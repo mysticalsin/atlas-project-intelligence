@@ -1,0 +1,34 @@
+// ATLAS edge test deployment. Deploy with ./deploy.sh (runs the tests first).
+{
+  "name": "atlas",
+  "main": "src/worker.js",
+  "compatibility_date": "2025-09-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  "ai": { "binding": "AI" },
+  "durable_objects": { "bindings": [{ "name": "INTERVIEW", "class_name": "Interview" }, { "name": "LIBRARY", "class_name": "LibraryStore" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Interview"] }, { "tag": "v2", "new_sqlite_classes": ["LibraryStore"] }],
+  "rules": [{ "type": "Text", "globs": ["**/*.html"], "fallthrough": true }],
+  "observability": { "enabled": true },
+  "triggers": { "crons": ["17 6 * * *"] },
+  "vars": {
+    "ORIGIN": "https://atlas.tony-walteur.workers.dev",
+    "ACCESS_TEAM_DOMAIN": "tony-walteur.cloudflareaccess.com",
+    "ACCESS_AUD": "fc05e3d966db92b03ed3bf38b31e5c5254e1508bb0e090825a56ce12a933f386",
+    "STT_MODEL": "@cf/deepgram/nova-3",
+    "TTS_MODEL": "@cf/deepgram/aura-2-en",
+    "TTS_VOICE": "harmonia",
+    "TALKER_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "ANALYST_MODEL": "@cf/openai/gpt-oss-120b",
+    "ADMIN_EMAILS": "tony.walteur@gmail.com",
+    "REVIEWER_EMAILS": "",
+    "READY_SCORE": "75",
+    "EMBED_MODEL": "@cf/baai/bge-m3",
+    "STT_LANGUAGE": "multi",
+    "TTS_MODEL_ES": "@cf/deepgram/aura-2-es",
+    "TTS_VOICE_ES": "celeste",
+    "ELEVENLABS_MODEL": "eleven_flash_v2_5",
+    "ELEVENLABS_VOICE_ID": "21m00Tcm4TlvDq8ikWAM"
+  }
+  // Secrets (never committed): CSRF_SECRET (deploy.sh); optional via set-keys.sh: HINDSIGHT_API_KEY, TYPESAFE_API_KEY, ELEVENLABS_API_KEY
+}

@@ -1,0 +1,135 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ATLAS Project Intelligence · PRD</title><style>body{margin:0;background:#F8F8F8;color:#101011;font:16px/1.85 Arial,system-ui,sans-serif}header{background:#3E007A;color:white;padding:26px max(24px,6vw)}header p{margin:0;font-size:12px;letter-spacing:1px}main{max-width:960px;margin:34px auto;padding:36px 48px;background:white;border:1px solid #E8E8EE;border-radius:14px}h1{font-size:45px;line-height:1.1;color:#3E007A;letter-spacing:-1.5px}h2{font-size:25px;color:#3E007A;line-height:1.35;border-top:1px solid #E8E8EE;padding-top:22px;margin-top:35px}h3{font-size:19px;color:#3E007A}blockquote{margin:25px 0;border-left:4px solid #3E007A;padding:5px 20px;background:#F8F8F8}table{border-collapse:collapse;width:100%;font-size:13px;display:block;overflow:auto}td,th{border:1px solid #D6D6D6;padding:12px;text-align:left;vertical-align:top}th{background:#F8F8F8}pre{padding:18px;background:#F8F8F8;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}code{font-size:13px}p,li,a{overflow-wrap:anywhere}a{color:#3E007A}@media(max-width:700px){main{margin:0;padding:25px 22px;border:0}h1{font-size:34px}body{font-size:15px}}@media print{header{display:none}main{margin:0;padding:0;border:0}body{font-size:12px}h2,h3{break-after:avoid}}</style></head><body><header><img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzg0IiBoZWlnaHQ9IjczIiB2aWV3Qm94PSIwIDAgMzg0IDczIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8ZyBjbGlwLXBhdGg9InVybCgjY2xpcDBfMjQ2NV81MDc2KSI+CjxwYXRoIGQ9Ik0xNjcuOTI0IDYxLjYyODRDMTY0Ljk4MSA2OC4yMjMzIDE1Ny44MjUgNzMgMTQ4LjU3MyA3M0MxMjguMjQxIDczIDExNC43NzYgNTcuMTQyNSAxMTQuNzc2IDM2LjIxODNDMTE0Ljc3NiAxNS4yOTQxIDEyNy45NjMgMC4wMDYzNDc2NiAxNDguMDE1IDAuMDA2MzQ3NjZDMTYwLjM1NSAwLjAwNjM0NzY2IDE2Ni4xMDcgNi42MDEyNSAxNjcuNzkxIDEwLjUzMDFWNS4yNTE5MUMxNjcuNzkxIDMuNDMyOTMgMTY5LjI2MiAxLjk1OTYzIDE3MS4wNjggMS45NTk2M0gxODIuNTk0QzE4NC40MTEgMS45NTk2MyAxODUuODcxIDMuNDMyOTMgMTg1Ljg3MSA1LjI1MTkxVjU4LjUzNzlDMTg1Ljg3MSA2Mi4xMzE0IDE4Ni4wMTYgNjUuMjU2IDE4Ni4xNjEgNjcuNTMyN0MxODYuMjg0IDY5LjQyOTYgMTg0Ljc3OSA3MS4wMjYxIDE4Mi44ODQgNzEuMDI2MUgxNzEuNDkyQzE2OS43OTcgNzEuMDI2MSAxNjguMzkyIDY5Ljc0MjcgMTY4LjIyNSA2OC4wNjgzQzE2OC4wNTggNjYuNDA1OSAxNjcuOTI0IDY0LjM4NTkgMTY3LjkyNCA2Mi40NjY4VjYxLjYzVjYxLjYyODRaTTE1MC44MTMgNTYuODUxN0MxNjAuNDg5IDU2Ljg1MTcgMTY3Ljc3OSA0OC44NTAyIDE2Ny43NzkgMzYuMjE4M0MxNjcuNzc5IDIzLjU4NjMgMTYwLjYzNCAxNi4xNDI3IDE1MC44MTMgMTYuMTQyN0MxNDAuOTkzIDE2LjE0MjcgMTMzLjU2OSAyMy41ODYzIDEzMy41NjkgMzYuMjE4M0MxMzMuNTY5IDQ4Ljg1MDIgMTQwLjcyNSA1Ni44NTE3IDE1MC44MTMgNTYuODUxN1oiIGZpbGw9IndoaXRlIi8+CjxwYXRoIGQ9Ik0yMTIuODYgNzEuMDM1NUgyMDAuNzc3QzE5OC45NiA3MS4wMzU1IDE5Ny40ODkgNjkuNTYzIDE5Ny40ODkgNjcuNzU0M1Y1LjI2MjE0QzE5Ny40ODkgMy40NDMxNiAxOTguOTYgMS45Njk4NiAyMDAuNzc3IDEuOTY5ODZIMjEyLjMwM0MyMTQuMTIgMS45Njk4NiAyMTUuNTgxIDMuNDQzMTYgMjE1LjU4MSA1LjI2MjE0VjEwLjU0MDNDMjE5Ljc4MyAzLjM3NTYyIDIyOC4wNjYgMC4xNTA4NzkgMjM1LjQ4OSAwLjE1MDg3OUMyNTIuNiAwLjE1MDg3OSAyNjAuNDQ3IDEyLjM1OTMgMjYwLjQ0NyAyNy41MjQ2VjY3Ljc1NDNDMjYwLjQ0NyA2OS41NzMzIDI1OC45NzYgNzEuMDM1NSAyNTcuMTYgNzEuMDM1NUgyNDUuMDc2QzI0My4yNiA3MS4wMzU1IDI0MS43ODggNjkuNTYzIDI0MS43ODggNjcuNzU0M1YzMC43NTAxQzI0MS43ODggMjMuMDI3NiAyMzcuOTk4IDE2Ljk5MDYgMjI5LjAyNSAxNi45OTA2QzIyMC44ODggMTYuOTkwNiAyMTYuMTI5IDIzLjMwNjUgMjE2LjEyOSAzMS4zMDhWNjcuNzQzMkMyMTYuMTI5IDY5LjU2MjIgMjE0LjY1NyA3MS4wMjQ0IDIxMi44NCA3MS4wMjQ0IiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMzY1Ljk2NiA2My41OTJDMzYyLjE3NiA3MC4wNTM0IDM1NC4xODQgNzIuODU0NiAzNDYuODkzIDcyLjg1NDZDMzMwLjIwNiA3Mi44NTQ2IDMyMC42NzUgNjAuNjQ1NCAzMjAuNjc1IDQ1LjYxNDRWNS4yNjIyNUMzMjAuNjc1IDMuNDQzMjcgMzIyLjE0NyAxLjk2OTk3IDMyMy45NTMgMS45Njk5N0gzMzYuMDM2QzMzNy44NTMgMS45Njk5NyAzMzkuMzI0IDMuNDQzMjcgMzM5LjMyNCA1LjI2MjI1VjQxLjg0MjlDMzM5LjMyNCA0OS41NjU0IDM0My4yNDcgNTUuNzM2IDM1MS45NDIgNTUuNzM2QzM2MC42MzcgNTUuNzM2IDM2NC45ODUgNTAuMTIyNSAzNjQuOTg1IDQyLjEyMThWNS4yNjIyNUMzNjQuOTg1IDMuNDQzMjcgMzY2LjQ1NSAxLjk2OTk3IDM2OC4yNjIgMS45Njk5N0gzODAuMzQ1QzM4Mi4xNjIgMS45Njk5NyAzODMuNjMzIDMuNDQzMjcgMzgzLjYzMyA1LjI2MjI1VjU4LjU0ODNDMzgzLjYzMyA2MS45MDczIDM4My44MDEgNjUuMDU0MiAzODMuOTkgNjcuNTA4OUMzODQuMTM1IDY5LjQxNjkgMzgyLjYyOSA3MS4wNDY3IDM4MC43MTIgNzEuMDQ2N0gzNjkuNDIxQzM2Ny43MTUgNzEuMDQ2NyAzNjYuMjg4IDY5Ljc0MTEgMzY2LjE1NCA2OC4wNDUzQzM2Ni4wNDMgNjYuNjYxOCAzNjUuOTY1IDY1LjA3NjQgMzY1Ljk2NSA2My42MTUxIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBvcGFjaXR5PSIwLjg1IiBkPSJNMTAxLjI3OSA3Mi45ODgxQzk2LjQ5NTcgNzIuOTg4MSA5MS45NTk3IDcwLjE2NzEgOTAuMDA2NCA2NS40NjlMNjkuNzUyIDE2Ljk0NTRDNjcuMTQ3MSAxMC43MTg0IDcwLjA4ODUgMy41NTg1MyA3Ni4zMDk2IDAuOTUwNDQ2QzgyLjUyOTggLTEuNjU3NjMgODkuNjgxOCAxLjI4NzM4IDkyLjI4NTkgNy41MTQzNUwxMTIuNTQgNTYuMDM4QzExNS4xNDUgNjIuMjY0OSAxMTIuMjA0IDY5LjQyNDkgMTA1Ljk4MyA3Mi4wMzI5QzEwNC40NDUgNzIuNjczNCAxMDIuODUgNzIuOTc3IDEwMS4yNzkgNzIuOTc3IiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBvcGFjaXR5PSIwLjciIGQ9Ik01Ni43Mzg1IDcyLjk4ODFDNTQuODk3MSA3Mi45ODgxIDUzLjAzMzUgNzIuNTcyNCA1MS4yODE4IDcxLjY5NTlDNDUuMjUyOSA2OC42NzIyIDQyLjgxNjIgNjEuMzIxNiA0NS44MzYyIDU1LjI4NTRMNzAuMTEgNi43NjE3NkM3My4xMyAwLjcyNTUwOSA4MC40NzMzIC0xLjcxMzMxIDg2LjUwMjMgMS4zMTAzOEM5Mi41MzEyIDQuMzM0MDcgOTQuOTY3OSAxMS42ODQ3IDkxLjk0NzggMTcuNzIwOUw2Ny42NzMzIDY2LjI0NDZDNjUuNTI4NyA3MC41Mjc4IDYxLjIxODEgNzMgNTYuNzQ4OCA3MyIgZmlsbD0id2hpdGUiLz4KPHBhdGggb3BhY2l0eT0iMC41NSIgZD0iTTU2Ljc2MTUgNzIuOTg4QzUyLjI4MTggNzIuOTg4IDQ3Ljk3MDQgNzAuNTE1IDQ1LjgzNyA2Ni4yMzI2TDIxLjU1MTMgMTcuNzA5QzE4LjUzMTMgMTEuNjcyNyAyMC45NjcyIDQuMzMzMjMgMjYuOTk2OSAxLjI5ODQyQzMzLjAyNTkgLTEuNzI1MjcgNDAuMzU4MSAwLjcxMzU0NiA0My4zODkyIDYuNzQ5OEw2Ny42NjI5IDU1LjI3MzRDNzAuNjgzIDYxLjMwODkgNjguMjQ3MSA2OC42NjAzIDYyLjIxNzQgNzEuNjg0QzYwLjQ2NjUgNzIuNTYwNSA1OC41OTA5IDcyLjk3NjEgNTYuNzYxNSA3Mi45NzYxIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBvcGFjaXR5PSIwLjM4IiBkPSJNMTIuMjEwMyA3Mi45ODg3QzEwLjYzODggNzIuOTg4NyA5LjA0NDIzIDcyLjY4NTIgNy41MDYwNCA3Mi4wNDQ3QzEuMjg1ODEgNjkuNDQ3NyAtMS42NTU2NCA2Mi4yODc4IDAuOTQ5Mjg0IDU2LjA0OTdMMjEuMjAzNyA3LjUyNjA3QzIzLjgwODYgMS4yOTkxIDMwLjk2MDcgLTEuNjQ1OTEgMzcuMTgwMSAwLjk2MjE2NUM0My40MDAzIDMuNTcwMjQgNDYuMzQxOCAxMC43MzAxIDQzLjczNjkgMTYuOTU3MUwyMy40ODI0IDY1LjQ4MDdDMjEuNTI5MSA3MC4xNjg1IDE2Ljk5MzEgNzMuMDAwNiAxMi4yMTAzIDczLjAwMDYiIGZpbGw9IndoaXRlIi8+CjxwYXRoIGQ9Ik0zMTIuNzUgNS4yNjIyNVYxNi43Nzg1QzMxMi43NSAxOC41OTc1IDMxMS4yNzkgMjAuMDcwOCAzMDkuNDcyIDIwLjA3MDhIMjk3LjM3OFY0Ny40NTU2QzI5Ny4zNzggNTMuNDkyNyAzMDAuMTg3IDU1LjQ1NzEgMzA1LjUxNiA1NS40NTcxQzMwNy43NTYgNTUuNDU3MSAzMTAuMjg3IDU1LjE3ODEgMzExLjI2OCA1NC44OTkyVjY3Ljk4ODlDMzExLjI2OCA2OS40ODQ0IDMxMC4yNTMgNzAuNzc4OSAzMDguODA0IDcxLjE0NjlDMzA2LjkyMSA3MS42MjY4IDMwNC4yNjcgNzIuMDI4MSAzMDAuNzU2IDcyLjAyODFIMzAwLjI0M0MyODcgNzEuODgyNyAyNzguNzQxIDYzLjkwNDMgMjc4Ljc0MSA1MC42OTE1VjIwLjA3MDhIMjY4LjA0QzI2Ni4yMjMgMjAuMDcwOCAyNjQuNzYyIDE4LjU5NzUgMjY0Ljc2MiAxNi43Nzg1VjUuMjYyMjVDMjY0Ljc2MiAzLjQ0MzI3IDI2Ni4yMzQgMS45Njk5NyAyNjguMDQgMS45Njk5N0gzMDkuNDg0QzMxMS4zMDEgMS45Njk5NyAzMTIuNzYxIDMuNDQzMjcgMzEyLjc2MSA1LjI2MjI1IiBmaWxsPSJ3aGl0ZSIvPgo8L2c+CjxkZWZzPgo8Y2xpcFBhdGggaWQ9ImNsaXAwXzI0NjVfNTA3NiI+CjxyZWN0IHdpZHRoPSIzODQiIGhlaWdodD0iNzMiIGZpbGw9IndoaXRlIi8+CjwvY2xpcFBhdGg+CjwvZGVmcz4KPC9zdmc+Cg==" width="126" alt="Mantu"><p>ATLAS / PROJECT INTELLIGENCE · v12</p></header><main><h1>ATLAS Project Intelligence</h1>
+<h2>Product and implementation contract · v12 · 26 September 2026</h2>
+<p><strong>Mantu · Product direction: Tony Walteur.</strong> Working software and a deployment kit, not a claim of a connected production service. The browser is one application with three primary screens: Conversation, Projects and Stories. The deeper quality, wiki, customer-match and private-memory tools live in one secondary workbench.</p>
+<blockquote>
+<p>The consultant should feel interviewed by someone who followed the work, noticed what was missing, and cared about getting the account right—not processed by an intake form.</p>
+</blockquote>
+<h2>1. The product decision</h2>
+<p>The orb is an audio-responsive interface, not the intelligence itself. Quality comes from the conversational model, the bounded interview controller, explicit source provenance, consultant correction and independent review. A visually lifelike response must never suggest knowledge, emotion, live connection or factual certainty that the application does not have.</p>
+<p>The durable outputs are an accurate account of the consultant’s contribution and a useful, permissioned customer story. An assessment, avoided bad decision, qualitative improvement or failed pilot may be more useful to a particular customer than a large but weakly supported savings claim. Do not optimize for the number of completed interviews, impressive percentages or polished paragraphs.</p>
+<p>The first release stays deliberately small: one application/gateway, one selected voice provider, per-user Hindsight, immutable Markdown story revisions and one SQLite authority registry. The optional editorial and JEV calls are explicit operations inside this application, not additional autonomous agents or microservices. A derived graph is a view of authorized records, not a second source of truth.</p>
+<h2>2. A real conversation, not narrated form fields</h2>
+<p>Two voice routes are implemented. The hosted route uses OpenAI Realtime with speech input/output, automatic turn detection, interruption handling, transcript events and restricted function calls. The retained NVIDIA PersonaPlex route uses its private GPU worker, with optional Riva transcription after the conversation. They share the interface and project rules but do not have identical capabilities. There is no silent fallback and no browser synthesizer pretending to be a hosted model.</p>
+<p>Hosted voice is the practical first pilot route when a PersonaPlex worker is not available. The default model name in the example configuration is <code>gpt-realtime-2.1</code>; confirm account access and actual behavior. NVIDIA remains available through an explicit server configuration change. A different provider must implement the same audio, consent, cancellation, transcript-provenance and tool boundaries before it can replace either route.</p>
+<p>The assistant introduces itself as an AI interviewer, asks one useful opening question, then waits. A brief pause is not automatically the end of the person’s thought. It acknowledges the specific detail just heard rather than repeating generic praise. It can be interrupted. Its goal is a concrete account, not a sequence of affirmative answers.</p>
+<h3>The twelve dimensions behind six familiar project topics</h3>
+<table>
+<thead>
+<tr>
+  <th>Dimension</th>
+  <th>Information to recover only when missing</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Problem and stakes</td>
+  <td>Who had the problem, what triggered action, and why the situation mattered.</td>
+</tr>
+<tr>
+  <td>Individual contribution</td>
+  <td>Deliverables and decisions the consultant actually owned, distinct from team/client ownership.</td>
+</tr>
+<tr>
+  <td>Intervention and choice</td>
+  <td>One implemented change, its mechanism, the plausible alternative, and the trade-off.</td>
+</tr>
+<tr>
+  <td>Adoption</td>
+  <td>Who used it, exceptions, handover and accountable operation after delivery.</td>
+</tr>
+<tr>
+  <td>Outcome</td>
+  <td>What changed, including a qualitative finding or a decision not to proceed.</td>
+</tr>
+<tr>
+  <td>Measurement</td>
+  <td>Named measure, baseline, after value, unit, time windows, population and comparison limitations.</td>
+</tr>
+<tr>
+  <td>Evidence</td>
+  <td>A checkable artifact, its version, supported sections and an appropriate reviewer.</td>
+</tr>
+<tr>
+  <td>Limits</td>
+  <td>Other changes, causal uncertainty, project stage and what must not be inferred.</td>
+</tr>
+<tr>
+  <td>Customer fit</td>
+  <td>The buyer, decision and situation for which this experience is useful.</td>
+</tr>
+<tr>
+  <td>Poor fit</td>
+  <td>Missing prerequisites, constraints or circumstances that make transfer inappropriate.</td>
+</tr>
+</tbody>
+</table>
+<p>This table is an internal coverage map, not a script to read aloud. A detailed answer may cover several dimensions at once. The voice model should capture those together and avoid asking them again. A source-linked estimate remains an estimate. A detailed account is not automatically true.</p>
+<h3>Example: recover the mechanism before the headline</h3>
+<p><strong>Consultant:</strong> “We used AI and saved forty percent.”</p>
+<p><strong>ATLAS:</strong> “What exactly does the forty percent measure?”</p>
+<p><strong>Consultant:</strong> “The time spent routing incoming requests.”</p>
+<p><strong>ATLAS:</strong> “What were the before-and-after values for that routing step?”</p>
+<p><strong>Consultant:</strong> “I need to check. I remember it felt faster, but I do not have the baseline.”</p>
+<p><strong>ATLAS:</strong> “We’ll leave the number unconfirmed. What did you personally change in the routing process?”</p>
+<p>The system has learned something valuable without coercing a number: the claimed measurement is unresolved, while the consultant’s intervention can still be investigated. After recovering the mechanism it asks who adopted the change, what artifact supports it, and what would make the approach a poor fit for another customer.</p>
+<h2>3. The bounded quality controller</h2>
+<p>With hosted transcript capture enabled, recognized user turns receive item IDs. <code>record_details</code> accepts exact quotes from those user items only; it rejects invented IDs, changed numerical/negative wording and agent speech. Quotes have <code>reported</code>, <code>uncertain</code> or <code>unknown</code> states. Confirmed corrections retire a prior same-field candidate through <code>supersedes</code>; the historical candidate is retained in the session ledger.</p>
+<p><code>inspect_gaps</code> reads the ledger. <code>plan_probe</code> chooses one next question and tracks the clarification budget. A repeated call within the same user turn does not consume another attempt. After two unresolved plans for a field, that field is deferred rather than marked complete. A plan is explicitly recorded as planned, not as proof that the model actually spoke it.</p>
+<p>A numerical outcome prioritizes its missing comparison basis. Multiple outcome accounts prompt a comparison/correction question; the code does not automatically label them contradictory or average them. Explicit unknowns and confidentiality remain open. Assessment and proof-of-concept outcomes are framed as findings or decisions, not assumed production benefits. The controller can end with a correction invitation while leaving unresolved work visible.</p>
+<p>The measurement detector uses conservative wording cues. It does not establish statistical comparability, semantic entailment or causality. The speech recognizer and the model’s field selection can be wrong. Human correction remains part of the product. The voice model has no tool to publish, approve, choose a memory bank or run arbitrary URLs.</p>
+<p>The offline wording lab is a transparent local helper, not a simulation of real inference. The live ledger remains empty until actual hosted user-transcript/tool events arrive. PersonaPlex receives the qualitative interview policy but does not use the hosted tool ledger; its captured notes follow the separate Riva route.</p>
+<h2>4. Presence with truthful signals</h2>
+<p>The embedded orb is a stable three-dimensional particle sculpture rendered with Canvas. Low, middle and high energy bands measured from output PCM affect shape, twist and highlights. A phrase onset after a short silence triggers one bounded directional gesture; tiny within-phrase gaps do not create jitter. The body settles when output becomes silent. A speaking label or a transcript delta without output energy cannot generate a speech gesture.</p>
+<p>Listening movement is subtler and tied to microphone energy. Muting input does not suppress the agent’s playback. Ending releases the microphone. Connection failure, tab lifecycle changes and timeouts stop the session rather than silently reconnect. Focus, palette, pause and system reduced-motion remain available. The inline SVG is a first-paint/failure animation, not evidence of inference.</p>
+<p>Silent previews are labelled and never create transcripts, memory, sources or approvals. No camera, emotional inference, attention tracking or claim of consciousness is part of this interface.</p>
+<h2>5. Hindsight remembers each person</h2>
+<p>Use <code>mysticalsin/hindsight</code>, inspected at commit <code>a921929a0e0ea82fb49da1daa0ca3e152e41fcc1</code>. This kit contains the adapter and deployment guidance, not a deployed copy of that repository.</p>
+<p>The server validates the current Entra identity and derives the private bank from tenant/object identity using a stable secret. Neither an email address nor a browser-supplied bank ID is authoritative. Recalled content is bounded and treated as untrusted context. A manager does not automatically inherit another person’s private bank.</p>
+<p>Private memory is for interview preferences, resume pointers and user-reviewed unresolved questions. The workbench can prepare a minimal resume note locally without client names or the full transcript. The person inspects it and explicitly saves it. Replacing the fixed <code>atlas-continuity</code> document supports correction without stacking obsolete summaries. Reading and forgetting that document are explicit operations. Older separately stored preferences and other provider records are outside that delete action; the UI says so.</p>
+<p>Memory must not become customer evidence. The assistant confirms a prior pointer against current authorized records and the consultant’s account. The kit does not silently upload whole conversations to Hindsight. An unavailable memory service is reported; the agent continues without pretending to remember.</p>
+<h2>6. The Markdown-first knowledge layer</h2>
+<p>Each saved story creates a new immutable <code>.md</code> revision. Its frontmatter includes identity, revision, stage, kind, audience, tags and recorded time. Eight narrative sections preserve challenge, contribution, approach, outcome, evidence, limitations, customer fit and poor fit. Versioned source excerpts are embedded in separately fenced blocks.</p>
+<p>The private vault layout is:</p>
+<pre><code class="language-text">data/wiki/
+  registry.sqlite3
+  &lt;owner-subject-key&gt;/
+    &lt;story-id&gt;/
+      r1-&lt;content-hash&gt;.md
+      r2-&lt;content-hash&gt;.md
+</code></pre>
+<p>The registry owns access, review decisions, withdrawal, expiry and audit events. Markdown is the narrative artifact; edited frontmatter cannot approve itself. Each read checks the stored content hash. Save uses an expected-hash check, writes a new immutable revision and does not inherit previous approval. Back up the files and registry together. This single-process pilot is not a claim of horizontally scalable or disaster-tested storage.</p>
+<p>A structural lint identifies unresolved placeholder sections and missing source links. It is not a model quality score. Such gaps block factual approval until the account is clarified or reformulated honestly. Distinct authenticated reviewers handle facts (<code>ATLAS.Review</code>) and external permission (<code>ATLAS.Publish</code>). An author cannot self-approve; reviewers must already have access. Local browser checkboxes remain local only.</p>
+<p>An authorized export creates <code>index.md</code>, story pages, topic pages, a relationship graph and a manifest. This is the modest LLM-wiki pattern: durable Markdown, explicit source conventions, derived indexes, and disciplined maintenance. It is not a second unrestricted personal-memory store.</p>
+<p>The native graph links stories to topics and versioned evidence. Its links are explicit record relationships, not causal claims. Optional Graphify runs consume an authorized exported snapshot—not the entire vault, registry or private Hindsight banks. Keep Graphify’s inferred relationships distinct from source-extracted links. A snapshot can become stale after withdrawal; recheck the live registry before reuse. Native Graphify execution is not performed by this package.</p>
+<h2>7. A source-grounded editorial pass</h2>
+<p>Template assembly remains available without an API. The optional editor uses one configured structured-output text model to improve a saved candidate for an explicit customer decision. It receives only that version’s narrative accounts and source excerpts. It cannot browse, load private memory, save or approve.</p>
+<p>Every proposed paragraph identifies known references appropriate to its section. The validator checks schema, section coverage, bounded lengths, reference existence and numerical-token provenance. A numerical headline is rejected. The original limitations are preserved verbatim when not already present. Provenance markers travel into the candidate text.</p>
+<p>These are useful checks, not a hallucination-proofing guarantee: a model can misinterpret a supported number, overstate causality without adding a number, or paraphrase a source incorrectly. Every returned candidate requires semantic, factual, anonymity and audience review. No received suggestion overwrites an unsaved edit. The server rechecks current access and the story hash after the asynchronous call. The user explicitly applies the suggestion to the editor and separately saves the next restricted revision.</p>
+<p>Configure <code>STORY_EDITOR_MODEL</code> to an approved model that supports the structured-output schema. This is separate from a realtime speech model. No model identifier, quota or provider acceptance is invented if that setting is empty.</p>
+<h2>8. JEV answers “best for this customer?”</h2>
+<p>The TypeSafe JEV adapter evaluates eligible customer-anonymized variants against four mandatory brief fields: customer problem, buyer/decision, constraints/prerequisites, and desired outcome. It does not rank consultants, certify facts or confer disclosure permission.</p>
+<p>A small deterministic lexical shortlist first selects up to twelve already-authorized eligible records. It considers the challenge, mechanism, fit, outcome, tags and title rather than simply taking the most recently uploaded files. This can miss synonyms and cross-domain analogies; an explicit authorized ID shortlist is supported by the API. An empty lexical shortlist is reported, not disguised as a semantic search result.</p>
+<p>Proposed pilot weights are problem fit 30%, transferability 25%, evidence 20%, decision usefulness 15%, and dated-source freshness 10%. JEV supplies four typed semantic scores with validated probability distributions. Code computes the date proxy from ISO dates in source-version labels, not upload time. Missing, invalid or future-dated labels remain unresolved. Currency is a proxy, not a claim that old experience is useless or newer work is better.</p>
+<p>The composite is a relevance estimate, never expected ROI or probability of customer success. Low model confidence or unresolved freshness produces <code>review-first</code>. Weak problem/transfer fit produces <code>poor-contextual-fit</code>. The response may contain no strong match and no recommended IDs. Display limitations and poor-fit text next to the result. The model does not produce freeform rationale in this adapter; the UI explains the rubric and shows the original caveats.</p>
+<p>Access, exact revision, audience and current eligibility are checked before each outbound call and again before returning results. The client explicitly authorizes external processing. Scores are not persisted as everlasting truth. A later edit, withdrawal, expiry or revoked access invalidates reuse. The weights and thresholds must be calibrated on human-labelled customer/story pairs before broad use.</p>
+<h2>9. Evaluate quality, not just a working transport</h2>
+<p>Local unit, route, browser and rendering tests establish that selected software contracts work with synthetic inputs. They do not establish a good spoken interview. Run a separately authorized live pilot against the chosen provider and account.</p>
+<p>Use paired reviews by a delivery expert and a customer-facing reviewer. Include vague claims, strong qualitative work, failed pilots, conflicting cohorts, withheld details, heavy accents, interruptions, long pauses and projects that should not be reused externally. Judge the retained meaning, not just word error rate.</p>
+<p>Proposed release gates, not achieved metrics: every introduced numerical claim must be detected/rejected or corrected before review; no tested cross-user memory or story access; no approval carried to a changed revision; no automatic publication; a complete microphone-stop test; and a verified no-match path. Score interview specificity, individual attribution, mechanism recovery, unnecessary repetition, respect for unknowns, source traceability and relevance to the buyer separately. Compare time-to-reviewable record and reviewer correction burden with the current manual interview process. Do not call voice quality proven because a codec test passed.</p>
+<h2>10. Deliberate first-release limits</h2>
+<p>One active voice interview per gateway in the provided pilot; one process owns the wiki registry. No cross-region replica protocol, agent swarm, graph database, general autonomous crawler or universal voice-provider router. Entra, provider endpoints and the Hindsight fork require real deployment, credentials, permissions and operational review. Local browser authoring is not a secure shared project database. Neither screenshots nor animation imply a live model connection.</p>
+<p>Move beyond these limits only after observing a requirement: concurrent interview demand, missed retrieval cases, measured queue latency or a need for central collaboration. Protect the quality contract while replacing internal components; do not trade concrete evidence for more apparent sophistication.</p>
+<h2>Source record</h2>
+<p>API and repository references inspected on 26 September 2026. They describe external capabilities, not deployment success for this kit.</p>
+<ul>
+<li>Hindsight fork: https://github.com/mysticalsin/hindsight/tree/a921929a0e0ea82fb49da1daa0ca3e152e41fcc1</li>
+<li>Hindsight retain and documents: https://hindsight.vectorize.io/developer/api/retain and https://hindsight.vectorize.io/developer/api/documents</li>
+<li>Hosted voice: https://developers.openai.com/api/docs/models/gpt-realtime-2.1 and https://developers.openai.com/api/docs/guides/realtime-conversations</li>
+<li>Structured editorial output: https://developers.openai.com/api/docs/guides/structured-outputs</li>
+<li>NVIDIA: https://github.com/NVIDIA/personaplex</li>
+<li>JEV API: https://docs.typesafe.ai/api</li>
+<li>Graphify source: https://github.com/mysticalsin/graphify/tree/v8</li>
+<li>LLM Wiki pattern: https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f</li>
+<li>Entra claim validation: https://learn.microsoft.com/en-us/entra/identity-platform/claims-validation</li>
+</ul>
+</main></body></html>

@@ -1,0 +1,21 @@
+PASS Assessment question does not assume production benefit
+PASS No measurement remains legitimate
+PASS Confidentiality elicits authorized non-identifying context
+PASS Editor refuses unsaved candidate
+PASS Explicit save reaches API adapter
+PASS External editing requires separate consent
+PASS Editor cannot refine a stale saved version
+PASS Structured suggestion is shown for review
+PASS Suggestion does not overwrite current title
+PASS Applying requires human acknowledgment
+PASS Accepted suggestion becomes editable draft
+PASS Applying neither saves nor approves remotely
+PASS Resume note excludes client name and full transcript
+PASS Resume preparation makes no API call
+PASS Deferred gap visible without quality inflation
+PASS Editor responsive at 320
+PASS Editor responsive at 390
+PASS Editor responsive at 768
+PASS Editor responsive at 1366
+PASS No JavaScript errors
+20 checks passed

@@ -1,0 +1,166 @@
+{
+  "scope": "Real browser rendering via unchanged HTML set_content; no native NVIDIA or microphone. One explicit Canvas-failure injection.",
+  "checks": [
+    {
+      "name": "New three-column dashboard is rendered",
+      "passed": true
+    },
+    {
+      "name": "Canvas draws without backend",
+      "passed": true
+    },
+    {
+      "name": "Initial progress is 0 of 6, not a fictional percentage",
+      "passed": true
+    },
+    {
+      "name": "Initial transcript contains no invented speech",
+      "passed": true
+    },
+    {
+      "name": "Initial state is disconnected",
+      "passed": true
+    },
+    {
+      "name": "No script/image/font fetch on load",
+      "passed": true
+    },
+    {
+      "name": "Idle Canvas pixels actually change",
+      "passed": true
+    },
+    {
+      "name": "Pause freezes rendered pixels",
+      "passed": true
+    },
+    {
+      "name": "Resume changes rendered pixels",
+      "passed": true
+    },
+    {
+      "name": "Speech preview causes actual body deformation",
+      "passed": true
+    },
+    {
+      "name": "Speech preview does not claim connection",
+      "passed": true
+    },
+    {
+      "name": "Side panel identifies the preview",
+      "passed": true
+    },
+    {
+      "name": "Preview leaves the microphone off",
+      "passed": true
+    },
+    {
+      "name": "Preview produces no transcript",
+      "passed": true
+    },
+    {
+      "name": "No expanding-wave property in pose",
+      "passed": true
+    },
+    {
+      "name": "Stop restores real disconnected state",
+      "passed": true
+    },
+    {
+      "name": "Focus removes the two side columns",
+      "passed": true
+    },
+    {
+      "name": "Escape restores context panels",
+      "passed": true
+    },
+    {
+      "name": "Project panel uses entered alias",
+      "passed": true
+    },
+    {
+      "name": "Project panel uses entered consultant and role",
+      "passed": true
+    },
+    {
+      "name": "Progress increases only for a saved topic",
+      "passed": true
+    },
+    {
+      "name": "Project library remains functional",
+      "passed": true
+    },
+    {
+      "name": "No document overflow at 320",
+      "passed": true
+    },
+    {
+      "name": "Canvas fits device at 320",
+      "passed": true
+    },
+    {
+      "name": "No document overflow at 390",
+      "passed": true
+    },
+    {
+      "name": "Canvas fits device at 390",
+      "passed": true
+    },
+    {
+      "name": "No document overflow at 768",
+      "passed": true
+    },
+    {
+      "name": "Canvas fits device at 768",
+      "passed": true
+    },
+    {
+      "name": "No document overflow at 1024",
+      "passed": true
+    },
+    {
+      "name": "Canvas fits device at 1024",
+      "passed": true
+    },
+    {
+      "name": "No document overflow at 1366",
+      "passed": true
+    },
+    {
+      "name": "Canvas fits device at 1366",
+      "passed": true
+    },
+    {
+      "name": "No document overflow at 1512",
+      "passed": true
+    },
+    {
+      "name": "Canvas fits device at 1512",
+      "passed": true
+    },
+    {
+      "name": "Main call to action fits a 1366 \u00d7 768 screen",
+      "passed": true
+    },
+    {
+      "name": "Optional blue appearance works",
+      "passed": true
+    },
+    {
+      "name": "Reduced motion does not animate continuously",
+      "passed": true
+    },
+    {
+      "name": "Missing Canvas retains visible inline SVG",
+      "passed": true
+    },
+    {
+      "name": "Canvas failure leaves connection controls available",
+      "passed": true
+    },
+    {
+      "name": "No JavaScript exceptions across checks",
+      "passed": true
+    }
+  ],
+  "errors": []
+}

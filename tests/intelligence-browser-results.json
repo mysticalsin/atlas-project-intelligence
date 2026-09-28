@@ -1,0 +1,110 @@
+{
+  "scope": "Actual Chromium DOM, downloads and Canvas; synthetic quality event injected for UI validation. No live voice/model/API.",
+  "checks": [
+    {
+      "name": "No invented live quality count",
+      "passed": true
+    },
+    {
+      "name": "Orb animates without claiming a model",
+      "passed": true
+    },
+    {
+      "name": "Quality workbench opens",
+      "passed": true
+    },
+    {
+      "name": "Vague percentage challenged",
+      "passed": true
+    },
+    {
+      "name": "Local coaching is labelled",
+      "passed": true
+    },
+    {
+      "name": "Detailed account advances to correction",
+      "passed": true
+    },
+    {
+      "name": "Unknown is kept explicit",
+      "passed": true
+    },
+    {
+      "name": "No fictional project silently created",
+      "passed": true
+    },
+    {
+      "name": "Project data enters Markdown draft",
+      "passed": true
+    },
+    {
+      "name": "Missing project fields are not invented",
+      "passed": true
+    },
+    {
+      "name": "Markdown download contains edits",
+      "passed": true
+    },
+    {
+      "name": "Local export is not approved",
+      "passed": true
+    },
+    {
+      "name": "Server draft send requires consent",
+      "passed": true
+    },
+    {
+      "name": "JEV requires an actual customer brief",
+      "passed": true
+    },
+    {
+      "name": "JEV processing requires consent",
+      "passed": true
+    },
+    {
+      "name": "Offline does not invent JEV scores",
+      "passed": true
+    },
+    {
+      "name": "Private memory write needs explicit review",
+      "passed": true
+    },
+    {
+      "name": "Offline does not fake remembered context",
+      "passed": true
+    },
+    {
+      "name": "Live quality event updates next probe",
+      "passed": true
+    },
+    {
+      "name": "Quote count does not imply verification",
+      "passed": true
+    },
+    {
+      "name": "Untrusted quote is text not executable HTML",
+      "passed": true
+    },
+    {
+      "name": "Workbench has no horizontal overflow 320",
+      "passed": true
+    },
+    {
+      "name": "Workbench has no horizontal overflow 390",
+      "passed": true
+    },
+    {
+      "name": "Workbench has no horizontal overflow 768",
+      "passed": true
+    },
+    {
+      "name": "Workbench has no horizontal overflow 1366",
+      "passed": true
+    },
+    {
+      "name": "No JavaScript errors",
+      "passed": true
+    }
+  ],
+  "errors": []
+}

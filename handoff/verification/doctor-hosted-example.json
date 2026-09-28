@@ -1,0 +1,58 @@
+{
+  "profile": "hosted",
+  "offline_only": true,
+  "checks": [
+    {
+      "name": "python",
+      "status": "pass",
+      "message": "Python 3.11+ required for the supported gateway environment."
+    },
+    {
+      "name": "source",
+      "status": "pass",
+      "message": "Build source, logo and compiled entry points must be present."
+    },
+    {
+      "name": "node",
+      "status": "pass",
+      "message": "Node with node --test is needed for JavaScript unit tests."
+    },
+    {
+      "name": "pytest",
+      "status": "pass",
+      "message": "Install requirements-test.txt to run Python unit tests."
+    },
+    {
+      "name": "playwright",
+      "status": "pass",
+      "message": "Playwright plus Chromium is needed for browser checks."
+    },
+    {
+      "name": "aiohttp",
+      "status": "pass",
+      "message": "Install requirements.txt for the application gateway."
+    },
+    {
+      "name": "configuration",
+      "status": "pass",
+      "message": "Existing Config validation passed; this does not test any service."
+    },
+    {
+      "name": "selected-provider",
+      "status": "pass",
+      "message": "Hosted profile requires explicit ATLAS_VOICE_PROVIDER=openai."
+    },
+    {
+      "name": "hosted-key",
+      "status": "fail",
+      "message": "OPENAI_API_KEY must be set server-side. Presence is not validity or account access."
+    },
+    {
+      "name": "not-live-verified",
+      "status": "warn",
+      "message": "No API key validation, network request, login, microphone, GPU inference or external write was attempted."
+    }
+  ],
+  "ready_for_local_prerequisites": false,
+  "live_verified": false
+}

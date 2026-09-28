@@ -1,0 +1,22 @@
+ATLAS: voice interviewer and reference platform (edge build)
+
+Voice-first project interviewer that turns consultants' work into reviewed,
+reusable client references, running on Cloudflare (Worker, Durable Objects,
+Workers AI, Access).
+
+- Interview: warm, open questions; breadth then depth; evidence contract;
+  ends itself, writes a report, saves automatically; 10-minute speaking budget;
+  admin mode; follows the consultant's language (10 understood, EN/ES native
+  voices, others via optional ElevenLabs)
+- Reference library: revisions, audit trail, roles, review agent quality gate,
+  in-app N+1 validation, publication, anonymised public view
+- Reuse: meeting recommendations with reasons, duplicate merge, client-context
+  .pptx slides (fact vs interpretation, no invented numbers)
+- Operations: lifecycle and six-month interview invitations, analytics and
+  coverage, commercial insights, Spotlight export/import
+- Private per-person memory with Hindsight, JEV relevance filter
+- Orb: JARVIS-style swarm with rotation, drift, click and drag
+- Tests: app, edge, Python and nine browser suites; CI on every push;
+  manual deploy workflow
+
+Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>

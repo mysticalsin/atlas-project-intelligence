@@ -1,0 +1,3 @@
+# Optional NVIDIA transcription client; not the PersonaPlex GPU runtime.
+-r requirements.txt
+nvidia-riva-client

@@ -1,0 +1,86 @@
+{
+  "scope": "Actual Chromium DOM and rendering; hosted API explicitly replaced with fixtures; no model or real identity.",
+  "checks": [
+    {
+      "name": "Assessment question does not assume production benefit",
+      "passed": true
+    },
+    {
+      "name": "No measurement remains legitimate",
+      "passed": true
+    },
+    {
+      "name": "Confidentiality elicits authorized non-identifying context",
+      "passed": true
+    },
+    {
+      "name": "Editor refuses unsaved candidate",
+      "passed": true
+    },
+    {
+      "name": "Explicit save reaches API adapter",
+      "passed": true
+    },
+    {
+      "name": "External editing requires separate consent",
+      "passed": true
+    },
+    {
+      "name": "Editor cannot refine a stale saved version",
+      "passed": true
+    },
+    {
+      "name": "Structured suggestion is shown for review",
+      "passed": true
+    },
+    {
+      "name": "Suggestion does not overwrite current title",
+      "passed": true
+    },
+    {
+      "name": "Applying requires human acknowledgment",
+      "passed": true
+    },
+    {
+      "name": "Accepted suggestion becomes editable draft",
+      "passed": true
+    },
+    {
+      "name": "Applying neither saves nor approves remotely",
+      "passed": true
+    },
+    {
+      "name": "Resume note excludes client name and full transcript",
+      "passed": true
+    },
+    {
+      "name": "Resume preparation makes no API call",
+      "passed": true
+    },
+    {
+      "name": "Deferred gap visible without quality inflation",
+      "passed": true
+    },
+    {
+      "name": "Editor responsive at 320",
+      "passed": true
+    },
+    {
+      "name": "Editor responsive at 390",
+      "passed": true
+    },
+    {
+      "name": "Editor responsive at 768",
+      "passed": true
+    },
+    {
+      "name": "Editor responsive at 1366",
+      "passed": true
+    },
+    {
+      "name": "No JavaScript errors",
+      "passed": true
+    }
+  ],
+  "errors": []
+}

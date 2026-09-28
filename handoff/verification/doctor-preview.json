@@ -1,0 +1,33 @@
+{
+  "profile": "preview",
+  "offline_only": true,
+  "checks": [
+    {
+      "name": "python",
+      "status": "pass",
+      "message": "Python 3.11+ required for the supported gateway environment."
+    },
+    {
+      "name": "source",
+      "status": "pass",
+      "message": "Build source, logo and compiled entry points must be present."
+    },
+    {
+      "name": "node",
+      "status": "pass",
+      "message": "Node with node --test is needed for JavaScript unit tests."
+    },
+    {
+      "name": "pytest",
+      "status": "pass",
+      "message": "Install requirements-test.txt to run Python unit tests."
+    },
+    {
+      "name": "playwright",
+      "status": "pass",
+      "message": "Playwright plus Chromium is needed for browser checks."
+    }
+  ],
+  "ready_for_local_prerequisites": true,
+  "live_verified": false
+}

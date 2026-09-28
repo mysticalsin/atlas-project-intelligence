@@ -1,0 +1,14 @@
+{
+  "date": "2026-09-25",
+  "url": "https://raw.githubusercontent.com/NVIDIA/personaplex/main/moshi/moshi/server.py",
+  "manual_web_review": {
+    "loopback_patch_target_present": true,
+    "prompt_redaction_target_present": true,
+    "reference_lines": [
+      239,
+      449
+    ]
+  },
+  "runtime_source_download": "Unavailable in build container (DNS failure). No remote source was executed.",
+  "model_inference_tested": false
+}

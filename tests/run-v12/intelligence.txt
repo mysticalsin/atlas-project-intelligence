@@ -1,0 +1,27 @@
+PASS No invented live quality count
+PASS Orb animates without claiming a model
+PASS Quality workbench opens
+PASS Vague percentage challenged
+PASS Local coaching is labelled
+PASS Detailed account advances to correction
+PASS Unknown is kept explicit
+PASS No fictional project silently created
+PASS Project data enters Markdown draft
+PASS Missing project fields are not invented
+PASS Markdown download contains edits
+PASS Local export is not approved
+PASS Server draft send requires consent
+PASS JEV requires an actual customer brief
+PASS JEV processing requires consent
+PASS Offline does not invent JEV scores
+PASS Private memory write needs explicit review
+PASS Offline does not fake remembered context
+PASS Live quality event updates next probe
+PASS Quote count does not imply verification
+PASS Untrusted quote is text not executable HTML
+PASS Workbench has no horizontal overflow 320
+PASS Workbench has no horizontal overflow 390
+PASS Workbench has no horizontal overflow 768
+PASS Workbench has no horizontal overflow 1366
+PASS No JavaScript errors
+26 checks passed

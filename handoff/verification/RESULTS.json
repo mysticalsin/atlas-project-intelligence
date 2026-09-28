@@ -1,0 +1,84 @@
+{
+  "handoff_version": "12.1",
+  "application_version": "12.0",
+  "date": "2026-09-26",
+  "purpose": "Claude-readable build continuation; application runtime and HTML preserved",
+  "total_passed": 404,
+  "total_failed": 0,
+  "suites": [
+    {
+      "name": "Node application/domain/worklet/orb/intelligence",
+      "passed": 104,
+      "evidence": "node.log",
+      "scope": "Local unit tests, simulated AudioWorklet; no native microphone"
+    },
+    {
+      "name": "Python full application + handoff tools via make test",
+      "passed": 149,
+      "warnings": 81,
+      "evidence": "make-test.log",
+      "scope": "120 application tests + 29 new offline handoff tests; synthetic provider fixtures, no live APIs"
+    },
+    {
+      "name": "Browser app/lifecycle",
+      "passed": 65,
+      "evidence": "studio.log",
+      "scope": "Actual DOM/Canvas; explicit microphone/provider/storage adapters"
+    },
+    {
+      "name": "Browser sculpture",
+      "passed": 40,
+      "evidence": "sculpture.log",
+      "scope": "Actual Canvas, controls, responsive layout and explicit Canvas-failure injection"
+    },
+    {
+      "name": "Browser intelligence",
+      "passed": 26,
+      "evidence": "intelligence.log",
+      "scope": "Actual DOM/downloads; synthetic quality events"
+    },
+    {
+      "name": "Browser editorial/depth",
+      "passed": 20,
+      "evidence": "depth.log",
+      "scope": "Actual DOM with upstream fixtures"
+    }
+  ],
+  "checks": {
+    "source_rebuild_byte_identical": true,
+    "four_html_aliases_identical": true,
+    "protected_original_files_byte_identical": 37,
+    "protected_original_files_changed": [],
+    "all_handoff_document_links_resolve": true,
+    "preview_doctor_passed": true,
+    "hosted_example_doctor_expected_missing_key_failure": true,
+    "make_test_includes_all_python_suites": true,
+    "make_test_ui_includes_all_four_browser_suites": true
+  },
+  "primary_html_sha256": "dd7c5627afcdbdec473e300ea0082f853a0a3819a96af2daffd48b37f862d314",
+  "logo_sha256": "92c5ff21779f09199097a2971c172453017f0d2581a0ced6f54fe486ba9b6c2b",
+  "environment": {
+    "python": "3.13.5",
+    "node": "v22.16.0",
+    "aiohttp": "3.13.3",
+    "pytest": "9.0.2",
+    "playwright": "1.57.0"
+  },
+  "upstream_source_zip_sha256": "c35fa14648703c2de899192d636f4217e2f66da66f7f18032272784225e4346b",
+  "browser_method": "Compiled HTML loaded through Playwright set_content; native file://, real microphone and provider networking not claimed.",
+  "providers_called": false,
+  "model_inference_tested": false,
+  "production_ready": false,
+  "not_validated": [
+    "Live OpenAI/NVIDIA speech and human interruption/quality",
+    "Native microphone/network playback",
+    "Real Entra app role lifecycle",
+    "Live Hindsight SDK and fork service",
+    "Live JEV calibration",
+    "Real narrative model grounding",
+    "Native Graphify execution",
+    "Multiuser deployment and joint operational vault recovery",
+    "Corporate brand and publication approval"
+  ],
+  "integrity_note": "MANIFEST.json enumerates package files except itself. Check with scripts/check_handoff.py before editing. Hash matching is not a signature or a security certification."
+}

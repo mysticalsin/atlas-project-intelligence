@@ -1,0 +1,41 @@
+PASS New three-column dashboard is rendered
+PASS Canvas draws without backend
+PASS Initial progress is 0 of 6, not a fictional percentage
+PASS Initial transcript contains no invented speech
+PASS Initial state is disconnected
+PASS No script/image/font fetch on load
+PASS Idle Canvas pixels actually change
+PASS Pause freezes rendered pixels
+PASS Resume changes rendered pixels
+PASS Speech preview causes actual body deformation
+PASS Speech preview does not claim connection
+PASS Side panel identifies the preview
+PASS Preview leaves the microphone off
+PASS Preview produces no transcript
+PASS No expanding-wave property in pose
+PASS Stop restores real disconnected state
+PASS Focus removes the two side columns
+PASS Escape restores context panels
+PASS Project panel uses entered alias
+PASS Project panel uses entered consultant and role
+PASS Progress increases only for a saved topic
+PASS Project library remains functional
+PASS No document overflow at 320
+PASS Canvas fits device at 320
+PASS No document overflow at 390
+PASS Canvas fits device at 390
+PASS No document overflow at 768
+PASS Canvas fits device at 768
+PASS No document overflow at 1024
+PASS Canvas fits device at 1024
+PASS No document overflow at 1366
+PASS Canvas fits device at 1366
+PASS No document overflow at 1512
+PASS Canvas fits device at 1512
+PASS Main call to action fits a 1366 × 768 screen
+PASS Optional blue appearance works
+PASS Reduced motion does not animate continuously
+PASS Missing Canvas retains visible inline SVG
+PASS Canvas failure leaves connection controls available
+PASS No JavaScript exceptions across checks
+40 checks passed

@@ -1,0 +1,270 @@
+{
+  "scope": "Actual HTML DOM and Canvas2D rendering. Provider/audio/storage lifecycle uses explicit adapters, not actual NVIDIA inference.",
+  "results": [
+    {
+      "name": "Standalone opens on rendered orb, without project setup",
+      "passed": true
+    },
+    {
+      "name": "First-screen canvas actually renders frames",
+      "passed": true
+    },
+    {
+      "name": "Default orb uses Mantu violet",
+      "passed": true
+    },
+    {
+      "name": "Disconnected state is explicit",
+      "passed": true
+    },
+    {
+      "name": "Idle has no microphone",
+      "passed": true
+    },
+    {
+      "name": "Preview is labelled separately from live voice",
+      "passed": true
+    },
+    {
+      "name": "Preview does not change transport state",
+      "passed": true
+    },
+    {
+      "name": "Preview never opens the microphone",
+      "passed": true
+    },
+    {
+      "name": "Preview never invents agent speech",
+      "passed": true
+    },
+    {
+      "name": "Preview does not create a project",
+      "passed": true
+    },
+    {
+      "name": "Preview reaches its speaking animation without claiming inference",
+      "passed": true
+    },
+    {
+      "name": "Stopping preview restores disconnected label",
+      "passed": true
+    },
+    {
+      "name": "Jarvis-blue palette works",
+      "passed": true
+    },
+    {
+      "name": "Mantu palette restores",
+      "passed": true
+    },
+    {
+      "name": "Pause motion stops drawing",
+      "passed": true
+    },
+    {
+      "name": "Motion resumes",
+      "passed": true
+    },
+    {
+      "name": "Focus hides secondary panels",
+      "passed": true
+    },
+    {
+      "name": "Escape exits focus",
+      "passed": true
+    },
+    {
+      "name": "Transcript panel is visible by default",
+      "passed": true
+    },
+    {
+      "name": "Transcript can be hidden",
+      "passed": true
+    },
+    {
+      "name": "Transcript can be restored",
+      "passed": true
+    },
+    {
+      "name": "Offline Start opens actionable connection setup",
+      "passed": true
+    },
+    {
+      "name": "Connection setup does not create a pretend live session",
+      "passed": true
+    },
+    {
+      "name": "Executable gateway URL rejected",
+      "passed": true
+    },
+    {
+      "name": "Credential-bearing URL rejected",
+      "passed": true
+    },
+    {
+      "name": "Navigation needs explicit trust",
+      "passed": true
+    },
+    {
+      "name": "Trusted origin becomes a plain navigation link",
+      "passed": true
+    },
+    {
+      "name": "Gateway link does not transfer opener or referrer",
+      "passed": true
+    },
+    {
+      "name": "Editing address clears trust",
+      "passed": true
+    },
+    {
+      "name": "Local setup shortcut uses explicit localhost origin",
+      "passed": true
+    },
+    {
+      "name": "Project context binds to the selected local project",
+      "passed": true
+    },
+    {
+      "name": "Original text note editor retained",
+      "passed": true
+    },
+    {
+      "name": "Actual authored answer saved",
+      "passed": true
+    },
+    {
+      "name": "Project library remains usable",
+      "passed": true
+    },
+    {
+      "name": "Project page exits dark conversation mode",
+      "passed": true
+    },
+    {
+      "name": "Conversation view restores dark orb layout",
+      "passed": true
+    },
+    {
+      "name": "Consent is required before a microphone request",
+      "passed": true
+    },
+    {
+      "name": "Adapter model playback drives orb speaking state",
+      "passed": true
+    },
+    {
+      "name": "Actual supplied adapter meter drives animation",
+      "passed": true
+    },
+    {
+      "name": "Preview unavailable during live connection",
+      "passed": true
+    },
+    {
+      "name": "Mute and end are visible during live connection",
+      "passed": true
+    },
+    {
+      "name": "Orb mutes microphone track",
+      "passed": true
+    },
+    {
+      "name": "Mute does not suppress agent playback state",
+      "passed": true
+    },
+    {
+      "name": "Muted silence stops the speaking state",
+      "passed": true
+    },
+    {
+      "name": "Unmute resumes listening without new permission",
+      "passed": true
+    },
+    {
+      "name": "Agent captions did not become consultant facts",
+      "passed": true
+    },
+    {
+      "name": "End closes microphone tracks",
+      "passed": true
+    },
+    {
+      "name": "End clears levels and playback claim",
+      "passed": true
+    },
+    {
+      "name": "Privacy text no longer claims streaming after End",
+      "passed": true
+    },
+    {
+      "name": "Changing screens keeps the conversation live with a visible live pill",
+      "passed": true
+    },
+    {
+      "name": "Ending from the live pill closes active audio",
+      "passed": true
+    },
+    {
+      "name": "No horizontal overflow at 320px",
+      "passed": true
+    },
+    {
+      "name": "Orb and start are visible at 320px",
+      "passed": true
+    },
+    {
+      "name": "No horizontal overflow at 390px",
+      "passed": true
+    },
+    {
+      "name": "Orb and start are visible at 390px",
+      "passed": true
+    },
+    {
+      "name": "No horizontal overflow at 768px",
+      "passed": true
+    },
+    {
+      "name": "Orb and start are visible at 768px",
+      "passed": true
+    },
+    {
+      "name": "No horizontal overflow at 1024px",
+      "passed": true
+    },
+    {
+      "name": "Orb and start are visible at 1024px",
+      "passed": true
+    },
+    {
+      "name": "No horizontal overflow at 1440px",
+      "passed": true
+    },
+    {
+      "name": "Orb and start are visible at 1440px",
+      "passed": true
+    },
+    {
+      "name": "System reduced-motion avoids continuous drawing",
+      "passed": true
+    },
+    {
+      "name": "Reduced-motion control is honest",
+      "passed": true
+    },
+    {
+      "name": "No browser read-aloud or recognition masquerades as NVIDIA",
+      "passed": true
+    },
+    {
+      "name": "Self-contained render has no external script/font downloads",
+      "passed": true
+    },
+    {
+      "name": "No JavaScript runtime errors",
+      "passed": true
+    }
+  ],
+  "errors": []
+}

@@ -1,0 +1,53 @@
+{
+  "checked": "2026-09-26",
+  "hindsight": {
+    "repository": "https://github.com/mysticalsin/hindsight",
+    "commit": "a921929a0e0ea82fb49da1daa0ca3e152e41fcc1",
+    "deployed": false
+  },
+  "graphify": {
+    "repository": "https://github.com/mysticalsin/graphify",
+    "inspected_branch": "v8",
+    "native_execution": false,
+    "package": "graphifyy"
+  },
+  "voice": {
+    "selected_by": "ATLAS_VOICE_PROVIDER",
+    "providers": [
+      "personaplex",
+      "openai"
+    ],
+    "hosted_default": "gpt-realtime-2.1",
+    "transcription_default": "gpt-transcribe",
+    "real_provider_tested": false
+  },
+  "jev": {
+    "endpoint": "https://api.typesafe.ai/v1/systemone",
+    "candidate_model": "jev-1.13.0",
+    "latest_claim": false,
+    "real_provider_tested": false,
+    "rubric": "customer-value-v2"
+  },
+  "memory_client": "Python Hindsight SDK and generated Documents API; validate against fork service",
+  "brand": {
+    "asset": "assets/Mantu.svg",
+    "sha256": "92c5ff21779f09199097a2971c172453017f0d2581a0ced6f54fe486ba9b6c2b",
+    "font_files_included": false
+  },
+  "editor": {
+    "endpoint": "https://api.openai.com/v1/chat/completions",
+    "model": "operator-configured STORY_EDITOR_MODEL",
+    "schema": "atlas_grounded_story",
+    "real_provider_tested": false
+  },
+  "wiki_pattern": "https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f",
+  "release": "12.0",
+  "hindsight_cloud": {
+    "checked": "2026-09-27",
+    "client": "@vectorize-io/hindsight-client 0.10.1",
+    "base_path": "/v1/default/banks/{bank_id}",
+    "auth": "Bearer",
+    "deployed": "edge, configured by secrets",
+    "real_provider_tested": false
+  }
+}

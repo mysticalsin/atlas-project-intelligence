@@ -1,0 +1,50 @@
+// HTTP surface of the reference library, run inside the LibraryStore Durable Object. Identity arrives only in
+// headers the Worker overwrites after verifying the sign-in (x-atlas-user, x-atlas-role); CSRF and Origin are
+// checked by the Worker before forwarding.
+export const SYSTEM = { email: 'atlas', role: 'admin' }; // automatic review after a save
+
+const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+
+export async function libraryRoutes(request, lib, { waitUntil = p => p } = {}) {
+  const url = new URL(request.url), user = { email: request.headers.get('x-atlas-user') || '', role: request.headers.get('x-atlas-role') || 'user' };
+  if (!user.email) return json({ error: 'Sign in first.' }, 401);
+  const parts = url.pathname.replace(/^\/api\/library\/?/, '').split('/').filter(Boolean), method = request.method;
+  let body = {};
+  if (method === 'POST') { try { body = await request.json(); } catch { return json({ error: 'Invalid JSON.' }, 400); } }
+  try {
+    if (!parts.length && method === 'GET') return json(lib.list(user, Object.fromEntries(url.searchParams)));
+    if (!parts.length && method === 'POST') {
+      const saved = await lib.upsert(user, body);
+      if (!saved.unchanged && lib.complete) waitUntil(lib.review(SYSTEM, saved.id).catch(() => {})); // automatic quality review
+      return json(saved, saved.unchanged ? 200 : 201);
+    }
+    const [id, action, arg] = parts;
+    // System calls (set only by the Worker's trigger endpoint or its daily cron).
+    if (user.role === 'system') {
+      if (method === 'POST' && id === 'trigger') return json(lib.invite(user.email, { ...body, source: user.email }), 201);
+      if (method === 'POST' && id === 'scan-stale') return json({ invited: lib.scanStale() });
+      return json({ error: 'Not found.' }, 404);
+    }
+    if (method === 'POST' && id === 'recommend') return json(await lib.recommend(user, body));
+    if (method === 'POST' && id === 'merge') { const saved = await lib.merge(user, body); if (lib.complete) waitUntil(lib.review(SYSTEM, saved.id).catch(() => {})); return json(saved); }
+    if (method === 'GET' && id === 'analytics') return json(lib.analytics(user));
+    if (method === 'POST' && id === 'insights') return json(await lib.insights(user));
+    if (method === 'GET' && id === 'export') return json(lib.exportAll(user));
+    if (method === 'POST' && id === 'import') { const out = await lib.importAll(user, body); return json(out); }
+    if (id === 'invitations') {
+      if (method === 'GET' && !action) return json({ items: lib.invitations({ ...user, all: url.searchParams.get('all') === '1' }) });
+      if (method === 'POST' && !action) { if (!['admin', 'reviewer'].includes(user.role)) return json({ error: 'Only a reviewer can schedule interviews for others.' }, 403); return json(lib.invite(user.email, body), 201); }
+      if (method === 'POST' && action) return json(lib.updateInvitation(user, action, body));
+    }
+    if (method === 'POST' && action === 'slides') return json(await lib.slides(user, id, body));
+    if (method === 'GET' && !action) return json(lib.get(user, id));
+    if (method === 'GET' && action === 'revisions' && arg) return json(lib.revision(user, id, arg));
+    if (method === 'POST' && action === 'review') return json(await lib.review(user, id));
+    if (method === 'POST' && action === 'validate') return json(lib.validate(user, id, body));
+    if (method === 'POST' && action === 'withdraw') return json(lib.withdraw(user, id, body));
+    if (method === 'POST' && action === 'reinstate') return json(lib.reinstate(user, id));
+    return json({ error: 'Not found.' }, 404);
+  } catch (e) {
+    return e.status ? json({ error: e.message }, e.status) : json({ error: 'The library could not complete that request.' }, 500);
+  }
+}

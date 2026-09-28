@@ -1,0 +1,111 @@
+"""Actual HTML/Canvas/DOM tests. Voice, identity and storage use explicit adapters.
+No test in this file claims real NVIDIA inference or a live enterprise connection.
+"""
+from pathlib import Path
+import ast,json,os,shutil
+from playwright.sync_api import sync_playwright
+ROOT=Path(__file__).resolve().parents[1]
+ADAPTER=(ROOT/'tests/fixtures/browser-adapter.js').read_text()
+ADAPTER=ADAPTER.replace('speaker:.1','speaker:(__TEST.speaker??.1)').replace('mic:m.muted?0:.08','mic:m.muted?0:(__TEST.mic??.08)')
+R=[];ERRORS=[]
+def check(name,value):
+ R.append({'name':name,'passed':bool(value)});print(('PASS ' if value else 'FAIL ')+name)
+ if not value:raise AssertionError(name)
+def load(context,adapter=False,reduced=False):
+ p=context.new_page();p.set_default_timeout(5000);p.set_viewport_size({'width':1440,'height':1000})
+ p.on('pageerror',lambda e:ERRORS.append(str(e)))
+ if reduced:p.emulate_media(reduced_motion='reduce')
+ h=(ROOT/'ATLAS_Voice_Studio.html').read_text()
+ if adapter:h=h.replace('/* SERVER_RUNTIME */',ADAPTER).replace("new URL('/api/voice',location.href)","new URL('/api/voice','http://localhost:8080')").replace("if(!['http:','https:'].includes(location.protocol))",'if(false)')
+ p.set_content(h,wait_until='load');p.wait_for_timeout(200);return p
+def wait(p,phase):p.wait_for_function('(v)=>AtlasVoice.status().phase===v',arg=phase,timeout=6000)
+def project(p):
+ p.locator('#studioProject').click();p.locator('#studioProjectDrawer [data-action=new-project]').click()
+ for k,v in {'projectTitle':'An authorized project alias','consultantName':'Alex Example','consultantRole':'Data engineer','sectorInput':'Financial services'}.items():p.locator('#'+k).fill(v)
+ p.locator('#projectStage').select_option('Pilot');p.locator('#projectForm button[type=submit]').click()
+def start(p):
+ p.locator('#voiceStart').click();p.locator('#voiceConsentDialog').wait_for(state='visible');p.locator('#modelConsent').check();p.locator('#voiceConsentStart').click();wait(p,'live');p.wait_for_timeout(200)
+with sync_playwright() as pw:
+ b=pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH') or shutil.which('chromium'),args=['--no-sandbox']);context=b.new_context(accept_downloads=True)
+ try:
+  p=load(context)
+  check('Standalone opens on rendered orb, without project setup',p.locator('#orbCanvas').is_visible() and not p.locator('#projectDialog').is_visible())
+  check('First-screen canvas actually renders frames',p.evaluate('AtlasOrbUI.inspect().frames>1'))
+  check('Default orb uses Mantu violet',p.evaluate('AtlasOrbUI.inspect().palette==="mantu"'))
+  check('Disconnected state is explicit',p.locator('#voiceState').text_content()=='Not connected')
+  check('Idle has no microphone',p.evaluate('!AtlasVoice.status().hasMicrophone'))
+  p.locator('#studioPreview').click();p.wait_for_timeout(160)
+  check('Preview is labelled separately from live voice',p.locator('#previewNotice').is_visible() and 'VISUAL PREVIEW' in p.locator('#previewNotice').inner_text())
+  check('Preview does not change transport state',p.evaluate('AtlasVoice.status().phase==="idle"'))
+  check('Preview never opens the microphone',p.evaluate('!AtlasVoice.status().hasMicrophone'))
+  check('Preview never invents agent speech',not p.locator('#agentText').text_content())
+  check('Preview does not create a project',p.evaluate('(()=>{const c=ATLAS_VOICE_BRIDGE.context();return c===null||c.isNew===true;})()'))
+  p.wait_for_timeout(4700)
+  check('Preview reaches its speaking animation without claiming inference',p.evaluate('AtlasOrbUI.inspect().state==="speaking" && AtlasVoice.status().phase==="idle"'))
+  p.locator('#studioPreview').click();check('Stopping preview restores disconnected label',p.locator('#orbStateCaption').text_content()=='Not connected')
+  p.locator('#studioAppearance').click();p.locator('button[data-palette=blue]').click()
+  check('Jarvis-blue palette works',p.evaluate('AtlasOrbUI.inspect().palette==="blue"'))
+  p.locator('button[data-palette=mantu]').click();check('Mantu palette restores',p.evaluate('AtlasOrbUI.inspect().palette==="mantu"'))
+  p.locator('#orbMotion').click();p.wait_for_timeout(150);frames=p.evaluate('AtlasOrbUI.inspect().frames');p.wait_for_timeout(150)
+  check('Pause motion stops drawing',p.evaluate('AtlasOrbUI.inspect().frames')==frames)
+  p.locator('#orbMotion').click();p.wait_for_timeout(180);check('Motion resumes',p.evaluate('AtlasOrbUI.inspect().frames')>frames)
+  p.locator('#studioFocus').click();check('Focus hides secondary panels',not p.locator('.studio-left').is_visible() and p.locator('#orbCanvas').is_visible())
+  p.keyboard.press('Escape');check('Escape exits focus',not p.evaluate('document.body.classList.contains("studio-focus")'))
+  p.locator('#studioAppearance').click()
+  try:p.locator('#agentText').wait_for(state='visible',timeout=2000)
+  except Exception:pass
+  check('Transcript panel is visible by default',p.locator('#agentText').is_visible());p.locator('#orbTranscriptToggle').click();check('Transcript can be hidden',not p.locator('#agentText').is_visible());p.locator('#orbTranscriptToggle').click();check('Transcript can be restored',p.locator('#agentText').is_visible())
+  p.locator('#voiceStart').click();p.locator('#voiceConnectionDialog').wait_for(state='visible')
+  check('Offline Start opens actionable connection setup','a voice model is not connected' in p.locator('#connectionSummary').inner_text())
+  check('Connection setup does not create a pretend live session',p.evaluate('!AtlasVoice.status().hasMicrophone && AtlasVoice.status().phase==="idle"'))
+  p.locator('#gatewayAddress').fill('javascript:alert(1)');check('Executable gateway URL rejected',p.locator('#gatewayOpen').get_attribute('href') is None)
+  p.locator('#gatewayAddress').fill('https://atlas.example.com/?token=secret');check('Credential-bearing URL rejected',p.locator('#gatewayOpen').get_attribute('href') is None)
+  p.locator('#gatewayAddress').fill('https://atlas.example.com');check('Navigation needs explicit trust',p.locator('#gatewayOpen').get_attribute('href') is None)
+  p.locator('#gatewayTrusted').check();check('Trusted origin becomes a plain navigation link',p.locator('#gatewayOpen').get_attribute('href')=='https://atlas.example.com')
+  check('Gateway link does not transfer opener or referrer','noopener' in p.locator('#gatewayOpen').get_attribute('rel') and 'noreferrer' in p.locator('#gatewayOpen').get_attribute('rel'))
+  p.locator('#gatewayAddress').fill('https://different.example.com');check('Editing address clears trust',not p.locator('#gatewayTrusted').is_checked() and p.locator('#gatewayOpen').get_attribute('href') is None)
+  p.locator('#gatewayLocal').click();check('Local setup shortcut uses explicit localhost origin',p.locator('#gatewayAddress').input_value()=='http://localhost:8080')
+  p.locator('#voiceConnectionDialog [data-voice-close]').click()
+  # Project authoring and generated story are real DOM operations; native storage is unavailable in this set_content origin.
+  project(p);check('Project context binds to the selected local project',p.locator('#orbProjectTitle').inner_text()=='An authorized project alias')
+  p.locator('#studioCloseContext').click();p.locator('#voiceTextToggle').click();check('Original text note editor retained',p.locator('.interview-layout').is_visible())
+  p.locator('#answerInput').fill('I implemented a normalization pipeline for a pilot intake queue. The architecture lead owned the overall target design.')
+  p.locator('#nextButton').click();check('Actual authored answer saved',p.evaluate('ATLAS_VOICE_BRIDGE.context().project.answers[0].includes("normalization")'))
+  p.locator('#voiceTextToggle').click();p.locator('header [data-view=projects]').click();check('Project library remains usable',p.locator('#projectCards').is_visible() and 'authorized project alias' in p.locator('#projectCards').inner_text())
+  check('Project page exits dark conversation mode',not p.evaluate('document.body.classList.contains("studio-view")'))
+  p.locator('header [data-view=interview]').click();check('Conversation view restores dark orb layout',p.evaluate('document.body.classList.contains("studio-view")'))
+  # Live lifecycle is tested with explicitly faked provider/microphone APIs.
+  live=load(context,adapter=True);project(live);live.locator('#studioCloseContext').click()
+  live.locator('#voiceStart').click();live.locator('#voiceConsentDialog').wait_for(state='visible')
+  check('Consent is required before a microphone request',live.evaluate('__TEST.micStarts===0') and live.locator('#voiceConsentStart').is_disabled())
+  live.locator('#modelConsent').check();live.locator('#voiceConsentStart').click();wait(live,'live');live.wait_for_timeout(250)
+  check('Adapter model playback drives orb speaking state',live.evaluate('AtlasOrbUI.inspect().state==="speaking"'))
+  check('Actual supplied adapter meter drives animation',live.evaluate('AtlasOrbUI.inspect().signals.output>0'))
+  check('Preview unavailable during live connection',live.locator('#studioPreview').is_disabled())
+  check('Mute and end are visible during live connection',live.locator('#voiceMute').is_visible() and live.locator('#voiceEnd').is_visible())
+  live.locator('#orbActivate').click();check('Orb mutes microphone track',live.evaluate('AtlasVoice.status().tracks[0].enabled===false'))
+  check('Mute does not suppress agent playback state',live.evaluate('AtlasOrbUI.inspect().state==="speaking"'))
+  live.evaluate('__TEST.speaker=0');live.wait_for_timeout(450);check('Muted silence stops the speaking state',live.evaluate('AtlasOrbUI.inspect().state==="muted"'))
+  live.locator('#orbActivate').click();live.wait_for_timeout(200);check('Unmute resumes listening without new permission',live.evaluate('__TEST.micStarts===1 && AtlasOrbUI.inspect().state==="listening"'))
+  check('Agent captions did not become consultant facts',not any(live.evaluate('ATLAS_VOICE_BRIDGE.context().project.answers')))
+  live.locator('#voiceEnd').click();wait(live,'idle');live.wait_for_timeout(150)
+  check('End closes microphone tracks',live.evaluate('__TEST.tracks.every(t=>t.readyState==="ended")'))
+  check('End clears levels and playback claim',live.evaluate('AtlasOrbUI.inspect().state==="idle" && AtlasOrbUI.inspect().signals.output===0'))
+  check('Privacy text no longer claims streaming after End','No audio is streaming' in live.locator('#voicePrivacy').inner_text())
+  start(live);live.locator('header [data-view=projects]').click();check('Changing screens keeps the conversation live with a visible live pill',live.evaluate('__TEST.tracks.at(-1).readyState==="live"') and live.locator('#voiceLivePill').is_visible())
+  live.locator('#voiceLivePill [data-pill=end]').click();check('Ending from the live pill closes active audio',live.evaluate('__TEST.tracks.every(t=>t.readyState==="ended")'))
+  # Responsive controls and reduced motion.
+  for width in [320,390,768,1024,1440]:
+   p.set_viewport_size({'width':width,'height':900});p.wait_for_timeout(150)
+   check(f'No horizontal overflow at {width}px',p.evaluate('document.documentElement.scrollWidth<=innerWidth'))
+   check(f'Orb and start are visible at {width}px',p.locator('#orbCanvas').is_visible() and p.locator('#voiceStart').is_visible())
+  reduced=load(context,reduced=True);frames=reduced.evaluate('AtlasOrbUI.inspect().frames');reduced.wait_for_timeout(200)
+  check('System reduced-motion avoids continuous drawing',reduced.evaluate('AtlasOrbUI.inspect().frames')==frames)
+  reduced.locator('#studioAppearance').click();check('Reduced-motion control is honest',reduced.locator('#orbMotion').is_disabled())
+  h=(ROOT/'ATLAS_Voice_Studio.html').read_text()
+  check('No browser read-aloud or recognition masquerades as NVIDIA','speechSynthesis' not in h and 'SpeechRecognition' not in h)
+  check('Self-contained render has no external script/font downloads','<script src=' not in h and 'font/woff' not in h)
+  check('No JavaScript runtime errors',not ERRORS)
+ finally:
+  (ROOT/'tests/studio-browser-results.json').write_text(json.dumps({'scope':'Actual HTML DOM and Canvas2D rendering. Provider/audio/storage lifecycle uses explicit adapters, not actual NVIDIA inference.','results':R,'errors':ERRORS},indent=2));b.close()
+print(f'{len(R)} assertions passed')

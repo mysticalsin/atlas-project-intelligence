@@ -1,0 +1,21 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {MotionRig,deformPoint,MOTIFS}=require('../src/orb-renderer.js');
+function advance(r,s,level=0,bands=null,n=120){r.setState(s);for(let i=0;i<n;i++)r.step(1/60,0,level,bands);return r.snapshot();}
+test('idle is not a speech gesture',()=>{const p=advance(new MotionRig(),'idle');assert.equal(p.articulation,0);assert.equal(p.deformX,1);assert.equal(p.scale,1);});
+test('speaking state alone does not manufacture speech',()=>{const p=advance(new MotionRig(),'speaking',0);assert.equal(p.articulation,0);assert.equal(p.bass,0);assert.equal(p.body,0);});
+test('audio reshapes the connected body',()=>{const p=advance(new MotionRig(),'speaking',.18);assert.ok(p.articulation>.5);assert.ok(Math.abs(p.deformX-1)>.01);const d=deformPoint(.6,.3,.2,p);assert.ok(Math.hypot(d[0]-.6,d[1]-.3,d[2]-.2)>.02);});
+test('same input history produces the same pose',()=>{const a=new MotionRig(),b=new MotionRig();a.setState('speaking');b.setState('speaking');for(let i=0;i<180;i++){const v=.16*Math.sin(i*.2)**2;a.step(1/60,0,v);b.step(1/60,0,v);}assert.deepEqual(a.snapshot(),b.snapshot());});
+test('silent release removes deformation after speech',()=>{const r=new MotionRig();advance(r,'speaking',.18);const p=advance(r,'speaking',0,null,240);assert.ok(p.articulation<1e-5);assert.ok(p.impulse<1e-6);});
+test('high frequencies affect highlights, not a fake output level',()=>{const p=advance(new MotionRig(),'speaking',.18,{low:0,mid:0,high:.12});assert.equal(p.bass,0);assert.equal(p.body,0);assert.ok(p.air>.2);});
+test('bass deforms vertical mass',()=>{const p=advance(new MotionRig(),'speaking',.18,{low:.12,mid:0,high:0});assert.ok(p.deformY<1);assert.equal(p.air,0);});
+test('mid band twists the body without bass pumping',()=>{const p=advance(new MotionRig(),'speaking',.18,{low:0,mid:.13,high:0});assert.ok(p.deformY>1);assert.equal(p.bass,0);});
+test('spectral residue cannot animate silent playback',()=>{const p=advance(new MotionRig(),'speaking',0,{low:1,mid:1,high:1});assert.equal(p.body,0);assert.equal(p.articulation,0);});
+test('microphone alone does not trigger speaking articulation',()=>{const r=new MotionRig();r.setState('listening');for(let i=0;i<120;i++)r.step(1/60,.15,0);assert.ok(r.snapshot().mic>.5);assert.equal(r.snapshot().speaker,0);});
+test('muted state ignores microphone and playback until an actual speaking signal state',()=>{const r=new MotionRig();r.setState('muted');for(let i=0;i<120;i++)r.step(1/60,.5,.5);assert.equal(r.snapshot().mic,0);assert.equal(r.snapshot().speaker,0);});
+test('bounded state blending has no discontinuous jumps',()=>{const r=new MotionRig();advance(r,'idle');r.setState('muted');let prev=r.snapshot().radius;for(let i=0;i<70;i++){const p=r.step(1/60);assert.ok(Math.abs(p.radius-prev)<.006);prev=p.radius;}});
+test('pointer tracking is bounded and recenters',()=>{const r=new MotionRig();r.look(99,-99);for(let i=0;i<120;i++)r.step(1/60);assert.ok(r.focusX<=1&&r.focusY>=-1);r.look(0,0);for(let i=0;i<240;i++)r.step(1/60);assert.ok(Math.abs(r.focusX)<1e-5);});
+test('invalid input and sample timing stay finite',()=>{const r=new MotionRig();r.setState('speaking');r.step(NaN,NaN,Infinity,{low:NaN,mid:Infinity,high:-2});r.step(1/60,NaN,NaN);assert.ok(Number.isFinite(r.snapshot().scale));assert.equal(r.snapshot().articulation,0);});
+test('reset preserves the chosen intensity',()=>{const r=new MotionRig();r.intensity=.3;advance(r,'speaking',.2);r.reset();assert.equal(r.snapshot().intensity,.3);assert.equal(r.snapshot().time,0);assert.equal(r.snapshot().speaker,0);});
+test('no motion state exposes a radial wave field',()=>{for(const s of Object.keys(MOTIFS)){const p=advance(new MotionRig(),s,.15);assert.equal(p.wave,undefined);assert.equal(p.outward,undefined);}});
+test('speech deformations stay inside a safe scene bound',()=>{const p=advance(new MotionRig(),'speaking',1,{low:1,mid:1,high:1});for(let i=0;i<500;i++){const a=i*2.399,y=1-2*i/500,r=Math.sqrt(1-y*y),d=deformPoint(r*Math.cos(a),y,r*Math.sin(a),p);assert.ok(d.every(Number.isFinite));assert.ok(Math.hypot(...d)<1.4);}});

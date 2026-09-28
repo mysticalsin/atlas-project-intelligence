@@ -1,0 +1,84 @@
+{
+  "version": "12.0",
+  "date": "2026-09-26",
+  "artifact": "ATLAS_Project_Intelligence.html",
+  "executed_suites": [
+    {
+      "suite": "Python domain, gateway, quality, wiki, editor, JEV and protocol",
+      "passed": 120,
+      "failed": 0,
+      "warnings": 81,
+      "scope": "Actual Python and HTTP/WebSocket code with synthetic PCM/Opus fixtures and explicit upstream/SDK test doubles. Includes authorization, immutable revision checks, deferred probes, narrative validation, semantic-shortlist gates and editor route checks. No live billed APIs."
+    },
+    {
+      "suite": "Node domain, worklet, geometry, preview and phrase-gesture tests",
+      "passed": 104,
+      "failed": 0,
+      "scope": "Deterministic local logic and simulated AudioWorklet host. No native microphone or remote inference."
+    },
+    {
+      "suite": "Browser application and voice lifecycle",
+      "passed": 65,
+      "failed": 0,
+      "scope": "Actual compiled HTML, DOM and Canvas rendering. Explicit microphone, WebSocket, provider and storage adapters."
+    },
+    {
+      "suite": "Browser speech sculpture and responsive controls",
+      "passed": 40,
+      "failed": 0,
+      "scope": "Real Canvas rendered pixels, responsive layout, state preview, focus and motion controls; explicit Canvas-failure injection."
+    },
+    {
+      "suite": "Browser story intelligence workbench",
+      "passed": 26,
+      "failed": 0,
+      "scope": "Real DOM/downloads/responsive layout; explicitly synthetic quality events; no voice/API inference."
+    },
+    {
+      "suite": "Browser depth, editorial and private-continuity workbench",
+      "passed": 20,
+      "failed": 0,
+      "scope": "Real DOM and rendering. APIs replaced with explicit fixtures to test consent, unsaved changes, editor application, quality state and private resume preparation."
+    }
+  ],
+  "total_passed": 375,
+  "failed": 0,
+  "warnings": {
+    "python": 81,
+    "detail": "aiohttp deprecation/NotAppKey warnings in tested code and fixtures; not suppressed or counted as successful features."
+  },
+  "browser_method": "Managed Chromium loaded the unchanged compiled HTML using Playwright set_content; direct file navigation is blocked in this environment.",
+  "renderer": "Embedded Canvas2D sculpture with inline animated SVG fallback; no external libraries or fonts.",
+  "voice_routes": {
+    "openai": "Hosted Realtime adapter with exact-user-ASR-quote candidate tools and bounded probe planning. API account access must be validated.",
+    "personaplex": "Private NVIDIA GPU-worker adapter with existing optional Riva post-session consultant transcription; not the same live tool-capture feature set."
+  },
+  "memory_source": {
+    "repository": "https://github.com/mysticalsin/hindsight",
+    "reviewed_commit": "a921929a0e0ea82fb49da1daa0ca3e152e41fcc1",
+    "deployed_here": false
+  },
+  "wiki": "Actual immutable Markdown revisions plus SQLite access/approval/hash registry; native explicit relationship graph. Graphify is an optional exported-snapshot consumer, not an executed integration.",
+  "jev": "Actual TypeSafe HTTP adapter; test fixtures only. Eligibility-before-scoring, shortlist, typed scores, date proxy and no-strong-match gates. Pilot weights and thresholds are not commercially calibrated.",
+  "logo_sha256": "92c5ff21779f09199097a2971c172453017f0d2581a0ced6f54fe486ba9b6c2b",
+  "html_sha256": "dd7c5627afcdbdec473e300ea0082f853a0a3819a96af2daffd48b37f862d314",
+  "native_provider_evaluation_plan": "docs/EVALUATION_v12.md; proposed live scenarios, not executed field evidence.",
+  "not_validated": [
+    "Live hosted OpenAI or NVIDIA inference, voice quality, conversational adherence or real-person interruption",
+    "Browser-native microphone, speaker and network audio end-to-end",
+    "Real Entra tenant assignments, login, sign-out and deployment policy",
+    "Live Hindsight SDK compatibility against the reviewed fork deployment",
+    "Live TypeSafe JEV classification, score calibration or commercial value prediction",
+    "Live narrative model semantic grounding, causal claims, anonymity or entailment",
+    "Graphify execution or its semantic model/data-egress policies",
+    "Native device persistence, central governance of local browser drafts, backups or multiuser operations",
+    "Full accessibility audit, production security certification, corporate brand approval"
+  ],
+  "production_ready": false,
+  "deployed": false,
+  "clean_source_rebuild": {
+    "byte_identical_to_tested_html": true,
+    "all_four_aliases_identical": true,
+    "build_output": "Built 327134 bytes; original logo SHA256: 92c5ff21779f09199097a2971c172453017f0d2581a0ced6f54fe486ba9b6c2b"
+  }
+}

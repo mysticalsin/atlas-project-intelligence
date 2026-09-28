@@ -1,0 +1,688 @@
+python3 build.py
+Built 327134 bytes; original logo SHA256: 92c5ff21779f09199097a2971c172453017f0d2581a0ced6f54fe486ba9b6c2b
+node --test tests/*.test.js
+TAP version 13
+# Subtest: fresh state has no seeded projects
+ok 1 - fresh state has no seeded projects
+  ---
+  duration_ms: 3.359536
+  type: 'test'
+  ...
+# Subtest: profiles have distinct identifiers
+ok 2 - profiles have distinct identifiers
+  ---
+  duration_ms: 0.308207
+  type: 'test'
+  ...
+# Subtest: projects use exactly six independent answers
+ok 3 - projects use exactly six independent answers
+  ---
+  duration_ms: 0.321987
+  type: 'test'
+  ...
+# Subtest: unknown stages normalize safely
+ok 4 - unknown stages normalize safely
+  ---
+  duration_ms: 0.196811
+  type: 'test'
+  ...
+# Subtest: vague team attribution prompts individual ownership
+ok 5 - vague team attribution prompts individual ownership
+  ---
+  duration_ms: 0.810711
+  type: 'test'
+  ...
+# Subtest: number without measurement triggers baseline/source follow-up
+ok 6 - number without measurement triggers baseline/source follow-up
+  ---
+  duration_ms: 0.529484
+  type: 'test'
+  ...
+# Subtest: coaching checks adoption
+ok 7 - coaching checks adoption
+  ---
+  duration_ms: 0.417498
+  type: 'test'
+  ...
+# Subtest: customer relevance asks poor fit and disclosure
+ok 8 - customer relevance asks poor fit and disclosure
+  ---
+  duration_ms: 0.427153
+  type: 'test'
+  ...
+# Subtest: coaching never returns an empty question
+ok 9 - coaching never returns an empty question
+  ---
+  duration_ms: 1.141981
+  type: 'test'
+  ...
+# Subtest: 42 to 26 is 38.1 percent reduction
+ok 10 - 42 to 26 is 38.1 percent reduction
+  ---
+  duration_ms: 16.704324
+  type: 'test'
+  ...
+# Subtest: growth calculation has correct direction
+ok 11 - growth calculation has correct direction
+  ---
+  duration_ms: 0.33106
+  type: 'test'
+  ...
+# Subtest: percentage rates use points, not relative headline
+ok 12 - percentage rates use points, not relative headline
+  ---
+  duration_ms: 0.205134
+  type: 'test'
+  ...
+# Subtest: zero baseline uses absolute change
+ok 13 - zero baseline uses absolute change
+  ---
+  duration_ms: 0.204163
+  type: 'test'
+  ...
+# Subtest: negative baseline does not create misleading ratio
+ok 14 - negative baseline does not create misleading ratio
+  ---
+  duration_ms: 0.131995
+  type: 'test'
+  ...
+# Subtest: NaN metric is not displayed
+ok 15 - NaN metric is not displayed
+  ---
+  duration_ms: 0.080639
+  type: 'test'
+  ...
+# Subtest: measurement needs comparison and source
+ok 16 - measurement needs comparison and source
+  ---
+  duration_ms: 0.406262
+  type: 'test'
+  ...
+# Subtest: generated story copies actual answers
+ok 17 - generated story copies actual answers
+  ---
+  duration_ms: 0.712816
+  type: 'test'
+  ...
+# Subtest: generation defaults to internal audience
+ok 18 - generation defaults to internal audience
+  ---
+  duration_ms: 0.109533
+  type: 'test'
+  ...
+# Subtest: draft does not inherit approval
+ok 19 - draft does not inherit approval
+  ---
+  duration_ms: 0.137283
+  type: 'test'
+  ...
+# Subtest: inspected coverage resolves evidence checks
+ok 20 - inspected coverage resolves evidence checks
+  ---
+  duration_ms: 0.190222
+  type: 'test'
+  ...
+# Subtest: deferred topics block review despite nonempty answer
+ok 21 - deferred topics block review despite nonempty answer
+  ---
+  duration_ms: 0.177313
+  type: 'test'
+  ...
+# Subtest: withdrawn evidence blocks review
+ok 22 - withdrawn evidence blocks review
+  ---
+  duration_ms: 0.102251
+  type: 'test'
+  ...
+# Subtest: missing source coverage blocks applicable claim
+ok 23 - missing source coverage blocks applicable claim
+  ---
+  duration_ms: 0.156402
+  type: 'test'
+  ...
+# Subtest: material edit invalidates review and stales draft
+ok 24 - material edit invalidates review and stales draft
+  ---
+  duration_ms: 0.131305
+  type: 'test'
+  ...
+# Subtest: story-only changes invalidate without changing record revision
+ok 25 - story-only changes invalidate without changing record revision
+  ---
+  duration_ms: 0.073939
+  type: 'test'
+  ...
+# Subtest: two local decisions enable readiness only with sources
+ok 26 - two local decisions enable readiness only with sources
+  ---
+  duration_ms: 0.08109
+  type: 'test'
+  ...
+# Subtest: imports reset source inspection and reviews
+ok 27 - imports reset source inspection and reviews
+  ---
+  duration_ms: 0.643934
+  type: 'test'
+  ...
+# Subtest: wrong import format is rejected
+ok 28 - wrong import format is rejected
+  ---
+  duration_ms: 0.174479
+  type: 'test'
+  ...
+# Subtest: oversized answer import is rejected
+ok 29 - oversized answer import is rejected
+  ---
+  duration_ms: 0.112737
+  type: 'test'
+  ...
+# Subtest: missing source name is rejected
+ok 30 - missing source name is rejected
+  ---
+  duration_ms: 0.118586
+  type: 'test'
+  ...
+# Subtest: duplicate evidence IDs are rejected
+ok 31 - duplicate evidence IDs are rejected
+  ---
+  duration_ms: 0.16875
+  type: 'test'
+  ...
+# Subtest: profile state roundtrip preserves legitimate records
+ok 32 - profile state roundtrip preserves legitimate records
+  ---
+  duration_ms: 0.336979
+  type: 'test'
+  ...
+# Subtest: duplicate profile IDs are rejected
+ok 33 - duplicate profile IDs are rejected
+  ---
+  duration_ms: 0.099537
+  type: 'test'
+  ...
+# Subtest: script URL and credentials are rejected
+ok 34 - script URL and credentials are rejected
+  ---
+  duration_ms: 0.119287
+  type: 'test'
+  ...
+# Subtest: legitimate HTTPS source link is preserved
+ok 35 - legitimate HTTPS source link is preserved
+  ---
+  duration_ms: 0.069453
+  type: 'test'
+  ...
+# Subtest: fingerprint changes with story wording
+ok 36 - fingerprint changes with story wording
+  ---
+  duration_ms: 0.353283
+  type: 'test'
+  ...
+# Subtest: memory preferences remain outside draft source
+ok 37 - memory preferences remain outside draft source
+  ---
+  duration_ms: 0.526029
+  type: 'test'
+  ...
+# Subtest: audit is bounded to 50 events
+ok 38 - audit is bounded to 50 events
+  ---
+  duration_ms: 0.222519
+  type: 'test'
+  ...
+# Subtest: silent speaking state does not create a phrase gesture
+ok 39 - silent speaking state does not create a phrase gesture
+  ---
+  duration_ms: 2.506202
+  type: 'test'
+  ...
+# Subtest: audible onset gives one coherent gesture, not a per-frame twitch
+ok 40 - audible onset gives one coherent gesture, not a per-frame twitch
+  ---
+  duration_ms: 1.063996
+  type: 'test'
+  ...
+# Subtest: a new phrase needs an actual silence interval
+ok 41 - a new phrase needs an actual silence interval
+  ---
+  duration_ms: 0.658856
+  type: 'test'
+  ...
+# Subtest: gesture settles in silence with bounded position
+ok 42 - gesture settles in silence with bounded position
+  ---
+  duration_ms: 8.720579
+  type: 'test'
+  ...
+# Subtest: phrase gestures deterministic for identical audio histories
+ok 43 - phrase gestures deterministic for identical audio histories
+  ---
+  duration_ms: 1.673629
+  type: 'test'
+  ...
+# Subtest: vague numerical result prompts for measurement rather than endorsing claim
+ok 44 - vague numerical result prompts for measurement rather than endorsing claim
+  ---
+  duration_ms: 2.328199
+  type: 'test'
+  ...
+# Subtest: unknown is accepted without manufacturing a success
+ok 45 - unknown is accepted without manufacturing a success
+  ---
+  duration_ms: 0.778553
+  type: 'test'
+  ...
+# Subtest: source-less project is an explicit unverified Markdown draft
+ok 46 - source-less project is an explicit unverified Markdown draft
+  ---
+  duration_ms: 1.242671
+  type: 'test'
+  ...
+# Subtest: edited story narrative is not lost during Markdown handoff
+ok 47 - edited story narrative is not lost during Markdown handoff
+  ---
+  duration_ms: 0.171594
+  type: 'test'
+  ...
+# Subtest: only active mapped sources copied to new wiki draft
+ok 48 - only active mapped sources copied to new wiki draft
+  ---
+  duration_ms: 0.962756
+  type: 'test'
+  ...
+# Subtest: markdown source fence cannot be closed by embedded triple ticks
+ok 49 - markdown source fence cannot be closed by embedded triple ticks
+  ---
+  duration_ms: 0.278323
+  type: 'test'
+  ...
+# Subtest: untrusted excerpts are HTML escaped by UI helper
+ok 50 - untrusted excerpts are HTML escaped by UI helper
+  ---
+  duration_ms: 0.193927
+  type: 'test'
+  ...
+# Subtest: a speech phrase produces coherent posture then settles without audio
+ok 51 - a speech phrase produces coherent posture then settles without audio
+  ---
+  duration_ms: 3.198849
+  type: 'test'
+  ...
+# Subtest: speaking label without output never fabricates a speech phrase
+ok 52 - speaking label without output never fabricates a speech phrase
+  ---
+  duration_ms: 0.667679
+  type: 'test'
+  ...
+# Subtest: particle geometry is deterministic, finite and bounded
+ok 53 - particle geometry is deterministic, finite and bounded
+  ---
+  duration_ms: 14.329627
+  type: 'test'
+  ...
+# Subtest: connections reference existing points and have no reverse duplicates
+ok 54 - connections reference existing points and have no reverse duplicates
+  ---
+  duration_ms: 1.852324
+  type: 'test'
+  ...
+# Subtest: geometry clamps malicious input
+ok 55 - geometry clamps malicious input
+  ---
+  duration_ms: 5.409534
+  type: 'test'
+  ...
+# Subtest: offline is never a listening or thinking claim
+ok 56 - offline is never a listening or thinking claim
+  ---
+  duration_ms: 0.262659
+  type: 'test'
+  ...
+# Subtest: only playback amplitude activates speaking
+ok 57 - only playback amplitude activates speaking
+  ---
+  duration_ms: 0.211433
+  type: 'test'
+  ...
+# Subtest: silence uses hysteresis, then returns to listening
+ok 58 - silence uses hysteresis, then returns to listening
+  ---
+  duration_ms: 0.142391
+  type: 'test'
+  ...
+# Subtest: muting suppresses input, not agent playback
+ok 59 - muting suppresses input, not agent playback
+  ---
+  duration_ms: 0.210532
+  type: 'test'
+  ...
+# Subtest: stale meters decay and never stay stuck speaking
+ok 60 - stale meters decay and never stay stuck speaking
+  ---
+  duration_ms: 0.144224
+  type: 'test'
+  ...
+# Subtest: NaN and out-of-range levels cannot corrupt scene state
+ok 61 - NaN and out-of-range levels cannot corrupt scene state
+  ---
+  duration_ms: 0.372272
+  type: 'test'
+  ...
+# Subtest: transport stages have explicit visual meanings, never generic thinking
+ok 62 - transport stages have explicit visual meanings, never generic thinking
+  ---
+  duration_ms: 0.472319
+  type: 'test'
+  ...
+# Subtest: end resets last input and speaker timestamps
+ok 63 - end resets last input and speaker timestamps
+  ---
+  duration_ms: 0.213406
+  type: 'test'
+  ...
+# Subtest: idle is not a speech gesture
+ok 64 - idle is not a speech gesture
+  ---
+  duration_ms: 4.20566
+  type: 'test'
+  ...
+# Subtest: speaking state alone does not manufacture speech
+ok 65 - speaking state alone does not manufacture speech
+  ---
+  duration_ms: 0.439471
+  type: 'test'
+  ...
+# Subtest: audio reshapes the connected body
+ok 66 - audio reshapes the connected body
+  ---
+  duration_ms: 3.633653
+  type: 'test'
+  ...
+# Subtest: same input history produces the same pose
+ok 67 - same input history produces the same pose
+  ---
+  duration_ms: 2.074904
+  type: 'test'
+  ...
+# Subtest: silent release removes deformation after speech
+ok 68 - silent release removes deformation after speech
+  ---
+  duration_ms: 3.715033
+  type: 'test'
+  ...
+# Subtest: high frequencies affect highlights, not a fake output level
+ok 69 - high frequencies affect highlights, not a fake output level
+  ---
+  duration_ms: 0.569093
+  type: 'test'
+  ...
+# Subtest: bass deforms vertical mass
+ok 70 - bass deforms vertical mass
+  ---
+  duration_ms: 0.633288
+  type: 'test'
+  ...
+# Subtest: mid band twists the body without bass pumping
+ok 71 - mid band twists the body without bass pumping
+  ---
+  duration_ms: 0.3989
+  type: 'test'
+  ...
+# Subtest: spectral residue cannot animate silent playback
+ok 72 - spectral residue cannot animate silent playback
+  ---
+  duration_ms: 0.494222
+  type: 'test'
+  ...
+# Subtest: microphone alone does not trigger speaking articulation
+ok 73 - microphone alone does not trigger speaking articulation
+  ---
+  duration_ms: 0.53292
+  type: 'test'
+  ...
+# Subtest: muted state ignores microphone and playback until an actual speaking signal state
+ok 74 - muted state ignores microphone and playback until an actual speaking signal state
+  ---
+  duration_ms: 0.500532
+  type: 'test'
+  ...
+# Subtest: bounded state blending has no discontinuous jumps
+ok 75 - bounded state blending has no discontinuous jumps
+  ---
+  duration_ms: 0.437768
+  type: 'test'
+  ...
+# Subtest: pointer tracking is bounded and recenters
+ok 76 - pointer tracking is bounded and recenters
+  ---
+  duration_ms: 0.911711
+  type: 'test'
+  ...
+# Subtest: invalid input and sample timing stay finite
+ok 77 - invalid input and sample timing stay finite
+  ---
+  duration_ms: 0.205534
+  type: 'test'
+  ...
+# Subtest: reset preserves the chosen intensity
+ok 78 - reset preserves the chosen intensity
+  ---
+  duration_ms: 0.404739
+  type: 'test'
+  ...
+# Subtest: no motion state exposes a radial wave field
+ok 79 - no motion state exposes a radial wave field
+  ---
+  duration_ms: 1.906223
+  type: 'test'
+  ...
+# Subtest: speech deformations stay inside a safe scene bound
+ok 80 - speech deformations stay inside a safe scene bound
+  ---
+  duration_ms: 0.933403
+  type: 'test'
+  ...
+# Subtest: HTTPS origin is normalized without opening a connection
+ok 81 - HTTPS origin is normalized without opening a connection
+  ---
+  duration_ms: 0.846033
+  type: 'test'
+  ...
+# Subtest: HTTP is restricted to exact loopback hosts
+ok 82 - HTTP is restricted to exact loopback hosts
+  ---
+  duration_ms: 0.623774
+  type: 'test'
+  ...
+# Subtest: No executable or data scheme is accepted
+ok 83 - No executable or data scheme is accepted
+  ---
+  duration_ms: 0.288658
+  type: 'test'
+  ...
+# Subtest: Credentials or URL tokens are rejected
+ok 84 - Credentials or URL tokens are rejected
+  ---
+  duration_ms: 0.233306
+  type: 'test'
+  ...
+# Subtest: Raw API/file paths are not app origins
+ok 85 - Raw API/file paths are not app origins
+  ---
+  duration_ms: 0.186546
+  type: 'test'
+  ...
+# Subtest: Malformed and oversized URLs fail without defaults
+ok 86 - Malformed and oversized URLs fail without defaults
+  ---
+  duration_ms: 1.009536
+  type: 'test'
+  ...
+# Subtest: Preview follows a finite visual-only state schedule
+ok 87 - Preview follows a finite visual-only state schedule
+  ---
+  duration_ms: 0.178624
+  type: 'test'
+  ...
+# Subtest: Preview carries no text, memory or transport command
+ok 88 - Preview carries no text, memory or transport command
+  ---
+  duration_ms: 0.653238
+  type: 'test'
+  ...
+# Subtest: Preview levels are finite and bounded
+ok 89 - Preview levels are finite and bounded
+  ---
+  duration_ms: 1.51864
+  type: 'test'
+  ...
+# Subtest: disabled input does not leave the audio worklet
+ok 90 - disabled input does not leave the audio worklet
+  ---
+  duration_ms: 3.940558
+  type: 'test'
+  ...
+# Subtest: capture sends exactly mono 20ms PCM16 frames
+ok 91 - capture sends exactly mono 20ms PCM16 frames
+  ---
+  duration_ms: 1.991019
+  type: 'test'
+  ...
+# Subtest: mute zeroes microphone frames while preserving the model clock
+ok 92 - mute zeroes microphone frames while preserving the model clock
+  ---
+  duration_ms: 1.506922
+  type: 'test'
+  ...
+# Subtest: local microphone is never echoed to the speaker
+ok 93 - local microphone is never echoed to the speaker
+  ---
+  duration_ms: 0.752946
+  type: 'test'
+  ...
+# Subtest: only received model PCM plays and creates a speaker meter
+ok 94 - only received model PCM plays and creates a speaker meter
+  ---
+  duration_ms: 2.017638
+  type: 'test'
+  ...
+# Subtest: playback buffer is bounded to 350ms and flush removes old speech
+ok 95 - playback buffer is bounded to 350ms and flush removes old speech
+  ---
+  duration_ms: 6.046437
+  type: 'test'
+  ...
+# Subtest: 48k microphone is resampled to 24k with correct sample count
+ok 96 - 48k microphone is resampled to 24k with correct sample count
+  ---
+  duration_ms: 10.204206
+  type: 'test'
+  ...
+# Subtest: 24k output is resampled to 44.1k with correct sample count
+ok 97 - 24k output is resampled to 44.1k with correct sample count
+  ---
+  duration_ms: 14.966656
+  type: 'test'
+  ...
+# Subtest: mute clears partial untransmitted microphone samples
+ok 98 - mute clears partial untransmitted microphone samples
+  ---
+  duration_ms: 1.629734
+  type: 'test'
+  ...
+# Subtest: microphone audio cannot generate a model spectral signature
+ok 99 - microphone audio cannot generate a model spectral signature
+  ---
+  duration_ms: 2.753629
+  type: 'test'
+  ...
+# Subtest: low-frequency playback produces a measured low band
+ok 100 - low-frequency playback produces a measured low band
+  ---
+  duration_ms: 3.243224
+  type: 'test'
+  ...
+# Subtest: high-frequency playback produces a measured high band
+ok 101 - high-frequency playback produces a measured high band
+  ---
+  duration_ms: 3.514686
+  type: 'test'
+  ...
+# Subtest: 48k playback spectral values remain finite
+ok 102 - 48k playback spectral values remain finite
+  ---
+  duration_ms: 10.352881
+  type: 'test'
+  ...
+# Subtest: playback acknowledgements count consumed samples, not queued generation
+ok 103 - playback acknowledgements count consumed samples, not queued generation
+  ---
+  duration_ms: 1.817132
+  type: 'test'
+  ...
+# Subtest: flushed unheard audio does not increase consumed count
+ok 104 - flushed unheard audio does not increase consumed count
+  ---
+  duration_ms: 2.684376
+  type: 'test'
+  ...
+1..104
+# tests 104
+# suites 0
+# pass 104
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 254.540719
+python3 -m pytest tests/test_*.py -q
+........................................................................ [ 48%]
+........................................................................ [ 96%]
+.....                                                                    [100%]
+=============================== warnings summary ===============================
+tests/test_editor_routes.py: 1 warning
+tests/test_realtime.py: 2 warnings
+tests/test_voice.py: 15 warnings
+  /mnt/data/atlas_claude_handoff/ATLAS_Project_Intelligence/atlas_voice/server.py:73: NotAppKeyWarning: It is recommended to use web.AppKey instances for keys.
+  https://docs.aiohttp.org/en/stable/web_advanced.html#application-s-config
+    app['config'] = config
+
+tests/test_editor_routes.py: 1 warning
+tests/test_realtime.py: 2 warnings
+tests/test_voice.py: 15 warnings
+  /mnt/data/atlas_claude_handoff/ATLAS_Project_Intelligence/atlas_voice/server.py:74: NotAppKeyWarning: It is recommended to use web.AppKey instances for keys.
+  https://docs.aiohttp.org/en/stable/web_advanced.html#application-s-config
+    app['identity'] = identity
+
+tests/test_editor_routes.py: 1 warning
+tests/test_realtime.py: 2 warnings
+tests/test_voice.py: 15 warnings
+  /mnt/data/atlas_claude_handoff/ATLAS_Project_Intelligence/atlas_voice/server.py:75: NotAppKeyWarning: It is recommended to use web.AppKey instances for keys.
+  https://docs.aiohttp.org/en/stable/web_advanced.html#application-s-config
+    app['voice_gate'] = gate
+
+tests/test_editor_routes.py::test_editor_route_consent_exact_version_and_no_auto_save
+tests/test_realtime.py::test_hosted_socket_pcm_tools_interruption_and_notes
+tests/test_realtime.py::test_wiki_routes_csrf_candidates_and_no_local_publish
+  /mnt/data/atlas_claude_handoff/ATLAS_Project_Intelligence/atlas_voice/server.py:78: NotAppKeyWarning: It is recommended to use web.AppKey instances for keys.
+  https://docs.aiohttp.org/en/stable/web_advanced.html#application-s-config
+    app['wiki'] = WikiVault(config.wiki_root)
+
+tests/test_editor_routes.py: 1 warning
+tests/test_realtime.py: 2 warnings
+tests/test_voice.py: 15 warnings
+  /mnt/data/atlas_claude_handoff/ATLAS_Project_Intelligence/atlas_voice/server.py:81: NotAppKeyWarning: It is recommended to use web.AppKey instances for keys.
+  https://docs.aiohttp.org/en/stable/web_advanced.html#application-s-config
+    app['http'] = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=None, connect=10),
+
+tests/test_editor_routes.py::test_editor_route_consent_exact_version_and_no_auto_save
+tests/test_editor_routes.py::test_editor_route_consent_exact_version_and_no_auto_save
+tests/test_editor_routes.py::test_editor_route_consent_exact_version_and_no_auto_save
+tests/test_editor_routes.py::test_editor_route_consent_exact_version_and_no_auto_save
+tests/test_realtime.py::test_wiki_routes_csrf_candidates_and_no_local_publish
+tests/test_voice.py::test_origin_is_enforced_before_upgrade
+  /opt/pyvenv/lib/python3.13/site-packages/aiohttp/web_protocol.py:528: DeprecationWarning: returning HTTPException object is deprecated (#2415) and will be removed, please raise the exception instead
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+149 passed, 81 warnings in 10.38s

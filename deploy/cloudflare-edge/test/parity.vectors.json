@@ -1,0 +1,2642 @@
+{
+ "vague_percent_then_unknown": {
+  "stage": "Delivery",
+  "ops": [
+   [
+    "t",
+    "u1",
+    "Tickets bounced between three teams and urgent cases waited days."
+   ],
+   [
+    "call",
+    "c1",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "Tickets bounced between three teams"
+      }
+     ]
+    }
+   ],
+   [
+    "plan"
+   ],
+   [
+    "t",
+    "u2",
+    "We cut triage time by about 40% after the rollout."
+   ],
+   [
+    "call",
+    "c2",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "We cut triage time by about 40%"
+      }
+     ]
+    }
+   ],
+   [
+    "plan"
+   ],
+   [
+    "plan"
+   ],
+   [
+    "t",
+    "u3",
+    "Honestly I don't know the baseline, it was never measured."
+   ],
+   [
+    "call",
+    "c3",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "measurement",
+       "item_id": "u3",
+       "quote": "I don't know the baseline, it was never measured."
+      }
+     ]
+    }
+   ],
+   [
+    "plan"
+   ],
+   [
+    "inspect"
+   ],
+   [
+    "notes"
+   ]
+  ],
+  "expected": [
+   {
+    "ok": null
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "Tickets bounced between three teams",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [],
+     "next_field": "contribution",
+     "next_question": "Which deliverable did you personally own, and what did someone else own?",
+     "why_this_question": "Separate the consultant’s own work from the team’s achievement.",
+     "coverage": {
+      "present": 1,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 1,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "Tickets bounced between three teams",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [],
+     "next_field": "contribution",
+     "next_question": "Which deliverable did you personally own, and what did someone else own?",
+     "why_this_question": "Separate the consultant’s own work from the team’s achievement.",
+     "coverage": {
+      "present": 1,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 1,
+     "next_action": "ask_one_question",
+     "probe_history": [],
+     "planned_question": "Which deliverable did you personally own, and what did someone else own?",
+     "repeat_plan": false,
+     "instruction": "Ask one short, natural question. Do not read the ledger. Deferred is not resolved."
+    }
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "Tickets bounced between three teams",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-002",
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "We cut triage time by about 40%",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Numerical outcome lacks a recorded measurement basis",
+      "Uncertainty must remain in the story"
+     ],
+     "next_field": "measurement",
+     "next_question": "What were the before and after values for that measure?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 2,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "period",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 2,
+     "next_action": "ask_one_question",
+     "probe_history": [
+      {
+       "field": "contribution",
+       "question": "Which deliverable did you personally own, and what did someone else own?",
+       "turn": "u1",
+       "status": "planned_not_confirmed_spoken"
+      }
+     ]
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "Tickets bounced between three teams",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-002",
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "We cut triage time by about 40%",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Numerical outcome lacks a recorded measurement basis",
+      "Uncertainty must remain in the story"
+     ],
+     "next_field": "measurement",
+     "next_question": "What were the before and after values for that measure?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 2,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "period",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 2,
+     "next_action": "ask_one_question",
+     "probe_history": [
+      {
+       "field": "contribution",
+       "question": "Which deliverable did you personally own, and what did someone else own?",
+       "turn": "u1",
+       "status": "planned_not_confirmed_spoken"
+      }
+     ],
+     "planned_question": "What were the before and after values for that measure?",
+     "repeat_plan": false,
+     "instruction": "Ask one short, natural question. Do not read the ledger. Deferred is not resolved."
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "Tickets bounced between three teams",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-002",
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "We cut triage time by about 40%",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Numerical outcome lacks a recorded measurement basis",
+      "Uncertainty must remain in the story"
+     ],
+     "next_field": "measurement",
+     "next_question": "What were the before and after values for that measure?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 2,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "period",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 2,
+     "next_action": "ask_one_question",
+     "probe_history": [
+      {
+       "field": "contribution",
+       "question": "Which deliverable did you personally own, and what did someone else own?",
+       "turn": "u1",
+       "status": "planned_not_confirmed_spoken"
+      },
+      {
+       "field": "measurement",
+       "question": "What were the before and after values for that measure?",
+       "turn": "u2",
+       "status": "planned_not_confirmed_spoken"
+      }
+     ],
+     "planned_question": "What were the before and after values for that measure?",
+     "repeat_plan": true
+    }
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "Tickets bounced between three teams",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-002",
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "We cut triage time by about 40%",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-003",
+       "field": "measurement",
+       "item_id": "u3",
+       "quote": "I don't know the baseline, it was never measured.",
+       "status": "unknown",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Uncertainty must remain in the story",
+      "No verified measurement: preserve a qualitative account; do not repeat a demand for ROI"
+     ],
+     "next_field": "contribution",
+     "next_question": "Which deliverable did you personally own, and what did someone else own?",
+     "why_this_question": "Separate the consultant’s own work from the team’s achievement.",
+     "coverage": {
+      "present": 3,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [
+      "measurement"
+     ],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "period",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 3,
+     "next_action": "ask_one_question",
+     "probe_history": [
+      {
+       "field": "contribution",
+       "question": "Which deliverable did you personally own, and what did someone else own?",
+       "turn": "u1",
+       "status": "planned_not_confirmed_spoken"
+      },
+      {
+       "field": "measurement",
+       "question": "What were the before and after values for that measure?",
+       "turn": "u2",
+       "status": "planned_not_confirmed_spoken"
+      }
+     ]
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "Tickets bounced between three teams",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-002",
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "We cut triage time by about 40%",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-003",
+       "field": "measurement",
+       "item_id": "u3",
+       "quote": "I don't know the baseline, it was never measured.",
+       "status": "unknown",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Uncertainty must remain in the story",
+      "No verified measurement: preserve a qualitative account; do not repeat a demand for ROI"
+     ],
+     "next_field": "contribution",
+     "next_question": "Which deliverable did you personally own, and what did someone else own?",
+     "why_this_question": "Separate the consultant’s own work from the team’s achievement.",
+     "coverage": {
+      "present": 3,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [
+      "measurement"
+     ],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "period",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 3,
+     "next_action": "ask_one_question",
+     "probe_history": [
+      {
+       "field": "contribution",
+       "question": "Which deliverable did you personally own, and what did someone else own?",
+       "turn": "u1",
+       "status": "planned_not_confirmed_spoken"
+      },
+      {
+       "field": "measurement",
+       "question": "What were the before and after values for that measure?",
+       "turn": "u2",
+       "status": "planned_not_confirmed_spoken"
+      }
+     ],
+     "planned_question": "Which deliverable did you personally own, and what did someone else own?",
+     "repeat_plan": false,
+     "instruction": "Ask one short, natural question. Do not read the ledger. Deferred is not resolved."
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "Tickets bounced between three teams",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-002",
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "We cut triage time by about 40%",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-003",
+       "field": "measurement",
+       "item_id": "u3",
+       "quote": "I don't know the baseline, it was never measured.",
+       "status": "unknown",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Uncertainty must remain in the story",
+      "No verified measurement: preserve a qualitative account; do not repeat a demand for ROI"
+     ],
+     "next_field": "contribution",
+     "next_question": "Which deliverable did you personally own, and what did someone else own?",
+     "why_this_question": "Separate the consultant’s own work from the team’s achievement.",
+     "coverage": {
+      "present": 3,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [
+      "measurement"
+     ],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "period",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 3,
+     "next_action": "ask_one_question",
+     "probe_history": [
+      {
+       "field": "contribution",
+       "question": "Which deliverable did you personally own, and what did someone else own?",
+       "turn": "u1",
+       "status": "planned_not_confirmed_spoken"
+      },
+      {
+       "field": "measurement",
+       "question": "What were the before and after values for that measure?",
+       "turn": "u2",
+       "status": "planned_not_confirmed_spoken"
+      },
+      {
+       "field": "contribution",
+       "question": "Which deliverable did you personally own, and what did someone else own?",
+       "turn": "u3",
+       "status": "planned_not_confirmed_spoken"
+      }
+     ]
+    }
+   },
+   {
+    "ok": [
+     "Tickets bounced between three teams",
+     "",
+     "",
+     "We cut triage time by about 40%\nI don't know the baseline, it was never measured.",
+     "",
+     ""
+    ]
+   }
+  ]
+ },
+ "measurement_basis_and_correction": {
+  "stage": "Pilot",
+  "ops": [
+   [
+    "t",
+    "u1",
+    "Median triage time before was 42 minutes and after the pilot 26 minutes, March 2026, Lisbon queue."
+   ],
+   [
+    "t",
+    "u2",
+    "Triage time dropped 38% overall."
+   ],
+   [
+    "t",
+    "u3",
+    "Sorry, correction: it dropped 35%, not 38%."
+   ],
+   [
+    "call",
+    "c1",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "Triage time dropped 38% overall."
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "c2",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "measurement",
+       "item_id": "u1",
+       "quote": "Median triage time before was 42 minutes and after the pilot 26 minutes"
+      }
+     ]
+    }
+   ],
+   [
+    "plan"
+   ],
+   [
+    "call",
+    "c3",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "outcome",
+       "item_id": "u3",
+       "quote": "it dropped 35%, not 38%",
+       "supersedes": "D-001"
+      }
+     ]
+    }
+   ],
+   [
+    "inspect"
+   ],
+   [
+    "call",
+    "c4",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "measurement",
+       "item_id": "u1",
+       "quote": "March 2026, Lisbon queue."
+      }
+     ]
+    }
+   ],
+   [
+    "plan"
+   ],
+   [
+    "notes"
+   ]
+  ],
+  "expected": [
+   {
+    "ok": null
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "Triage time dropped 38% overall.",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Numerical outcome lacks a recorded measurement basis"
+     ],
+     "next_field": "measurement",
+     "next_question": "What were the before and after values for that measure?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 1,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "period",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 1,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "Triage time dropped 38% overall.",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-002",
+       "field": "measurement",
+       "item_id": "u1",
+       "quote": "Median triage time before was 42 minutes and after the pilot 26 minutes",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Measurement account still needs: period, population"
+     ],
+     "next_field": "measurement",
+     "next_question": "Over which dates were the baseline and comparison measured?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 2,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "period",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 2,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "Triage time dropped 38% overall.",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-002",
+       "field": "measurement",
+       "item_id": "u1",
+       "quote": "Median triage time before was 42 minutes and after the pilot 26 minutes",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Measurement account still needs: period, population"
+     ],
+     "next_field": "measurement",
+     "next_question": "Over which dates were the baseline and comparison measured?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 2,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "period",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 2,
+     "next_action": "ask_one_question",
+     "probe_history": [],
+     "planned_question": "Over which dates were the baseline and comparison measured?",
+     "repeat_plan": false,
+     "instruction": "Ask one short, natural question. Do not read the ledger. Deferred is not resolved."
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-002",
+       "field": "measurement",
+       "item_id": "u1",
+       "quote": "Median triage time before was 42 minutes and after the pilot 26 minutes",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-003",
+       "field": "outcome",
+       "item_id": "u3",
+       "quote": "it dropped 35%, not 38%",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-001",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Measurement account still needs: period, population"
+     ],
+     "next_field": "measurement",
+     "next_question": "Over which dates were the baseline and comparison measured?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 2,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "period",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 3,
+     "next_action": "ask_one_question",
+     "probe_history": [
+      {
+       "field": "measurement",
+       "question": "Over which dates were the baseline and comparison measured?",
+       "turn": "u3",
+       "status": "planned_not_confirmed_spoken"
+      }
+     ]
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-002",
+       "field": "measurement",
+       "item_id": "u1",
+       "quote": "Median triage time before was 42 minutes and after the pilot 26 minutes",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-003",
+       "field": "outcome",
+       "item_id": "u3",
+       "quote": "it dropped 35%, not 38%",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-001",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Measurement account still needs: period, population"
+     ],
+     "next_field": "measurement",
+     "next_question": "Over which dates were the baseline and comparison measured?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 2,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "period",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 3,
+     "next_action": "ask_one_question",
+     "probe_history": [
+      {
+       "field": "measurement",
+       "question": "Over which dates were the baseline and comparison measured?",
+       "turn": "u3",
+       "status": "planned_not_confirmed_spoken"
+      }
+     ]
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-002",
+       "field": "measurement",
+       "item_id": "u1",
+       "quote": "Median triage time before was 42 minutes and after the pilot 26 minutes",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-003",
+       "field": "outcome",
+       "item_id": "u3",
+       "quote": "it dropped 35%, not 38%",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-001",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-004",
+       "field": "measurement",
+       "item_id": "u1",
+       "quote": "March 2026, Lisbon queue.",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Multiple outcome/measurement accounts: confirm comparability or explicit correction"
+     ],
+     "next_field": "measurement",
+     "next_question": "Do those two figures describe the same measure and population, or is one a correction?",
+     "why_this_question": "Multiple accounts need clarification before one result is selected.",
+     "coverage": {
+      "present": 2,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "quantified candidate",
+     "evidence_status": "unverified",
+     "updates": 4,
+     "next_action": "ask_one_question",
+     "probe_history": [
+      {
+       "field": "measurement",
+       "question": "Over which dates were the baseline and comparison measured?",
+       "turn": "u3",
+       "status": "planned_not_confirmed_spoken"
+      }
+     ]
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-002",
+       "field": "measurement",
+       "item_id": "u1",
+       "quote": "Median triage time before was 42 minutes and after the pilot 26 minutes",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-003",
+       "field": "outcome",
+       "item_id": "u3",
+       "quote": "it dropped 35%, not 38%",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-001",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-004",
+       "field": "measurement",
+       "item_id": "u1",
+       "quote": "March 2026, Lisbon queue.",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Multiple outcome/measurement accounts: confirm comparability or explicit correction"
+     ],
+     "next_field": "measurement",
+     "next_question": "Do those two figures describe the same measure and population, or is one a correction?",
+     "why_this_question": "Multiple accounts need clarification before one result is selected.",
+     "coverage": {
+      "present": 2,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "quantified candidate",
+     "evidence_status": "unverified",
+     "updates": 4,
+     "next_action": "ask_one_question",
+     "probe_history": [
+      {
+       "field": "measurement",
+       "question": "Over which dates were the baseline and comparison measured?",
+       "turn": "u3",
+       "status": "planned_not_confirmed_spoken"
+      }
+     ],
+     "planned_question": "Over which dates were the baseline and comparison measured?",
+     "repeat_plan": true
+    }
+   },
+   {
+    "ok": [
+     "",
+     "",
+     "",
+     "Median triage time before was 42 minutes and after the pilot 26 minutes\nit dropped 35%, not 38%\nMarch 2026, Lisbon queue.",
+     "",
+     ""
+    ]
+   }
+  ]
+ },
+ "invalid_and_duplicates": {
+  "stage": "Delivery",
+  "ops": [
+   [
+    "t",
+    "u1",
+    "I personally rebuilt the routing rules; Priya owned the dashboard."
+   ],
+   [
+    "call",
+    "bad1",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "outcome",
+       "item_id": "u1",
+       "quote": "saved two million euros"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "bad2",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "nonsense",
+       "item_id": "u1",
+       "quote": "I personally rebuilt"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "bad3",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "contribution",
+       "item_id": "u9",
+       "quote": "I personally rebuilt"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "bad4",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "abc"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "bad5",
+    "record_details",
+    {
+     "details": []
+    }
+   ],
+   [
+    "call",
+    "bad6",
+    "publish_story",
+    {}
+   ],
+   [
+    "call",
+    "ok1",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally rebuilt the routing rules"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "ok1",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally rebuilt the routing rules"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "ok1",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "Priya owned the dashboard"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "ok2",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally rebuilt the routing rules"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "ok3",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "Priya owned the dashboard",
+       "uncertain": true
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "bad7",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "Priya owned the dashboard",
+       "uncertain": "yes"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "bad8",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "outcome",
+       "item_id": "u1",
+       "quote": "Priya owned the dashboard",
+       "supersedes": "D-001"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "i1",
+    "inspect_gaps",
+    {}
+   ],
+   [
+    "call",
+    "i2",
+    "inspect_gaps",
+    {
+     "x": 1
+    }
+   ],
+   [
+    "t",
+    "u1",
+    "changed text"
+   ],
+   [
+    "t",
+    "",
+    "x"
+   ],
+   [
+    "notes"
+   ]
+  ],
+  "expected": [
+   {
+    "ok": null
+   },
+   {
+    "error": "Quote is not in the consultant transcript"
+   },
+   {
+    "error": "Invalid field, transcript reference or quote length"
+   },
+   {
+    "error": "Invalid field, transcript reference or quote length"
+   },
+   {
+    "error": "Invalid field, transcript reference or quote length"
+   },
+   {
+    "error": "Expected 1-12 candidate details"
+   },
+   {
+    "error": "Unknown or invalid tool"
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally rebuilt the routing rules",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [],
+     "next_field": "problem",
+     "next_question": "What was happening before, and who was affected?",
+     "why_this_question": "Find the most decision-useful detail, not a bigger claim.",
+     "coverage": {
+      "present": 1,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 1,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally rebuilt the routing rules",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [],
+     "next_field": "problem",
+     "next_question": "What was happening before, and who was affected?",
+     "why_this_question": "Find the most decision-useful detail, not a bigger claim.",
+     "coverage": {
+      "present": 1,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 1,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "error": "Call ID reused with different arguments"
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally rebuilt the routing rules",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [],
+     "next_field": "problem",
+     "next_question": "What was happening before, and who was affected?",
+     "why_this_question": "Find the most decision-useful detail, not a bigger claim.",
+     "coverage": {
+      "present": 1,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 2,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally rebuilt the routing rules",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-002",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "Priya owned the dashboard",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Uncertainty must remain in the story"
+     ],
+     "next_field": "problem",
+     "next_question": "What was happening before, and who was affected?",
+     "why_this_question": "Find the most decision-useful detail, not a bigger claim.",
+     "coverage": {
+      "present": 1,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 3,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "error": "uncertain must be boolean"
+   },
+   {
+    "error": "Correction must reference an active same-field candidate"
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally rebuilt the routing rules",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-002",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "Priya owned the dashboard",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Uncertainty must remain in the story"
+     ],
+     "next_field": "problem",
+     "next_question": "What was happening before, and who was affected?",
+     "why_this_question": "Find the most decision-useful detail, not a bigger claim.",
+     "coverage": {
+      "present": 1,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 3,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "error": "Unknown or invalid tool"
+   },
+   {
+    "error": "Transcript item changed; a correction needs a new item"
+   },
+   {
+    "error": "Invalid transcription event"
+   },
+   {
+    "ok": [
+     "",
+     "I personally rebuilt the routing rules\nPriya owned the dashboard",
+     "",
+     "",
+     "",
+     ""
+    ]
+   }
+  ]
+ },
+ "assessment_stage_and_deferral": {
+  "stage": "Assessment",
+  "ops": [
+   [
+    "t",
+    "u1",
+    "The client wanted to know whether automation was even feasible."
+   ],
+   [
+    "call",
+    "c1",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "whether automation was even feasible"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "c2",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "The client wanted to know"
+      }
+     ]
+    }
+   ],
+   [
+    "plan"
+   ],
+   [
+    "t",
+    "u2",
+    "We probably saved 10 hours a week."
+   ],
+   [
+    "call",
+    "c3",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "We probably saved 10 hours a week."
+      }
+     ]
+    }
+   ],
+   [
+    "plan"
+   ],
+   [
+    "t",
+    "u3",
+    "Not sure."
+   ],
+   [
+    "plan"
+   ],
+   [
+    "t",
+    "u4",
+    "Still not sure."
+   ],
+   [
+    "plan"
+   ],
+   [
+    "t",
+    "u5",
+    "No idea."
+   ],
+   [
+    "plan"
+   ],
+   [
+    "inspect"
+   ]
+  ],
+  "expected": [
+   {
+    "ok": null
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "whether automation was even feasible",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [],
+     "next_field": "contribution",
+     "next_question": "Which deliverable did you personally own, and what did someone else own?",
+     "why_this_question": "Separate the consultant’s own work from the team’s achievement.",
+     "coverage": {
+      "present": 1,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "learning or experience",
+     "evidence_status": "unverified",
+     "updates": 1,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "whether automation was even feasible",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-002",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "The client wanted to know",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [],
+     "next_field": "stakes",
+     "next_question": "What did that problem cost the team in time, risk or missed service?",
+     "why_this_question": "Find the most decision-useful detail, not a bigger claim.",
+     "coverage": {
+      "present": 2,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "learning or experience",
+     "evidence_status": "unverified",
+     "updates": 2,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "whether automation was even feasible",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-002",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "The client wanted to know",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [],
+     "next_field": "stakes",
+     "next_question": "What did that problem cost the team in time, risk or missed service?",
+     "why_this_question": "Find the most decision-useful detail, not a bigger claim.",
+     "coverage": {
+      "present": 2,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "learning or experience",
+     "evidence_status": "unverified",
+     "updates": 2,
+     "next_action": "ask_one_question",
+     "probe_history": [],
+     "planned_question": "What did that problem cost the team in time, risk or missed service?",
+     "repeat_plan": false,
+     "instruction": "Ask one short, natural question. Do not read the ledger. Deferred is not resolved."
+    }
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "whether automation was even feasible",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-002",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "The client wanted to know",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-003",
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "We probably saved 10 hours a week.",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Numerical outcome lacks a recorded measurement basis",
+      "Uncertainty must remain in the story"
+     ],
+     "next_field": "measurement",
+     "next_question": "What were the before and after values for that measure?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 3,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "period",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "learning or experience",
+     "evidence_status": "unverified",
+     "updates": 3,
+     "next_action": "ask_one_question",
+     "probe_history": [
+      {
+       "field": "stakes",
+       "question": "What did that problem cost the team in time, risk or missed service?",
+       "turn": "u1",
+       "status": "planned_not_confirmed_spoken"
+      }
+     ]
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "whether automation was even feasible",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-002",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "The client wanted to know",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-003",
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "We probably saved 10 hours a week.",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Numerical outcome lacks a recorded measurement basis",
+      "Uncertainty must remain in the story"
+     ],
+     "next_field": "measurement",
+     "next_question": "What were the before and after values for that measure?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 3,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "period",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "learning or experience",
+     "evidence_status": "unverified",
+     "updates": 3,
+     "next_action": "ask_one_question",
+     "probe_history": [
+      {
+       "field": "stakes",
+       "question": "What did that problem cost the team in time, risk or missed service?",
+       "turn": "u1",
+       "status": "planned_not_confirmed_spoken"
+      }
+     ],
+     "planned_question": "What were the before and after values for that measure?",
+     "repeat_plan": false,
+     "instruction": "Ask one short, natural question. Do not read the ledger. Deferred is not resolved."
+    }
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "whether automation was even feasible",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-002",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "The client wanted to know",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-003",
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "We probably saved 10 hours a week.",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Numerical outcome lacks a recorded measurement basis",
+      "Uncertainty must remain in the story"
+     ],
+     "next_field": "measurement",
+     "next_question": "What were the before and after values for that measure?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 3,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "period",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "learning or experience",
+     "evidence_status": "unverified",
+     "updates": 3,
+     "next_action": "ask_one_question",
+     "probe_history": [
+      {
+       "field": "stakes",
+       "question": "What did that problem cost the team in time, risk or missed service?",
+       "turn": "u1",
+       "status": "planned_not_confirmed_spoken"
+      },
+      {
+       "field": "measurement",
+       "question": "What were the before and after values for that measure?",
+       "turn": "u2",
+       "status": "planned_not_confirmed_spoken"
+      }
+     ],
+     "planned_question": "What were the before and after values for that measure?",
+     "repeat_plan": false,
+     "instruction": "Ask one short, natural question. Do not read the ledger. Deferred is not resolved."
+    }
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "whether automation was even feasible",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-002",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "The client wanted to know",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-003",
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "We probably saved 10 hours a week.",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Numerical outcome lacks a recorded measurement basis",
+      "Uncertainty must remain in the story"
+     ],
+     "next_field": "stakes",
+     "next_question": "What did that problem cost the team in time, risk or missed service?",
+     "why_this_question": "Find the most decision-useful detail, not a bigger claim.",
+     "coverage": {
+      "present": 3,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [
+      "measurement"
+     ],
+     "deferred_fields": {
+      "measurement": "Two clarification plans did not resolve this point; offer to collect it later."
+     },
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "period",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "learning or experience",
+     "evidence_status": "unverified",
+     "updates": 3,
+     "next_action": "ask_one_question",
+     "probe_history": [
+      {
+       "field": "stakes",
+       "question": "What did that problem cost the team in time, risk or missed service?",
+       "turn": "u1",
+       "status": "planned_not_confirmed_spoken"
+      },
+      {
+       "field": "measurement",
+       "question": "What were the before and after values for that measure?",
+       "turn": "u2",
+       "status": "planned_not_confirmed_spoken"
+      },
+      {
+       "field": "measurement",
+       "question": "What were the before and after values for that measure?",
+       "turn": "u3",
+       "status": "planned_not_confirmed_spoken"
+      }
+     ],
+     "planned_question": "What did that problem cost the team in time, risk or missed service?",
+     "repeat_plan": false,
+     "instruction": "Ask one short, natural question. Do not read the ledger. Deferred is not resolved."
+    }
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "whether automation was even feasible",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-002",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "The client wanted to know",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-003",
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "We probably saved 10 hours a week.",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Numerical outcome lacks a recorded measurement basis",
+      "Uncertainty must remain in the story"
+     ],
+     "next_field": "intervention",
+     "next_question": "Walk me through one concrete change you implemented.",
+     "why_this_question": "Find the most decision-useful detail, not a bigger claim.",
+     "coverage": {
+      "present": 3,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [
+      "measurement",
+      "stakes"
+     ],
+     "deferred_fields": {
+      "measurement": "Two clarification plans did not resolve this point; offer to collect it later.",
+      "stakes": "Two clarification plans did not resolve this point; offer to collect it later."
+     },
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "period",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "learning or experience",
+     "evidence_status": "unverified",
+     "updates": 3,
+     "next_action": "ask_one_question",
+     "probe_history": [
+      {
+       "field": "stakes",
+       "question": "What did that problem cost the team in time, risk or missed service?",
+       "turn": "u1",
+       "status": "planned_not_confirmed_spoken"
+      },
+      {
+       "field": "measurement",
+       "question": "What were the before and after values for that measure?",
+       "turn": "u2",
+       "status": "planned_not_confirmed_spoken"
+      },
+      {
+       "field": "measurement",
+       "question": "What were the before and after values for that measure?",
+       "turn": "u3",
+       "status": "planned_not_confirmed_spoken"
+      },
+      {
+       "field": "stakes",
+       "question": "What did that problem cost the team in time, risk or missed service?",
+       "turn": "u4",
+       "status": "planned_not_confirmed_spoken"
+      }
+     ],
+     "planned_question": "Walk me through one concrete change you implemented.",
+     "repeat_plan": false,
+     "instruction": "Ask one short, natural question. Do not read the ledger. Deferred is not resolved."
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "whether automation was even feasible",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-002",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "The client wanted to know",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-003",
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "We probably saved 10 hours a week.",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Numerical outcome lacks a recorded measurement basis",
+      "Uncertainty must remain in the story"
+     ],
+     "next_field": "intervention",
+     "next_question": "Walk me through one concrete change you implemented.",
+     "why_this_question": "Find the most decision-useful detail, not a bigger claim.",
+     "coverage": {
+      "present": 3,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [
+      "measurement",
+      "stakes"
+     ],
+     "deferred_fields": {
+      "measurement": "Two clarification plans did not resolve this point; offer to collect it later.",
+      "stakes": "Two clarification plans did not resolve this point; offer to collect it later."
+     },
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "period",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "learning or experience",
+     "evidence_status": "unverified",
+     "updates": 3,
+     "next_action": "ask_one_question",
+     "probe_history": [
+      {
+       "field": "stakes",
+       "question": "What did that problem cost the team in time, risk or missed service?",
+       "turn": "u1",
+       "status": "planned_not_confirmed_spoken"
+      },
+      {
+       "field": "measurement",
+       "question": "What were the before and after values for that measure?",
+       "turn": "u2",
+       "status": "planned_not_confirmed_spoken"
+      },
+      {
+       "field": "measurement",
+       "question": "What were the before and after values for that measure?",
+       "turn": "u3",
+       "status": "planned_not_confirmed_spoken"
+      },
+      {
+       "field": "stakes",
+       "question": "What did that problem cost the team in time, risk or missed service?",
+       "turn": "u4",
+       "status": "planned_not_confirmed_spoken"
+      },
+      {
+       "field": "intervention",
+       "question": "Walk me through one concrete change you implemented.",
+       "turn": "u5",
+       "status": "planned_not_confirmed_spoken"
+      }
+     ]
+    }
+   }
+  ]
+ }
+}

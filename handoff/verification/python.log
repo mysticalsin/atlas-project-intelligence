@@ -1,0 +1,49 @@
+........................................................................ [ 60%]
+................................................                         [100%]
+=============================== warnings summary ===============================
+tests/test_editor_routes.py: 1 warning
+tests/test_realtime.py: 2 warnings
+tests/test_voice.py: 15 warnings
+  /mnt/data/atlas_claude_handoff/ATLAS_Project_Intelligence/atlas_voice/server.py:73: NotAppKeyWarning: It is recommended to use web.AppKey instances for keys.
+  https://docs.aiohttp.org/en/stable/web_advanced.html#application-s-config
+    app['config'] = config
+
+tests/test_editor_routes.py: 1 warning
+tests/test_realtime.py: 2 warnings
+tests/test_voice.py: 15 warnings
+  /mnt/data/atlas_claude_handoff/ATLAS_Project_Intelligence/atlas_voice/server.py:74: NotAppKeyWarning: It is recommended to use web.AppKey instances for keys.
+  https://docs.aiohttp.org/en/stable/web_advanced.html#application-s-config
+    app['identity'] = identity
+
+tests/test_editor_routes.py: 1 warning
+tests/test_realtime.py: 2 warnings
+tests/test_voice.py: 15 warnings
+  /mnt/data/atlas_claude_handoff/ATLAS_Project_Intelligence/atlas_voice/server.py:75: NotAppKeyWarning: It is recommended to use web.AppKey instances for keys.
+  https://docs.aiohttp.org/en/stable/web_advanced.html#application-s-config
+    app['voice_gate'] = gate
+
+tests/test_editor_routes.py::test_editor_route_consent_exact_version_and_no_auto_save
+tests/test_realtime.py::test_hosted_socket_pcm_tools_interruption_and_notes
+tests/test_realtime.py::test_wiki_routes_csrf_candidates_and_no_local_publish
+  /mnt/data/atlas_claude_handoff/ATLAS_Project_Intelligence/atlas_voice/server.py:78: NotAppKeyWarning: It is recommended to use web.AppKey instances for keys.
+  https://docs.aiohttp.org/en/stable/web_advanced.html#application-s-config
+    app['wiki'] = WikiVault(config.wiki_root)
+
+tests/test_editor_routes.py: 1 warning
+tests/test_realtime.py: 2 warnings
+tests/test_voice.py: 15 warnings
+  /mnt/data/atlas_claude_handoff/ATLAS_Project_Intelligence/atlas_voice/server.py:81: NotAppKeyWarning: It is recommended to use web.AppKey instances for keys.
+  https://docs.aiohttp.org/en/stable/web_advanced.html#application-s-config
+    app['http'] = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=None, connect=10),
+
+tests/test_editor_routes.py::test_editor_route_consent_exact_version_and_no_auto_save
+tests/test_editor_routes.py::test_editor_route_consent_exact_version_and_no_auto_save
+tests/test_editor_routes.py::test_editor_route_consent_exact_version_and_no_auto_save
+tests/test_editor_routes.py::test_editor_route_consent_exact_version_and_no_auto_save
+tests/test_realtime.py::test_wiki_routes_csrf_candidates_and_no_local_publish
+tests/test_voice.py::test_origin_is_enforced_before_upgrade
+  /opt/pyvenv/lib/python3.13/site-packages/aiohttp/web_protocol.py:528: DeprecationWarning: returning HTTPException object is deprecated (#2415) and will be removed, please raise the exception instead
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+120 passed, 81 warnings in 10.58s

@@ -1,0 +1,45 @@
+# Secrets and local credentials (the sanitized example stays versioned)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials/
+# Runtime customer data and locally generated exports
+/data/
+/vault/
+/knowledge-vault/
+/exports/
+/backups/
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.db
+# Local environments and generated caches
+.venv*/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.log
+.DS_Store
+# Fresh test artifacts; received verification evidence is intentionally packaged.
+/tests/last-local-story.md
+/tests/run-local/
+/handoff/verification/local-*/
+
+# Browser automation snapshots can contain on-screen secrets
+.playwright-mcp/
+*.key
+
+# Local Claude Code state
+.claude/
+# Keep the received verification evidence logs
+!handoff/verification/*.log
+
+# Tooling caches
+node_modules/
+.wrangler/
+.npm/

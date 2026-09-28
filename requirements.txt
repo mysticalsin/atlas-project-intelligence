@@ -1,0 +1,3 @@
+# Lightweight gateway only. FFmpeg with libopus is an OS dependency.
+aiohttp>=3.10.5,<4
+msgpack>=1.0,<2

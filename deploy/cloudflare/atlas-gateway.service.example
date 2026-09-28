@@ -1,0 +1,22 @@
+# systemd unit for the ATLAS gateway on a Linux host behind cloudflared.
+# Install cloudflared separately with `sudo cloudflared service install`.
+[Unit]
+Description=ATLAS voice gateway (loopback only, fronted by Cloudflare Tunnel)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=atlas
+Group=atlas
+WorkingDirectory=/opt/atlas/ATLAS_Project_Intelligence
+Environment=PYTHON=/opt/atlas/venv/bin/python
+ExecStart=/usr/bin/bash scripts/start_gateway.sh
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/atlas
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

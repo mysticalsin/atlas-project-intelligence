@@ -1,0 +1,63 @@
+"""Real rendered HTML; local lab is not LLM inference. No provider or microphone used."""
+from pathlib import Path
+import json,os,shutil
+from playwright.sync_api import sync_playwright
+ROOT=Path(__file__).resolve().parents[1];HTML=(ROOT/'ATLAS_Intelligence.html').read_text();checks=[];errors=[]
+def check(name,v):
+ checks.append({'name':name,'passed':bool(v)});print(('PASS ' if v else 'FAIL ')+name)
+ if not v:raise AssertionError(name)
+with sync_playwright() as pw:
+ b=pw.chromium.launch(executable_path=os.getenv('CHROMIUM_PATH') or shutil.which('chromium'),args=['--no-sandbox'])
+ c=b.new_context(accept_downloads=True,viewport={'width':1512,'height':982});p=c.new_page();p.set_default_timeout(5000);p.on('pageerror',lambda e:errors.append(str(e)))
+ try:
+  p.set_content(HTML,wait_until='load');p.wait_for_timeout(350)
+  check('No invented live quality count','No live details' in p.locator('#qualityLiveCount').inner_text())
+  check('Orb animates without claiming a model',p.evaluate('AtlasOrbUI.inspect().frames>1 && !AtlasVoice.status().hasMicrophone'))
+  p.locator('[data-intelligence=quality]').click();check('Quality workbench opens',p.locator('#intelligenceDialog').is_visible())
+  p.locator('#qualityVague').click();check('Vague percentage challenged', 'before and after' in p.locator('#qualityLabResult').inner_text())
+  check('Local coaching is labelled', 'LOCAL WORDING LAB' in p.locator('#intel-quality').inner_text())
+  p.locator('#qualityDetailed').click();check('Detailed account advances to correction','correct before' in p.locator('#qualityLabResult').inner_text())
+  p.locator('#qualityInput').fill("I don't know; it was not measured.");p.locator('#qualityAnalyze').click();check('Unknown is kept explicit','unknown explicit' in p.locator('#qualityLabResult').inner_text())
+  p.locator('[data-intel-tab=wiki]').click();p.locator('#wikiCurrent').click();check('No fictional project silently created','Choose a project' in p.locator('#wikiMessage').inner_text())
+  p.locator('#intelligenceDialog [aria-label="Close story intelligence"]').click()
+  p.locator('.studio-left [data-action=new-project]').click()
+  for k,v in {'projectTitle':'A real authoring test','consultantName':'Alex Test','consultantRole':'Integration engineer','sectorInput':'Operations'}.items():p.locator('#'+k).fill(v)
+  p.locator('#projectForm button[type=submit]').click();p.locator('#voiceTextToggle').click()
+  p.locator('#answerInput').fill('The customer team had inconsistent manual intake and needed clear categories in one pilot.');p.locator('#nextButton').click()
+  p.locator('#answerInput').fill('I built the ingestion rules. A colleague owned the target architecture.');p.locator('#nextButton').click()
+  p.locator('#voiceTextToggle').click();p.locator('[data-intelligence=wiki]').click();p.locator('#wikiCurrent').click()
+  check('Project data enters Markdown draft',p.locator('#wikiTitle').input_value()=='A real authoring test' and 'ingestion rules' in p.locator('#wiki-contribution').input_value())
+  check('Missing project fields are not invented',p.locator('#wiki-outcome').input_value().startswith('Unknown'))
+  p.locator('#wiki-poor_fit').fill('Poor fit without an accountable process owner.');p.locator('#wiki-contribution').fill('I designed and tested the ingestion rules; architecture remained with the client.')
+  with p.expect_download() as dl:p.locator('#wikiExport').click()
+  path=ROOT/'tests/last-local-story.md';dl.value.save_as(path);text=path.read_text()
+  check('Markdown download contains edits', 'I designed and tested' in text and 'Poor fit without' in text)
+  check('Local export is not approved','DRAFT / UNVERIFIED' in text and 'publication permission' in text)
+  p.locator('#wikiSave').click();check('Server draft send requires consent','Authorize sending' in p.locator('#wikiMessage').inner_text())
+  p.locator('[data-intel-tab=rank]').click();p.locator('#rankStories').click();check('JEV requires an actual customer brief','all four parts' in p.locator('#rankMessage').inner_text())
+  for k in ('buyerProblem','buyerRole','buyerConstraints','buyerOutcome'):p.locator('#'+k).fill('Authorized synthetic customer context')
+  p.locator('#rankStories').click();check('JEV processing requires consent','Authorize the selected' in p.locator('#rankMessage').inner_text())
+  p.locator('#rankConsent').check();p.locator('#rankStories').click();check('Offline does not invent JEV scores','standalone HTML has no server' in p.locator('#rankMessage').inner_text() and p.locator('#rankResults').inner_text()=='')
+  p.locator('[data-intel-tab=memory]').click();p.locator('#memoryReplace').click();check('Private memory write needs explicit review','Review and authorize' in p.locator('#memoryMessage').inner_text())
+  p.locator('#memoryLoad').click();check('Offline does not fake remembered context','standalone HTML has no server' in p.locator('#memoryMessage').inner_text())
+  p.locator('#intelligenceDialog [aria-label="Close story intelligence"]').click()
+  p.evaluate("""window.dispatchEvent(new CustomEvent('atlas-quality',{detail:{type:'quality',candidate_details:[{field:'contribution',quote:'<img src=x onerror=alert(1)> I built a parser.',item_id:'synthetic-user-event',status:'reported'}],missing:['evidence'],flags:['Needs source inspection'],next_question:'Which versioned acceptance record supports this?',coverage:{present:1,total:12}}}));""")
+  check('Live quality event updates next probe','versioned acceptance' in p.locator('#qualityNext').inner_text())
+  check('Quote count does not imply verification','unverified' in p.locator('#qualityLiveCount').inner_text())
+  p.locator('[data-intelligence=quality]').click();p.locator('#intel-quality details summary').click()
+  check('Untrusted quote is text not executable HTML',p.locator('#candidateLedger img').count()==0 and '<img' in p.locator('#candidateLedger').inner_text())
+  for width in (320,390,768,1366):
+   p.set_viewport_size({'width':width,'height':900});p.wait_for_timeout(100)
+   check(f'Workbench has no horizontal overflow {width}',p.evaluate("document.getElementById('intelligenceDialog').scrollWidth <= document.getElementById('intelligenceDialog').clientWidth+1"))
+  p.locator('#intelligenceDialog [aria-label="Close story intelligence"]').click()
+  # Captures label disconnected mode. Remove injected test content before screenshots.
+  p.evaluate("window.dispatchEvent(new CustomEvent('atlas-quality',{detail:{type:'reset'}}));")
+  out=ROOT/'preview/v11';out.mkdir(parents=True,exist_ok=True)
+  p.set_viewport_size({'width':1512,'height':982});p.evaluate('scrollTo(0,0)');p.wait_for_timeout(250);p.screenshot(path=str(out/'desktop.png'),full_page=True)
+  p.locator('[data-orb-preview=speaking]').click();p.wait_for_timeout(1200);p.screenshot(path=str(out/'speaking-preview.png'),full_page=True)
+  p.locator('#studioPreview').click();p.locator('[data-intelligence=quality]').click();p.locator('#qualityDetailed').click();p.screenshot(path=str(out/'quality.png'),full_page=False)
+  p.locator('#intelligenceDialog [aria-label="Close story intelligence"]').click();p.set_viewport_size({'width':390,'height':844});p.evaluate('scrollTo(0,0)');p.wait_for_timeout(200);p.screenshot(path=str(out/'mobile.png'),full_page=True)
+  check('No JavaScript errors',not errors)
+ finally:
+  (ROOT/'tests/intelligence-browser-results.json').write_text(json.dumps({'scope':'Actual Chromium DOM, downloads and Canvas; synthetic quality event injected for UI validation. No live voice/model/API.','checks':checks,'errors':errors},indent=2));b.close()
+print(len(checks),'checks passed')

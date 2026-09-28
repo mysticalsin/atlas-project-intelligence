@@ -1,0 +1,37 @@
+{
+  "title": "FICTIONAL — More consistent service routing",
+  "kind": "qualitative",
+  "stage": "Pilot",
+  "audience": "internal",
+  "tags": [
+    "service-operations",
+    "routing"
+  ],
+  "customer_brief": "Fictional service owner deciding how to make intake and handover more consistent.",
+  "sections": {
+    "challenge": "A fictional service team used inconsistent intake categories, so ownership was unclear.",
+    "contribution": "The fictional consultant implemented intake normalization; the service owner defined policy and accepted handover.",
+    "approach": "Explicit categories and routing rules were piloted instead of an autonomous decision agent. Exceptions were documented for the service owner.",
+    "outcome": "The fictional service owner accepted the documented routing and exception process. No measured time or financial benefit is claimed.",
+    "evidence": "The synthetic pilot handover record v1 is the only attached source. It must be reviewed, not treated as real client evidence.",
+    "limitations": "Fictional pilot only. No production rollout, causal benefit, numerical saving or external permission is established.",
+    "customer_fit": "Useful as a design discussion when a service team has inconsistent intake and a named process owner.",
+    "poor_fit": "Not evidence for autonomous routing of regulated high-risk decisions or for teams without process ownership."
+  },
+  "sources": [
+    {
+      "id": "SYNTHETIC-HANDOVER",
+      "version": "v1 — 2026-09-26",
+      "supports": [
+        "challenge",
+        "contribution",
+        "approach",
+        "outcome",
+        "limitations",
+        "customer_fit",
+        "poor_fit"
+      ],
+      "excerpt": "FICTIONAL TEST DATA, NOT A CLIENT RECORD. The service team had inconsistent intake categories. The consultant implemented normalization; the service owner owned routing policy and accepted the documented exceptions and handover. This was a pilot, with no measured savings or production rollout. It is useful only as a design discussion for comparable teams with process ownership. No permission for external customer reuse is recorded."
+    }
+  ]
+}

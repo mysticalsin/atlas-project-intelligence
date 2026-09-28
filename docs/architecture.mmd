@@ -1,0 +1,14 @@
+flowchart LR
+  U[Consultant / browser orb] <--> A[One ATLAS application]
+  I[Entra ID] --> A
+  A <--> V[Selected conversational voice API\nHosted Realtime OR PersonaPlex]
+  A <--> Q[In-process quote ledger\nBounded next-question planner]
+  A <--> H[Hindsight fork\nPrivate bank per verified user]
+  A <--> W[Immutable Markdown revisions\nSQLite access + review registry]
+  W --> R[Independent source and disclosure review]
+  R --> E[Current eligible audience-specific stories]
+  A <--> X[Optional grounded editor\nCandidate only]
+  E --> S[Authorized lexical shortlist]
+  S --> J[JEV + deterministic date proxy]
+  J --> C[Customer-specific fit or no strong match]
+  E --> G[Derived topic/evidence graph\nOptional authorized Graphify snapshot]

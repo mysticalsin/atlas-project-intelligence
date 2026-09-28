@@ -1,0 +1,53 @@
+{
+  "date": "2026-09-26",
+  "scope": "real UI + gateway + cascade + analyst/ledger; SIMULATED STT/TTS/LLM; fake microphone",
+  "passed": 11,
+  "total": 11,
+  "results": [
+    {
+      "check": "Gateway serves the compiled ATLAS page with the orb rendering",
+      "pass": true
+    },
+    {
+      "check": "Consent dialog names the selected provider",
+      "pass": true
+    },
+    {
+      "check": "Live session reached (gateway ready handshake)",
+      "pass": true
+    },
+    {
+      "check": "Orb enters speaking state from PCM actually played",
+      "pass": true
+    },
+    {
+      "check": "Each consultant turn reached the page as unverified transcript",
+      "pass": true
+    },
+    {
+      "check": "Agent words streamed to the page",
+      "pass": true
+    },
+    {
+      "check": "Live evidence ledger shows quote-linked details (3 rows, \"3 quoted details \u00b7 unverified\")",
+      "pass": true
+    },
+    {
+      "check": "Ledger plans the next probe from the evidence (\"What were the before and after values for that measure?\")",
+      "pass": true
+    },
+    {
+      "check": "Notes dialog holds quote-linked candidate notes",
+      "pass": true
+    },
+    {
+      "check": "Microphone released after End",
+      "pass": true
+    },
+    {
+      "check": "No JavaScript errors",
+      "pass": true
+    }
+  ],
+  "errors": []
+}

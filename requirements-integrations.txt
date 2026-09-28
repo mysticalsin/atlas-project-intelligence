@@ -1,0 +1,6 @@
+-r requirements.txt
+# Install only on the server for integrations you enable. Validate and lock
+# your resolved versions after running provider acceptance checks.
+msal>=1.28,<2
+hindsight-client
+nvidia-riva-client

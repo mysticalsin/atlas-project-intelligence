@@ -1,0 +1,16 @@
+# cloudflared named-tunnel configuration for the ATLAS gateway.
+# Copy to /etc/cloudflared/config.yml (Linux) or ~/.cloudflared/config.yml (macOS)
+# and replace the three placeholders. Keep the credentials JSON private (chmod 600).
+tunnel: <TUNNEL_UUID>
+credentials-file: /etc/cloudflared/<TUNNEL_UUID>.json
+
+ingress:
+  - hostname: atlas.example.com
+    # The gateway binds loopback only; cloudflared on the same host is its sole ingress.
+    service: http://127.0.0.1:8080
+    originRequest:
+      # ATLAS checks Host against ATLAS_ORIGIN exactly; pin it rather than relying on defaults.
+      httpHostHeader: atlas.example.com
+      connectTimeout: 10s
+  # Anything else is refused; never expose other local ports through this tunnel.
+  - service: http_status:404

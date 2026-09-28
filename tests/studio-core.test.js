@@ -1,0 +1,12 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {gatewayOrigin,previewFrame}=require('../src/studio-core.js');
+test('HTTPS origin is normalized without opening a connection',()=>assert.equal(gatewayOrigin(' https://ATLAS.example.com/ '),'https://atlas.example.com'));
+test('HTTP is restricted to exact loopback hosts',()=>{assert.equal(gatewayOrigin('http://localhost:8080'),'http://localhost:8080');assert.equal(gatewayOrigin('http://127.0.0.1:8080'),'http://127.0.0.1:8080');assert.throws(()=>gatewayOrigin('http://localhost.attacker.example'));assert.throws(()=>gatewayOrigin('http://atlas.example'));});
+test('No executable or data scheme is accepted',()=>{for(const u of ['javascript:alert(1)','data:text/html,a','file:///tmp/a','ftp://example.com'])assert.throws(()=>gatewayOrigin(u));});
+test('Credentials or URL tokens are rejected',()=>{for(const u of ['https://u:p@example.com','https://example.com/?key=secret','https://example.com/#token'])assert.throws(()=>gatewayOrigin(u));});
+test('Raw API/file paths are not app origins',()=>{assert.throws(()=>gatewayOrigin('https://example.com/api/voice'));assert.throws(()=>gatewayOrigin('https://example.com/index.html'));});
+test('Malformed and oversized URLs fail without defaults',()=>{for(const u of ['',null,{},'my-server','x'.repeat(3000)])assert.throws(()=>gatewayOrigin(u));});
+test('Preview follows a finite visual-only state schedule',()=>{assert.equal(previewFrame(100).phase,'listening');assert.equal(previewFrame(7000).phase,'speaking');assert.equal(previewFrame(11000).phase,'muted');assert.equal(previewFrame(14500).phase,'listening');assert.equal(previewFrame(16000).complete,true);});
+test('Preview carries no text, memory or transport command',()=>{for(const t of [0,5000,11000,15999,16000])assert.deepEqual(Object.keys(previewFrame(t)).sort(),['complete','input','name','output','phase']);});
+test('Preview levels are finite and bounded',()=>{for(let t=-1000;t<18000;t+=11){let f=previewFrame(t);assert.ok(f.input>=0&&f.input<=1&&f.output>=0&&f.output<=1);}for(const v of [NaN,Infinity,-Infinity])assert.equal(previewFrame(v).phase,'idle');});
