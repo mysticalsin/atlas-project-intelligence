@@ -11,6 +11,8 @@ slots={'__CSS__':(ROOT/'src/styles.css').read_text()+'\n'+(ROOT/'src/voice.css')
  '__INTELLIGENCE_UI__':(ROOT/'src/intelligence-ui.js').read_text(),
  '__ENGINE__':(ROOT/'src/engine.js').read_text(),
 '__PPTX__':(ROOT/'src/pptx.js').read_text(),
+'__DOCX__':(ROOT/'src/docx.js').read_text(),
+'__OFFICE__':(ROOT/'src/office.js').read_text(),
  '__APP__':'window.ATLAS_BRIEF='+json.dumps((ROOT/'docs/BUILD_NOTES.md').read_text()).replace('</','<\\/')+';\n'+(ROOT/'src/app.js').read_text(),
  '__VOICE_PANEL__':(ROOT/'src/voice-panel.html').read_text(),
  '__STUDIO_CONNECTION__':(ROOT/'src/studio-connection.js').read_text(),

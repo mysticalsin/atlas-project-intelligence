@@ -41,6 +41,20 @@ export class EnergyTurns {
     }
     return [started, done];
   }
+
+  // End the current utterance now (semantic end-of-turn said the consultant has finished). Null when idle.
+  flush() {
+    if (!this.active || !this.buffer.length) return null;
+    const done = this.buffer; this.active = false; this.loud = 0; this.pre = new Uint8Array(0); this.buffer = new Uint8Array(0); this.quiet = 0;
+    return done;
+  }
+}
+
+// 24 kHz PCM16 -> 16 kHz PCM16 (linear interpolation), the rate turn-detection models expect.
+export function to16k(pcm) {
+  const n = pcm.length >> 1, src = new DataView(pcm.buffer, pcm.byteOffset, n * 2), m = Math.floor(n * 2 / 3), out = new Uint8Array(m * 2), dst = new DataView(out.buffer);
+  for (let i = 0; i < m; i++) { const x = i * 1.5, a = Math.floor(x), f = x - a, s0 = src.getInt16(a * 2, true), s1 = a + 1 < n ? src.getInt16((a + 1) * 2, true) : s0; dst.setInt16(i * 2, Math.round(s0 + (s1 - s0) * f), true); }
+  return out;
 }
 
 export function isEcho(text, recentAgentText) {

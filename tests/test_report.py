@@ -40,7 +40,8 @@ def test_pace_notes_budget_admin_and_topics_only():
     assert 'what was going on' not in pace and 'their personal contribution' in pace and 'nearly up' not in pace
     assert 'nearly up' in pace_notes(520000, 600, [], False)[1] and pace_notes(0, 600, [], False)[0] == ''
     msgs = talker_messages({'title': 't'}, '', None, [{'role': 'user', 'content': 'hi'}], None, ['', 'PACE'])
-    assert [m['content'] for m in msgs[1:]] == ['PACE', 'hi']
+    # per-turn notes follow the append-only history so the cached prefix (policy + history) stays stable
+    assert [m['content'] for m in msgs[1:]] == ['hi', 'PACE']
 
 
 def test_speaking_limit_config_bounds():

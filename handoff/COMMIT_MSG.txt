@@ -1,22 +1,37 @@
-ATLAS: voice interviewer and reference platform (edge build)
+ATLAS: reference sheet template, low-latency opening, patient turn-taking
 
-Voice-first project interviewer that turns consultants' work into reviewed,
-reusable client references, running on Cloudflare (Worker, Durable Objects,
-Workers AI, Access).
+Reference sheet (Amaris/Mantu template)
+- Four-step wizard: Opp ID first, sources (upload via Workers AI toMarkdown,
+  .pptx text and images read in the browser), grouped challenge questions,
+  validation with key visuals and country/entity, then generate
+- Word output: title, Executive Summary, one 8 x 2 table with a 3 cm label
+  column, captioned visuals, Calibri throughout, template file name
+- Never invents content ("To be completed"); client details scrubbed before
+  any model
 
-- Interview: warm, open questions; breadth then depth; evidence contract;
-  ends itself, writes a report, saves automatically; 10-minute speaking budget;
-  admin mode; follows the consultant's language (10 understood, EN/ES native
-  voices, others via optional ElevenLabs)
-- Reference library: revisions, audit trail, roles, review agent quality gate,
-  in-app N+1 validation, publication, anonymised public view
-- Reuse: meeting recommendations with reasons, duplicate merge, client-context
-  .pptx slides (fact vs interpretation, no invented numbers)
-- Operations: lifecycle and six-month interview invitations, analytics and
-  coverage, commercial insights, Spotlight export/import
-- Private per-person memory with Hindsight, JEV relevance filter
-- Orb: JARVIS-style swarm with rotation, drift, click and drag
-- Tests: app, edge, Python and nine browser suites; CI on every push;
-  manual deploy workflow
+Opening, tone and latency
+- Cached greeting that says who ATLAS is and why she is there, protected
+  from noise; Opp ID asked first; natural reactions and a CHALLENGE section
+  in the interviewer policy
+- Prompt-cache friendly message order, session affinity, PCM cache,
+  first-clause flush, semantic end of turn (smart-turn-v2); transcription
+  runs once per answer (no speculative transcripts)
+
+Patient turn-taking ("she answers too quick")
+- Turn model asked at 0.7 s and trusted only when confident (p >= 0.85);
+  1.2 s of silence when unsure; up to 2.5 s when it hears an unfinished
+  thought, then at most a gentle nudge
+- Never talks over the consultant; a consultant who carries on gets her
+  started reply withdrawn (screen and history) and one merged answer
+- Short sounds (clicks, breaths, a lone "No.") handled without loss or
+  delay; echo judged on the microphone stream against playback reports
+- Uptake acknowledgements ("Right.", "I see.") instead of continuers
+- Per-language unfinished-sentence detection; numbers-only reply_gap and
+  turn metrics for tuning
+- Six adversarial review rounds; every regression test fails on the
+  pre-fix code
+
+Tests: edge 148, app 134, Python 212, browser suites 239 checks.
+Deployed as Worker version bd28a7db.
 
 Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>

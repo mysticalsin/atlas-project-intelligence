@@ -30,3 +30,55 @@ export function languageNote(lang, spoken) {
     ? `LANGUAGE (server): the consultant is speaking ${name}. Reply only in natural ${name} (not a translation), and switch whenever they switch.`
     : `LANGUAGE (server): the consultant is speaking ${name}, but your voice can only speak ${said} right now. Reply in ${said}. The first time this happens, say in one short sentence that you understand ${name} and they are welcome to keep speaking it.`;
 }
+
+// Spoken instantly (cached audio) when the call connects: who ATLAS is and why she is there.
+export const GREETINGS = {
+  en: "Hi, I'm ATLAS. I'm here to interview you, to understand your project and how we can leverage it to win more opportunities like this one.",
+  fr: "Bonjour, je suis ATLAS. Je suis là pour vous interviewer, comprendre votre projet et voir comment nous pouvons nous en servir pour gagner d'autres opportunités comme celle-ci.",
+  es: 'Hola, soy ATLAS. Estoy aquí para entrevistarte, entender tu proyecto y ver cómo podemos aprovecharlo para ganar más oportunidades como esta.',
+  pt: 'Olá, eu sou a ATLAS. Estou aqui para entrevistar você, entender o seu projeto e ver como podemos aproveitá-lo para ganhar mais oportunidades como esta.',
+  de: 'Hallo, ich bin ATLAS. Ich bin hier, um Sie zu interviewen, Ihr Projekt zu verstehen und zu sehen, wie wir es nutzen können, um mehr solcher Chancen zu gewinnen.',
+  it: 'Ciao, sono ATLAS. Sono qui per intervistarti, capire il tuo progetto e come possiamo sfruttarlo per vincere altre opportunità come questa.',
+  nl: 'Hallo, ik ben ATLAS. Ik ben hier om je te interviewen, je project te begrijpen en te zien hoe we het kunnen gebruiken om meer van zulke kansen te winnen.',
+};
+export const WELCOME_BACK = {
+  en: "Hi, it's ATLAS again. Good to talk to you again.", fr: "Bonjour, c'est encore ATLAS. Ravie de vous retrouver.", es: 'Hola, soy ATLAS otra vez. Qué gusto volver a hablar contigo.',
+  pt: 'Olá, é a ATLAS de novo. Bom falar com você outra vez.', de: 'Hallo, hier ist wieder ATLAS. Schön, wieder mit Ihnen zu sprechen.', it: 'Ciao, sono di nuovo ATLAS. Che piacere risentirti.', nl: 'Hallo, het is ATLAS weer. Fijn om je weer te spreken.',
+};
+// Short uptake words ("Right.", "I see.") played from cache as ATLAS takes her turn, while the reply is prepared.
+// Not continuers like "Mm-hm", which mean "keep going" and contradict her taking the floor.
+export const FILLERS = {
+  en: ['Okay.', 'Right.', 'I see.', 'Yeah.'], fr: ["D'accord.", 'Je vois.', 'Ah oui.', 'Oui.'], es: ['Vale.', 'Ya veo.', 'Claro.', 'Sí.'], pt: ['Certo.', 'Entendi.', 'Sim.', 'Ah, sim.'],
+  de: ['Okay.', 'Ja.', 'Verstehe.', 'Ah ja.'], it: ['Certo.', 'Sì.', 'Capisco.', 'Ah, ok.'], nl: ['Oké.', 'Ja.', 'Duidelijk.', 'Ik snap het.'],
+};
+
+// Words a finished answer almost never ends on, per language (the one the speech recogniser heard). Precision beats
+// recall: a missed trailing word only falls back to the turn model plus merge-on-resume, while a false "unfinished"
+// answers a finished answer with a nudge. The lists need a native-speaker review. Hesitations ("um", "euh") only matter
+// when the recogniser keeps them (Nova-3 drops filler words by default); conjunctions and articles are the main signal.
+const TRAIL = Object.fromEntries(Object.entries({
+  en: ['and but or because the an a um uh erm er hmm', ['and so', 'and then', 'such as']],
+  fr: ['et mais car ou le la les des du de euh heu', ['parce que', "parce qu'", 'et puis', 'et alors']],
+  es: ['y pero porque o el los las de con eh em', ['o sea', 'y entonces', 'y luego']],
+  pt: ['e mas porque ou os as de do da com tipo hum ahn', ['e então', 'e aí', 'e depois']],
+  de: ['und aber weil sondern dass äh ähm öh', ['und dann', 'und also', 'zum beispiel']],
+  it: ['e ma quindi o il lo gli di con ehm cioè che', ['e poi', 'e quindi']],
+  nl: ['en maar omdat want of de met eh ehm uhm', ['en dan', 'en toen']],
+}).map(([lang, [words, phrases]]) => [lang, { words: new Set(words.split(' ')), phrases: phrases.map(x => x.split(' ')) }]));
+const TITLES = new Set('dr mr mrs ms prof st mme mlle hr fr sr sra dott sig dhr mevr'.split(' '));
+export function unfinished(text, lang = 'en') {
+  let t = String(text || '').trim();
+  if (!t || /[?？]\s*$/.test(t)) return false; // a question is never a thought left hanging
+  if (/(\.\.\.|…|[,;:–—-])$/.test(t)) return true;
+  t = t.replace(/[.!。]+$/, '');
+  const tokens = t.match(/[\p{L}\p{N}']+/gu) || [];
+  if (!tokens.length) return false;
+  const last = tokens.at(-1);
+  // "...the intake. And" starts a new sentence (not a name); a stop after an initial or a title ("Dr. A") does not.
+  const stop = /([\p{L}']+)[.!?。]\s+[\p{L}']+$/u.exec(t);
+  const newSentence = !!stop && stop[1].length > 1 && !TITLES.has(stop[1].toLowerCase());
+  if (tokens.length > 1 && last !== last.toLowerCase() && !newSentence) return false; // a name or "plan A"
+  const low = tokens.map(w => w.toLowerCase()), list = TRAIL[lang] || TRAIL.en;
+  if (list.words.has(low.at(-1))) return true;
+  return list.phrases.some(ph => ph.length <= low.length && ph.every((w, k) => low[low.length - ph.length + k] === w));
+}

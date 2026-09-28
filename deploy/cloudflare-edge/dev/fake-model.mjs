@@ -30,6 +30,19 @@ export function fakeModel() {
             { heading: 'Results', bullets: [{ text: first(a[3]), kind: 'fact', source: 'outcome' }, { text: 'Cut costs by 99% overnight', kind: 'fact', source: 'outcome' }] },
             { heading: 'Why it matters for you', bullets: [{ text: 'A comparable approach fits: ' + String(context).slice(0, 80), kind: 'interpretation', source: 'target' }] }] });
       }
+      if (system.startsWith('You are an assistant specialising in project reference sheets')) {
+        const m = JSON.parse(input), doc = m.source_document || '', ans = m.consultant_answers_to_challenges || '', p = m.project || {};
+        const sentences = (doc.match(/[^.!?\n]+[.!?]/g) || []).map(s => s.trim()), TBD = 'To be completed';
+        const answer = ans ? ans.split('A:').pop().trim() : '';
+        return JSON.stringify({ title: p.title || (doc.split('\n').find(Boolean) || '').slice(0, 60),
+          exec: { summary: sentences.length >= 3 ? sentences.slice(0, 3).join(' ') : TBD, teamSize: /consultant/i.test(doc) ? (doc.match(/\d+ consultants[^.\n]*/i) || [TBD])[0] : TBD, duration: (doc.match(/\d+ months/) || [TBD])[0], price: TBD, contacts: TBD },
+          sections: { industry: p.sector ? p.sector + ' client' : TBD, issue: sentences[0] || TBD, scope: doc ? doc.split('\n').filter(Boolean).slice(1, 3).join(' ') : TBD, methodology: TBD, deliverables: TBD, tools: TBD, team: TBD, value: answer || TBD },
+          challenges: [{ group: 'Results and ROI', questions: ['What measurable gain did the client get?', 'Compared with what baseline?'] }, { group: 'Team and delivery', questions: ['How many consultants, where, and at what seniority?'] }] });
+      }
+      if (system.startsWith('You select the 2 or 3 visuals')) {
+        const { images } = JSON.parse(input);
+        return JSON.stringify({ selected: images.map(i => ({ index: i.index, approach: /diagram|phase|approach/i.test(i.description), why: 'Shows ' + i.description.slice(0, 60), caption: 'Project approach (labels translated from French)' })) });
+      }
       if (system.startsWith('You analyse a set of anonymised')) {
         const { references } = JSON.parse(input), ids = references.map(r => r.id), by = {};
         for (const r of references) (by[r.industry || 'General'] = by[r.industry || 'General'] || []).push(r.id);

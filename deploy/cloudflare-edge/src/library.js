@@ -41,6 +41,11 @@ export function cleanReference(raw) {
     jev: j && obj(j.primary).key ? { primary: { key: str(j.primary.key, 40), label: str(j.primary.label, 60) }, also: (Array.isArray(j.also) ? j.also : []).slice(0, 8).map(a => ({ key: str(obj(a).key, 40), label: str(obj(a).label, 60) })),
       impact: Number.isFinite(j.impact) ? Math.max(0, Math.min(100, j.impact)) : null } : null,
     validation: { manager: { name: str(obj(v.manager).name, 100), email: email(obj(v.manager).email) }, managerStaff: v.managerStaff === true },
+    sheet: raw.sheet && typeof raw.sheet === 'object' ? { oppId: str(obj(raw.sheet).oppId, 40), oppIdPending: obj(raw.sheet).oppIdPending === true, title: str(obj(raw.sheet).title, 140),
+      exec: Object.fromEntries(['summary', 'teamSize', 'duration', 'price', 'contacts'].map(k => [k, para(obj(obj(raw.sheet).exec)[k], 1500)])),
+      sections: Object.fromEntries(['industry', 'issue', 'scope', 'methodology', 'deliverables', 'tools', 'team', 'value'].map(k => [k, para(obj(obj(raw.sheet).sections)[k], 3000)])),
+      file: { country: str(obj(obj(raw.sheet).file).country, 60), entity: ['HEMA', 'SOLLAN', 'ACT', 'CRO'].includes(obj(obj(raw.sheet).file).entity) ? obj(obj(raw.sheet).file).entity : '', entityCountry: str(obj(obj(raw.sheet).file).entityCountry, 60) },
+      fileName: str(obj(raw.sheet).fileName, 240), confirmedAt: str(obj(raw.sheet).confirmedAt, 40) } : null,
     sources: (Array.isArray(raw.sources) ? raw.sources : []).slice(0, 20).map(s => ({ name: str(obj(s).name, 160), version: str(obj(s).version, 100), url: https(obj(s).url), excerpt: para(obj(s).excerpt, 1000) })).filter(s => s.name),
   };
   if (!data.title) throw Object.assign(new Error('A reference needs a title.'), { status: 400 });

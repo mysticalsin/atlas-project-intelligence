@@ -61,3 +61,20 @@ test('interview facts fill only empty details, are marked unverified, and surviv
  const got=E.fillDetails(p,{project_id:'PRJ-9',country:'France',industry:'Insurance',team_size:4,technologies:['Python'],deliverables:[],start:'',end:'',duration:'',team_roles:[],service_lines:[]});
  assert.deepEqual(got.sort(),['projectId','sector','teamSize','technologies'].sort());assert.equal(p.details.country,'Belgium');assert.equal(p.details.from.projectId,'interview');assert.equal(p.sector,'Insurance');
  const c=E.cleanProject(JSON.parse(JSON.stringify(p)));assert.deepEqual(c.details,p.details);assert.deepEqual(E.fillDetails(p,null),[]);});
+test('reference sheet: bounded, entity rules, file name, issues and Part 1 name rule',()=>{
+ const s=E.cleanSheet({oppId:'00123',title:'ERP Rollout',exec:{summary:'One. Two. Three.',teamSize:'Sam Lead and 4 consultants in Paris',duration:'6 months',price:'',contacts:'PM: Sam Lead'},sections:{tools:'SAP S/4HANA, 5 consultants'},file:{country:'France',entity:'NOPE'},visuals:[{dataUrl:'javascript:x'}],from:{scope:'document',bogus:'ai'}});
+ assert.equal(s.file.entity,'');assert.equal(s.visuals.length,0);assert.deepEqual(s.from,{scope:'document'});
+ assert.equal(E.sheetFileName({...s,oppId:'',oppIdPending:true},'AXA'),'TBC - France - AXA - ERP Rollout.docx');
+ assert.equal(E.sheetFileName(s,'AXA'),'00123 - France - AXA - ERP Rollout.docx');
+ assert.equal(E.sheetFileName({...s,file:{entity:'HEMA',entityCountry:'France',country:''}},'AXA'),'00123 - HEMA France - AXA - ERP Rollout.docx');
+ assert.equal(E.sheetFileName({...s,file:{entity:'HEMA',entityCountry:'',country:''}},'AXA/Group'),'00123 - HEMA - AXA Group - ERP Rollout.docx');
+ assert.equal(E.sheetFileName(s,''),'','no file name without a client');
+ const issues=E.sheetIssues(s,'AXA',['Sam Lead']).map(i=>i.text).join(' | ');
+ assert.match(issues,/must not name consultants \(“Sam Lead” in Team size\)/);assert.match(issues,/must not include consultant counts/);assert.match(issues,/Project price/);assert.doesNotMatch(issues,/Opportunity ID/);
+ assert.match(E.sheetIssues(E.cleanSheet({}),'',[]).map(i=>i.text).join('|'),/^Opportunity ID \(asked first\)/);
+ const clean=E.scrubPart1(s,['Sam Lead']);assert.equal(clean.exec.teamSize,'a consultant and 4 consultants in Paris');assert.equal(clean.exec.contacts,'PM: Sam Lead','contacts are exempt');
+ assert.deepEqual(E.cleanProject(JSON.parse(JSON.stringify({...filled(),sheet:s}))).sheet,s);});
+test('sheet baseline from the project, and merge never overwrites what a person typed',()=>{const p=filled();p.sector='Insurance';p.details=E.cleanDetails({teamSize:5,teamRoles:['Data engineer'],technologies:['Python'],duration:'6 months'});
+ const b=E.sheetFromProject(p);assert.equal(b.title,p.title);assert.equal(b.exec.teamSize,'5 consultants');assert.equal(b.sections.tools,'Python');assert.equal(b.sections.industry,'Insurance');assert.equal(b.exec.price,'');
+ const typed={...b,sections:{...b.sections,tools:'SAP (typed)'}};const m=E.mergeSheet(typed,{title:'X',exec:{price:'EUR 250k',contacts:'To be completed'},sections:{tools:'AI tools',value:'Saved 30%'}},'document');
+ assert.equal(m.sections.tools,'SAP (typed)');assert.equal(m.exec.price,'EUR 250k');assert.equal(m.exec.contacts,'');assert.equal(m.title,p.title);assert.equal(m.from.price,'document');assert.equal(m.from.tools,undefined);});

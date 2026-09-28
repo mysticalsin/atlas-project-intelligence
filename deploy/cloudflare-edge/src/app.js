@@ -3,9 +3,10 @@
 // Workers AI through the AI binding, so no provider key exists in this code or in the browser.
 import { CHAT_TOOLS, SPEAKING_LIMIT_S } from './policy.generated.js';
 import { Session, MAX_SECONDS } from './session.js';
-import { wav } from './speech.js';
+import { wav, to16k } from './speech.js';
 import { classify } from './classify.js';
 import { bankId } from './memory.js';
+import { sheetRoutes } from './sheet.js';
 import { detectedLanguage, NATIVE_VOICES, normalize } from './languages.js';
 
 const enc = new TextEncoder();
@@ -102,7 +103,7 @@ export async function handle(request, env, page) {
       return json(env, { provider: 'workers', providerLabel: 'ATLAS voice', protocol: 'atlas-personaplex-pcm-v1', csrf,
         identity: { name: who.email, mode: env.IDENTITY_SOURCE === 'entra' ? 'entra' : 'access', subjectKey }, model: 'ATLAS conversational voice', admin,
         voices: ['atlas'], defaultVoice: 'atlas', captureRequired: true, codecAvailable: true, busy: false, capacity: 1, maxSeconds: MAX_SECONDS, speakingSeconds: SPEAKING_LIMIT_S,
-        memory: !!env.HINDSIGHT_API_KEY, wiki: false, jev: !!env.TYPESAFE_API_KEY, jevClassify: !!env.TYPESAFE_API_KEY, library: !!env.LIBRARY, libraryRole: role, transcription: true, structuredNotes: true, liveLedger: true, playbackAck: true,
+        memory: !!env.HINDSIGHT_API_KEY, wiki: false, jev: !!env.TYPESAFE_API_KEY, jevClassify: !!env.TYPESAFE_API_KEY, library: !!env.LIBRARY, libraryRole: role, sheet: true, transcription: true, structuredNotes: true, liveLedger: true, playbackAck: true,
         readiness: 'edge-deployment-test-data-only' });
     }
     if (url.pathname === '/api/voice') {
@@ -114,6 +115,12 @@ export async function handle(request, env, page) {
       forward.headers.set('x-atlas-bank', await bankId(env, who.sub)); // server-derived; the browser never picks a bank
       forward.headers.set('x-atlas-csrf', csrf); // set by the Worker only; the DO is not reachable otherwise
       return env.INTERVIEW.get(env.INTERVIEW.idFromName(who.sub)).fetch(forward);
+    }
+    if (url.pathname.startsWith('/api/sheet/') && request.method === 'POST') {
+      if (request.headers.get('Origin') !== env.ORIGIN || request.headers.get('X-Atlas-CSRF') !== csrf) return json(env, { error: 'Invalid request origin or session token.' }, 403);
+      if (Number(request.headers.get('Content-Length') || 0) > 12 * 1024 * 1024) return json(env, { error: 'The file is larger than 10 MB.' }, 413);
+      const ai = workersAI(env), res = await sheetRoutes(request, url.pathname.slice('/api/sheet/'.length), { complete: (m, n) => ai.complete(m, n), toMarkdown: f => env.AI.toMarkdown(f) });
+      return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
     }
     if (url.pathname === '/api/memory' || url.pathname.startsWith('/api/memory/')) {
       if (request.method !== 'GET' && (request.headers.get('Origin') !== env.ORIGIN || request.headers.get('X-Atlas-CSRF') !== csrf)) return json(env, { error: 'Invalid request origin or session token.' }, 403);
@@ -196,6 +203,12 @@ export function workersAI(env) {
       const r = await env.AI.run(env.STT_MODEL, { audio: { body: new Blob([wav(pcm)]).stream(), contentType: 'audio/wav' }, smart_format: true, punctuate: true, language: env.STT_LANGUAGE || 'multi' });
       return { text: r?.results?.channels?.[0]?.alternatives?.[0]?.transcript || '', language: detectedLanguage(r) };
     },
+    // Semantic end-of-turn (Pipecat smart-turn v2): has the consultant finished, or only paused? Last 8 s at 16 kHz.
+    async turnComplete(pcm) {
+      const tail = pcm.length > 8 * 48000 ? pcm.subarray(pcm.length - 8 * 48000) : pcm;
+      const r = await env.AI.run(env.TURN_MODEL || '@cf/pipecat-ai/smart-turn-v2', { audio: { body: new Blob([wav(to16k(tail), 16000)]).stream(), contentType: 'audio/wav' } });
+      return { complete: r?.is_complete === true, probability: Number(r?.probability) || 0 };
+    },
     speaks(lang) { return NATIVE_VOICES.includes(lang) || (!!env.ELEVENLABS_API_KEY && !!normalize(lang)); },
     async synthesize(text, speaker = 'atlas', lang = 'en') { // 'atlas' = the configured voice; the browser never sees its real name
       if (lang !== 'en' && lang !== 'es' && env.ELEVENLABS_API_KEY) return elevenLabs(env, text, lang);
@@ -203,8 +216,9 @@ export function workersAI(env) {
       const pcm = await bytesOf(await env.AI.run(es ? (env.TTS_MODEL_ES || '@cf/deepgram/aura-2-es') : env.TTS_MODEL, { text, speaker: es ? (env.TTS_VOICE_ES || 'celeste') : speaker === 'atlas' ? env.TTS_VOICE : speaker, encoding: 'linear16', container: 'none', sample_rate: 24000 }));
       return pcm.length % 2 ? pcm.subarray(0, pcm.length - 1) : pcm;
     },
-    async *chatStream(messages) {
-      const stream = await env.AI.run(env.TALKER_MODEL, { messages, stream: true, max_tokens: 300, temperature: 0.6 });
+    // Session affinity keeps one interview on the same model instance, so the cached prompt prefix is reused.
+    async *chatStream(messages, { affinity } = {}) {
+      const stream = await env.AI.run(env.TALKER_MODEL, { messages, stream: true, max_tokens: 300, temperature: 0.7 }, affinity ? { extraHeaders: { 'x-session-affinity': affinity } } : undefined);
       const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
       let buffer = '';
       for (;;) {

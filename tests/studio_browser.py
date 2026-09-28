@@ -48,7 +48,10 @@ with sync_playwright() as pw:
   p.locator('button[data-palette=mantu]').click();check('Mantu palette restores',p.evaluate('AtlasOrbUI.inspect().palette==="mantu"'))
   p.locator('#orbMotion').click();p.wait_for_timeout(150);frames=p.evaluate('AtlasOrbUI.inspect().frames');p.wait_for_timeout(150)
   check('Pause motion stops drawing',p.evaluate('AtlasOrbUI.inspect().frames')==frames)
-  p.locator('#orbMotion').click();p.wait_for_timeout(180);check('Motion resumes',p.evaluate('AtlasOrbUI.inspect().frames')>frames)
+  p.locator('#orbMotion').click()
+  try:p.wait_for_function('f=>AtlasOrbUI.inspect().frames>f',arg=frames,timeout=2000)
+  except Exception:pass
+  check('Motion resumes',p.evaluate('AtlasOrbUI.inspect().frames')>frames)
   p.locator('#studioFocus').click();check('Focus hides secondary panels',not p.locator('.studio-left').is_visible() and p.locator('#orbCanvas').is_visible())
   p.keyboard.press('Escape');check('Escape exits focus',not p.evaluate('document.body.classList.contains("studio-focus")'))
   p.locator('#studioAppearance').click()

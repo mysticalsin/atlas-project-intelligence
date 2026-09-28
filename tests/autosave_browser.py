@@ -21,7 +21,10 @@ def ws_handler(ws):
   d=json.loads(m);GOT.append(d.get('type'))
   if d.get('type')=='start':
    ws.send(json.dumps({'type':'ready','model':'ATLAS','provider':'ATLAS voice','sampleRate':24000,'capture':True,'liveLedger':True,'maxSeconds':2700,'speakingSeconds':600,'message':'ready'}))
-   ws.send(json.dumps({'type':'agent_text','text':'Thanks so much for sharing. I will prepare your report now.'}))
+   ws.send(json.dumps({'type':'agent_text','text':"Hi, I'm ATLAS."}))
+   ws.send(json.dumps({'type':'agent_text','text':'\n\nMm-hm. What was the '}))  # the consultant had not finished: taken back
+   ws.send(json.dumps({'type':'agent_retract','item_id':'agent-2','chars':len('\n\nMm-hm. What was the ')}))
+   ws.send(json.dumps({'type':'agent_text','text':'\n\nThanks so much for sharing. I will prepare your report now.'}))
    ws.send(json.dumps({'type':'user_text','item_id':'user-1','text':'That is everything.','provenance':'unverified_speech_recognition'}))
    ws.send(json.dumps({'type':'wrap_up','message':'ATLAS closed the interview.'}))
   if d.get('type')=='end':
@@ -43,6 +46,8 @@ with sync_playwright() as pw:
  t0=time.time()
  while time.time()-t0<15 and 'end' not in GOT:p.wait_for_timeout(200)
  check('client ended by itself after wrap_up (no click)','end' in GOT)
+ said=p.evaluate("document.getElementById('agentText').textContent")
+ check('a withdrawn reply is removed from the on-screen transcript','What was the' not in said and said.startswith("Hi, I'm ATLAS.") and 'Thanks so much for sharing' in said)
  p.wait_for_timeout(1500)
  st=p.evaluate('AtlasVoice.status()')
  check('microphone released',not st['hasMicrophone'])

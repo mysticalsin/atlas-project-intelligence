@@ -58,6 +58,8 @@ export function forModel(record) {
     : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, scrub(x)])) : v;
   const { client, owner, validation, quality, ...rest } = record;
   const details = { ...(rest.details || {}) }; delete details.consultants; delete details.from;
+  // Contacts, price and the file name (which carries the client) never reach a model or another reader.
+  if (rest.sheet) rest.sheet = { ...rest.sheet, exec: { ...rest.sheet.exec, contacts: '', price: '' }, file: undefined, fileName: '' };
   return scrub({ ...rest, details, sources: (rest.sources || []).map(s => ({ name: s.name, version: s.version, excerpt: s.excerpt })) });
 }
 

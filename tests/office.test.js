@@ -1,0 +1,10 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('fs'),path=require('path');
+const O=require('../src/office.js'),D=require('../src/docx.js');
+test('pptx: slide text in slide order, entities decoded (deflated entries)',async()=>{const t=await O.pptxText(fs.readFileSync(path.join(__dirname,'fixtures/sample.pptx')));
+ assert.equal(t,'Slide 1\nApproche globale\nPhase 1\n\nSlide 2\nRésultats : -30 % & plus');});
+test('media: embedded images found, tiny icons skipped',async()=>{const m=await O.mediaImages(fs.readFileSync(path.join(__dirname,'fixtures/sample.pptx')));
+ assert.deepEqual(m.map(x=>[x.name,x.type]),[['image1.png','png']]);assert.equal(m[0].bytes[1],0x50);});
+test('stored entries (ATLAS own .docx) round trip, and non-zip input is refused',async()=>{const img=fs.readFileSync(path.join(__dirname,'fixtures/sample.pptx'));
+ const docxBytes=D.build({title:'T',exec:{},sections:{},visuals:[]});const z=O.entries(docxBytes);assert.ok(z.has('word/document.xml'));
+ assert.match(new TextDecoder().decode(await z.get('word/document.xml')()),/Detailed Information Sheet/);assert.throws(()=>O.entries(new Uint8Array([1,2,3])),/Not a zip/);assert.ok(img.length);});

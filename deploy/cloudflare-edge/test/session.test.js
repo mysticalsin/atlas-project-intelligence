@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Session, projectContext, talkerMessages, TIME_UP, RESUME as RESUME_TEXT } from '../src/session.js';
-import { SAMPLE_RATE } from '../src/speech.js';
+import { Session, projectContext, talkerMessages, TIME_UP, RESUME as RESUME_TEXT, STILL_THINKING, THINKING_PAUSE, clearPcmCache } from '../src/session.js';
+import { GREETINGS, FILLERS } from '../src/languages.js';
+const spoken = calls => calls.tts.filter(t => !FILLERS.en.includes(t));
+import { SAMPLE_RATE, EnergyTurns, rms } from '../src/speech.js';
 
 const PROJECT = { title: 'Project Falcon (synthetic)', consultant: 'Alex', role: 'Designer', sector: 'Insurance', stage: 'Pilot', answers: [] };
 function frames(segments) {
@@ -13,7 +15,7 @@ function frames(segments) {
   }
   return out;
 }
-function harness(said = ['We cut triage time by about 40% after the rollout.'], extra = {}) {
+function harness(said = ['We cut triage time by about 40% after the rollout across all three regional support teams.'], extra = {}) {
   const events = [], bytes = [], calls = { talker: [], analyst: [], stt: 0, tts: [] }; let t = 1000, closed = false;
   const ai = {
     async transcribe(pcm) { calls.stt += 1; assert.ok(pcm.length > 0); return said[calls.stt - 1] || ''; },
@@ -32,7 +34,7 @@ function harness(said = ['We cut triage time by about 40% after the rollout.'], 
   return { s, events, bytes, calls, tick, closed: () => closed };
 }
 const open = new Set();
-test.afterEach(async () => { for (const s of open) if (!s.finished) await s.end(false); open.clear(); });
+test.afterEach(async () => { for (const s of open) if (!s.finished) await s.end(false); open.clear(); clearPcmCache(); });
 const until = async (cond, n = 2000) => { for (let i = 0; i < n && !cond(); i++) await new Promise(r => setImmediate(r)); assert.ok(cond(), 'condition not reached'); };
 
 test('full interview: opening, turn, transcript, evidence, guidance, notes', async () => {
@@ -40,7 +42,7 @@ test('full interview: opening, turn, transcript, evidence, guidance, notes', asy
   await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, voice: 'asteria', capture: true, memory: false }));
   assert.equal(h.events[0].type, 'ready');
   await until(() => h.bytes.length >= 10); // opening synthesized: 2 sentences x 4800 bytes
-  assert.deepEqual(h.calls.tts, ['Thanks.', 'What was the baseline?']);
+  assert.deepEqual(spoken(h.calls), [GREETINGS.en, 'Thanks.', 'What was the baseline?']);
   assert.ok(h.events.some(e => e.type === 'audio_turn' && e.item_id === 'agent-1'));
   await until(() => !h.s.busy());
   for (const f of frames([[0.6, .001], [1.2, .2], [1.3, .001]])) { h.tick(); h.s.onBinary(f); }
@@ -54,8 +56,9 @@ test('full interview: opening, turn, transcript, evidence, guidance, notes', asy
   await until(() => h.s.guidance !== null);
   const third = talkerMessages(h.s.project, h.s.guidance, h.s.history);
   assert.ok(third.some(m => m.content.startsWith('ANALYST_GUIDANCE') && m.content.includes('measurement')));
+  await until(() => !h.s.busy()); // text reaches the screen with its audio
   const agent = h.events.filter(e => e.type === 'agent_text').map(e => e.text).join('');
-  assert.ok(agent.includes('\n\nThanks.'));
+  assert.match(agent, /\n\n(Okay|Right|I see|Yeah)\. Thanks\./, 'a real answer gets a short acknowledgement, then the reply');
   await h.s.onText(JSON.stringify({ type: 'end' }));
   const notes = h.events.find(e => e.type === 'notes');
   assert.equal(notes.status, 'candidate'); assert.equal(notes.sections[3], 'We cut triage time by about 40%');
@@ -65,6 +68,7 @@ test('full interview: opening, turn, transcript, evidence, guidance, notes', asy
 test('consultant speaking over ATLAS interrupts playback', async () => {
   const h = harness([]);
   await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
+  h.s.playedMs[h.s.protectedItem] = 1e9; // the greeting has played (browser acknowledgement)
   h.s.queue.push({ gen: h.s.gen, item: 'agent-1', bytes: new Uint8Array(960) }, { gen: h.s.gen, item: 'agent-1', bytes: new Uint8Array(960) });
   for (const f of frames([[0.3, .001], [0.6, .5]])) { h.tick(); h.s.onBinary(f); } // sustained speech (> 450 ms) while ATLAS is audible
   assert.ok(h.events.some(e => e.type === 'clear_audio') && h.events.some(e => e.type === 'user_speaking'));
@@ -102,8 +106,13 @@ test('live regression: noise while ATLAS composes its opening cannot cancel it',
   await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
   for (const f of frames([[0.2, .001], [0.5, .4]])) { h.tick(); h.s.onBinary(f); } // loud room noise, nothing audible yet
   assert.ok(!h.events.some(e => e.type === 'clear_audio' || e.type === 'user_speaking'));
-  release(); await until(() => h.bytes.length >= 10);
-  assert.deepEqual(h.calls.tts, ['Thanks.', 'What was the baseline?']);
+  release();
+  for (let i = 0; i < 200; i++) await new Promise(r => setImmediate(r));
+  // the cached greeting (5 chunks) was already on its way before the noise began; the rest waits for quiet
+  assert.equal(h.bytes.length, 5, 'the rest of the opening waits while the sound is still going on');
+  for (const f of frames([[1.3, .001]])) { h.tick(); h.s.onBinary(f); } // the noise stops: it transcribes to nothing
+  await until(() => h.bytes.length >= 10);
+  assert.deepEqual(spoken(h.calls), [GREETINGS.en, 'Thanks.', 'What was the baseline?']);
   await h.s.end(false);
 });
 
@@ -111,6 +120,7 @@ test('live regression: an interruption that was only noise makes ATLAS re-ask', 
   const h = harness(['']); // barge-in audio transcribes to nothing
   await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
   await until(() => !h.s.busy());
+  h.s.playedMs[h.s.protectedItem] = 1e9; // the greeting has played (browser acknowledgement)
   h.s.queue.push({ gen: h.s.gen, item: 'agent-1', bytes: new Uint8Array(960) });
   for (const f of frames([[0.1, .001], [0.6, .5], [1.3, .001]])) { h.tick(); h.s.onBinary(f); }
   assert.ok(h.events.some(e => e.type === 'user_speaking'));
@@ -267,4 +277,715 @@ test('speaking budget is re-checked on every reply, including a noise re-ask', a
   h.s.turns = 1; h.s.startReply(RESUME_TEXT);
   await until(() => h.calls.talker.length >= 2);
   assert.equal(h.calls.talker.at(-1).at(-1).content, TIME_UP);
+});
+
+test('the greeting plays instantly from cache and cannot be cut by noise; after it has played, speaking over ATLAS interrupts', async () => {
+  const h = harness([]);
+  await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
+  await until(() => h.events.some(e => e.type === 'audio_turn'));
+  assert.equal(h.events.find(e => e.type === 'agent_text').text.trim(), GREETINGS.en);
+  assert.ok(h.s.greetingPlaying() && h.s.protectedMs > 0);
+  h.s.queue.push({ gen: h.s.gen, item: 'agent-1', bytes: new Uint8Array(960) });
+  for (const f of frames([[0.2, .001], [0.6, .5]])) { h.tick(); h.s.onBinary(f); }
+  assert.ok(!h.events.some(e => e.type === 'user_speaking'), 'loud noise during the greeting does not interrupt it');
+  h.s.playedMs[h.s.protectedItem] = h.s.protectedMs; h.s.queue.push({ gen: h.s.gen, item: 'agent-1', bytes: new Uint8Array(960) });
+  for (const f of frames([[1.3, .001]])) { h.tick(); h.s.onBinary(f); } // the noise segment ends
+  h.s.queue.push({ gen: h.s.gen, item: 'agent-1', bytes: new Uint8Array(960) });
+  for (const f of frames([[0.6, .5]])) { h.tick(); h.s.onBinary(f); }
+  assert.ok(h.events.some(e => e.type === 'user_speaking'), 'once played, the reply is interruptible');
+  await h.s.end(false);
+});
+test('second session reuses the cached greeting audio (no voice call)', async () => {
+  for (let i = 0; i < 2; i++) {
+    const h = harness([]);
+    await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
+    await until(() => h.calls.talker.length >= 1);
+    assert.equal(h.calls.tts.includes(GREETINGS.en), i === 0, i ? 'cached' : 'first synthesis');
+    await h.s.end(false); open.delete(h.s);
+  }
+});
+test('semantic end of turn: a finished answer is taken at the pause and transcribed once; an unfinished one waits, untranscribed', async () => {
+  for (const complete of [true, false]) {
+    let checks = 0, stt = 0;
+    const h = harness(['Our routing cut triage time a lot.'], calls => ({ async turnComplete() { checks += 1; return { complete, probability: complete ? 0.9 : 0.2 }; },
+      async transcribe() { stt += 1; return { text: 'Our routing cut triage time a lot.', language: 'en' }; } }));
+    await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
+    await until(() => !h.s.busy() && h.bytes.length >= 10);
+    h.s.playedMs[h.s.protectedItem] = 1e9;
+    for (const f of frames([[0.6, .001], [1.2, .2], [0.8, .001]])) { h.tick(); h.s.onBinary(f); } // 0.8 s of silence: below the 1.2 s rule
+    for (let i = 0; i < 200; i++) await new Promise(r => setImmediate(r));
+    assert.ok(checks >= 1, 'the turn model was asked at the pause');
+    assert.equal(h.s.history.some(m => m.role === 'user'), complete, complete ? 'answered without waiting 1.1 s' : 'kept listening');
+    assert.equal(stt, complete ? 1 : 0, complete ? 'transcribed exactly once' : 'no transcription is paid for while the consultant is still talking');
+    await h.s.end(false);
+  }
+});
+
+// ---- Patient turn-taking: a pause is thinking time, not the end of the answer ----
+const settle = async (n = 200) => { for (let i = 0; i < n; i++) await new Promise(r => setImmediate(r)); };
+async function opened(h) {
+  await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
+  await until(() => !h.s.busy() && h.bytes.length >= 10);
+  h.s.playedMs[h.s.protectedItem] = 1e9; // the greeting has played (browser acknowledgement)
+}
+const say = (h, segs) => { for (const f of frames(segs)) { h.tick(); h.s.onBinary(f); } };
+// Fillers are pre-synthesised into the cache at start, so check what ATLAS showed/said, not what was synthesised.
+// The browser's transcript reducer (src/voice-client.js): append agent_text, cut agent_retract's chars.
+const screen = h => h.events.reduce((t, e) => e.type === 'agent_text' ? t + e.text : e.type === 'agent_retract' ? t.slice(0, t.length - Math.min(e.chars, t.length)) : t, '');
+const acknowledged = h => h.events.some(e => e.type === 'agent_text' && e.text.startsWith('\n\n') && Object.values(FILLERS).flat().includes(e.text.trim()));
+
+test('the consultant keeps talking after a pause: ATLAS withdraws her started reply and answers the whole answer once', async () => {
+  let hold, gated = true;
+  const h = harness(['We rebuilt the claims intake.', 'Then we cut the backlog by a third in two months.'], calls => ({
+    async *chatStream(m) { calls.talker.push(m); yield 'Oh nice. '; if (calls.talker.length === 2 && gated) await new Promise(r => { hold = r; }); yield 'What changed for the team?'; } }));
+  await opened(h);
+  say(h, [[1.2, .2], [1.3, .001]]); // first part, then a 1.2 s pause: the turn ends
+  await until(() => h.calls.talker.length === 2 && h.s.shown.item === 'agent-2'); // her reply has started (on screen, audible)
+  say(h, [[1.0, .2], [1.3, .001]]); // ...and they carry on before ATLAS has really answered
+  await until(() => h.calls.talker.length === 3);
+  gated = false; hold?.();
+  await until(() => !h.s.busy());
+  assert.ok(h.events.some(e => e.type === 'agent_retract' && e.item_id === 'agent-2' && e.chars > 0), 'the started reply is taken back on screen');
+  const users = h.s.history.filter(m => m.role === 'user');
+  assert.deepEqual(users.map(m => m.content), ['We rebuilt the claims intake. Then we cut the backlog by a third in two months.']);
+  assert.ok(!h.s.history.some(m => m.content.includes('[interrupted')), 'a withdrawn reply is not an interruption');
+  assert.equal(h.s.history.filter(m => m.role === 'assistant').length, 2, 'opening + one real answer');
+  assert.ok(h.calls.talker[2].some(m => m.role === 'user' && m.content.endsWith('by a third in two months.')));
+  const opening = GREETINGS.en + ' Oh nice. What changed for the team?';
+  const shown = screen(h);
+  assert.ok(shown.startsWith(opening + '\n\n') && /^((Okay|Right|I see|Yeah)\. )?Oh nice\. What changed for the team\?$/.test(shown.slice(opening.length + 2)),
+    'exactly the opening and the one real reply on screen: ' + JSON.stringify(shown));
+});
+
+test('words that trail off ("and…") get an extra beat and no acknowledgement', async () => {
+  const h = harness(['We moved the whole billing platform to the new provider last spring and']);
+  await opened(h);
+  const before = h.bytes.length;
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 2);
+  await settle();
+  assert.equal(h.bytes.length, before, 'no audio yet: they may still be thinking');
+  assert.deepEqual(spoken(h.calls).slice(-2), ['Thanks.', 'What was the baseline?']); // synthesised, held back
+  assert.ok(!acknowledged(h), 'no "Mm-hm" on an unfinished sentence');
+  assert.equal(h.calls.talker[1].at(-1).content, STILL_THINKING, 'a gentle check, not a new question');
+  for (let i = 0; i < 90; i++) { h.tick(); await settle(5); } // 1.8 s of quiet: nothing more came, answer now
+  await until(() => h.bytes.length >= before + 10);
+});
+
+test('the turn model hears an unfinished thought: ATLAS waits through a long pause, then only nudges', async () => {
+  const h = harness(['We had to rethink the whole approach.'], calls => ({ async turnComplete() { return { complete: false, probability: 0.1 }; } }));
+  await opened(h);
+  say(h, [[1.5, .2], [0.72, .001]]); await settle(); // the verdict lands just after the 0.7 s check
+  say(h, [[1.68, .001]]); await settle(); // 2.4 s of silence: far past the plain 1.2 s rule
+  assert.equal(h.calls.stt, 0, 'still their turn: they are thinking');
+  say(h, [[0.2, .001]]); // 2.6 s in total
+  await until(() => h.calls.talker.length === 2);
+  assert.equal(h.calls.talker[1].at(-1).content, STILL_THINKING);
+  assert.ok(!acknowledged(h));
+});
+
+test('the turn model is unsure: the plain 1.2 s silence rule ends the turn', async () => {
+  const h = harness(['We rolled it out to every region in the spring and it worked well for everyone.'], calls => ({ async turnComplete() { return { complete: true, probability: 0.7 }; } }));
+  await opened(h);
+  say(h, [[1.5, .2], [0.72, .001]]); await settle(); // the verdict lands just after the 0.7 s check
+  say(h, [[0.28, .001]]); await settle();
+  assert.equal(h.calls.stt, 0, 'not yet at 1.0 s');
+  say(h, [[0.22, .001]]); // 1.22 s
+  await until(() => h.calls.stt === 1 && h.calls.talker.length === 2);
+  assert.ok(h.calls.talker[1].some(m => m.role === 'user' && m.content.startsWith('We rolled it out')));
+  assert.ok(!h.calls.talker[1].some(m => m.content === STILL_THINKING), 'a finished answer gets a real reply');
+});
+
+test('speaking again while the first part is still being transcribed: one turn, one reply', async () => {
+  let release; const slow = new Promise(r => { release = r; }); let n = 0;
+  const h = harness(['So we started with the intake team.', 'Then we automated the routing for every region.'], calls => ({
+    async transcribe(pcm) { calls.stt += 1; const i = n++; if (i === 0) await slow; return ['So we started with the intake team.', 'Then we automated the routing for every region.'][i]; } }));
+  await opened(h);
+  say(h, [[1.0, .2], [1.3, .001]]); // first part ends; its transcription is slow
+  say(h, [[1.0, .2], [1.3, .001]]); // they carry on meanwhile
+  release();
+  await until(() => h.s.history.filter(m => m.role === 'assistant').length === 2);
+  assert.deepEqual(h.s.history.filter(m => m.role === 'user').map(m => m.content), ['So we started with the intake team. Then we automated the routing for every region.']);
+  const answered = h.calls.talker.slice(1).filter(m => m.some(x => x.role === 'user' && x.content.startsWith('So we started')));
+  assert.ok(answered.at(-1).some(x => x.content.endsWith('every region.')), 'the reply that plays answers the whole answer');
+  assert.ok(!h.events.some(e => e.type === 'agent_retract'), 'a reply held before any audio never reached the screen: nothing to take back');
+  assert.ok(!h.s.history.some(m => m.content.includes('[interrupted')));
+});
+
+test('a noise while ATLAS prepares her answer only delays it: the reply is kept', async () => {
+  let hold;
+  const h = harness(['A short answer about the rollout.', ''], calls => ({
+    async *chatStream(m) { calls.talker.push(m); if (calls.talker.length === 2) await new Promise(r => { hold = r; }); yield 'Thanks. '; yield 'What was the baseline?'; } }));
+  await opened(h);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 2);
+  say(h, [[0.3, .3], [1.3, .001]]); // a cough: transcribes to nothing
+  await until(() => h.calls.stt === 2);
+  hold();
+  await until(() => !h.s.busy() && h.s.history.filter(m => m.role === 'assistant').length === 2);
+  assert.equal(h.calls.talker.length, 2, 'no second reply was needed');
+  assert.ok(!h.events.some(e => e.type === 'agent_retract'));
+  assert.equal(h.s.history.at(-1).content, 'Thanks. What was the baseline?');
+});
+
+test('acknowledgements only after a real answer: not after a few words, not after a question', async () => {
+  for (const [answer, filler] of [['Yes, about six months.', false], ['Can you repeat the question about the team size and the budget please?', false],
+    ['We moved the whole billing platform to the new provider last spring with a team of five.', true]]) {
+    const h = harness([answer]);
+    await opened(h);
+    say(h, [[1.2, .2], [1.3, .001]]);
+    await until(() => h.calls.talker.length === 2 && !h.s.busy());
+    assert.equal(acknowledged(h), filler, answer);
+    await h.s.end(false);
+  }
+});
+
+test('a finished answer ending on a name or a pronoun gets a real reply, not a nudge', async () => {
+  for (const heard of ['We went with plan A.', { text: 'Ja, das haben wir so gemacht, und ich weiß das.', language: 'de' }]) {
+    const h = harness([heard], calls => ({ speaks: () => true }));
+    await opened(h);
+    say(h, [[1.2, .2], [1.3, .001]]);
+    await until(() => h.calls.talker.length === 2);
+    assert.ok(!h.calls.talker[1].some(m => m.content === STILL_THINKING), JSON.stringify(heard));
+    await h.s.end(false);
+  }
+});
+
+test('an answer ending in a question is answered, never nudged or acknowledged', async () => {
+  const h = harness([{ text: 'Und was meinen Sie, oder?', language: 'de' }], calls => ({ speaks: () => true }));
+  await opened(h);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 2 && !h.s.busy());
+  assert.ok(!h.calls.talker[1].some(m => m.content === STILL_THINKING));
+  assert.equal(acknowledged(h), false);
+});
+
+test('a failed transcript of the continuation still gets the held answer answered', async () => {
+  let release; const slow = new Promise(r => { release = r; }); let n = 0;
+  const h = harness([], calls => ({ async transcribe() { calls.stt += 1; const i = n++; if (i === 0) { await slow; return 'So we started with the intake team.'; } throw new Error('stt down'); } }));
+  await opened(h);
+  say(h, [[1.0, .2], [1.3, .001]]); // first part ends; its transcription is slow
+  say(h, [[1.0, .2]]); // still talking
+  release(); await settle();
+  say(h, [[1.3, .001]]); // the continuation ends; its transcription fails
+  await until(() => h.calls.stt === 2);
+  for (let i = 0; i < 50; i++) { h.tick(); await settle(5); }
+  await until(() => h.calls.talker.length === 2);
+  assert.ok(h.calls.talker[1].filter(m => m.role === 'user').at(-1).content.startsWith('So we started'));
+  assert.ok(h.events.some(e => e.type === 'quality_warning' && /could not be transcribed/.test(e.message)));
+});
+
+test('a barge-in whose transcript fails still re-asks', async () => {
+  const h = harness([], calls => ({ async transcribe() { calls.stt += 1; throw new Error('stt down'); } }));
+  await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
+  await until(() => !h.s.busy());
+  h.s.playedMs[h.s.protectedItem] = 1e9;
+  h.s.queue.push({ gen: h.s.gen, item: 'agent-1', bytes: new Uint8Array(960) });
+  say(h, [[0.1, .001], [0.6, .5], [1.3, .001]]);
+  await until(() => h.calls.talker.length >= 2);
+  assert.equal(h.calls.talker[1].at(-1).content, RESUME_TEXT);
+});
+
+test('the acknowledgement does not count toward the continuation window', async () => {
+  for (const [fillerMs, resumed] of [[500, true], [0, false]]) {
+    const metrics = []; let hold;
+    const h = harness(['A short answer about the rollout.'], { session: { metric: (n, v) => metrics.push([n, v]) },
+      async *chatStream() { await new Promise(r => { hold = r; }); yield 'Thanks.'; } });
+    await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
+    hold(); await until(() => !h.s.busy() && h.bytes.length >= 5);
+    h.s.playedMs[h.s.protectedItem] = 1e9;
+    say(h, [[1.2, .2], [1.3, .001]]);
+    await until(() => h.s.replyTurn === 1 && h.s.busy());
+    // 2.2 s sent (1.9 s heard, less 0.45 s to notice the barge-in), of which fillerMs is "Right."
+    h.s.sentMs[h.s.replyItem] = 2200; h.s.fillerMs[h.s.replyItem] = fillerMs;
+    h.s.queue.push({ gen: h.s.gen, item: h.s.replyItem, bytes: new Uint8Array(960) }); // audible
+    say(h, [[0.6, .5]]);
+    assert.equal(metrics.some(([n]) => n === 'turn_resumed'), resumed, 'resumed with fillerMs=' + fillerMs);
+    assert.equal(metrics.some(([n]) => n === 'barge_in'), !resumed);
+    assert.equal(h.s.cutOff, !resumed);
+    hold(); await h.s.end(false);
+  }
+});
+
+test('fillerMs is recorded only for acknowledgements', async () => {
+  const h = harness(['We moved the whole billing platform to the new provider last spring with a team of five.']);
+  await opened(h);
+  assert.equal(h.s.fillerMs['agent-1'], undefined, 'the greeting is not an acknowledgement');
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 2 && !h.s.busy());
+  assert.ok(acknowledged(h));
+  assert.equal(h.s.fillerMs['agent-2'], 4800 / 48);
+});
+
+test('the trailing-words hold is measured from the consultant\'s last sound', async () => {
+  const metrics = [];
+  const h = harness(['We moved the whole billing platform to the new provider last spring and'], { session: { metric: (n, v) => metrics.push([n, v]) } });
+  await opened(h);
+  const before = h.bytes.length;
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 2);
+  for (let i = 0; i < 200 && h.bytes.length === before; i++) { h.tick(); await settle(5); }
+  const gap = metrics.find(([n]) => n === 'reply_gap')?.[1];
+  assert.ok(gap && gap.ms >= 2480 && gap.ms <= 2600, JSON.stringify(gap));
+  assert.equal(gap.thinking, 1);
+});
+
+test('reply_gap is reported for a normal answer, never for the opening, and no metric carries transcript text', async () => {
+  const metrics = [];
+  const h = harness(undefined, { session: { metric: (n, v) => metrics.push([n, v]) }, async turnComplete() { return { complete: true, probability: 0.95 }; } });
+  await opened(h);
+  assert.ok(!metrics.some(([n]) => n === 'reply_gap'), 'the opening answers no turn');
+  say(h, [[1.5, .2], [1.0, .001]]);
+  await until(() => h.calls.talker.length === 2 && !h.s.busy());
+  const gaps = metrics.filter(([n]) => n === 'reply_gap');
+  assert.equal(gaps.length, 1);
+  assert.ok(Number.isFinite(gaps[0][1].ms) && gaps[0][1].ms > 0 && [0, 1].includes(gaps[0][1].filler));
+  assert.ok(!JSON.stringify(metrics).includes('triage'), 'metrics are numbers and names only');
+});
+
+test('scope: the shared speech detector keeps its defaults; the session waits THINKING_PAUSE itself', () => {
+  assert.equal(new EnergyTurns().endSilence, 1.1);
+  const h = harness();
+  assert.equal(h.s.turnDetector.endSilence, THINKING_PAUSE);
+});
+
+test('without a turn model: 1.0 s of silence keeps the turn, 1.2 s ends it', async () => {
+  const h = harness(['We rolled it out to every region.']);
+  await opened(h);
+  say(h, [[1.5, .2], [1.0, .001]]); await settle();
+  assert.equal(h.calls.stt, 0);
+  say(h, [[0.22, .001]]);
+  await until(() => h.calls.stt === 1);
+});
+
+test('a reply already fully composed is taken back from the history too: a cough gets it re-answered, words get merged', async () => {
+  for (const second of ['', 'and then we cut the backlog by a third in two months across the region.']) {
+    const h = harness(['A short answer about the rollout.', second]);
+    await opened(h);
+    say(h, [[1.2, .2], [1.3, .001]]);
+    await until(() => h.calls.talker.length === 2 && !h.s.speaking && h.s.history.at(-1).role === 'assistant'); // written to history
+    h.s.queue.push({ gen: h.s.gen, item: h.s.replyItem, bytes: new Uint8Array(960) }); // its audio still playing
+    say(h, [[0.6, .5], [1.3, .001]]); // they carry on within the first second of it
+    await until(() => h.calls.talker.length === 3 && !h.s.busy());
+    const users = h.s.history.filter(m => m.role === 'user').map(m => m.content);
+    if (second) assert.deepEqual(users, ['A short answer about the rollout. ' + second], 'one merged answer');
+    else assert.deepEqual(users, ['A short answer about the rollout.'], 'the cough added nothing');
+    assert.equal(h.s.history.filter(m => m.role === 'assistant').length, 2, 'opening + the one reply that stands');
+    assert.equal(h.s.history.at(-1).role, 'assistant');
+    await h.s.end(false);
+  }
+});
+
+test('a held reply cut short by a new turn is recorded before that turn, with what was heard', async () => {
+  let hold;
+  const h = harness(['We rebuilt the claims intake last year.', 'Sorry, one more thing about the budget.'], calls => ({
+    async *chatStream(m) { calls.talker.push(m); yield 'Thanks. '; if (calls.talker.length === 2) await new Promise(r => { hold = r; }); yield 'What was the baseline?'; } }));
+  await opened(h);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 2 && h.s.shown.item === 'agent-2');
+  h.s.sentMs['agent-2'] = 3000; // she has been talking a while: this is a new turn, not the rest of the last one
+  for (let i = 0; i < 20; i++) h.tick(); // her audio went quiet (waiting for the model): not audible
+  say(h, [[1.0, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 3);
+  const roles = h.s.history.map(m => m.role + ':' + m.content.slice(0, 12));
+  assert.deepEqual(roles.slice(1), ['user:We rebuilt t', 'assistant:Thanks. [int', 'user:Sorry, one m']);
+  assert.ok(h.calls.talker[2].some(m => m.role === 'assistant' && m.content === 'Thanks. [interrupted by the consultant]'), 'the next reply knows what was already said');
+  hold(); await until(() => !h.s.busy());
+  assert.equal(h.s.history.filter(m => m.content.startsWith('Thanks. [int')).length, 1, 'recorded once');
+});
+
+test('a cough that cut ATLAS off is not re-asked while the consultant is already giving the real answer', async () => {
+  let release; const slow = new Promise(r => { release = r; }); let n = 0;
+  const h = harness([], calls => ({ async transcribe() { calls.stt += 1; const i = n++; if (i === 0) { await slow; return ''; } return 'We cut triage time by a third in two months.'; } }));
+  await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
+  await until(() => !h.s.busy());
+  h.s.playedMs[h.s.protectedItem] = 1e9;
+  h.s.queue.push({ gen: h.s.gen, item: 'agent-1', bytes: new Uint8Array(960) });
+  say(h, [[0.6, .5], [1.3, .001]]); // a cough cuts her off; its transcription is slow
+  say(h, [[1.0, .2]]); // the real answer starts meanwhile
+  release(); await settle();
+  say(h, [[1.3, .001]]);
+  await until(() => h.calls.talker.length === 2 && !h.s.busy());
+  assert.ok(!h.calls.talker.some(m => m.at(-1).content === RESUME_TEXT), 'no "sorry, I cut you off" over their answer');
+  assert.ok(h.calls.talker[1].some(m => m.role === 'user' && m.content.startsWith('We cut triage')));
+});
+
+test('a transcription that never returns counts as no words (timeout): the cut-off question is re-asked', async () => {
+  const h = harness([], { session: { sttTimeout: 20 }, transcribe() { return new Promise(() => {}); } });
+  await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
+  await until(() => !h.s.busy());
+  h.s.playedMs[h.s.protectedItem] = 1e9;
+  h.s.queue.push({ gen: h.s.gen, item: 'agent-1', bytes: new Uint8Array(960) });
+  say(h, [[0.1, .001], [0.6, .5], [1.3, .001]]);
+  await new Promise(r => setTimeout(r, 80));
+  await until(() => h.calls.talker.length >= 2);
+  assert.equal(h.calls.talker[1].at(-1).content, RESUME_TEXT);
+  assert.equal(h.s.sttBusy, 0);
+});
+
+test('a click while ATLAS prepares her answer neither holds her reply nor gets transcribed', async () => {
+  let hold;
+  const h = harness(['A short answer about the rollout.'], calls => ({
+    async *chatStream(m) { calls.talker.push(m); if (calls.talker.length === 2) await new Promise(r => { hold = r; }); yield 'Thanks. '; yield 'What was the baseline?'; } }));
+  await opened(h);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 2);
+  const before = h.bytes.length;
+  say(h, [[0.1, .5], [0.5, .001]]); // a click: 0.1 s of voice, then quiet closes it
+  hold(); await settle(400);
+  assert.ok(h.bytes.length > before, 'her reply plays through the click');
+  say(h, [[1.3, .001]]);
+  await until(() => !h.s.busy());
+  assert.equal(h.s.history.filter(m => m.role === 'user').length, 1, 'the click is not a turn');
+  assert.equal(h.calls.talker.length, 2, 'and gets no reply');
+});
+
+test('admin mode gets the same patience on words that trail off, without the nudge', async () => {
+  const metrics = [];
+  const h = harness(['We moved the whole billing platform to the new provider last spring and'], { session: { admin: true, metric: (n, v) => metrics.push([n, v]) } });
+  await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
+  await until(() => !h.s.busy() && h.bytes.length >= 10);
+  const before = h.bytes.length;
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 2);
+  assert.ok(!h.calls.talker[1].some(m => m.content === STILL_THINKING), 'no nudge for admin');
+  for (let i = 0; i < 200 && h.bytes.length === before; i++) { h.tick(); await settle(5); }
+  const gap = metrics.find(([n]) => n === 'reply_gap')?.[1];
+  assert.ok(gap && gap.ms >= 2480, 'admin waited too: ' + JSON.stringify(gap));
+});
+
+// ---- second review round ----
+const LONG = 'We moved the whole billing platform to the new provider last spring with a team of five.';
+
+test('a cough over a reply still waiting on the model: the reply is taken back and the answer is still answered', async () => {
+  let stuck;
+  const h = harness([LONG, ''], calls => ({ async *chatStream(m) { calls.talker.push(m); if (calls.talker.length === 2) await new Promise(r => { stuck = r; }); yield 'Thanks. '; yield 'Who owned the budget?'; } }));
+  await opened(h);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 2);
+  h.s.queue.push({ gen: h.s.gen, item: h.s.replyItem, bytes: new Uint8Array(960) }); // the acknowledgement is playing
+  say(h, [[0.6, .5], [1.3, .001]]); // a cough over it
+  await until(() => h.calls.talker.length === 3); // not stuck behind the stale reply
+  stuck(); await until(() => !h.s.busy() && h.s.history.at(-1).role === 'assistant');
+  assert.equal(h.s.history.filter(m => m.role === 'assistant').length, 2, 'opening + one answer');
+});
+
+test('a barge-in while her next sentence is still being voiced: the cut-off question is re-asked', async () => {
+  let voice;
+  const h = harness(['A short answer about the rollout.', ''], calls => ({
+    async *chatStream(m) { calls.talker.push(m); yield 'Thanks. '; yield calls.talker.length === 2 ? 'Who owned the budget?' : 'What was the baseline?'; },
+    async synthesize(t) { calls.tts.push(t); if (t === 'Who owned the budget?') await new Promise(r => { voice = r; }); return new Uint8Array(4800).fill(1); } }));
+  await opened(h);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.tts.includes('Who owned the budget?') && h.s.shown.item === h.s.replyItem);
+  h.s.sentMs[h.s.replyItem] = 3000; // well into her reply: a real barge-in
+  h.s.queue.push({ gen: h.s.gen, item: h.s.replyItem, bytes: new Uint8Array(960) });
+  say(h, [[0.6, .5], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 3);
+  assert.equal(h.calls.talker[2].at(-1).content, RESUME_TEXT);
+  assert.ok(h.s.history.some(m => m.role === 'assistant' && m.content === 'Thanks. [interrupted by the consultant]'), 'what was heard, marked');
+  voice();
+});
+
+test('her own reply coming back through the speakers after a withdrawal is recognised as echo, not merged', async () => {
+  const h = harness(['A short answer about the rollout.', 'Who owned the rollout budget?'], calls => ({
+    async *chatStream(m) { calls.talker.push(m); yield 'Great. '; yield calls.talker.length === 2 ? 'Who owned the rollout budget?' : 'What was the baseline?'; } }));
+  await opened(h);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 2 && h.s.live?.item === h.s.replyItem && h.s.live.text.includes('Who owned')); // played
+  h.s.queue.push({ gen: h.s.gen, item: h.s.replyItem, bytes: new Uint8Array(960) });
+  say(h, [[0.6, .5], [1.3, .001]]); // the microphone picks up her question
+  await until(() => h.calls.stt === 2 && h.calls.talker.length === 3);
+  assert.deepEqual(h.s.history.filter(m => m.role === 'user').map(m => m.content), ['A short answer about the rollout.'], 'her words are not the consultant\'s');
+  assert.ok(h.events.some(e => e.type === 'quality_warning' && /its own voice/.test(e.message)));
+});
+
+test('once the greeting is cut off by an answer, it is no longer protected', async () => {
+  let slow; const gate = new Promise(r => { slow = r; });
+  const h = harness(['Hello there, nice to meet you, I am ready.'], calls => ({ async *chatStream(m) { calls.talker.push(m); if (calls.talker.length === 1) await gate; yield 'Thanks. '; yield 'What was the baseline?'; } }));
+  await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
+  await until(() => h.s.protectedItem === 'agent-1');
+  say(h, [[1.2, .2], [1.3, .001]]); // they answer over the greeting
+  await until(() => h.calls.talker.length === 2);
+  assert.equal(h.s.greetingPlaying(), false);
+  slow();
+});
+
+test('End during a reply records only what was voiced, marked as cut off by the end', async () => {
+  let voice;
+  const h = harness(['A short answer about the rollout.'], calls => ({
+    async *chatStream(m) { calls.talker.push(m); yield 'Thanks. '; yield calls.talker.length === 2 ? 'Who owned the budget?' : 'What was the baseline?'; },
+    async synthesize(t) { calls.tts.push(t); if (t === 'Who owned the budget?') await new Promise(r => { voice = r; }); return new Uint8Array(4800).fill(1); } }));
+  await opened(h);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.tts.includes('Who owned the budget?') && h.s.live?.item === h.s.replyItem && h.s.live.text.includes('Thanks.'));
+  await h.s.end(true);
+  voice?.();
+  const last = h.s.history.filter(m => m.role === 'assistant').at(-1).content;
+  assert.equal(last, 'Thanks. [cut off when the interview ended]');
+  assert.ok(!h.s.history.some(m => m.content.includes('budget')), 'the sentence never voiced is not in the record');
+});
+
+test('the start of real speech holds her reply from the first frames', async () => {
+  let hold;
+  const h = harness(['A short answer about the rollout.'], calls => ({ async *chatStream(m) { calls.talker.push(m); if (calls.talker.length === 2) await new Promise(r => { hold = r; }); yield 'Thanks. '; yield 'What was the baseline?'; } }));
+  await opened(h);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 2);
+  h.s.sentMs['agent-1'] = 1e9; // (keep this a new turn, not a continuation)
+  const before = h.bytes.length;
+  say(h, [[0.1, .2]]); // they have just started to speak: under MIN_VOICED so far
+  hold(); await settle(400);
+  assert.equal(h.bytes.length, before, 'not a click yet: she waits');
+});
+
+test('a click while the answer is being transcribed does not delay the reply', async () => {
+  let release; const slow = new Promise(r => { release = r; });
+  const h = harness([], calls => ({ async transcribe() { calls.stt += 1; if (calls.stt === 1) { await slow; return 'A short answer about the rollout.'; } return ''; } }));
+  await opened(h);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  say(h, [[0.1, .5], [0.2, .001]]); // a click while it is transcribed
+  release();
+  await until(() => h.calls.talker.length === 2);
+  assert.equal(h.calls.stt, 1, 'the click is still going on: not transcribed, and not waited for');
+});
+
+// ---- third review round ----
+test('a withdrawn reply only counts as possible echo for the next transcript: a later real answer using its words is kept', async () => {
+  const h = harness(['A short answer about the rollout.', 'and it went live in March.', 'Yes.', 'I owned the rollout budget.'], calls => ({
+    async *chatStream(m) { calls.talker.push(m); yield 'Great. '; yield calls.talker.length === 2 ? 'Who owned the rollout budget?' : 'What was the baseline?'; } }));
+  await opened(h);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 2 && h.s.history.at(-1).role === 'assistant');
+  h.s.queue.push({ gen: h.s.gen, item: h.s.replyItem, bytes: new Uint8Array(960) });
+  say(h, [[0.6, .5], [1.3, .001]]); // they carry on: that reply is withdrawn
+  await until(() => h.calls.talker.length === 3 && !h.s.busy());
+  say(h, [[0.6, .2], [1.3, .001]]); // an ordinary turn
+  await until(() => h.calls.talker.length === 4 && !h.s.busy());
+  for (let i = 0; i < 600; i++) h.tick(); // twelve seconds later
+  say(h, [[1.2, .2], [1.3, .001]]); // a real answer that repeats the withdrawn question's words
+  await until(() => h.calls.talker.length === 5);
+  assert.equal(h.s.history.filter(m => m.role === 'user').at(-1).content, 'I owned the rollout budget.');
+});
+
+test('a click while the answer is transcribed, then real speech: ATLAS does not talk over it', async () => {
+  let release; const slow = new Promise(r => { release = r; }); let hold;
+  const h = harness([], calls => ({
+    async transcribe() { calls.stt += 1; if (calls.stt === 1) { await slow; return 'We rebuilt the claims intake.'; } return 'Then we cut the backlog by a third in two months.'; },
+    async *chatStream(m) { calls.talker.push(m); yield 'Thanks. '; if (calls.talker.length === 2) await new Promise(r => { hold = r; }); yield 'What was the baseline?'; } }));
+  await opened(h);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  say(h, [[0.1, .5], [0.5, .001]]); // a click, closed by the quiet after it
+  release();
+  await until(() => h.calls.talker.length === 2 && h.s.shown.item === 'agent-2'); // her reply is playing
+  h.s.queue.push({ gen: h.s.gen, item: h.s.replyItem, bytes: new Uint8Array(960) });
+  const cleared = h.events.filter(e => e.type === 'clear_audio').length;
+  say(h, [[0.6, .5]]); // then they really carry on
+  assert.ok(h.events.filter(e => e.type === 'clear_audio').length > cleared, 'she stops at once');
+  say(h, [[1.3, .001]]);
+  hold();
+  await until(() => h.calls.talker.length === 3 && !h.s.busy());
+  assert.equal(h.calls.stt, 2, 'the click was never transcribed');
+  assert.deepEqual(h.s.history.filter(m => m.role === 'user').map(m => m.content), ['We rebuilt the claims intake. Then we cut the backlog by a third in two months.']);
+});
+
+test('text on screen is exactly what is being voiced, even when the model streams word by word', async () => {
+  let voice;
+  const h = harness(['A short answer about the rollout.'], calls => ({
+    async *chatStream(m) { calls.talker.push(m); for (const t of calls.talker.length === 2 ? ['Thanks', '.', ' Who', ' owned', ' the', ' budget?'] : ['Thanks. ', 'What was the baseline?']) yield t; },
+    async synthesize(t) { calls.tts.push(t); if (t === 'Who owned the budget?') await new Promise(r => { voice = r; }); return new Uint8Array(4800).fill(1); } }));
+  await opened(h);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.tts.includes('Who owned the budget?') && h.s.live?.item === h.s.replyItem && h.s.live.text.includes('Thanks.'));
+  await settle();
+  assert.equal(h.s.live.text, '\n\nThanks.', 'nothing of the next sentence yet');
+  assert.ok(!screen(h).includes('Who'));
+  voice(); await until(() => !h.s.busy());
+  assert.ok(screen(h).endsWith('\n\nThanks. Who owned the budget?'));
+});
+
+// ---- fourth review round ----
+test('a short word, a comma pause, then the rest ("So, … one more thing"): one transcript with the first word, nothing played in the pause', async () => {
+  let hold; const heard = [];
+  const h = harness([], calls => ({
+    async transcribe(pcm) { calls.stt += 1; heard.push(pcm.length); return calls.stt === 1 ? 'We rebuilt the claims intake last year.' : 'So, one more thing about the budget.'; },
+    async *chatStream(m) { calls.talker.push(m); if (calls.talker.length === 2) await new Promise(r => { hold = r; }); yield 'Thanks. '; yield 'What was the baseline?'; } }));
+  await opened(h);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 2);
+  const before = h.bytes.length;
+  say(h, [[0.1, .2], [0.25, .001]]); // "So," and a comma pause
+  hold(); await settle(400);
+  assert.equal(h.bytes.length, before, 'she does not start into the pause');
+  say(h, [[1.0, .2], [1.3, .001]]);
+  await until(() => h.calls.stt === 2 && h.calls.talker.length === 3);
+  assert.ok(heard[1] >= (0.1 + 0.25 + 1.0) * 48000, 'the first word is in the transcribed audio');
+});
+
+test('"No, no." (two brief parts) is transcribed and answered', async () => {
+  const h = harness(['No, no.']);
+  await opened(h);
+  say(h, [[0.4, .001], [0.1, .2], [0.2, .001], [0.1, .2], [1.3, .001]]); // (a real answer comes after her question has ended)
+  await until(() => h.calls.stt === 1 && h.calls.talker.length === 2);
+});
+
+test('a lone short "No." is still answered (transcribed once nothing follows it)', async () => {
+  const h = harness(['No.']);
+  await opened(h);
+  say(h, [[0.4, .001], [0.1, .2], [0.5, .001]]); // under MIN_VOICED: closed as a possible click
+  say(h, [[1.1, .001]]); // nothing follows
+  await until(() => h.calls.stt === 1 && h.calls.talker.length === 2);
+  assert.equal(h.s.history.filter(m => m.role === 'user').at(-1).content, 'No.');
+});
+
+test('"Yes… [long pause] I think so": the short first word joins what follows', async () => {
+  const voiced = [];
+  const loud20ms = pcm => { let n = 0; for (let i = 0; i + 960 <= pcm.length; i += 960) if (rms(pcm.subarray(i, i + 960)) > 0.05) n++; return n; };
+  const h = harness([], calls => ({ async transcribe(pcm) { calls.stt += 1; voiced.push(loud20ms(pcm)); return 'Yes, I think we did, in the second phase.'; } }));
+  await opened(h);
+  say(h, [[0.6, .001], [0.1, .2], [0.7, .001], [1.0, .2], [1.3, .001]]); // (after her question has ended and cannot echo)
+  await until(() => h.calls.talker.length === 2);
+  assert.equal(h.calls.stt, 1, 'one utterance');
+  assert.ok(voiced[0] >= 54, 'the "Yes" (5 frames) is included with the rest (50): ' + voiced[0]);
+});
+
+test('a silent, stalled reply withdrawn at the end of a continuation does not make the next real answer look like echo', async () => {
+  let stall;
+  const h = harness(['A short answer about the rollout.', 'and it went live in March.', 'I owned the budget.'], calls => ({
+    async *chatStream(m) { calls.talker.push(m); const n = calls.talker.length;
+      if (n === 2) { yield 'Who owned the budget? '; await new Promise(r => { stall = r; }); yield 'And the timeline?'; return; }
+      yield 'Great. '; yield 'What was the baseline?'; } }));
+  await opened(h);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 2 && h.s.live?.text.includes('Who owned'));
+  h.s.playedMs[h.s.replyItem] = 1e9; // the browser has played it
+  await until(() => h.s.queue.length === 0);
+  for (let i = 0; i < 20; i++) h.tick(); // her audio went quiet while the model stalls: not audible
+  say(h, [[1.0, .2], [1.3, .001]]); // they carry on: merged, and her stalled reply withdrawn at the end
+  await until(() => h.calls.talker.length === 3 && !h.s.busy());
+  stall();
+  say(h, [[1.2, .2], [1.3, .001]]); // the answer to the question they heard
+  await until(() => h.calls.talker.length === 4);
+  assert.equal(h.s.history.filter(m => m.role === 'user').at(-1).content, 'I owned the budget.');
+  assert.ok(!h.events.some(e => e.type === 'quality_warning' && /its own voice/.test(e.message)));
+});
+
+test('an answer that reuses the words of her question is the consultant\'s, not echo', async () => {
+  const h = harness(['A short answer about the rollout.', 'I owned the rollout budget.'], calls => ({
+    async *chatStream(m) { calls.talker.push(m); yield 'Great. '; yield calls.talker.length === 2 ? 'Who owned the rollout budget?' : 'What was the baseline?'; } }));
+  await opened(h);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 2 && !h.s.busy());
+  say(h, [[0.6, .001], [1.2, .2], [1.3, .001]]); // they answer after she has finished
+  await until(() => h.calls.talker.length === 3);
+  assert.equal(h.s.history.filter(m => m.role === 'user').at(-1).content, 'I owned the rollout budget.');
+  assert.ok(!h.events.some(e => e.type === 'quality_warning' && /its own voice/.test(e.message)));
+});
+
+// ---- fifth review round: echo timed on the microphone stream (playback reports) ----
+const ack = (h, item, ms) => h.s.onText(JSON.stringify({ type: 'playback', item_id: item, played_ms: ms }));
+const QA = ['A short answer about the rollout.'];
+const asksBudget = calls => ({ async *chatStream(m) { calls.talker.push(m); yield 'Great. '; yield calls.talker.length === 2 ? 'Who owned the rollout budget?' : 'What was the baseline?'; } });
+
+test('her echo arriving late (network delay) is still recognised while the browser is still playing her question', async () => {
+  const h = harness([...QA, 'Who owned the rollout budget?'], asksBudget);
+  await opened(h);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 2 && !h.s.busy() && h.s.live.text.includes('Who owned'));
+  await ack(h, h.s.replyItem, 50); // the browser has played only the start of it so far
+  for (let i = 0; i < 40; i++) h.tick(); // 0.8 s later by the server clock: past any wall-clock window
+  say(h, [[0.6, .5], [1.3, .001]]); // the microphone picks up her question
+  await until(() => h.calls.stt === 2);
+  await settle();
+  assert.deepEqual(h.s.history.filter(m => m.role === 'user').map(m => m.content), QA);
+  assert.ok(h.events.some(e => e.type === 'quality_warning' && /its own voice/.test(e.message)));
+});
+
+test('once the browser reports her question fully played, a quick answer that reuses its words is kept', async () => {
+  const h = harness([...QA, 'I owned the rollout budget.'], asksBudget);
+  await opened(h);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 2 && !h.s.busy() && h.s.live.text.includes('Who owned'));
+  await ack(h, h.s.replyItem, h.s.sentMs[h.s.replyItem]); // fully played
+  say(h, [[0.3, .001], [1.2, .2], [1.3, .001]]); // a normal human gap, then the answer
+  await until(() => h.calls.talker.length === 3);
+  assert.equal(h.s.history.filter(m => m.role === 'user').at(-1).content, 'I owned the rollout budget.');
+});
+
+test('a breath right after her question does not make the real answer that follows look like echo', async () => {
+  const h = harness([...QA, 'I owned the rollout budget.'], asksBudget);
+  await opened(h);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 2 && !h.s.busy());
+  say(h, [[0.35, .001], [0.1, .3], [0.5, .001], [0.6, .001], [1.2, .2], [1.3, .001]]); // a breath just after she stops (could be her echo tail), then the answer
+  await until(() => h.calls.talker.length === 3);
+  assert.equal(h.s.history.filter(m => m.role === 'user').at(-1).content, 'I owned the rollout budget.');
+});
+
+test('a click after the answer, while it is still being transcribed, never holds her reply', async () => {
+  let release; const slow = new Promise(r => { release = r; });
+  const h = harness([], calls => ({ async transcribe() { calls.stt += 1; if (calls.stt === 1) { await slow; return 'A short answer about the rollout.'; } return ''; } }));
+  await opened(h);
+  say(h, [[0.6, .001], [1.2, .2], [1.3, .001]]);
+  say(h, [[0.1, .5], [0.5, .001], [1.2, .001]]); // a click, closed, and its joining window over
+  await settle();
+  assert.equal(h.calls.stt, 1, 'the click is not transcribed while the answer is');
+  const before = h.bytes.length;
+  release();
+  await until(() => h.calls.talker.length === 2);
+  await until(() => h.bytes.length > before); // her reply plays with no further frames
+  assert.equal(h.calls.stt, 1);
+});
+
+test('a short sound is joined by when the next speech began, not by when it was detected', async () => {
+  const voiced = [];
+  const loud20ms = pcm => { let n = 0; for (let i = 0; i + 960 <= pcm.length; i += 960) if (rms(pcm.subarray(i, i + 960)) > 0.05) n++; return n; };
+  const h = harness([], calls => ({ async transcribe(pcm) { calls.stt += 1; voiced.push(loud20ms(pcm)); return 'No, we never had a budget for that part.'; } }));
+  await opened(h);
+  say(h, [[0.6, .001]]);
+  const noPcm = frames([[0.1, .2]]).reduce((a, b) => { const o = new Uint8Array(a.length + b.length); o.set(a); o.set(b, a.length); return o; });
+  h.s.blip = { pcm: noPcm, voiced: 0.1, at: h.s.now() - 0.95, endedAt: h.s.now() - 1.4, continuing: false, echoable: false }; // "No." closed 0.95 s ago
+  say(h, [[1.2, .2], [1.3, .001]]); // speech begins at 0.97 s, inside the 1 s window; it is detected 0.08 s later, past it
+  await until(() => h.calls.talker.length === 2);
+  assert.equal(h.calls.stt, 1, 'one utterance');
+  assert.ok(voiced[0] >= 5 + 60, 'the "No." is part of it: ' + voiced[0]);
+});
+
+test('after she is interrupted, a later answer that reuses her question is kept (the cut playback is over)', async () => {
+  let hold;
+  const h = harness([...QA, 'Sorry, one moment.', 'I owned the rollout budget.'], calls => ({
+    async *chatStream(m) { calls.talker.push(m); const n = calls.talker.length; if (n === 3) await new Promise(r => { hold = r; });
+      yield 'Great. '; yield n === 2 ? 'Who owned the rollout budget?' : 'What was the baseline?'; } }));
+  await opened(h);
+  await ack(h, 'agent-1', h.s.sentMs['agent-1']); // the browser reports playback
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 2 && h.s.live.text.includes('Who owned'));
+  h.s.sentMs[h.s.replyItem] = 3000; await ack(h, h.s.replyItem, 2900); // well into her reply
+  h.s.queue.push({ gen: h.s.gen, item: h.s.replyItem, bytes: new Uint8Array(960) });
+  say(h, [[0.6, .5], [1.3, .001]]); // a real barge-in: she is cut
+  await until(() => h.calls.talker.length === 3); // her next reply is still being prepared (nothing playing)
+  say(h, [[2.0, .001], [1.2, .2], [1.3, .001]]); // two seconds later, the answer
+  await until(() => h.calls.stt === 3); await settle();
+  assert.ok(h.s.history.some(m => m.role === 'user' && m.content.includes('I owned the rollout budget.')), JSON.stringify(h.s.history));
+  assert.ok(!h.events.some(e => e.type === 'quality_warning' && /its own voice/.test(e.message)));
+  hold?.();
+});
+
+test('speech that starts in the gap between two of her sentences is not taken for echo of the second', async () => {
+  let hold;
+  const h = harness([...QA, 'I owned the rollout budget.'], calls => ({
+    async *chatStream(m) { calls.talker.push(m); const n = calls.talker.length;
+      if (n === 2) { yield 'Who owned the rollout budget? '; await new Promise(r => { hold = r; }); yield 'And when did it start?'; return; }
+      yield 'Great. '; yield 'What was the baseline?'; } }));
+  await opened(h);
+  await ack(h, 'agent-1', h.s.sentMs['agent-1']);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 2 && h.s.live.text.includes('Who owned') && h.s.queue.length === 0);
+  await ack(h, h.s.replyItem, h.s.sentMs[h.s.replyItem]); // her first sentence has fully played
+  say(h, [[0.4, .001], [0.06, .2]]); // they start answering...
+  hold(); await until(() => !h.s.playbackDone); // ...as her second sentence goes out
+  say(h, [[1.14, .2], [1.3, .001]]);
+  await until(() => h.calls.stt === 2); await settle();
+  assert.ok(h.s.history.some(m => m.role === 'user' && m.content.includes('I owned the rollout budget.')));
+  assert.ok(!h.events.some(e => e.type === 'quality_warning' && /its own voice/.test(e.message)));
 });

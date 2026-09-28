@@ -21,6 +21,7 @@ test-ui: build
 	$(PYTHON) tests/library_browser.py
 	$(PYTHON) tests/reuse_browser.py
 	$(PYTHON) tests/memory_browser.py
+	$(PYTHON) tests/sheet_browser.py
 doctor:
 	$(PYTHON) scripts/doctor.py --profile preview
 verify-package:

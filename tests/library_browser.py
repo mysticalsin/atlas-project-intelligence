@@ -44,8 +44,9 @@ try:
   check('library id known',bool(rid))
   o.locator('#recordDialog').screenshot(path=str(Path(os.environ.get('SHOTS','/tmp'))/'library_record.png')) if os.environ.get('SHOTS') else None
   with o.expect_download() as dw:o.locator('[data-rec-word]').click()
-  doc=Path(dw.value.path()).read_text()
-  check('Word record: every template field, confidential header, missing fields marked',all(w in doc for w in ['PRJ-2291','Zebracorp','CONFIDENTIAL','Team size','Technologies and methods','Key deliverables','Missing - to confirm','Timeline']))
+  import zipfile
+  doc=zipfile.ZipFile(dw.value.path()).read('word/document.xml').decode()
+  check('library Word = the reference-sheet template (.docx): title, summary labels, 8 sections, gaps "To be completed"',dw.value.suggested_filename.endswith('.docx') and all(w in doc for w in ['Claims triage alias','Executive Summary','Detailed Information Sheet','Industry sector, size and type of client','Added value and ROI','Team size','Python','To be completed']))
   o.locator('#recordDialog [data-close]').click()
   # --- N+1 via the direct link
   n=page('sam@mantu.com');n.goto(BASE+'/#library/'+rid);n.wait_for_timeout(1200)

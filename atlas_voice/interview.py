@@ -23,11 +23,14 @@ def clean(value, limit):
 def project_context(raw):
     if not isinstance(raw, dict):
         raise ValueError('Project context must be an object.')
-    unknown = set(raw) - {'id', 'title', 'consultant', 'role', 'sector', 'stage', 'answers'}
+    unknown = set(raw) - {'id', 'title', 'consultant', 'role', 'sector', 'stage', 'answers', 'oppId'}
     if unknown:
         raise ValueError('Unexpected project fields. Identity and memory banks are server-owned.')
     result = {k: clean(raw.get(k), n) for k, n in (
         ('id', 100), ('title', 160), ('consultant', 100), ('role', 120), ('sector', 100), ('stage', 60))}
+    opp = clean(raw.get('oppId'), 40)
+    if opp:
+        result['oppId'] = opp
     if not result['title']:
         raise ValueError('Create a project before starting an interview.')
     answers = raw.get('answers', [])

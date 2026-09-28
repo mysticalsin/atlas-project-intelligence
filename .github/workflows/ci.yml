@@ -17,7 +17,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: '3.13' }
       - name: Python dependencies
-        run: pip install -r requirements.txt -r requirements-test.txt msgpack pyjwt cryptography playwright
+        run: pip install -r requirements.txt -r requirements-test.txt msgpack pyjwt cryptography playwright python-docx
       - name: Build the page (four aliases + edge copy)
         run: python build.py && cp ATLAS_Voice.html deploy/cloudflare-edge/src/atlas.html
       - name: Generated edge policy is up to date
@@ -31,6 +31,6 @@ jobs:
       - name: Browser suites
         run: |
           python -m playwright install --with-deps chromium
-          for t in studio sculpture intelligence depth autosave orb_touch library reuse memory; do
+          for t in studio sculpture intelligence depth autosave orb_touch library reuse memory sheet; do
             echo "::group::$t"; python tests/${t}_browser.py; echo "::endgroup::"
           done

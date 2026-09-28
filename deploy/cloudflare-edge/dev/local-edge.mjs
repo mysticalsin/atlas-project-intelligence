@@ -26,12 +26,15 @@ async function token(email) {
   const input = b64u(JSON.stringify({ alg: 'RS256', kid: 'local' })) + '.' + b64u(JSON.stringify(body));
   return input + '.' + b64u(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, new TextEncoder().encode(input)));
 }
-const model = fakeModel();
+const model = fakeModel(), model_complete = m => model.complete(m);
 const lib = new Library(memorySql(), { complete: model.complete, embed: model.embed, model: 'local stand-in' });
 const pending = new Set(), stores = new Map();
 const storeFor = id => { if (!stores.has(id)) { const m = new Map(); stores.set(id, { get: async k => m.get(k), put: async (k, v) => m.set(k, v) }); } return stores.get(id); };
 const env = { ORIGIN, ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, CSRF_SECRET: 'local-only', TALKER_MODEL: 'local', TTS_VOICE: 'local',
-  TRIGGER_SECRET: process.env.TRIGGER_SECRET || 'local-trigger-secret',
+  TRIGGER_SECRET: process.env.TRIGGER_SECRET || 'local-trigger-secret', ANALYST_MODEL: 'local-analyst',
+  // Stand-ins for the Workers AI binding: toMarkdown (documents and image descriptions) and chat completions.
+  AI: { toMarkdown: async f => { const t = f.blob.type || ''; return t.startsWith('image/') ? { format: 'markdown', data: 'A diagram showing the project phases and approach' } : { format: 'markdown', data: new TextDecoder().decode(await f.blob.arrayBuffer()) }; },
+    run: async (model, input) => ({ choices: [{ message: { content: await model_complete(input.messages) } }] }) },
   ADMIN_EMAILS: process.env.ADMIN_EMAILS || 'tony.walteur@gmail.com', REVIEWER_EMAILS: process.env.REVIEWER_EMAILS || 'reviewer@mantu.com',
   HINDSIGHT_URL: HS, HINDSIGHT_API_KEY: 'local-hindsight-key',
   INTERVIEW: { idFromName: n => n, get: id => ({ fetch: r => memoryRoutes(r, { storage: storeFor(id), hs, env }) }) },

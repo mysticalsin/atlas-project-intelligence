@@ -52,3 +52,9 @@
 @media (max-width:640px){.library-tools{flex-direction:column;align-items:stretch}.library-tools>*:not(.sr){flex:0 0 auto!important;width:100%}.library-tools .check{justify-content:flex-start}.library-actions{justify-content:stretch}.library-actions .btn{width:100%}.recommend-row .btn{width:100%}}
 
 .memory-panel{border:1px solid var(--g2);border-radius:14px;padding:12px 14px;margin:12px 0}.memory-panel ul{list-style:none;padding:0;margin:8px 0}.memory-panel li{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:4px 0;border-bottom:1px solid var(--g2)}
+
+.sheet-steps{display:flex;gap:6px;list-style:none;padding:0;margin:0 0 14px;flex-wrap:wrap}.sheet-steps li{font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:5px 10px;border-radius:999px;border:1px solid var(--g2);color:var(--g5)}.sheet-steps li.active{background:var(--p);color:#fff;border-color:var(--p)}.sheet-steps li.done{color:var(--p)}
+[data-sheet-step] textarea,[data-sheet-step] input:not([type=checkbox]):not([type=radio]){width:100%}#sheetFields textarea.tbd{border-color:#e5c07b;background:rgba(229,192,123,.08)}.sheet-group{margin:8px 0}.sheet-group ul{margin:4px 0;padding-left:18px;font-size:13px}
+.sheet-preview{border:1px solid var(--g2);border-radius:14px;padding:14px 16px;font-family:Calibri,Carlito,Arial,sans-serif}.sheet-preview h2{margin:0 0 4px}.sheet-visual{display:grid;grid-template-columns:140px 1fr;gap:10px;align-items:start;margin:8px 0}.sheet-visual img{width:140px;border-radius:8px;border:1px solid var(--g2)}
+.sheet-file{display:grid;gap:6px;max-width:520px}.sheet-filename{font-weight:600;overflow-wrap:anywhere}.sheet-link{display:block;margin:8px 0 0;padding:0;font-size:12px}
+@media (max-width:640px){.sheet-visual{grid-template-columns:1fr}}

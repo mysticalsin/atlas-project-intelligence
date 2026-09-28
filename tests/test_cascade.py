@@ -35,7 +35,8 @@ def test_word_chunker_never_splits_words():
 def test_talker_gets_policy_guidance_and_untrusted_markers():
     m=talker_messages({'alias':'X'},'pref',{'field':'measurement','question':'Before and after?'},[{'role':'user','content':'hi'}]*30,'open')
     assert 'NO tools' in m[0]['content'] and 'UNTRUSTED PROJECT DATA' in m[0]['content'] and 'exactly ONE question' in m[0]['content']
-    assert m[1]['content'].startswith('ANALYST_GUIDANCE') and m[-1]=={'role':'user','content':'open'} and len(m)==2+16+1
+    # cache-friendly order: policy, append-only history (all 30 kept, HISTORY=40), then the per-turn guidance, then the instruction
+    assert m[1]=={'role':'user','content':'hi'} and m[-2]['content'].startswith('ANALYST_GUIDANCE') and m[-1]=={'role':'user','content':'open'} and len(m)==1+30+1+1
 
 class Content:
     def __init__(self,parts):self.parts=parts
