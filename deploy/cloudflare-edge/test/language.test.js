@@ -19,12 +19,16 @@ test('ElevenLabs voice: verified endpoint, key header, raw 24 kHz PCM, Flash v2.
   } finally { globalThis.fetch = real; }
 });
 
-test('turn model helper: 16 kHz WAV of the last 8 s; an answer without a boolean verdict is no verdict (not "unfinished")', async () => {
+test('turn model helper: base64 16 kHz WAV of the last 8 s; an answer without a boolean verdict is no verdict (not "unfinished")', async () => {
+  // The binding rejected the streamed {body, contentType} form for smart-turn-v2 (live logs: AiError on every turn); the
+  // base64 WAV string is the documented form, and the live model answers it with a verdict.
   let input = null, reply = { is_complete: true, probability: 0.93 };
   const ai = workersAI({ AI: { async run(model, body) { input = [model, body]; return reply; } } });
   assert.deepEqual(await ai.turnComplete(new Uint8Array(10 * 48000)), { complete: true, probability: 0.93 });
-  const wav = new Uint8Array(await new Response(input[1].audio.body).arrayBuffer()), v = new DataView(wav.buffer);
-  assert.deepEqual([input[0], input[1].audio.contentType, v.getUint32(24, true), v.getUint32(40, true)], ['@cf/pipecat-ai/smart-turn-v2', 'audio/wav', 16000, 8 * 32000]);
+  assert.equal(typeof input[1].audio, 'string', 'audio is a base64 string');
+  assert.deepEqual(Object.keys(input[1]), ['audio']);
+  const wav = Uint8Array.from(atob(input[1].audio), c => c.charCodeAt(0)), v = new DataView(wav.buffer);
+  assert.deepEqual([input[0], String.fromCharCode(...wav.subarray(0, 4)), v.getUint32(24, true), v.getUint32(40, true)], ['@cf/pipecat-ai/smart-turn-v2', 'RIFF', 16000, 8 * 32000]);
   for (reply of [{}, { result: { is_complete: true } }, null, { is_complete: 'yes', probability: 1 }]) assert.equal(await ai.turnComplete(new Uint8Array(4800)), null, JSON.stringify(reply));
 });
 
