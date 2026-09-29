@@ -610,7 +610,8 @@ test('a held reply cut short by a new turn is recorded before that turn, with wh
   say(h, [[1.0, .2], [1.3, .001]]);
   await until(() => h.calls.talker.length === 3);
   const roles = h.s.history.map(m => m.role + ':' + m.content.slice(0, 12));
-  assert.deepEqual(roles.slice(1), ['user:We rebuilt t', 'assistant:Thanks. [int', 'user:Sorry, one m']);
+  // Her answer to the new turn may already be composed (synthesis is pipelined); what matters is what comes before it.
+  assert.deepEqual(roles.slice(1, 4), ['user:We rebuilt t', 'assistant:Thanks. [int', 'user:Sorry, one m']);
   assert.ok(h.calls.talker[2].some(m => m.role === 'assistant' && m.content === 'Thanks. [interrupted by the consultant]'), 'the next reply knows what was already said');
   hold(); await until(() => !h.s.busy());
   assert.equal(h.s.history.filter(m => m.content.startsWith('Thanks. [int')).length, 1, 'recorded once');
@@ -1476,4 +1477,102 @@ test('gap: a still-thinking reply that asks the next item counts as asking it; a
   await until(() => n.calls.talker.length >= 2 && !n.s.busy());
   assert.equal(n.calls.talker[1].at(-1).content, STILL_THINKING);
   assert.deepEqual([n.s.openAsk, n.s.gapAttempts], ['G1', { G1: 1 }], 'a nudge asks nothing: the window stays on G1');
+});
+
+// ---- Speaking well: phrasing, pipelined synthesis and diagnostics (numbers only) ----
+const named = (metrics, name) => metrics.filter(([n]) => n === name).map(([, v]) => v);
+
+test('phrasing: markup is never voiced but stays on screen; short sentences join the next piece; text travels with its audio', async () => {
+  const h = harness([], calls => ({ async *chatStream(m) { calls.talker.push(m); yield* ['**Great.** ', 'That is clear. ', 'So it worked. ', 'Who measured the change before and after?', ' Ok.']; } }));
+  await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
+  await until(() => !h.s.busy() && spoken(h.calls).length === 4);
+  assert.deepEqual(spoken(h.calls), [GREETINGS.en, 'Great.', 'That is clear. So it worked. Who measured the change before and after?', 'Ok.']);
+  assert.deepEqual(h.events.filter(e => e.type === 'agent_text').map(e => e.text),
+    [GREETINGS.en, ' **Great.**', ' That is clear. So it worked. Who measured the change before and after?', ' Ok.'], 'each piece shown exactly when its audio starts');
+});
+
+test('pipelined synthesis: the next piece is synthesised while the one before it is, and audio stays in order', async () => {
+  const gates = {}, long = 'Who owned the budget for the whole programme across all regions?';
+  const h = harness([], calls => ({
+    async *chatStream(m) { calls.talker.push(m); yield* ['Thanks. ', long + ' ', 'And when?']; },
+    async synthesize(t) { calls.tts.push(t); if (t !== GREETINGS.en) await new Promise(r => { gates[t] = r; }); return new Uint8Array(t === long ? 1000 : 4800).fill(1); } }));
+  await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
+  await until(() => h.calls.tts.includes(long) && h.bytes.length === 5); await settle(); // the greeting has been sent
+  assert.ok(gates['Thanks.'] && h.bytes.length === 5, 'the second piece started before the first was voiced');
+  const sent = h.bytes.length;
+  gates[long](); await settle();
+  assert.equal(h.bytes.length, sent, 'nothing overtakes the first piece');
+  gates['Thanks.'](); await until(() => h.calls.tts.includes('And when?')); gates['And when?']();
+  await until(() => !h.s.busy() && h.bytes.length === sent + 12);
+  assert.deepEqual(h.bytes.slice(sent), [960, 960, 960, 960, 960, 960, 40, 960, 960, 960, 960, 960], 'Thanks., then the question, then And when?');
+  assert.deepEqual(h.events.filter(e => e.type === 'agent_text').map(e => e.text).slice(1), [' Thanks.', ' ' + long, ' And when?']);
+  assert.equal(h.s.history.at(-1).content, GREETINGS.en + ' Thanks. ' + long + ' And when?');
+});
+
+test('pipelined synthesis: an interruption drops every piece still being synthesised', async () => {
+  const gates = {}, long = 'Who owned the budget for the whole programme across all regions?';
+  const h = harness([], calls => ({
+    async *chatStream(m) { calls.talker.push(m); yield* ['Thanks. ', long + ' ', 'And when?']; },
+    async synthesize(t) { calls.tts.push(t); if (t !== GREETINGS.en) await new Promise(r => { gates[t] = r; }); return new Uint8Array(4800).fill(1); } }));
+  await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
+  await until(() => h.calls.tts.includes(long));
+  await until(() => h.bytes.length === 5); const shown = h.events.filter(e => e.type === 'agent_text').length;
+  h.s.interrupt(); gates[long](); gates['Thanks.'](); await settle();
+  await until(() => !h.s.speaking);
+  assert.equal(h.bytes.length, 5, 'no audio after the interruption'); assert.equal(h.events.filter(e => e.type === 'agent_text').length, shown, 'and no text');
+  assert.ok(!h.calls.tts.includes('And when?'), 'the rest of the reply is not synthesised');
+});
+
+test('tts metric: synthesis latency, audio length, characters and cache hits for every piece (numbers only)', async () => {
+  const metrics = [];
+  const h = harness(['We moved the whole billing platform to the new provider last spring with a team of five.'], { session: { metric: (n, v) => metrics.push([n, v]) } });
+  await opened(h);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 2 && !h.s.busy());
+  const tts = named(metrics, 'tts');
+  assert.deepEqual(tts[0], { ms: 0, audio_ms: 100, chars: GREETINGS.en.length, cached: 0 });
+  assert.ok(tts.some(v => v.cached === 1 && v.ms === 0), 'the acknowledgement came from cache');
+  assert.ok(tts.every(v => Object.keys(v).join() === 'ms,audio_ms,chars,cached' && Object.values(v).every(Number.isFinite)));
+  assert.equal(tts.length, 1 + 2 + 1 + 2, 'greeting + 2 opening pieces, then acknowledgement + 2 reply pieces');
+});
+
+test('underrun metric: the queue runs dry mid-reply while the next piece is still being voiced', async () => {
+  const metrics = []; let voice; const long = 'Who owned the budget for the whole programme across all regions?';
+  const h = harness([], calls => ({
+    async *chatStream(m) { calls.talker.push(m); yield* ['Thanks. ', long]; },
+    async synthesize(t) { calls.tts.push(t); if (t === long) await new Promise(r => { voice = r; }); return new Uint8Array(4800).fill(1); } }));
+  h.s.metric = (n, v) => metrics.push([n, v]); // the function form of harness() takes no session options
+  await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
+  await until(() => h.bytes.length === 10 && voice); await settle();
+  for (let i = 0; i < 50; i++) h.tick(); // 1 s passes: the greeting and "Thanks." (0.2 s) have long finished playing
+  voice(); await until(() => h.bytes.length === 15);
+  assert.deepEqual(named(metrics, 'underrun'), [{ gap_ms: 800 }]);
+});
+
+test('underrun metric: the planned wait after a greeting before the model speaks is not an underrun', async () => {
+  const metrics = []; let start; const ask = 'Which project would you like to talk about today?';
+  const h = harness([], calls => ({
+    async *chatStream(m) { calls.talker.push(m); await new Promise(r => { start = r; }); yield ask; },
+    async synthesize(t) { calls.tts.push(t); return new Uint8Array(4800).fill(1); } }));
+  h.s.metric = (n, v) => metrics.push([n, v]);
+  await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
+  await until(() => h.bytes.length === 5 && start); await settle();
+  for (let i = 0; i < 75; i++) h.tick(); // 1.5 s: the greeting has long finished and the model is still composing
+  start(); await until(() => h.bytes.length === 10);
+  assert.deepEqual(named(metrics, 'underrun'), []);
+});
+
+test('turn_check says why the turn model gave no verdict: timeout or the error name (never its message)', async () => {
+  for (const [turnComplete, extra] of [[() => new Promise(() => {}), { reason: 'timeout' }], [async () => { throw new TypeError('bad audio for Zelda'); }, { reason: 'error', name: 'TypeError' }],
+    [async () => null, { reason: 'error', name: 'NoVerdict' }], [async () => ({ complete: false, probability: 0.2 }), {}]]) {
+    const metrics = [];
+    const h = harness(['We had to rethink the whole approach.'], { session: { metric: (n, v) => metrics.push([n, v]) }, turnComplete });
+    await opened(h);
+    say(h, [[1.5, .2], [0.72, .001]]);
+    await new Promise(r => setTimeout(r, 400)); await settle();
+    const verdict = extra.reason ? { complete: -1, probability: -1 } : { complete: 0, probability: 0.2 };
+    assert.deepEqual(named(metrics, 'turn_check'), [{ ...verdict, used: 1, ...extra }]);
+    assert.ok(!JSON.stringify(metrics).includes('Zelda'));
+    await h.s.end(false); open.delete(h.s);
+  }
 });

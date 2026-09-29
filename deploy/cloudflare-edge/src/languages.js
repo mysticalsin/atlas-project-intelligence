@@ -23,11 +23,12 @@ export function detectedLanguage(result) {
 // Which language ATLAS can actually be heard in for a detected language.
 export function spokenFor(lang, speaks) { return speaks(lang) ? lang : 'en'; }
 
-// The talker's language note (server-side, every turn).
+// The talker's language note (server-side, every turn). The server switches only on consistent evidence (session.js), so
+// one misheard utterance must not move the talker either: her voice would read another language's words.
 export function languageNote(lang, spoken) {
   const name = LANGUAGES[lang] || 'English', said = LANGUAGES[spoken] || 'English';
   return lang === spoken
-    ? `LANGUAGE (server): the consultant is speaking ${name}. Reply only in natural ${name} (not a translation), and switch whenever they switch.`
+    ? `LANGUAGE (server): the consultant is speaking ${name}. Reply only in natural ${name} (not a translation). Keep to ${name} even if some of their words look like another language: this note changes when they really switch.`
     : `LANGUAGE (server): the consultant is speaking ${name}, but your voice can only speak ${said} right now. Reply in ${said}. The first time this happens, say in one short sentence that you understand ${name} and they are welcome to keep speaking it.`;
 }
 

@@ -63,13 +63,92 @@ def test_transcribe_and_synthesize_request_shapes():
     assert url.endswith('@cf/deepgram/aura-2-en') and kw['json']=={'text':'Hello.','speaker':'harmonia','encoding':'linear16','container':'none','sample_rate':24000}
     assert len(pcm)==4800
 
-def test_speak_synthesizes_sentence_by_sentence_as_text_streams():
+def test_speak_synthesizes_phrase_by_phrase_as_text_streams():
+    # The first sentence goes at once; a short sentence after it joins the next piece (natural phrasing, fewer pauses).
     http=Http();sp=WorkersSpeech(CFG,http);out=[]
     async def deltas():
         for d in ('Thanks. What ','was the base','line? Ok'):yield d
     async def emit(p):out.append(p)
     asyncio.run(sp.speak(deltas(),emit))
-    assert [kw['json']['text'] for _,kw in http.calls]==['Thanks.','What was the baseline?','Ok'] and sum(map(len,out))==3*4800
+    assert [kw['json']['text'] for _,kw in http.calls]==['Thanks.','What was the baseline? Ok'] and sum(map(len,out))==2*4800
+
+def test_speak_strips_markup_for_the_voice_and_starts_the_next_piece_while_the_previous_is_synthesized():
+    started,gates,out=[],{},[]
+    class Slow(WorkersSpeech):
+        async def synthesize(self,text):
+            started.append(text);gates[text]=asyncio.Event();await gates[text].wait();return text.encode()[:4]
+    async def go():
+        sp=Slow(CFG,Http())
+        async def deltas():
+            for d in ('**Thanks.** ','The next sentence is long enough to be spoken on its own. ','Ok'):yield d
+        async def emit(p):out.append(p)
+        task=asyncio.ensure_future(sp.speak(deltas(),emit))
+        for _ in range(50):
+            await asyncio.sleep(0)
+            if len(started)==2:break
+        assert started==['Thanks.','The next sentence is long enough to be spoken on its own.'],started  # both in flight
+        gates[started[1]].set()
+        for _ in range(20):await asyncio.sleep(0)
+        assert out==[],'strict order: nothing before the first piece'
+        gates['Thanks.'].set()
+        for _ in range(50):
+            await asyncio.sleep(0)
+            if 'Ok' in gates:gates['Ok'].set()
+        await task
+    asyncio.run(go())
+    assert out==[b'Than',b'The ',b'Ok'] and started==['Thanks.','The next sentence is long enough to be spoken on its own.','Ok']
+
+def test_speak_cancelled_mid_reply_cancels_the_synthesis_in_flight():
+    cancelled=[]
+    class Hang(WorkersSpeech):
+        async def synthesize(self,text):
+            try:await asyncio.Event().wait()
+            except asyncio.CancelledError:cancelled.append(text);raise
+    async def go():
+        sp=Hang(CFG,Http())
+        async def deltas():
+            for d in ('Thanks. ','The next sentence is long enough to be spoken on its own. ','Ok'):yield d
+        async def emit(p):pass
+        task=asyncio.ensure_future(sp.speak(deltas(),emit))
+        for _ in range(20):await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):await task
+    asyncio.run(go())
+    assert sorted(cancelled)==['Thanks.','The next sentence is long enough to be spoken on its own.']
+
+def test_sentence_ends_skip_initialisms_abbreviations_ellipses_decimals_and_list_numbers():
+    assert sentences('We used A.I. to triage. Then we')==(['We used A.I. to triage.'],'Then we')
+    assert sentences('For example, e.g. Kafka, i.e. a queue. It')==(['For example, e.g. Kafka, i.e. a queue.'],'It')
+    assert sentences('Mr. Smith and Dr. Patel led it. And')==(['Mr. Smith and Dr. Patel led it.'],'And')
+    assert sentences('The U.S. team grew 3.5 times. Next')==(['The U.S. team grew 3.5 times.'],'Next')
+    assert sentences('We had data... and more data... So')==(['We had data... and more data...'],'So')
+    assert sentences('Kafka, Spark, etc. were used vs. the old stack. Ok')==(['Kafka, Spark, etc. were used vs. the old stack.'],'Ok')
+    assert sentences('He said "done." Then')==(['He said "done."'],'Then')
+    assert sentences('1. We migrated. 2. We trained. 3')==(['1. We migrated.','2. We trained.'],'3')
+    # At the end of the streamed text a full stop still ends the sentence at once, as ! and ? do.
+    assert sentences('It ended. ')==(['It ended.'],'') and sentences('Really? ')==(['Really?'],'')
+
+def test_phrases_first_piece_fast_then_short_sentences_join_the_next():
+    from atlas_voice.speech import Phrases
+    def steps(deltas):
+        p=Phrases();return [p.feed(d) for d in deltas]+[p.flush()]
+    assert steps(['Thanks. ','What was ','the baseline?'])==[['Thanks.'],[],[],['What was the baseline?']]
+    assert steps(['Great. ','That is clear. ','So it worked. ','Who measured the change before and after?',' Ok.'])==[
+        ['Great.'],[],[],[],['That is clear. So it worked. Who measured the change before and after?'],['Ok.']]
+    # Model tokens carry the space before the next word: an ellipsis before a lowercase word is not an end.
+    assert steps(['Well...',' it depends.',' Right.'])==[[],[],['Well... it depends.'],['Right.']]
+    # The first clause goes early only when it is long enough to sound like a phrase (40 characters).
+    assert steps(['Before we get into the numbers and the detail, ','tell me who ','owned it.'])==[['Before we get into the numbers and the detail,'],[],[],['tell me who owned it.']]
+    assert steps(['Right, so the budget, ','who owned it?',' And'])==[[],[],['Right, so the budget, who owned it?'],['And']]
+
+def test_speakable_strips_markup_for_the_voice_only():
+    from atlas_voice.speech import speakable
+    assert speakable('**Budget**: we cut __costs__ by `40%`.')=='Budget: we cut costs by 40%.'
+    assert speakable('- the budget\n- the scope')=='the budget the scope'
+    assert speakable('1. We migrated.\n2) We trained.')=='We migrated. We trained.'
+    assert speakable('## Summary\nWe moved.')=='Summary We moved.'
+    assert speakable('C# and F# stay, -5 degrees, 3.5 times.')=='C# and F# stay, -5 degrees, 3.5 times.'
+    assert speakable('*really* good')=='really good' and speakable('**')=='' and speakable(' - ')==''
 
 def test_events_yield_voice_then_transcribed_turn():
     http=Http();sp=WorkersSpeech(CFG,http)

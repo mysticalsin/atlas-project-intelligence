@@ -71,7 +71,7 @@ async function startRecording(consent){const rec={stream:null,ctx:null,node:null
  const url=URL.createObjectURL(new Blob([src],{type:'text/javascript'}));try{await rec.ctx.audioWorklet.addModule(url);}finally{URL.revokeObjectURL(url);}
  if(S.rec!==rec)return;
  const node=rec.node=new AudioWorkletNode(rec.ctx,'atlas-duplex',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1]}),source=rec.ctx.createMediaStreamSource(rec.stream);
- if(rec.ctx.sampleRate>24000){const f=rec.ctx.createBiquadFilter();f.type='lowpass';f.frequency.value=11000;f.Q.value=.707;source.connect(f);f.connect(node);}else source.connect(node);
+ source.connect(node); // straight in, like voice-client.js: the worklet's band-limited resampler is the anti-alias filter
  const silent=rec.ctx.createGain();silent.gain.value=0;node.connect(silent);silent.connect(rec.ctx.destination);
  node.port.onmessage=e=>{if(S.rec!==rec||e.data?.type!=='pcm')return;const b=new Uint8Array(e.data.buffer);if(rec.bytes+b.length>MAX_BYTES){stopRecording(false);return;}rec.chunks.push(b);rec.bytes+=b.length;};
  node.port.postMessage({type:'state',enabled:true,muted:false});rec.timer=setTimeout(()=>{if(S.rec===rec)stopRecording(false);},30000);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { workersAI } from '../src/app.js';
 import { Session } from '../src/session.js';
 import { SAMPLE_RATE } from '../src/speech.js';
-import { unfinished } from '../src/languages.js';
+import { unfinished, languageNote } from '../src/languages.js';
 import { clearPcmCache } from '../src/session.js';
 test.afterEach(() => clearPcmCache());
 
@@ -19,6 +19,15 @@ test('ElevenLabs voice: verified endpoint, key header, raw 24 kHz PCM, Flash v2.
   } finally { globalThis.fetch = real; }
 });
 
+test('turn model helper: 16 kHz WAV of the last 8 s; an answer without a boolean verdict is no verdict (not "unfinished")', async () => {
+  let input = null, reply = { is_complete: true, probability: 0.93 };
+  const ai = workersAI({ AI: { async run(model, body) { input = [model, body]; return reply; } } });
+  assert.deepEqual(await ai.turnComplete(new Uint8Array(10 * 48000)), { complete: true, probability: 0.93 });
+  const wav = new Uint8Array(await new Response(input[1].audio.body).arrayBuffer()), v = new DataView(wav.buffer);
+  assert.deepEqual([input[0], input[1].audio.contentType, v.getUint32(24, true), v.getUint32(40, true)], ['@cf/pipecat-ai/smart-turn-v2', 'audio/wav', 16000, 8 * 32000]);
+  for (reply of [{}, { result: { is_complete: true } }, null, { is_complete: 'yes', probability: 1 }]) assert.equal(await ai.turnComplete(new Uint8Array(4800)), null, JSON.stringify(reply));
+});
+
 function frames(segments) {
   const out = [];
   for (const [sec, amp] of segments) { const n = Math.floor(SAMPLE_RATE * sec), pcm = new Uint8Array(n * 2), dv = new DataView(pcm.buffer);
@@ -27,15 +36,15 @@ function frames(segments) {
   return out;
 }
 async function interview({ browser = 'fr-FR', heard = [], speaks = l => ['en', 'es', 'fr', 'pt'].includes(l) } = {}) {
-  const talker = [], tts = [], events = []; let n = 0, t = 1000;
-  const s = new Session({ io: { send: e => events.push(e), sendBytes: () => {}, close: () => {} }, csrf: 'tok', voice: 'atlas', now: () => t, sleep: () => new Promise(r => setImmediate(r)),
+  const talker = [], tts = [], events = [], metrics = []; let n = 0, t = 1000;
+  const s = new Session({ io: { send: e => events.push(e), sendBytes: () => {}, close: () => {} }, csrf: 'tok', voice: 'atlas', now: () => t, sleep: () => new Promise(r => setImmediate(r)), metric: (k, v) => metrics.push([k, v]),
     ai: { speaks, async *chatStream(m) { talker.push(m); yield `Reply ${talker.length}, parlons du projet. `; }, async synthesize(text, voice, lang) { tts.push(lang); return new Uint8Array(960); },
       async transcribe() { return heard[n++] || { text: '', language: null }; }, async analyst() { return []; } } });
   await s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: { id: 'p', title: 'Claims', stage: 'Pilot', answers: [] }, voice: 'atlas', capture: true, memory: false, language: browser }));
   const settle = async () => { for (let i = 0; i < 300; i++) await new Promise(r => setImmediate(r)); };
   await settle();
   const speak = async () => { for (const f of frames([[0.6, .001], [1.2, .2], [1.3, .001]])) { t += 0.02; s.onBinary(f); } await settle(); };
-  return { s, talker, tts, events, speak, done: () => s.end(false) };
+  return { s, talker, tts, events, metrics, speak, done: () => s.end(false) };
 }
 const note = msgs => msgs.find(m => m.role === 'system' && m.content.startsWith('LANGUAGE'))?.content || '';
 
@@ -46,20 +55,46 @@ test('the browser language opens the conversation (French greeting in a French v
   const unknown = await interview({ browser: 'zz-ZZ' }); assert.match(note(unknown.talker[0]), /speaking English/); await unknown.done();
 });
 
-test('ATLAS follows a switch mid-interview; short or echoed utterances never switch; no voice means an honest English reply', async () => {
+test('ATLAS follows a switch mid-interview once two utterances agree; short or echoed utterances never switch; no voice means an honest English reply', async () => {
   const h = await interview({ browser: 'en-GB', speaks: l => ['en', 'es'].includes(l), heard: [
     { text: 'Sim', language: 'pt' },                                                   // too short: no switch
-    { text: 'Nós reduzimos o tempo de triagem de quarenta para doze minutos', language: 'pt' }, // clear Portuguese
-    { text: 'Reducimos el tiempo de clasificación a doce minutos', language: 'es' }] });  // then Spanish
+    { text: 'Nós reduzimos o tempo de triagem de quarenta para doze minutos', language: 'pt' }, // clear Portuguese: a candidate
+    { text: 'E a equipe de suporte ficou muito mais tranquila', language: 'pt' },       // and again: switch
+    { text: 'Reducimos el tiempo de clasificación a doce minutos', language: 'es' },    // then Spanish, twice
+    { text: 'Y el equipo quedó muy contento con el resultado', language: 'es' }] });
   await h.speak(); assert.ok(!h.events.some(e => e.type === 'language'));
+  await h.speak(); assert.ok(!h.events.some(e => e.type === 'language'), 'one utterance is not enough');
   await h.speak();
   const pt = h.events.find(e => e.type === 'language');
   assert.deepEqual([pt.language, pt.voice], ['pt', false]);
   assert.match(note(h.talker.at(-1)), /speaking Portuguese, but your voice can only speak English right now/); assert.equal(h.tts.at(-1), 'en');
-  await h.speak();
+  await h.speak(); await h.speak();
   assert.equal(h.events.filter(e => e.type === 'language').at(-1).language, 'es');
+  assert.deepEqual(h.metrics.filter(([k]) => k.startsWith('language_')), [['language_candidate', { language: 'pt' }], ['language_switch', { language: 'pt', voice: 0 }],
+    ['language_candidate', { language: 'es' }], ['language_switch', { language: 'es', voice: 1 }]]);
   assert.match(note(h.talker.at(-1)), /speaking Spanish\. Reply only in natural Spanish/); assert.equal(h.tts.at(-1), 'es');
   await h.done();
+});
+
+test('a single misdetected utterance changes nothing: the language, the voice and the note stay until two agree', async () => {
+  const h = await interview({ browser: 'en-GB', heard: [
+    { text: 'We moved the claims platform to the cloud last year', language: 'hi' }, // misheard as Hindi: a candidate only
+    { text: 'The team cut triage time by a third', language: 'en' },                  // English again: the candidate is dropped
+    { text: 'Then we trained the regional support teams', language: 'fr' },           // misheard as French
+    { text: 'Nous avons formé les équipes régionales de support', language: 'fr' }] });  // French again: now a real switch
+  for (let i = 0; i < 3; i++) await h.speak();
+  assert.ok(!h.events.some(e => e.type === 'language'), 'no switch');
+  assert.equal(h.s.language, 'en'); assert.ok(h.tts.every(l => l === 'en'), 'the voice never changed');
+  assert.ok(h.talker.every(m => /speaking English\. Reply only in natural English/.test(note(m))), 'the note never changed');
+  assert.deepEqual(h.metrics.filter(([k]) => k.startsWith('language_')), [['language_candidate', { language: 'hi' }], ['language_candidate', { language: 'fr' }]]);
+  await h.speak();
+  assert.equal(h.s.language, 'fr'); assert.match(note(h.talker.at(-1)), /speaking French\. Reply only in natural French/); assert.equal(h.tts.at(-1), 'fr');
+  await h.done();
+});
+
+test('the language note keeps the talker in the session language until the server confirms a switch', () => {
+  assert.match(languageNote('en', 'en'), /Reply only in natural English \(not a translation\)\. Keep to English even if some of their words look like another language/);
+  assert.doesNotMatch(languageNote('fr', 'fr'), /switch whenever they switch/);
 });
 
 test('unfinished: words that trail off, per language; finished answers and questions are not', () => {

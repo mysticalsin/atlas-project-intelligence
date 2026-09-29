@@ -13,6 +13,7 @@ import json
 import math
 import re
 import struct
+import unicodedata
 import wave
 
 import aiohttp
@@ -99,12 +100,93 @@ def is_echo(text, recent_agent_text):
     return sum(w in agent for w in words) / len(words) >= .7
 
 
+# A sentence end: . ! or ? (then any closing quote, bracket or markdown) before whitespace, or a CJK or Devanagari stop.
+_END = re.compile(r'([.!?]+)["\'\u201d\u2019\u00bb)\]*_`]*(\s+)|[\u3002\uff01\uff1f\u0964]\s*')
+ABBREVIATIONS = frozenset('mr mrs ms dr prof st jr sr vs etc cf approx inc ltd corp dept mme mlle hr sra dott sig dhr mevr ca'.split())
+MIN_PIECE = 40  # characters: shorter sentences join the next piece, and the first clause goes early only from here
+_CLAUSE = re.compile(r'(.{%d,}?[,;:\u2014\u2013])\s+' % MIN_PIECE, re.S)
+
+
+def _letters_before(text):
+    i = len(text)
+    while i and (text[i - 1] == '.' or unicodedata.category(text[i - 1]).startswith('L')):
+        i -= 1
+    return text[i:]
+
+
+def _boundaries(text):
+    """(end, next) of each sentence end in text: text[:end] is finished and the next sentence starts at next."""
+    cuts, start = [], 0
+    for m in _END.finditer(text):
+        nxt = m.end()
+        if m.group(1) is None:
+            end = m.start() + 1
+        else:
+            end, stops = nxt - len(m.group(2)), m.group(1)
+            if '!' not in stops and '?' not in stops:  # full stops only: maybe an initial, an abbreviation or a list number
+                if nxt < len(text) and unicodedata.category(text[nxt]) == 'Ll':
+                    continue  # a lowercase word continues the sentence ("data... and", "etc. were")
+                before = text[start:m.start()]
+                if re.fullmatch(r'\s*[0-9]{1,2}', before):
+                    continue  # "1." opens a list item
+                if stops == '.':
+                    token = _letters_before(before)
+                    if all(len(part) == 1 for part in token.split('.')) or token.lower() in ABBREVIATIONS:
+                        continue  # "A.I.", "e.g.", "U.S.", "J.", "Dr.", "vs."
+        cuts.append((end, nxt))
+        start = nxt
+    return cuts
+
+
 def sentences(buffer):
     """Split finished sentences off a streaming text buffer: (complete_sentences, remainder)."""
-    parts = re.split(r'(?<=[.!?])\s+|(?<=[。！？।])\s*', buffer)  # Latin, CJK and Devanagari sentence ends
-    if len(parts) == 1:
-        return [], buffer
-    return [p for p in parts[:-1] if p.strip()], parts[-1]
+    done, start = [], 0
+    for end, nxt in _boundaries(buffer):
+        if buffer[start:end].strip():
+            done.append(buffer[start:end])
+        start = nxt
+    return done, buffer[start:]
+
+
+class Phrases:
+    """Streaming reply text -> the pieces to synthesise, each an exact slice of the text (trimmed).
+
+    The first piece goes as soon as it is a whole sentence, or a clause of MIN_PIECE characters, so ATLAS starts talking
+    early. After it, a sentence shorter than MIN_PIECE joins the next one while more text is coming: the voice gets whole
+    phrases with natural intonation instead of clipped fragments with a pause after each."""
+
+    def __init__(self):
+        self.text, self.first = '', True
+
+    def feed(self, delta):
+        self.text += delta
+        out, start = [], 0
+        for end, nxt in _boundaries(self.text):
+            piece = self.text[start:end].strip()
+            if self.first or not piece or len(piece) >= MIN_PIECE:
+                if piece:
+                    out.append(piece)
+                    self.first = False
+                start = nxt
+        if self.first:
+            m = _CLAUSE.match(self.text, start)
+            if m:
+                out.append(m.group(1).strip())
+                self.first, start = False, m.end()
+        self.text = self.text[start:]
+        return out
+
+    def flush(self):
+        piece, self.text = self.text.strip(), ''
+        return [piece] if piece else []
+
+
+def speakable(text):
+    """What the voice says for a piece of reply text: markdown and list markers removed, whitespace collapsed (the
+    on-screen text keeps them). Empty when nothing speakable is left."""
+    text = re.sub(r'(?m)^\s*(?:#{1,6}|[-*\u2022]|[0-9]{1,2}[.)])\s+', '', text)
+    text = ' '.join(re.sub(r'\*\*|__|[*`]', '', text).split())
+    return text if any(c.isalnum() for c in text) else ''
 
 
 class KyutaiSpeech:
@@ -228,22 +310,37 @@ class WorkersSpeech:
             yield ('turn', text) if text else ('noise', None)
 
     async def speak(self, deltas, emit):
-        buffer = ''
+        phrases, jobs = Phrases(), []
 
-        async def say(sentence):
-            pcm = await self.synthesize(sentence)
+        def start(piece):
+            text = speakable(piece)
+            if text:
+                job = asyncio.ensure_future(self.synthesize(text))
+                job.add_done_callback(lambda j: j.cancelled() or j.exception())  # a failure is raised where it is awaited
+                jobs.append(job)
+
+        async def play_first():
+            pcm = await jobs[0]
+            jobs.pop(0)
             if len(pcm) % 2:
                 pcm = pcm[:-1]
-            for start in range(0, len(pcm), CHUNK):
-                await emit(pcm[start:start + CHUNK])
-        # Synthesize sentence by sentence as the reply streams, so ATLAS starts talking early.
-        async for delta in deltas:
-            buffer += delta
-            done, buffer = sentences(buffer)
-            for sentence in done:
-                await say(sentence)
-        if buffer.strip():
-            await say(buffer.strip())
+            for offset in range(0, len(pcm), CHUNK):
+                await emit(pcm[offset:offset + CHUNK])
+        # Phrase by phrase as the reply streams, so ATLAS starts talking early. Each piece is synthesised as soon as its
+        # text is complete, while the one before it is still being synthesised (at most two at once); audio stays in order.
+        try:
+            async for delta in deltas:
+                for piece in phrases.feed(delta):
+                    start(piece)
+                    while len(jobs) >= 2:
+                        await play_first()
+            for piece in phrases.flush():
+                start(piece)
+            while jobs:
+                await play_first()
+        finally:
+            for job in jobs:
+                job.cancel()
 
     async def final_turn(self):
         """Speech still waiting to be transcribed, or still being spoken (the interview time is up)."""

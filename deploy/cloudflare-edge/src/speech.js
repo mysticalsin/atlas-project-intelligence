@@ -1,4 +1,4 @@
-// JavaScript port of atlas_voice/speech.py EnergyTurns, sentences and wav_bytes (parity-tested).
+// JavaScript port of atlas_voice/speech.py EnergyTurns, sentences, Phrases, speakable and wav_bytes (parity-tested).
 export const SAMPLE_RATE = 24000;
 
 export function rms(bytes) {
@@ -50,10 +50,30 @@ export class EnergyTurns {
   }
 }
 
-// 24 kHz PCM16 -> 16 kHz PCM16 (linear interpolation), the rate turn-detection models expect.
+// 24 kHz PCM16 -> 16 kHz PCM16, the rate turn-detection models expect. Band-limited: a windowed-sinc low-pass at 7.2 kHz
+// (below the new 8 kHz limit) evaluated at each output position, 1.5 input samples apart (so two kernel phases). Plain
+// interpolation would fold 8-12 kHz into the speech band.
+const FIR_HALF = 24, FIR_CUTOFF = 7200 / SAMPLE_RATE;
+function firPhase(frac) {
+  const taps = [];
+  for (let j = 1 - FIR_HALF; j <= FIR_HALF; j++) {
+    const t = j - frac, x = 2 * FIR_CUTOFF * t, window = 0.54 + 0.46 * Math.cos(Math.PI * t / FIR_HALF);
+    taps.push((x === 0 ? 1 : Math.sin(Math.PI * x) / (Math.PI * x)) * window);
+  }
+  const sum = taps.reduce((a, b) => a + b, 0);
+  return Float64Array.from(taps, v => v / sum); // unity gain at DC
+}
+const FIR = [firPhase(0), firPhase(0.5)];
 export function to16k(pcm) {
-  const n = pcm.length >> 1, src = new DataView(pcm.buffer, pcm.byteOffset, n * 2), m = Math.floor(n * 2 / 3), out = new Uint8Array(m * 2), dst = new DataView(out.buffer);
-  for (let i = 0; i < m; i++) { const x = i * 1.5, a = Math.floor(x), f = x - a, s0 = src.getInt16(a * 2, true), s1 = a + 1 < n ? src.getInt16((a + 1) * 2, true) : s0; dst.setInt16(i * 2, Math.round(s0 + (s1 - s0) * f), true); }
+  const n = pcm.length >> 1, view = new DataView(pcm.buffer, pcm.byteOffset, n * 2), src = new Float64Array(n);
+  for (let i = 0; i < n; i++) src[i] = view.getInt16(i * 2, true);
+  const m = Math.floor(n * 2 / 3), out = new Uint8Array(m * 2), dst = new DataView(out.buffer);
+  for (let i = 0; i < m; i++) {
+    const a = (i * 3) >> 1, taps = FIR[i & 1]; // input position 1.5 i = a + (0 or 0.5)
+    let y = 0;
+    for (let j = 1 - FIR_HALF, k = 0; j <= FIR_HALF; j++, k++) y += taps[k] * src[Math.min(n - 1, Math.max(0, a + j))];
+    dst.setInt16(i * 2, Math.max(-32768, Math.min(32767, Math.round(y))), true);
+  }
   return out;
 }
 
@@ -63,10 +83,67 @@ export function isEcho(text, recentAgentText) {
   return words.filter(w => agent.has(w)).length / words.length >= 0.7;
 }
 
+// A sentence end: . ! or ? (then any closing quote, bracket or markdown) before whitespace, or a CJK or Devanagari stop.
+const END = /([.!?]+)["'\u201d\u2019\u00bb)\]*_`]*(\s+)|[\u3002\uff01\uff1f\u0964]\s*/gu;
+const ABBREVIATIONS = new Set('mr mrs ms dr prof st jr sr vs etc cf approx inc ltd corp dept mme mlle hr sra dott sig dhr mevr ca'.split(' '));
+export const MIN_PIECE = 40; // characters: shorter sentences join the next piece, and the first clause goes early only from here
+const CLAUSE = new RegExp(`^(.{${MIN_PIECE},}?[,;:\u2014\u2013])\\s+`, 'su');
+const chars = s => [...s].length; // code points, as in Python
+
+// [end, next] of each sentence end in text: text.slice(0, end) is finished and the next sentence starts at next.
+function boundaries(text) {
+  const cuts = []; let start = 0;
+  for (const m of text.matchAll(END)) {
+    const next = m.index + m[0].length;
+    let end = m.index + 1;
+    if (m[1] !== undefined) {
+      end = next - m[2].length;
+      if (!/[!?]/.test(m[1])) { // full stops only: maybe an initial, an abbreviation or a list number
+        if (/^\p{Ll}/u.test(text.slice(next))) continue; // a lowercase word continues the sentence ("data... and", "etc. were")
+        const before = text.slice(start, m.index);
+        if (/^\s*[0-9]{1,2}$/.test(before)) continue; // "1." opens a list item
+        if (m[1] === '.') {
+          const token = /[\p{L}.]*$/u.exec(before)[0];
+          if (token.split('.').every(part => chars(part) === 1) || ABBREVIATIONS.has(token.toLowerCase())) continue; // "A.I.", "e.g.", "U.S.", "J.", "Dr.", "vs."
+        }
+      }
+    }
+    cuts.push([end, next]); start = next;
+  }
+  return cuts;
+}
+
 export function sentences(buffer) {
-  const parts = buffer.split(/(?<=[.!?])\s+|(?<=[。！？।])\s*/); // Latin, CJK and Devanagari sentence ends
-  if (parts.length === 1) return [[], buffer];
-  return [parts.slice(0, -1).filter(p => p.trim()), parts[parts.length - 1]];
+  const done = []; let start = 0;
+  for (const [end, next] of boundaries(buffer)) { if (buffer.slice(start, end).trim()) done.push(buffer.slice(start, end)); start = next; }
+  return [done, buffer.slice(start)];
+}
+
+// Streaming reply text -> the pieces to synthesise, each an exact slice of the text (trimmed). The first piece goes as soon
+// as it is a whole sentence, or a clause of MIN_PIECE characters, so ATLAS starts talking early. After it, a sentence
+// shorter than MIN_PIECE joins the next one while more text is coming: the voice gets whole phrases with natural
+// intonation instead of clipped fragments with a pause after each.
+export class Phrases {
+  constructor() { this.text = ''; this.first = true; }
+  feed(delta) {
+    this.text += delta;
+    const out = []; let start = 0;
+    for (const [end, next] of boundaries(this.text)) {
+      const piece = this.text.slice(start, end).trim();
+      if (this.first || !piece || chars(piece) >= MIN_PIECE) { if (piece) { out.push(piece); this.first = false; } start = next; }
+    }
+    if (this.first) { const m = CLAUSE.exec(this.text.slice(start)); if (m) { out.push(m[1].trim()); this.first = false; start += m[0].length; } }
+    this.text = this.text.slice(start);
+    return out;
+  }
+  flush() { const piece = this.text.trim(); this.text = ''; return piece ? [piece] : []; }
+}
+
+// What the voice says for a piece of reply text: markdown and list markers removed, whitespace collapsed (the on-screen
+// text keeps them). Empty when nothing speakable is left.
+export function speakable(text) {
+  const t = text.replace(/^\s*(?:#{1,6}|[-*\u2022]|[0-9]{1,2}[.)])\s+/gmu, '').replace(/\*\*|__|[*`]/g, '').split(/\s+/).filter(Boolean).join(' ');
+  return /[\p{L}\p{N}]/u.test(t) ? t : '';
 }
 
 export function wav(pcm, rate = SAMPLE_RATE) {

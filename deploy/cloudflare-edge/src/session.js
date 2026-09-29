@@ -5,7 +5,7 @@ import { TALKER_POLICY, OPENING, HISTORY, TOPICS, ADMIN_NOTE, SPEAKING_LIMIT_S, 
   GAP_LIMIT_S, GAP_SPEAKING_S, GAP_WRAP_S, GAP_MAX, GAP_OPENING, WIN_HINTS } from './policy.generated.js';
 import { gapSystemBlock, gapNotes, gapStatus, gapGuidance, timePlan } from './gap-policy.js';
 import { Analyst, InterviewLedger } from './ledger.js';
-import { EnergyTurns, isEcho, sentences } from './speech.js';
+import { EnergyTurns, isEcho, Phrases, speakable } from './speech.js';
 import { EndMarker, parseReport, reportMessages } from './report.js';
 import { LANGUAGES, normalize, spokenFor, languageNote, GREETINGS, WELCOME_BACK, FILLERS, unfinished } from './languages.js';
 
@@ -31,6 +31,8 @@ export const ECHO_TAIL = 0.2; // seconds of microphone audio after her playback 
 export const ECHO_WINDOW = 0.5; // fallback without playback reports: after her last audio was sent (lead + tail)
 export const BLIP_JOIN = 1.0; // ...but kept this long: speech starting again joins it (nothing lost); if none, it is transcribed when idle
 export const STT_TIMEOUT_MS = 15000; // a transcription that never returns counts as no words
+export const SYNTH_AHEAD = 2; // pieces of one reply being synthesised (or waiting to be sent) at once
+export const UNDERRUN_S = 0.02; // a gap in her audio longer than one chunk counts as an underrun
 // Synthesised audio for short fixed phrases (greetings, acknowledgements), shared by every session in this isolate.
 const PCM_CACHE = new Map(), PCM_CACHE_BYTES = 12 * 1024 * 1024; let pcmCacheSize = 0;
 function cacheGet(key) { const v = PCM_CACHE.get(key); if (v) { PCM_CACHE.delete(key); PCM_CACHE.set(key, v); } return v; }
@@ -125,7 +127,7 @@ export class Session {
     // or the closing is heard) and gapAnswers (ask -> the consultant turns heard after it, each turn a list of transcript parts).
     this.mode = 'full'; this.wrapS = WRAP_S; this.winNote = ''; this.starting = false;
     this.gapAsks = []; this.gapRequest = null; this.askByItem = new Map(); this.gapAttempts = {}; this.gapAnswers = {}; this.openAsk = null; this.lastAnswer = null; this.askHeard = null;
-    this.memoryNote = ''; this.language = 'en'; this.affinity = 'atlas-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    this.memoryNote = ''; this.language = 'en'; this.languageCandidate = null; this.dry = false; this.affinity = 'atlas-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
     this.pause = ''; this.checkId = 0; this.continuing = false; this.replyTurn = -1; this.replyItem = null; this.shown = { item: null, chars: 0 }; this.discarded = new Set(); this.fillerMs = {}; this.committed = null; this.live = null; this.recorded = new Set(); this.voiced = 0; this.blip = null; this.echoable = false; this.acked = false; this.playbackDone = true; this.doneAt = 0; this.resumedAt = 0; this.lastFiller = -1; this.fillerTurn = -2; this.protectedItem = null; this.protectedMs = 0; this.protectedDeadline = 0;
     this.spokenMs = 0; this.timeUp = false; this.ending = null; this.sttBusy = 0;
     this.started = false; this.finished = false; this.capture = false; this.history = []; this.queue = []; this.waiter = null;
@@ -289,15 +291,18 @@ export class Session {
   async checkTurn() {
     this.pause = 'asking';
     const id = ++this.checkId, d = this.turnDetector, snapshot = d.buffer.slice(), t0 = this.now();
-    let verdict = null, timer;
-    try { verdict = await Promise.race([this.ai.turnComplete(snapshot), new Promise(r => { timer = setTimeout(() => r(null), 350); })]); } catch { verdict = null; } finally { clearTimeout(timer); }
+    let verdict = null, timer, why = null;
+    try { verdict = await Promise.race([this.ai.turnComplete(snapshot), new Promise(r => { timer = setTimeout(() => { why = { reason: 'timeout' }; r(null); }, 350); })]); }
+    catch (e) { verdict = null; why = { reason: 'error', name: e?.name || 'Error' }; } finally { clearTimeout(timer); }
+    // No verdict: say why (a name, never a message), so a turn model that always times out or fails shows in the logs.
+    why = verdict ? {} : why || { reason: 'error', name: 'NoVerdict' };
     // Still the same pause? (new speech resets it, and an ended turn clears it)
-    if (id !== this.checkId || this.pause !== 'asking' || this.finished || this.ending || !d.active || d.quiet < EARLY_PAUSE) { this.metric('turn_check', { complete: verdict?.complete ? 1 : 0, used: 0 }); return; }
+    if (id !== this.checkId || this.pause !== 'asking' || this.finished || this.ending || !d.active || d.quiet < EARLY_PAUSE) { this.metric('turn_check', { complete: verdict?.complete ? 1 : 0, used: 0, ...why }); return; }
     const p = verdict ? Math.round(verdict.probability * 100) / 100 : -1;
     if (verdict?.complete && verdict.probability >= TURN_PROBABILITY) { this.metric('turn_early', { ms: Math.round((this.now() - t0) * 1000), probability: p }); this.endTurn('sure'); return; }
     // Unsure (or no answer): the plain silence rule decides. Unfinished: give them room to think.
     this.pause = verdict && !verdict.complete ? 'unfinished' : 'unsure';
-    this.metric('turn_check', { complete: verdict ? (verdict.complete ? 1 : 0) : -1, probability: p, used: 1 });
+    this.metric('turn_check', { complete: verdict ? (verdict.complete ? 1 : 0) : -1, probability: p, used: 1, ...why });
   }
 
   async start(init) {
@@ -444,10 +449,16 @@ export class Session {
     // Echo reference: the reply that was playing (it stays live, even when withdrawn, until the utterance that stopped it
     // has been transcribed). Older replies cannot come back through the microphone.
     const recent = this.live?.text || this.history.filter(m => m.role === 'assistant').at(-1)?.content || '';
-    // Follow the consultant's language: switch on a clear utterance (three words or more) in another supported language.
-    if (heardIn && heardIn !== this.language && text.split(/\s+/).length >= 3 && !isEcho(text, recent)) {
-      this.language = heardIn; this.metric('language_switch', { language: heardIn, voice: this.spoken() === heardIn ? 1 : 0 });
-      this.event('language', { language: heardIn, name: LANGUAGES[heardIn], voice: this.spoken() === heardIn });
+    // Follow the consultant's language, on consistent evidence only: two consecutive clear utterances (three words or more,
+    // not her echo) heard in the same other supported language. Nova-3 gives no confidence to trust a single one, and one
+    // misheard utterance must not change her language, her voice or the talker's note. The session language clears it.
+    if (heardIn && text.split(/\s+/).length >= 3 && !isEcho(text, recent)) {
+      if (heardIn === this.language) this.languageCandidate = null;
+      else if (heardIn !== this.languageCandidate) { this.languageCandidate = heardIn; this.metric('language_candidate', { language: heardIn }); }
+      else {
+        this.languageCandidate = null; this.language = heardIn; this.metric('language_switch', { language: heardIn, voice: this.spoken() === heardIn ? 1 : 0 });
+        this.event('language', { language: heardIn, name: LANGUAGES[heardIn], voice: this.spoken() === heardIn });
+      }
     }
     // Speaker echo of ATLAS's own words must never become consultant testimony.
     if (text && echoable && isEcho(text, recent)) { this.metric('echo_ignored', {}); this.event('quality_warning', { message: 'ATLAS heard its own voice through the microphone and ignored it. Headphones prevent this.' }); text = ''; }
@@ -544,11 +555,12 @@ export class Session {
     return list[this.lastFiller];
   }
 
-  async synth(text, lang) {
-    const key = lang + '|' + this.voice + '|' + text, cached = text.length <= 220 ? cacheGet(key) : null;
-    if (cached) return cached;
-    const pcm = await this.ai.synthesize(text, this.voice, lang);
-    if (text.length <= 220) cacheSet(key, pcm);
+  // measure: a piece of a reply (not a prewarm), reported as numbers only: synthesis time, audio length, characters, cache hit.
+  async synth(text, lang, measure = false) {
+    const key = lang + '|' + this.voice + '|' + text, cached = text.length <= 220 ? cacheGet(key) : null, t0 = this.now();
+    const pcm = cached || await this.ai.synthesize(text, this.voice, lang);
+    if (!cached && text.length <= 220) cacheSet(key, pcm);
+    if (measure) this.metric('tts', { ms: cached ? 0 : Math.round((this.now() - t0) * 1000), audio_ms: Math.round(pcm.length / 48), chars: text.length, cached: cached ? 1 : 0 });
     return pcm;
   }
 
@@ -575,7 +587,7 @@ export class Session {
   }
 
   async speak(item, gen, instruction, prefix = '', isFiller = false, notBefore = 0, endedAt = 0, thinking = false) {
-    let said = '', buffer = '', interrupted = true, firstText = 0, firstAudio = 0, flushedClause = false;
+    let said = '', interrupted = true, firstText = 0, firstAudio = 0;
     const lang = this.spoken(); // one voice per reply, even if the consultant switches mid-reply
     const marker = new EndMarker(); // the talker's end-of-interview token is never spoken or shown
     const t0 = this.now();
@@ -588,8 +600,9 @@ export class Session {
       if (!pending || gen !== this.gen || this.finished) return;
       this.push({ gen, item, bytes: new Uint8Array(0), text: pending }); pending = '';
     };
-    const say = async (sentence, filler = false) => {
-      const pcm = await this.synth(sentence, lang);
+    // One piece of speech: its audio (being synthesised, or ready), sent for playback once the floor is hers.
+    const deliver = async (sentence, synthesis, filler = false, lead = false) => {
+      const pcm = await synthesis;
       // Never start talking over the consultant (or while their last words are still being transcribed), and leave
       // the extra beat after words that trail off. Any of these can end in a withdrawal (gen changes).
       while ((this.turnDetector.active || this.sttBusy > 0 || this.now() < notBefore) && gen === this.gen && !this.finished) await this.sleep(20);
@@ -602,15 +615,27 @@ export class Session {
       // The text of exactly this piece (and any separator before it), not the next sentence's first words already streamed.
       const at = pending.indexOf(sentence), cut = at >= 0 ? at + sentence.length : pending.length, piece = pending.slice(0, cut);
       pending = pending.slice(cut);
-      for (let i = 0; i < pcm.length; i += CHUNK) this.push({ gen, item, bytes: pcm.subarray(i, Math.min(pcm.length, i + CHUNK)), text: i ? '' : piece });
+      for (let i = 0; i < pcm.length; i += CHUNK) this.push({ gen, item, bytes: pcm.subarray(i, Math.min(pcm.length, i + CHUNK)), text: i ? '' : piece, lead });
       if (filler) this.fillerMs[item] = (this.fillerMs[item] || 0) + pcm.length / 48; // the acknowledgement's own audio, not counted as her reply
+    };
+    // Pipelined: a piece is synthesised as soon as its text is complete, while the piece before it is still being
+    // synthesised or waiting for the floor (at most SYNTH_AHEAD at once). Deliveries run strictly one after another, so
+    // audio and text keep their order and every wait above applies to each piece exactly as before.
+    let chain = Promise.resolve(); const inflight = [];
+    const say = async piece => {
+      const text = speakable(piece); // markup is never voiced; the screen keeps it
+      if (!text) return; // nothing to say: its text goes out with the next piece (or release())
+      const synthesis = this.synth(text, lang, true); synthesis.catch(() => {}); // a failure surfaces where it is delivered
+      chain = chain.then(() => deliver(piece, synthesis)); chain.catch(() => {});
+      inflight.push(chain);
+      while (inflight.length >= SYNTH_AHEAD) await inflight.shift();
     };
     try {
       if (prefix) { // cached greeting or acknowledgement: audible within milliseconds, while the model prepares the rest
         if (!firstText) firstText = this.now();
         show((this.replies > 1 ? '\n\n' : '') + prefix + ' '); said = prefix + ' ';
         const before = this.sentMs[item] || 0;
-        await say(prefix, isFiller); if (gen !== this.gen || this.finished) return;
+        await deliver(prefix, this.synth(prefix, lang, true), isFiller, true); if (gen !== this.gen || this.finished) return;
         if (!isFiller) { // protect exactly the greeting's audio: until the browser confirms it played (capped)
           this.protectedItem = item; this.protectedMs = (this.sentMs[item] || 0) + this.queue.filter(c => c.item === item).reduce((n, c) => n + c.bytes.length, 0) / 48 - before;
           this.protectedDeadline = this.now() + this.protectedMs / 1000 + 3;
@@ -626,23 +651,21 @@ export class Session {
       if (gap && (instruction === undefined || instruction === GAP_OPENING || instruction === TIME_UP)) this.askByItem.set(item, guidance?.askId ?? null);
       let asked = false;
       const carry = s => { if (gap && instruction === STILL_THINKING && !asked && /[?？]/.test(s)) { asked = true; this.askByItem.set(item, guidance?.askId ?? null); } };
+      // First words fast (the first sentence, or a first clause of 40 characters), then whole phrases (speech.js Phrases).
+      const phrases = new Phrases();
       for await (const raw of this.ai.chatStream(talkerMessages(this.project, guidance, this.history, instruction, notes, gap ? this.gapAsks : null), { affinity: this.affinity })) {
         if (gen !== this.gen || this.finished) return;
         const delta = marker.feed(raw);
         if (!delta) continue;
         if (!firstText) firstText = this.now();
         show(!said && this.replies > 1 ? '\n\n' + delta : delta);
-        said += delta; buffer += delta;
-        let [done, rest] = sentences(buffer);
-        // First words fast: send the first clause to the voice as soon as it is complete, not the whole sentence.
-        if (!flushedClause && !done.length) { const m = /^(.{24,}?[,;:—–])\s+/s.exec(rest); if (m) { done = [m[1]]; rest = rest.slice(m[0].length); } }
-        if (done.length) flushedClause = true;
-        buffer = rest;
-        for (const s of done) { carry(s); await say(s); if (gen !== this.gen) return; }
+        said += delta;
+        for (const piece of phrases.feed(delta)) { carry(piece); await say(piece); if (gen !== this.gen) return; }
       }
       const rest = marker.flush();
-      if (rest && gen === this.gen) { show(rest); said += rest; buffer += rest; }
-      if (buffer.trim() && gen === this.gen) { carry(buffer); await say(buffer.trim()); }
+      if (rest && gen === this.gen) { show(rest); said += rest; }
+      if (gen === this.gen) for (const piece of [...phrases.feed(rest), ...phrases.flush()]) { carry(piece); await say(piece); }
+      await chain; // every piece sent, or dropped by a withdrawal or an interruption
       release(); // anything left that produced no audio of its own
       interrupted = gen !== this.gen;
       // Backstop: a reply that still asks a question is not a closing, whatever token it carries (admin may end at will).
@@ -705,9 +728,16 @@ export class Session {
   async pace() {
     // Real-time paced playback, identical to the Python route: 20 ms chunks, stale generations dropped.
     while (!this.finished) {
-      if (!this.queue.length) { await new Promise(r => { this.waiter = r; }); continue; }
-      const { gen, item, bytes, text } = this.queue.shift();
+      if (!this.queue.length) { this.dry = true; await new Promise(r => { this.waiter = r; }); continue; }
+      const { gen, item, bytes, text, lead } = this.queue.shift();
       if (gen !== this.gen) continue;
+      if (bytes.length) { // underrun: the queue ran dry mid-reply, and more of the same reply came after her audio had run out
+        // Only once the reply's own composed speech has started: the wait after a greeting or acknowledgement is planned.
+        const gap = this.now() - this.nextTime;
+        if (this.dry && item === this.composedItem && gap > UNDERRUN_S) this.metric('underrun', { gap_ms: Math.round(gap * 1000) });
+        this.dry = false;
+        if (!lead) this.composedItem = item;
+      }
       // Bounded lead over acknowledged playback (browser ring buffer holds 350 ms). Without acknowledgements
       // (older clients, background tabs) fall back to wall-clock pacing after ~1 s of waiting.
       for (let wait = 0; wait < 50 && (this.sentMs[item] || 0) - (this.playedMs[item] || 0) > LEAD_MS && gen === this.gen && !this.finished; wait++) await this.sleep(20);

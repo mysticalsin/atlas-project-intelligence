@@ -167,8 +167,9 @@ types: `docs/WOW_SPEC.md` §3.
 ## Languages
 - Understanding: Deepgram Nova-3 on Workers AI with `STT_LANGUAGE=multi` (automatic detection and code-switching):
   English, French, Spanish, Portuguese, German, Italian, Dutch, Russian, Hindi, Japanese.
-- The browser's language opens the conversation; after that ATLAS follows each clear utterance (three words or more,
-  not an echo) and switches with the consultant. The talker gets a LANGUAGE note every turn.
+- The browser's language opens the conversation; after that ATLAS switches with the consultant once two consecutive
+  clear utterances (three words or more, not an echo) are heard in the same other language. One misdetected utterance
+  changes nothing (Nova-3 `multi` gives no confidence to trust a single one). The talker gets a LANGUAGE note every turn.
 - Speaking: English (Aura-2 `harmonia`) and Spanish (Aura-2 `aura-2-es`, `TTS_VOICE_ES`, default `celeste`) on Workers
   AI with no extra key. Every other language uses ElevenLabs Flash v2.5 (`ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`,
   raw `pcm_24000`, 32 languages). Without that key ATLAS still understands the language, answers in English and says so

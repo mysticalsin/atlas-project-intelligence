@@ -2,6 +2,7 @@
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
 ## Next task
+- **2026-09-29, Voice quality ("Atlas doesnt speak well and is not totally undertsandable"):** fixed on top of `ae50fae` (live Worker aa3478f8), integrated and locally verified, not committed, not deployed. Read the session "2026-09-29 / Voice quality" below: what changed, the evidence, and what the logs of the next live session should show. Commit, then Tony deploys with `deploy.sh` when nobody is interviewing.
 - **2026-09-29, WOW features F1-F7:** integrated and locally verified, not deployed. Before any deploy, read the session "2026-09-29 / WOW features F1-F7" below: Tony's pending decisions (Q12 first, because this build turns claim confirmations on) and the Access, vars and secrets each feature needs.
 - **2026-09-29, WOW review fixes (26 confirmed findings on `71efb5b`):** all 26 fixed, integrated and locally verified, not committed, not deployed. Read the session "2026-09-29 / WOW review fixes" below first: it records the per-finding fixes, the exact suite results, and one item Tony must confirm before the commit (D1 is now `true` in `features.js`).
 - **2026-09-29, Track Z (zero-setup start and profile prefill, `docs/WOW_ZERO_CONFIG.md`):** built on top of WOW, independently verified, not committed, not deployed. A new signed-in user needs 3 clicks (Start, the tick, Start conversation) and fills in nothing. Read the session "2026-09-29 / Track Z" below: it changes some WOW items (`SPOKEN_ASK` and `PDF_BRIEFS` variables removed, `TEAMS_ENABLED` removed) and lists the external items (§11) and Tony's D1.
@@ -466,6 +467,62 @@ Not a finding: WOW_ZERO_CONFIG §5.8 is now wired (the N+1 name is filled from a
 **Next task:** Tony confirms D1, then one integration commit (WOW + Z + these fixes, the four HTML aliases, and the new `deploy/cloudflare-edge/test/masking-routes.test.js`). Deploy manually when nobody is interviewing.
 
 - Deployed by Tony 2026-09-29 with `deploy.sh` (edge tests passed first): Worker version aa3478f8-5cc0-4c06-9c5f-59b6361022dc = commit b67808b (WOW F1-F7, zero-setup start + profile prefill, 26 review fixes). Upload 1483.66 KiB (gzip 451.41 KiB), startup 2 ms. Provider verification (live Workers AI prompts, real voice gap interview) happens on first live use; Access still admits only Tony.
+
+### Session: 2026-09-29 / Voice quality
+Tony, after a live session on aa3478f8: "Atlas doesnt speak well and is not totally undertsandable". Worked in the clone `~/AI-Brain-build/atlas-project-intelligence` on HEAD `ae50fae`. Two engineers worked in parallel (browser audio; server speech), then one integration pass. Not committed, not deployed, no wrangler, no network or paid provider in tests.
+
+**Evidence (before the fix)**
+- Browser: the AudioContext runs at the device rate (48 kHz, 44.1 kHz, or 16/24 kHz on a Bluetooth headset in call mode). `src/voice-worklet.js` converted ATLAS's 24 kHz voice to that rate, and the microphone to 24 kHz, by plain linear interpolation with no filter. Measured on HEAD: speech at 10 kHz was 4.0 dB down at 48 kHz and 5.3 dB down at 44.1 kHz (muffled). Mirror images of her voice reached -5 to -23 dB (metallic sizzle), and on a 16 kHz headset 10-11 kHz content folded into the speech band at -4/-5 dB (garbled). A 15 kHz microphone tone reached the 24 kHz stream at full level.
+- Worker logs of Tony's session: `language_switch` en to hi to en to fr within minutes. One utterance of 3+ words heard in another language (nova-3 `multi`) switched her language, and the language note then made her announce it.
+- Every `turn_check` logged `complete:-1 probability:-1` (no verdict from smart-turn), and the code hid whether it was the 350 ms timeout or an error.
+- `reply`: first text 0.55-2.4 s, first audio 1.9-4.1 s, `reply_gap` 3.4-5.5 s. Gaps between spoken pieces were not measured.
+- Splitting: "e.g.", "i.e.", "A.I.", "U.S." and "data..." each ended a spoken piece (falling intonation and a pause mid-sentence). Pieces were synthesised one after another inside the model stream, and markdown such as `**Great**` went to the voice.
+
+**Root causes and fixes**
+1. Resampler (`src/voice-worklet.js`): band-limited polyphase FIR (Kaiser-windowed sinc, beta 8, cutoff 0.45 x the lower rate, 32 lower-rate samples each side). State carries across blocks, buffers are allocated once, and the samples-per-block schedule is identical to before, so the ring buffer, 480-sample frames and playback acknowledgements are unchanged. `flush` also clears the filter memory. `src/voice-client.js` no longer puts the 11 kHz biquad in front of it: Web Audio treats that Q as resonance in dB, giving +1.74 dB near 9 kHz. Integration: `src/ask-ui.js` (Ask ATLAS recording, same worklet) had the same biquad and now connects straight in too, because the WOW spec says it records exactly as `voice-client.js` does.
+2. Phrasing (`deploy/cloudflare-edge/src/speech.js` and `atlas_voice/speech.py`, parity-tested): sentence ends skip initialisms, common abbreviations, a stop before a lowercase word, decimals and list numbers. `Phrases` sends the first sentence at once (or a first clause of 40+ characters; it was 24), then joins sentences under 40 characters to the next one while text is streaming. Every piece is an exact slice of the text on screen. `speakable()` strips markdown and list markers for the voice only.
+3. Pipelined synthesis (`session.js`; Python `WorkersSpeech.speak`): the next piece is synthesised while the previous one is being synthesised or waiting for the floor (`SYNTH_AHEAD` 2). Delivery stays strictly in order through the unchanged turn-taking waits. An interruption drops what is in flight.
+4. Language hysteresis (`session.js`, `languages.js`): the language switches only after two consecutive clear utterances in the same other language; an utterance in the session language clears the candidate. The same-language note no longer says "switch whenever they switch".
+5. Diagnostics (numbers and type names only; a test checks that no transcript or error message is logged): `tts {ms, audio_ms, chars, cached}` per spoken piece, `underrun {gap_ms}`, `language_candidate {language}`, and `turn_check` gains `reason: 'timeout'` or `reason: 'error'` plus `name`. `app.js`: a smart-turn response without a boolean `is_complete` is now "no verdict" (logged `NoVerdict`), not "unfinished" (which held the turn 2.5 s).
+6. `to16k()` (smart-turn input): 48-tap windowed low-pass at 7.2 kHz before the 1.5x decimation. Re-measured in integration: 9/10/11 kHz leaked 0.757/0.730/0.713 of the input before, 0.0004/0.0003/0.0003 now; 5 kHz 0.903 before, 1.000 now; 7 kHz 0.707 (the -3 dB point); 6.1 ms per 8 s call.
+Docs: `deploy/cloudflare-edge/README.md` (pipeline line, new metrics), `docs/INTEGRATIONS.md` (language rule).
+
+**Independent re-measurement (integration, own method: joint least-squares fits and windowed DFT at the exact image/alias frequency, HEAD vs new worklet)**
+- Passband: 24k to 48k at 10 kHz: -4.02 dB before, -0.04 dB after. 24k to 44.1k: -5.28 before, -0.04 after. 16k to 24k at 6.5 kHz: -4.48 before, 0.00 after. The designed transition band starts above that: -1.81 dB at 10.5 kHz, -11.1 dB at 11 kHz.
+- Speech-like multitone (70 harmonics up to 10.5 kHz), signal to everything-else: 24k to 48k 19.8 to 104.6 dB, 24k to 44.1k 22.5 to 99.5, 24k to 16k 26.3 to 122.8, 16k to 24k 20.6 to 105.6, 44.1k to 24k 34.1 to 106.3. Through the real `AtlasDuplexProcessor` at 48/44.1/16 kHz: 19.8/22.6/26.3 to 77.4/77.4/80.7 dB (the new figure is the 16-bit quantisation floor of the test signal).
+- Images and aliases: 24k to 48k 10 kHz image -4.6 to -91.7 dB; 24k to 16k 10/11 kHz aliases -4.0/-5.0 to -96.8/-99.9 dB; microphone 48k to 24k 15/20 kHz aliases -0.0/-0.0 to -96.8/-114.0 dB. End-to-end microphone frames at 48 and 44.1 kHz: a 15 kHz tone at 16,384 LSB arrived at 15,136 and 15,628 LSB before, 0 LSB after.
+- Delay (phase of a 200 Hz tone): 1.31-1.35 ms at 44.1/48 kHz, 1.98-2.02 ms at 16 kHz (about 0.02 ms before). These match the browser engineer's numbers to within 0.1 dB and 0.01 ms.
+
+**Splitter probe (voice pieces, HEAD vs now; JS and Python identical, token-by-token streaming)**
+- "Triage went from 3.5 days to 1.2 days. That is a big drop.": unchanged, 2 pieces; decimals were never split.
+- "You mentioned e.g. the claims team. Who owned it?": 3 pieces ("You mentioned e.g." / "the claims team." / ...) now 2.
+- "We used A.I. models on the U.S. data... then moved on. What next?": 5 pieces ("We used A.I." / "models on the U.S." / "data..." / "then moved on." / ...) now 2.
+- "**Great**, so the first step was: mapping the flows. What was second?": HEAD streamed "**Great**, so the first step was:" as a separate clause with the asterisks voiced; now "Great, so the first step was: mapping the flows." / "What was second?".
+
+**Tests (final tree)**
+- `python3 build.py`: 878,496 bytes; the 4 aliases and `deploy/cloudflare-edge/src/atlas.html` are identical (sha256 `0b7a13a4…0ab8`). `build_edge.py` (full) ran; `policy.generated.js` is unchanged (no Python policy changed).
+- `node --test tests/*.test.js`: 381 tests, 380 pass, 0 fail, 1 skipped (Natural Earth, needs `ATLAS_NE_SRC`). Edge `node --test test/*.test.js`: 445/445 (431 at HEAD).
+- `pytest tests/test_*.py` (sandbox off): 261 passed. Parity/policy freshness: 7 passed; `speech.vectors.json` regenerates byte-identical.
+- `make test-ui` suites, each exit 0 with 0 FAIL: studio 79, sculpture 40, intelligence 26, depth 20, autosave 33, orb_touch 8, library 14, reuse 19, memory 9, sheet 17, report 19, bids 70, ask 31 (incl. "about 1.5 s of audio at 24 kHz" through the worklet, no biquad), trust 51, storyboard 52, confirm 27, wow_edge 32, zero_config 87, zero_config_edge 54.
+- Test-first: each engineer showed each new test failing on HEAD. The ask-ui guard (added to `tests/resampler.test.js`) failed before the one-line fix.
+- Mutation check (scratch copy; each fix reverted alone): every revert makes its guard fail. Resampler to HEAD: 7 of 11 resampler tests fail. No flush reset: 1. Biquad back in `voice-client.js` or `ask-ui.js`: 1 each. JS/Python sentence exceptions removed: 4 / 2. No phrase joining: 3 / 2. First clause back to 24: JS 2; Python only through the parity freshness test. `speakable` off: 3 / 2. `to16k` back to linear: 1. One-utterance language switch: 2. Old language note: 1. No `turn_check` reason: 1. Old `is_complete` handling: 1. No `tts` metric: 1. No `underrun` metric: 1. Sequential synthesis: JS 2 / Python 2.
+- One reviewed test changed (server engineer): "a held reply cut short by a new turn" now checks `roles.slice(1, 4)`, because pipelining can compose her next answer earlier. The final history on HEAD and on the new code is identical for that scenario.
+
+**What the next live session's logs should show (Workers Logs, `atlas_metric`)**
+- `turn_check` with `complete:-1` now carries `reason`. All `timeout` means smart-turn takes over 350 ms: raise the race, or measure its latency. `error` with `name: NoVerdict` means the model's response has no boolean `is_complete`, so the input or output schema is wrong. Any other `name` is a thrown error of that type. This is still the open root cause of the null verdicts.
+- `language_switch` should be absent in an English-only session. One `language_candidate` for a misheard utterance is expected and harmless.
+- `tts`: `ms` per piece is the synthesis latency (1.3-1.8 s was the first-piece figure before). Pieces after the first should overlap her playback.
+- `underrun`: counted only after the reply's own composed speech has started. The planned wait after a greeting or acknowledgement is not logged (fixed after integration; test 'the planned wait after a greeting before the model speaks is not an underrun' failed with gap_ms 1400 before the fix).
+- `reply` first audio should be about the same (first sentence at once), or slightly later when a 24-39 character first clause used to go early.
+- By ear: laptop speakers (48 kHz) and a Bluetooth headset (16 kHz call mode) should sound clear, with no sizzle or garble, no pause after "e.g." or "A.I.", and no language flip on one misheard sentence.
+
+**Still open**
+- Root cause of the null smart-turn verdicts (the `reason` field above will tell).
+- The Python `KyutaiSpeech` streaming path (word by word to Kyutai TTS) does not strip markdown; only `WorkersSpeech` uses `Phrases`/`speakable`.
+- "Well... " with the lowercase next word arriving in a later chunk still splits there (the end of the streamed text counts as a sentence end, so first audio is never later than before).
+- `preview/v11/*.png` were rewritten by `intelligence_browser.py`: exclude them from the commit. `MANIFEST.json` is still stale (pre-existing).
+
+**Next task:** one commit (these files plus the four HTML aliases and the new `tests/resampler.test.js`), then Tony deploys with `deploy.sh` when nobody is interviewing, holds a session on laptop speakers and on a Bluetooth headset, and reads `turn_check.reason`, `tts`, `underrun` and `language_*` in Workers Logs.
 
 ## Per-session update template
 Copy this section for each session. Do not put secrets, private keys, customer source text or raw audio in this file.

@@ -337,7 +337,8 @@ export function workersAI(env) {
     async turnComplete(pcm) {
       const tail = pcm.length > 8 * 48000 ? pcm.subarray(pcm.length - 8 * 48000) : pcm;
       const r = await env.AI.run(env.TURN_MODEL || '@cf/pipecat-ai/smart-turn-v2', { audio: { body: new Blob([wav(to16k(tail), 16000)]).stream(), contentType: 'audio/wav' } });
-      return { complete: r?.is_complete === true, probability: Number(r?.probability) || 0 };
+      // No boolean verdict is no verdict (the session logs it as NoVerdict and uses the silence rule), never "unfinished".
+      return typeof r?.is_complete === 'boolean' ? { complete: r.is_complete, probability: Number(r.probability) || 0 } : null;
     },
     speaks(lang) { return NATIVE_VOICES.includes(lang) || (!!env.ELEVENLABS_API_KEY && !!normalize(lang)); },
     async synthesize(text, speaker = 'atlas', lang = 'en') { // 'atlas' = the configured voice; the browser never sees its real name
