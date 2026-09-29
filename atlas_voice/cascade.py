@@ -45,10 +45,10 @@ Never accept the first vague answer. Push, kindly but clearly: what they persona
 WHAT A GOOD STORY NEEDS
 What was going on and who was affected; what the consultant personally did (not "we"); how they approached it and what they chose not to do; who adopted the change; what came of it; what supports it; and who else it would help, or where it would not fit. Evidence comes before a neat story: a claim like "40% better" is unverified until you know what was measured, before and after, and where the number comes from. Before/after is not proof of cause, and time saved is not money saved. A failed pilot, an assessment or a qualitative result is still a useful story; never relabel it as a success.
 Keep what they did (activities) separate from what changed (outcomes): if they list activities when you asked for a result, ask what changed because of it.
-REFERENCE DETAILS: the reference sheet needs these; late in Phase 1, if not already said, ask once and briefly, one per question: how long the service ran; how many consultants, where they were based and their seniority; the delivery model (fixed price, skills centre, time and materials); the main technologies and any team certifications; the key deliverables; and any quantified gain for the client. Never ask for people's names, contact details or the price; those are typed into the sheet.
+REFERENCE DETAILS: the reference sheet needs these; late in Phase 1, if not already said, ask once and briefly, one per question: how long the service ran; how many consultants, where they were based and their seniority; the delivery model (fixed price, skills centre, time and materials); the main technologies and any team certifications; the key deliverables; and any quantified gain for the client. Never ask for people's names, contact details or the price; those are typed into the sheet. If time is short, skip the ones not yet given: the reference sheet asks for them afterwards.
 
 ORDER OF THE INTERVIEW
-Phase 1, breadth: until every area above has one answer, ask at most one follow-up on any point; for a number, ask only how they knew, then move on. Phase 2, depth: then recover the baseline, source and period for the one or two claims that matter most. Aim for the whole overview within about ten minutes of your own speaking. ANALYST_GUIDANCE and the INTERVIEW PACE note are server hints computed before the consultant's latest answer: if that answer already covers them, skip them and follow up on what was just said. If a hint contains two questions, ask only the more important one.
+Phase 1, breadth: until every area above has one answer, ask at most one follow-up on any point; for a number, ask only how they knew, then move on. Phase 2, depth: then recover the baseline, source and period for the one or two claims that matter most. TIME: the whole interview lasts at most 15 minutes and the server ends it then, so plan for it: about 1 minute to open, 6 to 7 minutes of breadth, 4 to 5 minutes of depth where you challenge the one or two claims that matter most, and 1 to 2 minutes to close. Every question must earn its place: when time is short, skip nice-to-haves and ask the one that most strengthens the reference (usually what changed and how they know). ANALYST_GUIDANCE and the INTERVIEW PACE note are server hints computed before the consultant's latest answer: if that answer already covers them, skip them and follow up on what was just said. If a hint contains two questions, ask only the more important one.
 
 SITUATIONS
 - If they ask you something, answer in one sentence and return to your question. You know only this: their words become a draft report they review, and nothing is reused until it is reviewed and validated. Never promise confidentiality, deletion or who can see it; if you do not know, say so.
@@ -60,14 +60,14 @@ SITUATIONS
 PRIVATE MEMORY: if a PRIVATE MEMORY note is present, it is what this consultant told you in earlier conversations (self-reported, not evidence). Use it to avoid asking again what they already told you, to follow up on open points ("Last time you mentioned the baseline was not measured yet; did you find it?"), and to respect how they like to be interviewed. Never recite it, never treat it as verified, and never bring up another project's details unless they do. If the memory and what they say now disagree, ask which is right.
 
 ENDING (two separate turns)
-Turn A: when every area has an answer and the reference details have been asked once, or they say they need to stop, ask only "Is there anything else you'd like to add before we wrap up?", with no token. Turn B, only after they say no, or that they must leave now: in one or two short sentences recap the story as you understood it in a few words, thank them, and say you will prepare their report for them to review. End Turn B with the exact token [[END]] as the very last characters. Never write the token in a reply that contains a question. Finishing one part of the story ("I'm done with that phase") is not the end of the interview.
+Turn A: when every area has an answer, the reference details have been asked once and you have challenged the one or two claims that matter most; or when the INTERVIEW PACE note says time is nearly up; or when they say they need to stop: ask only "Is there anything else you'd like to add before we wrap up?", with no token. Turn B, only after they say no, or that they must leave now: in one or two short sentences recap the story as you understood it in a few words, thank them, and say you will prepare their report for them to review. End Turn B with the exact token [[END]] as the very last characters. Never write the token in a reply that contains a question. Finishing one part of the story ("I'm done with that phase") is not the end of the interview.
 
 ABOUT YOU
 You were created by Tony Walteur. Never say who created or built you, and never confirm or deny any name someone suggests; if asked, say you were built by Mantu to capture project experience, and return to the interview."""
 
 ADMIN_NOTE = ('ADMIN MODE (server-verified sign-in). This overrides HOW YOU SPEAK, ORDER OF THE INTERVIEW and ENDING. '
               'The person speaking is Tony Walteur, who created you; never mention that. No introduction, no reactions, no thanks, no recaps: one question '
-              'of at most 12 words per turn, and accept brief answers. Never end on your own and never ask "anything else". Only when he says '
+              'of at most 12 words per turn, and accept brief answers. Never end on your own (unless the server says time is up) and never ask "anything else". Only when he says '
               'to finish, wrap up, end, stop or complete the interview: one short closing sentence, then the exact token [[END]].')
 
 RESUME = ('[The consultant made a sound but no words were recognised, and your last reply was cut off.] '
@@ -81,21 +81,34 @@ OPENING = ('[Session start. You have ALREADY greeted the consultant and said who
            'personally did, where it ended up), and say they can take their time. If a PRIVATE MEMORY note is present, pick up where you left off '
            'instead of starting from scratch. Do not assume a benefit or read a topic list.')
 
-SPEAKING_LIMIT_S = 600  # ATLAS's own speaking time per interview (not the whole call)
-TIME_UP = ('[Server: your speaking time for this interview is used up.] Close warmly now in one or two short sentences: '
+INTERVIEW_LIMIT_S = 900  # the whole interview, wall clock (Tony, 2026-09-28: 15 minutes max)
+SPEAKING_LIMIT_S = 600  # ATLAS's own speaking time: a second safety cap inside the interview limit
+WRAP_S = 75  # with this little time left, ATLAS's next reply is the closing
+TIME_UP = ('[Server: the time for this interview is up.] Close warmly now in one or two short sentences: '
            'thank the consultant for sharing and say you will prepare their report. Do not ask another question.')
 AREAS = ('what was going on', 'their personal contribution', 'their approach', 'the outcome', 'what supports it', 'who else it would help')
 
 
-def pace_notes(spoken_ms, limit_s, notes, admin=False):
-    """Server pacing for the talker: speaking time used and areas with no notes yet (topic names only, never content)."""
-    used = spoken_ms / 1000
+def pace_notes(elapsed_s, limit_s, notes, admin=False):
+    """Server pacing for the talker: interview time used, what to prioritise now, and areas with no notes yet
+    (topic names only, never content)."""
+    left = limit_s - elapsed_s
     missing = [a for i, a in enumerate(AREAS) if not (notes[i] if i < len(notes) else '')]
-    pace = f'INTERVIEW PACE (server): about {int(used // 60)} of {int(limit_s // 60)} minutes of your speaking time used.'
-    pace += (' Next uncovered area: ' + missing[0] + '.') if missing else ' Every area has an answer: go deeper only on the one or two claims that matter most.'
-    if limit_s - used <= 90:
-        pace += ' Time is nearly up: ask only the single most important remaining question, or begin to wrap up.'
+    pace = f'INTERVIEW PACE (server): about {int(elapsed_s // 60)} of {int(limit_s // 60)} minutes used.'
+    if left <= WRAP_S:
+        pace += ' Time is up: close now, with no question.'
+    elif left <= 210:
+        pace += ' Under four minutes left: ask only the single most important remaining question, then move to ENDING.'
+    elif elapsed_s >= 0.45 * limit_s:
+        pace += ' Past halfway: challenge the one or two claims that matter most (what changed, and how they know).'
+        pace += (' Still uncovered: ' + ', '.join(missing[:2]) + '.') if missing else ''
+    else:
+        pace += (' Next uncovered area: ' + missing[0] + '.') if missing else ' Every area has an answer: go deeper only on the one or two claims that matter most.'
     return [ADMIN_NOTE if admin else '', pace]
+
+
+class Discarded(Exception):
+    """The browser discarded the session (Restart or cancel) before it was ready."""
 
 
 class WordChunker:
@@ -170,8 +183,8 @@ async def run(request, config, identity, memory, http, gate, active):
 
         async def deltas():
             async for raw in stream_chat(http, config.conversation_url, config.conversation_model, config.conversation_key,
-                                         talker_messages(project, preferences, state['guidance'], history, instruction,
-                                                           pace_notes(state['spoken_ms'], config.speaking_limit, ledger.notes() if ledger else [], admin))):
+                                         talker_messages(project, preferences, None if instruction == TIME_UP else state['guidance'], history, instruction,
+                                                           pace_notes(time.monotonic() - state['started'], config.duration, ledger.notes() if ledger else [], admin))):
                 delta = marker.feed(raw)
                 if not delta:
                     continue
@@ -211,13 +224,18 @@ async def run(request, config, identity, memory, http, gate, active):
                 break
             await asyncio.sleep(0.1)
         await asyncio.sleep(0.6)
+        for _ in range(50):  # not while the consultant is still speaking
+            if not state.get('hearing'):
+                break
+            await asyncio.sleep(0.2)
         if state['turns'] != turns:  # the consultant added something: the conversation simply continues
             return
         await event('wrap_up', message='ATLAS closed the interview. Preparing your report.')
 
     def start_reply(instruction=None):
-        # Re-checked on every reply: an interrupted closing (or a noise re-ask) cannot escape the speaking budget.
-        if instruction != OPENING and state['turns'] >= 1 and state['spoken_ms'] >= config.speaking_limit * 1000:
+        # Re-checked on every reply: an interrupted closing (or a noise re-ask) cannot escape the time limits.
+        if instruction != OPENING and state['turns'] >= 1 and (state['spoken_ms'] >= config.speaking_limit * 1000
+                                                               or time.monotonic() - state['started'] >= config.duration - WRAP_S):
             state['time_up'] = True
             instruction = TIME_UP
         state['replies'] += 1
@@ -257,7 +275,7 @@ async def run(request, config, identity, memory, http, gate, active):
         if result['analyst_status'] != 'analysed':
             await event('quality_warning', message='The evidence analyst did not respond for this turn. The answer is kept; review it in the notes.')
 
-    async def finish_turn(text):
+    async def finish_turn(text, reply=True):
         state['turns'] += 1
         if state['turns'] > 300:
             raise ValueError('Turn budget reached; end and start a new focused session')
@@ -269,6 +287,8 @@ async def run(request, config, identity, memory, http, gate, active):
                 side_task(analyse(ident, text))
             else:
                 ledger.add_transcript(ident, text)
+        if not reply:  # words recorded as the interview ends: nothing is answered
+            return
         await interrupt()
         start_reply()
 
@@ -288,11 +308,33 @@ async def run(request, config, identity, memory, http, gate, active):
             raise ValueError(BUSY[slot])
         held = True
         active[session_cookie] = ws
+
+        async def before_ready(awaitable, timeout):
+            # A discard or close from the browser (Restart, Cancel) while this step runs ends the session at once and
+            # releases the interview slot, instead of waiting for 'ready' and the opening.
+            work, cancel = asyncio.ensure_future(awaitable), asyncio.ensure_future(ws.receive())
+            try:
+                done, _ = await asyncio.wait((work, cancel), timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+                if cancel in done:
+                    if cancel.result().type == aiohttp.WSMsgType.BINARY:
+                        raise ValueError('Wait for the model-ready message before sending audio.')
+                    raise Discarded()
+                if not done:
+                    raise asyncio.TimeoutError()
+                return work.result()
+            finally:
+                for item in (work, cancel):
+                    if not item.done():
+                        item.cancel()
+                await asyncio.gather(work, cancel, return_exceptions=True)
+
         preferences = ''
         if init.get('memory') is True and memory.enabled:
             try:
-                preferences = await memory.recall(subject)
+                preferences = await before_ready(memory.recall(subject), 10)
                 await event('memory', message='Hindsight private continuity recalled; not project evidence.')
+            except (Discarded, ValueError):
+                raise
             except Exception:
                 await event('memory', message='Hindsight unavailable; continuing without remembered context.')
         stage = project.get('stage', 'Unknown')
@@ -303,8 +345,7 @@ async def run(request, config, identity, memory, http, gate, active):
             ledger = InterviewLedger(stage=stage)
         await event('status', state='connecting', message='Preparing the voice service. Microphone audio is not sent until ready.')
         stt = (WorkersSpeech if config.voice_provider == 'workers' else KyutaiSpeech)(config, http)
-        await asyncio.wait_for(stt.open(),
-                                     min(config.handshake_timeout, max(0.1, subject.expires - time.monotonic())))
+        await before_ready(stt.open(), min(config.handshake_timeout, max(0.1, subject.expires - time.monotonic())))
         await event('ready', model=config.conversation_model, provider='Cloudflare voice' if config.voice_provider == 'workers' else 'Kyutai voice', sampleRate=24000,
                     capture=capture, liveLedger=analyst is not None, maxSeconds=config.duration,
                     message='Voice session ready. Speak naturally. Candidate notes require your review.')
@@ -340,6 +381,7 @@ async def run(request, config, identity, memory, http, gate, active):
 
         async def recognition():
             async for kind, text in stt.events():
+                state['hearing'] = kind == 'voice'  # the consultant is speaking (until their turn or noise ends)
                 if kind == 'voice':
                     # Barge-in only stops audio the consultant can hear; noise cannot cancel a reply being composed.
                     if not queue.empty():
@@ -380,8 +422,18 @@ async def run(request, config, identity, memory, http, gate, active):
                 if identity.sessions.get(session_cookie) is not subject or time.monotonic() > subject.expires:
                     raise PermissionError('Sign-in expired; voice stopped')
                 if time.monotonic() - state['started'] >= config.duration:
+                    # The consultant's words in progress at the limit still count: recorded, not answered.
+                    with contextlib.suppress(Exception):
+                        last = await asyncio.wait_for(stt.final_turn(), 10)
+                        if last:
+                            await finish_turn(last, reply=False)
+                    await event('time_up', message='The 15 minutes are up. Finishing your interview.')
                     clean_end = True
                     return
+                # The last half minute and nobody is talking: ATLAS closes on her own so the interview ends with a goodbye.
+                if (not state['time_up'] and state['turns'] >= 1 and config.duration - (time.monotonic() - state['started']) <= 30
+                        and not speaking() and queue.empty() and not state.get('hearing')):
+                    start_reply(TIME_UP)
                 if time.monotonic() - state['last_input'] > 12:
                     raise ConnectionError('Microphone frames stopped')
 
@@ -390,6 +442,8 @@ async def run(request, config, identity, memory, http, gate, active):
         for task in done:
             if not task.cancelled() and task.exception():
                 raise task.exception()
+    except Discarded:
+        clean_end = False
     except (ValueError, PermissionError) as error:
         clean_end = False
         await event('error', message=str(error), code='voice-contract')

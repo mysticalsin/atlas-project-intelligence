@@ -79,4 +79,28 @@ with sync_playwright() as pw:
  ok=p.evaluate("(ws)=>window.ATLAS_VOICE_BRIDGE.apply({workspaceId:ws,isNew:true,revision:'new',project:{consultant:'C'}},['Manual note.',null,null,null,null,null],'t',null)",snap['workspaceId'])
  p.wait_for_timeout(400);d=json.loads(p.evaluate(f"localStorage.getItem('{K}')"))
  check('manual fallback creates the project when there was none',ok is True and len(d['profiles'][0]['projects'])==n+1 and d['profiles'][0]['projects'][-1]['answers'][0]=='Manual note.')
+ # ---- Restart: a live conversation is discarded (never ended) and a new one starts; nothing is saved or sent anywhere
+ GOT2=[];CALLS=[]
+ def ws_live(ws):
+  def on_msg(m):
+   if isinstance(m,bytes):return
+   d=json.loads(m);GOT2.append(d.get('type'))
+   if d.get('type')=='start':
+    ws.send(json.dumps({'type':'ready','model':'ATLAS','provider':'ATLAS voice','sampleRate':24000,'capture':True,'liveLedger':True,'maxSeconds':900,'speakingSeconds':600,'message':'ready'}))
+    ws.send(json.dumps({'type':'agent_text','text':'Hi, I am ATLAS. What was going on?'}))
+    if GOT2.count('start')==1:ws.send(json.dumps({'type':'user_text','item_id':'user-1','text':'Discard me please.','provenance':'unverified_speech_recognition'}))
+   if d.get('type')=='discard':ws.close()
+  ws.on_message(on_msg)
+ ctx2=b.new_context(permissions=['microphone'],viewport={'width':1440,'height':1000});q=ctx2.new_page();q.on('pageerror',lambda e:ERR.append(str(e)))
+ q.route('**/*',route);q.route_web_socket('**/api/voice',ws_live)
+ q.on('request',lambda r:CALLS.append(r.url) if ('/api/memory/remember' in r.url or '/api/library' in r.url) else None)
+ q.goto('https://atlas.test/');q.wait_for_timeout(600)
+ q.locator('#voiceStart').click();q.locator('#voiceConsentDialog').wait_for(state='visible',timeout=8000);q.locator('#modelConsent').check();q.locator('#voiceConsentStart').click()
+ q.wait_for_function('()=>AtlasVoice.status().phase==="live"',timeout=8000);q.wait_for_timeout(300)
+ q.locator('#voiceRestart').click();q.locator('#voiceRestartDialog').wait_for(state='visible');q.locator('#voiceRestartConfirm').click()
+ q.wait_for_function('()=>AtlasVoice.status().phase==="live"',timeout=8000);q.wait_for_timeout(500)
+ check('restart: the server sees start, discard, start (never end)',[t for t in GOT2 if t!='playback']==['start','discard','start'])
+ check('restart: nothing saved, nothing sent to the library or memory',q.evaluate('window.ATLAS_VOICE_BRIDGE.context().isNew===true') and not CALLS and not q.locator('#reportDialog').is_visible())
+ check('restart: the discarded conversation left the screen','Discard me please' not in q.locator('body').inner_text())
+ ctx2.close()
  check('no page errors',not ERR);print(ERR,GOT)

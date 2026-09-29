@@ -61,6 +61,9 @@ test('interview facts fill only empty details, are marked unverified, and surviv
  const got=E.fillDetails(p,{project_id:'PRJ-9',country:'France',industry:'Insurance',team_size:4,technologies:['Python'],deliverables:[],start:'',end:'',duration:'',team_roles:[],service_lines:[]});
  assert.deepEqual(got.sort(),['projectId','sector','teamSize','technologies'].sort());assert.equal(p.details.country,'Belgium');assert.equal(p.details.from.projectId,'interview');assert.equal(p.sector,'Insurance');
  const c=E.cleanProject(JSON.parse(JSON.stringify(p)));assert.deepEqual(c.details,p.details);assert.deepEqual(E.fillDetails(p,null),[]);});
+test('a sector filled from the interview report is marked as such and keeps that mark through a round trip; a typed sector has none',()=>{const p=filled();p.sector='';
+ E.fillDetails(p,{industry:'Insurance'});assert.equal(p.sector,'Insurance');assert.equal(p.sectorFrom,'interview');assert.equal(E.cleanProject(JSON.parse(JSON.stringify(p))).sectorFrom,'interview');
+ const q=filled();q.sector='Banking';E.fillDetails(q,{industry:'Insurance'});assert.equal(q.sector,'Banking');assert.equal(q.sectorFrom,'');assert.equal(E.project({sector:'x',sectorFrom:'model'}).sectorFrom,'');});
 test('reference sheet: bounded, entity rules, file name, issues and Part 1 name rule',()=>{
  const s=E.cleanSheet({oppId:'00123',title:'ERP Rollout',exec:{summary:'One. Two. Three.',teamSize:'Sam Lead and 4 consultants in Paris',duration:'6 months',price:'',contacts:'PM: Sam Lead'},sections:{tools:'SAP S/4HANA, 5 consultants'},file:{country:'France',entity:'NOPE'},visuals:[{dataUrl:'javascript:x'}],from:{scope:'document',bogus:'ai'}});
  assert.equal(s.file.entity,'');assert.equal(s.visuals.length,0);assert.deepEqual(s.from,{scope:'document'});

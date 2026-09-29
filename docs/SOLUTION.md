@@ -25,7 +25,7 @@ missing or flagged, and every model output is checked.
 6. **Depth.** The one or two claims that matter most: baseline, source and period. Activities are kept apart from
    outcomes ("what changed because of it?"). Vague or team-level answers are challenged; after two unproductive tries
    ATLAS offers to move on.
-7. **Pacing.** The server tracks her own speaking time (10 minutes) and tells her which area is still uncovered.
+7. **Pacing.** The whole interview lasts at most 15 minutes. The server tells her how much time is used and what to prioritise (breadth, then challenging the one or two claims that matter, then only the most important question); with 75 seconds left her next reply is the closing, and at 15 minutes the interview ends cleanly with its report. Her own speaking time is a second cap (10 minutes).
 8. **Ending.** Two turns: "anything else before we wrap up?", then a one-sentence recap and thanks. The microphone
    closes by itself.
 9. **Report and save.** A report is drafted from the conversation only (client names generalised), saved

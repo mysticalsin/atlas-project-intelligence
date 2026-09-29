@@ -81,6 +81,14 @@ class EnergyTurns:
                 self.buffer = bytearray()
         return started, done
 
+    def flush(self):
+        """End the current utterance now (for example when the interview time is up). None when idle."""
+        if not self.active or not self.buffer:
+            return None
+        done, self.active, self.loud, self.pre, self.quiet = bytes(self.buffer), False, 0.0, bytearray(), 0.0
+        self.buffer = bytearray()
+        return done
+
 
 def is_echo(text, recent_agent_text):
     """True when a 'consultant' transcript is mostly ATLAS's own recent words picked up by the microphone."""
@@ -154,6 +162,11 @@ class KyutaiSpeech:
             await asyncio.gather(feed(), pull())
         finally:
             await tts.close()
+
+    async def final_turn(self):
+        """Words heard but not yet ended as a turn (the interview time is up)."""
+        text, self.detector.words = ' '.join(self.detector.words), []
+        return text
 
     async def close(self):
         if self.stt is not None:
@@ -231,6 +244,19 @@ class WorkersSpeech:
                 await say(sentence)
         if buffer.strip():
             await say(buffer.strip())
+
+    async def final_turn(self):
+        """Speech still waiting to be transcribed, or still being spoken (the interview time is up)."""
+        pending = []
+        while not self.queue.empty():
+            kind, value = self.queue.get_nowait()
+            if kind == 'audio':
+                pending.append(value)
+        last = self.turns.flush()
+        if last:
+            pending.append(last)
+        texts = [await self.transcribe(pcm) for pcm in pending]
+        return ' '.join(t for t in texts if t)
 
     async def close(self):
         return None

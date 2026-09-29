@@ -17,7 +17,7 @@ const now=()=>new Date().toISOString();
 const text=(v,n=6000)=>typeof v==='string'?v.slice(0,n):'';
 function blankProfile(name='My workspace'){return {id:id(),name:name.trim()||'My workspace',preferences:[],projects:[],lastProject:null};}
 function blankState(){const p=blankProfile();return {schema:4,revision:0,activeProfile:p.id,profiles:[p]};}
-function project(values={}){return {id:id(),title:text(values.title,140).trim(),consultant:text(values.consultant,100).trim(),role:text(values.role,100).trim(),sector:text(values.sector,100).trim(),stage:STAGES.includes(values.stage)?values.stage:'Pilot',client:cleanClient(values.client),jev:null,report:null,interview:null,details:cleanDetails(values.details),sheet:cleanSheet(values.sheet),validation:cleanValidation(values.validation),createdAt:now(),updatedAt:now(),recordRevision:1,pos:0,answers:Array(6).fill(''),deferred:Array(6).fill(false),sources:[],metric:null,story:null,audit:[],sample:Boolean(values.sample)};}
+function project(values={}){return {id:id(),title:text(values.title,140).trim(),consultant:text(values.consultant,100).trim(),role:text(values.role,100).trim(),sector:text(values.sector,100).trim(),sectorFrom:values.sectorFrom==='interview'?'interview':'',stage:STAGES.includes(values.stage)?values.stage:'Pilot',client:cleanClient(values.client),jev:null,report:null,interview:null,details:cleanDetails(values.details),sheet:cleanSheet(values.sheet),validation:cleanValidation(values.validation),createdAt:now(),updatedAt:now(),recordRevision:1,pos:0,answers:Array(6).fill(''),deferred:Array(6).fill(false),sources:[],metric:null,story:null,audit:[],sample:Boolean(values.sample)};}
 // Confidential client (who and where). Kept with the project for Mantu reference only: never placed in
 // voice/LLM prompts, JEV requests or story drafts. Plain local storage is not encryption.
 function cleanClient(c){c=c&&typeof c==='object'?c:{};return {name:text(c.name,120).trim(),location:text(c.location,120).trim(),contact:text(c.contact,120).trim()};}
@@ -61,7 +61,7 @@ function cleanDetails(v){v=v&&typeof v==='object'?v:{};const d=Object.fromEntrie
 function fillDetails(p,facts){if(!facts)return [];const d=p.details,filled=[],map={projectId:'project_id',country:'country',start:'start',end:'end',duration:'duration',teamSize:'team_size',teamRoles:'team_roles',technologies:'technologies',deliverables:'deliverables',serviceLines:'service_lines'};
  for(const [k,f] of Object.entries(map)){const val=facts[f],empty=d[k]===null||d[k]===''||(Array.isArray(d[k])&&!d[k].length);const has=val!==null&&val!==undefined&&val!==''&&!(Array.isArray(val)&&!val.length);
   if(empty&&has){const next=cleanDetails({...d,[k]:val})[k];if(next!==null&&next!==''&&!(Array.isArray(next)&&!next.length)){d[k]=next;d.from[k]='interview';filled.push(k);}}}
- if(!p.sector&&facts.industry){p.sector=oneLine(facts.industry,100);filled.push('sector');}
+ if(!p.sector&&facts.industry){p.sector=oneLine(facts.industry,100);p.sectorFrom='interview';filled.push('sector');}
  if(filled.length)log(p,'Reference details filled from the interview (unverified): '+filled.join(', '));return filled;}
 // ---- Project reference sheet (Amaris/Mantu template): Opp ID first, Executive Summary, 8-section fact sheet, visuals ----
 const SHEET_EXEC=['summary','teamSize','duration','price','contacts'],SHEET_SECTIONS=['industry','issue','scope','methodology','deliverables','tools','team','value'];

@@ -35,10 +35,12 @@ def test_report_messages_interleave_questions_and_keep_head_and_tail():
 
 def test_pace_notes_budget_admin_and_topics_only():
     from atlas_voice.cascade import ADMIN_NOTE, pace_notes, talker_messages
-    admin, pace = pace_notes(125000, 600, ['We cut triage time', '', '', '', '', ''], True)
-    assert admin == ADMIN_NOTE and 'about 2 of 10 minutes' in pace and 'We cut' not in pace
-    assert 'what was going on' not in pace and 'their personal contribution' in pace and 'nearly up' not in pace
-    assert 'nearly up' in pace_notes(520000, 600, [], False)[1] and pace_notes(0, 600, [], False)[0] == ''
+    # paced on the whole interview (15 minutes): breadth, then depth past halfway, then only the most important question
+    admin, pace = pace_notes(125, 900, ['We cut triage time', '', '', '', '', ''], True)
+    assert admin == ADMIN_NOTE and 'about 2 of 15 minutes used' in pace and 'We cut' not in pace
+    assert 'what was going on' not in pace and 'Next uncovered area: their personal contribution' in pace and 'Under four minutes' not in pace
+    assert 'Past halfway' in pace_notes(420, 900, [], False)[1]
+    assert 'Under four minutes left' in pace_notes(700, 900, [], False)[1] and pace_notes(0, 900, [], False)[0] == ''
     msgs = talker_messages({'title': 't'}, '', None, [{'role': 'user', 'content': 'hi'}], None, ['', 'PACE'])
     # per-turn notes follow the append-only history so the cached prefix (policy + history) stays stable
     assert [m['content'] for m in msgs[1:]] == ['hi', 'PACE']

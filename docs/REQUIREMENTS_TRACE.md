@@ -110,7 +110,7 @@ not control. Test files: edge `deploy/cloudflare-edge/test/*.test.js`, app `test
 | End of project / milestone / periodic review triggers | `/api/triggers` reasons | Built; PM connection External |
 | Not updated for six months | daily cron `scanStale` | Built, Live |
 | Part of the normal workflow | *Your interviews*, start from invitation, deep links | Built |
-| Scheduled slot, guided voice, short, dynamic | slots + `.ics`, voice interview, 10-minute speaking budget | Built |
+| Scheduled slot, guided voice, short, dynamic | slots + `.ics`, voice interview, 15-minute interview limit (her own speaking capped at 10) | Built |
 | No generic email | nothing sent automatically; calendar file and in-app list | Built |
 
 ## Experience requirement

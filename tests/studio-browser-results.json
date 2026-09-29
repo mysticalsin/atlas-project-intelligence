@@ -206,6 +206,54 @@
       "passed": true
     },
     {
+      "name": "Restart is offered during a conversation",
+      "passed": true
+    },
+    {
+      "name": "Restart asks first and says nothing will be saved",
+      "passed": true
+    },
+    {
+      "name": "Keep talking leaves the conversation running",
+      "passed": true
+    },
+    {
+      "name": "Confirm discards (never ends) and starts exactly one new conversation",
+      "passed": true
+    },
+    {
+      "name": "After a restart, keyboard focus is on a control, not lost",
+      "passed": true
+    },
+    {
+      "name": "Restart reuses the consent given on this page, without asking again",
+      "passed": true
+    },
+    {
+      "name": "The old microphone is released on restart",
+      "passed": true
+    },
+    {
+      "name": "Nothing from the discarded conversation was saved",
+      "passed": true
+    },
+    {
+      "name": "Mute, Restart and End fit a 320 px phone",
+      "passed": true
+    },
+    {
+      "name": "If ATLAS wraps up meanwhile, the restart question closes and nothing more is discarded",
+      "passed": true
+    },
+    {
+      "name": "After an error, Restart is offered next to Start",
+      "passed": true
+    },
+    {
+      "name": "Restart after an error starts at once (no question, no consent dialog)",
+      "passed": true
+    },
+    {
       "name": "No horizontal overflow at 320px",
       "passed": true
     },

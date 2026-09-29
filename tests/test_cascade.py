@@ -167,3 +167,38 @@ def test_load_script_verdicts():
     assert m.verdict(0,[1.0],0,[(0.3,0.7)])=='TTS slower than real time'
     assert m.verdict(1,[],0,[])=='over capacity (sessions refused or failed)'
     assert m.summarize([1,2,3,4])['median']==2.5 and m.summarize([])is None
+
+
+@pytest.mark.asyncio
+async def test_cascade_discard_while_connecting_frees_the_interview_slot_at_once(tmp_path):
+    # Restart (or Cancel) while the speech service is still connecting: the session must end at once and release the
+    # interview slot, not wait for 'ready' and the opening (the browser gives the old session 3 s before starting again).
+    async def slow_stt(request):
+        ws=web.WebSocketResponse();await ws.prepare(request);await asyncio.sleep(6);return ws
+    mock=web.Application();mock.router.add_get('/api/asr-streaming',slow_stt)
+    runner,port=await serve(mock);base=f'127.0.0.1:{port}'
+    with socket.socket() as sock:sock.bind(('127.0.0.1',0));gp=sock.getsockname()[1]
+    origin=f'http://127.0.0.1:{gp}'
+    cfg=replace(Config(),origin=origin,port=gp,voice_provider='kyutai',kyutai_stt_url='ws://'+base,kyutai_tts_url='ws://'+base,kyutai_key='FIXTURE',
+                kyutai_voice='fixture-voice',conversation_url=f'http://{base}/chat',conversation_model='fixture-talker',max_interviews=1)
+    app=create_app(cfg);r=web.AppRunner(app,access_log=None);await r.setup();await web.TCPSite(r,'127.0.0.1',gp).start()
+    try:
+        async with aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar(unsafe=True)) as c:
+            await c.get(origin);b=await(await c.get(origin+'/api/bootstrap')).json()
+            ws=await c.ws_connect(origin+'/api/voice',headers={'Origin':origin})
+            await ws.send_json({'type':'start','consent':True,'csrf':b['csrf'],'project':PROJECT,'voice':'fixture-voice','capture':True,'memory':False})
+            await asyncio.sleep(0.3);assert app['voice_gate'].locked()
+            await ws.send_json({'type':'discard'});t0=asyncio.get_event_loop().time()
+            seen=[]
+            while True:
+                m=await asyncio.wait_for(ws.receive(),3)
+                if m.type==aiohttp.WSMsgType.TEXT:seen.append(json.loads(m.data)['type'])
+                if m.type in (aiohttp.WSMsgType.CLOSE,aiohttp.WSMsgType.CLOSED,aiohttp.WSMsgType.CLOSING) or 'ended' in seen:break
+            assert asyncio.get_event_loop().time()-t0<2 and 'ready' not in seen and 'notes' not in seen
+            for _ in range(20):
+                if not app['voice_gate'].locked():break
+                await asyncio.sleep(0.05)
+            assert not app['voice_gate'].locked()
+            assert not (await(await c.get(origin+'/api/bootstrap')).json())['busy']
+    finally:
+        await r.cleanup();await runner.cleanup()

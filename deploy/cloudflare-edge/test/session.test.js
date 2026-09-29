@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Session, projectContext, talkerMessages, TIME_UP, RESUME as RESUME_TEXT, STILL_THINKING, THINKING_PAUSE, clearPcmCache } from '../src/session.js';
+import { Session, projectContext, talkerMessages, paceNotes, MAX_SECONDS, TIME_UP, RESUME as RESUME_TEXT, STILL_THINKING, THINKING_PAUSE, clearPcmCache } from '../src/session.js';
 import { GREETINGS, FILLERS } from '../src/languages.js';
 const spoken = calls => calls.tts.filter(t => !FILLERS.en.includes(t));
 import { SAMPLE_RATE, EnergyTurns, rms } from '../src/speech.js';
@@ -233,7 +233,7 @@ test('speaking limit: after her budget is spent the next reply is a forced wrap-
   await until(() => h.events.some(e => e.type === 'wrap_up'));
   const last = h.calls.talker.at(-1);
   assert.equal(last.at(-1).content, TIME_UP); assert.ok(h.s.timeUp);
-  assert.ok(last.some(m => m.role === 'system' && m.content.startsWith('INTERVIEW PACE') && m.content.includes('Time is nearly up')));
+  assert.ok(last.some(m => m.role === 'system' && m.content.startsWith('INTERVIEW PACE') && m.content.includes('of 15 minutes used')));
 });
 test('admin note only in admin sessions; pace note lists areas without notes and never content', async () => {
   const a = harness(undefined, { session: { admin: true } }), n = harness();
@@ -988,4 +988,102 @@ test('speech that starts in the gap between two of her sentences is not taken fo
   await until(() => h.calls.stt === 2); await settle();
   assert.ok(h.s.history.some(m => m.role === 'user' && m.content.includes('I owned the rollout budget.')));
   assert.ok(!h.events.some(e => e.type === 'quality_warning' && /its own voice/.test(e.message)));
+});
+
+// ---- 15-minute interview ----
+test('the interview is planned for 15 minutes: breadth first, then depth, then only the most important question', () => {
+  assert.equal(MAX_SECONDS, 900);
+  const none = ['', '', '', '', '', ''], some = ['a', '', 'c', '', '', ''];
+  assert.match(paceNotes(60, 900, none)[1], /about 1 of 15 minutes used\. Next uncovered area: what was going on\./);
+  assert.match(paceNotes(420, 900, some)[1], /about 7 of 15 minutes used\. Past halfway: challenge .* Still uncovered: their personal contribution, the outcome\./);
+  assert.match(paceNotes(720, 900, some)[1], /Under four minutes left: ask only the single most important remaining question, then move to ENDING\./);
+  assert.ok(TIME_UP.includes('the time for this interview is up'));
+});
+
+test('with 75 seconds of the interview left, her next reply is the closing, then the interview wraps up', async () => {
+  const h = harness(['Here is my project story.'], { session: { maxSeconds: 120 } });
+  await opened(h);
+  for (let i = 0; i < 2300; i++) h.tick(); // 46 s into a 120 s interview: 74 s left
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.events.some(e => e.type === 'wrap_up'));
+  assert.equal(h.calls.talker.at(-1).at(-1).content, TIME_UP);
+});
+
+test('in the last half minute, with nobody talking, ATLAS closes on her own; at the limit the interview ends cleanly with its notes', async () => {
+  const h = harness(['Here is my project story, with the context and what I did.'], { session: { maxSeconds: 120 } });
+  await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: true }));
+  await until(() => !h.s.busy() && h.bytes.length >= 10);
+  h.s.playedMs[h.s.protectedItem] = 1e9;
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 2 && !h.s.busy());
+  for (let i = 0; i < 4500; i++) h.tick(); // 25 s left, silence
+  h.s.lastInput = h.s.now(); h.s.watch();
+  await until(() => h.calls.talker.length === 3 && h.events.some(e => e.type === 'wrap_up'));
+  assert.equal(h.calls.talker[2].at(-1).content, TIME_UP);
+  for (let i = 0; i < 1500; i++) h.tick(); // past the limit
+  h.s.lastInput = h.s.now(); h.s.watch();
+  await until(() => h.events.some(e => e.type === 'ended'));
+  assert.ok(h.events.some(e => e.type === 'notes' && e.status === 'candidate'), 'a clean end: notes (and report) are produced');
+});
+
+// ---- Restart: the browser discards the live conversation, then starts a new session ----
+test('discard (Restart) ends the conversation with no notes and no report, and ignores anything after it', async () => {
+  let reports = 0;
+  const h = harness(['We rebuilt the claims intake for the whole region last year.'], { session: {}, async report() { reports += 1; return '{}'; } });
+  await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: true }));
+  await until(() => !h.s.busy() && h.bytes.length >= 10);
+  h.s.playedMs[h.s.protectedItem] = 1e9;
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.events.some(e => e.type === 'user_text'));
+  await h.s.onText(JSON.stringify({ type: 'discard' }));
+  await until(() => h.events.some(e => e.type === 'ended'));
+  assert.ok(h.events.some(e => e.type === 'audio_stopped') && h.closed() && h.s.finished);
+  assert.ok(!h.events.some(e => e.type === 'notes'), 'nothing to save');
+  assert.equal(reports, 0, 'no report written');
+  const n = h.events.length;
+  say(h, [[1.2, .2], [1.3, .001]]); await settle();
+  assert.equal(h.events.filter((e, i) => i >= n && e.type === 'user_text').length, 0, 'nothing heard after the discard');
+});
+
+test('End then discard: the interview already ended cleanly, exactly one set of notes', async () => {
+  const h = harness(['We rebuilt the claims intake for the whole region last year.']);
+  await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: true }));
+  await until(() => !h.s.busy() && h.bytes.length >= 10);
+  h.s.playedMs[h.s.protectedItem] = 1e9;
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.events.some(e => e.type === 'user_text'));
+  const ending = h.s.onText(JSON.stringify({ type: 'end' }));
+  await h.s.onText(JSON.stringify({ type: 'discard' }));
+  await ending; await until(() => h.events.some(e => e.type === 'ended'));
+  assert.equal(h.events.filter(e => e.type === 'notes').length, 1);
+});
+
+test('at the 15-minute limit the answer still being spoken is transcribed into the notes, and the browser is told time is up', async () => {
+  const h = harness(['We rebuilt the claims intake.', 'And the last thing I wanted to say is that it went live in March.'], { session: { maxSeconds: 120 } });
+  await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: true }));
+  await until(() => !h.s.busy() && h.bytes.length >= 10);
+  h.s.playedMs[h.s.protectedItem] = 1e9;
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 2 && !h.s.busy());
+  for (let i = 0; i < 5000; i++) h.tick(); // far into the interview; they are speaking when the time runs out
+  say(h, [[1.0, .2]]);
+  for (let i = 0; i < 1000; i++) h.tick();
+  h.s.lastInput = h.s.now(); h.s.watch();
+  await until(() => h.events.some(e => e.type === 'ended'));
+  assert.ok(h.events.some(e => e.type === 'time_up'));
+  const notes = h.events.find(e => e.type === 'notes');
+  assert.ok(notes && notes.transcript.includes('went live in March'), 'their last words are kept');
+});
+
+test('the closing reply is not given the analyst guidance and its pace note asks for no question', async () => {
+  const h = harness(['Here is my project story.'], { session: { maxSeconds: 120 } });
+  await opened(h);
+  h.s.guidance = { next_field: 'measurement', probe: 'Ask for the baseline.' };
+  for (let i = 0; i < 2300; i++) h.tick();
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 2);
+  const m = h.calls.talker[1];
+  assert.equal(m.at(-1).content, TIME_UP);
+  assert.ok(!m.some(x => x.content.startsWith('ANALYST_GUIDANCE')));
+  assert.ok(m.some(x => x.content.includes('Time is up: close now, with no question.')));
 });

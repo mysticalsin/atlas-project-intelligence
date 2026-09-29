@@ -1,7 +1,7 @@
 // One live interview, platform-independent (driven by the Durable Object in worker.js, tested in Node).
 // Same browser protocol as atlas_voice/cascade.py, so the compiled ATLAS page, worklet and orb work unchanged:
 // the orb moves only from PCM this session actually sends for playback.
-import { TALKER_POLICY, OPENING, HISTORY, TOPICS, ADMIN_NOTE, SPEAKING_LIMIT_S, TIME_UP, AREAS } from './policy.generated.js';
+import { TALKER_POLICY, OPENING, HISTORY, TOPICS, ADMIN_NOTE, SPEAKING_LIMIT_S, INTERVIEW_LIMIT_S, WRAP_S, TIME_UP, AREAS } from './policy.generated.js';
 import { Analyst, InterviewLedger } from './ledger.js';
 import { EnergyTurns, isEcho, sentences } from './speech.js';
 import { EndMarker, parseReport, reportMessages } from './report.js';
@@ -40,13 +40,17 @@ function cacheSet(key, pcm) {
 export const pcmCacheStats = () => ({ entries: PCM_CACHE.size, bytes: pcmCacheSize });
 export function clearPcmCache() { PCM_CACHE.clear(); pcmCacheSize = 0; }
 export { SPEAKING_LIMIT_S, TIME_UP };
-export const MAX_SECONDS = 2700; // whole-call safety cap; the real limit is ATLAS's own speaking time
+export const MAX_SECONDS = INTERVIEW_LIMIT_S; // the whole interview (15 minutes); ATLAS's own speaking time is a second cap inside it
 // Parity-tested port of atlas_voice.cascade.pace_notes: speaking time used and areas with no notes (names only, never content).
-export function paceNotes(spokenMs, limitS, notes, admin = false) {
-  const used = spokenMs / 1000, missing = AREAS.filter((_, i) => !notes[i]);
-  let pace = `INTERVIEW PACE (server): about ${Math.floor(used / 60)} of ${Math.floor(limitS / 60)} minutes of your speaking time used.`;
-  pace += missing.length ? ' Next uncovered area: ' + missing[0] + '.' : ' Every area has an answer: go deeper only on the one or two claims that matter most.';
-  if (limitS - used <= 90) pace += ' Time is nearly up: ask only the single most important remaining question, or begin to wrap up.';
+export function paceNotes(elapsedS, limitS, notes, admin = false) {
+  const left = limitS - elapsedS, missing = AREAS.filter((_, i) => !notes[i]);
+  let pace = `INTERVIEW PACE (server): about ${Math.floor(elapsedS / 60)} of ${Math.floor(limitS / 60)} minutes used.`;
+  if (left <= WRAP_S) pace += ' Time is up: close now, with no question.';
+  else if (left <= 210) pace += ' Under four minutes left: ask only the single most important remaining question, then move to ENDING.';
+  else if (elapsedS >= 0.45 * limitS) {
+    pace += ' Past halfway: challenge the one or two claims that matter most (what changed, and how they know).';
+    pace += missing.length ? ' Still uncovered: ' + missing.slice(0, 2).join(', ') + '.' : '';
+  } else pace += missing.length ? ' Next uncovered area: ' + missing[0] + '.' : ' Every area has an answer: go deeper only on the one or two claims that matter most.';
   return [admin ? ADMIN_NOTE : '', pace];
 }
 export const LEAD_MS = 300; // max audio sent ahead of what the browser has played
@@ -187,6 +191,18 @@ export class Session {
     if (d.quiet >= END_SILENCE && d.spoken >= d.minSpeech && this.pause !== 'asking' && this.pause !== 'unfinished') this.endTurn('silence');
   }
 
+  // The consultant's words still in progress when the interview ends (the time limit, or End) are part of it: they are
+  // transcribed and recorded (finishTurn records without replying while ending), never silently dropped.
+  finalWords() {
+    const d = this.turnDetector, b = this.blip; this.blip = null;
+    if (b && d.active) { d.buffer = joinPcm(b.pcm, d.buffer); this.voiced += b.voiced; }
+    else if (b) this.queueTranscription(b.pcm, { continuing: b.continuing, echoable: b.echoable, endedBy: 'limit', endedAt: b.endedAt });
+    if (!d.active) return;
+    const endedAt = this.now() - d.quiet, pcm = d.flush();
+    this.pause = '';
+    if (pcm && this.voiced >= MIN_VOICED) this.queueTranscription(pcm, { ...this.takeUtterance(), endedBy: 'limit', endedAt });
+  }
+
   closeBlip() {
     const d = this.turnDetector, endedAt = this.now() - d.quiet, pcm = d.flush();
     this.pause = '';
@@ -282,8 +298,11 @@ export class Session {
 
   watch() {
     if (this.finished || this.ending) return;
-    if (this.now() - this.startedAt >= this.maxSeconds) this.end(true);
+    const left = this.maxSeconds - (this.now() - this.startedAt);
+    if (left <= 0) { this.event('time_up', { message: 'The 15 minutes are up. Finishing your interview.' }); this.end(true); } // a clean end: the report is still written
     else if (this.now() - this.lastInput > 12) this.fail('Microphone frames stopped', 'voice-unavailable');
+    // The last half minute and nobody is talking: ATLAS closes on her own, so the interview ends with a goodbye.
+    else if (left <= 30 && !this.timeUp && this.turns >= 1 && !this.busy() && !this.turnDetector.active && this.sttBusy === 0) this.startReply(TIME_UP);
   }
 
   // A reply that was withdrawn or interrupted but has not yet noticed (awaiting the model or the voice) is not busy.
@@ -402,7 +421,7 @@ export class Session {
   }
 
   spoken() { return spokenFor(this.language, l => (this.ai.speaks ? this.ai.speaks(l) : l === 'en')); }
-  paceNotes() { const [admin, pace] = paceNotes(this.spokenMs, this.speakingLimit, this.ledger ? this.ledger.notes() : [], this.admin); return [admin, languageNote(this.language, this.spoken()), this.memoryNote, pace]; }
+  paceNotes() { const [admin, pace] = paceNotes(this.now() - this.startedAt, this.maxSeconds, this.ledger ? this.ledger.notes() : [], this.admin); return [admin, languageNote(this.language, this.spoken()), this.memoryNote, pace]; }
 
   // A short spoken acknowledgement from cache, only after a real answer, never twice in a row, never in admin mode.
   pickFiller(text) {
@@ -427,9 +446,11 @@ export class Session {
 
   startReply(instruction, { prefix = '', filler = '', notBefore = 0, turn = -1, endedAt = 0, thinking = false } = {}) {
     if (this.ending || this.finished) return;
-    // Re-checked on every reply: an interrupted closing (or a noise re-ask) cannot escape the speaking budget.
-    if (instruction !== OPENING && this.turns >= 1 && this.spokenMs >= this.speakingLimit * 1000) {
-      if (!this.timeUp) { this.timeUp = true; this.metric('speaking_limit', { turns: this.turns }); }
+    // Re-checked on every reply: an interrupted closing (or a noise re-ask) cannot escape the time limits. With WRAP_S
+    // left of the interview (or ATLAS's own speaking time used up), the next reply is the closing.
+    const late = this.now() - this.startedAt >= this.maxSeconds - WRAP_S;
+    if (instruction !== OPENING && this.turns >= 1 && (late || this.spokenMs >= this.speakingLimit * 1000)) {
+      if (!this.timeUp) { this.timeUp = true; this.metric(late ? 'interview_limit' : 'speaking_limit', { turns: this.turns }); }
       instruction = TIME_UP;
     }
     this.replies += 1;
@@ -484,7 +505,7 @@ export class Session {
       }
       const notes = [...this.paceNotes(), prefix ? (isFiller ? `ALREADY SAID (server): you have just said "${prefix}" out loud. Continue naturally from there; do not start with another short acknowledgement.`
         : `ALREADY SAID (server): you have just greeted the consultant with: "${prefix}". Do not repeat it or introduce yourself again.`) : ''];
-      for await (const raw of this.ai.chatStream(talkerMessages(this.project, this.guidance, this.history, instruction, notes), { affinity: this.affinity })) {
+      for await (const raw of this.ai.chatStream(talkerMessages(this.project, instruction === TIME_UP ? null : this.guidance, this.history, instruction, notes), { affinity: this.affinity })) {
         if (gen !== this.gen || this.finished) return;
         const delta = marker.feed(raw);
         if (!delta) continue;
@@ -591,6 +612,7 @@ export class Session {
     if (this.ending) return this.ending;
     this.ending = (async () => {
       this.recordLive(' [cut off when the interview ended]');
+      if (clean) this.finalWords();
       this.gen += 1; clearInterval(this.timer); this.queue = [];
       if (this.waiter) { const w = this.waiter; this.waiter = null; w(); }
       if (clean) {

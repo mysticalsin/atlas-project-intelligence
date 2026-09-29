@@ -147,7 +147,7 @@ class Config:
                 raise ValueError('That Kyutai voice set is licensed for non-commercial use only; choose a CC0/CC-BY voice.')
         if self.voice not in VOICES:
             raise ValueError('Select one of the bundled natural PersonaPlex voice filenames.')
-        if not 30 <= self.duration <= 1800 or not 5 <= self.handshake_timeout <= 180 or not 60 <= self.speaking_limit <= 1800:
+        if not 30 <= self.duration <= 900 or not 5 <= self.handshake_timeout <= 180 or not 60 <= self.speaking_limit <= 1800:
             raise ValueError('Invalid duration or handshake timeout.')
         if not 10 <= self.max_sessions <= 20000:
             raise ValueError('ATLAS_MAX_SESSIONS must be between 10 and 20000.')

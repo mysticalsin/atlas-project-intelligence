@@ -57,6 +57,7 @@ python3 tests/library_browser.py
 python3 tests/reuse_browser.py
 python3 tests/memory_browser.py
 python3 tests/sheet_browser.py
+python3 tests/report_browser.py
 ```
 The equivalent `make test` and `make test-ui` include the newest depth/editor suites in this handoff. See `handoff/ACCEPTANCE.md` for the real voice, memory, identity, multiuser and customer-quality checks. Do not skip native testing because mocked tests pass.
 

@@ -55,7 +55,7 @@ Open `http://localhost:8080` for the defaults. The safe preview is port 8000 and
 | `ATLAS_ORIGIN` | `http://localhost:8080` | Exact scheme/host/port, no path. Must match browser, proxy and callbacks. |
 | `ATLAS_BIND` / `ATLAS_PORT` | `127.0.0.1` / `8080` | Loopback in local mode. `localhost` versus `127.0.0.1` in the browser is not interchangeable under exact Host/Origin checks. |
 | `ATLAS_AUTH` | `local` | `local` for one trusted developer; `entra` for shared use. |
-| `ATLAS_MAX_SECONDS` | `900` | Session cap; code accepts 30–1800 seconds. |
+| `ATLAS_MAX_SECONDS` | `900` | Whole-interview cap; code accepts 30–900 seconds (the interview is at most 15 minutes). |
 | `ATLAS_MAX_INTERVIEWS` | `1` | Concurrent interviews per gateway process, 1–100; one per signed-in user. Must be 1 for the stock PersonaPlex worker. With `ATLAS_MAX_SECONDS` this bounds worst-case hosted spend. |
 | `ATLAS_MAX_SESSIONS` | `500` | Signed-in sessions (1 hour each) held by one process, 10–20000. Size from peak sign-ins per hour during a campaign; beyond it new sign-ins get HTTP 503. |
 | `ATLAS_HANDSHAKE_TIMEOUT` | `90` | Ready timeout; code accepts 5–180 seconds. |
