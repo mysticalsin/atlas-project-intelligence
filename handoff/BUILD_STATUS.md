@@ -526,6 +526,8 @@ Docs: `deploy/cloudflare-edge/README.md` (pipeline line, new metrics), `docs/INT
 
 - Deployed by Tony 2026-09-29 with `deploy.sh` (edge tests passed first): Worker version 4cbbd8b8-cd50-47a7-9a57-962a7a44b183 = commit acfb849 (voice intelligibility: band-limited resampling, language hysteresis, natural phrasing, tts/underrun/turn_check diagnostics). Next: read the new metrics from Tony's first session on laptop speakers and on a Bluetooth headset.
 
+- Deployed by Tony 2026-09-29 with `deploy.sh`: Worker version b4d8671c-2cf0-4964-bd2b-370955229835 = commit f3a066a (short opening without review talk; smart-turn-v2 now sent a base64 WAV after live AiError on every turn). Working tree verified clean at deploy time.
+
 ## Per-session update template
 Copy this section for each session. Do not put secrets, private keys, customer source text or raw audio in this file.
 
