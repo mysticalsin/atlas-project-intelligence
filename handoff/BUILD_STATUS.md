@@ -524,6 +524,8 @@ Docs: `deploy/cloudflare-edge/README.md` (pipeline line, new metrics), `docs/INT
 
 **Next task:** one commit (these files plus the four HTML aliases and the new `tests/resampler.test.js`), then Tony deploys with `deploy.sh` when nobody is interviewing, holds a session on laptop speakers and on a Bluetooth headset, and reads `turn_check.reason`, `tts`, `underrun` and `language_*` in Workers Logs.
 
+- Deployed by Tony 2026-09-29 with `deploy.sh` (edge tests passed first): Worker version 4cbbd8b8-cd50-47a7-9a57-962a7a44b183 = commit acfb849 (voice intelligibility: band-limited resampling, language hysteresis, natural phrasing, tts/underrun/turn_check diagnostics). Next: read the new metrics from Tony's first session on laptop speakers and on a Bluetooth headset.
+
 ## Per-session update template
 Copy this section for each session. Do not put secrets, private keys, customer source text or raw audio in this file.
 
