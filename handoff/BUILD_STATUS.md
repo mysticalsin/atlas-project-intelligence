@@ -465,6 +465,8 @@ Not a finding: WOW_ZERO_CONFIG §5.8 is now wired (the N+1 name is filled from a
 
 **Next task:** Tony confirms D1, then one integration commit (WOW + Z + these fixes, the four HTML aliases, and the new `deploy/cloudflare-edge/test/masking-routes.test.js`). Deploy manually when nobody is interviewing.
 
+- Deployed by Tony 2026-09-29 with `deploy.sh` (edge tests passed first): Worker version aa3478f8-5cc0-4c06-9c5f-59b6361022dc = commit b67808b (WOW F1-F7, zero-setup start + profile prefill, 26 review fixes). Upload 1483.66 KiB (gzip 451.41 KiB), startup 2 ms. Provider verification (live Workers AI prompts, real voice gap interview) happens on first live use; Access still admits only Tony.
+
 ## Per-session update template
 Copy this section for each session. Do not put secrets, private keys, customer source text or raw audio in this file.
 
