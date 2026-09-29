@@ -329,3 +329,43 @@ test('end to end, the new model input: a gap interview talker never sees a prosp
     assert.doesNotMatch(JSON.stringify(talker) + JSON.stringify(events), NAMES);
   } finally { await s.end(false); }
 });
+
+// Review finding 6: the other view of a bid's own text, shown to its author, marks which names are library clients.
+test('no self-assignment: neither the requester nor the bid owner can be the assignee; a request already assigned to the bid owner has no interview', async () => {
+  const { lib } = await setup();
+  gaps.ensure(lib);
+  const mine = await lib.upsert(OWNER, { localId: 'o', reference: { title: 'Olivia\'s own project', client: { name: 'Otherco' }, consultant: { name: 'Olivia', role: 'Lead' } } });
+  const count = () => ['gap_requests', 'audit'].map(t => lib.rows(`SELECT COUNT(*) AS n FROM ${t}`)[0].n);
+  const before = count();
+  for (const [who, assignee] of [[OWNER, { email: 'olivia@mantu.com' }], [OWNER, { email: ' Olivia@Mantu.COM ' }], [OWNER, { refId: mine.id, person: 0 }],
+    [ADMIN, { email: 'tony@mantu.com' }], [ADMIN, { email: 'olivia@mantu.com' }]]) {
+    const r = await ask(lib, ['R1'], assignee, who);
+    assert.deepEqual([r.status, r.body.error], [400, 'Ask someone else for proof.'], who.email + ' -> ' + JSON.stringify(assignee));
+  }
+  assert.deepEqual(count(), before, 'a refused request stores nothing and logs nothing');
+  const g = (await ask(lib, ['R1'], { email: 'kim@mantu.com' })).body;
+  lib.sql.exec('UPDATE gap_requests SET email = ? WHERE id = ?', OWNER.mail, g.id); // stored before this rule existed
+  assert.equal((await call(lib, 'GET', `gaps/${g.id}/interview`, OWNER)).status, 404);
+  assert.equal(await gaps.resolveForInterview(fakeEnv(lib, []), { user: OWNER.email, role: 'user', mail: OWNER.mail }, g.id), null);
+  assert.equal((await call(lib, 'GET', 'gaps/' + g.id, OWNER)).body.asks[0].ask, 'Proof the bid needs: Claims routing for Acme Prospect, like Zebracorp', 'the owner keeps the author view');
+});
+
+// Review finding 15: an ask cut in placeholder form ('[Company 1]' dropped whole, a plain name cut) shows the author which names are masked.
+test('a long ask is cut in the caller\'s view, never in placeholder form: the author sees their own words cut the same way, library client or not', async () => {
+  const { lib } = await setup();
+  const pad = 'w'.repeat(130) + ' ', typed = { R1: pad + 'Zebracorp tail words', R2: pad + 'Fakeco12 tail words' };
+  const edited = await bids.routes({ method: 'POST', parts: ['bids', 'b1', 'requirements'], user: OWNER, lib, env: {},
+    body: { requirements: [{ id: 'R1', text: typed.R1, kind: 'capability' }, { id: 'R2', text: typed.R2, kind: 'outcome' }] } });
+  assert.ok(edited.body);
+  const cut = t => Array.from('Proof the bid needs: ' + t).slice(0, 160).join('');
+  for (const id of ['R1', 'R2']) {
+    const g = (await ask(lib, [id], { email: 'alex@mantu.com' })).body;
+    assert.equal(g.asks[0].ask, cut(typed[id]), id + ': the author view is their own words, cut at 160 characters');
+    assert.equal((await call(lib, 'GET', 'gaps/' + g.id, OWNER)).body.asks[0].ask, cut(typed[id]));
+    for (const other of [(await call(lib, 'GET', `gaps/${g.id}/interview`, ALEX)).body.asks[0].ask, (await call(lib, 'GET', 'gaps/' + g.id, ALEX)).body.asks[0].ask]) {
+      assert.ok(Array.from(other).length <= 160, other);
+      assert.doesNotMatch(other, /Zebrac|\[[A-Za-z]*$/, 'no library client, no half label');
+      assert.ok(other.startsWith('Proof the bid needs: ' + 'w'.repeat(130)));
+    }
+  }
+});

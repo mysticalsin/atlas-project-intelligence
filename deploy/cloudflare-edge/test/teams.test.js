@@ -192,6 +192,29 @@ test('teamsRoutes: 503 BLOCKED_EXTERNAL until Teams is connected (app id, tenant
   assert.equal(seen.length, 0);
 });
 
+test('teamsRoutes messages (pre-Access): no token, the body is never read; a streamed body without Content-Length is cut just past 256 KiB', async () => {
+  resetBotKeyCache();
+  const { env, seen } = stack(), CHUNK = 1 << 16;
+  const streamed = token => {
+    const s = { pulled: 0 }, chunk = new Uint8Array(CHUNK).fill(120);
+    const body = new ReadableStream({ pull(c) { if (s.pulled >= 20 * (1 << 20)) return c.close(); s.pulled += CHUNK; c.enqueue(chunk); } });
+    s.request = new Request(ORIGIN + '/api/teams/messages', { method: 'POST', headers: token ? { Authorization: 'Bearer ' + token } : {}, body, duplex: 'half' });
+    return s;
+  };
+  const anon = streamed(null);
+  assert.equal(anon.request.headers.get('Content-Length'), null, 'a streamed body declares no length');
+  const r1 = await teamsRoutes(anon.request, env, {}, { fetcher: botFetcher() });
+  assert.deepEqual([r1.status, (await r1.json()).error], [401, 'A Bot Framework bearer token is required.']); SECURE(r1);
+  assert.ok(anon.pulled <= 2 * CHUNK, `no token: the body is not read (${anon.pulled} bytes pulled)`);
+  const big = streamed(await sign(live()));
+  const r2 = await teamsRoutes(big.request, env, {}, { fetcher: botFetcher() });
+  assert.deepEqual([r2.status, (await r2.json()).error], [413, 'Request too large.']); SECURE(r2);
+  assert.ok(big.pulled <= 262144 + 2 * CHUNK, `the read stops just past 256 KiB (${big.pulled} bytes pulled)`);
+  assert.equal(seen.length, 0);
+  const utf = await post(env, activity({ id: 'utf-1', text: 'Stop', from: { id: '29:zoe', aadObjectId: OID, name: 'Zoë Ålund' } }));
+  assert.equal(utf.status, 200, 'a bounded read still decodes UTF-8 like request.text()');
+});
+
 test('teamsRoutes messages: verified events reach the LibraryStore as teams-event (system, teams-bot); duplicates are processed once', async () => {
   resetBotKeyCache();
   const { env, seen, lib } = stack();

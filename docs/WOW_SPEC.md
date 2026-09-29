@@ -192,7 +192,7 @@ export function recordView(lib, data) -> object     // forModel(data) with recor
 - **Contacts.** A single-token contact that is a `STOPLIST` word or shorter than 3 characters is skipped, so a contact typed as "Will" or "Mark" never rewrites "the supplier will".
 - **PII:** emails; URLs (`https?://…` or `www.…`); phone numbers (7+ digits allowing `+ ( ) - . space`).
 - **Placeholder neutralising.** Before pseudonymising, user text matching `/\[(company|person|email|phone|link)(\s+\d+)?\]/gi` loses its square brackets, so a user can never type the masked form of a name and compare results.
-- **Identical spans share a placeholder** within one map (compared case-insensitively). Maps are bounded to 200 entries.
+- **Identical spans share a placeholder** within one map (compared case-insensitively). Maps are bounded by the input limits, never by a size cap: a size-based label or refusal would be a library-membership oracle (ground rule 5). A bid stores only the map entries its stored texts use (alias, requirements, customer, gap asks). (Superseded the earlier 200-entry cap in the WOW review fix round, 2026-09-29.)
 
 `review.js` changes (T1-S0): `forModel`'s own-client scrub becomes word-bounded (still case-insensitive, still names of 3+ characters), exposed as `export function clientScrub(record) -> (s) => string`. `forModel` uses it. `forModel` output is never hashed, so only embeddings shift, at each record's next review. The `repair` → `repthe client` corruption for a client named "Air" disappears (regression test).
 

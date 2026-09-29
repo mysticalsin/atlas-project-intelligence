@@ -219,18 +219,18 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
       if (!env.LIBRARY) return json(env, { error: 'The reference library is not configured on this deployment.' }, 404);
       if (request.method !== 'GET' && (request.headers.get('Origin') !== env.ORIGIN || request.headers.get('X-Atlas-CSRF') !== csrf)) return json(env, { error: 'Invalid request origin or session token.' }, 403);
       if (Number(request.headers.get('Content-Length') || 0) > 262144) return json(env, { error: 'Request too large.' }, 413);
-      // The declared length can be absent or wrong: bound the body actually read, then forward that text.
-      const bodyless = request.method === 'GET' || request.method === 'HEAD', text = bodyless ? '' : await request.text();
-      if (text.length > 262144) return json(env, { error: 'Request too large.' }, 413);
+      // The declared length can be absent or wrong: read at most 256 KiB of the body actually sent, then forward it.
+      const bodyless = request.method === 'GET' || request.method === 'HEAD', bytes = bodyless ? null : await boundedBytes(request, 262144);
+      if (!bodyless && !bytes) return json(env, { error: 'Request too large.' }, 413);
       const fwdHeaders = new Headers(request.headers); fwdHeaders.delete('content-length');
-      const forward = new Request(request.url, { method: request.method, headers: fwdHeaders, body: bodyless ? undefined : text });
+      const forward = new Request(request.url, { method: request.method, headers: fwdHeaders, body: bodyless ? undefined : bytes });
       // Entra: the stable tid:oid is the library identity (emails can change); Access: the verified email.
       forward.headers.set('x-atlas-user', libraryUser); forward.headers.set('x-atlas-role', role); forward.headers.set('x-atlas-email', mail); // always overwritten
       forward.headers.set('x-atlas-idp', toB64url(JSON.stringify(signinClaims(request)))); // always overwritten ('e30' = {}): never from the browser
       const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(forward);
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
     }
-    // Spoken Ask (F6): transcription of one short question. Off until Tony confirms D1 (SPOKEN_ASK_APPROVED); then each
+    // Spoken Ask (F6): transcription of one short question. Off while SPOKEN_ASK_APPROVED (D1) is false; then each
     // request needs the consent prompt's header, and `always` a consent stored in the person's profile. Stores nothing;
     // the log line carries numbers only.
     if (url.pathname === '/api/transcribe' && request.method === 'POST' && flagsOf(env).spokenAsk) {

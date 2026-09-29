@@ -129,7 +129,7 @@ test('F7.4 #5 guidance: null under the thresholds, quantified before confirmed, 
   assert.equal(winloop.guidance(l).hint, null, '9 decided bids');
   for (let i = 0; i < 5; i++) seed(l, 'lost', [['r2', QLC]]);
   let g = winloop.guidance(l);
-  assert.deepEqual(g, { hint: 'quantified', decided: 14, basis: 'Quantified proof won 67% of 9 decided uses; qualitative 0% of 5.' });
+  assert.deepEqual(g, { hint: 'quantified', decided: 14, basis: 'Quantified proof won 67% of 9 decided bids; qualitative 0% of 5.' });
   assert.doesNotMatch(JSON.stringify(g), /r1|r2|@/, 'aggregate only');
   const cached = winloop.guidance(l); assert.deepEqual(cached, g);
   l.sql.exec("UPDATE bids SET outcome = 'won' WHERE id IN (SELECT bid_id FROM bid_references WHERE ref_id = 'r2')");
@@ -141,6 +141,24 @@ test('F7.4 #5 guidance: null under the thresholds, quantified before confirmed, 
   for (let i = 0; i < 5; i++) seed(m, 'lost', [['d', QL]]);
   assert.equal(winloop.guidance(m).hint, 'confirmed', 'quantified and qualitative tie at 50%, confirmed beats unconfirmed');
   assert.deepEqual((await winloop.routes({ method: 'GET', parts: ['wins', 'guidance'], lib: m, user: KIM })).body, winloop.guidance(m));
+});
+
+test('F7.1 proof-type rates and the hint count decided bids, not uses: one bid citing five stories of a type is one decided bid', async () => {
+  const l = lib();
+  seed(l, 'won', [['r1', Q], ['r2', Q], ['r3', Q], ['r4', Q], ['r5', Q]]);
+  const body = (await winloop.routes({ method: 'GET', parts: ['wins'], lib: l, user: REV })).body;
+  assert.deepEqual(body.proofTypes.find(p => p.proofType === Q), { proofType: Q, used: 5, won: 1, lost: 0, decided: 1, winRate: null, ci95: null, caveat: 'Fewer than 5 decided bids: not shown.' });
+  assert.deepEqual(body.totals, { bids: 1, decided: 1 });
+  // 2 won bids with 3 quantified uses each, 8 lost qualitative bids: per use it would read 6 vs 8 and hint 'quantified'.
+  const m = lib();
+  for (let i = 0; i < 2; i++) seed(m, 'won', [['a', Q], ['b', Q], ['c', Q]]);
+  for (let i = 0; i < 8; i++) seed(m, 'lost', [['d', QL]]);
+  assert.deepEqual(winloop.guidance(m), { hint: null, decided: 10, basis: 'No proof type stands out yet.' }, 'only 2 quantified bids: under 5');
+  // A bid citing a quantified+unconfirmed and a quantified+confirmed story counts once in the quantified group.
+  const n = lib();
+  for (let i = 0; i < 5; i++) seed(n, 'won', [['a', Q], ['b', QC]]);
+  for (let i = 0; i < 5; i++) seed(n, 'lost', [['c', QL]]);
+  assert.deepEqual(winloop.guidance(n), { hint: 'quantified', decided: 10, basis: 'Quantified proof won 100% of 5 decided bids; qualitative 0% of 5.' });
 });
 
 test('fetchWinHint: forwards the interviewee identity to the global LibraryStore, caps at 1.5 s, null on any failure', async () => {

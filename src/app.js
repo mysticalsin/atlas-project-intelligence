@@ -51,7 +51,7 @@ function next(defer=false){const p=project();if(!p||p.pos>=6)return;stopVoice();
 function newProject(edit=false){editingProjectId=edit?project()?.id:null;const p=edit?project():null;$('projectFormTitle').textContent=edit?'Update project context.':'A project worth explaining.';for(const [el,field] of [['projectTitle','title'],['consultantName','consultant'],['consultantRole','role'],['sectorInput','sector'],['projectStage','stage']])$(el).value=p?.[field]||(el==='projectStage'?'Pilot':'');for(const [el,field] of [['clientName','name'],['clientLocation','location'],['clientContact','contact']])$(el).value=p?.client?.[field]||'';const lastV=p?.validation||profile().projects.slice().reverse().find(x=>x.validation?.manager.name||x.validation?.managerStaff)?.validation;$('n1Name').value=lastV?.manager.name||'';writeDetails(p?.details||null);$('n1Email').value=lastV?.manager.email||'';$('managerStaff').checked=!!lastV?.managerStaff;if(!edit&&profile().name!=='My workspace')$('consultantName').value=profile().name;
  if(!edit){const f=window.AtlasProfileCore.formValues(window.AtlasProfile?.get?.());if(f.consultant)$('consultantName').value=f.consultant;if(f.role)$('consultantRole').value=f.role;
   if(f.managerName||f.managerEmail){$('n1Name').value=f.managerName;$('n1Email').value=f.managerEmail;$('managerStaff').checked=false;}} // managerStaff is never set from the profile
- window.AtlasProfile?.paintProjectForm?.();open('projectDialog');}
+ window.AtlasProfile?.paintProjectForm?.({fresh:true,edit});open('projectDialog');}
 // Reference details form <-> model (the engine bounds and validates everything).
 function readDetails(){const lines=id=>$(id).value.split('\n').map(x=>x.trim()).filter(Boolean);
  return E.cleanDetails({projectId:$('refProjectId').value,country:$('refCountry').value,start:$('refStart').value,end:$('refEnd').value,teamSize:$('refTeamSize').value,serviceLines:$('refServiceLines').value,teamRoles:$('refTeamRoles').value,technologies:$('refTech').value,deliverables:lines('refDeliverables'),
@@ -402,12 +402,12 @@ function voiceSnapshot(){
  const gap=pendingGap&&pendingGap.projectId===p.id?{gap:pendingGap.requestId,gapAlias:pendingGap.alias}:{};
  return {workspaceId:profile().id,project:data,display:{consultant:p.consultant,role:p.role},revision:E.simpleHash(JSON.stringify([p.answers,p.deferred])),...gap}; // voice notes only append to answers: other edits during a call must not block saving
 }
-function autoSave(snapshot,sections,transcript,report,{mode='full',requestId}={}){
+function autoSave(snapshot,sections,transcript,report,{mode='full',requestId,results}={}){
  // Seamless end of interview: create the project when needed, attach notes, report, story draft and transcript. No click.
  // All or nothing: a failure removes a project created here, so a retry starts clean.
  if(blocked)throw Error('Editing is paused. Recover this workspace before saving the interview.');
  if(!snapshot||snapshot.workspaceId!==profile().id)throw Error('The workspace changed during the interview.');
- if(mode==='gap')return saveGapNotes(snapshot,sections,transcript,requestId);
+ if(mode==='gap')return saveGapNotes(snapshot,sections,transcript,requestId,results);
  if(mode!=='full')throw Error('Unknown interview mode.');
  const notes=(Array.isArray(sections)?sections:[]).slice(0,6).map(x=>typeof x==='string'&&x.trim()?x.trim().slice(0,6000):null);while(notes.length<6)notes.push(null);
  let r=report?E.cleanReport(report):null;
@@ -488,10 +488,10 @@ function projectFromLibrary(r,why='for a proof request'){const d=r?.data||{},ans
  p.pos=Math.min(6,firstOpenTopic(p));E.log(p,'Opened from the shared library (revision '+r.revision+') '+why);profile().projects.push(p);syncedHash.set(p.id,payloadHash(p));return p;}
 // Gap-mode end of interview (F2.1 step 6): the answers stay on this device as p.gapNotes. Nothing is appended to the answers,
 // synced to the library or sent to memory; the send to the bid team (T5) and applyGapNotes are separate explicit clicks.
-function saveGapNotes(snapshot,sections,transcript,requestId){
+function saveGapNotes(snapshot,sections,transcript,requestId,results){
  const p=!snapshot.isNew&&profile().projects.find(x=>x.id===snapshot.project?.id);if(!p)throw Error('The interviewed project no longer exists.');
  if(typeof requestId!=='string'||!/^[a-f0-9]{32}$/.test(requestId)||(snapshot.gap&&snapshot.gap!==requestId))throw Error('This gap request is not available to you.');
- const g=E.cleanGapNotes({requestId,sections:Array.isArray(sections)?sections:[],transcript:String(transcript||''),at:E.now()});if(!g)throw Error('Nothing was captured in this interview.');
+ const g=E.cleanGapNotes({requestId,sections:Array.isArray(sections)?sections:[],transcript:String(transcript||''),results,at:E.now()});if(!g)throw Error('Nothing was captured in this interview.');
  if(p.gapNotes)E.log(p,'Earlier proof-interview answers replaced before they were added to the reference');
  p.gapNotes=g;profile().lastProject=p.id;E.log(p,'Proof-interview answers kept on this device only (unverified speech recognition); not added to the reference or shared');
  save();render();return {projectId:p.id,title:p.title,report:false,persisted:persisted&&!storageError,mode:'gap'};}
@@ -502,11 +502,24 @@ async function applyGapNotes(id=project()?.id){
  if(!g.sections.some(Boolean))throw Error('The proof interview captured no answers to add.');
  p.answers=appendSections(p.answers,g.sections,'Adding these answers would take a topic past 6,000 characters. Shorten that topic first.');g.sections.forEach((v,i)=>{if(v)p.deferred[i]=false;});
  E.invalidate(p,'Added proof-interview answers (unverified speech recognition); evidence and permissions require review');
- p.pos=Math.min(6,firstOpenTopic(p));p.gapNotes=null;save();render();
+ p.pos=Math.min(6,firstOpenTopic(p));p.gapNotes=g.results?.length?{...g,sections:Array(6).fill(null),transcript:''}:null;save();render();  // unsent answers stay sendable
  return {projectId:p.id,library:await syncToLibrary(p.id)};}
+// "Send these answers to the bid team" from the Library (review #22): the per-ask results kept with the notes, posted only
+// on an explicit click. The request is then answered; the notes keep only what can still be added to the reference.
+async function sendGapAnswers(id){
+ if(blocked)throw Error('Editing is paused. Recover this workspace before sending answers.');
+ const p=profile().projects.find(x=>x.id===id),g=p?.gapNotes;if(!g?.results?.length)throw Error('There are no proof answers to send.');
+ await libraryApi('/gaps/'+g.requestId+'/answer',{method:'POST',body:{results:g.results.map(r=>({askId:r.askId,status:r.status,quotes:r.quotes})),referenceId:p.library?.id||undefined}});
+ gapAnswersSent(id,g.requestId);return {projectId:id};}
+function gapAnswersSent(id,requestId){const p=profile().projects.find(x=>x.id===id),g=p?.gapNotes;if(!g||g.requestId!==requestId||!g.results?.length)return;
+ p.gapNotes=g.sections.some(Boolean)?{...g,results:[]}:null;E.log(p,'Proof-interview answers sent to the bid team (unverified speech recognition)');save();render();}
+// Unsent answers for a request that is no longer open can never be sent: dropped when the Library lists the open ones.
+function dropGapResults(openIds){if(blocked||!Array.isArray(openIds))return;let n=0;
+ for(const p of profile().projects){const g=p.gapNotes;if(!g?.results?.length||openIds.includes(g.requestId))continue;p.gapNotes=g.sections.some(Boolean)||g.transcript.trim()?{...g,results:[]}:null;n++;}
+ if(n){save();render();}}
 // Shell contract for the view modules (bids-ui, ask-ui, trust-ui, storyboard-ui; WOW_SPEC 6.3). libraryApi sends this
 // session's own cookie and CSRF header; it never exposes the token.
-window.ATLAS_APP={libraryApi,bootInfo,esc,toast,download,open,confirm,switchView,render,project,profile,save,startFromInvitation,startFromGap,applyGapNotes,adoptProfileName};
+window.ATLAS_APP={libraryApi,bootInfo,esc,toast,download,open,confirm,switchView,render,project,profile,save,startFromInvitation,startFromGap,applyGapNotes,sendGapAnswers,gapAnswersSent,dropGapResults,adoptProfileName};
 bootInfo().then(b=>{const nav=document.querySelector('header nav [data-view="bids"]');if(nav)nav.hidden=!b.features?.bids;renderStorage();});
 // ---- Returning user (WOW_ZERO_CONFIG §3.6): an empty session-only workspace on the live site is rebuilt, once per load, from
 // the user's own library records (full access, not withdrawn, newest first, at most 50), each linked by library.id so a

@@ -58,7 +58,8 @@ function pinsOf(quote,geo){
  const r=remember('p\u0000'+geoId(geo)+'\u0000'+q,()=>{
   const found=new Map();
   for(const part of chunks(q,480)){let r;try{r=obj(geo.resolveLocations(part));}catch(e){continue;}  // the resolver reads at most 500 characters
-   for(const c of arr(r.countries))if(c&&typeof c.code==='string'&&typeof c.from==='string'&&c.from.trim())found.set(fold(c.from)+'\u0000'+c.code,{code:c.code,frag:c.from.trim()});
+   for(const c of arr(r.countries))if(c&&typeof c.code==='string'&&typeof c.from==='string'&&c.from.trim())  // the resolver keeps only the first words per
+    for(const frag of [c.from.trim(),String(geo.countryName(c.code)||'').trim()])if(frag)found.set(fold(frag)+'\u0000'+c.code,{code:c.code,frag});  // country ('UK'): its own name is searched too
    for(const a of arr(r.ambiguous))if(typeof a==='string'&&a.trim())found.set(fold(a)+'\u0000',{code:null,frag:a.trim()});}  // 'Georgia', 'Congo': never pinned
   const occ=[];
   for(const f of found.values()){const re=new RegExp('(?<![\\p{L}\\p{N}])'+reEsc(f.frag).replace(/\s+/g,'\\s+')+'(?![\\p{L}\\p{N}])','giu');

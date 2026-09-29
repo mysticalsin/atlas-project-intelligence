@@ -2,12 +2,12 @@
 // permissions from the verified sign-in, a quality gate and N+1 validation. Storage is SQL through an adapter
 // with exec(query, ...params) -> { toArray() } (Durable Object SQLite in production, node:sqlite in tests).
 // Confidential client details are visible only to the record's people and reviewers, and never reach a model.
-import { reviewReference, forModel, clientScrub, READY_SCORE } from './review.js';
+import { reviewReference, forModel, clientScrub, contactLead, READY_SCORE } from './review.js';
 import { searchText, cosine, lexical, TARGET_POLICY, parseTarget, RERANK_POLICY, parseRerankStrict, candidateCard, SLIDES_POLICY, parseSlides, INSIGHTS_POLICY, parseInsights } from './reuse.js';
 import { str, para, list, email, https, obj, fail } from './util.js';
 // Model input from a record goes through recordView (other library clients, contacts and PII masked too); text a
 // user types is pseudonymised and the caller gets their own words back (WOW_SPEC §2.3).
-import { recordView, pseudonymise, forAuthor } from './scrub.js';
+import { recordView, pseudonymise, forAuthor, nameMatcher } from './scrub.js';
 import { winSignals } from './winloop.js';
 const DUPLICATE = 0.9; // cosine similarity above which two references are flagged as the same or a related project
 export const PRACTICES = { data_ai: 'Data & AI', web_app: 'Web & App Development', telecom: 'Telecom & Networks', sap_erp: 'SAP & ERP', cloud_infra: 'Cloud & Infrastructure', cybersecurity: 'Cybersecurity', transformation: 'Transformation & Strategy', engineering: 'Engineering & Industry' };
@@ -63,8 +63,13 @@ function withConsultant(m, data) {
 }
 
 // Published view for people outside the record: client details removed and scrubbed from every text field.
+// A one-word contact lead ("Dupont, CFO" -> "Dupont") is masked here under the contact rules (case-sensitive when short
+// or a stoplist word, never a stoplist lead such as "Will"); clientScrub leaves it to recordText on model paths.
 export function anonymise(data) {
-  const m = withConsultant(forModel({ ...data, sources: data.sources }), data);
+  const lead = contactLead(data?.client?.contact), one = lead && !/\s/.test(lead) ? nameMatcher([lead], { contacts: true }) : null;
+  const deep = v => typeof v === 'string' ? one(v, () => 'the client') : Array.isArray(v) ? v.map(deep) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, deep(x)])) : v;
+  const own = forModel({ ...data, sources: data.sources });
+  const m = withConsultant(one ? deep(own) : own, data);
   m.details = { ...m.details, consultants: (data.details.consultants || []).map(c => ({ name: c.name, role: c.role })) };
   return m;
 }
@@ -236,7 +241,7 @@ export class Library {
     if (!this.complete) throw fail(503, 'Recommendations are not available.');
     // The query is typed text: every model call gets its pseudonymised form, and what comes back to the caller is
     // un-masked with its map, so they read their own words (no trace of which names ATLAS knows).
-    const q = pseudonymise(this, query), mine = forAuthor(this, q.map);
+    const q = pseudonymise(this, query), mine = forAuthor(this, q.map, { authorText: q.text });
     const target = parseTarget(await this.complete([{ role: 'system', content: TARGET_POLICY }, { role: 'user', content: q.text }]).catch(() => ''), q.text);
     const pool = this.visibleRows(user).filter(([r, level]) => r.status === 'published' || level === 'full');
     if (!pool.length) return { target: mine(target), results: [], method: 'none', note: 'No references are available to you yet.' };
@@ -299,7 +304,7 @@ export class Library {
     if (!out) throw fail(502, 'The slide writer did not produce usable text. Try again.');
     const d = row.data.details;
     this.log(id, user.email, 'slides generated', `context ${context.length} characters`);
-    return { ...forAuthor(this, c.map)(out), reference: { id, title: row.data.title, status: row.status, revision: row.revision }, facts: { industry: row.data.sector, country: d.country, timeline: d.start || d.end ? `${d.start || '?'} – ${d.end || 'ongoing'}` : d.duration, team: d.teamSize ? `${d.teamSize} people` : '', technologies: d.technologies.slice(0, 6) },
+    return { ...forAuthor(this, c.map, { authorText: c.text })(out), reference: { id, title: row.data.title, status: row.status, revision: row.revision }, facts: { industry: row.data.sector, country: d.country, timeline: d.start || d.end ? `${d.start || '?'} – ${d.end || 'ongoing'}` : d.duration, team: d.teamSize ? `${d.teamSize} people` : '', technologies: d.technologies.slice(0, 6) },
       client: obj(body).includeClient && level === 'full' ? row.data.client.name : '', warning: row.status === 'published' ? '' : 'Draft reference: not validated for client use.' };
   }
 

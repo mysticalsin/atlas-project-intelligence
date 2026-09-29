@@ -101,6 +101,20 @@ test('malformed server link, invitation, quality and proof notes are dropped',()
  for(const b of bad){const c=E.cleanProject({...p,...b});const k=Object.keys(b)[0];assert.equal(c[k],null,JSON.stringify(b));}
  assert.equal(E.cleanProject({...p,library:{id:REF,revision:-1}}).library.revision,null,'a bad revision keeps the link, so a later sync never forks a second reference');
  assert.equal(E.cleanGapNotes({requestId:GAP,sections:[],transcript:'Only the transcript.'}).sections.every(v=>v===null),true);});
+// Review #22: the per-ask results of a proof interview are kept with the notes (bounded), so the answers can still be
+// sent to the bid team after a reload or a new conversation; imports still drop them with the notes.
+test('proof notes keep the bounded per-ask results through validateState; results alone are enough; imports drop them',()=>{const p=linked();
+ p.gapNotes.results=[...Array.from({length:7},(_,i)=>({askId:'G'+(i+1)+'x'.repeat(30),field:'outcome',status:i===1?'unknown':i===2?'hacked':'answered_unverified',quotes:[' q1 ','',42,'q'.repeat(500),'a','b','c','d'],junk:1})),{askId:'',status:'open',quotes:['x']},null];
+ const s=E.blankState();s.profiles[0].projects=[p];const c=E.validateState(JSON.parse(JSON.stringify(s))).profiles[0].projects[0],r=c.gapNotes.results;
+ assert.equal(r.length,5);assert.deepEqual(Object.keys(r[0]),['askId','status','quotes']);assert.equal(r[0].askId,('G1'+'x'.repeat(30)).slice(0,20));
+ assert.deepEqual(r.map(x=>x.status),['answered_unverified','unknown','open','answered_unverified','answered_unverified'],'an unknown status reads as open');
+ assert.deepEqual(r[0].quotes.map(q=>q.length),[2,400,1,1,1]);assert.equal(r[0].quotes[0],'q1');
+ assert.deepEqual(E.cleanProject(JSON.parse(JSON.stringify(c))).gapNotes,c.gapNotes,'stable on a second pass');
+ const only=E.cleanGapNotes({requestId:GAP,sections:[],transcript:'',results:[{askId:'G1',status:'deferred',quotes:[]}]});
+ assert.deepEqual(only.results,[{askId:'G1',status:'deferred',quotes:[]}]);assert.ok(only.sections.every(v=>v===null));
+ assert.equal(E.cleanGapNotes({requestId:GAP,sections:[],transcript:'',results:[{askId:'',status:'open',quotes:[]}]}),null,'nothing usable: no notes');
+ assert.deepEqual(E.cleanGapNotes({requestId:GAP,sections:['x']}).results,[],'older notes read as having no results');
+ assert.equal(E.importBackup({format:'atlas-workspace',schema:4,profile:{name:'Imported',projects:[p]}}).projects[0].gapNotes,null);});
 // WOW_ZERO_CONFIG §3.5: roleFrom is the only stored provenance (the model rule needs it); it survives storage and imports.
 test('roleFrom: only profile or you are kept, anything else is blank',()=>{assert.equal(E.project({title:'x',role:'Lead',roleFrom:'profile'}).roleFrom,'profile');assert.equal(E.project({title:'x',roleFrom:'you'}).roleFrom,'you');assert.equal(E.project({title:'x',roleFrom:'dna'}).roleFrom,'');assert.equal(E.project({title:'x'}).roleFrom,'');});
 test('roleFrom survives validateState and importBackup',()=>{const p=filled();p.role='Principal';p.roleFrom='profile';const q=filled();q.roleFrom='you';const s=E.blankState();s.profiles[0].projects=[p,q];s.profiles[0].lastProject=p.id;

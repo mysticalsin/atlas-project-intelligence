@@ -130,13 +130,16 @@ test('flags: every key, conservative defaults, opt-in vars and the Entra rule', 
   assert.equal(f.phone, 'BLOCKED_EXTERNAL'); assert.equal(f.teams, teams.teamsStatus({}));
   // WOW_ZERO_CONFIG §4 D1/D2 (intentional assertion changes, recorded in handoff/status/Z.md): SPOKEN_ASK and
   // PDF_BRIEFS are no longer variables. spokenAsk = ask && SPOKEN_ASK_APPROVED (a code constant); pdfBriefs = bids.
-  assert.equal(features.SPOKEN_ASK_APPROVED, false, 'D1 stays off until Tony confirms it');
-  assert.equal(features.flags({ SPOKEN_ASK: '1' }).spokenAsk, false, 'the removed variable turns nothing on');
+  // D1 approved by Tony: "it should just work and ask for consent and that's it" (consent at the moment of use).
+  assert.equal(features.SPOKEN_ASK_APPROVED, true, 'D1 approved: spoken Ask follows Ask, with the per-use consent prompt');
+  assert.equal(f.spokenAsk, features.readyOf('ask', {}), 'spokenAsk equals on(ask)');
+  for (const v of ['0', '1', 'false']) assert.equal(features.flags({ SPOKEN_ASK: v }).spokenAsk, f.spokenAsk, 'the removed SPOKEN_ASK variable changes nothing');
   assert.equal(f.pdfBriefs, features.readyOf('bids', {}), 'pdfBriefs equals on(bids)');
   assert.equal(f.profile, profile.READY, 'profile follows profile.READY');
   const on = (w, env) => features.readyGate(w, env, () => true);
   const all = features.flags({}, on);
-  assert.deepEqual([all.bids, all.ask, all.spokenAsk, all.customerJev, all.pdfBriefs, all.clientConfirm, all.gaps, all.profile], [true, true, false, false, true, false, true, true]);
+  assert.deepEqual([all.bids, all.ask, all.spokenAsk, all.customerJev, all.pdfBriefs, all.clientConfirm, all.gaps, all.profile], [true, true, true, false, true, false, true, true]);
+  assert.equal(features.flags({}, on, { spokenAskApproved: false }).spokenAsk, false, 'the test seam can still turn it off');
   const opt = features.flags({ TYPESAFE_API_KEY: 'k', CLIENT_CONFIRM: '1', EXTERNAL_EMAILS: 'c@client.example' }, on, { spokenAskApproved: true });
   assert.deepEqual([opt.spokenAsk, opt.pdfBriefs, opt.customerJev, opt.clientConfirm], [true, true, true, true]);
   assert.equal(features.flags({}, (w, env) => w !== 'ask' && on(w, env), { spokenAskApproved: true }).spokenAsk, false, 'spokenAsk never exceeds ask');

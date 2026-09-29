@@ -297,7 +297,7 @@ Old fragment links keep working.
 | `TEST_VOICE` | (a) | Test only; off | |
 | `TRIGGER_SECRET` + Access bypass for `/api/triggers` | (c) | PM-system invitations absent; the interview is unaffected | Staffing tool owner |
 | Module `READY` constants | (a) | Flipped at WOW integration by acceptance tests; not a variable | |
-| `SPOKEN_ASK` | (b) | **Variable removed.** `features.spokenAsk = on('ask') && SPOKEN_ASK_APPROVED`. The first voice question shows a consent prompt (§8): "Allow this time" or "Always allow for me" (stored server-side in `profiles.consents`, revocable). The reminder and a recording indicator show on **every** recording. See D1 | Tony confirms D1 |
+| `SPOKEN_ASK` | (b) | **Variable removed.** `features.spokenAsk = on('ask') && SPOKEN_ASK_APPROVED`. The first voice question shows a consent prompt (§8): "Allow this time" or "Always allow for me" (stored server-side in `profiles.consents`, revocable). The reminder and a recording indicator show on **every** recording. See D1 | D1 approved by Tony (recorded 2026-09-29) |
 | `PDF_BRIEFS` | (a) | **Variable removed, no constant.** `features.pdfBriefs = on('bids')`. PDFs go through `toMarkdown` with `conversionOptions: {pdf: {metadata: false}}`. Images stay refused. A PDF that yields no text (a scan) gives an explicit message. See D2 | |
 | `CLIENT_CONFIRM` | (c) + legal | Safe default off; not on the interview path | Tony and legal (Q3), Access PIN policy |
 | `TEAMS_ENABLED`, `TEAMS_APP_ID`, `TEAMS_BOT_APP_ID`, `TEAMS_TENANT_ID`, `TEAMS_BOT_SECRET` | (c) | Simplification (T3 file): Teams counts as enabled when the ids and the secret are all present (no `TEAMS_ENABLED`), and `TEAMS_BOT_APP_ID` defaults to `TEAMS_APP_ID`. When absent, only the reviewer outreach queue shows its chip | Mantu IT, Azure owner, Teams admin (WOW §5) |
@@ -314,7 +314,7 @@ Old fragment links keep working.
 | Q7 defects | partly fixed | The ignored memory checkbox is fixed: memory is in the consented sentence and the switch works (§3.4). Self-declared `managerStaff` is unchanged and never prefilled true. Others are unchanged | |
 | Q8 sentence split, Q10 residual inference | (a) | | |
 | Q9 in-tab Teams | (c) | Launcher only | Tony, Mantu IT |
-| Q11 spoken Ask | (b) | D1 | |
+| Q11 spoken Ask | (b) | D1, approved: `SPOKEN_ASK_APPROVED = true` | |
 | Q12 claim currency, Q13 per-story win rates | (a) | Safe defaults; not on the interview path | Tony; HR/legal before reviewers use Q13 |
 | **New:** `ATLAS_HOME` | (a) | From `wrangler.jsonc` at build | |
 | **New:** `DATA_MODE` | (c) | Unset means test mode: the banner and readiness string stay as today; DNA connector and push are `BLOCKED_EXTERNAL`; the export import accepts reserved test addresses only (§5.6). `production`: no banner, readiness `production`, HR-data paths allowed when configured | Tony, only on a Mantu-owned Cloudflare account after Mantu IT approval and DPO sign-off (§11 item 2) |
@@ -323,7 +323,7 @@ Old fragment links keep working.
 | **New:** DNA export CSV | (c) | Real exports only in production mode. In test mode: synthetic rows only | HR / DNA owner supplies the file after DPO sign-off; an admin imports it |
 | **New:** Access IdP claims `name`, `given_name`, `family_name` (Entra optional claims `given_name` and `family_name`) | (c) | Absent: no sign-in name source | Mantu IT, with Entra enablement |
 
-**Decision Tony confirms when approving this amendment.** It is a code constant in `features.js`, not a deployment variable: `SPOKEN_ASK_APPROVED = false` until Tony confirms, then flipped once in a commit (like a `READY` flag). While it is false, `features.spokenAsk` stays false and the feature is simply absent. It never blocks an interview.
+**Decision confirmed by Tony (recorded 2026-09-29): "it should just work and ask for consent and that's it".** It is a code constant in `features.js`, not a deployment variable, now flipped: `SPOKEN_ASK_APPROVED = true` (like a `READY` flag), so `features.spokenAsk` follows `features.ask`. The consent prompt at the moment of use and the server-side consent check below are unchanged. Set back to `false`, the feature is simply absent again. It never blocks an interview.
 - **D1 (spoken Ask, Q11).** Tony's direction ("ask for consent and that's it") is read as replacing the flag with a consent prompt at the moment of use. This **extends WOW rule 4's single STT exception** from "a consented live interview" to "a consented spoken Ask question".
   - The prompt asks the user not to say client names, and a one-line reminder plus a recording indicator stay visible next to the microphone button on every recording, including after "Always allow".
   - The transcript is shown and editable, and it is pseudonymised before any other model (WOW §2.3, unchanged).
@@ -638,7 +638,7 @@ The memory sentence is new consent copy: the DPO reviews it together with the co
   - a GET navigation to `/ATLAS_Voice.html` → 302 `/`; a non-navigation stays 404; `/api/wiki` stays 404; the wrong host stays 403;
   - `/api/directory/push`: 401 without the secret; `BLOCKED_EXTERNAL` in test mode; forwarded as `system` in production mode;
   - banner and `readiness` follow `DATA_MODE`;
-  - `/api/transcribe`: 403 without the consent header when `spokenAsk` is on; 403 for `always` with no stored consent; 404 while `SPOKEN_ASK_APPROVED` is false.
+  - `/api/transcribe`: 403 without the consent header when `spokenAsk` is on; 403 for `always` with no stored consent; 404 when `spokenAsk` is off (Ask not READY, or the `spokenAskApproved: false` test seam now that D1 is approved).
 - **`session.test.js`:** `projectContext({title, consultant: 'Zelda Quintero'})` has no `consultant`, and `talkerMessages` contains no "Zelda". The greeting is unchanged (existing assertions).
 - **`library.test.js`:** `forModel` has no `consultant`, and record hashes are unchanged. A merge writes "Contribution by another consultant:". `recordView` strips a legacy "Contribution by x@y.com:" prefix.
 - **`memory.test.js`** (existing file or new) — **Hindsight payload leak test**: `retainItems(modelProject(libraryPayload(p), 'profile'))` contains neither the consultant name nor the profile title, and the client name is still scrubbed (`client` kept). `GET /api/memory/settings` returns `{off}` without calling the Hindsight fake.
@@ -774,7 +774,7 @@ Not touched (revision 1 touched them): `languages.js`, `worker.js`, and the `Ses
    - **pull:** only if DNA is HTTPS-reachable from Cloudflare, with header or bearer auth and lookup by email or `oid` (§5.3). IT supplies the URL template, header, key and field map;
    - **export CSV:** HR supplies the file, and an admin uploads it.
 4. **Entra sign-in and name claims.** Mantu IT, and Tony runs `enable_entra.sh`. It is **usually silent on Mantu-managed browsers, with one Microsoft sign-in otherwise**. Per-user gate: `ENTRA_REQUIRED_ROLE=ATLAS.Interview` admits only people assigned that role, so IT assigns it to a group that covers all consultants, or leaves it unset and gates with an Access policy on the Entra group or the email domains. The Entra app also needs the `given_name` and `family_name` optional claims.
-5. **One confirmation from Tony** (not a credential): D1, spoken Ask with consent.
+5. **One confirmation from Tony** (not a credential): D1, spoken Ask with consent. **Done** (recorded 2026-09-29): `SPOKEN_ASK_APPROVED = true`.
 
 **Works today, with nothing from anyone:** start, consent, interview, the auto-created project, the returning-user rebuild, re-sign-in without loss, `/go/` links, and a profile from your own edits plus the email guess.
 

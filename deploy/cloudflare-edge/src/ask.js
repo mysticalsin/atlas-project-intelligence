@@ -17,7 +17,10 @@ export const READY = true;
 const LABEL = 'Answers are interpretation over the library; open each reference for the facts. People are listed by the projects they worked on, never ranked.';
 const UNRANKED = 'Not ranked: the ranking model did not answer. Similarity is not relevance.';
 const NOTE = { empty_library: 'No references are available to you yet.', none: 'Nothing in the library answers this yet.', unranked: UNRANKED,
-  filtered: 'Filtered to references for that client that you can open fully.' };
+  filtered: 'Filtered to references for that client that you can open fully.', filteredNone: 'The ranking model judged none of them relevant to this question.' };
+// On the client-filter path the named client is the relevance signal, and pseudonymising the question masks its name,
+// so every row of that client reaches the ranking: no similarity floor there.
+const UNFLOORED = Object.freeze({ semantic: -Infinity, lexical: -Infinity });
 const norm = s => String(s ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
 
 export async function routes(ctx) {
@@ -37,7 +40,7 @@ async function ask(lib, user, b) {
     const theirs = pool.filter(([r, level]) => level === 'full' && named.has(norm(r.data.client?.name)));
     if (theirs.length) { pool = theirs; note = NOTE.filtered; }
   }
-  const q = pseudonymise(lib, question), mine = forAuthor(lib, q.map);
+  const q = pseudonymise(lib, question), mine = forAuthor(lib, q.map, { authorText: q.text });
   const answer = (verdict, method, results, extraNote) => {
     const people = [], byKey = new Map(), countries = new Map();
     for (const r of results) {
@@ -55,13 +58,13 @@ async function ask(lib, user, b) {
   };
   if (!pool.length) return answer('empty_library', 'none', [], NOTE.empty_library);
   const qv = lib.embed ? await lib.embed(q.text).catch(() => null) : null, wins = winSignals(lib);
-  const kept = rankPool(pool, q.text, qv, { floor: SIM_FLOOR, boost: r => wins.get(r.id)?.boost || 0 }).slice(0, 12);
+  const kept = rankPool(pool, q.text, qv, { floor: note ? UNFLOORED : SIM_FLOOR, boost: r => wins.get(r.id)?.boost || 0 }).slice(0, 12);
   const retrieval = retrievalOf(kept) || (qv ? 'semantic' : 'lexical');
   if (!kept.length) return answer('none', retrieval, [], NOTE.none);
   const cards = kept.map(k => candidateCard(k.row.id, recordView(lib, k.row.data)));
   const ranked = lib.complete ? parseRerankStrict(await lib.complete([{ role: 'system', content: RERANK_POLICY },
     { role: 'user', content: JSON.stringify({ context: { query: q.text }, candidates: cards }) }]).catch(() => ''), cards.map(c => c.id)) : null;
-  if (ranked !== null && !ranked.length) return answer('none', retrieval + ' + model ranking', [], NOTE.none);
+  if (ranked !== null && !ranked.length) return answer('none', retrieval + ' + model ranking', [], note ? NOTE.filteredNone : NOTE.none);
   const byId = new Map(kept.map(k => [k.row.id, k]));
   const picks = ranked ? [...ranked].sort((x, y) => y.relevance - x.relevance) : kept.map(k => ({ id: k.row.id, relevance: null, why: '', caveat: UNRANKED }));
   const results = picks.slice(0, limit).map(x => {
@@ -74,11 +77,12 @@ async function ask(lib, user, b) {
 }
 
 // The two snippets with the most lexical overlap with the (pseudonymised) question, scored on the masked text.
-// Full access: the raw sentence; otherwise the masked text. `raw` itself never leaves the server.
+// Full access: the raw sentence and source name (§2.3); otherwise the masked ones. `raw` and `rawSource` never leave
+// the server otherwise.
 function snippetsFor(lib, k, query) {
   const full = k.level === 'full';
   return snippetsOf(lib, k.row.data).map((s, i) => ({ s, i, score: lexical(query, s.text) })).sort((x, y) => y.score - x.score || x.i - y.i).slice(0, 2)
-    .map(({ s }) => ({ kind: s.kind, ...(s.kind === 'consultant_words' ? { topic: TOPIC_KEYS[s.topic] } : { sourceName: s.source.name }), text: (full ? s.raw : s.text).slice(0, 300) }));
+    .map(({ s }) => ({ kind: s.kind, ...(s.kind === 'consultant_words' ? { topic: TOPIC_KEYS[s.topic] } : { sourceName: full ? s.rawSource.name : s.source.name }), text: (full ? s.raw : s.text).slice(0, 300) }));
 }
 
 // Record membership only, in reference order: the reference owner, then the listed consultants. Never scored.

@@ -223,10 +223,13 @@ test('T1-S0 bootstrap: verified email and every feature flag, conservative by de
   assert.deepEqual(Object.keys(boot).slice(0, -2), ['provider', 'providerLabel', 'protocol', 'csrf', 'identity', 'model', 'admin', 'voices', 'defaultVoice', 'captureRequired', 'codecAvailable', 'busy', 'capacity',
     'maxSeconds', 'speakingSeconds', 'memory', 'wiki', 'jev', 'jevClassify', 'library', 'libraryRole', 'sheet', 'transcription', 'structuredNotes', 'liveLedger', 'playbackAck', 'readiness']);
   assert.equal(boot.email, 'tony@example.com'); assert.deepEqual(Object.keys(boot.features), FEATURE_KEYS);
-  assert.equal(boot.features.spokenAsk, false); assert.equal(boot.features.teams, 'BLOCKED_EXTERNAL'); assert.equal(boot.features.phone, 'BLOCKED_EXTERNAL');
-  // WOW_ZERO_CONFIG D1: SPOKEN_ASK is no longer a variable; spoken Ask waits for SPOKEN_ASK_APPROVED (a code constant).
-  const spoken = await (await handle(await req('/api/bootstrap'), { ...ENV, SPOKEN_ASK: '1' }, '')).json();
-  assert.equal(spoken.features.spokenAsk, false, 'the removed SPOKEN_ASK variable turns nothing on');
+  // D1 is the SPOKEN_ASK_APPROVED code constant (features.test.js pins its value): spoken Ask follows Ask when it is set.
+  assert.equal(boot.features.spokenAsk, SPOKEN_ASK_APPROVED && boot.features.ask); assert.equal(boot.features.teams, 'BLOCKED_EXTERNAL'); assert.equal(boot.features.phone, 'BLOCKED_EXTERNAL');
+  // WOW_ZERO_CONFIG D1: SPOKEN_ASK is no longer a variable; spoken Ask follows SPOKEN_ASK_APPROVED (a code constant).
+  for (const v of ['0', '1']) {
+    const spoken = await (await handle(await req('/api/bootstrap'), { ...ENV, SPOKEN_ASK: v }, '')).json();
+    assert.equal(spoken.features.spokenAsk, boot.features.spokenAsk, 'the removed SPOKEN_ASK variable changes nothing');
+  }
   const service = await (await handle(await signed('/api/bootstrap', { email: undefined }), ENV, '')).json();
   assert.equal(service.email, '', 'a service identity has no email'); assert.equal(service.identity.name, 'Access service identity');
 });
@@ -242,6 +245,15 @@ test('T1-S0 library forward: x-atlas-email set and a spoofed one overwritten; ra
   const big = JSON.stringify({ query: 'x'.repeat(262200) });
   const r = await post(big); assert.equal(r.status, 413); assert.deepEqual(await r.json(), { error: 'Request too large.' }); assert.equal(c.req, null, 'never forwarded');
   assert.equal((await post('{}', { 'Content-Length': '999999' })).status, 413, 'the declared length is still checked first');
+  // Review #16: a streamed body with no Content-Length is read only just past 256 KiB, not buffered whole.
+  const CHUNK = 1 << 16, s = { pulled: 0 }, chunk = new Uint8Array(CHUNK).fill(120);
+  const stream = new ReadableStream({ pull(ctl) { if (s.pulled >= 20 * (1 << 20)) return ctl.close(); s.pulled += CHUNK; ctl.enqueue(chunk); } });
+  c.req = null;
+  const long = await handle(new Request(ORIGIN + '/api/library/recommend', { method: 'POST', body: stream, duplex: 'half', headers: { 'cf-access-jwt-assertion': await jwt(), Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'Content-Type': 'application/json' } }), env, '');
+  assert.equal(long.status, 413); assert.equal(c.req, null, 'never forwarded');
+  assert.ok(s.pulled <= 262144 + 2 * CHUNK, `the read stops just past 256 KiB (${s.pulled} bytes pulled)`);
+  const utf = '{"query":"Zoë Ålund meeting about énergie"}';
+  assert.equal((await post(utf)).status, 200); assert.equal(c.body, utf, 'a bounded read forwards UTF-8 unchanged');
   const entra = { ...env, IDENTITY_SOURCE: 'entra', ENTRA_TENANTS: '11111111-2222-3333-4444-555555555555' };
   await handle(await signed('/api/library', { custom: { tid: '11111111-2222-3333-4444-555555555555', oid: '99999999-8888-7777-6666-555555555555', roles: [] } }), entra, '');
   assert.equal(c.req.headers.get('x-atlas-user'), '11111111-2222-3333-4444-555555555555:99999999-8888-7777-6666-555555555555'); assert.equal(c.req.headers.get('x-atlas-email'), 'tony@example.com');
@@ -347,11 +359,13 @@ test('T1-S0 scheduled(): the daily cron posts scan-stale to the LibraryStore as 
 });
 
 // ---- T1 step 3 (WOW_SPEC §F6.2, §F6.4 #5): /api/transcribe, Spoken Ask. WOW_ZERO_CONFIG D1: off while
-// SPOKEN_ASK_APPROVED is false (the SPOKEN_ASK variable is gone); `approved` exercises the route as if D1 were confirmed,
-// with the consent prompt's header (`once`; the `always` path is tested below). ----
-import { flags as featureFlags, readyOf } from '../src/features.js';
+// SPOKEN_ASK_APPROVED is false (the SPOKEN_ASK variable is gone). `APPROVED` and `UNAPPROVED` pin the test seam either
+// way, so these tests hold whatever the constant's value; `APPROVED` sends the consent prompt's header (`once`; the
+// `always` path is tested below). ----
+import { flags as featureFlags, readyOf, SPOKEN_ASK_APPROVED } from '../src/features.js';
 const APPROVED = { flagsOf: env => featureFlags(env, readyOf, { spokenAskApproved: true }) };
-test('T1 /api/transcribe: 404 until D1 is approved; Origin and CSRF; type and size limits; a numbers-only log; never for external confirmers', async () => {
+const UNAPPROVED = { flagsOf: env => featureFlags(env, readyOf, { spokenAskApproved: false }) };
+test('T1 /api/transcribe: 404 while D1 is not approved; Origin and CSRF; type and size limits; a numbers-only log; never for external confirmers', async () => {
   let fail = false; const runs = [];
   const AI = { async run(model, input) { runs.push([model, input.audio.contentType]); if (fail) throw new Error('stt down');
     return { results: { channels: [{ alternatives: [{ transcript: 'What did we do for Zebracorp? ' + 'x'.repeat(700), languages: ['en'] }] }] } }; } };
@@ -361,7 +375,7 @@ test('T1 /api/transcribe: 404 until D1 is approved; Origin and CSRF; type and si
   const logs = [], log = console.log; console.log = line => logs.push(line);
   try {
     for (const env of [on, { ...on, SPOKEN_ASK: '1' }]) {
-      const r = await post(new Uint8Array(9600), { env, opts: {} }); assert.equal(r.status, 404); assert.deepEqual(await r.json(), { error: 'This feature is not available in this deployment.' });
+      const r = await post(new Uint8Array(9600), { env, opts: UNAPPROVED }); assert.equal(r.status, 404); assert.deepEqual(await r.json(), { error: 'This feature is not available in this deployment.' });
     }
     assert.deepEqual(runs, [], 'nothing reaches speech-to-text while D1 is not approved');
     assert.equal(boot.features.spokenAsk, true, 'bootstrap advertises it only with D1 approved and Ask READY');

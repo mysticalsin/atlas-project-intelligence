@@ -65,10 +65,10 @@
 - Client contacts as confirmers stay off until `CLIENT_CONFIRM=1`, their exact emails in `EXTERNAL_EMAILS` and an Access
   One-time PIN policy for them (Tony's Q3).
 
-## Spoken Ask (F6): off until Tony confirms D1
+## Spoken Ask (F6): follows D1
 `POST /api/transcribe` (raw `audio/L16;rate=24000`, ≤ 30 s, Origin and CSRF) answers 404 while `SPOKEN_ASK_APPROVED` (a
-code constant in `deploy/cloudflare-edge/src/features.js`, not a variable; the old `SPOKEN_ASK` is gone) is false. After
-Tony confirms D1 (docs/WOW_ZERO_CONFIG.md §4) it is flipped once in a commit. Then every request needs the consent prompt's
+code constant in `deploy/cloudflare-edge/src/features.js`, not a variable; the old `SPOKEN_ASK` is gone) is false. It is
+`true` in this tree: D1 was recorded as approved on 2026-09-29 (docs/WOW_ZERO_CONFIG.md §4). Every request needs the consent prompt's
 header `X-Atlas-Consent: spoken-ask-v1; once|always` (403 "Voice questions need your consent first." without it). The
 header is a UI gate; for `always` the Worker also reads the person's stored consent (`GET /api/library/profile/consents`,
 with the verified identity) and refuses when it is missing or revoked. The reminder "Don't say client names" and a

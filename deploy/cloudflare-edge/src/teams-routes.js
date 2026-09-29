@@ -50,9 +50,31 @@ export function eventOf(a, env) {
   return null;
 }
 
+// Reads at most `max` bytes of a request body; null as soon as it is longer (the declared length can be absent or wrong).
+async function boundedText(request, max) {
+  if (!request.body) return '';
+  const reader = request.body.getReader(), parts = [];
+  let n = 0;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    n += value.length;
+    if (n > max) { await reader.cancel().catch(() => {}); return null; }
+    parts.push(value);
+  }
+  const out = new Uint8Array(n);
+  let at = 0;
+  for (const p of parts) { out.set(p, at); at += p.length; }
+  return new TextDecoder().decode(out);
+}
+
+// Served before Access: no bearer token, nothing is read; otherwise the body is read up to MAX_BODY only, then verified.
 async function messages(request, env, fetcher) {
   if (Number(request.headers.get('Content-Length') || 0) > MAX_BODY) return json({ error: 'Request too large.' }, 413);
-  const text = await request.text(), v = await verifyBotActivity(request, text, env, fetcher);
+  if (!/^Bearer\s+\S/.test(request.headers.get('Authorization') || '')) return json({ error: 'A Bot Framework bearer token is required.' }, 401);
+  const text = await boundedText(request, MAX_BODY);
+  if (text === null) return json({ error: 'Request too large.' }, 413);
+  const v = await verifyBotActivity(request, text, env, fetcher);
   if (!v.ok) return json({ error: v.error }, v.status);
   const event = eventOf(v.activity, env);
   if (!event) return json({}, 200);

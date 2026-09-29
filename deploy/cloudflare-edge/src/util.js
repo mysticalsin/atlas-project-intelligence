@@ -4,7 +4,9 @@
 export const str = (v, n) => typeof v === 'string' ? Array.from(v.split(/\s+/).filter(Boolean).join(' ')).slice(0, n).join('') : '';
 export const para = (v, n) => typeof v === 'string' ? v.replace(/\r/g, '').trim().slice(0, n) : '';
 export const list = (v, n, l) => [...new Set((Array.isArray(v) ? v : []).slice(0, 50).map(x => str(x, l)).filter(Boolean))].slice(0, n);
-export const email = v => { const e = String(v || '').trim().toLowerCase(); return /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(e) ? e.slice(0, 200) : ''; };
+// Longer than 254 characters (RFC 5321) is never an address: refused before the regex, which backtracks quadratically on
+// a long run of dots (a 250,000-character body field cost 36 s of Durable Object CPU; review #7, same class).
+export const email = v => { const e = String(v || '').trim().toLowerCase(); return e.length <= 254 && /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(e) ? e.slice(0, 200) : ''; };
 export const https = v => { try { const u = new URL(String(v)); return u.protocol === 'https:' && !u.username && !u.password ? u.href : ''; } catch { return ''; } };
 export const obj = v => v && typeof v === 'object' && !Array.isArray(v) ? v : {};
 export const fail = (status, message) => Object.assign(new Error(message), { status });

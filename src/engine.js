@@ -117,9 +117,14 @@ const SERVER_ID=/^[A-Za-z0-9_-]{1,100}$/;
 function cleanLibraryLink(l){if(!l||typeof l!=='object'||typeof l.id!=='string'||!SERVER_ID.test(l.id))return null;return {id:l.id,revision:Number.isSafeInteger(l.revision)&&l.revision>0?l.revision:null,status:text(l.status,40),syncedAt:text(l.syncedAt,40)};}
 function cleanQuality(q){if(!q||typeof q!=='object'||typeof q.score!=='number'||!Number.isFinite(q.score))return null;return {score:Math.max(0,Math.min(100,q.score)),status:text(q.status,40),issues:(Array.isArray(q.issues)?q.issues:[]).slice(0,20).map(i=>({field:text(i?.field,60),detail:text(i?.detail,400)}))};}
 // Proof-interview (gap mode) answers: kept on this device only until the consultant adds them to the reference (WOW_SPEC F2.1 step 6).
+// results: the per-ask answers of the proof interview (<= 5 asks, <= 5 quotes of 400 characters), kept so they can be sent
+// to the bid team later from the Library (review #22). Unsent answers alone keep the notes.
+const GAP_STATUS=['answered_unverified','unknown','deferred','open'];
 function cleanGapNotes(g){if(!g||typeof g!=='object'||typeof g.requestId!=='string'||!/^[a-f0-9]{32}$/.test(g.requestId))return null;
  const sections=Array.from({length:6},(_,i)=>{const v=Array.isArray(g.sections)?g.sections[i]:null;return typeof v==='string'&&v.trim()?v.trim().slice(0,6000):null;}),transcript=typeof g.transcript==='string'?g.transcript.slice(0,60000):'';
- if(!sections.some(Boolean)&&!transcript.trim())return null;return {requestId:g.requestId,sections,transcript,at:text(g.at,40)};}
+ const results=(Array.isArray(g.results)?g.results:[]).filter(r=>r&&typeof r==='object'&&typeof r.askId==='string'&&r.askId.trim()).slice(0,5).map(r=>({askId:r.askId.trim().slice(0,20),status:GAP_STATUS.includes(r.status)?r.status:'open',
+  quotes:(Array.isArray(r.quotes)?r.quotes:[]).filter(q=>typeof q==='string'&&q.trim()).slice(0,5).map(q=>q.trim().slice(0,400))}));
+ if(!sections.some(Boolean)&&!transcript.trim()&&!results.length)return null;return {requestId:g.requestId,sections,transcript,results,at:text(g.at,40)};}
 function cleanJev(j){if(!j||typeof j!=='object'||!j.primary||typeof j.impact!=='number'||!Number.isFinite(j.impact))return null;const num=(x,a,b)=>typeof x==='number'&&Number.isFinite(x)?Math.max(a,Math.min(b,x)):0;
  const scores={};for(const [k,v] of Object.entries(j.scores||{}).slice(0,8))scores[text(k,40)]={label:text(v?.label,60),score:num(v?.score,0,4),confidence:num(v?.confidence,0,1)};
  return {primary:{key:text(j.primary.key,40),label:text(j.primary.label,60),confidence:num(j.primary.confidence,0,1)},also:(Array.isArray(j.also)?j.also:[]).slice(0,8).map(a=>({key:text(a?.key,40),label:text(a?.label,60),probability:num(a?.probability,0,1)})),

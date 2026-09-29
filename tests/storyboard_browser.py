@@ -102,6 +102,7 @@ with sync_playwright() as pw:
  # ---- F5.3 #8 gap mode and F5.3 #9 / F2.7 #6: answers leave only on an explicit click
  p.evaluate("""rid=>{window.__apply=[];const A=window.ATLAS_APP;
    A.applyGapNotes=async id=>{__apply.push(id===undefined?null:id);return {projectId:id,library:{id:'ref-123',revision:4}};};
+   window.__sent=[];A.gapAnswersSent=(id,r)=>{__sent.push([id,r]);};
    A.profile=()=>({projects:[{id:'p-gap',title:'Proof for Bid X',library:{id:'ref-123',revision:3},gapNotes:{requestId:rid}}]});
    A.project=()=>({id:'p-other',library:{id:'ref-other'}});}""",RID)
  s(p,{'type':'ready','mode':'gap','maxSeconds':300,'liveLedger':True,'capture':True,'timePlan':{'depthAt':None,'closingAt':210},'gaps':GAPS})
@@ -122,6 +123,7 @@ with sync_playwright() as pw:
  p.locator('#gapSend').click();p.wait_for_function("()=>document.getElementById('gapSend').textContent==='Sent to the bid team'")
  p.evaluate("document.getElementById('gapSend').click()");p.wait_for_timeout(300)
  check('#gapSend posts exactly once, only on its click',len(POSTS)==1 and POSTS[0]['method']=='POST' and POSTS[0]['url'].endswith('/api/library/gaps/'+RID+'/answer') and POSTS[0]['csrf']=='tok')
+ check('Review #22: a send from the panel clears the stored results of the interviewed project (no second send from the Library)',p.evaluate('__sent')==[['p-gap',RID]])
  check('The answer body carries askId, status and quotes, and the interviewed reference',POSTS[0]['body']=={'results':[{'askId':'G1','status':'answered_unverified','quotes':['Errors fell 40% after the pilot.','<img src=x onerror="window.__xss=3">']},{'askId':'G2','status':'unknown','quotes':[]}],'referenceId':'ref-123'})
  check('Sending did not add to the reference',p.evaluate('__apply.length')==0)
  p.locator('#gapApply').click();p.wait_for_function("()=>document.getElementById('gapApply').textContent==='Added to your reference'")

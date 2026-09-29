@@ -160,3 +160,78 @@ test('safeSummary: full access unchanged; otherwise no owner email, no client, a
   assert.deepEqual([pub.owner, pub.client, pub.title, pub.industry, pub.technologies], ['', '', 'the client claims triage like another client, [email]', 'the client insurance', ['the client stack']]);
   assert.doesNotMatch(JSON.stringify(pub), /@|Zebracorp|Brightwave/);
 });
+
+// ---- Review regressions (masking): map cap oracle, Unicode forms, PII regex cost, display rule, "Name (role)" contacts ----
+import { clientScrub } from '../src/review.js';
+
+test('a full placeholder map never falls back to a uniform label, so the author view is no library-membership oracle', async () => {
+  const l = await lib(), emails = Array.from({ length: 200 }, (_, i) => `u${i}@x.io`);
+  const full = pseudonymise(l, emails.join(' ')).map;
+  assert.equal(Object.keys(full).length, 200);
+  const text = 'Experience with Zebracorp and Jane Doe and Fakeco and John Roe';
+  const p = pseudonymise(l, text, { map: full });
+  assert.equal(p.text, 'Experience with [Company 1] and [Person 1] and Fakeco and John Roe');
+  assert.equal(unmask(p.text, p.map), text, 'the author gets the typed names back, exactly like names outside the library');
+  assert.equal(pseudonymise(l, 'u7@x.io, Zebracorp and ops@y.io', { map: p.map }).text, '[Email 8], [Company 1] and [Email 201]', 'entries reused, numbering continues');
+});
+
+test('pseudonymise stays fast with thousands of placeholders (indexed lookup, no per-span scan of the map)', async () => {
+  const l = await lib(), text = Array.from({ length: 5000 }, (_, i) => `u${i}@x.io`).join(' ') + ' and Zebracorp';
+  const t0 = performance.now(), p = pseudonymise(l, text), ms = performance.now() - t0;
+  assert.equal(Object.keys(p.map).length, 5001);
+  assert.equal(unmask(p.text, p.map), text);
+  assert.ok(ms < 1500, `took ${ms.toFixed(0)} ms`);
+});
+
+test('Unicode: decomposed (NFD) text, names and prospects are matched like their composed (NFC) forms', async () => {
+  const l = await lib([{ name: 'Société Générale', location: '', contact: '' }, { name: 'Nestlé', location: '', contact: 'José Núñez' }]);
+  const nfc = 'We worked with Société Générale and Nestlé; José Núñez (josé@mail.example) agreed.', nfd = nfc.normalize('NFD');
+  assert.notEqual(nfd, nfc);
+  assert.equal(recordText(l)(nfd), 'We worked with another client and another client; a contact ([email]) agreed.');
+  const p = pseudonymise(l, nfd);
+  assert.equal(p.text, 'We worked with [Company 1] and [Company 2]; [Person 1] ([Email 1]) agreed.');
+  assert.equal(unmask(p.text, p.map), nfc, 'the author gets their own words back, in composed form');
+  assert.equal(piiText('Mail josé@mail.example now'.normalize('NFD')), 'Mail [email] now');
+  assert.equal(maskedPreview('Brief for Crédit Agricole.'.normalize('NFD'), ['Crédit Agricole']), 'Brief for [prospect].');
+  assert.equal(maskedPreview('Brief for Crédit Agricole.', ['Crédit Agricole'.normalize('NFD')]), 'Brief for [prospect].');
+  assert.equal(nameMatcher(['Crédit Agricole'])('Crédit Agricole'.normalize('NFD'), () => 'X'), 'X');
+  const d = await lib([{ name: 'Nestlé'.normalize('NFD'), location: '', contact: '' }]);
+  assert.equal(recordText(d)('Nestlé signed.'), 'another client signed.', 'a name stored decomposed matches composed text');
+  assert.equal(clientScrub({ client: { name: 'Société Générale' } })('Société Générale signed.'.normalize('NFD')), 'the client signed.');
+  assert.equal(clientScrub({ client: { name: 'Société Générale'.normalize('NFD') } })('Société Générale signed.'), 'the client signed.');
+});
+
+test('PII masking stays linear on 60,000-character single tokens (no quadratic email scan)', async () => {
+  const l = await lib(), rt = recordText(l);
+  for (const s of ['x'.repeat(60000), '.a'.repeat(30000), 'a@' + 'b.'.repeat(29999), '1'.repeat(60000) + 'a', 'www.' + 'a'.repeat(59996)]) {
+    const t0 = performance.now();
+    piiText(s); maskedPreview(s, []); pseudonymise(l, s); rt(s);
+    const ms = performance.now() - t0;
+    assert.ok(ms < 1000, `${JSON.stringify(s.slice(0, 6))}… took ${ms.toFixed(0)} ms`);
+  }
+  assert.equal(piiText(`Mail ${'a'.repeat(64)}@mail.example or jane.doe+x@mail.acme.example.`), 'Mail [email] or [email].');
+});
+
+test('display rule: a library name the author\'s own input carried to the model stays as written in the author view', async () => {
+  const l = await lib([{ name: 'Orange', location: '', contact: '' }, { name: 'Zebracorp', location: '', contact: 'Jane Doe' }]);
+  const sent = 'orange juice supply chain experience is required for this tender, as at [Company 1].';
+  const out = 'Orange juice supply chain experience; like Zebracorp and ORANGE; mail ops@orange.example.';
+  assert.equal(recordText(l, { authorText: sent })(out), 'Orange juice supply chain experience; like another client and ORANGE; mail [email].');
+  assert.equal(recordText(l)(out), 'another client juice supply chain experience; like another client and another client; mail [email].', 'other views: full record masking');
+  assert.deepEqual(recordMask(l, { authorText: sent })(['Orange juice', 3]), ['Orange juice', 3]);
+  assert.equal(forAuthor(l, { '[Company 1]': 'Acme' }, { authorText: sent })('[Company 1] wants Orange juice, not Zebracorp'), 'Acme wants Orange juice, not another client');
+  assert.equal(recordText(l, { authorText: 'oranges and lemons' })('Orange juice'), 'another client juice', 'word-bounded: "oranges" is not "Orange"');
+});
+
+test('"Name (role)" contacts: the bare name is masked as well as the whole field', async () => {
+  const l = await lib([{ name: 'Zebracorp', location: '', contact: 'Jane Doe (Head of Claims)' }, { name: 'Quillon', location: '', contact: 'Dupont, CFO' },
+    { name: 'Brightwave', location: '', contact: 'Will (CFO)' }, { name: 'Heron', location: '', contact: 'Max Roe <max@heron.example>' }]);
+  const rt = recordText(l);
+  assert.equal(rt('Jane Doe approved; Dupont signed; the supplier will ask Max Roe.'), 'a contact approved; a contact signed; the supplier will ask a contact.');
+  assert.equal(rt('Jane Doe (Head of Claims) agreed.'), 'a contact agreed.');
+  assert.equal(pseudonymise(l, 'Jane Doe approved it; ask Jane Doe (Head of Claims).').text, '[Person 1] approved it; ask [Person 2].');
+  assert.equal(clientScrub({ client: { name: 'Zebracorp', contact: 'Jane Doe (Head of Claims)' } })('Jane Doe approved the rollout.'), 'the client approved the rollout.');
+  assert.equal(clientScrub({ client: { name: 'Brightwave', contact: 'Will (CFO)' } })('the supplier will ask'), 'the supplier will ask', 'a stoplist word is never a contact');
+  const row = l.row(l.rows('SELECT id FROM refs WHERE local_id = ?', 'r0')[0].id);
+  assert.equal(recordView(l, { ...row.data, answers: ['Jane Doe approved the rollout.'] }).answers[0], 'the client approved the rollout.');
+});

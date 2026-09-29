@@ -77,12 +77,33 @@ function guessPrompt(el,projectId){const g=C.value(profile,'name');if(!el||!prof
  wrap.append(yes,' ',edit);el.append(wrap);}
 // ---- project form: prefill chips computed at render time (§3.5)
 const FORM=[['consultantName','name'],['consultantRole','title'],['n1Name','managerName'],['n1Email','managerEmail']];
-function paintProjectForm(){let fromProfile=false;
- for(const [id,k] of FORM){const input=$(id),c=document.querySelector(`[data-chip="${id}"]`);if(!input||!c)continue;const f=profile?.fields?.[k],t=profile?C.chipFor(f,input.value):'';
-  c.textContent=t;c.hidden=!t;if(t&&t!=='you edited')fromProfile=true;}
+// The N+1 name ATLAS put in #n1Name (§5.8), and the email it belongs to: the new-project prefill (from '') or a people
+// lookup (from 'dna' | 'dna_export', named by its chip). Only such a name follows the email; a name typed here, or the stored
+// name of a project being edited, is never replaced. Never stored (the only stored provenance is roleFrom).
+// fresh: the form was just opened; edit: for an existing project.
+let n1Auto=null,n1Seq=0;const n1Found=new Map(),n1Ours=()=>!!n1Auto&&$('n1Name')?.value.trim()===n1Auto.name;
+function paintProjectForm({fresh=false,edit=false}={}){let fromProfile=false;
+ if(fresh){n1Seq++;const n=$('n1Name')?.value.trim();n1Auto=!edit&&n?{email:C.validEmail($('n1Email')?.value),name:n,from:''}:null;}
+ for(const [id,k] of FORM){const input=$(id),c=document.querySelector(`[data-chip="${id}"]`);if(!input||!c)continue;const f=profile?.fields?.[k];let t=profile?C.chipFor(f,input.value):'';
+  if(t&&t!=='you edited')fromProfile=true;else if(t&&id==='n1Name'&&n1Ours()&&n1Auto.from)t=C.sourceLabel(n1Auto.from);
+  c.textContent=t;c.hidden=!t;}
  const note=$('projectPrefillNote');if(note)note.hidden=!fromProfile;
  const hint=$('roleHint'),role=$('consultantRole')?.value.trim();if(hint)hint.hidden=!(profile&&role&&role===C.value(profile,'title'));}
-for(const [id] of FORM)$(id)?.addEventListener('input',paintProjectForm);
+for(const [id] of FORM)$(id)?.addEventListener('input',()=>paintProjectForm());
+// §5.8: a typed N+1 email fills the N+1 name: your profile's N+1 when it is that email, else GET /people, which reads stored
+// directory rows only (never DNA, never anyone's profile). Only on a committed change, each found email once per page
+// (30 lookups an hour). Not found, refused or offline: nothing is filled and nothing is guessed.
+async function findPerson(e){if(n1Found.has(e))return n1Found.get(e);
+ try{const p=await app().libraryApi('/people?email='+encodeURIComponent(e));
+  if(typeof p?.name!=='string'||!p.name.trim()||!['dna','dna_export'].includes(p.from))return null;
+  const hit={name:p.name.trim().slice(0,C.LIMITS.managerName),from:p.from};n1Found.set(e,hit);return hit;}catch{return null;}}
+$('n1Email')?.addEventListener('change',async()=>{const name=$('n1Name'),seq=++n1Seq,e=C.validEmail($('n1Email').value);if(!profile||!name)return;
+ if(n1Ours()&&n1Auto.email!==e){name.value='';n1Auto=null;paintProjectForm();}  // ATLAS's name belonged to the old email
+ if(!e||name.value.trim()||e===String(profile.email||'').toLowerCase())return;  // a typed name stays; your N+1 can't be you
+ const mine=e===C.value(profile,'managerEmail').toLowerCase()&&C.value(profile,'managerName');
+ const hit=mine?{name:mine,from:''}:await findPerson(e);  // the profile's own pair needs no lookup (its chip is the profile's)
+ if(!hit||seq!==n1Seq||name.value.trim()||C.validEmail($('n1Email').value)!==e)return;  // a newer change, a reopened form or typing wins
+ n1Auto={email:e,...hit};name.value=hit.name;paintProjectForm();});
 // ---- admin: People directory (§5.6). Rows are built from the mapped approved columns only; nothing else is uploaded.
 const DIR={table:null,file:''};
 async function renderDirectory(){const el=$('peopleDirectory');if(!el)return;const b=await window.AtlasAuth.boot();

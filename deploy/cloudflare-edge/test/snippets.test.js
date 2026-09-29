@@ -68,8 +68,17 @@ test('sources are evidence snippets; data.report is never a snippet; caps respec
   assert.equal(s.length, 80);
   for (let t = 0; t < 6; t++) assert.equal(s.filter(x => x.topic === t).length, 12);
   const src = s.filter(x => x.kind === 'evidence');
-  assert.equal(src.length, 8); assert.deepEqual(src[0], { id: 'S1.1', kind: 'evidence', idx: 0, source: { name: 'Dashboard 0', version: 'v0' }, raw: 'Consultant sentence 0 is here.', text: 'Consultant sentence 0 is here.' });
+  assert.equal(src.length, 8); assert.deepEqual(src[0], { id: 'S1.1', kind: 'evidence', idx: 0, source: { name: 'Dashboard 0', version: 'v0' }, rawSource: { name: 'Dashboard 0', version: 'v0' }, raw: 'Consultant sentence 0 is here.', text: 'Consultant sentence 0 is here.' });
   assert.equal(snippetsOf(l, { ...d, answers: ['', '', '', '', '', ''] }).filter(x => x.id.startsWith('S1.')).length, 6);
   assert.doesNotMatch(JSON.stringify(s), /Model draft|Report headline/);
   assert.ok(aligned(d, s)); assert.ok(s.every(x => x.text.length <= 400));
+});
+
+test('evidence source name and version get the same masking as the text; the raw source stays server-side', async () => {
+  const l = await lib(['Quillon Energy']), name = 'Zebracorp Bank claims triage SOW.txt (jane.doe@zebracorp.example)', version = 'Quillon Energy v2 2026-03-01';
+  const d = data('Zebracorp Bank', [], { sources: [{ name, version, excerpt: 'Claims triage times fell from 40 to 12 minutes per claim.' }] });
+  const [s] = snippetsOf(l, d);
+  assert.deepEqual(s.source, { name: 'the client claims triage SOW.txt ([email])', version: 'another client v2 2026-03-01' });
+  assert.deepEqual(s.rawSource, { name, version }, 'raw, like `raw`: for full-access readers only, never customer-facing');
+  assert.deepEqual(snippetsOf(l, data('C', [], { sources: [{ excerpt: 'An excerpt long enough to keep.' }] }))[0].source, { name: '', version: '' });
 });

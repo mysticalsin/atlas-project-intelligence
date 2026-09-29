@@ -116,8 +116,19 @@ try:
           loc('/ATLAS_Voice.html', h={'Accept': 'text/html'}) == (302, '/') and loc('/index.html', h={'Sec-Fetch-Mode': 'navigate'}) == (302, '/')
           and get(BASE, '/ATLAS_Voice.html')[0] == 404 and get(BASE, '/api/wiki', headers={'Accept': 'text/html'})[0] == 404)
     check('test mode: the banner stays and readiness says so', boot['readiness'] == 'edge-deployment-test-data-only' and 'TEST DEPLOYMENT · SYNTHETIC DATA ONLY' in get(BASE, '/')[2])
-    check('spoken Ask stays off until D1 is approved: absent from features, /api/transcribe 404', boot['features'].get('spokenAsk') is False
-          and get(BASE, '/api/transcribe')[0] == 404)
+    # D1 is the SPOKEN_ASK_APPROVED code constant (features.test.js pins its value); this check holds either way.
+    approved = 'export const SPOKEN_ASK_APPROVED = true;' in (EDGE / 'src/features.js').read_text()
+    def transcribe(headers):
+        req = urllib.request.Request(BASE + '/api/transcribe?as=jane@example.com', data=b'\0' * 9600, method='POST',
+                                     headers={'Content-Type': 'audio/L16;rate=24000', 'Origin': BASE, 'X-Atlas-CSRF': boot['csrf'], **headers})
+        try: r = RAW.open(req, timeout=10); return r.status, r.read().decode()
+        except urllib.error.HTTPError as e: return e.code, e.read().decode()
+    no_consent = transcribe({})
+    if approved:
+        check('spoken Ask follows Ask once D1 is approved, and every recording needs the consent header (403 without it)',
+              boot['features'].get('spokenAsk') is boot['features'].get('ask') is True and no_consent[0] == 403 and 'consent' in no_consent[1])
+    else:
+        check('spoken Ask stays off until D1 is approved: absent from features, /api/transcribe 404', boot['features'].get('spokenAsk') is False and no_consent[0] == 404)
 
     with sync_playwright() as pw:
         br = pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH') or None,

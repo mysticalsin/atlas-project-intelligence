@@ -163,7 +163,8 @@ test('approve per channel: email draft (drafted, with .ics), Teams not connected
   assert.ok(a.body.draft.body.includes(`${ORIGIN}/go/invitation/${inv.id}`), 'a /go/ link that survives sign-in (WOW_ZERO_CONFIG §3.9)');
   assert.match(a.body.draft.ics, /DTSTART:20261001T093000\r\nDURATION:PT15M/);
   assert.ok(!JSON.stringify(a.body).includes('Zebracorp'), 'no client name in the draft');
-  assert.equal((await s.call(REV, 'POST', 'outreach/' + email.id, { action: 'approve' })).status, 409, 'drafted is final');
+  const again = await s.call(REV, 'POST', 'outreach/' + email.id, { action: 'approve' });
+  assert.deepEqual([again.status, again.body.item.status, again.body.draft.to], [200, 'drafted', 'alex@mantu.com'], 'drafted stays drafted; its draft can be produced again');
   const t = await s.call(ADMIN, 'POST', 'outreach/' + teams.id, { action: 'approve' });
   assert.deepEqual([t.body.item.status, t.body.item.reason], ['blocked_external', 'Teams is not connected: tenant app, bot credentials and TEAMS_* settings are missing.']);
   // Phone is never queued; a phone row (inserted by hand) is always blocked_external.
@@ -185,6 +186,29 @@ test('approve per channel: email draft (drafted, with .ics), Teams not connected
   const audit = s.l.rows("SELECT action, detail FROM audit WHERE action LIKE 'outreach %'");
   assert.ok(audit.length >= 8);
   for (const r of audit) { assert.match(r.action, /^outreach (pending_approval|drafted|sent|failed|blocked_external|dismissed)$/); assert.match(r.detail, /^(interview_invite|gap_request|confirmation_request) (teams|email_draft|phone)$/); }
+});
+
+test('an approved email draft can be produced again (the page reloaded before sending): same draft, row unchanged, audited; never once the subject closed', async () => {
+  const s = setup(); await others(s);
+  const inv = (await trigger(s)).body;
+  const email = (await s.call(REV, 'GET', 'outreach')).body.items.find(i => i.subjectId === inv.id && i.channel === 'email_draft');
+  const first = await s.call(REV, 'POST', 'outreach/' + email.id, { action: 'approve' });
+  assert.equal(first.body.item.status, 'drafted');
+  s.clock.t += 60e3;
+  const again = await s.call(ADMIN, 'POST', 'outreach/' + email.id, { action: 'approve' });
+  assert.equal(again.status, 200, JSON.stringify(again.body));
+  assert.deepEqual(again.body.item, first.body.item, 'status, approver and approval time unchanged');
+  assert.deepEqual({ ...again.body.draft, ics: '' }, { ...first.body.draft, ics: '' }); assert.match(again.body.draft.ics, /DTSTART:20261001T093000/);
+  assert.ok(!JSON.stringify(again.body).includes('Zebracorp'), 'no client name in the reissued draft');
+  assert.deepEqual(s.l.rows("SELECT actor, action, detail FROM audit WHERE id = ? AND action LIKE 'outreach %' ORDER BY seq", email.id), [
+    { actor: 'atlas', action: 'outreach pending_approval', detail: 'interview_invite email_draft' },
+    { actor: 'rev@mantu.com', action: 'outreach drafted', detail: 'interview_invite email_draft' },
+    { actor: 'boss@mantu.com', action: 'outreach drafted', detail: 'interview_invite email_draft' }]);
+  assert.equal((await s.call(REV, 'POST', 'outreach/' + email.id, { action: 'dismiss' })).status, 409, 'a drafted row is not dismissed');
+  await s.l.updateInvitation(ALEX, inv.id, { action: 'dismiss' });
+  const closed = await s.call(REV, 'POST', 'outreach/' + email.id, { action: 'approve' });
+  assert.deepEqual([closed.status, closed.body.error, closed.body.draft], [409, 'The invitation or request is no longer open.', undefined]);
+  assert.equal(s.l.rows('SELECT status FROM outreach WHERE id = ?', email.id)[0].status, 'drafted');
 });
 
 test('Teams connected (fake client): not installed, sent with the invitee binding, failed, MessageWritesBlocked stops the conversation', async () => {

@@ -75,7 +75,7 @@ test('bidView: the author sees their own words; everyone else uniform labels and
   l.sql.exec('UPDATE bids SET title = NULL, brief = NULL, prospects = NULL, pseudo = NULL, purged_at = ? WHERE id = ?', 'now', 'b1');
   const purged = bids.bidView(l, OWNER, 'b1');
   assert.equal(purged.view, 'other'); assert.equal(purged(alias.text), '[company]-style rollout', 'after a purge the owner renders like the other view');
-  assert.deepEqual(bids.getRequirement(l, OWNER, 'b1', 'R1').bid.prospects, []);
+  assert.throws(() => bids.getRequirement(l, OWNER, 'b1', 'R1'), e => e.status === 409, 'no new gap request on a deleted bid (review #17)');
 });
 
 // ======================================= T1 step 2: routes (WOW_SPEC §F1.1-§F1.4, §F1.9) =======================================
@@ -152,7 +152,8 @@ test('create: bounds, the alias refusal, raw text stored, requirements from the 
   const row = l.rows('SELECT * FROM bids WHERE id = ?', bid.id)[0];
   assert.equal(row.brief, BRIEF); assert.equal(row.title, NEW_BID.title); assert.equal(row.owner_mail, OWNER.email);
   assert.doesNotMatch(row.alias + row.requirements + row.customer, SENTINEL, 'stored in placeholder form');
-  assert.deepEqual(Object.values(JSON.parse(row.pseudo)).sort(), ['+33 6 12 34 56 78', 'Acme Prospect', 'Zebracorp', 'https://acme.example', 'jane@acme.example']);
+  // Only the entries the stored alias, requirements and customer use: the brief's contact details are not kept.
+  assert.deepEqual(Object.values(JSON.parse(row.pseudo)).sort(), ['Acme Prospect', 'Zebracorp']);
   for (const input of [...seen.complete, ...seen.embed]) assert.doesNotMatch(input, SENTINEL);
   assert.match(seen.complete.at(-1), /^\[\{"role":"system","content":"You extract the proof requirements from a customer brief\./);
   const fallback = world({ model: m => m[0].content.startsWith('You extract') ? 'not json' : '{}' });
@@ -390,7 +391,7 @@ test('parsers: bounded requirements, allow-listed ranks with the null / [] rules
   sections: [{ heading: 'In 3 steps', claims: [{ text: 'the client had slow claims.', cites: ['r1:A1.1'] }] }, { heading: 'Empty', claims: [] }] }), snip, reqs);
   assert.deepEqual(p.summary, [{ text: 'Triage fell from 40 to 12 minutes for [Company 2].', kind: 'fact', cites: ['r1:A4.1'], requirementIds: ['R2'] }], 'a placeholder index is not a figure');
   assert.equal(p.title, 'Faster triage for [Company 1] in 12 minutes'); assert.equal(p.subtitle, '');
-  assert.deepEqual(p.sections, [{ heading: '', claims: [{ text: 'the client had slow claims.', kind: 'fact', cites: ['r1:A1.1'], requirementIds: [] }] }]);
+  assert.deepEqual(p.sections, [{ heading: '', claims: [{ text: 'the client had slow claims.', kind: 'interpretation', cites: ['r1:A1.1'], requirementIds: [] }] }], 'no kind: the weaker label');
   assert.deepEqual(p.dropped, ['Triage fell to 12 minutes.', 'Cut costs by 99% overnight', 'heading: In 3 steps', 'subtitle: Saved 50%'], 'a figure must be in the claim\'s own cites');
 });
 
@@ -430,4 +431,141 @@ test('one-pager: a footnote\'s confirmation comes from claims.confirmationStatus
   assert.deepEqual(p.footnotes.map(f => [f.topic, f.confirmation]), [['context', 'unverified'], ['contribution', 'unverified'], ['approach', 'unverified'], ['outcome', claims.READY ? 'manager_confirmed' : 'unverified']]);
   const matched = (await call(l, OWNER, 'POST', `bids/${bid.id}/match`)).body.results.find(x => x.id === w.z);
   assert.deepEqual(matched.claims, claims.READY ? { confirmed: 1, total: 2 } : { confirmed: 0, total: 0 }, 'current confirmed claims out of all claims');
+});
+
+// ======================================= Review fixes (wow review #2, #4, #10, #17, #20, #21, #26) =======================================
+import * as gaps from '../src/gaps.js';
+const SAM = { email: 'sam@mantu.com', role: 'user' };
+const gapCall = async (l, user, method, path, body) => {
+  const url = new URL('https://atlas.test/api/library/' + path);
+  try { const r = await gaps.routes({ method, url, parts: url.pathname.replace('/api/library/', '').split('/').filter(Boolean), body: body || {}, user: { mail: user.email, ...user }, lib: l, env: {}, waitUntil: p => p });
+    return { status: r.status || 200, body: r.body }; }
+  catch (e) { if (!e.status) throw e; return { status: e.status, body: { error: e.message } }; }
+};
+const mapOf = (l, id) => JSON.parse(l.rows('SELECT pseudo FROM bids WHERE id = ?', id)[0].pseudo);
+const editable = reqs => reqs.map(({ id, text, kind, must }) => ({ id, text, kind, must }));
+
+test('review #2/#4 requirements edit: the bid map keeps only what a stored text still uses, so a long brief never turns a typed library name into a label', async () => {
+  const { l } = world({ model: () => 'not json' }); // keyword fallback: an empty customer summary
+  await l.upsert(LEE, { localId: 'secret', reference: ref('Secret draft', 'Insurance', 'Zebracorp', CLAIMS, { contact: 'Jane Doe' }) });
+  assert.equal(l.access(l.row(l.rows('SELECT id FROM refs')[0].id), OWNER), null, 'a draft the bid owner cannot open');
+  const brief = 'We need proof of delivery experience. ' + Array.from({ length: 200 }, (_, i) => `u${i}@x.io`).join(' ');
+  const bid = (await call(l, OWNER, 'POST', 'bids', { title: 'Probe bid', alias: 'Probe bid', prospectNames: [], briefText: brief })).body;
+  assert.deepEqual(mapOf(l, bid.id), {}, 'the brief\'s 200 addresses are not stored: no stored text uses them');
+  const typed = 'Experience with Zebracorp and Jane Doe and Fakeco and John Roe';
+  const edited = (await call(l, OWNER, 'POST', `bids/${bid.id}/requirements`, { requirements: [{ text: typed, kind: 'capability' }] })).body;
+  assert.equal(edited.requirements[0].text, typed, 'the author reads their own words: a [company] or [person] label would reveal library membership');
+  assert.deepEqual(mapOf(l, bid.id), { '[Company 1]': 'Zebracorp', '[Person 1]': 'Jane Doe' });
+  // Repeated edits do not grow the map; a gap request's ask keeps its entry, and new text never takes its number.
+  let rid = edited.requirements[0].id;
+  for (let i = 0; i < 5; i++) rid = (await call(l, OWNER, 'POST', `bids/${bid.id}/requirements`, { requirements: [{ id: rid, text: `Contact ops${i}@y.io about Zebracorp` }] })).body.requirements[0].id;
+  assert.deepEqual(mapOf(l, bid.id), { '[Email 1]': 'ops4@y.io', '[Company 1]': 'Zebracorp' });
+  assert.equal(rid, edited.requirements[0].id, 'an edited row keeps its id');
+  const g = await gapCall(l, OWNER, 'POST', 'gaps', { bidId: bid.id, requirementIds: [rid], assignee: { email: SAM.email } });
+  assert.equal(g.status, 201);
+  const next = (await call(l, OWNER, 'POST', `bids/${bid.id}/requirements`, { requirements: [{ text: 'Write to new@z.io' }] })).body;
+  assert.equal(next.requirements[0].text, 'Write to new@z.io');
+  assert.deepEqual(mapOf(l, bid.id), { '[Email 1]': 'ops4@y.io', '[Company 1]': 'Zebracorp', '[Email 2]': 'new@z.io' });
+  assert.equal((await gapCall(l, OWNER, 'GET', 'gaps/' + g.body.id)).body.asks[0].ask, 'Proof the bid needs: Contact ops4@y.io about Zebracorp', 'the ask still reads in the author\'s words');
+  assert.equal((await gapCall(l, REV, 'GET', 'gaps/' + g.body.id)).body.asks[0].ask, 'Proof the bid needs: Contact [contact] about [company]');
+});
+
+test('review #2/#4 rate limit: 60 requirement edits per user per hour, then 429; never a refusal based on the map', async () => {
+  const { l } = world({ model: () => 'not json' });
+  const bid = (await call(l, OWNER, 'POST', 'bids', NEW_BID)).body;
+  for (let i = 0; i < 60; i++) assert.equal((await call(l, OWNER, 'POST', `bids/${bid.id}/requirements`, { requirements: [{ text: `Need ${i}` }] })).status, 200);
+  assert.deepEqual(await call(l, OWNER, 'POST', `bids/${bid.id}/requirements`, { requirements: [{ text: 'One more' }] }),
+    { status: 429, body: { error: 'Too many requirement edits this hour. Try again later.' } });
+  assert.equal((await call(l, ADMIN, 'POST', `bids/${bid.id}/requirements`, { requirements: [{ text: 'An admin edit' }] })).status, 200, 'per user');
+});
+
+test('review #10 match: a run computed before a requirements edit or a delete is refused (409), never stored over the bid', async () => {
+  let hold = null;
+  const w = await library({ model: async (m, fake) => { if (hold && m[0].content.startsWith('You judge which')) await hold; return fake.complete(m); } }), { l, seen } = w;
+  const judging = async () => { while (!seen.complete.some(x => x.includes('You judge which'))) await new Promise(r => setImmediate(r)); seen.complete.length = 0; };
+  const bid = (await call(l, OWNER, 'POST', 'bids', NEW_BID)).body;
+  let open; hold = new Promise(r => { open = r; }); seen.complete.length = 0;
+  const pending = call(l, OWNER, 'POST', `bids/${bid.id}/match`);
+  await judging();
+  const edited = (await call(l, OWNER, 'POST', `bids/${bid.id}/requirements`, { requirements: [{ id: 'R1', text: 'Certified SAP S/4HANA migration for a bank', kind: 'credential', must: true }] })).body;
+  assert.equal(edited.match, null);
+  open();
+  assert.deepEqual(await pending, { status: 409, body: { error: 'The requirements changed while the match ran. Run the match again.' } });
+  assert.equal((await call(l, OWNER, 'GET', 'bids/' + bid.id)).body.match, null, 'no stale verdict or coverage over the new requirements');
+  hold = null;
+  const fresh = (await call(l, OWNER, 'POST', `bids/${bid.id}/match`)).body;
+  assert.deepEqual(fresh.coverage.map(c => c.requirementId), ['R1'], 'a run over the current requirements is stored');
+  hold = new Promise(r => { open = r; });
+  const purging = call(l, OWNER, 'POST', `bids/${bid.id}/match`);
+  await judging();
+  assert.equal((await call(l, OWNER, 'POST', `bids/${bid.id}/delete`)).status, 200);
+  open();
+  assert.equal((await purging).status, 409, 'a delete while matching: the run is not stored');
+});
+
+test('review #20 requirement ids: new text never takes an id the bid showed before or a gap request names', async () => {
+  const w = await library(), { l } = w, bid = (await call(l, OWNER, 'POST', 'bids', NEW_BID)).body;
+  assert.deepEqual(bid.requirements.map(r => r.id), ['R1', 'R2', 'R3']);
+  assert.equal((await gapCall(l, OWNER, 'POST', 'gaps', { bidId: bid.id, requirementIds: ['R2'], assignee: { email: SAM.email } })).status, 201);
+  const kept = editable(bid.requirements.filter(r => r.id !== 'R2'));
+  const e1 = (await call(l, OWNER, 'POST', `bids/${bid.id}/requirements`, { requirements: [...kept, { text: 'Experience running a 24/7 service desk in French' }] })).body;
+  assert.deepEqual(e1.requirements.map(r => r.id), ['R1', 'R3', 'R4'], 'not the removed R2, which a gap request still names');
+  assert.deepEqual(e1.gaps.map(x => x.requirementIds), [['R2']]);
+  const e2 = (await call(l, OWNER, 'POST', `bids/${bid.id}/requirements`, { requirements: [...editable(e1.requirements), { id: 'R2', text: 'Another new need' }] })).body;
+  assert.deepEqual(e2.requirements.map(r => [r.id, r.text]).slice(3), [['R5', 'Another new need']], 'an id the bid does not have is not taken from the client');
+  const e3 = (await call(l, OWNER, 'POST', `bids/${bid.id}/requirements`, { requirements: [...editable(e2.requirements.slice(0, 3)), { text: 'A replacement need' }] })).body;
+  assert.deepEqual(e3.requirements.map(r => r.id), ['R1', 'R3', 'R4', 'R6'], 'removed in this edit: not reused either');
+  assert.equal(e3.requirements[0].text, bid.requirements[0].text, 'kept rows keep their id and text');
+  const many = [...Array(12)].map((_, i) => ({ text: `Need number ${i + 1}` }));
+  const e4 = (await call(l, OWNER, 'POST', `bids/${bid.id}/requirements`, { requirements: many })).body;
+  assert.deepEqual(e4.requirements.map(r => r.id), [...Array(12)].map((_, i) => 'R' + (i + 7)), 'twelve new rows after R6');
+  const e5 = (await call(l, OWNER, 'POST', `bids/${bid.id}/requirements`, { requirements: editable(e4.requirements).reverse() })).body;
+  assert.deepEqual(e5.requirements.map(r => r.id), e4.requirements.map(r => r.id).reverse(), 'ids above R12 stay stable across saves');
+});
+
+test('review #17 delete: open gap requests close, answer maps and the brief-derived customer summary are erased with the brief', async () => {
+  const w = await library(), { l } = w, bid = (await call(l, OWNER, 'POST', 'bids', NEW_BID)).body;
+  assert.equal(bid.customer.buyer, 'Head of claims');
+  assert.ok((await call(l, OWNER, 'POST', `bids/${bid.id}/match`)).body.results.length);
+  const open = (await gapCall(l, OWNER, 'POST', 'gaps', { bidId: bid.id, requirementIds: ['R1'], assignee: { email: SAM.email } })).body;
+  const done = (await gapCall(l, OWNER, 'POST', 'gaps', { bidId: bid.id, requirementIds: ['R1'], assignee: { email: SAM.email } })).body;
+  const quote = { results: [{ askId: 'G1', status: 'answered_unverified', quotes: ['We did claims routing for Acme Prospect in 2024.'] }] };
+  assert.equal((await gapCall(l, SAM, 'POST', `gaps/${done.id}/answer`, quote)).status, 200);
+  assert.match(l.rows('SELECT pseudo FROM gap_requests WHERE id = ?', done.id)[0].pseudo, /Acme Prospect/);
+  const del = (await call(l, OWNER, 'POST', `bids/${bid.id}/delete`)).body;
+  assert.deepEqual([del.customer, del.match], [{ problem: '', buyer: '', constraints: '', desired_outcome: '' }, null]);
+  const row = l.rows('SELECT customer, match FROM bids WHERE id = ?', bid.id)[0];
+  assert.deepEqual([row.customer, row.match], [null, null]);
+  assert.deepEqual(l.rows('SELECT id, status, pseudo FROM gap_requests WHERE bid_id = ? ORDER BY status', bid.id).map(g => [g.id, g.status, g.pseudo]),
+    [[done.id, 'answered', null], [open.id, 'dismissed', null]]);
+  assert.doesNotMatch(JSON.stringify(l.rows('SELECT * FROM gap_requests')), /Acme Prospect|Head of claims/);
+  assert.equal((await gapCall(l, SAM, 'POST', `gaps/${open.id}/answer`, quote)).status, 409, 'nothing can be answered on a deleted bid');
+  assert.equal((await gapCall(l, OWNER, 'POST', 'gaps', { bidId: bid.id, requirementIds: ['R1'], assignee: { email: SAM.email } })).status, 409, 'nor asked');
+  assert.deepEqual((await gapCall(l, SAM, 'GET', `gaps/${done.id}`)).body.results[0].quotes, ['We did claims routing for [company] in 2024.'], 'the map is gone for everyone');
+  assert.deepEqual(del.requirements.map(r => r.id), ['R1', 'R2', 'R3'], 'requirements, outcome and uses stay for F7');
+});
+
+test('review #21 JEV: an empty customer field is named and JEV is not called; "JEV failed" stays for real failures', async () => {
+  const fields = { problem: 'A regional insurer has slow claims triage.', buyer: '', constraints: 'Within twelve months.', desired_outcome: 'Faster payouts.' };
+  const w = await library({ jev: async () => { throw new Error('JEV must not be called'); } }), { l, seen } = w, env = { TYPESAFE_API_KEY: 'k' };
+  const bid = (await call(l, OWNER, 'POST', 'bids', NEW_BID)).body;
+  l.sql.exec('UPDATE bids SET customer = ? WHERE id = ?', JSON.stringify(fields), bid.id);
+  const out = (await call(l, OWNER, 'POST', `bids/${bid.id}/match`, { useJev: true, jevConsent: true }, env)).body;
+  assert.equal(out.method, 'semantic + model ranking (JEV not asked: no buyer was taken from the brief; ranked by Workers AI)');
+  assert.equal(seen.fetch.length, 0);
+  const kw = await library({ model: (m, fake) => m[0].content.startsWith('You extract') ? 'not json' : fake.complete(m), jev: async () => { throw new Error('JEV must not be called'); } });
+  const kb = (await call(kw.l, OWNER, 'POST', 'bids', NEW_BID)).body;
+  assert.equal(kb.reqMethod, 'keyword');
+  assert.match((await call(kw.l, OWNER, 'POST', `bids/${kb.id}/match`, { useJev: true, jevConsent: true }, env)).body.method,
+    /\(JEV not asked: no problem, buyer, constraints or desired outcome was taken from the brief; ranked by Workers AI\)$/);
+  assert.equal(kw.seen.fetch.length, 0);
+});
+
+test('review #26 one-pager: a claim is "fact" only when the model says so; a missing or unknown kind is interpretation', () => {
+  const snip = new Map([['r1:A2.1', { text: 'I redesigned claims routing for the insurer.' }]]);
+  const claim = (text, kind) => ({ text, ...(kind === undefined ? {} : { kind }), cites: ['r1:A2.1'] });
+  const p = bids.parseOnePager(JSON.stringify({ title: 'Proof', summary: [claim("This approach fits the bank's regulatory needs."), claim('Relates to the need.', 'Interpretation'), claim('An inference.', 'inference')],
+    sections: [{ heading: 'Delivered', claims: [claim('I redesigned claims routing.', 'fact'), claim('Routing was redesigned.', ' FACT '), claim('Odd kind.', 7)] }] }), snip, []);
+  assert.deepEqual(p.summary.map(c => c.kind), ['interpretation', 'interpretation', 'interpretation']);
+  assert.deepEqual(p.sections[0].claims.map(c => c.kind), ['fact', 'fact', 'interpretation']);
 });

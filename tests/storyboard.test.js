@@ -40,6 +40,17 @@ test('pins: aliases, cities and ambiguous names are never mapped',()=>{
  assert.deepEqual(B.pinsOf('Around Lake Chad the pumps failed',G).pins,[],'part of a longer place name');
  assert.deepEqual(B.pinsOf('',G),{pins:[],notMapped:[]});assert.deepEqual(B.pinsOf('in Spain',null),{pins:[],notMapped:[]});});
 
+test('pins: a cued country name still pins when an alias of it comes first',()=>{
+ // The resolver keeps one fragment per country (the first, 'UK'); the cued exact name later in the quote must still be found.
+ const uk=B.pinsOf('A UK bank asked us to roll it out in the United Kingdom.',G);
+ assert.deepEqual(codes(uk),['GBR']);assert.deepEqual(uk.notMapped,[],'the alias chip goes once its country is pinned');
+ assert.deepEqual(codes(B.pinsOf('Holland was first; then we went live in the Netherlands.',G)),['NLD']);
+ assert.deepEqual(codes(B.pinsOf('The US team helped us deliver in the United States.',G)),['USA']);
+ assert.deepEqual(codes(B.pinsOf('Britain first, then we deployed in the United Kingdom and in Germany.',G)),['GBR','DEU']);
+ // the name alone is still not enough: without a cue, or as part of a longer place, nothing pins
+ assert.deepEqual(B.pinsOf('A UK bank said the United Kingdom team was slow.',G).pins,[]);
+ assert.deepEqual(B.pinsOf('The Mexico City office and Mexico headquarters agreed.',G).pins,[]);});
+
 test('pins: lower-case speech recognition still needs the cue',()=>{
  assert.deepEqual(codes(B.pinsOf('we worked in portugal and spain',G)),['PRT','ESP']);
  assert.deepEqual(B.pinsOf('chad said so',G).pins,[]);});

@@ -140,7 +140,7 @@ Track Z (docs/WOW_ZERO_CONFIG.md revision 2, §0-§9, §10 schedule; WOW_SPEC §
 - Mutation checks (scratch copy): the claims directory test fails when the directory step is removed or when it reads the owner's profile edits; the gaps test fails without the name fill; the session test fails when `projectContext` keeps the consultant; the teams tests fail when `TEAMS_ENABLED` is required again (6 tests); the outreach and claims tests fail with the old fragment links; `test_entra_claims.py` fails when the name claims come first; the edge browser suite fails on the old `profile-ui.js`.
 
 ### Not done / notes
-- `SPOKEN_ASK_APPROVED` stays false: D1 is Tony's decision; spoken Ask is verified end to end only with the test seam (`flagsOf`).
+- `SPOKEN_ASK_APPROVED` stayed false in Track Z: D1 is Tony's decision; spoken Ask was verified end to end only with the test seam (`flagsOf`). (Later: set to `true` in the WOW review fix round, 2026-09-29; see `handoff/BUILD_STATUS.md`.)
 - The N+1 name from a typed N+1 email on the project form (§5.8, `GET /api/library/people?email=`) is not wired in the browser: §10 assigns it to no browser file. The server route works; the gap assignee name is filled server-side.
 - `docs/THIRD_PARTY.md:57` still says the launcher opens `<ATLAS origin>/` (it now opens `/go/start`); not a Z file.
 - UNVERIFIED on the real Access app (§13): WebSocket survival across app-token expiry, fragment and path survival through an interactive sign-in. The local edge only imitates Access (`/__expire`).

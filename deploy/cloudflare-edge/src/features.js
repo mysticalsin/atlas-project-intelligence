@@ -17,8 +17,9 @@ export const EMAIL_AUTH_WORDS = new Set(['gaps', 'claims', 'confirmations']); //
 const MODULE = { bids, ask, wins: winloop, gaps, claims, confirmations: claims, outreach, staffing: outreach, 'teams-event': outreach,
   profile, people: profile, directory: profile };
 // D1 (WOW_ZERO_CONFIG §4): spoken Ask is a per-user consent prompt at the moment of use, not a deployment variable.
-// A code constant like READY: false until Tony confirms D1, then flipped once in a commit.
-export const SPOKEN_ASK_APPROVED = false;
+// A code constant like READY. Approved by Tony ("it should just work and ask for consent and that's it"): on wherever
+// Ask is on. Every recording still needs the consent prompt's header, and `always` a stored consent (app.js).
+export const SPOKEN_ASK_APPROVED = true;
 
 // The identity-mode gate on top of a readiness test: email-authorised words are off in Entra mode (the email is a
 // mutable claim there). Tests pass their own `isReady` to exercise the gate before a module's READY flips.
@@ -34,7 +35,7 @@ export async function featureRoutes(ctx, ready = readyOf) {
 }
 
 // Bootstrap `features` (§2.5). `ready` defaults to readyOf; tests may pass another to exercise the opt-in vars, and
-// `spokenAskApproved` to exercise D1 before it flips. PDF briefs follow bids (D2: PDF conversion is text extraction,
+// `spokenAskApproved` to exercise spoken Ask with D1 off. PDF briefs follow bids (D2: PDF conversion is text extraction,
 // metadata off; images stay refused).
 export function flags(env = {}, ready = readyOf, { spokenAskApproved = SPOKEN_ASK_APPROVED } = {}) {
   const on = w => ready(w, env);

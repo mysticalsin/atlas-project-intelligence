@@ -7,7 +7,7 @@
 // - Audit rows carry revisions and ids only, never claim text or names.
 import { str, email, obj, fail, inList } from './util.js';
 import { splitSentences, claimKey } from './snippets.js';
-import { recordText } from './scrub.js';
+import { recordText, piiText } from './scrub.js';
 import { clientScrub } from './review.js';
 import * as outreach from './outreach.js';
 import * as profile from './profile.js';
@@ -47,6 +47,9 @@ const mode = v => (v === 'sentence' || v === 'revision' ? v : CURRENCY);
 const dataOf = row => (typeof row?.data === 'string' ? JSON.parse(row.data) : obj(row?.data));
 const sentences = (data, topic) => splitSentences(Array.isArray(data?.answers) ? data.answers[topic] : '');
 const idsOf = r => { try { const v = JSON.parse(r.claim_ids); return Array.isArray(v) ? v.map(String) : []; } catch { return []; } };
+// Record masking for a reader without full access: PII first, so the own-client scrub never rewrites a client name
+// inside an email or URL (as snippets.js and bids.maskedTitle do).
+const masked = (lib, data) => s => recordText(lib)(clientScrub(data)(piiText(s)));
 const sha256 = async s => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)))].map(b => b.toString(16).padStart(2, '0')).join('');
 
 // Currency of one reference at its current revision: present(c) = the exact sentence is still there; current(c) adds
@@ -64,12 +67,18 @@ function claimRows(lib, refId, ids) {
   return ids.map(id => byId.get(id)).filter(Boolean);
 }
 
-// An open request is stale when its reference is gone, a claim's sentence left the current revision, or (strict mode)
-// the reference moved to a new revision since the request.
+// A claim moves out of 'unverified' once (§F3.1 step 6): while its decision is current, no request may ask it again
+// and no other open request may overwrite it. A new sentence is a new claim.
+const answered = current => c => c.status !== 'unverified' && current(c);
+const CHANGED = 'The reference changed since this request. The consultant can ask again.', ANSWERED = 'These points were already answered in another request.';
+// An open request is stale when its reference is gone, a claim's sentence left the current revision, (strict mode)
+// the reference moved to a new revision since the request, or a claim already has a current decision from another
+// request. Returns the reason, or '' while the request can still be answered.
 function staleRequest(lib, r, row, currency) {
-  if (!row || row.merged_into) return true;
-  const ids = idsOf(r), cs = claimRows(lib, r.ref_id, ids), { present } = currencyOf(row, currency);
-  return cs.length !== ids.length || !cs.every(present) || (currency === 'revision' && r.revision !== row.revision);
+  if (!row || row.merged_into) return CHANGED;
+  const ids = idsOf(r), cs = claimRows(lib, r.ref_id, ids), { present, current } = currencyOf(row, currency);
+  if (cs.length !== ids.length || !cs.every(present) || (currency === 'revision' && r.revision !== row.revision)) return CHANGED;
+  return cs.some(answered(current)) ? ANSWERED : '';
 }
 
 function requestView(r, status = r.status) {
@@ -170,7 +179,9 @@ function createRequest(ctx) {
     throw fail(409, 'The confirmer must be independent: not the consultant, the requester or a team member.');
   const cs = claimRows(lib, row.id, ids);
   if (cs.length !== ids.length) throw fail(404, 'Claim not found on this reference.');
-  if (!cs.every(currencyOf(row, CURRENCY).present)) throw fail(409, 'A point changed since it was proposed. Propose the current sentence again.');
+  const { present, current } = currencyOf(row, mode(ctx.currency));
+  if (!cs.every(present)) throw fail(409, 'A point changed since it was proposed. Propose the current sentence again.');
+  if (cs.some(answered(current))) throw fail(409, 'Already answered: edit the sentence to ask again.');
   const id = lib.newId(), at = lib.now(), expires = new Date(Date.parse(at) + EXPIRY_MS).toISOString();
   lib.sql.exec(`INSERT INTO confirmation_requests (id, ref_id, revision, kind, to_email, manager_source, claim_ids, status, created_by, created_by_mail, created_at, expires_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`, id, row.id, row.revision, kind, to, source, JSON.stringify(ids), user.email, email(user.mail), at, expires);
@@ -179,7 +190,7 @@ function createRequest(ctx) {
   const n = ids.length, name = str(row.data?.consultant?.name, 100) || 'a colleague', link = `${originOf(ctx)}/go/confirm/${id}`; // survives an interactive sign-in (§3.9)
   const subject = `Can you confirm ${n} point${n === 1 ? '' : 's'} from ${name}'s project? (about 60 seconds)`;
   const draft = { to, subject, body: link, link, mailto: `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(link)}` };
-  const title = recordText(lib)(clientScrub(row.data)(row.data.title));
+  const title = masked(lib, row.data)(row.data.title);
   const queued = outreach.queue(lib, { kind: 'confirmation_request', subjectId: id, toEmail: to, subject,
     preview: { title, text: `Confirm ${n} point${n === 1 ? '' : 's'} from ${name}'s project (about 60 seconds).` } });
   const request = lib.rows('SELECT * FROM confirmation_requests WHERE id = ?', id)[0];
@@ -195,7 +206,7 @@ function inbox(lib, user, currency) {
     const row = lib.row(r.ref_id);
     if (staleRequest(lib, r, row, currency)) continue;
     // A confirmer with full access (e.g. the declared N+1) sees the raw sentence; anyone else the record masking.
-    const mask = lib.access(row, user) === 'full' ? s => s : s => recordText(lib)(clientScrub(row.data)(s));
+    const mask = lib.access(row, user) === 'full' ? s => s : masked(lib, row.data);
     items.push({ request: requestView(r), reference: { title: mask(row.data.title), consultant: { name: row.data.consultant?.name || '', role: row.data.consultant?.role || '' }, revision: row.revision },
       claims: claimRows(lib, r.ref_id, idsOf(r)).map(c => ({ id: c.id, topic: c.topic, text: mask(c.text) })) });
   }
@@ -212,7 +223,8 @@ function decide(lib, user, id, body, currency) {
   if (r.status === 'expired' || (r.status === 'open' && r.expires_at <= now)) throw fail(410, 'This request has expired. The consultant can send a new one.');
   if (r.status !== 'open') throw fail(409, r.status === 'cancelled' ? 'This request was cancelled.' : 'This request is already answered.');
   const row = lib.row(r.ref_id);
-  if (staleRequest(lib, r, row, currency)) throw fail(409, 'The reference changed since this request. The consultant can ask again.');
+  const why = staleRequest(lib, r, row, currency);
+  if (why) throw fail(409, why);
   const ids = idsOf(r), list = Array.isArray(obj(body).decisions) ? body.decisions : [], byId = new Map();
   for (const d of list) {
     const x = obj(d), cid = str(x.claimId, 64), note = typeof x.note === 'string' ? str(x.note, 2 * NOTE_MAX) : '';
@@ -232,7 +244,7 @@ function decide(lib, user, id, body, currency) {
   }
   lib.sql.exec("UPDATE confirmation_requests SET status = 'done', decided_at = ? WHERE id = ?", now, r.id);
   const done = lib.rows('SELECT * FROM confirmation_requests WHERE id = ?', r.id)[0], { current } = currencyOf(row, currency);
-  const mask = lib.access(row, user) === 'full' ? s => s : s => recordText(lib)(clientScrub(row.data)(s)), deciders = decidersOf(lib, row.id);
+  const mask = lib.access(row, user) === 'full' ? s => s : masked(lib, row.data), deciders = decidersOf(lib, row.id);
   return { request: requestView(done), claims: claimRows(lib, r.ref_id, ids).map(c => claimView(c, current(c), deciders, mask(c.text))) };
 }
 

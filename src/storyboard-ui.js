@@ -129,7 +129,8 @@ $('gapSend').addEventListener('click',async()=>{const g=gap,app=window.ATLAS_APP
  g.sending=true;renderGap();$('gapMessage').textContent='Sending your answers…';
  try{const p=interviewed(g);
   await app.libraryApi('/gaps/'+g.requestId+'/answer',{method:'POST',body:{results:g.results.map(r=>({askId:r.askId,status:r.status,quotes:r.quotes})),referenceId:p&&p.library?p.library.id:undefined}});
-  g.sent=true;if(gap===g)$('gapMessage').textContent='Sent. The bid team sees these answers labelled unverified, with known client names masked.';}
+  g.sent=true;if(p&&typeof app.gapAnswersSent==='function')app.gapAnswersSent(p.id,g.requestId);
+  if(gap===g)$('gapMessage').textContent='Sent. The bid team sees these answers labelled unverified, with known client names masked.';}
  catch(e){if(gap===g)$('gapMessage').textContent=(e&&e.message)||'Your answers were not sent.';}
  finally{g.sending=false;if(gap===g)renderGap();}});
 $('gapApply').addEventListener('click',async()=>{const g=gap,app=window.ATLAS_APP;if(!g||g.applying||g.applied)return;

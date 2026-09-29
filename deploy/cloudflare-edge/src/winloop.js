@@ -45,15 +45,18 @@ function tallies(lib) {
   const b = lib.rows("SELECT COUNT(*) AS n, MAX(decided_at) AS at, SUM(rowid * (CASE outcome WHEN 'won' THEN 1 WHEN 'lost' THEN 2 WHEN 'withdrawn' THEN 3 ELSE 4 END)) AS sum FROM bids")[0] || {};
   const sig = [u.n, u.at, b.n, b.at, b.sum].join('|'), hit = cache.get(lib);
   if (hit?.sig === sig) return hit;
-  const blank = () => ({ used: 0, won: 0, lost: 0, pending: 0 }), byType = new Map(TYPES.map(t => [t, blank()])), byRef = new Map();
-  const add = (s, outcome) => { s.used++; if (outcome === 'won') s.won++; else if (outcome === 'lost') s.lost++; else if (outcome === 'pending') s.pending++; };
-  for (const r of lib.rows('SELECT u.ref_id, u.proof_type, b.outcome FROM bid_references u JOIN bids b ON b.id = u.bid_id')) {
-    if (byType.has(r.proof_type)) add(byType.get(r.proof_type), r.outcome);
+  // Per story, one use is one bid ((bid_id, ref_id) is the key). Per proof type, `used` counts uses but outcomes count
+  // distinct bids (bidsOf: type -> bid id -> outcome), so one bid citing five stories of a type is one decided bid.
+  const blank = () => ({ used: 0, won: 0, lost: 0, pending: 0 }), byType = new Map(TYPES.map(t => [t, blank()])), byRef = new Map(), bidsOf = new Map(TYPES.map(t => [t, new Map()]));
+  const count = (s, outcome) => { if (outcome === 'won') s.won++; else if (outcome === 'lost') s.lost++; else if (outcome === 'pending') s.pending++; };
+  for (const r of lib.rows('SELECT u.bid_id, u.ref_id, u.proof_type, b.outcome FROM bid_references u JOIN bids b ON b.id = u.bid_id')) {
+    if (byType.has(r.proof_type)) { byType.get(r.proof_type).used++; bidsOf.get(r.proof_type).set(r.bid_id, r.outcome); }
     if (!byRef.has(r.ref_id)) byRef.set(r.ref_id, blank());
-    add(byRef.get(r.ref_id), r.outcome);
+    const s = byRef.get(r.ref_id); s.used++; count(s, r.outcome);
   }
+  for (const [type, outcomes] of bidsOf) for (const outcome of outcomes.values()) count(byType.get(type), outcome);
   const t = lib.rows("SELECT COUNT(*) AS bids, SUM(CASE WHEN outcome IN ('won', 'lost') THEN 1 ELSE 0 END) AS decided FROM bids")[0] || {};
-  const entry = { sig, byType, byRef, totals: { bids: t.bids || 0, decided: t.decided || 0 } };
+  const entry = { sig, byType, bidsOf, byRef, totals: { bids: t.bids || 0, decided: t.decided || 0 } };
   cache.set(lib, entry);
   return entry;
 }
@@ -78,20 +81,25 @@ export function winSignals(lib) {
 }
 
 // The interview hint (aggregate only: no ids, titles or names). 'quantified' when at least 10 bids are decided, both
-// groups have 5+ decided uses and quantified proof's win rate beats qualitative by 15+ points; else 'confirmed' by
-// the same rule for confirmed vs unconfirmed; else null. From bids and bid_references only (no visibleRows scan).
+// groups have 5+ decided bids and quantified proof's win rate beats qualitative by 15+ points; else 'confirmed' by
+// the same rule for confirmed vs unconfirmed; else null. A group is the set of distinct bids with a use in it. From
+// bids and bid_references only (no visibleRows scan).
 export function guidance(lib) {
   if (!READY) return { hint: null, decided: 0, basis: 'not built' };
   const t = tallies(lib);
   if (!t.guidance) {
-    const group = test => { let won = 0, lost = 0; for (const [type, s] of t.byType) if (test(type)) { won += s.won; lost += s.lost; } return { decided: won + lost, rate: won + lost ? won / (won + lost) : 0 }; };
+    const group = test => {
+      const outcomes = new Map(); for (const [type, m] of t.bidsOf) if (test(type)) for (const [id, o] of m) outcomes.set(id, o);
+      let won = 0, lost = 0; for (const o of outcomes.values()) { if (o === 'won') won++; else if (o === 'lost') lost++; }
+      return { decided: won + lost, rate: won + lost ? won / (won + lost) : 0 };
+    };
     const beats = (a, b) => a.decided >= MIN_N && b.decided >= MIN_N && a.rate - b.rate >= HINT_GAP - 1e-9;
     const pct = g => `${Math.round(g.rate * 100)}% of ${g.decided}`;
     const q = group(x => x.startsWith('quantified')), ql = group(x => x.startsWith('qualitative')), c = group(x => x.endsWith('+confirmed')), u = group(x => x.endsWith('+unconfirmed'));
     const decided = t.totals.decided;
     t.guidance = decided < OVERALL_MIN ? { hint: null, decided, basis: `Fewer than ${OVERALL_MIN} decided bids.` }
-      : beats(q, ql) ? { hint: 'quantified', decided, basis: `Quantified proof won ${pct(q)} decided uses; qualitative ${pct(ql)}.` }
-        : beats(c, u) ? { hint: 'confirmed', decided, basis: `Confirmed proof won ${pct(c)} decided uses; unconfirmed ${pct(u)}.` }
+      : beats(q, ql) ? { hint: 'quantified', decided, basis: `Quantified proof won ${pct(q)} decided bids; qualitative ${pct(ql)}.` }
+        : beats(c, u) ? { hint: 'confirmed', decided, basis: `Confirmed proof won ${pct(c)} decided bids; unconfirmed ${pct(u)}.` }
           : { hint: null, decided, basis: 'No proof type stands out yet.' };
   }
   return { ...t.guidance };

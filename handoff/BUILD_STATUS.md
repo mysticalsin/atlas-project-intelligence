@@ -3,6 +3,7 @@
 
 ## Next task
 - **2026-09-29, WOW features F1-F7:** integrated and locally verified, not deployed. Before any deploy, read the session "2026-09-29 / WOW features F1-F7" below: Tony's pending decisions (Q12 first, because this build turns claim confirmations on) and the Access, vars and secrets each feature needs.
+- **2026-09-29, WOW review fixes (26 confirmed findings on `71efb5b`):** all 26 fixed, integrated and locally verified, not committed, not deployed. Read the session "2026-09-29 / WOW review fixes" below first: it records the per-finding fixes, the exact suite results, and one item Tony must confirm before the commit (D1 is now `true` in `features.js`).
 - **2026-09-29, Track Z (zero-setup start and profile prefill, `docs/WOW_ZERO_CONFIG.md`):** built on top of WOW, independently verified, not committed, not deployed. A new signed-in user needs 3 clicks (Start, the tick, Start conversation) and fills in nothing. Read the session "2026-09-29 / Track Z" below: it changes some WOW items (`SPOKEN_ASK` and `PDF_BRIEFS` variables removed, `TEAMS_ENABLED` removed) and lists the external items (§11) and Tony's D1.
 
 0. Local suites all pass (2026-09-26). `MANIFEST.json` still describes the received 12.1 package, so `check_handoff.py` flags the intentionally changed files. Regenerate the manifest only when cutting a new release package.
@@ -411,6 +412,58 @@ Merged from `handoff/status/Z.md`, which keeps the full per-step detail, decisio
 - Working tree: `preview/v11/*.png` are rewritten by `tests/intelligence_browser.py`. Exclude them from the commit unless the new screenshots are wanted.
 
 **Next task:** review, then one integration commit (WOW plus Z, including the four HTML aliases), made by Tony or the orchestrator. Before live use: the §11 items above and D1, then a manual deploy when nobody is interviewing.
+
+### Session: 2026-09-29 / WOW review fixes
+Built on the uncommitted WOW + Z tree (HEAD `d748c7a`) in the clone `~/AI-Brain-build/atlas-project-intelligence`. The review of `71efb5b` confirmed 26 findings. Five fix groups (masking, bids, gaps, trust, frontend) worked on separate files, then one integration pass handled the cross-group items. For each finding, a regression test was run and shown failing on the unfixed code, then shown passing after the fix. Not committed, not deployed, no wrangler, no network or paid provider in tests, and no real data.
+
+**Per finding** (file: fix; test)
+1, 3. Evidence source name and version: `snippets.js` masks them like the text, for one-pager footnotes (every viewer) and non-full Ask readers. Integration: `ask.js` gives a full-access reader the raw name, from the server-only `rawSource`, like the raw sentence (§2.3). Tests: `snippets.test.js`, `masking-routes.test.js`.
+2, 4. Map-cap membership oracle: `scrub.js` has no cap and no `[company]` fallback (indexed lookup, 5,001 placeholders in 81 ms). `bids.js` rebuilds the map from the entries still in use on each requirements edit, and limits edits to 60 per hour. Integration: `create` stores only the entries the alias, requirements and customer use (a 400-address brief stored 401 entries, now 2). Tests: `scrub.test.js`, `bids.test.js`, `masking-routes.test.js`.
+5. NFD bypass: NFC normalisation in every matcher and scrub (`scrub.js`, `review.js`). NFKC is deliberately not used.
+6. Self-assigned gap request: `gaps.js` answers 400 "Ask someone else for proof." when the assignee is the requester or the bid owner, and `interview()` answers 404 to the owner.
+7. Quadratic email regex: `scrub.js` EMAIL_RE is bounded (bid GET went from about 1.9 s to 7 ms). Integration, same class: `util.email` refuses more than 254 characters before its regex (reviewer probe_email2 went from 34,830 ms to 0 ms for 250,000 characters). Tests: `scrub.test.js`, `masking-routes.test.js`.
+8, 9. Gap answer windows: `session.js`. After reflect-and-confirm or the closing, a turn is not filed under the last ask. A still-thinking reply that asks the next item counts as asking it. Full-mode trace byte-identical before and after. Test: `session.test.js`.
+10. Stale match: `bids.js` answers 409 "The requirements changed while the match ran. Run the match again." and stores nothing.
+11. Win rates: `winloop.js` counts distinct decided bids, not uses.
+12. Display rule: `scrub.js` `{ authorText }`. Integration wiring: bid create (the text sent to the model), Ask, `Library.recommend` and `Library.slides`. Other views and the one-pager still apply full masking. Test: `masking-routes.test.js` (p3 now "Orange juice…").
+13. "Name (role)" contacts: `review.contactLead` in `scrub.js` and `review.js`. Integration: the Library.get public view (`library.js anonymise`) also masks a one-word lead under the contact rules ("Dupont, CFO"). A stoplist lead ("Will") is left alone.
+14. Confirmation views: `claims.js` masks PII before the own-client scrub.
+15. Gap ask cut: `gaps.js` cuts after rendering, in the caller's view.
+16. Unbounded bodies: `teams-routes.js` answers 401 without a token before reading, then reads through a bounded reader. Integration: the `/api/library` forward (`app.js`) uses `boundedBytes` (a streamed 20 MB body had been read in full, now it stops at 256 KiB). Test: `teams.test.js`, `app.test.js`.
+17. Bid delete: `bids.js` erases the customer and the match, closes open gap requests and nulls their maps. `getRequirement` answers 409.
+18. Decided claims: `claims.js` stops a decided claim from being re-asked or overwritten while its sentence is current. The first decision wins, and other open requests go stale.
+19. Gap quotes: `bids-ui.js` labels the quotes "unverified speech recognition" for every status.
+20. Requirement ids: `bids.js` never reuses an id the bid had or a gap request names.
+21. JEV: `bids.js` does not ask JEV when a customer field is blank and says which field. "JEV failed" is kept for real failures.
+22. Gap answers after a reload: integration across `engine.js` (cleanGapNotes keeps the bounded per-ask results; imports still drop the notes), `voice-client.js`, `app.js` (`sendGapAnswers`, `gapAnswersSent`, `dropGapResults`; adding answers to the reference keeps unsent results), `trust-ui.js` ("Send these answers to the bid team" on the open request's Library card, explicit click plus confirm) and `storyboard-ui.js` (a send from the panel clears the stored results). Tests: `engine.test.js`, `trust_browser.py`, `storyboard_browser.py`.
+23. Story-board pins: `storyboard-core.js` also searches each resolved country's own name.
+24. Ask client filter: `ask.js` has no similarity floor on the filtered path, plus its own "none" note.
+25. Email draft after reload: `outreach.js` reissues the draft of a drafted email row while its subject is open. Integration: `trust-ui.js` adds "Show the draft again". Tests: `outreach.test.js`, `trust_browser.py`.
+26. One-pager claim kind: `bids.js` treats only an explicit "fact" as a fact. Anything else is "interpretation".
+Not a finding: WOW_ZERO_CONFIG §5.8 is now wired (the N+1 name is filled from a typed N+1 email, with a source chip; `profile-ui.js`, `app.js`). This supersedes the Track Z gate "not wired in the browser".
+
+**Tony must confirm before the commit: D1.** In this round the trust group set `SPOKEN_ASK_APPROVED = true` (`features.js`, `docs/WOW_ZERO_CONFIG.md`), citing "it should just work and ask for consent and that's it". Track Z recorded the same words and still left D1 pending. The approval reached this round through the fix-round task text, so Tony should confirm it. The consent header and the server-side stored-consent check are unchanged. Reverting is one line: `app.test.js` and `zero_config_edge_browser.py` now follow the constant, and only `features.test.js` pins its value. Docs updated to match: `deploy/cloudflare-edge/README.md`, `docs/INTEGRATIONS.md`, `handoff/CONFIGURATION.md`, `handoff/status/Z.md`. `docs/WOW_SPEC.md` §2.3 no longer says "Maps are bounded to 200 entries".
+
+**Results (final tree; the build is the one the browser suites ran)**
+- `python3 build.py`: 875,201 bytes. The 4 aliases and `deploy/cloudflare-edge/src/atlas.html` are identical (sha256 `0c6e76c4…bed4a6`). `build_edge.py` ran; `policy.generated.js` and `atlas_voice/` are unchanged.
+- `node --test tests/*.test.js`: 370 tests, 369 pass, 0 fail, 1 skipped. Edge `node --test test/*.test.js`: 431 tests, 431 pass.
+- `pytest tests/test_*.py` (sandbox off): 256 passed. `tests/test_edge.py::test_parity_vectors_are_current`: 5 passed (parity, speech, pace, gap, jev vectors current).
+- `make test-ui` suites, each exit 0 with 0 FAIL: studio 79, sculpture 40, intelligence 26, depth 20, autosave 33, orb_touch 8, library 14, reuse 19, memory 9, sheet 17, report 19, bids 70, ask 31, trust 51, storyboard 51 (52 with the added panel check), confirm 27, wow_edge 32, zero_config 87, zero_config_edge 54. After the last edge edits: library 14, wow_edge 32 and zero_config_edge 54 were re-run, all green.
+- Reviewer probes (`/tmp/claude-501/review-scratch`, re-pointed at the clone) show the fixed behaviour for every finding they cover. The notes for 12, 13, 16 and 22 above give the numbers.
+
+**Still open (none blocks the commit)**
+- D1 confirmation (above).
+- Product calls: "couldn't say" counts as a decided claim (#18), and there is no create-time guard against a claim already in an open request.
+- Ask banner, on the filtered path when the ranker returns nothing: it still says "Nothing in the library answers this yet." above the note "…judged none of them relevant". This is true, but the copy could be sharper.
+- Suggested gap assignees can include the bid owner. The server then answers 400 "Ask someone else for proof.".
+- Outreach queued for a purged bid's gap requests stays pending until an approver acts. Approving it dismisses it ("no longer open") and drafts nothing (probe).
+- Library.get public view (pre-existing, human readers only): an email inside a source name is client-scrubbed but not PII-masked (`jane.doe@the client.example`, reviewer probe p1). Ask and the one-pager mask it.
+- `/api/jev/classify` and `/api/triggers` still call `request.text()` after the Content-Length check. Both are authenticated. This is the same pattern as #16's second part.
+- A removed requirement id that no gap names and that was the highest can come back in a later edit (no persistent high-water mark without an ALTER).
+- Purge residue: WOW has never been deployed, so no production bid was purged under the old code, and there is nothing to clean.
+- `preview/v11/*.png` are rewritten by `intelligence_browser.py`: exclude them from the commit. `MANIFEST.json` is still stale (pre-existing).
+
+**Next task:** Tony confirms D1, then one integration commit (WOW + Z + these fixes, the four HTML aliases, and the new `deploy/cloudflare-edge/test/masking-routes.test.js`). Deploy manually when nobody is interviewing.
 
 ## Per-session update template
 Copy this section for each session. Do not put secrets, private keys, customer source text or raw audio in this file.

@@ -50,13 +50,26 @@ issues: array of at most 12 objects {field, kind, detail}; field is one of conte
 recommendations: array of at most 6 short, concrete improvements (a question to ask or a detail to add), never invented content.
 summary: one or two sentences.`;
 
+// The leading name of a contact typed with a role or address: "Jane Doe (Head of Claims)", "Dupont, CFO",
+// "Max Roe <max@x.example>", "Jane Doe - Claims" -> the text before the first ( [ < , ; | / – — " - " or email.
+// '' when nothing is cut. NFC, whitespace collapsed.
+export function contactLead(contact) {
+  const s = String(contact || '').normalize('NFC').replace(/\s+/g, ' ').trim();
+  const lead = s.replace(/\s*(?:[([<,;|/–—]| - |\S*@)[\s\S]*$/u, '').trim();
+  return lead !== s ? lead : '';
+}
+
 // The record's own client name, location and contact (3+ characters) become "the client": case-insensitive, and
-// Unicode word-bounded so a client named "Air" never rewrites "repair". Longest names first.
+// Unicode word-bounded so a client named "Air" never rewrites "repair". Longest names first; compared in NFC.
+// A contact's leading name counts too when it has several words ("Jane Doe (Head of Claims)" -> "Jane Doe"). A
+// one-word lead ("Will (CFO)") is left to scrub.recordText, which applies the contact stoplist rule and runs after
+// this scrub on every model path: here, case-insensitive and without a stoplist, it would rewrite every "will".
 export function clientScrub(record) {
-  const names = [...new Set([record?.client?.name, record?.client?.location, record?.client?.contact].map(x => String(x || '').trim()).filter(x => x.length >= 3))]
+  const lead = contactLead(record?.client?.contact);
+  const names = [...new Set([record?.client?.name, record?.client?.location, record?.client?.contact, /\s/.test(lead) ? lead : ''].map(x => String(x || '').normalize('NFC').trim()).filter(x => x.length >= 3))]
     .sort((a, b) => b.length - a.length);
   const re = names.length ? new RegExp('(?<![\\p{L}\\p{N}])(?:' + names.map(x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+')).join('|') + ')(?![\\p{L}\\p{N}])', 'giu') : null;
-  return s => typeof s === 'string' && re ? s.replace(re, 'the client') : s;
+  return s => typeof s === 'string' && re ? s.normalize('NFC').replace(re, 'the client') : s;
 }
 
 // Anonymised view for any model: no client details, and their words replaced wherever they appear. No consultant

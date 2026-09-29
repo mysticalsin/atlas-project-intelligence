@@ -222,25 +222,73 @@ test('inbox: by verified mail only; raw text with full access, record masking wi
   // The claims API shows the statuses with their source.
   const view = (await s.call(ALEX, 'GET', 'claims/' + id)).body;
   assert.deepEqual(view.claims.map(c => [c.text, c.status, c.current, c.source]), [[T1, 'manager_confirmed', true, 'self_declared'], [T2, 'corrected', true, 'self_declared'], [T3, 'cant_say', true, 'self_declared']]);
-  assert.deepEqual(view.requests.map(r => [r.id, r.status]), [[req2.id, 'open'], [req.id, 'done']]);
-  // The staffing N+1 confirms the open request: the newest decision wins, and the source says "staffing".
+  assert.deepEqual(view.requests.map(r => [r.id, r.status]), [[req2.id, 'stale'], [req.id, 'done']], 'req2 asks points already answered: not waiting any more');
+  // The staffing N+1's open request can no longer overwrite those decisions (F3.1 step 6), and it left the inbox.
+  assert.deepEqual(await inbox(MAX), []);
   const byMax = await decide(MAX, { decisions: [{ claimId: cs[0].id, decision: 'confirm' }, { claimId: cs[1].id, decision: 'confirm' }] }, req2.id);
-  assert.deepEqual(byMax.body.claims.map(c => [c.text, c.status, c.source]), [['I built the routing model for the client myself.', 'manager_confirmed', 'staffing'], ['We reused the another client playbook.', 'manager_confirmed', 'staffing']], 'masked text back to a confirmer without full access');
-  // Expired (410) and cancelled (409).
-  const req3 = (await s.call(ALEX, 'POST', 'confirmations', { refId: id, claimIds: [cs[2].id] })).body.request;
-  const req4 = (await s.call(ALEX, 'POST', 'confirmations', { refId: id, claimIds: [cs[2].id] })).body.request;
+  assert.deepEqual([byMax.status, byMax.body.error], [409, 'These points were already answered in another request.']);
+  assert.deepEqual((await s.call(ALEX, 'GET', 'claims/' + id)).body.claims.map(c => c.status), ['manager_confirmed', 'corrected', 'cant_say']);
+  // Expired (410) and cancelled (409), on a fourth sentence that is still unverified.
+  const [c4] = await proposed(s, id, 'We compared rules against a model and kept a manual fallback.');
+  const req3 = (await s.call(ALEX, 'POST', 'confirmations', { refId: id, claimIds: [c4.id] })).body.request;
+  const req4 = (await s.call(ALEX, 'POST', 'confirmations', { refId: id, claimIds: [c4.id] })).body.request;
   assert.equal((await s.call(JO, 'POST', `confirmations/${req4.id}/cancel`)).status, 403);
   assert.equal((await s.call(ALEX, 'POST', `confirmations/${req4.id}/cancel`)).body.request.status, 'cancelled');
   assert.equal((await s.call(ALEX, 'POST', `confirmations/${req4.id}/cancel`)).status, 409);
-  assert.equal((await decide(MAX, { decisions: [{ claimId: cs[2].id, decision: 'confirm' }] }, req4.id)).status, 409, 'cancelled');
+  assert.equal((await decide(MAX, { decisions: [{ claimId: c4.id, decision: 'confirm' }] }, req4.id)).status, 409, 'cancelled');
   assert.deepEqual((await inbox(MAX)).map(i => i.request.id), [req3.id]);
   s.day(15);
   assert.deepEqual(await inbox(MAX), [], 'expired requests leave the inbox before the sweep');
-  assert.equal((await decide(MAX, { decisions: [{ claimId: cs[2].id, decision: 'confirm' }] }, req3.id)).status, 410);
-  assert.equal(claims.expire(s.l, s.l.now()), 1); assert.equal(claims.expire(s.l, s.l.now()), 0);
-  assert.equal((await decide(MAX, { decisions: [{ claimId: cs[2].id, decision: 'confirm' }] }, req3.id)).status, 410, 'still 410 after the sweep');
+  assert.equal((await decide(MAX, { decisions: [{ claimId: c4.id, decision: 'confirm' }] }, req3.id)).status, 410);
+  assert.equal(claims.expire(s.l, s.l.now()), 2, 'req2 and req3'); assert.equal(claims.expire(s.l, s.l.now()), 0);
+  assert.equal((await decide(MAX, { decisions: [{ claimId: c4.id, decision: 'confirm' }] }, req3.id)).status, 410, 'still 410 after the sweep');
   assert.equal(s.l.rows("SELECT COUNT(*) AS n FROM audit WHERE action = 'confirmations expired'")[0].n, 1);
   assert.equal((await s.call(REV, 'POST', `confirmations/nope/cancel`)).status, 404);
+});
+
+test('masked views (inbox, decision, outreach preview): PII is masked before the own-client scrub, so an email or link naming the client never leaks in part', async () => {
+  const s = setup(), ref = REF(), S = 'Jane (jane.doe@zebracorp.com) signed off; see https://portal.zebracorp.com/q3-report for the figures.';
+  ref.title = 'Sign-off from ops@zebracorp.com'; ref.answers[3] = S;
+  const id = await withReference(s, ref), [c] = await proposed(s, id, S);
+  outreach.ensure(s.l);
+  s.l.sql.exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at) VALUES ('PRJ-1', 'alex@mantu.com', 'max@mantu.com', 'Max', '', '', 'staffing-csv', 'x')");
+  const req = (await s.call(ALEX, 'POST', 'confirmations', { refId: id, claimIds: [c.id] })).body.request;
+  assert.equal(req.toEmail, 'max@mantu.com', 'a staffing N+1 without access to the record');
+  const want = 'Jane ([email]) signed off; see [link] for the figures.';
+  const [item] = (await s.call(MAX, 'GET', 'confirmations/inbox')).body.items;
+  assert.deepEqual([item.reference.title, item.claims.map(x => x.text)], ['Sign-off from [email]', [want]]);
+  const previews = s.l.rows('SELECT payload FROM outreach WHERE subject_id = ?', req.id).map(o => JSON.parse(o.payload).preview.title);
+  assert.deepEqual(previews, ['Sign-off from [email]', 'Sign-off from [email]']);
+  const done = await s.call(MAX, 'POST', 'confirmations/' + req.id, { decisions: [{ claimId: c.id, decision: 'confirm' }] });
+  assert.equal(done.status, 200); assert.deepEqual(done.body.claims.map(x => [x.text, x.source]), [[want, 'staffing']], 'masked text back, and the badge source');
+  for (const body of [item, done.body, previews]) assert.doesNotMatch(JSON.stringify(body), /jane\.doe|ops@|q3-report|portal|zebracorp/i);
+});
+
+test('a decided claim stays decided while its sentence is current: never asked again, never overwritten by another open request (F3.1 step 6)', async () => {
+  const s = setup(), id = await withReference(s), [c] = await proposed(s, id, T3);
+  // Two open requests for the same unverified claim: the declared N+1, then a staffing N+1.
+  const first = (await s.call(ALEX, 'POST', 'confirmations', { refId: id, claimIds: [c.id] })).body.request;
+  outreach.ensure(s.l);
+  s.l.sql.exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at) VALUES ('PRJ-1', 'alex@mantu.com', 'max@mantu.com', 'Max', '', '', 'staffing-csv', 'x')");
+  const second = (await s.call(ALEX, 'POST', 'confirmations', { refId: id, claimIds: [c.id] })).body.request;
+  assert.equal(second.toEmail, 'max@mantu.com');
+  const corrected = await s.call(SAM, 'POST', 'confirmations/' + first.id, { decisions: [{ claimId: c.id, decision: 'correct', note: 'It was 15, not 12.' }] });
+  assert.equal(corrected.status, 200);
+  // The other open request can no longer overwrite the correction, and it leaves the inbox.
+  assert.deepEqual((await s.call(MAX, 'GET', 'confirmations/inbox')).body.items, []);
+  const late = await s.call(MAX, 'POST', 'confirmations/' + second.id, { decisions: [{ claimId: c.id, decision: 'confirm' }] });
+  assert.deepEqual([late.status, late.body.error], [409, 'These points were already answered in another request.']);
+  // A details-only edit that changes the N+1 keeps the sentence: asking again is refused (the probe's path).
+  s.l.sql.exec('DELETE FROM staffing');
+  const edit = REF(); edit.validation.manager = { name: 'Pal', email: 'pal@mantu.com' };
+  await s.l.upsert(ALEX, { localId: 'r1', reference: edit });
+  const again = await s.call(ALEX, 'POST', 'confirmations', { refId: id, claimIds: [c.id] });
+  assert.deepEqual([again.status, again.body.error], [409, 'Already answered: edit the sentence to ask again.']);
+  const view = (await s.call(ALEX, 'GET', 'claims/' + id)).body;
+  assert.deepEqual(view.claims.map(x => [x.status, x.note, x.byMail, x.current]), [['corrected', 'It was 15, not 12.', 'sam@mantu.com', true]]);
+  assert.deepEqual(view.requests.map(r => [r.id, r.status]), [[second.id, 'stale'], [first.id, 'done']], 'the superseded request is not shown as waiting');
+  assert.deepEqual(claims.claimSummary(s.l, s.l.row(id)), { confirmed: 0, total: 1, current: 1 });
+  assert.equal(s.l.rows('SELECT COUNT(*) AS n FROM confirmation_requests')[0].n, 2, 'no third request was stored');
 });
 
 test('audit: one row per decision with rev N and the source; no row ever holds claim text or a client name', async () => {
@@ -265,25 +313,29 @@ test('currency (sentence mode): a details-only revision keeps confirmations curr
   assert.equal(view.revision, 2);
   assert.deepEqual(view.claims.map(c => [c.status, c.current, c.confirmedRevision]), [['manager_confirmed', true, 1], ['manager_confirmed', true, 1]], '"Confirmed on r1; sentence unchanged"');
   assert.deepEqual(claims.claimSummary(s.l, s.l.row(id)), { confirmed: 2, total: 2, current: 2 });
+  // A current decision is never asked again: only a changed sentence (a new claim) can be (F3.1 step 6).
+  const reask = await s.call(ALEX, 'POST', 'confirmations', { refId: id, claimIds: [cs[0].id] });
+  assert.deepEqual([reask.status, reask.body.error], [409, 'Already answered: edit the sentence to ask again.']);
   // An open request stays answerable across a details-only revision.
-  const open = (await s.call(ALEX, 'POST', 'confirmations', { refId: id, claimIds: [cs[0].id] })).body.request;
+  const [t2] = await proposed(s, id, T2);
+  const open = (await s.call(ALEX, 'POST', 'confirmations', { refId: id, claimIds: [t2.id] })).body.request;
   await s.l.upsert(ALEX, { localId: 'r1', reference: { ...edit, details: { ...edit.details, country: 'Spain' } } });
   assert.equal((await s.call(SAM, 'GET', 'confirmations/inbox')).body.items.length, 1);
   // Changing the outcome sentence makes that claim stale (claims API, summary, inbox 409, footnote map).
   const changed = REF(); changed.answers[3] = 'Triage fell from 40 to 15 minutes per claim.';
   await s.l.upsert(ALEX, { localId: 'r1', reference: changed });
   view = (await s.call(ALEX, 'GET', 'claims/' + id)).body;
-  assert.deepEqual(view.claims.map(c => [c.text, c.current]), [[T1, true], [T3, false]]);
-  assert.deepEqual(claims.claimSummary(s.l, s.l.row(id)), { confirmed: 1, total: 2, current: 1 });
-  assert.deepEqual([...claims.confirmationStatus(s.l, s.l.row(id)).keys()], [claimKey(1, T1)]);
+  assert.deepEqual(view.claims.map(c => [c.text, c.current]), [[T1, true], [T2, true], [T3, false]]);
+  assert.deepEqual(claims.claimSummary(s.l, s.l.row(id)), { confirmed: 1, total: 3, current: 2 });
+  assert.deepEqual([...claims.confirmationStatus(s.l, s.l.row(id))], [[claimKey(1, T1), 'manager_confirmed'], [claimKey(1, T2), 'unverified']]);
   const stale = (await s.call(ALEX, 'POST', 'confirmations', { refId: id, claimIds: [cs[1].id] }));
   assert.equal(stale.status, 409, 'a stale claim cannot be requested again; the new sentence is a new claim');
-  const withT3 = (await s.call(ALEX, 'POST', 'confirmations', { refId: id, claimIds: [cs[0].id] })).body.request;
+  const second = (await s.call(ALEX, 'POST', 'confirmations', { refId: id, claimIds: [t2.id] })).body.request;
   await s.l.upsert(ALEX, { localId: 'r1', reference: { ...changed, answers: changed.answers.map((a, i) => i === 1 ? 'I built the routing model myself.' : a) } });
   assert.deepEqual((await s.call(SAM, 'GET', 'confirmations/inbox')).body.items, [], 'the inbox drops requests whose sentence changed');
-  assert.equal((await s.call(SAM, 'POST', 'confirmations/' + withT3.id, { decisions: [{ claimId: cs[0].id, decision: 'confirm' }] })).status, 409);
-  assert.equal((await s.call(SAM, 'POST', 'confirmations/' + open.id, { decisions: [{ claimId: cs[0].id, decision: 'confirm' }] })).status, 409);
-  assert.deepEqual((await s.call(ALEX, 'GET', 'claims/' + id)).body.requests.filter(r => r.status === 'stale').map(r => r.id).sort(), [open.id, withT3.id].sort());
+  assert.equal((await s.call(SAM, 'POST', 'confirmations/' + second.id, { decisions: [{ claimId: t2.id, decision: 'confirm' }] })).status, 409);
+  assert.equal((await s.call(SAM, 'POST', 'confirmations/' + open.id, { decisions: [{ claimId: t2.id, decision: 'confirm' }] })).status, 409);
+  assert.deepEqual((await s.call(ALEX, 'GET', 'claims/' + id)).body.requests.filter(r => r.status === 'stale').map(r => r.id).sort(), [open.id, second.id].sort());
 });
 
 test('currency (revision mode, strict R4): any new revision makes decided claims and open requests stale', async () => {

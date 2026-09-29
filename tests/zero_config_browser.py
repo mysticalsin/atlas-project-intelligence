@@ -19,7 +19,9 @@ FORBIDDEN = re.compile(r'gateway|localhost|GPU|\.env|NVIDIA|address', re.I)
 REP = {'headline': 'Claims triage rebuilt', 'summary': 'The consultant rebuilt claims triage for the client.', 'topics': {'context': 'Tickets bounced between teams.'},
        'highlights': [], 'gaps': ['No named source'], 'follow_ups': [], 'status': 'model_draft'}
 ERR = []
-ANALYTICS = {'totals': {'visible': 0, 'published': 0, 'byStatus': []}, 'byCountry': [], 'byServiceLine': [], 'byPractice': [], 'byIndustry': [], 'byTechnology': [], 'byConsultant': [],
+# The people lookup's stored directory rows (§5.8): name and title only, never the N+1
+PEOPLE = {'jane@example.com': {'name': 'Jane Doe', 'title': 'Principal Data Lead', 'from': 'dna_export'}, 'bob@example.com': {'name': 'Bob Stone', 'title': 'Director', 'from': 'dna'}}
+ANALYTICS ={'totals': {'visible': 0, 'published': 0, 'byStatus': []}, 'byCountry': [], 'byServiceLine': [], 'byPractice': [], 'byIndustry': [], 'byTechnology': [], 'byConsultant': [],
              'byClient': [], 'coverage': [], 'coverageGaps': [], 'strongest': [], 'needsEnrichment': [], 'activityWithoutReference': []}
 
 
@@ -96,6 +98,9 @@ class Server:
             return r.fulfill(json={'id': mm.group(1), 'revision': rec['revision'], 'status': 'in_review', 'access': 'full', 'data': rec['data'],
                                    'state': {'validation': {'status': 'awaiting'}, 'quality': None, 'duplicates': []}, 'permissions': {}, 'revisions': [], 'audit': []})
         if path == '/api/library/invitations': return r.fulfill(json={'items': []})
+        if path == '/api/library/people' and m == 'GET':  # §6: one exact email -> {email, name, title, from} from stored directory rows, or 404
+            e = (parse_qs(u.query).get('email') or [''])[0].lower(); who = PEOPLE.get(e)
+            return r.fulfill(json={'email': e, **who}) if who else r.fulfill(status=404, json={'error': 'Nobody with that email in the directory.'})
         if path == '/api/library/analytics': return r.fulfill(json=ANALYTICS)
         if path == '/api/library/directory':
             return r.fulfill(json={'dataMode': 'test', 'rows': {'dna': 0, 'dna_export': s.dir_rows}, 'lastImport': None,
@@ -421,6 +426,47 @@ with sync_playwright() as pw:
             x = projects(p)[0]
             check('9 the saved project keeps roleFrom "you" for a typed role', x['roleFrom'] == 'you' and x['consultant'] == 'Tony Walteur' and x['validation']['managerStaff'] is False)
         p.context.close()
+
+    # ---- §5.8: the N+1 name from a typed N+1 email (GET /people: stored directory rows only), shown with its source.
+    # ATLAS's own name (prefill or lookup) follows the email; a name you typed, or an edited project's stored name, never changes
+    def n1_form(s):
+        p = open_page(s); p.locator('[data-action=new-project]:visible').first.click(); p.locator('#projectDialog').wait_for(state='visible'); return p
+    def n1_email(p, v, settle=400):
+        p.locator('#n1Email').fill(v); p.locator('#n1Email').press('Tab'); p.wait_for_timeout(settle)
+    s = Server(prof=profile(manager=None)); p = n1_form(s)
+    looks = lambda: [x['q'].get('email', [''])[0] for x in s.api('GET', '/api/library/people')]
+    fchip = lambda i: p.locator(f'[data-chip="{i}"]').inner_text() if p.locator(f'[data-chip="{i}"]').is_visible() else ''
+    check('5.8 no profile N+1: the N+1 fields start empty', p.locator('#n1Name').input_value() == '' and p.locator('#n1Email').input_value() == '')
+    n1_email(p, 'jane@exam')
+    check('5.8 an incomplete email is never looked up', looks() == [] and p.locator('#n1Name').input_value() == '')
+    n1_email(p, 'Jane@Example.com', 0); wait(p, lambda: p.locator('#n1Name').input_value() != '', 5)
+    check('5.8 a typed N+1 email fills the empty N+1 name from the directory, with its source chip',
+          p.locator('#n1Name').input_value() == 'Jane Doe' and fchip('n1Name') == 'from the DNA export' and looks() == ['jane@example.com'])
+    n1_email(p, 'bob@example.com', 0); wait(p, lambda: p.locator('#n1Name').input_value() == 'Bob Stone', 5)
+    check('5.8 a name the lookup filled follows the email', p.locator('#n1Name').input_value() == 'Bob Stone' and fchip('n1Name') == 'from DNA')
+    n1_email(p, 'nobody@example.com')
+    check('5.8 not in the directory: the looked-up name of the old email goes, nothing is guessed', p.locator('#n1Name').input_value() == '' and fchip('n1Name') == '')
+    p.locator('#n1Name').fill('Janet D.'); n1_email(p, 'jane@example.com')
+    check('5.8 a name you typed is never overwritten', p.locator('#n1Name').input_value() == 'Janet D.' and fchip('n1Name') == 'you edited')
+    p.locator('#n1Name').fill(''); n1_email(p, 'bob@example.com', 0); wait(p, lambda: p.locator('#n1Name').input_value() == 'Bob Stone', 5)
+    check('5.8 a found email is not looked up again (30 lookups an hour)', looks() == ['jane@example.com', 'bob@example.com', 'nobody@example.com'])
+    p.locator('#projectTitle').fill('N+1 from the directory'); p.locator('#projectForm button[type=submit]').click(); p.wait_for_timeout(300)
+    check('5.8 the project keeps the looked-up N+1; no provenance is stored', projects(p)[0]['validation']['manager'] == {'name': 'Bob Stone', 'email': 'bob@example.com'})
+    p.locator('header [data-view=projects]').click(); p.locator('#projectDetail [data-action=edit-project]').click(); p.locator('#projectDialog').wait_for(state='visible')
+    n1_email(p, 'jane@example.com')
+    check("5.8 editing a project: its stored N+1 name is never replaced", p.locator('#n1Name').input_value() == 'Bob Stone' and len(looks()) == 3)
+    p.context.close()
+    s = Server(prof=profile()); p = n1_form(s)  # the profile's N+1: Sam Lead, sam@example.com, from DNA
+    n1_email(p, 'jane@example.com', 0); wait(p, lambda: p.locator('#n1Name').input_value() == 'Jane Doe', 5)
+    check('5.8 a prefilled N+1 name follows a new N+1 email', p.locator('#n1Name').input_value() == 'Jane Doe' and fchip('n1Name') == 'from the DNA export')
+    n1_email(p, 'sam@example.com')
+    check("5.8 back to the profile's N+1 email: its name and chip return, with no lookup", p.locator('#n1Name').input_value() == 'Sam Lead' and fchip('n1Name') == 'from DNA'
+          and looks() == ['jane@example.com'])
+    p.context.close()
+    s = Server(prof=None); p = n1_form(s)
+    n1_email(p, 'jane@example.com')
+    check('5.8 without the profile feature there is no lookup', not s.api('GET', '/api/library/people') and p.locator('#n1Name').input_value() == '')
+    p.context.close()
 
     # ---- admin people directory: only the approved columns leave the browser (§5.6)
     s = Server(prof=profile(), role='admin'); s.dir_rows = 2

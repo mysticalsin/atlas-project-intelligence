@@ -270,6 +270,13 @@ async function act(ctx, id) {
   const o = rowOf(lib, str(id, 64));
   if (!o) throw fail(404, 'Outreach item not found.');
   if (inflight.get(lib)?.has(o.id)) throw fail(409, 'This item is being sent.');
+  // An approved email draft lives only in the approver's page: approving it again returns the same draft while its
+  // subject is open. The row keeps its status and first approver; the audit gets one more `outreach drafted` row.
+  if (action === 'approve' && o.status === 'drafted' && o.channel === 'email_draft') {
+    if (!subjectOpen(lib, o)) throw fail(409, REASONS.closed);
+    lib.log(o.id, user.email, 'outreach drafted', `${o.kind} ${o.channel}`);
+    return { item: view(o), draft: emailDraft(lib, o, originOf(ctx)) };
+  }
   if (!ACTIONABLE.has(o.status)) throw fail(409, `This item is already ${String(o.status).replace(/_/g, ' ')}.`);
   if (action === 'dismiss') return { item: setStatus(lib, o, 'dismissed', '', user) };
   if (!subjectOpen(lib, o)) return { item: setStatus(lib, o, 'dismissed', REASONS.closed, user) };

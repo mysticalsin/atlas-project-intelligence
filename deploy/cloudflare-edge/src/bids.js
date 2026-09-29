@@ -10,7 +10,7 @@ import { clientScrub } from './review.js';
 import { splitSentences, snippetsOf, claimKey, TOPIC_KEYS } from './snippets.js';
 import { parseJSON, numbersIn, candidateCard, rankPool, retrievalOf } from './reuse.js';
 import { claimSummary, confirmationStatus } from './claims.js';
-import { listForBid } from './gaps.js';
+import { listForBid, ensure as ensureGaps } from './gaps.js';
 import { customerJev } from './customer-jev.js';
 import { winSignals, proofTypeOf } from './winloop.js';
 
@@ -85,7 +85,8 @@ export function parseBidRank(text, ids, reqIds) {
 
 // snippetById: Map (or object) of 'r1:A4.2' -> { text } (the masked snippet text the model saw). A claim survives
 // only with a resolvable cite and with every number present in its cited snippets; a title or subtitle carrying a
-// number no snippet has is blanked. Every drop is listed. null when no claim survives.
+// number no snippet has is blanked. Every drop is listed. null when no claim survives. A claim is 'fact' only when the
+// model says so; a missing or unknown kind gets the weaker label, 'interpretation'.
 export function parseOnePager(text, snippetById, reqIds) {
   const r = parseJSON(text);
   if (!r) return null;
@@ -101,7 +102,7 @@ export function parseOnePager(text, snippetById, reqIds) {
     const cites = [...new Set((Array.isArray(o.cites) ? o.cites : []).map(String).filter(id => get(id)))].slice(0, 6);
     const own = new Set(cites.flatMap(id => figures(get(id).text)));
     if (!cites.length || !figures(t).every(n => own.has(n))) { dropped.push(t); return null; }
-    return { text: t, kind: o.kind === 'interpretation' ? 'interpretation' : 'fact', cites,
+    return { text: t, kind: String(o.kind ?? '').trim().toLowerCase() === 'fact' ? 'fact' : 'interpretation', cites,
       requirementIds: [...new Set((Array.isArray(o.requirements) ? o.requirements : []).map(String).filter(id => reqs.has(id)))] };
   };
   const summary = (Array.isArray(r.summary) ? r.summary : []).slice(0, 3).map(claim).filter(Boolean);
@@ -136,12 +137,14 @@ export function ensure(lib) {
 const parsed = (text, fallback) => { try { const v = JSON.parse(text); return v ?? fallback; } catch { return fallback; } };
 const isAuthor = (bid, user) => !!bid && (bid.owner === user?.email || user?.role === 'admin');
 
-// One requirement of a bid, for its owner or an admin only (anyone else: 404). Text stays in placeholder form (the
-// bid map); `prospects` (raw) and `pseudo` (the map) are confidential and for server-side pseudonymising only.
+// One requirement of a bid, for its owner or an admin only (anyone else: 404; a deleted bid: 409, so no gap request
+// opens on it). Text stays in placeholder form (the bid map); `prospects` (raw) and `pseudo` (the map) are
+// confidential and for server-side pseudonymising only.
 export function getRequirement(lib, user, bidId, reqId) {
   ensure(lib);
-  const bid = lib.rows('SELECT id, owner, alias, prospects, pseudo, requirements FROM bids WHERE id = ?', String(bidId ?? ''))[0];
+  const bid = lib.rows('SELECT id, owner, alias, prospects, pseudo, requirements, purged_at FROM bids WHERE id = ?', String(bidId ?? ''))[0];
   if (!isAuthor(bid, user)) throw fail(404, 'Bid not found.');
+  if (bid.purged_at) throw fail(409, PURGED);
   const reqs = parsed(bid.requirements, []), requirement = (Array.isArray(reqs) ? reqs : []).find(r => obj(r).id === String(reqId ?? ''));
   if (!requirement) throw fail(404, 'Requirement not found.');
   const prospects = parsed(bid.prospects, []);
@@ -230,36 +233,57 @@ async function create({ lib, user, body }) {
   const a = pseudonymise(lib, alias, { prospects }), p = pseudonymise(lib, brief, { prospects, map: a.map });
   let reqs = null, customer = customerOf({}), method = 'keyword';
   if (lib.complete) {
-    const got = parseRequirements(await lib.complete([{ role: 'system', content: REQUIREMENTS_POLICY }, { role: 'user', content: p.text.slice(0, 24000) }]).catch(() => ''));
-    if (got) { const mask = recordMask(lib); reqs = got.requirements.map(r => ({ ...r, text: mask(r.text) })); customer = mask(got.customer); method = 'model'; }
+    // The author's own words the model received stay as the model wrote them (§2.3 display rule, review #12). Stored
+    // text is placeholder form: the other view and the one-pager apply the full recordMask again at read time.
+    const sent = p.text.slice(0, 24000);
+    const got = parseRequirements(await lib.complete([{ role: 'system', content: REQUIREMENTS_POLICY }, { role: 'user', content: sent }]).catch(() => ''));
+    if (got) { const mask = recordMask(lib, { authorText: sent }); reqs = got.requirements.map(r => ({ ...r, text: mask(r.text) })); customer = mask(got.customer); method = 'model'; }
   }
   if (!reqs) reqs = keywordRequirements(p.text);
+  // Only the entries a stored text uses are kept (alias, requirements, customer): the brief map is bounded by the
+  // brief alone, and nothing reads the rest. Never a size-based refusal or label (a membership oracle, rule 5).
+  const used = usedKeys([a.text, JSON.stringify(reqs), JSON.stringify(customer)]), pseudo = Object.fromEntries(Object.entries(p.map).filter(([k]) => used.has(k)));
   const id = lib.newId(), at = lib.now();
   lib.sql.exec(`INSERT INTO bids (id, owner, owner_mail, title, alias, prospects, brief, pseudo, requirements, customer, req_method, match, status, outcome, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'open', 'pending', ?, ?)`, id, user.email, user.mail || '', title, a.text, JSON.stringify(prospects), brief,
-  JSON.stringify(p.map), JSON.stringify(reqs), JSON.stringify(customer), method, at, at);
+  JSON.stringify(pseudo), JSON.stringify(reqs), JSON.stringify(customer), method, at, at);
   lib.log(id, user.email, 'bid created', `${reqs.length} requirements, ${method}`);
   return bidOut(lib, user, load(lib, user, id));
 }
 
+// Map keys a stored placeholder-form text uses ('[company 2]' in model output is the key '[Company 2]').
+const usedKeys = texts => new Set(texts.flatMap(t => [...String(t ?? '').matchAll(/\[(company|person|email|phone|link)\s+(\d+)\]/gi)]
+  .map(([, k, n]) => `[${k[0].toUpperCase()}${k.slice(1).toLowerCase()} ${n}]`)));
+const reqNumber = id => /^R\d{1,9}$/.test(id) ? Number(id.slice(1)) : 0;
+
+// The requirements are replaced as a whole. The bid map is rebuilt from the entries the stored texts that stay still
+// use (alias, customer, every gap request's asks), then extended by the new requirements, so it never grows with
+// edits and never fills up (the match is reset, so it needs no entry). A row keeps its id only when the bid already
+// has that id; new text takes the next number above every id the bid had before this edit and every id a gap request
+// names, so no request or answer ever lands under a different requirement.
 function editRequirements({ lib, user, body }, row) {
   if (!isAuthor(row, user)) throw fail(403, 'Only the bid owner or an admin can edit its requirements.');
   if (row.purged_at) throw fail(409, PURGED);
   const items = obj(body).requirements;
   if (!Array.isArray(items) || items.length > 12) throw fail(400, 'Send at most 12 requirements.');
   if (items.some(x => typeof obj(x).text !== 'string' || str(x.text, 1000).length > 240)) throw fail(400, 'Each requirement is a text of at most 240 characters.');
-  const prospects = strings(parsed(row.prospects, [])), ids = new Set(), keep = [];
-  let map = obj(parsed(row.pseudo, {}));
+  if (!rateLimit(lib, 'bid-edit:' + user.email, 60, 36e5)) throw fail(429, 'Too many requirement edits this hour. Try again later.');
+  ensureGaps(lib);
+  const gapRows = lib.rows('SELECT requirement_ids, asks FROM gap_requests WHERE bid_id = ?', row.id), gapIds = gapRows.flatMap(g => strings(parsed(g.requirement_ids, [])));
+  const prospects = strings(parsed(row.prospects, [])), before = requirementsOf(row).map(r => r.id), ids = new Set(), keep = [];
+  const used = usedKeys([row.alias, row.customer, ...gapRows.map(g => g.asks)]);
+  let map = Object.fromEntries(Object.entries(obj(parsed(row.pseudo, {}))).filter(([k]) => used.has(k)));
   for (const x of items) {
     const text = str(x.text, 240);
     if (!text) continue;
     const p = pseudonymise(lib, text, { prospects, map }), wanted = String(x.id ?? '');
     map = p.map;
-    const id = /^R(?:[1-9]|1[0-2])$/.test(wanted) && !ids.has(wanted) ? wanted : null;
+    const id = before.includes(wanted) && !ids.has(wanted) ? wanted : null;
     if (id) ids.add(id);
     keep.push({ id, text: p.text, kind: KINDS.includes(x.kind) ? x.kind : 'capability', must: x.must === true });
   }
-  for (const r of keep) if (!r.id) { let n = 1; while (ids.has('R' + n)) n++; r.id = 'R' + n; ids.add(r.id); }
+  let next = Math.max(0, ...[...before, ...gapIds].map(reqNumber));
+  for (const r of keep) if (!r.id) r.id = 'R' + ++next;
   const at = lib.now();
   lib.sql.exec("UPDATE bids SET requirements = ?, pseudo = ?, req_method = 'manual', match = NULL, updated_at = ? WHERE id = ?", JSON.stringify(keep), JSON.stringify(map), at, row.id);
   lib.log(row.id, user.email, 'requirements edited', `${keep.length} requirements`);
@@ -277,6 +301,11 @@ async function match({ lib, user, body, env }, row) {
   const run = pool.length ? await rankRun(lib, env, { pool, query, reqs, customer, limit, jev: b.useJev === true && b.jevConsent === true })
     : { verdict: 'empty_library', method: 'none', results: [], coverage: cover(reqs, [], [], 'unmet'), note: NOTE.empty_library };
   const stored = { runAt: lib.now(), ...run, label: MATCH_LABEL };
+  // The run comes from `row` as read before the model calls, and the Durable Object serves other requests while they
+  // are awaited: a requirements edit or a delete may have landed. Checked and written with no await in between.
+  const cur = lib.rows('SELECT requirements, customer, purged_at FROM bids WHERE id = ?', row.id)[0];
+  if (!cur || cur.purged_at) throw fail(409, PURGED);
+  if (cur.requirements !== row.requirements || cur.customer !== row.customer) throw fail(409, 'The requirements changed while the match ran. Run the match again.');
   lib.sql.exec('UPDATE bids SET match = ?, updated_at = ? WHERE id = ?', JSON.stringify(stored), stored.runAt, row.id);
   lib.log(row.id, user.email, 'proof matched', `${stored.verdict}, ${stored.results.length} results`);
   return matchOut(lib, user, stored, viewOf(lib, user, row));
@@ -295,8 +324,12 @@ async function rankRun(lib, env, { pool, query, reqs, customer, limit, jev }) {
   const views = kept.map(k => recordView(lib, k.row.data)), cards = kept.map((k, i) => candidateCard(k.row.id, views[i]));
   const byId = new Map(kept.map(k => [k.row.id, k])), mask = recordMask(lib);
   const base = id => ({ id, similarity: round3(byId.get(id).similarity), retrieval: byId.get(id).retrieval });
+  // JEV ranks only with all four customer fields; one the brief did not give is named, never reported as a JEV failure.
+  const missing = CUSTOMER.filter(k => !customer[k].trim()).map(k => k.replace('_', ' '));
   let fellBack = '';
-  if (jev && env?.TYPESAFE_API_KEY) {
+  if (jev && env?.TYPESAFE_API_KEY && missing.length)
+    fellBack = ` (JEV not asked: no ${missing.length > 1 ? missing.slice(0, -1).join(', ') + ' or ' + missing.at(-1) : missing[0]} was taken from the brief; ranked by Workers AI)`;
+  else if (jev && env?.TYPESAFE_API_KEY) {
     try {
       const stories = kept.map((k, i) => ({ id: k.row.id, title: views[i].title, revision: k.row.revision, content_hash: k.row.content_hash,
         sections: { challenge: cards[i].challenge, contribution: cards[i].contribution, outcome: cards[i].outcome, customer_fit: cards[i].relevance },
@@ -451,13 +484,20 @@ function outcome({ lib, user, body }, row) {
   lib.log(row.id, user.email, 'bid outcome', b.outcome);
   return bidOut(lib, user, load(lib, user, row.id));
 }
-// The note is free text that may name the prospect, so it is purged with the title, brief, prospects and map.
+// Only the alias, requirements, outcome and uses stay (F7). The note is free text that may name the prospect, the
+// customer summary is sentences taken from the brief and the match was judged against it, so they go with the title,
+// brief, prospects and map. Open gap requests close (nothing is answerable on a deleted bid) and every gap answer map,
+// which may hold a declared prospect, is erased.
 function purge({ lib, user }, row) {
   if (!isAuthor(row, user)) throw fail(403, 'Only the bid owner or an admin can delete it.');
   if (!row.purged_at) {
     const at = lib.now();
-    lib.sql.exec('UPDATE bids SET title = NULL, brief = NULL, prospects = NULL, pseudo = NULL, outcome_note = NULL, purged_at = ?, updated_at = ? WHERE id = ?', at, at, row.id);
-    lib.log(row.id, user.email, 'bid purged', 'title, brief, prospect names and name map removed');
+    lib.sql.exec(`UPDATE bids SET title = NULL, brief = NULL, prospects = NULL, pseudo = NULL, customer = NULL, match = NULL, outcome_note = NULL,
+      purged_at = ?, updated_at = ? WHERE id = ?`, at, at, row.id);
+    ensureGaps(lib);
+    lib.sql.exec("UPDATE gap_requests SET status = 'dismissed' WHERE bid_id = ? AND status = 'open'", row.id);
+    lib.sql.exec('UPDATE gap_requests SET pseudo = NULL WHERE bid_id = ?', row.id);
+    lib.log(row.id, user.email, 'bid purged', 'title, brief, customer summary, match, prospect names and name maps removed; open gap requests closed');
   }
   return bidOut(lib, user, load(lib, user, row.id));
 }

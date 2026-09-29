@@ -17,6 +17,9 @@ export function claimKey(topic, text) { return `${topic}\n${text}`; }
 
 // Snippets of one reference's raw data: answers[t] (<= 12 sentences each) as consultant words, sources[j].excerpt
 // (<= 6 each) as evidence; <= 80 in all. `raw` is SERVER-SIDE ONLY and must be stripped before any response.
+// An evidence source's name and version (often the uploaded file name, which carries the client) get the same
+// masking as the text: `source` is what one-pager footnotes (customer-facing, every viewer) and non-full readers
+// see. `rawSource`, like `raw`, is SERVER-SIDE ONLY: for a reader with full access to the record, never customer-facing.
 // data.report is never a snippet (it is a model draft).
 export function snippetsOf(lib, data) {
   // PII first, so the own-client scrub never rewrites a name inside an email or URL (scrub.piiText).
@@ -24,7 +27,9 @@ export function snippetsOf(lib, data) {
   const answers = Array.isArray(data?.answers) ? data.answers : [];
   for (let t = 0; t < TOPIC_KEYS.length; t++)
     splitSentences(answers[t]).slice(0, 12).forEach((raw, n) => out.push({ id: `A${t + 1}.${n + 1}`, kind: 'consultant_words', topic: t, idx: n, raw, text: mask(raw) }));
-  (Array.isArray(data?.sources) ? data.sources : []).forEach((s, j) => splitSentences(s?.excerpt).slice(0, 6).forEach((raw, n) =>
-    out.push({ id: `S${j + 1}.${n + 1}`, kind: 'evidence', idx: n, source: { name: String(s?.name || ''), version: String(s?.version || '') }, raw, text: mask(raw) })));
+  (Array.isArray(data?.sources) ? data.sources : []).forEach((s, j) => {
+    const rawSource = { name: String(s?.name || ''), version: String(s?.version || '') }, source = { name: mask(rawSource.name), version: mask(rawSource.version) };
+    splitSentences(s?.excerpt).slice(0, 6).forEach((raw, n) => out.push({ id: `S${j + 1}.${n + 1}`, kind: 'evidence', idx: n, source, rawSource, raw, text: mask(raw) }));
+  });
   return out.slice(0, 80);
 }

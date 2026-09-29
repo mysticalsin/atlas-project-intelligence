@@ -121,8 +121,8 @@ export class Session {
     // metric(name, numbers): timings and counts only, never transcript or project content.
     Object.assign(this, { io, ai, csrf, voice, voices: voices || [voice], captureRequired, model, maxSeconds, admin, speakingLimit, now, sleep, metric, memory, sttTimeout, gaps, winHint, gapTimeout });
     // Interview mode. Gap mode keeps its own answer windows: askByItem (reply item -> the ask it carried, set when the reply
-    // is composed), gapAttempts (replies heard per ask), openAsk (the ask the consultant last heard) and gapAnswers
-    // (ask -> the consultant turns heard after it, each turn a list of transcript parts).
+    // is composed), gapAttempts (replies heard per ask), openAsk (the ask the consultant last heard; null once a reflect-back
+    // or the closing is heard) and gapAnswers (ask -> the consultant turns heard after it, each turn a list of transcript parts).
     this.mode = 'full'; this.wrapS = WRAP_S; this.winNote = ''; this.starting = false;
     this.gapAsks = []; this.gapRequest = null; this.askByItem = new Map(); this.gapAttempts = {}; this.gapAnswers = {}; this.openAsk = null; this.lastAnswer = null; this.askHeard = null;
     this.memoryNote = ''; this.language = 'en'; this.affinity = 'atlas-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -276,7 +276,7 @@ export class Session {
     this.discarded.add(item); this.gen += 1; this.queue = [];
     this.stopped();
     // A withdrawn reply is not an attempt either: its ask goes back to where it was (gap mode).
-    if (this.askHeard?.item === item) { const { id, before } = this.askHeard; this.gapAttempts[id] -= 1; this.openAsk = before; this.askHeard = null; }
+    if (this.askHeard?.item === item) { const { id, before } = this.askHeard; if (id) this.gapAttempts[id] -= 1; this.openAsk = before; this.askHeard = null; }
     // A reply already written to the history (fully composed, audio still playing) is taken back from it too.
     if (this.committed?.item === item) { const i = this.history.lastIndexOf(this.committed.entry); if (i >= 0) this.history.splice(i, 1); this.committed = null; }
     if (this.protectedItem === item) this.protectedItem = null;
@@ -620,8 +620,12 @@ export class Session {
         : `ALREADY SAID (server): you have just greeted the consultant with: "${prefix}". Do not repeat it or introduce yourself again.`) : ''];
       const guidance = instruction === TIME_UP ? null : this.guidance, gap = this.mode === 'gap';
       // Gap mode: the ask this reply carries, fixed now that it is composed. A normal reply or the opening carries the plan's
-      // ask; the closing, a nudge while they are mid-answer and a re-ask after a noise carry none (their window stays).
-      if (gap && (instruction === undefined || instruction === GAP_OPENING)) this.askByItem.set(item, guidance?.askId ?? null);
+      // ask; a reflect-back (the plan has no ask left) and the closing carry none, and once heard they close the answer
+      // window, so a confirmation or a goodbye answers no ask. A re-ask after a noise leaves the window as it is; so does a
+      // nudge while they are mid-answer, unless that reply goes on to ask a question: from it on, it carries the plan's ask.
+      if (gap && (instruction === undefined || instruction === GAP_OPENING || instruction === TIME_UP)) this.askByItem.set(item, guidance?.askId ?? null);
+      let asked = false;
+      const carry = s => { if (gap && instruction === STILL_THINKING && !asked && /[?？]/.test(s)) { asked = true; this.askByItem.set(item, guidance?.askId ?? null); } };
       for await (const raw of this.ai.chatStream(talkerMessages(this.project, guidance, this.history, instruction, notes, gap ? this.gapAsks : null), { affinity: this.affinity })) {
         if (gen !== this.gen || this.finished) return;
         const delta = marker.feed(raw);
@@ -634,11 +638,11 @@ export class Session {
         if (!flushedClause && !done.length) { const m = /^(.{24,}?[,;:—–])\s+/s.exec(rest); if (m) { done = [m[1]]; rest = rest.slice(m[0].length); } }
         if (done.length) flushedClause = true;
         buffer = rest;
-        for (const s of done) { await say(s); if (gen !== this.gen) return; }
+        for (const s of done) { carry(s); await say(s); if (gen !== this.gen) return; }
       }
       const rest = marker.flush();
       if (rest && gen === this.gen) { show(rest); said += rest; buffer += rest; }
-      if (buffer.trim() && gen === this.gen) await say(buffer.trim());
+      if (buffer.trim() && gen === this.gen) { carry(buffer); await say(buffer.trim()); }
       release(); // anything left that produced no audio of its own
       interrupted = gen !== this.gen;
       // Backstop: a reply that still asks a question is not a closing, whatever token it carries (admin may end at will).
@@ -712,10 +716,11 @@ export class Session {
       if (text) this.showText(item, text);
       if (!bytes.length) continue;
       // Gap mode: the consultant starts hearing a reply that carries an ask (its first composed audio; a greeting or an
-      // acknowledgement before it does not count). That is one attempt, and their next turns answer that ask.
+      // acknowledgement before it does not count). That is one attempt, and their next turns answer that ask. A reply that
+      // carries none (a reflect-back, the closing) is no attempt and closes the window: their next turns answer no ask.
       if (this.askByItem.has(item)) {
         const id = this.askByItem.get(item); this.askByItem.delete(item);
-        if (id) { this.askHeard = { item, id, before: this.openAsk }; this.gapAttempts[id] = (this.gapAttempts[id] || 0) + 1; this.openAsk = id; }
+        this.askHeard = { item, id, before: this.openAsk }; if (id) this.gapAttempts[id] = (this.gapAttempts[id] || 0) + 1; this.openAsk = id;
       }
       if (this.playbackDone) this.resumedAt = this.bytesIn; // where in the microphone stream her audio starts again
       this.io.sendBytes(bytes); this.playbackDone = false; this.spokenMs += bytes.length / 48; this.lastAudio = this.now(); this.sentMs[item] = (this.sentMs[item] || 0) + bytes.length / 48;

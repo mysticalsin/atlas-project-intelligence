@@ -1393,3 +1393,87 @@ test('resolver output is bounded: invalid asks dropped (never shadowing a valid 
   await h.s.onText(gapStart());
   assert.deepEqual(h.events[0].gaps.map(g => [g.id, g.label, g.ask.length]), [['G1', 'Supporting artifact', 13], ['G2', 'Observed outcome', 160]]);
 });
+
+// ---- Answer windows close at the reflect-and-confirm reply and at the closing (review findings 8, 9) ----
+const sayAsync = async (h, segs) => { for (const f of frames(segs)) { h.tick(); h.s.onBinary(f); await new Promise(r => setImmediate(r)); } };
+
+test('gap: the reply after reflect-and-confirm is not filed as the last ask\'s answer (an unknown or deferred ask stays so, the confirmation is no quote)', async () => {
+  const confirm = 'No, that all sounds right to me, thank you.';
+  for (const [said, expected] of [
+    [['The audit report was signed off by the client quality team.', 'Honestly I don\'t know how that was measured.', 'Mostly insurers with old mainframe claims platforms like this one.'],
+      [['answered_unverified', 1], ['unknown', 1], ['answered_unverified', 1]]],
+    [['The audit report was signed off by the client quality team.', 'I am not sure.', 'Sorry, no idea.', 'Mostly insurers with old mainframe claims platforms like this one.'],
+      [['answered_unverified', 1], ['deferred', 2], ['answered_unverified', 1]]],
+  ]) {
+    const h = harness([...said, confirm], { session: { gaps: resolver() } });
+    await gapOpened(h);
+    for (let n = 2; n <= said.length + 1; n++) { say(h, [[1.2, .2], [1.3, .001]]); await until(() => h.calls.talker.length >= n && !h.s.busy()); }
+    assert.equal(h.s.guidance.action, 'reflect_and_confirm');
+    assert.equal(h.s.openAsk, null, 'the reflect reply was heard: no ask is open any more');
+    say(h, [[1.2, .2], [1.3, .001]]);
+    await until(() => h.calls.talker.length >= said.length + 2 && !h.s.busy());
+    await h.s.onText(JSON.stringify({ type: 'end' })); await until(() => h.events.some(e => e.type === 'ended'));
+    const results = h.events.find(e => e.type === 'notes').gap.results;
+    assert.deepEqual(results.map(r => r.status), expected.map(([s]) => s), JSON.stringify(results));
+    assert.deepEqual(expected.map((_, i) => h.s.gapAttempts['G' + (i + 1)]), expected.map(([, n]) => n));
+    assert.ok(!results.some(r => r.quotes.includes(confirm)), 'the confirmation is no proof quote');
+    assert.ok(h.events.find(e => e.type === 'notes').transcript.includes(confirm), 'it stays in the transcript');
+  }
+});
+
+test('gap: the closing closes the answer window: a goodbye is no answer; a closing withdrawn because they carried on gives the window back', async () => {
+  const h = harness(['Um, not sure.', 'Okay, thank you very much for your time today.'], { session: { gaps: resolver() } });
+  await gapOpened(h);
+  for (let i = 0; i < 262 / 0.02; i++) h.tick();
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length >= 2 && !h.s.busy());
+  assert.equal(h.calls.talker[1].at(-1).content, TIME_UP);
+  assert.equal(h.s.openAsk, null, 'the closing was heard'); assert.deepEqual(h.s.gapAttempts, { G1: 1 }, 'the closing is no attempt');
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.stt >= 2); await until(() => !h.s.busy() && h.s.sttBusy === 0);
+  await h.s.onText(JSON.stringify({ type: 'end' })); await until(() => h.events.some(e => e.type === 'ended'));
+  assert.deepEqual(h.events.find(e => e.type === 'notes').gap.results[0], { askId: 'G1', field: 'evidence', status: 'open', quotes: ['Um, not sure.'] });
+
+  let hold, gated = true;
+  const w = harness(['We rebuilt the claims intake.', 'Then we cut the backlog by a third in two months.'], calls => ({
+    async *chatStream(m) { calls.talker.push(m); yield 'Thank you so much for your time. '; if (calls.talker.length === 2 && gated) await new Promise(r => { hold = r; }); yield 'Goodbye.'; } }));
+  w.s.gaps = resolver();
+  await gapOpened(w);
+  for (let i = 0; i < 262 / 0.02; i++) w.tick();
+  say(w, [[1.2, .2], [1.3, .001]]);
+  await until(() => w.calls.talker.length === 2 && w.s.shown.item === 'agent-2');
+  assert.equal(w.s.openAsk, null, 'the closing is being heard');
+  say(w, [[1.0, .2], [1.3, .001]]);
+  await until(() => w.calls.talker.length === 3);
+  gated = false; hold?.();
+  await until(() => !w.s.busy());
+  assert.ok(w.events.some(e => e.type === 'agent_retract' && e.item_id === 'agent-2'));
+  assert.deepEqual(w.s.gapAttempts, { G1: 1 }, 'no attempt counted or taken back for a closing');
+  assert.deepEqual(w.s.gapAnswers.G1, [['We rebuilt the claims intake.', 'Then we cut the backlog by a third in two months.']], 'the continuation joins its ask');
+});
+
+test('gap: a still-thinking reply that asks the next item counts as asking it; a reply that only nudges does not', async () => {
+  const unfinished = { async turnComplete() { return { complete: false, probability: 0.2 }; } };
+  const g1 = 'The audit report was signed off by the client quality team last year.', g2 = 'We compared handling time before and after the rollout over three months.';
+  const h = harness([g1, g2], { ...unfinished, session: { gaps: resolver() } });
+  await gapOpened(h);
+  await sayAsync(h, [[1.2, .2], [2.7, .001]]);
+  await until(() => h.calls.talker.length >= 2 && !h.s.busy());
+  assert.equal(h.calls.talker[1].at(-1).content, STILL_THINKING);
+  assert.ok(h.calls.talker[1].some(m => m.content.startsWith('ANALYST_GUIDANCE') && m.content.includes('"askId":"G2"')));
+  assert.equal(h.s.openAsk, 'G2', 'the question asked G2'); assert.deepEqual(h.s.gapAttempts, { G1: 1, G2: 1 });
+  await sayAsync(h, [[1.2, .2], [2.7, .001]]);
+  await until(() => h.calls.talker.length >= 3 && !h.s.busy());
+  await h.s.onText(JSON.stringify({ type: 'end' })); await until(() => h.events.some(e => e.type === 'ended'));
+  const results = h.events.find(e => e.type === 'notes').gap.results;
+  assert.deepEqual(results.slice(0, 2).map(r => [r.askId, r.status, r.quotes]), [['G1', 'answered_unverified', [g1]], ['G2', 'answered_unverified', [g2]]]);
+
+  const n = harness(['We moved the whole billing platform to the new provider', 'and it halved the monthly hosting bill in the first quarter.'], calls => ({ ...unfinished,
+    async *chatStream(m) { calls.talker.push(m); yield* (calls.talker.length === 2 ? ['Take your time.'] : ['Thanks. ', 'What was ', 'the baseline?']); } }));
+  n.s.gaps = resolver();
+  await gapOpened(n);
+  await sayAsync(n, [[1.2, .2], [2.7, .001]]);
+  await until(() => n.calls.talker.length >= 2 && !n.s.busy());
+  assert.equal(n.calls.talker[1].at(-1).content, STILL_THINKING);
+  assert.deepEqual([n.s.openAsk, n.s.gapAttempts], ['G1', { G1: 1 }], 'a nudge asks nothing: the window stays on G1');
+});

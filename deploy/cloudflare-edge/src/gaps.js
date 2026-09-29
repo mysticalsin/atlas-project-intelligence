@@ -39,13 +39,19 @@ export function ensure(lib) {
 
 const parsed = (text, fallback) => { try { return JSON.parse(text) ?? fallback; } catch { return fallback; } };
 const chars = (s, n) => Array.from(String(s)).slice(0, n).join('');
-// An ask is 'Proof the bid needs: ' + the requirement in placeholder form, cut to 160 characters; a placeholder cut in
-// half is dropped rather than shown as a fragment.
-const askText = text => chars('Proof the bid needs: ' + text, ASK_CHARS).replace(/\s*\[[A-Za-z]*(?:\s+\d*)?$/, '').trim();
+// An ask is stored whole: 'Proof the bid needs: ' + the requirement in placeholder form. It is cut to 160 characters only
+// after it is rendered for the caller (a label cut in half is dropped rather than shown as a fragment), so the author's
+// cut falls in their own words whether or not a name is masked for others (ground rule 5).
+const askText = text => 'Proof the bid needs: ' + text;
+const cutAsk = text => chars(text, ASK_CHARS).replace(/\s*\[[A-Za-z]*(?:\s+\d*)?$/, '').trim();
 const originOf = ctx => { for (const v of [ctx.env?.ORIGIN, ctx.url?.href]) { try { const o = new URL(String(v)).origin; if (/^https?:\/\//.test(o)) return o; } catch { /* next */ } } return ''; };
 const rowOf = (lib, id) => lib.rows('SELECT * FROM gap_requests WHERE id = ?', id)[0];
 const isAssignee = (g, user) => !!user.mail && user.mail === g.email;
 const isCreator = (g, user) => !!user.email && user.email === g.created_by;
+// The bid's owner, by library identity or verified email. The author view is theirs: the other view of their own words
+// would show which names are library clients (ground rule 5), so they are never a request's assignee.
+const ownsBid = (lib, bidId, ...ids) => { const b = lib.rows('SELECT owner, owner_mail FROM bids WHERE id = ?', String(bidId ?? ''))[0];
+  return !!b && ids.some(e => !!e && (e === b.owner || e === String(b.owner_mail || '').toLowerCase())); };
 const cutoff = (now, days) => { const t = Date.parse(now instanceof Date ? now.toISOString() : String(now ?? '')); return new Date((Number.isFinite(t) ? t : Date.now()) - days * 864e5).toISOString(); };
 const expired = (lib, g) => g.status === 'open' && g.created_at < cutoff(lib.now(), EXPIRY_DAYS);
 
@@ -77,7 +83,7 @@ function render(lib, user, g) {
   const mine = isAssignee(g, user), map = obj(parsed(g.pseudo, {})), others = recordText(lib);
   const showEmail = user.role === 'admin' || mine || (isCreator(g, user) && g.source !== 'reference_public');
   return { id: g.id, bidId: g.bid_id, bidAlias: bid ? view(bid.alias || '') : '', requirementIds: parsed(g.requirement_ids, []),
-    asks: parsed(g.asks, []).map(a => ({ id: a.id, field: a.field, label: FIELDS[a.field]?.[0] || '', ask: view(a.ask) })),
+    asks: parsed(g.asks, []).map(a => ({ id: a.id, field: a.field, label: FIELDS[a.field]?.[0] || '', ask: cutAsk(view(a.ask)) })),
     ...(showEmail ? { assigneeEmail: g.email } : {}), ...(g.assignee_name ? { assigneeName: g.assignee_name } : {}),
     referenceId: g.reference_id || null, status: expired(lib, g) ? 'expired' : g.status, createdAt: g.created_at, answeredAt: g.answered_at || null,
     results: Array.isArray(results) ? results.map(r => ({ ...r, quotes: mine ? unmask(r.quotes, map) : forOthers(r.quotes.map(others)) })) : null };
@@ -119,6 +125,7 @@ function create(ctx) {
     return { id: 'G' + (i + 1), field, label: FIELDS[field][0], ask: askText(String(r.text || '')) };
   });
   const who = resolveAssignee(lib, env, user, b.assignee);
+  if ([user.email, user.mail].includes(who.email) || ownsBid(lib, bidId, who.email)) throw fail(400, 'Ask someone else for proof.');
   // A blank name is filled from the stored DNA directory rows only (never DNA itself, never anyone's profile; §5.8).
   if (!who.name && profile.READY) who.name = String(profile.lookupPerson(lib, who.email)?.name || '').slice(0, 100);
   let ref = who.row;
@@ -145,11 +152,12 @@ function create(ctx) {
     outreach: queued.map(o => ({ id: o.id, channel: o.channel, status: o.status, reason: o.reason || '' })) } };
 }
 
-// The interview's view, for the Interview DO: the assignee only, an open request only, always the other view.
+// The interview's view, for the Interview DO: the assignee only (never the bid's owner, even on a request stored before
+// create() refused that), an open request only, always the other view.
 function interview(lib, user, g) {
-  if (!isAssignee(g, user) || g.status !== 'open' || expired(lib, g)) throw fail(404, 'Gap request not found.');
+  if (!isAssignee(g, user) || ownsBid(lib, g.bid_id, user.email, user.mail) || g.status !== 'open' || expired(lib, g)) throw fail(404, 'Gap request not found.');
   const other = bidView(lib, null, g.bid_id);
-  return { asks: parsed(g.asks, []).map(a => ({ id: a.id, field: a.field, label: FIELDS[a.field]?.[0] || '', ask: other(a.ask) })),
+  return { asks: parsed(g.asks, []).map(a => ({ id: a.id, field: a.field, label: FIELDS[a.field]?.[0] || '', ask: cutAsk(other(a.ask)) })),
     bidAlias: other(lib.rows('SELECT alias FROM bids WHERE id = ?', g.bid_id)[0]?.alias || ''), referenceId: g.reference_id || null, projectId: g.project_id || null };
 }
 

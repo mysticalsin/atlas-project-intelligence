@@ -115,3 +115,17 @@ test('rate limit: 60 questions per user per hour, then 429', async () => {
   assert.deepEqual(await call(l, KIM, { question: 'Which claims triage references?' }), { status: 429, body: { error: 'Too many questions this hour. Try again later.' } });
   assert.equal((await call(l, ALEX, { question: 'Which claims triage references?' })).status, 200, 'per user');
 });
+
+test('review #24 client filter: every reference of the named client reaches the ranking; a filtered answer never says the library has nothing', async () => {
+  const q = { question: 'What have we done for Zebracorp?' }; // its only content word is masked, so no row clears the similarity floor on its own
+  const { l, ids, seen } = await world(echo), r = (await call(l, ALEX, q)).body;
+  assert.deepEqual([r.verdict, r.results.map(x => x.id), r.note], ['strong', [ids.mine], 'Filtered to references for that client that you can open fully.']);
+  assert.ok(seen.complete.length === 1); for (const input of [...seen.complete, ...seen.embed]) assert.doesNotMatch(input, SENTINEL);
+  const lexical = await world(echo);
+  lexical.l.embed = null; // no embeddings (binding down, rows not indexed): the lexical path
+  assert.deepEqual((await call(lexical.l, ALEX, q)).body.results.map(x => x.id), [lexical.ids.mine]);
+  const none = (await call((await world(() => '{"results":[]}')).l, ALEX, q)).body;
+  assert.deepEqual([none.verdict, none.results, none.note], ['none', [], 'Filtered to references for that client that you can open fully. The ranking model judged none of them relevant to this question.']);
+  const kim = await world(echo), k = (await call(kim.l, KIM, q)).body;
+  assert.deepEqual([k.verdict, k.results, k.note, kim.seen.complete.length], ['none', [], 'Nothing in the library answers this yet.', 0], 'without the filter the floor still applies');
+});

@@ -15,7 +15,7 @@ USERS={'owner':('alex@mantu.com','user'),'reviewer':('reviewer@mantu.com','revie
 TITLE='Zebra internal title for Acme Prospect';PROSPECT='Acme Prospect'
 R1,R2='a'*32,'b'*32
 REQS=[{'id':'R1','text':'Proven claims triage automation at an insurer','kind':'capability','must':True},{'id':'R2','text':'Measured reduction in handling time','kind':'outcome','must':False},{'id':'R3','text':'ISO 27001 credential','kind':'credential','must':True}]
-S={'bids':{},'verdict':'strong','gaps':{},'n':0,'features':dict(FEATURES)}
+S={'bids':{},'verdict':'strong','gaps':{},'n':0,'features':dict(FEATURES),'gapResult':'answered_unverified'}
 LABEL='Relevance and reasons are interpretation; open each reference for the facts. Similarity is not relevance.'
 def result(i,rid,title,rel,ws):return {'id':rid,'title':title,'status':'published','revision':3,'access':'public','mine':False,'owner':'','client':'','practice':'Data & AI','industry':'Insurance','country':'France','serviceLines':[],'technologies':[],'headline':'','impact':None,'qualityScore':80,'qualityStatus':'ready','updatedAt':'2026-09-01',
  'relevance':rel,'similarity':0.61-i*0.1,'retrieval':'semantic' if i==0 else 'lexical','why':f'Why {title} fits <b>here</b>','transferable':['Routing rules','Pilot design'],'caveat':'Different country','covers':['R1'] if i==0 else ['R2'],'winSignal':ws,'claims':{'confirmed':1,'total':3}}
@@ -79,7 +79,7 @@ def make_route(who):
   mg=re.match(r'^/api/library/gaps/([a-f0-9]{32})$',path)
   if mg and mg.group(1) in S['gaps']:
    g=S['gaps'][mg.group(1)];return r.fulfill(json={'id':g['id'],'bidId':'','bidAlias':'','requirementIds':g['requirementIds'],'asks':[{'id':'G1','field':'outcome','label':'Outcome','ask':'Proof the bid needs: x'}],'status':g['status'],'createdAt':'2026-09-29','answeredAt':g['answeredAt'],
-    'results':[{'askId':'G1','field':'outcome','status':'answered_unverified','quotes':['We cut handling time by 30% in <b>six</b> weeks.'],'provenance':'unverified_speech_recognition'}] if g['status']=='answered' else None})
+    'results':[{'askId':'G1','field':'outcome','status':S['gapResult'],'quotes':['We cut handling time by 30% in <b>six</b> weeks.'],'provenance':'unverified_speech_recognition'}] if g['status']=='answered' else None})
   if path=='/api/sheet/ingest':return r.fulfill(json={'text':'PDF brief text that is long enough to be a brief for this bid.','truncated':False,'name':'brief.pdf'})
   if path=='/api/library':return r.fulfill(json={'items':[],'total':0,'facets':{'country':{},'industry':{}}})
   return r.fulfill(status=404,json={'error':'not mocked: '+path})
@@ -201,6 +201,13 @@ with sync_playwright() as pw:
  rg=o.locator('#bidRequirements [data-req-gaps="R2"]')
  check('#bid/<id> deep link opens the bid',o.locator('#bids').is_visible() and o.locator('#bidHeading').inner_text()=='Falcon')
  check('gap answers render under the requirement as "answered · unverified", inert',('answered · unverified' in rg.inner_text()) and 'We cut handling time by 30%' in rg.inner_text() and rg.locator('b').count()==0)
+ # every result that carries interview quotes is labelled unverified, whatever its status (rule 10, F2.1)
+ for st,word in (('answered_unverified','answered · unverified'),('unknown','answered: not known'),('deferred','deferred'),('open','not answered')):
+  S['gapResult']=st;q=page('owner',hash=f'#bid/{bid_id}');q.wait_for_timeout(600);box=q.locator('#bidRequirements [data-req-gaps="R2"]')
+  check(f'gap result "{st}" with quotes carries the unverified speech-recognition label',word in box.inner_text() and 'We cut handling time by 30%' in box.inner_text()
+        and 'From the interview · unverified speech recognition' in box.inner_text())
+  q.context.close()
+ S['gapResult']='answered_unverified'
  # win panel (plain owner): proof types always, low-n caveat, CI label; no stories table
  ws=o.locator('#winStats')
  check('win panel: proof-type rows carry n, rate with a Wilson interval, low-n caveat',ws.is_visible() and '60% (95% CI 23-88%)' in ws.inner_text() and 'n=5' in ws.inner_text() and 'Fewer than 5 decided bids: not shown.' in ws.inner_text() and 'Association, not causation' in ws.inner_text())

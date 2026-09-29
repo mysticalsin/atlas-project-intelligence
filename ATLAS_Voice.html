@@ -884,12 +884,33 @@ function guessPrompt(el,projectId){const g=C.value(profile,'name');if(!el||!prof
  wrap.append(yes,' ',edit);el.append(wrap);}
 // ---- project form: prefill chips computed at render time (§3.5)
 const FORM=[['consultantName','name'],['consultantRole','title'],['n1Name','managerName'],['n1Email','managerEmail']];
-function paintProjectForm(){let fromProfile=false;
- for(const [id,k] of FORM){const input=$(id),c=document.querySelector(`[data-chip="${id}"]`);if(!input||!c)continue;const f=profile?.fields?.[k],t=profile?C.chipFor(f,input.value):'';
-  c.textContent=t;c.hidden=!t;if(t&&t!=='you edited')fromProfile=true;}
+// The N+1 name ATLAS put in #n1Name (§5.8), and the email it belongs to: the new-project prefill (from '') or a people
+// lookup (from 'dna' | 'dna_export', named by its chip). Only such a name follows the email; a name typed here, or the stored
+// name of a project being edited, is never replaced. Never stored (the only stored provenance is roleFrom).
+// fresh: the form was just opened; edit: for an existing project.
+let n1Auto=null,n1Seq=0;const n1Found=new Map(),n1Ours=()=>!!n1Auto&&$('n1Name')?.value.trim()===n1Auto.name;
+function paintProjectForm({fresh=false,edit=false}={}){let fromProfile=false;
+ if(fresh){n1Seq++;const n=$('n1Name')?.value.trim();n1Auto=!edit&&n?{email:C.validEmail($('n1Email')?.value),name:n,from:''}:null;}
+ for(const [id,k] of FORM){const input=$(id),c=document.querySelector(`[data-chip="${id}"]`);if(!input||!c)continue;const f=profile?.fields?.[k];let t=profile?C.chipFor(f,input.value):'';
+  if(t&&t!=='you edited')fromProfile=true;else if(t&&id==='n1Name'&&n1Ours()&&n1Auto.from)t=C.sourceLabel(n1Auto.from);
+  c.textContent=t;c.hidden=!t;}
  const note=$('projectPrefillNote');if(note)note.hidden=!fromProfile;
  const hint=$('roleHint'),role=$('consultantRole')?.value.trim();if(hint)hint.hidden=!(profile&&role&&role===C.value(profile,'title'));}
-for(const [id] of FORM)$(id)?.addEventListener('input',paintProjectForm);
+for(const [id] of FORM)$(id)?.addEventListener('input',()=>paintProjectForm());
+// §5.8: a typed N+1 email fills the N+1 name: your profile's N+1 when it is that email, else GET /people, which reads stored
+// directory rows only (never DNA, never anyone's profile). Only on a committed change, each found email once per page
+// (30 lookups an hour). Not found, refused or offline: nothing is filled and nothing is guessed.
+async function findPerson(e){if(n1Found.has(e))return n1Found.get(e);
+ try{const p=await app().libraryApi('/people?email='+encodeURIComponent(e));
+  if(typeof p?.name!=='string'||!p.name.trim()||!['dna','dna_export'].includes(p.from))return null;
+  const hit={name:p.name.trim().slice(0,C.LIMITS.managerName),from:p.from};n1Found.set(e,hit);return hit;}catch{return null;}}
+$('n1Email')?.addEventListener('change',async()=>{const name=$('n1Name'),seq=++n1Seq,e=C.validEmail($('n1Email').value);if(!profile||!name)return;
+ if(n1Ours()&&n1Auto.email!==e){name.value='';n1Auto=null;paintProjectForm();}  // ATLAS's name belonged to the old email
+ if(!e||name.value.trim()||e===String(profile.email||'').toLowerCase())return;  // a typed name stays; your N+1 can't be you
+ const mine=e===C.value(profile,'managerEmail').toLowerCase()&&C.value(profile,'managerName');
+ const hit=mine?{name:mine,from:''}:await findPerson(e);  // the profile's own pair needs no lookup (its chip is the profile's)
+ if(!hit||seq!==n1Seq||name.value.trim()||C.validEmail($('n1Email').value)!==e)return;  // a newer change, a reopened form or typing wins
+ n1Auto={email:e,...hit};name.value=hit.name;paintProjectForm();});
 // ---- admin: People directory (§5.6). Rows are built from the mapped approved columns only; nothing else is uploaded.
 const DIR={table:null,file:''};
 async function renderDirectory(){const el=$('peopleDirectory');if(!el)return;const b=await window.AtlasAuth.boot();
@@ -1050,9 +1071,14 @@ const SERVER_ID=/^[A-Za-z0-9_-]{1,100}$/;
 function cleanLibraryLink(l){if(!l||typeof l!=='object'||typeof l.id!=='string'||!SERVER_ID.test(l.id))return null;return {id:l.id,revision:Number.isSafeInteger(l.revision)&&l.revision>0?l.revision:null,status:text(l.status,40),syncedAt:text(l.syncedAt,40)};}
 function cleanQuality(q){if(!q||typeof q!=='object'||typeof q.score!=='number'||!Number.isFinite(q.score))return null;return {score:Math.max(0,Math.min(100,q.score)),status:text(q.status,40),issues:(Array.isArray(q.issues)?q.issues:[]).slice(0,20).map(i=>({field:text(i?.field,60),detail:text(i?.detail,400)}))};}
 // Proof-interview (gap mode) answers: kept on this device only until the consultant adds them to the reference (WOW_SPEC F2.1 step 6).
+// results: the per-ask answers of the proof interview (<= 5 asks, <= 5 quotes of 400 characters), kept so they can be sent
+// to the bid team later from the Library (review #22). Unsent answers alone keep the notes.
+const GAP_STATUS=['answered_unverified','unknown','deferred','open'];
 function cleanGapNotes(g){if(!g||typeof g!=='object'||typeof g.requestId!=='string'||!/^[a-f0-9]{32}$/.test(g.requestId))return null;
  const sections=Array.from({length:6},(_,i)=>{const v=Array.isArray(g.sections)?g.sections[i]:null;return typeof v==='string'&&v.trim()?v.trim().slice(0,6000):null;}),transcript=typeof g.transcript==='string'?g.transcript.slice(0,60000):'';
- if(!sections.some(Boolean)&&!transcript.trim())return null;return {requestId:g.requestId,sections,transcript,at:text(g.at,40)};}
+ const results=(Array.isArray(g.results)?g.results:[]).filter(r=>r&&typeof r==='object'&&typeof r.askId==='string'&&r.askId.trim()).slice(0,5).map(r=>({askId:r.askId.trim().slice(0,20),status:GAP_STATUS.includes(r.status)?r.status:'open',
+  quotes:(Array.isArray(r.quotes)?r.quotes:[]).filter(q=>typeof q==='string'&&q.trim()).slice(0,5).map(q=>q.trim().slice(0,400))}));
+ if(!sections.some(Boolean)&&!transcript.trim()&&!results.length)return null;return {requestId:g.requestId,sections,transcript,results,at:text(g.at,40)};}
 function cleanJev(j){if(!j||typeof j!=='object'||!j.primary||typeof j.impact!=='number'||!Number.isFinite(j.impact))return null;const num=(x,a,b)=>typeof x==='number'&&Number.isFinite(x)?Math.max(a,Math.min(b,x)):0;
  const scores={};for(const [k,v] of Object.entries(j.scores||{}).slice(0,8))scores[text(k,40)]={label:text(v?.label,60),score:num(v?.score,0,4),confidence:num(v?.confidence,0,1)};
  return {primary:{key:text(j.primary.key,40),label:text(j.primary.label,60),confidence:num(j.primary.confidence,0,1)},also:(Array.isArray(j.also)?j.also:[]).slice(0,8).map(a=>({key:text(a?.key,40),label:text(a?.label,60),probability:num(a?.probability,0,1)})),
@@ -1766,7 +1792,8 @@ function pinsOf(quote,geo){
  const r=remember('p\u0000'+geoId(geo)+'\u0000'+q,()=>{
   const found=new Map();
   for(const part of chunks(q,480)){let r;try{r=obj(geo.resolveLocations(part));}catch(e){continue;}  // the resolver reads at most 500 characters
-   for(const c of arr(r.countries))if(c&&typeof c.code==='string'&&typeof c.from==='string'&&c.from.trim())found.set(fold(c.from)+'\u0000'+c.code,{code:c.code,frag:c.from.trim()});
+   for(const c of arr(r.countries))if(c&&typeof c.code==='string'&&typeof c.from==='string'&&c.from.trim())  // the resolver keeps only the first words per
+    for(const frag of [c.from.trim(),String(geo.countryName(c.code)||'').trim()])if(frag)found.set(fold(frag)+'\u0000'+c.code,{code:c.code,frag});  // country ('UK'): its own name is searched too
    for(const a of arr(r.ambiguous))if(typeof a==='string'&&a.trim())found.set(fold(a)+'\u0000',{code:null,frag:a.trim()});}  // 'Georgia', 'Congo': never pinned
   const occ=[];
   for(const f of found.values()){const re=new RegExp('(?<![\\p{L}\\p{N}])'+reEsc(f.frag).replace(/\s+/g,'\\s+')+'(?![\\p{L}\\p{N}])','giu');
@@ -1898,7 +1925,7 @@ function next(defer=false){const p=project();if(!p||p.pos>=6)return;stopVoice();
 function newProject(edit=false){editingProjectId=edit?project()?.id:null;const p=edit?project():null;$('projectFormTitle').textContent=edit?'Update project context.':'A project worth explaining.';for(const [el,field] of [['projectTitle','title'],['consultantName','consultant'],['consultantRole','role'],['sectorInput','sector'],['projectStage','stage']])$(el).value=p?.[field]||(el==='projectStage'?'Pilot':'');for(const [el,field] of [['clientName','name'],['clientLocation','location'],['clientContact','contact']])$(el).value=p?.client?.[field]||'';const lastV=p?.validation||profile().projects.slice().reverse().find(x=>x.validation?.manager.name||x.validation?.managerStaff)?.validation;$('n1Name').value=lastV?.manager.name||'';writeDetails(p?.details||null);$('n1Email').value=lastV?.manager.email||'';$('managerStaff').checked=!!lastV?.managerStaff;if(!edit&&profile().name!=='My workspace')$('consultantName').value=profile().name;
  if(!edit){const f=window.AtlasProfileCore.formValues(window.AtlasProfile?.get?.());if(f.consultant)$('consultantName').value=f.consultant;if(f.role)$('consultantRole').value=f.role;
   if(f.managerName||f.managerEmail){$('n1Name').value=f.managerName;$('n1Email').value=f.managerEmail;$('managerStaff').checked=false;}} // managerStaff is never set from the profile
- window.AtlasProfile?.paintProjectForm?.();open('projectDialog');}
+ window.AtlasProfile?.paintProjectForm?.({fresh:true,edit});open('projectDialog');}
 // Reference details form <-> model (the engine bounds and validates everything).
 function readDetails(){const lines=id=>$(id).value.split('\n').map(x=>x.trim()).filter(Boolean);
  return E.cleanDetails({projectId:$('refProjectId').value,country:$('refCountry').value,start:$('refStart').value,end:$('refEnd').value,teamSize:$('refTeamSize').value,serviceLines:$('refServiceLines').value,teamRoles:$('refTeamRoles').value,technologies:$('refTech').value,deliverables:lines('refDeliverables'),
@@ -2249,12 +2276,12 @@ function voiceSnapshot(){
  const gap=pendingGap&&pendingGap.projectId===p.id?{gap:pendingGap.requestId,gapAlias:pendingGap.alias}:{};
  return {workspaceId:profile().id,project:data,display:{consultant:p.consultant,role:p.role},revision:E.simpleHash(JSON.stringify([p.answers,p.deferred])),...gap}; // voice notes only append to answers: other edits during a call must not block saving
 }
-function autoSave(snapshot,sections,transcript,report,{mode='full',requestId}={}){
+function autoSave(snapshot,sections,transcript,report,{mode='full',requestId,results}={}){
  // Seamless end of interview: create the project when needed, attach notes, report, story draft and transcript. No click.
  // All or nothing: a failure removes a project created here, so a retry starts clean.
  if(blocked)throw Error('Editing is paused. Recover this workspace before saving the interview.');
  if(!snapshot||snapshot.workspaceId!==profile().id)throw Error('The workspace changed during the interview.');
- if(mode==='gap')return saveGapNotes(snapshot,sections,transcript,requestId);
+ if(mode==='gap')return saveGapNotes(snapshot,sections,transcript,requestId,results);
  if(mode!=='full')throw Error('Unknown interview mode.');
  const notes=(Array.isArray(sections)?sections:[]).slice(0,6).map(x=>typeof x==='string'&&x.trim()?x.trim().slice(0,6000):null);while(notes.length<6)notes.push(null);
  let r=report?E.cleanReport(report):null;
@@ -2335,10 +2362,10 @@ function projectFromLibrary(r,why='for a proof request'){const d=r?.data||{},ans
  p.pos=Math.min(6,firstOpenTopic(p));E.log(p,'Opened from the shared library (revision '+r.revision+') '+why);profile().projects.push(p);syncedHash.set(p.id,payloadHash(p));return p;}
 // Gap-mode end of interview (F2.1 step 6): the answers stay on this device as p.gapNotes. Nothing is appended to the answers,
 // synced to the library or sent to memory; the send to the bid team (T5) and applyGapNotes are separate explicit clicks.
-function saveGapNotes(snapshot,sections,transcript,requestId){
+function saveGapNotes(snapshot,sections,transcript,requestId,results){
  const p=!snapshot.isNew&&profile().projects.find(x=>x.id===snapshot.project?.id);if(!p)throw Error('The interviewed project no longer exists.');
  if(typeof requestId!=='string'||!/^[a-f0-9]{32}$/.test(requestId)||(snapshot.gap&&snapshot.gap!==requestId))throw Error('This gap request is not available to you.');
- const g=E.cleanGapNotes({requestId,sections:Array.isArray(sections)?sections:[],transcript:String(transcript||''),at:E.now()});if(!g)throw Error('Nothing was captured in this interview.');
+ const g=E.cleanGapNotes({requestId,sections:Array.isArray(sections)?sections:[],transcript:String(transcript||''),results,at:E.now()});if(!g)throw Error('Nothing was captured in this interview.');
  if(p.gapNotes)E.log(p,'Earlier proof-interview answers replaced before they were added to the reference');
  p.gapNotes=g;profile().lastProject=p.id;E.log(p,'Proof-interview answers kept on this device only (unverified speech recognition); not added to the reference or shared');
  save();render();return {projectId:p.id,title:p.title,report:false,persisted:persisted&&!storageError,mode:'gap'};}
@@ -2349,11 +2376,24 @@ async function applyGapNotes(id=project()?.id){
  if(!g.sections.some(Boolean))throw Error('The proof interview captured no answers to add.');
  p.answers=appendSections(p.answers,g.sections,'Adding these answers would take a topic past 6,000 characters. Shorten that topic first.');g.sections.forEach((v,i)=>{if(v)p.deferred[i]=false;});
  E.invalidate(p,'Added proof-interview answers (unverified speech recognition); evidence and permissions require review');
- p.pos=Math.min(6,firstOpenTopic(p));p.gapNotes=null;save();render();
+ p.pos=Math.min(6,firstOpenTopic(p));p.gapNotes=g.results?.length?{...g,sections:Array(6).fill(null),transcript:''}:null;save();render();  // unsent answers stay sendable
  return {projectId:p.id,library:await syncToLibrary(p.id)};}
+// "Send these answers to the bid team" from the Library (review #22): the per-ask results kept with the notes, posted only
+// on an explicit click. The request is then answered; the notes keep only what can still be added to the reference.
+async function sendGapAnswers(id){
+ if(blocked)throw Error('Editing is paused. Recover this workspace before sending answers.');
+ const p=profile().projects.find(x=>x.id===id),g=p?.gapNotes;if(!g?.results?.length)throw Error('There are no proof answers to send.');
+ await libraryApi('/gaps/'+g.requestId+'/answer',{method:'POST',body:{results:g.results.map(r=>({askId:r.askId,status:r.status,quotes:r.quotes})),referenceId:p.library?.id||undefined}});
+ gapAnswersSent(id,g.requestId);return {projectId:id};}
+function gapAnswersSent(id,requestId){const p=profile().projects.find(x=>x.id===id),g=p?.gapNotes;if(!g||g.requestId!==requestId||!g.results?.length)return;
+ p.gapNotes=g.sections.some(Boolean)?{...g,results:[]}:null;E.log(p,'Proof-interview answers sent to the bid team (unverified speech recognition)');save();render();}
+// Unsent answers for a request that is no longer open can never be sent: dropped when the Library lists the open ones.
+function dropGapResults(openIds){if(blocked||!Array.isArray(openIds))return;let n=0;
+ for(const p of profile().projects){const g=p.gapNotes;if(!g?.results?.length||openIds.includes(g.requestId))continue;p.gapNotes=g.sections.some(Boolean)||g.transcript.trim()?{...g,results:[]}:null;n++;}
+ if(n){save();render();}}
 // Shell contract for the view modules (bids-ui, ask-ui, trust-ui, storyboard-ui; WOW_SPEC 6.3). libraryApi sends this
 // session's own cookie and CSRF header; it never exposes the token.
-window.ATLAS_APP={libraryApi,bootInfo,esc,toast,download,open,confirm,switchView,render,project,profile,save,startFromInvitation,startFromGap,applyGapNotes,adoptProfileName};
+window.ATLAS_APP={libraryApi,bootInfo,esc,toast,download,open,confirm,switchView,render,project,profile,save,startFromInvitation,startFromGap,applyGapNotes,sendGapAnswers,gapAnswersSent,dropGapResults,adoptProfileName};
 bootInfo().then(b=>{const nav=document.querySelector('header nav [data-view="bids"]');if(nav)nav.hidden=!b.features?.bids;renderStorage();});
 // ---- Returning user (WOW_ZERO_CONFIG §3.6): an empty session-only workspace on the live site is rebuilt, once per load, from
 // the user's own library records (full access, not withdrawn, newest first, at most 50), each linked by library.id so a
@@ -2518,7 +2558,7 @@ function fillGaps(){const bid=S.bid,gaps=Array.isArray(bid?.gaps)?bid.gaps:[];
  for(const box of document.querySelectorAll('#bidRequirements [data-req-gaps]')){const rid=box.dataset.reqGaps,mine=gaps.filter(g=>Array.isArray(g.requirementIds)&&g.requirementIds.includes(rid));
   box.innerHTML=mine.map(g=>{const d=S.gapDetails.get(g.id),idx=(g.requirementIds||[]).indexOf(rid),ask=d?.asks?.[idx],res=ask&&Array.isArray(d.results)?d.results.find(x=>x.askId===ask.id):null;
    const quotes=res&&Array.isArray(res.quotes)?res.quotes:[];
-   return `<div class="gap-answer"><p class="tiny">Proof requested from ${esc(g.assigneeName||'a consultant')} · ${esc(g.status==='answered'?'answered':g.status)}${g.answeredAt?' · '+esc(String(g.answeredAt).slice(0,10)):''}</p>${res?`<p class="tiny gap-label">${esc(GAP_RESULT[res.status]||res.status)}</p>${quotes.map(q=>`<blockquote class="gap-quote">${esc(q)}</blockquote>`).join('')}`:''}</div>`;}).join('');}
+   return `<div class="gap-answer"><p class="tiny">Proof requested from ${esc(g.assigneeName||'a consultant')} · ${esc(g.status==='answered'?'answered':g.status)}${g.answeredAt?' · '+esc(String(g.answeredAt).slice(0,10)):''}</p>${res?`<p class="tiny gap-label">${esc(GAP_RESULT[res.status]||res.status)}</p>${quotes.map(q=>`<blockquote class="gap-quote">${esc(q)}</blockquote>`).join('')}${quotes.length?'<p class="tiny muted">From the interview · unverified speech recognition</p>':''}`:''}</div>`;}).join('');}  // quotes come with any status: always labelled (rule 10)
  for(const g of gaps)if(g.status==='answered'&&!S.gapDetails.has(g.id)&&HEX.test(String(g.id))){S.gapDetails.set(g.id,null);
   app().libraryApi('/gaps/'+encodeURIComponent(g.id)).then(d=>{S.gapDetails.set(g.id,d);if(S.bid===bid)fillGaps();}).catch(()=>S.gapDetails.delete(g.id));}}
 // ---- actions
@@ -2769,21 +2809,24 @@ $('claimsBlock')?.addEventListener('change',e=>{if(e.target.matches('[data-claim
 W.renderProofRequests=()=>(S.gapLoad=loadProofRequests(++S.gapSeq));
 async function loadProofRequests(seq){const el=$('proofRequests');if(!el)return;const b=await boot();
  if(!b.library||!b.features?.gaps){el.hidden=true;el.replaceChildren();return;}
- try{const d=await app().libraryApi('/gaps');if(seq!==S.gapSeq)return;S.gaps={assigned:arr(d.assigned),created:arr(d.created)};}
+ try{const d=await app().libraryApi('/gaps');if(seq!==S.gapSeq)return;S.gaps={assigned:arr(d.assigned),created:arr(d.created)};
+  app().dropGapResults?.(S.gaps.assigned.filter(g=>g.status==='open').map(g=>g.id));}
  catch(err){if(seq!==S.gapSeq)return;el.hidden=false;el.innerHTML=`<h3>Proof requests</h3><p class="tiny muted">${esc(err.message)}</p>`;return;}
  drawProofRequests();}
-function localAnswers(){const out=[];try{for(const p of app().profile().projects)if(p.gapNotes?.requestId)out.push({projectId:p.id,title:p.title,requestId:p.gapNotes.requestId});}catch{/* no workspace */}return out;}
+function localAnswers(){const out=[];try{for(const p of app().profile().projects){const g=p.gapNotes;if(g?.requestId)out.push({projectId:p.id,title:p.title,requestId:g.requestId,apply:arr(g.sections).some(Boolean),send:arr(g.results).length>0});}}catch{/* no workspace */}return out;}
 function drawProofRequests(){const el=$('proofRequests'),open=S.gaps.assigned.filter(g=>g.status==='open'),canStart=!!S.boot.features?.gapInterview,local=localAnswers();
- const localFor=id=>local.find(x=>x.requestId===id),orphans=local.filter(x=>!open.some(g=>g.id===x.requestId));
- const apply=x=>`<p class="tiny">Answers from your proof interview are on this device only. <button class="quiet" data-gap-apply="${esc(x.projectId)}" type="button">Add these answers to my reference</button></p>`;
+ const localFor=id=>local.find(x=>x.requestId===id),orphans=local.filter(x=>x.apply&&!open.some(g=>g.id===x.requestId));
+ // Answers kept with the notes (review #22): sendable while the request is open, even after a reload or a new conversation.
+ const apply=x=>x&&(x.apply||x.send)?`<p class="tiny">Answers from your proof interview are on this device only.${x.send?` <button class="quiet" data-gap-send="${esc(x.projectId)}" type="button">Send these answers to the bid team</button>`:''}${x.apply?` <button class="quiet" data-gap-apply="${esc(x.projectId)}" type="button">Add these answers to my reference</button>`:''}</p>`:'';
  if(!open.length&&!orphans.length){el.hidden=true;el.replaceChildren();return;}
  el.innerHTML=`<h3>Proof requests</h3><p class="tiny muted">A bid team asked you for specific proof: about five minutes. Your answers stay on this device until you choose to send them or add them to your reference.</p>
-${open.map(g=>`<article class="invite proof-request" data-gap-item="${esc(g.id)}"><div><b>${esc(g.bidAlias)}</b> <span class="tag">Proof request</span><ul class="gap-asks">${arr(g.asks).map(a=>`<li><span class="tiny muted">${esc(a.label)}:</span> ${esc(a.ask)}</li>`).join('')}</ul><p class="tiny muted">Asked ${esc(day(g.createdAt))}${g.referenceId?' · about one of your references':''}</p>${localFor(g.id)?apply(localFor(g.id)):''}</div>
+${open.map(g=>`<article class="invite proof-request" data-gap-item="${esc(g.id)}"><div><b>${esc(g.bidAlias)}</b> <span class="tag">Proof request</span><ul class="gap-asks">${arr(g.asks).map(a=>`<li><span class="tiny muted">${esc(a.label)}:</span> ${esc(a.ask)}</li>`).join('')}</ul><p class="tiny muted">Asked ${esc(day(g.createdAt))}${g.referenceId?' · about one of your references':''}</p>${apply(localFor(g.id))}</div>
 <div class="validation-actions">${canStart?`<button class="btn primary" data-gap-start="${esc(g.id)}" type="button">Start 5-minute interview</button>`:''}<button class="quiet" data-gap-dismiss="${esc(g.id)}" type="button">Dismiss</button></div></article>`).join('')}
 ${orphans.map(x=>`<article class="invite proof-request"><div><b>${esc(x.title)}</b> <span class="tag">Proof-interview answers</span>${apply(x)}</div></article>`).join('')}`;el.hidden=false;}
 $('proofRequests')?.addEventListener('click',e=>{const b=e.target.closest('button');if(!b||b.disabled)return;const d=b.dataset;
  if(d.gapStart){const g=S.gaps.assigned.find(x=>x.id===d.gapStart);if(g)app().startFromGap({id:g.id,bidAlias:g.bidAlias,referenceId:g.referenceId||null});}
  else if(d.gapDismiss)app().confirm('Dismiss this proof request?','The bid team sees that you dismissed it. Nothing else is shared.',async()=>{try{await app().libraryApi('/gaps/'+encodeURIComponent(d.gapDismiss)+'/dismiss',{method:'POST',body:{}});W.renderProofRequests();app().toast('Dismissed.');}catch(err){app().toast(err.message);}});
+ else if(d.gapSend)app().confirm('Send these answers to the bid team?','The bid team sees your answers labelled unverified speech recognition, with known client names and contact details masked. Nothing else is shared.',async()=>{try{await app().sendGapAnswers(d.gapSend);W.renderProofRequests();app().toast('Sent to the bid team.');}catch(err){app().toast(err.message);}});
  else if(d.gapApply)app().confirm('Add these answers to your reference?','They are appended to your answers (up to 6,000 characters per topic) and saved to the shared library as a new revision, so review and N+1 validation start again. They are self-reported and unverified.',async()=>{try{await app().applyGapNotes(d.gapApply);drawProofRequests();app().toast('Added to your reference and saved to the library.');}catch(err){app().toast(err.message);}});});
 // #gap/<32hex>: the assignee's link from the draft email (focus the request), or the bid owner's (open the bid).
 W.openGap=async id=>{if(!HEX.test(String(id||'')))return false;const b=await boot();if(!b.library||!b.features?.gaps){app().toast('Proof requests are not available here.');return false;}
@@ -2801,17 +2844,19 @@ W.renderOutreach=async()=>{const q=$('outreachQueue'),s=$('staffingImport'),b=aw
 async function loadQueue(){try{const d=await app().libraryApi('/outreach');S.outreach.items=arr(d.items);S.outreach.channels=d.channels||{};drawQueue();}
  catch(err){$('outreachQueue').innerHTML=`<h3>Outreach waiting for approval</h3><p class="tiny muted">${esc(err.message)}</p>`;}}
 function draftHTML(id,d){return `<div class="outreach-draft"><div class="validation-actions"><a class="btn primary" data-outreach-mailto="${esc(id)}" href="${esc(mailto(d))}">Open the email draft</a><button class="btn" data-outreach-copy="${esc(id)}" type="button">Copy</button>${d.ics?`<button class="btn" data-outreach-ics="${esc(id)}" type="button">Calendar (.ics)</button>`:''}</div><pre class="draft-text" data-outreach-text="${esc(id)}">${esc([d.subject,d.body].filter(Boolean).join('\n\n'))}</pre></div>`;}
-function row(o){const pending=o.status==='pending_approval',draft=S.outreach.drafts.get(o.id),st=o.status==='blocked_external'?'BLOCKED_EXTERNAL':B.outreachLabel(o.status);
+// An approved email draft lives only in this page: after a reload the row offers it again (the server re-issues the same
+// draft while the invitation or request is open; nothing is sent).
+function row(o){const pending=o.status==='pending_approval',draft=S.outreach.drafts.get(o.id),again=o.status==='drafted'&&o.channel==='email_draft'&&!draft,st=o.status==='blocked_external'?'BLOCKED_EXTERNAL':B.outreachLabel(o.status);
  return `<article class="outreach-row" data-outreach="${esc(o.id)}"><div class="impact-head"><strong>${esc(KIND[o.kind]||o.kind)}</strong><span class="tags"><span class="tag">${esc(CHANNEL[o.channel]||o.channel)}</span><span class="tag outreach-status status-${esc(o.status)}">${esc(st)}</span></span></div>
 ${o.preview?.title?`<p class="small"><b>${esc(o.preview.title)}</b></p>`:''}${o.preview?.text?`<p class="tiny muted">${esc(o.preview.text)}</p>`:''}<p class="tiny muted">To ${esc(o.toEmail||'')}${o.createdAt?' · queued '+esc(day(o.createdAt)):''}${o.approvedBy?' · approved by '+esc(o.approvedBy):''}</p>${o.reason?`<p class="tiny outreach-reason">${esc(o.reason)}</p>`:''}
-${pending?`<div class="validation-actions"><button class="btn primary" data-outreach-approve="${esc(o.id)}" type="button">Approve</button><button class="btn" data-outreach-dismiss="${esc(o.id)}" type="button">Dismiss</button></div>`:''}${draft?draftHTML(o.id,draft):''}</article>`;}
+${pending?`<div class="validation-actions"><button class="btn primary" data-outreach-approve="${esc(o.id)}" type="button">Approve</button><button class="btn" data-outreach-dismiss="${esc(o.id)}" type="button">Dismiss</button></div>`:''}${again?`<div class="validation-actions"><button class="btn" data-outreach-approve="${esc(o.id)}" type="button">Show the draft again</button></div>`:''}${draft?draftHTML(o.id,draft):''}</article>`;}
 function drawQueue(){const ch=S.outreach.channels||{},items=S.outreach.items,teams=ch.teams==='connected';
  $('outreachQueue').innerHTML=`<h3>Outreach waiting for approval</h3><p class="tiny muted">ATLAS never sends on its own. Approving an email gives you a draft to send yourself; a Teams message is sent only once Teams is connected.</p>
 <div class="tags" id="outreachChannels"><span class="tag ${teams?'chip-teams':'chip-blocked'}">Teams: ${esc(teams?'connected':'BLOCKED_EXTERNAL')}</span><span class="tag chip-email">Email: drafts you send</span><span class="tag chip-blocked">Phone: ${esc(ch.phone==='available'?'available':'BLOCKED_EXTERNAL')}</span></div>
 <div class="outreach-list">${items.map(row).join('')||'<p class="tiny muted">Nothing is waiting.</p>'}</div>`;}
-async function act(id,action){try{const r=await app().libraryApi('/outreach/'+encodeURIComponent(id),{method:'POST',body:{action}}),i=S.outreach.items.findIndex(x=>x.id===id);
+async function act(id,action){try{const again=S.outreach.items.find(x=>x.id===id)?.status==='drafted',r=await app().libraryApi('/outreach/'+encodeURIComponent(id),{method:'POST',body:{action}}),i=S.outreach.items.findIndex(x=>x.id===id);
   if(i>=0&&r.item)S.outreach.items[i]=r.item;if(r.draft)S.outreach.drafts.set(id,r.draft);drawQueue();
-  app().toast(action==='dismiss'?'Dismissed.':r.item?.status==='blocked_external'?'Not sent: '+(r.item.reason||'BLOCKED_EXTERNAL'):r.draft?'Approved. Nothing was sent: send the draft yourself.':'Approved.');}
+  app().toast(action==='dismiss'?'Dismissed.':r.item?.status==='blocked_external'?'Not sent: '+(r.item.reason||'BLOCKED_EXTERNAL'):r.draft?(again?'The draft again. Nothing was sent: send it yourself.':'Approved. Nothing was sent: send the draft yourself.'):'Approved.');}
  catch(err){app().toast(err.message);}}
 $('outreachQueue')?.addEventListener('click',e=>{const b=e.target.closest('button');if(!b||b.disabled)return;const d=b.dataset;
  if(d.outreachApprove){b.disabled=true;act(d.outreachApprove,'approve');}else if(d.outreachDismiss){b.disabled=true;act(d.outreachDismiss,'dismiss');}
@@ -3562,7 +3607,7 @@ async function restart(){if(restarting)return;restarting=true;if($('voiceRestart
   else{status('idle','Tell me about the work.','Please confirm how this conversation may be used.');restarting=false;begin();}
  }finally{restarting=false;controls();const a=document.activeElement;if(!a?.matches?.('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href]')||a.closest('dialog:not([open])')){const t=['voiceRestart','voiceEnd','voiceStart'].map($).find(x=>x&&!x.disabled&&x.offsetParent);t?.focus();}}}
 function toggleMute(){if(phase!=='live')return;muted=!muted;stream?.getAudioTracks().forEach(t=>t.enabled=!muted);node?.port.postMessage({type:'state',enabled:true,muted});controls();$('voiceState').textContent=muted?'Microphone muted · ATLAS may still speak':providerName()+' · listening';}
-function autoSave(m){current=null; /* the session already delivered its notes: saving may create/switch the project without cancelling */try{const gap=m.mode==='gap',r=bridge.autoSave(activeSnapshot,m.sections||[],m.transcript,m.report||null,{mode:m.mode||'full',requestId:m.gap?.requestId});activeSnapshot=null;m.savedTo=r.title;m.savedReport=r.report;m.persisted=r.persisted;const lib=!gap&&!!boot?.library;m.library=lib;after(gap?'Your proof answers are kept on this device only; nothing was sent. Review them, then choose to send them to the bid team or add them to your reference.'+(r.persisted?'':' Turn on “Save on this device” or export a backup before closing this tab.'):(r.report?'Saved to “'+r.title+'” with your report, notes and story draft. Your N+1 can now validate it.':'Saved to “'+r.title+'” with your notes and transcript.')+(r.persisted||lib?'':' It is kept in this browser tab only: turn on “Save on this device” or export a backup before closing.'));
+function autoSave(m){current=null; /* the session already delivered its notes: saving may create/switch the project without cancelling */try{const gap=m.mode==='gap',r=bridge.autoSave(activeSnapshot,m.sections||[],m.transcript,m.report||null,{mode:m.mode||'full',requestId:m.gap?.requestId,results:m.gap?.results});activeSnapshot=null;m.savedTo=r.title;m.savedReport=r.report;m.persisted=r.persisted;const lib=!gap&&!!boot?.library;m.library=lib;after(gap?'Your proof answers are kept on this device only; nothing was sent. Review them, then choose to send them to the bid team or add them to your reference.'+(r.persisted?'':' Turn on “Save on this device” or export a backup before closing this tab.'):(r.report?'Saved to “'+r.title+'” with your report, notes and story draft. Your N+1 can now validate it.':'Saved to “'+r.title+'” with your notes and transcript.')+(r.persisted||lib?'':' It is kept in this browser tab only: turn on “Save on this device” or export a backup before closing.'));
  if(!gap)window.AtlasProfile?.guessPrompt?.($('voiceAfter'),r.projectId);if(r.report)setTimeout(()=>bridge.showReport(r.projectId),200);
  // "Save on this device?" only when the library is off, the sync failed or was still pending at 10 s, or after a proof
  // interview (gap answers stay local, WOW §0 rule 6). A full interview the library accepted needs nothing more (§3.8).
@@ -3887,7 +3932,8 @@ $('gapSend').addEventListener('click',async()=>{const g=gap,app=window.ATLAS_APP
  g.sending=true;renderGap();$('gapMessage').textContent='Sending your answers…';
  try{const p=interviewed(g);
   await app.libraryApi('/gaps/'+g.requestId+'/answer',{method:'POST',body:{results:g.results.map(r=>({askId:r.askId,status:r.status,quotes:r.quotes})),referenceId:p&&p.library?p.library.id:undefined}});
-  g.sent=true;if(gap===g)$('gapMessage').textContent='Sent. The bid team sees these answers labelled unverified, with known client names masked.';}
+  g.sent=true;if(p&&typeof app.gapAnswersSent==='function')app.gapAnswersSent(p.id,g.requestId);
+  if(gap===g)$('gapMessage').textContent='Sent. The bid team sees these answers labelled unverified, with known client names masked.';}
  catch(e){if(gap===g)$('gapMessage').textContent=(e&&e.message)||'Your answers were not sent.';}
  finally{g.sending=false;if(gap===g)renderGap();}});
 $('gapApply').addEventListener('click',async()=>{const g=gap,app=window.ATLAS_APP;if(!g||g.applying||g.applied)return;
