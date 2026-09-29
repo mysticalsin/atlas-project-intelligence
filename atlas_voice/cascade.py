@@ -19,6 +19,7 @@ from aiohttp import web
 
 from .analyst import Analyst, chat_completer
 from .capacity import BUSY
+from .gaps import TIME_PLAN, gap_system_block
 from .identity import COOKIE
 from .interview import project_context
 from .kyutai import stream_chat
@@ -86,6 +87,8 @@ SPEAKING_LIMIT_S = 600  # ATLAS's own speaking time: a second safety cap inside 
 WRAP_S = 75  # with this little time left, ATLAS's next reply is the closing
 TIME_UP = ('[Server: the time for this interview is up.] Close warmly now in one or two short sentences: '
            'thank the consultant for sharing and say you will prepare their report. Do not ask another question.')
+TIME_UP_MESSAGE = 'The {minutes} minutes are up. Finishing your interview.'  # shown to the consultant; minutes = round(limit / 60)
+GAP_REFUSED = 'Focused gap interviews run on the edge deployment only.'
 AREAS = ('what was going on', 'their personal contribution', 'their approach', 'the outcome', 'what supports it', 'who else it would help')
 
 
@@ -97,9 +100,9 @@ def pace_notes(elapsed_s, limit_s, notes, admin=False):
     pace = f'INTERVIEW PACE (server): about {int(elapsed_s // 60)} of {int(limit_s // 60)} minutes used.'
     if left <= WRAP_S:
         pace += ' Time is up: close now, with no question.'
-    elif left <= 210:
+    elif left <= TIME_PLAN['closing_left_s']:
         pace += ' Under four minutes left: ask only the single most important remaining question, then move to ENDING.'
-    elif elapsed_s >= 0.45 * limit_s:
+    elif elapsed_s >= TIME_PLAN['depth_fraction'] * limit_s:
         pace += ' Past halfway: challenge the one or two claims that matter most (what changed, and how they know).'
         pace += (' Still uncovered: ' + ', '.join(missing[:2]) + '.') if missing else ''
     else:
@@ -130,9 +133,11 @@ class WordChunker:
         return done
 
 
-def talker_messages(project, preferences, guidance, history, instruction=None, notes=()):
-    """Prefix-cache friendly: fixed policy and project first, then the append-only conversation, then per-turn notes."""
-    system = (TALKER_POLICY + '\nUNTRUSTED PROJECT DATA:\n' + json.dumps(project, ensure_ascii=False) +
+def talker_messages(project, preferences, guidance, history, instruction=None, notes=(), gaps=None):
+    """Prefix-cache friendly: fixed policy and project first, then the append-only conversation, then per-turn notes.
+    A gap list (edge gap mode; mirrored here, the Python gateway never runs it) sits between the project data and the
+    preferences label, so the prefix stays stable for the whole session."""
+    system = (TALKER_POLICY + '\nUNTRUSTED PROJECT DATA:\n' + json.dumps(project, ensure_ascii=False) + (gap_system_block(gaps) if gaps else '') +
               '\nUNTRUSTED PRIVATE PREFERENCES (not evidence):\n' + preferences[:1200])
     messages = [{'role': 'system', 'content': system}]
     messages.extend(history[-HISTORY:])
@@ -294,6 +299,8 @@ async def run(request, config, identity, memory, http, gate, active):
 
     try:
         init = await asyncio.wait_for(ws.receive_json(), 15)
+        if isinstance(init, dict) and 'gap' in init:  # focused gap interviews need the edge's library and gap requests
+            raise ValueError(GAP_REFUSED)
         if (not isinstance(init, dict) or set(init) - {'type', 'csrf', 'consent', 'project', 'voice', 'capture', 'memory', 'language'}
                 or init.get('type') != 'start' or init.get('consent') is not True
                 or not secrets.compare_digest(str(init.get('csrf', '')), subject.csrf)):
@@ -427,7 +434,7 @@ async def run(request, config, identity, memory, http, gate, active):
                         last = await asyncio.wait_for(stt.final_turn(), 10)
                         if last:
                             await finish_turn(last, reply=False)
-                    await event('time_up', message='The 15 minutes are up. Finishing your interview.')
+                    await event('time_up', message=TIME_UP_MESSAGE.format(minutes=round(config.duration / 60)))
                     clean_end = True
                     return
                 # The last half minute and nobody is talking: ATLAS closes on her own so the interview ends with a goodbye.

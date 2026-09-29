@@ -103,4 +103,41 @@ with sync_playwright() as pw:
  check('restart: nothing saved, nothing sent to the library or memory',q.evaluate('window.ATLAS_VOICE_BRIDGE.context().isNew===true') and not CALLS and not q.locator('#reportDialog').is_visible())
  check('restart: the discarded conversation left the screen','Discard me please' not in q.locator('body').inner_text())
  ctx2.close()
+ # ---- Proof interview (WOW_SPEC F2.1 step 6, F2.8): gap-mode notes stay on the device; only the explicit apply reaches the library.
+ # Bridge level: T2's voice client passes {mode, requestId} from the session's notes; the full-mode path above is unchanged.
+ LIB=[];MEM=[];REF='a'*32;GAPID='b'*32
+ def route3(r):
+  u=r.request.url
+  if u.endswith('/api/bootstrap'):return r.fulfill(json=dict(BOOT,library=True,memory=True))
+  if u.rstrip('/')=='https://atlas.test':return r.fulfill(body=H,content_type='text/html')
+  if u.endswith('/api/memory/remember'):MEM.append(r.request.post_data_json);return r.fulfill(json={'stored':True})
+  if u.endswith('/api/library') and r.request.method=='POST':LIB.append(r.request.post_data_json);return r.fulfill(json={'id':REF,'revision':len(LIB),'status':'in_review'})
+  if u.endswith('/api/library/invitations'):return r.fulfill(json={'items':[]})
+  r.fulfill(status=404,body='')
+ ctx3=b.new_context(viewport={'width':1440,'height':1000});g=ctx3.new_page();g.on('pageerror',lambda e:ERR.append(str(e)))
+ g.route('**/*',route3);g.goto('https://atlas.test/');g.wait_for_timeout(600)
+ proj=lambda:g.evaluate('window.ATLAS_LOCAL.snapshot().profiles[0].projects')
+ g.evaluate("(s)=>window.ATLAS_VOICE_BRIDGE.autoSave(s,['I owned the routing design.',null,null,null,null,null],'Full interview words.',null)",g.evaluate('window.ATLAS_VOICE_BRIDGE.context()'))
+ g.wait_for_function('()=>window.ATLAS_LOCAL.snapshot().profiles[0].projects[0]?.library?.id',timeout=5000);g.wait_for_timeout(400)
+ check('full mode: still one automatic library save and one memory call',len(LIB)==1 and len(MEM)==1 and proj()[0]['library']['id']==REF)
+ pid=g.evaluate(f"window.ATLAS_APP.startFromGap({{id:'{GAPID}',referenceId:'{REF}',bidAlias:'[company] data platform bid'}})")
+ c=g.evaluate('window.ATLAS_VOICE_BRIDGE.context()')
+ check('proof request: the local project linked to the reference is used, and the gap rides on its context',pid==proj()[0]['id'] and len(proj())==1 and c.get('gap')==GAPID and c.get('gapAlias')=='[company] data platform bid')
+ other=g.evaluate("(()=>{const A=window.ATLAS_APP,p=AtlasEngine.project({title:'Another project'});A.profile().projects.push(p);A.profile().lastProject=p.id;const c=window.ATLAS_VOICE_BRIDGE.context();A.profile().projects.pop();A.profile().lastProject=A.profile().projects[0].id;return c;})()")
+ check('proof request: never offered on another project','gap' not in other and 'gapAlias' not in other)
+ g.evaluate('window.ATLAS_VOICE_BRIDGE.gapConsumed()')
+ check('gapConsumed: the next start on the same project is a full interview','gap' not in g.evaluate('window.ATLAS_VOICE_BRIDGE.context()'))
+ before=proj()[0];n0,m0=len(LIB),len(MEM)
+ bad=g.evaluate("(s)=>{try{window.ATLAS_VOICE_BRIDGE.autoSave(s,['x',null,null,null,null,null],'t',null,{mode:'gap',requestId:'not-a-request'});return 'saved';}catch(e){return e.message;}}",c)
+ check('gap mode: a malformed request id is refused',bad=='This gap request is not available to you.' and proj()[0].get('gapNotes') is None)
+ r=g.evaluate(f"(s)=>window.ATLAS_VOICE_BRIDGE.autoSave(s,['Tickets bounced 40% less after the change.',null,null,'Measured on the ticket log.',null,null],'Gap interview words.',null,{{mode:'gap',requestId:'{GAPID}'}})",c)
+ g.wait_for_timeout(800);x=proj()[0]
+ check('gap mode: no POST /api/library and no /api/memory/remember',len(LIB)==n0 and len(MEM)==m0)
+ check('gap mode: p.gapNotes set; answers and revision unchanged',r.get('mode')=='gap' and x['gapNotes']['requestId']==GAPID and x['gapNotes']['sections'][0]=='Tickets bounced 40% less after the change.' and x['gapNotes']['transcript']=='Gap interview words.' and x['answers']==before['answers'] and x['recordRevision']==before['recordRevision'] and x['interview']==before['interview'])
+ res=g.evaluate('window.ATLAS_APP.applyGapNotes().then(r=>({projectId:r.projectId,synced:!!r.library}))');g.wait_for_timeout(600);x=proj()[0]
+ check('apply: exactly one library save, to the same reference',res['synced'] and len(LIB)==n0+1 and LIB[-1]['id']==REF and 'Tickets bounced 40% less' in LIB[-1]['reference']['answers'][0])
+ check('apply: answers appended, notes cleared, revision bumped, no memory call',x['answers'][0]=='I owned the routing design.\n\nTickets bounced 40% less after the change.' and x['answers'][3]=='Measured on the ticket log.' and x['gapNotes'] is None and x['recordRevision']>before['recordRevision'] and len(MEM)==m0)
+ again=g.evaluate('window.ATLAS_APP.applyGapNotes().then(()=>"applied twice",e=>e.message)');g.wait_for_timeout(300)
+ check('apply: a second click adds nothing and posts nothing',again=='There are no proof-interview answers to add.' and len(LIB)==n0+1)
+ ctx3.close()
  check('no page errors',not ERR);print(ERR,GOT)

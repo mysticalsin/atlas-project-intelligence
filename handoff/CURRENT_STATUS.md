@@ -22,6 +22,7 @@ The compiled primary HTML and its three aliases still match the v12 application 
 | Source-grounded editing | `editor.py` | Structured validator tested; model unavailable until explicitly configured. Citation presence is not semantic truth. |
 | JEV customer matching | `jev.py` | HTTP/typed-score/recheck logic tested with fixtures. Needs actual TypeSafe access and human-labelled calibration. |
 | Graphify | Authorized export only | Not installed or run. Optional downstream integration; do not label it connected. |
+| WOW features F1-F7 (bids and proof, gap interviews, claim confirmation, capture and Teams, live story board, Ask ATLAS, win loop) | `deploy/cloudflare-edge/src/{bids,ask,winloop,gaps,claims,outreach,teams}.js`, `src/{bids,ask,trust}-ui.js`, `src/storyboard-*.js`; `docs/WOW_SPEC.md` | Added 2026-09-29. Locally verified on the edge build (unit suites and the end-to-end `wow_edge_browser.py`); provider verified: none; not deployed. Teams, phone and client-contact confirmation are BLOCKED_EXTERNAL; Tony's decisions and the per-feature Access, vars and secrets are in `BUILD_STATUS.md` (session 2026-09-29) and `deploy/cloudflare-edge/README.md`. |
 
 ## Explicit boundaries Claude must not erase
 - **Local mode has one synthetic server identity** (`local:single-developer`). Different browser workspace names are not different authenticated users and are not private Hindsight boundaries. Use distinct Entra subjects for the isolation test.

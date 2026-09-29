@@ -208,3 +208,170 @@ test('languages: automatic detection, native Spanish voice, ElevenLabs for the r
   assert.match(languageNote('fr', 'fr'), /Reply only in natural French/);
   assert.match(languageNote('pt', 'en'), /can only speak English right now\. Reply in English\..*understand Portuguese/);
 });
+
+// ---- T1-S0 additions (WOW_SPEC §2.2, §2.5, §2.6, §F1.10). No earlier assertion in this file changed. ----
+import { scheduled } from '../src/app.js';
+import { Library } from '../src/library.js';
+import { libraryRoutes } from '../src/library-routes.js';
+import { memorySql } from './sqlite.js';
+const FEATURE_KEYS = ['bids', 'ask', 'spokenAsk', 'wins', 'customerJev', 'pdfBriefs', 'gaps', 'gapInterview', 'claims', 'clientConfirm', 'outreach', 'staffing', 'teams', 'phone'];
+const capture = () => { const c = { req: null, body: null }; c.stub = { idFromName: n => n, get: () => ({ fetch: async r => { c.req = r; c.body = r.body ? await r.text() : null; return new Response('{"ok":true}'); } }) }; return c; };
+const signed = async (path, claims = {}, init = {}) => new Request(ORIGIN + path, { ...init, headers: { 'cf-access-jwt-assertion': await jwt(claims), ...(init.headers || {}) } });
+
+test('T1-S0 bootstrap: verified email and every feature flag, conservative by default; existing keys unchanged', async () => {
+  const boot = await (await handle(await req('/api/bootstrap'), ENV, '')).json();
+  assert.deepEqual(Object.keys(boot).slice(0, -2), ['provider', 'providerLabel', 'protocol', 'csrf', 'identity', 'model', 'admin', 'voices', 'defaultVoice', 'captureRequired', 'codecAvailable', 'busy', 'capacity',
+    'maxSeconds', 'speakingSeconds', 'memory', 'wiki', 'jev', 'jevClassify', 'library', 'libraryRole', 'sheet', 'transcription', 'structuredNotes', 'liveLedger', 'playbackAck', 'readiness']);
+  assert.equal(boot.email, 'tony@example.com'); assert.deepEqual(Object.keys(boot.features), FEATURE_KEYS);
+  assert.equal(boot.features.spokenAsk, false); assert.equal(boot.features.teams, 'BLOCKED_EXTERNAL'); assert.equal(boot.features.phone, 'BLOCKED_EXTERNAL');
+  const spoken = await (await handle(await req('/api/bootstrap'), { ...ENV, SPOKEN_ASK: '1' }, '')).json();
+  assert.equal(spoken.features.spokenAsk, spoken.features.ask, 'SPOKEN_ASK=1 never turns on more than Ask itself');
+  const service = await (await handle(await signed('/api/bootstrap', { email: undefined }), ENV, '')).json();
+  assert.equal(service.email, '', 'a service identity has no email'); assert.equal(service.identity.name, 'Access service identity');
+});
+
+test('T1-S0 library forward: x-atlas-email set and a spoofed one overwritten; raw body bounded even without Content-Length', async () => {
+  const c = capture(), env = { ...ENV, LIBRARY: c.stub };
+  await handle(await req('/api/library', { headers: { 'x-atlas-email': 'boss@example.com', 'x-atlas-user': 'boss@example.com' } }), env, '');
+  assert.equal(c.req.headers.get('x-atlas-email'), 'tony@example.com'); assert.equal(c.req.headers.get('x-atlas-user'), 'tony@example.com'); assert.equal(c.body, null);
+  const boot = await (await handle(await req('/api/bootstrap'), env, '')).json();
+  const post = async (body, headers = {}) => { c.req = null; return handle(new Request(ORIGIN + '/api/library/recommend', { method: 'POST', body, headers: { 'cf-access-jwt-assertion': await jwt(), Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'Content-Type': 'application/json', ...headers } }), env, ''); };
+  const ok = await post('{"query":"energy data director meeting"}');
+  assert.equal(ok.status, 200); assert.equal(c.body, '{"query":"energy data director meeting"}'); assert.equal(new URL(c.req.url).pathname, '/api/library/recommend'); assert.equal(c.req.method, 'POST');
+  const big = JSON.stringify({ query: 'x'.repeat(262200) });
+  const r = await post(big); assert.equal(r.status, 413); assert.deepEqual(await r.json(), { error: 'Request too large.' }); assert.equal(c.req, null, 'never forwarded');
+  assert.equal((await post('{}', { 'Content-Length': '999999' })).status, 413, 'the declared length is still checked first');
+  const entra = { ...env, IDENTITY_SOURCE: 'entra', ENTRA_TENANTS: '11111111-2222-3333-4444-555555555555' };
+  await handle(await signed('/api/library', { custom: { tid: '11111111-2222-3333-4444-555555555555', oid: '99999999-8888-7777-6666-555555555555', roles: [] } }), entra, '');
+  assert.equal(c.req.headers.get('x-atlas-user'), '11111111-2222-3333-4444-555555555555:99999999-8888-7777-6666-555555555555'); assert.equal(c.req.headers.get('x-atlas-email'), 'tony@example.com');
+});
+
+test('T1-S0 /api/voice forward SETS x-atlas-user, x-atlas-role and x-atlas-email (a browser cannot spoof them)', async () => {
+  let fwd = null; const env = { ...ENV, ADMIN_EMAILS: 'boss@example.com', REVIEWER_EMAILS: 'rev@example.com', INTERVIEW: { idFromName: n => n, get: () => ({ fetch: r => { fwd = r; return new Response('ok'); } }) } };
+  const voice = async (claims, headers = {}) => { fwd = null; await handle(await signed('/api/voice', claims, { headers: { Upgrade: 'websocket', Origin: ORIGIN, ...headers } }), env, ''); return ['x-atlas-user', 'x-atlas-role', 'x-atlas-email'].map(h => fwd.headers.get(h)); };
+  const spoof = { 'x-atlas-user': 'boss@example.com', 'x-atlas-role': 'admin', 'x-atlas-email': 'boss@example.com' };
+  assert.deepEqual(await voice({}, spoof), ['tony@example.com', 'user', 'tony@example.com']);
+  assert.deepEqual(await voice({ email: 'Rev@Example.com' }, spoof), ['rev@example.com', 'reviewer', 'rev@example.com']);
+  assert.deepEqual(await voice({ email: 'boss@example.com' }), ['boss@example.com', 'admin', 'boss@example.com']);
+  assert.deepEqual(await voice({ email: undefined }, spoof), ['access service identity', 'user', ''], 'no valid email: empty x-atlas-email');
+});
+
+test('T1-S0 external role: only explicitly listed emails; they reach /confirm, a reduced bootstrap and the confirmations API only', async () => {
+  const c = capture(); let voiceHit = false;
+  const env = { ...ENV, EXTERNAL_EMAILS: 'Client@Acme.example, other@x.example', REVIEWER_EMAILS: 'rev@acme.example', ADMIN_EMAILS: 'boss@acme.example', LIBRARY: c.stub,
+    INTERVIEW: { idFromName: n => n, get: () => ({ fetch: () => { voiceHit = true; return new Response('ok'); } }) } };
+  const ext = { email: 'client@acme.example', sub: 'ext-1' }, as = (path, init) => signed(path, ext, init);
+  const boot = await (await handle(await as('/api/bootstrap'), env, '')).json();
+  assert.deepEqual(Object.keys(boot), ['csrf', 'identity', 'email', 'libraryRole', 'features']);
+  // Only the claims flag, whatever its value (it follows claims.READY, which T3 flips).
+  assert.deepEqual([boot.libraryRole, boot.email, boot.features], ['external', 'client@acme.example', { claims: (await import('../src/features.js')).flags(env).claims }]); assert.equal(boot.csrf.length, 64);
+  const home = await handle(await as('/'), env, 'PAGE'); assert.equal(home.status, 303); assert.equal(home.headers.get('location'), '/confirm'); assert.equal(await home.text(), '');
+  const page = await handle(await as('/confirm'), env, 'PAGE'); assert.equal(page.status, 200); assert.match(page.headers.get('content-type'), /text\/html/);
+  for (const [path, init] of [['/api/library', {}], ['/api/library/bids', {}], ['/api/library/confirmations', {}], ['/api/memory', {}], ['/api/wiki', {}],
+    ['/api/voice', { headers: { Upgrade: 'websocket', Origin: ORIGIN } }], ['/api/sheet/ingest', { method: 'POST', headers: { Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf } }],
+    ['/api/jev/classify', { method: 'POST', body: '{}', headers: { Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf } }]]) {
+    c.req = null; const r = await handle(await as(path, init), env, '');
+    assert.equal(r.status, 403, path); assert.deepEqual(await r.json(), { error: 'Not available to external confirmers.' }); assert.equal(c.req, null, path);
+  }
+  assert.equal(voiceHit, false);
+  await handle(await as('/api/library/confirmations/inbox'), env, '');
+  assert.deepEqual(['x-atlas-user', 'x-atlas-role', 'x-atlas-email'].map(h => c.req.headers.get(h)), ['client@acme.example', 'external', 'client@acme.example']);
+  c.req = null; assert.equal((await handle(await as('/api/library/confirmations/r1', { method: 'POST', body: '{}', headers: { Origin: ORIGIN } }), env, '')).status, 403, 'still needs CSRF'); assert.equal(c.req, null);
+  await handle(await as('/api/library/confirmations/r1', { method: 'POST', body: '{"decisions":[]}', headers: { Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf } }), env, '');
+  assert.equal(c.body, '{"decisions":[]}');
+  // Only explicit listing makes someone external: any other domain stays a user; admin and reviewer lists come first.
+  const roleOf = async email => (await (await handle(await signed('/api/bootstrap', { email }), env, '')).json()).libraryRole;
+  assert.equal(await roleOf('consultant@othercorp.example'), 'user'); assert.equal(await roleOf('someone@acme.example'), 'user'); assert.equal(await roleOf('client@acme.example.evil'), 'user');
+  assert.equal(await roleOf('rev@acme.example'), 'reviewer');
+  assert.equal(await roleOf('boss@acme.example'), 'admin');
+  const both = { ...env, EXTERNAL_EMAILS: 'rev@acme.example,boss@acme.example' };
+  assert.deepEqual([await (await handle(await signed('/api/bootstrap', { email: 'rev@acme.example' }), both, '')).json(), await (await handle(await signed('/api/bootstrap', { email: 'boss@acme.example' }), both, '')).json()].map(b => b.libraryRole), ['reviewer', 'admin']);
+  const T = '11111111-2222-3333-4444-555555555555', O = '66666666-7777-8888-9999-000000000000';
+  const entraBoot = await (await handle(await signed('/api/bootstrap', { email: 'client@acme.example', custom: { tid: T, oid: O, roles: [] } }), { ...env, IDENTITY_SOURCE: 'entra', ENTRA_TENANTS: T }, '')).json();
+  assert.equal(entraBoot.libraryRole, 'user', 'Entra mode has no external role');
+});
+
+test('T1-S0 GET /confirm is served only after sign-in, with the standard headers and CSP', async () => {
+  assert.equal((await handle(await req('/confirm', { token: null }), ENV, '')).status, 401);
+  const home = await handle(await req('/'), ENV, '<html></body>'), r = await handle(await req('/confirm'), ENV, '');
+  assert.equal(r.status, 200); assert.equal(r.headers.get('content-type'), 'text/html; charset=utf-8');
+  for (const h of ['content-security-policy', 'cache-control', 'x-content-type-options', 'referrer-policy', 'permissions-policy']) assert.equal(r.headers.get(h), home.headers.get(h), h);
+  assert.match(r.headers.get('content-security-policy'), /default-src 'none'.*frame-ancestors 'none'/);
+  const html = await r.text(); assert.match(html, /^<!doctype html>/i); assert.doesNotMatch(html, /<script[^>]+src|https?:\/\//i);
+});
+
+test('T1-S0 Teams: with TEAMS_* set but TEAMS_ENABLED unset, every main-host response is unchanged; the two pre-Access paths answer 503', async () => {
+  const TEAMS = { TEAMS_APP_ID: 'a', TEAMS_BOT_APP_ID: 'b', TEAMS_TENANT_ID: 't', TEAMS_BOT_SECRET: 's' };
+  const stub = { idFromName: n => n, get: () => ({ fetch: async r => new Response(JSON.stringify({ path: new URL(r.url).pathname, user: r.headers.get('x-atlas-user'), role: r.headers.get('x-atlas-role'), mail: r.headers.get('x-atlas-email') }), { status: 200 }) }) };
+  const base = { ...ENV, TRIGGER_SECRET: 'trig-secret', LIBRARY: stub, INTERVIEW: stub, HINDSIGHT_API_KEY: 'k' };
+  const token = await jwt(), boot = await (await handle(await req('/api/bootstrap'), base, '')).json();
+  const requests = () => [
+    new Request(ORIGIN + '/', { headers: { 'cf-access-jwt-assertion': token } }), new Request(ORIGIN + '/api/bootstrap', { headers: { 'cf-access-jwt-assertion': token } }),
+    new Request(ORIGIN + '/api/wiki', { headers: { 'cf-access-jwt-assertion': token } }), new Request(ORIGIN + '/api/library', { headers: { 'cf-access-jwt-assertion': token } }),
+    new Request(ORIGIN + '/api/library', { method: 'POST', body: '{}', headers: { 'cf-access-jwt-assertion': token, Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf } }),
+    new Request(ORIGIN + '/api/memory', { headers: { 'cf-access-jwt-assertion': token } }), new Request(ORIGIN + '/api/voice', { headers: { 'cf-access-jwt-assertion': token, Upgrade: 'websocket', Origin: ORIGIN } }),
+    new Request(ORIGIN + '/api/triggers', { method: 'POST', body: '{}', headers: { Authorization: 'Bearer trig-secret' } }), new Request(ORIGIN + '/api/teams/other', { headers: { 'cf-access-jwt-assertion': token } }),
+    new Request(ORIGIN + '/api/teams/messages', { headers: { 'cf-access-jwt-assertion': token } }), new Request(ORIGIN + '/teams/tab', { method: 'POST', headers: { 'cf-access-jwt-assertion': token } }),
+    new Request(ORIGIN + '/api/teams/other'), new Request(ORIGIN + '/confirm', { headers: { 'cf-access-jwt-assertion': token } })];
+  const snap = async env => Promise.all(requests().map(async r => { const res = await handle(r, env, 'PAGE</body>'); return [res.status, [...res.headers].sort(), await res.text()]; }));
+  assert.deepEqual(await snap({ ...base, ...TEAMS }), await snap(base));
+  assert.deepEqual((await snap(base)).slice(8, 11).map(x => x[0]), [404, 404, 404], 'other /api/teams paths and methods stay behind Access');
+  assert.equal((await snap(base))[11][0], 401);
+  for (const env of [base, { ...base, ...TEAMS }, { ...base, ...TEAMS, TEAMS_ENABLED: '0' }]) {
+    for (const r of [new Request(ORIGIN + '/api/teams/messages', { method: 'POST', body: '{}' }), new Request(ORIGIN + '/teams/tab')]) {
+      const res = await handle(r, env, '');
+      assert.equal(res.status, 503); const b = await res.json(); assert.equal(b.status, 'BLOCKED_EXTERNAL'); assert.ok(b.reason && Array.isArray(b.needs));
+    }
+  }
+});
+
+test('T1-S0 scheduled(): the daily cron posts scan-stale to the LibraryStore as the system role; nothing without a library', async () => {
+  const c = capture(), waited = [];
+  await scheduled({}, { ...ENV, LIBRARY: c.stub }, { waitUntil: p => waited.push(p) });
+  await Promise.all(waited);
+  assert.equal(waited.length, 1); assert.equal(c.req.method, 'POST'); assert.equal(new URL(c.req.url).pathname, '/api/library/scan-stale');
+  assert.deepEqual([c.req.headers.get('x-atlas-user'), c.req.headers.get('x-atlas-role'), c.body], ['atlas-cron', 'system', '{}']);
+  const none = []; await scheduled({}, { ...ENV }, { waitUntil: p => none.push(p) }); assert.equal(none.length, 0);
+  // End to end through the real routes: the cron response keeps its shape.
+  const lib = new Library(memorySql(), {}); let out = null;
+  const real = { idFromName: n => n, get: () => ({ fetch: r => libraryRoutes(r, lib, { env: {} }) }) };
+  await scheduled({}, { ...ENV, LIBRARY: real }, { waitUntil: p => { out = p.then(r => r.json()); } });
+  assert.deepEqual(await out, { invited: 0 });
+});
+
+// ---- T1 step 3 (WOW_SPEC §F6.2, §F6.4 #5): /api/transcribe, Spoken Ask. Off unless SPOKEN_ASK=1 (Q11). ----
+test('T1 /api/transcribe: 404 without SPOKEN_ASK=1; Origin and CSRF; type and size limits; a numbers-only log; never for external confirmers', async () => {
+  let fail = false; const runs = [];
+  const AI = { async run(model, input) { runs.push([model, input.audio.contentType]); if (fail) throw new Error('stt down');
+    return { results: { channels: [{ alternatives: [{ transcript: 'What did we do for Zebracorp? ' + 'x'.repeat(700), languages: ['en'] }] }] } }; } };
+  const on = { ...ENV, STT_MODEL: 'stt', SPOKEN_ASK: '1', AI }, boot = await (await handle(await req('/api/bootstrap'), on, '')).json();
+  const post = async (bytes, { headers = {}, env = on, claims = {}, method = 'POST' } = {}) => handle(new Request(ORIGIN + '/api/transcribe', { method, body: method === 'POST' ? bytes : undefined,
+    headers: { 'cf-access-jwt-assertion': await jwt(claims), Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'Content-Type': 'audio/L16;rate=24000', ...headers } }), env, '');
+  const logs = [], log = console.log; console.log = line => logs.push(line);
+  try {
+    for (const env of [{ ...on, SPOKEN_ASK: undefined }, { ...on, SPOKEN_ASK: 'true' }]) {
+      const r = await post(new Uint8Array(9600), { env }); assert.equal(r.status, 404); assert.deepEqual(await r.json(), { error: 'This feature is not available in this deployment.' });
+    }
+    assert.equal(boot.features.spokenAsk, true, 'bootstrap advertises it only with SPOKEN_ASK=1 and Ask READY');
+    const ok = await post(new Uint8Array(9600));
+    assert.equal(ok.status, 200); const body = await ok.json();
+    assert.equal(body.text.length, 600); assert.equal(body.language, 'en'); assert.deepEqual(runs, [['stt', 'audio/wav']]);
+    assert.equal(logs.length, 1); const m = JSON.parse(logs[0]);
+    assert.deepEqual(Object.keys(m), ['atlas_metric', 'ms', 'bytes']); assert.equal(m.atlas_metric, 'transcribe'); assert.equal(m.bytes, 9600); assert.equal(typeof m.ms, 'number');
+    assert.equal((await post(new Uint8Array(9600), { headers: { 'Content-Type': 'audio/l16; rate=24000' } })).status, 200, 'case and spaces in the type are tolerated');
+    for (const [bytes, opts, status] of [[new Uint8Array(9600), { headers: { 'X-Atlas-CSRF': 'forged' } }, 403], [new Uint8Array(9600), { headers: { Origin: 'https://evil.example' } }, 403],
+      [new Uint8Array(9600), { headers: { 'Content-Type': 'audio/wav' } }, 415], [new Uint8Array(9600), { headers: { 'Content-Type': 'audio/L16;rate=16000' } }, 415],
+      [new Uint8Array(1536002), {}, 413], [new Uint8Array(9600), { headers: { 'Content-Length': '1536001' } }, 413],
+      [new Uint8Array(9601), {}, 400], [new Uint8Array(4798), {}, 400], [new Uint8Array(0), {}, 400]]) assert.equal((await post(bytes, opts)).status, status, `${bytes.length} ${JSON.stringify(opts)}`);
+    assert.equal((await post(new Uint8Array(1536000))).status, 200, 'exactly the maximum is accepted');
+    assert.equal((await post(null, { method: 'GET' })).status, 404);
+    fail = true; logs.length = 0;
+    const bad = await post(new Uint8Array(9600));
+    assert.equal(bad.status, 502); assert.deepEqual(await bad.json(), { error: 'Transcription failed. Type the question instead.' });
+    assert.deepEqual(Object.keys(JSON.parse(logs[0])), ['atlas_metric', 'ms', 'bytes', 'failed']);
+    assert.doesNotMatch(logs.join('\n'), /Zebracorp|what did we/i, 'only numbers are logged');
+    fail = false; runs.length = 0;
+    const ext = await post(new Uint8Array(9600), { env: { ...on, EXTERNAL_EMAILS: 'client@acme.example' }, claims: { email: 'client@acme.example', sub: 'ext-1' } });
+    assert.equal(ext.status, 403); assert.deepEqual(runs, [], 'an external confirmer never reaches speech-to-text');
+  } finally { console.log = log; }
+});

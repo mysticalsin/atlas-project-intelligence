@@ -2,6 +2,8 @@
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
 ## Next task
+- **2026-09-29, WOW features F1-F7:** integrated and locally verified, not deployed. Before any deploy, read the session "2026-09-29 / WOW features F1-F7" below: Tony's pending decisions (Q12 first, because this build turns claim confirmations on) and the Access, vars and secrets each feature needs.
+
 0. Local suites all pass (2026-09-26). `MANIFEST.json` still describes the received 12.1 package, so `check_handoff.py` flags the intentionally changed files. Regenerate the manifest only when cutting a new release package.
 1. The operator provisions the Cloudflare prerequisites in `deploy/cloudflare/README.md` (tunnel, Access app, Entra app, OpenAI key, durable host).
 2. Phase 1 live voice through `https://<host>`: acceptance V01–V03.
@@ -267,6 +269,64 @@
 - Tests (2026-09-28): app `node --test tests/*.test.js` 325 (324 pass, 1 skipped: Natural Earth regeneration needs `ATLAS_NE_SRC`); edge 155/155; Python 213/213; browser 11 suites 273/273 (studio 78, sculpture 40, intelligence 26, depth 20, autosave 23, orb touch 8, library 14, reuse 19, memory 9, sheet 17, report 19). GitHub Actions still blocked by the account's Actions budget, so CI has not run on GitHub.
 
 - Deployed by Tony 2026-09-29 from the clone with `deploy.sh` (edge tests passed first): Worker version c77b4d63-fc7d-4fb0-a553-362af24d1def = commit 331c99c (dashboard + map, Restart, 15-minute interviews, review fixes). Before the deploy the dashboard browser suite was rerun under the Worker's exact Content-Security-Policy: no violations, no page errors.
+
+### Session: 2026-09-29 / WOW features F1-F7 (five tracks + integration, `docs/WOW_SPEC.md` revision 2)
+Merged from `handoff/status/T1.md` … `T5.md` (each keeps the full per-track detail, decisions and mutation checks). Built on `00fbd39` in the clone; not committed by the tracks, not deployed, no paid provider or Microsoft endpoint called, no real data used.
+
+**Implemented**
+- T1 edge platform and proof engine: `util.js` (single helper copy), `scrub.js` (pseudonymisation, record masking, display rule), `snippets.js`, `features.js` registry (READY gate, Entra rule, external role), the `library-routes.js` / `app.js` / `worker.js` hooks, the existing-leak fixes (review, index, recommend, insights, slides now send only `recordView` / pseudonymised text; `parseRerankStrict`), F1 `bids.js` + `customer-jev.js` (JEV port with Python parity vectors), F6 `ask.js` + `/api/transcribe` (off), F7 `winloop.js` + `fetchWinHint`.
+- T2 focused gap interview: `atlas_voice/gaps.py` (policy first), `cascade.py` (`TIME_UP_MESSAGE`, `TIME_PLAN`, talker gap list, `run()` refuses gap), `build_edge.py --policy-only`, `gap-policy.js` (parity vectors), `session.js` gap mode (300 s, no memory recall, no report, answer windows, never-awaited win hint), `gaps.js` backend, `voice-client.js` gap start key and the `atlas-session` event bus.
+- T3 trust and capture: `claims.js` (sentence-level confirmations, staffing N+1 first, independence, `sentence` and `revision` currency), the self-contained `/confirm` page, `outreach.js` (approval queue, staffing CSV import, trigger fields, daily sweep), Teams bot endpoint and launcher tab (built, not connected), `teams/` package builder, TeamsJS 2.57.0 vendored with pinned SHA-256.
+- T4 workspace UI: `build.py` slots and `window.ATLAS_POLICY`, Bids view (brief, alias, masked preview, verdicts, one-pager with footnotes, `.docx`/`.md`/print), Ask ATLAS with the map, claims block and badges, proof requests, outreach queue and staffing import, `startFromGap` / `applyGapNotes`, `engine.js` persistence of `library`, `invitationId`, `quality`, `gapNotes` (dropped on backup import).
+- T5 live interview UI: `storyboard-core.js` / `storyboard-ui.js` (twelve dimensions, figures as exact quote slices, cued country pins, countdown and phase, gap checklist) and the proof-answers card with the two explicit buttons (send to the bid team, add to my reference).
+- READY: `bids`, `ask`, `wins`, `gaps`, `claims`, `outreach` are all true; every acceptance suite below passes, so none was turned back off. `/api/bootstrap` `features` shows `spokenAsk`, `customerJev`, `pdfBriefs`, `clientConfirm` false and `teams`, `phone` `BLOCKED_EXTERNAL` until their vars are set.
+
+**Integration step (WOW_SPEC §6.6)**
+- `python3 build.py` → "Built 815098 bytes; original logo SHA256: 92c5ff21…ba9b6c2b"; the four aliases are identical. Full `uv run --with aiohttp --with msgpack python3 deploy/cloudflare-edge/build_edge.py` → "edge constants + page generated"; `src/policy.generated.js` is byte-identical to T2's file (`cmp`), and `src/atlas.html` equals `ATLAS_Voice.html`.
+- Integration defects found by `tests/wow_edge_browser.py` (its first end-to-end run) and fixed in that test only; no module changed:
+  - the claims `<details>` is open by default when a reference has no claim yet, so the test's click on its summary closed it: the test now opens it only when closed;
+  - the outreach approval ran after the proof and confirmation requests were answered, and the backend (correctly) dismisses approval of a row whose request is no longer open: the test now checks that dismissal, then queues an open interview invitation through the Insights staffing import (UI, with an extra `client_name` column that must be ignored) and approves that invitation's email and Teams rows;
+  - the Ask question did not clear the 0.35 semantic floor under the local lexical fake embedding: the question now shares words with the reference (as T1 noted), the check is unchanged.
+- `deploy/cloudflare-edge/wrangler.jsonc`: comment naming the optional `TEAMS_SERVICE_HOSTS` var (T3 request). `docs/INTEGRATIONS.md` and `deploy/cloudflare-edge/README.md` updated (external role, trigger fields, staffing and outreach, Teams, `/confirm`, Spoken Ask, the new library routes, the stale scope line).
+- A scratch browser check (not committed) drove the real page with the repo's WebSocket test adapter: `startFromGap` → consent names the proof request → the start frame carries the gap id → the gap is consumed on `ready` → the story board shows the countdown and the gap checklist → `quality.gap_status` updates it → gap `notes` show the exact quote on the proof card, `p.gapNotes` is set for that request, `p.answers` unchanged, no page errors: 12 PASS, 0 FAIL. It is the only run that joins T4's bridge, T2's voice client and T5's board; the suites test each side with synthetic events.
+
+**Locally verified (integration run, 2026-09-29, macOS, Node 22, Chromium headless shell; sandbox off for loopback ports and Chromium)**
+- `node --test tests/*.test.js`: 356 tests, 355 pass, 1 skipped (Natural Earth regeneration needs `ATLAS_NE_SRC`), 0 fail.
+- `cd deploy/cloudflare-edge && node --test test/*.test.js`: 360 tests, 360 pass, 0 fail.
+- `python -m pytest tests/test_*.py -q` (uv, requirements + msgpack, pyjwt, cryptography): 240 passed. It includes `test_parity_vectors_are_current` for all five generators (parity, speech, pace, gap, JEV); every vector file was byte-identical before and after (checked with `cmp` against a copy).
+- Browser suites of `make test-ui` (each exit 0, 0 FAIL, no page errors): studio 78, sculpture 40, intelligence 26, depth 20, autosave 33, orb_touch 8, report 19, storyboard 51, library 14, reuse 19, memory 9, sheet 17, bids 66, ask 28, trust 43, confirm 27, **wow_edge 32** (end to end on the local edge: reference published and validated, bid with alias, honest verdict, one-pager with footnotes and `.md` export, gap request to a colleague who sees his own words while the owner sees the answer unverified and masked, claims confirmed on `/confirm` with the record and footnote badges flipping, outreach email drafted and Teams `BLOCKED_EXTERNAL`, Ask with the map lit and no `@` for a public reader, the reviewer's win rate with its interval at n=5 and no story table for a plain user, no overflow at 320 px).
+- Existing tests unchanged: `git diff --numstat` shows 0 removed lines in `session.test.js` (75 existing tests), `app.test.js`, `library.test.js`, `reuse.test.js`, `engine.test.js`, `autosave_browser.py`, `test_cascade.py`; `tests/test_edge.py` was refactored into a parametrised loop with the same checks.
+
+**Provider verified:** none. Every WOW model call (bid requirements, rank and one-pager on `ANALYST_MODEL`, embeddings, Ask) ran only against `dev/fake-model.mjs` and `dev/fakes/*`. No TypeSafe, Teams, Graph or telephony call was made.
+
+**Blocked (BLOCKED_EXTERNAL, WOW_SPEC §5)**
+- Pilot users: the Access policy admits only Tony, so F2 assignees and F3 N+1s cannot sign in yet; extend the Access policy (emails or an Entra group), set `REVIEWER_EMAILS`, and admit the Mantu group email domains Mantu IT lists.
+- Client-contact confirmation: Access One-time PIN policy for the named client emails, the same emails in `EXTERNAL_EMAILS`, `CLIENT_CONFIRM=1`, and the Q3 decision.
+- Staffing webhook: the staffing tool owner calls `/api/triggers` with `TRIGGER_SECRET` (existing) through the existing Access bypass, with the new optional fields.
+- Teams bot, card and launcher tab: the nine items in `deploy/cloudflare-edge/teams/README.md` (tenant ID, app registration, `TEAMS_BOT_SECRET`, Azure Bot F0, Teams admin approval, Access bypass for exactly `/api/teams/messages` and `/teams/tab`, `TEAMS_ENABLED=1` + `TEAMS_APP_ID` + `TEAMS_BOT_APP_ID` + `TEAMS_TENANT_ID`, brand icons, device check).
+- In-tab Teams interview (Q9), phone interviews (Twilio or Teams Phone with ACS; ACS closes to new customers on 2026-10-23), JEV ranking (`TYPESAFE_API_KEY`, per-request consent), Entra mode for F2/F3 (identity-mapping design, Q6).
+- Any deploy: Tony only, when nobody is interviewing; no new Durable Object class or migration is needed.
+
+**Tony's pending decisions (WOW_SPEC §5 and §7)**
+- **Q12 (decide before deploying this build):** claim currency. Code default `CURRENCY = 'sentence'` (a confirmation stays current while the exact sentence is unchanged); strict `'revision'` is implemented and tested. `claims.READY` is true, so a deploy turns confirmations on for everyone Access admits.
+- Q11 Spoken Ask (off, `SPOKEN_ASK` unset); Q13 per-story win rates for reviewers (HR/legal); Q10 residual membership inference; Q3 client contacts; Q1 PDF briefs (off); Q2 calibration of `SIM_FLOOR`, `STRONG`, `MIN_N` and the boosts (labelled uncalibrated); Q5 bot issuer set; Q8 naive sentence split; Q9 in-tab Teams interview.
+- T3: whether to widen the Teams tab CSP with `connect-src https://res.cdn.office.net` (TeamsJS falls back to its bundled domain list without it).
+
+**Deviations from the spec text, for review (reasons in the track files)**
+- T1: identical spans share a placeholder only when exactly equal (not case-insensitively), and the bid author view only un-masks (model output is record-masked before it is stored): both avoid a library-membership oracle (ground rule 5).
+- T2: a gap ask's attempt is counted at the first audio chunk of the reply that carries it (not at `audio_turn`, which fires on the greeting before the reply exists), and the gap plan is recomputed as soon as a turn ends. Worth a note in §F2.4.
+- T3: staffing invitations only for end dates from 30 days ago to 7 days ahead; one submit decides every point of a request; approving a row whose request is closed dismisses it; `daily` returns only non-zero counts.
+- T5: uncued city names are neither pinned nor listed; "3 percentage points" gives no chip; the ledger flag reads "No measurement recorded".
+
+**Gates still open**
+- Live checks of every new prompt on Workers AI (requirements, rank, one-pager, Ask) with synthetic briefs, and a live gap interview through the real voice path.
+- The per-ask gap results live only in the story board's memory: after a reload or a new conversation, "Send these answers to the bid team" is gone while "Add these answers to my reference" (`p.gapNotes`) survives. Spec silent; decide whether to persist them.
+- `teams-routes.js` imports `../teams/vendor/teams-js.mjs` (outside `src/`): wrangler bundling of it has not been run. The Teams manifest v1.30 schema is not vendored; the real-token service-URL claim name, `MessageWritesBlocked` and `app.openLink` per client are unverified.
+- CI has not run this work (GitHub Actions budget, see 2026-09-28). The `ci.yml` browser loop now includes `bids ask trust storyboard confirm wow_edge`.
+- The optional `.pptx` one-pager export (F1.8, not an acceptance item) is not built. Pre-existing defects listed in Q7 are unchanged.
+- Working tree: `tests/intelligence_browser.py` rewrites the tracked `preview/v11/{desktop,mobile,speaking-preview}.png`; exclude them from the commit unless the new screenshots are wanted.
+
+**Next task:** Tony decides Q12 (and Q11/Q13 if those features will be used), extends the Access policy to the pilot users, then deploys manually when nobody is interviewing. After the deploy: live checks of the new prompts with synthetic data, then a first real gap interview.
 
 ## Per-session update template
 Copy this section for each session. Do not put secrets, private keys, customer source text or raw audio in this file.

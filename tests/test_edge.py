@@ -1,17 +1,39 @@
 """The Cloudflare edge deployment must stay in sync with the Python source of truth."""
-import importlib.util, json, subprocess, sys
+import importlib.util, json, shutil, subprocess, sys
 from pathlib import Path
+import pytest
 EDGE = Path(__file__).resolve().parents[1] / 'deploy' / 'cloudflare-edge'
+ROOT = EDGE.parents[1]
+
+def build_edge():
+    spec = importlib.util.spec_from_file_location('build_edge', EDGE / 'build_edge.py'); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+    return m
 
 def test_generated_policy_is_current():
-    spec = importlib.util.spec_from_file_location('build_edge', EDGE / 'build_edge.py'); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-    assert (EDGE / 'src' / 'policy.generated.js').read_text() == m.render(), 'Run: python deploy/cloudflare-edge/build_edge.py'
+    assert (EDGE / 'src' / 'policy.generated.js').read_text() == build_edge().render(), 'Run: python deploy/cloudflare-edge/build_edge.py'
 
-def test_parity_vectors_are_current(tmp_path):
-    for gen, vec in (('gen_parity.py', 'parity.vectors.json'), ('gen_speech_parity.py', 'speech.vectors.json')):
-        before = (EDGE / 'test' / vec).read_text()
-        subprocess.run([sys.executable, str(EDGE / 'test' / gen)], check=True, capture_output=True)
-        assert (EDGE / 'test' / vec).read_text() == before, f'{vec} was stale; regenerated — rerun the JS tests'
+def test_build_edge_policy_only_writes_the_constants_without_the_page(tmp_path):
+    # A copy of build_edge.py in an empty tree (no ATLAS_Voice.html): --policy-only must succeed and copy no page.
+    edge = tmp_path / 'deploy' / 'cloudflare-edge'; (edge / 'src').mkdir(parents=True)
+    shutil.copy(EDGE / 'build_edge.py', edge / 'build_edge.py'); (tmp_path / 'atlas_voice').symlink_to(ROOT / 'atlas_voice')
+    r = subprocess.run([sys.executable, str(edge / 'build_edge.py'), '--policy-only'], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert (edge / 'src' / 'policy.generated.js').read_text() == build_edge().render() and not (edge / 'src' / 'atlas.html').exists()
+    assert subprocess.run([sys.executable, str(edge / 'build_edge.py')], capture_output=True).returncode != 0, 'without the flag the page is copied (none exists here)'
+
+# Each generator records Python behaviour for a JS parity test. CAUTION: this rewrites the vector files, so run it in a
+# clean tree only (WOW_SPEC §6.5); a stale file is left regenerated for review.
+VECTORS = [('gen_parity.py', 'parity.vectors.json'), ('gen_speech_parity.py', 'speech.vectors.json'), ('gen_pace_parity.py', 'pace.vectors.json'),
+           ('gen_gap_parity.py', 'gap.vectors.json'), ('gen_jev_parity.py', 'jev-customer.vectors.json')]
+@pytest.mark.parametrize('gen,vec', VECTORS)
+def test_parity_vectors_are_current(gen, vec):
+    if gen == 'gen_jev_parity.py':
+        if not (EDGE / 'test' / gen).exists(): pytest.skip('gen_jev_parity.py is not in this tree yet (T1 step 3 adds it)')
+        if importlib.util.find_spec('aiohttp') is None: pytest.skip('gen_jev_parity.py imports atlas_voice.jev, which needs aiohttp')
+    path = EDGE / 'test' / vec
+    before = path.read_text() if path.exists() else None
+    subprocess.run([sys.executable, str(EDGE / 'test' / gen)], check=True, capture_output=True)
+    assert path.read_text() == before, f'{vec} was stale; regenerated — rerun the JS tests'
 
 def test_wrangler_config_is_locked_down():
     text = (EDGE / 'wrangler.jsonc').read_text()

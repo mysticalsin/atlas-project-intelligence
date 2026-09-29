@@ -48,5 +48,32 @@ function build(sheet){
   ['word/document.xml',doc],['word/styles.xml',styles],['word/_rels/document.xml.rels',rels],
   ...vis.map((v,i)=>[`word/media/visual${i+1}.${v.type==='jpeg'?'jpeg':'png'}`,v.bytes])];
  return Pptx.zip(files);}
-return {build,SECTIONS,TBD,LABEL_W,CONTENT_W,TEXT_W};
+// Bid proof one-pager (WOW_SPEC F1.8), additive: a heading, paragraphs whose sources are [n] superscript runs, then a final
+// "Sources" section. Interpretation paragraphs are marked ◇ and set in italics. `build` above is unchanged.
+// model: {title, subtitle?, warning?, label?, blocks:[{heading, paragraphs:[{text, kind:'fact'|'interpretation', notes:[n]}]}], notes:[{n, text}]}
+function buildOnePager(model){const m=model&&typeof model==='object'?model:{},list=v=>Array.isArray(v)?v:[],GREY='666A78';
+ const sup=n=>`<w:r><w:rPr>${FONT}<w:vertAlign w:val="superscript"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr><w:t xml:space="preserve">[${n}]</w:t></w:r>`;
+ const notesOf=p=>[...new Set(list(p?.notes).filter(n=>Number.isInteger(n)&&n>0))];
+ const paragraph=p=>para((p?.kind==='interpretation'?run('◇ ',{color:PURPLE}):'')+run(p?.text,{italic:p?.kind==='interpretation'})+notesOf(p).map(sup).join(''));
+ const body=para(run(val(m.title),{bold:true,size:20,color:PURPLE}),{style:'Heading1',after:120})
+  +(String(m.subtitle??'').trim()?para(run(m.subtitle,{italic:true,size:12})):'')
+  +(String(m.warning??'').trim()?para(run(m.warning,{italic:true,size:10,color:'9A0000'})):'')
+  +list(m.blocks).map(b=>(String(b?.heading??'').trim()?para(run(b.heading,{bold:true,size:14,color:PURPLE}),{style:'Heading2',after:120}):'')+list(b?.paragraphs).map(paragraph).join('')).join('')
+  +para(run('Sources',{bold:true,size:14,color:PURPLE}),{style:'Heading2',after:120})
+  +list(m.notes).filter(n=>Number.isInteger(n?.n)&&n.n>0).map(n=>para(run('['+n.n+'] ',{bold:true,size:9})+run(n.text,{size:9}),{after:60})).join('')
+  +para(run('◇ interpretation relating the cited words to a requirement. Everything else restates them.'+(String(m.label??'').trim()?' '+m.label:''),{italic:true,size:9,color:GREY}),{after:0});
+ const doc=HEAD+`<w:document ${NS}><w:body>${body}<w:sectPr><w:pgSz w:w="${PAGE_W}" w:h="${PAGE_H}"/><w:pgMar w:top="${MARGIN}" w:right="${MARGIN}" w:bottom="${MARGIN}" w:left="${MARGIN}" w:header="709" w:footer="709" w:gutter="0"/></w:sectPr></w:body></w:document>`;
+ const styles=HEAD+`<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr>${FONT}<w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="en-GB"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="264" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>
+<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/><w:rPr>${FONT}</w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:outlineLvl w:val="0"/></w:pPr><w:rPr>${FONT}<w:b/><w:sz w:val="40"/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:outlineLvl w:val="1"/></w:pPr><w:rPr>${FONT}<w:b/><w:sz w:val="28"/></w:rPr></w:style></w:styles>`;
+ const files=[
+  ['[Content_Types].xml',HEAD+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>'],
+  ['_rels/.rels',HEAD+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>'],
+  ['docProps/core.xml',HEAD+`<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>${x(val(m.title))}</dc:title><dc:creator>ATLAS</dc:creator></cp:coreProperties>`],
+  ['docProps/app.xml',HEAD+'<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>ATLAS</Application></Properties>'],
+  ['word/document.xml',doc],['word/styles.xml',styles],
+  ['word/_rels/document.xml.rels',HEAD+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>']];
+ return Pptx.zip(files);}
+return {build,buildOnePager,SECTIONS,TBD,LABEL_W,CONTENT_W,TEXT_W};
 });

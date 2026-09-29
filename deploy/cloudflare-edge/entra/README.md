@@ -16,7 +16,7 @@ The key `tid:oid` is the same scheme as the Python gateway's Entra mode (`atlas_
 | App registration (client ID) for "ATLAS via Cloudflare Access" | Redirect URI: `https://<team>.cloudflareaccess.com/cdn-cgi/access/callback` |
 | Client secret (stored only in Cloudflare) | Certificates & secrets |
 | API permissions: `openid`, `email`, `profile`, `offline_access`, `User.Read` (+ `GroupMember.Read.All` only if groups are used) | Admin consent required |
-| App role `ATLAS.Interview` (plus `ATLAS.Review`, `ATLAS.Publish` for reviewers), assigned to the pilot people | App roles + Enterprise app → Users and groups |
+| App roles, assigned to the pilot people: `ATLAS.Interview` (the sign-in role named in `ENTRA_REQUIRED_ROLE`), `ATLAS.Reviewer` (library reviewer) and `ATLAS.Admin` (administrator). The Worker reads exactly `ATLAS.Admin` and `ATLAS.Reviewer` (`src/app.js`); any other role name grants nothing | App roles + Enterprise app → Users and groups |
 | Optional: Conditional Access (managed device, MFA) | Applies automatically through Entra |
 
 ## Enable (only with IT approval and a Mantu-owned Cloudflare account)

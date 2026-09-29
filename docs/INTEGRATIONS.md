@@ -6,6 +6,11 @@
   Email lists are ignored in Entra mode.
 - The N+1 named on a record can validate that record. Record people (owner, listed consultants, N+1) and reviewers see
   client details; everyone else sees published references with client details removed and scrubbed.
+- External confirmer (Access mode only): a verified email listed exactly in `EXTERNAL_EMAILS` (never a domain rule). It
+  reaches only `GET /confirm`, a reduced `/api/bootstrap`, `GET /api/library/confirmations/inbox` and
+  `POST /api/library/confirmations/:id`; `GET /` answers 303 to `/confirm` and everything else 403. Unset by default.
+- Gap requests (F2) and claim confirmations (F3) authorise people by the Access-verified email, so they run in Access
+  mode only; with `IDENTITY_SOURCE=entra` their words answer 404 and their `features` flags are false.
 
 ## Project-management system → interview invitations
 `POST https://<atlas>/api/triggers` with `Authorization: Bearer <TRIGGER_SECRET>` and JSON:
@@ -13,13 +18,51 @@
 { "email": "consultant@mantu.com", "reason": "project_end | milestone | periodic_review",
   "projectId": "PRJ-2291", "title": "Claims triage rollout", "slot": "2026-10-02T10:00" }
 ```
+- Optional fields `managerEmail`, `managerName` and `endDate` (`YYYY-MM-DD`) also store a staffing row (the N+1 of
+  record for F3 confirmations) and queue two outreach rows (Teams and email draft) waiting for approval.
 - `201` with the invitation. Repeated calls for the same person, reason and project return the open invitation.
 - Set the secret: `npx wrangler secret put TRIGGER_SECRET`. Without it the endpoint answers `401`.
 - Cloudflare Access protects the whole app, so add an Access **bypass** policy for the path `/api/triggers` only; the
   bearer secret (compared in constant time) protects it instead.
 - A daily cron (`17 6 * * *`) invites the owner of every reference not updated for six months (`six_month_update`).
+- The same cron also expires gap and confirmation requests, invites consultants whose staffing end date is due, queues
+  their outreach rows and prunes old Teams events. It never sends anything.
 - Nothing is emailed. Consultants see invitations under Library → *Your interviews*, with an `.ics` calendar file.
-  Microsoft Graph / Teams notifications need Entra and are not built (`BLOCKED_EXTERNAL`).
+  Teams messages are built but not connected (`BLOCKED_EXTERNAL`, see *Teams* below).
+
+## Staffing import and the outreach queue (F4; admins and reviewers)
+- `POST /api/library/staffing/import {csv}` (≤ 200,000 characters, ≤ 2,000 rows). Header row
+  `project_id,consultant_email,manager_email,manager_name,project_title,end_date`. Any other column, and so any client,
+  customer or account column, is dropped unread and listed in `ignoredColumns`. Rejected rows come back with line
+  numbers. A row whose end date is between 30 days ago and 7 days ahead, with no reference yet, gets a `project_end`
+  invitation plus outreach rows. `GET /api/library/staffing?project=<id>` lists stored rows.
+- `GET /api/library/outreach` lists rows; `POST /api/library/outreach/:id {action: approve | dismiss}` acts on one row:
+  an approved email becomes a draft `{to, subject, body, ics?}` the approver sends from their own mail client; an
+  approved Teams row ends `blocked_external` with the reason until Teams is connected; phone is always
+  `blocked_external`; a row whose invitation or request is no longer open is dismissed, never sent.
+
+## Teams (F4): built, not connected
+- Pre-Access endpoints: `POST /api/teams/messages` (Bot Framework activities, verified signature, issuer, audience,
+  tenant, service URL and size) and `GET /teams/tab` (a launcher tab that opens ATLAS in the browser). Both answer 503
+  `BLOCKED_EXTERNAL` until `TEAMS_ENABLED=1`, `TEAMS_APP_ID`, `TEAMS_BOT_APP_ID` and `TEAMS_TENANT_ID` are set.
+- Secret `TEAMS_BOT_SECRET` (`wrangler secret put`, by Tony). Optional var `TEAMS_SERVICE_HOSTS` (comma-separated host
+  names) extends the connector allow-list beyond `smba.trafficmanager.net`.
+- Access needs a **bypass** policy for exactly `/api/teams/messages` and `/teams/tab`; every other path stays behind Access.
+- Package and IT checklist: `deploy/cloudflare-edge/teams/README.md` (manifest v1.30 template, placeholder icons, builder
+  that refuses placeholders). TeamsJS 2.57.0 is vendored in `teams/vendor/` (version and SHA-256 in
+  `docs/THIRD_PARTY.md` and `docs/SOURCE_LOCK.json`). No Microsoft endpoint has been called.
+
+## Claim confirmation page (F3)
+- A confirmation request gives the requester a `mailto:` draft whose body is only `<ORIGIN>/confirm#<request id>`: no
+  claim text and no client name. The id is not a secret; the confirmer must sign in with the addressed email.
+- `GET /confirm` is a self-contained page (no external script or URL) that lists the signed-in person's open requests
+  and posts their decisions (confirm, correct with a note, can't say).
+- Client contacts as confirmers stay off until `CLIENT_CONFIRM=1`, their exact emails in `EXTERNAL_EMAILS` and an Access
+  One-time PIN policy for them (Tony's Q3).
+
+## Spoken Ask (F6): off
+`POST /api/transcribe` (raw `audio/L16;rate=24000`, ≤ 30 s, Origin and CSRF) answers 404 unless `SPOKEN_ASK=1`. It sends
+question audio to Workers AI speech-to-text outside the interview consent, so it stays off until Tony approves (Q11).
 
 ## Spotlight Ref exchange (`atlas.reference.v1`)
 - Export (reviewers): `GET /api/library/export` →
@@ -47,6 +90,17 @@
 | GET | `/api/library/analytics` | everyone (client counts: reviewers) |
 | POST | `/api/library/insights` | reviewers |
 | GET/POST | `/api/library/invitations[/:id]` | own invitations; reviewers create for others |
+| POST | `/api/library/bids` `{title, alias, prospectNames?, briefText}`; GET `/api/library/bids[?all=1]`, `/:id` | everyone creates their own; owner, reviewers, admins read |
+| POST | `/api/library/bids/:id/requirements`, `/match`, `/onepager`, `/use`, `/outcome`, `/delete` | owner (and admins); match, one-pager, use, outcome also reviewers |
+| POST/GET | `/api/library/gaps`, `/gaps/:id`, `/gaps/:id/interview`, `/answer`, `/dismiss` | bid owner creates; assignee answers (Access mode only) |
+| GET/POST | `/api/library/claims/:refId`, `/api/library/claims` | full access to the reference / editors (Access mode only) |
+| GET/POST | `/api/library/confirmations`, `/confirmations/inbox`, `/confirmations/:id`, `/:id/cancel` | editors create; the addressed email decides (Access mode only) |
+| POST | `/api/library/ask` `{question, limit?}` | everyone (not external) |
+| GET | `/api/library/wins`, `/api/library/wins/guidance` | everyone (per-story rows: reviewers, admins, the story's own people) |
+| GET/POST | `/api/library/outreach[/:id]`, `/api/library/staffing[/import]` | reviewers, admins |
+
+Every new word answers 404 while its module is not READY (`deploy/cloudflare-edge/src/features.js`). Contracts and
+types: `docs/WOW_SPEC.md` §3.
 
 ## Private memory (Hindsight, hindsight.vectorize.io)
 - One bank per person: `atlas-` + HMAC(`HINDSIGHT_BANK_SECRET`, or a labelled derivation of `CSRF_SECRET`, over the

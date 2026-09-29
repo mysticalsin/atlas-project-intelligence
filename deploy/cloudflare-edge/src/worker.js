@@ -1,22 +1,21 @@
 // ATLAS edge deployment entry: Cloudflare Worker + one Durable Object per signed-in person.
 import { DurableObject } from 'cloudflare:workers';
 import page from './atlas.html';
-import { handle, workersAI } from './app.js';
+import { handle, scheduled, workersAI } from './app.js';
 import { jevRanker } from './jev.js';
 import { Session } from './session.js';
 import { Library } from './library.js';
 import { libraryRoutes } from './library-routes.js';
 import { hindsight, recallQuery, memoryNote, jevRelevant } from './memory.js';
 import { memoryRoutes } from './memory-routes.js';
+import { resolveForInterview } from './gaps.js';
+import { fetchWinHint } from './winloop.js';
+import { teamsClient } from './teams.js';
 
 export default {
-  fetch: (request, env) => handle(request, env, page),
+  fetch: (request, env, ctx) => handle(request, env, page, { waitUntil: p => ctx.waitUntil(p) }),
   // Daily: references not updated for six months get an update invitation for their owner (never auto-sent).
-  async scheduled(controller, env, ctx) {
-    if (!env.LIBRARY) return;
-    const req = new Request('https://atlas.internal/api/library/scan-stale', { method: 'POST', body: '{}', headers: { 'Content-Type': 'application/json', 'x-atlas-user': 'atlas-cron', 'x-atlas-role': 'system' } });
-    ctx.waitUntil(env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(req));
-  },
+  scheduled,
 };
 
 export class Interview extends DurableObject {
@@ -40,11 +39,15 @@ export class Interview extends DurableObject {
       // stale session must never block the person from starting again.
       await this.session.fail('This interview continued in another window. Nothing was approved.', 'voice-contract');
     }
+    // The verified identity the Worker forwarded (always overwritten there), for gap requests and the win hint.
+    const identity = { user: request.headers.get('x-atlas-user') || '', role: request.headers.get('x-atlas-role') || 'user', mail: request.headers.get('x-atlas-email') || '' };
     const session = new Session({
       io: { send: e => { try { server.send(JSON.stringify(e)); } catch { /* closed */ } }, sendBytes: b => { try { server.send(b); } catch { /* closed */ } },
         close: () => { try { server.close(1000, 'ended'); } catch { /* closed */ } } },
       ai: Object.assign(workersAI(this.env), jevRanker(this.env) ? { rankProbe: jevRanker(this.env) } : {}), csrf: request.headers.get('x-atlas-csrf') || '', voice: 'atlas', captureRequired: true, model: this.env.TALKER_MODEL, admin: request.headers.get('x-atlas-admin') === '1', memory,
       metric: (name, values) => console.log(JSON.stringify({ atlas_metric: name, ...values })),
+      gaps: this.env.LIBRARY ? id => resolveForInterview(this.env, identity, id) : null,
+      winHint: this.env.LIBRARY ? () => fetchWinHint(this.env, identity) : null,
     });
     this.session = session;
     server.addEventListener('message', e => {
@@ -63,9 +66,10 @@ export class Interview extends DurableObject {
 export class LibraryStore extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
+    this.env = env;
     const ai = workersAI(env);
     this.lib = new Library(ctx.storage.sql, { complete: messages => ai.complete(messages), embed: text => ai.embed(text),
-      readyScore: Number(env.READY_SCORE) || undefined, model: env.ANALYST_MODEL });
+      readyScore: Number(env.READY_SCORE) || undefined, model: env.ANALYST_MODEL, services: { teams: teamsClient(env) } });
   }
-  fetch(request) { return libraryRoutes(request, this.lib, { waitUntil: p => this.ctx.waitUntil(p) }); }
+  fetch(request) { return libraryRoutes(request, this.lib, { waitUntil: p => this.ctx.waitUntil(p), env: this.env }); }
 }

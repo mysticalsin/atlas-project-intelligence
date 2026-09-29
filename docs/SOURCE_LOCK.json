@@ -49,5 +49,23 @@
     "auth": "Bearer",
     "deployed": "edge, configured by secrets",
     "real_provider_tested": false
+  },
+  "teams_js": {
+    "checked": "2026-09-29",
+    "package": "@microsoft/teams-js",
+    "version": "2.57.0",
+    "license": "MIT",
+    "tarball_integrity": "sha512-HJPyDD52nzs5E4WeScncMWHBDOQTSjtF1s3QFYTEGqVp+yqgRAJ1nTrcHyYw9TARKFg8y05OQLCOSRqM656wQw==",
+    "tarball_sha256": "6bdcfecb4febf61c8ee807a32eca925b44c8b89f605defe5b25df51e71f5111a",
+    "file": "dist/umd/MicrosoftTeams.min.js",
+    "file_sha256": "ee3403839e47f1338e6f6f8becdd4456ced589eca5a909b8e58ce31ff78cf068",
+    "vendored_as": "deploy/cloudflare-edge/teams/vendor/teams-js.mjs",
+    "connected": false
+  },
+  "teams_manifest_schema": {
+    "url": "https://developer.microsoft.com/json-schemas/teams/v1.30/MicrosoftTeams.schema.json",
+    "manifest_version": "1.30",
+    "vendored": false,
+    "verified_against_microsoft": false
   }
 }

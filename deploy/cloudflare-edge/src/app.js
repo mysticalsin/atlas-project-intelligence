@@ -8,6 +8,10 @@ import { classify } from './classify.js';
 import { bankId } from './memory.js';
 import { sheetRoutes } from './sheet.js';
 import { detectedLanguage, NATIVE_VOICES, normalize } from './languages.js';
+import { email as validEmail, inList } from './util.js';
+import { flags } from './features.js';
+import { teamsRoutes } from './teams-routes.js';
+import { CONFIRM_HTML } from './confirm-page.js';
 
 const enc = new TextEncoder();
 // One voice for everyone: @cf/deepgram/aura-2-en "harmonia" (Deepgram: empathetic, clear, calm, confident).
@@ -65,8 +69,27 @@ function headers(env, extra = {}) {
     ...extra };
 }
 const json = (env, body, status = 200) => new Response(JSON.stringify(body), { status, headers: headers(env, { 'Content-Type': 'application/json' }) });
+// Spoken Ask audio: 0.1 s to 32 s of 16-bit mono PCM at 24 kHz (the UI records at most 30 s).
+const AUDIO_MIN = 4800, AUDIO_MAX = 1536000;
+// Reads at most `max` bytes of a request body; null as soon as it is longer (the declared length can be absent or wrong).
+async function boundedBytes(request, max) {
+  if (!request.body) return new Uint8Array(0);
+  const reader = request.body.getReader(), parts = [];
+  let n = 0;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    n += value.length;
+    if (n > max) { await reader.cancel().catch(() => {}); return null; }
+    parts.push(value);
+  }
+  const out = new Uint8Array(n);
+  let at = 0;
+  for (const p of parts) { out.set(p, at); at += p.length; }
+  return out;
+}
 
-export async function handle(request, env, page) {
+export async function handle(request, env, page, { waitUntil = p => p } = {}) {
   {
     const url = new URL(request.url);
     if (!env.ORIGIN || url.origin !== env.ORIGIN) return new Response('Host is not the configured ATLAS origin.', { status: 403 });
@@ -80,16 +103,31 @@ export async function handle(request, env, page) {
       const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(fwd);
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
     }
+    // Teams bot endpoint and launcher tab (pre-Access, like /api/triggers): exactly these two; every other
+    // /api/teams/* path falls through to the signed-in handling. BLOCKED_EXTERNAL until Teams is connected.
+    if ((url.pathname === '/api/teams/messages' && request.method === 'POST') || (url.pathname === '/teams/tab' && request.method === 'GET')) return teamsRoutes(request, env, { waitUntil });
     let who = null;
     try { who = await verifyAccess(request, env); } catch { who = null; }
     if (!who) return new Response('Sign in to use ATLAS.', { status: 401, headers: headers(env) });
     // Access email only: an Entra deployment must grant admin through an app role, never a username fallback.
     const listed = (names, e) => (names || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean).includes(String(e || '').toLowerCase());
     const admin = env.IDENTITY_SOURCE !== 'entra' && (env.ADMIN_EMAILS || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean).includes(String(who.email || '').toLowerCase());
-    // Library role. Entra: app roles only (never a username fallback); Access: verified email lists.
+    // Library role. Entra: app roles only (never a username fallback); Access: verified email lists, then 'external'
+    // only for an email explicitly listed in EXTERNAL_EMAILS (never by domain), else 'user'.
     const role = env.IDENTITY_SOURCE === 'entra' ? (who.roles?.includes('ATLAS.Admin') ? 'admin' : who.roles?.includes('ATLAS.Reviewer') ? 'reviewer' : 'user')
-      : admin ? 'admin' : listed(env.REVIEWER_EMAILS, who.email) ? 'reviewer' : 'user';
+      : admin ? 'admin' : listed(env.REVIEWER_EMAILS, who.email) ? 'reviewer' : inList(who.email, env.EXTERNAL_EMAILS) ? 'external' : 'user';
     const csrf = await hmac(env.CSRF_SECRET, who.sub), subjectKey = (await hmac('atlas-subject', who.sub)).slice(0, 32);
+    // Forwarded identity: the library identity (Entra: stable tid:oid; Access: the verified email) and the verified
+    // email when it is a valid address (else empty). Always overwritten on every forward.
+    const libraryUser = String(env.IDENTITY_SOURCE === 'entra' ? who.sub : who.email || who.sub).toLowerCase(), mail = validEmail(who.email);
+    const identity = { name: who.email, mode: env.IDENTITY_SOURCE === 'entra' ? 'entra' : 'access', subjectKey };
+    if (role === 'external') {
+      // External confirmers (F3) reach only /confirm, a reduced bootstrap and /api/library/confirmations/*.
+      if (url.pathname === '/' && request.method === 'GET') return new Response(null, { status: 303, headers: headers(env, { Location: '/confirm' }) });
+      if (url.pathname === '/api/bootstrap' && request.method === 'GET') return json(env, { csrf, identity, email: mail, libraryRole: 'external', features: { claims: flags(env).claims } });
+      if (!(url.pathname === '/confirm' && request.method === 'GET') && !url.pathname.startsWith('/api/library/confirmations/')) return json(env, { error: 'Not available to external confirmers.' }, 403);
+    }
+    if (url.pathname === '/confirm' && request.method === 'GET') return new Response(CONFIRM_HTML, { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
     if (url.pathname === '/' && request.method === 'GET') {
       const runtime = JSON.stringify({ subjectKey, authMode: 'access', name: who.email }).replace(/</g, '\\u003c');
       let body = page.replace('/* SERVER_RUNTIME */', 'window.ATLAS_RUNTIME=' + runtime + ';')
@@ -101,17 +139,17 @@ export async function handle(request, env, page) {
     if (url.pathname === '/api/bootstrap' && request.method === 'GET') {
       // One voice for everyone, advertised only as 'atlas': the real voice and provider stay server-side.
       return json(env, { provider: 'workers', providerLabel: 'ATLAS voice', protocol: 'atlas-personaplex-pcm-v1', csrf,
-        identity: { name: who.email, mode: env.IDENTITY_SOURCE === 'entra' ? 'entra' : 'access', subjectKey }, model: 'ATLAS conversational voice', admin,
+        identity, model: 'ATLAS conversational voice', admin,
         voices: ['atlas'], defaultVoice: 'atlas', captureRequired: true, codecAvailable: true, busy: false, capacity: 1, maxSeconds: MAX_SECONDS, speakingSeconds: SPEAKING_LIMIT_S,
         memory: !!env.HINDSIGHT_API_KEY, wiki: false, jev: !!env.TYPESAFE_API_KEY, jevClassify: !!env.TYPESAFE_API_KEY, library: !!env.LIBRARY, libraryRole: role, sheet: true, transcription: true, structuredNotes: true, liveLedger: true, playbackAck: true,
-        readiness: 'edge-deployment-test-data-only' });
+        readiness: 'edge-deployment-test-data-only', email: mail, features: flags(env) });
     }
     if (url.pathname === '/api/voice') {
       if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected a WebSocket upgrade.', { status: 426 });
       if (request.headers.get('Origin') !== env.ORIGIN) return new Response('Invalid voice origin', { status: 403 });
       const forward = new Request(request, { headers: new Headers(request.headers) });
       forward.headers.set('x-atlas-admin', admin ? '1' : '0'); // always overwritten: a browser can never claim admin
-      forward.headers.delete('x-atlas-role'); forward.headers.delete('x-atlas-user');
+      forward.headers.set('x-atlas-user', libraryUser); forward.headers.set('x-atlas-role', role); forward.headers.set('x-atlas-email', mail); // always overwritten
       forward.headers.set('x-atlas-bank', await bankId(env, who.sub)); // server-derived; the browser never picks a bank
       forward.headers.set('x-atlas-csrf', csrf); // set by the Worker only; the DO is not reachable otherwise
       return env.INTERVIEW.get(env.INTERVIEW.idFromName(who.sub)).fetch(forward);
@@ -134,11 +172,29 @@ export async function handle(request, env, page) {
       if (!env.LIBRARY) return json(env, { error: 'The reference library is not configured on this deployment.' }, 404);
       if (request.method !== 'GET' && (request.headers.get('Origin') !== env.ORIGIN || request.headers.get('X-Atlas-CSRF') !== csrf)) return json(env, { error: 'Invalid request origin or session token.' }, 403);
       if (Number(request.headers.get('Content-Length') || 0) > 262144) return json(env, { error: 'Request too large.' }, 413);
-      const forward = new Request(request, { headers: new Headers(request.headers) });
+      // The declared length can be absent or wrong: bound the body actually read, then forward that text.
+      const bodyless = request.method === 'GET' || request.method === 'HEAD', text = bodyless ? '' : await request.text();
+      if (text.length > 262144) return json(env, { error: 'Request too large.' }, 413);
+      const fwdHeaders = new Headers(request.headers); fwdHeaders.delete('content-length');
+      const forward = new Request(request.url, { method: request.method, headers: fwdHeaders, body: bodyless ? undefined : text });
       // Entra: the stable tid:oid is the library identity (emails can change); Access: the verified email.
-      forward.headers.set('x-atlas-user', String(env.IDENTITY_SOURCE === 'entra' ? who.sub : who.email || who.sub).toLowerCase()); forward.headers.set('x-atlas-role', role); // always overwritten
+      forward.headers.set('x-atlas-user', libraryUser); forward.headers.set('x-atlas-role', role); forward.headers.set('x-atlas-email', mail); // always overwritten
       const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(forward);
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
+    }
+    // Spoken Ask (F6): transcription of one short question, off unless SPOKEN_ASK=1 (Q11: it is outside the interview
+    // consent). Stores nothing; the log line carries numbers only.
+    if (url.pathname === '/api/transcribe' && request.method === 'POST' && flags(env).spokenAsk) {
+      if (request.headers.get('Origin') !== env.ORIGIN || request.headers.get('X-Atlas-CSRF') !== csrf) return json(env, { error: 'Invalid request origin or session token.' }, 403);
+      if ((request.headers.get('Content-Type') || '').replace(/\s+/g, '').toLowerCase() !== 'audio/l16;rate=24000') return json(env, { error: 'Send 16-bit mono PCM at 24 kHz (audio/L16;rate=24000).' }, 415);
+      const pcm = Number(request.headers.get('Content-Length') || 0) > AUDIO_MAX ? null : await boundedBytes(request, AUDIO_MAX);
+      if (!pcm) return json(env, { error: 'The recording is longer than 30 seconds.' }, 413);
+      if (pcm.length < AUDIO_MIN || pcm.length % 2) return json(env, { error: 'The recording is too short or is not 16-bit audio.' }, 400);
+      const t0 = Date.now(), metric = values => console.log(JSON.stringify({ atlas_metric: 'transcribe', ms: Date.now() - t0, bytes: pcm.length, ...values }));
+      let out;
+      try { out = await workersAI(env).transcribe(pcm); } catch { metric({ failed: 1 }); return json(env, { error: 'Transcription failed. Type the question instead.' }, 502); }
+      metric({});
+      return json(env, { text: String(out?.text || '').slice(0, 600), language: out?.language || null });
     }
     if (url.pathname === '/api/jev/classify' && request.method === 'POST') {
       if (request.headers.get('Origin') !== env.ORIGIN || request.headers.get('X-Atlas-CSRF') !== csrf) return json(env, { error: 'Invalid request origin or session token.' }, 403);
@@ -160,6 +216,14 @@ export async function handle(request, env, page) {
     }
     return json(env, { error: 'This feature is not available in this deployment.' }, 404);
   }
+}
+
+// Daily cron (worker.js delegates here so Node tests cover it): references not updated for six months get an
+// update invitation for their owner, plus the feature modules' daily housekeeping. Nothing is ever sent.
+export async function scheduled(controller, env, ctx) {
+  if (!env.LIBRARY) return;
+  const req = new Request('https://atlas.internal/api/library/scan-stale', { method: 'POST', body: '{}', headers: { 'Content-Type': 'application/json', 'x-atlas-user': 'atlas-cron', 'x-atlas-role': 'system' } });
+  ctx.waitUntil(env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(req));
 }
 
 // Workers AI adapters. Tolerant of both OpenAI-shaped and native response shapes.

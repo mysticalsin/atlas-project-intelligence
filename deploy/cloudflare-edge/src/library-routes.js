@@ -1,17 +1,23 @@
 // HTTP surface of the reference library, run inside the LibraryStore Durable Object. Identity arrives only in
-// headers the Worker overwrites after verifying the sign-in (x-atlas-user, x-atlas-role); CSRF and Origin are
-// checked by the Worker before forwarding.
+// headers the Worker overwrites after verifying the sign-in (x-atlas-user, x-atlas-role, x-atlas-email); CSRF and
+// Origin are checked by the Worker before forwarding. Feature words go through the READY-gated registry
+// (features.js) before the generic /:id routes; `env` is the LibraryStore DO's own env (vars and bindings).
+import { featureRoutes } from './features.js';
+import * as outreach from './outreach.js';
 export const SYSTEM = { email: 'atlas', role: 'admin' }; // automatic review after a save
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 
-export async function libraryRoutes(request, lib, { waitUntil = p => p } = {}) {
-  const url = new URL(request.url), user = { email: request.headers.get('x-atlas-user') || '', role: request.headers.get('x-atlas-role') || 'user' };
+export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {} } = {}) {
+  const url = new URL(request.url), user = { email: request.headers.get('x-atlas-user') || '', mail: (request.headers.get('x-atlas-email') || '').toLowerCase(), role: request.headers.get('x-atlas-role') || 'user' };
   if (!user.email) return json({ error: 'Sign in first.' }, 401);
   const parts = url.pathname.replace(/^\/api\/library\/?/, '').split('/').filter(Boolean), method = request.method;
   let body = {};
   if (method === 'POST') { try { body = await request.json(); } catch { return json({ error: 'Invalid JSON.' }, 400); } }
+  const ctx = { request, url, method, parts, body, user, lib, env, waitUntil };
   try {
+    // External confirmers reach feature words only (the registry limits them to `confirmations`); nothing else.
+    if (user.role === 'external') { const r = await featureRoutes(ctx); return r ? json(r.body, r.status || 200) : json({ error: 'Not found.' }, 404); }
     if (!parts.length && method === 'GET') return json(lib.list(user, Object.fromEntries(url.searchParams)));
     if (!parts.length && method === 'POST') {
       const saved = await lib.upsert(user, body);
@@ -21,10 +27,14 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p } = {}) {
     const [id, action, arg] = parts;
     // System calls (set only by the Worker's trigger endpoint or its daily cron).
     if (user.role === 'system') {
-      if (method === 'POST' && id === 'trigger') return json(lib.invite(user.email, { ...body, source: user.email }), 201);
-      if (method === 'POST' && id === 'scan-stale') return json({ invited: lib.scanStale() });
+      if (method === 'POST' && id === 'trigger') return json(outreach.onTrigger(lib, user.email, body), 201);
+      if (method === 'POST' && id === 'scan-stale') return json({ invited: lib.scanStale(), ...outreach.daily(lib) });
+      const sys = await featureRoutes(ctx);
+      if (sys) return json(sys.body, sys.status || 200);
       return json({ error: 'Not found.' }, 404);
     }
+    const f = await featureRoutes(ctx);
+    if (f) return json(f.body, f.status || 200);
     if (method === 'POST' && id === 'recommend') return json(await lib.recommend(user, body));
     if (method === 'POST' && id === 'merge') { const saved = await lib.merge(user, body); if (lib.complete) waitUntil(lib.review(SYSTEM, saved.id).catch(() => {})); return json(saved); }
     if (method === 'GET' && id === 'analytics') return json(lib.analytics(user));

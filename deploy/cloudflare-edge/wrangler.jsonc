@@ -31,4 +31,8 @@
     "ELEVENLABS_VOICE_ID": "21m00Tcm4TlvDq8ikWAM"
   }
   // Secrets (never committed): CSRF_SECRET (deploy.sh); optional via set-keys.sh: HINDSIGHT_API_KEY, TYPESAFE_API_KEY, ELEVENLABS_API_KEY
+  // Optional WOW vars (docs/WOW_SPEC.md section 5), all unset by default; Tony decides and sets them, no values here:
+  // EXTERNAL_EMAILS (exact confirmer emails, comma-separated), CLIENT_CONFIRM (1), SPOKEN_ASK (1), PDF_BRIEFS (1)
+  // TEAMS_ENABLED (1), TEAMS_APP_ID, TEAMS_BOT_APP_ID, TEAMS_TENANT_ID; secret TEAMS_BOT_SECRET (wrangler secret put, by Tony)
+  // TEAMS_SERVICE_HOSTS (optional, comma-separated host names added to the Teams connector allow-list beyond smba.trafficmanager.net)
 }

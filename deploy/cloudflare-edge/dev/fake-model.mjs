@@ -1,6 +1,7 @@
 // Deterministic stand-in for the analyst model in local runs and tests. It answers each known prompt shape with
 // JSON derived only from its input, so flows can be exercised offline. It is not a quality judgement.
 import { lexical } from '../src/reuse.js';
+import { EXTRA_FAKES } from './fakes/index.mjs';
 const first = t => (String(t || '').split(/(?<=[.!?])\s/)[0] || '').slice(0, 200);
 const INDUSTRY = [[/energy|oil|gas|utility|power/i, 'Energy'], [/bank|finance|payment/i, 'Banking'], [/insur/i, 'Insurance'], [/telecom|operator|network/i, 'Telecom'], [/retail|shop/i, 'Retail']];
 export function fakeModel() {
@@ -8,6 +9,8 @@ export function fakeModel() {
   return {
     async complete(messages) {
       const system = messages[0]?.content || '', input = messages[1]?.content || '';
+      // Feature policies first (dev/fakes/<track>.mjs), each keyed on its policy's unique first sentence.
+      for (const fake of EXTRA_FAKES) { const out = await fake(system, input); if (typeof out === 'string') return out; }
       if (system.startsWith('You review a draft project reference')) {
         const rec = JSON.parse(input), a = rec.answers || [], len = a.filter(x => (x || '').length > 40).length;
         return JSON.stringify({ score: 40 + len * 9, client_value_clear: (a[5] || '').length > 30, issues: (a[4] || '').length < 20 ? [{ field: 'evidence', kind: 'missing', detail: 'No supporting evidence is named.' }] : [],

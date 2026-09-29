@@ -112,3 +112,52 @@ test('reuse parsers are bounded and strict', () => {
   assert.equal(parseInsights('{"offering_ideas":[{"title":"t","reference_ids":["nope"]}]}', ['a']).offeringIdeas.length, 0);
   assert.equal(parseTarget('garbage', 'energy meeting').searchText, 'energy meeting');
 });
+
+// ---- T1 step 1 (WOW_SPEC §F1.3, §2.3, §F1.10): strict rerank parsing, and typed queries/contexts pseudonymised ----
+import { parseRerankStrict, rankPool } from '../src/reuse.js';
+test('parseRerankStrict: null when the model did not answer usably, [] when it honestly found nothing', () => {
+  const ids = ['a', 'b'];
+  for (const bad of ['garbage', '', null, '{"results": "x"}', '{"other": []}', '[1,2]', '{"results":[{"id":"evil","relevance":90,"why":"w"}]}',
+    '{"results":[{"id":"a","relevance":90,"why":""},{"id":"b","relevance":70}]}']) assert.equal(parseRerankStrict(bad, ids), null, String(bad));
+  assert.deepEqual(parseRerankStrict('{"results":[]}', ids), []);
+  assert.deepEqual(parseRerankStrict('{"results":[{"id":"a","relevance":20,"why":"weak"},{"id":"b","relevance":29,"why":"weak"}]}', ids), [], 'all valid, all below 30');
+  const got = parseRerankStrict('{"results":[{"id":"b","relevance":"88","why":"good","transferable":["x","x"]},{"id":"evil","relevance":99,"why":"w"},{"id":"a","relevance":10,"why":"low"}]}', ids);
+  assert.deepEqual(got, [{ id: 'b', relevance: 88, why: 'good', transferable: ['x'], caveat: '' }], 'hallucinated ids dropped when a valid one exists');
+  assert.deepEqual(parseRerank('garbage', ids), [], 'the lenient form is unchanged');
+});
+
+test('rankPool: per-method floor on raw similarity, semantic before lexical, boosts reorder but never rescue', () => {
+  const row = (id, embedding, answers) => [{ id, embedding: embedding ? JSON.stringify(embedding) : null, data: { title: id, details: {}, answers } }, 'public'];
+  const pool = [row('lowSem', [1, 0.2], []), row('sem', [1, 1], []), row('lex', null, ['claims routing triage model']), row('lexLow', null, ['nothing shared here at all'])];
+  const floor = { semantic: 0.9, lexical: 0.1 };
+  const plain = rankPool(pool, 'claims routing', [1, 1], { floor });
+  assert.deepEqual(plain.map(k => [k.row.id, k.retrieval]), [['sem', 'semantic'], ['lex', 'lexical']]);
+  const boosted = rankPool(pool, 'claims routing', [1, 1], { floor, boost: r => r.id === 'lowSem' || r.id === 'lexLow' ? 5 : r.id === 'lex' ? 3 : 0 });
+  assert.deepEqual(boosted.map(k => k.row.id), ['sem', 'lex'], 'a boost never rescues a row below the floor, and a lexical row never passes a semantic one');
+  assert.equal(rankPool(pool, 'claims routing', null, { floor }).every(k => k.retrieval === 'lexical'), true, 'no query vector: lexical only');
+});
+
+test('recommend: the caveat says whether the ranking model did not answer or nothing reached 30', async () => {
+  for (const [rerank, want] of [['not json', /did not answer/], ['{"results":[]}', /no candidate reached the relevance threshold of 30/], ['{"results":[{"id":"nope","relevance":90,"why":"w"}]}', /did not answer/]]) {
+    const m = fakeModel(), l = new Library(memorySql(), { complete: async msgs => msgs[0].content.startsWith('You match past project references') ? rerank : m.complete(msgs), embed: m.embed });
+    await published(l, OWNER, base('Grid data platform', 'Energy', 'A power utility had fragmented grid data and slow decisions across control rooms.'), 'a');
+    const r = await l.recommend(OTHER, { query: 'Meeting an energy data director about grid decisions' });
+    assert.ok(r.results.length); assert.ok(r.results.every(x => x.relevance === null && want.test(x.caveat)), rerank); assert.doesNotMatch(r.method, /model ranking/);
+  }
+});
+
+test('recommend and slides: a library client, an email and a phone in the query or context never reach a model; the caller reads their own words', async () => {
+  const seen = [], m = fakeModel();
+  const l = new Library(memorySql(), { complete: async msgs => { seen.push(JSON.stringify(msgs)); return m.complete(msgs); }, embed: async t => { seen.push(String(t)); return m.embed(t); } });
+  const id = await published(l, OWNER, base('Grid data platform', 'Energy', 'Zebracorp, a power utility, had fragmented grid data and slow decisions across control rooms.'), 'a');
+  seen.length = 0;
+  const query = 'Meeting ZEBRACORP and zebracorp energy data team, jane@acme.example, +33 6 12 34 56 78, https://acme.example/brief';
+  const r = await l.recommend(OTHER, { query });
+  assert.match(r.target.searchText, /^Meeting ZEBRACORP and zebracorp energy data team, jane@acme\.example, \+33 6 12 34 56 78, https:\/\/acme\.example\/brief/, 'every spelling back as typed');
+  assert.doesNotMatch(JSON.stringify(r), /\[(Company|Person|Email|Phone|Link) \d+\]|another client|\[company\]|\[contact\]/);
+  const s = await l.slides(OTHER, id, { context: 'Zebracorp board, call +33 6 12 34 56 78 or jane@acme.example' });
+  assert.ok(s.sections.flatMap(x => x.bullets).some(b => b.text.includes('Zebracorp board, call +33 6 12 34 56 78 or jane@acme.example')));
+  assert.ok(seen.length >= 4);
+  for (const input of seen) assert.doesNotMatch(input, /zebracorp|jane@|acme\.example|\+33|12 34 56/i);
+  assert.equal(l.get(OWNER, id).audit.find(a => a.action === 'slides generated').detail, 'context 60 characters');
+});

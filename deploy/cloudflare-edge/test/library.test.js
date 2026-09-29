@@ -137,3 +137,62 @@ test('system routes: trigger creates an invitation, scan-stale runs; ordinary us
   assert.equal((await call('/api/library/trigger', OWNER, { email: 'x@y.co' })).status, 404);
   assert.equal((await (await libraryRoutes(new Request('https://atlas.test/api/library/invitations', { headers: { 'x-atlas-user': 'alex@mantu.com', 'x-atlas-role': 'user' } }), l)).json()).items[0].reason, 'milestone');
 });
+
+// T1-S0 (WOW_SPEC §2.3, §F1.10): the own-client scrub is word-bounded, still case-insensitive, names of 3+ characters.
+import { clientScrub, reviewReference } from '../src/review.js';
+test('forModel regression: a client named "Air" no longer turns "repair" into "repthe client"', async () => {
+  const air = REF(); air.client = { name: 'Air', location: 'Lyon', contact: 'Ops' };
+  air.answers[0] = 'Air had a backlog; we did the repair of the queue. AIR and air agreed, in Lyon and Lyonnais.';
+  const m = forModel(cleanReference(air));
+  assert.equal(m.answers[0], 'the client had a backlog; we did the repair of the queue. the client and the client agreed, in the client and Lyonnais.');
+  assert.equal(clientScrub({ client: { name: 'Air', contact: 'HR' } })('HR teams repair air ducts'), 'HR teams repair the client ducts', 'names under 3 characters are left to scrub.js');
+  assert.equal(clientScrub({ client: { name: 'Acme  Inc.' } })('Acme\nInc. and ACME INC. hired us'), 'the client and the client hired us');
+  const { l, seen } = lib(); const a = await l.upsert(OWNER, { localId: 'air', reference: air }); await l.review(OWNER, a.id);
+  assert.match(seen[0][1].content, /did the repair of the queue/); assert.doesNotMatch(seen[0][1].content, /repthe client|Air had/);
+  const views = []; await reviewReference(cleanReference(air), async msgs => { views.push(msgs[1].content); return GOOD; }, { view: r => ({ only: r.title }) });
+  assert.equal(views[0], JSON.stringify({ only: 'Claims triage alias' }), 'reviewReference accepts a view');
+});
+
+// ---- T1 step 1 (WOW_SPEC §2.3 "Existing leaks fixed by T1", §F1.9 #7, §F1.10): record text reaches a model only
+// through recordView; typed queries and contexts are pseudonymised and come back to the caller in their own words.
+import { recordView } from '../src/scrub.js';
+import { fakeModel } from '../dev/fake-model.mjs';
+const TWO = () => {
+  const b = REF(); b.title = 'Grid telemetry alias'; b.sector = 'Energy'; b.client = { name: 'Brightwave', location: 'Nantes', contact: 'Jane Doe' };
+  b.details = { ...b.details, projectId: 'PRJ-2', consultants: [] };
+  b.answers[0] = 'Brightwave asked us to repeat what we did at Zebracorp with their Head of Claims; write to ops@brightwave.example or see https://brightwave.example/case.';
+  const z = REF(); z.answers[5] = 'Any insurer like Brightwave with manual routing and a measurable queue would benefit from this approach.';
+  return [z, b];
+};
+const LEAK = /zebracorp|brightwave|head of claims|jane doe|nantes|lyon|jane@acme|\+33|acme\.example/i;
+async function twoClients() {
+  const seen = [], fake = fakeModel();
+  const l = new Library(memorySql(), { now: () => '2026-09-29T00:00:00.000Z', complete: async m => { seen.push(JSON.stringify(m)); return fake.complete(m); }, embed: async t => { seen.push(String(t)); return fake.embed(t); } });
+  const [z, b] = TWO(), ids = [];
+  for (const [k, ref] of [['z', z], ['b', b], ['c', { ...REF(), title: 'Payments alias', client: { name: 'Corvina Bank', location: '', contact: '' } }]]) ids.push((await l.upsert(OWNER, { localId: k, reference: ref })).id);
+  for (const id of ids) { await l.review(OWNER, id); l.validate(N1, id, { decision: 'validate' }); }
+  return { l, seen, ids };
+}
+
+test('recordView: own client "the client", other library clients "another client", their contacts "a contact", PII masked', async () => {
+  const { l, ids } = await twoClients();
+  const v = recordView(l, l.row(ids[1]).data);
+  assert.equal(v.answers[0], 'the client asked us to repeat what we did at another client with their a contact; write to [email] or see [link].');
+  assert.equal(recordView(l, l.row(ids[0]).data).answers[5], 'Any insurer like another client with manual routing and a measurable queue would benefit from this approach.');
+  assert.ok(!('client' in v)); assert.equal(v.details.links[0].url, '[link]');
+});
+
+test('review, index, recommend, insights and slides send no second-client name, contact or PII to any model', async () => {
+  const { l, seen, ids } = await twoClients();
+  assert.equal(l.get(OWNER, ids[0]).status, 'published');
+  const rec = await l.recommend(OTHER, { query: 'Meeting Zebracorp and Brightwave about energy data; write to jane@acme.example or +33 6 12 34 56 78' });
+  await l.insights(REV);
+  const s = await l.slides(OTHER, ids[1], { context: 'Pitch to the Zebracorp COO, jane@acme.example' });
+  assert.equal(seen.length, 11, '3 reviews + 3 index embeds + recommend (target, embed, rerank) + insights + slides');
+  for (const input of seen) assert.doesNotMatch(input, LEAK);
+  assert.match(rec.target.searchText, /Meeting Zebracorp and Brightwave about energy data; write to jane@acme\.example or \+33 6 12 34 56 78/, 'the caller sees their own query words');
+  assert.doesNotMatch(JSON.stringify(rec.target), /\[(Company|Person|Email|Phone|Link) \d+\]|another client/, 'no masking trace in the caller view');
+  assert.ok(s.sections.flatMap(x => x.bullets).some(b => b.text.includes('Pitch to the Zebracorp COO, jane@acme.example')), 'slide text un-masked for the caller');
+  const audit = l.get(OWNER, ids[1]).audit.find(a => a.action === 'slides generated');
+  assert.equal(audit.detail, 'context 45 characters'); assert.doesNotMatch(JSON.stringify(l.get(REV, ids[1]).audit), /Zebracorp|jane@|Pitch/);
+});

@@ -1087,3 +1087,287 @@ test('the closing reply is not given the analyst guidance and its pace note asks
   assert.ok(!m.some(x => x.content.startsWith('ANALYST_GUIDANCE')));
   assert.ok(m.some(x => x.content.includes('Time is up: close now, with no question.')));
 });
+
+// ---- Focused gap interviews (WOW_SPEC §F2.4, §F2.7, §F2.8) ----
+import { GAP_UNAVAILABLE } from '../src/session.js';
+import { GAP_OPENING, GAP_NOTE, GAP_WHY, GAP_REFLECT, WIN_HINTS, TALKER_POLICY, ADMIN_NOTE } from '../src/policy.generated.js';
+import { WELCOME_BACK } from '../src/languages.js';
+
+const GAP = 'ab'.repeat(16);
+const ASKS = [
+  { id: 'G1', field: 'evidence', label: 'ignored: the label comes from FIELDS', ask: 'Proof the bid needs: an audited report for [company]' },
+  { id: 'G2', field: 'measurement', label: 'x', ask: 'Proof the bid needs: how the saving was measured' },
+  { id: 'G3', field: 'customer_fit', label: 'x', ask: 'Proof the bid needs: an insurer with legacy claims systems' },
+  { id: 'G4', field: 'problem', label: 'x', ask: 'Dropped: at most GAP_MAX asks' },
+];
+const RESOLVED = { asks: ASKS, bidAlias: '[company] claims bid', referenceId: 'ref1', projectId: 'p1' };
+const gapStart = (extra = {}) => JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: true, gap: GAP, ...extra });
+const resolver = (value = RESOLVED, seen = []) => async id => { seen.push(id); return value; };
+async function gapOpened(h) {
+  await h.s.onText(gapStart());
+  await until(() => !h.s.busy() && h.bytes.length >= 10);
+  h.s.playedMs[h.s.protectedItem] = 1e9; // the greeting has played (browser acknowledgement)
+}
+const system = m => m[0].content;
+const notesOf = m => m.filter((x, i) => i > 0 && x.role === 'system' && !x.content.startsWith('ANALYST_GUIDANCE')).map(x => x.content);
+const lastQuality = h => h.events.filter(e => e.type === 'quality').at(-1);
+
+test('gap start: resolved server-side, ready carries mode/timePlan/gaps (at most 3), the gap list sits between project data and preferences', async () => {
+  const seen = [], h = harness(undefined, { session: { gaps: resolver(RESOLVED, seen) } });
+  await gapOpened(h);
+  assert.deepEqual(seen, [GAP], 'the browser supplies only the id');
+  const ready = h.events[0];
+  assert.equal(ready.type, 'ready'); assert.equal(ready.mode, 'gap'); assert.equal(ready.maxSeconds, 300); assert.equal(ready.speakingSeconds, 150);
+  assert.deepEqual(ready.timePlan, { depthAt: null, closingAt: 210 });
+  assert.deepEqual(ready.gaps, [{ id: 'G1', label: 'Supporting artifact', ask: ASKS[0].ask }, { id: 'G2', label: 'Measurement basis', ask: ASKS[1].ask },
+    { id: 'G3', label: 'Customer relevance', ask: ASKS[2].ask }]);
+  const sys = system(h.calls.talker[0]);
+  const at = label => sys.indexOf(label);
+  assert.ok(at('\nUNTRUSTED PROJECT DATA:\n') > 0 && at('\nUNTRUSTED PROJECT DATA:\n') < at('\nUNTRUSTED GAP LIST') && at('\nUNTRUSTED GAP LIST') < at('\nUNTRUSTED PRIVATE PREFERENCES'));
+  assert.ok(sys.endsWith('\nUNTRUSTED PRIVATE PREFERENCES (not evidence):\n'), 'nothing after the preferences label: the prefix is cache-stable');
+  assert.ok(sys.includes(JSON.stringify(ready.gaps)) && !sys.includes('Dropped'), 'ids, labels and asks only; the fourth ask is dropped');
+  const opening = h.calls.talker[0];
+  assert.equal(opening.at(-1).content, GAP_OPENING, 'the gap opening (it never asks for the Opp ID)');
+  assert.ok(opening.some(m => m.content.startsWith('ANALYST_GUIDANCE') && m.content.includes('"askId":"G1"') && m.content.includes(ASKS[0].ask)));
+  const notes = notesOf(opening);
+  assert.equal(notes[0], GAP_NOTE, 'GAP_NOTE first (no admin note)');
+  assert.ok(notes.includes('GAP PACE (server): about 0 of 5 minutes used. Open items: Supporting artifact, Measurement basis, Customer relevance.'));
+  assert.ok(!notes.some(n => n.startsWith('INTERVIEW PACE') || n.startsWith('ADMIN MODE')), 'no full-mode pace');
+  assert.deepEqual(spoken(h.calls), [GREETINGS.en, 'Thanks.', 'What was the baseline?'], 'greeting first, then the gap opening');
+  assert.equal(h.s.gapAttempts.G1, 1, 'the opening carried G1 and was heard'); assert.equal(h.s.openAsk, 'G1');
+});
+
+test('gap start refused: unknown or foreign id (null), malformed id, no resolver, a throwing or hanging resolver: voice-contract, no ready, no timer', async () => {
+  const cases = [
+    [{ gaps: resolver(null) }, {}], [{ gaps: resolver({ asks: [] }) }, {}], [{ gaps: resolver({ asks: [{ id: 'G1', field: 'nope', ask: 'x' }] }) }, {}],
+    [{ gaps: resolver() }, { gap: 'XYZ' }], [{ gaps: resolver() }, { gap: GAP.toUpperCase() }], [{ gaps: resolver() }, { gap: 7 }], [{}, {}],
+    [{ gaps: async () => { throw new Error('library down'); } }, {}], [{ gaps: () => new Promise(() => {}), gapTimeout: 20 }, {}],
+  ];
+  for (const [session, start] of cases) {
+    const h = harness(undefined, { session });
+    await h.s.onText(gapStart(start));
+    assert.equal(h.events[0].type, 'error', JSON.stringify(start)); assert.equal(h.events[0].code, 'voice-contract'); assert.equal(h.events[0].message, GAP_UNAVAILABLE);
+    assert.ok(!h.events.some(e => e.type === 'ready') && h.closed() && h.s.timer === null && h.calls.talker.length === 0);
+  }
+  const bad = harness(undefined, { session: { gaps: resolver() } });
+  await bad.s.onText(gapStart({ asks: ASKS })); // the browser cannot inject asks: an unknown start key
+  assert.equal(bad.events[0].message, 'Fresh voice consent and CSRF token required');
+});
+
+test('closing during gap resolution: a discard or End leaves no ready and no timer; anything else, including a second start, is refused', async () => {
+  for (const leave of [{ type: 'discard' }, { type: 'end' }, { type: 'start', consent: true, csrf: 'tok', project: PROJECT }, { type: 'discard', x: 1 }]) {
+    let release; const h = harness(undefined, { session: { gaps: () => new Promise(r => { release = r; }) } });
+    const starting = h.s.onText(gapStart());
+    await settle(5);
+    assert.equal(h.s.starting, true);
+    await h.s.onText(JSON.stringify(leave));
+    await until(() => h.events.some(e => e.type === 'ended'));
+    release(RESOLVED); await starting; await settle();
+    const refused = Object.keys(leave).length !== 1;
+    assert.equal(h.events.some(e => e.type === 'error' && e.code === 'voice-contract'), refused, JSON.stringify(leave));
+    assert.ok(!h.events.some(e => ['ready', 'notes'].includes(e.type)), 'no ready and no notes');
+    const timer = h.s.timer; clearInterval(timer); // a leaked timer must fail this test, not hang the run
+    assert.equal(timer, null, 'no live timer afterwards'); assert.equal(h.calls.talker.length, 0); assert.ok(h.closed());
+  }
+});
+
+test('full mode: a clean End while private memory is still recalled creates no timer and no opening (timer-leak guard)', async () => {
+  let release; const h = harness([], { session: { memory: () => new Promise(r => { release = r; }) } });
+  const starting = h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
+  await settle(5);
+  let sttDone; h.s.sttChain = new Promise(r => { sttDone = r; }); // End waits for the last words: ending, not yet finished
+  const sleep = h.s.sleep; h.s.sleep = () => new Promise(() => {});
+  const ending = h.s.onText(JSON.stringify({ type: 'end' }));
+  assert.ok(h.s.ending && !h.s.finished);
+  release('PRIVATE MEMORY: earlier'); await starting;
+  const timer = h.s.timer; clearInterval(timer); // a leaked timer must fail this test, not hang the run
+  assert.equal(timer, null); assert.equal(h.calls.talker.length, 0);
+  h.s.sleep = sleep; sttDone(); await ending;
+  assert.ok(h.events.some(e => e.type === 'ended'));
+});
+
+test('admin + gap: ADMIN_NOTE first, then GAP_NOTE and gap pace; no greeting; no memory recall in gap mode', async () => {
+  let recalls = 0;
+  const h = harness(undefined, { session: { admin: true, gaps: resolver(), memory: async () => { recalls += 1; return 'PRIVATE MEMORY: x'; } } });
+  await h.s.onText(gapStart());
+  await until(() => h.calls.talker.length >= 1 && !h.s.busy());
+  const notes = notesOf(h.calls.talker[0]);
+  assert.equal(notes[0], ADMIN_NOTE); assert.equal(notes[1], GAP_NOTE); assert.match(notes[2], /^GAP PACE \(server\)/);
+  assert.ok(!notes.some(n => n.startsWith('ALREADY SAID')), 'no greeting was spoken');
+  assert.ok(!h.calls.tts.includes(GREETINGS.en) && !h.calls.tts.includes(WELCOME_BACK.en));
+  assert.equal(recalls, 0); assert.ok(!h.events.some(e => e.type === 'memory'));
+  assert.ok(!h.calls.talker.flat().some(m => m.content.includes('PRIVATE MEMORY: x')), 'nothing recalled reaches the talker');
+});
+
+test('answer windows: the analyst files the answer under another field; the ask still reads answered_unverified with the exact quote; no rankProbe, no report', async () => {
+  let ranked = 0, reports = 0;
+  const said = 'We cut triage time by about 40% after the rollout across all three regional support teams.';
+  const h = harness([said], { session: { gaps: resolver() }, async rankProbe() { ranked += 1; return null; }, async report() { reports += 1; return '{}'; } });
+  await gapOpened(h);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => lastQuality(h) && h.calls.talker.length >= 2 && !h.s.busy());
+  const q = lastQuality(h);
+  assert.equal(q.candidate_details[0].field, 'outcome', 'the fake analyst filed it under outcome, not evidence');
+  assert.deepEqual(q.gap_status.map(s => [s.id, s.status]), [['G1', 'answered_unverified'], ['G2', 'open'], ['G3', 'open']]);
+  assert.deepEqual(q.gap_status[0].details, [], 'no detail in the evidence field');
+  assert.equal(q.next_field, 'measurement'); assert.equal(q.next_question, ASKS[1].ask); assert.equal(q.planned_question, ASKS[1].ask);
+  assert.equal(q.why_this_question, GAP_WHY); assert.equal(q.next_action, 'ask_one_question');
+  assert.ok(h.calls.talker[1].some(m => m.content.startsWith('ANALYST_GUIDANCE') && m.content.includes('"askId":"G2"')), 'the reply to the answer carries the next ask at once');
+  assert.equal(h.s.openAsk, 'G2'); assert.deepEqual(h.s.gapAttempts, { G1: 1, G2: 1 });
+  await h.s.onText(JSON.stringify({ type: 'end' }));
+  const notes = h.events.find(e => e.type === 'notes');
+  assert.equal(notes.mode, 'gap'); assert.equal(notes.report, null); assert.equal(notes.status, 'candidate');
+  assert.equal(notes.gap.requestId, GAP);
+  assert.deepEqual(notes.gap.results, [{ askId: 'G1', field: 'evidence', status: 'answered_unverified', quotes: [said] },
+    { askId: 'G2', field: 'measurement', status: 'open', quotes: [] }, { askId: 'G3', field: 'customer_fit', status: 'open', quotes: [] }]);
+  assert.ok(notes.transcript.includes(notes.gap.results[0].quotes[0]), 'each window quote is an exact transcript substring');
+  assert.equal(ranked, 0, 'JEV never reorders gap asks'); assert.equal(reports, 0); assert.ok(!h.events.some(e => e.type === 'reporting'));
+});
+
+test('deferral after two heard attempts comes from the session\'s own counts (never the ledger\'s deferred_fields); the quality event names the current ask', async () => {
+  const h = harness(['Not sure.', 'No idea really.'], { session: { gaps: resolver() } });
+  await gapOpened(h);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length >= 2 && !h.s.busy() && h.s.gapAttempts.G1 === 2);
+  assert.equal(lastQuality(h).gap_status[0].status, 'open', 'one short answer after one attempt: still open');
+  assert.equal(lastQuality(h).next_field, 'evidence');
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => lastQuality(h)?.gap_status[0].status === 'deferred' && h.calls.talker.length >= 3);
+  const q = lastQuality(h);
+  assert.ok(!Object.keys(q.deferred_fields).includes('evidence'), 'the ledger did not defer it');
+  assert.deepEqual([q.next_field, q.next_question, q.planned_question], ['measurement', ASKS[1].ask, ASKS[1].ask]);
+  assert.ok(h.calls.talker[2].some(m => m.content.startsWith('ANALYST_GUIDANCE') && m.content.includes('"deferred":["evidence"]')));
+  await h.s.onText(JSON.stringify({ type: 'end' }));
+  assert.deepEqual(h.events.find(e => e.type === 'notes').gap.results[0], { askId: 'G1', field: 'evidence', status: 'deferred', quotes: ['Not sure.', 'No idea really.'] });
+});
+
+test('every ask answered: the plan is reflect-and-confirm and the gap pace says so; UNKNOWN answers count as unknown', async () => {
+  const h = harness(['The audit report was signed off by the client quality team.', 'Honestly I don\'t know how that was measured.', 'Mostly insurers with old mainframe claims platforms like this one.'],
+    { session: { gaps: resolver() } });
+  await gapOpened(h);
+  for (let n = 2; n <= 4; n++) { say(h, [[1.2, .2], [1.3, .001]]); await until(() => h.calls.talker.length >= n && !h.s.busy()); }
+  await until(() => lastQuality(h)?.gap_status.every(s => s.status !== 'open'));
+  const q = lastQuality(h);
+  assert.deepEqual(q.gap_status.map(s => s.status), ['answered_unverified', 'unknown', 'answered_unverified']);
+  assert.deepEqual([q.next_field, q.next_question, q.next_action], [null, GAP_REFLECT, 'reflect_and_confirm']);
+  assert.ok(notesOf(h.calls.talker[3]).some(n => n.endsWith('Every item has an answer: reflect back and close.')));
+  assert.deepEqual(h.s.gapAttempts, { G1: 1, G2: 1, G3: 1 }, 'a reflect-and-confirm reply carries no ask');
+});
+
+test('a reply withdrawn because the consultant carried on is not an attempt; the continuation joins the same window entry as its own exact part', async () => {
+  let hold, gated = true;
+  const h = harness(['We rebuilt the claims intake.', 'Then we cut the backlog by a third in two months.'], calls => ({
+    async *chatStream(m) { calls.talker.push(m); yield 'Oh nice. '; if (calls.talker.length === 2 && gated) await new Promise(r => { hold = r; }); yield 'What changed for the team?'; } }));
+  h.s.gaps = resolver(); // (a function `extra` carries no session options)
+  await gapOpened(h);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 2 && h.s.shown.item === 'agent-2');
+  assert.equal(h.s.gapAttempts.G1, 2, 'her reply (still carrying G1) was heard');
+  say(h, [[1.0, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length === 3);
+  gated = false; hold?.();
+  await until(() => !h.s.busy());
+  assert.ok(h.events.some(e => e.type === 'agent_retract' && e.item_id === 'agent-2'));
+  assert.deepEqual(h.s.gapAttempts, { G1: 1, G2: 1 }, 'the withdrawn reply was taken back; the real reply carries G2');
+  assert.deepEqual(h.s.gapAnswers.G1, [['We rebuilt the claims intake.', 'Then we cut the backlog by a third in two months.']]);
+  await h.s.onText(JSON.stringify({ type: 'end' }));
+  const r = h.events.find(e => e.type === 'notes').gap.results[0];
+  assert.equal(r.status, 'answered_unverified', 'the two parts together answer it');
+  assert.deepEqual(r.quotes, ['We rebuilt the claims intake.', 'Then we cut the backlog by a third in two months.']);
+});
+
+test('gap timing: the closing comes at GAP_WRAP_S (40 s) left, not before; gap pace under ninety seconds; time_up says "The 5 minutes are up."', async () => {
+  for (const [seconds, closing] of [[250, false], [258, true]]) {
+    const h = harness(['Here is the audit report we produced for them.'], { session: { gaps: resolver() } });
+    await gapOpened(h);
+    for (let i = 0; i < seconds / 0.02; i++) h.tick();
+    say(h, [[1.2, .2], [1.3, .001]]);
+    await until(() => h.calls.talker.length === 2);
+    assert.equal(h.calls.talker[1].at(-1).content === TIME_UP, closing, seconds + ' s');
+    if (!closing) assert.ok(notesOf(h.calls.talker[1]).some(n => /^GAP PACE \(server\): about 4 of 5 minutes used\. Under ninety seconds left/.test(n)));
+    if (closing) {
+      for (let i = 0; i < 2500; i++) h.tick(); // past the 300 s limit
+      h.s.lastInput = h.s.now(); h.s.watch();
+      await until(() => h.events.some(e => e.type === 'ended'));
+      assert.equal(h.events.find(e => e.type === 'time_up').message, 'The 5 minutes are up. Finishing your interview.');
+      assert.equal(h.events.find(e => e.type === 'notes').mode, 'gap');
+    }
+  }
+});
+
+test('win hint: never awaited; its note joins the next composed reply (both modes); absent, null, failing or unknown hints add nothing', async () => {
+  const h = harness(undefined, { session: { winHint: async () => ({ hint: 'quantified' }) } });
+  await opened(h);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length >= 2);
+  const notes = notesOf(h.calls.talker[1]), win = notes.indexOf(WIN_HINTS.quantified);
+  assert.ok(win > 0 && win < notes.findIndex(n => n.startsWith('INTERVIEW PACE')), 'full mode: [admin, language, memory, win, pace]');
+  const g = harness(undefined, { session: { gaps: resolver(), winHint: async () => ({ hint: 'confirmed' }) } });
+  await gapOpened(g);
+  say(g, [[1.2, .2], [1.3, .001]]);
+  await until(() => g.calls.talker.length >= 2);
+  const gn = notesOf(g.calls.talker[1]);
+  assert.ok(gn.indexOf(WIN_HINTS.confirmed) > gn.findIndex(n => n.startsWith('GAP PACE')), 'gap mode: [admin, GAP_NOTE, pace, language, win]');
+  for (const winHint of [async () => ({ hint: null }), async () => null, async () => { throw new Error('down'); }, () => { throw new Error('sync'); }, async () => ({ hint: '__proto__' }), async () => ({ hint: 'constructor' }), null]) {
+    const n = harness(undefined, { session: { winHint } });
+    await opened(n);
+    say(n, [[1.2, .2], [1.3, .001]]);
+    await until(() => n.calls.talker.length >= 2);
+    assert.ok(!n.calls.talker.flat().some(m => /WIN LOOP/.test(m.content)), String(winHint));
+    assert.ok(!n.events.some(e => e.type === 'error'));
+  }
+});
+
+test('a win hint that never resolves changes neither ready nor the opening timing', async () => {
+  const ticksToOpening = async session => {
+    const h = harness(undefined, { session });
+    await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: true }));
+    assert.equal(h.events[0].type, 'ready', 'ready is sent at once');
+    let n = 0; while (h.calls.talker.length === 0 && n < 2000) { await new Promise(r => setImmediate(r)); n += 1; }
+    assert.equal(h.calls.talker.length, 1);
+    assert.ok(!h.calls.talker[0].some(m => /WIN LOOP/.test(m.content)));
+    return n;
+  };
+  assert.equal(await ticksToOpening({ winHint: () => new Promise(() => {}) }), await ticksToOpening({}));
+});
+
+test('full mode is unchanged: ready adds mode and timePlan only, the system prefix has no gap list, notes add mode: full', async () => {
+  const h = harness();
+  await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, voice: 'asteria', capture: true, memory: false }));
+  const ready = h.events[0];
+  assert.equal(ready.mode, 'full'); assert.deepEqual(ready.timePlan, { depthAt: 405, closingAt: 690 }); assert.ok(!('gaps' in ready));
+  await until(() => h.calls.talker.length >= 1 && !h.s.busy());
+  assert.equal(system(h.calls.talker[0]), TALKER_POLICY + '\nUNTRUSTED PROJECT DATA:\n' + JSON.stringify(h.s.project) + '\nUNTRUSTED PRIVATE PREFERENCES (not evidence):\n');
+  assert.deepEqual(talkerMessages(h.s.project, null, [], undefined, [], []), talkerMessages(h.s.project, null, [], undefined, []), 'an empty gap list adds nothing');
+  assert.deepEqual(h.s.askByItem.size + Object.keys(h.s.gapAttempts).length, 0, 'no answer windows in full mode');
+  await h.s.onText(JSON.stringify({ type: 'end' }));
+  const notes = h.events.find(e => e.type === 'notes');
+  assert.equal(notes.mode, 'full'); assert.ok(!('gap' in notes));
+  const off = harness([]);
+  await off.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
+  await off.s.onText(JSON.stringify({ type: 'end' }));
+  assert.equal(off.events.find(e => e.type === 'notes').mode, 'full');
+});
+
+test('the reply to an answer carries the next ask at once, before the analyst returns (answer windows never wait for the analyst)', async () => {
+  let open; const gate = new Promise(r => { open = r; });
+  const said = 'The audit report was signed off by the client quality team last year.';
+  const h = harness([said], calls => ({ async analyst(messages) { calls.analyst.push(messages); await gate; return []; } }));
+  h.s.gaps = resolver();
+  await gapOpened(h);
+  say(h, [[1.2, .2], [1.3, .001]]);
+  await until(() => h.calls.talker.length >= 2 && !h.s.busy());
+  assert.equal(h.events.filter(e => e.type === 'quality').length, 0, 'the analyst has not answered yet');
+  assert.ok(h.calls.talker[1].some(m => m.content.startsWith('ANALYST_GUIDANCE') && m.content.includes('"askId":"G2"')));
+  assert.deepEqual([h.s.openAsk, h.s.gapAttempts], ['G2', { G1: 1, G2: 1 }]);
+  open();
+  await until(() => lastQuality(h));
+  assert.equal(lastQuality(h).gap_status[0].status, 'answered_unverified');
+});
+
+test('resolver output is bounded: invalid asks dropped (never shadowing a valid one with the same id), duplicates dropped, asks cut to 160 characters', async () => {
+  const h = harness(undefined, { session: { gaps: resolver({ asks: [{ id: 'G1', field: 'nope', ask: 'invalid field' }, { id: 'G1', field: 'evidence', ask: 'The valid one' },
+    { id: 'G1', field: 'outcome', ask: 'A duplicate id' }, { id: 'G2', field: 'outcome', ask: 'x'.repeat(300) }, { id: 'G 3', field: 'problem', ask: 'bad id' }] }) } });
+  await h.s.onText(gapStart());
+  assert.deepEqual(h.events[0].gaps.map(g => [g.id, g.label, g.ask.length]), [['G1', 'Supporting artifact', 13], ['G2', 'Observed outcome', 160]]);
+});

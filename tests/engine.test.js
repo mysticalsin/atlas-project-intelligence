@@ -81,3 +81,23 @@ test('sheet baseline from the project, and merge never overwrites what a person 
  const b=E.sheetFromProject(p);assert.equal(b.title,p.title);assert.equal(b.exec.teamSize,'5 consultants');assert.equal(b.sections.tools,'Python');assert.equal(b.sections.industry,'Insurance');assert.equal(b.exec.price,'');
  const typed={...b,sections:{...b.sections,tools:'SAP (typed)'}};const m=E.mergeSheet(typed,{title:'X',exec:{price:'EUR 250k',contacts:'To be completed'},sections:{tools:'AI tools',value:'Saved 30%'}},'document');
  assert.equal(m.sections.tools,'SAP (typed)');assert.equal(m.exec.price,'EUR 250k');assert.equal(m.exec.contacts,'');assert.equal(m.title,p.title);assert.equal(m.from.price,'document');assert.equal(m.from.tools,undefined);});
+// WOW_SPEC T4-S0: server links, the invitation, quality and proof-interview notes survive a reload; an imported backup drops all four.
+const REF='a'.repeat(32),GAP='b'.repeat(32),INV='c'.repeat(32);
+function linked(){const p=JSON.parse(JSON.stringify(filled()));p.library={id:REF,revision:3,status:'published',syncedAt:'2026-09-29T10:00:00Z',extra:'dropped'};p.invitationId=INV;
+ p.quality={score:140,status:'ready',issues:Array.from({length:25},(_,i)=>({field:'outcome',detail:'d'.repeat(900)+i,kind:'x'}))};
+ p.gapNotes={requestId:GAP,sections:['  Proof answer.  ','x'.repeat(7000),'',null,42,'Customer fit.'],transcript:'t'.repeat(70000),at:'2026-09-29T11:00:00Z',junk:1};return p;}
+test('new projects start without server links, invitation, quality or proof notes',()=>{const p=E.project({library:{id:REF,revision:1},invitationId:INV,gapNotes:{requestId:GAP,sections:['x']}});assert.equal(p.library,null);assert.equal(p.invitationId,null);assert.equal(p.quality,null);assert.equal(p.gapNotes,null);});
+test('server link, invitation, quality and proof notes survive validateState, bounded',()=>{const s=E.blankState();s.profiles[0].projects=[linked()];
+ const c=E.validateState(JSON.parse(JSON.stringify(s))).profiles[0].projects[0];
+ assert.deepEqual(c.library,{id:REF,revision:3,status:'published',syncedAt:'2026-09-29T10:00:00Z'});assert.equal(c.invitationId,INV);
+ assert.equal(c.quality.score,100);assert.equal(c.quality.status,'ready');assert.equal(c.quality.issues.length,20);assert.equal(c.quality.issues[0].detail.length,400);assert.deepEqual(Object.keys(c.quality.issues[0]),['field','detail']);
+ assert.equal(c.gapNotes.requestId,GAP);assert.deepEqual(c.gapNotes.sections.map(v=>v&&v.length),['Proof answer.'.length,6000,null,null,null,'Customer fit.'.length]);assert.equal(c.gapNotes.sections[0],'Proof answer.');
+ assert.equal(c.gapNotes.transcript.length,60000);assert.equal(c.gapNotes.at,'2026-09-29T11:00:00Z');assert.ok(!('junk' in c.gapNotes));
+ const again=E.cleanProject(JSON.parse(JSON.stringify(c)));assert.deepEqual(again.library,c.library);assert.deepEqual(again.gapNotes,c.gapNotes);assert.deepEqual(again.quality,c.quality);});
+test('importBackup drops the server link, invitation, quality and proof notes',()=>{const u=E.importBackup({format:'atlas-workspace',schema:4,profile:{name:'Imported',projects:[linked()]}});const c=u.projects[0];
+ assert.equal(c.library,null);assert.equal(c.invitationId,null);assert.equal(c.quality,null);assert.equal(c.gapNotes,null);assert.equal(c.answers[0],linked().answers[0],'the work itself is kept');});
+test('malformed server link, invitation, quality and proof notes are dropped',()=>{const p=linked();
+ const bad=[{library:{id:'../etc',revision:1}},{library:'x'},{invitationId:'<script>'},{quality:{score:'high'}},{gapNotes:{requestId:'B'.repeat(32),sections:['x']}},{gapNotes:{requestId:GAP.slice(1),sections:['x']}},{gapNotes:{requestId:GAP,sections:[' ',null],transcript:'  '}}];
+ for(const b of bad){const c=E.cleanProject({...p,...b});const k=Object.keys(b)[0];assert.equal(c[k],null,JSON.stringify(b));}
+ assert.equal(E.cleanProject({...p,library:{id:REF,revision:-1}}).library.revision,null,'a bad revision keeps the link, so a later sync never forks a second reference');
+ assert.equal(E.cleanGapNotes({requestId:GAP,sections:[],transcript:'Only the transcript.'}).sections.every(v=>v===null),true);});

@@ -1,0 +1,73 @@
+/* ATLAS live story board (WOW_SPEC F5.2) and the proof answers after a gap interview (F2.6), in the studio's right column.
+   The only motion is a one-shot pop on new items (.is-new), defined for no-preference users only; styles.css also
+   removes every animation under reduced motion, and storyboard-ui.js never adds .is-new while the orb is paused. */
+/* Own card class (not .context-card, which the studio's three-column layout counts): same look as the studio cards. */
+.board-card{border:1px solid rgba(169,169,188,.14);border-radius:17px;padding:20px;background:rgba(16,16,17,.6);min-width:0}
+.story-board{display:flex;flex-direction:column;gap:12px;min-width:0;overflow:hidden}
+.story-board .board-card-heading{display:flex;align-items:center;gap:10px;font-size:12px;line-height:1.4;color:#E8E8EE;min-height:20px}
+.story-board .board-label{display:flex;flex-wrap:wrap;gap:3px 10px;margin:0;font-size:9px;line-height:1.5;letter-spacing:.4px;color:#A9A9BC}
+.story-board #boardCoverage{color:var(--y)}
+.story-board .board-part{border-top:1px solid rgba(169,169,188,.12);padding-top:11px;min-width:0}
+.story-board .board-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:2px 8px;margin:0 0 8px;font-size:11px;line-height:1.4;font-weight:400;letter-spacing:0;color:#E8E8EE}
+.story-board .board-head small{font-size:8px;letter-spacing:.3px;color:#A9A9BC}
+.story-board .board-body{min-width:0}
+.story-board p.board-note,.story-board p.board-empty,.story-board p.board-corrected{font-size:10px;line-height:1.6;margin:6px 0 0;color:#A9A9BC;overflow-wrap:anywhere}
+.story-board p.board-empty{color:#666A78}
+.story-board p.board-corrected{color:var(--y)}
+.story-board p.board-warn{color:#D6D6D6}
+/* time */
+.story-board .board-bar{height:4px;border-radius:4px;background:rgba(169,169,188,.16);overflow:hidden}
+.story-board .board-bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#8A00FF,var(--y))}
+.story-board p.board-time{display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 10px;margin:7px 0 0;font-size:10px;line-height:1.5;color:#A9A9BC}
+.story-board .board-time b{font-weight:500;color:#F8F8F8;font-variant-numeric:tabular-nums}
+.story-board #boardTime[data-phase=closing] .board-time b{color:var(--y)}
+/* gap checklist */
+.story-board .board-gaps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.story-board .board-gap{border:1px solid rgba(169,169,188,.16);border-radius:9px;padding:7px 9px;font-size:10px;line-height:1.45;color:#E8E8EE;min-width:0;overflow-wrap:anywhere}
+.story-board .board-gap b{font-weight:400;margin-right:8px}
+.story-board .board-gap-status{font-size:9px;color:#A9A9BC;white-space:nowrap}
+.story-board [data-status=answered_unverified]{border-color:rgba(180,144,232,.55)}
+.story-board [data-status=answered_unverified] .board-gap-status{color:#b490e8}
+.story-board [data-status=unknown],.story-board [data-status=deferred]{border-style:dashed}
+/* map */
+.story-board .board-map svg{display:block;width:100%;height:auto;max-height:190px;border-radius:10px;background:rgba(47,52,64,.2)}
+.story-board .board-pin{fill:var(--y);stroke:#101011;stroke-width:1.5px;vector-effect:non-scaling-stroke}
+/* figures */
+.story-board .board-chips{display:flex;flex-wrap:wrap;gap:6px;list-style:none;margin:0;padding:0}
+.story-board .board-chips+.board-chips{margin-top:7px}
+.story-board .board-chip{max-width:100%;border:1px solid rgba(246,235,75,.35);border-radius:999px;padding:3px 9px;font-size:11px;line-height:1.45;color:#F8F8F8;overflow-wrap:anywhere}
+.story-board .board-chip b{font-weight:500}
+.story-board .board-flag{font-size:9px;color:#A9A9BC}
+.story-board .board-slot{border-style:dashed;border-color:rgba(169,169,188,.45);color:#A9A9BC;font-size:10px}
+/* twelve dimensions */
+.story-board .board-dims{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;list-style:none;margin:0;padding:0}
+.story-board .board-dim{border:1px solid rgba(169,169,188,.13);border-radius:8px;padding:6px 7px;font-size:9px;line-height:1.35;color:#666A78;min-width:0;overflow-wrap:anywhere}
+.story-board .board-dim b{display:block;font-weight:400;font-size:10px;color:#A9A9BC}
+.story-board .board-dim[data-state=reported]{background:rgba(138,0,255,.2);border-color:rgba(180,144,232,.5);color:#D6D6D6}
+.story-board .board-dim[data-state=reported] b{color:#F8F8F8}
+.story-board .board-dim[data-state=uncertain]{border-style:dashed;border-color:rgba(246,235,75,.45);color:#D6D6D6}
+.story-board .board-dim[data-state=uncertain] b{color:#E8E8EE}
+.story-board .board-dim[data-state=unknown]{border-style:dotted;border-color:rgba(169,169,188,.5);color:#A9A9BC}
+.story-board .board-dim[data-state=deferred]{border-style:dashed;color:#A9A9BC}
+/* what ATLAS may ask next */
+.story-board p.board-question{margin:0;font-size:12px;line-height:1.6;color:#F8F8F8;overflow-wrap:anywhere}
+.story-board p.board-analysing{margin:0 0 6px;font-size:10px;letter-spacing:.3px;color:var(--y)}
+/* proof answers */
+.gap-panel .gap-result{border:1px solid rgba(169,169,188,.16);border-radius:10px;padding:10px;margin:0 0 8px;min-width:0}
+.gap-panel p.gap-result-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 8px;margin:0;font-size:11px;line-height:1.45;color:#E8E8EE}
+.gap-panel p.gap-result-head b{font-weight:400}
+.gap-panel .gap-quotes{margin:7px 0 0;padding-left:15px;font-size:11px;line-height:1.6;color:#E8E8EE;overflow-wrap:anywhere}
+.gap-panel .gap-quotes q{quotes:'“' '”'}
+.gap-panel .gap-actions{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+.gap-panel .board-btn{min-height:40px;padding:9px 14px;border-radius:999px;border:1px solid rgba(180,144,232,.55);background:rgba(138,0,255,.2);color:#F8F8F8;font-size:11px;line-height:1.4;text-align:center;white-space:normal;margin:0}
+.gap-panel .board-btn:hover:not(:disabled){background:rgba(138,0,255,.34)}
+.gap-panel .board-btn:focus-visible{outline:2px solid var(--y);outline-offset:3px}
+.gap-panel #gapMessage:empty{display:none}
+@media(max-width:1250px) and (min-width:1041px){.board-card{padding:17px}}
+@media(min-width:721px) and (max-width:1040px){.story-board .board-dims{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:720px){.story-board .board-head{flex-direction:column;align-items:flex-start}.story-board p.board-time{flex-direction:column}}
+@media(prefers-reduced-motion:no-preference){
+ .story-board .is-new{animation:board-pop .45s ease-out 1}
+ .story-board .board-pin.is-new{animation:board-drop .6s cubic-bezier(.2,.8,.3,1) 1;transform-box:fill-box;transform-origin:50% 100%}}
+@keyframes board-pop{from{opacity:0;transform:translateY(3px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes board-drop{from{opacity:0;transform:translateY(-14px)}to{opacity:1;transform:none}}

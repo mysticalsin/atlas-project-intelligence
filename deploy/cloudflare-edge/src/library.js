@@ -3,19 +3,17 @@
 // with exec(query, ...params) -> { toArray() } (Durable Object SQLite in production, node:sqlite in tests).
 // Confidential client details are visible only to the record's people and reviewers, and never reach a model.
 import { reviewReference, forModel, READY_SCORE } from './review.js';
-import { searchText, cosine, lexical, TARGET_POLICY, parseTarget, RERANK_POLICY, parseRerank, candidateCard, SLIDES_POLICY, parseSlides, INSIGHTS_POLICY, parseInsights } from './reuse.js';
+import { searchText, cosine, lexical, TARGET_POLICY, parseTarget, RERANK_POLICY, parseRerankStrict, candidateCard, SLIDES_POLICY, parseSlides, INSIGHTS_POLICY, parseInsights } from './reuse.js';
+import { str, para, list, email, https, obj, fail } from './util.js';
+// Model input from a record goes through recordView (other library clients, contacts and PII masked too); text a
+// user types is pseudonymised and the caller gets their own words back (WOW_SPEC §2.3).
+import { recordView, pseudonymise, forAuthor } from './scrub.js';
+import { winSignals } from './winloop.js';
 const DUPLICATE = 0.9; // cosine similarity above which two references are flagged as the same or a related project
 export const PRACTICES = { data_ai: 'Data & AI', web_app: 'Web & App Development', telecom: 'Telecom & Networks', sap_erp: 'SAP & ERP', cloud_infra: 'Cloud & Infrastructure', cybersecurity: 'Cybersecurity', transformation: 'Transformation & Strategy', engineering: 'Engineering & Industry' };
 
 export const STATUSES = ['in_review', 'needs_work', 'changes_requested', 'awaiting_validation', 'published', 'withdrawn'];
 const REVIEW_DAYS = 180; // references are due for an update six months after their last change
-
-const str = (v, n) => typeof v === 'string' ? Array.from(v.split(/\s+/).filter(Boolean).join(' ')).slice(0, n).join('') : '';
-const para = (v, n) => typeof v === 'string' ? v.replace(/\r/g, '').trim().slice(0, n) : '';
-const list = (v, n, l) => [...new Set((Array.isArray(v) ? v : []).slice(0, 50).map(x => str(x, l)).filter(Boolean))].slice(0, n);
-const email = v => { const e = String(v || '').trim().toLowerCase(); return /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(e) ? e.slice(0, 200) : ''; };
-const https = v => { try { const u = new URL(String(v)); return u.protocol === 'https:' && !u.username && !u.password ? u.href : ''; } catch { return ''; } };
-const obj = v => v && typeof v === 'object' && !Array.isArray(v) ? v : {};
 
 // Server-side bounds for everything a browser may send. Unknown fields are dropped.
 export function cleanReference(raw) {
@@ -73,7 +71,6 @@ export function deriveStatus(state) {
   return 'awaiting_validation';
 }
 
-const fail = (status, message) => Object.assign(new Error(message), { status });
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS refs (id TEXT PRIMARY KEY, owner TEXT NOT NULL, local_id TEXT, title TEXT, status TEXT, revision INTEGER, content_hash TEXT,
     practice TEXT, industry TEXT, country TEXT, manager_email TEXT, members TEXT, quality_score INTEGER, created_at TEXT, updated_at TEXT, updated_by TEXT,
@@ -86,8 +83,9 @@ const SCHEMA = [
 ];
 
 export class Library {
-  constructor(sql, { now = () => new Date().toISOString(), newId = () => crypto.randomUUID().replace(/-/g, ''), complete = null, embed = null, readyScore = READY_SCORE, model = '' } = {}) {
-    Object.assign(this, { sql, now, newId, complete, embed, readyScore, model });
+  // services: outbound adapters for feature modules ({ teams } in production; empty in tests and local runs).
+  constructor(sql, { now = () => new Date().toISOString(), newId = () => crypto.randomUUID().replace(/-/g, ''), complete = null, embed = null, readyScore = READY_SCORE, model = '', services = {} } = {}) {
+    Object.assign(this, { sql, now, newId, complete, embed, readyScore, model, services });
     for (const q of SCHEMA) this.sql.exec(q);
   }
 
@@ -192,7 +190,7 @@ export class Library {
     if (!row || !this.access(row, user)) throw fail(404, 'Reference not found.');
     if (user.email !== 'atlas' && !this.canEdit(row, user)) throw fail(403, 'You cannot review this reference.');
     if (!this.complete) throw fail(503, 'The review agent is not available.');
-    const quality = { ...(await reviewReference(row.data, this.complete, { readyScore: this.readyScore, now: this.now, model: this.model })), revision: row.revision };
+    const quality = { ...(await reviewReference(row.data, this.complete, { view: d => recordView(this, d), readyScore: this.readyScore, now: this.now, model: this.model })), revision: row.revision };
     const fresh = this.row(id);
     if (fresh.revision !== row.revision) return this.get(user, id); // a newer revision arrived meanwhile; its own review follows
     this.setState(fresh, { ...fresh.state, quality }, user.email, 'reviewed', `score ${quality.score}, ${quality.status}`);
@@ -203,7 +201,7 @@ export class Library {
   // Semantic index + duplicate detection (same project ID, or very similar anonymised content). Reciprocal flags.
   async index(id) {
     const row = this.row(id); if (!row) return;
-    const vec = this.embed ? await this.embed(searchText(forModel(row.data))) : null;
+    const vec = this.embed ? await this.embed(searchText(recordView(this, row.data))) : null;
     if (vec) this.sql.exec('UPDATE refs SET embedding = ? WHERE id = ?', JSON.stringify(vec), id);
     const others = this.rows('SELECT id, title, data, state, embedding FROM refs WHERE merged_into IS NULL AND id != ?', id);
     const mine = [], pid = row.data.details.projectId.toLowerCase();
@@ -229,24 +227,30 @@ export class Library {
     const query = str(obj(body).query, 1200), limit = Math.max(1, Math.min(10, Number(obj(body).limit) || 5));
     if (query.length < 8) throw fail(400, 'Describe the client or the meeting in a sentence.');
     if (!this.complete) throw fail(503, 'Recommendations are not available.');
-    const target = parseTarget(await this.complete([{ role: 'system', content: TARGET_POLICY }, { role: 'user', content: query }]).catch(() => ''), query);
+    // The query is typed text: every model call gets its pseudonymised form, and what comes back to the caller is
+    // un-masked with its map, so they read their own words (no trace of which names ATLAS knows).
+    const q = pseudonymise(this, query), mine = forAuthor(this, q.map);
+    const target = parseTarget(await this.complete([{ role: 'system', content: TARGET_POLICY }, { role: 'user', content: q.text }]).catch(() => ''), q.text);
     const pool = this.visibleRows(user).filter(([r, level]) => r.status === 'published' || level === 'full');
-    if (!pool.length) return { target, results: [], method: 'none', note: 'No references are available to you yet.' };
+    if (!pool.length) return { target: mine(target), results: [], method: 'none', note: 'No references are available to you yet.' };
     const want = [target.searchText, target.industry, target.likelyChallenges.join('. '), target.capabilities.join(', ')].join('\n');
     const qv = this.embed ? await this.embed(want).catch(() => null) : null;
+    const wins = winSignals(this); // bounded win-history boost (F7): order only, never model relevance
     const scored = pool.map(([r, level]) => {
       const m = forModel(r.data), sem = qv && r.embedding ? cosine(qv, JSON.parse(r.embedding)) : null, lex = lexical(want, searchText(m));
-      const boost = (target.industry && (r.data.sector || '').toLowerCase().includes(target.industry.toLowerCase().split(/\s+/)[0]) ? 0.05 : 0);
-      return { r, level, m, score: (sem ?? lex) + boost, similarity: sem ?? lex };
+      const boost = (target.industry && (r.data.sector || '').toLowerCase().includes(target.industry.toLowerCase().split(/\s+/)[0]) ? 0.05 : 0) + (wins.get(r.id)?.boost || 0);
+      return { r, level, score: (sem ?? lex) + boost, similarity: sem ?? lex };
     }).sort((a, b) => b.score - a.score).slice(0, 12);
-    const cards = scored.map(s => candidateCard(s.r.id, s.m));
-    const ranked = parseRerank(await this.complete([{ role: 'system', content: RERANK_POLICY },
-      { role: 'user', content: JSON.stringify({ context: { query, ...target }, candidates: cards }) }]).catch(() => ''), cards.map(c => c.id));
+    const cards = scored.map(s => candidateCard(s.r.id, recordView(this, s.r.data)));
+    const ranked = parseRerankStrict(await this.complete([{ role: 'system', content: RERANK_POLICY },
+      { role: 'user', content: JSON.stringify({ context: { query: q.text, ...target }, candidates: cards }) }]).catch(() => ''), cards.map(c => c.id));
+    // Unranked either way, but say which: the model did not answer (null) or nothing reached 30 ([]).
+    const caveat = ranked ? 'Matched by similarity only; no candidate reached the relevance threshold of 30.' : 'Matched by similarity only; the ranking model did not answer.';
     const byId = new Map(scored.map(s => [s.r.id, s]));
-    const results = (ranked.length ? ranked : scored.slice(0, limit).map(s => ({ id: s.r.id, relevance: null, why: '', transferable: [], caveat: 'Matched by similarity only; the ranking model did not answer.' })))
-      .slice(0, limit).map(x => { const s = byId.get(x.id); return { ...this.summary(s.r, s.level, user), ...x, similarity: Math.round(s.similarity * 100) / 100 }; });
+    const results = (ranked?.length ? ranked : scored.slice(0, limit).map(s => ({ id: s.r.id, relevance: null, why: '', transferable: [], caveat })))
+      .slice(0, limit).map(x => { const s = byId.get(x.id); return { ...this.summary(s.r, s.level, user), ...x, why: mine(x.why), transferable: mine(x.transferable), caveat: mine(x.caveat), similarity: Math.round(s.similarity * 100) / 100 }; });
     this.log('library', user.email, 'recommendation', `${results.length} results`);
-    return { target, results, method: (qv ? 'semantic' : 'lexical') + (ranked.length ? ' + model ranking' : ''), label: 'Relevance and reasons are interpretation; open each reference for the facts.' };
+    return { target: mine(target), results, method: (qv ? 'semantic' : 'lexical') + (ranked?.length ? ' + model ranking' : ''), label: 'Relevance and reasons are interpretation; open each reference for the facts.' };
   }
 
   // Consolidation: one stronger reference; every consultant keeps access and their own contribution.
@@ -278,13 +282,15 @@ export class Library {
     if (!level) throw fail(404, 'Reference not found.');
     if (row.status !== 'published' && level !== 'full') throw fail(403, 'Only published references can be turned into slides.');
     if (!this.complete) throw fail(503, 'Slide generation is not available.');
-    const m = forModel(row.data), context = str(obj(body).context, 800);
+    // The context is typed text: pseudonymised for the model, the slide text un-masked for the caller; the audit row
+    // keeps only its length (it may name the prospect).
+    const m = recordView(this, row.data), context = str(obj(body).context, 800), c = pseudonymise(this, context);
     const source = JSON.stringify(m);
-    const out = parseSlides(await this.complete([{ role: 'system', content: SLIDES_POLICY }, { role: 'user', content: JSON.stringify({ context: context || 'A general client presentation.', reference: m }) }]).catch(() => ''), source + ' ' + context);
+    const out = parseSlides(await this.complete([{ role: 'system', content: SLIDES_POLICY }, { role: 'user', content: JSON.stringify({ context: c.text || 'A general client presentation.', reference: m }) }]).catch(() => ''), source + ' ' + c.text);
     if (!out) throw fail(502, 'The slide writer did not produce usable text. Try again.');
     const d = row.data.details;
-    this.log(id, user.email, 'slides generated', context.slice(0, 120));
-    return { ...out, reference: { id, title: row.data.title, status: row.status, revision: row.revision }, facts: { industry: row.data.sector, country: d.country, timeline: d.start || d.end ? `${d.start || '?'} – ${d.end || 'ongoing'}` : d.duration, team: d.teamSize ? `${d.teamSize} people` : '', technologies: d.technologies.slice(0, 6) },
+    this.log(id, user.email, 'slides generated', `context ${context.length} characters`);
+    return { ...forAuthor(this, c.map)(out), reference: { id, title: row.data.title, status: row.status, revision: row.revision }, facts: { industry: row.data.sector, country: d.country, timeline: d.start || d.end ? `${d.start || '?'} – ${d.end || 'ongoing'}` : d.duration, team: d.teamSize ? `${d.teamSize} people` : '', technologies: d.technologies.slice(0, 6) },
       client: obj(body).includeClient && level === 'full' ? row.data.client.name : '', warning: row.status === 'published' ? '' : 'Draft reference: not validated for client use.' };
   }
 
@@ -313,7 +319,7 @@ export class Library {
     if (!this.complete) throw fail(503, 'Insights are not available.');
     const pub = this.visibleRows(user).filter(([r]) => r.status === 'published').slice(0, 60);
     if (pub.length < 3) return { repeatedNeeds: [], emergingExpertise: [], offeringIdeas: [], gaps: [], label: 'interpretation', note: 'At least three published references are needed.' };
-    const cards = pub.map(([r]) => candidateCard(r.id, forModel(r.data)));
+    const cards = pub.map(([r]) => candidateCard(r.id, recordView(this, r.data)));
     const out = parseInsights(await this.complete([{ role: 'system', content: INSIGHTS_POLICY }, { role: 'user', content: JSON.stringify({ references: cards }) }], 4000).catch(() => ''), cards.map(c => c.id));
     if (!out) throw fail(502, 'The insights model did not answer. Try again.');
     this.log('library', user.email, 'insights', `${pub.length} references`);

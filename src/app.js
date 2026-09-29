@@ -6,6 +6,8 @@ const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const fmt=iso=>{try{return new Date(iso).toLocaleString([],{dateStyle:'medium',timeStyle:'short'});}catch{return String(iso);}};
 let state=E.blankState(),persisted=false,lastDisk=null,saveTimer,toastTimer,blocked=false,storageError='',savePending=false;
 let view='interview',editingProjectId=null,editingSourceId=null,inspectingId=null,nameMode='new',confirmAction=null,editToken=null;
+// Proof request (F2): transient and one-shot, in memory only, never persisted. {projectId, requestId, alias}
+let pendingGap=null;
 try{const raw=localStorage.getItem(KEY);if(raw){state=E.validateState(JSON.parse(raw));persisted=true;lastDisk=raw;}}catch(err){storageError='Saved data could not be opened. Export or recover it before replacing it.';try{if(localStorage.getItem(KEY))blocked=true;}catch{storageError='Browser storage is unavailable. Use workspace backups.';}}
 const profile=()=>state.profiles.find(x=>x.id===state.activeProfile),project=()=>profile().projects.find(p=>p.id===profile().lastProject)||null;
 const emptyReview=()=>({facts:null,permission:null});
@@ -21,10 +23,10 @@ function confirm(title,message,action){$('confirmTitle').textContent=title;$('co
 function open(id){if(['profileDialog','confirmDialog','projectDialog'].includes(id))stopVoice();/* reading dialogs keep the conversation going */if(id==='profileDialog'){renderMemory();renderMemoryPanel();}if(id==='sourceDialog')renderSources();if(!$(id).open)$(id).showModal();}
 function stopVoice(){window.AtlasVoice?.cancel('Voice stopped before changing the workspace.');}
 function changed(p,message,sourceChange=true){E.invalidate(p,message,sourceChange);save();}
-function switchView(next){if(!['interview','projects','stories','library'].includes(next))return;/* the conversation continues while you look at projects or stories */editToken=null;view=next;render();window.scrollTo({top:0,behavior:'instant'});$('workspace').focus({preventScroll:true});}
-function selectProject(id){if(!profile().projects.some(x=>x.id===id))return;stopVoice();editToken=null;profile().lastProject=id;save();render();}
+function switchView(next){if(!['interview','projects','stories','library','bids'].includes(next))return;/* the conversation continues while you look at projects or stories */editToken=null;view=next;render();window.scrollTo({top:0,behavior:'instant'});$('workspace').focus({preventScroll:true});}
+function selectProject(id){if(!profile().projects.some(x=>x.id===id))return;stopVoice();editToken=null;if(pendingGap&&pendingGap.projectId!==id)pendingGap=null;profile().lastProject=id;save();render();}
 function renderSelectors(){const p=project();const opts=profile().projects.map(x=>`<option value="${esc(x.id)}">${esc(x.title)}${x.sample?' · fictional':''}</option>`).join('');for(const id of ['interviewProject','storyProject']){$(id).innerHTML=opts||'<option>No project yet</option>';$(id).disabled=!p;if(p)$(id).value=p.id;}const n=profile().name;$('profileButton').textContent=n.split(/\s+/).slice(0,2).map(x=>x[0]||'').join('').toUpperCase();$('privateLabel').textContent=n+' · local';}
-function render(){renderStorage();renderSelectors();for(const el of document.querySelectorAll('main>.view'))el.hidden=el.id!==view;for(const b of document.querySelectorAll('header nav button')){b.classList.toggle('active',b.dataset.view===view);if(b.dataset.view===view)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');}if(view==='interview')renderInterview();if(view==='projects')renderProjects();if(view==='stories')renderStory();if(view==='library')renderLibrary();window.dispatchEvent(new Event('atlas-context'));}
+function render(){renderStorage();renderSelectors();for(const el of document.querySelectorAll('main>.view'))el.hidden=el.id!==view;for(const b of document.querySelectorAll('header nav button')){b.classList.toggle('active',b.dataset.view===view);if(b.dataset.view===view)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');}if(view==='interview')renderInterview();if(view==='projects')renderProjects();if(view==='stories')renderStory();if(view==='library')renderLibrary();if(view==='bids')window.AtlasWowUI?.renderBids?.();window.dispatchEvent(new Event('atlas-context'));}
 function renderInterview(){const p=project();$('emptyInterview').hidden=!!p;document.querySelector('.interview-layout').hidden=!p;document.querySelector('.below-note').hidden=!p;if(!p)return;const i=Math.min(p.pos,5);$('chapterLabel').textContent=`${String(i+1).padStart(2,'0')} / 06 · ${E.TOPICS[i].label.toUpperCase()}`;$('stepDots').innerHTML=E.TOPICS.map((q,j)=>`<button data-step="${j}" class="${p.answers[j].trim()&&!p.deferred[j]?'done ':''}${p.pos===j?'current':''}" aria-label="Topic ${j+1}: ${esc(q.label)}" ${p.pos===j?'aria-current="step"':''}></button>`).join('');$('questionBody').hidden=p.pos===6;$('completion').hidden=p.pos!==6;
  if(p.pos<6){$('questionTitle').textContent=E.TOPICS[i].title;$('questionHint').textContent=E.TOPICS[i].hint;$('answerInput').value=p.answers[i];$('answerCount').textContent=p.answers[i].length.toLocaleString()+' / 6,000';$('challengeBox').hidden=true;$('previousButton').disabled=i===0;$('nextButton').textContent=i===5?'Save & review summary →':'Save & continue →';$('savedStatus').textContent=`${p.answers.filter((x,j)=>x.trim()&&!p.deferred[j]).length} of 6 topics captured`;let tools='';if(i===3)tools='<button class="quiet" data-action="metric">'+(p.metric?'Edit structured measurement':'＋ Add a precise measurement')+'</button>';if(i===4||i===3)tools+='<button class="quiet" data-dialog="sourceDialog">'+(p.sources.length?'Evidence library ('+p.sources.length+')':'＋ Add supporting evidence')+'</button>';$('topicTools').innerHTML=tools;
  }else{const count=p.answers.filter((x,j)=>x.trim()&&!p.deferred[j]).length;$('completionText').textContent=`${count} of 6 topics captured for ${p.title}. Shape the account into an editable draft, then inspect the sources before recording a review.`;const gaps=E.TOPICS.filter((_,j)=>!p.answers[j].trim()||p.deferred[j]);$('completionGaps').innerHTML=gaps.length?'<div class="gap-note">Still open: '+gaps.map(q=>esc(q.label)).join(' · ')+'. A draft can include open questions, but it cannot be marked reviewed yet.</div>':'<div class="gap-note">All six topics contain an answer. Coverage is not verification; the evidence still needs review.</div>';$('buildDraftButton').disabled=!p.answers.some(x=>x.trim());}
@@ -53,12 +55,12 @@ ${'name' in c?`<p class="conf"><b>CONFIDENTIAL - client details are internal onl
 <h2>Project</h2><table>${row('Project ID',d.projectId)}${row('Industry / sector',p.sector)}${row('Country',d.country)}${row('Service lines',list(d.serviceLines))}${row('Practice area (JEV)',p.jev?[p.jev.primary.label,...p.jev.also.map(a=>a.label)].join(', '):'')}${row('Timeline',d.start||d.end?(d.start||'?')+' to '+(d.end||'ongoing'):d.duration)}${row('Duration',d.duration)}${row('Team size',d.teamSize)}${row('Team roles',list(d.teamRoles))}${row('Technologies and methods',list(d.technologies))}${row('Key deliverables',list(d.deliverables))}${row('Consultants',[p.consultant+(p.role?' ('+p.role+')':''),...d.consultants.map(x=>x.name+(x.role?' ('+x.role+')':''))].join('; '))}${row('Links',d.links.map(l=>(l.label?l.label+': ':'')+l.url).join('; '))}</table>
 <h2>The story (consultant's own words)</h2>${topics}
 ${r?`<h2>ATLAS summary (model draft from the interview, to verify)</h2><p><b>${esc(r.headline)}</b></p><p>${esc(r.summary)}</p><h3>Missing or to confirm</h3><ul>${r.gaps.map(g=>`<li>${esc(g)}</li>`).join('')||'<li>None noted</li>'}</ul><h3>Commercial relevance</h3><p>${esc(r.topics.customer_relevance||p.answers[5]||'Not covered yet')}</p>`:''}
-${review}<h2>Validation</h2><p>${v.status==='validated'?'Validated by '+esc(v.by)+' on '+esc(v.validatedAt):v.status==='not_required'?'N+1 validation not required (manager staff)':'Awaiting N+1 validation'+(v.manager.name?' by '+esc(v.manager.name):'')}</p>
+${review}<h2>Validation</h2><p>${v.status==='validated'?(v.library?'Validated by ':'Self-recorded (not a confirmation): N+1 approval noted for ')+esc(v.by)+' on '+esc(v.validatedAt):v.status==='not_required'?'N+1 validation not required (manager staff)':'Awaiting N+1 validation'+(v.manager.name?' by '+esc(v.manager.name):'')}</p>
 <p style="color:#666;font-size:9pt">Self-reported by the consultant; figures are as stated unless a source is listed. Fields marked "Missing - to confirm" were not provided; nothing was inferred.</p></body></html>`;}
 // Word record straight from a library reference (the same template; client details only for people allowed to see them).
 function libraryDoc(r){const d=r.data,v=r.state.validation||{},q=r.state.quality;return recordDoc({title:d.title,stage:d.stage,recordRevision:r.revision,client:d.client||{},details:{...d.details,from:{}},sector:d.sector,jev:d.jev?{...d.jev,also:d.jev.also||[]}:null,
  consultant:d.consultant?.name||'',role:d.consultant?.role||'',answers:d.answers,report:d.report?{...d.report,gaps:d.report.gaps||[],topics:d.report.topics||{}}:null,quality:q?{score:q.score,status:q.status,issues:q.issues}:null,
- validation:{status:v.status==='not_required'?'not_required':v.status==='validated'?'validated':'awaiting',by:v.by||'',validatedAt:v.at||'',manager:{name:'',email:''}}});}
+ validation:{status:v.status==='not_required'?'not_required':v.status==='validated'?'validated':'awaiting',by:v.by||'',validatedAt:v.at||'',manager:{name:'',email:''},library:true}});}
 function downloadRecord(id){const p=profile().projects.find(x=>x.id===id);if(!p)return;download('ATLAS_Reference_'+slug(p.title)+'.doc',recordDoc(p),'application/msword');E.log(p,'Word reference record exported (includes confidential client details)');save();}
 // End-of-interview report and N+1 validation (local records; the consultant sends the email draft).
 const REPORT_LABELS={context:'Context',contribution:'Contribution',approach:'Approach',outcome:'Outcome',evidence:'Evidence',customer_relevance:'Customer relevance'};
@@ -68,13 +70,14 @@ function renderReport(el,r){el.replaceChildren();if(!r)return;const add=(tag,tex
  for(const [k,label] of [['highlights','Highlights'],['gaps','Open points'],['follow_ups','Worth asking next']]){if(!r[k]?.length)continue;add('h4',label);const ul=document.createElement('ul');for(const x of r[k]){const li=document.createElement('li');li.textContent=x;ul.append(li);}el.append(ul);}}
 function validationLine(p){const v=p.validation;if(!p.report)return '';
  if(v.status==='not_required')return '<p class="validation ok">✓ N+1 validation not required · manager staff</p>';
- if(v.status==='validated')return `<p class="validation ok">✓ Validated by ${esc(v.by)} · ${esc(fmt(v.validatedAt))}</p>`;
- return `<p class="validation wait">⏳ Awaiting N+1 validation${v.manager.name?' · '+esc(v.manager.name):''}${v.notifiedAt?' · email drafted '+esc(fmt(v.notifiedAt)):''}</p><div class="validation-actions">${v.manager.email?`<button class="btn" data-n1mail="${esc(p.id)}">Email N+1 for validation</button>`:`<span class="tiny muted">Add your N+1 in Edit project to request validation.</span>`}${v.manager.name?`<button class="quiet" data-n1ok="${esc(p.id)}">Record N+1 validation</button>`:''}</div>`;}
+ // A local N+1 note is the consultant's own record, never a confirmation (WOW_SPEC F3.4): F3 confirmations happen in the library.
+ if(v.status==='validated')return `<p class="validation self">Self-recorded (not a confirmation) · N+1 approval noted for ${esc(v.by)} · ${esc(fmt(v.validatedAt))}</p>`;
+ return `<p class="validation wait">⏳ Awaiting N+1 validation${v.manager.name?' · '+esc(v.manager.name):''}${v.notifiedAt?' · email drafted '+esc(fmt(v.notifiedAt)):''}</p><div class="validation-actions">${v.manager.email?`<button class="btn" data-n1mail="${esc(p.id)}">Email N+1 for validation</button>`:`<span class="tiny muted">Add your N+1 in Edit project to request validation.</span>`}${v.manager.name?`<button class="quiet" data-n1ok="${esc(p.id)}">Note N+1 approval (self-recorded)</button>`:''}</div>`;}
 function reportCard(p){const details=detailsLine(p)+(p.sample?'':`<button class="quiet sheet-link" data-sheet="${esc(p.id)}">${p.sheet?.confirmedAt?'Reference sheet ✓ · regenerate':'Reference sheet (Word) →'}</button>`)+(p.library?libraryPill(p):bootCache?.library&&!p.sample?`<button class="quiet library-pill" data-sync="${esc(p.id)}">Save to shared library →</button>`:'');if(!p.report)return details;return details+`<div class="report-line"><button class="quiet" data-report="${esc(p.id)}">📝 ${esc(p.report.headline)} <span>View report</span></button>${validationLine(p)}</div>`;}
 function showReport(id){const p=profile().projects.find(x=>x.id===id);if(!p?.report)return;$('reportTitle').textContent=p.title;$('reportStatus').textContent='Saved '+fmt(p.report.savedAt||p.updatedAt)+'.';renderReport($('reportBody'),p.report);$('reportActions').innerHTML=validationLine(p)+`<div class="validation-actions"><button class="btn primary" data-sheet="${esc(p.id)}">Create the reference sheet (Word)</button></div>`+(p.client?.name?'':`<div class="client-ask"><label class="field-label" for="reportClient">Client (confidential, never sent to AI)</label><div class="validation-actions"><input id="reportClient" maxlength="120" autocomplete="off" placeholder="Who was this for?"/><button class="btn" data-client-save="${esc(p.id)}">Save</button></div></div>`);if(p.interview){const d=document.createElement('details'),s=document.createElement('summary'),pre=document.createElement('pre');s.textContent='Interview transcript · your words, unverified speech recognition';pre.className='voice-raw';pre.textContent=p.interview.transcript;d.append(s,pre);$('reportBody').append(d);}open('reportDialog');}
 function emailN1(id){const p=profile().projects.find(x=>x.id===id);if(!p)return;try{const m=E.validationEmail(p,p.library?.id?location.origin+location.pathname+'#library/'+p.library.id:'');p.validation.notifiedAt=E.now();E.log(p,'N+1 validation email drafted for '+(p.validation.manager.name||m.to));save();renderProjects();
  if($('reportDialog').open)showReport(id);location.href='mailto:'+encodeURIComponent(m.to)+'?subject='+encodeURIComponent(m.subject)+'&body='+encodeURIComponent(m.body);toast('Email draft opened in your mail app. Review it and send it yourself.');}catch(e){toast(e.message);}}
-function confirmN1(id){const p=profile().projects.find(x=>x.id===id);if(!p)return;confirm('Record N+1 validation?',`Only record this once ${p.validation.manager.name||'your N+1'} has confirmed the report, for example by replying to your email. This is a local record, not an authenticated approval.`,()=>{try{E.recordValidation(p);save();renderProjects();if($('reportDialog').open)showReport(id);toast('N+1 validation recorded.');}catch(e){toast(e.message);}});}
+function confirmN1(id){const p=profile().projects.find(x=>x.id===id);if(!p)return;confirm('Note N+1 approval (self-recorded)?',`Only record this once ${p.validation.manager.name||'your N+1'} has confirmed the report, for example by replying to your email. This is a local record, not an authenticated approval.`,()=>{try{E.recordValidation(p);save();renderProjects();if($('reportDialog').open)showReport(id);toast('Noted as self-recorded (not a confirmation).');}catch(e){toast(e.message);}});}
 document.addEventListener('click',e=>{const b=e.target.closest('[data-report],[data-n1mail],[data-n1ok],[data-record],[data-client-save]');if(!b)return;if(b.dataset.report)showReport(b.dataset.report);else if(b.dataset.n1mail)emailN1(b.dataset.n1mail);else if(b.dataset.record)downloadRecord(b.dataset.record);else if(b.dataset.clientSave){const p=profile().projects.find(x=>x.id===b.dataset.clientSave),name=$('reportClient')?.value.trim();if(p&&name){p.client=E.cleanProject({...JSON.parse(JSON.stringify(p)),client:{...p.client,name}}).client;p.report=E.scrubReport(p.report,p.client);E.log(p,'Confidential client recorded');save();renderProjects();showReport(p.id);toast('Client saved. It stays internal and is never sent to AI.');}}else confirmN1(b.dataset.n1ok);});
 // ---- Project reference sheet wizard (Amaris/Mantu template): Opp ID first, sources, challenge, validate, .docx ----
 const SS={pid:null,step:1,images:[],suggested:[],challenges:[],extra:[]};
@@ -182,7 +185,7 @@ async function syncToLibrary(id,{quiet=false}={}){const p=profile().projects.fin
  catch(e){if(!quiet)toast(e.message);return null;}}
 function libraryPill(p){if(!p.library)return '';return `<button class="quiet library-pill status-${esc(p.library.status)}" data-open-record="${esc(p.library.id)}">Library · ${esc(STATUS_LABEL[p.library.status]||p.library.status)} <span>r${esc(p.library.revision)}</span></button>`;}
 let libraryTimer=null;
-async function renderLibrary(){renderInvitations();const line=$('libraryStatusLine'),grid=$('libraryList');const q=new URLSearchParams();
+async function renderLibrary(){renderInvitations();window.AtlasWowUI?.renderAsk?.();window.AtlasWowUI?.renderProofRequests?.();const line=$('libraryStatusLine'),grid=$('libraryList');const q=new URLSearchParams();
  for(const [id,key] of [['libraryText','q'],['libraryStatus','status'],['libraryCountry','country'],['libraryIndustry','industry']])if($(id).value)q.set(key,$(id).value);if($('libraryMine').checked)q.set('mine','1');
  line.textContent='Loading the library…';
  try{const d=await libraryApi('?'+q.toString());
@@ -205,6 +208,7 @@ async function openRecord(id){let r;try{r=await libraryApi('/'+encodeURIComponen
  const story=E.TOPICS.map((t,i)=>`<h4>${esc(t.label)}</h4><p>${d.answers[i]?esc(d.answers[i]):'<span class="muted">Not covered yet</span>'}</p>`).join('');
  const hist=r.revisions.length?`<details><summary>Versions and audit trail</summary><h4>Revisions</h4><ul>${r.revisions.map(x=>`<li>r${esc(x.revision)} · ${esc(x.author)} · ${esc(fmt(x.at))}</li>`).join('')}</ul><h4>Who did what</h4><ul>${r.audit.map(x=>`<li>${esc(fmt(x.at))} · ${esc(x.actor)} · ${esc(x.action)}${x.detail?' · '+esc(x.detail):''}</li>`).join('')}</ul></details>`:'';
  $('recordBody').innerHTML=`${q&&window.AtlasCharts?AtlasCharts.qualityGauge(q):''}${quality}${duplicatesBlock(r)}${val}<div class="validation-actions">${actions}</div>${r.status==='published'||r.access==='full'?slidesForm(r.id,r.access==='full'):''}<h3>Reference details</h3>${fields}<h3>The story</h3>${story}${d.report?`<h3>ATLAS summary (model draft)</h3><p><b>${esc(d.report.headline)}</b></p><p>${esc(d.report.summary)}</p>`:''}${hist}`;window.AtlasCharts?.bind($('recordBody'));
+ const claims=$('claimsBlock');claims.hidden=true;claims.replaceChildren();window.AtlasWowUI?.renderClaims?.(r); // never a previous record's claims
  if(!$('recordDialog').open)open('recordDialog');}
 async function recordAction(id,path,body){try{await libraryApi('/'+encodeURIComponent(id)+path,{method:'POST',body:body||{}});toast('Done.');const mine=profile().projects.find(x=>x.library?.id===id);if(mine){const fresh=await libraryApi('/'+encodeURIComponent(id));mine.library={...mine.library,status:fresh.status,revision:fresh.revision};save();}openRecord(id);if(view==='library')renderLibrary();}catch(e){toast(e.message);}}
 document.addEventListener('click',e=>{if(e.target.closest('[data-rec-word]')&&window.__record){const r=window.__record,d=r.data,base=E.sheetFromProject({title:d.title,sector:d.sector,answers:d.answers,report:d.report,details:E.cleanDetails(d.details),sheet:null}),sh=d.sheet?E.mergeSheet(E.cleanSheet(d.sheet),base,'project'):base;
@@ -238,7 +242,7 @@ async function renderInvitations(){const box=$('invitations');try{const {items}=
  box.innerHTML=items.length?`<h3>Your interviews</h3>${items.map(i=>`<article class="invite"><div><b>${esc(i.title||i.project_id||'Project interview')}</b> <span class="tag">${esc(REASON[i.reason]||i.reason)}</span>${i.project_id?` <span class="tiny muted">${esc(i.project_id)}</span>`:''}<p class="tiny muted">${i.slot?'Scheduled '+esc(fmt(i.slot)):'Not scheduled yet'}</p></div><div class="validation-actions"><button class="btn primary" data-inv-start="${esc(i.id)}">Start interview</button><input type="datetime-local" aria-label="Interview slot" data-inv-slot="${esc(i.id)}" value="${esc((i.slot||'').slice(0,16))}"/><button class="quiet" data-inv-schedule="${esc(i.id)}">Schedule</button><button class="quiet" data-inv-ics="${esc(i.id)}">Calendar (.ics)</button><button class="quiet" data-inv-dismiss="${esc(i.id)}">Dismiss</button></div></article>`).join('')}`:'';box.dataset.items=JSON.stringify(items);}
  catch{box.innerHTML='';}}
 async function invitationAction(id,action,extra={}){try{await libraryApi('/invitations/'+encodeURIComponent(id),{method:'POST',body:{action,...extra}});renderInvitations();}catch(e){toast(e.message);}}
-function startFromInvitation(inv){let p=profile().projects.find(x=>(inv.reference_id&&x.library?.id===inv.reference_id)||(inv.project_id&&x.details?.projectId===inv.project_id));
+function startFromInvitation(inv){let p=profile().projects.find(x=>(inv.reference_id&&x.library?.id===inv.reference_id)||(inv.project_id&&x.details?.projectId===inv.project_id)||x.invitationId===inv.id);
  if(!p){if(profile().projects.length>=50){toast('This workspace already holds 50 projects.');return;}p=E.project({title:inv.title||'Project '+(inv.project_id||''),consultant:profile().name!=='My workspace'?profile().name:(window.ATLAS_RUNTIME?.name||'Consultant'),details:{projectId:inv.project_id}});E.log(p,'Created from an interview invitation ('+(REASON[inv.reason]||inv.reason)+')');profile().projects.push(p);}
  p.invitationId=inv.id;profile().lastProject=p.id;save();switchView('interview');toast('Ready. Press Start conversation when you are.');}
 // ---- Analytics, coverage, insights, operations ----
@@ -254,7 +258,7 @@ async function openInsights(){open('insightsDialog');const body=$('insightsBody'
   ${rev?`<h3>Commercial insights</h3><p class="tiny muted">Interpretation drawn only from published references, with the references it relies on.</p><button class="btn" id="runInsights">Generate insights</button><div id="insightsOut"></div>
   <h3>Schedule an interview for a consultant</h3><div class="schedule-form"><input id="invEmail" type="email" placeholder="consultant@mantu.com"/><input id="invProject" maxlength="60" placeholder="Project ID"/><input id="invTitle" maxlength="140" placeholder="Project name"/><select id="invReason"><option value="project_end">End of project</option><option value="milestone">Milestone</option><option value="periodic_review">Periodic review</option><option value="manual">Other</option></select><input id="invSlot" type="datetime-local"/><button class="btn" id="invCreate">Create invitation</button></div><p class="tiny muted">ATLAS never emails anyone automatically: the consultant sees it under “Your interviews”, with a calendar file.</p>
   <h3>Spotlight Ref exchange</h3><div class="validation-actions"><button class="btn" id="exportLibrary">Export library (JSON)</button><label class="btn">Import references (JSON)<input id="importLibrary" type="file" accept="application/json" hidden/></label></div>`:''}`;window.AtlasCharts?.bind(body);
-  if(rev){$('runInsights').onclick=runInsights;$('invCreate').onclick=createInvitation;$('exportLibrary').onclick=exportLibrary;$('importLibrary').onchange=importLibrary;}}
+  if(rev){$('runInsights').onclick=runInsights;$('invCreate').onclick=createInvitation;$('exportLibrary').onclick=exportLibrary;$('importLibrary').onchange=importLibrary;window.AtlasWowUI?.renderOutreach?.();}}
  catch(e){body.innerHTML=`<p class="muted">${esc(e.message)}</p>`;}}
 async function runInsights(){const out=$('insightsOut');out.innerHTML='<p class="tiny muted">Reading the published references…</p>';try{const i=await libraryApi('/insights',{method:'POST',body:{}});const t=id=>`<button class="quiet" data-open-record="${esc(id)}">${esc(i.titles[id]||id)}</button>`;
  out.innerHTML=i.note?`<p class="tiny muted">${esc(i.note)}</p>`:`<h4>Repeated client needs</h4><ul>${i.repeatedNeeds.map(x=>`<li>${esc(x.need)} · ${x.referenceIds.map(t).join(', ')}</li>`).join('')||'<li>None</li>'}</ul><h4>Emerging expertise</h4><ul>${i.emergingExpertise.map(x=>`<li>${esc(x.area)} · ${x.referenceIds.map(t).join(', ')}</li>`).join('')||'<li>None</li>'}</ul><h4>Offering ideas</h4><ul>${i.offeringIdeas.map(x=>`<li><b>${esc(x.title)}</b>: ${esc(x.rationale)} · ${x.referenceIds.map(t).join(', ')}</li>`).join('')||'<li>None</li>'}</ul><h4>Thin evidence</h4><ul>${i.gaps.map(g=>`<li>${esc(g)}</li>`).join('')||'<li>None</li>'}</ul><p class="tiny muted">Interpretation based on ${esc(i.basedOn)} published references.</p>`;}catch(e){out.innerHTML=`<p class="muted">${esc(e.message)}</p>`;}}
@@ -269,8 +273,15 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-slides-for
  else{const items=JSON.parse($('invitations').dataset.items||'[]'),inv=items.find(i=>i.id===(d.invStart||d.invSchedule||d.invIcs||d.invDismiss));if(!inv)return;
   if(d.invStart)startFromInvitation(inv);else if(d.invSchedule){const v=document.querySelector(`[data-inv-slot="${CSS.escape(inv.id)}"]`)?.value;if(!v){toast('Pick a date and time first.');return;}invitationAction(inv.id,'schedule',{slot:v});}
   else if(d.invIcs)download('ATLAS_interview.ics',ics(inv),'text/calendar');else invitationAction(inv.id,'dismiss');}});
-// Deep link from the N+1 email: #library/<id>
-function openFromHash(){const m=/^#library\/([a-f0-9]{32})$/.exec(location.hash);if(m){switchView('library');openRecord(m[1]);}}window.addEventListener('hashchange',openFromHash);setTimeout(openFromHash,300);
+// Deep links: #library/<id> (N+1 email), #invitation/<id> (interview card), #bid/<id> and #gap/<id> (bid proof, AtlasWowUI).
+function openFromHash(){const h=location.hash;let m=/^#library\/([a-f0-9]{32})$/.exec(h);if(m){switchView('library');openRecord(m[1]);return;}
+ m=/^#invitation\/([a-f0-9]{32})$/.exec(h);if(m){openInvitation(m[1]);return;}
+ if(/^#(bid|gap)\/[a-f0-9]{32}$/.test(h))window.AtlasWowUI?.openHash?.(h);}
+async function openInvitation(id){try{const {items}=await libraryApi('/invitations'),inv=items.find(i=>i.id===id);
+  if(!inv){switchView('library');toast('This interview invitation is no longer open for you.');return;}
+  history.replaceState(null,'',location.pathname+location.search);startFromInvitation(inv);} // a reload must not start it again
+ catch(e){toast(e.message);}}
+window.addEventListener('hashchange',openFromHash);setTimeout(openFromHash,300);
 // JEV impact & category, and the confidential client line (only ever rendered in this workspace).
 let jevStatus=null,bootCache=null;async function bootInfo(){if(bootCache)return bootCache;try{if(!/^https?:$/.test(location.protocol))throw 0;bootCache=await(await fetch('/api/bootstrap',{credentials:'same-origin',cache:'no-store'})).json();}catch{bootCache={};}return bootCache;}
 async function jevAvailable(){if(jevStatus!==null)return jevStatus;const b=await bootInfo();jevStatus=b.jevClassify?b.csrf:false;return jevStatus;}
@@ -356,13 +367,17 @@ function voiceSnapshot(){
  // No project yet: interview on a placeholder; the project is created automatically from the report when it ends.
  if(!p)return {workspaceId:profile().id,isNew:true,project:{id:'new',title:'New project, not yet named',consultant:profile().name!=='My workspace'?profile().name:(window.ATLAS_RUNTIME?.name||''),role:'',sector:'',stage:'Pilot',answers:[]},revision:'new'};
  const data={id:p.id,title:p.title,consultant:p.consultant,role:p.role,sector:p.sector,stage:p.stage,answers:p.answers.slice(),...(p.sheet?.oppId?{oppId:p.sheet.oppId}:{})};
- return {workspaceId:profile().id,project:data,revision:E.simpleHash(JSON.stringify([p.answers,p.deferred]))}; // voice notes only append to answers: other edits during a call must not block saving
+ // A proof request (F2) is offered only for the project it targets; the voice client calls gapConsumed() once it is used.
+ const gap=pendingGap&&pendingGap.projectId===p.id?{gap:pendingGap.requestId,gapAlias:pendingGap.alias}:{};
+ return {workspaceId:profile().id,project:data,revision:E.simpleHash(JSON.stringify([p.answers,p.deferred])),...gap}; // voice notes only append to answers: other edits during a call must not block saving
 }
-function autoSave(snapshot,sections,transcript,report){
+function autoSave(snapshot,sections,transcript,report,{mode='full',requestId}={}){
  // Seamless end of interview: create the project when needed, attach notes, report, story draft and transcript. No click.
  // All or nothing: a failure removes a project created here, so a retry starts clean.
  if(blocked)throw Error('Editing is paused. Recover this workspace before saving the interview.');
  if(!snapshot||snapshot.workspaceId!==profile().id)throw Error('The workspace changed during the interview.');
+ if(mode==='gap')return saveGapNotes(snapshot,sections,transcript,requestId);
+ if(mode!=='full')throw Error('Unknown interview mode.');
  const notes=(Array.isArray(sections)?sections:[]).slice(0,6).map(x=>typeof x==='string'&&x.trim()?x.trim().slice(0,6000):null);while(notes.length<6)notes.push(null);
  let r=report?E.cleanReport(report):null;
  if(!r&&!notes.some(Boolean)&&!String(transcript||'').trim())throw Error('Nothing was captured in this interview.');
@@ -384,22 +399,70 @@ function autoSave(snapshot,sections,transcript,report){
  save();render();setTimeout(()=>{syncToLibrary(p.id,{quiet:true});rememberInterview(p,transcript);},0);return {projectId:p.id,title:p.title,report:!!p.report,persisted:persisted&&!storageError};
 }
 const REPORT_KEYS=['context','contribution','approach','outcome','evidence','customer_relevance'];
-window.ATLAS_VOICE_BRIDGE={context:voiceSnapshot,renderReport,autoSave,showReport:id=>{switchView('projects');showReport(id);},enableSave:()=>{if(!persisted)enableStorage();},apply:(snapshot,sections,transcript,report=null)=>{
+window.ATLAS_VOICE_BRIDGE={context:voiceSnapshot,renderReport,autoSave,gapConsumed:()=>{pendingGap=null;},showReport:id=>{switchView('projects');showReport(id);},enableSave:()=>{if(!persisted)enableStorage();},apply:(snapshot,sections,transcript,report=null)=>{
  if(snapshot?.isNew){autoSave(snapshot,sections,transcript,report);return true;}
  applyNotes(snapshot,sections,report);save();render();return true;
 }};
+// Append checked notes to the six answers, each topic bounded at 6,000 characters. Throws rather than truncating.
+function appendSections(answers,sections,tooLong='This addition would exceed the topic limit. Shorten the checked notes first.'){
+ const updated=answers.slice();
+ sections.forEach((value,i)=>{if(value===null)return;if(typeof value!=='string'||value.length>6000)throw Error('Invalid candidate note.');const v=value.trim();if(!v)return;const combined=updated[i].trim()+(updated[i].trim()?'\n\n':'')+v;if(combined.length>6000)throw Error(tooLong);updated[i]=combined;});
+ return updated;}
+const firstOpenTopic=p=>{const i=p.answers.findIndex((v,j)=>!v.trim()||p.deferred[j]);return i<0?6:i;};
 function applyNotes(snapshot,sections,report,reason='Appended human-checked voice ASR candidate notes; evidence and permissions require review'){
  if(blocked)throw Error('Editing is paused. Recover this workspace before adding notes.');
  const fresh=voiceSnapshot(),p=project();
  if(!snapshot||!fresh||fresh.workspaceId!==snapshot.workspaceId||fresh.project.id!==snapshot.project.id||fresh.revision!==snapshot.revision)throw Error('This project changed since the interview started. Export the transcript and review it against the current version; no old-session notes were applied.');
  const cleanReport=report?E.cleanReport({...report,savedAt:E.now()}):null;if(!Array.isArray(sections)||sections.length!==6||(!cleanReport&&!sections.some(x=>typeof x==='string'&&x.trim())))throw Error('Select at least one non-empty topic to add.');
- const updated=p.answers.slice();
- sections.forEach((value,i)=>{if(value===null)return;if(typeof value!=='string'||value.length>6000)throw Error('Invalid candidate note.');const v=value.trim();if(!v)return;const combined=updated[i].trim()+(updated[i].trim()?'\n\n':'')+v;if(combined.length>6000)throw Error('This addition would exceed the topic limit. Shorten the checked notes first.');updated[i]=combined;});
- p.answers=updated;sections.forEach((v,i)=>{if(typeof v==='string'&&v.trim())p.deferred[i]=false;});
+ p.answers=appendSections(p.answers,sections);sections.forEach((v,i)=>{if(typeof v==='string'&&v.trim())p.deferred[i]=false;});
  // Deliberately no source coverage: a microphone transcript is self-report, not independent proof.
  // The transcript stays in the review dialog/export; do not duplicate it in canonical evidence.
  E.invalidate(p,reason);
  if(cleanReport){p.report=cleanReport;E.requestValidation(p);}
- p.pos=Math.min(6,p.answers.findIndex((v,i)=>!v.trim()||p.deferred[i])<0?6:p.answers.findIndex((v,i)=>!v.trim()||p.deferred[i]));
+ p.pos=Math.min(6,firstOpenTopic(p));
 }
+// ---- Proof requests (F2): a focused, about 5-minute interview for a bid team ----
+// "Start 5-minute interview" (F2.1 step 3). The browser only ever sends the request id; the server resolves the asks. In order:
+// 1. the local project already linked to the request's reference; 2. a project seeded from that library record when the consultant
+// has full access to it, linked to it, so a later explicit sync updates that same reference; 3. a new 'Proof for <alias>' project.
+async function startFromGap(gap){const rid=String(gap?.id||'');if(!/^[a-f0-9]{32}$/.test(rid)){toast('This gap request is not available to you.');return null;}
+ if(blocked){toast('Editing is paused. Recover this workspace before starting an interview.');return null;}
+ const alias=String(gap.bidAlias||'a bid').slice(0,160),ref=typeof gap.referenceId==='string'&&/^[A-Za-z0-9_-]{1,100}$/.test(gap.referenceId)?gap.referenceId:null,owner=profile().id;
+ const linked=()=>ref?profile().projects.find(x=>x.library?.id===ref)||null:null;let p=linked();
+ if(!p&&profile().projects.length>=50){toast('This workspace already holds 50 projects.');return null;}
+ if(!p&&ref){let r=null;try{r=await libraryApi('/'+encodeURIComponent(ref));}catch{/* not readable here: a new project instead */}
+  if(profile().id!==owner||blocked){toast('The workspace changed. Start the proof request again.');return null;}
+  p=linked();if(!p&&r?.access==='full'&&r.id===ref)try{p=projectFromLibrary(r);}catch{p=null;}}
+ if(!p){p=E.project({title:'Proof for '+alias,consultant:profile().name!=='My workspace'?profile().name:(window.ATLAS_RUNTIME?.name||'Consultant')});E.log(p,'Created for a proof request from a bid team');profile().projects.push(p);}
+ pendingGap={projectId:p.id,requestId:rid,alias};profile().lastProject=p.id;editToken=null;save();switchView('interview');
+ toast('Ready: about five minutes of proof for '+alias+'. Press Start conversation when you are.');return p.id;}
+// Seed a local project from a library record the consultant can open fully. It carries every field the next explicit sync sends
+// back (answers, details, sources, report, sheet, practice area), so that sync updates the same reference without dropping any.
+function projectFromLibrary(r){const d=r?.data||{},answers=Array.from({length:6},(_,i)=>typeof d.answers?.[i]==='string'?d.answers[i].slice(0,6000):'');
+ const base=E.project({title:String(d.title||'').trim()||'Library reference',consultant:d.consultant?.name||(profile().name!=='My workspace'?profile().name:(window.ATLAS_RUNTIME?.name||'Consultant')),role:d.consultant?.role,sector:d.sector,stage:d.stage,client:d.client,details:d.details,sheet:d.sheet,validation:d.validation});
+ const sources=(Array.isArray(d.sources)?d.sources:[]).slice(0,20).filter(s=>s&&String(s.name||'').trim()).map(s=>({name:String(s.name).slice(0,160),version:String(s.version||'').trim().slice(0,100)||'as recorded in the library',url:s.url||'',text:String(s.excerpt||'').slice(0,20000),topics:[],active:true,inspected:false}));
+ const p=E.cleanProject({...base,answers,sources,report:d.report?{...d.report,savedAt:E.now()}:null,jev:d.jev&&typeof d.jev.impact==='number'?{...d.jev,revision:1}:null,library:{id:r.id,revision:r.revision,status:r.status,syncedAt:E.now()}});
+ p.pos=Math.min(6,firstOpenTopic(p));E.log(p,'Opened from the shared library (revision '+r.revision+') for a proof request');profile().projects.push(p);return p;}
+// Gap-mode end of interview (F2.1 step 6): the answers stay on this device as p.gapNotes. Nothing is appended to the answers,
+// synced to the library or sent to memory; the send to the bid team (T5) and applyGapNotes are separate explicit clicks.
+function saveGapNotes(snapshot,sections,transcript,requestId){
+ const p=!snapshot.isNew&&profile().projects.find(x=>x.id===snapshot.project?.id);if(!p)throw Error('The interviewed project no longer exists.');
+ if(typeof requestId!=='string'||!/^[a-f0-9]{32}$/.test(requestId)||(snapshot.gap&&snapshot.gap!==requestId))throw Error('This gap request is not available to you.');
+ const g=E.cleanGapNotes({requestId,sections:Array.isArray(sections)?sections:[],transcript:String(transcript||''),at:E.now()});if(!g)throw Error('Nothing was captured in this interview.');
+ if(p.gapNotes)E.log(p,'Earlier proof-interview answers replaced before they were added to the reference');
+ p.gapNotes=g;profile().lastProject=p.id;E.log(p,'Proof-interview answers kept on this device only (unverified speech recognition); not added to the reference or shared');
+ save();render();return {projectId:p.id,title:p.title,report:false,persisted:persisted&&!storageError,mode:'gap'};}
+// "Add these answers to my reference": the only path from a proof interview into the answers and the shared library.
+async function applyGapNotes(id=project()?.id){
+ if(blocked)throw Error('Editing is paused. Recover this workspace before adding notes.');
+ const p=profile().projects.find(x=>x.id===id),g=p?.gapNotes;if(!g)throw Error('There are no proof-interview answers to add.');
+ if(!g.sections.some(Boolean))throw Error('The proof interview captured no answers to add.');
+ p.answers=appendSections(p.answers,g.sections,'Adding these answers would take a topic past 6,000 characters. Shorten that topic first.');g.sections.forEach((v,i)=>{if(v)p.deferred[i]=false;});
+ E.invalidate(p,'Added proof-interview answers (unverified speech recognition); evidence and permissions require review');
+ p.pos=Math.min(6,firstOpenTopic(p));p.gapNotes=null;save();render();
+ return {projectId:p.id,library:await syncToLibrary(p.id)};}
+// Shell contract for the view modules (bids-ui, ask-ui, trust-ui, storyboard-ui; WOW_SPEC 6.3). libraryApi sends this
+// session's own cookie and CSRF header; it never exposes the token.
+window.ATLAS_APP={libraryApi,bootInfo,esc,toast,download,open,confirm,switchView,render,project,profile,save,startFromInvitation,startFromGap,applyGapNotes};
+bootInfo().then(b=>{const nav=document.querySelector('header nav [data-view="bids"]');if(nav)nav.hidden=!b.features?.bids;});
 })();

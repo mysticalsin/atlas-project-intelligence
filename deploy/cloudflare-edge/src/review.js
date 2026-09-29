@@ -50,11 +50,19 @@ issues: array of at most 12 objects {field, kind, detail}; field is one of conte
 recommendations: array of at most 6 short, concrete improvements (a question to ask or a detail to add), never invented content.
 summary: one or two sentences.`;
 
+// The record's own client name, location and contact (3+ characters) become "the client": case-insensitive, and
+// Unicode word-bounded so a client named "Air" never rewrites "repair". Longest names first.
+export function clientScrub(record) {
+  const names = [...new Set([record?.client?.name, record?.client?.location, record?.client?.contact].map(x => String(x || '').trim()).filter(x => x.length >= 3))]
+    .sort((a, b) => b.length - a.length);
+  const re = names.length ? new RegExp('(?<![\\p{L}\\p{N}])(?:' + names.map(x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+')).join('|') + ')(?![\\p{L}\\p{N}])', 'giu') : null;
+  return s => typeof s === 'string' && re ? s.replace(re, 'the client') : s;
+}
+
 // Anonymised view for any model: no client details, and their words replaced wherever they appear.
 export function forModel(record) {
-  const names = [record.client?.name, record.client?.location, record.client?.contact].map(x => String(x || '').trim()).filter(x => x.length >= 3);
-  const re = names.length ? new RegExp(names.map(x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi') : null;
-  const scrub = v => typeof v === 'string' ? (re ? v.replace(re, 'the client') : v) : Array.isArray(v) ? v.map(scrub)
+  const own = clientScrub(record);
+  const scrub = v => typeof v === 'string' ? own(v) : Array.isArray(v) ? v.map(scrub)
     : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, scrub(x)])) : v;
   const { client, owner, validation, quality, ...rest } = record;
   const details = { ...(rest.details || {}) }; delete details.consultants; delete details.from;
@@ -79,11 +87,12 @@ export function parseReview(text) {
 }
 
 // complete(messages) -> text. Returns the stored quality object; never throws for a model failure.
-export async function reviewReference(record, complete, { readyScore = READY_SCORE, now = () => new Date().toISOString(), model = '' } = {}) {
+// `view` builds the model's copy of the record (default forModel; the library may pass scrub.recordView).
+export async function reviewReference(record, complete, { view = forModel, readyScore = READY_SCORE, now = () => new Date().toISOString(), model = '' } = {}) {
   const c = completeness(record);
   let ai = null;
   try {
-    const text = await complete([{ role: 'system', content: REVIEW_POLICY }, { role: 'user', content: JSON.stringify(forModel(record)) }]);
+    const text = await complete([{ role: 'system', content: REVIEW_POLICY }, { role: 'user', content: JSON.stringify(view(record)) }]);
     ai = parseReview(text);
   } catch { ai = null; }
   const score = ai ? Math.round(0.45 * c.score + 0.55 * ai.score) : Math.round(c.score * 0.8);

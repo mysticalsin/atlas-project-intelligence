@@ -1,7 +1,9 @@
 // One live interview, platform-independent (driven by the Durable Object in worker.js, tested in Node).
 // Same browser protocol as atlas_voice/cascade.py, so the compiled ATLAS page, worklet and orb work unchanged:
 // the orb moves only from PCM this session actually sends for playback.
-import { TALKER_POLICY, OPENING, HISTORY, TOPICS, ADMIN_NOTE, SPEAKING_LIMIT_S, INTERVIEW_LIMIT_S, WRAP_S, TIME_UP, AREAS } from './policy.generated.js';
+import { TALKER_POLICY, OPENING, HISTORY, TOPICS, ADMIN_NOTE, SPEAKING_LIMIT_S, INTERVIEW_LIMIT_S, WRAP_S, TIME_UP, AREAS, TIME_PLAN, TIME_UP_MESSAGE, FIELDS,
+  GAP_LIMIT_S, GAP_SPEAKING_S, GAP_WRAP_S, GAP_MAX, GAP_OPENING, WIN_HINTS } from './policy.generated.js';
+import { gapSystemBlock, gapNotes, gapStatus, gapGuidance, timePlan } from './gap-policy.js';
 import { Analyst, InterviewLedger } from './ledger.js';
 import { EnergyTurns, isEcho, sentences } from './speech.js';
 import { EndMarker, parseReport, reportMessages } from './report.js';
@@ -46,15 +48,32 @@ export function paceNotes(elapsedS, limitS, notes, admin = false) {
   const left = limitS - elapsedS, missing = AREAS.filter((_, i) => !notes[i]);
   let pace = `INTERVIEW PACE (server): about ${Math.floor(elapsedS / 60)} of ${Math.floor(limitS / 60)} minutes used.`;
   if (left <= WRAP_S) pace += ' Time is up: close now, with no question.';
-  else if (left <= 210) pace += ' Under four minutes left: ask only the single most important remaining question, then move to ENDING.';
-  else if (elapsedS >= 0.45 * limitS) {
+  else if (left <= TIME_PLAN.closing_left_s) pace += ' Under four minutes left: ask only the single most important remaining question, then move to ENDING.';
+  else if (elapsedS >= TIME_PLAN.depth_fraction * limitS) {
     pace += ' Past halfway: challenge the one or two claims that matter most (what changed, and how they know).';
     pace += missing.length ? ' Still uncovered: ' + missing.slice(0, 2).join(', ') + '.' : '';
   } else pace += missing.length ? ' Next uncovered area: ' + missing[0] + '.' : ' Every area has an answer: go deeper only on the one or two claims that matter most.';
   return [admin ? ADMIN_NOTE : '', pace];
 }
 export const LEAD_MS = 300; // max audio sent ahead of what the browser has played
-const START_KEYS = ['type', 'csrf', 'consent', 'project', 'voice', 'capture', 'memory', 'language'];
+const START_KEYS = ['type', 'csrf', 'consent', 'project', 'voice', 'capture', 'memory', 'language', 'gap'];
+// Focused gap interviews (WOW_SPEC §F2.4). The browser sends only a request id; the asks come from the library, resolved
+// server-side for the verified assignee. Any failure (unknown id, not the assignee, no longer open, timeout) is this one
+// message, so the socket reveals nothing about other people's requests.
+export const GAP_UNAVAILABLE = 'This gap request is not available to you.';
+export const GAP_RESOLVE_MS = 3000;
+const GAP_ID = /^[a-f0-9]{32}$/;
+const QUOTE_CHARS = 400, WINDOW_QUOTES = 3, GAP_QUOTES = 5;
+const first = (s, n) => Array.from(s).slice(0, n).join(''); // whole code points: a quote never ends in half a character
+const ws = s => s.split(/\s+/).filter(Boolean).join(' '); // the ledger's quote normalisation
+// Resolver output is library data, still bounded here: at most GAP_MAX asks, each with an id, a known field, its label and
+// the ask text (already in the other view, placeholders replaced by uniform labels).
+function gapAsks(found) {
+  const asks = Array.isArray(found?.asks) ? found.asks : [], seen = new Set();
+  return asks.filter(a => a && typeof a.id === 'string' && /^[A-Za-z0-9_-]{1,16}$/.test(a.id) && typeof a.field === 'string' && Object.hasOwn(FIELDS, a.field) && typeof a.ask === 'string' && a.ask.trim()
+      && !seen.has(a.id) && seen.add(a.id))
+    .slice(0, GAP_MAX).map(a => ({ id: a.id, field: a.field, label: FIELDS[a.field][0], ask: clean(a.ask, 160) }));
+}
 
 function clean(value, limit) {
   if (typeof value !== 'string') return '';
@@ -78,9 +97,10 @@ export function projectContext(raw) {
 }
 
 // Prompt order is built for prefix caching: the fixed policy and project first, then the conversation (append-only),
-// and only then the per-turn server notes (guidance, language, memory, pace), which change every turn.
-export function talkerMessages(project, guidance, history, instruction, notes = []) {
-  const messages = [{ role: 'system', content: TALKER_POLICY + '\nUNTRUSTED PROJECT DATA:\n' + JSON.stringify(project) + '\nUNTRUSTED PRIVATE PREFERENCES (not evidence):\n' }];
+// and only then the per-turn server notes (guidance, language, memory, pace), which change every turn. A gap list (gap
+// mode) sits between the project data and the preferences label, so the prefix stays stable for the whole session.
+export function talkerMessages(project, guidance, history, instruction, notes = [], gaps = null) {
+  const messages = [{ role: 'system', content: TALKER_POLICY + '\nUNTRUSTED PROJECT DATA:\n' + JSON.stringify(project) + (gaps?.length ? gapSystemBlock(gaps) : '') + '\nUNTRUSTED PRIVATE PREFERENCES (not evidence):\n' }];
   messages.push(...history.slice(-HISTORY));
   if (guidance) messages.push({ role: 'system', content: 'ANALYST_GUIDANCE (server plan, not a script): ' + JSON.stringify(guidance) });
   for (const note of notes) if (note) messages.push({ role: 'system', content: note });
@@ -93,9 +113,17 @@ const same = (a, b) => { if (typeof a !== 'string' || typeof b !== 'string' || a
 
 export class Session {
   /** io: {send(obj), sendBytes(u8), close()}; ai: {transcribe(pcm), synthesize(text), chatStream(messages), analyst(messages)} */
-  constructor({ io, ai, csrf, voice, voices = null, captureRequired = false, model, maxSeconds = MAX_SECONDS, admin = false, memory = null, speakingLimit = SPEAKING_LIMIT_S, now = () => Date.now() / 1000, sleep = ms => new Promise(r => setTimeout(r, ms)), metric = () => {}, sttTimeout = STT_TIMEOUT_MS }) {
+  // gaps: async id => {asks, bidAlias, referenceId, projectId} | null (the verified assignee's open gap request);
+  // winHint: async () => ({hint: 'quantified'|'confirmed'|null}) | null (aggregate win-loop guidance, never awaited).
+  constructor({ io, ai, csrf, voice, voices = null, captureRequired = false, model, maxSeconds = MAX_SECONDS, admin = false, memory = null, speakingLimit = SPEAKING_LIMIT_S, now = () => Date.now() / 1000, sleep = ms => new Promise(r => setTimeout(r, ms)), metric = () => {}, sttTimeout = STT_TIMEOUT_MS,
+    gaps = null, winHint = null, gapTimeout = GAP_RESOLVE_MS }) {
     // metric(name, numbers): timings and counts only, never transcript or project content.
-    Object.assign(this, { io, ai, csrf, voice, voices: voices || [voice], captureRequired, model, maxSeconds, admin, speakingLimit, now, sleep, metric, memory, sttTimeout });
+    Object.assign(this, { io, ai, csrf, voice, voices: voices || [voice], captureRequired, model, maxSeconds, admin, speakingLimit, now, sleep, metric, memory, sttTimeout, gaps, winHint, gapTimeout });
+    // Interview mode. Gap mode keeps its own answer windows: askByItem (reply item -> the ask it carried, set when the reply
+    // is composed), gapAttempts (replies heard per ask), openAsk (the ask the consultant last heard) and gapAnswers
+    // (ask -> the consultant turns heard after it, each turn a list of transcript parts).
+    this.mode = 'full'; this.wrapS = WRAP_S; this.winNote = ''; this.starting = false;
+    this.gapAsks = []; this.gapRequest = null; this.askByItem = new Map(); this.gapAttempts = {}; this.gapAnswers = {}; this.openAsk = null; this.lastAnswer = null; this.askHeard = null;
     this.memoryNote = ''; this.language = 'en'; this.affinity = 'atlas-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
     this.pause = ''; this.checkId = 0; this.continuing = false; this.replyTurn = -1; this.replyItem = null; this.shown = { item: null, chars: 0 }; this.discarded = new Set(); this.fillerMs = {}; this.committed = null; this.live = null; this.recorded = new Set(); this.voiced = 0; this.blip = null; this.echoable = false; this.acked = false; this.playbackDone = true; this.doneAt = 0; this.resumedAt = 0; this.lastFiller = -1; this.fillerTurn = -2; this.protectedItem = null; this.protectedMs = 0; this.protectedDeadline = 0;
     this.spokenMs = 0; this.timeUp = false; this.ending = null; this.sttBusy = 0;
@@ -111,6 +139,10 @@ export class Session {
   async onText(text) {
     let value;
     try { value = JSON.parse(text); } catch { return this.fail('Unsupported client event', 'voice-contract'); }
+    if (this.starting) { // a gap request is being resolved: only leaving is allowed (never a second start)
+      const leave = value && typeof value === 'object' && Object.keys(value).length === 1 && (value.type === 'discard' || value.type === 'end');
+      return leave ? this.end(false) : this.fail('Unsupported client event', 'voice-contract');
+    }
     if (!this.started) return this.start(value);
     if (value?.type === 'end' && Object.keys(value).length === 1) return this.end(true);
     if (value?.type === 'discard' && Object.keys(value).length === 1) return this.end(false);
@@ -242,6 +274,8 @@ export class Session {
     const item = this.replyItem;
     this.discarded.add(item); this.gen += 1; this.queue = [];
     this.stopped();
+    // A withdrawn reply is not an attempt either: its ask goes back to where it was (gap mode).
+    if (this.askHeard?.item === item) { const { id, before } = this.askHeard; this.gapAttempts[id] -= 1; this.openAsk = before; this.askHeard = null; }
     // A reply already written to the history (fully composed, audio still playing) is taken back from it too.
     if (this.committed?.item === item) { const i = this.history.lastIndexOf(this.committed.entry); if (i >= 0) this.history.splice(i, 1); this.committed = null; }
     if (this.protectedItem === item) this.protectedItem = null;
@@ -274,32 +308,86 @@ export class Session {
       this.capture = init.capture === true;
       this.language = normalize(init.language) || 'en'; // the browser's language opens the conversation
       if (this.captureRequired && !this.capture) throw new Error('Transcription consent is required for this interview');
+      if (init.gap !== undefined && (typeof init.gap !== 'string' || !GAP_ID.test(init.gap) || !this.gaps)) throw new Error(GAP_UNAVAILABLE);
     } catch (e) { return this.fail(e.message, 'voice-contract'); }
+    // Aggregate win-loop guidance (both modes): started now, in parallel, and never awaited, so neither 'ready' nor the
+    // opening waits for it. It joins the per-turn notes of the first reply composed after it resolves, and never touches
+    // the ledger or the order of questions.
+    if (this.winHint) Promise.resolve().then(() => this.winHint()).then(h => { this.winNote = Object.hasOwn(WIN_HINTS, h?.hint ?? '') ? WIN_HINTS[h.hint] : ''; }, () => this.metric('win_hint_error', {}));
+    if (init.gap !== undefined) {
+      this.starting = true; // until resolved, the browser may only leave (onText)
+      let timer, found = null;
+      try { found = await Promise.race([Promise.resolve().then(() => this.gaps(init.gap)), new Promise(r => { timer = setTimeout(() => r(null), this.gapTimeout); })]); }
+      catch { found = null; }
+      finally { clearTimeout(timer); this.starting = false; }
+      if (this.finished || this.ending) return; // closed while resolving: no 'ready', no timer
+      const asks = gapAsks(found);
+      if (!asks.length) { this.metric('gap_unavailable', {}); return this.fail(GAP_UNAVAILABLE, 'voice-contract'); }
+      Object.assign(this, { mode: 'gap', maxSeconds: GAP_LIMIT_S, speakingLimit: GAP_SPEAKING_S, wrapS: GAP_WRAP_S, gapAsks: asks, gapRequest: init.gap });
+    }
+    const gap = this.mode === 'gap';
     this.started = true; this.startedAt = this.lastInput = this.now();
     const stage = this.project.stage || 'Unknown';
     this.analyst = this.capture ? new Analyst(messages => this.ai.analyst(messages), stage) : null;
     this.ledger = this.analyst ? this.analyst.ledger : new InterviewLedger(stage);
     this.event('ready', { model: 'ATLAS', provider: 'ATLAS voice', sampleRate: 24000, speakingSeconds: this.speakingLimit, capture: this.capture, liveLedger: !!this.analyst,
-      maxSeconds: this.maxSeconds, message: 'Voice session ready. Speak naturally. Candidate notes require your review.' });
-    if (this.memory) { // private memory from earlier conversations, bounded so the greeting is never held up
+      maxSeconds: this.maxSeconds, message: 'Voice session ready. Speak naturally. Candidate notes require your review.',
+      mode: this.mode, timePlan: timePlan(this.maxSeconds, this.mode), ...(gap ? { gaps: this.gapAsks.map(({ id, label, ask }) => ({ id, label, ask })) } : {}) });
+    if (this.memory && !gap) { // private memory from earlier conversations, bounded so the greeting is never held up (none in gap mode)
       let timer;
       try { this.memoryNote = await Promise.race([this.memory(this.project), new Promise(r => { timer = setTimeout(() => r(''), 3500); })]) || ''; }
       catch { this.memoryNote = ''; this.metric('memory_error', {}); }
       finally { clearTimeout(timer); }
-      if (this.finished) return;
+      if (this.finished || this.ending) return; // closed while recalling: no timer, no opening
       this.event('memory', { status: this.memoryNote ? 'recalled' : 'empty', message: this.memoryNote ? 'ATLAS remembers your earlier conversations (private to you).' : 'No earlier conversations to recall.' });
     }
     this.timer = setInterval(() => this.watch(), 1000);
     this.pace();
-    const lang = this.spoken(), greeting = this.admin ? '' : (this.memoryNote ? WELCOME_BACK[lang] : GREETINGS[lang]) || '';
-    this.startReply(OPENING, { prefix: greeting });
+    const lang = this.spoken();
+    if (gap) { // the first open ask, with the usual greeting unless admin
+      this.guidance = gapGuidance(this.gapAsks, this.gapStatuses());
+      this.startReply(GAP_OPENING, { prefix: this.admin ? '' : GREETINGS[lang] || '' });
+    } else this.startReply(OPENING, { prefix: this.admin ? '' : (this.memoryNote ? WELCOME_BACK[lang] : GREETINGS[lang]) || '' });
     this.prewarm();
+  }
+
+  // Gap mode: the status of every ask from the session's own answer windows and attempt counts, plus the ledger's active
+  // details (an ask's field may also be answered by a detail the analyst filed there).
+  gapStatuses() {
+    const answers = Object.fromEntries(Object.entries(this.gapAnswers).map(([id, turns]) => [id, turns.map(parts => parts.join(' '))]));
+    return gapStatus(this.gapAsks, this.gapAttempts, answers, this.ledger ? this.ledger.details.filter(d => d.active) : []);
+  }
+
+  // A consultant turn joins the answer window of the ask they last heard. The rest of a turn they had paused in
+  // (merged for the interviewer) extends the same entry, as a separate part, so every quote stays an exact transcript.
+  recordAnswer(text, merged) {
+    const last = this.lastAnswer;
+    if (merged) { if (last) this.gapAnswers[last.id][last.index].push(text); return; }
+    if (!this.openAsk) { this.lastAnswer = null; return; }
+    const turns = this.gapAnswers[this.openAsk] ||= [];
+    turns.push([text]); this.lastAnswer = { id: this.openAsk, index: turns.length - 1 };
+  }
+
+  // notes.gap.results: per ask, its answer-window turns (exact, first 400 characters, at most 3), then the quotes of active
+  // details in its field that those turns do not already contain, at most 5 in all. Statuses as the consultant left them.
+  gapResults() {
+    const details = this.ledger ? this.ledger.details.filter(d => d.active) : [];
+    return this.gapStatuses().map(s => {
+      const parts = (this.gapAnswers[s.id] || []).flat(), whole = parts.map(ws);
+      const quotes = parts.slice(0, WINDOW_QUOTES).map(p => first(p, QUOTE_CHARS));
+      for (const d of details) {
+        if (quotes.length >= GAP_QUOTES) break;
+        const q = first(d.quote, QUOTE_CHARS);
+        if (d.field === s.field && !whole.some(t => t.includes(d.quote)) && !quotes.includes(q)) quotes.push(q);
+      }
+      return { askId: s.id, field: s.field, status: s.status, quotes };
+    });
   }
 
   watch() {
     if (this.finished || this.ending) return;
     const left = this.maxSeconds - (this.now() - this.startedAt);
-    if (left <= 0) { this.event('time_up', { message: 'The 15 minutes are up. Finishing your interview.' }); this.end(true); } // a clean end: the report is still written
+    if (left <= 0) { this.event('time_up', { message: TIME_UP_MESSAGE.replace('{minutes}', String(Math.round(this.maxSeconds / 60))) }); this.end(true); } // a clean end: notes (and the full-mode report) are still written
     else if (this.now() - this.lastInput > 12) this.fail('Microphone frames stopped', 'voice-unavailable');
     // The last half minute and nobody is talking: ATLAS closes on her own, so the interview ends with a goodbye.
     else if (left <= 30 && !this.timeUp && this.turns >= 1 && !this.busy() && !this.turnDetector.active && this.sttBusy === 0) this.startReply(TIME_UP);
@@ -385,11 +473,15 @@ export class Session {
     const ident = 'user-' + this.turns;
     if (merge) { this.history[this.history.length - 1] = { role: 'user', content: this.history.at(-1).content + ' ' + text }; this.metric('turn_merged', {}); }
     else this.history.push({ role: 'user', content: text });
+    // Gap mode: the turn joins its ask's answer window, and the plan moves on at once (the reply about to be composed
+    // must carry the next ask, not wait for the analyst).
+    if (this.mode === 'gap') { this.recordAnswer(text, merge); this.guidance = gapGuidance(this.gapAsks, this.gapStatuses()); }
     if (this.capture) {
       this.event('user_text', { item_id: ident, text, provenance: 'unverified_speech_recognition' });
       const a0 = this.now();
       const job = this.analyst.hear(ident, text).then(async result => {
         this.metric('analyst', { ms: Math.round((this.now() - a0) * 1000), ok: result.analyst_status === 'analysed' ? 1 : 0, details: result.candidate_details.length, rejected: result.rejected_proposals });
+        if (this.mode === 'gap') return this.gapQuality(result);
         let chosen = result.guidance;
         if (this.ai.rankProbe && result.analyst_status === 'analysed') {
           const j0 = this.now();
@@ -408,6 +500,16 @@ export class Session {
     this.answer(this.history.at(-1).content, how);
   }
 
+  // Gap mode, after the analyst: no JEV rankProbe (it never reorders asks). The plan is recomputed from the windows and the
+  // ledger's details, and the quality event names the current ask in every question field, so the story board never shows
+  // a full-mode question during a gap interview.
+  gapQuality(result) {
+    const { guidance, ...rest } = result, statuses = this.gapStatuses(), g = gapGuidance(this.gapAsks, statuses);
+    this.guidance = g;
+    this.event('quality', { ...rest, next_field: g.field, next_question: g.question, planned_question: g.question, why_this_question: g.why, next_action: g.action, gap_status: statuses });
+    if (result.analyst_status !== 'analysed') this.event('quality_warning', { message: 'The evidence analyst did not respond for this turn. The answer is kept; review it in the notes.' });
+  }
+
   // Reply to the consultant's latest turn. A thought left hanging (the turn model heard it unfinished, or the words
   // trail off) gets room, then at most a gentle nudge the talker chooses; never an acknowledgement or a new question.
   // Timed from the consultant's last sound (endedAt), so the wait does not depend on how fast speech recognition was.
@@ -421,7 +523,17 @@ export class Session {
   }
 
   spoken() { return spokenFor(this.language, l => (this.ai.speaks ? this.ai.speaks(l) : l === 'en')); }
-  paceNotes() { const [admin, pace] = paceNotes(this.now() - this.startedAt, this.maxSeconds, this.ledger ? this.ledger.notes() : [], this.admin); return [admin, languageNote(this.language, this.spoken()), this.memoryNote, pace]; }
+  // Per-turn server notes. Full: [admin, language, memory, win hint, pace] (identical to before when there is no hint).
+  // Gap: [admin, GAP_NOTE, gap pace (open items by label)] then language and the win hint; there is no memory in gap mode.
+  paceNotes() {
+    const lang = languageNote(this.language, this.spoken()), elapsed = this.now() - this.startedAt;
+    if (this.mode === 'gap') {
+      const open = this.gapStatuses().filter(s => s.status === 'open').map(s => s.label);
+      return [...gapNotes(elapsed, this.maxSeconds, open, this.admin ? ADMIN_NOTE : ''), lang, this.winNote];
+    }
+    const [admin, pace] = paceNotes(elapsed, this.maxSeconds, this.ledger ? this.ledger.notes() : [], this.admin);
+    return [admin, lang, this.memoryNote, this.winNote, pace];
+  }
 
   // A short spoken acknowledgement from cache, only after a real answer, never twice in a row, never in admin mode.
   pickFiller(text) {
@@ -446,10 +558,10 @@ export class Session {
 
   startReply(instruction, { prefix = '', filler = '', notBefore = 0, turn = -1, endedAt = 0, thinking = false } = {}) {
     if (this.ending || this.finished) return;
-    // Re-checked on every reply: an interrupted closing (or a noise re-ask) cannot escape the time limits. With WRAP_S
-    // left of the interview (or ATLAS's own speaking time used up), the next reply is the closing.
-    const late = this.now() - this.startedAt >= this.maxSeconds - WRAP_S;
-    if (instruction !== OPENING && this.turns >= 1 && (late || this.spokenMs >= this.speakingLimit * 1000)) {
+    // Re-checked on every reply: an interrupted closing (or a noise re-ask) cannot escape the time limits. With wrapS
+    // (WRAP_S, or GAP_WRAP_S in gap mode) left of the interview, or ATLAS's own speaking time used up, the next reply is the closing.
+    const late = this.now() - this.startedAt >= this.maxSeconds - this.wrapS;
+    if (instruction !== OPENING && instruction !== GAP_OPENING && this.turns >= 1 && (late || this.spokenMs >= this.speakingLimit * 1000)) {
       if (!this.timeUp) { this.timeUp = true; this.metric(late ? 'interview_limit' : 'speaking_limit', { turns: this.turns }); }
       instruction = TIME_UP;
     }
@@ -505,7 +617,11 @@ export class Session {
       }
       const notes = [...this.paceNotes(), prefix ? (isFiller ? `ALREADY SAID (server): you have just said "${prefix}" out loud. Continue naturally from there; do not start with another short acknowledgement.`
         : `ALREADY SAID (server): you have just greeted the consultant with: "${prefix}". Do not repeat it or introduce yourself again.`) : ''];
-      for await (const raw of this.ai.chatStream(talkerMessages(this.project, instruction === TIME_UP ? null : this.guidance, this.history, instruction, notes), { affinity: this.affinity })) {
+      const guidance = instruction === TIME_UP ? null : this.guidance, gap = this.mode === 'gap';
+      // Gap mode: the ask this reply carries, fixed now that it is composed. A normal reply or the opening carries the plan's
+      // ask; the closing, a nudge while they are mid-answer and a re-ask after a noise carry none (their window stays).
+      if (gap && (instruction === undefined || instruction === GAP_OPENING)) this.askByItem.set(item, guidance?.askId ?? null);
+      for await (const raw of this.ai.chatStream(talkerMessages(this.project, guidance, this.history, instruction, notes, gap ? this.gapAsks : null), { affinity: this.affinity })) {
         if (gen !== this.gen || this.finished) return;
         const delta = marker.feed(raw);
         if (!delta) continue;
@@ -594,6 +710,12 @@ export class Session {
       if (this.currentItem !== item) { this.currentItem = item; this.event('audio_turn', { item_id: item }); }
       if (text) this.showText(item, text);
       if (!bytes.length) continue;
+      // Gap mode: the consultant starts hearing a reply that carries an ask (its first composed audio; a greeting or an
+      // acknowledgement before it does not count). That is one attempt, and their next turns answer that ask.
+      if (this.askByItem.has(item)) {
+        const id = this.askByItem.get(item); this.askByItem.delete(item);
+        if (id) { this.askHeard = { item, id, before: this.openAsk }; this.gapAttempts[id] = (this.gapAttempts[id] || 0) + 1; this.openAsk = id; }
+      }
       if (this.playbackDone) this.resumedAt = this.bytesIn; // where in the microphone stream her audio starts again
       this.io.sendBytes(bytes); this.playbackDone = false; this.spokenMs += bytes.length / 48; this.lastAudio = this.now(); this.sentMs[item] = (this.sentMs[item] || 0) + bytes.length / 48;
       this.nextTime = Math.max(this.nextTime, this.now()) + bytes.length / 48000;
@@ -623,10 +745,12 @@ export class Session {
       if (this.waiter) { const w = this.waiter; this.waiter = null; w(); }
       this.event('audio_stopped');
       if (clean && this.capture && this.ledger) {
-        const report = await this.report();
-        this.event('notes', { transcript: [...this.ledger.transcripts.values()].join('\n\n'), sections: this.ledger.notes(), status: 'candidate', report,
+        // Gap mode writes no report: its answers go back only through the consultant's explicit clicks (§F2.1 step 6).
+        const gap = this.mode === 'gap', report = gap ? null : await this.report();
+        this.event('notes', { transcript: [...this.ledger.transcripts.values()].join('\n\n'), sections: this.ledger.notes(), status: 'candidate', report, mode: this.mode,
+          ...(gap ? { gap: { requestId: this.gapRequest, results: this.gapResults() } } : {}),
           message: 'Unverified speech recognition and quote-linked candidate notes. Correct omissions and errors before adding to the project. The final cut-off utterance may be incomplete.' });
-      } else if (clean) this.event('notes', { transcript: '', sections: null, status: 'not-enabled', message: 'Transcript capture was off. No consultant notes were stored.' });
+      } else if (clean) this.event('notes', { transcript: '', sections: null, status: 'not-enabled', mode: this.mode, message: 'Transcript capture was off. No consultant notes were stored.' });
       this.event('ended', { message: 'Microphone and voice service closed.' });
       this.io.close();
     })();

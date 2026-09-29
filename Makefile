@@ -23,6 +23,12 @@ test-ui: build
 	$(PYTHON) tests/memory_browser.py
 	$(PYTHON) tests/sheet_browser.py
 	$(PYTHON) tests/report_browser.py
+	$(PYTHON) tests/bids_browser.py
+	$(PYTHON) tests/ask_browser.py
+	$(PYTHON) tests/trust_browser.py
+	$(PYTHON) tests/storyboard_browser.py
+	$(PYTHON) tests/confirm_browser.py
+	$(PYTHON) tests/wow_edge_browser.py
 doctor:
 	$(PYTHON) scripts/doctor.py --profile preview
 verify-package:

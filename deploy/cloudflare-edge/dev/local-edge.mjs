@@ -27,8 +27,11 @@ async function token(email) {
   return input + '.' + b64u(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, new TextEncoder().encode(input)));
 }
 const model = fakeModel(), model_complete = m => model.complete(m);
-const lib = new Library(memorySql(), { complete: model.complete, embed: model.embed, model: 'local stand-in' });
+const lib = new Library(memorySql(), { complete: model.complete, embed: model.embed, model: 'local stand-in', services: { teams: null } });
 const pending = new Set(), stores = new Map();
+const waitUntil = p => { const q = Promise.resolve(p); pending.add(q); q.finally(() => pending.delete(q)).catch(() => {}); };
+// Opt-in feature vars pass through from the shell when set (never defaulted here): WOW_SPEC §5.
+const passthrough = Object.fromEntries(['EXTERNAL_EMAILS', 'CLIENT_CONFIRM', 'SPOKEN_ASK', 'PDF_BRIEFS', 'IDENTITY_SOURCE'].filter(k => process.env[k]).map(k => [k, process.env[k]]));
 const storeFor = id => { if (!stores.has(id)) { const m = new Map(); stores.set(id, { get: async k => m.get(k), put: async (k, v) => m.set(k, v) }); } return stores.get(id); };
 const env = { ORIGIN, ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, CSRF_SECRET: 'local-only', TALKER_MODEL: 'local', TTS_VOICE: 'local',
   TRIGGER_SECRET: process.env.TRIGGER_SECRET || 'local-trigger-secret', ANALYST_MODEL: 'local-analyst',
@@ -38,7 +41,7 @@ const env = { ORIGIN, ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, CSRF_SECRET: 'l
   ADMIN_EMAILS: process.env.ADMIN_EMAILS || 'tony.walteur@gmail.com', REVIEWER_EMAILS: process.env.REVIEWER_EMAILS || 'reviewer@mantu.com',
   HINDSIGHT_URL: HS, HINDSIGHT_API_KEY: 'local-hindsight-key',
   INTERVIEW: { idFromName: n => n, get: id => ({ fetch: r => memoryRoutes(r, { storage: storeFor(id), hs, env }) }) },
-  LIBRARY: { idFromName: n => n, get: () => ({ fetch: r => libraryRoutes(r, lib, { waitUntil: p => { pending.add(p); p.finally(() => pending.delete(p)); } }) }) } };
+  LIBRARY: { idFromName: n => n, get: () => ({ fetch: r => libraryRoutes(r, lib, { waitUntil, env }) }) }, ...passthrough };
 
 const hs = hindsight(env);
 http.createServer(async (req, res) => {
@@ -49,7 +52,7 @@ http.createServer(async (req, res) => {
   const headers = new Headers(); for (const [k, v] of Object.entries(req.headers)) if (typeof v === 'string') headers.set(k, v);
   headers.set('cf-access-jwt-assertion', await token(decodeURIComponent(as)));
   const request = new Request(url, { method: req.method, headers, body: chunks.length ? Buffer.concat(chunks) : undefined });
-  const response = await handle(request, env, page);
+  const response = await handle(request, env, page, { waitUntil });
   const out = {}; response.headers.forEach((v, k) => { out[k] = v; });
   if (url.searchParams.get('as')) out['set-cookie'] = `dev_as=${encodeURIComponent(url.searchParams.get('as'))}; Path=/; SameSite=Strict`;
   res.writeHead(response.status, out); res.end(Buffer.from(await response.arrayBuffer()));
