@@ -98,9 +98,9 @@ try:
   for i in range(min(8,cb.locator('[data-claim-check]').count())):cb.locator('[data-claim-check]').nth(i).check()
   alex.locator('#claimsRequest').click();alex.wait_for_timeout(1200);settle()
   link=alex.locator('#claimsLink').inner_text()
-  check('confirmation request: a /confirm#id link and a mailto draft',re.search(r'/confirm#[a-f0-9]{32}$',link) is not None and (alex.locator('#claimsMailto').get_attribute('href') or '').startswith('mailto:sam%40mantu.com'))
+  check('confirmation request: a /go/confirm/<id> link (survives sign-in) and a mailto draft',re.search(r'/go/confirm/[a-f0-9]{32}$',link) is not None and (alex.locator('#claimsMailto').get_attribute('href') or '').startswith('mailto:sam%40mantu.com'))
   check('claims start unverified','Unverified' in cb.text_content())
-  cp=page('sam@mantu.com','/confirm#'+link.rsplit('#',1)[1]);cp.wait_for_timeout(1200)
+  cp=page('sam@mantu.com','/go/confirm/'+link.rsplit('/',1)[1]);cp.wait_for_timeout(1200) # the Worker answers 302 to /confirm#<id>
   for i in range(cp.locator('[data-decision=confirm]').count()):cp.locator('[data-decision=confirm]').nth(i).click()
   cp.locator('#confirmSubmit').click();cp.wait_for_timeout(1000)
   check('sam confirms on /confirm',cp.locator('#confirmDone').is_visible())

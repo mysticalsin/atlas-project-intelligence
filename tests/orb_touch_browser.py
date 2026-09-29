@@ -22,8 +22,12 @@ with sync_playwright() as pw:
  check('drag never opens the start dialog',not p.locator('#voiceConsentDialog').is_visible() and not p.locator('#voiceConnectionDialog').is_visible())
  after=T();p.wait_for_timeout(700);coast=T()
  check('fling keeps spinning then settles',coast['spinY']-after['spinY']>.2 and not coast['dragging'])
+ # WOW_ZERO_CONFIG §3.3: in an offline copy the orb forwards to the "Open ATLAS" link (a new tab). Every request from here on is
+ # recorded and aborted, so the new tab never reaches the network.
+ SEEN=[];NEW=[];p.context.route('**/*',lambda r:(SEEN.append(r.request.url),r.abort()));p.context.on('page',lambda pg:NEW.append(pg))
  p.mouse.click(cx+60,cy-40);p.wait_for_timeout(120);t=T()
  check('click makes it flinch and spark',t['flash']>.3 and t['electrons']>=1)
- opened=p.locator('#voiceConsentDialog').is_visible() or p.locator('#voiceConnectionDialog').is_visible() or p.evaluate("AtlasVoice.status().phase")!='idle'
+ p.wait_for_timeout(500);home=p.evaluate("window.ATLAS_HOME+'/go/start'")
+ opened=p.locator('#voiceConsentDialog').is_visible() or p.locator('#voiceConnectionDialog').is_visible() or p.evaluate("AtlasVoice.status().phase")!='idle' or (len(NEW)==1 and home in SEEN)
  check('click still does the button job (start flow began)',opened)
  check('no page errors',not ERR);print(ERR)

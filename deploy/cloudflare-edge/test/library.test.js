@@ -196,3 +196,35 @@ test('review, index, recommend, insights and slides send no second-client name, 
   const audit = l.get(OWNER, ids[1]).audit.find(a => a.action === 'slides generated');
   assert.equal(audit.detail, 'context 45 characters'); assert.doesNotMatch(JSON.stringify(l.get(REV, ids[1]).audit), /Zebracorp|jane@|Pitch/);
 });
+
+// ---- Track Z (WOW_ZERO_CONFIG §5.9, §9): no consultant in any model view; the people-facing views are unchanged. ----
+import { hashOf, anonymise } from '../src/library.js';
+import { snippetsOf } from '../src/snippets.js';
+test('Z forModel drops the consultant (name and role); stored hashes are unchanged; the public view and search still show people', async () => {
+  const ZREF = () => ({ ...REF(), consultant: { name: 'Zelda Quintero', role: 'Principal Zebra' } }), data = cleanReference(ZREF()), m = forModel(data);
+  assert.equal('consultant' in m, false); assert.doesNotMatch(JSON.stringify(m), /Zelda|Quintero|Principal Zebra|jo@mantu|"Jo"/);
+  assert.deepEqual(data.consultant, { name: 'Zelda Quintero', role: 'Principal Zebra' }, 'the record itself keeps its consultant');
+  const { l } = lib(), a = await l.upsert(OWNER, { localId: 'h', reference: ZREF() });
+  assert.equal(l.row(a.id).content_hash, await hashOf(data), 'forModel is never hashed: the content hash is the stored data only');
+  assert.equal((await l.upsert(OWNER, { localId: 'h', reference: ZREF() })).unchanged, true, 'saving the same record again reopens nothing');
+  assert.deepEqual(anonymise(data).consultant, { name: 'Zelda Quintero', role: 'Principal Zebra' }, 'the published view for people keeps the consultant');
+  const air = cleanReference({ ...REF(), consultant: { name: 'Zebracorp liaison', role: 'Lead at Zebracorp' } });
+  assert.deepEqual(anonymise(air).consultant, { name: 'the client liaison', role: 'Lead at the client' }, 'own-client scrubbed exactly as before');
+  assert.equal(l.list(OWNER, { q: 'quintero' }).total, 1, 'the library search still finds a reference by its consultant');
+  assert.equal(l.list(OWNER, { q: 'principal zebra' }).total, 1);
+});
+
+test('Z merge text names nobody; recordView and snippets strip a legacy "Contribution by <name or email>:" prefix', async () => {
+  const { l } = lib(), one = await l.upsert(OWNER, { localId: '1', reference: REF() });
+  const two = await l.upsert({ email: 'zelda@mantu.com', role: 'user' }, { localId: '2', reference: { ...REF(), title: 'Other', consultant: { name: 'Zelda Quintero', role: 'Principal' },
+    answers: ['Context.', 'Zelda built the ingestion pipeline and trained the ops team on it.', '', '', '', ''] } });
+  const merged = await l.merge(REV, { keep: one.id, merge: two.id }), a1 = l.row(merged.id).data.answers[1];
+  assert.match(a1, /\n\nContribution by another consultant: Zelda built the ingestion/); assert.doesNotMatch(a1, /Contribution by (Zelda|zelda@)/);
+  const legacy = { ...cleanReference(REF()), answers: ['Context here.', 'I built the model.\n\nContribution by jo@mantu.com: I ran the pilot.\nContribution by Zelda Quintero: I trained the team.', '', '', '', ''] };
+  const view = recordView(l, legacy).answers[1];
+  assert.equal(view, 'I built the model.\n\nContribution by another consultant: I ran the pilot.\nContribution by another consultant: I trained the team.');
+  assert.equal(recordView(l, { ...legacy, answers: ['Contribution by Kai: first line.', '', '', '', '', ''] }).answers[0], 'Contribution by another consultant: first line.');
+  const snips = snippetsOf(l, legacy).map(s => s.text).join('\n');
+  assert.doesNotMatch(snips, /jo@mantu|Zelda|\[email\]:/); assert.match(snips, /Contribution by another consultant: I ran the pilot\./);
+  assert.equal(recordView(l, { ...legacy, answers: ['A contribution by the team: fine.', '', '', '', '', ''] }).answers[0], 'A contribution by the team: fine.', 'only a line-leading prefix');
+});

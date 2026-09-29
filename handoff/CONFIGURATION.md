@@ -97,6 +97,24 @@ Requested Hindsight source: https://github.com/mysticalsin/hindsight at `a921929
 ### Hosting on Cloudflare (Tunnel + Access)
 Selected hosting shape (2026-09-26): the unchanged gateway on one always-on host, published through a Cloudflare named tunnel with Cloudflare Access as an outer gate. Runbook and templates: `deploy/cloudflare/README.md`, `config.yml.example`, `atlas.env.example`, `atlas-gateway.service.example`. Requires `ATLAS_AUTH=entra`, loopback bind and `ATLAS_ORIGIN` equal to the public `https://` hostname pinned by `httpHostHeader`. Local mode is rejected off loopback by design. Check with `python scripts/doctor.py --profile cloudflare --env-file .env` (offline only).
 
+### Cloudflare edge Worker (the live test deployment): zero-setup start and profile
+The live site (`deploy/cloudflare-edge/`, docs/WOW_ZERO_CONFIG.md) needs nothing per person: sign in, press Start, tick one box, talk. Its variables are named (without values) as comments in `deploy/cloudflare-edge/wrangler.jsonc`; secrets are set with `npx wrangler secret put <NAME>` by Tony only. Everything below is unset by default, and a missing item never blocks the interview: the feature is absent, or `BLOCKED_EXTERNAL` in the admin view.
+
+| Variable / decision | Contract |
+|---|---|
+| `DATA_MODE` | Unset = test mode: the "TEST DEPLOYMENT · SYNTHETIC DATA ONLY" banner, readiness `edge-deployment-test-data-only`, DNA push and pull `BLOCKED_EXTERNAL`, the DNA-export CSV accepts reserved test addresses only (`example.com`, `.test`, …). `production` only on a Mantu-owned Cloudflare account after Mantu IT approval and DPO sign-off on the six columns (email, name, first name, job title, N+1 name, N+1 email) and on the memory consent sentence. |
+| `DIRECTORY_PUSH_SECRET` (secret) | DNA push, the recommended option: a DNA/HR job posts rows to `POST /api/directory/push` with this bearer secret; add a Cloudflare Access bypass for `/api/directory/push` only. Production mode only. |
+| `DNA_PROFILE_URL`, `DNA_AUTH_HEADER`, `DNA_FIELD_MAP`, `DNA_API_KEY` (secret) | DNA pull, shape **ASSUMED** (not confirmed by Mantu IT): https template with one `{email}` or `{oid}`, header name (default `Authorization`), JSON field map, and the full header value. Never called when push is set. Production mode only. |
+| DNA export CSV | An admin uploads it in Insights → People directory; only the six approved columns leave the browser. Real exports only in production mode. |
+| `ATLAS_HOME_URL` (build time) | Overrides the live address baked into saved HTML copies (their one "Open ATLAS" link). Default: `vars.ORIGIN` in `wrangler.jsonc`. Must match `^https://[a-z0-9.-]+$`, else empty. |
+| Teams | Connected once `TEAMS_APP_ID`, `TEAMS_TENANT_ID` and the secret `TEAMS_BOT_SECRET` are set; `TEAMS_ENABLED` is gone and `TEAMS_BOT_APP_ID` defaults to `TEAMS_APP_ID`. |
+| Entra name claims | `entra/enable_entra.sh` appends `name`, `given_name`, `family_name` after the identity claims (Access trims from the end). Mantu IT adds the `given_name`/`family_name` optional claims. |
+| Removed | `SPOKEN_ASK` and `PDF_BRIEFS` (replaced by D1 and D2), `TEAMS_ENABLED`. |
+| **D1** spoken Ask (Tony confirms) | A code constant, `SPOKEN_ASK_APPROVED` in `deploy/cloudflare-edge/src/features.js`, false until Tony confirms, then flipped once in a commit. After that, a voice question in Ask asks for consent at the moment of use ("Allow this time" / "Always allow for me", stored in the profile, revocable), shows "Don't say client names" and a recording indicator on every recording, and the Worker checks the consent before transcribing. |
+| **D2** PDF briefs (recorded) | PDF briefs follow bids. Workers AI `toMarkdown` on a PDF is text extraction (re-verified 2026-09-29), run with PDF metadata off; images stay refused; a scanned PDF with no text gets an explicit message. Re-check at each dependency review. |
+
+Private memory stays in the one consent sentence whenever `HINDSIGHT_API_KEY` is set and the person's memory switch is on; without the key the sentence and the switch are absent.
+
 ### Optional NVIDIA / Riva route
 Use `ATLAS_VOICE_PROVIDER=personaplex`; follow `docs/NVIDIA_SETUP.md`. Run `doctor.py --profile nvidia` for local prerequisite checks. Hosted credentials do not create a NVIDIA service.
 

@@ -86,7 +86,11 @@
       "passed": true
     },
     {
-      "name": "Offline Start opens actionable connection setup",
+      "name": "Offline copy: Start is one \"Open ATLAS\" link to the live workspace",
+      "passed": true
+    },
+    {
+      "name": "Offline connection panel says so; the address form waits under an advanced disclosure (\u00a73.8)",
       "passed": true
     },
     {

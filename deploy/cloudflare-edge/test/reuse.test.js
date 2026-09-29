@@ -40,7 +40,7 @@ test('duplicates are detected (same project id or near-identical story) and a re
   const merged = await l.merge(REV, { keep: one.id, merge: two.id });
   const full = l.get(REV, merged.id);
   assert.ok(full.data.details.consultants.some(c => c.email === 'jo@mantu.com'), 'the other consultant is associated');
-  assert.match(full.data.answers[1], /^I led[\s\S]*Contribution by Jo: I built and trained/); assert.deepEqual(full.data.details.technologies.sort(), ['Azure ML', 'Python']);
+  assert.match(full.data.answers[1], /^I led[\s\S]*Contribution by another consultant: I built and trained/); assert.deepEqual(full.data.details.technologies.sort(), ['Azure ML', 'Python']);
   assert.equal(l.get(jo, one.id).access, 'full', 'the merged consultant keeps access'); assert.throws(() => l.get(REV, two.id), /not found/);
   assert.ok(full.audit.some(x => x.action === 'consolidated'));
 });

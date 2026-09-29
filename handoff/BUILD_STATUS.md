@@ -3,6 +3,7 @@
 
 ## Next task
 - **2026-09-29, WOW features F1-F7:** integrated and locally verified, not deployed. Before any deploy, read the session "2026-09-29 / WOW features F1-F7" below: Tony's pending decisions (Q12 first, because this build turns claim confirmations on) and the Access, vars and secrets each feature needs.
+- **2026-09-29, Track Z (zero-setup start and profile prefill, `docs/WOW_ZERO_CONFIG.md`):** built on top of WOW, independently verified, not committed, not deployed. A new signed-in user needs 3 clicks (Start, the tick, Start conversation) and fills in nothing. Read the session "2026-09-29 / Track Z" below: it changes some WOW items (`SPOKEN_ASK` and `PDF_BRIEFS` variables removed, `TEAMS_ENABLED` removed) and lists the external items (§11) and Tony's D1.
 
 0. Local suites all pass (2026-09-26). `MANIFEST.json` still describes the received 12.1 package, so `check_handoff.py` flags the intentionally changed files. Regenerate the manifest only when cutting a new release package.
 1. The operator provisions the Cloudflare prerequisites in `deploy/cloudflare/README.md` (tunnel, Access app, Entra app, OpenAI key, durable host).
@@ -327,6 +328,89 @@ Merged from `handoff/status/T1.md` … `T5.md` (each keeps the full per-track de
 - Working tree: `tests/intelligence_browser.py` rewrites the tracked `preview/v11/{desktop,mobile,speaking-preview}.png`; exclude them from the commit unless the new screenshots are wanted.
 
 **Next task:** Tony decides Q12 (and Q11/Q13 if those features will be used), extends the Access policy to the pilot users, then deploys manually when nobody is interviewing. After the deploy: live checks of the new prompts with synthetic data, then a first real gap interview.
+
+### Session: 2026-09-29 / Track Z: zero-setup start and profile prefill (`docs/WOW_ZERO_CONFIG.md` revision 2)
+Merged from `handoff/status/Z.md`, which keeps the full per-step detail, decisions and mutation checks. Built on the uncommitted WOW tree (HEAD `71efb5b`) in steps Z-S0 (edge), Z-S1 (browser) and Z-S2 (hooks, docs), then independently verified. Not committed, not deployed, no wrangler, no paid provider, no network from tests, no real HR data. Tony's words: "it should just work and ask for consent and thats it"; the profile should be "prefilled with the users information from our DNA (ERP) Name, email, title, ect — can be modified if needed too".
+
+**Implemented**
+- Z-S0 edge:
+  - `profile.js` (new): tables `profiles`, `directory` and `directory_imports`. Merge per field in the order you > dna > dna_export > signin > guess, with provenance and "DNA now says…" (`newer`). Email guess; first name for display only. People lookup reads stored rows only: 30 per hour, name and title only, never the N+1.
+  - Directory import and push: staged, test mode accepts synthetic addresses only, shrink guard 409, audit counts only.
+  - DNA pull connector: shape ASSUMED, `BLOCKED_EXTERNAL` until `DATA_MODE=production` and Mantu IT configuration. Daily purges.
+  - Worker (`app.js`):
+    - sign-in name claims come only from the verified token, and `x-atlas-idp` is always overwritten;
+    - `/go/{start,gap,invitation,bid,library,confirm}` redirects (`/go/confirm` also for externals), plus `/go/signed-in`;
+    - navigations to unknown pages go to `/`;
+    - `/api/directory/push` (bearer secret, production only);
+    - the banner and readiness follow `DATA_MODE`;
+    - `/api/transcribe` needs `X-Atlas-Consent`;
+    - PDF conversion with `metadata: false`.
+  - `GET /api/memory/settings`.
+  - Model boundary: `forModel`, `projectContext` (Python first, then the JS port) and the merge text ("Contribution by another consultant:") no longer carry the consultant. Legacy prefixes are rewritten before any model sees them.
+- Z-S1 browser:
+  - `session-keeper.js` (`AtlasAuth`: `X-Requested-With`, `redirect:'manual'`, one bootstrap, the modes live/offline/network/expired, and re-sign-in through a popup and `BroadcastChannel('atlas-auth')` without reloading a page that holds work).
+  - `profile-core.js` (`modelProject`, chips, CSV reader with approved columns only) and `profile-ui.js` (profile section, chips, guessed-name question, admin People directory).
+  - `voice-client.js`:
+    - the start control follows the mode; the offline copy shows one "Open ATLAS ↗" link to the baked `ATLAS_HOME/go/start`;
+    - ONE consent tick, whose memory clause appears only when memory is configured and on, with a working switch;
+    - the device-save prompt only when the library save failed or is off, or after a gap interview.
+  - `app.js`:
+    - every API call goes through `AtlasAuth`;
+    - model-safe `voiceSnapshot` (no name or email reaches a model);
+    - profile prefill: never a guess; title with `roleFrom`; N+1; `managerStaff` never set from the profile;
+    - returning-user rebuild from the library;
+    - storage strip, legacy email-consultant cleanup, `/go/library` link.
+  - `build.py` bakes `ATLAS_HOME` from `wrangler.jsonc`, overridable with `ATLAS_HOME_URL`.
+- Z-S2 hooks:
+  - `claims.js` N+1 order: staffing, then the stored directory row ("N+1 from DNA"), then self-declared.
+  - `gaps.js` fills a blank assignee name from stored rows.
+  - `/go/` links in outreach, claims, gaps and the Teams card.
+  - Teams simplification: no `TEAMS_ENABLED`; connected once the app id, tenant id and bot secret are set.
+  - `enable_entra.sh` appends the name claims after the identity claims.
+  - Docs updated: `handoff/CONFIGURATION.md`, the edge README, `docs/INTEGRATIONS.md`, `teams/README.md`.
+  - `profile.READY = true`, flipped after the acceptance suites passed. `SPOKEN_ASK_APPROVED = false` (D1 is Tony's).
+
+**Changes to the WOW session above (deliberate, WOW_ZERO_CONFIG §4)**
+- The `SPOKEN_ASK` variable is removed. `features.spokenAsk = on('ask') && SPOKEN_ASK_APPROVED`, a code constant flipped only by Tony's D1, with a per-use consent prompt.
+- The `PDF_BRIEFS` variable is removed. `pdfBriefs = on('bids')` (D2: PDF conversion is text extraction, not a model call; images stay refused). This turns Q1 into a recorded decision.
+- `TEAMS_ENABLED` is removed from the Teams blocked list above. Teams needs `TEAMS_APP_ID`, `TEAMS_TENANT_ID` and `TEAMS_BOT_SECRET`, and `TEAMS_BOT_APP_ID` defaults to `TEAMS_APP_ID`.
+- Links in drafts are `/go/…` paths (a recorded deviation from WOW §0 rule 7: random, non-secret ids in paths). Old fragment links still work.
+
+**Independent verification (final tree, macOS, Node 22, Chromium headless shell 1228; sandbox off only for loopback ports and Chromium)**
+- The product owner's path was walked with Playwright on the local edge, with a trusted-event counter in the page.
+  - **A brand-new signed-in user opening `/` needs 3 clicks (Start, the one tick, Start conversation) and fills in 0 fields.** This held for the admin and for a non-admin. The consent dialog's only field is the tick, and there is no setup text anywhere.
+  - Via `/go/start`: 2 clicks. From a saved HTML file: "Open ATLAS ↗", then the same 2 clicks.
+  - Not counted: the Access sign-in and the browser's first microphone prompt.
+  - The interview ran against a scripted WebSocket stand-in; the local edge has no voice route.
+- Defects found and fixed:
+  1. The "Is your name …? [Yes, that's me]" question after an interview was only in the hidden Conversation view, because the report opens by itself on Projects. So on today's deployment every auto-created project stayed "Consultant". It is now also in the auto-opened report (`src/app.js` `showReport`), and "Yes" thanks the user in every copy (`src/profile-ui.js`). `tests/zero_config_edge_browser.py` gained 4 checks for a brand-new user without DNA, including the exact 3-action count; they fail when the fix is removed.
+  2. `tests/storyboard_browser.py` was flaky (CSP `EvalError`): its two bare-string `wait_for_function` predicates are now functions. The mechanism was proven on the built page.
+  3. `docs/THIRD_PARTY.md:57` was stale on the Teams launcher and its variables.
+- Results:
+  - `python3 build.py`: exit 0, 868709 bytes, four identical aliases.
+  - Full `build_edge.py`: exit 0. `src/atlas.html` equals `ATLAS_Voice.html`. `policy.generated.js` is byte-identical to HEAD, because the only Python change (`interview.py` `project_context`) is a function, not an exported constant.
+  - `node --test tests/*.test.js`: 367 pass, 0 fail, 1 skipped (`ATLAS_NE_SRC`).
+  - Edge `node --test test/*.test.js`: 397 pass, 0 fail.
+  - `pytest tests/test_*.py`: 256 passed.
+- Browser suites of `make test-ui`, each exit 0 with 0 FAIL: studio 79, sculpture 40, intelligence 26, depth 20, autosave 33, orb_touch 8, library 14, reuse 19, memory 9, sheet 17, report 19, bids 66, ask 31, trust 43, storyboard 51, confirm 27, wow_edge 32, zero_config 75, zero_config_edge 54.
+
+**Provider verified:** none. DNA is `BLOCKED_EXTERNAL` by design, and its pull shape is ASSUMED.
+
+**Blocked / external (WOW_ZERO_CONFIG §11)**
+1. Who can sign in: an Access "Emails ending in" rule for the Mantu domains. It needs item 2 first, because the test deployment is on a personal account.
+2. A production deployment approved for personal data: a Mantu-owned account or a production sign-off, Mantu IT approval, and DPO sign-off on the column list and on the memory consent sentence. Then `DATA_MODE=production`.
+3. A DNA source: push (recommended, `DIRECTORY_PUSH_SECRET` plus an Access bypass), pull (URL template, header, key and field map from IT), or an export CSV.
+4. Entra sign-in and the name claims (`enable_entra.sh`; `given_name` and `family_name` optional claims; the role gate assigned to a group that covers all consultants).
+5. Tony's D1: spoken Ask with consent.
+
+**Gates still open**
+- UNVERIFIED on the real Access app (§13): whether an open WebSocket survives app-token expiry, and whether a path or fragment survives an interactive sign-in.
+- The N+1 name from a typed N+1 email is not wired in the browser (the server route works).
+- "Edit" in the guessed-name question leaves the just-created project as "Consultant" (later projects use the saved name): product decision.
+- `scripts/check_handoff.py` still fails on the stale `MANIFEST.json`. `src/intelligence-ui.js` (Python-gateway actions) still uses plain `fetch` without `X-Requested-With`.
+- Working tree: `preview/v11/*.png` are rewritten by `tests/intelligence_browser.py`. Exclude them from the commit unless the new screenshots are wanted.
+
+**Next task:** review, then one integration commit (WOW plus Z, including the four HTML aliases), made by Tony or the orchestrator. Before live use: the §11 items above and D1, then a manual deploy when nobody is interviewing.
 
 ## Per-session update template
 Copy this section for each session. Do not put secrets, private keys, customer source text or raw audio in this file.

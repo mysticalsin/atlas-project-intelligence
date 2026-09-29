@@ -3,9 +3,9 @@
  function syncProject(){
   const c=window.ATLAS_VOICE_BRIDGE?.context(),p=c&&!c.isNew?c.project:null; // the new-project placeholder is not a project
   $('contextProjectTitle').textContent=p?.title||'Your next great story.';
-  $('contextProjectMeta').textContent=p?[p.consultant,p.role].filter(Boolean).join(' · '):'Choose a project. ATLAS will help you explain what you actually did.';
+  $('contextProjectMeta').textContent=p?[c.display?.consultant,c.display?.role].filter(Boolean).join(' · '):'Choose a project. ATLAS will help you explain what you actually did.';
   $('contextProjectStage').textContent=p?.stage||'No project selected';$('contextProjectSector').textContent=p?.sector||'Private workspace';
-  let raw=null;const s=window.ATLAS_LOCAL?.snapshot();if(s&&c)raw=s.profiles?.find(u=>u.id===c.workspaceId)?.projects?.find(q=>q.id===p.id);
+  let raw=null;const s=window.ATLAS_LOCAL?.snapshot();if(s&&c&&p)raw=s.profiles?.find(u=>u.id===c.workspaceId)?.projects?.find(q=>q.id===p.id); // projects may exist with none selected (restored from the library)
   $('studioSample').hidden=!!p;if(raw?.sample)$('contextProjectSector').textContent='FICTIONAL / '+(p.sector||'Example');
   const present=Array.from({length:6},(_,i)=>!!p?.answers?.[i]?.trim()&&!raw?.deferred?.[i]);
   const count=present.filter(Boolean).length;$('captureCount').replaceChildren(document.createTextNode(String(count)),Object.assign(document.createElement('span'),{textContent:'/ 6'}));$('captureRing').style.setProperty('--capture',String(count/6*100));
@@ -14,10 +14,11 @@
  function syncState(e){const s=e.detail;if(!s)return;const label=$('connectionStateLabel'),info=$('connectionStateDetail');
   const titles={idle:'Ready when you are',listening:'Listening to you',speaking:'ATLAS is speaking',muted:'Microphone muted',connecting:'Connecting to voice',processing:'Finishing your session',error:'Connection stopped'};
   label.textContent=s.preview?'Motion preview':titles[s.state]||'Ready when you are';
-  info.textContent=s.preview?'Silent demonstration. No microphone or model connection.':s.phase==='live'?(s.muted?'Microphone muted. Model playback remains enabled.':'Voice session connected. You can interrupt naturally.'):(s.phase==='preparing'?'Checking the gateway; microphone off.':s.phase==='connecting'?'Microphone may be open locally; waiting for the ready signal.':s.phase==='ending'?'Microphone off. Completing any enabled notes.':'Microphone off. No model connected.');
+  info.textContent=s.preview?'Silent demonstration. No microphone or model connection.':s.phase==='live'?(s.muted?'Microphone muted. Model playback remains enabled.':'Voice session connected. You can interrupt naturally.'):(s.phase==='preparing'?'Checking the connection; microphone off.':s.phase==='connecting'?'Microphone may be open locally; waiting for the ready signal.':s.phase==='ending'?'Microphone off. Completing any enabled notes.':'Microphone off. No model connected.');
   $('connectionStateLabel').dataset.live=String(!s.preview&&s.phase==='live');
  }
- $('cardConnection').onclick=()=>$('studioConnection').click();
+ // Offline copy: the card opens the live workspace (the same real link as the start control); otherwise the connection panel.
+ $('cardConnection').onclick=()=>{const home=$('voiceOpenHome');if(home&&!home.hidden&&home.href)home.click();else $('studioConnection').click();};
  window.addEventListener('atlas-context',syncProject);window.addEventListener('atlas-studio-project',syncProject);window.addEventListener('atlas-orb-state',syncState);syncProject();
  document.querySelector('header [data-view="interview"]').textContent='Conversation';
  // Avoid historical product-title leakage when the previous source shell is reused.

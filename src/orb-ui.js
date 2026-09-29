@@ -2,6 +2,8 @@
 (()=>{'use strict';
  const $=id=>document.getElementById(id),signals=new AtlasOrb.SignalState();let paused=false,last='',previewAt=null,previewTimer=null,previewKind='sequence',spectrum=null;
  const orb=AtlasOrb.create($('orbCanvas'),{onError:m=>{$('orbDisplayNotice').textContent=m;$('orbDisplayNotice').hidden=!m;},onMotion:(reduced,manual)=>{$('orbMotion').textContent=reduced?'Reduced motion enabled':manual?'Resume motion':'Pause motion';$('orbMotion').disabled=reduced;$('orbMotion').setAttribute('aria-pressed',String(reduced||manual));$('orbQuickPause').disabled=reduced;$('orbQuickPause').setAttribute('aria-pressed',String(reduced||manual));$('orbQuickPause').setAttribute('aria-label',reduced?'Reduced motion enabled':manual?'Resume orb animation':'Pause orb animation');}});
+ // The idle label follows the page mode (WOW_ZERO_CONFIG §3.3); a page opened from a file stays "Not connected".
+ const IDLE={live:'Ready',offline:'Not connected',network:'Not reachable',expired:'Signed out'},idleName=()=>IDLE[window.AtlasAuth?.mode]||'Not connected';
  const names={idle:'Not connected',connecting:'Connecting to voice',listening:'Listening',speaking:'ATLAS is speaking',muted:'Microphone muted',processing:'Preparing notes',error:'Connection stopped'};
  const motifCopy={
  idle:['Poised.','A quiet turning body. No fake talking when there is no audio.','Ambient only'],
@@ -10,7 +12,7 @@
  muted:['Quiet.','Input motion is off. ATLAS audio can still move the sculpture.','Microphone muted'],
  connecting:['Connecting.','Preparing a voice session. The model is not yet ready.','Pending connection'],
  processing:['Preparing notes.','The microphone is off while the gateway finishes any enabled notes.','Not an understanding indicator'],
- error:['Connection stopped.','Microphone off. Check the gateway before starting again.','Awaiting your action']
+ error:['Connection stopped.','Microphone off. Check the connection before starting again.','Awaiting your action']
  };
  function describe(kind,preview=false){
   const v=motifCopy[kind]||motifCopy.idle;
@@ -21,7 +23,7 @@
   const s=signals.snapshot(performance.now());if(previewAt!==null)return;
   orb.setState(s.state);orb.setLevels(s.input,s.output,spectrum);$('voicePanel').dataset.orbState=s.state;$('voicePanel').dataset.phase=s.phase;
   window.dispatchEvent(new CustomEvent('atlas-orb-state',{detail:{state:s.state,phase:s.phase,muted:s.muted,preview:false}}));
-  const label=names[s.state]+(s.state==='speaking'&&s.muted?' · microphone muted':'');
+  const label=(s.state==='idle'?idleName():names[s.state])+(s.state==='speaking'&&s.muted?' · microphone muted':'');
   if(label!==last){describe(s.state);last=label;$('orbStateCaption').textContent=label;$('orbAccessibleState').textContent=label;}
   $('orbInputWord').textContent=s.phase==='live'?(s.muted?'Muted':s.inputActive?'Hearing you':'Microphone on'):s.phase==='connecting'?'Local only':'Microphone off';
   $('orbOutputWord').textContent=s.state==='speaking'?'Playing model audio':'No playback';
@@ -50,7 +52,10 @@
   frame();previewTimer=setInterval(frame,90);
  }
  const clock=setInterval(()=>{if(!document.hidden&&signals.phase==='live')update();},100);
- $('orbActivate').onclick=()=>{stopPreview();if(signals.phase==='live')$('voiceMute').click();else if(!['preparing','connecting','ending'].includes(signals.phase))$('voiceStart').click();};
+ // The orb does the start control's job: Start on the live site, the "Open ATLAS" link in an offline copy, Try again when unreachable.
+ $('orbActivate').onclick=()=>{stopPreview();if(signals.phase==='live'){$('voiceMute').click();return;}if(['preparing','connecting','ending'].includes(signals.phase))return;
+  const home=$('voiceOpenHome'),retry=$('voiceNetwork');if(home&&!home.hidden&&home.href)home.click();else if(retry&&!retry.hidden)$('voiceRetry').click();else $('voiceStart').click();};
+ window.addEventListener('atlas-auth',()=>{last='';update();});
  $('orbMotion').onclick=()=>{paused=!paused;orb.pause(paused);};
  $('orbTranscriptToggle').onclick=()=>{const el=$('orbTranscript');el.hidden=!el.hidden;$('orbTranscriptToggle').setAttribute('aria-expanded',String(!el.hidden));$('orbTranscriptToggle').textContent=el.hidden?'Show spoken text':'Hide spoken text';};
  $('replayPattern').onclick=()=>{if(previewAt===null)return;const kind=previewKind;stopPreview();startPreview(kind);};

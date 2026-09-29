@@ -4,12 +4,15 @@
 // (features.js) before the generic /:id routes; `env` is the LibraryStore DO's own env (vars and bindings).
 import { featureRoutes } from './features.js';
 import * as outreach from './outreach.js';
+import * as profile from './profile.js';
 export const SYSTEM = { email: 'atlas', role: 'admin' }; // automatic review after a save
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 
 export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {} } = {}) {
-  const url = new URL(request.url), user = { email: request.headers.get('x-atlas-user') || '', mail: (request.headers.get('x-atlas-email') || '').toLowerCase(), role: request.headers.get('x-atlas-role') || 'user' };
+  // idp: the sign-in name claims (x-atlas-idp, always written by the Worker from the verified token; WOW_ZERO_CONFIG §5.5).
+  const url = new URL(request.url), user = { email: request.headers.get('x-atlas-user') || '', mail: (request.headers.get('x-atlas-email') || '').toLowerCase(), role: request.headers.get('x-atlas-role') || 'user',
+    idp: profile.idpClaims(request.headers.get('x-atlas-idp')) };
   if (!user.email) return json({ error: 'Sign in first.' }, 401);
   const parts = url.pathname.replace(/^\/api\/library\/?/, '').split('/').filter(Boolean), method = request.method;
   let body = {};
@@ -28,7 +31,7 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
     // System calls (set only by the Worker's trigger endpoint or its daily cron).
     if (user.role === 'system') {
       if (method === 'POST' && id === 'trigger') return json(outreach.onTrigger(lib, user.email, body), 201);
-      if (method === 'POST' && id === 'scan-stale') return json({ invited: lib.scanStale(), ...outreach.daily(lib) });
+      if (method === 'POST' && id === 'scan-stale') return json({ invited: lib.scanStale(), ...outreach.daily(lib), ...(profile.READY ? profile.daily(lib) : {}) });
       const sys = await featureRoutes(ctx);
       if (sys) return json(sys.body, sys.status || 200);
       return json({ error: 'Not found.' }, 404);

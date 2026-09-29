@@ -10,9 +10,12 @@ const DAY_MS = 864e5, REFETCH_MS = 5 * 60e3, SKEW_S = 300, MAX_BODY = 262144, LI
 const SCOPE = 'https://api.botframework.com/.default', RETRY = new Set([429, 412, 502, 504]);
 const enc = new TextEncoder(), dec = new TextDecoder();
 
-// 'connected' only with TEAMS_ENABLED=1, every TEAMS_* id and the bot secret; anything else is BLOCKED_EXTERNAL.
+// The bot's app id: TEAMS_BOT_APP_ID, which defaults to TEAMS_APP_ID (one app registration serves both; WOW_ZERO_CONFIG §4).
+export const botAppId = (env = {}) => String(env.TEAMS_BOT_APP_ID || env.TEAMS_APP_ID || '');
+// 'connected' once the app id, the tenant id and the bot secret are all present (no separate on switch; WOW_ZERO_CONFIG
+// §4); anything else is BLOCKED_EXTERNAL.
 export function teamsStatus(env = {}) {
-  return env.TEAMS_ENABLED === '1' && !!env.TEAMS_APP_ID && !!env.TEAMS_BOT_APP_ID && !!env.TEAMS_TENANT_ID && !!env.TEAMS_BOT_SECRET ? 'connected' : 'BLOCKED_EXTERNAL';
+  return !!env.TEAMS_APP_ID && !!env.TEAMS_TENANT_ID && !!env.TEAMS_BOT_SECRET ? 'connected' : 'BLOCKED_EXTERNAL'; // the bot id defaults to the app id
 }
 
 const hostsOf = env => [...SERVICE_HOSTS, ...String(env?.TEAMS_SERVICE_HOSTS || '').toLowerCase().split(',').map(h => h.trim()).filter(h => /^[a-z0-9.-]+$/.test(h))];
@@ -57,7 +60,7 @@ export async function verifyBotActivity(request, bodyText, env = {}, fetcher = (
   const deny = (status, error) => ({ ok: false, status, error });
   const text = String(bodyText ?? '');
   if (enc.encode(text).length > MAX_BODY) return deny(413, 'Request too large.');                                       // 9
-  if (!env.TEAMS_BOT_APP_ID || !env.TEAMS_TENANT_ID) return deny(503, 'Teams is not configured.');
+  if (!botAppId(env) || !env.TEAMS_TENANT_ID) return deny(503, 'Teams is not configured.');
   const m = /^Bearer\s+([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$/.exec(request.headers.get('Authorization') || '');  // 1
   if (!m) return deny(401, 'A Bot Framework bearer token is required.');
   let header, payload, signature;
@@ -70,7 +73,7 @@ export async function verifyBotActivity(request, bodyText, env = {}, fetcher = (
   if (!valid) return deny(401, 'Bad token signature.');
   const t = now / 1000, aud = Array.isArray(payload.aud) ? payload.aud : [payload.aud];                                  // 4
   if (payload.iss !== BOT_ISSUER) return deny(401, 'Wrong token issuer.');
-  if (!aud.includes(env.TEAMS_BOT_APP_ID)) return deny(401, 'Wrong token audience.');
+  if (!aud.includes(botAppId(env))) return deny(401, 'Wrong token audience.');
   if (typeof payload.exp !== 'number' || payload.exp + SKEW_S < t) return deny(401, 'Expired token.');
   if (payload.nbf !== undefined && (typeof payload.nbf !== 'number' || payload.nbf - SKEW_S > t)) return deny(401, 'Token not yet valid.');
   let activity;
@@ -80,7 +83,7 @@ export async function verifyBotActivity(request, bodyText, env = {}, fetcher = (
   if (typeof claimUrl !== 'string' || claimUrl !== activity.serviceUrl) return deny(401, 'The serviceUrl claim does not match the activity.');
   if (!serviceBase(claimUrl, env)) return deny(401, 'The serviceUrl host is not allowed.');
   if (activity.channelId !== 'msteams' || !key.endorsements.includes('msteams')) return deny(403, 'Only the Microsoft Teams channel is accepted.');  // 6
-  if (activity.recipient?.id !== '28:' + env.TEAMS_BOT_APP_ID) return deny(403, 'The activity is not addressed to this bot.');                     // 7
+  if (activity.recipient?.id !== '28:' + botAppId(env)) return deny(403, 'The activity is not addressed to this bot.');                     // 7
   const tenant = activity.channelData?.tenant?.id ?? activity.conversation?.tenantId;                                    // 8
   if (typeof tenant !== 'string' || tenant.toLowerCase() !== String(env.TEAMS_TENANT_ID).toLowerCase()) return deny(403, 'Wrong tenant.');
   return { ok: true, status: 200, activity, claims: payload };
@@ -105,7 +108,7 @@ export function teamsClient(env = {}, fetcher = (...a) => fetch(...a), { now = (
     if (token && now() < token.exp - 300e3) return token.value;
     const r = await retrying(() => fetcher(`https://login.microsoftonline.com/${encodeURIComponent(env.TEAMS_TENANT_ID)}/oauth2/v2.0/token`, {
       method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(10000), headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ grant_type: 'client_credentials', client_id: env.TEAMS_BOT_APP_ID, client_secret: env.TEAMS_BOT_SECRET, scope: SCOPE }).toString() }));
+      body: new URLSearchParams({ grant_type: 'client_credentials', client_id: botAppId(env), client_secret: env.TEAMS_BOT_SECRET, scope: SCOPE }).toString() }));
     if (!r.ok) throw await failure(r, 'Teams token');
     const j = await r.json();
     if (typeof j?.access_token !== 'string' || !j.access_token) throw Object.assign(new Error('Teams token: no access_token'), { status: 502 });
@@ -144,11 +147,12 @@ const card = (body, actions) => ({ type: 'AdaptiveCard', $schema: 'http://adapti
 const block = (text, extra = {}) => ({ type: 'TextBlock', text, wrap: true, ...extra });
 const link = url => (url && url.length <= LINK_MAX ? url : '');
 
-// The interview invitation card: "Start now" opens the browser app at #invitation/<id> (T4 handles the hash);
+// The interview invitation card: "Start now" opens /go/invitation/<id>, which survives an interactive sign-in and lands on
+// #invitation/<id> (T4 handles the hash);
 // "Tomorrow" and "Not for this project" are Action.Execute verbs carrying only the outreach id.
 export function interviewCard({ invitationId, outreachId, projectRef, approverName, origin, note } = {}) {
   const o = originOf(origin), id = hex32(invitationId), ref = str(projectRef, 80) || 'your recent project', data = { outreachId: str(outreachId, 64) };
-  const url = link(o && id ? `${o}/#invitation/${id}` : '') || link(o ? o + '/' : '');
+  const url = link(o && id ? `${o}/go/invitation/${id}` : '') || link(o ? o + '/' : '');
   const body = [block("12 minutes while it's fresh?", { size: 'Medium', weight: 'Bolder' }),
     block(`A short voice interview about ${ref}, so the work can be reused as a project reference.`)];
   if (str(approverName, 200)) body.push(block(`Approved by ${str(approverName, 200)}.`, { isSubtle: true, size: 'Small' }));

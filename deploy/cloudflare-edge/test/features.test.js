@@ -18,13 +18,17 @@ import * as outreach from '../src/outreach.js';
 import * as teams from '../src/teams.js';
 import * as teamsRoutes from '../src/teams-routes.js';
 import * as confirmPage from '../src/confirm-page.js';
+import * as profile from '../src/profile.js';
 import { Library } from '../src/library.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import { memorySql } from './sqlite.js';
 
 const F = 'function';
 const CONTRACT = {
-  'features.js': [features, { WORDS: 'object', SYSTEM_WORDS: 'object', EXTERNAL_WORDS: 'object', EMAIL_AUTH_WORDS: 'object', readyOf: F, featureRoutes: F, flags: F }],
+  'features.js': [features, { WORDS: 'object', SYSTEM_WORDS: 'object', EXTERNAL_WORDS: 'object', EMAIL_AUTH_WORDS: 'object', readyOf: F, featureRoutes: F, flags: F, SPOKEN_ASK_APPROVED: 'boolean' }],
+  // WOW_ZERO_CONFIG §6: the profile.js exports.
+  'profile.js': [profile, { READY: 'boolean', routes: F, ensure: F, resolveProfile: F, firstName: F, emailGuess: F, lookupPerson: F, directoryManager: F,
+    dnaConfig: F, pushConfig: F, testAddress: F, daily: F }],
   'util.js': [util, { str: F, para: F, list: F, email: F, obj: F, https: F, fail: F, uuidish: F, inList: F, rateLimit: F }],
   'scrub.js': [scrub, { STOPLIST: 'object', libraryNames: F, nameMatcher: F, pseudonymise: F, unmask: F, forOthers: F, maskedPreview: F, recordText: F, recordView: F }],
   'snippets.js': [snippets, { splitSentences: F, TOPIC_KEYS: 'object', claimKey: F, snippetsOf: F }],
@@ -48,10 +52,12 @@ test('every module exports its §6.3 contract names', () => {
     for (const [name, type] of Object.entries(names)) assert.equal(typeof mod[name], type, `${file} ${name}`);
   assert.equal(winloop.MIN_N, 5); assert.ok(['sentence', 'revision'].includes(claims.CURRENCY));
   assert.ok(scrub.STOPLIST instanceof Set); assert.ok(Array.isArray(snippets.TOPIC_KEYS));
-  assert.deepEqual(Object.keys(features.WORDS).sort(), ['ask', 'bids', 'claims', 'confirmations', 'gaps', 'outreach', 'staffing', 'wins']);
-  assert.deepEqual(Object.keys(features.SYSTEM_WORDS), ['teams-event']);
+  assert.deepEqual(Object.keys(features.WORDS).sort(), ['ask', 'bids', 'claims', 'confirmations', 'directory', 'gaps', 'outreach', 'people', 'profile', 'staffing', 'wins']);
+  assert.deepEqual(Object.keys(features.SYSTEM_WORDS), ['teams-event', 'directory']);
   assert.deepEqual([...features.EXTERNAL_WORDS], ['confirmations']); assert.deepEqual([...features.EMAIL_AUTH_WORDS].sort(), ['claims', 'confirmations', 'gaps']);
   assert.equal(features.WORDS.confirmations, claims.routes); assert.equal(features.WORDS.staffing, outreach.routes); assert.equal(features.SYSTEM_WORDS['teams-event'], outreach.system);
+  for (const w of ['profile', 'people', 'directory']) assert.equal(features.WORDS[w], profile.routes, w);
+  assert.equal(features.SYSTEM_WORDS.directory, profile.routes);
 });
 
 const OWNER = { email: 'alex@mantu.com', role: 'user' };
@@ -88,27 +94,56 @@ test('READY gating and the Entra rule: email-authorised words are off in Entra m
     assert.deepEqual(await features.featureRoutes(ctx(word, 'user', { IDENTITY_SOURCE: 'entra' }), allReady), { status: 404, body: { error: NOT_AVAILABLE } });
     assert.equal(allReady(word, {}), true);
   }
-  for (const word of ['bids', 'ask', 'wins', 'outreach', 'staffing']) assert.equal(allReady(word, { IDENTITY_SOURCE: 'entra' }), true, word);
+  for (const word of ['bids', 'ask', 'wins', 'outreach', 'staffing', 'profile', 'people', 'directory']) assert.equal(allReady(word, { IDENTITY_SOURCE: 'entra' }), true, word);
   const bidsCtx = { ...ctx('bids'), lib: new Library(memorySql(), {}) };
   assert.deepEqual(await features.featureRoutes(bidsCtx, () => true), await bids.routes(bidsCtx), 'a READY word reaches its module handler');
-  for (const word of Object.keys(features.WORDS)) assert.equal(features.readyOf(word, {}), !!({ bids, ask, wins: winloop, gaps, claims, confirmations: claims, outreach, staffing: outreach })[word].READY, word);
+  for (const word of Object.keys(features.WORDS)) assert.equal(features.readyOf(word, {}), !!({ bids, ask, wins: winloop, gaps, claims, confirmations: claims, outreach, staffing: outreach,
+    profile, people: profile, directory: profile })[word].READY, word);
+  assert.equal(features.readyOf('directory', {}), profile.READY, 'the system push word follows profile.READY too');
+});
+
+// WOW_ZERO_CONFIG §6, §9: the three profile words, READY-gated like every WOW module; externals get 403.
+test('Z profile words: profile, people and directory are READY-gated, work in both identity modes and are never external', async () => {
+  const l = new Library(memorySql(), {}), EXT = { email: 'c@client.example', mail: 'c@client.example', role: 'external' };
+  for (const word of ['profile', 'people', 'directory']) {
+    assert.equal(features.EXTERNAL_WORDS.has(word), false, word); assert.equal(features.EMAIL_AUTH_WORDS.has(word), false, word);
+    assert.deepEqual(await features.featureRoutes({ parts: [word], user: EXT, env: {} }, () => true), { status: 403, body: { error: 'Not available to external confirmers.' } }, word);
+    const r = await call(l, 'GET', '/api/library/' + word, OWNER);
+    if (!profile.READY) { assert.equal(r.status, 404, word); assert.deepEqual(await r.json(), { error: NOT_AVAILABLE }, word); }
+    const ext = await call(l, 'GET', '/api/library/' + word, EXT);
+    assert.equal(ext.status, 403, 'external: ' + word);
+  }
+  const entraCtx = { method: 'GET', parts: ['profile'], url: new URL('https://atlas.test/api/library/profile'), body: {},
+    user: { email: '11111111-2222-3333-4444-555555555555:99999999-8888-7777-6666-555555555555', mail: 'alex@mantu.com', role: 'user', idp: {} }, lib: l, env: { IDENTITY_SOURCE: 'entra' } };
+  const got = await features.featureRoutes(entraCtx, (w, env) => features.readyGate(w, env, () => true));
+  assert.equal(got.body.email, 'alex@mantu.com', 'Entra mode: the profile is keyed by x-atlas-user and still answers');
+  // The system push forward reaches only directory/import, and only through SYSTEM_WORDS.
+  const SYS = { email: 'dna-push', role: 'system' };
+  assert.equal((await call(l, 'POST', '/api/library/profile', SYS, {})).status, 404, 'profile is not a system word');
+  if (!profile.READY) assert.equal((await call(l, 'POST', '/api/library/directory/import', SYS, {})).status, 404);
 });
 
 test('flags: every key, conservative defaults, opt-in vars and the Entra rule', () => {
-  const keys = ['bids', 'ask', 'spokenAsk', 'wins', 'customerJev', 'pdfBriefs', 'gaps', 'gapInterview', 'claims', 'clientConfirm', 'outreach', 'staffing', 'teams', 'phone'];
+  const keys = ['bids', 'ask', 'spokenAsk', 'wins', 'customerJev', 'pdfBriefs', 'gaps', 'gapInterview', 'claims', 'clientConfirm', 'outreach', 'staffing', 'teams', 'phone', 'profile'];
   const f = features.flags({});
   assert.deepEqual(Object.keys(f), keys);
   assert.equal(f.phone, 'BLOCKED_EXTERNAL'); assert.equal(f.teams, teams.teamsStatus({}));
-  assert.equal(features.flags({ SPOKEN_ASK: '1', PDF_BRIEFS: '1' }).spokenAsk, features.readyOf('ask', {}), 'spokenAsk never exceeds ask');
+  // WOW_ZERO_CONFIG §4 D1/D2 (intentional assertion changes, recorded in handoff/status/Z.md): SPOKEN_ASK and
+  // PDF_BRIEFS are no longer variables. spokenAsk = ask && SPOKEN_ASK_APPROVED (a code constant); pdfBriefs = bids.
+  assert.equal(features.SPOKEN_ASK_APPROVED, false, 'D1 stays off until Tony confirms it');
+  assert.equal(features.flags({ SPOKEN_ASK: '1' }).spokenAsk, false, 'the removed variable turns nothing on');
+  assert.equal(f.pdfBriefs, features.readyOf('bids', {}), 'pdfBriefs equals on(bids)');
+  assert.equal(f.profile, profile.READY, 'profile follows profile.READY');
   const on = (w, env) => features.readyGate(w, env, () => true);
   const all = features.flags({}, on);
-  assert.deepEqual([all.bids, all.ask, all.spokenAsk, all.customerJev, all.pdfBriefs, all.clientConfirm, all.gaps], [true, true, false, false, false, false, true]);
-  const opt = features.flags({ SPOKEN_ASK: '1', PDF_BRIEFS: '1', TYPESAFE_API_KEY: 'k', CLIENT_CONFIRM: '1', EXTERNAL_EMAILS: 'c@client.example' }, on);
+  assert.deepEqual([all.bids, all.ask, all.spokenAsk, all.customerJev, all.pdfBriefs, all.clientConfirm, all.gaps, all.profile], [true, true, false, false, true, false, true, true]);
+  const opt = features.flags({ TYPESAFE_API_KEY: 'k', CLIENT_CONFIRM: '1', EXTERNAL_EMAILS: 'c@client.example' }, on, { spokenAskApproved: true });
   assert.deepEqual([opt.spokenAsk, opt.pdfBriefs, opt.customerJev, opt.clientConfirm], [true, true, true, true]);
-  assert.equal(features.flags({ SPOKEN_ASK: 'true', PDF_BRIEFS: 'yes' }, on).spokenAsk, false, 'only the exact value 1 opts in');
+  assert.equal(features.flags({}, (w, env) => w !== 'ask' && on(w, env), { spokenAskApproved: true }).spokenAsk, false, 'spokenAsk never exceeds ask');
+  assert.equal(features.flags({}, (w, env) => w !== 'bids' && on(w, env)).pdfBriefs, false, 'pdfBriefs never exceeds bids');
   assert.equal(features.flags({ CLIENT_CONFIRM: '1' }, on).clientConfirm, false, 'client confirmation also needs EXTERNAL_EMAILS');
   const entra = features.flags({ IDENTITY_SOURCE: 'entra', CLIENT_CONFIRM: '1', EXTERNAL_EMAILS: 'c@client.example' }, on);
-  assert.deepEqual([entra.gaps, entra.gapInterview, entra.claims, entra.clientConfirm, entra.bids, entra.ask, entra.wins], [false, false, false, false, true, true, true]);
+  assert.deepEqual([entra.gaps, entra.gapInterview, entra.claims, entra.clientConfirm, entra.bids, entra.ask, entra.wins, entra.profile], [false, false, false, false, true, true, true, true]);
 });
 
 test('external role: only `confirmations` is reachable; nothing else in the library answers', async () => {

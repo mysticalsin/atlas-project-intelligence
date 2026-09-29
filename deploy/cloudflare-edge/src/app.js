@@ -12,11 +12,13 @@ import { email as validEmail, inList } from './util.js';
 import { flags } from './features.js';
 import { teamsRoutes } from './teams-routes.js';
 import { CONFIRM_HTML } from './confirm-page.js';
+import { nameClaims, pushConfig } from './profile.js';
 
 const enc = new TextEncoder();
 // One voice for everyone: @cf/deepgram/aura-2-en "harmonia" (Deepgram: empathetic, clear, calm, confident).
 // Transcription is part of the interview; consent covers it and reuse of reviewed notes for future projects.
 const b64url = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
+const toB64url = s => { let bin = ''; for (const b of enc.encode(s)) bin += String.fromCharCode(b); return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
 const hex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
 let certs = { at: 0, keys: [] };
 
@@ -54,6 +56,20 @@ export function entraIdentity(payload, env) {
   return { sub: `${c.tid.toLowerCase()}:${c.oid.toLowerCase()}`, email: payload.email || c.preferred_username || 'Microsoft account', roles };
 }
 
+// Sign-in name claims (WOW_ZERO_CONFIG §5.5): name, given_name and family_name from the Access JWT `custom` object,
+// each at most 100 characters (name composed from the other two when absent). Called only AFTER verifyAccess has
+// accepted this same token, whose return value stays unchanged. Absent claims give {} (PIN sign-in today).
+export function signinClaims(request) {
+  try { return nameClaims(JSON.parse(new TextDecoder().decode(b64url((request.headers.get('cf-access-jwt-assertion') || '').split('.')[1] || ''))).custom); }
+  catch { return {}; }
+}
+
+// The re-sign-in landing page (§3.7): opened in a popup, it tells the waiting tab and closes. No data, no token.
+export const SIGNED_IN_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ATLAS</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#15151c;color:#e8e8f0;font:15px/1.5 Arial,sans-serif;padding:16px;box-sizing:border-box}</style></head>
+<body><p>You're signed in. This window closes by itself.</p>
+<script>try{new BroadcastChannel('atlas-auth').postMessage('ok')}catch(e){}setTimeout(function(){window.close()},400)</script></body></html>`;
+
 function timingSafe(a, b) { let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i); return d === 0; }
 
 async function hmac(secret, value) {
@@ -89,7 +105,8 @@ async function boundedBytes(request, max) {
   return out;
 }
 
-export async function handle(request, env, page, { waitUntil = p => p } = {}) {
+// flagsOf: the bootstrap feature flags (tests pass flags with D1 approved to exercise /api/transcribe before it flips).
+export async function handle(request, env, page, { waitUntil = p => p, flagsOf = flags } = {}) {
   {
     const url = new URL(request.url);
     if (!env.ORIGIN || url.origin !== env.ORIGIN) return new Response('Host is not the configured ATLAS origin.', { status: 403 });
@@ -100,6 +117,20 @@ export async function handle(request, env, page, { waitUntil = p => p } = {}) {
       if (!secret || !env.LIBRARY || given.length !== secret.length || !timingSafe(given, secret)) return json(env, { error: 'Unauthorized.' }, 401);
       if (Number(request.headers.get('Content-Length') || 0) > 16384) return json(env, { error: 'Request too large.' }, 413);
       const fwd = new Request(new URL('/api/library/trigger', request.url), { method: 'POST', body: await request.text(), headers: { 'Content-Type': 'application/json', 'x-atlas-user': 'pm-system', 'x-atlas-role': 'system' } });
+      const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(fwd);
+      return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
+    }
+    // DNA push (WOW_ZERO_CONFIG §5.4): the same pattern as /api/triggers, with its own bearer secret (Access bypass on
+    // this path only). Production deployments only; forwarded as role `system` to the directory import (source dna).
+    if (url.pathname === '/api/directory/push' && request.method === 'POST') {
+      const secret = env.DIRECTORY_PUSH_SECRET || '', given = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+      if (!secret || !env.LIBRARY || given.length !== secret.length || !timingSafe(given, secret)) return json(env, { error: 'Unauthorized.' }, 401);
+      const push = pushConfig(env);
+      if (push.status !== 'on') return json(env, { error: 'DNA push is not connected.', ...push }, 503);
+      const bytes = Number(request.headers.get('Content-Length') || 0) > 262144 ? null : await boundedBytes(request, 262144);
+      if (!bytes) return json(env, { error: 'Request too large.' }, 413);
+      const fwd = new Request(new URL('/api/library/directory/import', request.url), { method: 'POST', body: bytes,
+        headers: { 'Content-Type': 'application/json', 'x-atlas-user': 'dna-push', 'x-atlas-role': 'system', 'x-atlas-email': '', 'x-atlas-idp': 'e30' } });
       const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(fwd);
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
     }
@@ -124,8 +155,21 @@ export async function handle(request, env, page, { waitUntil = p => p } = {}) {
     if (role === 'external') {
       // External confirmers (F3) reach only /confirm, a reduced bootstrap and /api/library/confirmations/*.
       if (url.pathname === '/' && request.method === 'GET') return new Response(null, { status: 303, headers: headers(env, { Location: '/confirm' }) });
-      if (url.pathname === '/api/bootstrap' && request.method === 'GET') return json(env, { csrf, identity, email: mail, libraryRole: 'external', features: { claims: flags(env).claims } });
+      if (url.pathname === '/api/bootstrap' && request.method === 'GET') return json(env, { csrf, identity, email: mail, libraryRole: 'external', features: { claims: flagsOf(env).claims } });
+      if (request.method === 'GET') { // a confirmation link (WOW_ZERO_CONFIG §3.9) also reaches an external confirmer
+        const m = /^\/go\/confirm\/([a-f0-9]{32})$/.exec(url.pathname);
+        if (m) return new Response(null, { status: 302, headers: headers(env, { Location: '/confirm#' + m[1] }) });
+      }
       if (!(url.pathname === '/confirm' && request.method === 'GET') && !url.pathname.startsWith('/api/library/confirmations/')) return json(env, { error: 'Not available to external confirmers.' }, 403);
+    }
+    // Links that survive an interactive sign-in (§3.9): /go/start, /go/{gap,invitation,bid,library,confirm}/<32 hex>.
+    // Anything else under /go/ goes home. The ids are random, non-secret and grant nothing without sign-in (a recorded
+    // deviation from WOW rule 7); no token ever goes in a path, and nothing here logs the path.
+    if (request.method === 'GET' && url.pathname === '/go/signed-in') return new Response(SIGNED_IN_HTML, { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
+    if (request.method === 'GET' && url.pathname.startsWith('/go/')) {
+      const m = /^\/go\/(?:(start)|(gap|invitation|bid|library|confirm)\/([a-f0-9]{32}))$/.exec(url.pathname);
+      const to = !m ? '/' : m[1] ? '/#start' : m[2] === 'confirm' ? '/confirm#' + m[3] : '/#' + m[2] + '/' + m[3];
+      return new Response(null, { status: 302, headers: headers(env, { Location: to }) });
     }
     if (url.pathname === '/confirm' && request.method === 'GET') return new Response(CONFIRM_HTML, { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
     if (url.pathname === '/' && request.method === 'GET') {
@@ -133,7 +177,8 @@ export async function handle(request, env, page, { waitUntil = p => p } = {}) {
       let body = page.replace('/* SERVER_RUNTIME */', 'window.ATLAS_RUNTIME=' + runtime + ';')
         .replace("connect-src 'self';", "connect-src 'self' " + env.ORIGIN.replace('https://', 'wss://') + ';');
       const end = body.lastIndexOf('</body>'); // the page embeds an earlier '</body>' inside a script string
-      body = body.slice(0, end) + '<div style="position:fixed;left:12px;bottom:10px;z-index:99;font:11px/1.4 Arial;letter-spacing:.06em;color:#A9A9BC;background:#15151cdd;border:1px solid #2a2a36;border-radius:14px;padding:4px 10px">TEST DEPLOYMENT · SYNTHETIC DATA ONLY</div>' + body.slice(end);
+      // The test banner stays until Tony sets DATA_MODE=production on an approved deployment (WOW_ZERO_CONFIG §0.7, §11).
+      if (env.DATA_MODE !== 'production') body = body.slice(0, end) + '<div style="position:fixed;left:12px;bottom:10px;z-index:99;font:11px/1.4 Arial;letter-spacing:.06em;color:#A9A9BC;background:#15151cdd;border:1px solid #2a2a36;border-radius:14px;padding:4px 10px">TEST DEPLOYMENT · SYNTHETIC DATA ONLY</div>' + body.slice(end);
       return new Response(body, { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
     }
     if (url.pathname === '/api/bootstrap' && request.method === 'GET') {
@@ -142,7 +187,7 @@ export async function handle(request, env, page, { waitUntil = p => p } = {}) {
         identity, model: 'ATLAS conversational voice', admin,
         voices: ['atlas'], defaultVoice: 'atlas', captureRequired: true, codecAvailable: true, busy: false, capacity: 1, maxSeconds: MAX_SECONDS, speakingSeconds: SPEAKING_LIMIT_S,
         memory: !!env.HINDSIGHT_API_KEY, wiki: false, jev: !!env.TYPESAFE_API_KEY, jevClassify: !!env.TYPESAFE_API_KEY, library: !!env.LIBRARY, libraryRole: role, sheet: true, transcription: true, structuredNotes: true, liveLedger: true, playbackAck: true,
-        readiness: 'edge-deployment-test-data-only', email: mail, features: flags(env) });
+        readiness: env.DATA_MODE === 'production' ? 'production' : 'edge-deployment-test-data-only', email: mail, features: flagsOf(env) });
     }
     if (url.pathname === '/api/voice') {
       if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected a WebSocket upgrade.', { status: 426 });
@@ -157,7 +202,9 @@ export async function handle(request, env, page, { waitUntil = p => p } = {}) {
     if (url.pathname.startsWith('/api/sheet/') && request.method === 'POST') {
       if (request.headers.get('Origin') !== env.ORIGIN || request.headers.get('X-Atlas-CSRF') !== csrf) return json(env, { error: 'Invalid request origin or session token.' }, 403);
       if (Number(request.headers.get('Content-Length') || 0) > 12 * 1024 * 1024) return json(env, { error: 'The file is larger than 10 MB.' }, 413);
-      const ai = workersAI(env), res = await sheetRoutes(request, url.pathname.slice('/api/sheet/'.length), { complete: (m, n) => ai.complete(m, n), toMarkdown: f => env.AI.toMarkdown(f) });
+      // PDF metadata (author, producer, title) is never extracted (D2, WOW_ZERO_CONFIG §4): text only.
+      const ai = workersAI(env), res = await sheetRoutes(request, url.pathname.slice('/api/sheet/'.length), { complete: (m, n) => ai.complete(m, n),
+        toMarkdown: f => env.AI.toMarkdown(f, { conversionOptions: { pdf: { metadata: false } } }) });
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
     }
     if (url.pathname === '/api/memory' || url.pathname.startsWith('/api/memory/')) {
@@ -179,13 +226,18 @@ export async function handle(request, env, page, { waitUntil = p => p } = {}) {
       const forward = new Request(request.url, { method: request.method, headers: fwdHeaders, body: bodyless ? undefined : text });
       // Entra: the stable tid:oid is the library identity (emails can change); Access: the verified email.
       forward.headers.set('x-atlas-user', libraryUser); forward.headers.set('x-atlas-role', role); forward.headers.set('x-atlas-email', mail); // always overwritten
+      forward.headers.set('x-atlas-idp', toB64url(JSON.stringify(signinClaims(request)))); // always overwritten ('e30' = {}): never from the browser
       const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(forward);
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
     }
-    // Spoken Ask (F6): transcription of one short question, off unless SPOKEN_ASK=1 (Q11: it is outside the interview
-    // consent). Stores nothing; the log line carries numbers only.
-    if (url.pathname === '/api/transcribe' && request.method === 'POST' && flags(env).spokenAsk) {
+    // Spoken Ask (F6): transcription of one short question. Off until Tony confirms D1 (SPOKEN_ASK_APPROVED); then each
+    // request needs the consent prompt's header, and `always` a consent stored in the person's profile. Stores nothing;
+    // the log line carries numbers only.
+    if (url.pathname === '/api/transcribe' && request.method === 'POST' && flagsOf(env).spokenAsk) {
       if (request.headers.get('Origin') !== env.ORIGIN || request.headers.get('X-Atlas-CSRF') !== csrf) return json(env, { error: 'Invalid request origin or session token.' }, 403);
+      // A UI gate: it proves the page showed the prompt, not that the person agreed; `always` is checked server-side.
+      const consent = /^spoken-ask-v1;\s*(once|always)$/.exec((request.headers.get('X-Atlas-Consent') || '').trim());
+      if (!consent || (consent[1] === 'always' && !await storedSpokenAsk(env, { libraryUser, role, mail }))) return json(env, { error: 'Voice questions need your consent first.' }, 403);
       if ((request.headers.get('Content-Type') || '').replace(/\s+/g, '').toLowerCase() !== 'audio/l16;rate=24000') return json(env, { error: 'Send 16-bit mono PCM at 24 kHz (audio/L16;rate=24000).' }, 415);
       const pcm = Number(request.headers.get('Content-Length') || 0) > AUDIO_MAX ? null : await boundedBytes(request, AUDIO_MAX);
       if (!pcm) return json(env, { error: 'The recording is longer than 30 seconds.' }, 413);
@@ -214,8 +266,22 @@ export async function handle(request, env, page, { waitUntil = p => p } = {}) {
       const pcm = await workersAI(env).synthesize(text, speaker);
       return new Response(pcm, { headers: headers(env, { 'Content-Type': 'audio/L16;rate=24000' }) });
     }
+    // A browser navigation to an unknown page (an old /ATLAS_Voice.html link, say) goes home; API paths keep their JSON 404.
+    if (request.method === 'GET' && !url.pathname.startsWith('/api/')
+      && (request.headers.get('Sec-Fetch-Mode') === 'navigate' || /text\/html/.test(request.headers.get('Accept') || ''))) return new Response(null, { status: 302, headers: headers(env, { Location: '/' }) });
     return json(env, { error: 'This feature is not available in this deployment.' }, 404);
   }
+}
+
+// D1 "Always allow for me": the consent stored in the person's own profile (LibraryStore), read with the verified
+// identity only. Anything but a stored version-1 consent (not READY, revoked, unreachable) counts as no consent.
+async function storedSpokenAsk(env, { libraryUser, role, mail }) {
+  if (!env.LIBRARY) return false;
+  try {
+    const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(new Request('https://atlas.internal/api/library/profile/consents',
+      { headers: { 'x-atlas-user': libraryUser, 'x-atlas-role': role, 'x-atlas-email': mail, 'x-atlas-idp': 'e30' } }));
+    return res.ok && (await res.json())?.spokenAsk?.version === 1;
+  } catch { return false; }
 }
 
 // Daily cron (worker.js delegates here so Node tests cover it): references not updated for six months get an

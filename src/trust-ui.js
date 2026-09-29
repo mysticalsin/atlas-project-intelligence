@@ -26,7 +26,7 @@ function requestFor(c,reqs){return reqs.find(q=>q.status==='done'&&arr(q.claimId
 function badge(c,rev,reqs){const tag=(cls,text)=>`<span class="badge claim-badge claim-${cls}">${esc(text)}</span>`,at=Number.isInteger(c.confirmedRevision)?c.confirmedRevision:c.revision;
  if(c.current===false)return tag('stale',`Stale: ${{unverified:'proposed',corrected:'corrected',cant_say:'answered'}[c.status]||'confirmed'} on r${int(at)}; the sentence changed`);
  const moved=Number.isInteger(c.confirmedRevision)&&Number.isInteger(rev)&&c.confirmedRevision<rev?` on r${c.confirmedRevision}; sentence unchanged`:'',src=requestFor(c,reqs)?.managerSource;
- if(c.status==='manager_confirmed')return tag('confirmed','Confirmed by N+1'+(src==='staffing'?' (staffing record)':src==='self_declared'?' (named by the consultant)':'')+moved);
+ if(c.status==='manager_confirmed')return tag('confirmed','Confirmed by N+1'+(src==='staffing'?' (staffing record)':src==='directory'?' (N+1 from DNA)':src==='self_declared'?' (named by the consultant)':'')+moved);
  if(c.status==='client_confirmed')return tag('confirmed','Confirmed by the client contact'+moved);
  if(c.status==='corrected')return tag('corrected','Corrected: '+(c.note||'no note given'));
  if(c.status==='cant_say')return tag('cantsay','N+1 couldn’t say');

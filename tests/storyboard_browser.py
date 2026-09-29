@@ -117,12 +117,14 @@ with sync_playwright() as pw:
  check('Gap quotes render inert',p.evaluate("!document.querySelector('#gapResults img') && window.__xss===undefined"))
  check('Nothing is sent before a click',POSTS==[] and p.evaluate('__apply.length')==0)
  check('Both actions are separate buttons with the agreed words',text(p,'#gapSend')=='Send these answers to the bid team' and text(p,'#gapApply')=='Add these answers to my reference')
- p.locator('#gapSend').click();p.wait_for_function("document.getElementById('gapSend').textContent==='Sent to the bid team'")
+ # A function predicate: Playwright evaluates it once and caches it; a bare string is re-eval'd on every poll, which the
+ # page CSP (no 'unsafe-eval') refuses, so a string wait passed only when the condition was already true on the first check.
+ p.locator('#gapSend').click();p.wait_for_function("()=>document.getElementById('gapSend').textContent==='Sent to the bid team'")
  p.evaluate("document.getElementById('gapSend').click()");p.wait_for_timeout(300)
  check('#gapSend posts exactly once, only on its click',len(POSTS)==1 and POSTS[0]['method']=='POST' and POSTS[0]['url'].endswith('/api/library/gaps/'+RID+'/answer') and POSTS[0]['csrf']=='tok')
  check('The answer body carries askId, status and quotes, and the interviewed reference',POSTS[0]['body']=={'results':[{'askId':'G1','status':'answered_unverified','quotes':['Errors fell 40% after the pilot.','<img src=x onerror="window.__xss=3">']},{'askId':'G2','status':'unknown','quotes':[]}],'referenceId':'ref-123'})
  check('Sending did not add to the reference',p.evaluate('__apply.length')==0)
- p.locator('#gapApply').click();p.wait_for_function("document.getElementById('gapApply').textContent==='Added to your reference'")
+ p.locator('#gapApply').click();p.wait_for_function("()=>document.getElementById('gapApply').textContent==='Added to your reference'")
  p.evaluate("document.getElementById('gapApply').click()");p.wait_for_timeout(300)
  check('#gapApply calls ATLAS_APP.applyGapNotes once, for the interviewed project',p.evaluate('JSON.stringify(__apply)')=='["p-gap"]' and len(POSTS)==1)
  check('No other library call was made',not [u for u in OTHER if '/api/library' in u])

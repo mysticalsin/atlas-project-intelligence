@@ -160,7 +160,7 @@ test('approve per channel: email draft (drafted, with .ics), Teams not connected
   const a = await s.call(REV, 'POST', 'outreach/' + email.id, { action: 'approve' });
   assert.deepEqual([a.status, a.body.item.status, a.body.item.approvedBy], [200, 'drafted', 'rev@mantu.com']);
   assert.deepEqual([a.body.draft.to, a.body.draft.subject], ['alex@mantu.com', "12 minutes while it's fresh?"]);
-  assert.ok(a.body.draft.body.includes(`${ORIGIN}/#invitation/${inv.id}`));
+  assert.ok(a.body.draft.body.includes(`${ORIGIN}/go/invitation/${inv.id}`), 'a /go/ link that survives sign-in (WOW_ZERO_CONFIG §3.9)');
   assert.match(a.body.draft.ics, /DTSTART:20261001T093000\r\nDURATION:PT15M/);
   assert.ok(!JSON.stringify(a.body).includes('Zebracorp'), 'no client name in the draft');
   assert.equal((await s.call(REV, 'POST', 'outreach/' + email.id, { action: 'approve' })).status, 409, 'drafted is final');
@@ -205,7 +205,7 @@ test('Teams connected (fake client): not installed, sent with the invitee bindin
   const card = activity.attachments[0].content, text = JSON.stringify(card);
   assert.equal(activity.attachments[0].contentType, 'application/vnd.microsoft.card.adaptive');
   assert.deepEqual([card.version, card.body[0].text], ['1.5', "12 minutes while it's fresh?"]);
-  assert.equal(card.actions[0].url, `${ORIGIN}/#invitation/${inv.id}`);
+  assert.equal(card.actions[0].url, `${ORIGIN}/go/invitation/${inv.id}`);
   assert.deepEqual(card.actions.slice(1).map(x => [x.type, x.verb, x.data.outreachId]), [['Action.Execute', 'snooze', teams.id], ['Action.Execute', 'decline', teams.id]]);
   assert.ok(!text.includes('Zebracorp'), 'no client name on the card');
   assert.equal((await s.call(REV, 'POST', 'outreach/' + teams.id, { action: 'approve' })).status, 409, 'sent is final');
@@ -284,6 +284,20 @@ test('teams-event: install, duplicate activity, stop, uninstall, and card action
   assert.deepEqual(s.l.rows('SELECT status, email FROM teams_conversations')[0], { status: 'active', email: 'alex@mantu.com' }, 'a reinstall keeps the routing email');
   assert.equal(fake.calls.length, 1, 'the bot never sends on its own: only the one approved card');
   assert.equal((await s.call(ALEX, 'POST', 'teams-event', { kind: 'install' })).status, 404, 'users cannot post Teams events');
+});
+
+test('Z links: every queued kind points at its /go/ path (WOW_ZERO_CONFIG §3.9); a row queued before keeps its stored fragment link', async () => {
+  const s = setup(); await others(s);
+  for (const [kind, id, path] of [['interview_invite', 'a'.repeat(32), '/go/invitation/'], ['gap_request', 'b'.repeat(32), '/go/gap/'], ['confirmation_request', 'c'.repeat(32), '/go/confirm/']]) {
+    outreach.queue(s.l, { kind, subjectId: id, toEmail: 'kim@mantu.com', preview: { title: 'T' } });
+    const rows = s.l.rows('SELECT payload FROM outreach WHERE kind = ? AND subject_id = ?', kind, id);
+    assert.deepEqual(rows.map(r => JSON.parse(r.payload).path), [path + id, path + id], kind);
+  }
+  const inv = (await trigger(s)).body, email = (await s.call(REV, 'GET', 'outreach')).body.items.find(i => i.subjectId === inv.id && i.channel === 'email_draft');
+  const row = s.l.rows('SELECT payload FROM outreach WHERE id = ?', email.id)[0], old = { ...JSON.parse(row.payload), path: '/#invitation/' + inv.id };
+  s.l.sql.exec('UPDATE outreach SET payload = ? WHERE id = ?', JSON.stringify(old), email.id);
+  const a = await s.call(REV, 'POST', 'outreach/' + email.id, { action: 'approve' });
+  assert.ok(a.body.draft.body.includes(`${ORIGIN}/#invitation/${inv.id}`), 'old fragment links keep working');
 });
 
 test('queue: deduped per subject and channel, previews masked again, bad items refused', async () => {

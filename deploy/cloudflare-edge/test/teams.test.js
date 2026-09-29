@@ -10,7 +10,9 @@ import { memorySql } from './sqlite.js';
 
 const ORIGIN = 'https://atlas.example', JWKS_URL = 'https://login.botframework.com/v1/.well-known/keys';
 const TID = '11111111-2222-3333-4444-555555555555', OID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', BOTID = '22222222-3333-4444-5555-666666666666';
-const ENV = { ORIGIN, TEAMS_ENABLED: '1', TEAMS_APP_ID: '33333333-4444-5555-6666-777777777777', TEAMS_BOT_APP_ID: BOTID, TEAMS_TENANT_ID: TID };
+const APPID = '33333333-4444-5555-6666-777777777777', ENV = { ORIGIN, TEAMS_APP_ID: APPID, TEAMS_BOT_APP_ID: BOTID, TEAMS_TENANT_ID: TID };
+// Connected (WOW_ZERO_CONFIG §4): the ids and the bot secret, with no separate on switch.
+const ON = { ...ENV, TEAMS_BOT_SECRET: 's' };
 const SERVICE = 'https://smba.trafficmanager.net/emea/';
 const T0 = Date.parse('2026-09-29T08:00:00Z');
 const enc = new TextEncoder(), b64u = b => Buffer.from(b).toString('base64url');
@@ -75,7 +77,11 @@ test('verifyBotActivity: every rejection case of §F4.8 (401 token, 401 serviceU
   const big = JSON.stringify(activity({ text: 'x'.repeat(262200) }));
   assert.equal((await verify({ body: big })).status, 413);
   assert.equal((await verify({ body: '{nope' })).status, 400);
-  assert.equal((await verify({ env: { ...ENV, TEAMS_BOT_APP_ID: '' } })).status, 503);
+  assert.equal((await verify({ env: { ...ENV, TEAMS_BOT_APP_ID: '', TEAMS_APP_ID: '' } })).status, 503, 'no bot id at all');
+  assert.equal((await verify({ env: { ...ENV, TEAMS_TENANT_ID: '' } })).status, 503, 'no tenant');
+  // TEAMS_BOT_APP_ID defaults to TEAMS_APP_ID: then the audience and the recipient are the app id.
+  assert.equal(await code({ env: { ...ENV, TEAMS_BOT_APP_ID: '' } }), 401, 'a token for another bot id');
+  assert.equal((await verify({ env: { ...ENV, TEAMS_BOT_APP_ID: '' }, payload: claims({ aud: APPID }), act: activity({ recipient: { id: '28:' + APPID } }) })).ok, true, 'the app id is the bot id by default');
 });
 
 test('JWKS cache: 24 h, and an unknown kid refetches at most once per 5 minutes; no keys at all gives 503', async () => {
@@ -102,24 +108,25 @@ test('JWKS cache: 24 h, and an unknown kid refetches at most once per 5 minutes;
   assert.equal((await verify({ fetcher: badHost })).status, 503, 'the JWKS must come from botframework.com');
 });
 
-test('teamsStatus: connected only with TEAMS_ENABLED=1, every id and the bot secret', () => {
+test('teamsStatus: connected once the app id, the tenant id and the bot secret are present; TEAMS_BOT_APP_ID defaults to TEAMS_APP_ID; no TEAMS_ENABLED', () => {
   assert.equal(teamsStatus({}), 'BLOCKED_EXTERNAL');
   assert.equal(teamsStatus(ENV), 'BLOCKED_EXTERNAL', 'no secret');
-  assert.equal(teamsStatus({ ...ENV, TEAMS_BOT_SECRET: 's' }), 'connected');
-  for (const k of ['TEAMS_APP_ID', 'TEAMS_BOT_APP_ID', 'TEAMS_TENANT_ID']) assert.equal(teamsStatus({ ...ENV, TEAMS_BOT_SECRET: 's', [k]: '' }), 'BLOCKED_EXTERNAL', k);
-  assert.equal(teamsStatus({ ...ENV, TEAMS_BOT_SECRET: 's', TEAMS_ENABLED: 'true' }), 'BLOCKED_EXTERNAL');
+  assert.equal(teamsStatus(ON), 'connected');
+  assert.equal(teamsStatus({ ...ON, TEAMS_BOT_APP_ID: '' }), 'connected', 'the bot id defaults to the app id');
+  for (const k of ['TEAMS_APP_ID', 'TEAMS_TENANT_ID', 'TEAMS_BOT_SECRET']) assert.equal(teamsStatus({ ...ON, [k]: '' }), 'BLOCKED_EXTERNAL', k);
+  for (const v of ['0', 'true', '']) assert.equal(teamsStatus({ ...ON, TEAMS_ENABLED: v }), 'connected', 'TEAMS_ENABLED is no longer read: ' + JSON.stringify(v));
 });
 
-test('interviewCard: Adaptive Card 1.5, OpenUrl to #invitation/<id> within 2,048 characters, Execute verbs carry only the outreach id', () => {
+test('interviewCard: Adaptive Card 1.5, OpenUrl to /go/invitation/<id> within 2,048 characters, Execute verbs carry only the outreach id', () => {
   const id = 'a'.repeat(32), card = interviewCard({ invitationId: id, outreachId: 'o1', projectRef: 'PRJ-9', approverName: 'rev@mantu.com', origin: ORIGIN });
   assert.deepEqual([card.type, card.version, card.body[0].text], ['AdaptiveCard', '1.5', "12 minutes while it's fresh?"]);
-  assert.deepEqual(card.actions, [{ type: 'Action.OpenUrl', title: 'Start now', url: `${ORIGIN}/#invitation/${id}` },
+  assert.deepEqual(card.actions, [{ type: 'Action.OpenUrl', title: 'Start now', url: `${ORIGIN}/go/invitation/${id}` },
     { type: 'Action.Execute', title: 'Tomorrow', verb: 'snooze', data: { outreachId: 'o1' } }, { type: 'Action.Execute', title: 'Not for this project', verb: 'decline', data: { outreachId: 'o1' } }]);
   assert.match(JSON.stringify(card.body), /PRJ-9/);
   const long = interviewCard({ invitationId: id, outreachId: 'o1', origin: 'https://' + 'x'.repeat(2040) + '.example' });
   assert.ok(long.actions.every(a => !a.url || a.url.length <= 2048), 'never a link over 2,048 characters');
   assert.deepEqual(long.actions.map(a => a.type), ['Action.Execute', 'Action.Execute']);
-  assert.equal(interviewCard({ invitationId: '../etc', outreachId: 'o', origin: ORIGIN }).actions[0].url, ORIGIN + '/', 'only a 32-hex id reaches the hash');
+  assert.equal(interviewCard({ invitationId: '../etc', outreachId: 'o', origin: ORIGIN }).actions[0].url, ORIGIN + '/', 'only a 32-hex id reaches the link');
   assert.equal(interviewCard({ invitationId: id, origin: 'javascript:alert(1)' }).actions[0].type, 'Action.Execute', 'no link without an http(s) origin');
   assert.equal(interviewCard({ projectRef: 'x'.repeat(300) }).body[1].text.length < 200, true, 'bounded text');
   assert.deepEqual(messageCard({ title: 'T', text: 'x', url: 'javascript:alert(1)' }).actions, undefined);
@@ -165,7 +172,7 @@ test('teamsClient: null unless connected; tenant token cached until exp - 300 s;
 });
 
 // ---- teamsRoutes: the pre-Access endpoint and the launcher.
-function stack(env = ENV) {
+function stack(env = ON) {
   const lib = new Library(memorySql(), { now: () => new Date(T0).toISOString() }), seen = [];
   const LIBRARY = { idFromName: n => n, get: () => ({ fetch: async r => { seen.push({ path: new URL(r.url).pathname, user: r.headers.get('x-atlas-user'), role: r.headers.get('x-atlas-role') }); return libraryRoutes(r, lib, { env: { ORIGIN } }); } }) };
   return { lib, seen, env: { ...env, LIBRARY } };
@@ -174,12 +181,12 @@ const live = () => claims({ exp: Math.floor(Date.now() / 1000) + 600, nbf: Math.
 const post = async (env, act, fetcher = botFetcher(), payload = live()) => teamsRoutes(new Request(ORIGIN + '/api/teams/messages', { method: 'POST', headers: { Authorization: 'Bearer ' + await sign(payload) }, body: JSON.stringify(act) }), env, {}, { fetcher });
 const SECURE = r => { assert.equal(r.headers.get('cache-control'), 'no-store'); assert.equal(r.headers.get('x-content-type-options'), 'nosniff'); assert.ok(r.headers.get('content-security-policy')); };
 
-test('teamsRoutes: 503 BLOCKED_EXTERNAL unless TEAMS_ENABLED=1 and the three ids are set; nothing is read or forwarded', async () => {
+test('teamsRoutes: 503 BLOCKED_EXTERNAL until Teams is connected (app id, tenant id, bot secret); nothing is read or forwarded', async () => {
   const { env, seen } = stack();
-  for (const bad of [{}, { ...env, TEAMS_ENABLED: '0' }, { ...env, TEAMS_APP_ID: '' }, { ...env, TEAMS_BOT_APP_ID: '' }, { ...env, TEAMS_TENANT_ID: '' }]) {
+  for (const bad of [{}, { ...env, TEAMS_BOT_SECRET: '' }, { ...env, TEAMS_APP_ID: '' }, { ...env, TEAMS_APP_ID: '', TEAMS_BOT_APP_ID: '' }, { ...env, TEAMS_TENANT_ID: '' }]) {
     for (const r of [await teamsRoutes(new Request(ORIGIN + '/api/teams/messages', { method: 'POST', body: '{}' }), bad), await teamsRoutes(new Request(ORIGIN + '/teams/tab'), bad)]) {
       assert.equal(r.status, 503); SECURE(r);
-      const b = await r.json(); assert.equal(b.status, 'BLOCKED_EXTERNAL'); assert.ok(b.reason && b.needs.includes('TEAMS_ENABLED=1'));
+      const b = await r.json(); assert.equal(b.status, 'BLOCKED_EXTERNAL'); assert.ok(b.reason && b.needs.includes('TEAMS_BOT_SECRET (Worker secret)') && !b.needs.some(n => n.includes('TEAMS_ENABLED')));
     }
   }
   assert.equal(seen.length, 0);
@@ -195,7 +202,7 @@ test('teamsRoutes messages: verified events reach the LibraryStore as teams-even
   assert.deepEqual([r.status, await r.json()], [200, {}]); SECURE(r);
   assert.deepEqual(seen, [{ path: '/api/library/teams-event', user: 'teams-bot', role: 'system' }]);
   assert.deepEqual(lib.rows('SELECT subject, conversation_id, service_url, email, status FROM teams_conversations'),
-    [{ subject: `${TID}:${OID}`, conversation_id: 'a:conv-alex', service_url: SERVICE, email: '', status: 'active' }], 'no secret: no member lookup, no email');
+    [{ subject: `${TID}:${OID}`, conversation_id: 'a:conv-alex', service_url: SERVICE, email: '', status: 'active' }], 'the member lookup failed: stored without an email');
   await post(env, installAct);
   assert.equal(lib.rows('SELECT COUNT(*) AS n FROM teams_seen')[0].n, 1, 'duplicate activity processed once');
   const stop = await post(env, activity({ id: 'stop-1', text: '<at>ATLAS</at> Stop ' }));
@@ -205,9 +212,9 @@ test('teamsRoutes messages: verified events reach the LibraryStore as teams-even
     const x = await post(env, a); assert.deepEqual([x.status, await x.json()], [200, {}]);
   }
   assert.equal(seen.length, before, 'help, group chats and other activities are not forwarded; the bot never replies');
-  // With the bot secret, install looks the member up (routing email only), through the fake connector.
+  // Connected, install looks the member up (routing email only), through the fake connector.
   resetBotKeyCache();
-  const s2 = stack({ ...ENV, TEAMS_BOT_SECRET: 's' }), f = botFetcher(), connector = async (url, init) => String(url).startsWith('https://login.microsoftonline.com/')
+  const s2 = stack(ON), f = botFetcher(), connector = async (url, init) => String(url).startsWith('https://login.microsoftonline.com/')
     ? json({ access_token: 't', expires_in: 3600 }) : String(url) === SERVICE + 'v3/conversations/a%3Aconv-alex/members/29%3Aalex' ? json({ email: 'Alex@Mantu.com', userPrincipalName: 'alex@mantu.com' }) : f(url, init);
   await post(s2.env, installAct, connector);
   assert.equal(s2.lib.rows('SELECT email FROM teams_conversations')[0].email, 'alex@mantu.com');
@@ -235,7 +242,7 @@ test('teamsRoutes invoke: the card action is answered in the HTTP 200 invoke res
 
 test('teamsRoutes tab: the launcher with its route-specific CSP when TeamsJS is vendored; 503 "TeamsJS not vendored" otherwise', async () => {
   const js = 'window.microsoftTeams={app:{initialize:function(){return Promise.resolve()},openLink:function(){return Promise.resolve()}}};';
-  const r = await teamsRoutes(new Request(ORIGIN + '/teams/tab'), ENV, {}, { teamsJs: js });
+  const r = await teamsRoutes(new Request(ORIGIN + '/teams/tab'), ON, {}, { teamsJs: js });
   assert.equal(r.status, 200); assert.equal(r.headers.get('content-type'), 'text/html; charset=utf-8');
   assert.equal(r.headers.get('content-security-policy'), TAB_CSP);
   assert.match(TAB_CSP, /frame-ancestors https:\/\/teams\.microsoft\.com https:\/\/\*\.teams\.microsoft\.com https:\/\/\*\.cloud\.microsoft$/);
@@ -243,12 +250,13 @@ test('teamsRoutes tab: the launcher with its route-specific CSP when TeamsJS is 
   assert.equal(r.headers.get('x-frame-options'), null);
   const html = await r.text();
   assert.doesNotMatch(html, /<script[^>]+src|fetch\(|XMLHttpRequest|\/api\//, 'no external script and no API call');
-  assert.ok(html.includes(js)); assert.match(html, /Open ATLAS/); assert.match(html, /microsoftTeams\.app\.initialize\(\)/); assert.match(html, /app\.openLink\(target\)/);
-  assert.ok(html.includes(JSON.stringify(ORIGIN + '/')));
-  const none = await teamsRoutes(new Request(ORIGIN + '/teams/tab'), ENV, {}, { teamsJs: '' });
+  assert.ok(html.includes(js)); assert.match(html, /Open ATLAS/); assert.match(html, /microsoftTeams\.app\.initialize\(\)/); assert.match(html, /app\.openLink\(to\)/);
+  assert.ok(html.includes('target=' + JSON.stringify(ORIGIN + '/go/start')), 'Open ATLAS goes to /go/start (the consent step)');
+  assert.ok(html.includes('home=' + JSON.stringify(ORIGIN + '/')), 'pending interviews open the workspace');
+  const none = await teamsRoutes(new Request(ORIGIN + '/teams/tab'), ON, {}, { teamsJs: '' });
   assert.equal(none.status, 503); SECURE(none);
   const b = await none.json(); assert.deepEqual([b.error, b.status], ['TeamsJS not vendored', 'BLOCKED_EXTERNAL']);
-  assert.equal((await teamsRoutes(new Request(ORIGIN + '/teams/other'), ENV)).status, 404);
+  assert.equal((await teamsRoutes(new Request(ORIGIN + '/teams/other'), ON)).status, 404);
 });
 
 test('vendored TeamsJS: @microsoft/teams-js 2.57.0 embedded byte for byte (pinned SHA-256); the launcher serves it inline', async () => {
@@ -258,7 +266,7 @@ test('vendored TeamsJS: @microsoft/teams-js 2.57.0 embedded byte for byte (pinne
   const digest = [...new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(TEAMS_JS)))].map(b => b.toString(16).padStart(2, '0')).join('');
   assert.equal(digest, TEAMS_JS_SHA256, 'the embedded string is the pinned file');
   assert.doesNotMatch(TEAMS_JS, /<\/script|<!--/i, 'safe to inline');
-  const r = await teamsRoutes(new Request(ORIGIN + '/teams/tab'), ENV);
+  const r = await teamsRoutes(new Request(ORIGIN + '/teams/tab'), ON);
   assert.equal(r.status, 200); assert.equal(r.headers.get('content-security-policy'), TAB_CSP);
   const html = await r.text(), scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
   assert.equal(scripts.length, 2); assert.equal(scripts[0], TEAMS_JS);

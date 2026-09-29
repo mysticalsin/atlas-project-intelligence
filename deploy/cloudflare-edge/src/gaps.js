@@ -10,6 +10,7 @@ import { pseudonymise, unmask, forOthers, recordText } from './scrub.js';
 import { clientScrub } from './review.js';
 import { getRequirement, bidView, ensure as ensureBids } from './bids.js';
 import * as outreach from './outreach.js';
+import * as profile from './profile.js';
 import { FIELDS, GAP_MAX } from './policy.generated.js';
 
 export const READY = true;
@@ -118,6 +119,8 @@ function create(ctx) {
     return { id: 'G' + (i + 1), field, label: FIELDS[field][0], ask: askText(String(r.text || '')) };
   });
   const who = resolveAssignee(lib, env, user, b.assignee);
+  // A blank name is filled from the stored DNA directory rows only (never DNA itself, never anyone's profile; §5.8).
+  if (!who.name && profile.READY) who.name = String(profile.lookupPerson(lib, who.email)?.name || '').slice(0, 100);
   let ref = who.row;
   if (b.referenceId !== undefined && b.referenceId !== null && b.referenceId !== '') {
     ref = lib.row(String(b.referenceId));
@@ -133,7 +136,7 @@ function create(ctx) {
   // Nothing is sent. The draft names nobody (no client, prospect or person) and links to the request by id only;
   // outreach rows wait for an approver and preview the other view.
   const other = bidView(lib, null, bidId), alias = other(lib.rows('SELECT alias FROM bids WHERE id = ?', bidId)[0]?.alias || '');
-  const g = rowOf(lib, id), out = render(lib, user, g), link = `${originOf(ctx)}/#gap/${id}`, points = asks.length === 1 ? 'one specific proof point' : `${asks.length} specific proof points`;
+  const g = rowOf(lib, id), out = render(lib, user, g), link = `${originOf(ctx)}/go/gap/${id}`, points = asks.length === 1 ? 'one specific proof point' : `${asks.length} specific proof points`;
   const text = `A bid team asks for ${points} from your project experience (${asks.map(a => a.label).join(', ')}). It takes about five minutes by voice with ATLAS, and nothing is shared until you choose to send your answers.`;
   let queued = [];
   try { queued = outreach.queue(lib, { kind: 'gap_request', subjectId: id, toEmail: who.email, subject: SUBJECT, preview: { title: alias || 'A bid', text } }); }

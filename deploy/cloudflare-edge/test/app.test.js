@@ -214,7 +214,7 @@ import { scheduled } from '../src/app.js';
 import { Library } from '../src/library.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import { memorySql } from './sqlite.js';
-const FEATURE_KEYS = ['bids', 'ask', 'spokenAsk', 'wins', 'customerJev', 'pdfBriefs', 'gaps', 'gapInterview', 'claims', 'clientConfirm', 'outreach', 'staffing', 'teams', 'phone'];
+const FEATURE_KEYS = ['bids', 'ask', 'spokenAsk', 'wins', 'customerJev', 'pdfBriefs', 'gaps', 'gapInterview', 'claims', 'clientConfirm', 'outreach', 'staffing', 'teams', 'phone', 'profile'];
 const capture = () => { const c = { req: null, body: null }; c.stub = { idFromName: n => n, get: () => ({ fetch: async r => { c.req = r; c.body = r.body ? await r.text() : null; return new Response('{"ok":true}'); } }) }; return c; };
 const signed = async (path, claims = {}, init = {}) => new Request(ORIGIN + path, { ...init, headers: { 'cf-access-jwt-assertion': await jwt(claims), ...(init.headers || {}) } });
 
@@ -224,8 +224,9 @@ test('T1-S0 bootstrap: verified email and every feature flag, conservative by de
     'maxSeconds', 'speakingSeconds', 'memory', 'wiki', 'jev', 'jevClassify', 'library', 'libraryRole', 'sheet', 'transcription', 'structuredNotes', 'liveLedger', 'playbackAck', 'readiness']);
   assert.equal(boot.email, 'tony@example.com'); assert.deepEqual(Object.keys(boot.features), FEATURE_KEYS);
   assert.equal(boot.features.spokenAsk, false); assert.equal(boot.features.teams, 'BLOCKED_EXTERNAL'); assert.equal(boot.features.phone, 'BLOCKED_EXTERNAL');
+  // WOW_ZERO_CONFIG D1: SPOKEN_ASK is no longer a variable; spoken Ask waits for SPOKEN_ASK_APPROVED (a code constant).
   const spoken = await (await handle(await req('/api/bootstrap'), { ...ENV, SPOKEN_ASK: '1' }, '')).json();
-  assert.equal(spoken.features.spokenAsk, spoken.features.ask, 'SPOKEN_ASK=1 never turns on more than Ask itself');
+  assert.equal(spoken.features.spokenAsk, false, 'the removed SPOKEN_ASK variable turns nothing on');
   const service = await (await handle(await signed('/api/bootstrap', { email: undefined }), ENV, '')).json();
   assert.equal(service.email, '', 'a service identity has no email'); assert.equal(service.identity.name, 'Access service identity');
 });
@@ -300,8 +301,9 @@ test('T1-S0 GET /confirm is served only after sign-in, with the standard headers
   const html = await r.text(); assert.match(html, /^<!doctype html>/i); assert.doesNotMatch(html, /<script[^>]+src|https?:\/\//i);
 });
 
-test('T1-S0 Teams: with TEAMS_* set but TEAMS_ENABLED unset, every main-host response is unchanged; the two pre-Access paths answer 503', async () => {
-  const TEAMS = { TEAMS_APP_ID: 'a', TEAMS_BOT_APP_ID: 'b', TEAMS_TENANT_ID: 't', TEAMS_BOT_SECRET: 's' };
+// WOW_ZERO_CONFIG §4 (Z-S2): TEAMS_ENABLED is gone; Teams is on once the ids and the bot secret are all present.
+test('T1-S0 Teams: with TEAMS_* set but no bot secret (TEAMS_ENABLED is not read), every main-host response is unchanged; the two pre-Access paths answer 503', async () => {
+  const TEAMS = { TEAMS_ENABLED: '1', TEAMS_APP_ID: 'a', TEAMS_BOT_APP_ID: 'b', TEAMS_TENANT_ID: 't' };
   const stub = { idFromName: n => n, get: () => ({ fetch: async r => new Response(JSON.stringify({ path: new URL(r.url).pathname, user: r.headers.get('x-atlas-user'), role: r.headers.get('x-atlas-role'), mail: r.headers.get('x-atlas-email') }), { status: 200 }) }) };
   const base = { ...ENV, TRIGGER_SECRET: 'trig-secret', LIBRARY: stub, INTERVIEW: stub, HINDSIGHT_API_KEY: 'k' };
   const token = await jwt(), boot = await (await handle(await req('/api/bootstrap'), base, '')).json();
@@ -323,6 +325,11 @@ test('T1-S0 Teams: with TEAMS_* set but TEAMS_ENABLED unset, every main-host res
       assert.equal(res.status, 503); const b = await res.json(); assert.equal(b.status, 'BLOCKED_EXTERNAL'); assert.ok(b.reason && Array.isArray(b.needs));
     }
   }
+  // With the bot secret too, Teams is connected: the bot endpoint verifies its bearer token and the launcher answers.
+  const on = { ...base, ...TEAMS, TEAMS_ENABLED: '0', TEAMS_BOT_SECRET: 's' };
+  assert.equal((await handle(new Request(ORIGIN + '/api/teams/messages', { method: 'POST', body: '{}' }), on, '')).status, 401);
+  assert.equal((await handle(new Request(ORIGIN + '/teams/tab'), on, '')).status, 200);
+  assert.equal((await (await handle(await req('/api/bootstrap'), on, '')).json()).features.teams, 'connected');
 });
 
 test('T1-S0 scheduled(): the daily cron posts scan-stale to the LibraryStore as the system role; nothing without a library', async () => {
@@ -339,20 +346,25 @@ test('T1-S0 scheduled(): the daily cron posts scan-stale to the LibraryStore as 
   assert.deepEqual(await out, { invited: 0 });
 });
 
-// ---- T1 step 3 (WOW_SPEC §F6.2, §F6.4 #5): /api/transcribe, Spoken Ask. Off unless SPOKEN_ASK=1 (Q11). ----
-test('T1 /api/transcribe: 404 without SPOKEN_ASK=1; Origin and CSRF; type and size limits; a numbers-only log; never for external confirmers', async () => {
+// ---- T1 step 3 (WOW_SPEC §F6.2, §F6.4 #5): /api/transcribe, Spoken Ask. WOW_ZERO_CONFIG D1: off while
+// SPOKEN_ASK_APPROVED is false (the SPOKEN_ASK variable is gone); `approved` exercises the route as if D1 were confirmed,
+// with the consent prompt's header (`once`; the `always` path is tested below). ----
+import { flags as featureFlags, readyOf } from '../src/features.js';
+const APPROVED = { flagsOf: env => featureFlags(env, readyOf, { spokenAskApproved: true }) };
+test('T1 /api/transcribe: 404 until D1 is approved; Origin and CSRF; type and size limits; a numbers-only log; never for external confirmers', async () => {
   let fail = false; const runs = [];
   const AI = { async run(model, input) { runs.push([model, input.audio.contentType]); if (fail) throw new Error('stt down');
     return { results: { channels: [{ alternatives: [{ transcript: 'What did we do for Zebracorp? ' + 'x'.repeat(700), languages: ['en'] }] }] } }; } };
-  const on = { ...ENV, STT_MODEL: 'stt', SPOKEN_ASK: '1', AI }, boot = await (await handle(await req('/api/bootstrap'), on, '')).json();
-  const post = async (bytes, { headers = {}, env = on, claims = {}, method = 'POST' } = {}) => handle(new Request(ORIGIN + '/api/transcribe', { method, body: method === 'POST' ? bytes : undefined,
-    headers: { 'cf-access-jwt-assertion': await jwt(claims), Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'Content-Type': 'audio/L16;rate=24000', ...headers } }), env, '');
+  const on = { ...ENV, STT_MODEL: 'stt', AI }, boot = await (await handle(await req('/api/bootstrap'), on, '', APPROVED)).json();
+  const post = async (bytes, { headers = {}, env = on, claims = {}, method = 'POST', opts = APPROVED } = {}) => handle(new Request(ORIGIN + '/api/transcribe', { method, body: method === 'POST' ? bytes : undefined,
+    headers: { 'cf-access-jwt-assertion': await jwt(claims), Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'Content-Type': 'audio/L16;rate=24000', 'X-Atlas-Consent': 'spoken-ask-v1; once', ...headers } }), env, '', opts);
   const logs = [], log = console.log; console.log = line => logs.push(line);
   try {
-    for (const env of [{ ...on, SPOKEN_ASK: undefined }, { ...on, SPOKEN_ASK: 'true' }]) {
-      const r = await post(new Uint8Array(9600), { env }); assert.equal(r.status, 404); assert.deepEqual(await r.json(), { error: 'This feature is not available in this deployment.' });
+    for (const env of [on, { ...on, SPOKEN_ASK: '1' }]) {
+      const r = await post(new Uint8Array(9600), { env, opts: {} }); assert.equal(r.status, 404); assert.deepEqual(await r.json(), { error: 'This feature is not available in this deployment.' });
     }
-    assert.equal(boot.features.spokenAsk, true, 'bootstrap advertises it only with SPOKEN_ASK=1 and Ask READY');
+    assert.deepEqual(runs, [], 'nothing reaches speech-to-text while D1 is not approved');
+    assert.equal(boot.features.spokenAsk, true, 'bootstrap advertises it only with D1 approved and Ask READY');
     const ok = await post(new Uint8Array(9600));
     assert.equal(ok.status, 200); const body = await ok.json();
     assert.equal(body.text.length, 600); assert.equal(body.language, 'en'); assert.deepEqual(runs, [['stt', 'audio/wav']]);
@@ -374,4 +386,169 @@ test('T1 /api/transcribe: 404 without SPOKEN_ASK=1; Origin and CSRF; type and si
     const ext = await post(new Uint8Array(9600), { env: { ...on, EXTERNAL_EMAILS: 'client@acme.example' }, claims: { email: 'client@acme.example', sub: 'ext-1' } });
     assert.equal(ext.status, 403); assert.deepEqual(runs, [], 'an external confirmer never reaches speech-to-text');
   } finally { console.log = log; }
+});
+
+// ---- Track Z, step Z-S0 (WOW_ZERO_CONFIG §3.9, §5.4, §5.5, §6, §9). No earlier assertion below this line. ----
+import { signinClaims, SIGNED_IN_HTML } from '../src/app.js';
+const idpOf = r => JSON.parse(Buffer.from(r.headers.get('x-atlas-idp'), 'base64url').toString());
+
+test('Z x-atlas-idp: always overwritten on every library forward, built only from the verified JWT custom claims; verifyAccess unchanged', async () => {
+  const c = capture(), env = { ...ENV, LIBRARY: c.stub }, spoof = Buffer.from(JSON.stringify({ name: 'Boss Person' })).toString('base64url');
+  await handle(await req('/api/library/profile', { headers: { 'x-atlas-idp': spoof } }), env, '');
+  assert.equal(c.req.headers.get('x-atlas-idp'), 'e30', 'no claims (PIN sign-in): {} as e30; the browser value is gone');
+  const claims = { custom: { name: 'Zoë  Lefèvre', given_name: 'Zoë', family_name: 'Lefèvre', roles: ['ATLAS.Admin'], tid: 't', groups: ['g'] } };
+  await handle(await signed('/api/library/profile', claims, { headers: { 'x-atlas-idp': spoof } }), env, '');
+  assert.deepEqual(idpOf(c.req), { name: 'Zoë Lefèvre', given_name: 'Zoë', family_name: 'Lefèvre' }, 'mapped name claims only');
+  await handle(await signed('/api/library/people?email=a@b.co', { custom: { given_name: 'Ana', family_name: 'Ruiz' } }), env, '');
+  assert.deepEqual(idpOf(c.req), { name: 'Ana Ruiz', given_name: 'Ana', family_name: 'Ruiz' }, 'name composed when absent');
+  const boot = await (await handle(await signed('/api/bootstrap', claims), env, '')).json();
+  await handle(await signed('/api/library/profile', claims, { method: 'POST', body: '{}', headers: { Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'x-atlas-idp': spoof } }), env, '');
+  assert.deepEqual(idpOf(c.req), { name: 'Zoë Lefèvre', given_name: 'Zoë', family_name: 'Lefèvre' }, 'POST forwards too');
+  assert.equal(idpOf({ headers: new Headers({ 'x-atlas-idp': 'e30' }) }).name, undefined);
+  assert.deepEqual(await verifyAccess(await signed('/', claims), ENV), { sub: 'user-abc', email: 'tony@example.com' }, 'the verifyAccess result is unchanged');
+  assert.equal(signinClaims(await signed('/', { custom: { name: 'x'.repeat(300), given_name: 7 } })).name.length, 100);
+  assert.deepEqual(signinClaims(new Request(ORIGIN)), {}); assert.deepEqual(signinClaims(new Request(ORIGIN, { headers: { 'cf-access-jwt-assertion': 'a.%%%.c' } })), {});
+  const [h, , s] = (await jwt(claims)).split('.'), forged = [h, b64u(JSON.stringify({ ...claims, sub: 'user-abc', custom: { name: 'Forged' } })), s].join('.');
+  c.req = null; assert.equal((await handle(await req('/api/library/profile', { token: forged }), env, '')).status, 401, 'claims are read only from a token Access verified'); assert.equal(c.req, null);
+});
+
+test('Z /go links: 302 to the page fragments after sign-in; /go/confirm also for an external confirmer; anything else under /go/ goes home', async () => {
+  const id = '0123456789abcdef0123456789abcdef', loc = async (path, claims = {}, env = ENV) => { const r = await handle(await signed(path, claims), env, 'PAGE'); return [r.status, r.headers.get('location')]; };
+  assert.deepEqual(await loc('/go/start'), [302, '/#start']);
+  for (const kind of ['gap', 'invitation', 'bid', 'library']) assert.deepEqual(await loc(`/go/${kind}/${id}`), [302, `/#${kind}/${id}`], kind);
+  assert.deepEqual(await loc('/go/confirm/' + id), [302, '/confirm#' + id]);
+  for (const bad of ['/go/x', '/go/gap/' + id.toUpperCase(), '/go/gap/' + id.slice(1), '/go/gap/' + id + '/x', '/go/', '/go/start/x', '/go/confirm/xyz', '/go/library/../x'])
+    assert.deepEqual(await loc(bad), [302, '/'], bad);
+  const r = await handle(await req('/go/start'), ENV, 'PAGE');
+  assert.equal(r.headers.get('cache-control'), 'no-store'); assert.match(r.headers.get('content-security-policy'), /frame-ancestors 'none'/);
+  assert.equal((await handle(await req('/go/start', { token: null }), ENV, 'PAGE')).status, 401, 'only after Access sign-in');
+  assert.equal((await handle(new Request(ORIGIN + '/go/start', { method: 'POST', headers: { 'cf-access-jwt-assertion': await jwt() } }), ENV, '')).status, 404, 'GET only');
+  const ext = { ...ENV, EXTERNAL_EMAILS: 'client@acme.example' }, as = { email: 'client@acme.example', sub: 'ext-1' };
+  assert.deepEqual(await loc('/go/confirm/' + id, as, ext), [302, '/confirm#' + id], 'an external confirmer reaches a confirmation link');
+  for (const path of ['/go/gap/' + id, '/go/start', '/go/library/' + id, '/go/signed-in', '/go/confirm/xyz']) {
+    const x = await handle(await signed(path, as), ext, 'PAGE'); assert.equal(x.status, 403, path); assert.deepEqual(await x.json(), { error: 'Not available to external confirmers.' });
+  }
+});
+
+test('Z /go/signed-in: a tiny page that tells the waiting tab over BroadcastChannel and closes; no token, no email, standard headers', async () => {
+  const home = await handle(await req('/'), ENV, '<html></body>'), r = await handle(await req('/go/signed-in'), ENV, 'PAGE'), html = await r.text();
+  assert.equal(r.status, 200); assert.equal(r.headers.get('content-type'), 'text/html; charset=utf-8'); assert.equal(html, SIGNED_IN_HTML);
+  assert.ok(html.includes("BroadcastChannel('atlas-auth')") && html.includes("postMessage('ok')") && html.includes("You're signed in. This window closes by itself."));
+  const boot = await (await handle(await req('/api/bootstrap'), ENV, '')).json();
+  for (const secret of ['tony@example.com', 'user-abc', boot.csrf, (await jwt()).slice(0, 20), 'ATLAS_RUNTIME']) assert.equal(html.includes(secret), false, secret);
+  assert.doesNotMatch(html, /<script[^>]+src|https?:\/\//i);
+  for (const h of ['content-security-policy', 'cache-control', 'x-content-type-options', 'referrer-policy', 'permissions-policy']) assert.equal(r.headers.get(h), home.headers.get(h), h);
+  assert.equal((await handle(await req('/go/signed-in', { token: null }), ENV, 'PAGE')).status, 401);
+});
+
+test('Z navigation fallback: an unknown page navigation goes home; API paths, non-navigations, the wrong host and no sign-in are unchanged', async () => {
+  const nav = { 'Sec-Fetch-Mode': 'navigate' }, html = { Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8' };
+  for (const [path, headers] of [['/ATLAS_Voice.html', nav], ['/index.html', html], ['/some/old/page', nav]]) {
+    const r = await handle(await req(path, { headers }), ENV, 'PAGE'); assert.deepEqual([r.status, r.headers.get('location')], [302, '/'], path);
+  }
+  for (const [path, headers] of [['/ATLAS_Voice.html', {}], ['/api/wiki', nav], ['/api/wiki', html], ['/favicon.ico', { Accept: 'image/*', 'Sec-Fetch-Mode': 'no-cors' }]]) {
+    const r = await handle(await req(path, { headers }), ENV, 'PAGE'); assert.equal(r.status, 404, path); assert.deepEqual(await r.json(), { error: 'This feature is not available in this deployment.' });
+  }
+  assert.equal((await handle(new Request(ORIGIN + '/ATLAS_Voice.html', { method: 'POST', headers: { ...nav, 'cf-access-jwt-assertion': await jwt() } }), ENV, '')).status, 404, 'GET only');
+  assert.equal((await handle(await req('/ATLAS_Voice.html', { headers: nav, host: 'https://evil.example' }), ENV, 'PAGE')).status, 403, 'the wrong host stays 403');
+  assert.equal((await handle(await req('/ATLAS_Voice.html', { headers: nav, token: null }), ENV, 'PAGE')).status, 401, 'still behind Access');
+});
+
+test('Z /api/directory/push: bearer secret (constant-time), BLOCKED_EXTERNAL in test mode, forwarded as system in production; bounded body', async () => {
+  const c = capture(), SECRET = 'push-secret-value', body = JSON.stringify({ batch: 'a'.repeat(32), part: 1, final: true, rows: [{ email: 'jane@example.com', name: 'Jane' }] });
+  const test_ = { ...ENV, LIBRARY: c.stub, DIRECTORY_PUSH_SECRET: SECRET }, prod = { ...test_, DATA_MODE: 'production' };
+  const push = (auth, env, data = body, headers = {}) => handle(new Request(ORIGIN + '/api/directory/push', { method: 'POST', body: data, headers: { ...(auth ? { Authorization: auth } : {}), ...headers } }), env, '');
+  for (const [auth, env] of [[null, test_], ['Bearer wrong-secret-value', prod], ['Bearer ' + SECRET, { ...prod, DIRECTORY_PUSH_SECRET: '' }], ['Bearer ' + SECRET, { ...prod, LIBRARY: undefined }], [SECRET + 'x', prod]]) {
+    const r = await push(auth, env); assert.equal(r.status, 401, String(auth)); assert.deepEqual(await r.json(), { error: 'Unauthorized.' });
+  }
+  assert.equal(c.req, null);
+  const blocked = await push('Bearer ' + SECRET, test_), b = await blocked.json();
+  assert.equal(blocked.status, 503); assert.equal(b.status, 'BLOCKED_EXTERNAL'); assert.match(b.reason, /DATA_MODE/); assert.ok(b.needs.length); assert.equal(c.req, null, 'never forwarded in test mode');
+  const ok = await push('Bearer ' + SECRET, prod, body, { 'x-atlas-role': 'admin', 'x-atlas-user': 'boss@example.com', 'x-atlas-idp': 'eyJuYW1lIjoiQm9zcyJ9', 'cf-access-jwt-assertion': 'x' });
+  assert.equal(ok.status, 200); assert.equal(new URL(c.req.url).pathname, '/api/library/directory/import'); assert.equal(c.req.method, 'POST'); assert.equal(c.body, body);
+  assert.deepEqual(['x-atlas-user', 'x-atlas-role', 'x-atlas-email', 'x-atlas-idp'].map(h => c.req.headers.get(h)), ['dna-push', 'system', '', 'e30'], 'identity set by the Worker only');
+  assert.equal(ok.headers.get('cache-control'), 'no-store');
+  c.req = null;
+  assert.equal((await push('Bearer ' + SECRET, prod, JSON.stringify({ rows: 'x'.repeat(262200) }))).status, 413); assert.equal(c.req, null);
+  assert.equal((await push('Bearer ' + SECRET, prod, '{}', { 'Content-Length': '999999' })).status, 413, 'the declared length is checked first');
+  assert.equal((await handle(new Request(ORIGIN + '/api/directory/push', { headers: { Authorization: 'Bearer ' + SECRET } }), prod, '')).status, 401, 'GET is not the push: it falls through to Access');
+});
+
+test('Z DATA_MODE: the test banner and the readiness string follow it; nothing else changes', async () => {
+  const page = "<meta http-equiv=x content=\"connect-src 'self';\"><script>/* SERVER_RUNTIME */</script></body>";
+  for (const [env, banner, readiness] of [[ENV, true, 'edge-deployment-test-data-only'], [{ ...ENV, DATA_MODE: 'Production' }, true, 'edge-deployment-test-data-only'],
+    [{ ...ENV, DATA_MODE: 'production' }, false, 'production']]) {
+    const html = await (await handle(await req('/'), env, page)).text(), boot = await (await handle(await req('/api/bootstrap'), env, page)).json();
+    assert.equal(html.includes('TEST DEPLOYMENT · SYNTHETIC DATA ONLY'), banner, JSON.stringify(env.DATA_MODE)); assert.equal(boot.readiness, readiness);
+    assert.ok(html.includes('window.ATLAS_RUNTIME={"subjectKey"'));
+  }
+});
+
+test('Z /api/transcribe consent gate (D1): the prompt header on every request; `always` needs a stored consent read with the verified identity', async () => {
+  const runs = [], AI = { async run(model) { runs.push(model); return { results: { channels: [{ alternatives: [{ transcript: 'a question' }] }] } }; } };
+  let reply = () => new Response(JSON.stringify({ spokenAsk: null })), asked = null;
+  const LIBRARY = { idFromName: n => n, get: () => ({ fetch: async r => { asked = r; return reply(); } }) };
+  const env = { ...ENV, STT_MODEL: 'stt', AI, LIBRARY, ADMIN_EMAILS: '' }, boot = await (await handle(await req('/api/bootstrap'), env, '', APPROVED)).json();
+  const post = async (consent, e = env) => handle(new Request(ORIGIN + '/api/transcribe', { method: 'POST', body: new Uint8Array(9600),
+    headers: { 'cf-access-jwt-assertion': await jwt(), Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'Content-Type': 'audio/L16;rate=24000', ...(consent === null ? {} : { 'X-Atlas-Consent': consent }) } }), e, '', APPROVED);
+  const log = console.log; console.log = () => {};
+  try {
+    for (const bad of [null, '', 'spoken-ask-v2; once', 'spoken-ask-v1; maybe', 'spoken-ask-v1', 'once', 'spoken-ask-v1; once; always']) {
+      const r = await post(bad); assert.equal(r.status, 403, String(bad)); assert.deepEqual(await r.json(), { error: 'Voice questions need your consent first.' });
+    }
+    assert.deepEqual(runs, [], 'no consent header: nothing reaches speech-to-text');
+    assert.equal((await post('spoken-ask-v1; once')).status, 200); assert.equal((await post('spoken-ask-v1;once')).status, 200); assert.equal(asked, null, '`once` needs no stored consent');
+    const always = await post('spoken-ask-v1; always');
+    assert.equal(always.status, 403, 'always without a stored consent');
+    assert.equal(new URL(asked.url).pathname, '/api/library/profile/consents'); assert.equal(asked.method, 'GET');
+    assert.deepEqual(['x-atlas-user', 'x-atlas-role', 'x-atlas-email'].map(h => asked.headers.get(h)), ['tony@example.com', 'user', 'tony@example.com'], 'the verified identity only');
+    reply = () => new Response(JSON.stringify({ spokenAsk: { version: 1, at: '2026-09-29T00:00:00.000Z' } }));
+    assert.equal((await post('spoken-ask-v1; always')).status, 200, 'a stored consent allows it');
+    for (const [name, r] of [['not READY', () => new Response('{"error":"x"}', { status: 404 })], ['wrong version', () => new Response('{"spokenAsk":{"version":2}}')], ['store down', () => { throw new Error('down'); }], ['not JSON', () => new Response('nope')]]) {
+      reply = r; assert.equal((await post('spoken-ask-v1; always')).status, 403, name);
+    }
+    assert.equal((await post('spoken-ask-v1; always', { ...env, LIBRARY: undefined })).status, 403, 'no library: no stored consent');
+    assert.equal(runs.length, 3);
+  } finally { console.log = log; }
+});
+
+// D1 end to end (Z-S2): "Always allow for me" is stored through the Worker's library forward in the person's own profile
+// (real LibraryStore routes, real profile.js), and /api/transcribe reads it back with the verified identity before any
+// speech-to-text. Another person's stored consent never counts; revoking stops it at once.
+import * as profileModule from '../src/profile.js';
+test('Z spoken Ask end to end: the stored "always" consent is the one the Worker checks; per person; revocable', async () => {
+  const runs = [], AI = { async run(model) { runs.push(model); return { results: { channels: [{ alternatives: [{ transcript: 'which claims projects' }] }] } }; } };
+  const lib = new Library(memorySql(), {}), LIBRARY = { idFromName: n => n, get: () => ({ fetch: r => libraryRoutes(r, lib, { env: {} }) }) };
+  const env = { ...ENV, STT_MODEL: 'stt', AI, LIBRARY, ADMIN_EMAILS: '' };
+  const as = async (email, path, init = {}) => {
+    const token = await jwt({ sub: 'sub-' + email, email }), boot = await (await handle(await req('/api/bootstrap', { token }), env, '', APPROVED)).json();
+    return handle(new Request(ORIGIN + path, { ...init, headers: { 'cf-access-jwt-assertion': token, Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, ...(init.headers || {}) } }), env, '', APPROVED);
+  };
+  const consent = (email, granted) => as(email, '/api/library/profile/consent', { method: 'POST', body: JSON.stringify({ kind: 'spokenAsk', version: 1, granted }), headers: { 'Content-Type': 'application/json' } });
+  const ask = (email, kind) => as(email, '/api/transcribe', { method: 'POST', body: new Uint8Array(9600), headers: { 'Content-Type': 'audio/L16;rate=24000', 'X-Atlas-Consent': 'spoken-ask-v1; ' + kind } });
+  const log = console.log; console.log = () => {};
+  try {
+    if (!profileModule.READY) { assert.equal((await ask('tony@example.com', 'always')).status, 403, 'no stored consent while the profile module is not READY'); return; }
+    assert.equal((await ask('tony@example.com', 'always')).status, 403, 'nothing stored yet');
+    const granted = await consent('tony@example.com', true);
+    assert.equal(granted.status, 200); assert.equal((await granted.json()).consents.spokenAsk.version, 1);
+    const ok = await ask('tony@example.com', 'always');
+    assert.equal(ok.status, 200); assert.equal((await ok.json()).text, 'which claims projects');
+    assert.equal((await ask('kim@example.com', 'always')).status, 403, "another person's consent never counts");
+    assert.equal((await ask('kim@example.com', 'once')).status, 200, '`once` needs the prompt only');
+    assert.equal((await consent('tony@example.com', false)).status, 200);
+    assert.equal((await ask('tony@example.com', 'always')).status, 403, 'revoked: asked again next time');
+    assert.equal(runs.length, 2, 'speech-to-text ran only for the two consented requests');
+    const stored = lib.rows('SELECT subject, consents FROM profiles ORDER BY subject');
+    assert.deepEqual(stored.map(r => [r.subject, JSON.parse(r.consents).spokenAsk ?? null]), [['tony@example.com', null]], 'one profile row, keyed by the verified identity; nothing stored for kim');
+  } finally { console.log = log; }
+});
+
+test('Z D2: PDF conversion for briefs and sheets runs without PDF metadata', async () => {
+  const calls = [], env = { ...ENV, AI: { toMarkdown: async (f, o) => { calls.push([f.name, o]); return { format: 'markdown', data: 'Brief text' }; } } };
+  const boot = await (await handle(await req('/api/bootstrap'), env, '')).json();
+  const r = await handle(new Request(ORIGIN + '/api/sheet/ingest', { method: 'POST', body: new Uint8Array([37, 80, 68, 70]), headers: { 'cf-access-jwt-assertion': await jwt(), Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'Content-Type': 'application/pdf', 'x-file-name': 'brief.pdf' } }), env, '');
+  assert.equal(r.status, 200); assert.equal((await r.json()).text, 'Brief text');
+  assert.deepEqual(calls, [['brief.pdf', { conversionOptions: { pdf: { metadata: false } } }]]);
+  assert.equal(boot.features.pdfBriefs, boot.features.bids, 'pdfBriefs follows bids (no PDF_BRIEFS variable)');
 });

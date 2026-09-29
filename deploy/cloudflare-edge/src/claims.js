@@ -10,6 +10,7 @@ import { splitSentences, claimKey } from './snippets.js';
 import { recordText } from './scrub.js';
 import { clientScrub } from './review.js';
 import * as outreach from './outreach.js';
+import * as profile from './profile.js';
 
 export const READY = true;
 // Claim currency (§2.4, Q12; Tony decides). 'sentence' (default): a confirmation stays current while its exact sentence
@@ -131,12 +132,15 @@ async function propose(lib, user, body, currency) {
   return { claims: [...out.values()].map(c => claimView(c, current(c), deciders)) };
 }
 
-// The N+1: the staffing record (F4) first, then the N+1 the consultant named on the reference.
+// The N+1: the staffing record (F4) first, then the owner's N+1 in the stored DNA directory (a dna or dna_export row,
+// never the owner's own profile edits; WOW_ZERO_CONFIG §5.8), then the N+1 the consultant named on the reference.
 function managerOf(lib, row) {
   outreach.ensure(lib);
   const pid = str(row.data?.details?.projectId, 60);
   const staffed = pid ? email(lib.rows("SELECT manager_email FROM staffing WHERE project_id = ? COLLATE NOCASE AND consultant_email = ? AND manager_email != '' ORDER BY updated_at DESC", pid, row.owner)[0]?.manager_email) : '';
   if (staffed) return { to: staffed, source: 'staffing' };
+  const listed = profile.READY ? email(profile.directoryManager(lib, row.owner)?.email) : ''; // a stub while the profile module is not READY
+  if (listed) return { to: listed, source: 'directory' };
   const declared = email(row.data?.validation?.manager?.email);
   if (declared) return { to: declared, source: 'self_declared' };
   throw fail(400, 'Name the N+1 on the reference first.');
@@ -172,7 +176,7 @@ function createRequest(ctx) {
     VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`, id, row.id, row.revision, kind, to, source, JSON.stringify(ids), user.email, email(user.mail), at, expires);
   lib.log(row.id, user.email, 'confirmation requested', `rev ${row.revision} request ${id}: ${ids.length} claims (${kind}, ${source || 'none'})`);
   // The draft names the consultant and the number of points only: no claim text, no client name. Nothing is sent.
-  const n = ids.length, name = str(row.data?.consultant?.name, 100) || 'a colleague', link = `${originOf(ctx)}/confirm#${id}`;
+  const n = ids.length, name = str(row.data?.consultant?.name, 100) || 'a colleague', link = `${originOf(ctx)}/go/confirm/${id}`; // survives an interactive sign-in (§3.9)
   const subject = `Can you confirm ${n} point${n === 1 ? '' : 's'} from ${name}'s project? (about 60 seconds)`;
   const draft = { to, subject, body: link, link, mailto: `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(link)}` };
   const title = recordText(lib)(clientScrub(row.data)(row.data.title));

@@ -50,11 +50,11 @@ with sync_playwright() as pw:
    check(f'No document overflow at {width}',p.evaluate('document.documentElement.scrollWidth<=innerWidth'))
    check(f'Canvas fits device at {width}',p.locator('#orbCanvas').bounding_box()['width']<=width)
   p.set_viewport_size({'width':1366,'height':768});p.evaluate('window.scrollTo(0,0)');p.wait_for_timeout(150)
-  box=p.locator('#voiceStart').bounding_box();check('Main call to action fits a 1366 × 768 screen',box['y']+box['height']<=768)
+  box=p.locator('#voiceOpenHome').bounding_box();check('Main call to action fits a 1366 × 768 screen',box['y']+box['height']<=768)  # offline copy: "Open ATLAS" (WOW_ZERO_CONFIG §3.3)
   p.locator('#studioAppearance').click();p.locator('[data-palette=blue]').click();check('Optional blue appearance works',p.evaluate('AtlasOrbUI.inspect().palette==="blue"'))
   reduced=load(reduced=True);f=reduced.evaluate('AtlasOrbUI.inspect().frames');reduced.wait_for_timeout(300);check('Reduced motion does not animate continuously',reduced.evaluate('AtlasOrbUI.inspect().frames')==f)
   fail=load(HTML.replace('/* SERVER_RUNTIME */',"HTMLCanvasElement.prototype.getContext=function(){return null};"));check('Missing Canvas retains visible inline SVG',fail.locator('.orb-inline-fallback').is_visible())
-  check('Canvas failure leaves connection controls available',fail.locator('#voiceStart').is_visible())
+  check('Canvas failure leaves connection controls available',fail.locator('#voiceOpenHome').is_visible())  # offline copy: "Open ATLAS" (WOW_ZERO_CONFIG §3.3)
   check('No JavaScript exceptions across checks',not errors)
  finally:
   (ROOT/'tests/sculpture-browser-results.json').write_text(json.dumps({'scope':'Real browser rendering via unchanged HTML set_content; no native NVIDIA or microphone. One explicit Canvas-failure injection.','checks':checks,'errors':errors},indent=2));b.close()

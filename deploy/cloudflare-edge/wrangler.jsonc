@@ -32,7 +32,11 @@
   }
   // Secrets (never committed): CSRF_SECRET (deploy.sh); optional via set-keys.sh: HINDSIGHT_API_KEY, TYPESAFE_API_KEY, ELEVENLABS_API_KEY
   // Optional WOW vars (docs/WOW_SPEC.md section 5), all unset by default; Tony decides and sets them, no values here:
-  // EXTERNAL_EMAILS (exact confirmer emails, comma-separated), CLIENT_CONFIRM (1), SPOKEN_ASK (1), PDF_BRIEFS (1)
-  // TEAMS_ENABLED (1), TEAMS_APP_ID, TEAMS_BOT_APP_ID, TEAMS_TENANT_ID; secret TEAMS_BOT_SECRET (wrangler secret put, by Tony)
+  // EXTERNAL_EMAILS (exact confirmer emails, comma-separated), CLIENT_CONFIRM (1)
+  // Zero-setup vars (docs/WOW_ZERO_CONFIG.md sections 4 and 5), all unset by default, no values here:
+  // DATA_MODE (production; only on an approved Mantu deployment: removes the test banner, allows real DNA/HR data)
+  // DNA pull, ASSUMED shape, from Mantu IT: DNA_PROFILE_URL (https template with one {email} or {oid}), DNA_AUTH_HEADER (default Authorization), DNA_FIELD_MAP (JSON); secret DNA_API_KEY
+  // DNA push: secret DIRECTORY_PUSH_SECRET, plus an Access bypass on /api/directory/push only (Tony)
+  // Teams (connected once all are set; no on switch): TEAMS_APP_ID, TEAMS_TENANT_ID; secret TEAMS_BOT_SECRET (wrangler secret put, by Tony); TEAMS_BOT_APP_ID only if the bot has its own app id (defaults to TEAMS_APP_ID)
   // TEAMS_SERVICE_HOSTS (optional, comma-separated host names added to the Teams connector allow-list beyond smba.trafficmanager.net)
 }

@@ -58,8 +58,11 @@ with sync_playwright() as pw:
   try:p.locator('#agentText').wait_for(state='visible',timeout=2000)
   except Exception:pass
   check('Transcript panel is visible by default',p.locator('#agentText').is_visible());p.locator('#orbTranscriptToggle').click();check('Transcript can be hidden',not p.locator('#agentText').is_visible());p.locator('#orbTranscriptToggle').click();check('Transcript can be restored',p.locator('#agentText').is_visible())
-  p.locator('#voiceStart').click();p.locator('#voiceConnectionDialog').wait_for(state='visible')
-  check('Offline Start opens actionable connection setup','a voice model is not connected' in p.locator('#connectionSummary').inner_text())
+  home=p.locator('#voiceOpenHome')  # WOW_ZERO_CONFIG §3.3: an offline copy offers one real link to the live workspace instead of Start
+  check('Offline copy: Start is one "Open ATLAS" link to the live workspace',home.is_visible() and not p.locator('#voiceStart').is_visible() and home.get_attribute('href').endswith('/go/start') and home.get_attribute('target')=='_blank' and 'noopener' in home.get_attribute('rel'))
+  p.locator('#voiceSetup').click();p.locator('#voiceConnectionDialog').wait_for(state='visible')
+  check('Offline connection panel says so; the address form waits under an advanced disclosure (§3.8)','offline copy of ATLAS' in p.locator('#connectionSummary').inner_text() and p.locator('#offlineOpenHome').is_visible() and not p.locator('#gatewayAddress').is_visible())
+  p.locator('#gatewayAdvanced > summary').click()
   check('Connection setup does not create a pretend live session',p.evaluate('!AtlasVoice.status().hasMicrophone && AtlasVoice.status().phase==="idle"'))
   p.locator('#gatewayAddress').fill('javascript:alert(1)');check('Executable gateway URL rejected',p.locator('#gatewayOpen').get_attribute('href') is None)
   p.locator('#gatewayAddress').fill('https://atlas.example.com/?token=secret');check('Credential-bearing URL rejected',p.locator('#gatewayOpen').get_attribute('href') is None)
@@ -126,7 +129,7 @@ with sync_playwright() as pw:
   for width in [320,390,768,1024,1440]:
    p.set_viewport_size({'width':width,'height':900});p.wait_for_timeout(150)
    check(f'No horizontal overflow at {width}px',p.evaluate('document.documentElement.scrollWidth<=innerWidth'))
-   check(f'Orb and start are visible at {width}px',p.locator('#orbCanvas').is_visible() and p.locator('#voiceStart').is_visible())
+   check(f'Orb and start are visible at {width}px',p.locator('#orbCanvas').is_visible() and p.locator('#voiceOpenHome').is_visible())  # offline copy: the start control is the "Open ATLAS" link
   reduced=load(context,reduced=True);frames=reduced.evaluate('AtlasOrbUI.inspect().frames');reduced.wait_for_timeout(200)
   check('System reduced-motion avoids continuous drawing',reduced.evaluate('AtlasOrbUI.inspect().frames')==frames)
   reduced.locator('#studioAppearance').click();check('Reduced-motion control is honest',reduced.locator('#orbMotion').is_disabled())

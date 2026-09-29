@@ -6,7 +6,9 @@ set -euo pipefail
 for v in CLOUDFLARE_API_TOKEN CF_ACCOUNT_ID ACCESS_APP_ID ENTRA_TENANT_ID ENTRA_CLIENT_ID ENTRA_CLIENT_SECRET; do [ -n "${!v:-}" ] || { echo "Missing $v" >&2; exit 2; }; done
 API="https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/access"
 auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json")
-idp=$(python3 -c 'import json,os; print(json.dumps({"name":"Mantu Microsoft Entra ID","type":"azureAD","config":{"client_id":os.environ["ENTRA_CLIENT_ID"],"client_secret":os.environ["ENTRA_CLIENT_SECRET"],"directory_id":os.environ["ENTRA_TENANT_ID"],"support_groups":False,"claims":["tid","oid","roles","preferred_username"]}}))')
+# Claim order matters: Access trims custom claims from the END of this list above ~1 KB, so the identity claims come
+# first and the name claims (WOW_ZERO_CONFIG §5.5, on-screen use only) last. Never add "groups".
+idp=$(python3 -c 'import json,os; print(json.dumps({"name":"Mantu Microsoft Entra ID","type":"azureAD","config":{"client_id":os.environ["ENTRA_CLIENT_ID"],"client_secret":os.environ["ENTRA_CLIENT_SECRET"],"directory_id":os.environ["ENTRA_TENANT_ID"],"support_groups":False,"claims":["tid","oid","roles","preferred_username","name","given_name","family_name"]}}))')
 IDP_ID=$(curl -sS "${auth[@]}" -X POST "$API/identity_providers" --data "$idp" | python3 -c 'import json,sys; r=json.load(sys.stdin); assert r["success"], r["errors"]; print(r["result"]["id"])')
 echo "Entra connector created: $IDP_ID"
 curl -sS "${auth[@]}" -X PATCH "$API/apps/$ACCESS_APP_ID" --data "{\"allowed_idps\":[\"$IDP_ID\"],\"auto_redirect_to_identity\":true}" \

@@ -46,6 +46,7 @@ function build(sec){S.built=true;const F=S.boot.features||{},rev=['admin','revie
  $('bidProspects').addEventListener('blur',addProspect);
  $('bidBrief').addEventListener('input',()=>say('bidBriefCount',$('bidBrief').value.length.toLocaleString()+' / 60,000 characters'));
  $('bidFile').addEventListener('change',onFile);
+ window.AtlasAuth?.dirty(()=>!!$('bidBrief')?.value.trim()); // an unsent brief is never reloaded away by a re-sign-in (WOW_ZERO_CONFIG §3.7)
  renderDetail();}
 // ---- new bid form
 function addProspect(){const el=$('bidProspects'),v=el.value.replace(/,+$/,'').trim().slice(0,120);el.value='';if(!v)return;
@@ -57,7 +58,7 @@ const namesProspect=alias=>S.prospects.some(n=>new RegExp('(?<![\\p{L}\\p{N}])'+
 const unxml=s=>s.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&amp;/g,'&');
 async function docxText(bytes){const z=window.AtlasOffice.entries(bytes),get=z.get('word/document.xml');if(!get)throw Error('This .docx has no document text.');
  const xml=new TextDecoder().decode(await get());return xml.split(/<\/w:p>/).map(p=>[...p.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].map(m=>unxml(m[1])).join('')).filter(t=>t.trim()).join('\n');}
-async function pdfText(file){const r=await fetch('/api/sheet/ingest',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'X-Atlas-CSRF':S.boot.csrf,'Content-Type':file.type||'application/pdf','x-file-name':file.name.slice(0,200)},body:new Uint8Array(await file.arrayBuffer())});
+async function pdfText(file){const r=await window.AtlasAuth.fetch('/api/sheet/ingest',{method:'POST',headers:{'X-Atlas-CSRF':S.boot.csrf,'Content-Type':file.type||'application/pdf','x-file-name':file.name.slice(0,200)},body:new Uint8Array(await file.arrayBuffer())});
  const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||'The PDF could not be read.');return String(d.text||'');}
 async function readBrief(file){const ext=(file.name.split('.').pop()||'').toLowerCase();
  if(/^image\//.test(file.type||'')||['png','jpg','jpeg','gif','webp','heic','heif','bmp','svg','tif','tiff','avif'].includes(ext))throw Error('Images are refused. Upload the brief as .txt, .md, .docx or .pptx, or paste its text.');
@@ -67,7 +68,7 @@ async function readBrief(file){const ext=(file.name.split('.').pop()||'').toLowe
  const bytes=new Uint8Array(await file.arrayBuffer());if(ext==='pptx')return window.AtlasOffice.pptxText(bytes);if(ext==='docx')return docxText(bytes);
  const t=new TextDecoder().decode(bytes);if(t.includes('\0'))throw Error('This file is not plain text.');return t;}
 async function onFile(e){const f=e.target.files?.[0];if(!f)return;say('bidNewStatus','Reading '+f.name+'…');
- try{const text=String(await readBrief(f)).trim();if(!text)throw Error('No text was found in this file.');$('bidBrief').value=text.slice(0,60000);S.fileName=f.name.slice(0,240);
+ try{const text=String(await readBrief(f)).trim();if(!text)throw Error(/\.pdf$/i.test(f.name)?'This PDF has no text ATLAS can read (a scanned document?). Paste the relevant text instead, or upload it as .docx.':'No text was found in this file.');$('bidBrief').value=text.slice(0,60000);S.fileName=f.name.slice(0,240);
   $('bidBrief').dispatchEvent(new Event('input'));say('bidNewStatus',text.length>60000?'Read '+f.name+'. Only the first 60,000 characters are kept.':'Read '+f.name+'. Check the text before creating the bid.');}
  catch(err){e.target.value='';S.fileName='';say('bidNewStatus',err.message);}}
 async function create(e){e.preventDefault();addProspect();const title=$('bidTitle').value.trim(),alias=$('bidAlias').value.trim(),brief=$('bidBrief').value.trim();

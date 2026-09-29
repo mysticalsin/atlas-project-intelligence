@@ -28,7 +28,8 @@ export const REASONS = Object.freeze({
   closed: 'The invitation or request is no longer open.',
 });
 const SUBJECT = { interview_invite: "12 minutes while it's fresh?", gap_request: 'Can you give 5 minutes of proof for a bid?', confirmation_request: 'Can you confirm a few points? (about 60 seconds)' };
-const PATH = { interview_invite: id => `/#invitation/${id}`, gap_request: id => `/#gap/${id}`, confirmation_request: id => `/confirm#${id}` };
+// /go/ links survive an interactive sign-in (WOW_ZERO_CONFIG §3.9); rows queued earlier keep their stored fragment path.
+const PATH = { interview_invite: id => `/go/invitation/${id}`, gap_request: id => `/go/gap/${id}`, confirmation_request: id => `/go/confirm/${id}` };
 const REASON_LABEL = { project_end: 'project ending', milestone: 'project milestone', six_month_update: 'six-month update', periodic_review: 'periodic review', manual: 'interview request' };
 
 // §2.4 DDL (new tables only). The unique index makes the per-(subject, channel) dedupe atomic.

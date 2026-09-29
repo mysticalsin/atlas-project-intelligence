@@ -202,11 +202,15 @@ export function maskedPreview(text, prospects = []) {
   return applySpans(src, [piiSpans(src), spansOf(src, re, { kind: 'prospect' })], s => s.kind === 'prospect' ? '[prospect]' : '[contact]');
 }
 
+// Merges before WOW_ZERO_CONFIG §5.9 wrote "Contribution by <name or email>:" into a stored answer. Every record path
+// to a model (recordView, snippets) passes recordText, so the legacy prefix loses the person here.
+const LEGACY_MERGE = /(^|\n)[ \t]*Contribution by [^\n:]{1,200}:[ \t]*/g;
 // Record masking for anything built from a record: other library clients, contacts and PII.
 export function recordText(lib) {
   const m = compiled(lib);
   return s => {
     if (typeof s !== 'string') return s;
+    s = s.replace(LEGACY_MERGE, '$1Contribution by another consultant: ');
     const [cci, ccs] = m.clients.spans(s), [pci, pcs] = m.contacts.spans(s);
     const tag = { Email: '[email]', Phone: '[phone]', Link: '[link]' };
     return applySpans(s, [piiSpans(s), cci, ccs, pci.map(x => ({ ...x, contact: true })), pcs.map(x => ({ ...x, contact: true }))],

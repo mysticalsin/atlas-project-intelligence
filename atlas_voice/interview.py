@@ -23,11 +23,13 @@ def clean(value, limit):
 def project_context(raw):
     if not isinstance(raw, dict):
         raise ValueError('Project context must be an object.')
+    # 'consultant' is still accepted (older pages send it) but never kept: the consultant's name never reaches a
+    # model (WOW_ZERO_CONFIG §0.4, §5.9).
     unknown = set(raw) - {'id', 'title', 'consultant', 'role', 'sector', 'stage', 'answers', 'oppId'}
     if unknown:
         raise ValueError('Unexpected project fields. Identity and memory banks are server-owned.')
     result = {k: clean(raw.get(k), n) for k, n in (
-        ('id', 100), ('title', 160), ('consultant', 100), ('role', 120), ('sector', 100), ('stage', 60))}
+        ('id', 100), ('title', 160), ('role', 120), ('sector', 100), ('stage', 60))}
     opp = clean(raw.get('oppId'), 40)
     if opp:
         result['oppId'] = opp
@@ -55,7 +57,7 @@ def make_prompt(project, preferences=''):
             return prompt
         prefs = prefs[:len(prefs)//2]
         context['prior_notes'] = {k: v[:len(v)//2] for k, v in context['prior_notes'].items() if len(v)>16}
-        for k in ('title', 'consultant', 'role', 'sector', 'stage'):
+        for k in ('title', 'role', 'sector', 'stage'):
             context[k] = context.get(k, '')[:max(16, len(context.get(k, ''))//2)]
     raise ValueError('Project context cannot fit the voice worker prompt budget.')
 

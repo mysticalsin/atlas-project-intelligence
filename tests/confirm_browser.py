@@ -87,7 +87,7 @@ try:
     st, made = api('alex@mantu.com', 'POST', '/api/library/confirmations', {'refId': rid, 'claimIds': ids, 'kind': 'manager'})
     req = made['request']
     check('confirmation requested from the self-declared N+1', st == 201 and req['toEmail'] == 'sam@mantu.com' and req['managerSource'] == 'self_declared')
-    check('the draft holds only the /confirm link: no claim text, no client name', made['draft']['body'] == f'{BASE}/confirm#{req["id"]}'
+    check('the draft holds only the /go/confirm/ link: no claim text, no client name', made['draft']['body'] == f'{BASE}/go/confirm/{req["id"]}'
           and 'Zebracorp' not in json.dumps(made['draft']) and 'routing model' not in json.dumps(made['draft']))
     check('outreach rows queued as pending_approval (nothing sent)', [o['status'] for o in made['outreach']] == ['pending_approval', 'pending_approval'])
 

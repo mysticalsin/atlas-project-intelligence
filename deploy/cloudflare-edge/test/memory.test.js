@@ -108,3 +108,26 @@ test('connection test explains Hindsight credit and key problems plainly', async
     assert.match((await r.json()).hindsight.error, text);
   }
 });
+
+// ---- Track Z (WOW_ZERO_CONFIG §3.4, §5.9, §9) ----
+test('Z GET /api/memory/settings: the switch alone, from DO storage, never a Hindsight call', async () => {
+  const calls = [], hs = new Proxy({}, { get: (_, k) => async () => { calls.push(String(k)); throw new Error('Hindsight must not be called'); } });
+  const ctx = { storage: store(), hs, env: ENV }, get = async c => (await memoryRoutes(req('GET', '/api/memory/settings'), c)).json();
+  assert.deepEqual(await get(ctx), { off: false }, 'on by default (inside the consented sentence)');
+  await memoryRoutes(req('POST', '/api/memory/settings', { off: true }), ctx); assert.deepEqual(await get(ctx), { off: true });
+  await memoryRoutes(req('POST', '/api/memory/settings', { off: false }), ctx); assert.deepEqual(await get(ctx), { off: false });
+  assert.deepEqual(calls, []);
+  assert.deepEqual(await get({ storage: store(), hs: null, env: {} }), { off: false }, 'answers without Hindsight configured too');
+  assert.equal((await memoryRoutes(new Request('https://atlas.test/api/memory/settings'), ctx)).status, 401, 'the Worker-set bank header is required');
+});
+
+test('Z Hindsight leak: a model-safe project (name blanked, profile-prefilled role blanked, client kept) retains no name or title; the client is still scrubbed', () => {
+  // The browser builds this payload with profile-core.js modelProject (Z-S1); this is the server-side half of that contract.
+  const full = { ...P, consultant: { name: 'Zelda Quintero', role: 'Principal Zebra' } }, modelSafe = { ...full, consultant: { name: '', role: '' } };
+  const items = JSON.stringify(retainItems(modelSafe, '2026-09-29T10:00:00.000Z'));
+  assert.doesNotMatch(items, /Zelda|Quintero|Principal Zebra/);
+  assert.doesNotMatch(items, /Zebracorp|Head of Claims/, 'the client is still scrubbed: modelProject keeps `client` for exactly this');
+  assert.match(JSON.stringify(retainItems(full)), /Consultant role: Principal Zebra\./, 'why the browser blanks a profile role: it would otherwise be retained');
+  assert.match(JSON.stringify(retainItems({ ...full, consultant: { name: '', role: 'Data engineer' } })), /Consultant role: Data engineer\./, 'a role the consultant typed stays');
+  assert.doesNotMatch(JSON.stringify(retainItems(full)), /Zelda|Quintero/, 'the name itself was never retained');
+});

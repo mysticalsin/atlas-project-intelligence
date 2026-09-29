@@ -1,10 +1,11 @@
 // F4.3 / F4.6 pre-Access Teams surfaces on the main host (WOW_SPEC §F4.3, §F4.6): BUILT, NOT CONNECTED.
 // app.js routes exactly POST /api/teams/messages and GET /teams/tab here, before Access, and returns this Response
-// as-is, so every response carries its own security headers. Unless TEAMS_ENABLED=1 and the three TEAMS_* ids are
-// set, both paths answer 503 BLOCKED_EXTERNAL; no other Worker response depends on any TEAMS_* var.
+// as-is, so every response carries its own security headers. Until Teams is connected (teamsStatus: TEAMS_APP_ID,
+// TEAMS_TENANT_ID and the TEAMS_BOT_SECRET, with TEAMS_BOT_APP_ID defaulting to TEAMS_APP_ID), both paths answer 503
+// BLOCKED_EXTERNAL; no other Worker response depends on any TEAMS_* var.
 // The bot never sends on its own: events are verified (teams.js), forwarded to the LibraryStore system word
 // `teams-event` (which dedupes and applies them), and a card action is answered in the HTTP 200 invoke response.
-import { verifyBotActivity, teamsClient, messageCard } from './teams.js';
+import { verifyBotActivity, teamsClient, messageCard, teamsStatus, botAppId } from './teams.js';
 import { str } from './util.js';
 import { TEAMS_JS } from '../teams/vendor/teams-js.mjs';
 
@@ -15,9 +16,9 @@ const json = (body, status = 200) => new Response(JSON.stringify(body), { status
 // Route-specific CSP: only Teams may frame the launcher; the main host keeps frame-ancestors 'none' everywhere else.
 export const TAB_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; "
   + 'frame-ancestors https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft';
-const NEEDS = ['TEAMS_ENABLED=1', 'TEAMS_APP_ID', 'TEAMS_BOT_APP_ID', 'TEAMS_TENANT_ID', 'TEAMS_BOT_SECRET (Worker secret)',
+const NEEDS = ['TEAMS_APP_ID', 'TEAMS_TENANT_ID', 'TEAMS_BOT_SECRET (Worker secret)', 'TEAMS_BOT_APP_ID only when the bot uses another app registration than TEAMS_APP_ID',
   'Cloudflare Access bypass for /api/teams/messages and /teams/tab', 'Azure Bot resource (F0, single tenant) with the Teams channel on', 'Teams admin approval of the app package'];
-const configured = env => env.TEAMS_ENABLED === '1' && !!env.TEAMS_APP_ID && !!env.TEAMS_BOT_APP_ID && !!env.TEAMS_TENANT_ID;
+const configured = env => teamsStatus(env) === 'connected';
 
 export async function teamsRoutes(request, env = {}, { waitUntil = p => p } = {}, { fetcher = (...a) => fetch(...a), teamsJs = TEAMS_JS } = {}) {
   void waitUntil; // nothing runs after the response: the invoke answer is part of it
@@ -31,7 +32,7 @@ export async function teamsRoutes(request, env = {}, { waitUntil = p => p } = {}
 
 // Map a verified activity to a TeamsEvent (personal scope only), or null when there is nothing to record.
 export function eventOf(a, env) {
-  const conv = a.conversation || {}, from = a.from || {}, bot = '28:' + env.TEAMS_BOT_APP_ID;
+  const conv = a.conversation || {}, from = a.from || {}, bot = '28:' + botAppId(env);
   if (conv.conversationType !== 'personal' || !a.id) return null;
   const base = { activityId: str(a.id, 256), aadObjectId: str(from.aadObjectId, 64), tenantId: str(a.channelData?.tenant?.id ?? conv.tenantId, 64),
     teamsUserId: str(from.id, 256), conversationId: str(conv.id, 512), serviceUrl: str(a.serviceUrl, 512) };
@@ -69,24 +70,25 @@ async function messages(request, env, fetcher) {
   return json({ statusCode: 200, type: 'application/vnd.microsoft.card.adaptive', value }, 200);
 }
 
-// GET /teams/tab: a static launcher with no user data and no API call. TeamsJS app.initialize(), then app.openLink.
+// GET /teams/tab: a static launcher with no user data and no API call. TeamsJS app.initialize(), then app.openLink to
+// /go/start, which opens the consent step (the microphone waits for the Start click; WOW_ZERO_CONFIG §3.1).
 function tab(env, js) {
   if (!js) return json({ error: 'TeamsJS not vendored', status: 'BLOCKED_EXTERNAL',
     reason: 'TeamsJS not vendored: the launcher tab needs the @microsoft/teams-js 2.57.0 UMD bundle in deploy/cloudflare-edge/teams/vendor/.',
     needs: ['@microsoft/teams-js 2.57.0 (MIT) vendored with teams/vendor_teamsjs.py, its SHA-256 recorded in docs/THIRD_PARTY.md and docs/SOURCE_LOCK.json'] }, 503);
   let origin = '';
   try { origin = new URL(String(env.ORIGIN)).origin; } catch { origin = ''; }
-  const target = JSON.stringify(origin + '/').replace(/</g, '\\u003c');
+  const target = JSON.stringify(origin ? origin + '/go/start' : '/').replace(/</g, '\\u003c'), home = JSON.stringify(origin + '/').replace(/</g, '\\u003c');
   const html = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ATLAS</title>'
     + '<style>body{margin:0;padding:24px;background:#101011;color:#F8F8F8;font:16px/1.5 Arial,system-ui,sans-serif}main{max-width:32rem}'
     + 'h1{font-size:22px;font-weight:600;margin:0 0 8px}p{color:#A9A9BC;margin:0 0 20px}button{font:inherit;border:0;border-radius:8px;padding:12px 18px;background:#3E007A;color:#fff;cursor:pointer}'
     + 'a{color:#F6EB4B}button:focus-visible,a:focus-visible{outline:3px solid #F6EB4B;outline-offset:3px}.row{display:flex;flex-wrap:wrap;gap:16px;align-items:center}</style></head>'
     + '<body><main><h1>ATLAS</h1><p>Interviews and references open in your browser, signed in as you.</p>'
     + '<div class="row"><button id="open" type="button">Open ATLAS</button><a id="pending" href="#">Your pending interviews</a></div><p id="msg" role="status"></p></main>'
-    + '<script>' + js + '</script><script>(function(){var target=' + target + ',ready=false,msg=document.getElementById("msg");'
-    + 'function open(e){if(e)e.preventDefault();if(ready&&window.microsoftTeams){microsoftTeams.app.openLink(target).catch(function(){msg.textContent="Teams could not open the link. Open ATLAS in your browser.";});}'
+    + '<script>' + js + '</script><script>(function(){var target=' + target + ',home=' + home + ',ready=false,msg=document.getElementById("msg");'
+    + 'function open(e,to){if(e)e.preventDefault();if(ready&&window.microsoftTeams){microsoftTeams.app.openLink(to).catch(function(){msg.textContent="Teams could not open the link. Open ATLAS in your browser.";});}'
     + 'else{msg.textContent="Open this tab inside Microsoft Teams, or open ATLAS in your browser.";}}'
-    + 'document.getElementById("open").addEventListener("click",open);document.getElementById("pending").addEventListener("click",open);'
+    + 'document.getElementById("open").addEventListener("click",function(e){open(e,target);});document.getElementById("pending").addEventListener("click",function(e){open(e,home);});'
     + 'try{microsoftTeams.app.initialize().then(function(){ready=true;}).catch(function(){ready=false;});}catch(e){ready=false;}})();</script></body></html>';
   return new Response(html, { status: 200, headers: { ...BASE, 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': TAB_CSP } });
 }

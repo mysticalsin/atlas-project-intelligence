@@ -1,10 +1,23 @@
 """Rebuild the self-contained browser client. No frontend dependencies or external assets."""
 from pathlib import Path
-import base64, json, hashlib, sys
+import base64, json, hashlib, os, re, sys
 ROOT=Path(__file__).resolve().parent
 sys.path.insert(0,str(ROOT))
 from atlas_voice.quality import NUMERIC, FIELDS, TO_TOPIC  # stdlib only: the ledger's field labels and number rule, one source
 logo_bytes=(ROOT/'assets/Mantu.svg').read_bytes()
+# The live ATLAS address baked into every copy (WOW_ZERO_CONFIG §3.10): an offline copy opens it with one link. It is public and
+# grants nothing (the target is behind Access). ATLAS_HOME_URL overrides the wrangler.jsonc ORIGIN; anything invalid gives ''.
+def atlas_home(environ=os.environ):
+    if 'ATLAS_HOME_URL' in environ:
+        value = environ['ATLAS_HOME_URL'].strip()
+    else:
+        try:
+            text = (ROOT/'deploy/cloudflare-edge/wrangler.jsonc').read_text()
+            value = json.loads('\n'.join(l for l in text.splitlines() if not l.strip().startswith('//')))['vars']['ORIGIN']
+        except Exception:
+            value = ''
+    return value if isinstance(value, str) and re.fullmatch(r'https://[a-z0-9.-]+', value) else ''
+ATLAS_HOME=atlas_home()
 logo='data:image/svg+xml;base64,'+base64.b64encode(logo_bytes).decode()
 slots={'__CSS__':(ROOT/'src/styles.css').read_text()+'\n'+(ROOT/'src/voice.css').read_text()+'\n'+(ROOT/'src/orb.css').read_text()+'\n'+(ROOT/'src/sculpture.css').read_text()+'\n'+(ROOT/'src/intelligence.css').read_text()+'\n'+(ROOT/'src/charts.css').read_text()+'\n'+(ROOT/'src/wow.css').read_text()+'\n'+(ROOT/'src/storyboard.css').read_text(),
  '__LOGO__':logo,'__LOGOJSON__':json.dumps(logo),'__ARCH__':(ROOT/'docs/architecture.svg').read_text(),
@@ -32,7 +45,12 @@ slots={'__CSS__':(ROOT/'src/styles.css').read_text()+'\n'+(ROOT/'src/voice.css')
  '__BIDS_CORE__':(ROOT/'src/bids-core.js').read_text(),
  '__WOW_UI__':'\n'.join((ROOT/'src'/n).read_text() for n in ('bids-ui.js','ask-ui.js','trust-ui.js')),
  '__BOARD_CORE__':(ROOT/'src/storyboard-core.js').read_text(),
- '__BOARD_UI__':(ROOT/'src/storyboard-ui.js').read_text()}
+ '__BOARD_UI__':(ROOT/'src/storyboard-ui.js').read_text(),
+ # Zero-setup start and the profile (WOW_ZERO_CONFIG): the live address, the auth helper and the profile. Replaced last.
+ '__ATLAS_HOME__':'<script>window.ATLAS_HOME='+json.dumps(ATLAS_HOME)+';</script>',
+ '__SESSION_KEEPER__':(ROOT/'src/session-keeper.js').read_text(),
+ '__PROFILE_CORE__':(ROOT/'src/profile-core.js').read_text(),
+ '__PROFILE_UI__':(ROOT/'src/profile-ui.js').read_text()}
 text=(ROOT/'src/shell.html').read_text()
 for k,v in slots.items():text=text.replace(k,v)
 text=text.replace('<title>ATLAS Presence / Mantu — A rhythm you recognize</title>','<title>ATLAS Voice Studio / Mantu</title>')
@@ -42,4 +60,4 @@ text=text.replace('<title>ATLAS Intelligence / Mantu — Quality before storytel
 (ROOT/'ATLAS_Intelligence.html').write_text(text)
 (ROOT/'ATLAS_Voice_Studio.html').write_text(text)
 (ROOT/'ATLAS_Voice.html').write_text(text)
-print('Built',len(text.encode()),'bytes; original logo SHA256:',hashlib.sha256(logo_bytes).hexdigest())
+print('Built',len(text.encode()),'bytes; ATLAS_HOME:',ATLAS_HOME or '(none)','; original logo SHA256:',hashlib.sha256(logo_bytes).hexdigest())

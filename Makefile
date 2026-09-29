@@ -29,6 +29,8 @@ test-ui: build
 	$(PYTHON) tests/storyboard_browser.py
 	$(PYTHON) tests/confirm_browser.py
 	$(PYTHON) tests/wow_edge_browser.py
+	$(PYTHON) tests/zero_config_browser.py
+	$(PYTHON) tests/zero_config_edge_browser.py
 doctor:
 	$(PYTHON) scripts/doctor.py --profile preview
 verify-package:

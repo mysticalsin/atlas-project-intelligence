@@ -7,6 +7,7 @@ import * as gaps from '../src/gaps.js';
 import * as bids from '../src/bids.js';
 import * as outreach from '../src/outreach.js';
 import * as features from '../src/features.js';
+import * as profile from '../src/profile.js';
 import { pseudonymise } from '../src/scrub.js';
 import { Library } from '../src/library.js';
 import { libraryRoutes } from '../src/library-routes.js';
@@ -54,8 +55,8 @@ test('create, assign and permissions: bid owner or admin create; assignee, creat
   const g = r.body;
   assert.match(g.id, /^[a-f0-9]{32}$/); assert.equal(g.bidId, 'b1'); assert.deepEqual(g.requirementIds, ['R1', 'R2']); assert.equal(g.status, 'open');
   assert.equal(g.referenceId, ref); assert.equal(g.results, null); assert.equal(g.assigneeName, 'Alex Martin');
-  assert.deepEqual(g.draft.subject, 'Can you give 5 minutes of proof for a bid?'); assert.equal(g.draft.link, 'https://atlas.test/#gap/' + g.id);
-  assert.ok(g.draft.body.includes('https://atlas.test/#gap/' + g.id) && g.draft.body.includes('2 specific proof points'));
+  assert.deepEqual(g.draft.subject, 'Can you give 5 minutes of proof for a bid?'); assert.equal(g.draft.link, 'https://atlas.test/go/gap/' + g.id, 'a /go/ link that survives sign-in (WOW_ZERO_CONFIG §3.9)');
+  assert.ok(g.draft.body.includes('https://atlas.test/go/gap/' + g.id) && g.draft.body.includes('2 specific proof points'));
   assert.equal((await ask(lib, ['R1'], { email: 'lee@mantu.com' }, ADMIN)).status, 201, 'an admin may ask on any bid');
   for (const who of [REV, KIM, ALEX]) assert.equal((await ask(lib, ['R1'], { email: 'kim@mantu.com' }, who)).status, 404, who.email);
   for (const who of [ALEX, OWNER, REV, ADMIN]) assert.equal((await call(lib, 'GET', 'gaps/' + g.id, who)).status, 200, who.email);
@@ -68,7 +69,7 @@ test('create, assign and permissions: bid owner or admin create; assignee, creat
   assert.equal((await call(lib, 'PUT', 'gaps/' + g.id, ADMIN)).status, 404);
   assert.equal((await call(lib, 'GET', `gaps/${g.id}/interview/x`, ALEX)).status, 404);
   const env = { ORIGIN: 'https://atlas.example' };
-  assert.equal((await ask(lib, ['R3'], { email: 'kim@mantu.com' }, OWNER, env)).body.draft.link.startsWith('https://atlas.example/#gap/'), true);
+  assert.equal((await ask(lib, ['R3'], { email: 'kim@mantu.com' }, OWNER, env)).body.draft.link.startsWith('https://atlas.example/go/gap/'), true);
 });
 
 test('{refId, person}: 0 is the reference owner, n a listed consultant; a missing email or person is a 400; public access needed; the email only for full access', async () => {
@@ -93,6 +94,28 @@ test('{refId, person}: 0 is the reference owner, n a listed consultant; a missin
   lib.sql.exec("UPDATE refs SET status = 'in_review' WHERE id = ?", ref);
   assert.deepEqual((await ask(lib, ['R1'], { refId: ref, person: 0 })).body, { error: 'Reference not found.' }, 'at least public access to the reference');
   assert.equal((await call(lib, 'POST', 'gaps', OWNER, { bidId: 'b1', requirementIds: ['R1'], assignee: { email: 'kim@mantu.com' }, referenceId: ref })).status, 404);
+});
+
+// WOW_ZERO_CONFIG §5.8: a blank assignee name comes from the stored directory rows only (dna, dna_export).
+test('Z assignee name: a blank name is filled from stored directory rows only; never from anyone\'s profile edits, never a typed name overwritten', async () => {
+  const { lib, ref } = await setup(), at = '2026-09-01T00:00:00.000Z';
+  profile.ensure(lib);
+  const dir = (key, source, name) => lib.sql.exec('INSERT OR REPLACE INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    key, source, name, '', 'Data lead', 'Boss', 'boss@mantu.com', 'b1', at);
+  lib.sql.exec('INSERT INTO profiles (subject, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', 'lee@mantu.com', 'lee@mantu.com',
+    JSON.stringify({ name: { value: 'Lee From Profile', at, basis: '' } }), '{}', '{}', at, at, at);
+  const lee = await ask(lib, ['R1'], { email: 'lee@mantu.com' });
+  assert.equal(lee.status, 201); assert.ok(!('assigneeName' in lee.body), 'a profile edit is never read for someone else');
+  dir('kim@mantu.com', 'dna_export', 'Kim Park');
+  const kim = await ask(lib, ['R1'], { email: 'kim@mantu.com' });
+  if (!profile.READY) { assert.ok(!('assigneeName' in kim.body), 'a stub while the profile module is not READY'); return; }
+  assert.equal(kim.body.assigneeName, 'Kim Park', 'typed email, name from the DNA export row');
+  assert.deepEqual(gaps.listForBid(lib, OWNER, 'b1').find(x => x.id === kim.body.id).assigneeName, 'Kim Park');
+  dir('kim@mantu.com', 'dna', 'Kim Park-Lee');
+  assert.equal((await ask(lib, ['R1'], { email: 'kim@mantu.com' })).body.assigneeName, 'Kim Park-Lee', 'dna before dna_export');
+  dir('alex@mantu.com', 'dna', 'Directory Alex');
+  assert.equal((await ask(lib, ['R1'], { refId: ref, person: 0 })).body.assigneeName, 'Alex Martin', 'a name on the reference is kept');
+  assert.ok(!JSON.stringify((await ask(lib, ['R1'], { email: 'kim@mantu.com' })).body).includes('Data lead'), 'the name only, never the title or the N+1');
 });
 
 test('requirement kind -> field: one field per ask, a collision takes the next field, none left is "Split these into two requests."', async () => {

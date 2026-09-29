@@ -20,12 +20,12 @@ Only Mantu IT, the Azure owner, the Teams admin or Tony can do these. Never simu
 | # | Item | Who | Where it goes |
 |---|---|---|---|
 | 1 | Mantu tenant (directory) ID | Mantu IT (Entra) | Worker var `TEAMS_TENANT_ID` |
-| 2 | Single-tenant app registration "ATLAS Teams" | Mantu IT (Entra) | its Application (client) ID in `TEAMS_APP_ID` and `TEAMS_BOT_APP_ID` (the same value) |
+| 2 | Single-tenant app registration "ATLAS Teams" | Mantu IT (Entra) | its Application (client) ID in `TEAMS_APP_ID` (the bot uses it too; set `TEAMS_BOT_APP_ID` only if the bot has its own registration) |
 | 3 | Client secret (or certificate) of that registration | Mantu IT | Worker secret `TEAMS_BOT_SECRET`, set by Tony with `wrangler secret put TEAMS_BOT_SECRET` (never in a file or a var) |
 | 4 | Azure Bot resource: pricing tier F0, type Single Tenant, messaging endpoint `https://<ATLAS host>/api/teams/messages`, Microsoft Teams channel enabled | Azure subscription owner | Azure portal |
 | 5 | Allow custom app upload, or publish the package to the org catalog; optionally a setup policy that pins the app | Teams admin | Teams admin center |
 | 6 | Cloudflare Access **bypass** policy for exactly `/api/teams/messages` and `/teams/tab` (every other path stays behind Access) | Tony | Cloudflare Zero Trust dashboard |
-| 7 | Worker vars `TEAMS_ENABLED=1`, `TEAMS_APP_ID`, `TEAMS_BOT_APP_ID`, `TEAMS_TENANT_ID` | Tony | manual deploy, when nobody is interviewing |
+| 7 | Worker vars `TEAMS_APP_ID` and `TEAMS_TENANT_ID` (with the secret of item 3, Teams counts as connected: there is no separate on switch; WOW_ZERO_CONFIG §4) | Tony | manual deploy, when nobody is interviewing |
 | 8 | Brand-approved icons: `color.png` 192×192 and `outline.png` 32×32 (white on transparent) | Mantu brand owner | replace the two placeholders in this folder |
 | 9 | Device check that the launcher's `app.openLink` opens ATLAS in the browser on Windows, Mac, web, iOS and Android | Tony, with a test tenant | UNVERIFIED |
 
@@ -50,10 +50,10 @@ python3 deploy/cloudflare-edge/teams/build_teams_package.py
 Tests: `python3 -m pytest tests/test_teams_package.py -q`.
 
 ## Security model of the bot endpoint (`src/teams.js`, `src/teams-routes.js`)
-- **Pre-Access, on the main host, exactly two paths.** `POST /api/teams/messages` and `GET /teams/tab`. Any other `/api/teams/*` path stays behind Access. With `TEAMS_*` vars set but `TEAMS_ENABLED` unset, every other Worker response is unchanged (tested in `test/app.test.js`).
+- **Pre-Access, on the main host, exactly two paths.** `POST /api/teams/messages` and `GET /teams/tab`. Any other `/api/teams/*` path stays behind Access. Until Teams is connected (`TEAMS_APP_ID`, `TEAMS_TENANT_ID` and `TEAMS_BOT_SECRET` all set) both answer 503 `BLOCKED_EXTERNAL`, and with the ids set but no secret every other Worker response is unchanged (tested in `test/app.test.js`). The launcher's "Open ATLAS" opens `/go/start` (the consent step; the microphone waits for the Start click).
 - **Bot Framework connector authentication, no SDK.** `verifyBotActivity` checks:
   - an RS256 token whose key comes from the Bot Framework OpenID metadata and JWKS. Keys are cached for 24 hours, and a refetch (expired cache or unknown key id) happens at most once per 5 minutes;
-  - issuer `https://api.botframework.com` only (no Entra first-party issuer, no emulator token; Q5), audience `TEAMS_BOT_APP_ID`, and `exp`/`nbf` within 300 seconds;
+  - issuer `https://api.botframework.com` only (no Entra first-party issuer, no emulator token; Q5), audience `TEAMS_BOT_APP_ID` (default `TEAMS_APP_ID`), and `exp`/`nbf` within 300 seconds;
   - the token's service URL claim equals the activity's `serviceUrl`, on the host allow-list;
   - channel `msteams`, and a signing key endorsed for `msteams`;
   - recipient `28:<bot id>`;

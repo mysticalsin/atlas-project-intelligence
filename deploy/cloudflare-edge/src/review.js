@@ -59,12 +59,13 @@ export function clientScrub(record) {
   return s => typeof s === 'string' && re ? s.replace(re, 'the client') : s;
 }
 
-// Anonymised view for any model: no client details, and their words replaced wherever they appear.
+// Anonymised view for any model: no client details, and their words replaced wherever they appear. No consultant
+// either (name and role): people data never reaches a model (WOW_ZERO_CONFIG §0.4, §5.9). Not hashed, so no record reopens.
 export function forModel(record) {
   const own = clientScrub(record);
   const scrub = v => typeof v === 'string' ? own(v) : Array.isArray(v) ? v.map(scrub)
     : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, scrub(x)])) : v;
-  const { client, owner, validation, quality, ...rest } = record;
+  const { client, owner, validation, quality, consultant, ...rest } = record;
   const details = { ...(rest.details || {}) }; delete details.consultants; delete details.from;
   // Contacts, price and the file name (which carries the client) never reach a model or another reader.
   if (rest.sheet) rest.sheet = { ...rest.sheet, exec: { ...rest.sheet.exec, contacts: '', price: '' }, file: undefined, fileName: '' };

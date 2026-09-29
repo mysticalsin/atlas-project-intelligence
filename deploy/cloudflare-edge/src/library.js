@@ -2,7 +2,7 @@
 // permissions from the verified sign-in, a quality gate and N+1 validation. Storage is SQL through an adapter
 // with exec(query, ...params) -> { toArray() } (Durable Object SQLite in production, node:sqlite in tests).
 // Confidential client details are visible only to the record's people and reviewers, and never reach a model.
-import { reviewReference, forModel, READY_SCORE } from './review.js';
+import { reviewReference, forModel, clientScrub, READY_SCORE } from './review.js';
 import { searchText, cosine, lexical, TARGET_POLICY, parseTarget, RERANK_POLICY, parseRerankStrict, candidateCard, SLIDES_POLICY, parseSlides, INSIGHTS_POLICY, parseInsights } from './reuse.js';
 import { str, para, list, email, https, obj, fail } from './util.js';
 // Model input from a record goes through recordView (other library clients, contacts and PII masked too); text a
@@ -55,9 +55,16 @@ export async function hashOf(data) {
   return [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+// forModel no longer carries the consultant (WOW_ZERO_CONFIG §5.9). The people-facing views below are not model
+// input, so they keep the record's consultant, own-client scrubbed exactly as forModel did before.
+function withConsultant(m, data) {
+  const own = clientScrub(data);
+  return { ...m, consultant: { name: own(data.consultant?.name || ''), role: own(data.consultant?.role || '') } };
+}
+
 // Published view for people outside the record: client details removed and scrubbed from every text field.
 export function anonymise(data) {
-  const m = forModel({ ...data, sources: data.sources });
+  const m = withConsultant(forModel({ ...data, sources: data.sources }), data);
   m.details = { ...m.details, consultants: (data.details.consultants || []).map(c => ({ name: c.name, role: c.role })) };
   return m;
 }
@@ -169,7 +176,7 @@ export class Library {
     const rows = this.visibleRows(user).filter(([r, level]) => (!f.status || r.status === f.status) && (!f.practice || r.practice === f.practice)
       && (!f.country || (r.country || '').toLowerCase() === String(f.country).toLowerCase()) && (!f.industry || (r.industry || '').toLowerCase() === String(f.industry).toLowerCase())
       && has(r.data.details.serviceLines, f.service) && has(r.data.details.technologies, f.tech) && (!f.mine || r.owner === user.email)
-      && (!q || JSON.stringify(forModel(r.data)).toLowerCase().includes(q) || (level === 'full' && Object.values(r.data.client).join(' ').toLowerCase().includes(q))));
+      && (!q || JSON.stringify(withConsultant(forModel(r.data), r.data)).toLowerCase().includes(q) || (level === 'full' && Object.values(r.data.client).join(' ').toLowerCase().includes(q))));
     const facet = key => { const out = {}; for (const [r] of rows) for (const v of [].concat(key(r)).filter(Boolean)) out[v] = (out[v] || 0) + 1; return out; };
     return { items: rows.slice(0, 200).map(([r, l]) => this.summary(r, l, user)), total: rows.length,
       facets: { status: facet(r => r.status), practice: facet(r => r.data.jev?.primary?.label), country: facet(r => r.data.details.country), industry: facet(r => r.data.sector),
@@ -266,7 +273,9 @@ export class Library {
     for (const key of ['technologies', 'deliverables', 'serviceLines', 'teamRoles']) k.details[key] = [...new Set([...k.details[key], ...g.details[key]])].slice(0, 15);
     k.details.links = [...k.details.links, ...g.details.links.filter(l => !k.details.links.some(x => x.url === l.url))].slice(0, 10);
     k.sources = [...k.sources, ...g.sources].slice(0, 20);
-    if (g.answers[1] && !k.answers[1].includes(g.answers[1])) k.answers[1] = (k.answers[1] + `\n\nContribution by ${g.consultant.name || gone.owner}: ` + g.answers[1]).trim().slice(0, 6000);
+    // No name or email in the text: answers reach models through forModel and recordView (WOW_ZERO_CONFIG §5.9); who
+    // contributed stays in details.consultants and members.
+    if (g.answers[1] && !k.answers[1].includes(g.answers[1])) k.answers[1] = (k.answers[1] + '\n\nContribution by another consultant: ' + g.answers[1]).trim().slice(0, 6000);
     for (const i of [0, 2, 3, 4, 5]) if (!k.answers[i] && g.answers[i]) k.answers[i] = g.answers[i];
     this.sql.exec('UPDATE refs SET merged_into = ?, status = ? WHERE id = ?', keep.id, 'withdrawn', gone.id);
     this.sql.exec('UPDATE refs SET members = ? WHERE id = ?', (keep.members || ',') + [gone.owner, ...g.details.consultants.map(c => c.email)].filter(Boolean).join(',') + ',', keep.id);

@@ -6,6 +6,7 @@ import { Library } from '../src/library.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import * as claims from '../src/claims.js';
 import * as outreach from '../src/outreach.js';
+import * as profile from '../src/profile.js';
 import { snippetsOf, claimKey, splitSentences } from '../src/snippets.js';
 import { memorySql } from './sqlite.js';
 
@@ -112,6 +113,35 @@ test('N+1 resolution: a staffing row (projectId + refs.owner) beats the self-dec
   assert.deepEqual([r.status, r.body.error], [400, 'Name the N+1 on the reference first.']);
 });
 
+// WOW_ZERO_CONFIG §5.8: staffing, then the stored DNA directory (dna or dna_export row for the owner), then self-declared.
+test('Z N+1 from the directory: staffing, then a stored dna/dna_export row, then self-declared; the owner\'s own profile edits never count', async () => {
+  const s = setup(), id = await withReference(s), [c] = await proposed(s, id, T1), at = '2026-09-29T08:00:00.000Z';
+  const ask = async () => { const r = await s.call(ALEX, 'POST', 'confirmations', { refId: id, claimIds: [c.id] }); return [r.status, r.body.request?.toEmail || r.body.error, r.body.request?.managerSource || null]; };
+  profile.ensure(s.l);
+  // The owner typed an N+1 in their own profile: that is self-declared data, never the directory.
+  s.l.sql.exec('INSERT INTO profiles (subject, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', 'alex@mantu.com', 'alex@mantu.com',
+    JSON.stringify({ managerEmail: { value: 'lee@mantu.com', at, basis: '' }, managerName: { value: 'Lee', at, basis: '' } }), '{}', '{}', at, at, at);
+  assert.deepEqual(await ask(), [201, 'sam@mantu.com', 'self_declared'], 'profile edits are not a directory source');
+  const row = (source, manager) => s.l.sql.exec('INSERT OR REPLACE INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'alex@mantu.com', source, 'Alex Martin', 'Alex', 'Data engineer', 'Max', manager, 'b1', at);
+  row('dna_export', 'max@mantu.com');
+  if (!profile.READY) { assert.deepEqual(await ask(), [201, 'sam@mantu.com', 'self_declared'], 'a stub while the profile module is not READY'); return; }
+  assert.deepEqual(await ask(), [201, 'max@mantu.com', 'directory'], 'the DNA export row outranks the N+1 named on the reference');
+  row('dna', 'jo@mantu.com');
+  assert.deepEqual(await ask(), [201, 'jo@mantu.com', 'directory'], 'dna before dna_export');
+  row('dna', 'kim@mantu.com');
+  assert.deepEqual((await ask()).slice(0, 1), [409], 'a directory N+1 must still be independent (kim is on the team)');
+  outreach.ensure(s.l);
+  s.l.sql.exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at) VALUES ('PRJ-1', 'alex@mantu.com', 'bea@mantu.com', 'Bea', '', '', 'staffing-csv', 'x')");
+  assert.deepEqual(await ask(), [201, 'bea@mantu.com', 'staffing'], 'staffing outranks the directory');
+  // A decision on a directory request carries its source (the badge reads "N+1 from DNA").
+  s.l.sql.exec("DELETE FROM staffing"); row('dna', 'max@mantu.com');
+  const [, , source] = await ask(), open = s.l.rows("SELECT id FROM confirmation_requests WHERE manager_source = 'directory' AND to_email = 'max@mantu.com' ORDER BY created_at DESC, rowid DESC")[0];
+  assert.equal(source, 'directory');
+  const done = await s.call(MAX, 'POST', 'confirmations/' + open.id, { decisions: [{ claimId: c.id, decision: 'confirm' }] });
+  assert.equal(done.status, 200, JSON.stringify(done.body)); assert.equal(done.body.claims[0].source, 'directory');
+});
+
 test('independence: the owner, a member or the requester can never be the confirmer (409)', async () => {
   const s = setup();
   const own = REF(); own.validation.manager.email = 'alex@mantu.com';
@@ -136,7 +166,7 @@ test('request: draft without claim text or client name, two pending outreach row
   assert.deepEqual([request.status, request.revision, request.claimIds, request.expiresAt], ['open', 1, cs.map(c => c.id), '2026-10-13T08:00:00.000Z']);
   assert.equal(draft.to, 'sam@mantu.com');
   assert.equal(draft.subject, "Can you confirm 3 points from Alex Martin's project? (about 60 seconds)");
-  assert.equal(draft.body, `${ORIGIN}/confirm#${request.id}`); assert.equal(draft.link, draft.body);
+  assert.equal(draft.body, `${ORIGIN}/go/confirm/${request.id}`, 'a /go/ link that survives sign-in (WOW_ZERO_CONFIG §3.9)'); assert.equal(draft.link, draft.body);
   assert.ok(draft.mailto.startsWith('mailto:sam%40mantu.com?subject='));
   const text = JSON.stringify(draft);
   for (const secret of ['Zebracorp', 'Acme', 'routing model', 'Triage', 'Lyon', 'Jane']) assert.ok(!text.includes(secret), secret);

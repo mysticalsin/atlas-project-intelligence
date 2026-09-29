@@ -27,7 +27,7 @@ def route(r):
  if req.url.rstrip('/')=='https://atlas.test':return r.fulfill(body=H,content_type='text/html')
  if path=='/api/bootstrap':return r.fulfill(json=boot())
  if not path.startswith('/api/'):return r.fulfill(status=404,body='')
- CALLS.append({'m':m,'path':path,'csrf':req.headers.get('x-atlas-csrf'),'type':req.headers.get('content-type'),'body':req.post_data_buffer if m=='POST' else None})
+ CALLS.append({'m':m,'path':path,'csrf':req.headers.get('x-atlas-csrf'),'type':req.headers.get('content-type'),'consent':req.headers.get('x-atlas-consent'),'body':req.post_data_buffer if m=='POST' else None})
  if m=='POST' and req.headers.get('x-atlas-csrf')!='tok':return r.fulfill(status=403,json={'error':'CSRF'})
  if path=='/api/library/invitations':return r.fulfill(json={'items':[]})
  if path=='/api/library':return r.fulfill(json={'items':[],'total':0,'facets':{'country':{},'industry':{}}})
@@ -69,12 +69,16 @@ with sync_playwright() as pw:
  S['empty']=True;p.locator('#askGo').click();p.wait_for_timeout(600)
  check('empty result stated plainly, nothing shown as a match',p.locator('#askVerdict .verdict-banner strong').inner_text()=='Nothing in the library answers this yet.' and p.locator('#askResults .ask-result').count()==0 and p.locator('#askMap path[data-state]').count()==0 and p.locator('#askPeople').is_hidden())
  S['empty']=False
- # spoken Ask: only with the flag and getUserMedia; consent first; locked during a voice interview
+ # spoken Ask: only with the flag and getUserMedia; consent asked at the moment of use (WOW_ZERO_CONFIG D1: the tick became a
+ # prompt, "Allow this time" or "Always allow for me"); locked during a voice interview
  S['features']=dict(S['features'],spokenAsk=True);p=page()
- mic=p.locator('#askMic')
- check('mic shown with spokenAsk and getUserMedia, with the consent tick',mic.is_visible() and p.locator('#askMicConsentRow').is_visible() and "Don't say client names" in p.locator('#askMicConsentRow').inner_text() and not p.locator('#askMicConsent').is_checked())
+ mic=p.locator('#askMic');cp=p.locator('#askConsent')
+ check('mic shown with spokenAsk and getUserMedia; nothing asked before it is used',mic.is_visible() and cp.is_hidden())
  mic.click();p.wait_for_timeout(300)
- check('no recording before the consent tick',('Tick' in p.locator('#askStatus').inner_text()) and mic.inner_text()=='Speak')
+ check('consent asked at the moment of use: "Ask by voice", no client names; nothing recorded yet',cp.is_visible() and 'Ask by voice' in cp.inner_text() and 'don’t say client names' in cp.inner_text().lower() and p.locator('#askAllowOnce').is_visible() and mic.inner_text()=='Speak')
+ check('"Always allow" is offered only where the profile can store it',p.locator('#askAllowAlways').is_hidden())
+ p.locator('#askConsentCancel').click();p.wait_for_timeout(200)
+ check('Cancel: no recording and nothing sent',cp.is_hidden() and mic.inner_text()=='Speak' and not calls('/api/transcribe'))
  p.evaluate("window.__realStatus=window.AtlasVoice.status;window.AtlasVoice.status=()=>({...window.__realStatus(),phase:'live'})");p.wait_for_timeout(1300)
  check('mic disabled while AtlasVoice.status().phase is live',mic.is_disabled() and p.locator('#askMicBusy').is_visible())
  for ph in ['preparing','connecting','ending']:
@@ -82,17 +86,18 @@ with sync_playwright() as pw:
   check(f'mic disabled while the interview is {ph}',mic.is_disabled())
  p.evaluate("window.AtlasVoice.status=window.__realStatus");p.wait_for_timeout(1200)
  check('mic enabled again once the interview is idle',mic.is_enabled() and p.locator('#askMicBusy').is_hidden())
- asked=len(calls('/api/library/ask'));p.locator('#askMicConsent').check();mic.click();p.wait_for_timeout(1500)
- check('recording: the button becomes Stop',mic.inner_text()=='Stop' and 'Listening' in p.locator('#askStatus').inner_text())
+ asked=len(calls('/api/library/ask'));mic.click();p.locator('#askAllowOnce').click();p.wait_for_timeout(1500)
+ check('recording: the button becomes Stop, with the reminder and a recording indicator',mic.inner_text()=='Stop' and 'Listening' in p.locator('#askStatus').inner_text() and p.locator('#askRecLine').is_visible() and 'Don’t say client names' in p.locator('#askRecLine').inner_text())
  mic.click();p.wait_for_timeout(900)
  t=calls('/api/transcribe')
  n=len(t[0]['body']) if t else 0
  check('stop posts raw PCM16 24 kHz once, with CSRF, even length within 4,800..1,536,000 bytes',len(t)==1 and t[0]['type']=='audio/L16;rate=24000' and t[0]['csrf']=='tok' and n%2==0 and 4800<=n<=1536000)
+ check('the request carries the consent the page showed (a UI gate): spoken-ask-v1; once',t[0]['consent']=='spoken-ask-v1; once' and p.locator('#askRecLine').is_hidden())
  check('about 1.5 s of audio at 24 kHz (default-rate context resampled by the worklet)',48000*0.6<=n<=48000*3)
  check('transcript shown, editable, and not asked automatically',p.locator('#askQuestion').input_value()=='What have we done on claims backlogs in insurance?' and p.locator('#askQuestion').is_editable() and len(calls('/api/library/ask'))==asked and 'edit the text' in p.locator('#askStatus').inner_text())
  st=p.evaluate('AtlasVoice.status()')
  check('the voice interview state is untouched by the question recording',st['phase']=='idle' and not st['hasMicrophone'])
- mic.click();p.wait_for_timeout(1000)
+ mic.click();p.locator('#askAllowOnce').click();p.wait_for_timeout(1000)  # each recording without a stored consent is asked again
  p.evaluate("window.AtlasVoice.status=()=>({...window.__realStatus(),phase:'connecting'})");p.wait_for_timeout(1300)
  check('a voice interview starting mid-recording discards the recording: nothing sent',len(calls('/api/transcribe'))==1 and 'discarded' in p.locator('#askStatus').inner_text() and mic.is_disabled())
  p.evaluate("window.AtlasVoice.status=window.__realStatus")

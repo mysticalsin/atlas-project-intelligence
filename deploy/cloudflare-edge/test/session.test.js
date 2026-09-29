@@ -99,6 +99,28 @@ test('project context is bounded and strips identity fields', () => {
   assert.throws(() => projectContext({ title: 'x', subjectKey: 'y' }));
 });
 
+// WOW_ZERO_CONFIG §5.9: the consultant's name never reaches a model. `consultant` is still accepted (older pages send it).
+test('Z model boundary: projectContext drops the consultant; the talker never sees the name; the greeting is unchanged', async () => {
+  const p = projectContext({ title: 'Claims triage', consultant: 'Zelda Quintero', role: 'Data engineer', answers: [] });
+  assert.ok(!('consultant' in p)); assert.equal(p.role, 'Data engineer'); assert.equal(p.title, 'Claims triage');
+  const run = async consultant => {
+    const h = harness();
+    await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: { ...PROJECT, consultant }, voice: 'asteria', capture: true, memory: false }));
+    assert.equal(h.events[0].type, 'ready');
+    await until(() => h.bytes.length >= 10 && !h.s.busy());
+    for (const f of frames([[0.6, .001], [1.2, .2], [1.3, .001]])) { h.tick(); h.s.onBinary(f); }
+    await until(() => h.calls.talker.length >= 2 && !h.s.busy());
+    return h;
+  };
+  const z = await run('Zelda Quintero'); clearPcmCache(); // the second run synthesizes again, so its spoken words are recorded
+  const a = await run('Alex');
+  const seen = JSON.stringify([z.calls.talker, z.calls.analyst, talkerMessages(z.s.project, z.s.guidance, z.s.history)]);
+  assert.ok(!/Zelda|Quintero/.test(seen), 'no talker or analyst input carries the name');
+  assert.ok(!('consultant' in z.s.project));
+  assert.equal(spoken(z.calls)[0], GREETINGS.en, 'the greeting names nobody');
+  assert.deepEqual(spoken(z.calls), spoken(a.calls), 'the same words whoever the consultant is');
+});
+
 test('live regression: noise while ATLAS composes its opening cannot cancel it', async () => {
   const h = harness([]);
   let release; const gate = new Promise(r => { release = r; });

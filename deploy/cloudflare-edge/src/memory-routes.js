@@ -34,6 +34,8 @@ export async function memoryRoutes(request, { storage, hs, env, fetcher = fetch 
       await storage.put('memoryOff', body.off === true);
       return json({ off: body.off === true });
     }
+    // The switch alone, for the consent sentence (WOW_ZERO_CONFIG §3.4): DO storage only, never a Hindsight call.
+    if (request.method === 'GET' && path === 'settings') return json({ off });
     if (request.method === 'GET' && path === 'test') {
       if (role !== 'admin') return json({ error: 'Admins only.' }, 403);
       const out = { hindsight: { configured: !!hs }, jev: { configured: !!env.TYPESAFE_API_KEY } };

@@ -81,12 +81,13 @@ function clean(value, limit) {
   return [...value].filter(c => c.codePointAt(0) >= 32 || c === '\n' || c === '\t').join('').trim().slice(0, limit);
 }
 
-// Port of atlas_voice/interview.py project_context: untrusted, bounded, no identity fields.
+// Port of atlas_voice/interview.py project_context: untrusted, bounded, no identity fields. `consultant` is still
+// accepted (older pages send it) but never kept: the consultant's name never reaches a model (WOW_ZERO_CONFIG §5.9).
 export function projectContext(raw) {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Project context must be an object.');
   if (Object.keys(raw).some(k => !['id', 'title', 'consultant', 'role', 'sector', 'stage', 'answers', 'oppId'].includes(k))) throw new Error('Unexpected project fields. Identity and memory banks are server-owned.');
   const result = {};
-  for (const [k, n] of [['id', 100], ['title', 160], ['consultant', 100], ['role', 120], ['sector', 100], ['stage', 60], ['oppId', 40]]) result[k] = clean(raw[k], n);
+  for (const [k, n] of [['id', 100], ['title', 160], ['role', 120], ['sector', 100], ['stage', 60], ['oppId', 40]]) result[k] = clean(raw[k], n);
   if (!result.oppId) delete result.oppId;
   if (!result.title) throw new Error('Create a project before starting an interview.');
   const answers = raw.answers ?? [];

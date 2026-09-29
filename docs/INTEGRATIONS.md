@@ -43,8 +43,10 @@
 
 ## Teams (F4): built, not connected
 - Pre-Access endpoints: `POST /api/teams/messages` (Bot Framework activities, verified signature, issuer, audience,
-  tenant, service URL and size) and `GET /teams/tab` (a launcher tab that opens ATLAS in the browser). Both answer 503
-  `BLOCKED_EXTERNAL` until `TEAMS_ENABLED=1`, `TEAMS_APP_ID`, `TEAMS_BOT_APP_ID` and `TEAMS_TENANT_ID` are set.
+  tenant, service URL and size) and `GET /teams/tab` (a launcher tab whose "Open ATLAS" opens `<ORIGIN>/go/start` in the
+  browser). Both answer 503 `BLOCKED_EXTERNAL` until Teams is connected: `TEAMS_APP_ID`, `TEAMS_TENANT_ID` and the secret
+  `TEAMS_BOT_SECRET` all set. There is no on switch (`TEAMS_ENABLED` is no longer read), and `TEAMS_BOT_APP_ID` defaults
+  to `TEAMS_APP_ID` (set it only when the bot has its own app registration).
 - Secret `TEAMS_BOT_SECRET` (`wrangler secret put`, by Tony). Optional var `TEAMS_SERVICE_HOSTS` (comma-separated host
   names) extends the connector allow-list beyond `smba.trafficmanager.net`.
 - Access needs a **bypass** policy for exactly `/api/teams/messages` and `/teams/tab`; every other path stays behind Access.
@@ -53,16 +55,56 @@
   `docs/THIRD_PARTY.md` and `docs/SOURCE_LOCK.json`). No Microsoft endpoint has been called.
 
 ## Claim confirmation page (F3)
-- A confirmation request gives the requester a `mailto:` draft whose body is only `<ORIGIN>/confirm#<request id>`: no
-  claim text and no client name. The id is not a secret; the confirmer must sign in with the addressed email.
+- A confirmation request gives the requester a `mailto:` draft whose body is only `<ORIGIN>/go/confirm/<request id>`
+  (it answers 302 to `/confirm#<request id>`, also for an external confirmer): no claim text and no client name. The id
+  is not a secret; the confirmer must sign in with the addressed email.
+- The N+1 who confirms: the staffing record (F4) first, then the owner's N+1 in the stored DNA directory (a `dna` or
+  `dna_export` row, never the owner's own profile edits; badge "N+1 from DNA"), then the N+1 named on the reference.
 - `GET /confirm` is a self-contained page (no external script or URL) that lists the signed-in person's open requests
   and posts their decisions (confirm, correct with a note, can't say).
 - Client contacts as confirmers stay off until `CLIENT_CONFIRM=1`, their exact emails in `EXTERNAL_EMAILS` and an Access
   One-time PIN policy for them (Tony's Q3).
 
-## Spoken Ask (F6): off
-`POST /api/transcribe` (raw `audio/L16;rate=24000`, ≤ 30 s, Origin and CSRF) answers 404 unless `SPOKEN_ASK=1`. It sends
-question audio to Workers AI speech-to-text outside the interview consent, so it stays off until Tony approves (Q11).
+## Spoken Ask (F6): off until Tony confirms D1
+`POST /api/transcribe` (raw `audio/L16;rate=24000`, ≤ 30 s, Origin and CSRF) answers 404 while `SPOKEN_ASK_APPROVED` (a
+code constant in `deploy/cloudflare-edge/src/features.js`, not a variable; the old `SPOKEN_ASK` is gone) is false. After
+Tony confirms D1 (docs/WOW_ZERO_CONFIG.md §4) it is flipped once in a commit. Then every request needs the consent prompt's
+header `X-Atlas-Consent: spoken-ask-v1; once|always` (403 "Voice questions need your consent first." without it). The
+header is a UI gate; for `always` the Worker also reads the person's stored consent (`GET /api/library/profile/consents`,
+with the verified identity) and refuses when it is missing or revoked. The reminder "Don't say client names" and a
+recording indicator show on every recording.
+
+## Links that survive sign-in (`/go/`)
+`GET /go/start` → `/#start` (opens the consent step; the microphone waits for the click), `/go/{gap,invitation,bid,library}/<32 hex>`
+→ `/#<kind>/<id>`, `/go/confirm/<32 hex>` → `/confirm#<id>` (also for an external confirmer), anything else under `/go/` → `/`.
+`/go/signed-in` is the small re-sign-in window: it posts `'ok'` on `BroadcastChannel('atlas-auth')` and closes, with no
+data. Emails, outreach rows and Teams cards use these links. The ids are random and grant nothing without sign-in (a
+recorded deviation from WOW rule 7); no token ever goes in a path. A page navigation to an unknown path goes to `/`.
+
+## People directory and the profile (DNA prefill; docs/WOW_ZERO_CONFIG.md §5-§7)
+- The profile fills project forms and the consent heading only; it never reaches an AI model. Sources, merged per field:
+  the person's own edits, then DNA (push or pull), then the DNA export (CSV), then the sign-in name claims (Entra), then
+  a guess from the email (confirmed with one click).
+- `DATA_MODE` gates every DNA and HR path. Unset (the test deployment): the push and the pull answer `BLOCKED_EXTERNAL` and
+  the CSV import accepts only reserved test addresses (`example.com/.org/.net`, `.test`, `.example`, `.invalid`).
+  `DATA_MODE=production` only on an approved Mantu-owned deployment (Mantu IT approval, DPO sign-off on the six columns).
+- **Push (recommended):** a DNA or HR job run by Mantu IT posts
+  `{batch: <32 hex>, part: 1..40, final: true|false, rows: [{email, name?, givenName?, familyName?, title?, managerName?, managerEmail?}] (≤ 500)}`
+  (≤ 262,144 bytes) to `POST https://<atlas>/api/directory/push` with `Authorization: Bearer <DIRECTORY_PUSH_SECRET>`
+  (compared in constant time). Add an Access **bypass** for `/api/directory/push` only. The final part replaces the
+  earlier DNA rows; a final part that would shrink the directory below 80% is refused (409), and a push cannot confirm it.
+  Unknown keys are rejected per row, by row number only. Without the secret: 401; in test mode: `BLOCKED_EXTERNAL`.
+- **Pull (shape ASSUMED, nothing confirmed by Mantu IT):** `DNA_PROFILE_URL` (https template with exactly one `{email}` or
+  `{oid}`, no credential in the query), `DNA_AUTH_HEADER` (default `Authorization`), `DNA_FIELD_MAP` (JSON: `root`, `name`,
+  `givenName`, `title`, `managerName`, `managerEmail` → dotted paths) and the secret `DNA_API_KEY` (the whole header value).
+  It works only if DNA answers HTTPS from the internet (no fixed Worker egress IP), with a static header or bearer key (no
+  mTLS), and can look one person up by email or `oid`. Called only for the signed-in person's own profile, 2.5 s cap,
+  manual redirects, ≤ 64 KB JSON, mapped fields only, cached 24 h. If push is set, pull is never called.
+- **Export CSV:** an admin uploads it in Insights → People directory. The browser reads only the approved columns (email,
+  name, first name, job title, N+1 name, N+1 email) and drops every other column before upload; the server rejects
+  unknown keys again. Rows go in batches of 500; the screen shows "This replaces N rows with M." first.
+- `GET /api/library/people?email=` gives any signed-in user one exact email's `{email, name, title, from}` from the stored
+  rows only (never the N+1, never a profile edit, never a DNA call), 30 lookups per hour. It fills the gap assignee name.
 
 ## Spotlight Ref exchange (`atlas.reference.v1`)
 - Export (reviewers): `GET /api/library/export` →
@@ -98,6 +140,9 @@ question audio to Workers AI speech-to-text outside the interview consent, so it
 | POST | `/api/library/ask` `{question, limit?}` | everyone (not external) |
 | GET | `/api/library/wins`, `/api/library/wins/guidance` | everyone (per-story rows: reviewers, admins, the story's own people) |
 | GET/POST | `/api/library/outreach[/:id]`, `/api/library/staffing[/import]` | reviewers, admins |
+| GET/POST | `/api/library/profile` `{set?, clear?, confirmGuess?}`, `/profile/delete`, `/profile/consent` `{kind: 'spokenAsk', version: 1, granted}`, GET `/profile/consents` | the signed-in person, their own profile only (not external) |
+| GET | `/api/library/people?email=` | everyone (not external); 30 per hour |
+| GET/POST | `/api/library/directory`, `/directory/import`, `/directory/clear` | admins (import also the DNA push, as `system`) |
 
 Every new word answers 404 while its module is not READY (`deploy/cloudflare-edge/src/features.js`). Contracts and
 types: `docs/WOW_SPEC.md` §3.

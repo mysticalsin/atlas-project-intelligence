@@ -101,3 +101,9 @@ test('malformed server link, invitation, quality and proof notes are dropped',()
  for(const b of bad){const c=E.cleanProject({...p,...b});const k=Object.keys(b)[0];assert.equal(c[k],null,JSON.stringify(b));}
  assert.equal(E.cleanProject({...p,library:{id:REF,revision:-1}}).library.revision,null,'a bad revision keeps the link, so a later sync never forks a second reference');
  assert.equal(E.cleanGapNotes({requestId:GAP,sections:[],transcript:'Only the transcript.'}).sections.every(v=>v===null),true);});
+// WOW_ZERO_CONFIG §3.5: roleFrom is the only stored provenance (the model rule needs it); it survives storage and imports.
+test('roleFrom: only profile or you are kept, anything else is blank',()=>{assert.equal(E.project({title:'x',role:'Lead',roleFrom:'profile'}).roleFrom,'profile');assert.equal(E.project({title:'x',roleFrom:'you'}).roleFrom,'you');assert.equal(E.project({title:'x',roleFrom:'dna'}).roleFrom,'');assert.equal(E.project({title:'x'}).roleFrom,'');});
+test('roleFrom survives validateState and importBackup',()=>{const p=filled();p.role='Principal';p.roleFrom='profile';const q=filled();q.roleFrom='you';const s=E.blankState();s.profiles[0].projects=[p,q];s.profiles[0].lastProject=p.id;
+ const out=E.validateState(JSON.parse(JSON.stringify(s)));assert.deepEqual(out.profiles[0].projects.map(x=>x.roleFrom),['profile','you']);
+ const u=E.importBackup({format:'atlas-workspace',schema:4,profile:{name:'Imported',projects:JSON.parse(JSON.stringify([p,q]))}});assert.deepEqual(u.projects.map(x=>x.roleFrom),['profile','you']);
+ const bad=JSON.parse(JSON.stringify(p));bad.roleFrom='<script>';assert.equal(E.cleanProject(bad).roleFrom,'');});
