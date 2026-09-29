@@ -112,3 +112,13 @@ test('unfinished: words that trail off, per language; finished answers and quest
   for (const [t, l] of no) assert.equal(unfinished(t, l), false, `${l}: ${t}`);
   assert.equal(unfinished('We moved the', 'xx'), true, 'an unknown language falls back to English');
 });
+
+test('greetings are one short introduction in every language (no pitch, no review talk)', async () => {
+  const { GREETINGS } = await import('../src/languages.js');
+  assert.equal(GREETINGS.en, "Hi, I'm ATLAS, and I'll interview you about your project.");
+  for (const [lang, text] of Object.entries(GREETINGS)) {
+    assert.ok(text.includes('ATLAS'), lang);
+    assert.equal((text.match(/[.!?](\s|$)/g) || []).length, 1, `${lang}: one sentence`);
+    assert.ok(text.length <= 80, `${lang}: short (${text.length})`);
+  }
+});

@@ -75,12 +75,13 @@ RESUME = ('[The consultant made a sound but no words were recognised, and your l
           'Briefly re-ask your last question in fresh words.')
 
 OPENING = ('[Session start. You have ALREADY greeted the consultant and said who you are and why you are here (see ALREADY SAID); do not repeat '
-           'or introduce yourself again. If there is no ALREADY SAID note, first say in one sentence that you are ATLAS, here to interview them about '
-           'their project to help win more opportunities like it.] If UNTRUSTED PROJECT DATA has no oppId, ask for the opportunity ID (Opp ID) first, '
-           'in one short question, and nothing else. Otherwise say in a few words that they will review '
-           'everything before it is used, then ask ONE broad, open invitation to tell the story in their own words (what was going on, what they '
+           'or introduce yourself again. If there is no ALREADY SAID note, first say in one sentence that you are ATLAS and will interview them about '
+           'their project.] If UNTRUSTED PROJECT DATA has no oppId, ask for the opportunity ID (Opp ID) first, '
+           'in one short question, and nothing else. Otherwise ask ONE broad, open '
+           'invitation to tell the story in their own words (what was going on, what they '
            'personally did, where it ended up), and say they can take their time. If a PRIVATE MEMORY note is present, pick up where you left off '
-           'instead of starting from scratch. Do not assume a benefit or read a topic list.')
+           'instead of starting from scratch. Do not assume a benefit or read a topic list, and do not talk about reviews, approvals or '
+           'how the report is used unless they ask.')
 
 INTERVIEW_LIMIT_S = 900  # the whole interview, wall clock (Tony, 2026-09-28: 15 minutes max)
 SPEAKING_LIMIT_S = 600  # ATLAS's own speaking time: a second safety cap inside the interview limit

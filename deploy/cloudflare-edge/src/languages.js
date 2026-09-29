@@ -34,13 +34,13 @@ export function languageNote(lang, spoken) {
 
 // Spoken instantly (cached audio) when the call connects: who ATLAS is and why she is there.
 export const GREETINGS = {
-  en: "Hi, I'm ATLAS. I'm here to interview you, to understand your project and how we can leverage it to win more opportunities like this one.",
-  fr: "Bonjour, je suis ATLAS. Je suis là pour vous interviewer, comprendre votre projet et voir comment nous pouvons nous en servir pour gagner d'autres opportunités comme celle-ci.",
-  es: 'Hola, soy ATLAS. Estoy aquí para entrevistarte, entender tu proyecto y ver cómo podemos aprovecharlo para ganar más oportunidades como esta.',
-  pt: 'Olá, eu sou a ATLAS. Estou aqui para entrevistar você, entender o seu projeto e ver como podemos aproveitá-lo para ganhar mais oportunidades como esta.',
-  de: 'Hallo, ich bin ATLAS. Ich bin hier, um Sie zu interviewen, Ihr Projekt zu verstehen und zu sehen, wie wir es nutzen können, um mehr solcher Chancen zu gewinnen.',
-  it: 'Ciao, sono ATLAS. Sono qui per intervistarti, capire il tuo progetto e come possiamo sfruttarlo per vincere altre opportunità come questa.',
-  nl: 'Hallo, ik ben ATLAS. Ik ben hier om je te interviewen, je project te begrijpen en te zien hoe we het kunnen gebruiken om meer van zulke kansen te winnen.',
+  en: "Hi, I'm ATLAS, and I'll interview you about your project.",
+  fr: "Bonjour, je suis ATLAS, et je vais vous interviewer sur votre projet.",
+  es: 'Hola, soy ATLAS, y voy a entrevistarte sobre tu proyecto.',
+  pt: 'Olá, eu sou a ATLAS, e vou entrevistar você sobre o seu projeto.',
+  de: 'Hallo, ich bin ATLAS und interviewe Sie zu Ihrem Projekt.',
+  it: 'Ciao, sono ATLAS e ti intervisterò sul tuo progetto.',
+  nl: 'Hallo, ik ben ATLAS en ik ga je interviewen over je project.',
 };
 export const WELCOME_BACK = {
   en: "Hi, it's ATLAS again. Good to talk to you again.", fr: "Bonjour, c'est encore ATLAS. Ravie de vous retrouver.", es: 'Hola, soy ATLAS otra vez. Qué gusto volver a hablar contigo.',
