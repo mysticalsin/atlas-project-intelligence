@@ -454,3 +454,46 @@ test('leak: "Zelda Quintero, Principal Zebra" never reaches complete or embed ac
   assert.equal('consultant' in ctx, false); assert.equal(ctx.role, 'Data engineer');
   assert.doesNotMatch(JSON.stringify(talkerMessages(ctx, null, [], 'Begin.')), LEAK);
 });
+
+// ---- JEV story rating (docs/JEV_RATING.md §8.4, §13.2): the jevRating consent kind, storedConsent, storedNames. ----
+test('jevRating consent: granted, read through GET /profile, revoked; GET /profile/consents is unchanged', async () => {
+  const { l } = world({ fetch: async () => { throw new Error('DNA must not be called for consents'); } });
+  let p = (await call(l, ALEX, 'POST', 'profile/consent', { kind: 'jevRating', version: 1, granted: true })).body;
+  assert.deepEqual(p.consents, { jevRating: { version: 1, at: NOW } }, 'build() adds jevRating only when it is stored');
+  assert.deepEqual((await call(l, ALEX, 'GET', 'profile')).body.consents, { jevRating: { version: 1, at: NOW } });
+  assert.deepEqual((await call(l, ALEX, 'GET', 'profile/consents')).body, { spokenAsk: null }, 'the consents read still returns exactly { spokenAsk }');
+  await call(l, ALEX, 'POST', 'profile/consent', { kind: 'spokenAsk', version: 1, granted: true });
+  assert.deepEqual(Object.keys((await call(l, ALEX, 'GET', 'profile')).body.consents).sort(), ['jevRating', 'spokenAsk'], 'the two kinds are independent');
+  p = (await call(l, ALEX, 'POST', 'profile/consent', { kind: 'jevRating', version: 1, granted: false })).body;
+  assert.deepEqual(p.consents, { spokenAsk: { version: 1, at: NOW } }, 'revoked');
+  for (const body of [{ kind: 'jevRating', version: 2, granted: true }, { kind: 'jevRating', version: 1, granted: 'yes' }, { kind: 'jev', version: 1, granted: true }])
+    assert.equal((await call(l, ALEX, 'POST', 'profile/consent', body)).status, 400, JSON.stringify(body));
+  assert.deepEqual(l.rows("SELECT detail FROM audit WHERE action = 'consent' ORDER BY seq").map(a => a.detail), ['jevRating granted', 'spokenAsk granted', 'jevRating revoked']);
+});
+
+test('storedConsent: false when nothing is stored, true after granting, per subject; creates no table', async () => {
+  const { l } = world();
+  const before = l.rows("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").map(r => r.name);
+  assert.equal(profile.storedConsent(l, ALEX.email, 'jevRating'), false);
+  assert.deepEqual(l.rows("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").map(r => r.name), before, 'a read on a fresh library creates nothing');
+  await call(l, ALEX, 'POST', 'profile/consent', { kind: 'spokenAsk', version: 1, granted: true });
+  assert.equal(profile.storedConsent(l, ALEX.email, 'jevRating'), false, 'another kind does not count');
+  await call(l, ALEX, 'POST', 'profile/consent', { kind: 'jevRating', version: 1, granted: true });
+  assert.equal(profile.storedConsent(l, ALEX.email, 'jevRating'), true);
+  assert.equal(profile.storedConsent(l, BEA.email, 'jevRating'), false, 'per subject');
+  assert.equal(profile.storedConsent(l, '', 'jevRating'), false);
+});
+
+test('storedNames: the stored edit and sign-in names only, never DNA; [] without a profile', async () => {
+  const { l } = world({ fetch: async () => { throw new Error('DNA must never be called'); } });
+  assert.deepEqual(profile.storedNames(l, ALEX.email), [], 'no profile row');
+  const env = { ...PROD, DNA_PROFILE_URL: 'https://dna.example/people/{email}', DNA_FIELD_MAP: '{"name":"n"}', DNA_API_KEY: 'k' };
+  const signedIn = { ...ALEX, idp: { name: 'Alexandre Martin', given_name: 'Alexandre' } };
+  await call(l, signedIn, 'GET', 'profile', null, env);
+  assert.deepEqual(profile.storedNames(l, ALEX.email), ['Alexandre Martin'], 'the sign-in name');
+  await call(l, signedIn, 'POST', 'profile', { set: { name: 'Alex Martin-Roux' } });
+  assert.deepEqual(profile.storedNames(l, ALEX.email).sort(), ['Alex Martin-Roux', 'Alexandre Martin']);
+  l.sql.exec("INSERT INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at) VALUES (?, 'dna', 'Dna Only Name', '', '', '', '', 'pull', ?)", ALEX.email, NOW);
+  assert.ok(!profile.storedNames(l, ALEX.email).includes('Dna Only Name'), 'directory rows are not the person\'s stored names');
+  assert.deepEqual(profile.storedNames(l, BEA.email), []);
+});

@@ -26,6 +26,8 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS directory_imports (batch TEXT PRIMARY KEY, source TEXT, by TEXT, started_at TEXT, finished_at TEXT,
     rows INTEGER, rejected INTEGER, state TEXT)`,
 ];
+// spokenAsk: spoken Ask (WOW_SPEC); jevRating: story rating by TypeSafe JEV for the owner's stories (docs/JEV_RATING.md §8).
+const CONSENT_KINDS = ['spokenAsk', 'jevRating'];
 const ensured = new WeakSet();
 export function ensure(lib) {
   if (ensured.has(lib)) return;
@@ -264,8 +266,10 @@ function build(g) {
       if (top && top.from !== 'guess' && top.value !== (e.basis || '') && top.value !== e.value) fields[f].newer = { value: top.value, from: top.from };
     } else fields[f] = top ? { value: top.value, from: top.from, at: top.at || '' } : null;
   }
+  // Each consent kind appears only when it is stored (so a profile without any still reads `consents: {}`).
+  const consents = Object.fromEntries(CONSENT_KINDS.filter(k => g.consents[k]).map(k => [k, g.consents[k]]));
   const profile = { email: g.mail, fields, firstName: '', guessed: fields.name?.from === 'guess',
-    consents: g.consents.spokenAsk ? { spokenAsk: g.consents.spokenAsk } : {}, sources: g.sources.map(([id, , state]) => ({ id, state })), updatedAt: g.row.updated_at };
+    consents, sources: g.sources.map(([id, , state]) => ({ id, state })), updatedAt: g.row.updated_at };
   profile.firstName = firstName(profile);
   return profile;
 }
@@ -380,6 +384,24 @@ function directoryStatus(lib, env) {
         needs: ['Entra sign-in through Cloudflare Access (entra/README.md)', 'the name, given_name and family_name claims, appended after preferred_username'] } } };
 }
 
+// ---- Stored reads for story rating (docs/JEV_RATING.md §3.2, §8.4). The profiles row only: never DNA, never a source.
+// They create no table: without a profiles table (profile never used on this library) nothing is stored, so the answer
+// is false / []. storedNames is used only to MASK names in model input; it is never sent anywhere.
+function storedProfile(lib, subject) {
+  if (!READY || !subject) return null;
+  try { return lib.rows('SELECT edits, signin, consents FROM profiles WHERE subject = ?', String(subject))[0] || null; }
+  catch { return null; } // no profiles table yet
+}
+export function storedConsent(lib, subject, kind) {
+  const row = storedProfile(lib, subject);
+  return !!row && CONSENT_KINDS.includes(kind) && json(row.consents)[kind]?.version === 1;
+}
+export function storedNames(lib, subject) {
+  const row = storedProfile(lib, subject);
+  if (!row) return [];
+  return [...new Set([json(row.edits).name?.value, json(row.signin).name].map(v => str(v, 100)).filter(Boolean))];
+}
+
 // ---- Daily housekeeping (called from the system `scan-stale` block once READY): counts only. ----
 export function daily(lib, now = lib.now()) {
   ensure(lib);
@@ -423,10 +445,10 @@ export async function routes(ctx) {
     }
     if (method === 'POST' && action === 'consent') {
       const b = obj(ctx.body);
-      if (b.kind !== 'spokenAsk' || b.version !== 1 || typeof b.granted !== 'boolean') throw fail(400, 'Unknown consent.');
+      if (!CONSENT_KINDS.includes(b.kind) || b.version !== 1 || typeof b.granted !== 'boolean') throw fail(400, 'Unknown consent.');
       const g = await gather(lib, env, user, user.idp, opts), consents = { ...g.consents };
-      if (b.granted) consents.spokenAsk = { version: 1, at: g.now }; else delete consents.spokenAsk;
-      return { body: build(save(lib, g, { consents }, user.email, 'consent', 'spokenAsk ' + (b.granted ? 'granted' : 'revoked'))) };
+      if (b.granted) consents[b.kind] = { version: 1, at: g.now }; else delete consents[b.kind];
+      return { body: build(save(lib, g, { consents }, user.email, 'consent', b.kind + ' ' + (b.granted ? 'granted' : 'revoked'))) };
     }
   }
   if (word === 'people' && method === 'GET' && !action) {

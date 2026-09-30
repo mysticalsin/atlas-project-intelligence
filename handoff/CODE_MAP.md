@@ -99,3 +99,6 @@ Valid server story audiences are `internal` and `customer-anonymized`. Local aut
 - `atlas_voice/cascade.py` — `ATLAS_VOICE_PROVIDER=kyutai` route: same browser protocol as `realtime.py`; talker without tools, analyst guidance, barge-in, notes. Dispatched from `server.py` `voice()`.
 - `docs/KYUTAI_SETUP.md` — GPU services, voice licensing, env vars, acceptance.
 - Tests: `tests/test_cloudflare.py`, `tests/test_capacity.py`, `tests/test_analyst.py`, `tests/test_cascade.py`.
+
+## Added 2026-09-29
+- `deploy/cloudflare-edge/src/rating.js` — JEV story rating (docs/JEV_RATING.md): the rubric (`DIMENSIONS`, `CHECKS`, `LANGUAGE`), masking and the containment guard (`sensitiveTerms`, `ownMask`, `guard`, `ratingInput`), `requestBody`, `parseAnswers` (all or nothing), `compose` (weights, blockers, holds, robustness check, status), and `storyRater` (budgets, hedge, retries, circuit breaker). Called from `library.js` `review()`; wired in `worker.js`. Tests: `deploy/cloudflare-edge/test/rating.test.js`; local fake `dev/fake-typesafe.mjs`.

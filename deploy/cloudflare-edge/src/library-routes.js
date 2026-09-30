@@ -6,6 +6,8 @@ import { featureRoutes } from './features.js';
 import * as outreach from './outreach.js';
 import * as profile from './profile.js';
 export const SYSTEM = { email: 'atlas', role: 'admin' }; // automatic review after a save
+// A rating engine exists: the review agent, or JEV with a key (docs/JEV_RATING.md §6.5).
+const canRate = lib => !!(lib.complete || lib.rater?.available());
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 
@@ -24,7 +26,7 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
     if (!parts.length && method === 'GET') return json(lib.list(user, Object.fromEntries(url.searchParams)));
     if (!parts.length && method === 'POST') {
       const saved = await lib.upsert(user, body);
-      if (!saved.unchanged && lib.complete) waitUntil(lib.review(SYSTEM, saved.id).catch(() => {})); // automatic quality review
+      if (!saved.unchanged && canRate(lib)) waitUntil(lib.review(SYSTEM, saved.id, { budget: 'background', waitUntil }).catch(() => {})); // automatic quality review
       return json(saved, saved.unchanged ? 200 : 201);
     }
     const [id, action, arg] = parts;
@@ -39,7 +41,7 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
     const f = await featureRoutes(ctx);
     if (f) return json(f.body, f.status || 200);
     if (method === 'POST' && id === 'recommend') return json(await lib.recommend(user, body));
-    if (method === 'POST' && id === 'merge') { const saved = await lib.merge(user, body); if (lib.complete) waitUntil(lib.review(SYSTEM, saved.id).catch(() => {})); return json(saved); }
+    if (method === 'POST' && id === 'merge') { const saved = await lib.merge(user, body); if (canRate(lib)) waitUntil(lib.review(SYSTEM, saved.id, { budget: 'background', waitUntil }).catch(() => {})); return json(saved); }
     if (method === 'GET' && id === 'analytics') return json(lib.analytics(user));
     if (method === 'POST' && id === 'insights') return json(await lib.insights(user));
     if (method === 'GET' && id === 'export') return json(lib.exportAll(user));
@@ -52,7 +54,8 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
     if (method === 'POST' && action === 'slides') return json(await lib.slides(user, id, body));
     if (method === 'GET' && !action) return json(lib.get(user, id));
     if (method === 'GET' && action === 'revisions' && arg) return json(lib.revision(user, id, arg));
-    if (method === 'POST' && action === 'review') return json(await lib.review(user, id));
+    // "Rate again" (and the consent "Allow"): a person is waiting; a second opinion continues in waitUntil.
+    if (method === 'POST' && action === 'review') return json(await lib.review(user, id, { budget: 'interactive', waitUntil }));
     if (method === 'POST' && action === 'validate') return json(lib.validate(user, id, body));
     if (method === 'POST' && action === 'withdraw') return json(lib.withdraw(user, id, body));
     if (method === 'POST' && action === 'reinstate') return json(lib.reinstate(user, id));

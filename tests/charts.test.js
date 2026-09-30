@@ -149,7 +149,7 @@ test('the export stylesheet styles every chart class the static dashboard emits'
  const p=full(),neg=full();Object.assign(neg.metric,{before:-5,after:5});const html=[C.dashboard(model(p)),C.dashboard(model(neg)),C.dashboard(model(E.project({title:'x'}))),C.qualityGauge({score:50,completeness:50,aiScore:50}),C.portfolioMap({byCountry:[{name:'France',n:1}]})].join('');
  const cls=new Set([...html.matchAll(/class="([^"]+)"/g)].flatMap(x=>x[1].split(' ')).filter(c=>/^ag-/.test(c)&&!hooks.has(c)));const missing=[...cls].filter(c=>!css.includes('.'+c));assert.deepEqual(missing,[]);});
 
-test('size regression guard (measured size, not the page budget)',()=>{const js=fs.statSync(path.join(ROOT,'src/charts.js')).size,css=fs.statSync(path.join(ROOT,'src/charts.css')).size;assert.ok(js<=54000,'charts.js '+js);assert.ok(css<=3400,'charts.css '+css);});
+test('size regression guard (measured size, not the page budget; raised from 54,000 for the JEV story rating gauge, docs/JEV_RATING.md U5)',()=>{const js=fs.statSync(path.join(ROOT,'src/charts.js')).size,css=fs.statSync(path.join(ROOT,'src/charts.css')).size;assert.ok(js<=57000,'charts.js '+js);assert.ok(css<=3400,'charts.css '+css);});
 
 test('a sector filled from the interview report is hatched and labelled wherever it is shown',()=>{const p=full();p.sector='';E.fillDetails(p,{industry:'Banking'});const m=model(p),[st,live]=both(m);
  assert.equal(m.scope.iSector,true);assert.ok(st.includes('<span class="ag-chip ag-iv" title="Sector: Banking · from interview · unverified">Sector: Banking</span>'));assert.ok(live.includes('data-tt="Sector: Banking" data-td="from interview · unverified"'));
@@ -235,3 +235,80 @@ test('with the real AtlasGeo module',{skip:!realGeo&&'src/geo.js or assets/geo/w
   p.details.country='';p.sheet.file={country:'',entity:'',entityCountry:''};m=model(p);assert.deepEqual(m.map.codes,[]);[st]=both(m);assert.ok(st.includes('Location: To be completed'));assert.ok(!/data-state="(recorded|interview|sheet)"/.test(st));
   p.details.country=HOSTILE+' France';[st,live]=both(model(p));assert.ok(!st.includes(HOSTILE)&&!live.includes(HOSTILE));
  }finally{C.setGeo(stubGeo());}});
+
+// ---- Story rating by JEV (docs/JEV_RATING.md §9.2, §9.4, §13.3 U1-U4; U5 is the size guard above). Fixtures follow the §9.2 contract.
+const DIMS=[['challenge','Business problem','context',[0,0,0,1],1,'Problem and stakes'],['contribution','Own contribution','contribution',[0,0,.2,.8],.73,'Own actions described'],
+ ['approach','Approach','approach',[0,0,.8,.2],.73,'Steps described'],['outcome','Outcome','outcome',[0,0,0,1],1,'Change with a figure'],['evidence','Evidence','evidence',[0,0,.1,.9],.87,'Source and what it shows'],
+ ['reusability','Reusability','customer_relevance',[0,0,.8,.2],.73,'Client type named'],['clarity','Plain language','general',[0,0,.2,.8],.73,'Plain business language']];
+const dim=([id,label,field,p,confidence,levelLabel],o={})=>({id,label,field,weight:.1,score:Math.round(p.reduce((s,x,i)=>s+x*i,0)*100)/100,level:p.indexOf(Math.max(...p)),levelLabel,confidence,
+ band:confidence>=.9?'sure':confidence>=.6?'likely':'unsure',split:false,method:'jev',p,...o});
+const JV=(o={})=>({composite:91.5,pessimisticScore:95,strict:false,dimensions:DIMS.map(d=>dim(d)),checks:[{id:'client_value_clear',label:'Client value stated',probability:.93,outcome:'yes'},
+ {id:'results_supported',label:'Every result backed by named evidence',probability:.91,outcome:'yes'},{id:'figure_source_named',label:'Figure and source stated (as written)',probability:.9,outcome:'yes'}],
+ language:{code:'en',confidence:.99},fixFirst:{field:'approach',label:'Approach'},...o});
+const JQ=(o={})=>({score:95,completeness:100,aiScore:92,status:'ready',clientValueClear:true,missing:[],issues:[],recommendations:[],summary:'Rated by JEV on 7 parts of the story.',blockers:[],holds:[],
+ reviewedAt:'2026-09-29T10:00:00.000Z',model:'jev-1.13.0',readyScore:75,revision:2,engine:'jev',ms:412,cached:false,rubric:'story-quality-v2',fallbackReason:null,gen:3,jev:JV(),...o});
+const AGENT=o=>JQ({aiScore:74,score:81,engine:'review-agent',ms:14210,rubric:null,jev:null,fallbackReason:'no_consent',...o});
+const engineOf=h=>(h.match(/<div class="ag-eng">([^<]*)<\/div>/)||[])[1];
+const visible=h=>h.replace(/<div class="ag-sr">[^]*?<\/table><\/div>/g,'').replace(/<[^>]*>/g,' ');   // what is on screen: no attributes, no text table
+const rowsOf=h=>[...h.matchAll(/<li class="ag-dim( is-unsure)?" title="([^"]*)"><span>([^<]*)<\/span><span class="ag-steps" data-level="(\d)">((?:<i[^>]*><\/i>)*)<\/span><small>([^]*?)<\/small><\/li>/g)]
+ .map(m=>({unsure:!!m[1],title:m[2],label:m[3],level:+m[4],on:(m[5].match(/is-on/g)||[]).length,small:m[6]}));
+
+test('U1 engine labels: JEV with seconds, a saved rating, the review agent, JEV did not answer, the second opinion and rules',()=>{const J={jev:true};
+ assert.equal(engineOf(C.qualityGauge(JQ(),J)),'Rated by JEV · 0.4 s');assert.equal(engineOf(C.qualityGauge(JQ({ms:1234}),J)),'Rated by JEV · 1.2 s');
+ assert.equal(engineOf(C.qualityGauge(JQ({cached:true,ms:2}),J)),'Rated by JEV · instant (saved rating)');
+ assert.equal(engineOf(C.qualityGauge(AGENT(),J)),'Rated by the review agent · 14 s');
+ for(const f of ['timeout','rate_limited','server_error','auth','rejected','invalid_answer','too_long','guard','network','circuit_open'])assert.equal(engineOf(C.qualityGauge(AGENT({fallbackReason:f,ms:9000}),J)),'Rated by the review agent · 9.0 s · JEV did not answer',f);
+ const esc8=C.qualityGauge(AGENT({fallbackReason:'escalated',escalatedFrom:'jev',jev:JV(),status:'needs_work'}),J);
+ assert.equal(engineOf(esc8),'Second opinion by the review agent · JEV was unsure');assert.ok(esc8.includes('JEV’s own reading · unsure')&&rowsOf(esc8).length===7,'the second opinion keeps JEV’s view, marked unsure');
+ assert.ok(!esc8.includes('Fix first'),'fix-first belongs to a JEV rating, not to the second opinion');assert.ok(esc8.includes('Review agent · weight 0.55'));
+ const rules=C.qualityGauge(JQ({engine:'rules',aiScore:null,score:72,status:'needs_work',fallbackReason:'timeout',jev:null}),J);
+ assert.equal(engineOf(rules),'Rules only · no rating engine answered');assert.ok(rules.includes('No rating engine answered (score = 0.8 × completeness)')&&rules.includes('ag-meter is-tbd'));
+ assert.equal(engineOf(C.qualityGauge(JQ({engine:'rules',aiScore:null,score:0,status:'insufficient',fallbackReason:'no_story',jev:null}),J)),'Rules only');
+ const h=C.qualityGauge(JQ(),J);for(const s of ['Completeness · weight 0.45','JEV · weight 0.55','>92<','Ready for use','A server review score is not verification: it does not confirm facts or permissions. JEV judges how the story is written and never rates the consultant.'])assert.ok(h.includes(s),s);
+ assert.ok(!h.includes('Review agent'),'a JEV rating never names the review agent');
+ assert.equal(engineOf(C.qualityGauge(JQ())),'Rated by JEV · 0.4 s','a JEV rating names its engine even where the bootstrap no longer reports JEV');
+ assert.equal(engineOf(C.qualityGauge(JQ({jev:null}),J)),'Rated by JEV · 0.4 s');assert.ok(!C.qualityGauge(JQ({jev:null}),J).includes('ag-dim'),'the public reduction has no per-dimension detail');
+ assert.equal(engineOf(C.qualityGauge(AGENT({fallbackReason:'auth',ms:900}),{jev:true,admin:true})),'Rated by the review agent · 0.9 s · JEV did not answer (the TypeSafe key was rejected)');
+ assert.ok(!C.qualityGauge(AGENT({fallbackReason:'auth'}),J).includes('TypeSafe key'),'only admins see why');
+ assert.equal(engineOf(C.qualityGauge(AGENT({engine:undefined,ms:undefined,fallbackReason:undefined}),J)),'Rated by the review agent','a legacy rating reads as today’s review agent');});
+
+test('U2 dimensions sit at the most likely level with confidence in words; the numbers are only in the tooltip and the text table',()=>{
+ const q=JQ(),h=C.qualityGauge(q,{jev:true}),rows=rowsOf(h),dims=q.jev.dimensions;
+ assert.equal(rows.length,7);assert.deepEqual(rows.map(r=>r.label),DIMS.map(d=>d[1]));
+ for(const [i,r] of rows.entries()){assert.equal(r.level,dims[i].level,r.label);assert.equal(r.on,dims[i].level,r.label+' meter');assert.ok(r.small.startsWith(dims[i].levelLabel),r.label);}
+ assert.deepEqual(rows.map(r=>r.level),[3,3,2,3,3,2,3]);
+ assert.ok(!/<em>/.test(rows[0].small)&&!rows[0].unsure,'a sure row carries no word');assert.match(rows[1].small,/<em>likely<\/em>/);assert.match(rows[4].small,/<em>likely<\/em>/);
+ assert.ok(!/conf 0\./.test(h),'never raw "conf 0.xx"');assert.ok(!/confidence|probability|\d%/.test(visible(h)),'no number on screen but the score: '+visible(h).replace(/\s+/g,' '));
+ assert.ok(rows[1].title.includes('confidence 0.73')&&rows[1].title.includes('probability by level 0: 0%, 1: 0%, 2: 20%, 3: 80%'),'numbers in the tooltip');
+ const sr=h.match(/<div class="ag-sr"><table>([^]*?)<\/table><\/div>/)[1];assert.ok(sr.includes('<th scope="row">Own contribution</th><td>Own actions described · level 3 of 3 · likely · confidence 0.73 · probability by level 0: 0%, 1: 0%, 2: 20%, 3: 80%</td>'),'numbers in the text table');
+ for(const c of ['Client value stated: yes','Every result backed by named evidence: yes','Figure and source stated (as written): yes'])assert.ok(h.includes(c),c);
+ assert.ok(sr.includes('<th scope="row">Client value stated</th><td>yes · probability 0.93</td>'));assert.ok(h.includes('title="Client value stated · yes · probability 0.93"'));
+ assert.ok(h.includes('Fix first: <b class="ag-n">Approach</b>'));assert.ok(!h.includes('JEV reads English best'));
+ // A bimodal answer (§5.1, R10d): expectation 1.65, but the meter shows the most likely level 3 and says the reading is split.
+ const bi=JV();bi.dimensions[0]=dim(DIMS[0],{p:[.45,0,0,.55],score:1.65,level:3,confidence:.4,band:'unsure',split:true});
+ const b=rowsOf(C.qualityGauge(JQ({jev:bi}),{jev:true}))[0];assert.equal(b.level,3);assert.equal(b.on,3);assert.ok(b.unsure,'an unsure row is drawn dashed');assert.match(b.small,/^Problem and stakes <em>unsure · split reading<\/em>$/);
+ assert.ok(b.title.includes('probability by level 0: 45%, 1: 0%, 2: 0%, 3: 55%'));
+ // Rule-decided parts, a missing figure, an unsure check and the language hold.
+ const r=JV();r.dimensions[5]=dim(DIMS[5],{method:'rule',score:0,level:0,confidence:1,band:'sure',p:null});r.checks[1]={...r.checks[1],probability:.5,outcome:'unsure'};r.checks[2]={...r.checks[2],probability:null,outcome:'no_figure'};
+ const rh=C.qualityGauge(JQ({jev:r,holds:['JEV reads English best; this story reads as French.']}),{jev:true}),rr=rowsOf(rh)[5];
+ assert.equal(rr.on,0);assert.equal(rr.small,'<em>not written yet</em>');assert.ok(rh.includes('<span class="ag-chip is-tbd" title="Every result backed by named evidence · unsure · probability 0.5">Every result backed by named evidence: unsure</span>'));
+ assert.ok(rh.includes('Figure and source stated (as written): no figure detected'));assert.ok(rh.includes('<li>JEV reads English best; a person should check this rating.</li>'));
+ const no=JV();no.checks[0]={...no.checks[0],probability:.1,outcome:'no'};assert.ok(C.qualityGauge(JQ({jev:no}),{jev:true}).includes('<span class="ag-chip is-warn" title="Client value stated · no · probability 0.1">Client value stated: no</span>'));
+ const live=C.qualityGauge(JQ(),{jev:true,interactive:true});assert.ok(live.includes('data-tt="Own contribution" data-td="Own actions described · level 3 of 3 · likely · confidence 0.73')&&!/ title="/.test(live.replace(/<svg[^]*?<\/svg>/,'')),'live marks use the delegated tooltip');
+ const cls=new Set([...[h,rh,C.qualityGauge(AGENT({fallbackReason:'escalated',jev:JV()}),{jev:true,admin:true}),C.qualityGauge(AGENT({fallbackReason:'no_key'}),{admin:true})].join('').matchAll(/class="([^"]+)"/g)].flatMap(x=>x[1].split(' ')).filter(c=>/^ag-/.test(c)&&c!=='ag-rv'));
+ assert.deepEqual([...cls].filter(c=>!C.EXPORT_CSS.includes('.'+c)),[],'every gauge class is styled in the export stylesheet');});
+
+test('U3 hostile labels, level labels, checks, holds and summaries are escaped',()=>{const j=JV();j.dimensions=j.dimensions.map(d=>({...d,label:HOSTILE+d.label,levelLabel:BREAK,band:BREAK}));
+ j.checks=j.checks.map(c=>({...c,label:BREAK,outcome:HOSTILE}));j.fixFirst={field:'x',label:HOSTILE};j.dimensions[2].p=[HOSTILE,0,1,0];
+ const q=JQ({jev:j,summary:HOSTILE,holds:['JEV reads English best'+HOSTILE,BREAK],status:HOSTILE,fallbackReason:BREAK});
+ for(const h of [C.qualityGauge(q,{jev:true}),C.qualityGauge(q,{jev:true,interactive:true}),C.qualityGauge({...q,engine:'review-agent',escalatedFrom:'jev'},{jev:true,admin:true})]){
+  assert.ok(!/<script|<img/i.test(h),'tag injected');assert.ok(!h.includes(BREAK)&&!h.includes('"><script'),'attribute break-out');for(const t of tagsOf(h))assert.ok(!/\son[a-z]+\s*=/i.test(t.replace(/"[^"]*"/g,'""')),t);}
+ const h=C.qualityGauge(q,{jev:true});assert.ok(h.includes(escH(HOSTILE)+'Business problem')&&h.includes('Fix first: <b class="ag-n">'+escH(HOSTILE)+'</b>'));assert.ok(h.includes(escH(BREAK)+': unsure'),'an unknown outcome reads unsure');});
+
+test('U4 no key, no change: without opts.jev the gauge is byte-identical to the one captured before this change',()=>{const F=require('./fixtures/quality-gauge-before-jev.json');
+ assert.ok(Object.keys(F.cases).length>=8);
+ for(const [k,q] of Object.entries(F.cases))for(const o of [undefined,{interactive:true},{jev:false},{admin:false},{jev:false,admin:true}]){
+  const want=q&&q.fallbackReason==='no_key'&&o&&o.admin?F.html[k].slice(0,-6)+'<div class="ag-cap">JEV: BLOCKED_EXTERNAL, needs TYPESAFE_API_KEY</div></div>':F.html[k];
+  assert.equal(C.qualityGauge(q,o),want,k+' '+JSON.stringify(o));if(!(o&&o.admin))assert.ok(!/JEV|TypeSafe/.test(C.qualityGauge(q,o)),k+' says nothing about JEV');}
+ assert.ok(!C.qualityGauge(F.cases.reviewAgentNoKey,{jev:false}).includes('BLOCKED_EXTERNAL'),'nobody but an admin sees the hint');
+ const J=C.qualityGauge(F.cases.reviewAgentNoKey,{jev:true,admin:true});assert.ok(J.includes('JEV: BLOCKED_EXTERNAL, needs TYPESAFE_API_KEY'));});

@@ -4,16 +4,16 @@
    which reads only the six approved columns of a DNA export and drops every other column in this browser. */
 (()=>{'use strict';
 const C=window.AtlasProfileCore,$=id=>document.getElementById(id),app=()=>window.ATLAS_APP;
-let profile=null,loadP=null,section=null;
+let profile=null,loadP=null,section=null,jevOn=false; // jevOn: bootstrap jev (story rating by JEV is configured)
 function h(tag,attrs={},...kids){const el=document.createElement(tag);for(const [k,v] of Object.entries(attrs||{})){if(v===null||v===undefined||v===false)continue;if(k==='text')el.textContent=v;else if(k.startsWith('on'))el.addEventListener(k.slice(2),v);else el.setAttribute(k,v===true?'':String(v));}
  for(const k of kids.flat())if(k!==null&&k!==undefined&&k!==false)el.append(k instanceof Node?k:document.createTextNode(String(k)));return el;}
 function clean(d){if(!d||typeof d!=='object'||!d.fields||typeof d.fields!=='object')return null;const fields={};
  for(const k of C.FIELDS){const f=d.fields[k],n=C.LIMITS[k];
   fields[k]=f&&typeof f==='object'&&typeof f.value==='string'&&C.SOURCES.includes(f.from)?{value:f.value.slice(0,n),from:f.from,at:typeof f.at==='string'?f.at.slice(0,40):'',
    ...(f.newer&&typeof f.newer==='object'&&typeof f.newer.value==='string'&&C.SOURCES.includes(f.newer.from)?{newer:{value:f.newer.value.slice(0,n),from:f.newer.from}}:{})}:null;}
- const sa=d.consents?.spokenAsk;
+ const consent=c=>c&&typeof c==='object'?{version:Number(c.version)||1,at:String(c.at||'').slice(0,40)}:null;
  return {email:typeof d.email==='string'?d.email.slice(0,200):'',fields,firstName:C.validFirstName(d.firstName),guessed:d.guessed===true||fields.name?.from==='guess',
-  consents:{spokenAsk:sa&&typeof sa==='object'?{version:Number(sa.version)||1,at:String(sa.at||'').slice(0,40)}:null},
+  consents:{spokenAsk:consent(d.consents?.spokenAsk),jevRating:consent(d.consents?.jevRating)},
   sources:Array.isArray(d.sources)?d.sources.slice(0,8).filter(s=>s&&typeof s.id==='string').map(s=>({id:s.id,state:String(s.state||'')})):[],updatedAt:String(d.updatedAt||'').slice(0,40)};}
 // A profile that arrives while the section holds unsaved typing (a fresh load after signing in again, say) never
 // re-renders it: the typing is kept, and Save compares it with the new values. The answer to a POST from the section
@@ -22,7 +22,7 @@ function set(p,{force=false}={}){const keep=!force&&sectionDirty();profile=p;win
 // Only on the live site, with the library and the profile feature (bootstrap features.profile, gated by profile.READY).
 function load({fresh=false}={}){if(loadP&&!fresh)return loadP;
  loadP=(async()=>{try{await window.AtlasAuth?.probe();const b=await window.AtlasAuth.boot();
-  if(window.AtlasAuth.mode!=='live'||!b.library||!b.features?.profile||!app()){set(null);return null;}
+  jevOn=!!b.jev;if(window.AtlasAuth.mode!=='live'||!b.library||!b.features?.profile||!app()){set(null);return null;}
   set(clean(await app().libraryApi('/profile')));}catch(e){if(!(e instanceof window.AtlasAuth.Expired))set(null);}return profile;})();
  return loadP;}
 async function post(path,body){const p=clean(await app().libraryApi(path,{method:'POST',body}));if(p)set(p,{force:true});return p;}
@@ -33,7 +33,11 @@ const api={load,ready:()=>loadP||Promise.resolve(null),get:()=>profile,
  firstName:()=>C.validFirstName(profile?.firstName),email:()=>profile?.email||'',guessed:()=>!!profile?.guessed,
  spokenAsk:()=>!!profile?.consents?.spokenAsk,confirmGuess,
  grantSpokenAsk:()=>post('/profile/consent',{kind:'spokenAsk',version:1,granted:true}),
- revokeSpokenAsk:()=>post('/profile/consent',{kind:'spokenAsk',version:1,granted:false})};
+ revokeSpokenAsk:()=>post('/profile/consent',{kind:'spokenAsk',version:1,granted:false}),
+ // Story rating by JEV (docs/JEV_RATING.md §8): the owner's consent, asked by app.js, stored and revocable like spoken Ask.
+ jevRating:()=>!!profile?.consents?.jevRating,
+ grantJevRating:()=>post('/profile/consent',{kind:'jevRating',version:1,granted:true}),
+ revokeJevRating:()=>post('/profile/consent',{kind:'jevRating',version:1,granted:false})};
 // ---- profile section, at the top of the profile dialog (§8)
 const ROWS=[['name','Name'],['preferredName','First name shown on screen'],['email','Email (your sign-in)'],['title','Job title'],['managerName','N+1 (line manager)'],['managerEmail','N+1 email']];
 const shown=k=>k==='email'?profile?.email||'':profile?.fields?.[k]?.value||'';
@@ -56,6 +60,7 @@ function renderSection(){if(!section)return;section.replaceChildren();if(!profil
   h('p',{class:'tiny',id:'pfStatus',role:'status'}),
   h('p',{class:'tiny muted',text:'Only you can open this profile. ATLAS’s AI never reads it. DNA values refresh daily and your edits win until DNA changes. Colleagues who type your exact email see only your name and job title. Unused profiles are deleted after 13 months.'}));
  if(profile.consents?.spokenAsk)section.append(h('p',{class:'tiny',id:'pfVoice'},'Voice questions: allowed · ',h('button',{class:'quiet',type:'button',onclick:()=>act(api.revokeSpokenAsk,'Voice questions are off. ATLAS asks again next time.')},'Revoke')));
+ if(jevOn&&profile.consents?.jevRating)section.append(h('p',{class:'tiny',id:'pfJev'},'Story rating by JEV: allowed · ',h('button',{class:'quiet',type:'button',onclick:()=>act(api.revokeJevRating,'Story rating by JEV is off. ATLAS asks again next time.')},'Turn off')));
  section.append(h('hr'));}
 async function act(fn,ok){try{await fn();say(ok);}catch(e){say(e.message);}}
 function edits(){const set={},clear=[];if(!section)return {set,clear};

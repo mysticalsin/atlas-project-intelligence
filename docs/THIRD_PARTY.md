@@ -8,6 +8,8 @@ NVIDIA PersonaPlex source and model weights are not bundled. Obtain them from th
 
 This file is a source-scope note, not a legal clearance of a corporate deployment.
 
+Story rating (`deploy/cloudflare-edge/src/rating.js`) sends an anonymised copy of each story to TypeSafe JEV when `TYPESAFE_API_KEY` is set and the story's owner allowed it; what is removed first, and what may remain, is in `docs/JEV_RATING.md` §3. TypeSafe's data terms (https://docs.typesafe.ai/legal.md) are for the owner to review before a production deployment.
+
 Version 11 adds original adapters for the OpenAI Realtime API, TypeSafe JEV and a native Markdown vault. These providers and the requested Hindsight/Graphify repositories have separate terms and deployment requirements. No remote repository source, provider binaries or model weights are vendored by this kit. `docs/SOURCE_LOCK.json` records inspected references, not a claim of a live deployment.
 
 ## Natural Earth v5.1.2 (world map data)

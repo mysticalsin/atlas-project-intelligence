@@ -134,8 +134,8 @@ Riva capture is separately consented; without it PersonaPlex can converse but do
 | Variable | Contract |
 |---|---|
 | `STORY_EDITOR_MODEL` | Empty disables external rewriting. Operator selects an approved structured-output model. Uses `OPENAI_API_KEY`. |
-| `TYPESAFE_API_KEY` | Server-only TypeSafe authorization. Missing key must never produce a fabricated score. |
-| `JEV_MODEL` | Example candidate `jev-1.13.0`; confirm API/account availability. Not claimed as latest. |
+| `TYPESAFE_API_KEY` | Server-only TypeSafe authorization. Missing key must never produce a fabricated score. It enables five paths (story rating, private-memory relevance, the next-question ranker, project classification, bid ranking) plus the admin connection test; **only story rating asks per-owner consent** (`jevRating`). See `docs/INTEGRATIONS.md` "TypeSafe (JEV)". |
+| `JEV_MODEL` | Example candidate `jev-1.13.0`; confirm API/account availability. Not claimed as latest. Story rating does **not** read it: it pins `jev-1.13.0` in `rating.js`, so setting `JEV_MODEL` for another path never re-pins story rating or invalidates its calibration. |
 
 JEV's four required brief fields are `problem`, `buyer`, `constraints`, `desired_outcome`. Only current eligible `customer-anonymized` stories enter this route after explicit consent. The Graphify consumer has no runtime environment variable because native Graphify execution is not part of this application.
 

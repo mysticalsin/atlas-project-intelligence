@@ -228,3 +228,131 @@ test('Z merge text names nobody; recordView and snippets strip a legacy "Contrib
   assert.doesNotMatch(snips, /jo@mantu|Zelda|\[email\]:/); assert.match(snips, /Contribution by another consultant: I ran the pilot\./);
   assert.equal(recordView(l, { ...legacy, answers: ['A contribution by the team: fine.', '', '', '', '', ''] }).answers[0], 'A contribution by the team: fine.', 'only a line-leading prefix');
 });
+
+// ---- JEV story rating (docs/JEV_RATING.md §13.2): the library side. Fake TypeSafe fetcher only; no network. ----
+import { storyRater } from '../src/rating.js';
+import * as profileMod from '../src/profile.js';
+import { fakeTypesafe } from '../dev/fake-typesafe.mjs';
+const TS_KEY = 'test-key-SECRET';
+// status(i): the HTTP status of the i-th TypeSafe call (200 answers every question sure at the top level).
+function jevLib({ complete = async () => GOOD, status = () => 200, fetcher = null, key = TS_KEY } = {}) {
+  const calls = [];
+  fetcher = fetcher || (async (url, init) => {
+    const body = JSON.parse(init.body), s = status(calls.length); calls.push(body);
+    if (s !== 200) return new Response('{}', { status: s });
+    const answers = Object.fromEntries(Object.entries(body.questions).map(([id, q]) => [id, q.type === 'score'
+      ? { type: 'score', score: 3, legend: Object.fromEntries(q.criteria.map((c, k) => [String(k), c])), probabilities: { 0: 0, 1: 0, 2: 0, 3: 1 }, confidence: 1 }
+      : q.type === 'noul' ? { type: 'noul', noul: 0.95 }
+        : { type: 'choice', choice: 'en', probabilities: Object.fromEntries(Object.keys(q.criteria).map(k => [k, k === 'en' ? 0.99 : 0.001])), confidence: 0.99 }]));
+    return new Response(JSON.stringify({ model: 'jev-1.13.0', answers, usage: { input_tokens: 100, output_tokens: 10 } }));
+  });
+  let t = 0;
+  const rater = storyRater({ TYPESAFE_API_KEY: key }, fetcher, { budgets: { background: { backoffMs: 1 } } });
+  const l = new Library(memorySql(), { now: () => new Date(Date.UTC(2026, 8, 29, 0, 0, t++)).toISOString(), complete, rater, metric: () => {} });
+  return { l, calls };
+}
+const consent = (l, u) => profileMod.routes({ method: 'POST', parts: ['profile', 'consent'], body: { kind: 'jevRating', version: 1, granted: true }, user: { idp: {}, mail: u.email, ...u }, lib: l, env: {} });
+const route = (l, pending) => (method, path, who, body) => libraryRoutes(new Request('https://atlas.test' + path, { method, headers: { 'x-atlas-user': who.email, 'x-atlas-role': who.role, 'Content-Type': 'application/json' },
+  body: body ? JSON.stringify(body) : undefined }), l, { waitUntil: p => pending.push(p) });
+
+test('JEV: a save by a consenting owner is rated in the background budget; GET shows the engine and jevAllowed', async () => {
+  const { l, calls } = jevLib({ status: i => (i < 2 ? 529 : 200) }), pending = [], call = route(l, pending);
+  await consent(l, OWNER);
+  const saved = await (await call('POST', '/api/library', OWNER, { localId: 'p1', reference: REF() })).json();
+  assert.equal(saved.status, 'in_review');
+  await Promise.all(pending);
+  const got = await (await call('GET', '/api/library/' + saved.id, OWNER)).json();
+  assert.deepEqual([got.state.quality.engine, got.status, calls.length, got.rating.running, got.jevAllowed], ['jev', 'awaiting_validation', 3, false, true],
+    'two 529s and a 200: three sequential attempts (the interactive budget stops at two)');
+  // The interview's automatic save of the same content does not rate again; "Rate again" reuses the answer.
+  assert.equal((await call('POST', '/api/library', OWNER, { localId: 'p1', reference: REF() })).status, 200);
+  const again = await (await call('POST', `/api/library/${saved.id}/review`, OWNER, {})).json();
+  assert.deepEqual([again.state.quality.cached, calls.length, again.rating.running], [true, 3, false], 'nothing is left running once the rating is stored');
+  const agent = await l.upsert(N1, { localId: 'n1', reference: { ...REF(), title: 'Agent alias' } });
+  assert.equal((await (await call('POST', `/api/library/${agent.id}/review`, N1, {})).json()).rating.running, false, 'the index alone is not a running rating');
+});
+
+test('JEV: the owner\'s consent decides, whoever triggers the rating; a reviewer\'s own consent does not count', async () => {
+  const { l, calls } = jevLib();
+  await consent(l, REV);
+  const a = await l.upsert(OWNER, { localId: 'p1', reference: REF() });
+  let q = (await l.review(REV, a.id)).state.quality;
+  assert.deepEqual([q.engine, q.fallbackReason, calls.length], ['review-agent', 'no_consent', 0]);
+  assert.equal(l.get(REV, a.id).jevAllowed, false);
+  await consent(l, OWNER);
+  q = (await l.review(REV, a.id)).state.quality;
+  assert.deepEqual([q.engine, calls.length], ['jev', 1]);
+  assert.equal(l.get(REV, a.id).jevAllowed, true);
+});
+
+test('JEV: merge rates the kept reference in the background budget', async () => {
+  const { l, calls } = jevLib({ status: i => (i < 2 ? 529 : 200) }), pending = [], call = route(l, pending);
+  await consent(l, OWNER);
+  const one = await l.upsert(OWNER, { localId: '1', reference: REF() }), two = await l.upsert(OWNER, { localId: '2', reference: { ...REF(), title: 'Other alias' } });
+  const merged = await (await call('POST', '/api/library/merge', REV, { keep: one.id, merge: two.id })).json();
+  await Promise.all(pending);
+  assert.deepEqual([l.get(OWNER, merged.id).state.quality.engine, calls.length], ['jev', 3]);
+});
+
+test('JEV: "Rate again" returns after the primary rating; the second opinion lands later through waitUntil', async () => {
+  const fake = fakeTypesafe({ key: TS_KEY }); fake.setMode('unsure'); // a ready candidate whose pessimistic score is below 75
+  let release; const { l } = jevLib({ fetcher: fake, complete: () => new Promise(r => { release = r; }) }), pending = [], call = route(l, pending);
+  await consent(l, OWNER);
+  const a = await l.upsert(OWNER, { localId: 'p1', reference: REF() });
+  const res = await Promise.race([call('POST', `/api/library/${a.id}/review`, OWNER, {}), new Promise(r => setTimeout(() => r('waited for the second opinion'), 1000))]);
+  assert.notEqual(res, 'waited for the second opinion');
+  const first = await res.json();
+  assert.deepEqual([first.state.quality.engine, first.state.quality.status, first.rating.running], ['jev', 'needs_work', true]);
+  release(GOOD); await Promise.all(pending);
+  const q = l.get(OWNER, a.id).state.quality;
+  assert.deepEqual([q.engine, q.escalatedFrom, l.get(OWNER, a.id).rating.running], ['review-agent', 'jev', false]);
+});
+
+test('JEV: list() items keep exactly today\'s fields', async () => {
+  const { l } = jevLib();
+  await consent(l, OWNER);
+  const a = await l.upsert(OWNER, { localId: 'p1', reference: REF() }); await l.review(OWNER, a.id);
+  assert.deepEqual(Object.keys(l.list(OWNER).items[0]), ['id', 'title', 'status', 'revision', 'access', 'mine', 'practice', 'industry', 'country', 'serviceLines', 'technologies',
+    'headline', 'impact', 'qualityScore', 'qualityStatus', 'updatedAt', 'nextReview', 'owner', 'client']);
+});
+
+test('JEV: without a rater, today\'s semantics and audit text hold; the stored rating names the review agent', async () => {
+  const { l } = lib();
+  const a = await l.upsert(OWNER, { localId: 'p1', reference: REF() });
+  const q = (await l.review(OWNER, a.id)).state.quality;
+  assert.deepEqual([q.engine, q.fallbackReason, q.jev, q.score], ['review-agent', 'no_key', null, 95]);
+  assert.equal(l.get(OWNER, a.id).audit[0].detail, 'score 95, ready');
+  assert.equal(l.get(OWNER, a.id).jevAllowed, false);
+});
+
+// ---- Integration review (no key = today): a deployment without TYPESAFE_API_KEY behaves exactly as before JEV. ----
+// worker.js always passes a rater; without the key it is unavailable, so these use storyRater({}) (no fetch is made).
+const noKeyLib = ({ complete = async () => GOOD, raterOpts = {} } = {}) => new Library(memorySql(), { complete, rater: storyRater({}, async () => { throw new Error('no network in tests'); }, raterOpts), metric: () => {} });
+
+test('JEV off (no key): "Run quality review" while the save\'s review runs waits for that review, as today (the no-key dialog does not poll)', async () => {
+  let release; const l = noKeyLib({ complete: () => new Promise(r => { release = r; }), raterOpts: { budgets: { interactive: { deadlineMs: 50 } } } });
+  const a = await l.upsert(OWNER, { localId: 'p1', reference: REF() });
+  const bg = l.review({ email: 'atlas', role: 'admin' }, a.id, { budget: 'background' });
+  await new Promise(r => setTimeout(r, 5));
+  const click = l.review(OWNER, a.id, { budget: 'interactive', waitUntil: () => {} });
+  await new Promise(r => setTimeout(r, 120)); // well past the JEV-only interactive join cap
+  release(GOOD);
+  const r = await click; await bg;
+  assert.deepEqual([r.state.quality?.engine, r.state.quality?.score, r.rating.running], ['review-agent', 95, false], 'the click returns the rating, not an empty dialog');
+});
+
+test('JEV off (no key): a story with no text is rated by the review agent, as today', async () => {
+  const seen = []; const l = noKeyLib({ complete: async m => { seen.push(m); return GOOD; } });
+  const a = await l.upsert(OWNER, { localId: 'p1', reference: { ...REF(), answers: ['', '', '', '', '', ''] } });
+  const q = (await l.review(OWNER, a.id)).state.quality;
+  assert.equal(seen.length, 1, 'the review agent is asked, as before JEV');
+  assert.deepEqual([q.engine, q.fallbackReason, q.aiScore], ['review-agent', 'no_key', 90]);
+});
+
+test('JEV off (no key): a review agent that does not answer leaves today\'s audit text', async () => {
+  const l = noKeyLib({ complete: async () => { throw new Error('down'); } });
+  const a = await l.upsert(OWNER, { localId: 'p1', reference: REF() });
+  const q = (await l.review(OWNER, a.id)).state.quality;
+  assert.deepEqual([q.aiScore, q.fallbackReason], [null, 'no_key']);
+  assert.equal(l.get(OWNER, a.id).audit[0].detail, `score ${q.score}, ${q.status}`, 'no "· rules only" suffix without JEV');
+});

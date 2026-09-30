@@ -123,8 +123,8 @@ recorded deviation from WOW rule 7); no token ever goes in a path. A page naviga
 |---|---|---|
 | GET | `/api/library?q&status&country&industry&practice&service&tech&mine` | everyone (visibility rules apply) |
 | POST | `/api/library` `{localId, id?, reference}` | owner / record people / reviewers |
-| GET | `/api/library/:id`, `/api/library/:id/revisions/:n` | record people / reviewers; others: published only |
-| POST | `/api/library/:id/review`, `/withdraw` | record people / reviewers |
+| GET | `/api/library/:id` (adds `rating.running`; `jevAllowed` at full access), `/api/library/:id/revisions/:n` | record people / reviewers; others: published only |
+| POST | `/api/library/:id/review` ("Rate again": JEV when configured and the owner allowed it, else the review agent), `/withdraw` | record people / reviewers |
 | POST | `/api/library/:id/validate` `{decision: validate | request_changes, note}` | the record's N+1 / reviewers |
 | POST | `/api/library/:id/reinstate`, `/api/library/merge` `{keep, merge}` | reviewers |
 | POST | `/api/library/recommend` `{query, limit}` | everyone |
@@ -140,7 +140,7 @@ recorded deviation from WOW rule 7); no token ever goes in a path. A page naviga
 | POST | `/api/library/ask` `{question, limit?}` | everyone (not external) |
 | GET | `/api/library/wins`, `/api/library/wins/guidance` | everyone (per-story rows: reviewers, admins, the story's own people) |
 | GET/POST | `/api/library/outreach[/:id]`, `/api/library/staffing[/import]` | reviewers, admins |
-| GET/POST | `/api/library/profile` `{set?, clear?, confirmGuess?}`, `/profile/delete`, `/profile/consent` `{kind: 'spokenAsk', version: 1, granted}`, GET `/profile/consents` | the signed-in person, their own profile only (not external) |
+| GET/POST | `/api/library/profile` `{set?, clear?, confirmGuess?}`, `/profile/delete`, `/profile/consent` `{kind: 'spokenAsk' | 'jevRating', version: 1, granted}`, GET `/profile/consents` | the signed-in person, their own profile only (not external) |
 | GET | `/api/library/people?email=` | everyone (not external); 30 per hour |
 | GET/POST | `/api/library/directory`, `/directory/import`, `/directory/clear` | admins (import also the DNA push, as `system`) |
 
@@ -155,7 +155,8 @@ types: `docs/WOW_SPEC.md` §3.
   `project:<id>`. Client name, location and contact are replaced by "the client" before anything leaves ATLAS.
 - Before each interview the person's Durable Object recalls (`budget: low`, tag-scoped to the project, 3.5 s cap)
   and gives the talker a PRIVATE MEMORY note. With `TYPESAFE_API_KEY`, JEV (Noul) drops recalled memories from other
-  projects that would not help this interview.
+  projects that would not help this interview. This JEV check asks no consent of its own (only the interview consent);
+  whether to gate it behind the `jevRating` consent is Tony's decision (docs/JEV_RATING.md §12.2; see "TypeSafe (JEV)").
 - API contract checked against `@vectorize-io/hindsight-client` 0.10.1: `PUT /v1/default/banks/{bank}` (missions),
   `POST .../memories` `{items, async}`, `POST .../memories/recall`, `GET .../documents`, `DELETE .../documents/{id}`,
   `DELETE .../banks/{bank}`, `Authorization: Bearer <key>`.
@@ -163,6 +164,39 @@ types: `docs/WOW_SPEC.md` §3.
   Durable Object). Admins can test the Hindsight and JEV connections there.
 - Secrets: `bash deploy/cloudflare-edge/set-keys.sh` (hidden dialogs → `HINDSIGHT_API_KEY` (Hindsight Cloud `https://api.hindsight.vectorize.io` is the default; `HINDSIGHT_URL` only for self-hosting),
   `TYPESAFE_API_KEY`). Memory is private continuity, never evidence, and never feeds the library or a report as fact.
+
+## TypeSafe (JEV)
+One server-side secret, `TYPESAFE_API_KEY`, switches on every path below; without it each one is off and nothing is faked.
+Every call is `POST https://api.typesafe.ai/v1/systemone` with the key only in `Authorization: Bearer` (never in a URL,
+log, audit row, stored rating or page). **Only story rating asks the per-owner consent below**; the other paths are
+recorded here as they are (the choice is Tony's, docs/JEV_RATING.md §12.2).
+
+| Path | Code | When it runs | What it sends | Consent |
+|---|---|---|---|---|
+| Story rating | `deploy/cloudflare-edge/src/rating.js`, `library.js` `review` | Save, merge, "Rate again" | The story's title, industry, service lines, six answers and up to 10 sources (name, version, excerpt), after `scrub.recordView` and the record's own values masked: client name, location, contact, project id, link hosts, and the consultant's, colleagues', N+1's and owner's stored names. A containment guard refuses to send if any own value remains. Abbreviations, product names and other clients fused into longer words are not masked (docs/JEV_RATING.md §3.5). Model pinned to `jev-1.13.0` | The story owner's `jevRating` consent (asked once; revocable in the profile) |
+| Private-memory relevance | `memory.js` `jevRelevant` | Before a live interview, when Hindsight recalls memories from other projects | The project's title, stage and sector as typed (the title is not masked) and the texts of those recalled memories (client name, location and contact were replaced before storage) | None beyond the interview consent |
+| Next-question ranker | `jev.js` `jevRanker` | During a live interview, when the ledger leaves a free choice | The interview's structure only: fields covered, statuses, flags, stage. No transcript text, quotes or project names | None |
+| Project classification ("Score impact") | `classify.js`, `/api/jev/classify` | A person clicks | Title, role, sector, stage and the six answers as typed (up to 3,000 characters each); client fields are refused, but names typed inside the text are not masked | The click |
+| Bid ranking | `customer-jev.js` via `bids.js` | A bid match with "use JEV" and its consent ticked | The customer brief in placeholder form and the eligible published stories' sections and source metadata | Per run (`useJev` and `jevConsent`) |
+| Admin connection test | `memory-routes.js` `GET /api/memory/test` | An admin clicks "test" | One fixed synthetic sentence; no user content | Admins only |
+
+Story rating in detail (docs/JEV_RATING.md):
+- **One request, typed answers.** Up to 11 questions (7 Scores, 3 Nouls, 1 Choice for the language) in one request; code
+  combines them (completeness 0.45, JEV 0.55; weights in `rating.js`). The rule blockers stay decisive. A rating is `ready`
+  only when no blocker applies, the score reaches `READY_SCORE`, and no uncertain answer could change that verdict.
+- **Fast and reliable.** A person waiting: 2 s hard cap with one hedged duplicate at 0.7 s. Save and merge: 6 s with up to
+  two retries (0.5 s doubling, `retry-after-ms` preferred over `Retry-After`). The last answer is reused when the story
+  body is unchanged (`refs.state.lastJev`, 0 requests). A circuit breaker skips JEV for 60 s after 3 consecutive timeouts,
+  network errors or 5xx; a 401/403 skips it until the key changes.
+- **Fallback, never a fake.** No key, no consent, a failure or an open breaker: today's review agent rates. Uncertainty
+  that could change a `ready` verdict, a non-English story, or a manager-staff story (no N+1) whose answers are not in the
+  0.9+ band escalates to the review agent as a second opinion.
+- **Metrics** (`story_rating`, numbers only): engine, fallback code, status, ms, attempts, hedged, http, cached, asked,
+  holds, escalated, strict, language, input_tokens. Escalation share = Σ `escalated` / count(`engine` = 1); the second
+  opinion's own row carries `fallback` 13 and `engine` 2 (answered) or 3 (did not answer). Cost = Σ `input_tokens` × $0.042
+  per million (https://docs.typesafe.ai/models.md).
+- **Local runs:** `FAKE_TYPESAFE=1 node deploy/cloudflare-edge/dev/local-edge.mjs` uses the local fake (model id
+  `fake-jev-local`; `/__typesafe_mode?m=ok|down|unsure`). Without it, a local run refuses every request to api.typesafe.ai.
 
 ## Languages
 - Understanding: Deepgram Nova-3 on Workers AI with `STT_LANGUAGE=multi` (automatic detection and code-switching):

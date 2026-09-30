@@ -9,6 +9,9 @@ import { str, para, list, email, https, obj, fail } from './util.js';
 // user types is pseudonymised and the caller gets their own words back (WOW_SPEC §2.3).
 import { recordView, pseudonymise, forAuthor, nameMatcher } from './scrub.js';
 import { winSignals } from './winloop.js';
+// Story rating by TypeSafe JEV (docs/JEV_RATING.md): used only when a rater with a key exists and the owner consented.
+import { RatingError, ratingInput, questionPlan, requestBody, compose, agentQuality, noStoryQuality, sha256Hex, BUDGETS, RUBRIC_VERSION, METRIC_CODES, MODEL } from './rating.js';
+import { storedConsent } from './profile.js';
 const DUPLICATE = 0.9; // cosine similarity above which two references are flagged as the same or a related project
 export const PRACTICES = { data_ai: 'Data & AI', web_app: 'Web & App Development', telecom: 'Telecom & Networks', sap_erp: 'SAP & ERP', cloud_infra: 'Cloud & Infrastructure', cybersecurity: 'Cybersecurity', transformation: 'Transformation & Strategy', engineering: 'Engineering & Industry' };
 
@@ -74,6 +77,19 @@ export function anonymise(data) {
   return m;
 }
 
+// What a reader without full access gets of a rating (docs/JEV_RATING.md §9.2): today's fields plus the engine; no
+// per-dimension detail and no holds. A legacy object (no engine) is today's object, unchanged.
+const QUALITY_PUBLIC = ['score', 'completeness', 'aiScore', 'status', 'clientValueClear', 'missing', 'issues', 'recommendations', 'summary', 'blockers', 'reviewedAt', 'model', 'readyScore', 'revision', 'engine'];
+function publicQuality(q) {
+  if (!q || !('engine' in q)) return q;
+  return { ...Object.fromEntries(QUALITY_PUBLIC.filter(k => k in q).map(k => [k, q[k]])), jev: null, holds: [] };
+}
+// Numbers only (docs/JEV_RATING.md §7.5): never an id, title, client, hash, model name, text or key.
+const defaultMetric = (name, values) => console.log(JSON.stringify({ atlas_metric: name, ...values }));
+const waitAtMost = (p, ms) => new Promise(resolve => { const t = setTimeout(resolve, ms); p.then(() => { clearTimeout(t); resolve(); }, () => { clearTimeout(t); resolve(); }); });
+// Without a key (fallback no_key) the audit text is today's, including when the review agent did not answer.
+const auditDetail = q => `score ${q.score}, ${q.status}` + (q.engine === 'jev' ? ' · JEV' : q.escalatedFrom ? ' · review agent (second opinion)' : q.engine === 'rules' && q.fallbackReason !== 'no_key' ? ' · rules only' : '');
+
 export function deriveStatus(state) {
   if (state.withdrawn) return 'withdrawn';
   if (!state.quality) return 'in_review';
@@ -96,8 +112,11 @@ const SCHEMA = [
 
 export class Library {
   // services: outbound adapters for feature modules ({ teams } in production; empty in tests and local runs).
-  constructor(sql, { now = () => new Date().toISOString(), newId = () => crypto.randomUUID().replace(/-/g, ''), complete = null, embed = null, readyScore = READY_SCORE, model = '', services = {} } = {}) {
-    Object.assign(this, { sql, now, newId, complete, embed, readyScore, model, services });
+  // rater: rating.storyRater(env) (null: no JEV); metric(name, values): numbers only (default: one console.log line).
+  constructor(sql, { now = () => new Date().toISOString(), newId = () => crypto.randomUUID().replace(/-/g, ''), complete = null, embed = null, readyScore = READY_SCORE, model = '', services = {},
+    rater = null, metric = defaultMetric } = {}) {
+    Object.assign(this, { sql, now, newId, complete, embed, readyScore, model, services, rater, metric });
+    this.inflight = new Map(); // `${id}:${revision}` -> { gen, engine, first, all }: one rating per revision at a time
     for (const q of SCHEMA) this.sql.exec(q);
   }
 
@@ -157,10 +176,19 @@ export class Library {
     if (!level) throw fail(404, 'Reference not found.');
     const full = level === 'full';
     return { ...this.summary(row, level, user), data: full ? row.data : anonymise(row.data),
-      state: { quality: row.state.quality, validation: full ? row.state.validation : { status: row.state.validation?.status }, withdrawn: !!row.state.withdrawn, duplicates: row.state.duplicates || [] },
+      state: { quality: full ? row.state.quality : publicQuality(row.state.quality), validation: full ? row.state.validation : { status: row.state.validation?.status }, withdrawn: !!row.state.withdrawn, duplicates: row.state.duplicates || [] },
       revisions: full ? this.rows('SELECT revision, author, at FROM revisions WHERE id = ? ORDER BY revision DESC', row.id) : [],
       audit: full ? this.rows('SELECT actor, action, at, detail FROM audit WHERE id = ? ORDER BY seq DESC LIMIT 100', row.id) : [],
-      permissions: { edit: this.canEdit(row, user), validate: this.canValidate(row, user), withdraw: this.canEdit(row, user), review: this.canEdit(row, user), reinstate: ['admin', 'reviewer'].includes(user.role), merge: ['admin', 'reviewer'].includes(user.role) } };
+      permissions: { edit: this.canEdit(row, user), validate: this.canValidate(row, user), withdraw: this.canEdit(row, user), review: this.canEdit(row, user), reinstate: ['admin', 'reviewer'].includes(user.role), merge: ['admin', 'reviewer'].includes(user.role) },
+      rating: { running: this.inflight.has(row.id + ':' + row.revision) }, ...(full ? { jevAllowed: this.jevAllowed(row) } : {}) };
+  }
+
+  // JEV may rate this story: a key, the OWNER's stored consent (whoever triggers the rating), and no rejected key.
+  jevAllowed(row) { return !!this.rater?.available() && this.rater.blocked() !== 'auth' && storedConsent(this, row.owner, 'jevRating'); }
+  engineFor(row) {
+    // Without a key, a story with no text still goes to the review agent, exactly as before JEV (docs/JEV_RATING.md §0).
+    if (!(row.data.answers || []).some(a => String(a ?? '').trim())) return this.rater?.available() ? 'rules' : 'review-agent';
+    return this.rater?.available() && storedConsent(this, row.owner, 'jevRating') ? 'jev' : 'review-agent';
   }
 
   revision(user, id, n) {
@@ -197,17 +225,138 @@ export class Library {
     return status;
   }
 
-  async review(user, id) {
+  // Rates the current revision (docs/JEV_RATING.md §5.5, §6.4-§6.6, §7.3). The engine resolves in this order: rules when
+  // the story has no text; jev with a key and the owner's consent; otherwise the review agent (today's path). One rating
+  // per revision at a time: a call with the same engine joins the one in flight; a different engine starts a new
+  // generation, and only the newest generation of the current revision is ever stored. An interactive call returns once
+  // the primary rating is stored; a second opinion and the index continue in waitUntil (awaited inline without it).
+  async review(user, id, { budget = 'interactive', waitUntil = null } = {}) {
     const row = this.row(id);
     if (!row || !this.access(row, user)) throw fail(404, 'Reference not found.');
     if (user.email !== 'atlas' && !this.canEdit(row, user)) throw fail(403, 'You cannot review this reference.');
-    if (!this.complete) throw fail(503, 'The review agent is not available.');
-    const quality = { ...(await reviewReference(row.data, this.complete, { view: d => recordView(this, d), readyScore: this.readyScore, now: this.now, model: this.model })), revision: row.revision };
-    const fresh = this.row(id);
-    if (fresh.revision !== row.revision) return this.get(user, id); // a newer revision arrived meanwhile; its own review follows
-    this.setState(fresh, { ...fresh.state, quality }, user.email, 'reviewed', `score ${quality.score}, ${quality.status}`);
-    await this.index(id).catch(() => {});
+    if (!this.complete && !this.rater?.available()) throw fail(503, 'The review agent is not available.');
+    const engine = this.engineFor(row), key = row.id + ':' + row.revision, cur = this.inflight.get(key);
+    if (cur && cur.engine === engine) {
+      // The 2 s cap exists because the JEV-configured dialog polls (rating.running). Without a key the dialog is today's
+      // and does not poll, so the person waits for the rating in flight, as they waited for their own review before JEV.
+      const capped = budget === 'interactive' && this.rater?.available();
+      await (capped ? waitAtMost(cur.first, this.rater?.budgets?.interactive?.deadlineMs ?? BUDGETS.interactive.deadlineMs) : cur.first);
+      return this.get(user, id);
+    }
+    const gen = this.nextGen(row.id);
+    let markFirst; const entry = { gen, engine, first: new Promise(r => { markFirst = r; }) };
+    // `running` ends when the rating (and any second opinion) is stored, not when the index finishes.
+    const release = () => { if (this.inflight.get(key) === entry) this.inflight.delete(key); };
+    this.inflight.set(key, entry);
+    entry.all = this.runRating(row, { engine, gen, budget, waitUntil, markFirst, release, actor: user.email })
+      .finally(() => { release(); markFirst(); });
+    entry.all.catch(() => {}); // awaited below or by waitUntil; never an unhandled rejection
+    await entry.first;
+    if (budget === 'interactive' && waitUntil) waitUntil(entry.all); else await entry.all;
     return this.get(user, id);
+  }
+
+  // refs.state.ratingGen: incremented and written back at once (a synchronous read-modify-write in the Durable Object).
+  nextGen(id) {
+    const r = this.row(id), gen = (Number(r.state.ratingGen) || 0) + 1;
+    this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...r.state, ratingGen: gen }), id);
+    return gen;
+  }
+
+  // Stores a rating only for the same revision and a generation that nothing newer superseded. A valid JEV answer is
+  // kept for reuse (lastJev) even when its rating is dropped.
+  storeRating(row, gen, quality, actor, lastJev = null) {
+    const fresh = this.row(row.id);
+    if (!fresh || fresh.merged_into) return false;
+    if (fresh.revision !== row.revision || (Number(fresh.state.ratingGen) || 0) > gen) {
+      if (lastJev) this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...fresh.state, lastJev }), fresh.id);
+      return false;
+    }
+    this.setState(fresh, { ...fresh.state, quality, ...(lastJev ? { lastJev } : {}) }, actor, 'reviewed', auditDetail(quality));
+    return true;
+  }
+
+  emitRating(q, { fallback = q.fallbackReason, attempts = 0, hedged = 0, http = 0, asked = 0, escalated = 0, strict = 0, inputTokens = 0 } = {}) {
+    const C = METRIC_CODES, n = x => (Number.isFinite(x) ? x : 0);
+    const values = { engine: C.engine[q.engine] ?? 0, fallback: C.fallback[fallback || 'none'] ?? 0, status: C.status[q.status] ?? 0, ms: n(q.ms), attempts: n(attempts), hedged: n(hedged),
+      http: n(http), cached: q.cached ? 1 : 0, asked: n(asked), holds: (q.holds || []).length, escalated: escalated ? 1 : 0, strict: strict ? 1 : 0,
+      language: C.language[q.jev?.language?.code] ?? 0, input_tokens: n(inputTokens) };
+    try { this.metric('story_rating', values); } catch { /* a metric never breaks a rating */ }
+  }
+
+  async runRating(row, { engine, gen, budget, waitUntil, markFirst, release, actor }) {
+    const inline = !(budget === 'interactive' && waitUntil);
+    const finish = async (stored, second = null) => {
+      const idx = stored ? this.index(row.id).catch(() => {}) : null;
+      if (!second) release(); // before markFirst: the caller's response must not say "running" for a finished rating
+      markFirst();
+      if (idx) { if (inline) await idx; else waitUntil(idx); }
+      if (second) { try { await second; } finally { release(); } }
+    };
+    if (engine === 'rules') {
+      const q = agentQuality({ ...noStoryQuality(row.data, { readyScore: this.readyScore, now: this.now }), revision: row.revision }, { engine: 'rules', fallbackReason: 'no_story', gen });
+      const stored = this.storeRating(row, gen, q, actor);
+      this.emitRating(q);
+      return finish(stored);
+    }
+    let fallback = engine === 'jev' ? null : this.rater?.available() ? 'no_consent' : 'no_key', meta = {};
+    if (engine === 'jev') {
+      let done = null;
+      // Any JEV failure falls back to the review agent. An unexpected error is recorded as `rejected` (metric 7): the
+      // person still gets a rating, and the metric shows JEV did not answer.
+      try { done = await this.jevRating(row, { gen, budget }); }
+      catch (e) { fallback = e instanceof RatingError ? e.code : 'rejected'; meta = e instanceof RatingError ? e.meta : {}; }
+      if (done) {
+        const stored = this.storeRating(row, gen, done.quality, actor, done.lastJev);
+        this.emitRating(done.quality, { ...done.meta, escalated: done.escalate, strict: done.quality.jev.strict });
+        return finish(stored, stored && done.escalate && this.complete ? this.secondOpinion(row, gen, done) : null);
+      }
+    }
+    const t0 = Date.now(), q0 = await reviewReference(row.data, this.complete || (async () => { throw new Error('no review agent'); }),
+      { view: d => recordView(this, d), readyScore: this.readyScore, now: this.now, model: this.model });
+    const q = agentQuality({ ...q0, revision: row.revision }, { fallbackReason: fallback, gen, ms: Date.now() - t0 });
+    const stored = this.storeRating(row, gen, q, actor);
+    this.emitRating(q, meta);
+    return finish(stored);
+  }
+
+  // The JEV engine: rules first, the masked state, the body; the last answer is reused when the body is unchanged.
+  async jevRating(row, { gen, budget }) {
+    const t0 = Date.now();
+    if (this.rater.blocked() === 'auth') throw new RatingError('auth'); // skipped until the key changes; never reused
+    const input = ratingInput(this, row.data, { owner: row.owner, ...(this.ratingView ? { view: this.ratingView } : {}) });
+    const plan = questionPlan(row.data, input.figure), asked = plan.asked;
+    const bodyText = JSON.stringify(requestBody(input.state, asked)), bodyHash = await sha256Hex(bodyText);
+    const last = this.row(row.id)?.state?.lastJev;
+    let answers, meta, lastJev = null, cached = false;
+    if (last && last.bodyHash === bodyHash && last.rubric === RUBRIC_VERSION && last.answers) {
+      answers = last.answers; cached = true; meta = { attempts: 0, hedged: 0, http: 0, inputTokens: 0 };
+    } else {
+      let r;
+      try { r = await this.rater.rate(bodyText, JSON.stringify(input.state.reference), { asked, terms: input.terms, budget }); }
+      catch (e) { throw e instanceof RatingError ? new RatingError(e.code, { ...e.meta, asked: asked.length }) : e; }
+      answers = r.answers; meta = { attempts: r.attempts, hedged: r.hedged, http: r.http, inputTokens: r.inputTokens ?? 0 };
+      lastJev = { bodyHash, rubric: RUBRIC_VERSION, model: MODEL, answers, inputTokens: r.inputTokens ?? 0 };
+    }
+    const strict = row.state.validation?.status === 'not_required'; // manager staff: no N+1 will look at it
+    const opts = { asked, ruled: plan.ruled, readyScore: this.readyScore, strict, ms: Date.now() - t0, cached, model: answers.model, now: this.now, revision: row.revision, gen };
+    const { quality, escalate } = compose(row.data, answers, { ...opts, second: this.complete ? 'running' : 'unanswered' });
+    return { quality, escalate, lastJev, meta: { ...meta, asked: asked.length }, unanswered: escalate ? compose(row.data, answers, { ...opts, second: 'unanswered' }).quality : null };
+  }
+
+  // §5.5 escalation: today's review agent decides, in the same generation. If it does not answer, the JEV rating stays
+  // needs_work and says a reviewer should check the unsure parts.
+  async secondOpinion(row, gen, done) {
+    const t0 = Date.now(), q0 = await reviewReference(row.data, this.complete, { view: d => recordView(this, d), readyScore: this.readyScore, now: this.now, model: this.model });
+    const strict = done.quality.jev.strict;
+    if (q0.aiScore !== null) {
+      const q = agentQuality({ ...q0, revision: row.revision }, { engine: 'review-agent', escalatedFrom: 'jev', fallbackReason: 'escalated', jev: done.quality.jev, holds: [], gen, ms: Date.now() - t0 });
+      this.storeRating(row, gen, q, 'atlas');
+      this.emitRating(q, { strict });
+    } else {
+      this.storeRating(row, gen, done.unanswered, 'atlas');
+      this.emitRating({ ...done.unanswered, engine: 'rules', ms: Date.now() - t0 }, { fallback: 'escalated', strict });
+    }
   }
 
   // Semantic index + duplicate detection (same project ID, or very similar anonymised content). Reciprocal flags.

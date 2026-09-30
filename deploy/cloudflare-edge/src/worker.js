@@ -5,6 +5,7 @@ import { handle, scheduled, workersAI } from './app.js';
 import { jevRanker } from './jev.js';
 import { Session } from './session.js';
 import { Library } from './library.js';
+import { storyRater } from './rating.js';
 import { libraryRoutes } from './library-routes.js';
 import { hindsight, recallQuery, memoryNote, jevRelevant } from './memory.js';
 import { memoryRoutes } from './memory-routes.js';
@@ -69,7 +70,7 @@ export class LibraryStore extends DurableObject {
     this.env = env;
     const ai = workersAI(env);
     this.lib = new Library(ctx.storage.sql, { complete: messages => ai.complete(messages), embed: text => ai.embed(text),
-      readyScore: Number(env.READY_SCORE) || undefined, model: env.ANALYST_MODEL, services: { teams: teamsClient(env) } });
+      readyScore: Number(env.READY_SCORE) || undefined, model: env.ANALYST_MODEL, services: { teams: teamsClient(env) }, rater: storyRater(env) }); // JEV only with TYPESAFE_API_KEY
   }
   fetch(request) { return libraryRoutes(request, this.lib, { waitUntil: p => this.ctx.waitUntil(p), env: this.env }); }
 }
