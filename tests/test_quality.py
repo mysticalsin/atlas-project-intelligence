@@ -167,3 +167,10 @@ async def test_jev_actual_adapter_body_and_confidence_label():
  assert h.calls[0][1]['allow_redirects'] is False
  assert result['rankings'][0]['review_required'] is True
  assert 'owner' not in h.calls[0][1]['json']['state']['eligible_story']
+def test_jev_accepts_two_decimal_rounding_like_the_live_model():
+ # Live jev-1.13.0 prints probabilities to 2 decimals; the implied score can differ by up to 0.05.
+ r=jev_result()
+ for a in r['answers'].values():a.update(score=2.84,probabilities={'0':0,'1':.05,'2':.30,'3':.45,'4':.20})
+ parse_result(r)
+ r['answers']['evidence']['score']=2.9
+ with pytest.raises(ValueError):parse_result(r)

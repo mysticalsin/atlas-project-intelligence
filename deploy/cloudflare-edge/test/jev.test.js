@@ -47,3 +47,12 @@ test('ranker is off without a key and uses the TypeSafe endpoint with it', async
   });
   assert.equal((await rank(plan, guidance(plan))).field, fields[1]);
 });
+
+test('parse accepts live jev-1.13.0 answers: probabilities printed to 2 decimals imply the score within 0.05', () => {
+  // Live 2026-09-30: every interview ranking failed with "Inconsistent JEV distribution" under a 0.03 tolerance.
+  const plan = planAfter([['problem', 'Tickets bounced between three teams'], ['contribution', 'I personally rebuilt the routing rules']]);
+  const [cur] = candidates(plan);
+  const rounded = { type: 'score', score: 2.84, confidence: .48, probabilities: { 0: 0, 1: .05, 2: .30, 3: .45, 4: .20 } }; // implies 2.80
+  assert.deepEqual(parse({ answers: { [cur]: rounded } }, [cur]), { [cur]: { score: 2.84, confidence: .48 } });
+  assert.throws(() => parse({ answers: { [cur]: { ...rounded, score: 2.9 } } }, [cur]), /Inconsistent/); // 0.10 away: a real mismatch
+});

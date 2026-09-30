@@ -36,10 +36,11 @@ def parse_result(data, freshness=None):
         if a.get('type')!='score' or not finite(a.get('score'),0,4) or not finite(a.get('confidence'),0,1):
             raise ValueError('Invalid JEV score or confidence')
         probabilities=a.get('probabilities',{})
-        if set(probabilities)!=set(map(str,range(5))) or any(not finite(p,0,1) for p in probabilities.values()) or abs(sum(probabilities.values())-1)>.015:
+        if set(probabilities)!=set(map(str,range(5))) or any(not finite(p,0,1) for p in probabilities.values()) or abs(sum(probabilities.values())-1)>.025:
             raise ValueError('Invalid JEV score distribution')
         expected=sum(int(k)*v for k,v in probabilities.items())
-        if abs(expected-a['score'])>.03:raise ValueError('Score does not match distribution')
+        # JEV prints probabilities to 2 decimals: the implied score may differ by up to (0+1+2+3+4) x 0.005
+        if abs(expected-a['score'])>.05:raise ValueError('Score does not match distribution')
         dimensions[k]={'score':a['score'],'confidence':a['confidence']}
     composite=round(sum(dimensions[k]['score']/4*w for k,(_,w) in DIMENSIONS.items())*100,1)
     return {'model':str(data.get('model','unknown')),'rubric_version':('customer-value-v2' if freshness is not None else RUBRIC_VERSION),'dimensions':dimensions,

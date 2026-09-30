@@ -66,3 +66,11 @@ test('off without a key; a present key never reaches the request body', async ()
   await assert.rejects(customerJev({ TYPESAFE_API_KEY: 'sk-secret' }, fetcher, { today: V.today })(V.rank.three_stories.customer, [V.rank.three_stories.stories[0]]), /Invalid JEV score/);
   assert.doesNotMatch(calls[0].init.body, /sk-secret/);
 });
+
+test('parseResult accepts live-style answers rounded to 2 decimals (score within 0.05 of the distribution)', () => {
+  const rounded = { type: 'score', score: 2.84, confidence: .7, probabilities: { 0: 0, 1: .05, 2: .30, 3: .45, 4: .20 } };
+  const data = { model: 'jev-1.13.0', answers: Object.fromEntries(Object.keys(DIMENSIONS).map(k => [k, { ...rounded }])) };
+  assert.doesNotThrow(() => parseResult(data));
+  data.answers[Object.keys(DIMENSIONS)[0]].score = 2.9;
+  assert.throws(() => parseResult(data), /does not match/);
+});

@@ -47,9 +47,10 @@ export function parseResult(data, freshness = null) {
     const a = isDict(answers[k]) ? answers[k] : {};
     if (a.type !== 'score' || !finite(a.score, 0, 4) || !finite(a.confidence, 0, 1)) throw new Error('Invalid JEV score or confidence');
     const p = isDict(a.probabilities ?? {}) ? (a.probabilities ?? {}) : null, keys = p ? Object.keys(p) : [], digits = ['0', '1', '2', '3', '4'];
-    if (!p || keys.length !== 5 || !digits.every(d => keys.includes(d)) || digits.some(d => !finite(p[d], 0, 1)) || Math.abs(digits.reduce((s, d) => s + p[d], 0) - 1) > 0.015)
+    if (!p || keys.length !== 5 || !digits.every(d => keys.includes(d)) || digits.some(d => !finite(p[d], 0, 1)) || Math.abs(digits.reduce((s, d) => s + p[d], 0) - 1) > 0.025)
       throw new Error('Invalid JEV score distribution');
-    if (Math.abs(digits.reduce((s, d) => s + Number(d) * p[d], 0) - a.score) > 0.03) throw new Error('Score does not match distribution');
+    // 2-decimal probabilities: the implied score may differ by up to (0+1+2+3+4) x 0.005 (parity with jev.py)
+    if (Math.abs(digits.reduce((s, d) => s + Number(d) * p[d], 0) - a.score) > 0.05) throw new Error('Score does not match distribution');
     dimensions[k] = { score: a.score, confidence: a.confidence };
   }
   const composite = pyRound1(Object.entries(DIMENSIONS).reduce((s, [k, [, w]]) => s + dimensions[k].score / 4 * w, 0) * 100);

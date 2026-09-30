@@ -32,7 +32,8 @@ export function parse(data, fields) {
     const p = a.probabilities || {}, keys = Object.keys(p);
     if (keys.length !== 5 || ['0', '1', '2', '3', '4'].some(k => !finite(p[k], 0, 1))) throw new Error('Invalid JEV distribution');
     const total = keys.reduce((s, k) => s + p[k], 0), expected = keys.reduce((s, k) => s + Number(k) * p[k], 0);
-    if (Math.abs(total - 1) > 0.015 || Math.abs(expected - a.score) > 0.03) throw new Error('Inconsistent JEV distribution');
+    // JEV prints probabilities to 2 decimals: the sum may be off by 5 x 0.005 and the implied score by (0+1+2+3+4) x 0.005.
+    if (Math.abs(total - 1) > 0.025 || Math.abs(expected - a.score) > 0.05) throw new Error('Inconsistent JEV distribution');
     out[f] = { score: a.score, confidence: a.confidence };
   }
   return out;
