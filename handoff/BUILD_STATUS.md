@@ -531,6 +531,8 @@ Docs: `deploy/cloudflare-edge/README.md` (pipeline line, new metrics), `docs/INT
 
 - Deployed by Tony 2026-09-30 with `deploy.sh` (working tree clean at 03ff83c): Worker version 1faba0bd-3cd0-467c-8cc1-6579cb2290e8 = JEV story rating live (TYPESAFE_API_KEY set). Next: confirm live ratings and smart-turn verdicts in the logs after Tony's next session.
 
+- Deployed by Tony 2026-09-30 with `deploy.sh` (tree clean at 3d1950d): Worker version cb2555d3-35cd-4e27-b255-e7a543ede836. Verified in the deployed script (Cloudflare API, script content): rounding-aware JEV checks (0.025 / 0.05) in the ranker and customer ranking, smart-turn base64 input, jev-1.13.0 pinned. Open: smart-turn answers in 0.7-1.9 s (REST timing), over its 350 ms budget; proposal to start the check earlier on a shorter tail awaits Tony.
+
 ## Per-session update template
 Copy this section for each session. Do not put secrets, private keys, customer source text or raw audio in this file.
 
