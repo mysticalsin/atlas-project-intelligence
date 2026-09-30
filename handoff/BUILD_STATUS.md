@@ -529,6 +529,8 @@ Docs: `deploy/cloudflare-edge/README.md` (pipeline line, new metrics), `docs/INT
 
 - Deployed by Tony 2026-09-29 with `deploy.sh`: Worker version b4d8671c-2cf0-4964-bd2b-370955229835 = commit f3a066a (short opening without review talk; smart-turn-v2 now sent a base64 WAV after live AiError on every turn). Working tree verified clean at deploy time.
 
+- Deployed by Tony 2026-09-30 with `deploy.sh` (working tree clean at 03ff83c): Worker version 1faba0bd-3cd0-467c-8cc1-6579cb2290e8 = JEV story rating live (TYPESAFE_API_KEY set). Next: confirm live ratings and smart-turn verdicts in the logs after Tony's next session.
+
 ## Per-session update template
 Copy this section for each session. Do not put secrets, private keys, customer source text or raw audio in this file.
 
