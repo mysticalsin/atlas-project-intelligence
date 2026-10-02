@@ -533,6 +533,8 @@ Docs: `deploy/cloudflare-edge/README.md` (pipeline line, new metrics), `docs/INT
 
 - Deployed by Tony 2026-09-30 with `deploy.sh` (tree clean at 3d1950d): Worker version cb2555d3-35cd-4e27-b255-e7a543ede836. Verified in the deployed script (Cloudflare API, script content): rounding-aware JEV checks (0.025 / 0.05) in the ranker and customer ranking, smart-turn base64 input, jev-1.13.0 pinned. Open: smart-turn answers in 0.7-1.9 s (REST timing), over its 350 ms budget; proposal to start the check earlier on a shorter tail awaits Tony.
 
+- Deployed by Tony 2026-10-02 with `deploy.sh` (tree clean at e5699b5): Worker version 8f5a97f9-cfde-415f-9bfb-25a24e69f7e6. ATLAS always opens with the spoken introduction (admin included); welcome-back line mentions the interview. Verified in the deployed script.
+
 ## Per-session update template
 Copy this section for each session. Do not put secrets, private keys, customer source text or raw audio in this file.
 
