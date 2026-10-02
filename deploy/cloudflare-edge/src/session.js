@@ -350,10 +350,10 @@ export class Session {
     this.timer = setInterval(() => this.watch(), 1000);
     this.pace();
     const lang = this.spoken();
-    if (gap) { // the first open ask, with the usual greeting unless admin
+    if (gap) { // the first open ask, after the usual greeting (always spoken, admin included: Tony, 2026-10-02)
       this.guidance = gapGuidance(this.gapAsks, this.gapStatuses());
-      this.startReply(GAP_OPENING, { prefix: this.admin ? '' : GREETINGS[lang] || '' });
-    } else this.startReply(OPENING, { prefix: this.admin ? '' : (this.memoryNote ? WELCOME_BACK[lang] : GREETINGS[lang]) || '' });
+      this.startReply(GAP_OPENING, { prefix: GREETINGS[lang] || '' });
+    } else this.startReply(OPENING, { prefix: (this.memoryNote ? WELCOME_BACK[lang] : GREETINGS[lang]) || '' });
     this.prewarm();
   }
 

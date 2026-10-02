@@ -126,3 +126,13 @@ test('greetings are one short introduction in every language (no pitch, no revie
     assert.ok(text.length <= 80, `${lang}: short (${text.length})`);
   }
 });
+
+test('the welcome-back greeting also says ATLAS will interview them (one short sentence)', async () => {
+  const { WELCOME_BACK } = await import('../src/languages.js');
+  assert.equal(WELCOME_BACK.en, "Hi, it's ATLAS again, and I'll interview you about your project.");
+  for (const [lang, text] of Object.entries(WELCOME_BACK)) {
+    assert.ok(text.includes('ATLAS'), lang);
+    assert.equal((text.match(/[.!?](\s|$)/g) || []).length, 1, `${lang}: one sentence`);
+    assert.ok(text.length <= 80, `${lang}: short (${text.length})`);
+  }
+});

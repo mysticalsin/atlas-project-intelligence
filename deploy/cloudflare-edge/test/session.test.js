@@ -1209,15 +1209,15 @@ test('full mode: a clean End while private memory is still recalled creates no t
   assert.ok(h.events.some(e => e.type === 'ended'));
 });
 
-test('admin + gap: ADMIN_NOTE first, then GAP_NOTE and gap pace; no greeting; no memory recall in gap mode', async () => {
+test('admin + gap: ADMIN_NOTE first, then GAP_NOTE and gap pace; the greeting is spoken; no memory recall in gap mode', async () => {
   let recalls = 0;
   const h = harness(undefined, { session: { admin: true, gaps: resolver(), memory: async () => { recalls += 1; return 'PRIVATE MEMORY: x'; } } });
   await h.s.onText(gapStart());
   await until(() => h.calls.talker.length >= 1 && !h.s.busy());
   const notes = notesOf(h.calls.talker[0]);
   assert.equal(notes[0], ADMIN_NOTE); assert.equal(notes[1], GAP_NOTE); assert.match(notes[2], /^GAP PACE \(server\)/);
-  assert.ok(!notes.some(n => n.startsWith('ALREADY SAID')), 'no greeting was spoken');
-  assert.ok(!h.calls.tts.includes(GREETINGS.en) && !h.calls.tts.includes(WELCOME_BACK.en));
+  // Tony, 2026-10-02: ATLAS always introduces herself first, admin included.
+  assert.ok((notes.find(n => n.startsWith('ALREADY SAID')) || '').includes(GREETINGS.en), 'the greeting was spoken first');
   assert.equal(recalls, 0); assert.ok(!h.events.some(e => e.type === 'memory'));
   assert.ok(!h.calls.talker.flat().some(m => m.content.includes('PRIVATE MEMORY: x')), 'nothing recalled reaches the talker');
 });
@@ -1574,5 +1574,17 @@ test('turn_check says why the turn model gave no verdict: timeout or the error n
     assert.deepEqual(named(metrics, 'turn_check'), [{ ...verdict, used: 1, ...extra }]);
     assert.ok(!JSON.stringify(metrics).includes('Zelda'));
     await h.s.end(false); open.delete(h.s);
+  }
+});
+
+test('every session starts with the spoken introduction, admin included (full mode)', async () => {
+  for (const admin of [false, true]) {
+    const h = harness(undefined, { session: { admin } });
+    await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, voice: 'asteria', capture: true, memory: false }));
+    await until(() => h.calls.talker.length >= 1);
+    const said = notesOf(h.calls.talker[0]).find(n => n.startsWith('ALREADY SAID')) || '';
+    assert.ok(said.includes(GREETINGS.en), (admin ? 'admin' : 'consultant') + ': the greeting was spoken first and the talker knows it');
+    await until(() => h.events.some(e => e.type === 'agent_text'));
+    assert.ok(h.events.find(e => e.type === 'agent_text').text.includes(GREETINGS.en), 'the first words on screen are the greeting');
   }
 });

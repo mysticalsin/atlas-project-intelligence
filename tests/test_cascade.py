@@ -310,3 +310,10 @@ def test_opening_is_a_simple_introduction_without_review_talk():
     assert 'will review' not in OPENING and 'review everything' not in OPENING
     assert 'do not talk about reviews, approvals or how the report is used unless they ask' in OPENING
     assert 'you are ATLAS and will interview them about their project' in OPENING
+
+
+def test_admin_note_does_not_suppress_the_introduction():
+    # Tony, 2026-10-02: ATLAS always presents herself first, admin included; the server speaks the greeting.
+    from atlas_voice.cascade import ADMIN_NOTE
+    assert 'No introduction' not in ADMIN_NOTE
+    assert 'Do not introduce yourself again (the server already greeted)' in ADMIN_NOTE

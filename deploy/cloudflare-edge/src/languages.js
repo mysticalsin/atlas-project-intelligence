@@ -43,8 +43,13 @@ export const GREETINGS = {
   nl: 'Hallo, ik ben ATLAS en ik ga je interviewen over je project.',
 };
 export const WELCOME_BACK = {
-  en: "Hi, it's ATLAS again. Good to talk to you again.", fr: "Bonjour, c'est encore ATLAS. Ravie de vous retrouver.", es: 'Hola, soy ATLAS otra vez. Qué gusto volver a hablar contigo.',
-  pt: 'Olá, é a ATLAS de novo. Bom falar com você outra vez.', de: 'Hallo, hier ist wieder ATLAS. Schön, wieder mit Ihnen zu sprechen.', it: 'Ciao, sono di nuovo ATLAS. Che piacere risentirti.', nl: 'Hallo, het is ATLAS weer. Fijn om je weer te spreken.',
+  en: "Hi, it's ATLAS again, and I'll interview you about your project.",
+  fr: "Bonjour, c'est encore ATLAS, et je vais vous interviewer sur votre projet.",
+  es: 'Hola, soy ATLAS otra vez, y voy a entrevistarte sobre tu proyecto.',
+  pt: 'Olá, é a ATLAS de novo, e vou entrevistar você sobre o seu projeto.',
+  de: 'Hallo, hier ist wieder ATLAS, und ich interviewe Sie zu Ihrem Projekt.',
+  it: 'Ciao, sono di nuovo ATLAS e ti intervisterò sul tuo progetto.',
+  nl: 'Hallo, hier is ATLAS weer, en ik ga je interviewen over je project.',
 };
 // Short uptake words ("Right.", "I see.") played from cache as ATLAS takes her turn, while the reply is prepared.
 // Not continuers like "Mm-hm", which mean "keep going" and contradict her taking the floor.
