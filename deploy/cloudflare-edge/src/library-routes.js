@@ -6,6 +6,7 @@ import { featureRoutes } from './features.js';
 import * as outreach from './outreach.js';
 import * as profile from './profile.js';
 import * as evidence from './evidence.js';
+import * as branches from './branches.js';
 export const SYSTEM = { email: 'atlas', role: 'admin' }; // automatic review after a save
 // A rating engine exists: the review agent, or JEV with a key (docs/JEV_RATING.md §6.5).
 const canRate = lib => !!(lib.complete || lib.rater?.available());
@@ -37,7 +38,11 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
     // System calls (set only by the Worker's trigger endpoint or its daily cron).
     if (user.role === 'system') {
       if (method === 'POST' && id === 'trigger') return json(outreach.onTrigger(lib, user.email, body), 201);
-      if (method === 'POST' && id === 'scan-stale') return json({ invited: lib.scanStale(), ...outreach.daily(lib), ...(profile.READY ? profile.daily(lib) : {}) });
+      if (method === 'POST' && id === 'scan-stale') {
+        const swept = { invited: lib.scanStale(), ...outreach.daily(lib), ...(profile.READY ? profile.daily(lib) : {}) };
+        branches.configure(lib, { env }); await branches.pump(evidence.evidence(lib)).catch(() => {}); // due destination retries (T15); a no-op unless ATLAS_ADAPTERS=mock
+        return json(swept);
+      }
       const sys = await featureRoutes(ctx);
       if (sys) return json(sys.body, sys.status || 200);
       return json({ error: 'Not found.' }, 404);

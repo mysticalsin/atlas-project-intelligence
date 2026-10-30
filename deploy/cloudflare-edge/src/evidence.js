@@ -17,6 +17,7 @@ import { Machine, StateError, TRANSITIONS, WORKFLOW_VERSION } from './conversati
 import { FIELDS } from './policy.generated.js';
 import { managerOf } from './claims.js';
 import { str, para, obj, fail } from './util.js';
+import * as branches from './branches.js'; // T15: the approval fan-out and its hooks; inert until the Library is configured with the Worker's env
 
 // Claim vocabulary: the pack's Claim schema, plus context and learning (D13, an Atlas extension).
 export const CLAIM_TYPES = ['responsibility', 'deliverable', 'technology', 'outcome', 'metric', 'credential', 'context', 'learning'];
@@ -52,8 +53,10 @@ const DDL = [
   `CREATE TABLE IF NOT EXISTS permission_grants (id TEXT PRIMARY KEY, entity TEXT, subject TEXT, purpose TEXT, destination TEXT, scope TEXT, channel TEXT, geography TEXT,
     expires_at TEXT, grantor TEXT, legal_basis_ref TEXT, status TEXT, revoked_at TEXT, revision INTEGER, content_hash TEXT, created_at TEXT)`,
   'CREATE INDEX IF NOT EXISTS permission_grants_entity ON permission_grants(entity)',
-  // Placeholder for T15 (branches per approved evidence); T13 only reads it to list derivatives.
-  'CREATE TABLE IF NOT EXISTS branch_status (entity TEXT, branch TEXT, status TEXT, updated_at TEXT, PRIMARY KEY (entity, branch))',
+  // One row per (evidence, branch), written only by branches.js (T15): the status, the revision and hash it was derived from, whether the last
+  // acknowledgement was a mock, a stable reason code and the job it reflects.
+  `CREATE TABLE IF NOT EXISTS branch_status (entity TEXT, branch TEXT, status TEXT, updated_at TEXT, revision INTEGER, content_hash TEXT, mock INTEGER, reason TEXT, job_id TEXT,
+    PRIMARY KEY (entity, branch))`,
 ];
 const ensured = new WeakSet();
 export function ensure(lib) {
@@ -336,6 +339,9 @@ class Evidence {
       } else if (action === 'complete_impact_review') extra.impact = { ...rec.state.impact, completed_by: user.email, completed_at: at };
     }
     this.save(rec, extra);
+    if (action === 'approve') await branches.afterApprove(this, rec); // seven independent branch records (T15); an approval is never undone by them
+    else if (action === 'withdraw' && rec.machine.state === 'impact_review') branches.onWithdrawn(this, rec);
+    else if (action === 'complete_impact_review') branches.onImpactReviewCompleted(this, rec);
     return this.view(rec, acc);
   }
 
@@ -395,6 +401,7 @@ class Evidence {
       rec.machine = new Machine('evidence'); extra.cycle = rec.state.cycle + 1; extra.superseded = { revision: next - 1, at, derivatives };
     } else this.log(rec, next, { from, to: from, event: 'amend', at, reason: null }, by, user.email);
     this.save(rec, extra);
+    branches.onRevisionChanged(this, rec, { afterApproval: after }); // jobs for older revisions stop, story approvals reset, derivatives flagged (T15)
     return { ...this.view(rec, acc), unchanged: false, derivatives };
   }
 
@@ -418,6 +425,7 @@ class Evidence {
     if (!acc || !g) throw fail(404, NOT_FOUND);
     this.check(user, acc, rec, 'revoke_permission', { expected_revision: revisionOf(p), extra: { purpose: g.purpose } });
     this.lib.sql.exec("UPDATE permission_grants SET status = 'revoked', revoked_at = ? WHERE id = ?", this.now(), g.id);
+    branches.onPermissionRevoked(this, rec, g.purpose); // what was derived under it goes to impact review (T15)
     return this.grantsFor(rec.id).find(x => x.id === g.id);
   }
 }
@@ -432,14 +440,19 @@ export function target(pathname) {
 }
 const NOT_FOUND_ROUTE = { status: 404, body: { error: 'Not found.' } };
 export async function routes(ctx) {
-  const { lib, user, method, rest, body, internal, url } = ctx, ev = evidence(lib), [id, action, extra] = rest, b = obj(body);
+  const { lib, user, method, rest, body, internal, url } = ctx, ev = evidence(lib), [id, action, extra, verb] = rest, b = obj(body);
+  if (ctx.env !== undefined) branches.configure(lib, { env: ctx.env }); // the Worker's variables (ATLAS_ADAPTERS, ATLAS_EVIDENCE_WORKFLOW) reach the branches here
   if (!id) {
     if (method === 'POST') return internal ? created(await ev.createDraftFromNotes(user.email, b.notes)) : NOT_FOUND_ROUTE;
     return method === 'GET' ? { body: { items: ev.list(user) } } : NOT_FOUND_ROUTE;
   }
   if (method === 'GET' && !action) { const r = url.searchParams.get('revision'); return { body: ev.get(user, id, r === null ? {} : { revision: /^\d{1,6}$/.test(r) ? Number(r) : 0 }) }; }
+  if (method === 'GET' && action === 'status' && !extra) return { body: branches.statusView(ev, user, id) }; // seven cards, never one generic "done" (T15)
   if (method !== 'POST') return NOT_FOUND_ROUTE;
   if (action === 'submit' && !extra) return { body: ev.submit(user, id, b.expected_revision) };
+  if (action === 'sync' && !extra) return { body: await branches.sync(ev, user, id, b) }; // a reviewer's recovery: re-check, run due jobs, recover one failed job
+  if (action === 'permissions' && !extra) { const g = ev.grantPermission(user, id, b); await branches.afterGrant(ev, id); return { status: 201, body: g }; }
+  if (action === 'permissions' && extra && verb === 'revoke') return { body: ev.revokePermission(user, id, extra, b) };
   if (action === 'review' && !extra) return { body: await ev.review(user, id, str(b.action, 40), b) };
   return NOT_FOUND_ROUTE;
 }

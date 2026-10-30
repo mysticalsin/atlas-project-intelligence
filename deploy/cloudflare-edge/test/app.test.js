@@ -214,7 +214,7 @@ import { scheduled } from '../src/app.js';
 import { Library } from '../src/library.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import { memorySql } from './sqlite.js';
-const FEATURE_KEYS = ['bids', 'ask', 'spokenAsk', 'wins', 'customerJev', 'pdfBriefs', 'gaps', 'gapInterview', 'claims', 'clientConfirm', 'outreach', 'staffing', 'teams', 'phone', 'profile'];
+const FEATURE_KEYS = ['bids', 'ask', 'spokenAsk', 'wins', 'customerJev', 'pdfBriefs', 'gaps', 'gapInterview', 'claims', 'clientConfirm', 'outreach', 'staffing', 'teams', 'phone', 'profile', 'evidence_workflow'];
 const capture = () => { const c = { req: null, body: null }; c.stub = { idFromName: n => n, get: () => ({ fetch: async r => { c.req = r; c.body = r.body ? await r.text() : null; return new Response('{"ok":true}'); } }) }; return c; };
 const signed = async (path, claims = {}, init = {}) => new Request(ORIGIN + path, { ...init, headers: { 'cf-access-jwt-assertion': await jwt(claims), ...(init.headers || {}) } });
 
