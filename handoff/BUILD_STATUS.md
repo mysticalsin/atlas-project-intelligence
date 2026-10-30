@@ -585,6 +585,14 @@ Docs: `deploy/cloudflare-edge/README.md` (pipeline line, new metrics), `docs/INT
 - Not verified: Word/LibreOffice rendering of the filled DOCX (neither installed; macOS `textutil` opened an output and read the expected text; XML well-formedness is tested); the default schema/policy are read from the docs copy until the T12 config lands.
 - Remaining: wire the evidence store (T13/T15) to reset `approval_state` flags when a story revision changes; point `SCHEMA_PATH`/`POLICY_PATH` at `atlas_voice/config` when T12 merges.
 
+### Session: 2026-10-30 / Agent Brain v2.1, T5 (content-aware acknowledgements)
+- Goal: plan 3d. The short spoken acknowledgement is chosen from what the answer was about, not from a rotating filler. Branch `v21/T5`. No push, no deploy, no provider call.
+- Changes: new `deploy/cloudflare-edge/src/ack.js`: pure `pickAck({category, cues, words, lang, recent, admin, afterQuestion, timeUp, repliesSinceEarned, seed})` returning `{text, category}` or null, and `ackPrewarmList(lang)`. Null for admin, after a question to ATLAS, time up, or under 8 words. A setback cue forces `setback_neutral` (unless the category is correction_thanks, confidential_ok or no_number_fine); a figure cue (metric, estimate) turns earned_result into `promising_unverified`; earned_result needs 3 or more replies since the last one, else `thanks_detail`; no line repeats within the last 4; the choice is a hash of `seed`. Languages without a bank get the neutral FILLERS (after a setback without the bare yes words). `persona.py` ACKS gained a fifth English variant per category (a 4-line window cannot be honoured by a 4-line bank); `policy.generated.js` regenerated. `session.js` is untouched.
+- Tests added: `deploy/cloudflare-edge/test/ack.test.js` (15) using the real `analyzeTurn` for cues. Four single-line mutations (setback override, earned rate limit, repeat window, figure cue) were each caught.
+- Commands and results: `build_edge.py --policy-only`, `python3 build.py`, `build_edge.py` (HTML aliases and `src/atlas.html` unchanged); `node --test tests/*.test.js` 385 tests, 384 pass, 1 skipped; `cd deploy/cloudflare-edge && node --test test/*.test.js` 562 pass; `pytest tests/test_*.py` 453 passed.
+- Remaining: T6 wires it (flag `ATLAS_ACKS=content|legacy`): call `pickAck` right after STT with `seed` = turn number, keep `recent` (last 4 played texts) and `repliesSinceEarned`, prewarm with `ackPrewarmList`, and keep `pickFiller` for legacy. English only: other languages stay on the neutral filler, and the fr/es/... filler words are not native-reviewed.
+- Git: committed on `v21/T5` as `v2.1 T5`.
+
 ## Per-session update template
 Copy this section for each session. Do not put secrets, private keys, customer source text or raw audio in this file.
 
