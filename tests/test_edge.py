@@ -51,8 +51,8 @@ def test_edge_modules_registry_merges_constants_and_rejects_duplicates(tmp_path)
     # A copy of build_edge.py registering a throwaway module: its EDGE_CONSTANTS land after the built-in ones; a clash fails the build.
     edge = tmp_path / 'deploy' / 'cloudflare-edge'; (edge / 'src').mkdir(parents=True); (tmp_path / 'atlas_voice').symlink_to(ROOT / 'atlas_voice')
     (tmp_path / 'fake_edge_mod.py').write_text("EDGE_CONSTANTS = {'FAKE_CONSTANT': {'a': [1, 2]}}\n")
-    src = (EDGE / 'build_edge.py').read_text(); assert 'EDGE_MODULES = [\n]' in src
-    (edge / 'build_edge.py').write_text(src.replace('EDGE_MODULES = [\n]', "EDGE_MODULES = [\n    'fake_edge_mod',\n]"))
+    src = (EDGE / 'build_edge.py').read_text(); tail = "\n]\nfor _name in EDGE_MODULES"; assert 'EDGE_MODULES = [\n' in src and src.count(tail) == 1
+    (edge / 'build_edge.py').write_text(src.replace(tail, "\n    'fake_edge_mod',\n]\nfor _name in EDGE_MODULES"))
     env = {**os.environ, 'PYTHONPATH': str(tmp_path)}
     r = subprocess.run([sys.executable, str(edge / 'build_edge.py'), '--policy-only'], capture_output=True, text=True, env=env); assert r.returncode == 0, r.stderr
     out = (edge / 'src' / 'policy.generated.js').read_text()

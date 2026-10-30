@@ -117,22 +117,30 @@ test('unfinished: words that trail off, per language; finished answers and quest
   assert.equal(unfinished('We moved the', 'xx'), true, 'an unknown language falls back to English');
 });
 
-test('greetings are one short introduction in every language (no pitch, no review talk)', async () => {
+const words = t => t.split(/\s+/).filter(Boolean).length, sentences = t => (t.match(/[.!?](["”»]?)(\s|$)/g) || []).length;
+const OPENING_EN = `Hi, I'm ATLAS, and I'll help you tell the story of your project. I'll capture what you say, you review it first, and nothing is reused without your permission. You can skip anything, or say "I don't know" or "I can't share". At the end, I'll read back a summary for you to correct before anything goes to review.`;
+test('greetings are the full pack opening in every language (purpose, capture, use, skip, read-back), voice-short', async () => {
   const { GREETINGS } = await import('../src/languages.js');
-  assert.equal(GREETINGS.en, "Hi, I'm ATLAS, and I'll interview you about your project.");
+  assert.equal(GREETINGS.en, OPENING_EN);
+  assert.ok(words(GREETINGS.en) <= 62, `English is about 60 words (${words(GREETINGS.en)})`);
   for (const [lang, text] of Object.entries(GREETINGS)) {
     assert.ok(text.includes('ATLAS'), lang);
-    assert.equal((text.match(/[.!?](\s|$)/g) || []).length, 1, `${lang}: one sentence`);
-    assert.ok(text.length <= 80, `${lang}: short (${text.length})`);
+    assert.equal(sentences(text), 4, `${lang}: four short sentences, two spoken breaths`);
+    assert.ok(words(text) <= 75, `${lang}: voice-short (${words(text)} words)`);
+    assert.ok(!/[?？]/.test(text), `${lang}: an introduction asks nothing`);
+    assert.ok(!text.includes('\n'), lang);
   }
+  assert.deepEqual(Object.keys(GREETINGS), ['en', 'fr', 'es', 'pt', 'de', 'it', 'nl'], 'every cached language has one');
 });
 
-test('the welcome-back greeting also says ATLAS will interview them (one short sentence)', async () => {
-  const { WELCOME_BACK } = await import('../src/languages.js');
-  assert.equal(WELCOME_BACK.en, "Hi, it's ATLAS again, and I'll interview you about your project.");
+test('the welcome-back greeting is the same opening, introduced as "again"', async () => {
+  const { GREETINGS, WELCOME_BACK } = await import('../src/languages.js');
+  assert.equal(WELCOME_BACK.en, OPENING_EN.replace("Hi, I'm ATLAS", "Hi, it's ATLAS again"));
+  assert.deepEqual(Object.keys(WELCOME_BACK), Object.keys(GREETINGS));
   for (const [lang, text] of Object.entries(WELCOME_BACK)) {
     assert.ok(text.includes('ATLAS'), lang);
-    assert.equal((text.match(/[.!?](\s|$)/g) || []).length, 1, `${lang}: one sentence`);
-    assert.ok(text.length <= 80, `${lang}: short (${text.length})`);
+    assert.equal(sentences(text), 4, `${lang}: four short sentences`);
+    assert.ok(words(text) <= 75, `${lang}: voice-short (${words(text)} words)`);
+    assert.ok(text.endsWith(GREETINGS[lang].split(/(?<=[.!?])\s/).slice(1).join(' ')), `${lang}: the same disclosure as the first greeting`);
   }
 });

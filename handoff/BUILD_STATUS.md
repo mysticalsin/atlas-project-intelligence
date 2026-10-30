@@ -542,6 +542,14 @@ Docs: `deploy/cloudflare-edge/README.md` (pipeline line, new metrics), `docs/INT
 - Remaining: T1 onward. Each later module registers itself with one line in `EDGE_MODULES` and one line in `VECTORS`; regenerate `policy.generated.js` and the vector files rather than hand-merging them.
 - Git: committed on `feature/agent-brain-v2.1` as `v2.1 T0`; `Claude outputs/` stays untracked.
 
+### Session: 2026-10-30 / Agent Brain v2.1, T1 (persona consolidation, full pack opening)
+- Goal: one persona behind every interviewer prompt, and Tony's decision Q1: the spoken opening is the FULL PACK OPENING (purpose, what is captured, how it may be used, skip / "I don't know" / "I can't share", summary read back for correction before review).
+- Changes: new `atlas_voice/persona.py` (PERSONA_CORE, TURN_PATTERN Acknowledge-Explore-Clarify-Connect-Confirm, PRAISE_RULES, QUESTION_RULES, SITUATIONS, SAFETY, OPENING_BRIEF; exports BANNED_PRAISE_SRC, ACKS (English, 8 categories x 4), PAUSE_LINES, RESUME_LINES; EDGE_CONSTANTS registered in `build_edge.py` EDGE_MODULES). `cascade.TALKER_POLICY` (1,235 -> 646 words; no "amazing" example, no "never accept the first vague answer, push"; one question per turn, probing capped at two attempts), `quality.INTERVIEW_POLICY` and `interview.ROLE` are composed from those blocks. `cascade.OPENING` and the cached `GREETINGS` / `WELCOME_BACK` in `languages.js` (7 languages) now carry the full opening; `tests/test_cascade.py` pin of c08e7ef replaced. `session.js`: stock phrases (greeting prefix) are cached whatever their length and the per-entry audio cap rises 1 to 2 MiB (the 330-character greeting exceeded the 220-character and 1 MiB cache limits). `tests/test_edge.py` registry test no longer assumes an empty EDGE_MODULES.
+- Tests added: `tests/test_persona.py` (16), `language.test.js` greeting tests rewritten (2). ADMIN_NOTE is byte-identical to efb4948.
+- Commands and results: see the T1 commit message; `policy.generated.js` regenerated with `build_edge.py --policy-only`.
+- Remaining: fr/es/pt/de/it/nl greetings are faithful translations, NOT native-reviewed. The full opening is one ~25 s cached piece: first-use synthesis latency and the greeting's non-interruptibility are unmeasured live. ACKS are English only (T5 wires them).
+- Git: committed on `v21/T1` as `v2.1 T1`.
+
 ## Per-session update template
 Copy this section for each session. Do not put secrets, private keys, customer source text or raw audio in this file.
 

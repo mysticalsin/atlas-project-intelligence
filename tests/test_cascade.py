@@ -304,12 +304,16 @@ async def test_cascade_refuses_a_gap_start_and_never_advertises_gap_mode(tmp_pat
         await r.cleanup();await runner.cleanup()
 
 
-def test_opening_is_a_simple_introduction_without_review_talk():
-    # Tony, 2026-09-29: the start must be "Hi, I'm ATLAS and I'll interview you on your project", not "they will review everything".
+def test_opening_covers_the_full_pack_introduction():
+    # Tony, 2026-10-30 (Agent Brain v2.1, Q1): the spoken opening covers purpose, what is captured, how it may be used, skip /
+    # "I don't know" / "can't share", and the read-back for correction. This overrides the 2026-09-29 pin (commit c08e7ef),
+    # which forbade review talk.
     from atlas_voice.cascade import OPENING
-    assert 'will review' not in OPENING and 'review everything' not in OPENING
-    assert 'do not talk about reviews, approvals or how the report is used unless they ask' in OPENING
-    assert 'you are ATLAS and will interview them about their project' in OPENING
+    assert 'review it first' in OPENING and 'nothing is reused without their permission' in OPENING
+    assert 'skip any question' in OPENING and "I don't know" in OPENING and "I can't share" in OPENING
+    assert 'read back a summary for them to correct before anything goes to review' in OPENING
+    assert 'do not repeat or re-introduce any of it' in OPENING and 'ALREADY SAID' in OPENING
+    assert 'do not talk about reviews' not in OPENING
 
 
 def test_admin_note_does_not_suppress_the_introduction():

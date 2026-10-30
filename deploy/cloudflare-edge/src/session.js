@@ -37,7 +37,7 @@ export const UNDERRUN_S = 0.02; // a gap in her audio longer than one chunk coun
 const PCM_CACHE = new Map(), PCM_CACHE_BYTES = 12 * 1024 * 1024; let pcmCacheSize = 0;
 function cacheGet(key) { const v = PCM_CACHE.get(key); if (v) { PCM_CACHE.delete(key); PCM_CACHE.set(key, v); } return v; }
 function cacheSet(key, pcm) {
-  if (PCM_CACHE.has(key) || pcm.length > 1024 * 1024) return;
+  if (PCM_CACHE.has(key) || pcm.length > 2 * 1024 * 1024) return; // the full spoken introduction is about 25 s (1.2 MB)
   PCM_CACHE.set(key, pcm); pcmCacheSize += pcm.length;
   for (const [k, v] of PCM_CACHE) { if (pcmCacheSize <= PCM_CACHE_BYTES) break; PCM_CACHE.delete(k); pcmCacheSize -= v.length; }
 }
@@ -556,10 +556,10 @@ export class Session {
   }
 
   // measure: a piece of a reply (not a prewarm), reported as numbers only: synthesis time, audio length, characters, cache hit.
-  async synth(text, lang, measure = false) {
-    const key = lang + '|' + this.voice + '|' + text, cached = text.length <= 220 ? cacheGet(key) : null, t0 = this.now();
+  async synth(text, lang, measure = false, fixed = false) { // fixed: a stock phrase (greeting, acknowledgement), cached whatever its length
+    const key = lang + '|' + this.voice + '|' + text, keep = fixed || text.length <= 220, cached = keep ? cacheGet(key) : null, t0 = this.now();
     const pcm = cached || await this.ai.synthesize(text, this.voice, lang);
-    if (!cached && text.length <= 220) cacheSet(key, pcm);
+    if (!cached && keep) cacheSet(key, pcm);
     if (measure) this.metric('tts', { ms: cached ? 0 : Math.round((this.now() - t0) * 1000), audio_ms: Math.round(pcm.length / 48), chars: text.length, cached: cached ? 1 : 0 });
     return pcm;
   }
@@ -635,7 +635,7 @@ export class Session {
         if (!firstText) firstText = this.now();
         show((this.replies > 1 ? '\n\n' : '') + prefix + ' '); said = prefix + ' ';
         const before = this.sentMs[item] || 0;
-        await deliver(prefix, this.synth(prefix, lang, true), isFiller, true); if (gen !== this.gen || this.finished) return;
+        await deliver(prefix, this.synth(prefix, lang, true, true), isFiller, true); if (gen !== this.gen || this.finished) return;
         if (!isFiller) { // protect exactly the greeting's audio: until the browser confirms it played (capped)
           this.protectedItem = item; this.protectedMs = (this.sentMs[item] || 0) + this.queue.filter(c => c.item === item).reduce((n, c) => n + c.bytes.length, 0) / 48 - before;
           this.protectedDeadline = this.now() + this.protectedMs / 1000 + 3;

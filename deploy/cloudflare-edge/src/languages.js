@@ -32,25 +32,40 @@ export function languageNote(lang, spoken) {
     : `LANGUAGE (server): the consultant is speaking ${name}, but your voice can only speak ${said} right now. Reply in ${said}. The first time this happens, say in one short sentence that you understand ${name} and they are welcome to keep speaking it.`;
 }
 
-// Spoken instantly (cached audio) when the call connects: who ATLAS is and why she is there.
-export const GREETINGS = {
-  en: "Hi, I'm ATLAS, and I'll interview you about your project.",
-  fr: "Bonjour, je suis ATLAS, et je vais vous interviewer sur votre projet.",
-  es: 'Hola, soy ATLAS, y voy a entrevistarte sobre tu proyecto.',
-  pt: 'Olá, eu sou a ATLAS, e vou entrevistar você sobre o seu projeto.',
-  de: 'Hallo, ich bin ATLAS und interviewe Sie zu Ihrem Projekt.',
-  it: 'Ciao, sono ATLAS e ti intervisterò sul tuo progetto.',
-  nl: 'Hallo, ik ben ATLAS en ik ga je interviewen over je project.',
+// Spoken instantly (cached audio) when the call connects: who ATLAS is, why she is there, what is captured and how it may
+// be used, that anything can be skipped ("I don't know", "I can't share"), and that a summary is read back for correction
+// before anything goes to review. Tony chose this full introduction on 2026-10-30 (Agent Brain v2.1, Q1). It is four short
+// sentences, two spoken breaths. English was authored; every other language is a faithful translation that still needs a
+// native-speaker review (see handoff/IMPLEMENTATION_STATUS.md).
+const INTRO = {
+  en: "Hi, I'm ATLAS, and I'll help you tell the story of your project.",
+  fr: "Bonjour, je suis ATLAS, et je vais vous aider à raconter l'histoire de votre projet.",
+  es: 'Hola, soy ATLAS, y voy a ayudarte a contar la historia de tu proyecto.',
+  pt: 'Olá, eu sou a ATLAS, e vou ajudar você a contar a história do seu projeto.',
+  de: 'Hallo, ich bin ATLAS und helfe Ihnen, die Geschichte Ihres Projekts zu erzählen.',
+  it: 'Ciao, sono ATLAS e ti aiuterò a raccontare la storia del tuo progetto.',
+  nl: 'Hallo, ik ben ATLAS en ik help je het verhaal van je project te vertellen.',
 };
-export const WELCOME_BACK = {
-  en: "Hi, it's ATLAS again, and I'll interview you about your project.",
-  fr: "Bonjour, c'est encore ATLAS, et je vais vous interviewer sur votre projet.",
-  es: 'Hola, soy ATLAS otra vez, y voy a entrevistarte sobre tu proyecto.',
-  pt: 'Olá, é a ATLAS de novo, e vou entrevistar você sobre o seu projeto.',
-  de: 'Hallo, hier ist wieder ATLAS, und ich interviewe Sie zu Ihrem Projekt.',
-  it: 'Ciao, sono di nuovo ATLAS e ti intervisterò sul tuo progetto.',
-  nl: 'Hallo, hier is ATLAS weer, en ik ga je interviewen over je project.',
+const INTRO_AGAIN = {
+  en: "Hi, it's ATLAS again, and I'll help you tell the story of your project.",
+  fr: "Bonjour, c'est encore ATLAS, et je vais vous aider à raconter l'histoire de votre projet.",
+  es: 'Hola, soy ATLAS otra vez, y voy a ayudarte a contar la historia de tu proyecto.',
+  pt: 'Olá, é a ATLAS de novo, e vou ajudar você a contar a história do seu projeto.',
+  de: 'Hallo, hier ist wieder ATLAS, und ich helfe Ihnen, die Geschichte Ihres Projekts zu erzählen.',
+  it: 'Ciao, sono di nuovo ATLAS e ti aiuterò a raccontare la storia del tuo progetto.',
+  nl: 'Hallo, hier is ATLAS weer, en ik help je het verhaal van je project te vertellen.',
 };
+const INTRO_REST = {
+  en: `I'll capture what you say, you review it first, and nothing is reused without your permission. You can skip anything, or say "I don't know" or "I can't share". At the end, I'll read back a summary for you to correct before anything goes to review.`,
+  fr: "Je note ce que vous dites, vous le relisez d'abord, et rien n'est réutilisé sans votre accord. Vous pouvez passer n'importe quelle question, ou dire « je ne sais pas » ou « je ne peux pas le partager ». À la fin, je vous lirai un résumé à corriger avant tout envoi en relecture.",
+  es: 'Tomo nota de lo que dices, tú lo revisas primero, y nada se reutiliza sin tu permiso. Puedes saltarte cualquier pregunta, o decir «no lo sé» o «no puedo compartirlo». Al final, te leeré un resumen para que lo corrijas antes de que nada pase a revisión.',
+  pt: 'Vou registrar o que você disser, você revisa primeiro, e nada é reutilizado sem a sua permissão. Você pode pular qualquer pergunta, ou dizer «não sei» ou «não posso compartilhar». No final, vou ler um resumo para você corrigir antes de qualquer envio para revisão.',
+  de: 'Ich halte fest, was Sie sagen, Sie prüfen es zuerst, und nichts wird ohne Ihre Erlaubnis wiederverwendet. Sie können jede Frage überspringen oder „Ich weiß es nicht“ oder „Das kann ich nicht teilen“ sagen. Am Ende lese ich Ihnen eine Zusammenfassung vor, die Sie korrigieren können, bevor etwas in die Prüfung geht.',
+  it: 'Annoto quello che dici, tu lo rivedi per primo, e niente viene riutilizzato senza il tuo permesso. Puoi saltare qualsiasi domanda, oppure dire «non lo so» o «non posso condividerlo». Alla fine ti leggerò un riepilogo da correggere, prima che qualcosa vada in revisione.',
+  nl: 'Ik noteer wat je zegt, jij bekijkt het eerst, en niets wordt hergebruikt zonder jouw toestemming. Je mag elke vraag overslaan, of zeggen: «ik weet het niet» of «dat kan ik niet delen». Aan het einde lees ik een samenvatting voor die je kunt corrigeren, voordat er iets ter beoordeling gaat.',
+};
+export const GREETINGS = Object.fromEntries(Object.keys(INTRO).map(l => [l, INTRO[l] + ' ' + INTRO_REST[l]]));
+export const WELCOME_BACK = Object.fromEntries(Object.keys(INTRO_AGAIN).map(l => [l, INTRO_AGAIN[l] + ' ' + INTRO_REST[l]]));
 // Short uptake words ("Right.", "I see.") played from cache as ATLAS takes her turn, while the reply is prepared.
 // Not continuers like "Mm-hm", which mean "keep going" and contradict her taking the floor.
 export const FILLERS = {
