@@ -12,6 +12,7 @@ import { winSignals } from './winloop.js';
 // Story rating by TypeSafe JEV (docs/JEV_RATING.md): used only when a rater with a key exists and the owner consented.
 import { RatingError, ratingInput, questionPlan, requestBody, compose, agentQuality, noStoryQuality, sha256Hex, BUDGETS, RUBRIC_VERSION, METRIC_CODES, MODEL } from './rating.js';
 import { storedConsent } from './profile.js';
+import { ensure as ensureEvidence } from './evidence.js'; // additive evidence tables (T13); nothing else in this file knows about them
 const DUPLICATE = 0.9; // cosine similarity above which two references are flagged as the same or a related project
 export const PRACTICES = { data_ai: 'Data & AI', web_app: 'Web & App Development', telecom: 'Telecom & Networks', sap_erp: 'SAP & ERP', cloud_infra: 'Cloud & Infrastructure', cybersecurity: 'Cybersecurity', transformation: 'Transformation & Strategy', engineering: 'Engineering & Industry' };
 
@@ -118,6 +119,7 @@ export class Library {
     Object.assign(this, { sql, now, newId, complete, embed, readyScore, model, services, rater, metric });
     this.inflight = new Map(); // `${id}:${revision}` -> { gen, engine, first, all }: one rating per revision at a time
     for (const q of SCHEMA) this.sql.exec(q);
+    ensureEvidence(this);
   }
 
   rows(q, ...p) { return this.sql.exec(q, ...p).toArray(); }

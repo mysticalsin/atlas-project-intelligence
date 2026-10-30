@@ -143,7 +143,7 @@ async function propose(lib, user, body, currency) {
 
 // The N+1: the staffing record (F4) first, then the owner's N+1 in the stored DNA directory (a dna or dna_export row,
 // never the owner's own profile edits; WOW_ZERO_CONFIG §5.8), then the N+1 the consultant named on the reference.
-function managerOf(lib, row) {
+export function managerOf(lib, row) {
   outreach.ensure(lib);
   const pid = str(row.data?.details?.projectId, 60);
   const staffed = pid ? email(lib.rows("SELECT manager_email FROM staffing WHERE project_id = ? COLLATE NOCASE AND consultant_email = ? AND manager_email != '' ORDER BY updated_at DESC", pid, row.owner)[0]?.manager_email) : '';

@@ -5,6 +5,7 @@
 import { featureRoutes } from './features.js';
 import * as outreach from './outreach.js';
 import * as profile from './profile.js';
+import * as evidence from './evidence.js';
 export const SYSTEM = { email: 'atlas', role: 'admin' }; // automatic review after a save
 // A rating engine exists: the review agent, or JEV with a key (docs/JEV_RATING.md §6.5).
 const canRate = lib => !!(lib.complete || lib.rater?.available());
@@ -23,6 +24,9 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
   try {
     // External confirmers reach feature words only (the registry limits them to `confirmations`); nothing else.
     if (user.role === 'external') { const r = await featureRoutes(ctx); return r ? json(r.body, r.status || 200) : json({ error: 'Not found.' }, 404); }
+    // Evidence store (T13): /api/library/evidence/... from a browser, /api/evidence/... only from the Interview DO (never forwarded by the Worker).
+    const ev = evidence.target(url.pathname);
+    if (ev) { const r = user.role === 'system' ? null : await evidence.routes({ ...ctx, rest: ev.rest, internal: ev.internal }); return json(r ? r.body : { error: 'Not found.' }, r ? r.status || 200 : 404); }
     if (!parts.length && method === 'GET') return json(lib.list(user, Object.fromEntries(url.searchParams)));
     if (!parts.length && method === 'POST') {
       const saved = await lib.upsert(user, body);
@@ -61,6 +65,6 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
     if (method === 'POST' && action === 'reinstate') return json(lib.reinstate(user, id));
     return json({ error: 'Not found.' }, 404);
   } catch (e) {
-    return e.status ? json({ error: e.message }, e.status) : json({ error: 'The library could not complete that request.' }, 500);
+    return e.status ? json({ error: e.message, ...(e.reason ? { reason: e.reason } : {}) }, e.status) : json({ error: 'The library could not complete that request.' }, 500);
   }
 }
