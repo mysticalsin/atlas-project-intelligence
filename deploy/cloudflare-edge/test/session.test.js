@@ -1,8 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Session, projectContext, talkerMessages, paceNotes, MAX_SECONDS, TIME_UP, RESUME as RESUME_TEXT, STILL_THINKING, THINKING_PAUSE, clearPcmCache } from '../src/session.js';
-import { GREETINGS, FILLERS } from '../src/languages.js';
-const spoken = calls => calls.tts.filter(t => !FILLERS.en.includes(t));
+import { GREETINGS, FILLERS, GREETING_PIECES } from '../src/languages.js';
+import { ACKS } from '../src/policy.generated.js';
+// The opening is two cached pieces (v2.1 T6); the acknowledgements are the content-aware bank of ack.js plus the stock FILLERS of other languages.
+const GREETING = GREETING_PIECES.en;
+const ACK_TEXTS = new Set([...Object.values(FILLERS).flat(), ...Object.values(ACKS).flatMap(bank => Object.values(bank).flat())]);
+const spoken = calls => calls.tts.filter(t => !ACK_TEXTS.has(t));
 import { SAMPLE_RATE, EnergyTurns, rms } from '../src/speech.js';
 
 const PROJECT = { title: 'Project Falcon (synthetic)', consultant: 'Alex', role: 'Designer', sector: 'Insurance', stage: 'Pilot', answers: [] };
@@ -24,10 +28,11 @@ function harness(said = ['We cut triage time by about 40% after the rollout acro
     async analyst(messages) { calls.analyst.push(messages); const seg = JSON.parse(messages[1].content.split('\n').slice(1).join('\n')).new_segment;
       return [{ id: 'c-' + seg.item_id, name: 'record_details', arguments: JSON.stringify({ details: [{ field: 'outcome', item_id: seg.item_id, quote: 'We cut triage time by about 40%' }] }) }]; },
   };
-  const { session: _opts, ...aiExtra } = typeof extra === 'function' ? extra(calls) : extra;
+  const { session: opts = {}, ...aiExtra } = typeof extra === 'function' ? extra(calls) : extra;
   Object.assign(ai, aiExtra);
-  const opts = typeof extra === 'function' ? {} : (extra.session || {});
-  const s = new Session({ ...opts, io: { send: e => events.push(e), sendBytes: b => bytes.push(b.length), close: () => { closed = true; } }, ai, csrf: 'tok',
+  // These scripted talkers repeat the same opener ("Thanks.", "Oh nice.") and some say two questions, which is exactly what the reply
+  // guard (v2.1 T4/T6) removes; this file is about turn-taking and playback, so it runs without the guard (session-humane.test.js has its own).
+  const s = new Session({ flags: { replyGuard: 'off' }, ...opts, io: { send: e => events.push(e), sendBytes: b => bytes.push(b.length), close: () => { closed = true; } }, ai, csrf: 'tok',
     voice: 'asteria', model: 'test-talker', now: () => t, sleep: () => new Promise(r => setImmediate(r)) });
   open.add(s);
   const tick = () => { t += 0.02; };
@@ -42,7 +47,7 @@ test('full interview: opening, turn, transcript, evidence, guidance, notes', asy
   await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, voice: 'asteria', capture: true, memory: false }));
   assert.equal(h.events[0].type, 'ready');
   await until(() => h.bytes.length >= 10); // opening synthesized: 2 sentences x 4800 bytes
-  assert.deepEqual(spoken(h.calls), [GREETINGS.en, 'Thanks.', 'What was the baseline?']);
+  assert.deepEqual(spoken(h.calls), [...GREETING, 'Thanks.', 'What was the baseline?']);
   assert.ok(h.events.some(e => e.type === 'audio_turn' && e.item_id === 'agent-1'));
   await until(() => !h.s.busy());
   for (const f of frames([[0.6, .001], [1.2, .2], [1.3, .001]])) { h.tick(); h.s.onBinary(f); }
@@ -58,7 +63,8 @@ test('full interview: opening, turn, transcript, evidence, guidance, notes', asy
   assert.ok(third.some(m => m.content.startsWith('ANALYST_GUIDANCE') && m.content.includes('measurement')));
   await until(() => !h.s.busy()); // text reaches the screen with its audio
   const agent = h.events.filter(e => e.type === 'agent_text').map(e => e.text).join('');
-  assert.match(agent, /\n\n(Okay|Right|I see|Yeah)\. Thanks\./, 'a real answer gets a short acknowledgement, then the reply');
+  const ackShown = /\n\n(.+?) Thanks\./.exec(agent);
+  assert.ok(ackShown && ACK_TEXTS.has(ackShown[1]), 'a real answer gets a short acknowledgement, then the reply: ' + JSON.stringify(agent.slice(-80)));
   await h.s.onText(JSON.stringify({ type: 'end' }));
   const notes = h.events.find(e => e.type === 'notes');
   assert.equal(notes.status, 'candidate'); assert.equal(notes.sections[3], 'We cut triage time by about 40%');
@@ -117,7 +123,7 @@ test('Z model boundary: projectContext drops the consultant; the talker never se
   const seen = JSON.stringify([z.calls.talker, z.calls.analyst, talkerMessages(z.s.project, z.s.guidance, z.s.history)]);
   assert.ok(!/Zelda|Quintero/.test(seen), 'no talker or analyst input carries the name');
   assert.ok(!('consultant' in z.s.project));
-  assert.equal(spoken(z.calls)[0], GREETINGS.en, 'the greeting names nobody');
+  assert.deepEqual(spoken(z.calls).slice(0, 2), GREETING, 'the greeting names nobody');
   assert.deepEqual(spoken(z.calls), spoken(a.calls), 'the same words whoever the consultant is');
 });
 
@@ -134,7 +140,7 @@ test('live regression: noise while ATLAS composes its opening cannot cancel it',
   assert.equal(h.bytes.length, 5, 'the rest of the opening waits while the sound is still going on');
   for (const f of frames([[1.3, .001]])) { h.tick(); h.s.onBinary(f); } // the noise stops: it transcribes to nothing
   await until(() => h.bytes.length >= 10);
-  assert.deepEqual(spoken(h.calls), [GREETINGS.en, 'Thanks.', 'What was the baseline?']);
+  assert.deepEqual(spoken(h.calls), [...GREETING, 'Thanks.', 'What was the baseline?']);
   await h.s.end(false);
 });
 
@@ -305,7 +311,7 @@ test('the greeting plays instantly from cache and cannot be cut by noise; after 
   const h = harness([]);
   await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
   await until(() => h.events.some(e => e.type === 'audio_turn'));
-  assert.equal(h.events.find(e => e.type === 'agent_text').text.trim(), GREETINGS.en);
+  assert.equal(h.events.find(e => e.type === 'agent_text').text.trim(), GREETING[0], 'the first piece of the introduction is the one protected');
   assert.ok(h.s.greetingPlaying() && h.s.protectedMs > 0);
   h.s.queue.push({ gen: h.s.gen, item: 'agent-1', bytes: new Uint8Array(960) });
   for (const f of frames([[0.2, .001], [0.6, .5]])) { h.tick(); h.s.onBinary(f); }
@@ -322,7 +328,7 @@ test('second session reuses the cached greeting audio (no voice call)', async ()
     const h = harness([]);
     await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
     await until(() => h.calls.talker.length >= 1);
-    assert.equal(h.calls.tts.includes(GREETINGS.en), i === 0, i ? 'cached' : 'first synthesis');
+    assert.deepEqual(GREETING.map(p => h.calls.tts.includes(p)), [i === 0, i === 0], i ? 'cached' : 'first synthesis');
     await h.s.end(false); open.delete(h.s);
   }
 });
@@ -354,7 +360,7 @@ const say = (h, segs) => { for (const f of frames(segs)) { h.tick(); h.s.onBinar
 // Fillers are pre-synthesised into the cache at start, so check what ATLAS showed/said, not what was synthesised.
 // The browser's transcript reducer (src/voice-client.js): append agent_text, cut agent_retract's chars.
 const screen = h => h.events.reduce((t, e) => e.type === 'agent_text' ? t + e.text : e.type === 'agent_retract' ? t.slice(0, t.length - Math.min(e.chars, t.length)) : t, '');
-const acknowledged = h => h.events.some(e => e.type === 'agent_text' && e.text.startsWith('\n\n') && Object.values(FILLERS).flat().includes(e.text.trim()));
+const acknowledged = h => h.events.some(e => e.type === 'agent_text' && e.text.startsWith('\n\n') && ACK_TEXTS.has(e.text.trim()));
 
 test('the consultant keeps talking after a pause: ATLAS withdraws her started reply and answers the whole answer once', async () => {
   let hold, gated = true;
@@ -375,7 +381,8 @@ test('the consultant keeps talking after a pause: ATLAS withdraws her started re
   assert.ok(h.calls.talker[2].some(m => m.role === 'user' && m.content.endsWith('by a third in two months.')));
   const opening = GREETINGS.en + ' Oh nice. What changed for the team?';
   const shown = screen(h);
-  assert.ok(shown.startsWith(opening + '\n\n') && /^((Okay|Right|I see|Yeah)\. )?Oh nice\. What changed for the team\?$/.test(shown.slice(opening.length + 2)),
+  const reply = shown.slice(opening.length + 2), ackText = reply.slice(0, reply.indexOf('Oh nice.')).trim();
+  assert.ok(shown.startsWith(opening + '\n\n') && reply.endsWith('Oh nice. What changed for the team?') && (!ackText || ACK_TEXTS.has(ackText)),
     'exactly the opening and the one real reply on screen: ' + JSON.stringify(shown));
 });
 
@@ -514,7 +521,7 @@ test('the acknowledgement does not count toward the continuation window', async 
     const h = harness(['A short answer about the rollout.'], { session: { metric: (n, v) => metrics.push([n, v]) },
       async *chatStream() { await new Promise(r => { hold = r; }); yield 'Thanks.'; } });
     await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
-    hold(); await until(() => !h.s.busy() && h.bytes.length >= 5);
+    await until(() => typeof hold === 'function'); hold(); await until(() => !h.s.busy() && h.bytes.length >= 5);
     h.s.playedMs[h.s.protectedItem] = 1e9;
     say(h, [[1.2, .2], [1.3, .001]]);
     await until(() => h.s.replyTurn === 1 && h.s.busy());
@@ -1156,7 +1163,7 @@ test('gap start: resolved server-side, ready carries mode/timePlan/gaps (at most
   assert.equal(notes[0], GAP_NOTE, 'GAP_NOTE first (no admin note)');
   assert.ok(notes.includes('GAP PACE (server): about 0 of 5 minutes used. Open items: Supporting artifact, Measurement basis, Customer relevance.'));
   assert.ok(!notes.some(n => n.startsWith('INTERVIEW PACE') || n.startsWith('ADMIN MODE')), 'no full-mode pace');
-  assert.deepEqual(spoken(h.calls), [GREETINGS.en, 'Thanks.', 'What was the baseline?'], 'greeting first, then the gap opening');
+  assert.deepEqual(spoken(h.calls), [...GREETING, 'Thanks.', 'What was the baseline?'], 'greeting first, then the gap opening');
   assert.equal(h.s.gapAttempts.G1, 1, 'the opening carried G1 and was heard'); assert.equal(h.s.openAsk, 'G1');
 });
 
@@ -1485,27 +1492,27 @@ const named = (metrics, name) => metrics.filter(([n]) => n === name).map(([, v])
 test('phrasing: markup is never voiced but stays on screen; short sentences join the next piece; text travels with its audio', async () => {
   const h = harness([], calls => ({ async *chatStream(m) { calls.talker.push(m); yield* ['**Great.** ', 'That is clear. ', 'So it worked. ', 'Who measured the change before and after?', ' Ok.']; } }));
   await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
-  await until(() => !h.s.busy() && spoken(h.calls).length === 4);
-  assert.deepEqual(spoken(h.calls), [GREETINGS.en, 'Great.', 'That is clear. So it worked. Who measured the change before and after?', 'Ok.']);
+  await until(() => !h.s.busy() && spoken(h.calls).length === 5);
+  assert.deepEqual(spoken(h.calls), [...GREETING, 'Great.', 'That is clear. So it worked. Who measured the change before and after?', 'Ok.']);
   assert.deepEqual(h.events.filter(e => e.type === 'agent_text').map(e => e.text),
-    [GREETINGS.en, ' **Great.**', ' That is clear. So it worked. Who measured the change before and after?', ' Ok.'], 'each piece shown exactly when its audio starts');
+    [GREETING[0], ' ' + GREETING[1], ' **Great.**', ' That is clear. So it worked. Who measured the change before and after?', ' Ok.'], 'each piece shown exactly when its audio starts');
 });
 
 test('pipelined synthesis: the next piece is synthesised while the one before it is, and audio stays in order', async () => {
   const gates = {}, long = 'Who owned the budget for the whole programme across all regions?';
   const h = harness([], calls => ({
     async *chatStream(m) { calls.talker.push(m); yield* ['Thanks. ', long + ' ', 'And when?']; },
-    async synthesize(t) { calls.tts.push(t); if (t !== GREETINGS.en) await new Promise(r => { gates[t] = r; }); return new Uint8Array(t === long ? 1000 : 4800).fill(1); } }));
+    async synthesize(t) { calls.tts.push(t); if (!GREETING.includes(t)) await new Promise(r => { gates[t] = r; }); return new Uint8Array(t === long ? 1000 : 4800).fill(1); } }));
   await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
-  await until(() => h.calls.tts.includes(long) && h.bytes.length === 5); await settle(); // the greeting has been sent
-  assert.ok(gates['Thanks.'] && h.bytes.length === 5, 'the second piece started before the first was voiced');
+  await until(() => h.calls.tts.includes(long) && h.bytes.length === 10); await settle(); // the greeting (two pieces) has been sent
+  assert.ok(gates['Thanks.'] && h.bytes.length === 10, 'the second piece started before the first was voiced');
   const sent = h.bytes.length;
   gates[long](); await settle();
   assert.equal(h.bytes.length, sent, 'nothing overtakes the first piece');
   gates['Thanks.'](); await until(() => h.calls.tts.includes('And when?')); gates['And when?']();
   await until(() => !h.s.busy() && h.bytes.length === sent + 12);
   assert.deepEqual(h.bytes.slice(sent), [960, 960, 960, 960, 960, 960, 40, 960, 960, 960, 960, 960], 'Thanks., then the question, then And when?');
-  assert.deepEqual(h.events.filter(e => e.type === 'agent_text').map(e => e.text).slice(1), [' Thanks.', ' ' + long, ' And when?']);
+  assert.deepEqual(h.events.filter(e => e.type === 'agent_text').map(e => e.text).slice(2), [' Thanks.', ' ' + long, ' And when?']);
   assert.equal(h.s.history.at(-1).content, GREETINGS.en + ' Thanks. ' + long + ' And when?');
 });
 
@@ -1513,13 +1520,13 @@ test('pipelined synthesis: an interruption drops every piece still being synthes
   const gates = {}, long = 'Who owned the budget for the whole programme across all regions?';
   const h = harness([], calls => ({
     async *chatStream(m) { calls.talker.push(m); yield* ['Thanks. ', long + ' ', 'And when?']; },
-    async synthesize(t) { calls.tts.push(t); if (t !== GREETINGS.en) await new Promise(r => { gates[t] = r; }); return new Uint8Array(4800).fill(1); } }));
+    async synthesize(t) { calls.tts.push(t); if (!GREETING.includes(t)) await new Promise(r => { gates[t] = r; }); return new Uint8Array(4800).fill(1); } }));
   await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
   await until(() => h.calls.tts.includes(long));
-  await until(() => h.bytes.length === 5); const shown = h.events.filter(e => e.type === 'agent_text').length;
+  await until(() => h.bytes.length === 10); const shown = h.events.filter(e => e.type === 'agent_text').length;
   h.s.interrupt(); gates[long](); gates['Thanks.'](); await settle();
   await until(() => !h.s.speaking);
-  assert.equal(h.bytes.length, 5, 'no audio after the interruption'); assert.equal(h.events.filter(e => e.type === 'agent_text').length, shown, 'and no text');
+  assert.equal(h.bytes.length, 10, 'no audio after the interruption'); assert.equal(h.events.filter(e => e.type === 'agent_text').length, shown, 'and no text');
   assert.ok(!h.calls.tts.includes('And when?'), 'the rest of the reply is not synthesised');
 });
 
@@ -1530,10 +1537,10 @@ test('tts metric: synthesis latency, audio length, characters and cache hits for
   say(h, [[1.2, .2], [1.3, .001]]);
   await until(() => h.calls.talker.length === 2 && !h.s.busy());
   const tts = named(metrics, 'tts');
-  assert.deepEqual(tts[0], { ms: 0, audio_ms: 100, chars: GREETINGS.en.length, cached: 0 });
+  assert.deepEqual(tts[0], { ms: 0, audio_ms: 100, chars: GREETING[0].length, cached: 0 });
   assert.ok(tts.some(v => v.cached === 1 && v.ms === 0), 'the acknowledgement came from cache');
   assert.ok(tts.every(v => Object.keys(v).join() === 'ms,audio_ms,chars,cached' && Object.values(v).every(Number.isFinite)));
-  assert.equal(tts.length, 1 + 2 + 1 + 2, 'greeting + 2 opening pieces, then acknowledgement + 2 reply pieces');
+  assert.equal(tts.length, 2 + 2 + 1 + 2, '2 greeting pieces + 2 opening pieces, then acknowledgement + 2 reply pieces');
 });
 
 test('underrun metric: the queue runs dry mid-reply while the next piece is still being voiced', async () => {
@@ -1543,10 +1550,10 @@ test('underrun metric: the queue runs dry mid-reply while the next piece is stil
     async synthesize(t) { calls.tts.push(t); if (t === long) await new Promise(r => { voice = r; }); return new Uint8Array(4800).fill(1); } }));
   h.s.metric = (n, v) => metrics.push([n, v]); // the function form of harness() takes no session options
   await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
-  await until(() => h.bytes.length === 10 && voice); await settle();
+  await until(() => h.bytes.length === 15 && voice); await settle();
   for (let i = 0; i < 50; i++) h.tick(); // 1 s passes: the greeting and "Thanks." (0.2 s) have long finished playing
-  voice(); await until(() => h.bytes.length === 15);
-  assert.deepEqual(named(metrics, 'underrun'), [{ gap_ms: 800 }]);
+  voice(); await until(() => h.bytes.length === 20);
+  assert.deepEqual(named(metrics, 'underrun'), [{ gap_ms: 700 }], 'one second of silence less the greeting (two 100 ms pieces) and "Thanks." (100 ms) already played');
 });
 
 test('underrun metric: the planned wait after a greeting before the model speaks is not an underrun', async () => {
@@ -1584,7 +1591,7 @@ test('every session starts with the spoken introduction, admin included (full mo
     await until(() => h.calls.talker.length >= 1);
     const said = notesOf(h.calls.talker[0]).find(n => n.startsWith('ALREADY SAID')) || '';
     assert.ok(said.includes(GREETINGS.en), (admin ? 'admin' : 'consultant') + ': the greeting was spoken first and the talker knows it');
-    await until(() => h.events.some(e => e.type === 'agent_text'));
-    assert.ok(h.events.find(e => e.type === 'agent_text').text.includes(GREETINGS.en), 'the first words on screen are the greeting');
+    await until(() => h.events.filter(e => e.type === 'agent_text').length >= 2);
+    assert.ok(h.events.filter(e => e.type === 'agent_text').slice(0, 2).map(e => e.text).join('').includes(GREETINGS.en), 'the first words on screen are the greeting');
   }
 });

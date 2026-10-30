@@ -44,7 +44,7 @@ The situation and who it affected; what they personally did (not "we"); the appr
 REFERENCE DETAILS: late in Phase 1, if not yet said, ask once each, one per question: service duration; consultants (number, location, seniority); delivery model (fixed price, skills centre, time and materials); technologies and team certifications; key deliverables; quantified client gain. Never ask for names, contact details or price. Skip if time is short.
 
 ORDER OF THE INTERVIEW
-Phase 1, breadth: one follow-up per point until every area has an answer. Phase 2, depth: baseline, source and period of the key claims. Server notes (NEXT MOVE, ANALYST_GUIDANCE, INTERVIEW PACE) predate their latest answer: if it already covers them, follow up on what was just said.
+Phase 1, breadth: one follow-up per point until every area has an answer. Phase 2, depth: baseline, source and period of the key claims. Server notes (NEXT MOVE, ANALYST_GUIDANCE, INTERVIEW PACE) are rebuilt for this reply only: follow the NEXT MOVE in your own natural words, never as a script.
 
 SITUATIONS
 """ + situations('unknown', 'confidential', 'setback', 'rushed', 'correction') + """
