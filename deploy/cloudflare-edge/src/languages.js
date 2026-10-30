@@ -66,6 +66,13 @@ const INTRO_REST = {
 };
 export const GREETINGS = Object.fromEntries(Object.keys(INTRO).map(l => [l, INTRO[l] + ' ' + INTRO_REST[l]]));
 export const WELCOME_BACK = Object.fromEntries(Object.keys(INTRO_AGAIN).map(l => [l, INTRO_AGAIN[l] + ' ' + INTRO_REST[l]]));
+// The same introductions as two cached spoken pieces (Agent Brain v2.1 T6): who she is plus what is captured and how it is
+// used (the first sentence of INTRO_REST), then the skip and read-back promises. Joined with a space they are exactly
+// GREETINGS / WELCOME_BACK. The session protects only the first piece from barge-in (about 11 s instead of 25 s).
+const firstSentence = text => text.indexOf('. ') + 1; // every INTRO_REST opens with one sentence that has no inner full stop
+const pieces = (intro, rest) => { const cut = firstSentence(rest); return [intro + ' ' + rest.slice(0, cut), rest.slice(cut + 1)]; };
+export const GREETING_PIECES = Object.fromEntries(Object.keys(INTRO).map(l => [l, pieces(INTRO[l], INTRO_REST[l])]));
+export const WELCOME_BACK_PIECES = Object.fromEntries(Object.keys(INTRO_AGAIN).map(l => [l, pieces(INTRO_AGAIN[l], INTRO_REST[l])]));
 // Short uptake words ("Right.", "I see.") played from cache as ATLAS takes her turn, while the reply is prepared.
 // Not continuers like "Mm-hm", which mean "keep going" and contradict her taking the floor.
 export const FILLERS = {

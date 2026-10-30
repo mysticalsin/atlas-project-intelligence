@@ -2,7 +2,7 @@
 // Identity comes ONLY from a verified Cloudflare Access JWT (fail closed). Speech and models run on
 // Workers AI through the AI binding, so no provider key exists in this code or in the browser.
 import { CHAT_TOOLS, SPEAKING_LIMIT_S } from './policy.generated.js';
-import { Session, MAX_SECONDS } from './session.js';
+import { Session, MAX_SECONDS, sessionFlags } from './session.js';
 import { wav, to16k } from './speech.js';
 import { classify } from './classify.js';
 import { bankId } from './memory.js';
@@ -15,6 +15,7 @@ import { CONFIRM_HTML } from './confirm-page.js';
 import { nameClaims, pushConfig } from './profile.js';
 
 const enc = new TextEncoder();
+export const TALKER_MAX_TOKENS = 160; // one or two spoken sentences; the reply guard cuts at 45 words anyway (override: env TALKER_MAX_TOKENS)
 // One voice for everyone: @cf/deepgram/aura-2-en "harmonia" (Deepgram: empathetic, clear, calm, confident).
 // Transcription is part of the interview; consent covers it and reuse of reviewed notes for future projects.
 const b64url = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
@@ -328,6 +329,7 @@ export function workersAI(env) {
     : r instanceof ReadableStream || r instanceof Response ? new Uint8Array(await new Response(r.body ?? r).arrayBuffer())
     : r?.audio ? Uint8Array.from(atob(r.audio), c => c.charCodeAt(0)) : new Uint8Array(0);
   return {
+    flags: sessionFlags(env), // ATLAS_SELECTOR, ATLAS_REPLY_GUARD, ATLAS_ACKS, ANALYST_WAIT_MS, SPECULATIVE_STT: read by the Session
     // Automatic language detection (Nova-3 "multi"): returns the text and the utterance's language.
     async transcribe(pcm) {
       const r = await env.AI.run(env.STT_MODEL, { audio: { body: new Blob([wav(pcm)]).stream(), contentType: 'audio/wav' }, smart_format: true, punctuate: true, language: env.STT_LANGUAGE || 'multi' });
@@ -350,23 +352,28 @@ export function workersAI(env) {
       return pcm.length % 2 ? pcm.subarray(0, pcm.length - 1) : pcm;
     },
     // Session affinity keeps one interview on the same model instance, so the cached prompt prefix is reused.
+    // A spoken reply is one or two sentences: TALKER_MAX_TOKENS (default 160, was 300) bounds it. When the caller stops reading (the
+    // reply guard has what it needs) the generator's return() cancels the model stream, so no tokens are generated for nothing.
     async *chatStream(messages, { affinity } = {}) {
-      const stream = await env.AI.run(env.TALKER_MODEL, { messages, stream: true, max_tokens: 300, temperature: 0.7 }, affinity ? { extraHeaders: { 'x-session-affinity': affinity } } : undefined);
+      const maxTokens = Math.floor(Number(env.TALKER_MAX_TOKENS)) > 0 ? Math.floor(Number(env.TALKER_MAX_TOKENS)) : TALKER_MAX_TOKENS;
+      const stream = await env.AI.run(env.TALKER_MODEL, { messages, stream: true, max_tokens: maxTokens, temperature: 0.7 }, affinity ? { extraHeaders: { 'x-session-affinity': affinity } } : undefined);
       const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
       let buffer = '';
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) return;
-        buffer += value;
-        let cut;
-        while ((cut = buffer.indexOf('\n')) >= 0) {
-          const line = buffer.slice(0, cut).trim(); buffer = buffer.slice(cut + 1);
-          if (!line.startsWith('data:')) continue;
-          const payload = line.slice(5).trim();
-          if (payload === '[DONE]') return;
-          try { const j = JSON.parse(payload), d = j.response ?? j.choices?.[0]?.delta?.content; if (d) yield d; } catch { /* keep-alive or partial */ }
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) return;
+          buffer += value;
+          let cut;
+          while ((cut = buffer.indexOf('\n')) >= 0) {
+            const line = buffer.slice(0, cut).trim(); buffer = buffer.slice(cut + 1);
+            if (!line.startsWith('data:')) continue;
+            const payload = line.slice(5).trim();
+            if (payload === '[DONE]') return;
+            try { const j = JSON.parse(payload), d = j.response ?? j.choices?.[0]?.delta?.content; if (d) yield d; } catch { /* keep-alive or partial */ }
+          }
         }
-      }
+      } finally { reader.cancel().catch(() => {}); }
     },
     async complete(messages, maxTokens = 2500) {
       return responseText(await runReasoning(env, { messages, temperature: 0.1, max_tokens: maxTokens }));

@@ -2,12 +2,15 @@
 // Same browser protocol as atlas_voice/cascade.py, so the compiled ATLAS page, worklet and orb work unchanged:
 // the orb moves only from PCM this session actually sends for playback.
 import { TALKER_POLICY, OPENING, HISTORY, TOPICS, ADMIN_NOTE, SPEAKING_LIMIT_S, INTERVIEW_LIMIT_S, WRAP_S, TIME_UP, AREAS, TIME_PLAN, TIME_UP_MESSAGE, FIELDS,
-  GAP_LIMIT_S, GAP_SPEAKING_S, GAP_WRAP_S, GAP_MAX, GAP_OPENING, WIN_HINTS } from './policy.generated.js';
+  GAP_LIMIT_S, GAP_SPEAKING_S, GAP_WRAP_S, GAP_MAX, GAP_OPENING, WIN_HINTS, BANNED_PRAISE_SRC } from './policy.generated.js';
 import { gapSystemBlock, gapNotes, gapStatus, gapGuidance, timePlan } from './gap-policy.js';
 import { Analyst, InterviewLedger } from './ledger.js';
-import { EnergyTurns, isEcho, Phrases, speakable } from './speech.js';
+import { EnergyTurns, isEcho, Phrases, speakable, sentences, ReplyGuard, GUARD_MAX_WORDS } from './speech.js';
 import { EndMarker, parseReport, reportMessages } from './report.js';
-import { LANGUAGES, normalize, spokenFor, languageNote, GREETINGS, WELCOME_BACK, FILLERS, unfinished } from './languages.js';
+import { LANGUAGES, normalize, spokenFor, languageNote, GREETING_PIECES, WELCOME_BACK_PIECES, FILLERS, unfinished } from './languages.js';
+import { analyzeTurn } from './turns.js';
+import { select } from './selector.js';
+import { pickAck, ackPrewarmList } from './ack.js';
 
 export const RESUME = '[The consultant made a sound but no words were recognised, and your last reply was cut off.] Briefly re-ask your last question in fresh words.';
 
@@ -31,6 +34,8 @@ export const ECHO_TAIL = 0.2; // seconds of microphone audio after her playback 
 export const ECHO_WINDOW = 0.5; // fallback without playback reports: after her last audio was sent (lead + tail)
 export const BLIP_JOIN = 1.0; // ...but kept this long: speech starting again joins it (nothing lost); if none, it is transcribed when idle
 export const STT_TIMEOUT_MS = 15000; // a transcription that never returns counts as no words
+export const PREWARM_LANES = 3; // acknowledgement lines synthesised at once while the session starts
+const OPENER_WORDS = 12; // a leading sentence longer than this is an answer, not a reaction (as in ReplyGuard)
 export const SYNTH_AHEAD = 2; // pieces of one reply being synthesised (or waiting to be sent) at once
 export const UNDERRUN_S = 0.02; // a gap in her audio longer than one chunk counts as an underrun
 // Synthesised audio for short fixed phrases (greetings, acknowledgements), shared by every session in this isolate.
@@ -44,6 +49,23 @@ function cacheSet(key, pcm) {
 export const pcmCacheStats = () => ({ entries: PCM_CACHE.size, bytes: pcmCacheSize });
 export function clearPcmCache() { PCM_CACHE.clear(); pcmCacheSize = 0; }
 export { SPEAKING_LIMIT_S, TIME_UP };
+
+// Agent Brain v2.1 switches, read from the Worker env (app.js hands them to the Session through ai.flags). Each defaults to the
+// new behaviour; the legacy values reproduce the earlier one exactly (analyst guidance one turn late, stock fillers, no reply guard).
+//   ATLAS_SELECTOR=v2|legacy    v2: the next move is selected synchronously from the answer just heard (full interviews, not admin)
+//   ATLAS_REPLY_GUARD=on|off    on: one question, no empty praise, no repeated opener, at most GUARD_MAX_WORDS words, enforced in code
+//   ATLAS_ACKS=content|legacy   content: the acknowledgement follows what the answer was about (ack.js); legacy: FILLERS
+//   ANALYST_WAIT_MS=0           bounded wait (ms) for the analyst while the acknowledgement plays, then the move is re-selected
+//   SPECULATIVE_STT=on          RESERVED: speculative transcription is not implemented, the flag is read and has no effect
+export const DEFAULT_FLAGS = Object.freeze({ selector: 'v2', replyGuard: 'on', acks: 'content', analystWaitMs: 0, speculativeStt: false });
+export function sessionFlags(env = {}) {
+  const e = env || {}, wait = Number(e.ANALYST_WAIT_MS);
+  return { selector: String(e.ATLAS_SELECTOR || '').toLowerCase() === 'legacy' ? 'legacy' : 'v2',
+    replyGuard: String(e.ATLAS_REPLY_GUARD || '').toLowerCase() === 'off' ? 'off' : 'on',
+    acks: String(e.ATLAS_ACKS || '').toLowerCase() === 'legacy' ? 'legacy' : 'content',
+    analystWaitMs: Number.isFinite(wait) && wait > 0 ? Math.min(Math.round(wait), 1500) : 0,
+    speculativeStt: ['on', '1', 'true'].includes(String(e.SPECULATIVE_STT || '').toLowerCase()) };
+}
 export const MAX_SECONDS = INTERVIEW_LIMIT_S; // the whole interview (15 minutes); ATLAS's own speaking time is a second cap inside it
 // Parity-tested port of atlas_voice.cascade.pace_notes: speaking time used and areas with no notes (names only, never content).
 export function paceNotes(elapsedS, limitS, notes, admin = false) {
@@ -111,6 +133,38 @@ export function talkerMessages(project, guidance, history, instruction, notes = 
   return messages;
 }
 
+// The talker's NEXT MOVE note (plan 3c): the move the server selected from the answer just heard, rebuilt for every reply and
+// never kept. The wording is a proposal; the talker says it in its own words. `say` can carry words of the consultant (a figure
+// they gave), so it passes through clean() like any untrusted text.
+const MOVE_ACTION = {
+  ask: 'Ask this one question, in your own natural words.',
+  confirm_asr: 'Check that you heard it right: ask only this confirming question, in your own words.',
+  reflect: 'Say back in one short sentence what you have understood so far, then ask the one check question.',
+  offer_move_on: 'Offer to move on from this point, gently; ask only that.',
+  accept_and_move: 'Accept their answer without pressing; then ask the one question.',
+  summary: 'No question is left. Recap what you understood in two short sentences, using only what they said, then ask only whether you have misunderstood or missed anything.',
+  close: 'Close now: thank them warmly in one or two short sentences, with no question, then end with the exact token [[END]].',
+};
+const MOVE_REACTION = {
+  none: 'Open with no reaction; go straight to the move.',
+  neutral: 'A very short neutral acknowledgement is enough.',
+  thanks_detail: 'Thank them briefly for the detail; no praise.',
+  no_number_fine: 'Say that it is fine not to have the number; no pressure.',
+  confidential_ok: 'Say that keeping it private is fine; no pressure.',
+  correction_thanks: 'Thank them for the correction and use their version.',
+  setback_neutral: 'Acknowledge the event neutrally and judge no one; no cheer, no praise.',
+  earned_result: 'One short, specific reaction to the result is earned; no superlatives.',
+  promising_unverified: 'Say only that it sounds promising; the figure is not confirmed yet; no praise.',
+};
+export function nextMoveNote(move) {
+  if (!move || typeof move !== 'object') return '';
+  const reaction = move.reaction === 'none' || !move.reaction ? MOVE_REACTION.none : MOVE_REACTION[move.ack_category] || MOVE_REACTION.neutral;
+  const parts = ['kind: ' + move.kind, move.field ? 'about: ' + move.field : '', move.intent && move.intent !== move.kind ? 'intent: ' + move.intent : '',
+    'proposed wording: ' + JSON.stringify(clean(move.say, 400)), 'why: ' + clean(move.why, 120)].filter(Boolean);
+  return 'NEXT MOVE (server, built from their latest answer, for this reply only; say it in your own words, not as a script): ' + parts.join('; ') + '. '
+    + (MOVE_ACTION[move.kind] || MOVE_ACTION.ask) + ' Reaction: ' + reaction + ' If an acknowledgement was already said aloud, add none.';
+}
+
 const joinPcm = (a, b) => { const out = new Uint8Array(a.length + b.length); out.set(a); out.set(b, a.length); return out; };
 const same = (a, b) => { if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false; let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i); return d === 0; };
 
@@ -119,9 +173,16 @@ export class Session {
   // gaps: async id => {asks, bidAlias, referenceId, projectId} | null (the verified assignee's open gap request);
   // winHint: async () => ({hint: 'quantified'|'confirmed'|null}) | null (aggregate win-loop guidance, never awaited).
   constructor({ io, ai, csrf, voice, voices = null, captureRequired = false, model, maxSeconds = MAX_SECONDS, admin = false, memory = null, speakingLimit = SPEAKING_LIMIT_S, now = () => Date.now() / 1000, sleep = ms => new Promise(r => setTimeout(r, ms)), metric = () => {}, sttTimeout = STT_TIMEOUT_MS,
-    gaps = null, winHint = null, gapTimeout = GAP_RESOLVE_MS }) {
+    gaps = null, winHint = null, gapTimeout = GAP_RESOLVE_MS, flags = null }) {
     // metric(name, numbers): timings and counts only, never transcript or project content.
     Object.assign(this, { io, ai, csrf, voice, voices: voices || [voice], captureRequired, model, maxSeconds, admin, speakingLimit, now, sleep, metric, memory, sttTimeout, gaps, winHint, gapTimeout });
+    this.flags = { ...DEFAULT_FLAGS, ...(flags || ai?.flags || {}) };
+    // Conversation state of the humane interviewer (Agent Brain v2.1), one plain object so a checkpoint can keep it whole:
+    // asked (the Move dicts committed so far, oldest first), covered (field ids the consultant's answers touched), rushed,
+    // acks (texts of the last acknowledgements played, oldest first), sinceEarned (replies since the last earned_result; null: none yet)
+    // and openers (the leading reaction of her last replies, for the repeated-opener rule).
+    this.humane = { asked: [], covered: new Set(), rushed: false, acks: [], sinceEarned: null, openers: [] };
+    this.move = null; this.moveByItem = new Map(); this.prefill = {}; this.lastPlan = null; this.lastTurn = null;
     // Interview mode. Gap mode keeps its own answer windows: askByItem (reply item -> the ask it carried, set when the reply
     // is composed), gapAttempts (replies heard per ask), openAsk (the ask the consultant last heard; null once a reflect-back
     // or the closing is heard) and gapAnswers (ask -> the consultant turns heard after it, each turn a list of transcript parts).
@@ -205,7 +266,7 @@ export class Session {
         this.event('user_speaking');
       } else if (audible && !this.greetingPlaying()) {
         // Barge-in only stops audio the consultant can actually hear; noise cannot cancel a reply still being composed.
-        // The short greeting is not interruptible (room noise must not cut the introduction); everything after it is.
+        // The first piece of the greeting is not interruptible (room noise must not cut the introduction); everything after it is, the second piece included.
         this.interrupt(); this.cutOff = true; this.metric('barge_in', {}); this.event('user_speaking');
       }
     }
@@ -276,6 +337,7 @@ export class Session {
     if (this.replyTurn !== this.turns || !this.replyItem || this.discarded.has(this.replyItem) || !this.busy()) return;
     const item = this.replyItem;
     this.discarded.add(item); this.gen += 1; this.queue = [];
+    this.uncommit(item); // a withdrawn reply asked nothing: its move leaves the asked log
     this.stopped();
     // A withdrawn reply is not an attempt either: its ask goes back to where it was (gap mode).
     if (this.askHeard?.item === item) { const { id, before } = this.askHeard; if (id) this.gapAttempts[id] -= 1; this.openAsk = before; this.askHeard = null; }
@@ -309,6 +371,9 @@ export class Session {
     try {
       if (!init || typeof init !== 'object' || Object.keys(init).some(k => !START_KEYS.includes(k)) || init.type !== 'start' || init.consent !== true || !same(String(init.csrf ?? ''), this.csrf)) throw new Error('Fresh voice consent and CSRF token required');
       this.project = projectContext(init.project);
+      // What is known before the first question (role, sector, stage, opportunity, earlier notes): never the consultant's name.
+      const { role, sector, stage, oppId, prior_notes: notes } = this.project;
+      this.prefill = Object.fromEntries(Object.entries({ role, sector, stage, oppId, prior_notes: notes && Object.keys(notes).length ? notes : null }).filter(([, v]) => v));
       if (!this.voices.includes(init.voice ?? this.voice)) throw new Error('Unsupported voice');
       this.voice = init.voice ?? this.voice;
       this.capture = init.capture === true;
@@ -352,8 +417,8 @@ export class Session {
     const lang = this.spoken();
     if (gap) { // the first open ask, after the usual greeting (always spoken, admin included: Tony, 2026-10-02)
       this.guidance = gapGuidance(this.gapAsks, this.gapStatuses());
-      this.startReply(GAP_OPENING, { prefix: GREETINGS[lang] || '' });
-    } else this.startReply(OPENING, { prefix: (this.memoryNote ? WELCOME_BACK[lang] : GREETINGS[lang]) || '' });
+      this.startReply(GAP_OPENING, { prefix: GREETING_PIECES[lang] || [] });
+    } else this.startReply(OPENING, { prefix: (this.memoryNote ? WELCOME_BACK_PIECES[lang] : GREETING_PIECES[lang]) || [] });
     this.prewarm();
   }
 
@@ -424,6 +489,7 @@ export class Session {
 
   interrupt() {
     this.recordLive();
+    this.uncommit(this.replyItem, true); // cut before she said her own words: the move was not asked
     this.stopped();
     this.protectedItem = null; // nothing protected is playing any more
     this.gen += 1; this.queue = [];
@@ -462,7 +528,7 @@ export class Session {
     }
     // Speaker echo of ATLAS's own words must never become consultant testimony.
     if (text && echoable && isEcho(text, recent)) { this.metric('echo_ignored', {}); this.event('quality_warning', { message: 'ATLAS heard its own voice through the microphone and ignored it. Headphones prevent this.' }); text = ''; }
-    const lang = heardIn || this.language, how = { endedBy, endedAt, lang };
+    const lang = heardIn || this.language, how = { endedBy, endedAt, lang, sttMs: blip ? -1 : Math.round((this.now() - t0) * 1000) };
     if (text) { this.cutOff = false; await this.finishTurn(text, continuing, how); }
     // No words. Unless the consultant is already speaking again (that utterance will decide): answer what they said
     // before a noise, or re-ask after a noise that cut ATLAS off.
@@ -494,6 +560,7 @@ export class Session {
       const job = this.analyst.hear(ident, text).then(async result => {
         this.metric('analyst', { ms: Math.round((this.now() - a0) * 1000), ok: result.analyst_status === 'analysed' ? 1 : 0, details: result.candidate_details.length, rejected: result.rejected_proposals });
         if (this.mode === 'gap') return this.gapQuality(result);
+        this.lastPlan = result; // the plan the ledger now holds; the next move is read from the ledger, so it is never one answer behind
         let chosen = result.guidance;
         if (this.ai.rankProbe && result.analyst_status === 'analysed') {
           const j0 = this.now();
@@ -505,7 +572,7 @@ export class Session {
         this.event('quality', rest);
         if (result.analyst_status !== 'analysed') this.event('quality_warning', { message: 'The evidence analyst did not respond for this turn. The answer is kept; review it in the notes.' });
       }).catch(() => this.event('quality_warning', { message: 'This turn exceeded the transcript budget and was not added to the evidence ledger.' }));
-      this.pending.add(job); job.finally(() => this.pending.delete(job));
+      this.turnJob = job; this.pending.add(job); job.finally(() => this.pending.delete(job));
     }
     if (closing) return;
     if (this.continuing && this.turnDetector.active && this.voiced >= MIN_VOICED) return; // already speaking again: answer when they have finished
@@ -525,13 +592,76 @@ export class Session {
   // Reply to the consultant's latest turn. A thought left hanging (the turn model heard it unfinished, or the words
   // trail off) gets room, then at most a gentle nudge the talker chooses; never an acknowledgement or a new question.
   // Timed from the consultant's last sound (endedAt), so the wait does not depend on how fast speech recognition was.
-  answer(text, { endedBy = '', endedAt = this.now(), lang = this.language } = {}) {
+  //
+  // Agent Brain v2.1: for a real answer the pre-pass (analyzeTurn) and the next move (select) run HERE, synchronously, from the
+  // words just transcribed, so the reply is steered by this answer and not by the analyst's plan of the one before; the
+  // acknowledgement is chosen from the same pre-pass and starts playing before the talker has produced a word. The analyst
+  // still runs in the background and refines the ledger the next move is read from.
+  answer(text, { endedBy = '', endedAt = this.now(), lang = this.language, sttMs = -1 } = {}) {
     const trailing = unfinished(text, lang);
-    // Admin (Tony) gets the same patience, without the nudge or an acknowledgement.
-    if (this.admin) return this.startReply(undefined, { turn: this.turns, endedAt, notBefore: trailing && endedBy !== 'thinking' ? endedAt + THINKING_PAUSE : 0 });
-    if (endedBy !== 'thinking' && !trailing) return this.startReply(undefined, { filler: this.pickFiller(text), turn: this.turns, endedAt });
+    // Admin (Tony) gets the same patience, without the nudge or an acknowledgement (and keeps the analyst's guidance).
+    if (this.admin) return this.startReply(undefined, { turn: this.turns, endedAt, notBefore: trailing && endedBy !== 'thinking' ? endedAt + THINKING_PAUSE : 0, timeline: { sttMs, selectorMs: -1 } });
+    if (endedBy !== 'thinking' && !trailing) {
+      const h = this.humane, v2 = this.flags.selector === 'v2' && this.mode === 'full', content = this.flags.acks === 'content';
+      let turn = null, move = null, selectorMs = -1, sinceEarned;
+      if (v2 || content) {
+        const t0 = this.now(), last = h.asked.at(-1);
+        try { turn = this.lastTurn = analyzeTurn(text, lang, { asked_field: last?.field ?? null }); } catch (e) { this.metric('turn_error', { name: e?.name || 'Error' }); }
+        if (turn && v2) { try { move = this.decide(turn); } catch (e) { this.metric('selector_error', { name: e?.name || 'Error' }); } }
+        selectorMs = Math.round((this.now() - t0) * 1000);
+      }
+      if (h.sinceEarned !== null) sinceEarned = h.sinceEarned += 1;
+      const ack = content ? this.ackFor(turn, move, text, sinceEarned) : null;
+      // The analyst's plan may still land while the acknowledgement plays: with ANALYST_WAIT_MS the move is chosen again from it.
+      const job = this.turnJob, wait = this.flags.analystWaitMs;
+      const refine = move && job && wait > 0 ? async old => { await Promise.race([job.catch(() => {}), this.sleep(wait)]); return this.decide(turn, old); } : null;
+      return this.startReply(undefined, { filler: ack ? ack.text : content ? '' : this.pickFiller(text), ack, move, refine, turn: this.turns, endedAt, timeline: { sttMs, selectorMs } });
+    }
     this.metric('still_thinking', { by: endedBy === 'thinking' ? 1 : 0 });
     this.startReply(STILL_THINKING, { notBefore: endedBy === 'thinking' ? 0 : endedAt + THINKING_PAUSE, turn: this.turns, endedAt, thinking: true });
+  }
+
+  // The plan the selector reads: the ledger as it stands now (whatever the analyst has filed so far), else its last result.
+  currentPlan() { try { return this.ledger ? this.ledger.inspect() : this.lastPlan || {}; } catch { return this.lastPlan || {}; } }
+  // T7 hook: uncertain speech spans of this turn ({text}) for confirm_asr; none until speech recognition reports confidence.
+  asrFor() { return null; }
+
+  // The next move for this answer (plan 3c). `replacing`: a move already committed for this reply, left out of the log when the
+  // analyst's newer plan makes the server choose again. Deferrals ("I don't know") stay open: their hints do not count as covered.
+  decide(turn, replacing = null) {
+    const h = this.humane, elapsed = this.now() - this.startedAt;
+    if (turn.intents.includes('rushed')) h.rushed = true;
+    const plan = { ...this.currentPlan(), covered_fields: [...h.covered] };
+    const move = select(plan, turn, h.asked.filter(m => m !== replacing), this.prefill, elapsed >= TIME_PLAN.depth_fraction * this.maxSeconds ? 'depth' : 'breadth',
+      this.maxSeconds - elapsed, this.asrFor(turn), h.rushed, this.language);
+    if (!turn.intents.some(i => ['dont_know', 'cannot_disclose', 'skip'].includes(i))) for (const f of turn.field_hints) h.covered.add(f);
+    // The selector had to avoid saying a question it already said (a variant, or a whole candidate): counted, never logged.
+    if (!replacing && /\+r[vi]/.test(move.why || '')) this.metric('question_repeat', { variant: move.why.includes('+rv') ? 1 : 0, skipped: move.why.includes('+ri') ? 1 : 0 });
+    return move;
+  }
+
+  // The move committed for a reply goes into the asked log; one taken back (withdrawn, or cut before she said it) comes out.
+  commitMove(item, move) { this.humane.asked.push(move); this.moveByItem.set(item, move); }
+  swapMove(item, old, move) { const i = this.humane.asked.indexOf(old); if (i >= 0) this.humane.asked[i] = move; else this.humane.asked.push(move); this.moveByItem.set(item, move); }
+  uncommit(item, onlyIfUnheard = false) {
+    const move = this.moveByItem.get(item);
+    if (!move || (onlyIfUnheard && this.composedItem === item)) return;
+    const i = this.humane.asked.indexOf(move); if (i >= 0) this.humane.asked.splice(i, 1);
+    this.moveByItem.delete(item);
+  }
+
+  // The acknowledgement for this answer (ack.js): from the selector's category and the cues of the words, never from a judgement
+  // of the person. Null in admin, after a question, at the time limit or when the answer is short.
+  ackFor(turn, move, text, sinceEarned) {
+    if (move?.reaction === 'none') return null; // the selector goes straight to the move (a repeat, an offer to move on, a read-back, a close)
+    const h = this.humane, words = turn ? turn.words : String(text).split(/\s+/).filter(Boolean).length;
+    return pickAck({ category: move?.ack_category ?? 'neutral', cues: turn?.cues ?? [], words, lang: this.spoken(), recent: h.acks.slice(-4), admin: this.admin, timeUp: this.timeUp,
+      afterQuestion: !!turn?.intents.includes('question_to_atlas') || /[?？]\s*$/.test(text), repliesSinceEarned: sinceEarned, seed: this.turns });
+  }
+  ackPlayed(ack) {
+    const h = this.humane; h.acks.push(ack.text); if (h.acks.length > 8) h.acks.shift();
+    if (ack.category === 'earned_result') h.sinceEarned = 0;
+    this.metric('ack', { category: ack.category });
   }
 
   spoken() { return spokenFor(this.language, l => (this.ai.speaks ? this.ai.speaks(l) : l === 'en')); }
@@ -564,12 +694,21 @@ export class Session {
     return pcm;
   }
 
-  prewarm() { // fill the cache for this language's acknowledgements without delaying anything
+  // Fill the cache with this language's acknowledgements without delaying anything: the legacy fillers at once (four lines), the
+  // content-aware bank (about forty English lines, a few MB of PCM against the 12 MB cache) a few at a time, and none in admin.
+  prewarm() {
     const lang = this.spoken();
-    for (const f of FILLERS[lang] || []) this.synth(f, lang).catch(() => {});
+    if (this.flags.acks === 'legacy') { for (const f of FILLERS[lang] || []) this.synth(f, lang).catch(() => {}); return; }
+    if (this.admin) return;
+    const todo = ackPrewarmList(lang);
+    const lane = async () => { for (let t = todo.shift(); t !== undefined; t = todo.shift()) { if (this.finished) return; await this.synth(t, lang, false, true).catch(() => {}); } };
+    for (let i = 0; i < PREWARM_LANES; i++) lane();
   }
 
-  startReply(instruction, { prefix = '', filler = '', notBefore = 0, turn = -1, endedAt = 0, thinking = false } = {}) {
+  // prefix: a greeting (a list of cached pieces) or an acknowledgement (`filler`, one cached piece). move / ack / refine / timeline:
+  // the humane interviewer's inputs for a normal reply (see answer()); a reply with another instruction (opening, nudge, closing,
+  // re-ask) carries none.
+  startReply(instruction, { prefix = '', filler = '', notBefore = 0, turn = -1, endedAt = 0, thinking = false, move = null, ack = null, refine = null, timeline = null } = {}) {
     if (this.ending || this.finished) return;
     // Re-checked on every reply: an interrupted closing (or a noise re-ask) cannot escape the time limits. With wrapS
     // (WRAP_S, or GAP_WRAP_S in gap mode) left of the interview, or ATLAS's own speaking time used up, the next reply is the closing.
@@ -578,19 +717,26 @@ export class Session {
       if (!this.timeUp) { this.timeUp = true; this.metric(late ? 'interview_limit' : 'speaking_limit', { turns: this.turns }); }
       instruction = TIME_UP;
     }
+    if (instruction !== undefined) { move = null; refine = null; } // only a normal reply carries the selected move
     this.replies += 1;
     const item = 'agent-' + this.replies, gen = ++this.gen;
     this.replyItem = item; this.replyTurn = turn; this.replyGen = gen;
-    const run = this.speak(item, gen, instruction, prefix || filler, !!filler, notBefore, endedAt, thinking).catch(e => { this.metric('reply_error', { name: e?.name || 'Error' }); if (!this.finished && gen === this.gen) this.event('error', { message: 'The voice reply failed. No fallback voice was used.', code: 'voice-unavailable' }); });
+    if (move) this.commitMove(item, move);
+    const pieces = Array.isArray(prefix) ? prefix : prefix ? [prefix] : filler ? [filler] : [];
+    const run = this.speak(item, gen, instruction, pieces, !!filler, notBefore, endedAt, thinking, { move, ack: filler ? ack : null, refine, timeline }).catch(e => { this.metric('reply_error', { name: e?.name || 'Error' }); if (!this.finished && gen === this.gen) this.event('error', { message: 'The voice reply failed. No fallback voice was used.', code: 'voice-unavailable' }); });
     this.speaking = run;
     run.finally(() => { if (this.speaking === run) this.speaking = null; });
   }
 
-  async speak(item, gen, instruction, prefix = '', isFiller = false, notBefore = 0, endedAt = 0, thinking = false) {
-    let said = '', interrupted = true, firstText = 0, firstAudio = 0;
+  async speak(item, gen, instruction, pieces = [], isFiller = false, notBefore = 0, endedAt = 0, thinking = false, { move = null, ack = null, refine = null, timeline = null } = {}) {
+    let said = '', interrupted = true, firstText = 0, firstToken = 0, firstAudio = 0, gapMs = -1, talker = '', voiced = 0;
     const lang = this.spoken(); // one voice per reply, even if the consultant switches mid-reply
     const marker = new EndMarker(); // the talker's end-of-interview token is never spoken or shown
-    const t0 = this.now();
+    const t0 = this.now(), prefix = pieces.join(' ');
+    // The reply guard (speech.js ReplyGuard) enforces the shape of what the talker says in code: one question, no empty praise,
+    // no repeated opener, a short reply. A closing is not capped (its end token comes last). Its drops are counted, never logged.
+    const guard = this.flags.replyGuard === 'on' ? new ReplyGuard({ bannedPraise: BANNED_PRAISE_SRC, recentOpeners: [...this.humane.openers, ...(isFiller ? pieces : [])],
+      maxWords: instruction === TIME_UP ? null : GUARD_MAX_WORDS }) : null;
     // Text travels with its audio and reaches the screen when that audio is actually sent for playback (pace()), so it
     // never shows words ATLAS has not started to say, and a withdrawn piece never appears.
     let pending = '';
@@ -609,7 +755,7 @@ export class Session {
       if (!firstAudio) {
         firstAudio = this.now(); this.metric('reply', { first_text_ms: Math.round((firstText - t0) * 1000), first_audio_ms: Math.round((firstAudio - t0) * 1000) });
         // The measure of "answers too quick": the consultant's last sound to ATLAS's first sound (numbers only).
-        if (endedAt && gen === this.gen) this.metric('reply_gap', { ms: Math.round((this.now() - endedAt) * 1000), filler: isFiller ? 1 : 0, thinking: thinking ? 1 : 0 });
+        if (endedAt && gen === this.gen) { gapMs = Math.round((this.now() - endedAt) * 1000); this.metric('reply_gap', { ms: gapMs, filler: isFiller ? 1 : 0, thinking: thinking ? 1 : 0 }); }
       }
       if (gen !== this.gen || this.finished) return;
       // The text of exactly this piece (and any separator before it), not the next sentence's first words already streamed.
@@ -631,19 +777,31 @@ export class Session {
       while (inflight.length >= SYNTH_AHEAD) await inflight.shift();
     };
     try {
-      if (prefix) { // cached greeting or acknowledgement: audible within milliseconds, while the model prepares the rest
+      if (pieces.length) { // cached greeting or acknowledgement: audible within milliseconds, while the model prepares the rest
         if (!firstText) firstText = this.now();
-        show((this.replies > 1 ? '\n\n' : '') + prefix + ' '); said = prefix + ' ';
-        const before = this.sentMs[item] || 0;
-        await deliver(prefix, this.synth(prefix, lang, true, true), isFiller, true); if (gen !== this.gen || this.finished) return;
-        if (!isFiller) { // protect exactly the greeting's audio: until the browser confirms it played (capped)
-          this.protectedItem = item; this.protectedMs = (this.sentMs[item] || 0) + this.queue.filter(c => c.item === item).reduce((n, c) => n + c.bytes.length, 0) / 48 - before;
-          this.protectedDeadline = this.now() + this.protectedMs / 1000 + 3;
+        const before = this.sentMs[item] || 0, syntheses = pieces.map(p => this.synth(p, lang, true, true)); // every piece is synthesised (or cached) at once
+        syntheses.forEach(x => x.catch(() => {}));
+        for (let i = 0; i < pieces.length; i++) {
+          show((i === 0 && this.replies > 1 ? '\n\n' : '') + pieces[i] + ' '); said += pieces[i] + ' ';
+          await deliver(pieces[i], syntheses[i], isFiller, true); if (gen !== this.gen || this.finished) return;
+          if (isFiller && ack) this.ackPlayed(ack);
+          if (!isFiller && i === 0) { // protect exactly the greeting's first piece: until the browser confirms it played (capped); the rest can be interrupted
+            this.protectedItem = item; this.protectedMs = (this.sentMs[item] || 0) + this.queue.filter(c => c.item === item).reduce((n, c) => n + c.bytes.length, 0) / 48 - before;
+            this.protectedDeadline = this.now() + this.protectedMs / 1000 + 3;
+          }
         }
       }
-      const notes = [...this.paceNotes(), prefix ? (isFiller ? `ALREADY SAID (server): you have just said "${prefix}" out loud. Continue naturally from there; do not start with another short acknowledgement.`
+      // Optionally wait (ANALYST_WAIT_MS) for the analyst while the acknowledgement plays, then choose the move again from its plan.
+      if (refine && move) {
+        let better = null;
+        try { better = await refine(move); } catch (e) { this.metric('selector_error', { name: e?.name || 'Error' }); }
+        if (gen !== this.gen || this.finished) return;
+        if (better) { this.swapMove(item, move, better); if (better.kind !== move.kind || better.intent !== move.intent) this.metric('move_refined', {}); move = better; }
+      }
+      const moveNote = move ? nextMoveNote(move) : '';
+      const notes = [...this.paceNotes(), moveNote, prefix ? (isFiller ? `ALREADY SAID (server): you have just said "${prefix}" out loud. Continue naturally from there; do not start with another short acknowledgement.`
         : `ALREADY SAID (server): you have just greeted the consultant with: "${prefix}". Do not repeat it or introduce yourself again.`) : ''];
-      const guidance = instruction === TIME_UP ? null : this.guidance, gap = this.mode === 'gap';
+      const guidance = instruction === TIME_UP || moveNote ? null : this.guidance, gap = this.mode === 'gap';
       // Gap mode: the ask this reply carries, fixed now that it is composed. A normal reply or the opening carries the plan's
       // ask; a reflect-back (the plan has no ask left) and the closing carry none, and once heard they close the answer
       // window, so a confirmation or a goodbye answers no ask. A re-ask after a noise leaves the window as it is; so does a
@@ -653,18 +811,46 @@ export class Session {
       const carry = s => { if (gap && instruction === STILL_THINKING && !asked && /[?？]/.test(s)) { asked = true; this.askByItem.set(item, guidance?.askId ?? null); } };
       // First words fast (the first sentence, or a first clause of 40 characters), then whole phrases (speech.js Phrases).
       const phrases = new Phrases();
+      // With the guard, only what it lets through is shown, voiced and remembered; without it, the talker's words as they come.
+      const voice = async piece => {
+        for (const run of guard.push(piece)) {
+          const lead = !said ? (this.replies > 1 ? '\n\n' : '') : /\s$/.test(said) ? '' : ' ';
+          show(lead + run); said += (said ? lead : '') + run; talker += (talker ? ' ' : '') + run; voiced += 1;
+          carry(run); await say(run); if (gen !== this.gen) return;
+        }
+      };
+      const stopped = () => !!guard?.done && (guard.stop === 'question' || marker.seen); // a cap still reads on, to find the end token
       for await (const raw of this.ai.chatStream(talkerMessages(this.project, guidance, this.history, instruction, notes, gap ? this.gapAsks : null), { affinity: this.affinity })) {
         if (gen !== this.gen || this.finished) return;
+        if (raw && !firstToken) firstToken = this.now();
         const delta = marker.feed(raw);
+        if (guard?.done) { if (stopped()) break; continue; } // the reply is complete: leaving the loop returns the stream, which stops the model
         if (!delta) continue;
         if (!firstText) firstText = this.now();
-        show(!said && this.replies > 1 ? '\n\n' + delta : delta);
-        said += delta;
-        for (const piece of phrases.feed(delta)) { carry(piece); await say(piece); if (gen !== this.gen) return; }
+        if (guard) {
+          for (const piece of phrases.feed(delta)) { await voice(piece); if (gen !== this.gen) return; if (guard.done) break; }
+          if (stopped()) break;
+        } else {
+          show(!said && this.replies > 1 ? '\n\n' + delta : delta);
+          said += delta;
+          for (const piece of phrases.feed(delta)) { carry(piece); await say(piece); if (gen !== this.gen) return; }
+        }
       }
-      const rest = marker.flush();
-      if (rest && gen === this.gen) { show(rest); said += rest; }
-      if (gen === this.gen) for (const piece of [...phrases.feed(rest), ...phrases.flush()]) { carry(piece); await say(piece); }
+      const rest = marker.flush(); // also where a closing token that ended the stream is recognised (even after a cap)
+      if (!guard?.done) {
+        if (guard) { if (gen === this.gen) for (const piece of [...(rest ? phrases.feed(rest) : []), ...phrases.flush()]) { await voice(piece); if (gen !== this.gen || guard.done) break; } }
+        else {
+          if (rest && gen === this.gen) { show(rest); said += rest; }
+          if (gen === this.gen) for (const piece of [...phrases.feed(rest), ...phrases.flush()]) { carry(piece); await say(piece); }
+        }
+      }
+      // The guard took everything (a lone repeated reaction, praise): ATLAS still asks the move's own question, never silence.
+      if (guard && gen === this.gen && !voiced && move?.say && /[?？]/.test(move.say) && Object.values(guard.stats).some(n => n > 0)) {
+        this.metric('reply_fallback', {});
+        const lead = !said ? (this.replies > 1 ? '\n\n' : '') : /\s$/.test(said) ? '' : ' ';
+        show(lead + move.say); said += (said ? lead : '') + move.say; talker = move.say; voiced += 1;
+        carry(move.say); await say(move.say);
+      }
       await chain; // every piece sent, or dropped by a withdrawal or an interruption
       release(); // anything left that produced no audio of its own
       interrupted = gen !== this.gen;
@@ -679,6 +865,13 @@ export class Session {
         const content = interrupted ? (this.live?.item === item ? this.live.text.trim() : '') && this.live.text.trim() + ' [cut off]' : text;
         if (content) { const entry = { role: 'assistant', content }; this.history.push(entry); this.committed = { item, entry }; }
       }
+      if (guard) this.metric('reply_guard', { ...guard.stats, stopped: guard.done ? 1 : 0 });
+      // Her leading reaction, for the repeated-opener rule of the next replies (a question is not a reaction).
+      const [done, rest] = sentences(talker + ' '), lead = (done[0] || rest || '').trim();
+      if (lead && !/[?？]$/.test(lead) && lead.split(/\s+/).length <= OPENER_WORDS && !this.discarded.has(item)) { this.humane.openers.push(lead); if (this.humane.openers.length > 3) this.humane.openers.shift(); }
+      // One line per turn: where the time went between the consultant's last word and hers (numbers only; -1: not reached).
+      if (timeline && !this.discarded.has(item)) this.metric('turn_timeline', { stt_ms: timeline.sttMs, selector_ms: timeline.selectorMs,
+        first_token_ms: firstToken ? Math.round((firstToken - t0) * 1000) : -1, first_audio_ms: firstAudio ? Math.round((firstAudio - t0) * 1000) : -1, reply_gap_ms: gapMs });
     }
   }
 
