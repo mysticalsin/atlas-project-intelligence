@@ -33,6 +33,7 @@ constants = {
 # Later modules register here, one line each. A module may expose EDGE_CONSTANTS (a dict) that is merged after the
 # constants above; a key defined twice is an error rather than a silent override.
 EDGE_MODULES = [
+    'atlas_voice.conversation_state',
 ]
 for _name in EDGE_MODULES:
     for _key, _value in getattr(importlib.import_module(_name), 'EDGE_CONSTANTS', {}).items():
