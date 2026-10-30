@@ -2,7 +2,7 @@
 import json, math, struct, sys
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]; sys.path.insert(0, str(ROOT))
-from atlas_voice.speech import EnergyTurns, Phrases, sentences, speakable, SAMPLE_RATE
+from atlas_voice.speech import EnergyTurns, Phrases, ReplyGuard, sentences, speakable, SAMPLE_RATE
 
 def tone(sec, amp, hz=180):
     n = int(SAMPLE_RATE * sec); return [int(amp * 32767 * math.sin(2 * math.pi * hz * i / SAMPLE_RATE)) for i in range(n)]
@@ -42,5 +42,61 @@ out['_phrases'] = [[d, phrase_steps(d)] for d in (
 out['_speakable'] = [[t, speakable(t)] for t in (
     '**Budget**: we cut __costs__ by `40%`.', '## Summary\nWe moved.', '- the budget\n- the scope', '1. We migrated.\n2) We trained.',
     'C# and F# stay, -5 degrees, 3.5 times.', '*really* good', '**', ' - ', 'Plain text stays as it is.', 'Quelle était la référence ?')]
+# ReplyGuard: pieces in (given directly, or the pieces Phrases makes of streamed deltas), what each push voices, the final
+# stats, and the push after which the guard was done (null: never). Every piece is pushed, also after done.
+RAMBLE = ' '.join('We looked at the numbers again and again for the quarter and the pipeline.' for _ in range(5))  # 5 x 14 words
+LONG_ONE = ' '.join('word%d' % i for i in range(60))
+GUARD = [
+    ('one question', {}, ['What was the baseline?']),
+    ('reaction then question', {}, ['Thanks. What was the baseline before the change?']),
+    ('second question in the same piece', {}, ['Got it, thanks for that.', 'Who owned it? And what changed afterwards?']),
+    ('piece after the question', {}, ['Who owned it?', 'And what about the budget?', 'Tell me more.']),
+    ('question split across pieces', {}, {'deltas': ['Before we get into the numbers and the detail, ', 'tell me who ', 'owned it?', ' And what did you choose instead?']}),
+    ('amazing alone', {}, ['Amazing!', 'What did you own?']),
+    ('praise inside the question is kept', {}, ["That's an amazing team effort \u2014 what did you own?"]),
+    ('praise sentence of 8 words goes, 9 stays', {}, ["That's a fantastic and truly brilliant result overall.", "That's honestly a fantastic and truly brilliant result overall.", 'Who led it?']),
+    ('repeated opener, prefix', {'recent_openers': ['Got it, thanks for that.', 'I see']}, ['Got it, thanks for that detail.', 'Who owned it?']),
+    ('repeated opener, exact and shorter', {'recent_openers': ['I see', 'Thanks for walking me through that.']}, ['I see.', 'Thanks.', 'Who owned it?']),
+    ('opener not repeated', {'recent_openers': ['Got it']}, ['Makes sense.', 'Who owned it?']),
+    ('long leading sentence is not a reaction', {'recent_openers': ['thanks']}, ['Thanks to the new pipeline the tickets dropped in the first quarter after launch.', 'Who owned it?']),
+    ('praise then repeated opener', {'recent_openers': ['makes sense']}, ['Awesome!', 'Makes sense. Who owned it?']),
+    ('only the last three openers count', {'recent_openers': ['Right', 'Got it', 'I see', 'Fine']}, ['Right.', 'Who owned it?']),
+    ('60-word ramble in sentences', {}, [RAMBLE, 'Who owned it?']),
+    ('60 words in one sentence', {}, [LONG_ONE + '.']),
+    ('ramble, no question, one sentence per piece', {}, ['We looked at the numbers again and again for the quarter and the pipeline.'] * 5),
+    ('small cap', {'max_words': 6}, ['That is clear.', 'It worked well for us.', 'Who owned it?']),
+    ('no cap', {'max_words': None}, [RAMBLE, 'Who owned it?']),
+    ('cap cuts inside a sentence under way', {}, ['Before we get into the numbers and the detail,', 'tell me ' + ' '.join('w%d' % i for i in range(45)) + '.']),
+    ('summary with an unknown number', {'summary_facts': ['35%', '12 weeks']}, ['Tickets dropped 35% over 12 weeks.', 'That saved us 40 hours.', 'What have I misunderstood or missed?']),
+    ('summary numerals normalised', {'summary_facts': ['1,200', '3.50', '\u20ac2M']}, ['We handled 1200 tickets.', 'Cost fell 3.5%.', 'It saved $1.2M.', 'It cost 2 million.', 'Is that right?']),
+    ('summary with no facts allows no number', {'summary_facts': []}, ['You worked on it for two years.', 'It took 3 teams.', 'What did I miss?']),
+    ('summary question with a made-up number', {'summary_facts': ['35%']}, ['Did it really reach 80%?', 'And then?']),
+    ('Spanish', {}, ['Gracias por compartirlo.', '\u00bfQui\u00e9n lider\u00f3 ese cambio?', '\u00bfY cu\u00e1nto tiempo tom\u00f3?']),
+    ('Spanish inverted mark mid piece', {}, ['Gracias. \u00bfQui\u00e9n lider\u00f3 eso? \u00bfY cu\u00e1nto tard\u00f3?']),
+    ('Japanese', {}, ['\u3042\u308a\u304c\u3068\u3046\u3002\u57fa\u6e96\u306f\u4f55\u3067\u3057\u305f\u304b\uff1f\u305d\u3057\u3066\u4f55\u3092\u5909\u3048\u307e\u3057\u305f\u304b\uff1f']),
+    ('French space before the mark', {}, ['Merci. ', 'Quelle \u00e9tait la r\u00e9f\u00e9rence ?', 'Et ensuite ?']),
+    ('Hindi', {}, ['\u0927\u0928\u094d\u092f\u0935\u093e\u0926\u0964 \u0906\u0927\u093e\u0930 \u0915\u094d\u092f\u093e \u0925\u093e? \u0914\u0930 \u0915\u094d\u092f\u093e?']),
+    ('quoted question', {}, ['Right \u2014 "who owned it?"', 'Next.']),
+    ('markdown question', {}, ['**Who owned it?** And the budget?']),
+    ('custom banned praise, any case', {'banned_praise': r'\b(great|nice)\b'}, ['GREAT!', 'Amazing.', 'What was the baseline?']),
+    ('dropped first clause drops the rest', {}, ['Awesome brilliant fantastic,', 'what did you own?', 'Next?']),
+    ('first clause repeating an opener drops the sentence', {'recent_openers': ['before we get into the numbers']}, ['Before we get into the numbers and the detail,', 'tell me who owned it?']),
+    ('voiced first clause is not taken back', {}, ['Before we get into the numbers and the detail,', 'that was amazing. Who owned it?']),
+    ('empty and blank pieces', {}, ['', '   ', 'We shipped it.', '', 'Who owned it?']),
+    ('no question, nothing dropped', {}, ['We shipped it.', 'It went well.']),
+    ('question mark after an abbreviation', {}, ['Dr. Patel led it. And the U.S. team? Who ran it?']),
+]
+out['_guard'] = []
+for name, opts, src in GUARD:
+    if isinstance(src, dict):
+        deltas = src['deltas']; ph = Phrases(); pieces = [x for d in deltas for x in ph.feed(d)] + ph.flush()
+    else:
+        deltas, pieces = None, src
+    g = ReplyGuard(**opts); voiced, done_at = [], None
+    for i, piece in enumerate(pieces):
+        voiced.append(g.push(piece))
+        if g.done and done_at is None:
+            done_at = i
+    out['_guard'].append({'name': name, 'opts': opts, 'deltas': deltas, 'pieces': pieces, 'voiced': voiced, 'stats': g.stats, 'done_at': done_at})
 (Path(__file__).parent / 'speech.vectors.json').write_text(json.dumps(out))
 print({k: len(v['events']) for k, v in out.items() if not k.startswith('_')})
