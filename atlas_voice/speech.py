@@ -189,6 +189,152 @@ def speakable(text):
     return text if any(c.isalnum() for c in text) else ''
 
 
+GUARD_MAX_WORDS = 45  # most words ATLAS says in one reply
+PRAISE_MAX_WORDS = 8  # a sentence this short that is only praise is dropped
+REACTION_MAX_WORDS = 12  # a leading sentence longer than this is an answer, not a reaction: the repeated-opener rule leaves it alone
+DEFAULT_BANNED_PRAISE = r'\b(amazing|incredible|brilliant|awesome|fantastic)\b'  # persona.BANNED_PRAISE_SRC replaces it when wired
+_TERMINAL = re.compile(r'[.!?\u3002\uff01\uff1f\u0964]+$')
+_CLOSERS = re.compile('[\\s"\'\u201d\u2019\u00bb)\\]*_`]+$')
+_NUMBER = re.compile(r'[0-9]+(?:[.,][0-9]+)*')
+_THOUSANDS = re.compile(r'[0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]+)?')
+_TRIM = ' ,;:\u2014\u2013-'
+GUARD_STATS = ('dropped_after_question', 'dropped_praise', 'dropped_repeat_opener', 'capped_words', 'dropped_unknown_number')
+
+
+def _words(text):
+    """The words of a text: whitespace-separated tokens with a letter or digit (a dash or a bullet is not a word)."""
+    return [t for t in text.split() if any(c.isalnum() for c in t)]
+
+
+def _norm(text):
+    """Lower case, apostrophes and punctuation removed, whitespace collapsed: how two reactions are compared."""
+    text = text.lower().replace("'", '').replace('\u2019', '')
+    return ' '.join(''.join(c if c.isalnum() or c.isspace() else ' ' for c in text).split())
+
+
+def _number(token):
+    """A numeral in one form, so '35%' and '35', '1,200' and '1200', '3.50' and '3.5' are the same figure."""
+    token = token.replace(',', '') if _THOUSANDS.fullmatch(token) else token.replace(',', '.')
+    return token.rstrip('0').rstrip('.') if '.' in token else token
+
+
+def _is_question(sentence):
+    """A finished sentence whose closing punctuation holds a question mark ('?', or the full-width one), quotes and markup aside."""
+    m = _TERMINAL.search(_CLOSERS.sub('', sentence))
+    return bool(m) and ('?' in m.group() or '\uff1f' in m.group())
+
+
+def _first_words(text, count):
+    """The start of text up to its count-th word, trailing commas and dashes trimmed (an exact slice)."""
+    seen = 0
+    for m in re.finditer(r'\S+', text):
+        if any(c.isalnum() for c in m.group()):
+            seen += 1
+            if seen >= count:
+                return text[:m.end()].rstrip(_TRIM) if count > 0 else ''
+    return text if count > 0 else ''
+
+
+class ReplyGuard:
+    """Streaming filter over the spoken pieces (Phrases) of one reply. It enforces the shape of a reply in code, whatever the
+    model wrote: at most one question, no empty praise, no repeated reaction, a short reply, and (in summary mode) no number
+    that is not one of the given facts.
+
+    push(piece) returns the pieces to voice: exact slices of the piece (so the on-screen text can be cut at them), possibly
+    trimmed or none. done turns true once the first question sentence has been reached (voiced or not) or the word cap has cut
+    the reply; the caller then stops reading the model stream. stats counts each rule's drops, never text.
+
+    Options: banned_praise, a regex source (case-insensitive); recent_openers, the leading reaction of the last replies
+    (only the last 3 count); max_words, None for no cap; summary_facts, None, or the list of figures the reply may use
+    (an empty list allows none): summary mode.
+
+    A sentence is judged when its first piece arrives. A first clause already voiced is not taken back, and the rest of that
+    sentence follows it (a dropped first clause drops the rest). Words are whitespace-separated: a language written without
+    spaces is not capped."""
+
+    def __init__(self, banned_praise=None, recent_openers=(), max_words=GUARD_MAX_WORDS, summary_facts=None):
+        self._praise = re.compile(DEFAULT_BANNED_PRAISE if banned_praise is None else banned_praise, re.I)
+        self._openers = [o for o in (_norm(o) for o in list(recent_openers or ())[-3:]) if o]
+        self._max = max_words
+        self._allowed = None if summary_facts is None else {_number(m) for fact in summary_facts for m in _NUMBER.findall(str(fact))}
+        self._stats = dict.fromkeys(GUARD_STATS, 0)
+        self._spoken = 0  # words voiced so far
+        self._open = None  # the sentence in progress when the last piece ended mid-sentence: 'voiced' or 'dropped'
+        self._lead = True  # the next sentence that gets this far is the reply's leading one
+        self._stop = None  # 'question' or 'cap'
+
+    @property
+    def done(self):
+        return self._stop is not None
+
+    @property
+    def stats(self):
+        return dict(self._stats)
+
+    def _repeats_opener(self, text):
+        words = _words(text)
+        n = _norm(text)
+        return bool(n) and len(words) <= REACTION_MAX_WORDS and any(n == o or n.startswith(o + ' ') or o.startswith(n + ' ') for o in self._openers)
+
+    def _judge(self, text, ended, continuing):
+        """(text to voice or '', whether the sentence is the first question). Applies the rules to one sentence or clause."""
+        stats = self._stats
+        question = ended and _is_question(text)
+        if continuing and self._open == 'dropped':
+            return '', question
+        if not continuing and not question:
+            if len(_words(text)) <= PRAISE_MAX_WORDS and self._praise.search(text):
+                stats['dropped_praise'] += 1
+                return '', question
+            if self._lead:
+                self._lead = False
+                if self._repeats_opener(text):
+                    stats['dropped_repeat_opener'] += 1
+                    return '', question
+        if self._allowed is not None and any(_number(m) not in self._allowed for m in _NUMBER.findall(text)):
+            stats['dropped_unknown_number'] += 1
+            return '', question
+        if self._max is not None:
+            room = self._max - self._spoken
+            if len(_words(text)) > room:
+                stats['capped_words'] += 1
+                self._stop = 'cap'
+                # Cut at a sentence boundary when something has been said already; else (or inside a sentence under way) at a word.
+                return (_first_words(text, room) if continuing or not self._spoken else ''), False
+        return text, question
+
+    def push(self, piece):
+        piece = piece or ''
+        cuts, start, spans = _boundaries(piece + ' '), 0, []
+        for end, nxt in cuts:
+            if piece[start:end].strip():
+                spans.append((start, min(end, len(piece)), True))
+            start = nxt
+        if piece[start:].strip():
+            spans.append((start, len(piece), False))
+        runs, last = [], -2
+        for i, (a, b, ended) in enumerate(spans):
+            while a < b and piece[a].isspace():
+                a += 1
+            if self._stop:
+                if self._stop == 'question':
+                    self._stats['dropped_after_question'] += 1
+                continue
+            text, question = self._judge(piece[a:b].strip(), ended, i == 0 and self._open is not None)
+            if text:
+                b = a + len(text)
+                self._spoken += len(_words(text))
+                if last == i - 1:
+                    runs[-1][1] = b
+                else:
+                    runs.append([a, b])
+                last = i
+            self._open = None if ended else ('voiced' if text else 'dropped')
+            if question and not self._stop:
+                self._stop = 'question'
+        return [piece[a:b] for a, b in runs]
+
+
 class KyutaiSpeech:
     def __init__(self, config, http):
         self.config, self.http, self.stt, self.detector = config, http, None, TurnDetector()

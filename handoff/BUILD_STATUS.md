@@ -542,6 +542,14 @@ Docs: `deploy/cloudflare-edge/README.md` (pipeline line, new metrics), `docs/INT
 - Remaining: T1 onward. Each later module registers itself with one line in `EDGE_MODULES` and one line in `VECTORS`; regenerate `policy.generated.js` and the vector files rather than hand-merging them.
 - Git: committed on `feature/agent-brain-v2.1` as `v2.1 T0`; `Claude outputs/` stays untracked.
 
+### Session: 2026-10-30 / Agent Brain v2.1, T4 (ReplyGuard)
+- Goal: enforce the shape of a spoken reply in code (plan 3b): one question, no empty praise, no repeated reaction, at most 45 words, and in summary mode no figure that is not a given fact. Branch `v21/T4`. No push, no deploy, no provider call.
+- Changes: `ReplyGuard` in `atlas_voice/speech.py` and the same class in `deploy/cloudflare-edge/src/speech.js`, a streaming filter over the pieces `Phrases` produces. `push(piece)` returns exact slices of the piece to voice; `done` turns true at the first question sentence (or when the word cap cuts the reply), so the caller stops reading the model stream; `stats` counts `dropped_after_question`, `dropped_praise`, `dropped_repeat_opener`, `capped_words`, `dropped_unknown_number` (counts only, no text). Options: banned praise regex source (default the five-word list; persona's `BANNED_PRAISE_SRC` plugs in later), `recent_openers` (last 3), `max_words` (45), `summary_facts`. Nothing consumes it yet: `session.js` is untouched (T6 wires it). `gen_speech_parity.py` records 38 guard streams in `speech.vectors.json`; the other vector keys are unchanged.
+- Tests added: `tests/test_speech.py` 8 `test_guard_*`; `test/speech.test.js` 9 ReplyGuard tests (parity over all recorded streams, edge cases, a Phrases-driven stream).
+- Commands and results: `build_edge.py --policy-only` (policy.generated.js unchanged); `node --test tests/*.test.js` 385 tests, 384 pass, 1 skipped; `cd deploy/cloudflare-edge && node --test test/*.test.js` 501 pass; `pytest tests/test_*.py` 273 passed (includes the vector-currency check for `speech.vectors.json`). No frontend change, so no page rebuild.
+- Interpretation notes: the repeated-opener rule applies only to the reply's first non-question sentence that survived the praise rule and only when it has 12 words or fewer; a first clause already voiced is never taken back; words are whitespace-separated, so a language without spaces is not capped.
+- Remaining: T6 wires the guard (pass `recentOpeners`, `summaryFacts`, stop reading the stream on `done`, count `stats` in the turn metric, handle a reply the guard emptied).
+
 ## Per-session update template
 Copy this section for each session. Do not put secrets, private keys, customer source text or raw audio in this file.
 
