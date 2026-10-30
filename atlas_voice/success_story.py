@@ -30,10 +30,12 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 ROOT = Path(__file__).resolve().parent.parent
-# Defaults come from the imported spec pack; pass schema= / policy= (or re-point these) to use another copy.
-CONFIG_DIR = ROOT / 'docs' / 'agent-brain-v2.1' / '11_Plug_and_Play_Config'
+# Defaults are the runtime config (atlas_voice/config, the JSON the edge generator also reads); tests compare them with the
+# pack's YAML (PACK_DIR). Pass schema= / policy= (or re-point these) to use another copy.
+CONFIG_DIR = ROOT / 'atlas_voice' / 'config'
+PACK_DIR = ROOT / 'docs' / 'agent-brain-v2.1' / '11_Plug_and_Play_Config'
 SCHEMA_PATH = CONFIG_DIR / 'success_story_template.schema.json'
-POLICY_PATH = CONFIG_DIR / 'field_visibility_policy.yaml'
+POLICY_PATH = CONFIG_DIR / 'field_visibility_policy.json'
 TEMPLATE_PATH = ROOT / 'assets' / 'templates' / 'amaris_success_story_es.docx'
 
 AUDIENCES = ('internal', 'client', 'public')

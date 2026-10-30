@@ -124,7 +124,7 @@ test('Z profile words: profile, people and directory are READY-gated, work in bo
 });
 
 test('flags: every key, conservative defaults, opt-in vars and the Entra rule', () => {
-  const keys = ['bids', 'ask', 'spokenAsk', 'wins', 'customerJev', 'pdfBriefs', 'gaps', 'gapInterview', 'claims', 'clientConfirm', 'outreach', 'staffing', 'teams', 'phone', 'profile'];
+  const keys = ['bids', 'ask', 'spokenAsk', 'wins', 'customerJev', 'pdfBriefs', 'gaps', 'gapInterview', 'claims', 'clientConfirm', 'outreach', 'staffing', 'teams', 'phone', 'profile', 'evidence_workflow'];
   const f = features.flags({});
   assert.deepEqual(Object.keys(f), keys);
   assert.equal(f.phone, 'BLOCKED_EXTERNAL'); assert.equal(f.teams, teams.teamsStatus({}));

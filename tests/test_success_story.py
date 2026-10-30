@@ -315,7 +315,10 @@ def test_validate_covers_the_keywords_in_use():
 
 def test_policy_parser_reads_the_pack_yaml_and_matches_the_config():
     policy = ss.load_policy()
-    text = ss.POLICY_PATH.read_text(encoding='utf-8')
+    yaml_path = ss.PACK_DIR / 'field_visibility_policy.yaml'
+    text = yaml_path.read_text(encoding='utf-8')
+    assert ss.POLICY_PATH.parent == ss.SCHEMA_PATH.parent == ROOT / 'atlas_voice' / 'config'  # runtime defaults are the config copies
+    assert ss.load_policy(yaml_path) == policy  # the config JSON is the pack YAML (same parse), so the two cannot drift
     assert policy['version'] == '1.0' and policy['template'] == 'amaris_success_story_es'
     listed = [l.strip()[2:] for l in text.splitlines() if l.strip().startswith('- ')]
     cfg = ss.projection_config()

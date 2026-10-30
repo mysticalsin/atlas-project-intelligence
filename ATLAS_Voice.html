@@ -539,6 +539,26 @@ dialog .check input[type=radio]{width:15px;height:15px;min-height:0;margin:2px 0
  .story-board .board-pin.is-new{animation:board-drop .6s cubic-bezier(.2,.8,.3,1) 1;transform-box:fill-box;transform-origin:50% 100%}}
 @keyframes board-pop{from{opacity:0;transform:translateY(3px) scale(.97)}to{opacity:1;transform:none}}
 @keyframes board-drop{from{opacity:0;transform:translateY(-14px)}to{opacity:1;transform:none}}
+
+/* Evidence workflow status cards (T15). The shell's tokens (--p, --g2, --g3); tone is a left border and is always paired with words. */
+.workflow-status{margin:0 0 22px;padding:16px;border:1px solid var(--g2);border-radius:12px;background:var(--white)}
+.wf-head{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between}
+.wf-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.wf-tools select{max-width:min(100%,360px)}
+.wf-overall{margin:10px 0;color:var(--g6)}
+.wf-overall[data-overall="attention"]{font-weight:600;color:var(--p)}
+.wf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
+.wf-card{padding:12px;border:1px solid var(--g2);border-left:4px solid var(--g3);border-radius:10px;min-width:0}
+.wf-card[data-tone="ok"]{border-left-color:#2e7d4f}
+.wf-card[data-tone="work"],.wf-card[data-tone="wait"]{border-left-color:#b7791f}
+.wf-card[data-tone="bad"]{border-left-color:#b3261e}
+.wf-card[data-tone="mock"],.wf-card[data-tone="hold"]{border-left:4px dashed var(--p)}
+.wf-card-title{margin:0 0 4px;font-size:14px}
+.wf-card-status{margin:0 0 6px;font-size:12px;font-weight:600;overflow-wrap:anywhere}
+.wf-card p{margin:0 0 4px;overflow-wrap:anywhere}
+.wf-mock{display:inline-block;margin:2px 0 6px}
+.wf-note{margin:10px 0 0}
+@media (max-width:560px){.workflow-status{padding:12px}.wf-grid{grid-template-columns:1fr 1fr}}
 </style><style>.auth-banner{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;background:var(--y);color:var(--ink);border-radius:10px;padding:10px 14px;margin:0 0 16px;font-size:13px}.auth-banner p{margin:0;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}.field-chip{margin-left:6px;vertical-align:middle;font-weight:400;letter-spacing:.2px;text-transform:none;white-space:normal}.profile-section .form-grid{margin-bottom:6px}.profile-section input[readonly]{background:var(--g1);color:var(--g5)}.profile-newer,.profile-guess{margin:6px 0 0}.memory-line{display:inline-block;margin:2px 0 10px;font-size:12px;text-decoration:underline}.voice-network{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0}.ask-recording{display:inline-flex;align-items:center;gap:6px;font-size:11px}.ask-recording i{width:8px;height:8px;border-radius:50%;background:#d0021b;display:inline-block}.guess-prompt button{margin-left:4px}.storage-retry{font-size:inherit;padding:0 4px}</style></head>
 <body class="studio-view"><a class="skip" href="#workspace">Skip to workspace</a>
 <header class="topbar"><div class="brand"><div class="brand-mark"><img alt="Mantu" height="24" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzg0IiBoZWlnaHQ9IjczIiB2aWV3Qm94PSIwIDAgMzg0IDczIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8ZyBjbGlwLXBhdGg9InVybCgjY2xpcDBfMjQ2NV81MDc2KSI+CjxwYXRoIGQ9Ik0xNjcuOTI0IDYxLjYyODRDMTY0Ljk4MSA2OC4yMjMzIDE1Ny44MjUgNzMgMTQ4LjU3MyA3M0MxMjguMjQxIDczIDExNC43NzYgNTcuMTQyNSAxMTQuNzc2IDM2LjIxODNDMTE0Ljc3NiAxNS4yOTQxIDEyNy45NjMgMC4wMDYzNDc2NiAxNDguMDE1IDAuMDA2MzQ3NjZDMTYwLjM1NSAwLjAwNjM0NzY2IDE2Ni4xMDcgNi42MDEyNSAxNjcuNzkxIDEwLjUzMDFWNS4yNTE5MUMxNjcuNzkxIDMuNDMyOTMgMTY5LjI2MiAxLjk1OTYzIDE3MS4wNjggMS45NTk2M0gxODIuNTk0QzE4NC40MTEgMS45NTk2MyAxODUuODcxIDMuNDMyOTMgMTg1Ljg3MSA1LjI1MTkxVjU4LjUzNzlDMTg1Ljg3MSA2Mi4xMzE0IDE4Ni4wMTYgNjUuMjU2IDE4Ni4xNjEgNjcuNTMyN0MxODYuMjg0IDY5LjQyOTYgMTg0Ljc3OSA3MS4wMjYxIDE4Mi44ODQgNzEuMDI2MUgxNzEuNDkyQzE2OS43OTcgNzEuMDI2MSAxNjguMzkyIDY5Ljc0MjcgMTY4LjIyNSA2OC4wNjgzQzE2OC4wNTggNjYuNDA1OSAxNjcuOTI0IDY0LjM4NTkgMTY3LjkyNCA2Mi40NjY4VjYxLjYzVjYxLjYyODRaTTE1MC44MTMgNTYuODUxN0MxNjAuNDg5IDU2Ljg1MTcgMTY3Ljc3OSA0OC44NTAyIDE2Ny43NzkgMzYuMjE4M0MxNjcuNzc5IDIzLjU4NjMgMTYwLjYzNCAxNi4xNDI3IDE1MC44MTMgMTYuMTQyN0MxNDAuOTkzIDE2LjE0MjcgMTMzLjU2OSAyMy41ODYzIDEzMy41NjkgMzYuMjE4M0MxMzMuNTY5IDQ4Ljg1MDIgMTQwLjcyNSA1Ni44NTE3IDE1MC44MTMgNTYuODUxN1oiIGZpbGw9IndoaXRlIi8+CjxwYXRoIGQ9Ik0yMTIuODYgNzEuMDM1NUgyMDAuNzc3QzE5OC45NiA3MS4wMzU1IDE5Ny40ODkgNjkuNTYzIDE5Ny40ODkgNjcuNzU0M1Y1LjI2MjE0QzE5Ny40ODkgMy40NDMxNiAxOTguOTYgMS45Njk4NiAyMDAuNzc3IDEuOTY5ODZIMjEyLjMwM0MyMTQuMTIgMS45Njk4NiAyMTUuNTgxIDMuNDQzMTYgMjE1LjU4MSA1LjI2MjE0VjEwLjU0MDNDMjE5Ljc4MyAzLjM3NTYyIDIyOC4wNjYgMC4xNTA4NzkgMjM1LjQ4OSAwLjE1MDg3OUMyNTIuNiAwLjE1MDg3OSAyNjAuNDQ3IDEyLjM1OTMgMjYwLjQ0NyAyNy41MjQ2VjY3Ljc1NDNDMjYwLjQ0NyA2OS41NzMzIDI1OC45NzYgNzEuMDM1NSAyNTcuMTYgNzEuMDM1NUgyNDUuMDc2QzI0My4yNiA3MS4wMzU1IDI0MS43ODggNjkuNTYzIDI0MS43ODggNjcuNzU0M1YzMC43NTAxQzI0MS43ODggMjMuMDI3NiAyMzcuOTk4IDE2Ljk5MDYgMjI5LjAyNSAxNi45OTA2QzIyMC44ODggMTYuOTkwNiAyMTYuMTI5IDIzLjMwNjUgMjE2LjEyOSAzMS4zMDhWNjcuNzQzMkMyMTYuMTI5IDY5LjU2MjIgMjE0LjY1NyA3MS4wMjQ0IDIxMi44NCA3MS4wMjQ0IiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMzY1Ljk2NiA2My41OTJDMzYyLjE3NiA3MC4wNTM0IDM1NC4xODQgNzIuODU0NiAzNDYuODkzIDcyLjg1NDZDMzMwLjIwNiA3Mi44NTQ2IDMyMC42NzUgNjAuNjQ1NCAzMjAuNjc1IDQ1LjYxNDRWNS4yNjIyNUMzMjAuNjc1IDMuNDQzMjcgMzIyLjE0NyAxLjk2OTk3IDMyMy45NTMgMS45Njk5N0gzMzYuMDM2QzMzNy44NTMgMS45Njk5NyAzMzkuMzI0IDMuNDQzMjcgMzM5LjMyNCA1LjI2MjI1VjQxLjg0MjlDMzM5LjMyNCA0OS41NjU0IDM0My4yNDcgNTUuNzM2IDM1MS45NDIgNTUuNzM2QzM2MC42MzcgNTUuNzM2IDM2NC45ODUgNTAuMTIyNSAzNjQuOTg1IDQyLjEyMThWNS4yNjIyNUMzNjQuOTg1IDMuNDQzMjcgMzY2LjQ1NSAxLjk2OTk3IDM2OC4yNjIgMS45Njk5N0gzODAuMzQ1QzM4Mi4xNjIgMS45Njk5NyAzODMuNjMzIDMuNDQzMjcgMzgzLjYzMyA1LjI2MjI1VjU4LjU0ODNDMzgzLjYzMyA2MS45MDczIDM4My44MDEgNjUuMDU0MiAzODMuOTkgNjcuNTA4OUMzODQuMTM1IDY5LjQxNjkgMzgyLjYyOSA3MS4wNDY3IDM4MC43MTIgNzEuMDQ2N0gzNjkuNDIxQzM2Ny43MTUgNzEuMDQ2NyAzNjYuMjg4IDY5Ljc0MTEgMzY2LjE1NCA2OC4wNDUzQzM2Ni4wNDMgNjYuNjYxOCAzNjUuOTY1IDY1LjA3NjQgMzY1Ljk2NSA2My42MTUxIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBvcGFjaXR5PSIwLjg1IiBkPSJNMTAxLjI3OSA3Mi45ODgxQzk2LjQ5NTcgNzIuOTg4MSA5MS45NTk3IDcwLjE2NzEgOTAuMDA2NCA2NS40NjlMNjkuNzUyIDE2Ljk0NTRDNjcuMTQ3MSAxMC43MTg0IDcwLjA4ODUgMy41NTg1MyA3Ni4zMDk2IDAuOTUwNDQ2QzgyLjUyOTggLTEuNjU3NjMgODkuNjgxOCAxLjI4NzM4IDkyLjI4NTkgNy41MTQzNUwxMTIuNTQgNTYuMDM4QzExNS4xNDUgNjIuMjY0OSAxMTIuMjA0IDY5LjQyNDkgMTA1Ljk4MyA3Mi4wMzI5QzEwNC40NDUgNzIuNjczNCAxMDIuODUgNzIuOTc3IDEwMS4yNzkgNzIuOTc3IiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBvcGFjaXR5PSIwLjciIGQ9Ik01Ni43Mzg1IDcyLjk4ODFDNTQuODk3MSA3Mi45ODgxIDUzLjAzMzUgNzIuNTcyNCA1MS4yODE4IDcxLjY5NTlDNDUuMjUyOSA2OC42NzIyIDQyLjgxNjIgNjEuMzIxNiA0NS44MzYyIDU1LjI4NTRMNzAuMTEgNi43NjE3NkM3My4xMyAwLjcyNTUwOSA4MC40NzMzIC0xLjcxMzMxIDg2LjUwMjMgMS4zMTAzOEM5Mi41MzEyIDQuMzM0MDcgOTQuOTY3OSAxMS42ODQ3IDkxLjk0NzggMTcuNzIwOUw2Ny42NzMzIDY2LjI0NDZDNjUuNTI4NyA3MC41Mjc4IDYxLjIxODEgNzMgNTYuNzQ4OCA3MyIgZmlsbD0id2hpdGUiLz4KPHBhdGggb3BhY2l0eT0iMC41NSIgZD0iTTU2Ljc2MTUgNzIuOTg4QzUyLjI4MTggNzIuOTg4IDQ3Ljk3MDQgNzAuNTE1IDQ1LjgzNyA2Ni4yMzI2TDIxLjU1MTMgMTcuNzA5QzE4LjUzMTMgMTEuNjcyNyAyMC45NjcyIDQuMzMzMjMgMjYuOTk2OSAxLjI5ODQyQzMzLjAyNTkgLTEuNzI1MjcgNDAuMzU4MSAwLjcxMzU0NiA0My4zODkyIDYuNzQ5OEw2Ny42NjI5IDU1LjI3MzRDNzAuNjgzIDYxLjMwODkgNjguMjQ3MSA2OC42NjAzIDYyLjIxNzQgNzEuNjg0QzYwLjQ2NjUgNzIuNTYwNSA1OC41OTA5IDcyLjk3NjEgNTYuNzYxNSA3Mi45NzYxIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBvcGFjaXR5PSIwLjM4IiBkPSJNMTIuMjEwMyA3Mi45ODg3QzEwLjYzODggNzIuOTg4NyA5LjA0NDIzIDcyLjY4NTIgNy41MDYwNCA3Mi4wNDQ3QzEuMjg1ODEgNjkuNDQ3NyAtMS42NTU2NCA2Mi4yODc4IDAuOTQ5Mjg0IDU2LjA0OTdMMjEuMjAzNyA3LjUyNjA3QzIzLjgwODYgMS4yOTkxIDMwLjk2MDcgLTEuNjQ1OTEgMzcuMTgwMSAwLjk2MjE2NUM0My40MDAzIDMuNTcwMjQgNDYuMzQxOCAxMC43MzAxIDQzLjczNjkgMTYuOTU3MUwyMy40ODI0IDY1LjQ4MDdDMjEuNTI5MSA3MC4xNjg1IDE2Ljk5MzEgNzMuMDAwNiAxMi4yMTAzIDczLjAwMDYiIGZpbGw9IndoaXRlIi8+CjxwYXRoIGQ9Ik0zMTIuNzUgNS4yNjIyNVYxNi43Nzg1QzMxMi43NSAxOC41OTc1IDMxMS4yNzkgMjAuMDcwOCAzMDkuNDcyIDIwLjA3MDhIMjk3LjM3OFY0Ny40NTU2QzI5Ny4zNzggNTMuNDkyNyAzMDAuMTg3IDU1LjQ1NzEgMzA1LjUxNiA1NS40NTcxQzMwNy43NTYgNTUuNDU3MSAzMTAuMjg3IDU1LjE3ODEgMzExLjI2OCA1NC44OTkyVjY3Ljk4ODlDMzExLjI2OCA2OS40ODQ0IDMxMC4yNTMgNzAuNzc4OSAzMDguODA0IDcxLjE0NjlDMzA2LjkyMSA3MS42MjY4IDMwNC4yNjcgNzIuMDI4MSAzMDAuNzU2IDcyLjAyODFIMzAwLjI0M0MyODcgNzEuODgyNyAyNzguNzQxIDYzLjkwNDMgMjc4Ljc0MSA1MC42OTE1VjIwLjA3MDhIMjY4LjA0QzI2Ni4yMjMgMjAuMDcwOCAyNjQuNzYyIDE4LjU5NzUgMjY0Ljc2MiAxNi43Nzg1VjUuMjYyMjVDMjY0Ljc2MiAzLjQ0MzI3IDI2Ni4yMzQgMS45Njk5NyAyNjguMDQgMS45Njk5N0gzMDkuNDg0QzMxMS4zMDEgMS45Njk5NyAzMTIuNzYxIDMuNDQzMjcgMzEyLjc2MSA1LjI2MjI1IiBmaWxsPSJ3aGl0ZSIvPgo8L2c+CjxkZWZzPgo8Y2xpcFBhdGggaWQ9ImNsaXAwXzI0NjVfNTA3NiI+CjxyZWN0IHdpZHRoPSIzODQiIGhlaWdodD0iNzMiIGZpbGw9IndoaXRlIi8+CjwvY2xpcFBhdGg+CjwvZGVmcz4KPC9zdmc+Cg==" width="126"/></div><span class="brand-divider"></span><span class="product">ATLAS<span>EXPERIENCE INTO STORIES</span></span></div><nav aria-label="Workspace"><button aria-current="page" class="active" data-view="interview">Conversation</button><button data-view="projects">Projects</button><button data-view="stories">Stories</button><button data-view="library">Library</button><button data-view="bids" hidden="">Bids</button></nav><div class="top-actions"><button class="quiet how-btn" data-dialog="howDialog">How it works <span aria-hidden="true">↗</span></button><button aria-label="Profile, local memory and backup" class="avatar" data-dialog="profileDialog" id="profileButton">ME</button></div></header>
@@ -597,7 +617,7 @@ dialog .check input[type=radio]{width:15px;height:15px;min-height:0;margin:2px 0
 <div class="recommend"><label class="field-label" for="recommendQuery">Find references for a meeting</label><div class="recommend-row"><textarea id="recommendQuery" rows="2" maxlength="1200" placeholder="e.g. I am meeting the data director of a major energy company. Which references can I present?"></textarea><button class="btn primary" id="recommendGo">Find references</button></div><div id="recommendResults"></div></div>
 <div id="invitations"></div><div id="proofRequests" hidden=""></div><div class="library-actions"><button class="btn" id="openInsights">Analytics &amp; insights</button></div>
 <div class="library-tools"><label class="sr" for="libraryText">Filter references</label><input id="libraryText" placeholder="Filter by words…"/><select id="libraryStatus" aria-label="Status"><option value="">All statuses</option><option value="in_review">In review</option><option value="needs_work">Needs work</option><option value="changes_requested">Changes requested</option><option value="awaiting_validation">Awaiting N+1</option><option value="published">Published</option><option value="withdrawn">Withdrawn</option></select><select id="libraryCountry" aria-label="Country"><option value="">All countries</option></select><select id="libraryIndustry" aria-label="Industry"><option value="">All industries</option></select><label class="check"><input id="libraryMine" type="checkbox"/><span>Mine</span></label></div>
-<p class="tiny muted" id="libraryStatusLine" role="status"></p><div class="project-grid" id="libraryList"></div></section>
+<p class="tiny muted" id="libraryStatusLine" role="status"></p><div class="workflow-status" hidden="" id="workflowStatus"></div><div class="project-grid" id="libraryList"></div></section>
 <section aria-label="Bids" class="view" hidden="" id="bids"></section>
 <footer><span class="studio-saving"><button class="quiet" id="studioSave">Session only</button><button class="quiet" id="studioBackup">Backup ↓</button></span><span>ATLAS <span class="footer-sep">/</span> Mantu · Experience into stories</span><span>ATLAS Intelligence · v11.0 <button class="quiet" data-dialog="howDialog">What is connected? ↗</button></span></footer></main>
 <dialog aria-labelledby="howTitle" class="wide-dialog" id="howDialog"><div class="dialog-head"><div><p class="eyebrow">THE BUILD BRIEF</p><h2 id="howTitle">One app. Clear responsibilities.</h2></div><button aria-label="Close build brief" class="close" data-close="">×</button></div><p class="muted">The included application gateway supports NVIDIA PersonaPlex or OpenAI Realtime. It keeps provider keys on the server and returns real generated speech. Entra and per-user Hindsight integrations are enabled by server configuration. No GPU model is embedded in the HTML.</p><div class="architecture" id="architecture"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 650" role="img" aria-labelledby="a-title a-desc"><title id="a-title">ATLAS Project Intelligence architecture</title><desc id="a-desc">One application orchestrates a selected voice API, private user memory, an immutable Markdown vault and explicit review. Only eligible records enter customer matching and authorized graph views.</desc><rect width="1100" height="650" fill="#F8F8F8"/><text x="45" y="30" font-family="Arial,sans-serif" font-size="13" fill="#3E007A">ATLAS / ONE APPLICATION · CLEAR KNOWLEDGE BOUNDARIES</text><defs><marker id="end" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10Z" fill="#666A78"/></marker></defs><g fill="none" stroke="#666A78" stroke-width="1.5" marker-end="url(#end)"><path d="M325 109H410"/><path d="M690 109H775"/><path d="M470 171V218H185V270"/><path d="M550 171V270"/><path d="M630 171V218H915V270"/><path d="M550 370V475"/><path d="M410 524H325"/><path d="M690 524H775"/></g><g><rect x="45" y="65" width="280" height="88" rx="12" fill="#FFFFFF" stroke="#D6D6D6"/><text x="64" y="93" fill="#3E007A" font-family="Arial,sans-serif" font-size="16">Microsoft Entra ID</text><text x="64" y="116" fill="#2F3440" font-family="Arial,sans-serif" font-size="11.5">Validated workforce identity</text><text x="64" y="135" fill="#2F3440" font-family="Arial,sans-serif" font-size="11.5">Assigned, independent review roles</text></g><g><rect x="410" y="65" width="280" height="106" rx="12" fill="#3E007A" stroke="#D6D6D6"/><text x="429" y="93" fill="#FFFFFF" font-family="Arial,sans-serif" font-size="16">ATLAS application</text><text x="429" y="116" fill="#E8E8EE" font-family="Arial,sans-serif" font-size="11.5">Voice session + candidate ledger</text><text x="429" y="135" fill="#E8E8EE" font-family="Arial,sans-serif" font-size="11.5">Bounded questions, access and review</text></g><g><rect x="775" y="65" width="280" height="88" rx="12" fill="#FFFFFF" stroke="#D6D6D6"/><text x="794" y="93" fill="#3E007A" font-family="Arial,sans-serif" font-size="16">One selected voice API</text><text x="794" y="116" fill="#2F3440" font-family="Arial,sans-serif" font-size="11.5">Hosted Realtime OR PersonaPlex</text><text x="794" y="135" fill="#2F3440" font-family="Arial,sans-serif" font-size="11.5">Actual microphone and speech audio</text></g><g><rect x="45" y="270" width="280" height="100" rx="12" fill="#F6EB4B" stroke="#D6D6D6"/><text x="64" y="298" fill="#3E007A" font-family="Arial,sans-serif" font-size="16">Hindsight · private per user</text><text x="64" y="321" fill="#2F3440" font-family="Arial,sans-serif" font-size="11.5">Preferences and resume pointers</text><text x="64" y="340" fill="#2F3440" font-family="Arial,sans-serif" font-size="11.5">Server-owned tenant / object mapping</text></g><g><rect x="410" y="270" width="280" height="100" rx="12" fill="#FFFFFF" stroke="#D6D6D6"/><text x="429" y="298" fill="#3E007A" font-family="Arial,sans-serif" font-size="16">Markdown story vault</text><text x="429" y="321" fill="#2F3440" font-family="Arial,sans-serif" font-size="11.5">Immutable revisions + exact sources</text><text x="429" y="340" fill="#2F3440" font-family="Arial,sans-serif" font-size="11.5">SQLite access / decisions / expiry</text></g><g><rect x="775" y="270" width="280" height="100" rx="12" fill="#FFFFFF" stroke="#D6D6D6"/><text x="794" y="298" fill="#3E007A" font-family="Arial,sans-serif" font-size="16">Optional grounded editor</text><text x="794" y="321" fill="#2F3440" font-family="Arial,sans-serif" font-size="11.5">Source-linked candidate paragraphs</text><text x="794" y="340" fill="#2F3440" font-family="Arial,sans-serif" font-size="11.5">Never saves or approves itself</text></g><g><rect x="45" y="475" width="280" height="98" rx="12" fill="#FFFFFF" stroke="#D6D6D6"/><text x="64" y="503" fill="#3E007A" font-family="Arial,sans-serif" font-size="16">Authorized knowledge view</text><text x="64" y="526" fill="#2F3440" font-family="Arial,sans-serif" font-size="11.5">Native topic / evidence graph</text><text x="64" y="545" fill="#2F3440" font-family="Arial,sans-serif" font-size="11.5">Optional Graphify snapshot export</text></g><g><rect x="410" y="475" width="280" height="98" rx="12" fill="#FFFFFF" stroke="#D6D6D6"/><text x="429" y="503" fill="#3E007A" font-family="Arial,sans-serif" font-size="16">Current eligible stories</text><text x="429" y="526" fill="#2F3440" font-family="Arial,sans-serif" font-size="11.5">Independent factual + use decisions</text><text x="429" y="545" fill="#2F3440" font-family="Arial,sans-serif" font-size="11.5">No approval copied across revisions</text></g><g><rect x="775" y="475" width="280" height="98" rx="12" fill="#FFFFFF" stroke="#D6D6D6"/><text x="794" y="503" fill="#3E007A" font-family="Arial,sans-serif" font-size="16">JEV · customer-specific fit</text><text x="794" y="526" fill="#2F3440" font-family="Arial,sans-serif" font-size="11.5">Typed rubric + code-based freshness</text><text x="794" y="545" fill="#2F3440" font-family="Arial,sans-serif" font-size="11.5">Human review / no strong match</text></g><g fill="#666A78" font-family="Arial,sans-serif" font-size="10"><text x="339" y="94">identity</text><text x="711" y="94">audio</text><text x="565" y="240">candidates</text><text x="565" y="426">human review</text></g><text x="550" y="614" text-anchor="middle" fill="#666A78" font-size="11" font-family="Arial,sans-serif">Proposed provider deployment · executable local integration code · no live connections claimed</text></svg></div><div class="note">On iPhone, Files / chat previews may not run JavaScript. Open the HTML in a full browser. For a reliable browser origin, the package includes a localhost server command.</div><div class="build-principles"><div><strong>Keep</strong><p>Private user memory, project permissions, useful follow-ups, source-linked facts and exact-version approval.</p></div><div><strong>Leave out of the first release</strong><p>Microservices, agent swarms, a separate graph database, an agent swarm, automatic provider fallback and a new workflow platform.</p></div></div><details><summary>Proposed Git workflow &amp; repository</summary><div class="git-lane"><span>Feature branch</span><b>→</b><span>PR + tests</span><b>→</b><span>Main</span><b>→</b><span>Staging</span><b>→</b><span>Approved release</span></div><p class="small muted">Deploy the tested artifact. Keep a compatible rollback. This is a proposed map—not a live repository scan.</p><pre>atlas/
@@ -4035,5 +4055,127 @@ $('gapApply').addEventListener('click',async()=>{const g=gap,app=window.ATLAS_AP
   if(gap===g)$('gapMessage').textContent=r.library?'Added to your reference (revision '+r.library.revision+'). It needs review and N+1 validation again.':'Added to this project’s notes on this device. The shared library was not updated.';}
  catch(e){if(gap===g)$('gapMessage').textContent=(e&&e.message)||'The answers were not added.';}
  finally{g.applying=false;if(gap===g)renderGap();}});
+})();
+</script><script>/* Workflow status cards (T15, plan §4, D12, D17; pack: Canonical Workflow "UI progress"). Pure and deterministic: no network, no storage,
+   no DOM. It turns the server's status view (GET /api/library/evidence/:id/status) into what a person reads: one card per branch, in
+   the pack's order, with plain words, a "Mock — not connected" badge on every destination that is not really connected, and an overall
+   line that can NEVER say "complete" while any card is pending, failed, held, mock-acknowledged or unknown. Nothing the server sends is
+   trusted for display: labels come from here, reason codes are mapped or shown as a bounded code, never as markup. */
+(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.AtlasWorkflowCore=api;})(typeof window!=='undefined'?window:globalThis,function(){'use strict';
+const ORDER=['evidence','maap','project_review','dna','mechat','imp','spotlight'];
+const LABELS={evidence:'Evidence',maap:'MAAP Review',project_review:'Project Review',dna:'DNA',mechat:'MeChat (CV)',imp:'IMP',spotlight:'Spotlight'};
+const DESTINATIONS=['dna','mechat','imp','spotlight'];
+const MOCK_BADGE='Mock — not connected';
+// display_status -> words and tone. Tones: ok, work, wait, mock, bad, hold, idle.
+const STATUS={approved:['Approved','ok'],in_review:['In review','work'],draft:['Draft','idle'],needs_clarification:['Needs clarification','wait'],rejected:['Rejected','bad'],disputed:['Disputed','bad'],
+  pending:['Pending','wait'],waiting_permission:['Waiting for permission','wait'],in_progress:['In progress','work'],mock_acknowledged:['Mock acknowledged — not synced','mock'],
+  sync_complete:['Synced','ok'],failed:['Failed — needs a person','bad'],needs_reconciliation:['Needs reconciliation','bad'],blocked_external:['Blocked — not connected','bad'],
+  awaiting_approval:['Awaiting approval','wait'],held:['Held — not published','hold'],published:['Published','ok'],impact_review:['Impact review needed','bad'],
+  withdrawn:['Withdrawn','idle'],superseded:['Superseded','idle'],not_started:['Not started','idle']};
+const BRANCH_STATUS={spotlight:{draft:['Story draft','idle'],held:['Held by the test CMS — not published','hold']}};
+// What "finished" is, per card. MAAP and Project Review never close in this build (no rubric), so an overall "complete" cannot appear yet.
+const COMPLETE={evidence:['approved'],maap:['closed'],project_review:['closed'],dna:['sync_complete'],mechat:['sync_complete'],imp:['sync_complete'],spotlight:['published']};
+const ATTENTION=['failed','needs_reconciliation','impact_review','blocked_external','rejected','disputed','withdrawn'];
+const GATES={claim_level_evidence:'claim-level evidence',project_owner_approval:'project owner approval',customer_permission_if_required:'customer permission',confidentiality_review:'confidentiality review',
+  privacy_legal_review_if_required:'privacy and legal review',brand_approval:'brand approval',exact_revision_publication_authorization:'publication authorization'};
+const PURPOSES={internal_knowledge:'internal knowledge',cv:'CV use',bid_client_facing:'bids',public_spotlight:'public Spotlight',skills_profile:'skills profile',matching:'matching'};
+const REASONS={MAAP_NOT_CONFIGURED:'The MAAP rubric has not been configured by its process owner.',PROJECT_REVIEW_NOT_CONFIGURED:'The Project Review rubric has not been configured by its process owner.',
+  MOCK_NOT_SYNCED:'A test acknowledgement only. Nothing reached a real system.',MOCK_CMS_NOT_PUBLISHED:'The test CMS holds it. Nothing is published.',ADAPTERS_OFF:'Connections are switched off.',
+  BLOCKED_EXTERNAL:'Needs the system owner’s endpoint and credentials.',AWAITING_EVIDENCE_APPROVAL:'Starts when the evidence is approved.',DESTINATION_NEWER_REVISION:'The destination holds a newer revision. It was not overwritten.',
+  SOURCE_SUPERSEDED:'The evidence changed. This delivery was stopped.',EVIDENCE_REVISION_CHANGED:'The evidence changed after this was derived.',WITHDRAWN_AFTER_APPROVAL:'The evidence was withdrawn after approval.',
+  IMPACT_REVIEW_COMPLETED:'The impact review is complete.',BRANCH_ERROR:'This branch hit an error. The others were not affected.',ADAPTER_EXCEPTION:'The destination did not answer.',NO_ACK:'The destination did not acknowledge.',
+  DESTINATION_ACK_NOT_BOUND_TO_REVISION:'The acknowledgement does not match this revision.',DESTINATION_ACK_NOT_LIVE:'Only a test acknowledgement.',NO_STORY_FOR_REVISION:'There is no story for this revision yet.'};
+const CODE=/^[A-Za-z0-9_.:-]{1,80}$/;
+const word=(map,id)=>Object.hasOwn(map,id)?map[id]:null;
+// A stable reason code (CODE or CODE:detail) in words. Unknown codes are shown as the bounded code itself, never as markup.
+function reasonText(code){
+ if(typeof code!=='string'||!CODE.test(code))return '';
+ const [head,...rest]=code.split(':'),detail=rest.join(':');
+ if(code.startsWith('SPOTLIGHT_GATE_OPEN:'))return 'Waiting for '+(word(GATES,detail)||'a gate')+'.';
+ if(head==='PERMISSION_REVOKED'||head==='PURPOSE_REVOKED')return 'Permission for '+(word(PURPOSES,detail)||'this use')+' was withdrawn.';
+ if(head==='PURPOSE_NOT_GRANTED')return 'No permission for '+(word(PURPOSES,detail)||'this use')+' yet.';
+ if(head==='PURPOSE_GRANT_NOT_BOUND_TO_REVISION')return 'The permission for '+(word(PURPOSES,detail)||'this use')+' was given for an earlier revision.';
+ if(head==='PURPOSE_EXPIRED')return 'Permission for '+(word(PURPOSES,detail)||'this use')+' has expired.';
+ if(head==='REQUIREMENT_UNMET')return 'Not met yet: '+detail.replace(/_/g,' ')+'.';
+ if(code.startsWith('PROJECTION_'))return 'The public version could not be built yet.';
+ return word(REASONS,code)||('Reported: '+code);
+}
+const known=id=>Object.hasOwn(STATUS,id);
+// One card, ready to render. `card` is untrusted.
+function cardModel(card){
+ const c=card&&typeof card==='object'?card:{},branch=ORDER.includes(c.branch)?c.branch:'',ds=typeof c.display_status==='string'?c.display_status:'';
+ const pair=(branch&&word(word(BRANCH_STATUS,branch)||{},ds))||word(STATUS,ds)||['Unknown status','bad'];
+ const mock=DESTINATIONS.includes(branch)&&c.mock!==false;
+ return {branch,label:LABELS[branch]||'Unknown',displayStatus:known(ds)?ds:'unknown',statusText:pair[0],tone:pair[1],mock,badge:mock?MOCK_BADGE:'',
+  reasonText:reasonText(c.reason),updatedAt:typeof c.updated_at==='string'?c.updated_at.slice(0,40):''};
+}
+const isComplete=m=>(COMPLETE[m.branch]||[]).includes(m.displayStatus);
+// The whole view: seven cards in the pack's order (a missing or repeated card is a gap, never filled with a guess) and an overall line.
+function model(view){
+ const v=view&&typeof view==='object'?view:{},list=Array.isArray(v.cards)?v.cards:[];
+ const cards=ORDER.map(b=>cardModel(list.find(c=>c&&c.branch===b)||{branch:b,display_status:'unknown'}));
+ const complete=cards.every(isComplete),attention=cards.some(m=>ATTENTION.includes(m.displayStatus)||m.displayStatus==='unknown');
+ // Never "complete" unless every card is, whatever the server said.
+ const status=complete&&v.overall?.complete===true?'complete':attention?'attention':'in_progress';
+ const text=status==='complete'?'Everything is finished.':status==='attention'?'Needs attention: at least one step has not worked or was flagged.':'In progress: not every step is finished.';
+ const mocks=cards.filter(m=>m.mock).length;
+ return {cards,overall:{status,text,complete:status==='complete'},note:mocks?'“'+MOCK_BADGE+'” means the step used a test destination. Nothing was sent to a real system.':'',
+  adapters:['off','mock','blocked'].includes(v.adapters)?v.adapters:'off'};
+}
+// D17: a reference that is "published" in the library is shared with colleagues inside ATLAS. It is not a Spotlight story and is never shown as one.
+const LIBRARY={in_review:'In review',needs_work:'Needs work',changes_requested:'Changes requested',awaiting_validation:'Awaiting N+1',published:'Shared in internal library',withdrawn:'Withdrawn'};
+const libraryStatusLabel=s=>word(LIBRARY,s)||'';
+// The evidence picker's one-line label for a record from GET /evidence.
+const itemLabel=x=>{const i=x&&typeof x==='object'?x:{};return [typeof i.project_ref==='string'&&i.project_ref?i.project_ref.slice(0,40):'Interview evidence',word(STATUS,{evidence_draft:'draft',reviewer_queue:'in_review',submitted_for_review:'in_review',approved:'approved'}[i.state]||'')?.[0]||String(i.state||'').replace(/_/g,' ').slice(0,30),'revision '+(Number.isInteger(i.revision)?i.revision:'?')].join(' · ');};
+return {ORDER,LABELS,DESTINATIONS,MOCK_BADGE,STATUS,COMPLETE,reasonText,cardModel,model,libraryStatusLabel,itemLabel};
+});
+</script><script>/* AtlasWorkflowUI (T15): the evidence workflow status in the Reference library view. One card per branch (Evidence, MAAP Review, Project
+   Review, DNA, MeChat, IMP, Spotlight), read from GET /api/library/evidence/:id/status and rendered by AtlasWorkflowCore. Read-only: nothing
+   here approves, grants, publishes or syncs. Every dynamic string is set with textContent. Shown only on the live site when the
+   deployment has the library and the evidence workflow (bootstrap features.evidence_workflow) and the person has evidence records. */
+(()=>{'use strict';
+const C=window.AtlasWorkflowCore,$=id=>document.getElementById(id),app=()=>window.ATLAS_APP;
+let items=[],selected='',busy=null,loadedAt=0;
+function h(tag,attrs={},...kids){const el=document.createElement(tag);for(const [k,v] of Object.entries(attrs||{})){if(v===null||v===undefined||v===false)continue;if(k==='text')el.textContent=v;else if(k.startsWith('on'))el.addEventListener(k.slice(2),v);else el.setAttribute(k,v===true?'':String(v));}
+ for(const k of kids.flat())if(k!==null&&k!==undefined&&k!==false)el.append(k instanceof Node?k:document.createTextNode(String(k)));return el;}
+const slot=()=>$('workflowStatus');
+function hide(){const s=slot();if(s){s.hidden=true;s.replaceChildren();}}
+function cardEl(m){
+ return h('article',{class:'wf-card','data-branch':m.branch,'data-tone':m.tone,'data-status':m.displayStatus},
+  h('h3',{class:'wf-card-title',text:m.label}),
+  h('p',{class:'wf-card-status',text:m.statusText}),
+  m.badge?h('span',{class:'tag wf-mock',text:m.badge}):null,
+  m.reasonText?h('p',{class:'tiny muted wf-card-reason',text:m.reasonText}):null,
+  m.updatedAt?h('p',{class:'tiny muted wf-card-time',text:'Updated '+m.updatedAt.replace('T',' ').replace(/\.\d+Z$/,'Z')}):null);
+}
+function render(view){
+ const s=slot();if(!s)return;const m=C.model(view);s.hidden=false;s.replaceChildren();
+ const pick=h('select',{id:'workflowPick','aria-label':'Evidence record',onchange:e=>{selected=e.target.value;refresh({force:true});}},
+  ...items.map(x=>h('option',{value:x.id,selected:x.id===selected},C.itemLabel(x))));
+ s.append(h('div',{class:'wf-head'},h('div',{},h('p',{class:'eyebrow',text:'EVIDENCE WORKFLOW'}),h('h2',{class:'panel-title',text:'Where each step stands'})),
+   h('div',{class:'wf-tools'},pick,h('button',{class:'quiet',type:'button',id:'workflowRefresh',onclick:()=>refresh({force:true}),text:'Refresh'}))),
+  h('p',{class:'wf-overall small','data-overall':m.overall.status,role:'status',text:m.overall.text}),
+  h('div',{class:'wf-grid'},...m.cards.map(cardEl)),
+  m.note?h('p',{class:'tiny muted wf-note',text:m.note}):null);
+}
+async function refresh({force=false}={}){
+ if(busy)return busy;if(!force&&Date.now()-loadedAt<5000)return null;
+ busy=(async()=>{try{
+  await window.AtlasAuth?.probe?.();const b=await app().bootInfo();
+  if(window.AtlasAuth?.mode!=='live'||!b.library||!b.features?.evidence_workflow){hide();return;}
+  const list=await app().libraryApi('/evidence');items=Array.isArray(list?.items)?list.items.filter(x=>x&&typeof x.id==='string').slice(0,50):[];
+  if(!items.length){hide();return;}
+  if(!items.some(x=>x.id===selected))selected=(items.find(x=>x.mine)||items[0]).id;
+  render(await app().libraryApi('/evidence/'+encodeURIComponent(selected)+'/status'));loadedAt=Date.now();
+ }catch(e){if(window.AtlasAuth&&e instanceof window.AtlasAuth.Expired)return;hide();}finally{busy=null;}})();
+ return busy;
+}
+// Refresh whenever the Reference library view is shown (the section's `hidden` flag flips); and once after sign-in.
+function start(){const lib=$('library');if(!lib||!app())return;
+ new MutationObserver(()=>{if(!lib.hidden)refresh();}).observe(lib,{attributes:true,attributeFilter:['hidden']});
+ window.AtlasAuth?.onSignedIn?.(()=>refresh({force:true}));
+ if(!lib.hidden)refresh();}
+window.AtlasWorkflowUI={refresh:()=>refresh({force:true}),model:C.model};
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start);else start();
 })();
 </script></body></html>

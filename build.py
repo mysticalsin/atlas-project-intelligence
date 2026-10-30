@@ -19,7 +19,7 @@ def atlas_home(environ=os.environ):
     return value if isinstance(value, str) and re.fullmatch(r'https://[a-z0-9.-]+', value) else ''
 ATLAS_HOME=atlas_home()
 logo='data:image/svg+xml;base64,'+base64.b64encode(logo_bytes).decode()
-slots={'__CSS__':(ROOT/'src/styles.css').read_text()+'\n'+(ROOT/'src/voice.css').read_text()+'\n'+(ROOT/'src/orb.css').read_text()+'\n'+(ROOT/'src/sculpture.css').read_text()+'\n'+(ROOT/'src/intelligence.css').read_text()+'\n'+(ROOT/'src/charts.css').read_text()+'\n'+(ROOT/'src/wow.css').read_text()+'\n'+(ROOT/'src/storyboard.css').read_text(),
+slots={'__CSS__':(ROOT/'src/styles.css').read_text()+'\n'+(ROOT/'src/voice.css').read_text()+'\n'+(ROOT/'src/orb.css').read_text()+'\n'+(ROOT/'src/sculpture.css').read_text()+'\n'+(ROOT/'src/intelligence.css').read_text()+'\n'+(ROOT/'src/charts.css').read_text()+'\n'+(ROOT/'src/wow.css').read_text()+'\n'+(ROOT/'src/storyboard.css').read_text()+'\n'+(ROOT/'src/workflow.css').read_text(),
  '__LOGO__':logo,'__LOGOJSON__':json.dumps(logo),'__ARCH__':(ROOT/'docs/architecture.svg').read_text(),
  '__INTELLIGENCE_PANEL__':(ROOT/'src/intelligence-panel.html').read_text(),
  '__INTELLIGENCE_CORE__':(ROOT/'src/intelligence-core.js').read_text(),
@@ -50,7 +50,10 @@ slots={'__CSS__':(ROOT/'src/styles.css').read_text()+'\n'+(ROOT/'src/voice.css')
  '__ATLAS_HOME__':'<script>window.ATLAS_HOME='+json.dumps(ATLAS_HOME)+';</script>',
  '__SESSION_KEEPER__':(ROOT/'src/session-keeper.js').read_text(),
  '__PROFILE_CORE__':(ROOT/'src/profile-core.js').read_text(),
- '__PROFILE_UI__':(ROOT/'src/profile-ui.js').read_text()}
+ '__PROFILE_UI__':(ROOT/'src/profile-ui.js').read_text(),
+ # Evidence workflow status cards (T15): the pure card model and the Reference-library panel. Replaced last.
+ '__WORKFLOW_CORE__':(ROOT/'src/workflow-core.js').read_text(),
+ '__WORKFLOW_UI__':(ROOT/'src/workflow-ui.js').read_text()}
 text=(ROOT/'src/shell.html').read_text()
 for k,v in slots.items():text=text.replace(k,v)
 text=text.replace('<title>ATLAS Presence / Mantu — A rhythm you recognize</title>','<title>ATLAS Voice Studio / Mantu</title>')
