@@ -1,0 +1,364 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Atlas Amaris Success Story Record",
+  "type": "object",
+  "required": [
+    "project",
+    "summary",
+    "challenge",
+    "solution",
+    "approval_state"
+  ],
+  "properties": {
+    "project": {
+      "type": "object",
+      "required": [
+        "year",
+        "country"
+      ],
+      "properties": {
+        "client_display": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "client_permission": {
+          "type": "string",
+          "enum": [
+            "named_allowed",
+            "anonymize",
+            "internal_only",
+            "unknown"
+          ]
+        },
+        "industry": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "year": {
+          "type": "integer"
+        },
+        "duration_months": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "consultant_count": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "main_role": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "country": {
+          "type": "string"
+        },
+        "technologies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "kpis": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": [
+          "label",
+          "status"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "before_value": {
+            "type": [
+              "number",
+              "string",
+              "null"
+            ]
+          },
+          "after_value": {
+            "type": [
+              "number",
+              "string",
+              "null"
+            ]
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "period": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "method": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "attribution": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "measured",
+              "estimated",
+              "qualitative",
+              "unverified",
+              "omitted"
+            ]
+          },
+          "public_permission": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "challenge": {
+      "type": "object",
+      "required": [
+        "problem"
+      ],
+      "properties": {
+        "problem": {
+          "type": "string"
+        },
+        "why_important": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "solution": {
+      "type": "object",
+      "required": [
+        "what_we_did"
+      ],
+      "properties": {
+        "what_we_did": {
+          "type": "string"
+        },
+        "technologies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "client_working_model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "results": {
+      "type": "object",
+      "properties": {
+        "before_after": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "indicator": {
+                "type": "string"
+              },
+              "before": {
+                "type": [
+                  "string",
+                  "number",
+                  "null"
+                ]
+              },
+              "after": {
+                "type": [
+                  "string",
+                  "number",
+                  "null"
+                ]
+              },
+              "unit": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source_refs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "new_capability": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "amaris_differentiator": {
+      "type": "object",
+      "properties": {
+        "why_selected": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "client_valued": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "client_quote": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "exact_text": {
+              "type": "string"
+            },
+            "speaker": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "company": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source_ref": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permission": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "internal_notes": {
+      "type": "object",
+      "properties": {
+        "manager": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "consultant": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "date": {
+          "type": "string"
+        }
+      },
+      "x-visibility": "internal_only",
+      "additionalProperties": false
+    },
+    "approval_state": {
+      "type": "object",
+      "required": [
+        "evidence_validated",
+        "public_release_authorized"
+      ],
+      "properties": {
+        "evidence_validated": {
+          "type": "boolean"
+        },
+        "project_owner_approved": {
+          "type": "boolean"
+        },
+        "customer_approved": {
+          "type": "boolean"
+        },
+        "confidentiality_reviewed": {
+          "type": "boolean"
+        },
+        "brand_approved": {
+          "type": "boolean"
+        },
+        "public_release_authorized": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
