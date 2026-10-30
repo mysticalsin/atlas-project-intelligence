@@ -35,6 +35,7 @@ constants = {
 EDGE_MODULES = [
     'atlas_voice.workflow_config',
     'atlas_voice.conversation_state',
+    'atlas_voice.turns',
 ]
 for _name in EDGE_MODULES:
     for _key, _value in getattr(importlib.import_module(_name), 'EDGE_CONSTANTS', {}).items():
