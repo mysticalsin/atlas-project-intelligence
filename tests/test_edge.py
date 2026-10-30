@@ -33,6 +33,7 @@ VECTORS = [
     ('gen_state_parity.py', 'state.vectors.json'),
     ('gen_turns_parity.py', 'turns.vectors.json'),
     ('gen_story_parity.py', 'story.vectors.json'),
+    ('gen_selector_parity.py', 'selector.vectors.json'),
 ]
 @pytest.mark.parametrize('gen,vec', VECTORS)
 def test_parity_vectors_are_current(gen, vec):
