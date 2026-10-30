@@ -1,0 +1,30 @@
+version: "1.0"
+template: amaris_success_story_es
+sections:
+  public_story:
+    fields:
+      - project.client_display
+      - project.industry
+      - project.year
+      - project.duration_months
+      - project.consultant_count
+      - project.main_role
+      - project.country
+      - project.technologies
+      - summary.text
+      - kpis
+      - challenge.problem
+      - challenge.why_important
+      - solution.what_we_did
+      - solution.technologies
+      - solution.client_working_model
+      - results.before_after
+      - results.new_capability
+      - amaris_differentiator.why_selected
+      - amaris_differentiator.client_valued
+      - amaris_differentiator.client_quote
+    requires: [evidence_validated, exact_story_revision_approved, relevant_customer_and_confidentiality_permissions]
+  internal_only:
+    fields: [internal_notes.manager, internal_notes.consultant, internal_notes.date]
+    never_export_to: [client_docx, spotlight_cms, public_pdf, external_presentation]
+    access_roles: [authorized_manager, authorized_internal_operations]

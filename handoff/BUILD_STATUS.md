@@ -535,6 +535,13 @@ Docs: `deploy/cloudflare-edge/README.md` (pipeline line, new metrics), `docs/INT
 
 - Deployed by Tony 2026-10-02 with `deploy.sh` (tree clean at e5699b5): Worker version 8f5a97f9-cfde-415f-9bfb-25a24e69f7e6. ATLAS always opens with the spoken introduction (admin included); welcome-back line mentions the interview. Verified in the deployed script.
 
+### Session: 2026-10-30 / Agent Brain v2.1, T0 (branch, docs import, baseline, generator registry)
+- Goal: start the approved v2.1 upgrade plan (T0 to T17) on branch `feature/agent-brain-v2.1` cut from `main` at `efb4948`. No push, no deploy, no provider call.
+- Changes: imported the supplied spec pack into `docs/agent-brain-v2.1/` (40 files, unedited; the pack-root dossier .docx/.pdf, the v1.0 .docx/.pdf and `Pasted text(3).txt` are excluded, reasons in its `README.md`); added `README.md`, `GAP_ANALYSIS.md` and `DECISION_LOG.md` there (decisions D1-D19 plus Tony's binding decisions of 2026-10-30). `deploy/cloudflare-edge/build_edge.py` gained an `EDGE_MODULES` registry (each module may expose an `EDGE_CONSTANTS` dict, merged after the built-in constants; a duplicate key raises). `tests/test_edge.py`: `VECTORS` is now one entry per line and one test covers the registry (merge order, duplicate rejection).
+- Commands and results: `build_edge.py --policy-only` then `git diff --exit-code deploy/cloudflare-edge/src/policy.generated.js` rc 0 (byte-identical). `python3 build.py` (888,787 bytes) and `build_edge.py`: HTML aliases, `src/atlas.html` and all vectors unchanged. `node --test tests/*.test.js`: 385 tests, 384 pass, 1 skipped. `cd deploy/cloudflare-edge && node --test test/*.test.js`: 492 pass. `pytest tests/test_*.py -q`: 265 passed (the earlier 264 plus the new registry test). Browser suites not run (no frontend change).
+- Remaining: T1 onward. Each later module registers itself with one line in `EDGE_MODULES` and one line in `VECTORS`; regenerate `policy.generated.js` and the vector files rather than hand-merging them.
+- Git: committed on `feature/agent-brain-v2.1` as `v2.1 T0`; `Claude outputs/` stays untracked.
+
 ## Per-session update template
 Copy this section for each session. Do not put secrets, private keys, customer source text or raw audio in this file.
 

@@ -1,0 +1,38 @@
+version: "2.1"
+workflow:
+  id: atlas_project_intelligence_lifecycle
+  entrypoint: consultant_project
+  sequence: [identify_consultant_and_project, prefill_authorized_context, michat_voice_or_text_interview, adaptive_followup_and_challenge, capture_project_and_individual_contribution, attach_artifacts_metrics_sources_attribution, manager_or_project_owner_factual_review, evidence_acceptance_gate, approve_evidence_revision, fan_out_independent_branches]
+  rejection_route: {target: clarify_correct_or_dispute, return_to: michat_voice_or_text_interview}
+  branches:
+    purpose_specific_projections:
+      independent: true
+      destinations:
+        - {id: dna, adapter: DNA_SKILLS_WRITEBACK, requires: [evidence_approved, dna_permission, reviewer_approval]}
+        - {id: mechat, adapter: MECHAT_CV, requires: [evidence_approved, cv_permission]}
+        - {id: imp, adapter: IMP_CAPABILITY, requires: [evidence_approved, matching_permission]}
+    maap_review:
+      independent: true
+      trigger: [scheduled, due, authorized_manager_initiation]
+      workflow: MAAP_REVIEW
+      rubric: MUST_BE_CONFIGURED_BY_PROCESS_OWNER
+    project_review:
+      independent: true
+      trigger: [project_milestone, governance_cadence, approved_risk_trigger, authorized_manual_start]
+      workflow: PROJECT_REVIEW
+      focus: [alignment, quality, readiness]
+      rubric: MUST_BE_CONFIGURED_BY_PROCESS_OWNER
+    spotlight:
+      independent: true
+      workflow: SPOTLIGHT_SUCCESS_STORY
+      requires: [claim_level_evidence, project_owner_approval, customer_permission_if_required, confidentiality_review, privacy_legal_review_if_required, brand_approval, exact_revision_publication_authorization]
+      deny_route: hold_revise_or_internal_only
+      publish_adapter: SPOTLIGHT_CMS
+  global_rules:
+    - no_llm_generated_fact_without_source_or_explicit_unverified_status
+    - no_publication_without_exact_revision_approval
+    - no_internal_notes_in_external_export
+    - one_destination_failure_does_not_rollback_other_successful_destinations
+    - all_writes_are_idempotent_and_audited
+    - missing_data_is_unknown_not_negative
+    - maap_and_project_review_are_distinct
