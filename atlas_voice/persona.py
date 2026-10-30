@@ -67,17 +67,17 @@ def situations(*keys):
 # case-insensitive regular expression source, valid in Python and JavaScript.
 BANNED_PRAISE_SRC = r'\b(?:amazing|incredible|brilliant|awesome|fantastic)\b'
 
-# Acknowledgement banks, category -> language -> variants. Short (<= 8 words), spoken-natural, no question, no
-# praise word. English only for now: a caller with no entry for a language falls back to its neutral filler.
+# Acknowledgement banks, category -> language -> variants (five each: ack.js never repeats a variant within the last
+# four). Short (<= 8 words), spoken-natural, no question, no praise word. English only for now: a caller with no entry for a language falls back to its neutral filler.
 ACKS = {
-    'neutral': {'en': ['Okay, I see.', 'Right, that makes sense.', 'Got it, thanks.', 'Okay, thanks for that.']},
-    'thanks_detail': {'en': ['Thanks, that detail helps.', "Thanks, that's useful context.", 'Thanks for the detail.', "That's helpful, thank you."]},
-    'no_number_fine': {'en': ["That's okay, we don't need a number.", 'No problem, a rough figure is fine.', "That's fine, we can keep it qualitative.", "No problem, we won't force a number."]},
-    'confidential_ok': {'en': ['No problem, we can keep that general.', 'Of course, we can leave the name out.', "That's fine, we can anonymise that.", 'Understood, we can keep it general.']},
-    'correction_thanks': {'en': ['Thanks for correcting me.', "Thanks, I'll use your version.", 'Good catch, thank you.', 'Thanks for setting that straight.']},
-    'setback_neutral': {'en': ['That sounds like it took real work.', 'That sounds hard to navigate.', 'I can see that was complicated.', 'That sounds like a tough situation.']},
-    'earned_result': {'en': ['That sounds like a meaningful result.', "That's a notable piece of work.", 'That sounds like a real step forward.', 'That sounds like a strong result.']},
-    'promising_unverified': {'en': ['That sounds promising.', 'That sounds like a promising direction.', 'I can see why that mattered.', 'That sounds like a good start.']},
+    'neutral': {'en': ['Okay, I see.', 'Right, that makes sense.', 'Got it, thanks.', 'Okay, thanks for that.', 'Okay, noted.']},
+    'thanks_detail': {'en': ['Thanks, that detail helps.', "Thanks, that's useful context.", 'Thanks for the detail.', "That's helpful, thank you.", 'Thanks, that fills in the picture.']},
+    'no_number_fine': {'en': ["That's okay, we don't need a number.", 'No problem, a rough figure is fine.', "That's fine, we can keep it qualitative.", "No problem, we won't force a number.", 'Fine, we can leave the figure out.']},
+    'confidential_ok': {'en': ['No problem, we can keep that general.', 'Of course, we can leave the name out.', "That's fine, we can anonymise that.", 'Understood, we can keep it general.', "That's fine, we can leave that out."]},
+    'correction_thanks': {'en': ['Thanks for correcting me.', "Thanks, I'll use your version.", 'Good catch, thank you.', 'Thanks for setting that straight.', 'Thanks, let me fix that.']},
+    'setback_neutral': {'en': ['That sounds like it took real work.', 'That sounds hard to navigate.', 'I can see that was complicated.', 'That sounds like a tough situation.', 'That sounds like a hard stretch.']},
+    'earned_result': {'en': ['That sounds like a meaningful result.', "That's a notable piece of work.", 'That sounds like a real step forward.', 'That sounds like a strong result.', 'That sounds like a solid outcome.']},
+    'promising_unverified': {'en': ['That sounds promising.', 'That sounds like a promising direction.', 'I can see why that mattered.', 'That sounds like a good start.', 'That sounds encouraging.']},
 }
 
 # Spoken when the consultant pauses, and when they come back (followed by the last question, re-spoken by the server).
