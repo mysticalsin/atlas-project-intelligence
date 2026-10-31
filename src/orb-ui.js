@@ -1,6 +1,6 @@
 /* Visual state is driven by actual audio meters. Preview is isolated and labelled. */
 (()=>{'use strict';
- const $=id=>document.getElementById(id),signals=new AtlasOrb.SignalState();let paused=false,last='',previewAt=null,previewTimer=null,previewKind='sequence',spectrum=null;
+ const $=id=>document.getElementById(id),signals=new AtlasOrb.SignalState();let paused=false,held=false,last='',previewAt=null,previewTimer=null,previewKind='sequence',spectrum=null;
  const orb=AtlasOrb.create($('orbCanvas'),{onError:m=>{$('orbDisplayNotice').textContent=m;$('orbDisplayNotice').hidden=!m;},onMotion:(reduced,manual)=>{$('orbMotion').textContent=reduced?'Reduced motion enabled':manual?'Resume motion':'Pause motion';$('orbMotion').disabled=reduced;$('orbMotion').setAttribute('aria-pressed',String(reduced||manual));$('orbQuickPause').disabled=reduced;$('orbQuickPause').setAttribute('aria-pressed',String(reduced||manual));$('orbQuickPause').setAttribute('aria-label',reduced?'Reduced motion enabled':manual?'Resume orb animation':'Pause orb animation');}});
  // The idle label follows the page mode (WOW_ZERO_CONFIG §3.3); a page opened from a file stays "Not connected".
  const IDLE={live:'Ready',offline:'Not connected',network:'Not reachable',expired:'Signed out'},idleName=()=>IDLE[window.AtlasAuth?.mode]||'Not connected';
@@ -23,9 +23,9 @@
   const s=signals.snapshot(performance.now());if(previewAt!==null)return;
   orb.setState(s.state);orb.setLevels(s.input,s.output,spectrum);$('voicePanel').dataset.orbState=s.state;$('voicePanel').dataset.phase=s.phase;
   window.dispatchEvent(new CustomEvent('atlas-orb-state',{detail:{state:s.state,phase:s.phase,muted:s.muted,preview:false}}));
-  const label=(s.state==='idle'?idleName():names[s.state])+(s.state==='speaking'&&s.muted?' · microphone muted':'');
+  const label=held&&s.phase==='live'&&s.state!=='speaking'?'Paused · microphone off':(s.state==='idle'?idleName():names[s.state])+(s.state==='speaking'&&s.muted?' · microphone muted':''); // held: the consultant paused the interview (T9)
   if(label!==last){describe(s.state);last=label;$('orbStateCaption').textContent=label;$('orbAccessibleState').textContent=label;}
-  $('orbInputWord').textContent=s.phase==='live'?(s.muted?'Muted':s.inputActive?'Hearing you':'Microphone on'):s.phase==='connecting'?'Local only':'Microphone off';
+  $('orbInputWord').textContent=s.phase==='live'?(held?'Paused':s.muted?'Muted':s.inputActive?'Hearing you':'Microphone on'):s.phase==='connecting'?'Local only':'Microphone off';
   $('orbOutputWord').textContent=s.state==='speaking'?'Playing model audio':'No playback';
   $('orbActivate').setAttribute('aria-label',s.phase==='live'?(s.muted?'Unmute microphone':'Mute microphone'):'Start voice interview');
   $('orbActivate').disabled=['preparing','connecting','ending'].includes(s.phase);
@@ -78,7 +78,7 @@
  window.addEventListener('atlas-context',onView);onView();
  document.addEventListener('keydown',e=>{const typing=e.target.closest('input,textarea,select,[contenteditable=true]');if(typing||document.querySelector('dialog[open]')||e.ctrlKey||e.metaKey||e.altKey)return;if(e.key.toLowerCase()==='f'&&!$('interview').hidden){e.preventDefault();$('studioFocus').click();}else if(e.key==='Escape'){stopPreview();if(document.body.classList.contains('studio-focus'))$('studioFocus').click();}});
  document.addEventListener('visibilitychange',()=>{if(document.hidden)stopPreview();});
- window.AtlasOrbUI={state(phase,muted=false){if(!['idle','error'].includes(phase))stopPreview();signals.setPhase(phase,muted);update();},levels(mic,speaker,bands=null){spectrum=bands;signals.levels(mic,speaker,performance.now());update();},reset(){signals.levels(0,0,performance.now());signals.lastInput=-1e9;signals.lastOutput=-1e9;update();},stopPreview,startPreview,inspect:()=>({...orb.inspect(),preview:previewAt!==null,signals:signals.snapshot(performance.now())}),renderer:orb};
+ window.AtlasOrbUI={state(phase,muted=false,onHold=false){held=!!onHold;if(!['idle','error'].includes(phase))stopPreview();signals.setPhase(phase,muted);update();},levels(mic,speaker,bands=null){spectrum=bands;signals.levels(mic,speaker,performance.now());update();},reset(){signals.levels(0,0,performance.now());signals.lastInput=-1e9;signals.lastOutput=-1e9;update();},stopPreview,startPreview,inspect:()=>({...orb.inspect(),preview:previewAt!==null,signals:signals.snapshot(performance.now())}),renderer:orb};
  $('orbMotion').disabled=orb.inspect().reducedMotion;if(orb.inspect().reducedMotion){$('orbMotion').textContent='Reduced motion enabled';$('orbMotion').setAttribute('aria-pressed','true');}
  window.addEventListener('pagehide',event=>{stopPreview();if(!event.persisted){clearInterval(clock);storageObserver.disconnect();orb.destroy();}});update();
 })();

@@ -35,6 +35,7 @@ slots={'__CSS__':(ROOT/'src/styles.css').read_text()+'\n'+(ROOT/'src/voice.css')
  '__ORB_RENDERER__':(ROOT/'src/orb-renderer.js').read_text(),
  '__ORB_UI__':(ROOT/'src/orb-ui.js').read_text()+'\n'+(ROOT/'src/studio-panels.js').read_text(),
  '__WORKLET__':(ROOT/'src/voice-worklet.js').read_text(),
+ '__VOICE_CONTROLS__':(ROOT/'src/voice-controls.js').read_text(),
  '__VOICE_CLIENT__':(ROOT/'src/voice-client.js').read_text(),
  # Project-at-a-glance charts: the world map is pre-projected at build time (scripts/build_world_map.py), no runtime geo library.
  '__WORLD__':json.dumps(json.loads((ROOT/'assets/geo/world-110m.json').read_text()),separators=(',',':'),ensure_ascii=False).replace('</','<\\/'),

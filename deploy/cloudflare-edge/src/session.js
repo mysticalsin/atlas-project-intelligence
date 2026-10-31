@@ -2,7 +2,7 @@
 // Same browser protocol as atlas_voice/cascade.py, so the compiled ATLAS page, worklet and orb work unchanged:
 // the orb moves only from PCM this session actually sends for playback.
 import { TALKER_POLICY, OPENING, HISTORY, TOPICS, ADMIN_NOTE, SPEAKING_LIMIT_S, INTERVIEW_LIMIT_S, WRAP_S, TIME_UP, AREAS, TIME_PLAN, TIME_UP_MESSAGE, FIELDS,
-  GAP_LIMIT_S, GAP_SPEAKING_S, GAP_WRAP_S, GAP_MAX, GAP_OPENING, WIN_HINTS, BANNED_PRAISE_SRC, ASR_TAU } from './policy.generated.js';
+  GAP_LIMIT_S, GAP_SPEAKING_S, GAP_WRAP_S, GAP_MAX, GAP_OPENING, WIN_HINTS, BANNED_PRAISE_SRC, ASR_TAU, PAUSE_LINES, RESUME_LINES } from './policy.generated.js';
 import { gapSystemBlock, gapNotes, gapStatus, gapGuidance, timePlan } from './gap-policy.js';
 import { Analyst, InterviewLedger } from './ledger.js';
 import { EnergyTurns, isEcho, Phrases, speakable, sentences, ReplyGuard, GUARD_MAX_WORDS } from './speech.js';
@@ -12,6 +12,7 @@ import { analyzeTurn } from './turns.js';
 import { select } from './selector.js';
 import { pickAck, ackPrewarmList } from './ack.js';
 import { uncertainSpans, replacement, tauFrom } from './asr.js';
+import { Machine } from './conversation-state.js';
 
 export const RESUME = '[The consultant made a sound but no words were recognised, and your last reply was cut off.] Briefly re-ask your last question in fresh words.';
 
@@ -70,6 +71,22 @@ export function sessionFlags(env = {}) {
     speculativeStt: ['on', '1', 'true'].includes(String(e.SPECULATIVE_STT || '').toLowerCase()) };
 }
 export const MAX_SECONDS = INTERVIEW_LIMIT_S; // the whole interview (15 minutes); ATLAS's own speaking time is a second cap inside it
+// Pause, repeat, skip and typed turns (Agent Brain v2.1 T9). Paused time does not count toward the interview (maxSeconds is measured in
+// active seconds, activeSeconds()), but nothing may stay open for ever: the session ends at WALL_CAP_S of wall-clock time, paused or not.
+export const WALL_CAP_S = 45 * 60;
+export const WALL_CAP_MESSAGE = 'The 45-minute session limit was reached. Finishing your notes.';
+export const CONTROLS = Object.freeze(['pause', 'resume', 'repeat', 'skip', 'text']); // client events this session understands (sent in `ready`, so older gateways are never sent them)
+export const CONTROL_MAX_WORDS = 12; // a spoken pause / repeat / skip is a short request; the same words inside a long answer are part of the answer
+export const TYPED_MAX_CHARS = 2000; // a typed answer; longer text is cut (the browser limits it to the same)
+export const SKIP_UNAVAILABLE = 'Skipping is not available in a focused proof interview.';
+const SKIP_NOTE = '(I\'d like to skip that question.)'; // history entry for the Skip button, so the talker sees what the consultant did (never the ledger)
+const SKIP_INSTRUCTION = '[Server: the consultant chose to skip your last question.] Accept that without pressing, and ask one different question.';
+const FIELD_ID = /^[a-z][a-z0-9_]{0,63}$/; // the state machine's rule for a skipped field: an internal id, never free text
+// Discovery focus (conversation-state.js `focus`) is an annotation of where the conversation is, derived from the field of the move just chosen.
+const FIELD_FOCUS = { problem: 'context', stakes: 'context', contribution: 'contribution', intervention: 'contribution', decision: 'contribution', adoption: 'contribution',
+  evidence: 'evidence', measurement: 'evidence', limitations: 'evidence', outcome: 'outcome', customer_fit: 'skills', poor_fit: 'skills' };
+// The last question sentence of a reply (what a repeat or a resume says again), as it is voiced.
+const lastQuestionOf = text => { const [done, rest] = sentences(String(text) + ' '); return [...done, rest].map(speakable).filter(t => /[?？]/.test(t)).at(-1) || ''; };
 // Parity-tested port of atlas_voice.cascade.pace_notes: speaking time used and areas with no notes (names only, never content).
 export function paceNotes(elapsedS, limitS, notes, admin = false) {
   const left = limitS - elapsedS, missing = AREAS.filter((_, i) => !notes[i]);
@@ -189,6 +206,11 @@ export class Session {
     // minConf, audioOffsetMs}. status: open (not yet settled), confirmed, denied (waiting for the right value) or corrected. asrIdents: the items
     // of the turn being answered (a turn they carried on after counts as one); asrCorrections: corrections waiting for their ledger turn.
     this.asrMeta = {}; this.asrIdents = []; this.asrDone = null; this.asrCorrections = [];
+    // Interview state machine (conversation-state.js, plan 3i) and the pause clock. `machine.audit` is the session's audit trail of transitions (T10
+    // checkpoints machine.toDict(), T11/T13 attach it to the evidence); `paused` is what the session acts on, the machine only records it.
+    // lastQuestion: {text, move, item}, the question ATLAS last asked (kept even if it was cut off), re-spoken by repeat and resume with no model call.
+    this.machine = new Machine('interview'); this.paused = false; this.pausedAt = null; this.pausedTotal = 0; this.pauseCount = 0; this.resumeCount = 0;
+    this.lastQuestion = null; this.composing = null; this.identNow = null;
     this.move = null; this.moveByItem = new Map(); this.prefill = {}; this.lastPlan = null; this.lastTurn = null;
     // Interview mode. Gap mode keeps its own answer windows: askByItem (reply item -> the ask it carried, set when the reply
     // is composed), gapAttempts (replies heard per ask), openAsk (the ask the consultant last heard; null once a reflect-back
@@ -207,16 +229,40 @@ export class Session {
 
   event(type, values = {}) { if (!this.finished || ['audio_stopped', 'reporting', 'notes', 'ended', 'error', 'quality', 'quality_warning'].includes(type)) this.io.send({ type, ...values }); }
 
+  // One transition of the interview machine. Never throws: an illegal or malformed move is counted (state_error) and the interview goes on.
+  fireState(event, actor, { data = null, reason = null } = {}) {
+    const m = this.machine, from = m.state;
+    try { m.fire(event, actor, { data, reason, at: new Date(this.now() * 1000).toISOString() }); }
+    catch (e) { this.metric('state_error', { event, from, code: e?.code || 'error' }); return false; }
+    const entry = m.audit.at(-1);
+    this.event('state', { state: m.state, from, event, actor, focus: m.focus, paused: m.state === 'paused', at: entry.at, ...(entry.data ? { data: entry.data } : {}) });
+    return true;
+  }
+  stateSnapshot() { return this.machine.toDict(); }
+
+  // Seconds of interview used: wall clock since the start, less every paused stretch (the one in progress included).
+  activeSeconds(now = this.now()) { return now - this.startedAt - this.pausedTotal - (this.pausedAt === null ? 0 : now - this.pausedAt); }
+
   async onText(text) {
     let value;
     try { value = JSON.parse(text); } catch { return this.fail('Unsupported client event', 'voice-contract'); }
     if (this.starting) { // a gap request is being resolved: only leaving is allowed (never a second start)
       const leave = value && typeof value === 'object' && Object.keys(value).length === 1 && (value.type === 'discard' || value.type === 'end');
+      if (leave && value.type === 'discard') this.fireState('withdraw', 'user', { reason: 'consultant discarded the interview' });
       return leave ? this.end(false) : this.fail('Unsupported client event', 'voice-contract');
     }
     if (!this.started) return this.start(value);
     if (value?.type === 'end' && Object.keys(value).length === 1) return this.end(true);
-    if (value?.type === 'discard' && Object.keys(value).length === 1) return this.end(false);
+    if (value?.type === 'discard' && Object.keys(value).length === 1) { this.fireState('withdraw', 'user', { reason: 'consultant discarded the interview' }); return this.end(false); }
+    // Interview controls (CONTROLS, announced in `ready`): the same handlers the spoken intents use. Exactly their own keys, nothing else.
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const n = Object.keys(value).length;
+      if (n === 1 && value.type === 'pause') return this.pauseSession('ui');
+      if (n === 1 && value.type === 'resume') return this.resumeSession('ui');
+      if (n === 1 && value.type === 'repeat') return this.repeatQuestion('ui');
+      if (n === 1 && value.type === 'skip') return this.skipQuestion();
+      if (n === 2 && value.type === 'text' && typeof value.text === 'string') return this.typedTurn(value.text);
+    }
     if (value?.type === 'playback') {
       // Flow control: the browser reports audio actually played; never run more than LEAD_MS ahead of it.
       const { item_id: item, played_ms: ms } = value;
@@ -235,6 +281,7 @@ export class Session {
   onBinary(bytes) {
     if (!this.started || this.finished || this.ending) return;
     if (!bytes.length || bytes.length % 2 || bytes.length > 3840) return this.fail('Invalid PCM frame', 'voice-contract');
+    if (this.paused) { this.lastInput = this.now(); return; } // paused: nothing is listened to, kept or counted (the browser also closes its microphone)
     this.bytesIn += bytes.length; this.lastInput = this.now();
     if (this.bytesIn > (this.lastInput - this.startedAt + 3) * 48000) return this.fail('Audio exceeds realtime input budget', 'voice-contract');
     const audible = this.audible();
@@ -411,7 +458,7 @@ export class Session {
     this.ledger = this.analyst ? this.analyst.ledger : new InterviewLedger(stage);
     this.event('ready', { model: 'ATLAS', provider: 'ATLAS voice', sampleRate: 24000, speakingSeconds: this.speakingLimit, capture: this.capture, liveLedger: !!this.analyst,
       maxSeconds: this.maxSeconds, message: 'Voice session ready. Speak naturally. Candidate notes require your review.',
-      mode: this.mode, timePlan: timePlan(this.maxSeconds, this.mode), ...(gap ? { gaps: this.gapAsks.map(({ id, label, ask }) => ({ id, label, ask })) } : {}) });
+      mode: this.mode, timePlan: timePlan(this.maxSeconds, this.mode), controls: CONTROLS, ...(gap ? { gaps: this.gapAsks.map(({ id, label, ask }) => ({ id, label, ask })) } : {}) });
     if (this.memory && !gap) { // private memory from earlier conversations, bounded so the greeting is never held up (none in gap mode)
       let timer;
       try { this.memoryNote = await Promise.race([this.memory(this.project), new Promise(r => { timer = setTimeout(() => r(''), 3500); })]) || ''; }
@@ -420,6 +467,7 @@ export class Session {
       if (this.finished || this.ending) return; // closed while recalling: no timer, no opening
       this.event('memory', { status: this.memoryNote ? 'recalled' : 'empty', message: this.memoryNote ? 'ATLAS remembers your earlier conversations (private to you).' : 'No earlier conversations to recall.' });
     }
+    this.fireState('start', 'atlas'); this.fireState('consent_given', 'user'); // the consent and the start came in the same message
     this.timer = setInterval(() => this.watch(), 1000);
     this.pace();
     const lang = this.spoken();
@@ -465,7 +513,11 @@ export class Session {
 
   watch() {
     if (this.finished || this.ending) return;
-    const left = this.maxSeconds - (this.now() - this.startedAt);
+    // The absolute cap runs on the wall clock, paused or not: a session never stays open for ever.
+    if (this.now() - this.startedAt >= WALL_CAP_S) { this.metric('wall_cap', {}); this.event('time_up', { message: WALL_CAP_MESSAGE }); this.end(true); return; }
+    // Paused: the interview clock is stopped and nobody is expected to send audio, so neither the time limit nor the microphone watchdog applies.
+    if (this.paused) return;
+    const left = this.maxSeconds - this.activeSeconds();
     if (left <= 0) { this.event('time_up', { message: TIME_UP_MESSAGE.replace('{minutes}', String(Math.round(this.maxSeconds / 60))) }); this.end(true); } // a clean end: notes (and the full-mode report) are still written
     else if (this.now() - this.lastInput > 12) this.fail('Microphone frames stopped', 'voice-unavailable');
     // The last half minute and nobody is talking: ATLAS closes on her own, so the interview ends with a goodbye.
@@ -496,6 +548,7 @@ export class Session {
   }
 
   interrupt() {
+    this.captureQuestion(); // a reply cut off still asked its question: repeat and resume say it again
     this.recordLive();
     this.uncommit(this.replyItem, true); // cut before she said her own words: the move was not asked
     this.stopped();
@@ -541,7 +594,7 @@ export class Session {
     if (text) { this.cutOff = false; await this.finishTurn(text, continuing, how); }
     // No words. Unless the consultant is already speaking again (that utterance will decide): answer what they said
     // before a noise, or re-ask after a noise that cut ATLAS off.
-    else if (this.continuing || this.sttBusy > 1 || this.busy()) return;
+    else if (this.paused || this.continuing || this.sttBusy > 1 || this.busy()) return;
     else if (continuing && this.history.at(-1)?.role === 'user') this.answer(this.history.at(-1).content, how);
     else if (this.cutOff) { this.cutOff = false; this.startReply(RESUME); }
   }
@@ -554,10 +607,11 @@ export class Session {
     if (continuing) this.withdraw();
     const merge = continuing && this.history.at(-1)?.role === 'user';
     // Otherwise a reply still under way is stopped here, and what they heard of it is recorded before their turn.
-    if (!merge && !closing && this.busy()) this.interrupt();
+    if (!merge && !closing && !this.paused && this.busy()) this.interrupt(); // (a paused session's last words are recorded, and nothing she says is cut for them)
     this.turns += 1;
     if (this.turns > 300) return this.fail('Turn budget reached; end and start a new focused session', 'voice-contract');
-    const ident = 'user-' + this.turns;
+    // A typed turn (how.typed, from the text box) has no speech recognition: its own item id, and its provenance says the consultant typed it.
+    const ident = (how.typed ? 'user-typed-' : 'user-') + this.turns; this.identNow = ident;
     if (merge) { this.history[this.history.length - 1] = { role: 'user', content: this.history.at(-1).content + ' ' + text }; this.metric('turn_merged', {}); }
     else this.history.push({ role: 'user', content: text });
     const asr = this.recordAsr(ident, how, merge);
@@ -565,10 +619,11 @@ export class Session {
     // must carry the next ask, not wait for the analyst).
     if (this.mode === 'gap') { this.recordAnswer(text, merge); this.guidance = gapGuidance(this.gapAsks, this.gapStatuses()); }
     if (this.capture) {
-      this.event('user_text', { item_id: ident, text, provenance: 'unverified_speech_recognition', ...(asr ? { asr } : {}) });
+      this.event('user_text', { item_id: ident, text, provenance: how.typed ? 'consultant_typed' : 'unverified_speech_recognition', ...(asr ? { asr } : {}) });
       const a0 = this.now();
       const job = this.analyst.hear(ident, text).then(async result => {
         this.applyAsrCorrections(ident); this.annotateAsr(ident); // before anything reads the ledger: doubt and corrections are on its details
+        if (how.typed) for (const d of this.ledger.details) if (d.item_id === ident && d.provenance === 'unverified_speech_recognition') d.provenance = 'consultant_typed';
         this.metric('analyst', { ms: Math.round((this.now() - a0) * 1000), ok: result.analyst_status === 'analysed' ? 1 : 0, details: result.candidate_details.length, rejected: result.rejected_proposals });
         if (this.mode === 'gap') return this.gapQuality(result);
         this.lastPlan = result; // the plan the ledger now holds; the next move is read from the ledger, so it is never one answer behind
@@ -585,8 +640,8 @@ export class Session {
       }).catch(() => this.event('quality_warning', { message: 'This turn exceeded the transcript budget and was not added to the evidence ledger.' }));
       this.turnJob = job; this.pending.add(job); job.finally(() => this.pending.delete(job));
     }
-    if (closing) return;
-    if (this.continuing && this.turnDetector.active && this.voiced >= MIN_VOICED) return; // already speaking again: answer when they have finished
+    if (closing || this.paused) return;
+    if (!how.typed && this.continuing && this.turnDetector.active && this.voiced >= MIN_VOICED) return; // already speaking again: answer when they have finished
     this.answer(this.history.at(-1).content, how);
   }
 
@@ -609,15 +664,23 @@ export class Session {
   // acknowledgement is chosen from the same pre-pass and starts playing before the talker has produced a word. The analyst
   // still runs in the background and refines the ledger the next move is read from.
   answer(text, { endedBy = '', endedAt = this.now(), lang = this.language, sttMs = -1 } = {}) {
-    const trailing = unfinished(text, lang);
+    const typed = endedBy === 'typed', trailing = !typed && unfinished(text, lang); // typed words are never "trailing off"
+    // The pre-pass runs for every answer (it also tells a spoken pause, repeat or skip from an answer). A short spoken pause or repeat is
+    // handled here and goes no further: no acknowledgement, no selector, no talker.
+    const t0 = this.now(); let turn = null;
+    if (endedBy !== 'thinking' && !trailing) {
+      try { turn = this.lastTurn = analyzeTurn(text, lang, { asked_field: this.humane.asked.at(-1)?.field ?? null }); } catch (e) { this.metric('turn_error', { name: e?.name || 'Error' }); }
+      const short = turn && turn.words <= CONTROL_MAX_WORDS;
+      if (short && turn.intents.includes('pause')) return this.pauseSession('voice');
+      if (short && turn.intents.includes('repeat')) return this.repeatQuestion('voice');
+      if (short && turn.intents.includes('skip')) this.noteSkip(this.humane.asked.at(-1)?.field); // the answer below accepts it and moves on
+    }
     // Admin (Tony) gets the same patience, without the nudge or an acknowledgement (and keeps the analyst's guidance).
     if (this.admin) return this.startReply(undefined, { turn: this.turns, endedAt, notBefore: trailing && endedBy !== 'thinking' ? endedAt + THINKING_PAUSE : 0, timeline: { sttMs, selectorMs: -1 } });
     if (endedBy !== 'thinking' && !trailing) {
       const h = this.humane, v2 = this.flags.selector === 'v2' && this.mode === 'full', content = this.flags.acks === 'content';
-      let turn = null, move = null, selectorMs = -1, sinceEarned;
+      let move = null, selectorMs = -1, sinceEarned;
       if (v2 || content) {
-        const t0 = this.now(), last = h.asked.at(-1);
-        try { turn = this.lastTurn = analyzeTurn(text, lang, { asked_field: last?.field ?? null }); } catch (e) { this.metric('turn_error', { name: e?.name || 'Error' }); }
         if (turn) turn = this.resolveAsr(turn, text); // a yes / no / right value for the span asked last turn settles it (once)
         if (turn && v2) { try { move = this.decide(turn); } catch (e) { this.metric('selector_error', { name: e?.name || 'Error' }); } }
         selectorMs = Math.round((this.now() - t0) * 1000);
@@ -670,7 +733,7 @@ export class Session {
     const all = Object.entries(this.asrMeta).flatMap(([ident, m]) => m.spans.map(span => ({ ident, span }))), say = String(last.say || '').toLowerCase();
     const found = last.intent === 'confirm_asr' ? all.find(x => x.span.status === 'open' && say.includes(x.span.text.toLowerCase())) : all.reverse().find(x => x.span.status === 'denied');
     if (!found) return turn;
-    const { ident, span } = found, current = 'user-' + this.turns;
+    const { ident, span } = found, current = this.identNow || 'user-' + this.turns;
     const correct = value => {
       span.status = 'corrected'; span.corrected_to = value; this.metric('asr_resolved', { how: 1 });
       if (this.capture) this.asrCorrections.push({ ident: current, spanIdent: ident, from: span.text, to: value });
@@ -738,7 +801,7 @@ export class Session {
   // The next move for this answer (plan 3c). `replacing`: a move already committed for this reply, left out of the log when the
   // analyst's newer plan makes the server choose again. Deferrals ("I don't know") stay open: their hints do not count as covered.
   decide(turn, replacing = null) {
-    const h = this.humane, elapsed = this.now() - this.startedAt;
+    const h = this.humane, elapsed = this.activeSeconds();
     if (turn.intents.includes('rushed')) h.rushed = true;
     const plan = { ...this.currentPlan(), covered_fields: [...h.covered] };
     const move = select(plan, turn, h.asked.filter(m => m !== replacing), this.prefill, elapsed >= TIME_PLAN.depth_fraction * this.maxSeconds ? 'depth' : 'breadth',
@@ -750,8 +813,113 @@ export class Session {
   }
 
   // The move committed for a reply goes into the asked log; one taken back (withdrawn, or cut before she said it) comes out.
-  commitMove(item, move) { this.humane.asked.push(move); this.moveByItem.set(item, move); }
-  swapMove(item, old, move) { const i = this.humane.asked.indexOf(old); if (i >= 0) this.humane.asked[i] = move; else this.humane.asked.push(move); this.moveByItem.set(item, move); }
+  commitMove(item, move) { this.humane.asked.push(move); this.moveByItem.set(item, move); this.moveState(move); }
+  swapMove(item, old, move) { const i = this.humane.asked.indexOf(old); if (i >= 0) this.humane.asked[i] = move; else this.humane.asked.push(move); this.moveByItem.set(item, move); this.moveState(move); }
+  // A move that opens the read-back asks for the summary; any other move about a field in a new focus area moves the discovery focus (both audited).
+  moveState(move) {
+    if (this.machine.state !== 'discovery') return;
+    if (move.kind === 'summary') { this.fireState('request_summary', 'atlas'); return; }
+    const focus = FIELD_FOCUS[move.field];
+    if (focus && focus !== this.machine.focus) this.fireState('focus', 'atlas', { data: { focus } });
+  }
+
+  // ----- pause, resume, repeat, skip, typed turns (T9) -----
+  // lastQuestion: the last question sentence ATLAS composed (so a reply cut off still counts), else, for a reply cut before it got that far,
+  // the question its move proposed. A withdrawn reply asked nothing. Repeat and resume say it again with no model call.
+  noteQuestion(item, said, move, interrupted) {
+    if (this.discarded.has(item)) return;
+    const q = lastQuestionOf(said), keep = this.lastQuestion;
+    if (q) this.lastQuestion = { text: q, move: move || (keep?.text === q ? keep.move : null), item };
+    else if (interrupted && move && /[?？]/.test(move.say || '')) { const text = speakable(clean(move.say, 400)); if (text) this.lastQuestion = { text, move, item }; }
+  }
+  captureQuestion() { const c = this.composing; if (c && this.busy()) this.noteQuestion(c.item, c.text(), c.move(), true); }
+  // A stock line in the spoken language (persona.py PAUSE_LINES / RESUME_LINES, English only for now: other languages are silent), rotating.
+  line(bank, n) { const list = bank[this.spoken()]; return list?.length ? list[n % list.length] : ''; }
+  // The consultant chose to skip the question just asked: its field (an internal id) is recorded as skipped_by_user (the field itself stays open).
+  noteSkip(field) {
+    if (this.mode !== 'full') return;
+    if (typeof field === 'string' && FIELD_ID.test(field)) this.fireState('skip', 'user', { data: { field } });
+    else this.metric('skip_no_field', {});
+  }
+  // Drop what the consultant was in the middle of saying: a held click, a half-heard answer, a pending end-of-turn check.
+  dropMic() {
+    const d = this.turnDetector;
+    if (d.active) d.flush();
+    this.blip = null; this.pause = ''; this.checkId += 1; this.voiced = 0; this.continuing = false; this.echoable = false;
+  }
+
+  // Pause: ATLAS stops (as for an interruption), says one stock line, then goes quiet. Audio is ignored, the interview clock and the
+  // microphone watchdog stand still (activeSeconds, watch). Nothing is lost: the question she was on is kept for the resume.
+  pauseSession(via = 'ui') {
+    if (!this.started || this.finished || this.ending || this.paused || this.starting) return;
+    this.paused = true; this.pausedAt = this.now();
+    this.dropMic();
+    if (this.busy()) this.interrupt();
+    this.cutOff = false;
+    this.metric('pause', { voice: via === 'voice' ? 1 : 0 });
+    this.fireState('pause', 'user');
+    const line = this.line(PAUSE_LINES, this.pauseCount++);
+    if (line) this.startReply(null, { prefix: [line], only: true });
+  }
+  // The paused stretch ends: the clock runs again, the microphone watchdog starts afresh.
+  unpause(via = 'ui') {
+    const t = this.now(), ms = Math.round((t - this.pausedAt) * 1000);
+    this.pausedTotal += t - this.pausedAt; this.pausedAt = null; this.paused = false; this.lastInput = t;
+    this.dropMic();
+    this.metric('resume', { voice: via === 'voice' ? 1 : 0, paused_ms: ms });
+    this.fireState('resume', 'user');
+  }
+  // Resume: a stock welcome-back line, then the question again (stored text, spoken from cache or synthesised once: no model call).
+  resumeSession(via = 'ui') {
+    if (!this.paused || this.finished || this.ending) return;
+    this.unpause(via);
+    this.speakQuestion(this.line(RESUME_LINES, this.resumeCount++));
+  }
+  // Say lastQuestion again after `lead` (a stock line, or nothing). A question asked but cut off before she said it goes back into the asked
+  // log. With no question yet (paused or asked to repeat before the first one) the talker is asked, once, to open or to re-ask.
+  speakQuestion(lead = '') {
+    const q = this.lastQuestion;
+    if (!q) return this.startReply(this.turns === 0 ? OPENING : RESUME, { prefix: lead ? [lead] : '', turn: -1 });
+    const move = q.move && !this.humane.asked.includes(q.move) ? q.move : null;
+    this.startReply(null, { prefix: [lead, q.text].filter(Boolean), only: true, move, turn: -1 });
+  }
+  repeatQuestion(via = 'ui') {
+    if (!this.started || this.finished || this.ending || this.paused || this.starting) return;
+    this.metric('repeat', { voice: via === 'voice' ? 1 : 0 });
+    if (this.busy()) this.interrupt();
+    this.cutOff = false;
+    this.speakQuestion();
+  }
+  // The Skip button: the question she was on is skipped (field recorded, left open, never asked again) and the selector's accept_and_move follows.
+  // The spoken "skip" takes the normal answer path; this one has no words of the consultant, so nothing goes to the ledger.
+  skipQuestion() {
+    if (!this.started || this.finished || this.ending || this.paused || this.starting) return;
+    if (this.mode !== 'full') { this.event('quality_warning', { message: SKIP_UNAVAILABLE }); return; }
+    this.metric('skip', {});
+    if (this.busy()) this.interrupt();
+    this.cutOff = false;
+    const h = this.humane, q = this.lastQuestion;
+    if (q?.move && !h.asked.includes(q.move)) h.asked.push(q.move); // cut off before she said it: it was still the question in front of them
+    const field = h.asked.at(-1)?.field ?? null;
+    this.noteSkip(field);
+    if (this.flags.selector !== 'v2' || this.admin) return this.startReply(SKIP_INSTRUCTION, { turn: -1 });
+    let move = null;
+    try { move = this.decide(analyzeTurn('skip it', 'en', { asked_field: field })); } catch (e) { this.metric('selector_error', { name: e?.name || 'Error' }); }
+    this.history.push({ role: 'user', content: SKIP_NOTE });
+    this.startReply(undefined, { move, turn: -1 });
+  }
+  // A typed answer from the text box: the same path as a spoken turn without the recogniser (works with the microphone muted). Typing while
+  // paused carries on the interview (they are answering): the clock restarts and nothing is re-asked.
+  async typedTurn(raw) {
+    if (!this.started || this.finished || this.ending || this.starting) return;
+    const text = clean(raw, TYPED_MAX_CHARS);
+    if (!text) return;
+    if (this.paused) this.unpause('ui');
+    this.cutOff = false;
+    this.metric('typed_turn', { chars: text.length });
+    await this.finishTurn(text, false, { endedBy: 'typed', endedAt: this.now(), lang: this.language, sttMs: -1, words: null, baseMs: 0, typed: true });
+  }
+
   uncommit(item, onlyIfUnheard = false) {
     const move = this.moveByItem.get(item);
     if (!move || (onlyIfUnheard && this.composedItem === item)) return;
@@ -777,7 +945,7 @@ export class Session {
   // Per-turn server notes. Full: [admin, language, memory, win hint, pace] (identical to before when there is no hint).
   // Gap: [admin, GAP_NOTE, gap pace (open items by label)] then language and the win hint; there is no memory in gap mode.
   paceNotes() {
-    const lang = languageNote(this.language, this.spoken()), elapsed = this.now() - this.startedAt;
+    const lang = languageNote(this.language, this.spoken()), elapsed = this.activeSeconds();
     if (this.mode === 'gap') {
       const open = this.gapStatuses().filter(s => s.status === 'open').map(s => s.label);
       return [...gapNotes(elapsed, this.maxSeconds, open, this.admin ? ADMIN_NOTE : ''), lang, this.winNote];
@@ -817,39 +985,43 @@ export class Session {
   // prefix: a greeting (a list of cached pieces) or an acknowledgement (`filler`, one cached piece). move / ack / refine / timeline:
   // the humane interviewer's inputs for a normal reply (see answer()); a reply with another instruction (opening, nudge, closing,
   // re-ask) carries none.
-  startReply(instruction, { prefix = '', filler = '', notBefore = 0, turn = -1, endedAt = 0, thinking = false, move = null, ack = null, refine = null, timeline = null } = {}) {
+  startReply(instruction, { prefix = '', filler = '', notBefore = 0, turn = -1, endedAt = 0, thinking = false, move = null, ack = null, refine = null, timeline = null, only = false } = {}) {
     if (this.ending || this.finished) return;
+    // only: the reply is exactly its `prefix` pieces (a pause or resume line, a question said again): no model call. Nothing else is spoken while paused.
+    if (this.paused && !only) return;
     // Re-checked on every reply: an interrupted closing (or a noise re-ask) cannot escape the time limits. With wrapS
     // (WRAP_S, or GAP_WRAP_S in gap mode) left of the interview, or ATLAS's own speaking time used up, the next reply is the closing.
-    const late = this.now() - this.startedAt >= this.maxSeconds - this.wrapS;
-    if (instruction !== OPENING && instruction !== GAP_OPENING && this.turns >= 1 && (late || this.spokenMs >= this.speakingLimit * 1000)) {
+    const late = this.activeSeconds() >= this.maxSeconds - this.wrapS;
+    if (!only && instruction !== OPENING && instruction !== GAP_OPENING && this.turns >= 1 && (late || this.spokenMs >= this.speakingLimit * 1000)) {
       if (!this.timeUp) { this.timeUp = true; this.metric(late ? 'interview_limit' : 'speaking_limit', { turns: this.turns }); }
       instruction = TIME_UP;
     }
-    if (instruction !== undefined) { move = null; refine = null; } // only a normal reply carries the selected move
+    if (only) refine = null; // a question said again keeps its move (it is asked again); it is never chosen again
+    else if (instruction !== undefined) { move = null; refine = null; } // only a normal reply carries the selected move
     this.replies += 1;
     const item = 'agent-' + this.replies, gen = ++this.gen;
     this.replyItem = item; this.replyTurn = turn; this.replyGen = gen;
     if (move) this.commitMove(item, move);
     const pieces = Array.isArray(prefix) ? prefix : prefix ? [prefix] : filler ? [filler] : [];
-    const run = this.speak(item, gen, instruction, pieces, !!filler, notBefore, endedAt, thinking, { move, ack: filler ? ack : null, refine, timeline }).catch(e => { this.metric('reply_error', { name: e?.name || 'Error' }); if (!this.finished && gen === this.gen) this.event('error', { message: 'The voice reply failed. No fallback voice was used.', code: 'voice-unavailable' }); });
+    const run = this.speak(item, gen, instruction, pieces, !!filler, notBefore, endedAt, thinking, { move, ack: filler ? ack : null, refine, timeline, only }).catch(e => { this.metric('reply_error', { name: e?.name || 'Error' }); if (!this.finished && gen === this.gen) this.event('error', { message: 'The voice reply failed. No fallback voice was used.', code: 'voice-unavailable' }); });
     this.speaking = run;
     run.finally(() => { if (this.speaking === run) this.speaking = null; });
   }
 
-  async speak(item, gen, instruction, pieces = [], isFiller = false, notBefore = 0, endedAt = 0, thinking = false, { move = null, ack = null, refine = null, timeline = null } = {}) {
+  async speak(item, gen, instruction, pieces = [], isFiller = false, notBefore = 0, endedAt = 0, thinking = false, { move = null, ack = null, refine = null, timeline = null, only = false } = {}) {
     let said = '', interrupted = true, firstText = 0, firstToken = 0, firstAudio = 0, gapMs = -1, talker = '', voiced = 0;
     const lang = this.spoken(); // one voice per reply, even if the consultant switches mid-reply
     const marker = new EndMarker(); // the talker's end-of-interview token is never spoken or shown
     const t0 = this.now(), prefix = pieces.join(' ');
     // The reply guard (speech.js ReplyGuard) enforces the shape of what the talker says in code: one question, no empty praise,
     // no repeated opener, a short reply. A closing is not capped (its end token comes last). Its drops are counted, never logged.
-    const guard = this.flags.replyGuard === 'on' ? new ReplyGuard({ bannedPraise: BANNED_PRAISE_SRC, recentOpeners: [...this.humane.openers, ...(isFiller ? pieces : [])],
+    const guard = !only && this.flags.replyGuard === 'on' ? new ReplyGuard({ bannedPraise: BANNED_PRAISE_SRC, recentOpeners: [...this.humane.openers, ...(isFiller ? pieces : [])],
       maxWords: instruction === TIME_UP ? null : GUARD_MAX_WORDS }) : null;
     // Text travels with its audio and reaches the screen when that audio is actually sent for playback (pace()), so it
     // never shows words ATLAS has not started to say, and a withdrawn piece never appears.
     let pending = '';
     this.live = { item, text: '' };
+    this.composing = { item, text: () => said, move: () => move }; // what this reply has composed so far: interrupt() keeps its question (captureQuestion)
     const show = text => { pending += text; };
     const release = () => { // text with no audio of its own
       if (!pending || gen !== this.gen || this.finished) return;
@@ -860,7 +1032,7 @@ export class Session {
       const pcm = await synthesis;
       // Never start talking over the consultant (or while their last words are still being transcribed), and leave
       // the extra beat after words that trail off. Any of these can end in a withdrawal (gen changes).
-      while ((this.turnDetector.active || this.sttBusy > 0 || this.now() < notBefore) && gen === this.gen && !this.finished) await this.sleep(20);
+      while (!(only && this.paused) && (this.turnDetector.active || this.sttBusy > 0 || this.now() < notBefore) && gen === this.gen && !this.finished) await this.sleep(20); // (the pause line has nobody to wait for: the microphone is closed)
       if (!firstAudio) {
         firstAudio = this.now(); this.metric('reply', { first_text_ms: Math.round((firstText - t0) * 1000), first_audio_ms: Math.round((firstAudio - t0) * 1000) });
         // The measure of "answers too quick": the consultant's last sound to ATLAS's first sound (numbers only).
@@ -894,11 +1066,15 @@ export class Session {
           show((i === 0 && this.replies > 1 ? '\n\n' : '') + pieces[i] + ' '); said += pieces[i] + ' ';
           await deliver(pieces[i], syntheses[i], isFiller, true); if (gen !== this.gen || this.finished) return;
           if (isFiller && ack) this.ackPlayed(ack);
-          if (!isFiller && i === 0) { // protect exactly the greeting's first piece: until the browser confirms it played (capped); the rest can be interrupted
+          if (!isFiller && !only && i === 0) { // protect exactly the greeting's first piece: until the browser confirms it played (capped); the rest can be interrupted
             this.protectedItem = item; this.protectedMs = (this.sentMs[item] || 0) + this.queue.filter(c => c.item === item).reduce((n, c) => n + c.bytes.length, 0) / 48 - before;
             this.protectedDeadline = this.now() + this.protectedMs / 1000 + 3;
           }
         }
+      }
+      if (only) { // a pause line, a resume line, a question said again: the pieces are the whole reply
+        await chain; release(); interrupted = gen !== this.gen;
+        return;
       }
       // Optionally wait (ANALYST_WAIT_MS) for the analyst while the acknowledgement plays, then choose the move again from its plan.
       if (refine && move) {
@@ -975,9 +1151,10 @@ export class Session {
         if (content) { const entry = { role: 'assistant', content }; this.history.push(entry); this.committed = { item, entry }; }
       }
       if (guard) this.metric('reply_guard', { ...guard.stats, stopped: guard.done ? 1 : 0 });
+      this.noteQuestion(item, said, move, interrupted);
       // Her leading reaction, for the repeated-opener rule of the next replies (a question is not a reaction).
       const [done, rest] = sentences(talker + ' '), lead = (done[0] || rest || '').trim();
-      if (lead && !/[?？]$/.test(lead) && lead.split(/\s+/).length <= OPENER_WORDS && !this.discarded.has(item)) { this.humane.openers.push(lead); if (this.humane.openers.length > 3) this.humane.openers.shift(); }
+      if (!only && lead && !/[?？]$/.test(lead) && lead.split(/\s+/).length <= OPENER_WORDS && !this.discarded.has(item)) { this.humane.openers.push(lead); if (this.humane.openers.length > 3) this.humane.openers.shift(); }
       // One line per turn: where the time went between the consultant's last word and hers (numbers only; -1: not reached).
       if (timeline && !this.discarded.has(item)) this.metric('turn_timeline', { stt_ms: timeline.sttMs, selector_ms: timeline.selectorMs,
         first_token_ms: firstToken ? Math.round((firstToken - t0) * 1000) : -1, first_audio_ms: firstAudio ? Math.round((firstAudio - t0) * 1000) : -1, reply_gap_ms: gapMs });
