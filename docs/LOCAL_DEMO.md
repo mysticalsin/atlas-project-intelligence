@@ -17,7 +17,7 @@ Open **http://127.0.0.1:8810/?as=you@mantu.com** (use `127.0.0.1`, not `localhos
 
 ## Run an interview
 
-1. Press **Type instead** (not "Start conversation": there is no speech recognition or voice offline), tick the consent box, then press **Type instead** again in the dialog.
+1. Press **Type instead** (not "Start interview": there is no speech recognition or voice offline), tick the consent box, then press **Type instead** again in the dialog.
 2. Answer ATLAS's questions in the box (Enter sends; one answer per 1.5 seconds). Answer in English, French, Spanish, Portuguese, German, Italian or Dutch:
    ATLAS follows your language. Give a few concrete facts (what was wrong, what you built, a before and after figure and where it came from, who used it).
 3. After the last question ATLAS reads the story back and the **read-back card** appears: **Keep private**, **Correct** (type the right wording), **Confirm summary**.
