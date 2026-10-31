@@ -12,6 +12,7 @@ import { snippetsOf, TOPIC_KEYS } from './snippets.js';
 import { RERANK_POLICY, parseRerankStrict, candidateCard, lexical, rankPool, retrievalOf, boundedMerge, BOUNDED_NOTE, UNRATED } from './reuse.js';
 import { SIM_FLOOR, STRONG } from './bids.js';
 import { winSignals } from './winloop.js';
+import { blockedOwners } from './privacy.js';
 
 export const READY = true;
 const LABEL = 'Answers are interpretation over the library; open each reference for the facts. People are listed by the projects they worked on, never ranked.';
@@ -40,7 +41,7 @@ async function ask(lib, user, b) {
     const theirs = pool.filter(([r, level]) => level === 'full' && named.has(norm(r.data.client?.name)));
     if (theirs.length) { pool = theirs; note = NOTE.filtered; }
   }
-  const q = pseudonymise(lib, question), mine = forAuthor(lib, q.map, { authorText: q.text });
+  const q = pseudonymise(lib, question), mine = forAuthor(lib, q.map, { authorText: q.text }), blocked = blockedOwners(lib, 'matching'); // X1 (red L7): objection applies to a listed consultant too
   const answer = (verdict, method, results, extraNote) => {
     const people = [], byKey = new Map(), countries = new Map();
     for (const r of results) {
@@ -72,7 +73,7 @@ async function ask(lib, user, b) {
   const results = picks.slice(0, limit).map(x => {
     const k = byId.get(x.id);
     return { ...safeSummary(lib, k.row, k.level, user), relevance: x.relevance, similarity: Math.round(k.similarity * 1000) / 1000, retrieval: k.retrieval,
-      why: mine(x.why), caveat: mine(x.caveat), snippets: snippetsFor(lib, k, q.text), people: peopleOf(k) };
+      why: mine(x.why), caveat: mine(x.caveat), snippets: snippetsFor(lib, k, q.text), people: peopleOf(k, blocked) };
   });
   const verdict = !ranked ? 'unranked' : results.some(x => x.relevance >= STRONG) ? 'strong' : 'partial';
   return answer(verdict, retrieval + (ranked ? ' + model ranking' : ' (not ranked)'), results, ranked ? (merged.bounded ? BOUNDED_NOTE : '') : NOTE.unranked);
@@ -89,9 +90,10 @@ function snippetsFor(lib, k, query) {
 
 // Record membership only, in reference order: the reference owner, then the listed consultants. Never scored.
 // An email only when the caller can open the record fully (the owner's is the record's owner, when it is an email).
-function peopleOf({ row, level }) {
+function peopleOf({ row, level }, blocked = new Set()) {
   const full = level === 'full', d = row.data || {}, out = [];
-  const add = (name, role, mail) => { const n = str(name, 100), e = full ? validEmail(mail) : ''; if (n || e) out.push({ name: n, role: str(role, 100), ...(e ? { email: e } : {}) }); };
+  // A listed consultant who restricted or objected to matching is not named, whatever the record says (their email is on the record even when it is not shown).
+  const add = (name, role, mail) => { if (blocked.has(String(mail || '').trim().toLowerCase())) return; const n = str(name, 100), e = full ? validEmail(mail) : ''; if (n || e) out.push({ name: n, role: str(role, 100), ...(e ? { email: e } : {}) }); };
   add(d.consultant?.name, d.consultant?.role, row.owner);
   for (const c of d.details?.consultants || []) add(c?.name, c?.role, c?.email);
   return out;

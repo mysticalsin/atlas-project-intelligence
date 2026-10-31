@@ -19,6 +19,9 @@ export const LIBRARY_LIMITS = Object.freeze({
   // G2: data subject rights and consent changes (per person)
   'me-export': { max: 5, windowMs: HOUR }, 'me-erase': { max: 3, windowMs: HOUR }, flags: { max: 30, windowMs: HOUR }, consent: { max: 60, windowMs: HOUR },
   submit: { max: 60, windowMs: HOUR },
+  // X1 (red L1): the model-calling and lookup routes of the feature modules (library-routes.js persistentLimit)
+  onepager: { max: 30, windowMs: HOUR }, ask: { max: 60, windowMs: HOUR }, 'bid-create': { max: 30, windowMs: DAY }, 'bid-edit': { max: 60, windowMs: HOUR }, 'bid-match': { max: 60, windowMs: HOUR },
+  people: { max: 30, windowMs: HOUR },
 });
 export const limitOf = (env, name) => { const v = Math.floor(Number(env?.['RL_' + name])); return v > 0 ? v : LIMITS[name]; };
 

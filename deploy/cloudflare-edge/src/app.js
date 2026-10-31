@@ -10,7 +10,7 @@ import { secure, baseSecurityHeaders, DATA_CSP } from './security-headers.js';
 import { PAGE_SCRIPT_HASHES, RUNTIME_BLOCK, REPORT_PATH, htmlCspHeaders, inlineScriptHashes, runtimeBlock, withoutMetaCsp, cspMode } from './csp.js';
 import { cspReport } from './csp-report.js';
 import { boundedBytes } from './bounded.js';
-import { requestLog, announceFlags } from './security-log.js';
+import { requestLog, announceFlags, secEvent } from './security-log.js';
 import * as ks from './kill-switches.js';
 import { limitOf, HOUR, retryAfterHeaders } from './ratelimit.js';
 import { sheetRoutes } from './sheet.js';
@@ -125,8 +125,9 @@ function headers(env, extra = {}) {
   return { ...baseSecurityHeaders(), 'Content-Security-Policy': DATA_CSP, ...extra };
 }
 // Headers of an HTML response: the one strict policy builder (csp.js) with the hashes of that page's own inline scripts.
-function htmlHeaders(env, hashes, extra = {}) {
-  return { ...baseSecurityHeaders(), ...htmlCspHeaders(env, { hashes, connect: env.ORIGIN.replace('https://', 'wss://') }), 'Content-Type': 'text/html; charset=utf-8', ...extra };
+// strict: the page never needed the old policy (the privacy notice, the re-sign-in page, the confirm page), so ATLAS_CSP=report-only does not loosen it (X1, red L2).
+function htmlHeaders(env, hashes, extra = {}, { strict = false } = {}) {
+  return { ...baseSecurityHeaders(), ...htmlCspHeaders(strict ? { ...env, ATLAS_CSP: '' } : env, { hashes, connect: env.ORIGIN.replace('https://', 'wss://') }), 'Content-Type': 'text/html; charset=utf-8', ...extra };
 }
 const readOnly503 = env => new Response(JSON.stringify({ error: ks.READ_ONLY_MESSAGE, code: 'READ_ONLY' }), { status: 503, headers: headers(env, { 'Content-Type': 'application/json', 'Retry-After': '300' }) });
 const json = (env, body, status = 200) => new Response(JSON.stringify(body), { status, headers: headers(env, { 'Content-Type': 'application/json' }) });
@@ -189,7 +190,7 @@ async function route(request, env, page, { waitUntil = p => p, flagsOf = flags }
     if (!env.CSRF_SECRET) return new Response('Deployment is not configured (CSRF_SECRET).', { status: 500 });
     // Kill switches (kill-switches.js), cheapest first: they apply before any secret or identity is looked at.
     const inbound = ((url.pathname === '/api/triggers' || url.pathname === '/api/directory/push' || url.pathname === '/api/teams/messages') && request.method === 'POST') || (url.pathname === '/teams/tab' && request.method === 'GET');
-    await announceFlags(env, ks.activeSwitches(env), sec.write);
+    await announceFlags(env, ks.securityFlags(env), sec.write);
     if (inbound && ks.inboundOff(env)) { sec.log('inbound_off', 'INBOUND_OFF', 503); return json(env, { error: ks.INBOUND_OFF_MESSAGE, code: 'INBOUND_OFF' }, 503); }
     if (request.method !== 'GET' && request.method !== 'HEAD' && ks.readOnly(env)) { sec.log('kill_switch', 'READ_ONLY', 503); return readOnly503(env); }
     // Project-management system trigger: its own bearer secret (Access bypass on this path only; see docs/INTEGRATIONS.md).
@@ -252,15 +253,15 @@ async function route(request, env, page, { waitUntil = p => p, flagsOf = flags }
     // Links that survive an interactive sign-in (§3.9): /go/start, /go/{gap,invitation,bid,library,confirm}/<32 hex>.
     // Anything else under /go/ goes home. The ids are random, non-secret and grant nothing without sign-in (a recorded
     // deviation from WOW rule 7); no token ever goes in a path, and nothing here logs the path.
-    if (request.method === 'GET' && url.pathname === '/go/signed-in') return new Response(SIGNED_IN_HTML, { headers: htmlHeaders(env, await inlineScriptHashes(SIGNED_IN_HTML)) });
+    if (request.method === 'GET' && url.pathname === '/go/signed-in') return new Response(SIGNED_IN_HTML, { headers: htmlHeaders(env, await inlineScriptHashes(SIGNED_IN_HTML), {}, { strict: true }) });
     if (request.method === 'GET' && url.pathname.startsWith('/go/')) {
       const m = /^\/go\/(?:(start)|(gap|invitation|bid|library|confirm)\/([a-f0-9]{32}))$/.exec(url.pathname);
       const to = !m ? '/' : m[1] ? '/#start' : m[2] === 'confirm' ? '/confirm#' + m[3] : '/#' + m[2] + '/' + m[3];
       return new Response(null, { status: 302, headers: headers(env, { Location: to }) });
     }
     // The privacy notice (G2): everyone signed in reads it, external confirmers too (it is where they learn what is done with their answers). No script, no data.
-    if (url.pathname === '/privacy' && request.method === 'GET') return new Response(privacy.renderNoticeHtml(RETENTION), { headers: htmlHeaders(env, []) });
-    if (url.pathname === '/confirm' && request.method === 'GET') return new Response(CONFIRM_HTML, { headers: htmlHeaders(env, await inlineScriptHashes(CONFIRM_HTML)) });
+    if (url.pathname === '/privacy' && request.method === 'GET') return new Response(privacy.renderNoticeHtml(RETENTION), { headers: htmlHeaders(env, [], {}, { strict: true }) });
+    if (url.pathname === '/confirm' && request.method === 'GET') return new Response(CONFIRM_HTML, { headers: htmlHeaders(env, await inlineScriptHashes(CONFIRM_HTML), {}, { strict: true }) });
     if (url.pathname === '/' && request.method === 'GET') {
       // The person's facts go in as a JSON data block, never as script (csp.js runtimeBlock), through a function replacer: a string one would expand "$'" and "$&" found in the email.
       let body = page.replace(RUNTIME_BLOCK, () => runtimeBlock({ subjectKey, authMode: 'access', name: who.email }))
@@ -311,7 +312,8 @@ async function route(request, env, page, { waitUntil = p => p, flagsOf = flags }
         readiness: env.DATA_MODE === 'production' ? 'production' : 'edge-deployment-test-data-only', email: mail, features: flagsOf(env), resumable,
         // G2: the consent wording and which toggles are required, and the person's consent state in force (what they last chose; memory is off until they turn it on).
         privacy: privacy.bootstrapView(), consent: consent ? { purposes: Object.fromEntries(Object.entries(consent.purposes || {}).map(([k, v]) => [k, v?.granted === true])), blocked: consent.blocked || {} } : null,
-        ...(ks.readOnly(env) ? { readOnly: true } : {}), ...(ks.aiOff(env) ? { aiOff: true } : {}) });
+        ...(ks.readOnly(env) ? { readOnly: true } : {}), ...(ks.aiOff(env) ? { aiOff: true } : {}),
+        ...(admin ? { securityFlags: ks.securityFlags(env) } : {}) }); // admin readiness: the non-default security settings (names only, X1 red L2)
     }
     // The admin Connections panel (v2.2 F2): read-only readiness of every connection in the framework, booleans and names only. Admins only; never any secret, URL or token value.
     if (url.pathname === '/api/connections/status' && request.method === 'GET') {
@@ -372,16 +374,23 @@ async function route(request, env, page, { waitUntil = p => p, flagsOf = flags }
       if (raw === null) return json(env, { error: 'Request too large.' }, 413);
       let b = {}; try { b = JSON.parse(new TextDecoder().decode(raw) || '{}'); } catch { return json(env, { error: 'Invalid JSON.' }, 400); }
       if (typeof b?.confirm !== 'string') {
-        const exp = Date.now() + ERASE_TOKEN_MS;
+        // exp.nonce.mac: the nonce makes the token single-use (X1, red L10): the person's own object remembers each nonce it has seen until the token would have expired anyway.
+        const exp = Date.now() + ERASE_TOKEN_MS, nonce = hex(crypto.getRandomValues(new Uint8Array(8)));
         sec.log('privacy_erase', 'CONFIRM_ISSUED', 200);
-        return json(env, { confirmToken: exp + '.' + (await hmac(env.CSRF_SECRET, 'erase|' + who.sub + '|' + exp)), expiresInSeconds: ERASE_TOKEN_MS / 1000,
+        return json(env, { confirmToken: exp + '.' + nonce + '.' + (await hmac(env.CSRF_SECRET, 'erase|' + who.sub + '|' + exp + '|' + nonce)), expiresInSeconds: ERASE_TOKEN_MS / 1000,
           willHappen: ['Your drafts, references, interview notes and evidence statements are replaced by empty markers.', 'Your saved interview and your private memory are deleted.', 'Your profile, invitations and messages about you are deleted.', 'Your name is removed from the audit trail.'],
           kept: ['Approved evidence, published references and bids are flagged for the DPO to review before deletion (they may already be used in a bid).', 'The record that you made consent choices (no content).', 'Platform backups can hold a copy for a short period.'] });
       }
-      const [exp, mac] = b.confirm.split('.');
-      if (!(Number(exp) > Date.now()) || !safeEqual(mac || '', await hmac(env.CSRF_SECRET, 'erase|' + who.sub + '|' + exp))) { sec.log('privacy_erase', 'CONFIRM_INVALID', 403); return json(env, { error: 'The confirmation expired or does not belong to this sign-in. Start again.' }, 403); }
+      const [exp, nonce, mac] = b.confirm.split('.');
+      if (!(Number(exp) > Date.now()) || !/^[0-9a-f]{16}$/.test(nonce || '') || !safeEqual(mac || '', await hmac(env.CSRF_SECRET, 'erase|' + who.sub + '|' + exp + '|' + nonce))) { sec.log('privacy_erase', 'CONFIRM_INVALID', 403); return json(env, { error: 'The confirmation expired or does not belong to this sign-in. Start again.' }, 403); }
+      // Single use: the nonce is recorded in the person's own object before anything is erased; a replay (or a second tab) is refused.
+      { const claim = await interviewOf('/api/me/erase-claim', { method: 'POST', body: JSON.stringify({ nonce, exp: Number(exp) }) }).catch(() => null);
+        if (claim?.status === 409) { sec.log('privacy_erase', 'CONFIRM_REPLAYED', 403); return json(env, { error: 'This confirmation was already used. Start again if you want to delete again.' }, 403); }
+        if (!claim?.ok) return json(env, { error: 'The deletion could not start. Nothing was changed. Please try again.' }, 502); }
       const lib = env.LIBRARY ? await libraryOf('/api/privacy/erase', { method: 'POST', body: JSON.stringify({ confirmed: true }) }) : null;
       if (lib && lib.status === 429) return new Response(lib.body, { status: 429, headers: headers(env, { 'Content-Type': 'application/json', 'Retry-After': lib.headers.get('Retry-After') || '3600' }) });
+      // X1 (red L4): the library part runs first and the interview part (checkpoint, memory, consent state) is irreversible, so a library failure stops here: nothing is half-erased and complete stays false.
+      if (lib && !lib.ok) return json(env, { error: 'Your data could not be deleted right now. Nothing was changed. Please try again.', complete: false, library: null, interview: null, retry: 'Choose Delete my data again to retry.' }, 502);
       const mine = await interviewOf('/api/me/erase', { method: 'POST', headers: { 'x-atlas-bank': bankSecretStatus(env) === 'missing' ? '' : await bankId(env, who.sub) } }).then(r => r.json()).catch(() => null);
       const library = lib && lib.ok ? await lib.json() : null, complete = (!env.LIBRARY || !!library) && !!mine?.complete;
       return json(env, { complete, library, interview: mine, ...(complete ? {} : { retry: 'Part of the erasure did not finish. Nothing already erased comes back; choose Delete my data again to finish.' }) });
@@ -507,6 +516,9 @@ async function storedSpokenAsk(env, { libraryUser, role, mail }) {
 // update invitation for their owner, plus the feature modules' daily housekeeping. Nothing is ever sent.
 export async function scheduled(controller, env, ctx) {
   if (!env.LIBRARY) return;
+  // X1 (red M3): under ATLAS_READ_ONLY the cron still reaches the LibraryStore so the audit chain is VERIFIED (worker.js), but the store then does nothing that writes: no retention
+  // erasure, no audit re-seal, no stale-reference invitations, no housekeeping, no destination retries (library-routes.js scan-stale).
+  if (ks.readOnly(env)) ctx.waitUntil(secEvent(env, 'kill_switch', { route: '/cron/scan-stale', status: 200, reason: 'READ_ONLY', role: 'system' }));
   const req = new Request('https://atlas.internal/api/library/scan-stale', { method: 'POST', body: '{}', headers: { 'Content-Type': 'application/json', 'x-atlas-user': 'atlas-cron', 'x-atlas-role': 'system' } });
   ctx.waitUntil(env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(req)); // the LibraryStore also verifies its audit chain on this call (worker.js)
 }

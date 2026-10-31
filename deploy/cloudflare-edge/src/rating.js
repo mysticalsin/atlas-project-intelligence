@@ -8,6 +8,7 @@
 // own values and known people's names are masked, and a containment guard refuses to send if any own value remains.
 // The key only ever goes in the Authorization header; errors carry fixed text only.
 import { completeness, contactLead } from './review.js';
+import { aiOff } from './kill-switches.js';
 import { recordView, nameMatcher, STOPLIST } from './scrub.js';
 import { NUMERIC_SRC } from './policy.generated.js';
 import { storedNames } from './profile.js';
@@ -434,7 +435,7 @@ export function storyRater(env, fetcher = fetch, opts = {}) {
   const budgets = { interactive: { ...BUDGETS.interactive, ...(opts.budgets?.interactive || {}) }, background: { ...BUDGETS.background, ...(opts.budgets?.background || {}) } };
   const now = opts.now || (() => Date.now()), random = opts.random || Math.random, sleep = opts.sleep || (ms => delay(ms));
   let fails = 0, openUntil = 0, authKey = null;
-  const available = () => !!env.TYPESAFE_API_KEY;
+  const available = () => !!env.TYPESAFE_API_KEY && !aiOff(env); // X1 (red M2): the AI kill switch makes the rater unavailable (no call, no story text sent)
   const blocked = () => (authKey !== null && env.TYPESAFE_API_KEY === authKey ? 'auth' : openUntil && now() < openUntil ? 'circuit_open' : null);
   const note = (o, key, trial) => {
     if (o.ok) { fails = 0; openUntil = 0; return; }

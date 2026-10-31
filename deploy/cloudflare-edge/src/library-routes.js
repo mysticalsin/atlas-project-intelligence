@@ -13,11 +13,25 @@ import * as retention from './retention.js';
 import { holdRoutes } from './subject-rights.js';
 import { enforce } from './ratelimit.js';
 import { secEvent } from './security-log.js';
+import { obj } from './util.js';
+import * as ks from './kill-switches.js';
 export const SYSTEM = { email: 'atlas', role: 'admin' }; // automatic review after a save
 // A rating engine exists: the review agent, or JEV with a key (docs/JEV_RATING.md §6.5).
 const canRate = lib => !!(lib.complete || lib.rater?.available());
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+
+// X1 (red L1): the model-calling and personal routes of the feature modules, limited per person in the Durable Object STORAGE (ratelimit.js), not only in this isolate's memory
+// (util.rateLimit resets whenever the object is evicted). The in-module limits stay as a second, tighter-grained guard.
+const persistentLimit = (method, parts) => {
+  if (method !== 'POST') return null;
+  const [word, id, action] = parts;
+  if (word === 'ask' && parts.length === 1) return 'ask';
+  if (word === 'people' && id === 'lookup') return 'people';
+  if (word !== 'bids') return null;
+  if (parts.length === 1) return 'bid-create';
+  return parts.length === 3 ? { requirements: 'bid-edit', match: 'bid-match', onepager: 'onepager' }[action] || null : null;
+};
 
 export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}, storage = null } = {}) {
   // idp: the sign-in name claims (x-atlas-idp, always written by the Worker from the verified token; WOW_ZERO_CONFIG §5.5).
@@ -44,6 +58,8 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
     const ev = evidence.target(url.pathname);
     if (ev) { const r = user.role === 'system' ? null : await evidence.routes({ ...ctx, rest: ev.rest, internal: ev.internal }); return json(r ? r.body : { error: 'Not found.' }, r ? r.status || 200 : 404); }
     if (!parts.length && method === 'GET') return json(lib.list(user, Object.fromEntries(url.searchParams)));
+    // X1 (red L12): free-text search travels in a POST body, never in a URL (a query string lands in access logs). The GET above stays for the plain filters.
+    if (method === 'POST' && parts.length === 1 && parts[0] === 'search') return json(lib.list(user, obj(body)));
     if (!parts.length && method === 'POST') {
       { const refused = await limited('upsert'); if (refused) return refused; }
       const saved = await lib.upsert(user, body);
@@ -55,9 +71,13 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
     if (user.role === 'system') {
       if (method === 'POST' && id === 'trigger') return json(outreach.onTrigger(lib, user.email, body), 201);
       if (method === 'POST' && id === 'scan-stale') {
+        // X1 (red M3): READ_ONLY freezes the cron. The chain check (worker.js) has already run; nothing else here may write: no stale-reference invitations, no retention erasure, no audit
+        // re-seal, no profile or outreach housekeeping, no destination retries.
+        if (ks.readOnly(env)) { await secEvent(env, 'kill_switch', { route: url.pathname, method, status: 200, reason: 'READ_ONLY', role: 'system' }); return json({ readOnly: true, skipped: ['scanStale', 'retention', 'outreach', 'profile', 'branches'] }); }
         const swept = { invited: lib.scanStale(), ...outreach.daily(lib), ...(profile.READY ? profile.daily(lib) : {}) };
         const kept = retention.sweep(lib); // G2: the retention schedule (counts only; absent on a quiet day)
-        if (kept.auditHead) { await secEvent(env, 'audit_chain_ok', { reason: 'CHAIN_RESEALED', n: kept.auditRows || 0, head: String(kept.auditHead).slice(0, 16) }); delete kept.auditHead; }
+        if (kept.auditHead) { await secEvent(env, 'audit_chain_ok', { reason: 'CHAIN_RESEALED', n: kept.auditRows || 0, head: String(kept.auditHead).slice(0, 16), prev: String(kept.auditPreviousHead || '').slice(0, 16) }); delete kept.auditHead; delete kept.auditPreviousHead; }
+        if (kept.auditRefused) { await secEvent(env, 'audit_chain_break', { reason: 'REWRITE_REFUSED', n: kept.auditRefused.brokenSeq }); delete kept.auditRefused; }
         if (Object.keys(kept).length) swept.retention = kept;
         branches.configure(lib, { env }); await branches.pump(evidence.evidence(lib)).catch(() => {}); // due destination retries (T15); a no-op unless ATLAS_ADAPTERS=mock
         return json(swept);
@@ -67,6 +87,7 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
       return json({ error: 'Not found.' }, 404);
     }
     if (id === 'privacy') { const h = holdRoutes(ctx); return json(h.body, h.status || 200); } // the DPO's list of what erasure held back (admin only)
+    { const name = persistentLimit(method, parts); if (name) { const refused = await limited(name); if (refused) return refused; } }
     const f = await featureRoutes(ctx);
     if (f) return json(f.body, f.status || 200);
     if (method === 'POST' && id === 'recommend') { const refused = await limited('recommend'); if (refused) return refused; return json(await lib.recommend(user, body)); }

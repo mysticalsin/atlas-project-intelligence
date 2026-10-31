@@ -3,6 +3,7 @@
 // without re-scoring. Confidential client fields are never accepted here, so they can never reach a model.
 // Categories are a starting taxonomy from Tony's examples; replace with Mantu's official practice list when available.
 
+import { assertAiOn } from './kill-switches.js';
 export const CATEGORIES = {
   data_ai: { label: 'Data & AI', what: 'data platforms, analytics and BI, data engineering, machine learning, generative AI, data governance' },
   web_app: { label: 'Web & App Development', what: 'web and mobile applications, front-end and back-end development, APIs, UX and product engineering' },
@@ -89,6 +90,7 @@ export function impact(scores, weights = Object.fromEntries(Object.entries(DIMEN
 
 export async function classify(env, rawProject, fetcher = fetch) {
   const state = projectState(rawProject); // invalid input is a 400 even when JEV is not configured
+  assertAiOn(env); // X1 (red M2): the AI kill switch, checked here as well as at the route
   if (!env.TYPESAFE_API_KEY) { const e = new Error('JEV is not configured on this deployment.'); e.status = 503; throw e; }
   const body = requestBody(env.JEV_MODEL || 'jev-latest', state);
   for (let attempt = 0; ; attempt++) {

@@ -81,10 +81,14 @@ export function verifyChain(sql) {
 
 // G2: a privacy rewrite (erasure of a person, the retention pseudonymisation). `edit(row)` returns the fields to change ({actor, detail}) or null. A changed row
 // gets its fields replaced and the chain is re-sealed from the first changed row to the end, so verifyChain keeps passing. This is the ONE sanctioned way to
-// alter history, and it moves the chain head: the caller logs the new head (the external anchor) and says why. The in-table chain never protected against
+// alter history, and it moves the chain head: the caller logs both heads (the external anchor) and says why. The in-table chain never protected against
 // whoever can rewrite the whole table (see the limits above); what stays tamper-evident is everything that was not erased.
+// X1 (red M8): the chain is VERIFIED FIRST. Re-sealing a chain that no longer verifies would make the tampered rows look legitimate, so a broken chain is left
+// exactly as it is and the call returns { refused: true, reason, brokenSeq, changed: 0 }; the caller reports it (a security event) and the privacy action continues
+// without the audit rewrite (the DPO is told that part is pending).
 export function rewriteRows(sql, edit) {
-  ensureChain(sql);
+  const before = verifyChain(sql);
+  if (!before.ok) return { refused: true, reason: before.reason, brokenSeq: before.brokenSeq, changed: 0, head: before.head, previousHead: before.head };
   let prev = GENESIS, changed = 0, resealing = false;
   for (const r of sql.exec('SELECT seq, id, actor, action, at, detail, prev_hash, hash FROM audit ORDER BY seq').toArray()) {
     const patch = edit(r), next = patch ? { ...r, ...patch } : r;
@@ -95,5 +99,5 @@ export function rewriteRows(sql, edit) {
       prev = h;
     } else prev = r.hash;
   }
-  return { changed, head: prev };
+  return { changed, head: prev, previousHead: before.head };
 }

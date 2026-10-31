@@ -5,6 +5,7 @@
 // threshold and the weights are uncalibrated pilot values.
 // One deliberate difference: jev.py refuses a story without `eligible: true`; here the caller has already limited
 // the stories to published references the user may see, and the story shape of §F1.5 carries no such flag.
+import { aiOff } from './kill-switches.js';
 export const RUBRIC_VERSION = 'customer-value-v1';
 export const DIMENSIONS = {
   problem_fit: ['Does the story address this customer problem and business stakes?', 0.30],
@@ -111,7 +112,7 @@ export function shortlist(stories, customer, limit = 12) {
 // recommendedIds, method, rubricVersion, thresholdStatus }. Transport: POST, redirect 'manual', 18 s per attempt,
 // body <= 65,000 bytes, retry on 429/529 at most twice. Any failure throws; the caller falls back and says so.
 export function customerJev(env, fetcher = fetch, { today, sleep = ms => new Promise(r => setTimeout(r, ms)) } = {}) {
-  if (!env?.TYPESAFE_API_KEY) return null;
+  if (!env?.TYPESAFE_API_KEY || aiOff(env)) return null; // no key, or the operator's AI kill switch (kill-switches.js): nothing is sent to the third party
   const key = env.TYPESAFE_API_KEY, model = env.JEV_MODEL || 'jev-1.13.0';
   return async (customer, stories) => {
     if (!isDict(customer) || CUSTOMER_KEYS.some(k => !pyStr(Object.hasOwn(customer, k) ? customer[k] : '').trim())) throw new Error('Supply problem, buyer, constraints and desired outcome before ranking');

@@ -108,10 +108,25 @@ const ensured = new WeakSet();
 export function ensure(lib) {
   if (ensured.has(lib)) return;
   for (const q of DDL) lib.sql.exec(q);
-  // Append-only: a receipt is never edited. (Deleting is possible only for the retention sweep, which removes a whole person's old receipts; see retention.js.)
-  try { lib.sql.exec("CREATE TRIGGER IF NOT EXISTS consent_receipts_no_update BEFORE UPDATE ON consent_receipts BEGIN SELECT RAISE(ABORT, 'consent receipts are append-only'); END"); } catch { /* a platform without triggers: the module still exposes no update path */ }
+  // Append-only: a receipt is never edited, deleted or replaced. The one exception is the retention sweep, which removes a whole person's old receipts and opens the gate
+  // (retentionGate below) for exactly that statement. X1 (red L9): REPLACE (a delete plus an insert) was allowed; SQLite runs a REPLACE's implicit delete without firing
+  // delete triggers, so an insert that reuses an existing id is refused as well.
+  try {
+    lib.sql.exec('CREATE TABLE IF NOT EXISTS privacy_gate (name TEXT PRIMARY KEY, open INTEGER)');
+    lib.sql.exec("CREATE TRIGGER IF NOT EXISTS consent_receipts_no_update BEFORE UPDATE ON consent_receipts BEGIN SELECT RAISE(ABORT, 'consent receipts are append-only'); END");
+    lib.sql.exec("CREATE TRIGGER IF NOT EXISTS consent_receipts_no_delete BEFORE DELETE ON consent_receipts WHEN COALESCE((SELECT open FROM privacy_gate WHERE name = 'receipts'), 0) != 1 BEGIN SELECT RAISE(ABORT, 'consent receipts are append-only'); END");
+    lib.sql.exec("CREATE TRIGGER IF NOT EXISTS consent_receipts_no_replace BEFORE INSERT ON consent_receipts WHEN EXISTS (SELECT 1 FROM consent_receipts WHERE id = NEW.id) BEGIN SELECT RAISE(ABORT, 'consent receipts are append-only'); END");
+  } catch { /* a platform without triggers: the module still exposes no update path */ }
   ensured.add(lib);
 }
+// Runs `fn` (the retention sweep's receipt delete) with the delete gate open, and always closes it again.
+export function retentionGate(lib, fn) {
+  ensure(lib);
+  try { lib.sql.exec("INSERT OR REPLACE INTO privacy_gate (name, open) VALUES ('receipts', 1)"); } catch { /* no gate table: no triggers either */ }
+  try { return fn(); } finally { try { lib.sql.exec("INSERT OR REPLACE INTO privacy_gate (name, open) VALUES ('receipts', 0)"); } catch { /* as above */ } }
+}
+// The hash of the pseudonymous subject key kept on an erasure hold: enough to show that a subject was erased, not enough to identify who.
+export const subjectHash = subj => sha256Hex('erasure|' + subj).slice(0, 24);
 
 const SUBJECT = /^[0-9a-f]{16,64}$/;
 export const subjectOf = v => { const s = String(v || '').toLowerCase(); return SUBJECT.test(s) ? s : ''; };
@@ -162,10 +177,14 @@ export function blockedOwners(lib, purpose) {
   const col = { scoring: 'object_scoring', matching: 'object_matching', memory: 'object_memory' }[purpose];
   return new Set(lib.rows(`SELECT subject FROM privacy_flags WHERE restricted = 1${col ? ' OR ' + col + ' = 1' : ''}`).map(r => r.subject));
 }
-export function setFlags(lib, email, patch, { actor = email } = {}) {
+// X1 (red L8): while erasure left material for the DPO (a pending hold under this subject), the restriction erasure set stays until the DPO resolves every hold: the person
+// can add flags but not lift one. `subj` is the verified pseudonymous subject key (holds record its hash).
+const pendingHolds = (lib, subj) => !!subj && lib.rows("SELECT 1 AS x FROM erasure_holds WHERE subject_hash = ? AND status = 'pending_dpo' LIMIT 1", subjectHash(subj)).length > 0;
+export function setFlags(lib, email, patch, { actor = email, subj = '' } = {}) {
   ensure(lib);
   const p = obj(patch), cur = flagsOf(lib, email), next = { ...cur };
   for (const k of FLAG_KEYS) if (p[k] !== undefined) { if (typeof p[k] !== 'boolean') throw fail(400, 'Each flag must be true or false.'); next[k] = p[k]; }
+  if (FLAG_KEYS.some(k => cur[k] && !next[k]) && pendingHolds(lib, subj)) throw fail(409, 'Your data stays restricted while the DPO reviews what the erasure kept. It can be lifted once they have resolved it.');
   const at = lib.now();
   lib.sql.exec('INSERT OR REPLACE INTO privacy_flags (subject, restricted, object_scoring, object_matching, object_memory, updated_at) VALUES (?, ?, ?, ?, ?, ?)', email, +next.restricted, +next.objectScoring, +next.objectMatching, +next.objectMemory, at);
   lib.log('privacy', actor, 'privacy flags', FLAG_KEYS.filter(k => next[k] !== cur[k]).map(k => k + '=' + next[k]).join(',') || 'unchanged'); // names the flags, never the person's content

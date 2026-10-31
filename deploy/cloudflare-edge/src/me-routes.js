@@ -4,6 +4,7 @@
 //   POST /api/consent        a change of choices {purposes: {checkpoint?, memory?, notice?}, channel}: state and receipts, all or nothing
 //   POST /api/consent/block  the Worker tells this object that memory is blocked (restriction or objection) or not
 //   GET  /api/me/export      the checkpoint (meta and content when present) and the private memory documents (content when the memory service gives it)
+//   POST /api/me/erase-claim record a confirmation nonce as used (single-use erase tokens, X1 red L10); 409 when it was already used
 //   POST /api/me/erase       purge the checkpoint, forget the whole memory bank, clear the consent state (the receipts stay in the library)
 import { CheckpointStore } from './checkpoint.js';
 import * as privacy from './privacy.js';
@@ -23,7 +24,8 @@ export async function meRoutes(request, { storage, hs, env, now = () => Date.now
     for (const [k, v] of Object.entries(obj(obj(body).purposes))) { if (!privacy.PURPOSES.includes(k) || typeof v !== 'boolean') return json({ error: 'Unknown consent choice.' }, 400); wanted[k] = v; }
     if (wanted.memory === true && (await privacy.loadState(storage)).blocked?.memory) return json({ error: 'Memory is switched off because you restricted or objected to it. Lift that first.' }, 409);
     try {
-      const r = await privacy.recordConsent(storage, env, id, wanted, { channel: privacy.CHANNELS.includes(obj(body).channel) ? body.channel : 'profile' });
+      // The receipt's channel is the route's, never the body's (X1, red L10): this route is the person's settings, so 'profile'. The interview dialog's channel is set by the session itself.
+      const r = await privacy.recordConsent(storage, env, id, wanted, { channel: 'profile' });
       return json({ purposes: r.state.purposes, changed: r.changes.map(c => ({ purpose: c.purpose, granted: c.granted })) });
     } catch { return json({ error: 'Your choice could not be recorded, so nothing changed. Please try again.' }, 502); }
   }
@@ -57,6 +59,18 @@ export async function meRoutes(request, { storage, hs, env, now = () => Date.now
       } catch { out.memory = { enabled: true, documents: [], error: 'The memory service did not answer.' }; }
     }
     return json(out);
+  }
+  if (request.method === 'POST' && url.pathname === '/api/me/erase-claim') {
+    const nonce = String(obj(body).nonce || ''), exp = Number(obj(body).exp);
+    if (!/^[0-9a-f]{16}$/.test(nonce) || !Number.isFinite(exp)) return json({ error: 'Bad request.' }, 400);
+    const key = 'erase-used:' + nonce;
+    if (await storage.get(key)) return json({ error: 'Already used.' }, 409);
+    await storage.put(key, { exp });
+    if (typeof storage.list === 'function') { // finished nonces go (a token is only valid for ten minutes)
+      const all = await storage.list({ prefix: 'erase-used:', limit: 100 }), dead = [...all].filter(([, v]) => !(Number(v?.exp) > now())).map(([k]) => k);
+      if (dead.length) await storage.delete(dead);
+    }
+    return json({ claimed: true });
   }
   if (request.method === 'POST' && url.pathname === '/api/me/erase') {
     const out = { checkpointPurged: 0, memory: { forgotten: !hs || !bank, error: '' }, consentCleared: false };

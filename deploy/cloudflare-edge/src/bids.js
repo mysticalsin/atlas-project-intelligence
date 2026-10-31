@@ -13,6 +13,8 @@ import { claimSummary, confirmationStatus } from './claims.js';
 import { listForBid, ensure as ensureGaps } from './gaps.js';
 import { customerJev } from './customer-jev.js';
 import { winSignals, proofTypeOf } from './winloop.js';
+import * as privacy from './privacy.js';
+import { aiOff } from './kill-switches.js';
 
 export const READY = true;
 
@@ -21,6 +23,7 @@ export const STRONG = 60;
 export const PARTIAL = 30;
 export const SIM_FLOOR = Object.freeze({ semantic: 0.35, lexical: 0.08 });
 
+const REFUSED_FLAG = 'This reference is switched off for matching and proof at its owner\'s request.';
 const KINDS = ['capability', 'sector', 'outcome', 'constraint', 'credential'];
 const CUSTOMER = ['problem', 'buyer', 'constraints', 'desired_outcome'];
 const OUTCOMES = ['pending', 'won', 'lost', 'withdrawn'];
@@ -329,7 +332,10 @@ async function rankRun(lib, env, { pool, query, reqs, customer, limit, jev }) {
   // JEV ranks only with all four customer fields; one the brief did not give is named, never reported as a JEV failure.
   const missing = CUSTOMER.filter(k => !customer[k].trim()).map(k => k.replace('_', ' '));
   let fellBack = '';
-  if (jev && env?.TYPESAFE_API_KEY && missing.length)
+  // X1 (red M2): with ATLAS_AI_OFF nothing is sent to TypeSafe, and the note says so (it used to claim a fall back to Workers AI, which is off as well).
+  if (jev && aiOff(env))
+    fellBack = ' (JEV not asked: the AI features are switched off by the operator)';
+  else if (jev && env?.TYPESAFE_API_KEY && missing.length)
     fellBack = ` (JEV not asked: no ${missing.length > 1 ? missing.slice(0, -1).join(', ') + ' or ' + missing.at(-1) : missing[0]} was taken from the brief; ranked by Workers AI)`;
   else if (jev && env?.TYPESAFE_API_KEY) {
     try {
@@ -417,6 +423,7 @@ async function onepager({ lib, user, body }, row) {
     const r = lib.row(id), level = lib.access(r, user);
     if (!level) throw fail(404, 'Reference not found.');
     if (r.status !== 'published') throw fail(400, 'Only published references can be used as proof.');
+    if (!privacy.processable(lib, r.owner, 'matching')) throw fail(409, REFUSED_FLAG); // X1 (red M4): restriction and objection stop every projection of the reference
     return { r, level };
   });
   const byId = new Map(), input = [];
@@ -469,6 +476,7 @@ function use({ lib, user, body }, row) {
     const r = lib.row(id);
     if (!lib.access(r, user)) throw fail(404, 'Reference not found.');
     if (r.status !== 'published') throw fail(400, 'Only published references can be used as proof.');
+    if (!privacy.processable(lib, r.owner, 'matching')) throw fail(409, REFUSED_FLAG); // X1 (red M4)
     return r;
   });
   const at = lib.now();

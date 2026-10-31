@@ -79,13 +79,14 @@ export function sweep(lib, { now = lib.now(), retention = RETENTION } = {}) {
       if (personal && !names.has(row.actor)) names.set(row.actor, token());
       return { actor: personal ? names.get(row.actor) : row.actor, detail: '' };
     });
-    if (r.changed) { add('auditRows', r.changed); out.auditHead = r.head; }
+    if (r.refused) out.auditRefused = { reason: r.reason, brokenSeq: r.brokenSeq }; // X1 (red M8): a chain that does not verify is left untouched; the cron reports it
+    else if (r.changed) { add('auditRows', r.changed); out.auditHead = r.head; out.auditPreviousHead = r.previousHead; }
   }
   // Consent receipts of a person whose latest receipt is older than the period.
   if (c('consent_receipts')) {
     const cut = before(now, c('consent_receipts'));
     const n = lib.rows('SELECT COUNT(*) AS n FROM consent_receipts WHERE subject IN (SELECT subject FROM consent_receipts GROUP BY subject HAVING MAX(at) < ?)', cut)[0].n;
-    if (n) { lib.sql.exec('DELETE FROM consent_receipts WHERE subject IN (SELECT subject FROM consent_receipts GROUP BY subject HAVING MAX(at) < ?)', cut); add('consentReceipts', n); }
+    if (n) { privacy.retentionGate(lib, () => lib.sql.exec('DELETE FROM consent_receipts WHERE subject IN (SELECT subject FROM consent_receipts GROUP BY subject HAVING MAX(at) < ?)', cut)); add('consentReceipts', n); }
   }
   return out;
 }
