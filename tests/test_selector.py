@@ -941,3 +941,62 @@ def test_h2_reflect_names_the_fields_the_way_people_say_them():
     m = mv(plan, turn('okay'), phase='depth')
     assert m['kind'] == 'reflect' and m['say'] == "So far we've covered the problem, your part and the result. What important thing have I missed?"
     assert not any(label.lower() in m['say'].lower() for _, (label, _) in FIELDS.items())
+
+
+# ---------- H3: never leave a setback unacknowledged ----------
+
+PILOT = ['Honestly the pilot failed. The client kept changing scope and in the end they cancelled it after three months.',
+         'I was the delivery lead, I tried to hold the scope with weekly steering meetings but the sponsor left halfway.',
+         'It was really frustrating, the team was exhausted and the new sponsor did not care about the project at all.']
+
+
+def test_h3_a_setback_turn_always_has_an_acknowledgement_never_none():
+    t = turn(PILOT[2])
+    assert 'describes_setback' in t['cues']
+    m1 = mv(t=t)
+    log = [m1]
+    for _ in range(6):   # every reply of a long run of setback answers
+        m = mv(t=t, asked=list(log))
+        assert m['reaction'] == 'ack' and m['ack_category'] in ('setback_neutral', 'setback_plain'), m
+        log.append(m)
+    # also where the move itself carries no acknowledgement of its own: an offer to move on, a read-back after "that's all"
+    stop = mv(t=turn('The whole thing failed and honestly I have nothing more to say.'), asked=[ASK('stakes', 'stakes', 2)])
+    assert stop['kind'] == 'summary' and stop['reaction'] == 'ack' and stop['ack_category'].startswith('setback_'), stop
+    blocked = [ASK('example', 'intervention', 2), ASK('example', 'intervention', 2, why='x')]
+    offer = mv(t=turn('It failed and the team was exhausted and nobody would say why it went wrong.'), asked=blocked)
+    assert offer['reaction'] == 'ack' and offer['ack_category'].startswith('setback_'), offer
+    # a turn without the cue keeps its old behaviour: no acknowledgement for a repeat, an offer or a reflection
+    assert mv(t=turn('The release pipeline cut the build time a lot for the squads.'), asked=blocked)['reaction'] in ('ack', 'none')
+    # the repeat of an unanswered question after a pause is not an acknowledgement point, setback or not
+    rep = mv(t=turn('It failed. Can you say that again?'), asked=[ASK('stakes', 'stakes', 2, say='What was at stake for the client?')])
+    assert rep['why'] == selector.REPEAT_LAST and rep['reaction'] == 'none'
+
+
+def test_h3_after_the_setback_question_the_next_move_goes_forward_not_to_stakes():
+    t = turn(PILOT[2], 'intervention')
+    m1 = mv(t=turn(PILOT[0]))
+    m2 = mv(t=turn(PILOT[1], 'decision'), asked=[m1])
+    assert (m1['intent'], m2['intent']) == ('setback_response', 'example_follow')
+    m3 = mv(t=t, asked=[m1, m2])
+    assert (m3['intent'], m3['say'], m3['why']) == ('keep_going', 'What helped you keep going?', 'setback:keep_going')
+    assert m3['reaction'] == 'ack' and m3['ack_category'] == 'setback_plain' and m3['field'] is None and m3['rung'] is None
+    assert m3['say'].count('?') == 1 and 'keep_going' in selector.NOT_ATTEMPTS and 'keep_going' in selector.NO_HOOK
+    # then the lesson (once), still before stakes
+    m4 = mv(t=t, asked=[m3, m1])
+    assert (m4['intent'], m4['field'], m4['say']) == ('lessons', 'limitations', 'What would you do differently next time?')
+    m5 = mv(t=t, asked=[m3, m1, m4])
+    assert m5['intent'] not in ('keep_going', 'lessons')
+    # the throttle gates it: no setback question just asked, then that comes first (H1/H2 behaviour); no setback cue, no forward move
+    assert mv(t=turn(PILOT[0]))['intent'] == 'setback_response'
+    calm = turn('The client wanted a support dashboard and we had two months to deliver it.')
+    assert mv(t=calm, asked=[m1])['intent'] not in ('keep_going', 'lessons')
+    # keep_going is asked at most once per interview, and a lesson already given is not asked for again
+    assert not any(x['intent'] == 'keep_going' for x in converse(PILOT * 3)[3:])
+    given = ledger_plan(('limitations', 'I would not run a pilot again without a signed scope and a backup sponsor'))
+    assert mv(plan=given, t=t, asked=[m1, m2])['intent'] == 'keep_going' and mv(plan=given, t=t, asked=[m3, m1])['intent'] != 'lessons'
+
+
+def test_h3_persona_c_replay_has_no_stakes_question_right_after_the_setback():
+    out = converse(PILOT)
+    assert [m['intent'] for m in out] == ['setback_response', 'example_follow', 'keep_going']
+    assert all(m['reaction'] == 'ack' for m in out) and 'stakes' not in [m['intent'] for m in out]

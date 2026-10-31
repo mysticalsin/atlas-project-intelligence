@@ -119,17 +119,17 @@ test('H2-1 live: the spoken read-back is the story, the card keeps its labels, a
 });
 
 // ---------- 2. empathy is paced ----------
-test('H2-2 persona C: three setback replies in a row get one setback acknowledgement, a plain uptake, then none; the setback question is not asked twice in three replies', () => {
+test('H2-2 persona C: three setback replies in a row get one setback acknowledgement, then plain uptakes (never none, H3); the setback question is not asked twice in three replies', () => {
   const t = turn('It was really frustrating, the team was exhausted and the new sponsor did not care about the project at all.');
   const m1 = mv(t), m2 = mv(t, { asked: [m1] }), m3 = mv(t, { asked: [m1, m2] }), m4 = mv(t, { asked: [m1, m2, m3] });
   assert.deepEqual([m1, m2, m3, m4].map(m => m.ack_category), ['setback_neutral', 'setback_plain', 'setback_plain', 'setback_neutral']);
   assert.deepEqual([m1, m2, m3, m4].map(m => m.intent === 'setback_response'), [true, false, false, true]);
-  // what is played: the plain uptake alternates with silence, never two in a row, never sympathy
+  // what is played: the plain uptake, never sympathy twice, and (H3) never silence on a setback
   let prev = null; const played = [];
   for (const [i, m] of [m1, m2, m3, m4].entries()) {
     const a = pickAck({ category: m.ack_category, cues: t.cues, words: t.words, prevCategory: prev, seed: i }); prev = a ? a.category : null; played.push(a);
   }
-  assert.deepEqual(played.map(a => a?.category ?? null), ['setback_neutral', 'setback_plain', null, 'setback_neutral']);
+  assert.deepEqual(played.map(a => a?.category ?? null), ['setback_neutral', 'setback_plain', 'setback_plain', 'setback_neutral']);
   assert.ok(ACKS.setback_plain.en.includes(played[1].text) && !ACKS.setback_neutral.en.includes(played[1].text));
 });
 

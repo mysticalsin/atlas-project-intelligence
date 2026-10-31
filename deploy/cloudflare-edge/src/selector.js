@@ -292,6 +292,10 @@ function* candidates(c) {
     if (cues.includes('client_praise') && lastIntent !== 'praise_source') yield { ...none, intent: 'praise_source', field: null, rung: null, why: 'client_praise' };
     const follow = followField(c); // a richer field they brought up unasked ("We chose GitLab over Jenkins because..."): one follow-up on that thread before moving on
     if (follow) yield { ...none, intent: FOLLOW_INTENTS[follow], field: follow, rung: rung(follow), why: 'follow:' + follow };
+    if (cues.includes('describes_setback') && recent(c, 'setback_response')) { // its question was just asked: go forward (what helped, what was learned) before stakes or customer fit
+      if (!count(c, 'keep_going', null, true)) yield { ...none, intent: 'keep_going', field: null, rung: null, why: 'setback:keep_going' };
+      if (!(c.present.has('limitations') || c.covered.has('limitations')) && !count(c, 'lessons', 'limitations')) yield { ...none, intent: 'lessons', field: 'limitations', rung: CONFIG.fields.limitations.rung, why: 'setback:lessons' };
+    }
     if (c.phase === 'depth' && c.present.size >= CONFIG.reflect_min_fields && !c.asked.some(a => a.kind === 'reflect' || a.intent === 'reflect')) {
       const labels = FIELD_KEYS.filter(f => c.present.has(f)).map(f => CONFIG.reflect_labels[f]).slice(0, 3);
       const text = labels.length === 1 ? labels[0] : labels.slice(0, -1).join(', ') + ' and ' + labels[labels.length - 1];
@@ -375,7 +379,8 @@ function line(c, kind, why, r = NONE) {
   return { kind, intent: kind, field: null, rung: null, say: bank[count(c, kind, null, true) % bank.length], why, reaction: r[0], ack_category: r[1], bridge: false, hook: '' };
 }
 // No question is left: the read-back summary first, then the close.
-const end = (c, why, r = NONE) => (summarized(c) ? line(c, 'close', 'close:' + why, r) : line(c, 'summary', 'summary:' + why, r));
+const end = (c, why, r = NONE) => (summarized(c) ? line(c, 'close', 'close:' + why, r)
+  : line(c, 'summary', 'summary:' + why, r[0] === 'none' && c.cues.includes('describes_setback') ? reaction(c) : r)); // a last answer that was a setback still gets its plain uptake before the read-back
 const deferField = c => (c.hints.includes(c.lastField) ? c.lastField : c.hints.length ? c.hints[0] : c.lastField);
 
 export function select(plan, turn, asked, prefill, phase, timeLeft, asr = null, rushed = false, lang = 'en') {
@@ -430,5 +435,7 @@ export function select(plan, turn, asked, prefill, phase, timeLeft, asr = null, 
   const cand = pick(c);
   if (cand === null) return end(c, c.rushed ? 'essentials' : c.phase === 'closing' ? 'closing' : 'no_candidates');
   const kind = cand.kind || 'ask';
-  return move(kind, cand, cand.say, cand.why, kind === 'offer_move_on' || kind === 'reflect' || cand.intent === 'contradiction' ? NONE : leadQuiet(cand, reaction(c)), c);
+  let r = kind === 'offer_move_on' || kind === 'reflect' || cand.intent === 'contradiction' ? NONE : leadQuiet(cand, reaction(c));
+  if (r[0] === 'none' && c.cues.includes('describes_setback') && !cand.say.startsWith(LEAD_RUSHED)) r = reaction(c); // a setback is never left unacknowledged: at least the plain uptake
+  return move(kind, cand, cand.say, cand.why, r, c);
 }

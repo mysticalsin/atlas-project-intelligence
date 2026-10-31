@@ -53,8 +53,10 @@ function resolve(category, cues, repliesSinceEarned) {
 //   repliesSinceEarned: replies since the last earned_result (omitted: none yet); prevCategory: the category of the acknowledgement before this
 //   one (null when that reply had none), which keeps a neutral or "thanks for the detail" line to alternate replies.
 export function pickAck({ category = 'neutral', cues = [], words = 0, lang = 'en', recent = [], admin = false, afterQuestion = false, timeUp = false, repliesSinceEarned, prevCategory = null, seed = 0 } = {}) {
-  if (admin || afterQuestion || timeUp || !(Number(words) >= ACK_MIN_WORDS || SHORT_OK.has(category))) return null;
-  const code = normalize(lang) || 'en', setback = hasCue(cues, 'describes_setback'), seen = Array.isArray(recent) ? recent : [];
+  const setback = hasCue(cues, 'describes_setback');
+  // A setback is never left unacknowledged: it gets at least a plain uptake even after a short answer or right after another one. Only admin, a question to ATLAS and the time limit silence it.
+  if (admin || afterQuestion || timeUp || !(setback || Number(words) >= ACK_MIN_WORDS || SHORT_OK.has(category))) return null;
+  const code = normalize(lang) || 'en', seen = Array.isArray(recent) ? recent : [];
   let cat = resolve(category, cues, repliesSinceEarned), bank = ACKS[cat] && ACKS[cat][code];
   if (!bank) { // no authored bank for this language: the neutral filler (always neutral, whatever was asked)
     cat = 'neutral'; bank = FILLERS[code] || null;
@@ -62,7 +64,7 @@ export function pickAck({ category = 'neutral', cues = [], words = 0, lang = 'en
   }
   bank = bank && bank.filter(t => !banned.test(t) && !t.includes('?'));
   if (!bank || !bank.length) return null;
-  if (ALTERNATING.has(cat) && ALTERNATING.has(prevCategory)) return null;
+  if (!setback && ALTERNATING.has(cat) && ALTERNATING.has(prevCategory)) return null; // the H2 pacing downgrades sympathy to the plain uptake on a setback, never to silence
   const pool = fresh(bank, seen, Math.min(ACK_NO_REPEAT, bank.length - 1));
   return { text: pool[hash(seed) % pool.length], category: cat };
 }
