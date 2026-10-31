@@ -137,3 +137,16 @@ test('the confirmed summary is saved through the library binding under the forwa
   assert.equal(await hook({}), null);
   assert.equal(await hook({ LIBRARY }, ''), null);
 });
+
+test('L10: messages buffered while the older window is suspending are bounded; overflow closes the socket and starts nothing', async () => {
+  const st = new FakeStorage(), e = env(), d = new Interview({ storage: st }, e);
+  const a = await interview(d, st), first = d.session;
+  const b = connect(d); // the older window is still being suspended: the newcomer's messages wait
+  for (let i = 0; i < 65; i++) b.server.fire('message', { data: JSON.stringify({ type: 'text', text: 'x' }) });
+  await b.p;
+  assert.equal(b.server.closed, true); assert.equal(d.session, first, 'no new session started'); assert.deepEqual(b.server.events(), []);
+  // within the limit: unchanged behaviour (the start is buffered, then served); and the byte cap holds for one large frame
+  const ok = connect(d); ok.server.fire('message', start()); await ok.p; await until(() => ready(ok.server)); assert.equal(ok.server.closed, false);
+  const big = connect(d); big.server.fire('message', { data: 'y'.repeat(1024 * 1024 + 1) }); await big.p; assert.equal(big.server.closed, true);
+  await d.session.end(false); void a;
+});

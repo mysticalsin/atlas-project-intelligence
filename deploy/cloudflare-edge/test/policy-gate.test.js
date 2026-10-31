@@ -184,6 +184,10 @@ test('Spotlight gate records must be approved, bound to the exact revision and h
   open('customer_permission_if_required', { status: 'not_required', decided_by: 'u-gate' }); // a waiver needs a reason
   open('customer_permission_if_required', { status: 'not_required', reason: 'x', decided_by: 'u-owner' });
   open('privacy_legal_review_if_required', { status: 'not_required', reason: 'x' });
+  // L11: a waiver is of one exact revision and content, like an approval
+  open('privacy_legal_review_if_required', { status: 'not_required', reason: 'x', decided_by: 'u-gate' }); // unbound
+  open('privacy_legal_review_if_required', gate({ status: 'not_required', reason: 'x', decided_by: 'u-gate', revision: 2 })); // an older revision
+  open('privacy_legal_review_if_required', gate({ status: 'not_required', reason: 'x', decided_by: 'u-gate', hash: 'sha256:old' }));
   open('exact_revision_publication_authorization', gate({ channel: 'other-channel' })); // approval names the channel
   open('exact_revision_publication_authorization', gate({ channel: undefined }));
   denied(publish({ channel: undefined, grants: [grant('public_spotlight')] }), 'SPOTLIGHT_GATE_OPEN:exact_revision_publication_authorization');
@@ -272,4 +276,15 @@ test('decide is deterministic and does not mutate its inputs', () => {
   for (let i = 0; i < 5; i++) assert.deepEqual(decide(a, 'spotlight_publish', e, c), first);
   assert.equal(JSON.stringify([a, e, c]), snap);
   assert.deepEqual(Object.keys(first), ['allow', 'reason']);
+});
+
+test('M2: the author of the revision under review cannot approve it (AUTHOR_CANNOT_APPROVE), whoever they are', () => {
+  const t = { ...ctx({ to: 'evidence_approved' }), transitions: TRANSITIONS };
+  const e = entity({ revision_author: 'u-rev' });
+  denied(decide(reviewer, 'approve', e, t), 'AUTHOR_CANNOT_APPROVE');
+  denied(decide({ sub: 'u-rev', roles: ['admin'] }, 'approve', e, t), 'AUTHOR_CANNOT_APPROVE');
+  allowed(decide({ sub: 'u-rev2', roles: ['reviewer'] }, 'approve', e, t));
+  allowed(decide(reviewer, 'approve', entity({ revision_author: 'u-owner' }), t)); // the owner wrote it: a reviewer approves
+  allowed(decide(reviewer, 'approve', entity(), t)); // no author recorded: unchanged behaviour
+  allowed(decide(reviewer, 'reject', e, { ...t, to: 'rejected' })); // only approval is author-bound
 });

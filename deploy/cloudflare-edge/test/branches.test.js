@@ -10,7 +10,7 @@ import { flags } from '../src/features.js';
 import * as B from '../src/branches.js';
 import { jobs } from '../src/jobs.js';
 import { Spotlight, GATES } from '../src/spotlight.js';
-import { registry, adapterMode, evidenceWorkflowOn, buildPayload, CONTRACTS, createMockAdapter } from '../src/adapters.js';
+import { registry, adapterMode, evidenceWorkflowOn, buildPayload, CONTRACTS, createMockAdapter, CV_STATEMENT_MAX } from '../src/adapters.js';
 import { memorySql } from './sqlite.js';
 
 const OWNER = { email: 'alex@mantu.com', role: 'user' }, N1 = { email: 'sam@mantu.com', role: 'user' }, OTHER = { email: 'kim@mantu.com', role: 'user' };
@@ -37,7 +37,7 @@ function setup({ mode = 'mock', maxAttempts = 3, configured = true } = {}) {
   let t = 0, n = 0;
   const clock = { t: T0 }, l = new Library(memorySql(), { now: () => new Date(Date.UTC(2026, 10, 1, 0, 0, t++)).toISOString(), newId: () => 'id' + String(++n).padStart(4, '0') });
   if (configured) B.configure(l, { ...(mode ? { mode } : {}), now: () => clock.t, random: () => 0, maxAttempts, adapters: {} });
-  return { l, ev: evidence(l), clock, ad: registry(l) };
+  return { l, ev: evidence(l), clock, ad: registry(l), skip: seconds => { t += seconds; } };
 }
 const PURPOSES = ['skills_profile', 'cv', 'matching', 'public_spotlight'];
 // draft -> grants (owner, bound to revision 1) -> submit -> approve. Returns the approved view.
@@ -386,4 +386,138 @@ test('the daily trigger runs due jobs (scan-stale) and answers as before', async
   const swept = await call('POST', '/api/library/scan-stale', { email: 'atlas-cron', role: 'system' }, {});
   assert.equal(swept.status, 200); assert.deepEqual(Object.keys(swept.body), ['invited']);
   assert.equal(status(l, d.id).imp, 'mock_acknowledged');
+});
+
+// ---- G1: governance fixes from the independent review (H1, L1, hash reuse) ----
+// draft -> the given grants ({ purpose, expires_at? }) -> submit -> approve, by OWNER and REV unless told otherwise.
+async function flow(ctx, grants, { session = 'sess-g1', owner = OWNER } = {}) {
+  const { ev } = ctx, d = await ev.createDraftFromNotes(owner.email, NOTES(session));
+  for (const g of grants) ev.grantPermission(owner, d.id, { expected_revision: 1, ...g });
+  const q = ev.submit(owner.email, d.id, 1);
+  return ev.review(REV, q.id, 'approve', { expected_revision: 1, content_hash: q.content_hash });
+}
+const jobOf = (l, id, dest) => jobs(l).list(id).find(j => j.destination === dest);
+
+test('H1 scenario A: a permission revoked after a dead-lettered job stops recovery from delivering', async () => {
+  const ctx = setup({ maxAttempts: 2 }), { l, ev, ad } = ctx;
+  ad.MECHAT_CV.failNext(1, { retryable: false, error: 'DOWN' });
+  const d = await flow(ctx, [{ purpose: 'cv' }]), job = jobOf(l, d.id, 'MeChat');
+  assert.equal(job.status, 'failed'); assert.equal(ad.MECHAT_CV.calls.length, 1);
+  ev.revokePermission(OWNER, d.id, ev.grantsFor(d.id)[0].id, { expected_revision: 1 });
+  assert.equal(jobs(l).get(job.job_id).status, 'needs_reconciliation', 'halt also stops a failed job');
+  await assert.rejects(B.sync(ev, REV, d.id, { recover_job: job.job_id }), e => e.status === 409 && e.reason === 'JOB_NOT_FAILED');
+  assert.equal(ad.MECHAT_CV.calls.length, 1, 'nothing more is sent');
+  assert.equal(status(l, d.id).mechat, 'impact_review', 'and the impact_review flag is not overwritten');
+  assert.equal(card(await B.sync(ev, REV, d.id), 'mechat').status, 'impact_review');
+  assert.equal(ad.MECHAT_CV.calls.length, 1);
+});
+
+test('H1 scenario A (gate on recovery): a grant that expired while the job was dead-lettered blocks the recovered job', async () => {
+  const ctx = setup({ maxAttempts: 2 }), { l, ev, ad, skip } = ctx;
+  ad.MECHAT_CV.failNext(1, { retryable: false, error: 'DOWN' });
+  const d = await flow(ctx, [{ purpose: 'cv', expires_at: '2026-11-01T00:30:00Z' }]), job = jobOf(l, d.id, 'MeChat');
+  assert.equal(job.status, 'failed'); skip(3600); // the grant expires; no event announces it
+  const v = await B.sync(ev, REV, d.id, { recover_job: job.job_id });
+  assert.equal(ad.MECHAT_CV.calls.length, 1, 'the recovered job is not delivered');
+  assert.equal(jobs(l).get(job.job_id).status, 'needs_reconciliation'); assert.match(jobs(l).get(job.job_id).last_error, /^PERMISSION_DENIED:PURPOSE_EXPIRED:cv/);
+  assert.deepEqual([card(v, 'mechat').status, card(v, 'mechat').reason], ['permission_pending', 'PURPOSE_EXPIRED:cv']);
+});
+
+test('H1 scenario B: a grant that expires while the job is retrying stops the pump', async () => {
+  const ctx = setup({ maxAttempts: 3 }), { l, ev, ad, clock, skip } = ctx;
+  ad.DNA_SKILLS_WRITEBACK.failNext(1, { retryable: true, error: 'BUSY' });
+  const d = await flow(ctx, [{ purpose: 'skills_profile', expires_at: '2026-11-01T00:30:00Z' }]), job = jobOf(l, d.id, 'DNA');
+  assert.equal(job.status, 'retrying');
+  skip(24 * 3600); clock.t += 24 * 3600e3;
+  const r = await B.pump(ev);
+  assert.equal(r.ran, 0); assert.equal(ad.DNA_SKILLS_WRITEBACK.calls.length, 1, 'no second delivery');
+  assert.equal(jobs(l).get(job.job_id).status, 'needs_reconciliation');
+  const c = card(B.statusView(ev, OWNER, d.id), 'dna');
+  assert.deepEqual([c.status, c.reason], ['permission_pending', 'PURPOSE_EXPIRED:skills_profile']);
+  assert.equal(status(l, d.id).imp, 'permission_pending', 'imp had no grant at all');
+});
+
+test('H1: fan-out re-checks the gate before it reflects an existing job, and never overwrites impact_review', async () => {
+  const ctx = setup(), { l, ev, ad, skip } = ctx;
+  const d = await flow(ctx, [{ purpose: 'matching', expires_at: '2026-11-01T00:30:00Z' }]);
+  assert.equal(status(l, d.id).imp, 'mock_acknowledged'); skip(3600);
+  await B.fanOut(ev, d.id); // the job succeeded earlier; its mock acknowledgement is not a permission
+  assert.equal(status(l, d.id).imp, 'permission_pending'); assert.equal(reasons(l, d.id).imp, 'PURPOSE_EXPIRED:matching');
+  // flagged for impact review (a person's to clear): fan-out leaves it alone
+  l.sql.exec("UPDATE branch_status SET status = 'impact_review', reason = 'PERMISSION_REVOKED:matching' WHERE entity = ? AND branch = 'imp'", d.id);
+  await B.fanOut(ev, d.id);
+  assert.deepEqual([status(l, d.id).imp, reasons(l, d.id).imp], ['impact_review', 'PERMISSION_REVOKED:matching']);
+  assert.equal(ad.IMP_CAPABILITY.calls.length, 1);
+});
+
+test('H1: a Spotlight CMS job is re-checked against the publication gate before the pump runs it', async () => {
+  const ctx = setup(), { l, ev, ad, skip } = ctx;
+  const d = await flow(ctx, [{ purpose: 'public_spotlight', expires_at: '2026-11-01T00:30:00Z' }]), sp = new Spotlight(ev);
+  const at = { expected_revision: 1, content_hash: d.content_hash };
+  for (const g of GATES) B.approveSpotlightGate(ev, GATE_ACTOR[g], d.id, g, { ...at, ...(g.endsWith('_if_required') ? { decision: 'not_required', reason: 'none' } : {}), ...(g === 'exact_revision_publication_authorization' ? { channel: CHANNEL } : {}) });
+  B.requestSpotlightApproval(ev, RV, d.id, at);
+  ad.SPOTLIGHT_CMS.failNext(1, { retryable: true, error: 'BUSY' });
+  const p = await B.publishSpotlight(ev, SA, d.id, { ...at, channel: CHANNEL });
+  assert.equal(p.sent, true); const job = jobOf(l, d.id, 'Spotlight'); assert.equal(job.status, 'retrying');
+  skip(3600); ctx.clock.t += 24 * 3600e3;
+  await B.pump(ev);
+  assert.equal(ad.SPOTLIGHT_CMS.calls.length, 1); assert.equal(jobs(l).get(job.job_id).status, 'needs_reconciliation');
+  assert.equal(status(l, d.id).spotlight, 'permission_pending');
+  void sp;
+});
+
+test('L1: an owner who also holds the reviewer role cannot recover or sync their own record', async () => {
+  const ctx = setup({ maxAttempts: 2 }), { l, ev, ad } = ctx, BOSS = { email: 'boss@mantu.com', role: 'reviewer' };
+  ad.MECHAT_CV.failNext(1, { retryable: false, error: 'DOWN' });
+  const d = await flow(ctx, [{ purpose: 'cv' }], { owner: BOSS }), job = jobOf(l, d.id, 'MeChat');
+  assert.equal(job.status, 'failed');
+  await assert.rejects(B.sync(ev, BOSS, d.id, { recover_job: job.job_id }), e => e.status === 403);
+  await assert.rejects(B.sync(ev, BOSS, d.id), e => e.status === 403);
+  assert.equal(jobs(l).get(job.job_id).status, 'failed'); assert.equal(ad.MECHAT_CV.calls.length, 1);
+  assert.equal(card(await B.sync(ev, REV, d.id, { recover_job: job.job_id }), 'mechat').status, 'mock_acknowledged', 'a different reviewer still can');
+});
+
+test('revision reuse: approving a revision whose content equals an earlier one is delivered, not swallowed by the old job', async () => {
+  const ctx = setup(), { l, ev, ad } = ctx;
+  const r1 = await flow(ctx, [{ purpose: 'skills_profile' }]);
+  const a2 = await ev.review(OWNER, r1.id, 'amend', { expected_revision: 1, add: [{ statement: 'We also trained the adjusters on the new queue.' }] });
+  const added = a2.claims.find(c => !r1.claims.some(x => x.claim_id === c.claim_id)).claim_id;
+  const a3 = await ev.review(OWNER, r1.id, 'amend', { expected_revision: 2, remove: [added] });
+  assert.equal(a3.content_hash, r1.content_hash, 'rev 3 has the same content as rev 1'); assert.equal(a3.revision, 3);
+  ev.grantPermission(OWNER, r1.id, { expected_revision: 3, purpose: 'skills_profile' });
+  const q = ev.submit(OWNER.email, r1.id, 3), r3 = await ev.review(REV, r1.id, 'approve', { expected_revision: 3, content_hash: q.content_hash });
+  assert.equal(r3.state, 'approved'); assert.equal(ad.DNA_SKILLS_WRITEBACK.calls.length, 2, 'one delivery per approved revision');
+  assert.deepEqual(jobs(l).list(r1.id).filter(j => j.destination === 'DNA').map(j => [j.source_revision, j.status]), [[1, 'succeeded'], [3, 'succeeded']]);
+  assert.equal(status(l, r1.id).dna, 'mock_acknowledged');
+});
+
+test('a job halted while its attempt is in flight shows the halt, never the late success', async () => {
+  const ctx = setup(), { l, ev, ad } = ctx;
+  let answer; ad.DNA_SKILLS_WRITEBACK.send = () => new Promise(r => { answer = r; });
+  const d = await ev.createDraftFromNotes(OWNER.email, NOTES('sess-race'));
+  ev.grantPermission(OWNER, d.id, { expected_revision: 1, purpose: 'skills_profile' });
+  const q = ev.submit(OWNER.email, d.id, 1);
+  const approving = ev.review(REV, q.id, 'approve', { expected_revision: 1, content_hash: q.content_hash });
+  while (!answer) await new Promise(r => setImmediate(r)); // the attempt is now in flight
+  ev.revokePermission(OWNER, d.id, ev.grantsFor(d.id)[0].id, { expected_revision: 1 }); // halts the in-flight job and flags the card
+  answer({ ok: true, ack: { mock: true, destination_revision: 1 } }); await approving;
+  assert.equal(jobOf(l, d.id, 'DNA').status, 'needs_reconciliation'); assert.equal(jobs(l).get(jobOf(l, d.id, 'DNA').job_id).last_error, 'PERMISSION_REVOKED');
+  assert.equal(status(l, d.id).dna, 'needs_reconciliation', 'the card shows the halt, never the success the destination returned late'); assert.equal(card(B.statusView(ev, OWNER, d.id), 'dna').mock, true);
+});
+
+test('L8: the MeChat CV payload carries no raw ASR quote: reviewed wording only, capped; outcome and metric text never; structured fields stay', async () => {
+  const ctx = setup(), { ev, ad } = ctx;
+  const d = await ev.createDraftFromNotes(OWNER.email, NOTES('sess-l8')), resp = d.claims.find(c => c.claim_type === 'responsibility'), deliv = d.claims.find(c => c.claim_type === 'deliverable');
+  const long = 'Designed and built the claims routing model for the triage queue. ' + 'x'.repeat(600);
+  const a = await ev.review(OWNER, d.id, 'amend', { expected_revision: 1, claims: [{ claim_id: resp.claim_id, statement: long }, { claim_id: d.claims.find(c => c.claim_type === 'metric').claim_id, value: '12', unit: 'minutes', baseline: '40' }] });
+  ev.grantPermission(OWNER, d.id, { expected_revision: a.revision, purpose: 'cv' });
+  const q = ev.submit(OWNER.email, d.id, a.revision); await ev.review(REV, d.id, 'approve', { expected_revision: q.revision, content_hash: q.content_hash });
+  const cv = ad.MECHAT_CV.calls[0].payload, by = t => cv.claims.filter(c => c.claim_type === t);
+  assert.equal(by('responsibility')[0].statement.length, CV_STATEMENT_MAX); assert.ok(by('responsibility')[0].statement.startsWith('Designed and built'));
+  assert.deepEqual([by('deliverable')[0].statement, by('deliverable')[0].statement_withheld], [null, 'VERBATIM_ASR_NOT_REVIEWED']); // never reviewed: raw speech recognition
+  for (const c of [...by('outcome'), ...by('metric')]) assert.deepEqual([c.statement, c.statement_withheld], [null, 'CLIENT_PERMISSION_UNKNOWN']);
+  assert.deepEqual([by('metric')[0].value, by('metric')[0].unit, by('metric')[0].baseline], ['12', 'minutes', '40']);
+  const dump = JSON.stringify(cv);
+  for (const raw of ['routing model in front of it', 'Adjusters now trust', 'according to the dashboard', 'Triage fell']) assert.ok(!dump.includes(raw), raw);
+  void deliv;
 });
