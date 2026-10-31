@@ -141,7 +141,7 @@ test('S13 DNA succeeds and MiChat fails: the state is per destination, DNA is un
   const ok = await approved(ctx), view = B.statusView(ev, OWNER, ok.id);
   assert.deepEqual([card(view, 'dna').display_status, card(view, 'michat').display_status, card(view, 'michat').reason], ['mock_acknowledged', 'failed', 'MOCK_MICHAT_DOWN']);
   assert.equal(ad.DNA_SKILLS_WRITEBACK.calls.length, 1, 'DNA was delivered once, whatever MiChat did');
-  assert.equal(l.rows("SELECT COUNT(*) AS n FROM approvals WHERE status = 'approved'")[0].n, 1, 'the approval stands'); assert.equal(ev.get(OWNER, ok.id).state, 'approved');
+  assert.equal(l.rows("SELECT COUNT(*) AS n FROM approvals WHERE status = 'approved'")[0].n, 1, 'the approval stands'); assert.equal(ev.get(OWNER, ok.id).state, 'downstream_proposals');
   assert.deepEqual(view.overall, { status: 'attention', complete: false });
   assert.ok(!view.cards.some(c => /^(complete|sync_complete|published)$/.test(c.display_status)), 'no card claims a completion');
   assert.equal(card(view, 'dna').mock, true, 'and the DNA success is labelled a mock acknowledgement, not a sync');
@@ -323,7 +323,7 @@ test('W7 evidence needs an accountable reviewer: no approval by the owner or by 
   await rejects(go(OWNER, at), 403, 'ROLE_NOT_PERMITTED'); await rejects(go({ ...OWNER, role: 'reviewer' }, at), 403, 'SELF_APPROVAL'); await rejects(go({ ...OWNER, role: 'admin' }, at), 403, 'SELF_APPROVAL');
   await rejects(go(REV, { expected_revision: 1 }), 400); await rejects(go(REV, { expected_revision: 2, content_hash: v.content_hash }), 409, 'REVISION_MISMATCH'); await rejects(go(REV, { expected_revision: 1, content_hash: 'f'.repeat(64) }), 409, 'CONTENT_HASH_MISMATCH');
   assert.equal(l.rows('SELECT COUNT(*) AS n FROM approvals')[0].n, 0, 'every refusal changed nothing');
-  const done = await go(N1, at); assert.deepEqual([done.state, done.approval.revision, done.approval.content_hash, done.approval.approver_sub], ['approved', 1, v.content_hash, N1.email], 'the resolved N+1 is an accountable reviewer');
+  const done = await go(N1, at); assert.deepEqual([done.state, done.approval.revision, done.approval.content_hash, done.approval.approver_sub], ['downstream_proposals', 1, v.content_hash, N1.email], 'the resolved N+1 is an accountable reviewer');
   trail(ctx);
 });
 
@@ -365,7 +365,7 @@ test('W11 a failure in one branch does not fail the others or roll back what suc
   const ctx = setup(), { l, ev, ad } = ctx; ad.IMP_CAPABILITY.send = async () => { throw new Error('socket hang up'); };
   const ok = await approved(ctx), view = B.statusView(ev, OWNER, ok.id);
   assert.deepEqual([card(view, 'imp').display_status, card(view, 'imp').reason, card(view, 'dna').display_status, card(view, 'michat').display_status], ['in_progress', 'ADAPTER_EXCEPTION', 'mock_acknowledged', 'mock_acknowledged']);
-  assert.equal(ev.get(OWNER, ok.id).state, 'approved'); assert.equal(l.rows("SELECT COUNT(*) AS n FROM approvals WHERE status = 'approved'")[0].n, 1);
+  assert.equal(ev.get(OWNER, ok.id).state, 'downstream_proposals'); assert.equal(l.rows("SELECT COUNT(*) AS n FROM approvals WHERE status = 'approved'")[0].n, 1);
   assert.deepEqual([status(l, ok.id).spotlight, status(l, ok.id).evidence], ['spotlight_draft', 'evidence_approved'], 'unrelated branches are untouched');
   trail(ctx);
 });
@@ -492,13 +492,21 @@ test('G5 setup: withdraw from every state the store can reach, and a clarificati
   const d = await queued(ctx, 'w-dis'); await ev.review(REV, d.id, 'reject', { expected_revision: 1, content_hash: d.content_hash, reason: 'No.' });
   await ev.review(OWNER, d.id, 'dispute', { expected_revision: 1, rationale: 'Yes.' }); assert.equal((await w(d.id)).state, 'withdrawn');
   trail(ctx);
+  // Approved with the knowledge proposed downstream: the system made that move (logged as atlas-system, role system), and a withdrawal goes to impact review.
+  const p = await approved(ctx, { session: 'w-prop' }); assert.equal(p.state, 'downstream_proposals');
+  assert.deepEqual(ctx.l.rows("SELECT actor, actor_role FROM workflow_transitions WHERE entity = ? AND event = 'propose_downstream'", p.id).map(r => [r.actor, r.actor_role]), [['atlas-system', 'system']]);
+  assert.equal((await w(p.id)).state, 'impact_review'); trail(ctx);
+  // Approved with no downstream workflow configured: nothing holds a proposal, so the record stays approved, and a withdrawal still goes to impact review.
+  let n = 0; const off = { l: new Library(memorySql(), { now: () => new Date(Date.UTC(2026, 10, 1)).toISOString(), newId: () => 'off' + String(++n).padStart(4, '0') }) }; off.ev = evidence(off.l);
+  const a = await approved(off, { session: 'w-appr', grants: [] }); assert.equal(a.state, 'approved');
+  assert.equal((await off.ev.review(OWNER, a.id, 'withdraw', { expected_revision: 1, reason: 'Not needed.' })).state, 'impact_review'); trail(off);
 });
 
 test('G5 transition coverage: every evidence-machine transition this suite did not exercise is named here, and each is one the store cannot reach today (defined and parity-tested in the machine, not wired to an action)', () => {
   const all = TRANSITIONS.evidence.map(([e, f, t]) => [e, f, t].join('>')), missing = all.filter(t => !SEEN.has(t)).sort();
-  // submitted_for_review is the instant between submit and enqueue (never at rest) and downstream_proposals is entered only by propose_downstream, which nothing fires yet.
-  assert.deepEqual(missing, ['close_rejected>disputed>closed_rejected', 'close_rejected>rejected>closed_rejected', 'propose_downstream>approved>downstream_proposals', 'reopen_review>disputed>reviewer_queue',
-    'withdraw>downstream_proposals>impact_review', 'withdraw>submitted_for_review>withdrawn'], 'if one of these gets wired (or another stops being covered) this pin must change with it, and COVERAGE.md with it');
+  // submitted_for_review is the instant between submit and enqueue (never at rest) and propose_downstream is fired by the system once a destination holds the approved knowledge (branches.js proposeDownstream).
+  assert.deepEqual(missing, ['close_rejected>disputed>closed_rejected', 'close_rejected>rejected>closed_rejected', 'reopen_review>disputed>reviewer_queue',
+    'withdraw>submitted_for_review>withdrawn'], 'if one of these gets wired (or another stops being covered) this pin must change with it, and COVERAGE.md with it');
   for (const critical of ['submit', 'enqueue', 'approve', 'reject', 'request_clarification', 'revise', 'dispute', 'withdraw', 'complete_impact_review']) assert.ok(all.some(t => t.startsWith(critical + '>') && SEEN.has(t)), `${critical} was exercised`);
 });
 

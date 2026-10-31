@@ -332,7 +332,7 @@ test('routes: identity comes from the verified headers, never the body; the brow
   const self = await call('POST', '/api/library/evidence/' + id + '/review', { ...OWNER, role: 'reviewer' }, { action: 'approve', expected_revision: 1, content_hash: got.body.content_hash });
   assert.deepEqual([self.status, self.body.reason], [403, 'SELF_APPROVAL']);
   const ok = await call('POST', '/api/library/evidence/' + id + '/review', REV, { action: 'approve', expected_revision: 1, content_hash: got.body.content_hash });
-  assert.deepEqual([ok.status, ok.body.state, ok.body.approved], [200, 'approved', true]);
+  assert.deepEqual([ok.status, ok.body.state, ok.body.approved], [200, 'downstream_proposals', true]);
   assert.equal((await call('GET', `/api/library/evidence/${id}?revision=1`, OWNER)).body.viewing_revision, 1);
   assert.equal((await call('GET', `/api/library/evidence/${id}?revision=7`, OWNER)).status, 404);
   assert.equal((await call('PUT', '/api/library/evidence/' + id, OWNER, { x: 1 })).status, 404);

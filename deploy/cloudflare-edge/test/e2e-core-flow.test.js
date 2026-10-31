@@ -120,7 +120,7 @@ test('E2E-1 project ID -> scripted interview -> confirmed summary -> review -> w
   rec = await L.http(CONSULTANT, 'user', 'POST', `/api/library/evidence/${id}/submit`, { expected_revision: rec.revision });
   await assert.rejects(L.http(CONSULTANT, 'user', 'POST', `/api/library/evidence/${id}/review`, { action: 'approve', expected_revision: rec.revision, content_hash: rec.content_hash }), /40[34]/, 'the author cannot approve');
   rec = await L.http(REVIEWER, 'reviewer', 'POST', `/api/library/evidence/${id}/review`, { action: 'approve', expected_revision: rec.revision, content_hash: rec.content_hash });
-  assert.equal(rec.state, 'approved');
+  assert.equal(rec.state, 'downstream_proposals');
 
   // 3. The fan-out: each output got exactly one well-formed payload, from the approved revision only.
   const ad = registry(L.lib), sent = name => { assert.equal(ad[name].calls.length, 1, `${name} called once`); return ad[name].calls[0]; };

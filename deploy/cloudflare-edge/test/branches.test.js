@@ -56,7 +56,7 @@ const BRANCH_IDS = ['evidence', 'maap', 'project_review', 'dna', 'michat', 'imp'
 
 test('approval creates seven independent branch records; each destination has its own permission check', async () => {
   const ctx = setup(), { l } = ctx, ok = await approved(ctx, { grants: ['skills_profile', 'cv'] }); // no matching grant
-  assert.equal(ok.state, 'approved');
+  assert.equal(ok.state, 'downstream_proposals');
   const s = status(l, ok.id);
   assert.deepEqual(Object.keys(s).sort(), [...BRANCH_IDS].sort());
   assert.deepEqual(s, { evidence: 'evidence_approved', maap: 'maap_pending', project_review: 'project_review_pending', dna: 'mock_acknowledged', michat: 'mock_acknowledged', imp: 'permission_pending', spotlight: 'spotlight_draft' });
@@ -77,7 +77,7 @@ test('DNA succeeds while MiChat fails: per-card states, nothing rolled back, nev
   assert.deepEqual(view.overall, { status: 'attention', complete: false });
   assert.equal(ad.DNA_SKILLS_WRITEBACK.calls.length, 1, 'DNA was delivered once and not touched by the MiChat failure');
   assert.equal(l.rows("SELECT status FROM approvals WHERE status = 'approved'").length, 1, 'the approval stands');
-  assert.equal(ev.get(OWNER, ok.id).state, 'approved');
+  assert.equal(ev.get(OWNER, ok.id).state, 'downstream_proposals');
   for (const c of view.cards) assert.deepEqual(Object.keys(c), ['branch', 'label', 'status', 'display_status', 'mock', 'updated_at', 'reason']);
   assert.deepEqual(view.cards.map(c => c.mock), [false, false, false, true, true, true, true], 'destination cards are mock: nothing real is connected');
 });
@@ -269,7 +269,7 @@ test('Spotlight gates: roles, self-approval, revision binding, the channel, the 
   assert.deepEqual(decide(RV, 'map_library_status_to_spotlight', ev.entity(ev.load(id)), {}), { allow: false, reason: 'LIBRARY_PUBLISHED_NOT_SPOTLIGHT' }); // D17
   assert.equal(decide(SA, 'spotlight_publish', ev.entity(ev.load(id)), { ...at, derived_from_library_status: true }).reason, 'LIBRARY_PUBLISHED_NOT_SPOTLIGHT');
   const bare = new Spotlight(ev), rec = ev.load(id);
-  assert.equal(rec.status, 'approved'); assert.ok(l.rows("SELECT 1 FROM spotlight_gates WHERE gate = 'brand_approval' AND approver_sub = ?", BR.sub).length === 1);
+  assert.equal(rec.status, 'downstream_proposals'); assert.ok(l.rows("SELECT 1 FROM spotlight_gates WHERE gate = 'brand_approval' AND approver_sub = ?", BR.sub).length === 1);
   assert.deepEqual(bare.gatesFor(id).brand_approval, { status: 'approved', revision: 1, hash: ok.content_hash, approver_sub: BR.sub, channel: null, reason: null, decided_by: null, at: bare.gatesFor(id).brand_approval.at });
 });
 
@@ -371,7 +371,7 @@ test('routes: status cards, the sync recovery route and permission routes; ident
   assert.equal((await call('POST', base + '/sync', OWNER, {})).status, 403);
   const closed = await call('GET', base + '/status', OWNER, undefined, { ATLAS_EVIDENCE_WORKFLOW: 'off' }); assert.equal(closed.status, 404);
   assert.equal((await call('POST', base + '/sync', REV, {}, { ATLAS_EVIDENCE_WORKFLOW: 'off' })).status, 404);
-  assert.equal(ev.get(OWNER, id).state, 'approved');
+  assert.equal(ev.get(OWNER, id).state, 'downstream_proposals');
 });
 
 test('the daily trigger runs due jobs (scan-stale) and answers as before', async () => {
@@ -486,7 +486,7 @@ test('revision reuse: approving a revision whose content equals an earlier one i
   assert.equal(a3.content_hash, r1.content_hash, 'rev 3 has the same content as rev 1'); assert.equal(a3.revision, 3);
   ev.grantPermission(OWNER, r1.id, { expected_revision: 3, purpose: 'skills_profile' });
   const q = ev.submit(OWNER.email, r1.id, 3), r3 = await ev.review(REV, r1.id, 'approve', { expected_revision: 3, content_hash: q.content_hash });
-  assert.equal(r3.state, 'approved'); assert.equal(ad.DNA_SKILLS_WRITEBACK.calls.length, 2, 'one delivery per approved revision');
+  assert.equal(r3.state, 'downstream_proposals'); assert.equal(ad.DNA_SKILLS_WRITEBACK.calls.length, 2, 'one delivery per approved revision');
   assert.deepEqual(jobs(l).list(r1.id).filter(j => j.destination === 'DNA').map(j => [j.source_revision, j.status]), [[1, 'succeeded'], [3, 'succeeded']]);
   assert.equal(status(l, r1.id).dna, 'mock_acknowledged');
 });

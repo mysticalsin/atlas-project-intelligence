@@ -358,7 +358,7 @@ class Evidence {
       } else if (action === 'complete_impact_review') extra.impact = { ...rec.state.impact, completed_by: user.email, completed_at: at };
     }
     this.save(rec, extra);
-    if (action === 'approve') await branches.afterApprove(this, rec); // seven independent branch records (T15); an approval is never undone by them
+    if (action === 'approve') { await branches.afterApprove(this, rec); return this.view(this.load(rec.id) || rec, acc); } // seven independent branch records (T15); an approval is never undone by them, and the view shows downstream_proposals once they hold the knowledge
     else if (action === 'withdraw' && rec.machine.state === 'impact_review') branches.onWithdrawn(this, rec);
     else if (action === 'complete_impact_review') branches.onImpactReviewCompleted(this, rec);
     return this.view(rec, acc);

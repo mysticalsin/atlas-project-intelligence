@@ -186,7 +186,16 @@ export async function fanOut(ev, id) {
       out.push({ branch, status: 'failed', error: 'BRANCH_ERROR' });
     }
   }
+  proposeDownstream(ev, rec, out);
   return { entity_id: rec.id, revision: rec.revision, branches: out };
+}
+// The evidence record follows its knowledge: once a destination (skills, CV, projects, success stories) holds a proposal for the approved revision
+// (a job queued or attempted, or a Spotlight nomination), the record moves approved -> downstream_proposals as the system. Approval, gates and amend
+// rules treat both states alike (APPROVED_STATES), so nothing a person can do changes; the move is logged like every other transition.
+function proposeDownstream(ev, rec, out) {
+  if (rec.machine.state !== 'approved' || !out.some(b => DESTINATION_BRANCHES.has(b.branch) && DERIVED.has(b.status))) return;
+  ev.fire(rec, 'propose_downstream', 'system', SYSTEM.sub);
+  ev.save(rec);
 }
 
 // ---- hooks called by evidence.js (all no-ops until configured) ----
