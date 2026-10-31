@@ -15,6 +15,7 @@ missing or flagged, and every model output is checked.
    for six months (daily scan). The consultant sees it under *Your interviews* with a calendar file. Nothing is emailed
    automatically.
 2. **Consent.** One plain sentence: transcribed, saved with a report, reused only once reviewed and validated.
+   v2.1 adds facts that wording must also cover (not yet in the dialog; wording needs Tony's and the data protection owner's approval): with transcript consent an interrupted interview is kept for up to 24 hours so it can be resumed, then deleted; a typed (text-only) interview sends no audio; a detail can be kept private at the read-back. See `docs/INTEGRATIONS.md`, "Privacy and consent wording for the interview".
 3. **Opening.** ATLAS says what it is for (a reference other teams can reuse, about fifteen minutes, reviewed before
    use) and asks one broad, open invitation to tell the story.
 4. **Breadth first.** One good open question per area until each has an answer: what was going on (client
@@ -78,7 +79,7 @@ interviewer, the review agent or the UI.
 ## 6. Open decisions (built so each is a setting, not a rebuild)
 | Decision | Built default | Where to change |
 |---|---|---|
-| Chat, voice or both | Voice first; typed notes remain available per topic | UI |
+| Chat, voice or both | Voice first; a text-only interview ("Type instead", no microphone, no audio) is built (v2.1, X1); typed notes remain available per topic | UI |
 | Interface (Teams, Slack, web) | Web app; deep links work from any channel; a Teams tab is the natural next step | Integration |
 | Individual access for consultants | Yes, each person has their own space and sees published references | Access / Entra |
 | Automatic scheduling | Invitations with suggested slots and calendar files; never auto-sent | `/api/triggers`, reviewer form |

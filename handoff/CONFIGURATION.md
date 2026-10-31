@@ -115,6 +115,24 @@ The live site (`deploy/cloudflare-edge/`, docs/WOW_ZERO_CONFIG.md) needs nothing
 
 Private memory stays in the one consent sentence whenever `HINDSIGHT_API_KEY` is set and the person's memory switch is on; without the key the sentence and the switch are absent.
 
+### Agent Brain v2.1 switches (Cloudflare edge Worker variables)
+All optional; each default is the new behaviour and the legacy value is the rollback. Verified in code (`session.js sessionFlags`, `app.js`, `checkpoint.js`, `adapters.js`); not exercised against a deployed Worker. Rollback of a deployed build is a Worker version rollback (Tony). Overview with the reasoning: `AGENT.md` section 5.
+
+| Variable | Default | Contract |
+|---|---|---|
+| `ATLAS_SELECTOR` | `v2` | `legacy` restores the analyst guidance one turn late (selector off) |
+| `ATLAS_REPLY_GUARD` | `on` | `off` removes the code enforcement of one question, praise, repeated openers and length |
+| `ATLAS_ACKS` | `content` | `legacy` restores the content-blind fillers |
+| `ANALYST_WAIT_MS` | `0` | Milliseconds (at most 1500) to wait for the analyst while the acknowledgement plays; Tony chose 0 |
+| `TALKER_MAX_TOKENS` | `160` | Maximum tokens of a spoken reply (was 300) |
+| `SPECULATIVE_STT` | off | Reserved. Read, no effect: speculative transcription is not built |
+| `ASR_CONFIRM_TAU` | `0.55` | Recogniser confidence below which a number or name is confirmed aloud. Uncalibrated pilot value |
+| `ATLAS_CHECKPOINT` | on | `off`: no interview checkpoints (no resume). Checkpoints need transcript consent and last 24 hours from the first write |
+| `ATLAS_EVIDENCE_WORKFLOW` | `on` | `off`: a confirmed summary is not filed; fan-out, status and sync routes off |
+| `ATLAS_ADAPTERS` | `off` | `mock` runs the four destination mocks; `live` is refused (`BLOCKED_EXTERNAL`: no owner contract exists) |
+
+Privacy facts for the consent text (24-hour checkpoint, text mode, keep private, drafts): `docs/INTEGRATIONS.md`, "Privacy and consent wording for the interview". The consent dialog does not yet mention the checkpoint.
+
 ### Optional NVIDIA / Riva route
 Use `ATLAS_VOICE_PROVIDER=personaplex`; follow `docs/NVIDIA_SETUP.md`. Run `doctor.py --profile nvidia` for local prerequisite checks. Hosted credentials do not create a NVIDIA service.
 
