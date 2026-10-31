@@ -110,3 +110,12 @@ def test_complete_make_targets():
     assert 'tests/test_*.py' in text
     assert 'tests/depth_browser.py' in text
     assert '\t$(PYTHON)' in text
+
+
+def test_setup_steps_are_automated():
+    root=Path(__file__).resolve().parents[1]
+    make=(root/'Makefile').read_text()
+    assert 'cp ATLAS_Voice.html deploy/cloudflare-edge/src/atlas.html' in make
+    assert 'test-edge: build' in make and 'test-eval: build' in make
+    assert 'scripts/chromium_path.py' in make and (root/'scripts/chromium_path.py').exists()
+    assert 'python-docx' in (root/'requirements-test.txt').read_text()

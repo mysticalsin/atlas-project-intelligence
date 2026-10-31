@@ -78,6 +78,10 @@ export function buildPayload(adapter, { entity, claims, approval, grants }) {
     case 'IMP_CAPABILITY': // a capability signal; availability and allocation are IMP's, never computed here
       return { ...base(entity, approval), consultant_id: entity.owner_sub, availability: null,
         signals: list.filter(c => SKILL_TYPES.includes(c.claim_type) && c.attribution !== 'client').map(typed), permissions: grantRef(grants, 'matching') };
+    case 'PROJECT_REVIEW': // the project hand-off (contracts/project_review): the Project ID and the approved evidence reference only. No claim text, and no
+      // rubric, focus or rating is invented (D3: MUST_BE_CONFIGURED_BY_PROCESS_OWNER). null when the record has no Project ID: nothing to hand off.
+      return entity.project_ref ? { review_id: `atlas-${entity.id}-r${entity.revision}`, project_id: String(entity.project_ref), trigger: 'evidence_approved', focus: [], rubric_version: null,
+        evidence_refs: [{ entity_id: String(entity.id), revision: entity.revision }] } : null;
     default: throw new Error(`No payload builder for ${adapter}.`);
   }
 }
@@ -125,9 +129,13 @@ export function createMockAdapter(name, { now = () => new Date().toISOString() }
 export function createShell(name) {
   const key = name === 'MAAP' ? 'maap' : 'project_review';
   const denied = action => decide({ sub: 'atlas-system', roles: ['system'] }, `${key}_${action}`, {}, {});
-  return { name, mock: true, rubric: 'MUST_BE_CONFIGURED_BY_PROCESS_OWNER', configured: false,
+  // `calls` records each hand-off it was given (a contract test can check it); nothing is transmitted and nothing is ever acknowledged.
+  const calls = [];
+  return { name, mock: true, rubric: 'MUST_BE_CONFIGURED_BY_PROCESS_OWNER', configured: false, calls,
     rate: () => denied('rate'), close: () => denied('close'), // { allow:false, reason:'MAAP_NOT_CONFIGURED' | 'PROJECT_REVIEW_NOT_CONFIGURED' }
-    async send() { return { ok: false, retryable: false, error: `${name.toUpperCase()}_NOT_CONFIGURED` }; } };
+    reset() { calls.length = 0; },
+    async send(job, payload) { if (job) calls.push({ source_entity_id: job.source_entity_id ?? null, source_revision: job.source_revision ?? null, destination: job.destination ?? name, payload });
+      return { ok: false, retryable: false, error: `${name.toUpperCase()}_NOT_CONFIGURED` }; } };
 }
 
 // One registry per Library (Durable Object); tests may replace an entry or call the injection hooks on it.

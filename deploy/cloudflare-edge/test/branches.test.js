@@ -541,3 +541,17 @@ test('M1: rows stored under the old MeChat spelling read as MiChat (branch key m
   const again = mk(); evidence(again); jobs(again); // idempotent
   assert.equal(rows("SELECT COUNT(*) AS n FROM branch_status")[0].n, 2);
 });
+
+test('Project Review hand-off: once per approved revision, the Project ID and the evidence reference only; still pending, still unrated', async () => {
+  const ctx = setup(), { l, ev, ad } = ctx, ok = await approved(ctx);
+  assert.equal(status(l, ok.id).project_review, 'project_review_pending');
+  assert.equal(ad.PROJECT_REVIEW.calls.length, 1);
+  assert.deepEqual(ad.PROJECT_REVIEW.calls[0].payload, { review_id: `atlas-${ok.id}-r${ok.revision}`, project_id: 'PRJ-1', trigger: 'evidence_approved', focus: [], rubric_version: null,
+    evidence_refs: [{ entity_id: ok.id, revision: ok.revision }] });
+  await B.fanOut(ev, ok.id); await B.fanOut(ev, ok.id);
+  assert.equal(ad.PROJECT_REVIEW.calls.length, 1, 'a re-run of the fan-out hands nothing off twice');
+  assert.equal(ad.MAAP.calls.length, 0, 'MAAP gets nothing: no MAAP review was triggered');
+  assert.deepEqual(ad.PROJECT_REVIEW.rate(), { allow: false, reason: 'PROJECT_REVIEW_NOT_CONFIGURED' });
+  assert.equal((await ad.PROJECT_REVIEW.send({}, {})).error, 'PROJECT_REVIEW_NOT_CONFIGURED', 'nothing is ever acknowledged');
+  assert.equal(buildPayload('PROJECT_REVIEW', { entity: { id: 'x', revision: 1, project_ref: null } }), null, 'no Project ID, no hand-off');
+});

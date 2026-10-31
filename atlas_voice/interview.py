@@ -33,7 +33,7 @@ def project_context(raw):
         raise ValueError('Project context must be an object.')
     # 'consultant' is still accepted (older pages send it) but never kept: the consultant's name never reaches a
     # model (WOW_ZERO_CONFIG §0.4, §5.9).
-    unknown = set(raw) - {'id', 'title', 'consultant', 'role', 'sector', 'stage', 'answers', 'oppId'}
+    unknown = set(raw) - {'id', 'title', 'consultant', 'role', 'sector', 'stage', 'answers', 'oppId', 'projectId'}
     if unknown:
         raise ValueError('Unexpected project fields. Identity and memory banks are server-owned.')
     result = {k: clean(raw.get(k), n) for k, n in (
@@ -41,6 +41,10 @@ def project_context(raw):
     opp = clean(raw.get('oppId'), 40)
     if opp:
         result['oppId'] = opp
+    # The business Project ID the interview starts from (routing data: never in a model prompt, see make_prompt and cascade).
+    pid = clean(raw.get('projectId'), 60)
+    if pid:
+        result['projectId'] = pid
     if not result['title']:
         raise ValueError('Create a project before starting an interview.')
     answers = raw.get('answers', [])
@@ -56,6 +60,7 @@ def make_prompt(project, preferences=''):
     # percent-encoded URL, not only Unicode character count. Keep policy intact.
     context = dict(project)
     context.pop('id', None)
+    context.pop('projectId', None)
     context['prior_notes'] = dict(context.get('prior_notes', {}))
     prefs = clean(preferences, 500)
     for _ in range(8):

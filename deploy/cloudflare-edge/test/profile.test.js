@@ -504,3 +504,11 @@ test('storedNames: the stored edit and sign-in names only, never DNA; [] without
   assert.ok(!profile.storedNames(l, ALEX.email).includes('Dna Only Name'), 'directory rows are not the person\'s stored names');
   assert.deepEqual(profile.storedNames(l, BEA.email), []);
 });
+
+test('the business Project ID is accepted and bounded, never reaches the talker, and files the evidence notes under it', () => {
+  const ctx = projectContext({ id: 'p-local', projectId: 'PRJ-2026-0042', title: 'Claims triage', role: 'Data engineer', answers: [] });
+  assert.equal(ctx.projectId, 'PRJ-2026-0042');
+  assert.equal(projectContext({ title: 'T', projectId: 'X'.repeat(500) }).projectId.length, 60);
+  assert.ok(!('projectId' in projectContext({ title: 'T', projectId: '   ' })));
+  assert.ok(!JSON.stringify(talkerMessages(ctx, null, [], null)).includes('PRJ-2026-0042'));
+});
