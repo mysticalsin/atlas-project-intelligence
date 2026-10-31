@@ -48,7 +48,9 @@ try:
   doc=zipfile.ZipFile(dw.value.path()).read('word/document.xml').decode()
   check('library Word = the reference-sheet template (.docx): title, summary labels, 8 sections, gaps "To be completed"',dw.value.suggested_filename.endswith('.docx') and all(w in doc for w in ['Claims triage alias','Executive Summary','Detailed Information Sheet','Industry sector, size and type of client','Added value and ROI','Team size','Python','To be completed']))
   o.locator('#recordDialog [data-close]').click()
-  # --- N+1 via the direct link
+  # --- N+1 via the direct link (v2.2, red-team H1: the staffing record names the N+1 who may validate; the one typed on the reference is only a name)
+  rv=page('reviewer@mantu.com');st=rv.evaluate("""async ([csv])=>{const b=await (await fetch('/api/bootstrap')).json();const r=await fetch('/api/library/staffing/import',{method:'POST',headers:{'Content-Type':'application/json','X-Atlas-CSRF':b.csrf},body:JSON.stringify({csv})});return {status:r.status,body:await r.json()};}""",['project_id,consultant_email,manager_email,manager_name,project_title,end_date\nPRJ-2291,alex@mantu.com,sam@mantu.com,Sam,,\n'])
+  check('the staffing record names sam as the N+1 (reviewer import)',st['status']==200 and st['body']['staffed']==1)
   n=page('sam@mantu.com');n.goto(BASE+'/#library/'+rid);n.wait_for_timeout(1200)
   check('N+1 deep link opens the record with a Validate button',n.locator('#recordDialog').is_visible() and n.locator('[data-rec-validate]').count()==1)
   n.locator('[data-rec-validate]').click();n.wait_for_timeout(900)

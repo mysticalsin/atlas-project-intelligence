@@ -10,7 +10,7 @@ const base = (title, industry, challenge, extra = {}) => ({ title, stage: 'Produ
   details: { projectId: extra.pid || '', country: extra.country || 'France', start: '2024-01', duration: '6 months', teamSize: 4, teamRoles: ['Engineer'], technologies: extra.tech || ['Python'], deliverables: ['Model'], serviceLines: ['Data & AI'], consultants: extra.people || [], links: [] },
   answers: [challenge, 'I led the design and delivery of the solution with the client team myself.', 'We compared options, chose a model-based approach and kept a manual fallback.', 'Processing time fell from 40 to 12 minutes according to the operations dashboard.', 'Operations dashboard export v3.', 'Any organisation with manual, slow operational routing would benefit from this approach.'],
   validation: { manager: { name: 'Sam', email: 'sam@mantu.com' }, managerStaff: false }, jev: extra.jev || { primary: { key: 'data_ai', label: 'Data & AI' }, also: [], impact: 70 } });
-async function published(l, owner, ref, localId) { const s = await l.upsert(owner, { localId, reference: ref }); await l.review({ email: 'atlas', role: 'admin' }, s.id); l.validate(N1, s.id, { decision: 'validate' }); return s.id; }
+async function published(l, owner, ref, localId) { const s = await l.upsert(owner, { localId, reference: ref }); await l.review({ email: 'atlas', role: 'admin' }, s.id); l.validate(REV, s.id, { decision: 'validate' }); return s.id; } // a reviewer validates: the typed N+1 cannot (red-team H1)
 function lib() { const m = fakeModel(); return new Library(memorySql(), { complete: m.complete, embed: m.embed }); }
 
 test('recommendation: understands the context, ranks by meaning, explains, never leaks client names or drafts to others', async () => {
@@ -34,7 +34,8 @@ test('duplicates are detected (same project id or near-identical story) and a re
   const jo = U('jo@mantu.com');
   const two = await l.upsert(jo, { localId: '2', reference: { ...base('Claims routing', 'Insurance', 'Claims bounced between teams and payouts were slow.', { pid: 'prj-7', tech: ['Azure ML'] }), consultant: { name: 'Jo', role: 'Data scientist' }, answers: ['Claims bounced between teams and payouts were slow.', 'I built and trained the routing model and coached the operations team.', '', '', '', ''] } });
   await l.review({ email: 'atlas', role: 'admin' }, two.id);
-  const dups = l.get(OWNER, one.id).state.duplicates;
+  const dups = l.get(REV, one.id).state.duplicates; // red-team M2: duplicates are filtered through access(), so the author of an unpublished near-twin sees nothing; a reviewer sees both
+  assert.deepEqual(l.get(OWNER, one.id).state.duplicates, [], "jo's unpublished record is invisible to the owner of the other one");
   assert.equal(dups[0].id, two.id); assert.equal(dups[0].sameProjectId, true);
   await assert.rejects(l.merge(OWNER, { keep: one.id, merge: two.id }), /reviewer/);
   const merged = await l.merge(REV, { keep: one.id, merge: two.id });

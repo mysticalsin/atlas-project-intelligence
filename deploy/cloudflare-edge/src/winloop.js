@@ -11,6 +11,7 @@ import { NUMERIC_SRC } from './policy.generated.js';
 
 export const READY = true;
 export const MIN_N = 5;
+const PER_BIDDER_CAP = 3, DECIDED_PER_BIDDER = 25; // see tallies(): per bidder and story; per bidder in the totals
 const OVERALL_MIN = 10, HINT_GAP = 0.15, Z = 1.959963984540054; // Z: the two-sided 95% normal quantile
 const TYPES = ['quantified+confirmed', 'quantified+unconfirmed', 'qualitative+confirmed', 'qualitative+unconfirmed'];
 const HINTS = ['quantified', 'confirmed'];
@@ -31,7 +32,7 @@ export function wilson(won, n) {
 export function proofTypeOf(lib, row) {
   const a = Array.isArray(row?.data?.answers) ? row.data.answers : [];
   const quantified = NUMERIC.test(String(a[3] || '')) || NUMERIC.test(String(a[4] || ''));
-  const confirmed = (Number(claimSummary(lib, row)?.confirmed) || 0) > 0;
+  const confirmed = (Number(claimSummary(lib, row, { independent: true })?.confirmed) || 0) > 0; // a self-named confirmer is not the N+1 (red-team M3)
   return (quantified ? 'quantified' : 'qualitative') + '+' + (confirmed ? 'confirmed' : 'unconfirmed');
 }
 
@@ -49,13 +50,22 @@ function tallies(lib) {
   // distinct bids (bidsOf: type -> bid id -> outcome), so one bid citing five stories of a type is one decided bid.
   const blank = () => ({ used: 0, won: 0, lost: 0, pending: 0 }), byType = new Map(TYPES.map(t => [t, blank()])), byRef = new Map(), bidsOf = new Map(TYPES.map(t => [t, new Map()]));
   const count = (s, outcome) => { if (outcome === 'won') s.won++; else if (outcome === 'lost') s.lost++; else if (outcome === 'pending') s.pending++; };
-  for (const r of lib.rows('SELECT u.bid_id, u.ref_id, u.proof_type, b.outcome FROM bid_references u JOIN bids b ON b.id = u.bid_id')) {
+  // Red-team L1: anyone can create bids and set their outcome, so a use counts only when (a) the bidder is not the story's own owner or a
+  // listed consultant (nobody promotes their own story), and (b) it is among the first PER_BIDDER_CAP uses of that story by that bidder
+  // (one account cannot move a rate alone; it takes several people). Totals count each bidder's decided bids up to a cap as well.
+  const seenBy = new Map();
+  for (const r of lib.rows(`SELECT u.bid_id, u.ref_id, u.proof_type, b.outcome, b.owner AS bidder, f.owner AS ref_owner, f.members AS ref_members
+      FROM bid_references u JOIN bids b ON b.id = u.bid_id LEFT JOIN refs f ON f.id = u.ref_id ORDER BY u.used_at, u.rowid`)) {
+    if (r.bidder && (r.bidder === r.ref_owner || String(r.ref_members || '').includes(',' + r.bidder + ','))) continue;
+    const key = r.bidder + '\n' + r.ref_id, n = (seenBy.get(key) || 0) + 1;
+    seenBy.set(key, n);
+    if (n > PER_BIDDER_CAP) continue;
     if (byType.has(r.proof_type)) { byType.get(r.proof_type).used++; bidsOf.get(r.proof_type).set(r.bid_id, r.outcome); }
     if (!byRef.has(r.ref_id)) byRef.set(r.ref_id, blank());
     const s = byRef.get(r.ref_id); s.used++; count(s, r.outcome);
   }
   for (const [type, outcomes] of bidsOf) for (const outcome of outcomes.values()) count(byType.get(type), outcome);
-  const t = lib.rows("SELECT COUNT(*) AS bids, SUM(CASE WHEN outcome IN ('won', 'lost') THEN 1 ELSE 0 END) AS decided FROM bids")[0] || {};
+  const t = lib.rows("SELECT (SELECT COUNT(*) FROM bids) AS bids, SUM(CASE WHEN outcome IN ('won', 'lost') THEN 1 ELSE 0 END) AS decided FROM (SELECT outcome, ROW_NUMBER() OVER (PARTITION BY owner ORDER BY created_at, rowid) AS n FROM bids) WHERE n <= ?", DECIDED_PER_BIDDER)[0] || {};
   const entry = { sig, byType, bidsOf, byRef, totals: { bids: t.bids || 0, decided: t.decided || 0 } };
   cache.set(lib, entry);
   return entry;

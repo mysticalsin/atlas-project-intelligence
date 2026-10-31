@@ -9,7 +9,7 @@
 import { str, obj, fail, email as validEmail, rateLimit } from './util.js';
 import { pseudonymise, forAuthor, recordView, clientMatcher, safeSummary } from './scrub.js';
 import { snippetsOf, TOPIC_KEYS } from './snippets.js';
-import { RERANK_POLICY, parseRerankStrict, candidateCard, lexical, rankPool, retrievalOf } from './reuse.js';
+import { RERANK_POLICY, parseRerankStrict, candidateCard, lexical, rankPool, retrievalOf, boundedMerge, BOUNDED_NOTE, UNRATED } from './reuse.js';
 import { SIM_FLOOR, STRONG } from './bids.js';
 import { winSignals } from './winloop.js';
 
@@ -66,14 +66,16 @@ async function ask(lib, user, b) {
     { role: 'user', content: JSON.stringify({ context: { query: q.text }, candidates: cards }) }]).catch(() => ''), cards.map(c => c.id)) : null;
   if (ranked !== null && !ranked.length) return answer('none', retrieval + ' + model ranking', [], note ? NOTE.filteredNone : NOTE.none);
   const byId = new Map(kept.map(k => [k.row.id, k]));
-  const picks = ranked ? [...ranked].sort((x, y) => y.relevance - x.relevance) : kept.map(k => ({ id: k.row.id, relevance: null, why: '', caveat: UNRANKED }));
+  // Red-team M4: bounded merge (the model reorders within a small window of the similarity order and cannot exclude a candidate).
+  const merged = ranked ? boundedMerge(kept.map(k => k.row.id), ranked) : null;
+  const picks = merged ? merged.order.map(({ id, entry }) => entry || { id, relevance: null, why: '', caveat: UNRATED }) : kept.map(k => ({ id: k.row.id, relevance: null, why: '', caveat: UNRANKED }));
   const results = picks.slice(0, limit).map(x => {
     const k = byId.get(x.id);
     return { ...safeSummary(lib, k.row, k.level, user), relevance: x.relevance, similarity: Math.round(k.similarity * 1000) / 1000, retrieval: k.retrieval,
       why: mine(x.why), caveat: mine(x.caveat), snippets: snippetsFor(lib, k, q.text), people: peopleOf(k) };
   });
   const verdict = !ranked ? 'unranked' : results.some(x => x.relevance >= STRONG) ? 'strong' : 'partial';
-  return answer(verdict, retrieval + (ranked ? ' + model ranking' : ' (not ranked)'), results, ranked ? '' : NOTE.unranked);
+  return answer(verdict, retrieval + (ranked ? ' + model ranking' : ' (not ranked)'), results, ranked ? (merged.bounded ? BOUNDED_NOTE : '') : NOTE.unranked);
 }
 
 // The two snippets with the most lexical overlap with the (pseudonymised) question, scored on the masked text.

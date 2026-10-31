@@ -76,8 +76,9 @@ try:
     check('alex saves a reference naming N+1 sam@mantu.com', st == 201 and saved.get('id'))
     rid = saved['id']
     settle()
-    st, validated = api('sam@mantu.com', 'POST', f'/api/library/{rid}/validate', {'decision': 'validate'})
-    check('sam validates the reference (existing N+1 flow)', st == 200 and validated['state']['validation']['status'] == 'validated')
+    # v2.2 (red-team H1): the N+1 typed on a reference cannot validate it; a reviewer does here, so sam stays a self-declared confirmer below.
+    st, validated = api('reviewer@mantu.com', 'POST', f'/api/library/{rid}/validate', {'decision': 'validate'})
+    check('a reviewer validates the reference (the typed N+1 cannot)', st == 200 and validated['state']['validation']['status'] == 'validated')
     st, view = api('alex@mantu.com', 'GET', f'/api/library/claims/{rid}')
     cands = view['candidates']
     pick = [next(c for c in cands if c['topic'] == 1 and c['idx'] == 0), next(c for c in cands if c['topic'] == 3 and c['idx'] == 0)]

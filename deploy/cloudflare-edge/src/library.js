@@ -3,7 +3,7 @@
 // with exec(query, ...params) -> { toArray() } (Durable Object SQLite in production, node:sqlite in tests).
 // Confidential client details are visible only to the record's people and reviewers, and never reach a model.
 import { reviewReference, forModel, clientScrub, contactLead, READY_SCORE } from './review.js';
-import { searchText, cosine, lexical, TARGET_POLICY, parseTarget, RERANK_POLICY, parseRerankStrict, candidateCard, SLIDES_POLICY, parseSlides, INSIGHTS_POLICY, parseInsights } from './reuse.js';
+import { searchText, cosine, lexical, TARGET_POLICY, parseTarget, RERANK_POLICY, parseRerankStrict, candidateCard, boundedMerge, BOUNDED_NOTE, UNRATED, SLIDES_POLICY, parseSlides, INSIGHTS_POLICY, parseInsights } from './reuse.js';
 import { str, para, list, email, https, obj, fail } from './util.js';
 // Model input from a record goes through recordView (other library clients, contacts and PII masked too); text a
 // user types is pseudonymised and the caller gets their own words back (WOW_SPEC §2.3).
@@ -12,6 +12,7 @@ import { winSignals } from './winloop.js';
 // Story rating by TypeSafe JEV (docs/JEV_RATING.md): used only when a rater with a key exists and the owner consented.
 import { RatingError, ratingInput, questionPlan, requestBody, compose, agentQuality, noStoryQuality, sha256Hex, BUDGETS, RUBRIC_VERSION, METRIC_CODES, MODEL } from './rating.js';
 import { storedConsent } from './profile.js';
+import { resolveN1 } from './claims.js'; // THE N+1 resolver: staffing record, then DNA directory; never the owner's own words (red-team H1)
 import { ensure as ensureEvidence } from './evidence.js'; // additive evidence tables (T13); nothing else in this file knows about them
 const DUPLICATE = 0.9; // cosine similarity above which two references are flagged as the same or a related project
 export const PRACTICES = { data_ai: 'Data & AI', web_app: 'Web & App Development', telecom: 'Telecom & Networks', sap_erp: 'SAP & ERP', cloud_infra: 'Cloud & Infrastructure', cybersecurity: 'Cybersecurity', transformation: 'Transformation & Strategy', engineering: 'Engineering & Industry' };
@@ -107,6 +108,9 @@ const SCHEMA = [
   'CREATE UNIQUE INDEX IF NOT EXISTS refs_owner_local ON refs(owner, local_id)',
   'CREATE TABLE IF NOT EXISTS revisions (id TEXT, revision INTEGER, data TEXT, author TEXT, at TEXT, PRIMARY KEY (id, revision))',
   'CREATE TABLE IF NOT EXISTS audit (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT, actor TEXT, action TEXT, at TEXT, detail TEXT)',
+  // Possible duplicates live between two records, in neither (red-team M2): titles are resolved at read time through access().
+  'CREATE TABLE IF NOT EXISTS duplicate_pairs (a TEXT NOT NULL, b TEXT NOT NULL, similarity REAL, same_project_id INTEGER, PRIMARY KEY (a, b))',
+  'CREATE INDEX IF NOT EXISTS duplicate_pairs_b ON duplicate_pairs(b)',
   `CREATE TABLE IF NOT EXISTS invitations (id TEXT PRIMARY KEY, email TEXT, project_id TEXT, title TEXT, reason TEXT, slot TEXT, reference_id TEXT,
     status TEXT, created_at TEXT, source TEXT)`,
 ];
@@ -135,6 +139,9 @@ export class Library {
     if (['admin', 'reviewer'].includes(user.role)) return 'full';
     const e = user.email;
     if (e && (row.owner === e || row.manager_email === e || (row.members || '').includes(',' + e + ','))) return 'full';
+    // The resolved N+1 must be able to open a reference that waits for validation, and keeps access once they validated it (red-team H1).
+    if (e && ['awaiting_validation', 'changes_requested'].includes(row.status) && resolveN1(this, row)?.to === e) return 'full';
+    if (e && row.state?.validation?.by === e) return 'full';
     return row.status === 'published' ? 'public' : null;
   }
   canEdit(row, user) { return ['admin', 'reviewer'].includes(user.role) || row.owner === user.email || (row.members || '').includes(',' + user.email + ','); }
@@ -150,16 +157,22 @@ export class Library {
   async upsert(user, body) {
     if (!user.email) throw fail(401, 'Sign in first.');
     body = obj(body);
-    const data = cleanReference(body.reference), localId = str(body.localId, 100), hash = await hashOf(data), at = this.now();
+    const data = cleanReference(body.reference), localId = str(body.localId, 100), at = this.now();
+    // Red-team H1: "my N+1 is not staff, so no validation" is a reviewer's or admin's call, never the author's own flag.
+    data.validation.managerStaff = data.validation.managerStaff && ['admin', 'reviewer'].includes(user.role);
+    const hash = await hashOf(data);
     const found = body.id ? { id: String(body.id) } : localId ? this.rows('SELECT id FROM refs WHERE owner = ? AND local_id = ?', user.email, localId)[0] : null;
     const row = found ? this.row(found.id) : null;
     if (body.id && !row) throw fail(404, 'Reference not found.');
     if (row && !this.canEdit(row, user)) throw fail(403, 'You cannot edit this reference.');
     if (row && row.merged_into) throw fail(409, 'This reference was merged into another one.');
     if (row && row.content_hash === hash) return { ...this.summary(row, 'full', user), unchanged: true };
+    // A second save without a localId would hit the (owner, local_id) unique index: say so instead of failing with a 500.
+    if (!row && !localId && this.rows("SELECT 1 AS x FROM refs WHERE owner = ? AND local_id = ''", user.email).length) throw fail(409, 'You already saved a reference without a localId. Send its id (or a localId) to update it, or a new localId for a new one.');
     const id = row ? row.id : this.newId(), revision = row ? row.revision + 1 : 1;
     const members = ',' + data.details.consultants.map(c => c.email).filter(Boolean).join(',') + ',';
-    const state = { ...(row ? row.state : {}), quality: null, withdrawn: false,
+    // Red-team H2: a withdrawal is carried across edits; only a reviewer's reinstate clears it.
+    const state = { ...(row ? row.state : {}), quality: null, withdrawn: !!row?.state?.withdrawn,
       validation: { status: data.validation.managerStaff ? 'not_required' : 'pending', by: '', at: '', note: '' } };
     const status = deriveStatus(state), next = new Date(Date.parse(at) + REVIEW_DAYS * 864e5).toISOString();
     if (row) this.sql.exec(`UPDATE refs SET title=?, status=?, revision=?, content_hash=?, practice=?, industry=?, country=?, manager_email=?, members=?, quality_score=NULL,
@@ -178,7 +191,7 @@ export class Library {
     if (!level) throw fail(404, 'Reference not found.');
     const full = level === 'full';
     return { ...this.summary(row, level, user), data: full ? row.data : anonymise(row.data),
-      state: { quality: full ? row.state.quality : publicQuality(row.state.quality), validation: full ? row.state.validation : { status: row.state.validation?.status }, withdrawn: !!row.state.withdrawn, duplicates: row.state.duplicates || [] },
+      state: { quality: full ? row.state.quality : publicQuality(row.state.quality), validation: full ? row.state.validation : { status: row.state.validation?.status }, withdrawn: !!row.state.withdrawn, duplicates: this.duplicatesOf(row, user) },
       revisions: full ? this.rows('SELECT revision, author, at FROM revisions WHERE id = ? ORDER BY revision DESC', row.id) : [],
       audit: full ? this.rows('SELECT actor, action, at, detail FROM audit WHERE id = ? ORDER BY seq DESC LIMIT 100', row.id) : [],
       permissions: { edit: this.canEdit(row, user), validate: this.canValidate(row, user), withdraw: this.canEdit(row, user), review: this.canEdit(row, user), reinstate: ['admin', 'reviewer'].includes(user.role), merge: ['admin', 'reviewer'].includes(user.role) },
@@ -218,7 +231,13 @@ export class Library {
         serviceLines: facet(r => r.data.details.serviceLines), technologies: facet(r => r.data.details.technologies) } };
   }
 
-  canValidate(row, user) { return ['admin', 'reviewer'].includes(user.role) || (!!user.email && row.manager_email === user.email); }
+  // Red-team H1: the owner and the listed consultants can never validate their own reference (even as a reviewer). Everyone else: a reviewer or
+  // admin, or the N+1 the staffing record or the DNA directory resolves for the owner. The N+1 the owner typed (refs.manager_email) is only a name.
+  isOwnerOrMember(row, user) { return !!user.email && (row.owner === user.email || (row.members || '').includes(',' + user.email + ',')); }
+  canValidate(row, user) {
+    if (!user.email || this.isOwnerOrMember(row, user)) return false;
+    return ['admin', 'reviewer'].includes(user.role) || resolveN1(this, row)?.to === user.email;
+  }
 
   setState(row, state, actor, action, detail) {
     const status = deriveStatus(state);
@@ -361,28 +380,32 @@ export class Library {
     }
   }
 
-  // Semantic index + duplicate detection (same project ID, or very similar anonymised content). Reciprocal flags.
+  // Semantic index + duplicate detection (same project ID, or very similar anonymised content). Pairs are stored between the two records
+  // (duplicate_pairs), never inside either one, and read back through access(): nobody learns a title, id or the existence of a record they
+  // cannot open, and no save ever writes into another person's record (red-team M2).
   async index(id) {
     const row = this.row(id); if (!row) return;
     const vec = this.embed ? await this.embed(searchText(recordView(this, row.data))) : null;
     if (vec) this.sql.exec('UPDATE refs SET embedding = ? WHERE id = ?', JSON.stringify(vec), id);
-    const others = this.rows('SELECT id, title, data, state, embedding FROM refs WHERE merged_into IS NULL AND id != ?', id);
+    const others = this.rows('SELECT id, data, embedding FROM refs WHERE merged_into IS NULL AND id != ?', id);
     const mine = [], pid = row.data.details.projectId.toLowerCase();
     for (const o of others) {
       const od = JSON.parse(o.data), sim = vec && o.embedding ? cosine(vec, JSON.parse(o.embedding)) : lexical(searchText(forModel(row.data)), searchText(forModel(od)));
       const sameId = pid && od.details.projectId.toLowerCase() === pid;
-      if (sameId || sim >= DUPLICATE) {
-        const hit = { id: o.id, title: o.title, similarity: Math.round(sim * 100) / 100, sameProjectId: !!sameId };
-        mine.push(hit);
-        const os = JSON.parse(o.state), list = (os.duplicates || []).filter(x => x.id !== id);
-        list.push({ id, title: row.data.title, similarity: hit.similarity, sameProjectId: hit.sameProjectId });
-        this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...os, duplicates: list.slice(0, 10) }), o.id);
-      }
+      if (sameId || sim >= DUPLICATE) mine.push({ id: o.id, similarity: Math.round(sim * 100) / 100, sameProjectId: !!sameId });
     }
     mine.sort((a, b) => (b.sameProjectId - a.sameProjectId) || (b.similarity - a.similarity)); // strongest signal first
-    const fresh = this.row(id);
-    this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...fresh.state, duplicates: mine.slice(0, 10) }), id);
-    if (mine.length) this.log(id, 'atlas', 'possible duplicate', mine.map(m => m.title).join('; '));
+    this.sql.exec('DELETE FROM duplicate_pairs WHERE a = ? OR b = ?', id, id);
+    for (const m of mine.slice(0, 10)) this.sql.exec('INSERT OR REPLACE INTO duplicate_pairs (a, b, similarity, same_project_id) VALUES (?, ?, ?, ?)', id, m.id, m.similarity, m.sameProjectId ? 1 : 0);
+  }
+  // The possible duplicates of `row` that `user` may open (a published record, or one they own, share or review). Titles come from the other
+  // record at read time. The audit trail records nothing about a duplicate: it would show the owner a record they cannot open.
+  duplicatesOf(row, user) {
+    return this.rows('SELECT a, b, similarity, same_project_id FROM duplicate_pairs WHERE a = ? OR b = ?', row.id, row.id)
+      .map(p => ({ other: this.row(p.a === row.id ? p.b : p.a), similarity: p.similarity, sameProjectId: !!p.same_project_id }))
+      .filter(p => p.other && this.access(p.other, user))
+      .map(p => ({ id: p.other.id, title: p.other.title, similarity: p.similarity, sameProjectId: p.sameProjectId }))
+      .sort((x, y) => (y.sameProjectId - x.sameProjectId) || (y.similarity - x.similarity)).slice(0, 10);
   }
 
   // Natural-language recommendation: understand the context, retrieve by meaning, then rerank with reasons.
@@ -410,10 +433,13 @@ export class Library {
     // Unranked either way, but say which: the model did not answer (null) or nothing reached 30 ([]).
     const caveat = ranked ? 'Matched by similarity only; no candidate reached the relevance threshold of 30.' : 'Matched by similarity only; the ranking model did not answer.';
     const byId = new Map(scored.map(s => [s.r.id, s]));
-    const results = (ranked?.length ? ranked : scored.slice(0, limit).map(s => ({ id: s.r.id, relevance: null, why: '', transferable: [], caveat })))
+    // Red-team M4: bounded merge: the model reorders within a small window of the similarity order and cannot exclude a candidate.
+    const merged = ranked?.length ? boundedMerge(scored.map(s => s.r.id), ranked) : null;
+    const results = (merged ? merged.order.map(({ id, entry }) => entry || { id, relevance: null, why: '', transferable: [], caveat: UNRATED }) : scored.slice(0, limit).map(s => ({ id: s.r.id, relevance: null, why: '', transferable: [], caveat })))
       .slice(0, limit).map(x => { const s = byId.get(x.id); return { ...this.summary(s.r, s.level, user), ...x, why: mine(x.why), transferable: mine(x.transferable), caveat: mine(x.caveat), similarity: Math.round(s.similarity * 100) / 100 }; });
     this.log('library', user.email, 'recommendation', `${results.length} results`);
-    return { target: mine(target), results, method: (qv ? 'semantic' : 'lexical') + (ranked?.length ? ' + model ranking' : ''), label: 'Relevance and reasons are interpretation; open each reference for the facts.' };
+    return { target: mine(target), results, method: (qv ? 'semantic' : 'lexical') + (ranked?.length ? ' + model ranking' : ''), ...(merged?.bounded ? { note: BOUNDED_NOTE } : {}),
+      label: 'Relevance and reasons are interpretation; open each reference for the facts.' };
   }
 
   // Consolidation: one stronger reference; every consultant keeps access and their own contribution.
@@ -515,7 +541,12 @@ export class Library {
     const action = obj(body).action;
     if (action === 'schedule') { const slot = String(obj(body).slot || ''); if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(slot)) throw fail(400, 'Pick a date and time.'); this.sql.exec("UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ?", slot.slice(0, 25), inv.id); }
     else if (action === 'dismiss') this.sql.exec("UPDATE invitations SET status = 'dismissed' WHERE id = ?", inv.id);
-    else if (action === 'done') this.sql.exec("UPDATE invitations SET status = 'done', reference_id = ? WHERE id = ?", str(obj(body).referenceId, 40) || inv.reference_id, inv.id);
+    else if (action === 'done') {
+      // The reference an invitation points at must be one the person can edit (their own, one they are listed on, or any for a reviewer).
+      const rid = str(obj(body).referenceId, 40), target = rid ? this.row(rid) : null;
+      if (rid && (!target || !this.canEdit(target, user))) throw fail(404, 'Reference not found.');
+      this.sql.exec("UPDATE invitations SET status = 'done', reference_id = ? WHERE id = ?", rid || inv.reference_id, inv.id);
+    }
     else throw fail(400, 'Unknown action.');
     this.log(inv.reference_id || 'library', user.email, 'invitation ' + action, inv.reason);
     return this.rows('SELECT * FROM invitations WHERE id = ?', inv.id)[0];
@@ -547,7 +578,7 @@ export class Library {
   validate(user, id, body = {}) {
     const row = this.row(id);
     if (!row || !this.access(row, user)) throw fail(404, 'Reference not found.');
-    if (!this.canValidate(row, user)) throw fail(403, 'Only the N+1 named on this reference, or a reviewer, can validate it.');
+    if (!this.canValidate(row, user)) throw fail(403, this.isOwnerOrMember(row, user) ? 'You cannot validate your own reference: your N+1 or a reviewer does.' : 'Only the N+1 resolved from the staffing record or the directory, or a reviewer, can validate it.');
     const decision = body.decision === 'request_changes' ? 'changes_requested' : body.decision === 'validate' ? 'validated' : null;
     if (!decision) throw fail(400, 'Choose validate or request_changes.');
     const note = str(body.note, 500);

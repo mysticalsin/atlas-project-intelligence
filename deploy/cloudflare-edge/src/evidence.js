@@ -15,7 +15,7 @@
 import { decide } from './policy-gate.js';
 import { Machine, StateError, TRANSITIONS, WORKFLOW_VERSION } from './conversation-state.js';
 import { FIELDS } from './policy.generated.js';
-import { managerOf } from './claims.js';
+import { resolveN1 } from './claims.js';
 import { str, para, obj, fail } from './util.js';
 import * as branches from './branches.js'; // T15: the approval fan-out and its hooks; inert until the Library is configured with the Worker's env
 
@@ -174,7 +174,7 @@ class Evidence {
   // a directory email, so in Entra mode only ATLAS.Reviewer / ATLAS.Admin review (fails closed; see the DECISION_LOG).
   n1(rec) {
     const ref = rec.ref_id ? this.lib.row(rec.ref_id) : null, data = ref ? ref.data : { details: { projectId: rec.project_ref || '' }, validation: {} };
-    try { const m = managerOf(this.lib, { owner: rec.owner_sub, data }); return m.source === 'self_declared' ? '' : m.to || ''; } catch { return ''; }
+    return resolveN1(this.lib, { owner: rec.owner_sub, data })?.to || ''; // claims.resolveN1: the one resolver (library validate and claims confirm use it too)
   }
   // Who this person is to this record, or null when it does not exist for them. Drafts are the owner's alone (D19).
   access(rec, user) {

@@ -34,6 +34,8 @@ try:
                                           ('Grid data lake','Energy','The utility had fragmented grid data spread over control rooms and slow operational decisions.','PRJ-1',jo)]):
    r=who.evaluate(API,['POST','',{'localId':'seed'+str(i),'reference':ref(t,ind,ch,pid,'Belgium' if i==2 else 'France')}]);ids.append(r['body']['id'])
   settle()
+  # v2.2 (red-team H1): the staffing record names sam as alex's N+1 on PRJ-1..3; the N+1 typed on a reference cannot validate
+  rv0=page('reviewer@mantu.com');rv0.evaluate(API.replace("'/api/library'+path","path"),['POST','/api/library/staffing/import',{'csv':'project_id,consultant_email,manager_email,manager_name,project_title,end_date\nPRJ-1,alex@mantu.com,sam@mantu.com,Sam,,\nPRJ-2,alex@mantu.com,sam@mantu.com,Sam,,\nPRJ-3,alex@mantu.com,sam@mantu.com,Sam,,\n'}])
   for rid in ids[:3]:sam.evaluate(API,['POST','/'+rid+'/validate',{'decision':'validate'}])
   kim=page('kim@mantu.com');kim.locator('header [data-view=library]').click();kim.wait_for_timeout(700)
   kim.locator('#recommendQuery').fill('I am meeting the data director of a major energy company. Which relevant references can I present?');kim.locator('#recommendGo').click();kim.wait_for_timeout(1200)
