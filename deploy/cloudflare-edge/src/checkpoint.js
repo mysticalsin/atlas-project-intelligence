@@ -51,6 +51,7 @@ export function serialize(s) {
     // The read-back (T11): whether the card is open, how many read-backs and typed corrections there were, and the confirmation with the draft it saved.
     summary: { open: s.summary.open, rounds: s.summary.rounds, corrections: s.summary.corrections, confirmed: s.summary.confirmed, draft: s.summary.draft, prompts: s.summary.prompts },
     counters: { turns: s.turns, replies: s.replies, spokenMs: s.spokenMs, identNow: s.identNow, timeUp: s.timeUp },
+    input: s.textMode ? 'text' : 'voice', // X1: how the interview is held (a resume carries on in it)
   });
 }
 
@@ -151,7 +152,7 @@ export class CheckpointStore {
     if (savedAt >= expiresAt) { await this.purge(); throw new CheckpointError('expired', 'the 24 hours are over: the interview is no longer kept'); }
     const chunks = split(enc.encode(JSON.stringify(doc)));
     if (chunks.length > MAX_CHUNKS) throw new CheckpointError('too_large', 'the checkpoint is too large to keep');
-    const entries = { [CURRENT]: id, [metaKey(id)]: { version: VERSION, sessionId: id, owner: this.owner, savedAt, capturedAt, expiresAt, state, chunks: chunks.length, bytes: chunks.reduce((n, c) => n + c.length, 0) } };
+    const entries = { [CURRENT]: id, [metaKey(id)]: { version: VERSION, sessionId: id, owner: this.owner, savedAt, capturedAt, expiresAt, state, input: doc.input === 'text' ? 'text' : 'voice', chunks: chunks.length, bytes: chunks.reduce((n, c) => n + c.length, 0) } };
     chunks.forEach((c, n) => { entries[chunkKey(id, n)] = c; });
     await this.storage.put(entries);
     if (isObj(old) && Number.isInteger(old.chunks) && old.chunks > chunks.length) await this.storage.delete(Array.from({ length: old.chunks - chunks.length }, (_, i) => chunkKey(id, chunks.length + i)));
@@ -175,7 +176,7 @@ export class CheckpointStore {
   async info() {
     const m = await this.meta();
     if (m && isTerminal(m.state)) { await this.purge(); return null; } // finished (an older write): it can only be refused, so it is neither offered nor kept
-    return m && m.version === VERSION ? { sessionId: m.sessionId, savedAt: m.savedAt, expiresAt: m.expiresAt } : null;
+    return m && m.version === VERSION ? { sessionId: m.sessionId, savedAt: m.savedAt, expiresAt: m.expiresAt, input: m.input === 'text' ? 'text' : 'voice' } : null;
   }
 
   async load(sessionId) {

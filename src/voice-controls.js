@@ -45,5 +45,38 @@ function view({phase,paused,muted,controls,draft}){
   state:paused?'Paused · microphone off':muted?'Microphone muted · ATLAS may still speak':''
  };
 }
-return {TEXT_MAX,CORRECT_MAX,NAMES,message,summaryMessage,supports,pausedFrom,elapsed,clock,view};
+// ---- Typed interview and typed turns (X1) ----
+const PRIVATE_MARK='[kept private]'; // the same marker the server uses for an utterance the consultant kept private
+// A typed turn the server took is echoed as user_text (provenance consultant_typed) with a TURN item id user-typed-N; typed corrections of the read-back are 1001 and up and
+// are not turns. Only that echo clears the typed text: until then the text stays in the box.
+const TYPED_ITEM=/^user-typed-(\d+)$/;
+function typedAccepted(m){if(!m||m.type!=='user_text'||m.provenance!=='consultant_typed'||typeof m.item_id!=='string')return false;const x=TYPED_ITEM.exec(m.item_id);return !!x&&Number(x[1])<1000;}
+// The gentle line under the box when the server did not take the typed turn (quality_warning with refused:'text'); '' for any other message.
+const TYPED_NOTES={speaking:'I’ll take that as soon as I finish speaking. Your text is kept here: press Send again in a moment.',
+ composing:'One moment, ATLAS is still replying. Your text is kept here: press Send again in a moment.',rate:'One moment, that was quick. Your text is kept here: press Send again in a moment.',
+ timeout:'That did not go through. Your text is kept here: press Send to try again.'};
+function typedRefusal(m){return m&&m.type==='quality_warning'&&m.refused==='text'?(TYPED_NOTES[m.reason]||TYPED_NOTES.composing):'';}
+// What the box does once the server answered a typed turn: cleared only when the text in it is still the one that was sent (words typed meanwhile are never wiped).
+function afterAccepted(sent,box,echo){const b=typeof box==='string'?box.trim():'',s=typeof sent==='string'?sent.trim():'',e=echo&&typeof echo.text==='string'?echo.text.trim():'';return b===''||b===s||b===e?'':box;}
+
+// The conversation shown in a typed interview: ATLAS's replies and the consultant's turns, in order. A pure reducer over the server's events, so node tests cover it.
+// entry: {who:'atlas'|'you', text, item?, private?}. agent_text starts a new ATLAS entry after a consultant turn, or when the server begins a new reply (\n\n).
+const LOG_MAX=200;
+function logApply(entries,m){
+ const list=Array.isArray(entries)?entries.map(e=>({...e})):[];if(!m||typeof m!=='object')return list;
+ if(m.type==='agent_text'&&typeof m.text==='string'){const last=list[list.length-1],fresh=/^\n\n/.test(m.text),text=m.text.replace(/^\n\n/,'');
+  if(!last||last.who!=='atlas'||fresh){if(text.trim())list.push({who:'atlas',text});}else last.text+=text;}
+ else if(m.type==='agent_retract'&&Number.isInteger(m.chars)&&m.chars>0){const last=list[list.length-1];if(last&&last.who==='atlas'){last.text=last.text.slice(0,Math.max(0,last.text.length-m.chars));if(!last.text.trim())list.pop();}}
+ else if(m.type==='user_text'&&typeof m.text==='string'){const at=typeof m.item_id==='string'?list.findIndex(e=>e.who==='you'&&e.item===m.item_id):-1;
+  if(at>=0)list[at].text=list[at].private?PRIVATE_MARK:m.text;else list.push({who:'you',item:typeof m.item_id==='string'?m.item_id:'',text:m.text.slice(0,2000)});}
+ else if(m.type==='user_text_private'&&Array.isArray(m.items)){const set=new Set(m.items.filter(x=>typeof x==='string'));for(const e of list)if(e.who==='you'&&set.has(e.item)){e.text=PRIVATE_MARK;e.private=true;}}
+ return list.slice(-LOG_MAX);
+}
+// A resumed interview: the server sends the consultant's turns and ATLAS's replies as two lists; ATLAS speaks first, so they alternate.
+function logRestore(m){
+ const agent=Array.isArray(m&&m.agent)?m.agent.filter(x=>typeof x==='string'):[],user=Array.isArray(m&&m.user)?m.user.filter(u=>u&&typeof u.text==='string'):[];
+ let list=[];for(let i=0;i<Math.max(agent.length,user.length);i++){if(i<agent.length)list=logApply(list,{type:'agent_text',text:'\n\n'+agent[i]});if(i<user.length)list=logApply(list,{type:'user_text',item_id:user[i].item_id,text:user[i].text});}
+ return list;
+}
+return {TEXT_MAX,CORRECT_MAX,NAMES,PRIVATE_MARK,TYPED_NOTES,message,summaryMessage,supports,pausedFrom,elapsed,clock,view,typedAccepted,typedRefusal,afterAccepted,logApply,logRestore};
 });

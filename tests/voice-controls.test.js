@@ -5,7 +5,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const C=require('../src/voice-controls.js'),ROOT=path.join(__dirname,'..');
 const ALL=['pause','resume','repeat','skip','text'];
 
-test('exports are the fixed contract',()=>{assert.deepEqual(Object.keys(C).sort(),['CORRECT_MAX','NAMES','TEXT_MAX','clock','elapsed','message','pausedFrom','summaryMessage','supports','view']);assert.deepEqual(C.NAMES,ALL);assert.equal(C.TEXT_MAX,2000);});
+test('exports are the fixed contract',()=>{assert.deepEqual(Object.keys(C).sort(),['CORRECT_MAX','NAMES','PRIVATE_MARK','TEXT_MAX','TYPED_NOTES','afterAccepted','clock','elapsed','logApply','logRestore','message','pausedFrom','summaryMessage','supports','typedAccepted','typedRefusal','view']);assert.deepEqual(C.NAMES,ALL);assert.equal(C.TEXT_MAX,2000);});
 
 test('messages: exactly the keys the session accepts',()=>{
  for(const k of ['pause','resume','repeat','skip'])assert.deepEqual(C.message(k),{type:k});
@@ -103,4 +103,40 @@ test('compiled page and sources agree (build.py was run)',()=>{
  for(const f of ['ATLAS_Voice.html','ATLAS_Intelligence.html','ATLAS_Project_Intelligence.html','ATLAS_Voice_Studio.html']){
   const t=fs.readFileSync(path.join(ROOT,f),'utf8');assert.ok(t.includes(client)&&t.includes(ctl),f);
  }
+});
+
+// ---- X1: the typed interview (pure parts) ----
+test('X1 typed turns: only the echo of a TURN clears the box; typed corrections (1001 and up) and other provenance do not',()=>{
+ const ok={type:'user_text',provenance:'consultant_typed',item_id:'user-typed-3',text:'x'};
+ assert.equal(C.typedAccepted(ok),true);
+ for(const bad of [{...ok,item_id:'user-typed-1001'},{...ok,item_id:'user-3'},{...ok,provenance:'unverified_speech_recognition'},{...ok,type:'agent_text'},{...ok,item_id:7},null,undefined])assert.equal(C.typedAccepted(bad),false);
+});
+test('X1 typed refusal: a gentle line for a typed refusal only, one per reason, always saying the text is kept',()=>{
+ for(const reason of ['speaking','composing','rate']){const n=C.typedRefusal({type:'quality_warning',refused:'text',reason});assert.ok(n&&/kept/.test(n),reason);}
+ assert.match(C.typedRefusal({type:'quality_warning',refused:'text',reason:'speaking'}),/I.ll take that as soon as I finish speaking/);
+ assert.match(C.typedRefusal({type:'quality_warning',refused:'text',reason:'composing'}),/^One moment/);
+ assert.match(C.typedRefusal({type:'quality_warning',refused:'text',reason:'something new'}),/^One moment/,'an unknown reason still gets the safe line');
+ assert.equal(C.typedRefusal({type:'quality_warning',message:'A speech segment could not be transcribed.'}),'');assert.equal(C.typedRefusal(null),'');assert.equal(C.typedRefusal({type:'user_text',refused:'text'}),'');
+});
+test('X1 afterAccepted: the box is cleared only when it still holds what was sent',()=>{
+ assert.equal(C.afterAccepted('  hello ','  hello  ',{text:'hello'}),'');assert.equal(C.afterAccepted('hello','hello there',{text:'hello'}),'hello there');
+ assert.equal(C.afterAccepted('hello','',{text:'hello'}),'');assert.equal(C.afterAccepted('a <system> b','a <system> b',{text:'a [quoted tag] b'}),'');assert.equal(C.afterAccepted('a','a b',{text:'a'}),'a b');
+});
+test('X1 conversation log reducer: order, new reply on \\n\\n, retract, kept private (and a late echo cannot undo it), restore interleaves',()=>{
+ let l=[];const ev=(...a)=>{for(const m of a)l=C.logApply(l,m);return l;};
+ ev({type:'agent_text',text:'Hi. '},{type:'agent_text',text:'Question?'},{type:'user_text',item_id:'user-typed-1',text:'Answer.'},{type:'agent_text',text:'\n\nNext?'},{type:'agent_text',text:'\n\nAgain.'});
+ assert.deepEqual(l.map(e=>[e.who,e.text]),[['atlas','Hi. Question?'],['you','Answer.'],['atlas','Next?'],['atlas','Again.']]);
+ ev({type:'agent_retract',chars:6});assert.equal(l.length,3,'a reply taken back completely leaves the log');assert.equal(l.at(-1).text,'Next?');
+ ev({type:'user_text_private',items:['user-typed-1']});assert.deepEqual(l[1],{who:'you',item:'user-typed-1',text:C.PRIVATE_MARK,private:true});
+ ev({type:'user_text',item_id:'user-typed-1',text:'Answer.'});assert.equal(l[1].text,C.PRIVATE_MARK);
+ assert.deepEqual(C.logApply(null,null),[]);assert.deepEqual(C.logApply([{who:'you',text:'a',item:'i'}],{type:'user_text_private',items:'nope'}).length,1);
+ const r=C.logRestore({agent:['A1','A2'],user:[{item_id:'u1',text:'U1'},{item_id:'u2',text:'U2'}]});assert.deepEqual(r.map(e=>e.text),['A1','U1','A2','U2']);
+ assert.deepEqual(C.logRestore(null),[]);
+ let many=[];for(let i=0;i<260;i++)many=C.logApply(many,{type:'user_text',item_id:'u'+i,text:'t'+i});assert.equal(many.length,200,'the log is bounded');
+});
+test('X1 page: the typed start, the log, the note and the dialog button exist once, named for assistive technology',()=>{
+ for(const id of ['voiceStartText','textLog','voiceTypeWrap','voiceTypeNote','voiceControls','voiceConsentType'])assert.equal(page.split('id="'+id+'"').length-1,1,id);
+ assert.match(page,/<div[^>]*aria-live="polite"[^>]*id="textLog"[^>]*role="log"|<div[^>]*id="textLog"[^>]*role="log"/);assert.match(page,/aria-label="Conversation"[^>]*id="textLog"/);
+ assert.match(page,/id="voiceTypeNote"[^>]*role="status"|role="status"[^>]*id="voiceTypeNote"/);assert.match(page,/aria-describedby="voiceTypeNote"/);
+ assert.match(page,/id="voiceStartText"[^>]*type="button">Type instead</);
 });

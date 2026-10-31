@@ -17,3 +17,23 @@
 .voice-type input{flex:1 1 auto;min-width:0;min-height:46px;border-radius:50px;border:1px solid rgba(169,169,188,.28);background:transparent;color:var(--g2);padding:11px 19px;font:inherit;font-size:13px}
 .voice-type input::placeholder{color:var(--g4)}.voice-type input:disabled{opacity:.55}.voice-type input:focus-visible{outline:2px solid var(--y);outline-offset:3px}
 .voice-controls .btn[hidden]{display:none}
+/* Typed interview (X1): no microphone, ATLAS answers in text. The conversation sits right above the answer box (voice-client.js moves the box under it). */
+.voice-type-wrap{width:100%;max-width:560px;margin:0 auto}
+.voice-type textarea{flex:1 1 auto;min-width:0;min-height:46px;max-height:168px;resize:none;border-radius:24px;border:1px solid rgba(169,169,188,.28);background:transparent;color:var(--g2);padding:12px 19px;font:inherit;font-size:13px;line-height:1.45;overflow-y:auto}
+.voice-type textarea::placeholder{color:var(--g4)}.voice-type textarea:disabled{opacity:.55}.voice-type textarea:focus-visible{outline:2px solid var(--y);outline-offset:3px}
+.voice-type-note{margin:8px auto 0;max-width:560px;font-size:12px;line-height:1.5;color:var(--y);text-align:center}.voice-type-note:empty{display:none}
+.voice-controls .voice-start-text[hidden]{display:none}
+.text-log{display:none}
+#voicePanel[data-input=text] .text-log{display:flex;flex-direction:column;gap:12px;width:100%;max-width:620px;max-height:min(44vh,380px);margin:18px auto 0;padding:16px 18px;overflow-y:auto;overscroll-behavior:contain;border:1px solid rgba(169,169,188,.22);border-radius:18px;background:rgba(18,18,26,.55);text-align:left;box-sizing:border-box}
+#voicePanel[data-input=text] .text-log:empty{display:none}
+#voicePanel[data-input=text] .voice-type-wrap{max-width:620px}#voicePanel[data-input=text] .voice-type{max-width:620px;margin-top:12px}
+.text-log:focus-visible{outline:2px solid var(--y);outline-offset:3px}
+.text-log .msg{margin:0;max-width:92%;font-size:14px;line-height:1.55;color:var(--g2);overflow-wrap:anywhere;white-space:pre-wrap}
+.text-log .msg-who{display:block;margin-bottom:3px;font-size:9px;font-weight:600;letter-spacing:1.6px;text-transform:uppercase;color:var(--g4)}
+.text-log .msg-you{align-self:flex-end;padding:9px 14px;border-radius:14px 14px 4px 14px;background:rgba(138,0,255,.16)}
+.text-log .msg-atlas{align-self:flex-start}
+.text-log .msg.is-private .msg-text{font-style:italic;color:var(--g4)}
+@media(prefers-reduced-motion:no-preference){.text-log .msg{animation:msgIn .22s ease-out}@keyframes msgIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}}
+#voicePanel[data-input=text] #orbTranscript,#voicePanel[data-input=text] .orb-meters,#voicePanel[data-input=text] #orbTranscriptToggle,#voicePanel[data-input=text] #soundHelp{display:none!important}
+#voiceConsentDialog #voiceConsentType[hidden]{display:none}#voiceConsentDialog #voiceConsentType{margin-top:9px}
+@media(max-width:540px){#voicePanel[data-input=text] .text-log{max-height:min(46vh,340px);padding:13px 14px}.text-log .msg{max-width:100%}}
