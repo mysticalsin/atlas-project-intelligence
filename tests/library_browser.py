@@ -52,7 +52,7 @@ try:
   n=page('sam@mantu.com');n.goto(BASE+'/#library/'+rid);n.wait_for_timeout(1200)
   check('N+1 deep link opens the record with a Validate button',n.locator('#recordDialog').is_visible() and n.locator('[data-rec-validate]').count()==1)
   n.locator('[data-rec-validate]').click();n.wait_for_timeout(900)
-  check('validated and published',n.locator('#recordEyebrow').inner_text().find('PUBLISHED')>=0 and 'Validated by sam@mantu.com' in n.locator('#recordBody').inner_text())
+  check('validated and published',n.locator('#recordEyebrow').inner_text().find('SHARED IN INTERNAL LIBRARY')>=0 and 'Validated by sam@mantu.com' in n.locator('#recordBody').inner_text())
   # --- colleague
   k=page('kim@mantu.com');k.locator('header [data-view=library]').click();k.wait_for_timeout(900)
   check('colleague sees the published reference',k.locator('#libraryList .project-card').count()==1)
