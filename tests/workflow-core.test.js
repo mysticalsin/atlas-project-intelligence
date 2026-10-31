@@ -66,5 +66,6 @@ test('untrusted cards are tamed: unknown branches, odd statuses, prototype keys 
 test('evidence picker labels',()=>{
  assert.equal(W.itemLabel({project_ref:'PRJ-1',state:'approved',revision:2}),'PRJ-1 · Approved · revision 2');
  assert.equal(W.itemLabel({state:'evidence_draft',revision:1}),'Interview evidence · Draft · revision 1');
+ assert.equal(W.itemLabel({project_ref:'PRJ-1',state:'downstream_proposals',revision:2}),'PRJ-1 · Approved · revision 2'); // proposed downstream is still approved to the person
  assert.match(W.itemLabel(null),/^Interview evidence · .* · revision \?$/);
 });

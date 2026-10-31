@@ -68,6 +68,6 @@ function model(view){
 const LIBRARY={in_review:'In review',needs_work:'Needs work',changes_requested:'Changes requested',awaiting_validation:'Awaiting N+1',published:'Shared in internal library',withdrawn:'Withdrawn'};
 const libraryStatusLabel=s=>word(LIBRARY,s)||'';
 // The evidence picker's one-line label for a record from GET /evidence.
-const itemLabel=x=>{const i=x&&typeof x==='object'?x:{};return [typeof i.project_ref==='string'&&i.project_ref?i.project_ref.slice(0,40):'Interview evidence',word(STATUS,{evidence_draft:'draft',reviewer_queue:'in_review',submitted_for_review:'in_review',approved:'approved'}[i.state]||'')?.[0]||String(i.state||'').replace(/_/g,' ').slice(0,30),'revision '+(Number.isInteger(i.revision)?i.revision:'?')].join(' · ');};
+const itemLabel=x=>{const i=x&&typeof x==='object'?x:{};return [typeof i.project_ref==='string'&&i.project_ref?i.project_ref.slice(0,40):'Interview evidence',word(STATUS,{evidence_draft:'draft',reviewer_queue:'in_review',submitted_for_review:'in_review',approved:'approved',downstream_proposals:'approved'}[i.state]||'')?.[0]||String(i.state||'').replace(/_/g,' ').slice(0,30),'revision '+(Number.isInteger(i.revision)?i.revision:'?')].join(' · ');};
 return {ORDER,LABELS,DESTINATIONS,MOCK_BADGE,STATUS,COMPLETE,reasonText,cardModel,model,libraryStatusLabel,itemLabel};
 });
