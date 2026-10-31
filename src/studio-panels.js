@@ -9,7 +9,7 @@
   $('studioSample').hidden=!!p;if(raw?.sample)$('contextProjectSector').textContent='FICTIONAL / '+(p.sector||'Example');
   const present=Array.from({length:6},(_,i)=>!!p?.answers?.[i]?.trim()&&!raw?.deferred?.[i]);
   const count=present.filter(Boolean).length;$('captureCount').replaceChildren(document.createTextNode(String(count)),Object.assign(document.createElement('span'),{textContent:'/ 6'}));$('captureRing').style.setProperty('--capture',String(count/6*100));
-  const wrap=$('captureSteps');wrap.replaceChildren();['Context & contribution','Approach & outcome','Evidence & relevance'].forEach((t,i)=>{const n=Number(present[i*2])+Number(present[i*2+1]),el=document.createElement('span');el.textContent=(n===2?'✓ ':n===1?'◐ ':'○ ')+t;el.classList.toggle('captured',n===2);wrap.append(el);});
+  const wrap=$('captureSteps');wrap.replaceChildren();['Context & contribution','Approach & outcome','Evidence & relevance'].forEach((t,i)=>{const n=Number(present[i*2])+Number(present[i*2+1]),el=document.createElement('span');el.textContent=t;el.dataset.n=String(n);el.classList.toggle('captured',n===2);wrap.append(el);});
  }
  function syncState(e){const s=e.detail;if(!s)return;const label=$('connectionStateLabel'),info=$('connectionStateDetail');
   const titles={idle:'Ready when you are',listening:'Listening to you',speaking:'ATLAS is speaking',muted:'Microphone muted',connecting:'Connecting to voice',processing:'Finishing your session',error:'Connection stopped'};

@@ -22,6 +22,7 @@ import { teamsRoutes } from './teams-routes.js';
 import { CONFIRM_HTML } from './confirm-page.js';
 import { nameClaims, pushConfig } from './profile.js';
 import { checkpointEnabled } from './checkpoint.js';
+import { connectionsView } from './connectors.js';
 import * as privacy from './privacy.js';
 import { RETENTION } from './policy.generated.js';
 
@@ -265,10 +266,10 @@ async function route(request, env, page, { waitUntil = p => p, flagsOf = flags }
       let body = page.replace(RUNTIME_BLOCK, () => runtimeBlock({ subjectKey, authMode: 'access', name: who.email }))
         .replace("connect-src 'self';", "connect-src 'self' " + env.ORIGIN.replace('https://', 'wss://') + ';');
       if (cspMode(env) === 'report-only') body = withoutMetaCsp(body); // the page's own <meta> policy would enforce what the header only reports
-      const end = body.lastIndexOf('</body>'); // the page embeds an earlier '</body>' inside a script string
       // The test banner stays until Tony sets DATA_MODE=production on an approved deployment (WOW_ZERO_CONFIG §0.7, §11). It says this is a test deployment awaiting the DPO's sign-off and links the
-      // privacy notice; it never claims that only synthetic data is used (real interviews run here) and it is not where any privacy control lives (G2).
-      if (env.DATA_MODE !== 'production') body = body.slice(0, end) + '<div style="position:fixed;left:12px;bottom:10px;z-index:99;font:11px/1.4 Arial;letter-spacing:.06em;color:#A9A9BC;background:#15151cdd;border:1px solid #2a2a36;border-radius:14px;padding:4px 10px">TEST DEPLOYMENT · DPO sign-off pending · <a href="/privacy" target="_blank" rel="noopener" style="color:#b9a8ff">Privacy notice</a></div>' + body.slice(end);
+      // privacy notice; it never claims that only synthetic data is used (real interviews run here) and it is not where any privacy control lives (G2). It sits in the normal flow at the top of
+      // the page (a 28px strip styled by the page's own CSS), never fixed over the controls (v2.2 F2). The body tag carries a class, so it is found by its end.
+      if (env.DATA_MODE !== 'production') { const strip = '<div class="env-strip" role="note">TEST DEPLOYMENT · DPO sign-off pending · <a href="/privacy" target="_blank" rel="noopener">Privacy notice</a></div>'; body = /<body[^>]*>/.test(body) ? body.replace(/(<body[^>]*>)/, m => m + strip) : strip + body; }
       return new Response(body, { headers: htmlHeaders(env, PAGE_SCRIPT_HASHES) });
     }
     // Resumable interview (checkpoint.js): asked of the requesting person's OWN Interview Durable Object only, under the identity just verified, and
@@ -311,6 +312,11 @@ async function route(request, env, page, { waitUntil = p => p, flagsOf = flags }
         // G2: the consent wording and which toggles are required, and the person's consent state in force (what they last chose; memory is off until they turn it on).
         privacy: privacy.bootstrapView(), consent: consent ? { purposes: Object.fromEntries(Object.entries(consent.purposes || {}).map(([k, v]) => [k, v?.granted === true])), blocked: consent.blocked || {} } : null,
         ...(ks.readOnly(env) ? { readOnly: true } : {}), ...(ks.aiOff(env) ? { aiOff: true } : {}) });
+    }
+    // The admin Connections panel (v2.2 F2): read-only readiness of every connection in the framework, booleans and names only. Admins only; never any secret, URL or token value.
+    if (url.pathname === '/api/connections/status' && request.method === 'GET') {
+      if (role !== 'admin') { sec.log('access_denied', 'ADMIN_ONLY', 403); return json(env, { error: 'Only an ATLAS admin can see the connections.' }, 403); }
+      return new Response(JSON.stringify(connectionsView(env)), { headers: headers(env, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }) });
     }
     if (url.pathname === '/api/voice') {
       if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected a WebSocket upgrade.', { status: 426 });

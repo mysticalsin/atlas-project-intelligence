@@ -194,7 +194,7 @@ try:
         jane.locator('#voiceStart').click(); jane.locator('#voiceConsentDialog').wait_for(state='visible', timeout=8000)
         dlg = jane.locator('#voiceConsentDialog')
         check('Start opens the consent step at once: one REQUIRED checkbox (plus the optional saved-interview, memory and notice choices), the first name from the DNA export in the heading, the sign-in in the footer',
-              dlg.locator('input[type=checkbox]:visible').count() == 4 and jane.locator('#memoryConsent').is_visible() and not jane.locator('#memoryConsent').is_checked() and jane.locator('#voiceConsentTitle').inner_text() == 'Ready when you are, Jane.'
+              dlg.locator('input[type=checkbox]:visible').count() == 4 and jane.locator('#memoryConsent').is_visible() and not jane.locator('#memoryConsent').is_checked() and jane.locator('#voiceConsentTitle').inner_text() == 'Ready when you are, Jane'
               and jane.locator('#consentIdentity').inner_text() == 'Signed in as Jane Doe · jane@example.com' and not FORBIDDEN.search(dlg.inner_text()))
         check('memory is configured here: its own tick, OFF by default; the required sentence names a private draft', 'private draft' in jane.locator('#modelConsentText').inner_text() and 'Hindsight' not in jane.locator('#modelConsentText').inner_text())
         jane.locator('#memoryConsent').check()  # this person turns memory on for the interview
@@ -326,7 +326,7 @@ try:
         new.locator('#voiceStart').click(); new.locator('#voiceConsentDialog').wait_for(state='visible', timeout=8000)
         check('new user, no DNA: the consent step holds the required tick and the three optional choices (saved interview, memory, notice), nothing else; a guessed name is not used in the heading',
               new.locator('#voiceConsentDialog').locator('input:visible, select:visible, textarea:visible').count() == 4 and new.locator('#voiceConsentDialog input[type=checkbox]:visible').count() == 4
-              and new.locator('#voiceConsentTitle').inner_text() == 'A conversation with ATLAS.' and new.locator('#consentIdentity').inner_text() == 'Signed in as noor.haddad@example.net')
+              and new.locator('#voiceConsentTitle').inner_text() == 'A conversation with ATLAS' and new.locator('#consentIdentity').inner_text() == 'Signed in as noor.haddad@example.net')
         talk(new)
         check('new user: exactly three actions reach the interview (Start, the tick, Start conversation)', new.evaluate('__acts') == ['voiceStart', 'modelConsent', 'voiceConsentStart'])
         wait(new, lambda: new.locator('#storageStatus').text_content() == 'Saved to ATLAS', 10); new.locator('#reportDialog').wait_for(state='visible', timeout=8000)
@@ -348,7 +348,7 @@ try:
         kai.locator('#voiceStart').click(); kai.locator('#voiceConsentDialog').wait_for(state='visible', timeout=8000)
         check('sign-in claims fill the name and the first name ("from your sign-in"); only the verified token counts',
               kprof['fields']['name'] == {'value': 'Kai Test', 'from': 'signin', 'at': kprof['fields']['name']['at']} and kprof['firstName'] == 'Kai'
-              and kai.locator('#voiceConsentTitle').inner_text() == 'Ready when you are, Kai.'
+              and kai.locator('#voiceConsentTitle').inner_text() == 'Ready when you are, Kai'
               and kai.evaluate("fetch('/api/library/profile',{headers:{'X-Requested-With':'XMLHttpRequest','x-atlas-idp':'eyJuYW1lIjoiRXZlIn0'}}).then(r=>r.json())")['fields']['name']['value'] == 'Kai Test')
         kai.context.close()
 

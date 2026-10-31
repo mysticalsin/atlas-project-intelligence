@@ -97,7 +97,7 @@ with sync_playwright() as pw:
  q.goto('https://atlas.test/');q.wait_for_timeout(600)
  q.locator('#voiceStart').click();q.locator('#voiceConsentDialog').wait_for(state='visible',timeout=8000);q.locator('#modelConsent').check();q.locator('#voiceConsentStart').click()
  q.wait_for_function('()=>AtlasVoice.status().phase==="live"',timeout=8000);q.wait_for_timeout(300)
- q.locator('#voiceRestart').click();q.locator('#voiceRestartDialog').wait_for(state='visible');q.locator('#voiceRestartConfirm').click()
+ q.locator('#voiceEnd').click();q.locator('#voiceRestart').click();q.locator('#voiceRestartDialog').wait_for(state='visible');q.locator('#voiceRestartConfirm').click()
  q.wait_for_function('()=>AtlasVoice.status().phase==="live"',timeout=8000);q.wait_for_timeout(500)
  check('restart: the server sees start, discard, start (never end)',[t for t in GOT2 if t!='playback']==['start','discard','start'])
  check('restart: nothing saved, nothing sent to the library or memory',q.evaluate('window.ATLAS_VOICE_BRIDGE.context().isNew===true') and not CALLS and not q.locator('#reportDialog').is_visible())

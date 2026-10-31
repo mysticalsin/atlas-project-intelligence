@@ -52,7 +52,7 @@ const clock=s=>String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStar
 function view({phase,paused,muted,controls,draft}){
  const live=phase==='live',has=k=>Array.isArray(controls)&&controls.includes(k),text=typeof draft==='string'?draft.trim():'';
  return {
-  pauseHidden:!has('pause'),pauseDisabled:!live||!has('pause'),pauseLabel:paused?'Resume':'Pause',pausePressed:!!paused,
+  pauseHidden:!has('pause'),pauseDisabled:!live||!has('pause'),pauseLabel:paused?'Resume interview':'Pause interview',pausePressed:!!paused,
   pauseAria:paused?'Resume the interview':'Pause the interview',
   repeatHidden:!has('repeat'),repeatDisabled:!live||paused||!has('repeat'),
   skipHidden:!has('skip'),skipDisabled:!live||paused||!has('skip'),

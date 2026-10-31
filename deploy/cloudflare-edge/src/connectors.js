@@ -84,6 +84,22 @@ export function connectionStatus(env, config = CONNECTIONS_CONFIG) {
   });
 }
 
+// The admin Connections panel (v2.2 F2): one of three words per connection, from connectionStatus (names and booleans only; no value, URL or token).
+//   ready           built into ATLAS (nothing outside to set up), or an outside connection that is configured and live (readiness eligible)
+//   mock            an outbound step that is wired but, while ATLAS_ADAPTERS is not 'live', reaches only a test destination ("Mock — not connected")
+//   not_configured  everything else: not wired yet, an inbound read with nothing set, or live mode with something missing (the reason codes say what)
+// `status` stays the configuration's own evidence level (configured_untested, contract_verified, ...): ready is not proof it has been used for real.
+export function connectionsView(env, config = CONNECTIONS_CONFIG) {
+  const live = String(env?.ATLAS_ADAPTERS ?? '').trim().toLowerCase() === 'live';
+  return { adapters: live ? 'live' : 'mock', connections: connectionStatus(env, config).map(c => {
+    const builtIn = c.managed_by === 'existing_code', wired = c.wired === true;
+    const state = builtIn && wired ? 'ready' : !wired ? 'not_configured' : c.eligible ? 'ready' : c.direction === 'outbound' && !live ? 'mock' : 'not_configured';
+    const note = connectionById(c.id, config)?.wired_note;
+    return { id: c.id, label: c.label, direction: c.direction, workflow_step: c.workflow_step, state, built_in: builtIn, wired, status: c.status, owner: c.owner || '', sandbox: c.sandbox === true,
+      schema_status: c.schema_status, reasons: c.reasons, secrets_present: c.secrets_present, base_url_set: c.base_url_set, endpoint_configured: c.endpoint_configured, ...(typeof note === 'string' && note ? { note } : {}) };
+  }) };
+}
+
 // ---- paths and mapping ----
 const segs = p => String(p).split('.').map(s => { if (UNSAFE.has(s.replace('[]', ''))) throw new Error('MAPPING_UNSAFE_PATH'); return s; });
 export const getPath = (obj, path) => String(path).split('.').reduce((v, k) => isObj(v) && Object.hasOwn(v, k) ? v[k] : undefined, obj);

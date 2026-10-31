@@ -88,7 +88,7 @@ try:
         p.locator('#voiceTypeInput').fill('We rebuilt the claims intake for an insurer.'); p.locator('#voiceTypeSend').click()
         p.wait_for_function("()=>document.body.innerText.includes('Over what period')", timeout=8000)
         check('a typed interview (start, typed answer, agent reply) runs with no violation', violations() == [] and policy_errors() == [] and not ERR)
-        p.locator('#voiceEnd').click(); p.wait_for_function('()=>AtlasVoice.status().phase==="idle"', timeout=8000)
+        p.locator('#voiceEnd').click(); p.locator('#voiceEndConfirm').click(); p.wait_for_function('()=>AtlasVoice.status().phase==="idle"', timeout=8000)
 
         # ---- the Library view and the profile / privacy panel
         p.locator('[data-view="library"]').first.click()

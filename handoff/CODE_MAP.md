@@ -32,6 +32,7 @@
 |---|---|
 | `src/shell.html`, `voice-panel.html`, `intelligence-panel.html` | Actual interface/templates. Preserve IDs used by JS and tests. |
 | `src/styles.css`, `voice.css`, `orb.css`, `sculpture.css`, `intelligence.css` | Existing cascade and responsive Mantu UI. Avoid adding conflicting duplicate state styling. |
+| `src/ui.css` (loaded last), tokens at the top of `src/styles.css` | v2.2 F2 interface pass: one dark theme and one header for every view (`body.ui2`), light dialogs, type floor 12px, line icons from the sprite in `shell.html`, read-back card, End sheet, connections panel, privacy and language styling. `orb.css`, `orb-renderer.js`, `orb-ui.js`, `assets/Mantu.svg` and the orb rules of `sculpture.css` are not edited. Method credit: unslop by Damir Sokolovsky (CC BY 4.0). |
 | `src/voice-client.js`, `voice-worklet.js` | Browser consent, mic/stream, PCM, playback acknowledgement and output energy. |
 | `src/orb-renderer.js`, `orb-ui.js`, `studio-panels.js` | Particle sculpture, phrase articulation, real audio signals, silent preview and visible project context. |
 | `src/engine.js`, `app.js` | Local profiles/projects, source excerpts, measurements, story versions, review UI, storage, backup. |

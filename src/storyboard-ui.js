@@ -33,7 +33,7 @@ function state(){return {quality:s.quality,heard:s.heard,qualitySeq:s.qualitySeq
 function render(){
  board.hidden=s.off||!s.live;if(board.hidden)return;
  const m=B.model(state()),fresh=new Set(motionOK()?B.diff(prev,m):[]);prev=m;
- $('boardCoverage').textContent=m.coverage.present+'/'+m.coverage.total+' · '+m.coverage.meaning;
+ $('boardCoverage').textContent=m.coverage.present+'/'+m.coverage.total+' · '+m.coverage.meaning;try{const c=$('captureCount');if(c)$('boardTopics').textContent=(parseInt(c.textContent,10)||0)+' of 6 topics saved · '+m.coverage.present+' of '+m.coverage.total+' dimensions heard';}catch(e){}
  renderTime(m.time);renderGaps(m,fresh);renderMap(m,fresh);renderMetrics(m,fresh);renderDims(m,fresh);renderChallenge(m);
  announce(B.summaryText(m));}
 function renderTime(t){const sec=$('boardTime');sec.hidden=t.max===null;if(t.max===null)return;
@@ -117,13 +117,19 @@ let sum=null,confirmTimer=null;
 function sumAct(kind,id,text){window.dispatchEvent(new CustomEvent('atlas-summary-action',{detail:{kind,detail_id:id,text}}));}
 function sumNote(text){const m=$('summaryMessage');if(m)m.textContent=text||'';}
 function sumClear(){clearTimeout(confirmTimer);confirmTimer=null;sum=null;sumNote('');renderSummary();}
+// The read-back is the one step that must not be missed: the first time it shows, the page brings it to the top and puts focus on its title (reduced motion: no smooth scroll).
+function reveal(){try{const reduced=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+ if(typeof card.scrollIntoView==='function')card.scrollIntoView({block:'start',behavior:reduced?'auto':'smooth'});
+ const t=$('summaryTitle');if(t&&typeof t.focus==='function')t.focus({preventScroll:true});}catch(e){}}
 function renderSummary(){if(!card)return;
- const v=B.summaryView(sum);card.hidden=!v.visible;if(!v.visible)return;
+ const v=B.summaryView(sum),panel=$('voicePanel');card.hidden=!v.visible;if(panel&&panel.dataset){panel.dataset.summary=String(v.visible);panel.dataset.readback=String(v.visible&&(v.phase==='open'||v.phase==='confirming'));} // readback: the card is asking for a decision, so it replaces the answer box and the controls until it is confirmed
+ if(!v.visible){if(card.dataset)card.dataset.shown='';return;}
+ if(card.dataset&&card.dataset.shown!=='1'){card.dataset.shown='1';setTimeout(reveal,0);}
  $('summaryTitle').textContent=v.title;$('summaryIntro').textContent=sum.phase==='open'||sum.phase==='confirming'?v.intro:'';
  const list=$('summaryItems');list.replaceChildren();
  for(const it of v.items){const li=el('li','summary-item');li.dataset.detail=it.id;
   const head=el('p','summary-item-head');head.append(el('b','',it.label));for(const t of it.tags)head.append(el('span','board-flag',' · '+t));
-  const quote=el('q','summary-quote',it.quote);if(it.lang){quote.setAttribute('lang',it.lang);if(it.lang!=='en')head.append(el('span','board-flag',' · '+it.lang.toUpperCase()));} /* the words stay in the language they were said in; the tag and lang attribute say which */
+  const quote=el('q','summary-quote',it.quote);quote.setAttribute('dir','auto');if(it.lang){quote.setAttribute('lang',it.lang);if(it.lang!=='en')head.append(el('span','board-flag',' · '+it.lang.toUpperCase()));} /* the words stay in the language they were said in; the tag and lang attribute say which */
   li.append(head,quote);
   if(it.editable){const row=el('div','summary-item-actions'),fix=el('button','board-btn','Correct'),keep=el('button','board-btn','Keep private');
    fix.type='button';fix.dataset.action='correct';fix.setAttribute('aria-label','Correct: '+it.label);fix.setAttribute('aria-expanded',sum.editing===it.id?'true':'false');
@@ -142,10 +148,10 @@ function renderSummary(){if(!card)return;
   list.append(li);}
  const empty=$('summaryEmpty');empty.hidden=!v.empty;empty.textContent=v.empty;
  const open=$('summaryOpen');open.hidden=!v.openPoints.length;const ol=$('summaryOpenList');ol.replaceChildren();for(const t of v.openPoints)ol.append(el('li','',t));
- $('summaryNext').textContent=v.next;
+ $('summaryNext').textContent=v.next;$('summaryNext').hidden=v.phase!=='open'&&v.phase!=='confirming'; // the promise before confirming goes stale once it is done
  const c=$('summaryConfirm');c.hidden=v.confirm.hidden;c.disabled=v.confirm.disabled;c.textContent=v.confirm.label;
- $('summarySaved').textContent=v.saved||v.notSaved;
- const b=$('summarySubmit');b.hidden=v.submit.hidden;b.disabled=v.submit.disabled;b.textContent=v.submit.label;
+ const spent=sum.submit&&sum.submit.status==='sent';$('summarySaved').textContent=spent?'':v.saved||v.notSaved; // after Submit one line says where it stands (summaryMessage), not two
+ const b=$('summarySubmit');b.hidden=v.submit.hidden||spent;b.disabled=v.submit.disabled;b.textContent=v.submit.label; // spent: the button is not shown a second time
  if(!v.submit.hidden)sumNote(v.submit.message);
  $('summaryLive').textContent=v.live;}
 $('summaryConfirm')&&$('summaryConfirm').addEventListener('click',()=>{if(!sum||sum.phase!=='open'||!sum.items.length)return;

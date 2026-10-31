@@ -207,3 +207,20 @@ Implemented and locally verified (unit, edge and a real-Chromium run); never dep
 
 Residual and not done: `style-src 'unsafe-inline'` remains (large inline styles and `style=` attributes; an injected tag can restyle but not run code); no Trusted Types; CSP delivery by the browser's own report path was not observable in the headless build (the endpoint and its log are tested directly); not verified in Safari or Firefox; nothing deployed, so a real week in `ATLAS_CSP=report-only` is still the recommended rollout.
 
+## 11. Interface pass (v2.2 F2)
+
+Implemented and locally verified (unit, edge, 22 Chromium suites, before and after screenshots at 1400 and 390); never seen by a real user, a real screen reader or Safari/Firefox. The design method is unslop by Damir Sokolovsky (@heydamir), licensed CC BY 4.0, https://heydamir.design/unslop; keep this credit in any copy.
+
+| Item | Status | Test |
+|---|---|---|
+| One dark theme and one header for Conversation, Projects, Stories, Library and Bids (`body.ui2`, `src/ui.css`, tokens in `src/styles.css`); the orb files are untouched | Implemented | `tests/f2-ui.test.js`; all browser suites |
+| Read-back card in the centre column, scrolled into view with focus on its title; quotes 16px, `dir=auto`, `lang`; one status line after Submit | Implemented | `f2-ui.test.js`, `summary-card-dom.test.js`, `humane_browser.py` |
+| Test badge in normal flow, not fixed | Implemented (edge) | `test/app.test.js`; measured: no overlap with Start, the answer box or Confirm at 390 |
+| End asks first (a sheet that also holds Restart); previews behind the disclosure; one progress caption; hero hidden while live | Implemented | `studio_browser.py`, `humane_browser.py`, `sculpture_browser.py` |
+| Consent dialog, privacy panel, two-step Delete, language selector styling; wording from `bootstrap.privacy` | Implemented | `g2-privacy-ui.test.js`, `zero_config*_browser.py`, `humane_browser.py` |
+| Reviewer sees the sentence around a claim (`source_refs.context`); `consultant_named` labelled; manager-staff explained | Implemented | `f2-ui.test.js` (structure); not covered by a browser test with a real evidence record |
+| CSRF 403: one re-read of `/api/bootstrap` and one resend; calm banner for `readOnly` / `aiOff` | Implemented | `f2-ui.test.js` |
+| Admin Connections panel and `GET /api/connections/status` (ready / mock / not_configured, no value, URL or token) | Implemented; **no connection has been exercised live** | `test/f2-connections.test.js` |
+
+Residual: dialogs stay light (they are sheets over the dark page); the line under the orb ("Click the orb to mute or unmute...") and the connection pill labels come from `orb-ui.js`; the orb chrome (`.orb-corner`, `.orb-divider`, `.orb-kicker`) keeps its original size and contrast by decision; at 390 the Confirm button sits about 55px below the first screen after the read-back opens; no native-speaker review of any new string; Lighthouse and screen-reader passes not run.
+

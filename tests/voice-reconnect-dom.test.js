@@ -79,7 +79,7 @@ test('an unexpected close mid-interview: Reconnecting…, then a resume start on
  const start=h.starts()[1];
  assert.equal(start.resume,ID);assert.equal(start.csrf,'csrf-1');assert.deepEqual(start.consent,{transcription:true,draft:true,checkpoint:true,memory:false,notice:false});assert.equal(start.capture,true);assert.ok(!('gap' in start));assert.equal(start.project.id,'p');assert.equal(start.language,'en');
  assert.equal(h.win.AtlasVoice.status().phase,'live');assert.equal(h.win.AtlasVoice.reconnect.state().reconnecting,false);
- assert.equal(text(h,'voiceHeading'),'You’re back. Picking up where we stopped.');
+ assert.equal(text(h,'voiceHeading'),'You’re back. Picking up where we stopped');
  assert.equal(track.readyState,'live','the microphone was never closed');assert.equal(h.win.AtlasVoice.status().hasMicrophone,true);
  assert.equal(text(h,'agentText'),'Right. What was the project?\n\nThanks. What was the baseline?');
  const q=h.quality();assert.equal(q.filter(d=>d.type==='user_text').length,1);assert.equal(q.find(d=>d.type==='user_text').text,'We rebuilt the intake process.');
@@ -117,7 +117,7 @@ test('a refusal stops the tries: expired or gone is said plainly, and the offer 
  drop(h);await wait(80);
  assert.deepEqual(h.delays,[1000],'one try, no more');
  const s=h.win.AtlasVoice.status();assert.equal(s.phase,'idle');assert.equal(s.hasMicrophone,false);
- assert.equal(text(h,'voiceHeading'),'This interview can’t be resumed.');assert.match(text(h,'voiceMessage'),/can no longer be resumed/);assert.match(text(h,'voiceMessage'),/Start a new one/);
+ assert.equal(text(h,'voiceHeading'),'This interview can’t be resumed');assert.match(text(h,'voiceMessage'),/can no longer be resumed/);assert.match(text(h,'voiceMessage'),/Start a new one/);
  assert.equal(h.win.AtlasVoice.bootstrap().resumable,null);
 });
 
@@ -197,7 +197,7 @@ test('a refused resume from the prompt says why and offers a new interview',asyn
  const h=boot({resumable:{sessionId:ID,savedAt:1,expiresAt:2}});
  h.reply=(m,s)=>h.server({type:'error',code:'resume-project',message:'That interview was about a different project.'},h.sockets.indexOf(s));
  await wait(20);h.win.AtlasVoice.reconnect.dialog().yes.click();await wait(60);
- assert.equal(h.win.AtlasVoice.status().phase,'idle');assert.equal(text(h,'voiceHeading'),'This interview can’t be resumed.');assert.match(text(h,'voiceMessage'),/different project/);
+ assert.equal(h.win.AtlasVoice.status().phase,'idle');assert.equal(text(h,'voiceHeading'),'This interview can’t be resumed');assert.match(text(h,'voiceMessage'),/different project/);
  assert.equal(h.win.AtlasVoice.status().hasMicrophone,false);
 });
 
