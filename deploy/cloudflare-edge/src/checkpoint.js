@@ -9,7 +9,7 @@
 // cp:<id>:<n> -> a Uint8Array of at most CHUNK_BYTES (the UTF-8 JSON, split), written together with the meta in one atomic put.
 import { Machine, StateError } from './conversation-state.js';
 
-export const VERSION = 1;
+export const VERSION = 2; // 2 (T11): the summary read-back state
 export const TTL_MS = 24 * 60 * 60 * 1000;
 export const CHUNK_BYTES = 100 * 1024; // a value in Durable Object storage may be 128 KiB: stay under it
 export const MAX_CHUNKS = 120; // 12 MB: far beyond any interview (the transcript budget is 100 000 characters); a put takes at most 128 keys
@@ -46,6 +46,8 @@ export function serialize(s) {
     lastQuestion: q ? { text: q.text, item: q.item, turn: q.turn ?? null, moveAt: at, move: at < 0 ? q.move ?? null : null } : null,
     // Durations, not clock readings: the time a connection was down is neither interview time nor wall-cap time.
     clock: { wall: now - s.startedAt, pausedTotal: s.pausedTotal, pausedFor: s.pausedAt === null ? 0 : now - s.pausedAt, paused: s.paused, pauseCount: s.pauseCount, resumeCount: s.resumeCount },
+    // The read-back (T11): whether the card is open, how many read-backs and typed corrections there were, and the confirmation with the draft it saved.
+    summary: { open: s.summary.open, rounds: s.summary.rounds, corrections: s.summary.corrections, confirmed: s.summary.confirmed, draft: s.summary.draft, prompts: s.summary.prompts },
     counters: { turns: s.turns, replies: s.replies, spokenMs: s.spokenMs, identNow: s.identNow, timeUp: s.timeUp },
   });
 }
@@ -82,6 +84,11 @@ export function restore(s, d) {
   if (H.sinceEarned !== null) num(H.sinceEarned, 'sinceEarned');
   const A = d.asr; if (!isObj(A) || !isObj(A.meta)) bad('no asr state');
   const idents = list(A.idents, 400, 'asr idents'), corrections = list(A.corrections, 100, 'asr corrections');
+  const S = d.summary; if (!isObj(S)) bad('no summary state');
+  if (typeof S.open !== 'boolean' || typeof S.confirmed !== 'boolean') bad('bad summary flags');
+  for (const [v, what] of [[S.rounds, 'summary rounds'], [S.corrections, 'summary corrections'], [S.prompts, 'summary prompts']]) if (num(v, what) < 0) bad(what + ' is negative');
+  if (S.draft !== null && !(isObj(S.draft) && typeof S.draft.id === 'string' && S.draft.id.length <= 100 && Number.isInteger(S.draft.revision))) bad('bad summary draft');
+  if (S.open && !m.returns.some(r => r === 'summary' || r === 'user_correction')) bad('an open summary needs the interview to be in the read-back');
   const c = d.clock, k = d.counters; if (!isObj(c) || !isObj(k)) bad('no clock');
   for (const [v, what] of [[c.wall, 'wall'], [c.pausedTotal, 'pausedTotal'], [c.pausedFor, 'pausedFor'], [c.pauseCount, 'pauseCount'], [c.resumeCount, 'resumeCount'], [k.turns, 'turns'], [k.replies, 'replies'], [k.spokenMs, 'spokenMs']]) num(v, what);
   if (typeof c.paused !== 'boolean') bad('bad pause flag');
@@ -100,6 +107,7 @@ export function restore(s, d) {
     history: history.slice(), lastQuestion, asrMeta: A.meta, asrIdents: idents, asrDone: isObj(A.done) ? A.done : null, asrCorrections: corrections,
     startedAt: now - c.wall, pausedTotal: c.pausedTotal, pausedAt: c.paused ? now - c.pausedFor : null, paused: c.paused, pauseCount: c.pauseCount, resumeCount: c.resumeCount,
     turns: k.turns, replies: k.replies, spokenMs: k.spokenMs, identNow: typeof k.identNow === 'string' ? k.identNow : null, timeUp: k.timeUp === true });
+  Object.assign(s.summary, { open: S.open, rounds: S.rounds, corrections: S.corrections, confirmed: S.confirmed, draft: S.draft, prompts: S.prompts, sig: '', posting: false });
   Object.assign(s.humane, { asked, covered: new Set(covered), rushed: H.rushed, acks, sinceEarned: H.sinceEarned, openers });
   Object.assign(s.ledger, { stage, transcripts: new Map(transcripts), details, probes, deferred: L.deferred, updates });
   return { from: d.machine.state, savedAt: d.savedAt };
@@ -113,6 +121,8 @@ export function restoreView(s) {
     user: [...s.ledger.transcripts].map(([item_id, text]) => ({ item_id, text, provenance: typed(item_id) ? 'consultant_typed' : 'unverified_speech_recognition' })),
     agent: s.history.filter(m => m.role === 'assistant').map(m => m.content.replace(CUT_MARKER, '')), // the talker's cut-off markers are never on the screen
     quality: { ...s.ledger.inspect(), analyst_status: 'restored' },
+    // The open read-back, so the card comes back on the screen (items and open points from the ledger, as when it was first sent).
+    summary: s.summary.open ? { ...s.summaryView(), state: s.machine.state } : null,
     lastQuestion: s.lastQuestion?.text || '', state: s.machine.state, paused: s.paused, activeSeconds: Math.max(0, Math.floor(s.activeSeconds())), turns: s.turns,
   };
 }

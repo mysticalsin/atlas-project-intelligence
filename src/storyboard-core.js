@@ -135,5 +135,36 @@ function summaryText(m){if(!m||typeof m!=='object')return '';const c=obj(m.cover
  const ch=obj(m.challenge);if(ch.next)parts.push('ATLAS may ask next about '+ch.next.label+'.');
  return parts.join(' ');}
 
-return {model,diff,summaryText,metricSpans,pinsOf};
+/* ---------- The read-back card (T11, plan 3h, D19, Tony Q2) ----------
+   sum = {items, unknowns, phase, draft, unavailable, submit} comes from the server's `summary`, `evidence_draft` and related events; this turns it into what a
+   person reads. phase: open (the card is live), confirming (the confirmation is on its way), confirmed (an owner-only draft was saved, or the server says why not),
+   ended (the interview ended before they confirmed: nothing was saved), closed (more was said, the card went away). The words never say verified, approved or
+   shared: a draft is private to its owner until they press Submit for review themselves. Items are exactly the server's, bounded here. */
+const DETAIL_RE=/^D-\d{3,6}$/;
+const STATUS_TAG={uncertain:'you called this an estimate',unknown:'left open: you did not know'};
+const PROVENANCE_TAG={consultant_typed:'typed by you',consultant_corrected:'corrected by you'};
+const POINT_WORDS={unconfirmed_speech:'Not confirmed, the speech recognition was unsure',unknown:'You did not know',skipped:'You skipped',deferred:'Left open'};
+const SUMMARY_INTRO='This is what ATLAS understood, in your own words. Correct anything that is wrong, keep private anything you do not want used, or confirm it.';
+const SUMMARY_NEXT='Confirming saves a private draft that only you can see. Nothing goes to your N+1 or reviewer until you press Submit for review, and they may use it for internal knowledge only until you grant more.';
+function summaryView(sum){
+ const s=obj(sum),phase=['open','confirming','confirmed','ended','closed'].includes(s.phase)?s.phase:'closed',draft=obj(s.draft),unavailable=obj(s.unavailable),submit=obj(s.submit);
+ const hasDraft=typeof draft.id==='string'&&draft.id!==''&&Number.isInteger(draft.revision);
+ const items=arr(s.items).filter(x=>x&&typeof x==='object'&&typeof x.detail_id==='string'&&DETAIL_RE.test(x.detail_id)).slice(0,60).map(x=>{
+  const tags=[];if(own(STATUS_TAG,x.status))tags.push(STATUS_TAG[x.status]);if(x.asr_unconfirmed===true)tags.push('speech not confirmed');if(own(PROVENANCE_TAG,x.provenance))tags.push(PROVENANCE_TAG[x.provenance]);
+  return {id:x.detail_id,field:str(x.field,40),label:str(x.label,80),quote:str(x.quote,200),tags,editable:phase==='open'};});
+ const openPoints=arr(s.unknowns).filter(u=>u&&typeof u==='object'&&own(POINT_WORDS,u.kind)).slice(0,12).map(u=>POINT_WORDS[u.kind]+': '+(str(u.label,80)||str(u.field,40)));
+ const sending=submit.status==='sending',sent=submit.status==='sent';
+ const visible=phase!=='closed'&&(items.length>0||hasDraft||!!unavailable.message||phase==='ended');
+ const saved=phase==='confirmed'&&hasDraft?'Saved as a private draft — only you can see it.'+(draft.unchanged===true?' (It was already saved.)':'')+' Revision '+draft.revision+'.':'';
+ const notSaved=phase==='confirmed'&&!hasDraft?(str(unavailable.message,300)||'The summary was confirmed but not saved to the library.')
+  :phase==='ended'?'The interview ended before you confirmed this summary, so nothing was saved to the library.':'';
+ return {visible,phase,title:'Read-back: what ATLAS understood',intro:SUMMARY_INTRO,items,openPoints,next:SUMMARY_NEXT,
+  empty:!items.length&&phase==='open'?'Nothing is firm enough to read back yet.':'',
+  confirm:{label:phase==='confirming'?'Saving…':'Confirm summary',hidden:phase!=='open'&&phase!=='confirming',disabled:phase!=='open'||!items.length},
+  saved,notSaved,
+  submit:{hidden:!hasDraft||phase!=='confirmed',disabled:sending||sent,label:sent?'Submitted for review':sending?'Submitting…':'Submit for review',
+   message:sent?'Submitted for review. Your N+1 or reviewer can now see it.':submit.status==='error'?str(submit.message,300)||'It was not submitted.':hasDraft&&phase==='confirmed'?'Not submitted yet. Only you can see this draft.':''},
+  live:phase==='open'?'Read-back: '+items.length+(items.length===1?' item':' items')+(openPoints.length?', '+openPoints.length+(openPoints.length===1?' open point':' open points'):'')+'.':saved||notSaved};}
+
+return {model,diff,summaryText,metricSpans,pinsOf,summaryView};
 });

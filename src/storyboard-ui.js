@@ -6,6 +6,8 @@
 (()=>{'use strict';
 const $=id=>document.getElementById(id),B=window.AtlasBoard,board=$('storyBoard'),panel=$('gapPanel');
 if(!B||!board||!panel)return;
+// Resuming an interview (T11): the server says how many interview seconds had been used, so the clock goes on from there and does not restart at zero.
+const used=d=>d.resumed===true&&num(d.activeSeconds)!==null&&d.activeSeconds>0?d.activeSeconds*1000:0;
 const LABEL='From the interview · unverified',SVG='http://www.w3.org/2000/svg',REQUEST=/^[a-f0-9]{32}$/;
 const PHASES={breadth:'Breadth: the whole story first',depth:'Depth: the details that matter',closing:'Closing',focused:'Focused: the proof requested'};
 const STATES={reported:'reported',uncertain:'uncertain',unknown:'unknown',deferred:'left open',empty:'not yet'};
@@ -95,12 +97,82 @@ window.addEventListener('atlas-quality',e=>{const d=e.detail;if(!d||typeof d!=='
 window.addEventListener('atlas-session',e=>{const d=e.detail;if(!d||typeof d!=='object')return;
  if(d.type==='reset')clear();
  else if(d.type==='ready'){clear();const max=num(d.maxSeconds);
-  s.session={readyAt:Date.now(),maxSeconds:max!==null&&max>0?max:null,mode:d.mode==='gap'?'gap':'full',gaps:arr(d.gaps).filter(g=>g&&typeof g==='object').slice(0,5),timePlan:obj(d.timePlan)};
+  s.session={readyAt:Date.now()-used(d),maxSeconds:max!==null&&max>0?max:null,mode:d.mode==='gap'?'gap':'full',gaps:arr(d.gaps).filter(g=>g&&typeof g==='object').slice(0,5),timePlan:obj(d.timePlan)};
   s.off=d.liveLedger===false;s.live=true;if(!s.off&&s.session.maxSeconds)startTicker();render();}
  else if(d.type==='audio_stopped'){stopClock();render();}
  else if(d.type==='ended'){stopClock();s.qualitySeq=++seq;render();}  // nothing is being analysed once the session has ended
  else if(d.type==='notes'){if(d.mode==='gap')showGap(d);}
  else if(d.type==='time_up'||d.type==='wrap_up')render();});
+
+/* ---------- The read-back card (T11, plan 3h, D19, Tony Q2) ----------
+   Driven by the server's `summary`, `summary_closed`, `summary_confirmed`, `evidence_draft` and `evidence_draft_unavailable` session events. Each button only asks
+   voice-client.js to send one message ('atlas-summary-action'); nothing is saved by the card itself. Confirming makes a PRIVATE draft (the server does that); sending
+   it to the reviewer is the separate Submit for review click below, a library POST with the revision the person saw. All text goes through textContent. */
+const card=$('summaryCard'),CONFIRM_WAIT_MS=15000;
+let sum=null,confirmTimer=null;
+function sumAct(kind,id,text){window.dispatchEvent(new CustomEvent('atlas-summary-action',{detail:{kind,detail_id:id,text}}));}
+function sumNote(text){const m=$('summaryMessage');if(m)m.textContent=text||'';}
+function sumClear(){clearTimeout(confirmTimer);confirmTimer=null;sum=null;sumNote('');renderSummary();}
+function renderSummary(){if(!card)return;
+ const v=B.summaryView(sum);card.hidden=!v.visible;if(!v.visible)return;
+ $('summaryTitle').textContent=v.title;$('summaryIntro').textContent=sum.phase==='open'||sum.phase==='confirming'?v.intro:'';
+ const list=$('summaryItems');list.replaceChildren();
+ for(const it of v.items){const li=el('li','summary-item');li.dataset.detail=it.id;
+  const head=el('p','summary-item-head');head.append(el('b','',it.label));for(const t of it.tags)head.append(el('span','board-flag',' · '+t));
+  li.append(head,el('q','summary-quote',it.quote));
+  if(it.editable){const row=el('div','summary-item-actions'),fix=el('button','board-btn','Correct'),keep=el('button','board-btn','Keep private');
+   fix.type='button';fix.dataset.action='correct';fix.setAttribute('aria-label','Correct: '+it.label);fix.setAttribute('aria-expanded',sum.editing===it.id?'true':'false');
+   keep.type='button';keep.dataset.action='withhold';keep.setAttribute('aria-label','Keep private: '+it.label);
+   fix.addEventListener('click',()=>{sum.editing=sum.editing===it.id?null:it.id;sumNote('');renderSummary();const f=card.querySelector&&card.querySelector('.summary-edit input');if(f&&f.focus)f.focus();});
+   keep.addEventListener('click',()=>{if(!sum||sum.phase!=='open')return;sumNote('Keeping that private…');sumAct('withhold',it.id);});
+   row.append(fix,keep);li.append(row);
+   if(sum.editing===it.id){const form=el('div','summary-edit'),input=document.createElement('input'),lab=el('label','','Your correction, in your own words'),save=el('button','board-btn','Save correction'),cancel=el('button','board-btn','Cancel');
+    input.type='text';input.id='summaryEdit-'+it.id;input.maxLength=1800;input.setAttribute('autocomplete','off');lab.setAttribute('for',input.id);save.type='button';cancel.type='button';save.dataset.action='save';cancel.dataset.action='cancel';
+    const go=()=>{const VC=window.AtlasVoiceControls;if(!sum||sum.phase!=='open')return;
+     if(VC&&typeof VC.summaryMessage==='function'&&!VC.summaryMessage('correct',it.id,input.value)){sumNote('Please type at least five characters, so your correction can be kept in your own words.');return;}
+     sum.editing=null;sumNote('Sent. The summary updates when ATLAS has your correction.');sumAct('correct',it.id,input.value);renderSummary();};
+    save.addEventListener('click',go);cancel.addEventListener('click',()=>{sum.editing=null;sumNote('');renderSummary();});
+    input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault&&e.preventDefault();go();}else if(e.key==='Escape'){sum.editing=null;renderSummary();}});
+    form.append(lab,input,save,cancel);li.append(form);}}
+  list.append(li);}
+ const empty=$('summaryEmpty');empty.hidden=!v.empty;empty.textContent=v.empty;
+ const open=$('summaryOpen');open.hidden=!v.openPoints.length;const ol=$('summaryOpenList');ol.replaceChildren();for(const t of v.openPoints)ol.append(el('li','',t));
+ $('summaryNext').textContent=v.next;
+ const c=$('summaryConfirm');c.hidden=v.confirm.hidden;c.disabled=v.confirm.disabled;c.textContent=v.confirm.label;
+ $('summarySaved').textContent=v.saved||v.notSaved;
+ const b=$('summarySubmit');b.hidden=v.submit.hidden;b.disabled=v.submit.disabled;b.textContent=v.submit.label;
+ if(!v.submit.hidden)sumNote(v.submit.message);
+ $('summaryLive').textContent=v.live;}
+$('summaryConfirm')&&$('summaryConfirm').addEventListener('click',()=>{if(!sum||sum.phase!=='open'||!sum.items.length)return;
+ sum.phase='confirming';sum.editing=null;sumNote('');renderSummary();sumAct('confirm_summary');
+ clearTimeout(confirmTimer);confirmTimer=setTimeout(()=>{if(sum&&sum.phase==='confirming'){sum.phase='open';sumNote('The confirmation did not go through. Try again, or press End to finish.');renderSummary();}},CONFIRM_WAIT_MS);});
+// Submit for review: the person's own click, a library POST with the revision they were shown (the server refuses a stale one). The Worker checks Origin and CSRF as for every library POST.
+async function sumStatus(s){const app=window.ATLAS_APP,Core=window.AtlasWorkflowCore,list=$('summaryStatus');
+ if(!app||typeof app.libraryApi!=='function'||!Core||!list||!s.draft)return;
+ try{const m=Core.model(await app.libraryApi('/evidence/'+encodeURIComponent(s.draft.id)+'/status'));if(sum!==s)return;
+  list.replaceChildren();for(const c of m.cards)list.append(el('li','',c.label+': '+c.statusText+(c.badge?' ('+c.badge+')':'')));list.hidden=false;}
+ catch(e){list.hidden=true;}
+ try{window.AtlasWorkflowUI&&window.AtlasWorkflowUI.refresh();}catch(e){}}
+async function sumSubmit(){const s=sum,app=window.ATLAS_APP;if(!s||s.phase!=='confirmed'||!s.draft||s.submit.status==='sending'||s.submit.status==='sent')return;
+ if(!app||typeof app.libraryApi!=='function'){s.submit={status:'error',message:'The shared library is not available here.'};renderSummary();return;}
+ s.submit={status:'sending'};renderSummary();
+ try{const v=await app.libraryApi('/evidence/'+encodeURIComponent(s.draft.id)+'/submit',{method:'POST',body:{expected_revision:s.draft.revision}});
+  s.submit={status:'sent'};if(v&&Number.isInteger(v.revision))s.draft={...s.draft,revision:v.revision};}
+ catch(e){s.submit={status:'error',message:(e&&e.message)||'It was not submitted.'};}
+ if(sum===s){renderSummary();sumStatus(s);}}
+$('summarySubmit')&&$('summarySubmit').addEventListener('click',sumSubmit);
+window.addEventListener('atlas-session',e=>{const d=e.detail;if(!d||typeof d!=='object'||!card)return;
+ if(d.type==='ready'||d.type==='reset')sumClear();
+ else if(d.type==='summary'){const was=sum&&sum.phase==='open'?sum:null;if(sum&&['confirming','confirmed'].includes(sum.phase))return;
+  sum={items:arr(d.items).filter(x=>x&&typeof x==='object').slice(0,60),unknowns:arr(d.unknowns).filter(x=>x&&typeof x==='object').slice(0,12),phase:'open',editing:null,confirmed:false,draft:null,unavailable:null,submit:{status:'idle'}};
+  if(was&&was.editing&&sum.items.some(x=>x.detail_id===was.editing))sum.editing=was.editing;sumNote('');renderSummary();}
+ else if(d.type==='summary_closed'){if(sum&&sum.phase==='open'){sum.phase='closed';sumNote('');renderSummary();}}
+ else if(d.type==='summary_confirmed'){if(sum){sum.confirmed=true;clearTimeout(confirmTimer);confirmTimer=null;if(sum.phase==='open')sum.phase='confirming';renderSummary();}}
+ else if(d.type==='evidence_draft'){if(sum){clearTimeout(confirmTimer);confirmTimer=null;sum.phase='confirmed';sum.confirmed=true;
+   sum.draft={id:str(d.id,100),revision:Number.isInteger(d.revision)?d.revision:1,unchanged:d.unchanged===true};sum.unavailable=null;sumNote('');renderSummary();sumStatus(sum);}}
+ else if(d.type==='evidence_draft_unavailable'){if(sum){clearTimeout(confirmTimer);confirmTimer=null;sum.phase='confirmed';sum.confirmed=true;sum.draft=null;sum.unavailable={reason:str(d.reason,40),message:str(d.message,300)};sumNote('');renderSummary();}}
+ else if(d.type==='ended'){if(sum&&['open','confirming'].includes(sum.phase)){clearTimeout(confirmTimer);confirmTimer=null;
+   if(sum.confirmed){sum.phase='confirmed';sum.unavailable={reason:'no_answer',message:'The summary was confirmed, but the interview ended before the library answered. Nothing was saved.'};}else sum.phase='ended';renderSummary();}}});
 
 /* ---------- Proof answers after a gap interview (F2.1 step 6): two separate explicit clicks ---------- */
 function showGap(m){const g=obj(m.gap),app=window.ATLAS_APP;

@@ -1796,6 +1796,1369 @@
    }
   ]
  },
+ "typed_correction_and_withhold": {
+  "stage": "Delivery",
+  "ops": [
+   [
+    "t",
+    "u1",
+    "Tickets bounced between three teams and urgent cases waited days."
+   ],
+   [
+    "t",
+    "u2",
+    "We cut triage time by about 40% after the rollout."
+   ],
+   [
+    "t",
+    "u3",
+    "Priya owned the dashboard and I rebuilt the routing rules."
+   ],
+   [
+    "call",
+    "c1",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "Tickets bounced between three teams"
+      },
+      {
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "We cut triage time by about 40%"
+      },
+      {
+       "field": "contribution",
+       "item_id": "u3",
+       "quote": "I rebuilt the routing rules"
+      }
+     ]
+    }
+   ],
+   [
+    "t",
+    "user-typed-1001",
+    "It was 35 percent, measured on the Lisbon queue in March 2026."
+   ],
+   [
+    "rec",
+    "consultant_typed",
+    [
+     {
+      "field": "outcome",
+      "item_id": "user-typed-1001",
+      "quote": "It was 35 percent",
+      "supersedes": "D-002"
+     }
+    ]
+   ],
+   [
+    "inspect"
+   ],
+   [
+    "rec",
+    "bogus",
+    [
+     {
+      "field": "measurement",
+      "item_id": "user-typed-1001",
+      "quote": "on the Lisbon queue in March 2026"
+     }
+    ]
+   ],
+   [
+    "rec",
+    null,
+    [
+     {
+      "field": "measurement",
+      "item_id": "user-typed-1001",
+      "quote": "on the Lisbon queue in March 2026"
+     }
+    ]
+   ],
+   [
+    "rec",
+    "consultant_corrected",
+    [
+     {
+      "field": "measurement",
+      "item_id": "user-typed-1001",
+      "quote": "in March 2026",
+      "supersedes": "D-005"
+     }
+    ]
+   ],
+   [
+    "inspect"
+   ],
+   [
+    "withhold",
+    "D-003"
+   ],
+   [
+    "inspect"
+   ],
+   [
+    "notes"
+   ],
+   [
+    "plan"
+   ],
+   [
+    "withhold",
+    "D-002"
+   ],
+   [
+    "withhold",
+    "D-099"
+   ],
+   [
+    "withhold",
+    "D-003"
+   ],
+   [
+    "call",
+    "c2",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "contribution",
+       "item_id": "u3",
+       "quote": "I rebuilt the routing rules"
+      }
+     ]
+    }
+   ],
+   [
+    "inspect"
+   ],
+   [
+    "notes"
+   ],
+   [
+    "withhold",
+    "D-001"
+   ],
+   [
+    "plan"
+   ],
+   [
+    "inspect"
+   ],
+   [
+    "notes"
+   ]
+  ],
+  "expected": [
+   {
+    "ok": null
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "Tickets bounced between three teams",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-002",
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "We cut triage time by about 40%",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-003",
+       "field": "contribution",
+       "item_id": "u3",
+       "quote": "I rebuilt the routing rules",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Numerical outcome lacks a recorded measurement basis",
+      "Uncertainty must remain in the story"
+     ],
+     "next_field": "measurement",
+     "next_question": "What were the before and after values for that measure?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 3,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "period",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 1,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "Tickets bounced between three teams",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-003",
+       "field": "contribution",
+       "item_id": "u3",
+       "quote": "I rebuilt the routing rules",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-004",
+       "field": "outcome",
+       "item_id": "user-typed-1001",
+       "quote": "It was 35 percent",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-002",
+       "provenance": "consultant_typed"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Numerical outcome lacks a recorded measurement basis"
+     ],
+     "next_field": "measurement",
+     "next_question": "What were the before and after values for that measure?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 3,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "period",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 2,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "Tickets bounced between three teams",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-003",
+       "field": "contribution",
+       "item_id": "u3",
+       "quote": "I rebuilt the routing rules",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-004",
+       "field": "outcome",
+       "item_id": "user-typed-1001",
+       "quote": "It was 35 percent",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-002",
+       "provenance": "consultant_typed"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Numerical outcome lacks a recorded measurement basis"
+     ],
+     "next_field": "measurement",
+     "next_question": "What were the before and after values for that measure?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 3,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "period",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 2,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "error": "Unknown provenance"
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "Tickets bounced between three teams",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-003",
+       "field": "contribution",
+       "item_id": "u3",
+       "quote": "I rebuilt the routing rules",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-004",
+       "field": "outcome",
+       "item_id": "user-typed-1001",
+       "quote": "It was 35 percent",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-002",
+       "provenance": "consultant_typed"
+      },
+      {
+       "id": "D-005",
+       "field": "measurement",
+       "item_id": "user-typed-1001",
+       "quote": "on the Lisbon queue in March 2026",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Measurement account still needs: measure, before/after, unit"
+     ],
+     "next_field": "measurement",
+     "next_question": "What were the before and after values for that measure?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 4,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 3,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "Tickets bounced between three teams",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-003",
+       "field": "contribution",
+       "item_id": "u3",
+       "quote": "I rebuilt the routing rules",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-004",
+       "field": "outcome",
+       "item_id": "user-typed-1001",
+       "quote": "It was 35 percent",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-002",
+       "provenance": "consultant_typed"
+      },
+      {
+       "id": "D-006",
+       "field": "measurement",
+       "item_id": "user-typed-1001",
+       "quote": "in March 2026",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-005",
+       "provenance": "consultant_corrected"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Measurement account still needs: measure, before/after, unit, population"
+     ],
+     "next_field": "measurement",
+     "next_question": "What were the before and after values for that measure?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 4,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 4,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "Tickets bounced between three teams",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-003",
+       "field": "contribution",
+       "item_id": "u3",
+       "quote": "I rebuilt the routing rules",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-004",
+       "field": "outcome",
+       "item_id": "user-typed-1001",
+       "quote": "It was 35 percent",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-002",
+       "provenance": "consultant_typed"
+      },
+      {
+       "id": "D-006",
+       "field": "measurement",
+       "item_id": "user-typed-1001",
+       "quote": "in March 2026",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-005",
+       "provenance": "consultant_corrected"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Measurement account still needs: measure, before/after, unit, population"
+     ],
+     "next_field": "measurement",
+     "next_question": "What were the before and after values for that measure?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 4,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 4,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "Tickets bounced between three teams",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-004",
+       "field": "outcome",
+       "item_id": "user-typed-1001",
+       "quote": "It was 35 percent",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-002",
+       "provenance": "consultant_typed"
+      },
+      {
+       "id": "D-006",
+       "field": "measurement",
+       "item_id": "user-typed-1001",
+       "quote": "in March 2026",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-005",
+       "provenance": "consultant_corrected"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Measurement account still needs: measure, before/after, unit, population"
+     ],
+     "next_field": "measurement",
+     "next_question": "What were the before and after values for that measure?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 3,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [
+      "contribution"
+     ],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 4,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "Tickets bounced between three teams",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-004",
+       "field": "outcome",
+       "item_id": "user-typed-1001",
+       "quote": "It was 35 percent",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-002",
+       "provenance": "consultant_typed"
+      },
+      {
+       "id": "D-006",
+       "field": "measurement",
+       "item_id": "user-typed-1001",
+       "quote": "in March 2026",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-005",
+       "provenance": "consultant_corrected"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Measurement account still needs: measure, before/after, unit, population"
+     ],
+     "next_field": "measurement",
+     "next_question": "What were the before and after values for that measure?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 3,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [
+      "contribution"
+     ],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 4,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": [
+     "Tickets bounced between three teams",
+     "",
+     "",
+     "It was 35 percent\nin March 2026",
+     "",
+     ""
+    ]
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "Tickets bounced between three teams",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-004",
+       "field": "outcome",
+       "item_id": "user-typed-1001",
+       "quote": "It was 35 percent",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-002",
+       "provenance": "consultant_typed"
+      },
+      {
+       "id": "D-006",
+       "field": "measurement",
+       "item_id": "user-typed-1001",
+       "quote": "in March 2026",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-005",
+       "provenance": "consultant_corrected"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Measurement account still needs: measure, before/after, unit, population"
+     ],
+     "next_field": "measurement",
+     "next_question": "What were the before and after values for that measure?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 3,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [
+      "contribution"
+     ],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 4,
+     "next_action": "ask_one_question",
+     "probe_history": [],
+     "planned_question": "What were the before and after values for that measure?",
+     "repeat_plan": false,
+     "instruction": "Ask one short, natural question. Do not read the ledger. Deferred is not resolved."
+    }
+   },
+   {
+    "error": "Only an active candidate detail can be kept private"
+   },
+   {
+    "error": "Only an active candidate detail can be kept private"
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "Tickets bounced between three teams",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-004",
+       "field": "outcome",
+       "item_id": "user-typed-1001",
+       "quote": "It was 35 percent",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-002",
+       "provenance": "consultant_typed"
+      },
+      {
+       "id": "D-006",
+       "field": "measurement",
+       "item_id": "user-typed-1001",
+       "quote": "in March 2026",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-005",
+       "provenance": "consultant_corrected"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Measurement account still needs: measure, before/after, unit, population"
+     ],
+     "next_field": "measurement",
+     "next_question": "What were the before and after values for that measure?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 3,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [
+      "contribution"
+     ],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 4,
+     "next_action": "ask_one_question",
+     "probe_history": [
+      {
+       "field": "measurement",
+       "question": "What were the before and after values for that measure?",
+       "turn": "user-typed-1001",
+       "status": "planned_not_confirmed_spoken"
+      }
+     ]
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "Tickets bounced between three teams",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-004",
+       "field": "outcome",
+       "item_id": "user-typed-1001",
+       "quote": "It was 35 percent",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-002",
+       "provenance": "consultant_typed"
+      },
+      {
+       "id": "D-006",
+       "field": "measurement",
+       "item_id": "user-typed-1001",
+       "quote": "in March 2026",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-005",
+       "provenance": "consultant_corrected"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Measurement account still needs: measure, before/after, unit, population"
+     ],
+     "next_field": "measurement",
+     "next_question": "What were the before and after values for that measure?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 3,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [
+      "contribution"
+     ],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 5,
+     "next_action": "ask_one_question",
+     "probe_history": [
+      {
+       "field": "measurement",
+       "question": "What were the before and after values for that measure?",
+       "turn": "user-typed-1001",
+       "status": "planned_not_confirmed_spoken"
+      }
+     ]
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "Tickets bounced between three teams",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-004",
+       "field": "outcome",
+       "item_id": "user-typed-1001",
+       "quote": "It was 35 percent",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-002",
+       "provenance": "consultant_typed"
+      },
+      {
+       "id": "D-006",
+       "field": "measurement",
+       "item_id": "user-typed-1001",
+       "quote": "in March 2026",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-005",
+       "provenance": "consultant_corrected"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Measurement account still needs: measure, before/after, unit, population"
+     ],
+     "next_field": "measurement",
+     "next_question": "What were the before and after values for that measure?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 3,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [
+      "contribution"
+     ],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 5,
+     "next_action": "ask_one_question",
+     "probe_history": [
+      {
+       "field": "measurement",
+       "question": "What were the before and after values for that measure?",
+       "turn": "user-typed-1001",
+       "status": "planned_not_confirmed_spoken"
+      }
+     ]
+    }
+   },
+   {
+    "ok": [
+     "Tickets bounced between three teams",
+     "",
+     "",
+     "It was 35 percent\nin March 2026",
+     "",
+     ""
+    ]
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-004",
+       "field": "outcome",
+       "item_id": "user-typed-1001",
+       "quote": "It was 35 percent",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-002",
+       "provenance": "consultant_typed"
+      },
+      {
+       "id": "D-006",
+       "field": "measurement",
+       "item_id": "user-typed-1001",
+       "quote": "in March 2026",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-005",
+       "provenance": "consultant_corrected"
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Measurement account still needs: measure, before/after, unit, population"
+     ],
+     "next_field": "measurement",
+     "next_question": "What were the before and after values for that measure?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 2,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [
+      "contribution",
+      "problem"
+     ],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 5,
+     "next_action": "ask_one_question",
+     "probe_history": [
+      {
+       "field": "measurement",
+       "question": "What were the before and after values for that measure?",
+       "turn": "user-typed-1001",
+       "status": "planned_not_confirmed_spoken"
+      }
+     ]
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-004",
+       "field": "outcome",
+       "item_id": "user-typed-1001",
+       "quote": "It was 35 percent",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-002",
+       "provenance": "consultant_typed"
+      },
+      {
+       "id": "D-006",
+       "field": "measurement",
+       "item_id": "user-typed-1001",
+       "quote": "in March 2026",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-005",
+       "provenance": "consultant_corrected"
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Measurement account still needs: measure, before/after, unit, population"
+     ],
+     "next_field": "measurement",
+     "next_question": "What were the before and after values for that measure?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 2,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [
+      "contribution",
+      "problem"
+     ],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 5,
+     "next_action": "ask_one_question",
+     "probe_history": [
+      {
+       "field": "measurement",
+       "question": "What were the before and after values for that measure?",
+       "turn": "user-typed-1001",
+       "status": "planned_not_confirmed_spoken"
+      }
+     ],
+     "planned_question": "What were the before and after values for that measure?",
+     "repeat_plan": true
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-004",
+       "field": "outcome",
+       "item_id": "user-typed-1001",
+       "quote": "It was 35 percent",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-002",
+       "provenance": "consultant_typed"
+      },
+      {
+       "id": "D-006",
+       "field": "measurement",
+       "item_id": "user-typed-1001",
+       "quote": "in March 2026",
+       "status": "reported",
+       "active": true,
+       "supersedes": "D-005",
+       "provenance": "consultant_corrected"
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Measurement account still needs: measure, before/after, unit, population"
+     ],
+     "next_field": "measurement",
+     "next_question": "What were the before and after values for that measure?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 2,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [
+      "contribution",
+      "problem"
+     ],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 5,
+     "next_action": "ask_one_question",
+     "probe_history": [
+      {
+       "field": "measurement",
+       "question": "What were the before and after values for that measure?",
+       "turn": "user-typed-1001",
+       "status": "planned_not_confirmed_spoken"
+      }
+     ]
+    }
+   },
+   {
+    "ok": [
+     "",
+     "",
+     "",
+     "It was 35 percent\nin March 2026",
+     "",
+     ""
+    ]
+   }
+  ]
+ },
  "assessment_stage_and_deferral": {
   "stage": "Assessment",
   "ops": [

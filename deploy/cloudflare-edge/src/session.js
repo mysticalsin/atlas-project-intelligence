@@ -14,6 +14,7 @@ import { pickAck, ackPrewarmList } from './ack.js';
 import { uncertainSpans, replacement, tauFrom } from './asr.js';
 import { Machine } from './conversation-state.js';
 import { serialize, restore, restoreView, newSessionId } from './checkpoint.js';
+import { buildSummary, buildUnknowns, summaryFacts, summaryNote, redact, withheldQuotes, MAX_FACTS, REFLECT_FACTS, SUMMARY_QUESTION } from './summary.js';
 
 export const RESUME = '[The consultant made a sound but no words were recognised, and your last reply was cut off.] Briefly re-ask your last question in fresh words.';
 
@@ -76,12 +77,34 @@ export const MAX_SECONDS = INTERVIEW_LIMIT_S; // the whole interview (15 minutes
 // active seconds, activeSeconds()), but nothing may stay open for ever: the session ends at WALL_CAP_S of wall-clock time, paused or not.
 export const WALL_CAP_S = 45 * 60;
 export const WALL_CAP_MESSAGE = 'The 45-minute session limit was reached. Finishing your notes.';
-export const CONTROLS = Object.freeze(['pause', 'resume', 'repeat', 'skip', 'text']); // client events this session understands (sent in `ready`, so older gateways are never sent them)
+export const CONTROLS = Object.freeze(['pause', 'resume', 'repeat', 'skip', 'text', 'correct', 'withhold', 'confirm_summary']); // client events this session understands (sent in `ready`, so older gateways are never sent them)
 export const CONTROL_MAX_WORDS = 12; // a spoken pause / repeat / skip is a short request; the same words inside a long answer are part of the answer
 export const TYPED_MAX_CHARS = 2000; // a typed answer; longer text is cut (the browser limits it to the same)
 export const SKIP_UNAVAILABLE = 'Skipping is not available in a focused proof interview.';
 const SKIP_NOTE = '(I\'d like to skip that question.)'; // history entry for the Skip button, so the talker sees what the consultant did (never the ledger)
 const SKIP_INSTRUCTION = '[Server: the consultant chose to skip your last question.] Accept that without pressing, and ask one different question.';
+// Summary read-back and correction revisions (T11, plan 3h, D19, Tony Q2). At the close ATLAS reads back a few facts, the browser shows the whole card
+// (summary event), and the consultant corrects, keeps private or confirms. Confirming saves an OWNER-ONLY evidence draft; nothing goes to a reviewer
+// until the owner presses Submit for review in the library (a separate click, never here).
+export const SUMMARY_WAIT_MS = 2500; // the analyst may still be filing the last answer when the read-back is built: wait this long for it, no more
+export const SUMMARY_MAX_WORDS = 90; // a read-back is longer than an ordinary reply (GUARD_MAX_WORDS); the question always follows it
+export const CORRECTION_MAX_CHARS = 1800; // the ledger's own bound for a quote
+export const CONFIRM_WAIT_MS = 3000; // a late analyst entry is part of the draft: wait this long for it when the summary is confirmed
+export const SATISFIED_WORDS = 6; // a reply this short to the read-back ("No, that's right.") means they have nothing to add (as the selector's own rule)
+const CORRECTION_ITEM_BASE = 1000; // typed corrections are transcript items user-typed-1001, 1002 ...: never a turn number (turns stop at 300)
+const DETAIL_ID = /^D-\d{3,6}$/;
+export const SUMMARY_UNAVAILABLE = 'There is no open summary to change. Wait for the read-back, then try again.';
+export const SUMMARY_LINES = Object.freeze({
+  corrected: { en: ['Thank you, I have updated that. Is there anything else I have misunderstood or missed?', 'Thank you, that is updated. Is there anything else I should correct?'] },
+  prompt: { en: ['Thank you. When you are ready, press Confirm summary. That saves a private draft that only you can see, and nothing goes to a reviewer until you press Submit for review yourself.'] },
+  saved: { en: ['Thank you. Your summary is saved as a private draft that only you can see. Press Submit for review when you are ready; until then it goes nowhere.'] },
+  unsaved: { en: ['Thank you. Your summary is confirmed, but it could not be saved to the library, so nothing was filed. You can try again from your notes.'] },
+});
+// Other languages: the talker closes (or prompts) in the consultant's language from these server instructions (no model-made claim about what was saved).
+const SUMMARY_PROMPT_INSTRUCTION = '[Server: the consultant has nothing to add to the read-back.] Thank them in one short sentence and tell them to press Confirm summary when ready: it saves a private draft only they can see, and nothing goes to a reviewer until they press Submit for review themselves. Ask no question.';
+const SUMMARY_CLOSE_INSTRUCTION = saved => '[Server: the consultant confirmed the summary.] Thank them warmly in one short sentence and say '
+  + (saved ? 'it is saved as a private draft that only they can see, and goes nowhere until they press Submit for review.' : 'it could not be saved to the library, so nothing was filed.') + ' Ask no question.';
+const SUMMARY_MOVE = { kind: 'summary', intent: 'summary', field: null, rung: null, say: 'Let me read that back once more.', why: 'summary:before_close', reaction: 'none', ack_category: null };
 const FIELD_ID = /^[a-z][a-z0-9_]{0,63}$/; // the state machine's rule for a skipped field: an internal id, never free text
 // Discovery focus (conversation-state.js `focus`) is an annotation of where the conversation is, derived from the field of the move just chosen.
 const FIELD_FOCUS = { problem: 'context', stakes: 'context', contribution: 'contribution', intervention: 'contribution', decision: 'contribution', adoption: 'contribution',
@@ -170,7 +193,7 @@ const MOVE_ACTION = {
   reflect: 'Say back in one short sentence what you have understood so far, then ask the one check question.',
   offer_move_on: 'Offer to move on from this point, gently; ask only that.',
   accept_and_move: 'Accept their answer without pressing; then ask the one question.',
-  summary: 'No question is left. Recap what you understood in two short sentences, using only what they said, then ask only whether you have misunderstood or missed anything.',
+  summary: 'No question is left: this is the read-back. Say back only the SUMMARY FACTS (next note), mention the open points briefly, then ask only: ' + SUMMARY_QUESTION,
   close: 'Close now: thank them warmly in one or two short sentences, with no question, then end with the exact token [[END]].',
 };
 const MOVE_REACTION = {
@@ -201,9 +224,9 @@ export class Session {
   // gaps: async id => {asks, bidAlias, referenceId, projectId} | null (the verified assignee's open gap request);
   // winHint: async () => ({hint: 'quantified'|'confirmed'|null}) | null (aggregate win-loop guidance, never awaited).
   constructor({ io, ai, csrf, voice, voices = null, captureRequired = false, model, maxSeconds = MAX_SECONDS, admin = false, memory = null, speakingLimit = SPEAKING_LIMIT_S, now = () => Date.now() / 1000, sleep = ms => new Promise(r => setTimeout(r, ms)), metric = () => {}, sttTimeout = STT_TIMEOUT_MS,
-    gaps = null, winHint = null, gapTimeout = GAP_RESOLVE_MS, flags = null, checkpoint = null }) {
+    gaps = null, winHint = null, gapTimeout = GAP_RESOLVE_MS, flags = null, checkpoint = null, evidence = null }) {
     // metric(name, numbers): timings and counts only, never transcript or project content.
-    Object.assign(this, { io, ai, csrf, voice, voices: voices || [voice], captureRequired, model, maxSeconds, admin, speakingLimit, now, sleep, metric, memory, sttTimeout, gaps, winHint, gapTimeout, checkpoint });
+    Object.assign(this, { io, ai, csrf, voice, voices: voices || [voice], captureRequired, model, maxSeconds, admin, speakingLimit, now, sleep, metric, memory, sttTimeout, gaps, winHint, gapTimeout, checkpoint, evidence });
     this.flags = { ...DEFAULT_FLAGS, ...(flags || ai?.flags || {}) };
     // Conversation state of the humane interviewer (Agent Brain v2.1), one plain object so a checkpoint can keep it whole:
     // asked (the Move dicts committed so far, oldest first), covered (field ids the consultant's answers touched), rushed,
@@ -222,6 +245,11 @@ export class Session {
     // Checkpoint (T10): `checkpoint` is the person's own CheckpointStore (worker.js), null when there is none (tests, ATLAS_CHECKPOINT=off). sessionId names the
     // interview across reconnects. discarding: the consultant threw it away (end() then purges). afterRestore: restored while paused, so Resume continues it.
     this.sessionId = null; this.discarding = false; this.afterRestore = false; this.resumed = false; this.ckptDirty = false; this.ckptRun = null;
+    // Summary read-back (T11). open: the card is on the consultant's screen; rounds: read-backs given; corrections: typed corrections so far (their item ids);
+    // confirmed / draft: the confirmation and the evidence draft it saved ({id, revision}, null when nothing was saved); posting: a confirmation is in flight;
+    // prompts: how often ATLAS pointed to the Confirm button; sig: the last card sent (not kept: a resume sends the card again).
+    // `evidence` is the hook that saves the draft: async notes => {status, body} (worker.js: postDraftFromInterview under the verified identity), null when off.
+    this.summary = { open: false, rounds: 0, corrections: 0, confirmed: false, draft: null, posting: false, prompts: 0, sig: '' };
     this.move = null; this.moveByItem = new Map(); this.prefill = {}; this.lastPlan = null; this.lastTurn = null;
     // Interview mode. Gap mode keeps its own answer windows: askByItem (reply item -> the ask it carried, set when the reply
     // is composed), gapAttempts (replies heard per ask), openAsk (the ask the consultant last heard; null once a reflect-back
@@ -273,6 +301,10 @@ export class Session {
       if (n === 1 && value.type === 'repeat') return this.repeatQuestion('ui');
       if (n === 1 && value.type === 'skip') return this.skipQuestion();
       if (n === 2 && value.type === 'text' && typeof value.text === 'string') return this.typedTurn(value.text);
+      // The summary card (T11): exactly their own keys.
+      if (n === 1 && value.type === 'confirm_summary') return this.confirmSummary();
+      if (n === 2 && value.type === 'withhold' && typeof value.detail_id === 'string') return this.withholdDetail(value.detail_id);
+      if (n === 3 && value.type === 'correct' && typeof value.detail_id === 'string' && typeof value.text === 'string') return this.correctDetail(value.detail_id, value.text);
     }
     if (value?.type === 'playback') {
       // Flow control: the browser reports audio actually played; never run more than LEAD_MS ahead of it.
@@ -486,7 +518,7 @@ export class Session {
     this.started = true; this.lastInput = this.now(); if (!this.resumed) this.startedAt = this.lastInput;
     this.event('ready', { model: 'ATLAS', provider: 'ATLAS voice', sampleRate: 24000, speakingSeconds: this.speakingLimit, capture: this.capture, liveLedger: !!this.analyst,
       maxSeconds: this.maxSeconds, message: 'Voice session ready. Speak naturally. Candidate notes require your review.',
-      mode: this.mode, timePlan: timePlan(this.maxSeconds, this.mode), controls: CONTROLS, ...(this.checkpointable() ? { sessionId: this.sessionId, resumable: true } : {}), ...(this.resumed ? { resumed: true } : {}), ...(gap ? { gaps: this.gapAsks.map(({ id, label, ask }) => ({ id, label, ask })) } : {}) });
+      mode: this.mode, timePlan: timePlan(this.maxSeconds, this.mode), controls: CONTROLS, ...(this.checkpointable() ? { sessionId: this.sessionId, resumable: true } : {}), ...(this.resumed ? { resumed: true, activeSeconds: Math.max(0, Math.floor(this.activeSeconds())) } : {}), ...(gap ? { gaps: this.gapAsks.map(({ id, label, ask }) => ({ id, label, ask })) } : {}) });
     if (this.memory && !gap) { // private memory from earlier conversations, bounded so the greeting is never held up (none in gap mode)
       let timer;
       try { this.memoryNote = await Promise.race([this.memory(this.project), new Promise(r => { timer = setTimeout(() => r(''), 3500); })]) || ''; }
@@ -668,6 +700,7 @@ export class Session {
         this.guidance = chosen;
         const { guidance, ...rest } = result;
         this.event('quality', rest);
+        if (this.summary.open) this.sendSummary(); // what the analyst filed late (or a spoken correction's supersede) is on the open card
         if (result.analyst_status !== 'analysed') this.event('quality_warning', { message: 'The evidence analyst did not respond for this turn. The answer is kept; review it in the notes.' });
       }).catch(() => this.event('quality_warning', { message: 'This turn exceeded the transcript budget and was not added to the evidence ledger.' }));
       this.turnJob = job; this.pending.add(job); job.finally(() => { this.pending.delete(job); this.checkpointSoon(); });
@@ -710,6 +743,9 @@ export class Session {
     // Admin (Tony) gets the same patience, without the nudge or an acknowledgement (and keeps the analyst's guidance).
     if (this.admin) return this.startReply(undefined, { turn: this.turns, endedAt, notBefore: trailing && endedBy !== 'thinking' ? endedAt + THINKING_PAUSE : 0, timeline: { sttMs, selectorMs: -1 } });
     if (endedBy !== 'thinking' && !trailing) {
+      // The read-back is open: a short reply means nothing to add (ATLAS points to the Confirm button and waits, no model call); a correction is taken by the
+      // normal path (the selector, the analyst's supersede); anything longer is more to say, so the interview goes on.
+      if (turn && this.summaryActive() && this.summaryTurn(turn)) return;
       const h = this.humane, v2 = this.flags.selector === 'v2' && this.mode === 'full', content = this.flags.acks === 'content';
       let move = null, selectorMs = -1, sinceEarned;
       if (v2 || content) {
@@ -841,6 +877,9 @@ export class Session {
     if (!turn.intents.some(i => ['dont_know', 'cannot_disclose', 'skip'].includes(i))) for (const f of turn.field_hints) h.covered.add(f);
     // The selector had to avoid saying a question it already said (a variant, or a whole candidate): counted, never logged.
     if (!replacing && /\+r[vi]/.test(move.why || '')) this.metric('question_repeat', { variant: move.why.includes('+rv') ? 1 : 0, skipped: move.why.includes('+ri') ? 1 : 0 });
+    // The selector closes once a read-back was asked and nothing is left. Nothing is filed without the consultant's confirmation, so a close that is not
+    // the time limit or their own wish to stop becomes another read-back (the card is on their screen; they confirm there).
+    if (move.kind === 'close' && !/^close:(wrap|stop)/.test(move.why || '') && !this.summary.confirmed && this.capture && !this.admin) { this.metric('summary_before_close', {}); return { ...SUMMARY_MOVE }; }
     return move;
   }
 
@@ -849,10 +888,148 @@ export class Session {
   swapMove(item, old, move) { const i = this.humane.asked.indexOf(old); if (i >= 0) this.humane.asked[i] = move; else this.humane.asked.push(move); this.moveByItem.set(item, move); this.moveState(move); }
   // A move that opens the read-back asks for the summary; any other move about a field in a new focus area moves the discovery focus (both audited).
   moveState(move) {
+    const state = this.machine.state;
+    if (move.kind === 'summary') { if (state === 'discovery' || state === 'user_correction') this.fireState('request_summary', 'atlas'); return; } // (already in the summary: a repeat)
+    // A read-back was begun (or is open) and the interview goes on with something else: back to discovery. A close (time is up) ends it as it is.
+    if (state === 'summary' && this.summary.open && move.kind !== 'close') { this.closeSummary('continue'); this.fireState('continue_discovery', 'atlas'); }
     if (this.machine.state !== 'discovery') return;
-    if (move.kind === 'summary') { this.fireState('request_summary', 'atlas'); return; }
     const focus = FIELD_FOCUS[move.field];
     if (focus && focus !== this.machine.focus) this.fireState('focus', 'atlas', { data: { focus } });
+  }
+
+
+  // ----- summary read-back and corrections (T11) -----
+  // The card is open on the consultant's screen and the machine is in summary / user_correction (not paused, not suspended).
+  summaryActive() { return this.summary.open && (this.machine.state === 'summary' || this.machine.state === 'user_correction'); }
+  closeSummary(reason) {
+    if (!this.summary.open) return;
+    this.summary.open = false; this.summary.sig = '';
+    this.event('summary_closed', { reason });
+  }
+  // The card, from the ledger: items (active, not kept private), open points (unsure speech, "I don't know", skipped, left open).
+  summaryView() {
+    return { items: buildSummary(this.ledger), unknowns: buildUnknowns(this.ledger, { skipped: this.machine.skipped, deferred: Object.keys(this.ledger.deferred) }), round: this.summary.rounds };
+  }
+  // Send the card to the browser (only when it changed, unless forced). Sent to the same person on the same authenticated socket.
+  sendSummary(force = false) {
+    const v = this.summaryView(), sig = JSON.stringify([v.items, v.unknowns]);
+    if (force || sig !== this.summary.sig) { this.summary.sig = sig; this.event('summary', { ...v, state: this.machine.state }); }
+    return v;
+  }
+  // The facts of a read-back, from the same ledger as the card. A summary opens the card (after a bounded wait for the analyst's last entry, which may
+  // still be landing: the read-back must include what they just said); a reflection only reads a few facts and shows no card. The talker is told these
+  // facts and no others, and the ReplyGuard blocks any figure that is not in them.
+  async readBack(move) {
+    const reflect = move.kind === 'reflect';
+    if (!reflect && this.turnJob) await Promise.race([this.turnJob.catch(() => {}), this.sleep(SUMMARY_WAIT_MS)]);
+    if (this.finished || this.ending) return null;
+    let v;
+    if (reflect) v = this.summaryView();
+    else { this.summary.open = true; this.summary.rounds += 1; v = this.sendSummary(true); this.metric('summary', { items: v.items.length, unknowns: v.unknowns.length, round: this.summary.rounds }); this.checkpointSoon(); }
+    const { facts, numbers } = summaryFacts(v.items, { max: reflect ? REFLECT_FACTS : MAX_FACTS });
+    return { reflect, facts: facts.map(f => clean(f, 240)), numbers, unknowns: v.unknowns.map(u => ({ ...u, label: clean(u.label, 80) })) };
+  }
+  // A spoken turn while the card is open. true: answered here, nothing else is said. false: the normal path goes on.
+  summaryTurn(turn) {
+    const intents = turn.intents;
+    // A correction: the normal path takes it (the selector accepts and narrows, the analyst supersedes the earlier detail); the read-back comes round again.
+    if (intents.includes('correction')) { this.fireState('correct', 'user'); this.checkpointSoon(); return false; }
+    if (turn.words <= SATISFIED_WORDS || intents.includes('confirm')) { this.promptConfirm(); return true; }
+    this.closeSummary('continue'); this.fireState('continue_discovery', 'atlas'); this.checkpointSoon(); // more to say: back to the conversation
+    return false;
+  }
+  // They have nothing to add: ATLAS says where the next click is (no model call), and the interview waits. Nothing is filed by speech alone.
+  promptConfirm() {
+    this.summary.prompts += 1; this.metric('summary_prompt', {});
+    const line = this.line(SUMMARY_LINES.prompt, this.summary.prompts - 1);
+    if (line) this.startReply(null, { prefix: [line], only: true, turn: this.turns }); else this.startReply(SUMMARY_PROMPT_INSTRUCTION, { turn: this.turns });
+  }
+  summaryWarning(message) { this.event('quality_warning', { message }); }
+  // The card's buttons (client events correct / withhold) act on one item of the open card. Anything else is refused with one message.
+  summaryEditable(id) {
+    if (!this.started || this.finished || this.ending || this.starting) return false;
+    if (!this.summaryActive() || this.summary.posting || typeof id !== 'string' || !DETAIL_ID.test(id)) { this.summaryWarning(SUMMARY_UNAVAILABLE); return false; }
+    return true;
+  }
+  // After a change the story board gets the ledger as it now stands, like after any analysed turn.
+  boardUpdate() { this.event('quality', { ...this.ledger.inspect(), analyst_status: 'analysed', rejected_proposals: 0, ignored_tool_calls: 0 }); }
+  // A typed correction of one item: the consultant's own words become a new transcript item (user-typed-N) and a new detail that SUPERSEDES the old one
+  // (provenance consultant_typed). The old detail stays in the ledger, inactive, and in the history. No model is involved. Then the read-back comes round again.
+  correctDetail(id, raw) {
+    if (!this.summaryEditable(id)) return;
+    const old = this.ledger.details.find(d => d.id === id && d.active && d.withheld !== true), text = clean(raw, CORRECTION_MAX_CHARS);
+    if (!old) return this.summaryWarning('That item is no longer in the summary.');
+    if (Array.from(text).length < 5) return this.summaryWarning('Please type a little more, so the correction can be kept as your own words.');
+    const ident = 'user-typed-' + (CORRECTION_ITEM_BASE + this.summary.corrections + 1);
+    try {
+      this.ledger.addTranscript(ident, text);
+      this.ledger.record({ details: [{ field: old.field, item_id: ident, quote: ws(text), supersedes: old.id }] }, 'consultant_typed');
+    } catch { return this.summaryWarning('That correction could not be added to the interview notes.'); }
+    this.summary.corrections += 1;
+    this.metric('summary_correct', { chars: text.length });
+    this.event('user_text', { item_id: ident, text, provenance: 'consultant_typed' });
+    this.boardUpdate();
+    this.fireState('correct', 'user'); this.fireState('request_summary', 'atlas'); // user_correction, then the read-back again (the loop)
+    this.sendSummary(true);
+    this.checkpointSoon();
+    const line = this.line(SUMMARY_LINES.corrected, this.summary.corrections - 1);
+    if (line) { if (this.busy()) this.interrupt(); this.cutOff = false; this.startReply(null, { prefix: [line], only: true, turn: -1 }); }
+  }
+  // "Keep private": the item leaves the notes, the report and the evidence draft; it stays in the ledger history. ATLAS does not ask about that point again.
+  withholdDetail(id) {
+    if (!this.summaryEditable(id)) return;
+    if (!this.ledger.details.some(d => d.id === id && d.active && d.withheld !== true)) return this.summaryWarning('That item is no longer in the summary.');
+    try { this.ledger.withhold(id); } catch { return this.summaryWarning('That item could not be kept private.'); }
+    this.metric('summary_withhold', {});
+    this.boardUpdate(); this.sendSummary(true); this.checkpointSoon();
+  }
+  // The notes a draft is made of (T13 cleanNotes): the active details that are not kept private, nothing else. A withheld or replaced detail never leaves here.
+  evidenceNotes() {
+    const details = this.ledger.details.filter(d => d.active && d.withheld !== true).map(d => ({ id: d.id, field: d.field, item_id: d.item_id, quote: d.quote, status: d.status, active: true,
+      supersedes: d.supersedes || '', withheld: false, provenance: d.provenance || 'unverified_speech_recognition', asr_min_conf: typeof d.asr_min_conf === 'number' ? d.asr_min_conf : null,
+      audio_offset_ms: Number.isInteger(d.audio_offset_ms) ? d.audio_offset_ms : null }));
+    const asr = this.asrNotes();
+    return { session_id: this.sessionId, project_ref: this.project?.id || null, details, ...(Object.keys(asr).length ? { asr } : {}) };
+  }
+  // Confirm: the machine moves to summary_confirmed, the notes become ONE owner-only evidence draft (the hook; idempotent on the session id), and ATLAS closes.
+  // It never submits: that is the owner's own click in the library.
+  async confirmSummary() {
+    if (!this.started || this.finished || this.ending || this.starting) return;
+    if (this.summary.confirmed || this.summary.posting) { this.metric('summary_confirm_repeat', {}); return; } // a second click saves nothing more
+    if (!this.summaryActive()) return this.summaryWarning(SUMMARY_UNAVAILABLE);
+    this.summary.posting = true;
+    try {
+      if (this.pending.size) await Promise.race([Promise.allSettled([...this.pending]), this.sleep(CONFIRM_WAIT_MS)]); // a late analyst entry belongs in the draft
+      if (this.finished || this.ending || !this.summaryActive() || !this.fireState('confirm_summary', 'user')) return;
+      this.summary.confirmed = true; this.summary.open = false;
+      if (this.busy()) this.interrupt();
+      this.cutOff = false;
+      this.metric('summary_confirmed', { rounds: this.summary.rounds, corrections: this.summary.corrections });
+      this.event('summary_confirmed', {});
+      const saved = await this.saveDraft();
+      if (this.finished || this.ending) return;
+      this.checkpointSoon();
+      const line = this.line(SUMMARY_LINES[saved ? 'saved' : 'unsaved'], 0);
+      if (line) this.startReply(null, { prefix: [line], only: true, turn: -1, closeAfter: true }); else this.startReply(SUMMARY_CLOSE_INSTRUCTION(saved), { turn: -1, closeAfter: true });
+    } finally { this.summary.posting = false; }
+  }
+  // true: a draft exists (created now, or the same notes were saved before). false: nothing was saved, and the browser is told why (a stable code, no content).
+  async saveDraft() {
+    const notes = this.evidenceNotes(), no = (reason, message) => { this.metric('evidence_draft_unavailable', { reason }); this.event('evidence_draft_unavailable', { reason, message }); return false; };
+    if (!notes.details.length) return no('nothing_to_save', 'Every item was kept private or replaced, so there is nothing to save as a draft.');
+    if (!this.evidence) return no('workflow_off', 'The evidence workflow is switched off here, so the summary was not saved to the library.');
+    let r = null;
+    try { r = await this.evidence(notes); } catch { r = null; }
+    if (r && (r.status === 200 || r.status === 201) && typeof r.body?.id === 'string') {
+      const revision = Number.isInteger(r.body.revision) ? r.body.revision : 1;
+      this.summary.draft = { id: r.body.id, revision };
+      this.metric('evidence_draft', { status: r.status, details: notes.details.length });
+      this.event('evidence_draft', { id: r.body.id, revision, state: typeof r.body.state === 'string' ? r.body.state : 'evidence_draft', visibility: 'owner_only', unchanged: r.status === 200 });
+      return true;
+    }
+    const status = r?.status || 0;
+    return no(status === 409 ? 'already_captured' : status === 400 ? 'nothing_to_save' : status === 0 ? 'library_unavailable' : 'refused',
+      status === 409 ? 'This interview was already saved as a draft with different notes. Amend that draft in the library.' : status === 0 ? 'The library could not be reached, so the summary was not saved.' : 'The library did not accept the summary, so it was not saved.');
   }
 
   // ----- pause, resume, repeat, skip, typed turns (T9) -----
@@ -1028,7 +1205,8 @@ export class Session {
   // prefix: a greeting (a list of cached pieces) or an acknowledgement (`filler`, one cached piece). move / ack / refine / timeline:
   // the humane interviewer's inputs for a normal reply (see answer()); a reply with another instruction (opening, nudge, closing,
   // re-ask) carries none.
-  startReply(instruction, { prefix = '', filler = '', notBefore = 0, turn = -1, endedAt = 0, thinking = false, move = null, ack = null, refine = null, timeline = null, only = false } = {}) {
+  // closeAfter: the interview ends once this reply has been heard (the confirmed summary's goodbye), as after a closing the talker ends with [[END]].
+  startReply(instruction, { prefix = '', filler = '', notBefore = 0, turn = -1, endedAt = 0, thinking = false, move = null, ack = null, refine = null, timeline = null, only = false, closeAfter = false } = {}) {
     if (this.ending || this.finished) return;
     // only: the reply is exactly its `prefix` pieces (a pause or resume line, a question said again): no model call. Nothing else is spoken while paused.
     if (this.paused && !only) return;
@@ -1046,20 +1224,20 @@ export class Session {
     this.replyItem = item; this.replyTurn = turn; this.replyGen = gen;
     if (move) this.commitMove(item, move);
     const pieces = Array.isArray(prefix) ? prefix : prefix ? [prefix] : filler ? [filler] : [];
-    const run = this.speak(item, gen, instruction, pieces, !!filler, notBefore, endedAt, thinking, { move, ack: filler ? ack : null, refine, timeline, only }).catch(e => { this.metric('reply_error', { name: e?.name || 'Error' }); if (!this.finished && gen === this.gen) this.event('error', { message: 'The voice reply failed. No fallback voice was used.', code: 'voice-unavailable' }); });
+    const run = this.speak(item, gen, instruction, pieces, !!filler, notBefore, endedAt, thinking, { move, ack: filler ? ack : null, refine, timeline, only, closeAfter }).catch(e => { this.metric('reply_error', { name: e?.name || 'Error' }); if (!this.finished && gen === this.gen) this.event('error', { message: 'The voice reply failed. No fallback voice was used.', code: 'voice-unavailable' }); });
     this.speaking = run;
     run.finally(() => { if (this.speaking === run) this.speaking = null; });
   }
 
-  async speak(item, gen, instruction, pieces = [], isFiller = false, notBefore = 0, endedAt = 0, thinking = false, { move = null, ack = null, refine = null, timeline = null, only = false } = {}) {
+  async speak(item, gen, instruction, pieces = [], isFiller = false, notBefore = 0, endedAt = 0, thinking = false, { move = null, ack = null, refine = null, timeline = null, only = false, closeAfter = false } = {}) {
     let said = '', interrupted = true, firstText = 0, firstToken = 0, firstAudio = 0, gapMs = -1, talker = '', voiced = 0;
     const lang = this.spoken(); // one voice per reply, even if the consultant switches mid-reply
     const marker = new EndMarker(); // the talker's end-of-interview token is never spoken or shown
     const t0 = this.now(), prefix = pieces.join(' ');
     // The reply guard (speech.js ReplyGuard) enforces the shape of what the talker says in code: one question, no empty praise,
     // no repeated opener, a short reply. A closing is not capped (its end token comes last). Its drops are counted, never logged.
-    const guard = !only && this.flags.replyGuard === 'on' ? new ReplyGuard({ bannedPraise: BANNED_PRAISE_SRC, recentOpeners: [...this.humane.openers, ...(isFiller ? pieces : [])],
-      maxWords: instruction === TIME_UP ? null : GUARD_MAX_WORDS }) : null;
+    const guardOptions = { bannedPraise: BANNED_PRAISE_SRC, recentOpeners: [...this.humane.openers, ...(isFiller ? pieces : [])], maxWords: instruction === TIME_UP ? null : GUARD_MAX_WORDS };
+    let guard = !only && this.flags.replyGuard === 'on' ? new ReplyGuard(guardOptions) : null; // (a read-back replaces it with one that knows the facts)
     // Text travels with its audio and reaches the screen when that audio is actually sent for playback (pace()), so it
     // never shows words ATLAS has not started to say, and a withdrawn piece never appears.
     let pending = '';
@@ -1117,6 +1295,7 @@ export class Session {
       }
       if (only) { // a pause line, a resume line, a question said again: the pieces are the whole reply
         await chain; release(); interrupted = gen !== this.gen;
+        if (!interrupted && closeAfter && this.turns >= 1) this.wrapUp(item, gen);
         return;
       }
       // Optionally wait (ANALYST_WAIT_MS) for the analyst while the acknowledgement plays, then choose the move again from its plan.
@@ -1127,7 +1306,16 @@ export class Session {
         if (better) { this.swapMove(item, move, better); if (better.kind !== move.kind || better.intent !== move.intent) this.metric('move_refined', {}); move = better; }
       }
       const moveNote = move ? nextMoveNote(move) : '';
-      const notes = [...this.paceNotes(), moveNote, prefix ? (isFiller ? `ALREADY SAID (server): you have just said "${prefix}" out loud. Continue naturally from there; do not start with another short acknowledgement.`
+      // A read-back (the closing summary, or a mid-interview reflection): the talker gets a few facts from the ledger, nothing else to say, and the guard
+      // blocks any figure that is not in them. The fixed question follows if the talker's own words never got to it.
+      let readNote = '', readBack = null;
+      if ((move?.kind === 'summary' || move?.kind === 'reflect') && this.ledger && this.capture) {
+        readBack = await this.readBack(move);
+        if (gen !== this.gen || this.finished || !readBack) return;
+        readNote = summaryNote(readBack.facts, readBack.unknowns, { reflect: readBack.reflect, question: clean(move.say, 400) });
+        if (guard) guard = new ReplyGuard({ ...guardOptions, maxWords: readBack.reflect ? GUARD_MAX_WORDS : SUMMARY_MAX_WORDS, summaryFacts: [...readBack.facts, ...readBack.numbers] });
+      }
+      const notes = [...this.paceNotes(), moveNote, readNote, prefix ? (isFiller ? `ALREADY SAID (server): you have just said "${prefix}" out loud. Continue naturally from there; do not start with another short acknowledgement.`
         : `ALREADY SAID (server): you have just greeted the consultant with: "${prefix}". Do not repeat it or introduce yourself again.`) : ''];
       const guidance = instruction === TIME_UP || moveNote ? null : this.guidance, gap = this.mode === 'gap';
       // Gap mode: the ask this reply carries, fixed now that it is composed. A normal reply or the opening carries the plan's
@@ -1179,13 +1367,19 @@ export class Session {
         show(lead + move.say); said += (said ? lead : '') + move.say; talker = move.say; voiced += 1;
         carry(move.say); await say(move.say);
       }
+      if (readBack && !readBack.reflect && gen === this.gen && !/[?？]/.test(said)) { // the read-back always ends in its question
+        const lead = !said ? (this.replies > 1 ? '\n\n' : '') : /\s$/.test(said) ? '' : ' ';
+        this.metric('summary_question_added', {});
+        show(lead + SUMMARY_QUESTION); said += (said ? lead : '') + SUMMARY_QUESTION; talker += (talker ? ' ' : '') + SUMMARY_QUESTION; voiced += 1;
+        await say(SUMMARY_QUESTION);
+      }
       await chain; // every piece sent, or dropped by a withdrawal or an interruption
       release(); // anything left that produced no audio of its own
       interrupted = gen !== this.gen;
       // Backstop: a reply that still asks a question is not a closing, whatever token it carries (admin may end at will).
       const closes = instruction === TIME_UP || (marker.seen && (this.admin || !said.includes('?')));
       if (marker.seen && !closes) this.metric('end_ignored', {});
-      if (!interrupted && closes && this.turns >= 1) this.wrapUp(item, gen);
+      if (!interrupted && (closes || closeAfter) && this.turns >= 1) this.wrapUp(item, gen);
     } finally {
       const text = said.trim();
       if (text && !this.discarded.has(item) && !this.recorded.has(item)) {
@@ -1230,7 +1424,9 @@ export class Session {
       let timer;
       try {
         const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), attempt === 1 ? 25000 : 15000); });
-        const report = parseReport(await Promise.race([this.ai.report(reportMessages(this.history, this.ledger.notes(), this.ledger.stage)), timeout]));
+        // What the consultant asked to keep private never reaches the report: it is taken out of the conversation the report is written from.
+        const kept = withheldQuotes(this.ledger), history = kept.length ? this.history.map(m => ({ ...m, content: redact(m.content, kept) })) : this.history;
+        const report = parseReport(await Promise.race([this.ai.report(reportMessages(history, this.ledger.notes(), this.ledger.stage)), timeout]));
         this.metric('report', { ms: Math.round((this.now() - t0) * 1000), ok: report ? 1 : 0, attempt });
         if (report) return report;
       } catch (e) { this.metric('report_error', { name: e?.message === 'timeout' ? 'Timeout' : e?.name || 'Error', attempt }); if (e?.message === 'timeout') return null; }
@@ -1349,7 +1545,7 @@ export class Session {
         // Gap mode writes no report: its answers go back only through the consultant's explicit clicks (§F2.1 step 6).
         const gap = this.mode === 'gap', report = gap ? null : await this.report();
         const asr = this.asrNotes();
-        this.event('notes', { transcript: [...this.ledger.transcripts.values()].join('\n\n'), sections: this.ledger.notes(), status: 'candidate', report, mode: this.mode,
+        this.event('notes', { transcript: redact([...this.ledger.transcripts.values()].join('\n\n'), withheldQuotes(this.ledger)), sections: this.ledger.notes(), status: 'candidate', report, mode: this.mode,
           ...(Object.keys(asr).length ? { asr } : {}),
           ...(gap ? { gap: { requestId: this.gapRequest, results: this.gapResults() } } : {}),
           message: 'Unverified speech recognition and quote-linked candidate notes. Correct omissions and errors before adding to the project. The final cut-off utterance may be incomplete.' });

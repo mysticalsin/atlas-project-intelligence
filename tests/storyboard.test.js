@@ -10,7 +10,7 @@ const state=(quality,extra={})=>({quality,heard:[],qualitySeq:1,session:{},now:0
 const codes=r=>r.pins.map(p=>p.code);
 const WORDS=/\b(?:verified|confirmed|approved)\b/i;  // 'unverified' never matches: no word boundary inside it
 
-test('exports are the fixed contract',()=>{assert.deepEqual(Object.keys(B).sort(),['diff','metricSpans','model','pinsOf','summaryText']);});
+test('exports are the fixed contract',()=>{assert.deepEqual(Object.keys(B).sort(),['diff','metricSpans','model','pinsOf','summaryText','summaryView']);});
 
 test('pins: only cued country names',()=>{
  assert.deepEqual(codes(B.pinsOf('We worked in Portugal and Spain for two years.',G)),['PRT','ESP']);

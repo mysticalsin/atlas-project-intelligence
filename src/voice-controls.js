@@ -11,6 +11,16 @@ function message(kind,text){
  if(kind==='text'){const t=typeof text==='string'?[...text.trim()].slice(0,TEXT_MAX).join(''):'';return t?{type:'text',text:t}:null;}
  return NAMES.includes(kind)&&kind!=='text'?{type:kind}:null;
 }
+// The summary card's three messages (T11), exactly the keys the session accepts: {type:'correct',detail_id,text}, {type:'withhold',detail_id}, {type:'confirm_summary'}.
+// A correction is the consultant's own typed words (at least five characters, like the ledger's quote rule, at most CORRECT_MAX). Anything else is null.
+const CORRECT_MAX=1800,CORRECT_MIN=5,DETAIL=/^D-\d{3,6}$/;
+function summaryMessage(kind,detailId,text){
+ if(kind==='confirm_summary')return {type:'confirm_summary'};
+ if(typeof detailId!=='string'||!DETAIL.test(detailId))return null;
+ if(kind==='withhold')return {type:'withhold',detail_id:detailId};
+ if(kind==='correct'){const t=typeof text==='string'?[...text.trim()].slice(0,CORRECT_MAX).join(''):'';return [...t].length>=CORRECT_MIN?{type:'correct',detail_id:detailId,text:t}:null;}
+ return null;
+}
 const supports=(ready,kind)=>Array.isArray(ready?.controls)&&ready.controls.includes(kind);
 
 // The paused flag from a server `state` event (the interview machine). Anything else leaves it as it is.
@@ -35,5 +45,5 @@ function view({phase,paused,muted,controls,draft}){
   state:paused?'Paused · microphone off':muted?'Microphone muted · ATLAS may still speak':''
  };
 }
-return {TEXT_MAX,NAMES,message,supports,pausedFrom,elapsed,clock,view};
+return {TEXT_MAX,CORRECT_MAX,NAMES,message,summaryMessage,supports,pausedFrom,elapsed,clock,view};
 });

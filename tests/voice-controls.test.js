@@ -5,7 +5,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const C=require('../src/voice-controls.js'),ROOT=path.join(__dirname,'..');
 const ALL=['pause','resume','repeat','skip','text'];
 
-test('exports are the fixed contract',()=>{assert.deepEqual(Object.keys(C).sort(),['NAMES','TEXT_MAX','clock','elapsed','message','pausedFrom','supports','view']);assert.deepEqual(C.NAMES,ALL);assert.equal(C.TEXT_MAX,2000);});
+test('exports are the fixed contract',()=>{assert.deepEqual(Object.keys(C).sort(),['CORRECT_MAX','NAMES','TEXT_MAX','clock','elapsed','message','pausedFrom','summaryMessage','supports','view']);assert.deepEqual(C.NAMES,ALL);assert.equal(C.TEXT_MAX,2000);});
 
 test('messages: exactly the keys the session accepts',()=>{
  for(const k of ['pause','resume','repeat','skip'])assert.deepEqual(C.message(k),{type:k});
