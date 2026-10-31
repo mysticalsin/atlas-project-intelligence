@@ -226,6 +226,20 @@ Implemented and locally verified (unit, edge, 22 Chromium suites, before and aft
 
 Residual: dialogs stay light (they are sheets over the dark page); the line under the orb ("Click the orb to mute or unmute...") and the connection pill labels come from `orb-ui.js`; the orb chrome (`.orb-corner`, `.orb-divider`, `.orb-kicker`) keeps its original size and contrast by decision; at 390 the Confirm button sits about 55px below the first screen after the read-back opens; no native-speaker review of any new string; Lighthouse and screen-reader passes not run.
 
+### Addendum: start flow and viewport-fit layout (v2.2 U1)
+
+Implemented and locally verified (`tests/ux_fit_browser.py`: getBoundingClientRect measurements at 1280x720, 1366x768, 1440x900 and 1512x982, plus 502x414 and 390x844; `tests/u1-start-flow.test.js`; edge `app.test.js`, `local-demo.test.js`); never seen by a real user, in Safari or Firefox, or with a real microphone. The orb files (`orb.css`, `orb-renderer.js`, `orb-ui.js`, the orb rules of `sculpture.css`) and `assets/Mantu.svg` are untouched: only the box around the orb (`.orb-screen`) is sized from the window height in the new `src/fit.css`.
+
+| Item | Status | Test |
+|---|---|---|
+| A microphone that cannot be opened (declined, blocked, no device, no secure page) is a calm idle state with one sentence, **Continue by typing** (starts the typed interview at once with the consent already given: no second dialog) and **Try the microphone again**; no "connection stopped" heading | Implemented | `ux_fit_browser.py`, `u1-start-flow.test.js` |
+| Bootstrap `voice: false` (only when the server sets `ATLAS_VOICE=off`; the local edge does) makes the typed interview the primary start, hides the voice button with a one-line reason; the orb starts the typed interview | Implemented (edge flag, page) | `app.test.js`, `local-demo.test.js`, `u1-start-flow.test.js` |
+| Dialogs (consent, resume, end, restart, erase): sticky head and action footer, body scrolls inside; the microphone help is folded for a voice start (open for a typed start and for an admin); every consent sentence kept | Implemented | `ux_fit_browser.py` (502x414, 390x844, desktop) |
+| Desktop (1024x560 and up): an app shell of exactly the window height; the page does not scroll in any phase; columns scroll inside; hero one line and sliding away while live; right rail: next question, then progress, then the story board with the twelve dimensions as a collapsed row of chips; left rail narrows while live; read-back card with its title, first item and a sticky Confirm | Implemented | `ux_fit_browser.py` |
+| No programmatic window scroll while live (focus uses `preventScroll`; the shell clips), reduced motion respected, start row reserved until the server answers | Implemented | `ux_fit_browser.py`, `u1-start-flow.test.js` |
+
+Residual: the voice-mode layout was measured with a scripted voice socket and a synthetic microphone only; below 1024px wide or 560px tall the page scrolls as before (one column); the orb's two corner buttons are still 31px; a long ATLAS line (more than about six lines at 1280x720) scrolls inside the conversation box; no native-speaker review of the new strings.
+
 ## 12. Red-team retest fixes (v2.2 X1)
 
 Implemented and locally verified (edge `x1-redteam.test.js`, 25 tests, each failing on e113613, plus the PoCs of `/tmp/claude-501/audit3/red/pocs` re-run on a local edge); never deployed. Controls implemented; DPO sign-off still required.

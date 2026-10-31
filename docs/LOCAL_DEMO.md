@@ -17,8 +17,8 @@ Open **http://127.0.0.1:8810/?as=you@mantu.com** (use `127.0.0.1`, not `localhos
 
 ## Run an interview
 
-1. Press **Type instead** (not "Start interview": there is no speech recognition or voice offline), tick the consent box, then press **Type instead** again in the dialog.
-2. Answer ATLAS's questions in the box (Enter sends; one answer per 1.5 seconds). Answer in English, French, Spanish, Portuguese, German, Italian or Dutch:
+1. Press **Start interview** (offline there is no speech recognition or voice, so the page says so and this button starts the typed interview; the local edge announces `voice: false`), tick the consent box, then press **Start interview** again in the dialog. The orb starts the same typed interview.
+2. To reach the read-back quickly, answer once or twice and then type **that's all**; the six answers of `tests/ux_fit_browser.py` also get there. Answer ATLAS's questions in the box (Enter sends; one answer per 1.5 seconds). Answer in English, French, Spanish, Portuguese, German, Italian or Dutch:
    ATLAS follows your language. Give a few concrete facts (what was wrong, what you built, a before and after figure and where it came from, who used it).
 3. After the last question ATLAS reads the story back and the **read-back card** appears: **Keep private**, **Correct** (type the right wording), **Confirm summary**.
 4. Confirm saves a **private draft that only you can see** (the evidence workflow, owner-only). Nothing reaches a reviewer until you press **Submit for review**.
@@ -50,3 +50,7 @@ not here. Destinations such as DNA, MiChat, IMP, Spotlight, MAAP and Project Rev
 `cd deploy/cloudflare-edge && node --test test/local-demo.test.js` starts the edge on a free port and runs a typed interview over a real socket (consent, answers,
 read-back, Keep private, Correct, confirm, owner-only draft, Submit for review, and a French answer that gets a French reply). The browser suites do not use the
 local socket: they route `**/api/voice` to a scripted stand-in in the page first, and that still works.
+
+`ATLAS_VOICE=on` makes the local edge omit `voice: false`, so the page offers the voice start again; the browser suites that stand in for the voice socket
+(`humane_browser.py`, `csp_browser.py`, `zero_config_edge_browser.py`, `ux_fit_browser.py`) set it. Without it the page leads with the typed interview and
+says why in one line.

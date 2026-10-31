@@ -230,6 +230,15 @@ const FEATURE_KEYS = ['bids', 'ask', 'spokenAsk', 'wins', 'customerJev', 'pdfBri
 const capture = () => { const c = { req: null, body: null }; c.stub = { idFromName: n => n, get: () => ({ fetch: async r => { c.req = r; c.body = r.body ? await r.text() : null; return new Response('{"ok":true}'); } }) }; return c; };
 const signed = async (path, claims = {}, init = {}) => new Request(ORIGIN + path, { ...init, headers: { 'cf-access-jwt-assertion': await jwt(claims), ...(init.headers || {}) } });
 
+test('U1 bootstrap: voice:false only when the server says it has no voice (ATLAS_VOICE=off); absent otherwise', async () => {
+  const on = await (await handle(await req('/api/bootstrap'), ENV, '')).json();
+  assert.equal('voice' in on, false); assert.equal(on.codecAvailable, true);
+  const off = await (await handle(await req('/api/bootstrap'), { ...ENV, ATLAS_VOICE: 'off' }, '')).json();
+  assert.equal(off.voice, false); assert.equal(off.textMode, true);
+  const explicit = await (await handle(await req('/api/bootstrap'), { ...ENV, ATLAS_VOICE: 'on' }, '')).json();
+  assert.equal('voice' in explicit, false);
+});
+
 test('T1-S0 bootstrap: verified email and every feature flag, conservative by default; existing keys unchanged', async () => {
   const boot = await (await handle(await req('/api/bootstrap'), ENV, '')).json();
   assert.deepEqual(Object.keys(boot).slice(0, -5), ['provider', 'providerLabel', 'protocol', 'csrf', 'identity', 'model', 'admin', 'voices', 'defaultVoice', 'captureRequired', 'codecAvailable', 'busy', 'capacity',

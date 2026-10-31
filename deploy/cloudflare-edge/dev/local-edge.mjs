@@ -74,6 +74,7 @@ const env = { ORIGIN, ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, CSRF_SECRET: 'l
       if (input.text && input.speaker) return new Uint8Array(24000); // no voice offline: half a second of silence
       return { choices: [{ message: { content: await model_complete(input.messages) } }] };
     } },
+  ATLAS_VOICE: process.env.ATLAS_VOICE === 'on' ? 'on' : 'off', // U1: there is no speech recognition or voice here, so bootstrap says voice:false and the page leads with the typed interview (ATLAS_VOICE=on: a browser test that stands in for the voice socket)
   ADMIN_EMAILS: process.env.ADMIN_EMAILS || 'tony.walteur@gmail.com', REVIEWER_EMAILS: process.env.REVIEWER_EMAILS || 'reviewer@mantu.com',
   HINDSIGHT_URL: HS, HINDSIGHT_API_KEY: 'local-hindsight-key', HINDSIGHT_BANK_SECRET: 'local-only-bank-secret', // (B1: memory needs a bank secret)
   LIBRARY: { idFromName: n => n, get: () => ({ fetch: r => libraryRoutes(r, lib, { waitUntil, env, storage: libraryStorage }) }) }, ...passthrough,

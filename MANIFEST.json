@@ -47,28 +47,28 @@
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 1038567,
-      "sha256": "8b4e2b77bbcefd84099d97a20188ea8d9de7d6a8b7bb7612ee9d4b8147f12d6a"
+      "bytes": 1076813,
+      "sha256": "c94937941ed61c495bcd19ae58a420cfd0b7dd829e462d8b6b4844daa14515c5"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 1038567,
-      "sha256": "8b4e2b77bbcefd84099d97a20188ea8d9de7d6a8b7bb7612ee9d4b8147f12d6a"
+      "bytes": 1076813,
+      "sha256": "c94937941ed61c495bcd19ae58a420cfd0b7dd829e462d8b6b4844daa14515c5"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 1038567,
-      "sha256": "8b4e2b77bbcefd84099d97a20188ea8d9de7d6a8b7bb7612ee9d4b8147f12d6a"
+      "bytes": 1076813,
+      "sha256": "c94937941ed61c495bcd19ae58a420cfd0b7dd829e462d8b6b4844daa14515c5"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 1038567,
-      "sha256": "8b4e2b77bbcefd84099d97a20188ea8d9de7d6a8b7bb7612ee9d4b8147f12d6a"
+      "bytes": 1076813,
+      "sha256": "c94937941ed61c495bcd19ae58a420cfd0b7dd829e462d8b6b4844daa14515c5"
     },
     {
       "path": "CLAUDE.md",
       "bytes": 12158,
-      "sha256": "761a4b6ac21193a948a9285fba2bfb4f38bada37035036189aece9abae98ba89"
+      "sha256": "76386d208954ded33b2f63d8aefc1b6f5ba7e31eba30a176795f3b1cb46d5448"
     },
     {
       "path": "CLAUDE_BUILD_PROMPT.md",
@@ -82,8 +82,8 @@
     },
     {
       "path": "Makefile",
-      "bytes": 2636,
-      "sha256": "cf514620a6e88cf871ae236df65575dbe9fd538bd8ff6735ec3fa14f0738f963"
+      "bytes": 2671,
+      "sha256": "61fd3dbc70a07e1e90a178b0619d28cb842a286898fb6e62d6e8804f5c6dcdca"
     },
     {
       "path": "Preview.command",
@@ -422,8 +422,8 @@
     },
     {
       "path": "build.py",
-      "bytes": 6455,
-      "sha256": "fb2f4d9bf1f08cb86588b2d4d633ec29e4dd3931f7c1c8be580cfac51b8c0da5"
+      "bytes": 6493,
+      "sha256": "033024bb71c35d814907fc0290265edc719c0b58f10585254f7d73c28638cd63"
     },
     {
       "path": "constraints-tested.txt",
@@ -507,8 +507,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/dev/local-edge.mjs",
-      "bytes": 12448,
-      "sha256": "4931bef76a579c62434a90f70ed24a9b27b9c692fd445d1b2b55502a15a3883c"
+      "bytes": 12708,
+      "sha256": "f501ca8d0991813f3f3e8962627d63f483165c4742228512c0df6398b1c21398"
     },
     {
       "path": "deploy/cloudflare-edge/dev/local-ws.mjs",
@@ -547,8 +547,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/app.js",
-      "bytes": 61242,
-      "sha256": "d89957a49c89043e9dfa04dc4e0f093c4c31c840a469c3591347d5bd85e10f16"
+      "bytes": 61436,
+      "sha256": "15cd76e2d7029f8ad8ba6022b7ed6944b7d152b5de8daab18d3291dadc0c32c3"
     },
     {
       "path": "deploy/cloudflare-edge/src/ask.js",
@@ -618,7 +618,7 @@
     {
       "path": "deploy/cloudflare-edge/src/csp.generated.js",
       "bytes": 2075,
-      "sha256": "013aef8a68dee3ba8b5e727056549fb0c0eca21e5826eec153680b9703cac337"
+      "sha256": "2e7eb15433c1b9fc3d0aa0a464844c3c12ae5d696483555c2a2ee5c3425ca81a"
     },
     {
       "path": "deploy/cloudflare-edge/src/csp.js",
@@ -947,8 +947,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/app.test.js",
-      "bytes": 62462,
-      "sha256": "49da40efdd0fda1b0bd8302aae7ec8d93fb8f7ce7f603a0732f45f2190fb618f"
+      "bytes": 63082,
+      "sha256": "3fd770dd67fcec97d56a0e6fc6a4a99c680f5e69568d75138b7bef6a2c8d8c9e"
     },
     {
       "path": "deploy/cloudflare-edge/test/ask.test.js",
@@ -1357,8 +1357,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/local-demo.test.js",
-      "bytes": 14444,
-      "sha256": "c5384900a113f9af847c5ab6ec7b9cda8ca274a6a9235b4f393dbf16350d9223"
+      "bytes": 14556,
+      "sha256": "3d478d4ef30e96b957b699262cfcff402509e9532371c9d85824aadd2aede369"
     },
     {
       "path": "deploy/cloudflare-edge/test/masking-routes.test.js",
@@ -1692,8 +1692,8 @@
     },
     {
       "path": "docs/LOCAL_DEMO.md",
-      "bytes": 4775,
-      "sha256": "73595b9736aca6b691b6b0dbdf319dceef425e6d87fb70d615bb22a996906033"
+      "bytes": 5381,
+      "sha256": "40f37b4123790af2758fd750af7d694126cd7d1c60eaa8be5740069648bce39d"
     },
     {
       "path": "docs/NVIDIA_SETUP.md",
@@ -1972,8 +1972,8 @@
     },
     {
       "path": "docs/agent-brain-v2.1/IMPLEMENTATION_STATUS.md",
-      "bytes": 43478,
-      "sha256": "ff625c9b78ab694c667d609bd639e6195b813da85ec7766c9ba9347afb93da35"
+      "bytes": 46112,
+      "sha256": "3ec6eeb3ae25c623f705592f0cf23c73825672a800a2c8ae850833575d7fc48f"
     },
     {
       "path": "docs/agent-brain-v2.1/README.md",
@@ -2062,8 +2062,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 267092,
-      "sha256": "fa3eac0e2b84464e25b4cea9587f61fa9ab01e5cc50f827960d6ba0cdc168a02"
+      "bytes": 270739,
+      "sha256": "1b7aa0fd9e3b66075bb0aa7a4afb22ceb9513fb696c8e92595d8bed1b5711b04"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2501,6 +2501,11 @@
       "sha256": "9b85b38c29499fb41caf54148b422b3ae8f0d810266975904a68a9c2a17cf9d0"
     },
     {
+      "path": "src/fit.css",
+      "bytes": 34037,
+      "sha256": "a75d56204305a3a7688ada69dc8d827d86d6ab2cd545d1ddc7cf0465c60e21a3"
+    },
+    {
       "path": "src/geo.js",
       "bytes": 13861,
       "sha256": "92865a46eb9611457846e2cb95f03ce5fd97f1caae43f794c2b2e0acb9c989f0"
@@ -2582,8 +2587,8 @@
     },
     {
       "path": "src/shell.html",
-      "bytes": 55470,
-      "sha256": "2e26d388f184cbada7023b7048eb96d82728c338f483ca45793b5c989d858456"
+      "bytes": 55549,
+      "sha256": "9edcc36a712fc82a7324fbef0157018278f48c91fc95687c3e61f018e91fbfd1"
     },
     {
       "path": "src/storyboard-core.js",
@@ -2632,8 +2637,8 @@
     },
     {
       "path": "src/voice-client.js",
-      "bytes": 74594,
-      "sha256": "6c45f63284a5340825258fe963228088033d0b6cc110b978c90bb1f229c6d988"
+      "bytes": 78007,
+      "sha256": "1f6c259d12f5ed3cd139b29c5c410b350bafab8bc6a55a9a9edb870ad352c888"
     },
     {
       "path": "src/voice-controls.js",
@@ -2647,8 +2652,8 @@
     },
     {
       "path": "src/voice-panel.html",
-      "bytes": 19297,
-      "sha256": "abb88d43bb26cc5b4bcb769bca609035aab4470bc95fdc128dd7957d59c4732a"
+      "bytes": 20013,
+      "sha256": "31ee0791d9e95d20e97abb7176c7db0a8469eb434ad6490de0c3eac55ba41687"
     },
     {
       "path": "src/voice-worklet.js",
@@ -2722,8 +2727,8 @@
     },
     {
       "path": "tests/csp_browser.py",
-      "bytes": 11569,
-      "sha256": "872bbf156ec3965975ba0de1dd7d7d568bda792ab22880502896becd0f05eb6c"
+      "bytes": 11745,
+      "sha256": "85a641e0467d687980fc57f4ea700fa52439cb1181ae5f036cbb2568ef2cfa62"
     },
     {
       "path": "tests/depth-browser-results.json",
@@ -2782,8 +2787,8 @@
     },
     {
       "path": "tests/humane_browser.py",
-      "bytes": 47980,
-      "sha256": "a4f40cfbed166764401161f99e3026098c8a2fb15bdd312dd5b1816b413e53f9"
+      "bytes": 48156,
+      "sha256": "9a5c5beb157f75efa8b038b5fbb0050643a2cd9650f0aace1fb3396762897f8a"
     },
     {
       "path": "tests/intelligence-browser-results.json",
@@ -3131,9 +3136,19 @@
       "sha256": "34e1e40fa541f1806b632a881116b0f2440ddd13428be47eec656196c6cf2a6e"
     },
     {
+      "path": "tests/u1-start-flow.test.js",
+      "bytes": 14339,
+      "sha256": "a7c77eebb069f5dbfe8c02d1e120d38ab3790e2de3bec07168ee9fa2e616db62"
+    },
+    {
       "path": "tests/upstream-source-check.json",
       "bytes": 432,
       "sha256": "4e34cbb62d7326ca21a8e6f0eb04304051832144fec1824574a9f6d3b3eb5dcf"
+    },
+    {
+      "path": "tests/ux_fit_browser.py",
+      "bytes": 21650,
+      "sha256": "84151d5f51b5877430bf66bf2eb3ef1d61ea90bbbed45498ebff6cf793c2f48d"
     },
     {
       "path": "tests/voice-controls-dom.test.js",
@@ -3177,8 +3192,8 @@
     },
     {
       "path": "tests/zero_config_edge_browser.py",
-      "bytes": 36121,
-      "sha256": "625fc224305f5ae5e2607ae2eda7dbc7c086dd3bc0d847e6ae5099a6395c6701"
+      "bytes": 36297,
+      "sha256": "b21309b4184cbc6caccdd65bb1cbe3788f9506bc10ff74365cb2eb1720d9b0d9"
     }
   ]
 }

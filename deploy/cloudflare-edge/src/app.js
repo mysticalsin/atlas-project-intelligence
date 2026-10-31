@@ -314,6 +314,7 @@ async function route(request, env, page, { waitUntil = p => p, flagsOf = flags }
         // G2: the consent wording and which toggles are required, and the person's consent state in force (what they last chose; memory is off until they turn it on).
         privacy: privacy.bootstrapView(), consent: consent ? { purposes: Object.fromEntries(Object.entries(consent.purposes || {}).map(([k, v]) => [k, v?.granted === true])), blocked: consent.blocked || {} } : null,
         ...(ks.readOnly(env) ? { readOnly: true } : {}), ...(ks.aiOff(env) ? { aiOff: true } : {}),
+        ...(env.ATLAS_VOICE === 'off' ? { voice: false } : {}), // U1: no speech service on this server (the local demo): the page leads with the typed interview. Absent means voice is offered.
         ...(admin ? { securityFlags: ks.securityFlags(env) } : {}) }); // admin readiness: the non-default security settings (names only, X1 red L2)
     }
     // The admin Connections panel (v2.2 F2): read-only readiness of every connection in the framework, booleans and names only. Admins only; never any secret, URL or token value.

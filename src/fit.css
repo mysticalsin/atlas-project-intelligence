@@ -1,0 +1,304 @@
+/* ATLAS start flow and viewport-fit interview layout (v2.2 U1). Loaded after ui.css, so it can settle the layout without editing orb.css, orb-renderer.js,
+   orb-ui.js, assets/Mantu.svg or the orb rules of sculpture.css: the orb, its aura, corners, caption and animation keep exactly the look they had; only the
+   size of the box around it (.orb-screen) follows the window height here.
+   What it does: (1) on a desktop window (1024px wide, 560px tall or more) the Conversation view is an app shell of exactly the window height: the page itself never
+   scrolls, the centre column holds the orb, ATLAS's line, the answer box and the controls, the right rail holds the next question first and the progress after it,
+   and a column that must scroll does so inside itself; (2) a denser scale (about a 90% zoom of before); (3) one calm inline state for a microphone that cannot be
+   opened; (4) dialogs whose actions are always visible; (5) transitions that respect prefers-reduced-motion.
+   Everything is scoped to body.ui2.studio-view: focus mode (body.studio-focus) and the other views keep what they had. */
+
+/* ---------- a visual-only hide that screen readers and innerText still see ---------- */
+.fit-sr{position:absolute!important;width:1px!important;height:1px!important;margin:-1px!important;padding:0!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;white-space:nowrap!important;border:0!important}
+
+/* a sheet's confirm button must not pass its second click of a double click to the control underneath once the sheet has closed */
+#voicePanel.fit-settling{pointer-events:none}
+
+/* ---------- start flow: the inline states ---------- */
+.voice-inline-state{display:flex;flex-direction:column;align-items:center;gap:var(--s2);width:100%;max-width:560px;margin:var(--s3) auto 0}
+.voice-inline-state[hidden],.voice-reason[hidden]{display:none}
+.voice-inline-actions{display:flex;flex-wrap:wrap;gap:var(--s2);justify-content:center}
+.voice-inline-actions .btn{min-height:44px}
+.voice-inline-help{font-size:12px;line-height:1.5;color:var(--text-2);text-align:center}
+.voice-inline-help summary{cursor:pointer;min-height:24px;display:inline-block;color:var(--text-2)}
+.voice-inline-help p{max-width:52ch;margin:var(--s1) auto 0}
+.voice-reason{font-size:12px;line-height:1.5;color:var(--text-2);text-align:center;max-width:46ch;margin:var(--s2) auto 0}
+#voiceControls[data-mic=blocked] :is(#voiceStart,#voiceStartText){display:none}
+/* until the server has told the page what it offers, the start row keeps its place and is quiet (no jump when the buttons settle); a fallback reveals it anyway */
+#voiceControls[data-boot=pending]{min-height:48px}
+#voiceControls[data-boot=pending] :is(#voiceStart,#voiceStartText){opacity:0;pointer-events:none;animation:fitBootReveal 0s 1.6s forwards}
+@keyframes fitBootReveal{to{opacity:1;pointer-events:auto}}
+@media(prefers-reduced-motion:no-preference){#voiceControls :is(#voiceStart,#voiceStartText){transition:opacity .2s ease}.voice-inline-state:not([hidden]),.voice-reason:not([hidden]){animation:fitIn .25s var(--ease)}}
+@keyframes fitIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* ---------- dialogs: the actions are always visible, the body scrolls inside ---------- */
+body.ui2 dialog[open]{max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px);overflow-y:auto;overscroll-behavior:contain}
+body.ui2 :is(#voiceConsentDialog,#voiceResumeDialog,#voiceEndDialog,#voiceRestartDialog,#eraseDialog){padding:var(--s5) var(--s6) 0}
+body.ui2 :is(#voiceConsentDialog,#voiceResumeDialog,#voiceEndDialog,#voiceRestartDialog,#eraseDialog) .dialog-head{position:sticky;top:0;z-index:2;background:inherit;padding-bottom:var(--s2);margin-bottom:var(--s1)}
+body.ui2 :is(#voiceConsentDialog,#voiceResumeDialog,#voiceEndDialog,#voiceRestartDialog,#eraseDialog) .dialog-head h2{font-size:20px;margin:0}
+body.ui2 :is(#voiceConsentDialog,#voiceResumeDialog,#voiceEndDialog,#voiceRestartDialog,#eraseDialog) .actions{position:sticky;bottom:0;z-index:2;background:inherit;margin:var(--s3) 0 0;padding:var(--s3) 0 var(--s4);border-top:1px solid rgba(16,16,17,.10)}
+body.ui2 #voiceConsentDialog .actions{flex-direction:row;flex-wrap:wrap}
+body.ui2 #voiceConsentDialog .actions .btn.full{flex:1 1 180px;width:auto;margin:0}
+body.ui2 #voiceConsentDialog #voiceConsentType{margin-top:0}
+body.ui2 #voiceConsentDialog .check{margin:var(--s2) 0}
+body.ui2 #voiceConsentDialog>p.small{margin:var(--s2) 0}
+body.ui2 #voiceConsentDialog .consent-help{margin:var(--s1) 0;font-size:12px;color:#555966}
+body.ui2 #voiceConsentDialog .consent-help summary{cursor:pointer;min-height:24px;display:inline-block}
+body.ui2 #voiceConsentDialog .consent-help p{margin:var(--s1) 0 0}
+body.ui2 #voiceConsentDialog #consentIdentity{margin:0;padding:0 0 var(--s2);position:sticky;bottom:0;background:inherit}
+body.ui2 #voiceConsentDialog .actions{bottom:0}
+@media(prefers-reduced-motion:no-preference){body.ui2 dialog[open]{animation:fitIn .2s var(--ease)}}
+
+/* ---------- every width: a denser hero, a smaller orb box (the orb itself is untouched) ---------- */
+body.ui2.studio-view:not(.studio-focus) #voicePanel{--fit-orb:clamp(150px,calc(100dvh - 520px),380px)}
+body.ui2.studio-view:not(.studio-focus) .studio-heading h1{letter-spacing:-.02em}
+body.ui2.studio-view:not(.studio-focus) .studio-heading h1 br{display:none}
+body.ui2.studio-view:not(.studio-focus) .studio-heading h1 em{margin-left:.28em}
+body.ui2.studio-view:not(.studio-focus) #voicePanel .orb-screen{width:var(--fit-orb);height:var(--fit-orb);max-width:100%;aspect-ratio:1;margin:0 auto;flex:none}
+body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text][data-phase=live]{--fit-orb:clamp(130px,calc(100dvh - 520px),380px)}
+body.ui2.studio-view:not(.studio-focus) #voicePanel[data-readback=true][data-phase][data-input]{--fit-orb:clamp(88px,calc(100dvh - 640px),150px)}
+@media(prefers-reduced-motion:no-preference){body.ui2.studio-view:not(.studio-focus) #voicePanel .orb-screen{transition:width .28s var(--ease),height .28s var(--ease)}}
+
+/* ---------- the centre column: a grid with fixed rows, so the order on screen does not depend on where a script placed an element (one column on a phone, a three-part dock on a desktop) ---------- */
+body.ui2.studio-view:not(.studio-focus) .orb-panel .voice-main{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:repeat(16,auto);align-content:start;justify-items:center;row-gap:0;width:100%;max-width:none;margin:0;text-align:center}
+body.ui2.studio-view:not(.studio-focus) .voice-main>*{grid-column:1/-1;min-width:0;max-width:100%;margin-top:0;margin-bottom:0}
+body.ui2.studio-view:not(.studio-focus) .voice-main>.orb-screen{grid-row:1}
+body.ui2.studio-view:not(.studio-focus) .voice-main>.orb-caption{grid-row:2}
+body.ui2.studio-view:not(.studio-focus) .voice-main>#voiceHeading{grid-row:3}
+body.ui2.studio-view:not(.studio-focus) .voice-main>#voiceMessage{grid-row:4}
+body.ui2.studio-view:not(.studio-focus) .voice-main>#summaryCard{grid-row:5;justify-self:stretch}
+body.ui2.studio-view:not(.studio-focus) .voice-main>#previewNotice{grid-row:6}
+body.ui2.studio-view:not(.studio-focus) .voice-main>#textLog{grid-row:7;justify-self:center}
+body.ui2.studio-view:not(.studio-focus) .voice-main>#voiceTypeWrap{grid-row:8}
+body.ui2.studio-view:not(.studio-focus) .voice-main>#voiceControls{grid-row:9}
+body.ui2.studio-view:not(.studio-focus) .voice-main>#voiceMicHelp{grid-row:9}
+body.ui2.studio-view:not(.studio-focus) .voice-main>#voiceReason{grid-row:10}
+body.ui2.studio-view:not(.studio-focus) .voice-main>#voiceLanguage{grid-row:11}
+body.ui2.studio-view:not(.studio-focus) .voice-main>#voiceEndRow{grid-row:12}
+body.ui2.studio-view:not(.studio-focus) .voice-main>.orb-interaction-hint{grid-row:13}
+body.ui2.studio-view:not(.studio-focus) .voice-main>.orb-display-tools{grid-row:14}
+body.ui2.studio-view:not(.studio-focus) .voice-main>.motion-language{grid-row:15}
+body.ui2.studio-view:not(.studio-focus) .voice-main>:is(.appearance-panel,.orb-meters){grid-row:16}
+
+/* ---------- narrow windows and phones: one clean column, the start buttons near the top ---------- */
+@media(max-width:1023px){
+ body.ui2.studio-view:not(.studio-focus) #voicePanel{--fit-orb:clamp(170px,min(62vw,34dvh),300px)}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-readback=true][data-phase][data-input]{--fit-orb:clamp(88px,18dvh,130px)}
+ body.ui2.studio-view:not(.studio-focus) .studio-heading{padding:var(--s2) 0 0}
+ body.ui2.studio-view:not(.studio-focus) .studio-heading .eyebrow{margin:0 0 var(--s1)}
+ body.ui2.studio-view:not(.studio-focus) .studio-heading h1{font-size:clamp(26px,7vw,34px);line-height:1.12;margin:0}
+ body.ui2.studio-view:not(.studio-focus) .studio-heading :is(.eyebrow,.hero-subline){position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+ body.ui2.studio-view:not(.studio-focus) .studio-heading{position:relative}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:not([data-phase=live]):not([data-phase=ending]) .voice-main>#voiceMessage{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+ body.ui2.studio-view:not(.studio-focus) .orb-layout{margin-top:0}
+ body.ui2.studio-view:not(.studio-focus) .orb-panel .voice-main{padding-top:var(--s2)}
+ body.ui2.studio-view:not(.studio-focus) #voiceHeading{font-size:22px;margin:var(--s2) 0 var(--s1)}
+ body.ui2.studio-view:not(.studio-focus) .voice-intro{font-size:14px;margin:0 auto var(--s2)}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text] .text-log{max-height:min(34dvh,300px)}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-phase=live] .studio-aside.studio-left{display:none}
+ body.ui2.studio-view:not(.studio-focus) .voice-controls .btn,body.ui2.studio-view:not(.studio-focus) .voice-end-row .quiet,body.ui2.studio-view:not(.studio-focus) .voice-type .btn{min-height:44px}
+ body.ui2.studio-view:not(.studio-focus) .gap-actions{position:sticky;bottom:0;z-index:3;background:var(--surface);padding:var(--s3) 0;margin-top:var(--s2)}
+ body.ui2.studio-view:not(.studio-focus) .gap-actions .board-btn{min-height:44px}
+}
+@media(pointer:coarse){body.ui2.studio-view:not(.studio-focus) .voice-controls .btn,body.ui2.studio-view:not(.studio-focus) .voice-end-row .quiet,body.ui2.studio-view:not(.studio-focus) .voice-type .btn,body.ui2.studio-view:not(.studio-focus) .gap-actions .board-btn{min-height:44px}}
+
+/* ======================================================================================================================================
+   The desktop app shell: 1024px wide or more and 560px tall or more. The page is exactly as tall as the window; nothing scrolls but a column.
+   ====================================================================================================================================== */
+@media(min-width:1024px) and (min-height:560px){
+ body.ui2.studio-view:not(.studio-focus){height:100vh;height:100dvh;overflow:hidden;overflow:clip;display:flex;flex-direction:column}
+ body.ui2.studio-view:not(.studio-focus) .env-strip{flex:none;min-height:24px;padding:2px var(--s4)}
+ body.ui2.studio-view:not(.studio-focus) .topbar{flex:none;height:56px;padding:0 28px}
+ body.ui2.studio-view:not(.studio-focus) .brand-mark img{width:92px}
+ body.ui2.studio-view:not(.studio-focus) .brand-divider{height:22px}
+ body.ui2.studio-view:not(.studio-focus) .product{font-size:16px}
+ body.ui2.studio-view:not(.studio-focus) .product>span{margin-top:0;font-size:12px}
+ body.ui2.studio-view:not(.studio-focus) .topbar nav button{min-height:36px;padding:0 var(--s3)}
+ body.ui2.studio-view:not(.studio-focus) main#workspace{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;width:100%;max-width:1680px;margin:0 auto;padding:0 28px;overflow:hidden;overflow:clip}
+ body.ui2.studio-view:not(.studio-focus) main#workspace>:is(.state-banner,.auth-banner,footer){flex:none}
+ body.ui2.studio-view:not(.studio-focus) main#workspace>#interview{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+ body.ui2.studio-view:not(.studio-focus) main#workspace>#interview[hidden]{display:none}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:not([hidden]){flex:1 1 auto;min-height:0;display:flex;flex-direction:column;overflow:hidden;overflow:clip;padding:0}
+ body.ui2.studio-view:not(.studio-focus) footer{padding:4px 0 6px;min-height:0;margin:0;border-top:0;gap:var(--s4);font-size:12px;line-height:1.3}
+ body.ui2.studio-view:not(.studio-focus) footer .quiet{min-height:24px;padding:0 var(--s1)}
+
+ /* the strip above the columns */
+ body.ui2.studio-view:not(.studio-focus) .orb-panel-top{flex:none;display:flex;align-items:center;justify-content:space-between;min-height:36px;padding:var(--s1) 0;margin:0}
+ body.ui2.studio-view:not(.studio-focus) .connection-pill{min-height:32px;padding:0 var(--s3);font-size:12px}
+ /* the hero: smaller, one line, and it slides away while live */
+ body.ui2.studio-view:not(.studio-focus) .studio-heading{flex:none;display:block;overflow:hidden;max-height:96px;opacity:1;visibility:visible;margin:0;padding:0 0 var(--s2);text-align:center;pointer-events:auto}
+ body.ui2.studio-view:not(.studio-focus) .studio-heading .eyebrow{font-size:12px;margin:0 0 2px}
+ body.ui2.studio-view:not(.studio-focus) .studio-heading h1{font-size:clamp(26px,2.3vw,34px);line-height:1.12;margin:0}
+ body.ui2.studio-view:not(.studio-focus) .hero-subline{font-size:14px;margin:var(--s1) 0 0}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) .studio-heading{max-height:0;opacity:0;padding:0;visibility:hidden}
+ @media(prefers-reduced-motion:no-preference){body.ui2.studio-view:not(.studio-focus) .studio-heading{transition:max-height .28s var(--ease),opacity .2s ease,padding .28s var(--ease),visibility 0s}
+  body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) .studio-heading{transition:max-height .28s var(--ease),opacity .2s ease,padding .28s var(--ease),visibility 0s .28s}}
+
+ /* three columns; the columns scroll, never the page */
+ body.ui2.studio-view:not(.studio-focus) .orb-layout{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:minmax(176px,224px) minmax(0,1fr) minmax(300px,360px);gap:var(--s5);margin:0;padding:0;align-items:stretch}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) .orb-layout{grid-template-columns:minmax(150px,184px) minmax(0,1fr) minmax(300px,360px)}
+ @media(prefers-reduced-motion:no-preference){body.ui2.studio-view:not(.studio-focus) .orb-layout{transition:grid-template-columns .28s var(--ease)}}
+ body.ui2.studio-view:not(.studio-focus) .studio-aside{display:flex;flex-direction:column;gap:var(--s3);min-height:0;max-width:none;margin:0;padding:0 var(--s1) var(--s2) 0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin}
+ body.ui2.studio-view:not(.studio-focus) .studio-aside>*{flex:none}
+ body.ui2.studio-view:not(.studio-focus) .studio-aside .context-card{padding:var(--s3) var(--s4);border-radius:14px;margin:0}
+ body.ui2.studio-view:not(.studio-focus) .studio-aside .card-heading{margin:0 0 var(--s2);font-size:14px}
+ body.ui2.studio-view:not(.studio-focus) .studio-left h3{font-size:16px;margin:0 0 var(--s1)}
+ body.ui2.studio-view:not(.studio-focus) .studio-left p{font-size:13px;line-height:1.45;margin:0 0 var(--s2)}
+ body.ui2.studio-view:not(.studio-focus) .studio-left .subtle-cta{min-height:28px;font-size:12px}
+ body.ui2.studio-view:not(.studio-focus) .capture-ring{width:56px;height:56px}
+ /* while live the left rail is a quiet reminder of the project and the capture, nothing more */
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) .studio-left :is(.state-card,#contextProjectMeta,.context-tags,.subtle-cta,.micro-note,.capture-steps){display:none}
+
+ /* the centre column of the desktop shell: it scrolls inside itself, its dock is one row */
+ body.ui2.studio-view:not(.studio-focus) .orb-panel .voice-main{grid-template-columns:auto minmax(0,1fr) auto;column-gap:var(--s3);min-height:0;max-width:720px;justify-self:center;padding:0 var(--s1) var(--s1);overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin}
+ body.ui2.studio-view:not(.studio-focus) .voice-main>.orb-caption{margin:var(--s1) 0 var(--s2);font-size:12px}
+ body.ui2.studio-view:not(.studio-focus) .voice-main>#voiceHeading{font-size:22px;line-height:1.2;margin:0 0 var(--s1)}
+ body.ui2.studio-view:not(.studio-focus) .voice-main>#voiceMessage{font-size:14px;line-height:1.45;max-width:56ch;margin:0 0 var(--s3)}
+ body.ui2.studio-view:not(.studio-focus) .voice-main>#previewNotice{margin:var(--s2) 0}
+ body.ui2.studio-view:not(.studio-focus) .voice-main>#voiceControls{margin-top:var(--s2)}
+ body.ui2.studio-view:not(.studio-focus) .voice-main>#voiceLanguage{margin-top:var(--s2)}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) .voice-main>#voiceControls{grid-column:1/-1;grid-row:9;justify-self:center;flex-wrap:wrap}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) .voice-main>#voiceLanguage{grid-column:1/3;grid-row:10;margin-top:var(--s2);justify-self:start}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) .voice-main>#voiceEndRow{grid-column:3;grid-row:10;margin-top:var(--s2);justify-self:end}
+ /* the one scrolling row of the centre column: the conversation (typed) or the read-back card */
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text]:is([data-phase=live],[data-phase=ending]) .voice-main{grid-template-rows:auto auto auto auto auto auto minmax(0,1fr) auto auto auto auto auto auto auto auto auto;overflow-y:hidden}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-readback=true]:is([data-phase=live],[data-phase=ending]) .voice-main{grid-template-rows:auto auto auto auto minmax(0,1fr) auto auto auto auto auto auto auto auto auto auto auto;overflow-y:hidden}
+ /* a typed interview: ATLAS's lines are in the conversation; the heading and the line under it are for screen readers, so nothing is said twice */
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text]:is([data-phase=live],[data-phase=ending]) .voice-main>:is(#voiceHeading,#voiceMessage){position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) .voice-main>#voiceHeading{font-size:18px}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) .voice-main>#voiceMessage{margin-bottom:var(--s2)}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-readback=true]:is([data-phase=live],[data-phase=ending]) .voice-main>:is(#voiceHeading,#voiceMessage){display:none}
+ /* a quieter orb panel while live: the orb is the interface, the rest is a few controls */
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) .voice-main>:is(.orb-interaction-hint,.orb-display-tools,.motion-language){position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+ body.ui2.studio-view:not(.studio-focus) .voice-main>.orb-interaction-hint{font-size:12px;margin:var(--s1) 0 0;color:var(--text-3)}
+ body.ui2.studio-view:not(.studio-focus) .voice-main>.orb-display-tools{margin:var(--s1) 0 0;font-size:12px}
+ body.ui2.studio-view:not(.studio-focus) .voice-main>.orb-display-tools .quiet{min-height:28px;font-size:12px}
+ body.ui2.studio-view:not(.studio-focus) .voice-main>.motion-language{margin:var(--s1) 0 0;font-size:12px}
+
+ /* the conversation, the answer box and the controls */
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text] .text-log{width:100%;max-width:680px;max-height:none;min-height:96px;margin:0;padding:var(--s3) var(--s4);gap:var(--s3);overflow-y:auto;overscroll-behavior:contain;text-align:left}
+ body.ui2.studio-view:not(.studio-focus) .text-log .msg{font-size:15px;line-height:1.5}
+ body.ui2.studio-view:not(.studio-focus) .voice-type-wrap,body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text] .voice-type-wrap{width:100%;max-width:680px}
+ body.ui2.studio-view:not(.studio-focus) .voice-type,body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text] .voice-type{margin:var(--s2) 0 0;max-width:680px}
+ body.ui2.studio-view:not(.studio-focus) .voice-type textarea{min-height:44px;max-height:96px;font-size:14px}
+ body.ui2.studio-view:not(.studio-focus) .voice-type-note{margin:var(--s1) auto 0}
+ body.ui2.studio-view:not(.studio-focus) .voice-controls{display:flex;flex-wrap:nowrap;gap:var(--s2);justify-content:center;align-items:center;margin-top:var(--s2)}
+ body.ui2.studio-view:not(.studio-focus) .voice-controls .btn{min-height:36px;padding:0 var(--s4);font-size:14px;white-space:nowrap}
+ body.ui2.studio-view:not(.studio-focus) #voiceControls :is(#voiceStart,#voiceStartText){min-height:44px}
+ body.ui2.studio-view:not(.studio-focus) .voice-end-row{display:flex;gap:var(--s2);justify-content:flex-end;align-items:center;margin:0}
+ body.ui2.studio-view:not(.studio-focus) .voice-end-row .quiet{min-height:36px;padding:0 var(--s3);font-size:14px}
+ body.ui2.studio-view:not(.studio-focus) #voiceLanguage{display:flex;align-items:center;gap:var(--s2);min-width:0;margin-top:var(--s2);justify-content:center;text-align:left}
+ body.ui2.studio-view:not(.studio-focus) #voiceLanguage[hidden]{display:none}
+ body.ui2.studio-view:not(.studio-focus) #voiceLanguage select{min-height:36px;padding:0 var(--s3);font-size:13px;max-width:180px}
+ body.ui2.studio-view:not(.studio-focus) #voiceLanguage label{font-size:12px}
+ body.ui2.studio-view:not(.studio-focus) .voice-language-state{flex:1 1 0;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+ /* the read-back: its title and its first item stay in view, the items scroll inside, Confirm is always on screen */
+  body.ui2.studio-view:not(.studio-focus) #summaryCard:not([hidden]){display:block;min-height:0;max-width:720px;width:100%;margin:var(--s2) auto 0;padding:0 var(--s4);text-align:left;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin}
+ body.ui2.studio-view:not(.studio-focus) #summaryCard .board-card-heading{position:sticky;top:0;z-index:2;margin:0;padding:var(--s3) 0 var(--s1);background:var(--surface)}
+ body.ui2.studio-view:not(.studio-focus) #summaryCard .summary-items{margin:0;padding:0}
+ body.ui2.studio-view:not(.studio-focus) #summaryCard .board-label{margin:0}
+ body.ui2.studio-view:not(.studio-focus) #summaryCard p.board-note{margin:var(--s1) 0 0}
+ body.ui2.studio-view:not(.studio-focus) #summaryCard .gap-actions{position:sticky;bottom:0;z-index:2;display:flex;flex-wrap:wrap;gap:var(--s2);margin:var(--s2) 0 0;padding:var(--s3) 0;background:var(--surface);border-top:1px solid var(--line)}
+ body.ui2.studio-view:not(.studio-focus) #summaryCard .gap-actions .board-btn{min-height:40px}
+body.ui2.studio-view:not(.studio-focus) #summaryCard :is(#summarySaved,#summaryMessage):empty{display:none}
+ body.ui2.studio-view:not(.studio-focus) #summaryCard .summary-status:not([hidden]){margin:var(--s1) 0 var(--s2)}
+
+ /* the right rail: the next question first, the progress after it, the dimensions as a collapsed row of chips */
+ body.ui2.studio-view:not(.studio-focus) .studio-right .quality-live-card .card-heading{font-size:13px;margin:0 0 var(--s1);color:var(--text-2)}
+ body.ui2.studio-view:not(.studio-focus) .studio-right .quality-live-card .quality-label{display:block;margin:0 0 var(--s1)}
+ body.ui2.studio-view:not(.studio-focus) .studio-right .quality-live-card .quality-next{font-size:16px;line-height:1.4;margin:0}
+ body.ui2.studio-view:not(.studio-focus) .studio-right .quality-live-card :is(.quality-open,.receipt){font-size:13px;line-height:1.4;margin:var(--s2) 0 0}
+ body.ui2.studio-view:not(.studio-focus) .studio-right .quality-live-card .quiet{min-height:28px;font-size:12px;margin-top:var(--s1)}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) .studio-right .quality-live-card :is(.quality-open,details,.card-heading){display:none}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) .studio-right .studio-quote{display:none}
+ body.ui2.studio-view:not(.studio-focus) .studio-right .studio-quote{margin:0;padding:0 var(--s1);font-size:14px}
+ body.ui2.studio-view:not(.studio-focus) .studio-right .voice-transcript{padding:var(--s3) var(--s4)}
+ body.ui2.studio-view:not(.studio-focus) .studio-right .voice-transcript #agentText{min-height:0;max-height:240px;overflow-y:auto;font-size:14px;line-height:1.5;padding:var(--s2) var(--s3)}
+ body.ui2.studio-view:not(.studio-focus) .studio-right .story-board{padding:var(--s3) var(--s4);gap:var(--s2)}
+ body.ui2.studio-view:not(.studio-focus) .studio-right .board-part{padding-top:var(--s2);margin:0}
+ body.ui2.studio-view:not(.studio-focus) .studio-right .board-head{display:flex;flex-wrap:nowrap;justify-content:space-between;align-items:baseline;gap:var(--s2);margin:0 0 var(--s1);font-size:14px}
+ body.ui2.studio-view:not(.studio-focus) .studio-right .board-head small{white-space:nowrap;font-size:12px}
+ body.ui2.studio-view:not(.studio-focus) .studio-right .board-label{margin:0}
+ body.ui2.studio-view:not(.studio-focus) .studio-right .board-part .board-empty,body.ui2.studio-view:not(.studio-focus) .studio-right .board-part p{margin:var(--s1) 0 0}
+ body.ui2.studio-view:not(.studio-focus) .studio-right .board-question{font-size:15px;line-height:1.4}
+ body.ui2.studio-view:not(.studio-focus) #boardDims>summary{cursor:pointer;list-style:none;min-height:28px}
+ body.ui2.studio-view:not(.studio-focus) #boardDims>summary::-webkit-details-marker{display:none}
+ body.ui2.studio-view:not(.studio-focus) #boardDims>summary::before{content:"+";display:inline-block;width:14px;color:var(--text-2)}
+ body.ui2.studio-view:not(.studio-focus) #boardDims[open]>summary::before{content:"–"}
+ body.ui2.studio-view:not(.studio-focus) #boardDims .board-dims{display:flex;flex-wrap:wrap;gap:var(--s1) var(--s2);margin:var(--s2) 0 0;padding:0;list-style:none}
+ body.ui2.studio-view:not(.studio-focus) #boardDims .board-dim{display:inline-flex;align-items:baseline;gap:var(--s1);padding:2px var(--s2);min-height:24px;border-radius:999px;font-size:12px;line-height:1.4;width:auto}
+ body.ui2.studio-view:not(.studio-focus) #boardDims .board-dim b{font-weight:400}
+
+ /* the strip under the columns: the privacy line and the three links on one row */
+ body.ui2.studio-view:not(.studio-focus) .studio-project-drawer:not([hidden]){flex:none}
+ body.ui2.studio-view:not(.studio-focus) .voice-after,body.ui2.studio-view:not(.studio-focus) #voiceAfter:not([hidden]){flex:none;max-height:20dvh;overflow-y:auto;margin:var(--s2) 0 0}
+ body.ui2.studio-view:not(.studio-focus) .sound-help:not([hidden]){flex:none;margin:var(--s1) 0 0}
+ body.ui2.studio-view:not(.studio-focus) .orb-panel-bottom{flex:none;display:flex;align-items:center;justify-content:space-between;gap:var(--s4);margin:0;padding:var(--s1) 0 var(--s1);border-top:1px solid var(--line)}
+ body.ui2.studio-view:not(.studio-focus) .orb-panel-bottom .voice-privacy{font-size:12px;line-height:1.35;margin:0;max-width:70ch;text-align:left}
+ body.ui2.studio-view:not(.studio-focus) .orb-bottom-actions{display:flex;align-items:center;gap:var(--s2)}
+ body.ui2.studio-view:not(.studio-focus) .orb-bottom-actions .quiet{min-height:28px;font-size:12px;padding:0 var(--s2)}
+}
+
+/* a window between 1024 and 1279 wide: the left rail steps aside */
+@media(min-width:1024px) and (max-width:1199px) and (min-height:560px){
+ body.ui2.studio-view:not(.studio-focus) .orb-layout{grid-template-columns:minmax(0,1fr) minmax(280px,330px)}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) .orb-layout{grid-template-columns:minmax(0,1fr) minmax(280px,330px)}
+ body.ui2.studio-view:not(.studio-focus) .studio-aside.studio-left{display:none}
+}
+
+/* ---------- finishing: primary start buttons, the orb's two tools beside the orb, rails ---------- */
+body.ui2 #voiceStartText.primary,body.ui2 #voiceMicType.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent,#101011)}
+body.ui2 #voiceStartText.primary:hover,body.ui2 #voiceMicType.primary:hover{filter:brightness(1.06)}
+@media(min-width:1024px) and (min-height:560px){
+ body.ui2.studio-view:not(.studio-focus) #voicePanel .orb-stage-tools{right:auto;left:calc(50% + var(--fit-orb) / 2 - 18px);top:4px}
+ body.ui2.studio-view:not(.studio-focus) .studio-right .orb-transcript{padding:var(--s3) var(--s4)!important;width:100%;margin:0;max-width:none}
+ body.ui2.studio-view:not(.studio-focus) .studio-right .voice-transcript-head{margin-bottom:var(--s2)}
+ body.ui2.studio-view:not(.studio-focus) .studio-left .context-tags{display:flex;flex-wrap:wrap;gap:var(--s1);margin:0 0 var(--s2)}
+ body.ui2.studio-view:not(.studio-focus) .studio-left .context-tags span{font-size:12px;padding:2px var(--s2)}
+ body.ui2.studio-view:not(.studio-focus) .studio-left .capture-overview{gap:var(--s3);align-items:center}
+ body.ui2.studio-view:not(.studio-focus) .studio-left .capture-steps span{font-size:12px;line-height:1.35}
+}
+
+@media(min-width:1024px) and (min-height:560px){
+ body.ui2.studio-view:not(.studio-focus) #voiceLanguage{flex-wrap:nowrap}
+ body.ui2.studio-view:not(.studio-focus) #voiceLanguage label{flex:none}
+ body.ui2.studio-view:not(.studio-focus) #voiceLanguage select{flex:1 1 140px;min-width:128px;max-width:200px}
+ body.ui2.studio-view:not(.studio-focus) #voiceLanguage label{white-space:nowrap}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) #voiceLanguage .voice-language-state{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:not([data-phase=idle]):not([data-phase=error]) .voice-reason{display:none}
+ body.ui2.studio-view:not(.studio-focus) .studio-right .board-part:not(#boardChallenge) .board-head small{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+ body.ui2.studio-view:not(.studio-focus) .text-log .msg{font-size:14px;line-height:1.5}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text] .text-log{padding:var(--s2) var(--s3);gap:var(--s2)}
+}
+
+@media(min-width:1024px) and (min-height:560px){
+ /* the left rail: the project and the capture, without the repeated state card or the helper sentences */
+ body.ui2.studio-view:not(.studio-focus) .studio-left .state-card:not(:has(#cardConnection:not([hidden]))){position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+ body.ui2.studio-view:not(.studio-focus) .studio-left :is(#contextProjectMeta,.micro-note){position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+ body.ui2.studio-view:not(.studio-focus) #boardDims>summary{justify-content:flex-start}
+ body.ui2.studio-view:not(.studio-focus) #boardDims>summary small{display:none}
+}
+
+@media(max-width:1023px){
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text][data-phase=live]{--fit-orb:clamp(120px,22dvh,190px)}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text]:is([data-phase=live],[data-phase=ending]) .voice-main>:is(#voiceHeading,#voiceMessage,.orb-interaction-hint){position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text] .text-log{max-height:min(30dvh,260px)}
+}
+
+@media(min-width:1024px) and (min-height:560px){
+ /* idle: both rails the same width, so the heading, the orb and the start buttons share one centre; live: the left rail narrows and the right one carries the story */
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:not([data-phase=live]):not([data-phase=ending]) .orb-layout{grid-template-columns:minmax(200px,300px) minmax(0,1fr) minmax(200px,300px)}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:not([data-phase=live]):not([data-phase=ending]) .voice-main>.orb-interaction-hint{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:has(#voiceMicHelp:not([hidden])){--fit-orb:clamp(140px,calc(100dvh - 650px),300px)}
+}
+
+/* a typed interview in a window wide enough for it: Pause / Repeat / Skip, the language and End on ONE row */
+@media(min-width:1280px) and (min-height:560px){
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text]:is([data-phase=live],[data-phase=ending]) .voice-main>#voiceControls{grid-column:1;grid-row:9;justify-self:start;flex-wrap:nowrap}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text]:is([data-phase=live],[data-phase=ending]) .voice-main>#voiceLanguage{grid-column:2;grid-row:9;justify-self:stretch}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text]:is([data-phase=live],[data-phase=ending]) .voice-main>#voiceEndRow{grid-column:3;grid-row:9}
+}
+@media(min-width:1024px) and (min-height:560px){
+ body.ui2.studio-view:not(.studio-focus) .voice-main>.orb-meters:not([hidden]){display:grid;grid-template-columns:1fr 1fr;gap:var(--s4);width:100%;max-width:420px;margin-top:var(--s2)}
+ body.ui2.studio-view:not(.studio-focus) .orb-meter-label{display:flex;justify-content:space-between;gap:var(--s2);font-size:12px}
+}

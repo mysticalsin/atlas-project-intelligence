@@ -91,6 +91,7 @@ test('the voice upgrade answers like a WebSocket server: 101 with the right acce
 test('a typed interview end to end: answers, read-back, confirmation, a private draft only the owner can read, then Submit for review', async () => {
   const owner = 'alex@mantu.com', { ws, boot } = await start(owner);
   assert.equal(boot.textMode, true);
+  assert.equal(boot.voice, false); // U1: no speech service locally, so the page leads with the typed interview
   const ready = ws.events.find(e => e.type === 'ready');
   assert.equal(ready.input, 'text'); assert.ok(ready.controls.includes('pause'));
   assert.doesNotMatch(ws.text(), /alex/i, 'the consultant\'s name is never in what ATLAS says');

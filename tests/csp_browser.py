@@ -21,10 +21,11 @@ def check(name, value):
     assert value, name
 
 
+# U1: the local edge announces voice:false (no speech service); this suite stands in for the voice socket, so it asks for the voice start (ATLAS_VOICE=on)
 def start_edge(extra_env=None):
     s = socket.socket(); s.bind(('127.0.0.1', 0)); port = s.getsockname()[1]; s.close()
     env = {k: v for k, v in os.environ.items() if k not in ('DATA_MODE', 'DIRECTORY_PUSH_SECRET', 'IDENTITY_SOURCE', 'ATLAS_CSP') and not k.startswith('DNA_')}
-    proc = subprocess.Popen(['node', '--no-warnings', 'dev/local-edge.mjs', str(port)], cwd=EDGE, env={**env, 'ATLAS_ADAPTERS': 'mock', **(extra_env or {})}, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    proc = subprocess.Popen(['node', '--no-warnings', 'dev/local-edge.mjs', str(port)], cwd=EDGE, env={**env, 'ATLAS_ADAPTERS': 'mock', 'ATLAS_VOICE': 'on', **(extra_env or {})}, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     PROCS.append(proc)
     base = f'http://127.0.0.1:{port}'
     for _ in range(100):
