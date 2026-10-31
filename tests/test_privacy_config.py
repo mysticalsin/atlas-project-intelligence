@@ -87,11 +87,11 @@ def test_normalisation_is_one_form_for_accents_case_and_german_transliteration()
 
 def test_every_phrase_is_normalised_unique_per_category_and_not_trivially_short():
     for cat, phrases in pc.SPECIAL.items():
-        assert len(set(phrases)) == len(phrases) and all(len(p) >= 3 and p == pc.normalize(p) for p in phrases), cat
+        assert len(set(phrases)) == len(phrases) and all((len(p) >= 3 or pc._nospace(p)) and p == pc.normalize(p) for p in phrases), cat  # (v2.2 X2: phrases of scripts without spaces may be one or two characters)
 
 
 def test_edge_constants_carry_the_three_objects():
-    assert set(pc.EDGE_CONSTANTS) == {'PRIVACY', 'RETENTION', 'SPECIAL_PHRASES'}
+    assert set(pc.EDGE_CONSTANTS) == {'PRIVACY', 'RETENTION', 'SPECIAL_PHRASES', 'SPECIAL_EXCLUDE', 'SPECIAL_LANGS'}
     gen = (ROOT / 'deploy/cloudflare-edge/src/policy.generated.js').read_text()
     for name in pc.EDGE_CONSTANTS:
         assert re.search(rf'^export const {name} = ', gen, re.M)

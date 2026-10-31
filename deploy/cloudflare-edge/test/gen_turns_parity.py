@@ -63,6 +63,15 @@ OTHER = [
     ('pardon, je voulais dire 35', 'fr'), ('je suis pressé, restons brefs', 'fr'), ('35 et pas 38', 'fr'), ('perdón, quería decir 35', 'es'), ('tengo prisa, seamos breves', 'es'),
     ('Czy możemy zrobić przerwę', 'pl'), ('pause please, I do not know', 'ja'), ('أريد أن نتوقف قليلا', 'ar'), ('I helped improve the platform', 'fr'), ('I helped improve the platform', 'EN-us'), ('yes', 'en_GB'), ('yes', None), ('yes', ''),
 ]
+# v2.2 X2 (red M11): a control phrase inside a long narrative answer is an answer; the same words alone are still the request
+OTHER += [("Nous avons dû mettre fin au contrat avec l'ancien prestataire, puis j'ai fini la migration des données en mars et le délai de traitement a baissé de 30 pour cent.", 'fr'),
+    ('We had to end the contract with the old vendor, then I need to finish the data migration by March, and we cut handling time by 30 percent.', 'en'),
+    ('Tuvimos que terminar la migración antes de marzo; eso es todo lo que el cliente pedía al principio, y luego redujimos el tiempo un 30 por ciento.', 'es'),
+    ('Das war alles für heute nicht entscheidend; wir haben die Migration bis März abgeschlossen und die Bearbeitungszeit um 30 Prozent gesenkt.', 'de'),
+    ('Il cliente aveva bisogno di una pausa nella migrazione per tre settimane, poi abbiamo ridotto il tempo di gestione del 30 per cento.', 'it'),
+    ('Dat was het belangrijkste probleem van de klant; daarna hebben we de migratie in maart afgerond en de doorlooptijd met 30 procent verlaagd.', 'nl'),
+    ('Isso é tudo o que o cliente pedia no início; depois reduzimos o tempo de tratamento em 30 por cento ao longo de seis meses medidos pelo cliente.', 'pt'),
+    ('terminons ici', 'fr'), ('on fait une pause', 'fr'), ('c est tout pour moi merci beaucoup on peut finir ici', 'fr'), ('pause', 'en'), ('stop', 'en')]
 CONTEXT = [
     ('We moved the batch jobs to Kafka last spring', 'en', {'asked_field': 'adoption'}), ('yes', 'en', {'asked_field': 'adoption'}), ('I do not know that', 'en', {'asked_field': 'outcome'}),
     ('It took about a quarter of the time', 'en', {'asked_field': 'measurement'}), ('We were all over the place', 'en', {'asked_field': 'nope'}), ('We were all over the place really', 'en', {'asked_field': 'poor_fit'}),

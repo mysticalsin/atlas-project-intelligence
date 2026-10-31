@@ -23,7 +23,7 @@ POINTS = {
 QUESTION_KINDS = ('ask', 'confirm_asr', 'reflect', 'accept_and_move')  # (an offer to move on from a stuck point is no reason to ask for more time)
 # Replies to the offer that decline it, and the one that agrees.
 REFUSING = ('deny', 'stop', 'rushed', 'skip', 'dont_know', 'cannot_disclose')
-SUBSTANTIVE_WORDS = 6  # a reply this long that refuses nothing is the consultant carrying on with the point: it counts as yes
+YES_MAX_WORDS = 14  # a yes is a short answer: a longer reply that merely starts with one ("Yes, but I have a meeting in ten minutes ...") is not a clean yes
 
 
 def hard_limit(soft_s):
@@ -48,12 +48,14 @@ def should_offer(kind, rushed, extension, time_left, closing_left_s=CLOSING_LEFT
     return extension is None and not rushed and kind in QUESTION_KINDS and time_left <= closing_left_s
 
 
-def reply(intents, words):
-    """'accepted' or 'refused': the consultant's answer to the offer, from the turn pre-pass. Without a clear yes there is no extension."""
+def reply(intents, words=None):
+    """'accepted' or 'refused': the consultant's answer to the offer, from the turn pre-pass. Only an explicit yes (the `confirm` intent) extends the interview; a refusal,
+    a long answer that says neither, and any language the intent rules do not cover all mean no (red M9: a long reply used to count as yes, so a polite refusal
+    in French or Russian extended the interview to 30 minutes). The yes must also be short (YES_MAX_WORDS) and `words` must be known."""
     intents = [i for i in intents if isinstance(i, str)]
     if any(i in REFUSING for i in intents): return 'refused'
-    return 'accepted' if 'confirm' in intents or (isinstance(words, int) and words >= SUBSTANTIVE_WORDS) else 'refused'
+    return 'accepted' if 'confirm' in intents and isinstance(words, int) and words <= YES_MAX_WORDS else 'refused'
 
 
 EDGE_CONSTANTS = {'INTERVIEW_HARD_S': INTERVIEW_HARD_S, 'EXTENSION_OFFER': EXTENSION_OFFER, 'EXTENSION_POINTS': POINTS, 'EXTENSION_QUESTION_KINDS': list(QUESTION_KINDS),
-                  'EXTENSION_REFUSING': list(REFUSING), 'EXTENSION_SUBSTANTIVE_WORDS': SUBSTANTIVE_WORDS}
+                  'EXTENSION_REFUSING': list(REFUSING), 'EXTENSION_YES_MAX_WORDS': YES_MAX_WORDS}

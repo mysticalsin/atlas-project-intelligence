@@ -11,11 +11,14 @@ import re
 import unicodedata
 from pathlib import Path
 
+from .languages import detect
+from .textfold import fold
+
 CONFIG_DIR = Path(__file__).resolve().parent / 'config'
 PURPOSES = ('transcription', 'draft', 'checkpoint', 'memory', 'notice')
 RETENTION_ACTIONS = ('delete', 'erase_content', 'pseudonymise', 'platform', 'forget')
 PROPOSAL = 'PROPOSAL — DPO to confirm'
-LANGS = ('en', 'fr', 'es', 'pt', 'de', 'it', 'nl')
+LANGS = ('en', 'fr', 'es', 'pt', 'de', 'it', 'nl', 'ru', 'pl', 'ar', 'ja', 'zh')
 CATEGORIES = ('health', 'union', 'religion', 'politics', 'sexual_orientation', 'ethnicity')
 
 
@@ -76,11 +79,31 @@ def validate_retention(cfg):
     return cfg
 
 
+# Scripts written without spaces between words (and Arabic, whose words carry attached prefixes): their phrases match anywhere in the text, not as whole words.
+_NOSPACE = re.compile('[\u0600-\u06ff\u3040-\u30ff\u3400-\u9fff\u0e00-\u0e7f]')
+_HAN = re.compile('[\u3400-\u9fff]')
+
+
+def _nospace(phrase):
+    return bool(_NOSPACE.search(phrase))
+
+
 def normalize(text):
-    """The matcher's one normal form: German transliteration, accents stripped, lower case, everything but letters and digits is one space."""
-    s = str(text).replace('ä', 'ae').replace('ö', 'oe').replace('ü', 'ue').replace('Ä', 'ae').replace('Ö', 'oe').replace('Ü', 'ue').replace('ß', 'ss')
-    s = ''.join(ch for ch in unicodedata.normalize('NFKD', s) if not unicodedata.combining(ch)).lower()
-    return re.sub(r'[^a-z0-9]+', ' ', s).strip()
+    """The matcher's one normal form (red M13): folded first (textfold.fold: NFKC, invisible characters gone, look-alike letters read as Latin), German transliteration,
+    accents stripped, lower case, everything but letters and digits is one space, and a run of three or more single letters ("c h e m o", "c-h-e-m-o") is one word."""
+    s = fold(text).replace('\u00e4', 'ae').replace('\u00f6', 'oe').replace('\u00fc', 'ue').replace('\u00df', 'ss')
+    s = ''.join(ch for ch in unicodedata.normalize('NFKD', s) if not unicodedata.category(ch).startswith('M'))
+    tokens, out, run = re.sub(r'[\W_]+', ' ', s).strip().split(' '), [], []
+    for t in tokens + ['']:
+        if len(t) == 1 and t.isalpha():
+            run.append(t)
+            continue
+        if run:
+            out.extend([''.join(run)] if len(run) >= 3 else run)
+            run = []
+        if t:
+            out.append(t)
+    return ' '.join(out)
 
 
 def validate_special(cfg):
@@ -94,23 +117,41 @@ def validate_special(cfg):
             _need(isinstance(words, list) and words and all(isinstance(w, str) for w in words), f'{cat}/{lang}: phrases')
             for w in words:
                 n = normalize(w)
-                _need(len(n) >= 3, f'{cat}/{lang}: phrase {w!r} is too short')
+                _need(len(n) >= (4 if '\u0600' <= n[:1] <= '\u06ff' else 1 if _HAN.fullmatch(n) else 2 if _nospace(n) else 3), f'{cat}/{lang}: phrase {w!r} is too short')
                 if n not in phrases:
                     phrases.append(n)
         table[cat] = phrases
     return table
 
 
+def validate_exclude(cfg):
+    ex = cfg.get('context_exclude', []) if isinstance(cfg, dict) else None
+    _need(isinstance(ex, list) and all(isinstance(x, str) and len(normalize(x)) >= 5 for x in ex), 'context_exclude: normalisable strings of five characters or more')
+    return [normalize(x) for x in ex]
+
+
+_SPECIAL_CFG = _load('special_categories.json')
 PRIVACY = validate_privacy(_load('privacy.json'))
 RETENTION = validate_retention(_load('retention.json'))
-SPECIAL = validate_special(_load('special_categories.json'))  # {category: [normalised phrase, ...]}
+SPECIAL = validate_special(_SPECIAL_CFG)  # {category: [normalised phrase, ...]}
+SPECIAL_EXCLUDE = validate_exclude(_SPECIAL_CFG)
 
 
 def special_categories(text):
     """The special categories whose phrases appear in `text`, in the fixed category order. A flag on a sentence, never a statement about a person:
-    callers use it to offer 'keep this private?' and to keep the text out of memory, and never store it against anyone."""
+    callers use it to offer 'keep this private?' and to keep the text out of memory, and never store it against anyone. A place name listed in context_exclude
+    ("Church Street") is removed first (red L14); a phrase in a script written without spaces matches anywhere, any other only as whole words."""
     s = ' ' + normalize(text) + ' '
-    return [cat for cat, phrases in SPECIAL.items() if any(' ' + p + ' ' in s for p in phrases)]
+    for x in SPECIAL_EXCLUDE:
+        s = s.replace(' ' + x + ' ', ' | ')
+    return [cat for cat, phrases in SPECIAL.items() if any((p in s) if _nospace(p) else (' ' + p + ' ' in s) for p in phrases)]
 
 
-EDGE_CONSTANTS = {'PRIVACY': PRIVACY, 'RETENTION': RETENTION, 'SPECIAL_PHRASES': SPECIAL}
+def uncovered_language(text):
+    """True when `text` is written in a language that has no phrase list here (the detector names it and it is not one of LANGS): the guard cannot judge it, so callers
+    keep such model-written text out of private memory rather than retain it unchecked (red M13). False for short or unnamed text."""
+    lang = detect(text).get('lang')
+    return lang is not None and lang not in LANGS
+
+
+EDGE_CONSTANTS = {'PRIVACY': PRIVACY, 'RETENTION': RETENTION, 'SPECIAL_PHRASES': SPECIAL, 'SPECIAL_EXCLUDE': SPECIAL_EXCLUDE, 'SPECIAL_LANGS': list(LANGS)}

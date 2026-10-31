@@ -1,5 +1,6 @@
 // JavaScript port of atlas_voice/speech.py EnergyTurns, sentences, Phrases, speakable, ReplyGuard and wav_bytes (parity-tested).
-import { DIGIT_ZEROS, NUMBER_WORDS, NUMBER_CONNECTORS, UNVERIFIED_CLAIM_SRC, CLAIM_HEDGE_SRC } from './policy.generated.js';
+import { DIGIT_ZEROS, NUMBER_WORDS, NUMBER_CONNECTORS, UNVERIFIED_CLAIM_SRC, CLAIM_HEDGE_SRC, CLAIM_TERMS, HEDGE_TERMS, PERCENT_WORDS } from './policy.generated.js';
+import { fold, plain } from './textfold.js';
 export const SAMPLE_RATE = 24000;
 
 export function rms(bytes) {
@@ -178,17 +179,52 @@ function runValue(run) {
   for (const w of parts) { const v = NUMBER_WORDS[w] ?? 0; total = w === 'hundred' ? (total || 1) * v : total + v; }
   return total;
 }
-const dropFormat = text => text.normalize('NFKC').replace(/\p{Cf}/gu, '');
+// A run of single-digit words ("four zero", "deux cinq") can also be read digit by digit: "40", "25". null when it is not such a run.
+function digitReading(run) {
+  const parts = run.toLowerCase().split(/[\s-]+/).filter(w => w && !NUMBER_CONNECTORS.includes(w));
+  if (parts.length < 2 || parts.some(w => !(w in NUMBER_WORDS) || NUMBER_WORDS[w] > 9)) return null;
+  return parseInt(parts.map(w => NUMBER_WORDS[w]).join(''), 10);
+}
 // Digits of other scripts (speech.py DIGIT_ZEROS) fold to ASCII, so a figure written in them is the same figure.
 const DIGITS = new RegExp('[' + DIGIT_ZEROS.map(z => String.fromCharCode(z) + '-' + String.fromCharCode(z + 9)).join('') + ']', 'g');
 const asciiDigits = text => text.replace(DIGITS, c => String(c.charCodeAt(0) - DIGIT_ZEROS.findLast(z => z <= c.charCodeAt(0))));
-export function figures(text) {
-  const folded = asciiDigits(dropFormat(String(text))).replace(QUATRE_VINGT, 'quatrevingt').replace(FOLD, (_, w) => ` ${runValue(w)} `).replace(HALF, ' 0.5 ');
-  return (folded.replace(NUM_RUN, run => { const v = runValue(run); return v === null ? run : ` ${v} `; }).match(NUMBER) || []).map(numeral);
+// Other ways to say a figure (red M10; speech.py): a roman numeral before a percent word, "a dozen", "a couple of million", a product ("4x4"), and the compound numerals of
+// German and Dutch written as one word, which cannot be read here: such a word stands for an unknown figure ('?').
+const ROMAN = new RegExp(`(?<!${L})([ivxlcdm]{2,8})(?=\\s*${PERCENT_WORDS}(?!${L}))`, 'gu'), ROMAN_VALID = /^m{0,3}(?:cm|cd|d?c{0,3})(?:xc|xl|l?x{0,3})(?:ix|iv|v?i{0,3})$/;
+const ROMAN_VALUES = { i: 1, v: 5, x: 10, l: 50, c: 100, d: 500, m: 1000 };
+const DOZEN = new RegExp(`(?<!${L})dozen(?!${L})`, 'gu'), COUPLE = new RegExp(`(?<!${L})couple(?=\\s+of\\s+(?:million|thousand|billion|hundred)(?!${L}))`, 'gu');
+const PRODUCT = /(?<![0-9.,])([0-9]+)\s*[x\u00d7*]\s*([0-9]+)(?![0-9.,])/g;
+const COMPOUND = new RegExp(`(?<!${L})${L}*(?:hundert|tausend|honderd|duizend)${L}*(?!${L})`, 'u');
+function romanValue(s) {
+  if (!s || !ROMAN_VALID.test(s)) return s;
+  let total = 0;
+  for (let i = 0; i < s.length; i++) { const v = ROMAN_VALUES[s[i]], n = i + 1 < s.length ? ROMAN_VALUES[s[i + 1]] : 0; total += n > v ? -v : v; }
+  return ` ${total} `;
 }
-// A sentence that says something was verified, approved or confirmed by someone, without a hedge or a denial (speech.py asserts_verification; red L3/L4).
+export function figures(text) {
+  let t = asciiDigits(fold(String(text)));
+  t = t.replace(QUATRE_VINGT, 'quatrevingt').replace(FOLD, (_, w) => ` ${runValue(w)} `).replace(HALF, ' 0.5 ');
+  t = t.replace(ROMAN, (_, r) => romanValue(r)).replace(DOZEN, ' 12 ').replace(COUPLE, ' 2 ');
+  const extra = COMPOUND.test(t) ? ['?'] : [], products = [...t.matchAll(PRODUCT)].map(m => String(parseInt(m[1], 10) * parseInt(m[2], 10)));
+  const spelled = t.replace(NUM_RUN, run => { const v = runValue(run); if (v === null) return run; const d = digitReading(run); return d === null || d === v ? ` ${v} ` : ` ${v} ${d} `; });
+  return [...(spelled.match(NUMBER) || []).map(numeral), ...products, ...extra];
+}
+// True when the text has a letter outside the Latin script (Cyrillic, Arabic, CJK, Greek ...): no number table exists for those languages, so a spelled-out figure in them
+// cannot be read (red M10). Summary mode voices no sentence like that.
+export const hasUncheckedScript = text => /(?!\p{Script=Latin})\p{L}/u.test(String(text).normalize('NFKC'));
+// A sentence that says something was verified, approved or confirmed by someone, without a hedge or a denial (speech.py asserts_verification; red L3/L4/M10): the English
+// source and the seven bank languages' term lists, matched on the accent-free folded text.
+const LETTER = '\\p{L}', escapeRe = w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function termsRe(terms) {
+  const alts = terms.map(t => {
+    const stem = t.endsWith('*');
+    return plain(t.replace(/\*$/, '')).split(' ').map(escapeRe).join('[\\s-]+') + (stem ? `${LETTER}*` : `(?!${LETTER})`);
+  });
+  return new RegExp(`(?<!${LETTER})(?:${alts.join('|')})`, 'iu');
+}
 const CLAIM = new RegExp(UNVERIFIED_CLAIM_SRC, 'i'), HEDGE = new RegExp(CLAIM_HEDGE_SRC, 'i');
-export function assertsVerification(text) { const t = dropFormat(text); return CLAIM.test(t) && !HEDGE.test(t); }
+const CLAIMS = termsRe(Object.values(CLAIM_TERMS).flat()), HEDGES = termsRe(Object.values(HEDGE_TERMS).flat());
+export function assertsVerification(text) { const t = plain(text).replaceAll('\u2019', "'"); return (CLAIM.test(t) || CLAIMS.test(t)) && !(HEDGE.test(t) || HEDGES.test(t)); }
 
 // A finished sentence whose closing punctuation holds a question mark ('?', the full-width one or the Arabic one), quotes and markup aside.
 function isQuestion(sentence) { const m = TERMINAL.exec(sentence.replace(CLOSERS, '')); return !!m && /[?\uff1f\u061f]/.test(m[0]); }
@@ -248,7 +284,7 @@ export class ReplyGuard {
       }
     }
     if (!question && !this.allowStatus && assertsVerification(text)) { this.counts.dropped_unverified_claim++; return ['', question]; }
-    if (this.allowed && figures(text).some(m => !this.allowed.has(m))) { this.counts.dropped_unknown_number++; return ['', question]; }
+    if (this.allowed && (hasUncheckedScript(text) || figures(text).some(m => !this.allowed.has(m)))) { this.counts.dropped_unknown_number++; return ['', question]; }
     if (this.max !== null) {
       const room = this.max - this.spoken;
       if (words(text).length > room) {

@@ -25,6 +25,9 @@ INTENT_ORDER = ['pause', 'resume', 'repeat', 'skip', 'dont_know', 'cannot_disclo
                 'question_to_atlas', 'confirm', 'deny']
 CUE_ORDER = ['metric', 'estimate', 'vague_verb', 'team_claim', 'tech_list', 'certification', 'client_praise',
              'describes_setback', 'describes_achievement', 'names_party', 'describes_problem', 'period_stated', 'describes_action']
+# A control request is short (v2.2 X2, red M11): the same words inside a long answer are part of the answer ("we had to end the contract ... I finished the migration")
+# and must never end, pause or skip the interview. A rule without its own max_words is capped here, in every language; an intent not listed has no cap.
+INTENT_MAX_WORDS = {'pause': 12, 'resume': 12, 'repeat': 12, 'skip': 12, 'stop': 14}
 LANGS_WITH_CUES = ('en',)
 LANGS_WITH_INTENTS = ('en', 'fr', 'es', 'pt', 'de', 'it', 'nl')
 
@@ -339,7 +342,8 @@ def intents(norm, lang, words, probe=None):
     for r in rules:
         if r['intent'] in found:
             continue
-        if r['max_words'] is not None and words > r['max_words']:
+        limit = r['max_words'] if r['max_words'] is not None else INTENT_MAX_WORDS.get(r['intent'])
+        if limit is not None and words > limit:
             continue
         if any(i in found for i in r['unless_intents']):
             continue
@@ -465,7 +469,7 @@ def analyze_turn(text, lang='en', context=None):
 
 
 EDGE_CONSTANTS = {
-    'TURN_MAX_CHARS': MAX_CHARS, 'TURN_MAX_NUMBERS': MAX_NUMBERS, 'TURN_INTENT_ORDER': INTENT_ORDER, 'TURN_CUE_ORDER': CUE_ORDER,
+    'TURN_MAX_CHARS': MAX_CHARS, 'TURN_MAX_NUMBERS': MAX_NUMBERS, 'TURN_INTENT_ORDER': INTENT_ORDER, 'TURN_INTENT_MAX_WORDS': INTENT_MAX_WORDS, 'TURN_CUE_ORDER': CUE_ORDER,
     'TURN_LANGS_WITH_CUES': list(LANGS_WITH_CUES), 'TURN_LANGS_WITH_INTENTS': list(LANGS_WITH_INTENTS),
     'TURN_INTENT_RULES': INTENT_RULES, 'TURN_CUE_SRC': CUE_SRC, 'TURN_TECH_SRC': TECH_SRC, 'TURN_HINT_SRC': HINT_SRC, 'TURN_HINT_FROM_TO': HINT_FROM_TO,
     'TURN_CUE_GATES': CUE_GATES, 'TURN_HINT_GATES': HINT_GATES, 'TURN_NUMBER_GATE': NUMBER_GATE, 'TURN_NOT_AN_ANSWER': NOT_AN_ANSWER, 'TURN_ASKED_MIN_WORDS': ASKED_MIN_WORDS, 'TURN_NUMBER_SRC': NUMBER_SRC, 'TURN_UNIT_CANON': UNIT_CANON,

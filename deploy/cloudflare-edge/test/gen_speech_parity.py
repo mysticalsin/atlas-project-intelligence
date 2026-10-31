@@ -2,7 +2,7 @@
 import json, math, struct, sys
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]; sys.path.insert(0, str(ROOT))
-from atlas_voice.speech import EnergyTurns, Phrases, ReplyGuard, sentences, speakable, figures, asserts_verification, SAMPLE_RATE
+from atlas_voice.speech import EnergyTurns, Phrases, ReplyGuard, sentences, speakable, figures, asserts_verification, has_unchecked_script, SAMPLE_RATE
 
 def tone(sec, amp, hz=180):
     n = int(SAMPLE_RATE * sec); return [int(amp * 32767 * math.sin(2 * math.pi * hz * i / SAMPLE_RATE)) for i in range(n)]
@@ -98,12 +98,22 @@ GUARD = [
     # v2.2 L1: the Arabic question mark ends a question, and figures written in other scripts' digits are figures
     ('arabic question mark', {}, ['\u0647\u0644 \u0642\u0627\u0633\u062a \u0630\u0644\u0643\u061f ', '\u0645\u0646 \u0645\u0644\u0643 \u0627\u0644\u0646\u0638\u0627\u0645\u061f']),
     ('localized digits are figures', {'summary_facts': ['40 minutes', '12 minutes']}, ['\u0627\u0646\u062e\u0641\u0636 \u0627\u0644\u0648\u0642\u062a \u0645\u0646 \u0664\u0660 \u0625\u0644\u0649 \u0661\u0662 \u062f\u0642\u064a\u0642\u0629. ', '\u092a\u0930 \u0967\u0968\u0968 \u092f\u0942\u0928\u093f\u091f.', 'Is that right?']),
+    # v2.2 X2 (red M10): other languages, homoglyphs and number tricks in summary mode; scripts with no number table are never voiced there
+    ('verification claims in the bank languages', {}, ['Votre manager a v\u00e9rifi\u00e9 et approuv\u00e9 ce r\u00e9sultat.', 'Ihr Vorgesetzter hat das gepr\u00fcft und freigegeben.', 'Tu responsable lo ha verificado y aprobado.', 'Il tuo responsabile lo ha verificato e approvato.',
+        'Je manager heeft het geverifieerd en goedgekeurd.', 'O seu gestor verificou e aprovou isso.', 'Your manager signed it off.', 'Your manager v\u0435rified and \u0430pproved it.', 'What was the baseline?']),
+    ('hedged claims in the bank languages are kept', {}, ["Ce r\u00e9sultat n'a pas \u00e9t\u00e9 v\u00e9rifi\u00e9.", 'Ein Vorgesetzter wird das noch pr\u00fcfen und freigeben.', 'Nadie lo ha verificado todav\u00eda.', 'Non \u00e8 stato verificato.',
+        'Het is nog niet goedgekeurd.', 'Isso n\u00e3o foi aprovado.', 'Was it approved by anyone?']),
+    ('figures in other forms in summary mode', {'summary_facts': ['you cut the handling time by 4 percent']}, ['You cut it by XL percent.', 'You cut it by four zero percent.', 'You cut it by 4x4 percent.', 'You cut it by a dozen percent.',
+        'You saved a couple of million.', 'Sie haben dreihunderttausend Euro gespart.', 'You cut it by 4 percent.', 'Is that right?']),
+    ('summary mode: no number table for the script', {'summary_facts': ['4 percent']}, ['\u4f60\u628a\u5904\u7406\u65f6\u95f4\u7f29\u77ed\u4e86\u56db\u5341\u4e2a\u767e\u5206\u70b9\u3002', '\u0422\u044b \u0441\u043e\u043a\u0440\u0430\u0442\u0438\u043b \u0432\u0440\u0435\u043c\u044f \u043d\u0430 \u0441\u043e\u0440\u043e\u043a \u043f\u0440\u043e\u0446\u0435\u043d\u0442\u043e\u0432.', 'You cut it by 4 percent.', 'Is that right?']),
+    ('the same sentences outside summary mode are voiced', {}, ['\u0422\u044b \u0441\u043e\u043a\u0440\u0430\u0442\u0438\u043b \u0432\u0440\u0435\u043c\u044f.', 'XL percent of the team was there.', 'Who owned it?']),
     ('unverified claim in summary mode with a good figure', {'summary_facts': ['4 percent']}, ['You cut it by 4 percent, and your manager verified it.', 'You cut it by 4 percent.', 'Is that right?']),
 ]
 out['_figures'] = [[t, figures(t)] for t in ('forty percent', 'twenty-five', 'two hundred and five', 'four-fold', 'tenfold gain', '\uff14\uff10 percent', 'one thing, no one', 'twenty one apples', 'quarante pour cent',
-    'quatre-vingt-dix', '\u0664\u0660 \u062f\u0642\u064a\u0642\u0629', '\u0967\u0968\u0968 \u092f\u0942\u0928\u093f\u091f', '\u06f3\u06f5\u066b\u06f5', 'half the tickets', '2 million', 'vingt-cinq', 'treinta y cinco', '3.5 times', '1,200 tickets', 'zero downtime', 'a 4\u200b0 percent gain', 'one hundred', 'fifty and five')]
+    'quatre-vingt-dix', '\u0664\u0660 \u062f\u0642\u064a\u0642\u0629', '\u0967\u0968\u0968 \u092f\u0942\u0928\u093f\u091f', '\u06f3\u06f5\u066b\u06f5', 'half the tickets', '2 million', 'vingt-cinq', 'treinta y cinco', '3.5 times', '1,200 tickets', 'zero downtime', 'a 4\u200b0 percent gain', 'one hundred', 'fifty and five', 'XL percent', 'four zero percent', 'deux cinq', '4x4', 'a dozen', 'a couple of million', 'dreihunderttausend Euro', 'cent pour cent', 'mix percent', 'CV and MD', 'v\u0435rt zero', 'two two')]
 out['_claims'] = [[t, asserts_verification(t)] for t in ('Your saving is verified and approved by your manager.', 'that figure is not verified yet', 'A reviewer will approve it later.', 'I checked with your manager: it is fine.',
-    'It was unverified.', 'Was it approved?', 'The CFO confirmed by email', 'Nobody has validated it.', 'It is validated.', "That isn\u2019t verified.", 'Signed off by the sponsor.', 'You confirmed it yourself.')]
+    'It was unverified.', 'Was it approved?', 'The CFO confirmed by email', 'Nobody has validated it.', 'It is validated.', "That isn\u2019t verified.", 'Signed off by the sponsor.', 'You confirmed it yourself.', 'Your manager signed it off.', 'Votre manager a v\u00e9rifi\u00e9 ce r\u00e9sultat.', "Ce r\u00e9sultat n'a pas \u00e9t\u00e9 v\u00e9rifi\u00e9.", 'Your manager v\u0435rified it.', 'Ihr Chef hat es freigegeben.', 'Het is goedgekeurd door de klant.')]
+out['_script'] = [[t, has_unchecked_script(t)] for t in ('plain English', 'Caf\u00e9 \u00fcber \u00e5ngstr\u00f6m', '1\u00aa vez', '\u0431\u0443\u043a\u0432\u044b', '\u4e2d\u6587', '\u0645\u0631\u062d\u0628\u0627', 'mixed \u0442\u0435\u043a\u0441\u0442', '123 45', '\u03b1\u03b2\u03b3')]
 out['_guard'] = []
 for name, opts, src in GUARD:
     if isinstance(src, dict):

@@ -152,3 +152,4 @@ Spec pack and status: `docs/agent-brain-v2.1/` (`README.md`, `DECISION_LOG.md`, 
 | Edge workflow | `test/policy-gate.test.js`, `evidence.test.js`, `branches.test.js`, `jobs.test.js` |
 | Offline evaluation (`make test-eval`) | `test/eval-conversation.test.js`, `eval-workflow.test.js`, `eval-rubric.test.js`, fixtures `test/fixtures/eval/`, `docs/agent-brain-v2.1/eval/conversation_rubric.json` |
 | Browser client | `tests/voice-controls.test.js`, `voice-controls-dom.test.js`, `text-mode-dom.test.js`, `summary-card-dom.test.js`, `voice-reconnect-dom.test.js`, `workflow-core.test.js`, `workflow-ui.test.js`, `tests/humane_browser.py` |
+| `textfold.py` / `textfold.js` (v2.2 X2) | The one normal form for matching text against word lists (NFKC, invisible characters, look-alike letters, accents): used by the ReplyGuard claim lists, the special-category guard and the prompt-data fence checks. Parity: `test/fold.vectors.json`. |

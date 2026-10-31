@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "Phrase lists for the special-category guard (GDPR Art 9). A match only suggests 'keep this private?' at the read-back and keeps that text out of private memory. It never records anything about the person and never infers a trait: it flags a sentence, not a human. Matching is accent- and case-insensitive on whole words or phrases. Basic terms only; needs native and DPO review.",
+  "note": "Phrase lists for the special-category guard (GDPR Art 9). A match only suggests 'keep this private?' at the read-back and keeps that text out of private memory. It never records anything about the person and never infers a trait: it flags a sentence, not a human. Matching is accent- and case-insensitive on whole words or phrases. Basic terms only; needs native and DPO review. Languages: the seven bank languages plus ru, pl, ar, ja, zh. context_exclude lists normalised strings (street names such as Church Street) that are removed before matching, so a place name is not read as a belief. Text in a language with no list is not matched at all: such text is kept out of private memory instead (uncovered_language).",
   "categories": {
     "health": {
       "en": [
@@ -30,7 +30,13 @@
         "my illness",
         "autism",
         "adhd",
-        "dyslexia"
+        "dyslexia",
+        "chemo",
+        "antidepressant",
+        "antidepressants",
+        "oncologist",
+        "sick note",
+        "radiotherapy"
       ],
       "fr": [
         "cancer",
@@ -121,6 +127,129 @@
         "zwangerschap",
         "geestelijke gezondheid",
         "gediagnosticeerd"
+      ],
+      "ru": [
+        "рак",
+        "рака",
+        "раком",
+        "раке",
+        "химиотерапия",
+        "химиотерапии",
+        "диабет",
+        "диабетом",
+        "депрессия",
+        "депрессией",
+        "депрессии",
+        "больничный",
+        "больничном",
+        "больничного",
+        "онколог",
+        "инвалидность",
+        "беременна",
+        "беременность",
+        "беременности",
+        "выкидыш",
+        "диагноз",
+        "диагноза",
+        "шизофрения",
+        "эпилепсия",
+        "психическое здоровье",
+        "психического здоровья",
+        "вич",
+        "аутизм",
+        "антидепрессанты"
+      ],
+      "pl": [
+        "rak",
+        "raka",
+        "rakiem",
+        "chemioterapia",
+        "chemioterapii",
+        "cukrzyca",
+        "cukrzycę",
+        "depresja",
+        "depresji",
+        "depresję",
+        "zwolnienie lekarskie",
+        "zwolnieniu lekarskim",
+        "niepełnosprawność",
+        "w ciąży",
+        "ciąża",
+        "poronienie",
+        "diagnoza",
+        "schizofrenia",
+        "padaczka",
+        "choroba przewlekła",
+        "zdrowie psychiczne",
+        "autyzm",
+        "antydepresanty"
+      ],
+      "ar": [
+        "السرطان",
+        "سرطان",
+        "علاج كيميائي",
+        "العلاج الكيميائي",
+        "السكري",
+        "سكري",
+        "اكتئاب",
+        "الاكتئاب",
+        "إجازة مرضية",
+        "اجازة مرضية",
+        "إعاقة",
+        "حامل",
+        "إجهاض",
+        "تشخيص",
+        "انفصام",
+        "مرض مزمن",
+        "الصحة النفسية",
+        "توحد",
+        "مضادات الاكتئاب"
+      ],
+      "ja": [
+        "癌",
+        "がんの治療",
+        "がん治療",
+        "がん検診",
+        "化学療法",
+        "抗がん剤",
+        "糖尿病",
+        "うつ病",
+        "鬱病",
+        "休職",
+        "病気休暇",
+        "身体障害",
+        "精神障害",
+        "発達障害",
+        "障害者",
+        "妊娠",
+        "流産",
+        "統合失調症",
+        "てんかん",
+        "慢性疾患",
+        "精神疾患",
+        "メンタルヘルス",
+        "自閉症",
+        "抗うつ薬"
+      ],
+      "zh": [
+        "癌症",
+        "化疗",
+        "糖尿病",
+        "抑郁症",
+        "病假",
+        "残疾",
+        "怀孕",
+        "流产",
+        "诊断",
+        "精神分裂",
+        "癫痫",
+        "慢性病",
+        "心理健康",
+        "精神疾病",
+        "自闭症",
+        "抗抑郁药",
+        "艾滋病",
+        "肿瘤"
       ]
     },
     "union": {
@@ -172,6 +301,35 @@
         "vakbondslid",
         "vakbondsafgevaardigde",
         "lid van de vakbond"
+      ],
+      "ru": [
+        "профсоюз",
+        "профсоюза",
+        "профсоюзе",
+        "член профсоюза",
+        "коллективный договор"
+      ],
+      "pl": [
+        "związek zawodowy",
+        "związku zawodowego",
+        "związkach zawodowych",
+        "układ zbiorowy"
+      ],
+      "ar": [
+        "نقابة",
+        "النقابة",
+        "نقابة عمالية",
+        "اتفاقية جماعية"
+      ],
+      "ja": [
+        "労働組合",
+        "組合員",
+        "労組",
+        "団体交渉"
+      ],
+      "zh": [
+        "工会",
+        "集体谈判"
       ]
     },
     "religion": {
@@ -314,6 +472,96 @@
         "gebed",
         "katholiek",
         "protestants"
+      ],
+      "ru": [
+        "моя религия",
+        "религиозные убеждения",
+        "религиозный",
+        "церковь",
+        "церкви",
+        "мечеть",
+        "синагога",
+        "мусульманин",
+        "мусульманка",
+        "христианин",
+        "христианка",
+        "иудаизм",
+        "индуист",
+        "буддист",
+        "атеист",
+        "православный",
+        "католик",
+        "протестант",
+        "рамадан",
+        "молитва",
+        "молюсь"
+      ],
+      "pl": [
+        "moja religia",
+        "przekonania religijne",
+        "kościół",
+        "kościoła",
+        "meczet",
+        "synagoga",
+        "muzułmanin",
+        "chrześcijanin",
+        "hinduista",
+        "buddysta",
+        "ateista",
+        "katolik",
+        "protestant",
+        "ramadan",
+        "modlitwa",
+        "modlę"
+      ],
+      "ar": [
+        "معتقداتي الدينية",
+        "ديانتي",
+        "كنيسة",
+        "مسجد",
+        "كنيس",
+        "مسلم",
+        "مسيحي",
+        "يهودي",
+        "هندوسي",
+        "بوذي",
+        "ملحد",
+        "رمضان",
+        "صلاة",
+        "كاثوليكي",
+        "بروتستانتي"
+      ],
+      "ja": [
+        "宗教",
+        "信仰",
+        "教会",
+        "モスク",
+        "シナゴーグ",
+        "イスラム",
+        "キリスト教",
+        "ユダヤ教",
+        "ヒンドゥー",
+        "仏教徒",
+        "無神論",
+        "ラマダン",
+        "カトリック",
+        "プロテスタント"
+      ],
+      "zh": [
+        "宗教",
+        "信仰",
+        "教堂",
+        "清真寺",
+        "犹太教",
+        "穆斯林",
+        "基督徒",
+        "基督教",
+        "佛教徒",
+        "无神论",
+        "斋月",
+        "祈祷",
+        "天主教",
+        "新教"
       ]
     },
     "politics": {
@@ -410,6 +658,59 @@
         "extreemrechts",
         "extreemlinks",
         "partijlid"
+      ],
+      "ru": [
+        "политическая партия",
+        "политические взгляды",
+        "политические убеждения",
+        "левые взгляды",
+        "правые взгляды",
+        "крайне правые",
+        "проголосовал за",
+        "проголосовала за",
+        "член партии",
+        "политический активист"
+      ],
+      "pl": [
+        "partia polityczna",
+        "poglądy polityczne",
+        "lewicowe",
+        "prawicowe",
+        "głosowałem na",
+        "głosowałam na",
+        "członek partii"
+      ],
+      "ar": [
+        "حزب سياسي",
+        "آرائي السياسية",
+        "الآراء السياسية",
+        "يساري",
+        "يميني",
+        "أقصى اليمين",
+        "عضو في حزب",
+        "ناشط سياسي"
+      ],
+      "ja": [
+        "支持政党",
+        "政治的見解",
+        "政治思想",
+        "左派",
+        "右派",
+        "極右",
+        "極左",
+        "党員",
+        "政治活動家"
+      ],
+      "zh": [
+        "政党",
+        "政治观点",
+        "政治立场",
+        "左派",
+        "右派",
+        "极右",
+        "党员",
+        "政治活动家",
+        "投票给"
       ]
     },
     "sexual_orientation": {
@@ -497,6 +798,61 @@
         "lgbt",
         "uit de kast komen",
         "homohuwelijk"
+      ],
+      "ru": [
+        "сексуальная ориентация",
+        "гей",
+        "лесбиянка",
+        "бисексуал",
+        "гомосексуал",
+        "трансгендер",
+        "квир",
+        "лгбт",
+        "каминг аут",
+        "однополый",
+        "однополые"
+      ],
+      "pl": [
+        "orientacja seksualna",
+        "gej",
+        "lesbijka",
+        "biseksualny",
+        "homoseksualny",
+        "transpłciowy",
+        "queer",
+        "lgbt",
+        "coming out",
+        "jednopłciowy"
+      ],
+      "ar": [
+        "الميول الجنسية",
+        "التوجه الجنسي",
+        "مثلي",
+        "مثلية",
+        "ثنائي الجنس",
+        "متحول جنسيا",
+        "كوير",
+        "مجتمع الميم"
+      ],
+      "ja": [
+        "性的指向",
+        "ゲイ",
+        "レズビアン",
+        "バイセクシュアル",
+        "同性愛",
+        "トランスジェンダー",
+        "クィア",
+        "カミングアウト",
+        "同性婚"
+      ],
+      "zh": [
+        "性取向",
+        "同性恋",
+        "双性恋",
+        "跨性别",
+        "酷儿",
+        "出柜",
+        "同性婚姻"
       ]
     },
     "ethnicity": {
@@ -600,7 +956,66 @@
         "migratieachtergrond",
         "gentest",
         "genetische gegevens"
+      ],
+      "ru": [
+        "этническое происхождение",
+        "расовое происхождение",
+        "моя этническая принадлежность",
+        "расизм",
+        "расист",
+        "этническое меньшинство",
+        "цвет кожи",
+        "генетический тест",
+        "генетические данные"
+      ],
+      "pl": [
+        "pochodzenie etniczne",
+        "pochodzenie rasowe",
+        "mniejszość etniczna",
+        "rasizm",
+        "rasista",
+        "kolor skóry",
+        "test genetyczny",
+        "dane genetyczne"
+      ],
+      "ar": [
+        "الأصل العرقي",
+        "الاصل العرقي",
+        "عنصرية",
+        "عنصري",
+        "لون البشرة",
+        "اختبار جيني",
+        "بيانات جينية",
+        "أقلية عرقية"
+      ],
+      "ja": [
+        "民族",
+        "人種",
+        "人種差別",
+        "肌の色",
+        "遺伝子検査",
+        "遺伝情報"
+      ],
+      "zh": [
+        "民族出身",
+        "种族",
+        "种族歧视",
+        "少数民族",
+        "肤色",
+        "基因检测",
+        "基因数据",
+        "族裔"
       ]
     }
-  }
+  },
+  "context_exclude": [
+    "church street",
+    "church road",
+    "church lane",
+    "church hill",
+    "church house",
+    "church gate",
+    "church square",
+    "church end"
+  ]
 }

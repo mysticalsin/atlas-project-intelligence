@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { specialCategories, normalizeText, isSpecial } from '../src/special.js';
+import { specialCategories, normalizeText, isSpecial, uncoveredLanguage } from '../src/special.js';
 import { SPECIAL_PHRASES } from '../src/policy.generated.js';
 
 const V = JSON.parse(readFileSync(new URL('./special.vectors.json', import.meta.url)));
@@ -10,6 +10,7 @@ const V = JSON.parse(readFileSync(new URL('./special.vectors.json', import.meta.
 test('special categories: parity with Python for the matcher and its normal form', () => {
   for (const [t, e] of V.cases) assert.deepEqual(specialCategories(t), e, JSON.stringify(t));
   for (const [t, e] of V.normalize) assert.equal(normalizeText(t), e, JSON.stringify(t));
+  for (const [t, e] of V.uncovered) assert.equal(uncoveredLanguage(t), e, 'uncovered ' + JSON.stringify(t));
 });
 
 test('the six Art 9 categories are present, in every supported language, and plain project talk raises nothing', () => {
