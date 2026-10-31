@@ -13,6 +13,10 @@ The pack describes itself as both versions:
 
 v2.1 is the later revision (it adds the canonical workflow diagram, the separate post-evidence branches and the Spanish success-story template). This repository uses **v2.1** for the branch, the folder and all new documents. Files whose own text says v2.0 are kept as supplied.
 
+## Naming: MeChat means MiChat
+
+The pack's "MeChat" is a typo; the CV destination system is **MiChat** (Tony, 2026-10-31, decision D1). The verbatim pack copies under `00_`-`11_` keep the typo on purpose; the repository uses `MICHAT_CV` / `michat` / "MiChat".
+
 ## What was imported
 
 All `.md`, `.mmd`, `.yaml`, `.json`, `.py` and `.png` files, plus `10_Source_References/Entrevista_Caso_de_Exito_Consultores_Template.docx` (the success-story template that the safety work in plan task T14 pins by hash). Sub-folder layout is preserved (`00_START_HERE` through `11_Plug_and_Play_Config`). The v1.0 Markdown and Mermaid files under `09_Previous_Version/v1.0/` are kept for history.
@@ -37,4 +41,4 @@ All `.md`, `.mmd`, `.yaml`, `.json`, `.py` and `.png` files, plus `10_Source_Ref
 
 - Do not edit imported files; record disagreements in `DECISION_LOG.md`.
 - The pack's `fill_success_story_template.py` helper is reference only; plan task T14 replaces it with a safe stdlib renderer and a pinned template hash.
-- DNA, MeChat, IMP, MAAP, Project Review and Spotlight are not connected systems. They stay `BLOCKED_EXTERNAL` or mock-only (see decisions D1-D5).
+- DNA, MiChat, IMP, MAAP, Project Review and Spotlight are not connected systems. They stay `BLOCKED_EXTERNAL` or mock-only (see decisions D1-D5).

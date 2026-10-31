@@ -68,17 +68,17 @@ test('mock stays the default: ATLAS_ADAPTERS off/mock/live semantics, and live i
   assert.deepEqual(adapterMode({ ATLAS_ADAPTERS: 'anything' }), { mode: 'off' });
   const live = adapterMode({ ATLAS_ADAPTERS: 'live' });
   assert.deepEqual([live.mode, live.code], ['blocked', 'BLOCKED_EXTERNAL'], 'the shipped connections are all unconfigured, so live is still blocked');
-  for (const name of ['DNA_SKILLS_WRITEBACK', 'MECHAT_CV', 'IMP_CAPABILITY', 'SPOTLIGHT_CMS']) {
+  for (const name of ['DNA_SKILLS_WRITEBACK', 'MICHAT_CV', 'IMP_CAPABILITY', 'SPOTLIGHT_CMS']) {
     assert.equal(adapterModeFor({ ATLAS_ADAPTERS: 'live' }, name).mode, 'blocked');
     assert.equal(adapterModeFor({ ATLAS_ADAPTERS: 'mock' }, name).mode, 'mock');
   }
   const reg = registry(new Library(memorySql(), { now: () => '2026-11-01T00:00:00Z', newId: () => 'x' }));
-  for (const name of ['DNA_SKILLS_WRITEBACK', 'MECHAT_CV', 'IMP_CAPABILITY', 'SPOTLIGHT_CMS']) assert.equal(reg[name].mock, true, `${name} registry entry is still the mock`);
+  for (const name of ['DNA_SKILLS_WRITEBACK', 'MICHAT_CV', 'IMP_CAPABILITY', 'SPOTLIGHT_CMS']) assert.equal(reg[name].mock, true, `${name} registry entry is still the mock`);
   assert.equal(anyLiveEligible({ ATLAS_ADAPTERS: 'live' }), false);
 });
 
-test('the shipped config: michat_cv maps to the existing MECHAT_CV adapter; every external connection starts not_configured with no owner', () => {
-  assert.equal(connectionForAdapter('MECHAT_CV')?.id, 'michat_cv');
+test('the shipped config: michat_cv maps to the existing MICHAT_CV adapter; every external connection starts not_configured with no owner', () => {
+  assert.equal(connectionForAdapter('MICHAT_CV')?.id, 'michat_cv');
   assert.equal(connectionById('mechat_cv'), null, 'the old spelling is not a connection id');
   assert.deepEqual(CONNECTIONS_CONFIG.connections.map(c => c.id), ['identity', 'prefill_profile', 'staffing', 'opportunity', 'dna_skills', 'michat_cv', 'imp_capability', 'maap_review', 'project_review', 'spotlight_cms']);
   for (const c of CONNECTIONS_CONFIG.connections.filter(c => c.managed_by === 'http_connector')) {
@@ -330,13 +330,13 @@ test('the real payload builders produce nothing a connection must never send, an
     { claim_id: 'c3', claim_type: 'deliverable', statement: 'Wrote runbook', attribution: 'individual', origin: 'consultant_reported', review_status: 'validated', source_refs: [] }];
   const grants = [{ id: 'g1', purpose: 'cv', status: 'active', scope: null, expires_at: null, revision: 3 }, { id: 'g2', purpose: 'matching', status: 'active', scope: null, expires_at: null, revision: 3 }];
   const never = CONNECTIONS_CONFIG.data_minimisation.never_send_keys;
-  for (const [adapter, id] of [['DNA_SKILLS_WRITEBACK', 'dna_skills'], ['MECHAT_CV', 'michat_cv'], ['IMP_CAPABILITY', 'imp_capability']]) {
+  for (const [adapter, id] of [['DNA_SKILLS_WRITEBACK', 'dna_skills'], ['MICHAT_CV', 'michat_cv'], ['IMP_CAPABILITY', 'imp_capability']]) {
     const payload = buildPayload(adapter, { entity, claims, approval, grants }), conn = connectionById(id);
     assert.equal(findForbidden(payload, never), null, `${adapter} payload`);
     const schema = JSON.parse(readFileSync(resolve(CONFIG_DIR, conn.request_schema), 'utf8')), r = validate(schema, payload);
     assert.deepEqual(r.errors, [], `${adapter} payload vs ${conn.request_schema}`);
   }
-  assert.equal(JSON.stringify(buildPayload('MECHAT_CV', { entity, claims, approval, grants })).includes('Acme'), false, 'outcome and metric text is withheld');
+  assert.equal(JSON.stringify(buildPayload('MICHAT_CV', { entity, claims, approval, grants })).includes('Acme'), false, 'outcome and metric text is withheld');
 });
 
 test('field_mapping handles nested paths and arrays, copies nothing unmapped, and refuses prototype-polluting paths', () => {

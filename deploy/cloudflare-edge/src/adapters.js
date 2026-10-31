@@ -1,5 +1,5 @@
 // Destination adapters (plan §4, decisions D1-D5, D12; Integration Contracts §1-§5): contract-driven MOCKS only. No live DNA,
-// MeChat, IMP or Spotlight CMS endpoint, schema or credential exists in this repository, so nothing here calls a network; a mock
+// MiChat, IMP or Spotlight CMS endpoint, schema or credential exists in this repository, so nothing here calls a network; a mock
 // answers from memory and every acknowledgement carries mock:true. A mock acknowledgement is never "synced" or "published"
 // (D12): the policy gate refuses record_sync_complete / record_published unless destination_ack.mock === false.
 //
@@ -35,7 +35,7 @@ export const evidenceWorkflowOn = env => String(env?.ATLAS_EVIDENCE_WORKFLOW ?? 
 // The four destination adapters. `destination` is the job envelope's destination, `branch` the status card it feeds.
 export const CONTRACTS = {
   DNA_SKILLS_WRITEBACK: { branch: 'dna', destination: 'DNA', purpose: 'skills_profile', label: 'DNA — skills write-back (mock, not connected)' },
-  MECHAT_CV: { branch: 'mechat', destination: 'MeChat', purpose: 'cv', label: 'MeChat (CV) — not connected, mock' },
+  MICHAT_CV: { branch: 'michat', destination: 'MiChat', purpose: 'cv', label: 'MiChat CV — not connected, mock' },
   IMP_CAPABILITY: { branch: 'imp', destination: 'IMP', purpose: 'matching', label: 'IMP — capability signal (mock, not connected)' },
   SPOTLIGHT_CMS: { branch: 'spotlight', destination: 'Spotlight', purpose: 'public_spotlight', label: 'Spotlight CMS — mock, can never publish' },
 };
@@ -47,7 +47,7 @@ const SKILL_TYPES = ['responsibility', 'deliverable', 'technology', 'credential'
 const CV_TYPES = ['responsibility', 'deliverable', 'technology', 'credential', 'outcome', 'metric'];
 const typed = c => ({ claim_id: c.claim_id, claim_type: c.claim_type, statement: c.statement, attribution: c.attribution, origin: c.origin });
 const measured = c => ({ ...typed(c), value: c.value ?? null, unit: c.unit ?? null, baseline: c.baseline ?? null, after_state: c.after_state ?? null, period: c.period ?? null });
-// MeChat CV (G1, review L8): the statement of an approved claim is the consultant's raw speech-recognition quote until a person has put it in their
+// MiChat CV (G1, review L8): the statement of an approved claim is the consultant's raw speech-recognition quote until a person has put it in their
 // own words. A CV gets only REVIEWED wording: the claim's statement is sent when the revision is validated AND a person amended it (an owner's or a
 // reviewer's amendment; the approver is never its author), capped at CV_STATEMENT_MAX. Otherwise the claim travels as structured fields only, with
 // the reason code beside it. Outcome and metric claims can name the client, and no client_permission exists in the data model to say they may be
@@ -72,7 +72,7 @@ export function buildPayload(adapter, { entity, claims, approval, grants }) {
       return { ...base(entity, approval), consultant_id: entity.owner_sub, reviewer: approval?.approver_sub ?? null, effective_date: String(approval?.at ?? '').slice(0, 10) || null,
         assertions: list.filter(c => SKILL_TYPES.includes(c.claim_type) && c.attribution !== 'client')
           .map(c => ({ ...typed(c), skill_taxonomy_id: null, level: null, status: 'proposed', evidence_refs: [{ claim_id: c.claim_id, revision: entity.revision }] })) };
-    case 'MECHAT_CV': // approved contribution claims only, with reviewed wording only (see cvClaim); context and learning may carry restricted client detail and stay out
+    case 'MICHAT_CV': // approved contribution claims only, with reviewed wording only (see cvClaim); context and learning may carry restricted client detail and stay out
       return { ...base(entity, approval), consultant_id: entity.owner_sub, profile_revision: entity.revision, language: null, target_role: null, template: null,
         claims: list.filter(c => CV_TYPES.includes(c.claim_type) && c.attribution !== 'client' && c.review_status === 'validated').map(cvClaim), permissions: grantRef(grants, 'cv') };
     case 'IMP_CAPABILITY': // a capability signal; availability and allocation are IMP's, never computed here

@@ -3,7 +3,7 @@
 Filled in from `08_Implementation/IMPLEMENTATION_STATUS_TEMPLATE.md`. Date: 2026-10-31. Tree: branch `v21/T17` on `2380cd4` (tasks T0 to T16, review-fix waves G1, S1, H1, H2, X1, then T17). Baseline before the upgrade: `efb4948`.
 
 **Read this first.**
-- **Provider verified: none.** No Workers AI model, no Deepgram or ElevenLabs voice, no Durable Object on a deployed Worker, no DNA, MeChat, IMP, MAAP, Project Review or Spotlight system, and no real consultant has touched any of this. Every "locally verified" below means an offline test on synthetic data against fakes and mocks passed.
+- **Provider verified: none.** No Workers AI model, no Deepgram or ElevenLabs voice, no Durable Object on a deployed Worker, no DNA, MiChat, IMP, MAAP, Project Review or Spotlight system, and no real consultant has touched any of this. Every "locally verified" below means an offline test on synthetic data against fakes and mocks passed.
 - **Not deployed.** Nothing was pushed or published.
 - **No claim of production readiness is made or implied.** The release gates in section 5 are mostly open, and the pack's own quality gate (conversation quality set with pilot users) has not started.
 - A passing test shows the code does what the test says. It does not show the live model sounds humane, that a latency target is met, or that a destination system accepts a payload.
@@ -41,7 +41,7 @@ Rows follow `GAP_ANALYSIS.md`. Owner is Tony unless stated.
 | C15 | Repetition guard | Implemented; locally verified | 3-gram similarity in the selector; opener rule in ReplyGuard. `test_selector.py`; `test_speech.py::test_guard_drops_a_leading_reaction_that_repeats_a_recent_opener`; adversarial runs in `eval-conversation.test.js` | none | none |
 | C16 | Rushed, skip, "I don't know", "can't share" | Implemented; locally verified | `turns.py`, `selector.py`. `eval-conversation.test.js::X2`, `::X3`, `::S5`; `h1-humane.test.js`; `test_turns.py` | none | Cues are English only; French and Spanish have intents only; other languages none. |
 | C17 | Text interview (workflow W3) | Implemented; locally verified | X1 text mode, `voice-client.js`. `session-text.test.js` (14), `text-mode-dom.test.js`, `eval-workflow.test.js::W3`, `::W3b`; `humane_browser.py` | none | Text-mode replies follow the voice languages (product call). No "read replies aloud" toggle. |
-| C18 | Output language per destination | PARTIAL | The success-story DOCX selects its language by the pinned template (`test_success_story.py::test_t10_...`). | none | No per-destination language setting for DNA, MeChat, IMP or Spotlight payloads (`language` is null until the owners define it, section 4). Reports stay English by design. |
+| C18 | Output language per destination | PARTIAL | The success-story DOCX selects its language by the pinned template (`test_success_story.py::test_t10_...`). | none | No per-destination language setting for DNA, MiChat, IMP or Spotlight payloads (`language` is null until the owners define it, section 4). Reports stay English by design. |
 
 ## 2. Memory, evidence and review
 
@@ -73,7 +73,7 @@ Rows follow `GAP_ANALYSIS.md`. Owner is Tony unless stated.
 | ID | Requirement | Status | Evidence | Owner and API needed | Next action |
 |---|---|---|---|---|---|
 | X1 | DNA skills write-back | **BLOCKED_EXTERNAL**; mock only | `adapters.js` `DNA_SKILLS_WRITEBACK`. Proposal payload; `skill_taxonomy_id` and `level` are null. Tests: `branches.test.js`, `eval-workflow.test.js::S13` | Mantu DNA owners (IT): endpoint, authentication, skill taxonomy, level scale, write contract | Owners define the contract; then a live adapter behind `ATLAS_ADAPTERS=live` (today refused). |
-| X2 | MeChat CV | **BLOCKED_EXTERNAL**; mock only | `MECHAT_CV`. `language`, `target_role`, `template` are null. CV claims carry reviewed wording only (G1-4). Tests: `branches.test.js` | MeChat owners: endpoint, CV schema, template and language rules, client-permission model | As above. "MiChat" is an internal label for this interview (D1); no UI rename. |
+| X2 | MiChat CV | **BLOCKED_EXTERNAL**; mock only | `MICHAT_CV`. `language`, `target_role`, `template` are null. CV claims carry reviewed wording only (G1-4). Tests: `branches.test.js` | MiChat owners: endpoint, CV schema, template and language rules, client-permission model | As above. "MiChat" is an internal label for this interview (D1); no UI rename. |
 | X3 | IMP capability signal | **BLOCKED_EXTERNAL**; mock only | `IMP_CAPABILITY`. `availability` null; waits for its own `matching` permission. Tests: `branches.test.js` (W9) | IMP owners: endpoint, signal schema, matching purpose confirmation | As above. |
 | X4 | Spotlight CMS | **BLOCKED_EXTERNAL**; mock holds, never publishes | `SPOTLIGHT_CMS`, `spotlight.js`. `eval-workflow.test.js::W12`, `::S12` | Spotlight CMS owners: API and publication contract; brand approval; per-revision authorization | Atlas never sets `published` (D4, D12). |
 | X5 | MAAP review | **BLOCKED_EXTERNAL** (rubric); shell only | `createShell('MAAP')`. Rating or closing returns `MAAP_NOT_CONFIGURED`. `eval-workflow.test.js::S11`, `MAAP-1` to `MAAP-6` | Process owner: rubric, cadence, owners, data model (D2) | Nothing to build until supplied. No MAAP conversation exists. |
@@ -99,7 +99,7 @@ Details, test names and notes: `eval/COVERAGE.md`. Short test names (CONV, WF) l
 | 10 manager and consultant disagree | Locally verified | WF `S10` | |
 | 11 MAAP requested, rubric missing | PARTIAL | WF `S11` | No MAAP conversation exists; only the gate. |
 | 12 relevant to a prospect, no public permission | Locally verified | WF `S12` | Live JEV ranking needs the key. |
-| 13 DNA succeeds, MeChat fails | Locally verified (mocks) | WF `S13`, `W11` | Mock destinations. |
+| 13 DNA succeeds, MiChat fails | Locally verified (mocks) | WF `S13`, `W11` | Mock destinations. |
 | 14 duplicate webhook | Locally verified | WF `S14` | No inbound webhook from any destination exists. |
 | 15 destination holds a newer revision | Locally verified (mocks) | WF `S15` | |
 | 16 permission revoked after publication | PARTIAL | WF `S16` | Nothing is ever published; "after the hold". |

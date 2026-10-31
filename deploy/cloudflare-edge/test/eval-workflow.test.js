@@ -2,7 +2,7 @@
 // acceptance tests W1-W12 (ATLAS_v2.1_Workflow_and_Template_Acceptance_Tests.md), the MAAP shell tests (04_Workflows/MAAP_Review_Specification.md section 8)
 // and the release gates that can be checked offline (framework section 4). Every test name starts with its id so that eval/COVERAGE.md can point at it.
 // Real code throughout: the evidence store, the review machine, the policy gate, the branch fan-out, the job queue (node:sqlite), the Worker's handle() and the
-// Session. Only the destinations are mocks (adapters.js: mock:true on every acknowledgement), because no live DNA, MeChat, IMP, MAAP or Spotlight exists.
+// Session. Only the destinations are mocks (adapters.js: mock:true on every acknowledgement), because no live DNA, MiChat, IMP, MAAP or Spotlight exists.
 // Where a requirement cannot be met today the test pins what is actually there and COVERAGE.md says PARTIAL, rather than faking it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -69,7 +69,7 @@ async function approved(ctx, { session = 'sess-001', grants = ['skills_profile',
 const status = (l, id) => Object.fromEntries(l.rows('SELECT branch, status FROM branch_status WHERE entity = ?', id).map(r => [r.branch, r.status]));
 const reasons = (l, id) => Object.fromEntries(l.rows('SELECT branch, reason FROM branch_status WHERE entity = ?', id).map(r => [r.branch, r.reason]));
 const card = (view, b) => view.cards.find(c => c.branch === b);
-const BRANCH_IDS = ['evidence', 'maap', 'project_review', 'dna', 'mechat', 'imp', 'spotlight'];
+const BRANCH_IDS = ['evidence', 'maap', 'project_review', 'dna', 'michat', 'imp', 'spotlight'];
 const rejects = (p, status, reason) => assert.rejects(Promise.resolve().then(typeof p === 'function' ? p : () => p), e => e.status === status && (reason === undefined || e.reason === reason || String(e.message).includes(reason)), `expected ${status} ${reason ?? ''}`);
 const closeGates = (ev, id, at, channel = CHANNEL) => { for (const g of GATES) B.approveSpotlightGate(ev, GATE_ACTOR[g], id, g, { ...at, channel, ...(g === 'privacy_legal_review_if_required' ? { decision: 'not_required', reason: 'No legal check needed.' } : {}) }); };
 
@@ -135,12 +135,12 @@ test('S12 a story is relevant to a prospect but has no public permission: intern
   trail(ctx);
 });
 
-test('S13 DNA succeeds and MeChat fails: the state is per destination, DNA is untouched, nothing is rolled back and no card says "complete"', async () => {
+test('S13 DNA succeeds and MiChat fails: the state is per destination, DNA is untouched, nothing is rolled back and no card says "complete"', async () => {
   const ctx = setup(), { l, ev, ad } = ctx;
-  ad.MECHAT_CV.failNext(1, { retryable: false, error: 'MOCK_MECHAT_DOWN' });
+  ad.MICHAT_CV.failNext(1, { retryable: false, error: 'MOCK_MICHAT_DOWN' });
   const ok = await approved(ctx), view = B.statusView(ev, OWNER, ok.id);
-  assert.deepEqual([card(view, 'dna').display_status, card(view, 'mechat').display_status, card(view, 'mechat').reason], ['mock_acknowledged', 'failed', 'MOCK_MECHAT_DOWN']);
-  assert.equal(ad.DNA_SKILLS_WRITEBACK.calls.length, 1, 'DNA was delivered once, whatever MeChat did');
+  assert.deepEqual([card(view, 'dna').display_status, card(view, 'michat').display_status, card(view, 'michat').reason], ['mock_acknowledged', 'failed', 'MOCK_MICHAT_DOWN']);
+  assert.equal(ad.DNA_SKILLS_WRITEBACK.calls.length, 1, 'DNA was delivered once, whatever MiChat did');
   assert.equal(l.rows("SELECT COUNT(*) AS n FROM approvals WHERE status = 'approved'")[0].n, 1, 'the approval stands'); assert.equal(ev.get(OWNER, ok.id).state, 'approved');
   assert.deepEqual(view.overall, { status: 'attention', complete: false });
   assert.ok(!view.cards.some(c => /^(complete|sync_complete|published)$/.test(c.display_status)), 'no card claims a completion');
@@ -166,8 +166,8 @@ test('S14 a duplicate webhook, draft post or job is idempotent: one invitation, 
   // The fan-out and the job, repeated: one job and one delivery per destination and revision.
   const ok = await approved(ctx, { session: 'sess-J' });
   await B.fanOut(ev, ok.id); await B.fanOut(ev, ok.id); await B.pump(ev);
-  assert.deepEqual(jobs(l).list(ok.id).map(j => j.destination), ['DNA', 'MeChat', 'IMP']);
-  assert.deepEqual([ad.DNA_SKILLS_WRITEBACK.calls.length, ad.MECHAT_CV.calls.length, ad.IMP_CAPABILITY.calls.length], [1, 1, 1]);
+  assert.deepEqual(jobs(l).list(ok.id).map(j => j.destination), ['DNA', 'MiChat', 'IMP']);
+  assert.deepEqual([ad.DNA_SKILLS_WRITEBACK.calls.length, ad.MICHAT_CV.calls.length, ad.IMP_CAPABILITY.calls.length], [1, 1, 1]);
   const j = jobs(l).list(ok.id)[0], again = await jobs(l).enqueue({ entity: ok.id, revision: ok.revision, hash: ok.content_hash, destination: 'DNA', payload: { x: 1 } });
   assert.deepEqual([again.duplicate, again.job.job_id], [true, j.job_id]);
   assert.throws(() => l.sql.exec('INSERT INTO jobs (job_id, idempotency_key) VALUES (?, ?)', 'dup', j.idempotency_key), /UNIQUE|constraint|NOT NULL/i, 'the key is UNIQUE in the table itself');
@@ -180,7 +180,7 @@ test('S15 a destination that already holds a newer revision is never overwritten
   for (const purpose of PURPOSES.slice(0, 3)) ev.grantPermission(OWNER, d.id, { expected_revision: 1, purpose });
   const q = ev.submit(OWNER.email, d.id, 1); await ev.review(REV, q.id, 'approve', { expected_revision: 1, content_hash: q.content_hash });
   const view = B.statusView(ev, OWNER, d.id);
-  assert.deepEqual([card(view, 'dna').display_status, card(view, 'dna').reason, card(view, 'mechat').display_status], ['needs_reconciliation', 'DESTINATION_NEWER_REVISION', 'mock_acknowledged'], 'only that destination is held; MeChat went through');
+  assert.deepEqual([card(view, 'dna').display_status, card(view, 'dna').reason, card(view, 'michat').display_status], ['needs_reconciliation', 'DESTINATION_NEWER_REVISION', 'mock_acknowledged'], 'only that destination is held; MiChat went through');
   assert.equal(ad.DNA_SKILLS_WRITEBACK.records.get(d.id).revision, 9, 'the newer destination record was left alone');
   assert.equal((await B.pump(ev)).ran, 0, 'a human reconciles; nothing retries on its own');
   // And on the source side: a job still waiting for an older revision never delivers once a newer one exists.
@@ -197,14 +197,14 @@ test('S16 a permission is revoked after approval and after the Spotlight hold: w
   B.requestSpotlightApproval(ev, RV, id, at); closeGates(ev, id, at);
   assert.equal((await B.publishSpotlight(ev, SA, id, { ...at, channel: CHANNEL })).allow, true); assert.equal(ad.SPOTLIGHT_CMS.calls.length, 1);
   assert.equal(status(l, id).spotlight, 'publication_held', 'the furthest a mock can go: held by the test CMS, never published');
-  const grants = ev.grantsFor(id), sent = ad.DNA_SKILLS_WRITEBACK.calls.length + ad.MECHAT_CV.calls.length + ad.IMP_CAPABILITY.calls.length;
+  const grants = ev.grantsFor(id), sent = ad.DNA_SKILLS_WRITEBACK.calls.length + ad.MICHAT_CV.calls.length + ad.IMP_CAPABILITY.calls.length;
   ev.revokePermission(OWNER, id, grants.find(g => g.purpose === 'public_spotlight').id, { expected_revision: 1 });
   ev.revokePermission(OWNER, id, grants.find(g => g.purpose === 'skills_profile').id, { expected_revision: 1 });
   assert.deepEqual([status(l, id).spotlight, reasons(l, id).spotlight, status(l, id).dna, reasons(l, id).dna], ['impact_review', 'PERMISSION_REVOKED:public_spotlight', 'impact_review', 'PERMISSION_REVOKED:skills_profile']);
-  assert.deepEqual([status(l, id).mechat, status(l, id).imp], ['mock_acknowledged', 'mock_acknowledged'], 'a permission that was not revoked leaves its destination alone');
+  assert.deepEqual([status(l, id).michat, status(l, id).imp], ['mock_acknowledged', 'mock_acknowledged'], 'a permission that was not revoked leaves its destination alone');
   const view = B.statusView(ev, OWNER, id); assert.deepEqual([card(view, 'dna').display_status, card(view, 'spotlight').display_status, view.overall.complete], ['impact_review', 'impact_review', false]);
   await B.fanOut(ev, id); assert.equal(status(l, id).dna, 'impact_review', 'a flagged branch stays flagged until a person clears it');
-  assert.equal(ad.DNA_SKILLS_WRITEBACK.calls.length + ad.MECHAT_CV.calls.length + ad.IMP_CAPABILITY.calls.length, sent, 'nothing more was sent');
+  assert.equal(ad.DNA_SKILLS_WRITEBACK.calls.length + ad.MICHAT_CV.calls.length + ad.IMP_CAPABILITY.calls.length, sent, 'nothing more was sent');
   // Withdrawal after approval lists the derivatives too, and a reviewer completes the impact review.
   const w = await ev.review(OWNER, id, 'withdraw', { expected_revision: 1, reason: 'I do not want this used.' });
   assert.equal(w.state, 'impact_review'); assert.ok(w.impact.derivatives.some(d => d.kind === 'branch' && d.branch === 'spotlight') && w.impact.derivatives.some(d => d.kind === 'permission'), 'derivatives are listed, branches and permissions');
@@ -341,11 +341,11 @@ test('W8 a rejection routes to clarify, correct or dispute and preserves the rev
   trail(ctx);
 });
 
-test('W9 approval creates independent branch records for DNA, MeChat, IMP, MAAP, Project Review and Spotlight (and the evidence card), each with its own permission check', async () => {
+test('W9 approval creates independent branch records for DNA, MiChat, IMP, MAAP, Project Review and Spotlight (and the evidence card), each with its own permission check', async () => {
   const ctx = setup(), { l, ad } = ctx, ok = await approved(ctx, { grants: ['skills_profile', 'cv'] }); // no matching grant
   assert.deepEqual(Object.keys(status(l, ok.id)).sort(), [...BRANCH_IDS].sort());
-  assert.deepEqual(status(l, ok.id), { evidence: 'evidence_approved', maap: 'maap_pending', project_review: 'project_review_pending', dna: 'mock_acknowledged', mechat: 'mock_acknowledged', imp: 'permission_pending', spotlight: 'spotlight_draft' });
-  assert.equal(reasons(l, ok.id).imp, 'PURPOSE_NOT_GRANTED:matching', 'IMP waits for ITS permission while DNA and MeChat went ahead');
+  assert.deepEqual(status(l, ok.id), { evidence: 'evidence_approved', maap: 'maap_pending', project_review: 'project_review_pending', dna: 'mock_acknowledged', michat: 'mock_acknowledged', imp: 'permission_pending', spotlight: 'spotlight_draft' });
+  assert.equal(reasons(l, ok.id).imp, 'PURPOSE_NOT_GRANTED:matching', 'IMP waits for ITS permission while DNA and MiChat went ahead');
   assert.equal(ad.IMP_CAPABILITY.calls.length, 0);
   trail(ctx);
 });
@@ -364,7 +364,7 @@ test('W10 MAAP and Project Review are separate workflows: separate state, separa
 test('W11 a failure in one branch does not fail the others or roll back what succeeded: a thrown error is that branch\'s state only', async () => {
   const ctx = setup(), { l, ev, ad } = ctx; ad.IMP_CAPABILITY.send = async () => { throw new Error('socket hang up'); };
   const ok = await approved(ctx), view = B.statusView(ev, OWNER, ok.id);
-  assert.deepEqual([card(view, 'imp').display_status, card(view, 'imp').reason, card(view, 'dna').display_status, card(view, 'mechat').display_status], ['in_progress', 'ADAPTER_EXCEPTION', 'mock_acknowledged', 'mock_acknowledged']);
+  assert.deepEqual([card(view, 'imp').display_status, card(view, 'imp').reason, card(view, 'dna').display_status, card(view, 'michat').display_status], ['in_progress', 'ADAPTER_EXCEPTION', 'mock_acknowledged', 'mock_acknowledged']);
   assert.equal(ev.get(OWNER, ok.id).state, 'approved'); assert.equal(l.rows("SELECT COUNT(*) AS n FROM approvals WHERE status = 'approved'")[0].n, 1);
   assert.deepEqual([status(l, ok.id).spotlight, status(l, ok.id).evidence], ['spotlight_draft', 'evidence_approved'], 'unrelated branches are untouched');
   trail(ctx);

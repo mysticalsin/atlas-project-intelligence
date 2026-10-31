@@ -1,12 +1,12 @@
 const test=require('node:test'),assert=require('node:assert/strict'),W=require('../src/workflow-core.js');
-const ORDER=['evidence','maap','project_review','dna','mechat','imp','spotlight'];
-const card=(branch,display_status,extra={})=>({branch,label:branch,status:display_status,display_status,mock:['dna','mechat','imp','spotlight'].includes(branch),updated_at:'2026-11-01T00:00:00.000Z',reason:null,...extra});
+const ORDER=['evidence','maap','project_review','dna','michat','imp','spotlight'];
+const card=(branch,display_status,extra={})=>({branch,label:branch,status:display_status,display_status,mock:['dna','michat','imp','spotlight'].includes(branch),updated_at:'2026-11-01T00:00:00.000Z',reason:null,...extra});
 const view=(statuses,extra={})=>({cards:ORDER.map((b,i)=>card(b,statuses[i])),overall:{status:'in_progress',complete:false},adapters:'mock',...extra});
 const APPROVED_MOCK=['approved','pending','pending','mock_acknowledged','mock_acknowledged','mock_acknowledged','draft'];
 test('seven cards in the pack order, labelled by the client, whatever order or labels the server sends',()=>{
  const v=view(APPROVED_MOCK);v.cards.reverse();v.cards.forEach(c=>{c.label='<img src=x onerror=alert(1)>';});
  const m=W.model(v);assert.deepEqual(m.cards.map(c=>c.branch),ORDER);
- assert.deepEqual(m.cards.map(c=>c.label),['Evidence','MAAP Review','Project Review','DNA','MeChat (CV)','IMP','Spotlight']);
+ assert.deepEqual(m.cards.map(c=>c.label),['Evidence','MAAP Review','Project Review','DNA','MiChat CV','IMP','Spotlight']);
 });
 test('every destination that is not really connected carries the "Mock — not connected" badge; evidence, MAAP and Project Review never do',()=>{
  const m=W.model(view(APPROVED_MOCK));
@@ -46,7 +46,7 @@ test('reasons are words; gates, purposes and unknown codes are bounded and never
  assert.equal(W.reasonText('PURPOSE_NOT_GRANTED:skills_profile'),'No permission for skills profile yet.');
  assert.equal(W.reasonText('PERMISSION_REVOKED:cv'),'Permission for CV use was withdrawn.');
  assert.equal(W.reasonText('PURPOSE_GRANT_NOT_BOUND_TO_REVISION:matching'),'The permission for matching was given for an earlier revision.');
- assert.equal(W.reasonText('MOCK_MECHAT_DOWN'),'Reported: MOCK_MECHAT_DOWN');
+ assert.equal(W.reasonText('MOCK_MICHAT_DOWN'),'Reported: MOCK_MICHAT_DOWN');
  for(const bad of ['<script>alert(1)</script>','a b','',null,undefined,5,'X'.repeat(200)])assert.equal(W.reasonText(bad),'');
  assert.equal(W.reasonText('MOCK_NOT_SYNCED'),'A test acknowledgement only. Nothing reached a real system.');
 });

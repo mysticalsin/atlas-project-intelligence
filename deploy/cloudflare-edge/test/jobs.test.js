@@ -34,7 +34,7 @@ test('idempotency_key is UNIQUE in the table, and a duplicate enqueue is a no-op
   assert.equal(b.duplicate, true); assert.equal(b.job.job_id, a.job.job_id); assert.equal(b.job.payload_hash, a.job.payload_hash, 'the first payload stands');
   assert.equal(l.rows('SELECT COUNT(*) AS n FROM jobs')[0].n, 1);
   assert.throws(() => l.sql.exec(`INSERT INTO jobs (job_id, idempotency_key) VALUES ('x', ?)`, a.job.idempotency_key), /UNIQUE/);
-  assert.equal((await J.enqueue(spec({ destination: 'MeChat' }))).duplicate, false, 'another destination is another job');
+  assert.equal((await J.enqueue(spec({ destination: 'MiChat' }))).duplicate, false, 'another destination is another job');
   assert.equal((await J.enqueue(spec({ hash: 'g'.repeat(64) }))).duplicate, false, 'another revision hash is another job');
   const [x, y] = await Promise.all([J.enqueue(spec({ entity: 'ev-2', hash: 'k'.repeat(64) })), J.enqueue(spec({ entity: 'ev-2', hash: 'k'.repeat(64) }))]); // a race resolves to one job
   assert.equal(x.job.job_id, y.job.job_id); assert.deepEqual([x.duplicate, y.duplicate].sort(), [false, true]);

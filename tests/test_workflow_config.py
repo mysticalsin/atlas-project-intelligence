@@ -79,6 +79,7 @@ def test_visibility_json_has_exactly_the_pack_yaml_keys_and_lists():
 def test_destinations_match_the_yaml_flow_maps():
     text = (PACK / 'atlas_workflow.yaml').read_text(encoding='utf-8')
     pack = [(m[0], m[1], tuple(x.strip() for x in m[2].split(','))) for m in re.findall(r'\{id: (\w+), adapter: (\w+), requires: \[([^\]]*)\]\}', text)]
+    pack = [(i.replace('mechat', 'michat'), ad.replace('MECHAT', 'MICHAT'), req) for i, ad, req in pack]  # the pack's "MeChat" is a typo for MiChat (Tony, 2026-10-31, D1)
     assert pack and pack == [(d['id'], d['adapter'], tuple(d['requires'])) for d in wc.WORKFLOW_CONFIG['workflow']['branches']['purpose_specific_projections']['destinations']]
 
 

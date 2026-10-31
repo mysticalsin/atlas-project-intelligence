@@ -17,7 +17,7 @@ Branch `feature/agent-brain-v2.1` (from `efb4948`): the humane, evidence-first i
 | Checkpoint and reconnect (24 h, transcript consent only) | `checkpoint.js`, `worker.js` | Locally verified against a storage fake. Durable Object alarm, eviction and mobile drops unverified. Consent text does not yet mention the 24 h retention (Tony and the data protection owner to approve wording). |
 | Summary read-back, correction revisions, owner-only evidence draft, explicit submit | `summary.js`, `evidence.js` | Locally verified. |
 | Evidence review, policy gate, seven branch cards, job envelope, success-story template safety | `evidence.js`, `policy-gate.js`, `branches.js`, `jobs.js`, `atlas_voice/success_story.py` | Locally verified. Destinations are mocks. DOCX visual fidelity in Word unverified. |
-| DNA, MeChat, IMP, Spotlight CMS | `adapters.js` (mocks), `docs/INTEGRATIONS.md` | `BLOCKED_EXTERNAL`: no endpoints, schemas or credentials. Mock acknowledgements are never "synced" or "published". |
+| DNA, MiChat, IMP, Spotlight CMS | `adapters.js` (mocks), `docs/INTEGRATIONS.md` | `BLOCKED_EXTERNAL`: no endpoints, schemas or credentials. Mock acknowledgements are never "synced" or "published". |
 | MAAP review, Project Review | shells in `adapters.js`, `atlas_workflow.json` | `BLOCKED_EXTERNAL` (rubric must be configured by the process owner). Rating or closing is denied. |
 | Offline evaluation (pack scenarios 1 to 16, W1 to W12, MAAP section 8, release gates) | `deploy/cloudflare-edge/test/eval-*.test.js`, `make test-eval` | Passes offline. Conversation quality with pilot users has not started. |
 

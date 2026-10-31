@@ -26,7 +26,7 @@ const UNSAFE = new Set(['__proto__', 'constructor', 'prototype']);
 
 // ---- registry lookups ----
 export const connectionById = (id, config = CONNECTIONS_CONFIG) => (config?.connections || []).find(c => c.id === id) || null;
-// michat_cv -> MECHAT_CV: the adapter id is renamed in M1; the connection id is already the confirmed name.
+// michat_cv -> MICHAT_CV (the CV destination is MiChat; the pack's "MeChat" is a typo).
 export const connectionForAdapter = (adapter, config = CONNECTIONS_CONFIG) => (config?.connections || []).find(c => c.adapter === adapter) || null;
 
 // ---- readiness ----

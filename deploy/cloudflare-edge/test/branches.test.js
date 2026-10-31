@@ -52,30 +52,30 @@ async function approved(ctx, { session = 'sess-001', grants = ['skills_profile',
 const status = (l, id) => Object.fromEntries(l.rows('SELECT branch, status FROM branch_status WHERE entity = ?', id).map(r => [r.branch, r.status]));
 const reasons = (l, id) => Object.fromEntries(l.rows('SELECT branch, reason FROM branch_status WHERE entity = ?', id).map(r => [r.branch, r.reason]));
 const card = (view, b) => view.cards.find(c => c.branch === b);
-const BRANCH_IDS = ['evidence', 'maap', 'project_review', 'dna', 'mechat', 'imp', 'spotlight'];
+const BRANCH_IDS = ['evidence', 'maap', 'project_review', 'dna', 'michat', 'imp', 'spotlight'];
 
 test('approval creates seven independent branch records; each destination has its own permission check', async () => {
   const ctx = setup(), { l } = ctx, ok = await approved(ctx, { grants: ['skills_profile', 'cv'] }); // no matching grant
   assert.equal(ok.state, 'approved');
   const s = status(l, ok.id);
   assert.deepEqual(Object.keys(s).sort(), [...BRANCH_IDS].sort());
-  assert.deepEqual(s, { evidence: 'evidence_approved', maap: 'maap_pending', project_review: 'project_review_pending', dna: 'mock_acknowledged', mechat: 'mock_acknowledged', imp: 'permission_pending', spotlight: 'spotlight_draft' });
+  assert.deepEqual(s, { evidence: 'evidence_approved', maap: 'maap_pending', project_review: 'project_review_pending', dna: 'mock_acknowledged', michat: 'mock_acknowledged', imp: 'permission_pending', spotlight: 'spotlight_draft' });
   assert.deepEqual([reasons(l, ok.id).imp, reasons(l, ok.id).maap, reasons(l, ok.id).project_review], ['PURPOSE_NOT_GRANTED:matching', 'MAAP_NOT_CONFIGURED', 'PROJECT_REVIEW_NOT_CONFIGURED']);
   assert.deepEqual(ok.derivatives.filter(d => d.kind === 'branch').map(d => d.branch).sort(), [...BRANCH_IDS].sort(), 'the review view lists the derivatives');
   const none = setup(), bare = await approved(none, { session: 's-bare', grants: [] });
-  assert.deepEqual([status(none.l, bare.id).dna, reasons(none.l, bare.id).dna, reasons(none.l, bare.id).mechat], ['permission_pending', 'PURPOSE_NOT_GRANTED:skills_profile', 'PURPOSE_NOT_GRANTED:cv']);
-  assert.equal(none.ad.DNA_SKILLS_WRITEBACK.calls.length + none.ad.MECHAT_CV.calls.length, 0, 'no permission, nothing sent');
+  assert.deepEqual([status(none.l, bare.id).dna, reasons(none.l, bare.id).dna, reasons(none.l, bare.id).michat], ['permission_pending', 'PURPOSE_NOT_GRANTED:skills_profile', 'PURPOSE_NOT_GRANTED:cv']);
+  assert.equal(none.ad.DNA_SKILLS_WRITEBACK.calls.length + none.ad.MICHAT_CV.calls.length, 0, 'no permission, nothing sent');
 });
 
-test('DNA succeeds while MeChat fails: per-card states, nothing rolled back, never one overall "complete" (W11)', async () => {
+test('DNA succeeds while MiChat fails: per-card states, nothing rolled back, never one overall "complete" (W11)', async () => {
   const ctx = setup(), { l, ev, ad } = ctx;
-  ad.MECHAT_CV.failNext(1, { retryable: false, error: 'MOCK_MECHAT_DOWN' });
+  ad.MICHAT_CV.failNext(1, { retryable: false, error: 'MOCK_MICHAT_DOWN' });
   const ok = await approved(ctx), view = B.statusView(ev, OWNER, ok.id);
   assert.deepEqual(view.cards.map(c => c.branch), BRANCH_IDS);
   assert.deepEqual(view.cards.map(c => c.display_status), ['approved', 'pending', 'pending', 'mock_acknowledged', 'failed', 'mock_acknowledged', 'draft']);
-  assert.deepEqual([card(view, 'mechat').reason, card(view, 'dna').reason, card(view, 'imp').reason], ['MOCK_MECHAT_DOWN', 'MOCK_NOT_SYNCED', 'MOCK_NOT_SYNCED']);
+  assert.deepEqual([card(view, 'michat').reason, card(view, 'dna').reason, card(view, 'imp').reason], ['MOCK_MICHAT_DOWN', 'MOCK_NOT_SYNCED', 'MOCK_NOT_SYNCED']);
   assert.deepEqual(view.overall, { status: 'attention', complete: false });
-  assert.equal(ad.DNA_SKILLS_WRITEBACK.calls.length, 1, 'DNA was delivered once and not touched by the MeChat failure');
+  assert.equal(ad.DNA_SKILLS_WRITEBACK.calls.length, 1, 'DNA was delivered once and not touched by the MiChat failure');
   assert.equal(l.rows("SELECT status FROM approvals WHERE status = 'approved'").length, 1, 'the approval stands');
   assert.equal(ev.get(OWNER, ok.id).state, 'approved');
   for (const c of view.cards) assert.deepEqual(Object.keys(c), ['branch', 'label', 'status', 'display_status', 'mock', 'updated_at', 'reason']);
@@ -85,36 +85,36 @@ test('DNA succeeds while MeChat fails: per-card states, nothing rolled back, nev
 test('an adapter that throws on one branch is that branch\'s state only (W11)', async () => {
   const ctx = setup(), { ev, ad } = ctx; ad.IMP_CAPABILITY.send = async () => { throw new Error('socket hang up'); };
   const ok = await approved(ctx), view = B.statusView(ev, OWNER, ok.id);
-  assert.deepEqual([card(view, 'imp').display_status, card(view, 'imp').reason, card(view, 'dna').display_status, card(view, 'mechat').display_status], ['in_progress', 'ADAPTER_EXCEPTION', 'mock_acknowledged', 'mock_acknowledged']);
-  const broken = setup(); broken.ad.MECHAT_CV.send = undefined; // a programming error inside one adapter is caught per branch
-  const b = await approved(broken); assert.equal(status(broken.l, b.id).dna, 'mock_acknowledged'); assert.equal(status(broken.l, b.id).mechat, 'retrying');
+  assert.deepEqual([card(view, 'imp').display_status, card(view, 'imp').reason, card(view, 'dna').display_status, card(view, 'michat').display_status], ['in_progress', 'ADAPTER_EXCEPTION', 'mock_acknowledged', 'mock_acknowledged']);
+  const broken = setup(); broken.ad.MICHAT_CV.send = undefined; // a programming error inside one adapter is caught per branch
+  const b = await approved(broken); assert.equal(status(broken.l, b.id).dna, 'mock_acknowledged'); assert.equal(status(broken.l, b.id).michat, 'retrying');
 });
 
 test('retry and backoff are deterministic: not run early, retried on schedule, dead-lettered after max attempts, then recovered by a reviewer', async () => {
-  const ctx = setup(), { l, ev, ad, clock } = ctx; ad.MECHAT_CV.failAlways('MOCK_DOWN');
+  const ctx = setup(), { l, ev, ad, clock } = ctx; ad.MICHAT_CV.failAlways('MOCK_DOWN');
   const ok = await approved(ctx);
-  assert.equal(status(l, ok.id).mechat, 'retrying'); assert.equal(card(B.statusView(ev, OWNER, ok.id), 'mechat').display_status, 'in_progress');
-  const J = jobs(l), job = J.list(ok.id).find(j => j.destination === 'MeChat');
+  assert.equal(status(l, ok.id).michat, 'retrying'); assert.equal(card(B.statusView(ev, OWNER, ok.id), 'michat').display_status, 'in_progress');
+  const J = jobs(l), job = J.list(ok.id).find(j => j.destination === 'MiChat');
   assert.deepEqual([job.attempt, job.next_attempt_at], [1, new Date(T0 + 500).toISOString()]);
-  assert.equal((await B.pump(ev)).ran, 0, 'not due yet'); assert.equal(ad.MECHAT_CV.calls.length, 1);
-  clock.t = T0 + 500; assert.equal((await B.pump(ev)).ran, 1); assert.equal(status(l, ok.id).mechat, 'retrying'); assert.equal(J.get(job.job_id).next_attempt_at, new Date(T0 + 1500).toISOString());
+  assert.equal((await B.pump(ev)).ran, 0, 'not due yet'); assert.equal(ad.MICHAT_CV.calls.length, 1);
+  clock.t = T0 + 500; assert.equal((await B.pump(ev)).ran, 1); assert.equal(status(l, ok.id).michat, 'retrying'); assert.equal(J.get(job.job_id).next_attempt_at, new Date(T0 + 1500).toISOString());
   clock.t = T0 + 1500; await B.pump(ev);
-  assert.deepEqual([status(l, ok.id).mechat, reasons(l, ok.id).mechat, J.get(job.job_id).attempt], ['failed', 'MOCK_DOWN', 3]); assert.equal(ad.MECHAT_CV.calls.length, 3);
+  assert.deepEqual([status(l, ok.id).michat, reasons(l, ok.id).michat, J.get(job.job_id).attempt], ['failed', 'MOCK_DOWN', 3]); assert.equal(ad.MICHAT_CV.calls.length, 3);
   assert.equal(status(l, ok.id).dna, 'mock_acknowledged'); assert.equal((await B.pump(ev)).ran, 0, 'a dead-lettered job is left for a person');
   await assert.rejects(B.sync(ev, OWNER, ok.id, { recover_job: job.job_id }), e => e.status === 403); // the owner does not run recovery
   await assert.rejects(B.sync(ev, OTHER, ok.id, {}), e => e.status === 404);
   await assert.rejects(B.sync(ev, REV, ok.id, { recover_job: 'nope' }), e => e.status === 404);
-  ad.MECHAT_CV.reset(); // the destination is back
+  ad.MICHAT_CV.reset(); // the destination is back
   const view = await B.sync(ev, REV, ok.id, { recover_job: job.job_id });
-  assert.deepEqual([card(view, 'mechat').display_status, J.get(job.job_id).status, J.get(job.job_id).attempt], ['mock_acknowledged', 'succeeded', 1]);
+  assert.deepEqual([card(view, 'michat').display_status, J.get(job.job_id).status, J.get(job.job_id).attempt], ['mock_acknowledged', 'succeeded', 1]);
   await assert.rejects(B.sync(ev, REV, ok.id, { recover_job: job.job_id }), e => e.status === 409 && e.reason === 'JOB_NOT_FAILED');
 });
 
 test('a duplicate fan-out or job is a no-op: one job and one delivery per destination and revision', async () => {
   const ctx = setup(), { l, ev, ad } = ctx, ok = await approved(ctx);
   await B.fanOut(ev, ok.id); await B.fanOut(ev, ok.id); await B.pump(ev);
-  assert.deepEqual(jobs(l).list(ok.id).map(j => j.destination), ['DNA', 'MeChat', 'IMP']);
-  assert.deepEqual([ad.DNA_SKILLS_WRITEBACK.calls.length, ad.MECHAT_CV.calls.length, ad.IMP_CAPABILITY.calls.length], [1, 1, 1]);
+  assert.deepEqual(jobs(l).list(ok.id).map(j => j.destination), ['DNA', 'MiChat', 'IMP']);
+  assert.deepEqual([ad.DNA_SKILLS_WRITEBACK.calls.length, ad.MICHAT_CV.calls.length, ad.IMP_CAPABILITY.calls.length], [1, 1, 1]);
   const j = jobs(l).list(ok.id)[0], again = await jobs(l).enqueue({ entity: ok.id, revision: ok.revision, hash: ok.content_hash, destination: 'DNA', payload: { x: 1 } });
   assert.deepEqual([again.duplicate, again.job.job_id], [true, j.job_id]);
   assert.equal(l.rows('SELECT COUNT(*) AS n FROM jobs')[0].n, 3);
@@ -126,7 +126,7 @@ test('a destination that already holds a newer revision is not overwritten: need
   for (const purpose of PURPOSES.slice(0, 3)) ev.grantPermission(OWNER, d.id, { expected_revision: 1, purpose });
   const q = ev.submit(OWNER.email, d.id, 1); await ev.review(REV, q.id, 'approve', { expected_revision: 1, content_hash: q.content_hash });
   const view = B.statusView(ev, OWNER, d.id);
-  assert.deepEqual([card(view, 'dna').display_status, card(view, 'dna').reason, card(view, 'mechat').display_status], ['needs_reconciliation', 'DESTINATION_NEWER_REVISION', 'mock_acknowledged']);
+  assert.deepEqual([card(view, 'dna').display_status, card(view, 'dna').reason, card(view, 'michat').display_status], ['needs_reconciliation', 'DESTINATION_NEWER_REVISION', 'mock_acknowledged']);
   assert.equal(ad.DNA_SKILLS_WRITEBACK.records.get(d.id).revision, 9, 'the newer destination record was left alone');
   assert.deepEqual(view.overall, { status: 'attention', complete: false });
   assert.equal((await B.pump(ev)).ran, 0, 'reconciliation is not retried');
@@ -161,8 +161,8 @@ test('a mock acknowledgement is never sync_complete or published: the gate refus
 
 test('adapters are contract-driven mocks with failure injection; every ack says mock:true', async () => {
   const ctx = setup(), { ev, ad } = ctx, ok = await approved(ctx);
-  assert.deepEqual(Object.keys(ad).sort(), ['DNA_SKILLS_WRITEBACK', 'IMP_CAPABILITY', 'MAAP', 'MECHAT_CV', 'PROJECT_REVIEW', 'SPOTLIGHT_CMS']);
-  assert.equal(ad.MECHAT_CV.label, 'MeChat (CV) — not connected, mock');
+  assert.deepEqual(Object.keys(ad).sort(), ['DNA_SKILLS_WRITEBACK', 'IMP_CAPABILITY', 'MAAP', 'MICHAT_CV', 'PROJECT_REVIEW', 'SPOTLIGHT_CMS']);
+  assert.equal(ad.MICHAT_CV.label, 'MiChat CV — not connected, mock');
   for (const [name, c] of Object.entries(CONTRACTS)) assert.equal(ad[name].mock, true, name);
   const acks = jobs(ctx.l).list(ok.id).map(j => j.destination_ack);
   assert.equal(acks.length, 3); for (const a of acks) { assert.equal(a.mock, true); assert.match(a.note, /Nothing was sent to a real system/); assert.equal(a.destination_revision, 1); }
@@ -175,11 +175,11 @@ test('adapters are contract-driven mocks with failure injection; every ack says 
   assert.throws(() => createMockAdapter('NOPE'));
 });
 
-test('payloads come from the approved revision only: no transcript, source_refs, ledger or session ids, and nothing restricted to MeChat', async () => {
+test('payloads come from the approved revision only: no transcript, source_refs, ledger or session ids, and nothing restricted to MiChat', async () => {
   const ctx = setup(), { ad } = ctx, ok = await approved(ctx);
-  const sent = n => ad[n].calls[0].payload, dump = JSON.stringify([sent('DNA_SKILLS_WRITEBACK'), sent('MECHAT_CV'), sent('IMP_CAPABILITY')]);
+  const sent = n => ad[n].calls[0].payload, dump = JSON.stringify([sent('DNA_SKILLS_WRITEBACK'), sent('MICHAT_CV'), sent('IMP_CAPABILITY')]);
   for (const leak of ['source_refs', 'sess-001', 'item-1', 'D-001', 'ledger', 'quote', 'asr_min_conf', 'audio_offset', 'provenance', 'created_by']) assert.ok(!dump.includes(leak), leak);
-  const cv = sent('MECHAT_CV');
+  const cv = sent('MICHAT_CV');
   assert.deepEqual([...new Set(cv.claims.map(c => c.claim_type))].sort(), ['deliverable', 'metric', 'outcome', 'responsibility']); // context (problem) and learning (limitations) stay out
   assert.ok(!JSON.stringify(cv).includes('commercial lines') && !JSON.stringify(cv).includes('bouncing between'));
   assert.deepEqual([cv.consultant_id, cv.profile_revision, cv.language, cv.permissions.length], [OWNER.email, 1, null, 1]);
@@ -187,7 +187,7 @@ test('payloads come from the approved revision only: no transcript, source_refs,
   assert.deepEqual([dna.reviewer, dna.effective_date, dna.assertions.every(a => a.skill_taxonomy_id === null && a.level === null && a.status === 'proposed')], [REV.email, dna.effective_date, true]);
   assert.ok(dna.assertions.length >= 2); assert.deepEqual(dna.assertions[0].evidence_refs[0], { claim_id: dna.assertions[0].claim_id, revision: 1 });
   assert.equal(sent('IMP_CAPABILITY').availability, null, 'availability is IMP\'s, never computed');
-  for (const p of [sent('DNA_SKILLS_WRITEBACK'), sent('MECHAT_CV'), sent('IMP_CAPABILITY')]) assert.deepEqual([p.entity_id, p.source_revision, p.content_hash], [ok.id, 1, ok.content_hash]);
+  for (const p of [sent('DNA_SKILLS_WRITEBACK'), sent('MICHAT_CV'), sent('IMP_CAPABILITY')]) assert.deepEqual([p.entity_id, p.source_revision, p.content_hash], [ok.id, 1, ok.content_hash]);
   assert.throws(() => buildPayload('SPOTLIGHT_CMS', {}));
 });
 
@@ -195,22 +195,22 @@ test('revoking a permission flags what was derived under it for impact review, u
   const ctx = setup(), { l, ev } = ctx, ok = await approved(ctx);
   const grants = ev.grantsFor(ok.id), dna = grants.find(g => g.purpose === 'skills_profile');
   ev.revokePermission(OWNER, ok.id, dna.id, { expected_revision: 1 });
-  assert.deepEqual([status(l, ok.id).dna, reasons(l, ok.id).dna, status(l, ok.id).mechat, status(l, ok.id).imp], ['impact_review', 'PERMISSION_REVOKED:skills_profile', 'mock_acknowledged', 'mock_acknowledged']);
+  assert.deepEqual([status(l, ok.id).dna, reasons(l, ok.id).dna, status(l, ok.id).michat, status(l, ok.id).imp], ['impact_review', 'PERMISSION_REVOKED:skills_profile', 'mock_acknowledged', 'mock_acknowledged']);
   const view = B.statusView(ev, OWNER, ok.id); assert.deepEqual([card(view, 'dna').display_status, view.overall.status], ['impact_review', 'attention']);
   await B.fanOut(ev, ok.id); assert.equal(status(l, ok.id).dna, 'impact_review', 'a flagged branch stays flagged for this revision until a person clears it');
   const twin = setup(), two = await twin.ev.createDraftFromNotes(OWNER.email, NOTES('s-two'));
   const g1 = twin.ev.grantPermission(OWNER, two.id, { expected_revision: 1, purpose: 'cv' }); twin.ev.grantPermission(OWNER, two.id, { expected_revision: 1, purpose: 'cv' });
   const q = twin.ev.submit(OWNER.email, two.id, 1); await twin.ev.review(REV, q.id, 'approve', { expected_revision: 1, content_hash: q.content_hash });
-  twin.ev.revokePermission(OWNER, two.id, g1.id, { expected_revision: 1 }); assert.equal(status(twin.l, two.id).mechat, 'mock_acknowledged', 'one grant remains');
+  twin.ev.revokePermission(OWNER, two.id, g1.id, { expected_revision: 1 }); assert.equal(status(twin.l, two.id).michat, 'mock_acknowledged', 'one grant remains');
   const late = setup(), pend = await approved(late, { session: 's-late', grants: [] });
-  assert.equal(status(late.l, pend.id).mechat, 'permission_pending'); // nothing was derived, so a revoke has nothing to flag
+  assert.equal(status(late.l, pend.id).michat, 'permission_pending'); // nothing was derived, so a revoke has nothing to flag
 });
 
 test('a grant after approval lets the waiting branch proceed; a grant bound to an older revision never does', async () => {
   const ctx = setup(), { l, ev, ad } = ctx, ok = await approved(ctx, { grants: [] });
   assert.equal(status(l, ok.id).dna, 'permission_pending');
   ev.grantPermission(OWNER, ok.id, { expected_revision: 1, purpose: 'skills_profile' }); await B.afterGrant(ev, ok.id);
-  assert.deepEqual([status(l, ok.id).dna, status(l, ok.id).mechat, ad.DNA_SKILLS_WRITEBACK.calls.length], ['mock_acknowledged', 'permission_pending', 1]);
+  assert.deepEqual([status(l, ok.id).dna, status(l, ok.id).michat, ad.DNA_SKILLS_WRITEBACK.calls.length], ['mock_acknowledged', 'permission_pending', 1]);
   const am = await ev.review(OWNER, ok.id, 'amend', { expected_revision: 1, add: [{ statement: 'We added a dashboard for adjusters.', claim_type: 'technology' }] });
   const q = ev.submit(OWNER.email, ok.id, am.revision), again = await ev.review(REV, ok.id, 'approve', { expected_revision: q.revision, content_hash: q.content_hash });
   assert.equal(again.revision, 2);
@@ -300,13 +300,13 @@ test('a job stuck for an older revision never delivers: a new revision halts the
 });
 
 test('withdrawn after approval: every branch goes to impact review and nothing more is sent; completing the review closes them (D11)', async () => {
-  const ctx = setup(), { l, ev, ad } = ctx; ad.MECHAT_CV.failAlways('MOCK_DOWN');
+  const ctx = setup(), { l, ev, ad } = ctx; ad.MICHAT_CV.failAlways('MOCK_DOWN');
   const ok = await approved(ctx);
   const w = await ev.review(OWNER, ok.id, 'withdraw', { expected_revision: 1, reason: 'Wrong project' }); assert.equal(w.state, 'impact_review');
   assert.deepEqual(Object.values(status(l, ok.id)), Array(7).fill('impact_review'));
   assert.deepEqual(w.impact.derivatives.filter(d => d.kind === 'branch').map(d => d.status).sort(),
     ['evidence_approved', 'maap_pending', 'mock_acknowledged', 'mock_acknowledged', 'project_review_pending', 'retrying', 'spotlight_draft'], 'the derivatives were listed before they were flagged');
-  assert.equal(jobs(l).list(ok.id).find(j => j.destination === 'MeChat').status, 'needs_reconciliation'); ctx.clock.t += 3_600_000; assert.equal((await B.pump(ev)).ran, 0);
+  assert.equal(jobs(l).list(ok.id).find(j => j.destination === 'MiChat').status, 'needs_reconciliation'); ctx.clock.t += 3_600_000; assert.equal((await B.pump(ev)).ran, 0);
   const view = B.statusView(ev, OWNER, ok.id); assert.deepEqual([view.overall.status, card(view, 'evidence').display_status], ['attention', 'impact_review']);
   await ev.review(REV2, ok.id, 'complete_impact_review', { expected_revision: 1 });
   assert.deepEqual(Object.values(status(l, ok.id)), Array(7).fill('withdrawn'));
@@ -332,7 +332,7 @@ test('flags and modes: ATLAS_ADAPTERS is off, mock or blocked (live); ATLAS_EVID
   assert.deepEqual([status(off.l, a.id).dna, reasons(off.l, a.id).dna, off.l.rows('SELECT COUNT(*) AS n FROM jobs')[0].n], ['projection_pending', 'ADAPTERS_OFF', 0]);
   const view = B.statusView(off.ev, OWNER, a.id); assert.deepEqual([view.adapters, card(view, 'dna').display_status, card(view, 'dna').mock], ['off', 'pending', true]);
   const live = setup({ mode: 'live' }), b = await approved(live);
-  assert.deepEqual([status(live.l, b.id).mechat, reasons(live.l, b.id).mechat, live.ad.MECHAT_CV.calls.length, card(B.statusView(live.ev, OWNER, b.id), 'mechat').display_status], ['blocked_external', 'BLOCKED_EXTERNAL', 0, 'blocked_external']);
+  assert.deepEqual([status(live.l, b.id).michat, reasons(live.l, b.id).michat, live.ad.MICHAT_CV.calls.length, card(B.statusView(live.ev, OWNER, b.id), 'michat').display_status], ['blocked_external', 'BLOCKED_EXTERNAL', 0, 'blocked_external']);
   const rolled = setup({ configured: false }), c = await approved(rolled, { session: 's-unconfigured' });
   assert.equal(rolled.l.rows('SELECT COUNT(*) AS n FROM branch_status')[0].n, 0, 'evidence on its own behaves as in T13: no fan-out until configured');
   assert.equal(c.state, 'approved');
@@ -360,7 +360,7 @@ test('routes: status cards, the sync recovery route and permission routes; ident
   const s1 = await call('GET', base + '/status', REV);
   assert.deepEqual(s1.body.cards.map(c => c.display_status), ['approved', 'pending', 'pending', 'waiting_permission', 'mock_acknowledged', 'waiting_permission', 'draft']);
   assert.deepEqual([s1.body.cards[3].reason, s1.body.cards[1].reason, s1.body.overall, s1.body.adapters], ['PURPOSE_NOT_GRANTED:skills_profile', 'MAAP_NOT_CONFIGURED', { status: 'in_progress', complete: false }, 'mock']);
-  assert.deepEqual(s1.body.jobs.map(j => [j.destination, j.status, j.mock]), [['MeChat', 'succeeded', true]]);
+  assert.deepEqual(s1.body.jobs.map(j => [j.destination, j.status, j.mock]), [['MiChat', 'succeeded', true]]);
   assert.ok(!JSON.stringify(s1.body).includes('Zebracorp') && !JSON.stringify(s1.body).includes('statement'), 'the status view carries no claim text');
   const g2 = await call('POST', base + '/permissions', OWNER, { expected_revision: 1, purpose: 'skills_profile' }); assert.equal(g2.status, 201);
   assert.equal((await call('GET', base + '/status', OWNER)).body.cards[3].display_status, 'mock_acknowledged', 'a grant lets the waiting branch proceed');
@@ -400,27 +400,27 @@ const jobOf = (l, id, dest) => jobs(l).list(id).find(j => j.destination === dest
 
 test('H1 scenario A: a permission revoked after a dead-lettered job stops recovery from delivering', async () => {
   const ctx = setup({ maxAttempts: 2 }), { l, ev, ad } = ctx;
-  ad.MECHAT_CV.failNext(1, { retryable: false, error: 'DOWN' });
-  const d = await flow(ctx, [{ purpose: 'cv' }]), job = jobOf(l, d.id, 'MeChat');
-  assert.equal(job.status, 'failed'); assert.equal(ad.MECHAT_CV.calls.length, 1);
+  ad.MICHAT_CV.failNext(1, { retryable: false, error: 'DOWN' });
+  const d = await flow(ctx, [{ purpose: 'cv' }]), job = jobOf(l, d.id, 'MiChat');
+  assert.equal(job.status, 'failed'); assert.equal(ad.MICHAT_CV.calls.length, 1);
   ev.revokePermission(OWNER, d.id, ev.grantsFor(d.id)[0].id, { expected_revision: 1 });
   assert.equal(jobs(l).get(job.job_id).status, 'needs_reconciliation', 'halt also stops a failed job');
   await assert.rejects(B.sync(ev, REV, d.id, { recover_job: job.job_id }), e => e.status === 409 && e.reason === 'JOB_NOT_FAILED');
-  assert.equal(ad.MECHAT_CV.calls.length, 1, 'nothing more is sent');
-  assert.equal(status(l, d.id).mechat, 'impact_review', 'and the impact_review flag is not overwritten');
-  assert.equal(card(await B.sync(ev, REV, d.id), 'mechat').status, 'impact_review');
-  assert.equal(ad.MECHAT_CV.calls.length, 1);
+  assert.equal(ad.MICHAT_CV.calls.length, 1, 'nothing more is sent');
+  assert.equal(status(l, d.id).michat, 'impact_review', 'and the impact_review flag is not overwritten');
+  assert.equal(card(await B.sync(ev, REV, d.id), 'michat').status, 'impact_review');
+  assert.equal(ad.MICHAT_CV.calls.length, 1);
 });
 
 test('H1 scenario A (gate on recovery): a grant that expired while the job was dead-lettered blocks the recovered job', async () => {
   const ctx = setup({ maxAttempts: 2 }), { l, ev, ad, skip } = ctx;
-  ad.MECHAT_CV.failNext(1, { retryable: false, error: 'DOWN' });
-  const d = await flow(ctx, [{ purpose: 'cv', expires_at: '2026-11-01T00:30:00Z' }]), job = jobOf(l, d.id, 'MeChat');
+  ad.MICHAT_CV.failNext(1, { retryable: false, error: 'DOWN' });
+  const d = await flow(ctx, [{ purpose: 'cv', expires_at: '2026-11-01T00:30:00Z' }]), job = jobOf(l, d.id, 'MiChat');
   assert.equal(job.status, 'failed'); skip(3600); // the grant expires; no event announces it
   const v = await B.sync(ev, REV, d.id, { recover_job: job.job_id });
-  assert.equal(ad.MECHAT_CV.calls.length, 1, 'the recovered job is not delivered');
+  assert.equal(ad.MICHAT_CV.calls.length, 1, 'the recovered job is not delivered');
   assert.equal(jobs(l).get(job.job_id).status, 'needs_reconciliation'); assert.match(jobs(l).get(job.job_id).last_error, /^PERMISSION_DENIED:PURPOSE_EXPIRED:cv/);
-  assert.deepEqual([card(v, 'mechat').status, card(v, 'mechat').reason], ['permission_pending', 'PURPOSE_EXPIRED:cv']);
+  assert.deepEqual([card(v, 'michat').status, card(v, 'michat').reason], ['permission_pending', 'PURPOSE_EXPIRED:cv']);
 });
 
 test('H1 scenario B: a grant that expires while the job is retrying stops the pump', async () => {
@@ -468,13 +468,13 @@ test('H1: a Spotlight CMS job is re-checked against the publication gate before 
 
 test('L1: an owner who also holds the reviewer role cannot recover or sync their own record', async () => {
   const ctx = setup({ maxAttempts: 2 }), { l, ev, ad } = ctx, BOSS = { email: 'boss@mantu.com', role: 'reviewer' };
-  ad.MECHAT_CV.failNext(1, { retryable: false, error: 'DOWN' });
-  const d = await flow(ctx, [{ purpose: 'cv' }], { owner: BOSS }), job = jobOf(l, d.id, 'MeChat');
+  ad.MICHAT_CV.failNext(1, { retryable: false, error: 'DOWN' });
+  const d = await flow(ctx, [{ purpose: 'cv' }], { owner: BOSS }), job = jobOf(l, d.id, 'MiChat');
   assert.equal(job.status, 'failed');
   await assert.rejects(B.sync(ev, BOSS, d.id, { recover_job: job.job_id }), e => e.status === 403);
   await assert.rejects(B.sync(ev, BOSS, d.id), e => e.status === 403);
-  assert.equal(jobs(l).get(job.job_id).status, 'failed'); assert.equal(ad.MECHAT_CV.calls.length, 1);
-  assert.equal(card(await B.sync(ev, REV, d.id, { recover_job: job.job_id }), 'mechat').status, 'mock_acknowledged', 'a different reviewer still can');
+  assert.equal(jobs(l).get(job.job_id).status, 'failed'); assert.equal(ad.MICHAT_CV.calls.length, 1);
+  assert.equal(card(await B.sync(ev, REV, d.id, { recover_job: job.job_id }), 'michat').status, 'mock_acknowledged', 'a different reviewer still can');
 });
 
 test('revision reuse: approving a revision whose content equals an earlier one is delivered, not swallowed by the old job', async () => {
@@ -505,14 +505,14 @@ test('a job halted while its attempt is in flight shows the halt, never the late
   assert.equal(status(l, d.id).dna, 'needs_reconciliation', 'the card shows the halt, never the success the destination returned late'); assert.equal(card(B.statusView(ev, OWNER, d.id), 'dna').mock, true);
 });
 
-test('L8: the MeChat CV payload carries no raw ASR quote: reviewed wording only, capped; outcome and metric text never; structured fields stay', async () => {
+test('L8: the MiChat CV payload carries no raw ASR quote: reviewed wording only, capped; outcome and metric text never; structured fields stay', async () => {
   const ctx = setup(), { ev, ad } = ctx;
   const d = await ev.createDraftFromNotes(OWNER.email, NOTES('sess-l8')), resp = d.claims.find(c => c.claim_type === 'responsibility'), deliv = d.claims.find(c => c.claim_type === 'deliverable');
   const long = 'Designed and built the claims routing model for the triage queue. ' + 'x'.repeat(600);
   const a = await ev.review(OWNER, d.id, 'amend', { expected_revision: 1, claims: [{ claim_id: resp.claim_id, statement: long }, { claim_id: d.claims.find(c => c.claim_type === 'metric').claim_id, value: '12', unit: 'minutes', baseline: '40' }] });
   ev.grantPermission(OWNER, d.id, { expected_revision: a.revision, purpose: 'cv' });
   const q = ev.submit(OWNER.email, d.id, a.revision); await ev.review(REV, d.id, 'approve', { expected_revision: q.revision, content_hash: q.content_hash });
-  const cv = ad.MECHAT_CV.calls[0].payload, by = t => cv.claims.filter(c => c.claim_type === t);
+  const cv = ad.MICHAT_CV.calls[0].payload, by = t => cv.claims.filter(c => c.claim_type === t);
   assert.equal(by('responsibility')[0].statement.length, CV_STATEMENT_MAX); assert.ok(by('responsibility')[0].statement.startsWith('Designed and built'));
   assert.deepEqual([by('deliverable')[0].statement, by('deliverable')[0].statement_withheld], [null, 'VERBATIM_ASR_NOT_REVIEWED']); // never reviewed: raw speech recognition
   for (const c of [...by('outcome'), ...by('metric')]) assert.deepEqual([c.statement, c.statement_withheld], [null, 'CLIENT_PERMISSION_UNKNOWN']);
@@ -520,4 +520,24 @@ test('L8: the MeChat CV payload carries no raw ASR quote: reviewed wording only,
   const dump = JSON.stringify(cv);
   for (const raw of ['routing model in front of it', 'Adjusters now trust', 'according to the dashboard', 'Triage fell']) assert.ok(!dump.includes(raw), raw);
   void deliv;
+});
+
+test('M1: rows stored under the old MeChat spelling read as MiChat (branch key michat, destination MiChat); an existing MiChat row wins', async () => {
+  const sql = memorySql(), mk = () => new Library(sql, { now: () => '2026-11-01T00:00:00.000Z', newId: () => 'idx' });
+  const first = mk(); evidence(first); jobs(first); // the schema exists, as in a Durable Object created before the rename
+  const ins = (q, ...p) => sql.exec(q, ...p);
+  ins("INSERT INTO branch_status (entity, branch, status, updated_at, mock) VALUES ('e1', 'mechat', 'mock_acknowledged', 't', 1)");
+  ins("INSERT INTO branch_status (entity, branch, status, updated_at, mock) VALUES ('e2', 'mechat', 'failed', 't', 1)");
+  ins("INSERT INTO branch_status (entity, branch, status, updated_at, mock) VALUES ('e2', 'michat', 'mock_acknowledged', 't', 1)");
+  ins("INSERT INTO jobs (job_id, idempotency_key, source_entity_id, source_revision, destination, status, attempt) VALUES ('j1', 'e1:1:hh:MeChat', 'e1', 1, 'MeChat', 'succeeded', 1)");
+  const later = mk(); const ev = evidence(later); const J = jobs(later); // a new isolate opens the same storage
+  const rows = (q, ...p) => sql.exec(q, ...p).toArray();
+  assert.deepEqual(rows("SELECT entity, branch, status FROM branch_status ORDER BY entity, branch"), [{ entity: 'e1', branch: 'michat', status: 'mock_acknowledged' }, { entity: 'e2', branch: 'michat', status: 'mock_acknowledged' }]);
+  assert.deepEqual(ev.derivatives('e1'), [{ kind: 'branch', branch: 'michat', status: 'mock_acknowledged' }]);
+  const j = J.get('j1');
+  assert.deepEqual([j.destination, j.idempotency_key], ['MiChat', 'e1:1:hh:MiChat']);
+  assert.equal(CONTRACTS.MICHAT_CV.destination, 'MiChat'); assert.equal(CONTRACTS.MICHAT_CV.branch, 'michat'); assert.equal(CONTRACTS.MECHAT_CV, undefined);
+  assert.equal((await J.enqueue({ entity: 'e1', revision: 1, hash: 'hh', destination: 'MiChat', payload: { a: 1 }, actor: 'atlas-system' })).duplicate, true, 'the migrated job still de-duplicates a new enqueue');
+  const again = mk(); evidence(again); jobs(again); // idempotent
+  assert.equal(rows("SELECT COUNT(*) AS n FROM branch_status")[0].n, 2);
 });

@@ -57,6 +57,10 @@ const DDL = [
   // acknowledgement was a mock, a stable reason code and the job it reflects.
   `CREATE TABLE IF NOT EXISTS branch_status (entity TEXT, branch TEXT, status TEXT, updated_at TEXT, revision INTEGER, content_hash TEXT, mock INTEGER, reason TEXT, job_id TEXT,
     PRIMARY KEY (entity, branch))`,
+  // v2.2 M1: the CV destination is MiChat (the pack's "MeChat" was a typo). A row stored under the old branch key reads as michat; an existing
+  // michat row wins over a stale mechat one. Idempotent, so it runs on every ensure.
+  `UPDATE OR IGNORE branch_status SET branch = 'michat' WHERE branch = 'mechat'`,
+  `DELETE FROM branch_status WHERE branch = 'mechat'`,
 ];
 const ensured = new WeakSet();
 export function ensure(lib) {

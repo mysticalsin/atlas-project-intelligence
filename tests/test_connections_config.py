@@ -38,7 +38,7 @@ def test_michat_not_mechat():
     assert 'michat_cv' in BY_ID and 'mechat_cv' not in BY_ID
     c = BY_ID['michat_cv']
     assert c['label'] == 'MiChat CV' and (cc.CONFIG_DIR / 'contracts' / 'michat_cv').is_dir() and not (cc.CONFIG_DIR / 'contracts' / 'mechat_cv').exists()
-    assert c['adapter'] == 'MECHAT_CV' and 'renamed in M1' in c['adapter_note']  # the code-level adapter id keeps its name until M1
+    assert c['adapter'] == 'MICHAT_CV' and 'adapter_note' not in c  # the code-level adapter id carries the confirmed name (M1)
 
 
 def test_existing_connections_are_marked_and_external_ones_are_not_configured():

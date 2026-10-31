@@ -15,6 +15,7 @@ import re
 import unicodedata
 
 from .quality import FIELDS, NUMERIC, UNCERTAIN, UNKNOWN
+from .regex_gate import gate, passes
 
 MAX_CHARS = 1500       # only the start of a very long answer (about 250 words) is read for intents, cues and numbers; keeps the pass near 1 ms
 MAX_NUMBERS = 20
@@ -30,8 +31,8 @@ _END = r"(?=\s*[,.;!?]|\s*$)"   # a bare word ends here (so "no idea" is not a "
 
 def _rule(intent, src, max_words=None, unless_intents=(), unless_src=''):
     """One intent rule. max_words: only utterances this short. unless_intents: skipped when one of those matched earlier in
-    the list. unless_src: skipped when this pattern also matches the utterance."""
-    return {'intent': intent, 'src': src, 'max_words': max_words, 'unless_intents': list(unless_intents), 'unless_src': unless_src}
+    the list. unless_src: skipped when this pattern also matches the utterance. gate: the literals the pattern cannot match without (regex_gate.py)."""
+    return {'intent': intent, 'src': src, 'max_words': max_words, 'unless_intents': list(unless_intents), 'unless_src': unless_src, 'gate': gate(src)}
 
 
 # Order matters: a rule may only look back at intents matched by earlier rules.
@@ -234,11 +235,11 @@ def _number_value(digits):
     return int(v) if v == int(v) else v
 
 
-def numbers(norm):
+def numbers(norm, probe=None):
     out = []
+    if not passes(NUMBER_GATE, (probe or _Probe(norm)).has):    # no digit, no number
+        return out
     for m in _re(NUMBER_SRC).finditer(norm):
-        if len(out) >= MAX_NUMBERS:
-            break
         cur, digits, sym, letters, word = m.group(1), m.group(2), m.group(3), m.group(4), m.group(5)
         item = {'text': m.group(0)}
         value = _number_value(digits)
@@ -256,13 +257,16 @@ def numbers(norm):
         if unit:
             item['unit'] = unit
         out.append(item)
+        if len(out) >= MAX_NUMBERS:    # stop scanning at the cap, not one match later
+            break
     return out
 
 
-def intents(norm, lang, words):
+def intents(norm, lang, words, probe=None):
     rules = INTENT_RULES.get(lang)
     if not rules:
         return []
+    probe = probe or _Probe(norm)
     found = set()
     for r in rules:
         if r['intent'] in found:
@@ -271,7 +275,7 @@ def intents(norm, lang, words):
             continue
         if any(i in found for i in r['unless_intents']):
             continue
-        if not _re(r['src']).search(norm):
+        if not probe.search(r['src'], r['gate']):
             continue
         if r['unless_src'] and _re(r['unless_src']).search(norm):
             continue
@@ -279,77 +283,93 @@ def intents(norm, lang, words):
     return [i for i in INTENT_ORDER if i in found]
 
 
-# A cheap substring test in front of the costlier cue patterns: a text with none of these words cannot match, so a long answer of anything else costs next to nothing.
-# (Superset triggers only: the pattern still decides. The same lists are read by turns.js.)
-CUE_GATES = {
-    'setback_strip': ['data loss', 'outage', 'downtime', 'incident'],
-    'client_problem': ['problem', 'issue', 'pain point', 'challenge', 'business', 'client', 'customer', 'users', 'stakeholder', 'organi', 'company', 'operations team', 'ops team'],
-    'period_words': ['week', 'month', 'quarter', 'half', 'year', 'q1', 'q2', 'q3', 'q4', 'h1', 'h2', 'fy', '20', 'january', 'february', 'march', 'april', 'june', 'july', 'august', 'september', 'october', 'november', 'december'],
-    'action': ['migrat', 'implement', 'built', 'introduc', 'deploy', 'rolled', 'automat', 'redesign', 'replac', 'moved', 'set up', 'configur', 'rebuil', 'refactor', 'integrat', 'install', 'creat',
-               'meeting', 'review', 'workshop', 'script', 'pipeline', 'dashboard', 'checklist', 'template', 'runbook', 'playbook', 'document', 'process', 'polic', 'standup', 'stand-up',
-               'retrospective', 'test', 'monitor', 'alert', 'automation', 'workflow', 'rule', 'guideline', 'plan', 'session', 'ticket', 'report', 'model', 'reconciliation', 'cutover', 'check', 'gate'],
-}
+# A cheap substring test in front of EVERY costlier pattern (cue, hint, number, intent rule): regex_gate.gate() derives, from the pattern itself, the literals a match
+# cannot do without, and the pattern is only run when the text holds one literal of each requirement. A text with none of those words (a long answer of anything else)
+# then costs next to nothing, and a literal is looked up once per utterance however many patterns share it. The same lists are read by turns.js.
+TECH_SRC = r'(?<![\w.#+])(?:' + '|'.join(CUE_SRC['tech_terms']) + r')(?![\w#+])'
+CUE_GATES = {name: gate(src) for name, src in CUE_SRC.items() if isinstance(src, str)}
+CUE_GATES['tech'] = gate(TECH_SRC)
+CUE_GATES['numeric'] = gate(NUMERIC.pattern)
+CUE_GATES['uncertain'] = gate(UNCERTAIN.pattern)
+HINT_GATES = {name: gate(src) for name, src in HINT_SRC.items()}
+HINT_GATES['from_to'] = gate(HINT_FROM_TO)
+NUMBER_GATE = gate(NUMBER_SRC)
 
 
-def _gated(name, norm):
-    """Search a gated cue pattern: None (a miss) without running it when the text holds none of its trigger words."""
-    return _re(CUE_SRC[name]).search(norm) if any(w in norm for w in CUE_GATES[name]) else None
+class _Probe:
+    """One utterance's substring lookups: each gate literal is searched for once, however many patterns share it."""
+    __slots__ = ('norm', 'seen')
+
+    def __init__(self, norm):
+        self.norm = norm
+        self.seen = {}
+
+    def has(self, w):
+        v = self.seen.get(w)
+        if v is None:
+            v = self.seen[w] = w in self.norm
+        return v
+
+    def search(self, src, gates):
+        """The regex match, or None without running it when the text lacks a word the pattern needs."""
+        return _re(src).search(self.norm) if passes(gates, self.has) else None
 
 
-def _sub_setback_strip(norm):
-    return _re(CUE_SRC['setback_strip']).sub(' ', norm) if any(w in norm for w in CUE_GATES['setback_strip']) else norm
+def _sub_setback_strip(norm, probe):
+    return _re(CUE_SRC['setback_strip']).sub(' ', norm) if passes(CUE_GATES['setback_strip'], probe.has) else norm
 
 
-def setback_words(norm, client_problem=None):
+def setback_words(norm, client_problem=None, probe=None):
     """True when the words describe a setback: the setback words that are left once "zero data loss" and the CLIENT's own problem ("the business was frustrated") are taken out.
     client_problem: whether the text holds the client's problem, when the caller has already looked (else it is looked for here)."""
-    stripped = _sub_setback_strip(norm)
+    probe = probe or _Probe(norm)
+    stripped = _sub_setback_strip(norm, probe)
     if client_problem is None:
-        client_problem = bool(_gated('client_problem', norm))
+        client_problem = bool(probe.search(CUE_SRC['client_problem'], CUE_GATES['client_problem']))
     if client_problem:
         stripped = _re(CUE_SRC['client_problem']).sub(' ', stripped)
-    return bool(_re(CUE_SRC['describes_setback']).search(stripped))
+    return bool((probe if stripped == norm else _Probe(stripped)).search(CUE_SRC['describes_setback'], CUE_GATES['describes_setback']))
 
 
-def cues(norm):
-    metric = bool(_re(NUMERIC.pattern).search(norm) or _re(CUE_SRC['metric_extra']).search(norm))
+def cues(norm, probe=None):
+    probe = probe or _Probe(norm)
+    S, G, find = CUE_SRC, CUE_GATES, probe.search
+    metric = bool(find(NUMERIC.pattern, G['numeric']) or find(S['metric_extra'], G['metric_extra']))
     out = set()
     if metric:
         out.add('metric')
-        if _re(UNCERTAIN.pattern).search(norm) or _re(CUE_SRC['estimate_extra']).search(norm):
+        if find(UNCERTAIN.pattern, G['uncertain']) or find(S['estimate_extra'], G['estimate_extra']):
             out.add('estimate')
-    if _re(CUE_SRC['vague_strong']).search(norm) or (not metric and _re(CUE_SRC['vague_weak']).search(norm)):
+    if find(S['vague_strong'], G['vague_strong']) or (not metric and find(S['vague_weak'], G['vague_weak'])):
         out.add('vague_verb')
-    if _re(CUE_SRC['team_verb']).search(norm) and not _re(CUE_SRC['i']).search(norm):
+    if find(S['team_verb'], G['team_verb']) and not find(S['i'], G['i']):
         out.add('team_claim')
-    if len({m.group(0) for m in _re(TECH_SRC).finditer(norm)}) >= CUE_SRC['tech_min']:
+    if passes(G['tech'], probe.has) and len({m.group(0) for m in _re(TECH_SRC).finditer(norm)}) >= S['tech_min']:
         out.add('tech_list')
-    if _re(CUE_SRC['certification']).search(norm):
+    if find(S['certification'], G['certification']):
         out.add('certification')
-    if _re(CUE_SRC['client_praise_said']).search(norm) or _re(CUE_SRC['client_praise_direct']).search(norm):
+    if find(S['client_praise_said'], G['client_praise_said']) or find(S['client_praise_direct'], G['client_praise_direct']):
         out.add('client_praise')
-    problem = bool(_gated('client_problem', norm))
+    problem = bool(find(S['client_problem'], G['client_problem']))
     if problem:
         out.add('describes_problem')
-    if setback_words(norm, problem):
+    if setback_words(norm, problem, probe):
         out.add('describes_setback')
-    if _re(CUE_SRC['describes_achievement']).search(norm):
+    if find(S['describes_achievement'], G['describes_achievement']):
         out.add('describes_achievement')
-    if _re(CUE_SRC['names_party']).search(norm):
+    if find(S['names_party'], G['names_party']):
         out.add('names_party')
-    if _gated('period_words', norm):
+    if find(S['period_words'], G['period_words']):
         out.add('period_stated')
-    if _gated('action', norm):
+    if find(S['action'], G['action']):
         out.add('describes_action')
     return [c for c in CUE_ORDER if c in out]
 
 
-TECH_SRC = r'(?<![\w.#+])(?:' + '|'.join(CUE_SRC['tech_terms']) + r')(?![\w#+])'
-
-
-def field_hints(norm, words, found_intents, context):
-    hits = {f for f, src in HINT_SRC.items() if _re(src).search(norm)}
-    if 'measurement' not in hits and _re(HINT_FROM_TO).search(norm):
+def field_hints(norm, words, found_intents, context, probe=None):
+    probe = probe or _Probe(norm)
+    hits = {f for f, src in HINT_SRC.items() if probe.search(src, HINT_GATES[f])}
+    if 'measurement' not in hits and probe.search(HINT_FROM_TO, HINT_GATES['from_to']):
         hits.add('measurement')
     asked = context.get('asked_field') if isinstance(context, dict) else None
     if words >= ASKED_MIN_WORDS and asked in FIELDS and not any(i in found_intents for i in NOT_AN_ANSWER):
@@ -364,14 +384,15 @@ def analyze_turn(text, lang='en', context=None):
     utterance of at least ASKED_MIN_WORDS words then also hints that field. Anything else in context is ignored."""
     text = text if isinstance(text, str) else ''
     norm = normalize(text)
+    probe = _Probe(norm)
     words = len([w for w in _WS.split(text) if w])   # the whole utterance, not just the part analysed
     lg = _lang(lang)
-    found = intents(norm, lg, words) if lg in LANGS_WITH_INTENTS else []
+    found = intents(norm, lg, words, probe) if lg in LANGS_WITH_INTENTS else []
     full = lg in LANGS_WITH_CUES
     return {'intents': found,
-            'cues': cues(norm) if full else [],
-            'field_hints': field_hints(norm, words, found, context) if full else [],
-            'numbers': numbers(norm) if full else [],
+            'cues': cues(norm, probe) if full else [],
+            'field_hints': field_hints(norm, words, found, context, probe) if full else [],
+            'numbers': numbers(norm, probe) if full else [],
             'words': words}
 
 
@@ -379,6 +400,6 @@ EDGE_CONSTANTS = {
     'TURN_MAX_CHARS': MAX_CHARS, 'TURN_MAX_NUMBERS': MAX_NUMBERS, 'TURN_INTENT_ORDER': INTENT_ORDER, 'TURN_CUE_ORDER': CUE_ORDER,
     'TURN_LANGS_WITH_CUES': list(LANGS_WITH_CUES), 'TURN_LANGS_WITH_INTENTS': list(LANGS_WITH_INTENTS),
     'TURN_INTENT_RULES': INTENT_RULES, 'TURN_CUE_SRC': CUE_SRC, 'TURN_TECH_SRC': TECH_SRC, 'TURN_HINT_SRC': HINT_SRC, 'TURN_HINT_FROM_TO': HINT_FROM_TO,
-    'TURN_CUE_GATES': CUE_GATES, 'TURN_NOT_AN_ANSWER': NOT_AN_ANSWER, 'TURN_ASKED_MIN_WORDS': ASKED_MIN_WORDS, 'TURN_NUMBER_SRC': NUMBER_SRC, 'TURN_UNIT_CANON': UNIT_CANON,
+    'TURN_CUE_GATES': CUE_GATES, 'TURN_HINT_GATES': HINT_GATES, 'TURN_NUMBER_GATE': NUMBER_GATE, 'TURN_NOT_AN_ANSWER': NOT_AN_ANSWER, 'TURN_ASKED_MIN_WORDS': ASKED_MIN_WORDS, 'TURN_NUMBER_SRC': NUMBER_SRC, 'TURN_UNIT_CANON': UNIT_CANON,
     'TURN_SCALE': SCALE, 'TURN_THOUSANDS_SRC': THOUSANDS, 'TURN_DOT_THOUSANDS_SRC': DOT_THOUSANDS, 'TURN_AMBIGUOUS_DOT_SRC': AMBIGUOUS_DOT, 'TURN_PLAIN_NUMBER_SRC': PLAIN_NUMBER, 'TURN_WHITESPACE_SRC': WHITESPACE,
 }

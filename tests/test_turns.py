@@ -198,12 +198,16 @@ def test_pure_deterministic_and_does_not_touch_its_input():
         assert analyze_turn(junk) == {'intents': [], 'cues': [], 'field_hints': [], 'numbers': [], 'words': 0}
 
 
-def _per_call(text, n=100):
+def _per_call(text, n=20, batches=5):
+    """Best of `batches` batches of `n` calls, in process CPU time: a busy machine (parallel test runs) steals wall time, not CPU time."""
     analyze_turn(text)
-    t0 = time.perf_counter()
-    for _ in range(n):
-        analyze_turn(text)
-    return (time.perf_counter() - t0) / n
+    best = float('inf')
+    for _ in range(batches):
+        t0 = time.process_time()
+        for _ in range(n):
+            analyze_turn(text)
+        best = min(best, (time.process_time() - t0) / n)
+    return best
 
 
 def test_fast_under_two_milliseconds_on_real_answers_and_bounded_on_junk():
@@ -341,3 +345,104 @@ def test_h2_work_actually_done_is_an_action_cue_and_a_lead_in_is_not():
     assert 'describes_action' in cues('We rebuilt the nightly job so reports ran in parallel across regions')
     assert 'describes_action' in cues('I tried to hold the scope with weekly steering meetings')
     assert 'describes_action' not in cues('Sure, let me explain what we did on that project last year') and 'describes_action' not in cues('I helped improve the platform')
+
+
+# ---- v2.2 M1: the keyword gates in front of every pattern (regex_gate.py) ----
+
+def _samples(src, rnd, n=60):
+    """Strings that match `src` (found by walking the parsed pattern at random and keeping what the real regex accepts)."""
+    import random as _r
+    from re import _parser as P, _constants as C
+    def gen(seq, depth=0):
+        out = []
+        for op, av in seq:
+            if op == C.LITERAL:
+                out.append(chr(av))
+            elif op == C.NOT_LITERAL:
+                out.append('z' if chr(av) != 'z' else 'y')
+            elif op == C.ANY:
+                out.append(rnd.choice('abc 1'))
+            elif op == C.IN:
+                neg = any(o == C.NEGATE for o, _ in av)
+                pool = []
+                for o, a in av:
+                    if o == C.LITERAL: pool.append(chr(a))
+                    elif o == C.RANGE: pool.extend(chr(i) for i in range(a[0], a[1] + 1))
+                    elif o == C.CATEGORY: pool.append({C.CATEGORY_DIGIT: '7', C.CATEGORY_SPACE: ' ', C.CATEGORY_WORD: 'k', C.CATEGORY_NOT_WORD: ',', C.CATEGORY_NOT_DIGIT: 'q', C.CATEGORY_NOT_SPACE: 'q'}.get(a, 'q'))
+                out.append(rnd.choice('xyz ' if neg and not pool else pool) if not neg else rnd.choice([c for c in 'abcxyz 1.,' if c not in pool]))
+            elif op == C.BRANCH:
+                out.append(gen(rnd.choice(av[1])))
+            elif op == C.SUBPATTERN:
+                out.append(gen(av[3]))
+            elif op in (C.MAX_REPEAT, C.MIN_REPEAT, C.POSSESSIVE_REPEAT):
+                lo, hi = av[0], min(av[1], av[0] + 3) if av[1] != C.MAXREPEAT else av[0] + 3
+                out.append(''.join(gen(av[2]) for _ in range(rnd.randint(lo, hi))))
+            elif op == C.CATEGORY:
+                out.append({C.CATEGORY_DIGIT: '7', C.CATEGORY_SPACE: ' ', C.CATEGORY_WORD: 'k'}.get(av, 'q'))
+            # AT, ASSERT, ASSERT_NOT, GROUPREF: contribute nothing; the regex has the last word
+        return ''.join(out)
+    tree = list(P.parse(src, re.I | re.A))
+    rx = re.compile(src, re.I | re.A)
+    found = []
+    for _ in range(n * 6):
+        s = gen(tree)
+        for text in (s, 'so ' + s + ' ok', s + '.', s.upper()):
+            norm = turns.normalize(text)
+            if rx.search(norm):
+                found.append(norm)
+        if len(found) >= n:
+            break
+    return found
+
+
+def _every_pattern():
+    from atlas_voice.quality import NUMERIC, UNCERTAIN
+    for lang, rules in turns.INTENT_RULES.items():
+        for r in rules:
+            yield f"intent:{lang}:{r['intent']}", r['src'], r['gate']
+    for name, src in turns.CUE_SRC.items():
+        if isinstance(src, str):
+            yield f'cue:{name}', src, turns.CUE_GATES[name]
+    yield 'cue:tech', turns.TECH_SRC, turns.CUE_GATES['tech']
+    yield 'cue:numeric', NUMERIC.pattern, turns.CUE_GATES['numeric']
+    yield 'cue:uncertain', UNCERTAIN.pattern, turns.CUE_GATES['uncertain']
+    for name, src in turns.HINT_SRC.items():
+        yield f'hint:{name}', src, turns.HINT_GATES[name]
+    yield 'hint:from_to', turns.HINT_FROM_TO, turns.HINT_GATES['from_to']
+    yield 'number', turns.NUMBER_SRC, turns.NUMBER_GATE
+
+
+def test_gates_never_reject_a_text_their_pattern_matches():
+    import random
+    rnd = random.Random(2026)
+    checked = 0
+    for name, src, gates in _every_pattern():
+        samples = _samples(src, rnd)
+        assert samples, f'could not sample a match for {name}'
+        for norm in samples:
+            probe = turns._Probe(norm)
+            assert re.compile(src, re.I | re.A).search(norm)
+            assert turns.passes(gates, probe.has), (name, norm, gates)
+            checked += 1
+    assert checked > 1500
+
+
+def test_every_costly_pattern_has_a_gate_and_gated_search_equals_plain_search():
+    from atlas_voice import regex_gate
+    ungated = [n for n, src, g in _every_pattern() if not g]
+    # a pattern may legitimately have no requirement (it can match without any fixed word), but the word-alternation ones all do
+    assert not [n for n in ungated if n.startswith(('cue:', 'hint:')) and n not in ('cue:i', 'cue:we', 'cue:tech_min')], ungated
+    assert regex_gate.gate(r'\b(?:abc|abd)\b') == [['abc', 'abd']]
+    assert regex_gate.gate(r'optimi[sz]ed') == [['optimised', 'optimized']]
+    assert regex_gate.gate(r'x?y*') == [] and regex_gate.gate(r'(?:ab)?cd') == [['cd']]
+    assert regex_gate.gate(r'(?:ab|\w+)') == []      # one branch with nothing fixed to require: no gate
+    for text in ('', 'we delivered 40% in two weeks, the client said it was great', 'abc 123 ' * 100, 'I paused. can we pause for a sec?'):
+        norm = turns.normalize(text)
+        probe = turns._Probe(norm)
+        for name, src, gates in _every_pattern():
+            assert bool(probe.search(src, gates)) == bool(re.compile(src, re.I | re.A).search(norm)), name
+
+
+def test_numbers_stop_at_the_cap():
+    out = analyze_turn('3 ' * 500)['numbers']
+    assert len(out) == turns.MAX_NUMBERS and analyze_turn('no digits here')['numbers'] == []

@@ -8,11 +8,11 @@ The pack names systems and a rubric the repository has no contract for. These st
 
 | ID | Decision | Consequence |
 |---|---|---|
-| D1 | MiChat is an internal document label for this interview. No UI rename. MeChat appears only as a mock adapter `MECHAT_CV`, shown as "not connected". | See Q4. |
+| D1 | **RESOLVED by Tony 2026-10-31:** the CV destination system is **MiChat**; the pack's "MeChat" is a typo. The adapter id is `MICHAT_CV`, the branch key `michat`, the card label "MiChat CV". The interview itself stays "Atlas interview". MiChat is still a mock adapter shown as "not connected" (`BLOCKED_EXTERNAL`). | See Q4. |
 | D2 | MAAP: the rubric is `MUST_BE_CONFIGURED_BY_PROCESS_OWNER`. Rating or closing a MAAP review returns `MAAP_NOT_CONFIGURED`. Only the shell is built. | No invented criteria. |
 | D3 | Project Review: same treatment as D2. | |
 | D4 | Spotlight is a `SPOTLIGHT_CMS` mock only and never sets `published`. | |
-| D5 | Live DNA, MeChat and IMP APIs are `BLOCKED_EXTERNAL`. | No endpoints or credentials invented. |
+| D5 | Live DNA, MiChat and IMP APIs are `BLOCKED_EXTERNAL`. | No endpoints or credentials invented. |
 | D6 | The interview-recap wishes (turnover, peer comparison, sentiment) are out of scope under the governance section. **Non-negotiable.** | The gate denies `rate_consultant` and `infer_sentiment`. |
 | D7 | Add purposes `skills_profile` and `matching` (the latter `pending_owner_confirmation`) next to the pack's four. | |
 
@@ -35,7 +35,7 @@ The pack names systems and a rubric the repository has no contract for. These st
 | G1-1 | Entra N+1 (review L3). In Entra mode `user.email` is `tid:oid`, which never equals the email the staffing record or DNA directory names as the N+1, so the resolved N+1 never matches and the lookup fails closed. Only `ATLAS.Reviewer` / `ATLAS.Admin` can review until the directory carries the Entra identifier. An N+1 the consultant typed on the reference (`self_declared`) is never an approver, in either mode (review L2). |
 | G1-2 | Authorship (review M2). The author of the current revision cannot approve it: the gate denies `approve` with `AUTHOR_CANNOT_APPROVE`. A reviewer who rewrites claims therefore needs a different reviewer to approve; the owner sees the amendment in the revision list (author and role). Chosen over sending the record back to the owner because it needs no new state and covers amendments after approval too. |
 | G1-3 | Delivery (review H1). Every delivery attempt re-runs the `project_destination` gate against the grants as they stand now (fan-out of an existing job, pump, recovery). A denial halts the job (`needs_reconciliation`, reason `PERMISSION_DENIED:<code>`) and puts the card in `permission_pending`; a card already in `impact_review` keeps that flag. A halted job is never recovered; a new revision (a new job key) ends it. Job keys include entity and revision. |
-| G1-4 | MeChat CV text (review L8). A CV claim carries its statement only when a person has amended it (never the raw speech-recognition quote), capped at 400 characters. Outcome and metric text is never sent, because the model has no `client_permission` to say the client may be named; structured fields (value, unit, baseline, after state, period) are. |
+| G1-4 | MiChat CV text (review L8). A CV claim carries its statement only when a person has amended it (never the raw speech-recognition quote), capped at 400 characters. Outcome and metric text is never sent, because the model has no `client_permission` to say the client may be named; structured fields (value, unit, baseline, after state, period) are. |
 | G1-5 | Source references (review M1). `source_refs` / `source_ref` are internal-only in the story projection; client and public projections and DOCX drop them, and `scan_package` flags interview, session and ledger id patterns in an external package. |
 
 ## Tony's decisions (2026-10-30), binding
@@ -46,7 +46,7 @@ The pack names systems and a rubric the repository has no contract for. These st
 | Q1 Opening | **Full pack opening**, overriding the plan's default. The spoken greeting covers the purpose, what is captured, how it may be used, that any question can be skipped, answered "I don't know" or "can't share", and that a summary is read back for correction before anything goes to review. Warm and short for voice: about 60 words at most, split into at most two spoken pieces. Update the `tests/test_cascade.py:309-312` pin and the cached greetings in `languages.js`. English is authored carefully; other cached languages are translated faithfully and flagged "needs native review" in `IMPLEMENTATION_STATUS.md`. |
 | Q2 Submission | Default: owner-only draft, then an explicit "Submit for review". |
 | Q3 Checkpoint | Default: 24 h in the user's own Durable Object, gated by consent, discard purges, paused time excluded from the interview clock, 45-minute wall cap. |
-| Q4 MiChat and MeChat | Default (D1). |
+| Q4 MiChat naming | Resolved by Tony 2026-10-31 (D1): MiChat is the CV destination; the interview stays "Atlas interview". |
 | Q5 Latency | Default: `SPECULATIVE_STT` and `ANALYST_WAIT_MS` stay off, endpointing and temperature unchanged, `max_tokens` 160. |
 
 ## Original questions and their default answers
@@ -57,7 +57,7 @@ The pack names systems and a rubric the repository has no contract for. These st
 | 2 | Submission | Confirm the summary, creating an owner-only draft; submission is an explicit click. |
 | 3a | Interview length (2026-10-31, Tony) | 20 minutes planned, 30 at most: one polite offer to continue when 270 s of the planned end are left and an essential question is still unasked; yes extends to 30, anything else goes to the read-back; never offered to a rushed consultant; closing/wrap windows are relative to the effective end | The read-back needs time; extra time is the consultant's choice, never assumed. |
 | 3 | Pause and checkpoint | Paused time excluded from the 20-minute limit (15 until 2026-10-31), 45-minute wall cap; checkpoints only with transcript consent, 24 h in the user's own Durable Object; discard purges. |
-| 4 | MiChat and MeChat | MiChat is an internal label, no UI rename; MeChat is a mock CV adapter shown as "not connected". |
+| 4 | MiChat naming | **Superseded (D1, 2026-10-31):** MiChat is the CV destination system (the pack's "MeChat" is a typo); it is a mock CV adapter shown as "not connected". |
 | 5 | Latency | `SPECULATIVE_STT` and `ANALYST_WAIT_MS` off; endpointing and temperature unchanged; `max_tokens` 160. |
 
 ## Rollout switches and rollback

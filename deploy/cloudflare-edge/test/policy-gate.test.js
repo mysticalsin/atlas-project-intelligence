@@ -96,21 +96,21 @@ test('a transition must be allowed by the table the caller passes', () => {
 test('destination projections need approved evidence, the purpose grant and (DNA) a reviewer approval', () => {
   const system = { sub: 'job-runner', roles: ['system'] };
   const proj = (destination, c = {}, e = entity()) => decide(system, 'project_destination', e, ctx({ destination, reviewer_approval: { sub: 'u-rev', revision: 3, hash: H }, grants: [grant('cv'), grant('skills_profile'), grant('matching')], ...c }));
-  allowed(proj('mechat')); allowed(proj('dna')); allowed(proj('imp'));
+  allowed(proj('michat')); allowed(proj('dna')); allowed(proj('imp'));
   denied(proj('crm'), 'UNKNOWN_DESTINATION:crm');
   denied(proj('spotlight'), 'UNKNOWN_DESTINATION:spotlight'); // Spotlight is not a projection
-  denied(proj('mechat', {}, entity({ approved_revision: 2 })), 'REQUIREMENT_UNMET:evidence_approved');
-  denied(proj('mechat', {}, entity({ approved_hash: 'sha256:old' })), 'REQUIREMENT_UNMET:evidence_approved');
-  denied(proj('mechat', {}, entity({ approved_revision: undefined })), 'REQUIREMENT_UNMET:evidence_approved');
-  denied(proj('mechat', {}, entity({ status: 'withdrawn' })), 'REQUIREMENT_UNMET:evidence_approved');
-  denied(proj('mechat', { grants: [] }), 'PURPOSE_NOT_GRANTED:cv');
-  denied(proj('mechat', { grants: [grant('skills_profile')] }), 'PURPOSE_NOT_GRANTED:cv'); // another purpose is not this one
+  denied(proj('michat', {}, entity({ approved_revision: 2 })), 'REQUIREMENT_UNMET:evidence_approved');
+  denied(proj('michat', {}, entity({ approved_hash: 'sha256:old' })), 'REQUIREMENT_UNMET:evidence_approved');
+  denied(proj('michat', {}, entity({ approved_revision: undefined })), 'REQUIREMENT_UNMET:evidence_approved');
+  denied(proj('michat', {}, entity({ status: 'withdrawn' })), 'REQUIREMENT_UNMET:evidence_approved');
+  denied(proj('michat', { grants: [] }), 'PURPOSE_NOT_GRANTED:cv');
+  denied(proj('michat', { grants: [grant('skills_profile')] }), 'PURPOSE_NOT_GRANTED:cv'); // another purpose is not this one
   denied(proj('imp', { grants: [grant('cv')] }), 'PURPOSE_NOT_GRANTED:matching');
   denied(proj('dna', { reviewer_approval: undefined }), 'REQUIREMENT_UNMET:reviewer_approval');
   denied(proj('dna', { reviewer_approval: { sub: 'u-owner', revision: 3, hash: H } }), 'REQUIREMENT_UNMET:reviewer_approval'); // the owner's own approval
   denied(proj('dna', { reviewer_approval: { sub: 'u-rev', revision: 2, hash: H } }), 'REQUIREMENT_UNMET:reviewer_approval');
   denied(proj('dna', { reviewer_approval: { sub: 'u-rev', revision: 3, hash: 'sha256:x' } }), 'REQUIREMENT_UNMET:reviewer_approval');
-  denied(decide({ sub: 'u-x', roles: ['member'] }, 'project_destination', entity(), ctx({ destination: 'mechat', grants: [grant('cv')] })), 'ROLE_NOT_PERMITTED');
+  denied(decide({ sub: 'u-x', roles: ['member'] }, 'project_destination', entity(), ctx({ destination: 'michat', grants: [grant('cv')] })), 'ROLE_NOT_PERMITTED');
 });
 
 test('purpose grants must be unexpired, unrevoked and bound to the revision, hash and channel', () => {
