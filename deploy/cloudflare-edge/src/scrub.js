@@ -142,16 +142,26 @@ export function nameMatcher(names, { contacts = false } = {}) {
 // A contact typed as "Jane Doe (Head of Claims)" also registers its leading name "Jane Doe" (review.contactLead);
 // nameMatcher's contact rules then apply to it. Cached per Library instance, recompiled when the refs table changes.
 const cache = new WeakMap();
+const MASK_PER_OWNER = 50, MASK_TOTAL = 5000, MASK_MIN_TOKEN = 3;
+// A name needs a token of MASK_MIN_TOKEN letters or digits; a 2-character upper-case acronym ("GE", "BP") also counts, as it is matched case-sensitively
+// ("ab", "x", "--" would otherwise be masked in everybody's text).
+const maskable = n => new RegExp(`[\\p{L}\\p{N}]{${MASK_MIN_TOKEN},}`, 'u').test(n) || /^\p{Lu}{2}$/u.test(n.split(/\s+/)[0]);
 function compiled(lib) {
   const k = lib.rows('SELECT COUNT(*) AS n, MAX(updated_at) AS u, SUM(revision) AS r FROM refs')[0] || {}, sig = `${k.n}|${k.u}|${k.r}`;
   const hit = cache.get(lib);
   if (hit && hit.sig === sig) return hit;
-  const clients = new Set(), contacts = new Set();
-  for (const r of lib.rows('SELECT data FROM refs')) {
+  const clients = new Set(), contacts = new Set(), perOwner = new Map();
+  // Red-team L2: the list grows with what people type, so it is bounded. Each owner contributes at most MASK_PER_OWNER distinct names (their most
+  // recently updated records first), the list holds at most MASK_TOTAL names, and a name needs a token of MASK_MIN_TOKEN letters or digits, so one
+  // account cannot slow every masked text down or make a common short word disappear for everyone.
+  for (const r of lib.rows('SELECT owner, data FROM refs ORDER BY updated_at DESC')) {
     let d; try { d = JSON.parse(r.data); } catch { continue; }
-    const name = norm(d?.client?.name || ''), contact = norm(d?.client?.contact || '');
-    if (name.length >= 2) clients.add(name);
-    for (const c of [contact, contactLead(contact)]) if (c.length >= 2) contacts.add(c);
+    if (clients.size + contacts.size >= MASK_TOTAL) break;
+    const name = norm(d?.client?.name || ''), contact = norm(d?.client?.contact || ''), mine = perOwner.get(r.owner) || new Set();
+    perOwner.set(r.owner, mine);
+    const take = (n, into) => { if (n.length >= 2 && maskable(n) && (mine.has(n) || mine.size < MASK_PER_OWNER)) { into.add(n); mine.add(n); } };
+    take(name, clients);
+    for (const c of [contact, contactLead(contact)]) take(c, contacts);
   }
   const longest = s => [...s].sort((a, b) => b.length - a.length || a.localeCompare(b));
   const names = { clients: longest(clients), contacts: longest(contacts) };

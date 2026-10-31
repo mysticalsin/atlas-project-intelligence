@@ -588,7 +588,7 @@ test('R17 metrics are numbers only; no key, hash or client in stored ratings, re
   // No quality figure per person.
   for (const c of l.analytics(REV).byConsultant) assert.deepEqual(Object.keys(c), ['name', 'n']);
   // A public reader of a published record.
-  l.validate(N1, id, { decision: 'validate' });
+  l.validate(REV, id, { decision: 'validate' });
   const pub = l.get(OTHER, id);
   assert.equal(pub.access, 'public'); assert.equal(pub.state.quality.jev, null); assert.deepEqual(pub.state.quality.holds, []);
   assert.equal('jevAllowed' in pub, false); assert.equal(pub.rating.running, false);
@@ -599,18 +599,20 @@ test('R17 metrics are numbers only; no key, hash or client in stored ratings, re
 
 test('R18 manager staff: JEV publishes on its own only when sure; otherwise the second opinion decides', async () => {
   const staff = () => { const r = REF(); r.validation.managerStaff = true; return r; };
+  // Red-team H1: "no N+1 validation" is set by a reviewer (the author's own flag is dropped), so a reviewer re-saves the author's record with it.
+  const savedStaff = async w => { const id = await saved(w.l, REF()); await w.l.upsert(REV, { id, reference: staff() }); return id; };
   let w = await world({ complete: counted(async () => 'not json'), reply: () => ({ spec: R7 }) });
-  let id = await saved(w.l, staff());
+  let id = await savedStaff(w);
   let r = await w.l.review(OWNER, id);
   assert.deepEqual([r.state.quality.status, r.status, r.state.quality.jev.strict], ['needs_work', 'needs_work', true]);
   assert.match(r.state.quality.summary, /publishing without N\+1 validation needs JEV to be sure/);
   assert.equal(w.metrics.at(-1).strict, 1);
   w = await world({ reply: () => ({ spec: R7 }) });
-  id = await saved(w.l, staff());
+  id = await savedStaff(w);
   r = await w.l.review(OWNER, id);
   assert.deepEqual([r.status, r.state.quality.engine, r.state.quality.escalatedFrom, r.state.quality.jev.strict], ['published', 'review-agent', 'jev', true], 'the agent decided');
   w = await world({ reply: () => ({ spec: { ...SURE, story_language: { choice: 'en', confidence: 0.99 } } }) });
-  id = await saved(w.l, staff());
+  id = await savedStaff(w);
   r = await w.l.review(OWNER, id);
   assert.deepEqual([r.status, r.state.quality.engine, w.complete.calls.length], ['published', 'jev', 0]);
 });

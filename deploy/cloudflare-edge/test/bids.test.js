@@ -433,6 +433,19 @@ test('one-pager: a footnote\'s confirmation comes from claims.confirmationStatus
   assert.deepEqual(matched.claims, claims.READY ? { confirmed: 1, total: 2 } : { confirmed: 0, total: 0 }, 'current confirmed claims out of all claims');
 });
 
+// Red-team M3 (v2.2 R1): the footnote carries who confirmed. A confirmer the consultant only named is 'consultant_named', never 'manager_confirmed'.
+test('one-pager: a confirmation through a self-declared N+1 is footnoted consultant_named; through the staffing record it stays manager_confirmed', async () => {
+  const w = await library(), { l } = w, bid = (await call(l, OWNER, 'POST', 'bids', NEW_BID)).body;
+  claims.ensure(l);
+  const sentence = splitSentences(l.row(w.z).data.answers[3])[0];
+  l.sql.exec("INSERT INTO claims (id, ref_id, revision, topic, idx, text, sentence_hash, status, by_mail, at, confirmed_revision, created_by, created_at) VALUES ('c1', ?, 1, 3, 0, ?, 'h1', 'manager_confirmed', 'friend@mantu.com', 'now', 1, 'lee@mantu.com', 'now')", w.z, sentence);
+  const request = source => l.sql.exec("INSERT OR REPLACE INTO confirmation_requests (id, ref_id, revision, kind, to_email, manager_source, claim_ids, status, created_by, created_by_mail, created_at, expires_at, decided_at) VALUES ('q1', ?, 1, 'manager', 'friend@mantu.com', ?, '[\"c1\"]', 'done', 'lee@mantu.com', 'lee@mantu.com', 'x', 'y', 'now')", w.z, source);
+  const outcome = async () => { const p = (await call(l, OWNER, 'POST', `bids/${bid.id}/onepager`, { refIds: [w.z] })).body; return p.footnotes.find(f => f.topic === 'outcome').confirmation; };
+  request('self_declared'); assert.equal(await outcome(), claims.READY ? 'consultant_named' : 'unverified');
+  const m1 = (await call(l, OWNER, 'POST', `bids/${bid.id}/match`)).body.results.find(x => x.id === w.z); assert.deepEqual(m1.claims, { confirmed: 0, total: 1 }, 'a self-named confirmer is not counted as confirmed');
+  request('staffing'); assert.equal(await outcome(), claims.READY ? 'manager_confirmed' : 'unverified');
+});
+
 // ======================================= Review fixes (wow review #2, #4, #10, #17, #20, #21, #26) =======================================
 import * as gaps from '../src/gaps.js';
 const SAM = { email: 'sam@mantu.com', role: 'user' };

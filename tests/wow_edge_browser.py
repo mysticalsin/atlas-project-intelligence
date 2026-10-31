@@ -49,6 +49,8 @@ try:
   alex.evaluate("([n,rep])=>window.ATLAS_VOICE_BRIDGE.autoSave(window.ATLAS_VOICE_BRIDGE.context(),n,'Consultant words.',rep)",[NOTES,REP]);alex.wait_for_timeout(1200);settle()
   rid=alex.evaluate('window.ATLAS_APP.project().library?.id')
   check('reference synced to the shared library',bool(rid))
+  # v2.2 (red-team H1): the N+1 who may validate is the one the staffing record names, not the one typed on the reference
+  api(page('reviewer@mantu.com'),'/staffing/import','POST',{'csv':'project_id,consultant_email,manager_email,manager_name,project_title,end_date\nPRJ-2291,alex@mantu.com,sam@mantu.com,Sam,,\n'})
   sam=page('sam@mantu.com');api(sam,'/'+rid+'/validate','POST',{'decision':'validate'});settle()
   check('N+1 validated: the reference is published',api(sam,'/'+rid)['status']=='published')
   # --- F1: bea creates a bid, matches, builds a one-pager
@@ -139,9 +141,11 @@ try:
   check('the map lights up the result country',kim.locator('#askMap path.geo-country[data-code="FRA"][data-state^="count-"]').count()==1)
   check('a public reader sees no email anywhere in the answer','@' not in kim.locator('#askAtlas').inner_text())
   # --- F7: five won bids; the reviewer sees the rate, a plain user no story table
+  carl=page('carl@mantu.com')  # v2.2 (red-team L1): one bidder counts at most 3 uses of a story, so the five wins come from two bidders
   for i in range(4):
-   x=api(bea,'/bids','POST',{'title':f'Won bid {i}','alias':f'Heron {i}','prospectNames':[],'briefText':'An insurer needs proven claims triage automation with measured handling time.'})
-   api(bea,f"/bids/{x['id']}/use",'POST',{'refIds':[rid]});api(bea,f"/bids/{x['id']}/outcome",'POST',{'outcome':'won'})
+   who=bea if i<2 else carl
+   x=api(who,'/bids','POST',{'title':f'Won bid {i}','alias':f'Heron {i}','prospectNames':[],'briefText':'An insurer needs proven claims triage automation with measured handling time.'})
+   api(who,f"/bids/{x['id']}/use",'POST',{'refIds':[rid]});api(who,f"/bids/{x['id']}/outcome",'POST',{'outcome':'won'})
   api(bea,f'/bids/{bid_id}/outcome','POST',{'outcome':'won'});settle()
   rv.locator('header nav [data-view=bids]').click();rv.wait_for_timeout(1200)
   ws=rv.locator('#winStats')

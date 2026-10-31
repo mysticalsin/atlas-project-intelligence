@@ -21,9 +21,10 @@ async function publish(l, owner, data) {
   return s.id;
 }
 let seq = 0;
-function seed(l, outcome, uses, owner = ALEX.email) {
+// Red-team L1: a bidder's first 3 uses of one story count, and nobody's own stories do, so seeded bids rotate over 12 bidders who own none of the stories.
+function seed(l, outcome, uses, owner = null) {
   bids.ensure(l);
-  const id = 'bid' + (++seq), at = '2026-09-29T00:00:' + String(seq % 60).padStart(2, '0') + '.000Z', decided = outcome !== 'pending';
+  const id = 'bid' + (++seq); owner ??= `bidder${seq % 12}@mantu.com`; const at = '2026-09-29T00:00:' + String(seq % 60).padStart(2, '0') + '.000Z', decided = outcome !== 'pending';
   l.sql.exec('INSERT INTO bids (id, owner, alias, status, outcome, decided_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', id, owner, 'alias', decided ? 'decided' : 'open', outcome, decided ? at : null, at, at);
   for (const [refId, type] of uses) l.sql.exec('INSERT INTO bid_references (bid_id, ref_id, revision, proof_type, used_at, used_by) VALUES (?, ?, 1, ?, ?, ?)', id, refId, type, at + seq, owner);
   return id;
@@ -114,7 +115,7 @@ test('proofTypeOf: quantified from the outcome or evidence answer, confirmed fro
   const sentence = splitSentences(l.row(q).data.answers[3])[0];
   l.sql.exec("INSERT INTO claims (id, ref_id, revision, topic, idx, text, sentence_hash, status, by_mail, at, confirmed_revision, created_by, created_at) VALUES ('c1', ?, 1, 3, 0, ?, 'h1', 'manager_confirmed', 'sam@mantu.com', 'now', 1, 'lee@mantu.com', 'now')", q, sentence);
   assert.equal(winloop.proofTypeOf(l, l.row(q)), claims.READY ? QC : Q, 'confirmed once T3 counts the claim');
-  const bid = seed(l, 'won', []);
+  const bid = seed(l, 'won', [], ALEX.email);
   l.sql.exec('UPDATE refs SET data = json_set(data, \'$.answers[3]\', ?) WHERE id = ?', 'No figures any more.', q);
   bids.ensure(l); await bids.routes({ method: 'POST', parts: ['bids', bid, 'use'], body: { refIds: [q] }, user: { ...ALEX, mail: ALEX.email }, lib: l, env: {} });
   assert.equal(l.rows('SELECT proof_type FROM bid_references WHERE bid_id = ?', bid)[0].proof_type, QL, 'the type is computed when the use is recorded');

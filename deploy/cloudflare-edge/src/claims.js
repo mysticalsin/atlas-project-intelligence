@@ -155,6 +155,13 @@ export function managerOf(lib, row) {
   throw fail(400, 'Name the N+1 on the reference first.');
 }
 
+// THE server-side N+1 resolver (red-team H1/M3; one implementation for library validation, claim confirmation and evidence
+// review). The N+1 is whoever the staffing record or the DNA directory says; the N+1 the consultant typed on the
+// reference (source 'self_declared') is the owner's own words and is never an approver. null when neither source knows one.
+export function resolveN1(lib, row) {
+  try { const m = managerOf(lib, row); return m.source === 'self_declared' || !m.to ? null : m; } catch { return null; }
+}
+
 const originOf = ctx => { for (const v of [ctx.env?.ORIGIN, ctx.url?.href]) { try { const o = new URL(String(v)).origin; if (/^https?:\/\//.test(o)) return o; } catch { /* next */ } } return ''; };
 const CLIENT_BLOCKED = { status: 503, body: { error: 'Client-contact confirmation is not enabled on this deployment.', status: 'BLOCKED_EXTERNAL',
   reason: "Client contacts can confirm only when CLIENT_CONFIRM=1, the contact's email is listed in EXTERNAL_EMAILS, an Access policy admits that email, and Tony has taken the business and legal decision (Q3).",
@@ -279,21 +286,27 @@ export async function routes(ctx) {
 
 // ---- Exports for other modules (F1 results and footnotes, F7 proof type, F4 daily sweep).
 // {confirmed: current confirmed claims, total: every claim of the reference, current: current claims}.
+// A decision answered through a request whose N+1 the consultant only named ('self_declared') is a colleague's confirmation, not the
+// N+1's (red-team M3). `independent: true` leaves those out of `confirmed` (proof types, bid views); the default keeps the F3 count.
+const selfNamed = (deciders, c) => deciders.get(c.id + '\n' + c.at + '\n' + c.by_mail)?.manager_source === 'self_declared';
 export function claimSummary(lib, row, opts = {}) {
   if (!READY || !row?.id) return { confirmed: 0, total: 0, current: 0 };
   ensure(lib);
-  const cs = lib.rows('SELECT topic, text, status, confirmed_revision FROM claims WHERE ref_id = ?', row.id), { current } = currencyOf(row, mode(opts.currency));
+  const cs = lib.rows('SELECT id, topic, text, status, by_mail, at, confirmed_revision FROM claims WHERE ref_id = ?', row.id), { current } = currencyOf(row, mode(opts.currency));
+  const deciders = opts.independent ? decidersOf(lib, row.id) : null;
   let cur = 0, confirmed = 0;
-  for (const c of cs) if (current(c)) { cur++; if (CONFIRMED.has(c.status)) confirmed++; }
+  for (const c of cs) if (current(c)) { cur++; if (CONFIRMED.has(c.status) && !(deciders && c.status === 'manager_confirmed' && selfNamed(deciders, c))) confirmed++; }
   return { confirmed, total: cs.length, current: cur };
 }
 // Map(claimKey(topic, text) -> status) for CURRENT claims only (a footnote only ever cites a current sentence).
+// `independent: true` reports a manager confirmation from a self-named confirmer as 'consultant_named' (never 'manager_confirmed').
 export function confirmationStatus(lib, row, opts = {}) {
   const out = new Map();
   if (!READY || !row?.id) return out;
   ensure(lib);
-  const { current } = currencyOf(row, mode(opts.currency));
-  for (const c of lib.rows('SELECT topic, text, status, confirmed_revision FROM claims WHERE ref_id = ?', row.id)) if (current(c)) out.set(claimKey(c.topic, c.text), c.status);
+  const { current } = currencyOf(row, mode(opts.currency)), deciders = opts.independent ? decidersOf(lib, row.id) : null;
+  for (const c of lib.rows('SELECT id, topic, text, status, by_mail, at, confirmed_revision FROM claims WHERE ref_id = ?', row.id))
+    if (current(c)) out.set(claimKey(c.topic, c.text), deciders && c.status === 'manager_confirmed' && selfNamed(deciders, c) ? 'consultant_named' : c.status);
   return out;
 }
 // Marks open requests past expires_at as expired (daily sweep). Ensures its own tables first: safe on a fresh schema.

@@ -253,7 +253,7 @@ async function route(request, env, page, { waitUntil = p => p, flagsOf = flags }
     if (url.pathname === '/confirm' && request.method === 'GET') return new Response(CONFIRM_HTML, { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
     if (url.pathname === '/' && request.method === 'GET') {
       const runtime = JSON.stringify({ subjectKey, authMode: 'access', name: who.email }).replace(/</g, '\\u003c');
-      let body = page.replace('/* SERVER_RUNTIME */', 'window.ATLAS_RUNTIME=' + runtime + ';')
+      let body = page.replace('/* SERVER_RUNTIME */', () => 'window.ATLAS_RUNTIME=' + runtime + ';') // a function replacer: a string one would expand "$'" and "$&" found in the email
         .replace("connect-src 'self';", "connect-src 'self' " + env.ORIGIN.replace('https://', 'wss://') + ';');
       const end = body.lastIndexOf('</body>'); // the page embeds an earlier '</body>' inside a script string
       // The test banner stays until Tony sets DATA_MODE=production on an approved deployment (WOW_ZERO_CONFIG §0.7, §11).
