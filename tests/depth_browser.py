@@ -1,5 +1,5 @@
 """v12 browser/editor tests with an explicit fake API. No real provider calls."""
-import json,os,shutil
+import json,os,re,shutil
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 R=Path(__file__).resolve().parents[1];HTML=(R/'ATLAS_Project_Intelligence.html').read_text();checks=[];errors=[]
@@ -10,7 +10,8 @@ with sync_playwright() as pw:
  b=pw.chromium.launch(executable_path=os.getenv('CHROMIUM_PATH') or shutil.which('chromium'),args=['--no-sandbox']);p=b.new_page(viewport={'width':1440,'height':1000},accept_downloads=True);p.set_default_timeout(5000);p.on('pageerror',lambda e:errors.append(str(e)))
  try:
   # API adapters are visible in test source, not bundled in the application.
-  html=HTML.replace("if(!['http:','https:'].includes(location.protocol))","if(false)")
+  # rewriting the page's script text means dropping its hash-pinned <meta> CSP
+  html=re.sub(r'<meta content="[^"]*" http-equiv="Content-Security-Policy"/>','',HTML,count=1).replace("if(!['http:','https:'].includes(location.protocol))","if(false)")
   p.set_content(html,wait_until='load');p.wait_for_timeout(250)
   p.locator('[data-intelligence=quality]').click();p.locator('#qualityAssessment').click()
   check('Assessment question does not assume production benefit','decision did the assessment enable' in p.locator('#qualityLabResult').inner_text())

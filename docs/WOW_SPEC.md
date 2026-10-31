@@ -1001,7 +1001,7 @@ The docs record the seam: a future `/api/phone/stream` would translate μ-law 8 
 
 - **`GET /teams/tab`** (pre-Access, main host) serves a small static launcher page: "Open ATLAS" plus the user's pending interviews link (`<ORIGIN>/`). It carries no user data and calls no API.
 - It uses the vendored TeamsJS bundle (`@microsoft/teams-js` 2.57.0, MIT, recorded in `docs/THIRD_PARTY.md` and `docs/SOURCE_LOCK.json`): `app.initialize()`, then `app.openLink(ORIGIN)` on click. If the bundle is not vendored, the route answers 503 BLOCKED_EXTERNAL "TeamsJS not vendored".
-- Its CSP is route-specific: `frame-ancestors https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft`, `script-src 'unsafe-inline'`, `default-src 'none'`. The main host keeps `frame-ancestors 'none'` everywhere else.
+- Its CSP is route-specific: `frame-ancestors https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft`, `script-src` limited to the SHA-256 of its two inline scripts (v2.2 F1, no `'unsafe-inline'`), `default-src 'none'`. The main host keeps `frame-ancestors 'none'` everywhere else.
 - **Not built in this spec** (Q9): the in-tab interview (Teams SSO, a Teams session token, a WebSocket ticket, a second hostname). Revision 1 designed these. They would put a mutable-claim identity and a second subject key beside Access, and they cannot be tested without a tenant. They wait for Entra enablement and a Mantu test tenant.
 
 #### F4.7 UI (T4)

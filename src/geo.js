@@ -4,7 +4,7 @@
 (function(root,factory){const api=factory(root);if(typeof module==='object'&&module.exports)module.exports=api;else root.AtlasGeo=api;})(typeof globalThis!=='undefined'?globalThis:this,root=>{
 'use strict';
 const own=(o,k)=>!!o&&Object.prototype.hasOwnProperty.call(o,k);
-const esc=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc=(root.AtlasSafe||(typeof require==='function'?require('./safe-html.js'):null)).esc;  // the shared escape (src/safe-html.js, loaded first in the page)
 let DATA=null,F=null,IDX=null;const BOXES=new Map();
 function world(){if(DATA)return DATA;let w=root.ATLAS_WORLD;if(!w&&typeof require==='function'){try{w=require('../assets/geo/world-110m.json');}catch(e){w=null;}}
  if(w&&w.countries&&Array.isArray(w.fields)){const f=k=>w.fields.indexOf(k);F={name:f('name'),iso2:f('iso2'),iso3:f('iso3'),aliases:f('aliases'),box:f('box'),label:f('label'),path:f('path')};DATA=w;}return DATA;}
@@ -103,15 +103,15 @@ function worldSVG(opts){const o=opts&&typeof opts==='object'?opts:{},w=world();i
  const title=c=>own(titles,c)&&typeof titles[c]==='string'&&titles[c]?`<title>${esc(titles[c])}</title>`:'';
  // static culling keeps the bands a 4:3 frame (the narrowest the stylesheet uses, on phones) letterboxes above and below a wider view
  const inView=c=>{if(interactive)return true;const b=bbox(c),m=vb[2]*.02,my=m+Math.max(0,vb[2]*.75-vb[3])/2;return b[2]>=vb[0]-m&&b[0]<=vb[0]+vb[2]+m&&b[3]>=vb[1]-my&&b[1]<=vb[1]+vb[3]+my;};
- const shape=c=>{const t=title(c);return `<path class="geo-country"${attrs(c)} d="${w.countries[c][F.path]}"`+(t?`>${t}</path>`:'/>');};
+ const shape=c=>{const t=title(c);return `<path class="geo-country"${attrs(c)} d="${esc(w.countries[c][F.path])}"`+(t?`>${t}</path>`:'/>');};
  const drawn=Object.keys(w.countries).filter(c=>w.countries[c][F.path]&&inView(c)).sort();
  const label=typeof o.label==='string'&&o.label?o.label:lit.length?'World map. Highlighted: '+lit.map(c=>countryName(c)+(STATE_WORDS[states[c]]?` (${STATE_WORDS[states[c]]})`:'')).join(', ')+'.':'World map. No country highlighted.';
- const marks=w.markers.filter(m=>states[m[0]]).map(m=>{const t=title(m[0]);return `<circle class="geo-marker"${attrs(m[0])} cx="${m[1]}" cy="${m[2]}" r="${sig(4*u)}" stroke-width="${sig(2*u)}"`+(t?`>${t}</circle>`:'/>');}).join('');
- return `<svg xmlns="http://www.w3.org/2000/svg" class="geo-map" viewBox="${vb.join(' ')}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${esc(label)}" data-fit="${vb.join(' ')}" data-world="0 0 ${w.width} ${w.height}">`+
+ const marks=w.markers.filter(m=>states[m[0]]).map(m=>{const t=title(m[0]);return `<circle class="geo-marker"${attrs(m[0])} cx="${esc(m[1])}" cy="${esc(m[2])}" r="${sig(4*u)}" stroke-width="${sig(2*u)}"`+(t?`>${t}</circle>`:'/>');}).join('');
+ return `<svg xmlns="http://www.w3.org/2000/svg" class="geo-map" viewBox="${vb.join(' ')}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${esc(label)}" data-fit="${vb.join(' ')}" data-world="0 0 ${esc(w.width)} ${esc(w.height)}">`+
   `<defs><pattern id="${p}-hatch" class="geo-hatch" patternUnits="userSpaceOnUse" width="${hs}" height="${hs}" patternTransform="rotate(45)"><rect class="geo-hatch-bg" width="${hs}" height="${hs}" fill="#2F3440"/>`+
   `<path class="geo-hatch-line" d="M${sig(3*u)} 0V${hs}" stroke="#F6EB4B" stroke-opacity=".55" stroke-width="${sig(1.2*u)}"/></pattern></defs>`+
   `<rect class="geo-bg" x="${-w.width}" y="${-w.height}" width="${3*w.width}" height="${3*w.height}" fill="none"/>`+
-  `<path class="geo-graticule" d="${w.graticule}" fill="none" stroke="#FFFFFF" stroke-opacity=".08" stroke-width=".5" vector-effect="non-scaling-stroke"/>`+
+  `<path class="geo-graticule" d="${esc(w.graticule)}" fill="none" stroke="#FFFFFF" stroke-opacity=".08" stroke-width=".5" vector-effect="non-scaling-stroke"/>`+
   `<g class="geo-countries" fill="#2F3440" fill-rule="evenodd" stroke="#101011" stroke-width="${sig(.5*u)}" stroke-linejoin="round">`+
   drawn.filter(c=>!states[c]).map(shape).join('')+drawn.filter(c=>states[c]).map(shape).join('')+`</g>`+
   (marks?`<g class="geo-markers" fill="#F6EB4B" stroke="#101011">${marks}</g>`:'')+`</svg>`;}

@@ -2,6 +2,7 @@
 'use strict';
 (()=>{
 const $=id=>document.getElementById(id), bridge=window.ATLAS_VOICE_BRIDGE;
+const {html,setHTML}=window.AtlasSafe;
 const labels=['Context','Contribution','Approach','Outcome','Evidence','Customer relevance'];
 let boot=null, generation=0, socket=null, stream=null, audio=null, node=null, source=null;
 let phase='idle', muted=false, paused=false, pausedAt=null, pausedMs=0, controlsOn=null, current=null, startedAt=0, timer=null, heardOutput=false, accumulated='', lastNotes=null;let micLabel='',micPeak=0,micWatch=0;
@@ -361,7 +362,7 @@ if($('soundHelpToggle')){$('soundHelpToggle').onclick=()=>{const p=$('soundHelpP
  $('soundTest').onclick=async()=>{try{if(audio&&audio.state!=='running')await audio.resume();}catch{}chime();$('soundHelpNote').textContent=audio?.state==='running'?'Played a chime. If you heard nothing, choose another output or check the system volume.':'Sound is still blocked by the browser. Click anywhere on the page, then try again.';};}
 // Live pill: while a conversation runs and you are on another screen, you always see it and can mute, end or go back.
 function livePill(){let pill=$('voiceLivePill');if(!pill){pill=document.createElement('div');pill.id='voiceLivePill';pill.className='voice-live-pill';pill.hidden=true;pill.setAttribute('role','status');
- pill.innerHTML='<span class="voice-live-dot" aria-hidden="true"></span><span data-pill="label">ATLAS is listening</span><button type="button" data-pill="mute">Mute</button><button type="button" data-pill="end">End</button><button type="button" data-pill="back">Back to conversation</button>';
+ setHTML(pill,html`<span class="voice-live-dot" aria-hidden="true"></span><span data-pill="label">ATLAS is listening</span><button type="button" data-pill="mute">Mute</button><button type="button" data-pill="end">End</button><button type="button" data-pill="back">Back to conversation</button>`);
  document.body.append(pill);pill.querySelector('[data-pill=mute]').onclick=toggleMute;pill.querySelector('[data-pill=end]').onclick=end;
  pill.querySelector('[data-pill=back]').onclick=()=>document.querySelector('header [data-view=interview]')?.click();}
  const away=!document.body.classList.contains('studio-view');pill.hidden=!(['connecting','live'].includes(phase)&&away);

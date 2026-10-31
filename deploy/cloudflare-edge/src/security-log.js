@@ -5,8 +5,8 @@
 // (a keyed hash). Fields outside the whitelist below are dropped, so a caller cannot leak by accident.
 const enc = new TextEncoder();
 export const EVENTS = Object.freeze(['authn_fail', 'csrf_fail', 'origin_fail', 'external_denied', 'bearer_fail', 'access_denied', 'rate_limited', 'body_too_large',
-  'header_spoof', 'kill_switch', 'subject_blocked', 'flag_state', 'audit_chain_break', 'audit_chain_ok', 'internal_error', 'inbound_off', 'privacy_export', 'privacy_erase', 'privacy_flags', 'consent_change']);
-const FIELDS = ['route', 'method', 'status', 'reason', 'subj', 'role', 'ip_h', 'colo', 'ray', 'n', 'bucket', 'head'];
+  'header_spoof', 'kill_switch', 'subject_blocked', 'flag_state', 'audit_chain_break', 'audit_chain_ok', 'internal_error', 'inbound_off', 'privacy_export', 'privacy_erase', 'privacy_flags', 'consent_change', 'csp_violation']);
+const FIELDS = ['route', 'method', 'status', 'reason', 'subj', 'role', 'ip_h', 'colo', 'ray', 'n', 'bucket', 'head', 'directive', 'blocked'];
 
 // '/api/library/<32 hex>/validate' -> '/api/library/:id/validate'. Only short lower-case words survive; everything else (ids,
 // e-mail addresses, encoded text) becomes ':id', and at most six segments are kept. The query string is never read.
@@ -36,6 +36,8 @@ export async function secEvent(env, event, f = {}, write = line => console.log(l
     else if (k === 'route') v = routeTemplate(v);
     else if (k === 'subj') v = String(v).toLowerCase().replace(/[^0-9a-f]/g, '').slice(0, 16);
     else if (k === 'status' || k === 'n') v = Number.isFinite(Number(v)) ? Math.trunc(Number(v)) : undefined;
+    else if (k === 'directive') v = /^[a-z-]{3,40}$/.test(String(v)) ? String(v) : 'unknown';
+    else if (k === 'blocked') v = String(v).toLowerCase().replace(/[^a-z0-9.:/-]/g, '').slice(0, 80); // an origin: scheme and host, never a path
     else if (k === 'role') v = ['user', 'reviewer', 'admin', 'external', 'system'].includes(v) ? v : undefined;
     else if (k === 'method') v = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(String(v).toUpperCase()) ? String(v).toUpperCase() : undefined;
     else v = String(v).replace(/[^A-Za-z0-9_.:-]/g, '').slice(0, 40);

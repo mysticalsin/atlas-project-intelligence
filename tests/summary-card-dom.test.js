@@ -78,7 +78,7 @@ class El{
 function boot({libraryApi,policy=true,timeout=setTimeout}={}){
  const els={},$=id=>els[id]||(els[id]=new El(id)),listeners={},actions=[],calls=[];
  const document={getElementById:$,createElement:t=>new El('',t),createElementNS:(ns,t)=>new El('',t),querySelector:()=>null,addEventListener(){},readyState:'complete'};
- const win={document,AtlasBoard:B,AtlasVoiceControls:VC,AtlasWorkflowCore:WF,ATLAS_POLICY:policy?{FIELDS:{}}:undefined,
+ const win={document,AtlasBoard:B,AtlasSafe:require('../src/safe-html.js'),AtlasVoiceControls:VC,AtlasWorkflowCore:WF,ATLAS_POLICY:policy?{FIELDS:{}}:undefined,
   ATLAS_APP:{libraryApi:libraryApi?async(p,o)=>{calls.push([p,o||{}]);return libraryApi(p,o);}:undefined},
   addEventListener:(t,f)=>(listeners[t]||=[]).push(f),
   dispatchEvent:e=>{if(e.type==='atlas-summary-action')actions.push(e.detail);for(const f of listeners[e.type]||[])f(e);},

@@ -130,6 +130,7 @@ All optional; each default is the new behaviour and the legacy value is the roll
 | `ATLAS_CHECKPOINT` | on | `off`: no interview checkpoints (no resume). Checkpoints need transcript consent and last 24 hours from the first write |
 | `ATLAS_EVIDENCE_WORKFLOW` | `on` | `off`: a confirmed summary is not filed; fan-out, status and sync routes off |
 | `ATLAS_ADAPTERS` | `off` | `mock` runs the four destination mocks; `live` is refused (`BLOCKED_EXTERNAL`: no owner contract exists) |
+| `ATLAS_CSP` | `enforce` | `report-only` enforces the pre-F1 policy and only reports the strict script CSP (rollout week; also read by the Python gateway). See `handoff/SECURITY_RUNBOOK.md` |
 
 Privacy facts for the consent text (24-hour checkpoint, text mode, keep private, drafts): `docs/INTEGRATIONS.md`, "Privacy and consent wording for the interview". The consent dialog now has the 24-hour saved-interview choice, memory, and the privacy notice as separate rows (v2.2 G2); wording lives in `atlas_voice/config/privacy.json` and the notice is served at `/privacy` (`docs/privacy/`).
 

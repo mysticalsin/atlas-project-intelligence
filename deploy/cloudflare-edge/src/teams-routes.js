@@ -8,15 +8,19 @@
 import { verifyBotActivity, teamsClient, messageCard, teamsStatus, botAppId } from './teams.js';
 import { str } from './util.js';
 import { baseSecurityHeaders } from './security-headers.js';
+import { htmlCsp, htmlCspHeaders, inlineScriptHashes } from './csp.js';
 import { TEAMS_JS } from '../teams/vendor/teams-js.mjs';
 
 const MAX_BODY = 262144;
 const BASE = baseSecurityHeaders(); // no-store, nosniff, no-referrer, HSTS, COOP/CORP same-origin, Permissions-Policy (security-headers.js)
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status,
   headers: { ...BASE, 'Content-Type': 'application/json', 'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'" } });
-// Route-specific CSP: only Teams may frame the launcher; the main host keeps frame-ancestors 'none' everywhere else.
-export const TAB_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; "
-  + 'frame-ancestors https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft';
+// Route-specific CSP: only Teams may frame the launcher; the main host keeps frame-ancestors 'none' everywhere else. Its two inline scripts
+// (the vendored TeamsJS bundle and the launcher) are static, so the policy allows exactly their hashes (v2.2 F1; blue G14): tabCsp(hashes).
+export const TAB_FRAME_ANCESTORS = 'https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft';
+export const tabCsp = hashes => htmlCsp({ hashes, page: false, blob: false, formAction: "'none'", frameAncestors: TAB_FRAME_ANCESTORS, report: false });
+// The pre-F1 policy, enforced only while ATLAS_CSP=report-only.
+const TAB_CSP_LEGACY = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors " + TAB_FRAME_ANCESTORS;
 const NEEDS = ['TEAMS_APP_ID', 'TEAMS_TENANT_ID', 'TEAMS_BOT_SECRET (Worker secret)', 'TEAMS_BOT_APP_ID only when the bot uses another app registration than TEAMS_APP_ID',
   'Cloudflare Access bypass for /api/teams/messages and /teams/tab', 'Azure Bot resource (F0, single tenant) with the Teams channel on', 'Teams admin approval of the app package'];
 const configured = env => teamsStatus(env) === 'connected';
@@ -95,7 +99,7 @@ async function messages(request, env, fetcher) {
 
 // GET /teams/tab: a static launcher with no user data and no API call. TeamsJS app.initialize(), then app.openLink to
 // /go/start, which opens the consent step (the microphone waits for the Start click; WOW_ZERO_CONFIG §3.1).
-function tab(env, js) {
+async function tab(env, js) {
   if (!js) return json({ error: 'TeamsJS not vendored', status: 'BLOCKED_EXTERNAL',
     reason: 'TeamsJS not vendored: the launcher tab needs the @microsoft/teams-js 2.57.0 UMD bundle in deploy/cloudflare-edge/teams/vendor/.',
     needs: ['@microsoft/teams-js 2.57.0 (MIT) vendored with teams/vendor_teamsjs.py, its SHA-256 recorded in docs/THIRD_PARTY.md and docs/SOURCE_LOCK.json'] }, 503);
@@ -113,5 +117,7 @@ function tab(env, js) {
     + 'else{msg.textContent="Open this tab inside Microsoft Teams, or open ATLAS in your browser.";}}'
     + 'document.getElementById("open").addEventListener("click",function(e){open(e,target);});document.getElementById("pending").addEventListener("click",function(e){open(e,home);});'
     + 'try{microsoftTeams.app.initialize().then(function(){ready=true;}).catch(function(){ready=false;});}catch(e){ready=false;}})();</script></body></html>';
-  return new Response(html, { status: 200, headers: { ...BASE, 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': TAB_CSP } });
+  const hashes = await inlineScriptHashes(html);
+  return new Response(html, { status: 200, headers: { ...BASE, 'Content-Type': 'text/html; charset=utf-8',
+    ...htmlCspHeaders(env, { hashes, page: false, blob: false, formAction: "'none'", frameAncestors: TAB_FRAME_ANCESTORS, report: false }, TAB_CSP_LEGACY) } });
 }

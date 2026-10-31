@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { handle, verifyAccess, workersAI } from '../src/app.js';
+import { inlineScriptHashes } from '../src/csp.js';
+import { CONFIRM_HTML } from '../src/confirm-page.js';
 
 const TEAM = 'team.cloudflareaccess.com', AUD = 'aud-123', ORIGIN = 'https://atlas.example.workers.dev';
 const b64u = b => Buffer.from(b).toString('base64url');
@@ -28,12 +30,12 @@ test('Access JWT verification accepts only valid, correctly scoped tokens', asyn
 });
 
 test('routes fail closed and serve the real page with runtime + CSP', async () => {
-  const page = "<meta http-equiv=x content=\"connect-src 'self';\"><script>/* SERVER_RUNTIME */</script></body>";
+  const page = "<meta http-equiv=x content=\"connect-src 'self';\"><script id=\"atlas-runtime\" type=\"application/json\">{}</script></body>";
   assert.equal((await handle(await req('/', { token: null }), ENV, page)).status, 401);
   assert.equal((await handle(await req('/', { host: 'https://evil.example' }), ENV, page)).status, 403);
   assert.equal((await handle(await req('/'), { ...ENV, CSRF_SECRET: '' }, page)).status, 500);
   const r = await handle(await req('/'), ENV, page), html = await r.text();
-  assert.equal(r.status, 200); assert.ok(html.includes('window.ATLAS_RUNTIME={"subjectKey"') && html.includes('"authMode":"access"'));
+  assert.equal(r.status, 200); assert.ok(html.includes('<script id="atlas-runtime" type="application/json">{"subjectKey"') && html.includes('"authMode":"access"') && !html.includes('window.ATLAS_RUNTIME'));
   assert.ok(html.includes("connect-src 'self' wss://atlas.example.workers.dev;") && html.includes('TEST DEPLOYMENT') && html.includes('DPO sign-off pending') && html.includes('href="/privacy"') && !html.includes('SYNTHETIC DATA ONLY'));
   assert.ok(r.headers.get('content-security-policy').includes("frame-ancestors 'none'") && r.headers.get('cache-control') === 'no-store');
   const boot = await (await handle(await req('/api/bootstrap'), ENV, page)).json();
@@ -322,8 +324,9 @@ test('T1-S0 GET /confirm is served only after sign-in, with the standard headers
   assert.equal((await handle(await req('/confirm', { token: null }), ENV, '')).status, 401);
   const home = await handle(await req('/'), ENV, '<html></body>'), r = await handle(await req('/confirm'), ENV, '');
   assert.equal(r.status, 200); assert.equal(r.headers.get('content-type'), 'text/html; charset=utf-8');
-  for (const h of ['content-security-policy', 'cache-control', 'x-content-type-options', 'referrer-policy', 'permissions-policy']) assert.equal(r.headers.get(h), home.headers.get(h), h);
+  for (const h of ['cache-control', 'x-content-type-options', 'referrer-policy', 'permissions-policy']) assert.equal(r.headers.get(h), home.headers.get(h), h);
   assert.match(r.headers.get('content-security-policy'), /default-src 'none'.*frame-ancestors 'none'/);
+  assert.ok(r.headers.get('content-security-policy').includes("script-src '" + (await inlineScriptHashes(CONFIRM_HTML))[0] + "' blob:") && !r.headers.get('content-security-policy').includes('unsafe-inline\' blob'), 'the confirm page allows exactly its own script hash');
   const html = await r.text(); assert.match(html, /^<!doctype html>/i); assert.doesNotMatch(html, /<script[^>]+src|https?:\/\//i);
 });
 
@@ -465,7 +468,8 @@ test('Z /go/signed-in: a tiny page that tells the waiting tab over BroadcastChan
   const boot = await (await handle(await req('/api/bootstrap'), ENV, '')).json();
   for (const secret of ['tony@example.com', 'user-abc', boot.csrf, (await jwt()).slice(0, 20), 'ATLAS_RUNTIME']) assert.equal(html.includes(secret), false, secret);
   assert.doesNotMatch(html, /<script[^>]+src|https?:\/\//i);
-  for (const h of ['content-security-policy', 'cache-control', 'x-content-type-options', 'referrer-policy', 'permissions-policy']) assert.equal(r.headers.get(h), home.headers.get(h), h);
+  for (const h of ['cache-control', 'x-content-type-options', 'referrer-policy', 'permissions-policy']) assert.equal(r.headers.get(h), home.headers.get(h), h);
+  assert.ok(r.headers.get('content-security-policy').includes("script-src '" + (await inlineScriptHashes(SIGNED_IN_HTML))[0] + "' blob:") && !r.headers.get('content-security-policy').includes("unsafe-inline' blob"), 'allows exactly its own script hash');
   assert.equal((await handle(await req('/go/signed-in', { token: null }), ENV, 'PAGE')).status, 401);
 });
 
@@ -503,12 +507,12 @@ test('Z /api/directory/push: bearer secret (constant-time), BLOCKED_EXTERNAL in 
 });
 
 test('Z DATA_MODE: the test banner and the readiness string follow it; nothing else changes', async () => {
-  const page = "<meta http-equiv=x content=\"connect-src 'self';\"><script>/* SERVER_RUNTIME */</script></body>";
+  const page = "<meta http-equiv=x content=\"connect-src 'self';\"><script id=\"atlas-runtime\" type=\"application/json\">{}</script></body>";
   for (const [env, banner, readiness] of [[ENV, true, 'edge-deployment-test-data-only'], [{ ...ENV, DATA_MODE: 'Production' }, true, 'edge-deployment-test-data-only'],
     [{ ...ENV, DATA_MODE: 'production' }, false, 'production']]) {
     const html = await (await handle(await req('/'), env, page)).text(), boot = await (await handle(await req('/api/bootstrap'), env, page)).json();
     assert.equal(html.includes('TEST DEPLOYMENT · DPO sign-off pending'), banner, JSON.stringify(env.DATA_MODE)); assert.ok(!html.includes('SYNTHETIC DATA ONLY'), 'real interviews run here: the banner never says synthetic only'); assert.equal(boot.readiness, readiness);
-    assert.ok(html.includes('window.ATLAS_RUNTIME={"subjectKey"'));
+    assert.ok(html.includes('<script id="atlas-runtime" type="application/json">{"subjectKey"'));
   }
 });
 

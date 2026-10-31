@@ -4,6 +4,7 @@
    one-second interval that only runs between ready and the end of the audio. All text goes through textContent; the only
    markup inserted is AtlasGeo's own escaped map SVG. Nothing leaves the browser except on an explicit click of #gapSend. */
 (()=>{'use strict';
+const {setHTML,trusted}=window.AtlasSafe;
 const $=id=>document.getElementById(id),B=window.AtlasBoard,board=$('storyBoard'),panel=$('gapPanel');
 if(!B||!board||!panel)return;
 // Resuming an interview (T11): the server says how many interview seconds had been used, so the clock goes on from there and does not restart at zero.
@@ -47,7 +48,7 @@ function renderMap(m,fresh){const G=window.AtlasGeo,key=m.pins.map(p=>p.code).jo
  if(key===mapKey)return;mapKey=key;const box=body('boardMap');box.replaceChildren();  // the SVG is rebuilt only when the places change
  if(m.pins.length&&G&&typeof G.worldSVG==='function'){
   const states={},titles={};for(const p of m.pins){states[p.code]='interview';titles[p.code]=p.name+': mentioned in the interview (not necessarily the project location)';}
-  const fig=el('div','board-map');fig.innerHTML=G.worldSVG({states,titles,idPrefix:'board',aspect:16/10});  // AtlasGeo escapes every title
+  const fig=el('div','board-map');setHTML(fig,trusted(G.worldSVG({states,titles,idPrefix:'board',aspect:16/10})));  // AtlasGeo escapes every title
   const svg=fig.querySelector('svg'),vb=svg?(svg.getAttribute('viewBox')||'').split(/\s+/).map(Number):[];
   if(svg&&vb.length===4&&typeof G.labelPoint==='function')for(const p of m.pins){const pt=G.labelPoint(p.code);if(!pt)continue;
    const pin=document.createElementNS(SVG,'circle'),t=document.createElementNS(SVG,'title');

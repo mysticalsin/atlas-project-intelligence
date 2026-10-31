@@ -95,7 +95,7 @@ def test_memory_banks_distinct_and_stable():
 async def test_real_bidirectional_codec_and_protocol():
     e=await Env().start()
     try:
-        assert 'SERVER_RUNTIME' not in e.html and '"subjectKey"' in e.html
+        assert 'SERVER_RUNTIME' not in e.html and 'window.ATLAS_RUNTIME={' not in e.html and '"subjectKey"' in e.html
         s=await e.ws();await e.event(s,'ready')
         async def frames():
             for _ in range(90):await s.send_bytes(b'\x00\x00'*480);await asyncio.sleep(.02)
