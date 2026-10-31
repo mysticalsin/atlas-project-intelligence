@@ -17,12 +17,30 @@ test-edge: build
 test-eval: build
 	cd deploy/cloudflare-edge && node --test test/eval-conversation.test.js test/eval-workflow.test.js test/eval-rubric.test.js
 # CHROMIUM_PATH: an explicit value wins; otherwise scripts/chromium_path.py picks a cached Chromium when Playwright's own revision is missing.
+test-ui: export CHROMIUM_PATH := $(or $(CHROMIUM_PATH),$(shell $(PYTHON) scripts/chromium_path.py))
 test-ui: build
-	@export CHROMIUM_PATH="$${CHROMIUM_PATH:-$$($(PYTHON) scripts/chromium_path.py)}"; \
-	echo "CHROMIUM_PATH=$${CHROMIUM_PATH:-<playwright default>}"; \
-	for t in studio sculpture intelligence depth autosave orb_touch library reuse memory sheet report bids ask trust storyboard confirm wow_edge zero_config zero_config_edge jev_rating humane csp; do \
-	  echo "== $$t"; $(PYTHON) tests/$${t}_browser.py || exit 1; \
-	done
+	$(PYTHON) tests/studio_browser.py
+	$(PYTHON) tests/sculpture_browser.py
+	$(PYTHON) tests/intelligence_browser.py
+	$(PYTHON) tests/depth_browser.py
+	$(PYTHON) tests/autosave_browser.py
+	$(PYTHON) tests/orb_touch_browser.py
+	$(PYTHON) tests/library_browser.py
+	$(PYTHON) tests/reuse_browser.py
+	$(PYTHON) tests/memory_browser.py
+	$(PYTHON) tests/sheet_browser.py
+	$(PYTHON) tests/report_browser.py
+	$(PYTHON) tests/bids_browser.py
+	$(PYTHON) tests/ask_browser.py
+	$(PYTHON) tests/trust_browser.py
+	$(PYTHON) tests/storyboard_browser.py
+	$(PYTHON) tests/confirm_browser.py
+	$(PYTHON) tests/wow_edge_browser.py
+	$(PYTHON) tests/zero_config_browser.py
+	$(PYTHON) tests/zero_config_edge_browser.py
+	$(PYTHON) tests/jev_rating_browser.py
+	$(PYTHON) tests/humane_browser.py
+	$(PYTHON) tests/csp_browser.py
 doctor:
 	$(PYTHON) scripts/doctor.py --profile preview
 verify-package:
