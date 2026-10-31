@@ -1,0 +1,40 @@
+{
+ "id": "S1",
+ "title": "Vague claim: 'helped improve the platform' gets a request for one concrete example",
+ "pack": "07_Evaluation_and_QA/ATLAS_Evaluation_Framework.md section 3, scenario 1; 03_Conversation_Design/ATLAS_Conversation_Examples.md 'Unclear claim' reaction",
+ "audit": [
+  "start",
+  "consent_given",
+  "focus"
+ ],
+ "turns": [
+  {
+   "said": "I helped improve the platform.",
+   "expect": {
+    "move": {
+     "kind": "ask",
+     "intent": "vague_example",
+     "field": "intervention",
+     "why": "vague:example"
+    },
+    "ack": null,
+    "scripted_says": "concrete example",
+    "scripted_not": "\\b(great|amazing|wonderful)\\b"
+   }
+  },
+  {
+   "said": "I rebuilt the nightly export job so the finance team stopped copying figures by hand every Friday.",
+   "file": [
+    {
+     "field": "intervention",
+     "quote": "I rebuilt the nightly export job"
+    }
+   ],
+   "expect": {
+    "not_intent": [
+     "vague_example"
+    ]
+   }
+  }
+ ]
+}

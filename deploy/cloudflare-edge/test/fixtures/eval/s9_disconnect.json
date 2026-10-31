@@ -1,0 +1,30 @@
+{
+ "id": "S9",
+ "title": "A mid-interview disconnect: the checkpoint restores, the last unanswered question is said again, the answered one is not",
+ "pack": "07_Evaluation_and_QA/ATLAS_Evaluation_Framework.md section 3, scenario 9; v2.1 plan 3g (24 h checkpoint in the person's own Durable Object)",
+ "audit": [
+  "start",
+  "consent_given"
+ ],
+ "turns": [
+  {
+   "said": "We rebuilt the claims intake process for the insurance client during the pilot, a big change for the whole team.",
+   "file": [
+    {
+     "field": "problem",
+     "quote": "the claims intake process for the insurance client"
+    }
+   ],
+   "expect": {
+    "move": {
+     "kind": "ask",
+     "intent": "team_ownership",
+     "field": "contribution"
+    }
+   }
+  }
+ ],
+ "after_resume": {
+  "said": "The median handling time dropped from fourteen minutes to nine minutes after the pilot, measured over six weeks across the claims team."
+ }
+}

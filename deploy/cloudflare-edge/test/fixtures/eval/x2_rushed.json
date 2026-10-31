@@ -1,0 +1,32 @@
+{
+ "id": "X2",
+ "title": "A rushed consultant gets the essentials: no acknowledgement chatter, one question, the offer to leave the detail for later",
+ "pack": "03_Conversation_Design/ATLAS_Conversation_Examples.md 'Example 6'",
+ "audit": [
+  "start",
+  "consent_given",
+  "focus"
+ ],
+ "turns": [
+  {
+   "said": "I only have five minutes.",
+   "expect": {
+    "ack": null,
+    "move": {
+     "kind": "ask",
+     "why": "rushed:ladder:problem"
+    },
+    "scripted_says": "keep to the essentials"
+   }
+  },
+  {
+   "said": "We rebuilt the claims intake process for the insurance client during the pilot, a big change for the whole team.",
+   "expect": {
+    "move": {
+     "kind": "ask",
+     "intent": "ownership"
+    }
+   }
+  }
+ ]
+}

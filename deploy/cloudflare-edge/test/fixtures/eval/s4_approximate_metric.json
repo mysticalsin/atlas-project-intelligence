@@ -1,0 +1,49 @@
+{
+ "id": "S4",
+ "title": "An approximate metric stays an estimate: filed as uncertain, read back as an estimate, and no invented figure joins the read-back",
+ "pack": "07_Evaluation_and_QA/ATLAS_Evaluation_Framework.md section 3, scenario 4",
+ "audit": [
+  "start",
+  "consent_given",
+  "focus",
+  "request_summary"
+ ],
+ "turns": [
+  {
+   "said": "The monthly report now takes about 25 minutes, roughly, it is an early estimate.",
+   "file": [
+    {
+     "field": "outcome",
+     "quote": "takes about 25 minutes",
+     "uncertain": true
+    }
+   ],
+   "expect": {
+    "move": {
+     "kind": "ask",
+     "intent": "metric_period",
+     "field": "measurement"
+    },
+    "ack": "promising_unverified"
+   }
+  },
+  {
+   "said": "We watched it over three monthly cycles, and it is still an early estimate.",
+   "expect": {
+    "move": {
+     "kind": "ask",
+     "intent": "metric_baseline",
+     "field": "measurement"
+    }
+   }
+  },
+  {
+   "said": "That is everything, I am done.",
+   "expect": {
+    "move": {
+     "kind": "summary"
+    }
+   }
+  }
+ ]
+}

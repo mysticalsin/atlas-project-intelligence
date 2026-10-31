@@ -1,0 +1,38 @@
+{
+ "id": "X3",
+ "title": "No exact metric: accepted, kept qualitative, the number is not demanded again",
+ "pack": "03_Conversation_Design/ATLAS_Conversation_Examples.md 'Example 3'",
+ "audit": [
+  "start",
+  "consent_given"
+ ],
+ "turns": [
+  {
+   "said": "We reduced manual work a lot after the new tooling, but I do not know the exact numbers.",
+   "file": [
+    {
+     "field": "outcome",
+     "quote": "We reduced manual work a lot"
+    }
+   ],
+   "expect": {
+    "move": {
+     "kind": "accept_and_move",
+     "why": "dont_know:outcome>ladder:problem"
+    },
+    "ack": "no_number_fine",
+    "scripted_not": "\\b(you must|need a number|exact figure|please provide)\\b"
+   }
+  },
+  {
+   "said": "Mostly the Friday reconciliation, the finance team stopped doing it by hand and nobody tracked the hours.",
+   "expect": {
+    "not_intent": [
+     "metric_kind",
+     "metric_period",
+     "metric_baseline"
+    ]
+   }
+  }
+ ]
+}

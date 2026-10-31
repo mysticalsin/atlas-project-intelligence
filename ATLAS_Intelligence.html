@@ -640,7 +640,7 @@ dialog .check input[type=radio]{width:15px;height:15px;min-height:0;margin:2px 0
 <div id="askAtlas" hidden=""></div>
 <div class="recommend"><label class="field-label" for="recommendQuery">Find references for a meeting</label><div class="recommend-row"><textarea id="recommendQuery" rows="2" maxlength="1200" placeholder="e.g. I am meeting the data director of a major energy company. Which references can I present?"></textarea><button class="btn primary" id="recommendGo">Find references</button></div><div id="recommendResults"></div></div>
 <div id="invitations"></div><div id="proofRequests" hidden=""></div><div class="library-actions"><button class="btn" id="openInsights">Analytics &amp; insights</button></div>
-<div class="library-tools"><label class="sr" for="libraryText">Filter references</label><input id="libraryText" placeholder="Filter by words…"/><select id="libraryStatus" aria-label="Status"><option value="">All statuses</option><option value="in_review">In review</option><option value="needs_work">Needs work</option><option value="changes_requested">Changes requested</option><option value="awaiting_validation">Awaiting N+1</option><option value="published">Published</option><option value="withdrawn">Withdrawn</option></select><select id="libraryCountry" aria-label="Country"><option value="">All countries</option></select><select id="libraryIndustry" aria-label="Industry"><option value="">All industries</option></select><label class="check"><input id="libraryMine" type="checkbox"/><span>Mine</span></label></div>
+<div class="library-tools"><label class="sr" for="libraryText">Filter references</label><input id="libraryText" placeholder="Filter by words…"/><select id="libraryStatus" aria-label="Status"><option value="">All statuses</option><option value="in_review">In review</option><option value="needs_work">Needs work</option><option value="changes_requested">Changes requested</option><option value="awaiting_validation">Awaiting N+1</option><option value="published">Shared in internal library</option><option value="withdrawn">Withdrawn</option></select><select id="libraryCountry" aria-label="Country"><option value="">All countries</option></select><select id="libraryIndustry" aria-label="Industry"><option value="">All industries</option></select><label class="check"><input id="libraryMine" type="checkbox"/><span>Mine</span></label></div>
 <p class="tiny muted" id="libraryStatusLine" role="status"></p><div class="workflow-status" hidden="" id="workflowStatus"></div><div class="project-grid" id="libraryList"></div></section>
 <section aria-label="Bids" class="view" hidden="" id="bids"></section>
 <footer><span class="studio-saving"><button class="quiet" id="studioSave">Session only</button><button class="quiet" id="studioBackup">Backup ↓</button></span><span>ATLAS <span class="footer-sep">/</span> Mantu · Experience into stories</span><span>ATLAS Intelligence · v11.0 <button class="quiet" data-dialog="howDialog">What is connected? ↗</button></span></footer></main>
@@ -2168,7 +2168,7 @@ $('memoryForgetAll').onclick=()=>confirm('Forget everything?','ATLAS permanently
 $('connectionTest').onclick=async()=>{$('memoryStatus').textContent='Testing…';try{const t=await memoryApi('/test');const line=(n,x)=>`${n}: ${!x.configured?'not configured (no key)':x.ok?'working ('+x.ms+' ms)':'FAILED'+(x.error?' · '+x.error:'')}`;$('memoryStatus').textContent=line('Hindsight',t.hindsight)+' · '+line('JEV',t.jev);}catch(e){$('memoryStatus').textContent=e.message;}};
 document.addEventListener('click',e=>{const b=e.target.closest('[data-forget]');if(!b)return;memoryApi('/forget',{method:'POST',body:{documentId:b.dataset.forget}}).then(()=>{toast('Forgotten.');renderMemoryPanel();}).catch(err=>toast(err.message));});
 // ---- Shared reference library (server system of record) ----
-const STATUS_LABEL={in_review:'In review',needs_work:'Needs work',changes_requested:'Changes requested',awaiting_validation:'Awaiting N+1',published:'Published',withdrawn:'Withdrawn'};
+const STATUS_LABEL={in_review:'In review',needs_work:'Needs work',changes_requested:'Changes requested',awaiting_validation:'Awaiting N+1',published:'Shared in internal library',withdrawn:'Withdrawn'};
 async function libraryApi(path,{method='GET',body}={}){const b=await bootInfo();if(!b.library)throw Error('The shared library is not available here.');
  const r=await window.AtlasAuth.fetch('/api/library'+path,{method,headers:method==='GET'?{}:{'Content-Type':'application/json','X-Atlas-CSRF':b.csrf},body:body===undefined?undefined:JSON.stringify(body)});
  const data=await r.json().catch(()=>({}));if(!r.ok)throw Error(data.error||'The library did not answer.');return data;}
@@ -2558,7 +2558,7 @@ const int=v=>Number.isInteger(v)&&v>=0?v:0;
 const OUTCOME={pending:'Outcome pending',won:'Won',lost:'Lost',withdrawn:'Withdrawn'};
 const KIND={capability:'Capability',sector:'Sector',outcome:'Outcome',constraint:'Constraint',credential:'Credential'};
 const COV={covered:'Covered',partial:'Partial',unmet:'Unmet',unknown:'Unknown'};
-const STATUS={in_review:'In review',needs_work:'Needs work',changes_requested:'Changes requested',awaiting_validation:'Awaiting N+1',published:'Published',withdrawn:'Withdrawn'};
+const STATUS={in_review:'In review',needs_work:'Needs work',changes_requested:'Changes requested',awaiting_validation:'Awaiting N+1',published:'Shared in internal library',withdrawn:'Withdrawn'};
 const FIT={'strong-contextual-fit':'JEV: strong contextual fit','partial-fit':'JEV: partial fit','poor-contextual-fit':'JEV: poor contextual fit','review-first':'JEV: review first'};
 const VCHIP={strong:'Strong proof',partial:'Partial',none:'No strong match',unranked:'Not ranked',empty_library:'Library empty'};
 const GAP_RESULT={answered_unverified:'answered · unverified',unknown:'answered: not known',deferred:'deferred',open:'not answered'};
@@ -2781,7 +2781,7 @@ W.openHash=hash=>{const m=/^#(bid|gap)\/([a-f0-9]{32})$/.exec(String(hash||''));
 (()=>{'use strict';
 const W=window.AtlasWowUI=window.AtlasWowUI||{},B=window.AtlasBids,esc=B.esc,$=id=>document.getElementById(id),app=()=>window.ATLAS_APP;
 const BUSY=['preparing','connecting','live','ending'],MAX_BYTES=30*24000*2,MIN_BYTES=4800,TOPIC_KEYS=['context','contribution','approach','outcome','evidence','customer_relevance'];
-const STATUS={in_review:'In review',needs_work:'Needs work',changes_requested:'Changes requested',awaiting_validation:'Awaiting N+1',published:'Published',withdrawn:'Withdrawn'};
+const STATUS={in_review:'In review',needs_work:'Needs work',changes_requested:'Changes requested',awaiting_validation:'Awaiting N+1',published:'Shared in internal library',withdrawn:'Withdrawn'};
 const S={built:false,boot:{},rec:null,poll:null,last:null,asked:''};
 const say=t=>{const el=$('askStatus');if(el)el.textContent=t||'';};
 const voiceBusy=()=>{try{return BUSY.includes(window.AtlasVoice?.status?.().phase);}catch{return false;}};

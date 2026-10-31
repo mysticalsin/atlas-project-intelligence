@@ -1,0 +1,46 @@
+{
+ "id": "S2",
+ "title": "A team result claimed as one's own: ownership is asked neutrally, once",
+ "pack": "07_Evaluation_and_QA/ATLAS_Evaluation_Framework.md section 3, scenario 2; Conversation Examples 'Example 2'",
+ "audit": [
+  "start",
+  "consent_given",
+  "focus"
+ ],
+ "turns": [
+  {
+   "said": "We delivered a new data platform that cut customer response times across the whole region last year.",
+   "file": [
+    {
+     "field": "outcome",
+     "quote": "cut customer response times across the whole region"
+    }
+   ],
+   "expect": {
+    "move": {
+     "kind": "ask",
+     "intent": "team_ownership",
+     "field": "contribution",
+     "why": "team_claim"
+    },
+    "scripted_says": "What part of that work did you take on yourself, alongside the team\\?",
+    "scripted_not": "\\b(really|actually|are you sure|you claim|prove|honestly)\\b"
+   }
+  },
+  {
+   "said": "I led the ingestion stream and the data quality checks inside that platform.",
+   "file": [
+    {
+     "field": "contribution",
+     "quote": "I led the ingestion stream and the data quality checks"
+    }
+   ],
+   "expect": {
+    "not_intent": [
+     "team_ownership",
+     "ownership"
+    ]
+   }
+  }
+ ]
+}

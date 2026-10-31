@@ -1,4 +1,5 @@
 src/atlas.html
-test/fixtures/
+test/fixtures/*
+!test/fixtures/eval/
 .wrangler/
 node_modules/
