@@ -150,6 +150,19 @@ function spotlightBranch(ev, rec, claims) {
   return setBranch(ev, rec, 'spotlight', s.status, { reason: s.status === 'publication_held' ? 'MOCK_CMS_NOT_PUBLISHED' : null });
 }
 
+// MAAP and Project Review stay pending (no rubric, D2/D3). Project Review still receives its hand-off once per approved revision: the Project ID and
+// the evidence reference (buildPayload PROJECT_REVIEW), so the project side of the knowledge is ready the day the owner configures it. The shell
+// records it and answers NOT_CONFIGURED; rating and closing remain refused by the gate.
+async function shellBranch(ev, rec, branch) {
+  const [pending, reason] = SHELL_STATUS[branch], before = rowsOf(ev, rec.id).find(r => r.branch === branch);
+  const status = setBranch(ev, rec, branch, pending, { reason });
+  if (branch === 'project_review' && !(before && before.revision === rec.revision && before.status === pending)) {
+    const payload = buildPayload('PROJECT_REVIEW', { entity: rec });
+    if (payload) await adapterSet(ev.lib).PROJECT_REVIEW.send({ source_entity_id: rec.id, source_revision: rec.revision, destination: 'Project Review' }, payload);
+  }
+  return status;
+}
+
 // Create or refresh the seven records for the approved revision. Idempotent: a second call re-checks permissions and keeps what is settled.
 // A branch that was flagged impact_review for THIS revision stays flagged until a person clears it (a new revision recomputes everything).
 export async function fanOut(ev, id) {
@@ -164,7 +177,7 @@ export async function fanOut(ev, id) {
     try {
       let status;
       if (branch === 'evidence') status = setBranch(ev, rec, 'evidence', 'evidence_approved');
-      else if (SHELL_STATUS[branch]) status = setBranch(ev, rec, branch, SHELL_STATUS[branch][0], { reason: SHELL_STATUS[branch][1] });
+      else if (SHELL_STATUS[branch]) status = await shellBranch(ev, rec, branch);
       else if (branch === 'spotlight') status = spotlightBranch(ev, rec, claims);
       else status = await destination(ev, rec, ap, branch);
       out.push({ branch, status });
