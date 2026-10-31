@@ -51,7 +51,7 @@ function boot({resumable=null,plan=[],discardOk=true}={}){
  const server=(m,i=sockets.length-1)=>sockets[i].onmessage({data:JSON.stringify(m)});
  const ready=(extra={})=>({type:'ready',model:'ATLAS',capture:true,controls:['pause','resume','repeat','skip','text'],sessionId:ID,resumable:true,...extra});
  Object.assign(h,{$,els,sockets,tracks,delays,requests,events,posted,server,win,ready,bootJson,
-  async live(){await $('voiceStart').onclick();await wait(5);$('modelConsent').checked=true;await $('voiceConsentStart').onclick();await wait(30);server(ready());},
+  async live({saved=true}={}){await $('voiceStart').onclick();await wait(5);$('modelConsent').checked=true;$('checkpointConsent').checked=saved;/* the person ticks the saved-interview box (X3: it starts unticked) */await $('voiceConsentStart').onclick();await wait(30);server(ready());},
   starts:()=>sockets.map(s=>s.sent.find(m=>m&&m.type==='start')).filter(Boolean),
   quality:()=>events.filter(e=>e.type==='atlas-quality').map(e=>e.detail)});
  return h;
@@ -205,4 +205,13 @@ test('a normal start never carries a resume field, and the first ready announces
  const h=boot();await h.live();
  assert.ok(!('resume' in h.starts()[0]));assert.equal(h.starts()[0].csrf,'csrf-1');assert.equal(h.win.AtlasVoice.reconnect.state().sessionId,ID);
  h.server({type:'ended'});await wait(5);assert.equal(h.win.AtlasVoice.reconnect.state().sessionId,null,'forgotten once the interview has ended');
+});
+
+test('X3 / red M1: the consent dialog opens with every optional box unticked, and an interview started without ticking the saved-interview box records no such consent',async()=>{
+ const h=boot();await $0(h);
+ async function $0(h){await h.$('voiceStart').onclick();await wait(5);}
+ assert.equal(h.$('checkpointConsent').checked,false,'the saved-interview box starts unticked');assert.equal(h.$('memoryConsent').checked,false);assert.equal(h.$('noticeAck').checked,false);assert.equal(h.$('modelConsent').checked,false);
+ h.$('modelConsent').checked=true;await h.$('voiceConsentStart').onclick();await wait(30);
+ const start=h.starts()[0];
+ assert.deepEqual(start.consent,{transcription:true,draft:true,checkpoint:false,memory:false,notice:false});assert.equal(start.capture,true,'transcript capture follows the required tick, with no hidden box');
 });

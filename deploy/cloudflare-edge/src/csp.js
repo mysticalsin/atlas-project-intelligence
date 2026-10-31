@@ -1,7 +1,8 @@
 // Content-Security-Policy for every HTML response (v2.2 F1; blue review P1, G1, G14). One builder, used by the page, the re-sign-in
 // page, the confirm page, the privacy notice and the Teams tab, so no HTML route can ship its own looser policy.
 //   script-src   exactly the SHA-256 of each executable inline script (+ blob: for the AudioWorklet module the page builds from its own
-//                text/plain script). No 'unsafe-inline', no 'strict-dynamic' (CSP3 browsers would then ignore blob:).
+//                text/plain script, on the voice page only: /privacy, the confirm and re-sign-in pages and the Teams tab pass blob: false).
+//                No 'unsafe-inline', no 'strict-dynamic' (CSP3 browsers would then ignore blob:).
 //   script-src-attr 'none'   no inline event handler attribute anywhere; handlers are attached with addEventListener.
 //   style-src 'unsafe-inline'   STILL ALLOWED, a recorded residual: the page carries ~1.5 MB of <style> and style="" attributes. It lets an
 //                injected tag restyle the page but not run code or reach the network. Removing it is a design-system change (F2 or later).
@@ -21,7 +22,8 @@ const quoted = hashes => hashes.map(h => `'${h}'`).join(' ');
 
 export function htmlCsp({ hashes = [], connect = '', frameAncestors = "'none'", formAction = "'self'", report = true, page = true, blob = true } = {}) {
   const d = ["default-src 'none'", 'script-src ' + ([hashes.length ? quoted(hashes) : '', blob ? 'blob:' : ''].filter(Boolean).join(' ') || "'none'"), "script-src-attr 'none'", "style-src 'unsafe-inline'"];
-  if (page) d.push("connect-src 'self'" + (connect ? ' ' + connect : ''), 'img-src data: blob:', "font-src 'self'", 'worker-src blob:', 'media-src blob:');
+  // blob: is for the voice page only (the AudioWorklet module it builds, the audio it plays, an image it previews). A page that sets blob: false gets none of them (red-team retest I2).
+  if (page) d.push("connect-src 'self'" + (connect ? ' ' + connect : ''), blob ? 'img-src data: blob:' : 'img-src data:', "font-src 'self'", ...(blob ? ['worker-src blob:', 'media-src blob:'] : []));
   else d.push('img-src data:');
   d.push("object-src 'none'", "base-uri 'none'", `form-action ${formAction}`, `frame-ancestors ${frameAncestors}`);
   if (report) d.push(`report-uri ${REPORT_PATH}`, `report-to ${REPORT_GROUP}`);

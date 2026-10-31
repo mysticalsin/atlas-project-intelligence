@@ -326,7 +326,7 @@ test('T1-S0 GET /confirm is served only after sign-in, with the standard headers
   assert.equal(r.status, 200); assert.equal(r.headers.get('content-type'), 'text/html; charset=utf-8');
   for (const h of ['cache-control', 'x-content-type-options', 'referrer-policy', 'permissions-policy']) assert.equal(r.headers.get(h), home.headers.get(h), h);
   assert.match(r.headers.get('content-security-policy'), /default-src 'none'.*frame-ancestors 'none'/);
-  assert.ok(r.headers.get('content-security-policy').includes("script-src '" + (await inlineScriptHashes(CONFIRM_HTML))[0] + "' blob:") && !r.headers.get('content-security-policy').includes('unsafe-inline\' blob'), 'the confirm page allows exactly its own script hash');
+  assert.ok(r.headers.get('content-security-policy').includes("script-src '" + (await inlineScriptHashes(CONFIRM_HTML))[0] + "';") && !r.headers.get('content-security-policy').includes('unsafe-inline\' blob'), 'the confirm page allows exactly its own script hash');
   const html = await r.text(); assert.match(html, /^<!doctype html>/i); assert.doesNotMatch(html, /<script[^>]+src|https?:\/\//i);
 });
 
@@ -469,7 +469,7 @@ test('Z /go/signed-in: a tiny page that tells the waiting tab over BroadcastChan
   for (const secret of ['tony@example.com', 'user-abc', boot.csrf, (await jwt()).slice(0, 20), 'ATLAS_RUNTIME']) assert.equal(html.includes(secret), false, secret);
   assert.doesNotMatch(html, /<script[^>]+src|https?:\/\//i);
   for (const h of ['cache-control', 'x-content-type-options', 'referrer-policy', 'permissions-policy']) assert.equal(r.headers.get(h), home.headers.get(h), h);
-  assert.ok(r.headers.get('content-security-policy').includes("script-src '" + (await inlineScriptHashes(SIGNED_IN_HTML))[0] + "' blob:") && !r.headers.get('content-security-policy').includes("unsafe-inline' blob"), 'allows exactly its own script hash');
+  assert.ok(r.headers.get('content-security-policy').includes("script-src '" + (await inlineScriptHashes(SIGNED_IN_HTML))[0] + "';") && !r.headers.get('content-security-policy').includes("unsafe-inline' blob"), 'allows exactly its own script hash');
   assert.equal((await handle(await req('/go/signed-in', { token: null }), ENV, 'PAGE')).status, 401);
 });
 

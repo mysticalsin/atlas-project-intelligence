@@ -75,9 +75,9 @@ function deleteProfile(){app()?.confirm('Delete my profile?','This deletes your 
  try{await app().libraryApi('/profile/delete',{method:'POST',body:{}});await load({fresh:true});app().toast('Your profile edits and consents were deleted.');if($('profileDialog')?.open)renderSection();}catch(e){app().toast(e.message);}});}
 // ---- the end-of-interview question when the name is only a guess (§3.5). It never blocks.
 function guessPrompt(el,projectId){const g=C.value(profile,'name');if(!el||!profile?.guessed||!g)return;
- const wrap=h('span',{class:'guess-prompt'},' Is your name '+g+'? ');
+ const wrap=h('span',{class:'guess-prompt'},' Is your name ',h('bdi',{},g),'? ');
  const yes=h('button',{class:'quiet',type:'button',onclick:async()=>{yes.disabled=true;edit.disabled=true;
-  try{await confirmGuess();await app()?.adoptProfileName?.(projectId);const t=' Thanks, '+(api.firstName()||api.confirmedName())+'.';document.querySelectorAll('.guess-prompt').forEach(w=>{w.textContent=t;});}catch(e){wrap.textContent=' '+e.message;}}},'Yes, that’s me');
+  try{await confirmGuess();await app()?.adoptProfileName?.(projectId);const n=api.firstName()||api.confirmedName();document.querySelectorAll('.guess-prompt').forEach(w=>{w.replaceChildren(' Thanks, ',h('bdi',{},n),'.');});}catch(e){wrap.textContent=' '+e.message;}}},'Yes, that’s me');
  const edit=h('button',{class:'quiet',type:'button',onclick:()=>{app()?.open('profileDialog');setTimeout(()=>$('pf_name')?.focus(),60);}},'Edit');
  wrap.append(yes,' ',edit);el.append(wrap);}
 // ---- project form: prefill chips computed at render time (§3.5)

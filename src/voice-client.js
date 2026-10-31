@@ -2,7 +2,7 @@
 'use strict';
 (()=>{
 const $=id=>document.getElementById(id), bridge=window.ATLAS_VOICE_BRIDGE;
-const {html,setHTML}=window.AtlasSafe;
+const {html,setHTML}=window.AtlasSafe, P0={clean:t=>window.AtlasProfileCore?.clean?window.AtlasProfileCore.clean(t):String(t??'')}; // P0.clean: bidi and zero-width characters removed from a name
 const labels=['Context','Contribution','Approach','Outcome','Evidence','Customer relevance'];
 let boot=null, generation=0, socket=null, stream=null, audio=null, node=null, source=null;
 let phase='idle', muted=false, paused=false, pausedAt=null, pausedMs=0, controlsOn=null, current=null, startedAt=0, timer=null, heardOutput=false, accumulated='', lastNotes=null;let micLabel='',micPeak=0,micWatch=0;
@@ -35,6 +35,7 @@ const closed=(s,ms)=>!s||s.readyState===3?Promise.resolve():new Promise(r=>{cons
 // The server records each as a receipt. `activeConsent` is the object the start message carries; a deployment without transcript capture (the Python gateway) sends the old bare tick.
 let activeConsent=null;
 const terms=b=>JSON.stringify({provider:b.provider,captureRequired:!!b.captureRequired,transcription:!!b.transcription,memory:!!b.memory,privacy:b.privacy?.version||'',identity:b.identity?.name||''});
+const storedChoice=(b,k)=>b.consent?.purposes?.[k]===true&&b.consent?.blocked?.[k]!==true; // the person's own recorded grant, never a default
 const consentFor=(b,{resume,typing})=>{if(!b?.captureRequired)return true;const v=b.privacy?.version,st=b.consent?.purposes||{};
  if(resume)return {transcription:!typing,draft:true,checkpoint:true,memory:st.memory===true&&b.consent?.blocked?.memory!==true&&!!b.memory,notice:st.notice===true,...(v?{version:v}:{})}; // Resume is the choice already made: the interview exists only because the saved-interview choice was on
  return {transcription:!typing,draft:true,checkpoint:$('checkpointConsent').checked,memory:!!b.memory&&$('memoryConsent').checked,notice:$('noticeAck').checked,...(v?{version:v}:{})};};
@@ -138,17 +139,18 @@ async function begin(input){
  $('captureConsent').checked=false;$('captureConsentRow').hidden=!b.transcription;$('captureUnavailable').hidden=b.transcription;
  $('voicePickRow').hidden=b.voices.length<=1;
  $('voiceConsentEyebrow').textContent='Before we listen';$('voiceConsentTitle').textContent='A conversation with ATLAS';$('memoryLine').hidden=true;
- $('memoryConsentRow').hidden=!b.memory;$('memoryConsent').checked=b.memory;
- $('consentIdentity').textContent='Session identity: '+b.identity.name+'. Per-user memory is selected by the server, never by a local workspace selector.';
+ $('memoryConsentRow').hidden=!b.memory;$('memoryConsent').checked=false; // an optional box is never pre-ticked: ticking it is the act of consent
+ 
+ setHTML($('consentIdentity'),html`Session identity: <bdi>${P0.clean(b.identity.name)}</bdi>. Per-user memory is selected by the server, never by a local workspace selector.`);
  $('checkpointConsentRow').hidden=$('noticeAckRow').hidden=$('consentSpecial').hidden=!b.captureRequired; // the saved-interview, notice and sensitive-information rows belong to the deployment that keeps transcripts (the Python gateway has none of them)
  if(b.captureRequired){ // ONE required tick (§3.4); the saved-interview, memory and notice rows are separate optional choices (G2).
   const P=window.AtlasProfile,first=P?.firstName?.()||'',name=P?.confirmedName?.()||'',email=P?.email?.()||b.email||b.identity?.name||'';
   $('voiceConsentEyebrow').textContent='Before we start';if(first)$('voiceConsentTitle').textContent='Ready when you are, '+first;
   $('providerConsentText').textContent='ATLAS will ask about this project out loud and listen to your answers. It takes about 20 to 30 minutes, and you can pause or stop at any time.';
   $('consentTip').textContent='Your browser will then ask to use your microphone. Headphones give the clearest conversation.'+(b.admin?' Admin mode: a faster interview. Say “wrap it up” whenever you want to finish.':'');
-  paintConsent(b);$('memoryConsentRow').hidden=!b.memory;$('memoryConsent').checked=false;$('checkpointConsent').checked=true;$('noticeAck').checked=false; // memory is OFF until ticked; the saved-interview choice starts on and can be unticked
-  $('consentIdentity').textContent=email?'Signed in as '+(name?name+' · ':'')+email:'';
-  $('captureConsentRow').hidden=true;$('captureConsent').checked=true;$('voiceConsentStart').textContent='Start interview';}
+  paintConsent(b);$('memoryConsentRow').hidden=!b.memory;$('memoryConsent').checked=!!b.memory&&storedChoice(b,'memory');$('checkpointConsent').checked=storedChoice(b,'checkpoint');$('noticeAck').checked=false; // every optional box starts UNticked (a pre-ticked box is not consent); only a choice the person already made and stored shows ticked, so starting does not silently withdraw it
+  setHTML($('consentIdentity'),email?html`Signed in as ${name?html`<bdi>${name}</bdi> · `:''}<bdi>${P0.clean(email)}</bdi>`:html``); // <bdi>: a name can never reorder the text around it
+  $('captureConsentRow').hidden=true;$('voiceConsentStart').textContent='Start interview';}
  if(b.features?.gapInterview&&c.gap)$('providerConsentText').textContent+=' This is a 5-minute proof request for '+(c.gapAlias||'a bid')+'.';
  paintConsentInput(b);
  if(!$('voiceConsentDialog').open)$('voiceConsentDialog').showModal();
@@ -171,7 +173,7 @@ function start(input){return startWith(null,input==='text'?'text':'voice');}
 // input: 'voice' (the microphone) or 'text' (a typed interview: no microphone, no audio, ATLAS answers in text). On a resume, input is how the saved interview was held (or what was asked for).
 async function startWith(resumeId,input='voice'){outputItem=null;lastPlaybackAck=0;resetBoards();if((!resumeId&&!$('modelConsent').checked)||!boot)return;const snapshot=bridge.context();if(!snapshot)return;
  const typing=input==='text';if(typing&&boot.textMode!==true){status('idle','Typing isn’t available here.','This server only takes voice interviews. Your projects are safe.');return;}
- gapUsed=resumeId?null:snapshot.gap||null;consentStarting=$('voiceConsentDialog').open;$('voiceConsentDialog').close();activeConsent=consentFor(boot,{resume:!!resumeId,typing});const memory=activeConsent===true?$('memoryConsent').checked:activeConsent.memory;const voice=resumeId?boot.defaultVoice:$('modelVoice').value,capture=resumeId?true:$('captureConsent').checked;lastConsent={workspaceId:snapshot.workspaceId,projectId:snapshot.project?.id,terms:terms(boot),voice,capture,memory,checkpoint:activeConsent===true?false:activeConsent.checkpoint,notice:activeConsent===true?false:activeConsent.notice,input:typing?'text':'voice'};sessionStart={snapshot,voice,capture,memory,input:typing?'text':'voice'};const token=++generation;current=snapshot;activeSnapshot=snapshot;lastNotes=null;heardOutput=false;accumulated='';
+ gapUsed=resumeId?null:snapshot.gap||null;consentStarting=$('voiceConsentDialog').open;$('voiceConsentDialog').close();activeConsent=consentFor(boot,{resume:!!resumeId,typing});const memory=activeConsent===true?$('memoryConsent').checked:activeConsent.memory;const voice=resumeId?boot.defaultVoice:$('modelVoice').value,capture=resumeId||boot.captureRequired?true:$('captureConsent').checked;lastConsent={workspaceId:snapshot.workspaceId,projectId:snapshot.project?.id,terms:terms(boot),voice,capture,memory,checkpoint:activeConsent===true?false:activeConsent.checkpoint,notice:activeConsent===true?false:activeConsent.notice,input:typing?'text':'voice'};sessionStart={snapshot,voice,capture,memory,input:typing?'text':'voice'};const token=++generation;current=snapshot;activeSnapshot=snapshot;lastNotes=null;heardOutput=false;accumulated='';
  textMode=typing;log=[];typedSettle();typedNote('');lastHeardItem=null;$('voicePanel').dataset.input=typing?'text':'voice';$('textLog').replaceChildren();placeTypeForm(typing);
  $('agentText').textContent='';$('voiceTimer').textContent='00:00';$('voiceAfter').hidden=true;muted=false;status('preparing',typing?'Starting your typed conversation.':'Let’s connect your microphone.',typing?'No microphone is used. ATLAS is getting ready.':'The model will introduce itself and lead the interview.');permissionPending=!typing;
  try{
@@ -325,7 +327,7 @@ async function restart(){if(restarting)return;restarting=true;if($('voiceRestart
   let b=await check().catch(lapsed);if(token!==generation||b==='expired')return;
   for(let i=0;i<5&&b?.busy;i++){await new Promise(r=>setTimeout(r,1000));if(token!==generation)return;b=await check().catch(lapsed);if(token!==generation||b==='expired')return;} // the server may still be letting go of the old one
   const c=bridge.context();
-  if(reusable(b,c)){$('modelVoice').value=lastConsent.voice;$('modelConsent').checked=true;$('captureConsent').checked=lastConsent.capture;$('memoryConsent').checked=lastConsent.memory&&!!b.memory;$('checkpointConsent').checked=lastConsent.checkpoint!==false;$('noticeAck').checked=lastConsent.notice===true;restarting=false;await start(lastConsent.input);}
+  if(reusable(b,c)){$('modelVoice').value=lastConsent.voice;$('modelConsent').checked=true;$('captureConsent').checked=lastConsent.capture;$('memoryConsent').checked=lastConsent.memory&&!!b.memory;$('checkpointConsent').checked=lastConsent.checkpoint===true;$('noticeAck').checked=lastConsent.notice===true;restarting=false;await start(lastConsent.input);}
   else{status('idle','Tell me about the work.','Please confirm how this conversation may be used.');restarting=false;begin();}
  }finally{restarting=false;controls();const a=document.activeElement;if(!a?.matches?.('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href]')||a.closest('dialog:not([open])')){const t=['voiceRestart','voiceEnd','voiceStart'].map($).find(x=>x&&!x.disabled&&x.offsetParent);t?.focus();}}}
 function toggleMute(){if(phase!=='live'||paused||textMode)return;muted=!muted;applyMic();controls();$('voiceState').textContent=muted?'Microphone muted · ATLAS may still speak':liveLabel();}

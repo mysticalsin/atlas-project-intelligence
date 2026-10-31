@@ -45,7 +45,9 @@ def html_csp(*, hashes=(), connect='', frame_ancestors="'none'", form_action="'s
     sources = ' '.join(filter(None, [script_src(hashes) if hashes else '', 'blob:' if blob else ''])) or "'none'"
     d = ["default-src 'none'", 'script-src ' + sources, "script-src-attr 'none'", "style-src 'unsafe-inline'"]
     if page:
-        d += ["connect-src 'self'" + (' ' + connect if connect else ''), 'img-src data: blob:', "font-src 'self'", 'worker-src blob:', 'media-src blob:']
+        d += ["connect-src 'self'" + (' ' + connect if connect else ''), 'img-src data: blob:' if blob else 'img-src data:', "font-src 'self'"]
+        if blob:  # the voice page only: the AudioWorklet module, the audio it plays, an image preview
+            d += ['worker-src blob:', 'media-src blob:']
     else:
         d += ['img-src data:']
     d += ["object-src 'none'", "base-uri 'none'", f'form-action {form_action}', f'frame-ancestors {frame_ancestors}']

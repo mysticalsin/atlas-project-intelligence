@@ -125,9 +125,10 @@ function headers(env, extra = {}) {
   return { ...baseSecurityHeaders(), 'Content-Security-Policy': DATA_CSP, ...extra };
 }
 // Headers of an HTML response: the one strict policy builder (csp.js) with the hashes of that page's own inline scripts.
-// strict: the page never needed the old policy (the privacy notice, the re-sign-in page, the confirm page), so ATLAS_CSP=report-only does not loosen it (X1, red L2).
+// strict: the page never needed the old policy (the privacy notice, the re-sign-in page, the confirm page), so ATLAS_CSP=report-only does not loosen it (X1, red L2),
+// and it has no audio worklet either: no blob: source at all (X3, red I2). Only the voice page keeps blob:.
 function htmlHeaders(env, hashes, extra = {}, { strict = false } = {}) {
-  return { ...baseSecurityHeaders(), ...htmlCspHeaders(strict ? { ...env, ATLAS_CSP: '' } : env, { hashes, connect: env.ORIGIN.replace('https://', 'wss://') }), 'Content-Type': 'text/html; charset=utf-8', ...extra };
+  return { ...baseSecurityHeaders(), ...htmlCspHeaders(strict ? { ...env, ATLAS_CSP: '' } : env, { hashes, connect: env.ORIGIN.replace('https://', 'wss://'), blob: !strict }), 'Content-Type': 'text/html; charset=utf-8', ...extra };
 }
 const readOnly503 = env => new Response(JSON.stringify({ error: ks.READ_ONLY_MESSAGE, code: 'READ_ONLY' }), { status: 503, headers: headers(env, { 'Content-Type': 'application/json', 'Retry-After': '300' }) });
 const json = (env, body, status = 200) => new Response(JSON.stringify(body), { status, headers: headers(env, { 'Content-Type': 'application/json' }) });

@@ -84,3 +84,14 @@ test('batches of at most 500, and a 32-hex batch id',()=>{
  const rows=Array.from({length:1201},(_,i)=>({email:'p'+i+'@example.com'}));
  assert.deepEqual(C.batches(rows).map(b=>b.length),[500,500,201]);assert.deepEqual(C.batches([]),[[]]);
  assert.match(C.randomBatchId(),/^[a-f0-9]{32}$/);assert.notEqual(C.randomBatchId(),C.randomBatchId());});
+
+test('red L2: a stored name with bidi or zero-width characters is cleaned before it is shown (and the consent line wraps it in <bdi>)',()=>{
+ const f=name=>({fields:{name:{value:name,from:'signin',at:'2026-09-01T10:00:00Z'}}});
+ assert.equal(C.value(f('‮moc.utnam@ynot​'),'name'),'moc.utnam@ynot');
+ assert.equal(C.confirmedName(f('Zo​ë ﻿Lefèvre⁦')),'Zoë Lefèvre');
+ assert.equal(C.clean('a‪‫‬‭‮⁦⁧⁨⁩‎‏؜​‌‍⁠﻿b'),'ab');
+ assert.equal(C.validFirstName('Zo​ë'),'', 'the first-name check still refuses a name with an invisible character');
+ const vc=require('node:fs').readFileSync(require('node:path').join(__dirname,'..','src','voice-client.js'),'utf8');
+ assert.match(vc,/Signed in as \$\{name\?html`<bdi>\$\{name\}<\/bdi> · `:''\}<bdi>\$\{P0\.clean\(email\)\}<\/bdi>/,'identity text is bidi-isolated and escaped by html``');
+ assert.doesNotMatch(vc,/\$\('consentIdentity'\)\.textContent/,'no unisolated name text');
+});

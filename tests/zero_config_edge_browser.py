@@ -197,11 +197,15 @@ try:
               dlg.locator('input[type=checkbox]:visible').count() == 4 and jane.locator('#memoryConsent').is_visible() and not jane.locator('#memoryConsent').is_checked() and jane.locator('#voiceConsentTitle').inner_text() == 'Ready when you are, Jane'
               and jane.locator('#consentIdentity').inner_text() == 'Signed in as Jane Doe · jane@example.com' and not FORBIDDEN.search(dlg.inner_text()))
         check('memory is configured here: its own tick, OFF by default; the required sentence names a private draft', 'private draft' in jane.locator('#modelConsentText').inner_text() and 'Hindsight' not in jane.locator('#modelConsentText').inner_text())
+        check('X3 red M1/I3: EVERY consent box starts unticked (required, saved-interview, memory, notice, and the hidden transcript box), and the identity line isolates the name and the address in <bdi>',
+              all(not jane.locator('#' + i).is_checked() for i in ('modelConsent', 'checkpointConsent', 'memoryConsent', 'noticeAck', 'captureConsent'))
+              and jane.locator('#consentIdentity bdi').count() == 2 and jane.locator('#voiceConsentStart').is_disabled())
         jane.locator('#memoryConsent').check()  # this person turns memory on for the interview
         jane.evaluate('window.ATLAS_VOICE_BRIDGE.setMemory(true)')  # (this stand-in has no live interview object to receive the start frame's choice, so the same choice is made through the profile route: a receipt and the memory purpose)
         check('the microphone is not requested before the Start click', not jane.evaluate('AtlasVoice.status().hasMicrophone'))
         talk(jane)
         start = [f for f in jane.voice.frames if f.get('type') == 'start'][-1]
+        check('X3 red M1: the start frame records only what was ticked: transcription and draft (the required tick), memory (ticked), NOT the saved interview or the notice', all(start['consent'][k] is v for k, v in {'transcription': True, 'draft': True, 'checkpoint': False, 'memory': True, 'notice': False}.items()) and start['capture'] is True)
         check('the start frame carries no name and no email: consultant "", the profile title not sent', start['project']['consultant'] == '' and start['project'].get('role', '') == ''
               and '@' not in json.dumps(start) and 'Jane' not in json.dumps(start))
         wait(jane, lambda: jane.locator('#storageStatus').text_content() == 'Saved to ATLAS', 10)

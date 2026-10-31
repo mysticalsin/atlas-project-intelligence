@@ -419,6 +419,34 @@ test('idp claims: bounded name claims from x-atlas-idp; anything malformed is em
   for (const bad of ['', 'e30', '!!!', enc([1]), enc({ name: 5 }), 'a'.repeat(3000), null]) assert.deepEqual(profile.idpClaims(bad), {}, String(bad).slice(0, 10));
 });
 
+// X3 / red L2: a sign-in name never keeps a bidi control or a zero-width character (U+202E would make "‮moc.utnam@ynot" read as an address on the consent screen).
+test('name claims: bidi controls and zero-width characters are stripped at the source, whole code-point ranges, and the rest of the name is unchanged', async () => {
+  const { str, INVISIBLE } = await import('../src/util.js');
+  const enc = o => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const BAD = [];
+  for (const [a, b] of [[0x202A, 0x202E], [0x2066, 0x2069], [0x200B, 0x200D]]) for (let c = a; c <= b; c++) BAD.push(c);
+  BAD.push(0x200E, 0x200F, 0x061C, 0x2060, 0xFEFF);
+  for (const c of BAD) {
+    const ch = String.fromCodePoint(c), hex = 'U+' + c.toString(16).toUpperCase();
+    assert.equal(profile.nameClaims({ name: 'Tony' + ch + ' Walteur', given_name: ch + 'Tony', family_name: 'Walteur' + ch }).name, 'Tony Walteur', hex);
+    assert.deepEqual(profile.idpClaims(enc({ name: 'A' + ch + 'B', given_name: 'A' + ch, family_name: ch + 'B' })), { name: 'AB', given_name: 'A', family_name: 'B' }, hex);
+    assert.equal(str('x' + ch + 'y', 10), c === 0x200C || c === 0x200D ? 'x' + ch + 'y' : 'xy', hex); // free text keeps ZWNJ/ZWJ
+  }
+  // the red-team PoC: the markup stays text (client escapes it) and the reordering character is gone
+  const poc = profile.nameClaims({ name: 'Eve "\'><b data-pwn=idp>x</b>‮redli​ · idpname@mantu.com' }).name;
+  assert.ok(!/[‪-‮⁦-⁩​-‏؜⁠﻿]/.test(poc) && poc.includes('redli'), poc);
+  assert.equal(profile.nameClaims({ name: '‮moc.utnam@ynot' }).name, 'moc.utnam@ynot');
+  assert.deepEqual(profile.nameClaims({ name: '‮​' }), {}, 'a name of only invisible characters is no name');
+  assert.equal(profile.nameClaims({ name: 'Zoë  Lefèvre' }).name, 'Zoë Lefèvre', 'letters, accents and ordinary spaces are untouched');
+  assert.equal(profile.nameClaims({ name: 'محمد علي' }).name, 'محمد علي', 'a right-to-left name keeps its letters');
+  assert.ok(INVISIBLE.global);
+  // free text in other scripts keeps the joiners it is spelled with; only reordering characters go
+  assert.equal(str('می\u200Cخواهم', 20), 'می\u200Cخواهم', 'Persian ZWNJ kept');
+  assert.equal(str('क्\u200Dष', 20), 'क्\u200Dष', 'Devanagari ZWJ kept');
+  assert.equal(str('👩\u200D💻 dev', 20), '👩\u200D💻 dev', 'emoji ZWJ sequence kept');
+  assert.equal(str('a\u202Eb', 20), 'ab', 'bidi override still removed from free text');
+});
+
 // ---- The model boundary (§0.4, §5.9): the profile never reaches a model, whatever the path. ----
 test('leak: "Zelda Quintero, Principal Zebra" never reaches complete or embed across review, merge, bids and Ask; nor the talker', async () => {
   const LEAK = /zelda|quintero|principal zebra/i, ZELDA = { email: 'zelda.quintero@example.com', role: 'user' }, KAI = { email: 'kai@example.com', role: 'user' };

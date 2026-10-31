@@ -1,6 +1,6 @@
 # How ATLAS handles your information
 
-Version `2026-10-31.1`. DRAFT — controls implemented in code; wording, lawful bases, controller and DPO details need DPO and legal sign-off.
+Version `2026-10-31.2`. DRAFT — controls implemented in code; wording, lawful bases, controller and DPO details need DPO and legal sign-off.
 
 > Generated from `atlas_voice/config/privacy.json` by `scripts/render_privacy_docs.py`. Edit the JSON, not this file. The same text is served at `/privacy`.
 
@@ -20,7 +20,7 @@ Keeping a private draft of your notes, transcript and report. Only you can see i
 
 After you submit: review by your N+1 or a reviewer and, once approved, reuse as reference material for future Mantu projects.
 
-Optional: resuming an interrupted interview (up to 24 hours) and a short private memory between interviews (off unless you turn it on).
+Optional, each off unless you tick it: resuming an interrupted interview (up to 24 hours) and a short private memory between interviews.
 
 Lawful basis for each purpose: [LAWFUL BASIS PER PURPOSE — DPO to confirm].
 

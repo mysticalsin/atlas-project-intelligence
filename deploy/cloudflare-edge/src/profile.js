@@ -4,7 +4,7 @@
 // Runs inside the LibraryStore DO; identity arrives only in headers the Worker overwrites (x-atlas-user, x-atlas-email,
 // x-atlas-idp). Every DNA or HR path is gated by DATA_MODE=production (§0.7): the test deployment accepts synthetic
 // addresses only. The pull connector's shape is ASSUMED (§5.3); push (§5.4) and the CSV export (§5.6) are equal options.
-import { str, email as validEmail, obj, fail, inList, rateLimit } from './util.js';
+import { str, name as nameText, email as validEmail, obj, fail, inList, rateLimit } from './util.js';
 import * as privacy from './privacy.js';
 
 // Flipped by the owning track only when the zero-config acceptance suites pass (WOW_SPEC §2.1, §2.5): flipped in Z-S2
@@ -48,8 +48,8 @@ export function testAddress(address) {
 
 // ---- Sign-in name claims (§5.5): mapped from the verified Access JWT `custom` object, each at most 100 characters.
 export function nameClaims(custom) {
-  const c = obj(custom), s = k => typeof c[k] === 'string' ? str(c[k], 100) : '';
-  const given = s('given_name'), family = s('family_name'), name = s('name') || str([given, family].filter(Boolean).join(' '), 100), out = {};
+  const c = obj(custom), s = k => typeof c[k] === 'string' ? nameText(c[k], 100) : '';
+  const given = s('given_name'), family = s('family_name'), name = s('name') || nameText([given, family].filter(Boolean).join(' '), 100), out = {};
   if (name) out.name = name;
   if (given) out.given_name = given;
   if (family) out.family_name = family;
