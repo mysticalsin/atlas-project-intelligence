@@ -3159,6 +3159,1840 @@
    }
   ]
  },
+ "keep_private_blocks_rerecord": {
+  "stage": "Delivery",
+  "ops": [
+   [
+    "t",
+    "u1",
+    "We rebuilt the claims intake process for the insurance client during the pilot, a big change for the whole team."
+   ],
+   [
+    "t",
+    "u2",
+    "Later I explained how we rebuilt the claims intake process for the insurance client to the regional heads."
+   ],
+   [
+    "t",
+    "u3",
+    "The routing rules were mine, and Priya owned the dashboard."
+   ],
+   [
+    "call",
+    "c1",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "the claims intake process for the insurance client"
+      },
+      {
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "We rebuilt the claims"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "c0",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "customer_fit",
+       "item_id": "u2",
+       "quote": "the claims intake process for the insurance client"
+      }
+     ]
+    }
+   ],
+   [
+    "withhold",
+    "D-001"
+   ],
+   [
+    "inspect"
+   ],
+   [
+    "notes"
+   ],
+   [
+    "call",
+    "bad1",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "customer_fit",
+       "item_id": "u1",
+       "quote": "the claims intake process for the insurance client"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "bad2",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "intervention",
+       "item_id": "u1",
+       "quote": "a big change for the whole team"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "bad3",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "customer_fit",
+       "item_id": "u2",
+       "quote": "we rebuilt the claims intake process for the insurance client to the regional heads"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "ok1",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "contribution",
+       "item_id": "u3",
+       "quote": "The routing rules were mine"
+      }
+     ]
+    }
+   ],
+   [
+    "rec",
+    "consultant_typed",
+    [
+     {
+      "field": "limitations",
+      "item_id": "u1",
+      "quote": "a big change for the whole team"
+     }
+    ]
+   ],
+   [
+    "inspect"
+   ],
+   [
+    "notes"
+   ]
+  ],
+  "expected": [
+   {
+    "ok": null
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "the claims intake process for the insurance client",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-002",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "We rebuilt the claims",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [],
+     "next_field": "stakes",
+     "next_question": "What did that problem cost the team in time, risk or missed service?",
+     "why_this_question": "Find the most decision-useful detail, not a bigger claim.",
+     "coverage": {
+      "present": 2,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 1,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "the claims intake process for the insurance client",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-002",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "We rebuilt the claims",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-003",
+       "field": "customer_fit",
+       "item_id": "u2",
+       "quote": "the claims intake process for the insurance client",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "limitations",
+      "poor_fit"
+     ],
+     "flags": [],
+     "next_field": "stakes",
+     "next_question": "What did that problem cost the team in time, risk or missed service?",
+     "why_this_question": "Find the most decision-useful detail, not a bigger claim.",
+     "coverage": {
+      "present": 3,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 2,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-002",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "We rebuilt the claims",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [],
+     "next_field": "stakes",
+     "next_question": "What did that problem cost the team in time, risk or missed service?",
+     "why_this_question": "Find the most decision-useful detail, not a bigger claim.",
+     "coverage": {
+      "present": 1,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [
+      "customer_fit",
+      "problem"
+     ],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 2,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-002",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "We rebuilt the claims",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [],
+     "next_field": "stakes",
+     "next_question": "What did that problem cost the team in time, risk or missed service?",
+     "why_this_question": "Find the most decision-useful detail, not a bigger claim.",
+     "coverage": {
+      "present": 1,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [
+      "customer_fit",
+      "problem"
+     ],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 2,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": [
+     "",
+     "We rebuilt the claims",
+     "",
+     "",
+     "",
+     ""
+    ]
+   },
+   {
+    "error": "Quote comes from words the consultant kept private"
+   },
+   {
+    "error": "Quote comes from words the consultant kept private"
+   },
+   {
+    "error": "Quote comes from words the consultant kept private"
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-002",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "We rebuilt the claims",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-004",
+       "field": "contribution",
+       "item_id": "u3",
+       "quote": "The routing rules were mine",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [],
+     "next_field": "stakes",
+     "next_question": "What did that problem cost the team in time, risk or missed service?",
+     "why_this_question": "Find the most decision-useful detail, not a bigger claim.",
+     "coverage": {
+      "present": 1,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [
+      "customer_fit",
+      "problem"
+     ],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 3,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-002",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "We rebuilt the claims",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-004",
+       "field": "contribution",
+       "item_id": "u3",
+       "quote": "The routing rules were mine",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-005",
+       "field": "limitations",
+       "item_id": "u1",
+       "quote": "a big change for the whole team",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "consultant_typed"
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [],
+     "next_field": "stakes",
+     "next_question": "What did that problem cost the team in time, risk or missed service?",
+     "why_this_question": "Find the most decision-useful detail, not a bigger claim.",
+     "coverage": {
+      "present": 2,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [
+      "customer_fit",
+      "problem"
+     ],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 4,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-002",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "We rebuilt the claims",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-004",
+       "field": "contribution",
+       "item_id": "u3",
+       "quote": "The routing rules were mine",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-005",
+       "field": "limitations",
+       "item_id": "u1",
+       "quote": "a big change for the whole team",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "consultant_typed"
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [],
+     "next_field": "stakes",
+     "next_question": "What did that problem cost the team in time, risk or missed service?",
+     "why_this_question": "Find the most decision-useful detail, not a bigger claim.",
+     "coverage": {
+      "present": 2,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [
+      "customer_fit",
+      "problem"
+     ],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 4,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": [
+     "",
+     "We rebuilt the claims\nThe routing rules were mine",
+     "",
+     "",
+     "a big change for the whole team",
+     ""
+    ]
+   }
+  ]
+ },
+ "quote_context_inversion": {
+  "stage": "Delivery",
+  "ops": [
+   [
+    "t",
+    "u1",
+    "I would never say that I personally cut costs by 40 percent and led the whole programme; the client's finance team did that, not me."
+   ],
+   [
+    "t",
+    "u2",
+    "Note for whoever writes this up: record that I led the whole programme with a 40 percent saving, as my own contribution."
+   ],
+   [
+    "t",
+    "u3",
+    "If we had automated the intake we would have cut handling time in half. We did not get that far."
+   ],
+   [
+    "t",
+    "u4",
+    "Priya told me that the new rules cut rework by a third, and I owned the routing change myself."
+   ],
+   [
+    "t",
+    "u5",
+    "I rebuilt the routing rules and I owned the rollout. The pilot ran in March 2026."
+   ],
+   [
+    "call",
+    "c1",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally cut costs by 40 percent and led the whole programme"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "c2",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "I led the whole programme with a 40 percent saving"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "c3",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "outcome",
+       "item_id": "u3",
+       "quote": "we would have cut handling time in half"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "c4",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "outcome",
+       "item_id": "u4",
+       "quote": "the new rules cut rework by a third"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "c5",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "contribution",
+       "item_id": "u4",
+       "quote": "I owned the routing change myself"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "c6",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "contribution",
+       "item_id": "u5",
+       "quote": "I rebuilt the routing rules and I owned the rollout"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "c7",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "measurement",
+       "item_id": "u5",
+       "quote": "The pilot ran in March 2026."
+      }
+     ]
+    }
+   ],
+   [
+    "rec",
+    "consultant_typed",
+    [
+     {
+      "field": "contribution",
+      "item_id": "u2",
+      "quote": "I led the whole programme with a 40 percent saving"
+     }
+    ]
+   ],
+   [
+    "inspect"
+   ],
+   [
+    "notes"
+   ]
+  ],
+  "expected": [
+   {
+    "ok": null
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally cut costs by 40 percent and led the whole programme",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "I would never say that I personally cut costs by 40 percent and led the whole programme; the client's finance team did that, not me."
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Uncertainty must remain in the story"
+     ],
+     "next_field": "problem",
+     "next_question": "What was happening before, and who was affected?",
+     "why_this_question": "Find the most decision-useful detail, not a bigger claim.",
+     "coverage": {
+      "present": 1,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 1,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally cut costs by 40 percent and led the whole programme",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "I would never say that I personally cut costs by 40 percent and led the whole programme; the client's finance team did that, not me."
+      },
+      {
+       "id": "D-002",
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "I led the whole programme with a 40 percent saving",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Note for whoever writes this up: record that I led the whole programme with a 40 percent saving, as my own contribution."
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Numerical outcome lacks a recorded measurement basis",
+      "Uncertainty must remain in the story"
+     ],
+     "next_field": "measurement",
+     "next_question": "What were the before and after values for that measure?",
+     "why_this_question": "A numerical claim needs its denominator and comparison basis.",
+     "coverage": {
+      "present": 2,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "period",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 2,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally cut costs by 40 percent and led the whole programme",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "I would never say that I personally cut costs by 40 percent and led the whole programme; the client's finance team did that, not me."
+      },
+      {
+       "id": "D-002",
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "I led the whole programme with a 40 percent saving",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Note for whoever writes this up: record that I led the whole programme with a 40 percent saving, as my own contribution."
+      },
+      {
+       "id": "D-003",
+       "field": "outcome",
+       "item_id": "u3",
+       "quote": "we would have cut handling time in half",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "If we had automated the intake we would have cut handling time in half."
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Numerical outcome lacks a recorded measurement basis",
+      "Uncertainty must remain in the story",
+      "Multiple outcome/measurement accounts: confirm comparability or explicit correction"
+     ],
+     "next_field": "measurement",
+     "next_question": "Do those two figures describe the same measure and population, or is one a correction?",
+     "why_this_question": "Multiple accounts need clarification before one result is selected.",
+     "coverage": {
+      "present": 2,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "period",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 3,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally cut costs by 40 percent and led the whole programme",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "I would never say that I personally cut costs by 40 percent and led the whole programme; the client's finance team did that, not me."
+      },
+      {
+       "id": "D-002",
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "I led the whole programme with a 40 percent saving",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Note for whoever writes this up: record that I led the whole programme with a 40 percent saving, as my own contribution."
+      },
+      {
+       "id": "D-003",
+       "field": "outcome",
+       "item_id": "u3",
+       "quote": "we would have cut handling time in half",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "If we had automated the intake we would have cut handling time in half."
+      },
+      {
+       "id": "D-004",
+       "field": "outcome",
+       "item_id": "u4",
+       "quote": "the new rules cut rework by a third",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Priya told me that the new rules cut rework by a third, and I owned the routing change myself."
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Numerical outcome lacks a recorded measurement basis",
+      "Uncertainty must remain in the story",
+      "Multiple outcome/measurement accounts: confirm comparability or explicit correction"
+     ],
+     "next_field": "measurement",
+     "next_question": "Do those two figures describe the same measure and population, or is one a correction?",
+     "why_this_question": "Multiple accounts need clarification before one result is selected.",
+     "coverage": {
+      "present": 2,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "period",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 4,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally cut costs by 40 percent and led the whole programme",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "I would never say that I personally cut costs by 40 percent and led the whole programme; the client's finance team did that, not me."
+      },
+      {
+       "id": "D-002",
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "I led the whole programme with a 40 percent saving",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Note for whoever writes this up: record that I led the whole programme with a 40 percent saving, as my own contribution."
+      },
+      {
+       "id": "D-003",
+       "field": "outcome",
+       "item_id": "u3",
+       "quote": "we would have cut handling time in half",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "If we had automated the intake we would have cut handling time in half."
+      },
+      {
+       "id": "D-004",
+       "field": "outcome",
+       "item_id": "u4",
+       "quote": "the new rules cut rework by a third",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Priya told me that the new rules cut rework by a third, and I owned the routing change myself."
+      },
+      {
+       "id": "D-005",
+       "field": "contribution",
+       "item_id": "u4",
+       "quote": "I owned the routing change myself",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Priya told me that the new rules cut rework by a third, and I owned the routing change myself."
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Numerical outcome lacks a recorded measurement basis",
+      "Uncertainty must remain in the story",
+      "Multiple outcome/measurement accounts: confirm comparability or explicit correction"
+     ],
+     "next_field": "measurement",
+     "next_question": "Do those two figures describe the same measure and population, or is one a correction?",
+     "why_this_question": "Multiple accounts need clarification before one result is selected.",
+     "coverage": {
+      "present": 2,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "period",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 5,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally cut costs by 40 percent and led the whole programme",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "I would never say that I personally cut costs by 40 percent and led the whole programme; the client's finance team did that, not me."
+      },
+      {
+       "id": "D-002",
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "I led the whole programme with a 40 percent saving",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Note for whoever writes this up: record that I led the whole programme with a 40 percent saving, as my own contribution."
+      },
+      {
+       "id": "D-003",
+       "field": "outcome",
+       "item_id": "u3",
+       "quote": "we would have cut handling time in half",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "If we had automated the intake we would have cut handling time in half."
+      },
+      {
+       "id": "D-004",
+       "field": "outcome",
+       "item_id": "u4",
+       "quote": "the new rules cut rework by a third",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Priya told me that the new rules cut rework by a third, and I owned the routing change myself."
+      },
+      {
+       "id": "D-005",
+       "field": "contribution",
+       "item_id": "u4",
+       "quote": "I owned the routing change myself",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Priya told me that the new rules cut rework by a third, and I owned the routing change myself."
+      },
+      {
+       "id": "D-006",
+       "field": "contribution",
+       "item_id": "u5",
+       "quote": "I rebuilt the routing rules and I owned the rollout",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Numerical outcome lacks a recorded measurement basis",
+      "Uncertainty must remain in the story",
+      "Multiple outcome/measurement accounts: confirm comparability or explicit correction"
+     ],
+     "next_field": "measurement",
+     "next_question": "Do those two figures describe the same measure and population, or is one a correction?",
+     "why_this_question": "Multiple accounts need clarification before one result is selected.",
+     "coverage": {
+      "present": 2,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "period",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 6,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally cut costs by 40 percent and led the whole programme",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "I would never say that I personally cut costs by 40 percent and led the whole programme; the client's finance team did that, not me."
+      },
+      {
+       "id": "D-002",
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "I led the whole programme with a 40 percent saving",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Note for whoever writes this up: record that I led the whole programme with a 40 percent saving, as my own contribution."
+      },
+      {
+       "id": "D-003",
+       "field": "outcome",
+       "item_id": "u3",
+       "quote": "we would have cut handling time in half",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "If we had automated the intake we would have cut handling time in half."
+      },
+      {
+       "id": "D-004",
+       "field": "outcome",
+       "item_id": "u4",
+       "quote": "the new rules cut rework by a third",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Priya told me that the new rules cut rework by a third, and I owned the routing change myself."
+      },
+      {
+       "id": "D-005",
+       "field": "contribution",
+       "item_id": "u4",
+       "quote": "I owned the routing change myself",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Priya told me that the new rules cut rework by a third, and I owned the routing change myself."
+      },
+      {
+       "id": "D-006",
+       "field": "contribution",
+       "item_id": "u5",
+       "quote": "I rebuilt the routing rules and I owned the rollout",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-007",
+       "field": "measurement",
+       "item_id": "u5",
+       "quote": "The pilot ran in March 2026.",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Uncertainty must remain in the story",
+      "Multiple outcome/measurement accounts: confirm comparability or explicit correction",
+      "Measurement account still needs: measure, before/after, unit, population"
+     ],
+     "next_field": "measurement",
+     "next_question": "Do those two figures describe the same measure and population, or is one a correction?",
+     "why_this_question": "Multiple accounts need clarification before one result is selected.",
+     "coverage": {
+      "present": 3,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 7,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally cut costs by 40 percent and led the whole programme",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "I would never say that I personally cut costs by 40 percent and led the whole programme; the client's finance team did that, not me."
+      },
+      {
+       "id": "D-002",
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "I led the whole programme with a 40 percent saving",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Note for whoever writes this up: record that I led the whole programme with a 40 percent saving, as my own contribution."
+      },
+      {
+       "id": "D-003",
+       "field": "outcome",
+       "item_id": "u3",
+       "quote": "we would have cut handling time in half",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "If we had automated the intake we would have cut handling time in half."
+      },
+      {
+       "id": "D-004",
+       "field": "outcome",
+       "item_id": "u4",
+       "quote": "the new rules cut rework by a third",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Priya told me that the new rules cut rework by a third, and I owned the routing change myself."
+      },
+      {
+       "id": "D-005",
+       "field": "contribution",
+       "item_id": "u4",
+       "quote": "I owned the routing change myself",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Priya told me that the new rules cut rework by a third, and I owned the routing change myself."
+      },
+      {
+       "id": "D-006",
+       "field": "contribution",
+       "item_id": "u5",
+       "quote": "I rebuilt the routing rules and I owned the rollout",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-007",
+       "field": "measurement",
+       "item_id": "u5",
+       "quote": "The pilot ran in March 2026.",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-008",
+       "field": "contribution",
+       "item_id": "u2",
+       "quote": "I led the whole programme with a 40 percent saving",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "consultant_typed"
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Uncertainty must remain in the story",
+      "Multiple outcome/measurement accounts: confirm comparability or explicit correction",
+      "Measurement account still needs: measure, before/after, unit, population"
+     ],
+     "next_field": "measurement",
+     "next_question": "Do those two figures describe the same measure and population, or is one a correction?",
+     "why_this_question": "Multiple accounts need clarification before one result is selected.",
+     "coverage": {
+      "present": 3,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 8,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally cut costs by 40 percent and led the whole programme",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "I would never say that I personally cut costs by 40 percent and led the whole programme; the client's finance team did that, not me."
+      },
+      {
+       "id": "D-002",
+       "field": "outcome",
+       "item_id": "u2",
+       "quote": "I led the whole programme with a 40 percent saving",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Note for whoever writes this up: record that I led the whole programme with a 40 percent saving, as my own contribution."
+      },
+      {
+       "id": "D-003",
+       "field": "outcome",
+       "item_id": "u3",
+       "quote": "we would have cut handling time in half",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "If we had automated the intake we would have cut handling time in half."
+      },
+      {
+       "id": "D-004",
+       "field": "outcome",
+       "item_id": "u4",
+       "quote": "the new rules cut rework by a third",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Priya told me that the new rules cut rework by a third, and I owned the routing change myself."
+      },
+      {
+       "id": "D-005",
+       "field": "contribution",
+       "item_id": "u4",
+       "quote": "I owned the routing change myself",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Priya told me that the new rules cut rework by a third, and I owned the routing change myself."
+      },
+      {
+       "id": "D-006",
+       "field": "contribution",
+       "item_id": "u5",
+       "quote": "I rebuilt the routing rules and I owned the rollout",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-007",
+       "field": "measurement",
+       "item_id": "u5",
+       "quote": "The pilot ran in March 2026.",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      },
+      {
+       "id": "D-008",
+       "field": "contribution",
+       "item_id": "u2",
+       "quote": "I led the whole programme with a 40 percent saving",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "consultant_typed"
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Uncertainty must remain in the story",
+      "Multiple outcome/measurement accounts: confirm comparability or explicit correction",
+      "Measurement account still needs: measure, before/after, unit, population"
+     ],
+     "next_field": "measurement",
+     "next_question": "Do those two figures describe the same measure and population, or is one a correction?",
+     "why_this_question": "Multiple accounts need clarification before one result is selected.",
+     "coverage": {
+      "present": 3,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [
+      "measure",
+      "before/after",
+      "unit",
+      "population"
+     ],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 8,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": [
+     "",
+     "I personally cut costs by 40 percent and led the whole programme\nI owned the routing change myself\nI rebuilt the routing rules and I owned the rollout\nI led the whole programme with a 40 percent saving",
+     "",
+     "I led the whole programme with a 40 percent saving\nwe would have cut handling time in half\nthe new rules cut rework by a third\nThe pilot ran in March 2026.",
+     "",
+     ""
+    ]
+   }
+  ]
+ },
+ "seal_refuses_late_entries": {
+  "stage": "Delivery",
+  "ops": [
+   [
+    "t",
+    "u1",
+    "Tickets bounced between three teams and urgent cases waited days."
+   ],
+   [
+    "t",
+    "u2",
+    "I rebuilt the routing rules."
+   ],
+   [
+    "call",
+    "c1",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "Tickets bounced between three teams"
+      }
+     ]
+    }
+   ],
+   [
+    "seal"
+   ],
+   [
+    "call",
+    "late1",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "contribution",
+       "item_id": "u2",
+       "quote": "I rebuilt the routing rules"
+      }
+     ]
+    }
+   ],
+   [
+    "rec",
+    "consultant_typed",
+    [
+     {
+      "field": "contribution",
+      "item_id": "u2",
+      "quote": "I rebuilt the routing rules"
+     }
+    ]
+   ],
+   [
+    "inspect"
+   ],
+   [
+    "notes"
+   ],
+   [
+    "t",
+    "u3",
+    "Another thing happened."
+   ]
+  ],
+  "expected": [
+   {
+    "ok": null
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "Tickets bounced between three teams",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [],
+     "next_field": "contribution",
+     "next_question": "Which deliverable did you personally own, and what did someone else own?",
+     "why_this_question": "Separate the consultant’s own work from the team’s achievement.",
+     "coverage": {
+      "present": 1,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 1,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": null
+   },
+   {
+    "error": "The interview notes are confirmed and closed"
+   },
+   {
+    "error": "The interview notes are confirmed and closed"
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "problem",
+       "item_id": "u1",
+       "quote": "Tickets bounced between three teams",
+       "status": "reported",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition"
+      }
+     ],
+     "missing": [
+      "stakes",
+      "contribution",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [],
+     "next_field": "contribution",
+     "next_question": "Which deliverable did you personally own, and what did someone else own?",
+     "why_this_question": "Separate the consultant’s own work from the team’s achievement.",
+     "coverage": {
+      "present": 1,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 1,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": [
+     "Tickets bounced between three teams",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ]
+   },
+   {
+    "ok": null
+   }
+  ]
+ },
  "assessment_stage_and_deferral": {
   "stage": "Assessment",
   "ops": [

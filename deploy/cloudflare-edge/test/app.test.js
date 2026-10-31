@@ -121,7 +121,7 @@ test('admin mode comes only from the verified sign-in email; a browser cannot cl
   assert.equal(await voice({}, {}), '1');
   assert.equal(await (async () => { forwarded = null; await handle(new Request(ORIGIN + '/api/voice', { headers: { 'cf-access-jwt-assertion': await jwt(), Upgrade: 'websocket', Origin: ORIGIN, 'x-atlas-admin': '1' } }), { ...env, ADMIN_EMAILS: '' }, ''); return forwarded.headers.get('x-atlas-admin'); })(), '0');
   const boot = await (await handle(await req('/api/bootstrap'), env, '')).json();
-  assert.equal(boot.admin, true); assert.equal(boot.speakingSeconds, 600);
+  assert.equal(boot.admin, true); assert.equal(boot.speakingSeconds, 800);
   const text = JSON.stringify(boot) + await (await handle(await req('/', { token: null }), env, '')).text();
   assert.doesNotMatch(text, /cloudflare|workers ai|harmonia/i);
 });

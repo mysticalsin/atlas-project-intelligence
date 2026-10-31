@@ -14,6 +14,8 @@ import { pickAck, ackPrewarmList } from './ack.js';
 import { uncertainSpans, replacement, tauFrom } from './asr.js';
 import { Machine } from './conversation-state.js';
 import { serialize, restore, restoreView, newSessionId, TTL_MS } from './checkpoint.js';
+import { hardLimit, offerText, shouldOffer, extensionReply } from './extension.js';
+import { cleanText, newFence, fenced, fenceRule, DEFAULT_FENCE } from './prompt-data.js';
 import { buildSummary, buildUnknowns, summaryFacts, factItems, summaryNote, redact, withheldQuotes, MAX_FACTS, REFLECT_FACTS, SUMMARY_QUESTION, SUMMARY_QUESTION_AGAIN } from './summary.js';
 
 export const RESUME = '[The consultant made a sound but no words were recognised, and your last reply was cut off.] Briefly re-ask your last question in fresh words.';
@@ -72,7 +74,7 @@ export function sessionFlags(env = {}) {
     asrTau: tauFrom(e.ASR_CONFIRM_TAU),
     speculativeStt: ['on', '1', 'true'].includes(String(e.SPECULATIVE_STT || '').toLowerCase()) };
 }
-export const MAX_SECONDS = INTERVIEW_LIMIT_S; // the whole interview (15 minutes); ATLAS's own speaking time is a second cap inside it
+export const MAX_SECONDS = INTERVIEW_LIMIT_S; // the whole interview (20 minutes); ATLAS's own speaking time is a second cap inside it
 // Pause, repeat, skip and typed turns (Agent Brain v2.1 T9). Paused time does not count toward the interview (maxSeconds is measured in
 // active seconds, activeSeconds()), but nothing may stay open for ever: the session ends at WALL_CAP_S of wall-clock time, paused or not.
 export const WALL_CAP_S = 45 * 60;
@@ -99,7 +101,6 @@ const SKIP_INSTRUCTION = '[Server: the consultant chose to skip your last questi
 export const SUMMARY_WAIT_MS = 2500; // the analyst may still be filing the last answer when the read-back is built: wait this long for it, no more
 export const SUMMARY_MAX_WORDS = 90; // a read-back is longer than an ordinary reply (GUARD_MAX_WORDS); the question always follows it
 export const CORRECTION_MAX_CHARS = 1800; // the ledger's own bound for a quote
-export const CONFIRM_WAIT_MS = 3000; // a late analyst entry is part of the draft: wait this long for it when the summary is confirmed
 export const SATISFIED_WORDS = 6; // a reply this short to the read-back ("No, that's right.") means they have nothing to add (as the selector's own rule)
 const CORRECTION_ITEM_BASE = 1000; // typed corrections are transcript items user-typed-1001, 1002 ...: never a turn number (turns stop at 300)
 const DETAIL_ID = /^D-\d{3,6}$/;
@@ -126,7 +127,7 @@ export function paceNotes(elapsedS, limitS, notes, admin = false) {
   const left = limitS - elapsedS, missing = AREAS.filter((_, i) => !notes[i]);
   let pace = `INTERVIEW PACE (server): about ${Math.floor(elapsedS / 60)} of ${Math.floor(limitS / 60)} minutes used.`;
   if (left <= WRAP_S) pace += ' Time is up: close now, with no question.';
-  else if (left <= TIME_PLAN.closing_left_s) pace += ' Under four minutes left: ask only the single most important remaining question, then move to ENDING.';
+  else if (left <= TIME_PLAN.closing_left_s) pace += ' Under five minutes left: ask only the single most important remaining question, then move to ENDING.';
   else if (elapsedS >= TIME_PLAN.depth_fraction * limitS) {
     pace += ' Past halfway: challenge the one or two claims that matter most (what changed, and how they know).';
     pace += missing.length ? ' Still uncovered: ' + missing.slice(0, 2).join(', ') + '.' : '';
@@ -165,11 +166,8 @@ function gapAsks(found) {
     .slice(0, GAP_MAX).map(a => ({ id: a.id, field: a.field, label: FIELDS[a.field][0], ask: clean(a.ask, 160) }));
 }
 
-function clean(value, limit) {
-  if (typeof value !== 'string') return '';
-  value = value.replace(/<\s*\/?\s*system\s*>/gi, '[quoted tag]');
-  return [...value].filter(c => c.codePointAt(0) >= 32 || c === '\n' || c === '\t').join('').trim().slice(0, limit);
-}
+// Untrusted text for a prompt: bounded, control and invisible characters dropped, chat-role tags (however spelled) neutralised (prompt-data.js).
+const clean = cleanText;
 
 // Port of atlas_voice/interview.py project_context: untrusted, bounded, no identity fields. `consultant` is still
 // accepted (older pages send it) but never kept: the consultant's name never reaches a model (WOW_ZERO_CONFIG §5.9).
@@ -190,10 +188,14 @@ export function projectContext(raw) {
 // Prompt order is built for prefix caching: the fixed policy and project first, then the conversation (append-only),
 // and only then the per-turn server notes (guidance, language, memory, pace), which change every turn. A gap list (gap
 // mode) sits between the project data and the preferences label, so the prefix stays stable for the whole session.
-export function talkerMessages(project, guidance, history, instruction, notes = [], gaps = null) {
-  const messages = [{ role: 'system', content: TALKER_POLICY + '\nUNTRUSTED PROJECT DATA:\n' + JSON.stringify(project) + (gaps?.length ? gapSystemBlock(gaps) : '') + '\nUNTRUSTED PRIVATE PREFERENCES (not evidence):\n' }];
+// opts: {fence, memory}. The system role carries Atlas's own policy only (the policy, the fence rule, the server's plan and notes). Everything a person or a record
+// wrote (the project, the gap list, a recalled memory) is ONE user-role message between per-session random fences, as JSON (blue #9, red L4/L6); a gap ask in the plan
+// is named by its id, its words are in that block.
+export function talkerMessages(project, guidance, history, instruction, notes = [], gaps = null, { fence = DEFAULT_FENCE, memory = '' } = {}) {
+  const messages = [{ role: 'system', content: TALKER_POLICY + fenceRule(fence) },
+    fenced(fence, ['UNTRUSTED PROJECT DATA:\n' + JSON.stringify(project) + (gaps?.length ? gapSystemBlock(gaps) : ''), memory, 'UNTRUSTED PRIVATE PREFERENCES (not evidence):'])];
   messages.push(...history.slice(-HISTORY));
-  if (guidance) messages.push({ role: 'system', content: 'ANALYST_GUIDANCE (server plan, not a script): ' + JSON.stringify(guidance) });
+  if (guidance) messages.push({ role: 'system', content: 'ANALYST_GUIDANCE (server plan, not a script): ' + JSON.stringify(guidance.askId ? { ...guidance, question: `the ask with id ${guidance.askId} in UNTRUSTED GAP LIST` } : guidance) });
   for (const note of notes) if (note) messages.push({ role: 'system', content: note });
   if (instruction) messages.push({ role: 'user', content: instruction });
   return messages;
@@ -210,6 +212,7 @@ const MOVE_ACTION = {
   accept_and_move: 'Accept their answer without pressing; then ask the one question.',
   summary: 'No question is left: this is the read-back. Say back only the SUMMARY FACTS (next note), mention the open points briefly, then ask only: ' + SUMMARY_QUESTION,
   summary_again: 'This is the second read-back: say back only the SUMMARY CHANGES (next note), then ask only: ' + SUMMARY_QUESTION_AGAIN,
+  offer_extension: 'Ask only this one polite question, in your own natural words, naming the point (it is the consultant\'s choice: a no is fine, no pressure, and it is asked once).',
   close: 'Close now: thank them warmly in one or two short sentences, with no question, then end with the exact token [[END]].',
 };
 const MOVE_REACTION = {
@@ -251,6 +254,7 @@ export class Session {
     gaps = null, winHint = null, gapTimeout = GAP_RESOLVE_MS, flags = null, checkpoint = null, evidence = null }) {
     // metric(name, numbers): timings and counts only, never transcript or project content.
     Object.assign(this, { io, ai, csrf, voice, voices: voices || [voice], captureRequired, model, maxSeconds, admin, speakingLimit, now, sleep, metric, memory, sttTimeout, gaps, winHint, gapTimeout, checkpoint, evidence });
+    this.softSeconds = maxSeconds; // the planned end; with the consultant's agreement the interview may run to hardLimit(softSeconds) of active time (extension.js)
     this.flags = { ...DEFAULT_FLAGS, ...(flags || ai?.flags || {}) };
     // Conversation state of the humane interviewer (Agent Brain v2.1), one plain object so a checkpoint can keep it whole:
     // asked (the Move dicts committed so far, oldest first), covered (field ids the consultant's answers touched), rushed,
@@ -274,7 +278,7 @@ export class Session {
     // confirmed / draft: the confirmation and the evidence draft it saved ({id, revision}, null when nothing was saved); posting: a confirmation is in flight;
     // prompts: how often ATLAS pointed to the Confirm button; sig: the last card sent (not kept: a resume sends the card again).
     // `evidence` is the hook that saves the draft: async notes => {status, body} (worker.js: postDraftFromInterview under the verified identity), null when off.
-    this.summary = { open: false, rounds: 0, corrections: 0, confirmed: false, draft: null, posting: false, prompts: 0, sig: '', read: new Set() };
+    this.summary = { open: false, rounds: 0, corrections: 0, confirmed: false, draft: null, posting: false, prompts: 0, sig: '', read: new Set(), shown: new Set(), snapshot: null };
     this.typedAt = -1e9; this.correctionTimes = []; // rate limits (typedTurn, correctDetail): when the last typed turn was taken, and the recent corrections
     this.move = null; this.moveByItem = new Map(); this.prefill = {}; this.lastPlan = null; this.lastTurn = null;
     // Interview mode. Gap mode keeps its own answer windows: askByItem (reply item -> the ask it carried, set when the reply
@@ -283,7 +287,7 @@ export class Session {
     this.textMode = false; // X1: a typed interview (start mode 'text'): no microphone, no audio, no synthesis
     this.mode = 'full'; this.wrapS = WRAP_S; this.winNote = ''; this.starting = false;
     this.gapAsks = []; this.gapRequest = null; this.askByItem = new Map(); this.gapAttempts = {}; this.gapAnswers = {}; this.openAsk = null; this.lastAnswer = null; this.askHeard = null;
-    this.memoryNote = ''; this.language = 'en'; this.languageCandidate = null; this.dry = false; this.affinity = 'atlas-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    this.memoryNote = ''; this.fence = newFence(); this.language = 'en'; this.languageCandidate = null; this.dry = false; this.affinity = 'atlas-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
     this.pause = ''; this.checkId = 0; this.continuing = false; this.replyTurn = -1; this.replyItem = null; this.shown = { item: null, chars: 0 }; this.discarded = new Set(); this.fillerMs = {}; this.committed = null; this.live = null; this.recorded = new Set(); this.voiced = 0; this.blip = null; this.echoable = false; this.acked = false; this.playbackDone = true; this.doneAt = 0; this.resumedAt = 0; this.lastFiller = -1; this.fillerTurn = -2; this.protectedItem = null; this.protectedMs = 0; this.protectedDeadline = 0;
     this.spokenMs = 0; this.timeUp = false; this.ending = null; this.sttBusy = 0;
     this.started = false; this.finished = false; this.capture = false; this.history = []; this.queue = []; this.waiter = null;
@@ -548,7 +552,7 @@ export class Session {
     this.ledger = this.analyst ? this.analyst.ledger : new InterviewLedger(stage);
     // A resume puts the stored interview back before it starts (nothing is changed if it is refused: the stored one stays for another try).
     if (doc) {
-      try { const r = restore(this, doc); this.resumed = true; this.metric('reconnect', { gap_s: Math.max(0, Math.round(this.now() - r.savedAt)), turns: this.turns, paused: this.paused ? 1 : 0 }); }
+      try { const r = restore(this, doc); this.resumed = true; if (this.humane.asked.findLast(m => m.intent === 'offer_extension')?.ext === 'accepted' && this.mode === 'full') this.maxSeconds = hardLimit(this.softSeconds); this.metric('reconnect', { gap_s: Math.max(0, Math.round(this.now() - r.savedAt)), turns: this.turns, paused: this.paused ? 1 : 0 }); }
       catch (e) {
         this.metric('resume_refused', { code: e?.code || 'error' });
         if (e?.code === 'corrupt') { this.starting = true; await this.purgeCheckpoint(); this.starting = false; } // an interview that had already ended, or damaged: never offered again
@@ -557,7 +561,7 @@ export class Session {
     } else this.sessionId = newSessionId();
     this.started = true; this.lastInput = this.now(); if (!this.resumed) this.startedAt = this.lastInput;
     this.event('ready', { model: 'ATLAS', provider: 'ATLAS voice', sampleRate: 24000, speakingSeconds: this.speakingLimit, capture: this.capture, liveLedger: !!this.analyst,
-      maxSeconds: this.maxSeconds, input: this.textMode ? 'text' : 'voice', message: this.textMode ? 'Typed session ready. Type your answers. Candidate notes require your review.' : 'Voice session ready. Speak naturally. Candidate notes require your review.',
+      maxSeconds: this.mode === 'full' ? hardLimit(this.softSeconds) : this.maxSeconds, ...(this.mode === 'full' ? { softSeconds: this.softSeconds } : {}), input: this.textMode ? 'text' : 'voice', message: this.textMode ? 'Typed session ready. Type your answers. Candidate notes require your review.' : 'Voice session ready. Speak naturally. Candidate notes require your review.',
       mode: this.mode, timePlan: timePlan(this.maxSeconds, this.mode), controls: CONTROLS, ...(this.checkpointable() ? { sessionId: this.sessionId, resumable: true } : {}), ...(this.resumed ? { resumed: true, activeSeconds: Math.max(0, Math.floor(this.activeSeconds())) } : {}), ...(gap ? { gaps: this.gapAsks.map(({ id, label, ask }) => ({ id, label, ask })) } : {}) });
     if (this.memory && !gap) { // private memory from earlier conversations, bounded so the greeting is never held up (none in gap mode)
       let timer;
@@ -935,8 +939,11 @@ export class Session {
     const h = this.humane, elapsed = this.activeSeconds();
     if (turn.intents.includes('rushed')) h.rushed = true;
     const plan = { ...this.currentPlan(), covered_fields: [...h.covered], latest_text: typeof text === 'string' ? clean(text, 300) : '' };
-    const move = select(plan, turn, h.asked.filter(m => m !== replacing), this.prefill, elapsed >= TIME_PLAN.depth_fraction * this.maxSeconds ? 'depth' : 'breadth',
-      this.maxSeconds - elapsed, this.asrFor(turn), h.rushed, this.language);
+    const asked = h.asked.filter(m => m !== replacing), ext = this.extensionAnswer(turn, asked);
+    // The consultant declined more time: the read-back now (once), and from then on only what is essential, as for a consultant in a hurry.
+    if (ext === 'refused' && !asked.some(m => m.kind === 'summary' || m.intent === 'summary') && !this.summary.confirmed) { this.metric('extension_refused', {}); return { ...SUMMARY_MOVE }; }
+    const move = select(plan, turn, asked, this.prefill, elapsed >= TIME_PLAN.depth_fraction * this.maxSeconds ? 'depth' : 'breadth',
+      this.maxSeconds - elapsed, this.asrFor(turn), h.rushed || ext === 'refused', this.language);
     // (a refusal to share that still said something, "kept_private", does count: the point was answered, only a name was held back)
     if (!turn.intents.some(i => ['dont_know', 'cannot_disclose', 'skip'].includes(i)) || /^kept_private:/.test(move.why || '')) for (const f of turn.field_hints) h.covered.add(f);
     // The selector had to avoid saying a question it already said (a variant, or a whole candidate): counted, never logged.
@@ -944,7 +951,29 @@ export class Session {
     // The selector closes once a read-back was asked and nothing is left. Nothing is filed without the consultant's confirmation, so a close that is not
     // the time limit or their own wish to stop becomes another read-back (the card is on their screen; they confirm there).
     if (move.kind === 'close' && !/^close:(wrap|stop)/.test(move.why || '') && !this.summary.confirmed && this.capture && !this.admin) { this.metric('summary_before_close', {}); return { ...SUMMARY_MOVE }; }
+    // Time is nearly up and something essential is still unasked: ask ONCE whether the consultant can give a few more minutes on that point (never when they are in a hurry).
+    if (this.mode === 'full' && !this.admin && this.maxSeconds < hardLimit(this.softSeconds) && shouldOffer(move.kind, h.rushed, ext, this.maxSeconds - elapsed)) {
+      this.metric('extension_offered', {});
+      return { kind: 'offer_extension', intent: 'offer_extension', field: null, rung: null, say: offerText(move.field, move.intent), why: 'extension:' + (move.field || move.intent || '-'), reaction: 'none', ack_category: null, bridge: false, hook: '' };
+    }
     return move;
+  }
+
+  // The state of the offer to continue, from the asked log (so a checkpoint keeps it): null (never made), 'offered', 'accepted' or 'refused'. The turn after the offer is the answer:
+  // a clear yes moves the planned end to the hard cap (active time, pauses excluded); anything else leaves it.
+  extensionAnswer(turn, asked = this.humane.asked) {
+    const offer = asked.findLast(m => m.intent === 'offer_extension');
+    if (!offer) return null;
+    if (!offer.ext && asked.at(-1) === offer) {
+      offer.ext = extensionReply(turn.intents, turn.words);
+      if (offer.ext === 'accepted') this.extend();
+    }
+    return offer.ext || 'offered';
+  }
+  extend() {
+    this.maxSeconds = hardLimit(this.softSeconds);
+    this.metric('time_extended', {});
+    this.event('time_extended', { maxSeconds: this.maxSeconds, timePlan: timePlan(this.maxSeconds, this.mode) });
   }
 
   // The move committed for a reply goes into the asked log; one taken back (withdrawn, or cut before she said it) comes out.
@@ -984,7 +1013,7 @@ export class Session {
   // Send the card to the browser (only when it changed, unless forced). Sent to the same person on the same authenticated socket.
   sendSummary(force = false) {
     const v = this.summaryView(), sig = JSON.stringify([v.items, v.unknowns]);
-    if (force || sig !== this.summary.sig) { this.summary.sig = sig; this.event('summary', { ...v, state: this.machine.state }); }
+    if (force || sig !== this.summary.sig) { this.summary.sig = sig; this.summary.shown = new Set(v.items.map(x => x.detail_id)); this.event('summary', { ...v, state: this.machine.state }); }
     return v;
   }
   // The facts of a read-back, from the same ledger as the card. A summary opens the card (after a bounded wait for the analyst's last entry, which may
@@ -1077,10 +1106,11 @@ export class Session {
     this.asrCorrections = this.asrCorrections.filter(c => !priv.has(c.ident) && !priv.has(c.spanIdent));
   }
   // The notes a draft is made of (T13 cleanNotes): the active details that are not kept private, nothing else. A withheld or replaced detail never leaves here.
-  evidenceNotes() {
-    const details = this.ledger.details.filter(d => d.active && d.withheld !== true).map(d => ({ id: d.id, field: d.field, item_id: d.item_id, quote: d.quote, status: d.status, active: true,
+  // `only`: the ids of the items the card showed (the confirmed snapshot): nothing else is in a draft the consultant confirmed.
+  evidenceNotes(only = null) {
+    const details = this.ledger.details.filter(d => d.active && d.withheld !== true && (!only || only.has(d.id))).map(d => ({ id: d.id, field: d.field, item_id: d.item_id, quote: d.quote, status: d.status, active: true,
       supersedes: d.supersedes || '', withheld: false, provenance: d.provenance || 'unverified_speech_recognition', asr_min_conf: typeof d.asr_min_conf === 'number' ? d.asr_min_conf : null,
-      audio_offset_ms: Number.isInteger(d.audio_offset_ms) ? d.audio_offset_ms : null }));
+      audio_offset_ms: Number.isInteger(d.audio_offset_ms) ? d.audio_offset_ms : null, ...(d.context ? { context: d.context } : {}) }));
     const asr = this.asrNotes();
     // A project that does not exist yet reaches the server as the placeholder id 'new' (the browser creates it from the report): that is no project, never a shared fake one.
     return { session_id: this.sessionId, project_ref: this.project?.id && this.project.id !== 'new' ? this.project.id : null, details, ...(Object.keys(asr).length ? { asr } : {}) };
@@ -1093,8 +1123,11 @@ export class Session {
     if (!this.summaryActive()) return this.summaryWarning(SUMMARY_UNAVAILABLE);
     this.summary.posting = true;
     try {
-      if (this.pending.size) await Promise.race([Promise.allSettled([...this.pending]), this.sleep(CONFIRM_WAIT_MS)]); // a late analyst entry belongs in the draft
-      if (this.finished || this.ending || !this.summaryActive() || !this.fireState('confirm_summary', 'user')) return;
+      if (!this.fireState('confirm_summary', 'user')) return;
+      // The draft is what the card SHOWED when the consultant clicked (red M1): the items and sections are fixed now, and the ledger refuses anything an analyst call
+      // still in flight files afterwards. Nothing the consultant did not see on the card, and nothing they kept private, reaches the draft, the report or memory.
+      this.summary.snapshot = { notes: this.evidenceNotes(this.summary.shown), sections: this.ledger.notes(this.summary.shown) };
+      this.ledger.seal();
       this.summary.confirmed = true; this.summary.open = false;
       if (this.busy()) this.interrupt();
       this.cutOff = false;
@@ -1109,7 +1142,7 @@ export class Session {
   }
   // true: a draft exists (created now, or the same notes were saved before). false: nothing was saved, and the browser is told why (a stable code, no content).
   async saveDraft() {
-    const notes = this.evidenceNotes(), no = (reason, message) => { this.metric('evidence_draft_unavailable', { reason }); this.event('evidence_draft_unavailable', { reason, message }); return false; };
+    const notes = this.summary.snapshot?.notes || this.evidenceNotes(), no = (reason, message) => { this.metric('evidence_draft_unavailable', { reason }); this.event('evidence_draft_unavailable', { reason, message }); return false; };
     if (!notes.details.length) return no('nothing_to_save', 'Every item was kept private or replaced, so there is nothing to save as a draft.');
     if (!this.evidence) return no('workflow_off', 'The evidence workflow is switched off here, so the summary was not saved to the library.');
     let r = null;
@@ -1282,7 +1315,7 @@ export class Session {
   }
 
   spoken() { return spokenFor(this.language, l => (this.ai.speaks ? this.ai.speaks(l) : l === 'en')); }
-  // Per-turn server notes. Full: [admin, language, memory, win hint, pace] (identical to before when there is no hint).
+  // Per-turn server notes. Full: [admin, language, win hint, pace] (the recalled memory is data, in the fenced user message, not a note).
   // Gap: [admin, GAP_NOTE, gap pace (open items by label)] then language and the win hint; there is no memory in gap mode.
   paceNotes() {
     const lang = languageNote(this.language, this.spoken()), elapsed = this.activeSeconds();
@@ -1291,7 +1324,7 @@ export class Session {
       return [...gapNotes(elapsed, this.maxSeconds, open, this.admin ? ADMIN_NOTE : ''), lang, this.winNote];
     }
     const [admin, pace] = paceNotes(elapsed, this.maxSeconds, this.ledger ? this.ledger.notes() : [], this.admin);
-    return [admin, lang, this.memoryNote, this.winNote, pace];
+    return [admin, lang, this.winNote, pace];
   }
 
   // A short spoken acknowledgement from cache, only after a real answer, never twice in a row, never in admin mode.
@@ -1460,7 +1493,7 @@ export class Session {
         }
       };
       const stopped = () => !!guard?.done && (guard.stop === 'question' || marker.seen); // a cap still reads on, to find the end token
-      for await (const raw of this.ai.chatStream(talkerMessages(this.project, guidance, this.history, instruction, notes, gap ? this.gapAsks : null), { affinity: this.affinity })) {
+      for await (const raw of this.ai.chatStream(talkerMessages(this.project, guidance, this.history, instruction, notes, gap ? this.gapAsks : null, { fence: this.fence, memory: this.memoryNote }), { affinity: this.affinity })) {
         if (gen !== this.gen || this.finished) return;
         if (raw && !firstToken) firstToken = this.now();
         const delta = marker.feed(raw);
@@ -1550,7 +1583,7 @@ export class Session {
         const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), attempt === 1 ? 25000 : 15000); });
         // What the consultant asked to keep private never reaches the report: it is taken out of the conversation the report is written from.
         const kept = [...withheldQuotes(this.ledger), ...this.privateTexts()], history = kept.length ? this.history.map(m => ({ ...m, content: redact(m.content, kept) })) : this.history;
-        const report = parseReport(await Promise.race([this.ai.report(reportMessages(history, this.ledger.notes(), this.ledger.stage)), timeout]));
+        const report = parseReport(await Promise.race([this.ai.report(reportMessages(history, this.summary.snapshot?.sections || this.ledger.notes(), this.ledger.stage)), timeout]));
         this.metric('report', { ms: Math.round((this.now() - t0) * 1000), ok: report ? 1 : 0, attempt });
         if (report) return report;
       } catch (e) { this.metric('report_error', { name: e?.message === 'timeout' ? 'Timeout' : e?.name || 'Error', attempt }); if (e?.message === 'timeout') return null; }
@@ -1674,7 +1707,7 @@ export class Session {
         const gap = this.mode === 'gap', report = gap ? null : await this.report();
         const asr = this.asrNotes();
         const priv = this.privateItems(), whole = [...this.ledger.transcripts].map(([item, text]) => priv.has(item) ? PRIVATE_MARK : text);
-        this.event('notes', { transcript: redact(whole.join('\n\n'), withheldQuotes(this.ledger)), sections: this.ledger.notes(), status: 'candidate', report, mode: this.mode,
+        this.event('notes', { transcript: redact(whole.join('\n\n'), withheldQuotes(this.ledger)), sections: this.summary.snapshot?.sections || this.ledger.notes(), status: 'candidate', report, mode: this.mode,
           ...(Object.keys(asr).length ? { asr } : {}),
           ...(gap ? { gap: { requestId: this.gapRequest, results: this.gapResults() } } : {}),
           message: 'Unverified speech recognition and quote-linked candidate notes. Correct omissions and errors before adding to the project. The final cut-off utterance may be incomplete.' });

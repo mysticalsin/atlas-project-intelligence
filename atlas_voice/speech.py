@@ -198,7 +198,78 @@ _CLOSERS = re.compile('[\\s"\'\u201d\u2019\u00bb)\\]*_`]+$')
 _NUMBER = re.compile(r'[0-9]+(?:[.,][0-9]+)*')
 _THOUSANDS = re.compile(r'[0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]+)?')
 _TRIM = ' ,;:\u2014\u2013-'
-GUARD_STATS = ('dropped_after_question', 'dropped_praise', 'dropped_repeat_opener', 'capped_words', 'dropped_unknown_number')
+GUARD_STATS = ('dropped_after_question', 'dropped_praise', 'dropped_repeat_opener', 'capped_words', 'dropped_unknown_number', 'dropped_unverified_claim')
+
+# Figures a reply may state are compared as numerals, however they are written (red L3): full-width and other compatibility digits fold to ASCII (NFKC),
+# invisible format characters are dropped, and spelled-out numbers become digits ("forty percent" -> "40 percent", "twenty-five" -> "25", "two hundred" -> "200").
+# Magnitude words stay words, exactly as "2 million" has always been the figure 2. Words for 0 and 2-99 in the interview languages; "one" only inside a longer run
+# (a lone "one" is the pronoun), and no word for 1, 100 or "half" besides English (they double as articles, nouns and the French "pour cent").
+NUMBER_WORDS = {
+    'zero': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10, 'eleven': 11, 'twelve': 12, 'thirteen': 13, 'fourteen': 14,
+    'fifteen': 15, 'sixteen': 16, 'seventeen': 17, 'eighteen': 18, 'nineteen': 19, 'twenty': 20, 'thirty': 30, 'forty': 40, 'fifty': 50, 'sixty': 60, 'seventy': 70, 'eighty': 80, 'ninety': 90,
+    'hundred': 100,
+    'deux': 2, 'trois': 3, 'quatre': 4, 'cinq': 5, 'sept': 7, 'huit': 8, 'dix': 10, 'onze': 11, 'douze': 12, 'treize': 13, 'quatorze': 14, 'quinze': 15, 'seize': 16, 'vingt': 20, 'trente': 30,
+    'quarante': 40, 'cinquante': 50, 'soixante': 60, 'quatrevingt': 80, 'quatrevingts': 80,
+    'dos': 2, 'tres': 3, 'cuatro': 4, 'cinco': 5, 'seis': 6, 'siete': 7, 'ocho': 8, 'nueve': 9, 'diez': 10, 'doce': 12, 'trece': 13, 'catorce': 14, 'quince': 15, 'veinte': 20, 'treinta': 30,
+    'cuarenta': 40, 'cincuenta': 50, 'sesenta': 60, 'setenta': 70, 'ochenta': 80, 'noventa': 90,
+    'dois': 2, 'tr\u00eas': 3, 'quatro': 4, 'sete': 7, 'oito': 8, 'dez': 10, 'vinte': 20, 'trinta': 30, 'quarenta': 40, 'cinquenta': 50, 'sessenta': 60, 'oitenta': 80,
+    'zwei': 2, 'drei': 3, 'vier': 4, 'f\u00fcnf': 5, 'sechs': 6, 'sieben': 7, 'acht': 8, 'neun': 9, 'zehn': 10, 'elf': 11, 'zw\u00f6lf': 12, 'zwanzig': 20, 'drei\u00dfig': 30, 'vierzig': 40,
+    'f\u00fcnfzig': 50, 'sechzig': 60, 'siebzig': 70, 'achtzig': 80, 'neunzig': 90,
+    'due': 2, 'tre': 3, 'quattro': 4, 'cinque': 5, 'sette': 7, 'otto': 8, 'nove': 9, 'dieci': 10, 'venti': 20, 'trenta': 30, 'quaranta': 40, 'cinquanta': 50, 'sessanta': 60, 'settanta': 70,
+    'ottanta': 80, 'novanta': 90,
+    'twee': 2, 'drie': 3, 'vijf': 5, 'zes': 6, 'zeven': 7, 'negen': 9, 'tien': 10, 'twintig': 20, 'dertig': 30, 'veertig': 40, 'vijftig': 50, 'zestig': 60, 'zeventig': 70, 'tachtig': 80, 'negentig': 90,
+}
+NUMBER_CONNECTORS = ('and', 'y', 'et', 'und', 'e', 'en')  # between two number words: "thirty and five", "treinta y cinco"
+_NUM_ALT = '|'.join(sorted(NUMBER_WORDS, key=lambda w: (-len(w), w)))
+_L = r'[^\W\d_]'  # a letter
+_NUM_RUN = re.compile(r'(?<!' + _L + r')(?:' + _NUM_ALT + r')(?:(?:[\s-]+(?:' + '|'.join(NUMBER_CONNECTORS) + r')[\s-]+|[\s-]+)(?:' + _NUM_ALT + r'))*(?!' + _L + r')', re.I)
+_FOLD = re.compile(r'(?<!' + _L + r')(' + _NUM_ALT + r')fold(?!' + _L + r')', re.I)
+_HALF = re.compile(r'(?<!' + _L + r')half(?!' + _L + r')', re.I)
+_SPLIT = re.compile(r'[\s-]+')
+_QUATRE_VINGT = re.compile(r'(?<!' + _L + r')quatre[\s-]+vingts?(?!' + _L + r')', re.I)  # 80, not 4 + 20
+
+
+def _run_value(run):
+    """The number a run of number words says, or None when it is a lone "one"."""
+    parts = [w for w in _SPLIT.split(run.lower()) if w and w not in NUMBER_CONNECTORS]
+    if parts == ['one']: return None
+    total = 0
+    for w in parts:
+        v = NUMBER_WORDS.get(w, 0)
+        total = (total or 1) * v if w == 'hundred' else total + v
+    return total
+
+
+def _digits(match):
+    v = _run_value(match.group())
+    return match.group() if v is None else f' {v} '
+
+
+def figures(text):
+    """Every figure in a text as a numeral (digits, full-width digits and spelled-out numbers alike)."""
+    text = ''.join(c for c in unicodedata.normalize('NFKC', str(text)) if unicodedata.category(c) != 'Cf')
+    text = _HALF.sub(' 0.5 ', _FOLD.sub(lambda m: f' {_run_value(m.group(1))} ', _QUATRE_VINGT.sub('quatrevingt', text)))
+    return [_number(m) for m in _NUMBER.findall(_NUM_RUN.sub(_digits, text))]
+
+
+# A reply sentence that asserts something was checked, approved or confirmed (red L3, red L4): the interviewer has verified nothing and approves nothing, and her
+# words are spoken to the consultant as if they were a status. Only a server status line may say so (ReplyGuard allow_status). A sentence that denies it, hedges it or asks
+# about it is fine ("that figure is not verified yet", "a reviewer will approve it later", "was it approved?").
+UNVERIFIED_CLAIM_SRC = (r"\b(?:verified|verify|verifies|verifying|approved|approves?|approving|validated|validates?|validating|certified|signed[\s-]off|endorsed|"
+                        r"confirmed (?:by|with)|checked with|authori[sz]ed by|cleared by)\b")
+CLAIM_HEDGE_SRC = (r"\b(?:not|never|no|nothing|nobody|neither|nor|yet|until|unless|before|once|if|whether|without|cannot|need(?:s|ed)? to|has to|have to|must|should|will|would|could|"
+                   r"might|may|be|being|still)\b|n[\u2019']t\b")
+_CLAIM = re.compile(UNVERIFIED_CLAIM_SRC, re.I)
+_HEDGE = re.compile(CLAIM_HEDGE_SRC, re.I)
+
+
+def asserts_verification(text):
+    """True when the sentence says something was verified, approved or confirmed by someone, without a hedge or a denial."""
+    t = ''.join(c for c in unicodedata.normalize('NFKC', text) if unicodedata.category(c) != 'Cf')
+    return bool(_CLAIM.search(t)) and not _HEDGE.search(t)
+
+
+EDGE_CONSTANTS = {'NUMBER_WORDS': NUMBER_WORDS, 'NUMBER_CONNECTORS': list(NUMBER_CONNECTORS), 'UNVERIFIED_CLAIM_SRC': UNVERIFIED_CLAIM_SRC, 'CLAIM_HEDGE_SRC': CLAIM_HEDGE_SRC}
 
 
 def _words(text):
@@ -246,17 +317,18 @@ class ReplyGuard:
 
     Options: banned_praise, a regex source (case-insensitive); recent_openers, the leading reaction of the last replies
     (only the last 3 count); max_words, None for no cap; summary_facts, None, or the list of figures the reply may use
-    (an empty list allows none): summary mode.
+    (an empty list allows none): summary mode; allow_status, True for a factual status line from the server (else a sentence that says something was verified or approved is dropped).
 
     A sentence is judged when its first piece arrives. A first clause already voiced is not taken back, and the rest of that
     sentence follows it (a dropped first clause drops the rest). Words are whitespace-separated: a language written without
     spaces is not capped."""
 
-    def __init__(self, banned_praise=None, recent_openers=(), max_words=GUARD_MAX_WORDS, summary_facts=None):
+    def __init__(self, banned_praise=None, recent_openers=(), max_words=GUARD_MAX_WORDS, summary_facts=None, allow_status=False):
         self._praise = re.compile(DEFAULT_BANNED_PRAISE if banned_praise is None else banned_praise, re.I)
         self._openers = [o for o in (_norm(o) for o in list(recent_openers or ())[-3:]) if o]
         self._max = max_words
-        self._allowed = None if summary_facts is None else {_number(m) for fact in summary_facts for m in _NUMBER.findall(str(fact))}
+        self._allowed = None if summary_facts is None else {m for fact in summary_facts for m in figures(fact)}
+        self._allow_status = bool(allow_status)  # a factual status line from the server may say that something was approved
         self._stats = dict.fromkeys(GUARD_STATS, 0)
         self._spoken = 0  # words voiced so far
         self._open = None  # the sentence in progress when the last piece ended mid-sentence: 'voiced' or 'dropped'
@@ -291,7 +363,10 @@ class ReplyGuard:
                 if self._repeats_opener(text):
                     stats['dropped_repeat_opener'] += 1
                     return '', question
-        if self._allowed is not None and any(_number(m) not in self._allowed for m in _NUMBER.findall(text)):
+        if not question and not self._allow_status and asserts_verification(text):
+            stats['dropped_unverified_claim'] += 1
+            return '', question
+        if self._allowed is not None and any(m not in self._allowed for m in figures(text)):
             stats['dropped_unknown_number'] += 1
             return '', question
         if self._max is not None:

@@ -257,3 +257,21 @@ def test_guard_follows_the_phrases_of_a_streamed_reply_and_done_stops_the_read()
         for piece in p.feed(d):spoken+=g.push(piece)
     assert spoken==['Who measured the change before and after?'] and read==6  # Phrases releases a sentence at the whitespace after it
     assert g.stats['dropped_repeat_opener']==1 and g.stats['dropped_praise']==1
+
+
+# ---- R2 (red L3): figures however written, and sentences that claim a verification ----
+def test_figures_fold_full_width_and_spelled_out_numbers_to_numerals():
+    from atlas_voice.speech import figures
+    for text,want in (('forty percent',['40']),('twenty-five',['25']),('two hundred and five',['205']),('４０ percent',['40']),('one thing, no one',[]),('twenty one apples',['21']),('quarante pour cent',['40']),
+                      ('quatre-vingt-dix',['90']),('treinta y cinco',['35']),('2 million',['2']),('1,200 tickets',['1200']),('a 4​0 percent gain',['40']),('tenfold gain',['10']),('half the tickets',['0.5'])):
+        assert figures(text)==want,text
+def test_reply_guard_catches_spelled_out_and_full_width_numbers_and_verification_claims():
+    from atlas_voice.speech import ReplyGuard,asserts_verification
+    facts=['you cut the handling time by 4 percent']
+    for reply in ('So, you cut the handling time by 40 percent. ','So, you cut the handling time by forty percent. ','So, you cut it by four-fold, saving two million euros. ','So, you cut it by ４０ percent. ','So, you cut it by half, a tenfold gain. '):
+        g=ReplyGuard(summary_facts=facts);assert g.push(reply)==[] and g.stats['dropped_unknown_number']==1,reply
+    g=ReplyGuard(summary_facts=facts);assert g.push('So, you cut it by 4 percent, and your manager verified and approved it. ')==[] and g.stats['dropped_unverified_claim']==1
+    assert ReplyGuard(summary_facts=facts).push('So, you cut it by four percent. ')==['So, you cut it by four percent.']
+    for said in ('Your saving is verified and approved by your manager.','I checked with your manager: it is fine.','The CFO confirmed by email'):assert asserts_verification(said),said
+    for said in ('that figure is not verified yet','A reviewer will approve it later.','It was unverified.','Was it approved?','You confirmed it yourself.'):assert not asserts_verification(said) or said=='Was it approved?',said
+    assert ReplyGuard().push('Was that approved by anyone?')==['Was that approved by anyone?'] and ReplyGuard(allow_status=True).push('The draft was approved by the reviewer.')==['The draft was approved by the reviewer.']

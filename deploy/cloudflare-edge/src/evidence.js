@@ -112,7 +112,7 @@ export function cleanNotes(raw) {
     if (!Object.hasOwn(FIELD_CLAIM, field) || !item || !quote) throw fail(400, 'Each detail needs a known field, a transcript item and its quote.');
     const conf = d.asr_min_conf ?? meta.min_conf, off = d.audio_offset_ms ?? meta.audio_offset_ms;
     return { id, field, item_id: item, quote, status: one(d.status, NOTE_STATUSES, 'reported'), active: d.active !== false, withheld: d.withheld === true,
-      supersedes: str(d.supersedes, 20), provenance: str(d.provenance, 60) || 'unverified_speech_recognition',
+      supersedes: str(d.supersedes, 20), provenance: str(d.provenance, 60) || 'unverified_speech_recognition', ...(str(d.context, 320) ? { context: str(d.context, 320) } : {}),
       asr_min_conf: typeof conf === 'number' && conf >= 0 && conf <= 1 ? conf : null, audio_offset_ms: Number.isInteger(off) && off >= 0 && off <= 1e9 ? off : null,
       value: optional(d.value), unit: optional(d.unit), baseline: optional(d.baseline), after_state: optional(d.after_state), period: optional(d.period) };
   });
@@ -124,12 +124,14 @@ export function cleanNotes(raw) {
 export function claimsFromNotes(recordId, owner, notes, at) {
   const usable = notes.details.filter(d => d.active && !d.withheld && d.status !== 'unknown');
   return usable.map((d, i) => {
-    const [claim_type, base] = FIELD_CLAIM[d.field], attribution = attributionFrom(d.quote);
+    // A quote said in a negated, hypothetical, reported or dictated sentence (ledger `context`) is never an individual claim by its wording alone (red M6): the
+    // attribution stays 'unknown' and the reviewer reads the sentence around it.
+    const [claim_type, base] = FIELD_CLAIM[d.field], attribution = d.context ? 'unknown' : attributionFrom(d.quote);
     return { claim_id: `${recordId}-c${i + 1}`, subject_type: attribution === 'team' && base === 'person' ? 'team' : base,
       subject_id: base === 'person' ? owner : notes.project_ref, claim_type, statement: d.quote, value: d.value, unit: d.unit, baseline: d.baseline, after_state: d.after_state,
       period: d.period, attribution, origin: 'consultant_reported', supersedes: null, conflicts_with: [],
       source_refs: [{ kind: 'interview', session_id: notes.session_id, item_id: d.item_id, ledger_id: `${notes.session_id}:${d.id}`, field: d.field, quote: d.quote, provenance: d.provenance,
-        ledger_status: d.status, asr_min_conf: d.asr_min_conf, audio_offset_ms: d.audio_offset_ms, supersedes_ledger_id: d.supersedes ? `${notes.session_id}:${d.supersedes}` : null }],
+        ledger_status: d.status, ...(d.context ? { context: d.context } : {}), asr_min_conf: d.asr_min_conf, audio_offset_ms: d.audio_offset_ms, supersedes_ledger_id: d.supersedes ? `${notes.session_id}:${d.supersedes}` : null }],
       created_by: owner, created_at: at };
   });
 }

@@ -470,8 +470,8 @@ ESS = ('problem', 'contribution', 'outcome')
 
 def test_phase_and_time_map_to_the_existing_pace():
     assert selector.effective_phase('breadth', 800) == 'breadth' and selector.effective_phase('depth', 800) == 'depth'
-    assert selector.effective_phase('breadth', 210) == 'closing' and selector.effective_phase('breadth', 211) == 'breadth'
-    assert selector.effective_phase('breadth', 75) == 'wrap' and selector.effective_phase('closing', 500) == 'closing'
+    assert selector.effective_phase('breadth', 270) == 'closing' and selector.effective_phase('breadth', 271) == 'breadth'
+    assert selector.effective_phase('breadth', 90) == 'wrap' and selector.effective_phase('closing', 500) == 'closing'
     assert selector.effective_phase('depth', 10) == 'wrap' and selector.effective_phase(None, None) == 'breadth' and selector.effective_phase('junk', True) == 'breadth'
 
 

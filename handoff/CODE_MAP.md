@@ -123,6 +123,8 @@ Spec pack and status: `docs/agent-brain-v2.1/` (`README.md`, `DECISION_LOG.md`, 
 | File | Responsibility |
 |---|---|
 | `session.js` (extended) | One turn: hear, `turns.js`, `asr.js`, `selector.js`, `ack.js`, talker, ReplyGuard, speak; pause, resume, repeat, skip, typed and text mode; checkpoint; summary; evidence draft; flags (`sessionFlags`) |
+| `prompt-data.js` (R2) | Untrusted text for prompts: `cleanText` (bounds, drops control/invisible characters, neutralises chat-role tags in any spelling) and `fenced` (per-session random fences, one USER-role data message; the system role is policy only). Used by `session.js` (project, gap list, memory), `memory.js`. |
+| `extension.js` (R2) | Port of `atlas_voice/extension.py`: the one polite offer to continue from 20 to at most 30 minutes (`shouldOffer`, `extensionReply`, `hardLimit`, `offerText`). Wired in `Session.decide`. |
 | `turns.js`, `selector.js`, `asr.js`, `speech.js`, `conversation-state.js`, `story-projection.js` | JavaScript ports (parity-tested) |
 | `ack.js` | Content-aware acknowledgements |
 | `summary.js` | Read-back facts, card items and open points from the ledger |

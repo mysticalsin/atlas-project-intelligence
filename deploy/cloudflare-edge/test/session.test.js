@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { INTERVIEW_LIMIT_S, SPEAKING_LIMIT_S, WRAP_S, TIME_PLAN } from '../src/policy.generated.js';
+import { timePlan } from '../src/gap-policy.js';
+import { fenceRule } from '../src/prompt-data.js';
 import { Session, projectContext, talkerMessages, paceNotes, MAX_SECONDS, TIME_UP, RESUME as RESUME_TEXT, STILL_THINKING, THINKING_PAUSE, clearPcmCache } from '../src/session.js';
 import { GREETINGS, FILLERS, GREETING_PIECES } from '../src/languages.js';
 import { ACKS } from '../src/policy.generated.js';
@@ -240,7 +243,7 @@ test('ATLAS ends the interview: end token never spoken or shown, wrap_up after p
   const kinds = h.events.map(e => e.type), notes = h.events.find(e => e.type === 'notes');
   assert.ok(kinds.indexOf('reporting') < kinds.indexOf('notes'));
   assert.equal(notes.report.headline, 'Claims triage rebuilt'); assert.equal(notes.report.status, 'model_draft'); assert.equal(notes.report.topics.context, '');
-  assert.ok(JSON.parse(h.calls.report[1].content).interview_transcript.includes('Consultant: That is the whole story of the intake rebuild.'));
+  assert.ok(JSON.parse(h.calls.report[1].content).interview_transcript.some(t => t.speaker === 'consultant' && t.text.includes('That is the whole story of the intake rebuild.')));
 });
 test('report failure keeps the notes and sends report null', async () => {
   const h = harness(undefined, { async report() { throw new Error('model down'); } });
@@ -262,7 +265,7 @@ test('speaking limit: after her budget is spent the next reply is a forced wrap-
   await until(() => h.events.some(e => e.type === 'wrap_up'));
   const last = h.calls.talker.at(-1);
   assert.equal(last.at(-1).content, TIME_UP); assert.ok(h.s.timeUp);
-  assert.ok(last.some(m => m.role === 'system' && m.content.startsWith('INTERVIEW PACE') && m.content.includes('of 15 minutes used')));
+  assert.ok(last.some(m => m.role === 'system' && m.content.startsWith('INTERVIEW PACE') && m.content.includes('of 20 minutes used')));
 });
 test('admin note only in admin sessions; pace note lists areas without notes and never content', async () => {
   const a = harness(undefined, { session: { admin: true } }), n = harness();
@@ -1021,17 +1024,19 @@ test('speech that starts in the gap between two of her sentences is not taken fo
   assert.ok(!h.events.some(e => e.type === 'quality_warning' && /its own voice/.test(e.message)));
 });
 
-// ---- 15-minute interview ----
-test('the interview is planned for 15 minutes: breadth first, then depth, then only the most important question', () => {
-  assert.equal(MAX_SECONDS, 900);
+// ---- 20-minute interview (Tony, 2026-10-31: was 15, so there is time to go over what was done) ----
+test('the interview is planned for 20 minutes: breadth first, then depth (from 9 minutes), then only the most important question (the last 4.5 minutes, the read-back window)', () => {
+  assert.equal(MAX_SECONDS, 1200); assert.equal(INTERVIEW_LIMIT_S, 1200); assert.equal(SPEAKING_LIMIT_S, 800); assert.equal(WRAP_S, 90); assert.equal(TIME_PLAN.closing_left_s, 270);
+  assert.deepEqual(timePlan(MAX_SECONDS, 'full'), { depthAt: 540, closingAt: 930 });
   const none = ['', '', '', '', '', ''], some = ['a', '', 'c', '', '', ''];
-  assert.match(paceNotes(60, 900, none)[1], /about 1 of 15 minutes used\. Next uncovered area: what was going on\./);
-  assert.match(paceNotes(420, 900, some)[1], /about 7 of 15 minutes used\. Past halfway: challenge .* Still uncovered: their personal contribution, the outcome\./);
-  assert.match(paceNotes(720, 900, some)[1], /Under four minutes left: ask only the single most important remaining question, then move to ENDING\./);
+  assert.match(paceNotes(60, 1200, none)[1], /about 1 of 20 minutes used\. Next uncovered area: what was going on\./);
+  assert.match(paceNotes(560, 1200, some)[1], /about 9 of 20 minutes used\. Past halfway: challenge .* Still uncovered: their personal contribution, the outcome\./);
+  assert.match(paceNotes(930, 1200, some)[1], /Under five minutes left: ask only the single most important remaining question, then move to ENDING\./);
+  assert.match(paceNotes(1110, 1200, some)[1], /Time is up: close now/);
   assert.ok(TIME_UP.includes('the time for this interview is up'));
 });
 
-test('with 75 seconds of the interview left, her next reply is the closing, then the interview wraps up', async () => {
+test('with 90 seconds of the interview left, her next reply is the closing, then the interview wraps up', async () => {
   const h = harness(['Here is my project story.'], { session: { maxSeconds: 120 } });
   await opened(h);
   for (let i = 0; i < 2300; i++) h.tick(); // 46 s into a 120 s interview: 74 s left
@@ -1139,7 +1144,7 @@ async function gapOpened(h) {
   await until(() => !h.s.busy() && h.bytes.length >= 10);
   h.s.playedMs[h.s.protectedItem] = 1e9; // the greeting has played (browser acknowledgement)
 }
-const system = m => m[0].content;
+const system = m => m[0].content, dataOf = m => { assert.equal(m[1].role, 'user'); return m[1].content; }; // the system role is policy; the untrusted data is the fenced user message after it
 const notesOf = m => m.filter((x, i) => i > 0 && x.role === 'system' && !x.content.startsWith('ANALYST_GUIDANCE')).map(x => x.content);
 const lastQuality = h => h.events.filter(e => e.type === 'quality').at(-1);
 
@@ -1152,14 +1157,15 @@ test('gap start: resolved server-side, ready carries mode/timePlan/gaps (at most
   assert.deepEqual(ready.timePlan, { depthAt: null, closingAt: 210 });
   assert.deepEqual(ready.gaps, [{ id: 'G1', label: 'Supporting artifact', ask: ASKS[0].ask }, { id: 'G2', label: 'Measurement basis', ask: ASKS[1].ask },
     { id: 'G3', label: 'Customer relevance', ask: ASKS[2].ask }]);
-  const sys = system(h.calls.talker[0]);
+  const sys = dataOf(h.calls.talker[0]), policy = system(h.calls.talker[0]);
   const at = label => sys.indexOf(label);
   assert.ok(at('\nUNTRUSTED PROJECT DATA:\n') > 0 && at('\nUNTRUSTED PROJECT DATA:\n') < at('\nUNTRUSTED GAP LIST') && at('\nUNTRUSTED GAP LIST') < at('\nUNTRUSTED PRIVATE PREFERENCES'));
-  assert.ok(sys.endsWith('\nUNTRUSTED PRIVATE PREFERENCES (not evidence):\n'), 'nothing after the preferences label: the prefix is cache-stable');
+  assert.ok(/\nUNTRUSTED PRIVATE PREFERENCES \(not evidence\):\n<<END-[0-9a-f]{8}>>$/.test(sys) && sys.startsWith('<<DATA-'), 'fenced, nothing after the preferences label: the prefix is cache-stable');
+  assert.ok(!policy.includes(ASKS[0].ask) && !policy.includes('UNTRUSTED GAP LIST ('), 'the system role carries no gap-request text');
   assert.ok(sys.includes(JSON.stringify(ready.gaps)) && !sys.includes('Dropped'), 'ids, labels and asks only; the fourth ask is dropped');
   const opening = h.calls.talker[0];
   assert.equal(opening.at(-1).content, GAP_OPENING, 'the gap opening (it never asks for the Opp ID)');
-  assert.ok(opening.some(m => m.content.startsWith('ANALYST_GUIDANCE') && m.content.includes('"askId":"G1"') && m.content.includes(ASKS[0].ask)));
+  assert.ok(opening.some(m => m.role === 'system' && m.content.startsWith('ANALYST_GUIDANCE') && m.content.includes('"askId":"G1"') && !m.content.includes(ASKS[0].ask) && m.content.includes('ask with id G1')), 'the plan names the ask by id; its words are only in the fenced data'); 
   const notes = notesOf(opening);
   assert.equal(notes[0], GAP_NOTE, 'GAP_NOTE first (no admin note)');
   assert.ok(notes.includes('GAP PACE (server): about 0 of 5 minutes used. Open items: Supporting artifact, Measurement basis, Customer relevance.'));
@@ -1366,9 +1372,12 @@ test('full mode is unchanged: ready adds mode and timePlan only, the system pref
   const h = harness();
   await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, voice: 'asteria', capture: true, memory: false }));
   const ready = h.events[0];
-  assert.equal(ready.mode, 'full'); assert.deepEqual(ready.timePlan, { depthAt: 405, closingAt: 690 }); assert.ok(!('gaps' in ready));
+  assert.equal(ready.mode, 'full'); assert.deepEqual(ready.timePlan, { depthAt: 540, closingAt: 930 }); assert.ok(!('gaps' in ready));
+  assert.equal(ready.maxSeconds, 1800, 'the clock runs to the hard cap'); assert.equal(ready.softSeconds, 1200, 'and shows the planned end');
   await until(() => h.calls.talker.length >= 1 && !h.s.busy());
-  assert.equal(system(h.calls.talker[0]), TALKER_POLICY + '\nUNTRUSTED PROJECT DATA:\n' + JSON.stringify(h.s.project) + '\nUNTRUSTED PRIVATE PREFERENCES (not evidence):\n');
+  const f = h.s.fence; assert.match(f, /^[0-9a-f]{8}$/);
+  assert.equal(system(h.calls.talker[0]), TALKER_POLICY + fenceRule(f));
+  assert.deepEqual(h.calls.talker[0][1], { role: 'user', content: `<<DATA-${f}>>\nUNTRUSTED PROJECT DATA:\n` + JSON.stringify(h.s.project) + `\nUNTRUSTED PRIVATE PREFERENCES (not evidence):\n<<END-${f}>>` });
   assert.deepEqual(talkerMessages(h.s.project, null, [], undefined, [], []), talkerMessages(h.s.project, null, [], undefined, []), 'an empty gap list adds nothing');
   assert.deepEqual(h.s.askByItem.size + Object.keys(h.s.gapAttempts).length, 0, 'no answer windows in full mode');
   await h.s.onText(JSON.stringify({ type: 'end' }));

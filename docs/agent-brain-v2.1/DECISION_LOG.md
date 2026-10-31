@@ -55,7 +55,8 @@ The pack names systems and a rubric the repository has no contract for. These st
 |---|---|---|
 | 1 | Opening | Keep the short greeting plus one sentence: "You can skip anything, and I'll read back a summary for you to correct at the end." Data use stays in the consent dialog. **Replaced by Tony's Q1 above.** |
 | 2 | Submission | Confirm the summary, creating an owner-only draft; submission is an explicit click. |
-| 3 | Pause and checkpoint | Paused time excluded from the 15-minute limit, 45-minute wall cap; checkpoints only with transcript consent, 24 h in the user's own Durable Object; discard purges. |
+| 3a | Interview length (2026-10-31, Tony) | 20 minutes planned, 30 at most: one polite offer to continue when 270 s of the planned end are left and an essential question is still unasked; yes extends to 30, anything else goes to the read-back; never offered to a rushed consultant; closing/wrap windows are relative to the effective end | The read-back needs time; extra time is the consultant's choice, never assumed. |
+| 3 | Pause and checkpoint | Paused time excluded from the 20-minute limit (15 until 2026-10-31), 45-minute wall cap; checkpoints only with transcript consent, 24 h in the user's own Durable Object; discard purges. |
 | 4 | MiChat and MeChat | MiChat is an internal label, no UI rename; MeChat is a mock CV adapter shown as "not connected". |
 | 5 | Latency | `SPECULATIVE_STT` and `ANALYST_WAIT_MS` off; endpointing and temperature unchanged; `max_tokens` 160. |
 

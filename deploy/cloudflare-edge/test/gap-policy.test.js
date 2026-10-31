@@ -28,7 +28,7 @@ test('the vectors cover what the spec names: analyst filed elsewhere, UNKNOWN, s
 
 test('generated gap constants (Python source of truth)', () => {
   assert.deepEqual([GAP_LIMIT_S, GAP_SPEAKING_S, GAP_WRAP_S, GAP_MAX, GAP_ATTEMPTS, GAP_ANSWER_WORDS], [300, 150, 40, 3, 2, 6]);
-  assert.deepEqual(TIME_PLAN, { depth_fraction: 0.45, closing_left_s: 210, gap_closing_left_s: 90 });
+  assert.deepEqual(TIME_PLAN, { depth_fraction: 0.45, closing_left_s: 270, gap_closing_left_s: 90 });
   assert.match(GAP_NOTE, /bracketed words such as \[company\] are masked names, never guess or ask for them/);
   assert.ok(GAP_LIST_LABEL.startsWith('UNTRUSTED GAP LIST'));
   assert.deepEqual(Object.keys(WIN_HINTS).sort(), ['confirmed', 'quantified']);

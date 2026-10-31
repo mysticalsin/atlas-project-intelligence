@@ -174,3 +174,10 @@ test('hostile text stays plain data, bounded, and nothing claims a check',needPo
  assert.equal(m.challenge.next,null);assert.deepEqual(m.challenge.flags,[x]);assert.deepEqual(m.challenge.deferred,[]);assert.deepEqual(m.measurementSlots,[]);assert.deepEqual(m.corrected,[]);
  for(const bad of [undefined,null,'x',{quality:'x',heard:'y',session:7,policy:[]},{quality:{candidate_details:{}}}])assert.doesNotThrow(()=>B.summaryText(B.model(bad)));
  const s=B.summaryText(m);assert.doesNotMatch(s,WORDS);assert.match(s,/unverified/);assert.doesNotMatch(JSON.stringify({label:m.label,coverage:m.coverage}),WORDS);});
+
+test('a full interview with a planned end shows elapsed time and the 20-30 minute range (Tony, 2026-10-31); the clock cap is the hard limit',()=>{
+const at=(session,sec)=>B.model(state({}, {session,now:sec*1000})).time;
+const full={readyAt:0,maxSeconds:1800,softSeconds:1200,mode:'full',timePlan:{depthAt:540,closingAt:930}};
+assert.deepEqual(at(full,60),{elapsed:60,max:1800,left:1740,phase:'breadth',soft:1200});
+assert.equal(at(full,1500).soft,1200);assert.equal(at(full,5000).elapsed,1800,'never past the hard cap');
+assert.equal('soft' in at({...full,mode:'gap',maxSeconds:300,softSeconds:0},10),false,'a gap interview keeps its countdown');});

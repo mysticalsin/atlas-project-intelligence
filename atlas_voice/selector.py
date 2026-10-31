@@ -59,8 +59,8 @@ CONFIG = {
     'max_attempts': 2,        # asks on one point before the selector offers to move on
     'repeat_window': 6,       # compared with the last N asked says
     'repeat_num': 4, 'repeat_den': 5,   # similar when intersection / union of word 3-grams >= 4/5 (integers: no float parity risk)
-    'wrap_s': 75,             # = cascade.WRAP_S: with this little time left the next move is the closing
-    'closing_left_s': 210,    # = gaps.TIME_PLAN['closing_left_s']: only the essentials, then summary and close
+    'wrap_s': 90,             # = cascade.WRAP_S: with this little time left the next move is the closing
+    'closing_left_s': 270,    # = gaps.TIME_PLAN['closing_left_s']: only the essentials, then summary and close
     'reflect_min_fields': 3,
     'earned_gap': 3,          # no 'earned' reaction if one of the last 3 moves had it
     'detail_words': 20,       # a longer answer gets a "thanks for the detail" acknowledgement
