@@ -8,7 +8,7 @@ const int=v=>Number.isInteger(v)&&v>=0?v:0;
 const OUTCOME={pending:'Outcome pending',won:'Won',lost:'Lost',withdrawn:'Withdrawn'};
 const KIND={capability:'Capability',sector:'Sector',outcome:'Outcome',constraint:'Constraint',credential:'Credential'};
 const COV={covered:'Covered',partial:'Partial',unmet:'Unmet',unknown:'Unknown'};
-const STATUS={in_review:'In review',needs_work:'Needs work',changes_requested:'Changes requested',awaiting_validation:'Awaiting N+1',published:'Published',withdrawn:'Withdrawn'};
+const STATUS={in_review:'In review',needs_work:'Needs work',changes_requested:'Changes requested',awaiting_validation:'Awaiting N+1',published:'Shared in internal library',withdrawn:'Withdrawn'};
 const FIT={'strong-contextual-fit':'JEV: strong contextual fit','partial-fit':'JEV: partial fit','poor-contextual-fit':'JEV: poor contextual fit','review-first':'JEV: review first'};
 const VCHIP={strong:'Strong proof',partial:'Partial',none:'No strong match',unranked:'Not ranked',empty_library:'Library empty'};
 const GAP_RESULT={answered_unverified:'answered · unverified',unknown:'answered: not known',deferred:'deferred',open:'not answered'};

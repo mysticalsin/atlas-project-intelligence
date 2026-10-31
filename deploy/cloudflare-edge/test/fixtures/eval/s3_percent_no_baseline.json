@@ -1,0 +1,54 @@
+{
+ "id": "S3",
+ "title": "'80% better' without a baseline: the measurement context is asked one part at a time, the figure is not praised as a fact",
+ "pack": "07_Evaluation_and_QA/ATLAS_Evaluation_Framework.md section 3, scenario 3; Personality doc section 9 ('Amazing! You saved 80%!')",
+ "audit": [
+  "start",
+  "consent_given",
+  "focus"
+ ],
+ "turns": [
+  {
+   "said": "We improved handling time by 80% across the claims team after the rollout.",
+   "file": [
+    {
+     "field": "outcome",
+     "quote": "improved handling time by 80%"
+    }
+   ],
+   "expect": {
+    "move": {
+     "kind": "ask",
+     "intent": "metric_kind",
+     "field": "measurement",
+     "why": "metric:kind"
+    },
+    "ack": "promising_unverified",
+    "scripted_says": "measured, or is it closer to an estimate\\?",
+    "scripted_not": "\\b(amazing|incredible|great result|fantastic)\\b"
+   }
+  },
+  {
+   "said": "It was measured on the operations dashboard, every week after the rollout.",
+   "expect": {
+    "move": {
+     "kind": "ask",
+     "intent": "metric_period",
+     "field": "measurement"
+    },
+    "scripted_says": "period"
+   }
+  },
+  {
+   "said": "Over six weeks after the rollout, from the first week of March.",
+   "expect": {
+    "move": {
+     "kind": "ask",
+     "intent": "metric_baseline",
+     "field": "measurement"
+    },
+    "scripted_says": "before the change"
+   }
+  }
+ ]
+}

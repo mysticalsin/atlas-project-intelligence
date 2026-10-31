@@ -7,7 +7,7 @@
 (()=>{'use strict';
 const W=window.AtlasWowUI=window.AtlasWowUI||{},B=window.AtlasBids,esc=B.esc,$=id=>document.getElementById(id),app=()=>window.ATLAS_APP;
 const BUSY=['preparing','connecting','live','ending'],MAX_BYTES=30*24000*2,MIN_BYTES=4800,TOPIC_KEYS=['context','contribution','approach','outcome','evidence','customer_relevance'];
-const STATUS={in_review:'In review',needs_work:'Needs work',changes_requested:'Changes requested',awaiting_validation:'Awaiting N+1',published:'Published',withdrawn:'Withdrawn'};
+const STATUS={in_review:'In review',needs_work:'Needs work',changes_requested:'Changes requested',awaiting_validation:'Awaiting N+1',published:'Shared in internal library',withdrawn:'Withdrawn'};
 const S={built:false,boot:{},rec:null,poll:null,last:null,asked:''};
 const say=t=>{const el=$('askStatus');if(el)el.textContent=t||'';};
 const voiceBusy=()=>{try{return BUSY.includes(window.AtlasVoice?.status?.().phase);}catch{return false;}};

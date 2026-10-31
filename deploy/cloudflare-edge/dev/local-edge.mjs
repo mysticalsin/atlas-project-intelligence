@@ -4,6 +4,8 @@
 //   node dev/local-edge.mjs [port]      then open http://127.0.0.1:8787/?as=you@mantu.com
 //   Dev only: &idp={"name":"Jane Doe","given_name":"Jane"} (URL-encoded JSON) puts custom claims into the local token,
 //   as Access does with Entra name claims (WOW_ZERO_CONFIG §5.5); remembered like ?as=, and an empty &idp= clears it.
+//   ATLAS_ADAPTERS=mock passes through (the evidence workflow's mock destinations); /__evidence_draft?as=you@mantu.com (POST notes) files the owner-only draft a
+//   confirmed read-back would, for tests/humane_browser.py. Nothing else here is new.
 //   FAKE_TYPESAFE=1 node dev/local-edge.mjs: JEV runs against the local fake TypeSafe (dev/fake-typesafe.mjs, model id
 //   fake-jev-local) with a local key; /__typesafe_mode?m=ok|down|unsure switches it. Without FAKE_TYPESAFE there is no
 //   key, and every request to api.typesafe.ai is refused: a local run never reaches a paid provider.
@@ -19,6 +21,7 @@ import { memoryRoutes } from '../src/memory-routes.js';
 import { fakeHindsight } from './fake-hindsight.mjs';
 import { fakeTypesafe } from './fake-typesafe.mjs';
 import { storyRater } from '../src/rating.js';
+import { postDraftFromInterview } from '../src/evidence.js';
 
 const PORT = Number(process.argv[2] || 8787), ORIGIN = `http://127.0.0.1:${PORT}`, TEAM = 'local.invalid', AUD = 'local-aud';
 const page = readFileSync(new URL('../src/atlas.html', import.meta.url), 'utf8');
@@ -46,7 +49,7 @@ const waitUntil = p => { const q = Promise.resolve(p); pending.add(q); q.finally
 // Opt-in feature vars pass through from the shell when set (never defaulted here): WOW_SPEC §5, WOW_ZERO_CONFIG §4.
 // DATA_MODE stays unset (test mode) unless the shell sets it; the DNA variables never have a local default.
 const passthrough = Object.fromEntries(['EXTERNAL_EMAILS', 'CLIENT_CONFIRM', 'IDENTITY_SOURCE', 'DATA_MODE', 'DNA_PROFILE_URL', 'DNA_AUTH_HEADER', 'DNA_FIELD_MAP', 'DNA_API_KEY',
-  'DIRECTORY_PUSH_SECRET'].filter(k => process.env[k]).map(k => [k, process.env[k]]));
+  'DIRECTORY_PUSH_SECRET', 'ATLAS_ADAPTERS'].filter(k => process.env[k]).map(k => [k, process.env[k]]));
 const storeFor = id => { if (!stores.has(id)) { const m = new Map(); stores.set(id, { get: async k => m.get(k), put: async (k, v) => m.set(k, v) }); } return stores.get(id); };
 const env = { ORIGIN, ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, CSRF_SECRET: 'local-only', TALKER_MODEL: 'local', TTS_VOICE: 'local',
   TRIGGER_SECRET: process.env.TRIGGER_SECRET || 'local-trigger-secret', ANALYST_MODEL: 'local-analyst',
@@ -68,6 +71,11 @@ let expired = false;
 http.createServer(async (req, res) => {
   const url = new URL(req.url, ORIGIN);
   if (url.pathname === '/__settle') { await Promise.allSettled([...pending]); res.end('ok'); return; } // test hook: wait for background reviews
+  if (url.pathname === '/__evidence_draft' && req.method === 'POST') { // test hook (humane_browser.py): what the Interview DO posts when a read-back is confirmed (T11), under the identity given by ?as=
+    const body = []; for await (const c of req) body.push(c);
+    const who = decodeURIComponent(url.searchParams.get('as') || 'consultant@mantu.com').toLowerCase(), r = await postDraftFromInterview(env, { user: who, role: 'user', mail: who }, JSON.parse(Buffer.concat(body).toString() || '{}'));
+    res.writeHead(r.status || 502, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(r.body)); return;
+  }
   if (url.pathname === '/__expire') { expired = true; res.end('ok'); return; }
   if (url.pathname === '/__typesafe_mode') { // test hook (FAKE_TYPESAFE only): ok | down (529) | unsure
     if (!fakeTs) { res.statusCode = 404; res.end('FAKE_TYPESAFE is off'); return; }

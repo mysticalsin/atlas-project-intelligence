@@ -145,7 +145,7 @@ with sync_playwright() as pw:
   if v=='unranked':check('unranked cards say not ranked, coverage unknown',('not ranked' in o.locator('#bidResults').inner_text()) and o.locator('#bidRequirements .cov-unknown').count()==3)
  check('uncalibrated thresholds labelled',('pilot values, not calibrated' in o.locator('#bidDetail').inner_text()))
  card=o.locator('#bidResults .bid-result').first;t=card.inner_text()
- check('result card: relevance, similarity, semantic retrieval, why, transfers, caveat, covers, status, claims x/y',all(x.lower() in t.lower() for x in ['relevance 72','similarity 0.61','semantic','Why Claims routing fits','Transfers: Routing rules','Caveat: Different country','Covers R1','Published','Claims confirmed 1/3']))
+ check('result card: relevance, similarity, semantic retrieval, why, transfers, caveat, covers, status, claims x/y',all(x.lower() in t.lower() for x in ['relevance 72','similarity 0.61','semantic','Why Claims routing fits','Transfers: Routing rules','Caveat: Different country','Covers R1','Shared in internal library','Claims confirmed 1/3']))
  check('hostile model text rendered inert',card.locator('b',has_text='here').count()==0 and '<b>here</b>' in t)
  check('win signal shown when non-null, with n and "association not causation"','n=6 decided, association not causation' in t)
  t2=o.locator('#bidResults .bid-result').nth(1).inner_text()

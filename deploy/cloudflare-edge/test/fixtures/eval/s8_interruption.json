@@ -1,0 +1,19 @@
+{
+ "id": "S8",
+ "title": "The consultant interrupts ATLAS: her speech stops at once and listening resumes with what was said",
+ "pack": "07_Evaluation_and_QA/ATLAS_Evaluation_Framework.md section 3, scenario 8; Personality doc section 8 ('Allow barge-in when Atlas is speaking')",
+ "audit": [
+  "start",
+  "consent_given"
+ ],
+ "turns": [
+  {
+   "said": "We rebuilt the claims intake process for the insurance client during the pilot, a big change for the whole team.",
+   "expect": {}
+  }
+ ],
+ "interrupt": {
+  "said": "Actually the baseline was fourteen minutes, measured over six weeks across the claims team.",
+  "expect_history_marker": "[interrupted by the consultant]"
+ }
+}

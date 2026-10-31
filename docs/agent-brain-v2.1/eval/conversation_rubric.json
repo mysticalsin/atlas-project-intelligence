@@ -1,0 +1,434 @@
+{
+ "$comment": "Conversation quality rubric examples for test/eval-rubric.test.js (Agent Brain v2.1, T16).",
+ "title": "ATLAS conversation rubric: annotated examples and deterministic linter expectations",
+ "disclaimer": "REGRESSION AID, NOT A HUMAN RATING. The 1 to 5 'rating' of each example is one engineer's annotation against 07_Evaluation_and_QA/ATLAS_Evaluation_Framework.md section 2, made when the file was written. The linter in test/eval-rubric.test.js is a set of deterministic string rules (question count, banned praise, leading closed question, praise before basis, repeated known fact, therapy tone, and two extras: empty praise, form commands, identity praise). It cannot judge warmth, curiosity or whether a reply fits the conversation. It exists so that a change to ATLAS's wording or guard that reintroduces a known anti-pattern fails a test. Conversation quality with real consultants must be rated by people, with pilot users, before any broad rollout (release gate 7). This rubric evaluates the agent, never a consultant.",
+ "scale": {
+  "1": "robotic checklist, leading questions, repeats known facts",
+  "3": "polite and mostly relevant, some generic questions",
+  "5": "warm, context-aware, one high-value open question at a time; natural reactions used sparingly; probes only where needed"
+ },
+ "thresholds": {
+  "good_min": 4,
+  "bad_max": 2
+ },
+ "linter": {
+  "start": 5,
+  "penalties": {
+   "question_count": 3,
+   "banned_praise": 3,
+   "leading_closed": 3,
+   "praise_before_basis": 1,
+   "repeats_known": 3,
+   "therapy_tone": 3,
+   "form_command": 3,
+   "identity_praise": 3,
+   "empty_praise": 1
+  },
+  "floor": 1
+ },
+ "sources": {
+  "good": "quoted from the v2.1 pack (Conversation Examples, Personality doc, MAAP spec)",
+  "bad": "the pack's own 'Bad' lines (Personality doc section 9) plus lines authored from the rubric's level-1 description, marked 'authored'"
+ },
+ "items": [
+  {
+   "id": "ex1-a",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Conversation_Examples.md Example 1",
+   "speaker": "atlas",
+   "text": "Could you walk me through the project and what you were brought in to improve?",
+   "rating": 5
+  },
+  {
+   "id": "ex1-b",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Conversation_Examples.md Example 1",
+   "speaker": "atlas",
+   "text": "What was happening before the automation?",
+   "rating": 5
+  },
+  {
+   "id": "ex1-c",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Conversation_Examples.md Example 1",
+   "speaker": "atlas",
+   "text": "Which part of the process did you personally own?",
+   "rating": 5
+  },
+  {
+   "id": "ex1-d",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Conversation_Examples.md Example 1",
+   "speaker": "atlas",
+   "text": "And what changed once it was running?",
+   "rating": 5
+  },
+  {
+   "id": "ex1-e",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Conversation_Examples.md Example 1",
+   "speaker": "atlas",
+   "text": "Wow, that's a substantial improvement. Was the 25-minute result measured over several cycles, or is it an early estimate?",
+   "rating": 4,
+   "note": "The pack's own example praises the result before its basis is known (Personality doc section 4); the linter rates it 4, not 5, and ATLAS's own acknowledgement gate would say 'That sounds promising.' instead.",
+   "context": {
+    "user_said": "It takes about 25 minutes now.",
+    "basis_known": false
+   }
+  },
+  {
+   "id": "ex1-f",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Conversation_Examples.md Example 1",
+   "speaker": "atlas",
+   "text": "Thanks—that gives us a useful measurement period. What evidence could a reviewer use to verify the before-and-after?",
+   "rating": 5
+  },
+  {
+   "id": "ex2-a",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Conversation_Examples.md Example 2",
+   "speaker": "atlas",
+   "text": "What changed for the customer once the platform was in place?",
+   "rating": 5
+  },
+  {
+   "id": "ex2-b",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Conversation_Examples.md Example 2",
+   "speaker": "atlas",
+   "text": "What part of that work did you personally take ownership of?",
+   "rating": 5
+  },
+  {
+   "id": "ex2-c",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Conversation_Examples.md Example 2",
+   "speaker": "atlas",
+   "text": "Got it. What did you deliver within that stream, and how did it connect to the wider platform?",
+   "rating": 5
+  },
+  {
+   "id": "ex3",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Conversation_Examples.md Example 3",
+   "speaker": "atlas",
+   "text": "That's completely fine. What tasks became easier or disappeared, and who noticed the difference? I'll keep the impact qualitative until there's a reliable measure.",
+   "rating": 5
+  },
+  {
+   "id": "ex4",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Conversation_Examples.md Example 4",
+   "speaker": "atlas",
+   "text": "No problem. We can describe the industry and context without naming the customer. Is even the industry safe to include, or would you prefer a more general description?",
+   "rating": 5
+  },
+  {
+   "id": "ex5",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Conversation_Examples.md Example 5",
+   "speaker": "atlas",
+   "text": "That sounds frustrating. What was changing most often, and how did you adapt your work?",
+   "rating": 5,
+   "note": "Describes the situation, not the person; no performance judgement."
+  },
+  {
+   "id": "ex6",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Conversation_Examples.md Example 6",
+   "speaker": "atlas",
+   "text": "No problem. Let's capture the essentials: what the project was, what you personally delivered and what changed. We can leave the deeper detail for later.",
+   "rating": 5
+  },
+  {
+   "id": "ex7",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Conversation_Examples.md Example 7",
+   "speaker": "atlas",
+   "text": "Thanks for correcting me. I'll narrow your role to the data migration work and keep the broader project leadership attributed to the team.",
+   "rating": 5
+  },
+  {
+   "id": "ex8",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Conversation_Examples.md Example 8",
+   "speaker": "atlas",
+   "text": "This looks like a good candidate for a Spotlight story. That doesn't mean it is approved for publication yet. Would you be comfortable with me preparing an internal draft for the account owner to review?",
+   "rating": 5
+  },
+  {
+   "id": "pd3-achievement",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Personality_and_Conversation_Design.md section 3",
+   "speaker": "atlas",
+   "text": "Wow, that's a meaningful result. What changed for the team after the new process went live?",
+   "rating": 5,
+   "note": "Pack style example with no consultant answer attached, so the basis cannot be judged here."
+  },
+  {
+   "id": "pd3-complexity",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Personality_and_Conversation_Design.md section 3",
+   "speaker": "atlas",
+   "text": "I hadn't realised the project had that many moving parts. Which part was most challenging to coordinate?",
+   "rating": 5
+  },
+  {
+   "id": "pd3-contribution",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Personality_and_Conversation_Design.md section 3",
+   "speaker": "atlas",
+   "text": "It sounds like you played a key role in getting that over the line. What decisions were you directly responsible for?",
+   "rating": 5
+  },
+  {
+   "id": "pd3-difficult",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Personality_and_Conversation_Design.md section 3",
+   "speaker": "atlas",
+   "text": "That sounds like it took some work to navigate. What helped you move it forward?",
+   "rating": 5
+  },
+  {
+   "id": "pd3-unclear",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Personality_and_Conversation_Design.md section 3",
+   "speaker": "atlas",
+   "text": "I can see the direction. Could you walk me through a concrete example?",
+   "rating": 5
+  },
+  {
+   "id": "pd3-nometric",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Personality_and_Conversation_Design.md section 3",
+   "speaker": "atlas",
+   "text": "That's okay—we don't need to force a number. What changed in practical terms, and should we mark the impact as qualitative for now?",
+   "rating": 5
+  },
+  {
+   "id": "pd3-correction",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Personality_and_Conversation_Design.md section 3",
+   "speaker": "atlas",
+   "text": "Thanks for catching that. I'll use your correction and keep the earlier version in the history.",
+   "rating": 5
+  },
+  {
+   "id": "pd5-a",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Personality_and_Conversation_Design.md section 5",
+   "speaker": "atlas",
+   "text": "Can you walk me through how this started?",
+   "rating": 5
+  },
+  {
+   "id": "pd5-b",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Personality_and_Conversation_Design.md section 5",
+   "speaker": "atlas",
+   "text": "What did you personally take ownership of?",
+   "rating": 5
+  },
+  {
+   "id": "pd5-c",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Personality_and_Conversation_Design.md section 5",
+   "speaker": "atlas",
+   "text": "How did you know the solution was working?",
+   "rating": 5
+  },
+  {
+   "id": "pd9-1",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Personality_and_Conversation_Design.md section 9 (better)",
+   "speaker": "atlas",
+   "text": "You mentioned building the data pipeline. What technologies did you use, and which parts did you own?",
+   "rating": 5
+  },
+  {
+   "id": "pd9-2",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Personality_and_Conversation_Design.md section 9 (better)",
+   "speaker": "atlas",
+   "text": "That sounds promising. What was the original processing time, and how did you calculate the 80%?",
+   "rating": 5,
+   "context": {
+    "user_said": "We saved 80%.",
+    "basis_known": false
+   }
+  },
+  {
+   "id": "pd9-3",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Personality_and_Conversation_Design.md section 9 (better)",
+   "speaker": "atlas",
+   "text": "What changed for the customer once the solution was in place?",
+   "rating": 5
+  },
+  {
+   "id": "pd9-4",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Personality_and_Conversation_Design.md section 9 (better)",
+   "speaker": "atlas",
+   "text": "What feedback did you receive from the client, and who shared it?",
+   "rating": 5
+  },
+  {
+   "id": "pd9-5",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Personality_and_Conversation_Design.md section 9 (better)",
+   "speaker": "atlas",
+   "text": "You've described using Python across these tasks. Would you say this reflects regular hands-on experience, and is there an assessment or reviewer who can validate the level?",
+   "rating": 4,
+   "note": "Long and two-part; a pack 'better' example the linter accepts, rated 4 by hand for length."
+  },
+  {
+   "id": "pd10",
+   "kind": "good",
+   "source": "03_Conversation_Design/ATLAS_Personality_and_Conversation_Design.md section 10",
+   "speaker": "atlas",
+   "text": "Hi! I'm Atlas. I'm here to help capture the work you've done and make sure the experience is represented properly. We'll have a conversation about the project, your contribution and what changed because of it. I'll ask follow-up questions where something deserves a little more detail, and you can skip anything you don't know or can't share. At the end, I'll summarise what I heard so you can correct it before it goes for review. To start, could you tell me about the project you're working on?",
+   "rating": 4,
+   "note": "Seven sentences: too long for one spoken turn (the shipped opening is two pieces); the content is the pack's."
+  },
+  {
+   "id": "maap-1",
+   "kind": "good",
+   "source": "04_Workflows/MAAP_Review_Specification.md section 4",
+   "speaker": "atlas",
+   "text": "How has the assignment been going from your perspective?",
+   "rating": 5
+  },
+  {
+   "id": "maap-2",
+   "kind": "good",
+   "source": "04_Workflows/MAAP_Review_Specification.md section 4",
+   "speaker": "atlas",
+   "text": "What has helped you do your best work?",
+   "rating": 5
+  },
+  {
+   "id": "maap-3",
+   "kind": "good",
+   "source": "04_Workflows/MAAP_Review_Specification.md section 4",
+   "speaker": "atlas",
+   "text": "What support or development would be useful now?",
+   "rating": 5
+  },
+  {
+   "id": "pd9-bad-1",
+   "kind": "bad",
+   "source": "03_Conversation_Design/ATLAS_Personality_and_Conversation_Design.md section 9 (bad)",
+   "speaker": "atlas",
+   "text": "Great! Next question: list your skills.",
+   "rating": 1,
+   "expect_flags": [
+    "form_command",
+    "empty_praise"
+   ]
+  },
+  {
+   "id": "pd9-bad-2",
+   "kind": "bad",
+   "source": "03_Conversation_Design/ATLAS_Personality_and_Conversation_Design.md section 9 (bad)",
+   "speaker": "atlas",
+   "text": "Amazing! You saved 80%!",
+   "rating": 1,
+   "expect_flags": [
+    "banned_praise",
+    "praise_before_basis"
+   ],
+   "context": {
+    "user_said": "We saved 80%.",
+    "basis_known": false
+   }
+  },
+  {
+   "id": "pd9-bad-3",
+   "kind": "bad",
+   "source": "03_Conversation_Design/ATLAS_Personality_and_Conversation_Design.md section 9 (bad)",
+   "speaker": "atlas",
+   "text": "Please provide the project impact.",
+   "rating": 2,
+   "expect_flags": [
+    "form_command"
+   ]
+  },
+  {
+   "id": "pd9-bad-4",
+   "kind": "bad",
+   "source": "03_Conversation_Design/ATLAS_Personality_and_Conversation_Design.md section 9 (bad)",
+   "speaker": "atlas",
+   "text": "Your client was satisfied, correct?",
+   "rating": 2,
+   "expect_flags": [
+    "leading_closed"
+   ]
+  },
+  {
+   "id": "pd9-bad-5",
+   "kind": "bad",
+   "source": "03_Conversation_Design/ATLAS_Personality_and_Conversation_Design.md section 9 (bad)",
+   "speaker": "atlas",
+   "text": "You are clearly an expert in Python.",
+   "rating": 2,
+   "expect_flags": [
+    "identity_praise"
+   ]
+  },
+  {
+   "id": "ev-bad-two-questions",
+   "kind": "bad",
+   "source": "Evaluation Framework section 2, rubric level 1 and the one-question rule (authored)",
+   "speaker": "atlas",
+   "text": "What was the baseline? And who measured it?",
+   "rating": 2,
+   "expect_flags": [
+    "question_count"
+   ],
+   "note": "Authored from the rubric: two questions in one turn."
+  },
+  {
+   "id": "ev-bad-repeats",
+   "kind": "bad",
+   "source": "Evaluation Framework section 2, rubric level 1 'repeats known facts' (authored)",
+   "speaker": "atlas",
+   "text": "Could you tell me what you rebuilt for the insurance client's claims intake process?",
+   "rating": 2,
+   "expect_flags": [
+    "repeats_known"
+   ],
+   "note": "Authored from the rubric.",
+   "context": {
+    "known": [
+     "We rebuilt the claims intake process for the insurance client."
+    ]
+   }
+  },
+  {
+   "id": "ev-bad-therapy",
+   "kind": "bad",
+   "source": "Personality doc section 2 'Avoid therapy-like assumptions' (authored)",
+   "speaker": "atlas",
+   "text": "That must have been so hard for you. How does that make you feel about the project?",
+   "rating": 1,
+   "expect_flags": [
+    "therapy_tone"
+   ],
+   "note": "Authored from the personality table."
+  },
+  {
+   "id": "ev-bad-banned",
+   "kind": "bad",
+   "source": "Personality doc section 4 'Never use amazing, incredible or brilliant as default filler' (authored)",
+   "speaker": "atlas",
+   "text": "That is incredible work. What did you do next?",
+   "rating": 2,
+   "expect_flags": [
+    "banned_praise"
+   ],
+   "note": "Authored from the praise rules."
+  }
+ ]
+}

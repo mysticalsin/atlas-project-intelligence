@@ -1,5 +1,5 @@
 PYTHON ?= python3
-.PHONY: build preview gateway test test-ui test-edge doctor verify-package
+.PHONY: build preview gateway test test-ui test-edge test-eval doctor verify-package
 build:
 	$(PYTHON) build.py
 preview: build
@@ -11,6 +11,10 @@ test: build test-edge
 	$(PYTHON) -m pytest tests/test_*.py -q
 test-edge:
 	cd deploy/cloudflare-edge && node --test test/*.test.js
+# The v2.1 offline evaluation (docs/agent-brain-v2.1/eval/COVERAGE.md): pack scenarios 1-16 through the real Session and workflow code, W1-W12, the MAAP shell tests,
+# the release gates that can be checked offline, and the rubric linter. A regression aid, not a measure of the live model (that needs pilot users and is never run here).
+test-eval:
+	cd deploy/cloudflare-edge && node --test test/eval-conversation.test.js test/eval-workflow.test.js test/eval-rubric.test.js
 test-ui: build
 	$(PYTHON) tests/studio_browser.py
 	$(PYTHON) tests/sculpture_browser.py
@@ -32,6 +36,7 @@ test-ui: build
 	$(PYTHON) tests/zero_config_browser.py
 	$(PYTHON) tests/zero_config_edge_browser.py
 	$(PYTHON) tests/jev_rating_browser.py
+	$(PYTHON) tests/humane_browser.py
 doctor:
 	$(PYTHON) scripts/doctor.py --profile preview
 verify-package:

@@ -1,0 +1,29 @@
+{
+ "id": "S7b",
+ "title": "A low-confidence proper noun is confirmed by name",
+ "pack": "07_Evaluation_and_QA/ATLAS_Evaluation_Framework.md section 3, scenario 7 (proper noun half)",
+ "audit": [
+  "start",
+  "consent_given"
+ ],
+ "turns": [
+  {
+   "heard": "we rebuilt the routing for Zebra:0.35 Corp:0.4 last spring with a small team of engineers",
+   "expect": {
+    "move": {
+     "kind": "confirm_asr",
+     "intent": "confirm_asr"
+    },
+    "scripted_says": "was that Zebra Corp\\?"
+   }
+  },
+  {
+   "said": "yes that is right, Zebra Corp",
+   "expect": {
+    "not_intent": [
+     "confirm_asr"
+    ]
+   }
+  }
+ ]
+}

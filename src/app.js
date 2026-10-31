@@ -198,7 +198,7 @@ $('memoryForgetAll').onclick=()=>confirm('Forget everything?','ATLAS permanently
 $('connectionTest').onclick=async()=>{$('memoryStatus').textContent='Testing…';try{const t=await memoryApi('/test');const line=(n,x)=>`${n}: ${!x.configured?'not configured (no key)':x.ok?'working ('+x.ms+' ms)':'FAILED'+(x.error?' · '+x.error:'')}`;$('memoryStatus').textContent=line('Hindsight',t.hindsight)+' · '+line('JEV',t.jev);}catch(e){$('memoryStatus').textContent=e.message;}};
 document.addEventListener('click',e=>{const b=e.target.closest('[data-forget]');if(!b)return;memoryApi('/forget',{method:'POST',body:{documentId:b.dataset.forget}}).then(()=>{toast('Forgotten.');renderMemoryPanel();}).catch(err=>toast(err.message));});
 // ---- Shared reference library (server system of record) ----
-const STATUS_LABEL={in_review:'In review',needs_work:'Needs work',changes_requested:'Changes requested',awaiting_validation:'Awaiting N+1',published:'Published',withdrawn:'Withdrawn'};
+const STATUS_LABEL={in_review:'In review',needs_work:'Needs work',changes_requested:'Changes requested',awaiting_validation:'Awaiting N+1',published:'Shared in internal library',withdrawn:'Withdrawn'};
 async function libraryApi(path,{method='GET',body}={}){const b=await bootInfo();if(!b.library)throw Error('The shared library is not available here.');
  const r=await window.AtlasAuth.fetch('/api/library'+path,{method,headers:method==='GET'?{}:{'Content-Type':'application/json','X-Atlas-CSRF':b.csrf},body:body===undefined?undefined:JSON.stringify(body)});
  const data=await r.json().catch(()=>({}));if(!r.ok)throw Error(data.error||'The library did not answer.');return data;}
