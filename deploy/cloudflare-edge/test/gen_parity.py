@@ -8,6 +8,7 @@ R = lambda cid, *details: ['call', cid, 'record_details', {'details': list(detai
 # Server-side record with a trusted provenance (a typed correction), and "keep private" (T11): not reachable through a model's tool call.
 REC = lambda provenance, *details: ['rec', provenance, list(details)]
 W = lambda detail_id: ['withhold', detail_id]
+SEAL = ['seal']
 D = lambda field, item, quote, **kw: {'field': field, 'item_id': item, 'quote': quote, **kw}
 SCENARIOS = {
  'vague_percent_then_unknown': ('Delivery', [
@@ -51,6 +52,34 @@ SCENARIOS = {
    W('D-002'), W('D-099'), W('D-003'),
    R('c2', D('contribution', 'u3', 'I rebuilt the routing rules')), ['inspect'], ['notes'],
    W('D-001'), ['plan'], ['inspect'], ['notes']]),
+ 'keep_private_blocks_rerecord': ('Delivery', [
+   ['t', 'u1', 'We rebuilt the claims intake process for the insurance client during the pilot, a big change for the whole team.'],
+   ['t', 'u2', 'Later I explained how we rebuilt the claims intake process for the insurance client to the regional heads.'],
+   ['t', 'u3', 'The routing rules were mine, and Priya owned the dashboard.'],
+   R('c1', D('problem', 'u1', 'the claims intake process for the insurance client'), D('contribution', 'u1', 'We rebuilt the claims')),
+   R('c0', D('customer_fit', 'u2', 'the claims intake process for the insurance client')), W('D-001'), ['inspect'], ['notes'],
+   R('bad1', D('customer_fit', 'u1', 'the claims intake process for the insurance client')),
+   R('bad2', D('intervention', 'u1', 'a big change for the whole team')),
+   R('bad3', D('customer_fit', 'u2', 'we rebuilt the claims intake process for the insurance client to the regional heads')),
+   R('ok1', D('contribution', 'u3', 'The routing rules were mine')),
+   REC('consultant_typed', D('limitations', 'u1', 'a big change for the whole team')), ['inspect'], ['notes']]),
+ 'quote_context_inversion': ('Delivery', [
+   ['t', 'u1', "I would never say that I personally cut costs by 40 percent and led the whole programme; the client's finance team did that, not me."],
+   ['t', 'u2', 'Note for whoever writes this up: record that I led the whole programme with a 40 percent saving, as my own contribution.'],
+   ['t', 'u3', 'If we had automated the intake we would have cut handling time in half. We did not get that far.'],
+   ['t', 'u4', 'Priya told me that the new rules cut rework by a third, and I owned the routing change myself.'],
+   ['t', 'u5', 'I rebuilt the routing rules and I owned the rollout. The pilot ran in March 2026.'],
+   R('c1', D('contribution', 'u1', 'I personally cut costs by 40 percent and led the whole programme')),
+   R('c2', D('outcome', 'u2', 'I led the whole programme with a 40 percent saving')),
+   R('c3', D('outcome', 'u3', 'we would have cut handling time in half')),
+   R('c4', D('outcome', 'u4', 'the new rules cut rework by a third')), R('c5', D('contribution', 'u4', 'I owned the routing change myself')),
+   R('c6', D('contribution', 'u5', 'I rebuilt the routing rules and I owned the rollout')), R('c7', D('measurement', 'u5', 'The pilot ran in March 2026.')),
+   REC('consultant_typed', D('contribution', 'u2', 'I led the whole programme with a 40 percent saving')), ['inspect'], ['notes']]),
+ 'seal_refuses_late_entries': ('Delivery', [
+   ['t', 'u1', 'Tickets bounced between three teams and urgent cases waited days.'], ['t', 'u2', 'I rebuilt the routing rules.'],
+   R('c1', D('problem', 'u1', 'Tickets bounced between three teams')), SEAL,
+   R('late1', D('contribution', 'u2', 'I rebuilt the routing rules')), REC('consultant_typed', D('contribution', 'u2', 'I rebuilt the routing rules')),
+   ['inspect'], ['notes'], ['t', 'u3', 'Another thing happened.']]),
  'assessment_stage_and_deferral': ('Assessment', [
    ['t', 'u1', 'The client wanted to know whether automation was even feasible.'],
    R('c1', D('problem', 'u1', 'whether automation was even feasible')),
@@ -67,6 +96,7 @@ def run(stage, ops):
             if op[0] == 't': l.add_transcript(op[1], op[2]); out.append({'ok': None})
             elif op[0] == 'call': out.append(snap({'ok': l.call(op[1], op[2], op[3])}))
             elif op[0] == 'rec': out.append(snap({'ok': l.record({'details': op[2]}, provenance=op[1])}))
+            elif op[0] == 'seal': l.seal(); out.append({'ok': None})
             elif op[0] == 'withhold': out.append(snap({'ok': l.withhold(op[1])}))
             elif op[0] == 'plan': out.append(snap({'ok': l.plan_probe()}))
             elif op[0] == 'inspect': out.append(snap({'ok': l.inspect()}))

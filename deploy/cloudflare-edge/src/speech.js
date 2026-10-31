@@ -1,4 +1,5 @@
 // JavaScript port of atlas_voice/speech.py EnergyTurns, sentences, Phrases, speakable, ReplyGuard and wav_bytes (parity-tested).
+import { NUMBER_WORDS, NUMBER_CONNECTORS, UNVERIFIED_CLAIM_SRC, CLAIM_HEDGE_SRC } from './policy.generated.js';
 export const SAMPLE_RATE = 24000;
 
 export function rms(bytes) {
@@ -153,7 +154,7 @@ export const DEFAULT_BANNED_PRAISE = '\\b(amazing|incredible|brilliant|awesome|f
 const TERMINAL = /[.!?\u3002\uff01\uff1f\u0964]+$/u, CLOSERS = /[\s"'\u201d\u2019\u00bb)\]*_`]+$/u;
 const NUMBER = /[0-9]+(?:[.,][0-9]+)*/g, THOUSANDS = /^[0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]+)?$/;
 const TRIM = /[\s,;:\u2014\u2013-]+$/u;
-export const GUARD_STATS = ['dropped_after_question', 'dropped_praise', 'dropped_repeat_opener', 'capped_words', 'dropped_unknown_number'];
+export const GUARD_STATS = ['dropped_after_question', 'dropped_praise', 'dropped_repeat_opener', 'capped_words', 'dropped_unknown_number', 'dropped_unverified_claim'];
 
 // The words of a text: whitespace-separated tokens with a letter or digit (a dash or a bullet is not a word).
 const words = text => text.split(/\s+/).filter(t => /[\p{L}\p{N}]/u.test(t));
@@ -164,6 +165,28 @@ function numeral(token) {
   token = THOUSANDS.test(token) ? token.replaceAll(',', '') : token.replaceAll(',', '.');
   return token.includes('.') ? token.replace(/0+$/, '').replace(/\.$/, '') : token;
 }
+// Every figure of a text as a numeral, however it is written (speech.py figures; red L3): full-width digits fold to ASCII (NFKC), invisible format characters go, and
+// spelled-out numbers become digits ("forty percent" -> "40 percent"). Magnitude words stay words, as "2 million" has always been the figure 2.
+const L = '\\p{L}', NUM_ALT = Object.keys(NUMBER_WORDS).sort((a, b) => b.length - a.length || (a < b ? -1 : a > b ? 1 : 0)).join('|');
+const NUM_RUN = new RegExp(`(?<!${L})(?:${NUM_ALT})(?:(?:[\\s-]+(?:${NUMBER_CONNECTORS.join('|')})[\\s-]+|[\\s-]+)(?:${NUM_ALT}))*(?!${L})`, 'giu');
+const FOLD = new RegExp(`(?<!${L})(${NUM_ALT})fold(?!${L})`, 'giu'), HALF = new RegExp(`(?<!${L})half(?!${L})`, 'giu');
+const QUATRE_VINGT = new RegExp(`(?<!${L})quatre[\\s-]+vingts?(?!${L})`, 'giu');
+function runValue(run) {
+  const parts = run.toLowerCase().split(/[\s-]+/).filter(w => w && !NUMBER_CONNECTORS.includes(w));
+  if (parts.length === 1 && parts[0] === 'one') return null; // a lone "one" is the pronoun
+  let total = 0;
+  for (const w of parts) { const v = NUMBER_WORDS[w] ?? 0; total = w === 'hundred' ? (total || 1) * v : total + v; }
+  return total;
+}
+const dropFormat = text => text.normalize('NFKC').replace(/\p{Cf}/gu, '');
+export function figures(text) {
+  const folded = dropFormat(String(text)).replace(QUATRE_VINGT, 'quatrevingt').replace(FOLD, (_, w) => ` ${runValue(w)} `).replace(HALF, ' 0.5 ');
+  return (folded.replace(NUM_RUN, run => { const v = runValue(run); return v === null ? run : ` ${v} `; }).match(NUMBER) || []).map(numeral);
+}
+// A sentence that says something was verified, approved or confirmed by someone, without a hedge or a denial (speech.py asserts_verification; red L3/L4).
+const CLAIM = new RegExp(UNVERIFIED_CLAIM_SRC, 'i'), HEDGE = new RegExp(CLAIM_HEDGE_SRC, 'i');
+export function assertsVerification(text) { const t = dropFormat(text); return CLAIM.test(t) && !HEDGE.test(t); }
+
 // A finished sentence whose closing punctuation holds a question mark ('?', or the full-width one), quotes and markup aside.
 function isQuestion(sentence) { const m = TERMINAL.exec(sentence.replace(CLOSERS, '')); return !!m && /[?\uff1f]/.test(m[0]); }
 // The start of text up to its count-th word, trailing commas and dashes trimmed (an exact slice).
@@ -184,17 +207,18 @@ function firstWords(text, count) {
 //
 // Options: bannedPraise, a regex source (case-insensitive); recentOpeners, the leading reaction of the last replies (only the
 // last 3 count); maxWords, null for no cap; summaryFacts, null, or the list of figures the reply may use (an empty list
-// allows none): summary mode.
+// allows none): summary mode; allowStatus, true for a factual status line from the server (else a sentence that says something was verified or approved is dropped).
 //
 // A sentence is judged when its first piece arrives. A first clause already voiced is not taken back, and the rest of that
 // sentence follows it (a dropped first clause drops the rest). Words are whitespace-separated: a language written without
 // spaces is not capped.
 export class ReplyGuard {
-  constructor({ bannedPraise = null, recentOpeners = [], maxWords = GUARD_MAX_WORDS, summaryFacts = null } = {}) {
+  constructor({ bannedPraise = null, recentOpeners = [], maxWords = GUARD_MAX_WORDS, summaryFacts = null, allowStatus = false } = {}) {
     this.praise = new RegExp(bannedPraise ?? DEFAULT_BANNED_PRAISE, 'i');
     this.openers = [...(recentOpeners || [])].slice(-3).map(norm).filter(Boolean);
     this.max = maxWords;
-    this.allowed = summaryFacts == null ? null : new Set(summaryFacts.flatMap(f => String(f).match(NUMBER) || []).map(numeral));
+    this.allowed = summaryFacts == null ? null : new Set(summaryFacts.flatMap(f => figures(f)));
+    this.allowStatus = !!allowStatus; // a factual status line from the server may say that something was approved
     this.counts = Object.fromEntries(GUARD_STATS.map(k => [k, 0]));
     this.spoken = 0; // words voiced so far
     this.open = null; // the sentence in progress when the last piece ended mid-sentence: 'voiced' or 'dropped'
@@ -220,7 +244,8 @@ export class ReplyGuard {
         if (this.repeatsOpener(text)) { this.counts.dropped_repeat_opener++; return ['', question]; }
       }
     }
-    if (this.allowed && (text.match(NUMBER) || []).some(m => !this.allowed.has(numeral(m)))) { this.counts.dropped_unknown_number++; return ['', question]; }
+    if (!question && !this.allowStatus && assertsVerification(text)) { this.counts.dropped_unverified_claim++; return ['', question]; }
+    if (this.allowed && figures(text).some(m => !this.allowed.has(m))) { this.counts.dropped_unknown_number++; return ['', question]; }
     if (this.max !== null) {
       const room = this.max - this.spoken;
       if (words(text).length > room) {

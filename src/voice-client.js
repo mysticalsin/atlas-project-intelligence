@@ -26,7 +26,7 @@ let gapUsed=null, consentStarting=false;
 function consumeGap(){const g=gapUsed;gapUsed=null;try{if(g&&bridge.context()?.gap===g)bridge.gapConsumed?.();}catch{}}
 // Session event bus for the live story board and the gap results (F5, F2): the server's session events, plus 'reset'
 // wherever the 'atlas-quality' reset fires. 'atlas-quality' itself is unchanged.
-const SESSION_EVENTS=['ready','time_up','wrap_up','audio_stopped','reporting','notes','ended','summary','summary_closed','summary_confirmed','evidence_draft','evidence_draft_unavailable'];
+const SESSION_EVENTS=['ready','time_up','wrap_up','audio_stopped','reporting','notes','ended','summary','summary_closed','summary_confirmed','evidence_draft','evidence_draft_unavailable','time_extended'];
 function sessionEvent(detail){window.dispatchEvent(new CustomEvent('atlas-session',{detail}));}
 function resetBoards(){window.dispatchEvent(new CustomEvent('atlas-quality',{detail:{type:'reset'}}));sessionEvent({type:'reset'});}
 const closed=(s,ms)=>!s||s.readyState===3?Promise.resolve():new Promise(r=>{const t=setTimeout(r,ms);s.onclose=()=>{clearTimeout(t);r();};});
@@ -111,7 +111,7 @@ const consentGate=on=>{$('voiceConsentStart').disabled=!on;$('voiceConsentType')
 function paintConsentInput(b){const can=b?.textMode===true,typed=can&&wantInput==='text';$('voiceConsentType').hidden=!can;$('voiceConsentDialog').dataset.input=typed?'text':'voice';
  $('voiceConsentStart').classList.toggle('primary',!typed);$('voiceConsentType').classList.toggle('primary',typed);
  if(can&&b.captureRequired){$('consentTip').textContent=(typed?'Typing: no microphone is used and no audio is sent. ATLAS answers in text.':'Your browser will then ask to use your microphone. Headphones give the clearest conversation. Prefer not to speak? Choose Type instead: no microphone is used.')+(b.admin?' Admin mode: a faster interview. Say “wrap it up” whenever you want to finish.':'');
-  $('providerConsentText').textContent='ATLAS will ask about this project and listen to your answers, out loud or typed, as you choose. It takes fifteen minutes at most, and you can pause or stop at any time.'+(b.features?.gapInterview&&bridge.context()?.gap?' This is a 5-minute proof request for '+(bridge.context().gapAlias||'a bid')+'.':'');}}
+  $('providerConsentText').textContent='ATLAS will ask about this project and listen to your answers, out loud or typed, as you choose. It takes twenty minutes at most, and you can pause or stop at any time.'+(b.features?.gapInterview&&bridge.context()?.gap?' This is a 5-minute proof request for '+(bridge.context().gapAlias||'a bid')+'.':'');}}
 async function begin(input){
  wantInput=input==='text'?'text':'voice';window.AtlasOrbUI?.stopPreview();if(['preparing','connecting','live','ending'].includes(phase))return;
  const attempt=++generation,A=window.AtlasAuth,ready='One thoughtful question at a time. Your contribution, the decisions, and what really changed.';status('preparing','Checking your voice connection.','Microphone off. Checking that ATLAS is ready.');
@@ -137,7 +137,7 @@ async function begin(input){
  if(b.captureRequired){ // ONE consent step (§3.4): one tick, the only required action. Its sentence names memory only when it is on.
   const P=window.AtlasProfile,first=P?.firstName?.()||'',name=P?.confirmedName?.()||'',email=P?.email?.()||b.email||b.identity?.name||'';
   $('voiceConsentEyebrow').textContent='BEFORE WE START';if(first)$('voiceConsentTitle').textContent='Ready when you are, '+first+'.';
-  $('providerConsentText').textContent='ATLAS will ask about this project out loud and listen to your answers. It takes fifteen minutes at most, and you can pause or stop at any time.';
+  $('providerConsentText').textContent='ATLAS will ask about this project out loud and listen to your answers. It takes twenty minutes at most, and you can pause or stop at any time.';
   $('consentTip').textContent='Your browser will then ask to use your microphone. Headphones give the clearest conversation.'+(b.admin?' Admin mode: a faster interview. Say “wrap it up” whenever you want to finish.':'');
   paintConsent(b);$('memoryConsentRow').hidden=true;$('memoryConsent').checked=false;
   $('consentIdentity').textContent=email?'Signed in as '+(name?name+' · ':'')+email:'';

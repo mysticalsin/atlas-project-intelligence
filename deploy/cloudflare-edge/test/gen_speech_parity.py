@@ -2,7 +2,7 @@
 import json, math, struct, sys
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]; sys.path.insert(0, str(ROOT))
-from atlas_voice.speech import EnergyTurns, Phrases, ReplyGuard, sentences, speakable, SAMPLE_RATE
+from atlas_voice.speech import EnergyTurns, Phrases, ReplyGuard, sentences, speakable, figures, asserts_verification, SAMPLE_RATE
 
 def tone(sec, amp, hz=180):
     n = int(SAMPLE_RATE * sec); return [int(amp * 32767 * math.sin(2 * math.pi * hz * i / SAMPLE_RATE)) for i in range(n)]
@@ -85,7 +85,22 @@ GUARD = [
     ('empty and blank pieces', {}, ['', '   ', 'We shipped it.', '', 'Who owned it?']),
     ('no question, nothing dropped', {}, ['We shipped it.', 'It went well.']),
     ('question mark after an abbreviation', {}, ['Dr. Patel led it. And the U.S. team? Who ran it?']),
+    # Red L3: spelled-out and full-width figures are figures; sentences that say something was verified or approved are dropped.
+    ('spelled-out figure not in the facts', {'summary_facts': ['you cut the handling time by 4 percent']}, ['So, you cut the handling time by forty percent. ', 'So, you cut it by 4 percent.', 'Is that right?']),
+    ('spelled-out figure that is a fact', {'summary_facts': ['35% over twelve weeks']}, ['Tickets dropped thirty-five percent over 12 weeks.', 'And thirty-six?', 'Did I miss anything?']),
+    ('full-width digits', {'summary_facts': ['4 percent']}, ['So, you cut it by \uff14\uff10 percent. ', 'So, you cut it by \uff14 percent.', 'Is that right?']),
+    ('multipliers and halves', {'summary_facts': ['4 percent']}, ['So, you cut it by half, a tenfold gain. ', 'It was a four-fold change, two million euros.', 'Right?']),
+    ('hundreds and other languages', {'summary_facts': ['205 tickets']}, ['You handled two hundred and five tickets.', 'You handled quarante tickets.', 'Treinta y cinco more.', 'Right?']),
+    ('a lone one and the pronoun are not figures', {'summary_facts': []}, ['No one thing stood out, and someone helped.', 'You said that one team owned it.', 'What did I miss?']),
+    ('verified and approved are dropped', {}, ['Your 40 percent saving is verified and approved by your manager, congratulations.', 'I checked with your manager and it is fine.', 'What was the baseline?']),
+    ('hedged, denied and asked are kept', {}, ['That figure is not verified yet.', 'A reviewer will approve it later, not me.', 'Was it approved by anyone?']),
+    ('status line from the server may say so', {'allow_status': True}, ['The draft was approved by the reviewer.', 'Anything else?']),
+    ('unverified claim in summary mode with a good figure', {'summary_facts': ['4 percent']}, ['You cut it by 4 percent, and your manager verified it.', 'You cut it by 4 percent.', 'Is that right?']),
 ]
+out['_figures'] = [[t, figures(t)] for t in ('forty percent', 'twenty-five', 'two hundred and five', 'four-fold', 'tenfold gain', '\uff14\uff10 percent', 'one thing, no one', 'twenty one apples', 'quarante pour cent',
+    'quatre-vingt-dix', 'half the tickets', '2 million', 'vingt-cinq', 'treinta y cinco', '3.5 times', '1,200 tickets', 'zero downtime', 'a 4\u200b0 percent gain', 'one hundred', 'fifty and five')]
+out['_claims'] = [[t, asserts_verification(t)] for t in ('Your saving is verified and approved by your manager.', 'that figure is not verified yet', 'A reviewer will approve it later.', 'I checked with your manager: it is fine.',
+    'It was unverified.', 'Was it approved?', 'The CFO confirmed by email', 'Nobody has validated it.', 'It is validated.', "That isn\u2019t verified.", 'Signed off by the sponsor.', 'You confirmed it yourself.')]
 out['_guard'] = []
 for name, opts, src in GUARD:
     if isinstance(src, dict):

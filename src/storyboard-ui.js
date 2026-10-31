@@ -36,7 +36,7 @@ function render(){
  renderTime(m.time);renderGaps(m,fresh);renderMap(m,fresh);renderMetrics(m,fresh);renderDims(m,fresh);renderChallenge(m);
  announce(B.summaryText(m));}
 function renderTime(t){const sec=$('boardTime');sec.hidden=t.max===null;if(t.max===null)return;
- $('boardTimeLeft').textContent=clock(t.left)+' left';$('boardPhase').textContent=t.phase?PHASES[t.phase]:'';sec.dataset.phase=t.phase||'';
+ $('boardTimeLeft').textContent=t.soft?clock(t.elapsed)+' · about '+Math.round(t.soft/60)+'–'+Math.round(t.max/60)+' min':clock(t.left)+' left';$('boardPhase').textContent=t.phase?PHASES[t.phase]:'';sec.dataset.phase=t.phase||'';
  $('boardTimeBar').style.width=(t.max?Math.min(100,100*t.elapsed/t.max):0).toFixed(1)+'%';}
 function renderGaps(m,fresh){const sec=$('boardGaps'),list=body('boardGaps');sec.hidden=!m.gaps.length;list.replaceChildren();
  const asks=new Map(arr(s.session.gaps).map(a=>[obj(a).id,obj(a)]));
@@ -99,8 +99,9 @@ window.addEventListener('atlas-quality',e=>{const d=e.detail;if(!d||typeof d!=='
 window.addEventListener('atlas-session',e=>{const d=e.detail;if(!d||typeof d!=='object')return;
  if(d.type==='reset')clear();
  else if(d.type==='ready'){clear();const max=num(d.maxSeconds);
-  s.session={readyAt:Date.now()-used(d),maxSeconds:max!==null&&max>0?max:null,mode:d.mode==='gap'?'gap':'full',gaps:arr(d.gaps).filter(g=>g&&typeof g==='object').slice(0,5),timePlan:obj(d.timePlan)};
+  s.session={readyAt:Date.now()-used(d),maxSeconds:max!==null&&max>0?max:null,softSeconds:num(d.softSeconds),mode:d.mode==='gap'?'gap':'full',gaps:arr(d.gaps).filter(g=>g&&typeof g==='object').slice(0,5),timePlan:obj(d.timePlan)};
   s.off=d.liveLedger===false;s.live=true;if(!s.off&&s.session.maxSeconds)startTicker();render();}
+ else if(d.type==='time_extended'){const max=num(d.maxSeconds);if(max!==null&&max>0)s.session.maxSeconds=max;if(d.timePlan&&typeof d.timePlan==='object')s.session.timePlan=obj(d.timePlan);render();}  // the consultant agreed to a few more minutes
  else if(d.type==='audio_stopped'){stopClock();render();}
  else if(d.type==='ended'){stopClock();s.qualitySeq=++seq;render();}  // nothing is being analysed once the session has ended
  else if(d.type==='notes'){if(d.mode==='gap')showGap(d);}

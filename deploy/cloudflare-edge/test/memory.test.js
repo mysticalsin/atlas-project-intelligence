@@ -93,12 +93,13 @@ test('session: recalled memory reaches the talker as a private note on every tur
   };
   let asked = null;
   const ok = await run(async project => { asked = project; return 'PRIVATE MEMORY (x):\n- Baseline was not measured yet.'; });
-  assert.equal(asked.id, 'p-1'); assert.ok(ok.talker[0].some(m => m.role === 'system' && m.content.includes('Baseline was not measured yet.')));
+  assert.equal(asked.id, 'p-1'); assert.ok(ok.talker[0].some(m => m.role === 'user' && m.content.startsWith('<<DATA-') && m.content.includes('Baseline was not measured yet.')));
+  assert.ok(!ok.talker[0].some(m => m.role === 'system' && m.content.includes('Baseline was not measured yet.')), 'a memory is data: never in the system role');
   assert.equal(ok.events.find(e => e.type === 'memory').status, 'recalled');
   const bad = await run(async () => { throw new Error('down'); });
   assert.ok(bad.talker.length, 'the opening still happens'); assert.ok(!bad.talker[0].some(m => m.content.startsWith('PRIVATE MEMORY')));
   const msgs = talkerMessages({ title: 'x' }, null, [], 'go', ['', 'PRIVATE MEMORY: y', 'pace']);
-  assert.deepEqual(msgs.slice(1, -1).map(m => m.content), ['PRIVATE MEMORY: y', 'pace']);
+  assert.deepEqual(msgs.slice(2, -1).map(m => m.content), ['PRIVATE MEMORY: y', 'pace']);
 });
 
 test('connection test explains Hindsight credit and key problems plainly', async () => {

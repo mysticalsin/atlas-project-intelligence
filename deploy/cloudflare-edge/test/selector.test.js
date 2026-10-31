@@ -32,8 +32,8 @@ test('repetition: 3-gram Jaccard at 0.8, whole-text compare under three words', 
   assert.ok(similar('hello there', 'Hello, there.') && !similar('hi', 'ho'));
 });
 test('phase follows the time left (the pace the session already uses)', () => {
-  assert.equal(effectivePhase('breadth', 800), 'breadth'); assert.equal(effectivePhase('breadth', 210), 'closing'); assert.equal(effectivePhase('breadth', 211), 'breadth');
-  assert.equal(effectivePhase('depth', 75), 'wrap'); assert.equal(effectivePhase('closing', 500), 'closing'); assert.equal(effectivePhase(null, null), 'breadth');
+  assert.equal(effectivePhase('breadth', 800), 'breadth'); assert.equal(effectivePhase('breadth', 270), 'closing'); assert.equal(effectivePhase('breadth', 271), 'breadth');
+  assert.equal(effectivePhase('depth', 90), 'wrap'); assert.equal(effectivePhase('closing', 500), 'closing'); assert.equal(effectivePhase(null, null), 'breadth');
 });
 test('a contradiction needs numbers that differ on both sides', () => {
   const d = (...q) => ({ candidate_details: q.map(x => ({ field: 'outcome', quote: x, active: true })) });

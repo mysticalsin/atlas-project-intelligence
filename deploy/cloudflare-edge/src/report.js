@@ -2,9 +2,10 @@
 // The report is a model-written draft grounded only in the consultant's transcript; the consultant reviews it before saving.
 import { REPORT_POLICY, REPORT_TOPICS, REPORT_LIMITS, REPORT_LISTS, REPORT_TRANSCRIPT_CHARS, FACT_TEXT, FACT_LISTS } from './policy.generated.js';
 
-const END_PATTERN = /\[+\s*end\s*\]+/gi; // [[END]] and near misses such as [END] or [[ end ]]
-const END_CLOSED = /\[+\s*end\s*\]+(?=[^\]])/gi; // ... only once no further ']' can follow
-const END_PARTIAL = /\[+\s*(?:e(?:n(?:d\s*\]*)?)?)?\s*$/i; // a token still arriving at the end of the stream
+// Bounded runs (red L7; report.py): a stream of '[' or spaces can neither be matched nor retained without limit, so a feed costs the same however long the reply is.
+const END_PATTERN = /\[{1,16}\s{0,16}end\s{0,16}\]{1,16}/gi; // [[END]] and near misses such as [END] or [[ end ]]
+const END_CLOSED = /\[{1,16}\s{0,16}end\s{0,16}\]{1,16}(?=[^\]])/gi; // ... only once no further ']' can follow
+const END_PARTIAL = /\[{1,16}\s{0,16}(?:e(?:n(?:d\s{0,16}\]{0,16})?)?)?\s{0,16}$/i; // a token still arriving at the end of the stream
 
 export class EndMarker {
   constructor() { this.buffer = ''; this.seen = false; }
@@ -22,16 +23,31 @@ export class EndMarker {
   }
 }
 
-// history: [{role: 'user'|'assistant', content}] in speaking order. Keeps the head and the tail of long interviews.
+// history: [{role: 'user'|'assistant', content}] in speaking order. The transcript is a JSON array of {speaker, text} turns, so a line break or an "ATLAS:" typed inside an
+// answer can never read as another speaker (red L4). Keeps the head and the tail of long interviews (REPORT_TRANSCRIPT_CHARS of text).
 export function reportMessages(history, sections, stage) {
-  let transcript = history.filter(m => m?.content).map(m => (m.role === 'user' ? 'Consultant: ' : 'ATLAS: ') + String(m.content)).join('\n');
-  if (transcript.length > REPORT_TRANSCRIPT_CHARS) {
-    const head = Math.floor(REPORT_TRANSCRIPT_CHARS / 3);
-    transcript = transcript.slice(0, head) + '\n[... middle of the interview omitted ...]\n' + transcript.slice(-(REPORT_TRANSCRIPT_CHARS - head));
+  let turns = history.filter(m => m?.content).map(m => ({ speaker: m.role === 'user' ? 'consultant' : 'atlas', text: String(m.content) }));
+  if (turns.reduce((n, t) => n + t.text.length, 0) > REPORT_TRANSCRIPT_CHARS) {
+    const headBudget = Math.floor(REPORT_TRANSCRIPT_CHARS / 3), head = [], tail = []; let used = 0, start = turns.length, cut = 0; // the turn that crosses the budget is cut to fit and its end may still open the tail
+    for (let i = 0; i < turns.length; i++) {
+      const t = turns[i], room = headBudget - used;
+      if (t.text.length > room) { head.push({ ...t, text: t.text.slice(0, Math.max(room, 0)) }); start = i; cut = Math.max(room, 0); break; }
+      head.push(t); used += t.text.length;
+    }
+    used = 0;
+    for (let i = turns.length - 1; i >= start; i--) { // the earliest of them is cut from its start to fit, never into what the head already holds
+      const t = turns[i], room = REPORT_TRANSCRIPT_CHARS - headBudget - used;
+      if (room <= 0) break;
+      const floor = i === start ? cut : 0;
+      if (t.text.length - floor > room) { tail.push({ ...t, text: t.text.slice(t.text.length - room) }); used += room; }
+      else if (i === start && floor) { tail.push({ ...t, text: t.text.slice(floor) }); used += t.text.length - floor; }
+      else { tail.push(t); used += t.text.length; }
+    }
+    turns = [...head, { speaker: 'server', text: '[... middle of the interview omitted ...]' }, ...tail.reverse()];
   }
   const notes = Object.fromEntries(REPORT_TOPICS.map((t, i) => [t, sections[i] ?? '']));
   return [{ role: 'system', content: REPORT_POLICY },
-    { role: 'user', content: JSON.stringify({ project_stage: stage, interview_transcript: transcript, quote_linked_notes: notes }) }];
+    { role: 'user', content: JSON.stringify({ project_stage: stage, interview_transcript: turns, quote_linked_notes: notes }) }];
 }
 
 const clean = (v, n) => typeof v === 'string' ? Array.from(v.split(/\s+/).filter(Boolean).join(' ')).slice(0, n).join('') : '';

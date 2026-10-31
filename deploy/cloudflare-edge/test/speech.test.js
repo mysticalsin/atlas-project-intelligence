@@ -96,8 +96,8 @@ test('to16k band-limits before decimating: 8-12 kHz no longer folds into the spe
 });
 
 // ---- ReplyGuard: one question, no empty praise, no repeated reaction, a short reply, summary-mode numbers. ----
-import { ReplyGuard, GUARD_STATS } from '../src/speech.js';
-const guardOf = o => new ReplyGuard({ bannedPraise: o.banned_praise, recentOpeners: o.recent_openers, ...('max_words' in o ? { maxWords: o.max_words } : {}), summaryFacts: o.summary_facts });
+import { ReplyGuard, GUARD_STATS, figures, assertsVerification } from '../src/speech.js';
+const guardOf = o => new ReplyGuard({ bannedPraise: o.banned_praise, recentOpeners: o.recent_openers, ...('max_words' in o ? { maxWords: o.max_words } : {}), summaryFacts: o.summary_facts, allowStatus: o.allow_status });
 const run = (opts, pieces) => { const g = guardOf(opts), voiced = []; let doneAt = null; pieces.forEach((p, i) => { voiced.push(g.push(p)); if (g.done && doneAt === null) doneAt = i; }); return { g, voiced, doneAt }; };
 
 test('ReplyGuard parity with Python on every recorded stream (voiced pieces, stats, when it was done)', () => {
@@ -183,4 +183,32 @@ test('ReplyGuard follows the Phrases pieces of a streamed reply, and done tells 
     for (const piece of p.feed(d)) spoken.push(...g.push(piece));
   }
   assert.deepEqual(spoken, ['Who measured the change before and after?']); assert.equal(read, 6); /* Phrases releases a sentence at the whitespace after it, so the stop comes one delta after the question mark */ assert.equal(g.stats.dropped_repeat_opener, 1); assert.equal(g.stats.dropped_praise, 1);
+});
+
+// ---- Red L3 (R2): figures however they are written, and sentences that claim something was verified or approved. PoC: red/pocs/prompt/p9_guard_numbers.mjs ----
+test('figures and verification claims: parity with Python on every recorded text', () => {
+  for (const [text, expected] of V._figures) assert.deepEqual(figures(text), expected, text);
+  for (const [text, expected] of V._claims) assert.equal(assertsVerification(text), expected, text);
+});
+
+test('p9 regression: spelled-out and full-width numbers are caught in summary mode, and "verified and approved" is never voiced', () => {
+  const facts = ['you cut the handling time by 4 percent'];
+  const said = reply => { const g = new ReplyGuard({ summaryFacts: facts }); return { out: g.push(reply), stats: g.stats }; };
+  for (const reply of ['So, you cut the handling time by 40 percent. ', 'So, you cut the handling time by forty percent. ', 'So, you cut it by four-fold, saving two million euros. ',
+    'So, you cut it by \uff14\uff10 percent. ', 'So, you cut it by half, a tenfold gain. ']) {
+    const r = said(reply); assert.deepEqual(r.out, [], reply); assert.equal(r.stats.dropped_unknown_number, 1, reply);
+  }
+  const verified = said('So, you cut it by 4 percent, and your manager verified and approved it. ');
+  assert.deepEqual(verified.out, []); assert.equal(verified.stats.dropped_unverified_claim, 1);
+  assert.deepEqual(said('So, you cut it by 4 percent. ').out, ['So, you cut it by 4 percent.'], 'the true figure still passes');
+  assert.deepEqual(said('So, you cut it by four percent. ').out, ['So, you cut it by four percent.'], 'a spelled-out fact is the same figure');
+});
+
+test('ReplyGuard: verification claims are dropped in every mode, denials, hedges and questions are kept, a server status line may say it', () => {
+  const g = new ReplyGuard({}), out = [];
+  for (const p of ['Your 40 percent saving is independently verified and approved by your manager.', 'That figure is not verified yet.', 'A reviewer will approve it later.', 'Was that approved by anyone?']) out.push(g.push(p));
+  assert.deepEqual(out, [[], ['That figure is not verified yet.'], ['A reviewer will approve it later.'], ['Was that approved by anyone?']]);
+  assert.equal(g.stats.dropped_unverified_claim, 1);
+  assert.deepEqual(new ReplyGuard({ allowStatus: true }).push('The draft was approved by the reviewer.'), ['The draft was approved by the reviewer.']);
+  assert.ok(GUARD_STATS.includes('dropped_unverified_claim'));
 });

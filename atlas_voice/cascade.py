@@ -27,6 +27,7 @@ from .report import END_TOKEN, EndMarker, parse_report, report_messages, text_co
 from .speech import KyutaiSpeech, WorkersSpeech, is_echo
 from .persona import OPENING_BRIEF, PERSONA_CORE, PRAISE_RULES, QUESTION_RULES, SAFETY, TURN_PATTERN, situations
 from .quality import InterviewLedger
+from .extension import INTERVIEW_SOFT_S
 
 HISTORY = 40  # long and stable, so the cached prompt prefix survives a whole interview
 CHUNK = 960  # 20 ms of 24 kHz PCM16, same pacing as the hosted route.
@@ -79,9 +80,9 @@ OPENING = ('[Session start. You have ALREADY greeted the consultant (see ALREADY
            'and say they can take their time. If a PRIVATE MEMORY note is present, pick up where you left off '
            'instead of starting from scratch. Do not assume a benefit or read a topic list.')
 
-INTERVIEW_LIMIT_S = 900  # the whole interview, wall clock (Tony, 2026-09-28: 15 minutes max)
-SPEAKING_LIMIT_S = 600  # ATLAS's own speaking time: a second safety cap inside the interview limit
-WRAP_S = 75  # with this little time left, ATLAS's next reply is the closing
+INTERVIEW_LIMIT_S = INTERVIEW_SOFT_S  # the planned end, in active time (Tony, 2026-10-31: 20 minutes, was 15; up to INTERVIEW_HARD_S = 30 with the consultant's agreement, extension.py)
+SPEAKING_LIMIT_S = 800  # ATLAS's own speaking time: a second safety cap inside the interview limit
+WRAP_S = 90  # with this little time left, ATLAS's next reply is the closing
 TIME_UP = ('[Server: the time for this interview is up.] Close warmly now in one or two short sentences: '
            'thank the consultant for sharing and say you will prepare their report. Do not ask another question.')
 TIME_UP_MESSAGE = 'The {minutes} minutes are up. Finishing your interview.'  # shown to the consultant; minutes = round(limit / 60)
@@ -98,7 +99,7 @@ def pace_notes(elapsed_s, limit_s, notes, admin=False):
     if left <= WRAP_S:
         pace += ' Time is up: close now, with no question.'
     elif left <= TIME_PLAN['closing_left_s']:
-        pace += ' Under four minutes left: ask only the single most important remaining question, then move to ENDING.'
+        pace += ' Under five minutes left: ask only the single most important remaining question, then move to ENDING.'
     elif elapsed_s >= TIME_PLAN['depth_fraction'] * limit_s:
         pace += ' Past halfway: challenge the one or two claims that matter most (what changed, and how they know).'
         pace += (' Still uncovered: ' + ', '.join(missing[:2]) + '.') if missing else ''

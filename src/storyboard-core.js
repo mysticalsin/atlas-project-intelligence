@@ -87,7 +87,8 @@ function timeOf(session,now){
  let elapsed=ready!==null&&until!==null?Math.max(0,Math.floor((until-ready)/1000)):0;if(max!==null)elapsed=Math.min(elapsed,max);
  const plan=obj(session.timePlan),closingAt=num(plan.closingAt),depthAt=num(plan.depthAt),gap=session.mode==='gap';
  const phase=closingAt!==null&&elapsed>=closingAt?'closing':gap?'focused':depthAt!==null&&elapsed>=depthAt?'depth':closingAt!==null||depthAt!==null?'breadth':null;
- return {elapsed,max,left:max===null?null:max-elapsed,phase};}  // no timePlan (an older server): no phase is invented
+ const soft=num(session.softSeconds);  // the planned end of a full interview (it may run on, with the consultant's agreement, to max): shown as an elapsed clock, not a countdown
+ return {elapsed,max,left:max===null?null:max-elapsed,phase,...(soft!==null&&soft>0&&max!==null&&!gap?{soft}:{})};}  // no timePlan (an older server): no phase is invented
 // state = {quality, heard: [{item_id, text, seq}], qualitySeq, session: {readyAt, stoppedAt, maxSeconds, mode, gaps, timePlan},
 //          now (ms), policy: window.ATLAS_POLICY, geo: AtlasGeo}. `seq` orders the events: analysing = a turn newer than the last quality.
 function model(state){

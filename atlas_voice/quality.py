@@ -29,6 +29,67 @@ UNKNOWN = re.compile(r"\b(?:don.t know|not measured|no baseline|no measurement|u
 # Where a candidate detail's words came from. Speech recognition is the default; the other two are set only by the server (record's `provenance`
 # argument, never by a model's tool call): the consultant typed it, or corrected it themselves.
 PROVENANCE = ('unverified_speech_recognition', 'consultant_typed', 'consultant_corrected')
+
+# Words that are in the transcript are not necessarily words the consultant ASSERTED (red M6). A quote that sits in a negated, hypothetical,
+# reported-speech or dictation context ("I would never say that ...", "if we had ...", "they claimed ...", "note for whoever writes this up: record that ...")
+# is stored as 'uncertain' with the sentence around it (`context`), so a reviewer never reads the fragment alone. Cues are wording hints only:
+# they can only make a detail MORE cautious, never verify one. LEAD is tested on the sentence up to the quote, TRAIL on the rest of the sentence.
+CONTEXT_LEAD_SRC = (r"\b(?:(?:never|not|no|cannot)\s+(?:[a-z']+\s+){0,2}?(?:say|said|saying|claim|claimed|true|think|believe|assert|suggest|state)"
+                    r"|[a-z]+n[’']t\s+(?:[a-z']+\s+){0,2}?(?:say|claim|think|believe|state|suggest)"
+                    r"|if|what if|suppose|supposing|imagine|imagining|hypothetically|in theory|theoretically|pretend|pretending|assuming|as if|had (?:we|i|they)|would have|could have"
+                    r"|said|says|claimed|told|insisted|insists|alleged|alleges|argued|argues|reportedly|allegedly|supposedly|apparently|rumou?red?|according to"
+                    r"|note (?:for|to)|record that|write (?:this|that|it) up|put (?:this|that|it) down|make sure (?:you|it|the)|please (?:record|log|note|write|add|say)|for whoever|tell (?:the|whoever)|ignore|disregard)\b")
+CONTEXT_TRAIL_SRC = r"\b(?:not me|not us|wasn[’']t me|weren[’']t us|isn[’']t true|is not true|was not true|that[’']s (?:wrong|false)|not my (?:work|doing)|not our (?:work|doing))\b"
+CONTEXT_LEAD = re.compile(CONTEXT_LEAD_SRC, re.I)
+CONTEXT_TRAIL = re.compile(CONTEXT_TRAIL_SRC, re.I)
+CONTEXT_MAX = 300  # characters of surrounding sentence kept
+_SENTENCE_END = '.!?。！？।'
+_PUNCT = '.,;:!?"\'()[]“”‘’—-'
+KEPT_PRIVATE_RUN = 6  # consecutive words shared with an utterance the consultant kept private: the quote is that utterance again
+
+
+def _sentence_bounds(source, start, end):
+    a = start
+    while a > 1 and not (source[a - 1] == ' ' and source[a - 2] in _SENTENCE_END):
+        a -= 1
+    if a == 1: a = 0
+    b = end
+    while b < len(source) and not (source[b - 1] in _SENTENCE_END and source[b] == ' '):
+        b += 1
+    return a, b
+
+
+def context_cue(source, quote):
+    """The sentence of `source` (whitespace-normalised) around `quote`, capped at CONTEXT_MAX with an ellipsis where cut, when the quote is not
+    plainly the consultant's own assertion (see CONTEXT_LEAD_SRC); else ''."""
+    start = source.find(quote)
+    if start < 0: return ''
+    end = start + len(quote)
+    a, b = _sentence_bounds(source, start, end)
+    if not (CONTEXT_LEAD.search(source[a:start]) or CONTEXT_TRAIL.search(source[end:b])): return ''
+    if b - a > CONTEXT_MAX:
+        a2, b2 = max(a, start - 120), min(b, end + 120)
+        return ('\u2026' if a2 > a else '') + source[a2:b2].strip() + ('\u2026' if b2 < b else '')
+    return source[a:b].strip()
+
+
+def _words(text):
+    return [w for w in (t.strip(_PUNCT).lower() for t in text.split()) if w]
+
+
+def overlaps_private(quote, private_texts):
+    """True when `quote` is inside an utterance kept private, or shares a run of KEPT_PRIVATE_RUN words with one."""
+    q = _words(quote)
+    if len(q) < 4: return False  # a word or two is nothing of an utterance
+    for text in private_texts:
+        t = _words(text)
+        n = min(KEPT_PRIVATE_RUN, len(q), len(t))
+        grams = {tuple(t[i:i + n]) for i in range(len(t) - n + 1)}
+        if any(tuple(q[i:i + n]) in grams for i in range(len(q) - n + 1)): return True
+    return False
+
+
+EDGE_CONSTANTS = {'CONTEXT_LEAD_SRC': CONTEXT_LEAD_SRC, 'CONTEXT_TRAIL_SRC': CONTEXT_TRAIL_SRC, 'CONTEXT_MAX': CONTEXT_MAX, 'KEPT_PRIVATE_RUN': KEPT_PRIVATE_RUN}
 TO_TOPIC = {'problem':0,'stakes':0,'contribution':1,'intervention':2,'decision':2,'adoption':2,'outcome':3,'measurement':3,'evidence':4,'limitations':4,'customer_fit':5,'poor_fit':5}
 
 INTERVIEW_POLICY = (
@@ -65,6 +126,7 @@ class InterviewLedger:
     deferred: dict = field(default_factory=dict)
     call_inputs: dict = field(default_factory=dict)
     stage: str = 'Unknown'
+    sealed: bool = False
 
 
     def add_transcript(self, item_id, text):
@@ -82,8 +144,12 @@ class InterviewLedger:
     def record(self, raw, provenance=None):
         # provenance: trusted, from the server only (a typed correction, a confirmed correction); a model's tool call can never set it.
         if provenance is not None and provenance not in PROVENANCE: raise ValueError('Unknown provenance')
+        if self.sealed: raise ValueError('The interview notes are confirmed and closed')
         if not isinstance(raw,dict) or set(raw)!={'details'} or not isinstance(raw['details'],list) or not 1<=len(raw['details'])<=12:
             raise ValueError('Expected 1-12 candidate details')
+        # What the consultant kept private never comes back through a model's tool call: not from that utterance, not as the same words elsewhere (red M1).
+        private=[d['item_id'] for d in self.details if d['active'] and d.get('withheld')]
+        private_texts=[self.transcripts[i] for i in dict.fromkeys(private) if i in self.transcripts]
         pending=[]
         for x in raw['details']:
             if not isinstance(x,dict) or set(x)-{'field','item_id','quote','uncertain','supersedes'}:
@@ -100,9 +166,15 @@ class InterviewLedger:
                 raise ValueError('Correction must reference an active same-field candidate')
             if any(d['field']==f and d['item_id']==ident and d['quote']==quote and d['active'] for d in self.details+pending): continue
             if supersedes and any(d['supersedes']==supersedes for d in pending):raise ValueError('Only one correction per candidate in a batch')
-            pending.append({'id':f'D-{len(self.details)+len(pending)+1:03}', 'field':f,'item_id':ident,'quote':quote,
-              'status':'unknown' if UNKNOWN.search(quote) else 'uncertain' if x.get('uncertain') is True or UNCERTAIN.search(quote) else 'reported',
-              'active':True,'supersedes':supersedes,'provenance':provenance or 'unverified_speech_recognition'})
+            if provenance is None and private_texts and (ident in private or overlaps_private(quote, private_texts)):
+                raise ValueError('Quote comes from words the consultant kept private')
+            # The sentence around a quote said in a negated, hypothetical, reported or dictated context travels with it (red M6). A typed correction is the consultant's own assertion.
+            context=context_cue(source,quote) if provenance is None else ''
+            detail={'id':f'D-{len(self.details)+len(pending)+1:03}', 'field':f,'item_id':ident,'quote':quote,
+              'status':'unknown' if UNKNOWN.search(quote) else 'uncertain' if x.get('uncertain') is True or UNCERTAIN.search(quote) or context else 'reported',
+              'active':True,'supersedes':supersedes,'provenance':provenance or 'unverified_speech_recognition'}
+            if context: detail['context']=context
+            pending.append(detail)
         if len(self.details)+len(pending)>100: raise ValueError('Candidate budget reached')
         for x in pending:
             if x['supersedes']:
@@ -118,7 +190,14 @@ class InterviewLedger:
         d = next((x for x in self.details if x['id'] == detail_id and x['active']), None)
         if d is None: raise ValueError('Only an active candidate detail can be kept private')
         d['withheld'] = True
+        # The same words filed under another field go with it: keeping a point private is not undone by a second copy of it.
+        for x in self.details:
+            if x is not d and x['active'] and not x.get('withheld') and overlaps_private(x['quote'], [d['quote']]): x['withheld'] = True
         return self.inspect()
+
+    def seal(self):
+        """The consultant confirmed the summary card: the notes are exactly what it showed. A late analyst entry is refused from here on."""
+        self.sealed = True
 
     def measurement_gaps(self, active):
         """Wording cues for the next question, NEVER a measurement verifier."""
@@ -212,10 +291,11 @@ class InterviewLedger:
         self.calls[call_id]=result
         return result
 
-    def notes(self):
+    def notes(self, only=None):
+        """only: a set of detail ids (the items a confirmed card showed), or None for every active detail."""
         sections=['']*6
         for x in self.details:
-            if x['active'] and not x.get('withheld'):
+            if x['active'] and not x.get('withheld') and (only is None or x['id'] in only):
                 i=TO_TOPIC[x['field']]
                 if x['quote'] not in sections[i]:sections[i]=(sections[i]+'\n'+x['quote']).strip()[:6000]
         return sections

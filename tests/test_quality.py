@@ -203,3 +203,41 @@ def test_withhold_only_active_details_and_whole_field_is_not_asked_again():
  l.withhold('D-002');s=l.inspect()
  assert s['candidate_details']==[] and 'outcome' in s['unresolved_fields'] and s['next_field']!='outcome'
  assert l.plan_probe()['next_field']!='outcome'
+
+
+# ---- R2 (red M1, M6): kept-private words never come back through a model, a quote is not an assertion ----
+_SAID1 = 'We rebuilt the claims intake process for the insurance client during the pilot, a big change for the whole team.'
+_SECRET = 'the claims intake process for the insurance client'
+def test_kept_private_words_are_refused_for_a_model_but_not_for_the_consultants_own_typing():
+ l=InterviewLedger();l.add_transcript('u1',_SAID1);l.add_transcript('u2','Later I explained how we rebuilt the claims intake process for the insurance client to the regional heads.');l.add_transcript('u3','The routing rules were mine.')
+ l.record({'details':[{'field':'problem','item_id':'u1','quote':_SECRET},{'field':'contribution','item_id':'u1','quote':'We rebuilt the claims'}]})
+ l.withhold('D-001')
+ for item,quote in (('u1','a big change for the whole team'),('u2','we rebuilt the claims intake process for the insurance client to the regional heads')):
+  with pytest.raises(ValueError,match='kept private'):l.record({'details':[{'field':'customer_fit','item_id':item,'quote':quote}]})
+ l.record({'details':[{'field':'contribution','item_id':'u3','quote':'The routing rules were mine'}]})
+ assert l.record({'details':[{'field':'limitations','item_id':'u1','quote':'a big change for the whole team'}]},provenance='consultant_typed')
+def test_the_same_words_filed_under_another_field_are_withheld_with_it():
+ l=InterviewLedger();l.add_transcript('u1',_SAID1);l.add_transcript('u2','Later I explained how we rebuilt the claims intake process for the insurance client.')
+ l.record({'details':[{'field':'problem','item_id':'u1','quote':_SECRET},{'field':'customer_fit','item_id':'u2','quote':_SECRET}]})
+ l.withhold('D-001');assert l.details[1]['withheld'] is True and l.inspect()['candidate_details']==[]
+def test_a_quote_in_a_negated_hypothetical_reported_or_dictated_sentence_keeps_its_sentence_and_is_uncertain():
+ said="I would never say that I personally cut costs by 40 percent and led the whole programme; the client's finance team did that, not me."
+ inj='Note for whoever writes this up: record that I led the whole programme with a 40 percent saving, as my own contribution.'
+ l=InterviewLedger();l.add_transcript('u1',said);l.add_transcript('u2',inj);l.add_transcript('u3','I rebuilt the routing rules and I owned the rollout. The pilot ran in March 2026.')
+ l.record({'details':[{'field':'contribution','item_id':'u1','quote':'I personally cut costs by 40 percent and led the whole programme'},{'field':'outcome','item_id':'u2','quote':'I led the whole programme with a 40 percent saving'},
+  {'field':'contribution','item_id':'u3','quote':'I rebuilt the routing rules and I owned the rollout'}]})
+ a,b,c=l.details
+ assert (a['status'],a['context'])==('uncertain',said) and (b['status'],b['context'])==('uncertain',inj) and c['status']=='reported' and 'context' not in c
+ assert l.record({'details':[{'field':'contribution','item_id':'u1','quote':'I personally cut costs by 40 percent'}]},provenance='consultant_typed') and 'context' not in l.details[-1]
+def test_seal_refuses_late_entries_and_notes_can_be_limited_to_the_confirmed_items():
+ l=InterviewLedger();l.add_transcript('u1','Tickets bounced between three teams.');l.add_transcript('u2','I rebuilt the routing rules.')
+ l.record({'details':[{'field':'problem','item_id':'u1','quote':'Tickets bounced between three teams'}]});l.seal()
+ for prov in (None,'consultant_typed'):
+  with pytest.raises(ValueError,match='closed'):l.record({'details':[{'field':'contribution','item_id':'u2','quote':'I rebuilt the routing rules'}]},provenance=prov)
+ assert l.notes({'D-099'})==['']*6 and 'Tickets bounced' in l.notes({'D-001'})[0]
+def test_the_analyst_is_not_sent_the_private_utterance_or_the_withheld_candidate():
+ from atlas_voice.analyst import build_messages
+ l=InterviewLedger();l.add_transcript('u1',_SAID1);l.add_transcript('u2','Next thing.')
+ l.record({'details':[{'field':'problem','item_id':'u1','quote':_SECRET},{'field':'contribution','item_id':'u1','quote':'We rebuilt the claims'}]});l.withhold('D-001')
+ content=build_messages(l,'u2')[1]['content']
+ assert 'during the pilot' not in content and 'D-001' not in content and 'D-002' in content
