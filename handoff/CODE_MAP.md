@@ -102,3 +102,46 @@ Valid server story audiences are `internal` and `customer-anonymized`. Local aut
 
 ## Added 2026-09-29
 - `deploy/cloudflare-edge/src/rating.js` — JEV story rating (docs/JEV_RATING.md): the rubric (`DIMENSIONS`, `CHECKS`, `LANGUAGE`), masking and the containment guard (`sensitiveTerms`, `ownMask`, `guard`, `ratingInput`), `requestBody`, `parseAnswers` (all or nothing), `compose` (weights, blockers, holds, robustness check, status), and `storyRater` (budgets, hedge, retries, circuit breaker). Called from `library.js` `review()`; wired in `worker.js`. Tests: `deploy/cloudflare-edge/test/rating.test.js`; local fake `dev/fake-typesafe.mjs`.
+
+## Added 2026-10-30 to 2026-10-31: Agent Brain v2.1
+Spec pack and status: `docs/agent-brain-v2.1/` (`README.md`, `DECISION_LOG.md`, `GAP_ANALYSIS.md`, `IMPLEMENTATION_STATUS.md`, `eval/COVERAGE.md`). How the agent works, with a diagram and the switches: `AGENT.md`. **Python is the source of truth; the edge ports are parity-tested against it.** Regenerate constants and vectors, never hand-edit them: `python deploy/cloudflare-edge/build_edge.py` (a Python with aiohttp, the project venv) writes `deploy/cloudflare-edge/src/policy.generated.js` (modules register in `EDGE_MODULES`), and `deploy/cloudflare-edge/test/gen_*_parity.py` write `*.vectors.json`.
+
+### Python (`atlas_voice/`)
+| File | Responsibility |
+|---|---|
+| `persona.py` | The one persona: blocks composed into `cascade.TALKER_POLICY`, `quality.INTERVIEW_POLICY`, `interview.ROLE`; `ACKS`, `BANNED_PRAISE_SRC`, pause and resume lines |
+| `turns.py` | `analyze_turn`: intents, event cues, field hints, numbers for one utterance (no person description, D18) |
+| `selector.py` | `select`: deterministic next move (question ladder, redundancy, deferrals, ASR confirm, summary, close); `QUESTION_BANK` |
+| `asr.py` | `uncertain_spans`, `replacement`, `TAU` (0.55; `ASR_CONFIRM_TAU`) |
+| `conversation_state.py` | Interview and evidence state machines with audit (D8 to D11) |
+| `workflow_config.py`, `config/atlas_workflow.json`, `config/field_visibility_policy.json`, `config/success_story_template.schema.json` | Pack YAML as validated JSON; purposes, branches, visibility |
+| `success_story.py` | Schema validation, audience projection, pinned Spanish DOCX template filling (`assets/templates/amaris_success_story_es.docx`), leak scan; CLI `scripts/fill_success_story.py` |
+| `speech.py` (extended) | `ReplyGuard`: one question, no empty praise, no repeated opener, 45-word cap, read-back figure rule |
+| `quality.py` (extended) | Ledger provenance and withheld details; `inspect` feeds the selector |
+
+### Edge Worker (`deploy/cloudflare-edge/src/`)
+| File | Responsibility |
+|---|---|
+| `session.js` (extended) | One turn: hear, `turns.js`, `asr.js`, `selector.js`, `ack.js`, talker, ReplyGuard, speak; pause, resume, repeat, skip, typed and text mode; checkpoint; summary; evidence draft; flags (`sessionFlags`) |
+| `turns.js`, `selector.js`, `asr.js`, `speech.js`, `conversation-state.js`, `story-projection.js` | JavaScript ports (parity-tested) |
+| `ack.js` | Content-aware acknowledgements |
+| `summary.js` | Read-back facts, card items and open points from the ledger |
+| `checkpoint.js` | `CheckpointStore`, `serialize`/`restore`, 24 h absolute expiry; `ATLAS_CHECKPOINT`; routes `GET /api/checkpoint`, `POST /api/checkpoint/discard` (wired in `app.js`, `worker.js`) |
+| `evidence.js` | Evidence store and review in the `LibraryStore` DO: claims, revisions, approvals, grants; `postDraftFromInterview` (server to server); routes `/api/library/evidence[/:id[/status|submit|sync|review|permissions[/:gid/revoke]]]` (browser) and `/api/evidence` (Interview DO only) via `library-routes.js` |
+| `policy-gate.js` | `decide(actor, action, entity, ctx)`: pure, default deny, stable reason codes |
+| `branches.js`, `jobs.js`, `adapters.js`, `spotlight.js` | Seven branch cards, job envelope with idempotency and retry, mock destination adapters and MAAP/Project Review shells, Spotlight hold; `ATLAS_ADAPTERS`, `ATLAS_EVIDENCE_WORKFLOW` |
+| `app.js`, `worker.js` (extended) | `TALKER_MAX_TOKENS`, bootstrap `resumable` and `textMode`, `Interview` DO wiring (checkpoint store, evidence poster, alarm) |
+| `languages.js` (extended) | Two-piece cached greetings in seven languages (translations need native review) |
+
+### Browser (`src/`)
+`voice-controls.js` (pause, repeat, skip, typed turns, text-mode log; pure helpers), `voice-client.js` (consent, `Type instead`, reconnect, resume prompt, summary actions), `voice-panel.html`, `shell.html`, `voice.css`, `workflow-core.js` / `workflow-ui.js` / `workflow.css` (seven status cards), `storyboard-ui.js`. Rebuild every alias after a change (`python3 build.py`, then `build_edge.py`).
+
+### Tests
+| Area | Tests |
+|---|---|
+| Python policy and pure logic | `tests/test_persona.py`, `test_turns.py`, `test_selector.py`, `test_asr.py`, `test_conversation_state.py`, `test_workflow_config.py`, `test_success_story.py`, `test_speech.py`, `test_edge.py` (generated constants current, vectors) |
+| Edge parity | `test/turns.test.js`, `selector.test.js`, `asr.test.js`, `conversation-state.test.js`, `story-projection.test.js`, `speech.test.js`, `parity.test.js` with `*.vectors.json` |
+| Edge session | `test/session-humane.test.js`, `session-asr.test.js`, `session-pause.test.js`, `session-reconnect.test.js`, `session-summary.test.js`, `session-text.test.js`, `session-s1.test.js`, `h1-humane.test.js`, `h2-polish.test.js`, `worker-interview.test.js`, `app-resume.test.js`, `checkpoint.test.js` |
+| Edge workflow | `test/policy-gate.test.js`, `evidence.test.js`, `branches.test.js`, `jobs.test.js` |
+| Offline evaluation (`make test-eval`) | `test/eval-conversation.test.js`, `eval-workflow.test.js`, `eval-rubric.test.js`, fixtures `test/fixtures/eval/`, `docs/agent-brain-v2.1/eval/conversation_rubric.json` |
+| Browser client | `tests/voice-controls.test.js`, `voice-controls-dom.test.js`, `text-mode-dom.test.js`, `summary-card-dom.test.js`, `voice-reconnect-dom.test.js`, `workflow-core.test.js`, `workflow-ui.test.js`, `tests/humane_browser.py` |

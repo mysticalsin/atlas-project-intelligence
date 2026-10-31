@@ -109,6 +109,8 @@ Delivered: executable browser application, real provider adapters, bounded inter
 
 Not deployed or validated here: live OpenAI/NVIDIA inference, native microphone/turn-taking/voice quality, real Entra tenant login, live Hindsight, live JEV, actual Graphify extraction, multiuser production operations or brand-owner sign-off. Automated provider tests use explicit synthetic fixtures. Frontend validation in this environment uses Chromium `set_content` because direct local-file navigation is blocked.
 
+Agent Brain v2.1 (the humane, evidence-first interviewer on the edge Worker, from the spec pack in `docs/agent-brain-v2.1/`): see `AGENT.md` for how it works and `docs/agent-brain-v2.1/IMPLEMENTATION_STATUS.md` for what is implemented, locally verified, mocked, blocked or unverified. Nothing in it is provider verified or deployed, and DNA, MeChat, IMP, Spotlight, MAAP and Project Review are mocks or shells.
+
 The original supplied Mantu logo is preserved byte-for-byte; no font files are distributed. Store local drafts and backups only on a trusted device and use authorized material. Browser storage/backups are not encrypted. Do not expose local-auth mode, the GPU worker, secrets or the private knowledge directory publicly.
 
 ## Working in the cloud

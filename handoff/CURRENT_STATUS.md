@@ -6,6 +6,23 @@ The supplied application was rebuilt and its existing suites rerun for this hand
 
 The compiled primary HTML and its three aliases still match the v12 application byte-for-byte. Runtime `src/`, `atlas_voice/` and `assets/Mantu.svg` are preserved. Handoff changes are documentation, build/test entry points, dependency examples, packaging hygiene and offline diagnostics.
 
+## Agent Brain v2.1 upgrade (2026-10-30 to 2026-10-31)
+Branch `feature/agent-brain-v2.1` (from `efb4948`): the humane, evidence-first interviewer on the edge Worker, from the supplied spec pack (`docs/agent-brain-v2.1/`). **Implemented and locally verified; provider verified: none; not deployed; no claim of production readiness.** The baseline counts above are historical. Current offline suites on this branch: root `node --test tests/*.test.js` 461 (460 pass, 1 skipped by design), edge `node --test` 939, `pytest tests/test_*.py` 627, `make test-eval` 52. Per-requirement status, with the test that proves each and what is only mocked or unverified: `docs/agent-brain-v2.1/IMPLEMENTATION_STATUS.md`. How the agent works and its switches: `AGENT.md`. Decisions: `docs/agent-brain-v2.1/DECISION_LOG.md`.
+
+| Capability | Source | Status and remaining work |
+|---|---|---|
+| One persona, turn pattern, one question per turn enforced in code (ReplyGuard), content-aware acknowledgements, deterministic next-move selector with a turn pre-pass | `atlas_voice/persona.py`, `turns.py`, `selector.py`; edge ports `turns.js`, `selector.js`, `speech.js`, `ack.js`; `session.js` | Locally verified (parity vectors, session and evaluation tests). Live model adherence to the NEXT MOVE note, real latency and non-English wording are unverified; acknowledgements and stock lines are English only; selector weights are uncalibrated. |
+| ASR uncertainty confirmation | `atlas_voice/asr.py`, `asr.js` | Logic locally verified. Real Nova-3 word confidences through Workers AI and the 0.55 threshold are unverified. |
+| Pause, resume, repeat, skip, typed turns, text-only mode | `session.js`, `voice-controls.js`, `voice-client.js` | Locally verified, including a browser test. Text replies follow the voice languages. |
+| Checkpoint and reconnect (24 h, transcript consent only) | `checkpoint.js`, `worker.js` | Locally verified against a storage fake. Durable Object alarm, eviction and mobile drops unverified. Consent text does not yet mention the 24 h retention (Tony and the data protection owner to approve wording). |
+| Summary read-back, correction revisions, owner-only evidence draft, explicit submit | `summary.js`, `evidence.js` | Locally verified. |
+| Evidence review, policy gate, seven branch cards, job envelope, success-story template safety | `evidence.js`, `policy-gate.js`, `branches.js`, `jobs.js`, `atlas_voice/success_story.py` | Locally verified. Destinations are mocks. DOCX visual fidelity in Word unverified. |
+| DNA, MeChat, IMP, Spotlight CMS | `adapters.js` (mocks), `docs/INTEGRATIONS.md` | `BLOCKED_EXTERNAL`: no endpoints, schemas or credentials. Mock acknowledgements are never "synced" or "published". |
+| MAAP review, Project Review | shells in `adapters.js`, `atlas_workflow.json` | `BLOCKED_EXTERNAL` (rubric must be configured by the process owner). Rating or closing is denied. |
+| Offline evaluation (pack scenarios 1 to 16, W1 to W12, MAAP section 8, release gates) | `deploy/cloudflare-edge/test/eval-*.test.js`, `make test-eval` | Passes offline. Conversation quality with pilot users has not started. |
+
+Open product calls for Tony: closing the page keeps the interview; text-mode language follows the voice languages; a re-grant after a halted job needs a new revision; withheld words stay in the owner-only ledger and checkpoint for 24 hours; the opening is about 22 seconds; the consent wording for checkpoints. Release readiness (what needs live or pilot verification before any deploy) is the last entry of `handoff/BUILD_STATUS.md`.
+
 ## Capability matrix
 | Capability | Existing source | Status and remaining work |
 |---|---|---|
