@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Staffing import row (Atlas-defined CSV header)",
+  "x-status": "Atlas-defined (existing import code); not an external owner contract",
+  "x-source": "docs/INTEGRATIONS.md, Staffing import and the outreach queue",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "project_id",
+    "consultant_email"
+  ],
+  "properties": {
+    "project_id": {
+      "type": "string"
+    },
+    "consultant_email": {
+      "type": "string"
+    },
+    "manager_email": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "manager_name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "project_title": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "end_date": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    }
+  }
+}

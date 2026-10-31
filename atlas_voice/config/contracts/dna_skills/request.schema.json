@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DNA skills write-back request (Atlas-side approved payload)",
+  "x-status": "draft — from Atlas side; owner to confirm",
+  "x-source": "ATLAS_Integration_Contracts.md §1; adapters.js buildPayload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "entity_id",
+    "source_revision",
+    "content_hash",
+    "consultant_id",
+    "assertions"
+  ],
+  "properties": {
+    "entity_id": {
+      "type": "string"
+    },
+    "source_revision": {
+      "type": "integer"
+    },
+    "content_hash": {
+      "type": "string"
+    },
+    "approved_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "consultant_id": {
+      "type": "string"
+    },
+    "reviewer": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "effective_date": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "assertions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "claim_id",
+          "claim_type",
+          "statement",
+          "status",
+          "skill_taxonomy_id",
+          "level",
+          "evidence_refs"
+        ],
+        "properties": {
+          "claim_id": {
+            "type": "string"
+          },
+          "claim_type": {
+            "type": "string"
+          },
+          "statement": {
+            "type": "string"
+          },
+          "attribution": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "skill_taxonomy_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "level": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "enum": [
+              "proposed"
+            ]
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "claim_id",
+                "revision"
+              ],
+              "properties": {
+                "claim_id": {
+                  "type": "string"
+                },
+                "revision": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
