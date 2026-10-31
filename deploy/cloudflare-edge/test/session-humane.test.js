@@ -68,11 +68,12 @@ const named = (metrics, name) => metrics.filter(([n]) => n === name).map(([, v])
 const questions = text => (text.match(/\?/g) || []).length;
 
 test('flags: new behaviour by default, legacy values read from the env', () => {
-  assert.deepEqual({ ...DEFAULT_FLAGS }, { selector: 'v2', replyGuard: 'on', acks: 'content', analystWaitMs: 0, speculativeStt: false });
+  assert.deepEqual({ ...DEFAULT_FLAGS }, { selector: 'v2', replyGuard: 'on', acks: 'content', analystWaitMs: 0, asrTau: 0.55, speculativeStt: false });
   assert.deepEqual(sessionFlags({}), { ...DEFAULT_FLAGS });
   assert.deepEqual(sessionFlags(undefined), { ...DEFAULT_FLAGS });
   assert.deepEqual(sessionFlags({ ATLAS_SELECTOR: 'legacy', ATLAS_REPLY_GUARD: 'off', ATLAS_ACKS: 'legacy', ANALYST_WAIT_MS: '250', SPECULATIVE_STT: 'on' }),
-    { selector: 'legacy', replyGuard: 'off', acks: 'legacy', analystWaitMs: 250, speculativeStt: true });
+    { selector: 'legacy', replyGuard: 'off', acks: 'legacy', analystWaitMs: 250, asrTau: 0.55, speculativeStt: true });
+  assert.equal(sessionFlags({ ASR_CONFIRM_TAU: '0.7' }).asrTau, 0.7); assert.equal(sessionFlags({ ASR_CONFIRM_TAU: 'x' }).asrTau, 0.55, 'a bad threshold keeps the default');
   assert.equal(sessionFlags({ ATLAS_SELECTOR: 'nonsense', ATLAS_REPLY_GUARD: 'maybe', ATLAS_ACKS: '' }).selector, 'v2', 'anything but "legacy"/"off" keeps the default');
   assert.equal(sessionFlags({ ANALYST_WAIT_MS: '-5' }).analystWaitMs, 0); assert.equal(sessionFlags({ ANALYST_WAIT_MS: '999999' }).analystWaitMs, 1500, 'bounded');
   assert.deepEqual(workersAI({}).flags, { ...DEFAULT_FLAGS }, 'the Worker adapter hands the env flags to the Session');

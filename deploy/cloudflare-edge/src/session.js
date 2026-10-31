@@ -2,7 +2,7 @@
 // Same browser protocol as atlas_voice/cascade.py, so the compiled ATLAS page, worklet and orb work unchanged:
 // the orb moves only from PCM this session actually sends for playback.
 import { TALKER_POLICY, OPENING, HISTORY, TOPICS, ADMIN_NOTE, SPEAKING_LIMIT_S, INTERVIEW_LIMIT_S, WRAP_S, TIME_UP, AREAS, TIME_PLAN, TIME_UP_MESSAGE, FIELDS,
-  GAP_LIMIT_S, GAP_SPEAKING_S, GAP_WRAP_S, GAP_MAX, GAP_OPENING, WIN_HINTS, BANNED_PRAISE_SRC } from './policy.generated.js';
+  GAP_LIMIT_S, GAP_SPEAKING_S, GAP_WRAP_S, GAP_MAX, GAP_OPENING, WIN_HINTS, BANNED_PRAISE_SRC, ASR_TAU } from './policy.generated.js';
 import { gapSystemBlock, gapNotes, gapStatus, gapGuidance, timePlan } from './gap-policy.js';
 import { Analyst, InterviewLedger } from './ledger.js';
 import { EnergyTurns, isEcho, Phrases, speakable, sentences, ReplyGuard, GUARD_MAX_WORDS } from './speech.js';
@@ -11,6 +11,7 @@ import { LANGUAGES, normalize, spokenFor, languageNote, GREETING_PIECES, WELCOME
 import { analyzeTurn } from './turns.js';
 import { select } from './selector.js';
 import { pickAck, ackPrewarmList } from './ack.js';
+import { uncertainSpans, replacement, tauFrom } from './asr.js';
 
 export const RESUME = '[The consultant made a sound but no words were recognised, and your last reply was cut off.] Briefly re-ask your last question in fresh words.';
 
@@ -56,14 +57,16 @@ export { SPEAKING_LIMIT_S, TIME_UP };
 //   ATLAS_REPLY_GUARD=on|off    on: one question, no empty praise, no repeated opener, at most GUARD_MAX_WORDS words, enforced in code
 //   ATLAS_ACKS=content|legacy   content: the acknowledgement follows what the answer was about (ack.js); legacy: FILLERS
 //   ANALYST_WAIT_MS=0           bounded wait (ms) for the analyst while the acknowledgement plays, then the move is re-selected
+//   ASR_CONFIRM_TAU=0.55        a number or proper noun the recogniser heard with less confidence than this is confirmed aloud (asr.js)
 //   SPECULATIVE_STT=on          RESERVED: speculative transcription is not implemented, the flag is read and has no effect
-export const DEFAULT_FLAGS = Object.freeze({ selector: 'v2', replyGuard: 'on', acks: 'content', analystWaitMs: 0, speculativeStt: false });
+export const DEFAULT_FLAGS = Object.freeze({ selector: 'v2', replyGuard: 'on', acks: 'content', analystWaitMs: 0, asrTau: ASR_TAU, speculativeStt: false });
 export function sessionFlags(env = {}) {
   const e = env || {}, wait = Number(e.ANALYST_WAIT_MS);
   return { selector: String(e.ATLAS_SELECTOR || '').toLowerCase() === 'legacy' ? 'legacy' : 'v2',
     replyGuard: String(e.ATLAS_REPLY_GUARD || '').toLowerCase() === 'off' ? 'off' : 'on',
     acks: String(e.ATLAS_ACKS || '').toLowerCase() === 'legacy' ? 'legacy' : 'content',
     analystWaitMs: Number.isFinite(wait) && wait > 0 ? Math.min(Math.round(wait), 1500) : 0,
+    asrTau: tauFrom(e.ASR_CONFIRM_TAU),
     speculativeStt: ['on', '1', 'true'].includes(String(e.SPECULATIVE_STT || '').toLowerCase()) };
 }
 export const MAX_SECONDS = INTERVIEW_LIMIT_S; // the whole interview (15 minutes); ATLAS's own speaking time is a second cap inside it
@@ -182,6 +185,10 @@ export class Session {
     // acks (texts of the last acknowledgements played, oldest first), sinceEarned (replies since the last earned_result; null: none yet)
     // and openers (the leading reaction of her last replies, for the repeated-opener rule).
     this.humane = { asked: [], covered: new Set(), rushed: false, acks: [], sinceEarned: null, openers: [] };
+    // Speech-recognition doubt (asr.js), per consultant turn item: asrMeta[item] = {spans: [{text, kind, min_conf, start, end, audio_offset_ms, status}],
+    // minConf, audioOffsetMs}. status: open (not yet settled), confirmed, denied (waiting for the right value) or corrected. asrIdents: the items
+    // of the turn being answered (a turn they carried on after counts as one); asrCorrections: corrections waiting for their ledger turn.
+    this.asrMeta = {}; this.asrIdents = []; this.asrDone = null; this.asrCorrections = [];
     this.move = null; this.moveByItem = new Map(); this.prefill = {}; this.lastPlan = null; this.lastTurn = null;
     // Interview mode. Gap mode keeps its own answer windows: askByItem (reply item -> the ask it carried, set when the reply
     // is composed), gapAttempts (replies heard per ask), openAsk (the ask the consultant last heard; null once a reflect-back
@@ -292,7 +299,7 @@ export class Session {
   finalWords() {
     const d = this.turnDetector, b = this.blip; this.blip = null;
     if (b && d.active) { d.buffer = joinPcm(b.pcm, d.buffer); this.voiced += b.voiced; }
-    else if (b) this.queueTranscription(b.pcm, { continuing: b.continuing, echoable: b.echoable, endedBy: 'limit', endedAt: b.endedAt });
+    else if (b) this.queueTranscription(b.pcm, { continuing: b.continuing, echoable: b.echoable, endedBy: 'limit', endedAt: b.endedAt, endBytes: b.endBytes });
     if (!d.active) return;
     const endedAt = this.now() - d.quiet, pcm = d.flush();
     this.pause = '';
@@ -302,7 +309,7 @@ export class Session {
   closeBlip() {
     const d = this.turnDetector, endedAt = this.now() - d.quiet, pcm = d.flush();
     this.pause = '';
-    this.blip = pcm ? { pcm, voiced: this.voiced, at: this.now(), endedAt, ...this.takeUtterance() } : null;
+    this.blip = pcm ? { pcm, voiced: this.voiced, at: this.now(), endedAt, endBytes: this.bytesIn, ...this.takeUtterance() } : null;
     this.metric('blip', {});
   }
 
@@ -313,7 +320,7 @@ export class Session {
     if (!b || this.sttBusy > 0) return; // wait for the transcript in flight: it decides whether ATLAS answers
     this.blip = null;
     if (this.busy() || this.ending) return;
-    this.queueTranscription(b.pcm, { continuing: b.continuing, echoable: b.echoable, endedBy: 'silence', endedAt: b.endedAt });
+    this.queueTranscription(b.pcm, { continuing: b.continuing, echoable: b.echoable, endedBy: 'silence', endedAt: b.endedAt, endBytes: b.endBytes });
   }
 
   endTurn(endedBy) {
@@ -325,6 +332,7 @@ export class Session {
 
   queueTranscription(pcm, how = {}) {
     this.sttBusy += 1;
+    how = { ...how, endBytes: how.endBytes ?? this.bytesIn }; // where in the microphone stream this utterance ended (the transcript comes later)
     this.sttChain = this.sttChain.then(() => this.transcribe(pcm, how)).finally(() => { this.sttBusy -= 1; });
   }
 
@@ -496,19 +504,19 @@ export class Session {
     this.event('clear_audio');
   }
 
-  async transcribe(pcm, { continuing = false, echoable = true, endedBy = '', endedAt = this.now(), blip = false } = {}) {
+  async transcribe(pcm, { continuing = false, echoable = true, endedBy = '', endedAt = this.now(), blip = false, endBytes = this.bytesIn } = {}) {
     if (this.finished) return;
     let text = '';
     const t0 = this.now();
-    let heardIn = null, timer;
+    let heardIn = null, words = null, timer;
     if (blip) this.metric('blip', {}); // a click or a breath: no words to transcribe
     else try {
       const heard = await Promise.race([this.ai.transcribe(pcm), new Promise((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error('timeout'), { name: 'Timeout' })), this.sttTimeout); })]);
-      text = (typeof heard === 'string' ? heard : heard?.text || '').trim(); heardIn = typeof heard === 'string' ? null : heard?.language || null;
+      text = (typeof heard === 'string' ? heard : heard?.text || '').trim(); heardIn = typeof heard === 'string' ? null : heard?.language || null; words = Array.isArray(heard?.words) ? heard.words : null;
       this.metric('stt', { ms: Math.round((this.now() - t0) * 1000), audio_ms: Math.round(pcm.length / 48), words: text ? text.split(/\s+/).length : 0 });
     } catch (e) {
       // A failed (or hung) transcription counts as no words: whatever was waiting on it (a held answer, a re-ask) still happens.
-      this.metric('stt_error', { name: e?.name || 'Error' }); this.event('quality_warning', { message: 'A speech segment could not be transcribed. Please repeat it or add it to your notes.' }); text = ''; heardIn = null;
+      this.metric('stt_error', { name: e?.name || 'Error' }); this.event('quality_warning', { message: 'A speech segment could not be transcribed. Please repeat it or add it to your notes.' }); text = ''; heardIn = null; words = null;
     } finally { clearTimeout(timer); }
     if (this.finished) return;
     // Echo reference: what the consultant could have heard, including a reply still playing or just withdrawn.
@@ -528,7 +536,8 @@ export class Session {
     }
     // Speaker echo of ATLAS's own words must never become consultant testimony.
     if (text && echoable && isEcho(text, recent)) { this.metric('echo_ignored', {}); this.event('quality_warning', { message: 'ATLAS heard its own voice through the microphone and ignored it. Headphones prevent this.' }); text = ''; }
-    const lang = heardIn || this.language, how = { endedBy, endedAt, lang, sttMs: blip ? -1 : Math.round((this.now() - t0) * 1000) };
+    // baseMs: where this utterance starts in the microphone stream (24 kHz PCM16 = 48 bytes per ms), so a word's offset is baseMs + its start.
+    const lang = heardIn || this.language, how = { endedBy, endedAt, lang, sttMs: blip ? -1 : Math.round((this.now() - t0) * 1000), words, baseMs: Math.max(0, endBytes - pcm.length) / 48 };
     if (text) { this.cutOff = false; await this.finishTurn(text, continuing, how); }
     // No words. Unless the consultant is already speaking again (that utterance will decide): answer what they said
     // before a noise, or re-ask after a noise that cut ATLAS off.
@@ -551,13 +560,15 @@ export class Session {
     const ident = 'user-' + this.turns;
     if (merge) { this.history[this.history.length - 1] = { role: 'user', content: this.history.at(-1).content + ' ' + text }; this.metric('turn_merged', {}); }
     else this.history.push({ role: 'user', content: text });
+    const asr = this.recordAsr(ident, how, merge);
     // Gap mode: the turn joins its ask's answer window, and the plan moves on at once (the reply about to be composed
     // must carry the next ask, not wait for the analyst).
     if (this.mode === 'gap') { this.recordAnswer(text, merge); this.guidance = gapGuidance(this.gapAsks, this.gapStatuses()); }
     if (this.capture) {
-      this.event('user_text', { item_id: ident, text, provenance: 'unverified_speech_recognition' });
+      this.event('user_text', { item_id: ident, text, provenance: 'unverified_speech_recognition', ...(asr ? { asr } : {}) });
       const a0 = this.now();
       const job = this.analyst.hear(ident, text).then(async result => {
+        this.applyAsrCorrections(ident); this.annotateAsr(ident); // before anything reads the ledger: doubt and corrections are on its details
         this.metric('analyst', { ms: Math.round((this.now() - a0) * 1000), ok: result.analyst_status === 'analysed' ? 1 : 0, details: result.candidate_details.length, rejected: result.rejected_proposals });
         if (this.mode === 'gap') return this.gapQuality(result);
         this.lastPlan = result; // the plan the ledger now holds; the next move is read from the ledger, so it is never one answer behind
@@ -607,6 +618,7 @@ export class Session {
       if (v2 || content) {
         const t0 = this.now(), last = h.asked.at(-1);
         try { turn = this.lastTurn = analyzeTurn(text, lang, { asked_field: last?.field ?? null }); } catch (e) { this.metric('turn_error', { name: e?.name || 'Error' }); }
+        if (turn) turn = this.resolveAsr(turn, text); // a yes / no / right value for the span asked last turn settles it (once)
         if (turn && v2) { try { move = this.decide(turn); } catch (e) { this.metric('selector_error', { name: e?.name || 'Error' }); } }
         selectorMs = Math.round((this.now() - t0) * 1000);
       }
@@ -623,8 +635,105 @@ export class Session {
 
   // The plan the selector reads: the ledger as it stands now (whatever the analyst has filed so far), else its last result.
   currentPlan() { try { return this.ledger ? this.ledger.inspect() : this.lastPlan || {}; } catch { return this.lastPlan || {}; } }
-  // T7 hook: uncertain speech spans of this turn ({text}) for confirm_asr; none until speech recognition reports confidence.
-  asrFor() { return null; }
+  // Uncertain speech spans of the turn being answered that are still open, for the selector's confirm_asr (it asks once per span).
+  asrFor() {
+    const out = [];
+    for (const id of this.asrIdents) for (const s of this.asrMeta[id]?.spans || []) if (s.status === 'open') out.push({ text: s.text, kind: s.kind, min_conf: s.min_conf });
+    return out.length ? out : null;
+  }
+
+  // Speech-recognition doubt for one consultant turn (words come from the transcriber, none from other models): its minimum word
+  // confidence, where it starts in the microphone stream, and the spans worth a spoken check. A turn that answers a confirm_asr or
+  // asr_repair question gets no new spans: the consultant has just said the value on purpose, so there is no loop. Returns the
+  // browser-facing summary (or null when the transcriber sent no words, which changes nothing).
+  recordAsr(ident, { words = null, baseMs = 0 } = {}, merge = false) {
+    this.asrIdents = merge ? [...this.asrIdents, ident] : [ident];
+    if (!Array.isArray(words) || !words.length) return null;
+    const answering = ['confirm_asr', 'asr_repair'].includes(this.humane.asked.at(-1)?.intent), at = ms => Number.isFinite(ms) ? Math.round(baseMs + ms * 1000) : null;
+    const confs = words.map(x => x.c).filter(c => typeof c === 'number'), start = words.find(x => typeof x.s === 'number')?.s;
+    const spans = (answering ? [] : uncertainSpans(words, this.flags.asrTau)).map(sp => ({ ...sp, audio_offset_ms: at(sp.start), status: 'open' }));
+    const meta = this.asrMeta[ident] = { spans, minConf: confs.length ? Math.min(...confs) : null, audioOffsetMs: at(start ?? 0) };
+    this.metric('asr', { words: words.length, spans: spans.length, min_conf: meta.minConf === null ? -1 : Math.round(meta.minConf * 100) });
+    return { min_conf: meta.minConf, audio_offset_ms: meta.audioOffsetMs, spans: spans.map(({ text, kind, min_conf, audio_offset_ms }) => ({ text, kind, min_conf, audio_offset_ms })) };
+  }
+  asrUnresolved(ident) { return (this.asrMeta[ident]?.spans || []).some(s => s.status === 'open' || s.status === 'denied'); }
+
+  // The answer to the span asked last (the selector's confirm_asr, or the asr_repair after a no). Yes: confirmed. No with the right value
+  // in the same breath ("no, thirty five"): corrected at once, and the turn no longer reads as a bare "no" (no second question). A bare
+  // no: denied, the selector asks for the right one, and the next answer is it. Anything else leaves the span open (never asked twice).
+  resolveAsr(turn, text) {
+    const strip = t => ({ ...t, intents: t.intents.filter(i => i !== 'deny') });
+    if (this.asrDone?.turn === this.turns) return this.asrDone.strip ? strip(turn) : turn; // answer() can run twice for one turn
+    this.asrDone = { turn: this.turns, strip: false };
+    const last = this.humane.asked.at(-1), intents = turn.intents;
+    if (!last || (last.intent !== 'confirm_asr' && last.intent !== 'asr_repair')) return turn;
+    const all = Object.entries(this.asrMeta).flatMap(([ident, m]) => m.spans.map(span => ({ ident, span }))), say = String(last.say || '').toLowerCase();
+    const found = last.intent === 'confirm_asr' ? all.find(x => x.span.status === 'open' && say.includes(x.span.text.toLowerCase())) : all.reverse().find(x => x.span.status === 'denied');
+    if (!found) return turn;
+    const { ident, span } = found, current = 'user-' + this.turns;
+    const correct = value => {
+      span.status = 'corrected'; span.corrected_to = value; this.metric('asr_resolved', { how: 1 });
+      if (this.capture) this.asrCorrections.push({ ident: current, spanIdent: ident, from: span.text, to: value });
+      this.syncAsr(ident);
+    };
+    if (last.intent === 'confirm_asr') {
+      if (intents.includes('confirm') && !intents.includes('deny')) { span.status = 'confirmed'; this.metric('asr_resolved', { how: 0 }); this.syncAsr(ident); }
+      else if (intents.includes('deny')) {
+        const value = replacement(text, span.kind);
+        if (value) { correct(value); this.asrDone.strip = true; } else { span.status = 'denied'; this.metric('asr_resolved', { how: 2 }); }
+      }
+    } else if (!intents.some(i => ['dont_know', 'cannot_disclose', 'skip', 'pause', 'resume', 'repeat', 'question_to_atlas', 'stop', 'rushed'].includes(i)) && turn.words >= 1) {
+      correct(replacement(text, span.kind) || first(text.trim(), 120));
+    }
+    return this.asrDone.strip ? strip(turn) : turn;
+  }
+
+  // The ledger's details of an item carry the turn's recognition doubt: asr_min_conf and audio_offset_ms (for the evidence record), and
+  // asr_unconfirmed: true while a flagged span of that turn is still open (false once settled). Only turns that had spans get the flag.
+  annotateAsr(ident) {
+    const meta = this.asrMeta[ident];
+    if (!meta || !this.ledger) return;
+    for (const d of this.ledger.details) if (d.item_id === ident && d.asr_min_conf === undefined) {
+      Object.assign(d, { asr_min_conf: meta.minConf, audio_offset_ms: meta.audioOffsetMs });
+      if (meta.spans.length) d.asr_unconfirmed = this.asrUnresolved(ident);
+    }
+  }
+  syncAsr(ident) {
+    if (!this.ledger) return;
+    for (const d of this.ledger.details) if (d.item_id === ident && 'asr_unconfirmed' in d) d.asr_unconfirmed = this.asrUnresolved(ident) || 'asr_correction' in d;
+  }
+
+  // A correction settled in the turn just analysed: the details that quote the misheard span are superseded by the consultant's own
+  // correcting words (provenance consultant_corrected), through the ledger's own supersede rule. If the analyst already filed the
+  // corrected value as a detail of this turn, that detail takes the supersede link instead of a second one. If the ledger refuses (a
+  // quote under five characters), the old detail stays active, marked asr_correction and still unconfirmed: never silently rewritten.
+  applyAsrCorrections(ident) {
+    const mine = this.asrCorrections.filter(c => c.ident === ident);
+    this.asrCorrections = this.asrCorrections.filter(c => c.ident !== ident);
+    if (!this.ledger) return;
+    const quote = first(ws(this.ledger.transcripts.get(ident) || ''), 1800), meta = this.asrMeta[ident];
+    for (const c of mine) {
+      for (const old of this.ledger.details.filter(d => d.active && d.item_id === c.spanIdent && d.quote.toLowerCase().includes(c.from.toLowerCase()))) {
+        const link = d => Object.assign(d, { provenance: 'consultant_corrected', asr_corrected_from: c.from, asr_corrected_to: c.to, ...(meta ? { asr_min_conf: meta.minConf, audio_offset_ms: meta.audioOffsetMs } : {}) });
+        const twin = this.ledger.details.find(d => d.active && !d.supersedes && d.item_id === ident && d.field === old.field && d.quote.toLowerCase().includes(c.to.toLowerCase()));
+        try {
+          if (twin) { old.active = false; twin.supersedes = old.id; link(twin); continue; }
+          this.ledger.record({ details: [{ field: old.field, item_id: ident, quote, supersedes: old.id }] });
+          const added = this.ledger.details.at(-1);
+          if (added?.supersedes !== old.id) throw new Error('not recorded');
+          link(added);
+        } catch { old.asr_correction = c.to; this.metric('asr_correction_unlinked', {}); }
+      }
+      this.syncAsr(c.spanIdent);
+    }
+  }
+  // notes.asr: item id -> recognition doubt of that consultant turn (T13's evidence store reads min_conf and audio_offset_ms).
+  asrNotes() {
+    const out = {};
+    for (const [item, m] of Object.entries(this.asrMeta)) out[item] = { min_conf: m.minConf, audio_offset_ms: m.audioOffsetMs,
+      spans: m.spans.map(({ text, kind, min_conf, audio_offset_ms, status, corrected_to }) => ({ text, kind, min_conf, audio_offset_ms, status, ...(corrected_to ? { corrected_to } : {}) })) };
+    return out;
+  }
 
   // The next move for this answer (plan 3c). `replacing`: a move already committed for this reply, left out of the log when the
   // analyst's newer plan makes the server choose again. Deferrals ("I don't know") stay open: their hints do not count as covered.
@@ -976,7 +1085,9 @@ export class Session {
       if (clean && this.capture && this.ledger) {
         // Gap mode writes no report: its answers go back only through the consultant's explicit clicks (§F2.1 step 6).
         const gap = this.mode === 'gap', report = gap ? null : await this.report();
+        const asr = this.asrNotes();
         this.event('notes', { transcript: [...this.ledger.transcripts.values()].join('\n\n'), sections: this.ledger.notes(), status: 'candidate', report, mode: this.mode,
+          ...(Object.keys(asr).length ? { asr } : {}),
           ...(gap ? { gap: { requestId: this.gapRequest, results: this.gapResults() } } : {}),
           message: 'Unverified speech recognition and quote-linked candidate notes. Correct omissions and errors before adding to the project. The final cut-off utterance may be incomplete.' });
       } else if (clean) this.event('notes', { transcript: '', sections: null, status: 'not-enabled', mode: this.mode, message: 'Transcript capture was off. No consultant notes were stored.' });

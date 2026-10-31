@@ -39,6 +39,7 @@ EDGE_MODULES = [
     'atlas_voice.persona',
     'atlas_voice.success_story',
     'atlas_voice.selector',
+    'atlas_voice.asr',
 ]
 for _name in EDGE_MODULES:
     for _key, _value in getattr(importlib.import_module(_name), 'EDGE_CONSTANTS', {}).items():
