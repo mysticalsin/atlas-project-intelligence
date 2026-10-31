@@ -221,13 +221,13 @@ test('c3: no acknowledgement in admin sessions, after a question to ATLAS, or af
   assert.ok(ACKS.neutral.en.every(t => g.calls.tts.includes(t)), 'the content-aware bank is synthesised ahead of time (neutral lines at least)');
 });
 
-test('c4: acknowledgements do not repeat within four; an earned result needs its basis and a gap of three', async () => {
+test('c4: acknowledgements do not repeat within four and a plain uptake is said on alternate replies; an earned result needs its basis and a gap of three', async () => {
   const said = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth'].map(n => `We worked through the ${n} stage of the migration with the team and it went to plan overall.`);
   const h = harness({ said });
   await opened(h);
   for (let i = 1; i <= 6; i++) { talked(h); await until(() => h.calls.talker.length === i + 1 && !h.s.busy()); }
   const acks = h.events.filter(e => e.type === 'agent_text' && e.text.startsWith('\n\n') && ACK_TEXTS.has(e.text.trim())).map(e => e.text.trim());
-  assert.ok(acks.length >= 5, 'a substantive turn gets one every time: ' + acks.length);
+  assert.ok(acks.length >= 3 && acks.length < 6, 'a plain uptake is said on alternate replies at most (H1): ' + acks.length);
   for (let i = 0; i < acks.length; i++) assert.ok(!acks.slice(Math.max(0, i - 4), i).includes(acks[i]), 'no repeat within four: ' + acks.join(' | '));
 });
 
@@ -381,7 +381,7 @@ test('i2: a move she never said (reply cut before her own words) is not counted 
 test('j: question_repeat is counted when the selector had to avoid saying a question again', async () => {
   const h = harness({ said: ['Sure, let me explain what we did on that project last year in some detail for you.'] });
   await opened(h);
-  h.s.humane.asked.push({ kind: 'ask', intent: 'stakes', field: 'stakes', rung: 2, say: QUESTION_BANK.ownership.en[0], why: 'ladder:stakes', reaction: 'none', ack_category: null });
+  h.s.humane.asked.push({ kind: 'ask', intent: 'stakes', field: 'stakes', rung: 2, say: QUESTION_BANK.ownership.en[1], why: 'ladder:stakes', reaction: 'none', ack_category: null });
   talked(h); await until(() => h.calls.talker.length === 2 && !h.s.busy());
   const move = h.s.humane.asked.at(-1);
   assert.ok(move.why.includes('+rv'), move.why);

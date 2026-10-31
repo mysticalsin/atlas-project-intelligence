@@ -24,7 +24,7 @@
      "why": "metric:kind"
     },
     "ack": "promising_unverified",
-    "scripted_says": "measured, or is it closer to an estimate\\?",
+    "scripted_says": "measured, or (?:is it closer to )?(?:more of )?an estimate\\?",
     "scripted_not": "\\b(amazing|incredible|great result|fantastic)\\b"
    }
   },

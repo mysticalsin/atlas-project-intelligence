@@ -2,19 +2,19 @@
 // Same browser protocol as atlas_voice/cascade.py, so the compiled ATLAS page, worklet and orb work unchanged:
 // the orb moves only from PCM this session actually sends for playback.
 import { TALKER_POLICY, OPENING, HISTORY, TOPICS, ADMIN_NOTE, SPEAKING_LIMIT_S, INTERVIEW_LIMIT_S, WRAP_S, TIME_UP, AREAS, TIME_PLAN, TIME_UP_MESSAGE, FIELDS,
-  GAP_LIMIT_S, GAP_SPEAKING_S, GAP_WRAP_S, GAP_MAX, GAP_OPENING, WIN_HINTS, BANNED_PRAISE_SRC, ASR_TAU, PAUSE_LINES, RESUME_LINES } from './policy.generated.js';
+  GAP_LIMIT_S, GAP_SPEAKING_S, GAP_WRAP_S, GAP_MAX, GAP_OPENING, WIN_HINTS, BANNED_PRAISE_SRC, ASR_TAU, PAUSE_LINES, RESUME_LINES, SELECTOR_METRIC_PARTS } from './policy.generated.js';
 import { gapSystemBlock, gapNotes, gapStatus, gapGuidance, timePlan } from './gap-policy.js';
 import { Analyst, InterviewLedger } from './ledger.js';
 import { EnergyTurns, isEcho, Phrases, speakable, sentences, ReplyGuard, GUARD_MAX_WORDS } from './speech.js';
 import { EndMarker, parseReport, reportMessages } from './report.js';
 import { LANGUAGES, normalize, spokenFor, languageNote, GREETING_PIECES, WELCOME_BACK_PIECES, FILLERS, unfinished } from './languages.js';
 import { analyzeTurn } from './turns.js';
-import { select } from './selector.js';
+import { select, numberConflict } from './selector.js';
 import { pickAck, ackPrewarmList } from './ack.js';
 import { uncertainSpans, replacement, tauFrom } from './asr.js';
 import { Machine } from './conversation-state.js';
 import { serialize, restore, restoreView, newSessionId, TTL_MS } from './checkpoint.js';
-import { buildSummary, buildUnknowns, summaryFacts, summaryNote, redact, withheldQuotes, MAX_FACTS, REFLECT_FACTS, SUMMARY_QUESTION } from './summary.js';
+import { buildSummary, buildUnknowns, summaryFacts, factItems, summaryNote, redact, withheldQuotes, MAX_FACTS, REFLECT_FACTS, SUMMARY_QUESTION, SUMMARY_QUESTION_AGAIN } from './summary.js';
 
 export const RESUME = '[The consultant made a sound but no words were recognised, and your last reply was cut off.] Briefly re-ask your last question in fresh words.';
 
@@ -102,7 +102,7 @@ const DETAIL_ID = /^D-\d{3,6}$/;
 export const SUMMARY_UNAVAILABLE = 'There is no open summary to change. Wait for the read-back, then try again.';
 export const SUMMARY_LINES = Object.freeze({
   corrected: { en: ['Thank you, I have updated that. Is there anything else I have misunderstood or missed?', 'Thank you, that is updated. Is there anything else I should correct?'] },
-  prompt: { en: ['Thank you. When you are ready, press Confirm summary. That saves a private draft that only you can see, and nothing goes to a reviewer until you press Submit for review yourself.'] },
+  prompt: { en: ['Thanks, that is everything I need. When you are ready, press Confirm summary. It saves a private draft only you can see, and nothing goes to a reviewer until you submit it.'] },
   saved: { en: ['Thank you. Your summary is saved as a private draft that only you can see. Press Submit for review when you are ready; until then it goes nowhere.'] },
   unsaved: { en: ['Thank you. Your summary is confirmed, but it could not be saved to the library, so nothing was filed. You can try again from your notes.'] },
 });
@@ -200,6 +200,7 @@ const MOVE_ACTION = {
   offer_move_on: 'Offer to move on from this point, gently; ask only that.',
   accept_and_move: 'Accept their answer without pressing; then ask the one question.',
   summary: 'No question is left: this is the read-back. Say back only the SUMMARY FACTS (next note), mention the open points briefly, then ask only: ' + SUMMARY_QUESTION,
+  summary_again: 'This is the second read-back: say back only the SUMMARY CHANGES (next note), then ask only: ' + SUMMARY_QUESTION_AGAIN,
   close: 'Close now: thank them warmly in one or two short sentences, with no question, then end with the exact token [[END]].',
 };
 const MOVE_REACTION = {
@@ -208,7 +209,8 @@ const MOVE_REACTION = {
   thanks_detail: 'Thank them briefly for the detail; no praise.',
   no_number_fine: 'Say that it is fine not to have the number; no pressure.',
   confidential_ok: 'Say that keeping it private is fine; no pressure.',
-  correction_thanks: 'Thank them for the correction and use their version.',
+  correction_thanks: 'Say you will use their version instead; no thanks needed.',
+  correction_thanks_fact: 'Thank them for the correction and use their version.',
   setback_neutral: 'Acknowledge the event neutrally and judge no one; no cheer, no praise.',
   earned_result: 'One short, specific reaction to the result is earned; no superlatives.',
   promising_unverified: 'Say only that it sounds promising; the figure is not confirmed yet; no praise.',
@@ -218,8 +220,12 @@ export function nextMoveNote(move) {
   const reaction = move.reaction === 'none' || !move.reaction ? MOVE_REACTION.none : MOVE_REACTION[move.ack_category] || MOVE_REACTION.neutral;
   const parts = ['kind: ' + move.kind, move.field ? 'about: ' + move.field : '', move.intent && move.intent !== move.kind ? 'intent: ' + move.intent : '',
     'proposed wording: ' + JSON.stringify(clean(move.say, 400)), 'why: ' + clean(move.why, 120)].filter(Boolean);
+  const hook = typeof move.hook === 'string' && !move.bridge ? clean(move.hook, 80) : '';
   return 'NEXT MOVE (server, built from their latest answer, for this reply only; say it in your own words, not as a script): ' + parts.join('; ') + '. '
-    + (MOVE_ACTION[move.kind] || MOVE_ACTION.ask) + ' Reaction: ' + reaction + ' If an acknowledgement was already said aloud, add none.';
+    + (MOVE_ACTION[move.kind] || MOVE_ACTION.ask)
+    + (hook ? ' Refer to their words ' + JSON.stringify(hook) + '.' : '')
+    + (move.bridge === true ? ' This changes topic: signal it in a few words (for example "Going back to the start..." or "Moving on to what happened after...").' : '')
+    + ' Reaction: ' + reaction + ' If an acknowledgement was already said aloud, add none.';
 }
 
 const joinPcm = (a, b) => { const out = new Uint8Array(a.length + b.length); out.set(a); out.set(b, a.length); return out; };
@@ -240,11 +246,12 @@ export class Session {
     // asked (the Move dicts committed so far, oldest first), covered (field ids the consultant's answers touched), rushed,
     // acks (texts of the last acknowledgements played, oldest first), sinceEarned (replies since the last earned_result; null: none yet)
     // and openers (the leading reaction of her last replies, for the repeated-opener rule).
-    this.humane = { asked: [], covered: new Set(), rushed: false, acks: [], sinceEarned: null, openers: [] };
+    this.humane = { asked: [], covered: new Set(), rushed: false, acks: [], sinceEarned: null, openers: [], prevAck: null };
     // Speech-recognition doubt (asr.js), per consultant turn item: asrMeta[item] = {spans: [{text, kind, min_conf, start, end, audio_offset_ms, status}],
     // minConf, audioOffsetMs}. status: open (not yet settled), confirmed, denied (waiting for the right value) or corrected. asrIdents: the items
     // of the turn being answered (a turn they carried on after counts as one); asrCorrections: corrections waiting for their ledger turn.
     this.asrMeta = {}; this.asrIdents = []; this.asrDone = null; this.asrCorrections = [];
+    this.numberCorrections = new Set(); // turn items where the consultant spoke a corrected figure ("I meant 3 days, not 2")
     // Interview state machine (conversation-state.js, plan 3i) and the pause clock. `machine.audit` is the session's audit trail of transitions (T10
     // checkpoints machine.toDict(), T11/T13 attach it to the evidence); `paused` is what the session acts on, the machine only records it.
     // lastQuestion: {text, move, item}, the question ATLAS last asked (kept even if it was cut off), re-spoken by repeat and resume with no model call.
@@ -257,7 +264,7 @@ export class Session {
     // confirmed / draft: the confirmation and the evidence draft it saved ({id, revision}, null when nothing was saved); posting: a confirmation is in flight;
     // prompts: how often ATLAS pointed to the Confirm button; sig: the last card sent (not kept: a resume sends the card again).
     // `evidence` is the hook that saves the draft: async notes => {status, body} (worker.js: postDraftFromInterview under the verified identity), null when off.
-    this.summary = { open: false, rounds: 0, corrections: 0, confirmed: false, draft: null, posting: false, prompts: 0, sig: '' };
+    this.summary = { open: false, rounds: 0, corrections: 0, confirmed: false, draft: null, posting: false, prompts: 0, sig: '', read: new Set() };
     this.typedAt = -1e9; this.correctionTimes = []; // rate limits (typedTurn, correctDetail): when the last typed turn was taken, and the recent corrections
     this.move = null; this.moveByItem = new Map(); this.prefill = {}; this.lastPlan = null; this.lastTurn = null;
     // Interview mode. Gap mode keeps its own answer windows: askByItem (reply item -> the ask it carried, set when the reply
@@ -705,7 +712,7 @@ export class Session {
       this.event('user_text', { item_id: ident, text, provenance: how.typed ? 'consultant_typed' : 'unverified_speech_recognition', ...(asr ? { asr } : {}) });
       const a0 = this.now();
       const job = this.analyst.hear(ident, text).then(async result => {
-        this.applyAsrCorrections(ident); this.annotateAsr(ident); // before anything reads the ledger: doubt and corrections are on its details
+        this.applyAsrCorrections(ident); this.supersedeNumbers(ident); this.annotateAsr(ident); // before anything reads the ledger: doubt and corrections are on its details
         if (how.typed) for (const d of this.ledger.details) if (d.item_id === ident && d.provenance === 'unverified_speech_recognition') d.provenance = 'consultant_typed';
         this.metric('analyst', { ms: Math.round((this.now() - a0) * 1000), ok: result.analyst_status === 'analysed' ? 1 : 0, details: result.candidate_details.length, rejected: result.rejected_proposals });
         if (this.mode === 'gap') return this.gapQuality(result);
@@ -754,6 +761,7 @@ export class Session {
     const t0 = this.now(); let turn = null;
     if (endedBy !== 'thinking' && !trailing) {
       try { turn = this.lastTurn = analyzeTurn(text, lang, { asked_field: this.humane.asked.at(-1)?.field ?? null }); } catch (e) { this.metric('turn_error', { name: e?.name || 'Error' }); }
+      if (turn && turn.intents.includes('correction') && turn.numbers.length) this.numberCorrections.add(this.identNow || 'user-' + this.turns); // the analyst's detail for this turn replaces the figure it corrects (supersedeNumbers)
       const short = turn && turn.words <= CONTROL_MAX_WORDS;
       if (short && turn.intents.includes('pause')) return this.pauseSession('voice');
       if (short && turn.intents.includes('repeat')) return this.repeatQuestion('voice');
@@ -880,6 +888,21 @@ export class Session {
       this.syncAsr(c.spanIdent);
     }
   }
+  // A spoken correction with a figure ("sorry, I meant 3 days, not 2"): the detail the analyst filed for this turn replaces the older same-field detail whose
+  // figures it contradicts (the ledger's own supersede link, provenance consultant_corrected). Done here, not left to the analyst, so ATLAS never asks the
+  // consultant which of the two versions is right after they have just said it.
+  supersedeNumbers(ident) {
+    if (!this.numberCorrections.delete(ident) || !this.ledger) return;
+    // Only the same measure is replaced: "3 days" for "2 days", not "40 ms" for "5 million" (a figure without the same unit is another figure).
+    const unit = t => t.replace(/\d+(?:[.,]\d+)?/, '').trim().toLowerCase();
+    const same = (a, b) => { const hit = numberConflict(a, b); return !!hit && unit(hit[0]) === unit(hit[1]); };
+    for (const d of this.ledger.details.filter(x => x.active && x.item_id === ident && !x.supersedes && x.withheld !== true)) {
+      const old = this.ledger.details.filter(x => x.active && x.field === d.field && x.item_id !== ident && x.id !== d.id && x.withheld !== true && same(x.quote, d.quote)).at(-1);
+      if (!old) continue;
+      old.active = false; d.supersedes = old.id; d.provenance = 'consultant_corrected';
+      this.metric('number_superseded', {});
+    }
+  }
   // notes.asr: item id -> recognition doubt of that consultant turn (T13's evidence store reads min_conf and audio_offset_ms).
   asrNotes() {
     const out = {}, priv = this.ledger ? this.privateItems() : new Set();
@@ -896,7 +919,8 @@ export class Session {
     const plan = { ...this.currentPlan(), covered_fields: [...h.covered] };
     const move = select(plan, turn, h.asked.filter(m => m !== replacing), this.prefill, elapsed >= TIME_PLAN.depth_fraction * this.maxSeconds ? 'depth' : 'breadth',
       this.maxSeconds - elapsed, this.asrFor(turn), h.rushed, this.language);
-    if (!turn.intents.some(i => ['dont_know', 'cannot_disclose', 'skip'].includes(i))) for (const f of turn.field_hints) h.covered.add(f);
+    // (a refusal to share that still said something, "kept_private", does count: the point was answered, only a name was held back)
+    if (!turn.intents.some(i => ['dont_know', 'cannot_disclose', 'skip'].includes(i)) || /^kept_private:/.test(move.why || '')) for (const f of turn.field_hints) h.covered.add(f);
     // The selector had to avoid saying a question it already said (a variant, or a whole candidate): counted, never logged.
     if (!replacing && /\+r[vi]/.test(move.why || '')) this.metric('question_repeat', { variant: move.why.includes('+rv') ? 1 : 0, skipped: move.why.includes('+ri') ? 1 : 0 });
     // The selector closes once a read-back was asked and nothing is left. Nothing is filed without the consultant's confirmation, so a close that is not
@@ -930,7 +954,14 @@ export class Session {
   }
   // The card, from the ledger: items (active, not kept private), open points (unsure speech, "I don't know", skipped, left open).
   summaryView() {
-    return { items: buildSummary(this.ledger), unknowns: buildUnknowns(this.ledger, { skipped: this.machine.skipped, deferred: Object.keys(this.ledger.deferred) }), round: this.summary.rounds };
+    return { items: buildSummary(this.ledger), unknowns: buildUnknowns(this.ledger, { skipped: this.machine.skipped, deferred: Object.keys(this.ledger.deferred), parts: this.unknownParts() }), round: this.summary.rounds };
+  }
+  // The metric parts the consultant said "I don't know" to (the move after such an answer carries a dont_know tag, the one before it asked the part):
+  // the figure is answered, its baseline or period is still open.
+  unknownParts() {
+    const a = this.humane.asked, out = new Set();
+    for (let i = 1; i < a.length; i++) if (/^dont_know:/.test(a[i].why || '') && SELECTOR_METRIC_PARTS.includes(a[i - 1].intent)) out.add(a[i - 1].intent);
+    return [...out];
   }
   // Send the card to the browser (only when it changed, unless forced). Sent to the same person on the same authenticated socket.
   sendSummary(force = false) {
@@ -948,15 +979,19 @@ export class Session {
     let v;
     if (reflect) v = this.summaryView();
     else { this.summary.open = true; this.summary.rounds += 1; v = this.sendSummary(true); this.metric('summary', { items: v.items.length, unknowns: v.unknowns.length, round: this.summary.rounds }); this.checkpointSoon(); }
-    const { facts, numbers } = summaryFacts(v.items, { max: reflect ? REFLECT_FACTS : MAX_FACTS });
-    return { reflect, facts: facts.map(f => clean(f, 240)), numbers, unknowns: v.unknowns.map(u => ({ ...u, label: clean(u.label, 80) })) };
+    // The second round (a read-back was already made) says only what is new or changed since; an outcome is said as "basis still open" while its measurement has gaps.
+    const again = !reflect && this.summary.read.size > 0, basisOpen = (this.ledger.inspect().measurement_gaps || []).length > 0;
+    const opts = { max: reflect ? REFLECT_FACTS : MAX_FACTS, basisOpen, skip: again ? this.summary.read : null };
+    const { facts, numbers } = summaryFacts(v.items, opts);
+    if (!reflect) for (const x of factItems(v.items, opts)) this.summary.read.add(x.detail_id);
+    return { reflect, again, facts: facts.map(f => clean(f, 240)), numbers, unknowns: v.unknowns.map(u => ({ ...u, label: clean(u.label, 80) })) };
   }
   // A spoken turn while the card is open. true: answered here, nothing else is said. false: the normal path goes on.
   summaryTurn(turn) {
     const intents = turn.intents;
     // A correction: the normal path takes it (the selector accepts and narrows, the analyst supersedes the earlier detail); the read-back comes round again.
     if (intents.includes('correction')) { this.fireState('correct', 'user'); this.checkpointSoon(); return false; }
-    if (turn.words <= SATISFIED_WORDS || intents.includes('confirm')) { this.promptConfirm(); return true; }
+    if (turn.words <= SATISFIED_WORDS || intents.includes('confirm') || (intents.includes('stop') && !intents.includes('deny'))) { this.promptConfirm(); return true; } // ("No, I think that is all, thank you.")
     this.closeSummary('continue'); this.fireState('continue_discovery', 'atlas'); this.checkpointSoon(); // more to say: back to the conversation
     return false;
   }
@@ -1205,10 +1240,14 @@ export class Session {
   // The acknowledgement for this answer (ack.js): from the selector's category and the cues of the words, never from a judgement
   // of the person. Null in admin, after a question, at the time limit or when the answer is short.
   ackFor(turn, move, text, sinceEarned) {
+    const h = this.humane, prev = h.prevAck ?? null;   // prevAck: the category of the acknowledgement before this one (none after a reply without one), so a neutral one is never said twice running
+    h.prevAck = null;
     if (move?.reaction === 'none') return null; // the selector goes straight to the move (a repeat, an offer to move on, a read-back, a close)
-    const h = this.humane, words = turn ? turn.words : String(text).split(/\s+/).filter(Boolean).length;
-    return pickAck({ category: move?.ack_category ?? 'neutral', cues: turn?.cues ?? [], words, lang: this.spoken(), recent: h.acks.slice(-4), admin: this.admin, timeUp: this.timeUp,
-      afterQuestion: !!turn?.intents.includes('question_to_atlas') || /[?？]\s*$/.test(text), repliesSinceEarned: sinceEarned, seed: this.turns });
+    const words = turn ? turn.words : String(text).split(/\s+/).filter(Boolean).length;
+    const ack = pickAck({ category: move?.ack_category ?? 'neutral', cues: turn?.cues ?? [], words, lang: this.spoken(), recent: h.acks.slice(-4), admin: this.admin, timeUp: this.timeUp,
+      afterQuestion: !!turn?.intents.includes('question_to_atlas') || /[?？]\s*$/.test(text), repliesSinceEarned: sinceEarned, prevCategory: prev, seed: this.turns });
+    h.prevAck = ack ? ack.category : null;
+    return ack;
   }
   ackPlayed(ack) {
     const h = this.humane; h.acks.push(ack.text); if (h.acks.length > 8) h.acks.shift();
@@ -1360,14 +1399,15 @@ export class Session {
         if (gen !== this.gen || this.finished) return;
         if (better) { this.swapMove(item, move, better); if (better.kind !== move.kind || better.intent !== move.intent) this.metric('move_refined', {}); move = better; }
       }
-      const moveNote = move ? nextMoveNote(move) : '';
+      let moveNote = move ? nextMoveNote(move) : '';
       // A read-back (the closing summary, or a mid-interview reflection): the talker gets a few facts from the ledger, nothing else to say, and the guard
       // blocks any figure that is not in them. The fixed question follows if the talker's own words never got to it.
       let readNote = '', readBack = null;
       if ((move?.kind === 'summary' || move?.kind === 'reflect') && this.ledger && this.capture) {
         readBack = await this.readBack(move, gen);
         if (gen !== this.gen || this.finished || !readBack) return;
-        readNote = summaryNote(readBack.facts, readBack.unknowns, { reflect: readBack.reflect, question: clean(move.say, 400) });
+        readNote = summaryNote(readBack.facts, readBack.unknowns, { reflect: readBack.reflect, again: readBack.again, question: clean(move.say, 400) });
+        if (readBack.again) moveNote = nextMoveNote({ ...move, kind: 'summary_again' });
         if (guard) guard = new ReplyGuard({ ...guardOptions, maxWords: readBack.reflect ? GUARD_MAX_WORDS : SUMMARY_MAX_WORDS, summaryFacts: [...readBack.facts, ...readBack.numbers] });
       }
       const notes = [...this.paceNotes(), moveNote, readNote, prefix ? (isFiller ? `ALREADY SAID (server): you have just said "${prefix}" out loud. Continue naturally from there; do not start with another short acknowledgement.`

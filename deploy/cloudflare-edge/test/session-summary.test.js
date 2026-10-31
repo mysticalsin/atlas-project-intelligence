@@ -98,7 +98,7 @@ test('a short reply to the read-back means nothing to add: ATLAS points to the C
   assert.equal(h.calls.talker.length, talkerCalls, 'no model call');
   assert.equal(h.s.machine.state, 'summary'); assert.equal(h.s.summary.open, true); assert.deepEqual(evidenceCalls, []);
   assert.ok(!h.events.some(e => e.type === 'evidence_draft' || e.type === 'wrap_up' || e.type === 'summary_closed'));
-  assert.match(SUMMARY_LINES.prompt.en[0], /Confirm summary.*private draft.*nothing goes to a reviewer until you press Submit for review/);
+  assert.match(SUMMARY_LINES.prompt.en[0], /Confirm summary.*private draft.*nothing goes to a reviewer until you submit it/);
 });
 
 test('more to say after the read-back: the interview goes back to discovery and the card closes', async () => {

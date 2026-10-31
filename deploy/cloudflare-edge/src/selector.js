@@ -5,12 +5,14 @@
 // from policy.generated.js (SELECTOR_CONFIG, QUESTION_BANK, SELECTOR_LINES, ...); see the Python module for the rules.
 import {
   FIELDS, TURN_NOT_AN_ANSWER, SELECTOR_CONFIG as CONFIG, QUESTION_BANK, SELECTOR_LINES as LINES, SELECTOR_LEAD_RUSHED as LEAD_RUSHED,
-  SELECTOR_NOT_ATTEMPTS as NOT_ATTEMPTS, SELECTOR_PHASES as PHASES, SELECTOR_ESSENTIALS as ESSENTIALS, SELECTOR_METRIC_PARTS as METRIC_PARTS,
+  SELECTOR_NOT_ATTEMPTS as NOT_ATTEMPTS, SELECTOR_NO_HOOK as NO_HOOK, SELECTOR_PHASES as PHASES, SELECTOR_ESSENTIALS as ESSENTIALS, SELECTOR_METRIC_PARTS as METRIC_PARTS,
+  TURN_CUE_SRC,
 } from './policy.generated.js';
+import { normalize } from './turns.js';
 
 const FIELD_KEYS = Object.keys(FIELDS);
 const REPEAT_LAST = 'repeat_last';
-const LADDER_INTENTS = [...Object.values(CONFIG.fields).map(v => v.intent), 'role', 'impact_assessment'];
+const LADDER_INTENTS = [...Object.values(CONFIG.fields).map(v => v.intent), 'role', 'impact_assessment', 'lessons'];
 const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isStr = v => typeof v === 'string';
@@ -70,18 +72,54 @@ function prefilledFields(prefill) {
 const numbersIn = quote => [...(isStr(quote) ? quote : '').matchAll(re(CONFIG.patterns.number_unit, 'gi'))].map(m => [m[1], m[0].split(/\s+/).filter(Boolean).join(' ')]);
 const subset = (a, b) => [...a].every(x => b.has(x));
 
-// (field, a, b) for the first field with two active candidates whose numbers each hold a value the other lacks; else null.
-export function contradiction(plan) {
+// (a, b) when the numbers of two quotes each hold a value the other lacks ({25} and {40} differ; {2, 25} and {25} do not); else null.
+export function numberConflict(qa, qb) {
+  const na = numbersIn(qa), nb = numbersIn(qb), sa = new Set(na.map(x => x[0])), sb = new Set(nb.map(x => x[0]));
+  if (sa.size && sb.size && !subset(sa, sb) && !subset(sb, sa)) return [clean(na.find(x => !sb.has(x[0]))[1]), clean(nb.find(x => !sa.has(x[0]))[1])];
+  return null;
+}
+
+// (field, a, b) for the first field (not in `skip`) with two active candidates whose numbers each hold a value the other lacks; else null.
+export function contradiction(plan, skip = []) {
   const by = {};
   for (const d of Array.isArray(plan.candidate_details) ? plan.candidate_details : []) if (active(d) && inF(d.field) && isStr(d.quote)) (by[d.field] ||= []).push(d.quote);
   for (const f of FIELD_KEYS) {
+    if (skip.includes(f)) continue;
     const qs = by[f] || [];
     for (let i = 0; i < qs.length; i++) for (let j = i + 1; j < qs.length; j++) {
-      const na = numbersIn(qs[i]), nb = numbersIn(qs[j]), sa = new Set(na.map(x => x[0])), sb = new Set(nb.map(x => x[0]));
-      if (sa.size && sb.size && !subset(sa, sb) && !subset(sb, sa)) return [f, clean(na.find(x => !sb.has(x[0]))[1]), clean(nb.find(x => !sa.has(x[0]))[1])];
+      const hit = numberConflict(qs[i], qs[j]);
+      if (hit) return [f, hit[0], hit[1]];
     }
   }
   return null;
+}
+
+// True when the words describe a setback (the pre-pass cue's own test, run on a ledger quote).
+const hasSetback = text => re(TURN_CUE_SRC.describes_setback).test(normalize(isStr(text) ? text : '').replace(re(TURN_CUE_SRC.setback_strip, 'gi'), ' '));
+
+// 2-6 of the consultant's own words from the latest active quote of the thread's field, as a noun phrase to refer back to ('' when there is none).
+// The subject and a leading verb are dropped ("I worked on the release pipeline" -> "the release pipeline"); it stops at a clause boundary.
+function hookOf(plan, thread) {
+  if (thread === null) return '';
+  let quote = '';
+  for (const d of Array.isArray(plan.candidate_details) ? plan.candidate_details : []) if (active(d) && d.field === thread && d.status !== 'unknown' && isStr(d.quote)) quote = d.quote;
+  const P = CONFIG.patterns, rest = quote.replace(re(P.junk, 'g'), ' ').trim();
+  let stripped = rest.replace(re(P.hook_subject), '');
+  if (stripped !== rest) { // a first-person subject: only a known verb leaves a phrase that reads back well
+    const after = stripped.replace(re(P.hook_verb), '');
+    if (after === stripped) return '';
+    stripped = after;
+  }
+  const out = [];
+  for (const tok of stripped.split(' ')) {
+    const word = tok.replace(/^[,;.:!"'()]+|[,;.:!"'()]+$/g, '');
+    if (!word) continue;
+    if (re(P.hook_stop).test(word) && out.length) break;
+    out.push(word);
+    if (out.length >= CONFIG.hook_words || ',;.:!'.includes(tok.slice(-1))) break;
+  }
+  while (out.length && re(P.hook_trail).test(out[out.length - 1])) out.pop();
+  return out.length >= CONFIG.hook_min_words ? clean(out.join(' ')) : '';
 }
 
 export function effectivePhase(phase, timeLeft) {
@@ -110,6 +148,16 @@ function context(plan, turn, asked, prefill, phase, timeLeft, rushed) {
     const better = (f, b) => { const x = key(f), y = key(b); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i]; return false; };
     thread = hints.reduce((b, f) => (b === null || better(f, b) ? f : b), null);
   }
+  // a field the consultant corrected: a contradiction there is settled (a number correction settles the outcome and the measurement together)
+  const corrected = new Set();
+  for (const a of asked) if (['correction', 'correction_number'].includes(a.intent) && inF(a.field)) {
+    corrected.add(a.field);
+    if (a.intent === 'correction_number') for (const f of CONFIG.numeric_fields) corrected.add(f);
+  }
+  const nums = Array.isArray(turn.numbers) ? turn.numbers : [];
+  const numbersText = nums.filter(n => isObj(n) && isStr(n.text)).map(n => clean(n.text));
+  const outcomeQuotes = (Array.isArray(plan.candidate_details) ? plan.candidate_details : []).filter(d => active(d) && d.field === 'outcome').map(d => d.quote);
+  const setbackOutcome = outcomeQuotes.some(hasSetback) || (cues.includes('describes_setback') && hints.includes('outcome'));
   const flags = Array.isArray(plan.flags) ? plan.flags : [];
   const gaps = plan.measurement_gaps;
   const numericPlan = (Array.isArray(gaps) && gaps.length > 0) || flags.some(f => isStr(f) && f.startsWith('Numerical outcome lacks'));
@@ -120,7 +168,8 @@ function context(plan, turn, asked, prefill, phase, timeLeft, rushed) {
     if (a.intent === 'offer_move_on' && inF(a.field)) deferred.add(a.field);
   }
   return {
-    plan, turn, asked, prefill, intents, cues, hints, words, numbers: Array.isArray(turn.numbers) ? turn.numbers : [], last, lastField, answerShaped,
+    plan, turn, asked, prefill, intents, cues, hints, words, numbers: nums, last, lastField, answerShaped, corrected, setbackOutcome,
+    figure: numbersText.length === 1 ? numbersText[0] : '', hook: hookOf(plan, thread),
     covered, thread, present: presentFields(plan), numericPlan, deferred, prefilled: prefilledFields(prefill), rushed: Boolean(rushed) || intents.includes('rushed'),
     phase: effectivePhase(phase, timeLeft), recent: asked.slice(-CONFIG.repeat_window).map(a => a.say).filter(isStr),
   };
@@ -131,12 +180,19 @@ const count = (c, intent, field = null, anyField = false) => c.asked.filter(a =>
 const attempts = (c, field) => c.asked.filter(a => real(a) && a.field === field && !NOT_ATTEMPTS.includes(a.intent)).length;
 const summarized = c => c.asked.some(a => a.kind === 'summary' || a.intent === 'summary');
 
-// The wording for a candidate: the variant its count points at, else the next, skipping any that repeats a recent say.
+const fillable = (tpl, params) => [...tpl.matchAll(/\{(\w+)\}/g)].every(m => params[m[1]]);
+// What fills a variant's placeholders: the candidate's own (a, b, span, labels) plus the thread's {figure} and {hook}.
+const paramsOf = (c, cand) => ({ figure: c.figure, hook: c.hook, ...(cand.params || {}) });
+
+// The wording for a candidate: the variant its count points at, else the next, skipping any that repeats a recent say or cannot be filled.
 function say(c, cand) {
-  const bank = QUESTION_BANK[cand.intent].en, start = count(c, cand.intent, null, true) % bank.length;
+  const params = paramsOf(c, cand);
+  let bank = QUESTION_BANK[cand.intent].en.filter(v => fillable(v, params));
+  if (cand.bridge) { const plain = bank.filter(v => !re(CONFIG.patterns.anaphora).test(v)); if (plain.length) bank = plain; } // a change of topic: no "that" or "it" pointing at the old one
+  const start = count(c, cand.intent, null, true) % bank.length;
   const lead = c.rushed && cand.lead && !c.asked.some(a => isStr(a.why) && a.why.includes('rushed:')) ? LEAD_RUSHED + ' ' : '';
   for (let k = 0; k < bank.length; k++) {
-    const text = lead + render(bank[(start + k) % bank.length], cand.params || {});
+    const text = lead + render(bank[(start + k) % bank.length], params);
     if (!c.recent.some(r => similar(text, r))) return [text, k === 0 ? '' : '+rv'];
   }
   return null;
@@ -167,6 +223,7 @@ function ladder(c) {
     if (c.rushed && !ESSENTIALS.includes(f)) return;
     if (c.phase === 'closing' && !ESSENTIALS.includes(f)) return;
     let gain = cfg.gain.missing;
+    if (f === 'measurement' && c.setbackOutcome) return; // a setback or a cancelled piece of work has no result to measure: it is asked what was learned instead (limitations -> lessons)
     if (f === 'measurement') {
       if (c.numericPlan) gain = cfg.gain.measurement_flagged;
       else if (c.present.has('outcome') || c.covered.has('outcome')) gain = cfg.gain.measurement_qualitative;
@@ -190,8 +247,9 @@ function* candidates(c) {
   const { cues, rushed } = c, cueing = !rushed && (c.phase === 'breadth' || c.phase === 'depth'), lastIntent = c.last ? c.last.intent : null;
   const none = { params: {}, important: false };
   if (cueing) {
-    const hit = contradiction(c.plan);
+    const hit = contradiction(c.plan, [...c.corrected]);
     if (hit) yield { intent: 'contradiction', field: hit[0], rung: rung(hit[0]), params: { a: hit[1], b: hit[2] }, why: 'contradiction:' + hit[0], important: true };
+    if (cues.includes('describes_setback') && lastIntent !== 'setback_response') yield { ...none, intent: 'setback_response', field: 'decision', rung: 4, why: 'setback' }; // a setback is met with "what did you do", before anything else is probed
     const continuing = METRIC_PARTS.includes(lastIntent) && c.answerShaped;
     if (!c.deferred.has('measurement') && (cues.includes('metric') || continuing || (c.numericPlan && c.hints.includes('measurement')))) {
       const part = metricPart(c);
@@ -213,13 +271,17 @@ function* candidates(c) {
       yield { ...none, intent: 'reflect', kind: 'reflect', field: null, rung: null, params: { labels: text }, why: 'reflect:depth' };
     }
   }
+  const thread = c.thread;
   for (const [f] of ladder(c)) {
     const fc = CONFIG.fields[f];
     let intent = fc.intent;
     if (f === 'contribution' && !(truthy(c.prefill.role) || count(c, 'role', 'contribution'))) intent = 'role';
     else if (f === 'outcome' && CONFIG.assessment_stages.includes(String(c.prefill.stage ?? '').toLowerCase())) intent = 'impact_assessment';
+    else if (f === 'limitations' && c.setbackOutcome) intent = 'lessons';
     else if (f === 'measurement' && c.numericPlan) { intent = metricPart(c); if (intent === null) continue; }
-    yield { intent, field: f, rung: fc.rung, params: {}, why: (rushed ? 'rushed:' : '') + 'ladder:' + f, important: true, lead: rushed };
+    // a question far from where the answer got to (not the thread's field, not the next rung either way) changes the topic
+    const bridge = thread !== null && f !== thread && Math.abs(fc.rung - rung(thread)) > 1;
+    yield { intent, field: f, rung: fc.rung, params: {}, why: (rushed ? 'rushed:' : '') + 'ladder:' + f, important: true, lead: rushed, bridge };
   }
 }
 
@@ -254,14 +316,17 @@ function pick(c) {
 // ----- reactions -----
 function reaction(c, accept = null) {
   const cues = c.cues;
-  if (accept === 'correction') return ['ack', 'correction_thanks'];
+  if (accept === 'correction') { // "Thanks for correcting me" only when ATLAS had just stated a fact (a heard span, a reflection, the read-back)
+    const last = c.last || {}, stated = ['confirm_asr', 'reflect', 'summary'].includes(last.kind) || ['confirm_asr', 'reflect', 'summary'].includes(last.intent);
+    return ['ack', stated ? 'correction_thanks_fact' : 'correction_thanks'];
+  }
   if (cues.includes('describes_setback')) return ['ack', 'setback_neutral'];
   if (accept === 'dont_know' || accept === 'skip') {
     const numeric = ['measurement', 'outcome'].includes(c.thread) || cues.includes('metric') || (c.last && [...METRIC_PARTS, 'measurement', 'impact'].includes(c.last.intent));
     return ['ack', numeric ? 'no_number_fine' : 'neutral'];
   }
   if (accept === 'cannot_disclose') return ['ack', 'confidential_ok'];
-  if (cues.includes('metric') && !c.present.has('measurement') && (cues.includes('describes_achievement') || cues.includes('estimate'))) return ['ack', 'promising_unverified'];
+  if (cues.includes('metric') && !c.present.has('measurement') && (cues.includes('describes_achievement') || cues.includes('estimate') || c.hints.includes('outcome'))) return ['ack', 'promising_unverified'];
   const gaps = c.plan.measurement_gaps, basisKnown = c.present.has('measurement') && !(Array.isArray(gaps) && gaps.length > 0);
   const recentEarned = c.asked.slice(-CONFIG.earned_gap).some(a => a.reaction === 'earned');
   if (cues.includes('describes_achievement') && basisKnown && !recentEarned) return ['earned', 'earned_result'];
@@ -270,10 +335,17 @@ function reaction(c, accept = null) {
   return ['none', null];
 }
 const NONE = ['none', null];
-const move = (kind, cand, text, why, r) => ({ kind, intent: cand.intent, field: cand.field ?? null, rung: cand.rung ?? null, say: text, why, reaction: r[0], ack_category: r[1] });
+// bridge: the question changes topic (the talker says so in a few words); hook: the consultant's own words to refer back to (never both).
+const move = (kind, cand, text, why, r, c = null) => {
+  const bridge = Boolean(cand.bridge);
+  return { kind, intent: cand.intent, field: cand.field ?? null, rung: cand.rung ?? null, say: text, why, reaction: r[0], ack_category: r[1], bridge,
+    hook: c && !bridge && kind === 'ask' && !NO_HOOK.includes(cand.intent) ? c.hook : '' };
+};
+// The rushed lead is itself the acknowledgement: no second one before it.
+const leadQuiet = (cand, r) => (cand.say.startsWith(LEAD_RUSHED) ? NONE : r);
 function line(c, kind, why, r = NONE) {
   const bank = LINES[kind].en;
-  return { kind, intent: kind, field: null, rung: null, say: bank[count(c, kind, null, true) % bank.length], why, reaction: r[0], ack_category: r[1] };
+  return { kind, intent: kind, field: null, rung: null, say: bank[count(c, kind, null, true) % bank.length], why, reaction: r[0], ack_category: r[1], bridge: false, hook: '' };
 }
 // No question is left: the read-back summary first, then the close.
 const end = (c, why, r = NONE) => (summarized(c) ? line(c, 'close', 'close:' + why, r) : line(c, 'summary', 'summary:' + why, r));
@@ -307,7 +379,7 @@ export function select(plan, turn, asked, prefill, phase, timeLeft, asr = null, 
   // 5. a pause, a "say that again" or a question to ATLAS leaves the last question unanswered: put it again (not an attempt)
   if (last && String(last.say ?? '').includes('?') && ['pause', 'resume', 'repeat', 'question_to_atlas'].some(i => intents.includes(i))) {
     return { kind: ['confirm_asr', 'offer_move_on', 'reflect'].includes(last.kind) ? last.kind : 'ask', intent: last.intent ?? null, field: last.field ?? null, rung: last.rung ?? null,
-      say: last.say, why: REPEAT_LAST, reaction: 'none', ack_category: null };
+      say: last.say, why: REPEAT_LAST, reaction: 'none', ack_category: null, bridge: false, hook: '' };
   }
   // 5b. right after the read-back summary, a short reply ends the interview
   if (last && (last.kind === 'summary' || last.intent === 'summary') && (c.words <= 6 || intents.includes('confirm'))) return line(c, 'close', 'close:after_summary');
@@ -315,19 +387,21 @@ export function select(plan, turn, asked, prefill, phase, timeLeft, asr = null, 
   const accept = ['cannot_disclose', 'dont_know', 'skip'].find(i => intents.includes(i));
   if (accept) {
     const field = deferField(c);
-    if (field) c.deferred.add(field);
-    const tag = accept + ':' + (field || '-');
-    if (accept === 'cannot_disclose' && field && !count(c, 'anonymise', field)) {
+    // "I can't name the client, but we rebuilt their reporting": there is content, so it is kept private as said and the interview goes on (the point is not left open)
+    const content = accept === 'cannot_disclose' && c.words >= CONFIG.private_content_words && c.hints.length > 0;
+    if (field && !content) c.deferred.add(field);
+    const tag = (content ? 'kept_private:' : accept + ':') + (field || '-');
+    if (accept === 'cannot_disclose' && !content && field && c.cues.includes('names_party') && !count(c, 'anonymise', field)) { // only a name or a client needs anonymising
       const cand = { intent: 'anonymise', field, rung: rung(field), params: {} }, said = say(c, cand);
-      if (said) return move('accept_and_move', cand, said[0], tag + '>anonymise' + said[1], reaction(c, accept));
+      if (said) return move('accept_and_move', cand, said[0], tag + '>anonymise' + said[1], reaction(c, accept), c);
     }
     const cand = pick(c);
     if (cand === null) { const e = end(c, 'no_candidates', reaction(c, accept)); e.why = tag + '>' + e.why; return e; }
-    return move('accept_and_move', cand, cand.say, tag + '>' + cand.why, reaction(c, accept));
+    return move('accept_and_move', cand, cand.say, tag + '>' + cand.why, leadQuiet(cand, reaction(c, accept)), c);
   }
   // 7. everything else: the best question
   const cand = pick(c);
   if (cand === null) return end(c, c.rushed ? 'essentials' : c.phase === 'closing' ? 'closing' : 'no_candidates');
   const kind = cand.kind || 'ask';
-  return move(kind, cand, cand.say, cand.why, kind === 'offer_move_on' || kind === 'reflect' || cand.intent === 'contradiction' ? NONE : reaction(c));
+  return move(kind, cand, cand.say, cand.why, kind === 'offer_move_on' || kind === 'reflect' || cand.intent === 'contradiction' ? NONE : leadQuiet(cand, reaction(c)), c);
 }

@@ -321,3 +321,10 @@ def test_admin_note_does_not_suppress_the_introduction():
     from atlas_voice.cascade import ADMIN_NOTE
     assert 'No introduction' not in ADMIN_NOTE
     assert 'Do not introduce yourself again (the server already greeted)' in ADMIN_NOTE
+
+
+def test_opening_asks_one_invitation_not_a_bundle():
+    # H1 review item 10: three parts after twenty seconds of greeting is a lot; the pack's own single invite instead
+    from atlas_voice.cascade import OPENING
+    assert 'To start, could you tell me about the project and what you were brought in to do?' in OPENING and 'take their time' in OPENING
+    assert 'what they personally did' not in OPENING and 'where it ended up' not in OPENING

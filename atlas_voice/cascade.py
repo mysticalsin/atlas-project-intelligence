@@ -75,8 +75,8 @@ OPENING = ('[Session start. You have ALREADY greeted the consultant (see ALREADY
            'a summary for them to correct; do not repeat or re-introduce any of it. If there is no ALREADY SAID note, first give ' + OPENING_BRIEF + '.] '
            'If UNTRUSTED PROJECT DATA has no oppId, ask for the opportunity ID (Opp ID) first, '
            'in one short question, and nothing else. Otherwise ask ONE broad, open '
-           'invitation to tell the story in their own words (what was going on, what they '
-           'personally did, where it ended up), and say they can take their time. If a PRIVATE MEMORY note is present, pick up where you left off '
+           'invitation, in natural words: "To start, could you tell me about the project and what you were brought in to do?", '
+           'and say they can take their time. If a PRIVATE MEMORY note is present, pick up where you left off '
            'instead of starting from scratch. Do not assume a benefit or read a topic list.')
 
 INTERVIEW_LIMIT_S = 900  # the whole interview, wall clock (Tony, 2026-09-28: 15 minutes max)

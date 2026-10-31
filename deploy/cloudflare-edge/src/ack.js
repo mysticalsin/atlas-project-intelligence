@@ -10,7 +10,11 @@ export const ACK_NO_REPEAT = 4; // a line is not used again within the last four
 export const EARNED_EVERY = 3; // at most one earned_result in three replies
 const CATEGORIES = Object.keys(ACKS);
 // Categories that do not praise or cheer: fine after a setback. Anything else becomes setback_neutral there.
-const SETBACK_SAFE = new Set(['setback_neutral', 'correction_thanks', 'confidential_ok', 'no_number_fine']);
+const SETBACK_SAFE = new Set(['setback_neutral', 'correction_thanks', 'correction_thanks_fact', 'confidential_ok', 'no_number_fine']);
+// These answer what the consultant just did ("I don't know", "I can't share", a change), so they are said even after a short answer ("I do not know the baseline, honestly.").
+const SHORT_OK = new Set(['no_number_fine', 'confidential_ok', 'correction_thanks', 'correction_thanks_fact']);
+// A plain uptake ("Okay.", "Thanks, that helps.") is said on alternate replies at most: constant acknowledgement stops sounding like listening.
+const ALTERNATING = new Set(['neutral', 'thanks_detail']);
 // A bare "yes" word is not a fit after a setback ("Yeah." after a failed pilot sounds like agreement with it).
 const YES_ONLY = /^(?:yeah|yes|oui|sí|si|sim|ja|sì|ok)\.$/i;
 const banned = new RegExp(BANNED_PRAISE_SRC, 'i');
@@ -46,9 +50,10 @@ function resolve(category, cues, repliesSinceEarned) {
 // pickAck({category, cues, words, lang, recent, admin, afterQuestion, timeUp, repliesSinceEarned, seed}) -> {text, category} | null
 //   category: what the selector asked for; cues: analyze_turn cues of this answer; words: its word count; recent: texts of the last
 //   acknowledgements (oldest first); afterQuestion: the consultant asked ATLAS something (she answers it, no preamble);
-//   repliesSinceEarned: replies since the last earned_result (omitted: none yet).
-export function pickAck({ category = 'neutral', cues = [], words = 0, lang = 'en', recent = [], admin = false, afterQuestion = false, timeUp = false, repliesSinceEarned, seed = 0 } = {}) {
-  if (admin || afterQuestion || timeUp || !(Number(words) >= ACK_MIN_WORDS)) return null;
+//   repliesSinceEarned: replies since the last earned_result (omitted: none yet); prevCategory: the category of the acknowledgement before this
+//   one (null when that reply had none), which keeps a neutral or "thanks for the detail" line to alternate replies.
+export function pickAck({ category = 'neutral', cues = [], words = 0, lang = 'en', recent = [], admin = false, afterQuestion = false, timeUp = false, repliesSinceEarned, prevCategory = null, seed = 0 } = {}) {
+  if (admin || afterQuestion || timeUp || !(Number(words) >= ACK_MIN_WORDS || SHORT_OK.has(category))) return null;
   const code = normalize(lang) || 'en', setback = hasCue(cues, 'describes_setback'), seen = Array.isArray(recent) ? recent : [];
   let cat = resolve(category, cues, repliesSinceEarned), bank = ACKS[cat] && ACKS[cat][code];
   if (!bank) { // no authored bank for this language: the neutral filler (always neutral, whatever was asked)
@@ -57,6 +62,7 @@ export function pickAck({ category = 'neutral', cues = [], words = 0, lang = 'en
   }
   bank = bank && bank.filter(t => !banned.test(t) && !t.includes('?'));
   if (!bank || !bank.length) return null;
+  if (ALTERNATING.has(cat) && ALTERNATING.has(prevCategory)) return null;
   const pool = fresh(bank, seen, Math.min(ACK_NO_REPEAT, bank.length - 1));
   return { text: pool[hash(seed) % pool.length], category: cat };
 }

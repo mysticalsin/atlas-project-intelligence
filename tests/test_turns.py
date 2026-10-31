@@ -13,7 +13,7 @@ from atlas_voice.turns import analyze_turn
 ROOT = Path(__file__).resolve().parents[1]
 KEYS = ['intents', 'cues', 'field_hints', 'numbers', 'words']
 INTENTS = {'pause', 'resume', 'repeat', 'skip', 'dont_know', 'cannot_disclose', 'correction', 'rushed', 'stop', 'question_to_atlas', 'confirm', 'deny'}
-CUES = {'metric', 'estimate', 'vague_verb', 'team_claim', 'tech_list', 'certification', 'client_praise', 'describes_setback', 'describes_achievement'}
+CUES = {'metric', 'estimate', 'vague_verb', 'team_claim', 'tech_list', 'certification', 'client_praise', 'describes_setback', 'describes_achievement', 'names_party'}
 PERSON = re.compile(r'mood|emotion|sentiment|feel|stress|personality', re.I)
 
 
@@ -238,3 +238,55 @@ def test_edge_export_is_registered_and_generated():
         assert f'export const {k} = {json.dumps(v, ensure_ascii=False)};' in generated, k
     vectors = json.loads((ROOT / 'deploy' / 'cloudflare-edge' / 'test' / 'turns.vectors.json').read_text())
     assert len(vectors) >= 40 and all(analyze_turn(*args) == expected for args, expected in vectors)
+
+
+# ---------- H1: humane conversation review (transcripts a-d) ----------
+
+def test_h1_closing_remarks_are_stop_and_beat_deny():
+    # review item 1: "No, I think that is all, thank you." was read as deny, "I think we covered it" was not read at all
+    for t in ['I think we covered it, I have nothing more to say.', 'No, I think that is all, thank you.', "That's everything from me, thanks", 'No, that is all',
+              'nothing else to add', "we've covered everything", 'that is all, thank you']:
+        assert intents(t) == ['stop'], t
+    assert 'stop' in intents("that's it for me") and 'deny' not in intents("no, that's it for me")
+    # neighbours that must not stop the interview: a yes/no check answered with "that's it", a long answer, "all right"
+    assert intents("yes, that's it") == ['confirm'] and intents('That is all right') == []
+    assert 'stop' not in intents('I think we covered it and there is nothing more to say about this project at all, so thanks for asking all of those questions')
+    assert intents("no, that's all wrong") == ['deny']
+    assert intents("that's all for now") == ['stop'] and intents("I'm done") == ['stop']
+
+
+def test_h1_setback_cues_are_wider_and_a_clean_result_is_not_a_setback():
+    # review item 2
+    for t in ['It was really frustrating, the team was exhausted and the new sponsor did not care about the project at all.', 'the sponsor left halfway',
+              'there was a lot of pushback and resistance from the ops team', 'the scope kept changing every week', 'it was a difficult migration']:
+        assert 'describes_setback' in cues(t), t
+    for t in ['It went live on time with zero data loss, around two million records.', 'we had no outage and without any downtime', 'no incidents in the first month']:
+        assert 'describes_setback' not in cues(t), t
+    assert 'describes_setback' in cues('we had data loss on the first night')   # the absence is stripped, not the word
+
+
+def test_h1_field_hints_follow_what_the_answer_says():
+    # review item 3 (and the adoption phrasing of transcript a)
+    hints = lambda t: analyze_turn(t)['field_hints']
+    assert 'contribution' in hints('Mostly I worked on the release pipeline and the monitoring, making things more efficient for everyone.')
+    assert 'contribution' in hints('I was responsible for the cutover') and 'contribution' in hints('I handled the runbooks')
+    assert 'problem' in hints('It was a data migration for a bank') and 'problem' in hints('this was an enterprise cloud rollout for a retailer')
+    assert 'adoption' in hints('The release manager and the two squads used it every day after we left, they owned it.')
+    assert 'limitations' in hints('I would not run a pilot again without a signed scope and a backup sponsor.')
+
+
+def test_h1_achievement_praise_and_party_cues():
+    # review items 5 and 8
+    assert 'describes_achievement' in cues('Deployments went down by 80 percent, it was a huge success and the client loved it.')
+    for t in ['the client loved it', 'the customers were really happy', 'the sponsor loved it']:
+        assert 'client_praise' in cues(t), t
+    assert 'client_praise' not in cues('I loved it')
+    assert 'names_party' in cues("I can not name the client, it is a big pharma company under NDA") and 'names_party' in cues("I can't say who they are")
+    assert 'names_party' not in cues('I can not share the documents, they are confidential.')
+
+
+def test_h1_i_do_not_have_the_numbers_is_a_dont_know():
+    # T16 finding: "I don't have the numbers" was read as a plain answer
+    for t in ["I don't have the numbers", "I don't have that data", 'We do not have the figures for that.', "we don't have any metrics"]:
+        assert intents(t) == ['dont_know'], t
+    assert intents('we have the numbers') == []

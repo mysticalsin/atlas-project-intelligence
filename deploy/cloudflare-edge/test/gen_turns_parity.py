@@ -25,6 +25,16 @@ EN = [
     'I CAN’T SHARE THE CLIENT NAME', 'NO, THAT’S WRONG', 'That is not correct', 'you are right', 'agreed', 'I disagree', 'Not really', 'not sure about that',
     'I do not know that', 'we served 1.000.000 users and 2.500 tickets', 'latency fell about forty percent', 'go ahead', 'we did not have a problem with it',
     'Well... it depends', 'the team delivered it and the sponsor loved it', 'we rolled it out in 2023 and it was successful',
+    # v2.1 H1: stopping words that must beat "deny", setback cues, the "zero data loss" strip, wider hints, praise and achievement words, a client being named
+    "I think we covered it, I have nothing more to say.", "No, I think that is all, thank you.", "That's everything from me, thanks", "No, that is all", "that's it for me",
+    "no, that's all wrong", "yes, that's it", "That is all right", "nothing else to add", "we've covered everything", "That's all I have, thank you very much indeed for your time today everyone", "I think we covered it and there is nothing more to say about this project at all, so thanks for asking all of those questions",
+    "It was really frustrating, the team was exhausted and the new sponsor did not care about the project at all.", "the sponsor left halfway", "there was a lot of pushback and resistance from the ops team",
+    "It went live on time with zero data loss, around two million records.", "we had no outage and without any downtime", "we had data loss on the first night", "a difficult tough conflict",
+    "Mostly I worked on the release pipeline and the monitoring, making things more efficient for everyone.", "I was responsible for the cutover", "I handled the runbooks and I owned the rollback plan",
+    "It was a data migration for a bank", "this was an enterprise cloud rollout for a retailer", "The release manager and the two squads used it every day after we left, they owned it.",
+    "Deployments went down by 80 percent, it was a huge success and the client loved it.", "the client loved it", "the customers were really happy", "it dropped and we were faster and had fewer tickets",
+    "Report preparation went from 10 days to 2 days per study.", "I can not name the client, it is a big pharma company under NDA, but we rebuilt their clinical trial reporting.",
+    "I can not share the documents, they are confidential.", "I can't say who they are", "which bank was it", "I don't have the numbers", "I don't have that data", "We do not have the figures for that.", "we have the numbers",
 ]
 OTHER = [
     ('on peut faire une pause ?', 'fr'), ('on reprend', 'fr'), ('pouvez-vous répéter la question', 'fr'), ('passons à la question suivante', 'fr'), ('je ne sais pas', 'fr'),

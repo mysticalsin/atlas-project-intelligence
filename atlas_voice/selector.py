@@ -31,7 +31,7 @@ import re
 import unicodedata
 
 from .quality import FIELDS
-from .turns import NOT_AN_ANSWER
+from .turns import CUE_SRC, NOT_AN_ANSWER, normalize
 
 PHASES = ['breadth', 'depth', 'closing', 'wrap']   # from least to most pressing; session.js / storyboard-core.js use the same words
 ESSENTIALS = ['problem', 'contribution', 'outcome']  # context, contribution, outcome: all a rushed consultant is asked for
@@ -66,62 +66,74 @@ CONFIG = {
     'detail_words': 20,       # a longer answer gets a "thanks for the detail" acknowledgement
     'ack_min_words': 8,       # a shorter plain answer gets no acknowledgement
     'span_chars': 60,
-    'assessment_stages': ['assessment', 'proof of concept', 'lessons learned'],
+    'assessment_stages': ['assessment', 'proof of concept', 'lessons learned', 'pilot'],
+    'private_content_words': 15,   # a refusal to share that still says this much (with a field to show for it) is accepted without leaving the point open
+    'hook_words': 6, 'hook_min_words': 2,   # the consultant's own words quoted back: at most 6, at least 2
     'period_units': ['week', 'month', 'quarter', 'year'],
+    'numeric_fields': ['outcome', 'measurement'],   # a corrected figure may sit in either
     'patterns': {
         'number': r"\d+(?:[.,]\d+)?",
         'number_unit': r"(\d+(?:[.,]\d+)?)\s?(?:%|percent|hours?|hrs?|minutes?|mins?|seconds?|days?|weeks?|months?|quarters?|years?|ms|x|times|k|m|users?|tickets?|people|euros?|dollars?|usd|eur)?(?![a-z0-9])",
         'kind_words': r"\b(?:measured|measuring|estimate|estimated|estimates|tracked|approximately|roughly|about|guess|logged)\b",
         'junk': r"[ \t\n\r\f\v?{}]+",
+        'anaphora': r"\b(?:that|it|this|those)\b",   # a variant that points back at what was just said; a change of topic avoids these
+        'hook_subject': r"^(?:(?:so|and|but|well|yes|yeah|okay|ok|honestly|basically|mostly|mainly)[, ]+)*(?:i|we|they|the team|our team|my team)(?:'(?:ve|d|ll))?\s+(?:(?:mostly|mainly|also|personally|really|just|then|all|both)\s+)*",
+        'hook_verb': r"^(?:worked on|working on|was responsible for|were responsible for|took care of|took responsibility for|took on|handled|owned|led|built|designed|wrote|created|implemented|migrated|introduced|delivered|chose|used|ran|set up|rolled out|helped (?:to )?(?:improve|build|deliver|design|run|with)?|improved|rebuilt|replaced|moved|deployed|automated|redesigned|refactored|integrated|installed|configured|developed|managed|drove|architected)\s+",
+        'hook_stop': r"^(?:but|because|so|which|while|although|since|when|where|who|making|after|before)$",
+        'hook_trail': r"^(?:the|a|an|of|to|for|in|on|at|by|with|and|or|our|my|their|its)$",
     },
 }
 
 # Question bank: intent -> language -> variants. Every variant asks exactly ONE question (one "?") and is open (no yes/no
 # leading question); confirm_asr is closed by design (a fact check, not an interview question). No praise anywhere. A variant
 # is chosen by how often the intent was asked before, so the same point is worded differently the second time.
-# {span} {a} {b} {labels} are filled from the turn / the plan, stripped of "?" and braces.
+# {span} {a} {b} {labels} {figure} {hook} are filled from the turn / the plan, stripped of "?" and braces; a variant whose
+# placeholder has nothing to fill is not used (the next one is). When the interview changes topic (move.bridge) a variant that points
+# back at "that" or "it" is passed over. Wording is spoken-natural: short, one idea, no form-field vocabulary.
 QUESTION_BANK = {
     # follow-up ladder, one intent per ledger field (rung in CONFIG['fields'])
     'open_exploration': {'en': ['Could you tell me about the project and how you became involved?', 'Could you walk me through what was happening before the project started?',
-                                'What was the main problem the team needed to solve?']},
-    'stakes': {'en': ['Why did that matter to the business at that point?', 'What was at stake if the problem stayed as it was?', 'Who felt that problem most, and how?']},
-    'example': {'en': ['Could you walk me through one concrete change you made?', 'What did that look like in practice, step by step?', 'Which part of the work would be the best example to start with?']},
+                                'What was the main problem the team needed to solve?', 'What were you trying to change?']},
+    'stakes': {'en': ['What was at stake for the client if nothing had changed?', 'What was the risk to the client if things stayed as they were?', 'Who felt that problem most?']},
+    'example': {'en': ['Could you walk me through one concrete change you made?', 'What did that look like in practice, step by step?', 'Which part of the work would be the best example to start with?',
+                       'How did you approach it?']},
     'role': {'en': ['What was your role on the project?', 'What was your own role when the project got going?']},
-    'ownership': {'en': ['What part of that did you personally take responsibility for?', 'Which decisions or deliverables were yours?',
-                         'Who else contributed, and how were the responsibilities divided?']},
-    'decision': {'en': ['How did you decide to do it that way?', 'What other options did you consider, and why did you choose this one?', 'What was the hardest decision, and what tipped it?']},
-    'evidence': {'en': ['What would help someone verify that, such as a document, dashboard or repository?', 'Which artifact could a reviewer look at to check that?',
-                        'Who could confirm that work, and are there limits on sharing it?']},
-    'adoption': {'en': ['Who actually used it, and who owned it after you handed it over?', 'Who adopted this in practice?', 'What happened after the handover, and who looked after it?']},
+    'ownership': {'en': ['You mentioned {hook}. Which part of that was yours?', 'Which decisions or deliverables were yours?', 'How was the work split between you and the team?',
+                         'What part of that did you personally take responsibility for?']},
+    'decision': {'en': ['How did you decide to do it that way?', 'What else did you consider before settling on that?', 'What was the hardest call you had to make?']},
+    'evidence': {'en': ['What could a reviewer look at later, like a report or a dashboard?', 'Which artifact could a reviewer look at to check that?', 'Who else saw this work up close?']},
+    'adoption': {'en': ['Who used it day to day once it was live?', 'Who adopted this in practice?', 'Who looked after it after the handover?']},
     'impact': {'en': ['What changed for the customer or the team once it was in place?', 'What difference did people notice after the work was delivered?',
                       'How did things look afterwards compared with before?']},
     'impact_assessment': {'en': ['What decision or tested finding came out of this work?', 'What did the assessment let the customer decide or learn?']},
-    'measurement': {'en': ['How did you tell that it had made a difference?', 'How, if at all, was that change measured?']},
-    'attribution': {'en': ['Which part of that result can fairly be linked to your own work?', 'What else changed at the same time that could have affected the result?',
-                           'What would this evidence not justify claiming?']},
-    'customer_fit': {'en': ['Which kind of customer situation would this experience help with most?', 'Who else could benefit from what you did here?']},
-    'poor_fit': {'en': ['Where would this approach not apply, or what would need to be in place first?', 'In which situations would you not recommend this approach?']},
+    'measurement': {'en': ['How did you know it was working?', 'What showed you things had changed?', 'How did you tell that it had made a difference?']},
+    'attribution': {'en': ['Which part of that result came from your piece of the work?', 'What else changed at the same time that could have affected the result?',
+                           'Where would you be careful not to overclaim this?']},
+    'lessons': {'en': ['What would you do differently next time?', 'What did you take away from how it ended?']},
+    'customer_fit': {'en': ['Which other clients could use what you learned here?', 'Who else could benefit from what you did here?',
+                            'Which kind of customer situation would this experience help with most?']},
+    'poor_fit': {'en': ['Where would this approach not work as well?', 'In which situations would you not recommend this approach?', 'What would you do differently next time?']},
     # one part of a metric's basis per move
-    'metric_kind': {'en': ['Was that figure measured, or is it closer to an estimate?', 'Is that number from a measurement, or a rough estimate?']},
+    'metric_kind': {'en': ['Was the {figure} measured, or more of an estimate?', 'Was that figure measured, or is it closer to an estimate?', 'Is that number from a measurement, or a rough estimate?']},
     'metric_period': {'en': ['Over what period was that measured?', 'Which dates or period does that figure cover?']},
-    'metric_baseline': {'en': ['What was the figure before the change, for the same measure?', 'What baseline did you compare that against?']},
-    'metric_source': {'en': ['Where does that number come from, such as a dashboard or a report?', 'Which source would a reviewer use to check that figure?']},
+    'metric_baseline': {'en': ['What was the starting point before the change?', 'What baseline did you compare that against?']},
+    'metric_source': {'en': ['Where would that number show up, say in a report or a dashboard?', 'Which source would a reviewer use to check that figure?']},
     # cue repairs
     'vague_example': {'en': ['Could you give me one concrete example of what that involved?', 'What did that look like for one specific piece of work?', 'Which task or deliverable comes to mind first?']},
-    'team_ownership': {'en': ['What part of that work did you take on yourself, alongside the team?', 'Within the team effort, which piece was yours?',
-                              'How were responsibilities split, and which part sat with you?']},
-    'tech_depth': {'en': ['Which of those did you use most hands-on, and for what?', 'Where in the project did you actually work with those, and how deeply?']},
-    'cert_details': {'en': ['Who issued that certification, and roughly when did you earn it?', 'Which exact certification was that, and what is its current status?']},
-    'praise_source': {'en': ['Who said that, and roughly when?', 'Where did that feedback come from, and who gave it?']},
+    'team_ownership': {'en': ['What part of that work did you take on yourself, alongside the team?', 'Within the team effort, which piece was yours?', 'Which piece of that sat with you?']},
+    'tech_depth': {'en': ['Which of those did you work with most hands-on?', 'Where in the project did you work with those?']},
+    'cert_details': {'en': ['Which body issued that certification?', 'Roughly when did you earn it?', 'Which exact certification was that?']},
+    'praise_source': {'en': ['Who gave you that feedback?', 'Where did that feedback come from?', 'Roughly when did you hear that?']},
+    'setback_response': {'en': ['What did you do when that happened?', 'How did you keep things moving after that?', 'What did you try next?', 'What made that difficult?']},
     'contradiction': {'en': ['I have two versions here, {a} and {b}. Which is accurate, or do they describe different things?',
                              "I've noted both {a} and {b}. How do they fit together, or is one of them off?"]},
     # accepting what the consultant said
     'correction': {'en': ["I'll narrow that to the part you described. What did you personally deliver within it?", "I'll use your version and leave the wider work with the team. Which piece was yours?"]},
-    'correction_number': {'en': ["I'll use your figure instead. How was that number arrived at?", "Understood, I'll record it your way. What does that figure measure exactly?"]},
+    'correction_number': {'en': ['How was that number arrived at?', 'What does that figure measure exactly?']},   # the acknowledgement before it already says the figure is changed
     'anonymise': {'en': ['We can keep names out of this. What can you say about the situation in general terms?',
                          "We can leave out the details you can't share. How would you describe it without naming anyone?"]},
-    'offer_move_on': {'en': ['We can leave that open for now. What would you like to cover instead?', "That's fine, we don't have to settle it. What shall we turn to next?",
-                             'It can stay open. Which part of the project would you rather talk about?']},
+    'offer_move_on': {'en': ["Let's leave that open. What happened next on the project?", "That's fine, we don't have to settle it. How did the work wrap up?",
+                             'It can stay open. What happened after that?']},
     # speech recognition: a closed check by design, then a repair when the consultant says no
     'confirm_asr': {'en': ['Just to check I heard right: was that {span}?', 'Sorry, I want to be sure: did you say {span}?', 'Quick check on what I heard: was it {span}?']},
     'asr_repair': {'en': ['Sorry, I may have misheard. What should I have written down?', 'Thanks for catching that. What was the right one?']},
@@ -134,11 +146,12 @@ LINES = {
     'close': {'en': ["That's all the time we have. Thank you for sharing this; I'll prepare your summary for you to review and correct.",
                      "We're at the end of our time. Thanks for walking me through it; you'll be able to review what I captured."]},
 }
+NO_HOOK = ['contradiction', 'setback_response', 'anonymise', 'correction', 'correction_number'] + METRIC_PARTS   # moves that carry no reference to the consultant's own words
 REPEAT_LAST = 'repeat_last'   # why-code of a move that puts the previous question again after a pause, a repeat request or a question to ATLAS
-LEAD_RUSHED = "No problem, let's keep to the essentials."   # said once, before the first question of a rushed interview
+LEAD_RUSHED = "No problem, let's keep it to three things: the project, your part, and what changed."   # said once, before the first question of a rushed interview (pack Example 6)
 
 # Intents asked about a ledger field that do not count as an attempt at the field's own question.
-NOT_ATTEMPTS = ['offer_move_on', 'confirm_asr', 'asr_repair', 'correction', 'correction_number', 'anonymise', 'contradiction', 'reflect'] + METRIC_PARTS
+NOT_ATTEMPTS = ['offer_move_on', 'confirm_asr', 'asr_repair', 'correction', 'correction_number', 'anonymise', 'contradiction', 'reflect', 'setback_response'] + METRIC_PARTS
 FIELD_KEYS = list(FIELDS)
 
 _FLAGS = re.I | re.A
@@ -234,24 +247,69 @@ def _numbers_in(quote):
     return [(m.group(1), ' '.join(m.group(0).split())) for m in _re(CONFIG['patterns']['number_unit']).finditer(quote or '')]
 
 
-def contradiction(plan):
-    """(field, a, b) for the first field with two ACTIVE candidates whose numbers each hold a value the other lacks; else None.
-    {25} and {40} differ; {2, 25} and {25} do not (one version only adds a number)."""
+def number_conflict(qa, qb):
+    """(a, b) when the numbers of two quotes each hold a value the other lacks ({25} and {40} differ; {2, 25} and {25} do not, one version
+    only adds a number); else None."""
+    na, nb = _numbers_in(qa), _numbers_in(qb)
+    sa, sb = {n for n, _ in na}, {n for n, _ in nb}
+    if sa and sb and not sa <= sb and not sb <= sa:
+        return _clean(next(t for n, t in na if n not in sb)), _clean(next(t for n, t in nb if n not in sa))
+    return None
+
+
+def contradiction(plan, skip=()):
+    """(field, a, b) for the first field (not in `skip`) with two ACTIVE candidates whose numbers each hold a value the other lacks; else None."""
     by = {}
     for d in plan.get('candidate_details') or []:
         if isinstance(d, dict) and d.get('active', True) and d.get('field') in FIELDS and isinstance(d.get('quote'), str):
             by.setdefault(d['field'], []).append(d['quote'])
     for f in FIELD_KEYS:
+        if f in skip:
+            continue
         qs = by.get(f, [])
         for i in range(len(qs)):
             for j in range(i + 1, len(qs)):
-                na, nb = _numbers_in(qs[i]), _numbers_in(qs[j])
-                sa, sb = {n for n, _ in na}, {n for n, _ in nb}
-                if sa and sb and not sa <= sb and not sb <= sa:
-                    a = next(t for n, t in na if n not in sb)
-                    b = next(t for n, t in nb if n not in sa)
-                    return f, _clean(a), _clean(b)
+                hit = number_conflict(qs[i], qs[j])
+                if hit:
+                    return f, hit[0], hit[1]
     return None
+
+
+def _has_setback(text):
+    """True when the words describe a setback (the same test as the pre-pass cue, run on a ledger quote)."""
+    norm = normalize(text if isinstance(text, str) else '')
+    return bool(_re(CUE_SRC['describes_setback']).search(_re(CUE_SRC['setback_strip']).sub(' ', norm)))
+
+
+def _hook(plan, thread):
+    """2-6 of the consultant's own words from the latest active quote of the thread's field, as a noun phrase to refer back to ('' when there is none).
+    The subject and a leading verb are dropped ("I worked on the release pipeline" -> "the release pipeline"); it stops at a clause boundary."""
+    if thread is None:
+        return ''
+    quote = ''
+    for d in plan.get('candidate_details') or []:
+        if isinstance(d, dict) and d.get('active', True) and d.get('field') == thread and d.get('status') != 'unknown' and isinstance(d.get('quote'), str):
+            quote = d['quote']
+    rest = _re(CONFIG['patterns']['junk'], 0).sub(' ', quote).strip()
+    stripped = _re(CONFIG['patterns']['hook_subject']).sub('', rest, count=1)
+    if stripped != rest:   # a first-person subject: only a known verb leaves a phrase that reads back well ("think it was measured" does not)
+        after = _re(CONFIG['patterns']['hook_verb']).sub('', stripped, count=1)
+        if after == stripped:
+            return ''
+        stripped = after
+    out = []
+    for tok in stripped.split(' '):
+        word = tok.strip(",;.:!\"'()")
+        if not word:
+            continue
+        if _re(CONFIG['patterns']['hook_stop']).match(word) and out:
+            break
+        out.append(word)
+        if len(out) >= CONFIG['hook_words'] or tok[-1] in ',;.:!':
+            break
+    while out and _re(CONFIG['patterns']['hook_trail']).match(out[-1]):
+        out.pop()
+    return _clean(' '.join(out)) if len(out) >= CONFIG['hook_min_words'] else ''
 
 
 def effective_phase(phase, time_left):
@@ -282,6 +340,17 @@ def _context(plan, turn, asked, prefill, phase, time_left, rushed):
     # the thread is where the consultant's answer got furthest along the ladder (the asked field wins a tie), else the field just asked
     thread = max(hints, key=lambda f: (rung(f), f == last_field, -FIELD_KEYS.index(f))) if hints else last_field
     present = _present_fields(plan)
+    # a field the consultant corrected: a contradiction there is settled (a number correction settles the outcome and the measurement together)
+    corrected = set()
+    for a in asked:
+        if a.get('intent') in ('correction', 'correction_number') and a.get('field') in FIELDS:
+            corrected.add(a['field'])
+            if a['intent'] == 'correction_number':
+                corrected |= set(CONFIG['numeric_fields'])
+    numbers = turn.get('numbers') if isinstance(turn.get('numbers'), list) else []
+    numbers_text = [_clean(n.get('text')) for n in numbers if isinstance(n, dict) and isinstance(n.get('text'), str)]
+    outcome_quotes = [d.get('quote') for d in plan.get('candidate_details') or [] if isinstance(d, dict) and d.get('active', True) and d.get('field') == 'outcome']
+    setback_outcome = any(_has_setback(q) for q in outcome_quotes) or ('describes_setback' in cues and 'outcome' in hints)
     flags = plan.get('flags') if isinstance(plan.get('flags'), list) else []
     numeric_plan = bool(plan.get('measurement_gaps')) or any(isinstance(f, str) and f.startswith('Numerical outcome lacks') for f in flags)
     deferred = _ledger_paused(plan)
@@ -293,7 +362,8 @@ def _context(plan, turn, asked, prefill, phase, time_left, rushed):
             deferred.add(a['field'])
     c = {
         'plan': plan, 'turn': turn, 'asked': asked, 'prefill': prefill, 'intents': intents, 'cues': cues, 'hints': hints, 'words': words,
-        'numbers': turn.get('numbers') if isinstance(turn.get('numbers'), list) else [], 'last': last, 'last_field': last_field,
+        'numbers': numbers, 'last': last, 'last_field': last_field, 'corrected': corrected, 'setback_outcome': setback_outcome,
+        'figure': numbers_text[0] if len(numbers_text) == 1 else '', 'hook': _hook(plan, thread),
         'answer_shaped': answer_shaped, 'covered_now': covered_now, 'thread': thread, 'present': present, 'numeric_plan': numeric_plan,
         'deferred': deferred, 'prefilled': _prefilled_fields(prefill), 'rushed': bool(rushed) or 'rushed' in intents,
         'phase': effective_phase(phase, time_left), 'recent': [a.get('say') for a in asked[-CONFIG['repeat_window']:] if isinstance(a.get('say'), str)],
@@ -318,14 +388,27 @@ def _summarized(c):
     return any(a.get('kind') == 'summary' or a.get('intent') == 'summary' for a in c['asked'])
 
 
+def _fillable(template, params):
+    return all(params.get(k) for k in re.findall(r'\{(\w+)\}', template))
+
+
+def _params(c, cand):
+    """What fills a variant's placeholders: the candidate's own (a, b, span, labels) plus the thread's {figure} and {hook}."""
+    out = {'figure': c['figure'], 'hook': c['hook']}
+    out.update(cand.get('params', {}))
+    return out
+
+
 def _say(c, cand):
-    """The wording for a candidate: the variant its count points at, else the next, skipping any that repeats a recent say."""
-    entry = QUESTION_BANK[cand['intent']]
-    bank = entry['en']
+    """The wording for a candidate: the variant its count points at, else the next, skipping any that repeats a recent say or cannot be filled."""
+    params = _params(c, cand)
+    bank = [v for v in QUESTION_BANK[cand['intent']]['en'] if _fillable(v, params)]
+    if cand.get('bridge'):   # a change of topic: no "that" or "it" pointing at the old one
+        bank = [v for v in bank if not _re(CONFIG['patterns']['anaphora']).search(v)] or bank
     start = _count(c, cand['intent'], any_field=True) % len(bank)
     lead = LEAD_RUSHED + ' ' if c['rushed'] and cand.get('lead') and not any(isinstance(a.get('why'), str) and 'rushed:' in a['why'] for a in c['asked']) else ''
     for k in range(len(bank)):
-        text = lead + _render(bank[(start + k) % len(bank)], cand.get('params', {}))
+        text = lead + _render(bank[(start + k) % len(bank)], params)
         if not any(similar(text, r) for r in c['recent']):
             return text, ('' if k == 0 else '+rv')
     return None
@@ -372,6 +455,8 @@ def _ladder(c):
         if c['phase'] == 'closing' and f not in ESSENTIALS:
             continue
         gain = cfg['gain']['missing']
+        if f == 'measurement' and c['setback_outcome']:
+            continue   # a setback or a cancelled piece of work has no result to measure: it is asked what was learned instead (limitations -> lessons)
         if f == 'measurement':
             if c['numeric_plan']:
                 gain = cfg['gain']['measurement_flagged']
@@ -404,10 +489,12 @@ def _candidates(c):
     cueing = not rushed and c['phase'] in ('breadth', 'depth')
     last_intent = c['last'].get('intent') if c['last'] else None
     if cueing:
-        hit = contradiction(c['plan'])
+        hit = contradiction(c['plan'], c['corrected'])
         if hit:
             f, a, b = hit
             yield {'intent': 'contradiction', 'field': f, 'rung': CONFIG['fields'][f]['rung'], 'params': {'a': a, 'b': b}, 'why': 'contradiction:' + f, 'important': True}
+        if 'describes_setback' in cues and last_intent != 'setback_response':   # a setback is met with "what did you do", before anything else is probed
+            yield {'intent': 'setback_response', 'field': 'decision', 'rung': 4, 'params': {}, 'why': 'setback', 'important': False}
         continuing = last_intent in METRIC_PARTS and c['answer_shaped']
         if 'measurement' not in c['deferred'] and ('metric' in cues or continuing or (c['numeric_plan'] and 'measurement' in c['hints'])):
             part = _metric_part(c)
@@ -432,6 +519,7 @@ def _candidates(c):
             labels = [FIELDS[f][0].lower() for f in FIELD_KEYS if f in c['present']][:3]
             text = labels[0] if len(labels) == 1 else ', '.join(labels[:-1]) + ' and ' + labels[-1]
             yield {'intent': 'reflect', 'kind': 'reflect', 'field': None, 'rung': None, 'params': {'labels': text}, 'why': 'reflect:depth', 'important': False}
+    thread = c['thread']
     for f, _ in _ladder(c):
         fc = CONFIG['fields'][f]
         intent = fc['intent']
@@ -439,14 +527,18 @@ def _candidates(c):
             intent = 'role'
         elif f == 'outcome' and str(c['prefill'].get('stage', '')).lower() in CONFIG['assessment_stages']:
             intent = 'impact_assessment'
+        elif f == 'limitations' and c['setback_outcome']:
+            intent = 'lessons'
         elif f == 'measurement' and c['numeric_plan']:
             intent = _metric_part(c)
             if intent is None:
                 continue
-        yield {'intent': intent, 'field': f, 'rung': fc['rung'], 'params': {}, 'why': ('rushed:' if rushed else '') + 'ladder:' + f, 'important': True, 'lead': rushed}
+        # a question far from where the answer got to (not the thread's field, not the next rung either way) changes the topic
+        bridge = thread is not None and f != thread and abs(fc['rung'] - CONFIG['fields'][thread]['rung']) > 1
+        yield {'intent': intent, 'field': f, 'rung': fc['rung'], 'params': {}, 'why': ('rushed:' if rushed else '') + 'ladder:' + f, 'important': True, 'lead': rushed, 'bridge': bridge}
 
 
-LADDER_INTENTS = [v['intent'] for v in CONFIG['fields'].values()] + ['role', 'impact_assessment']
+LADDER_INTENTS = [v['intent'] for v in CONFIG['fields'].values()] + ['role', 'impact_assessment', 'lessons']
 
 
 def _blocked(c, cand):
@@ -488,7 +580,9 @@ def _reaction(c, accept=None):
     """(reaction, ack_category) for the consultant's latest answer. earned_result needs an achievement cue AND a known basis."""
     cues = c['cues']
     if accept == 'correction':
-        return 'ack', 'correction_thanks'
+        last = c['last'] or {}   # "Thanks for correcting me" only when ATLAS had just stated a fact (a heard span, a reflection, the read-back)
+        stated = last.get('kind') in ('confirm_asr', 'reflect', 'summary') or last.get('intent') in ('confirm_asr', 'reflect', 'summary')
+        return 'ack', 'correction_thanks_fact' if stated else 'correction_thanks'
     if 'describes_setback' in cues:
         return 'ack', 'setback_neutral'
     if accept in ('dont_know', 'skip'):
@@ -497,7 +591,7 @@ def _reaction(c, accept=None):
     if accept == 'cannot_disclose':
         return 'ack', 'confidential_ok'
     if 'metric' in cues and 'measurement' not in c['present']:
-        if 'describes_achievement' in cues or 'estimate' in cues:
+        if 'describes_achievement' in cues or 'estimate' in cues or 'outcome' in c['hints']:
             return 'ack', 'promising_unverified'
     basis_known = 'measurement' in c['present'] and not c['plan'].get('measurement_gaps')
     recent_earned = any(a.get('reaction') == 'earned' for a in c['asked'][-CONFIG['earned_gap']:])
@@ -510,15 +604,17 @@ def _reaction(c, accept=None):
     return 'none', None
 
 
-def _move(kind, cand, say, why, reaction):
+def _move(kind, cand, say, why, reaction, c=None):
+    """The Move. bridge: the question changes topic (the talker says so in a few words); hook: the consultant's own words to refer back to (never both)."""
+    bridge = bool(cand.get('bridge'))
     return {'kind': kind, 'intent': cand['intent'], 'field': cand.get('field'), 'rung': cand.get('rung'), 'say': say, 'why': why,
-            'reaction': reaction[0], 'ack_category': reaction[1]}
+            'reaction': reaction[0], 'ack_category': reaction[1], 'bridge': bridge, 'hook': c['hook'] if c and not bridge and kind == 'ask' and cand['intent'] not in NO_HOOK else ''}
 
 
 def _line(c, kind, why, reaction=('none', None)):
     bank = LINES[kind]['en']
     n = _count(c, kind, any_field=True) % len(bank)
-    return {'kind': kind, 'intent': kind, 'field': None, 'rung': None, 'say': bank[n], 'why': why, 'reaction': reaction[0], 'ack_category': reaction[1]}
+    return {'kind': kind, 'intent': kind, 'field': None, 'rung': None, 'say': bank[n], 'why': why, 'reaction': reaction[0], 'ack_category': reaction[1], 'bridge': False, 'hook': ''}
 
 
 def _end(c, why, reaction=('none', None)):
@@ -569,7 +665,7 @@ def select(plan, turn, asked, prefill, phase, time_left, asr=None, rushed=False,
     # 5. a pause, a "say that again" or a question to ATLAS leaves the last question unanswered: put it again (not an attempt)
     if last and '?' in str(last.get('say', '')) and any(i in intents for i in ('pause', 'resume', 'repeat', 'question_to_atlas')):
         return {'kind': last['kind'] if last.get('kind') in ('confirm_asr', 'offer_move_on', 'reflect') else 'ask', 'intent': last.get('intent'),
-                'field': last.get('field'), 'rung': last.get('rung'), 'say': last['say'], 'why': REPEAT_LAST, 'reaction': 'none', 'ack_category': None}
+                'field': last.get('field'), 'rung': last.get('rung'), 'say': last['say'], 'why': REPEAT_LAST, 'reaction': 'none', 'ack_category': None, 'bridge': False, 'hook': ''}
     # 5b. right after the read-back summary, a short reply ends the interview
     if last and (last.get('kind') == 'summary' or last.get('intent') == 'summary') and (c['words'] <= 6 or 'confirm' in intents):
         return _line(c, 'close', 'close:after_summary')
@@ -577,26 +673,33 @@ def select(plan, turn, asked, prefill, phase, time_left, asr=None, rushed=False,
     accept = next((i for i in ('cannot_disclose', 'dont_know', 'skip') if i in intents), None)
     if accept:
         field = _defer_field(c)
-        if field:
+        # "I can't name the client, but we rebuilt their reporting": there is content, so it is kept private as said and the interview goes on (the point is not left open)
+        content = accept == 'cannot_disclose' and c['words'] >= CONFIG['private_content_words'] and bool(c['hints'])
+        if field and not content:
             c['deferred'].add(field)
-        tag = accept + ':' + (field or '-')
-        if accept == 'cannot_disclose' and field and not _count(c, 'anonymise', field):
+        tag = ('kept_private:' if content else accept + ':') + (field or '-')
+        if accept == 'cannot_disclose' and not content and field and 'names_party' in c['cues'] and not _count(c, 'anonymise', field):   # only a name or a client needs anonymising
             cand = {'intent': 'anonymise', 'field': field, 'rung': CONFIG['fields'][field]['rung'], 'params': {}}
             said = _say(c, cand)
             if said:
-                return _move('accept_and_move', cand, said[0], tag + '>anonymise' + said[1], _reaction(c, accept))
+                return _move('accept_and_move', cand, said[0], tag + '>anonymise' + said[1], _reaction(c, accept), c)
         cand = _pick(c)
         if cand is None:
             return _end_after(c, tag, accept)
-        return _move('accept_and_move', cand, cand['say'], tag + '>' + cand['why'], _reaction(c, accept))
+        return _move('accept_and_move', cand, cand['say'], tag + '>' + cand['why'], _lead_quiet(cand, _reaction(c, accept)), c)
     # 7. everything else: the best question
     cand = _pick(c)
     if cand is None:
         return _end(c, 'essentials' if c['rushed'] else 'closing' if c['phase'] == 'closing' else 'no_candidates')
     kind = cand.get('kind', 'ask')
     why = cand['why']
-    reaction = ('none', None) if kind in ('offer_move_on', 'reflect') or cand['intent'] == 'contradiction' else _reaction(c)
-    return _move(kind, cand, cand['say'], why, reaction)
+    reaction = ('none', None) if kind in ('offer_move_on', 'reflect') or cand['intent'] == 'contradiction' else _lead_quiet(cand, _reaction(c))
+    return _move(kind, cand, cand['say'], why, reaction, c)
+
+
+def _lead_quiet(cand, reaction):
+    """The rushed lead ("No problem, let's keep it to three things...") is itself the acknowledgement: no second one before it."""
+    return ('none', None) if cand['say'].startswith(LEAD_RUSHED) else reaction
 
 
 def _end_after(c, tag, accept):
@@ -606,4 +709,4 @@ def _end_after(c, tag, accept):
 
 
 EDGE_CONSTANTS = {'SELECTOR_CONFIG': CONFIG, 'QUESTION_BANK': QUESTION_BANK, 'SELECTOR_LINES': LINES, 'SELECTOR_LEAD_RUSHED': LEAD_RUSHED,
-                  'SELECTOR_NOT_ATTEMPTS': NOT_ATTEMPTS, 'SELECTOR_PHASES': PHASES, 'SELECTOR_ESSENTIALS': ESSENTIALS, 'SELECTOR_METRIC_PARTS': METRIC_PARTS}
+                  'SELECTOR_NOT_ATTEMPTS': NOT_ATTEMPTS, 'SELECTOR_NO_HOOK': NO_HOOK, 'SELECTOR_PHASES': PHASES, 'SELECTOR_ESSENTIALS': ESSENTIALS, 'SELECTOR_METRIC_PARTS': METRIC_PARTS}

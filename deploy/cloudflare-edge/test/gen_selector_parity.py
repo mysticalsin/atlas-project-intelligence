@@ -63,6 +63,25 @@ converse(['ok'] * 4, prefill={'prior_notes': ['problem', 'contribution'], 'secto
 converse(['ok'] * 4, prefill={'prior_notes': {'fields': {'problem': 'x', 'outcome': 'y', 'zzz': 'q'}}, 'problem': ''})
 converse(['ok'] * 3, plan={'candidate_details': [], 'covered_fields': ['problem', 'stakes', 'contribution', 'intervention', 'decision', 'adoption', 'outcome', 'measurement', 'evidence', 'limitations', 'customer_fit', 'poor_fit']})
 
+# v2.1 H1: the four review personas (thread-following, bridge and hook, setbacks, stop, confidential content, correction loop, lessons for a failed pilot)
+converse(['I helped improve the platform for the client, it was a big transformation and we really modernised everything.', 'Mostly I worked on the release pipeline and the monitoring, making things more efficient for everyone.',
+          'Deployments went down by 80 percent, it was a huge success and the client loved it.', 'I think it was measured, the ops team had a dashboard somewhere.', 'Not sure exactly, maybe over the first quarter after go live.',
+          'I do not know the baseline, honestly.', 'The release manager and the two squads used it every day after we left, they owned it.', 'We chose GitLab pipelines over Jenkins because the client already had licences and the team knew it.',
+          'The main problem was releases took a whole weekend and failed often, the business was frustrated.', 'That is everything, I am done.', 'No, that is right.'],
+         records={0: 'intervention', 1: 'contribution', 2: 'outcome', 3: 'measurement', 6: 'adoption', 7: 'decision', 8: 'problem'})
+converse(['Sorry I only have five minutes, can we be quick? It was a data migration for a bank.', 'I led the migration design and wrote the reconciliation scripts myself.', 'It went live on time with zero data loss, around two million records.',
+          'Reconciliation reports, signed off by the client.', 'No, that is right.'], records={0: 'problem', 1: 'contribution', 2: 'outcome'})
+converse(['Honestly the pilot failed. The client kept changing scope and in the end they cancelled it after three months.', 'I was the delivery lead, I tried to hold the scope with weekly steering meetings but the sponsor left halfway.',
+          'It was really frustrating, the team was exhausted and the new sponsor did not care about the project at all.', 'We wrote a lessons learned document and the client reused our data model in the next programme.',
+          'I would not run a pilot again without a signed scope and a backup sponsor.', 'I think we covered it, I have nothing more to say.', 'Yes that is fine.'],
+         records={0: 'outcome', 1: 'contribution', 3: 'adoption'}, prefill={'stage': 'Pilot'})
+converse(['I can not name the client, it is a big pharma company under NDA, but we rebuilt their clinical trial reporting.', 'I designed the data model and built the automated reporting pipeline with one other engineer.',
+          'Report preparation went from 10 days to 2 days per study.', 'Sorry, I meant 3 days, not 2. From 10 days to 3 days.', 'It was measured by the study managers in their tracking sheet over six months.',
+          'I can not share the documents, they are confidential.', 'Who else? I guess any regulated client with heavy manual reporting.', 'No, I think that is all, thank you.'],
+         records={0: 'problem', 1: 'contribution', 2: 'outcome', 3: 'outcome', 4: 'measurement'})
+converse(["I can't name the client", 'Which bank was it? I could not say who they are', 'Please do not ask for the name of the company'])
+converse(['we delivered the project on time', 'It was a really difficult migration with a lot of pushback', 'the sponsor left halfway', 'we recovered by splitting the work', 'ok'], records={1: 'problem'})
+
 # hand-made situations
 C = ledger(('outcome', 'It takes 25 minutes now'), ('outcome', 'The report now takes 40 minutes'))
 record(C, analyze_turn('okay', 'en'), [], {}, 'breadth', 800)
@@ -124,3 +143,19 @@ converse(['hmm'] * 5, plan={'candidate_details': [], 'covered_fields': [f for f 
 
 (Path(__file__).parent / 'selector.vectors.json').write_text(json.dumps(VECTORS, ensure_ascii=False))
 print(len(VECTORS))
+
+# v2.1 H1: hand-made situations
+F = ledger(('outcome', 'Report preparation went from 10 days to 2 days per study'), ('outcome', 'From 10 days to 3 days'))
+asked_c = [{'intent': 'correction_number', 'field': 'measurement', 'rung': 7, 'say': "I'll use your figure instead. How was that number arrived at?", 'why': 'correction', 'kind': 'accept_and_move'}]
+record(F, analyze_turn('It was measured in a tracking sheet over six months', 'en'), asked_c, {}, 'breadth', 800)
+record(F, analyze_turn('It was measured in a tracking sheet over six months', 'en'), [], {}, 'breadth', 800)
+G = ledger(('outcome', 'they cancelled it after three months'), ('contribution', 'I was the delivery lead'))
+record(G, analyze_turn('We wrote a lessons learned document and the client reused our data model', 'en', {'asked_field': 'adoption'}), [], {}, 'breadth', 800)
+record(G, analyze_turn('okay that was it', 'en'), [], {}, 'breadth', 800, rushed=False)
+H = ledger(('contribution', 'I worked on the release pipeline and the monitoring'), ('intervention', 'We chose GitLab pipelines over Jenkins because the client already had licences'))
+record(H, analyze_turn('we helped improve the platform for the client', 'en', {'asked_field': 'intervention'}), [], {}, 'breadth', 800)
+record(H, analyze_turn('We really modernised everything', 'en'), [{'intent': 'vague_example', 'field': 'intervention', 'rung': 2, 'say': 'x?', 'kind': 'ask'}], {}, 'breadth', 800)
+record({}, analyze_turn('It was a data migration for a bank', 'en'), [], {}, 'breadth', 800, rushed=True)
+record({}, analyze_turn('Deployments went down by 80 percent, it was a huge success and the client loved it.', 'en'), [], {}, 'breadth', 800)
+record({}, analyze_turn('Report preparation went from 10 days to 2 days per study.', 'en', {'asked_field': 'outcome'}), [{'intent': 'impact', 'field': 'outcome', 'rung': 6, 'say': 'What changed?', 'kind': 'ask'}], {}, 'breadth', 800)
+record({}, analyze_turn('Sorry, I meant 3 days', 'en'), [{'intent': 'summary', 'field': None, 'rung': None, 'say': 'Let me read back what I have.', 'kind': 'summary'}], {}, 'breadth', 800)

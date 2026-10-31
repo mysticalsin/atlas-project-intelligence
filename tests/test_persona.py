@@ -13,7 +13,7 @@ from atlas_voice.quality import INTERVIEW_POLICY
 BANNED = re.compile(BANNED_PRAISE_SRC, re.I)
 PROMPTS = {'TALKER_POLICY': TALKER_POLICY, 'INTERVIEW_POLICY': INTERVIEW_POLICY, 'ROLE': ROLE}
 CATEGORIES = ('neutral', 'thanks_detail', 'no_number_fine', 'confidential_ok', 'correction_thanks', 'setback_neutral',
-              'earned_result', 'promising_unverified')
+              'earned_result', 'promising_unverified', 'correction_thanks_fact')
 
 # ADMIN_NOTE exactly as committed at efb4948 (before the persona consolidation).
 ADMIN_NOTE_EFB4948 = ('ADMIN MODE (server-verified sign-in). This overrides HOW YOU SPEAK, ORDER OF THE INTERVIEW and ENDING. '
@@ -62,7 +62,7 @@ def test_every_prompt_embeds_the_persona_blocks(name):
 def test_situations_and_safety_rules_are_present():
     s = persona.SITUATIONS
     assert set(s) == {'unknown', 'confidential', 'setback', 'rushed', 'correction', 'story'}
-    assert 'anonymise' in s['confidential'] and 'judge no one' in s['setback'] and 'short path' in s['rushed']
+    assert 'keep the name out' in s['confidential'] and 'judge no one' in s['setback'] and 'short path' in s['rushed']
     assert 'not an approved story' in s['story'] and 'use their version' in s['correction'] and 'never pressure' in s['unknown']
     for line in s.values():
         assert '?' not in line

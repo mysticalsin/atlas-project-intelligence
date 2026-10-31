@@ -294,7 +294,7 @@ test('L7: keeping a detail private removes the WHOLE utterance from the notes tr
   await send(h, { type: 'withhold', detail_id: secret.id });
   // the talker's history: the utterance is a marker, not "We rebuilt ... for Zebracorp ... which nobody outside the team knows"
   const user = h.s.history.filter(m => m.role === 'user'); assert.deepEqual(user.map(m => m.content), [PRIVATE_MARK]);
-  h.s.ai.transcribe = async () => 'Nothing more to add on that point from my side, thank you.'; talked(h);
+  h.s.ai.transcribe = async () => 'Another point is that the pilot ran across two regional teams during the second quarter.'; talked(h); // ("nothing more to add" now reads as satisfied, H1: this is more to say)
   await until(() => h.calls.talker.length === 4 && !h.s.busy()); // (the read-back itself was the third call)
   const seen = h.calls.talker.at(-1).map(m => m.content).filter(c => /Zebracorp|nineteen/.test(c)); assert.deepEqual(seen, [], 'future talker calls never see it');
   assert.ok(!JSON.stringify(h.s.asrNotes()).includes('Zebracorp'));
