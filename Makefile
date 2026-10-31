@@ -1,5 +1,5 @@
 PYTHON ?= python3
-.PHONY: build preview gateway test test-ui test-edge test-eval test-e2e doctor verify-package
+.PHONY: build preview gateway test test-ui test-edge test-eval test-e2e test-e2e-worker doctor verify-package
 build:
 	$(PYTHON) build.py
 	cp ATLAS_Voice.html deploy/cloudflare-edge/src/atlas.html
@@ -19,6 +19,9 @@ test-eval: build
 # The core flow alone: project ID -> scripted interview -> draft -> review -> skills (DNA), CV (MiChat), projects (Project Review, IMP), success stories (Spotlight).
 test-e2e: build
 	cd deploy/cloudflare-edge && node --test test/e2e-core-flow.test.js
+# The same core flow against the real Worker in workerd (wrangler dev, fully local: no account, no AI binding, no outbound fetch).
+test-e2e-worker: build
+	cd deploy/cloudflare-edge && node --test test-worker/e2e-worker.test.js
 # CHROMIUM_PATH: an explicit value wins; otherwise scripts/chromium_path.py picks a cached Chromium when Playwright's own revision is missing.
 test-ui: export CHROMIUM_PATH := $(or $(CHROMIUM_PATH),$(shell $(PYTHON) scripts/chromium_path.py))
 test-ui: build
