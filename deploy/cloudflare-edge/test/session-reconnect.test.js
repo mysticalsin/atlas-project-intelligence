@@ -35,7 +35,8 @@ test('a dropped socket suspends the interview: persisted in the person\'s own st
   await h.s.suspend();
   assert.ok(h.s.finished && h.s.ending);
   assert.ok(cpKeys(h).includes('cp:' + id + ':meta') && cpKeys(h).includes('cp:' + id + ':0') && cpKeys(h).includes('cp:current'));
-  assert.equal(h.storage.alarm, h.clk.t * 1000 + TTL_MS, 'the purge alarm: 24 h after the last write');
+  const meta = h.storage.m.get('cp:' + id + ':meta'); // S1 (review L6): the 24 hours run from the FIRST write, not the last
+  assert.ok(meta.capturedAt <= h.clk.t * 1000); assert.equal(h.storage.alarm, meta.capturedAt + TTL_MS, 'the purge alarm: 24 h after the first write'); assert.equal(meta.expiresAt, h.storage.alarm);
   const stored = await new CheckpointStore(h.storage, { owner: USER, now: () => h.clk.t * 1000 }).load(id);
   assert.equal(stored.machine.state, 'suspended'); assert.equal(stored.machine.audit.at(-1).event, 'disconnect');
   assert.ok(h.events.some(e => e.type === 'state' && e.state === 'suspended' && e.event === 'disconnect'), 'the machine recorded the loss');
@@ -189,7 +190,7 @@ test('the alarm purges a stored interview after 24 hours (fake clock); until the
   h.advance(23 * 3600);
   assert.equal(await store.expire(), false); assert.equal(h.storage.alarm, alarm); assert.ok(cpKeys(h).length, 'not yet');
   const ok = await resumed(h); assert.ok(!errorsOf(ok).length, 'resumable at 23 hours'); await ok.s.suspend();
-  const alarm2 = h.storage.alarm; assert.ok(alarm2 > alarm, 'a new suspension starts a new 24 hours');
+  const alarm2 = h.storage.alarm; assert.equal(alarm2, alarm, 'S1 (L6): a new suspension keeps the first deadline (absolute, not sliding)');
   h.advance(24 * 3600 + 1);
   assert.equal(await store.expire(), true, 'the alarm handler purges');
   assert.equal(cpKeys(h).length, 0); assert.equal(h.storage.alarm, null);
