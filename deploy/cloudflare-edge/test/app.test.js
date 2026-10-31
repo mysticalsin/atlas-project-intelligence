@@ -7,8 +7,10 @@ const b64u = b => Buffer.from(b).toString('base64url');
 const { publicKey, privateKey } = await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);
 const jwk = { ...(await crypto.subtle.exportKey('jwk', publicKey)), kid: 'k1' };
 globalThis.fetch = async url => { assert.equal(String(url), `https://${TEAM}/cdn-cgi/access/certs`); return new Response(JSON.stringify({ keys: [jwk] })); };
+// One Access sign-in for the whole file: the CSRF token is bound to the token's iat (B1), so tokens minted per request must share it, as an Access session does.
+const IAT = Math.floor(Date.now() / 1000) - 5;
 async function jwt(claims = {}, header = { alg: 'RS256', kid: 'k1' }) {
-  const now = Math.floor(Date.now() / 1000), body = { aud: [AUD], iss: `https://${TEAM}`, sub: 'user-abc', email: 'tony@example.com', exp: now + 600, iat: now, ...claims };
+  const now = Math.floor(Date.now() / 1000), body = { aud: [AUD], iss: `https://${TEAM}`, sub: 'user-abc', email: 'tony@example.com', exp: now + 600, iat: IAT, ...claims };
   const input = b64u(JSON.stringify(header)) + '.' + b64u(JSON.stringify(body));
   return input + '.' + b64u(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, new TextEncoder().encode(input)));
 }
@@ -177,7 +179,7 @@ test('PM trigger endpoint: bearer secret only (constant-time), system role only 
 
 test('memory routes: forwarded to the person\'s own Durable Object with a server-derived bank; POST needs CSRF; bootstrap reports memory', async () => {
   let forwarded = null, name = null;
-  const env = { ...ENV, HINDSIGHT_URL: 'https://hs.example', HINDSIGHT_API_KEY: 'k', INTERVIEW: { idFromName: n => { name = n; return n; }, get: () => ({ fetch: r => { forwarded = r; return new Response('{}'); } }) } };
+  const env = { ...ENV, HINDSIGHT_URL: 'https://hs.example', HINDSIGHT_API_KEY: 'k', HINDSIGHT_BANK_SECRET: 'bank-secret', INTERVIEW: { idFromName: n => { name = n; return n; }, get: () => ({ fetch: r => { forwarded = r; return new Response('{}'); } }) } };
   await handle(await req('/api/memory', { headers: { 'x-atlas-bank': 'someone-elses-bank' } }), env, '');
   assert.equal(name, 'user-abc'); assert.match(forwarded.headers.get('x-atlas-bank'), /^atlas-[0-9a-f]{40}$/); assert.notEqual(forwarded.headers.get('x-atlas-bank'), 'someone-elses-bank');
   const boot = await (await handle(await req('/api/bootstrap'), env, '')).json(); assert.equal(boot.memory, true);

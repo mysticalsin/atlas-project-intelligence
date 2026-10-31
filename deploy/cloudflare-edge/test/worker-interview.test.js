@@ -113,7 +113,7 @@ test('ATLAS_CHECKPOINT=off: no checkpoint, a dropped socket ends the session as 
   assert.ok(!('sessionId' in ready(c.server)));
   typed(c.server, ANSWER); await until(() => spoken(c.server).includes(QUESTION) && !d.session.busy()); await settle(30);
   c.server.fire('close'); await d.session.ending;
-  assert.equal(st.keys().length, 0); assert.ok(c.server.events().some(x => x.type === 'ended'));
+  assert.equal(st.keys().filter(k => !k.startsWith('rl:')).length, 0); assert.ok(c.server.events().some(x => x.type === 'ended')); // rl: = the interview-start counter (ratelimit.js), not interview content
 });
 
 test('without a verified identity header there is no checkpoint at all, and the routes refuse', async () => {

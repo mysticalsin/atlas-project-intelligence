@@ -34,6 +34,27 @@ def csp(config):
             "worker-src blob:; media-src blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 
 
+# Security headers on every gateway response (the edge Worker ships the same set; deploy/cloudflare-edge/src/security-headers.js).
+# HSTS only on an https origin (browsers ignore it over plain http, and a local loopback gateway is not served over TLS).
+PERMISSIONS_POLICY = 'microphone=(self), camera=(), geolocation=(), payment=(), usb=(), display-capture=()'
+HSTS = 'max-age=63072000; includeSubDomains'
+
+
+def security_headers(config):
+    headers = {
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+        'Referrer-Policy': 'no-referrer',
+        'Cross-Origin-Opener-Policy': 'same-origin',
+        'Cross-Origin-Resource-Policy': 'same-origin',
+        'Permissions-Policy': PERMISSIONS_POLICY,
+        'Content-Security-Policy': csp(config),
+    }
+    if urlsplit(config.origin).scheme == 'https':
+        headers['Strict-Transport-Security'] = HSTS
+    return headers
+
+
 def same_origin(request, config):
     return request.headers.get('Origin') == config.origin
 
@@ -48,26 +69,24 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
 
     @web.middleware
     async def boundary(request, handler):
-        # Explicit Host validation also prevents DNS rebinding in local mode.
-        if request.host.lower() != urlsplit(config.origin).netloc.lower():
-            raise web.HTTPForbidden(text='Host is not the configured ATLAS origin.')
-        if config.auth_mode == 'local' and request.remote not in LOOPBACK:
-            raise web.HTTPForbidden(text='Local mode accepts loopback connections only.')
-        if request.method not in ('GET', 'HEAD'):
-            subject = identity.require(request)
-            if not same_origin(request, config) or not secrets.compare_digest(
-                    request.headers.get('X-Atlas-CSRF', ''), subject.csrf):
-                raise web.HTTPForbidden(text='Invalid request origin or session token.')
+        # Every outcome, including the refusals below, leaves through the header block at the end (security_headers).
         try:
+            # Explicit Host validation also prevents DNS rebinding in local mode.
+            if request.host.lower() != urlsplit(config.origin).netloc.lower():
+                raise web.HTTPForbidden(text='Host is not the configured ATLAS origin.')
+            if config.auth_mode == 'local' and request.remote not in LOOPBACK:
+                raise web.HTTPForbidden(text='Local mode accepts loopback connections only.')
+            if request.method not in ('GET', 'HEAD'):
+                subject = identity.require(request)
+                if not same_origin(request, config) or not secrets.compare_digest(
+                        request.headers.get('X-Atlas-CSRF', ''), subject.csrf):
+                    raise web.HTTPForbidden(text='Invalid request origin or session token.')
             response = await handler(request)
         except web.HTTPException as error:
             response = error
         if not response.prepared:
-            response.headers['Cache-Control'] = 'no-store'
-            response.headers['X-Content-Type-Options'] = 'nosniff'
-            response.headers['Referrer-Policy'] = 'no-referrer'
-            response.headers['Permissions-Policy'] = 'microphone=(self), camera=(), geolocation=()'
-            response.headers['Content-Security-Policy'] = csp(config)
+            for name, value in security_headers(config).items():
+                response.headers[name] = value
         return response
 
     app = web.Application(middlewares=[boundary], client_max_size=131072)

@@ -4,7 +4,10 @@
 export const TBD = 'To be completed';
 export const EXEC = ['summary', 'teamSize', 'duration', 'price', 'contacts'];
 export const SECTIONS = ['industry', 'issue', 'scope', 'methodology', 'deliverables', 'tools', 'team', 'value'];
+import { boundedBytes, boundedJson } from './bounded.js';
 const MAX_TEXT = 60000, MAX_FILE = 10 * 1024 * 1024, MAX_IMAGES = 12, MAX_IMAGE = 1_600_000;
+// JSON bodies are read through the same bounded reader as files (red review M5): a draft is text (2 MiB is generous), visuals carry up to 12 base64 images.
+const MAX_DRAFT_JSON = 2 * 1024 * 1024, MAX_VISUALS_JSON = 12 * 1024 * 1024;
 
 export const SHEET_POLICY = `You are an assistant specialising in project reference sheets that showcase the expertise and projects delivered by Amaris/Mantu to other clients and prospects.
 From the material provided (a source document such as a tender response, client brief or project notes, and/or the consultant's interview and notes), fill the reference sheet.
@@ -83,15 +86,19 @@ export async function sheetRoutes(request, path, ai) {
   try {
     if (path === 'ingest') {
       const name = str(request.headers.get('x-file-name') || 'document', 200) || 'document', type = request.headers.get('Content-Type') || 'application/octet-stream';
-      const bytes = new Uint8Array(await request.arrayBuffer());
+      const bytes = await boundedBytes(request, MAX_FILE); // stops pulling at the cap; never buffers an oversized upload
+      if (bytes === null) return json({ error: 'The file is larger than 10 MB.' }, 413);
       if (!bytes.length) return json({ error: 'The file is empty.' }, 400);
-      if (bytes.length > MAX_FILE) return json({ error: 'The file is larger than 10 MB.' }, 413);
       const r = await ai.toMarkdown({ name, blob: new Blob([bytes], { type }) });
       const one = Array.isArray(r) ? r[0] : r;
       if (!one || one.format === 'error') return json({ error: 'This file type could not be read. Try PDF, Word (.docx), Excel, ODT, CSV, HTML or paste the text.' }, 415);
       return json({ text: String(one.data || '').slice(0, MAX_TEXT), truncated: String(one.data || '').length > MAX_TEXT, name });
     }
-    let body; try { body = await request.json(); } catch { return json({ error: 'Invalid JSON.' }, 400); }
+    if (path !== 'draft' && path !== 'visuals') return json({ error: 'Not found.' }, 404);
+    const parsed = await boundedJson(request, path === 'draft' ? MAX_DRAFT_JSON : MAX_VISUALS_JSON);
+    if (parsed.tooLarge) return json({ error: 'The request is too large.' }, 413);
+    if (parsed.invalid) return json({ error: 'Invalid JSON.' }, 400);
+    const body = parsed.value;
     if (path === 'draft') {
       const draft = parseDraft(await ai.complete(draftMessages(body), 5000));
       if (!draft) return json({ error: 'The drafting model did not answer. Try again.' }, 502);

@@ -130,6 +130,7 @@ Spec pack and status: `docs/agent-brain-v2.1/` (`README.md`, `DECISION_LOG.md`, 
 | `evidence.js` | Evidence store and review in the `LibraryStore` DO: claims, revisions, approvals, grants; `postDraftFromInterview` (server to server); routes `/api/library/evidence[/:id[/status|submit|sync|review|permissions[/:gid/revoke]]]` (browser) and `/api/evidence` (Interview DO only) via `library-routes.js` |
 | `policy-gate.js` | `decide(actor, action, entity, ctx)`: pure, default deny, stable reason codes |
 | `branches.js`, `jobs.js`, `adapters.js`, `spotlight.js` | Seven branch cards, job envelope with idempotency and retry, mock destination adapters and MAAP/Project Review shells, Spotlight hold; `ATLAS_ADAPTERS`, `ATLAS_EVIDENCE_WORKFLOW` |
+| `security-headers.js`, `security-log.js`, `ratelimit.js`, `bounded.js`, `kill-switches.js`, `audit-chain.js` | B1 platform security: headers on every response (`secure`), pseudonymous security events (`secEvent`), persistent per-person rate limits (`consume`, `enforce` for the library routes), streaming bounded body reads, operator kill switches, the tamper-evident audit hash chain (`appendAudit` is the single hook in `library.js` `log`; `verifyChain` runs in the daily `scan-stale`). Runbook: `handoff/SECURITY_RUNBOOK.md` |
 | `app.js`, `worker.js` (extended) | `TALKER_MAX_TOKENS`, bootstrap `resumable` and `textMode`, `Interview` DO wiring (checkpoint store, evidence poster, alarm) |
 | `languages.js` (extended) | Two-piece cached greetings in seven languages (translations need native review) |
 

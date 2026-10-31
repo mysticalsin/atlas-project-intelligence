@@ -14,8 +14,17 @@ async function hmacHex(secret, value) {
   const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   return [...new Uint8Array(await crypto.subtle.sign('HMAC', key, enc.encode(value)))].map(b => b.toString(16).padStart(2, '0')).join('');
 }
-// Bank id from the verified subject only. HINDSIGHT_BANK_SECRET if set, else a labelled derivation of CSRF_SECRET.
+// Bank id from the verified subject only. Derivation (unchanged, so no bank is ever orphaned): HMAC(HINDSIGHT_BANK_SECRET, 'hindsight-bank:' + sub).
+// Memory is configured by HINDSIGHT_API_KEY, and then HINDSIGHT_BANK_SECRET is REQUIRED (fail closed): a bank id must not move when CSRF_SECRET
+// is rotated during an incident. A deployment that already holds banks derived from CSRF_SECRET migrates without orphaning anything by setting
+// HINDSIGHT_BANK_SECRET to the literal text 'atlas-hindsight:' + <the current CSRF_SECRET> (handoff/SECURITY_RUNBOOK.md); the bootstrap flag
+// HINDSIGHT_ALLOW_DERIVED_BANK=1 keeps the old coupled derivation for a short, explicit transition only.
+//   'unused'  memory is not configured; 'ok' the secret is set; 'derived' bootstrap flag on; 'missing' memory is refused until one is set.
+export const bankSecretStatus = env => (!env?.HINDSIGHT_API_KEY ? 'unused' : env.HINDSIGHT_BANK_SECRET ? 'ok'
+  : /^(1|true|on|yes)$/i.test(String(env.HINDSIGHT_ALLOW_DERIVED_BANK || '').trim()) ? 'derived' : 'missing');
+export const BANK_SECRET_MESSAGE = 'Memory is switched off until the operator sets HINDSIGHT_BANK_SECRET (see handoff/SECURITY_RUNBOOK.md).';
 export async function bankId(env, sub) {
+  if (bankSecretStatus(env) === 'missing') throw Object.assign(new Error(BANK_SECRET_MESSAGE), { code: 'BANK_SECRET_REQUIRED' });
   const secret = env.HINDSIGHT_BANK_SECRET || ('atlas-hindsight:' + env.CSRF_SECRET);
   return 'atlas-' + (await hmacHex(secret, 'hindsight-bank:' + sub)).slice(0, 40);
 }

@@ -1,0 +1,127 @@
+# ATLAS security incident runbook
+
+Status: written by the B1 hardening task (2026-10-31). The commands and the log fields are verified against the code in this tree; no step has been rehearsed on a deployed Worker, so **run the drill in section 9 once on the test deployment before relying on this**. Nothing here is legal advice: the GDPR steps list what the engineering side must provide to the DPO, who decides on notification.
+
+Scope: the edge Worker (`deploy/cloudflare-edge`, Cloudflare Access in front) and the Python gateway (`atlas_voice/server.py`). Owners and contacts are the first thing to fill in before the pilot (section 1).
+
+## 1. Roles and severity
+
+| Role | Who | Does |
+|---|---|---|
+| Incident owner | Tony Walteur (ATLAS owner) | Decides containment, runs this book, keeps the timeline |
+| Mantu SecOps | to be named by Mantu IT | Access policy, SIEM, wider investigation |
+| DPO | to be named by Mantu | Decides on notification to the authority and to people |
+| Cloudflare account admin | to be named | Secret rotation, rollback, Access sessions |
+
+| Severity | Examples | Target |
+|---|---|---|
+| SEV1 | Content of interviews or the library exposed to someone not entitled; signs of account takeover; `audit_chain_break`; a leaked secret in use | Contain within 1 hour; DPO told the same day |
+| SEV2 | Repeated failed access from one pseudonym; a model or provider misbehaving; a kill switch needed to stop cost | Contain the same day |
+| SEV3 | Single failed request, a user report that turns out benign | Next working day |
+
+## 2. Detect
+
+Everything the Worker records goes to the Worker log as one JSON line with `atlas_sec` set. View it with `npx wrangler@4.156.0 tail --format json | grep atlas_sec`, in the dashboard (Observability is enabled), or in a Workers Logpush / Tail Worker sink once Mantu SecOps provides one (not configured; a Tony / infra decision).
+
+Fields (`security-log.js`): `ts`, `event`, `route` (a template: ids and addresses become `:id`), `method`, `status`, `reason` (a stable code), `subj` (first 16 characters of the HMAC subject key: pseudonymous, never an e-mail), `role`, `ip_h` (keyed hash of the network address), `colo`, `ray`, `n`, `bucket`, `head`. Nothing else is ever logged: no e-mail, name, token, path parameter, query string or content.
+
+| `event` | Meaning | Look at |
+|---|---|---|
+| `authn_fail` | No or invalid Access token | many from one `ip_h`: probing |
+| `csrf_fail`, `origin_fail` | A state-changing request without the session token or from another origin | more than 20 in 10 minutes for one `subj`: a script or a cross-site attempt; a single one after a long idle tab or a re-sign-in is normal (the token is bound to the sign-in; if they are frequent for ordinary users, see `ATLAS_CSRF_BIND` in `handoff/CONFIGURATION.md`) |
+| `external_denied` | An external confirmer asked for something outside `/confirm` | any |
+| `bearer_fail` | Wrong secret on `/api/triggers`, `/api/directory/push`, Teams | more than 5 per minute: someone is guessing a secret |
+| `access_denied` | A 403 from the library, the evidence gate or an owner check, surfaced at the Worker | spikes per `subj` |
+| `rate_limited` | A per-person limit (`reason` `RATE:<BUCKET>`) | one `subj` repeatedly: scripted use |
+| `body_too_large` | An oversized request | any burst |
+| `header_spoof` | The browser sent `x-atlas-*` headers (stripped); `n` is how many | any: a tampering attempt |
+| `subject_blocked`, `kill_switch`, `inbound_off`, `flag_state` | A kill switch refused a request, or one is on (names only) | confirms a containment took effect |
+| `audit_chain_break` | The library audit trail no longer verifies; `reason` HASH_MISMATCH or LINK_BROKEN, `n` the first broken row | **SEV1**, see section 5 |
+| `audit_chain_ok` | Daily verification passed; `n` rows, `head` is the chain head | keep the daily `head`: it is the external anchor (see 5) |
+| `internal_error` | An unexpected exception (no message is logged) | any repeat |
+
+Suggested alerts (for Mantu's SIEM): `csrf_fail` > 20 per 10 minutes per `subj`; any `audit_chain_break`; `bearer_fail` > 5 per minute; no `audit_chain_ok` for 36 hours (the cron or the log is broken); `header_spoof` > 0.
+
+Also: user reports to the owner, and the Cloudflare Access logs (who signed in) held by Mantu IT.
+
+## 3. Contain (minutes)
+
+First decide the blast radius, then use the narrowest switch. The kill switches are Worker variables read on every request. A change needs a deploy of the Worker variable (`npx wrangler@4.156.0 deploy --var NAME:value` from `deploy/cloudflare-edge`, or the dashboard Settings → Variables, then Deploy). A deploy ends live interviews (they resume from their 24-hour checkpoint when the person returns). Every switch is logged (`flag_state` once per isolate, `kill_switch` / `subject_blocked` / `inbound_off` on each refusal).
+
+| Situation | Switch | Effect |
+|---|---|---|
+| One person's account is suspected | `ATLAS_BLOCKED_SUBS=<subj>[,<subj>]` | That pseudonym gets 403 on every path. Use the `subj` from the log (16 hex characters is enough; at least 12). Also revoke the Access session (section 4) |
+| Data may be changing wrongly, or you need a quiet system to investigate | `ATLAS_READ_ONLY=1` | Every mutation and every new interview answers 503 "read-only for maintenance"; reading still works |
+| A model or provider misbehaves, cost is running away, or a prompt-injection campaign is suspected | `ATLAS_AI_OFF=1` | No model call anywhere (talker, analyst, STT/TTS, sheet drafting, JEV, review, embeddings). Interviews are refused politely; notes can still be read and edited |
+| The external confirmation channel is abused | `ATLAS_EXTERNAL_OFF=1` | The external role and `/confirm`, `/api/library/confirmations/*` answer 403 |
+| An integration secret leaked (triggers, DNA push, Teams) | `ATLAS_INBOUND_OFF=1` | Those endpoints answer 503 before any secret is compared |
+| Unknown, serious, and needs everything stopped | `ATLAS_READ_ONLY=1` and `ATLAS_AI_OFF=1`, and if still needed remove the Access policy so nobody can sign in | |
+| A bad release | `npx wrangler@4.156.0 rollback` to the last good version | |
+| A product behaviour (not a security switch) | the v2.1 rollback switches (`ATLAS_CHECKPOINT`, `ATLAS_EVIDENCE_WORKFLOW`, `ATLAS_ADAPTERS`, `ATLAS_REPLY_GUARD`; `handoff/CONFIGURATION.md`) | |
+
+Also available per person without a deploy: the person's own memory switch and the "start over" discard. Cloudflare-side options (Tony / infra): the Workers Rate Limiting binding and WAF rate rules, which need a custom-domain zone (not available on `workers.dev`).
+
+Record the time of each switch in the incident timeline.
+
+## 4. Revoke and rotate
+
+Order matters because of the couplings below. Rotate secrets one at a time, redeploy, then verify with a test sign-in.
+
+1. **Access sessions**: in Cloudflare Zero Trust, revoke the user's active sessions (Access → Users → revoke), remove them from the Access policy, and for the Entra deployment disable the account in Entra. The CSRF token is bound to the session (`iat`), so a revoked and re-issued session also invalidates every token the old one held.
+2. **Integration bearer secrets** (independent, no data coupling): `TRIGGER_SECRET`, `DIRECTORY_PUSH_SECRET`, `TEAMS_BOT_SECRET` (`npx wrangler@4.156.0 secret put NAME`). Tell the owning system (project-management system, DNA job, Azure Bot) the new value over a secure channel.
+3. **Provider keys**: `TYPESAFE_API_KEY`, `ELEVENLABS_API_KEY`, `DNA_API_KEY`, `HINDSIGHT_API_KEY`. Revoke at the provider first, then put the new one.
+4. **`CSRF_SECRET`**: safe to rotate on its own **only once `HINDSIGHT_BANK_SECRET` is set** (below). Rotating it signs everyone's tokens out of the page: they reload and get a new one. The Worker refuses to serve memory when `HINDSIGHT_API_KEY` is set but `HINDSIGHT_BANK_SECRET` is not.
+5. **`HINDSIGHT_BANK_SECRET`**: never rotate during an incident. It addresses every person's private memory bank; changing it orphans all banks. Rotate it only as a planned migration (export, re-address, verify).
+6. **`LOG_SALT`** (optional): rotating it only changes the pseudonyms of hashed addresses in later log lines.
+7. **GitHub `CLOUDFLARE_API_TOKEN`**: revoke and re-issue in Cloudflare (scope: Workers Scripts:Edit on this account only), update the repository secret.
+
+**Migrating a deployment that already has memory banks and no `HINDSIGHT_BANK_SECRET`** (do this once, before the next deploy of this version, or memory is switched off with a clear message until you do): set `HINDSIGHT_BANK_SECRET` to the literal text `atlas-hindsight:` followed by the current value of `CSRF_SECRET` (for example by `printf 'atlas-hindsight:%s' "$CSRF" | npx wrangler secret put HINDSIGHT_BANK_SECRET`). The derivation is unchanged, so no bank moves. Alternatively set `HINDSIGHT_ALLOW_DERIVED_BANK=1` for a short transition (bank ids stay tied to `CSRF_SECRET`; do not rotate it while this is on). Verified in `test/memory-bank-secret.test.js`.
+
+## 5. Preserve evidence, then purge
+
+**Preserve first** (before deleting or restoring anything):
+1. Export the Worker log for the period (the `atlas_sec` lines are content-free by design) and the Cloudflare Access logs.
+2. Export the library: signed in as an admin, `GET /api/library/export` (references, revisions, audit). Keep the file in the incident folder, access-restricted. (Whether the export also carries every evidence revision and workflow transition row has not been checked; if the incident touches the evidence store, take a Durable Object backup as in step 4.)
+3. Verify the audit chain: the daily cron logs `audit_chain_ok` with the chain head. If `audit_chain_break` appears, the first broken audit row is `n` (`reason` HASH_MISMATCH: a row was altered; LINK_BROKEN: a row was removed or inserted before it). The chain proves integrity of the rows it holds; it does not detect removal of the newest rows or of the oldest (a retention sweep), so compare the latest logged `head` with the chain head you can compute from the export.
+4. Durable Object point-in-time recovery for the SQLite-backed library: **ASSUMED, verify the bookmark API on your Cloudflare plan before relying on it**; take a bookmark before any destructive step.
+
+**Purge** (only after the DPO agrees what must go):
+- A person's interview data: the person's own "start over" / checkpoint discard; there is no admin tool that discards another person's checkpoint; it expires on its own. Checkpoints expire by themselves 24 hours after the first write.
+- Library entries: withdraw through the library (`POST /api/library/<id>/withdraw`, the owner or an admin); never hard-delete evidence the DPO wants preserved.
+- Private memory: `POST /api/memory/forget` with `{"all":true}` for that person's bank (the person, or an admin acting through their session), or delete the Hindsight bank at Hindsight.
+- Provider-side copies: ask Hindsight, TypeSafe, ElevenLabs per their processor terms (processor registry: Wave B documents).
+
+## 6. Notify (GDPR, 72 hours)
+
+1. The clock starts when ATLAS or Mantu becomes aware that personal data was breached: note the time in the timeline.
+2. Within hours, give the DPO: what happened (event names and times from section 2), which data classes (interview transcripts and notes, library references including client details, the audit trail, private memory, e-mail addresses in the library), how many people (the number of distinct `subj` values in the affected events; the library holds the identities), whether the data was encrypted or content-free (the security log is content-free by design), containment taken (section 3), and what is still unknown.
+3. The DPO decides on notification of the supervisory authority (Art. 33, within 72 hours of awareness) and of the people (Art. 34), and on client confidentiality notifications (the governance document, section 7, `docs/agent-brain-v2.1/06_*`). Engineering does not notify anyone outside Mantu itself.
+4. Keep the contact with SecOps and the DPO in one thread; keep the decisions and who made them in the timeline.
+
+## 7. Recover and verify
+
+1. Fix the root cause on a branch with a regression test; run the full suite (`make test`, `make test-ui`).
+2. Deploy the fix, then lift the kill switches in reverse order of impact (`ATLAS_BLOCKED_SUBS` last).
+3. Verify: a test sign-in; the daily `audit_chain_ok` (or run it by waiting for the cron); no new `csrf_fail` / `bearer_fail` spikes; the library list and one interview work.
+4. Tell the affected people what happened, in plain words, if the DPO decided so.
+
+## 8. After the incident
+
+Within a week: a short blameless review (timeline, what detected it, what slowed containment, what to change), the actions with owners, and a lesson appended to the lessons log. Update this runbook with anything that did not work.
+
+## 9. Drill before the pilot (not done)
+
+On the test deployment, once: set each kill switch and observe the refusal and the log line; block a test `subj`; trigger a CSRF failure and find it in the log; rotate `TRIGGER_SECRET`; roll back one version; break the audit chain in a copy and see `audit_chain_break`. Record the date and result here.
+
+## Reference: where each control lives
+
+| Control | File |
+|---|---|
+| Security headers (HSTS, COOP, CORP, Permissions-Policy, nosniff, no-referrer) on every response; the gateway has the same set | `src/security-headers.js`, `atlas_voice/server.py` |
+| Security event log | `src/security-log.js` |
+| Per-person rate limits, persisted in Durable Object storage (interview starts 6/hour and 20/day; sheet 20/hour; JEV classify 30/hour; transcribe 60/hour; each overridable by `RL_<NAME>`) | `src/ratelimit.js`, wired in `app.js` and `worker.js` |
+| Bounded streaming body reads | `src/bounded.js` |
+| Kill switches | `src/kill-switches.js` |
+| Audit hash chain and daily verification | `src/audit-chain.js`, `worker.js` (`scan-stale`), single hook in `library.js` `log` |
+| Bank secret requirement | `src/memory.js` `bankSecretStatus` |
+| CSRF binding, inbound header stripping, signing-key handling | `src/app.js` |

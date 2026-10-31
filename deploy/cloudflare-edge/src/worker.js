@@ -15,6 +15,10 @@ import { memoryRoutes } from './memory-routes.js';
 import { resolveForInterview } from './gaps.js';
 import { fetchWinHint } from './winloop.js';
 import { teamsClient } from './teams.js';
+import { limitRoute, consume, limitOf, HOUR, DAY } from './ratelimit.js';
+import { verifyChain } from './audit-chain.js';
+import { aiOff } from './kill-switches.js';
+import { secEvent } from './security-log.js';
 
 const EARLY_MAX = 64, EARLY_MAX_BYTES = 1024 * 1024; // messages held while the older window's session is suspending
 const SUSPEND_WAIT_MS = 3000; // the longest the new window waits for the older window's session to finish suspending, then it proceeds
@@ -36,6 +40,8 @@ export class Interview extends DurableObject {
     if (path.startsWith('/api/memory')) return memoryRoutes(request, { storage: this.ctx.storage, hs: this.hs, env: this.env });
     // Resumable interview of THIS person (their own Durable Object, their own identity): whether one exists, and discarding it.
     if (path === '/api/checkpoint' || path.startsWith('/api/checkpoint/')) return checkpointRoutes(request, { storage: this.ctx.storage });
+    // Persistent per-person rate limits (ratelimit.js). Internal: only the Worker forwards this path; no browser route reaches it.
+    if (path === '/api/limit') return limitRoute(request, this.ctx.storage);
     // Private memory for this person's interview: recall before the opening, JEV relevance check when configured.
     const bank = request.headers.get('x-atlas-bank') || '', metric = (name, values) => console.log(JSON.stringify({ atlas_metric: name, ...values }));
     const memory = this.hs && bank && (await this.ctx.storage.get('memoryOff')) !== true ? async project => {
@@ -68,7 +74,7 @@ export class Interview extends DurableObject {
     const session = new Session({
       io: { send: e => { try { server.send(JSON.stringify(e)); } catch { /* closed */ } }, sendBytes: b => { try { server.send(b); } catch { /* closed */ } },
         close: () => { try { server.close(1000, 'ended'); } catch { /* closed */ } } },
-      ai: Object.assign(workersAI(this.env), jevRanker(this.env) ? { rankProbe: jevRanker(this.env) } : {}), csrf: request.headers.get('x-atlas-csrf') || '', voice: 'atlas', captureRequired: true, model: this.env.TALKER_MODEL, admin: request.headers.get('x-atlas-admin') === '1', memory,
+      ai: Object.assign(workersAI(this.env), !aiOff(this.env) && jevRanker(this.env) ? { rankProbe: jevRanker(this.env) } : {}), csrf: request.headers.get('x-atlas-csrf') || '', voice: 'atlas', captureRequired: true, model: this.env.TALKER_MODEL, admin: request.headers.get('x-atlas-admin') === '1', memory,
       metric: (name, values) => console.log(JSON.stringify({ atlas_metric: name, ...values })),
       gaps: this.env.LIBRARY ? id => resolveForInterview(this.env, identity, id) : null,
       winHint: this.env.LIBRARY ? () => fetchWinHint(this.env, identity) : null,
@@ -79,11 +85,42 @@ export class Interview extends DurableObject {
       evidence: evidenceWorkflowOn(this.env) && this.env.LIBRARY && identity.user ? notes => postDraftFromInterview(this.env, identity, notes) : null,
     });
     this.session = session;
-    const onMessage = e => {
+    const dispatch = e => {
       try {
         if (typeof e.data === 'string') session.onText(e.data);
         else session.onBinary(new Uint8Array(e.data));
       } catch { session.fail('The session stopped safely. No story was approved.', 'voice-failed'); }
+    };
+    // Fresh interview starts per person are capped per hour and per day, persistently (ratelimit.js): restarting is otherwise free STT + LLM + TTS.
+    // Only a new `start` counts. A resume of a saved interview (start with `resume`) and every later message pass straight through. Messages that
+    // arrive while the budget is being read wait in order; a refused start is answered politely and the socket closes (nothing started).
+    let first = true, budget = null; const waiting = [];
+    const onMessage = e => {
+      if (budget) { waiting.push(e); return; }
+      if (first) {
+        first = false;
+        let fresh = false;
+        if (typeof e.data === 'string' && e.data.length < 65536 && identity.role !== 'system') { try { const v = JSON.parse(e.data); fresh = v?.type === 'start' && v.resume === undefined; } catch { /* the session reports it */ } }
+        if (fresh) {
+          budget = consume(this.ctx.storage, [{ bucket: 'interview-h', max: limitOf(this.env, 'INTERVIEW_HOUR'), windowMs: HOUR }, { bucket: 'interview-d', max: limitOf(this.env, 'INTERVIEW_DAY'), windowMs: DAY }])
+            .catch(() => ({ ok: true })) // a limiter that cannot read its counters must not stop an interview
+            .then(r => {
+              budget = null;
+              if (!r.ok) {
+                waiting.length = 0;
+                const minutes = Math.max(1, Math.ceil(r.retryAfter / 60));
+                try { server.send(JSON.stringify({ type: 'error', message: `You have started a lot of interviews in a short time. Please try again in about ${minutes} minute${minutes === 1 ? '' : 's'}. Nothing was lost.`, code: 'rate-limited', retryAfter: r.retryAfter })); } catch { /* closed */ }
+                try { server.close(1013, 'Try again later.'); } catch { /* closed */ }
+                this.session = null;
+                secEvent(this.env, 'rate_limited', { route: '/api/voice', reason: 'RATE:' + r.bucket.toUpperCase().replace(/-/g, '_'), status: 429, bucket: r.bucket, subj: request.headers.get('x-atlas-subj'), role: identity.role });
+                return;
+              }
+              dispatch(e); for (const w of waiting.splice(0)) dispatch(w);
+            });
+          return;
+        }
+      }
+      dispatch(e);
     };
     route = onMessage; for (const e of early) onMessage(e);
     // A socket that closes mid-interview suspends it (resumable for 24 hours); one that cannot be resumed ends as before.
@@ -99,8 +136,21 @@ export class LibraryStore extends DurableObject {
     super(ctx, env);
     this.env = env;
     const ai = workersAI(env);
-    this.lib = new Library(ctx.storage.sql, { complete: messages => ai.complete(messages), embed: text => ai.embed(text),
-      readyScore: Number(env.READY_SCORE) || undefined, model: env.ANALYST_MODEL, services: { teams: teamsClient(env) }, rater: storyRater(env) }); // JEV only with TYPESAFE_API_KEY
+    // ATLAS_AI_OFF: no completion, embedding or JEV rating at all (the review agent and ranking then fall back to their deterministic paths).
+    const off = aiOff(env);
+    this.lib = new Library(ctx.storage.sql, { complete: off ? null : messages => ai.complete(messages), embed: off ? null : text => ai.embed(text),
+      readyScore: Number(env.READY_SCORE) || undefined, model: env.ANALYST_MODEL, services: { teams: teamsClient(env) }, rater: off ? null : storyRater(env) }); // JEV only with TYPESAFE_API_KEY
   }
-  fetch(request) { return libraryRoutes(request, this.lib, { waitUntil: p => this.ctx.waitUntil(p), env: this.env }); }
+  async fetch(request) {
+    // The daily cron (app.js `scheduled`) posts scan-stale as the system role, which only the Worker's own cron can set. The same call verifies the
+    // audit chain (audit-chain.js): a break is logged as a security event, and the chain head as the external anchor. Never part of the response.
+    if (request.method === 'POST' && new URL(request.url).pathname === '/api/library/scan-stale' && request.headers.get('x-atlas-role') === 'system') {
+      try {
+        const r = verifyChain(this.ctx.storage.sql), head = String(r.head || '').slice(0, 16);
+        await (r.ok ? secEvent(this.env, 'audit_chain_ok', { reason: 'CHAIN_VERIFIED', n: r.checked, head }) : secEvent(this.env, 'audit_chain_break', { reason: r.reason, n: r.brokenSeq, head }));
+      } catch { await secEvent(this.env, 'audit_chain_break', { reason: 'VERIFY_FAILED' }); }
+    }
+    // `storage`: the Durable Object's key-value storage, for ratelimit.enforce() in the library routes (Wave B).
+    return libraryRoutes(request, this.lib, { waitUntil: p => this.ctx.waitUntil(p), env: this.env, storage: this.ctx.storage });
+  }
 }

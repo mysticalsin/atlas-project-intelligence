@@ -133,6 +133,26 @@ All optional; each default is the new behaviour and the legacy value is the roll
 
 Privacy facts for the consent text (24-hour checkpoint, text mode, keep private, drafts): `docs/INTEGRATIONS.md`, "Privacy and consent wording for the interview". The consent dialog does not yet mention the checkpoint.
 
+### Platform security (B1, 2026-10-31; runbook: `handoff/SECURITY_RUNBOOK.md`)
+Verified in code and unit tests; not exercised against a deployed Worker.
+
+| Variable | Default | Contract |
+|---|---|---|
+| `HINDSIGHT_BANK_SECRET` (secret) | none | **Required whenever `HINDSIGHT_API_KEY` is set.** Without it memory is switched off with a clear message (bootstrap `memory:false`, `/api/memory` 503, interviews start without memory). Derivation unchanged when set. Existing deployment: set it to `atlas-hindsight:` + the current `CSRF_SECRET` to keep every bank |
+| `HINDSIGHT_ALLOW_DERIVED_BANK` | off | `1`: the old derivation from `CSRF_SECRET` for a short transition (do not rotate `CSRF_SECRET` while on) |
+| `ATLAS_READ_ONLY` | off | `1`: every non-GET request and every new interview answers 503 |
+| `ATLAS_AI_OFF` | off | `1`: no model call anywhere; interview start and sheet/classify/transcribe answer 503 politely; library review/embeddings/JEV rating off |
+| `ATLAS_BLOCKED_SUBS` | none | Comma list of subject keys from the security log (`subj`, at least 12 hex characters): 403 for those people |
+| `ATLAS_EXTERNAL_OFF` | off | `1`: the external confirmer role, `/confirm` and `/api/library/confirmations/*` answer 403 |
+| `ATLAS_INBOUND_OFF` | off | `1`: triggers, DNA push, Teams bot and tab answer 503 before any secret is checked |
+| `RL_INTERVIEW_HOUR`, `RL_INTERVIEW_DAY` | 6, 20 | Fresh interview starts per person (a resume is not a start). Product-visible: Tony decides the numbers |
+| `RL_SHEET_HOUR`, `RL_CLASSIFY_HOUR`, `RL_TRANSCRIBE_HOUR` | 20, 30, 60 | Requests per person per hour |
+| `ATLAS_CSRF_BIND` | bound to the sign-in | `sub`: bind the CSRF token to the person only (the old behaviour). A rollback for one risk: if Access re-mints the application token (a new `iat`) while a page stays open, an open page's token goes stale until it reloads. **Not yet observed on a real Access deployment**; if 403 CSRF errors appear after long idle periods, set this and tell the owner |
+| `LOG_SALT` (secret, optional) | derived from `CSRF_SECRET` | Key for the hashed network address in security events |
+| `ACCESS_JWKS_TIMEOUT_MS` | 3000 | Timeout of the Access signing-key fetch (50 to 10000) |
+
+Switch values are `1`, `true`, `on` or `yes`; anything else is off. Switches are Worker variables: a change needs a deploy. The CSRF token is now bound to the Access sign-in (it changes at each new sign-in); the page re-reads it after its own re-sign-in flow, but not after a silent token re-issue (see `ATLAS_CSRF_BIND`; a later frontend wave should re-read `/api/bootstrap` once on a CSRF 403).
+
 ### Optional NVIDIA / Riva route
 Use `ATLAS_VOICE_PROVIDER=personaplex`; follow `docs/NVIDIA_SETUP.md`. Run `doctor.py --profile nvidia` for local prerequisite checks. Hosted credentials do not create a NVIDIA service.
 

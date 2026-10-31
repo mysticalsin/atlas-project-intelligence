@@ -12,8 +12,10 @@ const b64u = b => Buffer.from(b).toString('base64url');
 const { publicKey, privateKey } = await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);
 const jwk = { ...(await crypto.subtle.exportKey('jwk', publicKey)), kid: 'k1' };
 globalThis.fetch = async () => new Response(JSON.stringify({ keys: [jwk] }));
+// One Access sign-in for the whole file: the CSRF token is bound to the token's iat (B1), so tokens minted per request must share it, as an Access session does.
+const IAT = Math.floor(Date.now() / 1000) - 5;
 async function jwt(claims = {}) {
-  const now = Math.floor(Date.now() / 1000), body = { aud: [AUD], iss: `https://${TEAM}`, sub: 'user-abc', email: 'tony@example.com', exp: now + 600, iat: now, ...claims };
+  const now = Math.floor(Date.now() / 1000), body = { aud: [AUD], iss: `https://${TEAM}`, sub: 'user-abc', email: 'tony@example.com', exp: now + 600, iat: IAT, ...claims };
   const input = b64u(JSON.stringify({ alg: 'RS256', kid: 'k1' })) + '.' + b64u(JSON.stringify(body));
   return input + '.' + b64u(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, new TextEncoder().encode(input)));
 }
