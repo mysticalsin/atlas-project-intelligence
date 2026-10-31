@@ -28,7 +28,7 @@ const NOT_FOUND = { status: 404, body: { error: 'Not found.' } };
 // §2.4 DDL (new tables only; nothing ALTERs an existing table). Memoised per Library instance.
 const DDL = [
   `CREATE TABLE IF NOT EXISTS claims (id TEXT PRIMARY KEY, ref_id TEXT, revision INTEGER, topic INTEGER, idx INTEGER, text TEXT, sentence_hash TEXT,
-    status TEXT, by_mail TEXT, at TEXT, confirmed_revision INTEGER, note TEXT, created_by TEXT, created_at TEXT)`,
+    status TEXT, by_mail TEXT, at TEXT, confirmed_revision INTEGER, note TEXT, created_by TEXT, created_at TEXT, by_source TEXT)`,
   'CREATE INDEX IF NOT EXISTS claims_ref ON claims(ref_id)',
   'CREATE UNIQUE INDEX IF NOT EXISTS claims_sentence ON claims(ref_id, sentence_hash)',
   `CREATE TABLE IF NOT EXISTS confirmation_requests (id TEXT PRIMARY KEY, ref_id TEXT, revision INTEGER, kind TEXT, to_email TEXT, manager_source TEXT,
@@ -40,6 +40,15 @@ const ensured = new WeakSet();
 export function ensure(lib) {
   if (ensured.has(lib)) return;
   for (const q of DDL) lib.sql.exec(q);
+  // X1 (red H1): the claim row itself records WHO answered it (the resolver source of the request it was answered through: staffing, directory, self_declared, or '' for a client).
+  // The self-named downgrade used to join the claim to its request through by_mail, a column erasure rewrites, and the request rows are deleted by retention; once either changed,
+  // a self-declared N+1's confirmation read as manager_confirmed. Tables created before this column get it here, back-filled once from the request that decided each claim.
+  try { lib.sql.exec('SELECT by_source FROM claims LIMIT 0'); }
+  catch {
+    lib.sql.exec('ALTER TABLE claims ADD COLUMN by_source TEXT');
+    lib.sql.exec(`UPDATE claims SET by_source = COALESCE((SELECT r.manager_source FROM confirmation_requests r WHERE r.status = 'done' AND r.ref_id = claims.ref_id AND r.decided_at = claims.at
+      AND r.to_email = claims.by_mail AND instr(r.claim_ids, '"' || claims.id || '"') > 0 LIMIT 1), '') WHERE status != 'unverified'`);
+  }
   ensured.add(lib);
 }
 
@@ -98,7 +107,7 @@ function claimView(c, current, deciders, text = c.text) {
   const out = { id: c.id, refId: c.ref_id, revision: c.revision, topic: c.topic, idx: c.idx, text, status: c.status, current };
   if (c.status !== 'unverified') {
     const r = deciders?.get(c.id + '\n' + c.at + '\n' + c.by_mail);
-    Object.assign(out, { confirmedRevision: c.confirmed_revision, byMail: c.by_mail, at: c.at, note: c.note || '', kind: r?.kind || null, source: r?.manager_source || null });
+    Object.assign(out, { confirmedRevision: c.confirmed_revision, byMail: c.by_mail, at: c.at, note: c.note || '', kind: r?.kind || null, source: c.by_source || r?.manager_source || null });
   }
   return out;
 }
@@ -246,8 +255,8 @@ function decide(lib, user, id, body, currency) {
   const status = { confirm: r.kind === 'client' ? 'client_confirmed' : 'manager_confirmed', correct: 'corrected', cant_say: 'cant_say' };
   for (const cid of ids) {
     const d = byId.get(cid);
-    lib.sql.exec('UPDATE claims SET status = ?, by_mail = ?, at = ?, note = ?, confirmed_revision = ? WHERE id = ? AND ref_id = ?',
-      status[d.decision], mail, now, d.note, row.revision, cid, r.ref_id);
+    lib.sql.exec('UPDATE claims SET status = ?, by_mail = ?, at = ?, note = ?, confirmed_revision = ?, by_source = ? WHERE id = ? AND ref_id = ?',
+      status[d.decision], mail, now, d.note, row.revision, r.manager_source || '', cid, r.ref_id);
     lib.log(r.ref_id, mail, 'claim ' + d.decision, `rev ${row.revision} claim ${cid} (${r.kind}, ${r.manager_source || 'none'})`);
   }
   lib.sql.exec("UPDATE confirmation_requests SET status = 'done', decided_at = ? WHERE id = ?", now, r.id);
@@ -289,11 +298,12 @@ export async function routes(ctx) {
 // {confirmed: current confirmed claims, total: every claim of the reference, current: current claims}.
 // A decision answered through a request whose N+1 the consultant only named ('self_declared') is a colleague's confirmation, not the
 // N+1's (red-team M3). `independent: true` leaves those out of `confirmed` (proof types, bid views); the default keeps the F3 count.
-const selfNamed = (deciders, c) => deciders.get(c.id + '\n' + c.at + '\n' + c.by_mail)?.manager_source === 'self_declared';
+// by_source first (it survives an erased confirmer and swept requests); the join through the request is the fallback for a row with no recorded source.
+const selfNamed = (deciders, c) => (c.by_source ? c.by_source === 'self_declared' : deciders.get(c.id + '\n' + c.at + '\n' + c.by_mail)?.manager_source === 'self_declared');
 export function claimSummary(lib, row, opts = {}) {
   if (!READY || !row?.id) return { confirmed: 0, total: 0, current: 0 };
   ensure(lib);
-  const cs = lib.rows('SELECT id, topic, text, status, by_mail, at, confirmed_revision FROM claims WHERE ref_id = ?', row.id), { current } = currencyOf(row, mode(opts.currency));
+  const cs = lib.rows('SELECT id, topic, text, status, by_mail, at, confirmed_revision, by_source FROM claims WHERE ref_id = ?', row.id), { current } = currencyOf(row, mode(opts.currency));
   const deciders = opts.independent ? decidersOf(lib, row.id) : null;
   let cur = 0, confirmed = 0;
   for (const c of cs) if (current(c)) { cur++; if (CONFIRMED.has(c.status) && !(deciders && c.status === 'manager_confirmed' && selfNamed(deciders, c))) confirmed++; }
@@ -306,7 +316,7 @@ export function confirmationStatus(lib, row, opts = {}) {
   if (!READY || !row?.id) return out;
   ensure(lib);
   const { current } = currencyOf(row, mode(opts.currency)), deciders = opts.independent ? decidersOf(lib, row.id) : null;
-  for (const c of lib.rows('SELECT id, topic, text, status, by_mail, at, confirmed_revision FROM claims WHERE ref_id = ?', row.id))
+  for (const c of lib.rows('SELECT id, topic, text, status, by_mail, at, confirmed_revision, by_source FROM claims WHERE ref_id = ?', row.id))
     if (current(c)) out.set(claimKey(c.topic, c.text), deciders && c.status === 'manager_confirmed' && selfNamed(deciders, c) ? 'consultant_named' : c.status);
   return out;
 }

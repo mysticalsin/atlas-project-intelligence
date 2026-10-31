@@ -4,6 +4,7 @@ import { retainItems, scrub } from './memory.js';
 import * as privacy from './privacy.js';
 import { RETENTION } from './policy.generated.js';
 import { who } from './me-routes.js';
+import { aiOff } from './kill-switches.js';
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 
@@ -32,6 +33,7 @@ export async function memoryRoutes(request, { storage, hs, env, fetcher = fetch 
     if (request.method === 'POST' && path === 'remember') {
       if (!hs) return json({ stored: false, reason: 'Memory is not configured.' });
       if (off) return json({ stored: false, reason: 'Memory is switched off.' });
+      if (aiOff(env)) return json({ stored: false, reason: 'The AI features are paused by the ATLAS owner.' }); // X1 (red M2)
       const items = retainItems(body); // short structured facts only; the raw conversation field, if a page still sends it, is ignored
       await hs.retain(bank, items);
       await prune(hs, bank, retentionDays()).catch(() => {}); // the retention proposal for memory (retention.json): old documents of THIS person are forgotten as it is used
@@ -55,6 +57,7 @@ export async function memoryRoutes(request, { storage, hs, env, fetcher = fetch 
     if (request.method === 'GET' && path === 'test') {
       if (role !== 'admin') return json({ error: 'Admins only.' }, 403);
       const out = { hindsight: { configured: !!hs }, jev: { configured: !!env.TYPESAFE_API_KEY } };
+      if (aiOff(env)) return json({ ...out, aiOff: true, note: 'The AI features are paused by the ATLAS owner; no probe was sent.' }); // X1 (red M2): the health probes are model calls too
       if (hs) { const t0 = Date.now(); try { await hs.ensureBank(bank); await hs.stats(bank); out.hindsight.ok = true; } catch (e) { out.hindsight.ok = false; out.hindsight.error = e.status === 402 ? 'no credits: add credits in Hindsight Cloud → Billing' : e.status === 401 || e.status === 403 ? 'key rejected: create a new key under Connect → Create API Key' : e.message; } out.hindsight.ms = Date.now() - t0; }
       if (env.TYPESAFE_API_KEY) {
         const t0 = Date.now();

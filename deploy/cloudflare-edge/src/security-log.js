@@ -6,7 +6,7 @@
 const enc = new TextEncoder();
 export const EVENTS = Object.freeze(['authn_fail', 'csrf_fail', 'origin_fail', 'external_denied', 'bearer_fail', 'access_denied', 'rate_limited', 'body_too_large',
   'header_spoof', 'kill_switch', 'subject_blocked', 'flag_state', 'audit_chain_break', 'audit_chain_ok', 'internal_error', 'inbound_off', 'privacy_export', 'privacy_erase', 'privacy_flags', 'consent_change', 'csp_violation']);
-const FIELDS = ['route', 'method', 'status', 'reason', 'subj', 'role', 'ip_h', 'colo', 'ray', 'n', 'bucket', 'head', 'directive', 'blocked'];
+const FIELDS = ['route', 'method', 'status', 'reason', 'subj', 'role', 'ip_h', 'colo', 'ray', 'n', 'bucket', 'head', 'prev', 'directive', 'blocked'];
 
 // '/api/library/<32 hex>/validate' -> '/api/library/:id/validate'. Only short lower-case words survive; everything else (ids,
 // e-mail addresses, encoded text) becomes ':id', and at most six segments are kept. The query string is never read.

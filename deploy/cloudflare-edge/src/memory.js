@@ -4,6 +4,7 @@
 // Memory is self-reported continuity, never evidence. Confidential client details are scrubbed before retention.
 // API contract checked against @vectorize-io/hindsight-client 0.10.1: /v1/default/banks/{bank_id}/..., Bearer key.
 
+import { aiOff, assertAiOn } from './kill-switches.js';
 import { cleanText } from './prompt-data.js';
 import { isSpecial } from './special.js';
 
@@ -82,16 +83,21 @@ export function hindsight(env, fetcher = fetch) {
   const bank = b => '/v1/default/banks/' + encodeURIComponent(b);
   const ready = new Set();
   return {
+    // X1 (red M2): ATLAS_AI_OFF stops everything that sends or asks for CONTENT (create bank, retain, recall). Reading the list, per-document reads and forgetting stay available:
+    // the person's access and erasure rights must work while the operator has the model features off, and they carry no story text.
     async ensureBank(b) {
+      assertAiOn(env);
       if (ready.has(b)) return;
       await call('PUT', bank(b), { retain_mission: RETAIN_MISSION, reflect_mission: REFLECT_MISSION, enable_observations: false });
       ready.add(b);
     },
     async retain(b, items) {
+      assertAiOn(env);
       await this.ensureBank(b);
       return call('POST', bank(b) + '/memories', { items, async: true }, 15000);
     },
     async recall(b, query, { tags, maxTokens = 700, timeoutMs = 3000 } = {}) {
+      assertAiOn(env);
       const res = await call('POST', bank(b) + '/memories/recall', { query, budget: 'low', max_tokens: maxTokens, ...(tags ? { tags, tags_match: 'any' } : {}) }, timeoutMs);
       return (Array.isArray(res.results) ? res.results : []).map(x => ({ text: str(x?.text, 400), tags: Array.isArray(x?.tags) ? x.tags : [], when: str(x?.mentioned_at || '', 40), documentId: str(x?.document_id || '', 80) })).filter(x => x.text);
     },
@@ -127,7 +133,7 @@ export function memoryNote(memories) {
 export async function jevRelevant(env, memories, project, fetcher = fetch, { consent = false } = {}) {
   const current = 'project:' + safeId(project?.id);
   const own = memories.filter(m => m.tags.includes(current)), other = memories.filter(m => !m.tags.includes(current));
-  if (consent !== true || !env.TYPESAFE_API_KEY || !other.length) return { memories, checked: 0 };
+  if (consent !== true || !env.TYPESAFE_API_KEY || aiOff(env) || !other.length) return { memories, checked: 0 };
   const questions = Object.fromEntries(other.map((m, i) => ['m' + i, { type: 'noul',
     instructions: `Would \`memories[${i}]\` help an interviewer talking with this consultant about the project in \`project\`, either as a preference about how they like to be interviewed or as information about this same project, rather than about a different project?` }]));
   const r = await fetcher('https://api.typesafe.ai/v1/systemone', { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(2500),

@@ -120,6 +120,10 @@ const SCHEMA = [
     status TEXT, created_at TEXT, source TEXT)`,
 ];
 
+// X1 (red M6): a reference that erasure kept for the DPO (state.erasure_pending_review) is frozen: nobody can edit, validate or reinstate it. Only the DPO's resolution
+// (subject-rights.js holdRoutes) deals with it.
+const heldCheck = row => { if (row?.state?.erasure_pending_review) throw fail(409, 'This reference is held for the data protection officer after an erasure request. It cannot be changed, validated or reinstated.'); };
+
 export class Library {
   // services: outbound adapters for feature modules ({ teams } in production; empty in tests and local runs).
   // rater: rating.storyRater(env) (null: no JEV); metric(name, values): numbers only (default: one console.log line).
@@ -176,8 +180,10 @@ export class Library {
     const hash = await hashOf(data);
     const found = body.id ? { id: String(body.id) } : localId ? this.rows('SELECT id FROM refs WHERE owner = ? AND local_id = ?', user.email, localId)[0] : null;
     const row = found ? this.row(found.id) : null;
-    if (body.id && !row) throw fail(404, 'Reference not found.');
+    // X1 (red L10): a record the caller cannot see answers exactly like one that does not exist (404), so a draft id cannot be probed for existence.
+    if (body.id && (!row || !this.access(row, user))) throw fail(404, 'Reference not found.');
     if (row && !this.canEdit(row, user)) throw fail(403, 'You cannot edit this reference.');
+    if (row) heldCheck(row);
     if (row && row.merged_into) throw fail(409, 'This reference was merged into another one.');
     if (row && row.content_hash === hash) return { ...this.summary(row, 'full', user), unchanged: true };
     // A second save without a localId would hit the (owner, local_id) unique index: say so instead of failing with a 500.
@@ -469,6 +475,7 @@ export class Library {
     if (!['admin', 'reviewer'].includes(user.role)) throw fail(403, 'Only a reviewer can merge references.');
     const keep = this.row(obj(body).keep), gone = this.row(obj(body).merge);
     if (!keep || !gone || keep.id === gone.id || keep.merged_into || gone.merged_into || keep.state.draft || gone.state.draft) throw fail(400, 'Choose two different active references.');
+    heldCheck(keep); heldCheck(gone);
     const k = structuredClone(keep.data), g = gone.data;
     const people = [...k.details.consultants];
     for (const c of [{ name: g.consultant.name, email: gone.owner, role: g.consultant.role }, ...g.details.consultants])
@@ -494,6 +501,7 @@ export class Library {
     const row = this.row(id), level = this.access(row, user);
     if (!level) throw fail(404, 'Reference not found.');
     if (row.status !== 'published' && level !== 'full') throw fail(403, 'Only published references can be turned into slides.');
+    if (!privacy.processable(this, row.owner, 'matching')) throw fail(409, 'This reference is switched off for matching and projections at its owner\'s request.'); // X1 (red M4)
     if (!this.complete) throw fail(503, 'Slide generation is not available.');
     // The context is typed text: pseudonymised for the model, the slide text un-masked for the caller; the audit row
     // keeps only its length (it may name the prospect).
@@ -611,6 +619,7 @@ export class Library {
   validate(user, id, body = {}) {
     const row = this.row(id);
     if (!row || !this.access(row, user)) throw fail(404, 'Reference not found.');
+    heldCheck(row);
     if (!this.canValidate(row, user)) throw fail(403, this.isOwnerOrMember(row, user) ? 'You cannot validate your own reference: your N+1 or a reviewer does.' : 'Only the N+1 resolved from the staffing record or the directory, or a reviewer, can validate it.');
     const decision = body.decision === 'request_changes' ? 'changes_requested' : body.decision === 'validate' ? 'validated' : null;
     if (!decision) throw fail(400, 'Choose validate or request_changes.');
@@ -632,6 +641,7 @@ export class Library {
     const row = this.row(id);
     if (!row || row.state.draft) throw fail(404, 'Reference not found.');
     if (!['admin', 'reviewer'].includes(user.role)) throw fail(403, 'Only a reviewer can reinstate a reference.');
+    heldCheck(row);
     this.setState(row, { ...row.state, withdrawn: false }, user.email, 'reinstated', '');
     return this.get(user, id);
   }

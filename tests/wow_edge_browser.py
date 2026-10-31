@@ -144,9 +144,9 @@ try:
   check('the map lights up the result country',kim.locator('#askMap path.geo-country[data-code="FRA"][data-state^="count-"]').count()==1)
   check('a public reader sees no email anywhere in the answer','@' not in kim.locator('#askAtlas').inner_text())
   # --- F7: five won bids; the reviewer sees the rate, a plain user no story table
-  carl=page('carl@mantu.com')  # v2.2 (red-team L1): one bidder counts at most 3 uses of a story, so the five wins come from two bidders
+  carl=page('carl@mantu.com')  # v2.2 (red-team L1): one bidder counts at most 3 uses of a story, and (X1) a win-rate figure needs decided bids from at least 3 different people, so the five wins come from three bidders
   for i in range(4):
-   who=bea if i<2 else carl
+   who=[bea,carl,kim,carl][i]
    x=api(who,'/bids','POST',{'title':f'Won bid {i}','alias':f'Heron {i}','prospectNames':[],'briefText':'An insurer needs proven claims triage automation with measured handling time.'})
    api(who,f"/bids/{x['id']}/use",'POST',{'refIds':[rid]});api(who,f"/bids/{x['id']}/outcome",'POST',{'outcome':'won'})
   api(bea,f'/bids/{bid_id}/outcome','POST',{'outcome':'won'});settle()

@@ -28,14 +28,15 @@ export async function internalRoutes(ctx) {
   }
   if (key === 'GET state') { if (!subj) throw fail(400, 'A subject key is required.'); return { body: { state: privacy.stateFromReceipts(lib, subj), flags: privacy.flagsOf(lib, user.email) } }; }
   if (key === 'GET flags') return { body: privacy.flagsOf(lib, user.email) };
-  if (key === 'POST flags') { const f = privacy.setFlags(lib, user.email, body); await note('FLAGS_SET'); return { body: f }; }
+  if (key === 'POST flags') { const f = privacy.setFlags(lib, user.email, body, { subj }); await note('FLAGS_SET'); return { body: f }; }
   if (key === 'GET export') { if (!subj) throw fail(400, 'A subject key is required.'); const out = exportMine(lib, user, subj); await note('EXPORT_BUILT'); return { body: out }; }
   if (key === 'POST erase') {
     if (!subj) throw fail(400, 'A subject key is required.');
     if (obj(body).confirmed !== true) throw fail(400, 'Erasure needs the confirmation the Worker checks.'); // the Worker verified the confirmation token; a direct call cannot skip it
     const out = eraseMine(lib, user, subj);
     await note('ERASURE_DONE', { n: Object.values(out.counts).reduce((a, b) => a + b, 0) });
-    if (out.auditHead) await secEvent(env, 'audit_chain_ok', { reason: 'CHAIN_RESEALED', n: out.counts.auditRows || 0, head: String(out.auditHead).slice(0, 16) });
+    if (out.auditHead) await secEvent(env, 'audit_chain_ok', { reason: 'CHAIN_RESEALED', n: out.counts.auditRows || 0, head: String(out.auditHead).slice(0, 16), prev: String(out.auditPreviousHead || '').slice(0, 16) });
+    if (out.auditRefused) await secEvent(env, 'audit_chain_break', { reason: 'REWRITE_REFUSED', n: out.auditRefused.brokenSeq }); // the chain failed its check, so erasure did not re-seal it (X1, red M8)
     return { body: out };
   }
   throw fail(404, 'Not found.');

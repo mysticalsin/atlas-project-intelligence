@@ -37,6 +37,10 @@ export function baseUrlProblem(value) {
   try { u = new URL(String(value)); } catch { return 'BASE_URL_INVALID'; }
   const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
   if (!(u.protocol === 'https:' || (u.protocol === 'http:' && loopback))) return 'BASE_URL_INVALID';
+  // X1 (red L3): an IP literal in a private, link-local, carrier-grade or unspecified range is never a destination (cloud metadata lives at 169.254.169.254). Loopback stays for tests and local mocks.
+  const h = u.hostname, v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
+  if (v4) { const [a, b] = [Number(v4[1]), Number(v4[2])]; if (a === 0 || a === 10 || (a === 127 && !loopback) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127)) return 'BASE_URL_INVALID'; }
+  if (h.startsWith('[') && !loopback && /^\[(fe[89ab]|f[cd]|::)/i.test(h)) return 'BASE_URL_INVALID';
   return u.username || u.password || u.search || u.hash ? 'BASE_URL_INVALID' : null;
 }
 const endpointOf = (conn, use) => conn.endpoints?.[use] && filled(conn.endpoints[use].path) ? conn.endpoints[use] : null;
@@ -190,7 +194,7 @@ async function authorise(conn, env, ctx) {
   }
 }
 const urlFor = (conn, env, ep, values = {}, query = {}) => {
-  const path = ep.path.replace(/\{([a-z_]+)\}/g, (_, k) => { if (!Object.hasOwn(values, k) || values[k] === undefined || values[k] === null || values[k] === '') throw new Error('ENDPOINT_PLACEHOLDER_UNRESOLVED'); return encodeURIComponent(String(values[k])); });
+  const path = ep.path.replace(/\{([a-z_]+)\}/g, (_, k) => { if (!Object.hasOwn(values, k) || values[k] === undefined || values[k] === null || values[k] === '') throw new Error('ENDPOINT_PLACEHOLDER_UNRESOLVED'); const v = String(values[k]); if (v === '.' || v === '..') throw new Error('ENDPOINT_PLACEHOLDER_INVALID'); return encodeURIComponent(v); }); // X1 (red L3): a dot segment is refused (even percent-encoded, a URL parser reads %2e%2e as ".."); "/" and the rest are encoded
   const q = form(query);
   return env[conn.base_url_var].replace(/\/+$/, '') + path + (q ? '?' + q : '');
 };

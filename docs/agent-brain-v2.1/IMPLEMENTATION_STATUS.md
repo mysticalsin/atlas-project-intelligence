@@ -207,3 +207,25 @@ Implemented and locally verified (unit, edge and a real-Chromium run); never dep
 
 Residual and not done: `style-src 'unsafe-inline'` remains (large inline styles and `style=` attributes; an injected tag can restyle but not run code); no Trusted Types; CSP delivery by the browser's own report path was not observable in the headless build (the endpoint and its log are tested directly); not verified in Safari or Firefox; nothing deployed, so a real week in `ATLAS_CSP=report-only` is still the recommended rollout.
 
+## 11. Red-team retest fixes (v2.2 X1)
+
+Implemented and locally verified (edge `x1-redteam.test.js`, 25 tests, each failing on e113613, plus the PoCs of `/tmp/claude-501/audit3/red/pocs` re-run on a local edge); never deployed. Controls implemented; DPO sign-off still required.
+
+| Finding | Fix | Status |
+|---|---|---|
+| H1 erasure upgraded a self-named N+1 confirmation to `manager_confirmed` | `claims.by_source` records who answered each claim (back-filled once for older rows); erasure rewrites `by_mail` only where the person is the confirmer, `created_by` only where they are the creator | Fixed, locally verified |
+| M2 AI_OFF did not stop the JEV bid ranker (or probes, rating, classify, memory) | One guard (`aiOff`, `assertAiOn`) in every model or third-party client; honest note | Fixed |
+| M3 READ_ONLY did not freeze the cron | scan-stale returns before any write; `kill_switch READ_ONLY` logged | Fixed |
+| M4 restriction/objection did not stop one-pager, use in bid, slides | `processable(owner, 'matching')` in all three | Fixed |
+| M5 withdraw-then-erase bypassed the legal hold; M6 reviewer could reinstate a held reference | Hold when ever validated/published or used in a bid or one-pager; edit, validate, reinstate and merge refused while held | Fixed |
+| M7 assignee's erasure took over the requester's gap request | Per-column rewrites | Fixed |
+| M8 erasure and retention re-sealed a tampered chain | Chain verified first; refused, logged, DPO hold; both heads logged | Fixed |
+| L1 one-pager and Ask/bid limits per isolate | Persistent (storage) limits | Fixed |
+| L2 flags not announced | `flag_state` event and admin `securityFlags`; strict CSP kept on privacy, confirm and sign-in pages under report-only | Fixed |
+| L3 connector placeholders | `.` and `..` refused; private, link-local and carrier-grade IP-literal base URLs refused | Fixed |
+| L4 stores without a profile table | Every optional table checked; library failure stops the interview step | Fixed |
+| L5 identity on others' records; L6 substring audit match; L7 objection for listed consultants; L8 DPO restriction; L9 receipts append-only; L10 token, channel, oracle | See `handoff/BUILD_STATUS.md` | Fixed |
+| Win-loop skew (old L1); search in a URL (old L12) | Per-person cap per proof type and at least three people; `POST /api/library/search` | Fixed |
+
+Not done (other owners or out of scope): H2, M1, M9 to M13 and the L11 to L14 prompt residuals; the downstream projections already queued are still not stopped by a restriction; the claim by_source back-fill is unproven on a store with years of rows.
+

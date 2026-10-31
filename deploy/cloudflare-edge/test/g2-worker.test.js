@@ -71,7 +71,7 @@ test('G2 POST /api/me/erase: CSRF and Origin, a confirmation step with a short-l
   const { env, lib, itv } = world(), me = await session(env), other = await session(env, { sub: 'someone-else', email: 'else@example.com' }); lib.calls.length = 0; itv.calls.length = 0;
   assert.equal((await me.go('/api/me/erase', { method: 'POST', body: '{}', csrf: false })).status, 403); assert.equal((await me.go('/api/me/erase', { method: 'POST', body: '{}', origin: false })).status, 403);
   const step1 = await (await me.go('/api/me/erase', { method: 'POST', body: '{}' })).json();
-  assert.match(step1.confirmToken, /^\d{13}\.[0-9a-f]{64}$/); assert.equal(step1.expiresInSeconds, 600); assert.ok(step1.willHappen.length >= 3); assert.ok(step1.kept.some(k => /DPO/.test(k)));
+  assert.match(step1.confirmToken, /^\d{13}\.[0-9a-f]{16}\.[0-9a-f]{64}$/); // X1: exp.nonce.mac (single use) assert.equal(step1.expiresInSeconds, 600); assert.ok(step1.willHappen.length >= 3); assert.ok(step1.kept.some(k => /DPO/.test(k)));
   assert.equal(lib.calls.length + itv.calls.length, 0, 'asking for the token erases and touches nothing');
   for (const bad of [step1.confirmToken.slice(0, -1) + '0', 'x', '1.' + step1.confirmToken.split('.')[1], (Date.now() - 1000) + '.' + step1.confirmToken.split('.')[1]]) {
     const r = await me.go('/api/me/erase', { method: 'POST', body: JSON.stringify({ confirm: bad }) }); assert.equal(r.status, 403, bad);
