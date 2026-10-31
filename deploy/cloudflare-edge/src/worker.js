@@ -10,8 +10,10 @@ import { evidenceWorkflowOn } from './adapters.js';
 import { postDraftFromInterview } from './evidence.js';
 import { storyRater } from './rating.js';
 import { libraryRoutes } from './library-routes.js';
-import { hindsight, recallQuery, memoryNote, jevRelevant } from './memory.js';
+import { hindsight, recallQuery, memoryNote } from './memory.js';
 import { memoryRoutes } from './memory-routes.js';
+import { meRoutes } from './me-routes.js';
+import * as privacy from './privacy.js';
 import { resolveForInterview } from './gaps.js';
 import { fetchWinHint } from './winloop.js';
 import { teamsClient } from './teams.js';
@@ -38,17 +40,26 @@ export class Interview extends DurableObject {
   async fetch(request) {
     const path = new URL(request.url).pathname;
     if (path.startsWith('/api/memory')) return memoryRoutes(request, { storage: this.ctx.storage, hs: this.hs, env: this.env });
+    // Consent state, data export and erasure for THIS person (me-routes.js): reachable only through the Worker's own /api/consent and /api/me/* handlers.
+    if (path === '/api/consent' || path.startsWith('/api/consent/') || path.startsWith('/api/me/')) return meRoutes(request, { storage: this.ctx.storage, hs: this.hs, env: this.env });
     // Resumable interview of THIS person (their own Durable Object, their own identity): whether one exists, and discarding it.
-    if (path === '/api/checkpoint' || path.startsWith('/api/checkpoint/')) return checkpointRoutes(request, { storage: this.ctx.storage });
+    if (path === '/api/checkpoint' || path.startsWith('/api/checkpoint/')) {
+      const res = await checkpointRoutes(request, { storage: this.ctx.storage });
+      if (request.method !== 'GET' || path !== '/api/checkpoint' || !res.ok) return res;
+      // The bootstrap's one question to this object also carries the consent state in force (what the person last chose; privacy.js), so the page needs no second call.
+      const state = await privacy.loadState(this.ctx.storage);
+      return new Response(JSON.stringify({ ...(await res.json()), consent: { purposes: state.purposes, blocked: state.blocked || {} } }), { status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+    }
     // Persistent per-person rate limits (ratelimit.js). Internal: only the Worker forwards this path; no browser route reaches it.
     if (path === '/api/limit') return limitRoute(request, this.ctx.storage);
     // Private memory for this person's interview: recall before the opening, JEV relevance check when configured.
     const bank = request.headers.get('x-atlas-bank') || '', metric = (name, values) => console.log(JSON.stringify({ atlas_metric: name, ...values }));
-    const memory = this.hs && bank && (await this.ctx.storage.get('memoryOff')) !== true ? async project => {
-      const t0 = Date.now(); let found = await this.hs.recall(bank, recallQuery(project), { tags: project?.id && project.id !== 'new' ? ['project:' + project.id] : undefined });
-      const n = found.length; let checked = 0;
-      try { const j = await jevRelevant(this.env, found, project); found = j.memories; checked = j.checked; } catch { metric('memory_jev_error', {}); }
-      metric('memory_recall', { ms: Date.now() - t0, found: n, kept: found.length, jev_checked: checked });
+    // Private memory is OFF unless the person turned it on (the memory purpose, privacy.js) and has not restricted or objected to it; the Session recalls only when the
+    // start message carried memory consent as well. Recalled text is never sent to another processor (the JEV relevance check was removed from this path, G2).
+    const memory = this.hs && bank ? async project => {
+      if (!privacy.memoryAllowed(await privacy.loadState(this.ctx.storage))) return '';
+      const t0 = Date.now(), found = await this.hs.recall(bank, recallQuery(project), { tags: project?.id && project.id !== 'new' ? ['project:' + project.id] : undefined });
+      metric('memory_recall', { ms: Date.now() - t0, found: found.length });
       return memoryNote(found);
     } : null;
     const pair = new WebSocketPair(), [client, server] = Object.values(pair);
@@ -71,6 +82,7 @@ export class Interview extends DurableObject {
     if (overflow) return new Response(null, { status: 101, webSocket: client }); // closed above; nothing was processed
     // The verified identity the Worker forwarded (always overwritten there), for gap requests and the win hint.
     const identity = { user: request.headers.get('x-atlas-user') || '', role: request.headers.get('x-atlas-role') || 'user', mail: request.headers.get('x-atlas-email') || '' };
+    const subj = request.headers.get('x-atlas-subj') || '';
     const session = new Session({
       io: { send: e => { try { server.send(JSON.stringify(e)); } catch { /* closed */ } }, sendBytes: b => { try { server.send(b); } catch { /* closed */ } },
         close: () => { try { server.close(1000, 'ended'); } catch { /* closed */ } } },
@@ -80,6 +92,9 @@ export class Interview extends DurableObject {
       winHint: this.env.LIBRARY ? () => fetchWinHint(this.env, identity) : null,
       // Interviews with transcript consent are kept for 24 hours so a dropped connection can resume (ATLAS_CHECKPOINT=off: never).
       checkpoint: checkpointEnabled(this.env) && identity.user ? new CheckpointStore(this.ctx.storage, { owner: identity.user }) : null,
+      // Each start's consent choices: the state in this person's storage and one receipt per change in the library (privacy.js recordConsent), all or nothing. Nothing is kept
+      // before it succeeds; a failure starts nothing.
+      consentHook: ({ mode, purposes, legacy }) => privacy.recordConsent(this.ctx.storage, this.env, { ...identity, subj }, legacy ? { transcription: purposes.transcription, draft: purposes.draft } : purposes, { mode, channel: legacy ? 'legacy-start' : 'consent-dialog' }), // an old page's bare tick states only what it always meant
       // Confirming the read-back saves an OWNER-ONLY evidence draft under the verified identity, server to server (never submitted from here). Off with
       // ATLAS_EVIDENCE_WORKFLOW=off or without the library: the summary is then confirmed but not filed, and the browser is told so.
       evidence: evidenceWorkflowOn(this.env) && this.env.LIBRARY && identity.user ? notes => postDraftFromInterview(this.env, identity, notes) : null,

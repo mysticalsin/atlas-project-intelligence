@@ -160,7 +160,8 @@ async function sumSubmit(){const s=sum,app=window.ATLAS_APP;if(!s||s.phase!=='co
  if(!app||typeof app.libraryApi!=='function'){s.submit={status:'error',message:'The shared library is not available here.'};renderSummary();return;}
  s.submit={status:'sending'};renderSummary();
  try{const v=await app.libraryApi('/evidence/'+encodeURIComponent(s.draft.id)+'/submit',{method:'POST',body:{expected_revision:s.draft.revision}});
-  s.submit={status:'sent'};if(v&&Number.isInteger(v.revision))s.draft={...s.draft,revision:v.revision};}
+  s.submit={status:'sent'};if(v&&Number.isInteger(v.revision))s.draft={...s.draft,revision:v.revision};
+  window.dispatchEvent(new CustomEvent('atlas-submitted'));} // the library story of this interview follows the same explicit click (app.js)
  catch(e){s.submit={status:'error',message:(e&&e.message)||'It was not submitted.'};}
  if(sum===s){renderSummary();sumStatus(s);}}
 $('summarySubmit')&&$('summarySubmit').addEventListener('click',sumSubmit);

@@ -36,7 +36,7 @@ test('the HTTP routes use a constant-time comparison and the WebSocket start sti
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../src/app.js', import.meta.url), 'utf8'), sessionJs = readFileSync(new URL('../src/session.js', import.meta.url), 'utf8');
   assert.ok(!/X-Atlas-CSRF'\)\s*!==/.test(app), 'no !== on the CSRF header any more');
-  assert.equal((app.match(/bad = csrfRefusal\(request, env, csrf, sec\)/g) || []).length, 6, 'one shared check for discard, sheet, memory, library, transcribe and classify');
+  assert.equal((app.match(/bad = csrfRefusal\(request, env, csrf, sec\)/g) || []).length, 9, 'one shared check for discard, consent, erase, privacy flags, sheet, memory, library, transcribe and classify (G2 added consent, erase and flags)');
   assert.ok(/same\(String\(init\.csrf \?\? ''\), this\.csrf\)/.test(sessionJs), 'the WS start compare is unchanged');
 });
 

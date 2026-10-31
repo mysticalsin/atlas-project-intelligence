@@ -5,7 +5,7 @@
 // (a keyed hash). Fields outside the whitelist below are dropped, so a caller cannot leak by accident.
 const enc = new TextEncoder();
 export const EVENTS = Object.freeze(['authn_fail', 'csrf_fail', 'origin_fail', 'external_denied', 'bearer_fail', 'access_denied', 'rate_limited', 'body_too_large',
-  'header_spoof', 'kill_switch', 'subject_blocked', 'flag_state', 'audit_chain_break', 'audit_chain_ok', 'internal_error', 'inbound_off']);
+  'header_spoof', 'kill_switch', 'subject_blocked', 'flag_state', 'audit_chain_break', 'audit_chain_ok', 'internal_error', 'inbound_off', 'privacy_export', 'privacy_erase', 'privacy_flags', 'consent_change']);
 const FIELDS = ['route', 'method', 'status', 'reason', 'subj', 'role', 'ip_h', 'colo', 'ray', 'n', 'bucket', 'head'];
 
 // '/api/library/<32 hex>/validate' -> '/api/library/:id/validate'. Only short lower-case words survive; everything else (ids,

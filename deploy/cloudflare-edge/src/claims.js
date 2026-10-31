@@ -173,6 +173,7 @@ function createRequest(ctx) {
   const row = lib.row(str(b.refId, 64));
   if (!row || row.merged_into || !lib.access(row, user)) throw fail(404, 'Reference not found.');
   if (!lib.canEdit(row, user)) throw fail(403, 'Only the people who can edit this reference can ask for confirmation.');
+  if (row.state?.draft) throw fail(409, 'Submit this reference for review first: a request to confirm shares its sentences with your N+1 or the client.');
   const kind = b.kind === undefined ? 'manager' : b.kind;
   if (kind !== 'manager' && kind !== 'client') throw fail(400, "kind must be 'manager' or 'client'.");
   const ids = [...new Set((Array.isArray(b.claimIds) ? b.claimIds : []).map(x => str(x, 64)).filter(Boolean))];

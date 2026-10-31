@@ -114,7 +114,7 @@ export function cleanNotes(raw) {
     return { id, field, item_id: item, quote, status: one(d.status, NOTE_STATUSES, 'reported'), active: d.active !== false, withheld: d.withheld === true,
       supersedes: str(d.supersedes, 20), provenance: str(d.provenance, 60) || 'unverified_speech_recognition', ...(str(d.context, 320) ? { context: str(d.context, 320) } : {}),
       asr_min_conf: typeof conf === 'number' && conf >= 0 && conf <= 1 ? conf : null, audio_offset_ms: Number.isInteger(off) && off >= 0 && off <= 1e9 ? off : null,
-      value: optional(d.value), unit: optional(d.unit), baseline: optional(d.baseline), after_state: optional(d.after_state), period: optional(d.period) };
+      value: optional(d.value), unit: optional(d.unit), baseline: optional(d.baseline), after_state: optional(d.after_state), period: optional(d.period), ...(d.sensitive === true ? { sensitive: true } : {}) };
   });
   return { session_id: session, project_ref: str(n.project_ref ?? n.projectRef, 100) || null, ref_id: str(n.ref_id ?? n.refId, 64) || null, details };
 }
@@ -131,7 +131,7 @@ export function claimsFromNotes(recordId, owner, notes, at) {
       subject_id: base === 'person' ? owner : notes.project_ref, claim_type, statement: d.quote, value: d.value, unit: d.unit, baseline: d.baseline, after_state: d.after_state,
       period: d.period, attribution, origin: 'consultant_reported', supersedes: null, conflicts_with: [],
       source_refs: [{ kind: 'interview', session_id: notes.session_id, item_id: d.item_id, ledger_id: `${notes.session_id}:${d.id}`, field: d.field, quote: d.quote, provenance: d.provenance,
-        ledger_status: d.status, ...(d.context ? { context: d.context } : {}), asr_min_conf: d.asr_min_conf, audio_offset_ms: d.audio_offset_ms, supersedes_ledger_id: d.supersedes ? `${notes.session_id}:${d.supersedes}` : null }],
+        ledger_status: d.status, ...(d.context ? { context: d.context } : {}), ...(d.sensitive ? { sensitive: true } : {}), asr_min_conf: d.asr_min_conf, audio_offset_ms: d.audio_offset_ms, supersedes_ledger_id: d.supersedes ? `${notes.session_id}:${d.supersedes}` : null }],
       created_by: owner, created_at: at };
   });
 }
@@ -180,7 +180,7 @@ class Evidence {
   }
   // Who this person is to this record, or null when it does not exist for them. Drafts are the owner's alone (D19).
   access(rec, user) {
-    if (!rec || !text(user.email)) return null;
+    if (!rec || !text(user.email) || rec.state?.erased) return null; // an erased record (G2) exists for nobody
     const owner = user.email === rec.owner_sub, role = ['admin', 'reviewer'].includes(user.role) ? user.role : '';
     const resolved = !owner && !role && this.n1(rec) === user.email; // a reviewer or admin needs no resolution (and none is paid for)
     const reviewer = !!role || resolved;
@@ -460,7 +460,7 @@ export async function routes(ctx) {
     if (method === 'POST') return internal ? created(await ev.createDraftFromNotes(user.email, b.notes)) : NOT_FOUND_ROUTE;
     return method === 'GET' ? { body: { items: ev.list(user) } } : NOT_FOUND_ROUTE;
   }
-  if (method === 'GET' && !action) { const r = url.searchParams.get('revision'); return { body: ev.get(user, id, r === null ? {} : { revision: /^\d{1,6}$/.test(r) ? Number(r) : 0 }) }; }
+  if (method === 'GET' && !action) { const r = url.searchParams.get('revision'), v = ev.get(user, id, r === null ? {} : { revision: /^\d{1,6}$/.test(r) ? Number(r) : 0 }); if (!v.mine && !internal) lib.logRead(String(id), user.email, 'viewed evidence'); return { body: v }; } // a reviewer's read of someone else's evidence is audited (G2; ids only)
   if (method === 'GET' && action === 'status' && !extra) return { body: branches.statusView(ev, user, id) }; // seven cards, never one generic "done" (T15)
   if (method !== 'POST') return NOT_FOUND_ROUTE;
   if (action === 'submit' && !extra) return { body: ev.submit(user, id, b.expected_revision) };

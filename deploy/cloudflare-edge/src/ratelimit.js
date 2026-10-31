@@ -16,6 +16,9 @@ export const LIBRARY_LIMITS = Object.freeze({
   upsert: { max: 120, windowMs: HOUR }, review: { max: 30, windowMs: HOUR }, insights: { max: 30, windowMs: HOUR }, recommend: { max: 30, windowMs: HOUR },
   slides: { max: 30, windowMs: HOUR }, export: { max: 5, windowMs: HOUR }, import: { max: 5, windowMs: HOUR },
   inbound: { max: 60, windowMs: 6e4 }, // triggers, directory push, Teams: per minute, one shared counter
+  // G2: data subject rights and consent changes (per person)
+  'me-export': { max: 5, windowMs: HOUR }, 'me-erase': { max: 3, windowMs: HOUR }, flags: { max: 30, windowMs: HOUR }, consent: { max: 60, windowMs: HOUR },
+  submit: { max: 60, windowMs: HOUR },
 });
 export const limitOf = (env, name) => { const v = Math.floor(Number(env?.['RL_' + name])); return v > 0 ? v : LIMITS[name]; };
 

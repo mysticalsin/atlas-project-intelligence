@@ -34,8 +34,12 @@ try:
   o.wait_for_timeout(1200);settle()
   o.locator('header [data-view=library]').click();o.wait_for_timeout(900)
   card=o.locator('#libraryList .project-card').first
-  check('interview synced to the shared library automatically',card.count()==1 and 'Claims triage rebuilt' in card.inner_text())
-  check('automatic quality review ran; awaiting the N+1','AWAITING N+1' in card.inner_text().upper())
+  check('interview saved as a PRIVATE DRAFT, not shared (G2)',card.count()==1 and 'Claims triage rebuilt' in card.inner_text() and 'PRIVATE DRAFT' in card.inner_text().upper())
+  check('a draft is not rated and shows a Submit for review button',card.locator('[data-submit-ref]').count()==1 and 'AWAITING N+1' not in card.inner_text().upper())
+  card.locator('[data-submit-ref]').click();o.wait_for_timeout(1500);settle()
+  o.locator('header [data-view=library]').click();o.wait_for_timeout(900)
+  card=o.locator('#libraryList .project-card').first
+  check('after Submit for review the automatic quality review ran; awaiting the N+1','AWAITING N+1' in card.inner_text().upper())
   card.locator('[data-open-record]').click();o.wait_for_timeout(700)
   body=o.locator('#recordBody').inner_text()
   check('record shows quality score and the full template',('Quality' in body) and 'PRJ-2291' in body and 'Zebracorp' in body and 'Python' in body)

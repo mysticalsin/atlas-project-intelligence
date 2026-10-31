@@ -288,22 +288,29 @@ test('DNA pull: 24 h cache, a stale value is served while waitUntil refreshes; o
   assert.deepEqual((await profile.resolveProfile(p.l, { ...PULL, DATA_MODE: undefined }, who(ALEX), {}, { fetcher: never })).sources[0], { id: 'dna', state: 'off' });
 });
 
-test('people lookup: one exact email, name and title only, stored rows only, 30 per hour, external 403', async () => {
+test('people lookup: one exact email in the POST body (never in a URL), name and title only, stored rows only, 30 per hour, external 403', async () => {
   const never = async () => { throw new Error('people lookup must never call DNA'); };
   const { l } = world({ fetch: never });
   await importRows(l, [{ email: 'jane@example.com', name: 'Jane Example', title: 'Analyst', managerName: 'Boss Person', managerEmail: 'boss@example.com' }]);
   await call(l, BEA, 'POST', 'profile', { set: { name: 'Bobby Secret', title: 'Hidden title' } });
-  const r = await call(l, ALEX, 'GET', 'people?email=Jane@Example.com', null, PULL);
+  const look = (user, email, lib = l, env = {}) => call(lib, user, 'POST', 'people/lookup', { email }, env);
+  const r = await look(ALEX, 'Jane@Example.com', l, PULL);
   assert.deepEqual(r, { status: 200, body: { email: 'jane@example.com', name: 'Jane Example', title: 'Analyst', from: 'dna_export' } }, 'never the N+1');
-  assert.equal((await call(l, ALEX, 'GET', 'people?email=bea@example.com', null, PULL)).status, 404, 'never another user\'s profile edits');
-  for (const q of ['people?email=jane', 'people?email=', 'people']) assert.equal((await call(l, ALEX, 'GET', q)).status, 400, q);
-  for (const q of ['people?email=*@example.com', 'people?email=jane%25@example.com', 'people?email=%25']) assert.ok([400, 404].includes((await call(l, ALEX, 'GET', q)).status), 'no wildcard: ' + q);
+  assert.equal((await look(ALEX, 'bea@example.com', l, PULL)).status, 404, 'never another user\'s profile edits');
+  for (const e of ['jane', '', undefined]) assert.equal((await look(ALEX, e)).status, 400, String(e));
+  assert.equal((await call(l, ALEX, 'POST', 'people/lookup', {})).status, 400);
+  for (const e of ['*@example.com', 'jane%@example.com', '%']) assert.ok([400, 404].includes((await look(ALEX, e)).status), 'no wildcard: ' + e);
+  // G2: the old GET with ?email= is gone, so an address can no longer land in a URL (and an access log).
+  for (const q of ['people?email=jane@example.com', 'people']) assert.equal((await call(l, ALEX, 'GET', q)).status, 404, q);
   const { l: l2 } = world({ fetch: never });
-  const got = []; for (let i = 0; i < 31; i++) got.push((await call(l2, ALEX, 'GET', 'people?email=nobody@example.com')).status);
+  const got = []; for (let i = 0; i < 31; i++) got.push((await look(ALEX, 'nobody@example.com', l2)).status);
   assert.deepEqual([got.slice(0, 30).every(s => s === 404), got[30]], [true, 429]);
-  assert.equal((await call(l2, BEA, 'GET', 'people?email=nobody@example.com')).status, 404, 'per user');
-  const ext = await call(l, { email: 'c@client.example', role: 'external' }, 'GET', 'people?email=jane@example.com');
+  assert.equal((await look(BEA, 'nobody@example.com', l2)).status, 404, 'per user');
+  const ext = await look({ email: 'c@client.example', role: 'external' }, 'jane@example.com');
   assert.equal(ext.status, 403);
+  // The lookup is audited without the looked-up address.
+  const audit = l.rows("SELECT actor, action, detail FROM audit WHERE action = 'people lookup'");
+  assert.ok(audit.length >= 1 && audit.every(x => !/example\.com/.test(x.detail)), JSON.stringify(audit));
   assert.deepEqual(profile.lookupPerson(l, 'JANE@example.com'), { email: 'jane@example.com', name: 'Jane Example', title: 'Analyst', from: 'dna_export' });
   assert.deepEqual(profile.directoryManager(l, 'jane@example.com'), { email: 'boss@example.com', name: 'Boss Person', from: 'dna_export' });
   assert.equal(profile.directoryManager(l, 'bea@example.com'), null, 'a user-edited N+1 never counts as directory');

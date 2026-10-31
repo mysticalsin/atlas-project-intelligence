@@ -65,7 +65,7 @@ test('library helper for Wave B: enforce() returns null while allowed and a read
   assert.equal(await enforce(st, 'export', 'subj-b', { now: T0 }), null, 'another person has their own counter');
   assert.equal(await enforce(st, 'no-such-limit', 'subj-a'), null); assert.equal(await enforce(null, 'export', 'a'), null);
   assert.equal(tooMany(7).headers.get('retry-after'), '7');
-  assert.deepEqual(Object.keys(LIBRARY_LIMITS).sort(), ['export', 'import', 'inbound', 'insights', 'recommend', 'review', 'slides', 'upsert']);
+  assert.deepEqual(Object.keys(LIBRARY_LIMITS).sort(), ['consent', 'export', 'flags', 'import', 'inbound', 'insights', 'me-erase', 'me-export', 'recommend', 'review', 'slides', 'submit', 'upsert']); // G2 added consent, flags, me-erase, me-export, submit
 });
 
 test('limits are configurable per deployment by RL_* variables and default to the blue-team proposal', () => {

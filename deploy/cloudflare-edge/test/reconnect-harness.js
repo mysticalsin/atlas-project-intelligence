@@ -17,7 +17,8 @@ export class FakeStorage {
     if (Array.isArray(k)) return new Map(k.filter(x => this.m.has(x)).map(x => [x, structuredClone(this.m.get(x))]));
     return this.m.has(k) ? structuredClone(this.m.get(k)) : undefined;
   }
-  async put(o) {
+  async put(o, v) {
+    if (typeof o === 'string') o = { [o]: v }; // the Durable Object API takes (key, value) as well as an object of entries
     const keys = Object.keys(o); if (keys.length > 128) throw new Error('a put takes at most 128 keys');
     for (const k of keys) if (o[k] instanceof Uint8Array && o[k].length > 128 * 1024) throw new Error('value over 128 KiB');
     this.puts.push(keys.length);
@@ -75,7 +76,9 @@ export function rig({ said = [], talk = null, flags = {}, metrics = [], session 
   return { s, events, bytes, calls, metrics, storage, store: keeper, clk, tick: () => { clk.t += 0.02; }, advance: sec => { clk.advance(sec); }, closed: () => closed };
 }
 
-export const startMsg = (extra = {}) => JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: true, voice: 'asteria', memory: false, ...extra });
+// G2: the consent is an object of separate choices; the saved-interview choice is what lets the interview be kept and resumed (a bare `true` no longer implies it).
+export const CONSENT = { transcription: true, draft: true, checkpoint: true };
+export const startMsg = (extra = {}) => JSON.stringify({ type: 'start', consent: CONSENT, csrf: 'tok', project: PROJECT, capture: true, voice: 'asteria', memory: false, ...extra });
 export const say = (h, segs) => { for (const f of frames(segs)) { h.tick(); h.s.onBinary(f); } };
 export const talked = h => say(h, [[1.2, .2], [1.3, .001]]); // one utterance, then enough silence for the turn to end
 export const send = (h, obj) => h.s.onText(JSON.stringify(obj));

@@ -5,6 +5,7 @@
 // bounds and the hint thresholds are uncalibrated pilot values (Q2). While READY is false the helpers called from
 // existing paths (winSignals from Library.recommend, guidance) keep their S0 neutral values.
 import { fail } from './util.js';
+import { processable } from './privacy.js';
 import { ensure } from './bids.js';
 import { claimSummary } from './claims.js';
 import { NUMERIC_SRC } from './policy.generated.js';
@@ -121,7 +122,7 @@ function stats(lib, user) {
   const stories = [];
   for (const [refId, s] of t.byRef) {
     const row = lib.row(refId);
-    if (lib.access(row, user) !== 'full') continue; // reviewers and admins: every active story; anyone else: their own (Q13)
+    if (lib.access(row, user) !== 'full' || !processable(lib, row.owner, 'matching')) continue; // reviewers and admins: every active story; anyone else: their own (Q13); not a restricted or objecting owner's (G2)
     const c = cell(s);
     stories.push({ refId, title: row.data.title, used: s.used, won: s.won, lost: s.lost, pending: s.pending, decided: c.decided, winRate: c.winRate, ci95: c.ci95, caveat: c.caveat });
   }

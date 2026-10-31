@@ -299,7 +299,7 @@ async function match({ lib, user, body, env }, row) {
   const query = [...reqs.map(r => r.text), ...CUSTOMER.map(k => customer[k])].filter(Boolean).join('\n').slice(0, 8000);
   if (!query.trim()) throw fail(400, 'Add at least one requirement before matching.');
   if (!rateLimit(lib, 'bid-match:' + user.email, 60, 36e5)) throw fail(429, 'Too many match runs this hour. Try again later.');
-  const pool = lib.visibleRows(user).filter(([r]) => r.status === 'published'); // drafts are never proof
+  const pool = lib.visibleRows(user, { processing: true }).filter(([r]) => r.status === 'published'); // drafts are never proof
   const run = pool.length ? await rankRun(lib, env, { pool, query, reqs, customer, limit, jev: b.useJev === true && b.jevConsent === true })
     : { verdict: 'empty_library', method: 'none', results: [], coverage: cover(reqs, [], [], 'unmet'), note: NOTE.empty_library };
   const stored = { runAt: lib.now(), ...run, label: MATCH_LABEL };

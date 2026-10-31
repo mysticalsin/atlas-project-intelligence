@@ -95,11 +95,11 @@ function paintProjectForm({fresh=false,edit=false}={}){let fromProfile=false;
  const note=$('projectPrefillNote');if(note)note.hidden=!fromProfile;
  const hint=$('roleHint'),role=$('consultantRole')?.value.trim();if(hint)hint.hidden=!(profile&&role&&role===C.value(profile,'title'));}
 for(const [id] of FORM)$(id)?.addEventListener('input',()=>paintProjectForm());
-// §5.8: a typed N+1 email fills the N+1 name: your profile's N+1 when it is that email, else GET /people, which reads stored
+// §5.8: a typed N+1 email fills the N+1 name: your profile's N+1 when it is that email, else POST /people/lookup (the address in the body, never in a URL), which reads stored
 // directory rows only (never DNA, never anyone's profile). Only on a committed change, each found email once per page
 // (30 lookups an hour). Not found, refused or offline: nothing is filled and nothing is guessed.
 async function findPerson(e){if(n1Found.has(e))return n1Found.get(e);
- try{const p=await app().libraryApi('/people?email='+encodeURIComponent(e));
+ try{const p=await app().libraryApi('/people/lookup',{method:'POST',body:{email:e}}); // the address travels in the body, never in a URL (G2)
   if(typeof p?.name!=='string'||!p.name.trim()||!['dna','dna_export'].includes(p.from))return null;
   const hit={name:p.name.trim().slice(0,C.LIMITS.managerName),from:p.from};n1Found.set(e,hit);return hit;}catch{return null;}}
 $('n1Email')?.addEventListener('change',async()=>{const name=$('n1Name'),seq=++n1Seq,e=C.validEmail($('n1Email').value);if(!profile||!name)return;
