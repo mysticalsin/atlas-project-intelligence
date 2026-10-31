@@ -36,7 +36,7 @@ export function languageNote(lang, spoken) {
 // be used, that anything can be skipped ("I don't know", "I can't share"), and that a summary is read back for correction
 // before anything goes to review. Tony chose this full introduction on 2026-10-30 (Agent Brain v2.1, Q1). It is four short
 // sentences, two spoken breaths. English was authored; every other language is a faithful translation that still needs a
-// native-speaker review (see handoff/IMPLEMENTATION_STATUS.md).
+// native-speaker review (see docs/agent-brain-v2.1/IMPLEMENTATION_STATUS.md).
 const INTRO = {
   en: "Hi, I'm ATLAS, and I'll help you tell the story of your project.",
   fr: "Bonjour, je suis ATLAS, et je vais vous aider à raconter l'histoire de votre projet.",
