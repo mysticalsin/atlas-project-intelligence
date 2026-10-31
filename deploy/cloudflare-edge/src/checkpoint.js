@@ -2,25 +2,27 @@
 //
 // A checkpoint is the whole state of a live interview, kept ONLY when the consultant consented to transcript capture (the Session decides),
 // in the signed-in person's OWN Interview Durable Object (one DO per identity: storage is per DO, and every read also requires the same
-// forwarded identity), for 24 hours (a DO alarm purges it). It is deleted at once on a clean end, a discard or withdrawal, and by any new
-// start that does not resume it. Pure parts: serialize(session) and restore(session, data), both carrying `version`.
+// forwarded identity), for 24 hours from its FIRST write (an absolute expiry: later writes and reconnects never extend it; a DO alarm purges it).
+// It is deleted at once on a clean end, a discard or withdrawal, any end that is not a suspend, and by any new start that does not resume it.
+// A finished interview (a terminal state of the machine) is never stored, and one that is found is neither offered nor kept. Pure parts: serialize(session) and restore(session, data), both carrying `version`.
 //
 // Storage layout (single slot per DO): cp:current -> session id; cp:<id>:meta -> {version, sessionId, owner, savedAt, expiresAt, chunks, bytes};
 // cp:<id>:<n> -> a Uint8Array of at most CHUNK_BYTES (the UTF-8 JSON, split), written together with the meta in one atomic put.
-import { Machine, StateError } from './conversation-state.js';
+import { Machine, StateError, STATES } from './conversation-state.js';
 
 export const VERSION = 2; // 2 (T11): the summary read-back state
 export const TTL_MS = 24 * 60 * 60 * 1000;
 export const CHUNK_BYTES = 100 * 1024; // a value in Durable Object storage may be 128 KiB: stay under it
 export const MAX_CHUNKS = 120; // 12 MB: far beyond any interview (the transcript budget is 100 000 characters); a put takes at most 128 keys
 export const HISTORY_KEEP = 40;
+const isTerminal = state => typeof state === 'string' && STATES.interview.terminal.includes(state);
 const CUT_MARKER = /\s*\[(?:interrupted by the consultant|cut off[^\]]*)\]\s*$/;
 const PREFIX = 'cp:', CURRENT = 'cp:current', SESSION_ID = /^[a-f0-9]{32}$/;
 const enc = new TextEncoder(), dec = new TextDecoder();
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const metaKey = id => `${PREFIX}${id}:meta`, chunkKey = (id, n) => `${PREFIX}${id}:${n}`;
 
-// code: missing (nothing to resume, or not yours), expired, version_mismatch, corrupt, too_large.
+// code: missing (nothing to resume, or not yours), expired, version_mismatch, corrupt, too_large, terminal (a finished interview is not stored).
 export class CheckpointError extends Error {
   constructor(code, message) { super(message || code); this.name = 'CheckpointError'; this.code = code; }
 }
@@ -36,7 +38,7 @@ export function newSessionId() { return Array.from(crypto.getRandomValues(new Ui
 export function serialize(s) {
   const now = s.now(), L = s.ledger, h = s.humane, q = s.lastQuestion, at = q?.move ? h.asked.indexOf(q.move) : -1;
   return structuredClone({
-    version: VERSION, sessionId: s.sessionId, savedAt: now, mode: s.mode, language: s.language, voice: s.voice, project: s.project, prefill: s.prefill,
+    version: VERSION, sessionId: s.sessionId, savedAt: now, capturedAt: s.capturedAt ?? null, mode: s.mode, language: s.language, voice: s.voice, project: s.project, prefill: s.prefill,
     machine: s.stateSnapshot(),
     history: s.history.slice(-HISTORY_KEEP),
     ledger: { stage: L.stage, transcripts: [...L.transcripts], details: L.details, probes: L.probes, deferred: L.deferred, updates: L.updates },
@@ -103,7 +105,7 @@ export function restore(s, d) {
   }
   // Valid: change the session.
   const now = s.now();
-  Object.assign(s, { sessionId: d.sessionId, language: typeof d.language === 'string' ? d.language : s.language, project: d.project, prefill: d.prefill, machine: m,
+  Object.assign(s, { capturedAt: Number.isFinite(d.capturedAt) ? d.capturedAt : null, sessionId: d.sessionId, language: typeof d.language === 'string' ? d.language : s.language, project: d.project, prefill: d.prefill, machine: m,
     history: history.slice(), lastQuestion, asrMeta: A.meta, asrIdents: idents, asrDone: isObj(A.done) ? A.done : null, asrCorrections: corrections,
     startedAt: now - c.wall, pausedTotal: c.pausedTotal, pausedAt: c.paused ? now - c.pausedFor : null, paused: c.paused, pauseCount: c.pauseCount, resumeCount: c.resumeCount,
     turns: k.turns, replies: k.replies, spokenMs: k.spokenMs, identNow: typeof k.identNow === 'string' ? k.identNow : null, timeUp: k.timeUp === true });
@@ -141,15 +143,20 @@ export class CheckpointStore {
   // Write the checkpoint (one atomic put of the chunks and the meta), drop chunks of an older, longer write, and arm the purge alarm.
   async save(doc) {
     if (!isObj(doc) || typeof doc.sessionId !== 'string' || !SESSION_ID.test(doc.sessionId)) throw new CheckpointError('corrupt', 'bad session id');
-    const id = doc.sessionId, chunks = split(enc.encode(JSON.stringify(doc)));
+    const id = doc.sessionId, state = isObj(doc.machine) ? doc.machine.state : null;
+    if (isTerminal(state)) throw new CheckpointError('terminal', 'a finished interview is not stored');
+    // The expiry is fixed by the FIRST write of this interview (kept in its meta; the Session also carries it, see session.js, for a purge in between): saving again never extends it.
+    const savedAt = this.now(), old = await this.storage.get(metaKey(id));
+    const capturedAt = isObj(old) && Number.isFinite(old.capturedAt) && old.capturedAt <= savedAt ? old.capturedAt : savedAt, expiresAt = capturedAt + this.ttlMs;
+    if (savedAt >= expiresAt) { await this.purge(); throw new CheckpointError('expired', 'the 24 hours are over: the interview is no longer kept'); }
+    const chunks = split(enc.encode(JSON.stringify(doc)));
     if (chunks.length > MAX_CHUNKS) throw new CheckpointError('too_large', 'the checkpoint is too large to keep');
-    const savedAt = this.now(), expiresAt = savedAt + this.ttlMs, old = await this.storage.get(metaKey(id));
-    const entries = { [CURRENT]: id, [metaKey(id)]: { version: VERSION, sessionId: id, owner: this.owner, savedAt, expiresAt, chunks: chunks.length, bytes: chunks.reduce((n, c) => n + c.length, 0) } };
+    const entries = { [CURRENT]: id, [metaKey(id)]: { version: VERSION, sessionId: id, owner: this.owner, savedAt, capturedAt, expiresAt, state, chunks: chunks.length, bytes: chunks.reduce((n, c) => n + c.length, 0) } };
     chunks.forEach((c, n) => { entries[chunkKey(id, n)] = c; });
     await this.storage.put(entries);
     if (isObj(old) && Number.isInteger(old.chunks) && old.chunks > chunks.length) await this.storage.delete(Array.from({ length: old.chunks - chunks.length }, (_, i) => chunkKey(id, chunks.length + i)));
     await this.storage.setAlarm(expiresAt);
-    return { chunks: chunks.length, bytes: entries[metaKey(id)].bytes, expiresAt };
+    return { chunks: chunks.length, bytes: entries[metaKey(id)].bytes, expiresAt, capturedAt };
   }
 
   // The current meta, or why there is none: null when nothing is stored, it is another person's (never purged by that), or a different version
@@ -167,6 +174,7 @@ export class CheckpointStore {
   // What the bootstrap may say: that something can be resumed, and until when. Never any content.
   async info() {
     const m = await this.meta();
+    if (m && isTerminal(m.state)) { await this.purge(); return null; } // finished (an older write): it can only be refused, so it is neither offered nor kept
     return m && m.version === VERSION ? { sessionId: m.sessionId, savedAt: m.savedAt, expiresAt: m.expiresAt } : null;
   }
 

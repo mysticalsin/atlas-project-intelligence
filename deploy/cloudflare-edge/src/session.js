@@ -13,7 +13,7 @@ import { select } from './selector.js';
 import { pickAck, ackPrewarmList } from './ack.js';
 import { uncertainSpans, replacement, tauFrom } from './asr.js';
 import { Machine } from './conversation-state.js';
-import { serialize, restore, restoreView, newSessionId } from './checkpoint.js';
+import { serialize, restore, restoreView, newSessionId, TTL_MS } from './checkpoint.js';
 import { buildSummary, buildUnknowns, summaryFacts, summaryNote, redact, withheldQuotes, MAX_FACTS, REFLECT_FACTS, SUMMARY_QUESTION } from './summary.js';
 
 export const RESUME = '[The consultant made a sound but no words were recognised, and your last reply was cut off.] Briefly re-ask your last question in fresh words.';
@@ -80,6 +80,12 @@ export const WALL_CAP_MESSAGE = 'The 45-minute session limit was reached. Finish
 export const CONTROLS = Object.freeze(['pause', 'resume', 'repeat', 'skip', 'text', 'correct', 'withhold', 'confirm_summary']); // client events this session understands (sent in `ready`, so older gateways are never sent them)
 export const CONTROL_MAX_WORDS = 12; // a spoken pause / repeat / skip is a short request; the same words inside a long answer are part of the answer
 export const TYPED_MAX_CHARS = 2000; // a typed answer; longer text is cut (the browser limits it to the same)
+// Cost bounds (S1, review L5): each typed turn costs an analyst call and a talker call, so one is taken at a time and not faster than this; corrections are bounded per minute.
+export const TYPED_MIN_INTERVAL_S = 1.5;
+export const TYPED_RATE_LIMITED = 'ATLAS is still replying. Wait a moment, then send that again.';
+export const CORRECTIONS_PER_MINUTE = 6;
+export const CORRECTION_RATE_LIMITED = 'That is a lot of corrections at once. Wait a moment, then try again.';
+export const PRIVATE_MARK = '[kept private]'; // what stands for a whole utterance the consultant kept private (summary.js redact() uses the same marker for a quote)
 export const SKIP_UNAVAILABLE = 'Skipping is not available in a focused proof interview.';
 const SKIP_NOTE = '(I\'d like to skip that question.)'; // history entry for the Skip button, so the talker sees what the consultant did (never the ledger)
 const SKIP_INSTRUCTION = '[Server: the consultant chose to skip your last question.] Accept that without pressing, and ask one different question.';
@@ -217,6 +223,8 @@ export function nextMoveNote(move) {
 }
 
 const joinPcm = (a, b) => { const out = new Uint8Array(a.length + b.length); out.set(a); out.set(b, a.length); return out; };
+// A well-formed playback report (the browser's acknowledgement of audio it played): exactly its three keys.
+const isPlayback = v => !!v && typeof v === 'object' && v.type === 'playback' && Object.keys(v).length === 3 && typeof v.item_id === 'string' && typeof v.played_ms === 'number' && Number.isFinite(v.played_ms) && v.played_ms >= 0;
 const same = (a, b) => { if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false; let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i); return d === 0; };
 
 export class Session {
@@ -244,12 +252,13 @@ export class Session {
     this.lastQuestion = null; this.composing = null; this.identNow = null;
     // Checkpoint (T10): `checkpoint` is the person's own CheckpointStore (worker.js), null when there is none (tests, ATLAS_CHECKPOINT=off). sessionId names the
     // interview across reconnects. discarding: the consultant threw it away (end() then purges). afterRestore: restored while paused, so Resume continues it.
-    this.sessionId = null; this.discarding = false; this.afterRestore = false; this.resumed = false; this.ckptDirty = false; this.ckptRun = null;
+    this.sessionId = null; this.discarding = false; this.afterRestore = false; this.resumed = false; this.ckptDirty = false; this.ckptRun = null; this.capturedAt = null; // capturedAt: when the first checkpoint was written (ms): the 24 hours run from it, whatever happens after
     // Summary read-back (T11). open: the card is on the consultant's screen; rounds: read-backs given; corrections: typed corrections so far (their item ids);
     // confirmed / draft: the confirmation and the evidence draft it saved ({id, revision}, null when nothing was saved); posting: a confirmation is in flight;
     // prompts: how often ATLAS pointed to the Confirm button; sig: the last card sent (not kept: a resume sends the card again).
     // `evidence` is the hook that saves the draft: async notes => {status, body} (worker.js: postDraftFromInterview under the verified identity), null when off.
     this.summary = { open: false, rounds: 0, corrections: 0, confirmed: false, draft: null, posting: false, prompts: 0, sig: '' };
+    this.typedAt = -1e9; this.correctionTimes = []; // rate limits (typedTurn, correctDetail): when the last typed turn was taken, and the recent corrections
     this.move = null; this.moveByItem = new Map(); this.prefill = {}; this.lastPlan = null; this.lastTurn = null;
     // Interview mode. Gap mode keeps its own answer windows: askByItem (reply item -> the ask it carried, set when the reply
     // is composed), gapAttempts (replies heard per ask), openAsk (the ask the consultant last heard; null once a reflect-back
@@ -285,7 +294,8 @@ export class Session {
   async onText(text) {
     let value;
     try { value = JSON.parse(text); } catch { return this.fail('Unsupported client event', 'voice-contract'); }
-    if (this.starting) { // a gap request is being resolved: only leaving is allowed (never a second start)
+    if (this.starting) { // a gap request or a checkpoint is being read: only leaving is allowed (never a second start)
+      if (isPlayback(value)) return; // (a reconnect: the worklet still reports the last item it played, ~80 ms after start; that is not a contract error)
       const leave = value && typeof value === 'object' && Object.keys(value).length === 1 && (value.type === 'discard' || value.type === 'end');
       if (leave && value.type === 'discard') { this.discarding = true; this.fireState('withdraw', 'user', { reason: 'consultant discarded the interview' }); }
       return leave ? this.end(false) : this.fail('Unsupported client event', 'voice-contract');
@@ -486,7 +496,11 @@ export class Session {
     if (this.checkpoint) {
       this.starting = true; // until it is read or deleted the browser may only leave (onText)
       try { if (init.resume !== undefined) doc = await this.checkpoint.load(init.resume); else await this.purgeCheckpoint(); }
-      catch (e) { this.starting = false; this.metric('resume_refused', { code: e?.code || 'error' }); return this.fail(RESUME_UNAVAILABLE, 'resume-unavailable'); }
+      catch (e) {
+        this.metric('resume_refused', { code: e?.code || 'error' });
+        if (e?.code === 'corrupt') await this.purgeCheckpoint(); // it can never be resumed: not offered again at every page load
+        this.starting = false; return this.fail(RESUME_UNAVAILABLE, 'resume-unavailable');
+      }
       this.starting = false;
       if (this.finished || this.ending) return;
       if (doc && doc.project?.id !== this.project.id) { this.metric('resume_refused', { code: 'project' }); return this.fail(RESUME_PROJECT, 'resume-project'); }
@@ -513,7 +527,11 @@ export class Session {
     // A resume puts the stored interview back before it starts (nothing is changed if it is refused: the stored one stays for another try).
     if (doc) {
       try { const r = restore(this, doc); this.resumed = true; this.metric('reconnect', { gap_s: Math.max(0, Math.round(this.now() - r.savedAt)), turns: this.turns, paused: this.paused ? 1 : 0 }); }
-      catch (e) { this.metric('resume_refused', { code: e?.code || 'error' }); return this.fail(RESUME_UNAVAILABLE, 'resume-unavailable'); }
+      catch (e) {
+        this.metric('resume_refused', { code: e?.code || 'error' });
+        if (e?.code === 'corrupt') { this.starting = true; await this.purgeCheckpoint(); this.starting = false; } // an interview that had already ended, or damaged: never offered again
+        return this.fail(RESUME_UNAVAILABLE, 'resume-unavailable');
+      }
     } else this.sessionId = newSessionId();
     this.started = true; this.lastInput = this.now(); if (!this.resumed) this.startedAt = this.lastInput;
     this.event('ready', { model: 'ATLAS', provider: 'ATLAS voice', sampleRate: 24000, speakingSeconds: this.speakingLimit, capture: this.capture, liveLedger: !!this.analyst,
@@ -611,10 +629,11 @@ export class Session {
     if (!this.playbackDone) { this.playbackDone = true; this.doneAt = this.bytesIn + lead * 48; }
   }
 
-  interrupt() {
+  // keepState: the card's own correction cuts the reply short and the read-back comes round again at once, so the machine is left where it is.
+  interrupt(keepState = false) {
     this.captureQuestion(); // a reply cut off still asked its question: repeat and resume say it again
     this.recordLive();
-    this.uncommit(this.replyItem, true); // cut before she said her own words: the move was not asked
+    this.uncommit(this.replyItem, true, keepState); // cut before she said her own words: the move was not asked
     this.stopped();
     this.protectedItem = null; // nothing protected is playing any more
     this.gen += 1; this.queue = [];
@@ -793,17 +812,20 @@ export class Session {
   // in the same breath ("no, thirty five"): corrected at once, and the turn no longer reads as a bare "no" (no second question). A bare
   // no: denied, the selector asks for the right one, and the next answer is it. Anything else leaves the span open (never asked twice).
   resolveAsr(turn, text) {
-    const strip = t => ({ ...t, intents: t.intents.filter(i => i !== 'deny') });
+    const strip = t => ({ ...t, intents: t.intents.filter(i => i !== 'deny' && i !== 'correction') }); // a settled correction is not a bare "no", nor a correction to narrow
     if (this.asrDone?.turn === this.turns) return this.asrDone.strip ? strip(turn) : turn; // answer() can run twice for one turn
     this.asrDone = { turn: this.turns, strip: false };
     const last = this.humane.asked.at(-1), intents = turn.intents;
     if (!last || (last.intent !== 'confirm_asr' && last.intent !== 'asr_repair')) return turn;
-    const all = Object.entries(this.asrMeta).flatMap(([ident, m]) => m.spans.map(span => ({ ident, span }))), say = String(last.say || '').toLowerCase();
-    const found = last.intent === 'confirm_asr' ? all.find(x => x.span.status === 'open' && say.includes(x.span.text.toLowerCase())) : all.reverse().find(x => x.span.status === 'denied');
+    // The span that was asked about: of the turns before this one, the most recent open span whose exact words (whole words) are in the question
+    // ("was that 15 percent?" never settles an older open "5"); a bare no is waited on for the most recent denied span.
+    const all = Object.entries(this.asrMeta).filter(([ident]) => ident !== (this.identNow || 'user-' + this.turns)).flatMap(([ident, m]) => m.spans.map(span => ({ ident, span }))).reverse(), say = String(last.say || '').toLowerCase();
+    const named = span => new RegExp('(?<![\\p{L}\\p{N}])' + span.text.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![\\p{L}\\p{N}])', 'u').test(say);
+    const found = last.intent === 'confirm_asr' ? all.filter(x => x.span.status === 'open' && named(x.span)).sort((a, b) => b.span.text.length - a.span.text.length)[0] : all.find(x => x.span.status === 'denied');
     if (!found) return turn;
     const { ident, span } = found, current = this.identNow || 'user-' + this.turns;
     const correct = value => {
-      span.status = 'corrected'; span.corrected_to = value; this.metric('asr_resolved', { how: 1 });
+      span.status = 'corrected'; span.corrected_to = value; this.asrDone.strip = true; this.metric('asr_resolved', { how: 1 });
       if (this.capture) this.asrCorrections.push({ ident: current, spanIdent: ident, from: span.text, to: value });
       this.syncAsr(ident);
     };
@@ -811,7 +833,7 @@ export class Session {
       if (intents.includes('confirm') && !intents.includes('deny')) { span.status = 'confirmed'; this.metric('asr_resolved', { how: 0 }); this.syncAsr(ident); }
       else if (intents.includes('deny')) {
         const value = replacement(text, span.kind);
-        if (value) { correct(value); this.asrDone.strip = true; } else { span.status = 'denied'; this.metric('asr_resolved', { how: 2 }); }
+        if (value) correct(value); else { span.status = 'denied'; this.metric('asr_resolved', { how: 2 }); }
       }
     } else if (!intents.some(i => ['dont_know', 'cannot_disclose', 'skip', 'pause', 'resume', 'repeat', 'question_to_atlas', 'stop', 'rushed'].includes(i)) && turn.words >= 1) {
       correct(replacement(text, span.kind) || first(text.trim(), 120));
@@ -860,9 +882,9 @@ export class Session {
   }
   // notes.asr: item id -> recognition doubt of that consultant turn (T13's evidence store reads min_conf and audio_offset_ms).
   asrNotes() {
-    const out = {};
+    const out = {}, priv = this.ledger ? this.privateItems() : new Set();
     for (const [item, m] of Object.entries(this.asrMeta)) out[item] = { min_conf: m.minConf, audio_offset_ms: m.audioOffsetMs,
-      spans: m.spans.map(({ text, kind, min_conf, audio_offset_ms, status, corrected_to }) => ({ text, kind, min_conf, audio_offset_ms, status, ...(corrected_to ? { corrected_to } : {}) })) };
+      spans: (priv.has(item) ? [] : m.spans).map(({ text, kind, min_conf, audio_offset_ms, status, corrected_to }) => ({ text, kind, min_conf, audio_offset_ms, status, ...(corrected_to ? { corrected_to } : {}) })) };
     return out;
   }
 
@@ -919,10 +941,10 @@ export class Session {
   // The facts of a read-back, from the same ledger as the card. A summary opens the card (after a bounded wait for the analyst's last entry, which may
   // still be landing: the read-back must include what they just said); a reflection only reads a few facts and shows no card. The talker is told these
   // facts and no others, and the ReplyGuard blocks any figure that is not in them.
-  async readBack(move) {
+  async readBack(move, gen = this.gen) {
     const reflect = move.kind === 'reflect';
     if (!reflect && this.turnJob) await Promise.race([this.turnJob.catch(() => {}), this.sleep(SUMMARY_WAIT_MS)]);
-    if (this.finished || this.ending) return null;
+    if (this.finished || this.ending || gen !== this.gen) return null; // interrupted or withdrawn while waiting: no card for a read-back nobody heard
     let v;
     if (reflect) v = this.summaryView();
     else { this.summary.open = true; this.summary.rounds += 1; v = this.sendSummary(true); this.metric('summary', { items: v.items.length, unknowns: v.unknowns.length, round: this.summary.rounds }); this.checkpointSoon(); }
@@ -960,11 +982,16 @@ export class Session {
     const old = this.ledger.details.find(d => d.id === id && d.active && d.withheld !== true), text = clean(raw, CORRECTION_MAX_CHARS);
     if (!old) return this.summaryWarning('That item is no longer in the summary.');
     if (Array.from(text).length < 5) return this.summaryWarning('Please type a little more, so the correction can be kept as your own words.');
-    const ident = 'user-typed-' + (CORRECTION_ITEM_BASE + this.summary.corrections + 1);
+    const t = this.now(); this.correctionTimes = this.correctionTimes.filter(x => t - x < 60);
+    if (this.correctionTimes.length >= CORRECTIONS_PER_MINUTE) { this.metric('correction_rate_limited', {}); return this.summaryWarning(CORRECTION_RATE_LIMITED); }
+    this.correctionTimes.push(t); // attempts count, failed or not
+    // The next free item id (a failed attempt must never leave its id taken: every later correction would then be refused as "Transcript item changed").
+    let n = CORRECTION_ITEM_BASE + this.summary.corrections + 1; while (this.ledger.transcripts.has('user-typed-' + n)) n += 1;
+    const ident = 'user-typed-' + n; let added = false;
     try {
-      this.ledger.addTranscript(ident, text);
+      this.ledger.addTranscript(ident, text); added = true;
       this.ledger.record({ details: [{ field: old.field, item_id: ident, quote: ws(text), supersedes: old.id }] }, 'consultant_typed');
-    } catch { return this.summaryWarning('That correction could not be added to the interview notes.'); }
+    } catch { if (added) this.ledger.transcripts.delete(ident); return this.summaryWarning('That correction could not be added to the interview notes.'); }
     this.summary.corrections += 1;
     this.metric('summary_correct', { chars: text.length });
     this.event('user_text', { item_id: ident, text, provenance: 'consultant_typed' });
@@ -973,7 +1000,7 @@ export class Session {
     this.sendSummary(true);
     this.checkpointSoon();
     const line = this.line(SUMMARY_LINES.corrected, this.summary.corrections - 1);
-    if (line) { if (this.busy()) this.interrupt(); this.cutOff = false; this.startReply(null, { prefix: [line], only: true, turn: -1 }); }
+    if (line) { if (this.busy()) this.interrupt(true); this.cutOff = false; this.startReply(null, { prefix: [line], only: true, turn: -1 }); }
   }
   // "Keep private": the item leaves the notes, the report and the evidence draft; it stays in the ledger history. ATLAS does not ask about that point again.
   withholdDetail(id) {
@@ -981,7 +1008,20 @@ export class Session {
     if (!this.ledger.details.some(d => d.id === id && d.active && d.withheld !== true)) return this.summaryWarning('That item is no longer in the summary.');
     try { this.ledger.withhold(id); } catch { return this.summaryWarning('That item could not be kept private.'); }
     this.metric('summary_withhold', {});
+    this.scrubPrivate();
     this.boardUpdate(); this.sendSummary(true); this.checkpointSoon();
+  }
+  // "Keep private" covers the WHOLE utterance the detail came from, not only the extracted quote (review L7): its text leaves the notes transcript, the report's
+  // input, what goes on to private memory (the notes transcript is what the browser retains) and the talker's history, where it is replaced by a neutral marker.
+  // The ledger keeps its own record (the withheld detail, its transcript item) for the audit and the owner-only checkpoint: that is T11's contract.
+  privateItems() { return new Set(this.ledger.details.filter(d => d.active && d.withheld === true).map(d => d.item_id)); }
+  privateTexts() { return [...this.privateItems()].map(i => this.ledger.transcripts.get(i)).filter(t => typeof t === 'string' && t.trim()); }
+  scrubPrivate() {
+    const texts = this.privateTexts();
+    if (texts.length) for (const m of this.history) if (m.role === 'user') m.content = redact(m.content, texts);
+    const priv = this.privateItems();
+    for (const item of priv) if (this.asrMeta[item]) this.asrMeta[item].spans = []; // its doubtful words are words of the utterance too
+    this.asrCorrections = this.asrCorrections.filter(c => !priv.has(c.ident) && !priv.has(c.spanIdent));
   }
   // The notes a draft is made of (T13 cleanNotes): the active details that are not kept private, nothing else. A withheld or replaced detail never leaves here.
   evidenceNotes() {
@@ -989,7 +1029,8 @@ export class Session {
       supersedes: d.supersedes || '', withheld: false, provenance: d.provenance || 'unverified_speech_recognition', asr_min_conf: typeof d.asr_min_conf === 'number' ? d.asr_min_conf : null,
       audio_offset_ms: Number.isInteger(d.audio_offset_ms) ? d.audio_offset_ms : null }));
     const asr = this.asrNotes();
-    return { session_id: this.sessionId, project_ref: this.project?.id || null, details, ...(Object.keys(asr).length ? { asr } : {}) };
+    // A project that does not exist yet reaches the server as the placeholder id 'new' (the browser creates it from the report): that is no project, never a shared fake one.
+    return { session_id: this.sessionId, project_ref: this.project?.id && this.project.id !== 'new' ? this.project.id : null, details, ...(Object.keys(asr).length ? { asr } : {}) };
   }
   // Confirm: the machine moves to summary_confirmed, the notes become ONE owner-only evidence draft (the hook; idempotent on the session id), and ATLAS closes.
   // It never submits: that is the owner's own click in the library.
@@ -1084,16 +1125,25 @@ export class Session {
     const restored = this.afterRestore; // an interview resumed from a checkpoint while it was paused carries on the same way as after a reconnect
     this.unpause(via);
     const lead = this.line(RESUME_LINES, this.resumeCount++);
-    if (restored) this.continueInterview(lead); else this.speakQuestion(lead);
+    if (restored) this.continueInterview(lead); else if (this.pendingAnswer()) this.answerPending(); else this.speakQuestion(lead);
   }
+  // The consultant's last turn when it still waits for its reply: the question in front of them is older than it (the reply was never composed: the
+  // connection dropped, or they paused while the answer was still being transcribed). A short spoken pause / repeat is a control, not an answer
+  // (answering it would pause again), and the Skip button's own history note has its reply composed elsewhere.
+  pendingAnswer() {
+    const q = this.lastQuestion, last = this.history.findLast(m => m.role === 'user');
+    if (!last || last.content === SKIP_NOTE || (q && (q.turn ?? this.turns) === this.turns)) return null;
+    try { const t = analyzeTurn(last.content, this.language, { asked_field: this.humane.asked.at(-1)?.field ?? null }); if (t.words <= CONTROL_MAX_WORDS && (t.intents.includes('pause') || t.intents.includes('repeat'))) return null; } catch { /* an answer */ }
+    return last;
+  }
+  answerPending() { this.answer(this.history.findLast(m => m.role === 'user').content, { endedBy: 'resume', endedAt: this.now(), lang: this.language, sttMs: -1 }); }
   // After a reconnect: the question in front of the consultant is said again from the stored text, with no model call. When they had already
   // answered it (the reply to that answer was never composed) it is never asked again: the answer gets its reply now, as it would have. Before
   // anything was asked the opening is spoken.
   continueInterview(lead = '') {
-    const q = this.lastQuestion, last = this.history.findLast(m => m.role === 'user');
-    if (q && (q.turn ?? this.turns) === this.turns) return this.speakQuestion(lead);
-    if (!last) return this.startReply(OPENING, { prefix: (this.memoryNote ? WELCOME_BACK_PIECES : GREETING_PIECES)[this.spoken()] || [] });
-    this.answer(last.content, { endedBy: 'resume', endedAt: this.now(), lang: this.language, sttMs: -1 });
+    if (this.pendingAnswer()) return this.answerPending();
+    if (this.lastQuestion || this.history.some(m => m.role === 'user')) return this.speakQuestion(lead);
+    this.startReply(OPENING, { prefix: (this.memoryNote ? WELCOME_BACK_PIECES : GREETING_PIECES)[this.spoken()] || [] });
   }
   // Say lastQuestion again after `lead` (a stock line, or nothing). A question asked but cut off before she said it goes back into the asked
   // log. With no question yet (paused or asked to repeat before the first one) the talker is asked, once, to open or to re-ask.
@@ -1134,17 +1184,22 @@ export class Session {
     if (!this.started || this.finished || this.ending || this.starting) return;
     const text = clean(raw, TYPED_MAX_CHARS);
     if (!text) return;
+    const t = this.now();
+    if (this.busy() || t - this.typedAt < TYPED_MIN_INTERVAL_S) { this.metric('typed_rate_limited', { busy: this.busy() ? 1 : 0 }); this.event('quality_warning', { message: TYPED_RATE_LIMITED }); return; }
+    this.typedAt = t;
     if (this.paused) this.unpause('ui');
     this.cutOff = false;
     this.metric('typed_turn', { chars: text.length });
     await this.finishTurn(text, false, { endedBy: 'typed', endedAt: this.now(), lang: this.language, sttMs: -1, words: null, baseMs: 0, typed: true });
   }
 
-  uncommit(item, onlyIfUnheard = false) {
+  uncommit(item, onlyIfUnheard = false, keepState = false) {
     const move = this.moveByItem.get(item);
     if (!move || (onlyIfUnheard && this.composedItem === item)) return;
     const i = this.humane.asked.indexOf(move); if (i >= 0) this.humane.asked.splice(i, 1);
     this.moveByItem.delete(item);
+    // A read-back that was never heard leaves the read-back too: otherwise the machine stays in `summary`, where skip and focus are illegal.
+    if (!keepState && move.kind === 'summary' && this.machine.state === 'summary') { this.closeSummary('continue'); this.fireState('continue_discovery', 'atlas'); this.checkpointSoon(); }
   }
 
   // The acknowledgement for this answer (ack.js): from the selector's category and the cues of the words, never from a judgement
@@ -1310,7 +1365,7 @@ export class Session {
       // blocks any figure that is not in them. The fixed question follows if the talker's own words never got to it.
       let readNote = '', readBack = null;
       if ((move?.kind === 'summary' || move?.kind === 'reflect') && this.ledger && this.capture) {
-        readBack = await this.readBack(move);
+        readBack = await this.readBack(move, gen);
         if (gen !== this.gen || this.finished || !readBack) return;
         readNote = summaryNote(readBack.facts, readBack.unknowns, { reflect: readBack.reflect, question: clean(move.say, 400) });
         if (guard) guard = new ReplyGuard({ ...guardOptions, maxWords: readBack.reflect ? GUARD_MAX_WORDS : SUMMARY_MAX_WORDS, summaryFacts: [...readBack.facts, ...readBack.numbers] });
@@ -1425,7 +1480,7 @@ export class Session {
       try {
         const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), attempt === 1 ? 25000 : 15000); });
         // What the consultant asked to keep private never reaches the report: it is taken out of the conversation the report is written from.
-        const kept = withheldQuotes(this.ledger), history = kept.length ? this.history.map(m => ({ ...m, content: redact(m.content, kept) })) : this.history;
+        const kept = [...withheldQuotes(this.ledger), ...this.privateTexts()], history = kept.length ? this.history.map(m => ({ ...m, content: redact(m.content, kept) })) : this.history;
         const report = parseReport(await Promise.race([this.ai.report(reportMessages(history, this.ledger.notes(), this.ledger.stage)), timeout]));
         this.metric('report', { ms: Math.round((this.now() - t0) * 1000), ok: report ? 1 : 0, attempt });
         if (report) return report;
@@ -1497,17 +1552,20 @@ export class Session {
   // Write the state to the store, one write at a time, at most one a second, and only for an interview that is checkpointable. Called after every
   // committed turn (the analyst's ledger entry, her reply).
   checkpointSoon() {
-    if (!this.checkpointable() || !this.started || this.finished || this.ending) return;
+    if (!this.checkpointable() || !this.started || this.finished || this.ending || this.machine.terminal) return; // a finished interview (confirmed, withdrawn) is never stored
     this.ckptDirty = true;
     if (this.ckptRun) return;
     this.ckptRun = (async () => {
       await this.sleep(CHECKPOINT_DEBOUNCE_MS);
-      while (this.ckptDirty && !this.finished && !this.ending) { this.ckptDirty = false; await this.saveCheckpoint(); }
+      while (this.ckptDirty && !this.finished && !this.ending && !this.machine.terminal) { this.ckptDirty = false; await this.saveCheckpoint(); }
     })().finally(() => { this.ckptRun = null; });
   }
   async saveCheckpoint() {
+    if (this.machine.terminal) return;
+    // Absolute expiry (L6): 24 hours from the first write, however many reconnects came between. Past it nothing is written, and what is stored is deleted.
+    if (this.capturedAt !== null && this.now() * 1000 >= this.capturedAt + TTL_MS) { this.metric('checkpoint_expired', {}); await this.checkpoint.purge().catch(() => {}); return; }
     const t0 = this.now();
-    try { const r = await this.checkpoint.save(serialize(this)); this.metric('checkpoint', { ms: Math.round((this.now() - t0) * 1000), bytes: r.bytes, chunks: r.chunks }); }
+    try { const r = await this.checkpoint.save(serialize(this)); this.capturedAt = r.capturedAt ?? this.capturedAt; this.metric('checkpoint', { ms: Math.round((this.now() - t0) * 1000), bytes: r.bytes, chunks: r.chunks }); }
     catch (e) { this.metric('checkpoint_error', { name: e?.code || e?.name || 'Error' }); } // a failed write never stops the interview
   }
   async purgeCheckpoint() {
@@ -1545,12 +1603,15 @@ export class Session {
         // Gap mode writes no report: its answers go back only through the consultant's explicit clicks (§F2.1 step 6).
         const gap = this.mode === 'gap', report = gap ? null : await this.report();
         const asr = this.asrNotes();
-        this.event('notes', { transcript: redact([...this.ledger.transcripts.values()].join('\n\n'), withheldQuotes(this.ledger)), sections: this.ledger.notes(), status: 'candidate', report, mode: this.mode,
+        const priv = this.privateItems(), whole = [...this.ledger.transcripts].map(([item, text]) => priv.has(item) ? PRIVATE_MARK : text);
+        this.event('notes', { transcript: redact(whole.join('\n\n'), withheldQuotes(this.ledger)), sections: this.ledger.notes(), status: 'candidate', report, mode: this.mode,
           ...(Object.keys(asr).length ? { asr } : {}),
           ...(gap ? { gap: { requestId: this.gapRequest, results: this.gapResults() } } : {}),
           message: 'Unverified speech recognition and quote-linked candidate notes. Correct omissions and errors before adding to the project. The final cut-off utterance may be incomplete.' });
       } else if (clean) this.event('notes', { transcript: '', sections: null, status: 'not-enabled', mode: this.mode, message: 'Transcript capture was off. No consultant notes were stored.' });
-      if (clean || this.discarding) await this.purgeCheckpoint(); // finished or thrown away: nothing of it is kept
+      // Finished, thrown away, or ended without being suspendable (a confirmed summary whose goodbye was cut by the drop, a failure in a terminal state):
+      // nothing of it is kept. Only a suspend leaves a checkpoint (and a session that never started leaves what is stored alone: it may be the resumable one).
+      if (clean || this.discarding || this.started) await this.purgeCheckpoint();
       this.event('ended', { message: 'Microphone and voice service closed.' });
       this.io.close();
     })();

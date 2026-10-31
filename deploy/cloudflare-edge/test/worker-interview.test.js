@@ -88,6 +88,15 @@ test('a newer window replaces the older one, the older one is kept, and the newe
   await d.session.end(false);
 });
 
+test('S1 minor c: a newer window waits for the older session to finish suspending only for a bounded time (about 3 s), then proceeds', async () => {
+  const st = new FakeStorage(), d = new Interview({ storage: st }, env()), a = await interview(d, st), first = d.session;
+  first.fail = () => new Promise(() => {}); // the older session's save never returns
+  const t0 = Date.now(), b = connect(d); await b.p; const waited = Date.now() - t0;
+  assert.ok(waited >= 2900 && waited < 6000, 'waited ' + waited + ' ms'); assert.notEqual(d.session, first, 'the new window got its session');
+  b.server.fire('message', start()); await until(() => ready(b.server)); await d.session.end(false);
+  delete first.fail; await first.end(false); // (its timers must not keep the process alive)
+});
+
 test('a start that does not resume deletes a stored interview; discard deletes it too', async () => {
   const st = new FakeStorage(), d = new Interview({ storage: st }, env()), a = await interview(d, st), id = ready(a.server).sessionId;
   a.server.fire('close'); await d.session.ending; assert.ok(cpKeys(st).length);

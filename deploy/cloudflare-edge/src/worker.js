@@ -16,6 +16,8 @@ import { resolveForInterview } from './gaps.js';
 import { fetchWinHint } from './winloop.js';
 import { teamsClient } from './teams.js';
 
+const SUSPEND_WAIT_MS = 3000; // the longest the new window waits for the older window's session to finish suspending, then it proceeds
+
 export default {
   fetch: (request, env, ctx) => handle(request, env, page, { waitUntil: p => ctx.waitUntil(p) }),
   // Daily: references not updated for six months get an update invitation for their owner (never auto-sent).
@@ -49,7 +51,8 @@ export class Interview extends DurableObject {
     if (this.session && !this.session.finished) {
       // Still one live interview per signed-in person, but the newest window wins: a forgotten tab or a
       // stale session must never block the person from starting again.
-      await this.session.fail('This interview continued in another window. Nothing was approved.', 'voice-contract');
+      // Bounded: saving the older interview (up to ~8 s of waiting on transcription and the analyst) must not hold the new window's socket for ever.
+      await Promise.race([this.session.fail('This interview continued in another window. Nothing was approved.', 'voice-contract'), new Promise(r => setTimeout(r, SUSPEND_WAIT_MS))]);
     }
     // The verified identity the Worker forwarded (always overwritten there), for gap requests and the win hint.
     const identity = { user: request.headers.get('x-atlas-user') || '', role: request.headers.get('x-atlas-role') || 'user', mail: request.headers.get('x-atlas-email') || '' };
