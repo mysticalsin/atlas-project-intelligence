@@ -7,6 +7,7 @@ import { libraryRoutes } from '../src/library-routes.js';
 import { evidence, claimsFromNotes, cleanNotes, attributionFrom, postDraftFromInterview, FIELD_CLAIM, CLAIM_TYPES } from '../src/evidence.js';
 import { FIELDS } from '../src/policy.generated.js';
 import { decide } from '../src/policy-gate.js';
+import { ensure as ensureOutreach } from '../src/outreach.js';
 import { memorySql } from './sqlite.js';
 
 const OWNER = { email: 'alex@mantu.com', role: 'user' }, N1 = { email: 'sam@mantu.com', role: 'user' }, OTHER = { email: 'kim@mantu.com', role: 'user' };
@@ -29,6 +30,8 @@ function setup() {
 }
 const REF = () => ({ title: 'Claims triage alias', stage: 'Production', sector: 'Insurance', consultant: { name: 'Alex', role: 'Data engineer' }, client: { name: 'Zebracorp', location: 'Lyon', contact: 'Head of Claims' },
   details: { projectId: 'PRJ-1', country: 'France', consultants: [] }, answers: ['a', 'b', 'c', 'd', 'e', 'f'], validation: { manager: { name: 'Sam', email: 'SAM@mantu.com' }, managerStaff: false } });
+// The N+1 an approver can be: the staffing record (or the DNA directory). The one a consultant types on the reference is NOT an approver (L2).
+const staff = l => { ensureOutreach(l); l.sql.exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at) VALUES ('PRJ-1', 'alex@mantu.com', 'sam@mantu.com', 'Sam', '', '', 'staffing-csv', 'x')"); };
 const draft = async (ev, owner = OWNER, notes = NOTES(), extra = {}) => ev.createDraftFromNotes(owner.email, { ...notes, ...extra });
 const queued = async (ev, owner = OWNER, notes = NOTES(), extra = {}) => { const d = await draft(ev, owner, notes, extra); return ev.submit(owner.email, d.id, d.revision); };
 const approve = (ev, who, v) => ev.review(who, v.id, 'approve', { expected_revision: v.revision, content_hash: v.content_hash });
@@ -105,7 +108,7 @@ test('idempotent: the same notes again return the same record; different notes f
 });
 
 test('a draft is the owner\'s alone (D19); submission is an explicit act; then the N+1 and reviewers see it, others still get 404', async () => {
-  const { l, ev } = setup(), ref = await l.upsert(OWNER, { localId: 'p1', reference: REF() }), d = await draft(ev, OWNER, NOTES(), { ref_id: ref.id });
+  const { l, ev } = setup(); staff(l); const ref = await l.upsert(OWNER, { localId: 'p1', reference: REF() }), d = await draft(ev, OWNER, NOTES(), { ref_id: ref.id });
   for (const who of [N1, OTHER, REV, { email: 'root@mantu.com', role: 'admin' }]) { assert.throws(() => ev.get(who, d.id), e => e.status === 404); assert.equal(ev.list(who).length, 0); }
   assert.equal(ev.get(OWNER, d.id).state, 'evidence_draft'); assert.equal(ev.list(OWNER).length, 1); // saved, not submitted
   const q = ev.submit(OWNER.email, d.id, 1);
@@ -127,7 +130,7 @@ test('submit is the owner\'s, needs the revision they saw, and happens once', as
 });
 
 test('W7: no approval without a reviewer, no self-approval, and an approval names the revision and hash the reviewer saw', async () => {
-  const { l, ev } = setup(), ref = await l.upsert(OWNER, { localId: 'p1', reference: REF() }), v = await queued(ev, OWNER, NOTES(), { ref_id: ref.id });
+  const { l, ev } = setup(); staff(l); const ref = await l.upsert(OWNER, { localId: 'p1', reference: REF() }), v = await queued(ev, OWNER, NOTES(), { ref_id: ref.id });
   const go = (who, p) => ev.review(who, v.id, 'approve', p), at = { expected_revision: 1, content_hash: v.content_hash };
   await rejects(go(OWNER, at), 403, 'ROLE_NOT_PERMITTED'); // the owner is not a reviewer
   await rejects(go({ ...OWNER, role: 'reviewer' }, at), 403, 'SELF_APPROVAL'); // a reviewer role does not let anyone approve their own evidence
@@ -300,8 +303,8 @@ test('the state is replayed from its audit on every load: a tampered record is r
 });
 
 test('the N+1 is resolved the way the library resolves it: from the reference, and a stranger is still a 404', async () => {
-  const { l, ev } = setup(), ref = await l.upsert(OWNER, { localId: 'p1', reference: REF() });
-  const a = await queued(ev, OWNER, NOTES('s-a'), { ref_id: ref.id }), b = await queued(ev, OWNER, NOTES('s-b')); // b names no reference: nobody to resolve
+  const { l, ev } = setup(); staff(l); const ref = await l.upsert(OWNER, { localId: 'p1', reference: REF() });
+  const a = await queued(ev, OWNER, NOTES('s-a'), { ref_id: ref.id }), b = await queued(ev, OWNER, { ...NOTES('s-b'), project_ref: 'PRJ-9' }); // b names no reference and no staffed project: nobody to resolve
   assert.equal(ev.get(N1, a.id).access, 'reviewer'); assert.throws(() => ev.get(N1, b.id), e => e.status === 404);
   assert.deepEqual(ev.list(N1).map(x => x.id), [a.id]);
   const other = { email: 'zed@mantu.com', role: 'user' }, ref2 = await l.upsert(other, { localId: 'q', reference: REF() });
@@ -360,4 +363,49 @@ test('postDraftFromInterview: the server-to-server post T11 calls, under the ver
 test('claimsFromNotes is pure: the same notes give the same claims and ids', () => {
   const n = cleanNotes(NOTES()), a = claimsFromNotes('rec1', 'u', n, 't'), b = claimsFromNotes('rec1', 'u', cleanNotes(NOTES()), 't');
   assert.deepEqual(a, b); assert.deepEqual(a.map(c => c.claim_id), ['rec1-c1', 'rec1-c2', 'rec1-c3', 'rec1-c4']);
+});
+
+// ---- G1: governance fixes from the independent review ----
+test('L2: an N+1 the consultant typed on the reference never becomes a reviewer; a staffing record does', async () => {
+  const { l, ev } = setup(), ref = await l.upsert(OWNER, { localId: 'p1', reference: REF() }); // REF names sam as the self-declared N+1
+  const q = await queued(ev, OWNER, NOTES('s-l2'), { ref_id: ref.id });
+  assert.throws(() => ev.get(N1, q.id), e => e.status === 404); assert.deepEqual(ev.list(N1), []);
+  await assert.rejects(approve(ev, N1, q), e => e.status === 404);
+  staff(l); // the staffing record, not the owner, says who the N+1 is
+  assert.equal(ev.get(N1, q.id).access, 'reviewer'); assert.equal((await approve(ev, N1, q)).state, 'approved');
+});
+
+test('M2 scenario C: a reviewer who rewrote the claims cannot approve their own rewrite; a different reviewer can', async () => {
+  const { l, ev } = setup(), q = await queued(ev), c = q.claims.find(x => x.claim_type === 'metric');
+  const a = await ev.review(REV, q.id, 'amend', { expected_revision: 1, claims: [{ claim_id: c.claim_id, statement: 'Triage fell from 40 to 2 minutes, saving 1M EUR.', origin: 'independently_measured' }] });
+  assert.equal(a.revision, 2); assert.deepEqual([a.revisions[0].author, a.revisions[0].author_role], [REV.email, 'reviewer']);
+  await rejects(approve(ev, REV, a), 403, 'AUTHOR_CANNOT_APPROVE');
+  assert.equal(l.rows('SELECT COUNT(*) AS n FROM approvals')[0].n, 0); assert.equal(ev.get(REV, q.id).state, 'reviewer_queue');
+  const ok = await approve(ev, REV2, a);
+  assert.deepEqual([ok.state, ok.approval.approver_sub, ok.approval.revision], ['approved', REV2.email, 2]);
+  // the same rule after approval: an amendment of an approved record by REV is approved by someone else
+  const b = await ev.review(REV, q.id, 'amend', { expected_revision: 2, claims: [{ claim_id: c.claim_id, statement: 'Triage fell from 40 to 3 minutes.' }] });
+  assert.equal(b.revision, 3);
+  const again = ev.submit(OWNER.email, q.id, 3);
+  await rejects(approve(ev, REV, again), 403, 'AUTHOR_CANNOT_APPROVE'); assert.equal((await approve(ev, REV2, again)).state, 'approved');
+});
+
+test('M2: the gate denies approve for the author of the revision under review, and only approve', () => {
+  const e = { id: 'ev-1', owner_sub: 'u-owner', revision: 2, content_hash: 'h', status: 'reviewer_queue', revision_author: 'rev@mantu.com' };
+  const c = { now: '2026-11-01T00:00:00Z', expected_revision: 2, content_hash: 'h', to: 'approved', transitions: { reviewer_queue: ['approved', 'rejected'] } };
+  assert.deepEqual(decide({ sub: 'rev@mantu.com', roles: ['reviewer'] }, 'approve', e, c), { allow: false, reason: 'AUTHOR_CANNOT_APPROVE' });
+  assert.equal(decide({ sub: 'rev2@mantu.com', roles: ['reviewer'] }, 'approve', e, c).allow, true);
+  assert.equal(decide({ sub: 'rev@mantu.com', roles: ['reviewer'] }, 'reject', e, { ...c, to: 'rejected' }).allow, true);
+});
+
+test('L9: the list is filtered in SQL, so records a person cannot see are never replayed', async () => {
+  const { l, ev } = setup(), mine = await draft(ev, OWNER, NOTES('s-mine')), theirs = [];
+  for (let i = 0; i < 4; i++) theirs.push(await draft(ev, OTHER, NOTES('s-o' + i)));
+  const loads = []; const orig = ev.load.bind(ev); ev.load = id => { loads.push(id); return orig(id); };
+  assert.deepEqual(ev.list(OWNER).map(x => x.id), [mine.id]);
+  assert.deepEqual(loads, [mine.id], 'only the owner\'s own record was loaded');
+  loads.length = 0; assert.equal(ev.list(REV).length, 0); assert.deepEqual(loads, [], 'a reviewer sees no drafts and loads none');
+  ev.submit(OTHER.email, theirs[0].id, 1); loads.length = 0;
+  assert.deepEqual(ev.list(REV).map(x => x.id), [theirs[0].id]); assert.deepEqual(loads, [theirs[0].id]);
+  void l;
 });

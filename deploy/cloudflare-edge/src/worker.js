@@ -16,6 +16,8 @@ import { resolveForInterview } from './gaps.js';
 import { fetchWinHint } from './winloop.js';
 import { teamsClient } from './teams.js';
 
+const EARLY_MAX = 64, EARLY_MAX_BYTES = 1024 * 1024; // messages held while the older window's session is suspending
+
 export default {
   fetch: (request, env, ctx) => handle(request, env, page, { waitUntil: p => ctx.waitUntil(p) }),
   // Daily: references not updated for six months get an update invitation for their owner (never auto-sent).
@@ -45,12 +47,20 @@ export class Interview extends DurableObject {
     const pair = new WebSocketPair(), [client, server] = Object.values(pair);
     server.accept();
     // Messages that arrive while the older window's session is being suspended wait here (the start of a resume comes first): none is lost.
-    const early = []; let route = e => early.push(e); server.addEventListener('message', e => route(e));
+    // Bounded (EARLY_MAX messages, EARLY_MAX_BYTES): a client cannot grow this buffer without limit; one that overflows it is closed with an error and no session starts.
+    const early = []; let earlyBytes = 0, overflow = false;
+    let route = e => {
+      earlyBytes += typeof e.data === 'string' ? e.data.length : (e.data?.byteLength ?? 0);
+      if (overflow || early.length >= EARLY_MAX || earlyBytes > EARLY_MAX_BYTES) { overflow = true; early.length = 0; try { server.close(1009, 'Too much input before the interview started.'); } catch { /* closed */ } return; }
+      early.push(e);
+    };
+    server.addEventListener('message', e => route(e));
     if (this.session && !this.session.finished) {
       // Still one live interview per signed-in person, but the newest window wins: a forgotten tab or a
       // stale session must never block the person from starting again.
       await this.session.fail('This interview continued in another window. Nothing was approved.', 'voice-contract');
     }
+    if (overflow) return new Response(null, { status: 101, webSocket: client }); // closed above; nothing was processed
     // The verified identity the Worker forwarded (always overwritten there), for gap requests and the win hint.
     const identity = { user: request.headers.get('x-atlas-user') || '', role: request.headers.get('x-atlas-role') || 'user', mail: request.headers.get('x-atlas-email') || '' };
     const session = new Session({

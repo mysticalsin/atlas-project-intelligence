@@ -45,6 +45,9 @@ KPI_STATUSES = ('measured', 'estimated', 'qualitative')  # the schema also allow
 KPI_KEYS = ('label', 'before_value', 'after_value', 'unit', 'period', 'method', 'source_refs', 'attribution', 'status', 'public_permission')
 BEFORE_AFTER_KEYS = ('indicator', 'before', 'after', 'unit', 'source_refs')
 QUOTE_KEYS = ('exact_text', 'speaker', 'title', 'company', 'source_ref')
+# Source references are interview or ledger ids (`interview:<session>:<item>:D-004`, `user-typed-...`): an internal audit trail, never an
+# export. Client and public projections drop them (the quote still must BE sourced to survive); only the internal audience keeps them.
+SOURCE_KEYS = ('source_refs', 'source_ref')
 ANONYMIZED_LABEL = 'Cliente anonimizado'
 NAMED = 'named_allowed'  # project.client_permission value that allows an external audience to see the client name
 INTERNAL_ROOTS = ('internal_notes', 'approval_state')  # never allowlisted for an external audience
@@ -184,7 +187,7 @@ def projection_config(policy=None):
     return {'audiences': list(AUDIENCES), 'public_fields': public_fields, 'internal_fields': internal_fields,
             'gates': {'client': _dedupe(base), 'public': _dedupe(base + list(PUBLIC_EXTRA_GATES))},
             'kpi_max': KPI_MAX, 'kpi_statuses': list(KPI_STATUSES), 'kpi_keys': list(KPI_KEYS),
-            'before_after_keys': list(BEFORE_AFTER_KEYS), 'quote_keys': list(QUOTE_KEYS),
+            'before_after_keys': list(BEFORE_AFTER_KEYS), 'quote_keys': list(QUOTE_KEYS), 'source_keys': list(SOURCE_KEYS),
             'anonymized_label': ANONYMIZED_LABEL, 'named': NAMED}
 
 
@@ -273,6 +276,10 @@ def gate_failures(story, audience, cfg=None):
     return [g for g in needed if state.get(g) is not True]
 
 
+def _keys(keys, audience, cfg):
+    return list(keys) if audience == 'internal' else [k for k in keys if k not in cfg['source_keys']]
+
+
 def _project_kpis(kpis, audience, cfg):
     out = []
     for k in kpis if isinstance(kpis, list) else []:
@@ -280,27 +287,27 @@ def _project_kpis(kpis, audience, cfg):
             continue
         if audience == 'public' and k.get('public_permission') is not True:
             continue
-        out.append({key: copy.deepcopy(k[key]) for key in cfg['kpi_keys'] if key in k})
+        out.append({key: copy.deepcopy(k[key]) for key in _keys(cfg['kpi_keys'], audience, cfg) if key in k})
         if len(out) == cfg['kpi_max']:
             break
     return out
 
 
-def _project_quote(quote, anonymize, cfg):
+def _project_quote(quote, anonymize, cfg, audience='internal'):
     """The quote object, or None. Only an explicitly permitted, sourced, verbatim quote survives."""
     if not isinstance(quote, dict) or quote.get('permission') is not True:
         return None
     if not _is_set(quote.get('exact_text')) or not _is_set(quote.get('source_ref')):
         return None
-    out = {k: copy.deepcopy(quote[k]) for k in cfg['quote_keys'] if k in quote}
+    out = {k: copy.deepcopy(quote[k]) for k in _keys(cfg['quote_keys'], audience, cfg) if k in quote}
     out['permission'] = True
     if anonymize:
         out['speaker'], out['company'] = None, cfg['anonymized_label']
     return out
 
 
-def _project_before_after(items, cfg):
-    return [{k: copy.deepcopy(i[k]) for k in cfg['before_after_keys'] if k in i} for i in items if isinstance(i, dict)] \
+def _project_before_after(items, cfg, audience='internal'):
+    return [{k: copy.deepcopy(i[k]) for k in _keys(cfg['before_after_keys'], audience, cfg) if k in i} for i in items if isinstance(i, dict)] \
         if isinstance(items, list) else []
 
 
@@ -354,9 +361,9 @@ def project_for_audience(story, audience, policy=None):
         if path == 'kpis':
             value = _project_kpis(value, audience, cfg)
         elif path == 'results.before_after':
-            value = _project_before_after(value, cfg)
+            value = _project_before_after(value, cfg, audience)
         elif path == quote_path:
-            value = _project_quote(value, anonymize, cfg)
+            value = _project_quote(value, anonymize, cfg, audience)
             if value is None:
                 continue
         else:
@@ -393,6 +400,10 @@ TEMPLATE_PIN = {
 }
 TEMPLATES = {'es': TEMPLATE_PIN}  # one pinned template per output language; FR/EN are separate versioned templates
 EXTRA_LEAK_MARKERS = ('NO COMPARTIR CON CLIENTE', 'Manager a cargo')
+# Ids that point into an interview (a source reference that slipped through): the `interview:` prefix, 32-hex session ids, the ledger's D-001 style
+# ids and typed-turn ids. Codes only in findings.
+INTERVIEW_ID_PATTERNS = (('interview_ref', r'interview:'), ('session_id', r'(?<![0-9a-fA-F])[0-9a-f]{32}(?![0-9a-fA-F])'), ('ledger_id', r'(?<![\w-])D-\d{3,6}(?![\w-])'),
+                         ('typed_id', r'user-typed-'))
 
 _ROW = re.compile(r'<w:tr(?:\s[^>]*)?>.*?</w:tr>', re.S)
 _CELL = re.compile(r'<w:tc(?:\s[^>]*)?>.*?</w:tc>', re.S)
@@ -536,7 +547,7 @@ def _amount(value, unit):
 _STATUS_ES = {'measured': 'Medido', 'estimated': 'Estimado', 'qualitative': 'Cualitativo'}
 
 
-def _kpi_texts(k):
+def _kpi_texts(k, audience='internal'):
     """(value, caption label, caption detail) for one projected KPI: baseline, after, unit, period, method, source kept."""
     after = _amount(k.get('after_value'), k.get('unit'))
     if after == DASH and k.get('status') == 'qualitative':
@@ -549,7 +560,7 @@ def _kpi_texts(k):
     for label, key in (('Período', 'period'), ('Método', 'method')):
         if _is_set(k.get(key)):
             lines.append(f'{label}: {k[key].strip()}')
-    if k.get('source_refs'):
+    if audience == 'internal' and k.get('source_refs'):  # interview ids are an internal trail: never printed for client or public
         lines.append(f'Fuente: {_s(k["source_refs"])}')
     if _is_set(k.get('attribution')):
         lines.append(f'Atribución: {k["attribution"].strip()}')
@@ -595,7 +606,7 @@ def _render_document(doc, projection, audience, pin):
     # Table 4: up to three KPI tiles (value over caption); unused tiles stay a dash.
     kpis = g('kpis') or []
     for i in range(KPI_MAX):
-        value, label, detail = _kpi_texts(kpis[i]) if i < len(kpis) else (DASH, 'Sin KPI verificado', '')
+        value, label, detail = _kpi_texts(kpis[i], audience) if i < len(kpis) else (DASH, 'Sin KPI verificado', '')
         tables[4] = _edit_para(tables[4], 0, i, 0, lambda p, v=value: _rewrite(p, [('new', v, 0, {})]))
         tables[4] = _edit_para(tables[4], 1, i, 0, lambda p, l=label, d=detail: _rewrite(
             p, [('new', l, 0, {})] + ([('keep', 1), ('new', d, 2, {'italic': False, 'color': '404040', 'size': 16})] if d else [])))
@@ -712,6 +723,10 @@ def scan_package(data, story, audience):
     name = project.get('client_display')
     if anonymizing(story, audience) and isinstance(name, str) and len(name.strip()) >= 3 and has(re.escape(name.strip()), re.I):
         findings.append('client_name_after_anonymisation')
+    if audience != 'internal':
+        for code, pattern in INTERVIEW_ID_PATTERNS:  # interview and ledger ids in an external export, wherever they came from
+            if has(pattern):
+                findings.append(f'interview_id:{code}')
     for ph in PLACEHOLDERS:
         if has(re.escape(ph)):
             findings.append(f'placeholder:{ph}')

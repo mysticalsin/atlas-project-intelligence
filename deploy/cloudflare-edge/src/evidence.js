@@ -169,16 +169,18 @@ class Evidence {
       .map(c => ({ ...c, conflicts_with: parse(c.conflicts_with, []), source_refs: parse(c.source_refs, []) }));
   }
 
-  // The resolved N+1 (the library's own resolution: staffing, DNA directory, then the N+1 named on the reference).
+  // The resolved N+1 (the library's own resolution: staffing, then the DNA directory). The N+1 the consultant typed on the reference (source
+  // 'self_declared') is not an approver: the owner could pick, or change, who reviews their own evidence. Entra users are `tid:oid`, which never equals
+  // a directory email, so in Entra mode only ATLAS.Reviewer / ATLAS.Admin review (fails closed; see the DECISION_LOG).
   n1(rec) {
     const ref = rec.ref_id ? this.lib.row(rec.ref_id) : null, data = ref ? ref.data : { details: { projectId: rec.project_ref || '' }, validation: {} };
-    try { return managerOf(this.lib, { owner: rec.owner_sub, data }).to || ''; } catch { return ''; }
+    try { const m = managerOf(this.lib, { owner: rec.owner_sub, data }); return m.source === 'self_declared' ? '' : m.to || ''; } catch { return ''; }
   }
   // Who this person is to this record, or null when it does not exist for them. Drafts are the owner's alone (D19).
   access(rec, user) {
     if (!rec || !text(user.email)) return null;
     const owner = user.email === rec.owner_sub, role = ['admin', 'reviewer'].includes(user.role) ? user.role : '';
-    const resolved = !owner && this.n1(rec) === user.email;
+    const resolved = !owner && !role && this.n1(rec) === user.email; // a reviewer or admin needs no resolution (and none is paid for)
     const reviewer = !!role || resolved;
     if (!owner && !(reviewer && rec.state.ever_submitted && rec.status !== 'evidence_draft')) return null;
     return { owner, reviewer, roles: [role, resolved ? 'reviewer' : ''].filter(Boolean) };
@@ -186,9 +188,9 @@ class Evidence {
   actor(user, acc) { return { sub: user.email, roles: acc.roles }; }
   approvalOf(id) { return this.rows("SELECT * FROM approvals WHERE entity = ? AND status = 'approved' ORDER BY rowid DESC", id)[0] || null; }
   entity(rec) {
-    const ap = this.approvalOf(rec.id);
+    const ap = this.approvalOf(rec.id), au = this.rows('SELECT author FROM evidence_revisions WHERE entity = ? AND revision = ?', rec.id, rec.revision)[0];
     return { id: rec.id, owner_sub: rec.owner_sub, revision: rec.revision, content_hash: rec.content_hash, status: rec.status,
-      approved_revision: ap ? ap.revision : null, approved_hash: ap ? ap.content_hash : null };
+      approved_revision: ap ? ap.revision : null, approved_hash: ap ? ap.content_hash : null, revision_author: au ? au.author : null };
   }
   check(user, acc, rec, action, ctx) {
     const v = decide(this.actor(user, acc), action, this.entity(rec), { now: this.now(), expected_revision: ctx.expected_revision, content_hash: ctx.content_hash ?? rec.content_hash,
@@ -248,12 +250,22 @@ class Evidence {
     if (revision !== undefined && !(Number.isInteger(revision) && revision >= 1 && revision <= rec.revision)) throw fail(404, 'Revision not found.');
     return this.view(rec, acc, revision === undefined ? {} : { revision });
   }
+  // Visibility is decided in SQL first (the owner's records, plus anything past draft for the people who might review it), then per row on the
+  // raw record, and only what the person may see is replayed through its state machine: the cost follows what they can see, not the library.
   list(user) {
     user = asUser(user);
-    const safe = id => { try { return this.load(id); } catch { return null; } }; // one unreadable record never hides the others
-    return this.rows('SELECT id FROM evidence_records ORDER BY updated_at DESC, rowid DESC').map(r => safe(r.id)).filter(Boolean).map(rec => [rec, this.access(rec, user)]).filter(([, acc]) => acc).slice(0, MAX_LIST)
-      .map(([rec, acc]) => ({ id: rec.id, status: rec.machine.status, state: rec.status, revision: rec.revision, project_ref: rec.project_ref, mine: acc.owner,
-        claims: this.claimsOf(rec.id, rec.revision).length, updated_at: rec.updated_at }));
+    if (!text(user.email)) return [];
+    const out = [];
+    for (const r of this.rows("SELECT * FROM evidence_records WHERE owner_sub = ? OR status != 'evidence_draft' ORDER BY updated_at DESC, rowid DESC", user.email)) {
+      const state = parse(r.state_json, null);
+      if (!state || !this.access({ ...r, state }, user)) continue;
+      let rec; try { rec = this.load(r.id); } catch { rec = null; } // one unreadable record never hides the others
+      const acc = rec && this.access(rec, user);
+      if (acc) out.push({ id: rec.id, status: rec.machine.status, state: rec.status, revision: rec.revision, project_ref: rec.project_ref, mine: acc.owner,
+        claims: this.claimsOf(rec.id, rec.revision).length, updated_at: rec.updated_at });
+      if (out.length >= MAX_LIST) break;
+    }
+    return out;
   }
 
   // ---- creating: interview notes -> a draft only the owner can see (D19) ----

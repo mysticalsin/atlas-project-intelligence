@@ -45,3 +45,24 @@ test('generated story constants (Python source of truth)', () => {
   assert.ok(P.public_fields.includes('kpis') && !P.public_fields.some(f => f.startsWith('internal_notes')));
   assert.deepEqual(P.internal_fields, ['internal_notes.manager', 'internal_notes.consultant', 'internal_notes.date']);
 });
+
+test('G1 M1: source references (interview ids) are in the internal projection only', () => {
+  assert.deepEqual(P.source_keys, ['source_refs', 'source_ref']);
+  let external = 0, internal = 0;
+  for (const [, audience, r] of V) {
+    if (!r.ok) continue;
+    const dump = JSON.stringify(r.ok), has = dump.includes('"source_ref');
+    if (audience === 'internal') { internal += has ? 1 : 0; continue; }
+    external++; assert.equal(has, false, `${audience} projection carries a source reference`);
+  }
+  assert.ok(external > 10 && internal > 0, 'both kinds are in the vectors');
+  const k = { label: 'T', status: 'measured', public_permission: true, source_refs: ['interview:s:item-4:D-004'] };
+  const story = { approval_state: { evidence_validated: true, project_owner_approved: true, customer_approved: true, confidentiality_reviewed: true, brand_approved: true, public_release_authorized: true },
+    kpis: [k], results: { before_after: [{ indicator: 'x', before: 1, after: 2, source_refs: ['interview:s'] }] },
+    amaris_differentiator: { client_quote: { exact_text: 'Hola mundo.', source_ref: 'interview:s:item-9:D-009', permission: true } }, project: { client_display: 'ACME Corp' } };
+  for (const aud of ['client', 'public']) {
+    const out = projectForAudience(story, aud);
+    assert.ok(!JSON.stringify(out).includes('interview:') && out.amaris_differentiator.client_quote.exact_text === 'Hola mundo.');
+  }
+  assert.deepEqual(projectForAudience(story, 'internal').kpis[0].source_refs, k.source_refs);
+});

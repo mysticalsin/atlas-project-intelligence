@@ -120,13 +120,57 @@ def test_t3_kpi_preserves_baseline_after_unit_period_method_and_source(tmp_path)
     k = {'label': 'Tiempo de cierre', 'before_value': 48, 'after_value': 4, 'unit': 'h', 'period': 'Q1-Q2 2026', 'method': 'Medición de tickets en Jira',
          'source_refs': ['S1:D-002'], 'attribution': 'equipo', 'status': 'measured', 'public_permission': True}
     s = approved(kpis=[k])
+    external = {key: value for key, value in k.items() if key != 'source_refs'}  # source references are an internal trail (G1 M1)
     for aud in ('client', 'public'):
-        assert ss.project_for_audience(s, aud)['kpis'] == [k]
+        assert ss.project_for_audience(s, aud)['kpis'] == [external]
+    assert ss.project_for_audience(s, 'internal')['kpis'] == [k]
     text = doc_text(fill(tmp_path, s, 'public'))
-    for needle in ('Tiempo de cierre', '48 h', '4 h', 'Q1-Q2 2026', 'Medición de tickets en Jira', 'S1:D-002', 'Medido'):
+    for needle in ('Tiempo de cierre', '48 h', '4 h', 'Q1-Q2 2026', 'Medición de tickets en Jira', 'Medido'):
         assert needle in text, needle
+    assert 'S1:D-002' not in text and 'Fuente' not in text
+    assert 'S1:D-002' in doc_text(fill(tmp_path, s, 'internal', 'int.docx'))
     est = approved(kpis=[{**k, 'status': 'estimated'}])
     assert '~4 h' in doc_text(fill(tmp_path, est, 'public', 'est.docx')) and 'Estimado' in doc_text(tmp_path / 'est.docx')
+
+
+INTERVIEW_REF = 'interview:7f3a9c0d1e2b4a5c8d6e7f8091a2b3c4:item-4:D-004'
+
+
+def test_g1_m1_interview_ids_never_reach_client_or_public_exports(tmp_path):
+    k = {'label': 'Tiempo de triaje', 'before_value': 40, 'after_value': 12, 'unit': 'min', 'status': 'measured', 'public_permission': True, 'source_refs': [INTERVIEW_REF]}
+    s = approved(kpis=[k])
+    s['results']['before_after'] = [{'indicator': 'Triaje', 'before': 40, 'after': 12, 'unit': 'min', 'source_refs': [INTERVIEW_REF]}]
+    s['amaris_differentiator']['client_quote']['source_ref'] = INTERVIEW_REF
+    for aud in ('client', 'public'):
+        p = ss.project_for_audience(s, aud)
+        dump = json.dumps(p)
+        assert 'interview:' not in dump and '7f3a9c0d' not in dump and 'D-004' not in dump
+        assert 'source_refs' not in dump and 'source_ref' not in dump
+        assert p['amaris_differentiator']['client_quote']['exact_text'], 'the quote must still be sourced to survive, and still survives'
+        out = fill(tmp_path, s, aud, aud + '.docx')
+        text = doc_text(out)
+        assert '7f3a9c0d' not in text and 'D-004' not in text and 'Fuente' not in text
+        assert ss.scan_package(out.read_bytes(), s, aud) == []
+    # an unsourced quote is still dropped for everyone
+    s2 = approved(); s2['amaris_differentiator']['client_quote']['source_ref'] = ''
+    assert 'client_quote' not in ss.project_for_audience(s2, 'public').get('amaris_differentiator', {})
+    # internal keeps the audit trail
+    p = ss.project_for_audience(s, 'internal')
+    assert p['kpis'][0]['source_refs'] == [INTERVIEW_REF] and p['amaris_differentiator']['client_quote']['source_ref'] == INTERVIEW_REF
+    assert 'D-004' in doc_text(fill(tmp_path, s, 'internal', 'internal.docx'))
+
+
+def test_g1_m1_scan_package_flags_interview_ids_in_an_external_package(tmp_path):
+    k = {'label': 'Tiempo de triaje', 'before_value': 40, 'after_value': 12, 'unit': 'min', 'status': 'measured', 'public_permission': True, 'source_refs': [INTERVIEW_REF]}
+    s = approved(kpis=[k])
+    internal = fill(tmp_path, s, 'internal').read_bytes()  # an internal package handed to an external audience
+    for aud in ('client', 'public'):
+        findings = ss.scan_package(internal, s, aud)
+        assert 'interview_id:interview_ref' in findings and 'interview_id:ledger_id' in findings and 'interview_id:session_id' in findings
+    assert not [f for f in ss.scan_package(internal, s, 'internal') if f.startswith('interview_id')]
+    for sample, code in (('user-typed-3', 'typed_id'), ('ref D-12', None), ('see D-0042 here', 'ledger_id')):
+        hit = [c for c, pat in ss.INTERVIEW_ID_PATTERNS if re.search(pat, sample)]
+        assert (code in hit) if code else not hit, sample
 
 
 def test_t4_no_numeric_impact_is_invented(tmp_path):

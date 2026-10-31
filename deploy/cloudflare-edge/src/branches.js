@@ -11,7 +11,7 @@
 // (library-routes.js calls configure with the Worker's env on every request), so evidence on its own behaves exactly as in T13.
 // Status codes are stable ids for the audit and the UI; user-facing words live in the browser (workflow-core.js).
 import { decide } from './policy-gate.js';
-import { jobs, configure as configureJobs, clock } from './jobs.js';
+import { jobs, configure as configureJobs, clock, idempotencyKey } from './jobs.js';
 import { adapterMode, evidenceWorkflowOn, registry, buildPayload, CONTRACTS, ADAPTER_BY_DESTINATION, ADAPTER_BY_BRANCH } from './adapters.js';
 import { Spotlight, FINAL_GATE } from './spotlight.js';
 import { str, obj, fail } from './util.js';
@@ -97,19 +97,41 @@ const sendFor = (lib, name) => (envelope, payload) => adapterSet(lib)[name].send
 async function dispatch(ev, rec, adapterName, payload, actor) {
   const lib = ev.lib, J = jobs(lib), c = CONTRACTS[adapterName];
   let { job } = await J.enqueue({ entity: rec.id, revision: rec.revision, hash: rec.content_hash, destination: c.destination, payload, actor });
-  if (modeOf(lib).mode === 'mock') job = (await J.run(job.job_id, sendFor(lib, adapterName))).job;
+  if (modeOf(lib).mode === 'mock') {
+    const r = await J.run(job.job_id, sendFor(lib, adapterName));
+    job = r.job;
+    const row = rowsOf(ev, rec.id).find(x => x.branch === c.branch); // stopped while in flight (a revocation, a new revision): the halt stands, and a person's impact_review flag is not repainted
+    if (r.halted && row && row.revision === rec.revision && row.status === 'impact_review') return row.status;
+  }
   return reflect(ev, rec, job);
 }
 
 // ---- fan-out ----
+// The delivery gate: the policy gate re-run NOW, against the grants as they stand now. It decides first-time delivery and every later attempt (fan-out
+// of an existing job, pump, recovery), so a revoked or expired permission stops delivery even for a job that was enqueued while it was valid.
+function deliveryGate(ev, rec, ap, branch) {
+  const grants = ev.grantsFor(rec.id), at = { now: ev.now(), expected_revision: rec.revision, content_hash: rec.content_hash };
+  if (branch === 'spotlight') { // the CMS job follows the publication gate: every Spotlight gate for this revision, the public_spotlight grant, the named channel
+    const sp = new Spotlight(ev), gates = sp.gatesFor(rec.id);
+    return decide({ sub: SYSTEM.sub, roles: ['publisher'] }, 'spotlight_publish', ev.entity(rec), { ...at, channel: gates[FINAL_GATE]?.channel, gates, grants, derived_from_library_status: false });
+  }
+  // Independent permission check for this destination: evidence approved, its own purpose grant (revision-bound, unexpired, unrevoked), a reviewer's approval.
+  return decide(SYSTEM, 'project_destination', ev.entity(rec), { ...at, destination: branch, channel: branch, grants,
+    reviewer_approval: { revision: ap.revision, hash: ap.content_hash, sub: ap.approver_sub } });
+}
+// A denied delivery: the job stops (needs_reconciliation, never silently dropped) and the card waits for permission. A card already flagged for impact
+// review at this revision keeps that flag: a person has to clear it.
+function stopDelivery(ev, rec, branch, reason, jobId = null) {
+  jobs(ev.lib).halt(rec.id, { reason: `PERMISSION_DENIED:${reason}`.slice(0, 80), destinations: [CONTRACTS[ADAPTER_BY_BRANCH[branch]].destination], jobId });
+  const row = rowsOf(ev, rec.id).find(r => r.branch === branch);
+  return row && row.revision === rec.revision && row.status === 'impact_review' ? 'impact_review' : setBranch(ev, rec, branch, 'permission_pending', { reason });
+}
 async function destination(ev, rec, ap, branch) {
-  const lib = ev.lib, name = ADAPTER_BY_BRANCH[branch], c = CONTRACTS[name], existing = jobs(lib).byKey(`${rec.content_hash}:${c.destination}`);
+  const lib = ev.lib, name = ADAPTER_BY_BRANCH[branch], c = CONTRACTS[name], existing = jobs(lib).byKey(idempotencyKey(rec.content_hash, c.destination, rec.id, rec.revision));
+  const v = deliveryGate(ev, rec, ap, branch); // before reflecting an existing job too: its state must not speak for a permission that is gone
+  if (!v.allow) return stopDelivery(ev, rec, branch, v.reason, existing?.job_id ?? null);
   if (existing) return reflect(ev, rec, existing);
   const grants = ev.grantsFor(rec.id);
-  // Independent permission check for this destination: evidence approved, its own purpose grant (revision-bound, unexpired, unrevoked), a reviewer's approval.
-  const v = decide(SYSTEM, 'project_destination', ev.entity(rec), { now: ev.now(), expected_revision: rec.revision, content_hash: rec.content_hash, destination: branch, channel: branch,
-    grants, reviewer_approval: { revision: ap.revision, hash: ap.content_hash, sub: ap.approver_sub } });
-  if (!v.allow) return setBranch(ev, rec, branch, 'permission_pending', { reason: v.reason });
   const mode = modeOf(lib);
   if (mode.mode === 'blocked') return setBranch(ev, rec, branch, 'blocked_external', { reason: mode.code });
   if (mode.mode === 'off') return setBranch(ev, rec, branch, 'projection_pending', { reason: 'ADAPTERS_OFF' }); // nothing is queued or sent
@@ -201,10 +223,12 @@ export async function pump(ev, { entity = null, limit = 50 } = {}) {
   if (!enabled(lib) || modeOf(lib).mode !== 'mock') return { ran: 0, jobs: [] };
   const J = jobs(lib), out = [];
   for (const j of J.due().filter(x => !entity || x.source_entity_id === entity).slice(0, limit)) {
-    const rec = ev.load(j.source_entity_id);
-    if (!rec || j.source_revision !== rec.revision || !approvedNow(ev, rec)) { J.halt(j.source_entity_id, { reason: 'SOURCE_SUPERSEDED', keepRevision: rec && approvedNow(ev, rec) ? rec.revision : null }); continue; }
+    const rec = ev.load(j.source_entity_id), ap = rec && approvedNow(ev, rec);
+    if (!rec || j.source_revision !== rec.revision || !ap) { J.halt(j.source_entity_id, { reason: 'SOURCE_SUPERSEDED', keepRevision: ap ? rec.revision : null }); continue; }
+    const branch = CONTRACTS[ADAPTER_BY_DESTINATION[j.destination]].branch, v = deliveryGate(ev, rec, ap, branch); // permissions as they stand now, not when the job was queued
+    if (!v.allow) { stopDelivery(ev, rec, branch, v.reason, j.job_id); continue; }
     const r = await J.run(j.job_id, sendFor(lib, ADAPTER_BY_DESTINATION[j.destination]));
-    if (r.ran) { reflect(ev, rec, r.job); out.push({ job_id: j.job_id, status: r.job.status }); }
+    if (r.ran && !r.halted) { reflect(ev, rec, r.job); out.push({ job_id: j.job_id, status: r.job.status }); } // a job halted while in flight is not the card's to show
   }
   return { ran: out.length, jobs: out };
 }
@@ -212,7 +236,7 @@ export async function pump(ev, { entity = null, limit = 50 } = {}) {
 export async function sync(ev, user, id, p = {}) {
   const lib = ev.lib, rec = ev.load(id), acc = ev.access(rec, user);
   if (!enabled(lib) || !acc) throw fail(404, 'Evidence not found.');
-  if (!acc.reviewer) throw fail(403, 'Only a reviewer can run recovery.');
+  if (!acc.reviewer || acc.owner) throw fail(403, 'Only a reviewer who is not the owner can run recovery.'); // nobody recovers delivery of their own record
   const jobId = str(obj(p).recover_job, 80);
   if (jobId) {
     const j = jobs(lib).get(jobId);

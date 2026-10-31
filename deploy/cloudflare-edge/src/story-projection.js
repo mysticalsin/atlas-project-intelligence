@@ -9,6 +9,8 @@ const own = (o, k) => o !== null && typeof o === 'object' && Object.hasOwn(o, k)
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isSet = v => typeof v === 'string' && v.trim() !== '';
 const clone = v => structuredClone(v);
+// Source references are interview/ledger ids, an internal audit trail: only the internal audience's projection keeps them.
+const keysFor = (keys, audience) => (audience === 'internal' ? keys : keys.filter(k => !P.source_keys.includes(k)));
 const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const QUOTE_PATH = 'amaris_differentiator.client_quote';
 
@@ -34,23 +36,23 @@ function projectKpis(kpis, audience) {
   for (const k of Array.isArray(kpis) ? kpis : []) {
     if (!isObj(k) || !P.kpi_statuses.includes(k.status) || !isSet(k.label)) continue;
     if (audience === 'public' && k.public_permission !== true) continue;
-    out.push(Object.fromEntries(P.kpi_keys.filter(key => own(k, key)).map(key => [key, clone(k[key])])));
+    out.push(Object.fromEntries(keysFor(P.kpi_keys, audience).filter(key => own(k, key)).map(key => [key, clone(k[key])])));
     if (out.length === P.kpi_max) break;
   }
   return out;
 }
 
 // The quote object, or null. Only an explicitly permitted, sourced, verbatim quote survives.
-function projectQuote(quote, anonymize) {
+function projectQuote(quote, anonymize, audience) {
   if (!isObj(quote) || quote.permission !== true || !isSet(quote.exact_text) || !isSet(quote.source_ref)) return null;
-  const out = Object.fromEntries(P.quote_keys.filter(k => own(quote, k)).map(k => [k, clone(quote[k])]));
+  const out = Object.fromEntries(keysFor(P.quote_keys, audience).filter(k => own(quote, k)).map(k => [k, clone(quote[k])]));
   out.permission = true;
   if (anonymize) { out.speaker = null; out.company = P.anonymized_label; }
   return out;
 }
 
-const projectBeforeAfter = items => Array.isArray(items)
-  ? items.filter(isObj).map(i => Object.fromEntries(P.before_after_keys.filter(k => own(i, k)).map(k => [k, clone(i[k])]))) : [];
+const projectBeforeAfter = (items, audience) => Array.isArray(items)
+  ? items.filter(isObj).map(i => Object.fromEntries(keysFor(P.before_after_keys, audience).filter(k => own(i, k)).map(k => [k, clone(i[k])]))) : [];
 
 function lookup(obj, path) {
   for (const part of path.split('.')) {
@@ -85,8 +87,8 @@ export function projectForAudience(story, audience) {
     let [found, value] = lookup(story, path);
     if (!found) continue;
     if (path === 'kpis') value = projectKpis(value, audience);
-    else if (path === 'results.before_after') value = projectBeforeAfter(value);
-    else if (path === QUOTE_PATH) { value = projectQuote(value, anonymize); if (value === null) continue; }
+    else if (path === 'results.before_after') value = projectBeforeAfter(value, audience);
+    else if (path === QUOTE_PATH) { value = projectQuote(value, anonymize, audience); if (value === null) continue; }
     else value = clone(value);
     store(out, path, value);
   }

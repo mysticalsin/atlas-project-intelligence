@@ -6,7 +6,8 @@
 //   decide(actor, action, entity, ctx) -> { allow, reason }
 //   actor   { sub, roles?: [..] | role?: '..' }       roles are what the caller authenticated; 'owner' is never taken from
 //                                                      here but derived: actor.sub === entity.owner_sub.
-//   entity  { id, owner_sub, revision, content_hash, status, approved_revision, approved_hash }
+//   entity  { id, owner_sub, revision, content_hash, status, approved_revision, approved_hash, revision_author? }
+//            revision_author: who wrote the current revision; the author of the revision under review cannot approve it (AUTHOR_CANNOT_APPROVE).
 //   ctx     { now, expected_revision, content_hash, to?, transitions?, destination?, purpose?, channel?, grants?, gates?,
 //             reviewer_approval?, destination_ack?, gate?, audience?, fields?, derived_from_library_status? }
 // The state machine is built elsewhere (T8); a transition is checked against the table the caller passes as
@@ -97,7 +98,7 @@ function purposeCheck(purpose, e, ctx) {
 
 function gateOpen(name, rec, e, ctx) {
   if (!obj(rec) || rec.source === 'library_status') return true; // a library label is never a gate (D17)
-  if (rec.status === 'not_required') return !(name.endsWith('_if_required') && text(rec.reason) && text(rec.decided_by) && rec.decided_by !== e.owner_sub);
+  if (rec.status === 'not_required') return !(name.endsWith('_if_required') && text(rec.reason) && text(rec.decided_by) && rec.decided_by !== e.owner_sub && bound(rec, e)); // a waiver is of this exact revision too
   if (rec.status !== 'approved' || !bound(rec, e) || !text(rec.approver_sub) || rec.approver_sub === e.owner_sub) return true;
   return name === FINAL_GATE && !(text(ctx.channel) && rec.channel === ctx.channel);
 }
@@ -170,6 +171,7 @@ function evaluate(actor, action, entity, ctx) {
   if (!Number.isInteger(entity.revision) || ctx.expected_revision !== entity.revision) return deny('REVISION_MISMATCH');
   if (!text(entity.content_hash) || ctx.content_hash !== entity.content_hash) return deny('CONTENT_HASH_MISMATCH');
   if (spec.review && actor.sub === entity.owner_sub) return deny('SELF_APPROVAL');
+  if (action === 'approve' && text(entity.revision_author) && entity.revision_author === actor.sub) return deny('AUTHOR_CANNOT_APPROVE'); // a reviewer who rewrote the claims needs a different approver
 
   if (spec.move) {
     if (!text(ctx.to) || !text(entity.status)) return deny('TRANSITION_TARGET_REQUIRED');

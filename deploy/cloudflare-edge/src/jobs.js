@@ -2,7 +2,7 @@
 // once and recorded exactly once. Runs inside the LibraryStore Durable Object on the Library's SQL adapter (additive
 // CREATE TABLE IF NOT EXISTS). The store is generic: it knows envelopes and outcomes, never what a destination is.
 //
-// - idempotency_key = `${source_revision_hash}:${destination}` is UNIQUE: enqueueing it again is a no-op that returns the
+// - idempotency_key = `${entity}:${revision}:${source_revision_hash}:${destination}` is UNIQUE: enqueueing it again is a no-op that returns the
 //   existing job, whatever state it is in (a failed job is recovered by a person, never re-created).
 // - A destination answers { ok:true, ack } | { ok:false, retryable?, error } | { ok:false, conflict:true, destination_revision }.
 //   Only an acknowledgement is success. Anything else retries with exponential backoff and jitter, bounded: after max_attempts
@@ -13,6 +13,7 @@
 //   acknowledgement and errors.
 export const JOB_STATUSES = ['queued', 'running', 'succeeded', 'retrying', 'failed', 'needs_reconciliation'];
 const OPEN = ['queued', 'running', 'retrying'];
+const HALTABLE = [...OPEN, 'failed'];
 export const DEFAULTS = { maxAttempts: 5, baseMs: 1000, capMs: 15 * 60 * 1000, leaseMs: 2 * 60 * 1000 };
 
 const DDL = [
@@ -47,7 +48,9 @@ export async function sha256(s) {
   return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)))].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 export const payloadHash = payload => sha256(stable(payload));
-export const idempotencyKey = (sourceRevisionHash, destination) => `${sourceRevisionHash}:${destination}`;
+// Entity and revision are part of the key: a later revision whose content equals an earlier one (add a claim, remove it) has the same hash,
+// and must still be delivered as its own job rather than collide with the halted job of the older revision.
+export const idempotencyKey = (sourceRevisionHash, destination, entity, revision) => `${entity}:${revision}:${sourceRevisionHash}:${destination}`;
 
 // Equal jitter: the delay for the attempt that just failed is between half and all of min(cap, base * 2^(attempt-1)).
 export function backoffMs(attempt, random = Math.random, { baseMs = DEFAULTS.baseMs, capMs = DEFAULTS.capMs } = {}) {
@@ -95,7 +98,7 @@ class Jobs {
   // Create the job, or return the one that already has this key. `duplicate` says which.
   async enqueue({ entity, revision, hash, destination, payload, actor = null }) {
     if (!entity || !Number.isInteger(revision) || !hash || !destination || !obj(payload)) throw new Error('A job needs an entity, a revision, its hash, a destination and a payload.');
-    const key = idempotencyKey(hash, destination), existing = this.byKey(key);
+    const key = idempotencyKey(hash, destination, entity, revision), existing = this.byKey(key);
     if (existing) return { job: existing, duplicate: true };
     const c = this.cfg(), id = this.lib.newId(), at = this.iso(c.now()), ph = await payloadHash(payload);
     const again = this.byKey(key); // another enqueue finished while the payload was hashed
@@ -124,6 +127,12 @@ class Jobs {
     const envelope = this.view(this.row(id)); // the pack's envelope; the payload travels beside it, never inside it
     let res;
     try { res = await send(envelope, parse(r.payload_json, {})); } catch { res = { ok: false, retryable: true, error: 'ADAPTER_EXCEPTION' }; }
+    // halt() may have stopped this job while the attempt was in flight: that decision stands, whatever the destination answered. The outcome is
+    // only recorded in the audit trail (a delivery that did get through is still visible to the person who reconciles it).
+    if (this.row(id).status !== 'running') {
+      this.log(r, 'result_after_halt', { detail: classify(res, r).outcome });
+      return { job: this.get(id), ran: true, halted: true };
+    }
     const out = classify(res, r);
     const ack = out.ack ? JSON.stringify(out.ack) : null;
     if (out.outcome === 'succeeded') { this.set(id, { status: 'succeeded', destination_ack: ack, last_error: null, next_attempt_at: null }); this.log(r, 'acknowledged', { detail: String(out.ack.mock === false ? 'live' : 'mock') }); }
@@ -156,11 +165,12 @@ class Jobs {
     return this.get(id);
   }
 
-  // Stop open jobs that must no longer deliver (the source moved on, a permission was withdrawn): needs_reconciliation, never silently dropped.
-  halt(entity, { reason, keepRevision = null, destinations = null }) {
+  // Stop jobs that must no longer deliver (the source moved on, a permission was withdrawn): needs_reconciliation, never silently dropped.
+  // Open jobs and dead-lettered (failed) ones: a failed job is one recover() away from the queue, so it must be stoppable too.
+  halt(entity, { reason, keepRevision = null, destinations = null, jobId = null }) {
     const stopped = [];
     for (const r of this.rows('SELECT * FROM jobs WHERE source_entity_id = ?', String(entity))) {
-      if (!OPEN.includes(r.status) || (keepRevision !== null && r.source_revision === keepRevision) || (destinations && !destinations.includes(r.destination))) continue;
+      if (!HALTABLE.includes(r.status) || (jobId !== null && r.job_id !== jobId) || (keepRevision !== null && r.source_revision === keepRevision) || (destinations && !destinations.includes(r.destination))) continue;
       this.set(r.job_id, { status: 'needs_reconciliation', last_error: reason, next_attempt_at: null });
       this.log(r, 'halted', { detail: reason });
       stopped.push(this.get(r.job_id));

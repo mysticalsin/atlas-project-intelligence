@@ -22,7 +22,7 @@ test('the envelope is the pack\'s: key, entity, revision, destination, payload h
   const { J } = setup(), { job, duplicate } = await J.enqueue(spec());
   assert.equal(duplicate, false);
   assert.deepEqual(Object.keys(job).slice(0, 10), ['job_id', 'idempotency_key', 'source_entity_id', 'source_revision', 'destination', 'payload_hash', 'status', 'attempt', 'max_attempts', 'destination_ack']);
-  assert.equal(job.idempotency_key, `${'h'.repeat(64)}:DNA`); assert.equal(job.idempotency_key, idempotencyKey('h'.repeat(64), 'DNA'));
+  assert.equal(job.idempotency_key, `ev-1:3:${'h'.repeat(64)}:DNA`); assert.equal(job.idempotency_key, idempotencyKey('h'.repeat(64), 'DNA', 'ev-1', 3));
   assert.deepEqual([job.source_entity_id, job.source_revision, job.destination, job.status, job.attempt, job.destination_ack], ['ev-1', 3, 'DNA', 'queued', 0, null]);
   assert.match(job.payload_hash, /^[0-9a-f]{64}$/); assert.match(job.created_at, /^2026-11-01T12:00:00/);
   assert.ok(JOB_STATUSES.includes(job.status)); assert.deepEqual(JOB_STATUSES, ['queued', 'running', 'succeeded', 'retrying', 'failed', 'needs_reconciliation']);
@@ -142,4 +142,36 @@ test('the tables are additive and a second store over the same database is harml
   for (const t of ['jobs', 'job_events']) assert.ok(names.includes(t), t);
   assert.equal(jobs(l), jobs(l));
   const l2 = new Library(l.sql, {}); assert.ok(jobs(l2));
+});
+
+// G1 (review: idempotency key reuse across revisions, in-flight delivery vs halt, halt covers dead letters)
+test('the same content hash at a later revision is its own job (the key includes entity and revision)', async () => {
+  const { J } = setup(), a = await J.enqueue(spec({ revision: 1 })), b = await J.enqueue(spec({ revision: 3 })), c = await J.enqueue(spec({ revision: 3 }));
+  assert.equal(b.duplicate, false); assert.notEqual(a.job.job_id, b.job.job_id); assert.equal(c.duplicate, true);
+  assert.equal((await J.enqueue(spec({ revision: 3, entity: 'ev-2' }))).duplicate, false, 'another record with the same hash is another job');
+});
+
+test('halt stops a dead-lettered (failed) job too, so recovery cannot put it back in the queue', async () => {
+  const { J } = setup(), { job } = await J.enqueue(spec());
+  await J.run(job.job_id, async () => ({ ok: false, retryable: false, error: 'DOWN' }));
+  assert.equal(J.get(job.job_id).status, 'failed');
+  assert.equal(J.halt('ev-1', { reason: 'PERMISSION_REVOKED' }).length, 1);
+  assert.equal(J.get(job.job_id).status, 'needs_reconciliation'); assert.equal(J.recover(job.job_id, 'rev'), null);
+});
+
+test('a delivery attempt in flight when halt() stops the job never overwrites the halt, and the job is not due again', async () => {
+  const { J, clock } = setup(), { job } = await J.enqueue(spec());
+  let answer; const inflight = J.run(job.job_id, () => new Promise(r => { answer = r; }));
+  await new Promise(r => setImmediate(r));
+  J.halt('ev-1', { reason: 'SOURCE_SUPERSEDED', keepRevision: 4 });
+  answer({ ok: false, retryable: true, error: 'TIMEOUT' });
+  const r = await inflight;
+  assert.equal(r.halted, true); assert.equal(J.get(job.job_id).status, 'needs_reconciliation'); assert.equal(J.get(job.job_id).last_error, 'SOURCE_SUPERSEDED');
+  clock.t += 3600e3; assert.deepEqual(J.due(), []);
+  assert.ok(J.events(job.job_id).some(e => e.event === 'result_after_halt' && e.detail === 'retry'));
+  // a delivery that did get through is not recorded as success either
+  const { job: j2 } = await J.enqueue(spec({ revision: 5, hash: 'z'.repeat(64) }));
+  let ans2; const p2 = J.run(j2.job_id, () => new Promise(r => { ans2 = r; })); await new Promise(r => setImmediate(r));
+  J.halt('ev-1', { reason: 'EVIDENCE_WITHDRAWN' }); ans2({ ok: true, ack: ack() }); await p2;
+  assert.equal(J.get(j2.job_id).status, 'needs_reconciliation'); assert.equal(J.get(j2.job_id).destination_ack, null);
 });
