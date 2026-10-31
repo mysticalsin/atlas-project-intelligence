@@ -5,6 +5,7 @@
 // open points are all derived from the same ledger, so what is said and what is shown cannot disagree.
 import { FIELDS } from './policy.generated.js';
 import { readback, hasBank, languageName } from './languages.js';
+import { isSpecial } from './special.js';
 
 export const MAX_ITEMS = 40;      // items on the card (the ledger holds at most 100 details)
 export const QUOTE_CHARS = 160;   // an item's quote on the card, whole code points
@@ -103,7 +104,8 @@ export function buildSummary(ledger) {
   return detailsOf(ledger).filter(shown).map((d, i) => ({ d, i })).sort((a, b) => order(a.d.field) - order(b.d.field) || a.i - b.i).slice(0, MAX_ITEMS)
     .map(({ d }) => ({ detail_id: String(d.id), field: d.field, label: label(d.field), quote: clip(d.quote, QUOTE_CHARS),
       status: ['reported', 'uncertain', 'unknown'].includes(d.status) ? d.status : 'reported', asr_unconfirmed: d.asr_unconfirmed === true,
-      provenance: typeof d.provenance === 'string' && d.provenance ? d.provenance : 'unverified_speech_recognition', ...(typeof d.lang === 'string' && /^[a-z]{2,3}$/.test(d.lang) ? { lang: d.lang } : {}) }));
+      provenance: typeof d.provenance === 'string' && d.provenance ? d.provenance : 'unverified_speech_recognition', ...(typeof d.lang === 'string' && /^[a-z]{2,3}$/.test(d.lang) ? { lang: d.lang } : {}),
+      ...(isSpecial(d.quote) ? { sensitive: true } : {}) })); // G2: a line that mentions a sensitive topic is offered "keep private" (a flag on the sentence, never on the person)
 }
 
 // Open points the read-back flags: words the recogniser was unsure of, answers that were "I don't know", questions the consultant skipped

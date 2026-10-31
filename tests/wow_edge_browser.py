@@ -48,7 +48,10 @@ try:
   alex.locator('#projectForm button[type=submit]').click();alex.wait_for_timeout(300)
   alex.evaluate("([n,rep])=>window.ATLAS_VOICE_BRIDGE.autoSave(window.ATLAS_VOICE_BRIDGE.context(),n,'Consultant words.',rep)",[NOTES,REP]);alex.wait_for_timeout(1200);settle()
   rid=alex.evaluate('window.ATLAS_APP.project().library?.id')
-  check('reference synced to the shared library',bool(rid))
+  check('reference synced to the shared library as a private draft',bool(rid) and alex.evaluate('window.ATLAS_APP.project().library?.status')=='draft')
+  # G2: private until the consultant clicks Submit for review (the Library's own button, delegated handler); only then can the N+1 validate it
+  alex.evaluate("id=>{const b=document.createElement('button');b.dataset.submitRef=id;document.body.append(b);b.click();b.remove();}",rid)
+  alex.wait_for_function("id=>window.ATLAS_APP.profile().projects.some(x=>x.library&&x.library.id===id&&x.library.status!=='draft')",arg=rid,timeout=8000);settle()
   # v2.2 (red-team H1): the N+1 who may validate is the one the staffing record names, not the one typed on the reference
   api(page('reviewer@mantu.com'),'/staffing/import','POST',{'csv':'project_id,consultant_email,manager_email,manager_name,project_title,end_date\nPRJ-2291,alex@mantu.com,sam@mantu.com,Sam,,\n'})
   sam=page('sam@mantu.com');api(sam,'/'+rid+'/validate','POST',{'decision':'validate'});settle()

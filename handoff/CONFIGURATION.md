@@ -102,7 +102,7 @@ The live site (`deploy/cloudflare-edge/`, docs/WOW_ZERO_CONFIG.md) needs nothing
 
 | Variable / decision | Contract |
 |---|---|
-| `DATA_MODE` | Unset = test mode: the "TEST DEPLOYMENT · SYNTHETIC DATA ONLY" banner, readiness `edge-deployment-test-data-only`, DNA push and pull `BLOCKED_EXTERNAL`, the DNA-export CSV accepts reserved test addresses only (`example.com`, `.test`, …). `production` only on a Mantu-owned Cloudflare account after Mantu IT approval and DPO sign-off on the six columns (email, name, first name, job title, N+1 name, N+1 email) and on the memory consent sentence. |
+| `DATA_MODE` | Unset = test mode: the "TEST DEPLOYMENT · DPO sign-off pending · Privacy notice" banner (it no longer says synthetic data only: real interviews run here), readiness `edge-deployment-test-data-only`, DNA push and pull `BLOCKED_EXTERNAL`, the DNA-export CSV accepts reserved test addresses only (`example.com`, `.test`, …). `production` only on a Mantu-owned Cloudflare account after Mantu IT approval and DPO sign-off on the six columns (email, name, first name, job title, N+1 name, N+1 email) and on the memory consent sentence. |
 | `DIRECTORY_PUSH_SECRET` (secret) | DNA push, the recommended option: a DNA/HR job posts rows to `POST /api/directory/push` with this bearer secret; add a Cloudflare Access bypass for `/api/directory/push` only. Production mode only. |
 | `DNA_PROFILE_URL`, `DNA_AUTH_HEADER`, `DNA_FIELD_MAP`, `DNA_API_KEY` (secret) | DNA pull, shape **ASSUMED** (not confirmed by Mantu IT): https template with one `{email}` or `{oid}`, header name (default `Authorization`), JSON field map, and the full header value. Never called when push is set. Production mode only. |
 | DNA export CSV | An admin uploads it in Insights → People directory; only the six approved columns leave the browser. Real exports only in production mode. |
@@ -113,7 +113,7 @@ The live site (`deploy/cloudflare-edge/`, docs/WOW_ZERO_CONFIG.md) needs nothing
 | **D1** spoken Ask (Tony confirms) | A code constant, `SPOKEN_ASK_APPROVED` in `deploy/cloudflare-edge/src/features.js`, `true` in this tree (D1 recorded as approved on 2026-09-29; set it back to `false` and spoken Ask is simply absent). A voice question in Ask asks for consent at the moment of use ("Allow this time" / "Always allow for me", stored in the profile, revocable), shows "Don't say client names" and a recording indicator on every recording, and the Worker checks the consent before transcribing. |
 | **D2** PDF briefs (recorded) | PDF briefs follow bids. Workers AI `toMarkdown` on a PDF is text extraction (re-verified 2026-09-29), run with PDF metadata off; images stay refused; a scanned PDF with no text gets an explicit message. Re-check at each dependency review. |
 
-Private memory stays in the one consent sentence whenever `HINDSIGHT_API_KEY` is set and the person's memory switch is on; without the key the sentence and the switch are absent.
+Private memory is **off by default** (v2.2 G2). With `HINDSIGHT_API_KEY` and `HINDSIGHT_BANK_SECRET` set the consent dialog offers it as its own tick and the profile as a switch, each recorded as a consent receipt; without the key the tick and the switch are absent. When on it keeps short structured project facts only (no conversation text).
 
 ### Agent Brain v2.1 switches (Cloudflare edge Worker variables)
 All optional; each default is the new behaviour and the legacy value is the rollback. Verified in code (`session.js sessionFlags`, `app.js`, `checkpoint.js`, `adapters.js`); not exercised against a deployed Worker. Rollback of a deployed build is a Worker version rollback (Tony). Overview with the reasoning: `AGENT.md` section 5.
@@ -131,7 +131,7 @@ All optional; each default is the new behaviour and the legacy value is the roll
 | `ATLAS_EVIDENCE_WORKFLOW` | `on` | `off`: a confirmed summary is not filed; fan-out, status and sync routes off |
 | `ATLAS_ADAPTERS` | `off` | `mock` runs the four destination mocks; `live` is refused (`BLOCKED_EXTERNAL`: no owner contract exists) |
 
-Privacy facts for the consent text (24-hour checkpoint, text mode, keep private, drafts): `docs/INTEGRATIONS.md`, "Privacy and consent wording for the interview". The consent dialog does not yet mention the checkpoint.
+Privacy facts for the consent text (24-hour checkpoint, text mode, keep private, drafts): `docs/INTEGRATIONS.md`, "Privacy and consent wording for the interview". The consent dialog now has the 24-hour saved-interview choice, memory, and the privacy notice as separate rows (v2.2 G2); wording lives in `atlas_voice/config/privacy.json` and the notice is served at `/privacy` (`docs/privacy/`).
 
 ### Platform security (B1, 2026-10-31; runbook: `handoff/SECURITY_RUNBOOK.md`)
 Verified in code and unit tests; not exercised against a deployed Worker.

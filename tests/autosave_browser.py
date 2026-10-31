@@ -40,7 +40,7 @@ with sync_playwright() as pw:
  p.goto('https://atlas.test/');p.wait_for_timeout(600)
  p.locator('#voiceStart').click();p.locator('#voiceConsentDialog').wait_for(state='visible',timeout=8000)
  check('no voice preset visible',not p.locator('#voicePickRow').is_visible())
- check('consent says saved with a report','saved with a report' in p.locator('#modelConsentText').inner_text())
+ check('consent says a private draft until Submit for review','private draft' in p.locator('#modelConsentText').inner_text() and 'Submit for review' in p.locator('#modelConsentText').inner_text())
  check('admin hint shown for a server-flagged admin','Admin mode' in p.locator('#consentTip').inner_text())
  p.locator('#modelConsent').check();p.locator('#voiceConsentStart').click()
  t0=time.time()
@@ -110,6 +110,7 @@ with sync_playwright() as pw:
   u=r.request.url
   if u.endswith('/api/bootstrap'):return r.fulfill(json=dict(BOOT,library=True,memory=True))
   if u.rstrip('/')=='https://atlas.test':return r.fulfill(body=H,content_type='text/html')
+  if u.endswith('/api/memory/settings'):return r.fulfill(json={'off':False}) # memory is OFF by default: this person turned it on
   if u.endswith('/api/memory/remember'):MEM.append(r.request.post_data_json);return r.fulfill(json={'stored':True})
   if u.endswith('/api/library') and r.request.method=='POST':LIB.append(r.request.post_data_json);return r.fulfill(json={'id':REF,'revision':len(LIB),'status':'in_review'})
   if u.endswith('/api/library/invitations'):return r.fulfill(json={'items':[]})
@@ -120,6 +121,8 @@ with sync_playwright() as pw:
  g.evaluate("(s)=>window.ATLAS_VOICE_BRIDGE.autoSave(s,['I owned the routing design.',null,null,null,null,null],'Full interview words.',null)",g.evaluate('window.ATLAS_VOICE_BRIDGE.context()'))
  g.wait_for_function('()=>window.ATLAS_LOCAL.snapshot().profiles[0].projects[0]?.library?.id',timeout=5000);g.wait_for_timeout(400)
  check('full mode: still one automatic library save and one memory call',len(LIB)==1 and len(MEM)==1 and proj()[0]['library']['id']==REF)
+ check('the library save is a private draft (G2)',LIB[0].get('draft') is True)
+ check('memory gets short facts only: no conversation text (G2)','conversation' not in MEM[0])
  pid=g.evaluate(f"window.ATLAS_APP.startFromGap({{id:'{GAPID}',referenceId:'{REF}',bidAlias:'[company] data platform bid'}})")
  c=g.evaluate('window.ATLAS_VOICE_BRIDGE.context()')
  check('proof request: the local project linked to the reference is used, and the gap rides on its context',pid==proj()[0]['id'] and len(proj())==1 and c.get('gap')==GAPID and c.get('gapAlias')=='[company] data platform bid')

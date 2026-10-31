@@ -115,7 +115,7 @@ try:
     check('a page navigation to an old path goes home; a non-navigation stays a JSON 404; /api/wiki stays 404',
           loc('/ATLAS_Voice.html', h={'Accept': 'text/html'}) == (302, '/') and loc('/index.html', h={'Sec-Fetch-Mode': 'navigate'}) == (302, '/')
           and get(BASE, '/ATLAS_Voice.html')[0] == 404 and get(BASE, '/api/wiki', headers={'Accept': 'text/html'})[0] == 404)
-    check('test mode: the banner stays and readiness says so', boot['readiness'] == 'edge-deployment-test-data-only' and 'TEST DEPLOYMENT · SYNTHETIC DATA ONLY' in get(BASE, '/')[2])
+    check('test mode: the banner stays and readiness says so', boot['readiness'] == 'edge-deployment-test-data-only' and 'TEST DEPLOYMENT · DPO sign-off pending' in get(BASE, '/')[2] and 'SYNTHETIC DATA ONLY' not in get(BASE, '/')[2])
     # D1 is the SPOKEN_ASK_APPROVED code constant (features.test.js pins its value); this check holds either way.
     approved = 'export const SPOKEN_ASK_APPROVED = true;' in (EDGE / 'src/features.js').read_text()
     def transcribe(headers):
@@ -193,10 +193,12 @@ try:
         check('fresh user: no project yet', jane.evaluate('window.ATLAS_LOCAL.snapshot().profiles[0].projects.length') == 0)
         jane.locator('#voiceStart').click(); jane.locator('#voiceConsentDialog').wait_for(state='visible', timeout=8000)
         dlg = jane.locator('#voiceConsentDialog')
-        check('Start opens the consent step at once: exactly one checkbox, the first name from the DNA export in the heading, the sign-in in the footer',
-              dlg.locator('input[type=checkbox]:visible').count() == 1 and jane.locator('#voiceConsentTitle').inner_text() == 'Ready when you are, Jane.'
+        check('Start opens the consent step at once: one REQUIRED checkbox (plus the optional saved-interview, memory and notice choices), the first name from the DNA export in the heading, the sign-in in the footer',
+              dlg.locator('input[type=checkbox]:visible').count() == 4 and jane.locator('#memoryConsent').is_visible() and not jane.locator('#memoryConsent').is_checked() and jane.locator('#voiceConsentTitle').inner_text() == 'Ready when you are, Jane.'
               and jane.locator('#consentIdentity').inner_text() == 'Signed in as Jane Doe · jane@example.com' and not FORBIDDEN.search(dlg.inner_text()))
-        check('memory is configured here, so the one sentence names it', 'private memory' in jane.locator('#modelConsentText').inner_text())
+        check('memory is configured here: its own tick, OFF by default; the required sentence names a private draft', 'private draft' in jane.locator('#modelConsentText').inner_text() and 'Hindsight' not in jane.locator('#modelConsentText').inner_text())
+        jane.locator('#memoryConsent').check()  # this person turns memory on for the interview
+        jane.evaluate('window.ATLAS_VOICE_BRIDGE.setMemory(true)')  # (this stand-in has no live interview object to receive the start frame's choice, so the same choice is made through the profile route: a receipt and the memory purpose)
         check('the microphone is not requested before the Start click', not jane.evaluate('AtlasVoice.status().hasMicrophone'))
         talk(jane)
         start = [f for f in jane.voice.frames if f.get('type') == 'start'][-1]
@@ -214,8 +216,9 @@ try:
               and rec['data']['validation']['manager']['email'] == 'sam@example.com'
               and not (jane.locator('#confirmDialog').is_visible() and 'Save on this device' in jane.locator('#confirmTitle').inner_text()))
         check('no setup form was shown at any point', jane.locator('#voiceConnectionDialog').is_hidden() and jane.locator('#gatewayAddress').is_hidden())
+        wait(jane, lambda: len(jane.evaluate("fetch('/api/memory').then(r=>r.json())").get('documents') or []) >= 1, 8)  # the page reads the memory switch first, then remembers
         mem = jane.evaluate("fetch('/api/memory').then(r=>r.json())")
-        check('the private memory holds the conversation (Hindsight stand-in), without the name or the title', len(mem.get('documents') or []) >= 1
+        check('the private memory (Hindsight stand-in) holds short project facts only, without the name, the title or any conversation text', len(mem.get('documents') or []) >= 1 and not any(str(d.get('id', '')).startswith('conversation-') for d in mem.get('documents') or [])
               and 'Jane Doe' not in json.dumps(mem) and 'Data lead' not in json.dumps(mem))
         check('every API call from the page carried X-Requested-With', all(x == 'XMLHttpRequest' for m, path, b, x in jane.bodies if path.startswith('/api/') and path != '/api/memory'))
         jane.locator('#reportDialog').wait_for(state='visible', timeout=8000)  # the report opens by itself after an interview
@@ -261,10 +264,10 @@ try:
         mine = api(lee, '/profile')
         check('another user reads only their own profile', mine['email'] == 'lee@example.org' and 'Jane' not in json.dumps(mine) and 'Head of Data' not in json.dumps(mine)
               and api(lee, '/profile?email=jane@example.com')['email'] == 'lee@example.org')
-        who = api(lee, '/people?email=jane@example.com')
+        who = api(lee, '/people/lookup', 'POST', {'email': 'jane@example.com'})
         check('the people lookup: exactly {email, name, title, from} from the directory row, never the N+1 and never her own edits',
               who == {'email': 'jane@example.com', 'name': 'Jane Doe', 'title': 'Principal Data Lead', 'from': 'dna_export'})
-        miss = lee.evaluate("fetch('/api/library/people?email=bob@mantu.com',{headers:{'X-Requested-With':'XMLHttpRequest'}}).then(r=>r.status)")
+        miss = lee.evaluate("window.ATLAS_APP.libraryApi('/people/lookup',{method:'POST',body:{email:'bob@mantu.com'}}).then(()=>200,()=>404)")
         check('the refused real-domain row was never stored: the lookup answers 404', miss == 404)
         lee.context.close()
 
@@ -321,8 +324,8 @@ try:
         new.evaluate("window.__acts=[];document.addEventListener('click',e=>{if(e.isTrusted)__acts.push(e.target.id||e.target.tagName)},true);"
                      "document.addEventListener('input',e=>{if(e.isTrusted&&e.target.type!=='checkbox')__acts.push('input '+(e.target.id||e.target.tagName))},true)")
         new.locator('#voiceStart').click(); new.locator('#voiceConsentDialog').wait_for(state='visible', timeout=8000)
-        check('new user, no DNA: the consent step holds one field (the tick); a guessed name is not used in the heading',
-              new.locator('#voiceConsentDialog').locator('input:visible, select:visible, textarea:visible').count() == 1
+        check('new user, no DNA: the consent step holds the required tick and the three optional choices (saved interview, memory, notice), nothing else; a guessed name is not used in the heading',
+              new.locator('#voiceConsentDialog').locator('input:visible, select:visible, textarea:visible').count() == 4 and new.locator('#voiceConsentDialog input[type=checkbox]:visible').count() == 4
               and new.locator('#voiceConsentTitle').inner_text() == 'A conversation with ATLAS.' and new.locator('#consentIdentity').inner_text() == 'Signed in as noor.haddad@example.net')
         talk(new)
         check('new user: exactly three actions reach the interview (Start, the tick, Start conversation)', new.evaluate('__acts') == ['voiceStart', 'modelConsent', 'voiceConsentStart'])

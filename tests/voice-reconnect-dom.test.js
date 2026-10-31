@@ -77,7 +77,7 @@ test('an unexpected close mid-interview: Reconnecting…, then a resume start on
  await wait(60);
  assert.deepEqual(h.delays,[1000],'one try, after 1 s');assert.equal(h.sockets.length,2);
  const start=h.starts()[1];
- assert.equal(start.resume,ID);assert.equal(start.csrf,'csrf-1');assert.equal(start.consent,true);assert.equal(start.capture,true);assert.ok(!('gap' in start));assert.equal(start.project.id,'p');assert.equal(start.language,'en');
+ assert.equal(start.resume,ID);assert.equal(start.csrf,'csrf-1');assert.deepEqual(start.consent,{transcription:true,draft:true,checkpoint:true,memory:false,notice:false});assert.equal(start.capture,true);assert.ok(!('gap' in start));assert.equal(start.project.id,'p');assert.equal(start.language,'en');
  assert.equal(h.win.AtlasVoice.status().phase,'live');assert.equal(h.win.AtlasVoice.reconnect.state().reconnecting,false);
  assert.equal(text(h,'voiceHeading'),'You’re back. Picking up where we stopped.');
  assert.equal(track.readyState,'live','the microphone was never closed');assert.equal(h.win.AtlasVoice.status().hasMicrophone,true);
@@ -162,7 +162,7 @@ test('Resume: starts with the interview id, with no consent dialog and transcrip
  const h=boot({resumable:{sessionId:ID,savedAt:1,expiresAt:2}});resumeOk(h);await wait(20);
  h.win.AtlasVoice.reconnect.dialog().yes.click();await wait(60);
  assert.equal(h.sockets.length,1);const start=h.starts()[0];
- assert.equal(start.resume,ID);assert.equal(start.capture,true);assert.equal(start.consent,true);assert.equal(start.voice,'v');assert.ok(!('gap' in start));
+ assert.equal(start.resume,ID);assert.equal(start.capture,true);assert.deepEqual(start.consent,{transcription:true,draft:true,checkpoint:true,memory:false,notice:false});assert.equal(start.voice,'v');assert.ok(!('gap' in start));
  assert.equal(h.$('voiceConsentDialog').open,false,'Resume is the consent: no second dialog');
  assert.equal(h.win.AtlasVoice.status().phase,'live');assert.equal(text(h,'agentText').includes('baseline'),true);
  assert.equal(h.win.AtlasVoice.reconnect.dialog().d.open,false);

@@ -33,7 +33,7 @@ async function ask(lib, user, b) {
   if (question.length < 8 || question.length > 600) throw fail(400, 'Ask a question of 8 to 600 characters.');
   const limit = Math.max(1, Math.min(8, Math.round(Number(b.limit)) || 6));
   if (!rateLimit(lib, 'ask:' + user.email, 60, 36e5)) throw fail(429, 'Too many questions this hour. Try again later.');
-  let pool = lib.visibleRows(user).filter(([r, level]) => r.status === 'published' || level === 'full'), note = '';
+  let pool = lib.visibleRows(user, { processing: true }).filter(([r, level]) => r.status === 'published' || level === 'full'), note = '';
   const named = new Set();
   clientMatcher(lib)(question, (match, stored) => { named.add(norm(stored)); return match; });
   if (named.size) {

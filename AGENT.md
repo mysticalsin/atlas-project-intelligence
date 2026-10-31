@@ -140,6 +140,8 @@ All are Worker variables. Each default is the new behaviour; the legacy value re
 | `ATLAS_EVIDENCE_WORKFLOW` | `on` | `off`: a confirmed summary is not filed, and the fan-out, status and sync routes are off | `adapters.js evidenceWorkflowOn` |
 | `ATLAS_ADAPTERS` | `off` | `mock`: the four destination mocks run; `live` is allowed per connection only when it is configured and ready (`docs/CONNECTIONS.md`), otherwise `BLOCKED_EXTERNAL`; anything else is `off` | `adapters.js adapterMode` |
 
+Privacy controls (v2.2 G2) have **no rollback flag on purpose**: private-until-submit, the consent receipts, memory off by default and the rights routes are not switchable. They are listed here so nobody looks for one. What an operator can still switch: `ATLAS_CHECKPOINT=off` (no saved interviews at all), `ATLAS_AI_OFF`, `ATLAS_READ_ONLY` and the other B1 kill switches (`handoff/SECURITY_RUNBOOK.md`); memory and each optional processor stay off without their key. The retention periods are data (`atlas_voice/config/retention.json`), not flags.
+
 Endpointing and temperature are unchanged (Tony, Q5). `SPECULATIVE_STT` and `ANALYST_WAIT_MS` stay off.
 
 ## 6. What is deliberately not done
@@ -156,3 +158,14 @@ Endpointing and temperature are unchanged (Tony, Q5). `SPECULATIVE_STT` and `ANA
 - Spec pack: `docs/agent-brain-v2.1/` (start at `README.md`). Decisions: `DECISION_LOG.md`. Gap analysis at baseline: `GAP_ANALYSIS.md`. Status per requirement: `IMPLEMENTATION_STATUS.md`. Evaluation: `eval/COVERAGE.md`.
 - Code map: `handoff/CODE_MAP.md` (section "Agent Brain v2.1"). Build log: `handoff/BUILD_STATUS.md`. Integration contracts: `docs/INTEGRATIONS.md`.
 - Tests: `make test` (everything), `make test-eval` (offline conversation, workflow and rubric evaluation, 52 tests), `make test-ui` (browser suites, needs Chromium).
+
+## 9. Privacy controls (v2.2 G2)
+
+Controls implemented in code; DPO sign-off required. Detail, tests and what is not done: `docs/agent-brain-v2.1/IMPLEMENTATION_STATUS.md` section 9 and `docs/privacy/`.
+
+- **Private until Submit.** An interview's reference is saved with `draft: true`; `Library.access` gives it to its owner only, and every pool that processes references (`visibleRows(user, {processing: true})`) excludes drafts. `POST /api/library/:id/submit` is the one way out.
+- **Consent.** The `start` message's `consent` is an object of purposes (`privacy.js parseConsent`); the Interview Durable Object keeps the state, the LibraryStore the append-only receipts. The session starts a checkpoint only with the checkpoint purpose and recalls memory only with the memory purpose.
+- **Memory.** Off until ticked; short structured facts only (`memory.js projectDocument`); never conversation text, kept-private items or lines the special-category guard flags (`special.js`).
+- **Rights.** `GET /api/me/export`, two-step `POST /api/me/erase`, `/api/me/privacy` (restriction and objection), `POST /api/consent`; the library side is `subject-rights.js`, `privacy-routes.js`, the DPO's hold list is `GET /api/library/privacy/holds`.
+- **Retention.** `retention.js sweep`, run by the daily cron; periods in `atlas_voice/config/retention.json`.
+- Never write "GDPR compliant" anywhere: controls implemented, DPO sign-off required.

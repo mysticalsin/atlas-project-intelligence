@@ -1210,7 +1210,7 @@ test('closing during gap resolution: a discard or End leaves no ready and no tim
 
 test('full mode: a clean End while private memory is still recalled creates no timer and no opening (timer-leak guard)', async () => {
   let release; const h = harness([], { session: { memory: () => new Promise(r => { release = r; }) } });
-  const starting = h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
+  const starting = h.s.onText(JSON.stringify({ type: 'start', consent: { transcription: true, memory: true }, csrf: 'tok', project: PROJECT, capture: false }));
   await settle(5);
   let sttDone; h.s.sttChain = new Promise(r => { sttDone = r; }); // End waits for the last words: ending, not yet finished
   const sleep = h.s.sleep; h.s.sleep = () => new Promise(() => {});

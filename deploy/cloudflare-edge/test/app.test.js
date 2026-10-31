@@ -34,7 +34,7 @@ test('routes fail closed and serve the real page with runtime + CSP', async () =
   assert.equal((await handle(await req('/'), { ...ENV, CSRF_SECRET: '' }, page)).status, 500);
   const r = await handle(await req('/'), ENV, page), html = await r.text();
   assert.equal(r.status, 200); assert.ok(html.includes('window.ATLAS_RUNTIME={"subjectKey"') && html.includes('"authMode":"access"'));
-  assert.ok(html.includes("connect-src 'self' wss://atlas.example.workers.dev;") && html.includes('SYNTHETIC DATA ONLY'));
+  assert.ok(html.includes("connect-src 'self' wss://atlas.example.workers.dev;") && html.includes('TEST DEPLOYMENT') && html.includes('DPO sign-off pending') && html.includes('href="/privacy"') && !html.includes('SYNTHETIC DATA ONLY'));
   assert.ok(r.headers.get('content-security-policy').includes("frame-ancestors 'none'") && r.headers.get('cache-control') === 'no-store');
   const boot = await (await handle(await req('/api/bootstrap'), ENV, page)).json();
   assert.equal(boot.provider, 'workers'); assert.equal(boot.csrf.length, 64); assert.equal(boot.identity.mode, 'access');
@@ -230,9 +230,9 @@ const signed = async (path, claims = {}, init = {}) => new Request(ORIGIN + path
 
 test('T1-S0 bootstrap: verified email and every feature flag, conservative by default; existing keys unchanged', async () => {
   const boot = await (await handle(await req('/api/bootstrap'), ENV, '')).json();
-  assert.deepEqual(Object.keys(boot).slice(0, -3), ['provider', 'providerLabel', 'protocol', 'csrf', 'identity', 'model', 'admin', 'voices', 'defaultVoice', 'captureRequired', 'codecAvailable', 'busy', 'capacity',
+  assert.deepEqual(Object.keys(boot).slice(0, -5), ['provider', 'providerLabel', 'protocol', 'csrf', 'identity', 'model', 'admin', 'voices', 'defaultVoice', 'captureRequired', 'codecAvailable', 'busy', 'capacity',
     'maxSeconds', 'speakingSeconds', 'memory', 'wiki', 'jev', 'jevClassify', 'library', 'libraryRole', 'sheet', 'transcription', 'structuredNotes', 'liveLedger', 'playbackAck', 'textMode', 'languages', 'readiness']);
-  assert.deepEqual(Object.keys(boot).slice(-3), ['email', 'features', 'resumable']); assert.equal(boot.resumable, null); // T10: nothing to resume without an Interview Durable Object
+  assert.deepEqual(Object.keys(boot).slice(-5), ['email', 'features', 'resumable', 'privacy', 'consent']); assert.equal(boot.resumable, null); assert.equal(boot.consent, null); // T10: nothing to resume without an Interview Durable Object
   assert.equal(boot.email, 'tony@example.com'); assert.deepEqual(Object.keys(boot.features), FEATURE_KEYS);
   // v2.2 L1: the languages the page can offer (every one known by name) and the ones ATLAS can say aloud (Aura-2: English and Spanish; more only with an ElevenLabs key)
   assert.equal(boot.languages.auto, true); assert.deepEqual(boot.languages.voice, ['en', 'es']); assert.ok(boot.languages.list.length >= 30 && boot.languages.list.every(l => /^[a-z]{2,3}$/.test(l.code) && l.name && l.native));
@@ -507,7 +507,7 @@ test('Z DATA_MODE: the test banner and the readiness string follow it; nothing e
   for (const [env, banner, readiness] of [[ENV, true, 'edge-deployment-test-data-only'], [{ ...ENV, DATA_MODE: 'Production' }, true, 'edge-deployment-test-data-only'],
     [{ ...ENV, DATA_MODE: 'production' }, false, 'production']]) {
     const html = await (await handle(await req('/'), env, page)).text(), boot = await (await handle(await req('/api/bootstrap'), env, page)).json();
-    assert.equal(html.includes('TEST DEPLOYMENT · SYNTHETIC DATA ONLY'), banner, JSON.stringify(env.DATA_MODE)); assert.equal(boot.readiness, readiness);
+    assert.equal(html.includes('TEST DEPLOYMENT · DPO sign-off pending'), banner, JSON.stringify(env.DATA_MODE)); assert.ok(!html.includes('SYNTHETIC DATA ONLY'), 'real interviews run here: the banner never says synthetic only'); assert.equal(boot.readiness, readiness);
     assert.ok(html.includes('window.ATLAS_RUNTIME={"subjectKey"'));
   }
 });

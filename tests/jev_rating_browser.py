@@ -145,7 +145,11 @@ try:
    p.locator('#projectForm button[type=submit]').click();p.wait_for_timeout(300)
    p.evaluate("([n,rep])=>{window.ATLAS_VOICE_BRIDGE.autoSave(window.ATLAS_VOICE_BRIDGE.context(),n,'Consultant words.',rep);}",[notes,REP])
    p.wait_for_function("()=>window.ATLAS_APP.profile().projects.some(x=>x.library&&x.library.id)",timeout=8000)
-   return p.evaluate("()=>window.ATLAS_APP.profile().projects.find(x=>x.library&&x.library.id).library.id")
+   rid=p.evaluate("()=>window.ATLAS_APP.profile().projects.find(x=>x.library&&x.library.id).library.id")
+   # G2: an interview is a private draft until the person clicks Submit for review (the Library's own button, delegated handler)
+   p.evaluate("id=>{const b=document.createElement('button');b.dataset.submitRef=id;document.body.append(b);b.click();b.remove();}",rid)
+   p.wait_for_function("id=>window.ATLAS_APP.profile().projects.some(x=>x.library&&x.library.id===id&&x.library.status!=='draft')",arg=rid,timeout=8000)
+   return rid
   def rec(p,rid):return p.evaluate("id=>fetch('/api/library/'+id).then(r=>r.json())",rid)
   def open_record(p,rid):   # the app's own delegated [data-open-record] handler, as a library card or project pill would do
    p.evaluate("id=>{const b=document.createElement('button');b.dataset.openRecord=id;document.body.append(b);b.click();b.remove();}",rid)

@@ -295,7 +295,7 @@ test('the card is checkpointed: summary state round-trips, restoreView carries t
   const h2 = rig({ storage, clk, said: [], session: { evidence: L.hook() }, talk: () => OK_REPLY });
   h2.s.ai.analyst = analystOf({});
   clk.advance(60);
-  await h2.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: true, voice: 'asteria', memory: false, resume: h.s.sessionId }));
+  await h2.s.onText(JSON.stringify({ type: 'start', consent: { transcription: true, draft: true, checkpoint: true }, csrf: 'tok', project: PROJECT, capture: true, voice: 'asteria', memory: false, resume: h.s.sessionId }));
   await until(() => h2.events.some(e => e.type === 'restore'));
   const view = h2.events.find(e => e.type === 'restore').summary;
   assert.ok(view && view.items.length === 2 && view.state === 'summary', 'the open card comes back with the screens');

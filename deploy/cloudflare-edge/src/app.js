@@ -20,8 +20,11 @@ import { teamsRoutes } from './teams-routes.js';
 import { CONFIRM_HTML } from './confirm-page.js';
 import { nameClaims, pushConfig } from './profile.js';
 import { checkpointEnabled } from './checkpoint.js';
+import * as privacy from './privacy.js';
+import { RETENTION } from './policy.generated.js';
 
 const enc = new TextEncoder();
+const ERASE_TOKEN_MS = 10 * 60 * 1000; // the confirmation of "Delete my data" is good for ten minutes, for this sign-in only
 export const TALKER_MAX_TOKENS = 160; // one or two spoken sentences; the reply guard cuts at 45 words anyway (override: env TALKER_MAX_TOKENS)
 // One voice for everyone: @cf/deepgram/aura-2-en "harmonia" (Deepgram: empathetic, clear, calm, confident).
 // Transcription is part of the interview; consent covers it and reuse of reviewed notes for future projects.
@@ -239,7 +242,7 @@ async function route(request, env, page, { waitUntil = p => p, flagsOf = flags }
         const m = /^\/go\/confirm\/([a-f0-9]{32})$/.exec(url.pathname);
         if (m) return new Response(null, { status: 302, headers: headers(env, { Location: '/confirm#' + m[1] }) });
       }
-      if (!(url.pathname === '/confirm' && request.method === 'GET') && !url.pathname.startsWith('/api/library/confirmations/')) { sec.log('external_denied', 'EXTERNAL_ROLE_PATH', 403); return json(env, { error: 'Not available to external confirmers.' }, 403); }
+      if (!(url.pathname === '/confirm' && request.method === 'GET') && !(url.pathname === '/privacy' && request.method === 'GET') && !url.pathname.startsWith('/api/library/confirmations/')) { sec.log('external_denied', 'EXTERNAL_ROLE_PATH', 403); return json(env, { error: 'Not available to external confirmers.' }, 403); }
     }
     // Links that survive an interactive sign-in (§3.9): /go/start, /go/{gap,invitation,bid,library,confirm}/<32 hex>.
     // Anything else under /go/ goes home. The ids are random, non-secret and grant nothing without sign-in (a recorded
@@ -250,22 +253,28 @@ async function route(request, env, page, { waitUntil = p => p, flagsOf = flags }
       const to = !m ? '/' : m[1] ? '/#start' : m[2] === 'confirm' ? '/confirm#' + m[3] : '/#' + m[2] + '/' + m[3];
       return new Response(null, { status: 302, headers: headers(env, { Location: to }) });
     }
+    // The privacy notice (G2): everyone signed in reads it, external confirmers too (it is where they learn what is done with their answers). No script, no data.
+    if (url.pathname === '/privacy' && request.method === 'GET') return new Response(privacy.renderNoticeHtml(RETENTION), { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
     if (url.pathname === '/confirm' && request.method === 'GET') return new Response(CONFIRM_HTML, { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
     if (url.pathname === '/' && request.method === 'GET') {
       const runtime = JSON.stringify({ subjectKey, authMode: 'access', name: who.email }).replace(/</g, '\\u003c');
       let body = page.replace('/* SERVER_RUNTIME */', () => 'window.ATLAS_RUNTIME=' + runtime + ';') // a function replacer: a string one would expand "$'" and "$&" found in the email
         .replace("connect-src 'self';", "connect-src 'self' " + env.ORIGIN.replace('https://', 'wss://') + ';');
       const end = body.lastIndexOf('</body>'); // the page embeds an earlier '</body>' inside a script string
-      // The test banner stays until Tony sets DATA_MODE=production on an approved deployment (WOW_ZERO_CONFIG §0.7, §11).
-      if (env.DATA_MODE !== 'production') body = body.slice(0, end) + '<div style="position:fixed;left:12px;bottom:10px;z-index:99;font:11px/1.4 Arial;letter-spacing:.06em;color:#A9A9BC;background:#15151cdd;border:1px solid #2a2a36;border-radius:14px;padding:4px 10px">TEST DEPLOYMENT · SYNTHETIC DATA ONLY</div>' + body.slice(end);
+      // The test banner stays until Tony sets DATA_MODE=production on an approved deployment (WOW_ZERO_CONFIG §0.7, §11). It says this is a test deployment awaiting the DPO's sign-off and links the
+      // privacy notice; it never claims that only synthetic data is used (real interviews run here) and it is not where any privacy control lives (G2).
+      if (env.DATA_MODE !== 'production') body = body.slice(0, end) + '<div style="position:fixed;left:12px;bottom:10px;z-index:99;font:11px/1.4 Arial;letter-spacing:.06em;color:#A9A9BC;background:#15151cdd;border:1px solid #2a2a36;border-radius:14px;padding:4px 10px">TEST DEPLOYMENT · DPO sign-off pending · <a href="/privacy" target="_blank" rel="noopener" style="color:#b9a8ff">Privacy notice</a></div>' + body.slice(end);
       return new Response(body, { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
     }
     // Resumable interview (checkpoint.js): asked of the requesting person's OWN Interview Durable Object only, under the identity just verified, and
     // answered with {sessionId, savedAt, expiresAt} or null: never any content. Any failure or a slow answer is "nothing to resume".
     const interviewOf = (path, init = {}) => {
-      const fwd = new Request(new URL(path, request.url), { ...init, headers: { 'Content-Type': 'application/json', 'x-atlas-user': libraryUser, 'x-atlas-role': role } });
+      const fwd = new Request(new URL(path, request.url), { ...init, headers: { 'Content-Type': 'application/json', 'x-atlas-user': libraryUser, 'x-atlas-role': role, 'x-atlas-email': mail, 'x-atlas-subj': subjectKey, ...(init.headers || {}) } });
       return env.INTERVIEW.get(env.INTERVIEW.idFromName(who.sub)).fetch(fwd);
     };
+    // The same, for the shared library's internal privacy surface (privacy-routes.js): the verified identity and the pseudonymous subject key, never from the browser.
+    const libraryOf = (path, init = {}) => env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(new Request(new URL(path, request.url), { method: 'GET', ...init,
+      headers: { 'Content-Type': 'application/json', 'x-atlas-user': libraryUser, 'x-atlas-role': role, 'x-atlas-email': mail, 'x-atlas-subj': subjectKey, 'x-atlas-idp': 'e30' } }));
     // Per-person persistent rate limit (ratelimit.js, in the person's own Interview Durable Object). A refusal is a 429 with Retry-After; if the limiter
     // itself is unreachable the request goes ahead (a cost cap must not become an outage) and nothing is lost but the count.
     const limited = async (name, max, windowMs) => {
@@ -279,11 +288,12 @@ async function route(request, env, page, { waitUntil = p => p, flagsOf = flags }
     };
     const paused = (message, code = 'AI_OFF') => new Response(JSON.stringify({ error: message, code }), { status: 503, headers: headers(env, { 'Content-Type': 'application/json', 'Retry-After': '300' }) });
     if (url.pathname === '/api/bootstrap' && request.method === 'GET') {
-      let resumable = null;
+      // The person's own object answers both questions in ONE call: whether an interview can be resumed, and the consent state in force (G2). Asked only while checkpoints are on; a failure or a slow answer is "nothing to resume, state unknown".
+      let resumable = null, consent = null;
       if (env.INTERVIEW && checkpointEnabled(env) && role !== 'external') {
         let timer;
-        try { resumable = (await Promise.race([interviewOf('/api/checkpoint').then(r => r.json()), new Promise(r => { timer = setTimeout(() => r(null), 1500); })]))?.resumable || null; }
-        catch { resumable = null; } finally { clearTimeout(timer); }
+        try { const r = await Promise.race([interviewOf('/api/checkpoint').then(r => r.json()), new Promise(r => { timer = setTimeout(() => r(null), 1500); })]); resumable = r?.resumable || null; consent = r?.consent || null; }
+        catch { resumable = null; consent = null; } finally { clearTimeout(timer); }
       }
       // One voice for everyone, advertised only as 'atlas': the real voice and provider stay server-side.
       return json(env, { provider: 'workers', providerLabel: 'ATLAS voice', protocol: 'atlas-personaplex-pcm-v1', csrf,
@@ -291,6 +301,8 @@ async function route(request, env, page, { waitUntil = p => p, flagsOf = flags }
         voices: ['atlas'], defaultVoice: 'atlas', captureRequired: true, codecAvailable: true, busy: false, capacity: 1, maxSeconds: MAX_SECONDS, speakingSeconds: SPEAKING_LIMIT_S,
         memory: !!env.HINDSIGHT_API_KEY && bankSecretStatus(env) !== 'missing', wiki: false, jev: !!env.TYPESAFE_API_KEY, jevClassify: !!env.TYPESAFE_API_KEY && !ks.aiOff(env), library: !!env.LIBRARY, libraryRole: role, sheet: true, transcription: true, structuredNotes: true, liveLedger: true, playbackAck: true, textMode: true, languages: languageList(workersAI(env).speaks),
         readiness: env.DATA_MODE === 'production' ? 'production' : 'edge-deployment-test-data-only', email: mail, features: flagsOf(env), resumable,
+        // G2: the consent wording and which toggles are required, and the person's consent state in force (what they last chose; memory is off until they turn it on).
+        privacy: privacy.bootstrapView(), consent: consent ? { purposes: Object.fromEntries(Object.entries(consent.purposes || {}).map(([k, v]) => [k, v?.granted === true])), blocked: consent.blocked || {} } : null,
         ...(ks.readOnly(env) ? { readOnly: true } : {}), ...(ks.aiOff(env) ? { aiOff: true } : {}) });
     }
     if (url.pathname === '/api/voice') {
@@ -314,6 +326,72 @@ async function route(request, env, page, { waitUntil = p => p, flagsOf = flags }
       const res = await interviewOf('/api/checkpoint/discard', { method: 'POST' });
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
     }
+    // ---- Consent and data subject rights (G2). The browser-facing side of privacy.js, subject-rights.js and me-routes.js; identity is the verified sign-in only. ----
+    // Changing a choice outside an interview (withdrawing the saved-interview or memory choice, acknowledging the notice): state and receipt, all or nothing, in the person's own object.
+    if (url.pathname === '/api/consent' && request.method === 'POST') {
+      { const bad = csrfRefusal(request, env, csrf, sec); if (bad) return bad; }
+      if (!env.INTERVIEW) return json(env, { error: 'Consent choices are not available here.' }, 404);
+      { const slow = await limited('consent', 60, HOUR); if (slow) return slow; }
+      const raw = await boundedBytes(request, 4096);
+      if (raw === null) return json(env, { error: 'Request too large.' }, 413);
+      const res = await interviewOf('/api/consent', { method: 'POST', body: raw, headers: { 'x-atlas-bank': '' } });
+      return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
+    }
+    // "Download my data": one machine-readable JSON file, built from the library (what the shared library holds about the person) and the person's own object (the saved
+    // interview, private memory, consent state). Rate limited in the library; every build leaves a numbers-only security event and an id-free audit row.
+    if (url.pathname === '/api/me/export' && request.method === 'GET') {
+      if (!env.INTERVIEW) return json(env, { error: 'Export is not available here.' }, 404);
+      const lib = env.LIBRARY ? await libraryOf('/api/privacy/export') : null;
+      if (lib && lib.status === 429) return new Response(lib.body, { status: 429, headers: headers(env, { 'Content-Type': 'application/json', 'Retry-After': lib.headers.get('Retry-After') || '3600' }) });
+      if (lib && !lib.ok) return json(env, { error: 'Your data could not be collected right now. Nothing was changed.' }, 502);
+      const mine = await interviewOf('/api/me/export', { headers: { 'x-atlas-bank': bankSecretStatus(env) === 'missing' ? '' : await bankId(env, who.sub) } });
+      if (!mine.ok) return json(env, { error: 'Your data could not be collected right now. Nothing was changed.' }, 502);
+      const out = { schema: 'atlas.my-data.v1', exportedAt: new Date().toISOString(), privacyNoticeVersion: privacy.NOTICE_VERSION, library: lib ? await lib.json() : null, interview: await mine.json(),
+        note: 'Everything ATLAS can find about you. Audio is never stored. Platform backups, provider-side logs and the DNA directory are outside this file.' };
+      return new Response(JSON.stringify(out, null, 2), { headers: headers(env, { 'Content-Type': 'application/json', 'Content-Disposition': 'attachment; filename="atlas-my-data.json"', 'Cache-Control': 'no-store' }) });
+    }
+    // "Delete my data": two steps. The first answers with what will and will not happen and a short-lived confirmation token tied to this sign-in; the second (with the token)
+    // erases. Origin and CSRF as for every state change. Approved or published material is flagged for the DPO instead of being silently deleted.
+    if (url.pathname === '/api/me/erase' && request.method === 'POST') {
+      { const bad = csrfRefusal(request, env, csrf, sec); if (bad) return bad; }
+      if (!env.INTERVIEW) return json(env, { error: 'Erasure is not available here.' }, 404);
+      const raw = await boundedBytes(request, 2048);
+      if (raw === null) return json(env, { error: 'Request too large.' }, 413);
+      let b = {}; try { b = JSON.parse(new TextDecoder().decode(raw) || '{}'); } catch { return json(env, { error: 'Invalid JSON.' }, 400); }
+      if (typeof b?.confirm !== 'string') {
+        const exp = Date.now() + ERASE_TOKEN_MS;
+        sec.log('privacy_erase', 'CONFIRM_ISSUED', 200);
+        return json(env, { confirmToken: exp + '.' + (await hmac(env.CSRF_SECRET, 'erase|' + who.sub + '|' + exp)), expiresInSeconds: ERASE_TOKEN_MS / 1000,
+          willHappen: ['Your drafts, references, interview notes and evidence statements are replaced by empty markers.', 'Your saved interview and your private memory are deleted.', 'Your profile, invitations and messages about you are deleted.', 'Your name is removed from the audit trail.'],
+          kept: ['Approved evidence, published references and bids are flagged for the DPO to review before deletion (they may already be used in a bid).', 'The record that you made consent choices (no content).', 'Platform backups can hold a copy for a short period.'] });
+      }
+      const [exp, mac] = b.confirm.split('.');
+      if (!(Number(exp) > Date.now()) || !safeEqual(mac || '', await hmac(env.CSRF_SECRET, 'erase|' + who.sub + '|' + exp))) { sec.log('privacy_erase', 'CONFIRM_INVALID', 403); return json(env, { error: 'The confirmation expired or does not belong to this sign-in. Start again.' }, 403); }
+      const lib = env.LIBRARY ? await libraryOf('/api/privacy/erase', { method: 'POST', body: JSON.stringify({ confirmed: true }) }) : null;
+      if (lib && lib.status === 429) return new Response(lib.body, { status: 429, headers: headers(env, { 'Content-Type': 'application/json', 'Retry-After': lib.headers.get('Retry-After') || '3600' }) });
+      const mine = await interviewOf('/api/me/erase', { method: 'POST', headers: { 'x-atlas-bank': bankSecretStatus(env) === 'missing' ? '' : await bankId(env, who.sub) } }).then(r => r.json()).catch(() => null);
+      const library = lib && lib.ok ? await lib.json() : null, complete = (!env.LIBRARY || !!library) && !!mine?.complete;
+      return json(env, { complete, library, interview: mine, ...(complete ? {} : { retry: 'Part of the erasure did not finish. Nothing already erased comes back; choose Delete my data again to finish.' }) });
+    }
+    // The person's own privacy state: consent in force, restriction and objection flags. POST sets the flags (restricted, objectScoring, objectMatching, objectMemory); memory is blocked at once.
+    if (url.pathname === '/api/me/privacy') {
+      if (!env.INTERVIEW) return json(env, { error: 'Not available here.' }, 404);
+      if (request.method === 'POST') { const bad = csrfRefusal(request, env, csrf, sec); if (bad) return bad; }
+      else if (request.method !== 'GET') return json(env, { error: 'Not found.' }, 404);
+      if (request.method === 'GET') {
+        const [consent, flags] = await Promise.all([interviewOf('/api/consent').then(r => r.json()).catch(() => null), env.LIBRARY ? libraryOf('/api/privacy/flags').then(r => r.json()).catch(() => null) : null]);
+        return json(env, { noticeVersion: privacy.NOTICE_VERSION, consent: consent && { purposes: Object.fromEntries(Object.entries(consent.purposes || {}).map(([k, v]) => [k, v?.granted === true])), blocked: consent.blocked || {} }, flags });
+      }
+      { const slow = await limited('privacy', 60, HOUR); if (slow) return slow; }
+      const raw = await boundedBytes(request, 2048);
+      if (raw === null) return json(env, { error: 'Request too large.' }, 413);
+      if (!env.LIBRARY) return json(env, { error: 'Flags are not available here.' }, 404);
+      const set = await libraryOf('/api/privacy/flags', { method: 'POST', body: raw });
+      if (!set.ok) return new Response(set.body, { status: set.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
+      const flags = await set.json();
+      await interviewOf('/api/consent/block', { method: 'POST', body: JSON.stringify({ memory: flags.restricted || flags.objectMemory }), headers: { 'x-atlas-bank': '' } }).catch(() => null);
+      return json(env, { flags });
+    }
     if (url.pathname.startsWith('/api/sheet/') && request.method === 'POST') {
       { const bad = csrfRefusal(request, env, csrf, sec); if (bad) return bad; }
       if (ks.aiOff(env)) { sec.log('kill_switch', 'AI_OFF', 503); return paused(ks.AI_OFF_MESSAGE); }
@@ -333,6 +411,7 @@ async function route(request, env, page, { waitUntil = p => p, flagsOf = flags }
       const memHeaders = new Headers(request.headers); memHeaders.delete('content-length');
       const forward = new Request(request.url, { method: request.method, headers: memHeaders, body: bodyless ? undefined : mem });
       forward.headers.set('x-atlas-bank', await bankId(env, who.sub)); forward.headers.set('x-atlas-role', role); // always overwritten
+      forward.headers.set('x-atlas-user', libraryUser); forward.headers.set('x-atlas-email', mail); forward.headers.set('x-atlas-subj', subjectKey); // memory choices leave receipts under the verified identity
       const res = await env.INTERVIEW.get(env.INTERVIEW.idFromName(who.sub)).fetch(forward);
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
     }
@@ -348,6 +427,7 @@ async function route(request, env, page, { waitUntil = p => p, flagsOf = flags }
       // Entra: the stable tid:oid is the library identity (emails can change); Access: the verified email.
       forward.headers.set('x-atlas-user', libraryUser); forward.headers.set('x-atlas-role', role); forward.headers.set('x-atlas-email', mail); // always overwritten
       forward.headers.set('x-atlas-idp', toB64url(JSON.stringify(signinClaims(request)))); // always overwritten ('e30' = {}): never from the browser
+      forward.headers.set('x-atlas-subj', subjectKey); // the pseudonym receipts and rate limits are keyed by (always overwritten)
       const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(forward);
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
     }

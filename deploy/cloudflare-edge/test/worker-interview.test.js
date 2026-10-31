@@ -39,7 +39,7 @@ function env(extra = {}) {
 }
 const headers = (user = USER) => ({ Upgrade: 'websocket', 'x-atlas-user': user, 'x-atlas-role': 'user', 'x-atlas-email': user, 'x-atlas-csrf': 'tok', 'x-atlas-admin': '0', 'x-atlas-bank': '' });
 const connect = (d, user) => { const p = d.fetch(new Request('https://atlas.example/api/voice', { headers: headers(user) })); return { p, server: pairs.at(-1)[1] }; };
-const start = extra => ({ data: JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: true, voice: 'atlas', memory: false, ...extra }) });
+const start = extra => ({ data: JSON.stringify({ type: 'start', consent: { transcription: true, draft: true, checkpoint: true }, csrf: 'tok', project: PROJECT, capture: true, voice: 'atlas', memory: false, ...extra }) });
 const cpKeys = st => st.keys().filter(k => k.startsWith('cp:'));
 const ready = s => s.events().find(e => e.type === 'ready');
 const spoken = s => s.events().filter(e => e.type === 'agent_text').map(e => e.text).join('');
@@ -113,7 +113,7 @@ test('ATLAS_CHECKPOINT=off: no checkpoint, a dropped socket ends the session as 
   assert.ok(!('sessionId' in ready(c.server)));
   typed(c.server, ANSWER); await until(() => spoken(c.server).includes(QUESTION) && !d.session.busy()); await settle(30);
   c.server.fire('close'); await d.session.ending;
-  assert.equal(st.keys().filter(k => !k.startsWith('rl:')).length, 0); assert.ok(c.server.events().some(x => x.type === 'ended')); // rl: = the interview-start counter (ratelimit.js), not interview content
+  assert.equal(st.keys().filter(k => !k.startsWith('rl:') && k !== 'consent').length, 0); assert.ok(c.server.events().some(x => x.type === 'ended')); // rl: = the interview-start counter (ratelimit.js); consent = the person's consent state (privacy.js): neither is interview content
 });
 
 test('without a verified identity header there is no checkpoint at all, and the routes refuse', async () => {
@@ -141,7 +141,8 @@ test('the confirmed summary is saved through the library binding under the forwa
   const on = await hook({ LIBRARY });
   assert.equal(typeof on, 'function');
   assert.deepEqual(await on({ session_id: 's1', details: [{ id: 'D-001' }] }), { status: 201, body: { id: 'e1', revision: 1 } });
-  assert.deepEqual(posts.map(p => p.slice(0, 4)), [['POST', '/api/evidence', USER, 'user']]); assert.equal(posts[0][4].notes.session_id, 's1');
+  const drafts = posts.filter(p => p[1] === '/api/evidence'); assert.deepEqual(drafts.map(p => p.slice(0, 4)), [['POST', '/api/evidence', USER, 'user']]); assert.equal(drafts[0][4].notes.session_id, 's1');
+  assert.ok(posts.some(p => p[1] === '/api/privacy/receipts' && p[2] === USER), 'the start\'s consent choices were receipted in the library under the same identity');
   assert.equal(await hook({ LIBRARY, ATLAS_EVIDENCE_WORKFLOW: 'off' }), null);
   assert.equal(await hook({}), null);
   assert.equal(await hook({ LIBRARY }, ''), null);

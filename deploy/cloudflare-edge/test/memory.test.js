@@ -23,15 +23,21 @@ test('bank id: server-derived per verified subject, stable, never guessable from
   assert.notEqual(a, await bankId({ ...ENV, HINDSIGHT_BANK_SECRET: 'other' }, 'user-a'));
 });
 
-test('project document: complete, labelled self-reported, client details scrubbed everywhere', () => {
+test('project document (G2): short structured facts only: no answer text, no report summary, no raw conversation; client and sensitive lines scrubbed', () => {
   const d = projectDocument(P);
-  assert.match(d, /Self-reported by the consultant/); assert.match(d, /Still missing or unverified: No named source/); assert.match(d, /Open follow-up questions: Who owns the dashboard\?/);
-  assert.doesNotMatch(d, /Zebracorp|Lyon|Head of Claims/); assert.match(d, /the client in the client had slow claims/);
+  assert.match(d, /Self-reported in ATLAS interviews/); assert.match(d, /Topics covered so far: Context, Personal contribution, Outcome\./); assert.match(d, /Still missing or unverified: No named source/); assert.match(d, /Open follow-up questions: Who owns the dashboard\?/);
+  assert.doesNotMatch(d, /slow claims|I built the model|Triage fell|Zebracorp|Lyon|Head of Claims/, 'what was said never reaches the memory service');
+  assert.doesNotMatch(d, /The consultant rebuilt triage/, 'not even the report summary');
   const items = retainItems(P, '2026-09-27T10:00:00.000Z');
+  assert.equal(items.length, 1, 'ONE document per project: the conversation item is gone');
   assert.equal(items[0].document_id, 'project-p-123'); assert.deepEqual(items[0].tags, ['atlas', 'project:p-123']); assert.equal(items[0].update_mode, 'replace');
-  assert.doesNotMatch(JSON.stringify(items), /Zebracorp|Head of Claims/); assert.match(items[1].document_id, /^conversation-p-123-20260927100000$/);
+  assert.doesNotMatch(JSON.stringify(items), /Zebracorp|Head of Claims|I told the Head|we would ship/);
   assert.throws(() => retainItems({ ...P, localId: '' }), /project id/);
   assert.equal(scrub('ab', { name: 'ab' }), 'ab', 'names under three characters are not scrubbed (too ambiguous)');
+  // A line that mentions a sensitive topic is dropped, whatever else it holds; the rest stays.
+  const sens = projectDocument({ ...P, report: { headline: 'h', gaps: ['No baseline', 'The consultant has cancer treatment on Fridays'], follow_ups: ['Who owns it?'] } });
+  assert.match(sens, /Still missing or unverified: No baseline\./); assert.doesNotMatch(sens, /cancer/i);
+  assert.doesNotMatch(projectDocument({ ...P, answers: ['I was diagnosed with cancer', '', '', '', '', ''] }), /cancer|diagnosed/i);
 });
 
 test('Hindsight client: verified endpoints, Bearer key, bank configured once, async retain, tag-scoped recall', async () => {
@@ -41,7 +47,8 @@ test('Hindsight client: verified endpoints, Bearer key, bank configured once, as
   const got = await hs.recall('atlas-x', recallQuery({ id: 'p-123', title: 'Claims' }), { tags: ['project:p-123'] });
   assert.deepEqual(calls.map(c => c.method + ' ' + new URL(c.url).pathname), ['PUT /v1/default/banks/atlas-x', 'POST /v1/default/banks/atlas-x/memories', 'POST /v1/default/banks/atlas-x/memories', 'POST /v1/default/banks/atlas-x/memories/recall']);
   assert.ok(calls.every(c => c.auth === 'Bearer hs-key')); assert.match(calls[0].body.retain_mission, /Never extract client company names/);
-  assert.equal(calls[1].body.async, true); assert.equal(calls[1].body.items.length, 2);
+  assert.equal(calls[0].body.enable_observations, false, 'no derived person profile'); assert.match(calls[0].body.retain_mission, /Do not extract anything about the person/); assert.doesNotMatch(calls[0].body.retain_mission, /expertise|how they like interviews/);
+  assert.equal(calls[1].body.async, true); assert.equal(calls[1].body.items.length, 1);
   assert.deepEqual([calls[3].body.tags, calls[3].body.tags_match, calls[3].body.budget], [['project:p-123'], 'any', 'low']);
   assert.deepEqual(got.map(g => g.text), ['Baseline was not measured yet.']);
   assert.equal(hindsight({ ...ENV, HINDSIGHT_API_KEY: '' }, fetcher), null);
@@ -53,9 +60,10 @@ test('memory note is bounded and labelled; JEV keeps this project\'s memories an
   assert.equal(memoryNote([]), ''); assert.match(memoryNote([{ text: 'Prefers short questions.' }]), /^PRIVATE MEMORY \(what this consultant told you in earlier conversations; self-reported, not evidence\)/);
   const mem = [{ text: 'Own project: baseline missing.', tags: ['project:p-1'] }, { text: 'Prefers short questions.', tags: [] }, { text: 'Other project: SAP rollout in Belgium.', tags: ['project:p-9'] }];
   assert.equal((await jevRelevant({}, mem, { id: 'p-1' })).memories.length, 3, 'no key: unchanged');
+  let sent = 0; assert.equal((await jevRelevant({ TYPESAFE_API_KEY: 'k' }, mem, { id: 'p-1' }, async () => { sent++; return new Response('{}'); })).memories.length, 3, 'without explicit consent nothing is sent to TypeSafe (G2)'); assert.equal(sent, 0);
   let body = null;
   const fetcher = async (url, init) => { body = JSON.parse(init.body); return new Response(JSON.stringify({ answers: { m0: { noul: 0.9 }, m1: { noul: 0.1 } } })); };
-  const r = await jevRelevant({ TYPESAFE_API_KEY: 'k' }, mem, { id: 'p-1', title: 'Claims' }, fetcher);
+  const r = await jevRelevant({ TYPESAFE_API_KEY: 'k' }, mem, { id: 'p-1', title: 'Claims' }, fetcher, { consent: true });
   assert.deepEqual(r.memories.map(m => m.text), ['Own project: baseline missing.', 'Prefers short questions.']); assert.equal(r.checked, 2);
   assert.deepEqual(Object.values(body.questions).map(q => q.type), ['noul', 'noul']); assert.deepEqual(body.state.memories, ['Prefers short questions.', 'Other project: SAP rollout in Belgium.']);
 });
@@ -67,6 +75,8 @@ test('memory routes: remember, list, forget one or all, switch off; bank header 
   const { calls, fetcher } = fakeHS({ documents: { items: [{ id: 'project-p-123', updated_at: '2026-09-27', memory_unit_count: 5 }] } });
   const ctx = { storage: store(), hs: hindsight(ENV, fetcher), env: { ...ENV, TYPESAFE_API_KEY: 'k' }, fetcher: async (u, i) => String(u).includes('typesafe') ? new Response(JSON.stringify({ answers: { ok: { noul: 0.97 } } })) : fetcher(u, i) };
   assert.equal((await memoryRoutes(new Request('https://atlas.test/api/memory'), ctx)).status, 401);
+  assert.equal((await (await memoryRoutes(req('POST', '/api/memory/remember', P), ctx)).json()).reason, 'Memory is switched off.', 'OFF by default (G2)');
+  assert.equal((await (await memoryRoutes(req('POST', '/api/memory/settings', { off: false }, { 'x-atlas-user': 'a@x' }), ctx)).json()).off, false);
   assert.equal((await (await memoryRoutes(req('POST', '/api/memory/remember', P), ctx)).json()).stored, true);
   const list = await (await memoryRoutes(req('GET', '/api/memory'), ctx)).json();
   assert.deepEqual(list.documents, [{ id: 'project-p-123', updatedAt: '2026-09-27', memories: 5, tags: [] }]);
@@ -87,7 +97,7 @@ test('session: recalled memory reaches the talker as a private note on every tur
     const talker = [], events = [];
     const s = new Session({ io: { send: e => events.push(e), sendBytes: () => {}, close: () => {} }, csrf: 'tok', voice: 'atlas', memory, sleep: () => new Promise(r => setImmediate(r)),
       ai: { async *chatStream(m) { talker.push(m); yield 'Hi. '; }, async synthesize() { return new Uint8Array(960); }, async transcribe() { return ''; }, async analyst() { return []; } } });
-    await s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: { id: 'p-1', title: 'Claims', stage: 'Pilot', answers: [] }, voice: 'atlas', capture: true, memory: false }));
+    await s.onText(JSON.stringify({ type: 'start', consent: { transcription: true, draft: true, memory: true }, csrf: 'tok', project: { id: 'p-1', title: 'Claims', stage: 'Pilot', answers: [] }, voice: 'atlas', capture: true, memory: false }));
     for (let i = 0; i < 50 && !talker.length; i++) await new Promise(r => setImmediate(r));
     await s.end(false); return { talker, events };
   };
@@ -111,14 +121,14 @@ test('connection test explains Hindsight credit and key problems plainly', async
 });
 
 // ---- Track Z (WOW_ZERO_CONFIG §3.4, §5.9, §9) ----
-test('Z GET /api/memory/settings: the switch alone, from DO storage, never a Hindsight call', async () => {
+test('Z GET /api/memory/settings: the switch alone, from DO storage, never a Hindsight call; OFF by default (G2)', async () => {
   const calls = [], hs = new Proxy({}, { get: (_, k) => async () => { calls.push(String(k)); throw new Error('Hindsight must not be called'); } });
   const ctx = { storage: store(), hs, env: ENV }, get = async c => (await memoryRoutes(req('GET', '/api/memory/settings'), c)).json();
-  assert.deepEqual(await get(ctx), { off: false }, 'on by default (inside the consented sentence)');
-  await memoryRoutes(req('POST', '/api/memory/settings', { off: true }), ctx); assert.deepEqual(await get(ctx), { off: true });
+  assert.deepEqual(await get(ctx), { off: true }, 'off until the person turns it on');
   await memoryRoutes(req('POST', '/api/memory/settings', { off: false }), ctx); assert.deepEqual(await get(ctx), { off: false });
+  await memoryRoutes(req('POST', '/api/memory/settings', { off: true }), ctx); assert.deepEqual(await get(ctx), { off: true });
   assert.deepEqual(calls, []);
-  assert.deepEqual(await get({ storage: store(), hs: null, env: {} }), { off: false }, 'answers without Hindsight configured too');
+  assert.deepEqual(await get({ storage: store(), hs: null, env: {} }), { off: true }, 'answers without Hindsight configured too');
   assert.equal((await memoryRoutes(new Request('https://atlas.test/api/memory/settings'), ctx)).status, 401, 'the Worker-set bank header is required');
 });
 
@@ -128,7 +138,7 @@ test('Z Hindsight leak: a model-safe project (name blanked, profile-prefilled ro
   const items = JSON.stringify(retainItems(modelSafe, '2026-09-29T10:00:00.000Z'));
   assert.doesNotMatch(items, /Zelda|Quintero|Principal Zebra/);
   assert.doesNotMatch(items, /Zebracorp|Head of Claims/, 'the client is still scrubbed: modelProject keeps `client` for exactly this');
-  assert.match(JSON.stringify(retainItems(full)), /Consultant role: Principal Zebra\./, 'why the browser blanks a profile role: it would otherwise be retained');
-  assert.match(JSON.stringify(retainItems({ ...full, consultant: { name: '', role: 'Data engineer' } })), /Consultant role: Data engineer\./, 'a role the consultant typed stays');
+  assert.match(JSON.stringify(retainItems(full)), /Job title: Principal Zebra\./, 'why the browser blanks a profile role: it would otherwise be retained');
+  assert.match(JSON.stringify(retainItems({ ...full, consultant: { name: '', role: 'Data engineer' } })), /Job title: Data engineer\./, 'a role the consultant typed stays');
   assert.doesNotMatch(JSON.stringify(retainItems(full)), /Zelda|Quintero/, 'the name itself was never retained');
 });

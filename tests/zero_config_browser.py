@@ -98,8 +98,8 @@ class Server:
             return r.fulfill(json={'id': mm.group(1), 'revision': rec['revision'], 'status': 'in_review', 'access': 'full', 'data': rec['data'],
                                    'state': {'validation': {'status': 'awaiting'}, 'quality': None, 'duplicates': []}, 'permissions': {}, 'revisions': [], 'audit': []})
         if path == '/api/library/invitations': return r.fulfill(json={'items': []})
-        if path == '/api/library/people' and m == 'GET':  # §6: one exact email -> {email, name, title, from} from stored directory rows, or 404
-            e = (parse_qs(u.query).get('email') or [''])[0].lower(); who = PEOPLE.get(e)
+        if path == '/api/library/people/lookup' and m == 'POST':  # §6 (G2: a POST, the address in the body, never in a URL): one exact email -> {email, name, title, from} from stored directory rows, or 404
+            e = str((body or {}).get('email') or '').lower(); who = PEOPLE.get(e)
             return r.fulfill(json={'email': e, **who}) if who else r.fulfill(status=404, json={'error': 'Nobody with that email in the directory.'})
         if path == '/api/library/analytics': return r.fulfill(json=ANALYTICS)
         if path == '/api/library/directory':
@@ -189,8 +189,8 @@ with sync_playwright() as pw:
     check('1 the connection pill is labelled "Connection and privacy"', p.locator('#studioConnection').get_attribute('aria-label') == 'Connection and privacy')
     consent(p)
     dlg = p.locator('#voiceConsentDialog')
-    check('1 Start opens the consent step at once: exactly one visible checkbox, heading with the first name',
-          dlg.locator('input[type=checkbox]:visible').count() == 1 and 'Tony' in p.locator('#voiceConsentTitle').inner_text() and p.locator('#voiceConsentEyebrow').inner_text() == 'BEFORE WE START')
+    check('1 Start opens the consent step at once: one REQUIRED checkbox (plus the optional saved-interview and notice choices), heading with the first name',
+          dlg.locator('input[type=checkbox]:visible').count() == 3 and p.locator('#voiceConsentStart').is_disabled() and 'Tony' in p.locator('#voiceConsentTitle').inner_text() and p.locator('#voiceConsentEyebrow').inner_text() == 'BEFORE WE START')
     check('1 the consent step has no setup words and names who is signed in', not FORBIDDEN.search(dlg.inner_text()) and p.locator('#consentIdentity').inner_text() == 'Signed in as Tony Walteur · tony.walteur@example.com')
     check('1 microphone not requested before the click', not p.evaluate('AtlasVoice.status().hasMicrophone'))
     talk(p, s)
@@ -207,32 +207,26 @@ with sync_playwright() as pw:
     p.context.close()
 
     # ---- 2. Memory consent
-    s = Server(memory=True, prof=profile())
+    s = Server(memory=True, prof=profile()); s.mem_off = True  # G2: memory is OFF until the person turns it on
     p = open_page(s); consent(p)
     txt = lambda: p.locator('#modelConsentText').inner_text()
-    check('2 memory on: the one sentence names private memory; the switch offers to turn it off',
-          'private memory' in txt() and 'Hindsight' in txt() and p.locator('#memoryLine').inner_text() == 'Turn off memory for my conversations' and p.locator('#memoryConsentRow').is_hidden())
+    check('2 memory on: its own tick in the consent step, OFF by default; the old "turn on memory" switch is gone; the required sentence does not name memory',
+          p.locator('#memoryConsentRow').is_visible() and not p.locator('#memoryConsent').is_checked() and p.locator('#memoryLine').is_hidden() and 'private memory' not in txt())
+    talk(p, s); p.wait_for_timeout(1500)
+    check('2 memory not ticked: the start frame says memory false and nothing is remembered',
+          [f for f in s.frames if f.get('type') == 'start'][-1]['consent']['memory'] is False and not s.api('POST', '/api/memory/remember'))
+    close_dialogs(p); p.evaluate("window.ATLAS_APP.profile().lastProject=null;window.ATLAS_APP.render()")
+    consent(p); p.locator('#memoryConsent').check(); s.mem_off = False  # the server records the choice at the start; the stand-in mirrors it
     talk(p, s); wait(p, lambda: s.api('POST', '/api/memory/remember'), 5); p.wait_for_timeout(600)
     rem = s.api('POST', '/api/memory/remember')
-    check('2 after the interview exactly one /api/memory/remember', len(rem) == 1)
-    check('2 Hindsight gets no consultant name or profile title; the client is still sent for scrubbing',
-          'Tony Walteur' not in json.dumps(rem[0]['body']) and 'Principal Consultant' not in json.dumps(rem[0]['body']) and 'client' in rem[0]['body'])
-    close_dialogs(p); p.evaluate("window.ATLAS_APP.profile().lastProject=null;window.ATLAS_APP.render()")
-    consent(p); p.locator('#modelConsent').check(); p.locator('#memoryLine').click(); p.wait_for_timeout(400)
-    posts = s.api('POST', '/api/memory/settings')
-    check('2 Turn off posts {off:true}; the sentence loses memory; the tick stays', posts and posts[-1]['body'] == {'off': True} and 'private memory' not in txt()
-          and p.locator('#modelConsent').is_checked() and p.locator('#memoryLine').inner_text() == 'Turn on memory')
-    p.locator('#memoryLine').click(); p.wait_for_timeout(400)
-    check('2 Turn on widens the sentence, so the tick is cleared', s.api('POST', '/api/memory/settings')[-1]['body'] == {'off': False} and 'private memory' in txt()
-          and not p.locator('#modelConsent').is_checked() and p.locator('#voiceConsentStart').is_disabled())
-    p.locator('#memoryLine').click(); p.wait_for_timeout(400)
-    n = len(s.api('POST', '/api/memory/remember')); talk(p, s); p.wait_for_timeout(1500)
-    check('2 memory off for this interview: no /api/memory/remember, and the start frame says memory false',
-          len(s.api('POST', '/api/memory/remember')) == n and [f for f in s.frames if f.get('type') == 'start'][-1]['memory'] is False)
+    check('2 memory ticked: the start frame carries it, and after the interview exactly one /api/memory/remember',
+          [f for f in s.frames if f.get('type') == 'start'][-1]['consent']['memory'] is True and len(rem) == 1)
+    check('2 Hindsight gets no consultant name or profile title, no conversation text; the client is still sent for scrubbing',
+          'Tony Walteur' not in json.dumps(rem[0]['body']) and 'Principal Consultant' not in json.dumps(rem[0]['body']) and 'client' in rem[0]['body'] and 'conversation' not in rem[0]['body'])
     p.context.close()
     s = Server(memory=False, prof=profile())
     p = open_page(s); consent(p)
-    check('2 memory not configured: no "memory" anywhere in the consent step', 'memory' not in p.locator('#voiceConsentDialog').inner_text().lower() and p.locator('#memoryLine').is_hidden())
+    check('2 memory not configured: no "memory" anywhere in the consent step', 'memory' not in p.locator('#voiceConsentDialog').inner_text().lower() and p.locator('#memoryLine').is_hidden() and p.locator('#memoryConsentRow').is_hidden())
     talk(p, s); p.wait_for_timeout(1200)
     check('2 memory not configured: no remember request', not s.api('POST', '/api/memory/remember') and not s.api('GET', '/api/memory/settings'))
     p.context.close()
@@ -434,7 +428,7 @@ with sync_playwright() as pw:
     def n1_email(p, v, settle=400):
         p.locator('#n1Email').fill(v); p.locator('#n1Email').press('Tab'); p.wait_for_timeout(settle)
     s = Server(prof=profile(manager=None)); p = n1_form(s)
-    looks = lambda: [x['q'].get('email', [''])[0] for x in s.api('GET', '/api/library/people')]
+    looks = lambda: [(x['body'] or {}).get('email', '') for x in s.api('POST', '/api/library/people/lookup')]
     fchip = lambda i: p.locator(f'[data-chip="{i}"]').inner_text() if p.locator(f'[data-chip="{i}"]').is_visible() else ''
     check('5.8 no profile N+1: the N+1 fields start empty', p.locator('#n1Name').input_value() == '' and p.locator('#n1Email').input_value() == '')
     n1_email(p, 'jane@exam')
@@ -465,7 +459,7 @@ with sync_playwright() as pw:
     p.context.close()
     s = Server(prof=None); p = n1_form(s)
     n1_email(p, 'jane@example.com')
-    check('5.8 without the profile feature there is no lookup', not s.api('GET', '/api/library/people') and p.locator('#n1Name').input_value() == '')
+    check('5.8 without the profile feature there is no lookup', not s.api('POST', '/api/library/people/lookup') and p.locator('#n1Name').input_value() == '')
     p.context.close()
 
     # ---- admin people directory: only the approved columns leave the browser (§5.6)

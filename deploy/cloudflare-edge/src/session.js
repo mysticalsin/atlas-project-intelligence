@@ -17,6 +17,8 @@ import { Machine } from './conversation-state.js';
 import { serialize, restore, restoreView, newSessionId, TTL_MS } from './checkpoint.js';
 import { hardLimit, offerText, shouldOffer, extensionReply } from './extension.js';
 import { cleanText, newFence, fenced, fenceRule, DEFAULT_FENCE } from './prompt-data.js';
+import { parseConsent } from './privacy.js';
+import { isSpecial } from './special.js';
 import { buildSummary, buildUnknowns, summaryFacts, factItems, summaryNote, redact, withheldQuotes, MAX_FACTS, REFLECT_FACTS, SUMMARY_QUESTION, SUMMARY_QUESTION_AGAIN } from './summary.js';
 
 export const RESUME = '[The consultant made a sound but no words were recognised, and your last reply was cut off.] Briefly re-ask your last question in fresh words.';
@@ -144,6 +146,7 @@ export const INTERVIEW_MODES = Object.freeze(['voice', 'text']);
 export const TEXT_READ_BEAT_MS = 2500; // after a closing line in text, a moment to read it before the interview ends (voice waits for the audio instead)
 // Checkpoint and reconnect (T10, checkpoint.js). `resume` in `start` is the id of the interview to continue; anything that cannot be resumed (nothing stored, another
 // person's, expired, another version, a gap request, transcript capture off) is this one message, so the socket reveals nothing about what is stored.
+export const CONSENT_UNRECORDED = 'Your consent choices could not be recorded, so nothing was started. Please try again.';
 export const RESUME_UNAVAILABLE = 'This interview can no longer be resumed. Start a new one.';
 export const RESUME_PROJECT = 'That interview was about a different project. Open that project to resume it, or start a new interview.';
 const RESUME_ID = /^[a-f0-9]{32}$/;
@@ -253,9 +256,11 @@ export class Session {
   // gaps: async id => {asks, bidAlias, referenceId, projectId} | null (the verified assignee's open gap request);
   // winHint: async () => ({hint: 'quantified'|'confirmed'|null}) | null (aggregate win-loop guidance, never awaited).
   constructor({ io, ai, csrf, voice, voices = null, captureRequired = false, model, maxSeconds = MAX_SECONDS, admin = false, memory = null, speakingLimit = SPEAKING_LIMIT_S, now = () => Date.now() / 1000, sleep = ms => new Promise(r => setTimeout(r, ms)), metric = () => {}, sttTimeout = STT_TIMEOUT_MS,
-    gaps = null, winHint = null, gapTimeout = GAP_RESOLVE_MS, flags = null, checkpoint = null, evidence = null }) {
+    gaps = null, winHint = null, gapTimeout = GAP_RESOLVE_MS, flags = null, checkpoint = null, evidence = null, consentHook = null }) {
     // metric(name, numbers): timings and counts only, never transcript or project content.
-    Object.assign(this, { io, ai, csrf, voice, voices: voices || [voice], captureRequired, model, maxSeconds, admin, speakingLimit, now, sleep, metric, memory, sttTimeout, gaps, winHint, gapTimeout, checkpoint, evidence });
+    Object.assign(this, { io, ai, csrf, voice, voices: voices || [voice], captureRequired, model, maxSeconds, admin, speakingLimit, now, sleep, metric, memory, sttTimeout, gaps, winHint, gapTimeout, checkpoint, evidence, consentHook });
+    // G2: the consent in force for this interview (privacy.js parseConsent): checkpoint only with the checkpoint purpose, private memory only with the memory purpose.
+    this.consent = { transcription: false, draft: false, checkpoint: false, memory: false, notice: false };
     this.softSeconds = maxSeconds; // the planned end; with the consultant's agreement the interview may run to hardLimit(softSeconds) of active time (extension.js)
     this.flags = { ...DEFAULT_FLAGS, ...(flags || ai?.flags || {}) };
     // Conversation state of the humane interviewer (Agent Brain v2.1), one plain object so a checkpoint can keep it whole:
@@ -503,7 +508,10 @@ export class Session {
 
   async start(init) {
     try {
-      if (!init || typeof init !== 'object' || Object.keys(init).some(k => !START_KEYS.includes(k)) || init.type !== 'start' || init.consent !== true || !same(String(init.csrf ?? ''), this.csrf)) throw new Error('Fresh voice consent and CSRF token required');
+      if (!init || typeof init !== 'object' || Object.keys(init).some(k => !START_KEYS.includes(k)) || init.type !== 'start' || !same(String(init.csrf ?? ''), this.csrf)) throw new Error('Fresh voice consent and CSRF token required');
+      // G2: the consent is an object of separate purposes (a bare `true` still means transcription only). A voice interview needs transcription and the draft; a typed one only the draft.
+      const parsed = parseConsent(init.consent, { capture: init.capture === true, mode: init.mode === 'text' ? 'text' : 'voice', required: this.captureRequired });
+      this.consent = parsed.purposes;
       this.project = projectContext(init.project);
       // What is known before the first question (role, sector, stage, opportunity, earlier notes): never the consultant's name.
       const { role, sector, stage, oppId, prior_notes: notes } = this.project;
@@ -516,9 +524,11 @@ export class Session {
       this.languageLocked = init.languageLock === true;
       if (this.captureRequired && !this.capture) throw new Error('Transcription consent is required for this interview');
       // A resume needs a checkpoint store, transcript consent given again now, and a full interview: a proof request (gap) is never resumed.
-      if (init.resume !== undefined && (typeof init.resume !== 'string' || !RESUME_ID.test(init.resume) || init.gap !== undefined || !this.checkpoint || !this.capture)) throw Object.assign(new Error(RESUME_UNAVAILABLE), { code: 'resume-unavailable' });
+      if (init.resume !== undefined && (typeof init.resume !== 'string' || !RESUME_ID.test(init.resume) || init.gap !== undefined || !this.checkpoint || !this.capture || !this.consent.checkpoint)) throw Object.assign(new Error(RESUME_UNAVAILABLE), { code: 'resume-unavailable' });
       if (init.gap !== undefined && (typeof init.gap !== 'string' || !GAP_ID.test(init.gap) || !this.gaps)) throw new Error(GAP_UNAVAILABLE);
       if (init.mode !== undefined && !INTERVIEW_MODES.includes(init.mode)) throw new Error('Unsupported interview mode');
+      // Each choice is stored with its receipt before anything is kept (all or nothing): when the receipt cannot be written, nothing starts.
+      if (this.consentHook) { try { await this.consentHook({ purposes: this.consent, mode: init.mode === 'text' ? 'text' : 'voice', legacy: parsed.legacy, resume: init.resume !== undefined }); } catch { throw Object.assign(new Error(CONSENT_UNRECORDED), { code: 'consent-failed' }); } }
     } catch (e) { return this.fail(e.message, e.code || 'voice-contract'); }
     // The checkpoint, before anything else happens: a resume reads it, every other start deletes it (a fresh start never leaves an old interview behind).
     let doc = null;
@@ -568,7 +578,7 @@ export class Session {
     this.event('ready', { model: 'ATLAS', provider: 'ATLAS voice', sampleRate: 24000, speakingSeconds: this.speakingLimit, capture: this.capture, liveLedger: !!this.analyst,
       maxSeconds: this.mode === 'full' ? hardLimit(this.softSeconds) : this.maxSeconds, ...(this.mode === 'full' ? { softSeconds: this.softSeconds } : {}), input: this.textMode ? 'text' : 'voice', language: this.languageInfo(), voices: this.voiceList(), message: this.textMode ? 'Typed session ready. Type your answers. Candidate notes require your review.' : 'Voice session ready. Speak naturally. Candidate notes require your review.',
       mode: this.mode, timePlan: timePlan(this.maxSeconds, this.mode), controls: CONTROLS, ...(this.checkpointable() ? { sessionId: this.sessionId, resumable: true } : {}), ...(this.resumed ? { resumed: true, activeSeconds: Math.max(0, Math.floor(this.activeSeconds())) } : {}), ...(gap ? { gaps: this.gapAsks.map(({ id, label, ask }) => ({ id, label, ask })) } : {}) });
-    if (this.memory && !gap) { // private memory from earlier conversations, bounded so the greeting is never held up (none in gap mode)
+    if (this.memory && !gap && this.consent.memory === true) { // private memory (only when the person turned it on for this interview) from earlier conversations, bounded so the greeting is never held up (none in gap mode)
       let timer;
       try { this.memoryNote = await Promise.race([this.memory(this.project), new Promise(r => { timer = setTimeout(() => r(''), 3500); })]) || ''; }
       catch { this.memoryNote = ''; this.metric('memory_error', {}); }
@@ -1111,7 +1121,7 @@ export class Session {
   evidenceNotes(only = null) {
     const details = this.ledger.details.filter(d => d.active && d.withheld !== true && (!only || only.has(d.id))).map(d => ({ id: d.id, field: d.field, item_id: d.item_id, quote: d.quote, status: d.status, active: true,
       supersedes: d.supersedes || '', withheld: false, provenance: d.provenance || 'unverified_speech_recognition', asr_min_conf: typeof d.asr_min_conf === 'number' ? d.asr_min_conf : null,
-      audio_offset_ms: Number.isInteger(d.audio_offset_ms) ? d.audio_offset_ms : null, ...(d.context ? { context: d.context } : {}), ...(typeof d.lang === 'string' ? { lang: d.lang } : {}) }));
+      audio_offset_ms: Number.isInteger(d.audio_offset_ms) ? d.audio_offset_ms : null, ...(d.context ? { context: d.context } : {}), ...(typeof d.lang === 'string' ? { lang: d.lang } : {}), ...(isSpecial(d.quote) ? { sensitive: true } : {}) }));
     const asr = this.asrNotes();
     // A project that does not exist yet reaches the server as the placeholder id 'new' (the browser creates it from the report): that is no project, never a shared fake one.
     return { session_id: this.sessionId, project_ref: this.project?.id && this.project.id !== 'new' ? this.project.id : null, details, ...(Object.keys(asr).length ? { asr } : {}) };
@@ -1726,7 +1736,7 @@ export class Session {
   suspend() { return this.end(false, { suspend: true }); }
 
   // Resumable now: a live full interview of a person who consented to transcript capture, past the consent step, with a store to keep it in.
-  checkpointable() { return !!this.checkpoint && this.capture === true && this.mode === 'full' && !!this.ledger && !!this.sessionId; }
+  checkpointable() { return !!this.checkpoint && this.consent.checkpoint === true && this.capture === true && this.mode === 'full' && !!this.ledger && !!this.sessionId; }
   canSuspend() { return this.started && !this.finished && this.checkpointable() && SUSPENDABLE.includes(this.machine.state); }
 
   // Write the state to the store, one write at a time, at most one a second, and only for an interview that is checkpointable. Called after every
