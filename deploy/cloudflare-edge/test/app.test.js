@@ -220,8 +220,9 @@ const signed = async (path, claims = {}, init = {}) => new Request(ORIGIN + path
 
 test('T1-S0 bootstrap: verified email and every feature flag, conservative by default; existing keys unchanged', async () => {
   const boot = await (await handle(await req('/api/bootstrap'), ENV, '')).json();
-  assert.deepEqual(Object.keys(boot).slice(0, -2), ['provider', 'providerLabel', 'protocol', 'csrf', 'identity', 'model', 'admin', 'voices', 'defaultVoice', 'captureRequired', 'codecAvailable', 'busy', 'capacity',
+  assert.deepEqual(Object.keys(boot).slice(0, -3), ['provider', 'providerLabel', 'protocol', 'csrf', 'identity', 'model', 'admin', 'voices', 'defaultVoice', 'captureRequired', 'codecAvailable', 'busy', 'capacity',
     'maxSeconds', 'speakingSeconds', 'memory', 'wiki', 'jev', 'jevClassify', 'library', 'libraryRole', 'sheet', 'transcription', 'structuredNotes', 'liveLedger', 'playbackAck', 'readiness']);
+  assert.deepEqual(Object.keys(boot).slice(-3), ['email', 'features', 'resumable']); assert.equal(boot.resumable, null); // T10: nothing to resume without an Interview Durable Object
   assert.equal(boot.email, 'tony@example.com'); assert.deepEqual(Object.keys(boot.features), FEATURE_KEYS);
   // D1 is the SPOKEN_ASK_APPROVED code constant (features.test.js pins its value): spoken Ask follows Ask when it is set.
   assert.equal(boot.features.spokenAsk, SPOKEN_ASK_APPROVED && boot.features.ask); assert.equal(boot.features.teams, 'BLOCKED_EXTERNAL'); assert.equal(boot.features.phone, 'BLOCKED_EXTERNAL');

@@ -14,6 +14,7 @@ import { flags } from './features.js';
 import { teamsRoutes } from './teams-routes.js';
 import { CONFIRM_HTML } from './confirm-page.js';
 import { nameClaims, pushConfig } from './profile.js';
+import { checkpointEnabled } from './checkpoint.js';
 
 const enc = new TextEncoder();
 export const TALKER_MAX_TOKENS = 160; // one or two spoken sentences; the reply guard cuts at 45 words anyway (override: env TALKER_MAX_TOKENS)
@@ -183,13 +184,25 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
       if (env.DATA_MODE !== 'production') body = body.slice(0, end) + '<div style="position:fixed;left:12px;bottom:10px;z-index:99;font:11px/1.4 Arial;letter-spacing:.06em;color:#A9A9BC;background:#15151cdd;border:1px solid #2a2a36;border-radius:14px;padding:4px 10px">TEST DEPLOYMENT · SYNTHETIC DATA ONLY</div>' + body.slice(end);
       return new Response(body, { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
     }
+    // Resumable interview (checkpoint.js): asked of the requesting person's OWN Interview Durable Object only, under the identity just verified, and
+    // answered with {sessionId, savedAt, expiresAt} or null: never any content. Any failure or a slow answer is "nothing to resume".
+    const interviewOf = (path, init = {}) => {
+      const fwd = new Request(new URL(path, request.url), { ...init, headers: { 'x-atlas-user': libraryUser, 'x-atlas-role': role } });
+      return env.INTERVIEW.get(env.INTERVIEW.idFromName(who.sub)).fetch(fwd);
+    };
     if (url.pathname === '/api/bootstrap' && request.method === 'GET') {
+      let resumable = null;
+      if (env.INTERVIEW && checkpointEnabled(env) && role !== 'external') {
+        let timer;
+        try { resumable = (await Promise.race([interviewOf('/api/checkpoint').then(r => r.json()), new Promise(r => { timer = setTimeout(() => r(null), 1500); })]))?.resumable || null; }
+        catch { resumable = null; } finally { clearTimeout(timer); }
+      }
       // One voice for everyone, advertised only as 'atlas': the real voice and provider stay server-side.
       return json(env, { provider: 'workers', providerLabel: 'ATLAS voice', protocol: 'atlas-personaplex-pcm-v1', csrf,
         identity, model: 'ATLAS conversational voice', admin,
         voices: ['atlas'], defaultVoice: 'atlas', captureRequired: true, codecAvailable: true, busy: false, capacity: 1, maxSeconds: MAX_SECONDS, speakingSeconds: SPEAKING_LIMIT_S,
         memory: !!env.HINDSIGHT_API_KEY, wiki: false, jev: !!env.TYPESAFE_API_KEY, jevClassify: !!env.TYPESAFE_API_KEY, library: !!env.LIBRARY, libraryRole: role, sheet: true, transcription: true, structuredNotes: true, liveLedger: true, playbackAck: true,
-        readiness: env.DATA_MODE === 'production' ? 'production' : 'edge-deployment-test-data-only', email: mail, features: flagsOf(env) });
+        readiness: env.DATA_MODE === 'production' ? 'production' : 'edge-deployment-test-data-only', email: mail, features: flagsOf(env), resumable });
     }
     if (url.pathname === '/api/voice') {
       if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected a WebSocket upgrade.', { status: 426 });
@@ -200,6 +213,13 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
       forward.headers.set('x-atlas-bank', await bankId(env, who.sub)); // server-derived; the browser never picks a bank
       forward.headers.set('x-atlas-csrf', csrf); // set by the Worker only; the DO is not reachable otherwise
       return env.INTERVIEW.get(env.INTERVIEW.idFromName(who.sub)).fetch(forward);
+    }
+    // "Start over" on the resume prompt: delete the stored interview now (its own Durable Object, same identity).
+    if (url.pathname === '/api/checkpoint/discard' && request.method === 'POST') {
+      if (request.headers.get('Origin') !== env.ORIGIN || request.headers.get('X-Atlas-CSRF') !== csrf) return json(env, { error: 'Invalid request origin or session token.' }, 403);
+      if (!env.INTERVIEW) return json(env, { discarded: false });
+      const res = await interviewOf('/api/checkpoint/discard', { method: 'POST' });
+      return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
     }
     if (url.pathname.startsWith('/api/sheet/') && request.method === 'POST') {
       if (request.headers.get('Origin') !== env.ORIGIN || request.headers.get('X-Atlas-CSRF') !== csrf) return json(env, { error: 'Invalid request origin or session token.' }, 403);

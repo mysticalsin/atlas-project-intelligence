@@ -81,7 +81,7 @@ ACKS = {
 }
 
 # Spoken when the consultant pauses, and when they come back (followed by the last question, re-spoken by the server).
-PAUSE_LINES = {'en': ["No problem, I'll wait. Say resume whenever you're ready.", "Pausing now. Take all the time you need.",
+PAUSE_LINES = {'en': ["No problem, I'll wait. Press Resume when you're ready.", "Pausing now. Take all the time you need.",
                       "Okay, paused. Pick it up whenever you like."]}
 RESUME_LINES = {'en': ["Welcome back. Here's where we were.", "Okay, picking up where we left off.", "Welcome back. Let me say that again."]}
 
