@@ -25,3 +25,5 @@ On top: the 5 box commits from atlas/core-e2e (box base 54e934c), replayed with 
 4. Built artifacts (ATLAS_*.html, csp.generated.js): box's committed hashes were built from box's app.js; after the merge the inline script hash changed.
    Winner: rebuilt from the merged sources (make build), committed.
    Why: a stale hash would make the strict CSP block the page script.
+5. Main line moved to aa2aaa2 (v2.2 consent_revoked notice) during this work. Synced it into atlas/core-e2e; the only conflicts were the generated pages and csp.generated.js.
+   Winner: regenerated with make build from the merged sources (aa2aaa2's app change plus core-e2e). Why: generated files must match their sources; hand-picking either side leaves a wrong CSP hash.

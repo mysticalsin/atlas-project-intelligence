@@ -298,6 +298,7 @@ function receive(m,token){
  else if(m.type==='restore'){restoreScreens(m);}
  else if(m.type==='error'){if(m.code==='resume-unavailable'||m.code==='resume-project')refused(m.message);else fail(m.message||'The selected voice service is unavailable.');}
  else if(m.type==='memory'){$('voiceTranscriptLabel').textContent=m.message+' · agent text is not consultant evidence';}
+ else if(m.type==='consent_revoked'){if(typeof m.message==='string')$('voiceTranscriptLabel').textContent=m.message.slice(0,200);} // X2: a withdrawal or erase applied to the live interview; when it ends the interview, `ended` follows
  else if(m.type==='status'){if(m.state==='transcribing'){status('ending','Let’s check what you said.',m.message);}else if(m.state==='connecting')$('voiceMessage').textContent=m.message;}
  else if(m.type==='audio_stopped'){stopDevices();if(phase==='live'||phase==='connecting')status('ending',textMode?'Finishing up.':'Your microphone is off.',textMode?'The conversation has closed. Finishing the session.':'The voice stream has closed. Finishing the session.');}
  else if(m.type==='time_up'){if(phase==='live'){$('voiceHeading').textContent='Time is up.';$('voiceMessage').textContent=m.message||'Time is up.';}}
