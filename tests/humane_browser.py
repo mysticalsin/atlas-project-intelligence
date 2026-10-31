@@ -165,7 +165,7 @@ try:
         v0 = Voice(controls=None, draft=draft)
         p0 = open_page(USER, v0); start_interview(p0)
         check('no controls announced: Pause, Repeat, Skip and the typed answer stay hidden', all(p0.locator(s).is_hidden() for s in ('#voicePause', '#voiceRepeat', '#voiceSkip', '#voiceTypeForm')))
-        p0.locator('#voiceEnd').click(); p0.wait_for_function('()=>AtlasVoice.status().phase==="idle"', timeout=8000)
+        p0.locator('#voiceEnd').click(); p0.locator('#voiceEndConfirm').click(); p0.wait_for_function('()=>AtlasVoice.status().phase==="idle"', timeout=8000)
         check('and nothing was sent to a gateway that never announced them', all(f.get('type') in ('start', 'end') for f in v0.frames))
 
         # ---- 2. the resume prompt on page load, then Resume
@@ -201,7 +201,7 @@ try:
         check('Pause (keyboard): one pause message is sent', len(frames_of(pr, 'pause')) == 1)
         cap = pr.locator('#orbStateCaption').inner_text().lower()  # the caption is set in capitals by the stylesheet
         check('Paused: the caption says so, the orb is not speaking, the microphone is off, and the button now reads Resume', cap.startswith('paused') and pr.evaluate("document.getElementById('voicePanel').dataset.orbState") != 'speaking'
-              and pr.locator('#orbInputWord').inner_text() == 'Paused' and pr.locator('#voicePause').inner_text() == 'Resume' and pr.get_attribute('#voicePause', 'aria-label') == 'Resume the interview')
+              and pr.locator('#orbInputWord').inner_text() == 'Paused' and pr.locator('#voicePause').inner_text() == 'Resume interview' and pr.get_attribute('#voicePause', 'aria-label') == 'Resume the interview')
         check('Paused: Repeat and Skip are off, the mute button is off, the typed answer still works', pr.locator('#voiceRepeat').is_disabled() and pr.locator('#voiceSkip').is_disabled() and pr.locator('#voiceMute').is_disabled() and pr.locator('#voiceTypeInput').is_enabled())
         t1 = pr.locator('#voiceTimer').inner_text(); pr.wait_for_timeout(2300)
         check('Paused: the clock stops', pr.locator('#voiceTimer').inner_text() == t1)
@@ -360,7 +360,7 @@ try:
         check('at 390 px a typed interview does not scroll sideways, and the log and answer box stay inside the screen', no_overflow(pt) and pt.evaluate("['textLog','voiceTypeInput','voiceTypeSend'].every(id=>{const r=document.getElementById(id).getBoundingClientRect();return r.left>=0&&r.right<=innerWidth+1})"))
         pt.emulate_media(reduced_motion='reduce'); vt.sock.send(json.dumps({'type': 'agent_text', 'text': '\n\nOne more thing: who adopted it?'})); pt.wait_for_timeout(300)
         check('reduced motion: a new line does not animate', pt.evaluate("getComputedStyle(document.querySelector('#textLog .msg:last-child')).animationName") == 'none')
-        pt.set_viewport_size({'width': 1280, 'height': 1000}); pt.locator('#voiceEnd').click(); pt.wait_for_function('()=>AtlasVoice.status().phase==="idle"', timeout=8000)
+        pt.set_viewport_size({'width': 1280, 'height': 1000}); pt.locator('#voiceEnd').click(); pt.locator('#voiceEndConfirm').click(); pt.wait_for_function('()=>AtlasVoice.status().phase==="idle"', timeout=8000)
         check('End: the typed conversation stays readable, the answer box goes, and both ways to start again are offered', pt.locator('#textLog .msg').count() >= 5 and pt.locator('#voiceTypeForm').is_hidden() and pt.locator('#voiceStartText').is_visible() and pt.locator('#voiceStartText').is_enabled())
         # a typed interview that is resumed: the saved interview says it was typed, and no microphone is asked for
         vtr = Voice(controls=CONTROLS, draft=draft, text=True)

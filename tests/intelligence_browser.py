@@ -54,8 +54,8 @@ with sync_playwright() as pw:
   p.evaluate("window.dispatchEvent(new CustomEvent('atlas-quality',{detail:{type:'reset'}}));")
   out=ROOT/'preview/v11';out.mkdir(parents=True,exist_ok=True)
   p.set_viewport_size({'width':1512,'height':982});p.evaluate('scrollTo(0,0)');p.wait_for_timeout(250);p.screenshot(path=str(out/'desktop.png'),full_page=True)
-  p.locator('[data-orb-preview=speaking]').click();p.wait_for_timeout(1200);p.screenshot(path=str(out/'speaking-preview.png'),full_page=True)
-  p.locator('#studioPreview').click();p.locator('[data-intelligence=quality]').click();p.locator('#qualityDetailed').click();p.screenshot(path=str(out/'quality.png'),full_page=False)
+  p.evaluate("document.querySelector('.motion-language').open=true");p.locator('[data-orb-preview=speaking]').click();p.wait_for_timeout(1200);p.screenshot(path=str(out/'speaking-preview.png'),full_page=True)
+  p.evaluate("document.querySelector('.motion-language').open=true");p.locator('#studioPreview').click();p.locator('[data-intelligence=quality]').click();p.locator('#qualityDetailed').click();p.screenshot(path=str(out/'quality.png'),full_page=False)
   p.locator('#intelligenceDialog [aria-label="Close story intelligence"]').click();p.set_viewport_size({'width':390,'height':844});p.evaluate('scrollTo(0,0)');p.wait_for_timeout(200);p.screenshot(path=str(out/'mobile.png'),full_page=True)
   check('No JavaScript errors',not errors)
  finally:

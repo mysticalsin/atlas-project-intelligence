@@ -29,6 +29,7 @@ function badge(c,rev,reqs){const tag=(cls,text)=>html`<span class="badge claim-b
  const moved=Number.isInteger(c.confirmedRevision)&&Number.isInteger(rev)&&c.confirmedRevision<rev?` on r${c.confirmedRevision}; sentence unchanged`:'',src=requestFor(c,reqs)?.managerSource;
  if(c.status==='manager_confirmed')return tag('confirmed','Confirmed by N+1'+(src==='staffing'?' (staffing record)':src==='directory'?' (N+1 from DNA)':src==='self_declared'?' (named by the consultant)':'')+moved);
  if(c.status==='client_confirmed')return tag('confirmed','Confirmed by the client contact'+moved);
+ if(c.status==='consultant_named')return tag('named','Named by the consultant, not independently confirmed'+moved);
  if(c.status==='corrected')return tag('corrected','Corrected: '+(c.note||'no note given'));
  if(c.status==='cant_say')return tag('cantsay','N+1 couldn’t say');
  return tag('unverified','Unverified');}

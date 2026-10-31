@@ -26,7 +26,7 @@ function askVerdictCopy(v,results){const c=verdictCopy(v,{covered:0,total:0});if
  if(!arr(results).length)return {...c,cta:null,text:v==='empty_library'?c.text:ASK_EMPTY};
  return {...c,cta:null,text:v==='strong'?'Strong matches found for your question.':v==='none'?'No strong match in the library for this question.':c.text};}
 const TOPIC={context:'Context',contribution:'Contribution',approach:'Approach',outcome:'Outcome',evidence:'Evidence',customer_relevance:'Customer relevance'};
-const CONFIRMATION={manager_confirmed:'Confirmed by N+1',client_confirmed:'Confirmed by the client contact',corrected:'Corrected by N+1',cant_say:'N+1 couldn’t say',unverified:'Unverified'};
+const CONFIRMATION={manager_confirmed:'Confirmed by N+1',client_confirmed:'Confirmed by the client contact',consultant_named:'Named by the consultant, not independently confirmed',corrected:'Corrected by N+1',cant_say:'N+1 couldn’t say',unverified:'Unverified'};
 const confirmationLabel=c=>own(CONFIRMATION,c)||CONFIRMATION.unverified;
 function sourceLabel(f){if(f?.kind==='evidence'){const s=[line(f.sourceName),line(f.sourceVersion)].filter(Boolean).join(' ');return 'Evidence'+(s?' · '+s:'');}
  return 'Consultant’s words'+(own(TOPIC,f?.topic)?' · '+TOPIC[f.topic]:'');}

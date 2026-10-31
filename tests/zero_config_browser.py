@@ -190,7 +190,7 @@ with sync_playwright() as pw:
     consent(p)
     dlg = p.locator('#voiceConsentDialog')
     check('1 Start opens the consent step at once: one REQUIRED checkbox (plus the optional saved-interview and notice choices), heading with the first name',
-          dlg.locator('input[type=checkbox]:visible').count() == 3 and p.locator('#voiceConsentStart').is_disabled() and 'Tony' in p.locator('#voiceConsentTitle').inner_text() and p.locator('#voiceConsentEyebrow').inner_text() == 'BEFORE WE START')
+          dlg.locator('input[type=checkbox]:visible').count() == 3 and p.locator('#voiceConsentStart').is_disabled() and 'Tony' in p.locator('#voiceConsentTitle').inner_text() and p.locator('#voiceConsentEyebrow').inner_text() == 'Before we start')
     check('1 the consent step has no setup words and names who is signed in', not FORBIDDEN.search(dlg.inner_text()) and p.locator('#consentIdentity').inner_text() == 'Signed in as Tony Walteur · tony.walteur@example.com')
     check('1 microphone not requested before the click', not p.evaluate('AtlasVoice.status().hasMicrophone'))
     talk(p, s)
@@ -373,7 +373,7 @@ with sync_playwright() as pw:
     s = Server(prof=profile(name=('Tony Walteur', 'guess'), title=None, manager=None, first='', guessed=True))
     p = open_page(s); consent(p)
     check('8 a guess is not reliable: no first name in the heading, only the email in the footer',
-          p.locator('#voiceConsentTitle').inner_text() == 'A conversation with ATLAS.' and p.locator('#consentIdentity').inner_text() == 'Signed in as tony.walteur@example.com')
+          p.locator('#voiceConsentTitle').inner_text() == 'A conversation with ATLAS' and p.locator('#consentIdentity').inner_text() == 'Signed in as tony.walteur@example.com')
     talk(p, s); wait(p, lambda: s.api('POST', '/api/library'), 5); p.wait_for_timeout(600)
     check('8 with only a guess the new project\'s consultant is "Consultant"', projects(p)[0]['consultant'] == 'Consultant' and s.api('POST', '/api/library')[-1]['body']['reference']['consultant']['name'] == 'Consultant')
     close_dialogs(p)

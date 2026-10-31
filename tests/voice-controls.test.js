@@ -48,7 +48,7 @@ test('the clock leaves out paused time (the one in progress too)',()=>{
 
 test('view: live and running',()=>{
  const v=C.view({phase:'live',paused:false,muted:false,controls:ALL,draft:''});
- assert.equal(v.pauseLabel,'Pause');assert.equal(v.pauseAria,'Pause the interview');assert.equal(v.pausePressed,false);
+ assert.equal(v.pauseLabel,'Pause interview');assert.equal(v.pauseAria,'Pause the interview');assert.equal(v.pausePressed,false);
  assert.ok(!v.pauseHidden&&!v.pauseDisabled&&!v.repeatDisabled&&!v.skipDisabled&&!v.textDisabled&&!v.muteDisabled);
  assert.equal(v.sendDisabled,true,'Send waits for text');
  assert.equal(C.view({phase:'live',paused:false,muted:false,controls:ALL,draft:'  hi '}).sendDisabled,false);
@@ -57,7 +57,7 @@ test('view: live and running',()=>{
 });
 test('view: paused: Resume only, microphone closed, orb is not speaking',()=>{
  const v=C.view({phase:'live',paused:true,muted:false,controls:ALL,draft:'typed while paused'});
- assert.equal(v.pauseLabel,'Resume');assert.equal(v.pauseAria,'Resume the interview');assert.equal(v.pausePressed,true);
+ assert.equal(v.pauseLabel,'Resume interview');assert.equal(v.pauseAria,'Resume the interview');assert.equal(v.pausePressed,true);
  assert.ok(!v.pauseDisabled,'Resume is the one way back');
  assert.ok(v.repeatDisabled&&v.skipDisabled&&v.muteDisabled);
  assert.equal(v.textDisabled,false,'typing is allowed while paused: it carries on');assert.equal(v.sendDisabled,false);
@@ -65,7 +65,7 @@ test('view: paused: Resume only, microphone closed, orb is not speaking',()=>{
 });
 test('view: muted is separate from paused',()=>{
  const m=C.view({phase:'live',paused:false,muted:true,controls:ALL,draft:''});
- assert.equal(m.muteLabel,'Unmute microphone');assert.equal(m.micOpen,false);assert.equal(m.pauseLabel,'Pause');assert.match(m.state,/muted/);
+ assert.equal(m.muteLabel,'Unmute microphone');assert.equal(m.micOpen,false);assert.equal(m.pauseLabel,'Pause interview');assert.match(m.state,/muted/);
  assert.equal(C.view({phase:'live',paused:false,muted:false,controls:ALL,draft:''}).muteLabel,'Mute microphone');
 });
 test('view: nothing is usable before the interview is live or after it ends',()=>{

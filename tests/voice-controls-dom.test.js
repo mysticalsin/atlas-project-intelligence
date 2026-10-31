@@ -73,32 +73,32 @@ test('Pause: a real toggle that closes the microphone, stops the visible clock a
  h.$('voicePause').click();
  assert.deepEqual(h.sent.filter(m=>m.type==='pause'),[{type:'pause'}]);
  assert.equal(h.win.AtlasVoice.status().tracks[0].enabled,false,'the microphone track is closed');
- assert.equal(h.$('voicePause').textContent,'Resume');assert.equal(h.$('voicePause').getAttribute('aria-label'),'Resume the interview');assert.equal(h.$('voicePause').dataset.paused,'true');
+ assert.equal(h.$('voicePause').textContent,'Resume interview');assert.equal(h.$('voicePause').getAttribute('aria-label'),'Resume the interview');assert.equal(h.$('voicePause').dataset.paused,'true');
  assert.equal(h.$('voiceRepeat').disabled,true);assert.equal(h.$('voiceSkip').disabled,true);assert.equal(h.$('voiceMute').disabled,true,'mute is not pause');
  assert.equal(h.$('voiceState').textContent,'Paused · microphone off');
  assert.deepEqual(JSON.parse(JSON.stringify(h.posted.filter(m=>m.type==='state').at(-1))),{type:'state',enabled:true,muted:true},'the audio worklet is told');
  assert.ok(h.posted.some(m=>m.type==='flush'),'anything of hers still queued is dropped: the orb cannot keep "speaking"');
  // typing while paused is allowed and carries the interview on
  h.$('voiceTypeInput').value='Carrying on';h.$('voiceTypeInput').oninput();h.$('voiceTypeForm').onsubmit({preventDefault(){}});
- assert.equal(h.sent.at(-1).type,'text');assert.equal(h.$('voicePause').textContent,'Resume','not before the server takes the turn');
+ assert.equal(h.sent.at(-1).type,'text');assert.equal(h.$('voicePause').textContent,'Resume interview','not before the server takes the turn');
  h.server({type:'state',state:'discovery',from:'paused',event:'resume',actor:'user',paused:false});h.server({type:'user_text',item_id:'user-typed-1',text:'Carrying on',provenance:'consultant_typed'});
- assert.equal(h.$('voicePause').textContent,'Pause');assert.equal(h.win.AtlasVoice.status().tracks[0].enabled,true);
+ assert.equal(h.$('voicePause').textContent,'Pause interview');assert.equal(h.win.AtlasVoice.status().tracks[0].enabled,true);
  // pause again, then Resume
  h.$('voicePause').click();h.$('voicePause').click();
  assert.deepEqual(h.sent.filter(m=>m.type==='pause'||m.type==='resume').map(m=>m.type),['pause','pause','resume']);
- assert.equal(h.$('voicePause').textContent,'Pause');assert.equal(h.win.AtlasVoice.status().tracks[0].enabled,true);
+ assert.equal(h.$('voicePause').textContent,'Pause interview');assert.equal(h.win.AtlasVoice.status().tracks[0].enabled,true);
  // mute is its own control
- h.$('voiceMute').click();assert.equal(h.win.AtlasVoice.status().tracks[0].enabled,false);assert.equal(h.$('voiceMute').textContent,'Unmute microphone');assert.equal(h.$('voicePause').textContent,'Pause');
+ h.$('voiceMute').click();assert.equal(h.win.AtlasVoice.status().tracks[0].enabled,false);assert.equal(h.$('voiceMute').textContent,'Unmute microphone');assert.equal(h.$('voicePause').textContent,'Pause interview');
 });
 
 test('the server\'s state events drive the toggle (a typed answer or a spoken pause changes it without a click)',async()=>{
  const h=boot();await h.live();
  h.server({type:'state',state:'paused',from:'discovery',event:'pause',actor:'user',paused:true});
- assert.equal(h.$('voicePause').textContent,'Resume');assert.equal(h.win.AtlasVoice.status().tracks[0].enabled,false);
+ assert.equal(h.$('voicePause').textContent,'Resume interview');assert.equal(h.win.AtlasVoice.status().tracks[0].enabled,false);
  h.server({type:'state',state:'discovery',from:'paused',event:'resume',actor:'user',paused:false});
- assert.equal(h.$('voicePause').textContent,'Pause');assert.equal(h.win.AtlasVoice.status().tracks[0].enabled,true);
+ assert.equal(h.$('voicePause').textContent,'Pause interview');assert.equal(h.win.AtlasVoice.status().tracks[0].enabled,true);
  h.server({type:'state',state:'discovery',from:'discovery',event:'focus',actor:'atlas',paused:false});
- assert.equal(h.$('voicePause').textContent,'Pause','other transitions change nothing');
+ assert.equal(h.$('voicePause').textContent,'Pause interview','other transitions change nothing');
 });
 
 test('while paused the Repeat and Skip buttons send nothing even if clicked',async()=>{
@@ -118,8 +118,8 @@ test('a server that did not announce controls (the other voice routes) is never 
 test('the paused state does not leak into the next conversation',async()=>{
  const h=boot();await h.live();h.$('voicePause').click();
  h.win.AtlasVoice.cancel('stop');await flush();
- assert.equal(h.$('voicePause').hidden,true);assert.equal(h.$('voicePause').textContent,'Pause');
- await h.live();assert.equal(h.$('voicePause').textContent,'Pause');assert.equal(h.win.AtlasVoice.status().tracks[0].enabled,true);
+ assert.equal(h.$('voicePause').hidden,true);assert.equal(h.$('voicePause').textContent,'Pause interview');
+ await h.live();assert.equal(h.$('voicePause').textContent,'Pause interview');assert.equal(h.win.AtlasVoice.status().tracks[0].enabled,true);
 });
 
 test('T11: the read-back card\'s buttons reach the socket as exactly the messages the session accepts, only while live and only when the server announced them',async()=>{

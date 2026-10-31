@@ -13,7 +13,14 @@ function setMode(m){if(mode===m)return;mode=m;try{window.dispatchEvent(new Custo
 // instead of a redirect, and redirect:'manual' catches the redirect anyway if Access is configured without that behaviour.
 function raw(path,opts={}){return fetch(path,{credentials:'same-origin',cache:'no-store',redirect:'manual',...opts,headers:{...(opts.headers||{}),'X-Requested-With':'XMLHttpRequest'}});}
 const lapsed=r=>r.status===401||r.type==='opaqueredirect';
-async function authFetch(path,opts={}){const r=await raw(path,opts);if(lapsed(r)){expired();throw new Expired();}return r;}
+// A POST whose CSRF token no longer matches (the sign-in was renewed, so the token rotated) re-reads /api/bootstrap once and sends the same request again with the new token. Only that exact refusal, only a body that can be sent twice.
+const CSRF_REFUSAL='Invalid request origin or session token.',resendable=b=>b===undefined||typeof b==='string'||(typeof Uint8Array!=='undefined'&&b instanceof Uint8Array)||(typeof ArrayBuffer!=='undefined'&&b instanceof ArrayBuffer);
+async function authFetch(path,opts={}){let r=await raw(path,opts);if(lapsed(r)){expired();throw new Expired();}
+ const sent=opts.headers&&(opts.headers['X-Atlas-CSRF']||opts.headers['x-atlas-csrf']);
+ if(r.status===403&&sent&&resendable(opts.body)){let refused=false;try{refused=(await r.clone().json())?.error===CSRF_REFUSAL;}catch{}
+  if(refused){const fresh=(await bootState({fresh:true})).b?.csrf;
+   if(typeof fresh==='string'&&fresh&&fresh!==sent){r=await raw(path,{...opts,headers:{...opts.headers,'X-Atlas-CSRF':fresh}});if(lapsed(r)){expired();throw new Expired();}}}}
+ return r;}
 // One bootstrap fetch per load, shared by the start control (voice-client.js) and ATLAS_APP.bootInfo (app.js).
 function load(){return (async()=>{
  if(!['http:','https:'].includes(location.protocol))return {b:{},state:'offline'}; // keep this exact expression: tests/studio_browser.py rewrites it
@@ -21,8 +28,13 @@ function load(){return (async()=>{
   if(lapsed(r))return {b:{},state:'expired'};
   if(!r.ok)return {b:{},state:'error'};
   const b=await r.json(); // a Cloudflare 52x HTML page throws here
+  paintState(b);
   return b&&typeof b==='object'?{b,state:b.protocol==='atlas-personaplex-pcm-v1'?'ok':'foreign'}:{b:{},state:'error'};
  }catch{return {b:{},state:'error'};}})();}
+// The kill switches (bootstrap readOnly, aiOff) as one calm line at the top of the page; absent when neither is on.
+function paintState(b){const box=$('stateBanner'),text=$('stateBannerText');if(!box||!text||!b||typeof b!=='object')return;
+ const lines=[];if(b.readOnly===true)lines.push('ATLAS is read-only for now. You can read and download, but saving, submitting and starting interviews are paused.');if(b.aiOff===true)lines.push('AI features are paused by the ATLAS owner. Interviews and AI suggestions are off for a while. Your drafts are safe.');
+ text.textContent=lines.join(' ');box.hidden=!lines.length;}
 function bootState({fresh=false}={}){if(!bootP||fresh)bootP=load();return bootP;}
 const boot=o=>bootState(o).then(x=>x.b);
 // The page mode (§3.3). The live runtime is injected by both servers, so with it a failure is 'network', never 'offline'.
@@ -69,7 +81,7 @@ try{const ch=new BroadcastChannel('atlas-auth');ch.onmessage=e=>{if(e.data==='ok
 $('authReconnect')?.addEventListener('click',reconnect);
 $('authBackup')?.addEventListener('click',()=>{$('backupQuick')?.click();backedUp=true;paint();});
 $('authReload')?.addEventListener('click',()=>{if(!(backedUp||clean()))return;stamp();reloadHome();});
-window.AtlasAuth={fetch:authFetch,expired,reconnect,Expired,pending,boot,probe,
+window.AtlasAuth={paintState,fetch:authFetch,expired,reconnect,Expired,pending,boot,probe,
  onSignedIn:fn=>{if(typeof fn==='function')signedInFns.push(fn);},
  dirty:fn=>{if(typeof fn!=='function')return ()=>{};checks.add(fn);return ()=>checks.delete(fn);},
  get mode(){return mode;}};

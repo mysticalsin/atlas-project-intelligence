@@ -20,7 +20,7 @@ def atlas_home(environ=os.environ):
     return value if isinstance(value, str) and re.fullmatch(r'https://[a-z0-9.-]+', value) else ''
 ATLAS_HOME=atlas_home()
 logo='data:image/svg+xml;base64,'+base64.b64encode(logo_bytes).decode()
-slots={'__CSS__':(ROOT/'src/styles.css').read_text()+'\n'+(ROOT/'src/voice.css').read_text()+'\n'+(ROOT/'src/orb.css').read_text()+'\n'+(ROOT/'src/sculpture.css').read_text()+'\n'+(ROOT/'src/intelligence.css').read_text()+'\n'+(ROOT/'src/charts.css').read_text()+'\n'+(ROOT/'src/wow.css').read_text()+'\n'+(ROOT/'src/storyboard.css').read_text()+'\n'+(ROOT/'src/workflow.css').read_text(),
+slots={'__CSS__':(ROOT/'src/styles.css').read_text()+'\n'+(ROOT/'src/voice.css').read_text()+'\n'+(ROOT/'src/orb.css').read_text()+'\n'+(ROOT/'src/sculpture.css').read_text()+'\n'+(ROOT/'src/intelligence.css').read_text()+'\n'+(ROOT/'src/charts.css').read_text()+'\n'+(ROOT/'src/wow.css').read_text()+'\n'+(ROOT/'src/storyboard.css').read_text()+'\n'+(ROOT/'src/workflow.css').read_text()+'\n'+(ROOT/'src/ui.css').read_text(),
  '__SAFE_HTML__':(ROOT/'src/safe-html.js').read_text(),'__RUNTIME__':(ROOT/'src/runtime.js').read_text(),
  '__LOGO__':logo,'__LOGOJSON__':json.dumps(logo),'__ARCH__':(ROOT/'docs/architecture.svg').read_text(),
  '__INTELLIGENCE_PANEL__':(ROOT/'src/intelligence-panel.html').read_text(),
