@@ -4,7 +4,11 @@
 // Bidi controls (U+202A-202E, U+2066-2069, U+200E/200F, U+061C) and zero-width characters (U+200B-200D, U+2060, U+FEFF) are never kept: one can reorder what
 // follows it on screen (a name that reads as an address) or make two different strings look alike (red-team retest L2). Same set in atlas_voice/identity.py.
 export const INVISIBLE = /[\u202A-\u202E\u2066-\u2069\u200E\u200F\u061C\u200B-\u200D\u2060\uFEFF]/g;
-export const str = (v, n) => typeof v === 'string' ? Array.from(v.replace(INVISIBLE, '').split(/\s+/).filter(Boolean).join(' ')).slice(0, n).join('') : '';
+// Free text keeps U+200C/U+200D (ZWNJ/ZWJ): Persian, Hindi and other scripts spell words with them, and emoji sequences need ZWJ.
+// Only the characters that reorder text or hide inside it are removed; names (`name` below) drop the whole INVISIBLE set.
+const REORDER = /[\u202A-\u202E\u2066-\u2069\u200E\u200F\u061C\u200B\u2060\uFEFF]/g;
+export const str = (v, n) => typeof v === 'string' ? Array.from(v.replace(REORDER, '').split(/\s+/).filter(Boolean).join(' ')).slice(0, n).join('') : '';
+export const name = (v, n) => str(typeof v === 'string' ? v.replace(INVISIBLE, '') : v, n);
 export const para = (v, n) => typeof v === 'string' ? v.replace(/\r/g, '').trim().slice(0, n) : '';
 export const list = (v, n, l) => [...new Set((Array.isArray(v) ? v : []).slice(0, 50).map(x => str(x, l)).filter(Boolean))].slice(0, n);
 // Longer than 254 characters (RFC 5321) is never an address: refused before the regex, which backtracks quadratically on

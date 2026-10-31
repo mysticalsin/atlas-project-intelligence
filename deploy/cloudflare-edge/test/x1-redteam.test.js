@@ -438,6 +438,8 @@ test('library search (old L12): POST /api/library/search returns the list with t
   const r = await call(ALICE, 'POST', '/api/library/search', { q: 'zebrafish' });
   assert.equal(r.http, 200); assert.equal(r.items.length, 1); assert.equal((await call(ALICE, 'POST', '/api/library/search', { q: 'no-such-thing' })).items.length, 0);
   const src = readFileSync(new URL('../../../src/app.js', import.meta.url), 'utf8');
+  // X3: the server no longer reads free text from a URL either: GET ?q= lists as if no text were given
+  assert.equal((await call(ALICE, 'GET', '/api/library?q=no-such-thing')).items.length, 1);
   assert.match(src, /libraryApi\('\/search',\{method:'POST'/); assert.doesNotMatch(src, /libraryApi\('\?'\s*\+/);
   void l;
 });

@@ -57,7 +57,7 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
     // Evidence store (T13): /api/library/evidence/... from a browser, /api/evidence/... only from the Interview DO (never forwarded by the Worker).
     const ev = evidence.target(url.pathname);
     if (ev) { const r = user.role === 'system' ? null : await evidence.routes({ ...ctx, rest: ev.rest, internal: ev.internal }); return json(r ? r.body : { error: 'Not found.' }, r ? r.status || 200 : 404); }
-    if (!parts.length && method === 'GET') return json(lib.list(user, Object.fromEntries(url.searchParams)));
+    if (!parts.length && method === 'GET') return json(lib.list(user, (({ q, ...filters }) => filters)(Object.fromEntries(url.searchParams)))) /* X3: free text never travels in a URL; ?q= is ignored, POST /search takes it */;
     // X1 (red L12): free-text search travels in a POST body, never in a URL (a query string lands in access logs). The GET above stays for the plain filters.
     if (method === 'POST' && parts.length === 1 && parts[0] === 'search') return json(lib.list(user, obj(body)));
     if (!parts.length && method === 'POST') {

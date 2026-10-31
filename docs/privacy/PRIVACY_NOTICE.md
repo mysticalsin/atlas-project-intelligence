@@ -1,6 +1,6 @@
 # How ATLAS handles your information
 
-Version `2026-10-31.1`. DRAFT — controls implemented in code; wording, lawful bases, controller and DPO details need DPO and legal sign-off.
+Version `2026-10-31.2`. DRAFT — controls implemented in code; wording, lawful bases, controller and DPO details need DPO and legal sign-off.
 
 > Generated from `atlas_voice/config/privacy.json` by `scripts/render_privacy_docs.py`. Edit the JSON, not this file. The same text is served at `/privacy`.
 

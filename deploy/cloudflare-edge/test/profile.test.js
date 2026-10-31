@@ -430,7 +430,7 @@ test('name claims: bidi controls and zero-width characters are stripped at the s
     const ch = String.fromCodePoint(c), hex = 'U+' + c.toString(16).toUpperCase();
     assert.equal(profile.nameClaims({ name: 'Tony' + ch + ' Walteur', given_name: ch + 'Tony', family_name: 'Walteur' + ch }).name, 'Tony Walteur', hex);
     assert.deepEqual(profile.idpClaims(enc({ name: 'A' + ch + 'B', given_name: 'A' + ch, family_name: ch + 'B' })), { name: 'AB', given_name: 'A', family_name: 'B' }, hex);
-    assert.equal(str('x' + ch + 'y', 10), 'xy', hex);
+    assert.equal(str('x' + ch + 'y', 10), c === 0x200C || c === 0x200D ? 'x' + ch + 'y' : 'xy', hex); // free text keeps ZWNJ/ZWJ
   }
   // the red-team PoC: the markup stays text (client escapes it) and the reordering character is gone
   const poc = profile.nameClaims({ name: 'Eve "\'><b data-pwn=idp>x</b>‮redli​ · idpname@mantu.com' }).name;
@@ -440,6 +440,11 @@ test('name claims: bidi controls and zero-width characters are stripped at the s
   assert.equal(profile.nameClaims({ name: 'Zoë  Lefèvre' }).name, 'Zoë Lefèvre', 'letters, accents and ordinary spaces are untouched');
   assert.equal(profile.nameClaims({ name: 'محمد علي' }).name, 'محمد علي', 'a right-to-left name keeps its letters');
   assert.ok(INVISIBLE.global);
+  // free text in other scripts keeps the joiners it is spelled with; only reordering characters go
+  assert.equal(str('می\u200Cخواهم', 20), 'می\u200Cخواهم', 'Persian ZWNJ kept');
+  assert.equal(str('क्\u200Dष', 20), 'क्\u200Dष', 'Devanagari ZWJ kept');
+  assert.equal(str('👩\u200D💻 dev', 20), '👩\u200D💻 dev', 'emoji ZWJ sequence kept');
+  assert.equal(str('a\u202Eb', 20), 'ab', 'bidi override still removed from free text');
 });
 
 // ---- The model boundary (§0.4, §5.9): the profile never reaches a model, whatever the path. ----
