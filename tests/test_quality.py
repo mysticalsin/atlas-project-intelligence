@@ -174,3 +174,32 @@ def test_jev_accepts_two_decimal_rounding_like_the_live_model():
  parse_result(r)
  r['answers']['evidence']['score']=2.9
  with pytest.raises(ValueError):parse_result(r)
+
+# ---- T11: provenance of a detail's words, and "keep this private" (withheld) ----
+def test_record_provenance_is_trusted_and_optional():
+ l=InterviewLedger();l.add_transcript('u1','We saved 40%.');l.add_transcript('user-typed-1001','It was 35 percent, not 40.')
+ candidate(l)
+ assert l.details[0]['provenance']=='unverified_speech_recognition'
+ l.record({'details':[{'field':'outcome','quote':'It was 35 percent','item_id':'user-typed-1001','supersedes':'D-001'}]},provenance='consultant_typed')
+ assert [d['provenance'] for d in l.details]==['unverified_speech_recognition','consultant_typed'] and not l.details[0]['active']
+ with pytest.raises(ValueError):l.record({'details':[{'field':'outcome','quote':'It was 35 percent','item_id':'user-typed-1001'}]},provenance='verified_by_atlas')
+ # a model's tool call cannot claim a provenance: the detail schema has no such key
+ with pytest.raises(ValueError):l.call('c9','record_details',{'details':[{'field':'problem','quote':'We saved 40%.','item_id':'u1','provenance':'consultant_typed'}]})
+def test_withheld_detail_leaves_notes_and_board_but_stays_in_history():
+ l=InterviewLedger();l.add_transcript('u1','Tickets bounced between three teams. I rebuilt the routing rules.')
+ l.record({'details':[{'field':'problem','quote':'Tickets bounced between three teams','item_id':'u1'},{'field':'contribution','quote':'I rebuilt the routing rules','item_id':'u1'}]})
+ s=l.withhold('D-001')
+ assert [d['id'] for d in s['candidate_details']]==['D-002'] and 'problem' in s['unresolved_fields'] and s['next_field']!='problem'
+ assert not any('Tickets bounced' in x for x in l.notes()) and any('routing rules' in x for x in l.notes())
+ assert l.details[0]['withheld'] is True and l.details[0]['active'] is True and l.details[0]['quote']=='Tickets bounced between three teams'
+ # the same words filed again do not bring it back
+ l.record({'details':[{'field':'problem','quote':'Tickets bounced between three teams','item_id':'u1'}]})
+ assert len(l.details)==2 and not any('Tickets bounced' in x for x in l.notes())
+def test_withhold_only_active_details_and_whole_field_is_not_asked_again():
+ l=InterviewLedger();l.add_transcript('u1','We saved 40%.');l.add_transcript('u2','Correction: it was 35%.')
+ candidate(l);candidate(l,quote='it was 35%.',ident='u2',supersedes='D-001')
+ for bad in ('D-001','D-099',''):
+  with pytest.raises(ValueError):l.withhold(bad)
+ l.withhold('D-002');s=l.inspect()
+ assert s['candidate_details']==[] and 'outcome' in s['unresolved_fields'] and s['next_field']!='outcome'
+ assert l.plan_probe()['next_field']!='outcome'

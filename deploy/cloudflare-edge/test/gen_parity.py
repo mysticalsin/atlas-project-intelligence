@@ -5,6 +5,9 @@ ROOT = Path(__file__).resolve().parents[3]; sys.path.insert(0, str(ROOT))
 from atlas_voice.quality import InterviewLedger
 
 R = lambda cid, *details: ['call', cid, 'record_details', {'details': list(details)}]
+# Server-side record with a trusted provenance (a typed correction), and "keep private" (T11): not reachable through a model's tool call.
+REC = lambda provenance, *details: ['rec', provenance, list(details)]
+W = lambda detail_id: ['withhold', detail_id]
 D = lambda field, item, quote, **kw: {'field': field, 'item_id': item, 'quote': quote, **kw}
 SCENARIOS = {
  'vague_percent_then_unknown': ('Delivery', [
@@ -34,6 +37,20 @@ SCENARIOS = {
    R('bad7', D('contribution', 'u1', 'Priya owned the dashboard', uncertain='yes')),
    R('bad8', D('outcome', 'u1', 'Priya owned the dashboard', supersedes='D-001')),
    ['call', 'i1', 'inspect_gaps', {}], ['call', 'i2', 'inspect_gaps', {'x': 1}], ['t', 'u1', 'changed text'], ['t', '', 'x'], ['notes']]),
+ 'typed_correction_and_withhold': ('Delivery', [
+   ['t', 'u1', 'Tickets bounced between three teams and urgent cases waited days.'],
+   ['t', 'u2', 'We cut triage time by about 40% after the rollout.'],
+   ['t', 'u3', 'Priya owned the dashboard and I rebuilt the routing rules.'],
+   R('c1', D('problem', 'u1', 'Tickets bounced between three teams'), D('outcome', 'u2', 'We cut triage time by about 40%'), D('contribution', 'u3', 'I rebuilt the routing rules')),
+   ['t', 'user-typed-1001', 'It was 35 percent, measured on the Lisbon queue in March 2026.'],
+   REC('consultant_typed', D('outcome', 'user-typed-1001', 'It was 35 percent', supersedes='D-002')), ['inspect'],
+   REC('bogus', D('measurement', 'user-typed-1001', 'on the Lisbon queue in March 2026')),
+   REC(None, D('measurement', 'user-typed-1001', 'on the Lisbon queue in March 2026')),
+   REC('consultant_corrected', D('measurement', 'user-typed-1001', 'in March 2026', supersedes='D-005')), ['inspect'],
+   W('D-003'), ['inspect'], ['notes'], ['plan'],
+   W('D-002'), W('D-099'), W('D-003'),
+   R('c2', D('contribution', 'u3', 'I rebuilt the routing rules')), ['inspect'], ['notes'],
+   W('D-001'), ['plan'], ['inspect'], ['notes']]),
  'assessment_stage_and_deferral': ('Assessment', [
    ['t', 'u1', 'The client wanted to know whether automation was even feasible.'],
    R('c1', D('problem', 'u1', 'whether automation was even feasible')),
@@ -49,6 +66,8 @@ def run(stage, ops):
         try:
             if op[0] == 't': l.add_transcript(op[1], op[2]); out.append({'ok': None})
             elif op[0] == 'call': out.append(snap({'ok': l.call(op[1], op[2], op[3])}))
+            elif op[0] == 'rec': out.append(snap({'ok': l.record({'details': op[2]}, provenance=op[1])}))
+            elif op[0] == 'withhold': out.append(snap({'ok': l.withhold(op[1])}))
             elif op[0] == 'plan': out.append(snap({'ok': l.plan_probe()}))
             elif op[0] == 'inspect': out.append(snap({'ok': l.inspect()}))
             elif op[0] == 'notes': out.append(snap({'ok': l.notes()}))

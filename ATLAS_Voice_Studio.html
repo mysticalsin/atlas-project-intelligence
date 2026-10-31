@@ -537,6 +537,22 @@ dialog .check input[type=radio]{width:15px;height:15px;min-height:0;margin:2px 0
 .gap-panel .board-btn:hover:not(:disabled){background:rgba(138,0,255,.34)}
 .gap-panel .board-btn:focus-visible{outline:2px solid var(--y);outline-offset:3px}
 .gap-panel #gapMessage:empty{display:none}
+/* the read-back card (T11): items with Correct / Keep private, the open points, Confirm, then the private draft and its explicit Submit */
+.summary-card .summary-items,.summary-card .summary-open,.summary-card .summary-status{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px}
+.summary-card .summary-item{border:1px solid rgba(169,169,188,.16);border-radius:10px;padding:9px 10px;min-width:0;overflow-wrap:anywhere}
+.summary-card p.summary-item-head{margin:0 0 4px;font-size:10px;line-height:1.45;color:#A9A9BC}
+.summary-card p.summary-item-head b{font-weight:400;font-size:11px;color:#E8E8EE}
+.summary-card q.summary-quote{display:block;font-size:11px;line-height:1.6;color:#F8F8F8;quotes:'“' '”'}
+.summary-card .summary-item-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+.summary-card .summary-item-actions .board-btn,.summary-card .summary-edit .board-btn{min-height:36px;padding:6px 12px;font-size:10px}
+.summary-card .summary-edit{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+.summary-card .summary-edit label{flex:1 0 100%;font-size:10px;color:#A9A9BC}
+.summary-card .summary-edit input{flex:1 1 180px;min-width:0;min-height:36px;border-radius:9px;border:1px solid rgba(169,169,188,.35);background:rgba(16,16,17,.8);color:#F8F8F8;padding:6px 9px;font-size:12px}
+.summary-card .summary-edit input:focus-visible{outline:2px solid var(--y);outline-offset:2px}
+.summary-card .summary-open li{font-size:10px;line-height:1.5;color:#D6D6D6;border-left:2px dashed rgba(169,169,188,.5);padding-left:8px}
+.summary-card .summary-status li{font-size:10px;line-height:1.45;color:#E8E8EE;border-left:3px solid rgba(169,169,188,.4);padding-left:8px}
+.summary-card #summarySaved:empty,.summary-card #summaryMessage:empty{display:none}
+.summary-card #summarySaved{color:#F8F8F8}
 @media(max-width:1250px) and (min-width:1041px){.board-card{padding:17px}}
 @media(min-width:721px) and (max-width:1040px){.story-board .board-dims{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:720px){.story-board .board-head{flex-direction:column;align-items:flex-start}.story-board p.board-time{flex-direction:column}}
@@ -601,6 +617,7 @@ dialog .check input[type=radio]{width:15px;height:15px;min-height:0;margin:2px 0
 <section class="board-part" id="boardDims"><h4 class="board-head"><span>Twelve dimensions</span><small>From the interview · unverified</small></h4><ul class="board-body board-dims"></ul></section>
 <section class="board-part" id="boardChallenge"><h4 class="board-head"><span>ATLAS may ask next</span><small>From the interview · unverified</small></h4><div class="board-body"></div></section>
 <div aria-live="polite" class="sr" id="boardSummary" role="status"></div></section>
+<section aria-labelledby="summaryTitle" class="board-card story-board gap-panel summary-card" hidden="" id="summaryCard"><div class="board-card-heading"><span aria-hidden="true" class="line-icon">✎</span><span id="summaryTitle">Read-back: what ATLAS understood</span></div><p class="board-label"><span>From the interview · unverified</span></p><p class="board-note" id="summaryIntro"></p><ul class="summary-items" id="summaryItems"></ul><p class="board-empty" id="summaryEmpty" hidden=""></p><div class="board-part" hidden="" id="summaryOpen"><h4 class="board-head"><span>Still open</span></h4><ul class="summary-open" id="summaryOpenList"></ul></div><p class="board-note" id="summaryNext"></p><div class="gap-actions"><button class="board-btn" id="summaryConfirm" type="button">Confirm summary</button><button class="board-btn" hidden="" id="summarySubmit" type="button">Submit for review</button></div><p class="board-note" id="summarySaved" role="status"></p><p class="board-note" id="summaryMessage" role="status"></p><ul class="summary-status" hidden="" id="summaryStatus" aria-label="Where this draft stands"></ul><div aria-live="polite" class="sr" id="summaryLive" role="status"></div></section>
 <section aria-labelledby="gapPanelTitle" class="board-card story-board gap-panel" hidden="" id="gapPanel"><div class="board-card-heading"><span aria-hidden="true" class="line-icon">◇</span><span id="gapPanelTitle">Your proof answers</span></div><p class="board-label"><span>From the interview · unverified</span></p><div id="gapResults"></div><p class="board-note">Nothing has left this device. Each button acts once, only when you click it. ATLAS masks known client names and contact details before the bid team reads your words.</p><div class="gap-actions"><button class="board-btn" id="gapSend" type="button">Send these answers to the bid team</button><button class="board-btn" id="gapApply" type="button">Add these answers to my reference</button></div><p class="board-note">Adding them appends them to this project's notes and saves the project to the shared library; the updated reference needs review and N+1 validation.</p><p aria-live="polite" class="board-note" id="gapMessage" role="status"></p></section>
 <section class="context-card cue-card quality-live-card"><div class="card-heading"><span class="quality-indicator"></span>Interview intelligence</div><span class="quality-label">NEXT DETAIL TO CLARIFY</span><p class="quality-next" id="qualityNext">What changed—and what supports it?</p><p id="qualityLiveCount">No live details yet</p><p class="quality-open" id="qualityOpen">Missing proof stays missing.</p><p class="receipt" hidden="" id="lastHeard"></p><button class="quiet" data-intelligence="quality">Inspect the quality ledger ↗</button><div aria-hidden="true" class="motif-glyph" hidden="" id="motifGlyph"></div><details><summary>Orb motion details</summary><div class="motion-description"><strong id="motifTitle">Poised.</strong><p id="motifDescription">A quiet turning body, ready for the conversation.</p><span id="motifPeriod">No speech playback</span><span id="motifSource">AMBIENT / MICROPHONE OFF</span></div></details></section><blockquote class="studio-quote">“A useful story starts with<br/>what actually happened.”<span>ATLAS / MANTU</span></blockquote></aside>
 </div>
@@ -1917,7 +1934,38 @@ function summaryText(m){if(!m||typeof m!=='object')return '';const c=obj(m.cover
  const ch=obj(m.challenge);if(ch.next)parts.push('ATLAS may ask next about '+ch.next.label+'.');
  return parts.join(' ');}
 
-return {model,diff,summaryText,metricSpans,pinsOf};
+/* ---------- The read-back card (T11, plan 3h, D19, Tony Q2) ----------
+   sum = {items, unknowns, phase, draft, unavailable, submit} comes from the server's `summary`, `evidence_draft` and related events; this turns it into what a
+   person reads. phase: open (the card is live), confirming (the confirmation is on its way), confirmed (an owner-only draft was saved, or the server says why not),
+   ended (the interview ended before they confirmed: nothing was saved), closed (more was said, the card went away). The words never say verified, approved or
+   shared: a draft is private to its owner until they press Submit for review themselves. Items are exactly the server's, bounded here. */
+const DETAIL_RE=/^D-\d{3,6}$/;
+const STATUS_TAG={uncertain:'you called this an estimate',unknown:'left open: you did not know'};
+const PROVENANCE_TAG={consultant_typed:'typed by you',consultant_corrected:'corrected by you'};
+const POINT_WORDS={unconfirmed_speech:'Not confirmed, the speech recognition was unsure',unknown:'You did not know',skipped:'You skipped',deferred:'Left open'};
+const SUMMARY_INTRO='This is what ATLAS understood, in your own words. Correct anything that is wrong, keep private anything you do not want used, or confirm it.';
+const SUMMARY_NEXT='Confirming saves a private draft that only you can see. Nothing goes to your N+1 or reviewer until you press Submit for review, and they may use it for internal knowledge only until you grant more.';
+function summaryView(sum){
+ const s=obj(sum),phase=['open','confirming','confirmed','ended','closed'].includes(s.phase)?s.phase:'closed',draft=obj(s.draft),unavailable=obj(s.unavailable),submit=obj(s.submit);
+ const hasDraft=typeof draft.id==='string'&&draft.id!==''&&Number.isInteger(draft.revision);
+ const items=arr(s.items).filter(x=>x&&typeof x==='object'&&typeof x.detail_id==='string'&&DETAIL_RE.test(x.detail_id)).slice(0,60).map(x=>{
+  const tags=[];if(own(STATUS_TAG,x.status))tags.push(STATUS_TAG[x.status]);if(x.asr_unconfirmed===true)tags.push('speech not confirmed');if(own(PROVENANCE_TAG,x.provenance))tags.push(PROVENANCE_TAG[x.provenance]);
+  return {id:x.detail_id,field:str(x.field,40),label:str(x.label,80),quote:str(x.quote,200),tags,editable:phase==='open'};});
+ const openPoints=arr(s.unknowns).filter(u=>u&&typeof u==='object'&&own(POINT_WORDS,u.kind)).slice(0,12).map(u=>POINT_WORDS[u.kind]+': '+(str(u.label,80)||str(u.field,40)));
+ const sending=submit.status==='sending',sent=submit.status==='sent';
+ const visible=phase!=='closed'&&(items.length>0||hasDraft||!!unavailable.message||phase==='ended');
+ const saved=phase==='confirmed'&&hasDraft?'Saved as a private draft — only you can see it.'+(draft.unchanged===true?' (It was already saved.)':'')+' Revision '+draft.revision+'.':'';
+ const notSaved=phase==='confirmed'&&!hasDraft?(str(unavailable.message,300)||'The summary was confirmed but not saved to the library.')
+  :phase==='ended'?'The interview ended before you confirmed this summary, so nothing was saved to the library.':'';
+ return {visible,phase,title:'Read-back: what ATLAS understood',intro:SUMMARY_INTRO,items,openPoints,next:SUMMARY_NEXT,
+  empty:!items.length&&phase==='open'?'Nothing is firm enough to read back yet.':'',
+  confirm:{label:phase==='confirming'?'Saving…':'Confirm summary',hidden:phase!=='open'&&phase!=='confirming',disabled:phase!=='open'||!items.length},
+  saved,notSaved,
+  submit:{hidden:!hasDraft||phase!=='confirmed',disabled:sending||sent,label:sent?'Submitted for review':sending?'Submitting…':'Submit for review',
+   message:sent?'Submitted for review. Your N+1 or reviewer can now see it.':submit.status==='error'?str(submit.message,300)||'It was not submitted.':hasDraft&&phase==='confirmed'?'Not submitted yet. Only you can see this draft.':''},
+  live:phase==='open'?'Read-back: '+items.length+(items.length===1?' item':' items')+(openPoints.length?', '+openPoints.length+(openPoints.length===1?' open point':' open points'):'')+'.':saved||notSaved};}
+
+return {model,diff,summaryText,metricSpans,pinsOf,summaryView};
 });
 </script><script>window.ATLAS_BRIEF="# ATLAS Project Intelligence v12\n\nOne browser interface and one application gateway. Use a real selected conversational voice provider, a quote-grounded candidate ledger, a bounded next-question planner, private Hindsight continuity and a reviewed Markdown story vault.\n\nHosted Realtime supports live transcript-linked tools. PersonaPlex retains the GPU and optional Riva post-session route. Neither can publish or approve. The orb responds to played audio, not received text. Silent previews do not connect a microphone or model.\n\nThe quality workbench accepts unknowns and confidentiality, separates individual contribution from team outcomes, and frames assessment/qualitative work correctly. Saving creates immutable Markdown candidates. An optional editor proposes a source-linked rewrite; applying and saving remain explicit. Exact-version review belongs to independently authorized humans. The native graph is an eligible-view projection; optional Graphify consumes an authorized snapshot only.\n\nJEV classifies customer-specific relevance from a four-part brief and eligible customer-anonymized records. Code computes the dated-source proxy. A weak match can return no recommendation. These weights are pilot assumptions, not outcome predictions. Hindsight remembers the person and resume context; it never certifies evidence.\n\nRead README.md, docs/PRD_v12.md, docs/WIKI_SCHEMA.md and docs/EVALUATION_v12.md in the build package. Opening the HTML runs local interface/animation/authoring, not provider inference. Configure the server and validate real audio, identity, memory and decision services before a pilot.\n";
 /* ATLAS voice edition: local authoring plus a real server-backed NVIDIA audio route. */
@@ -3571,6 +3619,16 @@ function message(kind,text){
  if(kind==='text'){const t=typeof text==='string'?[...text.trim()].slice(0,TEXT_MAX).join(''):'';return t?{type:'text',text:t}:null;}
  return NAMES.includes(kind)&&kind!=='text'?{type:kind}:null;
 }
+// The summary card's three messages (T11), exactly the keys the session accepts: {type:'correct',detail_id,text}, {type:'withhold',detail_id}, {type:'confirm_summary'}.
+// A correction is the consultant's own typed words (at least five characters, like the ledger's quote rule, at most CORRECT_MAX). Anything else is null.
+const CORRECT_MAX=1800,CORRECT_MIN=5,DETAIL=/^D-\d{3,6}$/;
+function summaryMessage(kind,detailId,text){
+ if(kind==='confirm_summary')return {type:'confirm_summary'};
+ if(typeof detailId!=='string'||!DETAIL.test(detailId))return null;
+ if(kind==='withhold')return {type:'withhold',detail_id:detailId};
+ if(kind==='correct'){const t=typeof text==='string'?[...text.trim()].slice(0,CORRECT_MAX).join(''):'';return [...t].length>=CORRECT_MIN?{type:'correct',detail_id:detailId,text:t}:null;}
+ return null;
+}
 const supports=(ready,kind)=>Array.isArray(ready?.controls)&&ready.controls.includes(kind);
 
 // The paused flag from a server `state` event (the interview machine). Anything else leaves it as it is.
@@ -3595,7 +3653,7 @@ function view({phase,paused,muted,controls,draft}){
   state:paused?'Paused · microphone off':muted?'Microphone muted · ATLAS may still speak':''
  };
 }
-return {TEXT_MAX,NAMES,message,supports,pausedFrom,elapsed,clock,view};
+return {TEXT_MAX,CORRECT_MAX,NAMES,message,summaryMessage,supports,pausedFrom,elapsed,clock,view};
 });
 </script><script>/* Real PersonaPlex transport. No browser speech recognition or synthetic read-aloud fallback. */
 'use strict';
@@ -3621,7 +3679,7 @@ let gapUsed=null, consentStarting=false;
 function consumeGap(){const g=gapUsed;gapUsed=null;try{if(g&&bridge.context()?.gap===g)bridge.gapConsumed?.();}catch{}}
 // Session event bus for the live story board and the gap results (F5, F2): the server's session events, plus 'reset'
 // wherever the 'atlas-quality' reset fires. 'atlas-quality' itself is unchanged.
-const SESSION_EVENTS=['ready','time_up','wrap_up','audio_stopped','reporting','notes','ended'];
+const SESSION_EVENTS=['ready','time_up','wrap_up','audio_stopped','reporting','notes','ended','summary','summary_closed','summary_confirmed','evidence_draft','evidence_draft_unavailable'];
 function sessionEvent(detail){window.dispatchEvent(new CustomEvent('atlas-session',{detail}));}
 function resetBoards(){window.dispatchEvent(new CustomEvent('atlas-quality',{detail:{type:'reset'}}));sessionEvent({type:'reset'});}
 const closed=(s,ms)=>!s||s.readyState===3?Promise.resolve():new Promise(r=>{const t=setTimeout(r,ms);s.onclose=()=>{clearTimeout(t);r();};});
@@ -3651,6 +3709,8 @@ function applyMic(){const off=muted||paused;stream?.getAudioTracks().forEach(t=>
 function setPaused(p){if(p===paused||phase!=='live')return;const now=Date.now();if(p)pausedAt=now;else{pausedMs+=now-pausedAt;pausedAt=null;}paused=p;applyMic();if(p){node?.port.postMessage({type:'flush'});window.AtlasOrbUI?.levels(0,0,{low:0,mid:0,high:0});}
  $('voiceState').textContent=p?'Paused · microphone off':muted?'Microphone muted · ATLAS may still speak':providerName()+' · listening';controls();}
 function togglePause(){if(phase!=='live'||!supported('pause'))return;if(send(VC.message(paused?'resume':'pause')))setPaused(!paused);}
+// The read-back card's buttons (storyboard-ui.js) ask for a message; only what the server announced is sent, and only while the interview is live.
+window.addEventListener('atlas-summary-action',e=>{const d=e.detail||{},m=VC.summaryMessage(d.kind,d.detail_id,d.text);if(!m||phase!=='live'||!supported(m.type))return;send(m);});
 function sendTyped(){const input=$('voiceTypeInput'),m=VC.message('text',input.value);if(phase!=='live'||!supported('text')||!m)return;if(send(m)){input.value='';if(paused)setPaused(false);$('voiceMessage').textContent='You typed: “'+m.text.slice(0,140)+(m.text.length>140?'…':'')+'”';if($('orbAccessibleState'))$('orbAccessibleState').textContent='Typed answer sent.';controls();}}
 function after(message){$('voiceAfter').hidden=false;$('voiceAfter').textContent=message;}
 function sync(){livePill();const c=bridge.context();$('voicePanel').hidden=false;const real=c&&!c.isNew;$('orbProjectTitle').textContent=real?c.project.title:c?'A new project':'No project selected yet.';$('orbProjectMeta').textContent=real?[c.display?.consultant,c.display?.role,c.project.stage].filter(Boolean).join(' · '):c?'Just start talking. ATLAS creates the project from your story.':'Give the interviewer an authorized project alias. It will ask for the details.';document.body.classList.toggle('has-voice-project',!!real);if(current&&c&&(c.workspaceId!==current.workspaceId||c.project.id!==current.project.id))cancel('Project changed. The microphone was stopped.');if(current&&!c)cancel('Project closed.');controls();}
@@ -3794,6 +3854,7 @@ function refused(message){consumeGap();generation++;const s=socket;socket=null;t
 function restoreScreens(m){
  for(const u of (Array.isArray(m.user)?m.user:[]).slice(-40))if(u&&typeof u.text==='string')window.dispatchEvent(new CustomEvent('atlas-quality',{detail:{type:'user_text',item_id:u.item_id,text:u.text,provenance:u.provenance}}));
  if(m.quality&&typeof m.quality==='object')window.dispatchEvent(new CustomEvent('atlas-quality',{detail:{...m.quality,type:'quality'}}));
+ if(m.summary&&typeof m.summary==='object')sessionEvent({...m.summary,type:'summary'}); // the open read-back comes back with the screens
  accumulated=(Array.isArray(m.agent)?m.agent.filter(t=>typeof t==='string').join('\n\n'):'').slice(-60000);$('agentText').textContent=accumulated;$('agentText').scrollTop=$('agentText').scrollHeight;
  if(Number.isFinite(m.activeSeconds)){startedAt=Date.now()-m.activeSeconds*1000;pausedMs=0;$('voiceTimer').textContent=VC.clock(VC.elapsed(startedAt,pausedMs,pausedAt,Date.now()));}
  if(typeof m.lastQuestion==='string'&&m.lastQuestion&&$('orbAccessibleState'))$('orbAccessibleState').textContent='Interview resumed. The question was: '+m.lastQuestion;}
@@ -4061,6 +4122,8 @@ window.AtlasIntelligence={open,record:()=>draft?readDraft():null,ledger:()=>live
 (()=>{'use strict';
 const $=id=>document.getElementById(id),B=window.AtlasBoard,board=$('storyBoard'),panel=$('gapPanel');
 if(!B||!board||!panel)return;
+// Resuming an interview (T11): the server says how many interview seconds had been used, so the clock goes on from there and does not restart at zero.
+const used=d=>d.resumed===true&&num(d.activeSeconds)!==null&&d.activeSeconds>0?d.activeSeconds*1000:0;
 const LABEL='From the interview · unverified',SVG='http://www.w3.org/2000/svg',REQUEST=/^[a-f0-9]{32}$/;
 const PHASES={breadth:'Breadth: the whole story first',depth:'Depth: the details that matter',closing:'Closing',focused:'Focused: the proof requested'};
 const STATES={reported:'reported',uncertain:'uncertain',unknown:'unknown',deferred:'left open',empty:'not yet'};
@@ -4150,12 +4213,82 @@ window.addEventListener('atlas-quality',e=>{const d=e.detail;if(!d||typeof d!=='
 window.addEventListener('atlas-session',e=>{const d=e.detail;if(!d||typeof d!=='object')return;
  if(d.type==='reset')clear();
  else if(d.type==='ready'){clear();const max=num(d.maxSeconds);
-  s.session={readyAt:Date.now(),maxSeconds:max!==null&&max>0?max:null,mode:d.mode==='gap'?'gap':'full',gaps:arr(d.gaps).filter(g=>g&&typeof g==='object').slice(0,5),timePlan:obj(d.timePlan)};
+  s.session={readyAt:Date.now()-used(d),maxSeconds:max!==null&&max>0?max:null,mode:d.mode==='gap'?'gap':'full',gaps:arr(d.gaps).filter(g=>g&&typeof g==='object').slice(0,5),timePlan:obj(d.timePlan)};
   s.off=d.liveLedger===false;s.live=true;if(!s.off&&s.session.maxSeconds)startTicker();render();}
  else if(d.type==='audio_stopped'){stopClock();render();}
  else if(d.type==='ended'){stopClock();s.qualitySeq=++seq;render();}  // nothing is being analysed once the session has ended
  else if(d.type==='notes'){if(d.mode==='gap')showGap(d);}
  else if(d.type==='time_up'||d.type==='wrap_up')render();});
+
+/* ---------- The read-back card (T11, plan 3h, D19, Tony Q2) ----------
+   Driven by the server's `summary`, `summary_closed`, `summary_confirmed`, `evidence_draft` and `evidence_draft_unavailable` session events. Each button only asks
+   voice-client.js to send one message ('atlas-summary-action'); nothing is saved by the card itself. Confirming makes a PRIVATE draft (the server does that); sending
+   it to the reviewer is the separate Submit for review click below, a library POST with the revision the person saw. All text goes through textContent. */
+const card=$('summaryCard'),CONFIRM_WAIT_MS=15000;
+let sum=null,confirmTimer=null;
+function sumAct(kind,id,text){window.dispatchEvent(new CustomEvent('atlas-summary-action',{detail:{kind,detail_id:id,text}}));}
+function sumNote(text){const m=$('summaryMessage');if(m)m.textContent=text||'';}
+function sumClear(){clearTimeout(confirmTimer);confirmTimer=null;sum=null;sumNote('');renderSummary();}
+function renderSummary(){if(!card)return;
+ const v=B.summaryView(sum);card.hidden=!v.visible;if(!v.visible)return;
+ $('summaryTitle').textContent=v.title;$('summaryIntro').textContent=sum.phase==='open'||sum.phase==='confirming'?v.intro:'';
+ const list=$('summaryItems');list.replaceChildren();
+ for(const it of v.items){const li=el('li','summary-item');li.dataset.detail=it.id;
+  const head=el('p','summary-item-head');head.append(el('b','',it.label));for(const t of it.tags)head.append(el('span','board-flag',' · '+t));
+  li.append(head,el('q','summary-quote',it.quote));
+  if(it.editable){const row=el('div','summary-item-actions'),fix=el('button','board-btn','Correct'),keep=el('button','board-btn','Keep private');
+   fix.type='button';fix.dataset.action='correct';fix.setAttribute('aria-label','Correct: '+it.label);fix.setAttribute('aria-expanded',sum.editing===it.id?'true':'false');
+   keep.type='button';keep.dataset.action='withhold';keep.setAttribute('aria-label','Keep private: '+it.label);
+   fix.addEventListener('click',()=>{sum.editing=sum.editing===it.id?null:it.id;sumNote('');renderSummary();const f=card.querySelector&&card.querySelector('.summary-edit input');if(f&&f.focus)f.focus();});
+   keep.addEventListener('click',()=>{if(!sum||sum.phase!=='open')return;sumNote('Keeping that private…');sumAct('withhold',it.id);});
+   row.append(fix,keep);li.append(row);
+   if(sum.editing===it.id){const form=el('div','summary-edit'),input=document.createElement('input'),lab=el('label','','Your correction, in your own words'),save=el('button','board-btn','Save correction'),cancel=el('button','board-btn','Cancel');
+    input.type='text';input.id='summaryEdit-'+it.id;input.maxLength=1800;input.setAttribute('autocomplete','off');lab.setAttribute('for',input.id);save.type='button';cancel.type='button';save.dataset.action='save';cancel.dataset.action='cancel';
+    const go=()=>{const VC=window.AtlasVoiceControls;if(!sum||sum.phase!=='open')return;
+     if(VC&&typeof VC.summaryMessage==='function'&&!VC.summaryMessage('correct',it.id,input.value)){sumNote('Please type at least five characters, so your correction can be kept in your own words.');return;}
+     sum.editing=null;sumNote('Sent. The summary updates when ATLAS has your correction.');sumAct('correct',it.id,input.value);renderSummary();};
+    save.addEventListener('click',go);cancel.addEventListener('click',()=>{sum.editing=null;sumNote('');renderSummary();});
+    input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault&&e.preventDefault();go();}else if(e.key==='Escape'){sum.editing=null;renderSummary();}});
+    form.append(lab,input,save,cancel);li.append(form);}}
+  list.append(li);}
+ const empty=$('summaryEmpty');empty.hidden=!v.empty;empty.textContent=v.empty;
+ const open=$('summaryOpen');open.hidden=!v.openPoints.length;const ol=$('summaryOpenList');ol.replaceChildren();for(const t of v.openPoints)ol.append(el('li','',t));
+ $('summaryNext').textContent=v.next;
+ const c=$('summaryConfirm');c.hidden=v.confirm.hidden;c.disabled=v.confirm.disabled;c.textContent=v.confirm.label;
+ $('summarySaved').textContent=v.saved||v.notSaved;
+ const b=$('summarySubmit');b.hidden=v.submit.hidden;b.disabled=v.submit.disabled;b.textContent=v.submit.label;
+ if(!v.submit.hidden)sumNote(v.submit.message);
+ $('summaryLive').textContent=v.live;}
+$('summaryConfirm')&&$('summaryConfirm').addEventListener('click',()=>{if(!sum||sum.phase!=='open'||!sum.items.length)return;
+ sum.phase='confirming';sum.editing=null;sumNote('');renderSummary();sumAct('confirm_summary');
+ clearTimeout(confirmTimer);confirmTimer=setTimeout(()=>{if(sum&&sum.phase==='confirming'){sum.phase='open';sumNote('The confirmation did not go through. Try again, or press End to finish.');renderSummary();}},CONFIRM_WAIT_MS);});
+// Submit for review: the person's own click, a library POST with the revision they were shown (the server refuses a stale one). The Worker checks Origin and CSRF as for every library POST.
+async function sumStatus(s){const app=window.ATLAS_APP,Core=window.AtlasWorkflowCore,list=$('summaryStatus');
+ if(!app||typeof app.libraryApi!=='function'||!Core||!list||!s.draft)return;
+ try{const m=Core.model(await app.libraryApi('/evidence/'+encodeURIComponent(s.draft.id)+'/status'));if(sum!==s)return;
+  list.replaceChildren();for(const c of m.cards)list.append(el('li','',c.label+': '+c.statusText+(c.badge?' ('+c.badge+')':'')));list.hidden=false;}
+ catch(e){list.hidden=true;}
+ try{window.AtlasWorkflowUI&&window.AtlasWorkflowUI.refresh();}catch(e){}}
+async function sumSubmit(){const s=sum,app=window.ATLAS_APP;if(!s||s.phase!=='confirmed'||!s.draft||s.submit.status==='sending'||s.submit.status==='sent')return;
+ if(!app||typeof app.libraryApi!=='function'){s.submit={status:'error',message:'The shared library is not available here.'};renderSummary();return;}
+ s.submit={status:'sending'};renderSummary();
+ try{const v=await app.libraryApi('/evidence/'+encodeURIComponent(s.draft.id)+'/submit',{method:'POST',body:{expected_revision:s.draft.revision}});
+  s.submit={status:'sent'};if(v&&Number.isInteger(v.revision))s.draft={...s.draft,revision:v.revision};}
+ catch(e){s.submit={status:'error',message:(e&&e.message)||'It was not submitted.'};}
+ if(sum===s){renderSummary();sumStatus(s);}}
+$('summarySubmit')&&$('summarySubmit').addEventListener('click',sumSubmit);
+window.addEventListener('atlas-session',e=>{const d=e.detail;if(!d||typeof d!=='object'||!card)return;
+ if(d.type==='ready'||d.type==='reset')sumClear();
+ else if(d.type==='summary'){const was=sum&&sum.phase==='open'?sum:null;if(sum&&['confirming','confirmed'].includes(sum.phase))return;
+  sum={items:arr(d.items).filter(x=>x&&typeof x==='object').slice(0,60),unknowns:arr(d.unknowns).filter(x=>x&&typeof x==='object').slice(0,12),phase:'open',editing:null,confirmed:false,draft:null,unavailable:null,submit:{status:'idle'}};
+  if(was&&was.editing&&sum.items.some(x=>x.detail_id===was.editing))sum.editing=was.editing;sumNote('');renderSummary();}
+ else if(d.type==='summary_closed'){if(sum&&sum.phase==='open'){sum.phase='closed';sumNote('');renderSummary();}}
+ else if(d.type==='summary_confirmed'){if(sum){sum.confirmed=true;clearTimeout(confirmTimer);confirmTimer=null;if(sum.phase==='open')sum.phase='confirming';renderSummary();}}
+ else if(d.type==='evidence_draft'){if(sum){clearTimeout(confirmTimer);confirmTimer=null;sum.phase='confirmed';sum.confirmed=true;
+   sum.draft={id:str(d.id,100),revision:Number.isInteger(d.revision)?d.revision:1,unchanged:d.unchanged===true};sum.unavailable=null;sumNote('');renderSummary();sumStatus(sum);}}
+ else if(d.type==='evidence_draft_unavailable'){if(sum){clearTimeout(confirmTimer);confirmTimer=null;sum.phase='confirmed';sum.confirmed=true;sum.draft=null;sum.unavailable={reason:str(d.reason,40),message:str(d.message,300)};sumNote('');renderSummary();}}
+ else if(d.type==='ended'){if(sum&&['open','confirming'].includes(sum.phase)){clearTimeout(confirmTimer);confirmTimer=null;
+   if(sum.confirmed){sum.phase='confirmed';sum.unavailable={reason:'no_answer',message:'The summary was confirmed, but the interview ended before the library answered. Nothing was saved.'};}else sum.phase='ended';renderSummary();}}});
 
 /* ---------- Proof answers after a gap interview (F2.1 step 6): two separate explicit clicks ---------- */
 function showGap(m){const g=obj(m.gap),app=window.ATLAS_APP;

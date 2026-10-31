@@ -221,7 +221,8 @@ test('when transcription consent is required, a start without it is refused', as
 
 const REPORT = { headline: 'Claims triage rebuilt', summary: 'The consultant rebuilt claims triage.', topics: { outcome: 'Triage time fell (stated).' }, highlights: ['Ownership'], gaps: ['No source'], follow_ups: [] };
 test('ATLAS ends the interview: end token never spoken or shown, wrap_up after playback, report in notes', async () => {
-  const h = harness(['That is everything, I am done.'], calls => ({
+  // (The consultant's words are an ordinary answer: "I am done" starts the read-back since T11, and nothing closes before the summary is confirmed.)
+  const h = harness(['That is the whole story of the intake rebuild.'], calls => ({
     async *chatStream(messages) { calls.talker.push(messages);
       const parts = calls.talker.length === 1 ? ['Hi, I am ATLAS. ', 'Tell me about it.'] : ['Thanks so much for sharing. ', 'I will prepare your report now. [', '[END', ']]'];
       for (const d of parts) yield d; },
@@ -239,7 +240,7 @@ test('ATLAS ends the interview: end token never spoken or shown, wrap_up after p
   const kinds = h.events.map(e => e.type), notes = h.events.find(e => e.type === 'notes');
   assert.ok(kinds.indexOf('reporting') < kinds.indexOf('notes'));
   assert.equal(notes.report.headline, 'Claims triage rebuilt'); assert.equal(notes.report.status, 'model_draft'); assert.equal(notes.report.topics.context, '');
-  assert.ok(JSON.parse(h.calls.report[1].content).interview_transcript.includes('Consultant: That is everything, I am done.'));
+  assert.ok(JSON.parse(h.calls.report[1].content).interview_transcript.includes('Consultant: That is the whole story of the intake rebuild.'));
 });
 test('report failure keeps the notes and sends report null', async () => {
   const h = harness(undefined, { async report() { throw new Error('model down'); } });

@@ -18,7 +18,7 @@ class El{
  get offsetParent(){return this.hidden?null:{};}
 }
 function boot({announce=true,provider='workers'}={}){
- const els={};const $=id=>els[id]||(els[id]=new El(id));
+ const els={},listeners={};const $=id=>els[id]||(els[id]=new El(id));
  const doc={getElementById:$,createElement:t=>new El(t),querySelector:()=>new El('q'),addEventListener(){},body:new El('body'),readyState:'complete'};
  const sent=[],posted=[],sockets=[],tracks=[],newTrack=()=>{const t={enabled:true,readyState:'live',stop(){this.readyState='ended';},addEventListener(){},label:'fake mic',muted:false};tracks.splice(0,tracks.length,t);return t;};
  class Socket{constructor(){this.readyState=0;this.bufferedAmount=0;sockets.push(this);setTimeout(()=>{this.readyState=1;this.onopen?.();},0);}send(d){sent.push(typeof d==='string'?JSON.parse(d):d.byteLength);}close(){this.readyState=3;}}
@@ -28,7 +28,7 @@ function boot({announce=true,provider='workers'}={}){
  const win={document:doc,navigator:{mediaDevices:{getUserMedia:async()=>{const t=[newTrack()];return{getTracks:()=>t,getAudioTracks:()=>t};},enumerateDevices:async()=>[]},languages:['en']},location:{protocol:'https:',href:'https://x/',hash:'',pathname:'/',search:''},
   isSecureContext:true,AudioContext:Ctx,AudioWorkletNode:Worklet,WebSocket:Socket,URL,Blob,performance,CustomEvent:class{constructor(t,o){this.type=t;this.detail=o?.detail;}},
   setTimeout:(f,ms)=>setTimeout(f,ms).unref(),clearTimeout,setInterval:(f,ms)=>setInterval(f,ms).unref(),clearInterval,queueMicrotask,AbortSignal,matchMedia:()=>({matches:false}),history:{replaceState(){}},Date,Promise,JSON,Math,Array,Object,String,Number,Error,Set,Map,
-  dispatchEvent(){},addEventListener(){},AtlasVoiceControls:require('../src/voice-controls.js'),
+  dispatchEvent(e){for(const f of listeners[e.type]||[])f(e);},addEventListener:(t,f)=>(listeners[t]||=[]).push(f),AtlasVoiceControls:require('../src/voice-controls.js'),
   AtlasAuth:{mode:'live',probe:async()=>{},onSignedIn(){},expired(){},Expired:class extends Error{},fetch:async()=>({ok:true,json:async()=>bootJson})},
   ATLAS_VOICE_BRIDGE:{context:()=>({workspaceId:'w',project:{id:'p',title:'P',stage:'Pilot',answers:[]},display:{}}),restored:async()=>{},gapConsumed(){},autoSave:()=>({})},
   URL_createObjectURL:0};
@@ -40,7 +40,7 @@ function boot({announce=true,provider='workers'}={}){
   async live(){
    await $('voiceStart').onclick();await new Promise(r=>setTimeout(r,5));
    $('modelConsent').checked=true;await $('voiceConsentStart').onclick();await new Promise(r=>setTimeout(r,30));
-   server({type:'ready',model:'ATLAS',capture:true,...(announce?{controls:['pause','resume','repeat','skip','text']}:{})});
+   server({type:'ready',model:'ATLAS',capture:true,...(announce?{controls:announce===true?['pause','resume','repeat','skip','text','correct','withhold','confirm_summary']:announce}:{})});
   }};
 }
 const flush=()=>new Promise(r=>setTimeout(r,5));
@@ -115,4 +115,24 @@ test('the paused state does not leak into the next conversation',async()=>{
  h.win.AtlasVoice.cancel('stop');await flush();
  assert.equal(h.$('voicePause').hidden,true);assert.equal(h.$('voicePause').textContent,'Pause');
  await h.live();assert.equal(h.$('voicePause').textContent,'Pause');assert.equal(h.win.AtlasVoice.status().tracks[0].enabled,true);
+});
+
+test('T11: the read-back card\'s buttons reach the socket as exactly the messages the session accepts, only while live and only when the server announced them',async()=>{
+ const act=(h,detail)=>h.win.dispatchEvent(new h.win.CustomEvent('atlas-summary-action',{detail}));
+ const out=h=>h.sent.filter(m=>typeof m==='object').filter(m=>m.type!=='start'&&m.type!=='playback');
+ const h=boot();await h.live();
+ act(h,{kind:'withhold',detail_id:'D-002'});act(h,{kind:'correct',detail_id:'D-001',text:'  It was 35 percent.  '});act(h,{kind:'confirm_summary'});
+ assert.deepEqual(out(h),[{type:'withhold',detail_id:'D-002'},{type:'correct',detail_id:'D-001',text:'It was 35 percent.'},{type:'confirm_summary'}]);
+ for(const bad of [{kind:'correct',detail_id:'D-001',text:'no'},{kind:'withhold',detail_id:'../x'},{kind:'skip'},{kind:'end'},{},null,{kind:'correct',text:'no id here'}])act(h,bad);
+ assert.equal(out(h).length,3,'nothing else is sent');
+ // an older gateway that announced only the T9 controls is never sent a card message
+ const old=boot({announce:['pause','resume','repeat','skip','text']});await old.live();
+ act(old,{kind:'confirm_summary'});act(old,{kind:'withhold',detail_id:'D-001'});assert.equal(out(old).length,0);
+ // before the interview is live nothing is sent either
+ const idle=boot();act(idle,{kind:'confirm_summary'});assert.equal(out(idle).length,0);
+ // the server's summary events reach the page bus the card listens on, and a resume brings the open card back with the screens
+ const seen=[];h.win.addEventListener('atlas-session',e=>seen.push(e.detail.type));
+ for(const m of [{type:'summary',items:[],unknowns:[]},{type:'summary_closed'},{type:'summary_confirmed'},{type:'evidence_draft',id:'e1',revision:1},{type:'evidence_draft_unavailable',reason:'workflow_off'}])h.server(m);
+ assert.deepEqual(seen,['summary','summary_closed','summary_confirmed','evidence_draft','evidence_draft_unavailable']);
+ seen.length=0;h.server({type:'restore',user:[],agent:[],quality:null,summary:{items:[],unknowns:[],state:'summary'},lastQuestion:'',activeSeconds:5});assert.deepEqual(seen,['summary']);
 });

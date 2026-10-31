@@ -7,6 +7,8 @@ const FIELD_KEYS = Object.keys(FIELDS);
 const NUMERIC = new RegExp(NUMERIC_SRC, 'i');
 const UNCERTAIN = new RegExp(UNCERTAIN_SRC, 'i');
 const UNKNOWN = new RegExp(UNKNOWN_SRC, 'i');
+// Where a candidate detail's words came from (as quality.py PROVENANCE): set only by the server, never by a model's tool call.
+export const PROVENANCE = ['unverified_speech_recognition', 'consultant_typed', 'consultant_corrected'];
 const ws = s => s.split(/\s+/).filter(Boolean).join(' ');
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const fail = m => { throw new Error(m); };
@@ -28,7 +30,9 @@ export class InterviewLedger {
     this.transcripts.set(itemId, text);
   }
 
-  record(raw) {
+  record(raw, provenance = null) {
+    // provenance: trusted, from the server only (a typed correction, a confirmed correction); a model's tool call can never set it.
+    if (provenance !== null && !PROVENANCE.includes(provenance)) fail('Unknown provenance');
     if (!isObj(raw) || Object.keys(raw).length !== 1 || !('details' in raw) || !Array.isArray(raw.details) || raw.details.length < 1 || raw.details.length > 12) fail('Expected 1-12 candidate details');
     const pending = [];
     for (const x of raw.details) {
@@ -44,11 +48,20 @@ export class InterviewLedger {
       if (supersedes && pending.some(d => d.supersedes === supersedes)) fail('Only one correction per candidate in a batch');
       pending.push({ id: 'D-' + String(this.details.length + pending.length + 1).padStart(3, '0'), field: f, item_id: ident, quote,
         status: UNKNOWN.test(quote) ? 'unknown' : (x.uncertain === true || UNCERTAIN.test(quote)) ? 'uncertain' : 'reported',
-        active: true, supersedes, provenance: 'unverified_speech_recognition' });
+        active: true, supersedes, provenance: provenance || 'unverified_speech_recognition' });
     }
     if (this.details.length + pending.length > 100) fail('Candidate budget reached');
     for (const x of pending) { if (x.supersedes) for (const old of this.details) if (old.id === x.supersedes) old.active = false; this.details.push(x); }
     this.updates += 1;
+    return this.inspect();
+  }
+
+  // The consultant keeps one active detail private. It stays in the history (and the checkpoint) but leaves the notes, the report, the
+  // evidence and the story board, and its field is not asked about again (it counts as unresolved). One way: there is no un-withhold.
+  withhold(detailId) {
+    const d = this.details.find(x => x.id === detailId && x.active);
+    if (!d) fail('Only an active candidate detail can be kept private');
+    d.withheld = true;
     return this.inspect();
   }
 
@@ -65,7 +78,9 @@ export class InterviewLedger {
   }
 
   inspect() {
-    const active = this.details.filter(x => x.active);
+    const active = this.details.filter(x => x.active && !x.withheld);
+    // A field whose only active details are withheld is not asked again: the consultant chose to keep it private.
+    const kept = new Set(active.map(x => x.field)), withheld = new Set(this.details.filter(x => x.active && x.withheld && !kept.has(x.field)).map(x => x.field));
     const present = new Set(active.map(x => x.field));
     const missing = FIELD_KEYS.filter(f => !present.has(f));
     const numeric = active.some(x => x.field === 'outcome' && NUMERIC.test(x.quote));
@@ -78,7 +93,7 @@ export class InterviewLedger {
     const basis = numeric ? this.measurementGaps(active) : [];
     if (numeric && unknown.has('measurement')) flags.push('No verified measurement: preserve a qualitative account; do not repeat a demand for ROI');
     else if (numeric && present.has('measurement') && basis.length) flags.push('Measurement account still needs: ' + basis.join(', '));
-    const paused = new Set([...Object.keys(this.deferred), ...unknown]);
+    const paused = new Set([...Object.keys(this.deferred), ...unknown, ...withheld]);
     let priority = null, reason = 'Find the most decision-useful detail, not a bigger claim.';
     if (multi.length && !paused.has('measurement')) { priority = 'measurement'; reason = 'Multiple accounts need clarification before one result is selected.'; }
     else if (numeric && basis.length && !paused.has('measurement')) { priority = 'measurement'; reason = 'A numerical claim needs its denominator and comparison basis.'; }
@@ -98,7 +113,7 @@ export class InterviewLedger {
     return {
       candidate_details: active, missing, flags, next_field: priority, next_question: nextQuestion, why_this_question: reason,
       coverage: { present: present.size, total: FIELD_KEYS.length, meaning: 'candidate coverage; NOT quality, verification or approval' },
-      unresolved_fields: [...new Set([...unknown, ...Object.keys(this.deferred)])].sort(),
+      unresolved_fields: [...new Set([...unknown, ...Object.keys(this.deferred), ...withheld])].sort(),
       deferred_fields: { ...this.deferred }, measurement_gaps: basis,
       quality_state: flags.length || missing.length ? 'needs clarification' : 'ready for consultant correction; not verified',
       story_route: ['assessment', 'lessons learned'].includes(stage) ? 'learning or experience' : numeric && !basis.length && !unknown.has('measurement') ? 'quantified candidate' : 'qualitative candidate',
@@ -134,7 +149,7 @@ export class InterviewLedger {
 
   notes() {
     const sections = ['', '', '', '', '', ''];
-    for (const x of this.details) if (x.active) { const i = TO_TOPIC[x.field]; if (!sections[i].includes(x.quote)) sections[i] = (sections[i] + '\n' + x.quote).trim().slice(0, 6000); }
+    for (const x of this.details) if (x.active && !x.withheld) { const i = TO_TOPIC[x.field]; if (!sections[i].includes(x.quote)) sections[i] = (sections[i] + '\n' + x.quote).trim().slice(0, 6000); }
     return sections;
   }
 }

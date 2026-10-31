@@ -63,6 +63,22 @@
 .gap-panel .board-btn:hover:not(:disabled){background:rgba(138,0,255,.34)}
 .gap-panel .board-btn:focus-visible{outline:2px solid var(--y);outline-offset:3px}
 .gap-panel #gapMessage:empty{display:none}
+/* the read-back card (T11): items with Correct / Keep private, the open points, Confirm, then the private draft and its explicit Submit */
+.summary-card .summary-items,.summary-card .summary-open,.summary-card .summary-status{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px}
+.summary-card .summary-item{border:1px solid rgba(169,169,188,.16);border-radius:10px;padding:9px 10px;min-width:0;overflow-wrap:anywhere}
+.summary-card p.summary-item-head{margin:0 0 4px;font-size:10px;line-height:1.45;color:#A9A9BC}
+.summary-card p.summary-item-head b{font-weight:400;font-size:11px;color:#E8E8EE}
+.summary-card q.summary-quote{display:block;font-size:11px;line-height:1.6;color:#F8F8F8;quotes:'“' '”'}
+.summary-card .summary-item-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+.summary-card .summary-item-actions .board-btn,.summary-card .summary-edit .board-btn{min-height:36px;padding:6px 12px;font-size:10px}
+.summary-card .summary-edit{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+.summary-card .summary-edit label{flex:1 0 100%;font-size:10px;color:#A9A9BC}
+.summary-card .summary-edit input{flex:1 1 180px;min-width:0;min-height:36px;border-radius:9px;border:1px solid rgba(169,169,188,.35);background:rgba(16,16,17,.8);color:#F8F8F8;padding:6px 9px;font-size:12px}
+.summary-card .summary-edit input:focus-visible{outline:2px solid var(--y);outline-offset:2px}
+.summary-card .summary-open li{font-size:10px;line-height:1.5;color:#D6D6D6;border-left:2px dashed rgba(169,169,188,.5);padding-left:8px}
+.summary-card .summary-status li{font-size:10px;line-height:1.45;color:#E8E8EE;border-left:3px solid rgba(169,169,188,.4);padding-left:8px}
+.summary-card #summarySaved:empty,.summary-card #summaryMessage:empty{display:none}
+.summary-card #summarySaved{color:#F8F8F8}
 @media(max-width:1250px) and (min-width:1041px){.board-card{padding:17px}}
 @media(min-width:721px) and (max-width:1040px){.story-board .board-dims{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:720px){.story-board .board-head{flex-direction:column;align-items:flex-start}.story-board p.board-time{flex-direction:column}}

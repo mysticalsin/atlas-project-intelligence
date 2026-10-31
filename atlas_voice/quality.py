@@ -26,6 +26,9 @@ FIELDS = {
 NUMERIC = re.compile(r'(?<!\w)(?:\d+(?:[.,]\d+)?\s*(?:%|percent|hours?|minutes?|days?|million|[kmb]\b)|[$€£]\s*\d+)', re.I)
 UNCERTAIN = re.compile(r'\b(?:guess|roughly|about|approximately|estimate|not sure|maybe|think|probably)\b', re.I)
 UNKNOWN = re.compile(r"\b(?:don.t know|not measured|no baseline|no measurement|unknown|not yet known|cannot share|can.t share|under NDA|not authorized to disclose)\b", re.I)
+# Where a candidate detail's words came from. Speech recognition is the default; the other two are set only by the server (record's `provenance`
+# argument, never by a model's tool call): the consultant typed it, or corrected it themselves.
+PROVENANCE = ('unverified_speech_recognition', 'consultant_typed', 'consultant_corrected')
 TO_TOPIC = {'problem':0,'stakes':0,'contribution':1,'intervention':2,'decision':2,'adoption':2,'outcome':3,'measurement':3,'evidence':4,'limitations':4,'customer_fit':5,'poor_fit':5}
 
 INTERVIEW_POLICY = (
@@ -76,7 +79,9 @@ class InterviewLedger:
             raise ValueError('Transcript context budget reached')
         self.transcripts[item_id]=text
 
-    def record(self, raw):
+    def record(self, raw, provenance=None):
+        # provenance: trusted, from the server only (a typed correction, a confirmed correction); a model's tool call can never set it.
+        if provenance is not None and provenance not in PROVENANCE: raise ValueError('Unknown provenance')
         if not isinstance(raw,dict) or set(raw)!={'details'} or not isinstance(raw['details'],list) or not 1<=len(raw['details'])<=12:
             raise ValueError('Expected 1-12 candidate details')
         pending=[]
@@ -97,7 +102,7 @@ class InterviewLedger:
             if supersedes and any(d['supersedes']==supersedes for d in pending):raise ValueError('Only one correction per candidate in a batch')
             pending.append({'id':f'D-{len(self.details)+len(pending)+1:03}', 'field':f,'item_id':ident,'quote':quote,
               'status':'unknown' if UNKNOWN.search(quote) else 'uncertain' if x.get('uncertain') is True or UNCERTAIN.search(quote) else 'reported',
-              'active':True,'supersedes':supersedes,'provenance':'unverified_speech_recognition'})
+              'active':True,'supersedes':supersedes,'provenance':provenance or 'unverified_speech_recognition'})
         if len(self.details)+len(pending)>100: raise ValueError('Candidate budget reached')
         for x in pending:
             if x['supersedes']:
@@ -105,6 +110,14 @@ class InterviewLedger:
                     if old['id']==x['supersedes']:old['active']=False
             self.details.append(x)
         self.updates+=1
+        return self.inspect()
+
+    def withhold(self, detail_id):
+        """The consultant keeps one active detail private. It stays in the history (and the checkpoint) but leaves the notes, the report, the
+        evidence and the story board, and its field is not asked about again (it counts as unresolved). One way: there is no un-withhold."""
+        d = next((x for x in self.details if x['id'] == detail_id and x['active']), None)
+        if d is None: raise ValueError('Only an active candidate detail can be kept private')
+        d['withheld'] = True
         return self.inspect()
 
     def measurement_gaps(self, active):
@@ -120,7 +133,9 @@ class InterviewLedger:
         return [k for k,v in checks.items() if not v]
 
     def inspect(self):
-        active=[x for x in self.details if x['active']]
+        active=[x for x in self.details if x['active'] and not x.get('withheld')]
+        # A field whose only active details are withheld is not asked again: the consultant chose to keep it private.
+        withheld={x['field'] for x in self.details if x['active'] and x.get('withheld')}-{x['field'] for x in active}
         present={x['field'] for x in active}
         missing=[f for f in FIELDS if f not in present]
         numeric=any(NUMERIC.search(x['quote']) for x in active if x['field']=='outcome')
@@ -137,7 +152,7 @@ class InterviewLedger:
             flags.append('No verified measurement: preserve a qualitative account; do not repeat a demand for ROI')
         elif numeric and 'measurement' in present and basis:
             flags.append('Measurement account still needs: '+', '.join(basis))
-        paused=set(self.deferred)|unknown
+        paused=set(self.deferred)|unknown|withheld
         priority=None;reason='Find the most decision-useful detail, not a bigger claim.'
         if multi and 'measurement' not in paused:
             priority='measurement';reason='Multiple accounts need clarification before one result is selected.'
@@ -161,7 +176,7 @@ class InterviewLedger:
         return {'candidate_details':active,'missing':missing,'flags':flags,'next_field':priority,
           'next_question':next_question,'why_this_question':reason,
           'coverage':{'present':len(present),'total':len(FIELDS),'meaning':'candidate coverage; NOT quality, verification or approval'},
-          'unresolved_fields':sorted(unknown|set(self.deferred)),
+          'unresolved_fields':sorted(unknown|set(self.deferred)|withheld),
           'deferred_fields':dict(self.deferred), 'measurement_gaps':basis,
           'quality_state':'needs clarification' if flags or missing else 'ready for consultant correction; not verified',
           'story_route':'learning or experience' if self.stage.lower() in ('assessment','lessons learned') else 'quantified candidate' if numeric and not basis and 'measurement' not in unknown else 'qualitative candidate',
@@ -200,7 +215,7 @@ class InterviewLedger:
     def notes(self):
         sections=['']*6
         for x in self.details:
-            if x['active']:
+            if x['active'] and not x.get('withheld'):
                 i=TO_TOPIC[x['field']]
                 if x['quote'] not in sections[i]:sections[i]=(sections[i]+'\n'+x['quote']).strip()[:6000]
         return sections

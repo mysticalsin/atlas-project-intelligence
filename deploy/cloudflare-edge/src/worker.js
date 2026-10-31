@@ -6,6 +6,8 @@ import { jevRanker } from './jev.js';
 import { Session } from './session.js';
 import { CheckpointStore, checkpointRoutes, checkpointEnabled } from './checkpoint.js';
 import { Library } from './library.js';
+import { evidenceWorkflowOn } from './adapters.js';
+import { postDraftFromInterview } from './evidence.js';
 import { storyRater } from './rating.js';
 import { libraryRoutes } from './library-routes.js';
 import { hindsight, recallQuery, memoryNote, jevRelevant } from './memory.js';
@@ -60,6 +62,9 @@ export class Interview extends DurableObject {
       winHint: this.env.LIBRARY ? () => fetchWinHint(this.env, identity) : null,
       // Interviews with transcript consent are kept for 24 hours so a dropped connection can resume (ATLAS_CHECKPOINT=off: never).
       checkpoint: checkpointEnabled(this.env) && identity.user ? new CheckpointStore(this.ctx.storage, { owner: identity.user }) : null,
+      // Confirming the read-back saves an OWNER-ONLY evidence draft under the verified identity, server to server (never submitted from here). Off with
+      // ATLAS_EVIDENCE_WORKFLOW=off or without the library: the summary is then confirmed but not filed, and the browser is told so.
+      evidence: evidenceWorkflowOn(this.env) && this.env.LIBRARY && identity.user ? notes => postDraftFromInterview(this.env, identity, notes) : null,
     });
     this.session = session;
     const onMessage = e => {

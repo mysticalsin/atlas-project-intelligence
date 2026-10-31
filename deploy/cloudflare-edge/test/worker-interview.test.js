@@ -124,3 +124,16 @@ test('the checkpoint routes answer for the forwarded identity only', async () =>
   assert.deepEqual(await del('someone@else.example'), { discarded: false }); assert.ok(cpKeys(st).length);
   assert.deepEqual(await del(USER), { discarded: true }); assert.equal(cpKeys(st).length, 0);
 });
+
+// T11: the Interview DO hands the Session the hook that saves the confirmed summary as an owner-only draft: server to server, under the forwarded identity.
+test('the confirmed summary is saved through the library binding under the forwarded identity; off with ATLAS_EVIDENCE_WORKFLOW=off or without the binding or the identity', async () => {
+  const posts = [], LIBRARY = { idFromName: n => n, get: () => ({ fetch: async req => { posts.push([req.method, new URL(req.url).pathname, req.headers.get('x-atlas-user'), req.headers.get('x-atlas-role'), JSON.parse(await req.text())]); return new Response(JSON.stringify({ id: 'e1', revision: 1 }), { status: 201 }); } }) };
+  const hook = async (extra, user) => { const d = new Interview({ storage: new FakeStorage() }, env(extra)), c = connect(d, user); await c.p; c.server.fire('message', start()); await until(() => ready(c.server)); const h = d.session.evidence; await d.session.end(false); return h; };
+  const on = await hook({ LIBRARY });
+  assert.equal(typeof on, 'function');
+  assert.deepEqual(await on({ session_id: 's1', details: [{ id: 'D-001' }] }), { status: 201, body: { id: 'e1', revision: 1 } });
+  assert.deepEqual(posts.map(p => p.slice(0, 4)), [['POST', '/api/evidence', USER, 'user']]); assert.equal(posts[0][4].notes.session_id, 's1');
+  assert.equal(await hook({ LIBRARY, ATLAS_EVIDENCE_WORKFLOW: 'off' }), null);
+  assert.equal(await hook({}), null);
+  assert.equal(await hook({ LIBRARY }, ''), null);
+});

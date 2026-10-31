@@ -22,7 +22,7 @@ let gapUsed=null, consentStarting=false;
 function consumeGap(){const g=gapUsed;gapUsed=null;try{if(g&&bridge.context()?.gap===g)bridge.gapConsumed?.();}catch{}}
 // Session event bus for the live story board and the gap results (F5, F2): the server's session events, plus 'reset'
 // wherever the 'atlas-quality' reset fires. 'atlas-quality' itself is unchanged.
-const SESSION_EVENTS=['ready','time_up','wrap_up','audio_stopped','reporting','notes','ended'];
+const SESSION_EVENTS=['ready','time_up','wrap_up','audio_stopped','reporting','notes','ended','summary','summary_closed','summary_confirmed','evidence_draft','evidence_draft_unavailable'];
 function sessionEvent(detail){window.dispatchEvent(new CustomEvent('atlas-session',{detail}));}
 function resetBoards(){window.dispatchEvent(new CustomEvent('atlas-quality',{detail:{type:'reset'}}));sessionEvent({type:'reset'});}
 const closed=(s,ms)=>!s||s.readyState===3?Promise.resolve():new Promise(r=>{const t=setTimeout(r,ms);s.onclose=()=>{clearTimeout(t);r();};});
@@ -52,6 +52,8 @@ function applyMic(){const off=muted||paused;stream?.getAudioTracks().forEach(t=>
 function setPaused(p){if(p===paused||phase!=='live')return;const now=Date.now();if(p)pausedAt=now;else{pausedMs+=now-pausedAt;pausedAt=null;}paused=p;applyMic();if(p){node?.port.postMessage({type:'flush'});window.AtlasOrbUI?.levels(0,0,{low:0,mid:0,high:0});}
  $('voiceState').textContent=p?'Paused · microphone off':muted?'Microphone muted · ATLAS may still speak':providerName()+' · listening';controls();}
 function togglePause(){if(phase!=='live'||!supported('pause'))return;if(send(VC.message(paused?'resume':'pause')))setPaused(!paused);}
+// The read-back card's buttons (storyboard-ui.js) ask for a message; only what the server announced is sent, and only while the interview is live.
+window.addEventListener('atlas-summary-action',e=>{const d=e.detail||{},m=VC.summaryMessage(d.kind,d.detail_id,d.text);if(!m||phase!=='live'||!supported(m.type))return;send(m);});
 function sendTyped(){const input=$('voiceTypeInput'),m=VC.message('text',input.value);if(phase!=='live'||!supported('text')||!m)return;if(send(m)){input.value='';if(paused)setPaused(false);$('voiceMessage').textContent='You typed: “'+m.text.slice(0,140)+(m.text.length>140?'…':'')+'”';if($('orbAccessibleState'))$('orbAccessibleState').textContent='Typed answer sent.';controls();}}
 function after(message){$('voiceAfter').hidden=false;$('voiceAfter').textContent=message;}
 function sync(){livePill();const c=bridge.context();$('voicePanel').hidden=false;const real=c&&!c.isNew;$('orbProjectTitle').textContent=real?c.project.title:c?'A new project':'No project selected yet.';$('orbProjectMeta').textContent=real?[c.display?.consultant,c.display?.role,c.project.stage].filter(Boolean).join(' · '):c?'Just start talking. ATLAS creates the project from your story.':'Give the interviewer an authorized project alias. It will ask for the details.';document.body.classList.toggle('has-voice-project',!!real);if(current&&c&&(c.workspaceId!==current.workspaceId||c.project.id!==current.project.id))cancel('Project changed. The microphone was stopped.');if(current&&!c)cancel('Project closed.');controls();}
@@ -195,6 +197,7 @@ function refused(message){consumeGap();generation++;const s=socket;socket=null;t
 function restoreScreens(m){
  for(const u of (Array.isArray(m.user)?m.user:[]).slice(-40))if(u&&typeof u.text==='string')window.dispatchEvent(new CustomEvent('atlas-quality',{detail:{type:'user_text',item_id:u.item_id,text:u.text,provenance:u.provenance}}));
  if(m.quality&&typeof m.quality==='object')window.dispatchEvent(new CustomEvent('atlas-quality',{detail:{...m.quality,type:'quality'}}));
+ if(m.summary&&typeof m.summary==='object')sessionEvent({...m.summary,type:'summary'}); // the open read-back comes back with the screens
  accumulated=(Array.isArray(m.agent)?m.agent.filter(t=>typeof t==='string').join('\n\n'):'').slice(-60000);$('agentText').textContent=accumulated;$('agentText').scrollTop=$('agentText').scrollHeight;
  if(Number.isFinite(m.activeSeconds)){startedAt=Date.now()-m.activeSeconds*1000;pausedMs=0;$('voiceTimer').textContent=VC.clock(VC.elapsed(startedAt,pausedMs,pausedAt,Date.now()));}
  if(typeof m.lastQuestion==='string'&&m.lastQuestion&&$('orbAccessibleState'))$('orbAccessibleState').textContent='Interview resumed. The question was: '+m.lastQuestion;}
