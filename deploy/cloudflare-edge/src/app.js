@@ -201,7 +201,7 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
       return json(env, { provider: 'workers', providerLabel: 'ATLAS voice', protocol: 'atlas-personaplex-pcm-v1', csrf,
         identity, model: 'ATLAS conversational voice', admin,
         voices: ['atlas'], defaultVoice: 'atlas', captureRequired: true, codecAvailable: true, busy: false, capacity: 1, maxSeconds: MAX_SECONDS, speakingSeconds: SPEAKING_LIMIT_S,
-        memory: !!env.HINDSIGHT_API_KEY, wiki: false, jev: !!env.TYPESAFE_API_KEY, jevClassify: !!env.TYPESAFE_API_KEY, library: !!env.LIBRARY, libraryRole: role, sheet: true, transcription: true, structuredNotes: true, liveLedger: true, playbackAck: true,
+        memory: !!env.HINDSIGHT_API_KEY, wiki: false, jev: !!env.TYPESAFE_API_KEY, jevClassify: !!env.TYPESAFE_API_KEY, library: !!env.LIBRARY, libraryRole: role, sheet: true, transcription: true, structuredNotes: true, liveLedger: true, playbackAck: true, textMode: true,
         readiness: env.DATA_MODE === 'production' ? 'production' : 'edge-deployment-test-data-only', email: mail, features: flagsOf(env), resumable });
     }
     if (url.pathname === '/api/voice') {

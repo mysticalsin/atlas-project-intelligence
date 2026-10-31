@@ -35,7 +35,7 @@ test('bootstrap: resumable is the requester\'s own interview, as {sessionId, sav
   assert.equal((await boot(env, {})).resumable, null, 'nothing stored');
   await save(ns, 'user-abc', 'tony@example.com');
   const b = await boot(env, {});
-  assert.deepEqual(Object.keys(b.resumable).sort(), ['expiresAt', 'savedAt', 'sessionId']); assert.equal(b.resumable.sessionId, ID);
+  assert.deepEqual(Object.keys(b.resumable).sort(), ['expiresAt', 'input', 'savedAt', 'sessionId']); assert.equal(b.resumable.sessionId, ID);
   assert.equal(b.resumable.expiresAt - b.resumable.savedAt, 24 * 3600 * 1000);
   assert.ok(!JSON.stringify(b).includes(SECRET), 'never content');
   assert.deepEqual(ns.seen.at(-1), { name: 'user-abc', user: 'tony@example.com', path: '/api/checkpoint' });

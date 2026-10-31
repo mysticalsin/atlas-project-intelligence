@@ -22,7 +22,7 @@ import { BANNED_PRAISE_SRC, WORKFLOW_CONFIG } from '../src/policy.generated.js';
 import { TRANSITIONS } from '../src/conversation-state.js';
 import { memorySql } from './sqlite.js';
 import { ensure as ensureOutreach } from '../src/outreach.js';
-import { rig, opened, talked, send, until, cleanup, named, PROJECT } from './reconnect-harness.js';
+import { rig, opened, talked, send, until, cleanup, named, PROJECT, startMsg } from './reconnect-harness.js';
 
 test.afterEach(cleanup);
 
@@ -269,6 +269,18 @@ test('W3 the interview works by voice and by text: a typed answer takes the same
   assert.ok(h.s.history.some(m => m.role === 'user' && m.content.startsWith('The median handling time')), 'it is in the conversation history');
   assert.ok(h.events.some(e => e.type === 'user_text' && e.provenance === 'consultant_typed'), 'and labelled as typed, not as speech recognition');
   assert.equal(named(h.metrics, 'typed_turn').length, 1); assert.ok(!h.events.some(e => e.type === 'error'));
+});
+
+test('W3b a text-only interview: it starts with no microphone and no audio, and a typed answer takes the same path (same ledger, same next move, same audit, nothing synthesised)', async () => {
+  const h = rig({ talk: n => n === 0 ? ['What was the project?'] : ['Thanks. ', 'What was the baseline?'] });
+  await h.s.onText(startMsg({ mode: 'text' })); await until(() => !h.s.busy() && h.events.some(e => e.type === 'agent_text'));
+  assert.equal(h.events.find(e => e.type === 'ready').input, 'text'); assert.equal(h.bytes.length, 0); assert.equal(h.calls.tts.length, 0);
+  await send(h, { type: 'text', text: 'We rebuilt the claims intake process for the insurance client during the pilot, a big change for the whole team.' });
+  await until(() => h.calls.talker.length === 2 && !h.s.busy());
+  assert.equal(h.s.humane.asked.length, 1, 'the typed turn got a selected move'); assert.ok(h.s.ledger.transcripts.has('user-typed-1'), 'it is in the ledger');
+  assert.ok(h.events.some(e => e.type === 'user_text' && e.provenance === 'consultant_typed'), 'labelled as typed');
+  assert.ok(h.events.filter(e => e.type === 'agent_text').map(e => e.text).join('').includes('What was the baseline?'), 'ATLAS answered in text');
+  assert.equal(h.calls.tts.length, 0); assert.equal(h.calls.stt, 0); assert.ok(!h.events.some(e => e.type === 'error'));
 });
 
 test('W4 one primary question per turn: whatever the model writes, one question is voiced', () => {

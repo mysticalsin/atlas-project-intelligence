@@ -153,7 +153,7 @@ test('the store: owner, expiry after 24 hours, purge and the alarm', async () =>
   assert.equal(await mine.info(), null, 'nothing stored yet');
   await mine.save(doc);
   assert.equal(storage.alarm, t + TTL_MS, 'the purge alarm is armed for 24 hours');
-  assert.deepEqual(await mine.info(), { sessionId: doc.sessionId, savedAt: t, expiresAt: t + TTL_MS });
+  assert.deepEqual(await mine.info(), { sessionId: doc.sessionId, savedAt: t, expiresAt: t + TTL_MS, input: 'voice' });
   assert.equal(JSON.stringify(await mine.info()).includes(doc.history[0].content), false, 'never any content');
   assert.equal(await theirs.info(), null, 'another identity sees nothing');
   await assert.rejects(theirs.load(doc.sessionId), e => e.code === 'missing', 'and cannot read it, with the right id');
@@ -185,7 +185,7 @@ test('checkpoint routes: GET says whether one exists, POST discard deletes only 
   const call = (method, path, user) => checkpointRoutes(new Request('https://x.example' + path, { method, headers: user === undefined ? {} : { 'x-atlas-user': user } }), { storage, now });
   assert.equal((await call('GET', '/api/checkpoint')).status, 401, 'no verified identity: nothing');
   assert.deepEqual(await (await call('GET', '/api/checkpoint', 'x@y.example')).json(), { resumable: null });
-  const own = await (await call('GET', '/api/checkpoint', USER)).json(); assert.deepEqual(Object.keys(own.resumable).sort(), ['expiresAt', 'savedAt', 'sessionId']);
+  const own = await (await call('GET', '/api/checkpoint', USER)).json(); assert.deepEqual(Object.keys(own.resumable).sort(), ['expiresAt', 'input', 'savedAt', 'sessionId']);
   assert.deepEqual(await (await call('POST', '/api/checkpoint/discard', 'x@y.example')).json(), { discarded: false }); assert.ok(storage.keys().length, 'someone else cannot delete it');
   assert.deepEqual(await (await call('POST', '/api/checkpoint/discard', USER)).json(), { discarded: true }); assert.equal(storage.keys().length, 0);
   assert.equal((await call('GET', '/api/other', USER)).status, 404);

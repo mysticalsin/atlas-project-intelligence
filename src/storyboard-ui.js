@@ -1,5 +1,5 @@
 /* ATLAS live story board in the Conversation view (WOW_SPEC F5.2) and the proof answers after a gap interview (F2.6, T5).
-   Driven only by window events: 'atlas-quality' (quality, user_text, reset) and 'atlas-session' (ready, time_up, wrap_up,
+   Driven only by window events: 'atlas-quality' (quality, user_text, user_text_private, reset) and 'atlas-session' (ready, time_up, wrap_up,
    audio_stopped, reporting, notes, ended, reset). Never by agent_text, and no requestAnimationFrame: the countdown is a
    one-second interval that only runs between ready and the end of the audio. All text goes through textContent; the only
    markup inserted is AtlasGeo's own escaped map SVG. Nothing leaves the browser except on an explicit click of #gapSend. */
@@ -93,7 +93,9 @@ window.addEventListener('atlas-quality',e=>{const d=e.detail;if(!d||typeof d!=='
  if(d.type==='reset')clear();
  else if(d.type==='quality'){s.quality=d;s.qualitySeq=++seq;s.live=true;render();}  // accepted after audio_stopped too: the analyst finishes late
  else if(d.type==='user_text'&&typeof d.text==='string'){s.heard.push({item_id:str(d.item_id,160),text:d.text.slice(0,2000),seq:++seq});
-  if(s.heard.length>40)s.heard.splice(0,s.heard.length-40);s.live=true;render();}});
+  if(s.heard.length>40)s.heard.splice(0,s.heard.length-40);s.live=true;render();}
+ else if(d.type==='user_text_private'&&Array.isArray(d.items)){const set=new Set(d.items.filter(x=>typeof x==='string'));  // kept private: the board forgets the words of those utterances too
+  for(const h of s.heard)if(set.has(h.item_id))h.text='[kept private]';render();}});
 window.addEventListener('atlas-session',e=>{const d=e.detail;if(!d||typeof d!=='object')return;
  if(d.type==='reset')clear();
  else if(d.type==='ready'){clear();const max=num(d.maxSeconds);

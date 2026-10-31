@@ -61,7 +61,10 @@ test('a server that announces controls: Pause, Repeat, Skip and the typed answer
  h.$('voiceTypeForm').onsubmit({preventDefault(){}});
  const msgs=h.sent.filter(m=>typeof m==='object').filter(m=>m.type!=='start'&&m.type!=='playback');
  assert.deepEqual(msgs,[{type:'repeat'},{type:'skip'},{type:'text',text:'We rebuilt the intake process.'}]);
- assert.equal(h.$('voiceTypeInput').value,'','cleared after sending');assert.equal(h.$('voiceTypeSend').disabled,true);
+ // X1 (S1 follow-up): the text stays in the box until the server takes the turn (its user_text echo); Send waits meanwhile, so nothing is sent twice
+ assert.equal(h.$('voiceTypeInput').value,'  We rebuilt the intake process.  ','kept until the server takes it');assert.equal(h.$('voiceTypeSend').disabled,true,'Send waits for the server');
+ h.server({type:'user_text',item_id:'user-typed-1',text:'We rebuilt the intake process.',provenance:'consultant_typed'});
+ assert.equal(h.$('voiceTypeInput').value,'','cleared once the server echoed the turn');assert.equal(h.$('voiceTypeSend').disabled,true);
  assert.match(h.$('voiceMessage').textContent,/You typed: “We rebuilt the intake process\.”/);
 });
 
@@ -77,7 +80,9 @@ test('Pause: a real toggle that closes the microphone, stops the visible clock a
  assert.ok(h.posted.some(m=>m.type==='flush'),'anything of hers still queued is dropped: the orb cannot keep "speaking"');
  // typing while paused is allowed and carries the interview on
  h.$('voiceTypeInput').value='Carrying on';h.$('voiceTypeInput').oninput();h.$('voiceTypeForm').onsubmit({preventDefault(){}});
- assert.equal(h.sent.at(-1).type,'text');assert.equal(h.$('voicePause').textContent,'Pause');assert.equal(h.win.AtlasVoice.status().tracks[0].enabled,true);
+ assert.equal(h.sent.at(-1).type,'text');assert.equal(h.$('voicePause').textContent,'Resume','not before the server takes the turn');
+ h.server({type:'state',state:'discovery',from:'paused',event:'resume',actor:'user',paused:false});h.server({type:'user_text',item_id:'user-typed-1',text:'Carrying on',provenance:'consultant_typed'});
+ assert.equal(h.$('voicePause').textContent,'Pause');assert.equal(h.win.AtlasVoice.status().tracks[0].enabled,true);
  // pause again, then Resume
  h.$('voicePause').click();h.$('voicePause').click();
  assert.deepEqual(h.sent.filter(m=>m.type==='pause'||m.type==='resume').map(m=>m.type),['pause','pause','resume']);

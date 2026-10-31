@@ -8,6 +8,9 @@ same post the Interview Durable Object makes on a confirmed read-back.
 Covers: controls only when the server announces them; Pause (caption, orb, clock), Resume, Repeat, Skip; a typed answer; the reconnect status and the "Resume your
 interview?" prompt (Resume, Start over); the read-back card (Correct, Keep private, Confirm, a typed correction, "Saved as a private draft", the separate "Submit for
 review" with expected_revision); the workflow status cards (mock badge, never one "complete"); keyboard use and aria labels; no horizontal overflow at 390 px; no page errors.
+X1 (text-only interview): "Type instead" before starting (no microphone permission is given and none is asked for), a typed interview from the greeting text through typed answers,
+the summary card and the confirmed draft; the typed text kept in the box until the server takes the turn (and a gentle note when it does not); a kept-private utterance replaced on
+screen by "[kept private]"; a resumed typed interview; keyboard use, aria-live, focus after each reply, reduced motion, 390 px.
 Not covered (needs a live voice model): what ATLAS says, audio, the microphone path beyond the browser's fake device (COVERAGE.md).
 """
 import json, os, re, socket, subprocess, sys, time, urllib.request
@@ -63,8 +66,9 @@ def wait(p, cond, timeout=8):
 
 class Voice:
     """The scripted stand-in for the voice WebSocket. controls: what `ready` announces (a gateway that announces none must get no control UI)."""
-    def __init__(s, controls=None, draft=None):
+    def __init__(s, controls=None, draft=None, text=False):
         s.controls = controls; s.draft = draft or {}; s.frames = []; s.sock = None; s.sockets = 0; s.hold = False; s.held = []; s.summary_items = [dict(i) for i in ITEMS]
+        s.text = text; s.binary = 0; s.refuse = None; s.typed = []   # text: a typed interview (start mode 'text'); refuse: the reason the stand-in refuses the next typed turn
 
     def send(s, **event): s.sock.send(json.dumps(event))
 
@@ -73,13 +77,13 @@ class Voice:
     def __call__(s, ws):
         s.sock = ws; s.sockets += 1
         def on(m):
-            if isinstance(m, bytes): return
+            if isinstance(m, bytes): s.binary += 1; return
             d = json.loads(m); s.frames.append(d); t = d.get('type')
             if t == 'start':
                 def ready():
                     resumed = d.get('resume') is not None
                     ws.send(json.dumps({'type': 'ready', 'mode': 'full', 'model': 'ATLAS', 'provider': 'ATLAS voice', 'sampleRate': 24000, 'capture': True, 'liveLedger': True, 'maxSeconds': 900,
-                                        'speakingSeconds': 600, 'message': 'ready', 'sessionId': SID, 'resumable': True, **({'resumed': True} if resumed else {}), **({'controls': s.controls} if s.controls else {}),
+                                        'speakingSeconds': 600, 'message': 'ready', **({'input': 'text'} if d.get('mode') == 'text' else {}), 'sessionId': SID, 'resumable': True, **({'resumed': True} if resumed else {}), **({'controls': s.controls} if s.controls else {}),
                                         'timePlan': {'depthAt': 405, 'closingAt': 690}}))
                     if resumed:
                         ws.send(json.dumps({'type': 'restore', 'user': [{'item_id': 'user-1', 'text': 'We rebuilt the claims intake process for the insurance client.', 'provenance': 'unverified_speech_recognition'}],
@@ -94,14 +98,18 @@ class Voice:
             elif t == 'repeat': ws.send(json.dumps({'type': 'agent_text', 'text': '\n\nOf course. What was the baseline?'}))
             elif t == 'skip': ws.send(json.dumps({'type': 'agent_text', 'text': "\n\nNo problem, we'll leave that one. What changed for the customer?"}))
             elif t == 'text':
-                ws.send(json.dumps({'type': 'user_text', 'item_id': 'user-typed-1', 'text': d['text'], 'provenance': 'consultant_typed'}))
-                ws.send(json.dumps({'type': 'agent_text', 'text': '\n\nThanks. Over what period was that measured?'}))
+                if s.refuse:   # the session refuses the turn (rate limit, still composing, the protected greeting): a quality_warning that says which, and no user_text
+                    ws.send(json.dumps({'type': 'quality_warning', 'message': 'ATLAS is still replying.', 'refused': 'text', 'reason': s.refuse})); return
+                s.typed.append(('user-typed-%d' % (len(s.typed) + 1), d['text']))
+                ws.send(json.dumps({'type': 'user_text', 'item_id': s.typed[-1][0], 'text': d['text'], 'provenance': 'consultant_typed'}))
+                ws.send(json.dumps({'type': 'agent_text', 'text': '\n\nThanks. Over what period was that measured?' if len(s.typed) < 3 else '\n\nThat helps. What did the team change?'}))
             elif t == 'correct':
                 for i in s.summary_items:
                     if i['detail_id'] == d['detail_id']: i.update(quote=d['text'], provenance='consultant_typed', detail_id='D-004')
                 s.summary()
             elif t == 'withhold':
                 s.summary_items = [i for i in s.summary_items if i['detail_id'] != d['detail_id']]; s.summary()
+                if s.text and s.typed: ws.send(json.dumps({'type': 'user_text_private', 'items': [s.typed[-1][0]]}))   # what the session announces for the utterance the detail came from
             elif t == 'confirm_summary':
                 ws.send(json.dumps({'type': 'summary_confirmed'}))
                 ws.send(json.dumps({'type': 'evidence_draft', 'id': s.draft['id'], 'revision': s.draft['revision'], 'unchanged': False}))
@@ -128,15 +136,16 @@ try:
     with sync_playwright() as pw:
         br = pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH') or None, args=['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'])
 
-        def open_page(who, voice, path='/', w=1280, resumable=False, discard=None):
-            ctx = br.new_context(permissions=['microphone'], viewport={'width': w, 'height': 1000})
-            p = ctx.new_page(); p.on('pageerror', lambda e: ERR.append(who + ': ' + str(e)))
+        MIC_COUNT = "window.__mic=0;const g=navigator.mediaDevices&&navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);if(g)navigator.mediaDevices.getUserMedia=(...a)=>{window.__mic++;return g(...a)};"
+        def open_page(who, voice, path='/', w=1280, resumable=False, discard=None, mic=True):
+            ctx = br.new_context(permissions=['microphone'] if mic else [], viewport={'width': w, 'height': 1000})
+            p = ctx.new_page(); p.on('pageerror', lambda e: ERR.append(who + ': ' + str(e))); p.add_init_script(MIC_COUNT)
             p.requests = []; p.on('request', lambda r: p.requests.append((r.method, urlparse(r.url).path, r.post_data or '', r.headers)) if '/api/' in r.url else None)
             p.voice = voice; p.route_web_socket('**/api/voice', voice)
             if resumable:  # the Interview Durable Object is not in the local edge: say what its /api/checkpoint would say, on the real bootstrap
                 def boot(route):
                     resp = route.fetch(); body = resp.json()
-                    if not discard: body['resumable'] = {'sessionId': SID, 'savedAt': int(time.time() * 1000) - 60000, 'expiresAt': int(time.time() * 1000) + 86400000}  # once discarded, the server has nothing to resume
+                    if not discard: body['resumable'] = {'sessionId': SID, 'savedAt': int(time.time() * 1000) - 60000, 'expiresAt': int(time.time() * 1000) + 86400000, **({'input': 'text'} if resumable == 'text' else {})}  # once discarded, the server has nothing to resume
                     route.fulfill(response=resp, json=body)
                 p.route('**/api/bootstrap', boot)
             if discard is not None: p.route('**/api/checkpoint/discard', lambda route: (discard.append(route.request.headers), route.fulfill(json={'discarded': True}))[1])
@@ -287,6 +296,82 @@ try:
         lib.set_viewport_size({'width': 390, 'height': 844}); lib.wait_for_timeout(300)
         check('at 390 px the library view with the workflow cards does not scroll sideways', no_overflow(lib))
         check('at 390 px the cards stay readable: every card is inside the viewport', lib.evaluate("[...document.querySelectorAll('#workflowStatus .wf-card')].every(e=>{const r=e.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth+1})"))
+
+        # ---- 8. X1: a typed interview (no microphone permission is given, and none may be asked for)
+        vt = Voice(controls=CONTROLS, draft=draft, text=True)
+        pt = open_page(USER, vt, mic=False)
+        pt.locator('#voiceStartText').wait_for(state='visible', timeout=8000)
+        check('before starting, "Type instead" sits next to Start conversation (the server announced typed interviews)', pt.locator('#voiceStartText').inner_text() == 'Type instead' and pt.locator('#voiceStart').is_visible())
+        pt.locator('#voiceStartText').click(); pt.locator('#voiceConsentDialog').wait_for(state='visible', timeout=8000)
+        check('the consent dialog offers both ways in, the typed one leading, both waiting for the one consent tick',
+              pt.locator('#voiceConsentType').is_visible() and pt.locator('#voiceConsentStart').is_visible() and pt.locator('#voiceConsentType').is_disabled() and pt.locator('#voiceConsentStart').is_disabled()
+              and pt.get_attribute('#voiceConsentDialog', 'data-input') == 'text' and 'no microphone is used' in pt.locator('#consentTip').inner_text().lower())
+        pt.locator('#modelConsent').check()
+        check('ticking enables both starts', pt.locator('#voiceConsentType').is_enabled() and pt.locator('#voiceConsentStart').is_enabled())
+        pt.locator('#voiceConsentType').click(); pt.wait_for_function('()=>AtlasVoice.status().phase==="live"', timeout=10000); pt.wait_for_timeout(700)
+        check('the start message asks for mode text (no other new key), and the page never asked for the microphone', frames_of(pt, 'start')[0].get('mode') == 'text' and pt.evaluate('window.__mic') == 0
+              and pt.evaluate('AtlasVoice.status().hasMicrophone===false&&AtlasVoice.status().hasAudioContext===false&&AtlasVoice.status().textMode===true'))
+        check('the greeting is on screen as text, in a labelled conversation log that announces politely', 'Hi, I\'m ATLAS. What was the project?' in pt.locator('#textLog').inner_text()
+              and pt.get_attribute('#textLog', 'role') == 'log' and pt.get_attribute('#textLog', 'aria-live') == 'polite' and pt.get_attribute('#textLog', 'aria-label') == 'Conversation')
+        check('no microphone anywhere: Mute is gone, the orb is idle (no listening or speaking motion), the caption says typed conversation', pt.locator('#voiceMute').is_hidden()
+              and pt.evaluate("document.getElementById('voicePanel').dataset.orbState") == 'idle' and 'typed conversation' in pt.locator('#orbStateCaption').inner_text().lower()
+              and pt.locator('.orb-meters').is_hidden() and 'Typed conversation' in pt.locator('#connectionStateLabel').inner_text())
+        check('the answer box is focused when the interview opens, under the conversation', pt.evaluate('document.activeElement.id') == 'voiceTypeInput'
+              and pt.evaluate("document.getElementById('textLog').nextElementSibling.contains(document.getElementById('voiceTypeInput'))"))
+        ANS1 = 'We rebuilt the claims intake process for a large insurer, and I led the design.'
+        pt.locator('#voiceTypeInput').fill(ANS1); pt.keyboard.press('Enter'); pt.wait_for_timeout(600)
+        log = pt.locator('#textLog .msg')
+        check('a typed answer: sent once, cleared when the server took it, shown as "You", and ATLAS\'s reply follows in the log',
+              [f['text'] for f in frames_of(pt, 'text')] == [ANS1] and pt.locator('#voiceTypeInput').input_value() == '' and log.count() == 3
+              and log.nth(1).inner_text().lower().startswith('you') and ANS1 in log.nth(1).inner_text() and 'Over what period was that measured?' in log.nth(2).inner_text())
+        check('after the reply the cursor is back in the answer box', pt.evaluate('document.activeElement.id') == 'voiceTypeInput')
+        # kept until accepted: the session refuses the turn, the text stays and a gentle note says so
+        ANS2 = 'It ran for about six months, and the baseline was forty minutes per claim.'
+        vt.refuse = 'speaking'; pt.locator('#voiceTypeInput').fill(ANS2); pt.keyboard.press('Enter'); pt.wait_for_timeout(500)
+        check('refused while ATLAS speaks: the text is still in the box, the note says "I\'ll take that as soon as I finish speaking", and the log did not change',
+              pt.locator('#voiceTypeInput').input_value() == ANS2 and "I\u2019ll take that as soon as I finish speaking" in pt.locator('#voiceTypeNote').inner_text() and 'Your text is kept' in pt.locator('#voiceTypeNote').inner_text() and log.count() == 3)
+        check('the note is a polite status region, Send is usable again, and focus is back in the box', pt.get_attribute('#voiceTypeNote', 'role') == 'status' and pt.get_attribute('#voiceTypeNote', 'aria-live') == 'polite'
+              and pt.locator('#voiceTypeSend').is_enabled() and pt.evaluate('document.activeElement.id') == 'voiceTypeInput')
+        vt.refuse = 'composing'; pt.keyboard.press('Enter'); pt.wait_for_timeout(400)
+        check('refused again while ATLAS is still replying: "One moment", the same text still there', 'One moment' in pt.locator('#voiceTypeNote').inner_text() and pt.locator('#voiceTypeInput').input_value() == ANS2)
+        pt.keyboard.press('Shift+Enter'); pt.keyboard.type('x'); pt.wait_for_timeout(100)
+        check('editing the kept text clears the note, and Shift+Enter adds a line instead of sending', pt.locator('#voiceTypeNote').inner_text() == '' and pt.locator('#voiceTypeInput').input_value() == ANS2 + '\nx' and len(frames_of(pt, 'text')) == 3)
+        pt.locator('#voiceTypeInput').fill(ANS2); vt.refuse = None; pt.keyboard.press('Enter'); pt.wait_for_timeout(600)
+        check('accepted at last: the text is cleared only now, the note is gone, and the answer is in the log', pt.locator('#voiceTypeInput').input_value() == '' and pt.locator('#voiceTypeNote').inner_text() == '' and ANS2 in pt.locator('#textLog').inner_text())
+        SECRET = 'The secret margin was nineteen percent and nobody outside the team knows it.'
+        pt.locator('#voiceTypeInput').fill(SECRET); pt.keyboard.press('Enter'); pt.wait_for_timeout(600)
+        check('the last answer is also the last-words receipt on the interview card', SECRET in pt.locator('#lastHeard').inner_text())
+        # the read-back card, then Keep private on the secret
+        vt.summary(); pt.locator('#summaryCard').wait_for(state='visible', timeout=5000)
+        pt.locator('#summaryItems [data-detail=D-001] [data-action=withhold]').click(); pt.wait_for_timeout(500)
+        check('Keep private: the live line of that utterance is replaced on screen by "[kept private]" in the conversation and in the last-words receipt, and its words are gone from the page',
+              '[kept private]' in pt.locator('#textLog').inner_text() and pt.locator('#lastHeard').inner_text() == '\u201c[kept private]\u201d' and SECRET not in pt.evaluate('document.body.innerText')
+              and ANS2 in pt.locator('#textLog').inner_text() and pt.locator('#textLog .msg.is-private').count() == 1)
+        pt.locator('#summaryConfirm').focus(); pt.keyboard.press('Enter'); pt.wait_for_timeout(1200)
+        check('confirm: the summary card shows "Saved as a private draft" in a typed interview too', 'Saved as a private draft' in pt.locator('#summarySaved').inner_text() and len(frames_of(pt, 'confirm_summary')) == 1)
+        check('no audio frame was sent in the whole typed interview, and the microphone was never requested', vt.binary == 0 and pt.evaluate('window.__mic') == 0)
+        # accessibility: keyboard, narrow screen, reduced motion
+        pt.locator('#voicePause').focus(); pt.keyboard.press('Enter'); pt.wait_for_timeout(400)
+        check('keyboard: Pause works in a typed interview and reads "Paused" (no microphone to mention)', len(frames_of(pt, 'pause')) == 1 and pt.locator('#voiceState').inner_text() == 'Paused')
+        pt.locator('#voicePause').click(); pt.wait_for_timeout(300)
+        check('the log can be scrolled by keyboard (it is focusable) and the answer box has its label', pt.get_attribute('#textLog', 'tabindex') == '0' and pt.evaluate("document.querySelector('label[for=voiceTypeInput]').textContent.trim()") != '')
+        pt.set_viewport_size({'width': 390, 'height': 844}); pt.wait_for_timeout(400)
+        check('at 390 px a typed interview does not scroll sideways, and the log and answer box stay inside the screen', no_overflow(pt) and pt.evaluate("['textLog','voiceTypeInput','voiceTypeSend'].every(id=>{const r=document.getElementById(id).getBoundingClientRect();return r.left>=0&&r.right<=innerWidth+1})"))
+        pt.emulate_media(reduced_motion='reduce'); vt.sock.send(json.dumps({'type': 'agent_text', 'text': '\n\nOne more thing: who adopted it?'})); pt.wait_for_timeout(300)
+        check('reduced motion: a new line does not animate', pt.evaluate("getComputedStyle(document.querySelector('#textLog .msg:last-child')).animationName") == 'none')
+        pt.set_viewport_size({'width': 1280, 'height': 1000}); pt.locator('#voiceEnd').click(); pt.wait_for_function('()=>AtlasVoice.status().phase==="idle"', timeout=8000)
+        check('End: the typed conversation stays readable, the answer box goes, and both ways to start again are offered', pt.locator('#textLog .msg').count() >= 5 and pt.locator('#voiceTypeForm').is_hidden() and pt.locator('#voiceStartText').is_visible() and pt.locator('#voiceStartText').is_enabled())
+        # a typed interview that is resumed: the saved interview says it was typed, and no microphone is asked for
+        vtr = Voice(controls=CONTROLS, draft=draft, text=True)
+        ptr = open_page(USER, vtr, resumable='text', mic=False)
+        ptr.locator('#voiceResumeDialog').wait_for(state='visible', timeout=8000)
+        check('the resume prompt names a typed interview', 'typed interview' in ptr.locator('#voiceResumeText').inner_text())
+        ptr.locator('#voiceResumeDialog').get_by_role('button', name='Resume').click(); ptr.wait_for_function('()=>AtlasVoice.status().phase==="live"', timeout=10000); ptr.wait_for_timeout(500)
+        st = frames_of(ptr, 'start')[0]
+        check('Resume carries the saved interview\'s id and mode text, with no microphone request', st.get('resume') == SID and st.get('mode') == 'text' and ptr.evaluate('window.__mic') == 0)
+        check('the typed conversation comes back where it was: the turns and ATLAS\'s words, in order', ptr.locator('#textLog .msg').count() == 3
+              and 'We rebuilt the claims intake process for the insurance client.' in ptr.locator('#textLog .msg').nth(1).inner_text() and 'What was the baseline?' in ptr.locator('#textLog .msg').nth(2).inner_text())
+        ptr.close(); pt.close()
         br.close()
     check('no page errors', not ERR)
 except SystemExit as e: code = e.code or 0

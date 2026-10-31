@@ -83,6 +83,10 @@ export const TYPED_MAX_CHARS = 2000; // a typed answer; longer text is cut (the 
 // Cost bounds (S1, review L5): each typed turn costs an analyst call and a talker call, so one is taken at a time and not faster than this; corrections are bounded per minute.
 export const TYPED_MIN_INTERVAL_S = 1.5;
 export const TYPED_RATE_LIMITED = 'ATLAS is still replying. Wait a moment, then send that again.';
+// X1: typing while ATLAS speaks is a barge-in (it stops her, as speaking does) and is taken. What is still refused: a burst (under TYPED_MIN_INTERVAL_S), a reply that is being
+// composed before any of it is out (one at a time: each turn costs a model call), and the protected first piece of the greeting. A refusal says which (`refused`, `reason`)
+// so the browser keeps the typed text and tells the person gently; it clears the text only when the turn is echoed back as `user_text`.
+export const TYPED_WAIT_SPEAKING = 'I\'ll take that as soon as I finish speaking.';
 export const CORRECTIONS_PER_MINUTE = 6;
 export const CORRECTION_RATE_LIMITED = 'That is a lot of corrections at once. Wait a moment, then try again.';
 export const PRIVATE_MARK = '[kept private]'; // what stands for a whole utterance the consultant kept private (summary.js redact() uses the same marker for a quote)
@@ -130,7 +134,12 @@ export function paceNotes(elapsedS, limitS, notes, admin = false) {
   return [admin ? ADMIN_NOTE : '', pace];
 }
 export const LEAD_MS = 300; // max audio sent ahead of what the browser has played
-const START_KEYS = ['type', 'csrf', 'consent', 'project', 'voice', 'capture', 'memory', 'language', 'gap', 'resume'];
+const START_KEYS = ['type', 'csrf', 'consent', 'project', 'voice', 'capture', 'memory', 'language', 'gap', 'resume', 'mode'];
+// X1: `mode` in `start` is 'voice' (the default) or 'text'. A text interview needs no microphone: no audio frames are expected, the microphone watchdog is off, ATLAS's replies
+// are text only (no speech synthesis at all, so no cost and nothing aloud in a quiet office), and everything else (selector, acknowledgements, guard, summary, evidence,
+// checkpoint) is the same path as a voice interview. The mode is stored in the checkpoint, and a resume without `mode` carries on in the stored one.
+export const INTERVIEW_MODES = Object.freeze(['voice', 'text']);
+export const TEXT_READ_BEAT_MS = 2500; // after a closing line in text, a moment to read it before the interview ends (voice waits for the audio instead)
 // Checkpoint and reconnect (T10, checkpoint.js). `resume` in `start` is the id of the interview to continue; anything that cannot be resumed (nothing stored, another
 // person's, expired, another version, a gap request, transcript capture off) is this one message, so the socket reveals nothing about what is stored.
 export const RESUME_UNAVAILABLE = 'This interview can no longer be resumed. Start a new one.';
@@ -270,6 +279,7 @@ export class Session {
     // Interview mode. Gap mode keeps its own answer windows: askByItem (reply item -> the ask it carried, set when the reply
     // is composed), gapAttempts (replies heard per ask), openAsk (the ask the consultant last heard; null once a reflect-back
     // or the closing is heard) and gapAnswers (ask -> the consultant turns heard after it, each turn a list of transcript parts).
+    this.textMode = false; // X1: a typed interview (start mode 'text'): no microphone, no audio, no synthesis
     this.mode = 'full'; this.wrapS = WRAP_S; this.winNote = ''; this.starting = false;
     this.gapAsks = []; this.gapRequest = null; this.askByItem = new Map(); this.gapAttempts = {}; this.gapAnswers = {}; this.openAsk = null; this.lastAnswer = null; this.askHeard = null;
     this.memoryNote = ''; this.language = 'en'; this.languageCandidate = null; this.dry = false; this.affinity = 'atlas-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -340,6 +350,7 @@ export class Session {
 
   onBinary(bytes) {
     if (!this.started || this.finished || this.ending) return;
+    if (this.textMode) return; // a typed interview expects no audio: anything that arrives is ignored, never listened to or counted
     if (!bytes.length || bytes.length % 2 || bytes.length > 3840) return this.fail('Invalid PCM frame', 'voice-contract');
     if (this.paused) { this.lastInput = this.now(); return; } // paused: nothing is listened to, kept or counted (the browser also closes its microphone)
     this.bytesIn += bytes.length; this.lastInput = this.now();
@@ -497,6 +508,7 @@ export class Session {
       // A resume needs a checkpoint store, transcript consent given again now, and a full interview: a proof request (gap) is never resumed.
       if (init.resume !== undefined && (typeof init.resume !== 'string' || !RESUME_ID.test(init.resume) || init.gap !== undefined || !this.checkpoint || !this.capture)) throw Object.assign(new Error(RESUME_UNAVAILABLE), { code: 'resume-unavailable' });
       if (init.gap !== undefined && (typeof init.gap !== 'string' || !GAP_ID.test(init.gap) || !this.gaps)) throw new Error(GAP_UNAVAILABLE);
+      if (init.mode !== undefined && !INTERVIEW_MODES.includes(init.mode)) throw new Error('Unsupported interview mode');
     } catch (e) { return this.fail(e.message, e.code || 'voice-contract'); }
     // The checkpoint, before anything else happens: a resume reads it, every other start deletes it (a fresh start never leaves an old interview behind).
     let doc = null;
@@ -527,6 +539,8 @@ export class Session {
       if (!asks.length) { this.metric('gap_unavailable', {}); return this.fail(GAP_UNAVAILABLE, 'voice-contract'); }
       Object.assign(this, { mode: 'gap', maxSeconds: GAP_LIMIT_S, speakingLimit: GAP_SPEAKING_S, wrapS: GAP_WRAP_S, gapAsks: asks, gapRequest: init.gap });
     }
+    this.textMode = init.mode === 'text' || (init.mode === undefined && doc?.input === 'text'); // (a stored text interview carries on in text unless the browser asks for voice)
+    if (this.textMode) this.metric('text_mode', {});
     const gap = this.mode === 'gap';
     const stage = this.project.stage || 'Unknown';
     this.analyst = this.capture ? new Analyst(messages => this.ai.analyst(messages), stage) : null;
@@ -542,7 +556,7 @@ export class Session {
     } else this.sessionId = newSessionId();
     this.started = true; this.lastInput = this.now(); if (!this.resumed) this.startedAt = this.lastInput;
     this.event('ready', { model: 'ATLAS', provider: 'ATLAS voice', sampleRate: 24000, speakingSeconds: this.speakingLimit, capture: this.capture, liveLedger: !!this.analyst,
-      maxSeconds: this.maxSeconds, message: 'Voice session ready. Speak naturally. Candidate notes require your review.',
+      maxSeconds: this.maxSeconds, input: this.textMode ? 'text' : 'voice', message: this.textMode ? 'Typed session ready. Type your answers. Candidate notes require your review.' : 'Voice session ready. Speak naturally. Candidate notes require your review.',
       mode: this.mode, timePlan: timePlan(this.maxSeconds, this.mode), controls: CONTROLS, ...(this.checkpointable() ? { sessionId: this.sessionId, resumable: true } : {}), ...(this.resumed ? { resumed: true, activeSeconds: Math.max(0, Math.floor(this.activeSeconds())) } : {}), ...(gap ? { gaps: this.gapAsks.map(({ id, label, ask }) => ({ id, label, ask })) } : {}) });
     if (this.memory && !gap) { // private memory from earlier conversations, bounded so the greeting is never held up (none in gap mode)
       let timer;
@@ -558,7 +572,9 @@ export class Session {
     this.pace();
     const lang = this.spoken();
     if (this.resumed) { // the screens are repopulated, then the question in front of the consultant is said again (no model call), unless they are paused
-      this.event('restore', restoreView(this));
+      const view = restoreView(this), priv = this.privateItems(); // an utterance kept private stays private on the resumed screen too
+      if (priv.size) view.user = view.user.map(u => priv.has(u.item_id) ? { ...u, text: PRIVATE_MARK } : u);
+      this.event('restore', view);
       if (this.paused) this.afterRestore = true; else this.continueInterview(this.line(RESUME_LINES, this.resumeCount++));
     } else if (gap) { // the first open ask, after the usual greeting (always spoken, admin included: Tony, 2026-10-02)
       this.guidance = gapGuidance(this.gapAsks, this.gapStatuses());
@@ -608,7 +624,7 @@ export class Session {
     if (this.paused) return;
     const left = this.maxSeconds - this.activeSeconds();
     if (left <= 0) { this.event('time_up', { message: TIME_UP_MESSAGE.replace('{minutes}', String(Math.round(this.maxSeconds / 60))) }); this.end(true); } // a clean end: notes (and the full-mode report) are still written
-    else if (this.now() - this.lastInput > 12) this.fail('Microphone frames stopped', 'voice-unavailable');
+    else if (!this.textMode && this.now() - this.lastInput > 12) this.fail('Microphone frames stopped', 'voice-unavailable'); // (a typed interview has no microphone to lose)
     // The last half minute and nobody is talking: ATLAS closes on her own, so the interview ends with a goodbye.
     else if (left <= 30 && !this.timeUp && this.turns >= 1 && !this.busy() && !this.turnDetector.active && this.sttBusy === 0) this.startReply(TIME_UP);
   }
@@ -1043,7 +1059,7 @@ export class Session {
     if (!this.ledger.details.some(d => d.id === id && d.active && d.withheld !== true)) return this.summaryWarning('That item is no longer in the summary.');
     try { this.ledger.withhold(id); } catch { return this.summaryWarning('That item could not be kept private.'); }
     this.metric('summary_withhold', {});
-    this.scrubPrivate();
+    this.scrubPrivate(); this.announcePrivate();
     this.boardUpdate(); this.sendSummary(true); this.checkpointSoon();
   }
   // "Keep private" covers the WHOLE utterance the detail came from, not only the extracted quote (review L7): its text leaves the notes transcript, the report's
@@ -1220,13 +1236,21 @@ export class Session {
     const text = clean(raw, TYPED_MAX_CHARS);
     if (!text) return;
     const t = this.now();
-    if (this.busy() || t - this.typedAt < TYPED_MIN_INTERVAL_S) { this.metric('typed_rate_limited', { busy: this.busy() ? 1 : 0 }); this.event('quality_warning', { message: TYPED_RATE_LIMITED }); return; }
+    // Her voice is out (audio sent or queued for this reply): typing stops her, as speaking does, and the turn is taken. Not in a typed interview (nothing is voiced there).
+    const voiced = !this.textMode && this.busy() && ((this.sentMs[this.replyItem] || 0) > 0 || this.queue.some(c => c.bytes.length));
+    const refuse = (reason, message) => { this.metric('typed_rate_limited', { busy: this.busy() ? 1 : 0 }); this.event('quality_warning', { message, refused: 'text', reason }); };
+    if (this.greetingPlaying()) return refuse('speaking', TYPED_WAIT_SPEAKING);
+    if (this.busy() && !voiced) return refuse('composing', TYPED_RATE_LIMITED); // being composed (or, in a typed interview, being written): one at a time
+    if (t - this.typedAt < TYPED_MIN_INTERVAL_S) return refuse('rate', TYPED_RATE_LIMITED);
     this.typedAt = t;
     if (this.paused) this.unpause('ui');
+    if (voiced) { this.interrupt(); this.metric('typed_barge_in', {}); }
     this.cutOff = false;
     this.metric('typed_turn', { chars: text.length });
     await this.finishTurn(text, false, { endedBy: 'typed', endedAt: this.now(), lang: this.language, sttMs: -1, words: null, baseMs: 0, typed: true });
   }
+  // The utterances kept private, told to the browser so a line of them still on its screen (the live transcript, the last words heard) becomes the marker too.
+  announcePrivate() { this.event('user_text_private', { items: [...this.privateItems()] }); }
 
   uncommit(item, onlyIfUnheard = false, keepState = false) {
     const move = this.moveByItem.get(item);
@@ -1278,6 +1302,7 @@ export class Session {
 
   // measure: a piece of a reply (not a prewarm), reported as numbers only: synthesis time, audio length, characters, cache hit.
   async synth(text, lang, measure = false, fixed = false) { // fixed: a stock phrase (greeting, acknowledgement), cached whatever its length
+    if (this.textMode) return new Uint8Array(0); // text interview: nothing is ever synthesised
     const key = lang + '|' + this.voice + '|' + text, keep = fixed || text.length <= 220, cached = keep ? cacheGet(key) : null, t0 = this.now();
     const pcm = cached || await this.ai.synthesize(text, this.voice, lang);
     if (!cached && keep) cacheSet(key, pcm);
@@ -1288,6 +1313,7 @@ export class Session {
   // Fill the cache with this language's acknowledgements without delaying anything: the legacy fillers at once (four lines), the
   // content-aware bank (about forty English lines, a few MB of PCM against the 12 MB cache) a few at a time, and none in admin.
   prewarm() {
+    if (this.textMode) return; // no audio, so nothing to warm
     const lang = this.spoken();
     if (this.flags.acks === 'legacy') { for (const f of FILLERS[lang] || []) this.synth(f, lang).catch(() => {}); return; }
     if (this.admin) return;
@@ -1357,7 +1383,8 @@ export class Session {
       // The text of exactly this piece (and any separator before it), not the next sentence's first words already streamed.
       const at = pending.indexOf(sentence), cut = at >= 0 ? at + sentence.length : pending.length, piece = pending.slice(0, cut);
       pending = pending.slice(cut);
-      for (let i = 0; i < pcm.length; i += CHUNK) this.push({ gen, item, bytes: pcm.subarray(i, Math.min(pcm.length, i + CHUNK)), text: i ? '' : piece, lead });
+      if (this.textMode) this.push({ gen, item, bytes: pcm, text: piece, lead }); // text only: released at once, in order, with no audio to wait for
+      else for (let i = 0; i < pcm.length; i += CHUNK) this.push({ gen, item, bytes: pcm.subarray(i, Math.min(pcm.length, i + CHUNK)), text: i ? '' : piece, lead });
       if (filler) this.fillerMs[item] = (this.fillerMs[item] || 0) + pcm.length / 48; // the acknowledgement's own audio, not counted as her reply
     };
     // Pipelined: a piece is synthesised as soon as its text is complete, while the piece before it is still being
@@ -1381,7 +1408,7 @@ export class Session {
           show((i === 0 && this.replies > 1 ? '\n\n' : '') + pieces[i] + ' '); said += pieces[i] + ' ';
           await deliver(pieces[i], syntheses[i], isFiller, true); if (gen !== this.gen || this.finished) return;
           if (isFiller && ack) this.ackPlayed(ack);
-          if (!isFiller && !only && i === 0) { // protect exactly the greeting's first piece: until the browser confirms it played (capped); the rest can be interrupted
+          if (!isFiller && !only && i === 0 && !this.textMode) { // protect exactly the greeting's first piece: until the browser confirms it played (capped); the rest can be interrupted
             this.protectedItem = item; this.protectedMs = (this.sentMs[item] || 0) + this.queue.filter(c => c.item === item).reduce((n, c) => n + c.bytes.length, 0) / 48 - before;
             this.protectedDeadline = this.now() + this.protectedMs / 1000 + 3;
           }
@@ -1504,7 +1531,7 @@ export class Session {
       if (!queued && (ahead <= 40 || this.now() >= this.nextTime + 0.3)) break;
       await this.sleep(100);
     }
-    await this.sleep(400);
+    await this.sleep(this.textMode ? TEXT_READ_BEAT_MS : 400); // (text: a moment to read the closing line)
     for (let i = 0; i < 100 && (this.turnDetector.active || this.sttBusy > 0) && !this.finished; i++) await this.sleep(200);
     if (gen !== this.gen || this.finished || this.ending || this.turns !== turns) return;
     this.metric('wrap_up', { turns: this.turns });
@@ -1556,9 +1583,9 @@ export class Session {
       // (older clients, background tabs) fall back to wall-clock pacing after ~1 s of waiting.
       for (let wait = 0; wait < 50 && (this.sentMs[item] || 0) - (this.playedMs[item] || 0) > LEAD_MS && gen === this.gen && !this.finished; wait++) await this.sleep(20);
       if (gen !== this.gen || this.finished) continue;
-      if (this.currentItem !== item) { this.currentItem = item; this.event('audio_turn', { item_id: item }); }
+      if (this.currentItem !== item && (bytes.length || !this.textMode)) { this.currentItem = item; this.event('audio_turn', { item_id: item }); }
       if (text) this.showText(item, text);
-      if (!bytes.length) continue;
+      if (!bytes.length && !(this.textMode && !lead)) continue; // (a typed interview has no audio: its composed text chunks count as the reply being heard, below)
       // Gap mode: the consultant starts hearing a reply that carries an ask (its first composed audio; a greeting or an
       // acknowledgement before it does not count). That is one attempt, and their next turns answer that ask. A reply that
       // carries none (a reflect-back, the closing) is no attempt and closes the window: their next turns answer no ask.
@@ -1566,6 +1593,7 @@ export class Session {
         const id = this.askByItem.get(item); this.askByItem.delete(item);
         this.askHeard = { item, id, before: this.openAsk }; if (id) this.gapAttempts[id] = (this.gapAttempts[id] || 0) + 1; this.openAsk = id;
       }
+      if (!bytes.length) continue; // text only: nothing to send for playback
       if (this.playbackDone) this.resumedAt = this.bytesIn; // where in the microphone stream her audio starts again
       this.io.sendBytes(bytes); this.playbackDone = false; this.spokenMs += bytes.length / 48; this.lastAudio = this.now(); this.sentMs[item] = (this.sentMs[item] || 0) + bytes.length / 48;
       this.nextTime = Math.max(this.nextTime, this.now()) + bytes.length / 48000;

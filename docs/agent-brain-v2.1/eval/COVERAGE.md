@@ -2,7 +2,7 @@
 
 Date: 2026-10-30. Written with task T16. Everything below is offline: synthetic data, no network, no provider, no live DNA, MeChat, IMP, MAAP or Spotlight. It shows what the code does, not how good the live model sounds.
 
-Run it: `make test-eval` (conversation, workflow and rubric tests, 51 tests) and `make test-ui` (adds `tests/humane_browser.py`). Both are part of the task's checks; neither is a human rating.
+Run it: `make test-eval` (conversation, workflow and rubric tests, 52 tests) and `make test-ui` (adds `tests/humane_browser.py`). Both are part of the task's checks; neither is a human rating.
 
 Status key:
 - **PASS**: the requirement is met by the code, and the named test proves it offline.
@@ -50,7 +50,7 @@ Mutation check, run by hand while writing (`EVAL_MUTATE` in the test file): with
 |---|---|---|---|---|
 | W1 | Consultant identified before prefill | WF `W1` | PARTIAL | Proved: no verified identity means no bootstrap and no interview; the forwarded identity and role come from the token, never the browser. Not built: the project context itself (role, sector, stage) is supplied by the page; there is no server-side lookup of the consultant's own projects behind the identity. |
 | W2 | Prefill only authorised fields | WF `W2` | PARTIAL | Proved: a fixed set of keys, the name dropped, unknown keys refused, a reference visible only to its owner and N+1. Not built: nothing checks that the role, sector and stage the page sends belong to the signed-in person. |
-| W3 | Voice and text | WF `W3`, BROWSER typed answer | PARTIAL | A typed answer takes the same path as a spoken one (same selector, ledger, audit; labelled `consultant_typed`). Not built: a text-only interview with no microphone; typing works only inside a live voice session. |
+| W3 | Voice and text | WF `W3`, `W3b`, `session-text.test.js`, BROWSER typed interview | PASS | Both modes are real. A typed answer takes the same path as a spoken one (same selector, ledger, audit; labelled `consultant_typed`). A text-only interview (X1): the consultant chooses "Type instead" before starting, no microphone is requested and no audio is sent, ATLAS's replies, acknowledgements and the greeting arrive as text, nothing is synthesised, the microphone watchdog is off, the interview clock, pause, summary, evidence draft and checkpoint/resume all work in text (the mode is stored and restored). Typed text stays in the box until the server takes it; typing while ATLAS speaks interrupts her. Offline only: what ATLAS says to a real typist, and non-English text replies (the reply language still follows the voice's supported languages), are not judged here. |
 | W4 | One primary question per turn | WF `W4`; every CONV scenario | PASS | Enforced in code by ReplyGuard whatever the model writes. |
 | W5 | Project facts and contribution claims separate | WF `W5` | PASS | Separate records, `project` and `person` subjects; "we" decisions stay `team`. |
 | W6 | Evidence links support each metric and artifact | WF `W6` | PARTIAL | Each claim carries session, item, ledger id, exact words, recognition confidence; a metric's figures stay null until a person fills them. Not built: there is no artifact upload or registry; an "artifact" is a sentence naming one. |
@@ -121,5 +121,5 @@ Real latency gains; Workers AI word confidences and the 0.55 threshold; real ech
 2. **The pack's Example 1 and its Achievement reaction praise a result before its basis is known**, which the pack's own praise rules forbid. The rubric rates them 4, not 5; ATLAS's acknowledgement gate would say "That sounds promising." instead.
 3. **ReplyGuard blocks invented figures only in a read-back**, by design. In a free reply, a figure the talker makes up is voiced. The adversarial talker proves the read-back case; the free-reply case is covered by the prompt only.
 4. **Three evidence-machine events are unreachable** (see gate 5).
-5. **The prefill is not authorised server-side** (W1, W2) and **there is no text-only interview** (W3).
+5. **The prefill is not authorised server-side** (W1, W2). *(W3 is closed by X1: there is now a text-only interview.)*
 6. `test/fixtures/` is git-ignored in `deploy/cloudflare-edge/.gitignore`; T16 re-includes `test/fixtures/eval/` so the scenario fixtures are committed.
