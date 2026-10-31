@@ -191,3 +191,19 @@ Each is built one way and can be changed; none was asked of the consultants.
 
 Not done, deliberately or for lack of a decision: a lawful basis per activity; a legal-hold rule beyond the three kinds above; alerting and a breach runbook; stopping downstream projections when a person restricts; a bank-wide memory sweep; the DNA directory in the erasure; native review of the wording; a Mantu-owned Cloudflare account; a works-council consultation.
 
+## 10. Strict CSP and safe rendering (v2.2 F1)
+
+Implemented and locally verified (unit, edge and a real-Chromium run); never deployed, so no real browser and no real Cloudflare Access session has seen it yet.
+
+| Control | Status | Test |
+|---|---|---|
+| No executable runtime injection: the server's per-person facts are a JSON data block (`<` and U+2028/2029 escaped), read by `src/runtime.js`; every executable inline script is static | Implemented (edge page, Python gateway, build) | `csp.test.js` (round trip with hostile e-mail), `tests/test_csp.py`, `csp_browser.py` |
+| `build.py` hashes every executable inline script and writes `csp.generated.js`; the small pages are hashed at run time; the gateway hashes what it serves | Implemented | freshness tests in `csp.test.js` and `tests/test_csp.py` |
+| One CSP builder for every HTML response (page, re-sign-in, confirm, privacy, Teams tab): `script-src` hashes + `blob:`, `script-src-attr 'none'`, `base-uri 'none'`, `object-src 'none'`, `frame-ancestors 'none'` (Teams only for the tab), `report-uri`/`report-to` + `Reporting-Endpoints`; the page `<meta>` carries the same script policy | Implemented; the Python gateway sends it without a report target | `csp.test.js`, `teams.test.js`, `security-headers.test.js`, byte parity of the two builders in `tests/test_csp.py` |
+| `POST /api/csp-report` (8 KiB, per-person rate limit, 204, `csp_violation` event with directive + blocked origin only) | Implemented | `csp.test.js` |
+| `ATLAS_CSP=report-only` rollout switch (old policy enforced, strict reported, `<meta>` dropped) | Implemented (edge and gateway) | `csp.test.js`, `tests/test_csp.py`, `csp_browser.py` |
+| `src/safe-html.js` (`html`, `setHTML`, `insertHTML`, `join`, `trusted`) replaces five `esc` copies; every markup sink in `src/*.js` converted (app.js 43, bids-ui 17, trust-ui 9, intelligence-ui 7, ask-ui 5, storyboard-ui 1, voice-client 1); a node lint fails on raw `innerHTML`/`outerHTML`/`insertAdjacentHTML`/`document.write`/`eval`, on any inline `on*=` and on a `trusted()` that is not one of the audited producers (9 uses) | Implemented | `tests/safe-html-lint.test.js` |
+| The audited SVG producers (`charts.js`, `geo.js`, `bids-core.js`) have every interpolation escaped or validated (gaps found and fixed; prototype-key lookups) | Implemented | `charts`, `geo`, `bids-core` XSS regression tests |
+
+Residual and not done: `style-src 'unsafe-inline'` remains (large inline styles and `style=` attributes; an injected tag can restyle but not run code); no Trusted Types; CSP delivery by the browser's own report path was not observable in the headless build (the endpoint and its log are tested directly); not verified in Safari or Firefox; nothing deployed, so a real week in `ATLAS_CSP=report-only` is still the recommended rollout.
+

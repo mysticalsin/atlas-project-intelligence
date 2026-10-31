@@ -38,7 +38,7 @@ function boot({resumable=null,plan=[],discardOk=true}={}){
   location:{protocol:'https:',href:'https://x/',hash:'',pathname:'/',search:''},isSecureContext:true,AudioContext:Ctx,AudioWorkletNode:Worklet,WebSocket:Socket,URL,Blob,performance,
   CustomEvent:class{constructor(t,o){this.type=t;this.detail=o?.detail;}},setTimeout:fast,clearTimeout,setInterval:(f,ms)=>setInterval(f,ms).unref(),clearInterval,queueMicrotask,AbortSignal,
   matchMedia:()=>({matches:false}),history:{replaceState(){}},Date,Promise,JSON,Math,Array,Object,String,Number,Error,Set,Map,
-  dispatchEvent(e){events.push(e);},addEventListener(t,f){(win.listeners||(win.listeners={}))[t]=f;},AtlasVoiceControls:require('../src/voice-controls.js'),
+  dispatchEvent(e){events.push(e);},addEventListener(t,f){(win.listeners||(win.listeners={}))[t]=f;},AtlasSafe:require('../src/safe-html.js'),AtlasVoiceControls:require('../src/voice-controls.js'),
   AtlasAuth:{mode:'live',probe:async()=>{},onSignedIn(){},expired(){},Expired:class extends Error{},
    fetch:async(p,o={})=>{requests.push({path:p,method:o.method||'GET',headers:o.headers||{}});
     if(p==='/api/bootstrap')return{ok:true,json:async()=>JSON.parse(JSON.stringify(bootJson))};

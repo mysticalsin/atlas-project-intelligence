@@ -113,6 +113,18 @@ Within a week: a short blameless review (timeline, what detected it, what slowed
 
 On the test deployment, once: set each kill switch and observe the refusal and the log line; block a test `subj`; trigger a CSRF failure and find it in the log; rotate `TRIGGER_SECRET`; roll back one version; break the audit chain in a copy and see `audit_chain_break`. Record the date and result here.
 
+## Content-Security-Policy (v2.2 F1)
+
+**What it enforces.** Every HTML response (the page, the re-sign-in page, `/confirm`, `/privacy`, the Teams tab) carries `script-src 'sha256-...' blob:` (the SHA-256 of each executable inline script, plus `blob:` for the AudioWorklet module), `script-src-attr 'none'` (no inline event handlers), `default-src 'none'`, `connect-src 'self'` + the websocket origin, `object-src 'none'`, `base-uri 'none'`, `frame-ancestors 'none'` (the Teams tab allows Teams only) and `report-uri` / `report-to` + `Reporting-Endpoints`. There is no `'unsafe-inline'` and no `'strict-dynamic'` for script. The server's per-person facts travel in a JSON data block (`<script type="application/json" id="atlas-runtime">`, `<` escaped), never as script, so every executable script is static. Data responses get `default-src 'none'; frame-ancestors 'none'`. The page also carries the same script policy in a `<meta>` (offline copies). **Residual:** `style-src 'unsafe-inline'` stays (the page has large inline styles; an injected tag can restyle, not run code or reach the network); removing it is a design-system change. The gateway (`atlas_voice/server.py`) sends the same policy without a report target (no report endpoint there).
+
+**Where the hashes come from.** `python3 build.py` computes them from the built page and writes `deploy/cloudflare-edge/src/csp.generated.js` (never edit it). The re-sign-in, confirm and Teams pages are hashed at run time from their own text (`src/csp.js`); the gateway hashes the page it serves. If any inline script changes and the generated module is stale the page is blocked; `deploy/cloudflare-edge/test/csp.test.js` and `tests/test_csp.py` fail first (freshness check: rebuild, then `git diff --exit-code deploy/cloudflare-edge/src/csp.generated.js`).
+
+**Violation reports.** `POST /api/csp-report` (signed-in people only, no CSRF token because the browser posts it, at most 8 KiB, 120 per person per hour) logs one `csp_violation` event (`atlas_sec`) with only the violated `directive` and the blocked ORIGIN; no path, query, sample or document URL is kept. Find them with `wrangler tail | grep csp_violation`. An unexpected `script-src-elem` / `script-src-attr` report with an `inline` blocked origin is either an injected script (treat as Sev 2: see section 3) or a stale hash after a deploy.
+
+**Rollout / rollback switch.** `ATLAS_CSP=report-only` (Worker var; gateway environment variable) enforces the previous policy and only REPORTS the strict one (the page `<meta>` is dropped from the response so it cannot enforce). Default (unset or anything else) is `enforce`. Use report-only for the first week on a real deployment, then unset it; set it again to roll back instantly without a deploy of code.
+
+**Developing.** No inline `on*=` attributes, no `innerHTML` assignment: markup is built with `html` and set with `setHTML` from `src/safe-html.js`; `tests/safe-html-lint.test.js` fails the build otherwise. `tests/csp_browser.py` loads the built page under the enforced header and asserts zero violations across boot, consent, a typed interview, the Library view and the privacy panel.
+
 ## Reference: where each control lives
 
 | Control | File |
@@ -125,3 +137,5 @@ On the test deployment, once: set each kill switch and observe the refusal and t
 | Audit hash chain and daily verification | `src/audit-chain.js`, `worker.js` (`scan-stale`), single hook in `library.js` `log` |
 | Bank secret requirement | `src/memory.js` `bankSecretStatus` |
 | CSRF binding, inbound header stripping, signing-key handling | `src/app.js` |
+| Strict script CSP (hashes), JSON runtime block, report endpoint, `ATLAS_CSP` switch | `src/csp.js`, `src/csp-report.js`, `src/csp.generated.js` (from `build.py`), `atlas_voice/csp.py`, `atlas_voice/server.py` |
+| Safe HTML rendering and its lint | `src/safe-html.js`, `tests/safe-html-lint.test.js` |

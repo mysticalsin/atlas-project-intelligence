@@ -1,9 +1,9 @@
 /* Deterministic local helpers. These are not a language model or live JEV scores. */
-(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.AtlasQuality=api;})(typeof globalThis!=='undefined'?globalThis:this,()=>{
+(function(root,factory){const api=factory(root);if(typeof module==='object'&&module.exports)module.exports=api;else root.AtlasQuality=api;})(typeof globalThis!=='undefined'?globalThis:this,root=>{
 'use strict';
 const sections=['challenge','contribution','approach','outcome','evidence','limitations','customer_fit','poor_fit'];
 const fields={problem:'Problem',stakes:'Business stakes',contribution:'Personal contribution',intervention:'What changed',decision:'Decision & trade-off',adoption:'Actual adoption',outcome:'Observed outcome',measurement:'Measurement basis',evidence:'Checkable source',limitations:'Limits',customer_fit:'Customer fit',poor_fit:'Poor-fit conditions'};
-const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const {esc}=root.AtlasSafe||require('./safe-html.js'); // the one shared escape; kept in the exports for the tests
 function challenge(text){
  const t=String(text||'').trim().slice(0,12000),unknown=/\b(don.t know|not measured|unsure|uncertain|no baseline|estimate)\b/i.test(t);
  const checks=[

@@ -51,7 +51,7 @@ const waitUntil = p => { const q = Promise.resolve(p); pending.add(q); q.finally
 // Opt-in feature vars pass through from the shell when set (never defaulted here): WOW_SPEC §5, WOW_ZERO_CONFIG §4.
 // DATA_MODE stays unset (test mode) unless the shell sets it; the DNA variables never have a local default.
 const passthrough = Object.fromEntries(['EXTERNAL_EMAILS', 'CLIENT_CONFIRM', 'IDENTITY_SOURCE', 'DATA_MODE', 'DNA_PROFILE_URL', 'DNA_AUTH_HEADER', 'DNA_FIELD_MAP', 'DNA_API_KEY',
-  'DIRECTORY_PUSH_SECRET', 'ATLAS_ADAPTERS'].filter(k => process.env[k]).map(k => [k, process.env[k]]));
+  'DIRECTORY_PUSH_SECRET', 'ATLAS_ADAPTERS', 'ATLAS_CSP'].filter(k => process.env[k]).map(k => [k, process.env[k]]));
 const storeFor = id => { if (!stores.has(id)) { const m = new Map(); stores.set(id, { get: async k => m.get(k), put: async (k, v) => m.set(k, v) }); } return stores.get(id); };
 const env = { ORIGIN, ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, CSRF_SECRET: 'local-only', TALKER_MODEL: 'local', TTS_VOICE: 'local',
   TRIGGER_SECRET: process.env.TRIGGER_SECRET || 'local-trigger-secret', ANALYST_MODEL: 'local-analyst',

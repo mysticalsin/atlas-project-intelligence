@@ -2,7 +2,7 @@
 No test in this file claims real NVIDIA inference or a live enterprise connection.
 """
 from pathlib import Path
-import ast,json,os,shutil
+import ast,json,os,re,shutil
 from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1]
 ADAPTER=(ROOT/'tests/fixtures/browser-adapter.js').read_text()
@@ -16,7 +16,9 @@ def load(context,adapter=False,reduced=False):
  p.on('pageerror',lambda e:ERRORS.append(str(e)))
  if reduced:p.emulate_media(reduced_motion='reduce')
  h=(ROOT/'ATLAS_Voice_Studio.html').read_text()
- if adapter:h=h.replace('/* SERVER_RUNTIME */',ADAPTER).replace("new URL('/api/voice',location.href)","new URL('/api/voice','http://localhost:8080')").replace("if(!['http:','https:'].includes(location.protocol))",'if(false)')
+ if adapter:
+  # The adapter is test code, so it goes in as an init script (the page's own scripts are hash-pinned by its <meta> CSP), and rewriting the page's script text means dropping that <meta>.
+  p.add_init_script(ADAPTER);p.goto('about:blank');h=re.sub(r'<meta content="[^"]*" http-equiv="Content-Security-Policy"/>','',h,count=1).replace("new URL('/api/voice',location.href)","new URL('/api/voice','http://localhost:8080')").replace("if(!['http:','https:'].includes(location.protocol))",'if(false)')
  p.set_content(h,wait_until='load');p.wait_for_timeout(200);return p
 def wait(p,phase):p.wait_for_function('(v)=>AtlasVoice.status().phase===v',arg=phase,timeout=6000)
 def project(p):

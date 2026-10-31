@@ -78,9 +78,10 @@ test('secure() adds only what is missing, leaves a WebSocket upgrade alone and g
   assert.deepEqual(Object.keys(baseSecurityHeaders()).sort(), ['Cache-Control', 'Cross-Origin-Opener-Policy', 'Cross-Origin-Resource-Policy', 'Permissions-Policy', 'Referrer-Policy', 'Strict-Transport-Security', 'X-Content-Type-Options']);
 });
 
-test('the script CSP of the page is unchanged by B1 (the strict CSP is a later wave)', async () => {
+test('the page CSP is the strict F1 policy: script hashes + blob:, no unsafe-inline script, no inline handlers', async () => {
   const me = await session(ENV);
   const csp = (await me.go('/')).headers.get('content-security-policy');
-  assert.ok(csp.includes("script-src 'unsafe-inline' blob:"));
+  assert.match(csp, /script-src ('sha256-[A-Za-z0-9+\/=]+' )+blob:;/);
+  assert.ok(!/script-src[^;]*unsafe-inline/.test(csp) && csp.includes("script-src-attr 'none'"));
   assert.ok(csp.includes("frame-ancestors 'none'") && csp.includes("object-src 'none'"));
 });

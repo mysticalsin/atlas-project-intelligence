@@ -75,3 +75,21 @@ test('outreach chips: Teams reads BLOCKED_EXTERNAL until connected; email is a d
 
 test('export file name uses the alias, never the title',()=>{
  assert.equal(B.fileName('Project Falcon / EU',new Date(2026,8,29)),'ATLAS_proof_Project-Falcon-EU_2026-09-29');assert.equal(B.fileName('',new Date(2026,0,2)),'ATLAS_proof_bid_2026-01-02');});
+
+// F1 audit: footnoteHTML and outreachChips are wrapped in trusted() by the page, so they must be inert for every field the server returns.
+const BREAK='"><img src=x onerror=1>',tagsIn=h=>h.match(/<[a-zA-Z][^>]*>/g)||[];
+const inertHTML=(h,k)=>{assert.ok(h.length,k);assert.ok(!/<img|<script/i.test(h),k+' tag injected');assert.ok(!h.includes(BREAK),k+' break-out');for(const t of tagsIn(h))assert.ok(!/\son[a-z]+\s*=/i.test(t.replace(/"[^"]*"/g,'""')),k+' handler: '+t);assert.ok(!/function\s*\w*\(\)|\[object /.test(h),k+' prototype member printed');};
+test('F1 audit: every server-controlled field of the one-pager and the outreach chips is escaped',()=>{
+ const H=BREAK+HOSTILE,op={view:BREAK,title:H,subtitle:H,warning:H,label:H,dropped:[H,BREAK],
+  summary:[{text:H,kind:BREAK,cites:[1,'<b>',1.5,-2,NaN,'1"']}],sections:[{heading:H,claims:[{text:BREAK,kind:'interpretation',cites:[2]}]}],
+  references:[{id:BREAK,title:H,client:H},{id:'r9',title:H,client:BREAK}],
+  footnotes:[{n:1,refId:BREAK,revision:'<x>',kind:'evidence',sourceName:H,sourceVersion:BREAK,quote:H,confirmation:BREAK},{n:2,refId:'r9',revision:2.5,kind:H,topic:'constructor',quote:BREAK,confirmation:'constructor'},
+   {n:3,refId:'r9',revision:1,kind:'consultant_words',topic:'__proto__',quote:'q',confirmation:'toString'},{n:'4"',refId:'r9',quote:'bad n',confirmation:'x'},{n:BREAK,quote:'bad n'}]};
+ const h=B.footnoteHTML(op);inertHTML(h,'footnoteHTML');assert.ok(h.includes(escH(BREAK)),'hostile text is shown escaped');assert.ok(!/data-fn="4|data-fn="&|value="4/.test(h),'a non-integer footnote number is dropped');
+ assert.match(h,/class="badge conf-unverified">Unverified</,'unknown or prototype confirmation falls back to unverified');assert.match(h,/<sup class="fn" aria-label="Sources 1">1<\/sup>/,'only positive integers become source numbers');
+ assert.ok(!/constructor|toString|__proto__/.test(h.replace(/data-[a-z]+="[^"]*"/g,'')),'table keys are never printed');
+ for(const bad of [null,undefined,0,'<img>',[],{}])inertHTML(B.footnoteHTML(bad)||'x','footnoteHTML('+typeof bad+')');
+ for(const [rows,teams] of [[[{channel:'teams',status:BREAK},{channel:'email_draft',status:H}],'connected'],[[{channel:'teams',status:'constructor'}],'connected'],[[],BREAK],[null,undefined]])inertHTML(B.outreachChips(rows,teams),'outreachChips');
+ assert.match(B.outreachChips([{channel:'teams',status:'constructor'}],'connected'),/Teams: constructor</,'an unknown status is printed as text, not as a prototype member');
+ for(const f of [B.verdictCopy,B.confirmationLabel,B.proofTypeLabel,B.outreachLabel,B.sourceLabel])for(const k of ['constructor','__proto__','toString','hasOwnProperty'])assert.ok(!/function|\[object/.test(JSON.stringify(f(k,{}))),f.name+' '+k);});
+const escH=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

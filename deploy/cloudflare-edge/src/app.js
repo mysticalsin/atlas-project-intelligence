@@ -6,7 +6,9 @@ import { Session, MAX_SECONDS, sessionFlags } from './session.js';
 import { wav, to16k } from './speech.js';
 import { classify } from './classify.js';
 import { bankId, bankSecretStatus, BANK_SECRET_MESSAGE } from './memory.js';
-import { secure, baseSecurityHeaders } from './security-headers.js';
+import { secure, baseSecurityHeaders, DATA_CSP } from './security-headers.js';
+import { PAGE_SCRIPT_HASHES, RUNTIME_BLOCK, REPORT_PATH, htmlCspHeaders, inlineScriptHashes, runtimeBlock, withoutMetaCsp, cspMode } from './csp.js';
+import { cspReport } from './csp-report.js';
 import { boundedBytes } from './bounded.js';
 import { requestLog, announceFlags } from './security-log.js';
 import * as ks from './kill-switches.js';
@@ -117,11 +119,13 @@ async function hmac(secret, value) {
   return hex(await crypto.subtle.sign('HMAC', key, enc.encode(value)));
 }
 
+// Headers of a data response (JSON, text, redirect): the locked-down data policy. HTML responses use htmlHeaders instead (csp.js).
 function headers(env, extra = {}) {
-  const ws = env.ORIGIN.replace('https://', 'wss://');
-  return { ...baseSecurityHeaders(),
-    'Content-Security-Policy': `default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; connect-src 'self' ${ws}; img-src data: blob:; font-src 'self'; worker-src blob:; media-src blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`,
-    ...extra };
+  return { ...baseSecurityHeaders(), 'Content-Security-Policy': DATA_CSP, ...extra };
+}
+// Headers of an HTML response: the one strict policy builder (csp.js) with the hashes of that page's own inline scripts.
+function htmlHeaders(env, hashes, extra = {}) {
+  return { ...baseSecurityHeaders(), ...htmlCspHeaders(env, { hashes, connect: env.ORIGIN.replace('https://', 'wss://') }), 'Content-Type': 'text/html; charset=utf-8', ...extra };
 }
 const readOnly503 = env => new Response(JSON.stringify({ error: ks.READ_ONLY_MESSAGE, code: 'READ_ONLY' }), { status: 503, headers: headers(env, { 'Content-Type': 'application/json', 'Retry-After': '300' }) });
 const json = (env, body, status = 200) => new Response(JSON.stringify(body), { status, headers: headers(env, { 'Content-Type': 'application/json' }) });
@@ -247,24 +251,25 @@ async function route(request, env, page, { waitUntil = p => p, flagsOf = flags }
     // Links that survive an interactive sign-in (§3.9): /go/start, /go/{gap,invitation,bid,library,confirm}/<32 hex>.
     // Anything else under /go/ goes home. The ids are random, non-secret and grant nothing without sign-in (a recorded
     // deviation from WOW rule 7); no token ever goes in a path, and nothing here logs the path.
-    if (request.method === 'GET' && url.pathname === '/go/signed-in') return new Response(SIGNED_IN_HTML, { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
+    if (request.method === 'GET' && url.pathname === '/go/signed-in') return new Response(SIGNED_IN_HTML, { headers: htmlHeaders(env, await inlineScriptHashes(SIGNED_IN_HTML)) });
     if (request.method === 'GET' && url.pathname.startsWith('/go/')) {
       const m = /^\/go\/(?:(start)|(gap|invitation|bid|library|confirm)\/([a-f0-9]{32}))$/.exec(url.pathname);
       const to = !m ? '/' : m[1] ? '/#start' : m[2] === 'confirm' ? '/confirm#' + m[3] : '/#' + m[2] + '/' + m[3];
       return new Response(null, { status: 302, headers: headers(env, { Location: to }) });
     }
     // The privacy notice (G2): everyone signed in reads it, external confirmers too (it is where they learn what is done with their answers). No script, no data.
-    if (url.pathname === '/privacy' && request.method === 'GET') return new Response(privacy.renderNoticeHtml(RETENTION), { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
-    if (url.pathname === '/confirm' && request.method === 'GET') return new Response(CONFIRM_HTML, { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
+    if (url.pathname === '/privacy' && request.method === 'GET') return new Response(privacy.renderNoticeHtml(RETENTION), { headers: htmlHeaders(env, []) });
+    if (url.pathname === '/confirm' && request.method === 'GET') return new Response(CONFIRM_HTML, { headers: htmlHeaders(env, await inlineScriptHashes(CONFIRM_HTML)) });
     if (url.pathname === '/' && request.method === 'GET') {
-      const runtime = JSON.stringify({ subjectKey, authMode: 'access', name: who.email }).replace(/</g, '\\u003c');
-      let body = page.replace('/* SERVER_RUNTIME */', () => 'window.ATLAS_RUNTIME=' + runtime + ';') // a function replacer: a string one would expand "$'" and "$&" found in the email
+      // The person's facts go in as a JSON data block, never as script (csp.js runtimeBlock), through a function replacer: a string one would expand "$'" and "$&" found in the email.
+      let body = page.replace(RUNTIME_BLOCK, () => runtimeBlock({ subjectKey, authMode: 'access', name: who.email }))
         .replace("connect-src 'self';", "connect-src 'self' " + env.ORIGIN.replace('https://', 'wss://') + ';');
+      if (cspMode(env) === 'report-only') body = withoutMetaCsp(body); // the page's own <meta> policy would enforce what the header only reports
       const end = body.lastIndexOf('</body>'); // the page embeds an earlier '</body>' inside a script string
       // The test banner stays until Tony sets DATA_MODE=production on an approved deployment (WOW_ZERO_CONFIG §0.7, §11). It says this is a test deployment awaiting the DPO's sign-off and links the
       // privacy notice; it never claims that only synthetic data is used (real interviews run here) and it is not where any privacy control lives (G2).
       if (env.DATA_MODE !== 'production') body = body.slice(0, end) + '<div style="position:fixed;left:12px;bottom:10px;z-index:99;font:11px/1.4 Arial;letter-spacing:.06em;color:#A9A9BC;background:#15151cdd;border:1px solid #2a2a36;border-radius:14px;padding:4px 10px">TEST DEPLOYMENT · DPO sign-off pending · <a href="/privacy" target="_blank" rel="noopener" style="color:#b9a8ff">Privacy notice</a></div>' + body.slice(end);
-      return new Response(body, { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
+      return new Response(body, { headers: htmlHeaders(env, PAGE_SCRIPT_HASHES) });
     }
     // Resumable interview (checkpoint.js): asked of the requesting person's OWN Interview Durable Object only, under the identity just verified, and
     // answered with {sessionId, savedAt, expiresAt} or null: never any content. Any failure or a slow answer is "nothing to resume".
@@ -287,6 +292,8 @@ async function route(request, env, page, { waitUntil = p => p, flagsOf = flags }
       return new Response(JSON.stringify({ error: 'Too many requests for now. Please wait a little and try again.', retryAfter }), { status: 429, headers: headers(env, retryAfterHeaders(retryAfter)) });
     };
     const paused = (message, code = 'AI_OFF') => new Response(JSON.stringify({ error: message, code }), { status: 503, headers: headers(env, { 'Content-Type': 'application/json', 'Retry-After': '300' }) });
+    // CSP violation reports (csp-report.js): sent by the browser itself, so no CSRF token; bounded, rate-limited and logged as directive + blocked origin only.
+    if (url.pathname === REPORT_PATH && request.method === 'POST') return cspReport(request, sec, limited);
     if (url.pathname === '/api/bootstrap' && request.method === 'GET') {
       // The person's own object answers both questions in ONE call: whether an interview can be resumed, and the consent state in force (G2). Asked only while checkpoints are on; a failure or a slow answer is "nothing to resume, state unknown".
       let resumable = null, consent = null;

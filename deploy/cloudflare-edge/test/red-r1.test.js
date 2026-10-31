@@ -271,7 +271,7 @@ test('L8: an e-mail containing $\' or $& does not corrupt the served page', asyn
   try {
     const now = Math.floor(Date.now() / 1000), email = "a$'b$&c$`d@mantu.com", head = b64u(JSON.stringify({ alg: 'RS256', kid: 'k1' })), body = b64u(JSON.stringify({ aud: [AUD], iss: `https://${TEAM}`, sub: 's1', email, exp: now + 600, iat: now }));
     const sig = b64u(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, new TextEncoder().encode(head + '.' + body)));
-    const page = "<meta content=\"connect-src 'self';\"><script>/* SERVER_RUNTIME */</script>MARK</body>";
+    const page = "<meta content=\"connect-src 'self';\"><script id=\"atlas-runtime\" type=\"application/json\">{}</script>MARK</body>";
     const res = await handle(new Request(ORIGIN + '/', { headers: { 'cf-access-jwt-assertion': head + '.' + body + '.' + sig } }),
       { ORIGIN, ACCESS_AUD: AUD, ACCESS_TEAM_DOMAIN: TEAM, CSRF_SECRET: 'x', DATA_MODE: 'production' }, page);
     const html = await res.text();
