@@ -839,3 +839,10 @@ Needs live or pilot verification before any deploy (none of it has happened; the
 10. Tony's product calls: closing the page keeps the interview; text-mode language follows the voice languages; a re-grant after a halted job needs a new revision; withheld words remain in the owner-only ledger and checkpoint for 24 hours; the opening length; the consent wording.
 - Next: Tony reviews `IMPLEMENTATION_STATUS.md` section 7 and the consent wording, then decides on a staged deployment with test data. Source entry point: `AGENT.md`.
 - Git: committed on `v21/T17` as `v2.1 T17: docs, implementation status, manifest`.
+
+### 2026-10-31 — Agent Brain v2.1: final orchestrator verification (feature/agent-brain-v2.1)
+- Scope merged on this branch since efb4948: T0–T17 (plan), review-fix waves G1 (governance), S1 (session/checkpoint), H1–H3 (humane conversation from simulated-transcript reviews), X1 (text-only interview), plus the W7 eval fix after G1 and the languages.js doc pointer.
+- Commands (from the repo root, venv `/tmp/claude-501/atlas_venv`): `node --test tests/*.test.js` → 461 tests, 460 pass, 1 skipped (Natural Earth regeneration, by design); `cd deploy/cloudflare-edge && node --test test/*.test.js` → 943/943; `python -m pytest tests/test_*.py -q` → 630 passed; `make test-eval` → 52/52; all 21 Playwright suites (`tests/*_browser.py`, Chromium headless shell 1228 via `CHROMIUM_PATH`, run outside the sandbox) → 21/21 exit 0, 801 PASS checks, 0 FAIL; `python3 scripts/check_handoff.py` → pass after the manifest regeneration below.
+- Baseline at efb4948 for comparison: 385 node (1 skip) / 492 edge / 264 pytest / 20 browser suites.
+- Nothing pushed or deployed. No provider was called. Nothing here is provider-verified: live latency, real Nova-3 word confidences, Llama adherence to the NEXT MOVE note, Durable Object alarms/eviction, DOCX rendering in Word and real barge-in still need a pilot (see docs/agent-brain-v2.1/IMPLEMENTATION_STATUS.md).
+- Known flaky-under-load: `tests/test_turns.py::test_fast_under_two_milliseconds…` failed once while several agents loaded the machine; it passed 5/5 when rerun alone.
