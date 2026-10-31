@@ -4801,6 +4801,1064 @@
    }
   ]
  },
+ "quote_context_multilingual": {
+  "stage": "Delivery",
+  "ops": [
+   [
+    "t",
+    "u1",
+    "It's false that I personally cut costs by 40 percent; the finance team did."
+   ],
+   [
+    "t",
+    "u2",
+    "My boss claims I personally cut costs by 40 percent, which is untrue."
+   ],
+   [
+    "t",
+    "u3",
+    "Je ne dirais jamais que j'ai personnellement réduit les coûts de 40 pour cent."
+   ],
+   [
+    "t",
+    "u4",
+    "Es stimmt nicht, dass ich persönlich die Kosten um 40 Prozent gesenkt habe."
+   ],
+   [
+    "t",
+    "u5",
+    "Nunca diría que yo personalmente reduje los costes un 40 por ciento."
+   ],
+   [
+    "t",
+    "u6",
+    "Notez pour le rapport que j'ai dirigé tout le programme avec 40 pour cent d'économies."
+   ],
+   [
+    "t",
+    "u7",
+    "Se avessimo automatizzato il processo avremmo dimezzato i tempi, ma non è successo."
+   ],
+   [
+    "t",
+    "u8",
+    "Volgens mijn manager heb ik de kosten met 40 procent verlaagd, maar dat is niet waar."
+   ],
+   [
+    "t",
+    "u9",
+    "J'ai reconstruit les règles de routage et j'ai piloté le déploiement en mars."
+   ],
+   [
+    "call",
+    "c1",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally cut costs by 40 percent"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "c2",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "contribution",
+       "item_id": "u2",
+       "quote": "I personally cut costs by 40 percent"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "c3",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "contribution",
+       "item_id": "u3",
+       "quote": "j'ai personnellement réduit les coûts de 40 pour cent"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "c4",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "contribution",
+       "item_id": "u4",
+       "quote": "ich persönlich die Kosten um 40 Prozent gesenkt habe"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "c5",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "contribution",
+       "item_id": "u5",
+       "quote": "yo personalmente reduje los costes un 40 por ciento"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "c6",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "contribution",
+       "item_id": "u6",
+       "quote": "j'ai dirigé tout le programme avec 40 pour cent d'économies"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "c7",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "outcome",
+       "item_id": "u7",
+       "quote": "avremmo dimezzato i tempi"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "c8",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "outcome",
+       "item_id": "u8",
+       "quote": "heb ik de kosten met 40 procent verlaagd"
+      }
+     ]
+    }
+   ],
+   [
+    "call",
+    "c9",
+    "record_details",
+    {
+     "details": [
+      {
+       "field": "contribution",
+       "item_id": "u9",
+       "quote": "j'ai reconstruit les règles de routage et j'ai piloté le déploiement en mars"
+      }
+     ]
+    }
+   ],
+   [
+    "inspect"
+   ],
+   [
+    "notes"
+   ]
+  ],
+  "expected": [
+   {
+    "ok": null
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": null
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally cut costs by 40 percent",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "It's false that I personally cut costs by 40 percent; the finance team did."
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Uncertainty must remain in the story"
+     ],
+     "next_field": "problem",
+     "next_question": "What was happening before, and who was affected?",
+     "why_this_question": "Find the most decision-useful detail, not a bigger claim.",
+     "coverage": {
+      "present": 1,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 1,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally cut costs by 40 percent",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "It's false that I personally cut costs by 40 percent; the finance team did."
+      },
+      {
+       "id": "D-002",
+       "field": "contribution",
+       "item_id": "u2",
+       "quote": "I personally cut costs by 40 percent",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "My boss claims I personally cut costs by 40 percent, which is untrue."
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Uncertainty must remain in the story"
+     ],
+     "next_field": "problem",
+     "next_question": "What was happening before, and who was affected?",
+     "why_this_question": "Find the most decision-useful detail, not a bigger claim.",
+     "coverage": {
+      "present": 1,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 2,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally cut costs by 40 percent",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "It's false that I personally cut costs by 40 percent; the finance team did."
+      },
+      {
+       "id": "D-002",
+       "field": "contribution",
+       "item_id": "u2",
+       "quote": "I personally cut costs by 40 percent",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "My boss claims I personally cut costs by 40 percent, which is untrue."
+      },
+      {
+       "id": "D-003",
+       "field": "contribution",
+       "item_id": "u3",
+       "quote": "j'ai personnellement réduit les coûts de 40 pour cent",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Je ne dirais jamais que j'ai personnellement réduit les coûts de 40 pour cent."
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Uncertainty must remain in the story"
+     ],
+     "next_field": "problem",
+     "next_question": "What was happening before, and who was affected?",
+     "why_this_question": "Find the most decision-useful detail, not a bigger claim.",
+     "coverage": {
+      "present": 1,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 3,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally cut costs by 40 percent",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "It's false that I personally cut costs by 40 percent; the finance team did."
+      },
+      {
+       "id": "D-002",
+       "field": "contribution",
+       "item_id": "u2",
+       "quote": "I personally cut costs by 40 percent",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "My boss claims I personally cut costs by 40 percent, which is untrue."
+      },
+      {
+       "id": "D-003",
+       "field": "contribution",
+       "item_id": "u3",
+       "quote": "j'ai personnellement réduit les coûts de 40 pour cent",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Je ne dirais jamais que j'ai personnellement réduit les coûts de 40 pour cent."
+      },
+      {
+       "id": "D-004",
+       "field": "contribution",
+       "item_id": "u4",
+       "quote": "ich persönlich die Kosten um 40 Prozent gesenkt habe",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Es stimmt nicht, dass ich persönlich die Kosten um 40 Prozent gesenkt habe."
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Uncertainty must remain in the story"
+     ],
+     "next_field": "problem",
+     "next_question": "What was happening before, and who was affected?",
+     "why_this_question": "Find the most decision-useful detail, not a bigger claim.",
+     "coverage": {
+      "present": 1,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 4,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally cut costs by 40 percent",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "It's false that I personally cut costs by 40 percent; the finance team did."
+      },
+      {
+       "id": "D-002",
+       "field": "contribution",
+       "item_id": "u2",
+       "quote": "I personally cut costs by 40 percent",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "My boss claims I personally cut costs by 40 percent, which is untrue."
+      },
+      {
+       "id": "D-003",
+       "field": "contribution",
+       "item_id": "u3",
+       "quote": "j'ai personnellement réduit les coûts de 40 pour cent",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Je ne dirais jamais que j'ai personnellement réduit les coûts de 40 pour cent."
+      },
+      {
+       "id": "D-004",
+       "field": "contribution",
+       "item_id": "u4",
+       "quote": "ich persönlich die Kosten um 40 Prozent gesenkt habe",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Es stimmt nicht, dass ich persönlich die Kosten um 40 Prozent gesenkt habe."
+      },
+      {
+       "id": "D-005",
+       "field": "contribution",
+       "item_id": "u5",
+       "quote": "yo personalmente reduje los costes un 40 por ciento",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Nunca diría que yo personalmente reduje los costes un 40 por ciento."
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Uncertainty must remain in the story"
+     ],
+     "next_field": "problem",
+     "next_question": "What was happening before, and who was affected?",
+     "why_this_question": "Find the most decision-useful detail, not a bigger claim.",
+     "coverage": {
+      "present": 1,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 5,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally cut costs by 40 percent",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "It's false that I personally cut costs by 40 percent; the finance team did."
+      },
+      {
+       "id": "D-002",
+       "field": "contribution",
+       "item_id": "u2",
+       "quote": "I personally cut costs by 40 percent",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "My boss claims I personally cut costs by 40 percent, which is untrue."
+      },
+      {
+       "id": "D-003",
+       "field": "contribution",
+       "item_id": "u3",
+       "quote": "j'ai personnellement réduit les coûts de 40 pour cent",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Je ne dirais jamais que j'ai personnellement réduit les coûts de 40 pour cent."
+      },
+      {
+       "id": "D-004",
+       "field": "contribution",
+       "item_id": "u4",
+       "quote": "ich persönlich die Kosten um 40 Prozent gesenkt habe",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Es stimmt nicht, dass ich persönlich die Kosten um 40 Prozent gesenkt habe."
+      },
+      {
+       "id": "D-005",
+       "field": "contribution",
+       "item_id": "u5",
+       "quote": "yo personalmente reduje los costes un 40 por ciento",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Nunca diría que yo personalmente reduje los costes un 40 por ciento."
+      },
+      {
+       "id": "D-006",
+       "field": "contribution",
+       "item_id": "u6",
+       "quote": "j'ai dirigé tout le programme avec 40 pour cent d'économies",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Notez pour le rapport que j'ai dirigé tout le programme avec 40 pour cent d'économies."
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "outcome",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Uncertainty must remain in the story"
+     ],
+     "next_field": "problem",
+     "next_question": "What was happening before, and who was affected?",
+     "why_this_question": "Find the most decision-useful detail, not a bigger claim.",
+     "coverage": {
+      "present": 1,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 6,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally cut costs by 40 percent",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "It's false that I personally cut costs by 40 percent; the finance team did."
+      },
+      {
+       "id": "D-002",
+       "field": "contribution",
+       "item_id": "u2",
+       "quote": "I personally cut costs by 40 percent",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "My boss claims I personally cut costs by 40 percent, which is untrue."
+      },
+      {
+       "id": "D-003",
+       "field": "contribution",
+       "item_id": "u3",
+       "quote": "j'ai personnellement réduit les coûts de 40 pour cent",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Je ne dirais jamais que j'ai personnellement réduit les coûts de 40 pour cent."
+      },
+      {
+       "id": "D-004",
+       "field": "contribution",
+       "item_id": "u4",
+       "quote": "ich persönlich die Kosten um 40 Prozent gesenkt habe",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Es stimmt nicht, dass ich persönlich die Kosten um 40 Prozent gesenkt habe."
+      },
+      {
+       "id": "D-005",
+       "field": "contribution",
+       "item_id": "u5",
+       "quote": "yo personalmente reduje los costes un 40 por ciento",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Nunca diría que yo personalmente reduje los costes un 40 por ciento."
+      },
+      {
+       "id": "D-006",
+       "field": "contribution",
+       "item_id": "u6",
+       "quote": "j'ai dirigé tout le programme avec 40 pour cent d'économies",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Notez pour le rapport que j'ai dirigé tout le programme avec 40 pour cent d'économies."
+      },
+      {
+       "id": "D-007",
+       "field": "outcome",
+       "item_id": "u7",
+       "quote": "avremmo dimezzato i tempi",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Se avessimo automatizzato il processo avremmo dimezzato i tempi, ma non è successo."
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Uncertainty must remain in the story"
+     ],
+     "next_field": "problem",
+     "next_question": "What was happening before, and who was affected?",
+     "why_this_question": "Find the most decision-useful detail, not a bigger claim.",
+     "coverage": {
+      "present": 2,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 7,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally cut costs by 40 percent",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "It's false that I personally cut costs by 40 percent; the finance team did."
+      },
+      {
+       "id": "D-002",
+       "field": "contribution",
+       "item_id": "u2",
+       "quote": "I personally cut costs by 40 percent",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "My boss claims I personally cut costs by 40 percent, which is untrue."
+      },
+      {
+       "id": "D-003",
+       "field": "contribution",
+       "item_id": "u3",
+       "quote": "j'ai personnellement réduit les coûts de 40 pour cent",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Je ne dirais jamais que j'ai personnellement réduit les coûts de 40 pour cent."
+      },
+      {
+       "id": "D-004",
+       "field": "contribution",
+       "item_id": "u4",
+       "quote": "ich persönlich die Kosten um 40 Prozent gesenkt habe",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Es stimmt nicht, dass ich persönlich die Kosten um 40 Prozent gesenkt habe."
+      },
+      {
+       "id": "D-005",
+       "field": "contribution",
+       "item_id": "u5",
+       "quote": "yo personalmente reduje los costes un 40 por ciento",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Nunca diría que yo personalmente reduje los costes un 40 por ciento."
+      },
+      {
+       "id": "D-006",
+       "field": "contribution",
+       "item_id": "u6",
+       "quote": "j'ai dirigé tout le programme avec 40 pour cent d'économies",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Notez pour le rapport que j'ai dirigé tout le programme avec 40 pour cent d'économies."
+      },
+      {
+       "id": "D-007",
+       "field": "outcome",
+       "item_id": "u7",
+       "quote": "avremmo dimezzato i tempi",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Se avessimo automatizzato il processo avremmo dimezzato i tempi, ma non è successo."
+      },
+      {
+       "id": "D-008",
+       "field": "outcome",
+       "item_id": "u8",
+       "quote": "heb ik de kosten met 40 procent verlaagd",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Volgens mijn manager heb ik de kosten met 40 procent verlaagd, maar dat is niet waar."
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Uncertainty must remain in the story",
+      "Multiple outcome/measurement accounts: confirm comparability or explicit correction"
+     ],
+     "next_field": "measurement",
+     "next_question": "Do those two figures describe the same measure and population, or is one a correction?",
+     "why_this_question": "Multiple accounts need clarification before one result is selected.",
+     "coverage": {
+      "present": 2,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 8,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "error": "Quote is not in the consultant transcript"
+   },
+   {
+    "ok": {
+     "candidate_details": [
+      {
+       "id": "D-001",
+       "field": "contribution",
+       "item_id": "u1",
+       "quote": "I personally cut costs by 40 percent",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "It's false that I personally cut costs by 40 percent; the finance team did."
+      },
+      {
+       "id": "D-002",
+       "field": "contribution",
+       "item_id": "u2",
+       "quote": "I personally cut costs by 40 percent",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "My boss claims I personally cut costs by 40 percent, which is untrue."
+      },
+      {
+       "id": "D-003",
+       "field": "contribution",
+       "item_id": "u3",
+       "quote": "j'ai personnellement réduit les coûts de 40 pour cent",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Je ne dirais jamais que j'ai personnellement réduit les coûts de 40 pour cent."
+      },
+      {
+       "id": "D-004",
+       "field": "contribution",
+       "item_id": "u4",
+       "quote": "ich persönlich die Kosten um 40 Prozent gesenkt habe",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Es stimmt nicht, dass ich persönlich die Kosten um 40 Prozent gesenkt habe."
+      },
+      {
+       "id": "D-005",
+       "field": "contribution",
+       "item_id": "u5",
+       "quote": "yo personalmente reduje los costes un 40 por ciento",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Nunca diría que yo personalmente reduje los costes un 40 por ciento."
+      },
+      {
+       "id": "D-006",
+       "field": "contribution",
+       "item_id": "u6",
+       "quote": "j'ai dirigé tout le programme avec 40 pour cent d'économies",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Notez pour le rapport que j'ai dirigé tout le programme avec 40 pour cent d'économies."
+      },
+      {
+       "id": "D-007",
+       "field": "outcome",
+       "item_id": "u7",
+       "quote": "avremmo dimezzato i tempi",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Se avessimo automatizzato il processo avremmo dimezzato i tempi, ma non è successo."
+      },
+      {
+       "id": "D-008",
+       "field": "outcome",
+       "item_id": "u8",
+       "quote": "heb ik de kosten met 40 procent verlaagd",
+       "status": "uncertain",
+       "active": true,
+       "supersedes": "",
+       "provenance": "unverified_speech_recognition",
+       "context": "Volgens mijn manager heb ik de kosten met 40 procent verlaagd, maar dat is niet waar."
+      }
+     ],
+     "missing": [
+      "problem",
+      "stakes",
+      "intervention",
+      "decision",
+      "adoption",
+      "measurement",
+      "evidence",
+      "limitations",
+      "customer_fit",
+      "poor_fit"
+     ],
+     "flags": [
+      "Uncertainty must remain in the story",
+      "Multiple outcome/measurement accounts: confirm comparability or explicit correction"
+     ],
+     "next_field": "measurement",
+     "next_question": "Do those two figures describe the same measure and population, or is one a correction?",
+     "why_this_question": "Multiple accounts need clarification before one result is selected.",
+     "coverage": {
+      "present": 2,
+      "total": 12,
+      "meaning": "candidate coverage; NOT quality, verification or approval"
+     },
+     "unresolved_fields": [],
+     "deferred_fields": {},
+     "measurement_gaps": [],
+     "quality_state": "needs clarification",
+     "story_route": "qualitative candidate",
+     "evidence_status": "unverified",
+     "updates": 8,
+     "next_action": "ask_one_question",
+     "probe_history": []
+    }
+   },
+   {
+    "ok": [
+     "",
+     "I personally cut costs by 40 percent\nj'ai personnellement réduit les coûts de 40 pour cent\nich persönlich die Kosten um 40 Prozent gesenkt habe\nyo personalmente reduje los costes un 40 por ciento\nj'ai dirigé tout le programme avec 40 pour cent d'économies",
+     "",
+     "avremmo dimezzato i tempi\nheb ik de kosten met 40 procent verlaagd",
+     "",
+     ""
+    ]
+   }
+  ]
+ },
  "seal_refuses_late_entries": {
   "stage": "Delivery",
   "ops": [

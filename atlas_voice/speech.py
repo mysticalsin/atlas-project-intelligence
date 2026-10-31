@@ -19,6 +19,7 @@ import wave
 import aiohttp
 
 from .kyutai import TurnDetector, connect_stt, connect_tts, float_to_pcm16, pack, pcm16_to_float, unpack
+from .textfold import fold, plain
 
 SAMPLE_RATE = 24000
 CHUNK = 960
@@ -240,41 +241,115 @@ def _run_value(run):
     return total
 
 
+def _digit_reading(run):
+    """A run of single-digit words ("four zero", "deux cinq") can also be read digit by digit: "40", "25". None when it is not such a run."""
+    parts = [w for w in _SPLIT.split(run.lower()) if w and w not in NUMBER_CONNECTORS]
+    if len(parts) < 2 or any(w not in NUMBER_WORDS or NUMBER_WORDS[w] > 9 for w in parts): return None
+    return int(''.join(str(NUMBER_WORDS[w]) for w in parts))
+
+
 def _digits(match):
     v = _run_value(match.group())
-    return match.group() if v is None else f' {v} '
+    if v is None: return match.group()
+    d = _digit_reading(match.group())
+    return f' {v} ' if d is None or d == v else f' {v} {d} '
 
 
 # The zero of each script's decimal digits (Arabic-Indic, Extended Arabic-Indic, Devanagari, Bengali, Tamil, Telugu, Thai, Myanmar): a figure written in them is the same figure.
 DIGIT_ZEROS = (0x660, 0x6F0, 0x966, 0x9E6, 0xBE6, 0xC66, 0xE50, 0x1040)
 _DIGITS = {z + i: 48 + i for z in DIGIT_ZEROS for i in range(10)}
+# Other ways to say a figure (red M10): a roman numeral before a percent word ("XL percent"), "a dozen", "a couple of million", a product ("4x4"), and the compound
+# numerals of German and Dutch written as one word ("dreihunderttausend"), which cannot be read here: such a word stands for an unknown figure ('?').
+PERCENT_WORDS = r'(?:%|percent|per[\s-]?cent|pour[\s-]cent|prozent|por[\s-]ciento|por[\s-]cento|per[\s-]cento|procent)'
+_ROMAN = re.compile(r'(?<!' + _L + r')([ivxlcdm]{2,8})(?=\s*' + PERCENT_WORDS + r'(?!' + _L + r'))')
+_ROMAN_VALID = re.compile(r'm{0,3}(?:cm|cd|d?c{0,3})(?:xc|xl|l?x{0,3})(?:ix|iv|v?i{0,3})')
+_ROMAN_VALUES = {'i': 1, 'v': 5, 'x': 10, 'l': 50, 'c': 100, 'd': 500, 'm': 1000}
+_DOZEN = re.compile(r'(?<!' + _L + r')dozen(?!' + _L + r')')
+_COUPLE = re.compile(r'(?<!' + _L + r')couple(?=\s+of\s+(?:million|thousand|billion|hundred)(?!' + _L + r'))')
+_PRODUCT = re.compile(r'(?<![0-9.,])([0-9]+)\s*[x\u00d7*]\s*([0-9]+)(?![0-9.,])')
+_COMPOUND = re.compile(r'(?<!' + _L + r')' + _L + r'*(?:hundert|tausend|honderd|duizend)' + _L + r'*(?!' + _L + r')')
+
+
+def _roman(match):
+    s = match.group(1)
+    if not _ROMAN_VALID.fullmatch(s): return s
+    total = 0
+    for a, b in zip(s, s[1:] + ' '):
+        v = _ROMAN_VALUES[a]
+        total += -v if b != ' ' and _ROMAN_VALUES[b] > v else v
+    return f' {total} '
 
 
 def figures(text):
-    """Every figure in a text as a numeral (digits in any common script, full-width digits and spelled-out numbers alike)."""
-    text = ''.join(c for c in unicodedata.normalize('NFKC', str(text)) if unicodedata.category(c) != 'Cf').translate(_DIGITS)
+    """Every figure in a text as a numeral (digits in any common script, full-width digits, spelled-out numbers, roman numerals before a percent word, "a dozen",
+    products and one-word compound numerals alike). Folded first (textfold.fold): look-alike letters of other scripts are the Latin letter."""
+    text = fold(text).translate(_DIGITS)
     text = _HALF.sub(' 0.5 ', _FOLD.sub(lambda m: f' {_run_value(m.group(1))} ', _QUATRE_VINGT.sub('quatrevingt', text)))
-    return [_number(m) for m in _NUMBER.findall(_NUM_RUN.sub(_digits, text))]
+    text = _COUPLE.sub(' 2 ', _DOZEN.sub(' 12 ', _ROMAN.sub(_roman, text)))
+    extra = ['?'] if _COMPOUND.search(text) else []
+    products = [str(int(a) * int(b)) for a, b in _PRODUCT.findall(text)]
+    return [_number(m) for m in _NUMBER.findall(_NUM_RUN.sub(_digits, text))] + products + extra
+
+
+def has_unchecked_script(text):
+    """True when the text has a letter outside the Latin script (Cyrillic, Arabic, CJK, Greek ...): no number table exists for those languages, so a spelled-out figure
+    in them cannot be read (red M10). Summary mode voices no sentence like that."""
+    return any(c.isalpha() and c not in '\u00aa\u00ba' and not unicodedata.name(c, 'LATIN').startswith('LATIN') for c in unicodedata.normalize('NFKC', str(text)))
 
 
 # A reply sentence that asserts something was checked, approved or confirmed (red L3, red L4): the interviewer has verified nothing and approves nothing, and her
 # words are spoken to the consultant as if they were a status. Only a server status line may say so (ReplyGuard allow_status). A sentence that denies it, hedges it or asks
 # about it is fine ("that figure is not verified yet", "a reviewer will approve it later", "was it approved?").
-UNVERIFIED_CLAIM_SRC = (r"\b(?:verified|verify|verifies|verifying|approved|approves?|approving|validated|validates?|validating|certified|signed[\s-]off|endorsed|"
+UNVERIFIED_CLAIM_SRC = (r"\b(?:verified|verify|verifies|verifying|approved|approves?|approving|validated|validates?|validating|certified|signed[\s-](?:(?:it|this|that|them)[\s-])?off|endorsed|"
                         r"confirmed (?:by|with)|checked with|authori[sz]ed by|cleared by)\b")
 CLAIM_HEDGE_SRC = (r"\b(?:not|never|no|nothing|nobody|neither|nor|yet|until|unless|before|once|if|whether|without|cannot|need(?:s|ed)? to|has to|have to|must|should|will|would|could|"
                    r"might|may|be|being|still)\b|n[\u2019']t\b")
+# The same two lists for the other bank languages (red M10), matched on the accent-free folded text (textfold.plain), so "vérifié", "verifie" and a Cyrillic-е "vеrifie" are one word.
+# A term ending in * is a stem (any letters may follow); a space inside a term is any run of spaces or hyphens. Wording hints only: a hedge anywhere in the sentence lets it through,
+# so a denial, a future, a question or a condition is never dropped, exactly as for English.
+CLAIM_TERMS = {
+    'fr': ['verifi*', 'approuv*', 'valide', 'validee*', 'valides', 'valider', 'validant', 'certifi*', 'autorise* par', 'confirme* par', 'confirme* avec', 'controle* par', 'signe* par', 'avalise*', 'homologue*', 'entérine*'],
+    'es': ['verific*', 'aprob*', 'valid*', 'certific*', 'autorizad* por', 'confirmad* por', 'confirmad* con', 'visto bueno', 'refrendad*', 'firmad* por'],
+    'it': ['verific*', 'approv*', 'valid*', 'certific*', 'autorizzat* da', 'confermat* da', 'confermat* con', 'firmat* da', 'convalid*', 'omologat*'],
+    'pt': ['verific*', 'aprov*', 'valid*', 'certific*', 'autorizad* por', 'confirmad* por', 'confirmad* com', 'assinad* por', 'homologad*'],
+    'de': ['gepruf*', 'freigegeben', 'freigabe', 'genehmig*', 'verifizier*', 'validier*', 'zertifizier*', 'abgesegnet', 'abgenommen', 'autorisiert', 'bestatigt von', 'bestatigt durch', 'kontrolliert von', 'uberpruf*', 'bewilligt'],
+    'nl': ['geverifieerd', 'verifieer*', 'gecontroleerd', 'goedgekeurd', 'goedkeur*', 'gevalideerd', 'valideer*', 'gecertificeerd', 'bevestigd door', 'bevestigd met', 'geautoriseerd', 'afgetekend', 'akkoord'],
+}
+HEDGE_TERMS = {
+    'fr': ['ne', "n'", 'pas', 'jamais', 'aucun*', 'rien', 'personne', 'sans', 'avant', 'jusqu*', 'tant que', 'si', "s'", 'sera', 'seront', 'devra', 'devront', 'doit', 'doivent', 'faut', 'pourra', 'pourrait', 'pourraient', 'serait', 'sauf', 'afin'],
+    'es': ['no', 'ni', 'nunca', 'jamas', 'nadie', 'nada', 'sin', 'antes de', 'hasta que', 'si', 'sera', 'seran', 'debera', 'debe', 'deben', 'tiene que', 'tendra', 'podria', 'podra', 'aun', 'todavia', 'salvo'],
+    'it': ['non', 'mai', 'nessun*', 'niente', 'nulla', 'senza', 'prima di', 'finche', 'se', 'sara', 'saranno', 'dovra', 'deve', 'devono', 'potrebbe', 'potra', 'ancora', 'purche'],
+    'pt': ['nao', 'nunca', 'ninguem', 'nada', 'sem', 'antes de', 'ate que', 'se', 'sera', 'serao', 'devera', 'deve', 'devem', 'tem que', 'podera', 'poderia', 'ainda', 'salvo'],
+    'de': ['nicht', 'nie', 'niemals', 'kein*', 'nichts', 'niemand', 'ohne', 'bevor', 'bis', 'wenn', 'ob', 'wird', 'werden', 'muss', 'mussen', 'soll', 'sollte', 'konnte', 'noch', 'erst', 'falls'],
+    'nl': ['niet', 'nooit', 'geen', 'niemand', 'niets', 'zonder', 'voordat', 'tot', 'als', 'zal', 'zullen', 'moet', 'moeten', 'zou', 'zouden', 'nog', 'pas', 'tenzij'],
+}
+_L_ = r'[^\W\d_]'  # a letter
+
+
+def _terms_re(terms):
+    """One case-insensitive regex for a term list: whole words, a trailing * for a stem, a space for any run of spaces and hyphens."""
+    alts = []
+    for t in terms:
+        stem = t.endswith('*')
+        body = r'[\s-]+'.join(re.escape(w) for w in plain(t.rstrip('*')).split(' ')) + (_L_ + '*' if stem else '')
+        alts.append(body + ('' if stem else '(?!' + _L_ + ')'))
+    return re.compile(r'(?<!' + _L_ + r')(?:' + '|'.join(alts) + ')', re.I)
+
+
 _CLAIM = re.compile(UNVERIFIED_CLAIM_SRC, re.I)
 _HEDGE = re.compile(CLAIM_HEDGE_SRC, re.I)
+_CLAIMS = _terms_re([t for terms in CLAIM_TERMS.values() for t in terms])
+_HEDGES = _terms_re([t for terms in HEDGE_TERMS.values() for t in terms])
 
 
 def asserts_verification(text):
-    """True when the sentence says something was verified, approved or confirmed by someone, without a hedge or a denial."""
-    t = ''.join(c for c in unicodedata.normalize('NFKC', text) if unicodedata.category(c) != 'Cf')
-    return bool(_CLAIM.search(t)) and not _HEDGE.search(t)
+    """True when the sentence says something was verified, approved or confirmed by someone, without a hedge or a denial (the seven bank languages; folded text)."""
+    t = plain(text).replace('\u2019', "'")
+    return bool(_CLAIM.search(t) or _CLAIMS.search(t)) and not (_HEDGE.search(t) or _HEDGES.search(t))
 
 
-EDGE_CONSTANTS = {'DIGIT_ZEROS': list(DIGIT_ZEROS), 'NUMBER_WORDS': NUMBER_WORDS, 'NUMBER_CONNECTORS': list(NUMBER_CONNECTORS), 'UNVERIFIED_CLAIM_SRC': UNVERIFIED_CLAIM_SRC, 'CLAIM_HEDGE_SRC': CLAIM_HEDGE_SRC}
+EDGE_CONSTANTS = {'DIGIT_ZEROS': list(DIGIT_ZEROS), 'NUMBER_WORDS': NUMBER_WORDS, 'NUMBER_CONNECTORS': list(NUMBER_CONNECTORS), 'UNVERIFIED_CLAIM_SRC': UNVERIFIED_CLAIM_SRC, 'CLAIM_HEDGE_SRC': CLAIM_HEDGE_SRC,
+                  'CLAIM_TERMS': CLAIM_TERMS, 'HEDGE_TERMS': HEDGE_TERMS, 'PERCENT_WORDS': PERCENT_WORDS}
 
 
 def _words(text):
@@ -371,7 +446,7 @@ class ReplyGuard:
         if not question and not self._allow_status and asserts_verification(text):
             stats['dropped_unverified_claim'] += 1
             return '', question
-        if self._allowed is not None and any(m not in self._allowed for m in figures(text)):
+        if self._allowed is not None and (has_unchecked_script(text) or any(m not in self._allowed for m in figures(text))):
             stats['dropped_unknown_number'] += 1
             return '', question
         if self._max is not None:

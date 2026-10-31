@@ -6,7 +6,7 @@
 
 import { aiOff, assertAiOn } from './kill-switches.js';
 import { cleanText } from './prompt-data.js';
-import { isSpecial } from './special.js';
+import { isSpecial, uncoveredLanguage } from './special.js';
 
 // Hindsight Cloud (docs.hindsight.vectorize.io/api-integration). HINDSIGHT_URL overrides it for a self-hosted server.
 export const HINDSIGHT_CLOUD = 'https://api.hindsight.vectorize.io';
@@ -59,7 +59,8 @@ export function projectDocument(p) {
   if (facts.length) lines.push('Details: ' + facts.map(x => str(String(x), 120)).join('; ') + '.');
   const covered = TOPICS.filter((_, i) => String((p.answers || [])[i] || '').trim());
   if (covered.length) lines.push('Topics covered so far: ' + covered.join(', ') + '.');
-  const clean = list => (list || []).map(g => str(g, 120)).filter(g => g && !isSpecial(g));
+  // A model-written line in a language the guard has no phrase list for is not retained either (X2, red M13): it cannot be judged.
+  const clean = list => (list || []).map(g => str(g, 120)).filter(g => g && !isSpecial(g) && !uncoveredLanguage(g));
   if (r && clean(r.gaps).length) lines.push('Still missing or unverified: ' + clean(r.gaps).slice(0, 4).join('; ') + '.');
   if (r && clean(r.follow_ups).length) lines.push('Open follow-up questions: ' + clean(r.follow_ups).slice(0, 3).join('; ') + '.');
   return scrub(lines.filter(l => !isSpecial(l)).join('\n'), p.client).slice(0, 2500);

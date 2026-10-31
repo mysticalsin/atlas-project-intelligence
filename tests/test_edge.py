@@ -38,6 +38,7 @@ VECTORS = [
     ('gen_extension_parity.py', 'extension.vectors.json'),
     ('gen_lang_parity.py', 'lang.vectors.json'),
     ('gen_special_parity.py', 'special.vectors.json'),
+    ('gen_fold_parity.py', 'fold.vectors.json'),
 ]
 @pytest.mark.parametrize('gen,vec', VECTORS)
 def test_parity_vectors_are_current(gen, vec):

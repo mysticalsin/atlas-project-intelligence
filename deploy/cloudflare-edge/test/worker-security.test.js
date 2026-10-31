@@ -56,8 +56,8 @@ test('a resume of a saved interview and every later message are not starts; a di
   // 'resume' with an id that does not exist: answered by the session ('unavailable'), never by the limiter
   const r = connect(d); await r.p; r.server.fire('message', startMsg({ resume: 'f'.repeat(32) })); await new Promise(x => setTimeout(x, 60));
   assert.ok(!r.server.events().some(e => e.code === 'rate-limited'), 'a resume does not spend or check the start budget');
-  const typedMore = connect(d); await typedMore.p; typedMore.server.fire('message', { data: '{"type":"junk"}' }); await new Promise(x => setTimeout(x, 30));
-  assert.ok(!typedMore.server.events().some(e => e.code === 'rate-limited'));
+  // (X2: a first message that is not a valid resume is a start, whatever it says: the budget is decided from the parsed message, never from its size)
+  const typedMore = connect(d); await typedMore.p; typedMore.server.fire('message', { data: '{"type":"junk"}' }); await until(() => typedMore.server.events().some(e => e.code === 'rate-limited'));
   const other = new Interview({ storage: new FakeStorage() }, env({ RL_INTERVIEW_HOUR: '1', RL_INTERVIEW_DAY: '1' })), o = connect(other); await o.p; o.server.fire('message', startMsg());
   await until(() => o.server.events().some(e => e.type === 'ready'));
 });

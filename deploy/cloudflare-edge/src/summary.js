@@ -35,10 +35,50 @@ const ORDER = Object.keys(FIELDS);
 const FACT_PRIORITY = ['problem', 'contribution', 'intervention', 'outcome', 'measurement', 'decision', 'adoption', 'stakes', 'evidence', 'limitations', 'customer_fit', 'poor_fit'];
 const NUMBER = /[0-9]+(?:[.,][0-9]+)*/g;
 const squash = s => String(s ?? '').split(/\s+/).filter(Boolean).join(' ');
-// The first n code points, an ellipsis when something is cut (the result is at most n code points).
+// Where a cut of a long text may fall (red X2, the read-back cut quotes in the middle of a word): never inside a word. `head` is the first n code points
+// and `next` the character after them. In order: the end of the head when it already ends a word; the last space; the last clause or sentence mark (the way a
+// script written without spaces is cut); the last word boundary Intl.Segmenter finds; else the head itself (one unbroken token longer than the limit).
+const BREAK = /[.!?;:,\u2014\u2013\u3002\uff01\uff1f\uff1b\uff1a\uff0c\u3001\u0964\u061f\u061b\u060c]/u;
+const isSpace = c => /\s/u.test(c);
+function wordCut(head, next) {
+  if (next === undefined || isSpace(next) || isSpace(head[head.length - 1] ?? ' ')) return head.length;
+  for (let i = head.length - 1; i > 0; i--) if (isSpace(head[i])) return i;
+  for (let i = head.length - 1; i > 0; i--) if (BREAK.test(head[i])) return i + 1;
+  try {
+    const str = head.join(''); let at = 0;
+    for (const { index } of new Intl.Segmenter(undefined, { granularity: 'word' }).segment(str)) { const k = Array.from(str.slice(0, index)).length; if (k > 0 && k < head.length) at = k; }
+    if (at) return at;
+  } catch { /* no segmenter: the head as it is */ }
+  return head.length;
+}
+// The first n code points cut at a word boundary, an ellipsis when something is cut (the result is at most n code points).
 export function clip(text, n) {
   const all = Array.from(squash(text));
-  return all.length <= n ? all.join('') : all.slice(0, n - 1).join('').trimEnd() + '…';
+  if (all.length <= n) return all.join('');
+  const head = all.slice(0, n - 1), cut = wordCut(head, all[n - 1]);
+  return undangle(head.slice(0, cut).join('').trimEnd().replace(/[,;:\u2014\u2013\u3001\uff0c]+$/u, '')) + '\u2026';
+}
+// Words that cannot end a thought (articles, prepositions, conjunctions of the seven bank languages): a cut that would end on one drops it as well.
+const DANGLING = new Set(('and or the a an to of for with that which in on at by as but than from into if so while et ou le la les de du des un une \u00e0 au aux que qui dans pour sur par avec mais ' +
+  'y o el los las del en con para por pero como e ou o a os as do da dos das um uma em com mas und oder der die das den dem zu von mit f\u00fcr dass auf aber il lo i gli le di un una che per da ma ' +
+  'en of de het een van te dat op voor met maar').split(' '));
+function undangle(text) {
+  let out = text;
+  for (;;) {
+    const m = /\s([^\s]+)$/u.exec(out);
+    if (!m || !DANGLING.has(m[1].toLowerCase())) return out;
+    out = out.slice(0, m.index).trimEnd().replace(/[,;:\u2014\u2013]+$/u, '');
+  }
+}
+// The same cut for what is SPOKEN: no ellipsis (it would be read out). Instead the trailing clause is dropped: back to the last comma, semicolon or sentence mark
+// when that keeps at least a third of the limit, else to the last word, and never on a dangling word. A text that fits is returned whole.
+export function clipSpoken(text, n) {
+  const all = Array.from(squash(text));
+  if (all.length <= n) return all.join('');
+  const head = all.slice(0, n);
+  let cut = wordCut(head, all[n]);
+  for (let i = cut - 1; i >= Math.ceil(n / 3); i--) if (BREAK.test(head[i])) { cut = i; break; }
+  return undangle(head.slice(0, cut).join('').trimEnd().replace(/[,;:\u2014\u2013\u3001\uff0c]+$/u, ''));
 }
 const detailsOf = ledger => (Array.isArray(ledger) ? ledger : Array.isArray(ledger?.details) ? ledger.details : []);
 const order = f => { const i = ORDER.indexOf(f); return i < 0 ? ORDER.length : i; };
@@ -89,10 +129,10 @@ export function toYou(quote) {
 // The clause ATLAS says for one card item, without its label. toYou() turns English first person into the second person; the consultant's words in any
 // other language are passed through as they said them (the talker addresses them in that language, see summaryNote), never converted or translated.
 export function spokenClause(quote, lang = 'en') {
-  if (lang !== 'en') return clip(quote, 400).replace(/…$/, '').trim();
+  if (lang !== 'en') return clipSpoken(quote, 400).trim();
   const clause = toYou(quote);
   if (clause) return clause;
-  const q = clip(String(quote ?? '').replace(/["“”]/g, "'"), 70).replace(/…$/, '').trim();
+  const q = clipSpoken(String(quote ?? '').replace(/["“”]/g, "'"), 70).trim();
   return q ? `you said "${q}"` : '';
 }
 // What a spoken read-back looks like when the clauses are joined: the opening, then the clauses as one running sentence. (The talker says it in its own
@@ -148,7 +188,7 @@ export function factItems(items, { max = MAX_FACTS, skip = null } = {}) {
 // says. An outcome carries "though the starting figure is still open" (basisPhrase) while its measurement basis is open (opts.basisOpen: the open parts or gap names, or true).
 export function summaryFacts(items, { max = MAX_FACTS, basisOpen = false, skip = null, lang = 'en' } = {}) {
   const english = lang === 'en', picked = factItems(items, { max, skip });
-  const facts = picked.map(x => spokenClause(clip(x.quote, FACT_CHARS), lang) + (english && basisOpen && x.field === 'outcome' ? basisPhrase(basisOpen) : '')).filter(Boolean);
+  const facts = picked.map(x => spokenClause(clipSpoken(x.quote, FACT_CHARS), lang) + (english && basisOpen && x.field === 'outcome' ? basisPhrase(basisOpen) : '')).filter(Boolean);
   const numbers = [...new Set(facts.flatMap(f => f.match(NUMBER) || []))];
   // Outside English the basis is not glued to a fact (its words are English): it is named in the note, for the talker to say in the consultant's language.
   const basis = !english && basisOpen && picked.some(x => x.field === 'outcome') ? basisPhrase(basisOpen).replace(/^,\s*though /, '') : '';

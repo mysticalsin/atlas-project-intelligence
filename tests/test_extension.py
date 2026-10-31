@@ -21,8 +21,9 @@ def test_the_offer_is_made_once_near_the_planned_end_to_a_consultant_in_no_hurry
     assert not x.should_offer('ask', True, None, 100)            # a hurry is never asked to stay
     for state in ('offered', 'accepted', 'refused'): assert not x.should_offer('ask', False, state, 100)       # at most once
 
-@pytest.mark.parametrize('intents,words,want', [(['confirm'], 1, 'accepted'), ([], 6, 'accepted'), ([], 5, 'refused'), (['deny'], 9, 'refused'), (['confirm', 'deny'], 3, 'refused'),
+@pytest.mark.parametrize('intents,words,want', [(['confirm'], 1, 'accepted'), ([], 6, 'refused'), ([], 5, 'refused'), (['confirm'], 14, 'accepted'), (['confirm'], 15, 'refused'), (['confirm'], None, 'refused'), ([], 40, 'refused'), (['deny'], 9, 'refused'), (['confirm', 'deny'], 3, 'refused'),
                                                 (['rushed'], 12, 'refused'), (['stop'], 20, 'refused'), (['dont_know'], 8, 'refused'), ([], 0, 'refused'), (['pause'], 1, 'refused')])
+# (v2.2 X2, red M9: a long reply with no refusing intent used to count as yes; now only an explicit short `confirm` does)
 def test_only_a_clear_yes_extends(intents, words, want):
     assert x.reply(intents, words) == want
 

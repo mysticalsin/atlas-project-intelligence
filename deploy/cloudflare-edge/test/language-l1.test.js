@@ -168,6 +168,7 @@ test('the consultant can lock a language in the UI: it is understood and spoken 
   assert.deepEqual(switches(h).at(-1).locked, false);
   await h.speak(); assert.equal(h.s.language, 'de', 'back to following the consultant');
   assert.equal(h.stt.at(-1), null, 'automatic detection again');
+  h.tick(6); // (X2: selector changes are throttled to one every LANG_SWITCH_MIN_S)
   const before = switches(h).length; await h.send({ type: 'language', language: 'not a language' }); assert.ok(h.events.some(e => e.type === 'quality_warning' && /not available/.test(e.message))); assert.equal(switches(h).length, before);
   await h.send({ type: 'language', language: 'fr', extra: 1 }); assert.ok(h.events.some(e => e.type === 'error'), 'exactly the message\'s own keys');
 });

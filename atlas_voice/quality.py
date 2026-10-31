@@ -38,8 +38,20 @@ CONTEXT_LEAD_SRC = (r"\b(?:(?:never|not|no|cannot)\s+(?:[a-z']+\s+){0,2}?(?:say|
                     r"|[a-z]+n[’']t\s+(?:[a-z']+\s+){0,2}?(?:say|claim|think|believe|state|suggest)"
                     r"|if|what if|suppose|supposing|imagine|imagining|hypothetically|in theory|theoretically|pretend|pretending|assuming|as if|had (?:we|i|they)|would have|could have"
                     r"|said|says|claimed|told|insisted|insists|alleged|alleges|argued|argues|reportedly|allegedly|supposedly|apparently|rumou?red?|according to"
-                    r"|note (?:for|to)|record that|write (?:this|that|it) up|put (?:this|that|it) down|make sure (?:you|it|the)|please (?:record|log|note|write|add|say)|for whoever|tell (?:the|whoever)|ignore|disregard)\b")
-CONTEXT_TRAIL_SRC = r"\b(?:not me|not us|wasn[’']t me|weren[’']t us|isn[’']t true|is not true|was not true|that[’']s (?:wrong|false)|not my (?:work|doing)|not our (?:work|doing))\b"
+                    r"|claims (?:that|i|we|to|it|he|she|they)|claiming|alleging|purports?|purported|contends?|denies|denied|(?:it|that)(?:[’']s| is| was) (?:false|untrue|not true|wrong|incorrect)|not true that"
+                    r"|note (?:for|to)|record that|write (?:this|that|it) up|put (?:this|that|it) down|make sure (?:you|it|the)|please (?:record|log|note|write|add|say)|for whoever|tell (?:the|whoever)|ignore|disregard)\b"
+                    # The same cues in the other bank languages (red M6 residual, X2): a negated claim ("je ne dirais jamais que"), a condition, a report, a dictation, "it is false that".
+                    # Wording hints that can only make a detail more cautious. Terms start and end with ASCII letters so the pattern means the same in JavaScript.
+                    r"|\b(?:ne|n[’']|pas|jamais|no|nunca|nao|n\u00e3o|nicht|nie|niemals|non|mai|niet|nooit)\b[^.!?]{0,40}?\b(?:dire|dirais|dirai|dis|dit|disais|pretend\w*|pr\u00e9tend\w*|affirm\w*|pens\w*|croi\w*|decir|dir[ií]a|dije|afirm\w*|creer|dizer|diria|afirm\w*|acredit\w*|sagen|sage|behaupt\w*|denk\w*|glaub\w*|dire|direi|affermare|pensare|credere|zeggen|zou zeggen|beweer\w*|geloof\w*)"
+                    r"|\b(?:si (?:nous|on|j[’']|je|tu|vous|ils?|elles?)|supposons|imaginons|imaginez|hypoth\w+|en th\w+orie|comme si|si (?:hubi\w+|tuvi\w+|fu\w+)|supongamos|imaginemos|hipot\w+|en teor\w+a|como si|se (?:nos|eu|eles|tivess\w+|fosse\w*)|suponha|imagine|em teoria|como se"
+                    r"|wenn (?:wir|ich|man|sie)|angenommen|stell dir vor|stellen sie sich vor|hypothetisch\w*|theoretisch|als ob|se (?:noi|io|avessimo|loro)|supponiamo|immagina|ipoteticamente|in teoria|come se|als (?:we|ik|ze|men)|stel (?:je )?voor|stel dat|alsof)\b"
+                    r"|\b(?:dit|dis|a dit|ont dit|soutien\w*|selon|d[’']apr\w+|aurait|soi-disant|dijo|dice|dicen|asegur\w*|seg\w+n|supuestamente|aparentemente|al parecer|disse|diz|segundo|supostamente|alegou"
+                    r"|sagte|sagt|behauptet\w*|laut|angeblich|offenbar|scheinbar|zufolge|ha detto|disse|afferma|sostiene|secondo|presumibilmente|apparentemente|zei|zegt|beweert|beweerde|volgens|naar verluidt|blijkbaar|zogenaamd)\b"
+                    r"|\b(?:il est faux que|c[’']est faux|ce n[’']est pas vrai|il n[’']est pas vrai que|es falso que|no es cierto que|no es verdad que|[eé] falso que|n\w+o [eé] verdade que|es stimmt nicht|es ist falsch|nicht wahr,? dass|[eè] falso che|non [eè] vero che|het is niet waar dat|het is onwaar dat)"
+                    r"|\b(?:notez|consignez|enregistrez|veillez|assurez-vous|ignore\w*|oubliez|anota\w*|registra\w*|aseg\w+rate|olvida\w*|anote\w*|registre\w*|certifique-se|esque\w+|notiere\w*|vermerk\w*|stell\w* sicher|ignorier\w*|vergiss|annota\w*|assicurati|dimentica\w*|noteer\w*|zorg dat|negeer\w*|vergeet)\b")
+CONTEXT_TRAIL_SRC = (r"\b(?:not me|not us|wasn[’']t me|weren[’']t us|isn[’']t true|is not true|was not true|that[’']s (?:wrong|false)|not my (?:work|doing)|not our (?:work|doing)|untrue|which is (?:false|wrong|incorrect)"
+                     r"|pas moi|pas nous|ce n[’']est pas (?:vrai|moi|nous)|c[’']est faux|no fui yo|no fuimos nosotros|no es (?:verdad|cierto)|es falso|n\w+o fui eu|n\w+o [eé] verdade|stimmt nicht|ist falsch|nicht wahr|non io|non noi|non [eè] vero"
+                     r"|niet ik|niet wij|niet waar|is onjuist|is onwaar)\b")
 CONTEXT_LEAD = re.compile(CONTEXT_LEAD_SRC, re.I)
 CONTEXT_TRAIL = re.compile(CONTEXT_TRAIL_SRC, re.I)
 CONTEXT_MAX = 300  # characters of surrounding sentence kept

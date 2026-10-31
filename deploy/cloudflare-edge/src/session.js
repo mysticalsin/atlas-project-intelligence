@@ -97,6 +97,15 @@ export const CORRECTION_RATE_LIMITED = 'That is a lot of corrections at once. Wa
 export const PRIVATE_MARK = '[kept private]'; // what stands for a whole utterance the consultant kept private (summary.js redact() uses the same marker for a quote)
 // v2.2 L1: a language switch needs consistent evidence (languageEvidence): one utterance may switch only when it is long and both the recogniser's tag and the text detector agree.
 export const SWITCH_NOW_UNITS = 8; // words (characters / 2 for scripts without spaces) of one strongly detected utterance that switch the language at once
+// Every inbound WebSocket message is bounded (X2, red M1): a start or a control is a few hundred bytes, a typed turn at most TYPED_MAX_CHARS characters, an audio frame 3840 bytes.
+// Measured in bytes (UTF-8), never by the string's length alone; the Worker applies the same test before it decides whether a message starts an interview.
+export const MAX_MESSAGE_BYTES = 16 * 1024;
+export function messageTooLarge(data) {
+  const n = typeof data === 'string' ? data.length : (data?.byteLength ?? 0);
+  if (n > MAX_MESSAGE_BYTES) return true; // a string's UTF-8 size is never smaller than its length
+  return typeof data === 'string' && n * 3 > MAX_MESSAGE_BYTES && new TextEncoder().encode(data).length > MAX_MESSAGE_BYTES;
+}
+export const LANG_SWITCH_MIN_S = 5, LANG_SWITCH_MAX = 12; // the language selector: at least this long between two switches, and at most this many per session (X2, red M12: each switch re-warms speech)
 export const SWITCH_MIN_UNITS = 3; // fewer words than this never count as evidence
 const Q = /[?？\u061f]/; // a question mark: ?, the full-width one or the Arabic one
 export const SKIP_UNAVAILABLE = 'Skipping is not available in a focused proof interview.';
@@ -197,7 +206,7 @@ export function projectContext(raw) {
 // is named by its id, its words are in that block.
 export function talkerMessages(project, guidance, history, instruction, notes = [], gaps = null, { fence = DEFAULT_FENCE, memory = '' } = {}) {
   const messages = [{ role: 'system', content: TALKER_POLICY + fenceRule(fence) },
-    fenced(fence, ['UNTRUSTED PROJECT DATA:\n' + JSON.stringify(project) + (gaps?.length ? gapSystemBlock(gaps) : ''), memory, 'UNTRUSTED PRIVATE PREFERENCES (not evidence):'])];
+    fenced(fence, ['UNTRUSTED PROJECT DATA:\n' + JSON.stringify(project) + (gaps?.length ? gapSystemBlock(gaps) : ''), 'UNTRUSTED PRIVATE PREFERENCES (not evidence):', memory])]; // (the label comes first: it names what follows it, X2 red L13)
   messages.push(...history.slice(-HISTORY));
   if (guidance) messages.push({ role: 'system', content: 'ANALYST_GUIDANCE (server plan, not a script): ' + JSON.stringify(guidance.askId ? { ...guidance, question: `the ask with id ${guidance.askId} in UNTRUSTED GAP LIST` } : guidance) });
   for (const note of notes) if (note) messages.push({ role: 'system', content: note });
@@ -256,9 +265,9 @@ export class Session {
   // gaps: async id => {asks, bidAlias, referenceId, projectId} | null (the verified assignee's open gap request);
   // winHint: async () => ({hint: 'quantified'|'confirmed'|null}) | null (aggregate win-loop guidance, never awaited).
   constructor({ io, ai, csrf, voice, voices = null, captureRequired = false, model, maxSeconds = MAX_SECONDS, admin = false, memory = null, speakingLimit = SPEAKING_LIMIT_S, now = () => Date.now() / 1000, sleep = ms => new Promise(r => setTimeout(r, ms)), metric = () => {}, sttTimeout = STT_TIMEOUT_MS,
-    gaps = null, winHint = null, gapTimeout = GAP_RESOLVE_MS, flags = null, checkpoint = null, evidence = null, consentHook = null }) {
+    gaps = null, winHint = null, gapTimeout = GAP_RESOLVE_MS, flags = null, checkpoint = null, evidence = null, consentHook = null, consentGuard = null }) {
     // metric(name, numbers): timings and counts only, never transcript or project content.
-    Object.assign(this, { io, ai, csrf, voice, voices: voices || [voice], captureRequired, model, maxSeconds, admin, speakingLimit, now, sleep, metric, memory, sttTimeout, gaps, winHint, gapTimeout, checkpoint, evidence, consentHook });
+    Object.assign(this, { io, ai, csrf, voice, voices: voices || [voice], captureRequired, model, maxSeconds, admin, speakingLimit, now, sleep, metric, memory, sttTimeout, gaps, winHint, gapTimeout, checkpoint, evidence, consentHook, consentGuard });
     // G2: the consent in force for this interview (privacy.js parseConsent): checkpoint only with the checkpoint purpose, private memory only with the memory purpose.
     this.consent = { transcription: false, draft: false, checkpoint: false, memory: false, notice: false };
     this.softSeconds = maxSeconds; // the planned end; with the consultant's agreement the interview may run to hardLimit(softSeconds) of active time (extension.js)
@@ -294,7 +303,7 @@ export class Session {
     this.textMode = false; // X1: a typed interview (start mode 'text'): no microphone, no audio, no synthesis
     this.mode = 'full'; this.wrapS = WRAP_S; this.winNote = ''; this.starting = false;
     this.gapAsks = []; this.gapRequest = null; this.askByItem = new Map(); this.gapAttempts = {}; this.gapAnswers = {}; this.openAsk = null; this.lastAnswer = null; this.askHeard = null;
-    this.memoryNote = ''; this.fence = newFence(); this.language = 'en'; this.languageCandidate = null; this.languageLocked = false; this.voiceTold = new Set(); this.announceVoice = false; this.dry = false; this.affinity = 'atlas-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    this.revoked = new Set(); this.ckptWriting = null; this.langSwitchAt = -1e9; this.langSwitches = 0; this.warmed = new Set(); this.memoryNote = ''; this.fence = newFence(); this.language = 'en'; this.languageCandidate = null; this.languageLocked = false; this.voiceTold = new Set(); this.announceVoice = false; this.dry = false; this.affinity = 'atlas-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
     this.pause = ''; this.checkId = 0; this.continuing = false; this.replyTurn = -1; this.replyItem = null; this.shown = { item: null, chars: 0 }; this.discarded = new Set(); this.fillerMs = {}; this.committed = null; this.live = null; this.recorded = new Set(); this.voiced = 0; this.blip = null; this.echoable = false; this.acked = false; this.playbackDone = true; this.doneAt = 0; this.resumedAt = 0; this.lastFiller = -1; this.fillerTurn = -2; this.protectedItem = null; this.protectedMs = 0; this.protectedDeadline = 0;
     this.spokenMs = 0; this.timeUp = false; this.ending = null; this.sttBusy = 0;
     this.started = false; this.finished = false; this.capture = false; this.history = []; this.queue = []; this.waiter = null;
@@ -321,6 +330,7 @@ export class Session {
   activeSeconds(now = this.now()) { return now - this.startedAt - this.pausedTotal - (this.pausedAt === null ? 0 : now - this.pausedAt); }
 
   async onText(text) {
+    if (messageTooLarge(text)) return this.fail('That message was too large. Nothing was approved.', 'message-too-large');
     let value;
     try { value = JSON.parse(text); } catch { return this.fail('Unsupported client event', 'voice-contract'); }
     if (this.starting) { // a gap request or a checkpoint is being read: only leaving is allowed (never a second start)
@@ -512,6 +522,7 @@ export class Session {
       // G2: the consent is an object of separate purposes (a bare `true` still means transcription only). A voice interview needs transcription and the draft; a typed one only the draft.
       const parsed = parseConsent(init.consent, { capture: init.capture === true, mode: init.mode === 'text' ? 'text' : 'voice', required: this.captureRequired });
       this.consent = parsed.purposes;
+      for (const p of this.revoked) this.consent[p] = false; // (a withdrawal that arrived while this start was being read)
       this.project = projectContext(init.project);
       // What is known before the first question (role, sector, stage, opportunity, earlier notes): never the consultant's name.
       const { role, sector, stage, oppId, prior_notes: notes } = this.project;
@@ -1361,6 +1372,10 @@ export class Session {
   // The language selector: 'auto' returns to following the consultant; a code locks that language (it is spoken to and understood as chosen, whatever the recogniser hears).
   lockLanguage(value) {
     if (!this.started || this.finished || this.ending || this.starting) return;
+    // Throttled (X2, red M12): a burst of selector controls costs nothing but one small event that puts the selector back where it is; none re-synthesises, re-saves or counts.
+    const t = this.now();
+    if (this.langSwitches >= LANG_SWITCH_MAX || t - this.langSwitchAt < LANG_SWITCH_MIN_S) { this.metric('language_throttled', {}); return this.event('language', this.languageInfo({ via: 'selector' })); }
+    this.langSwitchAt = t; this.langSwitches += 1;
     if (value === 'auto') { this.languageLocked = false; this.languageCandidate = null; this.metric('language_lock', { locked: 0 }); this.event('language', this.languageInfo({ via: 'selector' })); this.checkpointSoon(); return; }
     const code = normalize(value);
     if (!code) return this.event('quality_warning', { message: 'That language is not available.' });
@@ -1412,10 +1427,12 @@ export class Session {
   prewarm() {
     const lang = this.language;
     if (this.textMode || !this.voiceOk(lang)) return; // no audio, so nothing to warm
+    if (this.warmed.has(lang)) return; // each language once per session: its lines are in the cache (or being put there), and an old line is never synthesised again
+    this.warmed.add(lang);
     if (this.flags.acks === 'legacy') { for (const f of FILLERS[lang] || []) this.synth(f, lang).catch(() => {}); return; }
     if (this.admin) return;
     const todo = ackPrewarmList(lang);
-    const lane = async () => { for (let t = todo.shift(); t !== undefined; t = todo.shift()) { if (this.finished) return; await this.synth(t, lang, false, true).catch(() => {}); } };
+    const lane = async () => { for (let t = todo.shift(); t !== undefined; t = todo.shift()) { if (this.finished) return; if (this.language !== lang) { this.warmed.delete(lang); return; } await this.synth(t, lang, false, true).catch(() => {}); } };
     for (let i = 0; i < PREWARM_LANES; i++) lane();
   }
 
@@ -1751,12 +1768,33 @@ export class Session {
     })().finally(() => { this.ckptRun = null; });
   }
   async saveCheckpoint() {
-    if (this.machine.terminal) return;
+    if (this.machine.terminal || !this.checkpoint || this.revoked.has('checkpoint')) return; // (withdrawn consent: nothing more is written, revoke())
     // Absolute expiry (L6): 24 hours from the first write, however many reconnects came between. Past it nothing is written, and what is stored is deleted.
     if (this.capturedAt !== null && this.now() * 1000 >= this.capturedAt + TTL_MS) { this.metric('checkpoint_expired', {}); await this.checkpoint.purge().catch(() => {}); return; }
+    // The stored consent is read again before every write (X2, red H2, belt and braces): a withdrawal or an erasure that reached the storage by another road stops the writes too.
+    if (this.consentGuard) { let ok = true; try { ok = await this.consentGuard(); } catch { ok = true; } if (!ok) { this.revoked.add('checkpoint'); this.consent.checkpoint = false; this.metric('checkpoint_consent_gone', {}); return; } }
     const t0 = this.now();
-    try { const r = await this.checkpoint.save(serialize(this)); this.capturedAt = r.capturedAt ?? this.capturedAt; this.metric('checkpoint', { ms: Math.round((this.now() - t0) * 1000), bytes: r.bytes, chunks: r.chunks }); }
+    try { const w = this.checkpoint.save(serialize(this)); this.ckptWriting = w.then(() => {}, () => {}); const r = await w; this.capturedAt = r.capturedAt ?? this.capturedAt; this.metric('checkpoint', { ms: Math.round((this.now() - t0) * 1000), bytes: r.bytes, chunks: r.chunks }); }
     catch (e) { this.metric('checkpoint_error', { name: e?.code || e?.name || 'Error' }); } // a failed write never stops the interview
+  }
+  // The person withdrew a consent, or erased their data, while this interview is live (X2, red H2: the live session kept its consent in memory and wrote the checkpoint
+  // and transcript back for 24 hours after the erasure said "complete"). The Interview Durable Object (worker.js) calls this BEFORE it purges the stored data.
+  // `purposes`: 'all' or a list of transcription, draft, checkpoint, memory. Everything is switched off in this same tick, so nothing already queued can write afterwards;
+  // the one write that may be in flight is awaited, so the purge that follows comes last. Withdrawing the transcript or erasing everything ends the interview as a discard
+  // (nothing is kept, nothing is filed); withdrawing the checkpoint or memory alone lets the interview go on without them. The browser is told.
+  async revoke(purposes = 'all') {
+    if (this.finished && !this.ending) return;
+    const all = ['transcription', 'draft', 'checkpoint', 'memory'], list = purposes === 'all' ? all : (Array.isArray(purposes) ? purposes : []).filter(p => all.includes(p));
+    if (!list.length) return;
+    for (const p of list) { this.revoked.add(p); this.consent[p] = false; }
+    if (list.includes('checkpoint') || list.includes('transcription')) { this.ckptDirty = false; this.revoked.add('checkpoint'); this.consent.checkpoint = false; }
+    if (list.includes('memory')) { this.memory = null; this.memoryNote = ''; }
+    if (list.includes('draft') || list.includes('transcription')) this.evidence = null;
+    const ends = list.includes('transcription') || purposes === 'all';
+    this.metric('consent_revoked', { purposes: list.length, ends: ends ? 1 : 0 });
+    this.event('consent_revoked', { purposes: list, interview: ends ? 'ended' : 'continues', message: ends ? 'Your choice was applied: this interview was stopped and nothing of it is kept.' : 'Your choice was applied to this interview.' });
+    if (this.ckptWriting) await this.ckptWriting; // the write that was already under way finishes first; the stored copy is deleted after this returns
+    if (ends && !this.finished && !this.ending) { this.discarding = true; this.fireState('withdraw', 'user', { reason: 'consent withdrawn' }); this.end(false); }
   }
   async purgeCheckpoint() {
     if (!this.checkpoint) return false;

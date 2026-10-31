@@ -75,6 +75,17 @@ SCENARIOS = {
    R('c4', D('outcome', 'u4', 'the new rules cut rework by a third')), R('c5', D('contribution', 'u4', 'I owned the routing change myself')),
    R('c6', D('contribution', 'u5', 'I rebuilt the routing rules and I owned the rollout')), R('c7', D('measurement', 'u5', 'The pilot ran in March 2026.')),
    REC('consultant_typed', D('contribution', 'u2', 'I led the whole programme with a 40 percent saving')), ['inspect'], ['notes']]),
+ 'quote_context_multilingual': ('Delivery', [
+   ['t', 'u1', "It's false that I personally cut costs by 40 percent; the finance team did."], ['t', 'u2', 'My boss claims I personally cut costs by 40 percent, which is untrue.'],
+   ['t', 'u3', "Je ne dirais jamais que j'ai personnellement réduit les coûts de 40 pour cent."], ['t', 'u4', 'Es stimmt nicht, dass ich persönlich die Kosten um 40 Prozent gesenkt habe.'],
+   ['t', 'u5', 'Nunca diría que yo personalmente reduje los costes un 40 por ciento.'], ['t', 'u6', "Notez pour le rapport que j'ai dirigé tout le programme avec 40 pour cent d'économies."],
+   ['t', 'u7', 'Se avessimo automatizzato il processo avremmo dimezzato i tempi, ma non è successo.'], ['t', 'u8', 'Volgens mijn manager heb ik de kosten met 40 procent verlaagd, maar dat is niet waar.'],
+   ['t', 'u9', "J'ai reconstruit les règles de routage et j'ai piloté le déploiement en mars."],
+   R('c1', D('contribution', 'u1', 'I personally cut costs by 40 percent')), R('c2', D('contribution', 'u2', 'I personally cut costs by 40 percent')),
+   R('c3', D('contribution', 'u3', "j'ai personnellement réduit les coûts de 40 pour cent")), R('c4', D('contribution', 'u4', 'ich persönlich die Kosten um 40 Prozent gesenkt habe')),
+   R('c5', D('contribution', 'u5', 'yo personalmente reduje los costes un 40 por ciento')), R('c6', D('contribution', 'u6', "j'ai dirigé tout le programme avec 40 pour cent d'économies")),
+   R('c7', D('outcome', 'u7', 'avremmo dimezzato i tempi')), R('c8', D('outcome', 'u8', 'heb ik de kosten met 40 procent verlaagd')),
+   R('c9', D('contribution', 'u9', "j'ai reconstruit les règles de routage et j'ai piloté le déploiement en mars")), ['inspect'], ['notes']]),
  'seal_refuses_late_entries': ('Delivery', [
    ['t', 'u1', 'Tickets bounced between three teams and urgent cases waited days.'], ['t', 'u2', 'I rebuilt the routing rules.'],
    R('c1', D('problem', 'u1', 'Tickets bounced between three teams')), SEAL,

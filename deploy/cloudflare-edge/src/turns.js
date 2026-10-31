@@ -1,7 +1,7 @@
 // JavaScript port of atlas_voice/turns.py analyzeTurn (parity-tested): a deterministic pre-pass over ONE consultant utterance.
 // It reports what the WORDS do (intents, cues, field hints, numbers), never the person. All tables come from policy.generated.js.
 import {
-  NUMERIC_SRC, UNCERTAIN_SRC, FIELDS, TURN_MAX_CHARS, TURN_MAX_NUMBERS, TURN_INTENT_ORDER, TURN_CUE_ORDER, TURN_LANGS_WITH_CUES, TURN_LANGS_WITH_INTENTS,
+  NUMERIC_SRC, UNCERTAIN_SRC, FIELDS, TURN_MAX_CHARS, TURN_MAX_NUMBERS, TURN_INTENT_ORDER, TURN_INTENT_MAX_WORDS, TURN_CUE_ORDER, TURN_LANGS_WITH_CUES, TURN_LANGS_WITH_INTENTS,
   TURN_INTENT_RULES, TURN_CUE_SRC, TURN_TECH_SRC, TURN_HINT_SRC, TURN_HINT_FROM_TO, TURN_CUE_GATES, TURN_HINT_GATES, TURN_NUMBER_GATE, TURN_NOT_AN_ANSWER, TURN_ASKED_MIN_WORDS, TURN_NUMBER_SRC,
   TURN_UNIT_CANON, TURN_SCALE, TURN_THOUSANDS_SRC, TURN_DOT_THOUSANDS_SRC, TURN_AMBIGUOUS_DOT_SRC, TURN_PLAIN_NUMBER_SRC, TURN_WHITESPACE_SRC,
 } from './policy.generated.js';
@@ -55,7 +55,8 @@ export function intents(norm, lg, words, probe = new Probe(norm)) {
   const found = new Set();
   for (const r of rules) {
     if (found.has(r.intent)) continue;
-    if (r.max_words !== null && words > r.max_words) continue;
+    const limit = r.max_words !== null ? r.max_words : TURN_INTENT_MAX_WORDS[r.intent];
+    if (limit !== undefined && words > limit) continue;
     if (r.unless_intents.some(i => found.has(i))) continue;
     if (!probe.test(r.src, r.gate)) continue;
     if (r.unless_src && re(r.unless_src).test(norm)) continue;

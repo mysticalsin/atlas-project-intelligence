@@ -3,7 +3,7 @@ import { DurableObject } from 'cloudflare:workers';
 import page from './atlas.html';
 import { handle, scheduled, workersAI } from './app.js';
 import { jevRanker } from './jev.js';
-import { Session } from './session.js';
+import { Session, messageTooLarge } from './session.js';
 import { CheckpointStore, checkpointRoutes, checkpointEnabled } from './checkpoint.js';
 import { Library } from './library.js';
 import { evidenceWorkflowOn } from './adapters.js';
@@ -37,11 +37,28 @@ export class Interview extends DurableObject {
   // The 24-hour purge of a stored interview (checkpoint.js): the alarm is armed at every checkpoint write, so it never needs another trigger.
   async alarm() { await new CheckpointStore(this.ctx.storage).expire(); }
 
+  // Which consents a withdrawal, a restriction or an erasure takes away: 'all' (erasure) or a list of purposes.
+  async withdrawn(request, path) {
+    if (path === '/api/me/erase') return 'all';
+    let body = {}; try { body = await request.clone().json(); } catch { body = {}; }
+    if (path === '/api/consent') return Object.entries(body?.purposes && typeof body.purposes === 'object' ? body.purposes : {}).filter(([, v]) => v === false).map(([k]) => k);
+    if (path === '/api/consent/block' && body?.memory === true) return ['memory'];
+    return [];
+  }
+
   async fetch(request) {
     const path = new URL(request.url).pathname;
     if (path.startsWith('/api/memory')) return memoryRoutes(request, { storage: this.ctx.storage, hs: this.hs, env: this.env });
     // Consent state, data export and erasure for THIS person (me-routes.js): reachable only through the Worker's own /api/consent and /api/me/* handlers.
-    if (path === '/api/consent' || path.startsWith('/api/consent/') || path.startsWith('/api/me/')) return meRoutes(request, { storage: this.ctx.storage, hs: this.hs, env: this.env });
+    if (path === '/api/consent' || path.startsWith('/api/consent/') || path.startsWith('/api/me/')) {
+      // A live interview of this person is told first (X2, red H2): it revokes what was withdrawn or erased in memory, so it cannot write it back, and only then is the stored data changed.
+      const gone = request.method === 'POST' ? await this.withdrawn(request, path) : [];
+      if (gone.length && this.session && !this.session.finished) { try { await this.session.revoke(gone); } catch { /* the stored data is changed regardless */ } }
+      const res = await meRoutes(request, { storage: this.ctx.storage, hs: this.hs, env: this.env });
+      // Withdrawing the saved-interview (or transcript) consent also deletes what is already stored under it (an erasure does so itself).
+      if (res.ok && Array.isArray(gone) && (gone.includes('checkpoint') || gone.includes('transcription'))) await new CheckpointStore(this.ctx.storage, { owner: request.headers.get('x-atlas-user') || '' }).purge().catch(() => {});
+      return res;
+    }
     // Resumable interview of THIS person (their own Durable Object, their own identity): whether one exists, and discarding it.
     if (path === '/api/checkpoint' || path.startsWith('/api/checkpoint/')) {
       const res = await checkpointRoutes(request, { storage: this.ctx.storage });
@@ -92,6 +109,8 @@ export class Interview extends DurableObject {
       winHint: this.env.LIBRARY ? () => fetchWinHint(this.env, identity) : null,
       // Interviews with transcript consent are kept for 24 hours so a dropped connection can resume (ATLAS_CHECKPOINT=off: never).
       checkpoint: checkpointEnabled(this.env) && identity.user ? new CheckpointStore(this.ctx.storage, { owner: identity.user }) : null,
+      // The saved-interview consent as it stands in storage right now, read before each checkpoint write (session.js saveCheckpoint).
+      consentGuard: checkpointEnabled(this.env) && identity.user ? async () => privacy.grantedIn(await privacy.loadState(this.ctx.storage), 'checkpoint') : null,
       // Each start's consent choices: the state in this person's storage and one receipt per change in the library (privacy.js recordConsent), all or nothing. Nothing is kept
       // before it succeeds; a failure starts nothing.
       consentHook: ({ mode, purposes, legacy }) => privacy.recordConsent(this.ctx.storage, this.env, { ...identity, subj }, legacy ? { transcription: purposes.transcription, draft: purposes.draft } : purposes, { mode, channel: legacy ? 'legacy-start' : 'consent-dialog' }), // an old page's bare tick states only what it always meant
@@ -107,33 +126,40 @@ export class Interview extends DurableObject {
       } catch { session.fail('The session stopped safely. No story was approved.', 'voice-failed'); }
     };
     // Fresh interview starts per person are capped per hour and per day, persistently (ratelimit.js): restarting is otherwise free STT + LLM + TTS.
-    // Only a new `start` counts. A resume of a saved interview (start with `resume`) and every later message pass straight through. Messages that
-    // arrive while the budget is being read wait in order; a refused start is answered politely and the socket closes (nothing started).
+    // Only a valid resume of a saved interview (start with a string `resume`) is free; every other first message counts as a start, decided from the PARSED value and never
+    // from the size of the text (X2, red M1: padding the start past 64 KiB used to make it "not a start"). A first message over the size cap is counted and refused without
+    // being parsed or dispatched. Messages that arrive while the budget is being read wait in order (bounded); a refused start is answered politely and the socket closes.
     let first = true, budget = null; const waiting = [];
+    const refuse = (message, code, extra = {}) => {
+      waiting.length = 0;
+      try { server.send(JSON.stringify({ type: 'error', message, code, ...extra })); } catch { /* closed */ }
+      try { server.close(code === 'rate-limited' ? 1013 : 1009, code === 'rate-limited' ? 'Try again later.' : 'Message too large.'); } catch { /* closed */ }
+      this.session = null;
+    };
     const onMessage = e => {
-      if (budget) { waiting.push(e); return; }
+      if (budget) { if (waiting.length >= EARLY_MAX) { refuse('Too much input before the interview started.', 'message-too-large'); return; } waiting.push(e); return; }
       if (first) {
         first = false;
-        let fresh = false;
-        if (typeof e.data === 'string' && e.data.length < 65536 && identity.role !== 'system') { try { const v = JSON.parse(e.data); fresh = v?.type === 'start' && v.resume === undefined; } catch { /* the session reports it */ } }
-        if (fresh) {
+        const big = messageTooLarge(e.data);
+        let resume = false;
+        if (!big && typeof e.data === 'string') { try { const v = JSON.parse(e.data); resume = v?.type === 'start' && typeof v.resume === 'string'; } catch { /* the session reports it */ } }
+        if (!resume && identity.role !== 'system') {
           budget = consume(this.ctx.storage, [{ bucket: 'interview-h', max: limitOf(this.env, 'INTERVIEW_HOUR'), windowMs: HOUR }, { bucket: 'interview-d', max: limitOf(this.env, 'INTERVIEW_DAY'), windowMs: DAY }])
             .catch(() => ({ ok: true })) // a limiter that cannot read its counters must not stop an interview
             .then(r => {
               budget = null;
               if (!r.ok) {
-                waiting.length = 0;
                 const minutes = Math.max(1, Math.ceil(r.retryAfter / 60));
-                try { server.send(JSON.stringify({ type: 'error', message: `You have started a lot of interviews in a short time. Please try again in about ${minutes} minute${minutes === 1 ? '' : 's'}. Nothing was lost.`, code: 'rate-limited', retryAfter: r.retryAfter })); } catch { /* closed */ }
-                try { server.close(1013, 'Try again later.'); } catch { /* closed */ }
-                this.session = null;
+                refuse(`You have started a lot of interviews in a short time. Please try again in about ${minutes} minute${minutes === 1 ? '' : 's'}. Nothing was lost.`, 'rate-limited', { retryAfter: r.retryAfter });
                 secEvent(this.env, 'rate_limited', { route: '/api/voice', reason: 'RATE:' + r.bucket.toUpperCase().replace(/-/g, '_'), status: 429, bucket: r.bucket, subj: request.headers.get('x-atlas-subj'), role: identity.role });
                 return;
               }
+              if (big) { refuse('That message was too large. Nothing was started.', 'message-too-large'); secEvent(this.env, 'body_too_large', { route: '/api/voice', reason: 'WS_MESSAGE_SIZE', status: 1009, subj: request.headers.get('x-atlas-subj'), role: identity.role }); return; }
               dispatch(e); for (const w of waiting.splice(0)) dispatch(w);
             });
           return;
         }
+        if (big) { refuse('That message was too large. Nothing was started.', 'message-too-large'); return; }
       }
       dispatch(e);
     };

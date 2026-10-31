@@ -21,7 +21,7 @@ for (const [name, v] of Object.entries(V)) {
 }
 test('sentence splitting parity', () => { for (const [s, exp] of V._sentences) assert.deepEqual(sentences(s), exp); });
 test('wav header', () => { const w = wav(new Uint8Array(20)), d = new DataView(w.buffer); assert.equal(String.fromCharCode(...w.slice(0, 4)), 'RIFF'); assert.equal(d.getUint32(24, true), 24000); assert.equal(d.getUint32(40, true), 20); });
-import { isEcho } from '../src/speech.js';
+import { isEcho, hasUncheckedScript } from '../src/speech.js';
 test('echo detection matches Python', () => {
   const agent = "I'm ATLAS, here to discuss your project experience. What problem were you trying to solve with Project Falcon?";
   assert.ok(isEcho('what problem were you trying to solve', agent));
@@ -212,3 +212,6 @@ test('ReplyGuard: verification claims are dropped in every mode, denials, hedges
   assert.deepEqual(new ReplyGuard({ allowStatus: true }).push('The draft was approved by the reviewer.'), ['The draft was approved by the reviewer.']);
   assert.ok(GUARD_STATS.includes('dropped_unverified_claim'));
 });
+
+// ---- X2 (red M10): the script test of summary mode ----
+test('hasUncheckedScript: parity with Python (a letter outside the Latin script)', () => { for (const [t, e] of V._script) assert.equal(hasUncheckedScript(t), e, JSON.stringify(t)); });
