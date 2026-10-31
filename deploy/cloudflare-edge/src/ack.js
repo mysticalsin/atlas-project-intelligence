@@ -10,11 +10,11 @@ export const ACK_NO_REPEAT = 4; // a line is not used again within the last four
 export const EARNED_EVERY = 3; // at most one earned_result in three replies
 const CATEGORIES = Object.keys(ACKS);
 // Categories that do not praise or cheer: fine after a setback. Anything else becomes setback_neutral there.
-const SETBACK_SAFE = new Set(['setback_neutral', 'correction_thanks', 'correction_thanks_fact', 'confidential_ok', 'no_number_fine']);
+const SETBACK_SAFE = new Set(['setback_neutral', 'setback_plain', 'correction_thanks', 'correction_thanks_fact', 'confidential_ok', 'no_number_fine']);
 // These answer what the consultant just did ("I don't know", "I can't share", a change), so they are said even after a short answer ("I do not know the baseline, honestly.").
 const SHORT_OK = new Set(['no_number_fine', 'confidential_ok', 'correction_thanks', 'correction_thanks_fact']);
 // A plain uptake ("Okay.", "Thanks, that helps.") is said on alternate replies at most: constant acknowledgement stops sounding like listening.
-const ALTERNATING = new Set(['neutral', 'thanks_detail']);
+const ALTERNATING = new Set(['neutral', 'thanks_detail', 'setback_plain']);
 // A bare "yes" word is not a fit after a setback ("Yeah." after a failed pilot sounds like agreement with it).
 const YES_ONLY = /^(?:yeah|yes|oui|sí|si|sim|ja|sì|ok)\.$/i;
 const banned = new RegExp(BANNED_PRAISE_SRC, 'i');

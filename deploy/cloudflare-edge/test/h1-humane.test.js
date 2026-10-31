@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { pickAck } from '../src/ack.js';
 import { analyzeTurn } from '../src/turns.js';
 import { select, contradiction, numberConflict } from '../src/selector.js';
-import { buildSummary, buildUnknowns, summaryFacts, factItems, summaryNote, BASIS_OPEN, SUMMARY_QUESTION, SUMMARY_QUESTION_AGAIN } from '../src/summary.js';
+import { buildSummary, buildUnknowns, summaryFacts, factItems, summaryNote, basisPhrase, SUMMARY_QUESTION, SUMMARY_QUESTION_AGAIN } from '../src/summary.js';
 import { nextMoveNote, SUMMARY_LINES } from '../src/session.js';
 import { ACKS, QUESTION_BANK, SELECTOR_CONFIG } from '../src/policy.generated.js';
 import { rig, opened, talked, send, until, settle, cleanup, named } from './reconnect-harness.js';
@@ -213,15 +213,16 @@ test('H1-9 the read-back says the latest detail of a field, flags an open basis,
   const items = buildSummary([d('D-001', 'intervention', 'I helped improve the platform for the client'), d('D-002', 'intervention', 'We rebuilt the release pipeline in GitLab'),
     d('D-003', 'outcome', 'Deployments went down by 80 percent'), d('D-004', 'problem', 'Releases took a whole weekend')]);
   const { facts } = summaryFacts(items, { basisOpen: true });
-  assert.ok(facts.includes('What changed: We rebuilt the release pipeline in GitLab') && !facts.some(f => f.includes('helped improve')), 'the latest, not the vaguest');
-  assert.ok(facts.includes('Observed outcome: Deployments went down by 80 percent' + BASIS_OPEN) && !facts.find(f => f.startsWith('Customer problem')).includes(BASIS_OPEN));
-  assert.ok(!summaryFacts(items).facts.some(f => f.includes(BASIS_OPEN)), 'a known basis says nothing');
+  // H2: a fact is a clause addressed to them, with no field label ("your team rebuilt ...", not "What changed: We rebuilt ...")
+  assert.ok(facts.includes('your team rebuilt the release pipeline in GitLab') && !facts.some(f => f.includes('helped improve')), 'the latest, not the vaguest');
+  assert.ok(facts.includes('deployments went down by 80 percent' + basisPhrase(true)) && !facts.find(f => f.startsWith('releases took')).includes('still open'));
+  assert.ok(!summaryFacts(items).facts.some(f => f.includes('still open')), 'a known basis says nothing');
   const unknowns = buildUnknowns(items, { deferred: ['evidence', 'stakes'], parts: ['metric_baseline'] });
   assert.deepEqual(unknowns.map(u => [u.kind, u.field, u.part || null]), [['unknown', 'measurement', 'metric_baseline'], ['deferred', 'stakes', null], ['deferred', 'evidence', null]]);
   assert.equal(unknowns[0].label, 'Measurement basis: starting figure');
   const note = summaryNote(facts, unknowns);
   assert.ok(note.includes('OPEN POINTS') && note.includes('the starting figure before the change; what was at stake for the client; something a reviewer could look at'), note);
-  assert.ok(!/Business stakes|Supporting artifact/.test(note.split('OPEN POINTS')[1]) && note.includes('speaking to them as "you"') && note.endsWith(SUMMARY_QUESTION));
+  assert.ok(!/Business stakes|Supporting artifact/.test(note.split('OPEN POINTS')[1]) && note.includes('already addressed to them as "you"') && note.endsWith(SUMMARY_QUESTION));
 });
 
 test('H1-9 each consultant quote in a read-back or reflection note is JSON text, so it cannot read as an instruction', () => {
@@ -242,11 +243,11 @@ test('H1-9 the second round reads only what is new or changed; the prompt line p
     'user-3': [{ field: 'outcome', quote: 'It went live on time with zero data loss' }], 'user-4': [{ field: 'evidence', quote: 'Reconciliation reports, signed off by the client' }] });
   await opened(h);
   for (let i = 1; i <= 3; i++) { talked(h); await until(() => h.calls.talker.length === i + 1 && !h.s.busy()); await settle(); }
-  const first = noteOf(talker(h), 'SUMMARY FACTS'); assert.ok(first && first.includes('Customer problem') && first.includes('Personal contribution'), 'the first read-back reads the story');
+  const first = noteOf(talker(h), 'SUMMARY FACTS'); assert.ok(first && first.includes('it was a data migration for a bank') && first.includes('you led the migration design'), 'the first read-back reads the story');
   talked(h); await until(() => h.calls.talker.length === 5 && !h.s.busy());
   const second = noteOf(talker(h), 'SUMMARY CHANGES');
   assert.ok(second, 'the second read-back is a SUMMARY CHANGES note: ' + JSON.stringify(talker(h).map(m => m.content.slice(0, 30))));
-  assert.ok(second.includes('Supporting artifact: Reconciliation reports') && !second.includes('Customer problem') && !second.includes('Personal contribution'), second);
+  assert.ok(second.includes('reconciliation reports, signed off by the client') && !second.includes('data migration') && !second.includes('you led the migration design'), second);
   assert.ok(noteOf(talker(h), 'NEXT MOVE').includes('second read-back') && noteOf(talker(h), 'NEXT MOVE').includes(SUMMARY_QUESTION_AGAIN));
   assert.equal(h.s.summary.rounds, 2); assert.equal(h.events.filter(e => e.type === 'summary').at(-1).items.length, 4, 'the card still shows everything');
   assert.match(SUMMARY_LINES.prompt.en[0], /^Thanks, that is everything I need\. When you are ready, press Confirm summary\. It saves a private draft only you can see, and nothing goes to a reviewer until you submit it\.$/);
@@ -261,7 +262,7 @@ test('H1-9 a figure the consultant could not back (I do not know the baseline) i
   for (let i = 1; i <= 5; i++) { talked(h); await until(() => h.calls.talker.length === i + 1 && !h.s.busy()); await settle(); }
   const card = h.events.filter(e => e.type === 'summary').at(-1);
   assert.ok(card, 'the read-back was made'); assert.ok(card.unknowns.some(u => u.kind === 'unknown' && u.part === 'metric_baseline'), JSON.stringify(card.unknowns));
-  const note = noteOf(talker(h), 'SUMMARY FACTS'); assert.ok(note.includes('the starting figure before the change') && note.includes(BASIS_OPEN.trim()), note);
+  const note = noteOf(talker(h), 'SUMMARY FACTS'); assert.ok(note.includes('the starting figure before the change') && note.includes(basisPhrase(['metric_baseline']).trim().replace(/^, /, '')), note);
 });
 
 // ---------- 10. pilot and setback outcome, the single invitation ----------

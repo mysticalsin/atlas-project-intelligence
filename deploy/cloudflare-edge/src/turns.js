@@ -2,7 +2,7 @@
 // It reports what the WORDS do (intents, cues, field hints, numbers), never the person. All tables come from policy.generated.js.
 import {
   NUMERIC_SRC, UNCERTAIN_SRC, FIELDS, TURN_MAX_CHARS, TURN_MAX_NUMBERS, TURN_INTENT_ORDER, TURN_CUE_ORDER, TURN_LANGS_WITH_CUES, TURN_LANGS_WITH_INTENTS,
-  TURN_INTENT_RULES, TURN_CUE_SRC, TURN_TECH_SRC, TURN_HINT_SRC, TURN_HINT_FROM_TO, TURN_NOT_AN_ANSWER, TURN_ASKED_MIN_WORDS, TURN_NUMBER_SRC,
+  TURN_INTENT_RULES, TURN_CUE_SRC, TURN_TECH_SRC, TURN_HINT_SRC, TURN_HINT_FROM_TO, TURN_CUE_GATES, TURN_NOT_AN_ANSWER, TURN_ASKED_MIN_WORDS, TURN_NUMBER_SRC,
   TURN_UNIT_CANON, TURN_SCALE, TURN_THOUSANDS_SRC, TURN_DOT_THOUSANDS_SRC, TURN_AMBIGUOUS_DOT_SRC, TURN_PLAIN_NUMBER_SRC, TURN_WHITESPACE_SRC,
 } from './policy.generated.js';
 
@@ -64,6 +64,16 @@ export function intents(norm, lg, words) {
   return TURN_INTENT_ORDER.filter(i => found.has(i));
 }
 
+// A cheap substring test in front of the costlier cue patterns (turns.py CUE_GATES): a text with none of the trigger words cannot match.
+const gated = (name, norm) => TURN_CUE_GATES[name].some(w => norm.includes(w)) && test(TURN_CUE_SRC[name])(norm);
+// True when the words describe a setback: the setback words left once "zero data loss" and the CLIENT's own problem ("the business was frustrated") are taken out.
+// problem: whether the text holds the client's problem, when the caller has already looked (else it is looked for here).
+export function setbackWords(norm, problem = null) {
+  let stripped = TURN_CUE_GATES.setback_strip.some(w => norm.includes(w)) ? norm.replace(re(TURN_CUE_SRC.setback_strip, 'gi'), ' ') : norm;
+  if (problem === null ? gated('client_problem', norm) : problem) stripped = stripped.replace(re(TURN_CUE_SRC.client_problem, 'gi'), ' ');
+  return re(TURN_CUE_SRC.describes_setback).test(stripped);
+}
+
 export function cues(norm) {
   const S = TURN_CUE_SRC, out = new Set();
   const metric = test(NUMERIC_SRC)(norm) || test(S.metric_extra)(norm);
@@ -76,9 +86,13 @@ export function cues(norm) {
   if (new Set([...norm.matchAll(new RegExp(TURN_TECH_SRC, 'gi'))].map(m => m[0])).size >= S.tech_min) out.add('tech_list');
   if (test(S.certification)(norm)) out.add('certification');
   if (test(S.client_praise_said)(norm) || test(S.client_praise_direct)(norm)) out.add('client_praise');
-  if (test(S.describes_setback)(norm.replace(re(S.setback_strip, 'gi'), ' '))) out.add('describes_setback');
+  const problem = gated('client_problem', norm);
+  if (problem) out.add('describes_problem');
+  if (setbackWords(norm, problem)) out.add('describes_setback');
   if (test(S.describes_achievement)(norm)) out.add('describes_achievement');
   if (test(S.names_party)(norm)) out.add('names_party');
+  if (gated('period_words', norm)) out.add('period_stated');
+  if (gated('action', norm)) out.add('describes_action');
   return TURN_CUE_ORDER.filter(c => out.has(c));
 }
 

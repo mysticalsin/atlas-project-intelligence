@@ -31,7 +31,7 @@ import re
 import unicodedata
 
 from .quality import FIELDS
-from .turns import CUE_SRC, NOT_AN_ANSWER, normalize
+from .turns import CUE_SRC, NOT_AN_ANSWER, normalize, setback_words
 
 PHASES = ['breadth', 'depth', 'closing', 'wrap']   # from least to most pressing; session.js / storyboard-core.js use the same words
 ESSENTIALS = ['problem', 'contribution', 'outcome']  # context, contribution, outcome: all a rushed consultant is asked for
@@ -69,6 +69,13 @@ CONFIG = {
     'assessment_stages': ['assessment', 'proof of concept', 'lessons learned', 'pilot'],
     'private_content_words': 15,   # a refusal to share that still says this much (with a field to show for it) is accepted without leaving the point open
     'hook_words': 6, 'hook_min_words': 2,   # the consultant's own words quoted back: at most 6, at least 2
+    'setback_gap': 3,         # a setback is met with its acknowledgement and its "what did you do" at most once in this many replies
+    'follow_fields': ['decision', 'intervention', 'evidence', 'measurement'],   # richer fields the consultant may volunteer: one follow-up on that thread each, then on
+    'follow_min_words': 8,    # only a real answer (not a bare mention) opens a thread follow-up
+    # how a field is named when ATLAS says what it has covered so far (spoken, not the form label)
+    'reflect_labels': {'problem': 'the problem', 'stakes': 'what was at stake', 'contribution': 'your part', 'intervention': 'what was done', 'decision': 'the choices you made',
+                       'adoption': 'who used it', 'outcome': 'the result', 'measurement': 'how it was measured', 'evidence': 'the evidence', 'limitations': 'the limits',
+                       'customer_fit': 'who else it could help', 'poor_fit': 'where it would not fit'},
     'period_units': ['week', 'month', 'quarter', 'year'],
     'numeric_fields': ['outcome', 'measurement'],   # a corrected figure may sit in either
     'patterns': {
@@ -81,6 +88,7 @@ CONFIG = {
         'hook_verb': r"^(?:worked on|working on|was responsible for|were responsible for|took care of|took responsibility for|took on|handled|owned|led|built|designed|wrote|created|implemented|migrated|introduced|delivered|chose|used|ran|set up|rolled out|helped (?:to )?(?:improve|build|deliver|design|run|with)?|improved|rebuilt|replaced|moved|deployed|automated|redesigned|refactored|integrated|installed|configured|developed|managed|drove|architected)\s+",
         'hook_stop': r"^(?:but|because|so|which|while|although|since|when|where|who|making|after|before)$",
         'hook_trail': r"^(?:the|a|an|of|to|for|in|on|at|by|with|and|or|our|my|their|its)$",
+        'hook_choice_cut': r"\s+(?:over|instead of|rather than|versus|vs)\s+.*$",   # a decision's hook is the option chosen, not the one passed over
     },
 }
 
@@ -113,6 +121,11 @@ QUESTION_BANK = {
     'customer_fit': {'en': ['Which other clients could use what you learned here?', 'Who else could benefit from what you did here?',
                             'Which kind of customer situation would this experience help with most?']},
     'poor_fit': {'en': ['Where would this approach not work as well?', 'In which situations would you not recommend this approach?', 'What would you do differently next time?']},
+    # one follow-up on a richer field the consultant brought up unasked (once per field), deeper on the same thread
+    'decision_follow': {'en': ['What made {hook} the better fit there?', 'What tipped the decision your way?', 'What would have gone differently with the other option?']},
+    'example_follow': {'en': ['What was the trickiest part of {hook}?', 'Which part of that took the most effort?', 'What did you have to get right first?']},
+    'evidence_follow': {'en': ['Who could vouch for that if a reviewer asked?', 'Where is that kept today?']},
+    'measurement_follow': {'en': ['What did you compare it against?', 'Who kept track of it?']},
     # one part of a metric's basis per move
     'metric_kind': {'en': ['Was the {figure} measured, or more of an estimate?', 'Was that figure measured, or is it closer to an estimate?', 'Is that number from a measurement, or a rough estimate?']},
     'metric_period': {'en': ['Over what period was that measured?', 'Which dates or period does that figure cover?']},
@@ -151,7 +164,8 @@ REPEAT_LAST = 'repeat_last'   # why-code of a move that puts the previous questi
 LEAD_RUSHED = "No problem, let's keep it to three things: the project, your part, and what changed."   # said once, before the first question of a rushed interview (pack Example 6)
 
 # Intents asked about a ledger field that do not count as an attempt at the field's own question.
-NOT_ATTEMPTS = ['offer_move_on', 'confirm_asr', 'asr_repair', 'correction', 'correction_number', 'anonymise', 'contradiction', 'reflect', 'setback_response'] + METRIC_PARTS
+FOLLOW_INTENTS = {'decision': 'decision_follow', 'intervention': 'example_follow', 'evidence': 'evidence_follow', 'measurement': 'measurement_follow'}
+NOT_ATTEMPTS = ['offer_move_on', 'confirm_asr', 'asr_repair', 'correction', 'correction_number', 'anonymise', 'contradiction', 'reflect', 'setback_response'] + list(FOLLOW_INTENTS.values()) + METRIC_PARTS
 FIELD_KEYS = list(FIELDS)
 
 _FLAGS = re.I | re.A
@@ -277,19 +291,23 @@ def contradiction(plan, skip=()):
 
 def _has_setback(text):
     """True when the words describe a setback (the same test as the pre-pass cue, run on a ledger quote)."""
-    norm = normalize(text if isinstance(text, str) else '')
-    return bool(_re(CUE_SRC['describes_setback']).search(_re(CUE_SRC['setback_strip']).sub(' ', norm)))
+    return setback_words(normalize(text if isinstance(text, str) else ''))
 
 
-def _hook(plan, thread):
+def _hook(plan, thread, hints=()):
     """2-6 of the consultant's own words from the latest active quote of the thread's field, as a noun phrase to refer back to ('' when there is none).
-    The subject and a leading verb are dropped ("I worked on the release pipeline" -> "the release pipeline"); it stops at a clause boundary."""
+    The subject and a leading verb are dropped ("I worked on the release pipeline" -> "the release pipeline"); it stops at a clause boundary.
+    The ledger lags a turn: when it holds nothing yet for a thread this very answer covers, the start of the answer itself (plan['latest_text']) is used, and only
+    when it opens with a first-person subject and a known verb ("We chose GitLab pipelines over Jenkins because ...")."""
     if thread is None:
         return ''
     quote = ''
     for d in plan.get('candidate_details') or []:
         if isinstance(d, dict) and d.get('active', True) and d.get('field') == thread and d.get('status') != 'unknown' and isinstance(d.get('quote'), str):
             quote = d['quote']
+    fresh = not quote and thread in hints and isinstance(plan.get('latest_text'), str)
+    if fresh:
+        quote = plan['latest_text']
     rest = _re(CONFIG['patterns']['junk'], 0).sub(' ', quote).strip()
     stripped = _re(CONFIG['patterns']['hook_subject']).sub('', rest, count=1)
     if stripped != rest:   # a first-person subject: only a known verb leaves a phrase that reads back well ("think it was measured" does not)
@@ -297,6 +315,8 @@ def _hook(plan, thread):
         if after == stripped:
             return ''
         stripped = after
+    elif fresh:
+        return ''
     out = []
     for tok in stripped.split(' '):
         word = tok.strip(",;.:!\"'()")
@@ -363,7 +383,7 @@ def _context(plan, turn, asked, prefill, phase, time_left, rushed):
     c = {
         'plan': plan, 'turn': turn, 'asked': asked, 'prefill': prefill, 'intents': intents, 'cues': cues, 'hints': hints, 'words': words,
         'numbers': numbers, 'last': last, 'last_field': last_field, 'corrected': corrected, 'setback_outcome': setback_outcome,
-        'figure': numbers_text[0] if len(numbers_text) == 1 else '', 'hook': _hook(plan, thread),
+        'figure': numbers_text[0] if len(numbers_text) == 1 else '', 'hook': _hook(plan, thread, hints),
         'answer_shaped': answer_shaped, 'covered_now': covered_now, 'thread': thread, 'present': present, 'numeric_plan': numeric_plan,
         'deferred': deferred, 'prefilled': _prefilled_fields(prefill), 'rushed': bool(rushed) or 'rushed' in intents,
         'phase': effective_phase(phase, time_left), 'recent': [a.get('say') for a in asked[-CONFIG['repeat_window']:] if isinstance(a.get('say'), str)],
@@ -395,6 +415,10 @@ def _fillable(template, params):
 def _params(c, cand):
     """What fills a variant's placeholders: the candidate's own (a, b, span, labels) plus the thread's {figure} and {hook}."""
     out = {'figure': c['figure'], 'hook': c['hook']}
+    if cand['intent'] == 'decision_follow' and out['hook']:   # "GitLab pipelines over Jenkins" -> "GitLab pipelines"
+        cut = _re(CONFIG['patterns']['hook_choice_cut']).sub('', out['hook'], count=1)
+        if len(cut.split()) >= CONFIG['hook_min_words']:
+            out['hook'] = cut
     out.update(cand.get('params', {}))
     return out
 
@@ -430,9 +454,10 @@ def _metric_part(c):
     if done:   # a later part asked means the earlier ones were settled or skipped (an estimate needs no "measured or estimated?")
         done |= set(METRIC_PARTS[:max(METRIC_PARTS.index(p) for p in done) + 1])
     units = {n.get('unit') for n in c['numbers'] if isinstance(n, dict)}
+    period_said = 'period_stated' in cues or bool(_re(CUE_SRC['period_words']).search(normalize(quotes)))   # "over six months", "the first quarter", "in Q3": a period in words
     if 'metric_kind' not in done and 'estimate' not in cues and not _re(CONFIG['patterns']['kind_words']).search(quotes):
         return 'metric_kind'
-    if 'metric_period' not in done and not (known and 'period' not in gaps) and not any(u in CONFIG['period_units'] for u in units):
+    if 'metric_period' not in done and not (known and 'period' not in gaps) and not any(u in CONFIG['period_units'] for u in units) and not period_said:
         return 'metric_period'
     if 'metric_baseline' not in done and len(c['numbers']) < 2 and not (known and 'before/after' not in gaps):
         return 'metric_baseline'
@@ -484,6 +509,23 @@ def _ladder(c):
     return [(f, s) for s, _, f in out]
 
 
+def _recent(c, intent=None, ack=None):
+    """True when `intent` was the intent, or `ack` the acknowledgement, of one of the last setback_gap - 1 moves (a setback is not met twice within setback_gap replies)."""
+    return any((intent and a.get('intent') == intent) or (ack and a.get('ack_category') == ack) for a in c['asked'][-(CONFIG['setback_gap'] - 1):])
+
+
+def _follow_field(c):
+    """The richer field (decision, intervention, evidence, measurement) the answer volunteers (not the one asked, not known or asked before), if it has not had its one follow-up yet; the thread's own first."""
+    if not c['answer_shaped'] or c['words'] < CONFIG['follow_min_words']:
+        return None
+    before = c['present'] | {f for f in (c['plan'].get('covered_fields') if isinstance(c['plan'].get('covered_fields'), list) else []) if f in FIELDS}   # known before this answer
+    eligible = [f for f in CONFIG['follow_fields'] if f in c['hints'] and f != c['last_field'] and f not in c['deferred'] and f not in before and not _attempts(c, f) and not _count(c, FOLLOW_INTENTS[f], f)
+                and not (f == 'measurement' and ('metric' in c['cues'] or c['numeric_plan'])) and not (f == 'intervention' and 'describes_action' not in c['cues'])]   # "what we did" alone is no thread
+    if not eligible:
+        return None
+    return c['thread'] if c['thread'] in eligible else eligible[0]
+
+
 def _candidates(c):
     cues, rushed = c['cues'], c['rushed']
     cueing = not rushed and c['phase'] in ('breadth', 'depth')
@@ -493,7 +535,7 @@ def _candidates(c):
         if hit:
             f, a, b = hit
             yield {'intent': 'contradiction', 'field': f, 'rung': CONFIG['fields'][f]['rung'], 'params': {'a': a, 'b': b}, 'why': 'contradiction:' + f, 'important': True}
-        if 'describes_setback' in cues and last_intent != 'setback_response':   # a setback is met with "what did you do", before anything else is probed
+        if 'describes_setback' in cues and not _recent(c, 'setback_response'):   # a setback is met with "what did you do", before anything else is probed (at most once in setback_gap replies)
             yield {'intent': 'setback_response', 'field': 'decision', 'rung': 4, 'params': {}, 'why': 'setback', 'important': False}
         continuing = last_intent in METRIC_PARTS and c['answer_shaped']
         if 'measurement' not in c['deferred'] and ('metric' in cues or continuing or (c['numeric_plan'] and 'measurement' in c['hints'])):
@@ -515,8 +557,11 @@ def _candidates(c):
             yield {'intent': 'cert_details', 'field': None, 'rung': None, 'params': {}, 'why': 'certification', 'important': False}
         if 'client_praise' in cues and last_intent != 'praise_source':
             yield {'intent': 'praise_source', 'field': None, 'rung': None, 'params': {}, 'why': 'client_praise', 'important': False}
+        follow = _follow_field(c)
+        if follow:   # a richer field they brought up unasked ("We chose GitLab over Jenkins because..."): one follow-up on that thread before moving on
+            yield {'intent': FOLLOW_INTENTS[follow], 'field': follow, 'rung': CONFIG['fields'][follow]['rung'], 'params': {}, 'why': 'follow:' + follow, 'important': False}
         if c['phase'] == 'depth' and len(c['present']) >= CONFIG['reflect_min_fields'] and not any(a.get('kind') == 'reflect' or a.get('intent') == 'reflect' for a in c['asked']):
-            labels = [FIELDS[f][0].lower() for f in FIELD_KEYS if f in c['present']][:3]
+            labels = [CONFIG['reflect_labels'][f] for f in FIELD_KEYS if f in c['present']][:3]
             text = labels[0] if len(labels) == 1 else ', '.join(labels[:-1]) + ' and ' + labels[-1]
             yield {'intent': 'reflect', 'kind': 'reflect', 'field': None, 'rung': None, 'params': {'labels': text}, 'why': 'reflect:depth', 'important': False}
     thread = c['thread']
@@ -583,8 +628,8 @@ def _reaction(c, accept=None):
         last = c['last'] or {}   # "Thanks for correcting me" only when ATLAS had just stated a fact (a heard span, a reflection, the read-back)
         stated = last.get('kind') in ('confirm_asr', 'reflect', 'summary') or last.get('intent') in ('confirm_asr', 'reflect', 'summary')
         return 'ack', 'correction_thanks_fact' if stated else 'correction_thanks'
-    if 'describes_setback' in cues:
-        return 'ack', 'setback_neutral'
+    if 'describes_setback' in cues:   # empathy is paced: a plain uptake when the last replies already met a setback
+        return 'ack', 'setback_plain' if _recent(c, None, 'setback_neutral') else 'setback_neutral'
     if accept in ('dont_know', 'skip'):
         numeric = c['thread'] in ('measurement', 'outcome') or 'metric' in cues or (c['last'] and c['last'].get('intent') in METRIC_PARTS + ['measurement', 'impact'])
         return 'ack', 'no_number_fine' if numeric else 'neutral'
@@ -709,4 +754,4 @@ def _end_after(c, tag, accept):
 
 
 EDGE_CONSTANTS = {'SELECTOR_CONFIG': CONFIG, 'QUESTION_BANK': QUESTION_BANK, 'SELECTOR_LINES': LINES, 'SELECTOR_LEAD_RUSHED': LEAD_RUSHED,
-                  'SELECTOR_NOT_ATTEMPTS': NOT_ATTEMPTS, 'SELECTOR_NO_HOOK': NO_HOOK, 'SELECTOR_PHASES': PHASES, 'SELECTOR_ESSENTIALS': ESSENTIALS, 'SELECTOR_METRIC_PARTS': METRIC_PARTS}
+                  'SELECTOR_NOT_ATTEMPTS': NOT_ATTEMPTS, 'SELECTOR_FOLLOW_INTENTS': FOLLOW_INTENTS, 'SELECTOR_NO_HOOK': NO_HOOK, 'SELECTOR_PHASES': PHASES, 'SELECTOR_ESSENTIALS': ESSENTIALS, 'SELECTOR_METRIC_PARTS': METRIC_PARTS}

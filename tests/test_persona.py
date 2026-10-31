@@ -13,7 +13,7 @@ from atlas_voice.quality import INTERVIEW_POLICY
 BANNED = re.compile(BANNED_PRAISE_SRC, re.I)
 PROMPTS = {'TALKER_POLICY': TALKER_POLICY, 'INTERVIEW_POLICY': INTERVIEW_POLICY, 'ROLE': ROLE}
 CATEGORIES = ('neutral', 'thanks_detail', 'no_number_fine', 'confidential_ok', 'correction_thanks', 'setback_neutral',
-              'earned_result', 'promising_unverified', 'correction_thanks_fact')
+              'earned_result', 'promising_unverified', 'correction_thanks_fact', 'setback_plain')
 
 # ADMIN_NOTE exactly as committed at efb4948 (before the persona consolidation).
 ADMIN_NOTE_EFB4948 = ('ADMIN MODE (server-verified sign-in). This overrides HOW YOU SPEAK, ORDER OF THE INTERVIEW and ENDING. '

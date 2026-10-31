@@ -79,7 +79,10 @@ ACKS = {
     'correction_thanks_fact': {'en': ['Thanks for correcting me.', "Thanks, I'll use your version.", 'Thanks for setting that straight.', "Thanks, I've fixed that.", "Okay, I'll change that."]},
     'setback_neutral': {'en': ['That sounds hard to navigate.', 'That sounds like a tough stretch.', "That's a difficult position to be in.", 'I can see that was complicated.', 'That sounds like a lot to manage.']},
     'earned_result': {'en': ['That sounds like a meaningful result.', "That's a notable piece of work.", 'That sounds like a real step forward.', 'That sounds like a strong result.', 'That sounds like a solid outcome.']},
-    'promising_unverified': {'en': ['That sounds promising.', 'That sounds like a promising direction.', 'I can see why that mattered.', 'That sounds significant.', 'That sounds encouraging.']},
+    # every variant says only that it sounds promising: the figure has no basis yet, so nothing here agrees with it ("I can see why that mattered" did)
+    'promising_unverified': {'en': ['That sounds promising.', 'That sounds like a promising direction.', 'That sounds like a good sign.', 'That sounds significant.', 'That sounds encouraging.']},
+    # a setback met again within three replies: a plain uptake, no second helping of sympathy (the selector picks it, ack.js treats it as setback-safe)
+    'setback_plain': {'en': ['Okay.', 'I see.', 'Got it.', 'Okay, I follow.', 'Understood.']},
 }
 
 # Spoken when the consultant pauses, and when they come back (followed by the last question, re-spoken by the server).

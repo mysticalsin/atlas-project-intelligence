@@ -63,23 +63,23 @@ test('buildUnknowns: unsure speech, "I don\'t know", skipped and left-open field
 test('summaryFacts: at most four, one per field, the story\'s spine first; doubt and "I don\'t know" are not facts; numbers are exactly those in the facts', () => {
   const { facts, numbers } = summaryFacts(buildSummary(SAMPLE));
   assert.equal(facts.length, 3, 'problem, contribution, outcome (the unsure intervention and the unknown measurement are open points)');
-  assert.deepEqual(facts.map(f => f.split(':')[0]), ['Customer problem', 'Personal contribution', 'Observed outcome']);
+  assert.deepEqual(facts, ['tickets bounced between three teams', 'you rebuilt the routing rules', 'triage time dropped from 14 minutes to 9 minutes'], 'clauses addressed to them, no field labels');
   assert.ok(facts.every(f => f.length <= 120));
   assert.deepEqual(numbers.sort(), ['14', '9']);
   const all = Object.keys(FIELDS).map((f, i) => d('D-' + String(i + 1).padStart(3, '0'), f, `Answer ${i + 100} about ${f}`));
   const r = summaryFacts(buildSummary(all));
-  assert.equal(r.facts.length, MAX_FACTS); assert.deepEqual(r.facts.map(f => f.split(':')[0]), ['Customer problem', 'Personal contribution', 'What changed', 'Observed outcome']);
+  assert.equal(r.facts.length, MAX_FACTS); assert.deepEqual(r.facts.map(f => f.split(' ').pop()), ['problem', 'contribution', 'intervention', 'outcome']);
   assert.equal(summaryFacts(buildSummary(all), { max: 2 }).facts.length, 2);
   assert.deepEqual(summaryFacts([], {}), { facts: [], numbers: [] }); assert.deepEqual(summaryFacts(null), { facts: [], numbers: [] });
   assert.equal(summaryFacts(buildSummary(all), { max: 0 }).facts.length, 0);
   const long = summaryFacts(buildSummary([d('D-001', 'outcome', 'word '.repeat(80))]));
-  assert.ok(Array.from(long.facts[0]).length <= 'Observed outcome: '.length + 100);
+  assert.ok(Array.from(long.facts[0]).length <= 100);
 });
 
 test('summaryNote: the facts, at most three open points by name, the one question; a reflection asks the move\'s own check question', () => {
   const items = buildSummary(SAMPLE), { facts } = summaryFacts(items), unknowns = buildUnknowns(SAMPLE, { skipped: ['stakes', 'adoption', 'customer_fit'], deferred: [] });
   const note = summaryNote(facts, unknowns);
-  assert.ok(note.startsWith('SUMMARY FACTS (server') && note.includes('1) "Customer problem: Tickets bounced between three teams') && note.endsWith(SUMMARY_QUESTION));
+  assert.ok(note.startsWith('SUMMARY FACTS (server') && note.includes('1) "tickets bounced between three teams"') && note.endsWith(SUMMARY_QUESTION));
   assert.equal((note.match(/OPEN POINTS/g) || []).length, 1);
   const open = note.split('OPEN POINTS')[1].split('Then ask')[0]; assert.ok(open.split(';').length <= 3, 'at most three open points');
   assert.ok(!note.includes('Keep this private') && !note.includes('Old wording'), 'withheld and superseded words are nowhere');
