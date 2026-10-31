@@ -73,7 +73,7 @@ test('G2 POST /api/me/erase: CSRF and Origin, a confirmation step with a short-l
   const step1 = await (await me.go('/api/me/erase', { method: 'POST', body: '{}' })).json();
   assert.match(step1.confirmToken, /^\d{13}\.[0-9a-f]{16}\.[0-9a-f]{64}$/); // X1: exp.nonce.mac (single use) assert.equal(step1.expiresInSeconds, 600); assert.ok(step1.willHappen.length >= 3); assert.ok(step1.kept.some(k => /DPO/.test(k)));
   assert.equal(lib.calls.length + itv.calls.length, 0, 'asking for the token erases and touches nothing');
-  for (const bad of [step1.confirmToken.slice(0, -1) + '0', 'x', '1.' + step1.confirmToken.split('.')[1], (Date.now() - 1000) + '.' + step1.confirmToken.split('.')[1]]) {
+  for (const bad of [step1.confirmToken.slice(0, -1) + (step1.confirmToken.endsWith('0') ? '1' : '0'), 'x', '1.' + step1.confirmToken.split('.')[1], (Date.now() - 1000) + '.' + step1.confirmToken.split('.')[1]]) {
     const r = await me.go('/api/me/erase', { method: 'POST', body: JSON.stringify({ confirm: bad }) }); assert.equal(r.status, 403, bad);
   }
   assert.equal((await other.go('/api/me/erase', { method: 'POST', body: JSON.stringify({ confirm: step1.confirmToken }) })).status, 403, 'a token from another sign-in is worthless');
