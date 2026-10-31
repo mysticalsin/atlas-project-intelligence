@@ -936,3 +936,9 @@ Needs live or pilot verification before any deploy (none of it has happened; the
 - Docs: `IMPLEMENTATION_STATUS` 7.6 item 6, `DPIA_DRAFT`, notice paragraph in `privacy.json` (version string unchanged; toggle wording unchanged) and regenerated `docs/privacy/*` via `scripts/render_privacy_docs.py`.
 - New tests: `tests/test_display_name.py` (3), edge `profile.test.js` name-claims test, `profile-core.test.js` bidi test, lint self-test, `g2-privacy-ui` unticked pins, `voice-reconnect-dom` unticked-start test (and `live()` now ticks the saved-interview box as the person), browser checks in `zero_config_edge_browser.py`. Changed pins (intended): `g2-privacy-ui` (was "starts on"), `csp.test.js`/`app.test.js` (no `blob:` on confirm, re-sign-in and privacy).
 - Not done / residual: Trusted Types (`require-trusted-types-for 'script'`) is not enabled (needs a browser pass over every sink); `str()` now also removes ZWJ/ZWNJ from every bounded string (names in Persian and Indic scripts, emoji sequences lose the joiner); old stored names keep their characters in the database (cleaned on display in the client only).
+
+## 2026-10-31 — v2.2 Wave 2 integration (feature/agent-brain-v2.1)
+- Merged: R1, R2, B1, C1, M1, L1 (multilingual), G2 (GDPR controls), F1 (strict CSP), D1 (local demo), F2 (unslop UI), X1/X2/X3 (red-team retest fixes), plus atlas/core-e2e (see MERGE-NOTES.md).
+- Verified offline on the integrated tree: node 493 (1 skip), edge 1219, pytest 793, `make test-eval` 56, 22/22 Playwright suites (`/tmp/claude-501/atlas_logs/ui_final`), `scripts/check_handoff.py` PASS after MANIFEST regeneration.
+- Orb files (`orb.css`, `orb-renderer.js`, `orb-ui.js`, `assets/Mantu.svg`) unchanged by Wave 2.
+- Not deployed; no provider called. Privacy: controls implemented; DPO sign-off required.

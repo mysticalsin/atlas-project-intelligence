@@ -2,6 +2,8 @@
 
 Filled in from `08_Implementation/IMPLEMENTATION_STATUS_TEMPLATE.md`. Date: 2026-10-31. Tree: branch `v21/T17` on `2380cd4` (tasks T0 to T16, review-fix waves G1, S1, H1, H2, X1, then T17). Baseline before the upgrade: `efb4948`.
 
+**v2.2 (Wave 2, 2026-10-31).** On top of v2.1 the branch now carries: multilingual conversation (L1, C19), GDPR controls (G2, section 9), connections framework (C1, `docs/CONNECTIONS.md`), 20–30 minute interview (R2), MiChat naming (M1), strict CSP and safe rendering (F1, section 10), the unslop interface pass (F2, section 11), two red-team retests and their fixes (X1 section 12, X2 and X3 section 13), the local demo (D1, section 14) and the core end-to-end flow from the box session (`MERGE-NOTES.md`). Wording: privacy controls implemented; DPO sign-off required. Nothing is deployed.
+
 **Read this first.**
 - **Provider verified: none.** No Workers AI model, no Deepgram or ElevenLabs voice, no Durable Object on a deployed Worker, no DNA, MiChat, IMP, MAAP, Project Review or Spotlight system, and no real consultant has touched any of this. Every "locally verified" below means an offline test on synthetic data against fakes and mocks passed.
 - **Not deployed.** Nothing was pushed or published.
@@ -245,4 +247,31 @@ Implemented and locally verified (edge `x1-redteam.test.js`, 25 tests, each fail
 | Win-loop skew (old L1); search in a URL (old L12) | Per-person cap per proof type and at least three people; `POST /api/library/search` | Fixed |
 
 Not done (other owners or out of scope): H2, M1, M9 to M13 and the L11 to L14 prompt residuals; the downstream projections already queued are still not stopped by a restriction; the claim by_source back-fill is unproven on a store with years of rows.
+
+## 13. Red-team retest fixes (v2.2 X2 conversation, X3 interface)
+
+Implemented and locally verified (edge `x2-redteam.test.js`, `fold.test.js`, `tests/test_x2_guards.py`, X3 tests in `profile.test.js`, `safe-html-lint.test.js`, `g2-privacy-ui.test.js`, `voice-reconnect-dom.test.js`, `tests/test_display_name.py`; PoCs in `/tmp/claude-501/audit3/` re-run before and after). Reports: `RED_TEAM_RETEST.md` (backend, 22 earlier findings re-run: 15 pass, 7 partial, 0 fail before X1/X2) and `RED_UI_RETEST.md` (interface: no XSS, no CSP violation in any flow).
+
+| Finding | Fix | Status |
+|---|---|---|
+| Erase during a live interview let the checkpoint come back | Erase, withdrawal and memory restriction revoke the live session first; a guard re-reads stored consent before every checkpoint write; the page shows the `consent_revoked` notice | Fixed |
+| Start cap bypassed by a padded start message | 16 KiB byte cap in the Worker and `Session.onText`; an oversize first message counts as a start | Fixed |
+| Refusing the extension still extended to 30 min | Only an explicit short yes extends, in every bank language | Fixed |
+| ReplyGuard verification words and figure check English-only / homoglyph-blind | NFKC, confusables fold, zero-width strip; 7 bank languages' verification and number words | Fixed |
+| A "stop" inside a normal answer ended the interview | Control intents only for short standalone utterances | Fixed |
+| Language switch unthrottled | Throttled; old lines are never re-synthesized | Fixed |
+| Special-category guard missed new languages and variants; "Church Street Bank" false positive | Same normalisation; phrase lists for the 7 bank languages plus ru, pl, ar, ja, zh; word-context rules | Fixed (lists need native and DPO review) |
+| French/paraphrased steering of rerank and review; quote inversion | Fenced data framing; a steered record can only move down; multilingual negation context | Mitigated: models can still be steered by unlisted wording; the deterministic bounds are the control |
+| Look-alike fence and role tags; memory label after memory | Normalised before matching; label first | Fixed |
+| Read-back cut quotes mid-word | Cut at a word or clause boundary (CJK at punctuation) | Fixed |
+| Optional consent boxes pre-ticked (Art 7) | Checkpoint and memory start unticked; only a stored choice re-ticks; notice version `2026-10-31.2` | Fixed |
+| Bidi and zero-width characters in sign-in names | Stripped from names at the source (edge and Python), rendered in `<bdi>`; free text keeps ZWNJ/ZWJ (Persian, Indic, emoji) | Fixed |
+| Safe-HTML lint gaps; `blob:` on pages without audio | Sink table (DOMParser, srcdoc, string timers, `trusted()` argument shape…); `blob:` only on the voice page | Fixed |
+| Library search text in a URL | `POST /api/library/search`; `GET ?q=` ignored | Fixed |
+
+Not done: Trusted Types; summary mode does not voice scripts without a number table (Cyrillic, Arabic, CJK, Greek; the card still shows); "Christian" as a first name is read as religion; names already stored keep their characters until re-read.
+
+## 14. Local demo (v2.2 D1)
+
+`docs/LOCAL_DEMO.md`. `deploy/cloudflare-edge/dev/local-edge.mjs` serves the interview WebSocket through the real `handle()` to the real Interview Durable Object class and Session, with an in-memory Durable Object stand-in, real Library storage and offline fake models (`dev/fake-interviewer.mjs`: replies in en/fr/es/pt/de/it/nl from the selector's next move). A typed interview runs end to end: consent receipts, read-back, Keep private, Correct, Confirm into an owner-only draft, Submit for review, export and the two-step erase. Voice needs a provider, so locally it is typed only. Test: `test/local-demo.test.js`.
 
