@@ -38,8 +38,10 @@ globalThis.fetch = async (url, init) => {
   return realFetch(url, init);
 };
 const b64u = b => Buffer.from(b).toString('base64url');
+// Like Access, one application token per sign-in: `iat` is fixed per person until a new sign-in (the CSRF token is bound to it, B1).
+const issuedAt = new Map();
 async function token(email, custom = null) {
-  const now = Math.floor(Date.now() / 1000), body = { aud: [AUD], iss: `https://${TEAM}`, sub: 'local:' + email, email, exp: now + 3600, iat: now, ...(custom ? { custom } : {}) };
+  const now = Math.floor(Date.now() / 1000), iat = issuedAt.get(email) ?? issuedAt.set(email, now).get(email), body = { aud: [AUD], iss: `https://${TEAM}`, sub: 'local:' + email, email, exp: now + 3600, iat, ...(custom ? { custom } : {}) };
   const input = b64u(JSON.stringify({ alg: 'RS256', kid: 'local' })) + '.' + b64u(JSON.stringify(body));
   return input + '.' + b64u(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, new TextEncoder().encode(input)));
 }
@@ -57,7 +59,7 @@ const env = { ORIGIN, ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, CSRF_SECRET: 'l
   AI: { toMarkdown: async f => { const t = f.blob.type || ''; return t.startsWith('image/') ? { format: 'markdown', data: 'A diagram showing the project phases and approach' } : { format: 'markdown', data: new TextDecoder().decode(await f.blob.arrayBuffer()) }; },
     run: async (model, input) => ({ choices: [{ message: { content: await model_complete(input.messages) } }] }) },
   ADMIN_EMAILS: process.env.ADMIN_EMAILS || 'tony.walteur@gmail.com', REVIEWER_EMAILS: process.env.REVIEWER_EMAILS || 'reviewer@mantu.com',
-  HINDSIGHT_URL: HS, HINDSIGHT_API_KEY: 'local-hindsight-key',
+  HINDSIGHT_URL: HS, HINDSIGHT_API_KEY: 'local-hindsight-key', HINDSIGHT_BANK_SECRET: 'local-only-bank-secret', // (B1: memory needs a bank secret)
   INTERVIEW: { idFromName: n => n, get: id => ({ fetch: r => memoryRoutes(r, { storage: storeFor(id), hs, env }) }) },
   LIBRARY: { idFromName: n => n, get: () => ({ fetch: r => libraryRoutes(r, lib, { waitUntil, env }) }) }, ...passthrough,
   ...(FAKE_TYPESAFE ? { TYPESAFE_API_KEY: 'local-fake-key' } : {}) }; // bootstrap then reports jev: true
@@ -82,7 +84,7 @@ http.createServer(async (req, res) => {
     try { fakeTs.setMode(url.searchParams.get('m') || ''); res.end(fakeTs.mode); } catch { res.statusCode = 400; res.end('mode must be ok, down or unsure'); }
     return;
   }
-  if (expired && req.headers['sec-fetch-mode'] === 'navigate') expired = false;
+  if (expired && req.headers['sec-fetch-mode'] === 'navigate') { expired = false; issuedAt.clear(); } // the silent re-sign-in mints a new application token
   const as = url.searchParams.get('as') || /(?:^|;\s*)dev_as=([^;]+)/.exec(req.headers.cookie || '')?.[1] || 'consultant@mantu.com';
   const idpRaw = url.searchParams.has('idp') ? url.searchParams.get('idp') : decodeURIComponent(/(?:^|;\s*)dev_idp=([^;]+)/.exec(req.headers.cookie || '')?.[1] || '');
   let custom = null; try { const c = JSON.parse(idpRaw || 'null'); custom = c && typeof c === 'object' && !Array.isArray(c) ? c : null; } catch { custom = null; }

@@ -7,10 +7,11 @@
 // `teams-event` (which dedupes and applies them), and a card action is answered in the HTTP 200 invoke response.
 import { verifyBotActivity, teamsClient, messageCard, teamsStatus, botAppId } from './teams.js';
 import { str } from './util.js';
+import { baseSecurityHeaders } from './security-headers.js';
 import { TEAMS_JS } from '../teams/vendor/teams-js.mjs';
 
 const MAX_BODY = 262144;
-const BASE = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' };
+const BASE = baseSecurityHeaders(); // no-store, nosniff, no-referrer, HSTS, COOP/CORP same-origin, Permissions-Policy (security-headers.js)
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status,
   headers: { ...BASE, 'Content-Type': 'application/json', 'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'" } });
 // Route-specific CSP: only Teams may frame the launcher; the main host keeps frame-ancestors 'none' everywhere else.

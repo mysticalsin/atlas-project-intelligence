@@ -222,7 +222,8 @@ const b64u = b => Buffer.from(b).toString('base64url');
 async function worker() {
   const { publicKey, privateKey } = await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);
   const jwk = { ...(await crypto.subtle.exportKey('jwk', publicKey)), kid: 'k1' };
-  const jwt = async (email = 'alex@mantu.com') => { const now = Math.floor(Date.now() / 1000), body = { aud: [AUD], iss: `https://${TEAM}`, sub: 'user-' + email, email, exp: now + 600, iat: now };
+  const IAT = Math.floor(Date.now() / 1000) - 5; // one Access sign-in for the run: the CSRF token is bound to iat (B1)
+  const jwt = async (email = 'alex@mantu.com') => { const now = Math.floor(Date.now() / 1000), body = { aud: [AUD], iss: `https://${TEAM}`, sub: 'user-' + email, email, exp: now + 600, iat: IAT };
     const input = b64u(JSON.stringify({ alg: 'RS256', kid: 'k1' })) + '.' + b64u(JSON.stringify(body)); return input + '.' + b64u(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, new TextEncoder().encode(input))); };
   const forwarded = [], real = globalThis.fetch;
   globalThis.fetch = async url => { assert.equal(String(url), `https://${TEAM}/cdn-cgi/access/certs`); return new Response(JSON.stringify({ keys: [jwk] })); };

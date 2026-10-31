@@ -5,7 +5,8 @@ set -euo pipefail
 cd "$(dirname "$0")"
 python3 ../../build.py >/dev/null && cp ../../ATLAS_Voice.html src/atlas.html
 node --test test/*.test.js >/dev/null || { echo "Edge tests failed; not deploying." >&2; node --test test/*.test.js | tail -20; exit 1; }
-WRANGLER="npx --yes wrangler@4"
+# Pinned to an exact version (B1): a floating major tag would let a new release run with the Cloudflare token. Update deliberately, run the tests, then change this line.
+WRANGLER="npx --yes wrangler@4.156.0"
 $WRANGLER deploy
 if ! $WRANGLER secret list 2>/dev/null | grep -q CSRF_SECRET; then
   openssl rand -hex 32 | $WRANGLER secret put CSRF_SECRET >/dev/null && echo "CSRF_SECRET set."

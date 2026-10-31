@@ -1,0 +1,7 @@
+# Proposes updates for the SHA-pinned GitHub Actions (B1). Review each PR: the commit SHA in the diff must be the one the new tag points to.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5

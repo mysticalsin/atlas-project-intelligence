@@ -12,6 +12,7 @@ import { winSignals } from './winloop.js';
 // Story rating by TypeSafe JEV (docs/JEV_RATING.md): used only when a rater with a key exists and the owner consented.
 import { RatingError, ratingInput, questionPlan, requestBody, compose, agentQuality, noStoryQuality, sha256Hex, BUDGETS, RUBRIC_VERSION, METRIC_CODES, MODEL } from './rating.js';
 import { storedConsent } from './profile.js';
+import { appendAudit } from './audit-chain.js'; // B1: the one hook of the tamper-evident audit chain
 import { ensure as ensureEvidence } from './evidence.js'; // additive evidence tables (T13); nothing else in this file knows about them
 const DUPLICATE = 0.9; // cosine similarity above which two references are flagged as the same or a related project
 export const PRACTICES = { data_ai: 'Data & AI', web_app: 'Web & App Development', telecom: 'Telecom & Networks', sap_erp: 'SAP & ERP', cloud_infra: 'Cloud & Infrastructure', cybersecurity: 'Cybersecurity', transformation: 'Transformation & Strategy', engineering: 'Engineering & Industry' };
@@ -127,7 +128,7 @@ export class Library {
     const r = this.rows('SELECT * FROM refs WHERE id = ?', String(id || ''))[0];
     return r ? { ...r, data: JSON.parse(r.data), state: JSON.parse(r.state) } : null;
   }
-  log(id, actor, action, detail = '') { this.sql.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', id, actor, action, this.now(), String(detail).slice(0, 300)); }
+  log(id, actor, action, detail = '') { appendAudit(this.sql, { id, actor, action, at: this.now(), detail: String(detail).slice(0, 300) }); } // hash-chained (audit-chain.js, B1)
 
   // Who may see what. 'full' includes confidential client details; 'public' is the anonymised published view.
   access(row, user) {

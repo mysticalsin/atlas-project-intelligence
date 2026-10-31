@@ -4,7 +4,7 @@ import { bankId, hindsight, projectDocument, retainItems, memoryNote, jevRelevan
 import { memoryRoutes } from '../src/memory-routes.js';
 import { Session, talkerMessages } from '../src/session.js';
 
-const ENV = { HINDSIGHT_URL: 'https://hs.example/', HINDSIGHT_API_KEY: 'hs-key', CSRF_SECRET: 'csrf' };
+const ENV = { HINDSIGHT_URL: 'https://hs.example/', HINDSIGHT_API_KEY: 'hs-key', HINDSIGHT_BANK_SECRET: 'bank-secret', CSRF_SECRET: 'csrf' }; // B1: the bank secret is required when memory is configured
 function fakeHS(reply = {}) {
   const calls = [];
   const fetcher = async (url, init) => { calls.push({ url, method: init.method, auth: init.headers.Authorization, body: init.body ? JSON.parse(init.body) : null });
