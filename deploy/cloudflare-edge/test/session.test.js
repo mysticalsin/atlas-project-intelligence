@@ -983,7 +983,7 @@ test('a short sound is joined by when the next speech began, not by when it was 
 
 test('after she is interrupted, a later answer that reuses her question is kept (the cut playback is over)', async () => {
   let hold;
-  const h = harness([...QA, 'Sorry, one moment.', 'I owned the rollout budget.'], calls => ({
+  const h = harness([...QA, 'Sorry, let me think.', 'I owned the rollout budget.'], calls => ({
     async *chatStream(m) { calls.talker.push(m); const n = calls.talker.length; if (n === 3) await new Promise(r => { hold = r; });
       yield 'Great. '; yield n === 2 ? 'Who owned the rollout budget?' : 'What was the baseline?'; } }));
   await opened(h);
