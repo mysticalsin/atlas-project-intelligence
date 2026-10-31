@@ -21,6 +21,7 @@ import { ReplyGuard } from '../src/speech.js';
 import { BANNED_PRAISE_SRC, WORKFLOW_CONFIG } from '../src/policy.generated.js';
 import { TRANSITIONS } from '../src/conversation-state.js';
 import { memorySql } from './sqlite.js';
+import { ensure as ensureOutreach } from '../src/outreach.js';
 import { rig, opened, talked, send, until, cleanup, named, PROJECT } from './reconnect-harness.js';
 
 test.afterEach(cleanup);
@@ -301,7 +302,10 @@ test('W6 each claim links to its source: session, item, ledger id, exact words, 
 });
 
 test('W7 evidence needs an accountable reviewer: no approval by the owner or by anyone as themselves, and an approval names the exact revision and hash', async () => {
-  const ctx = setup(), { l, ev } = ctx, ref = await l.upsert(OWNER, { localId: 'p1', reference: REF() }), v = await queued(ctx, 'sess-001', { ref_id: ref.id }), at = { expected_revision: 1, content_hash: v.content_hash };
+  const ctx = setup(), { l, ev } = ctx;
+  // The accountable N+1 comes from the staffing record; a manager the consultant types on the reference is not an approver (G1 L2).
+  ensureOutreach(l); l.sql.exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at) VALUES ('PRJ-1', 'alex@mantu.com', 'sam@mantu.com', 'Sam', '', '', 'staffing-csv', 'x')");
+  const ref = await l.upsert(OWNER, { localId: 'p1', reference: REF() }), v = await queued(ctx, 'sess-001', { ref_id: ref.id }), at = { expected_revision: 1, content_hash: v.content_hash };
   const go = (who, p) => ev.review(who, v.id, 'approve', p);
   await rejects(go(OWNER, at), 403, 'ROLE_NOT_PERMITTED'); await rejects(go({ ...OWNER, role: 'reviewer' }, at), 403, 'SELF_APPROVAL'); await rejects(go({ ...OWNER, role: 'admin' }, at), 403, 'SELF_APPROVAL');
   await rejects(go(REV, { expected_revision: 1 }), 400); await rejects(go(REV, { expected_revision: 2, content_hash: v.content_hash }), 409, 'REVISION_MISMATCH'); await rejects(go(REV, { expected_revision: 1, content_hash: 'f'.repeat(64) }), 409, 'CONTENT_HASH_MISMATCH');
