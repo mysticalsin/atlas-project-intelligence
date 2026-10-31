@@ -5,10 +5,10 @@
 // from policy.generated.js (SELECTOR_CONFIG, QUESTION_BANK, SELECTOR_LINES, ...); see the Python module for the rules.
 import {
   FIELDS, TURN_NOT_AN_ANSWER, SELECTOR_CONFIG as CONFIG, QUESTION_BANK, SELECTOR_LINES as LINES, SELECTOR_LEAD_RUSHED as LEAD_RUSHED,
-  SELECTOR_NOT_ATTEMPTS as NOT_ATTEMPTS, SELECTOR_NO_HOOK as NO_HOOK, SELECTOR_PHASES as PHASES, SELECTOR_ESSENTIALS as ESSENTIALS, SELECTOR_METRIC_PARTS as METRIC_PARTS,
+  SELECTOR_NOT_ATTEMPTS as NOT_ATTEMPTS, SELECTOR_FOLLOW_INTENTS as FOLLOW_INTENTS, SELECTOR_NO_HOOK as NO_HOOK, SELECTOR_PHASES as PHASES, SELECTOR_ESSENTIALS as ESSENTIALS, SELECTOR_METRIC_PARTS as METRIC_PARTS,
   TURN_CUE_SRC,
 } from './policy.generated.js';
-import { normalize } from './turns.js';
+import { normalize, setbackWords } from './turns.js';
 
 const FIELD_KEYS = Object.keys(FIELDS);
 const REPEAT_LAST = 'repeat_last';
@@ -95,21 +95,25 @@ export function contradiction(plan, skip = []) {
 }
 
 // True when the words describe a setback (the pre-pass cue's own test, run on a ledger quote).
-const hasSetback = text => re(TURN_CUE_SRC.describes_setback).test(normalize(isStr(text) ? text : '').replace(re(TURN_CUE_SRC.setback_strip, 'gi'), ' '));
+const hasSetback = text => setbackWords(normalize(isStr(text) ? text : ''));
 
 // 2-6 of the consultant's own words from the latest active quote of the thread's field, as a noun phrase to refer back to ('' when there is none).
 // The subject and a leading verb are dropped ("I worked on the release pipeline" -> "the release pipeline"); it stops at a clause boundary.
-function hookOf(plan, thread) {
+// The ledger lags a turn: when it holds nothing yet for a thread this very answer covers, the start of the answer itself (plan.latest_text) is used, and only when it
+// opens with a first-person subject and a known verb ("We chose GitLab pipelines over Jenkins because ...").
+function hookOf(plan, thread, hints = []) {
   if (thread === null) return '';
   let quote = '';
   for (const d of Array.isArray(plan.candidate_details) ? plan.candidate_details : []) if (active(d) && d.field === thread && d.status !== 'unknown' && isStr(d.quote)) quote = d.quote;
+  const fresh = !quote && hints.includes(thread) && isStr(plan.latest_text);
+  if (fresh) quote = plan.latest_text;
   const P = CONFIG.patterns, rest = quote.replace(re(P.junk, 'g'), ' ').trim();
   let stripped = rest.replace(re(P.hook_subject), '');
   if (stripped !== rest) { // a first-person subject: only a known verb leaves a phrase that reads back well
     const after = stripped.replace(re(P.hook_verb), '');
     if (after === stripped) return '';
     stripped = after;
-  }
+  } else if (fresh) return '';
   const out = [];
   for (const tok of stripped.split(' ')) {
     const word = tok.replace(/^[,;.:!"'()]+|[,;.:!"'()]+$/g, '');
@@ -169,7 +173,7 @@ function context(plan, turn, asked, prefill, phase, timeLeft, rushed) {
   }
   return {
     plan, turn, asked, prefill, intents, cues, hints, words, numbers: nums, last, lastField, answerShaped, corrected, setbackOutcome,
-    figure: numbersText.length === 1 ? numbersText[0] : '', hook: hookOf(plan, thread),
+    figure: numbersText.length === 1 ? numbersText[0] : '', hook: hookOf(plan, thread, hints),
     covered, thread, present: presentFields(plan), numericPlan, deferred, prefilled: prefilledFields(prefill), rushed: Boolean(rushed) || intents.includes('rushed'),
     phase: effectivePhase(phase, timeLeft), recent: asked.slice(-CONFIG.repeat_window).map(a => a.say).filter(isStr),
   };
@@ -182,7 +186,14 @@ const summarized = c => c.asked.some(a => a.kind === 'summary' || a.intent === '
 
 const fillable = (tpl, params) => [...tpl.matchAll(/\{(\w+)\}/g)].every(m => params[m[1]]);
 // What fills a variant's placeholders: the candidate's own (a, b, span, labels) plus the thread's {figure} and {hook}.
-const paramsOf = (c, cand) => ({ figure: c.figure, hook: c.hook, ...(cand.params || {}) });
+const paramsOf = (c, cand) => {
+  let hook = c.hook;
+  if (cand.intent === 'decision_follow' && hook) { // "GitLab pipelines over Jenkins" -> "GitLab pipelines"
+    const cut = hook.replace(re(CONFIG.patterns.hook_choice_cut), '');
+    if (cut.split(/\s+/).filter(Boolean).length >= CONFIG.hook_min_words) hook = cut;
+  }
+  return { figure: c.figure, hook, ...(cand.params || {}) };
+};
 
 // The wording for a candidate: the variant its count points at, else the next, skipping any that repeats a recent say or cannot be filled.
 function say(c, cand) {
@@ -207,8 +218,9 @@ function metricPart(c) {
   if (last && METRIC_PARTS.includes(last.intent) && c.answerShaped) done.add(last.intent);
   if (done.size) { const hi = Math.max(...[...done].map(p => METRIC_PARTS.indexOf(p))); for (const p of METRIC_PARTS.slice(0, hi + 1)) done.add(p); }
   const units = new Set(c.numbers.filter(isObj).map(n => n.unit));
+  const periodSaid = cues.includes('period_stated') || re(TURN_CUE_SRC.period_words).test(normalize(quotes)); // "over six months", "the first quarter", "in Q3": a period in words
   if (!done.has('metric_kind') && !cues.includes('estimate') && !re(CONFIG.patterns.kind_words).test(quotes)) return 'metric_kind';
-  if (!done.has('metric_period') && !(known && !gaps.includes('period')) && !CONFIG.period_units.some(u => units.has(u))) return 'metric_period';
+  if (!done.has('metric_period') && !(known && !gaps.includes('period')) && !CONFIG.period_units.some(u => units.has(u)) && !periodSaid) return 'metric_period';
   if (!done.has('metric_baseline') && c.numbers.length < 2 && !(known && !gaps.includes('before/after'))) return 'metric_baseline';
   if (!done.has('metric_source') && !['evidence'].some(f => c.present.has(f) || c.covered.has(f) || c.prefilled.has(f))) return 'metric_source';
   return null;
@@ -243,13 +255,26 @@ function ladder(c) {
   return out.map(([s, , f]) => [f, s]);
 }
 
+// True when `intent` was the intent, or `ack` the acknowledgement, of one of the last setback_gap - 1 moves (a setback is not met twice within setback_gap replies).
+const recent = (c, intent = null, ack = null) => c.asked.slice(-(CONFIG.setback_gap - 1)).some(a => (intent && a.intent === intent) || (ack && a.ack_category === ack));
+
+// The richer field (decision, intervention, evidence, measurement) the answer volunteers (not the one asked, not known or asked before), if it has not had its one follow-up yet; the thread's own first.
+function followField(c) {
+  if (!c.answerShaped || c.words < CONFIG.follow_min_words) return null;
+  const before = new Set([...c.present, ...(Array.isArray(c.plan.covered_fields) ? c.plan.covered_fields.filter(inF) : [])]); // known before this answer
+  const eligible = CONFIG.follow_fields.filter(f => c.hints.includes(f) && f !== c.lastField && !c.deferred.has(f) && !before.has(f) && !attempts(c, f) && !count(c, FOLLOW_INTENTS[f], f)
+    && !(f === 'measurement' && (c.cues.includes('metric') || c.numericPlan)) && !(f === 'intervention' && !c.cues.includes('describes_action'))); // "what we did" alone is no thread
+  if (!eligible.length) return null;
+  return eligible.includes(c.thread) ? c.thread : eligible[0];
+}
+
 function* candidates(c) {
   const { cues, rushed } = c, cueing = !rushed && (c.phase === 'breadth' || c.phase === 'depth'), lastIntent = c.last ? c.last.intent : null;
   const none = { params: {}, important: false };
   if (cueing) {
     const hit = contradiction(c.plan, [...c.corrected]);
     if (hit) yield { intent: 'contradiction', field: hit[0], rung: rung(hit[0]), params: { a: hit[1], b: hit[2] }, why: 'contradiction:' + hit[0], important: true };
-    if (cues.includes('describes_setback') && lastIntent !== 'setback_response') yield { ...none, intent: 'setback_response', field: 'decision', rung: 4, why: 'setback' }; // a setback is met with "what did you do", before anything else is probed
+    if (cues.includes('describes_setback') && !recent(c, 'setback_response')) yield { ...none, intent: 'setback_response', field: 'decision', rung: 4, why: 'setback' }; // a setback is met with "what did you do", before anything else is probed
     const continuing = METRIC_PARTS.includes(lastIntent) && c.answerShaped;
     if (!c.deferred.has('measurement') && (cues.includes('metric') || continuing || (c.numericPlan && c.hints.includes('measurement')))) {
       const part = metricPart(c);
@@ -265,8 +290,10 @@ function* candidates(c) {
     if (cues.includes('tech_list') && lastIntent !== 'tech_depth') yield { ...none, intent: 'tech_depth', field: null, rung: 2, why: 'tech_list' };
     if (cues.includes('certification') && lastIntent !== 'cert_details') yield { ...none, intent: 'cert_details', field: null, rung: null, why: 'certification' };
     if (cues.includes('client_praise') && lastIntent !== 'praise_source') yield { ...none, intent: 'praise_source', field: null, rung: null, why: 'client_praise' };
+    const follow = followField(c); // a richer field they brought up unasked ("We chose GitLab over Jenkins because..."): one follow-up on that thread before moving on
+    if (follow) yield { ...none, intent: FOLLOW_INTENTS[follow], field: follow, rung: rung(follow), why: 'follow:' + follow };
     if (c.phase === 'depth' && c.present.size >= CONFIG.reflect_min_fields && !c.asked.some(a => a.kind === 'reflect' || a.intent === 'reflect')) {
-      const labels = FIELD_KEYS.filter(f => c.present.has(f)).map(f => FIELDS[f][0].toLowerCase()).slice(0, 3);
+      const labels = FIELD_KEYS.filter(f => c.present.has(f)).map(f => CONFIG.reflect_labels[f]).slice(0, 3);
       const text = labels.length === 1 ? labels[0] : labels.slice(0, -1).join(', ') + ' and ' + labels[labels.length - 1];
       yield { ...none, intent: 'reflect', kind: 'reflect', field: null, rung: null, params: { labels: text }, why: 'reflect:depth' };
     }
@@ -320,7 +347,7 @@ function reaction(c, accept = null) {
     const last = c.last || {}, stated = ['confirm_asr', 'reflect', 'summary'].includes(last.kind) || ['confirm_asr', 'reflect', 'summary'].includes(last.intent);
     return ['ack', stated ? 'correction_thanks_fact' : 'correction_thanks'];
   }
-  if (cues.includes('describes_setback')) return ['ack', 'setback_neutral'];
+  if (cues.includes('describes_setback')) return ['ack', recent(c, null, 'setback_neutral') ? 'setback_plain' : 'setback_neutral']; // empathy is paced: a plain uptake when the last replies already met a setback
   if (accept === 'dont_know' || accept === 'skip') {
     const numeric = ['measurement', 'outcome'].includes(c.thread) || cues.includes('metric') || (c.last && [...METRIC_PARTS, 'measurement', 'impact'].includes(c.last.intent));
     return ['ack', numeric ? 'no_number_fine' : 'neutral'];

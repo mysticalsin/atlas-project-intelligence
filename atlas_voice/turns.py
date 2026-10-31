@@ -21,7 +21,7 @@ MAX_NUMBERS = 20
 INTENT_ORDER = ['pause', 'resume', 'repeat', 'skip', 'dont_know', 'cannot_disclose', 'correction', 'rushed', 'stop',
                 'question_to_atlas', 'confirm', 'deny']
 CUE_ORDER = ['metric', 'estimate', 'vague_verb', 'team_claim', 'tech_list', 'certification', 'client_praise',
-             'describes_setback', 'describes_achievement', 'names_party']
+             'describes_setback', 'describes_achievement', 'names_party', 'describes_problem', 'period_stated', 'describes_action']
 LANGS_WITH_CUES = ('en',)
 LANGS_WITH_INTENTS = ('en', 'fr', 'es')
 
@@ -48,6 +48,10 @@ INTENT_RULES = {
         _rule('dont_know', r"\b(?:(?:don'?t|do not|dont) (?:really |actually |exactly |quite )?know|dunno|no idea|no clue|(?:can'?t|cannot|don'?t|do not|didn'?t) (?:really |quite )?(?:remember|recall)|never (?:measured|tracked)|we never (?:measured|tracked)|couldn'?t say|i have no way (?:of|to) know|(?:don'?t|do not|dont) have (?:the |any |that |those |exact |these )*(?:numbers?|data|figures?|stats|statistics|metrics?|baseline|measurements?))\b", unless_intents=['cannot_disclose']),
         _rule('dont_know', r"^\W*(?:(?:um|uh|hmm|well|honestly|sorry|er)[, ]+)*(?:i'?m |i am )?(?:not (?:really )?sure|unsure|not certain)\b", max_words=8, unless_src=r'\d'),
         _rule('correction', r"\b(?:sorry,? (?:i meant|i mean|it was|it'?s|that was|that'?s|i said)|i meant|correction|let me (?:correct|rephrase)|to correct (?:myself|that)|i misspoke|actually,? (?:it was|it'?s|that was|that'?s|i meant|no|it is)|no,? (?:it was|it'?s|i meant|wait)|scratch that|strike that|make that|wait,? (?:no|that'?s|it was|i)|\d+(?:[.,]\d+)?\s*%?\s*,?\s*not\s+\d)"),
+        # implicit corrections: "actually it was 3 days", "actually the reporting was for four studies", "four studies, not all of them". Written to start with a literal, so a long
+        # answer with none of these words costs next to nothing.
+        _rule('correction', r"(?:was|is) actually (?:\d|only|just|about|around|closer to|more like|for|in|at|from|with|the)\b|actually,? (?:the|that|it|this|they|we|i|there)\s+(?:\w+\s+){0,3}?(?:was|were|is|are|had|did)\b"),
+        _rule('correction', r",\s*not\s+(?:all|every|the whole|everything|everyone|the rest)\b"),
         _rule('rushed', r"\b(?:in a (?:hurry|rush)|short on time|(?:running|pressed|pushed) for time|running late|(?:have|got|i have|i'?ve got) (?:a|another) (?:meeting|call) (?:in|at|soon|now)|got to run|gotta run|have to run|(?:keep|make) (?:this|it) (?:short|quick|brief)|be brief|only (?:have )?(?:a )?(?:few|couple|five|ten|\d+) (?:minutes?|mins?)|(?:five|ten|\d+) (?:minutes?|mins?) (?:left|only|max)|not much time|(?:shorter|short) version|wrap (?:this|it) up quickly|(?:i|i'?ve) (?:really )?(?:need|have|got|gotta) to (?:go|leave|run|jump off|hop off|drop off)\b(?! through| over| into| back| with| live| to))\b"),
         _rule('stop', r"\b(?:(?:let'?s|can we|could we|i(?:'d| would) like to|i want to|i need to|please|we can|i'?m going to|time to|shall we|i think we should|i'?m ready to) (?:just |please )?(?:stop|end|finish|wrap up|call it|quit|conclude)(?: (?:here|now|the (?:interview|session|conversation|call)|this|it|for today|there))?|that'?s (?:all|enough|it) for (?:now|today)|(?:i'?m|we'?re|we are|i am) done(?! with| (?:the|that|this) )|stop (?:the )?(?:interview|session|recording)|end (?:the )?(?:interview|session|conversation)|call it a day|enough for (?:now|today)|that'?s all i (?:have|got|can))\b|^\W*stop\W*$"),
         # "nothing more to add", "we've covered it", "that is all, thank you": a short closing remark (a bare "that's it" is left to `confirm`, it answers a yes/no check)
@@ -89,6 +93,29 @@ INTENT_RULES = {
     ],
 }
 
+# A first-person action with a named practice or artifact ("I tried to hold the scope with weekly steering meetings", "we wrote the reconciliation
+# scripts"): already a concrete example of what was done, so the intervention is not asked for again.
+_ACTION_VERBS = (r"held|hold|holding|ran|run|set up|setup|wrote|write|built|build|introduced|introduce|started|created|create|configured|added|established|negotiated|rewrote|trained|facilitated"
+                 r"|organi[sz]ed|scheduled|drafted|prepared|implemented|automated|replaced|reviewed|tested|designed|rolled out|migrated|standardi[sz]ed|chaired|adopted|tracked|logged")
+_ACTION_OBJECTS = (r"meetings?|reviews?|workshops?|scripts?|pipelines?|dashboards?|checklists?|templates?|runbooks?|playbooks?|documents?|process(?:es)?|policy|policies|standups?|stand-ups?"
+                   r"|retrospectives?|tests?|monitors?|monitoring|alerts?|automation|workflows?|rules?|guidelines?|plans?|sessions?|tickets?|reports?|models?|reconciliation|cutover|checks?|gates?")
+CONCRETE_ACTION = r"\b(?:i|we)\b(?:\W+\w+){0,4}?\W+(?:" + _ACTION_VERBS + r")\b(?:\W+\w+){0,8}?\W+(?:" + _ACTION_OBJECTS + r")\b"
+
+# The CLIENT's problem, said in the consultant's words ("the main problem was releases took a whole weekend", "the business was frustrated"), is not a
+# setback the consultant went through. Words only: the subject is a problem noun or the business side, never a judgement of a person. The first form stops
+# before the consultant's own side (sponsor, team, I, we), which stays a setback.
+_PAIN = r"(?:frustrated|unhappy|annoyed|struggling|losing|stuck|overwhelmed|failing|worried|complaining|angry|upset|suffering|under pressure|exposed)"
+_CLIENT_SUBJ = r"(?:business|client|customers?|users|stakeholders|organi[sz]ation|company|operations team|ops team)"
+_CLIENT_PAIN = _CLIENT_SUBJ + r"\s+(?:(?:was|were|is|are|had been|got|became|kept)\s+(?:\w+\s+){0,2}?" + _PAIN + r"|struggled|suffered|complained|lost)\b"
+# (no leading \b on purpose: a pattern that starts with a literal is scanned much faster, and a word that merely ends in one of these is no harm to a cue)
+CLIENT_PROBLEM = (r"(?:problems?|issues?|pain points?|challenges?)\s+(?:was|were|is|are)\b(?:(?!\b(?:sponsor|team|we|i|my|our)\b)[^.;!?])*"
+                  r"|" + _CLIENT_PAIN + r"[^.;!?]*")
+# a period said in words: "over six months", "the first quarter after go live", "in Q3", "in 2025"
+PERIOD_WORDS = (r"(?:over|for|within|during|across|in)\s+(?:the\s+)?(?:(?:first|last|next|past|following|initial)\s+)?(?:(?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|several|few|\d+)\s+)?(?:weeks?|months?|quarters?|years?)\b"
+                r"|(?:first|second|third|fourth|last|next|past)\s+(?:week|month|quarter|half|year)\b|q[1-4]\b|h[12]\b"
+                r"|(?:in|during|since|by|from)\s+(?:january|february|march|april|june|july|august|september|october|november|december|20\d\d)\b|fy\s?\d{2,4}\b"
+                r"|(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|several|few)\s+(?:weeks?|months?|quarters?|years?)\b")
+
 # English cues. Plain pattern strings; the logic that combines them lives in analyze_turn (and in turns.js).
 CUE_SRC = {
     # a number with a unit, a currency amount, a multiplier word, or a from-to comparison (quality.NUMERIC is tried first)
@@ -120,14 +147,18 @@ CUE_SRC = {
     'describes_achievement': r"\b(?:delivered|launched|shipped|won|achieved|reduced|cut|saved|increased|improved|boosted|grew|doubled|tripled|completed|built|designed|implemented|migrated|automated|rolled out|deployed|introduced|created|developed|reached|exceeded|surpassed|accelerated|eliminated|streamlined|modernis?ed|modernized|rebuilt|redesigned|standardis?ed|standardized|scaled|went live|successfully|on time|ahead of schedule|under budget|award|promoted|adopted|success|successful|went (?:down|up)|dropped|fell|halved|faster|quicker|fewer|lower)\b",
     # the consultant refers to the client, customer, company or a name: a refusal to share is then about who, not about the content
     'names_party': r"\b(?:client|customer|company|name|names|who they are|which (?:bank|company|client))\b",
+    # work actually done, in the consultant's words (a first-person verb of doing, or a first-person action on a named practice): "what we did" alone is not
+    'action': r"\b(?:we|i) (?:\w+ )?(?:migrated|implemented|built|introduced|deployed|rolled out|automated|redesigned|replaced|moved|set up|configured|rebuilt|refactored|integrated|installed|created)\b|" + CONCRETE_ACTION,
+    'client_problem': CLIENT_PROBLEM,
+    'period_words': PERIOD_WORDS,
 }
 
 # Ledger fields (quality.FIELDS) an utterance probably covers. Wording cues for the NEXT question, never a verifier.
 HINT_SRC = {
-    'problem': r"\b(?:(?<!\bno )problem|issue|pain point|challenge|struggling|used to|was (?:slow|manual|broken|failing)|legacy|backlog|complaints?|complained|unable to|couldn'?t|(?:it|this) was an? [a-z ]{0,30}(?:migration|project|programme|rollout|implementation|transformation))\b",
+    'problem': r"\b(?:(?<!\bno )problem|issue|pain point|challenge|struggling|used to|was (?:slow|manual|broken|failing)|legacy|backlog|complaints?|complained|unable to|couldn'?t|(?:it|this) was an? [a-z ]{0,30}(?:migration|project|programme|rollout|implementation|transformation))\b|" + _CLIENT_PAIN,
     'stakes': r"\b(?:costing|costs?|risk|penalt(?:y|ies)|fines?|revenue|lost|losing|sla|compliance|regulators?|regulatory|deadline|churn|downtime|at stake|exposure|missed)\b",
     'contribution': r"\b(?:i (?:personally )?(?:led|owned|built|designed|wrote|did|was responsible|was the|managed|drove|architected|implemented|created|set up|ran|developed|delivered)|my (?:role|part|responsibility|contribution|job)|i was (?:the )?(?:lead|architect|owner|responsible|in charge)|personally|myself|i took|i (?:mostly |mainly )?(?:worked on|was responsible for|handled|owned|took care of|led|built|designed|wrote))\b",
-    'intervention': r"\b(?:(?:we|i) (?:\w+ )?(?:migrated|implemented|built|introduced|deployed|rolled out|automated|redesigned|replaced|moved|set up|configured|rebuilt|refactored|integrated|installed|created)|the (?:solution|approach|design|architecture|pipeline|platform)|what we (?:did|changed))\b",
+    'intervention': r"\b(?:(?:we|i) (?:\w+ )?(?:migrated|implemented|built|introduced|deployed|rolled out|automated|redesigned|replaced|moved|set up|configured|rebuilt|refactored|integrated|installed|created)|the (?:solution|approach|design|architecture|pipeline|platform)|what we (?:did|changed))\b|" + CONCRETE_ACTION,
     'decision': r"\b(?:instead of|rather than|alternatives?|trade-?offs?|chose|chosen|decided|decision|considered|compared|versus|options?|rejected|opted|picked|why we)\b",
     'adoption': r"\b(?:adopt(?:ed|ion)?|used by|rolled out to|onboarded|handed over|handover|hand-?off|owned (?:it )?after|maintained by|support team|operations team|ops team|run team|took over|trained|training|in production|went live|daily|weekly|used (?:it|this|them) (?:every|each)|every day|day[- ]to[- ]day|(?:they|team|squads?|users?) owned (?:it|this))\b",
     'outcome': r"\b(?:result|resulted|outcome|improved|reduced|increased|decreased|faster|slower|better|saved|achieved|as a result|ended up|impact|went down|went up|gained|success|successful)\b",
@@ -248,6 +279,38 @@ def intents(norm, lang, words):
     return [i for i in INTENT_ORDER if i in found]
 
 
+# A cheap substring test in front of the costlier cue patterns: a text with none of these words cannot match, so a long answer of anything else costs next to nothing.
+# (Superset triggers only: the pattern still decides. The same lists are read by turns.js.)
+CUE_GATES = {
+    'setback_strip': ['data loss', 'outage', 'downtime', 'incident'],
+    'client_problem': ['problem', 'issue', 'pain point', 'challenge', 'business', 'client', 'customer', 'users', 'stakeholder', 'organi', 'company', 'operations team', 'ops team'],
+    'period_words': ['week', 'month', 'quarter', 'half', 'year', 'q1', 'q2', 'q3', 'q4', 'h1', 'h2', 'fy', '20', 'january', 'february', 'march', 'april', 'june', 'july', 'august', 'september', 'october', 'november', 'december'],
+    'action': ['migrat', 'implement', 'built', 'introduc', 'deploy', 'rolled', 'automat', 'redesign', 'replac', 'moved', 'set up', 'configur', 'rebuil', 'refactor', 'integrat', 'install', 'creat',
+               'meeting', 'review', 'workshop', 'script', 'pipeline', 'dashboard', 'checklist', 'template', 'runbook', 'playbook', 'document', 'process', 'polic', 'standup', 'stand-up',
+               'retrospective', 'test', 'monitor', 'alert', 'automation', 'workflow', 'rule', 'guideline', 'plan', 'session', 'ticket', 'report', 'model', 'reconciliation', 'cutover', 'check', 'gate'],
+}
+
+
+def _gated(name, norm):
+    """Search a gated cue pattern: None (a miss) without running it when the text holds none of its trigger words."""
+    return _re(CUE_SRC[name]).search(norm) if any(w in norm for w in CUE_GATES[name]) else None
+
+
+def _sub_setback_strip(norm):
+    return _re(CUE_SRC['setback_strip']).sub(' ', norm) if any(w in norm for w in CUE_GATES['setback_strip']) else norm
+
+
+def setback_words(norm, client_problem=None):
+    """True when the words describe a setback: the setback words that are left once "zero data loss" and the CLIENT's own problem ("the business was frustrated") are taken out.
+    client_problem: whether the text holds the client's problem, when the caller has already looked (else it is looked for here)."""
+    stripped = _sub_setback_strip(norm)
+    if client_problem is None:
+        client_problem = bool(_gated('client_problem', norm))
+    if client_problem:
+        stripped = _re(CUE_SRC['client_problem']).sub(' ', stripped)
+    return bool(_re(CUE_SRC['describes_setback']).search(stripped))
+
+
 def cues(norm):
     metric = bool(_re(NUMERIC.pattern).search(norm) or _re(CUE_SRC['metric_extra']).search(norm))
     out = set()
@@ -265,12 +328,19 @@ def cues(norm):
         out.add('certification')
     if _re(CUE_SRC['client_praise_said']).search(norm) or _re(CUE_SRC['client_praise_direct']).search(norm):
         out.add('client_praise')
-    if _re(CUE_SRC['describes_setback']).search(_re(CUE_SRC['setback_strip']).sub(' ', norm)):
+    problem = bool(_gated('client_problem', norm))
+    if problem:
+        out.add('describes_problem')
+    if setback_words(norm, problem):
         out.add('describes_setback')
     if _re(CUE_SRC['describes_achievement']).search(norm):
         out.add('describes_achievement')
     if _re(CUE_SRC['names_party']).search(norm):
         out.add('names_party')
+    if _gated('period_words', norm):
+        out.add('period_stated')
+    if _gated('action', norm):
+        out.add('describes_action')
     return [c for c in CUE_ORDER if c in out]
 
 
@@ -309,6 +379,6 @@ EDGE_CONSTANTS = {
     'TURN_MAX_CHARS': MAX_CHARS, 'TURN_MAX_NUMBERS': MAX_NUMBERS, 'TURN_INTENT_ORDER': INTENT_ORDER, 'TURN_CUE_ORDER': CUE_ORDER,
     'TURN_LANGS_WITH_CUES': list(LANGS_WITH_CUES), 'TURN_LANGS_WITH_INTENTS': list(LANGS_WITH_INTENTS),
     'TURN_INTENT_RULES': INTENT_RULES, 'TURN_CUE_SRC': CUE_SRC, 'TURN_TECH_SRC': TECH_SRC, 'TURN_HINT_SRC': HINT_SRC, 'TURN_HINT_FROM_TO': HINT_FROM_TO,
-    'TURN_NOT_AN_ANSWER': NOT_AN_ANSWER, 'TURN_ASKED_MIN_WORDS': ASKED_MIN_WORDS, 'TURN_NUMBER_SRC': NUMBER_SRC, 'TURN_UNIT_CANON': UNIT_CANON,
+    'TURN_CUE_GATES': CUE_GATES, 'TURN_NOT_AN_ANSWER': NOT_AN_ANSWER, 'TURN_ASKED_MIN_WORDS': ASKED_MIN_WORDS, 'TURN_NUMBER_SRC': NUMBER_SRC, 'TURN_UNIT_CANON': UNIT_CANON,
     'TURN_SCALE': SCALE, 'TURN_THOUSANDS_SRC': THOUSANDS, 'TURN_DOT_THOUSANDS_SRC': DOT_THOUSANDS, 'TURN_AMBIGUOUS_DOT_SRC': AMBIGUOUS_DOT, 'TURN_PLAIN_NUMBER_SRC': PLAIN_NUMBER, 'TURN_WHITESPACE_SRC': WHITESPACE,
 }

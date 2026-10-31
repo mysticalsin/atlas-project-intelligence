@@ -280,7 +280,9 @@ test('the card is checkpointed: summary state round-trips, restoreView carries t
   await send(h, { type: 'correct', detail_id: detailOf(h, 'outcome').id, text: 'It was a modest change, limited to one queue.' }); await until(() => !h.s.busy());
   const doc = JSON.parse(JSON.stringify(serialize(h.s)));
   assert.equal(doc.version, VERSION); assert.ok(VERSION >= 2);
-  assert.deepEqual(doc.summary, { open: true, rounds: 1, corrections: 1, confirmed: false, draft: null, prompts: 0 });
+  const { read, ...rest } = doc.summary;
+  assert.deepEqual(rest, { open: true, rounds: 1, corrections: 1, confirmed: false, draft: null, prompts: 0 });
+  assert.ok(Array.isArray(read) && read.length > 0 && read.every(id => /^D-\d+$/.test(id)), 'H2: the details already read back are kept (a second read-back says only what is new)');
   assert.ok(doc.ledger.details.some(d => d.withheld === true) && doc.ledger.details.some(d => d.provenance === 'consultant_typed'));
   // tampered summary state is refused whole
   for (const bad of [{ ...doc, summary: undefined }, { ...doc, summary: { ...doc.summary, open: 'yes' } }, { ...doc, summary: { ...doc.summary, rounds: -1 } }, { ...doc, summary: { ...doc.summary, draft: { id: 5 } } }]) {

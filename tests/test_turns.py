@@ -13,7 +13,7 @@ from atlas_voice.turns import analyze_turn
 ROOT = Path(__file__).resolve().parents[1]
 KEYS = ['intents', 'cues', 'field_hints', 'numbers', 'words']
 INTENTS = {'pause', 'resume', 'repeat', 'skip', 'dont_know', 'cannot_disclose', 'correction', 'rushed', 'stop', 'question_to_atlas', 'confirm', 'deny'}
-CUES = {'metric', 'estimate', 'vague_verb', 'team_claim', 'tech_list', 'certification', 'client_praise', 'describes_setback', 'describes_achievement', 'names_party'}
+CUES = {'metric', 'estimate', 'vague_verb', 'team_claim', 'tech_list', 'certification', 'client_praise', 'describes_setback', 'describes_achievement', 'names_party', 'describes_problem', 'period_stated', 'describes_action'}
 PERSON = re.compile(r'mood|emotion|sentiment|feel|stress|personality', re.I)
 
 
@@ -24,6 +24,10 @@ def cues(t): return analyze_turn(t)['cues']
 # The cases the task names, then the neighbours that must NOT fire: (text, intents that must be exactly these, cues that must be present, cues that must be absent)
 TABLE = [
     ('I helped improve the platform', None, {'vague_verb'}, set()),
+    ('the main problem was that releases failed often and the business was frustrated', None, {'describes_problem'}, {'describes_setback'}),
+    ('over the first quarter after go live', None, {'period_stated'}, set()),
+    ('I set up weekly review meetings for every release', None, {'describes_action'}, set()),
+    ('let me explain what we did on the project', None, set(), {'describes_action'}),
     ('we delivered the migration', None, {'team_claim'}, {'vague_verb'}),
     ('I led the migration and we delivered it', None, set(), {'team_claim'}),
     ('about 80% faster', None, {'metric', 'estimate'}, set()),
@@ -290,3 +294,50 @@ def test_h1_i_do_not_have_the_numbers_is_a_dont_know():
     for t in ["I don't have the numbers", "I don't have that data", 'We do not have the figures for that.', "we don't have any metrics"]:
         assert intents(t) == ['dont_know'], t
     assert intents('we have the numbers') == []
+
+
+# ---------- H2 ----------
+
+def test_h2_the_clients_problem_is_not_a_setback_the_consultant_went_through():
+    t = 'The main problem was releases took a whole weekend and failed often, the business was frustrated.'
+    r = analyze_turn(t, 'en', {'asked_field': 'stakes'})
+    assert 'describes_problem' in r['cues'] and 'describes_setback' not in r['cues'] and 'problem' in r['field_hints']
+    for t in ['the business was frustrated with the slow releases', 'the client struggled with manual reporting', 'the biggest pain point was onboarding']:
+        assert 'describes_problem' in cues(t) and 'describes_setback' not in cues(t), t
+    assert 'problem' in analyze_turn('the business was frustrated with the slow releases')['field_hints']
+    # what the consultant went through stays a setback, and so does a setback that sits next to the client's problem
+    for t in ['Honestly the pilot failed. The client kept changing scope and in the end they cancelled it after three months.', 'the sponsor left halfway', 'the team was exhausted',
+              'The pilot failed because the business was frustrated and the sponsor left', 'the main problem was the sponsor left halfway']:
+        assert 'describes_setback' in cues(t), t
+    assert 'describes_problem' not in cues('the client was thrilled with the result') and 'describes_problem' not in cues('the client kept changing scope')
+
+
+def test_h2_a_period_in_words_is_a_period():
+    for t in ['It was measured by the study managers in their tracking sheet over six months.', 'maybe over the first quarter after go live', 'we saw it in Q3', 'during the last quarter', 'across two years',
+              'in 2025 it dropped', 'the first month was rough', 'for several weeks']:
+        assert 'period_stated' in cues(t), t
+    for t in ['Deployments went down by 80 percent', 'the quarterly report', 'I was there when it started']:
+        assert 'period_stated' not in cues(t), t
+
+
+def test_h2_an_implicit_correction_is_a_correction():
+    for t in ['Actually the reporting was for four studies, not all of them. Otherwise right.', 'it was actually 3 days', 'actually it was the second team', 'Actually I was the delivery lead',
+              'four studies, not all of them', 'two teams, not the whole department']:
+        assert 'correction' in intents(t), t
+    for t in ['we chose GitLab because the team knew it', 'actually we chose GitLab because the client already had licences and the team knew it', 'It was a team effort, not a solo one', 'it was actually quite smooth overall']:
+        assert 'correction' not in intents(t), t
+
+
+def test_h2_a_first_person_action_with_a_named_practice_is_already_concrete():
+    hints = lambda t: analyze_turn(t)['field_hints']
+    for t in ['I was the delivery lead, I tried to hold the scope with weekly steering meetings but the sponsor left halfway.', 'we wrote the reconciliation scripts and ran the cutover checks',
+              'I set up a dashboard for the release metrics', 'we introduced a review gate for every release']:
+        assert 'intervention' in hints(t), t
+    for t in ['I helped out a lot with the client work', 'Mostly I worked on the release pipeline and the monitoring, making things more efficient for everyone.', 'we really modernised everything']:
+        assert 'intervention' not in hints(t), t
+
+
+def test_h2_work_actually_done_is_an_action_cue_and_a_lead_in_is_not():
+    assert 'describes_action' in cues('We rebuilt the nightly job so reports ran in parallel across regions')
+    assert 'describes_action' in cues('I tried to hold the scope with weekly steering meetings')
+    assert 'describes_action' not in cues('Sure, let me explain what we did on that project last year') and 'describes_action' not in cues('I helped improve the platform')

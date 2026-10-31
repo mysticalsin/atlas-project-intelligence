@@ -10,7 +10,9 @@
 // cp:<id>:<n> -> a Uint8Array of at most CHUNK_BYTES (the UTF-8 JSON, split), written together with the meta in one atomic put.
 import { Machine, StateError, STATES } from './conversation-state.js';
 
-export const VERSION = 2; // 2 (T11): the summary read-back state
+export const VERSION = 3; // 2 (T11): the summary read-back state; 3 (H2): the last acknowledgement's category (humane.prevAck) and the details already read back (summary.read)
+export const READABLE_VERSIONS = [2, VERSION]; // a version-2 checkpoint (written before H2) still restores: the two new fields start empty, which is what a fresh read-back would have
+const readable = v => READABLE_VERSIONS.includes(v);
 export const TTL_MS = 24 * 60 * 60 * 1000;
 export const CHUNK_BYTES = 100 * 1024; // a value in Durable Object storage may be 128 KiB: stay under it
 export const MAX_CHUNKS = 120; // 12 MB: far beyond any interview (the transcript budget is 100 000 characters); a put takes at most 128 keys
@@ -42,14 +44,14 @@ export function serialize(s) {
     machine: s.stateSnapshot(),
     history: s.history.slice(-HISTORY_KEEP),
     ledger: { stage: L.stage, transcripts: [...L.transcripts], details: L.details, probes: L.probes, deferred: L.deferred, updates: L.updates },
-    humane: { asked: h.asked, covered: [...h.covered], rushed: h.rushed, acks: h.acks, sinceEarned: h.sinceEarned, openers: h.openers },
+    humane: { asked: h.asked, covered: [...h.covered], rushed: h.rushed, acks: h.acks, sinceEarned: h.sinceEarned, openers: h.openers, prevAck: h.prevAck ?? null },
     asr: { meta: s.asrMeta, idents: s.asrIdents, done: s.asrDone, corrections: s.asrCorrections },
     // The question in front of the consultant. Its move is stored as a position in the asked log (the session finds it by identity), or whole when it is not in it.
     lastQuestion: q ? { text: q.text, item: q.item, turn: q.turn ?? null, moveAt: at, move: at < 0 ? q.move ?? null : null } : null,
     // Durations, not clock readings: the time a connection was down is neither interview time nor wall-cap time.
     clock: { wall: now - s.startedAt, pausedTotal: s.pausedTotal, pausedFor: s.pausedAt === null ? 0 : now - s.pausedAt, paused: s.paused, pauseCount: s.pauseCount, resumeCount: s.resumeCount },
     // The read-back (T11): whether the card is open, how many read-backs and typed corrections there were, and the confirmation with the draft it saved.
-    summary: { open: s.summary.open, rounds: s.summary.rounds, corrections: s.summary.corrections, confirmed: s.summary.confirmed, draft: s.summary.draft, prompts: s.summary.prompts },
+    summary: { open: s.summary.open, rounds: s.summary.rounds, corrections: s.summary.corrections, confirmed: s.summary.confirmed, draft: s.summary.draft, prompts: s.summary.prompts, read: [...s.summary.read] },
     counters: { turns: s.turns, replies: s.replies, spokenMs: s.spokenMs, identNow: s.identNow, timeUp: s.timeUp },
   });
 }
@@ -64,7 +66,7 @@ const str = (v, what) => { if (typeof v !== 'string') bad(`${what} is not text`)
 // is moved there by a system `disconnect`): the session then fires `reconnect`.
 export function restore(s, d) {
   if (!isObj(d)) bad('not a checkpoint');
-  if (d.version !== VERSION) throw new CheckpointError('version_mismatch', `checkpoint is version ${JSON.stringify(d.version)}, this is ${VERSION}`);
+  if (!readable(d.version)) throw new CheckpointError('version_mismatch', `checkpoint is version ${JSON.stringify(d.version)}, this is ${VERSION}`);
   if (typeof d.sessionId !== 'string' || !SESSION_ID.test(d.sessionId)) bad('bad session id');
   if (d.mode !== 'full') bad('only full interviews are resumable');
   let m;
@@ -84,11 +86,15 @@ export function restore(s, d) {
   const asked = list(H.asked, 400, 'asked'), covered = list(H.covered, 100, 'covered'), acks = list(H.acks, 20, 'acks'), openers = list(H.openers, 10, 'openers');
   if (!asked.every(isObj) || !covered.every(x => typeof x === 'string') || typeof H.rushed !== 'boolean') bad('bad humane state');
   if (H.sinceEarned !== null) num(H.sinceEarned, 'sinceEarned');
+  const prevAck = typeof H.prevAck === 'string' && H.prevAck.length <= 40 ? H.prevAck : null; // absent in version 2 (and null after a reply with no acknowledgement)
+  if (H.prevAck !== undefined && H.prevAck !== null && prevAck === null) bad('bad prevAck');
   const A = d.asr; if (!isObj(A) || !isObj(A.meta)) bad('no asr state');
   const idents = list(A.idents, 400, 'asr idents'), corrections = list(A.corrections, 100, 'asr corrections');
   const S = d.summary; if (!isObj(S)) bad('no summary state');
   if (typeof S.open !== 'boolean' || typeof S.confirmed !== 'boolean') bad('bad summary flags');
   for (const [v, what] of [[S.rounds, 'summary rounds'], [S.corrections, 'summary corrections'], [S.prompts, 'summary prompts']]) if (num(v, what) < 0) bad(what + ' is negative');
+  const read = S.read === undefined ? [] : list(S.read, 100, 'summary read'); // absent in version 2: the next read-back is a first one
+  if (!read.every(x => typeof x === 'string' && x.length <= 100)) bad('bad summary read');
   if (S.draft !== null && !(isObj(S.draft) && typeof S.draft.id === 'string' && S.draft.id.length <= 100 && Number.isInteger(S.draft.revision))) bad('bad summary draft');
   if (S.open && !m.returns.some(r => r === 'summary' || r === 'user_correction')) bad('an open summary needs the interview to be in the read-back');
   const c = d.clock, k = d.counters; if (!isObj(c) || !isObj(k)) bad('no clock');
@@ -109,8 +115,8 @@ export function restore(s, d) {
     history: history.slice(), lastQuestion, asrMeta: A.meta, asrIdents: idents, asrDone: isObj(A.done) ? A.done : null, asrCorrections: corrections,
     startedAt: now - c.wall, pausedTotal: c.pausedTotal, pausedAt: c.paused ? now - c.pausedFor : null, paused: c.paused, pauseCount: c.pauseCount, resumeCount: c.resumeCount,
     turns: k.turns, replies: k.replies, spokenMs: k.spokenMs, identNow: typeof k.identNow === 'string' ? k.identNow : null, timeUp: k.timeUp === true });
-  Object.assign(s.summary, { open: S.open, rounds: S.rounds, corrections: S.corrections, confirmed: S.confirmed, draft: S.draft, prompts: S.prompts, sig: '', posting: false });
-  Object.assign(s.humane, { asked, covered: new Set(covered), rushed: H.rushed, acks, sinceEarned: H.sinceEarned, openers });
+  Object.assign(s.summary, { open: S.open, rounds: S.rounds, corrections: S.corrections, confirmed: S.confirmed, draft: S.draft, prompts: S.prompts, read: new Set(read), sig: '', posting: false });
+  Object.assign(s.humane, { asked, covered: new Set(covered), rushed: H.rushed, acks, sinceEarned: H.sinceEarned, openers, prevAck });
   Object.assign(s.ledger, { stage, transcripts: new Map(transcripts), details, probes, deferred: L.deferred, updates });
   return { from: d.machine.state, savedAt: d.savedAt };
 }
@@ -175,18 +181,18 @@ export class CheckpointStore {
   async info() {
     const m = await this.meta();
     if (m && isTerminal(m.state)) { await this.purge(); return null; } // finished (an older write): it can only be refused, so it is neither offered nor kept
-    return m && m.version === VERSION ? { sessionId: m.sessionId, savedAt: m.savedAt, expiresAt: m.expiresAt } : null;
+    return m && readable(m.version) ? { sessionId: m.sessionId, savedAt: m.savedAt, expiresAt: m.expiresAt } : null;
   }
 
   async load(sessionId) {
     const m = await this.meta();
     if (!m || m.sessionId !== sessionId) throw new CheckpointError('missing', 'no such checkpoint');
-    if (m.version !== VERSION) throw new CheckpointError('version_mismatch', `checkpoint is version ${JSON.stringify(m.version)}, this is ${VERSION}`);
+    if (!readable(m.version)) throw new CheckpointError('version_mismatch', `checkpoint is version ${JSON.stringify(m.version)}, this is ${VERSION}`);
     const keys = Array.from({ length: m.chunks }, (_, n) => chunkKey(sessionId, n)), got = await this.storage.get(keys), parts = keys.map(k => got.get(k));
     if (parts.some(p => !(p instanceof Uint8Array))) throw new CheckpointError('corrupt', 'a chunk is missing');
     const bytes = new Uint8Array(parts.reduce((n, p) => n + p.length, 0)); let at = 0; for (const p of parts) { bytes.set(p, at); at += p.length; }
     let doc; try { doc = JSON.parse(dec.decode(bytes)); } catch { throw new CheckpointError('corrupt', 'unreadable checkpoint'); }
-    if (!isObj(doc) || doc.version !== VERSION) throw new CheckpointError(isObj(doc) && doc.version !== undefined ? 'version_mismatch' : 'corrupt', 'wrong checkpoint version');
+    if (!isObj(doc) || !readable(doc.version)) throw new CheckpointError(isObj(doc) && doc.version !== undefined ? 'version_mismatch' : 'corrupt', 'wrong checkpoint version');
     if (doc.sessionId !== sessionId) throw new CheckpointError('corrupt', 'checkpoint belongs to another session');
     return doc;
   }

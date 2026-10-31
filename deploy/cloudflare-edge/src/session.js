@@ -212,6 +212,7 @@ const MOVE_REACTION = {
   correction_thanks: 'Say you will use their version instead; no thanks needed.',
   correction_thanks_fact: 'Thank them for the correction and use their version.',
   setback_neutral: 'Acknowledge the event neutrally and judge no one; no cheer, no praise.',
+  setback_plain: 'A very short neutral acknowledgement is enough; no further sympathy, judge no one.',
   earned_result: 'One short, specific reaction to the result is earned; no superlatives.',
   promising_unverified: 'Say only that it sounds promising; the figure is not confirmed yet; no praise.',
 };
@@ -777,14 +778,14 @@ export class Session {
       let move = null, selectorMs = -1, sinceEarned;
       if (v2 || content) {
         if (turn) turn = this.resolveAsr(turn, text); // a yes / no / right value for the span asked last turn settles it (once)
-        if (turn && v2) { try { move = this.decide(turn); } catch (e) { this.metric('selector_error', { name: e?.name || 'Error' }); } }
+        if (turn && v2) { try { move = this.decide(turn, null, text); } catch (e) { this.metric('selector_error', { name: e?.name || 'Error' }); } }
         selectorMs = Math.round((this.now() - t0) * 1000);
       }
       if (h.sinceEarned !== null) sinceEarned = h.sinceEarned += 1;
       const ack = content ? this.ackFor(turn, move, text, sinceEarned) : null;
       // The analyst's plan may still land while the acknowledgement plays: with ANALYST_WAIT_MS the move is chosen again from it.
       const job = this.turnJob, wait = this.flags.analystWaitMs;
-      const refine = move && job && wait > 0 ? async old => { await Promise.race([job.catch(() => {}), this.sleep(wait)]); return this.decide(turn, old); } : null;
+      const refine = move && job && wait > 0 ? async old => { await Promise.race([job.catch(() => {}), this.sleep(wait)]); return this.decide(turn, old, text); } : null;
       return this.startReply(undefined, { filler: ack ? ack.text : content ? '' : this.pickFiller(text), ack, move, refine, turn: this.turns, endedAt, timeline: { sttMs, selectorMs } });
     }
     this.metric('still_thinking', { by: endedBy === 'thinking' ? 1 : 0 });
@@ -913,10 +914,11 @@ export class Session {
 
   // The next move for this answer (plan 3c). `replacing`: a move already committed for this reply, left out of the log when the
   // analyst's newer plan makes the server choose again. Deferrals ("I don't know") stay open: their hints do not count as covered.
-  decide(turn, replacing = null) {
+  // `text`: the words of the answer being decided on (the ledger has not filed them yet): the selector may quote a few of them back (a hook), never anything else of them.
+  decide(turn, replacing = null, text = '') {
     const h = this.humane, elapsed = this.activeSeconds();
     if (turn.intents.includes('rushed')) h.rushed = true;
-    const plan = { ...this.currentPlan(), covered_fields: [...h.covered] };
+    const plan = { ...this.currentPlan(), covered_fields: [...h.covered], latest_text: typeof text === 'string' ? clean(text, 300) : '' };
     const move = select(plan, turn, h.asked.filter(m => m !== replacing), this.prefill, elapsed >= TIME_PLAN.depth_fraction * this.maxSeconds ? 'depth' : 'breadth',
       this.maxSeconds - elapsed, this.asrFor(turn), h.rushed, this.language);
     // (a refusal to share that still said something, "kept_private", does count: the point was answered, only a name was held back)
@@ -979,9 +981,9 @@ export class Session {
     let v;
     if (reflect) v = this.summaryView();
     else { this.summary.open = true; this.summary.rounds += 1; v = this.sendSummary(true); this.metric('summary', { items: v.items.length, unknowns: v.unknowns.length, round: this.summary.rounds }); this.checkpointSoon(); }
-    // The second round (a read-back was already made) says only what is new or changed since; an outcome is said as "basis still open" while its measurement has gaps.
-    const again = !reflect && this.summary.read.size > 0, basisOpen = (this.ledger.inspect().measurement_gaps || []).length > 0;
-    const opts = { max: reflect ? REFLECT_FACTS : MAX_FACTS, basisOpen, skip: again ? this.summary.read : null };
+    // The second round (a read-back was already made) says only what is new or changed since; an outcome is said with "though the starting figure is still open" (or the period, the source, or a general "basis") while its measurement basis is open.
+    const again = !reflect && this.summary.read.size > 0, gaps = this.ledger.inspect().measurement_gaps || [], parts = this.unknownParts();
+    const opts = { max: reflect ? REFLECT_FACTS : MAX_FACTS, basisOpen: parts.length ? parts : gaps.length ? gaps : false, skip: again ? this.summary.read : null };
     const { facts, numbers } = summaryFacts(v.items, opts);
     if (!reflect) for (const x of factItems(v.items, opts)) this.summary.read.add(x.detail_id);
     return { reflect, again, facts: facts.map(f => clean(f, 240)), numbers, unknowns: v.unknowns.map(u => ({ ...u, label: clean(u.label, 80) })) };

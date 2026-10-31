@@ -320,8 +320,10 @@ def test_ladder_starts_with_open_exploration_then_follows_the_thread_not_dict_or
     t = turn('We chose Kafka instead of RabbitMQ because we considered the trade-offs and the alternatives carefully', 'problem')
     assert 'decision' in t['field_hints']
     m = mv(None, t, asked=[first])
-    assert m['field'] not in ('problem', 'decision')
-    assert CONFIG['fields'][m['field']]['rung'] >= 5 or m['field'] == 'contribution'
+    assert (m['intent'], m['field']) == ('decision_follow', 'decision')   # H2: a richer field volunteered unasked gets one follow-up on its own thread first
+    n = mv(None, t, asked=[first, m])
+    assert n['field'] not in ('problem', 'decision')
+    assert CONFIG['fields'][n['field']]['rung'] >= 5 or n['field'] == 'contribution'
 
 
 def test_ladder_climbs_from_example_to_ownership_to_impact():
@@ -491,7 +493,7 @@ def test_closing_phase_asks_only_the_essentials_then_summary_then_close():
 def test_depth_phase_reflects_once_when_enough_is_known():
     plan = ledger_plan(('problem', 'Reports took two days'), ('contribution', 'I owned the pipeline'), ('outcome', 'They run in 25 minutes'))
     m = mv(plan, turn('okay'), phase='depth')
-    assert m['kind'] == 'reflect' and m['say'].count('?') == 1 and 'customer problem' in m['say'] and 'Reports took' not in m['say']
+    assert m['kind'] == 'reflect' and m['say'].count('?') == 1 and 'the problem, your part and the result' in m['say'] and 'Reports took' not in m['say'] and 'customer problem' not in m['say']   # H2: spoken names, not form labels
     n = mv(plan, turn('we also added alerts to the job and trained the support team'), asked=[m], phase='depth')
     assert n['kind'] != 'reflect'
     assert mv(plan, turn('okay'), phase='breadth')['kind'] != 'reflect'
@@ -821,3 +823,121 @@ def test_h1_the_move_carries_bridge_and_hook_and_never_a_score():
     assert isinstance(m['bridge'], bool) and isinstance(m['hook'], str) and list(m) == KEYS
     for line in (mv(phase='wrap'), mv(t=turn('can we pause'), asked=[{'intent': 'impact', 'field': 'outcome', 'rung': 6, 'say': 'What changed?', 'why': 'ladder:outcome', 'kind': 'ask'}])):
         assert line['bridge'] is False and line['hook'] == ''
+
+
+# ---------- H2: conversation polish (second humane review pass) ----------
+
+ASK = lambda intent, field, rung, say='x?', why='ladder:x', **kw: {'kind': 'ask', 'intent': intent, 'field': field, 'rung': rung, 'say': say, 'why': why, **kw}
+
+
+def test_h2_empathy_is_paced_one_setback_ack_and_one_setback_question_per_three_replies():
+    t = turn('It was really frustrating, the team was exhausted and the new sponsor did not care about the project at all.')
+    m1 = mv(t=t)
+    assert (m1['intent'], m1['ack_category']) == ('setback_response', 'setback_neutral')
+    m2 = mv(t=t, asked=[m1])
+    assert m2['intent'] != 'setback_response' and m2['ack_category'] == 'setback_plain'          # continues the ladder from what they said; a plain uptake
+    m3 = mv(t=t, asked=[m1, m2])
+    assert m3['intent'] != 'setback_response' and m3['ack_category'] == 'setback_plain'
+    m4 = mv(t=t, asked=[m1, m2, m3])
+    assert (m4['intent'], m4['ack_category']) == ('setback_response', 'setback_neutral')           # three replies later it may meet a setback again
+    assert 'setback_plain' in ACKS and all(not re.search(r'sounds|tough|hard|difficult', v) for v in ACKS['setback_plain']['en'])
+
+
+def test_h2_the_setback_throttle_looks_at_what_was_said_not_only_at_the_question():
+    # an acknowledgement is throttled even when the previous setback was met inside another move (the log keeps each move's ack category)
+    t = turn('the sponsor left halfway and the team was exhausted')
+    prior = ASK('example', 'intervention', 2, ack_category='setback_neutral')
+    assert mv(t=t, asked=[prior])['ack_category'] == 'setback_plain'
+    assert mv(t=t, asked=[prior, ASK('impact', 'outcome', 6, ack_category='neutral'), ASK('adoption', 'adoption', 6, ack_category='neutral')])['ack_category'] == 'setback_neutral'
+
+
+def test_h2_the_clients_problem_is_met_as_a_problem_not_as_a_setback():
+    t = turn('The main problem was releases took a whole weekend and failed often, the business was frustrated.', 'stakes')
+    assert 'describes_problem' in t['cues'] and 'describes_setback' not in t['cues']
+    m = mv(t=t, asked=[ASK('stakes', 'stakes', 2, 'What was at stake for the client if nothing had changed?')])
+    assert m['intent'] != 'setback_response' and m['say'] != 'What did you do when that happened?'
+    assert m['ack_category'] in ('neutral', 'thanks_detail')
+    assert m['field'] != 'problem'                                                                # the problem is now answered: the ladder moves on
+    # what the consultant went through is still met with "what did you do"
+    s = mv(t=turn('The pilot failed and the sponsor left halfway through.'))
+    assert s['intent'] == 'setback_response' and s['ack_category'] == 'setback_neutral'
+
+
+def test_h2_a_volunteered_richer_field_gets_one_follow_up_on_its_own_thread():
+    said = 'We chose GitLab pipelines over Jenkins because the client already had licences and the team knew it.'
+    plan = {'latest_text': said}
+    stakes = ASK('stakes', 'stakes', 2, 'What was at stake for the client if nothing had changed?', 'ladder:stakes')
+    t = turn(said, 'stakes')
+    assert 'decision' in t['field_hints']
+    m = mv(plan, t, asked=[stakes])
+    assert (m['intent'], m['field'], m['why']) == ('decision_follow', 'decision', 'follow:decision') and m['bridge'] is False
+    assert m['say'] == 'What made GitLab pipelines the better fit there?' and m['hook'] == 'GitLab pipelines over Jenkins'
+    assert m['say'].count('?') == 1 and 'decision_follow' in selector.NOT_ATTEMPTS
+    # without the words in the plan (older callers) the follow-up has no hook and still reads well
+    assert mv({}, t, asked=[stakes])['say'] == 'What tipped the decision your way?'
+    # once per field: the next answer on the same field is not followed up again, and the ladder is not blocked by it
+    again = mv(plan, t, asked=[stakes, m])
+    assert again['intent'] != 'decision_follow' and again['field'] != 'decision'
+    # not when it was the question asked, known before, deferred, or the consultant is rushed
+    assert mv(plan, turn(said, 'decision'), asked=[ASK('decision', 'decision', 4)])['intent'] != 'decision_follow'
+    assert mv({'latest_text': said, 'covered_fields': ['decision']}, t, asked=[stakes])['intent'] != 'decision_follow'
+    assert mv({'latest_text': said, 'deferred_fields': {'decision': 'x'}}, t, asked=[stakes])['intent'] != 'decision_follow'
+    assert mv(plan, t, asked=[stakes], rushed=True)['intent'] != 'decision_follow'
+    assert mv(plan, turn('We chose GitLab', 'stakes'), asked=[stakes])['intent'] != 'decision_follow'     # a bare mention is not a thread
+
+
+def test_h2_the_other_threads_follow_up_too_but_a_figure_is_left_to_the_metric_questions():
+    ev = turn('We wrote a lessons learned document and the client reused our data model in the next programme.', 'impact')
+    m = mv({'latest_text': 'We wrote a lessons learned document'}, ev, asked=[ASK('impact', 'outcome', 6)])
+    assert (m['intent'], m['field']) == ('evidence_follow', 'evidence') and m['say'] == 'Who could vouch for that if a reviewer asked?'
+    me = mv({}, turn('I set up weekly review meetings with the ops team and wrote the checklists for every release', 'stakes'), asked=[ASK('stakes', 'stakes', 2)])
+    assert (me['intent'], me['field']) == ('example_follow', 'intervention')
+    metric = mv({}, turn('Deployments went down by 80 percent and the ops team tracked it on a dashboard every week', 'impact'), asked=[ASK('impact', 'outcome', 6)])
+    assert metric['intent'] == 'metric_kind' and metric['field'] == 'measurement'
+    for v in [v for i in selector.FOLLOW_INTENTS.values() for v in QUESTION_BANK[i]['en']]:
+        assert v.count('?') == 1 and not YES_NO_START.match(v) and not re.search(BANNED_PRAISE_SRC, v, re.I), v
+
+
+def test_h2_a_first_person_action_with_specifics_is_not_asked_for_as_an_example():
+    t = turn('I was the delivery lead, I tried to hold the scope with weekly steering meetings but the sponsor left halfway.', 'decision')
+    assert 'intervention' in t['field_hints']
+    m = mv({}, t, asked=[ASK('setback_response', 'decision', 4, 'What did you do when that happened?', 'setback')])
+    assert m['intent'] not in ('example', 'vague_example') and 'concrete' not in m['say']
+    assert mv({}, turn('I was the delivery lead and we kept things going somehow.', 'decision'), asked=[ASK('setback_response', 'decision', 4)])['intent'] != 'example_follow'
+
+
+def test_h2_an_unverified_figure_is_only_ever_called_promising():
+    assert all(re.search(r'\bsounds\b', v) and 'mattered' not in v for v in ACKS['promising_unverified']['en'])
+    first = mv(t=turn('Deployments went down by 80 percent, it was a huge success and the client loved it.', 'outcome'), asked=[ASK('impact', 'outcome', 6)])
+    assert (first['reaction'], first['ack_category']) == ('ack', 'promising_unverified')
+
+
+def test_h2_a_period_said_in_words_is_not_asked_again():
+    plan = ledger_plan(('outcome', 'Report preparation went from 10 days to 3 days per study'))
+    kind = ASK('metric_kind', 'measurement', 7, 'Was that figure measured?', 'metric:kind')
+    said = turn('It was measured by the study managers in their tracking sheet over six months.', 'measurement')
+    assert 'period_stated' in said['cues']
+    m = mv(plan, said, asked=[kind])
+    assert m['intent'] != 'metric_period'
+    assert mv(plan, turn('I think it was measured, the ops team had a dashboard somewhere.', 'measurement'), asked=[kind])['intent'] == 'metric_period'
+    q = mv(ledger_plan(('outcome', 'Deployments went down by 80 percent')), turn('maybe over the first quarter after go live', 'measurement'), asked=[ASK('metric_period', 'measurement', 7, 'Over what period?', 'metric:period')])
+    assert q['intent'] == 'metric_baseline'
+
+
+def test_h2_the_hook_may_come_from_the_answer_itself_only_when_it_opens_with_a_first_person_verb():
+    base = {'candidate_details': []}
+    ok = selector._hook({**base, 'latest_text': 'We chose GitLab pipelines over Jenkins because the client had licences'}, 'decision', ['decision'])
+    assert ok == 'GitLab pipelines over Jenkins'
+    for text in ['Honestly the pilot failed and that was that', 'I think it was measured, there was a dashboard', 'The release manager and the squads used it daily']:
+        assert selector._hook({**base, 'latest_text': text}, 'adoption', ['adoption']) == '', text
+    assert selector._hook({**base, 'latest_text': 'We chose GitLab pipelines over Jenkins'}, 'decision', []) == ''              # the answer must cover the thread
+    old = {'candidate_details': [{'field': 'decision', 'quote': 'I chose Kafka over RabbitMQ for the queue', 'active': True, 'status': 'reported'}], 'latest_text': 'We chose GitLab pipelines'}
+    assert selector._hook(old, 'decision', ['decision']) == 'Kafka over RabbitMQ for the queue'                                  # the ledger's own quote wins when it has one
+
+
+def test_h2_reflect_names_the_fields_the_way_people_say_them():
+    assert set(CONFIG['reflect_labels']) == set(FIELDS)
+    plan = ledger_plan(('problem', 'Reports took two days'), ('contribution', 'I owned the pipeline'), ('outcome', 'They run in 25 minutes'))
+    m = mv(plan, turn('okay'), phase='depth')
+    assert m['kind'] == 'reflect' and m['say'] == "So far we've covered the problem, your part and the result. What important thing have I missed?"
+    assert not any(label.lower() in m['say'].lower() for _, (label, _) in FIELDS.items())

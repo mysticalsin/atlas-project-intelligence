@@ -35,6 +35,15 @@ EN = [
     "Deployments went down by 80 percent, it was a huge success and the client loved it.", "the client loved it", "the customers were really happy", "it dropped and we were faster and had fewer tickets",
     "Report preparation went from 10 days to 2 days per study.", "I can not name the client, it is a big pharma company under NDA, but we rebuilt their clinical trial reporting.",
     "I can not share the documents, they are confidential.", "I can't say who they are", "which bank was it", "I don't have the numbers", "I don't have that data", "We do not have the figures for that.", "we have the numbers",
+    # v2.1 H2: the client's problem is not a setback; a period in words; implicit corrections; a first-person action with a named practice
+    "The main problem was releases took a whole weekend and failed often, the business was frustrated.", "the business was frustrated with the slow releases", "the client struggled with manual reporting",
+    "the biggest pain point was onboarding", "The pilot failed because the business was frustrated and the sponsor left", "the main problem was the sponsor left halfway", "the client was thrilled with the result",
+    "the client kept changing scope", "It was measured by the study managers in their tracking sheet over six months.", "maybe over the first quarter after go live", "we saw it in Q3", "during the last quarter",
+    "across two years", "in 2025 it dropped", "for several weeks", "the quarterly report", "Actually the reporting was for four studies, not all of them. Otherwise right.", "it was actually 3 days",
+    "actually it was the second team", "Actually I was the delivery lead", "four studies, not all of them", "two teams, not the whole department", "It was a team effort, not a solo one",
+    "actually we chose GitLab because the client already had licences and the team knew it", "it was actually quite smooth overall",
+    "I was the delivery lead, I tried to hold the scope with weekly steering meetings but the sponsor left halfway.", "we wrote the reconciliation scripts and ran the cutover checks", "I set up a dashboard for the release metrics",
+    "we introduced a review gate for every release", "we really modernised everything", "We chose GitLab pipelines over Jenkins because the client already had licences and the team knew it.",
 ]
 OTHER = [
     ('on peut faire une pause ?', 'fr'), ('on reprend', 'fr'), ('pouvez-vous répéter la question', 'fr'), ('passons à la question suivante', 'fr'), ('je ne sais pas', 'fr'),

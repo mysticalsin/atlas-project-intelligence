@@ -82,6 +82,30 @@ converse(['I can not name the client, it is a big pharma company under NDA, but 
 converse(["I can't name the client", 'Which bank was it? I could not say who they are', 'Please do not ask for the name of the company'])
 converse(['we delivered the project on time', 'It was a really difficult migration with a lot of pushback', 'the sponsor left halfway', 'we recovered by splitting the work', 'ok'], records={1: 'problem'})
 
+# v2.1 H2: empathy pacing, the client's problem, thread following (with the answer's own words), concrete actions, a period in words, an implicit correction
+def converse_text(utterances, **kw):
+    """Like converse(), and the plan carries the answer's words (plan['latest_text']) the way the Session passes them."""
+    asked, led = [], InterviewLedger()
+    for i, text in enumerate(utterances):
+        last = asked[-1] if asked else None
+        t = analyze_turn(text, 'en', {'asked_field': last['field']} if last and last['field'] else None)
+        p = {**led.inspect(), 'latest_text': text, 'covered_fields': sorted({f for a in asked for f in [a['field']] if f})}
+        asked.append(record(p, t, asked, kw.get('prefill') or {}, 'breadth', 800 - 30 * i))
+    return asked
+
+
+converse_text(['It was really frustrating, the team was exhausted and the new sponsor did not care about the project at all.', 'the sponsor left halfway and the team was exhausted', 'the sponsor left halfway again',
+               'the sponsor left halfway again and again', 'ok'])
+converse_text(['We have a platform for the client.', 'The main problem was releases took a whole weekend and failed often, the business was frustrated.', 'We chose GitLab pipelines over Jenkins because the client already had licences and the team knew it.',
+               'We chose GitLab pipelines over Jenkins because the client already had licences and the team knew it.', 'We wrote a lessons learned document and the client reused our data model in the next programme.',
+               'I set up weekly review meetings with the ops team and wrote the checklists for every release', 'ok'])
+converse_text(['I was the delivery lead, I tried to hold the scope with weekly steering meetings but the sponsor left halfway.', 'I do not know', 'We chose Kafka', 'Honestly the pilot failed and that was that'])
+converse_text(['Report preparation went from 10 days to 2 days per study.', 'It was measured by the study managers in their tracking sheet over six months.', 'Actually the reporting was for four studies, not all of them. Otherwise right.'])
+converse_text(['Deployments went down by 80 percent, it was a huge success and the client loved it.', 'I think it was measured, the ops team had a dashboard somewhere.', 'maybe over the first quarter after go live', 'I do not know the baseline'])
+record({'latest_text': 'We chose GitLab pipelines over Jenkins because the client had licences'}, analyze_turn('We chose GitLab pipelines over Jenkins because the client had licences', 'en', {'asked_field': 'stakes'}), [], {}, 'breadth', 800)
+record({'latest_text': 'Honestly the pilot failed and that was that'}, analyze_turn('We chose GitLab pipelines over Jenkins because the client had licences', 'en', {'asked_field': 'stakes'}), [], {}, 'breadth', 800)
+record({'latest_text': 7}, analyze_turn('We chose GitLab pipelines over Jenkins because the client had licences', 'en', {'asked_field': 'stakes'}), [], {}, 'breadth', 800)
+
 # hand-made situations
 C = ledger(('outcome', 'It takes 25 minutes now'), ('outcome', 'The report now takes 40 minutes'))
 record(C, analyze_turn('okay', 'en'), [], {}, 'breadth', 800)
