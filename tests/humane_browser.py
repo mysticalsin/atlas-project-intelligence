@@ -66,7 +66,8 @@ def wait(p, cond, timeout=8):
 
 class Voice:
     """The scripted stand-in for the voice WebSocket. controls: what `ready` announces (a gateway that announces none must get no control UI)."""
-    def __init__(s, controls=None, draft=None, text=False):
+    def __init__(s, controls=None, draft=None, text=False, language=None):
+        s.language = language;   # v2.2 L1: the language object the stand-in announces in `ready` (None: none, as an older server)
         s.controls = controls; s.draft = draft or {}; s.frames = []; s.sock = None; s.sockets = 0; s.hold = False; s.held = []; s.summary_items = [dict(i) for i in ITEMS]
         s.text = text; s.binary = 0; s.refuse = None; s.typed = []   # text: a typed interview (start mode 'text'); refuse: the reason the stand-in refuses the next typed turn
 
@@ -83,12 +84,12 @@ class Voice:
                 def ready():
                     resumed = d.get('resume') is not None
                     ws.send(json.dumps({'type': 'ready', 'mode': 'full', 'model': 'ATLAS', 'provider': 'ATLAS voice', 'sampleRate': 24000, 'capture': True, 'liveLedger': True, 'maxSeconds': 900,
-                                        'speakingSeconds': 600, 'message': 'ready', **({'input': 'text'} if d.get('mode') == 'text' else {}), 'sessionId': SID, 'resumable': True, **({'resumed': True} if resumed else {}), **({'controls': s.controls} if s.controls else {}),
+                                        'speakingSeconds': 600, 'message': 'ready', **({'input': 'text'} if d.get('mode') == 'text' else {}), 'sessionId': SID, 'resumable': True, **({'resumed': True} if resumed else {}), **({'language': s.language, 'voices': ['en', 'es']} if s.language else {}), **({'controls': s.controls} if s.controls else {}),
                                         'timePlan': {'depthAt': 405, 'closingAt': 690}}))
                     if resumed:
                         ws.send(json.dumps({'type': 'restore', 'user': [{'item_id': 'user-1', 'text': 'We rebuilt the claims intake process for the insurance client.', 'provenance': 'unverified_speech_recognition'}],
                                             'agent': ['Hi, I am ATLAS.', 'What was the baseline?'], 'lastQuestion': 'What was the baseline?', 'activeSeconds': 95}))
-                    else: ws.send(json.dumps({'type': 'agent_text', 'text': "Hi, I'm ATLAS. What was the project?"}))
+                    else: ws.send(json.dumps({'type': 'agent_text', 'text': 'Bonjour, je suis ATLAS. Quel était le projet ?' if s.language else "Hi, I'm ATLAS. What was the project?"}))
                 if s.hold and d.get('resume') is not None: s.held.append(ready)
                 else: ready()
             elif t == 'pause': ws.send(json.dumps({'type': 'state', 'state': 'paused', 'event': 'pause', 'actor': 'consultant'}))
@@ -102,7 +103,7 @@ class Voice:
                     ws.send(json.dumps({'type': 'quality_warning', 'message': 'ATLAS is still replying.', 'refused': 'text', 'reason': s.refuse})); return
                 s.typed.append(('user-typed-%d' % (len(s.typed) + 1), d['text']))
                 ws.send(json.dumps({'type': 'user_text', 'item_id': s.typed[-1][0], 'text': d['text'], 'provenance': 'consultant_typed'}))
-                ws.send(json.dumps({'type': 'agent_text', 'text': '\n\nThanks. Over what period was that measured?' if len(s.typed) < 3 else '\n\nThat helps. What did the team change?'}))
+                ws.send(json.dumps({'type': 'agent_text', 'text': ('\n\nMerci. Sur quelle période cela a-t-il été mesuré ?' if s.language else '\n\nThanks. Over what period was that measured?') if len(s.typed) < 3 else '\n\nThat helps. What did the team change?'}))
             elif t == 'correct':
                 for i in s.summary_items:
                     if i['detail_id'] == d['detail_id']: i.update(quote=d['text'], provenance='consultant_typed', detail_id='D-004')
@@ -372,6 +373,41 @@ try:
         check('the typed conversation comes back where it was: the turns and ATLAS\'s words, in order', ptr.locator('#textLog .msg').count() == 3
               and 'We rebuilt the claims intake process for the insurance client.' in ptr.locator('#textLog .msg').nth(1).inner_text() and 'What was the baseline?' in ptr.locator('#textLog .msg').nth(2).inner_text())
         ptr.close(); pt.close()
+
+        # ---- 9. v2.2 L1: a typed interview in French. The page offers every language (the real bootstrap lists them), the choice is sent with the start, the server's language shows
+        # in the indicator (French has no voice here: replies are text), French text and accents are kept exactly, and a change during the conversation sends one message.
+        FR = {'code': 'fr', 'language': 'fr', 'name': 'French', 'native': 'Français', 'rtl': False, 'voice': False, 'locked': True, 'bank': True}
+        vf = Voice(controls=CONTROLS, draft=draft, text=True, language=FR)
+        pf = open_page(USER, vf, mic=False)
+        pf.locator('#voiceLanguage').wait_for(state='visible', timeout=8000)
+        opts = pf.evaluate("[...document.querySelectorAll('#voiceLanguageSelect option')].map(o=>[o.value,o.textContent])")
+        check('the language selector lists Auto-detect first and every language by its own name; one ATLAS has no voice for says "text replies"',
+              opts[0] == ['auto', 'Auto-detect'] and ['fr', 'Français \u00b7 French (text replies)'] in opts and ['en', 'English'] in opts and ['es', 'Español \u00b7 Spanish'] in opts and len(opts) >= 30)
+        check('the selector is a labelled control and the typed answer takes any direction of text', pf.evaluate("document.querySelector('label[for=voiceLanguageSelect]').textContent.trim()") == 'Language' and pf.get_attribute('#voiceTypeInput', 'dir') == 'auto')
+        pf.select_option('#voiceLanguageSelect', 'fr')
+        pf.locator('#voiceStartText').click(); pf.locator('#voiceConsentDialog').wait_for(state='visible', timeout=8000); pf.locator('#modelConsent').check()
+        pf.locator('#voiceConsentType').click(); pf.wait_for_function('()=>AtlasVoice.status().phase==="live"', timeout=10000); pf.wait_for_timeout(600)
+        st = frames_of(pf, 'start')[0]
+        check('the start message carries the chosen language and that it is fixed (and mode text), nothing else new', st.get('language') == 'fr' and st.get('languageLock') is True and st.get('mode') == 'text')
+        check('the indicator says what the server announced: French, fixed by you, answering in text; the selector shows it', 'Français \u00b7 fixed by you \u00b7 ATLAS answers in text' in pf.locator('#voiceLanguageState').inner_text()
+              and pf.evaluate("document.getElementById('voiceLanguageSelect').value") == 'fr' and pf.get_attribute('#voiceLanguageState', 'role') == 'status')
+        check('the French greeting is in the log, and its lines take their own text direction', 'Bonjour, je suis ATLAS. Quel était le projet ?' in pf.locator('#textLog').inner_text() and pf.get_attribute('#textLog .msg', 'dir') == 'auto')
+        FR1 = "Nous avons reconstruit le processus d\u2019accueil des sinistres pour un grand assureur, et j\u2019ai dirigé la conception."
+        pf.locator('#voiceTypeInput').fill(FR1); pf.keyboard.press('Enter'); pf.wait_for_timeout(600)
+        check('a French answer is sent exactly as typed (accents and the curly apostrophe intact) and shown as "You", with the French reply after it',
+              [f['text'] for f in frames_of(pf, 'text')] == [FR1] and FR1 in pf.locator('#textLog .msg').nth(1).inner_text() and 'Sur quelle période cela a-t-il été mesuré ?' in pf.locator('#textLog .msg').nth(2).inner_text())
+        vf.sock.send(json.dumps({'type': 'language', 'code': 'ar', 'language': 'ar', 'name': 'Arabic', 'native': '\u0627\u0644\u0639\u0631\u0628\u064a\u0629', 'rtl': True, 'voice': False, 'locked': False, 'bank': False, 'via': 'detected'})); pf.wait_for_timeout(300)
+        check('a switch the server announces updates the indicator and the selector (back to Auto-detect), with no page error', '\u0627\u0644\u0639\u0631\u0628\u064a\u0629 \u00b7 detected \u00b7 ATLAS answers in text' in pf.locator('#voiceLanguageState').inner_text()
+              and pf.evaluate("document.getElementById('voiceLanguageSelect').value") == 'auto')
+        vf.sock.send(json.dumps({'type': 'language', 'code': 'pl', 'language': 'pl', 'name': 'Polish', 'native': 'Polski', 'rtl': False, 'voice': False, 'locked': False, 'bank': False, 'via': 'detected', 'notice': 'ATLAS cannot speak aloud here right now.'})); pf.wait_for_timeout(300)
+        check('the one-time "no voice" notice is shown to the consultant', 'ATLAS cannot speak aloud here right now.' in pf.locator('#voiceMessage').inner_text())
+        pf.select_option('#voiceLanguageSelect', 'es'); pf.wait_for_timeout(300)
+        check('choosing a language during the conversation sends exactly one language message', [f for f in vf.frames if f.get('type') == 'language'] == [{'type': 'language', 'language': 'es'}])
+        pf.select_option('#voiceLanguageSelect', 'auto'); pf.wait_for_timeout(300)
+        check('and "Auto-detect" gives the choice back to the server', [f for f in vf.frames if f.get('type') == 'language'][-1] == {'type': 'language', 'language': 'auto'})
+        pf.set_viewport_size({'width': 390, 'height': 844}); pf.wait_for_timeout(300)
+        check('at 390 px the language row does not scroll sideways', no_overflow(pf) and pf.evaluate("(()=>{const r=document.getElementById('voiceLanguage').getBoundingClientRect();return r.left>=0&&r.right<=innerWidth+1})()"))
+        pf.close()
         br.close()
     check('no page errors', not ERR)
 except SystemExit as e: code = e.code or 0

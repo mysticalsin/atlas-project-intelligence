@@ -9,6 +9,7 @@
 // Storage layout (single slot per DO): cp:current -> session id; cp:<id>:meta -> {version, sessionId, owner, savedAt, expiresAt, chunks, bytes};
 // cp:<id>:<n> -> a Uint8Array of at most CHUNK_BYTES (the UTF-8 JSON, split), written together with the meta in one atomic put.
 import { Machine, StateError, STATES } from './conversation-state.js';
+import { normalize } from './languages.js';
 
 export const VERSION = 3; // 2 (T11): the summary read-back state; 3 (H2): the last acknowledgement's category (humane.prevAck) and the details already read back (summary.read)
 export const READABLE_VERSIONS = [2, VERSION]; // a version-2 checkpoint (written before H2) still restores: the two new fields start empty, which is what a fresh read-back would have
@@ -40,10 +41,10 @@ export function newSessionId() { return Array.from(crypto.getRandomValues(new Ui
 export function serialize(s) {
   const now = s.now(), L = s.ledger, h = s.humane, q = s.lastQuestion, at = q?.move ? h.asked.indexOf(q.move) : -1;
   return structuredClone({
-    version: VERSION, sessionId: s.sessionId, savedAt: now, capturedAt: s.capturedAt ?? null, mode: s.mode, language: s.language, voice: s.voice, project: s.project, prefill: s.prefill,
+    version: VERSION, sessionId: s.sessionId, savedAt: now, capturedAt: s.capturedAt ?? null, mode: s.mode, language: s.language, languageLocked: s.languageLocked === true, voice: s.voice, project: s.project, prefill: s.prefill,
     machine: s.stateSnapshot(),
     history: s.history.slice(-HISTORY_KEEP),
-    ledger: { stage: L.stage, transcripts: [...L.transcripts], details: L.details, probes: L.probes, deferred: L.deferred, updates: L.updates },
+    ledger: { stage: L.stage, transcripts: [...L.transcripts], details: L.details, probes: L.probes, deferred: L.deferred, updates: L.updates, langs: [...L.langs] },
     humane: { asked: h.asked, covered: [...h.covered], rushed: h.rushed, acks: h.acks, sinceEarned: h.sinceEarned, openers: h.openers, prevAck: h.prevAck ?? null },
     asr: { meta: s.asrMeta, idents: s.asrIdents, done: s.asrDone, corrections: s.asrCorrections },
     // The question in front of the consultant. Its move is stored as a position in the asked log (the session finds it by identity), or whole when it is not in it.
@@ -112,13 +113,13 @@ export function restore(s, d) {
   }
   // Valid: change the session.
   const now = s.now();
-  Object.assign(s, { capturedAt: Number.isFinite(d.capturedAt) ? d.capturedAt : null, sessionId: d.sessionId, language: typeof d.language === 'string' ? d.language : s.language, project: d.project, prefill: d.prefill, machine: m,
+  Object.assign(s, { capturedAt: Number.isFinite(d.capturedAt) ? d.capturedAt : null, sessionId: d.sessionId, language: normalize(d.language) || s.language, languageLocked: d.languageLocked === true, project: d.project, prefill: d.prefill, machine: m,
     history: history.slice(), lastQuestion, asrMeta: A.meta, asrIdents: idents, asrDone: isObj(A.done) ? A.done : null, asrCorrections: corrections,
     startedAt: now - c.wall, pausedTotal: c.pausedTotal, pausedAt: c.paused ? now - c.pausedFor : null, paused: c.paused, pauseCount: c.pauseCount, resumeCount: c.resumeCount,
     turns: k.turns, replies: k.replies, spokenMs: k.spokenMs, identNow: typeof k.identNow === 'string' ? k.identNow : null, timeUp: k.timeUp === true });
   Object.assign(s.summary, { open: S.open, rounds: S.rounds, corrections: S.corrections, confirmed: S.confirmed, draft: S.draft, prompts: S.prompts, read: new Set(read), sig: '', posting: false });
   Object.assign(s.humane, { asked, covered: new Set(covered), rushed: H.rushed, acks, sinceEarned: H.sinceEarned, openers, prevAck });
-  Object.assign(s.ledger, { stage, transcripts: new Map(transcripts), details, probes, deferred: L.deferred, updates });
+  Object.assign(s.ledger, { stage, transcripts: new Map(transcripts), details, probes, deferred: L.deferred, updates, langs: new Map(Array.isArray(L.langs) ? L.langs.filter(p => Array.isArray(p) && typeof p[0] === 'string' && /^[a-z]{2,3}$/.test(p[1])) : []) });
   return { from: d.machine.state, savedAt: d.savedAt };
 }
 

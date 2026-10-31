@@ -69,8 +69,8 @@ const states = h => h.events.filter(e => e.type === 'state');
 
 test('controls are announced in ready; a client that never saw them is not sent them', async () => {
   const h = harness(); await opened(h);
-  assert.deepEqual(h.events.find(e => e.type === 'ready').controls, ['pause', 'resume', 'repeat', 'skip', 'text', 'correct', 'withhold', 'confirm_summary']);
-  assert.deepEqual([...CONTROLS], ['pause', 'resume', 'repeat', 'skip', 'text', 'correct', 'withhold', 'confirm_summary']); // (T11 added the summary card's three)
+  assert.deepEqual(h.events.find(e => e.type === 'ready').controls, ['pause', 'resume', 'repeat', 'skip', 'text', 'correct', 'withhold', 'confirm_summary', 'language']);
+  assert.deepEqual([...CONTROLS], ['pause', 'resume', 'repeat', 'skip', 'text', 'correct', 'withhold', 'confirm_summary', 'language']); // (T11 added the summary card's three, L1 the language selector)
 });
 
 test('pause: ATLAS stops, says one stock line, goes quiet; audio is ignored and neither the watchdog nor the clock runs for 60 s of silence', async () => {

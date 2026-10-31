@@ -44,6 +44,7 @@ EDGE_MODULES = [
     'atlas_voice.quality',
     'atlas_voice.speech',
     'atlas_voice.extension',
+    'atlas_voice.languages',
 ]
 for _name in EDGE_MODULES:
     for _key, _value in getattr(importlib.import_module(_name), 'EDGE_CONSTANTS', {}).items():

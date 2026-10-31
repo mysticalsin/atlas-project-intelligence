@@ -95,10 +95,13 @@ GUARD = [
     ('verified and approved are dropped', {}, ['Your 40 percent saving is verified and approved by your manager, congratulations.', 'I checked with your manager and it is fine.', 'What was the baseline?']),
     ('hedged, denied and asked are kept', {}, ['That figure is not verified yet.', 'A reviewer will approve it later, not me.', 'Was it approved by anyone?']),
     ('status line from the server may say so', {'allow_status': True}, ['The draft was approved by the reviewer.', 'Anything else?']),
+    # v2.2 L1: the Arabic question mark ends a question, and figures written in other scripts' digits are figures
+    ('arabic question mark', {}, ['\u0647\u0644 \u0642\u0627\u0633\u062a \u0630\u0644\u0643\u061f ', '\u0645\u0646 \u0645\u0644\u0643 \u0627\u0644\u0646\u0638\u0627\u0645\u061f']),
+    ('localized digits are figures', {'summary_facts': ['40 minutes', '12 minutes']}, ['\u0627\u0646\u062e\u0641\u0636 \u0627\u0644\u0648\u0642\u062a \u0645\u0646 \u0664\u0660 \u0625\u0644\u0649 \u0661\u0662 \u062f\u0642\u064a\u0642\u0629. ', '\u092a\u0930 \u0967\u0968\u0968 \u092f\u0942\u0928\u093f\u091f.', 'Is that right?']),
     ('unverified claim in summary mode with a good figure', {'summary_facts': ['4 percent']}, ['You cut it by 4 percent, and your manager verified it.', 'You cut it by 4 percent.', 'Is that right?']),
 ]
 out['_figures'] = [[t, figures(t)] for t in ('forty percent', 'twenty-five', 'two hundred and five', 'four-fold', 'tenfold gain', '\uff14\uff10 percent', 'one thing, no one', 'twenty one apples', 'quarante pour cent',
-    'quatre-vingt-dix', 'half the tickets', '2 million', 'vingt-cinq', 'treinta y cinco', '3.5 times', '1,200 tickets', 'zero downtime', 'a 4\u200b0 percent gain', 'one hundred', 'fifty and five')]
+    'quatre-vingt-dix', '\u0664\u0660 \u062f\u0642\u064a\u0642\u0629', '\u0967\u0968\u0968 \u092f\u0942\u0928\u093f\u091f', '\u06f3\u06f5\u066b\u06f5', 'half the tickets', '2 million', 'vingt-cinq', 'treinta y cinco', '3.5 times', '1,200 tickets', 'zero downtime', 'a 4\u200b0 percent gain', 'one hundred', 'fifty and five')]
 out['_claims'] = [[t, asserts_verification(t)] for t in ('Your saving is verified and approved by your manager.', 'that figure is not verified yet', 'A reviewer will approve it later.', 'I checked with your manager: it is fine.',
     'It was unverified.', 'Was it approved?', 'The CFO confirmed by email', 'Nobody has validated it.', 'It is validated.', "That isn\u2019t verified.", 'Signed off by the sponsor.', 'You confirmed it yourself.')]
 out['_guard'] = []

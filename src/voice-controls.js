@@ -21,6 +21,24 @@ function summaryMessage(kind,detailId,text){
  if(kind==='correct'){const t=typeof text==='string'?[...text.trim()].slice(0,CORRECT_MAX).join(''):'';return [...t].length>=CORRECT_MIN?{type:'correct',detail_id:detailId,text:t}:null;}
  return null;
 }
+// ---- Language (v2.2 L1): the selector and the indicator ----
+// The server follows the language the consultant speaks or types and announces it (`ready.language`, the `language` event); the consultant can also fix one. A language
+// ATLAS has no voice for is answered in text, and the page says so.
+const LANG_CODE=/^[a-z]{2,3}$/;
+function languageMessage(value){return value==='auto'||(typeof value==='string'&&LANG_CODE.test(value))?{type:'language',language:value}:null;}
+// The selector's options from the bootstrap's `languages`: Auto first, then every language by its own name, a language with no voice marked.
+function languageOptions(languages){
+ const list=Array.isArray(languages&&languages.list)?languages.list:[],voice=new Set(Array.isArray(languages&&languages.voice)?languages.voice:[]);
+ if(!list.length)return [];
+ return [{value:'auto',label:'Auto-detect'},...list.filter(x=>x&&typeof x.code==='string'&&LANG_CODE.test(x.code)).map(x=>({value:x.code,label:(x.native&&x.native!==x.name?x.native+' · '+x.name:x.name||x.code)+(voice.has(x.code)?'':' (text replies)')}))];
+}
+const languageInfo=m=>m&&m.type==='language'?m:m&&m.type==='ready'&&m.language&&typeof m.language==='object'?m.language:null;
+// What the indicator says and what the selector shows. info: the server's language object ({code,name,native,voice,locked,rtl,notice?}).
+function languageView(info){
+ if(!info||typeof info.code!=='string'||!LANG_CODE.test(info.code))return {hidden:true,text:'',value:'auto',dir:'auto',voice:true,notice:''};
+ const name=typeof info.native==='string'&&info.native?info.native:typeof info.name==='string'&&info.name?info.name:info.code;
+ return {hidden:false,text:name+' · '+(info.locked?'fixed by you':'detected')+' · '+(info.voice?'ATLAS answers aloud':'ATLAS answers in text'),value:info.locked?info.code:'auto',dir:info.rtl?'rtl':'ltr',voice:!!info.voice,notice:typeof info.notice==='string'?info.notice:''};
+}
 const supports=(ready,kind)=>Array.isArray(ready?.controls)&&ready.controls.includes(kind);
 
 // The paused flag from a server `state` event (the interview machine). Anything else leaves it as it is.
@@ -78,5 +96,5 @@ function logRestore(m){
  let list=[];for(let i=0;i<Math.max(agent.length,user.length);i++){if(i<agent.length)list=logApply(list,{type:'agent_text',text:'\n\n'+agent[i]});if(i<user.length)list=logApply(list,{type:'user_text',item_id:user[i].item_id,text:user[i].text});}
  return list;
 }
-return {TEXT_MAX,CORRECT_MAX,NAMES,PRIVATE_MARK,TYPED_NOTES,message,summaryMessage,supports,pausedFrom,elapsed,clock,view,typedAccepted,typedRefusal,afterAccepted,logApply,logRestore};
+return {TEXT_MAX,CORRECT_MAX,NAMES,PRIVATE_MARK,TYPED_NOTES,message,summaryMessage,languageMessage,languageOptions,languageInfo,languageView,supports,pausedFrom,elapsed,clock,view,typedAccepted,typedRefusal,afterAccepted,logApply,logRestore};
 });

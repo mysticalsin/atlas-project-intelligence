@@ -173,12 +173,12 @@ def test_french_spanish_and_other_languages_have_intents_only():
     for lang in ('fr', 'es'):
         r = analyze_turn('we delivered it, about 80% faster, the pilot failed', lang)
         assert r['cues'] == [] and r['field_hints'] == [] and r['numbers'] == [] and r['words'] == 9
-    for lang in ('de', 'ja', 'pt', 'xx'):
+    for lang in ('pl', 'ja', 'ar', 'xx'):   # a language without a table: the words are an answer (v2.2 L1: pt, de, it and nl now have intents, see test_l1_*)
         r = analyze_turn('yes, pause please, I helped improve it by 80%', lang)
         assert (r['intents'], r['cues'], r['field_hints'], r['numbers']) == ([], [], [], []) and r['words'] == 9
     # an unusable or regional language tag falls back to the base language
     assert intents('yes', 'EN-us') == ['confirm'] and intents('yes', 'en_GB') == ['confirm'] and intents('yes', None) == ['confirm']
-    assert intents('yes', 'de') == [] and intents('ありがとう', 'ja') == []
+    assert intents('yes', 'pl') == [] and intents('ありがとう', 'ja') == []
 
 
 def test_accents_quotes_and_case_do_not_matter():
@@ -446,3 +446,42 @@ def test_every_costly_pattern_has_a_gate_and_gated_search_equals_plain_search():
 def test_numbers_stop_at_the_cap():
     out = analyze_turn('3 ' * 500)['numbers']
     assert len(out) == turns.MAX_NUMBERS and analyze_turn('no digits here')['numbers'] == []
+
+
+# ---------- v2.2 L1: control intents in the seven bank languages ----------
+
+L1 = {
+    'pt': [('podemos fazer uma pausa', 'pause'), ('vamos continuar', 'resume'), ('pode repetir a pergunta', 'repeat'), ('próxima pergunta', 'skip'), ('não sei', 'dont_know'),
+           ('não posso compartilhar o nome do cliente', 'cannot_disclose'), ('desculpe, eu quis dizer 35', 'correction'), ('estou com pressa', 'rushed'), ('vamos encerrar por hoje', 'stop'),
+           ('sim, exatamente', 'confirm'), ('não, isso está errado', 'deny'), ('não', 'deny')],
+    'de': [('Können wir eine Pause machen', 'pause'), ('machen wir weiter', 'resume'), ('Können Sie die Frage bitte wiederholen', 'repeat'), ('nächste Frage', 'skip'), ('Ich weiß es nicht', 'dont_know'),
+           ('Das kann ich nicht teilen', 'cannot_disclose'), ('Entschuldigung, ich meinte 35', 'correction'), ('Ich habe es eilig', 'rushed'), ('Lassen Sie uns beenden', 'stop'), ('Ja, genau', 'confirm'),
+           ('Nein, das stimmt nicht', 'deny'), ('Nein', 'deny')],
+    'it': [('possiamo fare una pausa', 'pause'), ('riprendiamo', 'resume'), ('puoi ripetere la domanda', 'repeat'), ('prossima domanda', 'skip'), ('non lo so', 'dont_know'),
+           ('non posso condividerlo', 'cannot_disclose'), ('scusa, intendevo 35', 'correction'), ('ho fretta', 'rushed'), ('finiamo qui', 'stop'), ('sì, esatto', 'confirm'), ('no, è sbagliato', 'deny'), ('no', 'deny')],
+    'nl': [('kunnen we even pauzeren', 'pause'), ('laten we verder gaan', 'resume'), ('kun je de vraag herhalen', 'repeat'), ('volgende vraag', 'skip'), ('ik weet het niet', 'dont_know'),
+           ('dat kan ik niet delen', 'cannot_disclose'), ('sorry, ik bedoelde 35', 'correction'), ('ik heb haast', 'rushed'), ('laten we stoppen', 'stop'), ('ja, precies', 'confirm'),
+           ('nee, dat klopt niet', 'deny'), ('nee', 'deny')],
+    'fr': [('pardon, je voulais dire 35', 'correction'), ('je suis pressé, restons brefs', 'rushed'), ('35 et pas 38', 'correction')],
+    'es': [('perdón, quería decir 35', 'correction'), ('tengo prisa, seamos breves', 'rushed')],
+}
+
+
+@pytest.mark.parametrize('lang,text,intent', [(l, t, i) for l, rows in L1.items() for t, i in rows])
+def test_l1_control_intents_in_the_bank_languages(lang, text, intent):
+    assert intent in intents(text, lang), (lang, text, intents(text, lang))
+
+
+def test_l1_answers_in_the_bank_languages_are_not_controls():
+    for lang, text in (('pt', 'nós migramos a plataforma para a nuvem'), ('de', 'Wir haben die Plattform migriert'), ('it', 'si è deciso di migrare la piattaforma'), ('nl', 'we hebben het platform gemigreerd'),
+                       ('fr', 'nous avons migré la plateforme'), ('es', 'si el cliente lo pide lo hacemos'), ('de', 'Im Moment läuft alles stabil'), ('pt', 'em um momento do projeto mudamos o plano')):
+        assert intents(text, lang) == [], (lang, text)
+
+
+def test_l1_languages_with_intents_are_exactly_the_bank_languages_and_the_rest_are_answers():
+    assert turns.LANGS_WITH_INTENTS == ('en', 'fr', 'es', 'pt', 'de', 'it', 'nl') and set(turns.INTENT_RULES) == set(turns.LANGS_WITH_INTENTS)
+    for lang in ('pl', 'ro', 'ar', 'zh', 'ja', 'ko', 'hi', 'ru', 'tr', 'sv', 'da', 'no', 'fi'):
+        assert analyze_turn('pause, skip, stop, no', lang) == {'intents': [], 'cues': [], 'field_hints': [], 'numbers': [], 'words': 4}, lang
+    for lang in ('fr', 'es', 'pt', 'de', 'it', 'nl'):   # intents only, no English cues
+        r = analyze_turn('we delivered it, about 80% faster, the pilot failed', lang)
+        assert r['cues'] == [] and r['numbers'] == []

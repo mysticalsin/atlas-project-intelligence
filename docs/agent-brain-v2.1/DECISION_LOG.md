@@ -59,6 +59,7 @@ The pack names systems and a rubric the repository has no contract for. These st
 | 3 | Pause and checkpoint | Paused time excluded from the 20-minute limit (15 until 2026-10-31), 45-minute wall cap; checkpoints only with transcript consent, 24 h in the user's own Durable Object; discard purges. |
 | 4 | MiChat naming | **Superseded (D1, 2026-10-31):** MiChat is the CV destination system (the pack's "MeChat" is a typo); it is a mock CV adapter shown as "not connected". |
 | 5 | Latency | `SPECULATIVE_STT` and `ANALYST_WAIT_MS` off; endpointing and temperature unchanged; `max_tokens` 160. |
+| 6 | Languages (2026-10-31, Tony: "speak any language the user is speaking, not just English") | The talker replies in the consultant's language, whatever it is; the language follows speech and typed text with hysteresis and can be fixed in the UI; fixed lines (opening, acknowledgements, pause and resume, summary prompts and framing, notices) exist for en fr es pt de it nl (translations need native review) and are never played in English for anyone else (the talker writes them); control intents for the same seven; voice only where a provider speaks the language (Aura-2 en and es, ElevenLabs when configured), otherwise the reply is text with one notice; every detail carries its `lang`; quotes are never translated; exports stay destination-configured. |
 
 ## Rollout switches and rollback
 

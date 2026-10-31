@@ -1,9 +1,9 @@
 // Content-aware spoken acknowledgement (plan 3d): a short fixed line, played from cache while the reply is prepared, chosen from
 // what the answer was about (the turn pre-pass cues), never from a judgement of the person. Pure and deterministic: the caller
 // supplies the state (recent lines, replies since the last earned one, seed) and keeps it. Banks come from persona.py via
-// policy.generated.js; languages without a bank fall back to the neutral FILLERS of languages.js.
+// policy.generated.js (every BANK_LANGUAGE has all of them); a language without a bank gets no acknowledgement from cache at all (v2.2 L1: never English).
 import { ACKS, BANNED_PRAISE_SRC } from './policy.generated.js';
-import { FILLERS, normalize } from './languages.js';
+import { FILLERS, normalize, hasBank } from './languages.js';
 
 export const ACK_MIN_WORDS = 8; // an acknowledgement only after a real answer
 export const ACK_NO_REPEAT = 4; // a line is not used again within the last four
@@ -56,9 +56,11 @@ export function pickAck({ category = 'neutral', cues = [], words = 0, lang = 'en
   const setback = hasCue(cues, 'describes_setback');
   // A setback is never left unacknowledged: it gets at least a plain uptake even after a short answer or right after another one. Only admin, a question to ATLAS and the time limit silence it.
   if (admin || afterQuestion || timeUp || !(setback || Number(words) >= ACK_MIN_WORDS || SHORT_OK.has(category))) return null;
-  const code = normalize(lang) || 'en', seen = Array.isArray(recent) ? recent : [];
+  const code = lang ? normalize(lang) : 'en', seen = Array.isArray(recent) ? recent : [];
+  if (!code) return null; // a language we cannot even name: nothing from cache, never another language's line
   let cat = resolve(category, cues, repliesSinceEarned), bank = ACKS[cat] && ACKS[cat][code];
-  if (!bank) { // no authored bank for this language: the neutral filler (always neutral, whatever was asked)
+  // A language with no authored bank (anything but the BANK_LANGUAGES) gets nothing from cache: the talker answers in the language, and an English line is never played to a speaker of another.
+  if (!bank && hasBank(code)) { // a bank language missing this category: the neutral filler (always neutral, whatever was asked)
     cat = 'neutral'; bank = FILLERS[code] || null;
     if (bank && setback) bank = bank.filter(f => !YES_ONLY.test(f));
   }
@@ -71,8 +73,8 @@ export function pickAck({ category = 'neutral', cues = [], words = 0, lang = 'en
 
 // Every line to synthesise ahead of time for a language (the cache keeps them for all sessions).
 export function ackPrewarmList(lang = 'en') {
-  const code = normalize(lang) || 'en', out = new Set();
+  const code = lang ? normalize(lang) : 'en', out = new Set();
   for (const c of CATEGORIES) for (const t of (ACKS[c] && ACKS[c][code]) || []) out.add(t);
-  if (!out.size) for (const t of FILLERS[code] || []) out.add(t);
+  if (!out.size && hasBank(code)) for (const t of FILLERS[code] || []) out.add(t);
   return [...out];
 }

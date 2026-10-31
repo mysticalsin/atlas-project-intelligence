@@ -54,7 +54,10 @@ export class InterviewLedger {
   constructor(stage = 'Unknown') {
     this.transcripts = new Map(); this.details = []; this.calls = new Map(); this.updates = 0;
     this.probes = []; this.deferred = {}; this.callInputs = new Map(); this.stage = stage; this.sealed = false;
+    this.langs = new Map(); // transcript item -> the language it was said in (v2.2 L1); a detail carries it as `lang`
   }
+
+  setLang(itemId, lang) { if (typeof itemId === 'string' && typeof lang === 'string' && /^[a-z]{2,3}$/.test(lang)) this.langs.set(itemId, lang); }
 
   addTranscript(itemId, text) {
     if (typeof itemId !== 'string' || !itemId || itemId.length > 160 || typeof text !== 'string') fail('Invalid transcription event');
@@ -92,6 +95,7 @@ export class InterviewLedger {
         status: UNKNOWN.test(quote) ? 'unknown' : (x.uncertain === true || UNCERTAIN.test(quote) || context) ? 'uncertain' : 'reported',
         active: true, supersedes, provenance: provenance || 'unverified_speech_recognition' };
       if (context) detail.context = context;
+      if (this.langs.has(ident)) detail.lang = this.langs.get(ident);
       pending.push(detail);
     }
     if (this.details.length + pending.length > 100) fail('Candidate budget reached');

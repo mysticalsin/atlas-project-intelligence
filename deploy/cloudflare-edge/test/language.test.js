@@ -59,7 +59,7 @@ test('the browser language opens the conversation (French greeting in a French v
   const unknown = await interview({ browser: 'zz-ZZ' }); assert.match(note(unknown.talker[0]), /speaking English/); await unknown.done();
 });
 
-test('ATLAS follows a switch mid-interview once two utterances agree; short or echoed utterances never switch; no voice means an honest English reply', async () => {
+test('ATLAS follows a switch mid-interview once two utterances agree; short or echoed utterances never switch; no voice means a reply in the language, on screen, with one notice', async () => {
   const h = await interview({ browser: 'en-GB', speaks: l => ['en', 'es'].includes(l), heard: [
     { text: 'Sim', language: 'pt' },                                                   // too short: no switch
     { text: 'Nós reduzimos o tempo de triagem de quarenta para doze minutos', language: 'pt' }, // clear Portuguese: a candidate
@@ -68,10 +68,13 @@ test('ATLAS follows a switch mid-interview once two utterances agree; short or e
     { text: 'Y el equipo quedó muy contento con el resultado', language: 'es' }] });
   await h.speak(); assert.ok(!h.events.some(e => e.type === 'language'));
   await h.speak(); assert.ok(!h.events.some(e => e.type === 'language'), 'one utterance is not enough');
+  const spoken = h.tts.length;
   await h.speak();
   const pt = h.events.find(e => e.type === 'language');
-  assert.deepEqual([pt.language, pt.voice], ['pt', false]);
-  assert.match(note(h.talker.at(-1)), /speaking Portuguese, but your voice can only speak English right now/); assert.equal(h.tts.at(-1), 'en');
+  assert.deepEqual([pt.language, pt.voice], ['pt', false]); assert.match(pt.notice, /não consegue falar português em voz alta/);
+  assert.match(note(h.talker.at(-1)), /speaking Portuguese\. Reply only in natural Portuguese.*cannot speak Portuguese yet, so your reply is shown on screen as text only/); assert.doesNotMatch(note(h.talker.at(-1)), /Reply in English/);
+  assert.ok(!h.tts.slice(spoken).includes('pt') && !h.tts.slice(spoken).includes('en'), 'no voice for it: nothing is synthesised, and never in English instead');
+  assert.ok(h.events.some(e => e.type === 'agent_text' && /Reply 3/.test(e.text)), 'the reply is shown on screen');
   await h.speak(); await h.speak();
   assert.equal(h.events.filter(e => e.type === 'language').at(-1).language, 'es');
   assert.deepEqual(h.metrics.filter(([k]) => k.startsWith('language_')), [['language_candidate', { language: 'pt' }], ['language_switch', { language: 'pt', voice: 0 }],
@@ -114,7 +117,8 @@ test('unfinished: words that trail off, per language; finished answers and quest
     ['Genau das.', 'de'], ['Bis dann.', 'de'], ['Non so perché.', 'it'], ['E poi?', 'it'], ['Ik weet het.', 'nl'], ['Queremos más proyectos como este.', 'es'], ['It went well. Thanks', 'en'], ['Our sponsor was Dr. A', 'en'], ['', 'en']];
   for (const [t, l] of yes) assert.equal(unfinished(t, l), true, `${l}: ${t}`);
   for (const [t, l] of no) assert.equal(unfinished(t, l), false, `${l}: ${t}`);
-  assert.equal(unfinished('We moved the', 'xx'), true, 'an unknown language falls back to English');
+  assert.equal(unfinished('We moved the', 'xx'), false, 'a language without a word list is judged by its punctuation only, never by English words');
+  assert.equal(unfinished('Zrobiliśmy to, bo', 'pl'), false); assert.equal(unfinished('Zrobiliśmy to,', 'pl'), true); assert.equal(unfinished('これは…', 'ja'), true);
 });
 
 const words = t => t.split(/\s+/).filter(Boolean).length, sentences = t => (t.match(/[.!?](["”»]?)(\s|$)/g) || []).length;

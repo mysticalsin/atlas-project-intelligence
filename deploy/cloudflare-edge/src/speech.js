@@ -1,5 +1,5 @@
 // JavaScript port of atlas_voice/speech.py EnergyTurns, sentences, Phrases, speakable, ReplyGuard and wav_bytes (parity-tested).
-import { NUMBER_WORDS, NUMBER_CONNECTORS, UNVERIFIED_CLAIM_SRC, CLAIM_HEDGE_SRC } from './policy.generated.js';
+import { DIGIT_ZEROS, NUMBER_WORDS, NUMBER_CONNECTORS, UNVERIFIED_CLAIM_SRC, CLAIM_HEDGE_SRC } from './policy.generated.js';
 export const SAMPLE_RATE = 24000;
 
 export function rms(bytes) {
@@ -84,8 +84,8 @@ export function isEcho(text, recentAgentText) {
   return words.filter(w => agent.has(w)).length / words.length >= 0.7;
 }
 
-// A sentence end: . ! or ? (then any closing quote, bracket or markdown) before whitespace, or a CJK or Devanagari stop.
-const END = /([.!?]+)["'\u201d\u2019\u00bb)\]*_`]*(\s+)|[\u3002\uff01\uff1f\u0964]\s*/gu;
+// A sentence end: . ! ? or the Arabic question mark (then any closing quote, bracket or markdown) before whitespace, or a CJK or Devanagari stop.
+const END = /([.!?\u061f]+)["'\u201d\u2019\u00bb)\]*_`]*(\s+)|[\u3002\uff01\uff1f\u0964]\s*/gu;
 const ABBREVIATIONS = new Set('mr mrs ms dr prof st jr sr vs etc cf approx inc ltd corp dept mme mlle hr sra dott sig dhr mevr ca'.split(' '));
 export const MIN_PIECE = 40; // characters: shorter sentences join the next piece, and the first clause goes early only from here
 const CLAUSE = new RegExp(`^(.{${MIN_PIECE},}?[,;:\u2014\u2013])\\s+`, 'su');
@@ -99,7 +99,7 @@ function boundaries(text) {
     let end = m.index + 1;
     if (m[1] !== undefined) {
       end = next - m[2].length;
-      if (!/[!?]/.test(m[1])) { // full stops only: maybe an initial, an abbreviation or a list number
+      if (!/[!?\u061f]/.test(m[1])) { // full stops only: maybe an initial, an abbreviation or a list number
         if (/^\p{Ll}/u.test(text.slice(next))) continue; // a lowercase word continues the sentence ("data... and", "etc. were")
         const before = text.slice(start, m.index);
         if (/^\s*[0-9]{1,2}$/.test(before)) continue; // "1." opens a list item
@@ -151,7 +151,7 @@ export const GUARD_MAX_WORDS = 45; // most words ATLAS says in one reply
 const PRAISE_MAX_WORDS = 8; // a sentence this short that is only praise is dropped
 const REACTION_MAX_WORDS = 12; // a leading sentence longer than this is an answer, not a reaction: the repeated-opener rule leaves it alone
 export const DEFAULT_BANNED_PRAISE = '\\b(amazing|incredible|brilliant|awesome|fantastic)\\b'; // persona BANNED_PRAISE_SRC replaces it when wired
-const TERMINAL = /[.!?\u3002\uff01\uff1f\u0964]+$/u, CLOSERS = /[\s"'\u201d\u2019\u00bb)\]*_`]+$/u;
+const TERMINAL = /[.!?\u061f\u3002\uff01\uff1f\u0964]+$/u, CLOSERS = /[\s"'\u201d\u2019\u00bb)\]*_`]+$/u;
 const NUMBER = /[0-9]+(?:[.,][0-9]+)*/g, THOUSANDS = /^[0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]+)?$/;
 const TRIM = /[\s,;:\u2014\u2013-]+$/u;
 export const GUARD_STATS = ['dropped_after_question', 'dropped_praise', 'dropped_repeat_opener', 'capped_words', 'dropped_unknown_number', 'dropped_unverified_claim'];
@@ -179,16 +179,19 @@ function runValue(run) {
   return total;
 }
 const dropFormat = text => text.normalize('NFKC').replace(/\p{Cf}/gu, '');
+// Digits of other scripts (speech.py DIGIT_ZEROS) fold to ASCII, so a figure written in them is the same figure.
+const DIGITS = new RegExp('[' + DIGIT_ZEROS.map(z => String.fromCharCode(z) + '-' + String.fromCharCode(z + 9)).join('') + ']', 'g');
+const asciiDigits = text => text.replace(DIGITS, c => String(c.charCodeAt(0) - DIGIT_ZEROS.findLast(z => z <= c.charCodeAt(0))));
 export function figures(text) {
-  const folded = dropFormat(String(text)).replace(QUATRE_VINGT, 'quatrevingt').replace(FOLD, (_, w) => ` ${runValue(w)} `).replace(HALF, ' 0.5 ');
+  const folded = asciiDigits(dropFormat(String(text))).replace(QUATRE_VINGT, 'quatrevingt').replace(FOLD, (_, w) => ` ${runValue(w)} `).replace(HALF, ' 0.5 ');
   return (folded.replace(NUM_RUN, run => { const v = runValue(run); return v === null ? run : ` ${v} `; }).match(NUMBER) || []).map(numeral);
 }
 // A sentence that says something was verified, approved or confirmed by someone, without a hedge or a denial (speech.py asserts_verification; red L3/L4).
 const CLAIM = new RegExp(UNVERIFIED_CLAIM_SRC, 'i'), HEDGE = new RegExp(CLAIM_HEDGE_SRC, 'i');
 export function assertsVerification(text) { const t = dropFormat(text); return CLAIM.test(t) && !HEDGE.test(t); }
 
-// A finished sentence whose closing punctuation holds a question mark ('?', or the full-width one), quotes and markup aside.
-function isQuestion(sentence) { const m = TERMINAL.exec(sentence.replace(CLOSERS, '')); return !!m && /[?\uff1f]/.test(m[0]); }
+// A finished sentence whose closing punctuation holds a question mark ('?', the full-width one or the Arabic one), quotes and markup aside.
+function isQuestion(sentence) { const m = TERMINAL.exec(sentence.replace(CLOSERS, '')); return !!m && /[?\uff1f\u061f]/.test(m[0]); }
 // The start of text up to its count-th word, trailing commas and dashes trimmed (an exact slice).
 function firstWords(text, count) {
   if (count <= 0) return '';

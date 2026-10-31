@@ -207,8 +207,16 @@ test('languages: automatic detection, native Spanish voice, ElevenLabs for the r
   assert.deepEqual(['fr', 'pt', 'de', 'xx'].map(l => withEleven.speaks(l)), [true, true, true, false]);
   assert.equal(detectedLanguage({ results: { channels: [{ alternatives: [{ words: [{ language: 'pt' }, { language: 'pt' }, { language: 'en' }] }] }] } }), 'pt');
   assert.equal(detectedLanguage({}), null); assert.equal(normalize('pt-BR'), 'pt'); assert.equal(normalize('zz'), null);
-  assert.match(languageNote('fr', 'fr'), /Reply only in natural French/);
-  assert.match(languageNote('pt', 'en'), /can only speak English right now\. Reply in English\..*understand Portuguese/);
+  assert.match(languageNote('fr', true), /Reply only in natural French/);
+  // v2.2 L1: no voice for a language means the reply is still in that language, on screen (never English); the talker announces it once when asked to
+  assert.match(languageNote('pt', false), /Reply only in natural Portuguese.*cannot speak Portuguese yet, so your reply is shown on screen as text only\./);
+  assert.doesNotMatch(languageNote('pt', false), /Reply in English|say once/); assert.match(languageNote('pt', false, { announce: true }), /say once, in one short sentence in Portuguese, that you cannot speak Portuguese aloud yet/);
+  // a language the consultant locked is asked of the recogniser alone; if that request is refused the automatic one is made
+  const lockEnv = { ...env, AI: { async run(model, input) { seen.push([model, input]); if (input.language === 'pl') throw new Error('unsupported'); return { results: { channels: [{ alternatives: [{ transcript: 'Cześć', languages: ['pl'] }] }] } }; } } };
+  seen.length = 0; await workersAI(lockEnv).transcribe(new Uint8Array(4), { language: 'fr' }); assert.deepEqual(seen.map(x => x[1].language), ['fr']);
+  seen.length = 0; await workersAI(lockEnv).transcribe(new Uint8Array(4), { language: 'pl' }); assert.deepEqual(seen.map(x => x[1].language), ['pl', 'multi']);
+  seen.length = 0; await workersAI(lockEnv).transcribe(new Uint8Array(4), { language: 'x; drop' }); assert.deepEqual(seen.map(x => x[1].language), ['multi'], 'only a language code reaches the recogniser');
+  assert.equal(normalize('pl'), 'pl'); assert.equal(normalize('pl-PL'), 'pl'); assert.equal(normalize('multi'), null); assert.equal(normalize('nb'), 'no'); assert.equal(normalize('uk'), 'uk'); assert.equal(normalize('el-GR'), 'el');
 });
 
 // ---- T1-S0 additions (WOW_SPEC §2.2, §2.5, §2.6, §F1.10). No earlier assertion in this file changed. ----
@@ -223,9 +231,12 @@ const signed = async (path, claims = {}, init = {}) => new Request(ORIGIN + path
 test('T1-S0 bootstrap: verified email and every feature flag, conservative by default; existing keys unchanged', async () => {
   const boot = await (await handle(await req('/api/bootstrap'), ENV, '')).json();
   assert.deepEqual(Object.keys(boot).slice(0, -3), ['provider', 'providerLabel', 'protocol', 'csrf', 'identity', 'model', 'admin', 'voices', 'defaultVoice', 'captureRequired', 'codecAvailable', 'busy', 'capacity',
-    'maxSeconds', 'speakingSeconds', 'memory', 'wiki', 'jev', 'jevClassify', 'library', 'libraryRole', 'sheet', 'transcription', 'structuredNotes', 'liveLedger', 'playbackAck', 'textMode', 'readiness']);
+    'maxSeconds', 'speakingSeconds', 'memory', 'wiki', 'jev', 'jevClassify', 'library', 'libraryRole', 'sheet', 'transcription', 'structuredNotes', 'liveLedger', 'playbackAck', 'textMode', 'languages', 'readiness']);
   assert.deepEqual(Object.keys(boot).slice(-3), ['email', 'features', 'resumable']); assert.equal(boot.resumable, null); // T10: nothing to resume without an Interview Durable Object
   assert.equal(boot.email, 'tony@example.com'); assert.deepEqual(Object.keys(boot.features), FEATURE_KEYS);
+  // v2.2 L1: the languages the page can offer (every one known by name) and the ones ATLAS can say aloud (Aura-2: English and Spanish; more only with an ElevenLabs key)
+  assert.equal(boot.languages.auto, true); assert.deepEqual(boot.languages.voice, ['en', 'es']); assert.ok(boot.languages.list.length >= 30 && boot.languages.list.every(l => /^[a-z]{2,3}$/.test(l.code) && l.name && l.native));
+  const eleven = await (await handle(await req('/api/bootstrap'), { ...ENV, ELEVENLABS_API_KEY: 'k' }, '')).json(); assert.ok(eleven.languages.voice.includes('pl') && eleven.languages.voice.includes('ja') && !eleven.languages.voice.includes('xx'));
   // D1 is the SPOKEN_ASK_APPROVED code constant (features.test.js pins its value): spoken Ask follows Ask when it is set.
   assert.equal(boot.features.spokenAsk, SPOKEN_ASK_APPROVED && boot.features.ask); assert.equal(boot.features.teams, 'BLOCKED_EXTERNAL'); assert.equal(boot.features.phone, 'BLOCKED_EXTERNAL');
   // WOW_ZERO_CONFIG D1: SPOKEN_ASK is no longer a variable; spoken Ask follows SPOKEN_ASK_APPROVED (a code constant).
