@@ -13,9 +13,16 @@ test('the read-back card tags a line that may be sensitive ("keep it private?") 
 test('the consent dialog has separate rows: required capture, saved interview (24 h), memory (off), the notice; a link to /privacy and the sentence about sensitive information',()=>{
  const shell=src('shell.html'),vc=src('voice-client.js');
  for(const id of ['modelConsent','checkpointConsent','memoryConsent','noticeAck','consentSpecial'])assert.match(shell,new RegExp('id="'+id+'"'),id);
- assert.match(shell,/href="\/privacy"/); assert.match(shell,/id="checkpointConsent" type="checkbox" checked/,'the saved-interview choice starts on and can be unticked');
- assert.doesNotMatch(shell,/id="memoryConsent" type="checkbox" checked/,'memory is never pre-ticked');
- assert.match(vc,/\$\('memoryConsent'\)\.checked=false/,'the dialog resets memory to off each time it opens');
+ assert.match(shell,/href="\/privacy"/); // X3 / red M1 (GDPR Art 7, Planet49): no optional consent box is pre-ticked, in the markup or by the script.
+ const CONSENT_IDS=['modelConsent','captureConsent','checkpointConsent','memoryConsent','noticeAck','privCheckpoint','privObjectScoring','privObjectMatching','privObjectMemory','privRestricted','memoryOn','askMicConsent','jevConsent'];
+ for(const f of ['shell.html','voice-dialogs.html','voice-panel.html'])for(const m of src(f).matchAll(/<input\b[^>]*>/g))if(CONSENT_IDS.some(id=>m[0].includes('id="'+id+'"')))assert.doesNotMatch(m[0],/\schecked\b/,f+': a consent box is pre-ticked: '+m[0]);
+ for(const id of ['modelConsent','checkpointConsent','memoryConsent','noticeAck'])assert.match(shell,new RegExp('<input id="'+id+'" type="checkbox"/>'),id+' exists, unticked');
+ assert.doesNotMatch(vc,/\$\('(?:checkpointConsent|memoryConsent|noticeAck|captureConsent)'\)\.checked=(?:true|b\.memory\b(?!&))/,'the script never ticks an optional box on the person\'s behalf');
+ assert.match(vc,/\$\('checkpointConsent'\)\.checked=storedChoice\(b,'checkpoint'\)/,'the saved-interview box shows only a choice the person already stored');
+ assert.match(vc,/\$\('memoryConsent'\)\.checked=!!b\.memory&&storedChoice\(b,'memory'\)/,'memory likewise');
+ assert.match(vc,/const storedChoice=\(b,k\)=>b\.consent\?\.purposes\?\.\[k\]===true&&b\.consent\?\.blocked\?\.\[k\]!==true/);
+ assert.match(vc,/capture=resumeId\|\|boot\.captureRequired\?true:\$\('captureConsent'\)\.checked/,'transcript capture is derived from the one required tick, not from a hidden box');
+ assert.match(vc,/\$\('modelConsent'\)\.checked=false/,'the required tick starts unticked');
  assert.match(vc,/consent:boot\.captureRequired&&activeConsent\?activeConsent:true/,'the start message carries the object; the gateway without transcript capture keeps the bare tick');
  assert.match(vc,/transcription:!typing,draft:true,checkpoint:\$\('checkpointConsent'\)\.checked,memory:!!b\.memory&&\$\('memoryConsent'\)\.checked,notice:\$\('noticeAck'\)\.checked/);
  assert.match(vc,/resume\)return \{transcription:!typing,draft:true,checkpoint:true/,'a resume carries the choice already made');

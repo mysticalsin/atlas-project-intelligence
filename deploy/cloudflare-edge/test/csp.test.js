@@ -40,6 +40,8 @@ test('htmlCsp: hashes + blob:, never unsafe-inline for script, the report target
   const small = htmlCsp({ hashes: ['sha256-aaa'], page: false, blob: false, report: false, formAction: "'none'", frameAncestors: 'https://t.example' });
   assert.equal(scriptSrc(small), "'sha256-aaa'"); assert.ok(!small.includes('connect-src') && !small.includes('report-') && small.endsWith('frame-ancestors https://t.example'));
   assert.equal(scriptSrc(htmlCsp({ blob: false })), "'none'");
+  const noBlob = htmlCsp({ hashes: ['sha256-aaa'], blob: false });
+  assert.doesNotMatch(noBlob, /blob:/, 'blob: false removes every blob: source, not only the script one'); assert.ok(noBlob.includes("connect-src 'self'") && noBlob.includes('img-src data:;'));
 });
 
 test('every HTML route ships the strict policy with ITS OWN hashes: page, privacy notice, confirm, re-sign-in', async () => {
@@ -51,11 +53,13 @@ test('every HTML route ships the strict policy with ITS OWN hashes: page, privac
   assert.ok(csp.includes("connect-src 'self' wss://atlas.example.workers.dev") && csp.includes("frame-ancestors 'none'"));
   assert.equal(body, '<html></html>', 'sanity: the harness page is a stub');
   const signed = await html('/go/signed-in'), c1 = signed.headers.get('content-security-policy');
-  assert.ok(strictOk(c1)); assert.equal(scriptSrc(c1), `'${(await inlineScriptHashes(SIGNED_IN_HTML))[0]}' blob:`);
+  assert.ok(strictOk(c1)); assert.equal(scriptSrc(c1), `'${(await inlineScriptHashes(SIGNED_IN_HTML))[0]}'`, 're-sign-in page: no blob:');
   const confirm = await html('/confirm'), c2 = confirm.headers.get('content-security-policy');
-  assert.ok(strictOk(c2)); assert.equal(scriptSrc(c2), `'${(await inlineScriptHashes(CONFIRM_HTML))[0]}' blob:`);
+  assert.ok(strictOk(c2)); assert.equal(scriptSrc(c2), `'${(await inlineScriptHashes(CONFIRM_HTML))[0]}'`, 'confirm page: no blob:');
   const priv = await html('/privacy'), c3 = priv.headers.get('content-security-policy');
-  assert.ok(strictOk(c3)); assert.equal(scriptSrc(c3), 'blob:', 'the privacy notice has no script at all');
+  assert.ok(strictOk(c3)); assert.equal(scriptSrc(c3), "'none'", 'the privacy notice has no script at all, so no script source');
+  for (const c of [c1, c2, c3]) assert.doesNotMatch(c, /blob:/, 'only the voice page keeps blob: (X3, red I2)');
+  assert.match(csp, /script-src [^;]*blob:/, 'the voice page keeps blob: for its AudioWorklet');
   assert.doesNotMatch(await priv.text(), /<script/i);
   for (const r of [home, signed, confirm, priv]) assert.equal(r.headers.get('content-security-policy-report-only'), null);
   // data responses stay on the data-only policy

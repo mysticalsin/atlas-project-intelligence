@@ -23,8 +23,11 @@ function sourceLabel(from,at){
 // value shows "you edited", and an empty value shows nothing.
 function chipFor(field,value){const v=String(value??'').trim();if(!v)return '';if(field&&typeof field.value==='string'&&field.value.trim()===v)return sourceLabel(field.from,field.at);return 'you edited';}
 function field(profile,name){const f=profile?.fields?.[name];return f&&typeof f==='object'&&typeof f.value==='string'&&SOURCES.includes(f.from)?f:null;}
-function value(profile,name){return field(profile,name)?.value.trim().slice(0,LIMITS[name]||200)||'';}
-function confirmedName(profile){const f=field(profile,'name');return f&&CONFIRMED.includes(f.from)?f.value.trim().slice(0,100):'';}
+// Bidi controls and zero-width characters never reach the screen in a name (the server strips them too; this covers a profile stored before that): U+202E could make a name read as an address.
+const INVISIBLE=/[\u202A-\u202E\u2066-\u2069\u200E\u200F\u061C\u200B-\u200D\u2060\uFEFF]/g;
+const clean=s=>String(s??'').replace(INVISIBLE,'');
+function value(profile,name){return clean(field(profile,name)?.value).trim().slice(0,LIMITS[name]||200)||'';}
+function confirmedName(profile){const f=field(profile,'name');return f&&CONFIRMED.includes(f.from)?clean(f.value).trim().slice(0,100):'';}
 // Profile -> project form (§3.5): consultant, role, N+1 name and email. managerStaff is never part of it.
 function formValues(profile){return {consultant:value(profile,'name'),role:value(profile,'title'),managerName:value(profile,'managerName'),managerEmail:value(profile,'managerEmail')};}
 // The on-screen first name (§5.7), re-validated here: at most two words, letters only, rendered with textContent.
@@ -77,5 +80,5 @@ function directoryRows(table,mapping){const rows=[],lines=[],rejected=[];const m
  return {rows,lines,rejected};}
 function batches(rows,size=500){const out=[];for(let i=0;i<rows.length;i+=size)out.push(rows.slice(i,i+size));return out.length?out:[[]];}
 function randomBatchId(){const a=new Uint8Array(16);(globalThis.crypto||{}).getRandomValues?.(a);if(a.every(x=>x===0))for(let i=0;i<16;i++)a[i]=Math.floor(Math.random()*256);return [...a].map(x=>x.toString(16).padStart(2,'0')).join('');}
-return {SOURCES,FIELDS,LIMITS,APPROVED,sourceLabel,chipFor,formValues,confirmedName,validFirstName,modelProject,roleFrom,validEmail,parseCsv,suggestColumns,directoryRows,batches,randomBatchId,field,value};
+return {INVISIBLE,clean,SOURCES,FIELDS,LIMITS,APPROVED,sourceLabel,chipFor,formValues,confirmedName,validFirstName,modelProject,roleFrom,validEmail,parseCsv,suggestColumns,directoryRows,batches,randomBatchId,field,value};
 });
