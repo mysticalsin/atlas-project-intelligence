@@ -184,12 +184,15 @@ const clean = cleanText;
 
 // Port of atlas_voice/interview.py project_context: untrusted, bounded, no identity fields. `consultant` is still
 // accepted (older pages send it) but never kept: the consultant's name never reaches a model (WOW_ZERO_CONFIG §5.9).
+// `projectId` is the business Project ID the consultant entered (the report's details.projectId, the staffing row's project_id): the interview
+// starts from it and the evidence draft is filed under it (evidenceNotes project_ref). It is routing data, so it is kept out of every model prompt.
 export function projectContext(raw) {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Project context must be an object.');
-  if (Object.keys(raw).some(k => !['id', 'title', 'consultant', 'role', 'sector', 'stage', 'answers', 'oppId'].includes(k))) throw new Error('Unexpected project fields. Identity and memory banks are server-owned.');
+  if (Object.keys(raw).some(k => !['id', 'title', 'consultant', 'role', 'sector', 'stage', 'answers', 'oppId', 'projectId'].includes(k))) throw new Error('Unexpected project fields. Identity and memory banks are server-owned.');
   const result = {};
-  for (const [k, n] of [['id', 100], ['title', 160], ['role', 120], ['sector', 100], ['stage', 60], ['oppId', 40]]) result[k] = clean(raw[k], n);
+  for (const [k, n] of [['id', 100], ['title', 160], ['role', 120], ['sector', 100], ['stage', 60], ['oppId', 40], ['projectId', 60]]) result[k] = clean(raw[k], n);
   if (!result.oppId) delete result.oppId;
+  if (!result.projectId) delete result.projectId;
   if (!result.title) throw new Error('Create a project before starting an interview.');
   const answers = raw.answers ?? [];
   if (!Array.isArray(answers) || answers.length > 6 || answers.some(x => typeof x !== 'string')) throw new Error('Expected at most six answer strings.');
@@ -204,9 +207,10 @@ export function projectContext(raw) {
 // opts: {fence, memory}. The system role carries Atlas's own policy only (the policy, the fence rule, the server's plan and notes). Everything a person or a record
 // wrote (the project, the gap list, a recalled memory) is ONE user-role message between per-session random fences, as JSON (blue #9, red L4/L6); a gap ask in the plan
 // is named by its id, its words are in that block.
+const forModel = project => { if (!project || typeof project !== 'object') return project; const { projectId: _routing, ...rest } = project; return rest; };
 export function talkerMessages(project, guidance, history, instruction, notes = [], gaps = null, { fence = DEFAULT_FENCE, memory = '' } = {}) {
   const messages = [{ role: 'system', content: TALKER_POLICY + fenceRule(fence) },
-    fenced(fence, ['UNTRUSTED PROJECT DATA:\n' + JSON.stringify(project) + (gaps?.length ? gapSystemBlock(gaps) : ''), 'UNTRUSTED PRIVATE PREFERENCES (not evidence):', memory])]; // (the label comes first: it names what follows it, X2 red L13)
+    fenced(fence, ['UNTRUSTED PROJECT DATA:\n' + JSON.stringify(forModel(project)) + (gaps?.length ? gapSystemBlock(gaps) : ''), 'UNTRUSTED PRIVATE PREFERENCES (not evidence):', memory])]; // (the label comes first: it names what follows it, X2 red L13)
   messages.push(...history.slice(-HISTORY));
   if (guidance) messages.push({ role: 'system', content: 'ANALYST_GUIDANCE (server plan, not a script): ' + JSON.stringify(guidance.askId ? { ...guidance, question: `the ask with id ${guidance.askId} in UNTRUSTED GAP LIST` } : guidance) });
   for (const note of notes) if (note) messages.push({ role: 'system', content: note });
@@ -1134,8 +1138,9 @@ export class Session {
       supersedes: d.supersedes || '', withheld: false, provenance: d.provenance || 'unverified_speech_recognition', asr_min_conf: typeof d.asr_min_conf === 'number' ? d.asr_min_conf : null,
       audio_offset_ms: Number.isInteger(d.audio_offset_ms) ? d.audio_offset_ms : null, ...(d.context ? { context: d.context } : {}), ...(typeof d.lang === 'string' ? { lang: d.lang } : {}), ...(isSpecial(d.quote) ? { sensitive: true } : {}) }));
     const asr = this.asrNotes();
+    // The business Project ID when the consultant gave one (projectContext), else the page's project id.
     // A project that does not exist yet reaches the server as the placeholder id 'new' (the browser creates it from the report): that is no project, never a shared fake one.
-    return { session_id: this.sessionId, project_ref: this.project?.id && this.project.id !== 'new' ? this.project.id : null, details, ...(Object.keys(asr).length ? { asr } : {}) };
+    return { session_id: this.sessionId, project_ref: this.project?.projectId || (this.project?.id && this.project.id !== 'new' ? this.project.id : null), details, ...(Object.keys(asr).length ? { asr } : {}) };
   }
   // Confirm: the machine moves to summary_confirmed, the notes become ONE owner-only evidence draft (the hook; idempotent on the session id), and ATLAS closes.
   // It never submits: that is the owner's own click in the library.

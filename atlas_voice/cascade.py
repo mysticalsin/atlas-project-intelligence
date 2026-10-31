@@ -135,7 +135,7 @@ def talker_messages(project, preferences, guidance, history, instruction=None, n
     """Prefix-cache friendly: fixed policy and project first, then the append-only conversation, then per-turn notes.
     A gap list (edge gap mode; mirrored here, the Python gateway never runs it) sits between the project data and the
     preferences label, so the prefix stays stable for the whole session."""
-    system = (TALKER_POLICY + '\nUNTRUSTED PROJECT DATA:\n' + json.dumps(project, ensure_ascii=False) + (gap_system_block(gaps) if gaps else '') +
+    system = (TALKER_POLICY + '\nUNTRUSTED PROJECT DATA:\n' + json.dumps({k: v for k, v in project.items() if k != 'projectId'}, ensure_ascii=False) + (gap_system_block(gaps) if gaps else '') +
               '\nUNTRUSTED PRIVATE PREFERENCES (not evidence):\n' + preferences[:1200])
     messages = [{'role': 'system', 'content': system}]
     messages.extend(history[-HISTORY:])

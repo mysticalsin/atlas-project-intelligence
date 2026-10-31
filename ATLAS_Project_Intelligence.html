@@ -2965,7 +2965,7 @@ function voiceSnapshot(){
  // (§5.9, modelProject). display is for this screen only.
  const MP=window.AtlasProfileCore.modelProject;
  if(!p)return {workspaceId:profile().id,isNew:true,project:MP({id:'new',title:'New project, not yet named',consultant:'',role:'',sector:'',stage:'Pilot',answers:[]}),display:{consultant:window.AtlasProfile?.displayName?.()||'',role:''},revision:'new'};
- const data=MP({id:p.id,title:p.title,consultant:p.consultant,role:p.role,sector:p.sector,stage:p.stage,answers:p.answers.slice(),...(p.sheet?.oppId?{oppId:p.sheet.oppId}:{})},p.roleFrom);
+ const data=MP({id:p.id,title:p.title,consultant:p.consultant,role:p.role,sector:p.sector,stage:p.stage,answers:p.answers.slice(),...(p.sheet?.oppId?{oppId:p.sheet.oppId}:{}),...(p.details?.projectId?{projectId:p.details.projectId}:{})},p.roleFrom);
  // A proof request (F2) is offered only for the project it targets; the voice client calls gapConsumed() once it is used.
  const gap=pendingGap&&pendingGap.projectId===p.id?{gap:pendingGap.requestId,gapAlias:pendingGap.alias}:{};
  return {workspaceId:profile().id,project:data,display:{consultant:p.consultant,role:p.role},revision:E.simpleHash(JSON.stringify([p.answers,p.deferred])),...gap}; // voice notes only append to answers: other edits during a call must not block saving
