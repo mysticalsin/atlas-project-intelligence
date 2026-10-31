@@ -186,7 +186,7 @@ test('amend by the reviewer: a new revision with a new hash; approval then binds
 test('a content change after approval invalidates it, starts review again, and lists the derivatives (D11)', async () => {
   const { l, ev } = setup(), v = await queued(ev), ok = await approve(ev, REV, v);
   l.sql.exec("INSERT INTO branch_status (entity, branch, status, updated_at) VALUES (?, 'dna', 'pending', 't')", v.id);
-  l.sql.exec("INSERT INTO branch_status (entity, branch, status, updated_at) VALUES (?, 'mechat', 'mock_acknowledged', 't')", v.id);
+  l.sql.exec("INSERT INTO branch_status (entity, branch, status, updated_at) VALUES (?, 'michat', 'mock_acknowledged', 't')", v.id);
   ev.grantPermission(OWNER, v.id, { expected_revision: 1, purpose: 'cv' });
   assert.equal(ok.approved, true);
   await rejects(ev.review(OWNER, v.id, 'amend', { expected_revision: 1 }), 400); // nothing said to change
@@ -195,7 +195,7 @@ test('a content change after approval invalidates it, starts review again, and l
   await rejects(ev.review(OWNER, v.id, 'amend', { expected_revision: 1, claims: [{ claim_id: ok.claims[0].claim_id, origin: 'manager_validated' }] }), 400); // an owner cannot validate their own claim
   const am = await ev.review(OWNER, v.id, 'amend', { expected_revision: 1, claims: [{ claim_id: ok.claims[0].claim_id, statement: 'Claims bounced between two teams.' }], add: [{ claim_type: 'technology', statement: 'We used Python.' }] });
   assert.deepEqual([am.revision, am.approved, am.approval, am.state, am.status], [2, false, null, 'evidence_draft', 'evidence_draft']);
-  assert.deepEqual(am.derivatives, [{ kind: 'branch', branch: 'dna', status: 'pending' }, { kind: 'branch', branch: 'mechat', status: 'mock_acknowledged' }, { kind: 'permission', purpose: 'cv', destination: null }]);
+  assert.deepEqual(am.derivatives, [{ kind: 'branch', branch: 'dna', status: 'pending' }, { kind: 'branch', branch: 'michat', status: 'mock_acknowledged' }, { kind: 'permission', purpose: 'cv', destination: null }]);
   assert.deepEqual(l.rows('SELECT revision, status FROM approvals').map(r => [r.revision, r.status]), [[1, 'superseded']]);
   assert.equal(am.claims.length, 5); assert.equal(am.claims.at(-1).claim_type, 'technology'); assert.equal(am.claims.at(-1).attribution, 'team'); assert.deepEqual(am.claims.at(-1).source_refs, [{ kind: 'typed', revision: 2, by: 'owner' }]);
   assert.throws(() => ev.get(REV, v.id), e => e.status === 404); // back to an owner-only draft until the owner submits again

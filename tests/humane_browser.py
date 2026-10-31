@@ -282,9 +282,9 @@ try:
         lib = open_page(USER, Voice(draft=draft)); lib.locator('header [data-view=library]').click(); lib.wait_for_timeout(500)
         lib.locator('#workflowStatus .wf-card').first.wait_for(state='visible', timeout=10000)
         cards = lib.locator('#workflowStatus .wf-card')
-        check('the workflow status shows seven cards in the pack\'s order', cards.count() == 7 and [c.get_attribute('data-branch') for c in cards.all()] == ['evidence', 'maap', 'project_review', 'dna', 'mechat', 'imp', 'spotlight'])
+        check('the workflow status shows seven cards in the pack\'s order', cards.count() == 7 and [c.get_attribute('data-branch') for c in cards.all()] == ['evidence', 'maap', 'project_review', 'dna', 'michat', 'imp', 'spotlight'])
         mocks = {c.get_attribute('data-branch'): c.locator('.wf-mock').inner_text() for c in cards.all() if c.locator('.wf-mock').count()}
-        check('every destination that is not really connected carries "Mock — not connected"', mocks == {b: 'Mock — not connected' for b in ('dna', 'mechat', 'imp', 'spotlight')})
+        check('every destination that is not really connected carries "Mock — not connected"', mocks == {b: 'Mock — not connected' for b in ('dna', 'michat', 'imp', 'spotlight')})
         check('DNA reads "Mock acknowledged — not synced", never "Synced"', 'Mock acknowledged — not synced' in lib.locator('[data-branch=dna]').inner_text() and 'Synced' not in lib.locator('#workflowStatus').inner_text())
         check('MAAP and Project Review say their rubric is not configured by its owner, and show no rating', 'not been configured by its process owner' in lib.locator('[data-branch=maap]').inner_text() and 'not been configured by its process owner' in lib.locator('[data-branch=project_review]').inner_text()
               and not re.search(r'rating|score', lib.locator('[data-branch=maap]').inner_text(), re.I))

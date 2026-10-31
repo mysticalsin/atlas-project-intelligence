@@ -125,7 +125,7 @@ Every card has the same blockers until the owner provides the data: `STATUS_NOT_
 - **Sends (draft)**: identity and revision fields, `consultant_id`, `profile_revision`, `language`, `target_role`, `template` (null until defined), `claims[]` (reviewed wording only; outcome and metric claims send structured value, unit, baseline, after state and period but no client text) and `permissions[]`.
 - **Needs back**: CV document id, version, generated status, timestamp, validation warnings (Integration Contracts section 2).
 - **Needs from the owner (MiChat)**: base URL, sandbox, auth, CV schema, template and language rules, sample request and response, ack semantics, rate limits, DPA or transfer approval, and the client-permission model that would let outcome text be sent.
-- **Naming**: the pack's "MeChat" is a typo for MiChat (Tony). The connection id is `michat_cv`. The code-level adapter id is still `MECHAT_CV`; it is renamed in M1.
+- **Naming**: the pack's "MeChat" is a typo for MiChat (Tony). The connection id is `michat_cv`. The code-level adapter id is `MICHAT_CV`, the branch key `michat`, the job destination `MiChat` (renamed in M1; stored `mechat` / `MeChat` rows are migrated on read, see `AGENT.md`).
 - **Permission in Atlas**: `evidence_approved` + `cv_permission` (purpose `cv`).
 - **Variables**: `MICHAT_CV_BASE_URL`. **Secrets**: `MICHAT_CV_TOKEN`.
 
@@ -160,4 +160,3 @@ Every card has the same blockers until the owner provides the data: `STATUS_NOT_
 - Moving the `profile.js` DNA pull onto the inbound connector once the DNA contract is confirmed.
 - A "held" live state for a CMS that accepts but does not publish (needs a branch status and a gate change).
 - Honouring `Retry-After` in `jobs.js` backoff (recorded on the attempt result today).
-- Renaming the `MECHAT_CV` adapter and branch to MiChat (M1).

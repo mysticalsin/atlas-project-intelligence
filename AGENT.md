@@ -39,7 +39,7 @@ Time: 15 minutes of active interview (paused and disconnected time excluded), AT
 | Summary read-back | `summary.js`, `session.js`, summary card | At the close the facts come from the ledger in the consultant's own words, with open points listed, and the question "What have I misunderstood or missed?". The card offers Correct (a typed correction supersedes the item), Keep private (the whole utterance is replaced by `[kept private]` in the history, notes and report input) and Confirm. A spoken "that's right" does not confirm; the button does. |
 | Evidence draft and submission | `evidence.js`, `library-routes.js` | Confirming creates an owner-only `evidence_draft` (server to server, under the verified identity). "Submit for review" is a separate explicit click that names the revision. |
 | Review and approval | `policy-gate.js`, `evidence.js` | An accountable reviewer (resolved N+1, or a reviewer role) approves one exact revision and content hash. Not the owner, not the author of the revision. A new revision voids earlier approvals. |
-| Branches | `branches.js`, `jobs.js`, `adapters.js` | Approval creates seven independent branch records (evidence, MAAP, Project Review, DNA, MeChat, IMP, Spotlight). Destination adapters are mocks, shown as "Mock, not connected". See section 6. |
+| Branches | `branches.js`, `jobs.js`, `adapters.js` | Approval creates seven independent branch records (evidence, MAAP, Project Review, DNA, MiChat, IMP, Spotlight). Destination adapters are mocks, shown as "Mock, not connected". See section 6. |
 
 The agent's tools and prompts cannot approve, publish, grant access, write private memory or file anything but an owner-only draft.
 
@@ -118,7 +118,7 @@ Endpointing and temperature are unchanged (Tony, Q5). `SPECULATIVE_STT` and `ANA
 
 - **D2 and D3: MAAP and Project Review ratings.** The rubric is `MUST_BE_CONFIGURED_BY_PROCESS_OWNER`. Only the shell and the gate exist. Rating or closing a review returns `MAAP_NOT_CONFIGURED` or `PROJECT_REVIEW_NOT_CONFIGURED`.
 - **D4: Spotlight publication.** `SPOTLIGHT_CMS` is a mock that can hold, never publish. The library's old "published" label is now "Shared in internal library" (D17) and the gate refuses to map it to Spotlight.
-- **D5: live DNA, MeChat, IMP.** `BLOCKED_EXTERNAL`: no endpoint, schema or credential exists in this repository. The mocks answer from memory and every acknowledgement is `mock: true`, shown as "not synced". `sync_complete` and `published` need a non-mock acknowledgement.
+- **D5: live DNA, MiChat, IMP.** `BLOCKED_EXTERNAL`: no endpoint, schema or credential exists in this repository. The mocks answer from memory and every acknowledgement is `mock: true`, shown as "not synced". `sync_complete` and `published` need a non-mock acknowledgement.
 - **D6: people inference.** Turnover, peer comparison, sentiment and performance scoring are out of scope and denied by the gate. Non-negotiable.
 - **Not built, not claimed:** an artifact upload or registry (an artifact is a sentence naming it); a server-side check that the prefilled project context belongs to the signed-in person; review owners for MAAP or Project Review; non-English selection wording or cues (English wording is used for every language); translated acknowledgements and stock lines; a "read replies aloud" toggle in text mode; speculative transcription.
 - **Never done by the agent:** approving, publishing, granting access, writing private memory, or telling a consultant how their words will be judged.

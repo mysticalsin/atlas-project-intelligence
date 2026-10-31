@@ -69,6 +69,6 @@ Status key: **E** existing, **P** partial, **M** missing, **B** blocked on an ex
 
 | Area | Status | Evidence | Note |
 |---|---|---|---|
-| DNA, MeChat, IMP, Spotlight live integration | B/O | export contract only | No endpoints or credentials exist. |
+| DNA, MiChat, IMP, Spotlight live integration | B/O | export contract only | No endpoints or credentials exist. |
 | MAAP review, Project Review | M/O | none | No rubric has been supplied; it must be configured by the process owner. |
 | JEV relevance-only matching | E | `jev.js`, `rating.js` | Ranks stories for a customer brief, never consultants. |

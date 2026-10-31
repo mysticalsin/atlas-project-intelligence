@@ -1,5 +1,5 @@
 /* AtlasWorkflowUI (T15): the evidence workflow status in the Reference library view. One card per branch (Evidence, MAAP Review, Project
-   Review, DNA, MeChat, IMP, Spotlight), read from GET /api/library/evidence/:id/status and rendered by AtlasWorkflowCore. Read-only: nothing
+   Review, DNA, MiChat, IMP, Spotlight), read from GET /api/library/evidence/:id/status and rendered by AtlasWorkflowCore. Read-only: nothing
    here approves, grants, publishes or syncs. Every dynamic string is set with textContent. Shown only on the live site when the
    deployment has the library and the evidence workflow (bootstrap features.evidence_workflow) and the person has evidence records. */
 (()=>{'use strict';

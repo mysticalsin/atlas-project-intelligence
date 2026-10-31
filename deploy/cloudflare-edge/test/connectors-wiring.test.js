@@ -48,7 +48,7 @@ const status = (l, id) => Object.fromEntries(l.rows('SELECT branch, status FROM 
 test('live is per connection: a ready DNA connection is delivered over HTTP and reaches sync_complete; the others stay blocked_external; nothing else is touched', async () => {
   configureDna(); seen.length = 0;
   const { l, ev, id } = await approvedWith(ENV);
-  assert.deepEqual(status(l, id), { evidence: 'evidence_approved', maap: 'maap_pending', project_review: 'project_review_pending', dna: 'sync_complete', mechat: 'blocked_external', imp: 'blocked_external', spotlight: 'spotlight_draft' });
+  assert.deepEqual(status(l, id), { evidence: 'evidence_approved', maap: 'maap_pending', project_review: 'project_review_pending', dna: 'sync_complete', michat: 'blocked_external', imp: 'blocked_external', spotlight: 'spotlight_draft' });
   assert.equal(seen.length, 1, 'one HTTP request, for DNA only');
   assert.equal(seen[0].headers.authorization, 'Bearer tok-test'); assert.match(seen[0].headers['idempotency-key'], /:DNA$/);
   const sent = JSON.parse(seen[0].body); assert.deepEqual(Object.keys(sent).sort(), ['hash', 'person', 'ref', 'rev', 'skills']);
@@ -57,7 +57,7 @@ test('live is per connection: a ready DNA connection is delivered over HTTP and 
   assert.equal(l.rows("SELECT mock FROM branch_status WHERE entity = ? AND branch = 'dna'", id)[0].mock, 0);
   assert.equal(B.statusView(ev, OWNER, id).cards.find(c => c.branch === 'dna').mock, false);
   assert.equal(registry(l).DNA_SKILLS_WRITEBACK.calls.length, 0, 'the mock was not used');
-  assert.deepEqual(l.rows("SELECT reason FROM branch_status WHERE entity = ? AND branch IN ('mechat','imp')", id).map(r => r.reason), ['BLOCKED_EXTERNAL', 'BLOCKED_EXTERNAL']);
+  assert.deepEqual(l.rows("SELECT reason FROM branch_status WHERE entity = ? AND branch IN ('michat','imp')", id).map(r => r.reason), ['BLOCKED_EXTERNAL', 'BLOCKED_EXTERNAL']);
 });
 
 test('a sandbox connection is delivered but shown as a mock acknowledgement, never as synced', async () => {

@@ -4,9 +4,9 @@
    line that can NEVER say "complete" while any card is pending, failed, held, mock-acknowledged or unknown. Nothing the server sends is
    trusted for display: labels come from here, reason codes are mapped or shown as a bounded code, never as markup. */
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.AtlasWorkflowCore=api;})(typeof window!=='undefined'?window:globalThis,function(){'use strict';
-const ORDER=['evidence','maap','project_review','dna','mechat','imp','spotlight'];
-const LABELS={evidence:'Evidence',maap:'MAAP Review',project_review:'Project Review',dna:'DNA',mechat:'MeChat (CV)',imp:'IMP',spotlight:'Spotlight'};
-const DESTINATIONS=['dna','mechat','imp','spotlight'];
+const ORDER=['evidence','maap','project_review','dna','michat','imp','spotlight'];
+const LABELS={evidence:'Evidence',maap:'MAAP Review',project_review:'Project Review',dna:'DNA',michat:'MiChat CV',imp:'IMP',spotlight:'Spotlight'};
+const DESTINATIONS=['dna','michat','imp','spotlight'];
 const MOCK_BADGE='Mock — not connected';
 // display_status -> words and tone. Tones: ok, work, wait, mock, bad, hold, idle.
 const STATUS={approved:['Approved','ok'],in_review:['In review','work'],draft:['Draft','idle'],needs_clarification:['Needs clarification','wait'],rejected:['Rejected','bad'],disputed:['Disputed','bad'],
@@ -16,7 +16,7 @@ const STATUS={approved:['Approved','ok'],in_review:['In review','work'],draft:['
   withdrawn:['Withdrawn','idle'],superseded:['Superseded','idle'],not_started:['Not started','idle']};
 const BRANCH_STATUS={spotlight:{draft:['Story draft','idle'],held:['Held by the test CMS — not published','hold']}};
 // What "finished" is, per card. MAAP and Project Review never close in this build (no rubric), so an overall "complete" cannot appear yet.
-const COMPLETE={evidence:['approved'],maap:['closed'],project_review:['closed'],dna:['sync_complete'],mechat:['sync_complete'],imp:['sync_complete'],spotlight:['published']};
+const COMPLETE={evidence:['approved'],maap:['closed'],project_review:['closed'],dna:['sync_complete'],michat:['sync_complete'],imp:['sync_complete'],spotlight:['published']};
 const ATTENTION=['failed','needs_reconciliation','impact_review','blocked_external','rejected','disputed','withdrawn'];
 const GATES={claim_level_evidence:'claim-level evidence',project_owner_approval:'project owner approval',customer_permission_if_required:'customer permission',confidentiality_review:'confidentiality review',
   privacy_legal_review_if_required:'privacy and legal review',brand_approval:'brand approval',exact_revision_publication_authorization:'publication authorization'};

@@ -16,7 +16,7 @@ DRAFT_MARK = 'draft — from Atlas side; owner to confirm'
 OWNER_PLACEHOLDER = 'TO CONFIRM'
 ENV_NAME = re.compile(r'^[A-Z][A-Z0-9_]{2,63}$')
 # Adapters the edge knows: the four destinations plus the two shells (adapters.js CONTRACTS / createShell).
-ADAPTERS = ('DNA_SKILLS_WRITEBACK', 'MECHAT_CV', 'IMP_CAPABILITY', 'SPOTLIGHT_CMS', 'MAAP', 'PROJECT_REVIEW')
+ADAPTERS = ('DNA_SKILLS_WRITEBACK', 'MICHAT_CV', 'IMP_CAPABILITY', 'SPOTLIGHT_CMS', 'MAAP', 'PROJECT_REVIEW')
 SECRET_ROLES = {'bearer': ('token',), 'api_key_header': ('key',), 'oauth2_client_credentials': ('client_id', 'client_secret'), 'mtls': ('binding',), 'none': ()}
 # The JSON-schema keywords deploy/cloudflare-edge/src/schema-lite.js supports; a schema using any other keyword is rejected.
 SCHEMA_KEYWORDS = {'type', 'enum', 'const', 'required', 'properties', 'additionalProperties', 'items', 'minItems', 'maxItems', 'minLength', 'maxLength',

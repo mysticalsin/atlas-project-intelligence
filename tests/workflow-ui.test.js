@@ -21,7 +21,7 @@ function boot({features={evidence_workflow:true},items,view,mode='live',library=
  const f=path.resolve(__dirname,'../src/workflow-ui.js');delete require.cache[f];require(f);
  return {els,calls};
 }
-const ORDER=['evidence','maap','project_review','dna','mechat','imp','spotlight'];
+const ORDER=['evidence','maap','project_review','dna','michat','imp','spotlight'];
 const VIEW=()=>({adapters:'mock',overall:{status:'in_progress',complete:false},cards:ORDER.map((b,i)=>({branch:b,label:'<b>'+b+'</b>',status:'x',display_status:['approved','pending','pending','mock_acknowledged','failed','waiting_permission','draft'][i],
  mock:i>2,updated_at:'2026-11-01T00:00:00.000Z',reason:['','MAAP_NOT_CONFIGURED','PROJECT_REVIEW_NOT_CONFIGURED','MOCK_NOT_SYNCED','<script>x</script>','PURPOSE_NOT_GRANTED:matching',null][i]}))});
 const settle=()=>new Promise(r=>setTimeout(r,20));

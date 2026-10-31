@@ -1,6 +1,6 @@
 # Evaluation coverage: Agent Brain v2.1
 
-Date: 2026-10-30. Written with task T16. Everything below is offline: synthetic data, no network, no provider, no live DNA, MeChat, IMP, MAAP or Spotlight. It shows what the code does, not how good the live model sounds.
+Date: 2026-10-30. Written with task T16. Everything below is offline: synthetic data, no network, no provider, no live DNA, MiChat, IMP, MAAP or Spotlight. It shows what the code does, not how good the live model sounds.
 
 Run it: `make test-eval` (conversation, workflow and rubric tests, 52 tests) and `make test-ui` (adds `tests/humane_browser.py`). Both are part of the task's checks; neither is a human rating.
 
@@ -39,7 +39,7 @@ Mutation check, run by hand while writing (`EVAL_MUTATE` in the test file): with
 | 10 | Manager and consultant disagree | WF `S10` | PASS | Rejection and dispute kept side by side with who said each; revision 1 stays readable after the amendment. |
 | 11 | MAAP requested, rubric unconfigured | WF `S11` | PARTIAL | No rating exists anywhere, nothing is sent, the card says the rubric is not configured. But there is no MAAP review conversation to evaluate: the shell has no interview, only the gate. |
 | 12 | Relevant to a prospect, no public permission | WF `S12` | PASS | Retrieval (JEV shortlist) finds it and carries no permission; internal use is allowed; publishing is denied at the gate with `PURPOSE_NOT_GRANTED:public_spotlight` and the CMS is never called. Live JEV ranking is NOT-OFFLINE-VERIFIABLE (needs the key). |
-| 13 | DNA succeeds, MeChat fails | WF `S13` (and `W11`) | PASS | Per-card state; DNA delivered once; approval stands; no card says complete. Destinations are mocks, labelled so. |
+| 13 | DNA succeeds, MiChat fails | WF `S13` (and `W11`) | PASS | Per-card state; DNA delivered once; approval stands; no card says complete. Destinations are mocks, labelled so. |
 | 14 | Duplicate webhook | WF `S14` | PASS | PM trigger twice gives one invitation; the interview's draft post twice (also concurrently) gives one record; fan-out and enqueue twice give one job and one delivery; the key is UNIQUE in the table. No inbound webhook from any destination exists. |
 | 15 | Destination holds a newer revision | WF `S15` | PASS | The write is refused and flagged `needs_reconciliation`; the newer record is untouched; a job for an older source revision never delivers. |
 | 16 | Permission revoked after publication | WF `S16` | PARTIAL | Revocation after approval and after the Spotlight hold flags exactly the affected branches and lists the derivatives; nothing more is sent. No real publication exists (the CMS is a mock that can only hold), so "after publication" means "after the hold". |
@@ -56,7 +56,7 @@ Mutation check, run by hand while writing (`EVAL_MUTATE` in the test file): with
 | W6 | Evidence links support each metric and artifact | WF `W6` | PARTIAL | Each claim carries session, item, ledger id, exact words, recognition confidence; a metric's figures stay null until a person fills them. Not built: there is no artifact upload or registry; an "artifact" is a sentence naming one. |
 | W7 | Reviewer required before approval | WF `W7` | PASS | No approval by the owner or as oneself; the approval names revision and hash. |
 | W8 | Rejection routes to clarify, correct or dispute; previous revision kept | WF `W8`, `S10` | PASS | |
-| W9 | Approval creates independent branches | WF `W9` | PASS | Seven records; IMP waits for its own permission while DNA and MeChat go ahead. Destinations are mocks. |
+| W9 | Approval creates independent branches | WF `W9` | PASS | Seven records; IMP waits for its own permission while DNA and MiChat go ahead. Destinations are mocks. |
 | W10 | MAAP and Project Review separate state, owner, completion | WF `W10` | PARTIAL | Separate state, completion status, reasons and shells. No owner is assigned: the process owners are not named in the pack, and neither review can complete. |
 | W11 | One branch failing does not fail the rest | WF `W11`, `S13` | PASS | |
 | W12 | Spotlight needs exact-revision authorization and every permission | WF `W12`, `S12` | PASS | Gate order, channel, and a new revision voids earlier approvals. Against a mock CMS only. |
@@ -113,7 +113,7 @@ Chromium against the local edge (real Worker, library, evidence store, mock dest
 
 ## Not offline-verifiable at all
 
-Real latency gains; Workers AI word confidences and the 0.55 threshold; real echo cancellation and barge-in with a person speaking; Durable Object eviction and alarms; how humane Llama and Aura actually sound; non-English cues (English only); DOCX fidelity in Word; live DNA, MeChat, IMP, MAAP, Project Review and Spotlight. `scripts/eval_live.mjs` is a manual-only stub that refuses to run without explicit authorisation and, even then, runs nothing.
+Real latency gains; Workers AI word confidences and the 0.55 threshold; real echo cancellation and barge-in with a person speaking; Durable Object eviction and alarms; how humane Llama and Aura actually sound; non-English cues (English only); DOCX fidelity in Word; live DNA, MiChat, IMP, MAAP, Project Review and Spotlight. `scripts/eval_live.mjs` is a manual-only stub that refuses to run without explicit authorisation and, even then, runs nothing.
 
 ## Findings from writing the evaluation
 

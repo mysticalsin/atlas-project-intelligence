@@ -1,5 +1,5 @@
 // Branches after approval (plan §4, D1-D5, D11, D12, D17; pack: Canonical Workflow §9-§11, Integration Contracts §7-§8): approving
-// an evidence revision creates seven INDEPENDENT branch records (evidence, maap, project_review, dna, mechat, imp, spotlight), each with
+// an evidence revision creates seven INDEPENDENT branch records (evidence, maap, project_review, dna, michat, imp, spotlight), each with
 // its own permission check (policy-gate decide, default deny, with the record's own grants) and its own status. One branch failing
 // never fails or rolls back another (W11). Destination work goes through the reliable job envelope (jobs.js) to mock adapters
 // (adapters.js); a mock acknowledgement is shown as `mock_acknowledged`, never as synced or published (D12), and the only way to
@@ -18,9 +18,9 @@ import { str, obj, fail } from './util.js';
 
 export const BRANCHES = [
   { id: 'evidence', label: 'Evidence' }, { id: 'maap', label: 'MAAP Review' }, { id: 'project_review', label: 'Project Review' },
-  { id: 'dna', label: 'DNA' }, { id: 'mechat', label: 'MeChat (CV)' }, { id: 'imp', label: 'IMP' }, { id: 'spotlight', label: 'Spotlight' },
+  { id: 'dna', label: 'DNA' }, { id: 'michat', label: 'MiChat CV' }, { id: 'imp', label: 'IMP' }, { id: 'spotlight', label: 'Spotlight' },
 ];
-const DESTINATION_BRANCHES = new Set(['dna', 'mechat', 'imp', 'spotlight']);
+const DESTINATION_BRANCHES = new Set(['dna', 'michat', 'imp', 'spotlight']);
 const SHELL_STATUS = { maap: ['maap_pending', 'MAAP_NOT_CONFIGURED'], project_review: ['project_review_pending', 'PROJECT_REVIEW_NOT_CONFIGURED'] };
 const SYSTEM = { sub: 'atlas-system', roles: ['system'] }; // the workflow's own actor: never an owner, never a person
 export const BRANCH_STATUSES = ['evidence_approved', 'maap_pending', 'project_review_pending', 'permission_pending', 'projection_pending', 'syncing', 'retrying', 'mock_acknowledged',
@@ -34,10 +34,10 @@ const DISPLAY = { evidence_approved: 'approved', maap_pending: 'pending', projec
 const EVIDENCE_DISPLAY = { evidence_draft: 'draft', submitted_for_review: 'in_review', reviewer_queue: 'in_review', needs_clarification: 'needs_clarification', approved: 'approved',
   downstream_proposals: 'approved', rejected: 'rejected', closed_rejected: 'rejected', disputed: 'disputed', impact_review: 'impact_review', withdrawn: 'withdrawn' };
 // What "finished" means per card. MAAP and Project Review can never close here (no rubric), so an overall "complete" is unreachable by design.
-const COMPLETE = { evidence: ['approved'], maap: ['closed'], project_review: ['closed'], dna: ['sync_complete'], mechat: ['sync_complete'], imp: ['sync_complete'], spotlight: ['published'] };
+const COMPLETE = { evidence: ['approved'], maap: ['closed'], project_review: ['closed'], dna: ['sync_complete'], michat: ['sync_complete'], imp: ['sync_complete'], spotlight: ['published'] };
 const ATTENTION = ['failed', 'needs_reconciliation', 'impact_review', 'blocked_external', 'rejected', 'disputed', 'withdrawn'];
 const DERIVED = new Set(['syncing', 'retrying', 'mock_acknowledged', 'sync_complete', 'failed', 'needs_reconciliation', 'spotlight_draft', 'spotlight_approval_pending', 'publication_held', 'published']);
-const PURPOSE_BRANCH = { skills_profile: 'dna', cv: 'mechat', matching: 'imp', public_spotlight: 'spotlight' };
+const PURPOSE_BRANCH = { skills_profile: 'dna', cv: 'michat', matching: 'imp', public_spotlight: 'spotlight' };
 const APPROVED_STATES = ['approved', 'downstream_proposals'];
 
 // ---- configuration ----

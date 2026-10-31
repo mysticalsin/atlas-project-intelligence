@@ -24,6 +24,9 @@ const DDL = [
   'CREATE INDEX IF NOT EXISTS jobs_open ON jobs(status)',
   `CREATE TABLE IF NOT EXISTS job_events (seq INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT, at TEXT, event TEXT, attempt INTEGER, status TEXT, actor TEXT, detail TEXT)`,
   'CREATE INDEX IF NOT EXISTS job_events_job ON job_events(job_id)',
+  // v2.2 M1: a job stored for destination 'MeChat' (the old spelling) is a MiChat job; the idempotency key ends in the destination and follows it.
+  // An existing MiChat job with the same key wins (the stale row is left untouched, and the unknown destination keeps it out of every fan-out).
+  `UPDATE OR IGNORE jobs SET destination = 'MiChat', idempotency_key = substr(idempotency_key, 1, length(idempotency_key) - 6) || 'MiChat' WHERE destination = 'MeChat'`,
 ];
 
 const settings = new WeakMap();
