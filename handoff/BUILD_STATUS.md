@@ -942,3 +942,10 @@ Needs live or pilot verification before any deploy (none of it has happened; the
 - Verified offline on the integrated tree: node 493 (1 skip), edge 1219, pytest 793, `make test-eval` 56, 22/22 Playwright suites (`/tmp/claude-501/atlas_logs/ui_final`), `scripts/check_handoff.py` PASS after MANIFEST regeneration.
 - Orb files (`orb.css`, `orb-renderer.js`, `orb-ui.js`, `assets/Mantu.svg`) unchanged by Wave 2.
 - Not deployed; no provider called. Privacy: controls implemented; DPO sign-off required.
+
+## 2026-10-31 — v2.2 core: approved knowledge proposed downstream (feature/agent-brain-v2.1, local only)
+- Item (core path, IMPLEMENTATION_STATUS section 8): the evidence machine never fired `propose_downstream`, so an approved record never showed that its knowledge had gone to skills (DNA), resume (MiChat CV), projects (IMP, Project Review hand-off) and success stories (Spotlight). **Done.**
+- Change: `branches.js` `proposeDownstream` moves approved -> `downstream_proposals` as the system (`atlas-system`, role system, logged in `workflow_transitions`) once a destination branch holds a proposal for the revision (a job queued or attempted, or a Spotlight nomination). With the workflow off or every destination waiting for permission the record stays `approved`. Gates, amend and withdraw already treat both states alike. `evidence.js` approve returns the reloaded view. `workflow-core.js` labels `downstream_proposals` as Approved. Pages and CSP hashes rebuilt.
+- Tests: pins moved from `approved` to `downstream_proposals` (branches, evidence, e2e-core-flow, eval-workflow, humane_browser); G5 now drives propose_downstream and both post-approval withdrawals; workflow-core label test. Flake fixed: the g2 erase tamper probe equalled the real token when its MAC ended in 0.
+- Results (venv `/tmp/atlas-core-e2e-venv`, logs `/tmp/atlas-v22next`): see the session report; not deployed, not pushed, no provider called.
+- Parked (out of core scope): `close_rejected` and `reopen_review` remain unwired (dispute adjudication); Trusted Types; native-speaker review.

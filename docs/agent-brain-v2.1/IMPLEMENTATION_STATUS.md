@@ -164,7 +164,7 @@ Each is built one way and can be changed; none was asked of the consultants.
 
 ## 8. Known open items
 
-- Evidence machine: `close_rejected`, `reopen_review`, `propose_downstream` are never fired (G5 pins the list).
+- Evidence machine: `close_rejected` and `reopen_review` are never fired (G5 pins the list). `propose_downstream` is wired (v2.2 core, 2026-10-31): the system fires it once a destination (DNA skills, MiChat CV, IMP projects, Spotlight stories) holds a proposal for the approved revision.
 - CV payload carries structured fields only until a person has reworded a claim (G1-4).
 - A reviewer-amended claim needs a second reviewer; the owner is asked nothing (G1-2).
 - Prefill is not authorised server-side (W1, W2). No artifact registry (W6). No MAAP or Project Review owners (W10).
