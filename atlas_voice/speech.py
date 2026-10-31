@@ -100,8 +100,8 @@ def is_echo(text, recent_agent_text):
     return sum(w in agent for w in words) / len(words) >= .7
 
 
-# A sentence end: . ! or ? (then any closing quote, bracket or markdown) before whitespace, or a CJK or Devanagari stop.
-_END = re.compile(r'([.!?]+)["\'\u201d\u2019\u00bb)\]*_`]*(\s+)|[\u3002\uff01\uff1f\u0964]\s*')
+# A sentence end: . ! ? or the Arabic question mark (then any closing quote, bracket or markdown) before whitespace, or a CJK or Devanagari stop.
+_END = re.compile(r'([.!?\u061f]+)["\'\u201d\u2019\u00bb)\]*_`]*(\s+)|[\u3002\uff01\uff1f\u0964]\s*')
 ABBREVIATIONS = frozenset('mr mrs ms dr prof st jr sr vs etc cf approx inc ltd corp dept mme mlle hr sra dott sig dhr mevr ca'.split())
 MIN_PIECE = 40  # characters: shorter sentences join the next piece, and the first clause goes early only from here
 _CLAUSE = re.compile(r'(.{%d,}?[,;:\u2014\u2013])\s+' % MIN_PIECE, re.S)
@@ -123,7 +123,7 @@ def _boundaries(text):
             end = m.start() + 1
         else:
             end, stops = nxt - len(m.group(2)), m.group(1)
-            if '!' not in stops and '?' not in stops:  # full stops only: maybe an initial, an abbreviation or a list number
+            if '!' not in stops and '?' not in stops and '\u061f' not in stops:  # full stops only: maybe an initial, an abbreviation or a list number
                 if nxt < len(text) and unicodedata.category(text[nxt]) == 'Ll':
                     continue  # a lowercase word continues the sentence ("data... and", "etc. were")
                 before = text[start:m.start()]
@@ -193,7 +193,7 @@ GUARD_MAX_WORDS = 45  # most words ATLAS says in one reply
 PRAISE_MAX_WORDS = 8  # a sentence this short that is only praise is dropped
 REACTION_MAX_WORDS = 12  # a leading sentence longer than this is an answer, not a reaction: the repeated-opener rule leaves it alone
 DEFAULT_BANNED_PRAISE = r'\b(amazing|incredible|brilliant|awesome|fantastic)\b'  # persona.BANNED_PRAISE_SRC replaces it when wired
-_TERMINAL = re.compile(r'[.!?\u3002\uff01\uff1f\u0964]+$')
+_TERMINAL = re.compile(r'[.!?\u061f\u3002\uff01\uff1f\u0964]+$')
 _CLOSERS = re.compile('[\\s"\'\u201d\u2019\u00bb)\\]*_`]+$')
 _NUMBER = re.compile(r'[0-9]+(?:[.,][0-9]+)*')
 _THOUSANDS = re.compile(r'[0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]+)?')
@@ -245,9 +245,14 @@ def _digits(match):
     return match.group() if v is None else f' {v} '
 
 
+# The zero of each script's decimal digits (Arabic-Indic, Extended Arabic-Indic, Devanagari, Bengali, Tamil, Telugu, Thai, Myanmar): a figure written in them is the same figure.
+DIGIT_ZEROS = (0x660, 0x6F0, 0x966, 0x9E6, 0xBE6, 0xC66, 0xE50, 0x1040)
+_DIGITS = {z + i: 48 + i for z in DIGIT_ZEROS for i in range(10)}
+
+
 def figures(text):
-    """Every figure in a text as a numeral (digits, full-width digits and spelled-out numbers alike)."""
-    text = ''.join(c for c in unicodedata.normalize('NFKC', str(text)) if unicodedata.category(c) != 'Cf')
+    """Every figure in a text as a numeral (digits in any common script, full-width digits and spelled-out numbers alike)."""
+    text = ''.join(c for c in unicodedata.normalize('NFKC', str(text)) if unicodedata.category(c) != 'Cf').translate(_DIGITS)
     text = _HALF.sub(' 0.5 ', _FOLD.sub(lambda m: f' {_run_value(m.group(1))} ', _QUATRE_VINGT.sub('quatrevingt', text)))
     return [_number(m) for m in _NUMBER.findall(_NUM_RUN.sub(_digits, text))]
 
@@ -269,7 +274,7 @@ def asserts_verification(text):
     return bool(_CLAIM.search(t)) and not _HEDGE.search(t)
 
 
-EDGE_CONSTANTS = {'NUMBER_WORDS': NUMBER_WORDS, 'NUMBER_CONNECTORS': list(NUMBER_CONNECTORS), 'UNVERIFIED_CLAIM_SRC': UNVERIFIED_CLAIM_SRC, 'CLAIM_HEDGE_SRC': CLAIM_HEDGE_SRC}
+EDGE_CONSTANTS = {'DIGIT_ZEROS': list(DIGIT_ZEROS), 'NUMBER_WORDS': NUMBER_WORDS, 'NUMBER_CONNECTORS': list(NUMBER_CONNECTORS), 'UNVERIFIED_CLAIM_SRC': UNVERIFIED_CLAIM_SRC, 'CLAIM_HEDGE_SRC': CLAIM_HEDGE_SRC}
 
 
 def _words(text):
@@ -290,9 +295,9 @@ def _number(token):
 
 
 def _is_question(sentence):
-    """A finished sentence whose closing punctuation holds a question mark ('?', or the full-width one), quotes and markup aside."""
+    """A finished sentence whose closing punctuation holds a question mark ('?', the full-width one or the Arabic one), quotes and markup aside."""
     m = _TERMINAL.search(_CLOSERS.sub('', sentence))
-    return bool(m) and ('?' in m.group() or '\uff1f' in m.group())
+    return bool(m) and ('?' in m.group() or '\uff1f' in m.group() or '\u061f' in m.group())
 
 
 def _first_words(text, count):

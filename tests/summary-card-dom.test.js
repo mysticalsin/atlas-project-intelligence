@@ -199,3 +199,10 @@ test('wiring: the compiled page has the card, its buttons and the three message 
  const ui=read('storyboard-ui.js');assert.match(ui,/'\/evidence\/'\+encodeURIComponent\(s\.draft\.id\)\+'\/submit',\{method:'POST',body:\{expected_revision:s\.draft\.revision\}\}/);
  assert.equal((ui.match(/\/submit/g)||[]).length,1,'one place submits, and only its own button calls it');
 });
+
+// ---- v2.2 L1: the language each quote was said in ----
+test('the card keeps a quote in its own language: lang attribute on the quote, a language tag outside English, never translated',()=>{
+ const B=require('../src/storyboard-core.js');
+ const v=B.summaryView({phase:'open',items:[{detail_id:'D-001',field:'problem',label:'Problem',quote:"Les sinistres rebondissaient entre trois équipes.",status:'reported',lang:'fr'},{detail_id:'D-002',field:'outcome',label:'Outcome',quote:'Triage fell to 12 minutes.',status:'reported',lang:'en'},{detail_id:'D-003',field:'outcome',label:'Outcome',quote:'No tag here.',status:'reported'},{detail_id:'D-004',field:'outcome',label:'Outcome',quote:'Hostile tag.',status:'reported',lang:'<b>'}]});
+ assert.deepEqual(v.items.map(i=>i.lang),['fr','en',undefined,undefined]);assert.equal(v.items[0].quote,"Les sinistres rebondissaient entre trois équipes.");
+});

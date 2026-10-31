@@ -78,6 +78,21 @@ These exist in `tests/test_success_story.py` (task T14) and run in `make test`; 
 | T9 | 13-table layout pinned, fails safely | STORY `test_t9_template_layout_is_version_pinned_and_fails_safely` | PASS |
 | T10 | Spanish labels stay; output language by destination | STORY `test_t10_spanish_labels_remain_and_output_language_is_selected_by_pinned_*` | PASS |
 
+## Multilingual conversation (v2.2 L1, Tony 2026-10-31)
+
+Offline only: a fake recogniser reports the language, a fake talker records the policy and notes it is given. What the model then writes, how each language sounds and whether the recogniser takes a locked language are NOT-OFFLINE-VERIFIABLE.
+
+| Requirement | Test | Status |
+|---|---|---|
+| The talker is told to reply in the consultant's language, keeping proper nouns and never translating quotes, for fr es de pl ja; the next-move wording is English guidance | CONV `language-l1.test.js` first test | PASS |
+| The language follows speech and typed text with hysteresis; one English word does not flip it; a selector fixes one | `language-l1.test.js` (switching, typed, lock tests), `language.test.js`, `lang-detect.test.js` plus `lang.vectors.json` (Python/JS parity) | PASS |
+| No cached English is played to a speaker of any other language (pl ja ar tr); bank languages get their own lines | `language-l1.test.js`, `ack.test.js` | PASS |
+| A language with no voice is answered as text, told once, never in English | `language-l1.test.js` (TTS honesty) | PASS |
+| Control intents for seven languages | `test_turns.py::test_l1_*`, `turns.vectors.json`, `language-l1.test.js` | PASS (native review open) |
+| Evidence keeps the original language and a tag | `language-l1.test.js` (evidence), `summary-card-dom.test.js` | PASS |
+| Typed interview in French in a real browser | `tests/humane_browser.py` section 9 | PASS |
+| Quality of the model's replies and voices in each language | none | NOT-OFFLINE-VERIFIABLE |
+
 ## MAAP Review Specification, section 8
 
 MAAP is a shell: the official rubric, cadence, owners and data model were not supplied (decision D2). The tests assert what must NOT happen. None of this proves a MAAP review works.

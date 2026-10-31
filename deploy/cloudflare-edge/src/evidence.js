@@ -117,6 +117,7 @@ export function cleanNotes(raw) {
     const conf = d.asr_min_conf ?? meta.min_conf, off = d.audio_offset_ms ?? meta.audio_offset_ms;
     return { id, field, item_id: item, quote, status: one(d.status, NOTE_STATUSES, 'reported'), active: d.active !== false, withheld: d.withheld === true,
       supersedes: str(d.supersedes, 20), provenance: str(d.provenance, 60) || 'unverified_speech_recognition', ...(str(d.context, 320) ? { context: str(d.context, 320) } : {}),
+      ...(/^[a-z]{2,3}$/.test(str(d.lang, 3)) ? { lang: str(d.lang, 3) } : {}), // the language the words were said in (v2.2 L1); quotes are never translated
       asr_min_conf: typeof conf === 'number' && conf >= 0 && conf <= 1 ? conf : null, audio_offset_ms: Number.isInteger(off) && off >= 0 && off <= 1e9 ? off : null,
       value: optional(d.value), unit: optional(d.unit), baseline: optional(d.baseline), after_state: optional(d.after_state), period: optional(d.period) };
   });
@@ -135,7 +136,7 @@ export function claimsFromNotes(recordId, owner, notes, at) {
       subject_id: base === 'person' ? owner : notes.project_ref, claim_type, statement: d.quote, value: d.value, unit: d.unit, baseline: d.baseline, after_state: d.after_state,
       period: d.period, attribution, origin: 'consultant_reported', supersedes: null, conflicts_with: [],
       source_refs: [{ kind: 'interview', session_id: notes.session_id, item_id: d.item_id, ledger_id: `${notes.session_id}:${d.id}`, field: d.field, quote: d.quote, provenance: d.provenance,
-        ledger_status: d.status, ...(d.context ? { context: d.context } : {}), asr_min_conf: d.asr_min_conf, audio_offset_ms: d.audio_offset_ms, supersedes_ledger_id: d.supersedes ? `${notes.session_id}:${d.supersedes}` : null }],
+        ledger_status: d.status, ...(d.context ? { context: d.context } : {}), ...(d.lang ? { lang: d.lang } : {}), asr_min_conf: d.asr_min_conf, audio_offset_ms: d.audio_offset_ms, supersedes_ledger_id: d.supersedes ? `${notes.session_id}:${d.supersedes}` : null }],
       created_by: owner, created_at: at };
   });
 }

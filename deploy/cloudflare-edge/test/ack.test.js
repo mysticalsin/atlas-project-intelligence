@@ -25,11 +25,13 @@ test('a failed pilot gets setback_neutral: never "Yeah.", never earned or upbeat
   for (const category of ['earned_result', 'promising_unverified', 'neutral', 'thanks_detail']) assert.equal(pickAck({ ...t, category, seed: 1 }).category, 'setback_neutral');
 });
 
-test('a setback in another language never gets a bare yes word', () => {
+test('a setback in another language gets that language\'s own setback-safe lines: never an earned or promising one, never a bare yes word', () => {
   const t = turn(PILOT);
-  for (const lang of ['fr', 'es', 'pt', 'de', 'it', 'nl']) for (let seed = 0; seed < 12; seed++) {
-    const a = pickAck({ ...t, lang, category: 'earned_result', seed });
-    assert.ok(FILLERS[lang].includes(a.text) && !/^(oui|sí|sim|ja|sì)\.$/i.test(a.text), lang + ' ' + a.text);
+  for (const lang of ['fr', 'es', 'pt', 'de', 'it', 'nl']) for (let seed = 0; seed < 12; seed++) for (const category of ['earned_result', 'promising_unverified', 'neutral', 'thanks_detail']) {
+    const a = pickAck({ ...t, lang, category, seed });
+    assert.equal(a.category, 'setback_neutral');
+    assert.ok(ACKS.setback_neutral[lang].includes(a.text), lang + ' ' + a.text);
+    assert.ok(!ACKS.earned_result[lang].includes(a.text) && !ACKS.promising_unverified[lang].includes(a.text) && !/^(oui|sí|sim|ja|sì|ok)\.$/i.test(a.text), lang + ' ' + a.text);
   }
 });
 
@@ -102,18 +104,21 @@ test('the choice is deterministic by seed and varies with it', () => {
   assert.ok(new Set(Array.from({ length: 40 }, (_, i) => pickAck({ ...args, seed: i }).text)).size >= 4);
 });
 
-test('non-English languages use the neutral FILLERS only', () => {
-  for (const lang of ['fr', 'es', 'pt', 'de', 'it', 'nl', 'fr-FR']) for (const category of ['neutral', 'earned_result', 'thanks_detail', 'promising_unverified']) {
-    const a = pickAck({ category, cues: ['metric'], words: 20, lang, repliesSinceEarned: 9, seed: 4 });
-    assert.equal(a.category, 'neutral'); assert.ok(FILLERS[lang.slice(0, 2)].includes(a.text), lang + a.text);
+test('every bank language answers from its own bank in the category asked; any other language gets nothing from cache, never English', () => {
+  for (const lang of ['fr', 'es', 'pt', 'de', 'it', 'nl', 'fr-FR']) for (const category of ['neutral', 'thanks_detail', 'no_number_fine', 'confidential_ok', 'correction_thanks']) {
+    const a = pickAck({ category, words: 20, lang, repliesSinceEarned: 9, seed: 4 });
+    assert.equal(a.category, category); assert.ok(ACKS[category][lang.slice(0, 2)].includes(a.text), lang + a.text);
+    assert.ok(!ACKS[category].en.includes(a.text), 'not the English line');
   }
-  assert.equal(pickAck({ category: 'neutral', words: 20, lang: 'xx', seed: 1 }).category, 'neutral'); // unknown tag: English
-  assert.equal(pickAck({ category: 'neutral', words: 20, lang: 'ru', seed: 1 }), null); // no filler bank for it
+  // a figure with no basis is hedged in every language, an earned result is said only in an earned moment
+  for (const lang of ['fr', 'de']) { assert.equal(pickAck({ category: 'earned_result', cues: ['metric'], words: 20, lang, seed: 1 }).category, 'promising_unverified'); assert.equal(pickAck({ category: 'earned_result', words: 20, lang, repliesSinceEarned: 9, seed: 1 }).category, 'earned_result'); }
+  for (const lang of ['pl', 'ru', 'ja', 'ar', 'zh', 'ko', 'tr', 'sv', 'xx']) for (const category of ['neutral', 'earned_result', 'no_number_fine'])
+    assert.equal(pickAck({ category, words: 20, lang, seed: 1 }), null, lang + ' ' + category); // no bank: the talker answers in the language, no English line is played
 });
 
 test('every returned text has no "?" and no banned praise, across seeds, categories, cues and languages', () => {
   const cueSets = [[], ['metric'], ['describes_setback'], ['describes_achievement'], ['estimate', 'team_claim']];
-  for (const lang of ['en', 'fr', 'es', 'de']) for (const category of [...Object.keys(ACKS), 'bogus', undefined]) for (const cues of cueSets) for (let seed = 0; seed < 6; seed++) {
+  for (const lang of ['en', 'fr', 'es', 'pt', 'de', 'it', 'nl']) for (const category of [...Object.keys(ACKS), 'bogus', undefined]) for (const cues of cueSets) for (let seed = 0; seed < 6; seed++) {
     const a = pickAck({ category, cues, words: 20, lang, seed, repliesSinceEarned: 5 });
     assert.ok(a && !a.text.includes('?') && !BANNED.test(a.text), a && a.text);
   }
@@ -126,10 +131,10 @@ test('pickAck does not mutate its inputs and accepts cues as an array, a Set or 
   for (const c of [['describes_setback'], new Set(['describes_setback']), { describes_setback: true }]) assert.equal(pickAck({ category: 'earned_result', cues: c, words: 20, seed: 1 }).category, 'setback_neutral');
 });
 
-test('prewarm list: every English line once; other languages their fillers; unknown none', () => {
+test('prewarm list: every line of the language once; a language without a bank none (never English)', () => {
   const en = ackPrewarmList('en');
-  assert.equal(new Set(en).size, en.length); assert.deepEqual([...en].sort(), [...new Set(all)].sort());
-  for (const lang of ['fr', 'de', 'nl']) assert.deepEqual(ackPrewarmList(lang), FILLERS[lang]);
-  assert.deepEqual(ackPrewarmList('ru'), []);
+  assert.equal(new Set(en).size, en.length); assert.deepEqual([...en].sort(), [...new Set(Object.values(ACKS).flatMap(c => c.en))].sort());
+  for (const lang of ['fr', 'de', 'nl', 'pt', 'es', 'it']) assert.deepEqual([...ackPrewarmList(lang)].sort(), [...new Set(Object.values(ACKS).flatMap(c => c[lang]))].sort());
+  assert.deepEqual(ackPrewarmList('ru'), []); assert.deepEqual(ackPrewarmList('pl'), []);
   assert.deepEqual(ackPrewarmList(), en);
 });

@@ -275,3 +275,12 @@ def test_reply_guard_catches_spelled_out_and_full_width_numbers_and_verification
     for said in ('Your saving is verified and approved by your manager.','I checked with your manager: it is fine.','The CFO confirmed by email'):assert asserts_verification(said),said
     for said in ('that figure is not verified yet','A reviewer will approve it later.','It was unverified.','Was it approved?','You confirmed it yourself.'):assert not asserts_verification(said) or said=='Was it approved?',said
     assert ReplyGuard().push('Was that approved by anyone?')==['Was that approved by anyone?'] and ReplyGuard(allow_status=True).push('The draft was approved by the reviewer.')==['The draft was approved by the reviewer.']
+
+
+def test_l1_other_scripts_digits_and_the_arabic_question_mark():
+    from atlas_voice.speech import figures, ReplyGuard
+    assert figures('انخفض الوقت من ٤٠ إلى ١٢ دقيقة') == ['40', '12'] and figures('१२८ यूनिट') == ['128'] and figures('४०%') == ['40']
+    g = ReplyGuard()
+    assert g.push('هل قاست ذلك؟ ') == ['هل قاست ذلك؟'] and g.done and g._stop == 'question'   # the Arabic question mark ends the reply like "?"
+    g = ReplyGuard(summary_facts=['40 minutes'])
+    assert g.push('انخفض من ٤٠ إلى ٩٩ دقيقة. ') == [] and g.stats['dropped_unknown_number'] == 1   # a figure that is in no fact is dropped, whatever digits it is written in

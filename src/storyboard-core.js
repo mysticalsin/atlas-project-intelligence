@@ -152,7 +152,7 @@ function summaryView(sum){
  const hasDraft=typeof draft.id==='string'&&draft.id!==''&&Number.isInteger(draft.revision);
  const items=arr(s.items).filter(x=>x&&typeof x==='object'&&typeof x.detail_id==='string'&&DETAIL_RE.test(x.detail_id)).slice(0,60).map(x=>{
   const tags=[];if(own(STATUS_TAG,x.status))tags.push(STATUS_TAG[x.status]);if(x.asr_unconfirmed===true)tags.push('speech not confirmed');if(own(PROVENANCE_TAG,x.provenance))tags.push(PROVENANCE_TAG[x.provenance]);
-  return {id:x.detail_id,field:str(x.field,40),label:str(x.label,80),quote:str(x.quote,200),tags,editable:phase==='open'};});
+  return {id:x.detail_id,field:str(x.field,40),label:str(x.label,80),quote:str(x.quote,200),tags,editable:phase==='open',...(typeof x.lang==='string'&&/^[a-z]{2,3}$/.test(x.lang)?{lang:x.lang}:{})};}); /* lang: the language the quote was said in (v2.2 L1), never translated */
  const openPoints=arr(s.unknowns).filter(u=>u&&typeof u==='object'&&own(POINT_WORDS,u.kind)).slice(0,12).map(u=>POINT_WORDS[u.kind]+': '+(str(u.label,80)||str(u.field,40)));
  const sending=submit.status==='sending',sent=submit.status==='sent';
  const visible=phase!=='closed'&&(items.length>0||hasDraft||!!unavailable.message||phase==='ended');

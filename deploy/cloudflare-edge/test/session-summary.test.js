@@ -57,7 +57,7 @@ test('the read-back: a summary event with the card and its open points; the talk
   const card = lastCard(h);
   assert.deepEqual(card.items.map(i => i.field), ['problem', 'contribution', 'outcome']);
   assert.deepEqual(card.items.map(i => i.detail_id), ['D-001', 'D-002', 'D-003']);
-  assert.deepEqual(Object.keys(card.items[0]).sort(), ['asr_unconfirmed', 'detail_id', 'field', 'label', 'provenance', 'quote', 'status']);
+  assert.deepEqual(Object.keys(card.items[0]).sort(), ['asr_unconfirmed', 'detail_id', 'field', 'label', 'lang', 'provenance', 'quote', 'status']); // (lang: v2.2 L1, the language each quote was said in)
   assert.ok(Array.isArray(card.unknowns) && card.state === 'summary' && card.round === 1);
   assert.equal(h.s.machine.state, 'summary'); assert.ok(audit(h).includes('request_summary'));
   const note = h.calls.talker[2].find(m => m.role === 'system' && m.content.startsWith('SUMMARY FACTS (server'));
@@ -192,7 +192,8 @@ test('the notes posted for the draft have exactly the T13 shape: session id, pro
   assert.equal(notes.session_id, h.s.sessionId); assert.equal(notes.project_ref, PROJECT.id);
   assert.deepEqual(notes.details.map(d => d.id), ['D-001', 'D-003']);
   for (const d of notes.details) {
-    assert.deepEqual(Object.keys(d).sort(), ['active', 'asr_min_conf', 'audio_offset_ms', 'field', 'id', 'item_id', 'provenance', 'quote', 'status', 'supersedes', 'withheld']);
+    assert.deepEqual(Object.keys(d).sort(), ['active', 'asr_min_conf', 'audio_offset_ms', 'field', 'id', 'item_id', 'lang', 'provenance', 'quote', 'status', 'supersedes', 'withheld']); // (v2.2 L1: the language each quote was said in)
+    assert.equal(d.lang, 'en');
     assert.equal(d.active, true); assert.equal(d.withheld, false); assert.equal(d.provenance, 'unverified_speech_recognition');
   }
   assert.ok(!notes.details.some(d => d.quote === 'We rebuilt the claims intake process'), 'the kept-private detail never leaves the session');

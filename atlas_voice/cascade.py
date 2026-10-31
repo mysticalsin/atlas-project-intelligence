@@ -50,7 +50,7 @@ Phase 1, breadth: one follow-up per point until every area has an answer. Phase 
 SITUATIONS
 """ + situations('unknown', 'confidential', 'setback', 'rushed', 'correction') + """
 - If they ask you something, answer in one sentence and return to your question; never promise confidentiality or deletion.
-- Follow the server LANGUAGE note and keep product names.
+- LANGUAGE: reply only in the language of the server LANGUAGE note, whatever it is. Keep proper nouns; never translate their quotes. Server notes, move wording and these rules are English guidance: say it naturally in their language.
 
 """ + SAFETY + """
 

@@ -110,7 +110,8 @@ Spec pack and status: `docs/agent-brain-v2.1/` (`README.md`, `DECISION_LOG.md`, 
 | File | Responsibility |
 |---|---|
 | `persona.py` | The one persona: blocks composed into `cascade.TALKER_POLICY`, `quality.INTERVIEW_POLICY`, `interview.ROLE`; `ACKS`, `BANNED_PRAISE_SRC`, pause and resume lines |
-| `turns.py` | `analyze_turn`: intents, event cues, field hints, numbers for one utterance (no person description, D18) |
+| `turns.py` | `analyze_turn`: intents, event cues, field hints, numbers for one utterance (no person description, D18); control intents for en fr es pt de it nl (v2.2 L1), cues English only |
+| `languages.py` | v2.2 L1: language names, the bank languages, `detect(text)` (script ranges plus stopwords), fixed lines (screen notices, confirm-summary lines, read-back framing); exported as `LANG_*` |
 | `selector.py` | `select`: deterministic next move (question ladder, redundancy, deferrals, ASR confirm, summary, close); `QUESTION_BANK` |
 | `asr.py` | `uncertain_spans`, `replacement`, `TAU` (0.55; `ASR_CONFIRM_TAU`) |
 | `conversation_state.py` | Interview and evidence state machines with audit (D8 to D11) |
@@ -134,7 +135,8 @@ Spec pack and status: `docs/agent-brain-v2.1/` (`README.md`, `DECISION_LOG.md`, 
 | `branches.js`, `jobs.js`, `adapters.js`, `spotlight.js` | Seven branch cards, job envelope with idempotency and retry, mock destination adapters and MAAP/Project Review shells, Spotlight hold; `ATLAS_ADAPTERS`, `ATLAS_EVIDENCE_WORKFLOW` |
 | `security-headers.js`, `security-log.js`, `ratelimit.js`, `bounded.js`, `kill-switches.js`, `audit-chain.js` | B1 platform security: headers on every response (`secure`), pseudonymous security events (`secEvent`), persistent per-person rate limits (`consume`, `enforce` for the library routes), streaming bounded body reads, operator kill switches, the tamper-evident audit hash chain (`appendAudit` is the single hook in `library.js` `log`; `verifyChain` runs in the daily `scan-stale`). Runbook: `handoff/SECURITY_RUNBOOK.md` |
 | `app.js`, `worker.js` (extended) | `TALKER_MAX_TOKENS`, bootstrap `resumable` and `textMode`, `Interview` DO wiring (checkpoint store, evidence poster, alarm) |
-| `languages.js` (extended) | Two-piece cached greetings in seven languages (translations need native review) |
+| `languages.js` (extended) | Language names (any BCP-47 code), the per-turn language note, two-piece cached greetings in seven languages, screen notices and read-back words per language, `languageList` for the bootstrap (translations need native review) |
+| `lang-detect.js` | `detect(text)`: script ranges plus stopword sets for typed or transcribed text; parity with `atlas_voice/languages.py` (`test/lang.vectors.json`) |
 
 ### Browser (`src/`)
 `voice-controls.js` (pause, repeat, skip, typed turns, text-mode log; pure helpers), `voice-client.js` (consent, `Type instead`, reconnect, resume prompt, summary actions), `voice-panel.html`, `shell.html`, `voice.css`, `workflow-core.js` / `workflow-ui.js` / `workflow.css` (seven status cards), `storyboard-ui.js`. Rebuild every alias after a change (`python3 build.py`, then `build_edge.py`).

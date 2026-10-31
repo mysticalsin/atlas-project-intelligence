@@ -37,3 +37,11 @@
 #voicePanel[data-input=text] #orbTranscript,#voicePanel[data-input=text] .orb-meters,#voicePanel[data-input=text] #orbTranscriptToggle,#voicePanel[data-input=text] #soundHelp{display:none!important}
 #voiceConsentDialog #voiceConsentType[hidden]{display:none}#voiceConsentDialog #voiceConsentType{margin-top:9px}
 @media(max-width:540px){#voicePanel[data-input=text] .text-log{max-height:min(46vh,340px);padding:13px 14px}.text-log .msg{max-width:100%}}
+
+/* Language selector and indicator (v2.2 L1). Placement and finish belong to the UI pass; this keeps it readable and reachable. */
+.voice-language{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:10px 0;font-size:12px}
+.voice-language label{font-weight:600}
+.voice-language select{max-width:100%;min-height:36px;padding:6px 8px;font:inherit;color:inherit;background:transparent;border:1px solid currentColor;border-radius:8px}
+.voice-language select option{color:#111;background:#fff}
+.voice-language-state{flex:1 1 220px;opacity:.85}
+.voice-language-state[data-voice="false"]{font-weight:600}

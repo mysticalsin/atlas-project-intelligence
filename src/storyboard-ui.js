@@ -122,7 +122,8 @@ function renderSummary(){if(!card)return;
  const list=$('summaryItems');list.replaceChildren();
  for(const it of v.items){const li=el('li','summary-item');li.dataset.detail=it.id;
   const head=el('p','summary-item-head');head.append(el('b','',it.label));for(const t of it.tags)head.append(el('span','board-flag',' · '+t));
-  li.append(head,el('q','summary-quote',it.quote));
+  const quote=el('q','summary-quote',it.quote);if(it.lang){quote.setAttribute('lang',it.lang);if(it.lang!=='en')head.append(el('span','board-flag',' · '+it.lang.toUpperCase()));} /* the words stay in the language they were said in; the tag and lang attribute say which */
+  li.append(head,quote);
   if(it.editable){const row=el('div','summary-item-actions'),fix=el('button','board-btn','Correct'),keep=el('button','board-btn','Keep private');
    fix.type='button';fix.dataset.action='correct';fix.setAttribute('aria-label','Correct: '+it.label);fix.setAttribute('aria-expanded',sum.editing===it.id?'true':'false');
    keep.type='button';keep.dataset.action='withhold';keep.setAttribute('aria-label','Keep private: '+it.label);

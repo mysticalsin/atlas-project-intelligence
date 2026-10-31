@@ -12,7 +12,7 @@ import { requestLog, announceFlags } from './security-log.js';
 import * as ks from './kill-switches.js';
 import { limitOf, HOUR, retryAfterHeaders } from './ratelimit.js';
 import { sheetRoutes } from './sheet.js';
-import { detectedLanguage, NATIVE_VOICES, normalize } from './languages.js';
+import { detectedLanguage, NATIVE_VOICES, ELEVENLABS_LANGUAGES, languageList } from './languages.js';
 import { sttWords } from './asr.js';
 import { email as validEmail, inList } from './util.js';
 import { flags } from './features.js';
@@ -289,7 +289,7 @@ async function route(request, env, page, { waitUntil = p => p, flagsOf = flags }
       return json(env, { provider: 'workers', providerLabel: 'ATLAS voice', protocol: 'atlas-personaplex-pcm-v1', csrf,
         identity, model: 'ATLAS conversational voice', admin,
         voices: ['atlas'], defaultVoice: 'atlas', captureRequired: true, codecAvailable: true, busy: false, capacity: 1, maxSeconds: MAX_SECONDS, speakingSeconds: SPEAKING_LIMIT_S,
-        memory: !!env.HINDSIGHT_API_KEY && bankSecretStatus(env) !== 'missing', wiki: false, jev: !!env.TYPESAFE_API_KEY, jevClassify: !!env.TYPESAFE_API_KEY && !ks.aiOff(env), library: !!env.LIBRARY, libraryRole: role, sheet: true, transcription: true, structuredNotes: true, liveLedger: true, playbackAck: true, textMode: true,
+        memory: !!env.HINDSIGHT_API_KEY && bankSecretStatus(env) !== 'missing', wiki: false, jev: !!env.TYPESAFE_API_KEY, jevClassify: !!env.TYPESAFE_API_KEY && !ks.aiOff(env), library: !!env.LIBRARY, libraryRole: role, sheet: true, transcription: true, structuredNotes: true, liveLedger: true, playbackAck: true, textMode: true, languages: languageList(workersAI(env).speaks),
         readiness: env.DATA_MODE === 'production' ? 'production' : 'edge-deployment-test-data-only', email: mail, features: flagsOf(env), resumable,
         ...(ks.readOnly(env) ? { readOnly: true } : {}), ...(ks.aiOff(env) ? { aiOff: true } : {}) });
     }
@@ -461,9 +461,13 @@ function buildWorkersAI(env) {
     : r?.audio ? Uint8Array.from(atob(r.audio), c => c.charCodeAt(0)) : new Uint8Array(0);
   return {
     flags: sessionFlags(env), // ATLAS_SELECTOR, ATLAS_REPLY_GUARD, ATLAS_ACKS, ANALYST_WAIT_MS, SPECULATIVE_STT: read by the Session
-    // Automatic language detection (Nova-3 "multi"): returns the text and the utterance's language.
-    async transcribe(pcm) {
-      const r = await env.AI.run(env.STT_MODEL, { audio: { body: new Blob([wav(pcm)]).stream(), contentType: 'audio/wav' }, smart_format: true, punctuate: true, language: env.STT_LANGUAGE || 'multi' });
+    // Automatic language detection (Nova-3 "multi"): returns the text and the utterance's language. opts.language: a language the consultant locked in the UI, asked of the
+    // recogniser alone (a monolingual request, the way to reach a language "multi" does not cover); if that request fails the automatic one is made instead.
+    async transcribe(pcm, opts) {
+      const run = language => env.AI.run(env.STT_MODEL, { audio: { body: new Blob([wav(pcm)]).stream(), contentType: 'audio/wav' }, smart_format: true, punctuate: true, language });
+      const lock = /^[a-z]{2,3}$/.test(opts?.language || '') ? opts.language : null, auto = env.STT_LANGUAGE || 'multi';
+      let r;
+      try { r = await run(lock || auto); } catch (e) { if (!lock) throw e; r = await run(auto); }
       // words [{w, c, s, e}] (word, confidence, start, end in seconds; at most 400) feed the uncertain-span check (asr.js); none when the model sent none.
       const words = sttWords(r);
       return { text: r?.results?.channels?.[0]?.alternatives?.[0]?.transcript || '', language: detectedLanguage(r), ...(words.length ? { words } : {}) };
@@ -477,7 +481,7 @@ function buildWorkersAI(env) {
       // No boolean verdict is no verdict (the session logs it as NoVerdict and uses the silence rule), never "unfinished".
       return typeof r?.is_complete === 'boolean' ? { complete: r.is_complete, probability: Number(r.probability) || 0 } : null;
     },
-    speaks(lang) { return NATIVE_VOICES.includes(lang) || (!!env.ELEVENLABS_API_KEY && !!normalize(lang)); },
+    speaks(lang) { return NATIVE_VOICES.includes(lang) || (!!env.ELEVENLABS_API_KEY && ELEVENLABS_LANGUAGES.includes(lang)); }, // a voice that can say it: Aura-2 (en, es) or the configured ElevenLabs voice; else the reply is text
     async synthesize(text, speaker = 'atlas', lang = 'en') { // 'atlas' = the configured voice; the browser never sees its real name
       if (lang !== 'en' && lang !== 'es' && env.ELEVENLABS_API_KEY) return elevenLabs(env, text, lang);
       const es = lang === 'es';

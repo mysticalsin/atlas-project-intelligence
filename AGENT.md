@@ -23,7 +23,7 @@ Acknowledge, Explore, Clarify, Connect, Confirm (`TURN_PATTERN_STEPS`). In code,
 5. **Acknowledge** (`ack.js pickAck`). A short fixed line chosen from the cues, played from the audio cache while the reply is prepared. Categories include neutral, thanks_detail, no_number_fine, confidential_ok, correction_thanks, setback_neutral, setback_plain, earned_result and promising_unverified. Rules: a line is not repeated within the last four; "earned" praise at most one reply in three and only when the basis is known; never after the consultant asked ATLAS a question or when time is up; only after a real answer (8 words); other languages fall back to the neutral fillers.
 6. **Talk.** The talker model (Workers AI Llama, `TALKER_MODEL`) gets the persona prompt, the history and a server-written `NEXT MOVE` note holding the Move's wording. The analyst (`ANALYST_MODEL`) files evidence into the ledger in parallel and refines the next turn.
 7. **ReplyGuard** (`speech.js`, from `speech.py`). Applied to whatever the talker streams, in code, whatever the model writes: it keeps one question (cutting the stream after the first), drops standalone banned praise, drops an opener that repeats one of the last three, caps a reply at 45 words, and in a read-back removes any figure the consultant did not say. If the guard empties a reply, the Move's own wording is spoken.
-8. **Speak** (Aura-2 English and Spanish; ElevenLabs for other languages if a key exists) and **record**. Barge-in clears the audio and the interruption is recorded.
+8. **Speak** (Aura-2 English and Spanish; ElevenLabs for other languages if a key exists; a language with no voice is answered as text, see section 4b) and **record**. Barge-in clears the audio and the interruption is recorded.
 
 Time (Tony, 2026-10-31: "20-30 min to get everything we need"; was 15): 20 minutes of active interview are planned (paused and disconnected time excluded) and 30 is the hard cap. With 270 s of the planned end left, if the selector still has an essential question (essential fields, open speech doubts, disagreeing figures), ATLAS asks ONCE whether the consultant can give a few more minutes on that point (`atlas_voice/extension.py`, `extension.js`, `Session.decide`): a clear yes moves the end to 30 minutes, anything else goes to the read-back now, a rushed consultant is never asked, and if the essentials are covered the interview closes early. ATLAS's own speaking is capped at 800 s, the read-back/closing window is the last 270 s of the effective end, the wrap-up the last 90 s, and the 45-minute wall-clock cap (`WALL_CAP_S`) is unchanged.
 
@@ -95,6 +95,32 @@ Layers, bottom up: Python policy and pure logic (`atlas_voice/`: persona, turns,
 
 The Python `cascade.py` route (Kyutai) shares the persona and the pure modules but does not run the v2 conversation: the v2 turn handling is wired into the edge only (decision D15).
 
+## 4b. Languages (v2.2 L1)
+
+ATLAS speaks the language the consultant speaks (Tony, 2026-10-31). Code: `atlas_voice/languages.py` (tables, detector, fixed lines; Python is the source of truth), `src/lang-detect.js` (parity-tested port, `test/lang.vectors.json`), `src/languages.js` (names, language note, banks), `session.js` (tracking, switching, text-only replies), `ack.js`, `summary.js`.
+
+- **Which language.** Each speech turn carries Deepgram's language tag; each typed turn is read by `detect()` (script ranges plus stopword sets for twenty languages and eleven more scripts). The session follows the consultant on consistent evidence only: an utterance of at least three words, and either one long utterance (eight words) whose tag and text detector agree, or two utterances in a row in the same other language. One English word in a French answer changes nothing. The consultant can also fix a language in the selector (`{type:'language', language:'pl'|'auto'}`); a fixed language never moves and the recogniser is asked for it alone. `session.language`, switch events (`language`), metrics `language_candidate|switch|lock`, and the choice survives a reconnect (checkpoint).
+- **The talker.** Every turn gets a `LANGUAGE (server)` note: reply only in natural {name}, keep proper nouns and product names, never translate or paraphrase a quote. The NEXT MOVE wording, the analyst guidance and the persona rules stay English guidance, said to be rendered naturally in the language. The ReplyGuard is language-agnostic (question marks `? ？ ؟`, figures in any script's digits).
+- **Words ATLAS says without the talker** exist for `BANK_LANGUAGES` only (en fr es pt de it nl): the cached opening, acknowledgements, pause and resume lines, the confirm-summary lines, the read-back framing and closing question, screen notices. They are translations awaiting native review (`REVIEW_STATUS`). For any other language nothing is played from cache: no acknowledgement, no cached opening; pause, resume, the summary prompts and the closing question are written by the talker in the language (guarded), and the fixed English move wording is never spoken (the talker is asked once more for just that question).
+- **Voice honesty.** `speaks(lang)`: Aura-2 for English and Spanish, ElevenLabs Flash v2.5 (32 languages) when `ELEVENLABS_API_KEY` is set, nothing else (no invented Workers AI model). A language without a voice is answered in that language as text on screen, nothing is synthesised, and the consultant is told once (the server's own notice for a bank language, the talker's one sentence otherwise). `ready.voices`, `ready.language` and the bootstrap `languages` let the page show it.
+- **Intents.** Control intents (pause, resume, repeat, skip, dont_know, cannot_disclose, correction, rushed, stop, confirm, deny) exist for the seven bank languages (`turns.py`). Other languages get no intents (the words are an answer), no cues and no numbers: the page's Pause, Repeat and Skip buttons are the way. A bare "one moment" counts as a pause only in a short remark.
+- **Evidence.** Every ledger detail carries `lang` (the language its utterance was said in); the notes, the claims' `source_refs` and the read-back card carry it. Quotes are never translated. Reports stay English and exports follow their destination.
+
+Coverage:
+
+| Language | Fixed lines (bank) | Control intents | Detected from typed text | Voice (aloud) | Notes |
+|---|---|---|---|---|---|
+| English | authored | yes (plus cues, field hints, numbers) | yes | Aura-2 | the reference language |
+| French, Portuguese, German, Italian, Dutch | translated, **needs native review** | yes (control intents only) | yes | ElevenLabs key only | acknowledgements (50), opening, pause and resume, confirm-summary lines, read-back framing, screen notices |
+| Spanish | translated, **needs native review** | yes (control intents only) | yes | Aura-2 (`es`) | as above |
+| Polish, Romanian, Turkish, Swedish, Danish, Norwegian, Finnish | none: the talker writes every line | none: an answer (use the buttons) | yes (Danish and Norwegian share words: the detector declines a tie) | ElevenLabs key only | talker replies in the language; no cached English is ever played |
+| Russian, Hindi, Japanese | none | none | yes | ElevenLabs key only | Nova-3 "multi" understands them (`STT_AUTO`) |
+| Arabic, Chinese, Korean | none | none | yes (script) | ElevenLabs key only | not in Nova-3 "multi": lock the language in the selector so the recogniser is asked for it alone (live verification open) |
+| Ukrainian, Greek, Hebrew, Thai, Bengali, Tamil, Telugu, Georgian, Armenian, Persian, Urdu | none | none | yes (script, `uk` also by letters) | Ukrainian, Greek, Tamil via ElevenLabs only | named in the selector |
+| Any other language | none | none | only when the recogniser tags it (any BCP-47 code named by `Intl.DisplayNames`) | ElevenLabs list only | the talker replies in it; if there is no voice the reply is shown as text |
+
+Limits that remain: ledger status words (unknown, uncertain, measurement gaps, negation context) are English patterns, so in another language the analyst's own `uncertain` flag and the reviewer reading the original quote are the safeguards; the selector's question ladder, cues and numbers work from English words, so a non-English interview is steered by the analyst's plan and the talker rather than by the cue pre-pass; the Python gateway (`cascade.py`) is not multilingual beyond the shared policy text; the page's own buttons and labels are English (stock lines name them: "Confirm summary", "Submit for review", "Resume").
+
 ## 5. Switches, defaults and rollback
 
 All are Worker variables. Each default is the new behaviour; the legacy value restores the earlier one. Rolling back a deployed Worker is a Worker version rollback done by Tony.
@@ -106,6 +132,8 @@ All are Worker variables. Each default is the new behaviour; the legacy value re
 | `ATLAS_ACKS` | `content` | `legacy`: the content-blind stock fillers | `session.js sessionFlags` |
 | `ANALYST_WAIT_MS` | `0` | milliseconds (capped at 1500) to wait for the analyst while the acknowledgement plays, then re-select | `session.js sessionFlags` |
 | `TALKER_MAX_TOKENS` | `160` | maximum tokens of a spoken reply (was 300) | `app.js` |
+| `STT_LANGUAGE` | `multi` | the recogniser's language for automatic detection; a language the consultant fixes in the selector is asked of it alone (monolingual request, falling back to this one) | `app.js` |
+| `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL` | off | the optional multilingual voice (Flash v2.5, 32 languages) for every language Aura-2 cannot say | `app.js`, `languages.py` |
 | `SPECULATIVE_STT` | off | Reserved: read but has no effect; speculative transcription is not implemented | `session.js sessionFlags` |
 | `ASR_CONFIRM_TAU` | `0.55` | confidence below which a number or name is confirmed aloud; a pilot value, not calibrated | `asr.js tauFrom`, `asr.py` |
 | `ATLAS_CHECKPOINT` | on | `off`: no checkpoints, a dropped interview is not resumable | `checkpoint.js checkpointEnabled` |

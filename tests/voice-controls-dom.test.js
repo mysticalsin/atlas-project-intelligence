@@ -141,3 +141,26 @@ test('T11: the read-back card\'s buttons reach the socket as exactly the message
  assert.deepEqual(seen,['summary','summary_closed','summary_confirmed','evidence_draft','evidence_draft_unavailable']);
  seen.length=0;h.server({type:'restore',user:[],agent:[],quality:null,summary:{items:[],unknowns:[],state:'summary'},lastQuestion:'',activeSeconds:5});assert.deepEqual(seen,['summary']);
 });
+
+// ---- v2.2 L1: the language selector and indicator, against the real client ----
+test('language: the selector is filled from the bootstrap, a chosen language is sent with the start, the server\'s language shows in the indicator, and a change while live sends exactly one message',async()=>{
+ const h=boot({announce:['pause','resume','repeat','skip','text','language']});
+ h.bootJson.languages={auto:true,voice:['en'],list:[{code:'en',name:'English',native:'English',rtl:false,bank:true},{code:'pl',name:'Polish',native:'Polski',rtl:false,bank:false},{code:'ar',name:'Arabic',native:'العربية',rtl:true,bank:false}]};
+ h.$('voiceLanguageSelect').value='pl'; // chosen before the conversation
+ await h.live();
+ assert.equal(h.$('voiceLanguage').hidden,false);
+ assert.deepEqual(h.$('voiceLanguageSelect').children.map(o=>[o.value,o.textContent]),[['auto','Auto-detect'],['en','English'],['pl','Polski · Polish (text replies)'],['ar','العربية · Arabic (text replies)']]);
+ const start=h.sent.find(m=>m&&m.type==='start');assert.equal(start.language,'pl');assert.equal(start.languageLock,true);
+ h.server({type:'language',code:'pl',language:'pl',name:'Polish',native:'Polski',voice:false,locked:true,rtl:false,via:'selector'});
+ assert.equal(h.$('voiceLanguageState').textContent,'Polski · fixed by you · ATLAS answers in text');assert.equal(h.$('voiceLanguageState').dataset.voice,'false');assert.equal(h.$('voiceLanguageSelect').value,'pl');
+ h.server({type:'language',code:'ar',language:'ar',name:'Arabic',native:'العربية',voice:false,locked:false,rtl:true,via:'detected',notice:'ATLAS cannot speak aloud here right now.'});
+ assert.equal(h.$('voiceLanguageState').textContent,'العربية · detected · ATLAS answers in text');assert.equal(h.$('voiceLanguageSelect').value,'auto');assert.equal(h.$('voiceMessage').textContent,'ATLAS cannot speak aloud here right now.');
+ h.$('voiceLanguageSelect').value='en';h.$('voiceLanguageSelect').listeners.change();
+ assert.deepEqual(h.sent.filter(m=>m&&m.type==='language'),[{type:'language',language:'en'}]);
+});
+test('language: a server that does not announce the language control is never sent one, and a bootstrap with no languages shows no selector',async()=>{
+ const h=boot({announce:['pause','resume','repeat','skip','text']});await h.live();
+ assert.equal(h.$('voiceLanguage').hidden,true);
+ h.$('voiceLanguageSelect').value='fr';h.$('voiceLanguageSelect').listeners.change();
+ assert.deepEqual(h.sent.filter(m=>m&&m.type==='language'),[]);
+});

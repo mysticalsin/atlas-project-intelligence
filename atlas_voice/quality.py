@@ -127,6 +127,12 @@ class InterviewLedger:
     call_inputs: dict = field(default_factory=dict)
     stage: str = 'Unknown'
     sealed: bool = False
+    langs: dict = field(default_factory=dict)   # transcript item -> the language it was said in (v2.2 L1); a detail carries it as `lang`
+
+    def set_lang(self, item_id, lang):
+        """Tag a transcript item with its language code (a short lower-case tag); an unusable tag is ignored."""
+        if isinstance(item_id, str) and isinstance(lang, str) and re.fullmatch(r'[a-z]{2,3}', lang):
+            self.langs[item_id] = lang
 
 
     def add_transcript(self, item_id, text):
@@ -174,6 +180,7 @@ class InterviewLedger:
               'status':'unknown' if UNKNOWN.search(quote) else 'uncertain' if x.get('uncertain') is True or UNCERTAIN.search(quote) or context else 'reported',
               'active':True,'supersedes':supersedes,'provenance':provenance or 'unverified_speech_recognition'}
             if context: detail['context']=context
+            if ident in self.langs: detail['lang']=self.langs[ident]
             pending.append(detail)
         if len(self.details)+len(pending)>100: raise ValueError('Candidate budget reached')
         for x in pending:

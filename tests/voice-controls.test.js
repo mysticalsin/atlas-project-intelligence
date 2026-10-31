@@ -5,7 +5,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const C=require('../src/voice-controls.js'),ROOT=path.join(__dirname,'..');
 const ALL=['pause','resume','repeat','skip','text'];
 
-test('exports are the fixed contract',()=>{assert.deepEqual(Object.keys(C).sort(),['CORRECT_MAX','NAMES','PRIVATE_MARK','TEXT_MAX','TYPED_NOTES','afterAccepted','clock','elapsed','logApply','logRestore','message','pausedFrom','summaryMessage','supports','typedAccepted','typedRefusal','view']);assert.deepEqual(C.NAMES,ALL);assert.equal(C.TEXT_MAX,2000);});
+test('exports are the fixed contract',()=>{assert.deepEqual(Object.keys(C).sort(),['CORRECT_MAX','NAMES','PRIVATE_MARK','TEXT_MAX','TYPED_NOTES','afterAccepted','clock','elapsed','languageInfo','languageMessage','languageOptions','languageView','logApply','logRestore','message','pausedFrom','summaryMessage','supports','typedAccepted','typedRefusal','view']);assert.deepEqual(C.NAMES,ALL);assert.equal(C.TEXT_MAX,2000);});
 
 test('messages: exactly the keys the session accepts',()=>{
  for(const k of ['pause','resume','repeat','skip'])assert.deepEqual(C.message(k),{type:k});
@@ -139,4 +139,29 @@ test('X1 page: the typed start, the log, the note and the dialog button exist on
  assert.match(page,/<div[^>]*aria-live="polite"[^>]*id="textLog"[^>]*role="log"|<div[^>]*id="textLog"[^>]*role="log"/);assert.match(page,/aria-label="Conversation"[^>]*id="textLog"/);
  assert.match(page,/id="voiceTypeNote"[^>]*role="status"|role="status"[^>]*id="voiceTypeNote"/);assert.match(page,/aria-describedby="voiceTypeNote"/);
  assert.match(page,/id="voiceStartText"[^>]*type="button">Type instead</);
+});
+
+// ---- v2.2 L1: the language selector and indicator ----
+test('language: the selector sends exactly {type:"language",language}: "auto" or a language code, nothing else',()=>{
+ assert.deepEqual(C.languageMessage('auto'),{type:'language',language:'auto'});assert.deepEqual(C.languageMessage('pl'),{type:'language',language:'pl'});assert.deepEqual(C.languageMessage('fil'),{type:'language',language:'fil'});
+ for(const bad of ['','AUTO','pl-PL','x; drop','p','polish',null,undefined,42,{}])assert.equal(C.languageMessage(bad),null,String(bad));
+});
+test('language: the options are Auto first, then every language by its own name, a language with no voice says so',()=>{
+ assert.deepEqual(C.languageOptions(undefined),[]);assert.deepEqual(C.languageOptions({list:[]}),[]);
+ const o=C.languageOptions({auto:true,voice:['en'],list:[{code:'en',name:'English',native:'English'},{code:'fr',name:'French',native:'Français'},{code:'ar',name:'Arabic',native:'العربية'},{code:'<b>',name:'x'}]});
+ assert.deepEqual(o,[{value:'auto',label:'Auto-detect'},{value:'en',label:'English'},{value:'fr',label:'Français · French (text replies)'},{value:'ar',label:'العربية · Arabic (text replies)'}]);
+});
+test('language: the indicator names the language, how it was chosen and whether ATLAS answers aloud; the selector follows a lock',()=>{
+ assert.equal(C.languageView(null).hidden,true);assert.equal(C.languageView({code:'<x>'}).hidden,true);
+ const a=C.languageView({code:'fr',name:'French',native:'Français',voice:true,locked:false,rtl:false});
+ assert.deepEqual([a.hidden,a.text,a.value,a.dir,a.voice],[false,'Français · detected · ATLAS answers aloud','auto','ltr',true]);
+ const b=C.languageView({code:'ar',name:'Arabic',native:'العربية',voice:false,locked:true,rtl:true,notice:'No voice.'});
+ assert.deepEqual([b.text,b.value,b.dir,b.voice,b.notice],['العربية · fixed by you · ATLAS answers in text','ar','rtl',false,'No voice.']);
+ assert.equal(C.languageInfo({type:'ready',language:{code:'en'}}).code,'en');assert.equal(C.languageInfo({type:'language',code:'de'}).code,'de');assert.equal(C.languageInfo({type:'ready'}),null);assert.equal(C.languageInfo(null),null);
+});
+test('language: the compiled page has the selector, the indicator, dir=auto on the typed answer and sends the lock with the start message',()=>{
+ const html=fs.readFileSync(path.join(ROOT,'ATLAS_Voice.html'),'utf8');
+ for(const id of ['voiceLanguage','voiceLanguageSelect','voiceLanguageState'])assert.equal(html.split('id="'+id+'"').length-1,1,id);
+ assert.match(html,/<textarea[^>]*dir="auto"[^>]*id="voiceTypeInput"/);assert.match(html,/language:langChoice\(\)\|\|lang\(\),\.\.\.\(langChoice\(\)\?\{languageLock:true\}:\{\}\)/);
+ assert.match(html,/role="status"[^>]*id="voiceLanguageState"|id="voiceLanguageState"[^>]*role="status"/);
 });

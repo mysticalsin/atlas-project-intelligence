@@ -50,7 +50,18 @@ OTHER = [
     ('Je ne peux pas partager le nom du client', 'fr'), ('terminons ici', 'fr'), ('oui, exactement', 'fr'), ('non, ce n\'est pas ça', 'fr'), ('non', 'fr'), ('nous avons livré la migration', 'fr'),
     ('Podemos hacer una pausa', 'es'), ('continuemos', 'es'), ('puedes repetir la pregunta', 'es'), ('siguiente pregunta', 'es'), ('no sé', 'es'), ('no se hizo así', 'es'),
     ('no puedo compartir el nombre del cliente', 'es'), ('terminemos por hoy', 'es'), ('sí, claro', 'es'), ('si el cliente lo pide lo hacemos', 'es'), ('no, es incorrecto', 'es'), ('entregamos la migración', 'es'),
-    ('pause please', 'de'), ('ありがとう', 'ja'), ('I helped improve the platform', 'fr'), ('I helped improve the platform', 'EN-us'), ('yes', 'en_GB'), ('yes', None), ('yes', ''),
+    ('pause please', 'de'), ('ありがとう', 'ja'),
+    # v2.2 L1: control intents of pt, de, it and nl (and correction and rushed for fr and es); answers that must stay answers; languages without a table
+    ('podemos fazer uma pausa', 'pt'), ('vamos continuar', 'pt'), ('pode repetir a pergunta', 'pt'), ('próxima pergunta', 'pt'), ('não sei', 'pt'), ('não posso compartilhar o nome do cliente', 'pt'), ('desculpe, eu quis dizer 35', 'pt'),
+    ('estou com pressa', 'pt'), ('vamos encerrar por hoje', 'pt'), ('sim, exatamente', 'pt'), ('não, isso está errado', 'pt'), ('não', 'pt'), ('nós migramos a plataforma', 'pt'), ('em um momento do projeto mudamos o plano', 'pt'), ('um momento', 'pt'),
+    ('Können wir eine Pause machen', 'de'), ('machen wir weiter', 'de'), ('Können Sie die Frage bitte wiederholen', 'de'), ('nächste Frage', 'de'), ('Ich weiß es nicht', 'de'), ('Das kann ich nicht teilen', 'de'), ('Entschuldigung, ich meinte 35', 'de'),
+    ('Ich habe es eilig', 'de'), ('Lassen Sie uns beenden', 'de'), ('Ja, genau', 'de'), ('Nein, das stimmt nicht', 'de'), ('Nein', 'de'), ('Wir haben die Plattform migriert', 'de'), ('Im Moment läuft alles stabil', 'de'), ('einen Moment', 'de'),
+    ('possiamo fare una pausa', 'it'), ('riprendiamo', 'it'), ('puoi ripetere la domanda', 'it'), ('prossima domanda', 'it'), ('non lo so', 'it'), ('non posso condividerlo', 'it'), ('scusa, intendevo 35', 'it'), ('ho fretta', 'it'),
+    ('finiamo qui', 'it'), ('sì, esatto', 'it'), ('no, è sbagliato', 'it'), ('no', 'it'), ('si è deciso di migrare la piattaforma', 'it'), ('un attimo', 'it'),
+    ('kunnen we even pauzeren', 'nl'), ('laten we verder gaan', 'nl'), ('kun je de vraag herhalen', 'nl'), ('volgende vraag', 'nl'), ('ik weet het niet', 'nl'), ('dat kan ik niet delen', 'nl'), ('sorry, ik bedoelde 35', 'nl'), ('ik heb haast', 'nl'),
+    ('laten we stoppen', 'nl'), ('ja, precies', 'nl'), ('nee, dat klopt niet', 'nl'), ('nee', 'nl'), ('we hebben het platform gemigreerd', 'nl'), ('een momentje', 'nl'),
+    ('pardon, je voulais dire 35', 'fr'), ('je suis pressé, restons brefs', 'fr'), ('35 et pas 38', 'fr'), ('perdón, quería decir 35', 'es'), ('tengo prisa, seamos breves', 'es'),
+    ('Czy możemy zrobić przerwę', 'pl'), ('pause please, I do not know', 'ja'), ('أريد أن نتوقف قليلا', 'ar'), ('I helped improve the platform', 'fr'), ('I helped improve the platform', 'EN-us'), ('yes', 'en_GB'), ('yes', None), ('yes', ''),
 ]
 CONTEXT = [
     ('We moved the batch jobs to Kafka last spring', 'en', {'asked_field': 'adoption'}), ('yes', 'en', {'asked_field': 'adoption'}), ('I do not know that', 'en', {'asked_field': 'outcome'}),
