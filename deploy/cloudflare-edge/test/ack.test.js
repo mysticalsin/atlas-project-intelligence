@@ -19,7 +19,7 @@ test('a failed pilot gets setback_neutral: never "Yeah.", never earned or upbeat
     const a = pickAck({ ...t, category, seed, repliesSinceEarned: 99 });
     assert.ok(a, category);
     assert.notEqual(a.text, 'Yeah.');
-    assert.ok(['setback_neutral', 'correction_thanks', 'confidential_ok', 'no_number_fine'].includes(a.category), category + ' -> ' + a.category);
+    assert.ok(['setback_neutral', 'correction_thanks', 'correction_thanks_fact', 'confidential_ok', 'no_number_fine'].includes(a.category), category + ' -> ' + a.category);
     assert.ok(!ACKS.earned_result.en.includes(a.text) && !ACKS.promising_unverified.en.includes(a.text), a.text);
   }
   for (const category of ['earned_result', 'promising_unverified', 'neutral', 'thanks_detail']) assert.equal(pickAck({ ...t, category, seed: 1 }).category, 'setback_neutral');

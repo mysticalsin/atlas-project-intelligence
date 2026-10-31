@@ -79,7 +79,7 @@ test('summaryFacts: at most four, one per field, the story\'s spine first; doubt
 test('summaryNote: the facts, at most three open points by name, the one question; a reflection asks the move\'s own check question', () => {
   const items = buildSummary(SAMPLE), { facts } = summaryFacts(items), unknowns = buildUnknowns(SAMPLE, { skipped: ['stakes', 'adoption', 'customer_fit'], deferred: [] });
   const note = summaryNote(facts, unknowns);
-  assert.ok(note.startsWith('SUMMARY FACTS (server') && note.includes('1) Customer problem: Tickets bounced between three teams') && note.endsWith(SUMMARY_QUESTION));
+  assert.ok(note.startsWith('SUMMARY FACTS (server') && note.includes('1) "Customer problem: Tickets bounced between three teams') && note.endsWith(SUMMARY_QUESTION));
   assert.equal((note.match(/OPEN POINTS/g) || []).length, 1);
   const open = note.split('OPEN POINTS')[1].split('Then ask')[0]; assert.ok(open.split(';').length <= 3, 'at most three open points');
   assert.ok(!note.includes('Keep this private') && !note.includes('Old wording'), 'withheld and superseded words are nowhere');

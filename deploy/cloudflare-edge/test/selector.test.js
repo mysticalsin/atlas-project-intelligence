@@ -5,13 +5,13 @@ import { readFileSync } from 'node:fs';
 import { select, similar, effectivePhase, contradiction } from '../src/selector.js';
 import { SELECTOR_CONFIG, QUESTION_BANK, SELECTOR_LINES } from '../src/policy.generated.js';
 const V = JSON.parse(readFileSync(new URL('./selector.vectors.json', import.meta.url)));
-const KEYS = ['kind', 'intent', 'field', 'rung', 'say', 'why', 'reaction', 'ack_category'];
+const KEYS = ['kind', 'intent', 'field', 'rung', 'say', 'why', 'reaction', 'ack_category', 'bridge', 'hook'];
 const walk = function* (d) { if (d && typeof d === 'object') for (const [k, v] of Object.entries(d)) { yield k; yield* walk(v); } };
 test('selector: at least 60 vectors', () => assert.ok(V.length >= 60, String(V.length)));
 test('selector parity with Python on every vector', () => {
   for (const [args, expected] of V) assert.deepEqual(select(...args), expected, JSON.stringify(args).slice(0, 200));
 });
-test('selector returns exactly the eight Move keys and never a score', () => {
+test('selector returns exactly the ten Move keys and never a score', () => {
   for (const [args] of V) { const m = select(...args); assert.deepEqual(Object.keys(m), KEYS); assert.ok(![...walk(m)].some(k => /score|rank/i.test(k))); }
 });
 test('selector vectors cover every kind and every reaction', () => {

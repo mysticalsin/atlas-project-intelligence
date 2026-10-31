@@ -117,7 +117,7 @@ Real latency gains; Workers AI word confidences and the 0.55 threshold; real ech
 
 ## Findings from writing the evaluation
 
-1. **"I don't have the numbers" is not recognised as a deferral.** The English cue wants "do not know" or "don't know"; the pack's own Example 3 phrasing is read as an ordinary answer, so ATLAS does not use its accept line. It does not demand the figure again either. Pinned in CONV `X3`. A wording fix belongs to the owner of `turns.py` (parity-tested), so it is recorded here, not patched.
+1. **"I don't have the numbers" is recognised as a deferral (fixed in H1).** It was read as an ordinary answer, so ATLAS did not use its accept line (it still did not demand the figure again). The `dont_know` cue in `turns.py` now also takes "I don't have the numbers / that data / the figures". Pinned in CONV `X3`.
 2. **The pack's Example 1 and its Achievement reaction praise a result before its basis is known**, which the pack's own praise rules forbid. The rubric rates them 4, not 5; ATLAS's acknowledgement gate would say "That sounds promising." instead.
 3. **ReplyGuard blocks invented figures only in a read-back**, by design. In a free reply, a figure the talker makes up is voiced. The adversarial talker proves the read-back case; the free-reply case is covered by the prompt only.
 4. **Three evidence-machine events are unreachable** (see gate 5).

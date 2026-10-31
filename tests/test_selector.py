@@ -13,7 +13,7 @@ from atlas_voice.quality import FIELDS, InterviewLedger
 from atlas_voice.selector import CONFIG, LINES, QUESTION_BANK, select
 from atlas_voice.turns import analyze_turn
 
-KEYS = ['kind', 'intent', 'field', 'rung', 'say', 'why', 'reaction', 'ack_category']
+KEYS = ['kind', 'intent', 'field', 'rung', 'say', 'why', 'reaction', 'ack_category', 'bridge', 'hook']   # H1: bridge (topic change) and hook (their own words)
 KINDS = {'ask', 'confirm_asr', 'reflect', 'summary', 'close', 'offer_move_on', 'accept_and_move'}
 YES_NO_START = re.compile(r'^(?:did|do|does|is|are|was|were|have|has|had|can|could|will|would|should|shall|may)\b', re.I)
 OPEN_INVITATION = re.compile(r'^could you (?:walk me through|tell me|give me)\b', re.I)
@@ -65,7 +65,7 @@ def question_sentence(say):
 def test_every_bank_entry_has_exactly_one_question_mark():
     assert QUESTION_BANK
     for intent, langs in QUESTION_BANK.items():
-        assert 2 <= len(langs['en']) <= 3, intent
+        assert 2 <= len(langs['en']) <= 4, intent   # H1: four where the pack toolkit adds a question (open_exploration, example, ownership, setback_response)
         for v in langs['en']:
             assert v.count('?') == 1 and v.rstrip().endswith('?'), (intent, v)
 
@@ -149,7 +149,7 @@ def test_malformed_inputs_never_raise():
 def test_vague_verb_asks_for_an_example_then_ownership():
     first = mv(t=turn('I helped improve the platform'))
     assert (first['kind'], first['intent'], first['rung']) == ('ask', 'vague_example', 2) and first['why'].startswith('vague:example')
-    second = mv(t=turn('We rebuilt the nightly report job so it ran in parallel'), asked=[first])
+    second = mv(t=turn('We rebuilt the nightly batch job so it ran in parallel'), asked=[first])
     assert (second['intent'], second['field'], second['rung']) == ('ownership', 'contribution', 3) and second['why'].startswith('vague:ownership')
 
 
@@ -451,7 +451,7 @@ def test_rushed_asks_only_the_essentials_and_accepts_gaps():
     asks = [m for m in out if m['kind'] == 'ask']
     assert asks and all(m['field'] in ('problem', 'contribution', 'outcome') for m in asks)
     assert not any(m['intent'] in selector.METRIC_PARTS + ['tech_depth', 'reflect', 'cert_details'] for m in out)
-    assert asks[0]['say'].startswith("No problem, let's keep to the essentials.") and sum(m['say'].startswith("No problem") for m in out) == 1
+    assert asks[0]['say'].startswith("No problem, let's keep it to three things") and sum(m['say'].startswith("No problem") for m in out) == 1
     assert all(m['why'].startswith('rushed:') for m in asks)
 
 
@@ -665,3 +665,159 @@ def test_selector_never_describes_the_person():
         assert not any(banned.search(v) for v in e['en'])
     for m in converse(CORPUS):
         assert not banned.search(json.dumps(m))
+
+
+# ---------- H1: humane conversation review (transcripts a-d) ----------
+
+def said(m):
+    return m['say']
+
+
+def test_h1_stop_closes_the_interview_instead_of_asking_again():
+    for t in ['I think we covered it, I have nothing more to say.', 'No, I think that is all, thank you.']:
+        m = mv(t=turn(t))
+        assert m['kind'] == 'summary' and m['why'] == 'summary:stop', t
+    m = mv(t=turn('No, I think that is all, thank you.'), asked=[{'kind': 'summary', 'intent': 'summary', 'field': None, 'rung': None, 'say': 'x', 'why': 'summary:stop'}])
+    assert m['kind'] == 'close'
+
+
+def test_h1_a_setback_is_met_with_what_did_you_do_once():
+    t = turn('It was really frustrating, the team was exhausted and the new sponsor did not care about the project at all.')
+    m = mv(t=t)
+    assert (m['intent'], m['field'], m['rung'], m['why']) == ('setback_response', 'decision', 4, 'setback')
+    assert m['ack_category'] == 'setback_neutral' and 'What did you do when that happened?' == m['say']
+    again = mv(t=t, asked=[m])
+    assert again['intent'] != 'setback_response'                      # the answer to it may also sound hard: no loop
+    assert 'setback_response' in selector.NOT_ATTEMPTS                # and it is not an attempt at the decision question
+    assert mv(t=turn('It went live on time with zero data loss, around two million records.'))['intent'] != 'setback_response'
+    assert mv(t=t, rushed=True)['intent'] != 'setback_response'       # a rushed consultant gets the essentials only
+
+
+def test_h1_first_person_work_is_not_asked_who_did_it():
+    out = converse(['I helped improve the platform for the client.', 'Mostly I worked on the release pipeline and the monitoring, making things more efficient for everyone.'])
+    assert out[0]['intent'] == 'vague_example'
+    assert out[1]['intent'] not in ('ownership', 'team_ownership', 'role')
+    assert mv(t=turn('It was a data migration for a bank'))['intent'] != 'open_exploration'
+
+
+def test_h1_rushed_lead_is_the_acknowledgement_and_says_the_three_things():
+    out = converse(["Sorry I only have five minutes, can we be quick? It was a data migration for a bank.", 'I led the migration design and wrote the scripts myself.'], rushed=True)
+    assert out[0]['say'].startswith("No problem, let's keep it to three things: the project, your part, and what changed.")
+    assert (out[0]['reaction'], out[0]['ack_category']) == ('none', None)      # no "Okay, noted." in front of it
+    assert not out[1]['say'].startswith('No problem')
+
+
+def test_h1_the_question_follows_the_thread_and_a_change_of_topic_says_so():
+    plan = ledger_plan(('contribution', 'I worked on the release pipeline and the monitoring'))
+    m = mv(plan=plan, t=turn('Deployments went down by 80 percent', 'contribution'))
+    assert m['intent'] == 'metric_kind' and m['say'] == 'Was the 80 percent measured, or more of an estimate?'   # {figure}
+    assert 'Was that figure measured' in said(mv(t=turn('it was 80% faster and 40% cheaper')))                  # two figures: no figure named
+    # {hook}: their own words, subject and verb dropped; the ownership question starts from it
+    plan = ledger_plan(('intervention', 'We rebuilt the nightly batch job so it ran in parallel'))
+    m = mv(plan=plan, t=turn('We rebuilt the nightly batch job so it ran in parallel', 'intervention'), asked=[{'intent': 'example', 'field': 'intervention', 'rung': 2, 'say': 'x?', 'why': 'ladder:intervention', 'kind': 'ask'}])
+    assert m['hook'] == 'the nightly batch job', m
+    assert not m['bridge']
+    # far from the thread: bridge, and no "that" or "it" in the wording
+    m = mv(plan=ledger_plan(('adoption', 'The squads used it every day')), t=turn('The release manager and the two squads used it every day after we left, they owned it.', 'adoption'))
+    assert m['bridge'] is True and m['hook'] == '' and not re.search(r'\b(?:that|it|this|those)\b', m['say'], re.I), m
+    assert selector._hook({'candidate_details': [{'field': 'problem', 'quote': 'I think it was measured, the ops team had a dashboard'}]}, 'problem') == ''   # no verb to drop: no hook
+    assert selector._hook({}, None) == '' and selector._hook({'candidate_details': [{'field': 'problem', 'quote': 'x'}]}, 'problem') == ''
+
+
+def test_h1_variants_with_nothing_to_fill_are_not_used():
+    for intent, e in QUESTION_BANK.items():
+        assert any(not re.search(r'\{(?:hook|figure)\}', v) for v in e['en']), intent      # every intent keeps a variant that needs no thread words
+    m = mv(t=turn('We chose GitLab over Jenkins'))
+    assert '{' not in m['say'] and '}' not in m['say']
+
+
+def test_h1_the_bank_is_rewritten_open_spoken_and_complete():
+    b = lambda i: QUESTION_BANK[i]['en']
+    assert b('stakes')[0] == 'What was at stake for the client if nothing had changed?' and b('stakes')[2] == 'Who felt that problem most?'
+    assert b('ownership')[0] == 'You mentioned {hook}. Which part of that was yours?' and 'How was the work split between you and the team?' in b('ownership')
+    assert b('decision')[1:] == ['What else did you consider before settling on that?', 'What was the hardest call you had to make?']
+    assert b('evidence')[0] == 'What could a reviewer look at later, like a report or a dashboard?' and b('adoption')[0] == 'Who used it day to day once it was live?'
+    assert b('measurement')[:2] == ['How did you know it was working?', 'What showed you things had changed?']
+    assert b('attribution')[0] == 'Which part of that result came from your piece of the work?' and b('attribution')[2] == 'Where would you be careful not to overclaim this?'
+    assert b('customer_fit')[0] == 'Which other clients could use what you learned here?' and b('poor_fit')[0] == 'Where would this approach not work as well?'
+    assert b('metric_baseline')[0] == 'What was the starting point before the change?' and b('metric_source')[0].startswith('Where would that number show up')
+    assert b('cert_details')[0] == 'Which body issued that certification?' and b('praise_source')[0] == 'Who gave you that feedback?'
+    assert b('offer_move_on')[0] == "Let's leave that open. What happened next on the project?"
+    assert not any('What would you like to cover instead' in v or 'What shall we turn to next' in v for v in b('offer_move_on'))   # not "you choose": that sounds lost
+    for v in ['What made that difficult?', 'What did you try next?'] + ['How did you approach it?'] + ['What were you trying to change?']:      # the pack toolkit questions
+        assert any(v in e['en'] for e in QUESTION_BANK.values()), v
+    for intent, e in QUESTION_BANK.items():
+        assert not any(re.search(r'\bactually\b|\bhow, if at all\b|\bverify\b', v, re.I) for v in e['en']), intent
+
+
+def test_h1_a_refusal_with_content_is_kept_private_and_the_interview_goes_on():
+    said_it = 'I can not name the client, it is a big pharma company under NDA, but we rebuilt their clinical trial reporting.'
+    m = mv(t=turn(said_it))
+    assert m['why'].startswith('kept_private:intervention>') and m['ack_category'] == 'confidential_ok' and m['intent'] != 'anonymise'
+    assert 'intervention' not in selector._context({}, turn(said_it), [], {}, 'breadth', 800, False)['deferred']
+    # a short refusal about a document: deferred, one acknowledgement, no "without naming anyone"
+    m = mv(t=turn('I can not share the documents, they are confidential.'), asked=[{'intent': 'evidence', 'field': 'evidence', 'rung': 5, 'say': 'x?', 'why': 'ladder:evidence', 'kind': 'ask'}])
+    assert m['why'].startswith('cannot_disclose:evidence>') and m['intent'] != 'anonymise'
+    # a name or a client being refused: anonymised, once
+    m = mv(t=turn("I can't name the client"), asked=[{'intent': 'open_exploration', 'field': 'problem', 'rung': 1, 'say': 'x?', 'why': 'ladder:problem', 'kind': 'ask'}])
+    assert m['intent'] == 'anonymise'
+    assert ACKS['confidential_ok']['en'] == ["That's fine, we'll keep that private.", 'No problem, that stays out.', 'Of course, we can leave that out.', "That's fine, we'll keep it general.", 'Understood, nothing specific then.']
+    assert not any('name out' in t or 'anonymise' in t for t in ACKS['confidential_ok']['en'])
+
+
+def test_h1_no_contradiction_loop_after_a_self_correction():
+    plan = ledger_plan(('outcome', 'Report preparation went from 10 days to 2 days per study'), ('outcome', 'From 10 days to 3 days'))
+    assert selector.contradiction(plan)[0] == 'outcome'
+    assert selector.contradiction(plan, skip=['outcome']) is None
+    corrected = [{'intent': 'correction_number', 'field': 'measurement', 'rung': 7, 'say': 'How was that number arrived at?', 'why': 'correction', 'kind': 'accept_and_move'}]
+    t = turn('It was measured in a tracking sheet over six months')
+    assert mv(plan=plan, t=t)['intent'] == 'contradiction'
+    assert mv(plan=plan, t=t, asked=corrected)['intent'] != 'contradiction'    # the correction settled the outcome and the measurement together
+    assert selector.number_conflict('10 days to 2 days', '10 days to 3 days') == ('2 days', '3 days') and selector.number_conflict('2 days and 25 minutes', '25 minutes') is None
+
+
+def test_h1_acknowledgement_banks_are_rewritten_and_correction_thanks_needs_a_stated_fact():
+    assert ACKS['neutral']['en'] == ['Okay.', 'I see.', 'Right.', 'Got it.', 'Okay, I follow.']
+    assert 'Thanks, that helps.' in ACKS['thanks_detail']['en'] and not any('Right, that makes sense' in t for e in ACKS.values() for t in e['en'])
+    assert ACKS['promising_unverified']['en'][3] == 'That sounds significant.' and 'That sounds like a good start.' not in ACKS['promising_unverified']['en']
+    assert 'Good catch, thank you.' not in ACKS['correction_thanks']['en'] and 'Thanks for correcting me.' in ACKS['correction_thanks_fact']['en']
+    assert 'That sounds like a tough stretch.' in ACKS['setback_neutral']['en']
+    t = turn('Sorry, I meant 3 days, not 2.')
+    plain = mv(t=t, asked=[{'intent': 'impact', 'field': 'outcome', 'rung': 6, 'say': 'What changed?', 'why': 'ladder:outcome', 'kind': 'ask'}])
+    assert plain['ack_category'] == 'correction_thanks'
+    after_fact = mv(t=t, asked=[{'intent': 'summary', 'kind': 'summary', 'field': None, 'rung': None, 'say': 'Let me read back', 'why': 'summary:x'}])
+    assert after_fact['ack_category'] == 'correction_thanks_fact'
+    heard = mv(t=t, asked=[{'intent': 'confirm_asr', 'kind': 'confirm_asr', 'field': None, 'rung': None, 'say': 'was that 2?', 'why': 'asr_span'}])
+    assert heard['ack_category'] == 'correction_thanks_fact'
+
+
+def test_h1_an_unverified_big_number_sounds_significant_not_neutral():
+    for text, asked_field in [('Deployments went down by 80 percent, it was a huge success and the client loved it.', None), ('Report preparation went from 10 days to 2 days per study.', 'outcome')]:
+        m = mv(t=turn(text, asked_field), asked=[{'intent': 'impact', 'field': 'outcome', 'rung': 6, 'say': 'What changed?', 'why': 'ladder:outcome', 'kind': 'ask'}])
+        assert (m['reaction'], m['ack_category']) == ('ack', 'promising_unverified'), text
+    assert mv(t=turn('It went well and the client loved it'))['ack_category'] != 'earned_result'
+    assert 'client_praise' in turn('Deployments went down by 80 percent, it was a huge success and the client loved it.')['cues']
+
+
+def test_h1_a_pilot_is_asked_for_the_finding_and_a_setback_for_the_lesson():
+    assert 'pilot' in CONFIG['assessment_stages']
+    early = ledger_plan(('problem', 'Reports took two days'), ('contribution', 'I owned the pipeline'), ('intervention', 'rebuilt the job'), ('stakes', 'lost time'), ('decision', 'chose parallel jobs'),
+                        ('adoption', 'ops team took over'), ('evidence', 'a dashboard'))
+    m = mv(t=turn(''), plan=early, prefill={'stage': 'Pilot', 'role': 'Architect'})
+    assert (m['intent'], m['field']) == ('impact_assessment', 'outcome') and m['say'] == 'What decision or tested finding came out of this work?'
+    assert mv(t=turn(''), plan=early, prefill={'stage': 'Production', 'role': 'Architect'})['intent'] == 'impact'
+    # a cancelled piece of work has no result to measure: no measurement question, the lesson instead
+    plan = ledger_plan(('problem', 'The client kept changing scope'), ('contribution', 'I was the delivery lead'), ('outcome', 'they cancelled it after three months'), ('stakes', 'a lost sponsor'),
+                       ('intervention', 'weekly steering meetings'), ('decision', 'we held the scope'), ('adoption', 'the client reused the data model'), ('evidence', 'a lessons learned document'))
+    m = mv(plan=plan, t=turn(''), prefill={'role': 'Lead'})
+    assert m['intent'] == 'lessons' and m['field'] == 'limitations' and m['say'] == 'What would you do differently next time?'
+    ok = ledger_plan(*[(f, q) for f, q in [('problem', 'Reports took two days'), ('contribution', 'I owned the pipeline'), ('outcome', 'They run in 25 minutes now'), ('intervention', 'rebuilt the job'),
+                                           ('stakes', 'lost time'), ('decision', 'chose parallel jobs'), ('adoption', 'ops team took over'), ('evidence', 'a dashboard')]])
+    assert mv(plan=ok, t=turn(''), prefill={'role': 'Lead'})['intent'] in ('measurement', 'attribution', 'metric_period', 'metric_kind', 'metric_baseline', 'metric_source')
+
+
+def test_h1_the_move_carries_bridge_and_hook_and_never_a_score():
+    m = mv(t=turn('The main problem was releases took a whole weekend'))
+    assert isinstance(m['bridge'], bool) and isinstance(m['hook'], str) and list(m) == KEYS
+    for line in (mv(phase='wrap'), mv(t=turn('can we pause'), asked=[{'intent': 'impact', 'field': 'outcome', 'rung': 6, 'say': 'What changed?', 'why': 'ladder:outcome', 'kind': 'ask'}])):
+        assert line['bridge'] is False and line['hook'] == ''

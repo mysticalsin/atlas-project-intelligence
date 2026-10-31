@@ -76,8 +76,9 @@ export function cues(norm) {
   if (new Set([...norm.matchAll(new RegExp(TURN_TECH_SRC, 'gi'))].map(m => m[0])).size >= S.tech_min) out.add('tech_list');
   if (test(S.certification)(norm)) out.add('certification');
   if (test(S.client_praise_said)(norm) || test(S.client_praise_direct)(norm)) out.add('client_praise');
-  if (test(S.describes_setback)(norm)) out.add('describes_setback');
+  if (test(S.describes_setback)(norm.replace(re(S.setback_strip, 'gi'), ' '))) out.add('describes_setback');
   if (test(S.describes_achievement)(norm)) out.add('describes_achievement');
+  if (test(S.names_party)(norm)) out.add('names_party');
   return TURN_CUE_ORDER.filter(c => out.has(c));
 }
 

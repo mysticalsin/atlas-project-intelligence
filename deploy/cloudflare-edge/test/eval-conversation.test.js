@@ -354,14 +354,16 @@ test('X2 a rushed consultant: essentials first, no acknowledgement on the first 
   for (const mode of MODES) { const { h, turns } = await play(fx, mode); finish(h, fx, mode, turns); assert.equal(h.s.humane.rushed, true, `[${mode}] rushed mode is on`); await cleanup(); }
 });
 
-test('X3 no exact metric: "I do not know the numbers" is accepted, the figure is not demanded again; "I don\'t have the numbers" is NOT recognised as a deferral today (recorded, not faked)', async () => {
+test('X3 no exact metric: "I do not know the numbers" is accepted, the figure is not demanded again; "I don\'t have the numbers" and "I don\'t have that data" are recognised as a deferral too (T16 finding, fixed in H1)', async () => {
   const fx = FX('x3_no_metric');
   for (const mode of MODES) {
     const { h, turns } = await play(fx, mode); finish(h, fx, mode, turns);
     assert.equal(h.s.ledger.details.find(d => d.field === 'outcome').status, 'reported', `[${mode}] the qualitative outcome is kept as said`);
     await cleanup();
   }
-  // Honest limit (COVERAGE.md): the English deferral cue wants "do not know" / "don't know"; "I don't have the numbers" is read as a plain answer.
-  assert.deepEqual(analyzeTurn("We reduced manual work a lot, but I don't have the numbers.", 'en', { asked_field: 'measurement' }).intents, []);
+  // T16 finding (COVERAGE.md said "read as a plain answer"): "I don't have the numbers" / "I don't have that data" now defer the point like "I don't know".
+  assert.deepEqual(analyzeTurn("We reduced manual work a lot, but I don't have the numbers.", 'en', { asked_field: 'measurement' }).intents, ['dont_know']);
+  assert.deepEqual(analyzeTurn("I don't have that data.", 'en', { asked_field: 'measurement' }).intents, ['dont_know']);
+  assert.deepEqual(analyzeTurn('We do not have the figures for that.', 'en').intents, ['dont_know']);
   assert.deepEqual(analyzeTurn('We reduced manual work a lot after the new tooling, but I do not know the exact numbers.', 'en', { asked_field: 'measurement' }).intents, ['dont_know']);
 });
