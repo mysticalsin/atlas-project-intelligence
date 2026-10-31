@@ -8,6 +8,7 @@ import { classify } from './classify.js';
 import { bankId } from './memory.js';
 import { sheetRoutes } from './sheet.js';
 import { detectedLanguage, NATIVE_VOICES, normalize } from './languages.js';
+import { sttWords } from './asr.js';
 import { email as validEmail, inList } from './util.js';
 import { flags } from './features.js';
 import { teamsRoutes } from './teams-routes.js';
@@ -333,7 +334,9 @@ export function workersAI(env) {
     // Automatic language detection (Nova-3 "multi"): returns the text and the utterance's language.
     async transcribe(pcm) {
       const r = await env.AI.run(env.STT_MODEL, { audio: { body: new Blob([wav(pcm)]).stream(), contentType: 'audio/wav' }, smart_format: true, punctuate: true, language: env.STT_LANGUAGE || 'multi' });
-      return { text: r?.results?.channels?.[0]?.alternatives?.[0]?.transcript || '', language: detectedLanguage(r) };
+      // words [{w, c, s, e}] (word, confidence, start, end in seconds; at most 400) feed the uncertain-span check (asr.js); none when the model sent none.
+      const words = sttWords(r);
+      return { text: r?.results?.channels?.[0]?.alternatives?.[0]?.transcript || '', language: detectedLanguage(r), ...(words.length ? { words } : {}) };
     },
     // Semantic end-of-turn (Pipecat smart-turn v2): has the consultant finished, or only paused? Last 8 s at 16 kHz.
     // Sent as a base64 WAV string: the binding rejects the streamed {body, contentType} form for this model (AiError).
