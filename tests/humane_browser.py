@@ -279,7 +279,7 @@ try:
         # (the grants above are the owner's own act through the real route; a reviewer then approves the exact revision and hash)
         rv = open_page(REVIEWER, Voice(draft=draft))
         approved = api(rv, '/evidence/' + draft['id'] + '/review', 'POST', {'action': 'approve', 'expected_revision': 1, 'content_hash': submitted['content_hash']})
-        check('a reviewer approves the exact revision and hash (the real review route)', approved['state'] == 'approved' and approved['approval']['revision'] == 1)
+        check('a reviewer approves the exact revision and hash (the real review route)', approved['state'] == 'downstream_proposals' and approved['approval']['revision'] == 1)  # approved, and the knowledge is already proposed downstream
         lib = open_page(USER, Voice(draft=draft)); lib.locator('header [data-view=library]').click(); lib.wait_for_timeout(500)
         lib.locator('#workflowStatus .wf-card').first.wait_for(state='visible', timeout=10000)
         cards = lib.locator('#workflowStatus .wf-card')
