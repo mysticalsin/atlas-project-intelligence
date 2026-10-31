@@ -164,6 +164,18 @@ record({}, analyze_turn('I helped with the migration', 'en'), [{**vq, 'say': 'a 
 only = {'candidate_details': [], 'covered_fields': [f for f in ['problem', 'stakes', 'contribution', 'intervention', 'decision', 'adoption', 'outcome', 'measurement', 'evidence', 'limitations', 'customer_fit', 'poor_fit'] if f != 'problem']}
 converse(['hmm'] * 6, plan=only)
 converse(['hmm'] * 5, plan={'candidate_details': [], 'covered_fields': [f for f in ['problem', 'stakes', 'intervention', 'decision', 'adoption', 'outcome', 'measurement', 'evidence', 'limitations', 'customer_fit', 'poor_fit']]})
+# H3: a setback is never left unacknowledged, and after its question the next move goes forward (keep_going, then the lesson), not to stakes
+PILOT = ['Honestly the pilot failed. The client kept changing scope and in the end they cancelled it after three months.',
+         'I was the delivery lead, I tried to hold the scope with weekly steering meetings but the sponsor left halfway.',
+         'It was really frustrating, the team was exhausted and the new sponsor did not care about the project at all.']
+converse(PILOT * 2)
+frustrated = analyze_turn(PILOT[2], 'en', {'asked_field': 'intervention'})
+a = lambda intent, field, rung, **kw: {'kind': 'ask', 'intent': intent, 'field': field, 'rung': rung, 'say': 'x ' + intent + '?', 'why': 'x', **kw}
+record({}, frustrated, [a('keep_going', None, None), a('setback_response', 'decision', 4, ack_category='setback_neutral')], {}, 'breadth', 800)
+record(ledger(('limitations', 'I would not run a pilot again without a signed scope')), frustrated, [a('setback_response', 'decision', 4, ack_category='setback_neutral'), a('example_follow', 'intervention', 2, ack_category='setback_plain')], {}, 'breadth', 800)
+record({}, analyze_turn('The whole thing failed and honestly I have nothing more to say.', 'en'), [a('stakes', 'stakes', 2)], {}, 'breadth', 800)
+record({}, analyze_turn('It failed and the team was exhausted and nobody would say why it went wrong.', 'en'), [a('example', 'intervention', 2), a('example', 'intervention', 2, say='x two?')], {}, 'breadth', 800)
+record({}, analyze_turn('It failed. Can you say that again?', 'en'), [a('stakes', 'stakes', 2, say='What was at stake for the client?')], {}, 'breadth', 800)
 
 (Path(__file__).parent / 'selector.vectors.json').write_text(json.dumps(VECTORS, ensure_ascii=False))
 print(len(VECTORS))

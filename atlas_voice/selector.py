@@ -137,6 +137,8 @@ QUESTION_BANK = {
     'tech_depth': {'en': ['Which of those did you work with most hands-on?', 'Where in the project did you work with those?']},
     'cert_details': {'en': ['Which body issued that certification?', 'Roughly when did you earn it?', 'Which exact certification was that?']},
     'praise_source': {'en': ['Who gave you that feedback?', 'Where did that feedback come from?', 'Roughly when did you hear that?']},
+    # after a setback, when its "what did you do" was just asked (empathy is paced): a forward question before any stakes or customer-fit one
+    'keep_going': {'en': ['What helped you keep going?', 'What kept the team moving through that?']},
     'setback_response': {'en': ['What did you do when that happened?', 'How did you keep things moving after that?', 'What did you try next?', 'What made that difficult?']},
     'contradiction': {'en': ['I have two versions here, {a} and {b}. Which is accurate, or do they describe different things?',
                              "I've noted both {a} and {b}. How do they fit together, or is one of them off?"]},
@@ -159,13 +161,13 @@ LINES = {
     'close': {'en': ["That's all the time we have. Thank you for sharing this; I'll prepare your summary for you to review and correct.",
                      "We're at the end of our time. Thanks for walking me through it; you'll be able to review what I captured."]},
 }
-NO_HOOK = ['contradiction', 'setback_response', 'anonymise', 'correction', 'correction_number'] + METRIC_PARTS   # moves that carry no reference to the consultant's own words
+NO_HOOK = ['contradiction', 'setback_response', 'keep_going', 'anonymise', 'correction', 'correction_number'] + METRIC_PARTS   # moves that carry no reference to the consultant's own words
 REPEAT_LAST = 'repeat_last'   # why-code of a move that puts the previous question again after a pause, a repeat request or a question to ATLAS
 LEAD_RUSHED = "No problem, let's keep it to three things: the project, your part, and what changed."   # said once, before the first question of a rushed interview (pack Example 6)
 
 # Intents asked about a ledger field that do not count as an attempt at the field's own question.
 FOLLOW_INTENTS = {'decision': 'decision_follow', 'intervention': 'example_follow', 'evidence': 'evidence_follow', 'measurement': 'measurement_follow'}
-NOT_ATTEMPTS = ['offer_move_on', 'confirm_asr', 'asr_repair', 'correction', 'correction_number', 'anonymise', 'contradiction', 'reflect', 'setback_response'] + list(FOLLOW_INTENTS.values()) + METRIC_PARTS
+NOT_ATTEMPTS = ['offer_move_on', 'confirm_asr', 'asr_repair', 'correction', 'correction_number', 'anonymise', 'contradiction', 'reflect', 'setback_response', 'keep_going'] + list(FOLLOW_INTENTS.values()) + METRIC_PARTS
 FIELD_KEYS = list(FIELDS)
 
 _FLAGS = re.I | re.A
@@ -560,6 +562,11 @@ def _candidates(c):
         follow = _follow_field(c)
         if follow:   # a richer field they brought up unasked ("We chose GitLab over Jenkins because..."): one follow-up on that thread before moving on
             yield {'intent': FOLLOW_INTENTS[follow], 'field': follow, 'rung': CONFIG['fields'][follow]['rung'], 'params': {}, 'why': 'follow:' + follow, 'important': False}
+        if 'describes_setback' in cues and _recent(c, 'setback_response'):   # its question was just asked: go forward (what helped, what was learned) before stakes or customer fit
+            if not _count(c, 'keep_going', any_field=True):
+                yield {'intent': 'keep_going', 'field': None, 'rung': None, 'params': {}, 'why': 'setback:keep_going', 'important': False}
+            if not ({'limitations'} & (c['present'] | c['covered_now'])) and not _count(c, 'lessons', 'limitations'):
+                yield {'intent': 'lessons', 'field': 'limitations', 'rung': CONFIG['fields']['limitations']['rung'], 'params': {}, 'why': 'setback:lessons', 'important': False}
         if c['phase'] == 'depth' and len(c['present']) >= CONFIG['reflect_min_fields'] and not any(a.get('kind') == 'reflect' or a.get('intent') == 'reflect' for a in c['asked']):
             labels = [CONFIG['reflect_labels'][f] for f in FIELD_KEYS if f in c['present']][:3]
             text = labels[0] if len(labels) == 1 else ', '.join(labels[:-1]) + ' and ' + labels[-1]
@@ -666,6 +673,8 @@ def _end(c, why, reaction=('none', None)):
     """No question is left: the read-back summary first, then the close."""
     if _summarized(c):
         return _line(c, 'close', 'close:' + why, reaction)
+    if reaction[0] == 'none' and 'describes_setback' in c['cues']:   # a last answer that was a setback still gets its plain uptake before the read-back
+        reaction = _reaction(c)
     return _line(c, 'summary', 'summary:' + why, reaction)
 
 
@@ -739,6 +748,8 @@ def select(plan, turn, asked, prefill, phase, time_left, asr=None, rushed=False,
     kind = cand.get('kind', 'ask')
     why = cand['why']
     reaction = ('none', None) if kind in ('offer_move_on', 'reflect') or cand['intent'] == 'contradiction' else _lead_quiet(cand, _reaction(c))
+    if reaction[0] == 'none' and 'describes_setback' in c['cues'] and not cand['say'].startswith(LEAD_RUSHED):   # a setback is never left unacknowledged: at least the plain uptake
+        reaction = _reaction(c)
     return _move(kind, cand, cand['say'], why, reaction, c)
 
 
