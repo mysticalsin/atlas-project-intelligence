@@ -4,6 +4,7 @@ import page from './atlas.html';
 import { handle, scheduled, workersAI } from './app.js';
 import { jevRanker } from './jev.js';
 import { Session } from './session.js';
+import { CheckpointStore, checkpointRoutes, checkpointEnabled } from './checkpoint.js';
 import { Library } from './library.js';
 import { storyRater } from './rating.js';
 import { libraryRoutes } from './library-routes.js';
@@ -22,8 +23,14 @@ export default {
 export class Interview extends DurableObject {
   constructor(ctx, env) { super(ctx, env); this.env = env; this.session = null; this.hs = hindsight(env); }
 
+  // The 24-hour purge of a stored interview (checkpoint.js): the alarm is armed at every checkpoint write, so it never needs another trigger.
+  async alarm() { await new CheckpointStore(this.ctx.storage).expire(); }
+
   async fetch(request) {
-    if (new URL(request.url).pathname.startsWith('/api/memory')) return memoryRoutes(request, { storage: this.ctx.storage, hs: this.hs, env: this.env });
+    const path = new URL(request.url).pathname;
+    if (path.startsWith('/api/memory')) return memoryRoutes(request, { storage: this.ctx.storage, hs: this.hs, env: this.env });
+    // Resumable interview of THIS person (their own Durable Object, their own identity): whether one exists, and discarding it.
+    if (path === '/api/checkpoint' || path.startsWith('/api/checkpoint/')) return checkpointRoutes(request, { storage: this.ctx.storage });
     // Private memory for this person's interview: recall before the opening, JEV relevance check when configured.
     const bank = request.headers.get('x-atlas-bank') || '', metric = (name, values) => console.log(JSON.stringify({ atlas_metric: name, ...values }));
     const memory = this.hs && bank && (await this.ctx.storage.get('memoryOff')) !== true ? async project => {
@@ -35,6 +42,8 @@ export class Interview extends DurableObject {
     } : null;
     const pair = new WebSocketPair(), [client, server] = Object.values(pair);
     server.accept();
+    // Messages that arrive while the older window's session is being suspended wait here (the start of a resume comes first): none is lost.
+    const early = []; let route = e => early.push(e); server.addEventListener('message', e => route(e));
     if (this.session && !this.session.finished) {
       // Still one live interview per signed-in person, but the newest window wins: a forgotten tab or a
       // stale session must never block the person from starting again.
@@ -49,16 +58,20 @@ export class Interview extends DurableObject {
       metric: (name, values) => console.log(JSON.stringify({ atlas_metric: name, ...values })),
       gaps: this.env.LIBRARY ? id => resolveForInterview(this.env, identity, id) : null,
       winHint: this.env.LIBRARY ? () => fetchWinHint(this.env, identity) : null,
+      // Interviews with transcript consent are kept for 24 hours so a dropped connection can resume (ATLAS_CHECKPOINT=off: never).
+      checkpoint: checkpointEnabled(this.env) && identity.user ? new CheckpointStore(this.ctx.storage, { owner: identity.user }) : null,
     });
     this.session = session;
-    server.addEventListener('message', e => {
+    const onMessage = e => {
       try {
         if (typeof e.data === 'string') session.onText(e.data);
         else session.onBinary(new Uint8Array(e.data));
       } catch { session.fail('The session stopped safely. No story was approved.', 'voice-failed'); }
-    });
-    server.addEventListener('close', () => { if (!session.finished) session.end(false); });
-    server.addEventListener('error', () => { if (!session.finished) session.end(false); });
+    };
+    route = onMessage; for (const e of early) onMessage(e);
+    // A socket that closes mid-interview suspends it (resumable for 24 hours); one that cannot be resumed ends as before.
+    server.addEventListener('close', () => { if (!session.finished) session.suspend(); });
+    server.addEventListener('error', () => { if (!session.finished) session.suspend(); });
     return new Response(null, { status: 101, webSocket: client });
   }
 }

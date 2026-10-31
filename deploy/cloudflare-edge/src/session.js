@@ -13,6 +13,7 @@ import { select } from './selector.js';
 import { pickAck, ackPrewarmList } from './ack.js';
 import { uncertainSpans, replacement, tauFrom } from './asr.js';
 import { Machine } from './conversation-state.js';
+import { serialize, restore, restoreView, newSessionId } from './checkpoint.js';
 
 export const RESUME = '[The consultant made a sound but no words were recognised, and your last reply was cut off.] Briefly re-ask your last question in fresh words.';
 
@@ -100,7 +101,14 @@ export function paceNotes(elapsedS, limitS, notes, admin = false) {
   return [admin ? ADMIN_NOTE : '', pace];
 }
 export const LEAD_MS = 300; // max audio sent ahead of what the browser has played
-const START_KEYS = ['type', 'csrf', 'consent', 'project', 'voice', 'capture', 'memory', 'language', 'gap'];
+const START_KEYS = ['type', 'csrf', 'consent', 'project', 'voice', 'capture', 'memory', 'language', 'gap', 'resume'];
+// Checkpoint and reconnect (T10, checkpoint.js). `resume` in `start` is the id of the interview to continue; anything that cannot be resumed (nothing stored, another
+// person's, expired, another version, a gap request, transcript capture off) is this one message, so the socket reveals nothing about what is stored.
+export const RESUME_UNAVAILABLE = 'This interview can no longer be resumed. Start a new one.';
+export const RESUME_PROJECT = 'That interview was about a different project. Open that project to resume it, or start a new interview.';
+const RESUME_ID = /^[a-f0-9]{32}$/;
+export const CHECKPOINT_DEBOUNCE_MS = 1000; // writes are coalesced: one at a time, at most one per second
+const SUSPENDABLE = ['discovery', 'summary', 'user_correction', 'paused', 'suspended']; // states a dropped connection can come back to
 // Focused gap interviews (WOW_SPEC §F2.4). The browser sends only a request id; the asks come from the library, resolved
 // server-side for the verified assignee. Any failure (unknown id, not the assignee, no longer open, timeout) is this one
 // message, so the socket reveals nothing about other people's requests.
@@ -193,9 +201,9 @@ export class Session {
   // gaps: async id => {asks, bidAlias, referenceId, projectId} | null (the verified assignee's open gap request);
   // winHint: async () => ({hint: 'quantified'|'confirmed'|null}) | null (aggregate win-loop guidance, never awaited).
   constructor({ io, ai, csrf, voice, voices = null, captureRequired = false, model, maxSeconds = MAX_SECONDS, admin = false, memory = null, speakingLimit = SPEAKING_LIMIT_S, now = () => Date.now() / 1000, sleep = ms => new Promise(r => setTimeout(r, ms)), metric = () => {}, sttTimeout = STT_TIMEOUT_MS,
-    gaps = null, winHint = null, gapTimeout = GAP_RESOLVE_MS, flags = null }) {
+    gaps = null, winHint = null, gapTimeout = GAP_RESOLVE_MS, flags = null, checkpoint = null }) {
     // metric(name, numbers): timings and counts only, never transcript or project content.
-    Object.assign(this, { io, ai, csrf, voice, voices: voices || [voice], captureRequired, model, maxSeconds, admin, speakingLimit, now, sleep, metric, memory, sttTimeout, gaps, winHint, gapTimeout });
+    Object.assign(this, { io, ai, csrf, voice, voices: voices || [voice], captureRequired, model, maxSeconds, admin, speakingLimit, now, sleep, metric, memory, sttTimeout, gaps, winHint, gapTimeout, checkpoint });
     this.flags = { ...DEFAULT_FLAGS, ...(flags || ai?.flags || {}) };
     // Conversation state of the humane interviewer (Agent Brain v2.1), one plain object so a checkpoint can keep it whole:
     // asked (the Move dicts committed so far, oldest first), covered (field ids the consultant's answers touched), rushed,
@@ -211,6 +219,9 @@ export class Session {
     // lastQuestion: {text, move, item}, the question ATLAS last asked (kept even if it was cut off), re-spoken by repeat and resume with no model call.
     this.machine = new Machine('interview'); this.paused = false; this.pausedAt = null; this.pausedTotal = 0; this.pauseCount = 0; this.resumeCount = 0;
     this.lastQuestion = null; this.composing = null; this.identNow = null;
+    // Checkpoint (T10): `checkpoint` is the person's own CheckpointStore (worker.js), null when there is none (tests, ATLAS_CHECKPOINT=off). sessionId names the
+    // interview across reconnects. discarding: the consultant threw it away (end() then purges). afterRestore: restored while paused, so Resume continues it.
+    this.sessionId = null; this.discarding = false; this.afterRestore = false; this.resumed = false; this.ckptDirty = false; this.ckptRun = null;
     this.move = null; this.moveByItem = new Map(); this.prefill = {}; this.lastPlan = null; this.lastTurn = null;
     // Interview mode. Gap mode keeps its own answer windows: askByItem (reply item -> the ask it carried, set when the reply
     // is composed), gapAttempts (replies heard per ask), openAsk (the ask the consultant last heard; null once a reflect-back
@@ -248,12 +259,12 @@ export class Session {
     try { value = JSON.parse(text); } catch { return this.fail('Unsupported client event', 'voice-contract'); }
     if (this.starting) { // a gap request is being resolved: only leaving is allowed (never a second start)
       const leave = value && typeof value === 'object' && Object.keys(value).length === 1 && (value.type === 'discard' || value.type === 'end');
-      if (leave && value.type === 'discard') this.fireState('withdraw', 'user', { reason: 'consultant discarded the interview' });
+      if (leave && value.type === 'discard') { this.discarding = true; this.fireState('withdraw', 'user', { reason: 'consultant discarded the interview' }); }
       return leave ? this.end(false) : this.fail('Unsupported client event', 'voice-contract');
     }
     if (!this.started) return this.start(value);
     if (value?.type === 'end' && Object.keys(value).length === 1) return this.end(true);
-    if (value?.type === 'discard' && Object.keys(value).length === 1) { this.fireState('withdraw', 'user', { reason: 'consultant discarded the interview' }); return this.end(false); }
+    if (value?.type === 'discard' && Object.keys(value).length === 1) { this.discarding = true; this.fireState('withdraw', 'user', { reason: 'consultant discarded the interview' }); return this.end(false); }
     // Interview controls (CONTROLS, announced in `ready`): the same handlers the spoken intents use. Exactly their own keys, nothing else.
     if (value && typeof value === 'object' && !Array.isArray(value)) {
       const n = Object.keys(value).length;
@@ -434,8 +445,20 @@ export class Session {
       this.capture = init.capture === true;
       this.language = normalize(init.language) || 'en'; // the browser's language opens the conversation
       if (this.captureRequired && !this.capture) throw new Error('Transcription consent is required for this interview');
+      // A resume needs a checkpoint store, transcript consent given again now, and a full interview: a proof request (gap) is never resumed.
+      if (init.resume !== undefined && (typeof init.resume !== 'string' || !RESUME_ID.test(init.resume) || init.gap !== undefined || !this.checkpoint || !this.capture)) throw Object.assign(new Error(RESUME_UNAVAILABLE), { code: 'resume-unavailable' });
       if (init.gap !== undefined && (typeof init.gap !== 'string' || !GAP_ID.test(init.gap) || !this.gaps)) throw new Error(GAP_UNAVAILABLE);
-    } catch (e) { return this.fail(e.message, 'voice-contract'); }
+    } catch (e) { return this.fail(e.message, e.code || 'voice-contract'); }
+    // The checkpoint, before anything else happens: a resume reads it, every other start deletes it (a fresh start never leaves an old interview behind).
+    let doc = null;
+    if (this.checkpoint) {
+      this.starting = true; // until it is read or deleted the browser may only leave (onText)
+      try { if (init.resume !== undefined) doc = await this.checkpoint.load(init.resume); else await this.purgeCheckpoint(); }
+      catch (e) { this.starting = false; this.metric('resume_refused', { code: e?.code || 'error' }); return this.fail(RESUME_UNAVAILABLE, 'resume-unavailable'); }
+      this.starting = false;
+      if (this.finished || this.ending) return;
+      if (doc && doc.project?.id !== this.project.id) { this.metric('resume_refused', { code: 'project' }); return this.fail(RESUME_PROJECT, 'resume-project'); }
+    }
     // Aggregate win-loop guidance (both modes): started now, in parallel, and never awaited, so neither 'ready' nor the
     // opening waits for it. It joins the per-turn notes of the first reply composed after it resolves, and never touches
     // the ledger or the order of questions.
@@ -452,13 +475,18 @@ export class Session {
       Object.assign(this, { mode: 'gap', maxSeconds: GAP_LIMIT_S, speakingLimit: GAP_SPEAKING_S, wrapS: GAP_WRAP_S, gapAsks: asks, gapRequest: init.gap });
     }
     const gap = this.mode === 'gap';
-    this.started = true; this.startedAt = this.lastInput = this.now();
     const stage = this.project.stage || 'Unknown';
     this.analyst = this.capture ? new Analyst(messages => this.ai.analyst(messages), stage) : null;
     this.ledger = this.analyst ? this.analyst.ledger : new InterviewLedger(stage);
+    // A resume puts the stored interview back before it starts (nothing is changed if it is refused: the stored one stays for another try).
+    if (doc) {
+      try { const r = restore(this, doc); this.resumed = true; this.metric('reconnect', { gap_s: Math.max(0, Math.round(this.now() - r.savedAt)), turns: this.turns, paused: this.paused ? 1 : 0 }); }
+      catch (e) { this.metric('resume_refused', { code: e?.code || 'error' }); return this.fail(RESUME_UNAVAILABLE, 'resume-unavailable'); }
+    } else this.sessionId = newSessionId();
+    this.started = true; this.lastInput = this.now(); if (!this.resumed) this.startedAt = this.lastInput;
     this.event('ready', { model: 'ATLAS', provider: 'ATLAS voice', sampleRate: 24000, speakingSeconds: this.speakingLimit, capture: this.capture, liveLedger: !!this.analyst,
       maxSeconds: this.maxSeconds, message: 'Voice session ready. Speak naturally. Candidate notes require your review.',
-      mode: this.mode, timePlan: timePlan(this.maxSeconds, this.mode), controls: CONTROLS, ...(gap ? { gaps: this.gapAsks.map(({ id, label, ask }) => ({ id, label, ask })) } : {}) });
+      mode: this.mode, timePlan: timePlan(this.maxSeconds, this.mode), controls: CONTROLS, ...(this.checkpointable() ? { sessionId: this.sessionId, resumable: true } : {}), ...(this.resumed ? { resumed: true } : {}), ...(gap ? { gaps: this.gapAsks.map(({ id, label, ask }) => ({ id, label, ask })) } : {}) });
     if (this.memory && !gap) { // private memory from earlier conversations, bounded so the greeting is never held up (none in gap mode)
       let timer;
       try { this.memoryNote = await Promise.race([this.memory(this.project), new Promise(r => { timer = setTimeout(() => r(''), 3500); })]) || ''; }
@@ -467,11 +495,15 @@ export class Session {
       if (this.finished || this.ending) return; // closed while recalling: no timer, no opening
       this.event('memory', { status: this.memoryNote ? 'recalled' : 'empty', message: this.memoryNote ? 'ATLAS remembers your earlier conversations (private to you).' : 'No earlier conversations to recall.' });
     }
-    this.fireState('start', 'atlas'); this.fireState('consent_given', 'user'); // the consent and the start came in the same message
+    if (this.resumed) this.fireState('reconnect', 'system'); // the stored interview was suspended (see restore): it carries on from where it was
+    else { this.fireState('start', 'atlas'); this.fireState('consent_given', 'user'); } // the consent and the start came in the same message
     this.timer = setInterval(() => this.watch(), 1000);
     this.pace();
     const lang = this.spoken();
-    if (gap) { // the first open ask, after the usual greeting (always spoken, admin included: Tony, 2026-10-02)
+    if (this.resumed) { // the screens are repopulated, then the question in front of the consultant is said again (no model call), unless they are paused
+      this.event('restore', restoreView(this));
+      if (this.paused) this.afterRestore = true; else this.continueInterview(this.line(RESUME_LINES, this.resumeCount++));
+    } else if (gap) { // the first open ask, after the usual greeting (always spoken, admin included: Tony, 2026-10-02)
       this.guidance = gapGuidance(this.gapAsks, this.gapStatuses());
       this.startReply(GAP_OPENING, { prefix: GREETING_PIECES[lang] || [] });
     } else this.startReply(OPENING, { prefix: (this.memoryNote ? WELCOME_BACK_PIECES[lang] : GREETING_PIECES[lang]) || [] });
@@ -638,7 +670,7 @@ export class Session {
         this.event('quality', rest);
         if (result.analyst_status !== 'analysed') this.event('quality_warning', { message: 'The evidence analyst did not respond for this turn. The answer is kept; review it in the notes.' });
       }).catch(() => this.event('quality_warning', { message: 'This turn exceeded the transcript budget and was not added to the evidence ledger.' }));
-      this.turnJob = job; this.pending.add(job); job.finally(() => this.pending.delete(job));
+      this.turnJob = job; this.pending.add(job); job.finally(() => { this.pending.delete(job); this.checkpointSoon(); });
     }
     if (closing || this.paused) return;
     if (!how.typed && this.continuing && this.turnDetector.active && this.voiced >= MIN_VOICED) return; // already speaking again: answer when they have finished
@@ -829,8 +861,8 @@ export class Session {
   noteQuestion(item, said, move, interrupted) {
     if (this.discarded.has(item)) return;
     const q = lastQuestionOf(said), keep = this.lastQuestion;
-    if (q) this.lastQuestion = { text: q, move: move || (keep?.text === q ? keep.move : null), item };
-    else if (interrupted && move && /[?？]/.test(move.say || '')) { const text = speakable(clean(move.say, 400)); if (text) this.lastQuestion = { text, move, item }; }
+    if (q) this.lastQuestion = { text: q, move: move || (keep?.text === q ? keep.move : null), item, turn: this.turns };
+    else if (interrupted && move && /[?？]/.test(move.say || '')) { const text = speakable(clean(move.say, 400)); if (text) this.lastQuestion = { text, move, item, turn: this.turns }; }
   }
   captureQuestion() { const c = this.composing; if (c && this.busy()) this.noteQuestion(c.item, c.text(), c.move(), true); }
   // A stock line in the spoken language (persona.py PAUSE_LINES / RESUME_LINES, English only for now: other languages are silent), rotating.
@@ -864,7 +896,7 @@ export class Session {
   // The paused stretch ends: the clock runs again, the microphone watchdog starts afresh.
   unpause(via = 'ui') {
     const t = this.now(), ms = Math.round((t - this.pausedAt) * 1000);
-    this.pausedTotal += t - this.pausedAt; this.pausedAt = null; this.paused = false; this.lastInput = t;
+    this.pausedTotal += t - this.pausedAt; this.pausedAt = null; this.paused = false; this.lastInput = t; this.afterRestore = false;
     this.dropMic();
     this.metric('resume', { voice: via === 'voice' ? 1 : 0, paused_ms: ms });
     this.fireState('resume', 'user');
@@ -872,8 +904,19 @@ export class Session {
   // Resume: a stock welcome-back line, then the question again (stored text, spoken from cache or synthesised once: no model call).
   resumeSession(via = 'ui') {
     if (!this.paused || this.finished || this.ending) return;
+    const restored = this.afterRestore; // an interview resumed from a checkpoint while it was paused carries on the same way as after a reconnect
     this.unpause(via);
-    this.speakQuestion(this.line(RESUME_LINES, this.resumeCount++));
+    const lead = this.line(RESUME_LINES, this.resumeCount++);
+    if (restored) this.continueInterview(lead); else this.speakQuestion(lead);
+  }
+  // After a reconnect: the question in front of the consultant is said again from the stored text, with no model call. When they had already
+  // answered it (the reply to that answer was never composed) it is never asked again: the answer gets its reply now, as it would have. Before
+  // anything was asked the opening is spoken.
+  continueInterview(lead = '') {
+    const q = this.lastQuestion, last = this.history.findLast(m => m.role === 'user');
+    if (q && (q.turn ?? this.turns) === this.turns) return this.speakQuestion(lead);
+    if (!last) return this.startReply(OPENING, { prefix: (this.memoryNote ? WELCOME_BACK_PIECES : GREETING_PIECES)[this.spoken()] || [] });
+    this.answer(last.content, { endedBy: 'resume', endedAt: this.now(), lang: this.language, sttMs: -1 });
   }
   // Say lastQuestion again after `lead` (a stock line, or nothing). A question asked but cut off before she said it goes back into the asked
   // log. With no question yet (paused or asked to repeat before the first one) the talker is asked, once, to open or to re-ask.
@@ -1155,6 +1198,7 @@ export class Session {
       // Her leading reaction, for the repeated-opener rule of the next replies (a question is not a reaction).
       const [done, rest] = sentences(talker + ' '), lead = (done[0] || rest || '').trim();
       if (!only && lead && !/[?？]$/.test(lead) && lead.split(/\s+/).length <= OPENER_WORDS && !this.discarded.has(item)) { this.humane.openers.push(lead); if (this.humane.openers.length > 3) this.humane.openers.shift(); }
+      this.checkpointSoon(); // the reply is part of the interview now (its question, the history)
       // One line per turn: where the time went between the consultant's last word and hers (numbers only; -1: not reached).
       if (timeline && !this.discarded.has(item)) this.metric('turn_timeline', { stt_ms: timeline.sttMs, selector_ms: timeline.selectorMs,
         first_token_ms: firstToken ? Math.round((firstToken - t0) * 1000) : -1, first_audio_ms: firstAudio ? Math.round((firstAudio - t0) * 1000) : -1, reply_gap_ms: gapMs });
@@ -1238,26 +1282,68 @@ export class Session {
     }
   }
 
+  // An error ends the interview, but one that can be resumed (a stored checkpoint) is suspended rather than lost: the same Durable Object's newer window,
+  // a dropped connection and a failed microphone all come back through `resume`.
   fail(message, code) {
     if (this.finished || this.ending) return;
     this.event('error', { message, code });
-    return this.end(false);
+    return this.end(false, { suspend: true });
   }
 
-  end(clean) {
+  // The connection dropped (worker.js calls this when the socket closes): the interview is kept for 24 hours and can be resumed. Without a checkpoint
+  // store, without transcript consent, in gap mode or before the interview was under way it simply ends, as it always did.
+  suspend() { return this.end(false, { suspend: true }); }
+
+  // Resumable now: a live full interview of a person who consented to transcript capture, past the consent step, with a store to keep it in.
+  checkpointable() { return !!this.checkpoint && this.capture === true && this.mode === 'full' && !!this.ledger && !!this.sessionId; }
+  canSuspend() { return this.started && !this.finished && this.checkpointable() && SUSPENDABLE.includes(this.machine.state); }
+
+  // Write the state to the store, one write at a time, at most one a second, and only for an interview that is checkpointable. Called after every
+  // committed turn (the analyst's ledger entry, her reply).
+  checkpointSoon() {
+    if (!this.checkpointable() || !this.started || this.finished || this.ending) return;
+    this.ckptDirty = true;
+    if (this.ckptRun) return;
+    this.ckptRun = (async () => {
+      await this.sleep(CHECKPOINT_DEBOUNCE_MS);
+      while (this.ckptDirty && !this.finished && !this.ending) { this.ckptDirty = false; await this.saveCheckpoint(); }
+    })().finally(() => { this.ckptRun = null; });
+  }
+  async saveCheckpoint() {
+    const t0 = this.now();
+    try { const r = await this.checkpoint.save(serialize(this)); this.metric('checkpoint', { ms: Math.round((this.now() - t0) * 1000), bytes: r.bytes, chunks: r.chunks }); }
+    catch (e) { this.metric('checkpoint_error', { name: e?.code || e?.name || 'Error' }); } // a failed write never stops the interview
+  }
+  async purgeCheckpoint() {
+    if (!this.checkpoint) return false;
+    if (this.ckptRun) await this.ckptRun.catch(() => {}); // never while a write is in flight
+    try { await this.checkpoint.purge(); return true; } catch { this.metric('checkpoint_error', { name: 'purge' }); return false; }
+  }
+
+  // end(clean): the interview is over (notes, report), a discard, or an error. end(false, {suspend: true}): leave it resumable.
+  end(clean, { suspend = false } = {}) {
     // One end per session: every later call (watch() at the wall cap, a socket close, a second End) shares this one.
     if (this.ending) return this.ending;
+    const keep = suspend && this.canSuspend();
     this.ending = (async () => {
-      this.recordLive(' [cut off when the interview ended]');
-      if (clean) this.finalWords();
+      // A reply cut off by the drop still asked its question: what she had said of it is kept, and a move she never got to say is not in the asked log.
+      if (keep) { this.captureQuestion(); this.recordLive(' [cut off when the connection dropped]'); this.uncommit(this.replyItem, true); }
+      else this.recordLive(' [cut off when the interview ended]');
+      if (clean || keep) this.finalWords();
       this.gen += 1; clearInterval(this.timer); this.queue = [];
       if (this.waiter) { const w = this.waiter; this.waiter = null; w(); }
-      if (clean) {
-        await Promise.race([this.sttChain, this.sleep(8000)]); // the consultant's last words are still being transcribed
-        if (this.pending.size) await Promise.race([Promise.allSettled([...this.pending]), this.sleep(10000)]);
+      if (clean || keep) {
+        await Promise.race([this.sttChain, this.sleep(keep ? 3000 : 8000)]); // the consultant's last words are still being transcribed
+        if (this.pending.size) await Promise.race([Promise.allSettled([...this.pending]), this.sleep(keep ? 5000 : 10000)]);
+      }
+      if (keep) { // the state machine records the loss, then the whole state is written once more (after any write in flight)
+        if (this.ckptRun) await this.ckptRun.catch(() => {});
+        if (this.machine.state !== 'suspended') this.fireState('disconnect', 'system');
+        await this.saveCheckpoint();
       }
       this.finished = true;
       if (this.waiter) { const w = this.waiter; this.waiter = null; w(); }
+      if (keep) { this.metric('suspend', { turns: this.turns, paused: this.paused ? 1 : 0 }); this.io.close(); return; }
       this.event('audio_stopped');
       if (clean && this.capture && this.ledger) {
         // Gap mode writes no report: its answers go back only through the consultant's explicit clicks (§F2.1 step 6).
@@ -1268,6 +1354,7 @@ export class Session {
           ...(gap ? { gap: { requestId: this.gapRequest, results: this.gapResults() } } : {}),
           message: 'Unverified speech recognition and quote-linked candidate notes. Correct omissions and errors before adding to the project. The final cut-off utterance may be incomplete.' });
       } else if (clean) this.event('notes', { transcript: '', sections: null, status: 'not-enabled', mode: this.mode, message: 'Transcript capture was off. No consultant notes were stored.' });
+      if (clean || this.discarding) await this.purgeCheckpoint(); // finished or thrown away: nothing of it is kept
       this.event('ended', { message: 'Microphone and voice service closed.' });
       this.io.close();
     })();

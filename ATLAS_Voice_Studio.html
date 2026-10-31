@@ -3605,6 +3605,10 @@ const labels=['Context','Contribution','Approach','Outcome','Evidence','Customer
 let boot=null, generation=0, socket=null, stream=null, audio=null, node=null, source=null;
 let phase='idle', muted=false, paused=false, pausedAt=null, pausedMs=0, controlsOn=null, current=null, startedAt=0, timer=null, heardOutput=false, accumulated='', lastNotes=null;let micLabel='',micPeak=0,micWatch=0;
 let outputItem=null, lastPlaybackAck=0;
+// Checkpoint and reconnect (T10). sessionId: the interview's id, announced in `ready` when the server keeps it for 24 hours (only with transcript consent).
+// sessionStart: what a resume needs again. reconnecting: the retry loop is running (the microphone stays open; ATLAS says the question again when it is back).
+const RECONNECT_MS=[1000,2000,4000];
+let sessionId=null, sessionStart=null, reconnecting=false, resumeDlg=null;
 const providerName=()=>boot?.providerLabel||(boot?.provider==='openai'?'OpenAI Realtime':'NVIDIA PersonaPlex');
 let checking=null, readyWatch=null, activeSnapshot=null, permissionPending=false;
 // Restart: the consent given on this page (reused only for the same project and the same terms), the teardown of the last
@@ -3633,8 +3637,8 @@ const reusable=(b,c)=>!!(lastConsent&&b&&c&&b.codecAvailable&&!b.busy&&c.workspa
 const canReuse=()=>reusable(boot,bridge.context());
 // How the reused choices are described, from what this server actually does with them.
 const choices=()=>{const b=boot||{};if(b.captureRequired)return 'transcribed and saved with a report';if(!lastConsent?.capture)return ['kyutai','workers'].includes(b.provider)?'transcribed live, not kept after the session':'not transcribed';return 'transcribed and saved to your project'+(b.liveLedger||b.structuredNotes?' with a report':'');};
-function status(state,heading,message){phase=state;if(['idle','error','preparing'].includes(state)){paused=false;pausedAt=null;pausedMs=0;controlsOn=null;}queueMicrotask(livePill);if($('soundHelp')){$('soundHelp').hidden=!['connecting','live'].includes(state);if($('soundHelp').hidden)$('soundHelpPanel').hidden=true;}$('voiceState').textContent=state==='live'?providerName()+' connected':state==='idle'?idleLabel():state==='ending'?'Preparing notes':state.charAt(0).toUpperCase()+state.slice(1);$('voiceHeading').textContent=heading;$('voiceMessage').textContent=message;if($('voiceRestartDialog')?.open&&!['connecting','live','error'].includes(state))$('voiceRestartDialog').close();if(state==='idle'||state==='error')$('voicePrivacy').textContent='Microphone off. No audio is streaming. Live voice starts only after connection and consent.';controls();}
-function controls(){const active=['preparing','connecting','live'].includes(phase), ending=phase==='ending';$('voiceStart').disabled=active||ending;$('voiceMute').disabled=phase!=='live';$('voiceEnd').disabled=!active&&!ending;$('voiceEnd').textContent=ending?'Discard pending notes':phase==='preparing'||phase==='connecting'?'Cancel connection':'End interview';const again=['connecting','live'].includes(phase)||(phase==='error'&&canReuse());$('voiceRestart').disabled=!again||restarting;if(['connecting','live'].includes(phase))$('voiceRestart').setAttribute('aria-haspopup','dialog');else $('voiceRestart').removeAttribute('aria-haspopup');$('voiceMute').textContent=muted?'Unmute microphone':'Mute microphone';$('voiceMute').setAttribute('aria-pressed',String(muted));$('voiceOrb').classList.toggle('active',phase==='live');window.AtlasOrbUI?.state(phase,muted||paused,paused);paintControls();}
+function status(state,heading,message){phase=state;if(['idle','error','preparing'].includes(state)){paused=false;pausedAt=null;pausedMs=0;controlsOn=null;sessionId=null;}queueMicrotask(livePill);if($('soundHelp')){$('soundHelp').hidden=!['connecting','live'].includes(state);if($('soundHelp').hidden)$('soundHelpPanel').hidden=true;}$('voiceState').textContent=state==='live'?providerName()+' connected':state==='idle'?idleLabel():state==='ending'?'Preparing notes':state.charAt(0).toUpperCase()+state.slice(1);$('voiceHeading').textContent=heading;$('voiceMessage').textContent=message;if($('voiceRestartDialog')?.open&&!['connecting','live','error'].includes(state))$('voiceRestartDialog').close();if(state==='idle'||state==='error')$('voicePrivacy').textContent='Microphone off. No audio is streaming. Live voice starts only after connection and consent.';controls();}
+function controls(){const active=['preparing','connecting','live'].includes(phase), ending=phase==='ending';$('voiceStart').disabled=active||ending;$('voiceMute').disabled=phase!=='live';$('voiceEnd').disabled=(!active&&!ending)||reconnecting;$('voiceEnd').textContent=ending?'Discard pending notes':phase==='preparing'||phase==='connecting'?'Cancel connection':'End interview';const again=['connecting','live'].includes(phase)||(phase==='error'&&canReuse());$('voiceRestart').disabled=!again||restarting||reconnecting;if(['connecting','live'].includes(phase))$('voiceRestart').setAttribute('aria-haspopup','dialog');else $('voiceRestart').removeAttribute('aria-haspopup');$('voiceMute').textContent=muted?'Unmute microphone':'Mute microphone';$('voiceMute').setAttribute('aria-pressed',String(muted));$('voiceOrb').classList.toggle('active',phase==='live');window.AtlasOrbUI?.state(phase,muted||paused,paused);paintControls();}
 // Pause / Repeat / Skip and the typed answer (T9): shown only when this server announced them in `ready` (the other voice routes never receive them).
 const VC=window.AtlasVoiceControls,supported=k=>VC.supports({controls:controlsOn},k);
 function send(msg){if(!msg||socket?.readyState!==1)return false;socket.send(JSON.stringify(msg));return true;}
@@ -3686,6 +3690,7 @@ async function begin(){
  if(!b){status('idle','ATLAS isn’t answering right now.','Try again in a minute. Your projects are safe.');return;}
  if(!b.codecAvailable){status('idle','Voice isn’t available right now.','Your projects are safe.');return;}
  if(b.busy){status('idle','The interviewer is in another session.','Try again when that interview ends. Your project is unchanged.');return;}
+ if(b.resumable){status('idle','You have an interview in progress.','Resume it, or start over.');resumePrompt(b.resumable);return;} // saved for 24 hours on the server; starting a new one would delete it
  await Promise.race([bridge.restored?.(),new Promise(r=>setTimeout(r,3000))]);if(attempt!==generation)return; // a returning user's projects (§3.6)
  if(b.memory&&b.captureRequired){await bridge.loadMemory?.();if(attempt!==generation)return;}
  status('idle','Tell me about the work.',ready);
@@ -3709,9 +3714,14 @@ async function begin(){
  if(!$('voiceConsentDialog').open)$('voiceConsentDialog').showModal();
 }
 async function stopDevices(){clearTimeout(readyWatch);readyWatch=null;clearInterval(timer);timer=null;if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}if(node){try{node.port.postMessage({type:'state',enabled:false,muted:true});node.port.postMessage({type:'flush'});node.disconnect();}catch{}node=null;}if(source){try{source.disconnect();}catch{}source=null;}const old=audio;audio=null;if(old)try{await old.close();}catch{}$('inputMeter').value=0;$('outputMeter').value=0;$('voiceOrb').style.setProperty('--voice-scale','1');window.AtlasOrbUI?.reset();}
-function cancel(message='Voice session stopped.'){if(!['preparing','connecting','live','ending'].includes(phase))return;consumeGap();generation++;const s=socket;socket=null;try{if(s?.readyState===1)s.send(JSON.stringify({type:'discard'}));s?.close();}catch{}teardown=Promise.all([closed(s,3000),stopDevices()]);current=null;permissionPending=false;status('idle','Your microphone is off.',message);}
+function cancel(message='Voice session stopped.'){if(!['preparing','connecting','live','ending'].includes(phase))return;consumeGap();if(reconnecting&&sessionId){reconnecting=false;discardRemote();} /* thrown away while disconnected: the saved copy goes too */generation++;const s=socket;socket=null;try{if(s?.readyState===1)s.send(JSON.stringify({type:'discard'}));s?.close();}catch{}teardown=Promise.all([closed(s,3000),stopDevices()]);current=null;permissionPending=false;status('idle','Your microphone is off.',message);}
 function fail(message){consumeGap();generation++;const s=socket;socket=null;try{s?.close();}catch{}teardown=Promise.all([closed(s,3000),stopDevices()]);permissionPending=false;status('error','The voice connection stopped.',message+' No fallback voice was used.');}
-async function start(){outputItem=null;lastPlaybackAck=0;resetBoards();if(!$('modelConsent').checked||!boot)return;const snapshot=bridge.context();if(!snapshot)return;gapUsed=snapshot.gap||null;consentStarting=$('voiceConsentDialog').open;$('voiceConsentDialog').close();const memory=boot.captureRequired?memoryWanted(boot):$('memoryConsent').checked;lastConsent={workspaceId:snapshot.workspaceId,projectId:snapshot.project?.id,terms:terms(boot),voice:$('modelVoice').value,capture:$('captureConsent').checked,memory};const token=++generation;current=snapshot;activeSnapshot=snapshot;lastNotes=null;heardOutput=false;accumulated='';$('agentText').textContent='';$('voiceTimer').textContent='00:00';$('voiceAfter').hidden=true;muted=false;status('preparing','Let’s connect your microphone.','The model will introduce itself and lead the interview.');permissionPending=true;
+const lang=()=>(navigator.languages&&navigator.languages[0])||navigator.language||'en';
+// The start message. A resume names the interview and never a proof request (the server refuses both together).
+const startMessage=(snapshot,voice,capture,memory,resumeId)=>({type:'start',csrf:boot.csrf,consent:true,project:snapshot.project,voice,capture,memory,language:lang(),...(resumeId?{resume:resumeId}:boot.features?.gapInterview&&snapshot.gap?{gap:snapshot.gap}:{})});
+function start(){return startWith(null);}
+// resumeId: continue the interview the server kept (the consultant pressed Resume). The consent dialog is not shown again: Resume is the consent, and transcription stays on as agreed.
+async function startWith(resumeId){outputItem=null;lastPlaybackAck=0;resetBoards();if((!resumeId&&!$('modelConsent').checked)||!boot)return;const snapshot=bridge.context();if(!snapshot)return;gapUsed=resumeId?null:snapshot.gap||null;consentStarting=$('voiceConsentDialog').open;$('voiceConsentDialog').close();const memory=boot.captureRequired?memoryWanted(boot):$('memoryConsent').checked;const voice=resumeId?boot.defaultVoice:$('modelVoice').value,capture=resumeId?true:$('captureConsent').checked;lastConsent={workspaceId:snapshot.workspaceId,projectId:snapshot.project?.id,terms:terms(boot),voice,capture,memory};sessionStart={snapshot,voice,capture,memory};const token=++generation;current=snapshot;activeSnapshot=snapshot;lastNotes=null;heardOutput=false;accumulated='';$('agentText').textContent='';$('voiceTimer').textContent='00:00';$('voiceAfter').hidden=true;muted=false;status('preparing','Let’s connect your microphone.','The model will introduce itself and lead the interview.');permissionPending=true;
  try{
  if(!window.isSecureContext||!navigator.mediaDevices?.getUserMedia)throw Error('Microphone access requires HTTPS or localhost in a full browser.');
  const acquired=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});
@@ -3726,30 +3736,97 @@ async function start(){outputItem=null;lastPlaybackAck=0;resetBoards();if(!$('mo
  socket=new WebSocket(new URL('/api/voice',location.href).href.replace(/^http/,'ws'));socket.binaryType='arraybuffer';const mine=socket;
  readyWatch=setTimeout(()=>{if(token===generation&&phase==='connecting')fail('The voice provider did not become ready within 60 seconds. Check the configured service and retry.');},60000);
  status('connecting','Preparing your voice interviewer.','Your microphone is open locally. Audio is not sent until the selected provider confirms it is ready.');
- mine.onopen=()=>{if(token!==generation){mine.close();return;}mine.send(JSON.stringify({type:'start',csrf:boot.csrf,consent:true,project:snapshot.project,voice:$('modelVoice').value,capture:$('captureConsent').checked,memory,language:(navigator.languages&&navigator.languages[0])||navigator.language||'en',...(boot.features?.gapInterview&&snapshot.gap?{gap:snapshot.gap}:{})}));};
- mine.onmessage=e=>{if(token!==generation)return;if(e.data instanceof ArrayBuffer){if(e.data.byteLength%2){fail('Invalid audio frame from the gateway.');return;}heardOutput=true;node?.port.postMessage({type:'audio',buffer:e.data,item_id:outputItem},[e.data]);return;}let m;try{m=JSON.parse(e.data);}catch{fail('Invalid gateway message.');return;}receive(m,token);};
+ mine.onopen=()=>{if(token!==generation){mine.close();return;}mine.send(JSON.stringify(startMessage(snapshot,voice,capture,memory,resumeId)));};
+ mine.onmessage=e=>{if(token!==generation)return;incoming(e,token);};
  // Before 'ready', an error or a close runs ONE handler per attempt: devices off, idle, then a bootstrap check that tells an
  // expired sign-in (§3.7) from a voice failure. After 'ready', the handlers are unchanged.
  let settled=false;const early=kind=>{if(token!==generation||readyFor===token)return false;if(!settled){settled=true;preReady(token,kind);}return true;};
  mine.onerror=()=>{if(early('error'))return;if(token===generation)fail('The secure voice gateway could not be reached. Check the selected voice service.');};
- mine.onclose=()=>{if(early('close'))return;if(token!==generation)return;consumeGap();socket=null;stopDevices();if(['preparing','connecting','live'].includes(phase))status('error','The microphone is off.','The voice connection closed before the interview finished. Nothing was approved.');else if(phase==='ending')status('idle','Your interview has ended.','The microphone and voice stream are closed.');controls();};
+ mine.onclose=()=>{if(early('close'))return;if(token!==generation)return;if(dropped(token))return;consumeGap();socket=null;stopDevices();if(['preparing','connecting','live'].includes(phase))status('error','The microphone is off.','The voice connection closed before the interview finished. Nothing was approved.');else if(phase==='ending')status('idle','Your interview has ended.','The microphone and voice stream are closed.');controls();};
  }catch(e){if(token!==generation)return;fail(e.name==='NotAllowedError'?'Microphone permission was declined, by the browser or by macOS/Windows privacy settings. Allow it (macOS: System Settings → Privacy & Security → Microphone → enable your browser) and start again.':e.name==='NotFoundError'?'No microphone was found. Connect or select an input device, then start again.':e.name==='NotReadableError'?'The microphone is in use by another app or blocked by the system. Close the other app or check privacy settings, then start again.':e.message||'The browser could not start audio.');}}
 async function preReady(token,kind){consumeGap();clearTimeout(readyWatch);const s=socket;socket=null;try{s?.close();}catch{}permissionPending=false;await stopDevices();if(token!==generation)return;
  status('idle','Checking the connection.','Microphone off. No audio is streaming.');
  try{await check();}catch(e){if(token!==generation)return;if(e instanceof window.AtlasAuth.Expired){status('idle','Your sign-in expired.','Your work is kept on this page. Reconnect, then start again.');window.AtlasAuth.expired({resume:'start'});return;}}
  if(token!==generation)return;
  if(kind==='error')fail('The secure voice gateway could not be reached. Check the selected voice service.');else{current=null;status('error','The microphone is off.','The voice connection closed before the interview finished. Nothing was approved.');}}
+// What arrives on the voice socket: audio for the worklet, or one JSON event. Used by the first socket and by every reconnect.
+function incoming(e,token){if(e.data instanceof ArrayBuffer){if(e.data.byteLength%2){fail('Invalid audio frame from the gateway.');return;}heardOutput=true;node?.port.postMessage({type:'audio',buffer:e.data,item_id:outputItem},[e.data]);return;}let m;try{m=JSON.parse(e.data);}catch{fail('Invalid gateway message.');return;}receive(m,token);}
+// Checkpoint and reconnect (T10). A socket that closes while the interview is live, and the server announced an interview id (so it keeps the interview for
+// 24 hours), is not the end: Reconnecting… then up to three tries (after 1, 2 and 4 s) with `resume`. The microphone stays open; the server says the
+// question again. A refusal (expired, gone, another project) stops the tries; three misses leave the saved interview for the next page load to offer.
+function dropped(token){if(token!==generation||phase!=='live'||!sessionId||reconnecting||!sessionStart||!boot)return false;socket=null;reconnect(token);return true;}
+async function reconnect(token){
+ reconnecting=true;controls();
+ $('voiceState').textContent='Reconnecting…';$('voiceHeading').textContent='Reconnecting…';$('voiceMessage').textContent='The connection dropped. Your interview is saved on the server; ATLAS is reconnecting.';
+ if($('orbAccessibleState'))$('orbAccessibleState').textContent='Connection lost. Reconnecting.';
+ node?.port.postMessage({type:'flush'});window.AtlasOrbUI?.levels(0,0,{low:0,mid:0,high:0});
+ let last=null;
+ for(const ms of RECONNECT_MS){
+  await new Promise(r=>setTimeout(r,ms));if(token!==generation||phase!=='live'){reconnecting=false;return;}
+  $('voiceMessage').textContent='The connection dropped. Your interview is saved on the server; reconnecting (try '+(RECONNECT_MS.indexOf(ms)+1)+' of '+RECONNECT_MS.length+').';
+  last=await resumeOnce(token);
+  if(token!==generation){reconnecting=false;return;}
+  if(last.result==='ready'){reconnecting=false;controls();return;}
+  if(last.result==='refused')break;
+ }
+ reconnecting=false;
+ if(last?.result==='refused'){refused(last.message);return;}
+ fail('The connection could not be restored. Your interview is saved for 24 hours: reload this page to resume it.');
+}
+// One try: a socket that starts with `resume` and settles as 'ready' (the server restored the interview), 'refused' (it cannot be resumed: stop) or 'closed'.
+function resumeOnce(token){return new Promise(done=>{
+ const {snapshot,voice,capture,memory}=sessionStart;let up=false,over=false;const finish=(result,message)=>{if(!over){over=true;done({result,message});}};
+ let s;try{s=new WebSocket(new URL('/api/voice',location.href).href.replace(/^http/,'ws'));}catch{finish('closed');return;}
+ s.binaryType='arraybuffer';socket=s;
+ s.onopen=()=>{if(token!==generation||socket!==s){try{s.close();}catch{}finish('closed');return;}s.send(JSON.stringify(startMessage(snapshot,voice,capture,memory,sessionId)));};
+ s.onmessage=e=>{if(token!==generation||socket!==s)return;
+  if(!up&&typeof e.data==='string'){let m=null;try{m=JSON.parse(e.data);}catch{}
+   if(m?.type==='error'){finish(m.code==='resume-unavailable'||m.code==='resume-project'?'refused':'closed',m.message);return;}
+   if(m?.type==='ready'&&m.resumed){up=true;finish('ready');}}
+  incoming(e,token);};
+ s.onerror=()=>{};
+ s.onclose=()=>{if(socket===s)socket=null;if(!up){finish('closed');return;}if(token===generation&&socket===null)dropped(token);};
+});}
+// The server will not resume this interview (or the page asked for something it cannot): say so, forget the offer, and leave the way open to start a new one.
+function refused(message){consumeGap();generation++;const s=socket;socket=null;try{s?.close();}catch{}teardown=Promise.all([closed(s,3000),stopDevices()]);current=null;permissionPending=false;reconnecting=false;if(boot)boot.resumable=null;
+ status('idle','This interview can’t be resumed.',(message||'It has expired or was already closed.')+' Start a new one when you are ready.');}
+// After a resume the server sends the consultant's turns, ATLAS's words, the story-board state and the interview clock: the screens carry on where they were.
+function restoreScreens(m){
+ for(const u of (Array.isArray(m.user)?m.user:[]).slice(-40))if(u&&typeof u.text==='string')window.dispatchEvent(new CustomEvent('atlas-quality',{detail:{type:'user_text',item_id:u.item_id,text:u.text,provenance:u.provenance}}));
+ if(m.quality&&typeof m.quality==='object')window.dispatchEvent(new CustomEvent('atlas-quality',{detail:{...m.quality,type:'quality'}}));
+ accumulated=(Array.isArray(m.agent)?m.agent.filter(t=>typeof t==='string').join('\n\n'):'').slice(-60000);$('agentText').textContent=accumulated;$('agentText').scrollTop=$('agentText').scrollHeight;
+ if(Number.isFinite(m.activeSeconds)){startedAt=Date.now()-m.activeSeconds*1000;pausedMs=0;$('voiceTimer').textContent=VC.clock(VC.elapsed(startedAt,pausedMs,pausedAt,Date.now()));}
+ if(typeof m.lastQuestion==='string'&&m.lastQuestion&&$('orbAccessibleState'))$('orbAccessibleState').textContent='Interview resumed. The question was: '+m.lastQuestion;}
+// Resume your interview? (a saved interview, offered on page load and when Start is pressed). Resume continues it; Start over deletes it on the server first.
+const when=ms=>{try{return new Date(ms).toLocaleString([],{dateStyle:'medium',timeStyle:'short'});}catch{return '';}};
+function discardRemote(){return request('/api/checkpoint/discard',{method:'POST',headers:{'X-Atlas-CSRF':boot?.csrf||''},signal:AbortSignal.timeout(8000)}).then(r=>!!r.ok,()=>false);}
+function resumePrompt(r){
+ if(!resumeDlg){const d=document.createElement('dialog'),head=document.createElement('div'),box=document.createElement('div'),eyebrow=document.createElement('p'),h=document.createElement('h2'),text=document.createElement('p'),note=document.createElement('p'),row=document.createElement('div'),yes=document.createElement('button'),no=document.createElement('button');
+  d.id='voiceResumeDialog';d.setAttribute('aria-labelledby','voiceResumeTitle');d.setAttribute('aria-describedby','voiceResumeText');head.className='dialog-head';eyebrow.className='eyebrow';eyebrow.textContent='SAVED INTERVIEW';h.id='voiceResumeTitle';h.textContent='Resume your interview?';
+  text.id='voiceResumeText';text.className='small';note.className='small';note.id='voiceResumeNote';row.className='actions';yes.className='btn primary';yes.type='button';yes.textContent='Resume';no.className='btn';no.type='button';no.textContent='Start over';
+  box.append(eyebrow,h);head.append(box);row.append(yes,no);d.append(head,text,note,row);document.body.append(d);
+  resumeDlg={d,text,note,yes,no};
+  yes.onclick=()=>{const id=resumeDlg.id;resumeDlg.d.close();if(id)startWith(id);};
+  no.onclick=async()=>{no.disabled=yes.disabled=true;const ok=await discardRemote();no.disabled=yes.disabled=false;
+   if(!ok){resumeDlg.note.textContent='The saved interview could not be deleted right now. Check the connection and try again.';return;}
+   if(boot)boot.resumable=null;resumeDlg.id=null;resumeDlg.d.close();if($('orbAccessibleState'))$('orbAccessibleState').textContent='The saved interview was deleted.';begin();};}
+ resumeDlg.id=r.sessionId;resumeDlg.text.textContent='You stopped in the middle of an interview'+(r.savedAt?' (saved '+when(r.savedAt)+')':'')+'. Resume it and ATLAS asks the question you were on again. ATLAS keeps transcribing your answers, as you agreed before.';
+ resumeDlg.note.textContent='Start over deletes the saved interview now'+(r.expiresAt?'; otherwise it is deleted automatically after '+when(r.expiresAt):'')+'.';
+ if(!resumeDlg.d.open)resumeDlg.d.showModal();}
+// On page load (live, nothing running): a saved interview is offered before anything else.
+async function offerResume(){if(window.AtlasAuth?.mode!=='live'||phase!=='idle'||resumeDlg?.d.open||$('voiceConsentDialog').open)return;let b=null;try{b=await check();}catch{return;}if(b?.resumable&&phase==='idle'&&bridge.context())resumePrompt(b.resumable);}
 function receive(m,token){
- if(m.type==='ready'){readyFor=token;consumeGap();clearTimeout(readyWatch);chime();clearTimeout(micWatch);micPeak=0;controlsOn=Array.isArray(m.controls)?m.controls:null;paused=false;pausedAt=null;pausedMs=0;
+ if(m.type==='ready'){readyFor=token;consumeGap();clearTimeout(readyWatch);if(!m.resumed)chime();sessionId=typeof m.sessionId==='string'?m.sessionId:null;clearTimeout(micWatch);micPeak=0;controlsOn=Array.isArray(m.controls)?m.controls:null;paused=false;pausedAt=null;pausedMs=0;
   // Permission can be granted while the OS still delivers silence; say so instead of waiting forever.
-  micWatch=setTimeout(()=>{if(token===generation&&phase==='live'&&!muted&&!paused&&micPeak<.0015){const t=stream?.getAudioTracks()[0];$('voiceMessage').textContent='ATLAS is not receiving sound from “'+micLabel+'”'+(t?.muted?' (the system is muting it)':'')+'. Check the input device and your system privacy settings for this browser, then speak again.';}},6000);startedAt=Date.now();phase='live';node?.port.postMessage({type:'state',enabled:true,muted:false});status('live','I’m here. Let’s talk about the work.',providerName()+' is connected. Answer naturally; ATLAS will ask one follow-up at a time.');$('voicePrivacy').textContent=boot?.provider!=='personaplex'?(m.capture?'Audio is streaming to '+providerName()+'. Consultant ASR text is processed for quote-grounded candidate notes; no automatic wiki publication.':'Audio is streaming to '+providerName()+'. Consultant transcript capture is off.'):(m.capture?'Audio is streaming to NVIDIA. Microphone-only audio is buffered in server memory for post-session transcription.':'Audio is streaming to NVIDIA. Consultant transcription is off for this session.');timer=setInterval(()=>{$('voiceTimer').textContent=VC.clock(VC.elapsed(startedAt,pausedMs,pausedAt,Date.now()));},500);readyWatch=setTimeout(()=>{if(token===generation&&phase==='live'&&!heardOutput)after('The provider completed its handshake but no generated audio has arrived. Check the voice service. A handshake alone does not prove the model is speaking.');},20000);}
+  micWatch=setTimeout(()=>{if(token===generation&&phase==='live'&&!muted&&!paused&&micPeak<.0015){const t=stream?.getAudioTracks()[0];$('voiceMessage').textContent='ATLAS is not receiving sound from “'+micLabel+'”'+(t?.muted?' (the system is muting it)':'')+'. Check the input device and your system privacy settings for this browser, then speak again.';}},6000);startedAt=Date.now();phase='live';node?.port.postMessage({type:'state',enabled:true,muted:false});status('live',m.resumed?'You’re back. Picking up where we stopped.':'I’m here. Let’s talk about the work.',m.resumed?'Your interview was kept. ATLAS says the question you were on again.':providerName()+' is connected. Answer naturally; ATLAS will ask one follow-up at a time.');$('voicePrivacy').textContent=boot?.provider!=='personaplex'?(m.capture?'Audio is streaming to '+providerName()+'. Consultant ASR text is processed for quote-grounded candidate notes; no automatic wiki publication.':'Audio is streaming to '+providerName()+'. Consultant transcript capture is off.'):(m.capture?'Audio is streaming to NVIDIA. Microphone-only audio is buffered in server memory for post-session transcription.':'Audio is streaming to NVIDIA. Consultant transcription is off for this session.');clearInterval(timer);timer=setInterval(()=>{$('voiceTimer').textContent=VC.clock(VC.elapsed(startedAt,pausedMs,pausedAt,Date.now()));},500);readyWatch=setTimeout(()=>{if(token===generation&&phase==='live'&&!heardOutput)after('The provider completed its handshake but no generated audio has arrived. Check the voice service. A handshake alone does not prove the model is speaking.');},20000);}
  else if(m.type==='agent_text'){accumulated=(accumulated+(typeof m.text==='string'?m.text:'')).slice(-60000);$('agentText').textContent=accumulated;$('agentText').scrollTop=$('agentText').scrollHeight;}
  else if(m.type==='agent_retract'){const n=Number.isInteger(m.chars)&&m.chars>0?Math.min(m.chars,accumulated.length):0;accumulated=accumulated.slice(0,accumulated.length-n);$('agentText').textContent=accumulated;} // a reply taken back: the consultant had not finished
  else if(m.type==='audio_turn'){outputItem=m.item_id;}
  else if(m.type==='clear_audio'){node?.port.postMessage({type:'flush'});window.AtlasOrbUI?.levels(0,0,{low:0,mid:0,high:0});}
  else if(['quality','user_text','quality_warning','user_speaking'].includes(m.type)){window.dispatchEvent(new CustomEvent('atlas-quality',{detail:m}));}
  else if(m.type==='state'){setPaused(VC.pausedFrom(paused,m));} // the interview machine: pause and resume are confirmed (or made) by the server
- else if(m.type==='error')fail(m.message||'The selected voice service is unavailable.');
+ else if(m.type==='restore'){restoreScreens(m);}
+ else if(m.type==='error'){if(m.code==='resume-unavailable'||m.code==='resume-project')refused(m.message);else fail(m.message||'The selected voice service is unavailable.');}
  else if(m.type==='memory'){$('voiceTranscriptLabel').textContent=m.message+' · agent text is not consultant evidence';}
  else if(m.type==='status'){if(m.state==='transcribing'){status('ending','Let’s check what you said.',m.message);}else if(m.state==='connecting')$('voiceMessage').textContent=m.message;}
  else if(m.type==='audio_stopped'){stopDevices();if(phase==='live'||phase==='connecting')status('ending','Your microphone is off.','The voice stream has closed. Finishing the session.');}
@@ -3761,7 +3838,7 @@ function receive(m,token){
  else if(m.type==='ended'){stopDevices();const s=socket;socket=null;try{s?.close();}catch{} /* the session is over: nothing is left to receive, and an open socket would read as "voice active" */status('idle','Great work. Worth capturing.',lastNotes?.savedTo?'Saved to “'+lastNotes.savedTo+'”.'+(lastNotes.savedReport?' Your report is open for review.':'')+(lastNotes.persisted||lastNotes.library?'':' Not yet stored on this device.'):lastNotes?.transcript?'Review the consultant transcript before adding it to your project.':'The microphone and model stream are closed. '+(lastNotes?.message||'No project facts were approved.'));}
  if(SESSION_EVENTS.includes(m.type))sessionEvent(m);
 }
-function end(){if(phase==='ending'){cancel('Pending notes discarded. No project changes were applied.');return;}if(phase==='preparing'||phase==='connecting'){cancel('Connection cancelled. Your microphone is off.');return;}if(phase!=='live')return;stopDevices();status('ending','Your microphone is off.','Closing the voice session and preparing any enabled consultant transcript.');if(socket?.readyState===1)socket.send(JSON.stringify({type:'end'}));else cancel('The voice stream was already closed.');}
+function end(){if(reconnecting){$('voiceMessage').textContent='Reconnecting… You can end the interview as soon as the connection is back.';return;}if(phase==='ending'){cancel('Pending notes discarded. No project changes were applied.');return;}if(phase==='preparing'||phase==='connecting'){cancel('Connection cancelled. Your microphone is off.');return;}if(phase!=='live')return;stopDevices();status('ending','Your microphone is off.','Closing the voice session and preparing any enabled consultant transcript.');if(socket?.readyState===1)socket.send(JSON.stringify({type:'end'}));else cancel('The voice stream was already closed.');}
 // Restart: throw this conversation away (never saved: discard, not end) and start a new one about the same project.
 function askRestart(){if(restarting)return;if(phase==='error'){restart();return;}if(!['connecting','live'].includes(phase))return;const c=bridge.context();$('voiceRestartText').textContent='ATLAS stops listening now and throws this conversation away. Nothing from it is saved: no transcript, no report, no change to your project, and ATLAS will not remember it. A new conversation about “'+(c?.isNew?'a new project':(c?.project?.title||'this project'))+'” starts straight away, with the same choices you agreed to: '+choices()+(lastConsent?.memory?', private memory on':'')+'.';$('voiceRestartConfirm').disabled=false;if(!$('voiceRestartDialog').open)$('voiceRestartDialog').showModal();}
 async function restart(){if(restarting)return;restarting=true;if($('voiceRestartDialog').open)$('voiceRestartDialog').close();
@@ -3818,15 +3895,18 @@ function livePill(){let pill=$('voiceLivePill');if(!pill){pill=document.createEl
  pill.querySelector('[data-pill=back]').onclick=()=>document.querySelector('header [data-view=interview]')?.click();}
  const away=!document.body.classList.contains('studio-view');pill.hidden=!(['connecting','live'].includes(phase)&&away);
  pill.querySelector('[data-pill=label]').textContent=phase==='connecting'?'ATLAS is connecting':muted?'Microphone muted':'ATLAS is listening';pill.querySelector('[data-pill=mute]').textContent=muted?'Unmute':'Mute';}
-window.addEventListener('pagehide',()=>cancel('Page closed.'));
+// Closing or reloading the page mid-interview keeps it (the socket just closes: the server suspends the interview and the next load offers to resume it);
+// only an interview the server does not keep is thrown away, as before.
+window.addEventListener('pagehide',()=>{if(phase==='live'&&sessionId){generation++;const s=socket;socket=null;reconnecting=false;try{s?.close();}catch{}teardown=Promise.all([closed(s,3000),stopDevices()]);current=null;status('idle','Your microphone is off.','Your interview was kept. Reload to resume it.');return;}cancel('Page closed.');});
+window.addEventListener('pageshow',e=>{if(e.persisted)offerResume();});
 // "Voice active" (§3.7) is the microphone held or a socket open or connecting, never the phase label.
 const active=()=>!!stream||!!(socket&&socket.readyState<=1);
-window.AtlasVoice={cancel,checkConnection:check,bootstrap:()=>boot,begin,active,status:()=>({phase,hasMicrophone:!!stream,tracks:stream?.getTracks().map(t=>({state:t.readyState,enabled:t.enabled}))||[],hasAudioContext:!!audio,modelAudioReceived:heardOutput,permissionPending})};
+window.AtlasVoice={cancel,checkConnection:check,bootstrap:()=>boot,begin,active,reconnect:{delays:RECONNECT_MS,state:()=>({sessionId,reconnecting}),prompt:resumePrompt,offer:offerResume,dialog:()=>resumeDlg},status:()=>({phase,hasMicrophone:!!stream,tracks:stream?.getTracks().map(t=>({state:t.readyState,enabled:t.enabled}))||[],hasAudioContext:!!audio,modelAudioReceived:heardOutput,permissionPending})};
 document.body.classList.add('voice-first');sync();
 // One probe per load (shared with ATLAS_APP.bootInfo). Live and '#start' (a /go/start link): the consent step opens at once;
 // the microphone still waits for the Start click. A re-sign-in honours a Start that the expiry interrupted.
 window.addEventListener('atlas-auth',renderStart);renderStart();
-window.AtlasAuth.probe().then(()=>{renderStart();if(window.AtlasAuth.mode==='live'&&location.hash==='#start'){try{history.replaceState(null,'',location.pathname+location.search);}catch{}begin();}});
+window.AtlasAuth.probe().then(()=>{renderStart();if(window.AtlasAuth.mode==='live'&&location.hash==='#start'){try{history.replaceState(null,'',location.pathname+location.search);}catch{}begin();}else offerResume();});
 window.AtlasAuth.onSignedIn(async({resume}={})=>{try{await check();}catch{}if(resume==='start')begin();});
 })();
 </script><script>/* Navigation helper only: live calls stay same-origin. No permissive CORS/null-origin bypass. */
