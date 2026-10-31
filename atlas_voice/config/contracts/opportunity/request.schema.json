@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Opportunity read request (Atlas-side inputs)",
+  "x-status": "draft — from Atlas side; owner to confirm",
+  "x-source": "ATLAS_Integration_Contracts.md §4: opportunity ID",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "opportunity_id"
+  ],
+  "properties": {
+    "opportunity_id": {
+      "type": "string"
+    }
+  }
+}

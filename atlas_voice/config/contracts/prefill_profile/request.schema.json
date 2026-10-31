@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DNA profile read request (Atlas-side inputs)",
+  "x-status": "draft — from Atlas side; owner to confirm",
+  "x-source": "WOW_ZERO_CONFIG §5.3 (existing assumed pull); ATLAS_Integration_Contracts.md §1 (consultant stable ID)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "consultant_id"
+  ],
+  "properties": {
+    "consultant_id": {
+      "type": "string"
+    }
+  },
+  "x-note": "The existing pull looks up by the signed-in subject's oid or email; the owner confirms the key."
+}

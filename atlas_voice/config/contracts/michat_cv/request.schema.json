@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MiChat CV request (Atlas-side approved payload)",
+  "x-status": "draft — from Atlas side; owner to confirm",
+  "x-source": "ATLAS_Integration_Contracts.md §2; adapters.js buildPayload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "entity_id",
+    "source_revision",
+    "content_hash",
+    "consultant_id",
+    "profile_revision",
+    "claims",
+    "permissions"
+  ],
+  "properties": {
+    "entity_id": {
+      "type": "string"
+    },
+    "source_revision": {
+      "type": "integer"
+    },
+    "content_hash": {
+      "type": "string"
+    },
+    "approved_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "consultant_id": {
+      "type": "string"
+    },
+    "profile_revision": {
+      "type": "integer"
+    },
+    "language": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "target_role": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "template": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "claim_id",
+          "claim_type"
+        ],
+        "properties": {
+          "claim_id": {
+            "type": "string"
+          },
+          "claim_type": {
+            "type": "string"
+          },
+          "attribution": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "statement": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "statement_withheld": {
+            "enum": [
+              "CLIENT_PERMISSION_UNKNOWN",
+              "VERBATIM_ASR_NOT_REVIEWED"
+            ]
+          },
+          "value": {
+            "type": [
+              "number",
+              "string",
+              "null"
+            ]
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "baseline": {
+            "type": [
+              "number",
+              "string",
+              "null"
+            ]
+          },
+          "after_state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "period": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "permissions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "grant_id",
+          "purpose"
+        ],
+        "properties": {
+          "grant_id": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "scope": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  }
+}

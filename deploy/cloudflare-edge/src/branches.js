@@ -12,7 +12,7 @@
 // Status codes are stable ids for the audit and the UI; user-facing words live in the browser (workflow-core.js).
 import { decide } from './policy-gate.js';
 import { jobs, configure as configureJobs, clock, idempotencyKey } from './jobs.js';
-import { adapterMode, evidenceWorkflowOn, registry, buildPayload, CONTRACTS, ADAPTER_BY_DESTINATION, ADAPTER_BY_BRANCH } from './adapters.js';
+import { adapterMode, adapterModeFor, liveAdapter, evidenceWorkflowOn, registry, buildPayload, CONTRACTS, ADAPTER_BY_DESTINATION, ADAPTER_BY_BRANCH } from './adapters.js';
 import { Spotlight, FINAL_GATE } from './spotlight.js';
 import { str, obj, fail } from './util.js';
 
@@ -51,7 +51,11 @@ export function configure(lib, { env, mode, adapters, ...timing } = {}) {
 }
 const adapterSet = lib => registry(lib, { now: () => clock(lib) });
 export const enabled = lib => { const s = state.get(lib); return !!s?.configured && evidenceWorkflowOn(s.env); };
-export const modeOf = lib => { const s = state.get(lib) || {}; return adapterMode(s.mode !== undefined ? { ATLAS_ADAPTERS: s.mode } : s.env); };
+const envOf = lib => { const s = state.get(lib) || {}; return s.mode !== undefined ? { ...s.env, ATLAS_ADAPTERS: s.mode } : s.env; };
+export const modeOf = lib => adapterMode(envOf(lib));
+// One adapter's mode: under `live` a destination is live only when its connection is ready (connectors.js), else blocked_external.
+export const modeFor = (lib, name) => adapterModeFor(envOf(lib), name);
+const runs = m => m.mode === 'mock' || m.mode === 'live'; // a mode that makes delivery attempts
 
 // ---- branch rows ----
 const rowsOf = (ev, id) => ev.rows('SELECT * FROM branch_status WHERE entity = ?', String(id));
@@ -92,12 +96,12 @@ function reflect(ev, rec, job) {
   return setBranch(ev, rec, branch, status, { reason, ack, jobId: job.job_id });
 }
 
-const sendFor = (lib, name) => (envelope, payload) => adapterSet(lib)[name].send(envelope, payload);
+const sendFor = (lib, name) => (envelope, payload) => (modeFor(lib, name).mode === 'live' ? liveAdapter(envOf(lib), name, { now: () => Date.parse(clock(lib)) }) : adapterSet(lib)[name]).send(envelope, payload);
 // Enqueue (a duplicate is a no-op) and, when mock adapters are on, make the first attempt; then show the job's state on its card.
 async function dispatch(ev, rec, adapterName, payload, actor) {
   const lib = ev.lib, J = jobs(lib), c = CONTRACTS[adapterName];
   let { job } = await J.enqueue({ entity: rec.id, revision: rec.revision, hash: rec.content_hash, destination: c.destination, payload, actor });
-  if (modeOf(lib).mode === 'mock') {
+  if (runs(modeFor(lib, adapterName))) {
     const r = await J.run(job.job_id, sendFor(lib, adapterName));
     job = r.job;
     const row = rowsOf(ev, rec.id).find(x => x.branch === c.branch); // stopped while in flight (a revocation, a new revision): the halt stands, and a person's impact_review flag is not repainted
@@ -132,7 +136,7 @@ async function destination(ev, rec, ap, branch) {
   if (!v.allow) return stopDelivery(ev, rec, branch, v.reason, existing?.job_id ?? null);
   if (existing) return reflect(ev, rec, existing);
   const grants = ev.grantsFor(rec.id);
-  const mode = modeOf(lib);
+  const mode = modeFor(lib, name);
   if (mode.mode === 'blocked') return setBranch(ev, rec, branch, 'blocked_external', { reason: mode.code });
   if (mode.mode === 'off') return setBranch(ev, rec, branch, 'projection_pending', { reason: 'ADAPTERS_OFF' }); // nothing is queued or sent
   const payload = buildPayload(name, { entity: rec, claims: ev.claimsOf(rec.id, rec.revision), approval: ap, grants });
@@ -220,13 +224,14 @@ export function onPermissionRevoked(ev, rec, purpose) {
 // Run every job that is due (queued, retrying whose time has come, or an attempt past its lease). Called by the daily trigger, a person's sync, and tests.
 export async function pump(ev, { entity = null, limit = 50 } = {}) {
   const lib = ev.lib;
-  if (!enabled(lib) || modeOf(lib).mode !== 'mock') return { ran: 0, jobs: [] };
+  if (!enabled(lib) || !['mock', 'live'].includes(modeOf(lib).mode)) return { ran: 0, jobs: [] };
   const J = jobs(lib), out = [];
   for (const j of J.due().filter(x => !entity || x.source_entity_id === entity).slice(0, limit)) {
     const rec = ev.load(j.source_entity_id), ap = rec && approvedNow(ev, rec);
     if (!rec || j.source_revision !== rec.revision || !ap) { J.halt(j.source_entity_id, { reason: 'SOURCE_SUPERSEDED', keepRevision: ap ? rec.revision : null }); continue; }
     const branch = CONTRACTS[ADAPTER_BY_DESTINATION[j.destination]].branch, v = deliveryGate(ev, rec, ap, branch); // permissions as they stand now, not when the job was queued
     if (!v.allow) { stopDelivery(ev, rec, branch, v.reason, j.job_id); continue; }
+    if (!runs(modeFor(lib, ADAPTER_BY_DESTINATION[j.destination]))) continue; // live is per connection: a destination that is not ready waits
     const r = await J.run(j.job_id, sendFor(lib, ADAPTER_BY_DESTINATION[j.destination]));
     if (r.ran && !r.halted) { reflect(ev, rec, r.job); out.push({ job_id: j.job_id, status: r.job.status }); } // a job halted while in flight is not the card's to show
   }
@@ -274,8 +279,8 @@ export async function publishSpotlight(ev, actor, id, p = {}) {
   const v = decide(actor, 'spotlight_publish', ev.entity(rec), { now: ev.now(), expected_revision: p.expected_revision, content_hash: p.content_hash, channel: p.channel,
     gates: sp.gatesFor(rec.id), grants: ev.grantsFor(rec.id), derived_from_library_status: false });
   if (!v.allow) { setBranch(ev, rec, 'spotlight', 'spotlight_approval_pending', { reason: v.reason }); return { allow: false, reason: v.reason }; }
-  const mode = modeOf(ev.lib);
-  if (mode.mode !== 'mock') { const reason = mode.mode === 'blocked' ? mode.code : 'ADAPTERS_OFF'; setBranch(ev, rec, 'spotlight', 'spotlight_approval_pending', { reason }); return { allow: true, sent: false, reason }; }
+  const mode = modeFor(ev.lib, 'SPOTLIGHT_CMS');
+  if (!runs(mode)) { const reason = mode.mode === 'blocked' ? mode.code : 'ADAPTERS_OFF'; setBranch(ev, rec, 'spotlight', 'spotlight_approval_pending', { reason }); return { allow: true, sent: false, reason }; }
   let story;
   try { story = sp.project(rec, 'public'); } catch (e) { const reason = `PROJECTION_${String(e.code || 'error').toUpperCase()}`; setBranch(ev, rec, 'spotlight', 'spotlight_approval_pending', { reason }); return { allow: false, reason }; }
   const payload = { audience: 'public', channel: str(p.channel, 100), story_revision_id: `${rec.id}:${rec.revision}`, revision_hash: rec.content_hash, content_hash: rec.content_hash, story };

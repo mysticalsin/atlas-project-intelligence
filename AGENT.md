@@ -110,7 +110,7 @@ All are Worker variables. Each default is the new behaviour; the legacy value re
 | `ASR_CONFIRM_TAU` | `0.55` | confidence below which a number or name is confirmed aloud; a pilot value, not calibrated | `asr.js tauFrom`, `asr.py` |
 | `ATLAS_CHECKPOINT` | on | `off`: no checkpoints, a dropped interview is not resumable | `checkpoint.js checkpointEnabled` |
 | `ATLAS_EVIDENCE_WORKFLOW` | `on` | `off`: a confirmed summary is not filed, and the fan-out, status and sync routes are off | `adapters.js evidenceWorkflowOn` |
-| `ATLAS_ADAPTERS` | `off` | `mock`: the four destination mocks run; `live` is refused as `BLOCKED_EXTERNAL`; anything else is `off` | `adapters.js adapterMode` |
+| `ATLAS_ADAPTERS` | `off` | `mock`: the four destination mocks run; `live` is allowed per connection only when it is configured and ready (`docs/CONNECTIONS.md`), otherwise `BLOCKED_EXTERNAL`; anything else is `off` | `adapters.js adapterMode` |
 
 Endpointing and temperature are unchanged (Tony, Q5). `SPECULATIVE_STT` and `ANALYST_WAIT_MS` stay off.
 

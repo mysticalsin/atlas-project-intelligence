@@ -3,19 +3,32 @@
 // answers from memory and every acknowledgement carries mock:true. A mock acknowledgement is never "synced" or "published"
 // (D12): the policy gate refuses record_sync_complete / record_published unless destination_ack.mock === false.
 //
-// ATLAS_ADAPTERS = off (default) | mock. `live` is refused and reported BLOCKED_EXTERNAL; anything else is off.
+// ATLAS_ADAPTERS = off (default) | mock | live. `live` is allowed only PER CONNECTION (connectors.js, atlas_voice/config/connections.json): a destination
+// whose connection is not ready (status, secrets, base URL, endpoint, mapping, ack rule) is reported BLOCKED_EXTERNAL exactly as before, and mock stays
+// the default. A live acknowledgement exists only when a real HTTP response satisfied the connection's ack_rule. Anything else is off.
 // Payloads are built ONLY from an approved revision's claims (statement and typed fields): never the interview transcript, never
 // source_refs, ledger or session ids. The Spotlight payload is the audience projection (story-projection.js), built elsewhere.
 // MAAP and Project Review are shells: their rubric is MUST_BE_CONFIGURED_BY_PROCESS_OWNER, so rating or closing is denied by the
 // gate with MAAP_NOT_CONFIGURED / PROJECT_REVIEW_NOT_CONFIGURED.
 import { decide } from './policy-gate.js';
+import { adapterReadiness, anyLiveEligible, createHttpConnector } from './connectors.js';
 
+const BLOCKED = { mode: 'blocked', code: 'BLOCKED_EXTERNAL', reason: 'Live adapters need the system owners\' endpoints, schemas and credentials; none are configured.' };
 export const adapterMode = env => {
   const v = String(env?.ATLAS_ADAPTERS ?? 'off').trim().toLowerCase();
   if (v === 'mock') return { mode: 'mock' };
-  if (v === 'live') return { mode: 'blocked', code: 'BLOCKED_EXTERNAL', reason: 'Live adapters need the system owners\' endpoints, schemas and credentials; none are configured.' };
+  if (v === 'live') return anyLiveEligible(env) ? { mode: 'live' } : BLOCKED;
   return { mode: 'off' };
 };
+// The mode for ONE adapter: under `live`, only a ready connection is live; the others stay blocked (never silently mock).
+export const adapterModeFor = (env, name) => {
+  const m = adapterMode(env);
+  if (m.mode !== 'live') return m;
+  const r = adapterReadiness(env, name);
+  return r.eligible ? m : { ...BLOCKED, reasons: r.reasons };
+};
+// The HTTP connector for a ready connection (an adapter with the same send(envelope, payload) interface as the mock).
+export const liveAdapter = (env, name, opts = {}) => createHttpConnector(name, { ...opts, env });
 // ATLAS_EVIDENCE_WORKFLOW=off turns the fan-out, the status route and the sync route off (rollback); anything else is on.
 export const evidenceWorkflowOn = env => String(env?.ATLAS_EVIDENCE_WORKFLOW ?? 'on').trim().toLowerCase() !== 'off';
 

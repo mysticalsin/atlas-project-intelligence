@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "IMP capability signal request (Atlas-side approved payload)",
+  "x-status": "draft — from Atlas side; owner to confirm",
+  "x-source": "ATLAS_Integration_Contracts.md §3 (write side is the Atlas capability signal); adapters.js buildPayload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "entity_id",
+    "source_revision",
+    "content_hash",
+    "consultant_id",
+    "signals",
+    "permissions"
+  ],
+  "properties": {
+    "entity_id": {
+      "type": "string"
+    },
+    "source_revision": {
+      "type": "integer"
+    },
+    "content_hash": {
+      "type": "string"
+    },
+    "approved_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "consultant_id": {
+      "type": "string"
+    },
+    "availability": {
+      "type": "null"
+    },
+    "signals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "claim_id",
+          "claim_type",
+          "statement"
+        ],
+        "properties": {
+          "claim_id": {
+            "type": "string"
+          },
+          "claim_type": {
+            "type": "string"
+          },
+          "statement": {
+            "type": "string"
+          },
+          "attribution": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "permissions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "grant_id",
+          "purpose"
+        ],
+        "properties": {
+          "grant_id": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "scope": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  }
+}

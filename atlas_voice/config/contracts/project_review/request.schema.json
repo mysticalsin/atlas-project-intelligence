@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Project Review hand-off request (Atlas-side draft; rubric NOT configured)",
+  "x-status": "draft — from Atlas side; owner to confirm",
+  "x-source": "Project_Review_Specification.md (domains, workflow); fields TO CONFIRM — the pack gives no data model",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "review_id",
+    "project_id",
+    "rubric_version"
+  ],
+  "properties": {
+    "review_id": {
+      "type": "string"
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "trigger": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "focus": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "alignment",
+          "quality",
+          "readiness"
+        ]
+      }
+    },
+    "rubric_version": {
+      "type": "null",
+      "x-note": "MUST_BE_CONFIGURED_BY_PROCESS_OWNER; Atlas never fills it in"
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "entity_id",
+          "revision"
+        ],
+        "properties": {
+          "entity_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  }
+}
