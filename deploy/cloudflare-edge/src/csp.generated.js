@@ -13,9 +13,10 @@ export const PAGE_SCRIPT_HASHES = [
   "sha256-GUpHpcCtSH1/S17CQbayd+mxfOqid7/BW0gll+yJATM=",
   "sha256-I8cjyoH1ILkVjafMZPPvPYM7v0EVWcHp2ctYrvDggq4=",
   "sha256-IRbkAJ6laZnjOxTZpi88EsCiRgkZ5MmlRvpf4/8IPTI=",
-  "sha256-NPD5H0Nee+bABIzn2arPCviOsSr4MKg0HT0GzjwzPzg=",
   "sha256-PLvAtKbMmNTz55W+r8CI1A4zsyeqT0HInVOG9wYNXNg=",
   "sha256-PSL+QKM2F4IJC9scI/OC48PzuQi71ntN48iiCpdXng4=",
+  "sha256-Vsa7eYRACYBtrA5skYzwAjOs3keFw6Dlf7oXeZ94EyE=",
+  "sha256-baAE3CCKOQJuUT6DRcMOjndN2hxvRaz6uf1/QtxPcu4=",
   "sha256-eg6Wm43A18Ap/A/R7f/g8zUP8mzpy1YeX8WGgB0Gz1s=",
   "sha256-egwYU6GKGZ+zIe7DTPY3L72N0s5A54sq1FyksiTO0zE=",
   "sha256-jLmKukV/5rkk0V70NjDxCuPQp+quvExj/lYBQPKccRI=",
@@ -30,7 +31,6 @@ export const PAGE_SCRIPT_HASHES = [
   "sha256-ta1guazYVzf3zIM6RzUPjLvCrr6KVmmp608+TjZ15Gs=",
   "sha256-vLb/3y5uVpkGSFWIvOczp9J9hjHDLhV6VzeEWoZNBDQ=",
   "sha256-xD/2DwATH+/vF/LAlOSdob4MHnyY71lXXkPqx8vwGGE=",
-  "sha256-ycIHUoMlVf6sLlbUievyLdq6QMl9CqYGSkEOJn9s1j0=",
   "sha256-z/AC2XmHbnicp2/vCCpdk2kB0wAplmfmMogkhg0xMOM="
 ];
 export const RUNTIME_BLOCK = "<script id=\"atlas-runtime\" type=\"application/json\">{}</script>";

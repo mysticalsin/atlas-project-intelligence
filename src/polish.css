@@ -37,8 +37,8 @@ body.ui2 .how-btn .how-ico{width:18px;height:18px;display:none}
 @media(max-width:1100px){html body.ui2 .topbar .how-btn{display:inline-flex;min-width:44px;min-height:44px;justify-content:center;padding:0}html body.ui2 .topbar .how-btn .how-label{display:none}html body.ui2 .topbar .how-btn .how-ico{display:block}}
 @media(max-width:700px){body.ui2 .palette-btn{display:none}}
 
-/* ---------- a phone: the five places become a bottom tab bar (the nav element itself, so every handler and test still finds it); the live interview and the read-back hide it and keep the whole screen ---------- */
-@media(max-width:700px){
+/* ---------- a phone or a tablet in portrait: the five places become a bottom tab bar (the nav element itself, so every handler and test still finds it); the live interview and the read-back hide it and keep the whole screen ---------- */
+@media(max-width:1023px){
  :root{--tabbar-h:60px}
  html body.ui2 .topbar{height:auto;min-height:0;padding:var(--s3) var(--s4) var(--s2);display:flex;flex-wrap:nowrap;align-items:center;justify-content:space-between;gap:var(--s2)}
  html body.ui2 .topbar .brand{gap:var(--s2);min-width:0}
@@ -182,3 +182,9 @@ html body.ui2 :is(button,.btn):disabled:not(.orb-activate):not(.quiet):not(.clos
 html body.ui2 .bottom-tools .quiet{font-size:13px;min-height:44px;color:var(--text-2)}
 html body.ui2 .bottom-tools .quiet:disabled{background:transparent;color:var(--text-3);opacity:.7}
 html body.ui2 .bottom-tools .tiny{font-size:12px}
+
+/* ---------- the 12px floor for the parts of the sheets that still said 9 to 11px (report headings, the insights charts, legends, the contract card, the profile chips) ---------- */
+html body.ui2 dialog :is(.report-topics h4,.atlas-report>h4,legend,.quality-contract p){font-size:12px}
+html body.ui2 .atlas-dash :is(.ag-h4,.ag-pill,.ag-cap,.ag-sub,.ag-legend span,.ag-legend li,.ag-ch *,.ag-mw *){font-size:12px}
+html body.ui2 dialog .field-chip{display:inline-block;margin:var(--s1) 0 0 0;font-size:12px;white-space:normal;vertical-align:baseline}
+@media(pointer:coarse){html body.ui2 :is(.save-chip,.palette-btn,.how-btn,.storage-retry){min-height:44px}}

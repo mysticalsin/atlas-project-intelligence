@@ -49,12 +49,14 @@ const STATE_WORDS={ready:'Ready',mock:'Mock',not_configured:'Not configured'};
 // Plain words for the person who administers ATLAS (v2.2 W3): what is missing, not the name of the setting. The names of the settings (never their values) sit under "For IT" in each row.
 const REASON_WORDS={NOT_WIRED:'Not built yet',ADAPTERS_NOT_LIVE:'ATLAS is in mock (practice) mode',BASE_URL_MISSING:'The other system’s address has not been added',BASE_URL_INVALID:'The address that was added is not valid',ENDPOINT_NOT_CONFIGURED:'The connection point has not been added',FIELD_MAPPING_EMPTY:'The matching of fields is empty',ACK_RULE_MISSING:'The rule for a successful hand-over is missing',TOKEN_URL_MISSING:'The sign-in address for the other system is missing',STATUS_NOT_CONFIGURED:'Its owner has not set it up yet',NOT_HTTP_CONNECTOR:'Built into ATLAS'};
 const isSecret=r=>/^SECRET_MISSING:/.test(r);
+// Server notes can carry a code or a decision number ("MUST_BE_CONFIGURED_BY_PROCESS_OWNER (D2)"): say it in words, keep the meaning.
+const noteText=n=>String(n||'').replace(/MUST_BE_CONFIGURED_BY_PROCESS_OWNER/g,'not yet set by its process owner').replace(/\s*\(D\d+\)/g,'').replace(/\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/g,m=>m.toLowerCase().replace(/_/g,' '));
 const reasonText=r=>isSecret(r)?'Access details have not been added yet':REASON_WORDS[r]||String(r).replace(/_/g,' ').toLowerCase();
 const EVIDENCE_WORDS={not_configured:'not configured',configured_untested:'configured, not yet tried',contract_verified:'contract checked, not used live',live_verified:'used live'};
 // One table row per connection: name (with a details disclosure), a state dot and word, and what is missing in one line. It renders into the Connections tab of the Settings sheet (settings-ui.js loads it
 // when the tab opens); text only, nothing from the server is ever written as markup.
 function connRow(c){const all=c.state==='ready'?[]:(c.reasons||[]).filter(r=>!(c.state==='mock'&&r==='ADAPTERS_NOT_LIVE')),why=[...new Set(all.slice(0,6).map(reasonText))].slice(0,3),names=all.filter(isSecret).map(r=>r.slice(15));
- const missing=[c.state==='mock'?'Reaches a test destination only: “Mock — not connected”.':'',...why,c.note||''].filter(Boolean).join(' · ')||'Nothing missing.';
+ const missing=[c.state==='mock'?'Reaches a test destination only: “Mock — not connected”.':'',...why,noteText(c.note)].filter(Boolean).join(' · ')||'Nothing missing.';
  const detail=[(c.direction==='inbound'?'Reads from it':'Sends to it')+' · step '+c.workflow_step+(c.built_in?' · built into ATLAS':''),c.status==='not_configured'?'':EVIDENCE_WORDS[c.status]||String(c.status||'').replace(/_/g,' '),names.length?'Settings to add on the server (names only): '+names.join(', '):''].filter(Boolean).join(' · ');
  return h('tr',{class:'conn-row','data-conn':c.id,'data-state':c.state},
   h('th',{scope:'row',class:'conn-name'},h('b',{text:c.label}),h('details',{class:'conn-more'},h('summary',{text:'For IT'}),h('p',{class:'tiny muted',text:detail}))),
