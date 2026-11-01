@@ -30,7 +30,7 @@
     "ELEVENLABS_MODEL": "eleven_flash_v2_5",
     "ELEVENLABS_VOICE_ID": "21m00Tcm4TlvDq8ikWAM"
   }
-  // Secrets (never committed): CSRF_SECRET (deploy.sh); optional via set-keys.sh: HINDSIGHT_API_KEY, TYPESAFE_API_KEY, ELEVENLABS_API_KEY
+  // Secrets (never committed): CSRF_SECRET and SETTINGS_KEY (deploy.sh; SETTINGS_KEY seals the ElevenLabs key an admin saves in Settings -> Voice); optional via set-keys.sh: HINDSIGHT_API_KEY, TYPESAFE_API_KEY, ELEVENLABS_API_KEY
   // Optional WOW vars (docs/WOW_SPEC.md section 5), all unset by default; Tony decides and sets them, no values here:
   // EXTERNAL_EMAILS (exact confirmer emails, comma-separated), CLIENT_CONFIRM (1)
   // Zero-setup vars (docs/WOW_ZERO_CONFIG.md sections 4 and 5), all unset by default, no values here:

@@ -24,6 +24,7 @@ import { nameClaims, pushConfig } from './profile.js';
 import { checkpointEnabled } from './checkpoint.js';
 import { connectionsView } from './connectors.js';
 import * as privacy from './privacy.js';
+import { voiceAdminRoutes } from './settings.js';
 import { RETENTION } from './policy.generated.js';
 
 const enc = new TextEncoder();
@@ -321,6 +322,11 @@ async function route(request, env, page, { waitUntil = p => p, flagsOf = flags }
     if (url.pathname === '/api/connections/status' && request.method === 'GET') {
       if (role !== 'admin') { sec.log('access_denied', 'ADMIN_ONLY', 403); return json(env, { error: 'Only an ATLAS admin can see the connections.' }, 403); }
       return new Response(JSON.stringify(connectionsView(env)), { headers: headers(env, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }) });
+    }
+    // Admin voice settings (v2.2 V2, settings.js): the provider, the ElevenLabs key (write-only, sealed in the LibraryStore), the voice and the model. Admins only; the module checks the role, Origin and CSRF, rate limits and the AI-off switch.
+    if (url.pathname === '/api/admin/voice' || url.pathname.startsWith('/api/admin/voice/')) {
+      return voiceAdminRoutes({ request, env, url, role, sec, limited, libraryOf, json: (body, status) => json(env, body, status), headers: extra => headers(env, extra),
+        csrfRefusal: () => csrfRefusal(request, env, csrf, sec), synthesize: text => workersAI(env).synthesize(text, 'atlas', 'en') });
     }
     if (url.pathname === '/api/voice') {
       if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected a WebSocket upgrade.', { status: 426 });

@@ -14,6 +14,8 @@
 //   FAKE_TYPESAFE=1 node dev/local-edge.mjs: JEV runs against the local fake TypeSafe (dev/fake-typesafe.mjs, model id
 //   fake-jev-local) with a local key; /__typesafe_mode?m=ok|down|unsure switches it. Without FAKE_TYPESAFE there is no
 //   key, and every request to api.typesafe.ai is refused: a local run never reaches a paid provider.
+//   FAKE_ELEVENLABS=1: the Settings sheet's ElevenLabs calls (voice list, key check, test voice) run against dev/fake-elevenlabs.mjs, which accepts one key (FAKE_ELEVENLABS_KEY, default
+//   local-fake-elevenlabs-key); without it api.elevenlabs.io is refused. SETTINGS_KEY (32+ characters) lets an admin store that key; /__elevenlabs_calls lists what the fake was asked.
 import http from 'node:http';
 import { readFileSync } from 'node:fs';
 import { handle } from '../src/app.js';
@@ -23,6 +25,7 @@ import { memorySql } from '../test/sqlite.js';
 import { fakeModel } from './fake-model.mjs';
 import { fakeHindsight } from './fake-hindsight.mjs';
 import { fakeTypesafe } from './fake-typesafe.mjs';
+import { fakeElevenlabs } from './fake-elevenlabs.mjs';
 import { storyRater } from '../src/rating.js';
 import { postDraftFromInterview } from '../src/evidence.js';
 import { installRuntime, upgradeHandler } from './local-ws.mjs';
@@ -38,10 +41,12 @@ const jwk = { ...(await crypto.subtle.exportKey('jwk', publicKey)), kid: 'local'
 const realFetch = globalThis.fetch;
 const HS = 'https://hindsight.local.invalid', fakeHs = fakeHindsight();
 const TYPESAFE = 'https://api.typesafe.ai/', FAKE_TYPESAFE = process.env.FAKE_TYPESAFE === '1', fakeTs = FAKE_TYPESAFE ? fakeTypesafe({ key: 'local-fake-key' }) : null;
+const ELEVEN = 'https://api.elevenlabs.io/', fakeEl = process.env.FAKE_ELEVENLABS === '1' ? fakeElevenlabs({ key: process.env.FAKE_ELEVENLABS_KEY || 'local-fake-elevenlabs-key' }) : null;
 globalThis.fetch = async (url, init) => {
   const u = String(url instanceof Request ? url.url : url);
   if (u === `https://${TEAM}/cdn-cgi/access/certs`) return new Response(JSON.stringify({ keys: [jwk] }));
   if (u.startsWith(HS)) return fakeHs(url, init);
+  if (u.startsWith(ELEVEN)) { if (fakeEl) return fakeEl(u, init); throw new TypeError('Local run: api.elevenlabs.io is refused (set FAKE_ELEVENLABS=1 for the local fake).'); }
   if (u.startsWith(TYPESAFE)) { if (fakeTs) return fakeTs(u, init); throw new TypeError('Local run: api.typesafe.ai is refused (set FAKE_TYPESAFE=1 for the local fake).'); }
   return realFetch(url, init);
 };
@@ -59,7 +64,7 @@ const waitUntil = p => { const q = Promise.resolve(p); pending.add(q); q.finally
 // Opt-in feature vars pass through from the shell when set (never defaulted here): WOW_SPEC §5, WOW_ZERO_CONFIG §4.
 // DATA_MODE stays unset (test mode) unless the shell sets it; the DNA variables never have a local default.
 const passthrough = Object.fromEntries(['EXTERNAL_EMAILS', 'CLIENT_CONFIRM', 'IDENTITY_SOURCE', 'DATA_MODE', 'DNA_PROFILE_URL', 'DNA_AUTH_HEADER', 'DNA_FIELD_MAP', 'DNA_API_KEY',
-  'DIRECTORY_PUSH_SECRET', 'ATLAS_ADAPTERS', 'ATLAS_CSP', 'RL_INTERVIEW_HOUR', 'RL_INTERVIEW_DAY'].filter(k => process.env[k]).map(k => [k, process.env[k]]));
+  'DIRECTORY_PUSH_SECRET', 'ATLAS_ADAPTERS', 'ATLAS_CSP', 'RL_INTERVIEW_HOUR', 'RL_INTERVIEW_DAY', 'SETTINGS_KEY', 'ATLAS_SETTINGS_KEYS', 'ELEVENLABS_API_KEY', 'ELEVENLABS_PROVIDER'].filter(k => process.env[k]).map(k => [k, process.env[k]]));
 // The interview's offline models: the talker streams like Workers AI (server-sent events), speech recognition hears nothing, voices are silent.
 const sse = text => new ReadableStream({ start(c) { const e = new TextEncoder(); for (const w of text.match(/\S+\s*/g) || []) c.enqueue(e.encode(`data: ${JSON.stringify({ response: w })}\n\n`)); c.enqueue(e.encode('data: [DONE]\n\n')); c.close(); } });
 const env = { ORIGIN, ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, CSRF_SECRET: 'local-only', TALKER_MODEL: 'local', TTS_VOICE: 'local', STT_MODEL: 'local-stt', TTS_MODEL: 'local-tts',
@@ -104,6 +109,7 @@ const server = http.createServer(async (req, res) => {
     const who = decodeURIComponent(url.searchParams.get('as') || 'consultant@mantu.com').toLowerCase(), r = await postDraftFromInterview(env, { user: who, role: 'user', mail: who }, JSON.parse(Buffer.concat(body).toString() || '{}'));
     res.writeHead(r.status || 502, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(r.body)); return;
   }
+  if (url.pathname === '/__elevenlabs_calls') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(fakeEl ? fakeEl.calls : [])); return; } // test hook: what the fake ElevenLabs was asked (paths only)
   if (url.pathname === '/__expire') { expired = true; res.end('ok'); return; }
   if (url.pathname === '/__typesafe_mode') { // test hook (FAKE_TYPESAFE only): ok | down (529) | unsure
     if (!fakeTs) { res.statusCode = 404; res.end('FAKE_TYPESAFE is off'); return; }

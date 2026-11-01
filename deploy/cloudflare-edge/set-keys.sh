@@ -22,8 +22,11 @@ put() { # $1 secret name, $2 value (never echoed)
     if printf '%s' "$2" | $WRANGLER secret put "$1" >/dev/null 2>&1; then echo "✓ $1 stored"; else echo "✗ $1 could not be stored (is wrangler logged in? run: npx wrangler login)"; fi
   else echo "· $1 skipped: $REASON"; fi
 }
+# The ElevenLabs key can also be pasted by an admin in ATLAS -> Settings -> Voice (stored sealed, never shown again; needs the SETTINGS_KEY secret that deploy.sh creates). A key stored there wins over
+# this one; this one stays as the server-level fallback.
 # Hindsight Cloud (https://api.hindsight.vectorize.io) is the default; set HINDSIGHT_URL only for a self-hosted server.
 ask 'Hindsight API key (Hindsight Cloud → Organization → API Keys; hidden)' true; put HINDSIGHT_API_KEY "$VALUE"
 ask 'TypeSafe (JEV) API key (hidden)' true; put TYPESAFE_API_KEY "$VALUE"
 ask 'ElevenLabs API key for French, Portuguese, German and more (hidden; English and Spanish work without it)' true; put ELEVENLABS_API_KEY "$VALUE"; VALUE=""
+echo "Tip: an admin can add or change the ElevenLabs key later in ATLAS → Settings → Voice, without this script."
 echo "Secrets apply immediately (no redeploy needed). Verify: ATLAS → your profile → 'Test Hindsight and JEV connections'."
