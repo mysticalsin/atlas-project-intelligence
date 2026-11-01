@@ -48,6 +48,7 @@ async function interview(d, st) {
   const c = connect(d); await c.p; c.server.fire('message', start());
   await until(() => ready(c.server) && spoken(c.server).includes('Where would you like to start?'));
   await until(() => !d.session.busy());
+  if (d.session.protectedItem) d.session.playedMs[d.session.protectedItem] = 1e9; // the greeting has played (the browser's acknowledgement; v2.2 V1: sending no longer takes as long as playing)
   typed(c.server, ANSWER); await until(() => spoken(c.server).includes(QUESTION) && !d.session.busy());
   await until(() => st.keys().some(k => k.endsWith(':meta')) && !d.session.ckptRun);
   return c;
@@ -111,6 +112,7 @@ test('ATLAS_CHECKPOINT=off: no checkpoint, a dropped socket ends the session as 
   const st = new FakeStorage(), d = new Interview({ storage: st }, env({ ATLAS_CHECKPOINT: 'off' }));
   const c = connect(d); await c.p; c.server.fire('message', start()); await until(() => ready(c.server) && !d.session.busy());
   assert.ok(!('sessionId' in ready(c.server)));
+  if (d.session.protectedItem) d.session.playedMs[d.session.protectedItem] = 1e9; // the greeting has played (the browser's acknowledgement)
   typed(c.server, ANSWER); await until(() => spoken(c.server).includes(QUESTION) && !d.session.busy()); await settle(30);
   c.server.fire('close'); await d.session.ending;
   assert.equal(st.keys().filter(k => !k.startsWith('rl:') && k !== 'consent').length, 0); assert.ok(c.server.events().some(x => x.type === 'ended')); // rl: = the interview-start counter (ratelimit.js); consent = the person's consent state (privacy.js): neither is interview content
