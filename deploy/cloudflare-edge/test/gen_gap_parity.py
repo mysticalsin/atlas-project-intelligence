@@ -42,6 +42,19 @@ STATUS = [
     [ASKS, {'G2': 1}, {'G1': ['one two three four five six'], 'G2': ['a﻿b c d e f'], 'G3': [None, 7, 'x']}, []],
     [ASKS[:1], {'G1': 0}, {'G1': []}, []],
     [[], {}, {}, [D('D-001', 'outcome', 'reported')]],
+    # v2.2 U2 (Tony, 2026-10-31): "I don't know", "no idea", "pass", "next question" are re-angled (up to GAP_REANGLES = 2) before the ask is recorded unknown; "I can't share" is accepted at once.
+    [ASKS, {'G1': 1, 'G2': 1, 'G3': 1}, {'G1': ["I don't know"], 'G2': ['no idea'], 'G3': ['pass']}, []],
+    [ASKS, {'G1': 2, 'G2': 2, 'G3': 2}, {'G1': ["I don't know", 'no idea'], 'G2': ['pass', 'next question'], 'G3': ['skip', 'dunno']}, []],
+    [ASKS, {'G1': 3, 'G2': 3, 'G3': 3}, {'G1': ["I don't know", 'no idea', 'honestly no clue'], 'G2': ['pass', 'next question', 'skip it'], 'G3': ['skip', "I'm not sure", 'dunno']}, []],
+    [ASKS, {'G1': 3, 'G2': 4, 'G3': 2}, {'G1': ['no idea', 'Yes, about three.'], 'G2': ['pass', 'Not really.'], 'G3': ['Maybe banks.']}, []],
+    [ASKS, {'G1': 2, 'G2': 3, 'G3': 4}, {'G1': ["I don't know", 'it was nine days before'], 'G2': ["I don't know"], 'G3': ["I don't know", 'no idea']}, []],
+    [ASKS, {'G1': 2, 'G2': 2, 'G3': 2}, {'G1': ["I don't know", LONG], 'G2': ["I don't know", "I can't share that, it is under NDA"], 'G3': ['It is confidential']}, []],
+    [ASKS, {'G1': 2}, {'G1': ['no idea', 'the ops team may know']}, [D('D-001', 'outcome', 'unknown')]],
+    [ASKS, {'G1': 1, 'G2': 2, 'G3': 3}, {'G1': ['je ne sais pas'], 'G2': ['aucune idée', 'je passe'], 'G3': ['question suivante', 'passe', 'je ne sais pas']}, [], 'fr'],
+    [ASKS, {'G1': 1, 'G2': 2, 'G3': 3}, {'G1': ['weiß ich nicht'], 'G2': ['keine Ahnung', 'nächste Frage'], 'G3': ['pass', 'weiß ich nicht', 'Das kann ich nicht teilen']}, [], 'de'],
+    [ASKS, {'G1': 1, 'G2': 2, 'G3': 3}, {'G1': ['no lo sé'], 'G2': ['ni idea', 'siguiente pregunta'], 'G3': ['paso', 'no sé', 'no tengo ni idea']}, [], 'es'],
+    [ASKS, {'G1': 2, 'G2': 3, 'G3': 3}, {'G1': ['non lo so', 'non posso condividerlo'], 'G2': ['non ne ho idea', 'passo'], 'G3': ['non lo so', 'prossima domanda', 'passo']}, [], 'it'],
+    [ASKS, {'G1': 1, 'G2': 3, 'G3': 3}, {'G1': ['weet ik niet'], 'G2': ['geen idee', 'volgende vraag', 'ik pas'], 'G3': ['weet ik niet', 'overslaan', 'ik pas']}, [], 'nl'],
 ]
 
 TIMES = [[900, 'full'], [300, 'gap'], [900, 'gap'], [300, 'full'], [120, 'full'], [121, 'full'], [10, 'full'], [30, 'full'], [50, 'full'], [1, 'full'], [45.5, 'full'], [0, 'gap']]

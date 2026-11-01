@@ -2,7 +2,7 @@
 // Same browser protocol as atlas_voice/cascade.py, so the compiled ATLAS page, worklet and orb work unchanged:
 // the orb moves only from PCM this session actually sends for playback.
 import { LANG_SUMMARY_LINES, LANG_GENERATED_LINES, TALKER_POLICY, OPENING, HISTORY, TOPICS, ADMIN_NOTE, SPEAKING_LIMIT_S, INTERVIEW_LIMIT_S, WRAP_S, TIME_UP, AREAS, TIME_PLAN, TIME_UP_MESSAGE, FIELDS,
-  GAP_LIMIT_S, GAP_SPEAKING_S, GAP_WRAP_S, GAP_MAX, GAP_OPENING, WIN_HINTS, BANNED_PRAISE_SRC, ASR_TAU, PAUSE_LINES, RESUME_LINES, SELECTOR_METRIC_PARTS } from './policy.generated.js';
+  GAP_LIMIT_S, GAP_SPEAKING_S, GAP_WRAP_S, GAP_MAX, GAP_OPENING, WIN_HINTS, BANNED_PRAISE_SRC, ASR_TAU, PAUSE_LINES, RESUME_LINES, SELECTOR_METRIC_PARTS, ACKS } from './policy.generated.js';
 import { gapSystemBlock, gapNotes, gapStatus, gapGuidance, timePlan } from './gap-policy.js';
 import { Analyst, InterviewLedger } from './ledger.js';
 import { EnergyTurns, isEcho, Phrases, speakable, sentences, ReplyGuard, GUARD_MAX_WORDS } from './speech.js';
@@ -58,6 +58,24 @@ function cacheSet(key, pcm) {
 export const pcmCacheStats = () => ({ entries: PCM_CACHE.size, bytes: pcmCacheSize });
 export function clearPcmCache() { PCM_CACHE.clear(); pcmCacheSize = 0; }
 export { SPEAKING_LIMIT_S, TIME_UP };
+// A piece of speech being synthesised (v2.2 V1): its PCM chunks are kept as they arrive and read in order, so the first of them can be sent for playback while the rest
+// is still coming. Iterating it yields the chunks and throws the synthesis error (if any) after the last one.
+class Synthesis {
+  constructor() { this.chunks = []; this.done = false; this.error = null; this.waiters = []; }
+  push(c) { this.chunks.push(c); this.wake(); }
+  finish(error = null) { this.done = true; this.error = error; this.wake(); }
+  wake() { const w = this.waiters; this.waiters = []; for (const r of w) r(); }
+  async *[Symbol.asyncIterator]() {
+    for (let i = 0; ;) {
+      while (i < this.chunks.length) yield this.chunks[i++];
+      if (this.done) { if (this.error) throw this.error; return; }
+      await new Promise(r => this.waiters.push(r));
+    }
+  }
+}
+const chunksOf = async function* (x) { if (x instanceof Synthesis) yield* x; else yield await x; }; // a whole buffer (cached or not streamed) is one chunk
+const TTS_NOTICE = 'The ElevenLabs voice did not answer, so ATLAS used the standard voice for that sentence.';
+const TTS_NOTICE_TRIPPED = 'The ElevenLabs voice failed three times in a row, so ATLAS uses the standard voice for the next minute.';
 
 // Agent Brain v2.1 switches, read from the Worker env (app.js hands them to the Session through ai.flags). Each defaults to the
 // new behaviour; the legacy values reproduce the earlier one exactly (analyst guidance one turn late, stock fillers, no reply guard).
@@ -145,7 +163,12 @@ export function paceNotes(elapsedS, limitS, notes, admin = false) {
   } else pace += missing.length ? ' Next uncovered area: ' + missing[0] + '.' : ' Every area has an answer: go deeper only on the one or two claims that matter most.';
   return [admin ? ADMIN_NOTE : '', pace];
 }
-export const LEAD_MS = 300; // max audio sent ahead of what the browser has played
+export const LEAD_MS = 500; // audio sent ahead of what the browser has played (v2.2 V1: the browser ring holds 1 s; was 300 ms with a pacer that never reached it)
+export const VOICE_PREPARE_MS = 1500; // the most a session waits for the voice settings before it starts
+export const ACK_STALE_S = 1; // playback reports older than this are no reports: pacing falls back to the wall clock until they come again
+// Barge-in on confirmed words (v2.2 V1). Sound over her voice only ducks her volume; she stops when speech recognition hears BARGE_WORDS words that are not her own echo
+// and the consultant has been voiced for BARGE_VOICED seconds. A reply the consultant has heard part of is never withdrawn (agent_retract), only interrupted.
+export const BARGE_WORDS = 2, BARGE_VOICED = 0.6, BARGE_RECHECK = 0.8, BARGE_CHECKS = 4;
 const START_KEYS = ['type', 'csrf', 'consent', 'project', 'voice', 'capture', 'memory', 'language', 'languageLock', 'gap', 'resume', 'mode'];
 // X1: `mode` in `start` is 'voice' (the default) or 'text'. A text interview needs no microphone: no audio frames are expected, the microphone watchdog is off, ATLAS's replies
 // are text only (no speech synthesis at all, so no cost and nothing aloud in a quiet office), and everything else (selector, acknowledgements, guard, summary, evidence,
@@ -315,6 +338,9 @@ export class Session {
     // The detector ends a turn only at THINKING_PAUSE; the session applies END_SILENCE itself unless the turn model heard an unfinished thought.
     this.sttChain = Promise.resolve(); this.turnDetector = new EnergyTurns(THINKING_PAUSE); this.bytesIn = 0; this.startedAt = 0; this.lastInput = 0;
     this.nextTime = 0; this.currentItem = null; this.timer = null; this.lastAudio = -1e9; this.cutOff = false; this.sentMs = {}; this.playedMs = {};
+    // v2.2 V1: ackAt (when the last playback report came), prevItem/itemCut (audio of the reply before is still in the browser's buffer: it counts against the lead),
+    // cand (a sound over her voice that may become a barge-in), ducked (her volume is lowered), fellBack (a piece of this isolate's voice came from the fallback voice).
+    this.ackAt = -1e9; this.prevItem = null; this.itemCut = false; this.cand = null; this.ducked = false; this.ttsNotified = false;
   }
 
   event(type, values = {}) { if (!this.finished || ['audio_stopped', 'reporting', 'notes', 'ended', 'error', 'quality', 'quality_warning'].includes(type)) this.io.send({ type, ...values }); }
@@ -364,7 +390,7 @@ export class Session {
       // Flow control: the browser reports audio actually played; never run more than LEAD_MS ahead of it.
       const { item_id: item, played_ms: ms } = value;
       if (Object.keys(value).length === 3 && typeof item === 'string' && typeof ms === 'number' && Number.isFinite(ms) && ms >= 0 && ms <= (this.sentMs[item] || 0) + 1) {
-        this.playedMs[item] = Math.max(this.playedMs[item] || 0, ms); this.acked = true;
+        this.playedMs[item] = Math.max(this.playedMs[item] || 0, ms); this.acked = true; this.ackAt = this.now();
         // Everything sent has been played: from this point of the microphone stream on, speech cannot be her echo.
         if (!this.playbackDone && item === this.currentItem && !this.queue.some(c => c.bytes.length) && this.playedMs[item] >= (this.sentMs[item] || 0) - 40) {
           this.playbackDone = true; this.doneAt = this.bytesIn;
@@ -405,23 +431,27 @@ export class Session {
     } else if (this.blip && !d.active && this.now() - d.loud - this.blip.at > BLIP_JOIN) this.expireBlip(); // speech already under way still joins
     if (started) {
       // Speaking again before ATLAS has really answered (still transcribing, composing, or only a second or so into her
-      // reply) means the consultant had not finished: what follows is the rest of the same answer. Her reply stops at
-      // once if audible; a reply not yet audible is held and withdrawn only if they actually add words.
+      // reply) means the consultant had not finished: what follows is the rest of the same answer. A reply nothing of which has been heard is held
+      // and withdrawn only if they actually add words. A reply they have heard part of is never withdrawn: sound over her voice ducks her volume, and
+      // she stops only when speech recognition confirms words (below), as an ordinary interruption.
       const replying = this.turns > 0 && this.replyTurn === this.turns && this.busy(), item = this.replyItem;
       // What they have actually heard of her reply: acknowledged playback (else what was sent, less the lead), without
       // the acknowledgement word and without the time it took to notice them speaking.
       const heard = replying ? (this.playedMs[item] ?? Math.max(0, (this.sentMs[item] || 0) - LEAD_MS)) - (this.fillerMs[item] || 0) - d.loud * 1000 : 0;
       this.continuing = carried || this.sttBusy > 0 || (replying && heard <= CONTINUE_MS);
       if (this.continuing) {
-        if (audible && !this.greetingPlaying()) this.withdraw();
         this.metric('turn_resumed', { heard_ms: replying ? Math.round(heard) : -1, filler_ms: replying ? Math.round(this.fillerMs[item] || 0) : -1, transcribing: this.sttBusy > 0 ? 1 : 0 });
         this.event('user_speaking');
-      } else if (audible && !this.greetingPlaying()) {
-        // Barge-in only stops audio the consultant can actually hear; noise cannot cancel a reply still being composed.
+      }
+      if (audible && !this.greetingPlaying()) {
         // The first piece of the greeting is not interruptible (room noise must not cut the introduction); everything after it is, the second piece included.
-        this.interrupt(); this.cutOff = true; this.metric('barge_in', {}); this.event('user_speaking');
+        // Barge-in only stops audio the consultant can actually hear, and only for words: a candidate ducks her volume now and is checked below.
+        this.cand = { checks: 0, lastVoiced: 0, pending: false, echoable: this.echoable, at: this.now() };
+        this.duck(true); this.metric('barge_candidate', {});
+        if (!this.continuing) this.event('user_speaking');
       }
     }
+    if (this.cand) this.tendCandidate();
     if (utterance) {
       // endedAt: the consultant's last sound (feed() leaves the silence count in place when it completes an utterance)
       const endedBy = this.pause === 'unfinished' ? 'thinking' : 'silence', endedAt = this.now() - this.turnDetector.quiet;
@@ -482,14 +512,47 @@ export class Session {
   }
 
   // What is known about the utterance that just ended, taken once (the next utterance starts fresh).
-  takeUtterance() { const u = { continuing: this.continuing, echoable: this.echoable }; this.continuing = false; this.echoable = false; return u; }
+  takeUtterance() { const u = { continuing: this.continuing, echoable: this.echoable }; this.continuing = false; this.echoable = false; this.endCandidate(); return u; }
+
+  // Her volume goes down while a sound over her voice is being checked, and back up when it is not an interruption (the browser also lets it go by itself after 3 s).
+  duck(on) {
+    if (on === this.ducked && !on) return;
+    this.ducked = on; this.event('duck', { on });
+  }
+  // A candidate is a sound over her voice that began while she was audible. It is checked, not obeyed: once the consultant has been voiced for BARGE_VOICED seconds
+  // the audio so far is transcribed, and she stops only when it holds BARGE_WORDS words that are not her own echo. Checked again every BARGE_RECHECK seconds of voice
+  // (at most BARGE_CHECKS times); a sound that is never words only ever dipped her volume.
+  tendCandidate() {
+    const c = this.cand, d = this.turnDetector;
+    if (!d.active) { this.endCandidate(); return; }
+    if (c.pending || c.checks >= BARGE_CHECKS || this.voiced < BARGE_VOICED || this.voiced - c.lastVoiced < (c.checks ? BARGE_RECHECK : BARGE_VOICED)) return;
+    c.pending = true; c.checks += 1; c.lastVoiced = this.voiced;
+    if (c.checks > 1) this.duck(true);
+    this.confirmBarge(c, d.buffer.slice(), this.voiced);
+  }
+  endCandidate() { if (!this.cand) return; this.cand = null; this.duck(false); }
+  async confirmBarge(c, pcm, voiced) {
+    let text = '', t0 = this.now(), timer;
+    try { // (probe: a check of a sound over her voice, not a turn; bounded like any transcription)
+      const heard = await Promise.race([this.ai.transcribe(pcm, { ...(this.languageLocked ? { language: this.language } : {}), probe: true }), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), this.sttTimeout); })]);
+      text = (typeof heard === 'string' ? heard : heard?.text || '').trim();
+    } catch { text = ''; } finally { clearTimeout(timer); }
+    if (this.cand !== c || this.finished || this.ending) return; // the utterance ended meanwhile: the ordinary turn decides
+    c.pending = false;
+    const recent = this.live?.text || this.history.filter(m => m.role === 'assistant').at(-1)?.content || '';
+    const echo = !!text && c.echoable && isEcho(text, recent), n = echo ? 0 : text.split(/\s+/).filter(w => /[\p{L}\p{N}]/u.test(w)).length;
+    this.metric('barge_check', { ms: Math.round((this.now() - t0) * 1000), words: n, echo: echo ? 1 : 0, voiced_ms: Math.round(voiced * 1000) });
+    if (n >= BARGE_WORDS && this.busy()) { this.cand = null; this.interrupt(); this.cutOff = true; this.metric('barge_in', { voiced_ms: Math.round(voiced * 1000) }); this.event('user_speaking'); return; }
+    this.duck(false);
+  }
 
   // Take back the reply to the consultant's last turn: they had not finished. Not an interruption, not in the history,
   // and its text is removed from the on-screen transcript.
   withdraw() {
     if (this.replyTurn !== this.turns || !this.replyItem || this.discarded.has(this.replyItem) || !this.busy()) return;
     const item = this.replyItem;
-    this.discarded.add(item); this.gen += 1; this.queue = [];
+    if ((this.sentMs[item] || 0) > 0) return; // v2.2 V1: something of it was heard: it is never taken back (no clear_audio, no agent_retract); finishTurn interrupts it instead
+    this.discarded.add(item); this.gen += 1; this.queue = []; this.itemCut = true;
     this.uncommit(item); // a withdrawn reply asked nothing: its move leaves the asked log
     this.stopped();
     // A withdrawn reply is not an attempt either: its ask goes back to where it was (gap mode).
@@ -589,6 +652,9 @@ export class Session {
         return this.fail(RESUME_UNAVAILABLE, 'resume-unavailable');
       }
     } else this.sessionId = newSessionId();
+    // The voice provider (the admin's stored choice or the environment's, settings.js): read before `ready` announces which languages can be spoken. Bounded, and a failure
+    // changes nothing (the last known choice stays).
+    if (this.ai.prepareVoice) { let timer; try { await Promise.race([this.ai.prepareVoice(), new Promise(r => { timer = setTimeout(r, VOICE_PREPARE_MS); })]); } catch { /* the environment's choice stays */ } finally { clearTimeout(timer); } if (this.finished || this.ending) return; }
     this.started = true; this.lastInput = this.now(); if (!this.resumed) this.startedAt = this.lastInput;
     this.event('ready', { model: 'ATLAS', provider: 'ATLAS voice', sampleRate: 24000, speakingSeconds: this.speakingLimit, capture: this.capture, liveLedger: !!this.analyst,
       maxSeconds: this.mode === 'full' ? hardLimit(this.softSeconds) : this.maxSeconds, ...(this.mode === 'full' ? { softSeconds: this.softSeconds } : {}), input: this.textMode ? 'text' : 'voice', language: this.languageInfo(), voices: this.voiceList(), message: this.textMode ? 'Typed session ready. Type your answers. Candidate notes require your review.' : 'Voice session ready. Speak naturally. Candidate notes require your review.',
@@ -623,7 +689,7 @@ export class Session {
   // details (an ask's field may also be answered by a detail the analyst filed there).
   gapStatuses() {
     const answers = Object.fromEntries(Object.entries(this.gapAnswers).map(([id, turns]) => [id, turns.map(parts => parts.join(' '))]));
-    return gapStatus(this.gapAsks, this.gapAttempts, answers, this.ledger ? this.ledger.details.filter(d => d.active) : []);
+    return gapStatus(this.gapAsks, this.gapAttempts, answers, this.ledger ? this.ledger.details.filter(d => d.active) : [], this.language);
   }
 
   // A consultant turn joins the answer window of the ask they last heard. The rest of a turn they had paused in
@@ -668,7 +734,12 @@ export class Session {
   // A reply that was withdrawn or interrupted but has not yet noticed (awaiting the model or the voice) is not busy.
   busy() { return (!!this.speaking && this.replyGen === this.gen) || this.queue.length > 0; }
 
-  audible() { return this.queue.length > 0 || this.now() - this.lastAudio < 0.3; }
+  // Her voice can be heard (v2.2 V1: for the whole reply, not only the instant a chunk goes out): something queued, sound still in the browser's buffer (acknowledged
+  // playback, else the wall clock), or a reply that has begun to be heard and is not finished.
+  audible() {
+    return this.queue.length > 0 || (this.ackFresh() ? !this.playbackDone : this.now() - this.lastAudio < 0.3) || (this.busy() && (this.sentMs[this.replyItem] || 0) > 0);
+  }
+  ackFresh() { return this.acked && this.now() - this.ackAt < ACK_STALE_S; }
   greetingPlaying() { return !!this.protectedItem && (this.playedMs[this.protectedItem] || 0) < this.protectedMs - 50 && this.now() < this.protectedDeadline; }
 
   // What the consultant heard of a reply cut short (the text sent with its audio) is recorded now, before their next
@@ -695,7 +766,10 @@ export class Session {
     this.uncommit(this.replyItem, true, keepState); // cut before she said her own words: the move was not asked
     this.stopped();
     this.protectedItem = null; // nothing protected is playing any more
-    this.gen += 1; this.queue = [];
+    // Gap mode: a closing or a reflect-back (a reply that carries no ask) that the consultant spoke over gives the answer window back: what they say next still answers the ask they had.
+    if (this.askHeard?.item === this.replyItem && !this.askHeard.id) { this.openAsk = this.askHeard.before; this.askHeard = null; }
+    this.gen += 1; this.queue = []; this.itemCut = true;
+    this.cand = null; this.duck(false);
     this.event('clear_audio');
   }
 
@@ -812,8 +886,13 @@ export class Session {
       if (short && turn.intents.includes('pause')) return this.pauseSession('voice');
       if (short && turn.intents.includes('repeat')) return this.repeatQuestion('voice');
     }
-    // Admin (Tony) gets the same patience, without the nudge or an acknowledgement (and keeps the analyst's guidance).
-    if (this.admin) return this.startReply(undefined, { turn: this.turns, endedAt, notBefore: trailing && endedBy !== 'thinking' ? endedAt + THINKING_PAUSE : 0, timeline: { sttMs, selectorMs: -1 } });
+    // Admin (Tony) gets the same patience, without the nudge (and keeps the analyst's guidance)...
+    // v2.2 V1: ...and a short neutral acknowledgement from cache after a real answer (no praise, never a question), so the silence before her first word is the transcription and
+    // nothing more, as it is for everyone else; the talker is called in parallel with it.
+    if (this.admin) {
+      const ack = endedBy !== 'thinking' && !trailing && this.flags.acks === 'content' ? this.ackFor(turn, null, text, undefined, false) : null;
+      return this.startReply(undefined, { turn: this.turns, endedAt, notBefore: trailing && endedBy !== 'thinking' ? endedAt + THINKING_PAUSE : 0, filler: ack ? ack.text : '', ack, timeline: { sttMs, selectorMs: -1 } });
+    }
     if (endedBy !== 'thinking' && !trailing) {
       // The read-back is open: a short reply means nothing to add (ATLAS points to the Confirm button and waits, no model call); a correction is taken by the
       // normal path (the selector, the analyst's supersede); anything longer is more to say, so the interview goes on.
@@ -1322,12 +1401,12 @@ export class Session {
 
   // The acknowledgement for this answer (ack.js): from the selector's category and the cues of the words, never from a judgement
   // of the person. Null in admin, after a question, at the time limit or when the answer is short.
-  ackFor(turn, move, text, sinceEarned) {
+  ackFor(turn, move, text, sinceEarned, admin = this.admin) {
     const h = this.humane, prev = h.prevAck ?? null;   // prevAck: the category of the acknowledgement before this one (none after a reply without one), so a neutral one is never said twice running
     h.prevAck = null;
     if (move?.reaction === 'none') return null; // the selector goes straight to the move (a repeat, an offer to move on, a read-back, a close)
     const words = turn ? turn.words : String(text).split(/\s+/).filter(Boolean).length;
-    const ack = pickAck({ category: move?.ack_category ?? 'neutral', cues: turn?.cues ?? [], words, lang: this.language, recent: h.acks.slice(-4), admin: this.admin, timeUp: this.timeUp,
+    const ack = pickAck({ category: move?.ack_category ?? 'neutral', cues: turn?.cues ?? [], words, lang: this.language, recent: h.acks.slice(-4), admin, timeUp: this.timeUp,
       afterQuestion: !!turn?.intents.includes('question_to_atlas') || /[?？\u061f]\s*$/.test(text), repliesSinceEarned: sinceEarned, prevCategory: prev, seed: this.turns });
     h.prevAck = ack ? ack.category : null;
     return ack;
@@ -1407,14 +1486,41 @@ export class Session {
     return list[this.lastFiller];
   }
 
+  // The PCM cache key: the language, the voice and the provider (provider, voice id and model), so audio of one voice is never replayed after a switch to another.
+  ttsKey(lang, text) { return lang + '|' + this.voice + '|' + (this.ai.voiceKey ? this.ai.voiceKey(lang) : '') + '|' + text; }
+  // A fallback of the voice (ElevenLabs to Aura, or to text): counted, and shown to the admin (who can act on it) once, again when the breaker trips.
+  noteFallback(info) {
+    this.metric('tts_fallback', { reason: info.reason || 'error', status: info.status || 0, tripped: info.tripped ? 1 : 0, midstream: info.midstream ? 1 : 0, to: info.to || 'aura' });
+    if (this.admin && (!this.ttsNotified || info.tripped)) { this.ttsNotified = true; this.event('quality_warning', { message: info.tripped ? TTS_NOTICE_TRIPPED : TTS_NOTICE }); }
+  }
+
   // measure: a piece of a reply (not a prewarm), reported as numbers only: synthesis time, audio length, characters, cache hit.
   async synth(text, lang, measure = false, fixed = false) { // fixed: a stock phrase (greeting, acknowledgement), cached whatever its length
     if (this.textMode || !this.voiceOk(lang)) return new Uint8Array(0); // a text interview, or a language no voice can say: nothing is synthesised, the reply is shown
-    const key = lang + '|' + this.voice + '|' + text, keep = fixed || text.length <= 220, cached = keep ? cacheGet(key) : null, t0 = this.now();
-    const pcm = cached || await this.ai.synthesize(text, this.voice, lang);
-    if (!cached && keep) cacheSet(key, pcm);
+    const key = this.ttsKey(lang, text), keep = fixed || text.length <= 220, cached = keep ? cacheGet(key) : null, t0 = this.now();
+    let fell = false;
+    const pcm = cached || await this.ai.synthesize(text, this.voice, lang, { onFallback: i => { fell = true; this.noteFallback(i); } });
+    if (!cached && keep && !fell) cacheSet(key, pcm); // (audio from the fallback voice is not kept under the chosen voice's key)
     if (measure) this.metric('tts', { ms: cached ? 0 : Math.round((this.now() - t0) * 1000), audio_ms: Math.round(pcm.length / 48), chars: text.length, cached: cached ? 1 : 0 });
     return pcm;
+  }
+
+  // The same for a piece of a reply, as a stream (the voice provider streams: ai.synthesizeStream): chunks are readable while the rest is still being made.
+  // previousText: what was said before this piece in the reply, for the provider's intonation across pieces.
+  synthStream(text, lang, previousText = '') {
+    const out = new Synthesis(), key = this.ttsKey(lang, text), keep = text.length <= 220, cached = keep ? cacheGet(key) : null, t0 = this.now();
+    if (cached) { out.push(cached); out.finish(); this.metric('tts', { ms: 0, audio_ms: Math.round(cached.length / 48), chars: text.length, cached: 1 }); return out; }
+    let fell = false, n = 0, failure = null;
+    (async () => {
+      try { for await (const c of this.ai.synthesizeStream(text, this.voice, lang, { previousText, onFallback: i => { fell = true; this.noteFallback(i); } })) { n += c.length; out.push(c); } }
+      catch (e) { failure = e; }
+      if (!failure && n && keep && !fell) { const whole = new Uint8Array(n); let o = 0; for (const c of out.chunks) { whole.set(c, o); o += c.length; } cacheSet(key, whole); }
+      this.metric('tts', { ms: Math.round((this.now() - t0) * 1000), audio_ms: Math.round(n / 48), chars: text.length, cached: 0 });
+      // An error after some audio was made ends the piece there (it was heard; the reply is not failed for it); before any audio it surfaces where the piece is delivered.
+      if (failure && n) { this.metric('tts_error', { midstream: 1, name: failure?.name || 'Error' }); failure = null; }
+      out.finish(failure);
+    })();
+    return out;
   }
 
   // Fill the cache with this language's acknowledgements without delaying anything: the legacy fillers at once (four lines), the
@@ -1425,8 +1531,7 @@ export class Session {
     if (this.warmed.has(lang)) return; // each language once per session: its lines are in the cache (or being put there), and an old line is never synthesised again
     this.warmed.add(lang);
     if (this.flags.acks === 'legacy') { for (const f of FILLERS[lang] || []) this.synth(f, lang).catch(() => {}); return; }
-    if (this.admin) return;
-    const todo = ackPrewarmList(lang);
+    const todo = this.admin ? ['neutral', 'setback_neutral', 'setback_plain'].flatMap(c => ACKS[c]?.[lang] || []) : ackPrewarmList(lang); // (admin: only the neutral lines it can be given)
     const lane = async () => { for (let t = todo.shift(); t !== undefined; t = todo.shift()) { if (this.finished) return; if (this.language !== lang) { this.warmed.delete(lang); return; } await this.synth(t, lang, false, true).catch(() => {}); } };
     for (let i = 0; i < PREWARM_LANES; i++) lane();
   }
@@ -1480,34 +1585,54 @@ export class Session {
       if (!pending || gen !== this.gen || this.finished) return;
       this.push({ gen, item, bytes: new Uint8Array(0), text: pending }); pending = '';
     };
-    // One piece of speech: its audio (being synthesised, or ready), sent for playback once the floor is hers.
+    // One piece of speech: its audio (being synthesised, or ready), sent for playback as it arrives. The floor is waited for only before the reply's first audio
+    // (v2.2 V1): once she has begun, a piece never waits for a pause in the consultant (a sound over her voice only ducks her volume; words stop her, see onBinary).
+    let floored = false;
     const deliver = async (sentence, synthesis, filler = false, lead = false) => {
-      const pcm = await synthesis;
+      const chunks = chunksOf(synthesis)[Symbol.asyncIterator]();
+      let first = null, asText = textual;
+      try { first = await chunks.next(); } catch (e) { if (e?.code !== 'TTS_TEXT_FALLBACK') throw e; asText = true; } // the voice could not say it (a language only ElevenLabs speaks): the piece is shown
       // Never start talking over the consultant (or while their last words are still being transcribed), and leave
       // the extra beat after words that trail off. Any of these can end in a withdrawal (gen changes).
-      while (!(only && this.paused) && (this.turnDetector.active || this.sttBusy > 0 || this.now() < notBefore) && gen === this.gen && !this.finished) await this.sleep(20); // (the pause line has nobody to wait for: the microphone is closed)
+      while (!floored && !(only && this.paused) && (this.turnDetector.active || this.sttBusy > 0 || this.now() < notBefore) && gen === this.gen && !this.finished) await this.sleep(20); // (the pause line has nobody to wait for: the microphone is closed)
+      floored = true;
       if (!firstAudio) {
         firstAudio = this.now(); this.metric('reply', { first_text_ms: Math.round((firstText - t0) * 1000), first_audio_ms: Math.round((firstAudio - t0) * 1000) });
         // The measure of "answers too quick": the consultant's last sound to ATLAS's first sound (numbers only).
         if (endedAt && gen === this.gen) { gapMs = Math.round((this.now() - endedAt) * 1000); this.metric('reply_gap', { ms: gapMs, filler: isFiller ? 1 : 0, thinking: thinking ? 1 : 0 }); }
       }
-      if (gen !== this.gen || this.finished) return;
+      if (gen !== this.gen || this.finished) { chunks.return?.(); return; }
       // The text of exactly this piece (and any separator before it), not the next sentence's first words already streamed.
       const at = pending.indexOf(sentence), cut = at >= 0 ? at + sentence.length : pending.length, piece = pending.slice(0, cut);
       pending = pending.slice(cut);
-      if (textual) this.push({ gen, item, bytes: pcm, text: piece, lead, silent: true }); // text only: released at once, in order, with no audio to wait for
-      else for (let i = 0; i < pcm.length; i += CHUNK) this.push({ gen, item, bytes: pcm.subarray(i, Math.min(pcm.length, i + CHUNK)), text: i ? '' : piece, lead });
-      if (filler) this.fillerMs[item] = (this.fillerMs[item] || 0) + pcm.length / 48; // the acknowledgement's own audio, not counted as her reply
+      if (asText) { this.push({ gen, item, bytes: new Uint8Array(0), text: piece, lead, silent: true }); chunks.return?.(); return; } // text only: released at once, in order, with no audio to wait for
+      let rest = new Uint8Array(0), textOut = false, sent = 0;
+      const out = (bytes, last) => { // whole 20 ms frames as they fill; the first carries the piece's text; what is left over waits for the next chunk (or goes out at the end)
+        if (rest.length) { const m = new Uint8Array(rest.length + bytes.length); m.set(rest); m.set(bytes, rest.length); bytes = m; rest = new Uint8Array(0); }
+        let i = 0;
+        for (; i + CHUNK <= bytes.length; i += CHUNK) { this.push({ gen, item, bytes: bytes.subarray(i, i + CHUNK), text: textOut ? '' : piece, lead }); textOut = true; }
+        if (i < bytes.length) { if (last) { this.push({ gen, item, bytes: bytes.subarray(i), text: textOut ? '' : piece, lead }); textOut = true; } else rest = bytes.slice(i); }
+      };
+      for (let r = first; r && !r.done; r = await chunks.next()) {
+        if (gen !== this.gen || this.finished) { chunks.return?.(); return; }
+        sent += r.value.length; out(r.value, false);
+      }
+      if (gen !== this.gen || this.finished) return;
+      out(new Uint8Array(0), true);
+      if (!textOut) this.push({ gen, item, bytes: new Uint8Array(0), text: piece, lead }); // no audio came: the text still goes out, in order
+      if (filler) this.fillerMs[item] = (this.fillerMs[item] || 0) + sent / 48; // the acknowledgement's own audio, not counted as her reply
     };
     // Pipelined: a piece is synthesised as soon as its text is complete, while the piece before it is still being
     // synthesised or waiting for the floor (at most SYNTH_AHEAD at once). Deliveries run strictly one after another, so
-    // audio and text keep their order and every wait above applies to each piece exactly as before.
-    let chain = Promise.resolve(); const inflight = [];
+    // audio and text keep their order. The acknowledgement (prefix) is the first delivery of the same chain: the talker is called at once, in parallel with it.
+    let chain = Promise.resolve(); const inflight = []; let context = pieces.join(' ');
+    const queue = fn => { chain = chain.then(fn); chain.catch(() => {}); return chain; };
     const say = async piece => {
       const text = speakable(piece); // markup is never voiced; the screen keeps it
       if (!text) return; // nothing to say: its text goes out with the next piece (or release())
-      const synthesis = this.synth(text, lang, true); synthesis.catch(() => {}); // a failure surfaces where it is delivered
-      chain = chain.then(() => deliver(piece, synthesis)); chain.catch(() => {});
+      const previous = context; context += (context ? ' ' : '') + text;
+      const synthesis = this.ai.synthesizeStream && !textual ? this.synthStream(text, lang, previous) : this.synth(text, lang, true); synthesis.catch?.(() => {}); // a failure surfaces where it is delivered
+      queue(() => deliver(piece, synthesis));
       inflight.push(chain);
       while (inflight.length >= SYNTH_AHEAD) await inflight.shift();
     };
@@ -1518,12 +1643,15 @@ export class Session {
         syntheses.forEach(x => x.catch(() => {}));
         for (let i = 0; i < pieces.length; i++) {
           show((i === 0 && this.replies > 1 ? '\n\n' : '') + pieces[i] + ' '); said += pieces[i] + ' ';
-          await deliver(pieces[i], syntheses[i], isFiller, true); if (gen !== this.gen || this.finished) return;
-          if (isFiller && ack) this.ackPlayed(ack);
-          if (!isFiller && !only && i === 0 && !textual) { // protect exactly the greeting's first piece: until the browser confirms it played (capped); the rest can be interrupted
-            this.protectedItem = item; this.protectedMs = (this.sentMs[item] || 0) + this.queue.filter(c => c.item === item).reduce((n, c) => n + c.bytes.length, 0) / 48 - before;
-            this.protectedDeadline = this.now() + this.protectedMs / 1000 + 3;
-          }
+          queue(async () => {
+            if (gen !== this.gen || this.finished) return;
+            await deliver(pieces[i], syntheses[i], isFiller, true); if (gen !== this.gen || this.finished) return;
+            if (isFiller && ack) this.ackPlayed(ack);
+            if (!isFiller && !only && i === 0 && !textual) { // protect exactly the greeting's first piece: until the browser confirms it played (capped); the rest can be interrupted
+              this.protectedItem = item; this.protectedMs = (this.sentMs[item] || 0) + this.queue.filter(c => c.item === item).reduce((n, c) => n + c.bytes.length, 0) / 48 - before;
+              this.protectedDeadline = this.now() + this.protectedMs / 1000 + 3;
+            }
+          });
         }
       }
       if (only) { // a pause line, a resume line, a question said again: the pieces are the whole reply
@@ -1700,8 +1828,18 @@ export class Session {
 
   push(chunk) { this.queue.push(chunk); if (this.waiter) { const w = this.waiter; this.waiter = null; w(); } }
 
+  // How much audio the browser still has buffered for this item, in ms: what was sent less what it reports played, plus what the item before it has left (it is
+  // still playing while this one starts arriving, and both are in the browser's ring buffer).
+  aheadMs(item) {
+    let ahead = (this.sentMs[item] || 0) - (this.playedMs[item] || 0);
+    if (item === this.currentItem && this.prevItem && !(this.playedMs[item] > 0)) ahead += Math.max(0, (this.sentMs[this.prevItem] || 0) - (this.playedMs[this.prevItem] || 0));
+    return ahead;
+  }
+
   async pace() {
-    // Real-time paced playback, identical to the Python route: 20 ms chunks, stale generations dropped.
+    // Credit-based playback (v2.2 V1): with playback reports, audio goes out at once while less than LEAD_MS is buffered in the browser, so a late tick or a slow frame
+    // costs nothing; without them (older clients, a background tab: no report for ACK_STALE_S) the wall clock keeps the same lead. A late tick is never lost as silence:
+    // the pacer simply sends on without sleeping until it is LEAD_MS ahead again.
     while (!this.finished) {
       if (!this.queue.length) { this.dry = true; await new Promise(r => { this.waiter = r; }); continue; }
       const { gen, item, bytes, text, lead, silent } = this.queue.shift(), textual = this.textMode || silent === true;
@@ -1713,11 +1851,9 @@ export class Session {
         this.dry = false;
         if (!lead) this.composedItem = item;
       }
-      // Bounded lead over acknowledged playback (browser ring buffer holds 350 ms). Without acknowledgements
-      // (older clients, background tabs) fall back to wall-clock pacing after ~1 s of waiting.
-      for (let wait = 0; wait < 50 && (this.sentMs[item] || 0) - (this.playedMs[item] || 0) > LEAD_MS && gen === this.gen && !this.finished; wait++) await this.sleep(20);
+      for (let wait = 0; wait < 250 && this.ackFresh() && this.aheadMs(item) > LEAD_MS && gen === this.gen && !this.finished; wait++) await this.sleep(20);
       if (gen !== this.gen || this.finished) continue;
-      if (this.currentItem !== item && (bytes.length || !textual)) { this.currentItem = item; this.event('audio_turn', { item_id: item }); }
+      if (this.currentItem !== item && (bytes.length || !textual)) { this.prevItem = this.itemCut ? null : this.currentItem; this.itemCut = false; this.currentItem = item; this.event('audio_turn', { item_id: item }); }
       if (text) this.showText(item, text);
       if (!bytes.length && !(textual && !lead)) continue; // (a typed interview, or a reply no voice can say, has no audio: its composed text chunks count as the reply being heard, below)
       // Gap mode: the consultant starts hearing a reply that carries an ask (its first composed audio; a greeting or an
@@ -1731,7 +1867,8 @@ export class Session {
       if (this.playbackDone) this.resumedAt = this.bytesIn; // where in the microphone stream her audio starts again
       this.io.sendBytes(bytes); this.playbackDone = false; this.spokenMs += bytes.length / 48; this.lastAudio = this.now(); this.sentMs[item] = (this.sentMs[item] || 0) + bytes.length / 48;
       this.nextTime = Math.max(this.nextTime, this.now()) + bytes.length / 48000;
-      await this.sleep(Math.max(0, this.nextTime - this.now()) * 1000);
+      const early = this.nextTime - this.now() - LEAD_MS / 1000; // how far past the lead the wall clock says she is
+      if (!this.ackFresh() && early > 0) await this.sleep(early * 1000);
     }
   }
 

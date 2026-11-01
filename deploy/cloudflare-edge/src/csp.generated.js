@@ -2,7 +2,6 @@
 // Every executable inline <script> of the page, as CSP hash tokens (no quotes). The runtime data block is JSON, not code, so it has none.
 export const PAGE_SCRIPT_HASHES = [
   "sha256-2sbhUOpCUTDabxq8ZJUOMjOlfZoDsQlKlrScgh+W9uY=",
-  "sha256-4wHNUMJstK8675+pPqQ1iLH4XcbczozB0u+cjG43Hjc=",
   "sha256-5rYG/h4Ubn327dlqfQNG0U+awlwJqo1NGOPJMM7Vvz0=",
   "sha256-6JjcHUVU2k8Im57vno8SuO3mrPt4XSBhi9Kqt6rZnkA=",
   "sha256-7TzFqYrxSW/rC3sX/Bk2aJnN8tlRr1NWaT1e+YrM3TQ=",
@@ -12,15 +11,16 @@ export const PAGE_SCRIPT_HASHES = [
   "sha256-EDTbw2nx5SJhFdMOBddfpohZ6cO9brUzyrts87BhxMs=",
   "sha256-EeL4PaJwZFNGjiY5AYttd8d1TrgnUFf/tiRKweJzi+8=",
   "sha256-GUpHpcCtSH1/S17CQbayd+mxfOqid7/BW0gll+yJATM=",
+  "sha256-H1M3lVud1BDhv0y+FP8YBAQYAOA9g57+KUSdpza+y4k=",
   "sha256-I8cjyoH1ILkVjafMZPPvPYM7v0EVWcHp2ctYrvDggq4=",
   "sha256-IRbkAJ6laZnjOxTZpi88EsCiRgkZ5MmlRvpf4/8IPTI=",
+  "sha256-IdIgXjjLMavviDVhA3qpkHH0iaEPKD8rlyjpz11YMCQ=",
   "sha256-KRxXcVneiOL0qX5sWQJ81yqpkQsTRuJUfiZFGDxYzy8=",
   "sha256-PLvAtKbMmNTz55W+r8CI1A4zsyeqT0HInVOG9wYNXNg=",
-  "sha256-TuunT0tuyt1+Ge8+T3BtjvC4NvDmp+ZJ49JNhSzFoz0=",
-  "sha256-WQ9csD5uSR01ILenFJKs6KvDgDYywn9rVXxXKNIWmkQ=",
-  "sha256-Yq+Qzu+TpdSuQxChXTBaBQYbRZsRtsiZwUqsb6+k86M=",
   "sha256-dRyQY94fh58qsuz51lYciZTYQXaT4oTzPPJZIrXaGj4=",
+  "sha256-dfN6IHa8gqA7+LOXooUX/QmS/TQD9QS4251OYBeTtRk=",
   "sha256-egwYU6GKGZ+zIe7DTPY3L72N0s5A54sq1FyksiTO0zE=",
+  "sha256-klL4UMMaJZVck7xiOUanszUww5gumaPGxZsslCSArLw=",
   "sha256-koZaRuuWEUV4RuLLlfA85f2X8cquQ/eUwrLgrLnJifA=",
   "sha256-lHYn+L2sxtl5pY/A1l1eAZljS/p4NK0pSmaaPMAlOk4=",
   "sha256-m4WzjClJn7Qcr1QUi0IrOujw2BAmaXWQSmipwqF8+dA=",
@@ -30,6 +30,6 @@ export const PAGE_SCRIPT_HASHES = [
   "sha256-qFB/hfHfs0IRGFPk2rlmogHSpX9ljAyLfP3tzIZOJ8I=",
   "sha256-uma1Fy0clJN2UBocsCk5TUs8OQLpdpKmf1NB9gcaAZ4=",
   "sha256-upG0MDPwD2XNFEsZA5D2e0cu6ERjVCKhxha1cyFvDaQ=",
-  "sha256-vI8ZkmhulMluuBGQSNBYhDrfcGAmkVws0OJ61PAA2FE="
+  "sha256-vLb/3y5uVpkGSFWIvOczp9J9hjHDLhV6VzeEWoZNBDQ="
 ];
 export const RUNTIME_BLOCK = "<script id=\"atlas-runtime\" type=\"application/json\">{}</script>";

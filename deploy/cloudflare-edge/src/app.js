@@ -24,7 +24,9 @@ import { nameClaims, pushConfig } from './profile.js';
 import { checkpointEnabled } from './checkpoint.js';
 import { connectionsView } from './connectors.js';
 import * as privacy from './privacy.js';
+import { voiceAdminRoutes } from './settings.js';
 import { RETENTION } from './policy.generated.js';
+import { voiceConfig } from './settings.js';
 
 const enc = new TextEncoder();
 const ERASE_TOKEN_MS = 10 * 60 * 1000; // the confirmation of "Delete my data" is good for ten minutes, for this sign-in only
@@ -322,6 +324,11 @@ async function route(request, env, page, { waitUntil = p => p, flagsOf = flags }
       if (role !== 'admin') { sec.log('access_denied', 'ADMIN_ONLY', 403); return json(env, { error: 'Only an ATLAS admin can see the connections.' }, 403); }
       return new Response(JSON.stringify(connectionsView(env)), { headers: headers(env, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }) });
     }
+    // Admin voice settings (v2.2 V2, settings.js): the provider, the ElevenLabs key (write-only, sealed in the LibraryStore), the voice and the model. Admins only; the module checks the role, Origin and CSRF, rate limits and the AI-off switch.
+    if (url.pathname === '/api/admin/voice' || url.pathname.startsWith('/api/admin/voice/')) {
+      return voiceAdminRoutes({ request, env, url, role, sec, limited, libraryOf, json: (body, status) => json(env, body, status), headers: extra => headers(env, extra),
+        csrfRefusal: () => csrfRefusal(request, env, csrf, sec), synthesize: text => workersAI(env).synthesize(text, 'atlas', 'en') });
+    }
     if (url.pathname === '/api/voice') {
       if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected a WebSocket upgrade.', { status: 426 });
       if (request.headers.get('Origin') !== env.ORIGIN) { sec.log('origin_fail', request.headers.get('Origin') ? 'ORIGIN_MISMATCH' : 'ORIGIN_MISSING', 403); return new Response('Invalid voice origin', { status: 403 }); }
@@ -546,26 +553,98 @@ async function runReasoning(env, input) {
   catch { return env.AI.run(env.ANALYST_MODEL, input); }
 }
 
-// ElevenLabs Flash v2.5 (32 languages) as raw 24 kHz PCM, the same format as Aura. Optional: ELEVENLABS_API_KEY.
-async function elevenLabs(env, text, lang, fetcher = fetch) {
-  const voice = encodeURIComponent(env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM');
-  const r = await fetcher(`https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=pcm_24000`, { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(15000),
-    headers: { 'xi-api-key': env.ELEVENLABS_API_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ text, model_id: env.ELEVENLABS_MODEL || 'eleven_flash_v2_5', language_code: lang }) });
-  if (!r.ok) throw new Error('ElevenLabs HTTP ' + r.status);
-  const pcm = new Uint8Array(await r.arrayBuffer());
-  return pcm.length % 2 ? pcm.subarray(0, pcm.length - 1) : pcm;
+// ---- Speech synthesis (v2.2 V1). One primitive, ttsStream(): an async iterator of whole-sample 24 kHz PCM16 chunks, forwarded as they arrive.
+// Aura-2 (Workers AI) answers with a stream; ElevenLabs Flash v2.5 (32 languages) is POST /v1/text-to-speech/{voice}/stream with output_format=pcm_24000. When
+// ElevenLabs is the chosen provider it speaks every one of its languages, English and Spanish included. A piece that ElevenLabs cannot give (an error, 401, 429, or
+// no first byte within EL_FIRST_BYTE_MS) is spoken by Aura instead when Aura has the language (en, es); any other language falls back to text (the caller is told with
+// code TTS_TEXT_FALLBACK). After EL_BREAKER_FAILS failures in a row ElevenLabs is skipped for EL_BREAKER_MS. The caller hears of each fallback through onFallback.
+export const EL_FIRST_BYTE_MS = 3000, EL_TOTAL_MS = 20000, EL_BREAKER_FAILS = 3, EL_BREAKER_MS = 60000, VOICE_CONFIG_TTL_MS = 60000;
+const elBreaker = { fails: 0, openUntil: 0 };
+export function resetTtsBreaker() { elBreaker.fails = 0; elBreaker.openUntil = 0; }
+const envVoice = env => env?.ELEVENLABS_API_KEY ? { provider: 'elevenlabs', elevenlabs: { apiKey: env.ELEVENLABS_API_KEY, voiceId: env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM', modelId: env.ELEVENLABS_MODEL || 'eleven_flash_v2_5' }, source: 'env' } : { provider: 'aura', source: 'none' };
+const usesEleven = (cfg, lang) => cfg.provider === 'elevenlabs' && !!cfg.elevenlabs?.apiKey && ELEVENLABS_LANGUAGES.includes(lang);
+
+// Whole 16-bit samples only: a byte that ends a chunk waits for the next one (a trailing odd byte at the very end is dropped).
+export async function* pcmChunks(source) {
+  let carry = null;
+  const even = u8 => {
+    if (carry) { const m = new Uint8Array(carry.length + u8.length); m.set(carry); m.set(u8, carry.length); u8 = m; carry = null; }
+    if (u8.length % 2) { carry = u8.slice(u8.length - 1); u8 = u8.subarray(0, u8.length - 1); }
+    return u8;
+  };
+  const body = source instanceof Response ? source.body : source instanceof ReadableStream ? source : null;
+  if (body) {
+    const reader = body.getReader();
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) return;
+        const c = value?.length ? even(value instanceof Uint8Array ? value : new Uint8Array(value)) : null;
+        if (c?.length) yield c;
+      }
+    } finally { reader.cancel().catch(() => {}); }
+  }
+  const whole = source instanceof Uint8Array ? source : source instanceof ArrayBuffer ? new Uint8Array(source) : source?.audio ? Uint8Array.from(atob(source.audio), c => c.charCodeAt(0)) : new Uint8Array(0);
+  const c = even(whole);
+  if (c.length) yield c;
+}
+
+async function* elevenLabsStream(cfg, text, lang, { previousText = '', nextText = '', fetcher = fetch, firstByteMs = EL_FIRST_BYTE_MS } = {}) {
+  const { apiKey, voiceId, modelId } = cfg.elevenlabs, ctrl = new AbortController();
+  const first = setTimeout(() => ctrl.abort(Object.assign(new Error('first byte'), { name: 'TimeoutError' })), firstByteMs), total = setTimeout(() => ctrl.abort(Object.assign(new Error('total'), { name: 'TimeoutError' })), EL_TOTAL_MS);
+  try {
+    const body = { text, model_id: modelId, language_code: lang, ...(previousText ? { previous_text: previousText.slice(-300) } : {}), ...(nextText ? { next_text: nextText.slice(0, 300) } : {}) };
+    const r = await fetcher(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}/stream?output_format=pcm_24000`, { method: 'POST', redirect: 'manual', signal: ctrl.signal,
+      headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r.ok) throw Object.assign(new Error('ElevenLabs HTTP ' + r.status), { status: r.status });
+    let got = false;
+    for await (const c of pcmChunks(r)) { if (!got) { got = true; clearTimeout(first); } yield c; }
+    if (!got) throw Object.assign(new Error('ElevenLabs sent no audio'), { name: 'EmptyAudio' });
+  } finally { clearTimeout(first); clearTimeout(total); ctrl.abort(); }
+}
+const failureReason = e => e?.status === 401 || e?.status === 403 ? 'unauthorized' : e?.status === 429 ? 'rate_limited' : e?.status ? 'http_' + e.status : e?.name === 'TimeoutError' || e?.name === 'AbortError' ? 'timeout' : e?.name === 'EmptyAudio' ? 'no_audio' : 'error';
+
+async function* auraStream(env, text, speaker, lang) {
+  const es = lang === 'es';
+  yield* pcmChunks(await env.AI.run(es ? (env.TTS_MODEL_ES || '@cf/deepgram/aura-2-es') : env.TTS_MODEL, { text, speaker: es ? (env.TTS_VOICE_ES || 'celeste') : speaker === 'atlas' ? env.TTS_VOICE : speaker, encoding: 'linear16', container: 'none', sample_rate: 24000 }));
+}
+
+export async function* ttsStream(env, cfg, text, speaker, lang, { previousText = '', nextText = '', onFallback = null, fetcher = fetch, now = Date.now, firstByteMs = EL_FIRST_BYTE_MS } = {}) {
+  const note = info => { try { onFallback?.({ provider: 'elevenlabs', ...info }); } catch { /* a callback never stops the voice */ } };
+  const auraHas = NATIVE_VOICES.includes(lang), textOnly = () => Object.assign(new Error('ElevenLabs is unavailable and Aura has no voice for this language.'), { code: 'TTS_TEXT_FALLBACK' });
+  if (usesEleven(cfg, lang)) {
+    if (now() < elBreaker.openUntil) { note({ reason: 'breaker', to: auraHas ? 'aura' : 'text' }); if (!auraHas) throw textOnly(); }
+    else {
+      let got = false;
+      try {
+        for await (const c of elevenLabsStream(cfg, text, lang, { previousText, nextText, fetcher, firstByteMs })) { got = true; yield c; }
+        elBreaker.fails = 0; return;
+      } catch (e) {
+        elBreaker.fails += 1; const tripped = elBreaker.fails >= EL_BREAKER_FAILS;
+        if (tripped) { elBreaker.openUntil = now() + EL_BREAKER_MS; elBreaker.fails = 0; }
+        note({ reason: failureReason(e), status: e?.status || 0, tripped, midstream: got, to: got ? 'none' : auraHas ? 'aura' : 'text' });
+        if (got) return; // part of this piece was already voiced: it ends there, the next piece starts afresh
+        if (!auraHas) throw textOnly();
+      }
+    }
+  }
+  yield* auraStream(env, text, speaker, lang);
+}
+async function collectPcm(stream) {
+  const parts = []; let n = 0;
+  for await (const c of stream) { parts.push(c); n += c.length; }
+  const out = new Uint8Array(n); let o = 0; for (const c of parts) { out.set(c, o); o += c.length; }
+  return out;
 }
 
 // With ATLAS_AI_OFF every model call (Workers AI, ElevenLabs, scoring) fails closed with a 503-coded error before it leaves the Worker.
 export function workersAI(env) { return ks.aiOff(env) ? pausedAI(buildWorkersAI(env)) : buildWorkersAI(env); }
 function pausedAI(ai) {
   const stop = () => { throw Object.assign(new Error('AI is switched off by the operator.'), { status: 503, code: 'AI_OFF' }); };
-  return Object.fromEntries(Object.entries(ai).map(([k, v]) => [k, typeof v !== 'function' || k === 'speaks' ? v : k === 'chatStream' ? async function* () { stop(); } : async () => stop()]));
+  return Object.fromEntries(Object.entries(ai).map(([k, v]) => [k, typeof v !== 'function' || k === 'speaks' || k === 'voiceKey' || k === 'prepareVoice' ? v : k === 'chatStream' || k === 'synthesizeStream' ? async function* () { stop(); } : async () => stop()]));
 }
 function buildWorkersAI(env) {
-  const bytesOf = async r => r instanceof Uint8Array ? r : r instanceof ArrayBuffer ? new Uint8Array(r)
-    : r instanceof ReadableStream || r instanceof Response ? new Uint8Array(await new Response(r.body ?? r).arrayBuffer())
-    : r?.audio ? Uint8Array.from(atob(r.audio), c => c.charCodeAt(0)) : new Uint8Array(0);
+  let voice = envVoice(env), voiceAt = 0; // the voice provider in force: the environment until prepareVoice() has read the settings
   return {
     flags: sessionFlags(env), // ATLAS_SELECTOR, ATLAS_REPLY_GUARD, ATLAS_ACKS, ANALYST_WAIT_MS, SPECULATIVE_STT: read by the Session
     // Automatic language detection (Nova-3 "multi"): returns the text and the utterance's language. opts.language: a language the consultant locked in the UI, asked of the
@@ -588,13 +667,20 @@ function buildWorkersAI(env) {
       // No boolean verdict is no verdict (the session logs it as NoVerdict and uses the silence rule), never "unfinished".
       return typeof r?.is_complete === 'boolean' ? { complete: r.is_complete, probability: Number(r.probability) || 0 } : null;
     },
-    speaks(lang) { return NATIVE_VOICES.includes(lang) || (!!env.ELEVENLABS_API_KEY && ELEVENLABS_LANGUAGES.includes(lang)); }, // a voice that can say it: Aura-2 (en, es) or the configured ElevenLabs voice; else the reply is text
-    async synthesize(text, speaker = 'atlas', lang = 'en') { // 'atlas' = the configured voice; the browser never sees its real name
-      if (lang !== 'en' && lang !== 'es' && env.ELEVENLABS_API_KEY) return elevenLabs(env, text, lang);
-      const es = lang === 'es';
-      const pcm = await bytesOf(await env.AI.run(es ? (env.TTS_MODEL_ES || '@cf/deepgram/aura-2-es') : env.TTS_MODEL, { text, speaker: es ? (env.TTS_VOICE_ES || 'celeste') : speaker === 'atlas' ? env.TTS_VOICE : speaker, encoding: 'linear16', container: 'none', sample_rate: 24000 }));
-      return pcm.length % 2 ? pcm.subarray(0, pcm.length - 1) : pcm;
+    // A voice that can say it: Aura-2 (en, es) or, when ElevenLabs is the provider, any of its 32 languages; else the reply is text.
+    speaks(lang) { return NATIVE_VOICES.includes(lang) || usesEleven(voice, lang); },
+    // The voice in force for a language, as part of the PCM cache key: audio from one provider or voice is never replayed for another.
+    voiceKey(lang = 'en') { return usesEleven(voice, lang) ? `el:${voice.elevenlabs.voiceId}:${voice.elevenlabs.modelId}` : 'aura:' + (lang === 'es' ? (env.TTS_MODEL_ES || 'aura-2-es') + ':' + (env.TTS_VOICE_ES || 'celeste') : (env.TTS_MODEL || '') + ':' + (env.TTS_VOICE || '')); },
+    // The provider settings (settings.js voiceConfig: the admin's stored choice, else the environment), read at the start of a session and again after a minute.
+    async prepareVoice() {
+      if (Date.now() - voiceAt < VOICE_CONFIG_TTL_MS) return voice;
+      voiceAt = Date.now();
+      try { voice = (await voiceConfig(env, env.LIBRARY ? env.LIBRARY.get(env.LIBRARY.idFromName('global')) : null)) || voice; } catch { /* the last known choice stays */ }
+      return voice;
     },
+    // PCM chunks as they arrive. previousText / nextText: the neighbouring text of the same reply, so ElevenLabs carries the intonation across pieces.
+    synthesizeStream(text, speaker = 'atlas', lang = 'en', opts = {}) { return ttsStream(env, voice, text, speaker, lang, opts); }, // 'atlas' = the configured voice; the browser never sees its real name
+    async synthesize(text, speaker = 'atlas', lang = 'en', opts = {}) { return collectPcm(ttsStream(env, voice, text, speaker, lang, opts)); },
     // Session affinity keeps one interview on the same model instance, so the cached prompt prefix is reused.
     // A spoken reply is one or two sentences: TALKER_MAX_TOKENS (default 160, was 300) bounds it. When the caller stops reading (the
     // reply guard has what it needs) the generator's return() cancels the model stream, so no tokens are generated for nothing.

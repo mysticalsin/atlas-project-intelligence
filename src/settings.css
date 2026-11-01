@@ -1,0 +1,100 @@
+/* The Settings sheet (v2.2 V2): the profile dialog as a dark Mantu sheet with a tab rail (a full-screen sheet with a scrolling tab row on a phone). Loaded after fit.css so it can restyle the
+   light dialog rules for this one dialog only. Tokens come from styles.css; type stays at 12px or more and every target is 44px. */
+body.ui2 dialog.settings-sheet{width:min(940px,calc(100vw - 32px));max-width:none;padding:0;background:var(--surface);color:var(--text);color-scheme:dark;border:1px solid var(--line-2);border-radius:var(--r-dialog);overflow:hidden}
+body.ui2 dialog.settings-sheet[open]{display:flex;flex-direction:column;height:min(780px,calc(100vh - 32px));height:min(780px,calc(100dvh - 32px));max-height:none;overflow:hidden}
+body.ui2 dialog.settings-sheet::backdrop{background:rgba(8,8,9,.72)}
+body.ui2 dialog.settings-sheet .dialog-head{margin:0;padding:var(--s5) var(--s6) var(--s4);border-bottom:1px solid var(--line);align-items:center}
+body.ui2 dialog.settings-sheet .dialog-head h2{margin:0;font-size:22px;color:var(--text)}
+body.ui2 dialog.settings-sheet .dialog-head .eyebrow{margin:0 0 var(--s1);color:var(--accent)}
+body.ui2 dialog.settings-sheet .close{background:var(--raised);color:var(--text);border:1px solid var(--line-2)}
+.settings-layout{display:grid;grid-template-columns:196px minmax(0,1fr);grid-template-rows:minmax(0,1fr);flex:1 1 auto;min-height:0}
+.settings-tabs{display:flex;flex-direction:column;gap:var(--s1);padding:var(--s4) var(--s3);border-right:1px solid var(--line);overflow-y:auto}
+body.ui2 dialog.settings-sheet .settings-tab{display:flex;align-items:center;min-height:44px;padding:0 var(--s4);border:0;border-radius:var(--r-control);background:transparent;color:var(--text-2);font-size:14px;text-align:left;white-space:nowrap}
+body.ui2 dialog.settings-sheet .settings-tab:hover{background:var(--raised);color:var(--text)}
+body.ui2 dialog.settings-sheet .settings-tab[aria-selected=true]{background:var(--raised);color:var(--text);font-weight:500;box-shadow:inset 3px 0 0 var(--accent)}
+body.ui2 dialog.settings-sheet .settings-tab[data-admin-tab]::after{content:"Admin";margin-left:auto;padding-left:var(--s3);font-size:12px;color:var(--text-3)}
+.settings-panes{min-width:0;overflow-y:auto;overscroll-behavior:contain}
+.settings-pane{padding:var(--s5) var(--s6) var(--s6)}
+.settings-pane:focus-visible{outline-offset:-4px}
+.settings-pane h3.pane-title{margin:0 0 var(--s3);font-size:18px}
+.settings-pane h4{margin:var(--s5) 0 var(--s2);font-size:14px;font-weight:500;color:var(--text)}
+.settings-pane>h4:first-child,.settings-pane .settings-card>h4:first-child{margin-top:0}
+
+/* readable on the dark sheet: the light-dialog colours of ui.css are replaced inside it */
+body.ui2 dialog.settings-sheet :is(h3,h4,label,legend,summary){color:var(--text)}
+body.ui2 dialog.settings-sheet :is(.muted,.tiny.muted,.small.muted,.field-note,.field-label,.tiny){color:var(--text-2)}
+body.ui2 dialog.settings-sheet .check,body.ui2 dialog.settings-sheet .check span{color:var(--text)}
+body.ui2 dialog.settings-sheet .check small.field-note{color:var(--text-2)}
+body.ui2 dialog.settings-sheet a{color:var(--violet)}
+body.ui2 dialog.settings-sheet hr{border:0;border-top:1px solid var(--line);margin:var(--s5) 0}
+body.ui2 dialog.settings-sheet :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+body.ui2 dialog.settings-sheet :is(input:not([type=checkbox]):not([type=radio]),select,textarea){background:var(--bg);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r-control);padding:10px 12px;min-height:44px;font-size:14px}
+body.ui2 dialog.settings-sheet select[size]{padding:var(--s1)}
+body.ui2 dialog.settings-sheet select[size] option{padding:var(--s2) var(--s3);border-radius:6px}
+body.ui2 dialog.settings-sheet input::placeholder{color:var(--text-3)}
+body.ui2 dialog.settings-sheet :is(input[type=radio],input[type=checkbox]){accent-color:var(--accent)}
+body.ui2 dialog.settings-sheet .btn{background:var(--raised);color:var(--text);border:1px solid var(--line-2)}
+body.ui2 dialog.settings-sheet .btn:hover:not(:disabled){background:#2a2b33}
+body.ui2 dialog.settings-sheet .btn.primary{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+body.ui2 dialog.settings-sheet .btn.primary:hover:not(:disabled){background:#fff27a}
+body.ui2 dialog.settings-sheet .btn.danger-quiet{color:var(--bad)}
+body.ui2 dialog.settings-sheet .quiet{color:var(--violet)}
+body.ui2 dialog.settings-sheet :is(.privacy-panel,.memory-panel){border-top:0;margin-top:0;padding-top:0}
+body.ui2 dialog.settings-sheet .memory-panel{margin-top:var(--s6);padding-top:var(--s4);border-top:1px solid var(--line)}
+body.ui2 dialog.settings-sheet .privacy-panel h3,body.ui2 dialog.settings-sheet .memory-panel h3{margin:0 0 var(--s2);font-size:18px}
+body.ui2 dialog.settings-sheet .tag{background:var(--raised);color:var(--text-2);border:1px solid var(--line-2)}
+body.ui2 dialog.settings-sheet details{margin-top:var(--s4)}
+body.ui2 dialog.settings-sheet summary{cursor:pointer;min-height:32px}
+body.ui2 dialog.settings-sheet .actions{margin:var(--s4) 0 var(--s2)}
+.settings-card{padding:var(--s4);margin:var(--s4) 0;background:var(--raised);border:1px solid var(--line);border-radius:var(--r-card)}
+.settings-card .actions{margin-bottom:0}
+#profileSection:not([hidden])+#profileEmpty{display:none}
+.settings-pane .check{align-items:flex-start;margin-top:var(--s3);line-height:1.5}
+.settings-pane .check input{margin-top:3px}
+
+/* Voice */
+.settings-status{margin:0 0 var(--s4);padding:var(--s3) var(--s4);background:var(--raised);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:var(--r-control);font-size:14px;line-height:1.5;color:var(--text)}
+.settings-fieldset{margin:0 0 var(--s2);padding:0;border:0}
+.settings-fieldset legend{padding:0;margin-bottom:var(--s1);font-size:14px;font-weight:500}
+.settings-radio{padding:var(--s3);margin-top:var(--s2);border:1px solid var(--line);border-radius:var(--r-control);min-height:44px}
+.settings-radio:has(input:checked){border-color:var(--accent);background:var(--raised)}
+.settings-radio input:disabled+span{opacity:.6}
+.settings-radio small{display:block;margin-top:var(--s1)}
+.settings-row{display:flex;flex-wrap:wrap;gap:var(--s3);align-items:center}
+.settings-row .settings-input{flex:1 1 240px;width:auto}
+.settings-input{width:100%}
+.voice-list{margin:var(--s2) 0}
+.settings-actions{display:flex;flex-wrap:wrap}
+#voiceMsg{min-height:20px}
+#voiceMsg[data-bad="1"]{color:var(--bad)}
+
+/* Connections: a table, stacked on a phone */
+.conn-scroll{overflow-x:auto;margin:var(--s3) 0}
+.conn-table{width:100%;border-collapse:collapse;font-size:14px}
+.conn-table th,.conn-table td{padding:var(--s3);text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+.conn-table thead th{font-size:12px;font-weight:500;color:var(--text-2);letter-spacing:.02em}
+.conn-table tbody th{font-weight:400;min-width:160px}
+.conn-table .conn-name b{display:block;font-weight:500;overflow-wrap:anywhere}
+.conn-table .conn-why{color:var(--text-2);font-size:13px;overflow-wrap:anywhere;min-width:200px}
+.conn-table .conn-state{white-space:nowrap}
+body.ui2 dialog.settings-sheet .conn-more{margin-top:var(--s1);padding-top:0;border-top:0}
+.conn-more summary{font-size:12px;color:var(--text-2);min-height:24px}
+.conn-more p{margin:var(--s1) 0 0}
+
+@media(max-width:640px){
+ body.ui2 dialog.settings-sheet{width:100vw;max-width:100vw;margin:0;border-radius:0;border:0}
+ body.ui2 dialog.settings-sheet[open]{height:100vh;height:100dvh;max-height:none}
+ body.ui2 dialog.settings-sheet .dialog-head{padding:var(--s3) var(--s4)}
+ .settings-layout{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
+ .settings-tabs{flex-direction:row;overflow-x:auto;overflow-y:hidden;padding:var(--s2) var(--s3);border-right:0;border-bottom:1px solid var(--line);scroll-snap-type:x proximity}
+ body.ui2 dialog.settings-sheet .settings-tab{flex:none;scroll-snap-align:start;padding:0 var(--s4)}
+ body.ui2 dialog.settings-sheet .settings-tab[aria-selected=true]{box-shadow:inset 0 -3px 0 var(--accent)}
+ body.ui2 dialog.settings-sheet .settings-tab[data-admin-tab]::after{content:none}
+ .settings-pane{padding:var(--s4) var(--s4) var(--s6)}
+ .conn-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+ .conn-table,.conn-table tbody,.conn-table tr,.conn-table th,.conn-table td{display:block}
+ .conn-table tr{padding:var(--s3) 0;border-bottom:1px solid var(--line)}
+ .conn-table th,.conn-table td{padding:var(--s1) 0;border:0;min-width:0!important}
+ .settings-row .btn{flex:1 1 100%}
+}
+@media(prefers-reduced-motion:no-preference){body.ui2 dialog.settings-sheet .settings-tab{transition:background .15s var(--ease),color .15s var(--ease)}}

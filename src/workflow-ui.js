@@ -1,4 +1,4 @@
-/* AtlasWorkflowUI (T15, v2.2 F2: calm times, the reviewer's claims with their context, the admin Connections panel): the evidence workflow status in the Reference library view. One card per branch (Evidence, MAAP Review, Project
+/* AtlasWorkflowUI (T15, v2.2 F2: calm times, the reviewer's claims with their context, the admin Connections table, now in Settings): the evidence workflow status in the Reference library view. One card per branch (Evidence, MAAP Review, Project
    Review, DNA, MiChat, IMP, Spotlight), read from GET /api/library/evidence/:id/status and rendered by AtlasWorkflowCore. Read-only: nothing
    here approves, grants, publishes or syncs. Every dynamic string is set with textContent. Shown only on the live site when the
    deployment has the library and the evidence workflow (bootstrap features.evidence_workflow) and the person has evidence records. */
@@ -49,18 +49,25 @@ const STATE_WORDS={ready:'Ready',mock:'Mock',not_configured:'Not configured'};
 const REASON_WORDS={NOT_WIRED:'Not built yet',ADAPTERS_NOT_LIVE:'ATLAS is in mock mode',BASE_URL_MISSING:'Address not set',BASE_URL_INVALID:'Address is not valid',ENDPOINT_NOT_CONFIGURED:'Endpoint not set',FIELD_MAPPING_EMPTY:'Field mapping empty',ACK_RULE_MISSING:'Acknowledgement rule missing',TOKEN_URL_MISSING:'Token address not set',STATUS_NOT_CONFIGURED:'Not set up by its owner yet',NOT_HTTP_CONNECTOR:'Built into ATLAS'};
 const reasonText=r=>/^SECRET_MISSING:/.test(r)?'Credential '+r.slice(15)+' not set':REASON_WORDS[r]||String(r).replace(/_/g,' ').toLowerCase();
 const EVIDENCE_WORDS={not_configured:'not configured',configured_untested:'configured, not yet tried',contract_verified:'contract checked, not used live',live_verified:'used live'};
+// One table row per connection: name (with a details disclosure), a state dot and word, and what is missing in one line. It renders into the Connections tab of the Settings sheet (settings-ui.js loads it
+// when the tab opens); text only, nothing from the server is ever written as markup.
 function connRow(c){const why=c.state==='ready'?[]:(c.reasons||[]).filter(r=>!(c.state==='mock'&&r==='ADAPTERS_NOT_LIVE')).slice(0,3).map(reasonText);
- return h('li',{class:'conn-row','data-conn':c.id,'data-state':c.state},
-  h('div',{class:'conn-main'},h('b',{class:'conn-name',text:c.label}),h('span',{class:'tiny muted',text:(c.direction==='inbound'?'Reads from it':'Sends to it')+' · step '+c.workflow_step+(c.built_in?' · built into ATLAS':'')})),
-  h('div',{class:'conn-state'},h('span',{class:'conn-chip','data-state':c.state,text:STATE_WORDS[c.state]||c.state}),c.status==='not_configured'?null:h('span',{class:'tiny muted',text:EVIDENCE_WORDS[c.status]||String(c.status||'').replace(/_/g,' ')})),
-  h('p',{class:'tiny muted conn-why',text:[c.state==='mock'?'Reaches a test destination only: “Mock — not connected”.':'',...why,c.note||''].filter(Boolean).join(' · ')||'Nothing missing.'}));}
+ const missing=[c.state==='mock'?'Reaches a test destination only: “Mock — not connected”.':'',...why,c.note||''].filter(Boolean).join(' · ')||'Nothing missing.';
+ const detail=[(c.direction==='inbound'?'Reads from it':'Sends to it')+' · step '+c.workflow_step+(c.built_in?' · built into ATLAS':''),c.status==='not_configured'?'':EVIDENCE_WORDS[c.status]||String(c.status||'').replace(/_/g,' ')].filter(Boolean).join(' · ');
+ return h('tr',{class:'conn-row','data-conn':c.id,'data-state':c.state},
+  h('th',{scope:'row',class:'conn-name'},h('b',{text:c.label}),h('details',{class:'conn-more'},h('summary',{text:'Details'}),h('p',{class:'tiny muted',text:detail}))),
+  h('td',{class:'conn-state'},h('span',{class:'conn-chip','data-state':c.state,text:STATE_WORDS[c.state]||c.state})),
+  h('td',{class:'conn-why',text:missing}));}
 async function refreshConnections(){const box=$('connectionsPanel');if(!box)return;
- try{await window.AtlasAuth?.probe?.();const b=await app().bootInfo();if(window.AtlasAuth?.mode!=='live'||b.libraryRole!=='admin'){box.hidden=true;box.replaceChildren();return;}
-  const r=await window.AtlasAuth.fetch('/api/connections/status');if(!r.ok){box.hidden=true;return;}const v=await r.json(),list=Array.isArray(v.connections)?v.connections:[];if(!list.length){box.hidden=true;return;}
-  const n=s=>list.filter(c=>c.state===s).length;box.replaceChildren(h('div',{class:'wf-head'},h('div',{},h('p',{class:'eyebrow',text:'Admin only'}),h('h2',{class:'panel-title',id:'connectionsTitle',text:'Connections'}))),
-   h('p',{class:'small muted',text:'Where ATLAS reads from or hands work to other systems. '+n('ready')+' ready, '+n('mock')+' mock, '+n('not_configured')+' not configured. ATLAS is in '+(v.adapters==='live'?'live':'mock')+' mode: nothing reaches an outside system unless its connection is Ready and live.'}),
-   h('ul',{class:'conn-list'},...list.map(connRow)),h('p',{class:'tiny muted wf-note',text:'Names and yes/no only. No credential, address or token is shown here.'}));box.hidden=false;
- }catch(e){if(window.AtlasAuth&&e instanceof window.AtlasAuth.Expired)return;box.hidden=true;}}
+ try{await window.AtlasAuth?.probe?.();const b=await app().bootInfo();if(window.AtlasAuth?.mode!=='live'||b.libraryRole!=='admin'){box.replaceChildren();return;}
+  const r=await window.AtlasAuth.fetch('/api/connections/status');if(!r.ok){box.replaceChildren(h('p',{class:'small muted',text:'The connections could not be loaded right now.'}));return;}
+  const v=await r.json(),list=Array.isArray(v.connections)?v.connections:[];if(!list.length){box.replaceChildren(h('p',{class:'small muted',text:'No connections are defined.'}));return;}
+  const n=s=>list.filter(c=>c.state===s).length;
+  box.replaceChildren(h('h4',{id:'connectionsTitle',text:n('ready')+' ready · '+n('mock')+' mock · '+n('not_configured')+' not configured'}),
+   h('p',{class:'small muted',text:'ATLAS is in '+(v.adapters==='live'?'live':'mock')+' mode: nothing reaches an outside system unless its connection is Ready and live.'}),
+   h('div',{class:'conn-scroll'},h('table',{class:'conn-table'},h('thead',{},h('tr',{},h('th',{scope:'col',text:'Connection'}),h('th',{scope:'col',text:'State'}),h('th',{scope:'col',text:'What is missing'}))),h('tbody',{},...list.map(connRow)))),
+   h('p',{class:'tiny muted',text:'Names and yes/no only. No credential, address or token is shown here.'}));
+ }catch(e){if(window.AtlasAuth&&e instanceof window.AtlasAuth.Expired)return;box.replaceChildren(h('p',{class:'small muted',text:'The connections could not be loaded right now.'}));}}
 async function refresh({force=false}={}){
  if(busy)return busy;if(!force&&Date.now()-loadedAt<5000)return null;
  busy=(async()=>{try{
@@ -75,9 +82,9 @@ async function refresh({force=false}={}){
 }
 // Refresh whenever the Reference library view is shown (the section's `hidden` flag flips); and once after sign-in.
 function start(){const lib=$('library');if(!lib||!app())return;
- new MutationObserver(()=>{if(!lib.hidden){refresh();refreshConnections();}}).observe(lib,{attributes:true,attributeFilter:['hidden']});
- window.AtlasAuth?.onSignedIn?.(()=>{refresh({force:true});refreshConnections();});
- if(!lib.hidden){refresh();refreshConnections();}}
+ new MutationObserver(()=>{if(!lib.hidden)refresh();}).observe(lib,{attributes:true,attributeFilter:['hidden']});
+ window.AtlasAuth?.onSignedIn?.(()=>{refresh({force:true});if(!$('spane-connections')?.hidden)refreshConnections();});
+ if(!lib.hidden)refresh();}
 window.AtlasWorkflowUI={refresh:()=>refresh({force:true}),refreshConnections,model:C.model};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start);else start();
 })();

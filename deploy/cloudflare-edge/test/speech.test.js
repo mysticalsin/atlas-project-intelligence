@@ -137,12 +137,20 @@ test('ReplyGuard: a leading reaction that repeats a recent opener is dropped; on
   assert.equal(run(o, ['Got it. Got it, thanks for that.', 'Who?']).g.stats.dropped_repeat_opener, 1); // only the leading sentence is a reaction
 });
 
-test('ReplyGuard: the word cap cuts at a sentence when it can, at a word when it must, and ends the reply', () => {
+test('ReplyGuard: the word cap lands on a sentence end (v2.2 V1), cuts a sentence only when it runs far past the cap, and ends the reply', () => {
   const sentence = 'We looked at the numbers again and again for the quarter and the pipeline.'; // 14 words
   const a = run({}, [[sentence, sentence, sentence, sentence].join(' '), 'Who owned it?']);
   assert.equal(a.voiced[0][0], [sentence, sentence, sentence].join(' ')); assert.deepEqual(a.voiced[1], []); assert.equal(a.g.stats.capped_words, 1); assert.equal(a.doneAt, 0);
-  const one = run({}, [Array.from({ length: 60 }, (_, i) => 'w' + i).join(' ') + '.']).voiced[0][0];
-  assert.equal(one.split(' ').length, 45); assert.ok(one.endsWith('w44'));
+  // A sentence that has begun is finished, never cut at the word (60 words, 15 past the cap, is said whole); one that runs 25 words past is cut, at a clause when it has one.
+  const one = run({}, [Array.from({ length: 60 }, (_, i) => 'w' + i).join(' ') + '.']);
+  assert.equal(one.voiced[0][0].split(' ').length, 60); assert.equal(one.g.stats.capped_words, 1); assert.equal(one.doneAt, 0);
+  const huge = run({}, [Array.from({ length: 100 }, (_, i) => 'w' + i).join(' ') + '.']).voiced[0][0];
+  assert.equal(huge.split(' ').length, 70); assert.ok(huge.endsWith('w69'));
+  const clause = run({}, [Array.from({ length: 100 }, (_, i) => 'w' + i + (i === 60 ? ',' : '')).join(' ') + '.']).voiced[0][0];
+  assert.ok(clause.endsWith('w60'), 'cut at the last clause mark');
+  // The same sentence arriving in pieces (a first clause already said): the rest of it follows, and the reply ends at its end.
+  const parts = run({}, ['Before we get into the numbers and the detail,', 'tell me ' + Array.from({ length: 45 }, (_, i) => 'w' + i).join(' ') + '.', 'Who owned it?']);
+  assert.equal(parts.voiced[0][0].split(' ').length + parts.voiced[1][0].split(' ').length, 56); assert.deepEqual(parts.voiced[2], []); assert.equal(parts.doneAt, 1);
   assert.deepEqual(run({ max_words: 6 }, ['That is clear.', 'It worked well for us.']).voiced, [['That is clear.'], []]);
   assert.equal(run({ max_words: null }, [Array(200).fill('word').join(' ') + '.']).g.stats.capped_words, 0);
   // Exactly at the cap is fine; the next word is not.

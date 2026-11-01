@@ -11,4 +11,9 @@ $WRANGLER deploy
 if ! $WRANGLER secret list 2>/dev/null | grep -q CSRF_SECRET; then
   openssl rand -hex 32 | $WRANGLER secret put CSRF_SECRET >/dev/null && echo "CSRF_SECRET set."
 fi
+# SETTINGS_KEY (v2.2 V2) seals the keys an admin saves in ATLAS -> Settings -> Voice (AES-GCM, key derived with HKDF). Created once, like CSRF_SECRET; never printed. Rotating it makes saved keys unreadable until
+# they are saved again (put the old value in SETTINGS_KEY_PREVIOUS while rotating; handoff/SECURITY_RUNBOOK.md section 4).
+if ! $WRANGLER secret list 2>/dev/null | grep -q '"SETTINGS_KEY"'; then
+  openssl rand -hex 32 | $WRANGLER secret put SETTINGS_KEY >/dev/null && echo "SETTINGS_KEY set."
+fi
 echo "Live (Cloudflare Access, your email only): https://atlas.tony-walteur.workers.dev"

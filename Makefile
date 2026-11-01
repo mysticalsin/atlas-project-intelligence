@@ -48,6 +48,7 @@ test-ui: build
 	$(PYTHON) tests/humane_browser.py
 	$(PYTHON) tests/csp_browser.py
 	$(PYTHON) tests/ux_fit_browser.py
+	$(PYTHON) tests/settings_browser.py
 doctor:
 	$(PYTHON) scripts/doctor.py --profile preview
 verify-package:

@@ -6,7 +6,7 @@ const {html,setHTML}=window.AtlasSafe, P0={clean:t=>window.AtlasProfileCore?.cle
 const labels=['Context','Contribution','Approach','Outcome','Evidence','Customer relevance'];
 let boot=null, generation=0, socket=null, stream=null, audio=null, node=null, source=null;
 let phase='idle', muted=false, paused=false, pausedAt=null, pausedMs=0, controlsOn=null, current=null, startedAt=0, timer=null, heardOutput=false, accumulated='', lastNotes=null;let micLabel='',micPeak=0,micWatch=0;
-let outputItem=null, lastPlaybackAck=0;
+let outputItem=null, lastPlaybackAck=0, audioStats=null; // audioStats: the worklet's last meter (ms queued, times the buffer ran dry), for tests and diagnostics
 // Typed interview (X1): textMode: this interview has no microphone and ATLAS answers in text. wantInput: how the consent dialog was opened ('voice' | 'text'). typedPending: a typed turn
 // sent and not yet taken or refused by the server ({text, at}); the box keeps its text until the server echoes the turn. log: the conversation shown in a typed interview.
 let textMode=false, wantInput='voice', typedPending=null, typedTimer=0, lastHeardItem=null, focusTimer=0, log=[], heardTurns=new Set();
@@ -245,7 +245,7 @@ async function openAudio(token){
  node=new AudioWorkletNode(audio,'atlas-duplex',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1]});source=audio.createMediaStreamSource(stream);
  // Straight into the worklet: its band-limited resampler is the anti-alias filter (flat to 10 kHz, aliases >= 80 dB down).
  source.connect(node);node.connect(audio.destination);
- node.port.onmessage=e=>{if(token!==generation)return;const m=e.data;if(m.type==='pcm'){if(phase!=='live'||socket?.readyState!==1)return;if(socket.bufferedAmount>24000){fail('The connection cannot keep up with real-time audio. Check the network and restart.');return;}socket.send(m.buffer);}else if(m.type==='meter'){if(phase==='live'&&!muted)micPeak=Math.max(micPeak,m.mic||0); $('inputMeter').value=Math.min(1,m.mic*5);$('outputMeter').value=Math.min(1,m.speaker*5);window.AtlasOrbUI?.levels(m.mic,m.speaker,m.bands||null);if(boot?.playbackAck&&m.playedItem&&socket?.readyState===1&&performance.now()-lastPlaybackAck>80){lastPlaybackAck=performance.now();socket.send(JSON.stringify({type:'playback',item_id:m.playedItem,played_ms:m.playedMs}));}if(m.droppedSamples>0&&boot?.provider!=='personaplex'){fail('Playback buffer overflowed. Session stopped rather than misrepresenting what was heard.');return;}if(phase==='live')$('voiceState').textContent=m.speaker>.009?'ATLAS is speaking':paused?'Paused · microphone off':muted?'Microphone muted':providerName()+' · listening';}};
+ node.port.onmessage=e=>{if(token!==generation)return;const m=e.data;if(m.type==='pcm'){if(phase!=='live'||socket?.readyState!==1)return;if(socket.bufferedAmount>24000){fail('The connection cannot keep up with real-time audio. Check the network and restart.');return;}socket.send(m.buffer);}else if(m.type==='meter'){audioStats={queuedMs:m.queuedMs,underruns:m.underruns,droppedSamples:m.droppedSamples};if(phase==='live'&&!muted)micPeak=Math.max(micPeak,m.mic||0); $('inputMeter').value=Math.min(1,m.mic*5);$('outputMeter').value=Math.min(1,m.speaker*5);window.AtlasOrbUI?.levels(m.mic,m.speaker,m.bands||null);if(boot?.playbackAck&&m.playedItem&&socket?.readyState===1&&performance.now()-lastPlaybackAck>80){lastPlaybackAck=performance.now();socket.send(JSON.stringify({type:'playback',item_id:m.playedItem,played_ms:m.playedMs}));}if(m.droppedSamples>0&&boot?.provider!=='personaplex'){fail('Playback buffer overflowed. Session stopped rather than misrepresenting what was heard.');return;}if(phase==='live')$('voiceState').textContent=m.speaker>.009?'ATLAS is speaking':paused?'Paused · microphone off':muted?'Microphone muted':providerName()+' · listening';}};
  return true;}
 // The answer box sits right under the conversation in a typed interview (so the reading and the typing are in one place), and back with the other controls otherwise.
 let formInLog=false;
@@ -335,6 +335,7 @@ function receive(m,token){
  else if(m.type==='agent_text'){setThinking(false);if(textMode)heardOutput=true;accumulated=(accumulated+(typeof m.text==='string'?m.text:'')).slice(-60000);$('agentText').textContent=accumulated;$('agentText').scrollTop=$('agentText').scrollHeight;logEvent(m);if(textMode)focusSoon();}
  else if(m.type==='agent_retract'){const n=Number.isInteger(m.chars)&&m.chars>0?Math.min(m.chars,accumulated.length):0;accumulated=accumulated.slice(0,accumulated.length-n);$('agentText').textContent=accumulated;logEvent(m);} // a reply taken back: the consultant had not finished
  else if(m.type==='audio_turn'){outputItem=m.item_id;}
+ else if(m.type==='duck'){node?.port.postMessage({type:'duck',on:m.on===true});} // a sound over her voice is being checked: her volume dips (the worklet lets go by itself)
  else if(m.type==='clear_audio'){node?.port.postMessage({type:'flush'});window.AtlasOrbUI?.levels(0,0,{low:0,mid:0,high:0});}
  else if(['quality','user_text','quality_warning','user_speaking','user_text_private'].includes(m.type)){
   if(m.type==='user_text'){lastHeardItem=typeof m.item_id==='string'?m.item_id:null;if(lastHeardItem)heardTurns.add(lastHeardItem);logEvent(m);if(VC.typedAccepted(m))typedAccepted(m);}
@@ -427,7 +428,7 @@ window.addEventListener('pagehide',()=>{if(phase==='live'&&sessionId){generation
 window.addEventListener('pageshow',e=>{if(e.persisted)offerResume();});
 // "Voice active" (§3.7) is the microphone held or a socket open or connecting, never the phase label.
 const active=()=>!!stream||!!(socket&&socket.readyState<=1);
-window.AtlasVoice={cancel,checkConnection:check,bootstrap:()=>boot,begin,active,reconnect:{delays:RECONNECT_MS,state:()=>({sessionId,reconnecting}),prompt:resumePrompt,offer:offerResume,dialog:()=>resumeDlg},status:()=>({phase,textMode,hasMicrophone:!!stream,tracks:stream?.getTracks().map(t=>({state:t.readyState,enabled:t.enabled}))||[],hasAudioContext:!!audio,modelAudioReceived:heardOutput,permissionPending})};
+window.AtlasVoice={cancel,checkConnection:check,bootstrap:()=>boot,begin,active,reconnect:{delays:RECONNECT_MS,state:()=>({sessionId,reconnecting}),prompt:resumePrompt,offer:offerResume,dialog:()=>resumeDlg},status:()=>({phase,textMode,hasMicrophone:!!stream,tracks:stream?.getTracks().map(t=>({state:t.readyState,enabled:t.enabled}))||[],hasAudioContext:!!audio,modelAudioReceived:heardOutput,permissionPending}),audioStats:()=>audioStats};
 document.body.classList.add('voice-first');sync();
 // One probe per load (shared with ATLAS_APP.bootInfo). Live and '#start' (a /go/start link): the consent step opens at once;
 // the microphone still waits for the Start click. A re-sign-in honours a Start that the expiry interrupted.

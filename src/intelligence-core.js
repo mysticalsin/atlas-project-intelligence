@@ -18,7 +18,7 @@ function challenge(text){
  if(/\d|%|percent|saved|faster/i.test(t)&&!checks[2][1])next=checks[2][2];
  if(/assess|recommended|recommendation/.test(t.toLowerCase())&&/not implemented|nothing was implemented|not production|no implementation/.test(t.toLowerCase()))next='What decision did the assessment enable, rather than which production benefit did it deliver?';
  if(/cannot share|can.t share|under NDA|not authorized to disclose/i.test(t))next='We can leave restricted details out. Which non-identifying mechanism or lesson are you authorized to discuss?';
- if(unknown)next='Let’s keep that unknown explicit. What did you observe directly, and who could verify it later?';
+ if(unknown)next='Let’s come at that another way. What did you observe directly, and who could verify it later?';
  return {next,signals:checks.map(([id,present])=>({id,present})),flags:unknown?['Uncertainty preserved; no achieved benefit inferred']:[],
    notice:'Local wording checks only. Detailed language is not proof; these signals never approve a story.'};
 }

@@ -54,9 +54,9 @@ export async function cleanup() { for (const s of open) if (!s.finished) await s
 // said: what speech recognition hears, utterance by utterance. talk(n, messages): the deltas of talker call n (default: a thank-you and QUESTION).
 // storage / clk can be shared by several rigs (a reconnect is a second Session on the same Durable Object storage). store: false for no checkpoint store.
 export function rig({ said = [], talk = null, flags = {}, metrics = [], session = {}, storage = new FakeStorage(), clk = clock(), owner = USER, store = undefined } = {}) {
-  const events = [], bytes = [], calls = { talker: [], analyst: 0, stt: 0, tts: [] }; let closed = false;
+  const events = [], bytes = [], calls = { talker: [], analyst: 0, stt: 0, tts: [], probeText: '' }; let closed = false;
   const ai = {
-    async transcribe() { calls.stt += 1; return said[calls.stt - 1] || ''; },
+    async transcribe(pcm, o) { if (o?.probe) return calls.probeText; calls.stt += 1; return said[calls.stt - 1] || ''; }, // (a probe: the check of a sound over her voice, v2.2 V1)
     async synthesize(text) { calls.tts.push(text); return new Uint8Array(4800).fill(1); },
     chatStream(messages) {
       const n = calls.talker.length; calls.talker.push(messages);

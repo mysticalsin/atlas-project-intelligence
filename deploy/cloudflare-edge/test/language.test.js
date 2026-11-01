@@ -12,7 +12,7 @@ test('ElevenLabs voice: verified endpoint, key header, raw 24 kHz PCM, Flash v2.
   globalThis.fetch = async (url, init) => { call = { url: String(url), init }; return new Response(new Uint8Array(9)); };
   try {
     const pcm = await workersAI({ ELEVENLABS_API_KEY: 'el-key', ELEVENLABS_VOICE_ID: 'voice1' }).synthesize('Bonjour.', 'atlas', 'fr');
-    assert.equal(call.url, 'https://api.elevenlabs.io/v1/text-to-speech/voice1?output_format=pcm_24000');
+    assert.equal(call.url, 'https://api.elevenlabs.io/v1/text-to-speech/voice1/stream?output_format=pcm_24000'); // v2.2 V1: the streaming endpoint
     assert.equal(call.init.headers['xi-api-key'], 'el-key');
     assert.deepEqual(JSON.parse(call.init.body), { text: 'Bonjour.', model_id: 'eleven_flash_v2_5', language_code: 'fr' });
     assert.equal(pcm.length, 8, 'odd byte trimmed: whole 16-bit samples only');

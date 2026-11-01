@@ -278,7 +278,8 @@ test('S8 the consultant interrupts ATLAS: her speech is cut at once, what she ha
     const cleared = h.events.filter(e => e.type === 'clear_audio').length, talkerCalls = h.calls.talker.length, from = h.events.length;
     h.s.queue.push({ gen: h.s.gen, item: h.s.replyItem, bytes: new Uint8Array(960) });
     h.s.sentMs[h.s.replyItem] = 3000;
-    say(h, [[0.6, .5]]);
+    h.calls.probeText = fx.interrupt.said; // (v2.2 V1: she stops once speech recognition hears words, not at the first sound)
+    say(h, [[1.0, .5]]); await settle();
     assert.ok(h.events.filter(e => e.type === 'clear_audio').length > cleared && h.events.some((e, i) => i >= from && e.type === 'user_speaking'), `[${mode}] her speech stops at once (clear_audio) and the consultant is heard (user_speaking)`);
     assert.equal(h.s.queue.length, 0, `[${mode}] no queued audio of hers survives the interruption`);
     say(h, [[1.3, .001]]);
@@ -371,6 +372,35 @@ test('U2-B "skip", "pass" and "next question" are answers to probe: the same ang
     assert.deepEqual(h.s.machine.skipped, [], `[${mode}] and still no skip`);
     await cleanup();
   }
+});
+
+// Gap mode (the bid-proof interview), same rule (DECISION_LOG D-U2-7): no invitation to skip; "I don't know", "no idea", "next question" get two easier angles on the same item before it is recorded unknown with the consultant's words; "I can't share" is accepted at once.
+test('U2-D gap mode: "I don\'t know" is re-angled twice then the item is recorded unknown (their words kept); confidentiality is accepted at once; no prompt invites a skip', async () => {
+  const GAPS = [{ id: 'G1', field: 'evidence', label: 'x', ask: 'Proof the bid needs: an audited report for [company]' }, { id: 'G2', field: 'measurement', label: 'x', ask: 'Proof the bid needs: how the saving was measured' }];
+  const resolver = async () => ({ asks: GAPS, bidAlias: '[company] claims bid', referenceId: 'ref1', projectId: 'p1' });
+  const guidanceOf = messages => JSON.parse(messages.filter(m => m.role === 'system' && m.content.startsWith('ANALYST_GUIDANCE')).map(m => m.content).pop().replace(/^ANALYST_GUIDANCE \(server plan, not a script\): /, ''));
+  const play = async said => {
+    const h = rig({ said, session: { gaps: resolver }, talk: () => ['What can you tell me about it?'] });
+    await opened(h, { gap: 'ab'.repeat(16) });
+    for (let n = 2; n <= said.length + 1; n++) { talked(h); await until(() => h.calls.talker.length >= n && !h.s.busy()); await settle(10); }
+    return h;
+  };
+  const h = await play(["I don't know", 'no idea', 'next question', 'We measured the saving from the monthly timesheets over six months.']);
+  const g = h.calls.talker.slice(1).map(guidanceOf);
+  assert.deepEqual(g.map(x => [x.askId, x.reangle ?? null]), [['G1', 'Who on the project would know that best?'], ['G1', 'What is one concrete example you remember, however small?'], ['G2', null], [null, null]], 'two easier angles on G1, then G2, then the reflect-back');
+  assert.ok(g[0].why.includes('narrower, easier angle') && !/skip|pass/i.test(g[0].reangle + g[1].reangle), 'the angles invite no way out');
+  assert.deepEqual(h.s.gapAttempts, { G1: 3, G2: 1 });
+  const note = h.calls.talker.at(-1).filter(m => m.role === 'system').map(m => m.content).find(m => m.startsWith('GAP MODE'));
+  assert.ok(note && /never accept it at once and never tell them they may skip/.test(note) && !/accept 'I don't know'/.test(note), 'GAP_NOTE no longer says to accept "I don\'t know" and move on');
+  await send(h, { type: 'end' }); await until(() => h.events.some(e => e.type === 'notes'));
+  const results = h.events.find(e => e.type === 'notes').gap.results;
+  assert.deepEqual(results.map(r => [r.askId, r.status]), [['G1', 'unknown'], ['G2', 'answered_unverified']]);
+  assert.deepEqual(results[0].quotes, ["I don't know", 'no idea', 'next question'], 'the consultant\'s own words are the record');
+  await cleanup();
+  const c = await play(["I can't share that, it is under NDA.", 'We measured the saving from the monthly timesheets over six months.']);
+  const cg = c.calls.talker.slice(1).map(guidanceOf);
+  assert.deepEqual(cg.map(x => [x.askId, x.reangle ?? null]), [['G2', null], [null, null]], 'confidentiality is accepted at once: no easier angle, on to the next item');
+  assert.deepEqual(c.s.gapStatuses().map(x => x.status), ['unknown', 'answered_unverified']);
 });
 
 test('U2-C "that\'s all" before the essentials are covered: what is missing, one more question; at most twice; then it is respected', async () => {

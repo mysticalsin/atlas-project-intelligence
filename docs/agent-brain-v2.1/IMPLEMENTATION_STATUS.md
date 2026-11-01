@@ -294,3 +294,15 @@ Not done: Trusted Types; summary mode does not voice scripts without a number ta
 
 `docs/LOCAL_DEMO.md`. `deploy/cloudflare-edge/dev/local-edge.mjs` serves the interview WebSocket through the real `handle()` to the real Interview Durable Object class and Session, with an in-memory Durable Object stand-in, real Library storage and offline fake models (`dev/fake-interviewer.mjs`: replies in en/fr/es/pt/de/it/nl from the selector's next move). A typed interview runs end to end: consent receipts, read-back, Keep private, Correct, Confirm into an owner-only draft, Submit for review, export and the two-step erase. Voice needs a provider, so locally it is typed only. Test: `test/local-demo.test.js`.
 
+## 15. Settings sheet and admin Voice settings (v2.2 V2)
+
+| Item | Status |
+|---|---|
+| Settings sheet from the avatar and Ctrl/Cmd + comma: tabs Profile, Privacy, Workspace; Connections and Voice for admins only | **Implemented, locally verified** (node `tests/v2-settings-ui.test.js`, browser `tests/settings_browser.py` at 1440x900 and 390x844, which also checks the keyboard tabs, 44px targets, no CSP violation). The former profile dialog (`#profileDialog`) with every control id kept; Download my data and Delete my data are two clicks from any page; the four choices carry plain explanations and stay unticked |
+| Connections as a table (name, state dot, what is missing; details disclosure) moved from the Library into Settings | **Implemented, locally verified.** Same data (`/api/connections/status`); names and yes/no only |
+| ElevenLabs key stored by an admin: sealed (AES-GCM-256, HKDF of `SETTINGS_KEY`, random IV, AAD `atlas-settings:v1:elevenlabs`, `kid` for rotation), write-only, validated before it is stored | **Implemented, locally verified against a fake ElevenLabs** (`test/v2-settings.test.js`: round trip, wrong AAD, tamper, rotation, key text absent from every response, log line, audit row, export and page). **Provider verified: no.** The real `GET /v2/voices`, `/v1/user` and text-to-speech calls have not been made |
+| Provider choice (Automatic, Workers AI, ElevenLabs), voice list from the account, model, Test voice (fixed phrase, played from a blob), Remove key | **Implemented, locally verified.** Voice previews are not played (media from `blob:` only) |
+| `voiceConfig(env, library)` / `voiceStatus` for the voice engine: stored choice, then environment, then Workers AI; `ATLAS_SETTINGS_KEYS=off`; 60 s cache | **Implemented, unit tested.** Whether the Interview Durable Object uses it is V1's change: until then speech is unchanged |
+| ElevenLabs as a processor | **Open for the DPO.** `PROCESSORS.md` and `ROPA.md` rows 13 and 14 are marked *to verify*; no contract, location or retention is known |
+
+Open: `SETTINGS_KEY` must exist on the deployment (`deploy.sh` creates it on the next run); the cache means another isolate sees a change within a minute; the breaker and fallback state shown to the admin is the static description (the live state is the voice engine's); a real ElevenLabs key has never been entered.

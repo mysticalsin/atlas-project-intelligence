@@ -190,7 +190,8 @@ def speakable(text):
     return text if any(c.isalnum() for c in text) else ''
 
 
-GUARD_MAX_WORDS = 45  # most words ATLAS says in one reply
+GUARD_MAX_WORDS = 45  # most words ATLAS says in one reply (v2.2 V1: the cap lands on a sentence end; a sentence that has begun is finished, never cut)
+CAP_SLACK_WORDS = 25  # ...unless that one sentence runs on this far past the cap: then it is cut, at a clause when it has one, else at a word
 PRAISE_MAX_WORDS = 8  # a sentence this short that is only praise is dropped
 REACTION_MAX_WORDS = 12  # a leading sentence longer than this is an answer, not a reaction: the repeated-opener rule leaves it alone
 DEFAULT_BANNED_PRAISE = r'\b(amazing|incredible|brilliant|awesome|fantastic)\b'  # persona.BANNED_PRAISE_SRC replaces it when wired
@@ -386,6 +387,13 @@ def _first_words(text, count):
     return text if count > 0 else ''
 
 
+def _clause_cut(text, count):
+    """The start of text up to its count-th word, ended at the last clause mark (comma, semicolon, colon, dash) in its second half when it has one."""
+    head = _first_words(text, count)
+    at = max(head.rfind(c) for c in ',;:\u2014\u2013')
+    return head[:at].rstrip(_TRIM) if at >= len(head) // 2 and at > 0 else head
+
+
 class ReplyGuard:
     """Streaming filter over the spoken pieces (Phrases) of one reply. It enforces the shape of a reply in code, whatever the
     model wrote: at most one question, no empty praise, no repeated reaction, a short reply, and (in summary mode) no number
@@ -414,6 +422,7 @@ class ReplyGuard:
         self._open = None  # the sentence in progress when the last piece ended mid-sentence: 'voiced' or 'dropped'
         self._lead = True  # the next sentence that gets this far is the reply's leading one
         self._stop = None  # 'question' or 'cap'
+        self._finish = False  # the cap was reached inside a sentence that is being finished
 
     @property
     def done(self):
@@ -450,12 +459,24 @@ class ReplyGuard:
             stats['dropped_unknown_number'] += 1
             return '', question
         if self._max is not None:
-            room = self._max - self._spoken
-            if len(_words(text)) > room:
+            n = len(_words(text))
+            if self._finish or n > self._max - self._spoken:
+                if continuing or not self._spoken:
+                    # A sentence already begun (or the reply's first one) is finished, never cut: the cap lands on its end. Only a sentence that
+                    # runs on far past the cap is cut, at a clause when it has one.
+                    if not self._finish:
+                        stats['capped_words'] += 1
+                        self._finish = True
+                    ceiling = self._max + CAP_SLACK_WORDS - self._spoken
+                    if n > ceiling:
+                        self._stop = 'cap'
+                        return _clause_cut(text, ceiling), False
+                    if ended:
+                        self._stop = 'cap'
+                    return text, question
                 stats['capped_words'] += 1
                 self._stop = 'cap'
-                # Cut at a sentence boundary when something has been said already; else (or inside a sentence under way) at a word.
-                return (_first_words(text, room) if continuing or not self._spoken else ''), False
+                return '', False  # a sentence that does not fit whole is left out
         return text, question
 
     def push(self, piece):

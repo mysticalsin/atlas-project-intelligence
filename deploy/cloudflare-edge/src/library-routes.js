@@ -9,6 +9,7 @@ import * as evidence from './evidence.js';
 import * as branches from './branches.js';
 import * as privacy from './privacy.js';
 import { internalRoutes as privacyInternal } from './privacy-routes.js';
+import { internalRoutes as settingsInternal } from './settings.js';
 import * as retention from './retention.js';
 import { holdRoutes } from './subject-rights.js';
 import { enforce } from './ratelimit.js';
@@ -52,6 +53,8 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
   try {
     // The privacy surface (consent receipts, export, erasure, flags): only the Worker and the person's Interview Durable Object reach it.
     if (url.pathname.startsWith('/api/privacy/')) { const r = await privacyInternal(ctx); return r.response || json(r.body, r.status || 200); }
+    // Admin settings (v2.2 V2): the sealed ElevenLabs key and the voice choice. An admin (through the Worker's /api/admin/voice* routes) or the Worker's own code (a read) only; never forwarded from a browser.
+    if (url.pathname === '/api/settings' || url.pathname.startsWith('/api/settings/')) { const r = await settingsInternal(ctx); return json(r.body, r.status || 200); }
     // External confirmers reach feature words only (the registry limits them to `confirmations`); nothing else.
     if (user.role === 'external') { const r = await featureRoutes(ctx); return r ? json(r.body, r.status || 200) : json({ error: 'Not found.' }, 404); }
     // Evidence store (T13): /api/library/evidence/... from a browser, /api/evidence/... only from the Interview DO (never forwarded by the Worker).
