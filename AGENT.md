@@ -169,3 +169,14 @@ Controls implemented in code; DPO sign-off required. Detail, tests and what is n
 - **Rights.** `GET /api/me/export`, two-step `POST /api/me/erase`, `/api/me/privacy` (restriction and objection), `POST /api/consent`; the library side is `subject-rights.js`, `privacy-routes.js`, the DPO's hold list is `GET /api/library/privacy/holds`.
 - **Retention.** `retention.js sweep`, run by the daily cron; periods in `atlas_voice/config/retention.json`.
 - Never write "GDPR compliant" anywhere: controls implemented, DPO sign-off required.
+
+## 10. Live QA fixes (v2.2 Q1)
+What the live Chrome QA of a937b74 found, and how the code now behaves (decisions D-Q1-1 to D-Q1-4):
+
+- **Admin is not a special interview.** An admin session runs the selector, the held "that's all", the easier angles and the process acknowledgements like any session (the admin note, no generic upbeat acknowledgement and no extension offer remain).
+- **The question spoken is the move's.** `enforce.py` (ported to `enforce.js`, parity vectors) checks the talker's question against the move: a re-angle by its concrete angle (an example, a rough order of magnitude, who would know, what they saw), any other move by its content stems. An off-move question is replaced by the selector's wording, the localized line (fr es pt de it nl) or a guarded talker call that renders exactly that question. The move log, the spoken question and the next-question panel (`Session.setAsking`) are one.
+- **Said by the server, no model call:** "that's all" while the essentials are missing (what is missing, then the question), an instruction to ATLAS (one fixed line, the unanswered question again, never filed or echoed; `nonanswer.py is_injection`). The confidentiality line ("Understood, I'll leave the client unnamed.") is a cached acknowledgement. An explicit negative ("no hard data on that", "nobody else") is recorded as the answer and closes the point.
+- **Evidence.** A non-answer ("I don't know", "pass", a bare "ok", 7 languages: `nonanswer.py`) is never a ledger claim or a read-back item; the point is marked open. Every consultant turn is in the transcript when it is heard, and the read-back and the notes wait (bounded) for the analyst's whole backlog.
+- **Projects.** A new interview is a new project unless a project is picked (`app.js voiceSnapshot({interview:true})`); the `notes` event carries the interview's session id.
+- Switches are unchanged (`ATLAS_SELECTOR=legacy` and `ATLAS_REPLY_GUARD=off` switch the enforcement off with the rest of the v2 path).
+

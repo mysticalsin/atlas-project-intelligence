@@ -2,17 +2,23 @@
 // what the answer was about (the turn pre-pass cues), never from a judgement of the person. Pure and deterministic: the caller
 // supplies the state (recent lines, replies since the last earned one, seed) and keeps it. Banks come from persona.py via
 // policy.generated.js (every BANK_LANGUAGE has all of them); a language without a bank gets no acknowledgement from cache at all (v2.2 L1: never English).
-import { ACKS, BANNED_PRAISE_SRC } from './policy.generated.js';
+import { ACKS, BANNED_PRAISE_SRC, CLIENT_MENTION_SRC } from './policy.generated.js';
 import { FILLERS, normalize, hasBank } from './languages.js';
+import { plain } from './textfold.js';
 
 export const ACK_MIN_WORDS = 8; // an acknowledgement only after a real answer
 export const ACK_NO_REPEAT = 4; // a line is not used again within the last four
 export const EARNED_EVERY = 3; // at most one earned_result in three replies
 const CATEGORIES = Object.keys(ACKS);
 // Categories that do not praise or cheer: fine after a setback. Anything else becomes setback_neutral there.
-const SETBACK_SAFE = new Set(['setback_neutral', 'setback_plain', 'correction_thanks', 'correction_thanks_fact', 'confidential_ok', 'no_number_fine', 'reangle']);
+const SETBACK_SAFE = new Set(['setback_neutral', 'setback_plain', 'correction_thanks', 'correction_thanks_fact', 'confidential_ok', 'confidential_client', 'injection', 'no_number_fine', 'reangle']);
 // These answer what the consultant just did ("I don't know", "I can't share", a change), so they are said even after a short answer ("I do not know the baseline, honestly.").
-const SHORT_OK = new Set(['no_number_fine', 'reangle', 'confidential_ok', 'correction_thanks', 'correction_thanks_fact']);
+const SHORT_OK = new Set(['no_number_fine', 'reangle', 'confidential_ok', 'confidential_client', 'injection', 'correction_thanks', 'correction_thanks_fact']);
+// What the consultant said about the PROCESS (an easier angle after "I don't know", "I can't share", an instruction to ATLAS): said in every session, admin included (v2.2 Q1, item 5).
+const PROCESS_OK = new Set(['reangle', 'confidential_ok', 'confidential_client', 'injection']);
+const CLIENT = new RegExp(CLIENT_MENTION_SRC, 'i');
+// True when the words talk about the client or a name ("I can't share the client name"): a refusal then gets "I'll leave the client unnamed".
+export const mentionsClient = text => CLIENT.test(plain(typeof text === 'string' ? text : ''));
 // A plain uptake ("Okay.", "Thanks, that helps.") is said on alternate replies at most: constant acknowledgement stops sounding like listening.
 const ALTERNATING = new Set(['neutral', 'thanks_detail', 'setback_plain']);
 // A bare "yes" word is not a fit after a setback ("Yeah." after a failed pilot sounds like agreement with it).
@@ -52,10 +58,11 @@ function resolve(category, cues, repliesSinceEarned) {
 //   acknowledgements (oldest first); afterQuestion: the consultant asked ATLAS something (she answers it, no preamble);
 //   repliesSinceEarned: replies since the last earned_result (omitted: none yet); prevCategory: the category of the acknowledgement before this
 //   one (null when that reply had none), which keeps a neutral or "thanks for the detail" line to alternate replies.
-export function pickAck({ category = 'neutral', cues = [], words = 0, lang = 'en', recent = [], admin = false, afterQuestion = false, timeUp = false, repliesSinceEarned, prevCategory = null, seed = 0 } = {}) {
+export function pickAck({ category = 'neutral', cues = [], words = 0, lang = 'en', recent = [], admin = false, afterQuestion = false, timeUp = false, repliesSinceEarned, prevCategory = null, seed = 0, client = false } = {}) {
   const setback = hasCue(cues, 'describes_setback');
+  if (category === 'confidential_ok' && client) category = 'confidential_client'; // (the bank of this language has it; otherwise it falls back to the neutral filler below)
   // A setback is never left unacknowledged: it gets at least a plain uptake even after a short answer or right after another one. Only admin, a question to ATLAS and the time limit silence it.
-  if (admin || afterQuestion || timeUp || !(setback || Number(words) >= ACK_MIN_WORDS || SHORT_OK.has(category))) return null;
+  if ((admin && !PROCESS_OK.has(category)) || afterQuestion || timeUp || !(setback || Number(words) >= ACK_MIN_WORDS || SHORT_OK.has(category))) return null;
   const code = lang ? normalize(lang) : 'en', seen = Array.isArray(recent) ? recent : [];
   if (!code) return null; // a language we cannot even name: nothing from cache, never another language's line
   let cat = resolve(category, cues, repliesSinceEarned), bank = ACKS[cat] && ACKS[cat][code];

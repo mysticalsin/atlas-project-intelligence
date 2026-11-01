@@ -7,6 +7,7 @@ import json
 import re
 import time
 
+from .nonanswer import is_non_answer
 from .persona import OPENING_BRIEF, PERSONA_CORE, PRAISE_RULES, QUESTION_RULES, SAFETY, TURN_PATTERN, situations
 
 FIELDS = {
@@ -174,6 +175,8 @@ class InterviewLedger:
                 raise ValueError('Invalid detail schema')
             if 'uncertain' in x and not isinstance(x['uncertain'],bool):raise ValueError('uncertain must be boolean')
             f,ident,q=x.get('field'),x.get('item_id'),x.get('quote')
+            # A deferral, a refusal or a bare filler ("I don't know", "pass", "ok") is never a claim, whatever a model proposes: the point is marked open elsewhere (v2.2 Q1).
+            if f in FIELDS and ident in self.transcripts and isinstance(q,str) and is_non_answer(q): continue
             if f not in FIELDS or ident not in self.transcripts or not isinstance(q,str) or not 5<=len(q)<=1800:
                 raise ValueError('Invalid field, transcript reference or quote length')
             # Whitespace normalization only: preserve numbers, negation and spelling.
@@ -282,9 +285,9 @@ class InterviewLedger:
           'next_action':'ask_one_question' if priority else 'reflect_and_confirm',
           'probe_history':self.probes[-12:]}
 
-    def plan_probe(self):
-        """Plan at most two follow-ups per field; a plan is not proof of speech."""
-        turn=next(reversed(self.transcripts), 'opening')
+    def plan_probe(self, turn_id=None):
+        """Plan at most two follow-ups per field; a plan is not proof of speech. `turn_id`: the transcript item being planned for (default: the latest)."""
+        turn=turn_id if turn_id is not None else next(reversed(self.transcripts), 'opening')
         # Retrying before another user turn cannot consume the clarification budget.
         if self.probes and self.probes[-1]['turn']==turn:
             return {**self.inspect(),'planned_question':self.probes[-1]['question'],'repeat_plan':True}

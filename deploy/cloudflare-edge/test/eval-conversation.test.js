@@ -75,9 +75,9 @@ const subseq = (all, want) => { let i = 0; for (const x of all) if (x === want[i
 // One consultant turn: speak, wait for the reply to be composed and voiced, collect what the checks need.
 async function turn(h, i, t, { offset = 0 } = {}) {
   if (t.elapsed) h.advance(t.elapsed); // U2: the interview clock before this turn (a "that's all" is respected at once only when the essentials are covered or the planned time is nearly used)
-  const from = h.events.length, before = h.calls.talker.length, acks = named(h.metrics, 'ack').length, asked = h.s.humane.asked.length;
+  const from = h.events.length, before = h.calls.talker.length, acks = named(h.metrics, 'ack').length, asked = h.s.humane.asked.length, held = named(h.metrics, 'stop_held').length;
   talked(h);
-  await until(() => h.calls.talker.length === before + 1 && !h.s.busy());
+  await until(() => (h.calls.talker.length === before + 1 || named(h.metrics, 'stop_held').length > held) && !h.s.busy()); // (a held "that's all" is said by the server itself, with no model call: v2.2 Q1)
   await h.s.turnJob; await settle(20);
   const moves = h.s.humane.asked.slice(asked), ackNow = named(h.metrics, 'ack').slice(acks);
   return { i: offset + i, text: textOf(t), analysis: analyzeTurn(textOf(t), 'en', {}), voiced: voicedSince(h, from), move: moves.at(-1) || null, ack: ackNow.at(-1)?.category ?? null, fixture: t };
@@ -214,7 +214,7 @@ test('S5 a client that cannot be named: accepted without pressure, anonymisation
   for (const mode of MODES) {
     const { h, turns } = await play(fx, mode); finish(h, fx, mode, turns);
     assert.equal(h.s.humane.asked.filter(m => m.intent === 'anonymise').length, 1, `[${mode}] offered once`);
-    assert.ok(ACKS.confidential_ok.en.some(l => h.s.humane.acks.includes(l)), `[${mode}] the acknowledgement played is one of the confidentiality lines`);
+    assert.ok(ACKS.confidential_client.en.some(l => h.s.humane.acks.includes(l)), `[${mode}] the acknowledgement played says the client stays unnamed (v2.2 Q1)`);
     assert.ok(!h.s.ledger.details.some(d => /NDA|client name/i.test(d.quote)), `[${mode}] the refusal is not filed as a fact about the project`);
     await cleanup();
   }

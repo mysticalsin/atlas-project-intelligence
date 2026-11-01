@@ -10,7 +10,7 @@ import { rig, opened, startMsg, sessionIdOf, talked, until, settle, send, cleanu
 test.afterEach(cleanup);
 const errorsOf = h => h.events.filter(e => e.type === 'error');
 const readyOf = h => h.events.find(e => e.type === 'ready');
-const TALK = n => n === 0 ? ['Right. ', 'What was the project?'] : ['Thanks. ', 'What was ', 'the baseline?'];
+const TALK = n => n === 0 ? ['Right. ', 'What was the project?'] : ['Thanks. ', 'What part of that work ', 'did you take on yourself, alongside the team?'];
 // A typed interview, opened: the greeting and the opening question are on the screen as text.
 async function openedText(h, extra = {}) {
   await h.s.onText(startMsg({ mode: 'text', ...extra }));
@@ -63,21 +63,21 @@ test('typed turns take the same path as spoken ones: user_text, the analyst, the
   const h = rig({ talk: TALK }); await openedText(h);
   await send(h, { type: 'text', text: ANSWER }); await until(() => h.calls.talker.length === 2 && !h.s.busy());
   assert.equal(h.s.turns, 1); assert.equal(typedText(h).length, 1); assert.equal(typedText(h)[0].item_id, 'user-typed-1'); assert.equal(typedText(h)[0].text, ANSWER);
-  assert.ok(screen(h).includes('What was the baseline?'), 'the reply is on the screen');
+  assert.ok(screen(h).includes(QUESTION), 'the reply is on the screen');
   assert.equal(h.calls.analyst, 1); assert.ok(h.events.some(e => e.type === 'quality'), 'the story board gets the ledger');
   assert.ok(h.s.humane.asked.length >= 1, 'the selector chose and logged the move'); assert.ok(named(h.metrics, 'ack').length >= 1, 'an acknowledgement was chosen and shown as text');
   assert.equal(h.calls.tts.length, 0); assert.equal(h.bytes.length, 0); assert.equal(h.calls.stt, 0);
-  assert.equal(h.s.history.at(-1).role, 'assistant'); assert.ok(h.s.history.at(-1).content.includes('What was the baseline?'));
+  assert.equal(h.s.history.at(-1).role, 'assistant'); assert.ok(h.s.history.at(-1).content.includes(QUESTION));
   assert.equal(h.s.lastQuestion.text, QUESTION);
   assert.ok(named(h.metrics, 'reply_guard').length >= 2, 'the reply guard ran on the typed interview too');
 });
 
 test('replies are released in order and at once: the text events add up to the screen, in the order spoken, with no waiting for audio', async () => {
-  const h = rig({ talk: n => n === 0 ? ['Right. ', 'What was the project?'] : ['Thanks. ', 'Over what period ', 'was that measured?'] }); await openedText(h);
+  const h = rig({ talk: n => n === 0 ? ['Right. ', 'What was the project?'] : ['Thanks. ', 'What part of that work ', 'did you take on yourself, alongside the team?'] }); await openedText(h);
   await send(h, { type: 'text', text: ANSWER }); await until(() => h.calls.talker.length === 2 && !h.s.busy());
   const texts = h.events.filter(e => e.type === 'agent_text').map(e => e.text), full = texts.join('');
   assert.equal(full, screen(h));
-  assert.ok(full.indexOf('What was the project?') < full.indexOf('Over what period was that measured?'), 'in order');
+  assert.ok(full.indexOf('What was the project?') < full.indexOf(QUESTION), 'in order');
   assert.ok(texts.length >= 3, 'streamed in pieces, not one block');
   assert.ok(!full.includes('[[END]]'));
 });
@@ -108,7 +108,7 @@ test('interview clock and pause work as in voice: paused time is not interview t
   h.advance(TYPED_MIN_INTERVAL_S + 0.1);
   await send(h, { type: 'text', text: 'carrying on now' }); assert.equal(h.s.paused, false); assert.equal(h.s.turns, 2);
   await until(() => !h.s.busy()); await send(h, { type: 'repeat' }); await until(() => !h.s.busy());
-  assert.ok(screen(h).split('baseline?').length >= 3, 'Repeat says the question again, as text');
+  const asked = h.s.lastQuestion.text; assert.ok(screen(h).split(asked).length >= 3, 'Repeat says the question again, as text');
   h.advance(h.s.maxSeconds); h.s.watch(); await settle(100); assert.ok(h.s.ending, 'the interview limit still applies: a clean end');
 });
 
@@ -131,7 +131,7 @@ test('checkpoint and resume in text mode: the mode is stored, offered with the s
 });
 
 test('text mode with a gap (proof) interview: the asks are counted and answered through text too', async () => {
-  const GAP = 'a'.repeat(32), asks = { asks: [{ id: 'A1', field: 'measurement', ask: 'What was the baseline?' }], bidAlias: 'Bid X', projectId: 'p-falcon' };
+  const GAP = 'a'.repeat(32), asks = { asks: [{ id: 'A1', field: 'measurement', ask: QUESTION }], bidAlias: 'Bid X', projectId: 'p-falcon' };
   const h = rig({ talk: n => n === 0 ? ['What was the baseline before the change?'] : ['Thanks. Anything else on it?'], session: { gaps: async id => id === GAP ? asks : null } });
   await h.s.onText(startMsg({ mode: 'text', gap: GAP })); await until(() => !h.s.busy() && screen(h).includes('baseline before'));
   assert.equal(readyOf(h).mode, 'gap'); assert.equal(readyOf(h).input, 'text'); assert.equal(h.calls.tts.length, 0);
@@ -161,7 +161,7 @@ test('kept private: the browser is told which utterances (user_text_private), so
 
 test('typing while ATLAS is speaking is a barge-in: it stops her and the turn is taken (voice mode); a burst and a reply still being composed are refused', async () => {
   let gate; const held = new Promise(r => { gate = r; });
-  const h = rig({ talk: n => n === 0 ? ['Right. ', 'What was the project?'] : (async function* () { yield 'Thanks. '; await held; yield 'What was the baseline?'; })() });
+  const h = rig({ talk: n => n === 0 ? ['Right. ', 'What was the project?'] : (async function* () { yield 'Thanks. '; await held; yield QUESTION; })() });
   await opened(h);
   await send(h, { type: 'text', text: ANSWER });
   await until(() => h.s.busy() && (h.s.sentMs[h.s.replyItem] || 0) > 0); // her acknowledgement is out; the rest of the reply is still being composed

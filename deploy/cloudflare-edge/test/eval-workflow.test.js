@@ -273,14 +273,14 @@ test('W3 the interview works by voice and by text: a typed answer takes the same
 });
 
 test('W3b a text-only interview: it starts with no microphone and no audio, and a typed answer takes the same path (same ledger, same next move, same audit, nothing synthesised)', async () => {
-  const h = rig({ talk: n => n === 0 ? ['What was the project?'] : ['Thanks. ', 'What was the baseline?'] });
+  const h = rig({ talk: n => n === 0 ? ['What was the project?'] : ['Thanks. ', 'What part of that work did you take on yourself, alongside the team?'] }); // (the selector's question for that answer: the question spoken is the move's, v2.2 Q1)
   await h.s.onText(startMsg({ mode: 'text' })); await until(() => !h.s.busy() && h.events.some(e => e.type === 'agent_text'));
   assert.equal(h.events.find(e => e.type === 'ready').input, 'text'); assert.equal(h.bytes.length, 0); assert.equal(h.calls.tts.length, 0);
   await send(h, { type: 'text', text: 'We rebuilt the claims intake process for the insurance client during the pilot, a big change for the whole team.' });
   await until(() => h.calls.talker.length === 2 && !h.s.busy());
   assert.equal(h.s.humane.asked.length, 1, 'the typed turn got a selected move'); assert.ok(h.s.ledger.transcripts.has('user-typed-1'), 'it is in the ledger');
   assert.ok(h.events.some(e => e.type === 'user_text' && e.provenance === 'consultant_typed'), 'labelled as typed');
-  assert.ok(h.events.filter(e => e.type === 'agent_text').map(e => e.text).join('').includes('What was the baseline?'), 'ATLAS answered in text');
+  assert.ok(h.events.filter(e => e.type === 'agent_text').map(e => e.text).join('').includes('alongside the team?'), 'ATLAS answered in text');
   assert.equal(h.calls.tts.length, 0); assert.equal(h.calls.stt, 0); assert.ok(!h.events.some(e => e.type === 'error'));
 });
 

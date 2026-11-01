@@ -6,6 +6,7 @@
 import { FIELDS } from './policy.generated.js';
 import { readback, hasBank, languageName } from './languages.js';
 import { isSpecial } from './special.js';
+import { isNonAnswer } from './nonanswer.js';
 
 export const MAX_ITEMS = 40;      // items on the card (the ledger holds at most 100 details)
 export const QUOTE_CHARS = 160;   // an item's quote on the card, whole code points
@@ -84,7 +85,8 @@ const detailsOf = ledger => (Array.isArray(ledger) ? ledger : Array.isArray(ledg
 const order = f => { const i = ORDER.indexOf(f); return i < 0 ? ORDER.length : i; };
 const label = f => (Object.hasOwn(FIELDS, f) ? FIELDS[f][0] : f);
 // What a read-back may contain: details that are active and not kept private (superseded and withheld ones are history only).
-const shown = d => d && d.active !== false && d.withheld !== true && typeof d.quote === 'string' && Object.hasOwn(FIELDS, d.field);
+// A non-answer ("I don't know", "pass", "ok") is never an item or an open-point quote, even when an older checkpoint holds one (v2.2 Q1): the point it was said about is listed open by its label.
+const shown = d => d && d.active !== false && d.withheld !== true && typeof d.quote === 'string' && Object.hasOwn(FIELDS, d.field) && !isNonAnswer(d.quote);
 
 // ---- the spoken form of a fact: their words as a clause addressed to them ("I built the pipeline" -> "you built the pipeline") ----
 // Safe by construction: I / my / me / myself become you / your; "we" and "our" become "your team" only before a past-tense verb or was / were (the team

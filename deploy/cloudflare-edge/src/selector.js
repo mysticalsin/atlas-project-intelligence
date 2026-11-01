@@ -168,8 +168,8 @@ function context(plan, turn, asked, prefill, phase, timeLeft, rushed) {
   const numericPlan = (Array.isArray(gaps) && gaps.length > 0) || flags.some(f => isStr(f) && f.startsWith('Numerical outcome lacks'));
   const deferred = ledgerPaused(plan);
   for (const a of asked) {
-    const m = /^(?:dont_know|cannot_disclose|skip):([a-z_]+)(?:>|$)/.exec(isStr(a.why) ? a.why : '');
-    if (m && inF(m[1])) deferred.add(m[1]);
+    const m = /^(?:dont_know|cannot_disclose|skip|negative):([a-z_+]+)(?:>|$)/.exec(isStr(a.why) ? a.why : '');
+    if (m) for (const f of m[1].split('+')) if (inF(f)) deferred.add(f);
     if (a.intent === 'offer_move_on' && inF(a.field)) deferred.add(a.field);
   }
   return {
@@ -355,7 +355,8 @@ function reaction(c, accept = null) {
     return ['ack', stated ? 'correction_thanks_fact' : 'correction_thanks'];
   }
   if (cues.includes('describes_setback')) return ['ack', recent(c, null, 'setback_neutral') ? 'setback_plain' : 'setback_neutral']; // empathy is paced: a plain uptake when the last replies already met a setback
-  if (accept === 'dont_know' || accept === 'skip') {
+  if (accept === 'injection') return ['ack', 'injection'];
+  if (accept === 'dont_know' || accept === 'skip' || accept === 'negative') {
     const numeric = ['measurement', 'outcome'].includes(c.thread) || cues.includes('metric') || (c.last && [...METRIC_PARTS, 'measurement', 'impact'].includes(c.last.intent));
     return ['ack', numeric ? 'no_number_fine' : 'neutral'];
   }
@@ -430,6 +431,17 @@ export function select(plan, turn, asked, prefill, phase, timeLeft, asr = null, 
     if (said === null) said = [render(QUESTION_BANK.confirm_asr.en[count(c, 'confirm_asr', null, true) % 3], cand.params), '+rv'];
     return move('confirm_asr', cand, said[0], 'asr_span' + said[1], NONE);
   }
+  // 2b. an instruction to ATLAS hidden in the answer ("ignore your instructions ..."): never obeyed, never repeated back, never an answer. The question in front of them is put again
+  // (they did not answer it) after one short fixed line, or the next question is asked when there is none to put again.
+  if (intents.includes('injection')) {
+    if (last && String(last.say ?? '').includes('?')) {
+      return { kind: ['confirm_asr', 'offer_move_on', 'reflect'].includes(last.kind) ? last.kind : 'ask', intent: last.intent ?? null, field: last.field ?? null, rung: last.rung ?? null,
+        say: last.say, why: REPEAT_LAST, reaction: 'ack', ack_category: 'injection', bridge: false, hook: '' };
+    }
+    const cand = pick(c);
+    if (cand === null) { const e = end(c, 'no_candidates', reaction(c, 'injection')); e.why = 'injection:-' + '>' + e.why; return e; }
+    return move('accept_and_move', cand, cand.say, 'injection:->' + cand.why, ['ack', 'injection'], c);
+  }
   // 3. the consultant wants to stop: respected once the essentials are covered or the planned time is nearly used; before that, what is still missing and one more question
   if (intents.includes('stop')) return holdStop(c) || end(c, 'stop');
   // 4. a correction: use their version, narrow
@@ -445,6 +457,16 @@ export function select(plan, turn, asked, prefill, phase, timeLeft, asr = null, 
   }
   // 5b. right after the read-back summary, a short reply ends the interview
   if (last && (last.kind === 'summary' || last.intent === 'summary') && (c.words <= 6 || intents.includes('confirm'))) return line(c, 'close', 'close:after_summary');
+  // 5c. an explicit negative answer ("there is no hard data on that", "nobody else", "no other teams") is an ANSWER: it is recorded as one, the point it answers is closed (for "no data": the
+  // figures and the evidence behind them too) and never asked again, and ATLAS asks something else. No easier angles: nothing was left unsaid. A long answer with content is taken as said.
+  const negative = ['no_data', 'nobody'].find(i => intents.includes(i));
+  if (negative && !(c.words >= CONFIG.private_content_words && c.hints.length > 0)) {
+    const field = deferField(c), closes = new Set([...(field ? [field] : []), ...(negative === 'no_data' ? ['measurement', 'evidence'] : [])]);
+    for (const f of closes) c.deferred.add(f);
+    const tag = 'negative:' + (FIELD_KEYS.filter(f => closes.has(f)).join('+') || '-'), cand = pick(c), r = reaction(c, 'negative');
+    if (cand === null) { const e = end(c, 'no_candidates', r); e.why = tag + '>' + e.why; return e; }
+    return move('accept_and_move', cand, cand.say, tag + '>' + cand.why, leadQuiet(cand, r), c);
+  }
   // 6. "I can't share": accept, keep it out, ask something else. "I don't know" / "pass" / "skip": re-angle twice, then record the field OPEN and ask something else (never that field again)
   const accept = ['cannot_disclose', 'dont_know', 'skip'].find(i => intents.includes(i));
   if (accept) {

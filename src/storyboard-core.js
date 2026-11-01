@@ -18,7 +18,12 @@ const GAP_STATUS=new Set(['answered_unverified','unknown','deferred','open']);
 // The span grammar of F5.1. A word unit must end where the word ends, so "3 percentage points" or "5 daily" never read as
 // "3 percent" or "5 day": the unit is not taken, and a hit that relied on it is not shown (see metricSpans).
 const SPAN=/(?:[$€£]\s*)?\d+(?:[.,]\d+)*(?:\s*(?:%|(?:percent|million|billion|thousand|bn|[kmb]|hours?|minutes?|days?|weeks?|months?|years?)(?![\p{L}])))?/giu;
-const BARE=/^(?:[$€£]\s*)?\d+(?:[.,]\d+)*$/,RANGE=/^(?:\s+to\s+|\s*[-–]\s*)$/i,SPACE=/^\s*$/;
+// A range or a before/after pair is ONE figure as said: "from 40 to 12 minutes", "de 40 à 12 minutes", "de 40 a 12", "de 40 até 12", "von 40 auf 12", "da 40 a 12", "van 40 naar 12". The leading from/de/von/da/van is not part of it.
+const BARE=/^(?:[$€£]\s*)?\d+(?:[.,]\d+)*$/,RANGE=/^(?:\s+(?:to|à|a|al|para|até|ate|auf|bis|naar|tot)\s+|\s*[-–]\s*)$/i,SPACE=/^\s*$/;
+// Words that say a figure is an estimate (en, fr, es, pt, de, it, nl), read on accent-free lower case in the sentence the figure sits in: only the consultant's own words make a chip an estimate.
+const HEDGE=/(?:^|[^\p{L}])(?:about|around|roughly|approx(?:imately|imate)?|estimate[sd]?|guess(?:ed)?|circa|environ|a peu pres|autour de|presque|aproximadamente|mas o menos|alrededor de|cerca de|ungefahr|etwa|rund|ongeveer|zo'?n|geschat|geschatzt|estime|estimado|stimato|stima|ca\.?(?=\s*\d))(?![\p{L}])|[~≈]/iu;
+const plain=t=>t.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+function hedged(q,s,e){let a=0,b=q.length;for(const m of q.matchAll(/[.!?;]\s+|\n/g)){const end=m.index+m[0].length;if(end<=s)a=end;else if(m.index>=e){b=m.index;break;}}return HEDGE.test(plain(q.slice(a,b)));}
 const cache=new Map();
 function remember(key,make){if(cache.has(key))return cache.get(key);if(cache.size>600)cache.clear();const v=make();cache.set(key,v);return v;}
 const geoIds=new WeakMap();let geoN=0;const geoId=g=>{if(!geoIds.has(g))geoIds.set(g,++geoN);return geoIds.get(g);};
@@ -36,13 +41,14 @@ function metricSpans(quote,numericSrc){
    let s=Math.min(...over.map(p=>p.s));const e=Math.max(...over.map(p=>p.e));
    if(e<he)continue;  // the hit's unit runs into a longer word: not a figure
    const before=spans.filter(p=>p.e<=s).pop();  // a bare number joined by ' to ', '-' or '–' starts a range
-   if(before&&BARE.test(before.t)&&RANGE.test(q.slice(before.e,s)))s=before.s;
-   grown.push({s,e});}
+   let pair=false;if(before&&BARE.test(before.t)&&RANGE.test(q.slice(before.e,s))){s=before.s;pair=true;}
+   else if(before&&!BARE.test(before.t)&&RANGE.test(q.slice(before.e,s)))pair=true;  // two measured values joined by "to": two chips, but the answer holds a before/after
+   grown.push({s,e,pair});}
   grown.sort((a,b)=>a.s-b.s||a.e-b.e);
   const merged=[];for(const g of grown){const last=merged[merged.length-1];  // overlapping or adjacent spans merge
-   if(last&&(g.s<=last.e||SPACE.test(q.slice(last.e,g.s))))last.e=Math.max(last.e,g.e);else merged.push({...g});}
-  return merged.map(({s,e})=>{const text=q.slice(s,e),unit=text.replace(/^[\s\S]*\d/,'').trim();
-   return {text,unit,unitUnclear:/^[kmb]$/i.test(unit)&&!/[$€£]/.test(text),start:s,end:e};});}).map(x=>({...x}));}  // copies: the cache stays intact
+   if(last&&(g.s<=last.e||SPACE.test(q.slice(last.e,g.s)))){last.e=Math.max(last.e,g.e);last.pair=last.pair||g.pair;}else merged.push({...g});}
+  return merged.map(({s,e,pair})=>{const text=q.slice(s,e),unit=text.replace(/^[\s\S]*\d/,'').trim();
+   return {text,unit,unitUnclear:/^[kmb]$/i.test(unit)&&!/[$€£]/.test(text),start:s,end:e,pair:!!pair,estimate:hedged(q,s,e)};});}).map(x=>({...x}));}  // copies: the cache stays intact
 
 /* ---------- Places: cued country names only (F5.1 "Pins") ---------- */
 const CUE=/(?:^|[^\p{L}\p{N}])(?:in|to|from|across|throughout|within|into|at)\s+(?:the\s+)?$/iu;
@@ -97,12 +103,15 @@ function model(state){
  const ds=details(q,fields),deferredFields=obj(q.deferred_fields);
  const dims=keys.map(field=>{const mine=ds.filter(d=>d.field===field),has=st=>mine.some(d=>d.status===st);
   return {field,label:label(field),state:has('reported')?'reported':has('uncertain')?'uncertain':has('unknown')?'unknown':own(deferredFields,field)?'deferred':'empty',count:mine.length};});
- const pins=new Map(),loose=new Map(),metrics=[],seen=new Set();
+ const pins=new Map(),loose=new Map(),metrics=[],seen=new Map();let pairSaid=false;
  for(const d of ds){const p=pinsOf(d.quote,s.geo);
   for(const x of p.pins){if(!pins.has(x.code))pins.set(x.code,{code:x.code,name:x.name,detailIds:[]});const ids=pins.get(x.code).detailIds;if(!ids.includes(d.id))ids.push(d.id);}
   for(const x of p.notMapped){const k=x.text.toLowerCase();if(!loose.has(k))loose.set(k,x);}
-  for(const m of metricSpans(d.quote,policy.NUMERIC_SRC)){const k=d.id+'|'+m.text;if(seen.has(k)||metrics.length>=40)continue;seen.add(k);
-   metrics.push({detailId:d.id,field:d.field,text:m.text,unit:m.unit,unitUnclear:m.unitUnclear,status:d.status});}}
+  for(const m of metricSpans(d.quote,policy.NUMERIC_SRC)){  // one chip per figure as said, whichever details quote it; an estimate only on the consultant's own hedge words (an 'unknown' stays so)
+   if(m.pair)pairSaid=true;const k=m.text.toLowerCase();
+   if(seen.has(k)){if(m.estimate&&seen.get(k).status==='reported')seen.get(k).status='uncertain';continue;}
+   if(metrics.length>=40)continue;
+   const chip={detailId:d.id,field:d.field,text:m.text,unit:m.unit,unitUnclear:m.unitUnclear,status:d.status==='unknown'?'unknown':m.estimate?'uncertain':'reported'};seen.set(k,chip);metrics.push(chip);}}
  const heard=arr(s.heard),last=heard.length?num(obj(heard[heard.length-1]).seq):null,settled=num(s.qualitySeq);
  const next=typeof q.next_field==='string'&&keys.includes(q.next_field)?{field:q.next_field,label:label(q.next_field)}:null;
  const status=new Map(arr(q.gap_status).filter(g=>g&&typeof g.id==='string').map(g=>[g.id,GAP_STATUS.has(g.status)?g.status:'open']));
@@ -112,7 +121,7 @@ function model(state){
   pins:[...pins.values()],
   placesNotMapped:[...loose.values()].filter(x=>!x.code||!pins.has(x.code)).map(x=>x.text.slice(0,60)).slice(0,12),
   metrics,
-  measurementSlots:[...new Set(arr(q.measurement_gaps))].filter(n=>NEEDS.includes(n)).map(need=>({need})),
+  measurementSlots:[...new Set(arr(q.measurement_gaps))].filter(n=>NEEDS.includes(n)&&!(n==='before/after'&&pairSaid)).map(need=>({need})),  // the answer itself holds a from-to pair: no "before/after values" left to recover
   corrected:ds.filter(d=>d.supersedes).map(d=>({detailId:d.supersedes,supersededBy:d.id})),
   challenge:{next,planned:str(q.planned_question,400)||str(q.next_question,400),  // what ATLAS may ask next; probe_history is never read
    flags:arr(q.flags).filter(f=>typeof f==='string'&&f).map(f=>f.slice(0,200)).slice(0,4),

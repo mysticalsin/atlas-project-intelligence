@@ -15,7 +15,7 @@ test-edge: build
 # The v2.1 offline evaluation (docs/agent-brain-v2.1/eval/COVERAGE.md): pack scenarios 1-16 through the real Session and workflow code, W1-W12, the MAAP shell tests,
 # the release gates that can be checked offline, and the rubric linter. A regression aid, not a measure of the live model (that needs pilot users and is never run here).
 test-eval: build
-	cd deploy/cloudflare-edge && node --test test/eval-conversation.test.js test/eval-workflow.test.js test/eval-rubric.test.js test/e2e-core-flow.test.js
+	cd deploy/cloudflare-edge && node --test test/eval-conversation.test.js test/eval-workflow.test.js test/eval-rubric.test.js test/e2e-core-flow.test.js test/eval-q1-conversation.test.js test/eval-q1-ledger.test.js test/eval-q1-numbers.test.js
 # The core flow alone: project ID -> scripted interview -> draft -> review -> skills (DNA), CV (MiChat), projects (Project Review, IMP), success stories (Spotlight).
 test-e2e: build
 	cd deploy/cloudflare-edge && node --test test/e2e-core-flow.test.js
@@ -50,6 +50,7 @@ test-ui: build
 	$(PYTHON) tests/ux_fit_browser.py
 	$(PYTHON) tests/w1_browser.py
 	$(PYTHON) tests/settings_browser.py
+	$(PYTHON) tests/q1_browser.py
 doctor:
 	$(PYTHON) scripts/doctor.py --profile preview
 verify-package:

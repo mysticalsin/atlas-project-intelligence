@@ -32,7 +32,7 @@
      "intent": "anonymise",
      "field": "contribution"
     },
-    "ack": "confidential_ok",
+    "ack": "confidential_client",
     "scripted_says": "We can keep names out of this\\.",
     "scripted_not": "\\b(why|must|need to know|have to tell)\\b"
    }

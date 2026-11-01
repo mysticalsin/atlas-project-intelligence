@@ -8,9 +8,9 @@ rung (1-8, the follow-up ladder), say (what to ask, from QUESTION_BANK), why (a 
 ack_category (a key of persona.ACKS). The Move never contains a score: the ranking below orders questions, it is not a rating
 of anyone, and nothing here describes the person (D18).
 
-Priority (first that applies): wrap-up time > confirm an uncertain span > the consultant wants to stop (only once the essentials are
+Priority (first that applies): wrap-up time > confirm an uncertain span > an instruction to ATLAS hidden in the answer (v2.2 Q1: not obeyed, not echoed, the last question is put again) > the consultant wants to stop (only once the essentials are
 covered or the planned time is nearly used; before that ATLAS says what is still missing and asks one more question) > a correction
-(use their version, narrow) > "I can't share" (accept, keep it out, ask something else) > "I don't know" / "no idea" / "pass" / "skip" /
+(use their version, narrow) > an explicit negative answer ("there is no hard data on that", "nobody else": recorded as the answer, the point is closed and never asked again, no easier angles) > "I can't share" (accept, keep it out, ask something else) > "I don't know" / "no idea" / "pass" / "skip" /
 "next question" (Tony, 2026-10-31: never accepted at once, and never invited: up to two narrower, easier angles on the SAME point, then the
 point is recorded OPEN in the consultant's own words and ATLAS moves to another point) > a contradiction in the plan (both versions, neutrally, never pick) > a metric without a basis (ONE part per move:
 measured or estimated, period, baseline, source) > a vague verb (a concrete example, then ownership) > a team claim (their own
@@ -392,9 +392,9 @@ def _context(plan, turn, asked, prefill, phase, time_left, rushed):
     numeric_plan = bool(plan.get('measurement_gaps')) or any(isinstance(f, str) and f.startswith('Numerical outcome lacks') for f in flags)
     deferred = _ledger_paused(plan)
     for a in asked:
-        m = re.match(r'^(?:dont_know|cannot_disclose|skip):([a-z_]+)(?:>|$)', a.get('why') if isinstance(a.get('why'), str) else '')
-        if m and m.group(1) in FIELDS:
-            deferred.add(m.group(1))
+        m = re.match(r'^(?:dont_know|cannot_disclose|skip|negative):([a-z_+]+)(?:>|$)', a.get('why') if isinstance(a.get('why'), str) else '')
+        if m:
+            deferred |= {f for f in m.group(1).split('+') if f in FIELDS}
         if a.get('intent') == 'offer_move_on' and a.get('field') in FIELDS:
             deferred.add(a['field'])
     c = {
@@ -655,7 +655,9 @@ def _reaction(c, accept=None):
         return 'ack', 'correction_thanks_fact' if stated else 'correction_thanks'
     if 'describes_setback' in cues:   # empathy is paced: a plain uptake when the last replies already met a setback
         return 'ack', 'setback_plain' if _recent(c, None, 'setback_neutral') else 'setback_neutral'
-    if accept in ('dont_know', 'skip'):
+    if accept == 'injection':
+        return 'ack', 'injection'
+    if accept in ('dont_know', 'skip', 'negative'):
         numeric = c['thread'] in ('measurement', 'outcome') or 'metric' in cues or (c['last'] and c['last'].get('intent') in METRIC_PARTS + ['measurement', 'impact'])
         return 'ack', 'no_number_fine' if numeric else 'neutral'
     if accept == 'cannot_disclose':
@@ -758,6 +760,16 @@ def select(plan, turn, asked, prefill, phase, time_left, asr=None, rushed=False,
         if said is None:
             said = (_render(QUESTION_BANK['confirm_asr']['en'][_count(c, 'confirm_asr', any_field=True) % 3], cand['params']), '+rv')
         return _move('confirm_asr', cand, said[0], 'asr_span' + said[1], ('none', None))
+    # 2b. an instruction to ATLAS hidden in the answer ("ignore your instructions ..."): never obeyed, never repeated back, never an answer. The question in front of them is put again
+    # (they did not answer it) after one short fixed line, or the next question is asked when there is none to put again.
+    if 'injection' in intents:
+        if last and '?' in str(last.get('say', '')):
+            return {'kind': last['kind'] if last.get('kind') in ('confirm_asr', 'offer_move_on', 'reflect') else 'ask', 'intent': last.get('intent'), 'field': last.get('field'), 'rung': last.get('rung'),
+                    'say': last['say'], 'why': REPEAT_LAST, 'reaction': 'ack', 'ack_category': 'injection', 'bridge': False, 'hook': ''}
+        cand = _pick(c)
+        if cand is None:
+            return _end_after(c, 'injection:-', 'injection')
+        return _move('accept_and_move', cand, cand['say'], 'injection:->' + cand['why'], ('ack', 'injection'), c)
     # 3. the consultant wants to stop: respected once the essentials are covered or the planned time is nearly used; before that, what is still missing and one more question
     if 'stop' in intents:
         return _hold_stop(c) or _end(c, 'stop')
@@ -775,6 +787,19 @@ def select(plan, turn, asked, prefill, phase, time_left, asr=None, rushed=False,
     # 5b. right after the read-back summary, a short reply ends the interview
     if last and (last.get('kind') == 'summary' or last.get('intent') == 'summary') and (c['words'] <= 6 or 'confirm' in intents):
         return _line(c, 'close', 'close:after_summary')
+    # 5c. an explicit negative answer ("there is no hard data on that", "nobody else", "no other teams") is an ANSWER: it is recorded as one, the point it answers is closed (for "no data": the
+    # figures and the evidence behind them too) and never asked again, and ATLAS asks something else. No easier angles: nothing was left unsaid. A long answer with content is taken as said.
+    negative = next((i for i in ('no_data', 'nobody') if i in intents), None)
+    if negative and not (c['words'] >= CONFIG['private_content_words'] and c['hints']):
+        field = _defer_field(c)
+        closes = ({field} if field else set()) | ({'measurement', 'evidence'} if negative == 'no_data' else set())
+        c['deferred'] |= closes
+        tag = 'negative:' + ('+'.join(f for f in FIELD_KEYS if f in closes) or '-')
+        cand = _pick(c)
+        reaction = _reaction(c, 'negative')
+        if cand is None:
+            return _end_after(c, tag, 'negative')
+        return _move('accept_and_move', cand, cand['say'], tag + '>' + cand['why'], _lead_quiet(cand, reaction), c)
     # 6. "I can't share": accept, keep it out, ask something else. "I don't know" / "pass" / "skip": re-angle twice, then record the field OPEN and ask something else (never that field again)
     accept = next((i for i in ('cannot_disclose', 'dont_know', 'skip') if i in intents), None)
     if accept:
