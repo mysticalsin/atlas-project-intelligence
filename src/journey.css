@@ -137,10 +137,6 @@ dialog input[aria-invalid=true]{border-color:#ff8a8a;box-shadow:0 0 0 1px #ff8a8
 .firstrun-pick{width:100%;min-height:44px;border-radius:999px;background:transparent;border:1px solid var(--violet);color:var(--text)}
 .firstrun-pick:hover{background:rgba(138,0,255,.18)}
 .firstrun-private{margin:var(--s3) 0 0;font-size:13px;line-height:1.45;color:var(--text-2)}
-/* while the checklist is there (before the first Submit), the idle right rail is the checklist, not the engine cards */
-@media(min-width:1024px) and (min-height:560px){
- body.ui2.studio-view:not(.studio-focus) #voicePanel[data-firstrun=true]:not([data-phase=live]):not([data-phase=ending]) .studio-right>:not(.firstrun-card){display:none}
-}
 body.ui2.studio-view #voicePanel[data-firstrun=true]:is([data-phase=live],[data-phase=ending]) .firstrun-card{display:none}
 
 /* ---------- the Submit moment ---------- */
@@ -235,8 +231,9 @@ body.ui2 dialog.w1-dark .consent-optional,body.ui2 dialog.w1-dark .check{color:v
 body.ui2 dialog.w1-dark #voiceConsentType:not(.primary),body.ui2 dialog.w1-dark #voiceConsentStart:not(.primary){background:var(--raised)}
 
 /* ---------- after the interview: a clean start screen; a confirmed read-back, when there is one, owns the column ---------- */
-body.ui2.studio-view #voicePanel:is([data-phase=idle],[data-phase=error],[data-phase=preparing],[data-phase=connecting]) .text-log{display:none!important}
-body.ui2.studio-view #voicePanel[data-phase=idle]:not([data-summary=true]) .studio-right>:is(.quality-live-card,#storyBoard){display:none}
+body.ui2.studio-view #voicePanel:is([data-phase=idle],[data-phase=error]) .text-log{display:none!important}
+body.ui2.studio-view #voicePanel[data-ended=true]:is([data-phase=idle],[data-phase=error]):not([data-summary=true]) .studio-right>#storyBoard{display:none}
+body.ui2.studio-view #voicePanel[data-ended=true]:is([data-phase=idle],[data-phase=error]) .quality-live-card :is(#boardChallenge,.quality-label,#qualityNext,#qualityLiveCount,.quality-open,.receipt){display:none}
 .bottom-tools .quiet,body.ui2 .bottom-tools .quiet{background:transparent;border:0;color:var(--text-2)}
 .bottom-tools .quiet:disabled{opacity:.4;background:transparent}
 

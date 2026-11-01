@@ -44,6 +44,7 @@ try:
   if off:print('NOT RUNNABLE: these features are not READY in this build: '+', '.join(off)+'. The integration step flips READY (WOW_SPEC 6.6 step 4), then runs this suite.');sys.exit(2)
   # --- a published reference (alex, N+1 sam)
   alex.locator('[data-action=new-project]:visible').first.click();alex.wait_for_timeout(200)
+  alex.evaluate("document.getElementById('projectMore').open=true") # W1: these fields live under "More details"
   for k,v in {'projectTitle':'Claims triage alias','consultantName':'Alex Martin','consultantRole':'Data engineer','clientName':'Zebracorp','clientLocation':'Lyon','n1Name':'Sam','n1Email':'sam@mantu.com'}.items():alex.locator('#'+k).fill(v)
   alex.locator('#projectForm button[type=submit]').click();alex.wait_for_timeout(300)
   alex.evaluate("([n,rep])=>window.ATLAS_VOICE_BRIDGE.autoSave(window.ATLAS_VOICE_BRIDGE.context(),n,'Consultant words.',rep)",[NOTES,REP]);alex.wait_for_timeout(1200);settle()

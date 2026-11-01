@@ -21,6 +21,7 @@ with sync_playwright() as pw:
   p.locator('[data-intel-tab=wiki]').click();p.locator('#wikiCurrent').click();check('No fictional project silently created','Choose a project' in p.locator('#wikiMessage').inner_text())
   p.locator('#intelligenceDialog [aria-label="Close story intelligence"]').click()
   p.locator('.studio-left [data-action=new-project]').click()
+  p.evaluate("document.getElementById('projectMore').open=true") # W1: these fields live under "More details"
   for k,v in {'projectTitle':'A real authoring test','consultantName':'Alex Test','consultantRole':'Integration engineer','sectorInput':'Operations'}.items():p.locator('#'+k).fill(v)
   p.locator('#projectForm button[type=submit]').click();p.locator('#voiceTextToggle').click()
   p.locator('#answerInput').fill('The customer team had inconsistent manual intake and needed clear categories in one pilot.');p.locator('#nextButton').click()

@@ -28,6 +28,7 @@ try:
   # --- owner
   o=page('alex@mantu.com')
   o.locator('[data-action=new-project]:visible').first.click();o.wait_for_timeout(200)
+  o.evaluate("document.getElementById('projectMore').open=true") # W1: these fields live under "More details"
   for k,v in {'projectTitle':'Claims triage alias','consultantName':'Alex','consultantRole':'Data engineer','clientName':'Zebracorp','clientLocation':'Lyon','n1Name':'Sam','n1Email':'sam@mantu.com'}.items():o.locator('#'+k).fill(v)
   o.locator('#projectForm button[type=submit]').click();o.wait_for_timeout(300)
   r=o.evaluate("([n,rep])=>window.ATLAS_VOICE_BRIDGE.autoSave(window.ATLAS_VOICE_BRIDGE.context(),n,'Consultant words.',rep)",[NOTES,REP])

@@ -22,6 +22,7 @@ with sync_playwright() as pw:
   p.locator('[data-intel-tab=wiki]').click();p.locator('.editor-fold>summary').click();p.locator('#editorRefine').click()
   check('Editor refuses unsaved candidate','Save a restricted' in p.locator('#editorMessage').inner_text())
   p.locator('#intelligenceDialog [data-close]').click();p.locator('.studio-left [data-action=new-project]').click()
+  p.evaluate("document.getElementById('projectMore').open=true") # W1: these fields live under "More details"
   for k,v in {'projectTitle':'SYNTHETIC editor test','consultantName':'Test Author','consultantRole':'Engineer','sectorInput':'Operations'}.items():p.locator('#'+k).fill(v)
   p.locator('#projectForm button[type=submit]').click();p.locator('[data-intelligence=wiki]').click();p.locator('#wikiCurrent').click()
   p.evaluate("""window.__fake={calls:[],story:null};

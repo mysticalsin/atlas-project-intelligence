@@ -141,6 +141,7 @@ try:
    p.goto((base or A)+'/?as='+email);p.wait_for_timeout(800);return p
   def create(p,title,consultant,notes):
    p.locator('[data-action=new-project]:visible').first.click();p.wait_for_timeout(200)
+   p.evaluate("document.getElementById('projectMore').open=true") # W1: these fields live under "More details"
    for k,v in {'projectTitle':title,'consultantName':consultant,'consultantRole':'Data engineer','clientName':'Zebracorp','clientLocation':'Lyon','n1Name':'Sam','n1Email':'sam@mantu.com'}.items():p.locator('#'+k).fill(v)
    p.locator('#projectForm button[type=submit]').click();p.wait_for_timeout(300)
    p.evaluate("([n,rep])=>{window.ATLAS_VOICE_BRIDGE.autoSave(window.ATLAS_VOICE_BRIDGE.context(),n,'Consultant words.',rep);}",[notes,REP])

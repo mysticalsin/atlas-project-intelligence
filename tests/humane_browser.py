@@ -253,7 +253,7 @@ try:
         check('the card updates: the item now reads as the correction, tagged "typed by you", and the old words are gone', item.count() == 1 and CORRECTION in item.inner_text() and 'typed by you' in item.inner_text()
               and 'built the routing model' not in pr.locator('#summaryItems').inner_text())
         pr.locator('#summaryItems [data-detail=D-001] [data-action=withhold]').click(); pr.wait_for_timeout(500)
-        check('Keep private: one withhold message, and the item leaves the card', frames_of(pr, 'withhold') == [{'type': 'withhold', 'detail_id': 'D-001'}] and pr.locator('#summaryItems [data-detail=D-001]').count() == 0 and pr.locator('#summaryItems .summary-item').count() == 2)
+        check('Keep private: one withhold message; the line stays in its block as "Kept private. Not used." with its words gone (W1: visibly excluded, not silently removed)', frames_of(pr, 'withhold') == [{'type': 'withhold', 'detail_id': 'D-001'}] and pr.locator('#summaryItems [data-detail=D-001].is-kept').count() == 1 and 'Kept private. Not used.' in pr.locator('#summaryItems [data-detail=D-001]').inner_text() and pr.locator('#summaryItems .summary-item').count() == 3 and pr.locator('#summaryItems [data-detail=D-001] button').count() == 0)
         check('at 390 px the live interview with the read-back card does not scroll sideways', (pr.set_viewport_size({'width': 390, 'height': 844}), pr.wait_for_timeout(300), no_overflow(pr))[2])
         pr.set_viewport_size({'width': 1280, 'height': 1000}); pr.wait_for_timeout(200)
         pr.locator('#summaryConfirm').focus(); pr.keyboard.press('Enter'); pr.wait_for_timeout(1200)

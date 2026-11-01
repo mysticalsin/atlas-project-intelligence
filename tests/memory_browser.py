@@ -21,6 +21,7 @@ try:
    c=b.new_context(viewport={'width':1300,'height':1000});p=c.new_page();p.on('pageerror',lambda e:ERR.append(str(e)));p.goto(BASE+'/?as='+email);p.wait_for_timeout(600);return p
   o=page('alex@mantu.com')
   o.locator('[data-action=new-project]:visible').first.click();o.wait_for_timeout(200)
+  o.evaluate("document.getElementById('projectMore').open=true") # W1: these fields live under "More details"
   for k,v in {'projectTitle':'Claims triage alias','consultantName':'Alex','clientName':'Zebracorp','n1Name':'Sam','n1Email':'sam@mantu.com'}.items():o.locator('#'+k).fill(v)
   o.locator('#projectForm button[type=submit]').click();o.wait_for_timeout(300)
   o.evaluate("(rep)=>window.ATLAS_VOICE_BRIDGE.autoSave(window.ATLAS_VOICE_BRIDGE.context(),['Zebracorp had claims bouncing between three teams, slowing payouts.',null,null,'Triage fell from 40 to 12 minutes.',null,null],'I worked with Zebracorp on claims.',rep)",REP)

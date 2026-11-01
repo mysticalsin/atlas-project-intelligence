@@ -39,6 +39,7 @@ with sync_playwright() as pw:
   check('Escape restores context panels',p.locator('.studio-left').is_visible())
   # Project facts and progress come from actual local records, not the mockup.
   p.locator('.studio-left [data-action=new-project]').click()
+  p.evaluate("document.getElementById('projectMore').open=true") # W1: these fields live under "More details"
   for k,v in {'projectTitle':'Pilot knowledge capture','consultantName':'Alex Example','consultantRole':'Delivery engineer','sectorInput':'Manufacturing'}.items():p.locator('#'+k).fill(v)
   p.locator('#projectForm button[type=submit]').click()
   check('Project panel uses entered alias',p.locator('#contextProjectTitle').inner_text()=='Pilot knowledge capture')

@@ -23,6 +23,7 @@ def load(context,adapter=False,reduced=False):
 def wait(p,phase):p.wait_for_function('(v)=>AtlasVoice.status().phase===v',arg=phase,timeout=6000)
 def project(p):
  p.locator('#studioProject').click();p.locator('#studioProjectDrawer [data-action=new-project]').click()
+ p.evaluate("document.getElementById('projectMore').open=true") # W1: these fields live under "More details"
  for k,v in {'projectTitle':'An authorized project alias','consultantName':'Alex Example','consultantRole':'Data engineer','sectorInput':'Financial services'}.items():p.locator('#'+k).fill(v)
  p.locator('#projectStage').select_option('Pilot');p.locator('#projectForm button[type=submit]').click()
 def start(p):

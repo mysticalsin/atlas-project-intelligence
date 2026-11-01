@@ -17,8 +17,8 @@ async function staffingRows(){if(rows&&Date.now()-rowsAt<30000)return rows;rows=
  try{const A=app(),b=A.bootInfo?await A.bootInfo():null;if(b&&b.library&&b.features&&b.features.staffing&&typeof A.libraryApi==='function'){const r=await A.libraryApi('/staffing/mine');rows=Array.isArray(r&&r.items)?r.items.slice(0,50):[];}}catch{rows=[];}
  return rows;}
 const own=()=>{try{return typeof app().ownProjects==='function'?app().ownProjects():[];}catch{return [];}};
-// Start asks the picker only when there is something to pick from (a staffing row, or projects on this device) and no project is selected yet; a person with neither goes straight on (ATLAS creates the project from the story).
-async function needsPick(){let c=null;try{c=window.ATLAS_VOICE_BRIDGE&&window.ATLAS_VOICE_BRIDGE.context();}catch{}if(!c||!c.isNew)return false;return (await staffingRows()).length>0||own().length>0;}
+// Start asks the picker only when the person has staffing rows and no project is selected yet (the picker then also lists the projects on this device); everyone else goes straight on (ATLAS creates the project from the story).
+async function needsPick(){let c=null;try{c=window.ATLAS_VOICE_BRIDGE&&window.ATLAS_VOICE_BRIDGE.context();}catch{}if(!c||!c.isNew)return false;return (await staffingRows()).length>0;}
 let dlg=null;
 function build(){const d=document.createElement('dialog');d.id='projectPickDialog';d.className='pick-dialog w1-dark';d.setAttribute('aria-labelledby','projectPickTitle');
  setHTML(d,html`<div class="dialog-head"><div><p class="eyebrow">Step 1 of 3</p><h2 id="projectPickTitle">Which project?</h2></div><button aria-label="Close" class="close" data-pick-close="" type="button">×</button></div>
