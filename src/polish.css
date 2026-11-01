@@ -189,3 +189,6 @@ html body.ui2 .atlas-dash :is(.ag-h4,.ag-pill,.ag-cap,.ag-sub,.ag-legend span,.a
 html body.ui2 dialog .field-chip{display:inline-block;margin:var(--s1) 0 0 0;font-size:12px;white-space:normal;vertical-align:baseline}
 @media(pointer:coarse){html body.ui2 :is(.save-chip,.palette-btn,.how-btn,.storage-retry){min-height:44px}}
 html body.ui2 dialog :is(select,input:not([type=checkbox]):not([type=radio]),textarea){max-width:100%;min-width:0}
+
+/* the strip that used to sit under the header (and gave the page its top space) is gone: the page keeps the space */
+html body.ui2:not(.studio-view) main#workspace{padding-top:var(--s6)}
