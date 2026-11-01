@@ -406,7 +406,7 @@ with sync_playwright() as pw:
             p.locator('#pfSave').click(); p.wait_for_timeout(500)
             check('9 Save posts only the change {set:{title}}, and the chip stays "you edited"', s.api('POST', '/api/library/profile')[-1]['body'] == {'set': {'title': 'Head of Data'}} and chip('title') == 'you edited')
         close_dialogs(p)
-        p.locator('[data-action=new-project]:visible').first.click(); p.locator('#projectDialog').wait_for(state='visible')
+        p.locator('[data-action=new-project]:visible').first.click(); p.locator('#projectDialog').wait_for(state='visible'); p.evaluate("document.getElementById('projectMore').open=true")  # W1: the name and the N+1 are under More details
         fchip = lambda i: p.locator(f'[data-chip="{i}"]').inner_text()
         check(f'9 [{w}px] the new-project form is prefilled from the profile, with chips; managerStaff unticked',
               p.locator('#consultantName').input_value() == 'Tony Walteur' and fchip('consultantName') == 'from DNA' and p.locator('#consultantRole').input_value() == role

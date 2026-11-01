@@ -315,7 +315,7 @@ try:
         pt.locator('#voiceConsentType').click(); pt.wait_for_function('()=>AtlasVoice.status().phase==="live"', timeout=10000); pt.wait_for_timeout(700)
         check('the start message asks for mode text (no other new key), and the page never asked for the microphone', frames_of(pt, 'start')[0].get('mode') == 'text' and pt.evaluate('window.__mic') == 0
               and pt.evaluate('AtlasVoice.status().hasMicrophone===false&&AtlasVoice.status().hasAudioContext===false&&AtlasVoice.status().textMode===true'))
-        check('the greeting is on screen as text, in a labelled conversation log that announces politely', 'Hi, I\'m ATLAS. What was the project?' in pt.locator('#textLog').inner_text()
+        check('the greeting is on screen as text, in a labelled conversation log that announces politely', ('Hi, I\'m ATLAS.' in pt.locator('#textLog').inner_text() and 'What was the project?' in pt.locator('#textLog').inner_text())
               and pt.get_attribute('#textLog', 'role') == 'log' and pt.get_attribute('#textLog', 'aria-live') == 'polite' and pt.get_attribute('#textLog', 'aria-label') == 'Conversation')
         check('no microphone anywhere: Mute is gone, the orb is idle (no listening or speaking motion), the caption says typed interview', pt.locator('#voiceMute').is_hidden()
               and pt.evaluate("document.getElementById('voicePanel').dataset.orbState") == 'idle' and 'typed interview' in pt.locator('#orbStateCaption').inner_text().lower()

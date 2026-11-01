@@ -70,7 +70,7 @@ with sync_playwright() as pw:
     check('the sector taken from the interview is labelled as such', sector.count() == 1 and 'ag-iv' in (sector.get_attribute('class') or ''))
     p.locator('header [data-view=projects]').first.click(); p.wait_for_timeout(400)
     p.locator('[data-action=edit-project]').first.click(); p.wait_for_timeout(300)
-    p.fill('#sectorInput', 'Reinsurance'); p.evaluate("document.getElementById('projectForm').requestSubmit()"); p.wait_for_timeout(300)
+    p.evaluate("document.getElementById('projectMore').open=true"); p.fill('#sectorInput', 'Reinsurance'); p.evaluate("document.getElementById('projectForm').requestSubmit()"); p.wait_for_timeout(300)
     p.locator('header [data-view=stories]').first.click(); p.wait_for_timeout(2200)
     sector = p.locator('#storyPaper .ag-chip', has_text='Sector: Reinsurance')
     check('a sector the consultant retypes loses the "from interview" label', sector.count() == 1 and 'ag-iv' not in (sector.get_attribute('class') or ''))

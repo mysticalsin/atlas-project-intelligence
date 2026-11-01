@@ -248,7 +248,7 @@ try:
               and 'Head of Data' not in jane.evaluate("JSON.stringify({...localStorage,...sessionStorage})"))
         close_dialogs(jane)
         jane.locator('header [data-view=projects]').click(); jane.wait_for_timeout(300)
-        jane.locator('[data-action=new-project]:visible').first.click(); jane.locator('#projectDialog').wait_for(state='visible')
+        jane.locator('[data-action=new-project]:visible').first.click(); jane.locator('#projectDialog').wait_for(state='visible'); jane.evaluate("document.getElementById('projectMore').open=true")  # W1: the name and the N+1 are under More details
         fchip = lambda i: jane.locator(f'[data-chip="{i}"]').inner_text()
         check('the new-project form is prefilled from the profile with chips; the edited title reads "you edited"',
               jane.locator('#consultantName').input_value() == 'Jane Doe' and exp.match(fchip('consultantName')) and jane.locator('#consultantRole').input_value() == 'Head of Data'

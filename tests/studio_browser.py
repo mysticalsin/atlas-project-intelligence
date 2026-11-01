@@ -77,14 +77,14 @@ with sync_playwright() as pw:
   p.locator('#voiceConnectionDialog [data-voice-close]').click()
   # Project authoring and generated story are real DOM operations; native storage is unavailable in this set_content origin.
   project(p);check('Project context binds to the selected local project',p.locator('#orbProjectTitle').inner_text()=='An authorized project alias')
-  p.locator('#studioCloseContext').click();p.locator('#voiceTextToggle').click();check('Original text note editor retained',p.locator('.interview-layout').is_visible())
+  (p.locator('#studioCloseContext').click() if p.locator('#studioCloseContext').is_visible() else None);p.locator('#voiceTextToggle').click();check('Original text note editor retained',p.locator('.interview-layout').is_visible())
   p.locator('#answerInput').fill('I implemented a normalization pipeline for a pilot intake queue. The architecture lead owned the overall target design.')
   p.locator('#nextButton').click();check('Actual authored answer saved',p.evaluate('ATLAS_VOICE_BRIDGE.context().project.answers[0].includes("normalization")'))
   p.locator('#voiceTextToggle').click();p.locator('header [data-view=projects]').click();check('Project library remains usable',p.locator('#projectCards').is_visible() and 'authorized project alias' in p.locator('#projectCards').inner_text())
   check('Project page exits dark conversation mode',not p.evaluate('document.body.classList.contains("studio-view")'))
   p.locator('header [data-view=interview]').click();check('Conversation view restores dark orb layout',p.evaluate('document.body.classList.contains("studio-view")'))
   # Live lifecycle is tested with explicitly faked provider/microphone APIs.
-  live=load(context,adapter=True);project(live);live.locator('#studioCloseContext').click()
+  live=load(context,adapter=True);project(live);(live.locator('#studioCloseContext').click() if live.locator('#studioCloseContext').is_visible() else None)
   live.locator('#voiceStart').click();live.locator('#voiceConsentDialog').wait_for(state='visible')
   check('Consent is required before a microphone request',live.evaluate('__TEST.micStarts===0') and live.locator('#voiceConsentStart').is_disabled())
   live.locator('#modelConsent').check();live.locator('#voiceConsentStart').click();wait(live,'live');live.wait_for_timeout(250)
