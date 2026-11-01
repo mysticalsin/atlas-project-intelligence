@@ -201,34 +201,34 @@ body.ui2.studio-view:not(.studio-focus) #summaryTitle:focus-visible{outline:2px 
  body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true] .orb-stage-tools{display:none}
 }
 
-/* ---------- the start flow's sheets are dark Mantu sheets like Settings: consent, Stop, Start over, Resume, the picker and the project form. One primary per sheet, and it is yellow ---------- */
-body.ui2 dialog.w1-dark{background:var(--surface);color:var(--text);color-scheme:dark;border:1px solid var(--line-2);border-radius:var(--r-dialog)}
-body.ui2 dialog.w1-dark::backdrop{background:rgba(8,8,9,.72)}
-body.ui2 dialog.w1-dark .dialog-head{background:var(--surface)}
-body.ui2 dialog.w1-dark .dialog-head h2{color:var(--text)}
-body.ui2 dialog.w1-dark .eyebrow{color:var(--accent)}
-body.ui2 dialog.w1-dark .close{background:var(--raised);color:var(--text);border:1px solid var(--line-2)}
-body.ui2 dialog.w1-dark :is(p,label,legend,summary,h3,h4,.small,.check span){color:var(--text)}
-body.ui2 dialog.w1-dark :is(.muted,.tiny,.tiny.muted,.small.muted,.field-note,.field-label,.consent-help,.consent-help p,.consent-help summary,#consentIdentity,#consentTip,.voice-language-state){color:var(--text-2)}
-body.ui2 dialog.w1-dark #voiceConsentDialog .consent-help{color:var(--text-2)}
-body.ui2 dialog.w1-dark a{color:var(--violet)}
-body.ui2 dialog.w1-dark :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-body.ui2 dialog.w1-dark :is(input:not([type=checkbox]):not([type=radio]),select,textarea){background:var(--bg);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r-control);padding:10px 12px;min-height:44px;font-size:14px}
-body.ui2 dialog.w1-dark input::placeholder{color:var(--text-3)}
-body.ui2 dialog.w1-dark :is(input[type=radio],input[type=checkbox]){accent-color:var(--accent)}
-body.ui2 dialog.w1-dark .btn{background:var(--raised);color:var(--text);border:1px solid var(--line-2);border-radius:999px}
-body.ui2 dialog.w1-dark .btn:hover:not(:disabled){background:#2a2b33}
-body.ui2 dialog.w1-dark .btn.primary{background:var(--accent);color:var(--on-accent);border-color:var(--accent);font-weight:600}
-body.ui2 dialog.w1-dark .btn.primary:hover:not(:disabled){background:#fff27a}
-body.ui2 dialog.w1-dark .btn:disabled{opacity:.45}
-body.ui2 dialog.w1-dark .quiet{color:var(--violet)}
-body.ui2 dialog.w1-dark .actions{border-top-color:var(--line)}
-body.ui2 dialog.w1-dark :is(.more-details,.confidential-client){border-color:var(--line)}
-body.ui2 dialog.w1-dark .confidential-client legend span{color:var(--text-2)}
-body.ui2 dialog.w1-dark .tag{background:var(--raised);color:var(--text-2);border:1px solid var(--line-2)}
-body.ui2 dialog.w1-dark .consent-optional,body.ui2 dialog.w1-dark .check{color:var(--text)}
+/* ---------- every sheet is a dark Mantu sheet like Settings (v2.2 W3: consent, Stop, Start over, Resume, the picker, the project form, How it works, the record, the report, insights, the reference sheet, the confirmations and the rest). One primary per sheet, and it is yellow ---------- */
+body.ui2 dialog{background:var(--surface);color:var(--text);color-scheme:dark;border:1px solid var(--line-2);border-radius:var(--r-dialog)}
+body.ui2 dialog::backdrop{background:rgba(8,8,9,.72)}
+body.ui2 dialog .dialog-head{background:var(--surface)}
+body.ui2 dialog .dialog-head h2{color:var(--text)}
+body.ui2 dialog .eyebrow{color:var(--accent)}
+body.ui2 dialog .close{background:var(--raised);color:var(--text);border:1px solid var(--line-2)}
+body.ui2 dialog :is(p,label,legend,summary,h3,h4,.small,.check span){color:var(--text)}
+body.ui2 dialog :is(.muted,.tiny,.tiny.muted,.small.muted,.field-note,.field-label,.consent-help,.consent-help p,.consent-help summary,#consentIdentity,#consentTip,.voice-language-state){color:var(--text-2)}
+body.ui2 dialog #voiceConsentDialog .consent-help{color:var(--text-2)}
+body.ui2 dialog a{color:var(--violet)}
+body.ui2 dialog :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+body.ui2 dialog :is(input:not([type=checkbox]):not([type=radio]),select,textarea){background:var(--bg);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r-control);padding:10px 12px;min-height:44px;font-size:14px}
+body.ui2 dialog input::placeholder{color:var(--text-3)}
+body.ui2 dialog :is(input[type=radio],input[type=checkbox]){accent-color:var(--accent)}
+body.ui2 dialog .btn{background:var(--raised);color:var(--text);border:1px solid var(--line-2);border-radius:999px}
+body.ui2 dialog .btn:hover:not(:disabled){background:#2a2b33}
+body.ui2 dialog .btn.primary{background:var(--accent);color:var(--on-accent);border-color:var(--accent);font-weight:600}
+body.ui2 dialog .btn.primary:hover:not(:disabled){background:#fff27a}
+body.ui2 dialog .btn:disabled{opacity:.45}
+body.ui2 dialog .quiet{color:var(--violet)}
+body.ui2 dialog .actions{border-top-color:var(--line)}
+body.ui2 dialog :is(.more-details,.confidential-client){border-color:var(--line)}
+body.ui2 dialog .confidential-client legend span{color:var(--text-2)}
+body.ui2 dialog .tag{background:var(--raised);color:var(--text-2);border:1px solid var(--line-2)}
+body.ui2 dialog .consent-optional,body.ui2 dialog .check{color:var(--text)}
 /* the consent sheet: the one required choice reads as required, the others as optional */
-body.ui2 dialog.w1-dark #voiceConsentType:not(.primary),body.ui2 dialog.w1-dark #voiceConsentStart:not(.primary){background:var(--raised)}
+body.ui2 dialog #voiceConsentType:not(.primary),body.ui2 dialog #voiceConsentStart:not(.primary){background:var(--raised)}
 
 /* ---------- after the interview: a clean start screen; a confirmed read-back, when there is one, owns the column ---------- */
 body.ui2.studio-view #voicePanel:is([data-phase=idle],[data-phase=error]) .text-log{display:none!important}

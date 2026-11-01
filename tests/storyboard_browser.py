@@ -59,7 +59,7 @@ with sync_playwright() as pw:
  check('Measurement slot is dashed "to recover"','to recover: before and after values' in text(p,'#boardMetrics'))
  st=p.evaluate("Object.fromEntries([...document.querySelectorAll('#boardDims .board-dim')].map(e=>[e.dataset.field,e.dataset.state]))")
  check('Twelve dimension cells in the right states',len(st)==12 and st['problem']=='reported' and st['measurement']=='unknown' and st['evidence']=='deferred' and st['decision']=='empty')
- check('Coverage reads as candidate coverage','5/12 · candidate coverage, not verification'==text(p,'#boardCoverage'))
+ check('Coverage reads in plain words: things a reader will want to know, not yet checked against sources','Covered so far: 5 of 12 things a reader will want to know · not yet checked against sources'==text(p,'#boardTopics'))
  check('"ATLAS may ask next", never "asked"','ATLAS may ask next' in text(p,'#boardChallenge') and 'before and after values' in text(p,'#boardChallenge') and not re.search(r'\basked\b',p.evaluate("document.querySelector('#storyBoard').textContent")))
  check('Lagging probe_history is not shown','Earlier plan' not in p.evaluate("document.querySelector('#storyBoard').textContent"))
  # ---- F5.3 #4: nothing claims a check; every section carries the label

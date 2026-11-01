@@ -4,7 +4,7 @@
    when it is named after a place cue, and the next question is only what ATLAS may ask, never what it asked. */
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.AtlasBoard=api;})(typeof globalThis!=='undefined'?globalThis:this,()=>{
 'use strict';
-const LABEL='From the interview · unverified',MEANING='candidate coverage, not verification',MAX_QUOTE=2000;
+const LABEL='From the interview · unverified',MEANING='not yet checked against sources',MAX_QUOTE=2000;
 const own=(o,k)=>!!o&&Object.prototype.hasOwnProperty.call(o,k);
 const obj=v=>v&&typeof v==='object'&&!Array.isArray(v)?v:{};
 const arr=v=>Array.isArray(v)?v:[];
@@ -128,7 +128,7 @@ function diff(prev,next){const before=new Set(keysOf(prev));return keysOf(next).
 
 // Short plain sentences for the polite live region. Never says what was asked, never claims a check.
 function summaryText(m){if(!m||typeof m!=='object')return '';const c=obj(m.coverage),parts=['From the interview, unverified.'];
- parts.push((c.present||0)+' of '+(c.total||0)+' dimensions have candidate details.');
+ parts.push('Covered so far: '+(c.present||0)+' of '+(c.total||0)+' things a reader will want to know.');
  if(arr(m.pins).length)parts.push('Countries mentioned: '+m.pins.map(p=>p.name).join(', ')+'.');
  const figs=arr(m.metrics);if(figs.length)parts.push('Figures heard: '+figs.slice(0,4).map(x=>x.text+(x.unitUnclear?' (unit unclear)':'')+(x.status==='uncertain'?' (estimate)':'')).join(', ')+(figs.length>4?' and '+(figs.length-4)+' more':'')+'.');
  const n=arr(m.corrected).length;if(n)parts.push(n===1?'One earlier account was corrected.':n+' earlier accounts were corrected.');

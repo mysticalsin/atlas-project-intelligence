@@ -46,16 +46,18 @@ async function renderClaims(id){const box=$('wfClaims');if(!box)return;box.hidde
   box.append(d);box.hidden=false;}catch(e){}}
 // ---- the admin Connections panel: every connection of the framework and where it stands (GET /api/connections/status; names and booleans only) ----
 const STATE_WORDS={ready:'Ready',mock:'Mock',not_configured:'Not configured'};
-const REASON_WORDS={NOT_WIRED:'Not built yet',ADAPTERS_NOT_LIVE:'ATLAS is in mock mode',BASE_URL_MISSING:'Address not set',BASE_URL_INVALID:'Address is not valid',ENDPOINT_NOT_CONFIGURED:'Endpoint not set',FIELD_MAPPING_EMPTY:'Field mapping empty',ACK_RULE_MISSING:'Acknowledgement rule missing',TOKEN_URL_MISSING:'Token address not set',STATUS_NOT_CONFIGURED:'Not set up by its owner yet',NOT_HTTP_CONNECTOR:'Built into ATLAS'};
-const reasonText=r=>/^SECRET_MISSING:/.test(r)?'Credential '+r.slice(15)+' not set':REASON_WORDS[r]||String(r).replace(/_/g,' ').toLowerCase();
+// Plain words for the person who administers ATLAS (v2.2 W3): what is missing, not the name of the setting. The names of the settings (never their values) sit under "For IT" in each row.
+const REASON_WORDS={NOT_WIRED:'Not built yet',ADAPTERS_NOT_LIVE:'ATLAS is in mock (practice) mode',BASE_URL_MISSING:'The other system’s address has not been added',BASE_URL_INVALID:'The address that was added is not valid',ENDPOINT_NOT_CONFIGURED:'The connection point has not been added',FIELD_MAPPING_EMPTY:'The matching of fields is empty',ACK_RULE_MISSING:'The rule for a successful hand-over is missing',TOKEN_URL_MISSING:'The sign-in address for the other system is missing',STATUS_NOT_CONFIGURED:'Its owner has not set it up yet',NOT_HTTP_CONNECTOR:'Built into ATLAS'};
+const isSecret=r=>/^SECRET_MISSING:/.test(r);
+const reasonText=r=>isSecret(r)?'Access details have not been added yet':REASON_WORDS[r]||String(r).replace(/_/g,' ').toLowerCase();
 const EVIDENCE_WORDS={not_configured:'not configured',configured_untested:'configured, not yet tried',contract_verified:'contract checked, not used live',live_verified:'used live'};
 // One table row per connection: name (with a details disclosure), a state dot and word, and what is missing in one line. It renders into the Connections tab of the Settings sheet (settings-ui.js loads it
 // when the tab opens); text only, nothing from the server is ever written as markup.
-function connRow(c){const why=c.state==='ready'?[]:(c.reasons||[]).filter(r=>!(c.state==='mock'&&r==='ADAPTERS_NOT_LIVE')).slice(0,3).map(reasonText);
+function connRow(c){const all=c.state==='ready'?[]:(c.reasons||[]).filter(r=>!(c.state==='mock'&&r==='ADAPTERS_NOT_LIVE')),why=[...new Set(all.slice(0,6).map(reasonText))].slice(0,3),names=all.filter(isSecret).map(r=>r.slice(15));
  const missing=[c.state==='mock'?'Reaches a test destination only: “Mock — not connected”.':'',...why,c.note||''].filter(Boolean).join(' · ')||'Nothing missing.';
- const detail=[(c.direction==='inbound'?'Reads from it':'Sends to it')+' · step '+c.workflow_step+(c.built_in?' · built into ATLAS':''),c.status==='not_configured'?'':EVIDENCE_WORDS[c.status]||String(c.status||'').replace(/_/g,' ')].filter(Boolean).join(' · ');
+ const detail=[(c.direction==='inbound'?'Reads from it':'Sends to it')+' · step '+c.workflow_step+(c.built_in?' · built into ATLAS':''),c.status==='not_configured'?'':EVIDENCE_WORDS[c.status]||String(c.status||'').replace(/_/g,' '),names.length?'Settings to add on the server (names only): '+names.join(', '):''].filter(Boolean).join(' · ');
  return h('tr',{class:'conn-row','data-conn':c.id,'data-state':c.state},
-  h('th',{scope:'row',class:'conn-name'},h('b',{text:c.label}),h('details',{class:'conn-more'},h('summary',{text:'Details'}),h('p',{class:'tiny muted',text:detail}))),
+  h('th',{scope:'row',class:'conn-name'},h('b',{text:c.label}),h('details',{class:'conn-more'},h('summary',{text:'For IT'}),h('p',{class:'tiny muted',text:detail}))),
   h('td',{class:'conn-state'},h('span',{class:'conn-chip','data-state':c.state,text:STATE_WORDS[c.state]||c.state})),
   h('td',{class:'conn-why',text:missing}));}
 async function refreshConnections(){const box=$('connectionsPanel');if(!box)return;
@@ -64,9 +66,9 @@ async function refreshConnections(){const box=$('connectionsPanel');if(!box)retu
   const v=await r.json(),list=Array.isArray(v.connections)?v.connections:[];if(!list.length){box.replaceChildren(h('p',{class:'small muted',text:'No connections are defined.'}));return;}
   const n=s=>list.filter(c=>c.state===s).length;
   box.replaceChildren(h('h4',{id:'connectionsTitle',text:n('ready')+' ready · '+n('mock')+' mock · '+n('not_configured')+' not configured'}),
-   h('p',{class:'small muted',text:'ATLAS is in '+(v.adapters==='live'?'live':'mock')+' mode: nothing reaches an outside system unless its connection is Ready and live.'}),
+   h('p',{class:'small muted',text:'ATLAS is in '+(v.adapters==='live'?'live':'mock (practice)')+' mode: nothing reaches an outside system unless its connection is Ready and live.'}),
    h('div',{class:'conn-scroll'},h('table',{class:'conn-table'},h('thead',{},h('tr',{},h('th',{scope:'col',text:'Connection'}),h('th',{scope:'col',text:'State'}),h('th',{scope:'col',text:'What is missing'}))),h('tbody',{},...list.map(connRow)))),
-   h('p',{class:'tiny muted',text:'Names and yes/no only. No credential, address or token is shown here.'}));
+   h('p',{class:'tiny muted',text:'Plain explanations only. The technical names are under “For IT” in each row; no credential, address or token is ever shown here.'}));
  }catch(e){if(window.AtlasAuth&&e instanceof window.AtlasAuth.Expired)return;box.replaceChildren(h('p',{class:'small muted',text:'The connections could not be loaded right now.'}));}}
 async function refresh({force=false}={}){
  if(busy)return busy;if(!force&&Date.now()-loadedAt<5000)return null;

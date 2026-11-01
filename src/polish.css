@@ -1,0 +1,178 @@
+/* v2.2 W3 global polish. Loaded last, so it states the final word on: the one toast, the one save chip, the header and the phone tab bar, the dark sheets (inner parts), the consent hierarchy, the plain-words rail,
+   How it works for people, and the command palette. Tokens come from styles.css (dark Mantu: --bg, --surface, --raised, --text, --text-2 8.2:1, --text-3 5.5:1, --accent yellow, --on-accent 11.4:1). Type floor 12px, touch targets 44px,
+   motion only when the person allows it. The orb's own rules are not touched. */
+
+/* ---------- ONE toast: bottom-centre, polite live region, 4 s, optional Undo. It sits in the top layer (popover) so a sheet never hides it ---------- */
+.toast{position:fixed;inset:auto;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));top:auto;margin:0;transform:translateX(-50%);z-index:400;max-width:min(560px,calc(100vw - 32px));width:max-content;
+ display:none;align-items:center;gap:var(--s3);padding:var(--s3) var(--s4);background:var(--raised);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r-control);box-shadow:0 12px 40px rgba(0,0,0,.55);
+ font-size:14px;line-height:1.45;overflow:visible;max-height:none;overflow-wrap:anywhere}
+.toast:popover-open{display:flex}
+@supports not selector(:popover-open){.toast.show{display:flex}}
+.toast #toastText{flex:1 1 auto;min-width:0}
+.toast .toast-undo{flex:none;min-height:44px;padding:0 var(--s4);margin:calc(var(--s2) * -1) calc(var(--s2) * -1) calc(var(--s2) * -1) 0;border-radius:var(--r-control);background:transparent;color:var(--accent);border:1px solid var(--line-2);font-size:14px;font-weight:600}
+.toast .toast-undo:hover{background:rgba(246,235,75,.10)}
+.toast :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media(prefers-reduced-motion:no-preference){.toast:popover-open{animation:w3ToastIn .2s var(--ease)}}
+@keyframes w3ToastIn{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translateX(-50%)}}
+@media print{.toast{display:none!important}}
+
+/* ---------- ONE save chip: Saved | Saving… | Not saved: kept in this tab. It opens Settings, Workspace ---------- */
+body.ui2 .top-actions{gap:var(--s3)}
+.save-wrap{display:inline-flex;align-items:center;gap:var(--s1)}
+body.ui2 .save-chip{display:inline-flex;align-items:center;gap:var(--s2);min-height:36px;padding:var(--s1) var(--s3);border-radius:999px;background:transparent;border:1px solid var(--line-2);color:var(--text-2);font-size:12px;line-height:1.25;text-align:left;max-width:230px}
+body.ui2 .save-chip::before{content:"";flex:none;width:8px;height:8px;border-radius:50%;background:var(--ok)}
+body.ui2 .save-chip:hover{background:var(--raised);color:var(--text)}
+body.ui2 .save-chip[data-state=saving]::before{background:var(--wait)}
+body.ui2 .save-chip[data-state=unsaved]{color:var(--text);border-color:var(--wait)}
+body.ui2 .save-chip[data-state=unsaved]::before{background:var(--wait)}
+@media(prefers-reduced-motion:no-preference){body.ui2 .save-chip[data-state=saving]::before{animation:w3Pulse 1s ease-in-out infinite}}
+@keyframes w3Pulse{50%{opacity:.35}}
+body.ui2 .save-chip:focus-visible,body.ui2 .palette-btn:focus-visible,body.ui2 .how-btn:focus-visible,body.ui2 .storage-retry:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+body.ui2 .storage-retry{min-height:36px;color:var(--violet);font-size:12px;padding:0 var(--s2)}
+body.ui2 .palette-btn{display:inline-flex;align-items:center;min-height:36px;padding:0 var(--s3);border:1px solid var(--line-2);border-radius:var(--r-control);color:var(--text-2);font-size:12px;letter-spacing:.2px}
+body.ui2 .palette-btn:hover{background:var(--raised);color:var(--text)}
+body.ui2 .how-btn{display:inline-flex;align-items:center;gap:var(--s2);min-height:36px;color:var(--text-2);font-size:14px}
+body.ui2 .how-btn .how-ico{width:18px;height:18px;display:none}
+.nav-ico{display:none}
+@media(max-width:1100px){html body.ui2 .topbar .how-btn{display:inline-flex;min-width:44px;min-height:44px;justify-content:center;padding:0}html body.ui2 .topbar .how-btn .how-label{display:none}html body.ui2 .topbar .how-btn .how-ico{display:block}}
+@media(max-width:700px){body.ui2 .palette-btn{display:none}}
+
+/* ---------- a phone: the five places become a bottom tab bar (the nav element itself, so every handler and test still finds it); the live interview and the read-back hide it and keep the whole screen ---------- */
+@media(max-width:700px){
+ :root{--tabbar-h:60px}
+ html body.ui2 .topbar{height:auto;min-height:0;padding:var(--s3) var(--s4) var(--s2);display:flex;flex-wrap:nowrap;align-items:center;justify-content:space-between;gap:var(--s2)}
+ html body.ui2 .topbar .brand{gap:var(--s2);min-width:0}
+ html body.ui2 .topbar .brand-mark{padding:10px 11px}
+ html body.ui2 .topbar .brand-mark img{width:72px}
+ html body.ui2 .topbar .product{font-size:16px;letter-spacing:1.5px}
+ html body.ui2 .topbar .top-actions{grid-row:auto;grid-column:auto;gap:var(--s2);flex:none}
+ html body.ui2 .save-chip{max-width:132px;padding:var(--s1) var(--s2);min-height:44px}
+ html body.ui2 .avatar{width:44px;height:44px}
+ html body.ui2 .topbar nav{position:fixed;left:0;right:0;bottom:0;z-index:120;grid-row:auto;grid-column:auto;margin:0;width:auto;overflow:visible;padding:var(--s1) var(--s2) calc(var(--s1) + env(safe-area-inset-bottom,0px));gap:0;display:flex;justify-content:space-between;
+  background:var(--surface);border:0;border-top:1px solid var(--line-2);border-radius:0}
+ html body.ui2 .topbar nav button{flex:1 1 0;min-width:max-content;min-height:var(--tabbar-h);padding:var(--s1) var(--s1);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12px;line-height:1.2;color:var(--text-2);border-radius:var(--r-control);white-space:nowrap;overflow:visible;text-overflow:clip;background:transparent}
+ html body.ui2 .topbar nav button[hidden]{display:none}
+ html body.ui2 .topbar nav button .nav-ico{display:block;width:22px;height:22px}
+ html body.ui2 .topbar nav button.active{color:var(--accent);background:var(--raised)}
+ html body.ui2 .topbar nav button:focus-visible{outline:2px solid var(--accent);outline-offset:-3px}
+ html body.ui2 main#workspace{padding-bottom:calc(var(--tabbar-h) + var(--s4) + env(safe-area-inset-bottom,0px))}
+ html body.ui2 footer{padding-bottom:var(--s2)}
+ /* the interview and the read-back own the screen: no tab bar there (Stop is the way out); the answer bar is pinned instead */
+ html body.ui2.studio-view:not(.studio-focus):has(#voicePanel:is([data-phase=live],[data-phase=ending],[data-summary=true])) .topbar nav{display:none}
+ html body.ui2.studio-view:not(.studio-focus):has(#voicePanel:is([data-phase=live],[data-phase=ending],[data-summary=true])) main#workspace{padding-bottom:0}
+ /* the toast makes room for itself on a phone: content moves up, nothing is covered */
+ html body.ui2.has-toast main#workspace{padding-bottom:calc(var(--toast-h,0px) + var(--tabbar-h) + env(safe-area-inset-bottom,0px))!important}
+ html body.ui2.has-toast.studio-view:not(.studio-focus):has(#voicePanel:is([data-phase=live],[data-phase=ending],[data-summary=true])) main#workspace{padding-bottom:calc(var(--toast-h,0px) + env(safe-area-inset-bottom,0px))!important}
+ .toast{bottom:calc(var(--tabbar-h) + var(--s2) + env(safe-area-inset-bottom,0px));max-width:calc(100vw - 24px)}
+ html body.ui2.studio-view:not(.studio-focus):has(#voicePanel:is([data-phase=live],[data-phase=ending],[data-summary=true])) .toast{bottom:calc(var(--s2) + env(safe-area-inset-bottom,0px))}
+ .voice-live-pill{bottom:calc(var(--tabbar-h) + var(--s3) + env(safe-area-inset-bottom,0px))}
+}
+
+/* ---------- the sheets' inner parts on the dark surface (the light parts of the old dialogs: notes, tables, code, steps, tabs, status rows). Floor 12px, contrast 4.5:1 or better ---------- */
+html body.ui2 dialog :is(strong,b,th,td,dt,dd){color:var(--text)}
+html body.ui2 dialog th{color:var(--text-2);font-weight:500}
+html body.ui2 dialog :is(.voice-details span,.git-lane span,.build-principles p){color:var(--text-2);font-size:12px}
+html body.ui2 dialog .voice-details strong,html body.ui2 dialog .build-principles strong{color:var(--text);font-size:12px}
+html body.ui2 dialog .voice-details>div{border-bottom-color:var(--line);font-size:12px}
+html body.ui2 dialog .note{background:var(--raised);color:var(--text);border:1px solid var(--line-2);border-left:3px solid var(--accent);border-radius:var(--r-control);font-size:14px;line-height:1.55}
+html body.ui2 dialog :is(pre,.voice-raw){background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:var(--r-control);font-size:12px}
+html body.ui2 dialog hr{border:0;border-top:1px solid var(--line)}
+html body.ui2 dialog .sheet-steps li{font-size:12px;color:var(--text-2);border-color:var(--line-2)}
+html body.ui2 dialog .sheet-steps li.active{background:var(--accent);color:var(--on-accent);border-color:var(--accent);font-weight:600}
+html body.ui2 dialog .sheet-steps li.done{color:var(--accent);border-color:var(--line-2)}
+html body.ui2 dialog .intel-chip{font-size:12px;letter-spacing:.3px;color:var(--accent);border-color:var(--line-2)}
+html body.ui2 dialog .intelligence-tabs{background:var(--bg);border:1px solid var(--line-2)}
+html body.ui2 dialog .intelligence-tabs button{background:transparent;color:var(--text-2);font-size:14px;min-height:44px}
+html body.ui2 dialog .intelligence-tabs button:hover{background:var(--raised);color:var(--text)}
+html body.ui2 dialog .intelligence-tabs button.selected{background:var(--accent);color:var(--on-accent);font-weight:600}
+html body.ui2 dialog .architecture{background:#F8F8F8;border-color:var(--line-2)}
+html body.ui2 dialog .btn.danger{background:#a4262c;border-color:#c0392b;color:#fff}
+html body.ui2 dialog .btn.danger:hover:not(:disabled){background:#8c1f25;border-color:#c0392b}
+html body.ui2 dialog .btn.danger:disabled{background:var(--raised);border-color:var(--line-2);color:var(--text-2);opacity:.6}
+html body.ui2 dialog .btn.danger-quiet{color:#ff9aa0}
+html body.ui2 dialog :is(.btn,.quiet,.close,a.btn):focus-visible,html body.ui2 dialog :is(input,select,textarea,summary,button,a):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+html body.ui2 dialog textarea{background:var(--bg);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r-control)}
+html body.ui2 dialog :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea)::placeholder{color:var(--text-3)}
+html body.ui2 dialog :is(.field-error,.gateway-error,[data-bad="1"]){color:#ff9aa0}
+
+/* ---------- the consent sheet: one required block, a lighter optional block, a sticky Start with a one-line summary ---------- */
+html body.ui2 #voiceConsentDialog{--dlg-px:var(--s6)}
+@media(max-width:700px){html body.ui2 #voiceConsentDialog{--dlg-px:var(--s5)}}
+html body.ui2 #voiceConsentDialog #consentIdentity{margin:0 0 var(--s3);padding:0;position:static;font-size:12px;color:var(--text-2)}
+html body.ui2 #voiceConsentDialog .consent-block{margin:var(--s3) 0;min-width:0}
+html body.ui2 #voiceConsentDialog .consent-tag{display:flex;align-items:baseline;flex-wrap:wrap;gap:var(--s1) var(--s2);margin:0 0 var(--s2);font-size:12px;line-height:1.4;color:var(--text-2)}
+html body.ui2 #voiceConsentDialog .consent-tag b{font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+html body.ui2 #voiceConsentDialog .consent-required{padding:var(--s4);background:var(--raised);border:1px solid var(--line-2);border-left:4px solid var(--accent);border-radius:var(--r-control)}
+html body.ui2 #voiceConsentDialog .consent-required .consent-tag b{color:var(--accent)}
+html body.ui2 #voiceConsentDialog .consent-required .check{margin:0;font-size:16px;line-height:1.5;font-weight:500}
+html body.ui2 #voiceConsentDialog .consent-required .check span{color:var(--text)}
+html body.ui2 #voiceConsentDialog .consent-required input[type=checkbox]{width:24px;height:24px;flex:none}
+html body.ui2 #voiceConsentDialog .consent-optional{padding:var(--s3) 0 0;border-top:1px solid var(--line)}
+html body.ui2 #voiceConsentDialog .consent-optional:not(:has(label.check:not([hidden]))){display:none}
+html body.ui2 #voiceConsentDialog .consent-optional .consent-tag b{color:var(--text-2)}
+html body.ui2 #voiceConsentDialog .consent-optional .check{margin:var(--s2) 0;font-size:14px;line-height:1.5;font-weight:400}
+html body.ui2 #voiceConsentDialog .consent-optional .check span,html body.ui2 #voiceConsentDialog .consent-optional .check span span{color:var(--text-2)}
+html body.ui2 #voiceConsentDialog .consent-bar{position:sticky;bottom:0;z-index:3;margin:var(--s3) calc(var(--dlg-px) * -1) 0;padding:var(--s3) var(--dlg-px) var(--s4);background:var(--surface);border-top:1px solid var(--line-2)}
+html body.ui2 #voiceConsentDialog .consent-summary{margin:0 0 var(--s2);font-size:13px;line-height:1.5;color:var(--text-2)}
+html body.ui2 #voiceConsentDialog .consent-reason{margin:0 0 var(--s2);font-size:12px;color:var(--text-2)}
+html body.ui2 #voiceConsentDialog .consent-bar .actions{position:static;margin:var(--s2) 0 0;padding:0;border:0;background:none}
+html body.ui2 #voiceConsentDialog #consentSpecial{margin:var(--s2) 0 0}
+
+/* ---------- the live rail in plain words: one progress caption, "Details" holds the 12 points and the quality log ---------- */
+.story-board #boardTopics{color:var(--text);font-size:13px;line-height:1.5}
+.story-board .board-sub{margin:var(--s2) 0;font-size:12px;line-height:1.5;color:var(--text-2)}
+.story-board .board-quality{margin-top:var(--s2);min-height:44px;font-size:12px;color:var(--violet);padding:0 var(--s2)}
+.story-board #boardDims>summary{min-height:44px;display:flex;align-items:center;gap:var(--s2)}
+
+/* ---------- How it works, for people: four steps and who sees what, when. The architecture lives under Settings, For IT ---------- */
+html body.ui2 dialog.how-dialog{width:min(760px,calc(100vw - 24px));max-width:760px}
+.how-steps{list-style:none;margin:var(--s4) 0;padding:0;display:grid;gap:var(--s3)}
+.how-steps li{display:grid;grid-template-columns:44px minmax(0,1fr);gap:var(--s4);align-items:start;padding:var(--s4);background:var(--raised);border:1px solid var(--line);border-radius:var(--r-card)}
+.how-steps .how-num{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;border:1px solid var(--accent);color:var(--accent);font-size:18px;font-weight:600}
+html body.ui2 dialog.how-dialog .how-steps h3{margin:0 0 var(--s1);font-size:18px;line-height:1.3}
+html body.ui2 dialog.how-dialog .how-steps p{margin:0;font-size:14px;line-height:1.55;color:var(--text-2)}
+.how-who{margin:var(--s5) 0 0;padding:var(--s4);border:1px solid var(--line-2);border-radius:var(--r-card)}
+html body.ui2 dialog.how-dialog .how-who h3{margin:0 0 var(--s3);font-size:18px}
+.how-who dl{margin:0;display:grid;gap:var(--s3)}
+.how-who dl>div{display:grid;grid-template-columns:minmax(150px,230px) minmax(0,1fr);gap:var(--s2) var(--s4);align-items:baseline}
+html body.ui2 dialog.how-dialog .how-who dt{font-size:14px;font-weight:600;color:var(--text)}
+html body.ui2 dialog.how-dialog .how-who dd{margin:0;font-size:14px;line-height:1.5;color:var(--text-2)}
+@media(max-width:600px){.how-steps li{grid-template-columns:36px minmax(0,1fr);gap:var(--s3);padding:var(--s3)}.how-steps .how-num{width:36px;height:36px;font-size:16px}.how-who dl>div{grid-template-columns:1fr}}
+.how-it-diagram{margin:var(--s3) 0}
+html body.ui2 dialog.settings-sheet .forit-more{margin:var(--s3) 0}
+html body.ui2 dialog.settings-sheet .forit-more code{padding:1px 6px;border-radius:6px;background:var(--bg);border:1px solid var(--line)}
+
+/* ---------- the command palette and the shortcut list ---------- */
+html body.ui2 dialog.palette{width:min(620px,calc(100vw - 24px));max-width:620px;margin:12vh auto auto;padding:0;overflow:hidden;max-height:min(70dvh,560px)}
+html body.ui2 dialog.palette[open]{display:flex;flex-direction:column}
+html body.ui2 dialog.palette::backdrop{background:rgba(8,8,9,.6)}
+html body.ui2 dialog.palette .palette-input{width:100%;margin:0;min-height:56px;padding:var(--s3) var(--s5);font-size:16px;background:var(--bg);color:var(--text);border:0;border-bottom:1px solid var(--line-2);border-radius:0}
+html body.ui2 dialog.palette .palette-input:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.palette-list{list-style:none;margin:0;padding:var(--s2);overflow-y:auto;flex:1 1 auto;min-height:0}
+.palette-item{display:flex;align-items:center;gap:var(--s3);min-height:44px;padding:var(--s2) var(--s3);border-radius:var(--r-control);border-left:3px solid transparent;cursor:pointer;color:var(--text);font-size:14px}
+.palette-item.on{background:var(--raised);border-left-color:var(--accent)}
+.palette-label{flex:1 1 auto;min-width:0}
+.palette-note{flex:none;font-size:12px;color:var(--text-2)}
+.palette-hint,.palette-keys kbd{flex:none;font:12px/1.2 var(--font);padding:3px 8px;border:1px solid var(--line-2);border-radius:6px;color:var(--text-2);background:var(--bg)}
+.palette-empty{padding:var(--s4) var(--s3);color:var(--text-2);font-size:14px}
+.palette-foot{display:flex;flex-wrap:wrap;gap:var(--s1) var(--s4);margin:0;padding:var(--s3) var(--s5);border-top:1px solid var(--line);font-size:12px;color:var(--text-2)}
+html body.ui2 dialog.palette-help{width:min(560px,calc(100vw - 24px))}
+.palette-keys{margin:var(--s3) 0;display:grid;gap:var(--s2)}
+.palette-keys>div{display:grid;grid-template-columns:minmax(120px,190px) minmax(0,1fr);gap:var(--s3);align-items:center;min-height:36px}
+.palette-keys dt,.palette-keys dd{margin:0}
+html body.ui2 dialog.palette-help .palette-keys dd{font-size:14px;color:var(--text-2)}
+@media(max-width:600px){.palette-keys>div{grid-template-columns:1fr;gap:var(--s1)}html body.ui2 dialog.palette{margin-top:6vh}}
+
+/* ---------- a phone, live: the screen is as tall as the visible area (the keyboard takes its share), and the answer box, Send and Stop keep the bottom edge, clear of the home indicator ---------- */
+@media(max-width:1023px){
+ html body.ui2.studio-view:not(.studio-focus):has(#voicePanel:is([data-phase=live],[data-phase=ending],[data-summary=true])){height:var(--vvh,100dvh);position:relative;top:var(--vvt,0px)}
+ html body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending],[data-summary=true]){padding-bottom:env(safe-area-inset-bottom,0px)}
+ html.kb-open body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending],[data-summary=true]){padding-bottom:0}
+ html.kb-open body.ui2 .topbar nav{display:none}
+ html body.ui2.studio-view:not(.studio-focus) #voicePanel[data-phase=live] .voice-type-wrap{position:sticky;bottom:0;z-index:6;background:var(--bg)}
+}
+@media(max-width:1023px){
+ /* with the keyboard up there is room for the conversation, the answer box and Stop, nothing else: the banner, the header, the orb box, Language, Pause and Repeat come back when it closes */
+ html.kb-open body.ui2.studio-view:not(.studio-focus):has(#voicePanel[data-phase=live]) :is(.env-strip,.topbar){display:none}
+ html.kb-open body.ui2.studio-view:not(.studio-focus) #voicePanel[data-phase=live] :is(.orb-panel-top,#voiceOrb,.orb-caption,#voiceLanguage,#voicePause,#voiceRepeat){display:none}
+}

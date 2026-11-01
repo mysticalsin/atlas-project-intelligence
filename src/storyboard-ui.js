@@ -33,11 +33,13 @@ function state(){return {quality:s.quality,heard:s.heard,qualitySeq:s.qualitySeq
 function render(){
  board.hidden=s.off||!s.live;if(board.hidden)return;
  const m=B.model(state()),fresh=new Set(motionOK()?B.diff(prev,m):[]);prev=m;
- $('boardCoverage').textContent=m.coverage.present+'/'+m.coverage.total+' · '+m.coverage.meaning;try{const c=$('captureCount');if(c)$('boardTopics').textContent=(parseInt(c.textContent,10)||0)+' of 6 topics saved · '+m.coverage.present+' of '+m.coverage.total+' dimensions heard';}catch(e){}
+ paintCaption(m);
  renderTime(m.time);renderGaps(m,fresh);renderMap(m,fresh);renderMetrics(m,fresh);renderDims(m,fresh);renderChallenge(m);
  announce(B.summaryText(m));}
 // One count of saved topics: the capture ring in the left rail is the source; this line follows it whenever it changes (not only at the next interview event), so the two never disagree.
-function paintTopics(){try{const c=$('captureCount');if(c&&prev&&!board.hidden)$('boardTopics').textContent=(parseInt(c.textContent,10)||0)+' of 6 topics saved · '+prev.coverage.present+' of '+prev.coverage.total+' dimensions heard';}catch(e){}}
+// ONE progress caption (v2.2 W3), in plain words. The saved-notes count is a different thing from what ATLAS has heard, so it is named as such and only shown once there is something in the notes (never "0 of 6 saved" beside "10 of 12 heard").
+function paintCaption(m){try{const n=parseInt($('captureCount')?.textContent,10)||0;$('boardTopics').textContent='Covered so far: '+m.coverage.present+' of '+m.coverage.total+' things a reader will want to know · '+m.coverage.meaning+(n>0?' · Your notes: '+n+' of 6 topics saved':'');}catch(e){}}
+function paintTopics(){if(prev&&!board.hidden)paintCaption(prev);}
 try{if(typeof MutationObserver==='function'&&$('captureCount'))new MutationObserver(paintTopics).observe($('captureCount'),{childList:true,characterData:true,subtree:true});}catch(e){}
 function renderTime(t){const sec=$('boardTime');sec.hidden=t.max===null;if(t.max===null)return;
  $('boardTimeLeft').textContent=t.soft?clock(t.elapsed)+' · about '+Math.round(t.soft/60)+'–'+Math.round(t.max/60)+' min':clock(t.left)+' left';$('boardPhase').textContent=t.phase?PHASES[t.phase]:'';sec.dataset.phase=t.phase||'';
@@ -79,7 +81,7 @@ function renderChallenge(m){const c=m.challenge,box=body('boardChallenge');box.r
  if(c.next)box.append(el('p','board-note','About: '+c.next.label));
  for(const f of c.flags)box.append(el('p','board-note board-warn',flagText(f)));
  if(c.deferred.length)box.append(el('p','board-note','Still open: '+c.deferred.map(f=>fieldLabel(f)||f).join(', ')));
- if(c.route)box.append(el('p','board-note','Story route: '+c.route));}
+ if(c.route)box.append(el('p','board-note','Story route: '+({'quantified candidate':'a story with numbers, not yet checked','qualitative candidate':'a story without numbers so far','learning or experience':'a lessons-learned story'}[c.route]||c.route)));}
 // The polite live region changes at most once every 10 seconds, always to the latest summary.
 function announce(text){pending=text;if(text===said&&!sayTimer)return;const wait=saidAt+10000-Date.now();if(wait<=0)flush();else if(!sayTimer)sayTimer=setTimeout(flush,wait);}
 function flush(){sayTimer=null;if(pending===said)return;said=pending;saidAt=Date.now();$('boardSummary').textContent=said;}
@@ -89,7 +91,7 @@ function tick(){if(board.hidden)return;renderTime(B.model({session:s.session,now
 function startTicker(){stopTicker();ticker=setInterval(tick,1000);}
 function stopTicker(){if(ticker!==null)clearInterval(ticker);ticker=null;}
 function clear(){told=[];stopTicker();clearTimeout(sayTimer);sayTimer=null;s=blank();prev=null;mapKey=null;said=pending='';saidAt=0;gap=null;
- board.hidden=true;$('boardSummary').textContent='';$('boardCoverage').textContent='';$('boardTime').hidden=true;$('boardGaps').hidden=true;
+ board.hidden=true;$('boardSummary').textContent='';$('boardTopics').textContent='';$('boardTime').hidden=true;$('boardGaps').hidden=true;
  for(const id of ['boardGaps','boardMap','boardMetrics','boardDims','boardChallenge'])body(id).replaceChildren();
  renderGap();$('gapMessage').textContent='';}
 function stopClock(){if(s.session.readyAt&&!s.session.stoppedAt)s.session.stoppedAt=Date.now();stopTicker();}

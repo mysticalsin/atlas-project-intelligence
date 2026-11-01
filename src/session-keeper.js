@@ -79,7 +79,7 @@ async function signedIn(){if(mode!=='expired')return;
  window.ATLAS_APP?.toast?.('You’re signed in again. Nothing was lost.');}
 try{const ch=new BroadcastChannel('atlas-auth');ch.onmessage=e=>{if(e.data==='ok')signedIn();};}catch{}
 $('authReconnect')?.addEventListener('click',reconnect);
-$('authBackup')?.addEventListener('click',()=>{$('backupQuick')?.click();backedUp=true;paint();});
+$('authBackup')?.addEventListener('click',()=>{$('backupProfile')?.click();backedUp=true;paint();});
 $('authReload')?.addEventListener('click',()=>{if(!(backedUp||clean()))return;stamp();reloadHome();});
 window.AtlasAuth={paintState,fetch:authFetch,expired,reconnect,Expired,pending,boot,probe,
  onSignedIn:fn=>{if(typeof fn==='function')signedInFns.push(fn);},
