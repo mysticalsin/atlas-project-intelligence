@@ -212,3 +212,21 @@ test('serialize needs no model, no network and no browser: only the session', as
   serialize(h.s); restore(blank(clock()), serialize(h.s)); restoreView(h.s);
   assert.equal(h.calls.talker.length + h.calls.analyst, calls);
 });
+
+test('PR1 checkpoint fence rechecks ownership after an awaited read and serializes an in-flight put before replacement', async () => {
+  for (const pauseAt of ['get', 'put']) {
+    const st = new FakeStorage(); let owner = 'old', release, entered;
+    const gate = new Promise(r => { release = r; }), reached = new Promise(r => { entered = r; });
+    const original = st[pauseAt].bind(st); let pause = true;
+    st[pauseAt] = async (...args) => { if (pause) { pause = false; entered(); await gate; } return original(...args); };
+    const old = new CheckpointStore(st, { owner: USER, isCurrent: () => owner === 'old' });
+    const next = new CheckpointStore(st, { owner: USER, isCurrent: () => owner === 'new' });
+    const doc = id => ({ version: VERSION, sessionId: id.repeat(32), machine: { state: 'discovery' } });
+    const late = old.save(doc('a')).catch(e => e.code);
+    await reached; owner = 'new'; const fresh = next.save(doc('b')); release();
+    await Promise.all([late, fresh]);
+    assert.equal(await st.get('cp:current'), 'b'.repeat(32), pauseAt + ': the new interview owns the checkpoint');
+    await old.purge().catch(e => assert.equal(e.code, 'replaced'));
+    assert.equal(await st.get('cp:current'), 'b'.repeat(32));
+  }
+});

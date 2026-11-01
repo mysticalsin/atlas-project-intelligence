@@ -20,7 +20,7 @@ class El{
  get offsetParent(){return this.hidden?null:{};}
 }
 // plan: how each new socket behaves ('open' by default, 'fail' closes before ready). reply(start, socket): what the server answers to a `start` (default: nothing).
-function boot({resumable=null,plan=[],discardOk=true}={}){
+function boot({resumable=null,plan=[],discardOk=true,readyTimeout=false}={}){
  const els={};const $=id=>els[id]||(els[id]=new El(id));
  const doc={getElementById:$,createElement:t=>new El(t),querySelector:()=>new El('q'),addEventListener(){},body:new El('body'),readyState:'complete'};
  const sockets=[],tracks=[],delays=[],requests=[],events=[],posted=[],h={};
@@ -33,7 +33,7 @@ function boot({resumable=null,plan=[],discardOk=true}={}){
  class Ctx{constructor(){this.state='running';this.audioWorklet={addModule:async()=>{}};this.destination={};this.sampleRate=24000;}async resume(){}async close(){}createMediaStreamSource(){return{connect(){},disconnect(){}};}}
  const bootJson={protocol:'atlas-personaplex-pcm-v1',csrf:'csrf-1',identity:{name:'T',mode:'local'},model:'M',voices:['v'],defaultVoice:'v',busy:false,codecAvailable:true,maxSeconds:900,memory:false,transcription:true,captureRequired:true,structuredNotes:false,provider:'workers',playbackAck:true,resumable};
  // The reconnect pauses (1, 2, 4 s) are recorded and shortened; every other timer is real.
- const fast=(f,ms)=>{if([1000,2000,4000].includes(ms)){delays.push(ms);return setTimeout(f,1).unref();}return setTimeout(f,ms).unref();};
+ const fast=(f,ms)=>{if(readyTimeout&&sockets.length>1&&ms===60000)return setTimeout(f,10).unref();if([1000,2000,4000].includes(ms)){delays.push(ms);return setTimeout(f,1).unref();}return setTimeout(f,ms).unref();};
  const win={document:doc,navigator:{mediaDevices:{getUserMedia:async()=>{const t=[newTrack()];return{getTracks:()=>t,getAudioTracks:()=>t};},enumerateDevices:async()=>[]},languages:['en']},
   location:{protocol:'https:',href:'https://x/',hash:'',pathname:'/',search:''},isSecureContext:true,AudioContext:Ctx,AudioWorkletNode:Worklet,WebSocket:Socket,URL,Blob,performance,
   CustomEvent:class{constructor(t,o){this.type=t;this.detail=o?.detail;}},setTimeout:fast,clearTimeout,setInterval:(f,ms)=>setInterval(f,ms).unref(),clearInterval,queueMicrotask,AbortSignal,
@@ -214,4 +214,17 @@ test('X3 / red M1: the consent dialog opens with every optional box unticked, an
  h.$('modelConsent').checked=true;await h.$('voiceConsentStart').onclick();await wait(30);
  const start=h.starts()[0];
  assert.deepEqual(start.consent,{transcription:true,draft:true,checkpoint:false,memory:false,notice:false});assert.equal(start.capture,true,'transcript capture follows the required tick, with no hidden box');
+});
+
+test('PR1: sockets that open but never become ready time out, retry three times and release the microphone',async()=>{
+ const h=boot({readyTimeout:true});await h.live();const track=h.tracks[0];
+ drop(h);await wait(160);
+ assert.deepEqual(h.delays,[1000,2000,4000]);
+ assert.equal(h.sockets.length,4);
+ assert.ok(h.sockets.slice(1).every(s=>s.readyState===3));
+ assert.equal(h.win.AtlasVoice.status().hasMicrophone,false);
+ assert.equal(track.readyState,'ended');
+ assert.equal(h.win.AtlasVoice.reconnect.state().reconnecting,false);
+ assert.match(text(h,'voiceMessage'),/saved for 24 hours/);
+ assert.ok(!h.requests.some(r=>r.path==='/api/checkpoint/discard'));
 });

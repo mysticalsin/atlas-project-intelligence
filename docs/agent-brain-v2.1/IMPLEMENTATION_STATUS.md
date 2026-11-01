@@ -294,3 +294,7 @@ Not done: Trusted Types; summary mode does not voice scripts without a number ta
 
 `docs/LOCAL_DEMO.md`. `deploy/cloudflare-edge/dev/local-edge.mjs` serves the interview WebSocket through the real `handle()` to the real Interview Durable Object class and Session, with an in-memory Durable Object stand-in, real Library storage and offline fake models (`dev/fake-interviewer.mjs`: replies in en/fr/es/pt/de/it/nl from the selector's next move). A typed interview runs end to end: consent receipts, read-back, Keep private, Correct, Confirm into an owner-only draft, Submit for review, export and the two-step erase. Voice needs a provider, so locally it is typed only. Test: `test/local-demo.test.js`.
 
+
+## 2026-11-01: PR #1 review fixes
+
+The privacy and checkpoint-concurrency findings, reconnect readiness and unsaved-correction defects are fixed and regression tested. Confirmation was revalidated: the existing snapshot/seal protects draft membership; the card now also exposes every ledger detail and its complete quote. Details, test results and remaining browser/environment limits: [PR1_REVIEW_FIXES.md](PR1_REVIEW_FIXES.md). Status remains **locally verified, provider verified: none, not deployed**.

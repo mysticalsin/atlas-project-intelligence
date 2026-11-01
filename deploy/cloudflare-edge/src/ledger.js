@@ -75,7 +75,7 @@ export class InterviewLedger {
     if (this.sealed) fail('The interview notes are confirmed and closed');
     if (!isObj(raw) || Object.keys(raw).length !== 1 || !('details' in raw) || !Array.isArray(raw.details) || raw.details.length < 1 || raw.details.length > 12) fail('Expected 1-12 candidate details');
     // What the consultant kept private never comes back through a model's tool call: not from that utterance, not as the same words elsewhere (red M1).
-    const priv = new Set(this.details.filter(d => d.active && d.withheld).map(d => d.item_id)), privateTexts = [...priv].filter(i => this.transcripts.has(i)).map(i => this.transcripts.get(i));
+    const priv = new Set(this.details.filter(d => d.withheld).map(d => d.item_id)), privateTexts = [...priv].filter(i => this.transcripts.has(i)).map(i => this.transcripts.get(i));
     const pending = [];
     for (const x of raw.details) {
       if (!isObj(x) || Object.keys(x).some(k => !['field', 'item_id', 'quote', 'uncertain', 'supersedes'].includes(k))) fail('Invalid detail schema');
@@ -210,7 +210,7 @@ export class InterviewLedger {
 
 export function buildMessages(ledger, itemId) {
   // An utterance the consultant kept private, and the details withheld from it, never go to the analyst again (red M1).
-  const priv = new Set(ledger.details.filter(d => d.active && d.withheld).map(d => d.item_id));
+  const priv = new Set(ledger.details.filter(d => d.withheld).map(d => d.item_id));
   const ids = [...ledger.transcripts.keys()].filter(i => !priv.has(i) || i === itemId);
   const recent = ids.slice(-(CONTEXT_SEGMENTS + 1)).filter(i => i !== itemId).slice(-CONTEXT_SEGMENTS);
   const active = ledger.details.filter(d => d.active && !d.withheld).map(d => ({ id: d.id, field: d.field, quote: d.quote.slice(0, 200) })).slice(-20);

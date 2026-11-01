@@ -143,25 +143,42 @@ export function split(bytes, size = CHUNK_BYTES) {
   return out.length ? out : [new Uint8Array(0)];
 }
 
+// Every store for this Durable Object shares a mutation queue. A replacement can revoke a
+// session while an async read/write is pending: queued stale work is refused, and a put
+// already issued must finish before the new owner can write or purge the same slot.
+const mutations = new WeakMap();
+
 export class CheckpointStore {
   // storage: the Durable Object storage (get/put/delete/list/setAlarm/deleteAlarm). owner: the verified identity the Worker forwarded for this
   // request. now: milliseconds (a test moves it).
-  constructor(storage, { owner = '', now = () => Date.now(), ttlMs = TTL_MS } = {}) { Object.assign(this, { storage, owner, now, ttlMs }); }
+  constructor(storage, { owner = '', now = () => Date.now(), ttlMs = TTL_MS, isCurrent = () => true } = {}) { Object.assign(this, { storage, owner, now, ttlMs, isCurrent }); }
+
+  assertCurrent() { if (!this.isCurrent()) throw new CheckpointError('replaced', 'this session no longer owns the checkpoint'); }
+  mutate(fn) {
+    const run = (mutations.get(this.storage) || Promise.resolve()).then(() => { this.assertCurrent(); return fn(); });
+    const settled = run.then(() => {}, () => {});
+    mutations.set(this.storage, settled);
+    settled.then(() => { if (mutations.get(this.storage) === settled) mutations.delete(this.storage); });
+    return run;
+  }
 
   // Write the checkpoint (one atomic put of the chunks and the meta), drop chunks of an older, longer write, and arm the purge alarm.
-  async save(doc) {
+  save(doc) { return this.mutate(() => this.saveCurrent(doc)); }
+  async saveCurrent(doc) {
     if (!isObj(doc) || typeof doc.sessionId !== 'string' || !SESSION_ID.test(doc.sessionId)) throw new CheckpointError('corrupt', 'bad session id');
     const id = doc.sessionId, state = isObj(doc.machine) ? doc.machine.state : null;
     if (isTerminal(state)) throw new CheckpointError('terminal', 'a finished interview is not stored');
     // The expiry is fixed by the FIRST write of this interview (kept in its meta; the Session also carries it, see session.js, for a purge in between): saving again never extends it.
     const savedAt = this.now(), old = await this.storage.get(metaKey(id));
     const capturedAt = isObj(old) && Number.isFinite(old.capturedAt) && old.capturedAt <= savedAt ? old.capturedAt : savedAt, expiresAt = capturedAt + this.ttlMs;
-    if (savedAt >= expiresAt) { await this.purge(); throw new CheckpointError('expired', 'the 24 hours are over: the interview is no longer kept'); }
+    if (savedAt >= expiresAt) { await this.purgeCurrent(); throw new CheckpointError('expired', 'the 24 hours are over: the interview is no longer kept'); }
     const chunks = split(enc.encode(JSON.stringify(doc)));
     if (chunks.length > MAX_CHUNKS) throw new CheckpointError('too_large', 'the checkpoint is too large to keep');
     const entries = { [CURRENT]: id, [metaKey(id)]: { version: VERSION, sessionId: id, owner: this.owner, savedAt, capturedAt, expiresAt, state, input: doc.input === 'text' ? 'text' : 'voice', chunks: chunks.length, bytes: chunks.reduce((n, c) => n + c.length, 0) } };
     chunks.forEach((c, n) => { entries[chunkKey(id, n)] = c; });
+    this.assertCurrent();
     await this.storage.put(entries);
+    this.assertCurrent();
     if (isObj(old) && Number.isInteger(old.chunks) && old.chunks > chunks.length) await this.storage.delete(Array.from({ length: old.chunks - chunks.length }, (_, i) => chunkKey(id, chunks.length + i)));
     await this.storage.setAlarm(expiresAt);
     return { chunks: chunks.length, bytes: entries[metaKey(id)].bytes, expiresAt, capturedAt };
@@ -200,8 +217,10 @@ export class CheckpointStore {
   }
 
   // Delete every checkpoint key of this Durable Object and disarm the alarm. Safe to call when nothing is stored.
-  async purge() {
+  purge() { return this.mutate(() => this.purgeCurrent()); }
+  async purgeCurrent() {
     const keys = [...(await this.storage.list({ prefix: PREFIX })).keys()];
+    this.assertCurrent();
     for (let i = 0; i < keys.length; i += 128) await this.storage.delete(keys.slice(i, i + 128));
     await this.storage.deleteAlarm();
     return keys.length;

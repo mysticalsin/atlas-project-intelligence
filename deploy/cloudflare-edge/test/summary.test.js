@@ -29,7 +29,7 @@ test('buildSummary: active, non-withheld details in the story order, with exactl
   assert.ok(items.every(i => i.provenance === 'unverified_speech_recognition' && typeof i.asr_unconfirmed === 'boolean'));
 });
 
-test('buildSummary: takes a real ledger, keeps provenance, clips a long quote to 160 code points and never splits a character', () => {
+test('buildSummary: takes a real ledger, keeps provenance and exposes the complete ledger quote for review', () => {
   const l = new InterviewLedger('Pilot'), long = 'We rebuilt the whole intake flow ' + '😀 wide '.repeat(60);
   l.addTranscript('u1', long); l.addTranscript('user-typed-1001', 'It was a different flow entirely, I think.');
   l.record({ details: [{ field: 'intervention', item_id: 'u1', quote: long.trim() }] });
@@ -38,12 +38,13 @@ test('buildSummary: takes a real ledger, keeps provenance, clips a long quote to
   assert.equal(items.length, 1); assert.equal(items[0].provenance, 'consultant_typed'); assert.equal(items[0].status, 'uncertain');
   const l2 = new InterviewLedger('Pilot'); l2.addTranscript('u1', long); l2.record({ details: [{ field: 'intervention', item_id: 'u1', quote: long.trim() }] });
   const q = buildSummary(l2)[0].quote;
-  assert.ok(Array.from(q).length <= QUOTE_CHARS && q.endsWith('…') && !/[\ud800-\udbff]$/.test(q.slice(0, -1)), 'at most 160 code points, an ellipsis, no lone surrogate');
+  assert.equal(q, long.trim(), 'the full quote is reviewable, including the end');
+  assert.ok(q.length <= QUOTE_CHARS);
   assert.equal(clip('short  text', 160), 'short text');
 });
 
 test('buildSummary: bounded, tolerant of junk, never mutates the ledger', () => {
-  const many = Array.from({ length: 70 }, (_, i) => d('D-' + String(i + 1).padStart(3, '0'), 'outcome', 'Detail number ' + i));
+  const many = Array.from({ length: 130 }, (_, i) => d('D-' + String(i + 1).padStart(3, '0'), 'outcome', 'Detail number ' + i));
   assert.equal(buildSummary(many).length, MAX_ITEMS);
   assert.deepEqual(buildSummary(null), []); assert.deepEqual(buildSummary({}), []); assert.deepEqual(buildSummary([null, 5, { field: 'nope', quote: 'x', active: true }, { field: 'problem', active: true }]), []);
   const before = JSON.stringify(SAMPLE); buildSummary(SAMPLE); assert.equal(JSON.stringify(SAMPLE), before);
@@ -90,7 +91,8 @@ test('summaryNote: the facts, at most three open points by name, the one questio
 
 test('redact and withheldQuotes: a withheld quote becomes a marker wherever it is, whatever the whitespace; regex characters are literal', () => {
   const l = [d('D-001', 'problem', 'Zebracorp (Lyon) lost $4.5m [secret]', { withheld: true }), d('D-002', 'outcome', 'Visible detail'), d('D-003', 'stakes', 'Old private', { withheld: true, active: false })];
-  assert.deepEqual(withheldQuotes(l), ['Zebracorp (Lyon) lost $4.5m [secret]']);
+  assert.deepEqual(withheldQuotes(l), ['Zebracorp (Lyon) lost $4.5m [secret]', 'Old private']);
+  assert.equal(redact('Old private', withheldQuotes(l)), '[kept private]');
   assert.equal(redact('Consultant: Well, Zebracorp  (Lyon)\nlost $4.5m [secret] last year. ATLAS: Zebracorp (Lyon) lost $4.5m [secret].', withheldQuotes(l)),
     'Consultant: Well, [kept private] last year. ATLAS: [kept private].');
   assert.equal(redact('nothing here', ['absent words']), 'nothing here'); assert.equal(redact('abc', []), 'abc'); assert.equal(redact('abc', ['']), 'abc'); assert.equal(redact(undefined, ['x']), '');

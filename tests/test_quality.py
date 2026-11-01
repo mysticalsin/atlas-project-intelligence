@@ -241,3 +241,15 @@ def test_the_analyst_is_not_sent_the_private_utterance_or_the_withheld_candidate
  l.record({'details':[{'field':'problem','item_id':'u1','quote':_SECRET},{'field':'contribution','item_id':'u1','quote':'We rebuilt the claims'}]});l.withhold('D-001')
  content=build_messages(l,'u2')[1]['content']
  assert 'during the pilot' not in content and 'D-001' not in content and 'D-002' in content
+
+def test_superseded_withheld_detail_remains_private_to_the_analyst_and_tool():
+ from atlas_voice.analyst import build_messages
+ l=InterviewLedger();secret='Synthetic confidential launch code ORCHID-729.';safe='The public pilot used a standard intake workflow.'
+ l.add_transcript('u1',secret);l.record({'details':[{'field':'problem','item_id':'u1','quote':secret}]});l.withhold('D-001')
+ l.add_transcript('u2',safe);l.record({'details':[{'field':'problem','item_id':'u2','quote':safe,'supersedes':'D-001'}]})
+ assert not l.details[0]['active'] and l.details[0]['withheld']
+ l.add_transcript('u3','Another synthetic observation.')
+ assert 'ORCHID-729' not in build_messages(l,'u3')[1]['content']
+ with pytest.raises(ValueError,match='kept private'):
+  l.record({'details':[{'field':'evidence','item_id':'u1','quote':secret}]})
+ assert l.transcripts['u1']==secret

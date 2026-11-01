@@ -1130,7 +1130,8 @@ export class Session {
   // "Keep private" covers the WHOLE utterance the detail came from, not only the extracted quote (review L7): its text leaves the notes transcript, the report's
   // input, what goes on to private memory (the notes transcript is what the browser retains) and the talker's history, where it is replaced by a neutral marker.
   // The ledger keeps its own record (the withheld detail, its transcript item) for the audit and the owner-only checkpoint: that is T11's contract.
-  privateItems() { return new Set(this.ledger.details.filter(d => d.active && d.withheld === true).map(d => d.item_id)); }
+  // Withholding is permanent for that utterance: an inactive revision still records the owner's choice.
+  privateItems() { return new Set(this.ledger.details.filter(d => d.withheld === true).map(d => d.item_id)); }
   privateTexts() { return [...this.privateItems()].map(i => this.ledger.transcripts.get(i)).filter(t => typeof t === 'string' && t.trim()); }
   scrubPrivate() {
     const texts = this.privateTexts();

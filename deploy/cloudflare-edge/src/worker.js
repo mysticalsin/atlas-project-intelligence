@@ -32,7 +32,7 @@ export default {
 };
 
 export class Interview extends DurableObject {
-  constructor(ctx, env) { super(ctx, env); this.env = env; this.session = null; this.hs = hindsight(env); }
+  constructor(ctx, env) { super(ctx, env); this.env = env; this.session = null; this.connection = 0; this.checkpointOwner = null; this.hs = hindsight(env); }
 
   // The 24-hour purge of a stored interview (checkpoint.js): the alarm is armed at every checkpoint write, so it never needs another trigger.
   async alarm() { await new CheckpointStore(this.ctx.storage).expire(); }
@@ -90,16 +90,22 @@ export class Interview extends DurableObject {
       early.push(e);
     };
     server.addEventListener('message', e => route(e));
+    const connection = ++this.connection;
     if (this.session && !this.session.finished) {
       // Still one live interview per signed-in person, but the newest window wins: a forgotten tab or a
       // stale session must never block the person from starting again.
       // Bounded: saving the older interview (up to ~8 s of waiting on transcription and the analyst) must not hold the new window's socket for ever.
-      await Promise.race([this.session.fail('This interview continued in another window. Nothing was approved.', 'voice-contract'), new Promise(r => setTimeout(r, SUSPEND_WAIT_MS))]);
+      let timer;
+      try { await Promise.race([this.session.fail('This interview continued in another window. Nothing was approved.', 'voice-contract'), new Promise(r => { timer = setTimeout(r, SUSPEND_WAIT_MS); })]); }
+      finally { clearTimeout(timer); }
     }
+    if (connection !== this.connection) { server.close(1000, 'This interview continued in another window.'); return new Response(null, { status: 101, webSocket: client }); }
     if (overflow) return new Response(null, { status: 101, webSocket: client }); // closed above; nothing was processed
     // The verified identity the Worker forwarded (always overwritten there), for gap requests and the win hint.
     const identity = { user: request.headers.get('x-atlas-user') || '', role: request.headers.get('x-atlas-role') || 'user', mail: request.headers.get('x-atlas-email') || '' };
     const subj = request.headers.get('x-atlas-subj') || '';
+    // Fence the old writer before the replacement starts, even when suspension timed out.
+    const checkpointOwner = Symbol(); this.checkpointOwner = checkpointOwner;
     const session = new Session({
       io: { send: e => { try { server.send(JSON.stringify(e)); } catch { /* closed */ } }, sendBytes: b => { try { server.send(b); } catch { /* closed */ } },
         close: () => { try { server.close(1000, 'ended'); } catch { /* closed */ } } },
@@ -108,7 +114,7 @@ export class Interview extends DurableObject {
       gaps: this.env.LIBRARY ? id => resolveForInterview(this.env, identity, id) : null,
       winHint: this.env.LIBRARY ? () => fetchWinHint(this.env, identity) : null,
       // Interviews with transcript consent are kept for 24 hours so a dropped connection can resume (ATLAS_CHECKPOINT=off: never).
-      checkpoint: checkpointEnabled(this.env) && identity.user ? new CheckpointStore(this.ctx.storage, { owner: identity.user }) : null,
+      checkpoint: checkpointEnabled(this.env) && identity.user ? new CheckpointStore(this.ctx.storage, { owner: identity.user, isCurrent: () => this.checkpointOwner === checkpointOwner }) : null,
       // The saved-interview consent as it stands in storage right now, read before each checkpoint write (session.js saveCheckpoint).
       consentGuard: checkpointEnabled(this.env) && identity.user ? async () => privacy.grantedIn(await privacy.loadState(this.ctx.storage), 'checkpoint') : null,
       // Each start's consent choices: the state in this person's storage and one receipt per change in the library (privacy.js recordConsent), all or nothing. Nothing is kept
@@ -120,6 +126,7 @@ export class Interview extends DurableObject {
     });
     this.session = session;
     const dispatch = e => {
+      if (this.session !== session) return;
       try {
         if (typeof e.data === 'string') session.onText(e.data);
         else session.onBinary(new Uint8Array(e.data));
@@ -134,7 +141,7 @@ export class Interview extends DurableObject {
       waiting.length = 0;
       try { server.send(JSON.stringify({ type: 'error', message, code, ...extra })); } catch { /* closed */ }
       try { server.close(code === 'rate-limited' ? 1013 : 1009, code === 'rate-limited' ? 'Try again later.' : 'Message too large.'); } catch { /* closed */ }
-      this.session = null;
+      if (this.session === session) this.session = null;
     };
     const onMessage = e => {
       if (budget) { if (waiting.length >= EARLY_MAX) { refuse('Too much input before the interview started.', 'message-too-large'); return; } waiting.push(e); return; }

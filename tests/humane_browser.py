@@ -241,12 +241,25 @@ try:
               and 'Still open, in your own words: Decision' in pr.locator('#summaryOpen').inner_text() and 'unverified' in pr.locator('#summaryCard .board-label').inner_text())
         check('buttons carry accessible names that say which item', pr.get_attribute('#summaryItems [data-detail=D-002] [data-action=correct]', 'aria-label') == 'Correct: Contribution'
               and pr.get_attribute('#summaryItems [data-detail=D-002] [data-action=withhold]', 'aria-label') == 'Keep private: Contribution' and pr.get_attribute('#summaryLive', 'aria-live') == 'polite')
+        review_items = [dict(ITEMS[0], detail_id=f'D-{n:03}', quote=('A contextual synthetic detail. ' * 30) + f'Final qualification {n}.') for n in range(1, 101)]
+        vr.send(type='summary', items=review_items, unknowns=[], state='summary', round=1); pr.wait_for_timeout(200)
+        check('PR1: all 100 details and the full final qualification are inspectable', pr.locator('#summaryItems .summary-item').count() == 100
+              and pr.locator('#summaryItems [data-detail=D-100] q').text_content() == review_items[-1]['quote'])
+        pr.locator('#summaryItems [data-detail=D-100] [data-action=correct]').click()
+        check('PR1: the final detail can be corrected', pr.locator('#summaryEdit-D-100').is_visible())
+        pr.locator('#summaryItems [data-detail=D-100] [data-action=cancel]').click()
+        vr.summary(); pr.wait_for_timeout(200)
         # keyboard: focus Correct on the contribution item, Enter opens the field and focuses it, type, Enter sends
         pr.locator('#summaryItems [data-detail=D-002] [data-action=correct]').focus(); pr.keyboard.press('Enter'); pr.wait_for_timeout(200)
         check('Correct (keyboard) opens a labelled field and focuses it', pr.evaluate('document.activeElement.id') == 'summaryEdit-D-002' and pr.evaluate("document.querySelector('label[for=summaryEdit-D-002]').textContent") == 'Your correction, in your own words')
         pr.keyboard.type('ok'); pr.keyboard.press('Enter'); pr.wait_for_timeout(200)
         check('a correction under five characters is refused on the page, nothing is sent', 'at least five characters' in pr.locator('#summaryMessage').inner_text() and not frames_of(pr, 'correct'))
-        pr.locator('#summaryEdit-D-002').fill(CORRECTION); pr.keyboard.press('Enter'); pr.wait_for_timeout(600)
+        pr.locator('#summaryEdit-D-002').fill(CORRECTION)
+        pr.locator('#summaryEdit-D-002').evaluate("e => e.setSelectionRange(5, 14, 'backward')")
+        vr.summary(); pr.wait_for_timeout(200)
+        check('PR1: late summary preserves correction text, focus and selection', pr.locator('#summaryEdit-D-002').input_value() == CORRECTION
+              and pr.evaluate("document.activeElement.id === 'summaryEdit-D-002' && document.activeElement.selectionStart === 5 && document.activeElement.selectionEnd === 14 && document.activeElement.selectionDirection === 'backward'"))
+        pr.keyboard.press('Enter'); pr.wait_for_timeout(600)
         sent = frames_of(pr, 'correct')
         check('the typed correction is sent as {type:correct, detail_id, text}', len(sent) == 1 and sent[0] == {'type': 'correct', 'detail_id': 'D-002', 'text': CORRECTION})
         item = pr.locator('#summaryItems [data-detail=D-004]')

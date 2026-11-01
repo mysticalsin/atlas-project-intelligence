@@ -44,7 +44,7 @@ test('summaryView never trusts what it is given: bad ids, odd statuses, too many
  const v=B.summaryView({phase:'open',items:[...ITEMS,{detail_id:'../x',quote:'x'},null,5,{detail_id:'D-9',quote:'x'},item('D-004','problem','<b>Label</b>','<img src=x onerror=alert(1)>',{status:'weird',provenance:'weird'})],
   unknowns:[{kind:'nope',label:'x'},null,{kind:'deferred',label:'Customer relevance'}]});
  assert.equal(v.items.length,4);assert.deepEqual(v.items[3].tags,[]);assert.equal(v.items[3].quote,'<img src=x onerror=alert(1)>');assert.deepEqual(v.openPoints,['Still open: Customer relevance']);
- assert.equal(B.summaryView({phase:'open',items:Array.from({length:90},(_,i)=>item('D-'+String(i+1).padStart(3,'0'),'problem','L','q'))}).items.length,60);
+ assert.equal(B.summaryView({phase:'open',items:Array.from({length:130},(_,i)=>item('D-'+String(i+1).padStart(3,'0'),'problem','L','q'))}).items.length,100);
  assert.equal(B.summaryView({phase:'confirmed',draft:{id:5,revision:1},items:ITEMS}).submit.hidden,true,'a draft needs a text id');
 });
 test('summaryMessage: exactly the keys the session accepts, the consultant\'s words bounded like the server, anything else is null',()=>{
@@ -71,13 +71,14 @@ class El{
  findAll(pred){return this.walk().filter(pred);}
  querySelector(sel){const m=sel.match(/^\.([\w-]+)(?: (\w+))?$/);if(!m)return new El('stub');
   const hit=this.walk().find(e=>e.cls.split(/\s+/).includes(m[1])&&true);if(!hit)return new El('stub');return m[2]?hit.walk().find(e=>e.tag===m[2])||new El('stub'):hit;}
- querySelectorAll(){return [];}focus(){this.focused=true;}
+ querySelectorAll(){return [];}focus(){this.focused=true;if(this.ownerDocument)this.ownerDocument.activeElement=this;}
+ setSelectionRange(a,b,d){this.selectionStart=a;this.selectionEnd=b;this.selectionDirection=d;}
  fire(t,ev={}){for(const f of this.listeners[t]||[])f({key:'',preventDefault(){},...ev});}
  click(){if(this.disabled||this.hidden)return;this.fire('click');}
 }
 function boot({libraryApi,policy=true,timeout=setTimeout}={}){
- const els={},$=id=>els[id]||(els[id]=new El(id)),listeners={},actions=[],calls=[];
- const document={getElementById:$,createElement:t=>new El('',t),createElementNS:(ns,t)=>new El('',t),querySelector:()=>null,addEventListener(){},readyState:'complete'};
+ const els={},$=id=>els[id]||(els[id]=Object.assign(new El(id),{ownerDocument:document})),listeners={},actions=[],calls=[];
+ const document={getElementById:$,createElement:t=>Object.assign(new El('',t),{ownerDocument:document}),createElementNS:(ns,t)=>Object.assign(new El('',t),{ownerDocument:document}),querySelector:()=>null,addEventListener(){},readyState:'complete'};
  const win={document,AtlasBoard:B,AtlasSafe:require('../src/safe-html.js'),AtlasVoiceControls:VC,AtlasWorkflowCore:WF,ATLAS_POLICY:policy?{FIELDS:{}}:undefined,
   ATLAS_APP:{libraryApi:libraryApi?async(p,o)=>{calls.push([p,o||{}]);return libraryApi(p,o);}:undefined},
   addEventListener:(t,f)=>(listeners[t]||=[]).push(f),
@@ -205,4 +206,31 @@ test('the card keeps a quote in its own language: lang attribute on the quote, a
  const B=require('../src/storyboard-core.js');
  const v=B.summaryView({phase:'open',items:[{detail_id:'D-001',field:'problem',label:'Problem',quote:"Les sinistres rebondissaient entre trois équipes.",status:'reported',lang:'fr'},{detail_id:'D-002',field:'outcome',label:'Outcome',quote:'Triage fell to 12 minutes.',status:'reported',lang:'en'},{detail_id:'D-003',field:'outcome',label:'Outcome',quote:'No tag here.',status:'reported'},{detail_id:'D-004',field:'outcome',label:'Outcome',quote:'Hostile tag.',status:'reported',lang:'<b>'}]});
  assert.deepEqual(v.items.map(i=>i.lang),['fr','en',undefined,undefined]);assert.equal(v.items[0].quote,"Les sinistres rebondissaient entre trois équipes.");
+});
+
+test('PR1: late summary updates preserve unsaved correction text, focus and selection',()=>{
+ const h=boot();h.session(SUMMARY);buttons(h,'correct')[0].click();
+ let input=h.$('summaryItems').findAll(e=>e.tag==='input')[0];
+ input.value='Actually, the pilot handled fifteen cases.';input.focus();input.setSelectionRange(10,19,'backward');
+ h.session({...SUMMARY,items:[...ITEMS,item('D-004','evidence','Evidence','The synthetic pilot log.')]});
+ input=h.$('summaryItems').findAll(e=>e.tag==='input')[0];
+ assert.equal(input.value,'Actually, the pilot handled fifteen cases.');
+ assert.equal(h.win.document.activeElement,input);assert.equal(input.selectionStart,10);assert.equal(input.selectionEnd,19);assert.equal(input.selectionDirection,'backward');
+ buttons(h,'save')[0].click();assert.equal(h.actions.at(-1).text,'Actually, the pilot handled fifteen cases.');
+});
+
+test('PR1: the 100th detail and its complete quote can be inspected and withheld',()=>{
+ const h=boot(),quote='A long contextual statement '.repeat(40)+'the final qualification.';
+ h.session({...SUMMARY,items:Array.from({length:100},(_,i)=>item('D-'+String(i+1).padStart(3,'0'),'problem','Problem',quote))});
+ assert.equal(items(h).length,100);
+ assert.equal(items(h).at(-1).findAll(e=>e.tag==='q')[0].textContent,quote);
+ buttons(h,'withhold')[99].click();assert.equal(h.actions.at(-1).detail_id,'D-100');
+});
+
+test('PR1: confirming cannot silently throw away an open correction',()=>{
+ const h=boot();h.session(SUMMARY);buttons(h,'correct')[0].click();
+ const input=h.$('summaryItems').findAll(e=>e.tag==='input')[0];input.value='An unsaved correction to the original claim.';
+ h.$('summaryConfirm').click();assert.ok(!h.actions.some(a=>a.kind==='confirm_summary'));
+ assert.match(h.$('summaryMessage').textContent,/Save or cancel/);assert.equal(input.value,'An unsaved correction to the original claim.');
+ buttons(h,'cancel')[0].click();h.$('summaryConfirm').click();assert.equal(h.actions.at(-1).kind,'confirm_summary');h.session({type:'ended'});
 });
