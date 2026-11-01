@@ -278,7 +278,8 @@ test('S8 the consultant interrupts ATLAS: her speech is cut at once, what she ha
     const cleared = h.events.filter(e => e.type === 'clear_audio').length, talkerCalls = h.calls.talker.length, from = h.events.length;
     h.s.queue.push({ gen: h.s.gen, item: h.s.replyItem, bytes: new Uint8Array(960) });
     h.s.sentMs[h.s.replyItem] = 3000;
-    say(h, [[0.6, .5]]);
+    h.calls.probeText = fx.interrupt.said; // (v2.2 V1: she stops once speech recognition hears words, not at the first sound)
+    say(h, [[1.0, .5]]); await settle();
     assert.ok(h.events.filter(e => e.type === 'clear_audio').length > cleared && h.events.some((e, i) => i >= from && e.type === 'user_speaking'), `[${mode}] her speech stops at once (clear_audio) and the consultant is heard (user_speaking)`);
     assert.equal(h.s.queue.length, 0, `[${mode}] no queued audio of hers survives the interruption`);
     say(h, [[1.3, .001]]);

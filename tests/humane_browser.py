@@ -13,7 +13,7 @@ the summary card and the confirmed draft; the typed text kept in the box until t
 screen by "[kept private]"; a resumed typed interview; keyboard use, aria-live, focus after each reply, reduced motion, 390 px.
 Not covered (needs a live voice model): what ATLAS says, audio, the microphone path beyond the browser's fake device (COVERAGE.md).
 """
-import json, os, re, socket, subprocess, sys, time, urllib.request
+import json, math, os, re, socket, struct, subprocess, sys, time, urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
@@ -411,6 +411,38 @@ try:
         pf.set_viewport_size({'width': 390, 'height': 844}); pf.wait_for_timeout(300)
         check('at 390 px the language row does not scroll sideways', no_overflow(pf) and pf.evaluate("(()=>{const r=document.getElementById('voiceLanguage').getBoundingClientRect();return r.left>=0&&r.right<=innerWidth+1})()"))
         pf.close()
+
+        # ---- 10. v2.2 V1: the voice engine in the page. The scripted voice socket sends real 24 kHz PCM at 1x with a 500 ms credit lead, as the server now does, and
+        # ONE 120 ms stall in the middle. The worklet must never run dry, and her volume ducks on the server's word and comes back.
+        vv = Voice(controls=CONTROLS, draft=draft)
+        pv = open_page(USER, vv); start_interview(pv)
+        pv.wait_for_function('()=>!!AtlasVoice.audioStats()', timeout=8000)
+        stats = lambda: pv.evaluate('AtlasVoice.audioStats()')
+        us0 = stats()['underruns']; SECONDS, FRAME = 3.0, 0.02
+        total = int(SECONDS / FRAME)
+        pcm = lambda i: struct.pack('<480h', *[int(9000 * math.sin(2 * math.pi * 440 * (i * 480 + k) / 24000)) for k in range(480)])
+        vv.send(type='audio_turn', item_id='agent-1')
+        sent, stalled, queued_low, started, t0 = 0, False, 1e9, False, time.time()
+        while sent < total:
+            now = time.time() - t0
+            if now > 1.5 and not stalled:   # the one stall: nothing for 120 ms
+                stalled = True; pv.wait_for_timeout(120); continue
+            due = min(total, int((now + 0.5) / FRAME) + 1)   # credit: keep 500 ms ahead of the clock, as the server does
+            while sent < due: vv.sock.send(pcm(sent)); sent += 1
+            q = stats()
+            if q['queuedMs'] > 100: started = True
+            if started and now > 0.4: queued_low = min(queued_low, q['queuedMs'])
+            if sent in (60, 61): vv.send(type='duck', on=True)
+            if sent >= total - 2 and sent >= 120: vv.send(type='duck', on=False)
+            pv.wait_for_timeout(10)
+        after = stats()
+        check('real PCM at 1x with one 120 ms stall: playback began and the worklet buffer never ran dry while it streamed', started and after['underruns'] == us0 and queued_low > 0)
+        print('# lowest queue while streaming: %d ms (lead 500 ms, stall 120 ms)' % queued_low, flush=True)
+        check('the buffer never overflowed (a full second of ring)', after['droppedSamples'] == 0)
+        pv.wait_for_timeout(2200)
+        check('after the last chunk the buffer drains once, and that is the only run-dry', stats()['underruns'] == us0 + 1)
+        check('the page took the server\'s duck without error and no gateway failure was shown', not pv.locator('#voiceHeading').inner_text().lower().startswith('error'))
+        pv.close()
         br.close()
     check('no page errors', not ERR)
 except SystemExit as e: code = e.code or 0

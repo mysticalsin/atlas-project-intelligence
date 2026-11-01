@@ -12,7 +12,6 @@ export const PAGE_SCRIPT_HASHES = [
   "sha256-EeL4PaJwZFNGjiY5AYttd8d1TrgnUFf/tiRKweJzi+8=",
   "sha256-GUpHpcCtSH1/S17CQbayd+mxfOqid7/BW0gll+yJATM=",
   "sha256-I8cjyoH1ILkVjafMZPPvPYM7v0EVWcHp2ctYrvDggq4=",
-  "sha256-INiAs6pD97/vDWZLmUncK+kV/3Kspp/C6HFhNLbKam0=",
   "sha256-IRbkAJ6laZnjOxTZpi88EsCiRgkZ5MmlRvpf4/8IPTI=",
   "sha256-IdIgXjjLMavviDVhA3qpkHH0iaEPKD8rlyjpz11YMCQ=",
   "sha256-PLvAtKbMmNTz55W+r8CI1A4zsyeqT0HInVOG9wYNXNg=",
@@ -30,6 +29,7 @@ export const PAGE_SCRIPT_HASHES = [
   "sha256-pe3cfmwuvECW+mP1TirC1ApHh38C3hFLIpv4VBHA7k8=",
   "sha256-qFB/hfHfs0IRGFPk2rlmogHSpX9ljAyLfP3tzIZOJ8I=",
   "sha256-uma1Fy0clJN2UBocsCk5TUs8OQLpdpKmf1NB9gcaAZ4=",
-  "sha256-vLb/3y5uVpkGSFWIvOczp9J9hjHDLhV6VzeEWoZNBDQ="
+  "sha256-vLb/3y5uVpkGSFWIvOczp9J9hjHDLhV6VzeEWoZNBDQ=",
+  "sha256-xg5ByPVrSBrle+vGKcdccInptEjUlBDXjXPrvwBOD08="
 ];
 export const RUNTIME_BLOCK = "<script id=\"atlas-runtime\" type=\"application/json\">{}</script>";

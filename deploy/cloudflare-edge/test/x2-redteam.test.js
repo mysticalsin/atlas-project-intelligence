@@ -54,6 +54,7 @@ const post = (d, path, body) => d.fetch(new Request('https://atlas.example' + pa
 async function interview(d, st) {
   const c = connect(d); await c.p; c.server.fire('message', start());
   await until(() => ready(c.server) && !d.session.busy());
+  if (d.session.protectedItem) d.session.playedMs[d.session.protectedItem] = 1e9; // the greeting has played (the browser's acknowledgement; v2.2 V1: sending no longer takes as long as playing)
   typed(c.server, H.ANSWER); await until(() => !d.session.busy() && c.server.events().some(e => e.type === 'agent_text' && /baseline/.test(e.text)));
   await until(() => st.keys().some(k => k.endsWith(':meta')) && !d.session.ckptRun);
   return c;

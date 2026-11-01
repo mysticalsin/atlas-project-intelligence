@@ -28,10 +28,10 @@ function frames(segments) {
 // talk(callIndex, messages) -> an array of deltas, or an async iterable (to watch return()). said: what speech recognition hears, turn by turn.
 // analyst: 'gated' holds the evidence analyst until release() (it lands after the reply), else it answers at once.
 function harness({ said = [], talk = null, flags = {}, analyst = 'now', metrics = [], session = {} } = {}) {
-  const events = [], bytes = [], calls = { talker: [], analyst: 0, stt: 0, tts: [], order: [] }; let t = 1000, closed = false, release = () => {};
+  const events = [], bytes = [], calls = { talker: [], analyst: 0, stt: 0, tts: [], order: [], probeText: '' }; let t = 1000, closed = false, release = () => {};
   const gate = new Promise(r => { release = r; });
   const ai = {
-    async transcribe() { calls.stt += 1; return said[calls.stt - 1] || ''; },
+    async transcribe(pcm, o) { if (o?.probe) return calls.probeText; calls.stt += 1; return said[calls.stt - 1] || ''; }, // (a probe: the check of a sound over her voice, v2.2 V1)
     async synthesize(text) { calls.tts.push(text); return new Uint8Array(4800).fill(1); },
     chatStream(messages) {
       const n = calls.talker.length; calls.talker.push(messages); calls.order.push(['talker', n]);
@@ -175,15 +175,15 @@ test('b3: a closing for the time limit is not capped', async () => {
 });
 
 // (c) The acknowledgement goes out before the talker's first token.
-test('c: the acknowledgement is pushed before the first talker token; a setback never gets an upbeat or earned one', async () => {
+test('c: the acknowledgement is pushed before the first talker token (the model is called in parallel with it, v2.2 V1); a setback never gets an upbeat or earned one', async () => {
   const h = harness({ said: ['We moved the whole billing platform to the new provider last spring with a team of five.'] });
   await opened(h);
   talked(h); await until(() => h.calls.talker.length === 2 && !h.s.busy());
-  const reply = h.calls.order.findIndex(e => e[0] === 'talker' && e[1] === 1);
-  const before = h.calls.order.slice(0, reply).filter(e => e[0] === 'push' && e[1] === 'agent-2' && e[2] === true && e[3] > 0);
-  assert.ok(before.length >= 1, 'her own acknowledgement audio (a lead piece of the reply) was queued before the model was even asked');
-  const token = h.calls.order.findIndex(e => e[0] === 'token' && e[1] === 1);
-  assert.ok(before.length && reply < token, 'and the first token came later still');
+  // The model is asked at once, in parallel with the acknowledgement (the scripted model answers in the same tick, so only the audio order is pinned): her own
+  // acknowledgement audio (a lead piece of the reply) is queued ahead of every piece of the model's reply.
+  const reply = h.calls.order.findIndex(e => e[0] === 'talker' && e[1] === 1), pushes = h.calls.order.filter(e => e[0] === 'push' && e[1] === 'agent-2' && e[3] > 0);
+  assert.ok(reply >= 0 && pushes.length > 1 && pushes[0][2] === true, 'the first audio of the reply is her acknowledgement');
+  assert.ok(pushes.findIndex(e => e[2] === false) > pushes.findLastIndex(e => e[2] === true), 'all of it before the model\'s own words');
   const ack = h.calls.tts.find(t => ACK_TEXTS.has(t) && screen(h).includes(t));
   assert.ok(ack, 'an acknowledgement was shown: ' + screen(h).slice(-90));
   assert.ok(h.calls.talker[1].some(m => m.content.startsWith('ALREADY SAID (server): you have just said "' + ack + '"')), 'the talker is told not to acknowledge again');
@@ -209,8 +209,8 @@ test('c2: a setback utterance gets a neutral acknowledgement: never earned, prom
   }
 });
 
-test('c3: no acknowledgement in admin sessions, after a question to ATLAS, or after a short answer; the bank is prewarmed once', async () => {
-  for (const [admin, said, expected] of [[true, 'We moved the whole billing platform to the new provider last spring with a team of five.', false],
+test('c3: a neutral acknowledgement only in admin sessions (v2.2 V1), none after a question to ATLAS or after a short answer; the bank is prewarmed once', async () => {
+  for (const [admin, said, expected] of [[true, 'We moved the whole billing platform to the new provider last spring with a team of five.', true],
     [false, 'Can you say that again, what exactly do you need to know about the team size and the budget?', false], [false, 'Yes, about six months.', false],
     [false, 'We moved the whole billing platform to the new provider last spring with a team of five.', true]]) {
     const h = harness({ said: [said], session: { admin } });
@@ -220,10 +220,11 @@ test('c3: no acknowledgement in admin sessions, after a question to ATLAS, or af
     await h.s.end(false); clearPcmCache();
   }
   const h = harness({ said: [], session: { admin: true } });
-  await opened(h, false);
-  assert.ok(!h.calls.tts.some(t => ACK_TEXTS.has(t)), 'admin never prewarms acknowledgements');
+  await opened(h, false); await settle();
+  assert.ok(ACKS.neutral.en.every(t => h.calls.tts.includes(t)) && !ACKS.earned_result.en.some(t => h.calls.tts.includes(t)), 'admin prewarms the neutral lines only (never an earned or upbeat one)');
+  clearPcmCache(); // (the cache is shared by every session of the isolate)
   const g = harness({ said: [] });
-  await opened(g, false); await settle();
+  await opened(g, false); await settle(1000);
   assert.ok(ACKS.neutral.en.every(t => g.calls.tts.includes(t)), 'the content-aware bank is synthesised ahead of time (neutral lines at least)');
 });
 
@@ -283,8 +284,8 @@ test('e: the introduction is two cached pieces; barge-in during the first is ign
   h.s.playedMs['agent-1'] = 100; // the browser reports the first piece played: the second is playing
   assert.ok(!h.s.greetingPlaying(), 'protection ends with the first piece');
   h.s.queue.push({ gen: h.s.gen, item: 'agent-1', bytes: new Uint8Array(960) });
-  say(h, [[0.6, .5]]);
-  assert.ok(h.events.some(e => e.type === 'clear_audio') && h.events.some(e => e.type === 'user_speaking'), 'during the second piece the consultant may interrupt');
+  h.calls.probeText = 'sorry, one moment'; say(h, [[1.0, .5]]); await settle();
+  assert.ok(h.events.some(e => e.type === 'clear_audio') && h.events.some(e => e.type === 'user_speaking'), 'during the second piece the consultant may interrupt, with words');
   const heard = h.s.history.filter(m => m.role === 'assistant').at(-1)?.content || '';
   assert.ok(heard.startsWith(GREETING[0]) && heard.includes('[interrupted'), 'what was heard of the introduction is recorded');
 });
@@ -358,7 +359,7 @@ test('h: a reply the guard empties is replaced by the move\'s own question, neve
 });
 
 // Move bookkeeping.
-test('i: a reply taken back because the consultant carried on leaves no move in the asked log; the merged turn is selected once', async () => {
+test('i: a reply the consultant carried on over after her own words were heard keeps its move in the asked log (v2.2 V1: it is never taken back); the next turn is selected once', async () => {
   let hold, gated = true;
   const h = harness({ said: ['We rebuilt the claims intake process for the insurance client during the pilot.', 'Then we cut the onboarding backlog by a third in two months.'],
     talk: (n, m) => n === 0 ? ['Hello. ', 'What happened?'] : (async function* () { yield 'Oh nice. '; if (n === 1 && gated) await new Promise(r => { hold = r; }); yield 'What changed for the team?'; })() });
@@ -366,10 +367,11 @@ test('i: a reply taken back because the consultant carried on leaves no move in 
   talked(h);
   await until(() => h.calls.talker.length === 2 && h.s.shown.item === 'agent-2');
   assert.equal(h.s.humane.asked.length, 1, 'the first part was answered with one move');
-  talked(h); await until(() => h.calls.talker.length === 3);
+  h.calls.probeText = 'then we cut the backlog'; say(h, [[1.2, .2]]); await settle(); say(h, [[1.3, .001]]); // (words stop her: v2.2 V1)
+  await until(() => h.calls.talker.length === 3);
   gated = false; hold?.();
   await until(() => !h.s.busy());
-  assert.equal(h.s.humane.asked.length, 1, 'the withdrawn reply\'s move was taken back, the merged answer has its own');
+  assert.equal(h.s.humane.asked.length, 2, 'the interrupted reply\'s move stays (she had begun it), and the new answer has its own');
   assert.ok(noteOf(h.calls.talker[2], 'NEXT MOVE').length === 1);
 });
 

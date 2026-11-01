@@ -148,7 +148,8 @@ export function speakable(text) {
   return /[\p{L}\p{N}]/u.test(t) ? t : '';
 }
 
-export const GUARD_MAX_WORDS = 45; // most words ATLAS says in one reply
+export const GUARD_MAX_WORDS = 45; // most words ATLAS says in one reply (v2.2 V1: the cap lands on a sentence end; a sentence that has begun is finished, never cut)
+export const CAP_SLACK_WORDS = 25; // ...unless that one sentence runs on this far past the cap: then it is cut, at a clause when it has one, else at a word
 const PRAISE_MAX_WORDS = 8; // a sentence this short that is only praise is dropped
 const REACTION_MAX_WORDS = 12; // a leading sentence longer than this is an answer, not a reaction: the repeated-opener rule leaves it alone
 export const DEFAULT_BANNED_PRAISE = '\\b(amazing|incredible|brilliant|awesome|fantastic)\\b'; // persona BANNED_PRAISE_SRC replaces it when wired
@@ -236,6 +237,12 @@ function firstWords(text, count) {
   return text;
 }
 
+// The start of text up to its count-th word, ended at the last clause mark (comma, semicolon, colon, dash) in its second half when it has one.
+function clauseCut(text, count) {
+  const head = firstWords(text, count), at = Math.max(...[',', ';', ':', '\u2014', '\u2013'].map(c => head.lastIndexOf(c)));
+  return at >= Math.floor(head.length / 2) && at > 0 ? head.slice(0, at).replace(TRIM, '') : head;
+}
+
 // Streaming filter over the spoken pieces (Phrases) of one reply. It enforces the shape of a reply in code, whatever the
 // model wrote: at most one question, no empty praise, no repeated reaction, a short reply, and (in summary mode) no number
 // that is not one of the given facts. Same rules as the Python ReplyGuard.
@@ -263,6 +270,7 @@ export class ReplyGuard {
     this.open = null; // the sentence in progress when the last piece ended mid-sentence: 'voiced' or 'dropped'
     this.lead = true; // the next sentence that gets this far is the reply's leading one
     this.stop = null; // 'question' or 'cap'
+    this.finish = false; // the cap was reached inside a sentence that is being finished
   }
   get done() { return this.stop !== null; }
   get stats() { return { ...this.counts }; }
@@ -286,11 +294,19 @@ export class ReplyGuard {
     if (!question && !this.allowStatus && assertsVerification(text)) { this.counts.dropped_unverified_claim++; return ['', question]; }
     if (this.allowed && (hasUncheckedScript(text) || figures(text).some(m => !this.allowed.has(m)))) { this.counts.dropped_unknown_number++; return ['', question]; }
     if (this.max !== null) {
-      const room = this.max - this.spoken;
-      if (words(text).length > room) {
+      const n = words(text).length;
+      if (this.finish || n > this.max - this.spoken) {
+        if (continuing || !this.spoken) {
+          // A sentence already begun (or the reply's first one) is finished, never cut: the cap lands on its end. Only a sentence that
+          // runs on far past the cap is cut, at a clause when it has one.
+          if (!this.finish) { this.counts.capped_words++; this.finish = true; }
+          const ceiling = this.max + CAP_SLACK_WORDS - this.spoken;
+          if (n > ceiling) { this.stop = 'cap'; return [clauseCut(text, ceiling), false]; }
+          if (ended) this.stop = 'cap';
+          return [text, question];
+        }
         this.counts.capped_words++; this.stop = 'cap';
-        // Cut at a sentence boundary when something has been said already; else (or inside a sentence under way) at a word.
-        return [continuing || !this.spoken ? firstWords(text, room) : '', false];
+        return ['', false]; // a sentence that does not fit whole is left out
       }
     }
     return [text, question];

@@ -211,19 +211,23 @@ def test_guard_drops_a_leading_reaction_that_repeats_a_recent_opener():
     g,voiced,_=run_guard(['Awesome!','Makes sense. Who owned it?'],recent_openers=['makes sense'])
     assert voiced==[[],['Who owned it?']] and g.stats['dropped_praise']==1 and g.stats['dropped_repeat_opener']==1
 
-def test_guard_word_cap_cuts_at_a_sentence_then_a_word_and_ends_the_reply():
+def test_guard_word_cap_lands_on_a_sentence_end_and_ends_the_reply():
     sentence='We looked at the numbers again and again for the quarter and the pipeline.'  # 14 words
     g,voiced,done_at=run_guard([' '.join([sentence]*4),'Who owned it?'])
     assert voiced[0]==[' '.join([sentence]*3)] and voiced[1]==[] and g.stats['capped_words']==1 and done_at==0
-    one=run_guard([' '.join('w%d'%i for i in range(60))+'.'])[1][0][0]
-    assert len(one.split())==45 and one.endswith('w44')
+    # v2.2 V1: a sentence that has begun is finished, never cut at the word; one that runs 25 words past the cap is cut, at a clause when it has one
+    g,voiced,done_at=run_guard([' '.join('w%d'%i for i in range(60))+'.'])
+    assert len(voiced[0][0].split())==60 and g.stats['capped_words']==1 and done_at==0
+    huge=run_guard([' '.join('w%d'%i for i in range(100))+'.'])[1][0][0]
+    assert len(huge.split())==70 and huge.endswith('w69')
+    assert run_guard([' '.join('w%d'%i+(',' if i==60 else '') for i in range(100))+'.'])[1][0][0].endswith('w60')
     assert run_guard(['That is clear.','It worked well for us.'],max_words=6)[1]==[['That is clear.'],[]]
     assert run_guard([' '.join(['word']*200)+'.'],max_words=None)[0].stats['capped_words']==0
     assert run_guard(['One two three four.'],max_words=4)[0].stats['capped_words']==0
     assert run_guard(['One two three four.','Five.'],max_words=4)[0].stats['capped_words']==1
-    # inside a sentence already under way the cut is at a word
-    _,voiced,_=run_guard(['Before we get into the numbers and the detail,','tell me '+' '.join('w%d'%i for i in range(45))+'.'])
-    assert len(voiced[0][0].split())+len(voiced[1][0].split())==45
+    # inside a sentence already under way the rest of it follows and the reply ends at its end
+    _,voiced,done_at=run_guard(['Before we get into the numbers and the detail,','tell me '+' '.join('w%d'%i for i in range(45))+'.','Who owned it?'])
+    assert len(voiced[0][0].split())+len(voiced[1][0].split())==56 and voiced[2]==[] and done_at==1
 
 def test_guard_summary_mode_drops_figures_that_are_not_facts():
     facts=['35%','12 weeks','1,200','3.50']
