@@ -281,17 +281,23 @@ async function reconnect(token){
 }
 // One try: a socket that starts with `resume` and settles as 'ready' (the server restored the interview), 'refused' (it cannot be resumed: stop) or 'closed'.
 function resumeOnce(token){return new Promise(done=>{
- const {snapshot,voice,capture,memory,input}=sessionStart;let up=false,over=false;const finish=(result,message)=>{if(!over){over=true;done({result,message});}};
- let s;try{s=new WebSocket(new URL('/api/voice',location.href).href.replace(/^http/,'ws'));}catch{finish('closed');return;}
+ const {snapshot,voice,capture,memory,input}=sessionStart;let up=false,over=false,timer=null,s;
+ const finish=(result,message)=>{if(over)return;over=true;clearTimeout(timer);
+  if(result!=='ready'){if(socket===s)socket=null;try{s?.close();}catch{}}
+  done({result,message});};
+ try{s=new WebSocket(new URL('/api/voice',location.href).href.replace(/^http/,'ws'));}catch{finish('closed');return;}
  s.binaryType='arraybuffer';socket=s;
- s.onopen=()=>{if(token!==generation||socket!==s){try{s.close();}catch{}finish('closed');return;}s.send(JSON.stringify(startMessage(snapshot,voice,capture,memory,sessionId,input)));};
- s.onmessage=e=>{if(token!==generation||socket!==s)return;
+ // Bound both opening and the ready handshake, just like the initial connection.
+ timer=setTimeout(()=>finish('closed'),60000);
+ s.onopen=()=>{if(over||token!==generation||socket!==s){finish('closed');return;}
+  try{s.send(JSON.stringify(startMessage(snapshot,voice,capture,memory,sessionId,input)));}catch{finish('closed');}};
+ s.onmessage=e=>{if((over&&!up)||token!==generation||socket!==s)return;
   if(!up&&typeof e.data==='string'){let m=null;try{m=JSON.parse(e.data);}catch{}
    if(m?.type==='error'){finish(m.code==='resume-unavailable'||m.code==='resume-project'?'refused':'closed',m.message);return;}
    if(m?.type==='ready'&&m.resumed){up=true;finish('ready');}}
   incoming(e,token);};
- s.onerror=()=>{};
- s.onclose=()=>{if(socket===s)socket=null;if(!up){finish('closed');return;}if(token===generation&&socket===null)dropped(token);};
+ s.onerror=()=>{if(!up)finish('closed');};
+ s.onclose=()=>{const wasCurrent=socket===s;if(wasCurrent)socket=null;if(!up){finish('closed');return;}if(wasCurrent&&token===generation)dropped(token);};
 });}
 // The server will not resume this interview (or the page asked for something it cannot): say so, forget the offer, and leave the way open to start a new one.
 function refused(message){consumeGap();generation++;const s=socket;socket=null;try{s?.close();}catch{}teardown=Promise.all([closed(s,3000),stopDevices()]);current=null;permissionPending=false;reconnecting=false;if(boot)boot.resumable=null;

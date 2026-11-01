@@ -167,7 +167,7 @@ class InterviewLedger:
         if not isinstance(raw,dict) or set(raw)!={'details'} or not isinstance(raw['details'],list) or not 1<=len(raw['details'])<=12:
             raise ValueError('Expected 1-12 candidate details')
         # What the consultant kept private never comes back through a model's tool call: not from that utterance, not as the same words elsewhere (red M1).
-        private=[d['item_id'] for d in self.details if d['active'] and d.get('withheld')]
+        private=[d['item_id'] for d in self.details if d.get('withheld')]
         private_texts=[self.transcripts[i] for i in dict.fromkeys(private) if i in self.transcripts]
         pending=[]
         for x in raw['details']:

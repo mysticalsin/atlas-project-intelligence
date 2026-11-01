@@ -162,3 +162,34 @@ test('L10: messages buffered while the older window is suspending are bounded; o
   const big = connect(d); big.server.fire('message', { data: 'y'.repeat(1024 * 1024 + 1) }); await big.p; assert.equal(big.server.closed, true);
   await d.session.end(false); void a;
 });
+
+test('PR1 checkpoint ownership: a delayed abandoned analyst cannot overwrite or purge the replacement checkpoint', async () => {
+  const st = new FakeStorage(), d = new Interview({ storage: st }, env());
+  await interview(d, st); const old = d.session, oldId = old.sessionId;
+  let release; const pending = new Promise(r => { release = r; }); old.pending.add(pending);
+  const b = connect(d); b.server.fire('message', start()); await b.p;
+  await until(() => ready(b.server) && !d.session.busy()); const current = d.session;
+  await current.saveCheckpoint();
+  assert.notEqual(current.sessionId, oldId);
+  try {
+    release(); await old.ending;
+    assert.equal(await st.get('cp:current'), current.sessionId, 'late final save cannot steal the current slot');
+    await old.purgeCheckpoint();
+    assert.equal(await st.get('cp:current'), current.sessionId, 'late cleanup cannot delete the new interview');
+    assert.equal((await new CheckpointStore(st, { owner: USER }).load(current.sessionId)).sessionId, current.sessionId);
+  } finally { release(); await current.end(false); }
+});
+
+test('PR1 checkpoint ownership: overlapping replacements cannot let an older upgrade win last', async () => {
+  const st = new FakeStorage(), d = new Interview({ storage: st }, env());
+  const a = connect(d); await a.p; const old = d.session;
+  let release; old.fail = () => new Promise(r => { const previous = release; release = () => { previous?.(); r(); }; });
+  const b = connect(d), c = connect(d); release(); await Promise.all([b.p, c.p]);
+  assert.equal(b.server.closed, true, 'superseded upgrade is closed without starting');
+  assert.equal(c.server.closed, false);
+  c.server.fire('message', start()); await until(() => ready(c.server));
+  const current = d.session; await current.saveCheckpoint();
+  b.server.fire('message', start()); await settle();
+  assert.equal(d.session, current); assert.equal(await st.get('cp:current'), current.sessionId);
+  await current.end(false); await old.end(false);
+});

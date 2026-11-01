@@ -306,3 +306,8 @@ Not done: Trusted Types; summary mode does not voice scripts without a number ta
 | ElevenLabs as a processor | **Open for the DPO.** `PROCESSORS.md` and `ROPA.md` rows 13 and 14 are marked *to verify*; no contract, location or retention is known |
 
 Open: `SETTINGS_KEY` must exist on the deployment (`deploy.sh` creates it on the next run); the cache means another isolate sees a change within a minute; the breaker and fallback state shown to the admin is the static description (the live state is the voice engine's); a real ElevenLabs key has never been entered.
+
+
+## 2026-11-01: PR #1 review fixes
+
+The privacy and checkpoint-concurrency findings, reconnect readiness and unsaved-correction defects are fixed and regression tested. Confirmation was revalidated: the existing snapshot/seal protects draft membership; the card now also exposes every ledger detail and its complete quote. Details, test results and remaining browser/environment limits: [PR1_REVIEW_FIXES.md](PR1_REVIEW_FIXES.md). Status remains **locally verified, provider verified: none, not deployed**.

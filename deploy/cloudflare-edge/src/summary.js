@@ -8,8 +8,8 @@ import { readback, hasBank, languageName } from './languages.js';
 import { isSpecial } from './special.js';
 import { isNonAnswer } from './nonanswer.js';
 
-export const MAX_ITEMS = 40;      // items on the card (the ledger holds at most 100 details)
-export const QUOTE_CHARS = 160;   // an item's quote on the card, whole code points
+export const MAX_ITEMS = 100;      // items on the card (the ledger holds at most 100 details)
+export const QUOTE_CHARS = 1800;   // full ledger quote limit; spoken summaries have their own shorter limits
 export const MAX_FACTS = 4;       // facts ATLAS may read back at the close
 export const REFLECT_FACTS = 2;   // facts for a mid-interview reflection
 export const FACT_CHARS = 100;    // one fact, a label and a clipped quote: short enough to say aloud
@@ -144,7 +144,7 @@ export const narrate = (clauses, lead = READBACK_LEAD) => (clauses.length ? `${l
 // The card's items, in the story's order (the ledger's field order, then the order they were said).
 export function buildSummary(ledger) {
   return detailsOf(ledger).filter(shown).map((d, i) => ({ d, i })).sort((a, b) => order(a.d.field) - order(b.d.field) || a.i - b.i).slice(0, MAX_ITEMS)
-    .map(({ d }) => ({ detail_id: String(d.id), field: d.field, label: label(d.field), quote: clip(d.quote, QUOTE_CHARS),
+    .map(({ d }) => ({ detail_id: String(d.id), field: d.field, label: label(d.field), quote: String(d.quote).slice(0, QUOTE_CHARS),
       status: ['reported', 'uncertain', 'unknown'].includes(d.status) ? d.status : 'reported', asr_unconfirmed: d.asr_unconfirmed === true,
       provenance: typeof d.provenance === 'string' && d.provenance ? d.provenance : 'unverified_speech_recognition', ...(typeof d.lang === 'string' && /^[a-z]{2,3}$/.test(d.lang) ? { lang: d.lang } : {}),
       ...(isSpecial(d.quote) ? { sensitive: true } : {}) })); // G2: a line that mentions a sensitive topic is offered "keep private" (a flag on the sentence, never on the person)
@@ -237,4 +237,4 @@ export function redact(text, quotes) {
   }
   return out;
 }
-export const withheldQuotes = ledger => detailsOf(ledger).filter(d => d && d.active !== false && d.withheld === true && typeof d.quote === 'string').map(d => d.quote);
+export const withheldQuotes = ledger => detailsOf(ledger).filter(d => d && d.withheld === true && typeof d.quote === 'string').map(d => d.quote);

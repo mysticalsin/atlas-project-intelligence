@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { SUMMARY_LINES, SUMMARY_UNAVAILABLE, nextMoveNote } from '../src/session.js';
 import { SUMMARY_QUESTION } from '../src/summary.js';
 import { analyzeTurn } from '../src/turns.js';
-import { InterviewLedger } from '../src/ledger.js';
+import { InterviewLedger, buildMessages } from '../src/ledger.js';
 import { Library } from '../src/library.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import { evidence, postDraftFromInterview } from '../src/evidence.js';
@@ -355,4 +355,44 @@ test('paused and suspended interviews refuse the card\'s buttons (the machine ha
   assert.equal(JSON.stringify(h.s.ledger.details), before); assert.equal(h.s.summary.confirmed, false);
   await send(h, { type: 'resume' }); await until(() => !h.s.paused && !h.s.busy());
   assert.equal(h.s.machine.state, 'summary'); assert.equal(h.s.summaryActive(), true);
+});
+
+test('PR1 privacy: superseding a withheld detail never restores its utterance, including after checkpoint restore', async () => {
+  const secret = 'Confidential synthetic launch code ORCHID-729 must stay private.';
+  const safe = 'The public pilot used a standard intake workflow.';
+  const h = await atSummary({ said1: secret, details: [{ field: 'problem', quote: secret }] });
+  await send(h, { type: 'withhold', detail_id: 'D-001' });
+  h.s.ledger.addTranscript('user-3', safe);
+  h.s.ledger.record({ details: [{ field: 'problem', item_id: 'user-3', quote: safe, supersedes: 'D-001' }] });
+  assert.equal(h.s.ledger.details[0].active, false);
+  const resumed = rig(); resumed.s.ledger = new InterviewLedger('Pilot'); restore(resumed.s, serialize(h.s));
+  assert.ok(resumed.s.privateItems().has('user-1'), 'withholding survives a checkpoint and an inactive revision');
+  assert.deepEqual(resumed.s.evidenceNotes().details.map(d => d.quote), [safe]);
+  assert.ok(!JSON.stringify(buildMessages(resumed.s.ledger, 'user-3')).includes('ORCHID-729'), 'later analyst prompts remain redacted');
+  assert.throws(() => resumed.s.ledger.record({ details: [{ field: 'evidence', item_id: 'user-1', quote: secret }] }), /kept private/);
+  let reportInput;
+  h.s.ai.report = async messages => { reportInput = messages; return '{}'; };
+  await h.s.end(true);
+  const notes = h.events.find(e => e.type === 'notes');
+  assert.ok(notes.transcript.includes('[kept private]'));
+  assert.ok(!notes.transcript.includes('ORCHID-729'));
+  assert.ok(!JSON.stringify(reportInput).includes('ORCHID-729'));
+  assert.equal(h.s.ledger.transcripts.get('user-1'), secret, 'owner-only audit source retained');
+});
+
+test('PR1 confirmation: all 100 active details and full quotes are reviewable and bind the saved draft', async () => {
+  const h = await atSummary({ said1: 'A synthetic intake problem affected the pilot.', details: [{ field: 'problem', quote: 'A synthetic intake problem affected the pilot.' }] });
+  for (let n = 2; n <= 100; n++) {
+    const quote = `Detail ${n}: ` + 'a synthetic observation with its context '.repeat(12) + `tail-${n}.`;
+    h.s.ledger.addTranscript('review-' + n, quote);
+    h.s.ledger.record({ details: [{ field: 'problem', item_id: 'review-' + n, quote }] });
+  }
+  h.s.sendSummary(true);
+  const card = lastCard(h);
+  assert.equal(card.items.length, 100);
+  assert.equal(card.items.at(-1).quote, h.s.ledger.details.at(-1).quote);
+  let saved; h.s.evidence = async notes => { saved = notes; return { status: 201, body: { id: 'review-all', revision: 1 } }; };
+  await h.s.confirmSummary();
+  assert.deepEqual(saved.details.map(d => d.id), card.items.map(d => d.detail_id));
+  assert.equal(saved.details.at(-1).quote, card.items.at(-1).quote);
 });

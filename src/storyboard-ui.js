@@ -147,17 +147,17 @@ function quoteItem(q){const li=el('li','summary-item'+(q.private?' is-kept':'')+
  if(q.editable){const row=el('div','summary-item-actions'),fix=el('button','board-btn','Correct'),keep=el('button','board-btn','Keep private');
   fix.type='button';fix.dataset.action='correct';fix.setAttribute('aria-label','Correct: '+q.label);fix.setAttribute('aria-expanded',sum.editing===q.id?'true':'false');
   keep.type='button';keep.dataset.action='withhold';keep.setAttribute('aria-label','Keep private: '+q.label);
-  fix.addEventListener('click',()=>{markSeen(q.id);sum.editing=sum.editing===q.id?null:q.id;sumNote('');renderSummary();const f=card.querySelector&&card.querySelector('.summary-edit input');if(f&&f.focus)f.focus();});
+  fix.addEventListener('click',()=>{markSeen(q.id);sum.editing=sum.editing===q.id?null:q.id;sumNote('');renderSummary();const f=$('summaryItems').querySelector&&$('summaryItems').querySelector('.summary-edit input');if(f&&f.focus)f.focus();});
   keep.addEventListener('click',()=>{if(!sum||sum.phase!=='open')return;markSeen(q.id);sum.keeping.add(q.id);sumNote('Keeping that private…');renderSummary();sumAct('withhold',q.id);
    setTimeout(()=>{if(sum&&sum.keeping.delete(q.id))renderSummary();},6000);}); /* the server did not drop it in six seconds: it is shown as it is (not as private) */
   row.append(fix,keep);li.append(row);
   if(sum.editing===q.id){const form=el('div','summary-edit'),input=document.createElement('input'),lab=el('label','','Your correction, in your own words'),save=el('button','board-btn','Save correction'),cancel=el('button','board-btn','Cancel');
-   input.type='text';input.id='summaryEdit-'+q.id;input.maxLength=1800;input.setAttribute('autocomplete','off');lab.setAttribute('for',input.id);save.type='button';cancel.type='button';save.dataset.action='save';cancel.dataset.action='cancel';
+   input.type='text';input.id='summaryEdit-'+q.id;input.dataset.detail=q.id;input.value=sum.edits?.[q.id]?.text||'';input.maxLength=1800;input.setAttribute('autocomplete','off');lab.setAttribute('for',input.id);save.type='button';cancel.type='button';save.dataset.action='save';cancel.dataset.action='cancel';
    const go=()=>{const VC=window.AtlasVoiceControls;if(!sum||sum.phase!=='open')return;
     if(VC&&typeof VC.summaryMessage==='function'&&!VC.summaryMessage('correct',q.id,input.value)){sumNote('Please type at least five characters, so your correction can be kept in your own words.');return;}
-    sum.editing=null;markSeen(q.id);sumNote('Sent. The summary updates when ATLAS has your correction.');sumAct('correct',q.id,input.value);renderSummary();};
-   save.addEventListener('click',go);cancel.addEventListener('click',()=>{sum.editing=null;sumNote('');renderSummary();});
-   input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault&&e.preventDefault();go();}else if(e.key==='Escape'){sum.editing=null;renderSummary();}});
+    delete sum.edits?.[q.id];input.dataset.detail='';sum.editing=null;markSeen(q.id);sumNote('Sent. The summary updates when ATLAS has your correction.');sumAct('correct',q.id,input.value);renderSummary();};
+   save.addEventListener('click',go);cancel.addEventListener('click',()=>{delete sum.edits?.[q.id];input.dataset.detail='';sum.editing=null;sumNote('');renderSummary();});
+   input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault&&e.preventDefault();go();}else if(e.key==='Escape'){delete sum.edits?.[q.id];input.dataset.detail='';sum.editing=null;renderSummary();}});
    form.append(lab,input,save,cancel);li.append(form);}}
  return li;}
 function paintStory(v){const root=$('summaryItems');root.replaceChildren();resetSeen();
@@ -170,7 +170,10 @@ function paintStory(v){const root=$('summaryItems');root.replaceChildren();reset
   const ul=el('ul','story-quotes');for(const q of sec.quotes){const li=quoteItem(q);ul.append(li);if(q.editable)watchSeen(li);}
   block.append(h,ul);if(sec.provenance)block.append(el('p','story-prov',sec.provenance));root.append(block);}
  paintProgress();}
-function renderSummary(){if(!card)return;
+function rememberEdit(){if(!sum||!card)return;const input=$('summaryItems').querySelector&&$('summaryItems').querySelector('.summary-edit input');
+ if(!input||!input.dataset.detail)return;const id=input.dataset.detail;
+ (sum.edits||(sum.edits={}))[id]={text:input.value,focus:document.activeElement===input,start:input.selectionStart,end:input.selectionEnd,direction:input.selectionDirection};} /* an unsaved correction survives a summary refresh: text, focus, selection and its direction */
+function renderSummary(){if(!card)return;rememberEdit();
  const v=B.summaryView(sum),panel=$('voicePanel');card.hidden=!v.visible;if(panel&&panel.dataset){panel.dataset.summary=String(v.visible);panel.dataset.readback=String(v.visible&&(v.phase==='open'||v.phase==='confirming'));} // readback: the card is asking for a decision, so it replaces the answer box and the controls until it is confirmed
  if(!v.visible){if(card.dataset)card.dataset.shown='';return;}
  if(card.dataset&&card.dataset.shown!=='1'){card.dataset.shown='1';setTimeout(reveal,0);}
@@ -183,8 +186,12 @@ function renderSummary(){if(!card)return;
  const spent=sum.submit&&sum.submit.status==='sent';$('summarySaved').textContent=spent?'':v.saved||v.notSaved; // after Submit one line says where it stands (summaryMessage), not two
  const b=$('summarySubmit');b.hidden=v.submit.hidden||spent;b.disabled=v.submit.disabled;b.textContent=v.submit.label; // spent: the button is not shown a second time
  if(!v.submit.hidden)sumNote(v.submit.message);
- $('summaryLive').textContent=v.live;}
+ $('summaryLive').textContent=v.live;
+ const edit=sum.editing&&sum.edits?.[sum.editing],input=$('summaryItems').querySelector&&$('summaryItems').querySelector('.summary-edit input');
+ if(edit?.focus&&input?.dataset.detail===sum.editing){input.focus({preventScroll:true});if(typeof input.setSelectionRange==='function')input.setSelectionRange(edit.start,edit.end,edit.direction);}}
+
 $('summaryConfirm')&&$('summaryConfirm').addEventListener('click',()=>{if(!sum||sum.phase!=='open'||!sum.items.length)return;
+ if(sum.editing){sumNote('Save or cancel your correction before confirming the summary.');return;}
  sum.phase='confirming';sum.editing=null;sumNote('');renderSummary();sumAct('confirm_summary');
  clearTimeout(confirmTimer);confirmTimer=setTimeout(()=>{if(sum&&sum.phase==='confirming'){sum.phase='open';sumNote('The confirmation did not go through. Try again, or press End to finish.');renderSummary();}},CONFIRM_WAIT_MS);});
 // Submit for review: the person's own click, a library POST with the revision they were shown (the server refuses a stale one). The Worker checks Origin and CSRF as for every library POST.
@@ -206,7 +213,7 @@ $('summarySubmit')&&$('summarySubmit').addEventListener('click',sumSubmit);
 window.addEventListener('atlas-session',e=>{const d=e.detail;if(!d||typeof d!=='object'||!card)return;
  if(d.type==='ready'||d.type==='reset')sumClear();
  else if(d.type==='summary'){const was=sum&&sum.phase==='open'?sum:null;if(sum&&['confirming','confirmed'].includes(sum.phase))return;
-  const carry=sum||{};sum={items:arr(d.items).filter(x=>x&&typeof x==='object').slice(0,60),unknowns:arr(d.unknowns).filter(x=>x&&typeof x==='object').slice(0,12),phase:'open',editing:null,confirmed:false,draft:null,unavailable:null,submit:{status:'idle'},seen:carry.seen||new Set(),kept:carry.kept||new Map(),keeping:carry.keeping||new Set()};
+  rememberEdit();const carry=sum||{};sum={edits:was?.edits||{},items:arr(d.items).filter(x=>x&&typeof x==='object').slice(0,100),unknowns:arr(d.unknowns).filter(x=>x&&typeof x==='object').slice(0,12),phase:'open',editing:null,confirmed:false,draft:null,unavailable:null,submit:{status:'idle'},seen:carry.seen||new Set(),kept:carry.kept||new Map(),keeping:carry.keeping||new Set()};
    for(const id of [...sum.keeping])if(!sum.items.some(x=>x&&x.detail_id===id)){const old=arr(carry.items).find(x=>x&&x.detail_id===id)||{};sum.keeping.delete(id);sum.kept.set(id,{id,field:str(old.field,40),label:str(old.label,80),quote:'',tags:[]});} /* the server dropped it: now it is kept private, its words gone */
   if(was&&was.editing&&sum.items.some(x=>x.detail_id===was.editing))sum.editing=was.editing;sumNote('');renderSummary();}
  else if(d.type==='summary_closed'){if(sum&&sum.phase==='open'){sum.phase='closed';sumNote('');renderSummary();}}

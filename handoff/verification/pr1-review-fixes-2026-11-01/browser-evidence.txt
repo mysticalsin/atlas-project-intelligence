@@ -1,0 +1,35 @@
+humane:
+PASS PR1: all 100 details and the full final qualification are inspectable
+PASS PR1: the final detail can be corrected
+PASS PR1: late summary preserves correction text, focus and selection
+PASS no page errors
+
+csp:
+PASS no page errors
+csp_browser: all checks passed
+
+ux_fit:
+OK ux_fit_browser
+
+depth_fixed:
+FAIL Editor responsive at 320
+AssertionError: Editor responsive at 320
+
+depth_parent:
+FAIL Editor responsive at 320
+AssertionError: Editor responsive at 320
+
+zero_config_fixed:
+FAIL 1 the start frame: consultant "" and no email anywhere in it
+AssertionError: 1 the start frame: consultant "" and no email anywhere in it
+
+zero_config_parent:
+FAIL 1 the start frame: consultant "" and no email anywhere in it
+AssertionError: 1 the start frame: consultant "" and no email anywhere in it
+
+zero_config_edge_fixed:
+FAIL the start frame carries no name and no email: consultant "", the profile title not sent
+
+zero_config_edge_parent:
+FAIL the start frame carries no name and no email: consultant "", the profile title not sent
+
