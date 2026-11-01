@@ -4,7 +4,7 @@
    one-second interval that only runs between ready and the end of the audio. All text goes through textContent; the only
    markup inserted is AtlasGeo's own escaped map SVG. Nothing leaves the browser except on an explicit click of #gapSend. */
 (()=>{'use strict';
-const {setHTML,trusted}=window.AtlasSafe;
+const {setHTML,trusted}=window.AtlasSafe,S=window.AtlasStory;
 const $=id=>document.getElementById(id),B=window.AtlasBoard,board=$('storyBoard'),panel=$('gapPanel');
 if(!B||!board||!panel)return;
 // Resuming an interview (T11): the server says how many interview seconds had been used, so the clock goes on from there and does not restart at zero.
@@ -25,7 +25,7 @@ const motionOK=()=>!(window.matchMedia&&matchMedia('(prefers-reduced-motion: red
 const flagText=f=>f.replace(/^No verified measurement\b/i,'No measurement recorded');
 const fieldLabel=f=>{const x=obj(window.ATLAS_POLICY&&window.ATLAS_POLICY.FIELDS)[f];return Array.isArray(x)?str(x[0],80):'';};
 
-let s=blank(),prev=null,seq=0,ticker=null,mapKey=null,said='',pending='',saidAt=0,sayTimer=null,gap=null;
+let told=[],s=blank(),prev=null,seq=0,ticker=null,mapKey=null,said='',pending='',saidAt=0,sayTimer=null,gap=null;
 function blank(){return {quality:null,qualitySeq:null,heard:[],session:{},live:false,off:false};}
 function state(){return {quality:s.quality,heard:s.heard,qualitySeq:s.qualitySeq,session:s.session,now:Date.now(),policy:window.ATLAS_POLICY,geo:window.AtlasGeo};}
 
@@ -85,7 +85,7 @@ function flush(){sayTimer=null;if(pending===said)return;said=pending;saidAt=Date
 function tick(){if(board.hidden)return;renderTime(B.model({session:s.session,now:Date.now()}).time);}
 function startTicker(){stopTicker();ticker=setInterval(tick,1000);}
 function stopTicker(){if(ticker!==null)clearInterval(ticker);ticker=null;}
-function clear(){stopTicker();clearTimeout(sayTimer);sayTimer=null;s=blank();prev=null;mapKey=null;said=pending='';saidAt=0;gap=null;
+function clear(){told=[];stopTicker();clearTimeout(sayTimer);sayTimer=null;s=blank();prev=null;mapKey=null;said=pending='';saidAt=0;gap=null;
  board.hidden=true;$('boardSummary').textContent='';$('boardCoverage').textContent='';$('boardTime').hidden=true;$('boardGaps').hidden=true;
  for(const id of ['boardGaps','boardMap','boardMetrics','boardDims','boardChallenge'])body(id).replaceChildren();
  renderGap();$('gapMessage').textContent='';}
@@ -93,7 +93,7 @@ function stopClock(){if(s.session.readyAt&&!s.session.stoppedAt)s.session.stoppe
 window.addEventListener('atlas-quality',e=>{const d=e.detail;if(!d||typeof d!=='object')return;
  if(d.type==='reset')clear();
  else if(d.type==='quality'){s.quality=d;s.qualitySeq=++seq;s.live=true;render();}  // accepted after audio_stopped too: the analyst finishes late
- else if(d.type==='user_text'&&typeof d.text==='string'){s.heard.push({item_id:str(d.item_id,160),text:d.text.slice(0,2000),seq:++seq});
+ else if(d.type==='user_text'&&typeof d.text==='string'){if(!d.restored)told.push({text:d.text.slice(0,2000),at:Date.now()});if(told.length>60)told.shift();s.heard.push({item_id:str(d.item_id,160),text:d.text.slice(0,2000),seq:++seq});
   if(s.heard.length>40)s.heard.splice(0,s.heard.length-40);s.live=true;render();}
  else if(d.type==='user_text_private'&&Array.isArray(d.items)){const set=new Set(d.items.filter(x=>typeof x==='string'));  // kept private: the board forgets the words of those utterances too
   for(const h of s.heard)if(set.has(h.item_id))h.text='[kept private]';render();}});
@@ -116,36 +116,63 @@ const card=$('summaryCard'),CONFIRM_WAIT_MS=15000;
 let sum=null,confirmTimer=null;
 function sumAct(kind,id,text){window.dispatchEvent(new CustomEvent('atlas-summary-action',{detail:{kind,detail_id:id,text}}));}
 function sumNote(text){const m=$('summaryMessage');if(m)m.textContent=text||'';}
-function sumClear(){clearTimeout(confirmTimer);confirmTimer=null;sum=null;sumNote('');renderSummary();}
+function sumClear(){clearTimeout(confirmTimer);confirmTimer=null;sum=null;resetSeen();sumNote('');renderSummary();}
 // The read-back is the one step that must not be missed: the first time it shows, the page brings it to the top and puts focus on its title (reduced motion: no smooth scroll).
 function reveal(){try{const reduced=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
  if(typeof card.scrollIntoView==='function')card.scrollIntoView({block:'start',behavior:reduced?'auto':'smooth'});
  const t=$('summaryTitle');if(t&&typeof t.focus==='function')t.focus({preventScroll:true});}catch(e){}}
+/* ---------- The read-back as a finished case study (W1) ----------
+   The same server items, grouped by AtlasStory.caseStudy into Challenge / Approach / Your contribution / Outcome (and the evidence and fit lines). Every sentence is the consultant's own quote or a fixed
+   label; each block says where its words came from ("From your words, 10:42"); a before/after strip appears only from "from X to Y" in their words. Correct and Keep private stay on each quote as small text
+   buttons. A line kept private stays in its block as "Kept private. Not used." with its words gone. "n of N reviewed" counts quotes that were on screen for a moment or that the person acted on. */
+const SPANS=q=>{const src=window.ATLAS_POLICY&&window.ATLAS_POLICY.NUMERIC_SRC;return src?B.metricSpans(q,src):[];};
+let seenObs=null,seenTimers=new Map();
+function markSeen(id){if(!sum||!sum.seen||sum.seen.has(id))return;sum.seen.add(id);paintProgress();}
+function watchSeen(li){if(typeof IntersectionObserver!=='function')return;if(!seenObs)seenObs=new IntersectionObserver(es=>{for(const e of es){const id=e.target.dataset.detail;
+  if(e.isIntersecting){if(!seenTimers.has(id))seenTimers.set(id,setTimeout(()=>{seenTimers.delete(id);markSeen(id);},700));}else if(seenTimers.has(id)){clearTimeout(seenTimers.get(id));seenTimers.delete(id);}}},{root:$('summaryScroll'),threshold:.6});
+ seenObs.observe(li);}
+function resetSeen(){if(seenObs){seenObs.disconnect();seenObs=null;}for(const x of seenTimers.values())clearTimeout(x);seenTimers.clear();}
+function paintProgress(){const el=$('summaryProgress');if(!el||!sum)return;const v=B.summaryView(sum),cs=S.caseStudy({items:v.items},{seen:sum.seen,keeping:sum.keeping,kept:sum.kept});
+ const open=sum.phase==='open'||sum.phase==='confirming';el.hidden=!open||!cs.total;el.textContent=cs.total?cs.reviewed+' of '+cs.total+' reviewed':'';}
+function quoteItem(q){const li=el('li','summary-item'+(q.private?' is-kept':'')+(q.pending?' is-pending':''));li.dataset.detail=q.id;
+ const head=el('p','summary-item-head');head.append(el('b','',q.label));
+ if(q.private){li.append(head,el('p','summary-kept','Kept private. Not used.'));return li;}
+ for(const tg of q.tags)head.append(el('span','board-flag',' · '+tg));
+ const quote=el('q','summary-quote',q.quote);quote.setAttribute('dir','auto');if(q.lang){quote.setAttribute('lang',q.lang);if(q.lang!=='en')head.append(el('span','board-flag',' · '+q.lang.toUpperCase()));}
+ li.append(head,quote);
+ if(q.pending){li.append(el('p','summary-item-wait','Keeping that private…'));return li;}
+ if(q.editable){const row=el('div','summary-item-actions'),fix=el('button','board-btn','Correct'),keep=el('button','board-btn','Keep private');
+  fix.type='button';fix.dataset.action='correct';fix.setAttribute('aria-label','Correct: '+q.label);fix.setAttribute('aria-expanded',sum.editing===q.id?'true':'false');
+  keep.type='button';keep.dataset.action='withhold';keep.setAttribute('aria-label','Keep private: '+q.label);
+  fix.addEventListener('click',()=>{markSeen(q.id);sum.editing=sum.editing===q.id?null:q.id;sumNote('');renderSummary();const f=card.querySelector&&card.querySelector('.summary-edit input');if(f&&f.focus)f.focus();});
+  keep.addEventListener('click',()=>{if(!sum||sum.phase!=='open')return;markSeen(q.id);sum.keeping.add(q.id);sumNote('Keeping that private…');renderSummary();sumAct('withhold',q.id);
+   setTimeout(()=>{if(sum&&sum.keeping.delete(q.id))renderSummary();},6000);}); /* the server did not drop it in six seconds: it is shown as it is (not as private) */
+  row.append(fix,keep);li.append(row);
+  if(sum.editing===q.id){const form=el('div','summary-edit'),input=document.createElement('input'),lab=el('label','','Your correction, in your own words'),save=el('button','board-btn','Save correction'),cancel=el('button','board-btn','Cancel');
+   input.type='text';input.id='summaryEdit-'+q.id;input.maxLength=1800;input.setAttribute('autocomplete','off');lab.setAttribute('for',input.id);save.type='button';cancel.type='button';save.dataset.action='save';cancel.dataset.action='cancel';
+   const go=()=>{const VC=window.AtlasVoiceControls;if(!sum||sum.phase!=='open')return;
+    if(VC&&typeof VC.summaryMessage==='function'&&!VC.summaryMessage('correct',q.id,input.value)){sumNote('Please type at least five characters, so your correction can be kept in your own words.');return;}
+    sum.editing=null;markSeen(q.id);sumNote('Sent. The summary updates when ATLAS has your correction.');sumAct('correct',q.id,input.value);renderSummary();};
+   save.addEventListener('click',go);cancel.addEventListener('click',()=>{sum.editing=null;sumNote('');renderSummary();});
+   input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault&&e.preventDefault();go();}else if(e.key==='Escape'){sum.editing=null;renderSummary();}});
+   form.append(lab,input,save,cancel);li.append(form);}}
+ return li;}
+function paintStory(v){const root=$('summaryItems');root.replaceChildren();resetSeen();
+ const cs=S.caseStudy({items:v.items.filter(x=>!sum.kept.has(x.id))},{heard:told,spans:SPANS,seen:sum.seen,keeping:sum.keeping,kept:sum.kept});
+ if(cs.numbers){const n=cs.numbers,box=el('section','story-numbers');box.setAttribute('aria-label',n.kind==='beforeAfter'?'Before and after':'Your numbers');box.dataset.kind=n.kind;
+  if(n.kind==='beforeAfter'){const a=el('div','story-num'),b=el('div','story-num');a.append(el('small','','Before'),el('b','',n.before.text));b.append(el('small','','After'),el('b','',n.after.text));box.append(a,el('span','story-arrow','→'),b);}
+  else for(const f of n.figures){const d=el('div','story-num');d.append(el('small','',f.label),el('b','',f.text));box.append(d);}
+  box.append(el('p','story-prov','From your words'));root.append(box);}
+ for(const sec of cs.sections){const block=el('section','story-block');block.dataset.block=sec.id;const h=el('h3','story-block-title',sec.title);h.id='story-'+sec.id;block.setAttribute('aria-labelledby',h.id);
+  const ul=el('ul','story-quotes');for(const q of sec.quotes){const li=quoteItem(q);ul.append(li);if(q.editable)watchSeen(li);}
+  block.append(h,ul);if(sec.provenance)block.append(el('p','story-prov',sec.provenance));root.append(block);}
+ paintProgress();}
 function renderSummary(){if(!card)return;
  const v=B.summaryView(sum),panel=$('voicePanel');card.hidden=!v.visible;if(panel&&panel.dataset){panel.dataset.summary=String(v.visible);panel.dataset.readback=String(v.visible&&(v.phase==='open'||v.phase==='confirming'));} // readback: the card is asking for a decision, so it replaces the answer box and the controls until it is confirmed
  if(!v.visible){if(card.dataset)card.dataset.shown='';return;}
  if(card.dataset&&card.dataset.shown!=='1'){card.dataset.shown='1';setTimeout(reveal,0);}
  $('summaryTitle').textContent=v.title;$('summaryIntro').textContent=sum.phase==='open'||sum.phase==='confirming'?v.intro:'';
- const list=$('summaryItems');list.replaceChildren();
- for(const it of v.items){const li=el('li','summary-item');li.dataset.detail=it.id;
-  const head=el('p','summary-item-head');head.append(el('b','',it.label));for(const t of it.tags)head.append(el('span','board-flag',' · '+t));
-  const quote=el('q','summary-quote',it.quote);quote.setAttribute('dir','auto');if(it.lang){quote.setAttribute('lang',it.lang);if(it.lang!=='en')head.append(el('span','board-flag',' · '+it.lang.toUpperCase()));} /* the words stay in the language they were said in; the tag and lang attribute say which */
-  li.append(head,quote);
-  if(it.editable){const row=el('div','summary-item-actions'),fix=el('button','board-btn','Correct'),keep=el('button','board-btn','Keep private');
-   fix.type='button';fix.dataset.action='correct';fix.setAttribute('aria-label','Correct: '+it.label);fix.setAttribute('aria-expanded',sum.editing===it.id?'true':'false');
-   keep.type='button';keep.dataset.action='withhold';keep.setAttribute('aria-label','Keep private: '+it.label);
-   fix.addEventListener('click',()=>{sum.editing=sum.editing===it.id?null:it.id;sumNote('');renderSummary();const f=card.querySelector&&card.querySelector('.summary-edit input');if(f&&f.focus)f.focus();});
-   keep.addEventListener('click',()=>{if(!sum||sum.phase!=='open')return;sumNote('Keeping that private…');sumAct('withhold',it.id);});
-   row.append(fix,keep);li.append(row);
-   if(sum.editing===it.id){const form=el('div','summary-edit'),input=document.createElement('input'),lab=el('label','','Your correction, in your own words'),save=el('button','board-btn','Save correction'),cancel=el('button','board-btn','Cancel');
-    input.type='text';input.id='summaryEdit-'+it.id;input.maxLength=1800;input.setAttribute('autocomplete','off');lab.setAttribute('for',input.id);save.type='button';cancel.type='button';save.dataset.action='save';cancel.dataset.action='cancel';
-    const go=()=>{const VC=window.AtlasVoiceControls;if(!sum||sum.phase!=='open')return;
-     if(VC&&typeof VC.summaryMessage==='function'&&!VC.summaryMessage('correct',it.id,input.value)){sumNote('Please type at least five characters, so your correction can be kept in your own words.');return;}
-     sum.editing=null;sumNote('Sent. The summary updates when ATLAS has your correction.');sumAct('correct',it.id,input.value);renderSummary();};
-    save.addEventListener('click',go);cancel.addEventListener('click',()=>{sum.editing=null;sumNote('');renderSummary();});
-    input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault&&e.preventDefault();go();}else if(e.key==='Escape'){sum.editing=null;renderSummary();}});
-    form.append(lab,input,save,cancel);li.append(form);}}
-  list.append(li);}
+ paintStory(v);
  const empty=$('summaryEmpty');empty.hidden=!v.empty;empty.textContent=v.empty;
  const open=$('summaryOpen');open.hidden=!v.openPoints.length;const ol=$('summaryOpenList');ol.replaceChildren();for(const t of v.openPoints)ol.append(el('li','',t));
  $('summaryNext').textContent=v.next;$('summaryNext').hidden=v.phase!=='open'&&v.phase!=='confirming'; // the promise before confirming goes stale once it is done
@@ -176,7 +203,8 @@ $('summarySubmit')&&$('summarySubmit').addEventListener('click',sumSubmit);
 window.addEventListener('atlas-session',e=>{const d=e.detail;if(!d||typeof d!=='object'||!card)return;
  if(d.type==='ready'||d.type==='reset')sumClear();
  else if(d.type==='summary'){const was=sum&&sum.phase==='open'?sum:null;if(sum&&['confirming','confirmed'].includes(sum.phase))return;
-  sum={items:arr(d.items).filter(x=>x&&typeof x==='object').slice(0,60),unknowns:arr(d.unknowns).filter(x=>x&&typeof x==='object').slice(0,12),phase:'open',editing:null,confirmed:false,draft:null,unavailable:null,submit:{status:'idle'}};
+  const carry=sum||{};sum={items:arr(d.items).filter(x=>x&&typeof x==='object').slice(0,60),unknowns:arr(d.unknowns).filter(x=>x&&typeof x==='object').slice(0,12),phase:'open',editing:null,confirmed:false,draft:null,unavailable:null,submit:{status:'idle'},seen:carry.seen||new Set(),kept:carry.kept||new Map(),keeping:carry.keeping||new Set()};
+   for(const id of [...sum.keeping])if(!sum.items.some(x=>x&&x.detail_id===id)){const old=arr(carry.items).find(x=>x&&x.detail_id===id)||{};sum.keeping.delete(id);sum.kept.set(id,{id,field:str(old.field,40),label:str(old.label,80),quote:'',tags:[]});} /* the server dropped it: now it is kept private, its words gone */
   if(was&&was.editing&&sum.items.some(x=>x.detail_id===was.editing))sum.editing=was.editing;sumNote('');renderSummary();}
  else if(d.type==='summary_closed'){if(sum&&sum.phase==='open'){sum.phase='closed';sumNote('');renderSummary();}}
  else if(d.type==='summary_confirmed'){if(sum){sum.confirmed=true;clearTimeout(confirmTimer);confirmTimer=null;if(sum.phase==='open')sum.phase='confirming';renderSummary();}}

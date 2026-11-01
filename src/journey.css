@@ -1,0 +1,202 @@
+/* ATLAS journey surfaces (v2.2 W1). Loaded after fit.css. The orb, its aura, corners, caption and animation are untouched; everything here is the screen around it:
+   a calm live screen (one status line, one control cluster, the project folded to its chip, conversation as whole bubbles), the read-back as a finished case study with a sticky
+   bar, the project picker and its three-field form, the first-run checklist, the Submit moment and the fictional example. Motion lives only under prefers-reduced-motion: no-preference. */
+
+/* ---------- live: calm ---------- */
+/* the project drawer never sits over a running interview: the project's name is the chip above the columns */
+body.ui2.studio-view #voicePanel:is([data-phase=live],[data-phase=ending]) .studio-project-drawer{display:none!important}
+/* the conversation: whole bubbles, newest in view, a soft 12px fade at the very top and nothing cut */
+body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text] .text-log{position:relative;border:0;background:transparent;border-radius:0;padding:14px var(--s2) var(--s3);gap:var(--s3);scroll-snap-type:y proximity;scroll-padding-top:14px;-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 12px);mask-image:linear-gradient(to bottom,transparent 0,#000 12px)}
+body.ui2.studio-view:not(.studio-focus) .text-log .msg{display:block;box-sizing:border-box;width:fit-content;max-width:min(94%,640px);margin:0;padding:var(--s3) var(--s4);border-radius:16px;scroll-snap-align:start;text-align:left}
+body.ui2.studio-view:not(.studio-focus) .text-log .msg-atlas{align-self:flex-start;background:rgba(248,248,248,.055);border-bottom-left-radius:5px}
+body.ui2.studio-view:not(.studio-focus) .text-log .msg-you{align-self:flex-end;background:rgba(138,0,255,.2);border:1px solid rgba(180,144,232,.34);border-bottom-right-radius:5px}
+body.ui2.studio-view:not(.studio-focus) .text-log .msg .msg-who{display:block;margin:0 0 2px;font-size:12px;font-weight:500;letter-spacing:.04em;color:var(--text-3)}
+body.ui2.studio-view:not(.studio-focus) .text-log .msg.is-question{background:rgba(246,235,75,.06);border:1px solid rgba(246,235,75,.2);border-bottom-left-radius:5px}
+body.ui2.studio-view:not(.studio-focus) .text-log .msg.is-question .msg-text{font-size:17px;line-height:1.45}
+body.ui2.studio-view:not(.studio-focus) .text-log .msg.is-pending{opacity:.62}
+body.ui2.studio-view:not(.studio-focus) .text-log .msg.is-private{opacity:.7}
+body.ui2.studio-view:not(.studio-focus) .text-log .msg.is-dots{padding:var(--s3) var(--s4)}
+.text-log .msg.is-dots .msg-who{display:none!important}
+.text-log .msg.is-dots .msg-text{display:inline-flex;gap:5px;align-items:center;min-height:22px}
+.text-log .msg.is-dots i{display:block;width:7px;height:7px;border-radius:50%;background:var(--text-2)}
+/* the box while a sent turn waits for the server: its text is in the conversation already, the box shows it only if the server refuses */
+.voice-type.is-sending textarea{color:transparent;caret-color:transparent}
+/* the status line under the orb: the one place that says what is going on */
+body.ui2.studio-view:not(.studio-focus) .voice-main>.orb-caption{color:var(--text-2);letter-spacing:.14em}
+/* one control cluster: Pause, Repeat and Stop interview are one family; the language is a quiet line beside the answer, not a fourth button */
+body.ui2.studio-view:not(.studio-focus) .voice-controls .btn{border-radius:999px}
+body.ui2.studio-view:not(.studio-focus) #voiceLanguage select{border-radius:999px;background-color:transparent;border-color:var(--line);color:var(--text-2)}
+body.ui2.studio-view:not(.studio-focus) #voiceLanguage label{color:var(--text-3)}
+
+/* ---------- micro-feedback ---------- */
+@media(prefers-reduced-motion:no-preference){
+ .text-log .msg[data-rise]{animation:w1Rise .12s ease-out both}
+ .text-log .msg.is-dots i{animation:w1Dot 1s ease-in-out infinite}
+ .text-log .msg.is-dots i:nth-child(2){animation-delay:.15s}.text-log .msg.is-dots i:nth-child(3){animation-delay:.3s}
+ .voice-type.is-nudged{animation:w1Nudge .16s ease-in-out 1}
+ body.ui2 :is(.btn,.board-btn,.pick-row):not(:disabled):active{transform:scale(.98)}
+ body.ui2 :is(.btn,.board-btn,.pick-row){transition:transform .08s ease,background-color .15s ease,border-color .15s ease}
+}
+@keyframes w1Rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes w1Dot{0%,80%,100%{opacity:.35;transform:none}40%{opacity:1;transform:translateY(-3px)}}
+@keyframes w1Nudge{0%,100%{transform:none}25%{transform:translateX(-5px)}50%{transform:translateX(5px)}75%{transform:translateX(-2px)}}
+
+/* ---------- the case study (read-back, example) ---------- */
+.story-blocks{display:flex;flex-direction:column;gap:0;min-width:0}
+.story-block{padding:var(--s4) 0 var(--s3);border-top:1px solid var(--line);min-width:0}
+.story-block:first-child{border-top:0;padding-top:var(--s2)}
+.story-block-title{margin:0 0 var(--s3);font-size:12px;line-height:1.3;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--violet)}
+.story-quotes{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--s4);min-width:0}
+.story-block .summary-item{display:block!important;border:0!important;padding:0!important;min-width:0;overflow-wrap:anywhere}
+.story-block .summary-item-head{margin:0 0 3px!important;font-size:12px;line-height:1.4;color:var(--text-3)}
+.story-block .summary-item-head b{font-weight:400;font-size:12px;color:var(--text-3)}
+.story-block q.summary-quote{display:block;margin:0!important;font-size:17px;line-height:1.55;color:var(--text);quotes:'“' '”'}
+.story-block .summary-item-actions{display:flex!important;flex-direction:row!important;flex-wrap:wrap;gap:var(--s1) var(--s5);margin:var(--s1) 0 0!important}
+.story-block .summary-item-actions .board-btn{min-height:32px;padding:0;border:0;border-radius:6px;background:none;color:var(--text-2);font-size:12px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.story-block .summary-item-actions .board-btn:hover{color:var(--text);background:none}
+.story-block .summary-item-actions .board-btn:focus-visible{outline:2px solid var(--y);outline-offset:3px}
+.story-block .summary-edit{margin-top:var(--s2)}
+.story-block .summary-kept,.story-block .summary-item-wait{margin:0;font-size:13px;line-height:1.5;color:var(--text-3);font-style:italic}
+.story-block .summary-item.is-kept .summary-item-head b,.story-block .summary-item.is-pending q{color:var(--text-3)}
+.story-prov{margin:var(--s3) 0 0;font-size:12px;line-height:1.4;color:var(--text-3)}
+.story-numbers{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:var(--s2) var(--s5);margin:var(--s1) 0 var(--s3);padding:var(--s3) var(--s4) var(--s2);border:1px solid var(--line);border-radius:16px;background:rgba(248,248,248,.03)}
+.story-num{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0}
+.story-num small{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);text-align:center}
+.story-num b{font-size:clamp(26px,2.6vw,34px);line-height:1.1;font-weight:600;color:var(--y);font-variant-numeric:tabular-nums;text-align:center}
+.story-arrow{font-size:28px;color:var(--text-2)}
+.story-numbers .story-prov{flex:1 0 100%;text-align:center;margin:0}
+@media(min-width:1024px) and (min-height:560px){
+ /* the read-back card: a page, not a box. Its title row, a quiet label and intro stay put; the case study scrolls inside it; the bar below it never moves */
+ body.ui2.studio-view:not(.studio-focus) #summaryCard:not([hidden]){border:0;background:transparent;padding:0 var(--s1);max-width:760px;margin-top:var(--s1)}
+ body.ui2.studio-view:not(.studio-focus) #summaryCard .board-card-heading{font-size:15px;font-weight:500;color:var(--text);padding-top:var(--s1)}
+ body.ui2.studio-view:not(.studio-focus) #summaryCard .board-label{margin:2px 0 0}
+ body.ui2.studio-view:not(.studio-focus) #summaryCard p#summaryIntro{font-size:13px;line-height:1.5;margin:var(--s1) 0 var(--s2);color:var(--text-2)}
+ body.ui2.studio-view:not(.studio-focus) #summaryCard .summary-scroll{padding:0 var(--s2) var(--s4) 0;margin-top:0;scroll-snap-type:y proximity}
+ body.ui2.studio-view:not(.studio-focus) #summaryCard .summary-items{padding-bottom:0}
+ body.ui2.studio-view:not(.studio-focus) #summaryCard .summary-item{scroll-snap-align:start}
+}
+body.ui2.studio-view:not(.studio-focus) #summaryCard .summary-scroll::after{display:none}
+/* the sticky bar: how far you have read, and the one primary action */
+body.ui2.studio-view:not(.studio-focus) #summaryCard .gap-actions{display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;justify-content:flex-end;gap:var(--s4);margin:0;padding:var(--s3) var(--s2) var(--s3);background:var(--bg);border-top:1px solid var(--line)}
+.story-bar-text{margin-right:auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+.story-bar-text p{margin:0!important;font-size:13px!important;line-height:1.4!important;color:var(--text-2)}
+.story-bar-text p:empty{display:none}
+.story-bar-text #summarySaved{color:var(--text)}
+.story-progress{font-size:13px;line-height:1.3;color:var(--text-2);font-variant-numeric:tabular-nums}
+.story-progress[hidden]{display:none}
+body.ui2.studio-view:not(.studio-focus) #summaryCard :is(#summaryConfirm,#summarySubmit){min-height:44px;padding:0 var(--s6);border-radius:999px;background:var(--accent);border:1px solid var(--accent);color:var(--on-accent);font-size:14px;font-weight:600;cursor:pointer}
+body.ui2.studio-view:not(.studio-focus) #summaryCard :is(#summaryConfirm,#summarySubmit):disabled{opacity:.5;cursor:default}
+body.ui2.studio-view:not(.studio-focus) #summaryCard :is(#summaryConfirm,#summarySubmit):hover:not(:disabled){filter:brightness(1.06)}
+body.ui2.studio-view:not(.studio-focus) #summaryCard :is(#summaryConfirm,#summarySubmit)[hidden]{display:none}
+/* after Confirm: the card is the saved story, with its private-draft line and the Submit button; it shares the column with the conversation as before */
+body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true]:not([data-readback=true]) #summaryCard:not([hidden]){height:min(300px,38dvh)}
+@media(max-width:1023px){
+ body.ui2.studio-view:not(.studio-focus) #summaryCard .gap-actions{position:sticky;bottom:0;z-index:4;margin:0 calc(var(--s4) * -1);padding:var(--s3) var(--s4) calc(var(--s3) + env(safe-area-inset-bottom));border-top:1px solid var(--line)}
+ body.ui2.studio-view:not(.studio-focus) #summaryCard :is(#summaryConfirm,#summarySubmit){min-height:48px}
+ .story-block .summary-item-actions .board-btn{min-height:44px;padding:0 var(--s2)}
+ .story-block q.summary-quote{font-size:16px}
+}
+@media(pointer:coarse){.story-block .summary-item-actions .board-btn{min-height:44px;padding:0 var(--s2)}}
+
+/* ---------- the project form and the picker ---------- */
+.field-error{margin:4px 0 0;font-size:12px;line-height:1.4;color:#B3261E}
+.field-error[hidden]{display:none}
+dialog input[aria-invalid=true]{border-color:#B3261E;box-shadow:0 0 0 1px #B3261E}
+.more-details{margin:var(--s3) 0 var(--s2);border-top:1px solid rgba(16,16,17,.14);padding-top:var(--s1)}
+.more-details>summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-size:14px;font-weight:500;list-style:none}
+.more-details>summary::-webkit-details-marker{display:none}
+.more-details>summary::before{content:"+";display:inline-block;width:20px;font-size:18px;line-height:1}
+.more-details[open]>summary::before{content:"–"}
+.pick-dialog{width:min(560px,calc(100vw - 24px))}
+.pick-search{width:100%;min-height:44px;margin:var(--s3) 0;padding:0 var(--s4);box-sizing:border-box;border:1px solid rgba(16,16,17,.25);font-size:15px}
+.pick-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--s2);max-height:min(46dvh,380px);overflow-y:auto;overscroll-behavior:contain}
+.pick-row{width:100%;min-height:56px;display:flex;flex-direction:column;gap:2px;align-items:flex-start;text-align:left;padding:var(--s3) var(--s4);border:1px solid rgba(16,16,17,.18);border-radius:12px;background:#fff;color:#101011;font:inherit;cursor:pointer}
+.pick-row:hover{border-color:#3E007A;background:#f6f1fc}
+.pick-row:focus-visible{outline:2px solid #3E007A;outline-offset:2px}
+.pick-title{font-size:15px;font-weight:600;line-height:1.35}
+.pick-sub{font-size:12px;line-height:1.4;color:#555966}
+.pick-empty{margin:var(--s3) 0 0;font-size:13px;line-height:1.5;color:#555966}
+.pick-empty[hidden]{display:none}
+
+/* ---------- first run ---------- */
+.firstrun-card[hidden]{display:none}
+.firstrun-title{margin:0 0 var(--s3)}
+.firstrun-steps{list-style:none;margin:0 0 var(--s3);padding:0;display:flex;flex-direction:column;gap:var(--s3)}
+.firstrun-steps li{display:flex;align-items:flex-start;gap:var(--s3);color:var(--text-3)}
+.firstrun-n{flex:none;width:28px;height:28px;border-radius:50%;border:1px solid var(--line);display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:var(--text-2)}
+.firstrun-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.firstrun-text b{font-size:15px;font-weight:600;line-height:1.35;color:var(--text-2)}
+.firstrun-text small{font-size:12px;line-height:1.45;color:var(--text-3)}
+.firstrun-steps li[data-state=current] .firstrun-n{background:rgba(138,0,255,.3);border-color:var(--violet);color:var(--text)}
+.firstrun-steps li[data-state=current] .firstrun-text b{color:var(--text)}
+.firstrun-steps li[data-state=done] .firstrun-n{background:var(--violet);border-color:var(--violet);color:#101011}
+.firstrun-pick{width:100%;min-height:44px;border-radius:999px;background:transparent;border:1px solid var(--violet);color:var(--text)}
+.firstrun-pick:hover{background:rgba(138,0,255,.18)}
+.firstrun-private{margin:var(--s3) 0 0;font-size:13px;line-height:1.45;color:var(--text-2)}
+/* while the checklist is there (before the first Submit), the idle right rail is the checklist, not the engine cards */
+@media(min-width:1024px) and (min-height:560px){
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-firstrun=true]:not([data-phase=live]):not([data-phase=ending]) .studio-right>:not(.firstrun-card){display:none}
+}
+body.ui2.studio-view #voicePanel[data-firstrun=true]:is([data-phase=live],[data-phase=ending]) .firstrun-card{display:none}
+
+/* ---------- the Submit moment ---------- */
+dialog.submit-sheet,dialog.example-sheet{color-scheme:dark;background:#101011;color:#F8F8F8;border:1px solid rgba(180,144,232,.32);border-radius:20px;box-shadow:0 24px 80px rgba(0,0,0,.6)}
+dialog.submit-sheet::backdrop,dialog.example-sheet::backdrop{background:rgba(6,6,9,.74)}
+dialog.submit-sheet{width:min(540px,calc(100vw - 24px));padding:36px 32px 28px;text-align:center}
+.submit-body h2{margin:var(--s3) 0 var(--s2);font-size:28px;line-height:1.2;color:#F8F8F8}
+.submit-body p{margin:0 auto;max-width:38ch;font-size:15px;line-height:1.55;color:#C9CAD6}
+.submit-check{width:76px;height:76px;display:block;margin:0 auto}
+.submit-ring,.submit-tick{fill:none;stroke:#F6EB4B;stroke-linecap:round;stroke-linejoin:round}
+.submit-ring{stroke-width:3}.submit-tick{stroke-width:4.5}
+.submit-steps{list-style:none;display:flex;margin:30px 0 6px;padding:0}
+.submit-steps li{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:var(--s2);position:relative;font-size:12px;line-height:1.3;color:#A9A9BC;padding:0 2px}
+.submit-steps li:not(:last-child)::after{content:"";position:absolute;top:8px;left:calc(50% + 12px);right:calc(-50% + 12px);height:2px;background:rgba(169,169,188,.3)}
+.submit-steps li[data-state=done]:not(:last-child)::after{background:linear-gradient(90deg,#F6EB4B,rgba(169,169,188,.3))}
+.submit-dot{width:18px;height:18px;border-radius:50%;border:2px solid #666A78;background:#101011;position:relative;z-index:1;box-sizing:border-box}
+.submit-steps li[data-state=done] .submit-dot{background:#F6EB4B;border-color:#F6EB4B}
+.submit-steps li[data-state=done]{color:#F8F8F8}
+.submit-steps li[data-state=next] .submit-dot{border-color:#B490E8}
+dialog.submit-sheet .actions{display:flex;flex-wrap:wrap;gap:var(--s3);justify-content:center;margin:26px 0 0}
+dialog.submit-sheet .btn,dialog.example-sheet .btn{min-height:44px;border-radius:999px;padding:0 var(--s6);background:transparent;color:#F8F8F8;border:1px solid rgba(248,248,248,.34);font-size:14px;cursor:pointer}
+dialog.submit-sheet .btn:hover,dialog.example-sheet .btn:hover{background:rgba(248,248,248,.08)}
+dialog.submit-sheet .btn.primary,dialog.example-sheet .btn.primary{background:#F6EB4B;color:#3E007A;border-color:#F6EB4B;font-weight:600}
+dialog.submit-sheet .btn.primary:hover,dialog.example-sheet .btn.primary:hover{filter:brightness(1.06);background:#F6EB4B}
+dialog.submit-sheet :focus-visible,dialog.example-sheet :focus-visible{outline:2px solid #F6EB4B;outline-offset:3px}
+.submit-ring{stroke-dasharray:182;stroke-dashoffset:0}.submit-tick{stroke-dasharray:50;stroke-dashoffset:0}
+@media(prefers-reduced-motion:no-preference){
+ dialog.submit-sheet[open]{animation:w1SheetIn .24s var(--ease)}
+ dialog.submit-sheet[open] .submit-ring{stroke-dashoffset:182;animation:w1Draw .24s ease-out .02s forwards}
+ dialog.submit-sheet[open] .submit-tick{stroke-dashoffset:50;animation:w1Draw .16s ease-out .26s forwards}
+}
+@keyframes w1Draw{to{stroke-dashoffset:0}}
+@keyframes w1SheetIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+@media(max-width:480px){dialog.submit-sheet{padding:28px 18px 22px}.submit-steps li{font-size:12px}.submit-body h2{font-size:24px}}
+
+/* ---------- the fictional example ---------- */
+dialog.example-sheet{width:min(820px,calc(100vw - 24px));height:min(92vh,900px);height:min(92dvh,900px);padding:0;overflow:hidden}
+dialog.example-sheet[open]{display:flex;flex-direction:column}
+.example-banner{flex:none;display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;padding:var(--s3) var(--s4);background:#F6EB4B;color:#3E007A;font-size:13px;line-height:1.4}
+.example-banner b{font-size:14px;letter-spacing:.08em;text-transform:uppercase}
+.example-banner span{flex:1 1 220px}
+dialog.example-sheet .example-banner .btn{background:#3E007A;color:#F8F8F8;border-color:#3E007A;min-height:44px}
+.example-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;padding:var(--s6) var(--s6) var(--s4);overscroll-behavior:contain}
+.example-scroll h2{margin:var(--s1) 0 var(--s3);font-size:26px;line-height:1.25;color:#F8F8F8}
+.example-scroll .eyebrow{color:#B490E8}
+.example-foot{flex:none;display:flex;align-items:center;justify-content:space-between;gap:var(--s4);flex-wrap:wrap;padding:var(--s3) var(--s5) var(--s3);border-top:1px solid var(--line);font-size:12px;color:#A9A9BC}
+@media(max-width:480px){.example-scroll{padding:var(--s4)}.example-scroll h2{font-size:22px}}
+
+/* ---------- the read-back and the saved story are the whole centre column ---------- */
+@media(min-width:1024px) and (min-height:560px){
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-readback=true],[data-summary=true])[data-phase][data-input]{--fit-orb:clamp(72px,calc(100dvh - 760px),96px)}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true] .voice-main{grid-template-rows:auto auto auto auto minmax(0,1fr) auto auto auto auto auto auto auto auto auto auto auto;overflow-y:hidden}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true] .voice-main>:is(#voiceHeading,#voiceMessage,#textLog,.orb-caption){display:none}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true]:not([data-readback=true]) #summaryCard:not([hidden]){height:auto}
+}
+body.ui2.studio-view:not(.studio-focus) #summaryTitle:focus-visible{outline:2px solid rgba(180,144,232,.7);outline-offset:4px;border-radius:6px}
+
+/* after Confirm: the saved story keeps the whole column; the answer box has nothing left to ask and the engine's status list is not the owner's view (the Submit sheet and the Library show where it stands) */
+@media(min-width:1024px) and (min-height:560px){
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true]:not([data-readback=true]) .voice-main>#voiceTypeWrap{display:none}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true] #summaryCard .summary-status{display:none}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true] .orb-stage-tools{display:none}
+}

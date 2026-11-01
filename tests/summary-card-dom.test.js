@@ -78,7 +78,7 @@ class El{
 function boot({libraryApi,policy=true,timeout=setTimeout}={}){
  const els={},$=id=>els[id]||(els[id]=new El(id)),listeners={},actions=[],calls=[];
  const document={getElementById:$,createElement:t=>new El('',t),createElementNS:(ns,t)=>new El('',t),querySelector:()=>null,addEventListener(){},readyState:'complete'};
- const win={document,AtlasBoard:B,AtlasSafe:require('../src/safe-html.js'),AtlasVoiceControls:VC,AtlasWorkflowCore:WF,ATLAS_POLICY:policy?{FIELDS:{}}:undefined,
+ const win={document,AtlasBoard:B,AtlasStory:require('../src/journey-core.js'),AtlasSafe:require('../src/safe-html.js'),AtlasVoiceControls:VC,AtlasWorkflowCore:WF,ATLAS_POLICY:policy?{FIELDS:{}}:undefined,
   ATLAS_APP:{libraryApi:libraryApi?async(p,o)=>{calls.push([p,o||{}]);return libraryApi(p,o);}:undefined},
   addEventListener:(t,f)=>(listeners[t]||=[]).push(f),
   dispatchEvent:e=>{if(e.type==='atlas-summary-action')actions.push(e.detail);for(const f of listeners[e.type]||[])f(e);},
@@ -90,7 +90,7 @@ function boot({libraryApi,policy=true,timeout=setTimeout}={}){
 }
 const flush=()=>new Promise(r=>setTimeout(r,5)),plain=v=>JSON.parse(JSON.stringify(v)); // (values made inside the page's vm context have another realm's prototypes)
 const buttons=(h,act)=>h.$('summaryItems').findAll(e=>e.tag==='button'&&e.dataset.action===act);
-const items=h=>h.$('summaryItems').kids;
+const items=h=>h.$('summaryItems').findAll(e=>e.tag==='li'&&/\bsummary-item\b/.test(e.cls));
 const SUMMARY={type:'summary',items:ITEMS,unknowns:UNKNOWNS,state:'summary',round:1};
 const OK_STATUS={cards:[{branch:'evidence',display_status:'draft'},{branch:'maap',display_status:'not_started',reason:'MAAP_NOT_CONFIGURED'},{branch:'dna',display_status:'pending',mock:true}]};
 
@@ -111,6 +111,7 @@ test('the card appears with the read-back: each item has Correct and Keep privat
 test('Keep private asks for exactly one withhold message for that item; Correct opens a labelled input and sends the typed words, nothing shorter than five characters',()=>{
  const h=boot();h.session(SUMMARY);
  buttons(h,'withhold')[1].click();assert.deepEqual(plain(h.actions),[{kind:'withhold',detail_id:'D-002'}]);
+ assert.equal(items(h).length,3,'the line stays until the server drops it');assert.match(items(h)[1].textContent,/Keeping that private/);assert.equal(buttons(h,'withhold').length,2,'its buttons are gone while it waits: one withhold only');
  buttons(h,'correct')[0].click();
  const input=h.$('summaryItems').findAll(e=>e.tag==='input')[0];assert.ok(input,'an inline input');assert.equal(input.getAttribute('autocomplete'),'off');
  const label=h.$('summaryItems').findAll(e=>e.tag==='label')[0];assert.equal(label.getAttribute('for'),input.id);assert.match(label.textContent,/in your own words/);
@@ -121,7 +122,7 @@ test('Keep private asks for exactly one withhold message for that item; Correct 
  assert.deepEqual(plain(h.actions.at(-1)),{kind:'correct',detail_id:'D-001',text:'It was 35 percent, measured in March.'});
  assert.equal(h.$('summaryItems').findAll(e=>e.tag==='input').length,0,'the input closes after sending');assert.match(h.$('summaryMessage').textContent,/Sent\./);
  // Enter sends, Escape cancels, Cancel closes
- buttons(h,'correct')[2].click();let i2=h.$('summaryItems').findAll(e=>e.tag==='input')[0];i2.value='Typed with the keyboard.';i2.fire('keydown',{key:'Enter'});
+ buttons(h,'correct')[1].click();let i2=h.$('summaryItems').findAll(e=>e.tag==='input')[0];i2.value='Typed with the keyboard.';i2.fire('keydown',{key:'Enter'});
  assert.deepEqual(plain(h.actions.at(-1)),{kind:'correct',detail_id:'D-003',text:'Typed with the keyboard.'});
  buttons(h,'correct')[0].click();i2=h.$('summaryItems').findAll(e=>e.tag==='input')[0];i2.fire('keydown',{key:'Escape'});assert.equal(h.$('summaryItems').findAll(e=>e.tag==='input').length,0);
  buttons(h,'correct')[0].click();h.$('summaryItems').findAll(e=>e.dataset.action==='cancel')[0].click();assert.equal(h.$('summaryItems').findAll(e=>e.tag==='input').length,0);
@@ -205,4 +206,19 @@ test('the card keeps a quote in its own language: lang attribute on the quote, a
  const B=require('../src/storyboard-core.js');
  const v=B.summaryView({phase:'open',items:[{detail_id:'D-001',field:'problem',label:'Problem',quote:"Les sinistres rebondissaient entre trois équipes.",status:'reported',lang:'fr'},{detail_id:'D-002',field:'outcome',label:'Outcome',quote:'Triage fell to 12 minutes.',status:'reported',lang:'en'},{detail_id:'D-003',field:'outcome',label:'Outcome',quote:'No tag here.',status:'reported'},{detail_id:'D-004',field:'outcome',label:'Outcome',quote:'Hostile tag.',status:'reported',lang:'<b>'}]});
  assert.deepEqual(v.items.map(i=>i.lang),['fr','en',undefined,undefined]);assert.equal(v.items[0].quote,"Les sinistres rebondissaient entre trois équipes.");
+});
+
+test('W1 case study: the items are grouped into Challenge / Approach / Your contribution / Outcome blocks with a provenance line each; a kept-private line stays as "Kept private. Not used." with its words gone',()=>{
+ const h=boot();h.session({type:'summary',items:[item('D-001','problem','Customer problem','Tickets bounced between three teams.'),item('D-002','intervention','What changed','I built the routing model.'),item('D-003','contribution','Personal contribution','I owned the routing rules.'),item('D-004','outcome','Observed outcome','Triage went from 14 minutes to 9 minutes.')],unknowns:[]});
+ const root=h.$('summaryItems'),blocks=root.findAll(e=>e.tag==='section'&&/\bstory-block\b/.test(e.cls));
+ assert.deepEqual(blocks.map(b=>b.findAll(e=>e.tag==='h3')[0].textContent),['Challenge','Approach','Your contribution','Outcome']);
+ for(const b of blocks)assert.match(b.findAll(e=>/\bstory-prov\b/.test(e.cls))[0].textContent,/^From your words/);
+ assert.equal(h.$('summaryProgress').textContent,'0 of 4 reviewed');
+ buttons(h,'correct')[0].click();assert.equal(h.$('summaryProgress').textContent,'1 of 4 reviewed','acting on a quote counts as reviewing it');
+ buttons(h,'withhold')[1].click();
+ h.session({type:'summary',items:[item('D-001','problem','Customer problem','Tickets bounced between three teams.'),item('D-003','contribution','Personal contribution','I owned the routing rules.'),item('D-004','outcome','Observed outcome','Triage went from 14 minutes to 9 minutes.')],unknowns:[]});
+ const kept=items(h).filter(e=>/is-kept/.test(e.cls));assert.equal(kept.length,1);assert.equal(kept[0].dataset.detail,'D-002');
+ assert.match(kept[0].textContent,/What changed/);assert.match(kept[0].textContent,/Kept private\. Not used\./);assert.ok(!/routing model/.test(h.$('summaryItems').textContent),'its words are gone from the card');
+ assert.equal(h.$('summaryProgress').textContent.replace(/^\d+/,'N'),'N of 3 reviewed','a kept-private line is not part of the story that is confirmed');
+ assert.ok(/Triage went from 14 minutes to 9 minutes/.test(h.$('summaryItems').textContent));
 });

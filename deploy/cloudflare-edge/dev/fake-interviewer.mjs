@@ -50,7 +50,7 @@ export function fakeTalker(messages) {
   const instruction = messages.at(-1)?.role === 'user' ? String(messages.at(-1).content) : '';
   const asked = /^\[Server: ask exactly this one question[^\]]*\]\s*(".*")\s*$/s.exec(instruction);
   if (asked) return json(asked[1]) || t.ask;
-  if (instruction.startsWith('[Session start')) return /"oppId":\s*"[^"]/.test(messages.map(m => m.content).join('\n')) ? t.open : t.opp;
+  if (instruction.startsWith('[Session start')) return t.open; // W1: the opening never asks for the Opp ID, whether or not the project has one (see cascade.OPENING)
   if (instruction.startsWith('[Server: the consultant went quiet')) return t.thinking;
   if (instruction.startsWith('[Server: the consultant has nothing to add')) return t.prompt;
   if (instruction.startsWith('[Server: the consultant confirmed')) return /could not be saved/.test(instruction) ? 'Thank you. It could not be saved to the library, so nothing was filed.' : t.confirmed;

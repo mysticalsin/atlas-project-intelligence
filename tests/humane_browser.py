@@ -317,9 +317,9 @@ try:
               and pt.evaluate('AtlasVoice.status().hasMicrophone===false&&AtlasVoice.status().hasAudioContext===false&&AtlasVoice.status().textMode===true'))
         check('the greeting is on screen as text, in a labelled conversation log that announces politely', 'Hi, I\'m ATLAS. What was the project?' in pt.locator('#textLog').inner_text()
               and pt.get_attribute('#textLog', 'role') == 'log' and pt.get_attribute('#textLog', 'aria-live') == 'polite' and pt.get_attribute('#textLog', 'aria-label') == 'Conversation')
-        check('no microphone anywhere: Mute is gone, the orb is idle (no listening or speaking motion), the caption says typed conversation', pt.locator('#voiceMute').is_hidden()
-              and pt.evaluate("document.getElementById('voicePanel').dataset.orbState") == 'idle' and 'typed conversation' in pt.locator('#orbStateCaption').inner_text().lower()
-              and pt.locator('.orb-meters').is_hidden() and 'Typed conversation' in pt.locator('#connectionStateLabel').inner_text())
+        check('no microphone anywhere: Mute is gone, the orb is idle (no listening or speaking motion), the caption says typed interview', pt.locator('#voiceMute').is_hidden()
+              and pt.evaluate("document.getElementById('voicePanel').dataset.orbState") == 'idle' and 'typed interview' in pt.locator('#orbStateCaption').inner_text().lower()
+              and pt.locator('.orb-meters').is_hidden() and 'Typed interview' in pt.locator('#connectionStateLabel').inner_text())
         check('the answer box is focused when the interview opens, under the conversation', pt.evaluate('document.activeElement.id') == 'voiceTypeInput'
               and pt.evaluate("document.getElementById('textLog').nextElementSibling.contains(document.getElementById('voiceTypeInput'))"))
         ANS1 = 'We rebuilt the claims intake process for a large insurer, and I led the design.'
@@ -364,7 +364,7 @@ try:
         pt.emulate_media(reduced_motion='reduce'); vt.sock.send(json.dumps({'type': 'agent_text', 'text': '\n\nOne more thing: who adopted it?'})); pt.wait_for_timeout(300)
         check('reduced motion: a new line does not animate', pt.evaluate("getComputedStyle(document.querySelector('#textLog .msg:last-child')).animationName") == 'none')
         pt.set_viewport_size({'width': 1280, 'height': 1000}); pt.locator('#voiceEnd').click(); pt.locator('#voiceEndConfirm').click(); pt.wait_for_function('()=>AtlasVoice.status().phase==="idle"', timeout=8000)
-        check('End: the typed conversation stays readable, the answer box goes, and both ways to start again are offered', pt.locator('#textLog .msg').count() >= 5 and pt.locator('#voiceTypeForm').is_hidden() and pt.locator('#voiceStartText').is_visible() and pt.locator('#voiceStartText').is_enabled())
+        check('End: the typed interview stays readable, the answer box goes, and both ways to start again are offered', pt.locator('#textLog .msg').count() >= 5 and pt.locator('#voiceTypeForm').is_hidden() and pt.locator('#voiceStartText').is_visible() and pt.locator('#voiceStartText').is_enabled())
         # a typed interview that is resumed: the saved interview says it was typed, and no microphone is asked for
         vtr = Voice(controls=CONTROLS, draft=draft, text=True)
         ptr = open_page(USER, vtr, resumable='text', mic=False)
@@ -373,7 +373,7 @@ try:
         ptr.locator('#voiceResumeDialog').get_by_role('button', name='Resume').click(); ptr.wait_for_function('()=>AtlasVoice.status().phase==="live"', timeout=10000); ptr.wait_for_timeout(500)
         st = frames_of(ptr, 'start')[0]
         check('Resume carries the saved interview\'s id and mode text, with no microphone request', st.get('resume') == SID and st.get('mode') == 'text' and ptr.evaluate('window.__mic') == 0)
-        check('the typed conversation comes back where it was: the turns and ATLAS\'s words, in order', ptr.locator('#textLog .msg').count() == 3
+        check('the typed interview comes back where it was: the turns and ATLAS\'s words, in order', ptr.locator('#textLog .msg').count() == 3
               and 'We rebuilt the claims intake process for the insurance client.' in ptr.locator('#textLog .msg').nth(1).inner_text() and 'What was the baseline?' in ptr.locator('#textLog .msg').nth(2).inner_text())
         ptr.close(); pt.close()
 

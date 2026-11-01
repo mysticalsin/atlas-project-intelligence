@@ -285,9 +285,20 @@ async function act(ctx, id) {
   return { item: setStatus(lib, o, 'blocked_external', REASONS.phone, user, { approved: true }) };
 }
 
-// Words `outreach` and `staffing` (admin and reviewer only).
+// W1: the person's OWN staffing rows, for the project picker ("Which project?"). Only rows whose consultant is the signed-in person, only what the picker shows (the project, its
+// title, the end date, the N+1 of record); never another person's row, never the client columns (they are not stored). Everyone may read their own; a reviewer's full list is below.
+const mineView = s => ({ projectId: s.project_id, projectTitle: s.project_title || '', endDate: s.end_date || '', managerName: s.manager_name || '', managerEmail: s.manager_email || '' });
+function mine(lib, user) {
+  const who = String(user.mail || user.email || '').trim().toLowerCase();
+  if (!who || !who.includes('@')) return { items: [] };
+  ensure(lib);
+  return { items: lib.rows(`SELECT * FROM staffing WHERE consultant_email = ? COLLATE NOCASE ORDER BY CASE WHEN end_date = '' THEN 1 ELSE 0 END, end_date DESC, project_id LIMIT 50`, who).map(mineView) };
+}
+
+// Words `outreach` and `staffing` (admin and reviewer only, except staffing/mine: the person's own rows).
 export async function routes(ctx) {
   const { parts, method, user, lib } = ctx, [word, a, b] = parts, q = k => ctx.url?.searchParams?.get(k) || '';
+  if (word === 'staffing' && method === 'GET' && a === 'mine' && !b && user.role !== 'system') return { body: mine(lib, user) };
   if (!REVIEWERS.includes(user.role)) return { status: 403, body: { error: 'Outreach and staffing are for reviewers.' } };
   ensure(lib);
   if (word === 'staffing') {

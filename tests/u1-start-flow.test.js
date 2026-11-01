@@ -79,7 +79,7 @@ test('a server that offers no typed interview gets no "Continue by typing" (the 
 });
 test('a real failure after the microphone opened is still an error, worded for the kind of interview',async()=>{
  const h=boot();await h.live();h.server({type:'error',message:'The service is unavailable.'});await flush();
- assert.equal(h.win.AtlasVoice.status().phase,'error');assert.match(h.$('voiceHeading').textContent,/The conversation stopped/);assert.ok(!/fallback voice/.test(h.$('voiceMessage').textContent));
+ assert.equal(h.win.AtlasVoice.status().phase,'error');assert.match(h.$('voiceHeading').textContent,/The interview stopped/);assert.ok(!/fallback voice/.test(h.$('voiceMessage').textContent));
 });
 test('bootstrap voice:false (no speech service): the typed interview is primary, the voice button is gone with a short reason, and the orb starts it',async()=>{
  const h=boot({extra:{voice:false}});await tick(h);

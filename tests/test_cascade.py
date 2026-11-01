@@ -330,3 +330,14 @@ def test_opening_asks_one_invitation_not_a_bundle():
     from atlas_voice.cascade import OPENING
     assert 'To start, could you tell me about the project and what you were brought in to do?' in OPENING and 'take their time' in OPENING
     assert 'what they personally did' not in OPENING and 'where it ended up' not in OPENING
+
+
+def test_w1_opening_never_asks_for_the_opp_id_first():
+    """W1: what staffing or the picker already provides is never asked; without an Opp ID it is asked once, later, briefly."""
+    from atlas_voice.cascade import OPENING, TALKER_POLICY
+    assert 'ask for the opportunity ID (Opp ID) first' not in OPENING
+    assert 'never ask for the opportunity ID (Opp ID) in this first turn' in OPENING and 'never ask for what is there' in OPENING
+    assert 'To start, could you tell me about the project and what you were brought in to do?' in OPENING
+    rule = [l for l in TALKER_POLICY.splitlines() if l.startswith('OPPORTUNITY ID:')][0]
+    assert 'has an oppId, never ask for it' in rule and 'only after the consultant' in rule and 'never as the first question' in rule
+    assert not re.search(r"skip|don.t know", rule, re.I)

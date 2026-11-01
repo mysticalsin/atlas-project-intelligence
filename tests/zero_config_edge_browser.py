@@ -331,7 +331,7 @@ try:
         new.locator('#voiceStart').click(); new.locator('#voiceConsentDialog').wait_for(state='visible', timeout=8000)
         check('new user, no DNA: the consent step holds the required tick and the three optional choices (saved interview, memory, notice), nothing else; a guessed name is not used in the heading',
               new.locator('#voiceConsentDialog').locator('input:visible, select:visible, textarea:visible').count() == 4 and new.locator('#voiceConsentDialog input[type=checkbox]:visible').count() == 4
-              and new.locator('#voiceConsentTitle').inner_text() == 'A conversation with ATLAS' and new.locator('#consentIdentity').inner_text() == 'Signed in as noor.haddad@example.net')
+              and new.locator('#voiceConsentTitle').inner_text() == 'Your interview with ATLAS' and new.locator('#consentIdentity').inner_text() == 'Signed in as noor.haddad@example.net')
         talk(new)
         check('new user: exactly three actions reach the interview (Start, the tick, Start conversation)', new.evaluate('__acts') == ['voiceStart', 'modelConsent', 'voiceConsentStart'])
         wait(new, lambda: new.locator('#storageStatus').text_content() == 'Saved to ATLAS', 10); new.locator('#reportDialog').wait_for(state='visible', timeout=8000)

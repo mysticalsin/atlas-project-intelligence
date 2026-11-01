@@ -373,7 +373,7 @@ with sync_playwright() as pw:
     s = Server(prof=profile(name=('Tony Walteur', 'guess'), title=None, manager=None, first='', guessed=True))
     p = open_page(s); consent(p)
     check('8 a guess is not reliable: no first name in the heading, only the email in the footer',
-          p.locator('#voiceConsentTitle').inner_text() == 'A conversation with ATLAS' and p.locator('#consentIdentity').inner_text() == 'Signed in as tony.walteur@example.com')
+          p.locator('#voiceConsentTitle').inner_text() == 'Your interview with ATLAS' and p.locator('#consentIdentity').inner_text() == 'Signed in as tony.walteur@example.com')
     talk(p, s); wait(p, lambda: s.api('POST', '/api/library'), 5); p.wait_for_timeout(600)
     check('8 with only a guess the new project\'s consultant is "Consultant"', projects(p)[0]['consultant'] == 'Consultant' and s.api('POST', '/api/library')[-1]['body']['reference']['consultant']['name'] == 'Consultant')
     close_dialogs(p)

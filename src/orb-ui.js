@@ -25,7 +25,7 @@
   const typed=$('voicePanel').dataset.input==='text'&&s.phase==='live';if(typed){s.state='idle';s.input=0;s.output=0;}
   orb.setState(s.state);orb.setLevels(s.input,s.output,spectrum);$('voicePanel').dataset.orbState=s.state;$('voicePanel').dataset.phase=s.phase;
   window.dispatchEvent(new CustomEvent('atlas-orb-state',{detail:{state:s.state,phase:s.phase,muted:s.muted,preview:false}}));
-  const label=typed?(held?'Paused':'Typed conversation'):held&&s.phase==='live'&&s.state!=='speaking'?'Paused · microphone off':(s.state==='idle'?idleName():names[s.state])+(s.state==='speaking'&&s.muted?' · microphone muted':''); // held: the consultant paused the interview (T9)
+  const label=typed?(held?'Paused':'Typed interview'):held&&s.phase==='live'&&s.state!=='speaking'?'Paused · microphone off':(s.state==='idle'?idleName():names[s.state])+(s.state==='speaking'&&s.muted?' · microphone muted':''); // held: the consultant paused the interview (T9)
   if(label!==last){describe(s.state);last=label;$('orbStateCaption').textContent=label;$('orbAccessibleState').textContent=label;}
   $('orbInputWord').textContent=typed?(held?'Paused':'Typing'):s.phase==='live'?(held?'Paused':s.muted?'Muted':s.inputActive?'Hearing you':'Microphone on'):s.phase==='connecting'?'Local only':'Microphone off';
   $('orbOutputWord').textContent=typed?'Text replies':s.state==='speaking'?'Playing model audio':'No playback';
@@ -33,7 +33,7 @@
   $('orbActivate').disabled=['preparing','connecting','ending'].includes(s.phase);
   $('studioPreview').disabled=!['idle','error'].includes(s.phase);document.querySelectorAll('[data-orb-preview]').forEach(b=>b.disabled=!['idle','error'].includes(s.phase));
   document.querySelector('.orb-meters').hidden=s.phase!=='live'||typed;
-  $('orbInteractionHint').textContent=typed?'You are typing: no microphone is used. Type below; End closes the conversation.':s.phase==='live'?'Click the orb to mute or unmute. End closes the microphone.':s.phase==='connecting'?'Preparing the connection. You can cancel at any time.':'Microphone off. You choose when the conversation starts.';
+  $('orbInteractionHint').textContent=typed?'You are typing: no microphone is used. Type below; End closes the interview.':s.phase==='live'?'Click the orb to mute or unmute. End closes the microphone.':s.phase==='connecting'?'Preparing the connection. You can cancel at any time.':'Microphone off. You choose when the conversation starts.';
  }
  function stopPreview(){if(previewAt===null)return;previewAt=null;clearInterval(previewTimer);previewTimer=null;$('previewNotice').hidden=true;$('voicePanel').dataset.preview='false';$('studioPreview').textContent='Preview the orb';$('studioPreview').setAttribute('aria-pressed','false');document.querySelectorAll('[data-orb-preview]').forEach(b=>b.setAttribute('aria-pressed','false'));last='';update();}
  function startPreview(kind='sequence'){

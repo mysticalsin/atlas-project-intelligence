@@ -12,12 +12,12 @@ class El{
  set textContent(v){this._text=String(v);this.children=[];}get textContent(){return this._text;}
  set innerHTML(v){this._html=v;}get innerHTML(){return this._html||'';}
  setAttribute(k,v){this.attrs[k]=String(v);}getAttribute(k){return this.attrs[k]??null;}removeAttribute(k){delete this.attrs[k];}
- addEventListener(t,f){(this.listeners||(this.listeners={}))[t]=f;}append(...k){this.children.push(...k);}appendChild(k){this.children.push(k);return k;}replaceChildren(...k){this.children=k;}
+ addEventListener(t,f){(this.listeners||(this.listeners={}))[t]=f;}append(...k){k.forEach(x=>{if(x&&typeof x==='object')x.parent=this;});this.children.push(...k);}appendChild(k){k.parent=this;this.children.push(k);return k;}replaceChildren(...k){this.children=k;}
  insertBefore(k){this.children.push(k);}querySelector(){return new El('q');}querySelectorAll(){return [];}closest(){return null;}matches(){return false;}
  get firstChild(){return this.children[0]||null;}get lastChild(){return this.children[this.children.length-1]||null;}remove(){if(this.parent)this.parent.children=this.parent.children.filter(c=>c!==this);}after(n){n.parent=this.parent;} focus(){global.__focus=this.id;}close(){this.open=false;}showModal(){this.open=true;}click(){if(this.disabled||this.hidden)return;return this.onclick?.({target:this});}
  get offsetParent(){return this.hidden?null:{};}
 }
-function boot({announce=true,provider='workers',text=true}={}){
+function boot({announce=true,provider='workers',text=true,reduced=false}={}){
  let mic=0;
  const els={},listeners={};const $=id=>els[id]||(els[id]=new El(id));
  const doc={getElementById:$,createElement:t=>new El(t),querySelector:()=>new El('q'),addEventListener(){},body:new El('body'),readyState:'complete'};
@@ -28,7 +28,7 @@ function boot({announce=true,provider='workers',text=true}={}){
  const bootJson={protocol:'atlas-personaplex-pcm-v1',csrf:'c',identity:{name:'T',mode:'local'},model:'M',voices:['v'],defaultVoice:'v',busy:false,codecAvailable:true,maxSeconds:900,memory:false,transcription:true,structuredNotes:false,provider,playbackAck:true,...(text?{textMode:true}:{})};
  const win={document:doc,navigator:{mediaDevices:{getUserMedia:async()=>{mic++;const t=[newTrack()];return{getTracks:()=>t,getAudioTracks:()=>t};},enumerateDevices:async()=>[]},languages:['en']},location:{protocol:'https:',href:'https://x/',hash:'',pathname:'/',search:''},
   isSecureContext:true,AudioContext:Ctx,AudioWorkletNode:Worklet,WebSocket:Socket,URL,Blob,performance,CustomEvent:class{constructor(t,o){this.type=t;this.detail=o?.detail;}},
-  setTimeout:(f,ms)=>setTimeout(f,ms).unref(),clearTimeout,setInterval:(f,ms)=>setInterval(f,ms).unref(),clearInterval,queueMicrotask,AbortSignal,matchMedia:()=>({matches:false}),history:{replaceState(){}},Date,Promise,JSON,Math,Array,Object,String,Number,Error,Set,Map,
+  setTimeout:(f,ms)=>setTimeout(f,ms).unref(),clearTimeout,setInterval:(f,ms)=>setInterval(f,ms).unref(),clearInterval,queueMicrotask,AbortSignal,matchMedia:()=>({matches:reduced}),AtlasStory:require('../src/journey-core.js'),history:{replaceState(){}},Date,Promise,JSON,Math,Array,Object,String,Number,Error,Set,Map,
   dispatchEvent(e){for(const f of listeners[e.type]||[])f(e);},addEventListener:(t,f)=>(listeners[t]||=[]).push(f),AtlasSafe:require('../src/safe-html.js'),AtlasVoiceControls:require('../src/voice-controls.js'),
   AtlasAuth:{mode:'live',probe:async()=>{},onSignedIn(){},expired(){},Expired:class extends Error{},fetch:async()=>({ok:true,json:async()=>bootJson})},
   ATLAS_VOICE_BRIDGE:{context:()=>({workspaceId:'w',project:{id:'p',title:'P',stage:'Pilot',answers:[]},display:{}}),restored:async()=>{},gapConsumed(){},autoSave:()=>({})},
@@ -60,7 +60,7 @@ test('a typed interview asks for no microphone and no audio: mode text in the st
  assert.equal(h.mic(),0,'getUserMedia was never called');assert.deepEqual(h.posted,[],'no audio worklet');
  const start=h.sent.find(m=>m&&m.type==='start');assert.equal(start.mode,'text');assert.equal(start.consent,true);
  const s=h.win.AtlasVoice.status();assert.equal(s.phase,'live');assert.equal(s.textMode,true);assert.equal(s.hasMicrophone,false);assert.equal(s.hasAudioContext,false);
- assert.equal(h.$('voiceMute').hidden,true);assert.equal(h.$('voicePanel').dataset.input,'text');assert.match(h.$('voiceState').textContent,/typed conversation/);
+ assert.equal(h.$('voiceMute').hidden,true);assert.equal(h.$('voicePanel').dataset.input,'text');assert.match(h.$('voiceState').textContent,/typed interview/);
  assert.match(h.$('voicePrivacy').textContent,/no microphone is used and no audio is sent/);
  assert.equal(h.$('voiceTypeForm').hidden,false);assert.equal(h.$('voiceTypeInput').disabled,false);
  // a binary frame from a gateway is ignored (a typed interview plays nothing)
@@ -73,15 +73,15 @@ test('a voice start is unchanged: no mode key, the microphone is asked for',asyn
 });
 
 test('the conversation log: ATLAS\'s text and the consultant\'s turns in order; a retracted reply leaves it; the screen reader log changes only where something changed',async()=>{
- const h=boot();await h.live();
+ const h=boot({reduced:true});await h.live();
  h.server({type:'agent_text',text:'Hi, I’m ATLAS. '});h.server({type:'agent_text',text:'What was the project?'});
  h.server({type:'user_text',item_id:'user-typed-1',text:'We rebuilt the intake.',provenance:'consultant_typed'});
  h.server({type:'agent_text',text:'\n\nThanks. Over what period?'});
- assert.deepEqual(logTexts(h),['ATLAS | Hi, I’m ATLAS. What was the project?','You | We rebuilt the intake.','ATLAS | Thanks. Over what period?']);
+ assert.deepEqual(logTexts(h),['ATLAS | Hi, I’m ATLAS.','ATLAS | What was the project?','You | We rebuilt the intake.','ATLAS | Thanks. Over what period?'],'W1: the opening is the greeting and the question, two bubbles');
  const first=h.$('textLog').children[0];h.server({type:'agent_text',text:' Anything else?'});
  assert.equal(h.$('textLog').children[0],first,'existing lines are updated in place, not rebuilt');
- h.server({type:'agent_retract',item_id:'agent-3',chars:' Anything else?'.length});assert.equal(logTexts(h)[2],'ATLAS | Thanks. Over what period?');
- assert.equal(h.$('textLog').children[1].className,'msg msg-you');
+ h.server({type:'agent_retract',item_id:'agent-3',chars:' Anything else?'.length});assert.equal(logTexts(h)[3],'ATLAS | Thanks. Over what period?');
+ assert.equal(h.$('textLog').children[2].className,'msg msg-you');
 });
 
 test('S1 follow-up: the typed text stays in the box until the server takes the turn; a refusal keeps it and says so gently; Send waits for the answer',async()=>{
@@ -127,4 +127,41 @@ test('a resumed typed interview: the prompt names it, Resume sends mode text wit
  h.server({type:'restore',user:[{item_id:'user-typed-1',text:'We rebuilt the intake.',provenance:'consultant_typed'},{item_id:'user-typed-2',text:'[kept private]',provenance:'consultant_typed'}],agent:['Hi, I am ATLAS.','What was the baseline?','And the period?'],lastQuestion:'And the period?',activeSeconds:95});
  assert.deepEqual(logTexts(h),['ATLAS | Hi, I am ATLAS.','You | We rebuilt the intake.','ATLAS | What was the baseline?','You | [kept private]','ATLAS | And the period?']);
  assert.equal(h.win.AtlasVoice.status().textMode,true);
+});
+
+// ---- W1: the screen around the orb answers at once ----
+const GREETING='Hi, I’m ATLAS, and I’ll help you tell the story of your project. I’ll capture what you say, you review it first, and nothing is reused without your permission. ';
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+test('W1 the opening is two staged bubbles: the greeting, then dots, then the question 400 ms later; reduced motion shows both at once',async()=>{
+ const h=boot();await h.live();
+ h.server({type:'agent_text',text:GREETING});assert.deepEqual(logTexts(h),['ATLAS | '+GREETING.trim()]);
+ h.server({type:'agent_text',text:'To start, could you tell me about the project and what you were brought in to do? Take your time.'});
+ assert.equal(h.$('textLog').children.length,2,'the greeting, and the dots where the question will be');assert.match(h.$('textLog').children[1].className,/is-dots/);assert.equal(h.$('textLog').children[1].getAttribute('aria-hidden'),'true');
+ await wait(450);assert.equal(h.$('textLog').children.length,2);assert.match(h.$('textLog').children[1].className,/is-question/);
+ assert.deepEqual(logTexts(h),['ATLAS | '+GREETING.trim(),'ATLAS | To start, could you tell me about the project and what you were brought in to do? Take your time.']);
+ const r=boot({reduced:true});await r.live();r.server({type:'agent_text',text:GREETING+'What was the project?'});
+ assert.equal(r.$('textLog').children.length,2);assert.match(r.$('textLog').children[1].className,/is-question/,'reduced motion: no wait, no dots');
+ const one=boot();await one.live();one.server({type:'agent_text',text:GREETING});assert.equal(one.$('textLog').children.length,1,'no question yet: one bubble');
+});
+test('W1 a resumed interview shows what it had at once: nothing is staged',async()=>{
+ const h=boot();await h.live();h.server({type:'ready',model:'ATLAS',capture:true,input:'text',resumed:true,controls:['text']});
+ h.server({type:'restore',user:[],agent:[GREETING+'What was the project?'],lastQuestion:'What was the project?'});assert.equal(h.$('textLog').children.length,1,'one restored entry, as it was (the restored log is not split)');
+});
+test('W1 a sent turn is in the conversation at once; after 300 ms without a reply three dots say ATLAS is thinking; the reply replaces them; a refusal removes both',async()=>{
+ const h=boot();await h.live();const box=h.$('voiceTypeInput');
+ box.value='We rebuilt the intake process.';box.oninput();h.$('voiceTypeForm').onsubmit({preventDefault(){}});
+ assert.deepEqual(logTexts(h),['You | We rebuilt the intake process.']);assert.match(h.$('textLog').children[0].className,/is-pending/);assert.ok(h.$('voiceTypeForm').classList.contains('is-sending'));
+ assert.equal(box.value,'We rebuilt the intake process.','the text is kept in the box until the server takes the turn');
+ await wait(340);assert.equal(h.$('textLog').children.length,2);assert.match(h.$('textLog').children[1].className,/is-dots/);
+ h.server({type:'user_text',item_id:'user-typed-1',text:'We rebuilt the intake process.',provenance:'consultant_typed'});
+ assert.equal(h.$('textLog').children.length,2,'the echo replaces the pending bubble, the dots stay');assert.doesNotMatch(h.$('textLog').children[0].className,/is-pending/);assert.ok(!h.$('voiceTypeForm').classList.contains('is-sending'));
+ h.server({type:'agent_text',text:'What was the baseline?'});assert.deepEqual(logTexts(h),['You | We rebuilt the intake process.','ATLAS | What was the baseline?'],'the dots become the reply');
+ box.value='Again.';box.oninput();h.$('voiceTypeForm').onsubmit({preventDefault(){}});await wait(340);assert.equal(h.$('textLog').children.length,4);
+ h.server({type:'quality_warning',message:'x',refused:'text',reason:'composing'});assert.equal(h.$('textLog').children.length,2,'refused: neither the pending bubble nor the dots remain');assert.equal(box.value,'Again.');
+});
+test('W1 an empty Enter is a small shake and a hint, nothing is sent; Shift+Enter and typing clear it',async()=>{
+ const h=boot();await h.live();const box=h.$('voiceTypeInput');box.value='   ';
+ box.onkeydown({key:'Enter',shiftKey:false,preventDefault(){}});
+ assert.equal(sentTyped(h).length,0);assert.ok(h.$('voiceTypeForm').classList.contains('is-nudged'));assert.equal(h.$('voiceTypeNote').textContent,'Type a few words, then press Enter.');
+ box.value='x';box.oninput();assert.equal(h.$('voiceTypeNote').textContent,'');
 });

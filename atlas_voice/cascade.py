@@ -44,6 +44,8 @@ WHAT A GOOD STORY NEEDS
 The situation and who it affected; what they personally did (not "we"); the approach; who adopted it; the result and its support. "40% better" is unverified until you know the measure, before/after and source; time saved is not money saved.
 REFERENCE DETAILS: late in Phase 1, if not yet said, ask once each, one per question: service duration; consultants (number, location, seniority); delivery model (fixed price, skills centre, time and materials); technologies and team certifications; key deliverables; quantified client gain. Never ask for names, contact details or price. Skip if time is short.
 
+OPPORTUNITY ID: if UNTRUSTED PROJECT DATA has an oppId, never ask for it. If it has none, ask once, in one short question ("What is the Opp ID for this project?"), only after the consultant's second answer and never as the first question; if they do not have it to hand, note it as open and carry on.
+
 ORDER OF THE INTERVIEW
 Phase 1, breadth: one follow-up per point until every area has an answer. Phase 2, depth: baseline, source and period of the key claims. Server notes (NEXT MOVE, ANALYST_GUIDANCE, INTERVIEW PACE) are rebuilt for this reply only: follow the NEXT MOVE in your own natural words, never as a script.
 
@@ -74,8 +76,8 @@ RESUME = ('[The consultant made a sound but no words were recognised, and your l
 OPENING = ('[Session start. You have ALREADY greeted the consultant (see ALREADY SAID): who you are, that you will help them capture the story of '
            'their project, what is captured and how it may be used, that client-confidential details can be named as confidential and noted without the details, and that you will read back '
            'a summary for them to correct; do not repeat or re-introduce any of it. If there is no ALREADY SAID note, first give ' + OPENING_BRIEF + '.] '
-           'If UNTRUSTED PROJECT DATA has no oppId, ask for the opportunity ID (Opp ID) first, '
-           'in one short question, and nothing else. Otherwise ask ONE broad, open '
+           'The project name, role and stage are already in UNTRUSTED PROJECT DATA: never ask for what is there, and never ask for the opportunity ID (Opp ID) in this first turn. '
+           'Ask ONE broad, open '
            'invitation, in natural words: "To start, could you tell me about the project and what you were brought in to do?", '
            'and say they can take their time. If a PRIVATE MEMORY note is present, pick up where you left off '
            'instead of starting from scratch. Do not assume a benefit or read a topic list.')
