@@ -83,10 +83,13 @@ async function create(e){e.preventDefault();addProspect();const title=$('bidTitl
   show(bid);reveal();loadList();app().toast('Bid created. Check its requirements, then find proof.');}
  catch(err){say('bidNewStatus',err.message);}finally{btn.disabled=false;}}
 // ---- list and detail
+// v2.2 W2: shimmer rows while the list loads, and "We couldn't load this. Your work is safe. [Try again]" when it does not (the list is a <ul>, so each block sits in one <li>).
+const slot=el=>{setHTML(el,html`<li class="load-li"></li>`);return el.firstElementChild;};
 async function loadList(){const el=$('bidList');if(!el)return;
+ if(!el.querySelector('[data-bid-open]'))window.AtlasLoad?.skeleton(slot(el),{rows:3,label:'Loading your bids'});
  try{const d=await app().libraryApi('/bids'+(S.all?'?all=1':''));S.list=Array.isArray(d.items)?d.items:[];
   setHTML(el,S.list.length?html`${S.list.map(x=>html`<li><button class="bid-item${S.bid?.id===x.id?' active':''}" data-bid-open="${x.id}" type="button"><span class="bid-alias">${x.alias}</span>${x.title?html`<span class="tiny muted bid-own-title">${x.title}</span>`:''}<span class="bid-chips">${verdictChip(x.verdict)}${x.outcome&&x.outcome!=='pending'?html`<span class="tag">${OUTCOME[x.outcome]||x.outcome}</span>`:''}</span></button></li>`)}`:html`<li class="tiny muted">No bids yet. Create one below.</li>`);}
- catch(err){setHTML(el,html`<li class="tiny muted">${err.message}</li>`);}}
+ catch(err){if(window.AtlasLoad&&!(window.AtlasAuth&&err instanceof window.AtlasAuth.Expired))window.AtlasLoad.failure(slot(el),loadList);else setHTML(el,html`<li class="tiny muted">${err.message}</li>`);}}
 function show(bid){if(!bid||typeof bid!=='object')return;if(S.bid?.id!==bid.id){S.picks.clear();S.onePager=null;S.editing=false;S.gapDetails.clear();}S.bid=bid;renderDetail();
  for(const b of document.querySelectorAll('#bidList [data-bid-open]'))b.classList.toggle('active',b.dataset.bidOpen===bid.id);}
 async function openBid(id){if(!HEX.test(String(id||'')))return false;if($('bids').hidden)app().switchView('bids');if(!await ensure())return false;const seq=++S.seq;

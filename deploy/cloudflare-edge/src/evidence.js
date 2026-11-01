@@ -158,8 +158,13 @@ const MOVES = {
 const OWNER_AMEND = new Set(['evidence_draft', 'needs_clarification', 'approved', 'downstream_proposals']);
 const REVIEWER_AMEND = new Set(['reviewer_queue', 'approved', 'downstream_proposals']);
 
+// v2.2 W2: which of a person's library references an evidence record belongs to, for display only (the project's name, the owner's own status strip). The record names it
+// (ref_id), else the Project ID or the page's own id it was filed under (project_ref) matches the reference's local id or its Project ID. Never a guess by time or by title.
+const matchRef = (refs, rec) => refs.find(x => x.id === rec.ref_id) || (rec.project_ref ? refs.find(x => x.local_id === rec.project_ref || x.data?.details?.projectId === rec.project_ref) : null) || null;
+
 class Evidence {
   constructor(lib) { this.lib = lib; }
+  ownRefs(owner) { return this.rows("SELECT * FROM refs WHERE owner = ? AND (merged_into IS NULL OR merged_into = '') ORDER BY updated_at DESC", owner).map(x => ({ ...x, data: parse(x.data, {}), state: parse(x.state, {}) })); }
   rows(q, ...p) { return this.lib.rows(q, ...p); }
   now() { return this.lib.now(); }
 
@@ -263,13 +268,40 @@ class Evidence {
     user = asUser(user);
     if (!text(user.email)) return [];
     const out = [];
+    let mine = null;
     for (const r of this.rows("SELECT * FROM evidence_records WHERE owner_sub = ? OR status != 'evidence_draft' ORDER BY updated_at DESC, rowid DESC", user.email)) {
       const state = parse(r.state_json, null);
       if (!state || !this.access({ ...r, state }, user)) continue;
       let rec; try { rec = this.load(r.id); } catch { rec = null; } // one unreadable record never hides the others
       const acc = rec && this.access(rec, user);
-      if (acc) out.push({ id: rec.id, status: rec.machine.status, state: rec.status, revision: rec.revision, project_ref: rec.project_ref, mine: acc.owner,
-        claims: this.claimsOf(rec.id, rec.revision).length, updated_at: rec.updated_at });
+      if (acc) {
+        if (acc.owner && !mine) mine = this.ownRefs(user.email); // v2.2 W2: the owner's own reference, so their screen can follow it (never another person's)
+        out.push({ id: rec.id, status: rec.machine.status, state: rec.status, revision: rec.revision, project_ref: rec.project_ref, mine: acc.owner,
+          claims: this.claimsOf(rec.id, rec.revision).length, updated_at: rec.updated_at, ...(acc.owner && matchRef(mine, rec) ? { library_id: matchRef(mine, rec).id } : {}) });
+      }
+      if (out.length >= MAX_LIST) break;
+    }
+    return out;
+  }
+
+  // v2.2 W2: the reviewer's queue ("Waiting for you"), read-only. Reviewers and admins only (anyone else gets an empty list), never their own records
+  // (the gate would refuse them anyway), oldest first. One request carries what the row needs: the project's name, the consultant's display name and the
+  // quality chip, read from the owner's library reference ONLY when that reference has left its private draft (G2: a draft is the owner's alone, so a
+  // queue row never leaks one). A row without a visible reference has no name here; the browser says "Interview evidence", never a raw id.
+  queue(user) {
+    user = asUser(user);
+    if (!text(user.email) || !['admin', 'reviewer'].includes(user.role)) return [];
+    const out = [];
+    for (const r of this.rows("SELECT * FROM evidence_records WHERE status = 'reviewer_queue' AND owner_sub != ? ORDER BY updated_at ASC, rowid ASC", user.email)) {
+      const state = parse(r.state_json, null);
+      if (!state || state.erased || !this.access({ ...r, state }, user)) continue;
+      const at = this.rows("SELECT at FROM workflow_transitions WHERE entity = ? AND to_state = 'reviewer_queue' ORDER BY seq DESC LIMIT 1", r.id)[0]?.at || r.updated_at;
+      const ref = matchRef(this.ownRefs(r.owner_sub).filter(x => !x.state.draft), r);
+      const q = ref?.state?.quality;
+      out.push({ id: r.id, revision: r.revision, project_ref: r.project_ref, queued_at: at, updated_at: r.updated_at,
+        claims: this.rows('SELECT COUNT(*) AS n FROM evidence_claims WHERE entity = ? AND revision = ?', r.id, r.revision)[0].n,
+        project: ref ? str(ref.title || ref.data?.title, 160) : '', consultant: ref ? str(ref.data?.consultant?.name, 100) : '',
+        quality: q && Number.isFinite(q.score) ? { score: q.score, status: str(q.status, 20) } : null });
       if (out.length >= MAX_LIST) break;
     }
     return out;
@@ -465,6 +497,7 @@ export async function routes(ctx) {
     if (method === 'POST') return internal ? created(await ev.createDraftFromNotes(user.email, b.notes)) : NOT_FOUND_ROUTE;
     return method === 'GET' ? { body: { items: ev.list(user) } } : NOT_FOUND_ROUTE;
   }
+  if (id === 'queue' && !action) return method === 'GET' && !internal ? { body: { items: ev.queue(user) } } : NOT_FOUND_ROUTE; // v2.2 W2: the reviewer's read-only queue
   if (method === 'GET' && !action) { const r = url.searchParams.get('revision'), v = ev.get(user, id, r === null ? {} : { revision: /^\d{1,6}$/.test(r) ? Number(r) : 0 }); if (!v.mine && !internal) lib.logRead(String(id), user.email, 'viewed evidence'); return { body: v }; } // a reviewer's read of someone else's evidence is audited (G2; ids only)
   if (method === 'GET' && action === 'status' && !extra) return { body: branches.statusView(ev, user, id) }; // seven cards, never one generic "done" (T15)
   if (method !== 'POST') return NOT_FOUND_ROUTE;

@@ -9,6 +9,8 @@ function h(tag,attrs={},...kids){const el=document.createElement(tag);for(const 
  for(const k of kids.flat())if(k!==null&&k!==undefined&&k!==false)el.append(k instanceof Node?k:document.createTextNode(String(k)));return el;}
 const slot=()=>$('workflowStatus');
 function hide(){const s=slot();if(s){s.hidden=true;s.replaceChildren();}}
+// The name of the project an evidence record belongs to, from this person's own projects (never a raw id in the picker).
+const nameFor=x=>{try{const ps=typeof app().ownProjects==='function'?app().ownProjects():[],ref=x&&x.project_ref;const p=ps.find(q=>ref&&(q.details&&q.details.projectId===ref||q.id===ref));return p&&p.title||'';}catch{return '';}};
 function cardEl(m){
  return h('article',{class:'wf-card','data-branch':m.branch,'data-tone':m.tone,'data-status':m.displayStatus},
   h('h3',{class:'wf-card-title',text:m.label}),
@@ -22,7 +24,7 @@ const when=iso=>{const d=new Date(iso);if(!iso||Number.isNaN(d.getTime()))return
 function render(view){
  const s=slot();if(!s)return;const m=C.model(view);s.hidden=false;s.replaceChildren();
  const pick=h('select',{id:'workflowPick','aria-label':'Evidence record',onchange:e=>{selected=e.target.value;refresh({force:true});}},
-  ...items.map(x=>h('option',{value:x.id,selected:x.id===selected},C.itemLabel(x))));
+  ...items.map(x=>h('option',{value:x.id,selected:x.id===selected},C.itemLabel(x,nameFor(x)))));
  s.append(h('div',{class:'wf-head'},h('div',{},h('p',{class:'eyebrow',text:'Evidence workflow'}),h('h2',{class:'panel-title',text:'Where each step stands'})),
    h('div',{class:'wf-tools'},pick,h('button',{class:'quiet',type:'button',id:'workflowRefresh',onclick:()=>refresh({force:true}),text:'Refresh'}))),
   h('p',{class:'wf-overall small','data-overall':m.overall.status,role:'status',text:m.overall.text}),

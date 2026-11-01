@@ -85,3 +85,11 @@ Said by Tony on 2026-10-31, after trying the live app. His words: "She can't say
 3. **Submit is a moment**: the sheet reports a Submit the consultant already made; it changes nothing about what is stored or shared.
 4. **No human framing**: ATLAS is an agent; the product does not call the interview a "real conversation" (Tony, 2026-11-01).
 5. **One discard in the Stop sheet** ("Discard everything"); Restart is no longer a second visible option.
+
+## v2.2 W2 (reviewer queue and journey), 2026-11-01
+
+1. **D-W2-1 The queue is the evidence state `reviewer_queue`**, read through one read-only route (`GET /api/library/evidence/queue`). Names come only from the owner's reference once it has left its private draft (G2), matched by `ref_id`, local id or Project ID, never by time or title; otherwise the row says "Interview evidence".
+2. **D-W2-2 Undo is a deferred commit.** Approval is not reversible by a reviewer, so U cancels the click before it is written (8 s). No new route, no new transition.
+3. **D-W2-3 Validate = approve, Request changes = clarify (reason required), Amend = amend with the existing confirmation.** Reject and withdraw are not on this screen.
+4. **D-W2-4 The strip reads state, it never infers it.** An unknown status is not progress; a project that cannot be matched to an evidence record uses its library status; "Published or held" is done only when the Spotlight card says published (a held test CMS is "held").
+
