@@ -292,7 +292,7 @@ body.ui2.studio-view:not(.studio-focus) .text-log .msg-atlas:not(.is-question):h
 
 /* a read-back left on screen after the interview has ended (idle): it is still the whole centre column; the start button, hero and orb tools step aside until it is dismissed or another interview starts */
 body.ui2.studio-view:not(.studio-focus) #voicePanel[data-phase=idle][data-summary=true] .studio-heading{display:none}
-body.ui2.studio-view:not(.studio-focus) #voicePanel[data-phase=idle][data-summary=true] .voice-main>:not(.orb-screen):not(#summaryCard){display:none}
+body.ui2.studio-view:not(.studio-focus) #voicePanel[data-phase=idle][data-summary=true] .voice-main>:not(.orb-screen):not(#summaryCard):not(#voiceControls){display:none}
 body.ui2.studio-view:not(.studio-focus) #voicePanel[data-phase=idle][data-summary=true] .orb-stage-tools{display:none}
 
 /* the read-back's quiet label sits on the title row, not under it */
