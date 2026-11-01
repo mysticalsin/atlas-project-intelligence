@@ -176,3 +176,9 @@ html body.ui2 dialog.palette-help .palette-keys dd{font-size:14px;color:var(--te
  html.kb-open body.ui2.studio-view:not(.studio-focus):has(#voicePanel[data-phase=live]) :is(.env-strip,.topbar){display:none}
  html.kb-open body.ui2.studio-view:not(.studio-focus) #voicePanel[data-phase=live] :is(.orb-panel-top,#voiceOrb,.orb-caption,#voiceLanguage,#voicePause,#voiceRepeat){display:none}
 }
+
+/* ---------- disabled controls on the dark surfaces read as disabled, not as a pale box (the old light-theme rule) ---------- */
+html body.ui2 :is(button,.btn):disabled:not(.orb-activate):not(.quiet):not(.close){background:var(--raised);border-color:var(--line);color:var(--text-3);opacity:1}
+html body.ui2 .bottom-tools .quiet{font-size:13px;min-height:44px;color:var(--text-2)}
+html body.ui2 .bottom-tools .quiet:disabled{background:transparent;color:var(--text-3);opacity:.7}
+html body.ui2 .bottom-tools .tiny{font-size:12px}

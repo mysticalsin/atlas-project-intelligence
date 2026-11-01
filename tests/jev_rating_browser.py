@@ -166,7 +166,7 @@ try:
   strip=o.locator('[data-jev-where="strip"]')
   check('1 the storage strip asks for consent right after the first library save',shows(o,'[data-jev-where="strip"]','Rate your stories with JEV',6000) and strip.count()==1)
   check('1 consent copy is the spec text, word for word',' '.join(strip.locator('p').inner_text().split())==COPY)
-  check('1 the row sits right under the storage strip',o.evaluate("()=>document.querySelector('.environment').nextElementSibling===document.querySelector('[data-jev-where=\"strip\"]')"))
+  check('1 the row sits at the top of the workspace, right under the sign-in banner (the save chip is in the header now)',o.evaluate("()=>document.querySelector('#authBanner').nextElementSibling===document.querySelector('[data-jev-where=\"strip\"]')"))
   # 2. Allow -> the record is rated by JEV within 3 s, and a late background agent rating does not overwrite it
   t0=time.time();strip.get_by_role('button',name='Allow for my stories').click()
   eng=None

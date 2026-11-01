@@ -14,19 +14,19 @@ test('every id of the built page is unique (the Voice tab once shared #voicePane
  assert.ok(ids.includes('adminVoicePanel')&&ids.includes('voicePanel'));
 });
 
-test('the Settings sheet is the profile dialog with an accessible tab list: five tabs, one selected, each controlling a labelled panel; Connections and Voice start hidden',()=>{
+test('the Settings sheet is the profile dialog with an accessible tab list: six tabs (For IT is the sixth, v2.2 W3), one selected, each controlling a labelled panel; Connections, Voice and For IT start hidden',()=>{
  assert.match(sheet,/class="settings-sheet"/); assert.match(sheet,/role="tablist"/);
  const tabs=[...sheet.matchAll(/<button[^>]*role="tab"[^>]*>/g)].map(m=>m[0]);
- assert.deepEqual(tabs.map(t=>/data-stab="(\w+)"/.exec(t)[1]),['profile','privacy','workspace','connections','voice']);
+ assert.deepEqual(tabs.map(t=>/data-stab="(\w+)"/.exec(t)[1]),['profile','privacy','workspace','connections','voice','forit']);
  assert.equal(tabs.filter(t=>/aria-selected="true"/.test(t)).length,1); assert.match(tabs[0],/aria-selected="true"/); assert.match(tabs[0],/tabindex="0"/); for(const t of tabs.slice(1))assert.match(t,/tabindex="-1"/);
  for(const t of tabs){const k=/data-stab="(\w+)"/.exec(t)[1];assert.match(t,new RegExp('aria-controls="spane-'+k+'"')); assert.match(sheet,new RegExp('<section[^>]*aria-labelledby="stab-'+k+'"[^>]*id="spane-'+k+'"[^>]*role="tabpanel"|<section[^>]*id="spane-'+k+'"[^>]*role="tabpanel"'));}
- for(const k of ['connections','voice']){assert.match(tabs[['profile','privacy','workspace','connections','voice'].indexOf(k)],/\bhidden\b[^>]*data-admin-tab|data-admin-tab[^>]*\bhidden\b/,k+' tab starts hidden'); assert.match(sheet,new RegExp('<section[^>]*id="spane-'+k+'"[^>]*\\bhidden\\b'),k+' panel starts hidden');}
+ for(const k of ['connections','voice','forit']){assert.match(tabs[['profile','privacy','workspace','connections','voice','forit'].indexOf(k)],/\bhidden\b[^>]*data-admin-tab|data-admin-tab[^>]*\bhidden\b/,k+' tab starts hidden'); assert.match(sheet,new RegExp('<section[^>]*id="spane-'+k+'"[^>]*\\bhidden\\b'),k+' panel starts hidden');}
  for(const k of ['profile','privacy','workspace'])assert.doesNotMatch(tabs[['profile','privacy','workspace'].indexOf(k)],/\bhidden\b/);
  assert.match(markup,/class="avatar"[^>]*id="profileButton"|id="profileButton"[^>]*class="avatar"/); assert.match(markup,/aria-label="Settings: profile, privacy, workspace"/);
 });
 
 test('every control the earlier work put in the profile dialog is still inside the sheet, on the tab that fits it, with its id',()=>{
- const pane=k=>{const s=sheet.indexOf('id="spane-'+k+'"'),n=sheet.indexOf('<section',s+10),next=['profile','privacy','workspace','connections','voice'].map(x=>sheet.indexOf('id="spane-'+x+'"')).filter(i=>i>s).sort((a,b)=>a-b)[0];return sheet.slice(s,next||sheet.length);};
+ const pane=k=>{const s=sheet.indexOf('id="spane-'+k+'"'),n=sheet.indexOf('<section',s+10),next=['profile','privacy','workspace','connections','voice','forit'].map(x=>sheet.indexOf('id="spane-'+x+'"')).filter(i=>i>s).sort((a,b)=>a-b)[0];return sheet.slice(s,next||sheet.length);};
  const has=(k,ids)=>{const p=pane(k);for(const id of ids)assert.match(p,new RegExp('id="'+id+'"'),k+' has '+id);};
  has('profile',['profileSection','profileEmpty']);
  has('privacy',['privacyPanel','privCheckpoint','privRestricted','privObjectScoring','privObjectMatching','privObjectMemory','privDownload','privDelete','privStatus','hindsightPanel','memoryOn','memoryForgetAll','connectionTest','memoryStatus']);
@@ -48,7 +48,7 @@ test('settings-ui.js: the key field is an empty password field nothing fills in;
  assert.doesNotMatch(js,/localStorage|sessionStorage|document\.cookie|indexedDB/,'nothing is kept in the browser');
  assert.match(js,/URL\.createObjectURL\(blob\)/); assert.match(js,/URL\.revokeObjectURL/); assert.doesNotMatch(js,/preview_url|previewUrl/,'no preview audio from another origin: the page may play blob: media only');
  assert.doesNotMatch(js,/innerHTML|insertAdjacentHTML|setHTML/); assert.match(js,/'X-Atlas-CSRF':b\.csrf/);
- assert.match(js,/\['connections','voice'\]/); assert.match(js,/dataset|data-admin-tab/);
+ assert.match(js,/\['connections','voice','forit'\]/); assert.match(js,/dataset|data-admin-tab/);
  for(const route of ['/api/admin/voice','/api/admin/voice/key','/api/admin/voice/voices','/api/admin/voice/test'])assert.ok(js.includes(route),route);
 });
 

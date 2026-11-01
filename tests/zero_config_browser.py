@@ -200,8 +200,8 @@ with sync_playwright() as pw:
     x = projects(p)[0]
     check('1 the project is created with the profile name, title and N+1', x['consultant'] == 'Tony Walteur' and x['role'] == 'Principal Consultant' and x['roleFrom'] == 'profile'
           and x['validation']['manager'] == {'name': 'Sam Lead', 'email': 'sam@example.com'} and x['validation']['managerStaff'] is False)
-    check('1 the library accepted it: no "Save on this device?" prompt, the strip says "Saved to ATLAS"',
-          not (p.locator('#confirmDialog').is_visible() and 'Save on this device' in p.locator('#confirmTitle').inner_text()) and p.locator('#storageStatus').text_content() == 'Saved to ATLAS')
+    check('1 the library accepted it: no "Save on this device?" prompt, the chip says "Saved"',
+          not (p.locator('#confirmDialog').is_visible() and 'Save on this device' in p.locator('#confirmTitle').inner_text()) and p.locator('#storageStatus').text_content() == 'Saved')
     check('1 the end message names no device step', 'Save on this device' not in p.locator('#voiceAfter').inner_text())
     check('1 every API call carried X-Requested-With', s.log and all(e['xrw'] == 'XMLHttpRequest' for e in s.log))
     p.context.close()
@@ -240,13 +240,13 @@ with sync_playwright() as pw:
           p.locator('#authBanner').is_visible() and 'Your sign-in expired. Your work is kept on this page.' in p.locator('#authBanner').inner_text() and len(p.loads) == 1)
     st = store(p)
     check('3 no project content reaches sessionStorage or localStorage', 'Claims triage' not in st and 'routing design' not in st and 'Zebracorp' not in st)
-    check('3 the strip says the work is only in this tab', 'Not saved to ATLAS yet · kept in this tab' in p.locator('#storageStatus').text_content())
+    check('3 the strip says the work is only in this tab', 'Not saved: kept in this tab' in p.locator('#storageStatus').text_content())
     close_dialogs(p); s.lib_status = 201; before = len(s.api('POST', '/api/library'))
     with p.expect_popup() as pop: p.locator('#authReconnect').click()
     check('3 Reconnect opens /go/signed-in in a small window', urlparse(pop.value.url).path == '/go/signed-in')
     wait(p, lambda: len(s.api('POST', '/api/library')) > before, 8); p.wait_for_timeout(800)
     check('3 signed in again: the sync is retried, the project is saved, and the toast says so',
-          len(s.api('POST', '/api/library')) == before + 1 and p.locator('#storageStatus').text_content() == 'Saved to ATLAS' and 'signed in again' in p.locator('#toast').inner_text()
+          len(s.api('POST', '/api/library')) == before + 1 and p.locator('#storageStatus').text_content() == 'Saved' and 'signed in again' in p.locator('#toast').inner_text()
           and p.locator('#authBanner').is_hidden() and len(p.loads) == 1)
     p.context.close()
     # clean page + 401 -> exactly one reload; a second 401 within 5 minutes -> the banner
@@ -365,7 +365,7 @@ with sync_playwright() as pw:
     talk(p, s); p.wait_for_timeout(2500)
     check('7 gap mode: the start frame carries the request', [f for f in s.frames if f.get('type') == 'start'][-1].get('gap') == GAP)
     check('7 gap answers stay here: strip "Not saved to ATLAS yet · kept in this tab", the device prompt, no library POST',
-          'Not saved to ATLAS yet · kept in this tab' in p.locator('#storageStatus').text_content() and p.locator('#confirmDialog').is_visible()
+          'Not saved: kept in this tab' in p.locator('#storageStatus').text_content() and p.locator('#confirmDialog').is_visible()
           and 'Save on this device' in p.locator('#confirmTitle').inner_text() and not s.api('POST', '/api/library'))
     close_dialogs(p); p.context.close()
 
