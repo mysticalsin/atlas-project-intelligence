@@ -92,6 +92,8 @@ def desktop(br, base, w, h):
     state = p.evaluate("()=>({voiceHidden:document.getElementById('voiceStart').hidden,label:document.getElementById('voiceStartText').textContent,primary:document.getElementById('voiceStartText').classList.contains('primary'),reason:document.getElementById('voiceReason').textContent,reasonShown:!document.getElementById('voiceReason').hidden})")
     check(f'{vp} start: voice is off here, so the typed interview is primary, the voice button is gone and a short reason is shown', state['voiceHidden'] and state['primary'] and state['label'] == 'Start interview' and state['reasonShown'] and len(state['reason']) < 120, state)
     reason = p.evaluate(VIS, '#voiceReason'); check(f'{vp} start: the reason is visible', reason['ok'], reason)
+    ring = p.evaluate("()=>{const r=document.querySelector('.capture-ring').getBoundingClientRect(),c={x:r.left+r.width/2,y:r.top+r.height/2},R=r.width/2;const bad=[...document.querySelectorAll('.capture-ring b,.capture-ring small')].filter(e=>{const q=e.getBoundingClientRect();return [[q.left,q.top],[q.right,q.top],[q.left,q.bottom],[q.right,q.bottom]].some(([x,y])=>Math.hypot(x-c.x,y-c.y)>R-3)}).map(e=>e.tagName+':'+e.textContent.slice(0,14));return {bad,R}}")
+    row(vp, 'start capture ring', not ring['bad'], str(ring) if ring['bad'] else ''); check(f'{vp} start: the words of the Story capture ring sit inside the circle', not ring['bad'], ring)
     shot(p, 'start', w, h)
     # ---- consent
     p.locator('#voiceStartText').click(); p.locator('#voiceConsentDialog').wait_for(state='visible', timeout=8000); p.wait_for_timeout(400)
@@ -103,9 +105,10 @@ def desktop(br, base, w, h):
     p.locator('#voiceConsentType').click(); p.wait_for_function('()=>AtlasVoice.status().phase==="live"', timeout=15000)
     p.wait_for_function("()=>document.querySelectorAll('#textLog .msg-atlas').length>=1", timeout=15000); p.wait_for_timeout(700)
     # ---- live
-    sels = {'orb': '.orb-screen', 'ATLAS line': '#textLog .msg-atlas:last-child, #textLog .msg:last-child', 'answer box': '#voiceTypeInput', 'next question': '#qualityNext', 'progress caption': '#boardTopics'}
+    sels = {'orb': '.orb-screen', 'ATLAS line': '#textLog .msg-atlas:last-child, #textLog .msg:last-child', 'answer box': '#voiceTypeInput', 'next question': '#boardChallenge .board-question, #qualityNext', 'progress caption': '#boardTopics'}
     all_visible(p, vp, 'live', sels)
     ns = p.evaluate(NOSCROLL); row(vp, 'live no page scroll', ns['ok'], str(ns)); check(f'{vp} live: the page does not scroll', ns['ok'], ns)
+    left = p.evaluate("()=>getComputedStyle(document.querySelector('.studio-left')).visibility"); check(f'{vp} live: the left rail is folded away (no awkward narrow card)', left == 'hidden', left)
     check(f'{vp} live: focus is in the answer box', p.evaluate("document.activeElement&&document.activeElement.id")=='voiceTypeInput')
     shot(p, 'live', w, h)
     # answer until the read-back, checking the window never moves
@@ -115,17 +118,33 @@ def desktop(br, base, w, h):
         p.wait_for_function('n=>document.querySelectorAll("#textLog .msg").length>=n+2 || !document.getElementById("summaryCard").hidden', arg=n, timeout=20000)
         if i == 2:
             ns = p.evaluate(NOSCROLL); check(f'{vp} live after answers: the page still does not scroll', ns['ok'], ns)
-            all_visible(p, vp, 'live after 3 answers', {'orb': '.orb-screen', 'answer box': '#voiceTypeInput', 'next question': '#qualityNext', 'progress caption': '#boardTopics', 'ATLAS line': '#textLog .msg-atlas:last-child, #textLog .msg:last-child'})
+            all_visible(p, vp, 'live after 3 answers', {'orb': '.orb-screen', 'answer box': '#voiceTypeInput', 'next question': '#boardChallenge .board-question, #qualityNext', 'progress caption': '#boardTopics', 'ATLAS line': '#textLog .msg-atlas:last-child, #textLog .msg:last-child'})
+            p.wait_for_timeout(500)
+            cl = p.evaluate("()=>{const m=[...document.querySelectorAll('#textLog .msg')],a=m.filter(x=>x.classList.contains('msg-atlas')).at(-1),s=getComputedStyle(a),lum=c=>{const v=c.match(/[\\d.]+/g).map(Number);return (0.2126*v[0]+0.7152*v[1]+0.0722*v[2])/255};let o=1;for(let e=a;e&&e.id!=='textLog';e=e.parentElement)o*=+getComputedStyle(e).opacity;return {opacity:o,lum:lum(s.color),size:parseFloat(s.fontSize),tag:m.at(-1)===a||m.at(-2)===a}}")
+            check(f'{vp} live: ATLAS\'s current line is full contrast (opacity 1, light text) and 15px or more', cl['opacity'] == 1 and cl['lum'] > 0.85 and cl['size'] >= 15 and cl['tag'], cl)
+            newest = p.evaluate(VIS, '#textLog .msg:last-child'), p.evaluate(VIS, '#textLog .msg:nth-last-child(2)')
+            check(f'{vp} live: the newest two lines are whole inside the conversation box (no clipped half line)', all(x['ok'] for x in newest), newest)
+            one = p.evaluate("()=>[...document.querySelectorAll('#qualityNext,#boardChallenge .board-question')].filter(e=>e.getBoundingClientRect().width>8&&getComputedStyle(e).clip==='auto').length")
+            check(f'{vp} live: ONE next question in the rail (not the same question twice), and the board no longer holds a second one', one == 1 and p.evaluate("!document.querySelector('#storyBoard #boardChallenge')"), one)
             shot(p, 'live-after-answers', w, h)
         if not p.locator('#summaryCard').is_hidden(): break
         p.wait_for_timeout(max(900, 1700 - int((time.time() - t0) * 1000)))
     p.locator('#summaryCard').wait_for(state='visible', timeout=25000); p.wait_for_timeout(900)
     # ---- read-back
     all_visible(p, vp, 'read-back', {'title': '#summaryTitle', 'first item': '#summaryItems li:first-child', 'Confirm': '#summaryConfirm'})
+    rb = p.evaluate("()=>{const s=document.getElementById('summaryScroll').getBoundingClientRect(),c=document.getElementById('summaryConfirm').getBoundingClientRect(),el=document.getElementById('summaryScroll');return {scrollBottom:s.bottom,confirmTop:c.top,over:el.scrollHeight>el.clientHeight,hint:getComputedStyle(el,'::after').content}}")
+    check(f'{vp} read-back: Confirm sits below the scrolling list, never over an item', rb['confirmTop'] >= rb['scrollBottom'] - 1, rb)
+    check(f'{vp} read-back: a "More below" hint exists for the items below the edge (browsers with scroll-driven animations)', 'More below' in rb['hint'] or not p.evaluate("CSS.supports('animation-timeline','scroll()')"), rb)
     cov = p.evaluate("()=>{const i=document.querySelector('#summaryItems li:first-child').getBoundingClientRect(),c=document.getElementById('summaryConfirm').getBoundingClientRect();return {itemBottom:i.bottom,confirmTop:c.top}}")
     check(f'{vp} read-back: the first item is not hidden behind the Confirm bar', cov['itemBottom'] <= cov['confirmTop'] + 1, cov)
     ns = p.evaluate(NOSCROLL); row(vp, 'read-back no page scroll', ns['ok'], str(ns)); check(f'{vp} read-back: the page does not scroll', ns['ok'], ns)
     shot(p, 'readback', w, h)
+    # after Confirm the card shows "Saved as a private draft" next to the conversation: nothing may overlap (the humane suite clicks Pause here)
+    p.locator('#summaryConfirm').click(); p.wait_for_function("()=>/Saved as a private draft/.test(document.getElementById('summarySaved').innerText)", timeout=15000); p.wait_for_timeout(500)
+    ov = p.evaluate("()=>{const r=i=>document.getElementById(i).getBoundingClientRect(),a=r('textLog'),b=r('voiceTypeWrap'),c=r('voiceControls'),d=r('summaryCard');const vis=['textLog','voiceTypeWrap','voiceControls'].every(i=>document.getElementById(i).offsetParent);return {vis,cardBottom:d.bottom,logTop:a.top,logBottom:a.bottom,wrapTop:b.top,wrapBottom:b.bottom,ctlTop:c.top}}")
+    check(f'{vp} after Confirm: the conversation, the answer box and the controls do not overlap the card or each other', (not ov['vis']) or (ov['cardBottom'] <= ov['logTop'] + 1 and ov['logBottom'] <= ov['wrapTop'] + 1 and ov['wrapBottom'] <= ov['ctlTop'] + 1), ov)
+    sub = p.evaluate(VIS, '#summarySubmit'); check(f'{vp} after Confirm: Submit for review is visible and not clipped by the card', sub['ok'], sub)
+    shot(p, 'confirmed', w, h)
     ctx.close()
 
 
@@ -207,9 +226,15 @@ def voice_layout(br, base, w, h):
     p.locator('#voiceConsentDialog').wait_for(state='visible', timeout=8000); p.locator('#modelConsent').check(); p.locator('#voiceConsentStart').click()
     p.wait_for_function('()=>AtlasVoice.status().phase==="live"', timeout=15000)
     p.wait_for_function("()=>/ATLAS/.test(document.getElementById('agentText').textContent)", timeout=8000); p.wait_for_timeout(700)
-    all_visible(p, vp, 'voice live', {'orb': '.orb-screen', 'ATLAS line (transcript)': '#agentText', 'voice controls': '#voiceMute', 'next question': '#qualityNext', 'progress caption': '#boardTopics'})
+    all_visible(p, vp, 'voice live', {'orb': '.orb-screen', 'ATLAS line (transcript)': '#agentText', 'voice controls': '#voiceMute', 'next question': '#boardChallenge .board-question, #qualityNext', 'progress caption': '#boardTopics'})
     ns = p.evaluate(NOSCROLL); row(vp, 'voice live no page scroll', ns['ok'], str(ns)); check(f'{vp} voice live: the page does not scroll', ns['ok'], ns)
-    shot(p, 'voice-live', w, h); ctx.close()
+    al = p.evaluate("()=>{const c=e=>{const r=document.querySelector(e).getBoundingClientRect();return r.left+r.width/2},o=c('.orb-screen');return {meters:Math.abs(c('.orb-meters')-o),inStrip:!!document.querySelector('.orb-bottom-actions #soundHelpToggle')}}")
+    check(f'{vp} voice live: the level meters are centred on the column and the sound-check link sits with the other links in the bottom strip', al['meters'] < 3 and al['inStrip'], al)
+    v = p.evaluate(VIS, '#soundHelpToggle'); check(f'{vp} voice live: the sound-check link is inside the window', v['ok'], v)
+    shot(p, 'voice-live', w, h)
+    p.locator('#soundHelpToggle').click(); p.wait_for_timeout(200)
+    v = p.evaluate(VIS, '#soundHelpPanel'); check(f'{vp} voice live: the sound-check panel opens inside the window', v['ok'], v)
+    shot(p, 'voice-live-soundcheck', w, h); ctx.close()
 
 
 def reduced_motion(br, base):

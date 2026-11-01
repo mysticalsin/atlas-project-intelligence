@@ -54,7 +54,7 @@ body.ui2.studio-view:not(.studio-focus) .studio-heading h1{letter-spacing:-.02em
 body.ui2.studio-view:not(.studio-focus) .studio-heading h1 br{display:none}
 body.ui2.studio-view:not(.studio-focus) .studio-heading h1 em{margin-left:.28em}
 body.ui2.studio-view:not(.studio-focus) #voicePanel .orb-screen{width:var(--fit-orb);height:var(--fit-orb);max-width:100%;aspect-ratio:1;margin:0 auto;flex:none}
-body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text][data-phase=live]{--fit-orb:clamp(130px,calc(100dvh - 520px),380px)}
+body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text][data-phase=live]{--fit-orb:clamp(120px,calc(100dvh - 620px),300px)}
 body.ui2.studio-view:not(.studio-focus) #voicePanel[data-readback=true][data-phase][data-input]{--fit-orb:clamp(88px,calc(100dvh - 640px),150px)}
 @media(prefers-reduced-motion:no-preference){body.ui2.studio-view:not(.studio-focus) #voicePanel .orb-screen{transition:width .28s var(--ease),height .28s var(--ease)}}
 
@@ -135,7 +135,7 @@ body.ui2.studio-view:not(.studio-focus) .voice-main>:is(.appearance-panel,.orb-m
 
  /* three columns; the columns scroll, never the page */
  body.ui2.studio-view:not(.studio-focus) .orb-layout{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:minmax(176px,224px) minmax(0,1fr) minmax(300px,360px);gap:var(--s5);margin:0;padding:0;align-items:stretch}
- body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) .orb-layout{grid-template-columns:minmax(150px,184px) minmax(0,1fr) minmax(300px,360px)}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) .orb-layout{grid-template-columns:0px minmax(0,1fr) minmax(300px,360px)}
  @media(prefers-reduced-motion:no-preference){body.ui2.studio-view:not(.studio-focus) .orb-layout{transition:grid-template-columns .28s var(--ease)}}
  body.ui2.studio-view:not(.studio-focus) .studio-aside{display:flex;flex-direction:column;gap:var(--s3);min-height:0;max-width:none;margin:0;padding:0 var(--s1) var(--s2) 0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin}
  body.ui2.studio-view:not(.studio-focus) .studio-aside>*{flex:none}
@@ -144,7 +144,6 @@ body.ui2.studio-view:not(.studio-focus) .voice-main>:is(.appearance-panel,.orb-m
  body.ui2.studio-view:not(.studio-focus) .studio-left h3{font-size:16px;margin:0 0 var(--s1)}
  body.ui2.studio-view:not(.studio-focus) .studio-left p{font-size:13px;line-height:1.45;margin:0 0 var(--s2)}
  body.ui2.studio-view:not(.studio-focus) .studio-left .subtle-cta{min-height:28px;font-size:12px}
- body.ui2.studio-view:not(.studio-focus) .capture-ring{width:56px;height:56px}
  /* while live the left rail is a quiet reminder of the project and the capture, nothing more */
  body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) .studio-left :is(.state-card,#contextProjectMeta,.context-tags,.subtle-cta,.micro-note,.capture-steps){display:none}
 
@@ -160,7 +159,7 @@ body.ui2.studio-view:not(.studio-focus) .voice-main>:is(.appearance-panel,.orb-m
  body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) .voice-main>#voiceLanguage{grid-column:1/3;grid-row:10;margin-top:var(--s2);justify-self:start}
  body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) .voice-main>#voiceEndRow{grid-column:3;grid-row:10;margin-top:var(--s2);justify-self:end}
  /* the one scrolling row of the centre column: the conversation (typed) or the read-back card */
- body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text]:is([data-phase=live],[data-phase=ending]) .voice-main{grid-template-rows:auto auto auto auto auto auto minmax(0,1fr) auto auto auto auto auto auto auto auto auto;overflow-y:hidden}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text]:is([data-phase=live],[data-phase=ending]) .voice-main{grid-template-rows:auto auto auto auto auto auto minmax(96px,1fr) auto auto auto auto auto auto auto auto auto}
  body.ui2.studio-view:not(.studio-focus) #voicePanel[data-readback=true]:is([data-phase=live],[data-phase=ending]) .voice-main{grid-template-rows:auto auto auto auto minmax(0,1fr) auto auto auto auto auto auto auto auto auto auto auto;overflow-y:hidden}
  /* a typed interview: ATLAS's lines are in the conversation; the heading and the line under it are for screen readers, so nothing is said twice */
  body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text]:is([data-phase=live],[data-phase=ending]) .voice-main>:is(#voiceHeading,#voiceMessage){position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
@@ -193,14 +192,17 @@ body.ui2.studio-view:not(.studio-focus) .voice-main>:is(.appearance-panel,.orb-m
  body.ui2.studio-view:not(.studio-focus) .voice-language-state{flex:1 1 0;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
  /* the read-back: its title and its first item stay in view, the items scroll inside, Confirm is always on screen */
-  body.ui2.studio-view:not(.studio-focus) #summaryCard:not([hidden]){display:block;min-height:0;max-width:720px;width:100%;margin:var(--s2) auto 0;padding:0 var(--s4);text-align:left;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin}
- body.ui2.studio-view:not(.studio-focus) #summaryCard .board-card-heading{position:sticky;top:0;z-index:2;margin:0;padding:var(--s3) 0 var(--s1);background:var(--surface)}
- body.ui2.studio-view:not(.studio-focus) #summaryCard .summary-items{margin:0;padding:0}
- body.ui2.studio-view:not(.studio-focus) #summaryCard .board-label{margin:0}
+  body.ui2.studio-view:not(.studio-focus) #summaryCard:not([hidden]){display:flex;flex-direction:column;min-height:0;max-width:720px;width:100%;margin:var(--s2) auto 0;padding:var(--s3) var(--s4) 0;text-align:left;overflow:hidden}
+ body.ui2.studio-view:not(.studio-focus) #summaryCard>*{flex:none}
+ body.ui2.studio-view:not(.studio-focus) #summaryCard .summary-scroll{flex:1 1 auto;min-height:84px;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;margin-top:var(--s1)}
+ body.ui2.studio-view:not(.studio-focus) #summaryCard .board-card-heading{margin:0}
+ body.ui2.studio-view:not(.studio-focus) #summaryCard .board-label{margin:var(--s1) 0 0}
  body.ui2.studio-view:not(.studio-focus) #summaryCard p.board-note{margin:var(--s1) 0 0}
- body.ui2.studio-view:not(.studio-focus) #summaryCard .gap-actions{position:sticky;bottom:0;z-index:2;display:flex;flex-wrap:wrap;gap:var(--s2);margin:var(--s2) 0 0;padding:var(--s3) 0;background:var(--surface);border-top:1px solid var(--line)}
+ body.ui2.studio-view:not(.studio-focus) #summaryCard .summary-items{margin:0;padding:0}
+ body.ui2.studio-view:not(.studio-focus) #summaryCard .summary-item{break-inside:avoid;padding:var(--s2) 0}
+ body.ui2.studio-view:not(.studio-focus) #summaryCard .gap-actions{position:static;flex:none;display:flex;flex-wrap:wrap;gap:var(--s2);margin:var(--s1) 0 0;padding:var(--s3) 0 var(--s3);background:var(--surface);border-top:1px solid var(--line)}
  body.ui2.studio-view:not(.studio-focus) #summaryCard .gap-actions .board-btn{min-height:40px}
-body.ui2.studio-view:not(.studio-focus) #summaryCard :is(#summarySaved,#summaryMessage):empty{display:none}
+ body.ui2.studio-view:not(.studio-focus) #summaryCard :is(#summarySaved,#summaryMessage):empty{display:none}
  body.ui2.studio-view:not(.studio-focus) #summaryCard .summary-status:not([hidden]){margin:var(--s1) 0 var(--s2)}
 
  /* the right rail: the next question first, the progress after it, the dimensions as a collapsed row of chips */
@@ -302,3 +304,65 @@ body.ui2 #voiceStartText.primary:hover,body.ui2 #voiceMicType.primary:hover{filt
  body.ui2.studio-view:not(.studio-focus) .voice-main>.orb-meters:not([hidden]){display:grid;grid-template-columns:1fr 1fr;gap:var(--s4);width:100%;max-width:420px;margin-top:var(--s2)}
  body.ui2.studio-view:not(.studio-focus) .orb-meter-label{display:flex;justify-content:space-between;gap:var(--s2);font-size:12px}
 }
+
+/* ---------- round 6 ---------- */
+/* the capture ring: the words fit inside the circle */
+body.ui2.studio-view:not(.studio-focus) .capture-ring{width:96px;height:96px}
+body.ui2.studio-view:not(.studio-focus) .capture-ring b{font-size:22px;line-height:1.1}
+body.ui2.studio-view:not(.studio-focus) .capture-ring small{font-size:12px;line-height:1.15;margin-top:0;text-align:center;max-width:68px}
+/* the project's name in the strip above the columns (the left rail is folded away while live) */
+.fit-project{display:none}
+body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) .fit-project:not([hidden]){display:block;flex:0 1 auto;min-width:0;max-width:46ch;margin:0 auto 0 var(--s4);padding:2px var(--s3);border:1px solid var(--line);border-radius:999px;font-size:12px;line-height:1.5;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* the conversation: the newest two lines are full contrast and ATLAS's current line is the largest thing in the box; older lines step back; a soft edge instead of a clipped half line */
+body.ui2.studio-view:not(.studio-focus) .text-log .msg:not(:last-child):not(:nth-last-child(2)){color:var(--text-2)}
+body.ui2.studio-view:not(.studio-focus) .text-log .msg:is(:last-child,:nth-last-child(2)){color:var(--text)}
+body.ui2.studio-view:not(.studio-focus) .text-log .msg-atlas:is(:last-child,:nth-last-child(2)){font-size:15px;line-height:1.5}
+@media(min-height:800px){body.ui2.studio-view:not(.studio-focus) .text-log .msg-atlas:is(:last-child,:nth-last-child(2)){font-size:16px}}
+body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text] .text-log{padding-top:var(--s6);-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 var(--s5));mask-image:linear-gradient(to bottom,transparent 0,#000 var(--s5))}
+/* ONE next-question card: ATLAS may ask next (question, About, warnings), the quote it builds on and the ledger link; the ledger's own line only when nothing is planned */
+body.ui2.studio-view:not(.studio-focus) .quality-live-card #boardChallenge{padding:0;margin:0 0 var(--s2)}
+body.ui2.studio-view:not(.studio-focus) .quality-live-card #boardChallenge:has(.board-body:empty){display:none}
+body.ui2.studio-view:not(.studio-focus) .quality-live-card #boardChallenge .board-head{margin:0 0 var(--s1)}
+body.ui2.studio-view:not(.studio-focus) .quality-live-card #boardChallenge .board-question{font-size:16px;line-height:1.4;color:var(--text);margin:var(--s1) 0 0}
+body.ui2.studio-view:not(.studio-focus) .quality-live-card #boardChallenge .board-note:not(.board-warn):not(.board-question + .board-note),
+body.ui2.studio-view:not(.studio-focus) .quality-live-card #boardChallenge:not(:has(.board-question)),
+body.ui2.studio-view:not(.studio-focus) .quality-live-card:has(#boardChallenge .board-question) :is(.quality-label,#qualityNext){position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+body.ui2.studio-view:not(.studio-focus) .quality-live-card #boardChallenge .board-question + .board-note{font-size:13px;color:var(--text-2);margin:var(--s1) 0 0}
+/* read-back: a visible hint while items are below the edge (browsers with scroll-driven animations) */
+@supports(animation-timeline:scroll()){
+ body.ui2.studio-view:not(.studio-focus) #summaryCard .summary-scroll::after{content:"More below \2193";position:sticky;bottom:0;display:flex;align-items:flex-end;justify-content:center;height:44px;margin-top:-44px;padding:0 0 2px;font-size:12px;line-height:1.3;color:var(--text-2);background:linear-gradient(to bottom,transparent,var(--surface) 60%);opacity:0;pointer-events:none;animation:fitMore linear both;animation-timeline:scroll(nearest block)}
+}
+@keyframes fitMore{0%,90%{opacity:1}100%{opacity:0}}
+@media(min-width:1024px) and (min-height:560px){
+ /* the left rail folds away while live (the column shrinks to nothing) */
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) .studio-aside.studio-left{opacity:0;visibility:hidden;overflow:hidden;pointer-events:none}
+ @media(prefers-reduced-motion:no-preference){body.ui2.studio-view:not(.studio-focus) .studio-aside.studio-left{transition:opacity .2s ease,visibility 0s}body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) .studio-aside.studio-left{transition:opacity .2s ease,visibility 0s .28s}}
+ /* the sound check and the level meters: one tidy centred block under the controls */
+ body.ui2.studio-view:not(.studio-focus) .voice-main>.orb-meters:not([hidden]){grid-row:16;margin:var(--s3) auto 0}
+ body.ui2.studio-view:not(.studio-focus) .orb-bottom-actions .sound-help{position:relative;margin:0}
+ body.ui2.studio-view:not(.studio-focus) .orb-bottom-actions .sound-help-panel:not([hidden]){position:absolute;right:0;bottom:calc(100% + var(--s2));z-index:30;width:min(300px,80vw);padding:var(--s3) var(--s4);background:var(--raised);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.5);text-align:left}
+ body.ui2.studio-view:not(.studio-focus) .sound-help-toggle{min-height:28px;font-size:12px}
+}
+
+body.ui2.studio-view:not(.studio-focus) #summaryCard .summary-items{padding-bottom:var(--s5)}
+body.ui2.studio-view:not(.studio-focus) #summaryCard .summary-item{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:var(--s3);align-items:center}
+body.ui2.studio-view:not(.studio-focus) #summaryCard .summary-item>.summary-item-head{grid-column:1;grid-row:1;margin:0}
+body.ui2.studio-view:not(.studio-focus) #summaryCard .summary-item>.summary-quote{grid-column:1;grid-row:2;margin:var(--s1) 0 0}
+body.ui2.studio-view:not(.studio-focus) #summaryCard .summary-item>.summary-item-actions{grid-column:2;grid-row:1/3;margin:0;display:flex;flex-direction:column;gap:var(--s1)}
+body.ui2.studio-view:not(.studio-focus) #summaryCard .summary-item>:not(.summary-item-head):not(.summary-quote):not(.summary-item-actions){grid-column:1/-1}
+body.ui2.studio-view:not(.studio-focus) #summaryCard .summary-item-actions .board-btn{min-height:36px}
+body.ui2.studio-view:not(.studio-focus) .quality-live-card #boardChallenge .board-head small{font-weight:400;color:var(--text-3)}
+@media(min-width:1024px) and (min-height:560px){
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-readback=true]:is([data-phase=live],[data-phase=ending]) .voice-main>.orb-caption{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+}
+
+body.ui2.studio-view:not(.studio-focus) #summaryCard .summary-scroll{scroll-snap-type:y proximity}
+body.ui2.studio-view:not(.studio-focus) #summaryCard .summary-item{scroll-snap-align:start}
+
+/* the card after Confirm (saved, Submit for review) sits above the conversation: a fixed share of the column, its list scrolls inside; the orb steps back like in the read-back */
+body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true]:not([data-readback=true]) #summaryCard:not([hidden]){height:min(280px,36dvh)}
+body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true][data-phase][data-input]{--fit-orb:clamp(88px,calc(100dvh - 640px),150px)}
+@media(min-width:1024px) and (min-height:560px){
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true]:is([data-phase=live],[data-phase=ending]) .voice-main>.orb-caption{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+}
+body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true]:not([data-readback=true]) #summaryCard .summary-scroll{min-height:40px}

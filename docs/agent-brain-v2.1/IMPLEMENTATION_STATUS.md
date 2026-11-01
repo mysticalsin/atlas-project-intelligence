@@ -238,6 +238,8 @@ Implemented and locally verified (`tests/ux_fit_browser.py`: getBoundingClientRe
 | Desktop (1024x560 and up): an app shell of exactly the window height; the page does not scroll in any phase; columns scroll inside; hero one line and sliding away while live; right rail: next question, then progress, then the story board with the twelve dimensions as a collapsed row of chips; left rail narrows while live; read-back card with its title, first item and a sticky Confirm | Implemented | `ux_fit_browser.py` |
 | No programmatic window scroll while live (focus uses `preventScroll`; the shell clips), reduced motion respected, start row reserved until the server answers | Implemented | `ux_fit_browser.py`, `u1-start-flow.test.js` |
 
+Round 6 polish: the newest two conversation lines are full contrast with a soft top edge; one next-question card (question, About, quote, ledger link); the read-back list scrolls inside its own box above a fixed Confirm, with a "More below" hint; meters and the sound check tidied; the left rail folds away while live with the project name as a chip.
+
 Residual: the voice-mode layout was measured with a scripted voice socket and a synthetic microphone only; below 1024px wide or 560px tall the page scrolls as before (one column); the orb's two corner buttons are still 31px; a long ATLAS line (more than about six lines at 1280x720) scrolls inside the conversation box; no native-speaker review of the new strings.
 
 ## 12. Red-team retest fixes (v2.2 X1)

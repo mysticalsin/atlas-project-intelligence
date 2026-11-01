@@ -117,3 +117,14 @@ test('a sheet\'s confirm shields the panel for a moment, so a double click canno
  await h.$('voiceEndConfirm').onclick();assert.ok(h.$('voicePanel').classList.contains('fit-settling'));
  assert.match(read('fit.css'),/#voicePanel\.fit-settling\{pointer-events:none\}/);
 });
+
+test('round 6 structure: one next-question card (the challenge lives in the cue card, not in the board), the read-back list scrolls on its own, the sound check sits with the bottom links, the project chip exists',()=>{
+ const html=read('voice-panel.html'),at=s=>html.indexOf(s);
+ assert.ok(at('id="boardChallenge"')>at('quality-live-card')&&at('id="boardChallenge"')<at('id="qualityNext"'),'ATLAS may ask next is the top of the cue card');
+ assert.ok(at('id="boardChallenge"')<at('id="storyBoard"')||at('id="boardChallenge"')>html.indexOf('</section>',at('id="storyBoard"')),'not inside the story board');
+ assert.ok(at('id="summaryScroll"')<at('id="summaryItems"')&&at('id="summaryNext"')<at('id="summarySaved"')&&at('id="summarySaved"')<at('id="summaryConfirm"'),'items, still-open and the next line scroll; the saved note and the actions stay outside');
+ assert.ok(at('class="orb-bottom-actions"')<at('id="soundHelp"')&&at('id="soundHelp"')<at('id="voiceSetup"'),'the sound check is one of the bottom links');
+ assert.match(html,/id="fitProject"/);
+ const h=boot();
+ assert.equal(h.$('fitProject').textContent,'P','the project title (the fake workspace calls it P) is in the strip');assert.equal(h.$('fitProject').hidden,false);
+});
