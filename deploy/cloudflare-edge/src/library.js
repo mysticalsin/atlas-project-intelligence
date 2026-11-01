@@ -118,6 +118,9 @@ const SCHEMA = [
   'CREATE INDEX IF NOT EXISTS duplicate_pairs_b ON duplicate_pairs(b)',
   `CREATE TABLE IF NOT EXISTS invitations (id TEXT PRIMARY KEY, email TEXT, project_id TEXT, title TEXT, reason TEXT, slot TEXT, reference_id TEXT,
     status TEXT, created_at TEXT, source TEXT)`,
+  // Admin settings (v2.2 V2, settings.js): one row per setting. The ElevenLabs key is stored sealed (value is the AES-GCM record, never the key); key_id names the secret it was sealed under.
+  // updated_by is the pseudonymous subject key, never an email.
+  'CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value TEXT NOT NULL, key_id TEXT, updated_at TEXT, updated_by TEXT)',
 ];
 
 // X1 (red M6): a reference that erasure kept for the DPO (state.erasure_pending_review) is frozen: nobody can edit, validate or reinstate it. Only the DPO's resolution
@@ -137,6 +140,13 @@ export class Library {
   }
 
   rows(q, ...p) { return this.sql.exec(q, ...p).toArray(); }
+  // Admin settings (settings.js): the rows as { name: { value, keyId, updatedAt } }, a write and a delete. The routes that reach these check the role; names are checked there too.
+  getSettings() { return Object.fromEntries(this.rows('SELECT name, value, key_id, updated_at FROM settings').map(r => [r.name, { value: r.value, keyId: r.key_id, updatedAt: r.updated_at }])); }
+  putSetting(name, value, { keyId = null, by = '' } = {}) {
+    this.sql.exec('INSERT INTO settings (name, value, key_id, updated_at, updated_by) VALUES (?, ?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value, key_id = excluded.key_id, updated_at = excluded.updated_at, updated_by = excluded.updated_by',
+      String(name), String(value), keyId, this.now(), String(by).slice(0, 40));
+  }
+  deleteSetting(name) { this.sql.exec('DELETE FROM settings WHERE name = ?', String(name)); }
   row(id) {
     const r = this.rows('SELECT * FROM refs WHERE id = ?', String(id || ''))[0];
     return r ? { ...r, data: JSON.parse(r.data), state: JSON.parse(r.state) } : null;

@@ -44,7 +44,7 @@ const shown=k=>k==='email'?profile?.email||'':profile?.fields?.[k]?.value||'';
 function chip(k,v){const f=profile?.fields?.[k];const t=k==='email'?'':C.chipFor(f,v);return h('span',{class:'tag field-chip','data-pf-chip':k,hidden:!t},t);}
 function say(t){const s=$('pfStatus');if(s)s.textContent=t||'';}
 function renderSection(){if(!section)return;section.replaceChildren();if(!profile){section.hidden=true;return;}section.hidden=false;
- section.append(h('h3',{text:'You'}),h('p',{class:'tiny muted',text:'ATLAS fills in forms with this, so you don’t have to. Change anything that’s wrong.'}));
+ section.append(h('p',{class:'small muted',text:'ATLAS fills in forms with this, so you don’t have to. Change anything that’s wrong.'}));
  if(profile.guessed&&C.value(profile,'name'))section.append(h('p',{class:'profile-guess small'},'Is this right? ',
   h('button',{class:'btn',type:'button',onclick:async e=>{e.currentTarget.disabled=true;try{await confirmGuess();say('Thanks. Your name is confirmed.');}catch(err){say(err.message);}}},'Yes, that’s me'),' ',
   h('button',{class:'quiet',type:'button',onclick:()=>$('pf_name')?.focus()},'Edit')));

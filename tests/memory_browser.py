@@ -30,7 +30,7 @@ try:
   o.evaluate("window.ATLAS_VOICE_BRIDGE.setMemory(true)");o.wait_for_timeout(500)
   o.evaluate("(rep)=>window.ATLAS_VOICE_BRIDGE.autoSave(window.ATLAS_VOICE_BRIDGE.context(),['Zebracorp had claims bouncing between three teams, slowing payouts.',null,null,'Triage fell from 40 to 12 minutes.',null,null],'I worked with Zebracorp on claims.',rep)",REP)
   o.wait_for_timeout(1500)
-  o.locator('#profileButton').click();o.wait_for_timeout(900)
+  o.locator('#profileButton').click();o.wait_for_timeout(900);o.locator('#stab-privacy').click();o.wait_for_timeout(200)  # V2: what ATLAS remembers is on the Privacy tab of the Settings sheet
   panel=o.locator('#hindsightPanel')
   check('profile shows what ATLAS remembers, by project; the switch is on because the person turned it on',panel.is_visible() and 'Claims triage alias' in o.locator('#memoryList').inner_text() and 'Conversation on' not in o.locator('#memoryList').inner_text() and o.locator('#memoryOn').is_checked())
   stored=o.evaluate("fetch('/api/memory').then(r=>r.json())")
@@ -47,7 +47,7 @@ try:
   o.evaluate("(rep)=>window.ATLAS_VOICE_BRIDGE.autoSave(window.ATLAS_VOICE_BRIDGE.context(),[null,null,'We kept a fallback.',null,null,null],'x',rep)",REP);o.wait_for_timeout(1200)
   check('switched off: nothing new is remembered',o.evaluate("fetch('/api/memory').then(r=>r.json())")['documents']==[] and o.evaluate("fetch('/api/memory').then(r=>r.json())")['off'] is True)
   check('connection test hidden for non-admins',not o.locator('#connectionTest').is_visible())
-  a=page('tony.walteur@gmail.com');a.locator('#profileButton').click();a.wait_for_timeout(900);a.locator('#connectionTest').click();a.wait_for_timeout(900)
+  a=page('tony.walteur@gmail.com');a.locator('#profileButton').click();a.wait_for_timeout(900);a.locator('#stab-privacy').click();a.wait_for_timeout(200);a.locator('#connectionTest').click();a.wait_for_timeout(900)
   st=a.locator('#memoryStatus').inner_text()
   check('admin connection test: Hindsight working, JEV reports missing key','Hindsight: working' in st and 'JEV: not configured' in st)
   check('no page errors',not ERR);print(ERR)
