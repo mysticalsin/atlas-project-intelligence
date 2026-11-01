@@ -40,7 +40,7 @@ function env(extra = {}) {
   let n = 0;
   return { TALKER_MODEL: 'talker', STT_MODEL: 'stt', TTS_MODEL: 'tts', TTS_VOICE: 'harmonia', ANALYST_MODEL: 'analyst', ...extra, AI: { async run(model) {
     if (model === 'tts') return new Uint8Array(4800).fill(1);
-    if (model === 'talker') return sse(n++ === 0 ? 'Hello. Where would you like to start?' : 'Thanks. What was the baseline?');
+    if (model === 'talker') return sse(n++ === 0 ? 'Hello. Where would you like to start?' : 'Thanks. ' + H.QUESTION);
     return { tool_calls: [] };
   } } };
 }
@@ -55,7 +55,7 @@ async function interview(d, st) {
   const c = connect(d); await c.p; c.server.fire('message', start());
   await until(() => ready(c.server) && !d.session.busy());
   if (d.session.protectedItem) d.session.playedMs[d.session.protectedItem] = 1e9; // the greeting has played (the browser's acknowledgement; v2.2 V1: sending no longer takes as long as playing)
-  typed(c.server, H.ANSWER); await until(() => !d.session.busy() && c.server.events().some(e => e.type === 'agent_text' && /baseline/.test(e.text)));
+  typed(c.server, H.ANSWER); await until(() => !d.session.busy() && c.server.events().some(e => e.type === 'agent_text' && /alongside the team/.test(e.text)));
   await until(() => st.keys().some(k => k.endsWith(':meta')) && !d.session.ckptRun);
   return c;
 }

@@ -8,7 +8,7 @@ import { SAMPLE_RATE } from '../src/speech.js';
 export const PROJECT = { id: 'p-falcon', title: 'Project Falcon (synthetic)', consultant: 'Alex', role: 'Designer', sector: 'Insurance', stage: 'Pilot', answers: [] };
 export const ANSWER = 'We rebuilt the claims intake process for the insurance client during the pilot, a big change for the whole team.';
 export const ANSWER2 = 'The median handling time dropped from fourteen minutes to nine minutes after the pilot, measured over six weeks across the claims team.';
-export const QUESTION = 'What was the baseline?';
+export const QUESTION = 'What part of that work did you take on yourself, alongside the team?'; // the selector's question after ANSWER: the question spoken is the move's (v2.2 Q1)
 export const USER = 'tony@example.com';
 
 export class FakeStorage {
@@ -60,7 +60,7 @@ export function rig({ said = [], talk = null, flags = {}, metrics = [], session 
     async synthesize(text) { calls.tts.push(text); return new Uint8Array(4800).fill(1); },
     chatStream(messages) {
       const n = calls.talker.length; calls.talker.push(messages);
-      const out = talk ? talk(n, messages) : ['Thanks. ', 'What was ', 'the baseline?'];
+      const out = talk ? talk(n, messages) : ['Thanks. ', 'What part of that work ', 'did you take on yourself, alongside the team?'];
       return Array.isArray(out) ? (async function* () { yield* out; })() : out;
     },
     async analyst(messages) {
@@ -93,7 +93,7 @@ export async function opened(h, extra = {}) {
 
 // A started interview in which the consultant has answered once: ATLAS asked the opening question, the answer was heard, and ATLAS has asked QUESTION.
 export async function interviewing(opts = {}) {
-  const h = rig({ talk: n => n === 0 ? ['Right. ', 'What was the project?'] : ['Thanks. ', 'What was ', 'the baseline?'], ...opts, said: [ANSWER, ...(opts.said || [])] });
+  const h = rig({ talk: n => n === 0 ? ['Right. ', 'What was the project?'] : ['Thanks. ', 'What part of that work ', 'did you take on yourself, alongside the team?'], ...opts, said: [ANSWER, ...(opts.said || [])] });
   await opened(h);
   talked(h); await until(() => h.calls.talker.length === 2 && !h.s.busy());
   return h;

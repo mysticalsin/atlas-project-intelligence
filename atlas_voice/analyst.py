@@ -11,6 +11,7 @@ import json
 
 import aiohttp
 
+from .nonanswer import is_non_answer
 from .quality import FIELDS, TOOLS, InterviewLedger
 
 RECORD_TOOL = next(t for t in TOOLS if t['name'] == 'record_details')
@@ -61,10 +62,13 @@ class Analyst:
         async with self.lock:
             self.ledger.add_transcript(item_id, text)
             status, rejected, ignored = 'analysed', 0, 0
-            try:
-                calls = await asyncio.wait_for(self.complete(build_messages(self.ledger, item_id)), self.timeout)
-            except (asyncio.TimeoutError, aiohttp.ClientError, ValueError, KeyError, TypeError):
-                calls, status = [], 'analyst-unavailable'
+            calls = []
+            # A turn that is only a deferral, a refusal or a filler ("I don't know", "pass", "ok") has nothing to file: the model is not called (v2.2 Q1).
+            if not is_non_answer(text):
+                try:
+                    calls = await asyncio.wait_for(self.complete(build_messages(self.ledger, item_id)), self.timeout)
+                except (asyncio.TimeoutError, aiohttp.ClientError, ValueError, KeyError, TypeError):
+                    calls, status = [], 'analyst-unavailable'
             for call in calls[:MAX_CALLS]:
                 if call.get('name') != 'record_details':
                     ignored += 1
@@ -81,7 +85,7 @@ class Analyst:
                     except (ValueError, TypeError):
                         rejected += 1
             ignored += max(0, len(calls) - MAX_CALLS)
-            plan = self.ledger.plan_probe()
+            plan = self.ledger.plan_probe(item_id)
             return {**plan, 'analyst_status': status, 'rejected_proposals': rejected,
                     'ignored_tool_calls': ignored, 'guidance': guidance(plan)}
 

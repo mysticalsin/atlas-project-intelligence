@@ -95,10 +95,10 @@ test('resume when the answer was heard but nothing was composed: the answer gets
   // the consultant's second answer is in the history, ATLAS never began to reply: the stored question is older than the answer
   h.s.turns += 1; h.s.history.push({ role: 'user', content: ANSWER2 }); h.s.ledger.addTranscript('user-2', ANSWER2);
   await h.s.suspend();
-  const r = await resumed(h, { talk: () => ['Thanks. ', 'Which team measured it?'] });
+  const r = await resumed(h, { talk: () => ['Thanks. ', 'What did you compare it against?'] }); // (the selector's question for that answer: the question spoken is the move's)
   assert.ok(!errorsOf(r).length);
   const said = screen(r);
-  assert.ok(!said.includes(QUESTION) && said.includes('Which team measured it?'), said);
+  assert.ok(!said.includes(QUESTION) && said.includes('What did you compare it against?'), said);
   assert.equal(r.calls.talker.length, 1, 'one reply, to the answer that had none');
 });
 

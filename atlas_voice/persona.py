@@ -123,6 +123,26 @@ ACKS = {
         'it': ['Va bene, lo teniamo privato.', 'Nessun problema, resta fuori.', 'Certo, possiamo lasciarlo fuori.', 'Va bene, restiamo generici.', 'Capito, niente di specifico allora.'],
         'nl': ['Dat is prima, dat houden we privé.', 'Geen probleem, dat blijft erbuiten.', 'Natuurlijk, dat laten we weg.', 'Prima, we blijven algemeen.', 'Begrepen, dan niets specifieks.'],
     },
+    # the consultant said they cannot name the client (v2.2 Q1, item 5): said plainly, never an invitation to say more
+    'confidential_client': {
+        'en': ["Understood, I'll leave the client unnamed.", 'Of course, the client stays unnamed.', "Fine, I won't name the client.", "No problem, I'll keep the client unnamed.", 'Understood, no client name needed.'],
+        'fr': ['Compris, je laisse le client sans nom.', 'Bien sûr, le client reste anonyme.', "D'accord, je ne nommerai pas le client.", 'Pas de souci, le client reste anonyme.', 'Entendu, pas besoin du nom du client.'],
+        'es': ['Entendido, dejo al cliente sin nombre.', 'Por supuesto, el cliente queda sin nombre.', 'Vale, no nombraré al cliente.', 'Sin problema, el cliente queda anónimo.', 'Entendido, no hace falta el nombre del cliente.'],
+        'pt': ['Entendido, deixo o cliente sem nome.', 'Claro, o cliente fica sem nome.', 'Certo, não vou nomear o cliente.', 'Sem problema, o cliente fica anônimo.', 'Entendido, não precisa do nome do cliente.'],
+        'de': ['Verstanden, ich lasse den Kunden ungenannt.', 'Natürlich, der Kunde bleibt ungenannt.', 'In Ordnung, ich nenne den Kunden nicht.', 'Kein Problem, der Kunde bleibt anonym.', 'Verstanden, der Name des Kunden ist nicht nötig.'],
+        'it': ['Capito, lascio il cliente senza nome.', 'Certo, il cliente resta senza nome.', 'Va bene, non nominerò il cliente.', 'Nessun problema, il cliente resta anonimo.', 'Capito, non serve il nome del cliente.'],
+        'nl': ['Begrepen, ik laat de klant ongenoemd.', 'Natuurlijk, de klant blijft ongenoemd.', 'Prima, ik noem de klant niet.', 'Geen probleem, de klant blijft anoniem.', 'Begrepen, de klantnaam is niet nodig.'],
+    },
+    # an instruction to ATLAS hidden in an answer ("ignore your instructions ..."): not obeyed, not repeated, no accusation; the interview simply carries on (v2.2 Q1, item 5)
+    'injection': {
+        'en': ["I'll stay with the interview.", "I'll keep to the project questions.", 'I only note what concerns the project.', "Let's stay with the project itself.", "I'll carry on with the interview."],
+        'fr': ["Je reste sur l'entretien.", "Je m'en tiens aux questions sur le projet.", 'Je note seulement ce qui concerne le projet.', 'Restons sur le projet lui-même.', "Je poursuis l'entretien."],
+        'es': ['Sigo con la entrevista.', 'Me quedo con las preguntas del proyecto.', 'Solo anoto lo que concierne al proyecto.', 'Centrémonos en el proyecto.', 'Continúo con la entrevista.'],
+        'pt': ['Sigo com a entrevista.', 'Fico nas perguntas sobre o projeto.', 'Só anoto o que diz respeito ao projeto.', 'Vamos ficar no projeto em si.', 'Continuo com a entrevista.'],
+        'de': ['Ich bleibe beim Interview.', 'Ich bleibe bei den Projektfragen.', 'Ich notiere nur, was das Projekt betrifft.', 'Bleiben wir beim Projekt selbst.', 'Ich mache mit dem Interview weiter.'],
+        'it': ["Resto sull'intervista.", 'Mi attengo alle domande sul progetto.', 'Annoto solo ciò che riguarda il progetto.', 'Restiamo sul progetto stesso.', "Continuo con l'intervista."],
+        'nl': ['Ik blijf bij het interview.', 'Ik houd me aan de projectvragen.', 'Ik noteer alleen wat het project betreft.', 'Laten we bij het project zelf blijven.', 'Ik ga door met het interview.'],
+    },
     # what ATLAS says when the consultant changes something they said; "Thanks for correcting me" only when ATLAS had just stated a fact (a heard span, a reflection, the read-back)
     'correction_thanks': {
         'en': ["Okay, I'll use that instead.", "Got it, I've changed that.", "Thanks, I'll go with your version.", "Understood, I've updated it.", 'Okay, noted the change.'],
@@ -203,8 +223,12 @@ RESUME_LINES = {
     'nl': ['Welkom terug. Hier waren we gebleven.', 'Oké, we gaan verder waar we waren gebleven.', 'Welkom terug. Ik zeg de vraag nog een keer.'],
 }
 
+# Words that say the consultant is talking about the CLIENT (or a name): a refusal to share that mentions them is met with "I'll leave the client unnamed" (ack.js picks
+# confidential_client); any other refusal with the general confidential_ok line. On the folded text (accents gone, lower case), the seven bank languages.
+CLIENT_MENTION_SRC = (r"\b(?:clients?|customers?|company|account|names?|clientes?|cliente|societe|entreprise|nom|nombre|cuenta|empresa|nome|conta|kund\w*|firma|unternehmen|namen?|clienti|azienda|klant\w*|bedrijf|naam)\b")
+
 # Constants the Worker needs from this module (merged into policy.generated.js by build_edge.py).
 EDGE_CONSTANTS = {
-    'BANNED_PRAISE_SRC': BANNED_PRAISE_SRC, 'ACKS': ACKS, 'PAUSE_LINES': PAUSE_LINES, 'RESUME_LINES': RESUME_LINES,
+    'BANNED_PRAISE_SRC': BANNED_PRAISE_SRC, 'CLIENT_MENTION_SRC': CLIENT_MENTION_SRC, 'ACKS': ACKS, 'PAUSE_LINES': PAUSE_LINES, 'RESUME_LINES': RESUME_LINES,
     'TURN_PATTERN_STEPS': list(TURN_PATTERN_STEPS),
 }

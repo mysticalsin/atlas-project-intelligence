@@ -115,6 +115,8 @@ Spec pack and status: `docs/agent-brain-v2.1/` (`README.md`, `DECISION_LOG.md`, 
 | `languages.py` | v2.2 L1: language names, the bank languages, `detect(text)` (script ranges plus stopwords), fixed lines (screen notices, confirm-summary lines, read-back framing); exported as `LANG_*` |
 | `selector.py` | `select`: deterministic next move (question ladder, redundancy, deferrals, ASR confirm, summary, close); `QUESTION_BANK` |
 | `asr.py` | `uncertain_spans`, `replacement`, `TAU` (0.55; `ASR_CONFIRM_TAU`) |
+| `enforce.py` | v2.2 Q1: is the question spoken the move's question (`on_move`), the localized re-angle and held "that's all" lines (`local_say`); ported to `src/enforce.js` |
+| `nonanswer.py` | v2.2 Q1: what is not an answer ("I don't know", "pass", fillers) and an instruction to ATLAS (`kind`, `is_injection`); ported to `src/nonanswer.js` |
 | `conversation_state.py` | Interview and evidence state machines with audit (D8 to D11) |
 | `workflow_config.py`, `config/atlas_workflow.json`, `config/field_visibility_policy.json`, `config/success_story_template.schema.json` | Pack YAML as validated JSON; purposes, branches, visibility |
 | `success_story.py` | Schema validation, audience projection, pinned Spanish DOCX template filling (`assets/templates/amaris_success_story_es.docx`), leak scan; CLI `scripts/fill_success_story.py` |

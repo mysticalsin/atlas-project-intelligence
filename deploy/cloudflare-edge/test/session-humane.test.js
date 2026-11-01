@@ -65,6 +65,8 @@ async function opened(h, capture = true) {
 const screen = h => h.events.reduce((t, e) => e.type === 'agent_text' ? t + e.text : e.type === 'agent_retract' ? t.slice(0, t.length - Math.min(e.chars, t.length)) : t, '');
 const noteOf = (messages, start) => messages.filter(m => m.role === 'system' && m.content.startsWith(start)).map(m => m.content);
 const named = (metrics, name) => metrics.filter(([n]) => n === name).map(([, v]) => v);
+// The wording of the NEXT MOVE note: what a talker that says the move's own question says (the question spoken is the move's, v2.2 Q1).
+const proposal = messages => { const n = messages.find(m => m.role === 'system' && m.content.startsWith('NEXT MOVE')), m = n && /proposed wording: ("(?:[^"\\]|\\.)*")/.exec(n.content); return m ? JSON.parse(m[1]) : null; };
 const questions = text => (text.match(/\?/g) || []).length;
 
 test('flags: new behaviour by default, legacy values read from the env', () => {
@@ -131,22 +133,23 @@ test('a3: "I don\'t know" is met with two easier angles, then the point is left 
 
 // (b) An adversarial talker: two questions, "Amazing!", the same opener every time.
 test('b: one question voiced, no banned praise, no repeated opener, and the model stream is stopped', async () => {
-  let returned = 0;
-  const stream = () => ({ [Symbol.asyncIterator]() {
-    const parts = ['Amazing! ', 'Thanks so much for that. ', 'What was the baseline? ', 'And who measured it? ', 'Also tell me the period?'];
+  let returned = 0; const qs = [];
+  const stream = q => ({ [Symbol.asyncIterator]() {
+    const parts = ['Amazing! ', 'Thanks so much for that. ', q + ' ', 'And who measured it? ', 'Also tell me the period?'];
     let i = 0;
     return { async next() { return i < parts.length ? { value: parts[i++], done: false } : { value: undefined, done: true }; }, async return() { returned += 1; return { value: undefined, done: true }; } };
   } });
-  const h = harness({ said: ['We moved the whole billing platform to the new provider last spring with a team of five.', 'It took about six months in total and I led it from the start with a small group.'], talk: () => stream() });
+  // (the question the model says is the selector's own: a question that is not on the move is replaced by it, v2.2 Q1)
+  const h = harness({ said: ['We moved the whole billing platform to the new provider last spring with a team of five.', 'It took about six months in total and I led it from the start with a small group.'], talk: (n, messages) => { const q = proposal(messages) || 'What was the baseline?'; qs[n] = q; return stream(q); } });
   await opened(h);
   talked(h); await until(() => h.calls.talker.length === 2 && !h.s.busy());
   talked(h); await until(() => h.calls.talker.length === 3 && !h.s.busy());
   assert.equal(returned, 3, 'every reply stopped reading the model once its question was out (opening included)');
-  assert.deepEqual(spoken(h.calls), ['Thanks so much for that. What was the baseline?', 'What was the baseline?'], 'the second and third questions were never synthesised (the repeated question comes from the cache)');
+  assert.deepEqual(spoken(h.calls), ['Thanks so much for that. What was the baseline?', qs[1], qs[2]], 'the second and third questions were never synthesised');
   const replies = h.s.history.filter(m => m.role === 'assistant').map(m => m.content);
   assert.equal(replies.length, 3);
   assert.ok(replies[0].endsWith('Thanks so much for that. What was the baseline?'), 'the first reply keeps its reaction');
-  for (const reply of replies.slice(1)) { assert.ok(!/Thanks so much/.test(reply) && reply.endsWith('What was the baseline?'), 'the repeated opener is dropped: ' + reply); assert.equal(questions(reply), 1); }
+  for (const [i, reply] of replies.slice(1).entries()) { assert.ok(!/Thanks so much/.test(reply) && reply.endsWith(qs[i + 1]), 'the repeated opener is dropped: ' + reply); assert.equal(questions(reply), 1); }
   const text = screen(h);
   assert.ok(!/Amazing/i.test(text) && !/who measured/i.test(text) && !/period/.test(text), 'nor shown: ' + JSON.stringify(text.slice(-200)));
   assert.ok(!h.s.history.some(m => /Amazing/.test(m.content)), 'what the guard dropped is not remembered either');
@@ -157,7 +160,7 @@ test('b: one question voiced, no banned praise, no repeated opener, and the mode
 
 test('b2: the word cap ends a long reply but the end token is still found, so a closing is never lost', async () => {
   const long = 'Thank you for walking me through all of this today, it has been a really clear picture of the project and what it changed for the claims team and the clients involved. ';
-  const h = harness({ said: ['That is everything I wanted to say about it, thank you very much.'], talk: n => n === 0 ? ['Hello there. ', 'What happened?'] : [long, long, 'I will prepare your report for you to review. ', '[[END]]'] });
+  const h = harness({ flags: { selector: 'legacy' }, said: ['That is everything I wanted to say about it, thank you very much.'], talk: n => n === 0 ? ['Hello there. ', 'What happened?'] : [long, long, 'I will prepare your report for you to review. ', '[[END]]'] });
   await opened(h);
   talked(h); await until(() => h.calls.talker.length === 2);
   await until(() => h.events.some(e => e.type === 'wrap_up'));

@@ -107,9 +107,9 @@ test('model: the exact F5.1 shape and the synthetic interview',needPolicy,()=>{
  assert.deepEqual(m.pins,[{code:'PRT',name:'Portugal',detailIds:['D-001']},{code:'ESP',name:'Spain',detailIds:['D-001']}]);
  assert.deepEqual(m.placesNotMapped,['Chad']);
  assert.deepEqual(m.metrics.map(x=>[x.text,x.unit,x.unitUnclear,x.status]),[['40%','%',false,'reported'],['12 to 4 days','days',false,'reported'],
-  ['$3.5 million','million',false,'uncertain'],['€2 million','million',false,'uncertain'],['1.5 m','m',true,'reported']]);
+  ['$3.5 million','million',false,'reported'],['€2 million','million',false,'reported'],['1.5 m','m',true,'reported']]);  // (Q1: "uncertain" is the ledger's flag, not hedge words: no estimate chip)
  assert.deepEqual(Object.keys(m.metrics[0]),['detailId','field','text','unit','unitUnclear','status']);
- assert.deepEqual(m.measurementSlots,[{need:'before/after'},{need:'period'}]);
+ assert.deepEqual(m.measurementSlots,[{need:'period'}]);  // (Q1: "from 12 to 4 days" is the before/after, nothing left to recover there)
  assert.deepEqual(m.challenge,{next:{field:'measurement',label:'Measurement basis'},planned:'What were the before and after values for that measure?',
   flags:['Uncertainty must remain in the story'],deferred:['evidence'],route:'qualitative candidate',analysing:false});
  assert.deepEqual(m.time,{elapsed:60,max:900,left:840,phase:'breadth'});
@@ -181,3 +181,23 @@ const full={readyAt:0,maxSeconds:1800,softSeconds:1200,mode:'full',timePlan:{dep
 assert.deepEqual(at(full,60),{elapsed:60,max:1800,left:1740,phase:'breadth',soft:1200});
 assert.equal(at(full,1500).soft,1200);assert.equal(at(full,5000).elapsed,1800,'never past the hard cap');
 assert.equal('soft' in at({...full,mode:'gap',maxSeconds:300,softSeconds:0},10),false,'a gap interview keeps its countdown');});
+
+// Q1 item 7: a French "de 40 à 12 minutes" showed as "12 minutes" twice (one an "estimate"), the 40 lost.
+test('metrics: a from-to pair is one figure in every bank language, the leading word is not part of it',needPolicy,()=>{
+ for(const [q,text] of [['Le temps est passé de 40 à 12 minutes.','40 à 12 minutes'],['Pasamos de 40 a 12 minutes.','40 a 12 minutes'],['Passámos de 40 para 12 minutes.','40 para 12 minutes'],
+  ['Passámos de 40 até 12 minutes.','40 até 12 minutes'],['Es ging von 40 auf 12 minutes zurück.','40 auf 12 minutes'],['Von 40 bis 12 minutes.','40 bis 12 minutes'],
+  ['Siamo passati da 40 a 12 minutes.','40 a 12 minutes'],['Het ging van 40 naar 12 minutes.','40 naar 12 minutes'],['Het ging van 40 tot 12 minutes.','40 tot 12 minutes'],
+  ['It went from 40 to 12 minutes.','40 to 12 minutes'],['It went 40-12 minutes','40-12 minutes'],['It went 40–12 minutes','40–12 minutes']]){
+  const m=B.metricSpans(q,POLICY.NUMERIC_SRC);assert.deepEqual(m.map(x=>x.text),[text],q);assert.equal(m[0].unit,'minutes',q);assert.equal(q.slice(m[0].start,m[0].end),text,'exact substring');}
+ assert.deepEqual(B.metricSpans('Il y a 40 puis 12 minutes',POLICY.NUMERIC_SRC).map(x=>x.text),['12 minutes'],'no connector, no pair');});
+test('model: one chip per figure, an estimate only when the words say so, no before/after slot when the answer holds one',needPolicy,()=>{
+ const q={candidate_details:[d('D-001','outcome','Le temps de traitement est passé de 40 à 12 minutes.'),
+  d('D-002','measurement','Le temps de traitement est passé de 40 à 12 minutes.',{status:'uncertain'}),
+  d('D-004','adoption','We saved 3 days.',{status:'uncertain'})],measurement_gaps:['before/after','period']};
+ const m=B.model(state(q));
+ assert.deepEqual(m.metrics.map(x=>[x.detailId,x.text,x.status]),[['D-001','40 à 12 minutes','reported'],['D-004','3 days','reported']],'the figure once; "uncertain" without hedge words is no estimate');
+ assert.deepEqual(m.measurementSlots,[{need:'period'}]);
+ const e=B.model(state({candidate_details:[d('D-001','outcome','It took about 12 minutes, I think.'),d('D-002','outcome','Il a fallu environ 12 minutes.'),d('D-003','outcome','Es dauerte ungefähr 20 minutes.'),d('D-004','outcome','It took 7 hours.',{status:'uncertain'})]}));
+ assert.deepEqual(e.metrics.map(x=>[x.text,x.status]),[['12 minutes','uncertain'],['20 minutes','uncertain'],['7 hours','reported']]);
+ assert.match(B.summaryText(e),/12 minutes \(estimate\)/);
+ assert.deepEqual(B.model(state({candidate_details:[d('D-001','outcome','a 12 minutes figure',{status:'unknown'})]})).metrics.map(x=>x.status),['unknown'],'an unknown stays unknown');});

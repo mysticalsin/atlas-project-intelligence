@@ -16,13 +16,14 @@ buttons are the way to pause or repeat. `skip` is detected only so the selector 
 import re
 import unicodedata
 
+from .nonanswer import INJECTION
 from .quality import FIELDS, NUMERIC, UNCERTAIN, UNKNOWN
 from .regex_gate import gate, passes
 
 MAX_CHARS = 1500       # only the start of a very long answer (about 250 words) is read for intents, cues and numbers; keeps the pass near 1 ms
 MAX_NUMBERS = 20
 INTENT_ORDER = ['pause', 'resume', 'repeat', 'skip', 'dont_know', 'cannot_disclose', 'correction', 'rushed', 'stop',
-                'question_to_atlas', 'confirm', 'deny']
+                'question_to_atlas', 'confirm', 'deny', 'injection', 'no_data', 'nobody']
 CUE_ORDER = ['metric', 'estimate', 'vague_verb', 'team_claim', 'tech_list', 'certification', 'client_praise',
              'describes_setback', 'describes_achievement', 'names_party', 'describes_problem', 'period_stated', 'describes_action']
 # A control request is short (v2.2 X2, red M11): the same words inside a long answer are part of the answer ("we had to end the contract ... I finished the migration")
@@ -165,6 +166,32 @@ INTENT_RULES = {
     ],
 }
 
+# v2.2 Q1 (item 3, 5): an explicit NEGATIVE ANSWER (intents no_data and nobody) ("there is no hard data on that", "nobody else", "no other teams") is an answer: the point is recorded as answered and ATLAS moves on,
+# it is not "I don't know" (no easier angles) and the point is never asked again. Two forms per language: no data / figures / evidence (short), and nobody / no other team (a bare reply).
+# An injection ("ignore your instructions ...") is an instruction to ATLAS, never an answer (nonanswer.py INJECTION).
+_DATA_ADJ = r"(?:(?:hard|reliable|real|solid|exact|precise|formal|actual|firm|good|clear|concrete|proper|specific|written|documented|available|measurable|such|any|much)\s+)*"
+NEGATIVE = {
+    'en': (r"\bno\s+" + _DATA_ADJ + r"(?:data|figures?|numbers?|stats|statistics|metrics?|measurements?|evidence|documentation|records?|reports?|dashboards?|documents?|proof)\b",
+           r"^\W*(?:(?:no|nope|um|uh|well|sorry|honestly|hmm)[, ]+)*(?:nobody|no one|noone|none)(?: else| other| at all)?\W*(?:thanks?|thank you)?\W*$|\bno (?:other|more) (?:teams?|departments?|clients?|customers?|people|users?|groups?|units?|stakeholders?)\b|\b(?:nobody|no one) else\b"),
+    'fr': (r"\b(?:pas|aucune?|sans)\s+(?:de\s+|d'|des\s+)?(?:(?:vraies?|reelles?|fiables?|solides?|precises?|exactes?|formelles?|bonnes?|claires?|concretes?|chiffrees?|disponibles?)\s+)*(?:donnees?|chiffres?|statistiques?|metriques?|mesures?|preuves?|documentation|documents?|rapports?|tableaux? de bord)\b",
+           r"^\W*(?:(?:non|bah|euh|desole)[, ]+)*(?:personne(?: d'autre)?|aucun(?:e)?(?: autre)?)\W*$|\b(?:aucune? autre|pas d'autres?) (?:equipes?|departements?|clients?|personnes?|services?|utilisateurs?)\b|\bpersonne d'autre\b"),
+    'es': (r"\b(?:no (?:hay|tenemos|tengo|existen?|contamos con)|sin|ningun[ao]?)\s+(?:\w+\s+){0,2}?(?:datos|cifras|numeros|estadisticas|metricas|mediciones|pruebas|evidencias|documentacion|registros|informes)\b",
+           r"^\W*(?:(?:no|bueno|pues|perdon)[, ]+)*(?:nadie(?: mas)?|ninguno|ninguna)\W*$|\bningun otro (?:equipo|departamento|cliente|grupo)\b|\bnadie mas\b"),
+    'pt': (r"\b(?:nao (?:ha|temos|tenho|existem?)|sem|nenhum[a]?)\s+(?:\w+\s+){0,2}?(?:dados|numeros|cifras|estatisticas|metricas|medicoes|provas|evidencias|documentacao|registros|registos|relatorios)\b",
+           r"^\W*(?:(?:nao|bem|entao|desculpa)[, ]+)*(?:ninguem(?: mais)?|nenhum|nenhuma)\W*$|\bnenhum[a]? outr[ao] (?:time|equipe|equipa|departamento|cliente)\b|\bninguem mais\b"),
+    'de': (r"\b(?:keine?[nrms]?|ohne)\s+(?:\w+\s+){0,2}?(?:daten|zahlen|kennzahlen|statistiken|metriken|messungen|belege|nachweise|dokumentation|unterlagen|berichte)\b",
+           r"^\W*(?:(?:nein|also|na ja|ehrlich)[, ]+)*(?:niemand(?: sonst| anderes)?|keiner|keine)\W*$|\bkein(?:e|es)? (?:anderes|anderen|andere) (?:team|teams|abteilung|abteilungen|kunden?)\b|\bniemand sonst\b"),
+    'it': (r"\b(?:non ci sono|non abbiamo|non ho|senza|nessun[a]?)\s+(?:\w+\s+){0,2}?(?:dati|dato|numeri|cifre|statistiche|metriche|misurazioni|prove|evidenze|documentazione|rapporti)\b",
+           r"^\W*(?:(?:no|beh|allora|scusa)[, ]+)*(?:nessuno(?: altro)?|nessuna)\W*$|\bnessun altro (?:team|reparto|cliente|gruppo)\b|\bnessun altro\b"),
+    'nl': (r"\b(?:geen|zonder)\s+(?:\w+\s+){0,2}?(?:data|cijfers|gegevens|statistieken|metrics|metingen|bewijs|documentatie|rapporten)\b",
+           r"^\W*(?:(?:nee|nou|tja|eerlijk)[, ]+)*(?:niemand(?: anders)?|niemand)\W*$|\bgeen ander(?:e)? (?:team|teams|afdeling|afdelingen|klant|klanten)\b|\bniemand anders\b"),
+}
+for _lg, _src in INJECTION.items():
+    INTENT_RULES[_lg].append(_rule('injection', _src))
+for _lg, (_data, _people) in NEGATIVE.items():
+    INTENT_RULES[_lg].append(_rule('no_data', _data, max_words=16, unless_intents=['cannot_disclose', 'stop']))
+    INTENT_RULES[_lg].append(_rule('nobody', _people, max_words=10, unless_intents=['cannot_disclose', 'stop']))
+
 # A first-person action with a named practice or artifact ("I tried to hold the scope with weekly steering meetings", "we wrote the reconciliation
 # scripts"): already a concrete example of what was done, so the intervention is not asked for again.
 _ACTION_VERBS = (r"held|hold|holding|ran|run|set up|setup|wrote|write|built|build|introduced|introduce|started|created|create|configured|added|established|negotiated|rewrote|trained|facilitated"
@@ -242,7 +269,7 @@ HINT_SRC = {
 }
 HINT_FROM_TO = r"\b(?:from|down from|up from)\s+\d[\d.,]*\s*(?:%|\w+)?\s+(?:to|down to|up to)\s+\d"   # a before/after pair also hints "measurement"
 # Intents that mean the utterance is not an answer to the question asked: the asked_field context does not apply.
-NOT_AN_ANSWER = ['pause', 'resume', 'repeat', 'skip', 'stop', 'rushed', 'question_to_atlas', 'dont_know', 'cannot_disclose']
+NOT_AN_ANSWER = ['pause', 'resume', 'repeat', 'skip', 'stop', 'rushed', 'question_to_atlas', 'dont_know', 'cannot_disclose', 'injection']
 ASKED_MIN_WORDS = 4
 
 # One number with an optional currency symbol before it and an optional unit after it. Groups: 1 currency, 2 digits,

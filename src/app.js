@@ -13,6 +13,7 @@ let pendingGap=null;
 const syncing=new Set(),syncedHash=new Map();let stripTimer=0,lastStrip=null,memoryOn=null;
 try{const raw=localStorage.getItem(KEY);if(raw){state=E.validateState(JSON.parse(raw));persisted=true;lastDisk=raw;}}catch(err){storageError='Saved data could not be opened. Export or recover it before replacing it.';try{if(localStorage.getItem(KEY))blocked=true;}catch{storageError='Browser storage is unavailable. Use workspace backups.';}}
 const profile=()=>state.profiles.find(x=>x.id===state.activeProfile),project=()=>profile().projects.find(p=>p.id===profile().lastProject)||null;
+let pickedProject=null; // the project the person picked since their last interview ended (voiceSnapshot: which project the next interview belongs to)
 const emptyReview=()=>({facts:null,permission:null});
 function toast(message){$('toast').textContent=message;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),5500);}
 function download(name,content,type='text/plain'){const url=URL.createObjectURL(new Blob([content],{type}));const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);}
@@ -38,7 +39,7 @@ function open(id){if(['profileDialog','confirmDialog','projectDialog'].includes(
 function stopVoice(){window.AtlasVoice?.cancel('Voice stopped before changing the workspace.');}
 function changed(p,message,sourceChange=true){E.invalidate(p,message,sourceChange);save();}
 function switchView(next){if(!['interview','projects','stories','library','bids'].includes(next))return;/* the conversation continues while you look at projects or stories */editToken=null;view=next;render();window.scrollTo({top:0,behavior:'instant'});$('workspace').focus({preventScroll:true});}
-function selectProject(id){if(!profile().projects.some(x=>x.id===id))return;stopVoice();editToken=null;if(pendingGap&&pendingGap.projectId!==id)pendingGap=null;profile().lastProject=id;save();render();}
+function selectProject(id){if(!profile().projects.some(x=>x.id===id))return;stopVoice();pickedProject=id;editToken=null;if(pendingGap&&pendingGap.projectId!==id)pendingGap=null;profile().lastProject=id;save();render();}
 function renderSelectors(){const p=project();const opts=profile().projects.map(x=>html`<option value="${x.id}">${x.title}${x.sample?' · fictional':''}</option>`);for(const id of ['interviewProject','storyProject']){setHTML($(id),opts.length?html`${opts}`:html`<option>No project yet</option>`);$(id).disabled=!p;if(p)$(id).value=p.id;}const n=profile().name,pn=window.AtlasProfile?.displayName?.()||'';$('profileButton').textContent=(pn||n).split(/\s+/).slice(0,2).map(x=>x[0]||'').join('').toUpperCase();$('privateLabel').textContent=n+' · local';}
 function render(){renderStorage();renderSelectors();for(const el of document.querySelectorAll('main>.view'))el.hidden=el.id!==view;for(const b of document.querySelectorAll('header nav button')){b.classList.toggle('active',b.dataset.view===view);if(b.dataset.view===view)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');}if(view==='interview')renderInterview();if(view==='projects')renderProjects();if(view==='stories')renderStory();if(view==='library')renderLibrary();if(view==='bids')window.AtlasWowUI?.renderBids?.();window.dispatchEvent(new Event('atlas-context'));}
 function renderInterview(){const p=project();$('emptyInterview').hidden=!!p;document.querySelector('.interview-layout').hidden=!p;document.querySelector('.below-note').hidden=!p;if(!p)return;const i=Math.min(p.pos,5);$('chapterLabel').textContent=`${String(i+1).padStart(2,'0')} / 06 · ${E.TOPICS[i].label.toUpperCase()}`;setHTML($('stepDots'),html`${E.TOPICS.map((q,j)=>html`<button data-step="${j}" class="${p.answers[j].trim()&&!p.deferred[j]?'done ':''}${p.pos===j?'current':''}" aria-label="Topic ${j+1}: ${q.label}" ${p.pos===j?html`aria-current="step"`:''}></button>`)}`);$('questionBody').hidden=p.pos===6;$('completion').hidden=p.pos!==6;
@@ -326,7 +327,7 @@ async function renderInvitations(){const box=$('invitations');try{const {items}=
 async function invitationAction(id,action,extra={}){try{await libraryApi('/invitations/'+encodeURIComponent(id),{method:'POST',body:{action,...extra}});renderInvitations();}catch(e){toast(e.message);}}
 function startFromInvitation(inv){let p=profile().projects.find(x=>(inv.reference_id&&x.library?.id===inv.reference_id)||(inv.project_id&&x.details?.projectId===inv.project_id)||x.invitationId===inv.id);
  if(!p){if(profile().projects.length>=50){toast('This workspace already holds 50 projects.');return;}p=E.project({title:inv.title||'Project '+(inv.project_id||''),...prefill(),details:{projectId:inv.project_id}});E.log(p,'Created from an interview invitation ('+(REASON[inv.reason]||inv.reason)+')');profile().projects.push(p);}
- p.invitationId=inv.id;profile().lastProject=p.id;save();switchView('interview');toast('Ready when you are.');if(window.AtlasAuth?.mode==='live')window.AtlasVoice?.begin?.();}
+ p.invitationId=inv.id;profile().lastProject=p.id;pickedProject=p.id;save();switchView('interview');toast('Ready when you are.');if(window.AtlasAuth?.mode==='live')window.AtlasVoice?.begin?.();}
 // ---- Analytics, coverage, insights, operations ----
 function bars(list,max=8){if(!list.length)return html`<p class="tiny muted">No data yet.</p>`;const top=list[0].n||1;return html`<ul class="bars">${list.slice(0,max).map(x=>html`<li><span>${x.name}</span><i style="width:${Math.max(4,x.n/top*100)}%"></i><b>${x.n}</b></li>`)}</ul>`;}
 async function openInsights(){open('insightsDialog');const body=$('insightsBody');setHTML(body,html`<p class="muted">Loading…</p>`);
@@ -444,8 +445,14 @@ if(blocked)showBlock('The existing saved workspace could not be validated. It wa
 // Expose a read-only snapshot and pure helpers for diagnostics/tests, never credentials or a network API.
 window.ATLAS_LOCAL={version:'11.0',snapshot:()=>JSON.parse(JSON.stringify(state)),save:saveNow,status:()=>({persisted,blocked,storageError,view})};
 
-function voiceSnapshot(){
- const p=project();if(blocked)return null;
+// Which project an interview belongs to (v2.2 Q1, S1): the selected one, unless it already holds an interview and the person has not picked it since their last interview ended.
+// An interview that was just saved leaves its project selected (the report opens on it), and the next Start must not attach itself to it: the live QA found a second interview
+// opened under the first one's title, with the first one's transcript, and its report overwritten. `interview: true` is what the voice client asks for; every other reader of
+// the context (the project panels, the memory card) still sees the selected project.
+const holdsInterview=p=>!!(p.interview?.transcript||p.report);
+function voiceSnapshot({interview=false}={}){
+ const p0=project();if(blocked)return null;
+ const p=interview&&p0&&holdsInterview(p0)&&pickedProject!==p0.id?null:p0;
  // No project yet: interview on a placeholder; the project is created automatically from the report when it ends.
  // project is what the voice server (and its model) receives: no name, never the sign-in email, and a profile title never
  // (§5.9, modelProject). display is for this screen only.
@@ -480,6 +487,7 @@ function autoSave(snapshot,sections,transcript,report,{mode='full',requestId,res
   if(p.story?.edited)E.log(p,'New interview report available; your edited story draft was kept. Update the draft when ready.');
   else if(p.answers.some(x=>x.trim())||p.report){E.generate(p,{buyer:p.story?.buyer,audience:p.story?.audience});if(p.report){REPORT_KEYS.forEach((k,i)=>{if(p.report.topics[k])p.story.parts[i]=p.report.topics[k];});E.log(p,'Story draft assembled from the ATLAS report; review before any use');}}
   E.log(p,'Interview saved automatically (self-reported, unverified; review before any reuse)');
+  pickedProject=null; // this interview is done: the next Start is a new one, on a new project unless the person picks this one again
  }catch(e){if(created){profile().projects=profile().projects.filter(x=>x!==created);profile().lastProject=before;}throw e;}
  save();render();let done;const synced=new Promise(res=>{done=res;});
  const intent=submitIntent;submitIntent=false; // the person already clicked Submit for review in the read-back: the story follows that click, otherwise it stays a private draft
@@ -497,7 +505,7 @@ function prefill(){const P=window.AtlasProfile,m=P?.manager?.()||{},title=P?.tit
 function adoptProfileName(id){const p=state.profiles.flatMap(u=>u.projects).find(x=>x.id===id),n=window.AtlasProfile?.confirmedName?.();if(!p||!n)return Promise.resolve(null);
  if(p.consultant==='Consultant'||String(p.consultant).includes('@')){p.consultant=n;E.log(p,'Consultant name confirmed from your profile');save();render();}return syncToLibrary(p.id,{quiet:true});}
 const REPORT_KEYS=['context','contribution','approach','outcome','evidence','customer_relevance'];
-window.ATLAS_VOICE_BRIDGE={context:voiceSnapshot,renderReport,autoSave,memoryState:()=>({on:memoryOn}),loadMemory,setMemory,restored:()=>rebuildP||Promise.resolve(0),gapConsumed:()=>{pendingGap=null;},showReport:id=>{switchView('projects');showReport(id);},enableSave:()=>{if(!persisted)enableStorage();},apply:(snapshot,sections,transcript,report=null)=>{
+window.ATLAS_VOICE_BRIDGE={context:opts=>voiceSnapshot(opts),renderReport,autoSave,memoryState:()=>({on:memoryOn}),loadMemory,setMemory,restored:()=>rebuildP||Promise.resolve(0),gapConsumed:()=>{pendingGap=null;},showReport:id=>{switchView('projects');showReport(id);},enableSave:()=>{if(!persisted)enableStorage();},apply:(snapshot,sections,transcript,report=null)=>{
  if(snapshot?.isNew){autoSave(snapshot,sections,transcript,report);return true;}
  applyNotes(snapshot,sections,report);save();render();return true;
 }};
@@ -532,7 +540,7 @@ async function startFromGap(gap){const rid=String(gap?.id||'');if(!/^[a-f0-9]{32
   if(profile().id!==owner||blocked){toast('The workspace changed. Start the proof request again.');return null;}
   p=linked();if(!p&&r?.access==='full'&&r.id===ref)try{p=projectFromLibrary(r);}catch{p=null;}}
  if(!p){p=E.project({title:'Proof for '+alias,...prefill()});E.log(p,'Created for a proof request from a bid team');profile().projects.push(p);}
- pendingGap={projectId:p.id,requestId:rid,alias};profile().lastProject=p.id;editToken=null;save();switchView('interview');
+ pendingGap={projectId:p.id,requestId:rid,alias};profile().lastProject=p.id;pickedProject=p.id;editToken=null;save();switchView('interview');
  toast('Ready: about five minutes of proof for '+alias+'.');if(window.AtlasAuth?.mode==='live')window.AtlasVoice?.begin?.();return p.id;}
 // Seed a local project from a library record the consultant can open fully. It carries every field the next explicit sync sends
 // back (answers, details, sources, report, sheet, practice area), so that sync updates the same reference without dropping any.

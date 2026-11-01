@@ -9,7 +9,7 @@ import { SAMPLE_RATE } from '../src/speech.js';
 
 const PROJECT = { title: 'Project Falcon (synthetic)', consultant: 'Alex', role: 'Designer', sector: 'Insurance', stage: 'Pilot', answers: [] };
 const ANSWER = 'We rebuilt the claims intake process for the insurance client during the pilot, a big change for the whole team.';
-const QUESTION = 'What was the baseline?';
+const QUESTION = 'What part of that work did you take on yourself, alongside the team?'; // the selector's question after ANSWER: the question spoken is the move's (v2.2 Q1)
 
 function frames(segments) {
   const out = [];
@@ -29,7 +29,7 @@ function harness({ said = [], talk = null, flags = {}, metrics = [], session = {
     async synthesize(text) { calls.tts.push(text); return new Uint8Array(4800).fill(1); },
     chatStream(messages) {
       const n = calls.talker.length; calls.talker.push(messages);
-      const out = talk ? talk(n, messages) : ['Thanks. ', 'What was ', 'the baseline?'];
+      const out = talk ? talk(n, messages) : ['Thanks. ', 'What part of that work ', 'did you take on yourself, alongside the team?'];
       return Array.isArray(out) ? (async function* () { yield* out; })() : out;
     },
     async analyst(messages) {
@@ -56,7 +56,7 @@ async function opened(h, capture = true) {
 }
 // A started session in which the consultant has answered once: ATLAS has asked a question and the move is in the asked log.
 async function interviewing(opts = {}) {
-  const h = harness({ said: [ANSWER, ...(opts.said || [])], talk: n => n === 0 ? ['Right. ', 'What was the project?'] : ['Thanks. ', 'What was ', 'the baseline?'], ...opts, said: [ANSWER, ...(opts.said || [])] });
+  const h = harness({ said: [ANSWER, ...(opts.said || [])], talk: n => n === 0 ? ['Right. ', 'What was the project?'] : ['Thanks. ', 'What part of that work ', 'did you take on yourself, alongside the team?'], ...opts, said: [ANSWER, ...(opts.said || [])] });
   await opened(h);
   talked(h); await until(() => h.calls.talker.length === 2 && !h.s.busy());
   return h;

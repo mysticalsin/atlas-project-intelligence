@@ -13,7 +13,7 @@ from atlas_voice.quality import INTERVIEW_POLICY
 BANNED = re.compile(BANNED_PRAISE_SRC, re.I)
 PROMPTS = {'TALKER_POLICY': TALKER_POLICY, 'INTERVIEW_POLICY': INTERVIEW_POLICY, 'ROLE': ROLE}
 CATEGORIES = ('neutral', 'thanks_detail', 'no_number_fine', 'confidential_ok', 'correction_thanks', 'setback_neutral',
-              'earned_result', 'promising_unverified', 'correction_thanks_fact', 'setback_plain', 'reangle')
+              'earned_result', 'promising_unverified', 'correction_thanks_fact', 'setback_plain', 'reangle', 'confidential_client', 'injection')
 
 # ADMIN_NOTE exactly as committed at efb4948 (before the persona consolidation).
 ADMIN_NOTE_EFB4948 = ('ADMIN MODE (server-verified sign-in). This overrides HOW YOU SPEAK, ORDER OF THE INTERVIEW and ENDING. '
@@ -138,7 +138,7 @@ def test_admin_note_is_unchanged():
 def test_edge_constants_are_json_and_do_not_collide():
     import importlib.util
     c = persona.EDGE_CONSTANTS
-    assert set(c) == {'BANNED_PRAISE_SRC', 'ACKS', 'PAUSE_LINES', 'RESUME_LINES', 'TURN_PATTERN_STEPS'}
+    assert set(c) == {'BANNED_PRAISE_SRC', 'CLIENT_MENTION_SRC', 'ACKS', 'PAUSE_LINES', 'RESUME_LINES', 'TURN_PATTERN_STEPS'}
     json.dumps(c)
     spec = importlib.util.spec_from_file_location('build_edge_probe', persona.__file__.replace('atlas_voice/persona.py', 'deploy/cloudflare-edge/build_edge.py'))
     # build_edge refuses a duplicate key at import time, so importing it is the collision check

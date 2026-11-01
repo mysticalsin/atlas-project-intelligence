@@ -1,6 +1,7 @@
 // JavaScript port of atlas_voice/quality.py InterviewLedger and atlas_voice/analyst.py Analyst.
 // Behaviour must match the Python source exactly: test/parity.test.js replays Python-generated
 // scenarios and requires identical results. Candidate details are never verified facts.
+import { isNonAnswer } from './nonanswer.js';
 import { FIELDS, TO_TOPIC, NUMERIC_SRC, UNCERTAIN_SRC, UNKNOWN_SRC, ANALYST_POLICY, CONTEXT_SEGMENTS, SEGMENT_CHARS, MAX_CALLS, CONTEXT_LEAD_SRC, CONTEXT_TRAIL_SRC, CONTEXT_MAX, KEPT_PRIVATE_RUN } from './policy.generated.js';
 
 const FIELD_KEYS = Object.keys(FIELDS);
@@ -81,6 +82,8 @@ export class InterviewLedger {
       if (!isObj(x) || Object.keys(x).some(k => !['field', 'item_id', 'quote', 'uncertain', 'supersedes'].includes(k))) fail('Invalid detail schema');
       if ('uncertain' in x && typeof x.uncertain !== 'boolean') fail('uncertain must be boolean');
       const f = x.field, ident = x.item_id, q = x.quote;
+      // A deferral, a refusal or a bare filler ("I don't know", "pass", "ok") is never a claim, whatever a model proposes: the point is marked open elsewhere (v2.2 Q1).
+      if (FIELD_KEYS.includes(f) && this.transcripts.has(ident) && typeof q === 'string' && isNonAnswer(q)) continue;
       if (!FIELD_KEYS.includes(f) || !this.transcripts.has(ident) || typeof q !== 'string' || q.length < 5 || q.length > 1800) fail('Invalid field, transcript reference or quote length');
       const quote = ws(q), source = ws(this.transcripts.get(ident));
       if (!source.includes(quote)) fail('Quote is not in the consultant transcript');
@@ -175,8 +178,8 @@ export class InterviewLedger {
     };
   }
 
-  planProbe() {
-    const keys = [...this.transcripts.keys()], turn = keys.length ? keys[keys.length - 1] : 'opening';
+  planProbe(turnId = null) {
+    const keys = [...this.transcripts.keys()], turn = turnId ?? (keys.length ? keys[keys.length - 1] : 'opening');
     if (this.probes.length && this.probes[this.probes.length - 1].turn === turn) return { ...this.inspect(), planned_question: this.probes[this.probes.length - 1].question, repeat_plan: true };
     let choice = this.inspect(), f = choice.next_field;
     while (f && this.probes.filter(p => p.field === f).length >= 2) {
@@ -211,7 +214,8 @@ export class InterviewLedger {
 export function buildMessages(ledger, itemId) {
   // An utterance the consultant kept private, and the details withheld from it, never go to the analyst again (red M1).
   const priv = new Set(ledger.details.filter(d => d.active && d.withheld).map(d => d.item_id));
-  const ids = [...ledger.transcripts.keys()].filter(i => !priv.has(i) || i === itemId);
+  // (the analyst may be behind the conversation: items heard after this one are not its context, so a late turn reads exactly as it would have in order)
+  const all = [...ledger.transcripts.keys()], upto = all.indexOf(itemId), ids = (upto < 0 ? all : all.slice(0, upto + 1)).filter(i => !priv.has(i) || i === itemId);
   const recent = ids.slice(-(CONTEXT_SEGMENTS + 1)).filter(i => i !== itemId).slice(-CONTEXT_SEGMENTS);
   const active = ledger.details.filter(d => d.active && !d.withheld).map(d => ({ id: d.id, field: d.field, quote: d.quote.slice(0, 200) })).slice(-20);
   const context = { project_stage: ledger.stage, recent_segments: recent.map(i => ({ item_id: i, text: ledger.transcripts.get(i).slice(0, SEGMENT_CHARS) })),
@@ -227,9 +231,12 @@ export function guidance(plan) {
 
 export class Analyst {
   // complete(messages) -> [{id, name, arguments(string)}]. Only record_details is honoured.
-  constructor(complete, stage = 'Unknown', timeoutMs = 8000) { this.ledger = new InterviewLedger(stage); this.complete = complete; this.timeoutMs = timeoutMs; this.chain = Promise.resolve(); }
+  constructor(complete, stage = 'Unknown', timeoutMs = 8000) { this.ledger = new InterviewLedger(stage); this.complete = complete; this.timeoutMs = timeoutMs; this.chain = Promise.resolve(); this.missed = new Set(); this.retried = new Set(); }
 
   hear(itemId, text) {
+    // The words are in the transcript the moment they are heard (v2.2 Q1): the analyst may be many turns behind a fast conversation, and a turn it has not reached
+    // yet must still be in the notes and the report. (A refused one, over budget, is reported by its own queued job below, as before.)
+    try { this.ledger.addTranscript(itemId, text); } catch { /* _hear raises the same error in its turn */ }
     // Serialise turns so the ledger order equals speech order.
     const run = this.chain.then(() => this._hear(itemId, text));
     this.chain = run.catch(() => {});
@@ -238,11 +245,20 @@ export class Analyst {
 
   async _hear(itemId, text) {
     this.ledger.addTranscript(itemId, text);
+    // A turn that is only a deferral, a refusal or a filler ("I don't know", "pass", "ok") has nothing to file: the model is not called (v2.2 Q1).
+    const { status, rejected, ignored } = isNonAnswer(text) ? { status: 'analysed', rejected: 0, ignored: 0 } : await this._analyse(itemId);
+    const plan = this.ledger.planProbe(itemId); // (planned for THIS turn: later ones may already be in the transcript)
+    return { ...plan, analyst_status: status, rejected_proposals: rejected, ignored_tool_calls: ignored, guidance: guidance(plan) };
+  }
+
+  // The model call for one transcript item and the filing of what it proposes. A call that fails or times out leaves the item in `missed` (retryMissed).
+  async _analyse(itemId) {
     let status = 'analysed', rejected = 0, ignored = 0, calls = [];
     try {
       calls = await Promise.race([this.complete(buildMessages(this.ledger, itemId)), new Promise((_, r) => setTimeout(() => r(new Error('timeout')), this.timeoutMs))]);
       if (!Array.isArray(calls)) throw new Error('bad');
     } catch { calls = []; status = 'analyst-unavailable'; }
+    if (status === 'analysed') this.missed.delete(itemId); else this.missed.add(itemId);
     for (const call of calls.slice(0, MAX_CALLS)) {
       if (call?.name !== 'record_details') { ignored += 1; continue; }
       let details;
@@ -251,7 +267,16 @@ export class Analyst {
       details.forEach((detail, n) => { try { this.ledger.call(`${call.id ?? ''}#${n}`, 'record_details', { details: [detail] }); } catch { rejected += 1; } });
     }
     ignored += Math.max(0, calls.length - MAX_CALLS);
-    const plan = this.ledger.planProbe();
-    return { ...plan, analyst_status: status, rejected_proposals: rejected, ignored_tool_calls: ignored, guidance: guidance(plan) };
+    return { status, rejected, ignored };
+  }
+
+  // Once, for each turn whose analyst call failed: ask again (after the turns already queued, so the ledger order is still the speech order). Used when the read-back is built.
+  // Resolves with the item ids that were asked again.
+  retryMissed() {
+    const todo = [...this.missed].filter(i => !this.retried.has(i) && this.ledger.transcripts.has(i));
+    for (const i of todo) this.retried.add(i);
+    const run = this.chain.then(async () => { for (const i of todo) await this._analyse(i); return todo; });
+    this.chain = run.catch(() => {});
+    return run;
   }
 }
