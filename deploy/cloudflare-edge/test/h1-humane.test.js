@@ -20,7 +20,7 @@ const analystOf = byItem => async messages => {
 const SAY = n => ({ ask: ['Okay. ', `Question ${n}?`] });
 const d = (id, field, quote, extra = {}) => ({ id, field, item_id: 'u1', quote, status: 'reported', active: true, supersedes: '', provenance: 'unverified_speech_recognition', ...extra });
 const turn = (text, asked_field = null) => analyzeTurn(text, 'en', asked_field ? { asked_field } : null);
-const mv = (t, { plan = {}, asked = [], prefill = {}, rushed = false } = {}) => select(plan, t, asked, prefill, 'breadth', 800, null, rushed, 'en');
+const mv = (t, { plan = {}, asked = [], prefill = {}, rushed = false, phase = 'breadth', left = 800 } = {}) => select(plan, t, asked, prefill, phase, left, null, rushed, 'en');
 const talker = h => h.calls.talker.at(-1);
 const noteOf = (messages, start) => messages.find(m => m.role === 'system' && m.content.startsWith(start))?.content;
 
@@ -29,7 +29,8 @@ test('H1-1 closing remarks are a stop at the edge too, and beat deny', () => {
   for (const t of ['I think we covered it, I have nothing more to say.', 'No, I think that is all, thank you.', 'nothing else to add', "That's everything from me, thanks"]) assert.deepEqual(turn(t).intents, ['stop'], t);
   assert.deepEqual(turn("no, that's all wrong").intents, ['deny']);
   assert.deepEqual(turn('That is all right').intents, []);
-  const m = mv(turn('No, I think that is all, thank you.'));
+  // (U2: respected at once when the planned time is nearly used; before the essentials are covered ATLAS says what is missing and asks once more, see u2-challenge.test.js)
+  const m = mv(turn('No, I think that is all, thank you.'), { phase: 'closing', left: 200 });
   assert.equal(m.kind, 'summary'); assert.equal(m.why, 'summary:stop');
 });
 
@@ -39,6 +40,7 @@ test('H1-1 in the read-back a closing remark means nothing to add: ATLAS points 
   h.s.ai.analyst = analystOf({ 'user-1': [{ field: 'problem', quote: 'the claims intake process' }] });
   await opened(h);
   talked(h); await until(() => h.calls.talker.length === 2 && !h.s.busy());
+  h.advance(960); // the planned time is nearly used, so "I am done" is respected at once
   talked(h); await until(() => h.events.some(e => e.type === 'summary') && h.calls.talker.length === 3 && !h.s.busy());
   const calls = h.calls.talker.length;
   talked(h); await until(() => h.calls.tts.includes(SUMMARY_LINES.prompt.en[0]));
@@ -78,7 +80,7 @@ test('H1-4 {figure}, {hook}, bridge and the rewritten bank', () => {
   const b = i => QUESTION_BANK[i].en;
   assert.equal(b('stakes')[0], 'What was at stake for the client if nothing had changed?');
   assert.equal(b('ownership')[0], 'You mentioned {hook}. Which part of that was yours?');
-  assert.equal(b('offer_move_on')[0], "Let's leave that open. What happened next on the project?");
+  assert.equal(b('offer_move_on')[0], "I'll note that as still open. What happened next on the project?");
   assert.ok(b('measurement')[0] === 'How did you know it was working?' && b('setback_response').includes('What made that difficult?') && b('example').includes('How did you approach it?'));
   for (const [intent, e] of Object.entries(QUESTION_BANK)) { assert.ok(e.en.some(v => !/\{(?:hook|figure)\}/.test(v)), intent); for (const v of e.en) assert.equal(v.split('?').length - 1, 1, v); }
 });
@@ -194,7 +196,8 @@ test('H1-7 live: four substantive answers get an uptake on alternate replies, an
   const acks = named(h.metrics, 'ack').map(a => a.category);
   assert.ok(acks.slice(0, 3).filter(c => c === 'neutral' || c === 'thanks_detail').length <= 2, acks.join(','));
   assert.ok(acks.filter(c => c === 'neutral' || c === 'thanks_detail').length < 3, 'three plain answers do not each get an uptake: ' + acks.join(','));
-  assert.ok(acks.includes('no_number_fine'), 'the 7-word "I do not know the baseline, honestly." is acknowledged: ' + acks.join(','));
+  // (U2: "I do not know" is met with an easier angle, so its acknowledgement is the re-angle line; once the point is left open it is no_number_fine)
+  assert.ok(acks.includes('reangle') || acks.includes('no_number_fine'), 'the 7-word "I do not know the baseline, honestly." is acknowledged: ' + acks.join(','));
 });
 
 // ---------- 8. achievement, praise, metric_kind ----------
@@ -255,11 +258,12 @@ test('H1-9 the second round reads only what is new or changed; the prompt line p
 
 test('H1-9 a figure the consultant could not back (I do not know the baseline) is an open point on the card and in the read-back', async () => {
   const said = ['Deployments went down by 80 percent after the new release pipeline went live across all squads.', 'I think it was measured, the ops team had a dashboard somewhere.', 'Not sure exactly, maybe over the first quarter after go live.',
-    'I do not know the baseline, honestly.', 'That is everything, I am done.'];
+    'I do not know the baseline, honestly.', 'I really do not know that one.', 'No idea at all, sorry.', 'That is everything, I am done.']; // (U2: two easier angles first, then the point is left open)
   const h = rig({ said, talk: (n, m) => noteOf(m, 'SUMMARY FACTS') ? ['Here is what I have. ', SUMMARY_QUESTION] : ['Okay. ', 'Next?'] });
   h.s.ai.analyst = analystOf({ 'user-1': [{ field: 'outcome', quote: 'Deployments went down by 80 percent' }], 'user-2': [{ field: 'measurement', quote: 'the ops team had a dashboard somewhere' }] });
   await opened(h);
-  for (let i = 1; i <= 5; i++) { talked(h); await until(() => h.calls.talker.length === i + 1 && !h.s.busy()); await settle(); }
+  for (let i = 1; i <= 7; i++) { if (i === 7) h.advance(960); talked(h); await until(() => h.calls.talker.length === i + 1 && !h.s.busy()); await settle(); }
+  assert.deepEqual(h.s.humane.asked.filter(m => /^reangle:/.test(m.why)).map(m => m.why), ['reangle:measurement:1', 'reangle:measurement:2'], 'the baseline was asked from two other angles before it was left open');
   const card = h.events.filter(e => e.type === 'summary').at(-1);
   assert.ok(card, 'the read-back was made'); assert.ok(card.unknowns.some(u => u.kind === 'unknown' && u.part === 'metric_baseline'), JSON.stringify(card.unknowns));
   const note = noteOf(talker(h), 'SUMMARY FACTS'); assert.ok(note.includes('the starting figure before the change') && note.includes(basisPhrase(['metric_baseline']).trim().replace(/^, /, '')), note);

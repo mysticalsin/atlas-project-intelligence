@@ -19,8 +19,8 @@ test('summaryView: the card as a person reads it: items with plain tags, open po
  assert.deepEqual(v.items.map(i=>[i.id,i.label,i.editable]),[['D-001','Customer problem',true],['D-002','Observed outcome',true],['D-003','Measurement basis',true]]);
  assert.deepEqual(v.items[0].tags,[]);
  assert.deepEqual(v.items[1].tags,['you called this an estimate','speech not confirmed','typed by you']);
- assert.deepEqual(v.items[2].tags,['left open: you did not know']);
- assert.deepEqual(v.openPoints,['Not confirmed, the speech recognition was unsure: Observed outcome','You skipped: Business stakes']);
+ assert.deepEqual(v.items[2].tags,['still open, in your own words']);
+ assert.deepEqual(v.openPoints,['Not confirmed, the speech recognition was unsure: Observed outcome','Still open: Business stakes']);
  assert.match(v.next,/private draft that only you can see/);assert.match(v.next,/your N\+1 or reviewer/);assert.match(v.next,/internal knowledge only until you grant more/);assert.match(v.next,/Submit for review/);
  assert.deepEqual(v.confirm,{label:'Confirm summary',hidden:false,disabled:false});assert.equal(v.submit.hidden,true);
  assert.equal(v.saved,'');assert.equal(v.notSaved,'');assert.match(v.live,/^Read-back: 3 items, 2 open points\.$/);
@@ -43,7 +43,7 @@ test('summaryView: confirming, then the private draft and the separate Submit; o
 test('summaryView never trusts what it is given: bad ids, odd statuses, too many items, markup stay inert text',()=>{
  const v=B.summaryView({phase:'open',items:[...ITEMS,{detail_id:'../x',quote:'x'},null,5,{detail_id:'D-9',quote:'x'},item('D-004','problem','<b>Label</b>','<img src=x onerror=alert(1)>',{status:'weird',provenance:'weird'})],
   unknowns:[{kind:'nope',label:'x'},null,{kind:'deferred',label:'Customer relevance'}]});
- assert.equal(v.items.length,4);assert.deepEqual(v.items[3].tags,[]);assert.equal(v.items[3].quote,'<img src=x onerror=alert(1)>');assert.deepEqual(v.openPoints,['Left open: Customer relevance']);
+ assert.equal(v.items.length,4);assert.deepEqual(v.items[3].tags,[]);assert.equal(v.items[3].quote,'<img src=x onerror=alert(1)>');assert.deepEqual(v.openPoints,['Still open: Customer relevance']);
  assert.equal(B.summaryView({phase:'open',items:Array.from({length:90},(_,i)=>item('D-'+String(i+1).padStart(3,'0'),'problem','L','q'))}).items.length,60);
  assert.equal(B.summaryView({phase:'confirmed',draft:{id:5,revision:1},items:ITEMS}).submit.hidden,true,'a draft needs a text id');
 });

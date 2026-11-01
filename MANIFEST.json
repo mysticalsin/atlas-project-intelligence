@@ -42,33 +42,33 @@
     },
     {
       "path": "AGENT.md",
-      "bytes": 23789,
-      "sha256": "acc3b65cb3c72f1726e1504d0199199ad974fae44dd0ecef42c27d0687142ab7"
+      "bytes": 24770,
+      "sha256": "e04c2e633457a3aec3a08be01929c1d503dff42d0ce1656710864abea6aa7669"
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 1084975,
-      "sha256": "60ace2f69bbce071cca5391c8c078abe6eaf48548bc7bfcfca4616b52592a158"
+      "bytes": 1086429,
+      "sha256": "2cf41c96c24a94f4dacf0d1875b4a8426529b179316f997f4cbf1a74923de52e"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 1084975,
-      "sha256": "60ace2f69bbce071cca5391c8c078abe6eaf48548bc7bfcfca4616b52592a158"
+      "bytes": 1086429,
+      "sha256": "2cf41c96c24a94f4dacf0d1875b4a8426529b179316f997f4cbf1a74923de52e"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 1084975,
-      "sha256": "60ace2f69bbce071cca5391c8c078abe6eaf48548bc7bfcfca4616b52592a158"
+      "bytes": 1086429,
+      "sha256": "2cf41c96c24a94f4dacf0d1875b4a8426529b179316f997f4cbf1a74923de52e"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 1084975,
-      "sha256": "60ace2f69bbce071cca5391c8c078abe6eaf48548bc7bfcfca4616b52592a158"
+      "bytes": 1086429,
+      "sha256": "2cf41c96c24a94f4dacf0d1875b4a8426529b179316f997f4cbf1a74923de52e"
     },
     {
       "path": "CLAUDE.md",
-      "bytes": 12158,
-      "sha256": "76386d208954ded33b2f63d8aefc1b6f5ba7e31eba30a176795f3b1cb46d5448"
+      "bytes": 12675,
+      "sha256": "05bfc84a77a55b5e24e609c8f57b0ac7b866ff9a107cb593552ae50278f22814"
     },
     {
       "path": "CLAUDE_BUILD_PROMPT.md",
@@ -147,8 +147,8 @@
     },
     {
       "path": "atlas_voice/cascade.py",
-      "bytes": 28220,
-      "sha256": "97848165ad13344bc5cd6be0160d4da3d6eaf4656b7e31ef86d8449f77a6c126"
+      "bytes": 28225,
+      "sha256": "555c97d65f6650508acb7b898c2044c2e48b0c0d9933b36c1ce93837b8a53a2c"
     },
     {
       "path": "atlas_voice/config.py",
@@ -282,8 +282,8 @@
     },
     {
       "path": "atlas_voice/conversation_state.py",
-      "bytes": 15867,
-      "sha256": "7fddc282c51e60127e70acc5ab9e7287b33a84ba014741fd77b83b229efc31fa"
+      "bytes": 16007,
+      "sha256": "c56eff342c1aded258eb0355e70dd6087174b3e2d3834b92031c51ec2d4b2fc1"
     },
     {
       "path": "atlas_voice/csp.py",
@@ -347,8 +347,8 @@
     },
     {
       "path": "atlas_voice/persona.py",
-      "bytes": 20474,
-      "sha256": "5c42fcf9a6aa5a37003fddb901183d3e9ffe0c1382a4cca4aed4c84c6c0cc22e"
+      "bytes": 22357,
+      "sha256": "326d653efb56074d0b691579dff7c103a84af69c7276d6c12b05d06d889a221c"
     },
     {
       "path": "atlas_voice/privacy_config.py",
@@ -357,8 +357,8 @@
     },
     {
       "path": "atlas_voice/quality.py",
-      "bytes": 29349,
-      "sha256": "04290dc50399b783b139b8c58174f7f12cf1580dcca0b053c70888a6d0060b48"
+      "bytes": 29548,
+      "sha256": "671cfc94091f69247f32aca0b928bd587c11ad7659a73f4a740cf83e8bfd209e"
     },
     {
       "path": "atlas_voice/realtime.py",
@@ -377,8 +377,8 @@
     },
     {
       "path": "atlas_voice/selector.py",
-      "bytes": 53730,
-      "sha256": "202254642fb155d1dcb3ec91f1fbbe93f6c94960e7f1a3cf2be1618a6f9041b3"
+      "bytes": 59376,
+      "sha256": "4ae1e9576ec12a9b3efee268509e61cfdbdc889c76ce0ed7d161a5e0df9ad202"
     },
     {
       "path": "atlas_voice/server.py",
@@ -402,8 +402,8 @@
     },
     {
       "path": "atlas_voice/turns.py",
-      "bytes": 61448,
-      "sha256": "0a8687a5edbb774f7234c5ff1d463902c48ad750804c073aa7470638ce7398f2"
+      "bytes": 62073,
+      "sha256": "484b09104708bdc546bb59d0baa19cc091e265d507afb66bfce60f2d4048db02"
     },
     {
       "path": "atlas_voice/wiki.py",
@@ -467,8 +467,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/dev/fake-interviewer.mjs",
-      "bytes": 14615,
-      "sha256": "fce59a61ba15e1d12962281cea5459af11f00cd19d6cf141327a6f683da956c4"
+      "bytes": 13787,
+      "sha256": "82a6315b9bc2eab370c66c234f34ec3fa540ba64f66cf81f0902ae71558df39b"
     },
     {
       "path": "deploy/cloudflare-edge/dev/fake-model.mjs",
@@ -537,8 +537,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/ack.js",
-      "bytes": 6341,
-      "sha256": "5caf37711bae2ffac415674912e8faee006d0c71965913b68b0dd5178367e14a"
+      "bytes": 6363,
+      "sha256": "541c5e3f2c1fb07976ad8a085ca285a904b5e0ad156cde285226057c7c2e543a"
     },
     {
       "path": "deploy/cloudflare-edge/src/adapters.js",
@@ -618,7 +618,7 @@
     {
       "path": "deploy/cloudflare-edge/src/csp.generated.js",
       "bytes": 2075,
-      "sha256": "62202c5e1dbd11a269255d11e4370d34b8aace55488e6ec29822e8b2747a1a06"
+      "sha256": "5770cd7c5b11a2c785b80b11568aa25f6b35a3f1db25a7f4742b6ca285b45226"
     },
     {
       "path": "deploy/cloudflare-edge/src/csp.js",
@@ -677,8 +677,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/languages.js",
-      "bytes": 13162,
-      "sha256": "89c768a0fe12300ae219cef0a5233e313e8046700efcc626bf1dfe666dfba691"
+      "bytes": 13315,
+      "sha256": "a354550eeaf295182fff2c9c84692704f1de79c676b7ea9107bd559073978d56"
     },
     {
       "path": "deploy/cloudflare-edge/src/ledger.js",
@@ -727,8 +727,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/policy.generated.js",
-      "bytes": 214466,
-      "sha256": "fe384d68a26a30aab46416924eafedb1230220d2c37d3b84ac825933c34f9343"
+      "bytes": 217917,
+      "sha256": "d56fb17a5c3f7e0741e00d5eb74a46c272d708e625cfa8c43ddfa2f958fbcfae"
     },
     {
       "path": "deploy/cloudflare-edge/src/privacy-routes.js",
@@ -802,13 +802,13 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/selector.js",
-      "bytes": 31325,
-      "sha256": "24cefec399e4072d1411becb12b2b8d8aa4635c6241de2ffdc770b836b5aae6b"
+      "bytes": 34347,
+      "sha256": "1898bb58d6934e2f4679dad051f9b61cf4c25137e15025b6272b92acd0ca2f0b"
     },
     {
       "path": "deploy/cloudflare-edge/src/session.js",
-      "bytes": 165607,
-      "sha256": "7b457c491c9efb9f2dc97e1870cad44c9bf09d2f8e4e54c4b2b18b9674cd1d0b"
+      "bytes": 165394,
+      "sha256": "77cb62152723a723377dd7cde3721409d6341c2b6b80eb543076d860c8d9f6ab"
     },
     {
       "path": "deploy/cloudflare-edge/src/sheet.js",
@@ -937,8 +937,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/ack.test.js",
-      "bytes": 9749,
-      "sha256": "8ded9c5299fe3203688b6e69d13e4a91b27d0e3a5a13dbc29185c3eb0954559c"
+      "bytes": 9760,
+      "sha256": "990500f0329a0b872e4b81b6d3bb096a55df8f710c6d98708700e47ed9d4576b"
     },
     {
       "path": "deploy/cloudflare-edge/test/app-resume.test.js",
@@ -1047,13 +1047,13 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/e2e-core-flow.test.js",
-      "bytes": 18319,
-      "sha256": "940b13b46fd3e98c11f4d43928cdf12b0fcfc0efba4e235b89e304140be61656"
+      "bytes": 18462,
+      "sha256": "ae9af5d3674f2ac87397fef6057f7bd395eb805b45eaa4a1ecae1c5da4a7fa47"
     },
     {
       "path": "deploy/cloudflare-edge/test/eval-conversation.test.js",
-      "bytes": 28596,
-      "sha256": "cd2c559898c1eb1406338f0e92eb85caf09449a88a9634830d3728223da2454f"
+      "bytes": 32018,
+      "sha256": "2a7d4c5e524160b49df59b7b05a154a36a3c03658b5586054c0b2a9aa332a205"
     },
     {
       "path": "deploy/cloudflare-edge/test/eval-rubric.test.js",
@@ -1112,8 +1112,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/fixtures/eval/s4_approximate_metric.json",
-      "bytes": 1052,
-      "sha256": "2707e880f8fcdc2b7696182c42c4244da27dac0e8799fb75f38e5cd0eee5522b"
+      "bytes": 1071,
+      "sha256": "54208cd93f2286bf2db7a75ecf32df1e9b49007828b8e9359d219428bdebf33a"
     },
     {
       "path": "deploy/cloudflare-edge/test/fixtures/eval/s5_confidential_client.json",
@@ -1122,8 +1122,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/fixtures/eval/s6_correction.json",
-      "bytes": 1141,
-      "sha256": "a72839b4efa855bdaec5bbc7ed82f8aa4906a680f5761bd529d52ba9390ea8df"
+      "bytes": 1160,
+      "sha256": "30c05c8cda5ea89be0e7940f837c9baf046ed23eedb430b289cc044c09aea1ee"
     },
     {
       "path": "deploy/cloudflare-edge/test/fixtures/eval/s7_asr_mishearing.json",
@@ -1267,8 +1267,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/gen_selector_parity.py",
-      "bytes": 22536,
-      "sha256": "109b736cbc390915b3ae009a4e4358b72fef73f80fda9721491b4f7fcdb039a8"
+      "bytes": 24974,
+      "sha256": "e0e2f5749eda78bff4fc904a15b41b5ea67250b95f5585ecccb2e80d7b9c6c27"
     },
     {
       "path": "deploy/cloudflare-edge/test/gen_special_parity.py",
@@ -1292,18 +1292,18 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/gen_turns_parity.py",
-      "bytes": 12825,
-      "sha256": "803d307d72c4fb8d4b5ef9a8b78aae40f98e5887fb2b8d0a3724140e515b7688"
+      "bytes": 12863,
+      "sha256": "f3dae47e0625f88f3deba6fec2d7f28139e7cedb3ab769a5d71a8f97018b94d4"
     },
     {
       "path": "deploy/cloudflare-edge/test/h1-humane.test.js",
-      "bytes": 27535,
-      "sha256": "199e462a6bb3325dc1718195d29a6e2390dd66a856854fcb954ff7790facd847"
+      "bytes": 28410,
+      "sha256": "072a443beb3ea7c7c4a45260d8b2aff76d9e1c92ac5ca96c001524284010699c"
     },
     {
       "path": "deploy/cloudflare-edge/test/h2-polish.test.js",
-      "bytes": 28738,
-      "sha256": "5d3fd76dde6a52c9566e779825c6cd453aecc3b2c43bae1152409dec7e8a61cc"
+      "bytes": 28830,
+      "sha256": "09e80ea700ca3418bc1207f0a74d7dc06a9b695b0f0826daeb4817e208d81e9d"
     },
     {
       "path": "deploy/cloudflare-edge/test/h3-setback.test.js",
@@ -1347,8 +1347,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/language.test.js",
-      "bytes": 12880,
-      "sha256": "3320db94b0f70abec2188bf96d963ac6133b0be9702bc414bbe4948de71f1cca"
+      "bytes": 14213,
+      "sha256": "2ab38627a89881f1258bf49f7f43ac9ae7f0986765417429217e767e3b5a034f"
     },
     {
       "path": "deploy/cloudflare-edge/test/library.test.js",
@@ -1417,8 +1417,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/r2-llm-security.test.js",
-      "bytes": 17744,
-      "sha256": "c4b265c27fe3471bc46e26e348bbd35f379cdb39847f8f660f619fcfe637bf9e"
+      "bytes": 17928,
+      "sha256": "cb4cef45e83fd0c3d42a1aa94012b18ec7a6b13557a942d9b1cbfca0bed4c95a"
     },
     {
       "path": "deploy/cloudflare-edge/test/ratelimit.test.js",
@@ -1482,8 +1482,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/selector.vectors.json",
-      "bytes": 451764,
-      "sha256": "18687c5671bd8e407ee5a109c6a361dbf36301aa215539c7f81a86ce1c8a961b"
+      "bytes": 601961,
+      "sha256": "f8523eab1ec28c35a1267edd45f42f29aa2b2e7cc60e2c6975d86d62ef5a9772"
     },
     {
       "path": "deploy/cloudflare-edge/test/session-asr.test.js",
@@ -1492,13 +1492,13 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/session-humane.test.js",
-      "bytes": 35204,
-      "sha256": "46e0011e42050f21664231d220d35bfa46a3066f2b114587509904d6d01afcac"
+      "bytes": 35976,
+      "sha256": "e50065c1d3bb7c36bcc9358a01fe68a9d4ec70f6a1e69d7bb93f7085bfcc28ad"
     },
     {
       "path": "deploy/cloudflare-edge/test/session-pause.test.js",
-      "bytes": 23733,
-      "sha256": "68c6a082160a3aa13f708423cc9f30774ed86f463e8af66d85f69ed769fff7ba"
+      "bytes": 24722,
+      "sha256": "c0ae759a5fc3faa888361f140de81a3afcd0e59e703e96d337150b2df721083e"
     },
     {
       "path": "deploy/cloudflare-edge/test/session-reconnect.test.js",
@@ -1512,8 +1512,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/session-summary.test.js",
-      "bytes": 32532,
-      "sha256": "5fbcacb6f73ba725968b3b506c6b4a52396b3eda081d564acbe7626357d75269"
+      "bytes": 32748,
+      "sha256": "aa8ba4d2089562c5cada1d2a122a01570082f38867d8988109da68dedece7e18"
     },
     {
       "path": "deploy/cloudflare-edge/test/session-text.test.js",
@@ -1592,8 +1592,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/turns.vectors.json",
-      "bytes": 55094,
-      "sha256": "2d9e33135b80fb9b297c82b276615d7d0a9c75af523f963196f3e1386d54e047"
+      "bytes": 55423,
+      "sha256": "a6938263c3d005b17402691ba7f44966b154a28b084b303feaf67b97ee4ed701"
     },
     {
       "path": "deploy/cloudflare-edge/test/winloop.test.js",
@@ -1957,8 +1957,8 @@
     },
     {
       "path": "docs/agent-brain-v2.1/DECISION_LOG.md",
-      "bytes": 9124,
-      "sha256": "4ae0f927fde3639edb0987626e5763c1ba282c5554fb44cf669fc505f2d49698"
+      "bytes": 14229,
+      "sha256": "e3c65fc7e092242e25529b755a5af4b15bafacb606abe39429bb2f6104b576ce"
     },
     {
       "path": "docs/agent-brain-v2.1/FILE_INDEX.md",
@@ -1972,8 +1972,8 @@
     },
     {
       "path": "docs/agent-brain-v2.1/IMPLEMENTATION_STATUS.md",
-      "bytes": 46464,
-      "sha256": "4d2748f3730f2fe828ffc2574e5845c412033dbad6355a36aef97100db079326"
+      "bytes": 48261,
+      "sha256": "719dd9f3c8cc245364317bb369436c29146c84bdecf969aa19a3ecf818d00f15"
     },
     {
       "path": "docs/agent-brain-v2.1/README.md",
@@ -1987,13 +1987,13 @@
     },
     {
       "path": "docs/agent-brain-v2.1/eval/COVERAGE.md",
-      "bytes": 19385,
-      "sha256": "48b824f2d6875da0220576210beee554d2b93cc3baab5bf27f41524254fd98fd"
+      "bytes": 21020,
+      "sha256": "6ca0b8210fe0af5084ef3ee9f06386ee7187e77873c8d91c890c90eba322be32"
     },
     {
       "path": "docs/agent-brain-v2.1/eval/conversation_rubric.json",
-      "bytes": 15759,
-      "sha256": "56a9f003ce8266b1f60646fd0affde6596f1c9ad6877c717eb62398ae2e66144"
+      "bytes": 15935,
+      "sha256": "4942cb5b8878a49d6a67dba0553ae1a86d73baf38ef188a4f12444e0759198a3"
     },
     {
       "path": "docs/architecture.mmd",
@@ -2062,8 +2062,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 271723,
-      "sha256": "e46b2f0d0773ec9f1ace5995e547617ee6a085ccecb6691bf7e666ddf5f6c5ba"
+      "bytes": 274924,
+      "sha256": "04f7ade4b86562d04a719db19ed9026144001d57c6bdb5c7b8e7dd6649e4d9e9"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2502,8 +2502,8 @@
     },
     {
       "path": "src/fit.css",
-      "bytes": 41881,
-      "sha256": "fd0b07cccc3c88e9447310b68d92e5d7d27ca0acd0d9fa2e481508bac599c61e"
+      "bytes": 41886,
+      "sha256": "0b951b42eb6ecedbc1b1be181697342ad4cc5c6e43e41745eeaeb8d726148710"
     },
     {
       "path": "src/geo.js",
@@ -2517,8 +2517,8 @@
     },
     {
       "path": "src/intelligence-panel.html",
-      "bytes": 11906,
-      "sha256": "400206bb9d887c821ba9dd74b57326682b740e0b509d257b7a688bc7eafb278d"
+      "bytes": 11907,
+      "sha256": "86fcf0a0452b03e038018e0efa885dc89c320127458ea86afa88056acbcc03bf"
     },
     {
       "path": "src/intelligence-ui.js",
@@ -2587,18 +2587,18 @@
     },
     {
       "path": "src/shell.html",
-      "bytes": 55549,
-      "sha256": "9edcc36a712fc82a7324fbef0157018278f48c91fc95687c3e61f018e91fbfd1"
+      "bytes": 55624,
+      "sha256": "756b68cb7d8d51bd352b664eaead7b0c13d1648edfa6fbccae4e7e3434f0ae98"
     },
     {
       "path": "src/storyboard-core.js",
-      "bytes": 17341,
-      "sha256": "4d936fad16734b4f5ca1bfd1ac80156cfa71875f64bd2f3f21de4ca151dcd1d8"
+      "bytes": 17356,
+      "sha256": "d1b0c8f27caf1ea6b3a013a1b8aa572350a15e779c477dff361c5ae2b335388f"
     },
     {
       "path": "src/storyboard-ui.js",
-      "bytes": 25819,
-      "sha256": "fd05247c4e116bf504295d2d207052b2c8d6991432e0daf2c6072111528f5228"
+      "bytes": 25814,
+      "sha256": "4f5ffdb6f6a55316ca647240f8df5b9ed568d2de6408e25e82e80d96d797d1b3"
     },
     {
       "path": "src/storyboard.css",
@@ -2632,18 +2632,18 @@
     },
     {
       "path": "src/ui.css",
-      "bytes": 44495,
-      "sha256": "004fdf9a4f5820030cb646528ba625d0c4acf589aa46dbe4f4e3cdb9c8027a7a"
+      "bytes": 45151,
+      "sha256": "5a307a70b465892ed57c4ea83436d87ad39fb93d14e924ed568ba3b80256baef"
     },
     {
       "path": "src/voice-client.js",
-      "bytes": 78214,
-      "sha256": "6eae1ff893520a908a0fc8bb7b73224edbfb6521362d4885b7ffa389b6a644ba"
+      "bytes": 78807,
+      "sha256": "20d880b3aa43f7bfef0d664b9949dc2be915ff72aca69fc2e8716134b6ca6a6d"
     },
     {
       "path": "src/voice-controls.js",
-      "bytes": 9725,
-      "sha256": "59d8b49422fa10a4706a822f0a2c3aac164a6d3b2b9b6ab1f42f3a46865a6af6"
+      "bytes": 9757,
+      "sha256": "ed3cc5a98af1496feb0b7b17fc19366899cdf2d951af5356693d5ef98accdd34"
     },
     {
       "path": "src/voice-dialogs.html",
@@ -2652,8 +2652,8 @@
     },
     {
       "path": "src/voice-panel.html",
-      "bytes": 20124,
-      "sha256": "12b7e777567709da3a318eae2de9e994556414647c0d088dda3130a1de030f1e"
+      "bytes": 20206,
+      "sha256": "3fd9c99262bbcf2152aa7dba6f17c699de713430d070e0205324240e8450621c"
     },
     {
       "path": "src/voice-worklet.js",
@@ -2787,8 +2787,8 @@
     },
     {
       "path": "tests/humane_browser.py",
-      "bytes": 48156,
-      "sha256": "9a5c5beb157f75efa8b038b5fbb0050643a2cd9650f0aace1fb3396762897f8a"
+      "bytes": 48922,
+      "sha256": "5638027d28fae00d11757d38dc4a57701e4a8ddff3f012ffd47f82b2220a92a4"
     },
     {
       "path": "tests/intelligence-browser-results.json",
@@ -2952,13 +2952,13 @@
     },
     {
       "path": "tests/studio_browser.py",
-      "bytes": 17378,
-      "sha256": "cffc83f350f44041708d95b05132f208dc974724602c8acf5e1a20836af41be5"
+      "bytes": 17396,
+      "sha256": "2a0b8a4d423a9a5a1d94ad93f7f6d557b2d816177a14e431348a34995810f52b"
     },
     {
       "path": "tests/summary-card-dom.test.js",
-      "bytes": 23892,
-      "sha256": "f50678655703e2c14b1e176ad8b4bb9e18bc7c9101d186c03d9490a0c4ac1042"
+      "bytes": 23894,
+      "sha256": "d792ce986fcfd1e49ceaab6354d71f9be1abbb320a1529721c68e1c64c375901"
     },
     {
       "path": "tests/swarm.test.js",
@@ -2992,8 +2992,8 @@
     },
     {
       "path": "tests/test_cascade.py",
-      "bytes": 23800,
-      "sha256": "5a27ae9358e2ef2a234062de4a3193cc6c8434c0cba17de005debe5fb47d44ec"
+      "bytes": 23992,
+      "sha256": "5be1a60394f2fc535ddeeac0eb7d7f919db22b0bf6822d8a9bdd7ec8aea5c9eb"
     },
     {
       "path": "tests/test_cloudflare.py",
@@ -3052,8 +3052,8 @@
     },
     {
       "path": "tests/test_persona.py",
-      "bytes": 7942,
-      "sha256": "22eac4abeb6592bffba43a5ff7f8813f0eebbb948ca03a8f7c1199e19dca7686"
+      "bytes": 8397,
+      "sha256": "3a53488f248052808f2ea00ead51774e4ae01bf86dc7efb4324843ab21f364ff"
     },
     {
       "path": "tests/test_preview.py",
@@ -3087,8 +3087,8 @@
     },
     {
       "path": "tests/test_selector.py",
-      "bytes": 68162,
-      "sha256": "be6f4e6d9f977cd9b026c6d2e21b76509c437b1f438a574f5ecfcee33427db3a"
+      "bytes": 74348,
+      "sha256": "d0a6c4a779ab3eb909dc393b5cdfe2ce2e90575153d579a77ad75706a4983c39"
     },
     {
       "path": "tests/test_speech.py",
@@ -3107,8 +3107,8 @@
     },
     {
       "path": "tests/test_turns.py",
-      "bytes": 31101,
-      "sha256": "2f6a11f41c62f41ee9af712608450d0f40db80e17859e791b6d74942328035c0"
+      "bytes": 32773,
+      "sha256": "cb82598e8985af9343163259e7a8658111b06446855afbc81a95518eecdd4e3b"
     },
     {
       "path": "tests/test_voice.py",
@@ -3127,8 +3127,8 @@
     },
     {
       "path": "tests/text-mode-dom.test.js",
-      "bytes": 14717,
-      "sha256": "94bfdd3783c90a2903cc5b15cd29f9ff70ea3dd926bfbff323599a4e0b9c9d33"
+      "bytes": 14710,
+      "sha256": "b1021036aae05af29d98e736c3842e6e5cc0fa30176f226e98d3cc9ed97b6f79"
     },
     {
       "path": "tests/trust_browser.py",
@@ -3137,8 +3137,8 @@
     },
     {
       "path": "tests/u1-start-flow.test.js",
-      "bytes": 15576,
-      "sha256": "a23f744b5120fbf57fbec50ec9abeff87b965ce329d2697e89947bd60e718bc2"
+      "bytes": 15562,
+      "sha256": "79a9c3267c14b9ab3a24f96baeb3f15474fb9f9792aed84bba28b8102f4814b3"
     },
     {
       "path": "tests/upstream-source-check.json",
@@ -3147,23 +3147,23 @@
     },
     {
       "path": "tests/ux_fit_browser.py",
-      "bytes": 26664,
-      "sha256": "7ccff29d3daf32ebe8426eafdfbd8b0b841825cf4e2753eec61c8b18be88a57c"
+      "bytes": 36117,
+      "sha256": "40cdbc3233c74f465d460efbd439bf8b1ef87be1a5a34ead22911d777994c7c7"
     },
     {
       "path": "tests/voice-controls-dom.test.js",
-      "bytes": 16656,
-      "sha256": "643e8d3a3fc39d512f847ee159ade564aa8a6f505af77cf8d12deb1662f6947a"
+      "bytes": 19822,
+      "sha256": "f52875cbfcf49a5cb97a61324f0b5e56d6cad004f9be1c2bcbd27c8306244c72"
     },
     {
       "path": "tests/voice-controls.test.js",
-      "bytes": 15454,
-      "sha256": "8fb6c078f3cbf5e5cf11faae6b97ee298048dd73c116e50cc5946f34550d0dfb"
+      "bytes": 15799,
+      "sha256": "3f39b1bb488fc1d436b32671ee3735ace1210569b6acfa25be1b3c5673427a6e"
     },
     {
       "path": "tests/voice-reconnect-dom.test.js",
-      "bytes": 19680,
-      "sha256": "ada4cc0707eb37f75f1e60f67888d5a108efd096e905186c41e42d93e4494f39"
+      "bytes": 19675,
+      "sha256": "ea12891367113ccc76136df6868f08501ad253218d86c287ffcb48bc76e5f75c"
     },
     {
       "path": "tests/workflow-core.test.js",
@@ -3194,6 +3194,21 @@
       "path": "tests/zero_config_edge_browser.py",
       "bytes": 36297,
       "sha256": "b21309b4184cbc6caccdd65bb1cbe3788f9506bc10ff74365cb2eb1720d9b0d9"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/fixtures/eval/u2_dont_know.json",
+      "bytes": 1717,
+      "sha256": "8cb1a53d3fd9d30d13d87a7e5697e51aeab07f7ac042d1a12937eed583a27727"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/fixtures/eval/u2_skip_probe.json",
+      "bytes": 1147,
+      "sha256": "c6793d2204ff5c132b2c9349c018893602da9a48e52579a7219caec0ff4aed13"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/fixtures/eval/u2_stop_hold.json",
+      "bytes": 1296,
+      "sha256": "9e201ee2ae390c432706dc7433461edbd36ff074037cfff87dac25d24757274d"
     }
   ]
 }

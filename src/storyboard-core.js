@@ -142,9 +142,9 @@ function summaryText(m){if(!m||typeof m!=='object')return '';const c=obj(m.cover
    ended (the interview ended before they confirmed: nothing was saved), closed (more was said, the card went away). The words never say verified, approved or
    shared: a draft is private to its owner until they press Submit for review themselves. Items are exactly the server's, bounded here. */
 const DETAIL_RE=/^D-\d{3,6}$/;
-const STATUS_TAG={uncertain:'you called this an estimate',unknown:'left open: you did not know'};
+const STATUS_TAG={uncertain:'you called this an estimate',unknown:'still open, in your own words'};
 const PROVENANCE_TAG={consultant_typed:'typed by you',consultant_corrected:'corrected by you'};
-const POINT_WORDS={unconfirmed_speech:'Not confirmed, the speech recognition was unsure',unknown:'You did not know',skipped:'You skipped',deferred:'Left open'};
+const POINT_WORDS={unconfirmed_speech:'Not confirmed, the speech recognition was unsure',unknown:'Still open, in your own words',skipped:'Still open',deferred:'Still open'};
 const SUMMARY_INTRO='This is what ATLAS understood, in your own words. Correct anything that is wrong, keep private anything you do not want used, or confirm it.';
 const SUMMARY_NEXT='Confirming saves a private draft that only you can see. Nothing goes to your N+1 or reviewer until you press Submit for review, and they may use it for internal knowledge only until you grant more.';
 function summaryView(sum){

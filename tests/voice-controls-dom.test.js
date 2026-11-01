@@ -40,27 +40,28 @@ function boot({announce=true,provider='workers'}={}){
   async live(){
    await $('voiceStart').onclick();await new Promise(r=>setTimeout(r,5));
    $('modelConsent').checked=true;await $('voiceConsentStart').onclick();await new Promise(r=>setTimeout(r,30));
-   server({type:'ready',model:'ATLAS',capture:true,...(announce?{controls:announce===true?['pause','resume','repeat','skip','text','correct','withhold','confirm_summary']:announce}:{})});
+   server({type:'ready',model:'ATLAS',capture:true,...(announce?{controls:announce===true?['pause','resume','repeat','text','correct','withhold','confirm_summary']:announce}:{})});
   }};
 }
 const flush=()=>new Promise(r=>setTimeout(r,5));
 
 test('the real client loads against the fake DOM and the controls start hidden',()=>{
  const h=boot();
- for(const id of ['voicePause','voiceRepeat','voiceSkip','voiceTypeForm'])assert.equal(h.$(id).hidden,true,id);
+ for(const id of ['voicePause','voiceRepeat','voiceEnd','voiceTypeForm'])assert.equal(h.$(id).hidden,true,id);
 });
 
-test('a server that announces controls: Pause, Repeat, Skip and the typed answer appear and send exactly their messages',async()=>{
+test('a server that announces controls: Pause, Repeat, Stop and the typed answer appear and send exactly their messages',async()=>{
  const h=boot();await h.live();
  assert.equal(h.win.AtlasVoice.status().phase,'live');
- for(const id of ['voicePause','voiceRepeat','voiceSkip','voiceTypeForm'])assert.equal(h.$(id).hidden,false,id+' shown');
- for(const id of ['voicePause','voiceRepeat','voiceSkip','voiceMute'])assert.equal(h.$(id).disabled,false,id+' enabled');
+ for(const id of ['voicePause','voiceRepeat','voiceEnd','voiceTypeForm'])assert.equal(h.$(id).hidden,false,id+' shown');
+ for(const id of ['voicePause','voiceRepeat','voiceEnd','voiceMute'])assert.equal(h.$(id).disabled,false,id+' enabled');
+ assert.equal(h.$('voiceEndLabel').textContent,'Stop interview');assert.equal(h.$('voiceEnd').getAttribute('aria-label'),'Stop the interview');
  assert.equal(h.$('voiceTypeInput').disabled,false);assert.equal(h.$('voiceTypeSend').disabled,true,'Send waits for text');
- h.$('voiceRepeat').click();h.$('voiceSkip').click();
+ h.$('voiceRepeat').click();
  h.$('voiceTypeInput').value='  We rebuilt the intake process.  ';h.$('voiceTypeInput').oninput();assert.equal(h.$('voiceTypeSend').disabled,false);
  h.$('voiceTypeForm').onsubmit({preventDefault(){}});
  const msgs=h.sent.filter(m=>typeof m==='object').filter(m=>m.type!=='start'&&m.type!=='playback');
- assert.deepEqual(msgs,[{type:'repeat'},{type:'skip'},{type:'text',text:'We rebuilt the intake process.'}]);
+ assert.deepEqual(msgs,[{type:'repeat'},{type:'text',text:'We rebuilt the intake process.'}]);
  // X1 (S1 follow-up): the text stays in the box until the server takes the turn (its user_text echo); Send waits meanwhile, so nothing is sent twice
  assert.equal(h.$('voiceTypeInput').value,'  We rebuilt the intake process.  ','kept until the server takes it');assert.equal(h.$('voiceTypeSend').disabled,true,'Send waits for the server');
  h.server({type:'user_text',item_id:'user-typed-1',text:'We rebuilt the intake process.',provenance:'consultant_typed'});
@@ -74,7 +75,7 @@ test('Pause: a real toggle that closes the microphone, stops the visible clock a
  assert.deepEqual(h.sent.filter(m=>m.type==='pause'),[{type:'pause'}]);
  assert.equal(h.win.AtlasVoice.status().tracks[0].enabled,false,'the microphone track is closed');
  assert.equal(h.$('voicePause').textContent,'Resume interview');assert.equal(h.$('voicePause').getAttribute('aria-label'),'Resume the interview');assert.equal(h.$('voicePause').dataset.paused,'true');
- assert.equal(h.$('voiceRepeat').disabled,true);assert.equal(h.$('voiceSkip').disabled,true);assert.equal(h.$('voiceMute').disabled,true,'mute is not pause');
+ assert.equal(h.$('voiceRepeat').disabled,true);assert.equal(h.$('voiceMute').disabled,true,'mute is not pause');
  assert.equal(h.$('voiceState').textContent,'Paused · microphone off');
  assert.deepEqual(JSON.parse(JSON.stringify(h.posted.filter(m=>m.type==='state').at(-1))),{type:'state',enabled:true,muted:true},'the audio worklet is told');
  assert.ok(h.posted.some(m=>m.type==='flush'),'anything of hers still queued is dropped: the orb cannot keep "speaking"');
@@ -101,17 +102,18 @@ test('the server\'s state events drive the toggle (a typed answer or a spoken pa
  assert.equal(h.$('voicePause').textContent,'Pause interview','other transitions change nothing');
 });
 
-test('while paused the Repeat and Skip buttons send nothing even if clicked',async()=>{
+test('while paused the Repeat button sends nothing even if clicked',async()=>{
  const h=boot();await h.live();h.$('voicePause').click();const n=h.sent.length;
- h.$('voiceRepeat').onclick();h.$('voiceSkip').onclick();
+ h.$('voiceRepeat').onclick();
  assert.equal(h.sent.length,n);
 });
 
 test('a server that did not announce controls (the other voice routes) is never sent one and keeps its mute-only controls',async()=>{
  const h=boot({announce:false,provider:'personaplex'});await h.live();
- for(const id of ['voicePause','voiceRepeat','voiceSkip','voiceTypeForm'])assert.equal(h.$(id).hidden,true,id);
- h.$('voicePause').onclick();h.$('voiceRepeat').onclick();h.$('voiceSkip').onclick();h.$('voiceTypeInput').value='hi';h.$('voiceTypeForm').onsubmit({preventDefault(){}});
- assert.deepEqual(h.sent.filter(m=>typeof m==='object'&&['pause','resume','repeat','skip','text'].includes(m.type)),[]);
+ for(const id of ['voicePause','voiceRepeat','voiceTypeForm'])assert.equal(h.$(id).hidden,true,id);
+ assert.equal(h.$('voiceEnd').hidden,false,'Stop is not an announced control: it is always there while live');
+ h.$('voicePause').onclick();h.$('voiceRepeat').onclick();h.$('voiceTypeInput').value='hi';h.$('voiceTypeForm').onsubmit({preventDefault(){}});
+ assert.deepEqual(h.sent.filter(m=>typeof m==='object'&&['pause','resume','repeat','text'].includes(m.type)),[]);
  h.$('voiceMute').click();assert.equal(h.win.AtlasVoice.status().tracks[0].enabled,false,'mute works as before');
 });
 
@@ -131,7 +133,7 @@ test('T11: the read-back card\'s buttons reach the socket as exactly the message
  for(const bad of [{kind:'correct',detail_id:'D-001',text:'no'},{kind:'withhold',detail_id:'../x'},{kind:'skip'},{kind:'end'},{},null,{kind:'correct',text:'no id here'}])act(h,bad);
  assert.equal(out(h).length,3,'nothing else is sent');
  // an older gateway that announced only the T9 controls is never sent a card message
- const old=boot({announce:['pause','resume','repeat','skip','text']});await old.live();
+ const old=boot({announce:['pause','resume','repeat','text']});await old.live();
  act(old,{kind:'confirm_summary'});act(old,{kind:'withhold',detail_id:'D-001'});assert.equal(out(old).length,0);
  // before the interview is live nothing is sent either
  const idle=boot();act(idle,{kind:'confirm_summary'});assert.equal(out(idle).length,0);
@@ -144,7 +146,7 @@ test('T11: the read-back card\'s buttons reach the socket as exactly the message
 
 // ---- v2.2 L1: the language selector and indicator, against the real client ----
 test('language: the selector is filled from the bootstrap, a chosen language is sent with the start, the server\'s language shows in the indicator, and a change while live sends exactly one message',async()=>{
- const h=boot({announce:['pause','resume','repeat','skip','text','language']});
+ const h=boot({announce:['pause','resume','repeat','text','language']});
  h.bootJson.languages={auto:true,voice:['en'],list:[{code:'en',name:'English',native:'English',rtl:false,bank:true},{code:'pl',name:'Polish',native:'Polski',rtl:false,bank:false},{code:'ar',name:'Arabic',native:'العربية',rtl:true,bank:false}]};
  h.$('voiceLanguageSelect').value='pl'; // chosen before the conversation
  await h.live();
@@ -159,8 +161,43 @@ test('language: the selector is filled from the bootstrap, a chosen language is 
  assert.deepEqual(h.sent.filter(m=>m&&m.type==='language'),[{type:'language',language:'en'}]);
 });
 test('language: a server that does not announce the language control is never sent one, and a bootstrap with no languages shows no selector',async()=>{
- const h=boot({announce:['pause','resume','repeat','skip','text']});await h.live();
+ const h=boot({announce:['pause','resume','repeat','text']});await h.live();
  assert.equal(h.$('voiceLanguage').hidden,true);
  h.$('voiceLanguageSelect').value='fr';h.$('voiceLanguageSelect').listeners.change();
  assert.deepEqual(h.sent.filter(m=>m&&m.type==='language'),[]);
+});
+
+// ---- U2 (Tony, 2026-10-31): a visible Stop interview button; its sheet offers "Stop and review what you said" or "Stop and discard", plus Cancel ----
+test('Stop interview: a visible secondary button in the live controls, named for assistive technology; the sheet reviews what was said (when something was) or discards',async()=>{
+ const h=boot();await h.live();
+ assert.equal(h.$('voiceEnd').hidden,false);assert.equal(h.$('voiceEnd').disabled,false);
+ assert.equal(h.$('voiceEndLabel').textContent,'Stop interview');assert.equal(h.$('voiceEnd').getAttribute('aria-label'),'Stop the interview');
+ // nothing said yet: the sheet says so and the first button just stops
+ h.$('voiceEnd').click();assert.equal(h.$('voiceEndDialog').open,true);
+ assert.match(h.$('voiceEndText').textContent,/Nothing has been said yet, so there is nothing to review/);assert.equal(h.$('voiceEndConfirm').textContent,'Stop interview');
+ h.$('voiceEndDialog').close();
+ // something was said: review it, or throw it away
+ h.server({type:'user_text',item_id:'user-1',text:'We rebuilt the claims intake process.',provenance:'unverified_speech_recognition'});
+ h.$('voiceEnd').click();
+ assert.equal(h.$('voiceEndConfirm').textContent,'Stop and review what you said');assert.match(h.$('voiceEndText').textContent,/review what you said.*Submit for review.*discard this interview/);
+ const before=h.sent.filter(m=>typeof m==='object').length;
+ h.$('voiceEndDiscard').click();
+ assert.equal(h.$('voiceEndDialog').open,false);assert.equal(h.win.AtlasVoice.status().phase,'idle');
+ assert.deepEqual(h.sent.filter(m=>typeof m==='object').slice(before).map(m=>m.type),['discard'],'discard, never end: nothing of it is saved');
+ assert.ok(h.$('voicePanel').classList.contains('fit-settling'),'the sheet keeps its 450 ms click shield');
+});
+test('Stop interview: "Stop and review what you said" ends the interview the normal way (end, then the notes)',async()=>{
+ const h=boot();await h.live();
+ h.server({type:'user_text',item_id:'user-1',text:'We rebuilt the claims intake process.',provenance:'unverified_speech_recognition'});
+ h.$('voiceEnd').click();h.$('voiceEndConfirm').click();
+ assert.equal(h.$('voiceEndDialog').open,false);assert.equal(h.win.AtlasVoice.status().phase,'ending');
+ assert.deepEqual(h.sent.filter(m=>typeof m==='object'&&(m.type==='end'||m.type==='discard')).map(m=>m.type),['end']);
+ assert.ok(h.$('voicePanel').classList.contains('fit-settling'));
+});
+test('Stop interview: before live it is "Cancel connection"; there is no Skip control and the page never builds a skip message',async()=>{
+ const h=boot();
+ assert.equal(h.$('voiceSkip').onclick,undefined);
+ const page=fs.readFileSync(path.join(ROOT,'ATLAS_Voice.html'),'utf8');
+ assert.ok(!/End interview|End this interview|End and prepare/.test(page.replace(/<script[\s\S]*?<\/script>/g,'').replace(/<style[\s\S]*?<\/style>/g,'')),'"End interview" is "Stop interview" everywhere the consultant reads it');
+ assert.match(page,/id="voiceEndLabel">Stop interview</);assert.match(page,/Stop and review what you said/);assert.match(page,/Stop and discard/);
 });

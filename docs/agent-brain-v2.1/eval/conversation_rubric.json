@@ -288,9 +288,9 @@
    "kind": "good",
    "source": "03_Conversation_Design/ATLAS_Personality_and_Conversation_Design.md section 10",
    "speaker": "atlas",
-   "text": "Hi! I'm Atlas. I'm here to help capture the work you've done and make sure the experience is represented properly. We'll have a conversation about the project, your contribution and what changed because of it. I'll ask follow-up questions where something deserves a little more detail, and you can skip anything you don't know or can't share. At the end, I'll summarise what I heard so you can correct it before it goes for review. To start, could you tell me about the project you're working on?",
+   "text": "Hi! I'm Atlas. I'm here to help capture the work you've done and make sure the experience is represented properly. We'll have a conversation about the project, your contribution and what changed because of it. I'll ask follow-up questions where something deserves a little more detail, and if something is client-confidential, just say so and I'll note it without the details. At the end, I'll summarise what I heard so you can correct it before it goes for review. To start, could you tell me about the project you're working on?",
    "rating": 4,
-   "note": "Seven sentences: too long for one spoken turn (the shipped opening is two pieces); the content is the pack's."
+   "note": "Seven sentences: too long for one spoken turn (the shipped opening is two pieces); the content is the pack's, with its \"skip anything you don't know or can't share\" clause replaced by the confidentiality line (Tony, 2026-10-31, DECISION_LOG D-U2-1)."
   },
   {
    "id": "maap-1",

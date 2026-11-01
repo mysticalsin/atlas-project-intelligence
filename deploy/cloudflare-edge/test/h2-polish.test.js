@@ -256,6 +256,7 @@ async function interviewing() {
   h.s.ai.analyst = analystOf({ 'user-1': [{ field: 'problem', quote: 'releases took a whole weekend and failed often' }] });
   await opened(h);
   talked(h); await until(() => h.calls.talker.length === 2 && !h.s.busy());
+  h.advance(960); // the planned time is nearly used: "I am done" is respected at once (U2)
   talked(h); await until(() => h.events.some(e => e.type === 'summary') && !h.s.busy());
   return h;
 }

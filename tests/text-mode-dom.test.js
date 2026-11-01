@@ -41,7 +41,7 @@ function boot({announce=true,provider='workers',text=true}={}){
   async live(){
    await $('voiceStartText').onclick();await new Promise(r=>setTimeout(r,5));
    $('modelConsent').checked=true;await $('voiceConsentType').onclick();await new Promise(r=>setTimeout(r,30));
-   server({type:'ready',model:'ATLAS',capture:true,input:'text',...(announce?{controls:announce===true?['pause','resume','repeat','skip','text','correct','withhold','confirm_summary']:announce}:{})});
+   server({type:'ready',model:'ATLAS',capture:true,input:'text',...(announce?{controls:announce===true?['pause','resume','repeat','text','correct','withhold','confirm_summary']:announce}:{})});
   }};
 }
 const flush=()=>new Promise(r=>setTimeout(r,5));

@@ -112,15 +112,21 @@ test('a2: notes are rebuilt every turn, never accumulated; covered fields are th
   assert.ok(!h.s.history.some(m => m.content.startsWith('NEXT MOVE')), 'the note is not part of the conversation history');
 });
 
-test('a3: a deferral ("I don\'t know") is accepted, the field stays open and is not asked again', async () => {
-  const h = harness({ said: ['We cut triage time by a large margin after the rollout across the regions.', 'Honestly I do not know the baseline, I never saw those figures.'] });
+test('a3: "I don\'t know" is met with two easier angles, then the point is left open (accepted) and not asked again', async () => {
+  const h = harness({ said: ['We cut triage time by a large margin after the rollout across the regions.', 'Honestly I do not know the baseline, I never saw those figures.', 'Still no idea, I never saw them.', 'No, I really do not know.'] });
   await opened(h);
   talked(h); await until(() => h.calls.talker.length === 2 && !h.s.busy());
   talked(h); await until(() => h.calls.talker.length === 3 && !h.s.busy());
+  const first = h.s.humane.asked.at(-1);
+  assert.equal(first.kind, 'ask'); assert.match(first.why, /^reangle:[a-z_]+:1/); assert.equal(first.ack_category, 'reangle');
+  assert.match(noteOf(h.calls.talker[2], 'NEXT MOVE')[0], /come at it from another side/);
+  talked(h); await until(() => h.calls.talker.length === 4 && !h.s.busy());
+  const second = h.s.humane.asked.at(-1); assert.match(second.why, /^reangle:[a-z_]+:2/); assert.equal(second.field, first.field);
+  talked(h); await until(() => h.calls.talker.length === 5 && !h.s.busy());
   const move = h.s.humane.asked.at(-1);
-  assert.equal(move.kind, 'accept_and_move'); assert.match(move.why, /^dont_know:/);
-  assert.ok(!h.s.humane.covered.has('measurement') || true);
-  assert.match(noteOf(h.calls.talker[2], 'NEXT MOVE')[0], /Accept their answer without pressing/);
+  assert.equal(move.kind, 'accept_and_move'); assert.match(move.why, new RegExp('^dont_know:' + first.field)); assert.notEqual(move.field, first.field);
+  assert.match(noteOf(h.calls.talker[4], 'NEXT MOVE')[0], /note the point as open/);
+  assert.ok(h.s.ledger.deferred[first.field], 'the point is recorded open in the ledger (the card and the next-question panel show it as still open)');
 });
 
 // (b) An adversarial talker: two questions, "Amazing!", the same opener every time.

@@ -485,3 +485,22 @@ def test_l1_languages_with_intents_are_exactly_the_bank_languages_and_the_rest_a
     for lang in ('fr', 'es', 'pt', 'de', 'it', 'nl'):   # intents only, no English cues
         r = analyze_turn('we delivered it, about 80% faster, the pilot failed', lang)
         assert r['cues'] == [] and r['numbers'] == []
+
+
+# v2.2 U2 (Tony, 2026-10-31): a bare "pass", "skip" or "next question" is still read as a request to move on in every bank language, because the selector answers it with an easier
+# angle on the same point instead of moving on. The wording a consultant is likely to use, short and spoken.
+PASS = {'en': ['pass', "I'll pass", 'skip this one', 'skip', 'next question'], 'fr': ['je passe', 'passe', 'question suivante'], 'es': ['paso', 'siguiente pregunta'], 'pt': ['passo', 'pular', 'próxima pergunta'],
+        'de': ['pass', 'ich passe', 'nächste Frage', 'überspringen'], 'it': ['passo', 'prossima domanda'], 'nl': ['ik pas', 'volgende vraag', 'overslaan']}
+NO_IDEA = {'en': ["I don't know", 'no idea', 'no clue', 'dunno'], 'fr': ['je ne sais pas', 'aucune idée', "pas d'idée"], 'es': ['no lo sé', 'ni idea'], 'pt': ['não sei', 'sem ideia'],
+           'de': ['weiß ich nicht', 'keine Ahnung'], 'it': ['non lo so', 'non ne ho idea'], 'nl': ['weet ik niet', 'geen idee', 'geen flauw idee']}
+
+
+@pytest.mark.parametrize('lang', sorted(PASS))
+def test_u2_pass_and_no_idea_are_recognised_in_every_bank_language(lang):
+    for text in PASS[lang]:
+        assert analyze_turn(text, lang)['intents'] == ['skip'], (lang, text)
+    for text in NO_IDEA[lang]:
+        assert analyze_turn(text, lang)['intents'] == ['dont_know'], (lang, text)
+    # inside a real answer the same words are part of the answer (the control rules are capped at 12 words)
+    long = 'we had to pass the review twice and in the end the migration shipped with the new validation rules and nothing was skipped'
+    assert 'skip' not in analyze_turn(long, lang if lang == 'en' else 'en')['intents']

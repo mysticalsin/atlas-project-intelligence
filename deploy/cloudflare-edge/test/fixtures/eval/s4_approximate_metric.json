@@ -39,6 +39,7 @@
   },
   {
    "said": "That is everything, I am done.",
+   "elapsed": 960,
    "expect": {
     "move": {
      "kind": "summary"

@@ -8,9 +8,11 @@ rung (1-8, the follow-up ladder), say (what to ask, from QUESTION_BANK), why (a 
 ack_category (a key of persona.ACKS). The Move never contains a score: the ranking below orders questions, it is not a rating
 of anyone, and nothing here describes the person (D18).
 
-Priority (first that applies): wrap-up time > confirm an uncertain span > the consultant wants to stop > a correction (use their
-version, narrow) > "I don't know" / "I can't share" / skip (accept, leave the field OPEN, ask something else, never ask it
-again) > a contradiction in the plan (both versions, neutrally, never pick) > a metric without a basis (ONE part per move:
+Priority (first that applies): wrap-up time > confirm an uncertain span > the consultant wants to stop (only once the essentials are
+covered or the planned time is nearly used; before that ATLAS says what is still missing and asks one more question) > a correction
+(use their version, narrow) > "I can't share" (accept, keep it out, ask something else) > "I don't know" / "no idea" / "pass" / "skip" /
+"next question" (Tony, 2026-10-31: never accepted at once, and never invited: up to two narrower, easier angles on the SAME point, then the
+point is recorded OPEN in the consultant's own words and ATLAS moves to another point) > a contradiction in the plan (both versions, neutrally, never pick) > a metric without a basis (ONE part per move:
 measured or estimated, period, baseline, source) > a vague verb (a concrete example, then ownership) > a team claim (their own
 part, without diminishing the team) > a technology list (where and how deep) > a certification (issuer, date) > client praise
 (who said it, never a quote) > one reflection when the interview moves to depth > the follow-up ladder (open exploration,
@@ -56,7 +58,12 @@ CONFIG = {
     },
     'gain': {'missing': 4, 'measurement_flagged': 5, 'measurement_qualitative': 2},
     'relevance': {'default': 3, 'next_rung': 5, 'same_rung': 3, 'ahead': 3, 'behind': 2, 'phase_bonus': 1, 'depth_rung': 5, 'breadth_rung': 3},
-    'max_attempts': 2,        # asks on one point before the selector offers to move on
+    'max_attempts': 2,        # asks on one point before the selector records it open and moves on
+    'max_reangles': 2,        # "I don't know" / "pass" / "skip": narrower, easier angles on the same point before it is recorded as open (Tony, 2026-10-31)
+    'max_stop_holds': 2,      # "that's all" before the essentials are covered: ATLAS says what is missing and asks once more, at most this many times (the Stop button always ends)
+    # which angles a point gets, in order: a figure is approached by its order of magnitude and by who would know; the consultant's own part by an example and by what they saw first-hand; proof by who could vouch
+    'reangle_kind': {'measurement': 'numeric', 'outcome': 'numeric', 'contribution': 'personal', 'intervention': 'personal', 'decision': 'personal', 'evidence': 'proof'},
+    'reangle_angles': {'numeric': ['reangle_scale', 'reangle_who'], 'personal': ['reangle_example', 'reangle_saw'], 'proof': ['reangle_who', 'reangle_example'], 'default': ['reangle_example', 'reangle_who']},
     'repeat_window': 6,       # compared with the last N asked says
     'repeat_num': 4, 'repeat_den': 5,   # similar when intersection / union of word 3-grams >= 4/5 (integers: no float parity risk)
     'wrap_s': 90,             # = cascade.WRAP_S: with this little time left the next move is the closing
@@ -147,8 +154,13 @@ QUESTION_BANK = {
     'correction_number': {'en': ['How was that number arrived at?', 'What does that figure measure exactly?']},   # the acknowledgement before it already says the figure is changed
     'anonymise': {'en': ['We can keep names out of this. What can you say about the situation in general terms?',
                          "We can leave out the details you can't share. How would you describe it without naming anyone?"]},
-    'offer_move_on': {'en': ["Let's leave that open. What happened next on the project?", "That's fine, we don't have to settle it. How did the work wrap up?",
-                             'It can stay open. What happened after that?']},
+    'offer_move_on': {'en': ["I'll note that as still open. What happened next on the project?", "I'll keep that open for now. How did the work wrap up?",
+                             'That stays open for now. What happened after that?']},   # ATLAS moves on after two unproductive tries; it never invites the consultant to skip
+    # "I don't know", "no idea", "pass", "skip", "next question": a narrower, easier angle on the SAME point (one question each, no pressure, never an accusation)
+    'reangle_example': {'en': ["Let me make it easier: what's one concrete example you remember, however small?", 'Could you give me one specific moment from the project that touches on that?']},
+    'reangle_scale': {'en': ['What would a rough order of magnitude be, even approximately?', 'If you had to put a rough range on it, what would it be?']},
+    'reangle_who': {'en': ['Who on the project would know that best?', 'Who could tell me more about that, even if it was not you?']},
+    'reangle_saw': {'en': ['What did you see or do yourself at that point?', 'What did you personally notice while that was going on?']},
     # speech recognition: a closed check by design, then a repair when the consultant says no
     'confirm_asr': {'en': ['Just to check I heard right: was that {span}?', 'Sorry, I want to be sure: did you say {span}?', 'Quick check on what I heard: was it {span}?']},
     'asr_repair': {'en': ['Sorry, I may have misheard. What should I have written down?', 'Thanks for catching that. What was the right one?']},
@@ -158,16 +170,19 @@ QUESTION_BANK = {
 # Spoken lines that are not questions (no "?"): the hand to the read-back summary, and the close.
 LINES = {
     'summary': {'en': ["Let me read back what I have so far, and you can tell me what I've misunderstood or missed.", "I'll read back what I've captured so far; please correct anything that's off."]},
+    # "that's all" before the essentials are covered: what is still missing, then one more question (the question is appended, it carries the only "?")
+    'stop_missing': {'en': ["Before we wrap up, I'm still missing {labels}.", "I'd like to have {labels} before we finish."]},
     'close': {'en': ["That's all the time we have. Thank you for sharing this; I'll prepare your summary for you to review and correct.",
                      "We're at the end of our time. Thanks for walking me through it; you'll be able to review what I captured."]},
 }
-NO_HOOK = ['contradiction', 'setback_response', 'keep_going', 'anonymise', 'correction', 'correction_number'] + METRIC_PARTS   # moves that carry no reference to the consultant's own words
+REANGLES = ['reangle_example', 'reangle_scale', 'reangle_who', 'reangle_saw']   # the angles an "I don't know" is met with (QUESTION_BANK)
+NO_HOOK = ['contradiction', 'setback_response', 'keep_going', 'anonymise', 'correction', 'correction_number'] + REANGLES + METRIC_PARTS   # moves that carry no reference to the consultant's own words
 REPEAT_LAST = 'repeat_last'   # why-code of a move that puts the previous question again after a pause, a repeat request or a question to ATLAS
 LEAD_RUSHED = "No problem, let's keep it to three things: the project, your part, and what changed."   # said once, before the first question of a rushed interview (pack Example 6)
 
 # Intents asked about a ledger field that do not count as an attempt at the field's own question.
 FOLLOW_INTENTS = {'decision': 'decision_follow', 'intervention': 'example_follow', 'evidence': 'evidence_follow', 'measurement': 'measurement_follow'}
-NOT_ATTEMPTS = ['offer_move_on', 'confirm_asr', 'asr_repair', 'correction', 'correction_number', 'anonymise', 'contradiction', 'reflect', 'setback_response', 'keep_going'] + list(FOLLOW_INTENTS.values()) + METRIC_PARTS
+NOT_ATTEMPTS = ['offer_move_on', 'confirm_asr', 'asr_repair', 'correction', 'correction_number', 'anonymise', 'contradiction', 'reflect', 'setback_response', 'keep_going'] + REANGLES + list(FOLLOW_INTENTS.values()) + METRIC_PARTS
 FIELD_KEYS = list(FIELDS)
 
 _FLAGS = re.I | re.A
@@ -601,15 +616,18 @@ def _blocked(c, cand):
     return _count(c, intent, f) >= CONFIG['max_attempts']
 
 
-def _pick(c):
-    """The first candidate that is neither deferred nor exhausted nor a repeat, with its words filled in; None when nothing is left."""
+def _pick(c, only=None):
+    """The first candidate that is neither deferred nor exhausted nor a repeat, with its words filled in; None when nothing is left.
+    only: a set of fields; no other candidate is considered (and an exhausted point is skipped, never offered to move on from)."""
     suffix = ''
     for cand in _candidates(c):
         f = cand['field']
+        if only is not None and f not in only:
+            continue
         if f in c['deferred']:
             continue
         if _blocked(c, cand):
-            if cand['important'] and f in FIELDS and not any(a.get('intent') == 'offer_move_on' and a.get('field') == f for a in c['asked']):
+            if only is None and cand['important'] and f in FIELDS and not any(a.get('intent') == 'offer_move_on' and a.get('field') == f for a in c['asked']):
                 offer = {'intent': 'offer_move_on', 'kind': 'offer_move_on', 'field': f, 'rung': cand['rung'], 'params': {}, 'why': 'blocked:' + cand['intent'] + ':' + f}
                 said = _say(c, offer)
                 if said:
@@ -684,6 +702,40 @@ def _defer_field(c):
     return c['hints'][0] if c['hints'] else c['last_field']
 
 
+def _reangle(c, field):
+    """(candidate, (say, suffix), n) for the next narrower, easier angle on the point just left unanswered, or None once max_reangles were tried
+    (the point is then recorded open) or every wording would repeat a recent question."""
+    if field not in FIELDS:
+        return None
+    n = sum(1 for a in c['asked'] if _real(a) and a.get('intent') in REANGLES and a.get('field') == field)
+    if n >= CONFIG['max_reangles']:
+        return None
+    angles = CONFIG['reangle_angles'][CONFIG['reangle_kind'].get(field, 'default')]
+    cand = {'intent': angles[n], 'field': field, 'rung': CONFIG['fields'][field]['rung'], 'params': {}}
+    said = _say(c, cand)
+    return (cand, said, n) if said else None
+
+
+def _hold_stop(c):
+    """A Move that says what is still missing and asks one more question, or None when the request to stop is to be respected: the essentials are covered
+    (or open, or known up front), the planned time is nearly used, nothing is left to ask about them, or it was already held max_stop_holds times."""
+    if c['phase'] in ('closing', 'wrap'):
+        return None
+    holds = sum(1 for a in c['asked'] if isinstance(a.get('why'), str) and a['why'].startswith('stop_missing:'))
+    if holds >= CONFIG['max_stop_holds']:
+        return None
+    known = c['present'] | c['covered_now'] | c['prefilled'] | c['deferred']
+    missing = [f for f in ESSENTIALS if f not in known]
+    cand = _pick(c, set(missing)) if missing else None
+    if cand is None:
+        return None
+    labels = [CONFIG['reflect_labels'][f] for f in missing]
+    text = labels[0] if len(labels) == 1 else ', '.join(labels[:-1]) + ' and ' + labels[-1]
+    lead = _render(LINES['stop_missing']['en'][holds % len(LINES['stop_missing']['en'])], {'labels': text})
+    say = lead + ' ' + cand['say']
+    return _move('ask', cand, say, 'stop_missing:' + ','.join(missing) + '>' + cand['why'], ('none', None), c)
+
+
 def select(plan, turn, asked, prefill, phase, time_left, asr=None, rushed=False, lang='en'):
     """The next move. See the module docstring for the rules; every argument is optional data, a malformed one is ignored."""
     c = _context(plan, turn, asked, prefill, phase, time_left, rushed)
@@ -706,9 +758,9 @@ def select(plan, turn, asked, prefill, phase, time_left, asr=None, rushed=False,
         if said is None:
             said = (_render(QUESTION_BANK['confirm_asr']['en'][_count(c, 'confirm_asr', any_field=True) % 3], cand['params']), '+rv')
         return _move('confirm_asr', cand, said[0], 'asr_span' + said[1], ('none', None))
-    # 3. the consultant wants to stop
+    # 3. the consultant wants to stop: respected once the essentials are covered or the planned time is nearly used; before that, what is still missing and one more question
     if 'stop' in intents:
-        return _end(c, 'stop')
+        return _hold_stop(c) or _end(c, 'stop')
     # 4. a correction: use their version, narrow
     if 'correction' in intents:
         number = bool(c['numbers'])
@@ -723,10 +775,17 @@ def select(plan, turn, asked, prefill, phase, time_left, asr=None, rushed=False,
     # 5b. right after the read-back summary, a short reply ends the interview
     if last and (last.get('kind') == 'summary' or last.get('intent') == 'summary') and (c['words'] <= 6 or 'confirm' in intents):
         return _line(c, 'close', 'close:after_summary')
-    # 6. "I don't know" / "I can't share" / skip: accept, leave the field open, ask something else (never that field again)
+    # 6. "I can't share": accept, keep it out, ask something else. "I don't know" / "pass" / "skip": re-angle twice, then record the field OPEN and ask something else (never that field again)
     accept = next((i for i in ('cannot_disclose', 'dont_know', 'skip') if i in intents), None)
     if accept:
         field = _defer_field(c)
+        # "I don't know", "no idea", "pass", "skip", "next question" is not accepted at once: a narrower, easier angle on the same point, up to max_reangles times; a long
+        # answer that still says something (an "I don't know" inside real content) is not a bare refusal and is taken as it was said
+        if accept != 'cannot_disclose' and field and not (c['words'] >= CONFIG['private_content_words'] and c['hints']):
+            angle = _reangle(c, field)
+            if angle:
+                cand, said, n = angle
+                return _move('ask', cand, said[0], 'reangle:%s:%d%s' % (field, n + 1, said[1]), ('ack', 'reangle'), c)
         # "I can't name the client, but we rebuilt their reporting": there is content, so it is kept private as said and the interview goes on (the point is not left open)
         content = accept == 'cannot_disclose' and c['words'] >= CONFIG['private_content_words'] and bool(c['hints'])
         if field and not content:

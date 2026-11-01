@@ -15,7 +15,7 @@ only steer the conversation, which keeps the "agent tools cannot approve or publ
 
 Every transition appends an audit entry {from, to, event, actor, at, workflow_version, reason} (plus `data` for focus and skip).
 An illegal move raises StateError and changes nothing. Reasons are required for reject, close_rejected, withdraw and dispute.
-Missing data is never inferred: a skipped field is recorded as skipped, not as absent or negative.
+Missing data is never inferred: a skipped field is recorded as skipped, not as absent or negative. (Since 2026-10-31 nothing fires `skip`: the consultant cannot skip a question, DECISION_LOG D-U2-2; the event stays in the machine unused.)
 """
 import copy
 import re

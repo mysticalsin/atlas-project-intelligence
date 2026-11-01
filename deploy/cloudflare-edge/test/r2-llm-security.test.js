@@ -31,6 +31,7 @@ test('p1 regression: after "Keep private" neither the private utterance nor the 
   };
   await opened(h);
   talked(h); await until(() => h.calls.talker.length === 2 && !h.s.busy());
+  h.advance(960); // the planned time is nearly used: "I am done" is respected at once (U2)
   talked(h); await until(() => h.events.some(e => e.type === 'summary') && !h.s.busy());
   await send(h, { type: 'withhold', detail_id: 'D-001' });
   seen.length = 0;
@@ -59,6 +60,7 @@ test('p1b regression: the draft is exactly the card the consultant confirmed, an
   };
   await opened(h);
   talked(h); await until(() => h.calls.talker.length === 2 && !h.s.busy());
+  h.advance(960); // the planned time is nearly used: "I am done" is respected at once (U2)
   talked(h); await until(() => h.events.some(e => e.type === 'summary') && !h.s.busy());
   await send(h, { type: 'withhold', detail_id: 'D-001' });
   talked(h); await until(() => h.s.pending.size > 0 && releaseLate);

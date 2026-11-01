@@ -78,12 +78,12 @@ export function sessionFlags(env = {}) {
     speculativeStt: ['on', '1', 'true'].includes(String(e.SPECULATIVE_STT || '').toLowerCase()) };
 }
 export const MAX_SECONDS = INTERVIEW_LIMIT_S; // the whole interview (20 minutes); ATLAS's own speaking time is a second cap inside it
-// Pause, repeat, skip and typed turns (Agent Brain v2.1 T9). Paused time does not count toward the interview (maxSeconds is measured in
+// Pause, repeat and typed turns (Agent Brain v2.1 T9; the Skip button was removed on 2026-10-31). Paused time does not count toward the interview (maxSeconds is measured in
 // active seconds, activeSeconds()), but nothing may stay open for ever: the session ends at WALL_CAP_S of wall-clock time, paused or not.
 export const WALL_CAP_S = 45 * 60;
 export const WALL_CAP_MESSAGE = 'The 45-minute session limit was reached. Finishing your notes.';
-export const CONTROLS = Object.freeze(['pause', 'resume', 'repeat', 'skip', 'text', 'correct', 'withhold', 'confirm_summary', 'language']); // client events this session understands (sent in `ready`, so older gateways are never sent them)
-export const CONTROL_MAX_WORDS = 12; // a spoken pause / repeat / skip is a short request; the same words inside a long answer are part of the answer
+export const CONTROLS = Object.freeze(['pause', 'resume', 'repeat', 'text', 'correct', 'withhold', 'confirm_summary', 'language']); // client events this session understands (sent in `ready`, so older gateways are never sent them)
+export const CONTROL_MAX_WORDS = 12; // a spoken pause / repeat is a short request; the same words inside a long answer are part of the answer
 export const TYPED_MAX_CHARS = 2000; // a typed answer; longer text is cut (the browser limits it to the same)
 // Cost bounds (S1, review L5): each typed turn costs an analyst call and a talker call, so one is taken at a time and not faster than this; corrections are bounded per minute.
 export const TYPED_MIN_INTERVAL_S = 1.5;
@@ -108,9 +108,9 @@ export function messageTooLarge(data) {
 export const LANG_SWITCH_MIN_S = 5, LANG_SWITCH_MAX = 12; // the language selector: at least this long between two switches, and at most this many per session (X2, red M12: each switch re-warms speech)
 export const SWITCH_MIN_UNITS = 3; // fewer words than this never count as evidence
 const Q = /[?？\u061f]/; // a question mark: ?, the full-width one or the Arabic one
-export const SKIP_UNAVAILABLE = 'Skipping is not available in a focused proof interview.';
-const SKIP_NOTE = '(I\'d like to skip that question.)'; // history entry for the Skip button, so the talker sees what the consultant did (never the ledger)
-const SKIP_INSTRUCTION = '[Server: the consultant chose to skip your last question.] Accept that without pressing, and ask one different question.';
+// Tony, 2026-10-31: ATLAS is there to understand what the consultant did, so a question is never skipped on request. The Skip button is gone; an old client that still sends
+// {type:'skip'} is answered with this note and nothing else happens (no move, no state change, no ledger entry). A spoken or typed "skip" is an answer the selector probes.
+export const SKIP_DECLINED = 'ATLAS keeps going on this one, because your own account is the point. A rough answer, an example or who would know is enough.';
 // Summary read-back and correction revisions (T11, plan 3h, D19, Tony Q2). At the close ATLAS reads back a few facts, the browser shows the whole card
 // (summary event), and the consultant corrects, keeps private or confirms. Confirming saves an OWNER-ONLY evidence draft; nothing goes to a reviewer
 // until the owner presses Submit for review in the library (a separate click, never here).
@@ -128,7 +128,6 @@ const SUMMARY_CLOSE_INSTRUCTION = saved => '[Server: the consultant confirmed th
   + (saved ? 'it is saved as a private draft that only they can see, and goes nowhere until they press Submit for review.' : 'it could not be saved to the library, so nothing was filed.') + ' Ask no question.';
 const SUMMARY_CORRECTED_INSTRUCTION = '[Server: the consultant corrected an item and the summary card is updated.] Thank them in one short sentence and ask once whether there is anything else you misunderstood or missed.';
 const SUMMARY_MOVE = { kind: 'summary', intent: 'summary', field: null, rung: null, say: 'Let me read that back once more.', why: 'summary:before_close', reaction: 'none', ack_category: null };
-const FIELD_ID = /^[a-z][a-z0-9_]{0,63}$/; // the state machine's rule for a skipped field: an internal id, never free text
 // Discovery focus (conversation-state.js `focus`) is an annotation of where the conversation is, derived from the field of the move just chosen.
 const FIELD_FOCUS = { problem: 'context', stakes: 'context', contribution: 'contribution', intervention: 'contribution', decision: 'contribution', adoption: 'contribution',
   evidence: 'evidence', measurement: 'evidence', limitations: 'evidence', outcome: 'outcome', customer_fit: 'skills', poor_fit: 'skills' };
@@ -225,8 +224,8 @@ const MOVE_ACTION = {
   ask: 'Ask this one question, in your own natural words.',
   confirm_asr: 'Check that you heard it right: ask only this confirming question, in your own words.',
   reflect: 'Say back in one short sentence what you have understood so far, then ask the one check question.',
-  offer_move_on: 'Offer to move on from this point, gently; ask only that.',
-  accept_and_move: 'Accept their answer without pressing; then ask the one question.',
+  offer_move_on: 'Say, gently, that you will note this point as still open, then ask only the new question. Never tell them they may skip.',
+  accept_and_move: 'Take what they said without pressing and note the point as open; then ask the one question. Never tell them they may skip or pass.',
   summary: 'No question is left: this is the read-back. Say back only the SUMMARY FACTS (next note), mention the open points briefly, then ask only: ' + SUMMARY_QUESTION,
   summary_again: 'This is the second read-back: say back only the SUMMARY CHANGES (next note), then ask only: ' + SUMMARY_QUESTION_AGAIN,
   offer_extension: 'Ask only this one polite question, in your own natural words, naming the point (it is the consultant\'s choice: a no is fine, no pressure, and it is asked once).',
@@ -236,7 +235,8 @@ const MOVE_REACTION = {
   none: 'Open with no reaction; go straight to the move.',
   neutral: 'A very short neutral acknowledgement is enough.',
   thanks_detail: 'Thank them briefly for the detail; no praise.',
-  no_number_fine: 'Say that it is fine not to have the number; no pressure.',
+  no_number_fine: 'Say you will note the figure as still open for now; no pressure, never an invitation to skip.',
+  reangle: 'Say in a few words that you will come at it from another side; no pressure, no accusation, never an invitation to skip.',
   confidential_ok: 'Say that keeping it private is fine; no pressure.',
   correction_thanks: 'Say you will use their version instead; no thanks needed.',
   correction_thanks_fact: 'Thank them for the correction and use their version.',
@@ -352,7 +352,7 @@ export class Session {
       if (n === 1 && value.type === 'pause') return this.pauseSession('ui');
       if (n === 1 && value.type === 'resume') return this.resumeSession('ui');
       if (n === 1 && value.type === 'repeat') return this.repeatQuestion('ui');
-      if (n === 1 && value.type === 'skip') return this.skipQuestion();
+      if (n === 1 && value.type === 'skip') return this.declineSkip(); // (an old client's Skip button: refused politely, never a skip)
       if (n === 2 && value.type === 'text' && typeof value.text === 'string') return this.typedTurn(value.text);
       if (n === 2 && value.type === 'language' && typeof value.language === 'string') return this.lockLanguage(value.language); // the language selector: 'auto' or a language code
       // The summary card (T11): exactly their own keys.
@@ -811,7 +811,6 @@ export class Session {
       const short = turn && turn.words <= CONTROL_MAX_WORDS;
       if (short && turn.intents.includes('pause')) return this.pauseSession('voice');
       if (short && turn.intents.includes('repeat')) return this.repeatQuestion('voice');
-      if (short && turn.intents.includes('skip')) this.noteSkip(this.humane.asked.at(-1)?.field); // the answer below accepts it and moves on
     }
     // Admin (Tony) gets the same patience, without the nudge or an acknowledgement (and keeps the analyst's guidance).
     if (this.admin) return this.startReply(undefined, { turn: this.turns, endedAt, notBefore: trailing && endedBy !== 'thinking' ? endedAt + THINKING_PAUSE : 0, timeline: { sttMs, selectorMs: -1 } });
@@ -973,6 +972,10 @@ export class Session {
     if (!turn.intents.some(i => ['dont_know', 'cannot_disclose', 'skip'].includes(i)) || /^kept_private:/.test(move.why || '')) for (const f of turn.field_hints) h.covered.add(f);
     // The selector had to avoid saying a question it already said (a variant, or a whole candidate): counted, never logged.
     if (!replacing && /\+r[vi]/.test(move.why || '')) this.metric('question_repeat', { variant: move.why.includes('+rv') ? 1 : 0, skipped: move.why.includes('+ri') ? 1 : 0 });
+    // "I don't know" / "pass" / "skip" after the narrower angles (U2, Tony 2026-10-31): the point is recorded OPEN, in the consultant's own words (their turn is in the transcript and the
+    // analyst's "unknown" detail), so the card and the next-question panel show it as still open. Nothing is inferred about them; the point is never asked again.
+    const openPoint = /^(?:dont_know|skip):([a-z_]+)(?:>|$)/.exec(move.why || '');
+    if (openPoint && Object.hasOwn(FIELDS, openPoint[1]) && this.ledger && !(openPoint[1] in this.ledger.deferred)) { this.ledger.deferred[openPoint[1]] = 'Left open in the consultant\'s own words after two other angles.'; this.metric('point_left_open', {}); }
     // The selector closes once a read-back was asked and nothing is left. Nothing is filed without the consultant's confirmation, so a close that is not
     // the time limit or their own wish to stop becomes another read-back (the card is on their screen; they confirm there).
     if (move.kind === 'close' && !/^close:(wrap|stop)/.test(move.why || '') && !this.summary.confirmed && this.capture && !this.admin) { this.metric('summary_before_close', {}); return { ...SUMMARY_MOVE }; }
@@ -1032,7 +1035,12 @@ export class Session {
   // the figure is answered, its baseline or period is still open.
   unknownParts() {
     const a = this.humane.asked, out = new Set();
-    for (let i = 1; i < a.length; i++) if (/^dont_know:/.test(a[i].why || '') && SELECTOR_METRIC_PARTS.includes(a[i - 1].intent)) out.add(a[i - 1].intent);
+    for (let i = 1; i < a.length; i++) {
+      if (!/^(?:dont_know|skip):/.test(a[i].why || '')) continue;
+      let j = i - 1;
+      while (j > 0 && /^reangle_/.test(a[j].intent || '')) j--; // the easier angles asked in between belong to the same point
+      if (SELECTOR_METRIC_PARTS.includes(a[j].intent)) out.add(a[j].intent);
+    }
     return [...out];
   }
   // Send the card to the browser (only when it changed, unless forced). Sent to the same person on the same authenticated socket.
@@ -1200,12 +1208,6 @@ export class Session {
   // A stock line in the consultant's language (persona.py PAUSE_LINES / RESUME_LINES, summary lines: fr es pt de it nl and en), rotating. '' for any other language: the caller then
   // has the talker write that one line (generated), never plays English.
   line(bank, n) { const list = bank[this.language]; return list?.length ? list[n % list.length] : ''; }
-  // The consultant chose to skip the question just asked: its field (an internal id) is recorded as skipped_by_user (the field itself stays open).
-  noteSkip(field) {
-    if (this.mode !== 'full') return;
-    if (typeof field === 'string' && FIELD_ID.test(field)) this.fireState('skip', 'user', { data: { field } });
-    else this.metric('skip_no_field', {});
-  }
   // Drop what the consultant was in the middle of saying: a held click, a half-heard answer, a pending end-of-turn check.
   dropMic() {
     const d = this.turnDetector;
@@ -1247,10 +1249,10 @@ export class Session {
   }
   // The consultant's last turn when it still waits for its reply: the question in front of them is older than it (the reply was never composed: the
   // connection dropped, or they paused while the answer was still being transcribed). A short spoken pause / repeat is a control, not an answer
-  // (answering it would pause again), and the Skip button's own history note has its reply composed elsewhere.
+  // (answering it would pause again).
   pendingAnswer() {
     const q = this.lastQuestion, last = this.history.findLast(m => m.role === 'user');
-    if (!last || last.content === SKIP_NOTE || (q && (q.turn ?? this.turns) === this.turns)) return null;
+    if (!last || (q && (q.turn ?? this.turns) === this.turns)) return null;
     try { const t = analyzeTurn(last.content, this.language, { asked_field: this.humane.asked.at(-1)?.field ?? null }); if (t.words <= CONTROL_MAX_WORDS && (t.intents.includes('pause') || t.intents.includes('repeat'))) return null; } catch { /* an answer */ }
     return last;
   }
@@ -1278,23 +1280,11 @@ export class Session {
     this.cutOff = false;
     this.speakQuestion();
   }
-  // The Skip button: the question she was on is skipped (field recorded, left open, never asked again) and the selector's accept_and_move follows.
-  // The spoken "skip" takes the normal answer path; this one has no words of the consultant, so nothing goes to the ledger.
-  skipQuestion() {
+  // The Skip button (removed from the page on 2026-10-31) of an older client: a polite refusal, nothing else. The question stays the question in front of the consultant.
+  declineSkip() {
     if (!this.started || this.finished || this.ending || this.paused || this.starting) return;
-    if (this.mode !== 'full') { this.event('quality_warning', { message: SKIP_UNAVAILABLE }); return; }
-    this.metric('skip', {});
-    if (this.busy()) this.interrupt();
-    this.cutOff = false;
-    const h = this.humane, q = this.lastQuestion;
-    if (q?.move && !h.asked.includes(q.move)) h.asked.push(q.move); // cut off before she said it: it was still the question in front of them
-    const field = h.asked.at(-1)?.field ?? null;
-    this.noteSkip(field);
-    if (this.flags.selector !== 'v2' || this.admin) return this.startReply(SKIP_INSTRUCTION, { turn: -1 });
-    let move = null;
-    try { move = this.decide(analyzeTurn('skip it', 'en', { asked_field: field })); } catch (e) { this.metric('selector_error', { name: e?.name || 'Error' }); }
-    this.history.push({ role: 'user', content: SKIP_NOTE });
-    this.startReply(undefined, { move, turn: -1 });
+    this.metric('skip_declined', {});
+    this.event('quality_warning', { message: SKIP_DECLINED, refused: 'skip' });
   }
   // A typed answer from the text box: the same path as a spoken turn without the recogniser (works with the microphone muted). Typing while
   // paused carries on the interview (they are answering): the clock restarts and nothing is re-asked.

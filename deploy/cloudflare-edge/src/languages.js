@@ -59,8 +59,9 @@ export function languageNote(lang, voiced = true, { announce = false } = {}) {
 }
 
 // Spoken instantly (cached audio) when the call connects: who ATLAS is, why she is there, what is captured and how it may
-// be used, that anything can be skipped ("I don't know", "I can't share"), and that a summary is read back for correction
-// before anything goes to review. Tony chose this full introduction on 2026-10-30 (Agent Brain v2.1, Q1). It is four short
+// be used, that client-confidential details can be named as such and are noted without the details, and that a summary is read back for correction
+// before anything goes to review. Tony chose this full introduction on 2026-10-30 (Agent Brain v2.1, Q1); on 2026-10-31 he removed the invitation to skip or to say
+// "I don't know" (ATLAS is there to understand the work) and kept one narrow confidentiality sentence. It is four short
 // sentences, two spoken breaths. English was authored; every other language is a faithful translation that still needs a
 // native-speaker review (see docs/agent-brain-v2.1/IMPLEMENTATION_STATUS.md).
 const INTRO = {
@@ -82,18 +83,18 @@ const INTRO_AGAIN = {
   nl: 'Hallo, hier is ATLAS weer, en ik help je het verhaal van je project te vertellen.',
 };
 const INTRO_REST = {
-  en: `I'll capture what you say, you review it first, and nothing is reused without your permission. You can skip anything, or say "I don't know" or "I can't share". At the end, I'll read back a summary for you to correct before anything goes to review.`,
-  fr: "Je note ce que vous dites, vous le relisez d'abord, et rien n'est réutilisé sans votre accord. Vous pouvez passer n'importe quelle question, ou dire « je ne sais pas » ou « je ne peux pas le partager ». À la fin, je vous lirai un résumé à corriger avant tout envoi en relecture.",
-  es: 'Tomo nota de lo que dices, tú lo revisas primero, y nada se reutiliza sin tu permiso. Puedes saltarte cualquier pregunta, o decir «no lo sé» o «no puedo compartirlo». Al final, te leeré un resumen para que lo corrijas antes de que nada pase a revisión.',
-  pt: 'Vou registrar o que você disser, você revisa primeiro, e nada é reutilizado sem a sua permissão. Você pode pular qualquer pergunta, ou dizer «não sei» ou «não posso compartilhar». No final, vou ler um resumo para você corrigir antes de qualquer envio para revisão.',
-  de: 'Ich halte fest, was Sie sagen, Sie prüfen es zuerst, und nichts wird ohne Ihre Erlaubnis wiederverwendet. Sie können jede Frage überspringen oder „Ich weiß es nicht“ oder „Das kann ich nicht teilen“ sagen. Am Ende lese ich Ihnen eine Zusammenfassung vor, die Sie korrigieren können, bevor etwas in die Prüfung geht.',
-  it: 'Annoto quello che dici, tu lo rivedi per primo, e niente viene riutilizzato senza il tuo permesso. Puoi saltare qualsiasi domanda, oppure dire «non lo so» o «non posso condividerlo». Alla fine ti leggerò un riepilogo da correggere, prima che qualcosa vada in revisione.',
-  nl: 'Ik noteer wat je zegt, jij bekijkt het eerst, en niets wordt hergebruikt zonder jouw toestemming. Je mag elke vraag overslaan, of zeggen: «ik weet het niet» of «dat kan ik niet delen». Aan het einde lees ik een samenvatting voor die je kunt corrigeren, voordat er iets ter beoordeling gaat.',
+  en: `I'll capture what you say, you review it first, and nothing is reused without your permission. If something is client-confidential, say so and I'll note it without the details. At the end, I'll read back a summary for you to correct before anything goes to review.`,
+  fr: "Je note ce que vous dites, vous le relisez d'abord, et rien n'est réutilisé sans votre accord. Si quelque chose est confidentiel pour le client, dites-le-moi et je le noterai sans les détails. À la fin, je vous lirai un résumé à corriger avant tout envoi en relecture.",
+  es: 'Tomo nota de lo que dices, tú lo revisas primero, y nada se reutiliza sin tu permiso. Si algo es confidencial del cliente, dímelo y lo anotaré sin los detalles. Al final, te leeré un resumen para que lo corrijas antes de que nada pase a revisión.',
+  pt: 'Vou registrar o que você disser, você revisa primeiro, e nada é reutilizado sem a sua permissão. Se algo for confidencial do cliente, diga e eu registro sem os detalhes. No final, vou ler um resumo para você corrigir antes de qualquer envio para revisão.',
+  de: 'Ich halte fest, was Sie sagen, Sie prüfen es zuerst, und nichts wird ohne Ihre Erlaubnis wiederverwendet. Wenn etwas für den Kunden vertraulich ist, sagen Sie es, und ich notiere es ohne die Details. Am Ende lese ich Ihnen eine Zusammenfassung vor, die Sie korrigieren können, bevor etwas in die Prüfung geht.',
+  it: 'Annoto quello che dici, tu lo rivedi per primo, e niente viene riutilizzato senza il tuo permesso. Se qualcosa è riservato per il cliente, dimmelo e lo annoterò senza i dettagli. Alla fine ti leggerò un riepilogo da correggere, prima che qualcosa vada in revisione.',
+  nl: 'Ik noteer wat je zegt, jij bekijkt het eerst, en niets wordt hergebruikt zonder jouw toestemming. Als iets vertrouwelijk is voor de klant, zeg het dan, en ik noteer het zonder de details. Aan het einde lees ik een samenvatting voor die je kunt corrigeren, voordat er iets ter beoordeling gaat.',
 };
 export const GREETINGS = Object.fromEntries(Object.keys(INTRO).map(l => [l, INTRO[l] + ' ' + INTRO_REST[l]]));
 export const WELCOME_BACK = Object.fromEntries(Object.keys(INTRO_AGAIN).map(l => [l, INTRO_AGAIN[l] + ' ' + INTRO_REST[l]]));
 // The same introductions as two cached spoken pieces (Agent Brain v2.1 T6): who she is plus what is captured and how it is
-// used (the first sentence of INTRO_REST), then the skip and read-back promises. Joined with a space they are exactly
+// used (the first sentence of INTRO_REST), then the confidentiality and read-back promises. Joined with a space they are exactly
 // GREETINGS / WELCOME_BACK. The session protects only the first piece from barge-in (about 11 s instead of 25 s).
 const firstSentence = text => text.indexOf('. ') + 1; // every INTRO_REST opens with one sentence that has no inner full stop
 const pieces = (intro, rest) => { const cut = firstSentence(rest); return [intro + ' ' + rest.slice(0, cut), rest.slice(cut + 1)]; };

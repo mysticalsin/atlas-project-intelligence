@@ -11,7 +11,7 @@ if(!B||!board||!panel)return;
 const used=d=>d.resumed===true&&num(d.activeSeconds)!==null&&d.activeSeconds>0?d.activeSeconds*1000:0;
 const LABEL='From the interview · unverified',SVG='http://www.w3.org/2000/svg',REQUEST=/^[a-f0-9]{32}$/;
 const PHASES={breadth:'Breadth: the whole story first',depth:'Depth: the details that matter',closing:'Closing',focused:'Focused: the proof requested'};
-const STATES={reported:'reported',uncertain:'uncertain',unknown:'unknown',deferred:'left open',empty:'not yet'};
+const STATES={reported:'reported',uncertain:'uncertain',unknown:'still open',deferred:'still open',empty:'not yet'};
 const GAP_WORDS={answered_unverified:'answered · unverified',unknown:'unknown',deferred:'deferred',open:'open'};
 const NEEDS={measure:'what is measured','before/after':'before and after values',unit:'the unit',period:'the periods',population:'who was measured'};
 const obj=v=>v&&typeof v==='object'&&!Array.isArray(v)?v:{},arr=v=>Array.isArray(v)?v:[],str=(v,n)=>typeof v==='string'?v.slice(0,n):'';
@@ -75,7 +75,7 @@ function renderChallenge(m){const c=m.challenge,box=body('boardChallenge');box.r
  if(c.planned)box.append(el('p','board-question',c.planned));else box.append(el('p','board-empty','Nothing planned yet.'));
  if(c.next)box.append(el('p','board-note','About: '+c.next.label));
  for(const f of c.flags)box.append(el('p','board-note board-warn',flagText(f)));
- if(c.deferred.length)box.append(el('p','board-note','Left open for later: '+c.deferred.map(f=>fieldLabel(f)||f).join(', ')));
+ if(c.deferred.length)box.append(el('p','board-note','Still open: '+c.deferred.map(f=>fieldLabel(f)||f).join(', ')));
  if(c.route)box.append(el('p','board-note','Story route: '+c.route));}
 // The polite live region changes at most once every 10 seconds, always to the latest summary.
 function announce(text){pending=text;if(text===said&&!sayTimer)return;const wait=saidAt+10000-Date.now();if(wait<=0)flush();else if(!sayTimer)sayTimer=setTimeout(flush,wait);}

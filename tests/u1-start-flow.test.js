@@ -41,7 +41,7 @@ function boot({announce=true,provider='workers',text=true,extra={},micError=null
   async live(){
    await $('voiceStartText').onclick();await new Promise(r=>setTimeout(r,5));
    $('modelConsent').checked=true;await $('voiceConsentType').onclick();await new Promise(r=>setTimeout(r,30));
-   server({type:'ready',model:'ATLAS',capture:true,input:'text',...(announce?{controls:announce===true?['pause','resume','repeat','skip','text','correct','withhold','confirm_summary']:announce}:{})});
+   server({type:'ready',model:'ATLAS',capture:true,input:'text',...(announce?{controls:announce===true?['pause','resume','repeat','text','correct','withhold','confirm_summary']:announce}:{})});
   }};
 }
 
@@ -62,7 +62,7 @@ test('a blocked microphone: idle, one sentence, "Continue by typing" and a retry
 test('Continue by typing: text mode starts at once, with the consent already given and no second dialog; the inline state goes away',async()=>{
  const h=boot({micError:'NotAllowedError',extra:{captureRequired:true}});await tick(h);await h.$('voiceStart').onclick();await flush();h.$('checkpointConsent').checked=true;await consentAndStart(h,'voiceConsentStart');
  let opened=0;const show=h.$('voiceConsentDialog').showModal;h.$('voiceConsentDialog').showModal=function(){opened++;return show.call(this);};
- await h.$('voiceMicType').onclick();await flush(40);h.server({type:'ready',model:'ATLAS',capture:true,input:'text',controls:['pause','resume','repeat','skip','text']});await flush();
+ await h.$('voiceMicType').onclick();await flush(40);h.server({type:'ready',model:'ATLAS',capture:true,input:'text',controls:['pause','resume','repeat','text']});await flush();
  const start=h.sent.filter(m=>m&&m.type==='start').at(-1);assert.equal(start.mode,'text');assert.equal(start.consent.draft,true,'the consent already given is carried');assert.equal(start.consent.checkpoint,true,'so is the saved-interview choice');assert.equal(start.consent.transcription,false,'typed: no transcription of audio');
  assert.equal(opened,0,'no second consent dialog');assert.equal(h.$('voiceConsentDialog').open,false);
  const s=h.win.AtlasVoice.status();assert.equal(s.phase,'live');assert.equal(s.textMode,true);assert.equal(h.mic(),1,'the microphone was asked for once (the first attempt), never again');

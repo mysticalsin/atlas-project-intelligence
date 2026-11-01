@@ -9,7 +9,7 @@ EN = [
     'sorry, it was 35 not 38', "I don't know", "yes that's right", "no, that's wrong", 'the pilot failed and we had to roll back',
     'we used Python, Kafka and Terraform', 'AWS Solutions Architect certified', 'the client said it was the best team they had',
     "I'm in a hurry, can we keep this short", 'Can you repeat the question?', 'what do you mean by baseline?', "let's continue", "I'm back, let's carry on",
-    'can we skip this one', 'next question please', "that's all for now", "I'm done", 'we paused the rollout for two weeks', 'no idea', 'no measurement was taken',
+    'can we skip this one', 'skip this one', "I'll pass", 'pass', 'next question please', "that's all for now", "I'm done", 'we paused the rollout for two weeks', 'no idea', 'no measurement was taken',
     "I'm not sure", "I'm not sure, maybe 40%", 'it saved about $1.5 million a year', 'cut costs by 1,200 euros over 3 months', 'latency fell from 800 ms to 250ms',
     'roughly 3x faster, ~12 hours a week', 'we handled 2k tickets and 5.5k users', 'I led the design and we rolled it out to 12 teams', 'It was under NDA so I cannot name them',
     "That's confidential", 'the customer was delighted and told us it was fantastic', 'we had a great NPS of 72', 'it did not work the first time and we hit a snag',

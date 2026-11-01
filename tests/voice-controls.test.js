@@ -3,12 +3,13 @@
 // The wiring in voice-client.js is checked against the compiled page below (every id and handler it needs exists once, nothing is sent unannounced).
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const C=require('../src/voice-controls.js'),ROOT=path.join(__dirname,'..');
-const ALL=['pause','resume','repeat','skip','text'];
+const ALL=['pause','resume','repeat','text'];
 
 test('exports are the fixed contract',()=>{assert.deepEqual(Object.keys(C).sort(),['CORRECT_MAX','NAMES','PRIVATE_MARK','TEXT_MAX','TYPED_NOTES','afterAccepted','clock','elapsed','languageInfo','languageMessage','languageOptions','languageView','logApply','logRestore','message','pausedFrom','summaryMessage','supports','typedAccepted','typedRefusal','view']);assert.deepEqual(C.NAMES,ALL);assert.equal(C.TEXT_MAX,2000);});
 
 test('messages: exactly the keys the session accepts',()=>{
- for(const k of ['pause','resume','repeat','skip'])assert.deepEqual(C.message(k),{type:k});
+ for(const k of ['pause','resume','repeat'])assert.deepEqual(C.message(k),{type:k});
+ assert.equal(C.message('skip'),null,'there is no Skip control (Tony, 2026-10-31): the client cannot build one');assert.ok(!C.NAMES.includes('skip'));
  assert.deepEqual(C.message('text','  We cut onboarding time.  '),{type:'text',text:'We cut onboarding time.'});
  assert.deepEqual(Object.keys(C.message('text','x')).sort(),['text','type']);
 });
@@ -23,10 +24,10 @@ test('typed text is bounded by whole characters, like the server',()=>{
 
 test('a gateway that announced nothing is never sent a control',()=>{
  for(const ready of [{},{controls:null},{controls:'pause'},undefined,null])for(const k of ALL)assert.equal(C.supports(ready,k),false);
- assert.equal(C.supports({controls:ALL},'pause'),true);assert.equal(C.supports({controls:['pause']},'skip'),false);
+ assert.equal(C.supports({controls:ALL},'pause'),true);assert.equal(C.supports({controls:['pause']},'repeat'),false);
  const v=C.view({phase:'live',paused:false,muted:false,controls:null,draft:'hello'});
- assert.ok(v.pauseHidden&&v.repeatHidden&&v.skipHidden&&v.textHidden,'old routes keep mute-only controls');
- assert.ok(v.pauseDisabled&&v.repeatDisabled&&v.skipDisabled&&v.textDisabled&&v.sendDisabled);
+ assert.ok(v.pauseHidden&&v.repeatHidden&&v.textHidden,'old routes keep mute-only controls');
+ assert.ok(v.pauseDisabled&&v.repeatDisabled&&v.textDisabled&&v.sendDisabled);
 });
 
 test('the paused flag follows the server\'s state events only',()=>{
@@ -49,7 +50,7 @@ test('the clock leaves out paused time (the one in progress too)',()=>{
 test('view: live and running',()=>{
  const v=C.view({phase:'live',paused:false,muted:false,controls:ALL,draft:''});
  assert.equal(v.pauseLabel,'Pause interview');assert.equal(v.pauseAria,'Pause the interview');assert.equal(v.pausePressed,false);
- assert.ok(!v.pauseHidden&&!v.pauseDisabled&&!v.repeatDisabled&&!v.skipDisabled&&!v.textDisabled&&!v.muteDisabled);
+ assert.ok(!v.pauseHidden&&!v.pauseDisabled&&!v.repeatDisabled&&!v.textDisabled&&!v.muteDisabled);assert.ok(!('skipHidden' in v)&&!('skipDisabled' in v),'no Skip in the view');
  assert.equal(v.sendDisabled,true,'Send waits for text');
  assert.equal(C.view({phase:'live',paused:false,muted:false,controls:ALL,draft:'  hi '}).sendDisabled,false);
  assert.equal(C.view({phase:'live',paused:false,muted:false,controls:ALL,draft:'   '}).sendDisabled,true,'blank is not an answer');
@@ -59,7 +60,7 @@ test('view: paused: Resume only, microphone closed, orb is not speaking',()=>{
  const v=C.view({phase:'live',paused:true,muted:false,controls:ALL,draft:'typed while paused'});
  assert.equal(v.pauseLabel,'Resume interview');assert.equal(v.pauseAria,'Resume the interview');assert.equal(v.pausePressed,true);
  assert.ok(!v.pauseDisabled,'Resume is the one way back');
- assert.ok(v.repeatDisabled&&v.skipDisabled&&v.muteDisabled);
+ assert.ok(v.repeatDisabled&&v.muteDisabled);
  assert.equal(v.textDisabled,false,'typing is allowed while paused: it carries on');assert.equal(v.sendDisabled,false);
  assert.equal(v.orbPhase,'paused');assert.equal(v.micOpen,false);assert.match(v.state,/^Paused/);
 });
@@ -71,18 +72,19 @@ test('view: muted is separate from paused',()=>{
 test('view: nothing is usable before the interview is live or after it ends',()=>{
  for(const phase of ['idle','preparing','connecting','ending','error']){
   const v=C.view({phase,paused:false,muted:false,controls:ALL,draft:'hello'});
-  assert.ok(v.pauseDisabled&&v.repeatDisabled&&v.skipDisabled&&v.textDisabled&&v.sendDisabled&&v.muteDisabled,phase);
+  assert.ok(v.pauseDisabled&&v.repeatDisabled&&v.textDisabled&&v.sendDisabled&&v.muteDisabled,phase);
  }
 });
 
 // The compiled page: the controls exist once, are named for assistive technology, and the client talks only through the pure messages.
 const page=fs.readFileSync(path.join(ROOT,'ATLAS_Voice.html'),'utf8');
 test('page: buttons and the typed answer have ids, labels and a form (Enter sends)',()=>{
- for(const id of ['voicePause','voiceRepeat','voiceSkip','voiceTypeForm','voiceTypeInput','voiceTypeSend','voiceMute'])assert.equal(page.split('id="'+id+'"').length-1,1,id);
- for(const id of ['voicePause','voiceRepeat','voiceSkip','voiceTypeSend'])assert.match(page,new RegExp('aria-label="[^"]+"[^>]*id="'+id+'"'),id+' has an aria-label');
+ for(const id of ['voicePause','voiceRepeat','voiceEnd','voiceTypeForm','voiceTypeInput','voiceTypeSend','voiceMute'])assert.equal(page.split('id="'+id+'"').length-1,1,id);
+ for(const id of ['voicePause','voiceRepeat','voiceEnd','voiceTypeSend'])assert.match(page,new RegExp('aria-label="[^"]+"[^>]*id="'+id+'"'),id+' has an aria-label');
  assert.match(page,/<label class="visually-hidden" for="voiceTypeInput">/);assert.match(page,/<form[^>]*id="voiceTypeForm"/);
  assert.match(page,/id="voiceTypeInput"[^>]*maxlength="2000"/);assert.match(page,/id="voiceTypeSend"[^>]*type="submit"/);
- for(const id of ['voicePause','voiceRepeat','voiceSkip','voiceTypeForm'])assert.match(page,new RegExp('hidden=""[^>]*id="'+id+'"|id="'+id+'"[^>]*hidden=""'),id+' starts hidden until announced');
+ assert.ok(!page.includes('id="voiceSkip"')&&!page.includes('Skip this question'),'the Skip button is gone from the page');
+ for(const id of ['voicePause','voiceRepeat','voiceEnd','voiceTypeForm'])assert.match(page,new RegExp('hidden=""[^>]*id="'+id+'"|id="'+id+'"[^>]*hidden=""'),id+' starts hidden until announced');
 });
 test('page: the pure module is built in before the client, once',()=>{
  assert.equal(page.split('AtlasVoiceControls=api').length-1,1);
@@ -91,8 +93,9 @@ test('page: the pure module is built in before the client, once',()=>{
 test('client: sends only through the pure messages, only when announced, and only when live',()=>{
  const src=fs.readFileSync(path.join(ROOT,'src/voice-client.js'),'utf8');
  assert.ok(!/socket\.send\(JSON\.stringify\(\{type:'(pause|resume|repeat|skip|text)'/.test(src),'no hand-built control message');
- for(const k of ['pause','resume','repeat','skip','text'])assert.match(src,new RegExp("VC\\.message\\('"+k+"'|VC\\.message\\(paused\\?'resume':'pause'"),k);
- for(const k of ['pause','repeat','skip','text'])assert.match(src,new RegExp("supported\\('"+k+"'\\)"),k+' is gated on the announcement');
+ assert.ok(!/VC\.message\('skip'\)|supported\('skip'\)/.test(src),'the client never sends a skip');
+ for(const k of ['pause','resume','repeat','text'])assert.match(src,new RegExp("VC\\.message\\('"+k+"'|VC\\.message\\(paused\\?'resume':'pause'"),k);
+ for(const k of ['pause','repeat','text'])assert.match(src,new RegExp("supported\\('"+k+"'\\)"),k+' is gated on the announcement');
  assert.match(src,/controlsOn=Array\.isArray\(m\.controls\)\?m\.controls:null/);
  assert.match(src,/m\.type==='state'\)\{setPaused\(VC\.pausedFrom\(paused,m\)\)/);
  assert.match(src,/!muted&&!paused&&micPeak/,'the microphone-silence warning is not shown while paused');

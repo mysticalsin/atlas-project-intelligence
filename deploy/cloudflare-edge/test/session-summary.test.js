@@ -43,6 +43,7 @@ async function atSummary({ said1 = SAID1, details = FIRST, talk = null, session 
   h.s.ai.analyst = analystOf({ 'user-1': details, ...(extra.analyst || {}) });
   await opened(h);
   talked(h); await until(() => h.calls.talker.length === 2 && !h.s.busy());
+  if (!['problem', 'contribution', 'outcome'].every(f => details.some(d => d.field === f))) h.advance(960); // U2: with an essential missing "I am done" is respected at once only when the planned time is nearly used
   talked(h); await until(() => h.events.some(e => e.type === 'summary') && h.calls.talker.length === 3 && !h.s.busy());
   return h;
 }

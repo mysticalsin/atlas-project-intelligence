@@ -73,7 +73,7 @@ async function interview(L) {
     talk: n => n === 0 ? ['Right. ', 'What did you own on this project?'] : n === 1 ? ['Thanks. ', 'What changed, and how was it measured?'] : n === 2 ? ['Thanks. ', 'Anything else?'] : ['I heard that you built the routing model. ', 'What have I missed?'] });
   h.s.ai.analyst = analyst;
   await opened(h, { project: PROJECT });
-  for (let turn = 1; turn <= 3 && !h.events.some(e => e.type === 'summary'); turn++) { talked(h); await until(() => h.calls.talker.length === turn + 1 && !h.s.busy()); }
+  for (let turn = 1; turn <= 3 && !h.events.some(e => e.type === 'summary'); turn++) { if (turn === 3) h.advance(960); /* U2: the planned time is nearly used, so "I am done" is respected at once */ talked(h); await until(() => h.calls.talker.length === turn + 1 && !h.s.busy()); }
   await until(() => h.events.some(e => e.type === 'summary') && !h.s.busy());
   await send(h, { type: 'confirm_summary' });
   await until(() => h.events.some(e => e.type === 'evidence_draft' || e.type === 'evidence_draft_unavailable'));
@@ -186,7 +186,7 @@ test('E2E-2 no Project ID: the page\'s own project id is still the reference (ol
     h.s.ai.analyst = analyst;
     const { projectId, ...p } = project;
     await opened(h, { project: p });
-    for (let turn = 1; turn <= 2 && !h.events.some(e => e.type === 'summary'); turn++) { talked(h); await until(() => h.calls.talker.length === turn + 1 && !h.s.busy()); }
+    for (let turn = 1; turn <= 2 && !h.events.some(e => e.type === 'summary'); turn++) { if (turn === 2) h.advance(960); talked(h); await until(() => h.calls.talker.length === turn + 1 && !h.s.busy()); }
     await until(() => h.events.some(e => e.type === 'summary') && !h.s.busy());
     await send(h, { type: 'confirm_summary' }); await until(() => h.events.some(e => e.type === 'evidence_draft'));
     assert.equal(L.ev.list({ email: CONSULTANT, role: 'user' })[0].project_ref, expected);

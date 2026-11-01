@@ -2,7 +2,7 @@
 // Same fakes as session-humane.test.js: scripted speech recognition, voice, talker and analyst, and a fake clock that the tests move by hand.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Session, CONTROLS, WALL_CAP_S, WALL_CAP_MESSAGE, TYPED_MAX_CHARS, clearPcmCache } from '../src/session.js';
+import { Session, CONTROLS, SKIP_DECLINED, WALL_CAP_S, WALL_CAP_MESSAGE, TYPED_MAX_CHARS, clearPcmCache } from '../src/session.js';
 import { PAUSE_LINES, RESUME_LINES } from '../src/policy.generated.js';
 import { Machine } from '../src/conversation-state.js';
 import { SAMPLE_RATE } from '../src/speech.js';
@@ -69,8 +69,8 @@ const states = h => h.events.filter(e => e.type === 'state');
 
 test('controls are announced in ready; a client that never saw them is not sent them', async () => {
   const h = harness(); await opened(h);
-  assert.deepEqual(h.events.find(e => e.type === 'ready').controls, ['pause', 'resume', 'repeat', 'skip', 'text', 'correct', 'withhold', 'confirm_summary', 'language']);
-  assert.deepEqual([...CONTROLS], ['pause', 'resume', 'repeat', 'skip', 'text', 'correct', 'withhold', 'confirm_summary', 'language']); // (T11 added the summary card's three, L1 the language selector)
+  assert.deepEqual(h.events.find(e => e.type === 'ready').controls, ['pause', 'resume', 'repeat', 'text', 'correct', 'withhold', 'confirm_summary', 'language']);
+  assert.deepEqual([...CONTROLS], ['pause', 'resume', 'repeat', 'text', 'correct', 'withhold', 'confirm_summary', 'language']); // (T11 added the summary card's three, L1 the language selector; U2 removed Skip)
 });
 
 test('pause: ATLAS stops, says one stock line, goes quiet; audio is ignored and neither the watchdog nor the clock runs for 60 s of silence', async () => {
@@ -179,29 +179,33 @@ test('spoken pause: the same handler (line, then quiet, clock stopped); a long a
   assert.equal(named(h.metrics, 'pause')[0].voice, 1);
 });
 
-test('skip (button): the field is skipped_by_user (still open), accept_and_move, never asked again', async () => {
+test('skip (an old client\'s button): a polite refusal note and nothing else: no move, no state change, no ledger entry, never a skip', async () => {
   const h = await interviewing();
-  const field = h.s.humane.asked.at(-1).field, talker = h.calls.talker.length;
-  assert.ok(field, 'the question had a field');
-  await send(h, { type: 'skip' }); await until(() => h.calls.talker.length === talker + 1 && !h.s.busy());
-  assert.deepEqual(h.s.machine.skipped, [field]);
-  const entry = h.s.machine.audit.find(a => a.event === 'skip');
-  assert.deepEqual([entry.event, entry.actor, entry.data], ['skip', 'user', { field }]);
-  const move = h.s.humane.asked.at(-1);
-  assert.equal(move.kind, 'accept_and_move'); assert.match(move.why, new RegExp('^skip:' + field));
-  assert.notEqual(move.field, field, 'she moved on to something else');
-  assert.ok(!h.s.ledger.transcripts.has('user-2'), 'the button has no words of the consultant: nothing reaches the ledger');
-  assert.ok(h.s.history.some(m => m.role === 'user' && /skip that question/.test(m.content)));
+  const asked = h.s.humane.asked.length, talker = h.calls.talker.length, audit = h.s.machine.audit.length, history = h.s.history.length;
+  await send(h, { type: 'skip' }); await settle(30);
+  const warn = h.events.find(e => e.type === 'quality_warning' && e.refused === 'skip');
+  assert.equal(warn.message, SKIP_DECLINED); assert.match(warn.message, /rough answer|example|who would know/);
+  assert.ok(!/skip|pass|leave it/i.test(warn.message.replace(/ATLAS keeps going/, '')), 'the note never invites a skip');
+  assert.deepEqual([h.s.humane.asked.length, h.calls.talker.length, h.s.machine.audit.length, h.s.history.length], [asked, talker, audit, history], 'nothing moved');
+  assert.deepEqual(h.s.machine.skipped, []); assert.ok(!h.s.machine.audit.some(a => a.event === 'skip'));
+  assert.equal(named(h.metrics, 'skip_declined').length, 1);
+  assert.ok(!h.s.busy() && !h.s.finished);
 });
 
-test('spoken "skip": normal answer path, same state event and the same accept_and_move', async () => {
-  const h = await interviewing({ said: ['Skip.'] });
-  const field = h.s.humane.asked.at(-1).field, talker = h.calls.talker.length;
+test('spoken "skip": an answer to probe: an easier angle on the same point, then (if it is said again) a second one, then the point is left open', async () => {
+  const h = await interviewing({ said: ['Skip.', 'Pass.', 'Next question.'] });
+  const first = h.s.humane.asked.at(-1), field = first.field, talker = h.calls.talker.length;
   talked(h); await until(() => h.calls.talker.length === talker + 1 && !h.s.busy());
-  assert.deepEqual(h.s.machine.skipped, [field]);
+  const a1 = h.s.humane.asked.at(-1);
+  assert.equal(a1.kind, 'ask'); assert.equal(a1.field, field); assert.match(a1.why, new RegExp('^reangle:' + field + ':1')); assert.deepEqual(h.s.machine.skipped, [], 'never a skip');
+  assert.equal(h.s.asrDone?.turn, 2, 'a skip is still a turn: it resolved nothing');
+  talked(h); await until(() => h.calls.talker.length === talker + 2 && !h.s.busy());
+  assert.match(h.s.humane.asked.at(-1).why, new RegExp('^reangle:' + field + ':2'));
+  talked(h); await until(() => h.calls.talker.length === talker + 3 && !h.s.busy());
   const move = h.s.humane.asked.at(-1);
   assert.equal(move.kind, 'accept_and_move'); assert.match(move.why, new RegExp('^skip:' + field)); assert.notEqual(move.field, field);
-  assert.equal(h.s.asrDone?.turn, 2, 'a skip is still a turn: it resolved nothing');
+  assert.deepEqual(h.s.machine.skipped, [], 'the state machine records no skip: the point is open in the ledger');
+  assert.ok(h.s.ledger.deferred[field]);
 });
 
 test('typed turn: same path as a spoken turn without speech recognition (item user-typed-N, provenance consultant_typed, reply spoken and shown)', async () => {
@@ -297,10 +301,11 @@ test('an illegal transition never crashes the session: state_error is counted an
   assert.equal(h.s.fireState('pause', 'atlas'), false, 'actor not allowed');
   assert.equal(h.s.fireState('no_such_event', 'user'), false);
   assert.deepEqual(named(h.metrics, 'state_error').map(v => v.code), ['illegal_transition', 'actor_not_allowed', 'unknown_event']);
-  // summary state: skip is not a legal event there, yet the Skip button still moves the interview on
+  // summary state: an old client's skip is refused politely there too, and nothing breaks
   h.s.machine.fire('request_summary', 'atlas'); const talker = h.calls.talker.length;
-  await send(h, { type: 'skip' }); await until(() => h.calls.talker.length === talker + 1 && !h.s.busy());
-  assert.ok(named(h.metrics, 'state_error').length >= 4 && !h.s.finished && !h.events.some(e => e.type === 'error'));
+  await send(h, { type: 'skip' }); await settle(30);
+  assert.equal(h.calls.talker.length, talker); assert.ok(h.events.some(e => e.refused === 'skip'));
+  assert.ok(named(h.metrics, 'state_error').length >= 3 && !h.s.finished && !h.events.some(e => e.type === 'error'));
   // and pause / resume still work from there
   await send(h, { type: 'pause' }); await until(() => h.s.paused && !h.s.busy());
   await send(h, { type: 'resume' }); await until(() => !h.s.paused && !h.s.busy());
@@ -317,7 +322,7 @@ test('pause is idempotent and resume needs a pause; controls before the intervie
   await send(h, { type: 'pause' }); await send(h, { type: 'pause' }); await until(() => !h.s.busy());
   assert.equal(h.s.machine.audit.filter(a => a.event === 'pause').length, 1);
   await send(h, { type: 'repeat' }); await send(h, { type: 'skip' }); await settle(20);
-  assert.equal(h.calls.talker.length, 2, 'repeat and skip do nothing while paused');
+  assert.equal(h.calls.talker.length, 2, 'repeat and skip do nothing while paused'); assert.ok(!h.events.some(e => e.refused === 'skip'), 'a skip while paused is dropped without a note');
 });
 
 test('with no question yet (paused during the greeting) the first resume asks the talker once to open', async () => {
@@ -331,16 +336,17 @@ test('with no question yet (paused during the greeting) the first resume asks th
   assert.ok(h.s.lastQuestion?.text === QUESTION);
 });
 
-test('skip is not offered in a focused proof interview: a warning, no move, the interview goes on', async () => {
+test('an old client\'s skip in a focused proof interview gets the same polite refusal: no move, the interview goes on', async () => {
   const h = await interviewing(); h.s.mode = 'gap'; const talker = h.calls.talker.length;
   await send(h, { type: 'skip' }); await settle(30);
-  assert.ok(h.events.some(e => e.type === 'quality_warning' && /not available/.test(e.message)));
+  assert.ok(h.events.some(e => e.type === 'quality_warning' && e.refused === 'skip'));
   assert.equal(h.calls.talker.length, talker); assert.deepEqual(h.s.machine.skipped, []);
 });
 
-test('a spoken skip with no field to skip (the last question had none) records nothing and still moves on', async () => {
+test('a spoken skip with no question in front of it (the last move had no field) records nothing and still moves on with a question', async () => {
   const h = harness({ said: ['Skip.'] }); await opened(h);
   talked(h); await until(() => h.calls.talker.length === 2 && !h.s.busy());
   assert.deepEqual(h.s.machine.skipped, []);
-  assert.ok(named(h.metrics, 'skip_no_field').length === 1 && !h.events.some(e => e.type === 'error'));
+  const move = h.s.humane.asked.at(-1);
+  assert.ok(move && !/^reangle:/.test(move.why) && (move.say || '').includes('?') && !h.events.some(e => e.type === 'error'));
 });

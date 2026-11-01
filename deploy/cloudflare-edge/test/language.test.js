@@ -121,9 +121,14 @@ test('unfinished: words that trail off, per language; finished answers and quest
   assert.equal(unfinished('Zrobiliśmy to, bo', 'pl'), false); assert.equal(unfinished('Zrobiliśmy to,', 'pl'), true); assert.equal(unfinished('これは…', 'ja'), true);
 });
 
+// The words of an invitation to skip, to pass or to say "I don't know", per bank language (the opening must hold none of them), and the confidentiality line (native review still due).
+const NO_SKIP = { en: /skip|don.t know|can.t share/i, fr: /passer|sais pas|ne peux pas le partager/i, es: /saltar|no lo s[eé]|no puedo compartir/i, pt: /pular|n[aã]o sei|n[aã]o posso compartilhar/i,
+  de: /überspringen|weiß (?:es )?nicht|nicht teilen/i, it: /saltare|non lo so|non posso condividere/i, nl: /overslaan|weet (?:het )?niet|niet delen/i };
+const CONFIDENTIAL = { en: /client-confidential.*without the details/, fr: /confidentiel pour le client.*sans les détails/, es: /confidencial del cliente.*sin los detalles/, pt: /confidencial do cliente.*sem os detalhes/,
+  de: /vertraulich.*ohne die Details/, it: /riservato per il cliente.*senza i dettagli/, nl: /vertrouwelijk is voor de klant.*zonder de details/ };
 const words = t => t.split(/\s+/).filter(Boolean).length, sentences = t => (t.match(/[.!?](["”»]?)(\s|$)/g) || []).length;
-const OPENING_EN = `Hi, I'm ATLAS, and I'll help you tell the story of your project. I'll capture what you say, you review it first, and nothing is reused without your permission. You can skip anything, or say "I don't know" or "I can't share". At the end, I'll read back a summary for you to correct before anything goes to review.`;
-test('greetings are the full pack opening in every language (purpose, capture, use, skip, read-back), voice-short', async () => {
+const OPENING_EN = `Hi, I'm ATLAS, and I'll help you tell the story of your project. I'll capture what you say, you review it first, and nothing is reused without your permission. If something is client-confidential, say so and I'll note it without the details. At the end, I'll read back a summary for you to correct before anything goes to review.`;
+test('greetings are the full pack opening in every language (purpose, capture, use, one confidentiality line, read-back), voice-short', async () => {
   const { GREETINGS } = await import('../src/languages.js');
   assert.equal(GREETINGS.en, OPENING_EN);
   assert.ok(words(GREETINGS.en) <= 62, `English is about 60 words (${words(GREETINGS.en)})`);
@@ -133,6 +138,9 @@ test('greetings are the full pack opening in every language (purpose, capture, u
     assert.ok(words(text) <= 75, `${lang}: voice-short (${words(text)} words)`);
     assert.ok(!/[?？]/.test(text), `${lang}: an introduction asks nothing`);
     assert.ok(!text.includes('\n'), lang);
+    // Tony, 2026-10-31 (U2): no invitation to skip a question or to say "I don't know" in any language (ATLAS is there to understand the work); one narrow confidentiality line instead
+    assert.ok(!NO_SKIP[lang].test(text), `${lang}: no invitation to skip or to say "I don't know": ${text}`);
+    assert.match(text, CONFIDENTIAL[lang], `${lang}: one client-confidentiality line`);
   }
   assert.deepEqual(Object.keys(GREETINGS), ['en', 'fr', 'es', 'pt', 'de', 'it', 'nl'], 'every cached language has one');
 });

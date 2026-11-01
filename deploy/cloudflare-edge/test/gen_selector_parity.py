@@ -177,7 +177,6 @@ record({}, analyze_turn('The whole thing failed and honestly I have nothing more
 record({}, analyze_turn('It failed and the team was exhausted and nobody would say why it went wrong.', 'en'), [a('example', 'intervention', 2), a('example', 'intervention', 2, say='x two?')], {}, 'breadth', 800)
 record({}, analyze_turn('It failed. Can you say that again?', 'en'), [a('stakes', 'stakes', 2, say='What was at stake for the client?')], {}, 'breadth', 800)
 
-(Path(__file__).parent / 'selector.vectors.json').write_text(json.dumps(VECTORS, ensure_ascii=False))
 print(len(VECTORS))
 
 # v2.1 H1: hand-made situations
@@ -195,3 +194,19 @@ record({}, analyze_turn('It was a data migration for a bank', 'en'), [], {}, 'br
 record({}, analyze_turn('Deployments went down by 80 percent, it was a huge success and the client loved it.', 'en'), [], {}, 'breadth', 800)
 record({}, analyze_turn('Report preparation went from 10 days to 2 days per study.', 'en', {'asked_field': 'outcome'}), [{'intent': 'impact', 'field': 'outcome', 'rung': 6, 'say': 'What changed?', 'kind': 'ask'}], {}, 'breadth', 800)
 record({}, analyze_turn('Sorry, I meant 3 days', 'en'), [{'intent': 'summary', 'field': None, 'rung': None, 'say': 'Let me read back what I have.', 'kind': 'summary'}], {}, 'breadth', 800)
+
+# v2.2 U2 (Tony, 2026-10-31): "I don't know", "pass", "skip" and "next question" are met with up to two narrower angles on the same point, then the point is recorded open;
+# "that's all" before the essentials are covered is held (what is missing, one more question), then respected.
+converse(['Reports took two days', 'I owned the pipeline and the validation', 'We cut it from two days to 25 minutes', "I don't know", 'no idea', 'no clue at all', 'dunno', 'ok'],
+         records={0: 'problem', 1: 'contribution', 2: 'outcome'}, phases=['breadth'] * 8)
+converse(['we modernised the reporting for a bank', 'skip', 'pass', 'next question', 'skip it', 'I helped on the delivery side'], records={0: 'problem'})
+converse(['we modernised the reporting for a bank', "I don't know", 'about ten people used it', 'no idea', 'that is all', 'no that is all for now', 'ok'], records={0: 'problem', 2: 'adoption'})
+converse(['we modernised the reporting for a bank', 'I owned the data model', "that's all for now", 'the reports ran in half the time', "I'm done, that's all", "that's all for now", 'ok'], records={0: 'problem', 1: 'contribution'})
+converse(['Reports took two days', 'I owned the pipeline and the validation', 'it runs in 25 minutes now', "that's all for now", 'yes'], records={0: 'problem', 1: 'contribution', 2: 'outcome'})
+converse(['we modernised the reporting for a bank', "that's all for now", 'ok'], phases=['breadth', 'closing', 'closing'], lefts=[800, 200, 150], records={0: 'problem'})
+converse(['we modernised the reporting for a bank', 'we saw a big change', 'It was measured over three months', "I don't know the baseline", 'no idea', 'pass', 'ok'], records={0: 'problem', 1: 'outcome', 2: 'measurement'}, phases=['depth'] * 7)
+converse(['we modernised reporting', "I don't know, we never really measured it and honestly nobody asked us to, but the platform team rebuilt the nightly job and cut the run time a lot"], records={0: 'problem'})
+for lang, words in {'fr': ['je ne sais pas', 'aucune idée', 'je passe', 'question suivante'], 'es': ['no lo sé', 'ni idea', 'paso', 'siguiente pregunta'], 'pt': ['não sei', 'sem ideia', 'passo', 'próxima pergunta'],
+                    'de': ['weiß ich nicht', 'keine Ahnung', 'pass', 'nächste Frage'], 'it': ['non lo so', 'non ne ho idea', 'passo', 'prossima domanda'], 'nl': ['weet ik niet', 'geen idee', 'ik pas', 'volgende vraag']}.items():
+    converse(words, lang=lang)
+(Path(__file__).parent / 'selector.vectors.json').write_text(json.dumps(VECTORS, ensure_ascii=False))

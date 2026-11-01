@@ -74,7 +74,7 @@ class Voice:
 
     def send(s, **event): s.sock.send(json.dumps(event))
 
-    def summary(s): s.send(type='summary', items=s.summary_items, unknowns=[{'kind': 'skipped', 'field': 'decision', 'label': 'Decision'}], state='summary', round=1)
+    def summary(s): s.send(type='summary', items=s.summary_items, unknowns=[{'kind': 'unknown', 'field': 'decision', 'label': 'Decision'}], state='summary', round=1)
 
     def __call__(s, ws):
         s.sock = ws; s.sockets += 1
@@ -98,7 +98,6 @@ class Voice:
                 ws.send(json.dumps({'type': 'state', 'state': 'discovery', 'event': 'resume', 'actor': 'consultant'}))
                 ws.send(json.dumps({'type': 'agent_text', 'text': '\n\nWelcome back. What was the baseline?'}))
             elif t == 'repeat': ws.send(json.dumps({'type': 'agent_text', 'text': '\n\nOf course. What was the baseline?'}))
-            elif t == 'skip': ws.send(json.dumps({'type': 'agent_text', 'text': "\n\nNo problem, we'll leave that one. What changed for the customer?"}))
             elif t == 'text':
                 if s.refuse:   # the session refuses the turn (rate limit, still composing, the protected greeting): a quality_warning that says which, and no user_text
                     ws.send(json.dumps({'type': 'quality_warning', 'message': 'ATLAS is still replying.', 'refused': 'text', 'reason': s.refuse})); return
@@ -165,7 +164,7 @@ try:
         # ---- 1. a server that announces no controls gets none
         v0 = Voice(controls=None, draft=draft)
         p0 = open_page(USER, v0); start_interview(p0)
-        check('no controls announced: Pause, Repeat, Skip and the typed answer stay hidden', all(p0.locator(s).is_hidden() for s in ('#voicePause', '#voiceRepeat', '#voiceSkip', '#voiceTypeForm')))
+        check('no controls announced: Pause, Repeat and the typed answer stay hidden (Stop is not an announced control: it is there while live)', all(p0.locator(s).is_hidden() for s in ('#voicePause', '#voiceRepeat', '#voiceTypeForm')) and p0.locator('#voiceEnd').is_visible() and p0.locator('#voiceEndLabel').inner_text() == 'Stop interview' and p0.locator('#voiceSkip').count() == 0)
         p0.locator('#voiceEnd').click(); p0.locator('#voiceEndConfirm').click(); p0.wait_for_function('()=>AtlasVoice.status().phase==="idle"', timeout=8000)
         check('and nothing was sent to a gateway that never announced them', all(f.get('type') in ('start', 'end') for f in v0.frames))
 
@@ -191,10 +190,10 @@ try:
         check('Resume starts the interview with the saved interview\'s id, and no consent dialog is shown again', start.get('resume') == SID and not pr.locator('#voiceConsentDialog').is_visible())
         check('the screens come back where they were: ATLAS\'s words, the question, the clock', 'What was the baseline?' in pr.locator('#agentText').inner_text() and 'Interview resumed. The question was: What was the baseline?' in pr.locator('#orbAccessibleState').inner_text())
 
-        # ---- 3. controls are announced: Pause, Resume, Repeat, Skip
-        check('the server announced the controls: Pause, Repeat, Skip and the typed answer are shown and enabled', all(pr.locator(s).is_visible() and pr.locator(s).is_enabled() for s in ('#voicePause', '#voiceRepeat', '#voiceSkip', '#voiceTypeInput')))
+        # ---- 3. controls are announced: Pause, Resume, Repeat, Stop
+        check('the server announced the controls: Pause, Repeat, Stop interview and the typed answer are shown and enabled, and there is no Skip', all(pr.locator(s).is_visible() and pr.locator(s).is_enabled() for s in ('#voicePause', '#voiceRepeat', '#voiceEnd', '#voiceTypeInput')) and pr.locator('#voiceSkip').count() == 0)
         check('every control has its own accessible name', pr.get_attribute('#voicePause', 'aria-label') == 'Pause the interview' and pr.get_attribute('#voiceRepeat', 'aria-label') == 'Ask me the last question again'
-              and pr.get_attribute('#voiceSkip', 'aria-label') == 'Skip this question' and pr.get_attribute('#voiceTypeSend', 'aria-label') == 'Send your typed answer'
+              and pr.get_attribute('#voiceEnd', 'aria-label') == 'Stop the interview' and pr.get_attribute('#voiceTypeSend', 'aria-label') == 'Send your typed answer'
               and pr.evaluate("document.querySelector('label[for=voiceTypeInput]').textContent.trim()") == 'Type your answer instead of speaking')
         t0 = pr.locator('#voiceTimer').inner_text(); pr.wait_for_timeout(1300)
         check('the interview clock runs, starting from the restored 01:35', t0 >= '01:35' and pr.locator('#voiceTimer').inner_text() > t0)
@@ -203,16 +202,19 @@ try:
         cap = pr.locator('#orbStateCaption').inner_text().lower()  # the caption is set in capitals by the stylesheet
         check('Paused: the caption says so, the orb is not speaking, the microphone is off, and the button now reads Resume', cap.startswith('paused') and pr.evaluate("document.getElementById('voicePanel').dataset.orbState") != 'speaking'
               and pr.locator('#orbInputWord').inner_text() == 'Paused' and pr.locator('#voicePause').inner_text() == 'Resume interview' and pr.get_attribute('#voicePause', 'aria-label') == 'Resume the interview')
-        check('Paused: Repeat and Skip are off, the mute button is off, the typed answer still works', pr.locator('#voiceRepeat').is_disabled() and pr.locator('#voiceSkip').is_disabled() and pr.locator('#voiceMute').is_disabled() and pr.locator('#voiceTypeInput').is_enabled())
+        check('Paused: Repeat is off, the mute button is off, Stop interview still works, the typed answer still works', pr.locator('#voiceRepeat').is_disabled() and pr.locator('#voiceEnd').is_enabled() and pr.locator('#voiceMute').is_disabled() and pr.locator('#voiceTypeInput').is_enabled())
         t1 = pr.locator('#voiceTimer').inner_text(); pr.wait_for_timeout(2300)
         check('Paused: the clock stops', pr.locator('#voiceTimer').inner_text() == t1)
         pr.locator('#voicePause').click(); pr.wait_for_timeout(2300)
-        check('Resume: one resume message, the caption and the clock carry on, Repeat and Skip are back', len(frames_of(pr, 'resume')) == 1 and not pr.locator('#orbStateCaption').inner_text().lower().startswith('paused')
+        check('Resume: one resume message, the caption and the clock carry on, Repeat is back', len(frames_of(pr, 'resume')) == 1 and not pr.locator('#orbStateCaption').inner_text().lower().startswith('paused')
               and pr.locator('#voiceTimer').inner_text() > t1 and pr.locator('#voiceRepeat').is_enabled() and 'Welcome back' in pr.locator('#agentText').inner_text())
         pr.locator('#voiceRepeat').click(); pr.wait_for_timeout(400)
         check('Repeat: one repeat message, and the question is said again on screen', len(frames_of(pr, 'repeat')) == 1 and 'Of course. What was the baseline?' in pr.locator('#agentText').inner_text())
-        pr.locator('#voiceSkip').click(); pr.wait_for_timeout(400)
-        check('Skip: one skip message, and ATLAS moves on', len(frames_of(pr, 'skip')) == 1 and "we'll leave that one" in pr.locator('#agentText').inner_text())
+        pr.locator('#voiceEnd').click(); pr.locator('#voiceEndDialog').wait_for(state='visible')
+        check('Stop interview: the sheet offers Stop and review what you said, Stop and discard and Cancel (nothing is sent yet)', pr.locator('#voiceEndConfirm').inner_text() == 'Stop and review what you said' and pr.locator('#voiceEndDiscard').inner_text() == 'Stop and discard'
+              and pr.locator('#voiceEndDialog').get_by_role('button', name='Cancel', exact=True).count() >= 1 and not frames_of(pr, 'end') and not frames_of(pr, 'discard'))
+        pr.locator('#voiceEndDialog [data-voice-close]').last.click(); pr.wait_for_timeout(300)
+        check('Cancel leaves the interview running', pr.evaluate('AtlasVoice.status().phase') == 'live' and not pr.locator('#voiceEndDialog').is_visible() and not frames_of(pr, 'end') and not frames_of(pr, 'discard'))
         # ---- 4. a typed answer
         pr.locator('#voiceTypeInput').fill(TYPED); pr.keyboard.press('Enter'); pr.wait_for_timeout(500)
         typed = frames_of(pr, 'text')
@@ -236,7 +238,7 @@ try:
         check('the read-back shows each item in the consultant\'s words, with Correct and Keep private, and one Confirm summary', pr.locator('#summaryItems .summary-item').count() == 3
               and pr.locator('#summaryItems [data-action=correct]').count() == 3 and pr.locator('#summaryItems [data-action=withhold]').count() == 3 and pr.locator('#summaryConfirm').is_visible())
         check('an estimate is labelled as the consultant\'s own estimate; an open point is listed; the card says nothing is verified', 'you called this an estimate' in pr.locator('#summaryItems .summary-item[data-detail=D-003]').inner_text()
-              and 'You skipped: Decision' in pr.locator('#summaryOpen').inner_text() and 'unverified' in pr.locator('#summaryCard .board-label').inner_text())
+              and 'Still open, in your own words: Decision' in pr.locator('#summaryOpen').inner_text() and 'unverified' in pr.locator('#summaryCard .board-label').inner_text())
         check('buttons carry accessible names that say which item', pr.get_attribute('#summaryItems [data-detail=D-002] [data-action=correct]', 'aria-label') == 'Correct: Contribution'
               and pr.get_attribute('#summaryItems [data-detail=D-002] [data-action=withhold]', 'aria-label') == 'Keep private: Contribution' and pr.get_attribute('#summaryLive', 'aria-live') == 'polite')
         # keyboard: focus Correct on the contribution item, Enter opens the field and focuses it, type, Enter sends

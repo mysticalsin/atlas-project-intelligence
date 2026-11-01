@@ -13,7 +13,7 @@ from atlas_voice.quality import INTERVIEW_POLICY
 BANNED = re.compile(BANNED_PRAISE_SRC, re.I)
 PROMPTS = {'TALKER_POLICY': TALKER_POLICY, 'INTERVIEW_POLICY': INTERVIEW_POLICY, 'ROLE': ROLE}
 CATEGORIES = ('neutral', 'thanks_detail', 'no_number_fine', 'confidential_ok', 'correction_thanks', 'setback_neutral',
-              'earned_result', 'promising_unverified', 'correction_thanks_fact', 'setback_plain')
+              'earned_result', 'promising_unverified', 'correction_thanks_fact', 'setback_plain', 'reangle')
 
 # ADMIN_NOTE exactly as committed at efb4948 (before the persona consolidation).
 ADMIN_NOTE_EFB4948 = ('ADMIN MODE (server-verified sign-in). This overrides HOW YOU SPEAK, ORDER OF THE INTERVIEW and ENDING. '
@@ -46,7 +46,8 @@ def test_talker_policy_has_the_turn_pattern_in_order():
 
 
 def test_probing_is_bounded_not_pushy():
-    assert 'after two attempts on a point, offer to move on' in TALKER_POLICY
+    # Tony, 2026-10-31: no offer to skip; after two unproductive attempts the point is left open and ATLAS moves on
+    assert 'after two unproductive attempts on a point, leave it open and move on; never say they may skip' in TALKER_POLICY
     assert 'Probe only where it changes the record' in TALKER_POLICY
 
 
@@ -92,8 +93,11 @@ def test_interview_policy_and_role_keep_their_contracts():
 def test_the_spoken_opening_covers_the_pack_points_in_every_prompt():
     for text in (OPENING, INTERVIEW_POLICY, ROLE):
         for point in ('capture the story of their project', 'review it first', 'nothing is reused without their permission',
-                      'skip any question', "I don't know", "I can't share", 'read back a summary for them to correct'):
+                      'client-confidential', 'without the details', 'read back a summary for them to correct'):
             assert point in text, point
+    # Tony, 2026-10-31: the opening never invites the consultant to skip or to say "I don't know" (the situation rules may name those words to forbid accepting them)
+    for text in (OPENING, persona.OPENING_BRIEF):
+        assert not re.search(r"skip|don.t know|can.t share", text, re.I)
 
 
 def test_banned_praise_is_exported_and_well_formed():

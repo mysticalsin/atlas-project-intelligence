@@ -294,7 +294,7 @@ body.ui2 #voiceStartText.primary:hover,body.ui2 #voiceMicType.primary:hover{filt
  body.ui2.studio-view:not(.studio-focus) #voicePanel:has(#voiceMicHelp:not([hidden])){--fit-orb:clamp(140px,calc(100dvh - 650px),300px)}
 }
 
-/* a typed interview in a window wide enough for it: Pause / Repeat / Skip, the language and End on ONE row */
+/* a typed interview in a window wide enough for it: Pause / Repeat / Stop interview and the language on ONE row */
 @media(min-width:1280px) and (min-height:560px){
  body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text]:is([data-phase=live],[data-phase=ending]) .voice-main>#voiceControls{grid-column:1;grid-row:9;justify-self:start;flex-wrap:nowrap}
  body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text]:is([data-phase=live],[data-phase=ending]) .voice-main>#voiceLanguage{grid-column:2;grid-row:9;justify-self:stretch}

@@ -12,6 +12,7 @@ import { normalize, setbackWords } from './turns.js';
 
 const FIELD_KEYS = Object.keys(FIELDS);
 const REPEAT_LAST = 'repeat_last';
+const REANGLES = ['reangle_example', 'reangle_scale', 'reangle_who', 'reangle_saw']; // the angles an "I don't know" is met with (QUESTION_BANK)
 const LADDER_INTENTS = [...Object.values(CONFIG.fields).map(v => v.intent), 'role', 'impact_assessment', 'lessons'];
 const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -323,13 +324,15 @@ function blocked(c, cand) {
 }
 
 // The first candidate that is neither deferred nor exhausted nor a repeat, with its words filled in; null when nothing is left.
-function pick(c) {
+// only: a Set of fields; no other candidate is considered (and an exhausted point is skipped, never offered to move on from).
+function pick(c, only = null) {
   let suffix = '';
   for (const cand of candidates(c)) {
     const f = cand.field ?? null;
+    if (only !== null && !only.has(f)) continue;
     if (f !== null && c.deferred.has(f)) continue;
     if (blocked(c, cand)) {
-      if (cand.important && inF(f) && !c.asked.some(a => a.intent === 'offer_move_on' && a.field === f)) {
+      if (only === null && cand.important && inF(f) && !c.asked.some(a => a.intent === 'offer_move_on' && a.field === f)) {
         const offer = { intent: 'offer_move_on', kind: 'offer_move_on', field: f, rung: cand.rung, params: {}, why: 'blocked:' + cand.intent + ':' + f };
         const said = say(c, offer);
         if (said) { offer.say = said[0]; return offer; }
@@ -383,6 +386,33 @@ const end = (c, why, r = NONE) => (summarized(c) ? line(c, 'close', 'close:' + w
   : line(c, 'summary', 'summary:' + why, r[0] === 'none' && c.cues.includes('describes_setback') ? reaction(c) : r)); // a last answer that was a setback still gets its plain uptake before the read-back
 const deferField = c => (c.hints.includes(c.lastField) ? c.lastField : c.hints.length ? c.hints[0] : c.lastField);
 
+// [candidate, [say, suffix], n] for the next narrower, easier angle on the point just left unanswered, or null once max_reangles were tried (the point is then
+// recorded open) or every wording would repeat a recent question.
+function reangle(c, field) {
+  if (!inF(field)) return null;
+  const n = c.asked.filter(a => real(a) && REANGLES.includes(a.intent) && a.field === field).length;
+  if (n >= CONFIG.max_reangles) return null;
+  const angles = CONFIG.reangle_angles[CONFIG.reangle_kind[field] ?? 'default'];
+  const cand = { intent: angles[n], field, rung: CONFIG.fields[field].rung, params: {} }, said = say(c, cand);
+  return said ? [cand, said, n] : null;
+}
+
+// A Move that says what is still missing and asks one more question, or null when the request to stop is to be respected: the essentials are covered (or open,
+// or known up front), the planned time is nearly used, nothing is left to ask about them, or it was already held max_stop_holds times.
+function holdStop(c) {
+  if (c.phase === 'closing' || c.phase === 'wrap') return null;
+  const holds = c.asked.filter(a => isStr(a.why) && a.why.startsWith('stop_missing:')).length;
+  if (holds >= CONFIG.max_stop_holds) return null;
+  const known = new Set([...c.present, ...c.covered, ...c.prefilled, ...c.deferred]);
+  const missing = ESSENTIALS.filter(f => !known.has(f));
+  const cand = missing.length ? pick(c, new Set(missing)) : null;
+  if (cand === null) return null;
+  const labels = missing.map(f => CONFIG.reflect_labels[f]);
+  const text = labels.length === 1 ? labels[0] : labels.slice(0, -1).join(', ') + ' and ' + labels[labels.length - 1];
+  const bank = LINES.stop_missing.en, lead = render(bank[holds % bank.length], { labels: text });
+  return move('ask', cand, lead + ' ' + cand.say, 'stop_missing:' + missing.join(',') + '>' + cand.why, NONE, c);
+}
+
 export function select(plan, turn, asked, prefill, phase, timeLeft, asr = null, rushed = false, lang = 'en') {
   const c = context(plan, turn, asked, prefill, phase, timeLeft, rushed), { intents, last } = c;
   // 1. time is up: close, no question
@@ -400,8 +430,8 @@ export function select(plan, turn, asked, prefill, phase, timeLeft, asr = null, 
     if (said === null) said = [render(QUESTION_BANK.confirm_asr.en[count(c, 'confirm_asr', null, true) % 3], cand.params), '+rv'];
     return move('confirm_asr', cand, said[0], 'asr_span' + said[1], NONE);
   }
-  // 3. the consultant wants to stop
-  if (intents.includes('stop')) return end(c, 'stop');
+  // 3. the consultant wants to stop: respected once the essentials are covered or the planned time is nearly used; before that, what is still missing and one more question
+  if (intents.includes('stop')) return holdStop(c) || end(c, 'stop');
   // 4. a correction: use their version, narrow
   if (intents.includes('correction')) {
     const number = c.numbers.length > 0;
@@ -415,10 +445,16 @@ export function select(plan, turn, asked, prefill, phase, timeLeft, asr = null, 
   }
   // 5b. right after the read-back summary, a short reply ends the interview
   if (last && (last.kind === 'summary' || last.intent === 'summary') && (c.words <= 6 || intents.includes('confirm'))) return line(c, 'close', 'close:after_summary');
-  // 6. "I don't know" / "I can't share" / skip: accept, leave the field open, ask something else (never that field again)
+  // 6. "I can't share": accept, keep it out, ask something else. "I don't know" / "pass" / "skip": re-angle twice, then record the field OPEN and ask something else (never that field again)
   const accept = ['cannot_disclose', 'dont_know', 'skip'].find(i => intents.includes(i));
   if (accept) {
     const field = deferField(c);
+    // "I don't know", "no idea", "pass", "skip", "next question" is not accepted at once: a narrower, easier angle on the same point, up to max_reangles times; a long
+    // answer that still says something (an "I don't know" inside real content) is not a bare refusal and is taken as it was said
+    if (accept !== 'cannot_disclose' && field && !(c.words >= CONFIG.private_content_words && c.hints.length > 0)) {
+      const angle = reangle(c, field);
+      if (angle) { const [cand, said, n] = angle; return move('ask', cand, said[0], 'reangle:' + field + ':' + (n + 1) + said[1], ['ack', 'reangle'], c); }
+    }
     // "I can't name the client, but we rebuilt their reporting": there is content, so it is kept private as said and the interview goes on (the point is not left open)
     const content = accept === 'cannot_disclose' && c.words >= CONFIG.private_content_words && c.hints.length > 0;
     if (field && !content) c.deferred.add(field);

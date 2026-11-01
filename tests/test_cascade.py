@@ -1,7 +1,7 @@
 """Kyutai cascaded voice route: synthetic STT/TTS/LLM services only.
 No Kyutai server, LLM provider, GPU or microphone is contacted. Constant PCM is a transport payload, not speech.
 """
-import asyncio,json,socket
+import asyncio,json,re,socket
 from dataclasses import replace
 import aiohttp,msgpack,pytest
 from aiohttp import web
@@ -306,12 +306,13 @@ async def test_cascade_refuses_a_gap_start_and_never_advertises_gap_mode(tmp_pat
 
 
 def test_opening_covers_the_full_pack_introduction():
-    # Tony, 2026-10-30 (Agent Brain v2.1, Q1): the spoken opening covers purpose, what is captured, how it may be used, skip /
-    # "I don't know" / "can't share", and the read-back for correction. This overrides the 2026-09-29 pin (commit c08e7ef),
-    # which forbade review talk.
+    # Tony, 2026-10-30 (Agent Brain v2.1, Q1): the spoken opening covers purpose, what is captured, how it may be used and the read-back for correction. This
+    # overrides the 2026-09-29 pin (commit c08e7ef), which forbade review talk. Tony, 2026-10-31 (U2): it no longer invites the consultant to skip or to say "I don't
+    # know" (ATLAS is there to understand the work); one narrow client-confidentiality line stays.
     from atlas_voice.cascade import OPENING
     assert 'review it first' in OPENING and 'nothing is reused without their permission' in OPENING
-    assert 'skip any question' in OPENING and "I don't know" in OPENING and "I can't share" in OPENING
+    assert 'client-confidential' in OPENING and 'without the details' in OPENING
+    assert not re.search(r"skip|don.t know|can.t share", OPENING, re.I)
     assert 'read back a summary for them to correct before anything goes to review' in OPENING
     assert 'do not repeat or re-introduce any of it' in OPENING and 'ALREADY SAID' in OPENING
     assert 'do not talk about reviews' not in OPENING

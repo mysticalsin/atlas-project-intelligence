@@ -74,6 +74,7 @@ const subseq = (all, want) => { let i = 0; for (const x of all) if (x === want[i
 
 // One consultant turn: speak, wait for the reply to be composed and voiced, collect what the checks need.
 async function turn(h, i, t, { offset = 0 } = {}) {
+  if (t.elapsed) h.advance(t.elapsed); // U2: the interview clock before this turn (a "that's all" is respected at once only when the essentials are covered or the planned time is nearly used)
   const from = h.events.length, before = h.calls.talker.length, acks = named(h.metrics, 'ack').length, asked = h.s.humane.asked.length;
   talked(h);
   await until(() => h.calls.talker.length === before + 1 && !h.s.busy());
@@ -339,6 +340,49 @@ test('E0 the invariant checks catch what they claim to catch (negative control)'
 });
 
 // ---- the conversation examples that are not numbered pack scenarios but pin the same behaviours (Personality doc sections 3 and 9) ----
+// ---- Tony, 2026-10-31 (v2.2 U2): challenge, do not invite a way out (DECISION_LOG D-U2-3, D-U2-4) ----
+test('U2-A "I don\'t know" is not accepted at once: two easier angles on the same point, then it is recorded open (the card and the next-question panel show it as still open) and ATLAS moves on', async () => {
+  const fx = FX('u2_dont_know');
+  for (const mode of MODES) {
+    const { h, turns } = await play(fx, mode); finish(h, fx, mode, turns);
+    const angles = h.s.humane.asked.filter(m => /^reangle:/.test(m.why));
+    assert.deepEqual(angles.map(m => [m.field, m.why]), [['contribution', 'reangle:contribution:1'], ['contribution', 'reangle:contribution:2']], `[${mode}] two angles, both on the point that was not answered`);
+    assert.ok(!h.s.humane.asked.some(m => m.intent === 'offer_move_on'), `[${mode}] nothing was offered or skipped`);
+    assert.ok(h.s.ledger.deferred.contribution, `[${mode}] the point is recorded open in the ledger`);
+    assert.equal(h.s.ledger.transcripts.get('user-4'), "I really don't know that", `[${mode}] with the consultant's own words in the transcript`);
+    const card = h.s.summaryView();
+    assert.ok(card.unknowns.some(u => u.field === 'contribution' && u.kind === 'deferred'), `[${mode}] the read-back lists it as an open point: ${JSON.stringify(card.unknowns)}`);
+    const quality = h.events.filter(e => e.type === 'quality').at(-1);
+    assert.ok(quality && Object.hasOwn(quality.deferred_fields, 'contribution'), `[${mode}] the next-question panel's plan carries it as deferred (still open)`);
+    assert.ok(!h.s.humane.asked.slice(4).some(m => m.field === 'contribution'), `[${mode}] it is never asked again`);
+    for (const a of ACKS.reangle.en.concat(ACKS.no_number_fine.en)) assert.ok(!/\b(skip|pass|fine)\b/i.test(a), `no acknowledgement invites a way out: ${a}`);
+    await cleanup();
+  }
+});
+
+test('U2-B "skip", "pass" and "next question" are answers to probe: the same angles, nothing recorded as skipped, an old client\'s Skip is refused politely', async () => {
+  const fx = FX('u2_skip_probe');
+  for (const mode of MODES) {
+    const { h, turns } = await play(fx, mode); finish(h, fx, mode, turns);
+    assert.deepEqual(h.s.machine.skipped, [], `[${mode}] the state machine records no skip`);
+    assert.ok(!h.s.machine.audit.some(a => a.event === 'skip'), `[${mode}] and fires no skip event`);
+    await send(h, { type: 'skip' }); await settle(20);
+    assert.ok(h.events.some(e => e.type === 'quality_warning' && e.refused === 'skip'), `[${mode}] an old client's skip message gets the polite refusal`);
+    assert.deepEqual(h.s.machine.skipped, [], `[${mode}] and still no skip`);
+    await cleanup();
+  }
+});
+
+test('U2-C "that\'s all" before the essentials are covered: what is missing, one more question; at most twice; then it is respected', async () => {
+  const fx = FX('u2_stop_hold');
+  for (const mode of MODES) {
+    const { h, turns } = await play(fx, mode); finish(h, fx, mode, turns);
+    assert.equal(h.s.humane.asked.filter(m => /^stop_missing:/.test(m.why)).length, 2, `[${mode}] held twice`);
+    assert.equal(h.s.humane.asked.at(-1).kind, 'summary', `[${mode}] the third request goes to the read-back`);
+    await cleanup();
+  }
+});
+
 test('X1 a difficult project experience: a neutral acknowledgement, never upbeat, and no judgement of the person', async () => {
   const fx = FX('x1_setback');
   for (const mode of MODES) {

@@ -180,9 +180,17 @@ def test_metric_basis_from_the_ledger_is_not_asked_again():
     assert m['intent'] not in selector.METRIC_PARTS or m['intent'] == 'metric_source'
 
 
-def test_dont_know_is_accepted_the_field_stays_open_and_is_never_re_asked():
+def test_dont_know_is_re_angled_twice_then_recorded_open_and_never_re_asked():
+    # Tony, 2026-10-31: "I don't know" is never accepted at once. Two narrower, easier angles on the same point, then it is recorded open and ATLAS moves on.
     asked = [{'kind': 'ask', 'intent': 'impact', 'field': 'outcome', 'rung': 6, 'say': 'What changed?', 'why': 'ladder:outcome', 'reaction': 'none', 'ack_category': None}]
-    m = mv(t=turn("I don't know", 'outcome'), asked=asked)
+    a1 = mv(t=turn("I don't know", 'outcome'), asked=asked)
+    assert (a1['kind'], a1['intent'], a1['field'], a1['why']) == ('ask', 'reangle_scale', 'outcome', 'reangle:outcome:1')
+    assert a1['reaction'] == 'ack' and a1['ack_category'] == 'reangle' and a1['say'].count('?') == 1 and a1['hook'] == ''
+    asked.append(a1)
+    a2 = mv(t=turn('no idea', 'outcome'), asked=asked)
+    assert (a2['kind'], a2['intent'], a2['field'], a2['why']) == ('ask', 'reangle_who', 'outcome', 'reangle:outcome:2') and not selector.similar(a1['say'], a2['say'])
+    asked.append(a2)
+    m = mv(t=turn("I really don't know", 'outcome'), asked=asked)
     assert m['kind'] == 'accept_and_move' and m['why'].startswith('dont_know:outcome') and m['field'] != 'outcome'
     assert m['reaction'] == 'ack' and m['ack_category'] in ('no_number_fine', 'neutral') and m['say'].count('?') == 1
     # every later move, whatever the turn says, leaves outcome alone (even when the ledger has not recorded the "I don't know" yet)
@@ -191,6 +199,44 @@ def test_dont_know_is_accepted_the_field_stays_open_and_is_never_re_asked():
         n = mv(t=turn(text, m['field']), asked=asked)
         assert n['field'] != 'outcome' and n['intent'] not in ('impact', 'impact_assessment'), (text, n)
         asked.append(n)
+
+
+def test_pass_skip_and_next_question_are_answers_to_probe_not_a_way_out():
+    # the same re-angles for "pass", "skip" and "next question" (a spoken skip is an answer, never a topic change on request)
+    for words in ('skip', 'pass', 'next question', 'skip it', "I'll pass", 'can we skip this one'):
+        asked = [ASK('example', 'intervention', 2)]
+        m = mv(t=turn(words, 'intervention'), asked=asked)
+        assert m['kind'] == 'ask' and m['intent'] in selector.REANGLES and m['field'] == 'intervention' and m['ack_category'] == 'reangle', (words, m)
+        assert m['intent'] == 'reangle_example', words   # the consultant's own part: a concrete example first
+        m2 = mv(t=turn(words, 'intervention'), asked=asked + [m])
+        assert m2['intent'] == 'reangle_saw' and m2['field'] == 'intervention', words   # then what they saw themselves
+        m3 = mv(t=turn(words, 'intervention'), asked=asked + [m, m2])
+        assert m3['kind'] == 'accept_and_move' and m3['field'] != 'intervention' and m3['why'].startswith(('skip:intervention', 'dont_know:intervention')), (words, m3)
+
+
+def test_every_re_angle_is_one_easy_open_question_and_none_invites_a_skip():
+    angles = {'numeric': ['reangle_scale', 'reangle_who'], 'personal': ['reangle_example', 'reangle_saw'], 'proof': ['reangle_who', 'reangle_example'], 'default': ['reangle_example', 'reangle_who']}
+    assert CONFIG['reangle_angles'] == angles and CONFIG['max_reangles'] == 2
+    for intent in selector.REANGLES:
+        assert intent in selector.NOT_ATTEMPTS and intent in selector.NO_HOOK
+        assert len(QUESTION_BANK[intent]['en']) >= 2
+        for v in QUESTION_BANK[intent]['en']:
+            assert v.count('?') == 1 and (OPEN_INVITATION.match(v) or not YES_NO_START.match(v)) and not re.search(r"skip|pass\b|don't have to|no need|leave it|move on", v, re.I), v
+    # every field gets angles from its kind; the ledger-field kinds are real fields
+    assert set(CONFIG['reangle_kind']) <= set(FIELDS)
+
+
+def test_a_long_dont_know_with_real_content_is_taken_as_said():
+    said = "I don't know the exact number, we never measured it, but the platform team rebuilt the nightly job and the run time dropped a lot for everyone."
+    t = turn(said, 'outcome')
+    assert 'dont_know' in t['intents'] and t['words'] >= CONFIG['private_content_words'] and t['field_hints']
+    m = mv(t=t, asked=[ASK('impact', 'outcome', 6)])
+    assert m['kind'] != 'ask' or m['intent'] not in selector.REANGLES
+
+
+def test_cannot_disclose_is_not_re_angled():
+    m = mv(t=turn("I can't share the numbers, it's confidential", 'outcome'), asked=[ASK('impact', 'outcome', 6)])
+    assert m['intent'] not in selector.REANGLES and m['ack_category'] == 'confidential_ok'
 
 
 def test_dont_know_from_the_ledger_marks_the_field_open_too():
@@ -303,12 +349,40 @@ def test_a_denied_asr_check_gets_one_repair_question():
     assert mv(t=turn("no, that's wrong"), asked=asked + [m])['intent'] != 'asr_repair'
 
 
-def test_stop_goes_to_summary_then_close():
-    s = mv(t=turn("that's all for now"))
+ESSENTIALS_PLAN = ledger_plan(('problem', 'Reports took two days and the data was inconsistent'), ('contribution', 'I designed the pipeline and wrote the validation rules myself'),
+                              ('outcome', 'The nightly job now runs in 25 minutes'))
+
+
+def test_stop_goes_to_summary_then_close_once_the_essentials_are_covered():
+    s = mv(ESSENTIALS_PLAN, turn("that's all for now"))
     assert s['kind'] == 'summary' and s['say'].count('?') == 0
-    c = mv(t=turn("that's all for now"), asked=[s])
+    c = mv(ESSENTIALS_PLAN, turn("that's all for now"), asked=[s])
     assert c['kind'] == 'close' and '?' not in c['say']
-    assert mv(t=turn('yes'), asked=[s])['kind'] == 'close'
+    assert mv(ESSENTIALS_PLAN, turn('yes'), asked=[s])['kind'] == 'close'
+
+
+def test_stop_before_the_essentials_says_what_is_missing_and_asks_one_more_question():
+    # Tony, 2026-10-31: "that's all" is respected after the essentials are covered or the planned time is nearly used; before that ATLAS says what is missing and asks once more
+    m = mv(t=turn("that's all for now"))
+    assert m['kind'] == 'ask' and m['why'].startswith('stop_missing:problem,contribution,outcome>') and m['say'].count('?') == 1 and m['reaction'] == 'none'
+    assert m['say'].startswith("Before we wrap up, I'm still missing the problem, your part and the result.")
+    one = mv(ledger_plan(('problem', 'Reports took two days and the data was inconsistent')), turn("that's all for now"))
+    assert one['why'].startswith('stop_missing:contribution,outcome>') and 'your part and the result' in one['say'] and one['field'] in ('contribution', 'outcome')
+    # held at most max_stop_holds times in a row: a consultant who insists is respected (the Stop button always ends it at once)
+    asked = [m]
+    second = mv(t=turn("no, that's all, thank you"), asked=asked)
+    assert second['why'].startswith('stop_missing:') and second['say'] != m['say']
+    third = mv(t=turn("no, that's all, thank you"), asked=asked + [second])
+    assert third['kind'] == 'summary' and third['why'] == 'summary:stop'
+
+
+def test_stop_is_respected_at_once_in_the_closing_time_and_when_the_missing_points_are_open():
+    assert mv(t=turn("that's all for now"), phase='closing', left=200)['kind'] == 'summary'
+    assert mv(t=turn("that's all for now"), left=200)['kind'] == 'summary'   # the time left alone makes the phase "closing"
+    # an essential left open (recorded as "I don't know" after the re-angles) does not hold the interview
+    open_ = [ASK('example', 'intervention', 2), {**ASK('impact', 'outcome', 6), 'why': 'dont_know:outcome>ladder:problem'}]
+    plan = ledger_plan(('problem', 'Reports took two days and the data was inconsistent'), ('contribution', 'I designed the pipeline and wrote the validation rules myself'))
+    assert mv(plan, turn("that's all for now"), asked=open_)['kind'] == 'summary'
 
 
 # ---------- ladder, thread and redundancy ----------
@@ -677,9 +751,9 @@ def said(m):
 
 def test_h1_stop_closes_the_interview_instead_of_asking_again():
     for t in ['I think we covered it, I have nothing more to say.', 'No, I think that is all, thank you.']:
-        m = mv(t=turn(t))
+        m = mv(ESSENTIALS_PLAN, turn(t))
         assert m['kind'] == 'summary' and m['why'] == 'summary:stop', t
-    m = mv(t=turn('No, I think that is all, thank you.'), asked=[{'kind': 'summary', 'intent': 'summary', 'field': None, 'rung': None, 'say': 'x', 'why': 'summary:stop'}])
+    m = mv(ESSENTIALS_PLAN, turn('No, I think that is all, thank you.'), asked=[{'kind': 'summary', 'intent': 'summary', 'field': None, 'rung': None, 'say': 'x', 'why': 'summary:stop'}])
     assert m['kind'] == 'close'
 
 
@@ -744,7 +818,8 @@ def test_h1_the_bank_is_rewritten_open_spoken_and_complete():
     assert b('customer_fit')[0] == 'Which other clients could use what you learned here?' and b('poor_fit')[0] == 'Where would this approach not work as well?'
     assert b('metric_baseline')[0] == 'What was the starting point before the change?' and b('metric_source')[0].startswith('Where would that number show up')
     assert b('cert_details')[0] == 'Which body issued that certification?' and b('praise_source')[0] == 'Who gave you that feedback?'
-    assert b('offer_move_on')[0] == "Let's leave that open. What happened next on the project?"
+    assert b('offer_move_on')[0] == "I'll note that as still open. What happened next on the project?"
+    assert not any(re.search(r"we don't have to|it can stay|let's leave", v, re.I) for v in b('offer_move_on'))   # (Tony, 2026-10-31: ATLAS moves on after two tries, it never invites a skip)
     assert not any('What would you like to cover instead' in v or 'What shall we turn to next' in v for v in b('offer_move_on'))   # not "you choose": that sounds lost
     for v in ['What made that difficult?', 'What did you try next?'] + ['How did you approach it?'] + ['What were you trying to change?']:      # the pack toolkit questions
         assert any(v in e['en'] for e in QUESTION_BANK.values()), v
@@ -895,7 +970,7 @@ def test_h2_the_other_threads_follow_up_too_but_a_figure_is_left_to_the_metric_q
     metric = mv({}, turn('Deployments went down by 80 percent and the ops team tracked it on a dashboard every week', 'impact'), asked=[ASK('impact', 'outcome', 6)])
     assert metric['intent'] == 'metric_kind' and metric['field'] == 'measurement'
     for v in [v for i in selector.FOLLOW_INTENTS.values() for v in QUESTION_BANK[i]['en']]:
-        assert v.count('?') == 1 and not YES_NO_START.match(v) and not re.search(BANNED_PRAISE_SRC, v, re.I), v
+        assert v.count('?') == 1 and (OPEN_INVITATION.match(v) or not YES_NO_START.match(v)) and not re.search(BANNED_PRAISE_SRC, v, re.I), v
 
 
 def test_h2_a_first_person_action_with_specifics_is_not_asked_for_as_an_example():
@@ -960,7 +1035,7 @@ def test_h3_a_setback_turn_always_has_an_acknowledgement_never_none():
         assert m['reaction'] == 'ack' and m['ack_category'] in ('setback_neutral', 'setback_plain'), m
         log.append(m)
     # also where the move itself carries no acknowledgement of its own: an offer to move on, a read-back after "that's all"
-    stop = mv(t=turn('The whole thing failed and honestly I have nothing more to say.'), asked=[ASK('stakes', 'stakes', 2)])
+    stop = mv(ESSENTIALS_PLAN, turn('The whole thing failed and honestly I have nothing more to say.'), asked=[ASK('stakes', 'stakes', 2)])
     assert stop['kind'] == 'summary' and stop['reaction'] == 'ack' and stop['ack_category'].startswith('setback_'), stop
     blocked = [ASK('example', 'intervention', 2), ASK('example', 'intervention', 2, why='x')]
     offer = mv(t=turn('It failed and the team was exhausted and nobody would say why it went wrong.'), asked=blocked)

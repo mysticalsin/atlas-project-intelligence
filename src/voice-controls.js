@@ -1,10 +1,10 @@
-/* ATLAS interview controls (Agent Brain v2.1 T9): the pure part of Pause / Resume, Repeat, Skip and the typed answer. No DOM, no socket, no
+/* ATLAS interview controls (Agent Brain v2.1 T9): the pure part of Pause / Resume, Repeat and the typed answer (there is no Skip: ATLAS's job is to understand the work, so a question is answered or left open, never skipped). No DOM, no socket, no
    clock of its own (the caller passes `now`). UMD so node tests cover the message shapes. The edge session announces what it understands in
    its `ready` event (`controls`); a gateway that does not announce them (the other voice routes) is never sent a control message. */
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.AtlasVoiceControls=api;})(typeof globalThis!=='undefined'?globalThis:this,()=>{
 'use strict';
 const TEXT_MAX=2000; // the same bound as the server (TYPED_MAX_CHARS)
-const NAMES=['pause','resume','repeat','skip','text'];
+const NAMES=['pause','resume','repeat','text'];
 
 // What the browser may send: exactly the keys the session accepts, nothing else.
 function message(kind,text){
@@ -55,7 +55,6 @@ function view({phase,paused,muted,controls,draft}){
   pauseHidden:!has('pause'),pauseDisabled:!live||!has('pause'),pauseLabel:paused?'Resume interview':'Pause interview',pausePressed:!!paused,
   pauseAria:paused?'Resume the interview':'Pause the interview',
   repeatHidden:!has('repeat'),repeatDisabled:!live||paused||!has('repeat'),
-  skipHidden:!has('skip'),skipDisabled:!live||paused||!has('skip'),
   textHidden:!has('text'),textDisabled:!live||!has('text'),sendDisabled:!live||!has('text')||!text,
   muteDisabled:!live||paused,muteLabel:muted?'Unmute microphone':'Mute microphone',
   // The orb never shows speech while paused: the browser's microphone is closed and nothing of hers is playing.

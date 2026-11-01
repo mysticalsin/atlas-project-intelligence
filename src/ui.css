@@ -146,7 +146,7 @@ dialog .actions.stack .btn{width:100%}
 dialog .btn.danger{background:#a4262c;border-color:#a4262c;color:#fff}
 dialog .btn.danger:disabled{background:#E8E8EE;border-color:#D6D6D6;color:#555966}
 dialog .btn.danger:hover:not(:disabled){background:#7f1d22;border-color:#7f1d22}
-button:disabled,.btn:disabled{opacity:1;background:#E8E8EE;border-color:#D6D6D6;color:#555966}
+button:disabled:not(.orb-activate),.btn:disabled{opacity:1;background:#E8E8EE;border-color:#D6D6D6;color:#555966}
 .btn.primary:disabled{background:#E8E8EE;border-color:#D6D6D6;color:#555966}
 dialog .btn.primary{background:var(--p);color:#fff}
 .consent-reason{margin:var(--s3) 0 0;font-size:12px;color:#555966}
@@ -267,7 +267,7 @@ body.ui2.studio-view footer{font-size:12px;color:var(--text-2)}
 body.ui2.studio-view footer .quiet{font-size:12px;color:var(--text-2)}
 body.ui2 .orb-note,body.ui2 .note.orb-after{font-size:14px;color:var(--text-2)}
 
-/* ---------- controls: one primary per state; End is a quiet link; the answer box is a box, not a pill ---------- */
+/* ---------- controls: one primary per state; Stop interview is a secondary button beside Pause; the answer box is a box, not a pill ---------- */
 body.ui2 .orb-panel .voice-controls{display:flex;flex-wrap:wrap;justify-content:center;gap:var(--s2);margin:var(--s5) auto var(--s3)}
 body.ui2 .orb-panel .voice-controls .btn,body.ui2 .orb-panel .orb-control{min-height:44px;padding:var(--s2) var(--s4);border-radius:var(--r-control);font-size:14px;font-weight:500;gap:var(--s2);background:var(--raised);color:var(--text);border:1px solid var(--line-2);transition:background .15s var(--ease),border-color .15s var(--ease)}
 body.ui2 .orb-panel .orb-control:hover:not(:disabled){background:#2a2b33;border-color:rgba(248,248,248,.3)}
@@ -277,11 +277,17 @@ body.ui2 .orb-panel #voiceStart:disabled{background:var(--surface);color:var(--t
 body.ui2 .voice-controls button[aria-pressed=true],body.ui2 .orb-panel .orb-control[aria-pressed=true]{background:var(--raised);border-color:var(--accent);color:var(--accent)}
 body.ui2 .orb-panel .voice-network{color:var(--text-2);font-size:14px}
 .voice-end-row{display:flex;justify-content:flex-end;max-width:620px;margin:0 auto;padding:0 var(--s1)}
-.voice-end-row:has(#voiceEnd[hidden]):not(:has(#voiceRestartQuiet:not([hidden]))){display:none}
+.voice-end-row:not(:has(#voiceRestartQuiet:not([hidden]))){display:none}
 .voice-end-row [hidden]{display:none}
-body.ui2 .orb-panel #voiceEnd.end-link,body.ui2 .end-link{min-height:44px;padding:var(--s2) var(--s3);display:inline-flex;align-items:center;font-size:14px;color:var(--text-2);background:transparent;border:0;border-radius:var(--r-control)}
-body.ui2 .orb-panel #voiceEnd.end-link:hover:not(:disabled),body.ui2 .end-link:hover:not(:disabled){color:var(--text);background:var(--raised);text-decoration:none}
-body.ui2 .orb-panel #voiceEnd.end-link:disabled,body.ui2 .end-link:disabled{display:none}
+body.ui2 .end-link{min-height:44px;padding:var(--s2) var(--s3);display:inline-flex;align-items:center;font-size:14px;color:var(--text-2);background:transparent;border:0;border-radius:var(--r-control)}
+body.ui2 .end-link:hover:not(:disabled){color:var(--text);background:var(--raised);text-decoration:none}
+body.ui2 .end-link:disabled{display:none}
+/* Stop interview: a visible secondary button in the live controls row (the Pause family, a stop square before its words), never the yellow primary */
+body.ui2 .orb-panel #voiceEnd.stop-btn,body.ui2 .orb-panel #voiceEnd.stop-btn:not(:disabled){display:inline-flex;align-items:center;justify-content:center;gap:var(--s2);background:var(--raised);color:var(--text);border:1px solid var(--line-2)}
+body.ui2 .orb-panel #voiceEnd.stop-btn[hidden]{display:none}
+body.ui2 .orb-panel #voiceEnd.stop-btn:hover:not(:disabled){background:#2a2b33;border-color:rgba(248,248,248,.3)}
+body.ui2 .orb-panel #voiceEnd.stop-btn:disabled{background:var(--surface);color:var(--text-3);border-color:var(--line)}
+#voiceEnd.stop-btn svg{width:14px;height:14px;flex:none;fill:currentColor;stroke:none}
 .voice-type-wrap{max-width:620px}
 body.ui2 .voice-type{margin:var(--s3) auto 0;max-width:620px;gap:var(--s2);align-items:flex-end}
 body.ui2 .voice-type textarea{border-radius:var(--r-control);border:1px solid var(--line-2);background:var(--surface);color:var(--text);padding:var(--s3) var(--s4);font-size:14px;min-height:48px;line-height:1.5}

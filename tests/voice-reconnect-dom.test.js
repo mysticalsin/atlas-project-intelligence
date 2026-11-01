@@ -49,7 +49,7 @@ function boot({resumable=null,plan=[],discardOk=true}={}){
  $('atlasVoiceWorklet').textContent='// worklet';
  const ctx=vm.createContext(win);vm.runInContext(read('voice-client.js'),ctx,{filename:'voice-client.js'});
  const server=(m,i=sockets.length-1)=>sockets[i].onmessage({data:JSON.stringify(m)});
- const ready=(extra={})=>({type:'ready',model:'ATLAS',capture:true,controls:['pause','resume','repeat','skip','text'],sessionId:ID,resumable:true,...extra});
+ const ready=(extra={})=>({type:'ready',model:'ATLAS',capture:true,controls:['pause','resume','repeat','text'],sessionId:ID,resumable:true,...extra});
  Object.assign(h,{$,els,sockets,tracks,delays,requests,events,posted,server,win,ready,bootJson,
   async live({saved=true}={}){await $('voiceStart').onclick();await wait(5);$('modelConsent').checked=true;$('checkpointConsent').checked=saved;/* the person ticks the saved-interview box (X3: it starts unticked) */await $('voiceConsentStart').onclick();await wait(30);server(ready());},
   starts:()=>sockets.map(s=>s.sent.find(m=>m&&m.type==='start')).filter(Boolean),
@@ -128,10 +128,10 @@ test('a server that does not keep the interview (no id in ready) gets no reconne
  assert.deepEqual(h.delays,[]);assert.equal(h.sockets.length,1);assert.equal(h.win.AtlasVoice.status().phase,'error');assert.match(text(h,'voiceMessage'),/closed before the interview finished/);
 });
 
-test('End is ignored while reconnecting; Cancel discards the saved interview as well',async()=>{
+test('Stop is ignored while reconnecting; Cancel discards the saved interview as well',async()=>{
  const h=boot({plan:['open','fail','fail','fail']});await h.live();
  drop(h);
- h.$('voiceEnd').onclick();assert.match(text(h,'voiceMessage'),/end the interview as soon as the connection is back/);assert.equal(h.win.AtlasVoice.status().phase,'live');
+ h.$('voiceEnd').onclick();assert.match(text(h,'voiceMessage'),/stop the interview as soon as the connection is back/);assert.equal(h.win.AtlasVoice.status().phase,'live');
  h.win.AtlasVoice.cancel('Stop.');await wait(10);
  assert.deepEqual(h.requests.filter(r=>r.path==='/api/checkpoint/discard').map(r=>[r.method,r.headers['X-Atlas-CSRF']]),[['POST','csrf-1']]);
  assert.equal(h.win.AtlasVoice.status().phase,'idle');

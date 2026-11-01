@@ -35,12 +35,26 @@ VIS = """(sel)=>{const e=document.querySelector(sel);if(!e)return {ok:false,why:
  for(let p=e.parentElement;ok&&p&&p!==document.documentElement;p=p.parentElement){const s=getComputedStyle(p);
   if(s.overflowY!=='visible'||s.overflowX!=='visible'){const q=p.getBoundingClientRect();if(r.top<q.top-0.5||r.bottom>q.bottom+0.5||r.left<q.left-0.5||r.right>q.right+0.5){ok=false;why='clipped by '+(p.id||p.className)}}}
  return {ok,why,top:Math.round(r.top),bottom:Math.round(r.bottom),h:innerHeight}}"""
+# U2 (Tony: "I need you to add a stop interview button"): a clearly visible secondary button in the live controls row, a stop icon before its words, the Pause family (never the yellow primary)
+STOP = """()=>{const e=document.querySelector('#voiceEnd'),b=document.querySelector('#voicePause');if(!e||!b)return {ok:false,why:'missing'};const c=getComputedStyle(e),q=getComputedStyle(b),r=e.getBoundingClientRect(),s=b.getBoundingClientRect();
+ return {ok:true,label:e.innerText.trim(),aria:e.getAttribute('aria-label'),svg:!!e.querySelector('svg'),sameRow:e.parentElement===b.parentElement&&Math.abs(r.top-s.top)<8,bg:c.backgroundColor,pauseBg:q.backgroundColor,border:c.borderTopColor,pauseBorder:q.borderTopColor,
+  yellow:/rgb\\(24[0-9], 2[0-9]{2}, [0-9]{1,2}\\)/.test(c.backgroundColor),h:Math.round(r.height),disabled:e.disabled,hidden:e.hidden}}"""
 NOSCROLL = "()=>({sh:document.scrollingElement.scrollHeight,ih:innerHeight,y:scrollY,ok:document.scrollingElement.scrollHeight<=innerHeight+1&&scrollY===0})"
 
 
 def check(name, ok, detail=''):
     print(('PASS ' if ok else 'FAIL ') + name + (' ' + str(detail) if detail and not ok else ''), flush=True)
     assert ok, name + ' ' + str(detail)
+
+
+def stop_checks(p, vp, mode, min_h=36, phone=False):
+    if phone: p.evaluate("()=>document.querySelector('#voiceEnd').scrollIntoView({block:'center'})"); p.wait_for_timeout(200)   # a phone scrolls: reachable, not necessarily on the first screen
+    v = p.evaluate(VIS, '#voiceEnd'); check(f'{vp} {mode} live: the Stop interview button is inside the window', v['ok'], v)
+    st = p.evaluate(STOP)
+    check(f'{vp} {mode} live: Stop interview is a visible button with a stop icon, beside Pause in the controls row', st['ok'] and st['label'] == 'Stop interview' and st['svg'] and (st['sameRow'] or phone) and not st['disabled'] and not st['hidden'] and st['aria'] == 'Stop the interview', st)
+    check(f'{vp} {mode} live: it is a secondary button of the Pause family (same fill and border), never the yellow primary', st['bg'] == st['pauseBg'] and st['border'] == st['pauseBorder'] and not st['yellow'], st)
+    check(f'{vp} {mode} live: it is at least {min_h}px high', st['h'] >= min_h, st)
+    check(f'{vp} {mode} live: "End interview" is gone from the page text', 'End interview' not in p.evaluate("document.body.innerText"))
 
 
 def row(vp, phase, ok, note=''):
@@ -106,7 +120,9 @@ def desktop(br, base, w, h):
     p.wait_for_function("()=>document.querySelectorAll('#textLog .msg-atlas').length>=1", timeout=15000); p.wait_for_timeout(700)
     # ---- live
     sels = {'orb': '.orb-screen', 'ATLAS line': '#textLog .msg-atlas:last-child, #textLog .msg:last-child', 'answer box': '#voiceTypeInput', 'next question': '#boardChallenge .board-question, #qualityNext', 'progress caption': '#boardTopics'}
+    sels['Stop interview'] = '#voiceEnd'
     all_visible(p, vp, 'live', sels)
+    stop_checks(p, vp, 'typed')
     ns = p.evaluate(NOSCROLL); row(vp, 'live no page scroll', ns['ok'], str(ns)); check(f'{vp} live: the page does not scroll', ns['ok'], ns)
     left = p.evaluate("()=>getComputedStyle(document.querySelector('.studio-left')).visibility"); check(f'{vp} live: the left rail is folded away (no awkward narrow card)', left == 'hidden', left)
     check(f'{vp} live: focus is in the answer box', p.evaluate("document.activeElement&&document.activeElement.id")=='voiceTypeInput')
@@ -118,7 +134,7 @@ def desktop(br, base, w, h):
         p.wait_for_function('n=>document.querySelectorAll("#textLog .msg").length>=n+2 || !document.getElementById("summaryCard").hidden', arg=n, timeout=20000)
         if i == 2:
             ns = p.evaluate(NOSCROLL); check(f'{vp} live after answers: the page still does not scroll', ns['ok'], ns)
-            all_visible(p, vp, 'live after 3 answers', {'orb': '.orb-screen', 'answer box': '#voiceTypeInput', 'next question': '#boardChallenge .board-question, #qualityNext', 'progress caption': '#boardTopics', 'ATLAS line': '#textLog .msg-atlas:last-child, #textLog .msg:last-child'})
+            all_visible(p, vp, 'live after 3 answers', {'orb': '.orb-screen', 'answer box': '#voiceTypeInput', 'next question': '#boardChallenge .board-question, #qualityNext', 'progress caption': '#boardTopics', 'ATLAS line': '#textLog .msg-atlas:last-child, #textLog .msg:last-child', 'Stop interview': '#voiceEnd'})
             p.wait_for_timeout(500)
             cl = p.evaluate("()=>{const m=[...document.querySelectorAll('#textLog .msg')],a=m.filter(x=>x.classList.contains('msg-atlas')).at(-1),s=getComputedStyle(a),lum=c=>{const v=c.match(/[\\d.]+/g).map(Number);return (0.2126*v[0]+0.7152*v[1]+0.0722*v[2])/255};let o=1;for(let e=a;e&&e.id!=='textLog';e=e.parentElement)o*=+getComputedStyle(e).opacity;return {opacity:o,lum:lum(s.color),size:parseFloat(s.fontSize),tag:m.at(-1)===a||m.at(-2)===a}}")
             check(f'{vp} live: ATLAS\'s current line is full contrast (opacity 1, light text) and 15px or more', cl['opacity'] == 1 and cl['lum'] > 0.85 and cl['size'] >= 15 and cl['tag'], cl)
@@ -172,6 +188,7 @@ def phone(br, base):
     p.locator('#voiceConsentType').click(); p.wait_for_function('()=>AtlasVoice.status().phase==="live"', timeout=15000)
     p.wait_for_function("()=>document.querySelectorAll('#textLog .msg-atlas').length>=1", timeout=15000); p.wait_for_timeout(900)
     v = p.evaluate(VIS, '#voiceTypeInput'); row('390x844', 'live', v['ok'], str(v) if not v['ok'] else ''); check('390x844 live: the answer box is inside the first screen', v['ok'], v)
+    stop_checks(p, '390x844', 'typed', min_h=43.5, phone=True); p.evaluate('scrollTo(0,0)')
     sw = p.evaluate("()=>document.documentElement.scrollWidth<=innerWidth"); check('390x844 live: no horizontal scroll', sw)
     check('390x844 live: starting did not scroll the page away from the orb', p.evaluate('scrollY') < 60, p.evaluate('scrollY'))
     shot(p, 'live', 390, 844); ctx.close()
@@ -226,7 +243,8 @@ def voice_layout(br, base, w, h):
     p.locator('#voiceConsentDialog').wait_for(state='visible', timeout=8000); p.locator('#modelConsent').check(); p.locator('#voiceConsentStart').click()
     p.wait_for_function('()=>AtlasVoice.status().phase==="live"', timeout=15000)
     p.wait_for_function("()=>/ATLAS/.test(document.getElementById('agentText').textContent)", timeout=8000); p.wait_for_timeout(700)
-    all_visible(p, vp, 'voice live', {'orb': '.orb-screen', 'ATLAS line (transcript)': '#agentText', 'voice controls': '#voiceMute', 'next question': '#boardChallenge .board-question, #qualityNext', 'progress caption': '#boardTopics'})
+    all_visible(p, vp, 'voice live', {'orb': '.orb-screen', 'ATLAS line (transcript)': '#agentText', 'voice controls': '#voiceMute', 'Stop interview': '#voiceEnd', 'next question': '#boardChallenge .board-question, #qualityNext', 'progress caption': '#boardTopics'})
+    stop_checks(p, vp, 'voice')
     ns = p.evaluate(NOSCROLL); row(vp, 'voice live no page scroll', ns['ok'], str(ns)); check(f'{vp} voice live: the page does not scroll', ns['ok'], ns)
     al = p.evaluate("()=>{const c=e=>{const r=document.querySelector(e).getBoundingClientRect();return r.left+r.width/2},o=c('.orb-screen');return {meters:Math.abs(c('.orb-meters')-o),inStrip:!!document.querySelector('.orb-bottom-actions #soundHelpToggle')}}")
     check(f'{vp} voice live: the level meters are centred on the column and the sound-check link sits with the other links in the bottom strip', al['meters'] < 3 and al['inStrip'], al)
@@ -255,6 +273,73 @@ def orb_click_typed(br, base):
     ok = p.locator('#voiceConsentType').is_visible() and not p.locator('#voiceConsentStart').is_visible() and p.locator('#voiceConsentDialog').get_attribute('data-input') == 'text'
     check('the orb starts the typed interview when this server has no voice', ok); ctx.close()
 
+# U2: nothing near-white may sit in or on the orb box. A disabled <button> got a light-grey fill from ui.css (`button:disabled`), so for the seconds ATLAS
+# was connecting the whole round orb button showed as a pale disc behind the particles. Every element that overlaps the orb box (and its ::before/::after)
+# is checked for a near-white background, gradient, border, outline or shadow, in the connecting phase and while live; the canvas itself must keep its idle band.
+ORB_WINDOWS = [(1440, 900, 1), (2250, 1260, 1.6)]   # a plain laptop, and a 2250x1260 CSS-px window at devicePixelRatio 1.6 (80 % page zoom on a retina screen)
+ORB_WHITE = """()=>{const box=document.querySelector('.orb-screen').getBoundingClientRect(),out=[];
+ const v=s=>(s||'').match(/[\\d.]+/g)||[],lit=s=>{const a=v(s).map(Number);return a.length>=3&&a[0]>=225&&a[1]>=225&&a[2]>=225&&(a.length<4||a[3]>=.25)};
+ for(const e of document.body.querySelectorAll('*')){const r=e.getBoundingClientRect();if(r.width<2||r.height<2||r.right<=box.left||r.left>=box.right||r.bottom<=box.top||r.top>=box.bottom)continue;
+  if(e.closest('dialog')||e.closest('[hidden]'))continue; /* a dialog is a light surface on purpose */
+  for(const ps of [null,'::before','::after']){const c=getComputedStyle(e,ps);if(ps&&(c.content==='none'||c.content==='normal'))continue;if(c.display==='none'||c.visibility==='hidden')continue;
+   const bad=[lit(c.backgroundColor)&&'background',/rgba?\\(2[2-5]\\d, 2[2-5]\\d, 2[2-5]\\d/.test(c.backgroundImage)&&'gradient',c.borderTopStyle!=='none'&&parseFloat(c.borderTopWidth)>0&&lit(c.borderTopColor)&&'border',
+    c.outlineStyle!=='none'&&parseFloat(c.outlineWidth)>0&&lit(c.outlineColor)&&'outline',/rgba?\\(2[2-5]\\d, 2[2-5]\\d, 2[2-5]\\d/.test(c.boxShadow)&&'shadow'].filter(Boolean);
+   if(bad.length)out.push((e.id?'#'+e.id:e.tagName.toLowerCase()+'.'+String(e.className&&e.className.baseVal!==undefined?e.className.baseVal:e.className).trim().split(/\\s+/).join('.'))+(ps||'')+' '+bad.join('+'))}}
+ return out}"""
+ORB_CANVAS = """()=>{const cv=document.querySelector('#orbActivate canvas');if(!cv||!cv.width)return -1;const g=cv.getContext('2d',{willReadFrequently:true}),w=cv.width,h=cv.height,d=g.getImageData(0,0,w,h).data;let n=0,t=0;
+ for(let y=0;y<h;y+=2)for(let x=0;x<w;x+=2){const i=(y*w+x)*4;t++;if(d[i+3]>200&&d[i]>235&&d[i+1]>235&&d[i+2]>235)n++}return n/t}"""
+ORB_BAND = 0.06   # measured: 0.4 % of the canvas for the idle orb, at most 2.7 % while live (electrons, the nucleus and the nearest particles are white); a pale disc would be 30 % or more
+
+
+def orb_no_white(br, base, w, h, dsf, path):
+    """path: 'start' (Start -> consent -> live) or 'resume' (the Resume dialog -> live), a scripted voice socket that holds `ready` so the connecting phase can be inspected."""
+    vp = f'{w}x{h}@{dsf} {path}'
+    init = """(()=>{navigator.mediaDevices.getUserMedia=async()=>{const c=new AudioContext(),d=c.createMediaStreamDestination(),o=c.createOscillator();o.connect(d);o.start();return d.stream};})()"""
+    ctx = br.new_context(viewport={'width': w, 'height': h}, device_scale_factor=dsf, color_scheme='light'); ctx.add_init_script(init); p = ctx.new_page()
+    p.on('pageerror', lambda e: ERR.append(str(e))); p.on('console', lambda m: ERR.append('console: ' + m.text) if m.type == 'error' else None)
+    held = {}
+    def on_ws(ws):
+        def on(m):
+            if not isinstance(m, bytes) and json.loads(m).get('type') == 'start': held['ws'] = ws; held['resumed'] = json.loads(m).get('resume') is not None
+        ws.on_message(on)
+    p.route_web_socket('**/api/voice', on_ws)
+    if path == 'resume':
+        def boot(route):
+            resp = route.fetch(); body = resp.json(); body['resumable'] = {'sessionId': 'ab' * 16, 'savedAt': int(time.time() * 1000) - 60000, 'expiresAt': int(time.time() * 1000) + 86400000}
+            route.fulfill(response=resp, json=body)
+        p.route('**/api/bootstrap', boot)
+    p.goto(f'{base}/?as=fitwhite{w}{path}@mantu.com'); p.wait_for_timeout(1500)
+    idle = p.evaluate(ORB_CANVAS)
+    check(f'{vp} idle: nothing near-white in the orb box, and the canvas keeps its idle band', p.evaluate(ORB_WHITE) == [] and 0 <= idle <= ORB_BAND, (p.evaluate(ORB_WHITE), idle))
+    if path == 'resume':
+        p.locator('#voiceResumeDialog').wait_for(state='visible', timeout=8000); p.locator('#voiceResumeDialog').get_by_role('button', name='Resume').click()
+    else:
+        p.locator('#voiceStart').click(); p.locator('#voiceConsentDialog').wait_for(state='visible', timeout=8000); p.locator('#modelConsent').check(); p.locator('#voiceConsentStart').click()
+    p.wait_for_function("()=>document.getElementById('voicePanel').dataset.orbState==='connecting' && !!window.AtlasVoice", timeout=8000)
+    for _ in range(50):
+        if held.get('ws'): break
+        p.wait_for_timeout(100)
+    check(f'{vp} connecting: the start request was sent and the orb is waiting', bool(held.get('ws')))
+    p.wait_for_timeout(400)
+    dis = p.evaluate("()=>{const e=document.querySelector('#orbActivate'),c=getComputedStyle(e);return {disabled:e.disabled,bg:c.backgroundColor,bgi:c.backgroundImage}}")
+    bad = p.evaluate(ORB_WHITE)
+    check(f'{vp} connecting: the orb button is disabled and paints nothing (no pale disc behind the particles)', dis['disabled'] and dis['bg'] in ('rgba(0, 0, 0, 0)', 'transparent') and dis['bgi'] == 'none', dis)
+    check(f'{vp} connecting: no element in the orb box has a near-white background, border, outline or shadow', bad == [], bad)
+    shot(p, f'orb-connecting-{path}-dsf{dsf}', w, h)
+    ready = {'type': 'ready', 'mode': 'full', 'model': 'ATLAS', 'provider': 'ATLAS voice', 'sampleRate': 24000, 'capture': True, 'liveLedger': True, 'maxSeconds': 900, 'speakingSeconds': 600, 'message': 'ready', 'sessionId': 'ab' * 16, 'resumable': True,
+             'controls': ['pause', 'resume', 'repeat', 'text'], **({'resumed': True} if held['resumed'] else {})}
+    held['ws'].send(json.dumps(ready)); held['ws'].send(json.dumps({'type': 'agent_text', 'text': "Hi, I'm ATLAS. What was the project, and what was your part in it?"}))
+    p.wait_for_function('()=>AtlasVoice.status().phase==="live"', timeout=15000)
+    ratios, bad = [], []
+    for _ in range(8):
+        p.wait_for_timeout(250); ratios.append(p.evaluate(ORB_CANVAS)); bad += p.evaluate(ORB_WHITE)
+    focus = p.evaluate("()=>{const e=document.querySelector('#orbActivate');return {focusVisible:e.matches(':focus-visible'),outline:getComputedStyle(e).outlineStyle}}")
+    check(f'{vp} live: no element in the orb box has a near-white background, border, outline or shadow', not bad, bad[:4])
+    check(f'{vp} live: the canvas near-white pixel ratio stays inside the normal band (<= {ORB_BAND}); measured {max(ratios):.3f}', all(0 <= r <= ORB_BAND for r in ratios), ratios)
+    check(f'{vp} live: the orb button shows no focus ring (it was not focused by the person)', not focus['focusVisible'] or focus['outline'] == 'none', focus)
+    row(f'{vp}', 'orb has no pale disc', True, f'canvas near-white <= {max(ratios):.3f}')
+    ctx.close()
+
 
 def main():
     base_off, base_on = start_edge(False), start_edge(True)
@@ -264,6 +349,8 @@ def main():
             for w, h in DESKTOP: desktop(br, base_off, w, h)
             narrow(br, base_off); phone(br, base_off); orb_click_typed(br, base_off); reduced_motion(br, base_off)
             blocked_mic(br, base_on)
+            for w, h, dsf in ORB_WINDOWS:
+                for path in ('start', 'resume'): orb_no_white(br, base_on, w, h, dsf, path)
             for w, h in [(1280, 720), (1440, 900)]: voice_layout(br, base_on, w, h)
             br.close()
     finally:

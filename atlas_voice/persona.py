@@ -30,12 +30,13 @@ PRAISE_RULES = (
 QUESTION_RULES = (
     "QUESTIONS: ask exactly ONE question per turn, at most about 25 words; never bundle parts (measure, baseline, unit, "
     "period, source). Never ask what is already known. Probe only where "
-    "it changes the record (a generic answer, \"we\", what changed, how they know); after two attempts on a point, offer "
-    "to move on.")
+    "it changes the record (a generic answer, \"we\", what changed, how they know); after two unproductive attempts on a "
+    "point, leave it open and move on; never say they may skip.")
 
 # Sensitive situations (pack: AGENT.md pacing, Conversation Examples 3-8). One line each so a composer can pick a subset.
 SITUATIONS = {
-    'unknown': "Unknown, rough or can't-share answers are fine: leave it open, never pressure.",
+    'unknown': "\"I don't know\", \"pass\", \"skip\": never accept at once or invite; try a narrower, easier angle on the same point, twice at most, then "
+               "leave it open; never pressure.",
     'confidential': "Confidential client: keep the name out, use what they said, move on.",
     'setback': "A setback: acknowledge the event neutrally, judge no one, ask what they did.",
     'rushed': "Rushed: offer the short path (project, what they delivered, what changed).",
@@ -50,11 +51,12 @@ SAFETY = (
 
 
 # The spoken introduction (Tony, 2026-10-30: the full pack opening). The cached greeting (edge languages.js) says it in
-# every language; models without a cached greeting are told to say it themselves.
+# every language; models without a cached greeting are told to say it themselves. Tony, 2026-10-31: no invitation to skip or to say "I don't know";
+# one narrow client-confidentiality line instead (DECISION_LOG D-U2).
 OPENING_BRIEF = (
     'a short, warm introduction in at most four short sentences: you are ATLAS and will help them capture the story of '
     'their project; you capture what they say, they review it first, and nothing is reused without their permission; '
-    'they can skip any question or say "I don\'t know" or "I can\'t share"; and at the end you will read back a summary '
+    'if something is client-confidential they can say so and you will note it without the details; and at the end you will read back a summary '
     'for them to correct before anything goes to review')
 
 
@@ -92,14 +94,25 @@ ACKS = {
         'it': ['Grazie, mi aiuta.', 'È utile, grazie.', 'Ok, ora è più chiaro.', 'Grazie, completa il quadro.', 'Mi dà il quadro, grazie.'],
         'nl': ['Dank je, dat helpt.', 'Dat is nuttig, dank je.', 'Oké, nu is het duidelijker.', 'Dank je, dat vult het beeld aan.', 'Dat geeft me het beeld, dank je.'],
     },
+    # said after two easier angles on a figure did not produce one: it stays open. Never an invitation to skip a number (Tony, 2026-10-31).
     'no_number_fine': {
-        'en': ["That's okay, we don't need a number.", 'No problem, a rough figure is fine.', "That's fine, we can keep it qualitative.", "No problem, we won't force a number.", 'Fine, we can leave the figure out.'],
-        'fr': ["Ce n'est pas grave, pas besoin de chiffre.", "Pas de souci, un ordre de grandeur suffit.", 'Très bien, on peut rester qualitatif.', "Pas de souci, aucun chiffre forcé.", "D'accord, on peut laisser le chiffre de côté."],
-        'es': ['No pasa nada, no necesitamos una cifra.', 'Sin problema, una cifra aproximada basta.', 'Está bien, podemos dejarlo cualitativo.', 'Sin problema, no forzaremos una cifra.', 'Bien, podemos dejar la cifra fuera.'],
-        'pt': ['Tudo bem, não precisamos de um número.', 'Sem problema, um valor aproximado serve.', 'Tudo bem, podemos manter qualitativo.', 'Sem problema, não vamos forçar um número.', 'Certo, podemos deixar o número de fora.'],
-        'de': ['Das ist in Ordnung, wir brauchen keine Zahl.', 'Kein Problem, eine grobe Zahl reicht.', 'Gut, wir können es qualitativ lassen.', 'Kein Problem, wir erzwingen keine Zahl.', 'Gut, wir lassen die Zahl weg.'],
-        'it': ['Va bene, non serve un numero.', 'Nessun problema, basta una cifra approssimativa.', 'Va bene, possiamo restare qualitativi.', 'Nessun problema, non forziamo un numero.', 'Bene, possiamo lasciare la cifra fuori.'],
-        'nl': ['Dat is prima, we hebben geen getal nodig.', 'Geen probleem, een grove schatting is genoeg.', 'Prima, we kunnen het kwalitatief houden.', 'Geen probleem, we forceren geen getal.', 'Prima, we laten het getal weg.'],
+        'en': ["Okay, I'll note that figure as still open.", 'Understood, the number stays open for now.', "Okay, I'll mark the figure as open.", 'Noted, that figure stays open.', 'Okay, the figure is still open.'],
+        'fr': ["D'accord, je note ce chiffre comme encore ouvert.", 'Compris, le chiffre reste ouvert pour le moment.', 'Entendu, je marque ce chiffre comme ouvert.', 'Noté, ce chiffre reste ouvert.', "D'accord, le chiffre reste ouvert."],
+        'es': ['Vale, anoto esa cifra como abierta.', 'Entendido, la cifra queda abierta por ahora.', 'Vale, marco la cifra como abierta.', 'Anotado, esa cifra sigue abierta.', 'Vale, la cifra sigue abierta.'],
+        'pt': ['Certo, anoto esse número como em aberto.', 'Entendido, o número fica em aberto por ora.', 'Certo, marco o número como em aberto.', 'Anotado, esse número continua em aberto.', 'Certo, o número segue em aberto.'],
+        'de': ['Okay, ich notiere die Zahl als noch offen.', 'Verstanden, die Zahl bleibt vorerst offen.', 'Okay, ich markiere die Zahl als offen.', 'Notiert, die Zahl bleibt offen.', 'Okay, die Zahl ist noch offen.'],
+        'it': ['Ok, annoto quella cifra come ancora aperta.', 'Capito, il numero resta aperto per ora.', 'Ok, segno la cifra come aperta.', 'Annotato, quella cifra resta aperta.', 'Ok, la cifra è ancora aperta.'],
+        'nl': ['Oké, ik noteer dat getal als nog open.', 'Begrepen, het getal blijft voorlopig open.', 'Oké, ik markeer het getal als open.', 'Genoteerd, dat getal blijft open.', 'Oké, het getal is nog open.'],
+    },
+    # what ATLAS says before a narrower, easier question on the same point, when the consultant said "I don't know", "pass" or "skip": the point is asked again from another side, never accepted at once
+    'reangle': {
+        'en': ['Let me ask that another way.', 'Let me come at that differently.', "Let's try it from another side.", 'Let me put it another way.', 'Okay, a different angle on that.'],
+        'fr': ['Je vous le demande autrement.', 'Laissez-moi aborder cela autrement.', 'Essayons sous un autre angle.', 'Je reformule autrement.', "D'accord, un autre angle."],
+        'es': ['Te lo pregunto de otra manera.', 'Déjame abordarlo de otra forma.', 'Probemos desde otro ángulo.', 'Lo planteo de otro modo.', 'Vale, otro enfoque.'],
+        'pt': ['Deixe-me perguntar de outro jeito.', 'Vou abordar isso de outra forma.', 'Vamos tentar por outro ângulo.', 'Vou colocar de outra maneira.', 'Certo, outro ângulo.'],
+        'de': ['Ich frage anders.', 'Lassen Sie mich es anders angehen.', 'Versuchen wir es von einer anderen Seite.', 'Ich formuliere es anders.', 'Okay, ein anderer Blickwinkel.'],
+        'it': ['Te lo chiedo in un altro modo.', 'Provo ad affrontarlo diversamente.', 'Proviamo da un altro lato.', 'Lo dico in un altro modo.', "Ok, un'altra angolazione."],
+        'nl': ['Ik vraag het anders.', 'Laat me het anders aanpakken.', 'Laten we het van een andere kant proberen.', 'Ik zeg het op een andere manier.', 'Oké, een andere invalshoek.'],
     },
     'confidential_ok': {
         'en': ["That's fine, we'll keep that private.", 'No problem, that stays out.', 'Of course, we can leave that out.', "That's fine, we'll keep it general.", 'Understood, nothing specific then.'],
