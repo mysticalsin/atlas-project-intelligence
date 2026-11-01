@@ -188,3 +188,4 @@ html body.ui2 dialog :is(.report-topics h4,.atlas-report>h4,legend,.quality-cont
 html body.ui2 .atlas-dash :is(.ag-h4,.ag-pill,.ag-cap,.ag-sub,.ag-legend span,.ag-legend li,.ag-ch *,.ag-mw *){font-size:12px}
 html body.ui2 dialog .field-chip{display:inline-block;margin:var(--s1) 0 0 0;font-size:12px;white-space:normal;vertical-align:baseline}
 @media(pointer:coarse){html body.ui2 :is(.save-chip,.palette-btn,.how-btn,.storage-retry){min-height:44px}}
+html body.ui2 dialog :is(select,input:not([type=checkbox]):not([type=radio]),textarea){max-width:100%;min-width:0}

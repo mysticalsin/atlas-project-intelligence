@@ -88,7 +88,7 @@ with sync_playwright() as pw:
  check('Hostile text renders inert',p.evaluate("!document.querySelector('#storyBoard img,#storyBoard b b') && window.__xss===undefined") and '<img src=y' in text(p,'#boardChallenge'))
  # ---- F5.3 #3: reset clears everything
  s(p,{'type':'reset'})
- check('reset clears everything',p.locator('#storyBoard').is_hidden() and p.evaluate("['boardMap','boardMetrics','boardDims','boardChallenge'].every(id=>!document.querySelector('#'+id+' .board-body').children.length) && !document.getElementById('boardSummary').textContent && !document.getElementById('boardCoverage').textContent"))
+ check('reset clears everything',p.locator('#storyBoard').is_hidden() and p.evaluate("['boardMap','boardMetrics','boardDims','boardChallenge'].every(id=>!document.querySelector('#'+id+' .board-body').children.length) && !document.getElementById('boardSummary').textContent && !document.getElementById('boardTopics').textContent"))
  s(p,READY);q(p,QUALITY);q(p,{'type':'reset'})
  check('atlas-quality reset clears too',p.locator('#storyBoard').is_hidden() and p.locator('#boardMetrics .board-chip').count()==0)
  # ---- F5.3 #8: full-mode phases at the timePlan boundaries (page clock moved forward; the countdown ticks once a second)

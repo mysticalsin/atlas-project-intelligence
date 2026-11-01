@@ -1,8 +1,8 @@
 /* AtlasPalette (v2.2 W3): the Cmd/Ctrl+K command palette and the "?" shortcut list.
    It only ever calls what a button on the page already does: go to a view, start a new project, start the interview, open Settings on a tab (Download my data opens the Privacy tab, it never downloads
    or deletes anything), open How it works. There is no destructive command here and none can be added by data: the list is fixed in this file. Everything shown is set as text.
-   Both sheets are native modal dialogs, so the page behind is inert, Tab stays inside, Esc closes and focus returns to where it was. The palette is built once; opening it only shows it (the open time of the last
-   use is kept in AtlasPalette.lastOpenMs for the test). The list is a listbox the input controls (aria-activedescendant); typing filters it; the arrow keys, Home, End and Enter drive it. "G" then C, P, S, L or B goes
+   Both sheets are native modal dialogs, so the page behind is inert, Tab stays inside, Esc closes and focus returns to where it was. The sheet is built once; opening it repaints the short list (a dozen rows) and shows it (the open time of the
+   last use is kept in AtlasPalette.lastOpenMs for the test). The list is a listbox the input controls (aria-activedescendant); typing filters it; the arrow keys, Home, End and Enter drive it. "G" then C, P, S, L or B goes
    to a view. */
 (()=>{'use strict';
 const $=id=>document.getElementById(id),app=()=>window.ATLAS_APP;
