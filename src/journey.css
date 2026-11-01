@@ -7,10 +7,10 @@
 body.ui2.studio-view #voicePanel:is([data-phase=live],[data-phase=ending]) .studio-project-drawer{display:none!important}
 /* the conversation: whole bubbles, newest in view, a soft 12px fade at the very top and nothing cut */
 body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text] .text-log{position:relative;border:0;background:transparent;border-radius:0;padding:14px var(--s2) var(--s3);gap:var(--s3);scroll-snap-type:y proximity;scroll-padding-top:14px;-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 12px);mask-image:linear-gradient(to bottom,transparent 0,#000 12px)}
-body.ui2.studio-view:not(.studio-focus) .text-log .msg{display:block;box-sizing:border-box;width:fit-content;max-width:min(94%,640px);margin:0;padding:var(--s3) var(--s4);border-radius:16px;scroll-snap-align:start;text-align:left}
+body.ui2.studio-view:not(.studio-focus) .text-log .msg{display:block;box-sizing:border-box;width:fit-content;max-width:min(94%,640px);margin:0;padding:10px var(--s4);border-radius:16px;scroll-snap-align:start;text-align:left}
 body.ui2.studio-view:not(.studio-focus) .text-log .msg-atlas{align-self:flex-start;background:rgba(248,248,248,.055);border-bottom-left-radius:5px}
 body.ui2.studio-view:not(.studio-focus) .text-log .msg-you{align-self:flex-end;background:rgba(138,0,255,.2);border:1px solid rgba(180,144,232,.34);border-bottom-right-radius:5px}
-body.ui2.studio-view:not(.studio-focus) .text-log .msg .msg-who{display:block;margin:0 0 2px;font-size:12px;font-weight:500;letter-spacing:.04em;color:var(--text-3)}
+body.ui2.studio-view:not(.studio-focus) .text-log .msg .msg-who{display:block;margin:0 0 1px;line-height:1.3;font-size:12px;font-weight:500;letter-spacing:.04em;color:var(--text-3)}
 body.ui2.studio-view:not(.studio-focus) .text-log .msg.is-question{background:rgba(246,235,75,.06);border:1px solid rgba(246,235,75,.2);border-bottom-left-radius:5px}
 body.ui2.studio-view:not(.studio-focus) .text-log .msg.is-question .msg-text{font-size:17px;line-height:1.45}
 body.ui2.studio-view:not(.studio-focus) .text-log .msg.is-pending{opacity:.62}
@@ -43,22 +43,26 @@ body.ui2.studio-view:not(.studio-focus) #voiceLanguage label{color:var(--text-3)
 
 /* ---------- the case study (read-back, example) ---------- */
 .story-blocks{display:flex;flex-direction:column;gap:0;min-width:0}
-.story-block{padding:var(--s4) 0 var(--s3);border-top:1px solid var(--line);min-width:0}
+.story-block{padding:var(--s3) 0 var(--s2);border-top:1px solid var(--line);min-width:0}
 .story-block:first-child{border-top:0;padding-top:var(--s2)}
-.story-block-title{margin:0 0 var(--s3);font-size:12px;line-height:1.3;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--violet)}
-.story-quotes{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--s4);min-width:0}
-.story-block .summary-item{display:block!important;border:0!important;padding:0!important;min-width:0;overflow-wrap:anywhere}
+.story-block-title{margin:0 0 var(--s2);font-size:12px;line-height:1.3;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--violet)}
+.story-quotes{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--s3);min-width:0}
+.story-block .summary-item{display:grid!important;grid-template-columns:minmax(0,1fr) auto;column-gap:var(--s3);align-items:center;border:0!important;padding:0!important;min-width:0;overflow-wrap:anywhere}
+.story-block .summary-item>.summary-item-head{grid-column:1;grid-row:1}
+.story-block .summary-item>.summary-item-actions{grid-column:2;grid-row:1}
+.story-block .summary-item>q.summary-quote{grid-column:1/-1;grid-row:2}
+.story-block .summary-item>:not(.summary-item-head):not(.summary-item-actions):not(q){grid-column:1/-1}
 .story-block .summary-item-head{margin:0 0 3px!important;font-size:12px;line-height:1.4;color:var(--text-3)}
 .story-block .summary-item-head b{font-weight:400;font-size:12px;color:var(--text-3)}
-.story-block q.summary-quote{display:block;margin:0!important;font-size:17px;line-height:1.55;color:var(--text);quotes:'“' '”'}
-.story-block .summary-item-actions{display:flex!important;flex-direction:row!important;flex-wrap:wrap;gap:var(--s1) var(--s5);margin:var(--s1) 0 0!important}
-.story-block .summary-item-actions .board-btn{min-height:32px;padding:0;border:0;border-radius:6px;background:none;color:var(--text-2);font-size:12px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.story-block q.summary-quote{display:block;margin:0!important;font-size:16px;line-height:1.5;color:var(--text);quotes:'“' '”'}
+.story-block .summary-item-actions{display:flex!important;flex-direction:row!important;flex-wrap:nowrap;gap:var(--s1) var(--s4);margin:0!important;grid-row:1}
+.story-block .summary-item-actions .board-btn{min-height:28px;padding:0;white-space:nowrap;border:0;border-radius:6px;background:none;color:var(--text-2);font-size:12px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 .story-block .summary-item-actions .board-btn:hover{color:var(--text);background:none}
 .story-block .summary-item-actions .board-btn:focus-visible{outline:2px solid var(--y);outline-offset:3px}
 .story-block .summary-edit{margin-top:var(--s2)}
 .story-block .summary-kept,.story-block .summary-item-wait{margin:0;font-size:13px;line-height:1.5;color:var(--text-3);font-style:italic}
 .story-block .summary-item.is-kept .summary-item-head b,.story-block .summary-item.is-pending q{color:var(--text-3)}
-.story-prov{margin:var(--s3) 0 0;font-size:12px;line-height:1.4;color:var(--text-3)}
+.story-prov{margin:var(--s2) 0 0;font-size:12px;line-height:1.4;color:var(--text-3)}
 .story-numbers{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:var(--s2) var(--s5);margin:var(--s1) 0 var(--s3);padding:var(--s3) var(--s4) var(--s2);border:1px solid var(--line);border-radius:16px;background:rgba(248,248,248,.03)}
 .story-num{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0}
 .story-num small{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);text-align:center}
@@ -99,23 +103,23 @@ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true]:not([data
 @media(pointer:coarse){.story-block .summary-item-actions .board-btn{min-height:44px;padding:0 var(--s2)}}
 
 /* ---------- the project form and the picker ---------- */
-.field-error{margin:4px 0 0;font-size:12px;line-height:1.4;color:#B3261E}
+.field-error{margin:4px 0 0;font-size:12px;line-height:1.4;color:#ff8a8a}
 .field-error[hidden]{display:none}
-dialog input[aria-invalid=true]{border-color:#B3261E;box-shadow:0 0 0 1px #B3261E}
-.more-details{margin:var(--s3) 0 var(--s2);border-top:1px solid rgba(16,16,17,.14);padding-top:var(--s1)}
+dialog input[aria-invalid=true]{border-color:#ff8a8a;box-shadow:0 0 0 1px #ff8a8a}
+.more-details{margin:var(--s3) 0 var(--s2);border-top:1px solid var(--line);padding-top:var(--s1)}
 .more-details>summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-size:14px;font-weight:500;list-style:none}
 .more-details>summary::-webkit-details-marker{display:none}
 .more-details>summary::before{content:"+";display:inline-block;width:20px;font-size:18px;line-height:1}
 .more-details[open]>summary::before{content:"–"}
 .pick-dialog{width:min(560px,calc(100vw - 24px))}
-.pick-search{width:100%;min-height:44px;margin:var(--s3) 0;padding:0 var(--s4);box-sizing:border-box;border:1px solid rgba(16,16,17,.25);font-size:15px}
+.pick-search{width:100%;min-height:44px;margin:var(--s3) 0;padding:0 var(--s4);box-sizing:border-box;font-size:15px}
 .pick-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--s2);max-height:min(46dvh,380px);overflow-y:auto;overscroll-behavior:contain}
-.pick-row{width:100%;min-height:56px;display:flex;flex-direction:column;gap:2px;align-items:flex-start;text-align:left;padding:var(--s3) var(--s4);border:1px solid rgba(16,16,17,.18);border-radius:12px;background:#fff;color:#101011;font:inherit;cursor:pointer}
-.pick-row:hover{border-color:#3E007A;background:#f6f1fc}
-.pick-row:focus-visible{outline:2px solid #3E007A;outline-offset:2px}
+.pick-row{width:100%;min-height:56px;display:flex;flex-direction:column;gap:2px;align-items:flex-start;text-align:left;padding:var(--s3) var(--s4);border:1px solid var(--line-2);border-radius:12px;background:var(--raised);color:var(--text);font:inherit;cursor:pointer}
+.pick-row:hover{border-color:var(--violet);background:#2a2b33}
+.pick-row:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .pick-title{font-size:15px;font-weight:600;line-height:1.35}
-.pick-sub{font-size:12px;line-height:1.4;color:#555966}
-.pick-empty{margin:var(--s3) 0 0;font-size:13px;line-height:1.5;color:#555966}
+.pick-sub{font-size:12px;line-height:1.4;color:var(--text-2)}
+.pick-empty{margin:var(--s3) 0 0;font-size:13px;line-height:1.5;color:var(--text-2)}
 .pick-empty[hidden]{display:none}
 
 /* ---------- first run ---------- */
@@ -187,7 +191,7 @@ dialog.example-sheet .example-banner .btn{background:#3E007A;color:#F8F8F8;borde
 
 /* ---------- the read-back and the saved story are the whole centre column ---------- */
 @media(min-width:1024px) and (min-height:560px){
- body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-readback=true],[data-summary=true])[data-phase][data-input]{--fit-orb:clamp(72px,calc(100dvh - 760px),96px)}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-readback=true],[data-summary=true])[data-phase][data-input]{--fit-orb:clamp(64px,calc(100dvh - 800px),72px)}
  body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true] .voice-main{grid-template-rows:auto auto auto auto minmax(0,1fr) auto auto auto auto auto auto auto auto auto auto auto;overflow-y:hidden}
  body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true] .voice-main>:is(#voiceHeading,#voiceMessage,#textLog,.orb-caption){display:none}
  body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true]:not([data-readback=true]) #summaryCard:not([hidden]){height:auto}
@@ -199,4 +203,103 @@ body.ui2.studio-view:not(.studio-focus) #summaryTitle:focus-visible{outline:2px 
  body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true]:not([data-readback=true]) .voice-main>#voiceTypeWrap{display:none}
  body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true] #summaryCard .summary-status{display:none}
  body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true] .orb-stage-tools{display:none}
+}
+
+/* ---------- the start flow's sheets are dark Mantu sheets like Settings: consent, Stop, Start over, Resume, the picker and the project form. One primary per sheet, and it is yellow ---------- */
+body.ui2 dialog.w1-dark{background:var(--surface);color:var(--text);color-scheme:dark;border:1px solid var(--line-2);border-radius:var(--r-dialog)}
+body.ui2 dialog.w1-dark::backdrop{background:rgba(8,8,9,.72)}
+body.ui2 dialog.w1-dark .dialog-head{background:var(--surface)}
+body.ui2 dialog.w1-dark .dialog-head h2{color:var(--text)}
+body.ui2 dialog.w1-dark .eyebrow{color:var(--accent)}
+body.ui2 dialog.w1-dark .close{background:var(--raised);color:var(--text);border:1px solid var(--line-2)}
+body.ui2 dialog.w1-dark :is(p,label,legend,summary,h3,h4,.small,.check span){color:var(--text)}
+body.ui2 dialog.w1-dark :is(.muted,.tiny,.tiny.muted,.small.muted,.field-note,.field-label,.consent-help,.consent-help p,.consent-help summary,#consentIdentity,#consentTip,.voice-language-state){color:var(--text-2)}
+body.ui2 dialog.w1-dark #voiceConsentDialog .consent-help{color:var(--text-2)}
+body.ui2 dialog.w1-dark a{color:var(--violet)}
+body.ui2 dialog.w1-dark :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+body.ui2 dialog.w1-dark :is(input:not([type=checkbox]):not([type=radio]),select,textarea){background:var(--bg);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r-control);padding:10px 12px;min-height:44px;font-size:14px}
+body.ui2 dialog.w1-dark input::placeholder{color:var(--text-3)}
+body.ui2 dialog.w1-dark :is(input[type=radio],input[type=checkbox]){accent-color:var(--accent)}
+body.ui2 dialog.w1-dark .btn{background:var(--raised);color:var(--text);border:1px solid var(--line-2);border-radius:999px}
+body.ui2 dialog.w1-dark .btn:hover:not(:disabled){background:#2a2b33}
+body.ui2 dialog.w1-dark .btn.primary{background:var(--accent);color:var(--on-accent);border-color:var(--accent);font-weight:600}
+body.ui2 dialog.w1-dark .btn.primary:hover:not(:disabled){background:#fff27a}
+body.ui2 dialog.w1-dark .btn:disabled{opacity:.45}
+body.ui2 dialog.w1-dark .quiet{color:var(--violet)}
+body.ui2 dialog.w1-dark .actions{border-top-color:var(--line)}
+body.ui2 dialog.w1-dark :is(.more-details,.confidential-client){border-color:var(--line)}
+body.ui2 dialog.w1-dark .confidential-client legend span{color:var(--text-2)}
+body.ui2 dialog.w1-dark .tag{background:var(--raised);color:var(--text-2);border:1px solid var(--line-2)}
+body.ui2 dialog.w1-dark .consent-optional,body.ui2 dialog.w1-dark .check{color:var(--text)}
+/* the consent sheet: the one required choice reads as required, the others as optional */
+body.ui2 dialog.w1-dark #voiceConsentType:not(.primary),body.ui2 dialog.w1-dark #voiceConsentStart:not(.primary){background:var(--raised)}
+
+/* ---------- after the interview: a clean start screen; a confirmed read-back, when there is one, owns the column ---------- */
+body.ui2.studio-view #voicePanel:is([data-phase=idle],[data-phase=error],[data-phase=preparing],[data-phase=connecting]) .text-log{display:none!important}
+body.ui2.studio-view #voicePanel[data-phase=idle]:not([data-summary=true]) .studio-right>:is(.quality-live-card,#storyBoard){display:none}
+.bottom-tools .quiet,body.ui2 .bottom-tools .quiet{background:transparent;border:0;color:var(--text-2)}
+.bottom-tools .quiet:disabled{opacity:.4;background:transparent}
+
+/* ---------- a phone: the nav shows all five places; the live interview fits the screen (answer box and Stop always reachable, the rails fold away) ---------- */
+@media(max-width:540px){
+ html body.ui2 .topbar nav{overflow-x:auto;scrollbar-width:none}
+ html body.ui2 .topbar nav::-webkit-scrollbar{display:none}
+ html body.ui2 .topbar nav button{flex:1 0 auto;min-width:0;padding:0 9px;min-height:44px;font-size:13px;white-space:nowrap;overflow:visible;text-overflow:clip}
+}
+@media(max-width:1023px){
+ body.ui2.studio-view:not(.studio-focus):has(#voicePanel:is([data-phase=live],[data-phase=ending],[data-summary=true])){height:100vh;height:100dvh;overflow:hidden;display:flex;flex-direction:column}
+ body.ui2.studio-view:not(.studio-focus):has(#voicePanel:is([data-phase=live],[data-phase=ending],[data-summary=true])) :is(.env-strip,.topbar){flex:none}
+ body.ui2.studio-view:not(.studio-focus):has(#voicePanel:is([data-phase=live],[data-phase=ending],[data-summary=true])) main#workspace{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;overflow:hidden;padding-top:var(--s2);padding-bottom:0}
+ body.ui2.studio-view:not(.studio-focus):has(#voicePanel:is([data-phase=live],[data-phase=ending],[data-summary=true])) main#workspace>:is(footer,.state-banner){display:none}
+ body.ui2.studio-view:not(.studio-focus):has(#voicePanel:is([data-phase=live],[data-phase=ending],[data-summary=true])) main#workspace>#interview{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending],[data-summary=true]){flex:1 1 auto;min-height:0;display:flex;flex-direction:column;overflow:hidden;padding:0}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending],[data-summary=true]) :is(.orb-panel-top .studio-label,.studio-heading,.studio-aside,.orb-panel-bottom,.studio-project-drawer,.voice-privacy){display:none}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending],[data-summary=true]) .orb-panel-top{flex:none;min-height:0;padding:0 0 var(--s1);justify-content:flex-start}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending],[data-summary=true]) .orb-layout{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;margin:0}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending],[data-summary=true]) .voice-main{flex:1 1 auto;min-height:0;overflow:hidden;grid-template-rows:auto auto auto auto auto auto minmax(0,1fr) auto auto auto auto auto auto auto auto auto;padding:0}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text]:is([data-phase=live],[data-phase=ending],[data-summary=true]){--fit-orb:clamp(88px,15dvh,140px)}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text]:is([data-phase=live],[data-phase=ending],[data-summary=true]) .text-log{max-height:none;min-height:0}
+ /* a confirmed or open read-back is the whole column, its bar sticks to the bottom */
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true]{--fit-orb:clamp(56px,9dvh,80px)}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true] .voice-main{grid-template-rows:auto auto auto auto minmax(0,1fr) auto auto auto auto auto auto auto auto auto auto auto}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true] .voice-main>:is(#voiceHeading,#voiceMessage,#textLog,.orb-caption,#voiceControls,#voiceLanguage,#voiceEndRow){display:none}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true] #summaryCard .summary-status{display:none}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-readback=true]:is([data-phase=live],[data-phase=ending],[data-summary=true]) .voice-main>#voiceTypeWrap,body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true] .voice-main>#voiceTypeWrap{display:none}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true] .orb-stage-tools{display:none}
+ /* the cluster on a phone: Pause and Repeat share a row, Stop interview is the full-width row under them */
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending],[data-summary=true]) #voiceControls{display:grid;grid-template-columns:1fr 1fr;gap:var(--s2);width:100%;margin-top:var(--s2)}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending],[data-summary=true]) #voiceControls #voiceEnd{grid-column:1/-1}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending],[data-summary=true]) #voiceControls .btn[hidden]{display:none}
+}
+
+/* the greeting is context, the question is the line: when a question follows it, the greeting is quieter and smaller */
+body.ui2.studio-view:not(.studio-focus) .text-log .msg-atlas:not(.is-question):has(+ .is-question){font-size:14px;line-height:1.5;color:var(--text-2)}
+body.ui2.studio-view:not(.studio-focus) .text-log .msg-atlas:not(.is-question):has(+ .is-question) .msg-text{font-size:14px;line-height:1.5}
+@media(max-width:540px){
+ html body.ui2 .topbar nav{padding:3px;gap:0}
+ html body.ui2 .topbar nav button{padding:0 6px;font-size:12px}
+}
+@media(max-width:1023px){
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) .voice-main>:is(.voice-reason,#voiceReason,.orb-display-tools,.motion-language,.orb-interaction-hint,.appearance-panel,.orb-meters){display:none}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) #voiceLanguage .voice-language-state,body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) #voiceLanguage label{display:none}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) #voiceLanguage{margin:var(--s2) 0 0;width:100%}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel:is([data-phase=live],[data-phase=ending]) #voiceLanguage select{width:100%;max-width:none}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-input=text]:is([data-phase=live],[data-phase=ending]){--fit-orb:clamp(72px,11dvh,110px)}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true]:is([data-phase=live],[data-phase=ending]) .voice-main>:not(.orb-screen):not(#summaryCard){display:none}
+ body.ui2.studio-view:not(.studio-focus) #voicePanel[data-summary=true]:is([data-phase=live],[data-phase=ending]) #summaryIntro{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+ .story-numbers{gap:var(--s1) var(--s2);padding:var(--s2) var(--s3)}
+ .story-num{flex:1 1 90px}
+ .story-num b{font-size:22px;overflow-wrap:anywhere}
+ .story-arrow{flex:none;font-size:20px}
+}
+
+/* a read-back left on screen after the interview has ended (idle): it is still the whole centre column; the start button, hero and orb tools step aside until it is dismissed or another interview starts */
+body.ui2.studio-view:not(.studio-focus) #voicePanel[data-phase=idle][data-summary=true] .studio-heading{display:none}
+body.ui2.studio-view:not(.studio-focus) #voicePanel[data-phase=idle][data-summary=true] .voice-main>:not(.orb-screen):not(#summaryCard){display:none}
+body.ui2.studio-view:not(.studio-focus) #voicePanel[data-phase=idle][data-summary=true] .orb-stage-tools{display:none}
+
+/* the read-back's quiet label sits on the title row, not under it */
+@media(min-width:1024px) and (min-height:560px){
+ body.ui2.studio-view:not(.studio-focus) #summaryCard:not([hidden]){position:relative}
+ body.ui2.studio-view:not(.studio-focus) #summaryCard .board-label{position:absolute;top:calc(var(--s1) + 5px);right:var(--s2);margin:0}
 }

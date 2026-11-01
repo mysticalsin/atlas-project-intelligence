@@ -48,6 +48,7 @@ def check(name, ok, detail=''):
 
 
 def stop_checks(p, vp, mode, min_h=36, phone=False):
+    p.mouse.move(1, 1)   # (a pointer left over the button would show its hover colour)
     if phone: p.evaluate("()=>document.querySelector('#voiceEnd').scrollIntoView({block:'center'})"); p.wait_for_timeout(200)   # a phone scrolls: reachable, not necessarily on the first screen
     v = p.evaluate(VIS, '#voiceEnd'); check(f'{vp} {mode} live: the Stop interview button is inside the window', v['ok'], v)
     st = p.evaluate(STOP)
@@ -154,6 +155,13 @@ def desktop(br, base, w, h):
     cov = p.evaluate("()=>{const i=document.querySelector('#summaryItems li:first-child').getBoundingClientRect(),c=document.getElementById('summaryConfirm').getBoundingClientRect();return {itemBottom:i.bottom,confirmTop:c.top}}")
     check(f'{vp} read-back: the first item is not hidden behind the Confirm bar', cov['itemBottom'] <= cov['confirmTop'] + 1, cov)
     ns = p.evaluate(NOSCROLL); row(vp, 'read-back no page scroll', ns['ok'], str(ns)); check(f'{vp} read-back: the page does not scroll', ns['ok'], ns)
+    inview = p.evaluate("()=>{const s=document.getElementById('summaryScroll').getBoundingClientRect();return [...document.querySelectorAll('#summaryItems .summary-item')].filter(e=>{const r=e.getBoundingClientRect();return r.top>=s.top-1&&r.bottom<=s.bottom+1}).length}")
+    need = 1 if h < 760 else 2 if h < 880 else 3
+    check(f'{vp} read-back (W1 case study): at least {need} quotes are whole on the first screen, inside the scrolling case study (no ~230px inner box)', inview >= need, inview)
+    blocks = p.evaluate("()=>[...document.querySelectorAll('#summaryItems .story-block-title')].map(e=>e.textContent)")
+    check(f'{vp} read-back: the quotes are grouped under Challenge / Approach / Your contribution / Outcome headings', blocks[:1] == ['Challenge'] and set(blocks) <= {'Challenge', 'Approach', 'Your contribution', 'Outcome', 'Evidence and fit'}, blocks)
+    cut = p.evaluate("()=>{const b=document.getElementById('textLog'),t=b.getBoundingClientRect().top;return [...b.querySelectorAll('.msg')].filter(m=>{const r=m.getBoundingClientRect();return b.offsetParent&&r.top<t-0.5&&r.bottom>t+8}).length}")
+    check(f'{vp} read-back: no conversation message is cut at the top of its box', cut == 0, cut)
     shot(p, 'readback', w, h)
     # after Confirm the card shows "Saved as a private draft" next to the conversation: nothing may overlap (the humane suite clicks Pause here)
     p.locator('#summaryConfirm').click(); p.wait_for_function("()=>/Saved as a private draft/.test(document.getElementById('summarySaved').innerText)", timeout=15000); p.wait_for_timeout(500)
@@ -161,6 +169,14 @@ def desktop(br, base, w, h):
     check(f'{vp} after Confirm: the conversation, the answer box and the controls do not overlap the card or each other', (not ov['vis']) or (ov['cardBottom'] <= ov['logTop'] + 1 and ov['logBottom'] <= ov['wrapTop'] + 1 and ov['wrapBottom'] <= ov['ctlTop'] + 1), ov)
     sub = p.evaluate(VIS, '#summarySubmit'); check(f'{vp} after Confirm: Submit for review is visible and not clipped by the card', sub['ok'], sub)
     shot(p, 'confirmed', w, h)
+    # W1: Submit is a moment, not a footer line
+    p.locator('#summarySubmit').click(); p.wait_for_function("()=>{const d=document.getElementById('submitSheet');return d&&d.open}", timeout=5000); p.wait_for_timeout(500)
+    sh = p.evaluate("()=>{const d=document.getElementById('submitSheet').getBoundingClientRect(),bs=[...document.querySelectorAll('#submitSheet .actions .btn')].map(b=>b.getBoundingClientRect());return {d:[d.left,d.top,d.right,d.bottom],iw:innerWidth,ih:innerHeight,btns:bs.map(b=>[b.left,b.top,b.right,b.bottom]),focus:document.activeElement.id,title:document.getElementById('submitTitle').innerText}}")
+    d = sh['d']; inside = d[0] >= 0 and d[1] >= 0 and d[2] <= sh['iw'] and d[3] <= sh['ih'] and all(b[0] >= d[0] and b[2] <= d[2] and b[1] >= d[1] and b[3] <= d[3] for b in sh['btns'])
+    check(f'{vp} submit: the "Sent for review" sheet is inside the window, its buttons inside it, focus on View status', inside and sh['title'] == 'Sent for review' and sh['focus'] == 'submitView', sh)
+    shot(p, 'submitted', w, h)
+    p.keyboard.press('Escape'); p.wait_for_timeout(250)
+    ns = p.evaluate(NOSCROLL); check(f'{vp} after the sheet closes: the page does not scroll and the card stays (no reset to the home screen)', ns['ok'] and p.evaluate("!document.getElementById('summaryCard').hidden"), ns)
     ctx.close()
 
 
@@ -188,6 +204,8 @@ def phone(br, base):
     p.locator('#voiceConsentType').click(); p.wait_for_function('()=>AtlasVoice.status().phase==="live"', timeout=15000)
     p.wait_for_function("()=>document.querySelectorAll('#textLog .msg-atlas').length>=1", timeout=15000); p.wait_for_timeout(900)
     v = p.evaluate(VIS, '#voiceTypeInput'); row('390x844', 'live', v['ok'], str(v) if not v['ok'] else ''); check('390x844 live: the answer box is inside the first screen', v['ok'], v)
+    ns = p.evaluate(NOSCROLL); row('390x844', 'live no page scroll', ns['ok'], str(ns)); check('390x844 live (W1): the interview fits the phone, the page does not scroll', ns['ok'], ns)
+    check('390x844 live (W1): the answer box and Stop interview are on the screen without scrolling', p.evaluate(VIS, '#voiceTypeInput')['ok'] and p.evaluate(VIS, '#voiceEnd')['ok'])
     stop_checks(p, '390x844', 'typed', min_h=43.5, phone=True); p.evaluate('scrollTo(0,0)')
     sw = p.evaluate("()=>document.documentElement.scrollWidth<=innerWidth"); check('390x844 live: no horizontal scroll', sw)
     check('390x844 live: starting did not scroll the page away from the orb', p.evaluate('scrollY') < 60, p.evaluate('scrollY'))

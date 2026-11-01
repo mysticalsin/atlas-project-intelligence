@@ -20,7 +20,7 @@ const own=()=>{try{return typeof app().ownProjects==='function'?app().ownProject
 // Start asks the picker only when there is something to pick from (a staffing row, or projects on this device) and no project is selected yet; a person with neither goes straight on (ATLAS creates the project from the story).
 async function needsPick(){let c=null;try{c=window.ATLAS_VOICE_BRIDGE&&window.ATLAS_VOICE_BRIDGE.context();}catch{}if(!c||!c.isNew)return false;return (await staffingRows()).length>0||own().length>0;}
 let dlg=null;
-function build(){const d=document.createElement('dialog');d.id='projectPickDialog';d.className='pick-dialog';d.setAttribute('aria-labelledby','projectPickTitle');
+function build(){const d=document.createElement('dialog');d.id='projectPickDialog';d.className='pick-dialog w1-dark';d.setAttribute('aria-labelledby','projectPickTitle');
  setHTML(d,html`<div class="dialog-head"><div><p class="eyebrow">Step 1 of 3</p><h2 id="projectPickTitle">Which project?</h2></div><button aria-label="Close" class="close" data-pick-close="" type="button">×</button></div>
 <label class="fit-sr" for="projectPickSearch">Search your projects</label><input autocomplete="off" class="pick-search" id="projectPickSearch" placeholder="Search by name or ID" type="search"/>
 <ul class="pick-list" id="projectPickList"></ul><p class="pick-empty" hidden="" id="projectPickEmpty" role="status"></p>

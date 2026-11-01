@@ -23,7 +23,7 @@ ADMIN_NOTE_EFB4948 = ('ADMIN MODE (server-verified sign-in). This overrides HOW 
 
 
 def test_talker_policy_is_short_and_has_no_filler_praise():
-    assert len(TALKER_POLICY.split()) <= 700  # (650 until v2.2 L1 added the language rule; the per-turn LANGUAGE note carries the detail)
+    assert len(TALKER_POLICY.split()) <= 730  # (650 until v2.2 L1 added the language rule, 700 until v2.2 W1 added the one Opp ID rule: 27 words)
     assert 'amazing' not in TALKER_POLICY.lower() and not BANNED.search(TALKER_POLICY)
     assert 'Oh wow' not in TALKER_POLICY
     assert 'Never accept the first vague answer' not in TALKER_POLICY and 'Push' not in TALKER_POLICY

@@ -167,14 +167,14 @@ test('language: a server that does not announce the language control is never se
  assert.deepEqual(h.sent.filter(m=>m&&m.type==='language'),[]);
 });
 
-// ---- U2 (Tony, 2026-10-31): a visible Stop interview button; its sheet offers "Stop and review what you said" or "Stop and discard", plus Cancel ----
+// ---- U2 (Tony, 2026-10-31): a visible Stop interview button; its sheet offers "Stop and review what you said" or "Discard everything", plus Cancel ----
 test('Stop interview: a visible secondary button in the live controls, named for assistive technology; the sheet reviews what was said (when something was) or discards',async()=>{
  const h=boot();await h.live();
  assert.equal(h.$('voiceEnd').hidden,false);assert.equal(h.$('voiceEnd').disabled,false);
  assert.equal(h.$('voiceEndLabel').textContent,'Stop interview');assert.equal(h.$('voiceEnd').getAttribute('aria-label'),'Stop the interview');
  // nothing said yet: the sheet says so and the first button just stops
  h.$('voiceEnd').click();assert.equal(h.$('voiceEndDialog').open,true);
- assert.match(h.$('voiceEndText').textContent,/Nothing has been said yet, so there is nothing to review/);assert.equal(h.$('voiceEndConfirm').textContent,'Stop interview');
+ assert.match(h.$('voiceEndText').textContent,/Nothing has been said yet, so there is nothing to review/);assert.equal(h.$('voiceEndConfirm').textContent,'Stop here');
  h.$('voiceEndDialog').close();
  // something was said: review it, or throw it away
  h.server({type:'user_text',item_id:'user-1',text:'We rebuilt the claims intake process.',provenance:'unverified_speech_recognition'});
@@ -199,5 +199,5 @@ test('Stop interview: before live it is "Cancel connection"; there is no Skip co
  assert.equal(h.$('voiceSkip').onclick,undefined);
  const page=fs.readFileSync(path.join(ROOT,'ATLAS_Voice.html'),'utf8');
  assert.ok(!/End interview|End this interview|End and prepare/.test(page.replace(/<script[\s\S]*?<\/script>/g,'').replace(/<style[\s\S]*?<\/style>/g,'')),'"End interview" is "Stop interview" everywhere the consultant reads it');
- assert.match(page,/id="voiceEndLabel">Stop interview</);assert.match(page,/Stop and review what you said/);assert.match(page,/Stop and discard/);
+ assert.match(page,/id="voiceEndLabel">Stop interview</);assert.match(page,/Stop and review what you said/);assert.match(page,/Stop the interview\?/);assert.match(page,/Discard everything/);assert.ok(!/Stop and discard/.test(page),'one discard option, not two');
 });

@@ -13,8 +13,7 @@ test('the opening asks about the work, never for the Opp ID first', () => {
 
 test('the Opp ID is asked once, later and briefly, only when the project has none', () => {
   const rule = /OPPORTUNITY ID:[^\n]*/.exec(TALKER_POLICY)?.[0] || '';
-  assert.match(rule, /has an oppId, never ask for it/);
-  assert.match(rule, /If it has none, ask once, in one short question/);
-  assert.match(rule, /only after the consultant's second answer and never as the first question/);
+  assert.match(rule, /never ask for it when UNTRUSTED PROJECT DATA has an oppId/);
+  assert.match(rule, /If absent, ask once, in one short question, after their second answer, never first/);
   assert.ok(!/skip|don.t know/i.test(rule), 'no invitation to skip');
 });

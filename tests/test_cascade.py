@@ -342,5 +342,5 @@ def test_w1_opening_never_asks_for_the_opp_id_first():
     assert 'never ask for the opportunity ID (Opp ID) in this first turn' in OPENING and 'never ask for what is there' in OPENING
     assert 'To start, could you tell me about the project and what you were brought in to do?' in OPENING
     rule = [l for l in TALKER_POLICY.splitlines() if l.startswith('OPPORTUNITY ID:')][0]
-    assert 'has an oppId, never ask for it' in rule and 'only after the consultant' in rule and 'never as the first question' in rule
+    assert 'never ask for it when UNTRUSTED PROJECT DATA has an oppId' in rule and 'ask once, in one short question, after their second answer, never first' in rule
     assert not re.search(r"skip|don.t know", rule, re.I)

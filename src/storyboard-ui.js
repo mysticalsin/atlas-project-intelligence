@@ -36,6 +36,9 @@ function render(){
  $('boardCoverage').textContent=m.coverage.present+'/'+m.coverage.total+' · '+m.coverage.meaning;try{const c=$('captureCount');if(c)$('boardTopics').textContent=(parseInt(c.textContent,10)||0)+' of 6 topics saved · '+m.coverage.present+' of '+m.coverage.total+' dimensions heard';}catch(e){}
  renderTime(m.time);renderGaps(m,fresh);renderMap(m,fresh);renderMetrics(m,fresh);renderDims(m,fresh);renderChallenge(m);
  announce(B.summaryText(m));}
+// One count of saved topics: the capture ring in the left rail is the source; this line follows it whenever it changes (not only at the next interview event), so the two never disagree.
+function paintTopics(){try{const c=$('captureCount');if(c&&prev&&!board.hidden)$('boardTopics').textContent=(parseInt(c.textContent,10)||0)+' of 6 topics saved · '+prev.coverage.present+' of '+prev.coverage.total+' dimensions heard';}catch(e){}}
+try{if(typeof MutationObserver==='function'&&$('captureCount'))new MutationObserver(paintTopics).observe($('captureCount'),{childList:true,characterData:true,subtree:true});}catch(e){}
 function renderTime(t){const sec=$('boardTime');sec.hidden=t.max===null;if(t.max===null)return;
  $('boardTimeLeft').textContent=t.soft?clock(t.elapsed)+' · about '+Math.round(t.soft/60)+'–'+Math.round(t.max/60)+' min':clock(t.left)+' left';$('boardPhase').textContent=t.phase?PHASES[t.phase]:'';sec.dataset.phase=t.phase||'';
  $('boardTimeBar').style.width=(t.max?Math.min(100,100*t.elapsed/t.max):0).toFixed(1)+'%';}

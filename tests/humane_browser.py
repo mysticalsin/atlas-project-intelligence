@@ -211,7 +211,7 @@ try:
         pr.locator('#voiceRepeat').click(); pr.wait_for_timeout(400)
         check('Repeat: one repeat message, and the question is said again on screen', len(frames_of(pr, 'repeat')) == 1 and 'Of course. What was the baseline?' in pr.locator('#agentText').inner_text())
         pr.locator('#voiceEnd').click(); pr.locator('#voiceEndDialog').wait_for(state='visible')
-        check('Stop interview: the sheet offers Stop and review what you said, Stop and discard and Cancel (nothing is sent yet)', pr.locator('#voiceEndConfirm').inner_text() == 'Stop and review what you said' and pr.locator('#voiceEndDiscard').inner_text() == 'Stop and discard'
+        check('Stop interview: the sheet offers Stop and review what you said, Discard everything and Cancel (nothing is sent yet)', pr.locator('#voiceEndConfirm').inner_text() == 'Stop and review what you said' and pr.locator('#voiceEndDiscard').inner_text() == 'Discard everything' and pr.locator('#voiceEndTitle').inner_text() == 'Stop the interview?'
               and pr.locator('#voiceEndDialog').get_by_role('button', name='Cancel', exact=True).count() >= 1 and not frames_of(pr, 'end') and not frames_of(pr, 'discard'))
         pr.locator('#voiceEndDialog [data-voice-close]').last.click(); pr.wait_for_timeout(300)
         check('Cancel leaves the interview running', pr.evaluate('AtlasVoice.status().phase') == 'live' and not pr.locator('#voiceEndDialog').is_visible() and not frames_of(pr, 'end') and not frames_of(pr, 'discard'))
