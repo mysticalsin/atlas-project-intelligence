@@ -47,6 +47,7 @@ EDGE_MODULES = [
     'atlas_voice.languages',
     'atlas_voice.privacy_config',
     'atlas_voice.textfold',
+    'atlas_voice.gaps',
 ]
 for _name in EDGE_MODULES:
     for _key, _value in getattr(importlib.import_module(_name), 'EDGE_CONSTANTS', {}).items():

@@ -17,7 +17,7 @@ with sync_playwright() as pw:
   p.locator('#qualityVague').click();check('Vague percentage challenged', 'before and after' in p.locator('#qualityLabResult').inner_text())
   check('Local coaching is labelled', 'LOCAL WORDING LAB' in p.locator('#intel-quality').inner_text())
   p.locator('#qualityDetailed').click();check('Detailed account advances to correction','correct before' in p.locator('#qualityLabResult').inner_text())
-  p.locator('#qualityInput').fill("I don't know; it was not measured.");p.locator('#qualityAnalyze').click();check('Unknown is kept explicit','unknown explicit' in p.locator('#qualityLabResult').inner_text())
+  p.locator('#qualityInput').fill("I don't know; it was not measured.");p.locator('#qualityAnalyze').click();check('An "I don\'t know" is met with another angle','come at that another way' in p.locator('#qualityLabResult').inner_text())
   p.locator('[data-intel-tab=wiki]').click();p.locator('#wikiCurrent').click();check('No fictional project silently created','Choose a project' in p.locator('#wikiMessage').inner_text())
   p.locator('#intelligenceDialog [aria-label="Close story intelligence"]').click()
   p.locator('.studio-left [data-action=new-project]').click()

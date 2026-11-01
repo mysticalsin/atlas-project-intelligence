@@ -623,7 +623,7 @@ export class Session {
   // details (an ask's field may also be answered by a detail the analyst filed there).
   gapStatuses() {
     const answers = Object.fromEntries(Object.entries(this.gapAnswers).map(([id, turns]) => [id, turns.map(parts => parts.join(' '))]));
-    return gapStatus(this.gapAsks, this.gapAttempts, answers, this.ledger ? this.ledger.details.filter(d => d.active) : []);
+    return gapStatus(this.gapAsks, this.gapAttempts, answers, this.ledger ? this.ledger.details.filter(d => d.active) : [], this.language);
   }
 
   // A consultant turn joins the answer window of the ask they last heard. The rest of a turn they had paused in
