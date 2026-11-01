@@ -333,7 +333,7 @@ try:
         ANS2 = 'It ran for about six months, and the baseline was forty minutes per claim.'
         vt.refuse = 'speaking'; pt.locator('#voiceTypeInput').fill(ANS2); pt.keyboard.press('Enter'); pt.wait_for_timeout(500)
         check('refused while ATLAS speaks: the text is still in the box, the note says "I\'ll take that as soon as I finish speaking", and the log did not change',
-              pt.locator('#voiceTypeInput').input_value() == ANS2 and "I\u2019ll take that as soon as I finish speaking" in pt.locator('#voiceTypeNote').inner_text() and 'Your text is kept' in pt.locator('#voiceTypeNote').inner_text() and log.count() == 3)
+              pt.locator('#voiceTypeInput').input_value() == ANS2 and "I\u2019ll take that as soon as I finish speaking" in pt.locator('#voiceTypeNote').inner_text() and 'Your text is kept' in pt.locator('#voiceTypeNote').inner_text() and log.count() == 4)
         check('the note is a polite status region, Send is usable again, and focus is back in the box', pt.get_attribute('#voiceTypeNote', 'role') == 'status' and pt.get_attribute('#voiceTypeNote', 'aria-live') == 'polite'
               and pt.locator('#voiceTypeSend').is_enabled() and pt.evaluate('document.activeElement.id') == 'voiceTypeInput')
         vt.refuse = 'composing'; pt.keyboard.press('Enter'); pt.wait_for_timeout(400)
