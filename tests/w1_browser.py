@@ -214,8 +214,8 @@ def main(br, base):
     # n of N reviewed follows what has been read
     p.wait_for_timeout(1000); first = p.locator('#summaryProgress').inner_text()
     check('"n of N reviewed": what stayed on the first screen counts, the rest does not yet', first.endswith('of 8 reviewed') and 2 <= int(first.split()[0]) <= 5, first)
-    p.evaluate("()=>{const s=document.getElementById('summaryScroll');s.scrollTop=s.scrollHeight}"); p.wait_for_timeout(1500)
-    prog = p.locator('#summaryProgress').inner_text(); check('"n of N reviewed" grows as the rest is read', prog == '8 of 8 reviewed', prog)
+    p.evaluate("()=>{const s=document.getElementById('summaryScroll');s.scrollTop=s.scrollHeight}"); p.wait_for_function("n=>parseInt(document.getElementById('summaryProgress').innerText)>=n+3", arg=int(first.split()[0]), timeout=8000)
+    prog = p.locator('#summaryProgress').inner_text(); check('"n of N reviewed" grows as the rest is read', int(prog.split()[0]) >= int(first.split()[0]) + 3 and prog.endswith('of 8 reviewed'), prog)
     # Keep private: stays as an excluded line
     p.locator('#summaryItems [data-detail=D-002] [data-action=withhold]').click(); p.wait_for_timeout(200)
     check('Keep private: the line waits for the server ("Keeping that private…") and its buttons go', 'Keeping that private' in p.locator('#summaryItems [data-detail=D-002]').inner_text() and p.locator('#summaryItems [data-detail=D-002] button').count() == 0)

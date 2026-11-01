@@ -394,11 +394,11 @@ try:
         check('the start message carries the chosen language and that it is fixed (and mode text), nothing else new', st.get('language') == 'fr' and st.get('languageLock') is True and st.get('mode') == 'text')
         check('the indicator says what the server announced: French, fixed by you, answering in text; the selector shows it', 'Français \u00b7 fixed by you \u00b7 ATLAS answers in text' in pf.locator('#voiceLanguageState').inner_text()
               and pf.evaluate("document.getElementById('voiceLanguageSelect').value") == 'fr' and pf.get_attribute('#voiceLanguageState', 'role') == 'status')
-        check('the French greeting is in the log, and its lines take their own text direction', 'Bonjour, je suis ATLAS. Quel était le projet ?' in pf.locator('#textLog').inner_text() and pf.get_attribute('#textLog .msg', 'dir') == 'auto')
+        check('the French greeting is in the log, and its lines take their own text direction', 'Bonjour, je suis ATLAS.' in pf.locator('#textLog').inner_text() and 'Quel était le projet ?' in pf.locator('#textLog').inner_text() and pf.get_attribute('#textLog .msg', 'dir') == 'auto')
         FR1 = "Nous avons reconstruit le processus d\u2019accueil des sinistres pour un grand assureur, et j\u2019ai dirigé la conception."
         pf.locator('#voiceTypeInput').fill(FR1); pf.keyboard.press('Enter'); pf.wait_for_timeout(600)
         check('a French answer is sent exactly as typed (accents and the curly apostrophe intact) and shown as "You", with the French reply after it',
-              [f['text'] for f in frames_of(pf, 'text')] == [FR1] and FR1 in pf.locator('#textLog .msg').nth(1).inner_text() and 'Sur quelle période cela a-t-il été mesuré ?' in pf.locator('#textLog .msg').nth(2).inner_text())
+              [f['text'] for f in frames_of(pf, 'text')] == [FR1] and FR1 in pf.locator('#textLog .msg').nth(2).inner_text() and 'Sur quelle période cela a-t-il été mesuré ?' in pf.locator('#textLog .msg').nth(3).inner_text())  # (W1: the opening is two bubbles)
         vf.sock.send(json.dumps({'type': 'language', 'code': 'ar', 'language': 'ar', 'name': 'Arabic', 'native': '\u0627\u0644\u0639\u0631\u0628\u064a\u0629', 'rtl': True, 'voice': False, 'locked': False, 'bank': False, 'via': 'detected'})); pf.wait_for_timeout(300)
         check('a switch the server announces updates the indicator and the selector (back to Auto-detect), with no page error', '\u0627\u0644\u0639\u0631\u0628\u064a\u0629 \u00b7 detected \u00b7 ATLAS answers in text' in pf.locator('#voiceLanguageState').inner_text()
               and pf.evaluate("document.getElementById('voiceLanguageSelect').value") == 'auto')
