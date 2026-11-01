@@ -243,17 +243,20 @@ def test_gap_status_rules_and_guidance():
     st=lambda attempts,answers,details:[s['status'] for s in gap_status(ASKS,attempts,answers,details)]
     # The analyst filed the answer under another field: the ask's own answer window still answers it.
     out=gap_status(ASKS,{'G1':1},{'G1':[LONG]},[detail('D-001','outcome','reported')])
-    assert out[0]=={'id':'G1','field':'evidence','label':'Supporting artifact','status':'answered_unverified','details':[]}
-    assert st({'G1':1},{'G1':["I really don't know what the baseline was then."]},[])[0]=='unknown'
+    assert out[0]=={'id':'G1','field':'evidence','label':'Supporting artifact','status':'answered_unverified','refusals':0,'details':[]}
+    # v2.2 U2: an "I don't know" is not recorded at once: two easier angles first (tests/test_gaps_challenge.py), then unknown; confidentiality is unknown at once
+    assert st({'G1':1},{'G1':["I really don't know what the baseline was then."]},[])[0]=='open'
+    assert st({'G1':3},{'G1':["I really don't know what the baseline was then.",'no idea','pass']},[])[0]=='unknown'
+    assert st({'G1':1},{'G1':['I cannot share that, it is under NDA.']},[])[0]=='unknown'
     assert st({'G1':1},{'G1':['Yes, about three.']},[])[0]=='open', 'a short answer does not answer'
     assert st({'G1':2},{'G1':['Yes, about three.']},[])[0]=='deferred', 'two attempts: deferred, from the session counts only'
     assert st({},{},[detail('D-001','evidence','uncertain')])[0]=='answered_unverified'
-    assert st({},{},[detail('D-001','evidence','unknown')])[0]=='unknown'
+    assert st({},{},[detail('D-001','evidence','unknown')])[0]=='open', 'a ledger "unknown" alone no longer closes the ask: the consultant is asked again from an easier angle first'
     assert st({'G1':2},{},[detail('D-001','evidence','reported',False)])[0]=='deferred', 'an inactive detail is ignored'
     assert st({'G1':3},{'G1':['Not measured, sorry.',LONG]},[])[0]=='answered_unverified', 'an answer beats an unknown'
     g=gap_guidance(ASKS,gap_status(ASKS,{'G1':2},{'G1':['No.']},[]))
     assert g=={'askId':'G2','field':'measurement','label':'Measurement basis','question':ASKS[1]['ask'],'why':GAP_WHY,'action':'ask_one_question','deferred':['evidence']}
-    done=gap_guidance(ASKS,gap_status(ASKS,{},{'G1':[LONG],'G2':["I don't know."]},[]))
+    done=gap_guidance(ASKS,gap_status(ASKS,{},{'G1':[LONG],'G2':["I don't know.",'no idea','pass']},[]))
     assert done=={'askId':None,'field':None,'label':None,'question':GAP_REFLECT,'why':GAP_DONE_WHY,'action':'reflect_and_confirm','deferred':[]}
 
 def test_time_plan_both_modes():

@@ -1262,7 +1262,7 @@ test('answer windows: the analyst files the answer under another field; the ask 
 });
 
 test('deferral after two heard attempts comes from the session\'s own counts (never the ledger\'s deferred_fields); the quality event names the current ask', async () => {
-  const h = harness(['Not sure.', 'No idea really.'], { session: { gaps: resolver() } });
+  const h = harness(['Maybe, it varied.', 'Depends on the team.'], { session: { gaps: resolver() } });
   await gapOpened(h);
   say(h, [[1.2, .2], [1.3, .001]]);
   await until(() => h.calls.talker.length >= 2 && !h.s.busy() && h.s.gapAttempts.G1 === 2);
@@ -1275,20 +1275,20 @@ test('deferral after two heard attempts comes from the session\'s own counts (ne
   assert.deepEqual([q.next_field, q.next_question, q.planned_question], ['measurement', ASKS[1].ask, ASKS[1].ask]);
   assert.ok(h.calls.talker[2].some(m => m.content.startsWith('ANALYST_GUIDANCE') && m.content.includes('"deferred":["evidence"]')));
   await h.s.onText(JSON.stringify({ type: 'end' }));
-  assert.deepEqual(h.events.find(e => e.type === 'notes').gap.results[0], { askId: 'G1', field: 'evidence', status: 'deferred', quotes: ['Not sure.', 'No idea really.'] });
+  assert.deepEqual(h.events.find(e => e.type === 'notes').gap.results[0], { askId: 'G1', field: 'evidence', status: 'deferred', quotes: ['Maybe, it varied.', 'Depends on the team.'] });
 });
 
-test('every ask answered: the plan is reflect-and-confirm and the gap pace says so; UNKNOWN answers count as unknown', async () => {
-  const h = harness(['The audit report was signed off by the client quality team.', 'Honestly I don\'t know how that was measured.', 'Mostly insurers with old mainframe claims platforms like this one.'],
+test('every ask answered: the plan is reflect-and-confirm and the gap pace says so; an item the consultant could not answer after two easier angles counts as unknown', async () => {
+  const h = harness(['The audit report was signed off by the client quality team.', 'Honestly I don\'t know how that was measured.', 'No idea at all.', 'Still no idea, sorry.', 'Mostly insurers with old mainframe claims platforms like this one.'],
     { session: { gaps: resolver() } });
   await gapOpened(h);
-  for (let n = 2; n <= 4; n++) { say(h, [[1.2, .2], [1.3, .001]]); await until(() => h.calls.talker.length >= n && !h.s.busy()); }
+  for (let n = 2; n <= 6; n++) { say(h, [[1.2, .2], [1.3, .001]]); await until(() => h.calls.talker.length >= n && !h.s.busy()); }
   await until(() => lastQuality(h)?.gap_status.every(s => s.status !== 'open'));
   const q = lastQuality(h);
   assert.deepEqual(q.gap_status.map(s => s.status), ['answered_unverified', 'unknown', 'answered_unverified']);
   assert.deepEqual([q.next_field, q.next_question, q.next_action], [null, GAP_REFLECT, 'reflect_and_confirm']);
-  assert.ok(notesOf(h.calls.talker[3]).some(n => n.endsWith('Every item has an answer: reflect back and close.')));
-  assert.deepEqual(h.s.gapAttempts, { G1: 1, G2: 1, G3: 1 }, 'a reflect-and-confirm reply carries no ask');
+  assert.ok(notesOf(h.calls.talker[5]).some(n => n.endsWith('Every item has an answer: reflect back and close.')));
+  assert.deepEqual(h.s.gapAttempts, { G1: 1, G2: 3, G3: 1 }, 'the ask and its two easier angles are three attempts; a reflect-and-confirm reply carries no ask');
 });
 
 test('a reply withdrawn because the consultant carried on is not an attempt; the continuation joins the same window entry as its own exact part', async () => {
@@ -1418,9 +1418,9 @@ const sayAsync = async (h, segs) => { for (const f of frames(segs)) { h.tick(); 
 test('gap: the reply after reflect-and-confirm is not filed as the last ask\'s answer (an unknown or deferred ask stays so, the confirmation is no quote)', async () => {
   const confirm = 'No, that all sounds right to me, thank you.';
   for (const [said, expected] of [
-    [['The audit report was signed off by the client quality team.', 'Honestly I don\'t know how that was measured.', 'Mostly insurers with old mainframe claims platforms like this one.'],
-      [['answered_unverified', 1], ['unknown', 1], ['answered_unverified', 1]]],
-    [['The audit report was signed off by the client quality team.', 'I am not sure.', 'Sorry, no idea.', 'Mostly insurers with old mainframe claims platforms like this one.'],
+    [['The audit report was signed off by the client quality team.', 'Honestly I don\'t know how that was measured.', 'No idea at all.', 'Still no idea, sorry.', 'Mostly insurers with old mainframe claims platforms like this one.'],
+      [['answered_unverified', 1], ['unknown', 3], ['answered_unverified', 1]]],
+    [['The audit report was signed off by the client quality team.', 'Maybe, it varied.', 'Depends on the team.', 'Mostly insurers with old mainframe claims platforms like this one.'],
       [['answered_unverified', 1], ['deferred', 2], ['answered_unverified', 1]]],
   ]) {
     const h = harness([...said, confirm], { session: { gaps: resolver() } });

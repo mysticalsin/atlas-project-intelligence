@@ -2,7 +2,7 @@
 
 Date: 2026-10-30. Written with task T16. Everything below is offline: synthetic data, no network, no provider, no live DNA, MiChat, IMP, MAAP or Spotlight. It shows what the code does, not how good the live model sounds.
 
-Run it: `make test-eval` (conversation, workflow, rubric and core-flow tests, 59 tests) and `make test-ui` (adds `tests/humane_browser.py`). Both are part of the task's checks; neither is a human rating.
+Run it: `make test-eval` (conversation, workflow, rubric and core-flow tests, 60 tests) and `make test-ui` (adds `tests/humane_browser.py`). Both are part of the task's checks; neither is a human rating.
 
 Status key:
 - **PASS**: the requirement is met by the code, and the named test proves it offline.
@@ -54,6 +54,7 @@ Not pack scenarios: they pin `DECISION_LOG.md` D-U2-1 to D-U2-4. They replace wh
 | "I don't know" is not accepted at once | CONV `U2-A` | PASS | Two easier angles on the same point (`reangle_example`, then `reangle_saw` for the consultant's own part; a figure gets `reangle_scale` then `reangle_who`), each with the `reangle` acknowledgement; the third "I don't know" records the point open (`dont_know:<field>`, `ledger.deferred`, the card's open points, the plan's `deferred_fields`) and ATLAS moves on; the point is never asked again; no line invites a skip. |
 | "skip", "pass", "next question" | CONV `U2-B` | PASS | The same two angles, then the point is left open; the state machine records no skip; an old client's `{type:'skip'}` gets the polite refusal `SKIP_DECLINED` and nothing else. All seven bank languages are covered by `tests/test_turns.py::test_u2_pass_and_no_idea_are_recognised_in_every_bank_language` and the parity vectors. |
 | "That's all" before the essentials | CONV `U2-C` | PASS | Held twice with "I'm still missing the problem, your part and the result" plus one question; the third request goes to the read-back. With the essentials covered, or in the closing window, it is respected at once (`S4`, `S6` run their last turn after 960 s of interview time). |
+| Gap mode (bid proof): the same rule | CONV `U2-D`; `gap-policy.test.js`; `tests/test_gaps_challenge.py` | PASS | Two easier angles on the same item (`reangle` in the analyst guidance), the third refusal records it `unknown` with the consultant's words, then the next item; a confidentiality answer is accepted at once; `GAP_NOTE` invites no skip. |
 
 ## Workflow acceptance tests W1 to W12
 
