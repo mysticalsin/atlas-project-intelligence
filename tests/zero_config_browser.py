@@ -424,7 +424,7 @@ with sync_playwright() as pw:
     # ---- §5.8: the N+1 name from a typed N+1 email (GET /people: stored directory rows only), shown with its source.
     # ATLAS's own name (prefill or lookup) follows the email; a name you typed, or an edited project's stored name, never changes
     def n1_form(s):
-        p = open_page(s); p.locator('[data-action=new-project]:visible').first.click(); p.locator('#projectDialog').wait_for(state='visible'); return p
+        p = open_page(s); p.locator('[data-action=new-project]:visible').first.click(); p.locator('#projectDialog').wait_for(state='visible'); p.evaluate("document.getElementById('projectMore').open=true"); return p  # W1: the N+1 is under More details
     def n1_email(p, v, settle=400):
         p.locator('#n1Email').fill(v); p.locator('#n1Email').press('Tab'); p.wait_for_timeout(settle)
     s = Server(prof=profile(manager=None)); p = n1_form(s)

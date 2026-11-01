@@ -326,8 +326,8 @@ try:
         pt.locator('#voiceTypeInput').fill(ANS1); pt.keyboard.press('Enter'); pt.wait_for_timeout(600)
         log = pt.locator('#textLog .msg')
         check('a typed answer: sent once, cleared when the server took it, shown as "You", and ATLAS\'s reply follows in the log',
-              [f['text'] for f in frames_of(pt, 'text')] == [ANS1] and pt.locator('#voiceTypeInput').input_value() == '' and log.count() == 3
-              and log.nth(1).inner_text().lower().startswith('you') and ANS1 in log.nth(1).inner_text() and 'Over what period was that measured?' in log.nth(2).inner_text())
+              [f['text'] for f in frames_of(pt, 'text')] == [ANS1] and pt.locator('#voiceTypeInput').input_value() == '' and log.count() == 4   # W1: the opening is two bubbles (greeting, question)
+              and log.nth(2).inner_text().lower().startswith('you') and ANS1 in log.nth(2).inner_text() and 'Over what period was that measured?' in log.nth(3).inner_text())
         check('after the reply the cursor is back in the answer box', pt.evaluate('document.activeElement.id') == 'voiceTypeInput')
         # kept until accepted: the session refuses the turn, the text stays and a gentle note says so
         ANS2 = 'It ran for about six months, and the baseline was forty minutes per claim.'
