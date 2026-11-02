@@ -13,7 +13,7 @@ with sync_playwright() as pw:
   # rewriting the page's script text means dropping its hash-pinned <meta> CSP
   html=re.sub(r'<meta content="[^"]*" http-equiv="Content-Security-Policy"/>','',HTML,count=1).replace("if(!['http:','https:'].includes(location.protocol))","if(false)")
   p.set_content(html,wait_until='load');p.wait_for_timeout(250)
-  p.locator('[data-intelligence=quality]').click();p.locator('#qualityAssessment').click()
+  p.evaluate("AtlasIntelligence.open('quality')");p.locator('#qualityAssessment').click()
   check('Assessment question does not assume production benefit','decision did the assessment enable' in p.locator('#qualityLabResult').inner_text())
   check('The wording lab has no "No measurement" sample button (it modelled an "I don\'t know")',p.locator('#qualityUnknown').count()==0)
   p.locator('#qualityInput').fill("I don't know. We did not measure a before and after baseline.");p.locator('#qualityAnalyze').click();check('A typed "I don\'t know" is met with another angle','come at that another way' in p.locator('#qualityLabResult').inner_text())

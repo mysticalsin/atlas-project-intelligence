@@ -1,5 +1,5 @@
-/* AtlasSettings (v2.2 V2): the Settings sheet. It is the former profile dialog (#profileDialog, opened from the avatar or with Ctrl/Cmd + comma) split into tabs: Profile, Privacy, Workspace and, for admins only, Connections and
-   Voice. The tabs only show and hide parts that already exist in the page, so every id and handler of the profile, privacy and backup controls keeps working.
+/* AtlasSettings (v2.2 V2): the Settings sheet. It is the former profile dialog (#profileDialog, opened from the avatar or with Ctrl/Cmd + comma) split into tabs: Profile, Privacy, Workspace and, for admins only, Connections, Voice and For IT (the
+   architecture, deployment notes and downloads that used to be the people-facing How it works). The tabs only show and hide parts that already exist in the page, so every id and handler of the profile, privacy and backup controls keeps working.
    The Voice tab is the one admin control with a secret: the ElevenLabs key is a password field that is always empty, sent once to PUT /api/admin/voice/key, and never shown back (not even its last characters): after a save the
    page says "Key saved · validated <date>" and nothing else. The voice list, the provider, the model and "Test voice" go through /api/admin/voice*; the test audio arrives as a blob and plays from a blob: URL (the page's
    policy allows media from blob: only). Text from the server is only ever set as text, never as markup. */
@@ -8,7 +8,7 @@ const $=id=>document.getElementById(id),app=()=>window.ATLAS_APP,dlg=$('profileD
 function h(tag,attrs={},...kids){const el=document.createElement(tag);for(const [k,v] of Object.entries(attrs||{})){if(v===null||v===undefined||v===false)continue;if(k==='text')el.textContent=v;else if(k.startsWith('on'))el.addEventListener(k.slice(2),v);else el.setAttribute(k,v===true?'':String(v));}
  for(const k of kids.flat())if(k!==null&&k!==undefined&&k!==false)el.append(k instanceof Node?k:document.createTextNode(String(k)));return el;}
 if(!dlg||!$('stab-profile'))return;
-const TABS=['profile','privacy','workspace','connections','voice'];
+const TABS=['profile','privacy','workspace','connections','voice','forit'];
 let pendingTab=null,adminP=null,current='profile';
 const isAdmin=()=>adminP||(adminP=(async()=>{try{await window.AtlasAuth?.probe?.();const b=await app().bootInfo();return window.AtlasAuth?.mode==='live'&&b.libraryRole==='admin';}catch{return false;}})());
 window.AtlasAuth?.onSignedIn?.(()=>{adminP=null;});
@@ -26,14 +26,13 @@ $('stab-profile').parentElement.addEventListener('keydown',e=>{const list=visibl
  if(e.key==='ArrowRight'||e.key==='ArrowDown')to=list[(i+1)%list.length];else if(e.key==='ArrowLeft'||e.key==='ArrowUp')to=list[(i-1+list.length)%list.length];else if(e.key==='Home')to=list[0];else if(e.key==='End')to=list[list.length-1];
  if(to){e.preventDefault();select(to,{focus:true});}});
 // Opening the sheet always starts on Profile (or the tab asked for); the admin tabs appear only once the person is known to be an admin.
-const ADMIN_TABS=['connections','voice'];
+const ADMIN_TABS=['connections','voice','forit'];
 function opened(){const want=pendingTab;pendingTab=null;for(const el of document.querySelectorAll('[data-admin-tab]'))el.hidden=true;select(want&&!ADMIN_TABS.includes(want)?want:'profile');
  isAdmin().then(a=>{for(const el of document.querySelectorAll('[data-admin-tab]'))el.hidden=!a;if(a&&ADMIN_TABS.includes(want)&&dlg.open)select(want);});}
 function closed(){voice.leave();}
 let wasOpen=false;new MutationObserver(()=>{if(dlg.open&&!wasOpen){wasOpen=true;opened();}else if(!dlg.open&&wasOpen){wasOpen=false;closed();}}).observe(dlg,{attributes:true,attributeFilter:['open']});
-// Ctrl/Cmd + comma opens it from anywhere; the footer's save status opens it on the Workspace tab.
+// Ctrl/Cmd + comma opens it from anywhere; the save chip in the header opens it on the Workspace tab (app.js).
 document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&!e.altKey&&!e.shiftKey&&e.key===','){e.preventDefault();if(!dlg.open)open('profile');}},true);
-$('enableSave')?.addEventListener('click',()=>{pendingTab='workspace';},true);
 
 // ---------------------------------------------------------------- the Voice tab
 const voice=(()=>{
@@ -58,7 +57,8 @@ const voice=(()=>{
   input.addEventListener('change',()=>{draft.choice=value;paintDirty();});
   return h('label',{class:'check settings-radio',for:id},input,h('span',{},h('b',{text:title}),h('small',{class:'field-note',text:text})));}
  function keyBlock(){const out=[h('h4',{text:'ElevenLabs key'})];
-  if(!st.storable){out.push(h('p',{class:'small muted',id:'voiceNoStore',text:{SETTINGS_KEYS_OFF:'Stored keys are switched off on this deployment.',SETTINGS_KEY_WEAK:'Keys cannot be stored yet: the SETTINGS_KEY secret is too short.'}[st.storableReason]||'Keys cannot be stored from here yet: this deployment has no SETTINGS_KEY secret. Whoever deploys ATLAS creates it by running deploy.sh again.'}),
+  if(!st.storable){out.push(h('p',{class:'small muted',id:'voiceNoStore',text:{SETTINGS_KEYS_OFF:'A voice key cannot be stored here: storing keys is switched off on this deployment.',SETTINGS_KEY_WEAK:'A voice key cannot be stored yet. The person who runs ATLAS needs to finish one setup step first.'}[st.storableReason]||'A voice key cannot be stored from here yet. The person who runs ATLAS needs to finish one setup step first.'}),
+   h('details',{class:'forit-more'},h('summary',{text:'For IT'}),h('p',{class:'small muted',text:{SETTINGS_KEYS_OFF:'ATLAS_SETTINGS_KEYS is set to off on the server. Remove it to allow stored keys.',SETTINGS_KEY_WEAK:'The SETTINGS_KEY secret is shorter than the minimum. Replace it with a long random value.'}[st.storableReason]||'The deployment has no SETTINGS_KEY secret. It is created when deploy.sh runs; run it again, or set it with: wrangler secret put SETTINGS_KEY.'})),
    h('p',{class:'small muted',text:st.keyEnv?'A key set on the server by the operator is in use. It works as before.':'A key set on the server by the operator would still work.'}));return out;}
   if(st.keyStored){const meta=[st.keyReadable?'Key saved · validated '+(when(st.validatedAt)||'earlier'):'A key is saved but this deployment can no longer read it. Save the key again.'];
    if(st.keyReadable&&st.tier)meta.push(st.tier.charAt(0).toUpperCase()+st.tier.slice(1)+' plan'+(st.charactersLimit?', '+n(Math.max(0,st.charactersLimit-(st.charactersUsed||0)))+' of '+n(st.charactersLimit)+' characters left when checked':''));

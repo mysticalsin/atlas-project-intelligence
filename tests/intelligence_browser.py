@@ -13,7 +13,7 @@ with sync_playwright() as pw:
   p.set_content(HTML,wait_until='load');p.wait_for_timeout(350)
   check('No invented live quality count','No live details' in p.locator('#qualityLiveCount').inner_text())
   check('Orb animates without claiming a model',p.evaluate('AtlasOrbUI.inspect().frames>1 && !AtlasVoice.status().hasMicrophone'))
-  p.locator('[data-intelligence=quality]').click();check('Quality workbench opens',p.locator('#intelligenceDialog').is_visible())
+  p.evaluate("AtlasIntelligence.open('quality')");check('Quality workbench opens',p.locator('#intelligenceDialog').is_visible())
   p.locator('#qualityVague').click();check('Vague percentage challenged', 'before and after' in p.locator('#qualityLabResult').inner_text())
   check('Local coaching is labelled', 'LOCAL WORDING LAB' in p.locator('#intel-quality').inner_text())
   p.locator('#qualityDetailed').click();check('Detailed account advances to correction','correct before' in p.locator('#qualityLabResult').inner_text())
@@ -45,7 +45,7 @@ with sync_playwright() as pw:
   p.evaluate("""window.dispatchEvent(new CustomEvent('atlas-quality',{detail:{type:'quality',candidate_details:[{field:'contribution',quote:'<img src=x onerror=alert(1)> I built a parser.',item_id:'synthetic-user-event',status:'reported'}],missing:['evidence'],flags:['Needs source inspection'],next_question:'Which versioned acceptance record supports this?',coverage:{present:1,total:12}}}));""")
   check('Live quality event updates next probe','versioned acceptance' in p.locator('#qualityNext').inner_text())
   check('Quote count does not imply verification','unverified' in p.locator('#qualityLiveCount').inner_text())
-  p.locator('[data-intelligence=quality]').click();p.locator('#intel-quality details summary').click()
+  p.evaluate("AtlasIntelligence.open('quality')");p.locator('#intel-quality details summary').click()
   check('Untrusted quote is text not executable HTML',p.locator('#candidateLedger img').count()==0 and '<img' in p.locator('#candidateLedger').inner_text())
   for width in (320,390,768,1366):
    p.set_viewport_size({'width':width,'height':900});p.wait_for_timeout(100)
@@ -56,7 +56,7 @@ with sync_playwright() as pw:
   out=ROOT/'preview/v11';out.mkdir(parents=True,exist_ok=True)
   p.set_viewport_size({'width':1512,'height':982});p.evaluate('scrollTo(0,0)');p.wait_for_timeout(250);p.screenshot(path=str(out/'desktop.png'),full_page=True)
   p.evaluate("document.querySelector('.motion-language').open=true");p.locator('[data-orb-preview=speaking]').click();p.wait_for_timeout(1200);p.screenshot(path=str(out/'speaking-preview.png'),full_page=True)
-  p.evaluate("document.querySelector('.motion-language').open=true");p.locator('#studioPreview').click();p.locator('[data-intelligence=quality]').click();p.locator('#qualityDetailed').click();p.screenshot(path=str(out/'quality.png'),full_page=False)
+  p.evaluate("document.querySelector('.motion-language').open=true");p.locator('#studioPreview').click();p.evaluate("AtlasIntelligence.open('quality')");p.locator('#qualityDetailed').click();p.screenshot(path=str(out/'quality.png'),full_page=False)
   p.locator('#intelligenceDialog [aria-label="Close story intelligence"]').click();p.set_viewport_size({'width':390,'height':844});p.evaluate('scrollTo(0,0)');p.wait_for_timeout(200);p.screenshot(path=str(out/'mobile.png'),full_page=True)
   check('No JavaScript errors',not errors)
  finally:

@@ -99,7 +99,7 @@ test('model: the exact F5.1 shape and the synthetic interview',needPolicy,()=>{
  const m=B.model(state(q,{session:{readyAt:1000,maxSeconds:900,mode:'full',timePlan:{depthAt:405,closingAt:690}},now:61000}));
  assert.deepEqual(Object.keys(m),['label','dims','coverage','pins','placesNotMapped','metrics','measurementSlots','corrected','challenge','time','gaps']);
  assert.equal(m.label,'From the interview · unverified');
- assert.deepEqual(m.coverage,{present:5,total:12,meaning:'candidate coverage, not verification'});
+ assert.deepEqual(m.coverage,{present:5,total:12,meaning:'not yet checked against sources'});
  assert.deepEqual(m.dims.map(x=>x.field),Object.keys(POLICY.FIELDS),'the 12 FIELDS in order');
  const dim=f=>m.dims.find(x=>x.field===f);
  assert.deepEqual(dim('problem'),{field:'problem',label:'Customer problem',state:'reported',count:1});

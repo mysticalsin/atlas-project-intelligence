@@ -209,15 +209,15 @@ try:
         check('X3 red M1: the start frame records only what was ticked: transcription and draft (the required tick), memory (ticked), NOT the saved interview or the notice', all(start['consent'][k] is v for k, v in {'transcription': True, 'draft': True, 'checkpoint': False, 'memory': True, 'notice': False}.items()) and start['capture'] is True)
         check('the start frame carries no name and no email: consultant "", the profile title not sent', start['project']['consultant'] == '' and start['project'].get('role', '') == ''
               and '@' not in json.dumps(start) and 'Jane' not in json.dumps(start))
-        wait(jane, lambda: jane.locator('#storageStatus').text_content() == 'Saved to ATLAS', 10)
+        wait(jane, lambda: jane.locator('#storageStatus').text_content() == 'Saved', 10)
         x = jane.evaluate('window.ATLAS_LOCAL.snapshot().profiles[0].projects')
         check('the project is created after the interview, prefilled from the profile: name, title (roleFrom profile), N+1; managerStaff unticked',
               len(x) == 1 and x[0]['consultant'] == 'Jane Doe' and x[0]['role'] == 'Data lead' and x[0]['roleFrom'] == 'profile'
               and x[0]['validation']['manager'] == {'name': 'Sam Lead', 'email': 'sam@example.com'} and x[0]['validation']['managerStaff'] is False)
         rid = x[0]['library']['id']
         rec = api(jane, '/' + rid)
-        check('saved to the real library: "Saved to ATLAS", the record holds the profile values, no device prompt',
-              jane.locator('#storageStatus').text_content() == 'Saved to ATLAS' and rec['data']['consultant']['name'] == 'Jane Doe'
+        check('saved to the real library: "Saved", the record holds the profile values, no device prompt',
+              jane.locator('#storageStatus').text_content() == 'Saved' and rec['data']['consultant']['name'] == 'Jane Doe'
               and rec['data']['validation']['manager']['email'] == 'sam@example.com'
               and not (jane.locator('#confirmDialog').is_visible() and 'Save on this device' in jane.locator('#confirmTitle').inner_text()))
         check('no setup form was shown at any point', jane.locator('#voiceConnectionDialog').is_hidden() and jane.locator('#gatewayAddress').is_hidden())
@@ -291,7 +291,7 @@ try:
         projects = jane.evaluate('window.ATLAS_LOCAL.snapshot().profiles[0].projects')
         check('expired after the interview: the banner, the page is not reloaded, the new project is kept in the tab',
               'Your sign-in expired. Your work is kept on this page.' in jane.locator('#authBanner').inner_text() and len(jane.loads) == loads and len(projects) == 2
-              and 'Not saved to ATLAS yet · kept in this tab' in jane.locator('#storageStatus').text_content())
+              and 'Not saved: kept in this tab' in jane.locator('#storageStatus').text_content())
         check('no project content reached sessionStorage or localStorage', 'Claims triage' not in store and 'routing design' not in store and 'Zebracorp' not in store)
         wait(jane, lambda: jane.locator('#confirmDialog').is_visible(), 5)
         check('the sync failed, so "Save on this device?" is offered (§3.8); the note says the work is only in this tab',
@@ -299,7 +299,7 @@ try:
         close_dialogs(jane)  # declined: the work stays in this tab only
         with jane.expect_popup() as pop: jane.locator('#authReconnect').click()
         check('Reconnect opens /go/signed-in in a small window; the navigation signs in again (as Access does)', urlparse(pop.value.url).path == '/go/signed-in')
-        wait(jane, lambda: jane.locator('#storageStatus').text_content() == 'Saved to ATLAS', 10)
+        wait(jane, lambda: jane.locator('#storageStatus').text_content() == 'Saved', 10)
         listed = [i for i in api(jane, '?mine=1')['items'] if i['mine']]
         check('signed in again: the pending sync is retried, the second project is in the library, nothing was reloaded',
               jane.locator('#authBanner').is_hidden() and len(listed) == 2 and len(jane.loads) == loads and 'signed in again' in jane.locator('#toast').inner_text())
@@ -334,7 +334,7 @@ try:
               and new.locator('#voiceConsentTitle').inner_text() == 'Your interview with ATLAS' and new.locator('#consentIdentity').inner_text() == 'Signed in as noor.haddad@example.net')
         talk(new)
         check('new user: exactly three actions reach the interview (Start, the tick, Start conversation)', new.evaluate('__acts') == ['voiceStart', 'modelConsent', 'voiceConsentStart'])
-        wait(new, lambda: new.locator('#storageStatus').text_content() == 'Saved to ATLAS', 10); new.locator('#reportDialog').wait_for(state='visible', timeout=8000)
+        wait(new, lambda: new.locator('#storageStatus').text_content() == 'Saved', 10); new.locator('#reportDialog').wait_for(state='visible', timeout=8000)
         nx = new.evaluate('window.ATLAS_LOCAL.snapshot().profiles[0].projects'); nrid = nx[0]['library']['id']
         q = new.locator('#reportStatus .guess-prompt')
         check('only a guess: the project says "Consultant", and the report that opens by itself asks "Is your name Noor Haddad?"',

@@ -21,7 +21,6 @@
  // Offline copy: the card opens the live workspace (the same real link as the start control); otherwise the connection panel.
  $('cardConnection').onclick=()=>{const home=$('voiceOpenHome');if(home&&!home.hidden&&home.href)home.click();else $('studioConnection').click();};
  window.addEventListener('atlas-context',syncProject);window.addEventListener('atlas-studio-project',syncProject);window.addEventListener('atlas-orb-state',syncState);syncProject();
- document.querySelector('header [data-view="interview"]').textContent='Conversation';
- // Avoid historical product-title leakage when the previous source shell is reused.
+  // Avoid historical product-title leakage when the previous source shell is reused.
  document.title='ATLAS Project Intelligence · Mantu';
 })();

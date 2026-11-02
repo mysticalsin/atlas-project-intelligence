@@ -52,6 +52,7 @@ test-ui: build
 	$(PYTHON) tests/settings_browser.py
 	$(PYTHON) tests/q1_browser.py
 	$(PYTHON) tests/w2_browser.py
+	$(PYTHON) tests/w3_browser.py
 doctor:
 	$(PYTHON) scripts/doctor.py --profile preview
 verify-package:
