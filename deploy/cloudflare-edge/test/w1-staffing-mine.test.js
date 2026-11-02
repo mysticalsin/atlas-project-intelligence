@@ -24,7 +24,7 @@ test('a person gets their own rows (newest end first, undated last) with only th
   const r = await s.call(ALEX, 'GET', 'staffing/mine');
   assert.equal(r.status, 200);
   assert.deepEqual(r.body.items.map(x => x.projectId), ['PRJ-1', 'PRJ-2', 'PRJ-4']);
-  assert.deepEqual(Object.keys(r.body.items[0]).sort(), ['endDate', 'managerEmail', 'managerName', 'projectId', 'projectTitle']);
+  assert.deepEqual(Object.keys(r.body.items[0]).sort(), ['confirm', 'derivedFrom', 'endDate', 'managerEmail', 'managerName', 'projectId', 'projectTitle', 'role', 'sector', 'stage']);
   assert.equal(r.body.items[0].projectTitle, 'Claims triage rebuild'); assert.equal(r.body.items[0].managerName, 'Sam Lead');
   assert.ok(!JSON.stringify(r.body).includes('Someone else') && !JSON.stringify(r.body).includes('jo@mantu.com'));
   assert.deepEqual((await s.call(JO, 'GET', 'staffing/mine')).body.items.map(x => x.projectId), ['PRJ-3']);

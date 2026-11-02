@@ -301,7 +301,8 @@ export class Session {
   /** io: {send(obj), sendBytes(u8), close()}; ai: {transcribe(pcm), synthesize(text), chatStream(messages), analyst(messages)} */
   // gaps: async id => {asks, bidAlias, referenceId, projectId} | null (the verified assignee's open gap request);
   // winHint: async () => ({hint: 'quantified'|'confirmed'|null}) | null (aggregate win-loop guidance, never awaited).
-  // staffing: async () => [projectId, ...] | null (the signed-in person's own staffing rows, read server-side: W1/W2 prefill authorisation).
+  // staffing: async () => [{projectId, role, sector, stage}, ...] | null (the signed-in person's own staffing rows and what is derived from them, read
+  // server-side: W1/W2 prefill authorisation; a bare projectId string is accepted too).
   constructor({ io, ai, csrf, voice, voices = null, captureRequired = false, model, maxSeconds = MAX_SECONDS, admin = false, memory = null, speakingLimit = SPEAKING_LIMIT_S, now = () => Date.now() / 1000, sleep = ms => new Promise(r => setTimeout(r, ms)), metric = () => {}, sttTimeout = STT_TIMEOUT_MS,
     gaps = null, staffing = null, winHint = null, gapTimeout = GAP_RESOLVE_MS, reportTimeouts = REPORT_TIMEOUTS_MS, flags = null, checkpoint = null, evidence = null, consentHook = null, consentGuard = null }) {
     // metric(name, numbers): timings and counts only, never transcript or project content.
@@ -638,21 +639,38 @@ export class Session {
     // person's own staffing rows, read server-side for that verified identity: one of them, verified; rows that do not include it, or a lookup that
     // failed, dropped (fail closed), and the page's own id files the interview. A person with NO staffing rows at all (the feed does not cover them
     // yet) keeps the ID as self-declared (projectVerified false), as before; making that strict is a decision for the process owner once the feed
-    // covers everyone. Role, sector and stage stay the person's own words (untrusted data).
-    if (this.project.projectId && this.staffing) {
-      this.starting = true; // until checked, the browser may only leave (onText)
-      let timer, mine = null;
-      try { mine = await Promise.race([Promise.resolve().then(() => this.staffing()), new Promise(r => { timer = setTimeout(() => r(null), this.gapTimeout); })]); }
-      catch { mine = null; }
-      finally { clearTimeout(timer); this.starting = false; }
-      if (this.finished || this.ending) return;
-      const want = this.project.projectId.trim().toLowerCase();
-      this.projectVerified = Array.isArray(mine) && mine.some(id => typeof id === 'string' && id.trim().toLowerCase() === want);
-      if (!this.projectVerified) {
-        const noRows = Array.isArray(mine) && mine.length === 0;
-        if (!noRows) delete this.project.projectId;
-        this.metric('project_unverified', { lookup: Array.isArray(mine) ? 1 : 0, rows: noRows ? 0 : 1, kept: noRows ? 1 : 0 });
+    // covers everyone.
+    // W2 (decided 2 Nov 2026): role, sector and stage come from the person's own projects. Only the values derived server-side from the verified
+    // staffing row (outreach.js derive: the feed, the published reference's industry, the end date) are prefilled; a field with nothing derived is
+    // NOT prefilled (ATLAS asks for it) and reported as to_confirm (the page declared something) or unknown. The page's own words stay untrusted
+    // context only and are never marked verified.
+    if (this.staffing) {
+      let mine = null, derived = null;
+      if (this.project.projectId) {
+        this.starting = true; // until checked, the browser may only leave (onText)
+        let timer;
+        try { mine = await Promise.race([Promise.resolve().then(() => this.staffing()), new Promise(r => { timer = setTimeout(() => r(null), this.gapTimeout); })]); }
+        catch { mine = null; }
+        finally { clearTimeout(timer); this.starting = false; }
+        if (this.finished || this.ending) return;
+        const rows = Array.isArray(mine) ? mine.map(x => typeof x === 'string' ? { projectId: x } : x && typeof x === 'object' && typeof x.projectId === 'string' ? x : null).filter(Boolean) : null;
+        const want = this.project.projectId.trim().toLowerCase(), row = rows ? rows.find(x => x.projectId.trim().toLowerCase() === want) : undefined;
+        this.projectVerified = !!row;
+        if (!row) {
+          const noRows = Array.isArray(mine) && mine.length === 0;
+          if (!noRows) delete this.project.projectId;
+          this.metric('project_unverified', { lookup: Array.isArray(mine) ? 1 : 0, rows: noRows ? 0 : 1, kept: noRows ? 1 : 0 });
+        }
+        derived = row || null;
       }
+      const row = derived;
+      this.prefillStatus = {};
+      for (const k of ['role', 'sector', 'stage']) {
+        const v = row ? clean(row[k], k === 'stage' ? 60 : k === 'role' ? 120 : 100) : '';
+        if (v) { this.project[k] = v; this.prefill[k] = v; this.prefillStatus[k] = 'verified'; }
+        else { delete this.prefill[k]; this.prefillStatus[k] = this.project[k] ? 'to_confirm' : 'unknown'; }
+      }
+      this.metric('prefill_derived', Object.fromEntries(Object.entries(this.prefillStatus).map(([k, v]) => [k, v === 'verified' ? 1 : 0])));
     }
     // Aggregate win-loop guidance (both modes): started now, in parallel, and never awaited, so neither 'ready' nor the
     // opening waits for it. It joins the per-turn notes of the first reply composed after it resolves, and never touches
@@ -690,7 +708,7 @@ export class Session {
     this.started = true; this.lastInput = this.now(); if (!this.resumed) this.startedAt = this.lastInput;
     this.event('ready', { model: 'ATLAS', provider: 'ATLAS voice', sampleRate: 24000, speakingSeconds: this.speakingLimit, capture: this.capture, liveLedger: !!this.analyst,
       maxSeconds: this.mode === 'full' ? hardLimit(this.softSeconds) : this.maxSeconds, ...(this.mode === 'full' ? { softSeconds: this.softSeconds } : {}), input: this.textMode ? 'text' : 'voice', language: this.languageInfo(), voices: this.voiceList(), message: this.textMode ? 'Typed session ready. Type your answers. Candidate notes require your review.' : 'Voice session ready. Speak naturally. Candidate notes require your review.',
-      mode: this.mode, timePlan: timePlan(this.maxSeconds, this.mode), controls: CONTROLS, ...(this.checkpointable() ? { sessionId: this.sessionId, resumable: true } : {}), ...(this.resumed ? { resumed: true, activeSeconds: Math.max(0, Math.floor(this.activeSeconds())) } : {}), ...(gap ? { gaps: this.gapAsks.map(({ id, label, ask }) => ({ id, label, ask })) } : {}) });
+      mode: this.mode, timePlan: timePlan(this.maxSeconds, this.mode), controls: CONTROLS, ...(this.prefillStatus ? { prefill: { ...this.prefillStatus } } : {}), ...(this.checkpointable() ? { sessionId: this.sessionId, resumable: true } : {}), ...(this.resumed ? { resumed: true, activeSeconds: Math.max(0, Math.floor(this.activeSeconds())) } : {}), ...(gap ? { gaps: this.gapAsks.map(({ id, label, ask }) => ({ id, label, ask })) } : {}) });
     if (this.memory && !gap && this.consent.memory === true) { // private memory (only when the person turned it on for this interview) from earlier conversations, bounded so the greeting is never held up (none in gap mode)
       let timer;
       try { this.memoryNote = await Promise.race([this.memory(this.project), new Promise(r => { timer = setTimeout(() => r(''), 3500); })]) || ''; }

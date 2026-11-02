@@ -79,8 +79,13 @@ function pickerModel(rows,projects,query){
 
 // What picking a staffing row fills in (the form's own fields; nothing is guessed): the title and the project/Opp ID from the row, the end month from its end date, the N+1 from the
 // row, and the person's own name and role from their profile. Stage stays the form's default until they say otherwise.
+/* W2 (decided 2 Nov 2026): role, sector and stage come from the person's own projects, derived server-side (staffing/mine). Only those are filled
+   from the row; with nothing derived the role falls back to the person's profile (self-declared, ATLAS still asks: never verified) and the rest stay empty. */
+const STAGES=['Assessment','Proof of concept','Pilot','Production','Ongoing operation','Lessons learned'];
 function staffingValues(row,profile){const r=obj(row),p=obj(profile),end=/^(\d{4}-\d{2})-\d{2}$/.exec(String(r.endDate||''));
- return {title:str(r.projectTitle,140)||str(r.projectId,60),consultant:str(p.consultant,100),role:str(p.role,100),oppId:str(r.projectId,40),
+ const dRole=str(r.role,100),dSector=str(r.sector,100),dStage=STAGES.includes(r.stage)?r.stage:'';
+ return {title:str(r.projectTitle,140)||str(r.projectId,60),consultant:str(p.consultant,100),role:dRole||str(p.role,100),oppId:str(r.projectId,40),
+  derived:{role:!!dRole,sector:!!dSector,stage:!!dStage},sector:dSector,stage:dStage,
   details:{projectId:str(r.projectId,60),...(end?{end:end[1]}:{})},manager:{name:str(r.managerName,100),email:str(r.managerEmail,200)}};}
 
 /* ---------- the submit sheet ---------- */

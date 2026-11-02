@@ -34,7 +34,7 @@ function build(){const d=document.createElement('dialog');d.id='projectPickDialo
 function finish(ok){const done=pickDone;pickDone=null;if(dlg&&dlg.open)dlg.close();if(done)done(ok);}
 function paintList(){const list=$('projectPickList'),m=S.pickerModel(rows||[],own(),$('projectPickSearch').value);list.replaceChildren();
  for(const x of m.items){const li=el('li'),b=el('button','pick-row');b.type='button';b.dataset.key=x.key;
-  const t=el('span','pick-title',x.title),s=el('span','pick-sub',[x.kind==='staffing'?'From your staffing list':'On this device',x.ref?'Ref '+x.ref:'',x.when?'ends '+x.when:'',x.detail].filter(Boolean).join(' · '));
+  const t=el('span','pick-title',x.title),s=el('span','pick-sub',[x.kind==='staffing'?'From your staffing list':'On this device',x.ref?'Ref '+x.ref:'',x.when?'ends '+x.when:'',x.detail,x.kind==='staffing'&&Array.isArray(x.row?.confirm)&&x.row.confirm.length?'ATLAS will ask: '+x.row.confirm.join(', '):''].filter(Boolean).join(' · '));
   b.append(t,s);b.addEventListener('click',()=>choose(x));li.append(b);list.append(li);}
  const empty=$('projectPickEmpty');empty.hidden=!!m.items.length;empty.textContent=m.items.length?'':m.empty?'No staffing rows or projects yet. Choose “Something else” and name your project.':'Nothing matches. Choose “Something else” to add it.';}
 function choose(x){const A=app();

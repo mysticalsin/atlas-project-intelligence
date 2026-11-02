@@ -18,6 +18,12 @@ const STATUSES = ['pending_approval', 'drafted', 'sent', 'failed', 'blocked_exte
 const ACTIONABLE = new Set(['pending_approval', 'blocked_external', 'failed']);
 const REVIEWERS = ['admin', 'reviewer'];
 const HEADER = ['project_id', 'consultant_email', 'manager_email', 'manager_name', 'project_title', 'end_date'];
+// W2 (v2.2, decided 2 Nov 2026): the source of record for the interview's role, sector and stage is the person's own projects. Three OPTIONAL columns
+// of the staffing feed carry them: the person's role on the project, the customer's SECTOR (an industry, never the customer's name: name columns stay
+// ignored) and the project stage. Nothing else is read.
+const OPTIONAL = ['role', 'customer_sector', 'project_stage'];
+export const PROJECT_STAGES = ['Assessment', 'Proof of concept', 'Pilot', 'Production', 'Ongoing operation', 'Lessons learned'];
+const stageOf = v => PROJECT_STAGES.find(x => x.toLowerCase() === String(v || '').trim().toLowerCase()) || '';
 const MAX_ROWS = 2000, MAX_CHARS = 200000, DUE_AHEAD_DAYS = 7, DUE_BACK_DAYS = 30, SEEN_KEEP_MS = 2 * 864e5;
 export const REASONS = Object.freeze({
   teamsOff: 'Teams is not connected: tenant app, bot credentials and TEAMS_* settings are missing.',
@@ -36,6 +42,8 @@ const REASON_LABEL = { project_end: 'project ending', milestone: 'project milest
 const DDL = [
   `CREATE TABLE IF NOT EXISTS staffing (project_id TEXT, consultant_email TEXT, manager_email TEXT, manager_name TEXT, project_title TEXT,
     end_date TEXT, source TEXT, updated_at TEXT, PRIMARY KEY (project_id, consultant_email))`,
+  `CREATE TABLE IF NOT EXISTS staffing_facts (project_id TEXT, consultant_email TEXT, role TEXT, customer_sector TEXT, stage TEXT, updated_at TEXT,
+    PRIMARY KEY (project_id, consultant_email))`,
   `CREATE TABLE IF NOT EXISTS outreach (id TEXT PRIMARY KEY, kind TEXT, subject_id TEXT, channel TEXT, to_email TEXT, status TEXT, reason TEXT,
     payload TEXT, aad_object_id TEXT, created_at TEXT, approved_by TEXT, approved_at TEXT, sent_at TEXT, activity_id TEXT)`,
   'CREATE UNIQUE INDEX IF NOT EXISTS outreach_subject ON outreach(kind, subject_id, channel)',
@@ -97,6 +105,14 @@ function queueInvite(lib, inv) {
   const ref = recordText(lib)(str(inv.project_id, 60) || str(inv.title, 140)) || 'your recent project';
   return queueRows(lib, { kind: 'interview_invite', subjectId: inv.id, toEmail: inv.email, subject: SUBJECT.interview_invite,
     preview: { title: ref, text: `12 minutes while it's fresh? A short interview about ${ref} (${REASON_LABEL[inv.reason] || 'interview request'}).` } });
+}
+
+// W2: a column present in the import replaces the stored value (an empty cell clears it); a column absent from the import keeps it.
+function upsertFacts(lib, s) {
+  const old = lib.rows('SELECT role, customer_sector, stage FROM staffing_facts WHERE project_id = ? AND consultant_email = ?', s.projectId, s.consultantEmail)[0] || {};
+  const f = s.facts, pick = (v, o) => v === null ? (o || '') : v;
+  lib.sql.exec(`INSERT OR REPLACE INTO staffing_facts (project_id, consultant_email, role, customer_sector, stage, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+    s.projectId, s.consultantEmail, pick(f.role, old.role), pick(f.sector, old.customer_sector), pick(f.stage, old.stage), lib.now());
 }
 
 function upsertStaffing(lib, s) {
@@ -170,8 +186,9 @@ export function parseCsv(text) {
   return { header: head ? head.cells : [], rows, rejected };
 }
 
-// ---- POST /staffing/import (admin, reviewer). Only the six named columns are ever read: any other column (and so
-// any client, customer or account column) is dropped right after parsing and reported by name in ignoredColumns.
+// ---- POST /staffing/import (admin, reviewer). Only the six named columns (and the three optional W2 columns, role, customer_sector and
+// project_stage) are ever read: any other column (and so any client name, customer reference or account column) is dropped right after parsing
+// and reported by name in ignoredColumns.
 function importCsv(lib, user, body) {
   const csv = typeof obj(body).csv === 'string' ? body.csv : '';
   if (csv.length > MAX_CHARS) throw fail(413, 'The CSV is larger than 200,000 characters.');
@@ -181,17 +198,21 @@ function importCsv(lib, user, body) {
   const names = p.header.map(h => String(h).trim().toLowerCase()), idx = Object.fromEntries(HEADER.map(h => [h, names.indexOf(h)]));
   const missing = HEADER.filter(h => idx[h] < 0);
   if (missing.length) throw fail(400, `The first row must be the header ${HEADER.join(',')} (missing: ${missing.join(', ')}).`);
-  const used = new Set(Object.values(idx)), ignoredColumns = p.header.map((h, i) => used.has(i) ? null : (str(h, 80) || `column ${i + 1}`)).filter(Boolean);
+  const opt = Object.fromEntries(OPTIONAL.map(h => [h, names.indexOf(h)]).filter(([, i]) => i >= 0));
+  const used = new Set([...Object.values(idx), ...Object.values(opt)]), ignoredColumns = p.header.map((h, i) => used.has(i) ? null : (str(h, 80) || `column ${i + 1}`)).filter(Boolean);
   const rejected = [...p.rejected], staffed = [];
   for (const r of p.rows) {
-    const cell = h => String(r.cells[idx[h]] ?? '').trim();
+    const cell = h => String(r.cells[idx[h] ?? opt[h]] ?? '').trim();
     const projectId = str(cell('project_id'), 60), consultantEmail = email(cell('consultant_email')), mgrRaw = cell('manager_email'), managerEmail = email(mgrRaw), end = cell('end_date');
     const error = !projectId ? 'project_id is required.' : !consultantEmail ? 'consultant_email is not a valid email.' : mgrRaw && !managerEmail ? 'manager_email is not a valid email.'
-      : managerEmail && managerEmail === consultantEmail ? 'The N+1 cannot be the consultant.' : end && !isoDate(end) ? 'end_date must be a real date written YYYY-MM-DD.' : '';
+      : managerEmail && managerEmail === consultantEmail ? 'The N+1 cannot be the consultant.' : end && !isoDate(end) ? 'end_date must be a real date written YYYY-MM-DD.'
+        : opt.project_stage !== undefined && cell('project_stage') && !stageOf(cell('project_stage')) ? `project_stage must be one of: ${PROJECT_STAGES.join(', ')}.` : '';
     if (error) { rejected.push({ line: r.line, error }); continue; }
-    staffed.push({ projectId, consultantEmail, managerEmail, managerName: managerEmail ? str(cell('manager_name'), 100) : '', projectTitle: str(cell('project_title'), 140), endDate: isoDate(end), source: 'staffing-csv' });
+    const facts = Object.keys(opt).length ? { role: opt.role !== undefined ? str(cell('role'), 100) : null, sector: opt.customer_sector !== undefined ? str(cell('customer_sector'), 100) : null,
+      stage: opt.project_stage !== undefined ? stageOf(cell('project_stage')) : null } : null;
+    staffed.push({ projectId, consultantEmail, managerEmail, managerName: managerEmail ? str(cell('manager_name'), 100) : '', projectTitle: str(cell('project_title'), 140), endDate: isoDate(end), source: 'staffing-csv', facts });
   }
-  for (const s of staffed) upsertStaffing(lib, s);
+  for (const s of staffed) { upsertStaffing(lib, s); if (s.facts) upsertFacts(lib, s); }
   const { invited, queued } = inviteDue(lib, staffed, lib.now().slice(0, 10));
   lib.log('library', user.email, 'staffing import', `${staffed.length} rows, ${rejected.length} rejected, ${invited} invited`);
   return { rows: p.rows.length, staffed: staffed.length, invited, outreachQueued: queued, ignoredColumns, rejected: rejected.sort((a, b) => a.line - b.line) };
@@ -287,16 +308,44 @@ async function act(ctx, id) {
 
 // W1: the person's OWN staffing rows, for the project picker ("Which project?"). Only rows whose consultant is the signed-in person, only what the picker shows (the project, its
 // title, the end date, the N+1 of record); never another person's row, never the client columns (they are not stored). Everyone may read their own; a reviewer's full list is below.
-const mineView = s => ({ projectId: s.project_id, projectTitle: s.project_title || '', endDate: s.end_date || '', managerName: s.manager_name || '', managerEmail: s.manager_email || '' });
+// W2 (v2.2): role, sector and stage DERIVED server-side from the person's own projects, never from what the page declares. Role: the staffing feed's role
+// for this person on this project. Sector: the feed's customer sector, else the industry of a PUBLISHED (N+1 validated) library reference filed under
+// the same Project ID. Stage: the feed's project stage, else 'Lessons learned' once the project's end date has passed. Anything not derived is ''
+// and listed in `confirm` (unknown: ATLAS asks for it and nothing self-declared is ever marked verified).
+export const DERIVED_FIELDS = ['role', 'sector', 'stage'];
+function publishedSector(lib, projectId) {
+  try {
+    for (const r of lib.rows(`SELECT industry, data FROM refs WHERE status = 'published' AND (merged_into IS NULL OR merged_into = '') ORDER BY updated_at DESC LIMIT 500`)) {
+      const pid = String(parsed(r.data).details?.projectId || '').trim().toLowerCase();
+      if (pid && pid === projectId.trim().toLowerCase() && str(r.industry, 100)) return str(r.industry, 100);
+    }
+  } catch { /* no library table yet: nothing derived */ }
+  return '';
+}
+function derive(lib, s, today) {
+  const f = lib.rows('SELECT role, customer_sector, stage FROM staffing_facts WHERE project_id = ? AND consultant_email = ?', s.project_id, s.consultant_email)[0] || {};
+  const out = { role: { value: str(f.role, 100), from: 'staffing' }, sector: { value: str(f.customer_sector, 100), from: 'staffing' }, stage: { value: stageOf(f.stage), from: 'staffing' } };
+  if (!out.sector.value) out.sector = { value: publishedSector(lib, s.project_id), from: 'library' };
+  if (!out.stage.value && s.end_date && s.end_date < today) out.stage = { value: 'Lessons learned', from: 'end_date' };
+  return out;
+}
+const mineView = (lib, today) => s => {
+  const d = derive(lib, s, today), base = { projectId: s.project_id, projectTitle: s.project_title || '', endDate: s.end_date || '', managerName: s.manager_name || '', managerEmail: s.manager_email || '' };
+  for (const k of DERIVED_FIELDS) base[k] = d[k].value;
+  base.derivedFrom = Object.fromEntries(DERIVED_FIELDS.filter(k => d[k].value).map(k => [k, d[k].from]));
+  base.confirm = DERIVED_FIELDS.filter(k => !d[k].value);
+  return base;
+};
 function mine(lib, user) {
   const who = String(user.mail || user.email || '').trim().toLowerCase();
   if (!who || !who.includes('@')) return { items: [] };
   ensure(lib);
-  return { items: lib.rows(`SELECT * FROM staffing WHERE consultant_email = ? COLLATE NOCASE ORDER BY CASE WHEN end_date = '' THEN 1 ELSE 0 END, end_date DESC, project_id LIMIT 50`, who).map(mineView) };
+  return { items: lib.rows(`SELECT * FROM staffing WHERE consultant_email = ? COLLATE NOCASE ORDER BY CASE WHEN end_date = '' THEN 1 ELSE 0 END, end_date DESC, project_id LIMIT 50`, who).map(mineView(lib, lib.now().slice(0, 10))) };
 }
 
 // SERVER-TO-SERVER (W1/W2 prefill authorisation): the Project IDs of the signed-in person's own staffing rows, read from the global LibraryStore
-// under the verified identity the Worker forwarded (the same rows as staffing/mine). Returns an array, or null when it cannot be read (never throws).
+// under the verified identity the Worker forwarded (the same rows as staffing/mine), with the role, sector and stage derived from them (W2).
+// Returns an array of { projectId, role, sector, stage }, or null when it cannot be read (never throws).
 export async function staffingForInterview(env, identity) {
   if (!env?.LIBRARY || !identity?.user) return null;
   try {
@@ -304,7 +353,9 @@ export async function staffingForInterview(env, identity) {
     const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(new Request('https://atlas.internal/api/library/staffing/mine', { headers }));
     if (!res.ok) return null;
     const b = await res.json();
-    return Array.isArray(b?.items) ? b.items.map(x => x?.projectId).filter(v => typeof v === 'string' && v) : null;
+    if (!Array.isArray(b?.items)) return null;
+    const text = v => typeof v === 'string' ? v : '';
+    return b.items.filter(x => typeof x?.projectId === 'string' && x.projectId).map(x => ({ projectId: x.projectId, role: text(x.role), sector: text(x.sector), stage: text(x.stage) }));
   } catch { return null; }
 }
 

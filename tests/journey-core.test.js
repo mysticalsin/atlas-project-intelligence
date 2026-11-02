@@ -69,8 +69,14 @@ test('the picker lists staffing rows and the person\'s own projects, searches th
 });
 test('a staffing row fills the title, the Opp/project id, the end month and the N+1; the person\'s own role comes from their profile; nothing else is guessed',()=>{
  const v=J.staffingValues({projectId:'PRJ-2291',projectTitle:'Claims triage rebuild',endDate:'2026-11-20',managerName:'Sam Lead',managerEmail:'sam@mantu.com'},{consultant:'Alex Doe',role:'Data engineer'});
- assert.deepEqual(v,{title:'Claims triage rebuild',consultant:'Alex Doe',role:'Data engineer',oppId:'PRJ-2291',details:{projectId:'PRJ-2291',end:'2026-11'},manager:{name:'Sam Lead',email:'sam@mantu.com'}});
+ assert.deepEqual(v,{title:'Claims triage rebuild',consultant:'Alex Doe',role:'Data engineer',oppId:'PRJ-2291',derived:{role:false,sector:false,stage:false},sector:'',stage:'',details:{projectId:'PRJ-2291',end:'2026-11'},manager:{name:'Sam Lead',email:'sam@mantu.com'}});
  assert.equal(J.staffingValues({projectId:'P'},{}).title,'P');assert.ok(!('end' in J.staffingValues({projectId:'P',endDate:'soon'},{}).details));
+});
+test('W2: the role, sector and stage derived server-side from the person\'s projects win over the profile; an unknown stage is never filled',()=>{
+ const v=J.staffingValues({projectId:'PRJ-1',role:'Lead engineer',sector:'Utilities',stage:'Lessons learned'},{consultant:'Alex',role:'Data engineer'});
+ assert.deepEqual([v.role,v.sector,v.stage],['Lead engineer','Utilities','Lessons learned']);assert.deepEqual(v.derived,{role:true,sector:true,stage:true});
+ const w=J.staffingValues({projectId:'PRJ-1',stage:'Rollout'},{role:'Data engineer'});
+ assert.deepEqual([w.role,w.sector,w.stage],['Data engineer','','']);assert.deepEqual(w.derived,{role:false,sector:false,stage:false});
 });
 test('the submit sheet has the five steps and the one line about who can see it',()=>{
  assert.deepEqual(J.SUBMIT_STEPS,['Submitted','Quality review','N+1 review','Approved','Published or held']);

@@ -1055,3 +1055,7 @@ Implementation and verification: `docs/agent-brain-v2.1/PR1_REVIEW_FIXES.md` and
 - Native review (D-NR): `docs/agent-brain-v2.1/eval/NATIVE_REVIEW.md`, no string changed.
 - G1-4 CV payload: still BLOCKED_EXTERNAL (client_permission source, MiChat endpoint and schema); noted in IMPLEMENTATION_STATUS section 8.
 - 2026-11-02, prefill follow-up: the real-Worker E2E (no staffing rows imported) showed that fail-closed on an empty feed would unlink every interview in live. A person with no rows at all now keeps the Project ID as self-declared (not verified); rows without the ID, or a failed lookup, still drop it. `prefill-auth.test.js` 9.
+
+## 2026-11-02: v2.2 G1-4 and W2 decisions (Tony)
+- G1-4 (D-G14): redact by decision; no client-permission model; X2 blocked only on the MiChat contract. IMPLEMENTATION_STATUS row X2 and section 8, DECISION_LOG updated.
+- W2 (D-W2D): `deploy/cloudflare-edge/src/outreach.js` reads optional `role`, `customer_sector`, `project_stage` columns into `staffing_facts`, derives role, sector and stage per row (feed, published reference industry, end date) in `staffing/mine` and `staffingForInterview`; `src/session.js` prefills only derived values and reports `ready.prefill` (verified, to_confirm, unknown); `src/journey-core.js`, `src/app.js`, `src/journey-ui.js` fill the picker's project from them. Tests: `prefill-auth.test.js` (W2 cases), `w1-staffing-mine.test.js`, `tests/journey-core.test.js`. W2 now PASS in COVERAGE.
