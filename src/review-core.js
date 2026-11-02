@@ -31,7 +31,10 @@ function queueRows(items,now){
  return arr(items).filter(x=>x&&typeof x==='object'&&typeof x.id==='string'&&x.mine!==true).map((x,i)=>({x,i}))
   .sort((a,b)=>(Date.parse(a.x.queued_at||a.x.updated_at)||0)-(Date.parse(b.x.queued_at||b.x.updated_at)||0)||a.i-b.i)
   .map(({x})=>{const at=x.queued_at||x.updated_at;return {id:x.id,revision:Number.isInteger(x.revision)?x.revision:null,name:projectName(x),consultant:str(x.consultant,100),
-   age:ageText(at,now),tone:ageTone(at,now),quality:qualityChip(x.quality),claims:Number.isInteger(x.claims)?x.claims:0,at:str(at,40)};});}
+   age:ageText(at,now),tone:ageTone(at,now),quality:qualityChip(x.quality),claims:Number.isInteger(x.claims)?x.claims:0,at:str(at,40),
+   ...(x.state==='disputed'?{disputed:true,canSettle:x.can_adjudicate===true}:{})};});}
+// What waits for this reviewer: a dispute they cannot settle (they rejected it and another reviewer exists) is listed, but not counted (D-DSR).
+const waiting=rows=>arr(rows).filter(r=>!(r&&r.disputed&&!r.canSettle)).length;
 const queueTitle=n=>'Waiting for you ('+(Number.isInteger(n)&&n>0?n:0)+')';
 
 /* ---------- one claim, as the reviewer reads it ---------- */
@@ -76,7 +79,7 @@ function humanError(e,{write=false}={}){const m=typeof e==='string'?e:str(e&&e.m
 // The policy gate's stable codes, said the way a reviewer would say them.
 const DECISION_WORDS={SELF_APPROVAL:'You cannot approve your own submission. Another reviewer does.',REVISION_MISMATCH:'The consultant changed this while you were reading. Open it again to review the new version.',
  CONTENT_HASH_MISMATCH:'This changed while you were reading. Open it again to review the new version.',TRANSITION_NOT_ALLOWED:'Someone already decided this. Reload the queue.',EVENT_ACTOR_NOT_ALLOWED:'ATLAS did not allow that for your role.',
- AMEND_NOT_ALLOWED_IN_STATE:'This can no longer be amended.'};
+ AMEND_NOT_ALLOWED_IN_STATE:'This can no longer be amended.',ADJUDICATOR_IS_REJECTER:'You rejected this and another reviewer is available, so that reviewer settles the dispute.'};
 function decisionError(e){const m=str(e&&e.message,300),code=str(e&&e.reason,80).split(':')[0]||(/Not allowed: ([A-Z_]+)/.exec(m)||[])[1]||'';
  if(DECISION_WORDS[code])return DECISION_WORDS[code];if(/^Not allowed/i.test(m))return 'ATLAS did not allow that. '+DECISION_WORDS.TRANSITION_NOT_ALLOWED;return humanError(e,{write:true});}
 
@@ -112,5 +115,5 @@ function stripModel({project,item,status,libraryStatus}={}){
  const cur=steps.findIndex(s=>['current','attention','held'].includes(s.state)),idx=cur<0?6:cur;
  return {name:p?str(p.title,140)||FALLBACK:'',steps,current:idx,state:steps[idx].state,summary:steps[idx].label+(steps[idx].state==='attention'?' (needs you)':steps[idx].state==='held'?' (held)':steps[idx].state==='done'?' (done)':'')};}
 
-return {isOpaqueId,projectName,noIds,ageMs,ageText,ageTone,qualityChip,queueRows,queueTitle,claimModel,keyAction,createDeferred,LOAD_FAIL,SEND_FAIL,isRaw,humanError,decisionError,DECISION_WORDS,STEPS,itemFor,stripModel,FALLBACK};
+return {waiting,isOpaqueId,projectName,noIds,ageMs,ageText,ageTone,qualityChip,queueRows,queueTitle,claimModel,keyAction,createDeferred,LOAD_FAIL,SEND_FAIL,isRaw,humanError,decisionError,DECISION_WORDS,STEPS,itemFor,stripModel,FALLBACK};
 });

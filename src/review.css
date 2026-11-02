@@ -157,3 +157,10 @@ body.ui2.studio-view #voicePanel:is([data-phase=live],[data-phase=ending]) #jour
 }
 @media (prefers-reduced-motion:no-preference){.journey-dot{transition:background-color .2s,border-color .2s}}
 @media print{.rq,.journey-host,.rv-screen,.nav-count{display:none!important}}
+/* D-DSR: the dispute panel (review screen and status panel) */
+.dp{display:grid;gap:var(--s2);padding:var(--s3);border:1px solid var(--line-2);border-radius:var(--r-control)}
+.dp-head{display:flex;align-items:center;justify-content:space-between;gap:var(--s2)}.dp-title{margin:0;font-size:16px}
+.dp-story{list-style:none;margin:0;padding:0;display:grid;gap:var(--s2)}.dp-line{font-size:14px}.dp-text{margin:2px 0 0}
+.dp-note{margin:0;color:var(--text-2)}.dp-acts{display:grid;gap:var(--s2)}.dp-act{min-height:44px}.dp-why{margin:0}
+.dp textarea,.dp input{width:100%;padding:var(--s3);font:inherit;font-size:15px;color:var(--text);background:var(--bg);border:1px solid var(--line-2);border-radius:var(--r-control)}
+.dp-done:empty,.dp-err:empty{display:none}.rv-dispute[hidden],.wf-dispute[hidden]{display:none}.wf-dispute{margin-top:var(--s3)}

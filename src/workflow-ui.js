@@ -30,6 +30,7 @@ function render(view){
   h('p',{class:'wf-overall small','data-overall':m.overall.status,role:'status',text:m.overall.text}),
   h('div',{class:'wf-grid'},...m.cards.map(cardEl)),
   m.note?h('p',{class:'tiny muted wf-note',text:m.note}):null,
+  h('div',{id:'wfDispute',class:'wf-dispute',hidden:true}),
   h('div',{id:'wfClaims',class:'wf-claims',hidden:true}));
 }
 // ---- the claims behind the record, for the person reviewing it (not the author): each statement, who said what and how, and the sentence around it when ATLAS kept the claim uncertain ----
@@ -40,8 +41,11 @@ function claimEl(c){const ref=Array.isArray(c.source_refs)?c.source_refs.find(r=
  const context=typeof ref.context==='string'&&ref.context?h('p',{class:'wf-context'},h('span',{class:'wf-context-label',text:'Read the sentence around it. It was negated, hypothetical or reported speech, so ATLAS did not treat it as the consultant’s own claim.'}),h('q',{class:'wf-quote',dir:'auto',lang:/^[a-z]{2,3}$/.test(ref.lang||'')?ref.lang:null,text:ref.context})):null;
  const tags=[ORIGIN_WORDS[c.origin]||String(c.origin||'').replace(/_/g,' '),ref.ledger_status==='uncertain'?'estimate':null,c.attribution&&c.attribution!=='unknown'?'attribution: '+String(c.attribution).replace(/_/g,' '):context?'attribution not established':null,'unverified'].filter(Boolean);
  return h('li',{class:'wf-claim','data-claim':c.claim_id||null},h('p',{class:'wf-claim-head'},h('b',{text:TYPE_WORDS[c.claim_type]||String(c.claim_type||'Claim')}),h('span',{class:'prov',text:tags.join(' · ')})),h('p',{class:'wf-claim-text',dir:'auto',text:String(c.statement||'')}),quote,context);}
+// ---- the dispute (D-DSR): the owner raises one or accepts the rejection; a reviewer upholds or overturns it. AtlasDisputeUI builds it from the record's own actions ----
+function renderDispute(rec){const box=$('wfDispute');if(!box)return;const el=rec&&window.AtlasDisputeUI?window.AtlasDisputeUI.panel(rec,{onChanged:()=>{refresh({force:true});try{window.AtlasReviewUI?.refresh?.();}catch{}}}):null;
+ box.replaceChildren(...(el?[el]:[]));box.hidden=!el;}
 async function renderClaims(id){const box=$('wfClaims');if(!box)return;box.hidden=true;box.replaceChildren();
- try{const rec=await app().libraryApi('/evidence/'+encodeURIComponent(id));if(selected!==id||!rec||rec.access!=='reviewer')return; // only the person reviewing someone else's record sees this
+ try{const rec=await app().libraryApi('/evidence/'+encodeURIComponent(id));if(selected!==id||!rec)return;renderDispute(rec);if(rec.access!=='reviewer')return; // only the person reviewing someone else's record sees the claims here
   const claims=Array.isArray(rec.claims)?rec.claims.slice(0,60):[];if(!claims.length)return;
   const open=claims.some(c=>Array.isArray(c.source_refs)&&c.source_refs.some(r=>r&&r.context));
   const d=h('details',{open},h('summary',{text:'Claims and their sources ('+claims.length+')'}),h('ul',{class:'wf-claim-list'},...claims.map(claimEl)));

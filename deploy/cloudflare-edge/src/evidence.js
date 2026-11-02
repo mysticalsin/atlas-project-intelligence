@@ -154,16 +154,19 @@ const MOVES = {
   dispute: { gate: 'dispute', event: 'dispute', as: 'user', to: () => 'disputed', why: 'Say why you dispute the rejection.' },
   withdraw: { gate: 'withdraw', event: 'withdraw', as: 'user', to: s => (s === 'approved' || s === 'downstream_proposals' ? 'impact_review' : 'withdrawn'), why: 'Say why this is withdrawn.' },
   complete_impact_review: { gate: 'withdraw', event: 'complete_impact_review', as: 'reviewer', to: () => 'withdrawn' },
-  // Disputes (v2.2): the owner may accept a rejection (or drop their dispute of it); a dispute is adjudicated by a reviewer who is neither the owner
-  // (the gate's SELF_APPROVAL) nor the reviewer who rejected it (ADJUDICATOR_IS_REJECTER): the rejection stands, or the record is reviewed again.
+  // Disputes (v2.2): the owner may accept a rejection (or drop their dispute of it); a dispute is adjudicated by a reviewer who is not the owner
+  // (the gate's SELF_APPROVAL) and, when the record has two or more eligible reviewers, not the reviewer who rejected it (ADJUDICATOR_IS_REJECTER).
+  // With exactly one eligible reviewer, that reviewer settles it (D-DSR, Tony 2026-11-02): the rejection stands, or the record is reviewed again.
   accept_rejection: { gate: 'accept_rejection', event: 'close_rejected', as: 'user', to: () => 'closed_rejected', why: 'Say why you accept the rejection.' },
   uphold_rejection: { gate: 'uphold_rejection', event: 'close_rejected', as: 'reviewer', to: () => 'closed_rejected', from: ['disputed'], adjudicates: true, why: 'Say why the rejection stands.' },
   reopen_review: { gate: 'reopen_review', event: 'reopen_review', as: 'reviewer', to: () => 'reviewer_queue', from: ['disputed'], adjudicates: true },
 };
 const lc = v => String(v || '').trim().toLowerCase();
-// The reviewer who rejected a record never adjudicates the dispute of that rejection (four eyes, like AUTHOR_CANNOT_APPROVE).
+// The reviewer who rejected a record does not adjudicate the dispute of that rejection (four eyes, like AUTHOR_CANNOT_APPROVE), unless that reviewer is the
+// only eligible reviewer of the record (D-DSR): then the same reviewer settles it, and the decision is recorded as a single-reviewer adjudication.
 const rejecterOf = rec => lc(rec.state?.dispute?.rejection?.by || rec.state?.rejection?.by);
-const mayAdjudicate = (rec, user) => !rejecterOf(rec) || rejecterOf(rec) !== lc(user.email);
+const emailList = v => String(v || '').toLowerCase().split(',').map(x => x.trim()).filter(Boolean);
+export const SINGLE_REVIEWER_AUDIT = 'single_reviewer_adjudication';
 const OWNER_AMEND = new Set(['evidence_draft', 'needs_clarification', 'approved', 'downstream_proposals']);
 const REVIEWER_AMEND = new Set(['reviewer_queue', 'approved', 'downstream_proposals']);
 
@@ -172,7 +175,7 @@ const REVIEWER_AMEND = new Set(['reviewer_queue', 'approved', 'downstream_propos
 const matchRef = (refs, rec) => refs.find(x => x.id === rec.ref_id) || (rec.project_ref ? refs.find(x => x.local_id === rec.project_ref || x.data?.details?.projectId === rec.project_ref) : null) || null;
 
 class Evidence {
-  constructor(lib) { this.lib = lib; }
+  constructor(lib) { this.lib = lib; this.env = undefined; }
   ownRefs(owner) { return this.rows("SELECT * FROM refs WHERE owner = ? AND (merged_into IS NULL OR merged_into = '') ORDER BY updated_at DESC", owner).map(x => ({ ...x, data: parse(x.data, {}), state: parse(x.state, {}) })); }
   rows(q, ...p) { return this.lib.rows(q, ...p); }
   now() { return this.lib.now(); }
@@ -207,6 +210,24 @@ class Evidence {
     return { owner, reviewer, email: user.email, roles: [role, resolved ? 'reviewer' : ''].filter(Boolean) };
   }
   actor(user, acc) { return { sub: user.email, roles: acc.roles }; }
+  // D-DSR: the people who could review this record, as lower-case emails: the listed reviewers and admins (Access mode, the same lists app.js reads the role
+  // from) and the resolved N+1, never the owner. Entra app-role holders cannot be listed from here, so in Entra mode (or with no Worker env) the pool is
+  // unknown (null) and the four-eyes rule applies: an unknown count is never treated as one.
+  reviewerPool(rec) {
+    const env = this.env;
+    if (!env || env.IDENTITY_SOURCE === 'entra') return null;
+    const pool = new Set([...emailList(env.ADMIN_EMAILS), ...emailList(env.REVIEWER_EMAILS), lc(this.n1(rec))].filter(Boolean));
+    pool.delete(lc(rec.owner_sub));
+    return pool;
+  }
+  // Who may settle a dispute: 'four_eyes' (not the rejecter, or no rejecter is known), 'single_reviewer' (the rejecter is the record's only eligible
+  // reviewer), or '' (refused: the rejecter, and another reviewer exists or the count is unknown). The named adjudicator stays recorded, not enforced (D-DSP 3).
+  adjudicationRule(rec, email) {
+    const by = rejecterOf(rec), me = lc(email);
+    if (!by || by !== me) return 'four_eyes';
+    const pool = this.reviewerPool(rec);
+    return pool && pool.size === 1 && pool.has(me) ? 'single_reviewer' : '';
+  }
   approvalOf(id) { return this.rows("SELECT * FROM approvals WHERE entity = ? AND status = 'approved' ORDER BY rowid DESC", id)[0] || null; }
   entity(rec) {
     const ap = this.approvalOf(rec.id), au = this.rows('SELECT author FROM evidence_revisions WHERE entity = ? AND revision = ?', rec.id, rec.revision)[0];
@@ -220,14 +241,15 @@ class Evidence {
   }
 
   // Appends the machine's newest audit entry (or a non-machine event) to workflow_transitions: codes and ids only, never text.
-  log(rec, revision, entry, asRole, actor) {
+  // `code` is a policy code kept beside it (D-DSR: single_reviewer_adjudication), never text.
+  log(rec, revision, entry, asRole, actor, code = null) {
     this.lib.sql.exec(`INSERT INTO workflow_transitions (entity, revision, from_state, to_state, event, actor, actor_role, at, workflow_version, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      rec.id, revision, entry.from, entry.to, entry.event, actor, asRole, entry.at, entry.workflow_version ?? WORKFLOW_VERSION, entry.reason ? 'text_recorded' : null);
+      rec.id, revision, entry.from, entry.to, entry.event, actor, asRole, entry.at, entry.workflow_version ?? WORKFLOW_VERSION, [entry.reason ? 'text_recorded' : '', code || ''].filter(Boolean).join(',') || null);
   }
-  fire(rec, event, as, actor, reason) {
+  fire(rec, event, as, actor, reason, code = null) {
     const at = this.now();
     try { rec.machine.fire(event, as, { reason: reason || null, at }); } catch (e) { if (e instanceof StateError) throw stateFailure(e); throw e; }
-    this.log(rec, rec.revision, rec.machine.audit.at(-1), as, actor);
+    this.log(rec, rec.revision, rec.machine.audit.at(-1), as, actor, code);
   }
   save(rec, extra = {}) {
     const state = { ...rec.state, ...extra, machine: rec.machine.toDict() };
@@ -252,8 +274,13 @@ class Evidence {
     const actions = [];
     if (acc.owner) for (const [name, ev, as] of [['submit', 'submit', 'user'], ['dispute', 'dispute', 'user'], ['accept_rejection', 'close_rejected', 'user'], ['withdraw', 'withdraw', 'user']]) if (m.canFire(ev, as)) actions.push(name);
     if (acc.owner && OWNER_AMEND.has(rec.status)) actions.push('amend');
+    let policy = null;
     if (!acc.owner && acc.reviewer) {
-      for (const [name, spec] of Object.entries(MOVES)) if (spec.as === 'reviewer' && m.canFire(spec.event, 'reviewer') && (!spec.from || spec.from.includes(rec.status)) && (!spec.adjudicates || mayAdjudicate(rec, { email: acc.email }))) actions.push(name);
+      if (['rejected', 'disputed', 'closed_rejected'].includes(rec.status) || rec.state.dispute) { // what the reviewer screen says beside the adjudication buttons (counts only, never who)
+        const pool = this.reviewerPool(rec), rule = this.adjudicationRule(rec, acc.email);
+        policy = { reviewers: pool ? pool.size : null, you_rejected: !!rejecterOf(rec) && rejecterOf(rec) === lc(acc.email), may_adjudicate: !!rule, rule: rule || 'refused' };
+      }
+      for (const [name, spec] of Object.entries(MOVES)) if (spec.as === 'reviewer' && m.canFire(spec.event, 'reviewer') && (!spec.from || spec.from.includes(rec.status)) && (!spec.adjudicates || this.adjudicationRule(rec, acc.email))) actions.push(name);
       if (REVIEWER_AMEND.has(rec.status)) actions.push('amend');
     }
     return { id: rec.id, status: m.status, state: rec.status, revision: rec.revision, content_hash: rec.content_hash, project_ref: rec.project_ref, ref_id: rec.ref_id,
@@ -261,7 +288,7 @@ class Evidence {
       claims: this.claimsOf(rec.id, revision).map(({ entity, created_by, created_at, ...c }) => c),
       revisions: this.rows('SELECT revision, content_hash, author, author_role, kind, at FROM evidence_revisions WHERE entity = ? ORDER BY revision DESC', rec.id),
       approval: ap ? { revision: ap.revision, content_hash: ap.content_hash, approver_sub: ap.approver_sub, at: ap.at } : null, approved,
-      history: m.audit, clarifications: rec.state.clarifications, rejection: rec.state.rejection, dispute: rec.state.dispute, adjudication: rec.state.adjudication || null, impact: rec.state.impact,
+      history: m.audit, clarifications: rec.state.clarifications, rejection: rec.state.rejection, dispute: rec.state.dispute, adjudication: rec.state.adjudication || null, adjudication_policy: policy, impact: rec.state.impact,
       derivatives: this.derivatives(rec.id), grants: this.grantsFor(rec.id), actions };
   }
   get(user, id, { revision } = {}) {
@@ -301,16 +328,17 @@ class Evidence {
     user = asUser(user);
     if (!text(user.email) || !['admin', 'reviewer'].includes(user.role)) return [];
     const out = [];
-    for (const r of this.rows("SELECT * FROM evidence_records WHERE status = 'reviewer_queue' AND owner_sub != ? ORDER BY updated_at ASC, rowid ASC", user.email)) {
+    for (const r of this.rows("SELECT * FROM evidence_records WHERE status IN ('reviewer_queue', 'disputed') AND owner_sub != ? ORDER BY updated_at ASC, rowid ASC", user.email)) {
       const state = parse(r.state_json, null);
       if (!state || state.erased || !this.access({ ...r, state }, user)) continue;
-      const at = this.rows("SELECT at FROM workflow_transitions WHERE entity = ? AND to_state = 'reviewer_queue' ORDER BY seq DESC LIMIT 1", r.id)[0]?.at || r.updated_at;
+      const at = this.rows('SELECT at FROM workflow_transitions WHERE entity = ? AND to_state = ? ORDER BY seq DESC LIMIT 1', r.id, r.status)[0]?.at || r.updated_at;
       const ref = matchRef(this.ownRefs(r.owner_sub).filter(x => !x.state.draft), r);
       const q = ref?.state?.quality;
       out.push({ id: r.id, revision: r.revision, project_ref: r.project_ref, queued_at: at, updated_at: r.updated_at,
         claims: this.rows('SELECT COUNT(*) AS n FROM evidence_claims WHERE entity = ? AND revision = ?', r.id, r.revision)[0].n,
         project: ref ? str(ref.title || ref.data?.title, 160) : '', consultant: ref ? str(ref.data?.consultant?.name, 100) : '',
-        quality: q && Number.isFinite(q.score) ? { score: q.score, status: str(q.status, 20) } : null });
+        quality: q && Number.isFinite(q.score) ? { score: q.score, status: str(q.status, 20) } : null,
+        state: r.status, ...(r.status === 'disputed' ? { can_adjudicate: !!this.adjudicationRule({ ...r, state }, user.email) } : {}) }); // a dispute waits for a reviewer too (D-DSR)
       if (out.length >= MAX_LIST) break;
     }
     return out;
@@ -378,11 +406,13 @@ class Evidence {
     this.check(user, acc, rec, spec.gate, { expected_revision: expected, content_hash: spec.bind ? p.content_hash : undefined, to: spec.to(rec.status) });
     // The machine's actor is the role in the process: a reviewer decision is never the owner's, and the owner's act is never an admin's.
     if ((spec.as === 'user' && !acc.owner) || (spec.as === 'reviewer' && (acc.owner || !acc.reviewer))) throw Object.assign(fail(403, 'Not allowed: EVENT_ACTOR_NOT_ALLOWED'), { reason: 'EVENT_ACTOR_NOT_ALLOWED' });
-    if (spec.adjudicates && !mayAdjudicate(rec, user)) throw Object.assign(fail(403, 'Not allowed: ADJUDICATOR_IS_REJECTER'), { reason: 'ADJUDICATOR_IS_REJECTER' });
+    const rule = spec.adjudicates ? this.adjudicationRule(rec, user.email) : '';
+    if (spec.adjudicates && !rule) throw Object.assign(fail(403, 'Not allowed: ADJUDICATOR_IS_REJECTER'), { reason: 'ADJUDICATOR_IS_REJECTER' });
     const reason = str(p.reason ?? p.rationale ?? p.note, 500), from = rec.status;
     if (spec.why && !reason) throw fail(400, spec.why);
     const at = this.now(), extra = {};
-    this.fire(rec, spec.event, spec.as, user.email, reason);
+    this.fire(rec, spec.event, spec.as, user.email, reason, rule === 'single_reviewer' ? SINGLE_REVIEWER_AUDIT : null);
+    if (rule === 'single_reviewer') this.lib.log(rec.id, user.email, SINGLE_REVIEWER_AUDIT, action); // the hash-chained audit too (ids and codes only)
     const decision = { revision: rec.revision, content_hash: rec.content_hash, by: user.email, at };
     const sql = this.lib.sql, aid = () => this.lib.newId();
     if (action === 'approve') sql.exec(`INSERT INTO approvals (id, entity, revision, content_hash, channel, purpose, approver_sub, status, at) VALUES (?, ?, ?, ?, NULL, 'evidence_review', ?, 'approved', ?)`, aid(), rec.id, rec.revision, rec.content_hash, user.email, at);
@@ -395,7 +425,8 @@ class Evidence {
       extra.dispute = { ...decision, rationale: reason, adjudicator: str(p.adjudicator, 100) || null, claim_ids: (Array.isArray(p.claim_ids) ? p.claim_ids : []).map(c => str(c, 80)).filter(Boolean).slice(0, MAX_CLAIMS), rejection: rec.state.rejection };
     }
     if (action === 'accept_rejection' || action === 'uphold_rejection' || action === 'reopen_review') { // the outcome sits beside both views (rejection, dispute); neither is rewritten
-      extra.adjudication = { ...decision, outcome: action === 'reopen_review' ? 'reopened' : action === 'uphold_rejection' ? 'upheld' : 'accepted_by_owner', reason: reason || null, from };
+      extra.adjudication = { ...decision, outcome: action === 'reopen_review' ? 'reopened' : action === 'uphold_rejection' ? 'upheld' : 'accepted_by_owner', reason: reason || null, from,
+        rule: action === 'accept_rejection' ? 'owner' : rule, single_reviewer: rule === 'single_reviewer' };
     }
     if (action === 'withdraw' || action === 'complete_impact_review') {
       if (rec.machine.state === 'impact_review') { // withdrawn after approval: the approval is revoked and the derivatives are listed for review (D11)
@@ -506,7 +537,7 @@ export function target(pathname) {
 const NOT_FOUND_ROUTE = { status: 404, body: { error: 'Not found.' } };
 export async function routes(ctx) {
   const { lib, user, method, rest, body, internal, url } = ctx, ev = evidence(lib), [id, action, extra, verb] = rest, b = obj(body);
-  if (ctx.env !== undefined) branches.configure(lib, { env: ctx.env }); // the Worker's variables (ATLAS_ADAPTERS, ATLAS_EVIDENCE_WORKFLOW) reach the branches here
+  if (ctx.env !== undefined) { branches.configure(lib, { env: ctx.env }); ev.env = ctx.env; } // the Worker's variables (ATLAS_ADAPTERS, ATLAS_EVIDENCE_WORKFLOW) reach the branches here, and the reviewer lists reach the dispute rule (D-DSR)
   if (!id) {
     if (method === 'POST') return internal ? created(await ev.createDraftFromNotes(user.email, b.notes)) : NOT_FOUND_ROUTE;
     return method === 'GET' ? { body: { items: ev.list(user) } } : NOT_FOUND_ROUTE;

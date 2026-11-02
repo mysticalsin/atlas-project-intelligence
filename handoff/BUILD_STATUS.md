@@ -1066,3 +1066,10 @@ Implementation and verification: `docs/agent-brain-v2.1/PR1_REVIEW_FIXES.md` and
 - D-L2: `deploy/cloudflare-edge/src/translate.js` and `POST /api/translate`; `REVIEW_STATUS` is `machine_translated`; `eval/NATIVE_REVIEW.md` A1 to A4 resolved, no human gate.
 - Tests: new `michat-connector.test.js` (5, mock MiChat on 127.0.0.1), `translate.test.js` (4), `translate-route.test.js` (2), assumed samples in `connection-contracts.test.js`, `test_connections_config.py` overlay test.
 - Still external: the MiChat endpoint, token and contract confirmation (owners). Until Tony sets the variables, MiChat stays mock or outbox and nothing is sent.
+
+## 2026-11-02: single-reviewer dispute adjudication (D-DSR) and the reviewer-screen dispute UI
+Tony, 13:15 BRT: "Let the same reviewer settle the dispute when there's only one reviewer." Decision: `DECISION_LOG.md` D-DSR (D-DSP 2 superseded in part). This replaces the earlier note that the reviewer screen had no buttons for disputed records.
+- Server: `evidence.js` `reviewerPool` (listed reviewers and admins plus the resolved N+1, never the owner; unknown in Entra mode or without env), `adjudicationRule` (`four_eyes`, `single_reviewer`, or refused), `adjudication.rule`/`single_reviewer`, `single_reviewer_adjudication` in `workflow_transitions` and the audit chain, `adjudication_policy` in the view, disputes in the review queue with `can_adjudicate`. The route hands the Worker env to the store.
+- UI: `src/dispute-core.js`, `src/dispute-ui.js` (built into the workflow scripts by `build.py`), `review-ui.js` (Disputed chip, the panel on the one-screen review, Validate and Request changes give way to Uphold / Overturn), `workflow-ui.js` (owner: Raise a dispute with an optional adjudicator, Accept the rejection), `review.css`. Every action needs a reason; disabled buttons say why.
+- Tests: `test/dispute-single-reviewer.test.js` (7), `tests/dispute-core.test.js` (6), `tests/dispute-ui.test.js` (4), `tests/dispute_browser.py` (25 checks, added to `make test-ui`).
+- This is the final Atlas development milestone (Tony, 13:21 BRT).

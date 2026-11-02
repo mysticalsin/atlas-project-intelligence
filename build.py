@@ -55,8 +55,8 @@ slots={'__CSS__':(ROOT/'src/styles.css').read_text()+'\n'+(ROOT/'src/voice.css')
  '__PROFILE_CORE__':(ROOT/'src/profile-core.js').read_text(),
  '__PROFILE_UI__':(ROOT/'src/profile-ui.js').read_text()+'\n'+(ROOT/'src/settings-ui.js').read_text(),  # the Settings sheet (v2.2 V2) rides in the profile script
  # Evidence workflow status cards (T15): the pure card model and the Reference-library panel. Replaced last.
- '__WORKFLOW_CORE__':(ROOT/'src/workflow-core.js').read_text()+'\n'+(ROOT/'src/review-core.js').read_text(),  # the reviewer queue and journey strip helpers (v2.2 W2)
- '__WORKFLOW_UI__':(ROOT/'src/workflow-ui.js').read_text()+'\n'+(ROOT/'src/review-ui.js').read_text(),
+ '__WORKFLOW_CORE__':(ROOT/'src/workflow-core.js').read_text()+'\n'+(ROOT/'src/review-core.js').read_text()+'\n'+(ROOT/'src/dispute-core.js').read_text(),  # the reviewer queue and journey strip helpers (v2.2 W2)
+ '__WORKFLOW_UI__':(ROOT/'src/dispute-ui.js').read_text()+'\n'+(ROOT/'src/workflow-ui.js').read_text()+'\n'+(ROOT/'src/review-ui.js').read_text(),  # the dispute panel (D-DSR) first: both screens use it
  # The Cmd/Ctrl+K command palette and the ? shortcut list (v2.2 W3): runs last, it only calls what the page's own buttons already do.
  '__PALETTE__':(ROOT/'src/palette.js').read_text()}
 text=(ROOT/'src/shell.html').read_text()

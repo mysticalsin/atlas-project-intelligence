@@ -127,7 +127,7 @@ Details, test names and notes: `eval/COVERAGE.md`. Short test names (CONV, WF) l
 | Gate 2 unsupported claims published | PARTIAL | WF `G2` | Nothing can be published. |
 | Gate 3 silent revision overwrite | Locally verified | WF `G3`, `S15` | |
 | Gate 4 duplicate writes under retry | Locally verified (mocks) | WF `G4`, `S14` | |
-| Gate 5 critical transitions covered | PASS | WF `G5`, `Disputes adjudicated` | Disputes wired (2026-11-02); only the never-at-rest `submitted_for_review` withdrawal is unexercised. |
+| Gate 5 critical transitions covered | PASS | WF `G5`, `Disputes adjudicated`, `dispute-single-reviewer.test.js` | Disputes wired (2026-11-02), single-reviewer adjudication (D-DSR) and the reviewer-screen dispute UI the same day; only the never-at-rest `submitted_for_review` withdrawal is unexercised. |
 | Gate 6 human review of consequential decisions | Locally verified | WF `G6`, `W7`, `W12` | |
 | Gate 7 conversation quality target with pilot users | **Not started** | none | Needs consultants. The rubric linter is a regression aid only. |
 
@@ -321,3 +321,9 @@ The privacy and checkpoint-concurrency findings, reconnect readiness and unsaved
 - D-L2: `deploy/cloudflare-edge/src/translate.js`, `POST /api/translate` (signed in, CSRF, `TRANSLATE_HOUR`), `REVIEW_STATUS` `machine_translated`, `eval/NATIVE_REVIEW.md` A1 to A4 resolved.
 - Status: locally verified; the Worker is deployed with none of the MiChat variables set, so MiChat stays in mock or outbox mode and no call to MiChat is made.
 
+## 2026-11-02: single-reviewer dispute adjudication (D-DSR) and the dispute UI
+
+- Policy: `deploy/cloudflare-edge/src/evidence.js` `reviewerPool(rec)` and `adjudicationRule(rec, email)`: with exactly one eligible reviewer the rejecter settles the dispute; with two or more (or an unknown count) the four-eyes rule stays. Recorded as `adjudication.rule`/`single_reviewer`, `single_reviewer_adjudication` in `workflow_transitions.reason` and the hash-chained audit. `view()` returns `adjudication_policy` (a count and booleans, never who); the review queue lists disputes with `can_adjudicate`.
+- UI: `src/dispute-core.js` (pure), `src/dispute-ui.js` (the panel), wired into `review-ui.js` (queue chip, one-screen review) and `workflow-ui.js` (the owner's status panel). State badges: Rejected, Disputed, Rejection upheld, Rejection accepted, Reopened after a dispute.
+- Tests: `deploy/cloudflare-edge/test/dispute-single-reviewer.test.js` (unit and API), `tests/dispute-core.test.js`, `tests/dispute-ui.test.js`, `tests/dispute_browser.py` (real local edge, single and four-eyes, in `make test-ui`).
+- Status: locally verified and deployed. Live Access mode today: `ADMIN_EMAILS` has one admin and `REVIEWER_EMAILS` is empty, so a record whose N+1 does not resolve has one eligible reviewer and that admin settles disputes of their own rejections.

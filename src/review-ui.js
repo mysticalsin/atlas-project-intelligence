@@ -43,12 +43,12 @@ const homeStrip=()=>stripHost('journeyHome',()=>{const s=document.querySelector(
 function setBadge(n){const b=document.querySelector('header nav [data-view="library"]');if(!b)return;let s=b.querySelector('.nav-count');
  if(!n){if(s)s.remove();b.removeAttribute('data-waiting');return;}
  if(!s){s=document.createElement('span');s.className='nav-count';b.append(s);}s.textContent=String(n);b.dataset.waiting=String(n);s.setAttribute('role','img');s.setAttribute('aria-label',n+' waiting for you');}
-function drawQueue(){const h=queueHost();if(!h)return;const rs=rows();setBadge(Q.err?0:rs.length);h.hidden=false;
+function drawQueue(){const h=queueHost();if(!h)return;const rs=rows();setBadge(Q.err?0:C.waiting(rs));h.hidden=false;
  if(Q.err){setHTML(h,html`<div class="rq-head"><div><p class="eyebrow">Review</p><h2 class="rq-title" id="rqTitle" tabindex="-1">Waiting for you</h2></div></div><div class="rq-body" id="rqBody"></div>`);Load.failure($('rqBody'),()=>loadQueue({force:true}));return;}
- setHTML(h,html`<div class="rq-head"><div><p class="eyebrow">Review</p><h2 class="rq-title" id="rqTitle" tabindex="-1">${C.queueTitle(rs.length)}</h2></div><button class="quiet" data-rq-refresh="" type="button">Refresh</button></div>
+ setHTML(h,html`<div class="rq-head"><div><p class="eyebrow">Review</p><h2 class="rq-title" id="rqTitle" tabindex="-1">${C.queueTitle(C.waiting(rs))}</h2></div><button class="quiet" data-rq-refresh="" type="button">Refresh</button></div>
 <div class="rq-undo" data-undo-host="" role="status"></div>
 ${rs.length?html`<p class="rq-sub small">Oldest first. Open one to read each claim beside the words it came from. <kbd>J</kbd> and <kbd>K</kbd> move between them, <kbd>A</kbd> validates, <kbd>R</kbd> asks for changes, <kbd>U</kbd> takes it back.</p>
-<ul class="rq-list">${rs.map(r=>html`<li><button class="rq-row" data-rq-open="${r.id}" type="button"><span class="rq-main"><b class="rq-name">${r.name}</b><span class="rq-who">${r.consultant||'Consultant not named'}${r.claims?' · '+r.claims+(r.claims===1?' claim':' claims'):''}</span></span><span class="rq-age" data-tone="${r.tone}"><span class="sr">Waiting </span>${r.age}</span><span class="rq-chip" data-tone="${r.quality.tone}">${r.quality.text}</span><span class="rq-go" aria-hidden="true">Open</span></button></li>`)}</ul>`
+<ul class="rq-list">${rs.map(r=>html`<li><button class="rq-row" data-rq-open="${r.id}" type="button"><span class="rq-main"><b class="rq-name">${r.name}</b><span class="rq-who">${r.consultant||'Consultant not named'}${r.claims?' · '+r.claims+(r.claims===1?' claim':' claims'):''}</span></span><span class="rq-age" data-tone="${r.tone}"><span class="sr">Waiting </span>${r.age}</span><span class="rq-chip" data-tone="${r.quality.tone}">${r.quality.text}</span>${r.disputed?html`<span class="rq-chip" data-rq-disputed="" data-tone="work">${r.canSettle?'Disputed':'Disputed: another reviewer decides'}</span>`:''}<span class="rq-go" aria-hidden="true">Open</span></button></li>`)}</ul>`
  :html`<div class="rq-empty"><p><b>Nothing is waiting for you.</b></p><p class="small muted">When someone submits a story for review it appears here, oldest first.</p></div>`}`);
  drawUndo();}
 async function loadQueue({force=false}={}){
@@ -83,7 +83,7 @@ function dialog(){let d=$('reviewScreen');if(d)return d;d=document.createElement
 <div class="rv-who"><h2 id="rvTitle" tabindex="-1">Review</h2><p class="rv-meta" id="rvMeta"></p></div>
 <div class="rv-nav"><span id="rvPos" role="status"></span><button aria-label="Previous (K)" class="rv-step" data-rv-go="-1" type="button">↑</button><button aria-label="Next (J)" class="rv-step" data-rv-go="1" type="button">↓</button></div></header>
 <div class="rv-body"><section aria-label="Claims and the words they came from" class="rv-claims" id="rvClaims" tabindex="0"></section>
-<aside aria-label="Your decision" class="rv-decide"><div class="rv-undo" data-undo-host="" hidden="" role="status"></div><p class="rv-state" id="rvState"></p>
+<aside aria-label="Your decision" class="rv-decide"><div class="rv-undo" data-undo-host="" hidden="" role="status"></div><p class="rv-state" id="rvState"></p><div class="rv-dispute" hidden="" id="rvDispute"></div>
 <button class="btn primary rv-act" data-rv-do="approve" id="rvApprove" type="button">Validate <kbd>A</kbd></button>
 <button class="btn rv-act" data-rv-do="changes" id="rvChanges" type="button">Request changes <kbd>R</kbd></button>
 <div class="rv-reason" hidden="" id="rvReasonBox"><label class="field-label" for="rvReason">What should change?</label><textarea id="rvReason" maxlength="500" rows="4"></textarea><p class="tiny rv-err" id="rvReasonErr" role="alert"></p><button class="btn primary" data-rv-send="" type="button">Send the request</button><p class="tiny muted">The consultant reads what you write here. Press Ctrl or ⌘ + Enter to send.</p></div>
@@ -119,8 +119,16 @@ ${c.quote?html`<p class="rv-quote small"><span class="rv-label">As heard</span> 
 ${c.context?html`<p class="rv-context small"><span class="rv-label">Read the sentence around it.</span> It was negated, hypothetical or reported speech, so ATLAS did not treat it as the consultant’s own claim. <q dir="auto">${c.context}</q></p>`:''}</li>`)}</ol>`);}
 function drawDecide(){const rec=R.rec,acts=new Set(Array.isArray(rec&&rec.actions)?rec.actions:[]),can=k=>!!rec&&acts.has(k);
  $('rvApprove').disabled=!can('approve');$('rvChanges').disabled=!can('clarify');$('rvAmend').disabled=!can('amend');
- say('rvState',rec&&!acts.size?'This is no longer waiting for a decision from you ('+String(rec.state||'').replace(/_/g,' ')+').':'');
+ const dp=drawDispute(rec);
+ say('rvState',rec&&!acts.size&&!dp?'This is no longer waiting for a decision from you ('+String(rec.state||'').replace(/_/g,' ')+').':'');
  say('rvBind',rec?'Validating binds revision '+rec.revision+' and its content fingerprint '+String(rec.content_hash||'').slice(0,8)+'. If the consultant changes it first, you will be asked to read it again.':'');}
+// D-DSR: a disputed record shows the dispute panel instead of Validate / Request changes / Amend (the server offers none of them in that state).
+function drawDispute(rec){const host=$('rvDispute');if(!host)return false;const el=rec&&rec.state==='disputed'&&window.AtlasDisputeUI?window.AtlasDisputeUI.panel(rec,{onChanged:settled}):null;
+ host.replaceChildren(...(el?[el]:[]));host.hidden=!el;for(const id of ['rvApprove','rvChanges','rvAmend'])if($(id)&&R.mode!=='amend')$(id).hidden=!!el;return !!el;}
+function settled(out,action){const id=out&&out.id,msg=action==='reopen_review'?'Overturned. The record is back in review: read it again, then validate or ask for changes.':'Upheld. The consultant is told why.';
+ if(id)R.cache.delete(id);Q.loadedAt=0;try{window.AtlasWorkflowUI?.refresh?.();}catch{}
+ Promise.resolve(loadQueue({force:true})).then(()=>{if(!dlgOpen())return;const rs=rows();if(!rs.length){closeReview();return;}const k=rs.findIndex(r=>r.id===id);
+  showAt(k>=0?k:Math.min(R.idx,rs.length-1)).then(()=>say('rvState',msg));});}
 function setMode(m,{redraw=true}={}){R.mode=m;const am=m==='amend';$('rvAmendBox').hidden=!am;$('rvAmend').hidden=am;$('rvApprove').hidden=am;$('rvChanges').hidden=am;if(am)hideReason();say('rvAmendErr','');if(redraw){drawClaims();drawDecide();if(am){const f=document.querySelector('#rvClaims [data-claim-edit]');if(f)f.focus();}}}
 function hideReason(){const b=$('rvReasonBox');if(b){b.hidden=true;say('rvReasonErr','');}}
 function closeReview(){const d=$('reviewScreen');if(d&&d.open)d.close();}
