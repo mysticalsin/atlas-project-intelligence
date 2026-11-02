@@ -122,3 +122,11 @@ Said by Tony on 2026-10-31, after trying the live app. His words: "She can't say
 ## D-PFA (2026-11-02): the interview prefill is checked against the staffing feed (pack W1, W2)
 1. **A Project ID from the page is a claim.** When the session starts, the Project ID is checked against the person's own staffing rows (`/api/library/staffing/mine`, the signed-in identity only, same Worker, no outside call). If it is not there, or the lookup fails or times out, the ID is dropped (fail closed) and the session runs as an unlinked interview; a `project_unverified` metric is written, never the ID.
 2. **Role, sector and stage stay self-declared** (W2 PARTIAL): the staffing feed has no source of record for them. To decide: accept them as declared, or add them to the feed.
+
+## D-TT (2026-11-02): Trusted Types on every HTML response
+1. **`require-trusted-types-for 'script'` everywhere; one named policy on the page only.** The page (header and `<meta>`) allows `trusted-types atlas-html`; the small pages (re-sign-in, confirm, privacy, Teams tab) allow `'none'`. The policy is created once, privately, in `safe-html.js`, and only `setHTML`/`insertHTML` reach it, after the check that the markup was built with the html template tag. No default policy (a default policy would silently pass raw strings), no `'allow-duplicates'`, no script or script-URL creation.
+2. **The script-src hashes stay as the second layer**, and a browser without Trusted Types keeps them. The AudioWorklet module (a blob: URL) is not a Trusted Types sink and keeps working (studio and ask suites).
+3. **The rollout switch is unchanged**: `ATLAS_CSP=report-only` reports the strict policy (now with Trusted Types) while the old one is enforced.
+
+## D-NR (2026-11-02): native-speaker review is prepared, not done
+A machine pre-pass of every non-English line is in `eval/NATIVE_REVIEW.md`, with four decisions for Tony first (ATLAS's grammatical gender per language, neutral address to the consultant, the Spanish and Portuguese varieties, quotes around button names) and a checklist per reviewer. No string was changed: the lines are pinned by tests and a non-native rewrite would need the same review.
