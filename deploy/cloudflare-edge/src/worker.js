@@ -16,6 +16,7 @@ import { meRoutes } from './me-routes.js';
 import * as privacy from './privacy.js';
 import { resolveForInterview } from './gaps.js';
 import { fetchWinHint } from './winloop.js';
+import { staffingForInterview } from './outreach.js';
 import { teamsClient } from './teams.js';
 import { limitRoute, consume, limitOf, HOUR, DAY } from './ratelimit.js';
 import { verifyChain } from './audit-chain.js';
@@ -112,6 +113,7 @@ export class Interview extends DurableObject {
       ai: Object.assign(workersAI(this.env), !aiOff(this.env) && jevRanker(this.env) ? { rankProbe: jevRanker(this.env) } : {}), csrf: request.headers.get('x-atlas-csrf') || '', voice: 'atlas', captureRequired: true, model: this.env.TALKER_MODEL, admin: request.headers.get('x-atlas-admin') === '1', memory,
       metric: (name, values) => console.log(JSON.stringify({ atlas_metric: name, ...values })),
       gaps: this.env.LIBRARY ? id => resolveForInterview(this.env, identity, id) : null,
+      staffing: this.env.LIBRARY ? () => staffingForInterview(this.env, identity) : null,
       winHint: this.env.LIBRARY ? () => fetchWinHint(this.env, identity) : null,
       // Interviews with transcript consent are kept for 24 hours so a dropped connection can resume (ATLAS_CHECKPOINT=off: never).
       checkpoint: checkpointEnabled(this.env) && identity.user ? new CheckpointStore(this.ctx.storage, { owner: identity.user, isCurrent: () => this.checkpointOwner === checkpointOwner }) : null,

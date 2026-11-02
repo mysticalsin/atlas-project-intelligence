@@ -295,6 +295,19 @@ function mine(lib, user) {
   return { items: lib.rows(`SELECT * FROM staffing WHERE consultant_email = ? COLLATE NOCASE ORDER BY CASE WHEN end_date = '' THEN 1 ELSE 0 END, end_date DESC, project_id LIMIT 50`, who).map(mineView) };
 }
 
+// SERVER-TO-SERVER (W1/W2 prefill authorisation): the Project IDs of the signed-in person's own staffing rows, read from the global LibraryStore
+// under the verified identity the Worker forwarded (the same rows as staffing/mine). Returns an array, or null when it cannot be read (never throws).
+export async function staffingForInterview(env, identity) {
+  if (!env?.LIBRARY || !identity?.user) return null;
+  try {
+    const headers = new Headers({ 'x-atlas-user': String(identity.user), 'x-atlas-role': String(identity.role || 'user'), 'x-atlas-email': String(identity.mail || '') });
+    const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(new Request('https://atlas.internal/api/library/staffing/mine', { headers }));
+    if (!res.ok) return null;
+    const b = await res.json();
+    return Array.isArray(b?.items) ? b.items.map(x => x?.projectId).filter(v => typeof v === 'string' && v) : null;
+  } catch { return null; }
+}
+
 // Words `outreach` and `staffing` (admin and reviewer only, except staffing/mine: the person's own rows).
 export async function routes(ctx) {
   const { parts, method, user, lib } = ctx, [word, a, b] = parts, q = k => ctx.url?.searchParams?.get(k) || '';

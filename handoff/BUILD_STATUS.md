@@ -1043,3 +1043,9 @@ Implementation and verification: `docs/agent-brain-v2.1/PR1_REVIEW_FIXES.md` and
 - Tests: `tests/w3-ui.test.js` (8, structure), `tests/w3_browser.py` (toast, chip, every sheet's contrast and focus ring, consent, rail, How it works, phone, palette, settings); `v2-settings-ui`, storyboard, zero_config, jev, depth and intelligence tests follow the new strings and the sixth Settings tab.
 - Not verified: a real phone keyboard (the test pins the visual viewport), real screen readers, the DPO view of the step 4 wording. Not deployed, not pushed.
 - 2026-11-02, finished on `feature/agent-brain-v2.1` (D-W3 done): after the W2 merge the W2 journey strip squeezed the studio voice panel so the "Hide note editor" button sat under the editor (`sculpture_browser` failed on the merged tree only; each branch passed alone). Fix: one `polish.css` rule hides `#journeyHome` while the note editor is open (not voice-first). The full `make test-ui` run is green on the merged tree.
+
+## 2026-11-02: v2.2 disputes adjudicated (G5) and prefill auth (W1, W2)
+- Asked by Tony (via Ultron): build the deferred items, secure, no web fetching. Decisions: `DECISION_LOG.md` D-DSP and D-PFA.
+- Disputes: `policy-gate.js` (`accept_rejection`, `uphold_rejection`, `reopen_review`), `evidence.js` (moves with `from: ['disputed']`, the rejecter cannot adjudicate, `adjudication` on the record, owner and reviewer views list the new actions). The reviewer screen has no buttons for disputed records yet; the API is complete.
+- Prefill auth: `session.js` (optional `staffing` lookup raced against the gap timeout, fail closed), `outreach.js` `staffingForInterview()` (LIBRARY Durable Object, identity headers only), `worker.js` wiring.
+- Tests: `eval-workflow.test.js` (disputes adjudicated, G5 pin and the critical and system lists follow), new `test/prefill-auth.test.js` (8). COVERAGE: G5 PASS, W1 PASS, W2 PARTIAL.

@@ -36,6 +36,9 @@ const ACTIONS = {
   amend: { roles: ['owner', 'reviewer', 'admin'] },
   withdraw: { roles: ['owner', 'reviewer', 'admin'], move: true },
   dispute: { roles: ['owner', 'reviewer', 'admin'], move: true },
+  accept_rejection: { roles: ['owner'], move: true }, // the owner closes a rejection (or their own dispute of it): close_rejected as the user
+  uphold_rejection: { roles: ['reviewer', 'admin'], review: true, move: true }, // a dispute adjudicated: the rejection stands (close_rejected as a reviewer)
+  reopen_review: { roles: ['reviewer', 'admin'], review: true, move: true }, // a dispute adjudicated: the record goes back to the reviewer queue
   approve: { roles: ['reviewer', 'admin'], review: true, move: true },
   reject: { roles: ['reviewer', 'admin'], review: true, move: true },
   request_clarification: { roles: ['reviewer', 'admin'], review: true, move: true },

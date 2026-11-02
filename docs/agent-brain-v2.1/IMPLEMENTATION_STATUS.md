@@ -41,7 +41,7 @@ Rows follow `GAP_ANALYSIS.md`. Owner is Tony unless stated.
 | C11 | Pause, resume, repeat | Implemented; locally verified | `session.js`, `voice-controls.js`. `session-pause.test.js` (pause, clock excluded, resume with no model call); `voice-controls-dom.test.js`; `humane_browser.py` | none | Wording says "press Resume" (audio is ignored while paused). |
 | C12 | Checkpoint and reconnect | Implemented; locally verified | `checkpoint.js`, `worker.js`. `checkpoint.test.js`, `session-reconnect.test.js`, `session-s1.test.js` (absolute 24 h expiry, terminal never stored), `worker-interview.test.js`, `app-resume.test.js`; `eval-conversation.test.js::S9`; `humane_browser.py` | none | **DO eviction, the 24-hour alarm, storage limits and mobile network drops are unverified** (the tests use a storage fake that enforces the documented limits). Product calls in section 7. |
 | C13 | Summary read-back and correction | Implemented; locally verified | `summary.js`, summary card. `summary.test.js`, `session-summary.test.js`, `summary-card-dom.test.js`, `h2-polish.test.js`; `eval-conversation.test.js::S4`, `::S6` | none | How natural the read-back sounds in a live voice is unverified. |
-| C14 | State machine and audit | Implemented; locally verified | `conversation_state.py`/`conversation-state.js`. `test_conversation_state.py`, `conversation-state.test.js` (parity vectors), `eval-workflow.test.js::G5` | none | Three evidence events (`close_rejected`, `reopen_review`, `propose_downstream`) are defined but nothing fires them; `G5` pins that list. |
+| C14 | State machine and audit | Implemented; locally verified | `conversation_state.py`/`conversation-state.js`. `test_conversation_state.py`, `conversation-state.test.js` (parity vectors), `eval-workflow.test.js::G5` | none | All evidence events are fired: `close_rejected` (`accept_rejection` by the owner, `uphold_rejection` by an adjudicating reviewer) and `reopen_review` since 2026-11-02, `propose_downstream` by the system; `G5` pins the one unreachable transition. |
 | C15 | Repetition guard | Implemented; locally verified | 3-gram similarity in the selector; opener rule in ReplyGuard. `test_selector.py`; `test_speech.py::test_guard_drops_a_leading_reaction_that_repeats_a_recent_opener`; adversarial runs in `eval-conversation.test.js` | none | none |
 | C16 | Rushed, "I don't know" / "pass" / "skip" (challenged, 2 re-angles, then open; no Skip control, no invitation: D-U2), "can't share", "that's all" held until the essentials are covered (D-U2) | Implemented; locally verified | `turns.py`, `selector.py`. `eval-conversation.test.js::X2`, `::X3`, `::S5`, `::U2-*`; `h1-humane.test.js`; `session-humane.test.js::a3`; `session-pause.test.js`; `test_turns.py`; `test_selector.py` | none | Cues are English only; French and Spanish have intents only; other languages none. |
 | C17 | Text interview (workflow W3) | Implemented; locally verified | X1 text mode, `voice-client.js`. `session-text.test.js` (14), `text-mode-dom.test.js`, `eval-workflow.test.js::W3`, `::W3b`; `humane_browser.py` | none | Text-mode replies follow the voice languages (product call). No "read replies aloud" toggle. |
@@ -108,8 +108,8 @@ Details, test names and notes: `eval/COVERAGE.md`. Short test names (CONV, WF) l
 | 14 duplicate webhook | Locally verified | WF `S14` | No inbound webhook from any destination exists. |
 | 15 destination holds a newer revision | Locally verified (mocks) | WF `S15` | |
 | 16 permission revoked after publication | PARTIAL | WF `S16` | Nothing is ever published; "after the hold". |
-| W1 consultant identified before prefill | PARTIAL | WF `W1` | The project context itself is not looked up server-side for the signed-in person. |
-| W2 prefill only authorised fields | PARTIAL | WF `W2` | Nothing checks the page's role, sector and stage belong to the signed-in person. |
+| W1 consultant identified before prefill | PASS | WF `W1`, `prefill-auth.test.js` | Since 2026-11-02 the business Project ID is looked up server-side in the signed-in person's own staffing rows (verified identity, LibraryStore) before the interview starts; not theirs, no rows or a failed lookup drops it (fail closed) and the page's own id files the interview. |
+| W2 prefill only authorised fields | PARTIAL | WF `W2`, `prefill-auth.test.js` | The routing field (Project ID) is authorised server-side (W1). Role, sector and stage stay the person's own words, sent to the model as untrusted project data and never used for routing: no system of record holds them (the staffing feed has project, consultant, manager and end date only). Needs a decision: accept self-declared, or add role, sector and stage to the staffing feed. |
 | W3 voice and text | Locally verified | WF `W3`, `W3b`, `session-text.test.js` | Live text quality not judged. |
 | W4 one question per turn | Locally verified | WF `W4` | |
 | W5 project facts apart from contribution | Locally verified | WF `W5` | |
@@ -127,7 +127,7 @@ Details, test names and notes: `eval/COVERAGE.md`. Short test names (CONV, WF) l
 | Gate 2 unsupported claims published | PARTIAL | WF `G2` | Nothing can be published. |
 | Gate 3 silent revision overwrite | Locally verified | WF `G3`, `S15` | |
 | Gate 4 duplicate writes under retry | Locally verified (mocks) | WF `G4`, `S14` | |
-| Gate 5 critical transitions covered | PARTIAL | WF `G5` | Three evidence events are unreachable. |
+| Gate 5 critical transitions covered | PASS | WF `G5`, `Disputes adjudicated` | Disputes wired (2026-11-02); only the never-at-rest `submitted_for_review` withdrawal is unexercised. |
 | Gate 6 human review of consequential decisions | Locally verified | WF `G6`, `W7`, `W12` | |
 | Gate 7 conversation quality target with pilot users | **Not started** | none | Needs consultants. The rubric linter is a regression aid only. |
 
@@ -167,10 +167,10 @@ Each is built one way and can be changed; none was asked of the consultants.
 
 ## 8. Known open items
 
-- Evidence machine: `close_rejected` and `reopen_review` are never fired (G5 pins the list). `propose_downstream` is wired (v2.2 core, 2026-10-31): the system fires it once a destination (DNA skills, MiChat CV, IMP projects, Spotlight stories) holds a proposal for the approved revision.
+- Evidence machine: disputes are wired (2026-11-02): the owner may accept a rejection (`accept_rejection`, reason required); a dispute is adjudicated by a reviewer who is neither the owner nor the reviewer who rejected it (`uphold_rejection` with a reason, or `reopen_review` back to the queue); the outcome is kept beside the rejection and the dispute (`adjudication`). The adjudication is API-level and in the reviewer screen; the owner-named `adjudicator` is recorded, not enforced (a decision for the process owner). `propose_downstream` is wired (v2.2 core, 2026-10-31): the system fires it once a destination (DNA skills, MiChat CV, IMP projects, Spotlight stories) holds a proposal for the approved revision.
 - CV payload carries structured fields only until a person has reworded a claim (G1-4).
 - A reviewer-amended claim needs a second reviewer; the owner is asked nothing (G1-2).
-- Prefill is not authorised server-side (W1, W2). No artifact registry (W6). No MAAP or Project Review owners (W10).
+- Prefill: the Project ID is authorised server-side (W1, 2026-11-02); role, sector and stage are self-declared (W2 needs a source of record or a decision to accept them). No artifact registry (W6). No MAAP or Project Review owners (W10).
 - `intelligence-ui.js` keeps an unused map with the original words of a kept-private item in browser memory; it is never displayed.
 - A comment in `deploy/cloudflare-edge/src/languages.js` points at `handoff/IMPLEMENTATION_STATUS.md`; this file lives here, in `docs/agent-brain-v2.1/`. The comment was left alone (documentation-only task).
 - Browser suites run only with Chromium (build 1228) and outside the sandbox; the result of the T17 run is in `handoff/BUILD_STATUS.md`.

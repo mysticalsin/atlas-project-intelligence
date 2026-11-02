@@ -154,7 +154,16 @@ const MOVES = {
   dispute: { gate: 'dispute', event: 'dispute', as: 'user', to: () => 'disputed', why: 'Say why you dispute the rejection.' },
   withdraw: { gate: 'withdraw', event: 'withdraw', as: 'user', to: s => (s === 'approved' || s === 'downstream_proposals' ? 'impact_review' : 'withdrawn'), why: 'Say why this is withdrawn.' },
   complete_impact_review: { gate: 'withdraw', event: 'complete_impact_review', as: 'reviewer', to: () => 'withdrawn' },
+  // Disputes (v2.2): the owner may accept a rejection (or drop their dispute of it); a dispute is adjudicated by a reviewer who is neither the owner
+  // (the gate's SELF_APPROVAL) nor the reviewer who rejected it (ADJUDICATOR_IS_REJECTER): the rejection stands, or the record is reviewed again.
+  accept_rejection: { gate: 'accept_rejection', event: 'close_rejected', as: 'user', to: () => 'closed_rejected', why: 'Say why you accept the rejection.' },
+  uphold_rejection: { gate: 'uphold_rejection', event: 'close_rejected', as: 'reviewer', to: () => 'closed_rejected', from: ['disputed'], adjudicates: true, why: 'Say why the rejection stands.' },
+  reopen_review: { gate: 'reopen_review', event: 'reopen_review', as: 'reviewer', to: () => 'reviewer_queue', from: ['disputed'], adjudicates: true },
 };
+const lc = v => String(v || '').trim().toLowerCase();
+// The reviewer who rejected a record never adjudicates the dispute of that rejection (four eyes, like AUTHOR_CANNOT_APPROVE).
+const rejecterOf = rec => lc(rec.state?.dispute?.rejection?.by || rec.state?.rejection?.by);
+const mayAdjudicate = (rec, user) => !rejecterOf(rec) || rejecterOf(rec) !== lc(user.email);
 const OWNER_AMEND = new Set(['evidence_draft', 'needs_clarification', 'approved', 'downstream_proposals']);
 const REVIEWER_AMEND = new Set(['reviewer_queue', 'approved', 'downstream_proposals']);
 
@@ -195,7 +204,7 @@ class Evidence {
     const resolved = !owner && !role && this.n1(rec) === user.email; // a reviewer or admin needs no resolution (and none is paid for)
     const reviewer = !!role || resolved;
     if (!owner && !(reviewer && rec.state.ever_submitted && rec.status !== 'evidence_draft')) return null;
-    return { owner, reviewer, roles: [role, resolved ? 'reviewer' : ''].filter(Boolean) };
+    return { owner, reviewer, email: user.email, roles: [role, resolved ? 'reviewer' : ''].filter(Boolean) };
   }
   actor(user, acc) { return { sub: user.email, roles: acc.roles }; }
   approvalOf(id) { return this.rows("SELECT * FROM approvals WHERE entity = ? AND status = 'approved' ORDER BY rowid DESC", id)[0] || null; }
@@ -241,10 +250,10 @@ class Evidence {
     const m = rec.machine, ap = this.approvalOf(rec.id);
     const approved = !!ap && ap.revision === rec.revision && ap.content_hash === rec.content_hash && ['approved', 'downstream_proposals'].includes(rec.status);
     const actions = [];
-    if (acc.owner) for (const [name, ev, as] of [['submit', 'submit', 'user'], ['dispute', 'dispute', 'user'], ['withdraw', 'withdraw', 'user']]) if (m.canFire(ev, as)) actions.push(name);
+    if (acc.owner) for (const [name, ev, as] of [['submit', 'submit', 'user'], ['dispute', 'dispute', 'user'], ['accept_rejection', 'close_rejected', 'user'], ['withdraw', 'withdraw', 'user']]) if (m.canFire(ev, as)) actions.push(name);
     if (acc.owner && OWNER_AMEND.has(rec.status)) actions.push('amend');
     if (!acc.owner && acc.reviewer) {
-      for (const [name, spec] of Object.entries(MOVES)) if (spec.as === 'reviewer' && m.canFire(spec.event, 'reviewer')) actions.push(name);
+      for (const [name, spec] of Object.entries(MOVES)) if (spec.as === 'reviewer' && m.canFire(spec.event, 'reviewer') && (!spec.from || spec.from.includes(rec.status)) && (!spec.adjudicates || mayAdjudicate(rec, { email: acc.email }))) actions.push(name);
       if (REVIEWER_AMEND.has(rec.status)) actions.push('amend');
     }
     return { id: rec.id, status: m.status, state: rec.status, revision: rec.revision, content_hash: rec.content_hash, project_ref: rec.project_ref, ref_id: rec.ref_id,
@@ -252,7 +261,7 @@ class Evidence {
       claims: this.claimsOf(rec.id, revision).map(({ entity, created_by, created_at, ...c }) => c),
       revisions: this.rows('SELECT revision, content_hash, author, author_role, kind, at FROM evidence_revisions WHERE entity = ? ORDER BY revision DESC', rec.id),
       approval: ap ? { revision: ap.revision, content_hash: ap.content_hash, approver_sub: ap.approver_sub, at: ap.at } : null, approved,
-      history: m.audit, clarifications: rec.state.clarifications, rejection: rec.state.rejection, dispute: rec.state.dispute, impact: rec.state.impact,
+      history: m.audit, clarifications: rec.state.clarifications, rejection: rec.state.rejection, dispute: rec.state.dispute, adjudication: rec.state.adjudication || null, impact: rec.state.impact,
       derivatives: this.derivatives(rec.id), grants: this.grantsFor(rec.id), actions };
   }
   get(user, id, { revision } = {}) {
@@ -362,12 +371,14 @@ class Evidence {
     if (!acc) throw fail(404, NOT_FOUND);
     if (action === 'amend') return this.amend(user, rec, acc, p);
     const spec = Object.hasOwn(MOVES, action) ? MOVES[action] : null;
-    if (!spec) throw fail(400, 'Choose approve, amend, clarify, dispute, reject, withdraw or complete_impact_review.');
+    if (!spec) throw fail(400, 'Choose approve, amend, clarify, dispute, reject, withdraw, complete_impact_review, accept_rejection, uphold_rejection or reopen_review.');
+    if (spec.from && !spec.from.includes(rec.status)) throw denial(`TRANSITION_NOT_ALLOWED:${rec.status}>${action}`);
     const expected = revisionOf(p);
     if (spec.bind && !text(p.content_hash)) throw fail(400, 'content_hash is required: the content you reviewed.');
     this.check(user, acc, rec, spec.gate, { expected_revision: expected, content_hash: spec.bind ? p.content_hash : undefined, to: spec.to(rec.status) });
     // The machine's actor is the role in the process: a reviewer decision is never the owner's, and the owner's act is never an admin's.
     if ((spec.as === 'user' && !acc.owner) || (spec.as === 'reviewer' && (acc.owner || !acc.reviewer))) throw Object.assign(fail(403, 'Not allowed: EVENT_ACTOR_NOT_ALLOWED'), { reason: 'EVENT_ACTOR_NOT_ALLOWED' });
+    if (spec.adjudicates && !mayAdjudicate(rec, user)) throw Object.assign(fail(403, 'Not allowed: ADJUDICATOR_IS_REJECTER'), { reason: 'ADJUDICATOR_IS_REJECTER' });
     const reason = str(p.reason ?? p.rationale ?? p.note, 500), from = rec.status;
     if (spec.why && !reason) throw fail(400, spec.why);
     const at = this.now(), extra = {};
@@ -382,6 +393,9 @@ class Evidence {
     if (action === 'clarify') extra.clarifications = [...rec.state.clarifications, { ...decision, note: reason }].slice(-20);
     if (action === 'dispute') { // both views are kept: the reviewer's rejection and the owner's rationale, with who adjudicates
       extra.dispute = { ...decision, rationale: reason, adjudicator: str(p.adjudicator, 100) || null, claim_ids: (Array.isArray(p.claim_ids) ? p.claim_ids : []).map(c => str(c, 80)).filter(Boolean).slice(0, MAX_CLAIMS), rejection: rec.state.rejection };
+    }
+    if (action === 'accept_rejection' || action === 'uphold_rejection' || action === 'reopen_review') { // the outcome sits beside both views (rejection, dispute); neither is rewritten
+      extra.adjudication = { ...decision, outcome: action === 'reopen_review' ? 'reopened' : action === 'uphold_rejection' ? 'upheld' : 'accepted_by_owner', reason: reason || null, from };
     }
     if (action === 'withdraw' || action === 'complete_impact_review') {
       if (rec.machine.state === 'impact_review') { // withdrawn after approval: the approval is revoked and the derivatives are listed for review (D11)

@@ -443,7 +443,7 @@ test('MAAP-6 a MAAP outcome cannot change DNA skill proficiency or employment st
 
 test('G1 default deny: an actor with no role is refused every known action; unknown and people-inference actions are refused for everyone (no bypass found; absence of bypass is not provable)', async () => {
   const ctx = setup(), { ev } = ctx, ok = await approved(ctx), entity = ev.entity(ev.load(ok.id)), nobody = actor('nobody@x.test');
-  const known = ['submit', 'amend', 'withdraw', 'dispute', 'approve', 'reject', 'request_clarification', 'grant_permission', 'revoke_permission', 'use_for_purpose', 'project_destination', 'spotlight_nominate',
+  const known = ['submit', 'amend', 'withdraw', 'dispute', 'accept_rejection', 'uphold_rejection', 'reopen_review', 'approve', 'reject', 'request_clarification', 'grant_permission', 'revoke_permission', 'use_for_purpose', 'project_destination', 'spotlight_nominate',
     'approve_gate', 'spotlight_schedule', 'spotlight_publish', 'record_sync_complete', 'record_published', 'export'];
   for (const a of known) assert.equal(decide(nobody, a, entity, { now: ev.now() }).allow, false, `nobody may not ${a}`);
   for (const a of ['rate_consultant', 'infer_sentiment', 'predict_attrition', 'decide_promotion', 'map_library_status_to_spotlight', 'definitely_not_an_action', '__proto__', 'constructor']) for (const person of [RV, actor('admin@mantu.com', 'admin', 'reviewer', 'owner')]) assert.equal(decide(person, a, entity, {}).allow, false, a);
@@ -502,17 +502,53 @@ test('G5 setup: withdraw from every state the store can reach, and a clarificati
   assert.equal((await off.ev.review(OWNER, a.id, 'withdraw', { expected_revision: 1, reason: 'Not needed.' })).state, 'impact_review'); trail(off);
 });
 
+test('Disputes adjudicated (v2.2): the owner may accept a rejection; a dispute is decided by a reviewer who is neither the owner nor the one who rejected; both outcomes keep both views', async () => {
+  const ctx = setup(), { ev } = ctx, rej = async (name) => { const v = await queued(ctx, name); await ev.review(REV, v.id, 'reject', { expected_revision: 1, content_hash: v.content_hash, reason: 'Not supported.' }); return v; };
+  // The owner accepts the rejection: closed, with their reason; nobody else may do it for them.
+  const a = await rej('d-accept');
+  assert.ok(ev.get(OWNER, a.id).actions.includes('accept_rejection'));
+  await rejects(ev.review(REV2, a.id, 'accept_rejection', { expected_revision: 1, reason: 'Fine.' }), 403);
+  await rejects(ev.review(OWNER, a.id, 'accept_rejection', { expected_revision: 1 }), 400);
+  const ac = await ev.review(OWNER, a.id, 'accept_rejection', { expected_revision: 1, reason: 'The export does not show it.' });
+  assert.deepEqual([ac.state, ac.adjudication.outcome, ac.adjudication.by, ac.rejection.reason], ['closed_rejected', 'accepted_by_owner', OWNER.email, 'Not supported.']);
+  assert.deepEqual(ac.actions, [], 'a closed rejection is final');
+  // Disputed, then upheld by a second reviewer; the rejecter and the owner are refused, and a reviewer may not close a rejection nobody disputed.
+  const u = await rej('d-uphold');
+  await rejects(ev.review(REV2, u.id, 'uphold_rejection', { expected_revision: 1, reason: 'Stands.' }), 409, 'TRANSITION_NOT_ALLOWED');
+  await ev.review(OWNER, u.id, 'dispute', { expected_revision: 1, rationale: 'It is in the export.', adjudicator: REV2.email });
+  assert.ok(!ev.get(REV, u.id).actions.includes('uphold_rejection') && !ev.get(REV, u.id).actions.includes('reopen_review'), 'the rejecter is not offered the adjudication');
+  assert.deepEqual(['uphold_rejection', 'reopen_review'].filter(x => ev.get(REV2, u.id).actions.includes(x)), ['uphold_rejection', 'reopen_review']);
+  await rejects(ev.review(REV, u.id, 'uphold_rejection', { expected_revision: 1, reason: 'Stands.' }), 403, 'ADJUDICATOR_IS_REJECTER');
+  await rejects(ev.review(REV, u.id, 'reopen_review', { expected_revision: 1 }), 403, 'ADJUDICATOR_IS_REJECTER');
+  await rejects(ev.review(OWNER, u.id, 'reopen_review', { expected_revision: 1 }), 403);
+  await rejects(ev.review(REV2, u.id, 'uphold_rejection', { expected_revision: 1 }), 400);
+  await rejects(ev.review(REV2, u.id, 'uphold_rejection', { expected_revision: 2, reason: 'Stands.' }), 409, 'REVISION_MISMATCH');
+  const up = await ev.review(REV2, u.id, 'uphold_rejection', { expected_revision: 1, reason: 'The export covers a different line.' });
+  assert.deepEqual([up.state, up.adjudication.outcome, up.adjudication.by, up.adjudication.from], ['closed_rejected', 'upheld', REV2.email, 'disputed']);
+  assert.ok(up.dispute.rationale && up.rejection.reason, 'both views stay');
+  // Disputed, then reopened: back in the queue for a fresh review (and approvable by a reviewer who did not author it).
+  const o = await rej('d-reopen');
+  await ev.review(OWNER, o.id, 'dispute', { expected_revision: 1, rationale: 'It is in the export.' });
+  const re = await ev.review(REV2, o.id, 'reopen_review', { expected_revision: 1 });
+  assert.deepEqual([re.state, re.adjudication.outcome], ['reviewer_queue', 'reopened']);
+  assert.ok(ev.queue(REV2).some(x => x.id === o.id), 'it is waiting in the queue again');
+  assert.equal((await ev.review(REV2, o.id, 'approve', { expected_revision: 1, content_hash: re.content_hash })).state !== 'disputed', true);
+  // The owner may also accept after disputing (drop the dispute).
+  const w = await rej('d-drop'); await ev.review(OWNER, w.id, 'dispute', { expected_revision: 1, rationale: 'Maybe.' });
+  assert.equal((await ev.review(OWNER, w.id, 'accept_rejection', { expected_revision: 1, reason: 'On reflection, no.' })).state, 'closed_rejected');
+  trail(ctx);
+});
+
 test('G5 transition coverage: every evidence-machine transition this suite did not exercise is named here, and each is one the store cannot reach today (defined and parity-tested in the machine, not wired to an action)', () => {
   const all = TRANSITIONS.evidence.map(([e, f, t]) => [e, f, t].join('>')), missing = all.filter(t => !SEEN.has(t)).sort();
   // submitted_for_review is the instant between submit and enqueue (never at rest) and propose_downstream is fired by the system once a destination holds the approved knowledge (branches.js proposeDownstream).
-  assert.deepEqual(missing, ['close_rejected>disputed>closed_rejected', 'close_rejected>rejected>closed_rejected', 'reopen_review>disputed>reviewer_queue',
-    'withdraw>submitted_for_review>withdrawn'], 'if one of these gets wired (or another stops being covered) this pin must change with it, and COVERAGE.md with it');
-  for (const critical of ['submit', 'enqueue', 'approve', 'reject', 'request_clarification', 'revise', 'dispute', 'withdraw', 'complete_impact_review']) assert.ok(all.some(t => t.startsWith(critical + '>') && SEEN.has(t)), `${critical} was exercised`);
+  assert.deepEqual(missing, ['withdraw>submitted_for_review>withdrawn'], 'if one of these gets wired (or another stops being covered) this pin must change with it, and COVERAGE.md with it');
+  for (const critical of ['submit', 'enqueue', 'approve', 'reject', 'request_clarification', 'revise', 'dispute', 'close_rejected', 'reopen_review', 'withdraw', 'complete_impact_review']) assert.ok(all.some(t => t.startsWith(critical + '>') && SEEN.has(t)), `${critical} was exercised`);
 });
 
 test('G6 consequential decisions are a person\'s: ATLAS itself (the system actor) cannot approve, reject, grant, revoke, close a gate, publish or withdraw', async () => {
   const ctx = setup(), { ev } = ctx, ok = await approved(ctx), entity = ev.entity(ev.load(ok.id)), atlas = actor('atlas', 'system');
-  for (const a of ['approve', 'reject', 'request_clarification', 'grant_permission', 'revoke_permission', 'withdraw', 'dispute', 'approve_gate', 'spotlight_publish', 'spotlight_schedule', 'submit'])
+  for (const a of ['approve', 'reject', 'request_clarification', 'grant_permission', 'revoke_permission', 'withdraw', 'dispute', 'accept_rejection', 'uphold_rejection', 'reopen_review', 'approve_gate', 'spotlight_publish', 'spotlight_schedule', 'submit'])
     assert.equal(decide(atlas, a, entity, { now: ev.now(), expected_revision: 1, content_hash: ok.content_hash, to: 'approved', transitions: {} }).allow, false, `the system actor may not ${a}`);
   await rejects(ev.review({ email: 'atlas', role: 'system' }, ok.id, 'approve', { expected_revision: 1, content_hash: ok.content_hash }), 404);
 });

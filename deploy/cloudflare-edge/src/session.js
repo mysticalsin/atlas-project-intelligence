@@ -301,10 +301,11 @@ export class Session {
   /** io: {send(obj), sendBytes(u8), close()}; ai: {transcribe(pcm), synthesize(text), chatStream(messages), analyst(messages)} */
   // gaps: async id => {asks, bidAlias, referenceId, projectId} | null (the verified assignee's open gap request);
   // winHint: async () => ({hint: 'quantified'|'confirmed'|null}) | null (aggregate win-loop guidance, never awaited).
+  // staffing: async () => [projectId, ...] | null (the signed-in person's own staffing rows, read server-side: W1/W2 prefill authorisation).
   constructor({ io, ai, csrf, voice, voices = null, captureRequired = false, model, maxSeconds = MAX_SECONDS, admin = false, memory = null, speakingLimit = SPEAKING_LIMIT_S, now = () => Date.now() / 1000, sleep = ms => new Promise(r => setTimeout(r, ms)), metric = () => {}, sttTimeout = STT_TIMEOUT_MS,
-    gaps = null, winHint = null, gapTimeout = GAP_RESOLVE_MS, reportTimeouts = REPORT_TIMEOUTS_MS, flags = null, checkpoint = null, evidence = null, consentHook = null, consentGuard = null }) {
+    gaps = null, staffing = null, winHint = null, gapTimeout = GAP_RESOLVE_MS, reportTimeouts = REPORT_TIMEOUTS_MS, flags = null, checkpoint = null, evidence = null, consentHook = null, consentGuard = null }) {
     // metric(name, numbers): timings and counts only, never transcript or project content.
-    Object.assign(this, { io, ai, csrf, voice, voices: voices || [voice], captureRequired, model, maxSeconds, admin, speakingLimit, now, sleep, metric, memory, sttTimeout, gaps, winHint, gapTimeout, reportTimeouts, checkpoint, evidence, consentHook, consentGuard });
+    Object.assign(this, { io, ai, csrf, voice, voices: voices || [voice], captureRequired, model, maxSeconds, admin, speakingLimit, now, sleep, metric, memory, sttTimeout, gaps, staffing, winHint, gapTimeout, reportTimeouts, checkpoint, evidence, consentHook, consentGuard });
     // G2: the consent in force for this interview (privacy.js parseConsent): checkpoint only with the checkpoint purpose, private memory only with the memory purpose.
     this.consent = { transcription: false, draft: false, checkpoint: false, memory: false, notice: false };
     this.softSeconds = maxSeconds; // the planned end; with the consultant's agreement the interview may run to hardLimit(softSeconds) of active time (extension.js)
@@ -632,6 +633,20 @@ export class Session {
       this.starting = false;
       if (this.finished || this.ending) return;
       if (doc && doc.project?.id !== this.project.id) { this.metric('resume_refused', { code: 'project' }); return this.fail(RESUME_PROJECT, 'resume-project'); }
+    }
+    // W1/W2 (v2.2): the business Project ID routes the interview (the report's project_ref, Project Review), so it is kept only when it is one of
+    // the signed-in person's own staffing rows, read server-side for that verified identity. Otherwise (not theirs, no rows, or the lookup failed)
+    // it is dropped, fail closed, and the page's own id files the interview. Role, sector and stage stay the person's own words (untrusted data).
+    if (this.project.projectId && this.staffing) {
+      this.starting = true; // until checked, the browser may only leave (onText)
+      let timer, mine = null;
+      try { mine = await Promise.race([Promise.resolve().then(() => this.staffing()), new Promise(r => { timer = setTimeout(() => r(null), this.gapTimeout); })]); }
+      catch { mine = null; }
+      finally { clearTimeout(timer); this.starting = false; }
+      if (this.finished || this.ending) return;
+      const want = this.project.projectId.trim().toLowerCase();
+      this.projectVerified = Array.isArray(mine) && mine.some(id => typeof id === 'string' && id.trim().toLowerCase() === want);
+      if (!this.projectVerified) { delete this.project.projectId; this.metric('project_unverified', { lookup: Array.isArray(mine) ? 1 : 0 }); }
     }
     // Aggregate win-loop guidance (both modes): started now, in parallel, and never awaited, so neither 'ready' nor the
     // opening waits for it. It joins the per-turn notes of the first reply composed after it resolves, and never touches
