@@ -192,3 +192,6 @@ html body.ui2 dialog :is(select,input:not([type=checkbox]):not([type=radio]),tex
 
 /* the strip that used to sit under the header (and gave the page its top space) is gone: the page keeps the space */
 html body.ui2:not(.studio-view) main#workspace{padding-top:var(--s6)}
+
+/* the note editor open (not voice-first) under the studio fit: the voice panel shrinks to its strip, so the W2 journey strip (home only) steps aside; else it pushes the panel's buttons under the editor */
+html body.ui2.studio-view:not(.studio-focus):not(.voice-first) #voicePanel #journeyHome{display:none}
