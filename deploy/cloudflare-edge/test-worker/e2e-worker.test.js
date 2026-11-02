@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import net from 'node:net';
+import { SELECTOR_CONFIG } from '../src/policy.generated.js';
 
 const EDGE = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const WRANGLER = (process.env.WRANGLER || 'npx --yes wrangler@4.156.0').split(' ');
@@ -84,7 +85,10 @@ async function interview(csrf) {
   ws.send(JSON.stringify({ type: 'start', consent: { transcription: true, draft: true, checkpoint: false }, csrf, project: PROJECT, capture: true, voice: 'atlas', memory: false, mode: 'text' })); // "Type instead": a typed interview
   await until(() => events.some(e => e.type === 'agent_text') || events.some(e => e.type === 'error'), 'the opening');
   assert.ok(!events.some(e => e.type === 'error'), 'the start was accepted: ' + JSON.stringify(events.find(e => e.type === 'error')));
-  for (const answer of ANSWERS) {
+  // v2.2 U2 (D-U2-4): "I am done" before the essentials are covered is held (ATLAS says what is missing and asks once more), at most max_stop_holds times;
+  // a consultant who insists is respected. So, as a person would, the closing answer is repeated until the read-back comes.
+  const TURNS = [...ANSWERS, ...Array(SELECTOR_CONFIG.max_stop_holds).fill(ANSWERS.at(-1))];
+  for (const answer of TURNS) {
     if (events.some(e => e.type === 'summary')) break;
     // As a person would: wait for ATLAS to finish, and if it asks for a moment (the typed pacing rule), send the answer again.
     for (let attempt = 0; ; attempt++) {
