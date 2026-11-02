@@ -38,7 +38,9 @@ test('htmlCsp: hashes + blob:, never unsafe-inline for script, the report target
   assert.ok(full.includes("connect-src 'self' wss://x.example") && full.includes("frame-ancestors 'none'") && full.includes('report-uri /api/csp-report') && full.includes('report-to atlas-csp') && full.includes("style-src 'unsafe-inline'"));
   assert.equal(scriptSrc(htmlCsp({})), 'blob:');
   const small = htmlCsp({ hashes: ['sha256-aaa'], page: false, blob: false, report: false, formAction: "'none'", frameAncestors: 'https://t.example' });
-  assert.equal(scriptSrc(small), "'sha256-aaa'"); assert.ok(!small.includes('connect-src') && !small.includes('report-') && small.endsWith('frame-ancestors https://t.example'));
+  assert.equal(scriptSrc(small), "'sha256-aaa'"); assert.ok(!small.includes('connect-src') && !small.includes('report-') && small.endsWith("frame-ancestors https://t.example; require-trusted-types-for 'script'; trusted-types 'none'"));
+  // Trusted Types on every variant: the full page allows the one policy safe-html.js creates, a small page none; never a default or duplicates
+  assert.ok(full.includes("require-trusted-types-for 'script'; trusted-types atlas-html") && !/trusted-types[^;]*('allow-duplicates'|\bdefault\b|\*)/.test(full));
   assert.equal(scriptSrc(htmlCsp({ blob: false })), "'none'");
   const noBlob = htmlCsp({ hashes: ['sha256-aaa'], blob: false });
   assert.doesNotMatch(noBlob, /blob:/, 'blob: false removes every blob: source, not only the script one'); assert.ok(noBlob.includes("connect-src 'self'") && noBlob.includes('img-src data:;'));
@@ -60,6 +62,7 @@ test('every HTML route ships the strict policy with ITS OWN hashes: page, privac
   assert.ok(strictOk(c3)); assert.equal(scriptSrc(c3), "'none'", 'the privacy notice has no script at all, so no script source');
   for (const c of [c1, c2, c3]) assert.doesNotMatch(c, /blob:/, 'only the voice page keeps blob: (X3, red I2)');
   assert.match(csp, /script-src [^;]*blob:/, 'the voice page keeps blob: for its AudioWorklet');
+  for (const c of [csp, c1, c2, c3]) assert.ok(c.includes("require-trusted-types-for 'script'; trusted-types atlas-html"), 'every HTML route enforces Trusted Types');
   assert.doesNotMatch(await priv.text(), /<script/i);
   for (const r of [home, signed, confirm, priv]) assert.equal(r.headers.get('content-security-policy-report-only'), null);
   // data responses stay on the data-only policy

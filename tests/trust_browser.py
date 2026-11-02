@@ -83,7 +83,7 @@ with sync_playwright() as pw:
   p.route('**/*',make_route(who));p.goto('https://atlas.test/'+hash);p.wait_for_timeout(700);return p
  # ---- F3.4 claims block in the record dialog
  S['gaps']=gaps();o=page('owner');o.evaluate(f"window.ATLAS_APP.switchView('library')");o.wait_for_timeout(400)
- o.evaluate(f"document.body.insertAdjacentHTML('beforeend','<button data-open-record=\"{R1}\" id=\"openR1\">o</button>')");o.locator('#openR1').click();o.wait_for_timeout(800)
+ o.evaluate(f"(()=>{{const b=document.createElement('button');b.dataset.openRecord='{R1}';b.id='openR1';b.textContent='o';document.body.append(b);}})()");o.locator('#openR1').click();o.wait_for_timeout(800)
  cb=o.locator('#claimsBlock')
  check('claims block shown in the record dialog for a full-access reader',o.locator('#recordDialog').is_visible() and cb.is_visible() and len(gets(rf'/claims/{R1}$'))==1)
  txt=cb.text_content()
@@ -105,7 +105,7 @@ with sync_playwright() as pw:
  check('record dialog with claims fits at 320 px',o.evaluate("(()=>{const d=document.getElementById('recordDialog');return d.scrollWidth<=d.clientWidth+1})()"))
  o.set_viewport_size({'width':1440,'height':1000});o.locator('#recordDialog [data-close]').first.click()
  n=len(gets(r'/claims/'))
- o.evaluate(f"document.body.insertAdjacentHTML('beforeend','<button data-open-record=\"{R2}\" id=\"openR2\">o</button>')");o.locator('#openR2').click();o.wait_for_timeout(700)
+ o.evaluate(f"(()=>{{const b=document.createElement('button');b.dataset.openRecord='{R2}';b.id='openR2';b.textContent='o';document.body.append(b);}})()");o.locator('#openR2').click();o.wait_for_timeout(700)
  check('public-access record: no claims block and no claims request',o.locator('#claimsBlock').is_hidden() and len(gets(r'/claims/'))==n and o.locator('#claimsBlock').inner_html()=='')
  o.locator('#recordDialog [data-close]').first.click()
  # ---- F2.6 proof requests in the Library; startFromGap seeds from the library record (full access)

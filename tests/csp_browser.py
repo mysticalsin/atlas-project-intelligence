@@ -104,15 +104,26 @@ try:
 
         # ---- the negative proof: the policy is live
         before = len(reports)
-        p.evaluate("""()=>{const s=document.createElement('script');s.textContent='window.__pwn_inline=1';document.body.appendChild(s);
-          const d=document.createElement('div');d.innerHTML='<img src="x:broken" onerror="window.__pwn_attr=1">';document.body.appendChild(d);
-          const a=document.createElement('a');a.href='javascript:window.__pwn_url=1';document.body.appendChild(a);a.click();}""")
+        # Trusted Types is the outer layer: a raw string never reaches an HTML or script sink, so each attempt throws before script-src is even asked.
+        tt = p.evaluate("""()=>{const out={};const t=(k,f)=>{try{f();out[k]='ran';}catch(e){out[k]=e&&e.name;}};
+          t('script',()=>{const s=document.createElement('script');s.textContent='window.__pwn_inline=1';document.body.appendChild(s);});
+          t('html',()=>{const d=document.createElement('div');d.innerHTML='<img src="x:broken" onerror="window.__pwn_attr=1">';document.body.appendChild(d);});
+          t('adjacent',()=>{document.body.insertAdjacentHTML('beforeend','<img src="x:broken" onerror="window.__pwn_attr=1">');});
+          t('scripturl',()=>{const s=document.createElement('script');s.src='data:text/javascript,window.__pwn_src=1';document.body.appendChild(s);});
+          t('policy',()=>trustedTypes.createPolicy('evil',{createHTML:x=>x}));
+          t('duplicate',()=>trustedTypes.createPolicy('atlas-html',{createHTML:x=>x}));
+          t('safe',()=>{const d=document.createElement('div');AtlasSafe.setHTML(d,AtlasSafe.html`<b>${'<i>x</i>'}</b>`);if(d.innerHTML!=='<b>&lt;i&gt;x&lt;/i&gt;</b>')throw new Error('escaped');});
+          const a=document.createElement('a');a.href='javascript:window.__pwn_url=1';document.body.appendChild(a);a.click();
+          return out;}""")
         p.wait_for_timeout(1200)
-        check('an injected inline script does not run', p.evaluate('window.__pwn_inline') is None)
+        check('Trusted Types: a raw string is refused by every HTML and script sink (script text, innerHTML, insertAdjacentHTML, script src)', all(tt.get(k) == 'TypeError' for k in ('script', 'html', 'adjacent', 'scripturl')))
+        check('Trusted Types: no other policy can be created, not even a second atlas-html', tt.get('policy') == 'TypeError' and tt.get('duplicate') == 'TypeError')
+        check('Trusted Types: the one sanctioned path (AtlasSafe.setHTML with html``) still renders, escaped', tt.get('safe') == 'ran')
+        check('an injected inline script does not run', p.evaluate('window.__pwn_inline') is None and p.evaluate('window.__pwn_src') is None)
         check('an inline event-handler attribute does not run', p.evaluate('window.__pwn_attr') is None)
         check('a javascript: URL does not run', p.evaluate('window.__pwn_url') is None)
         v = violations()
-        check('each refusal fired a securitypolicyviolation (script-src-elem, script-src-attr and the javascript: navigation)', {x['d'] for x in v} >= {'script-src-elem', 'script-src-attr'} and len(v) >= 3)
+        check('each refusal fired a securitypolicyviolation (require-trusted-types-for, trusted-types)', {x['d'] for x in v} >= {'require-trusted-types-for', 'trusted-types'} and len(v) >= 5)
         # The browser's own delivery of reports (report-uri / report-to) is not observable from here in every Chromium build, so the endpoint is exercised from the page,
         # under the same policy (connect-src 'self'), exactly as a browser would post it; the Worker's log is read at the end.
         r = p.evaluate("""async()=>{const b=await (await fetch('/api/bootstrap')).json();

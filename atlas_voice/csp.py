@@ -39,6 +39,9 @@ def script_src(hashes):
     return ' '.join(f"'{h}'" for h in hashes)
 
 
+TT_POLICY = 'atlas-html'
+
+
 def html_csp(*, hashes=(), connect='', frame_ancestors="'none'", form_action="'self'", report=True, page=True, blob=True):
     """The policy for an HTML response. `connect` is the extra connect-src origin (the websocket origin), `page` False is
     the reduced policy of a small static page (no fetch, images only from data:), `report` adds the violation report target."""
@@ -51,6 +54,8 @@ def html_csp(*, hashes=(), connect='', frame_ancestors="'none'", form_action="'s
     else:
         d += ['img-src data:']
     d += ["object-src 'none'", "base-uri 'none'", f'form-action {form_action}', f'frame-ancestors {frame_ancestors}']
+    # Trusted Types: the full page may create the one policy safe-html.js makes; a small page none. No default policy.
+    d += ["require-trusted-types-for 'script'", 'trusted-types ' + (TT_POLICY if page else "'none'")]
     if report:
         d += [f'report-uri {REPORT_PATH}', f'report-to {REPORT_GROUP}']
     return '; '.join(d)

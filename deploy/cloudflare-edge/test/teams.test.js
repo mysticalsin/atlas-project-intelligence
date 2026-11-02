@@ -270,7 +270,7 @@ test('teamsRoutes tab: the launcher with its route-specific CSP when TeamsJS is 
   assert.equal(r.status, 200); assert.equal(r.headers.get('content-type'), 'text/html; charset=utf-8');
   const html = await r.text(), csp = r.headers.get('content-security-policy');
   assert.equal(csp, tabCsp(await inlineScriptHashes(html)), 'exactly the hashes of the two inline scripts');
-  assert.match(csp, /frame-ancestors https:\/\/teams\.microsoft\.com https:\/\/\*\.teams\.microsoft\.com https:\/\/\*\.cloud\.microsoft$/);
+  assert.match(csp, /frame-ancestors https:\/\/teams\.microsoft\.com https:\/\/\*\.teams\.microsoft\.com https:\/\/\*\.cloud\.microsoft; require-trusted-types-for 'script'; trusted-types 'none'$/, 'the tab may create no Trusted Types policy');
   assert.equal(TAB_FRAME_ANCESTORS, 'https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft');
   assert.match(csp, /^default-src 'none'; script-src 'sha256-[^']+' 'sha256-[^']+'; script-src-attr 'none'; style-src 'unsafe-inline'; img-src data:;/);
   assert.ok(!/unsafe-inline' (blob|')|script-src[^;]*unsafe-inline/.test(csp) && !csp.includes('blob:'));

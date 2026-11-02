@@ -4,6 +4,8 @@
 //                text/plain script, on the voice page only: /privacy, the confirm and re-sign-in pages and the Teams tab pass blob: false).
 //                No 'unsafe-inline', no 'strict-dynamic' (CSP3 browsers would then ignore blob:).
 //   script-src-attr 'none'   no inline event handler attribute anywhere; handlers are attached with addEventListener.
+//   require-trusted-types-for 'script' + trusted-types atlas-html (v2.2): the one HTML sink (safe-html.js setHTML/insertHTML) goes
+//                through a private policy; any other innerHTML, script text or script URL is refused by the browser.
 //   style-src 'unsafe-inline'   STILL ALLOWED, a recorded residual: the page carries ~1.5 MB of <style> and style="" attributes. It lets an
 //                injected tag restyle the page but not run code or reach the network. Removing it is a design-system change (F2 or later).
 // The server's per-person facts go into a JSON data block (runtimeBlock), never into script. The same policy is built in Python by
@@ -12,6 +14,7 @@ import { PAGE_SCRIPT_HASHES, RUNTIME_BLOCK } from './csp.generated.js';
 
 export { PAGE_SCRIPT_HASHES, RUNTIME_BLOCK };
 export const REPORT_PATH = '/api/csp-report';
+export const TT_POLICY = 'atlas-html';
 export const REPORT_GROUP = 'atlas-csp';
 export const REPORTING_ENDPOINTS = `${REPORT_GROUP}="${REPORT_PATH}"`;
 
@@ -26,6 +29,9 @@ export function htmlCsp({ hashes = [], connect = '', frameAncestors = "'none'", 
   if (page) d.push("connect-src 'self'" + (connect ? ' ' + connect : ''), blob ? 'img-src data: blob:' : 'img-src data:', "font-src 'self'", ...(blob ? ['worker-src blob:', 'media-src blob:'] : []));
   else d.push('img-src data:');
   d.push("object-src 'none'", "base-uri 'none'", `form-action ${formAction}`, `frame-ancestors ${frameAncestors}`);
+  // Trusted Types: every HTML or script sink takes only a trusted value. The full page may create one policy, `atlas-html`, and only
+  // safe-html.js does (behind html``); a small page may create none. No default policy, no 'allow-duplicates'.
+  d.push("require-trusted-types-for 'script'", 'trusted-types ' + (page ? TT_POLICY : "'none'"));
   if (report) d.push(`report-uri ${REPORT_PATH}`, `report-to ${REPORT_GROUP}`);
   return d.join('; ');
 }

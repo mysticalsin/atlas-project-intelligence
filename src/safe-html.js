@@ -16,7 +16,11 @@ const html=(strs,...vals)=>new Safe(strs.reduce((o,s,i)=>o+s+(i<vals.length?part
 const trusted=s=>s instanceof Safe?s:new Safe(s);
 const join=(arr,sep='')=>new Safe(arr.map(part).join(esc(sep)));
 const need=v=>{if(!(v instanceof Safe))throw new TypeError('Markup must be built with html`` (got '+typeof v+')');return v.s;};
-const setHTML=(el,v)=>{el.innerHTML=need(v);};
-const insertHTML=(el,where,v)=>{el.insertAdjacentHTML(where,need(v));};
+// Trusted Types (CSP require-trusted-types-for 'script'; trusted-types atlas-html): the one policy, private to this file and reached only
+// after need(), so only html``-built markup can become TrustedHTML. No createScript, no createScriptURL, no default policy.
+const TT=(()=>{const t=typeof globalThis!=='undefined'?globalThis.trustedTypes:undefined;return t&&typeof t.createPolicy==='function'?t.createPolicy('atlas-html',{createHTML:s=>s}):null;})();
+const markup=v=>{const s=need(v);return TT?TT.createHTML(s):s;};
+const setHTML=(el,v)=>{el.innerHTML=markup(v);};
+const insertHTML=(el,where,v)=>{el.insertAdjacentHTML(where,markup(v));};
 return Object.freeze({esc,html,trusted,join,Safe,setHTML,insertHTML});
 });
