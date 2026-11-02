@@ -1,5 +1,6 @@
 // v2.2 W1/W2 prefill authorisation: the business Project ID that routes an interview (the report's project_ref, Project Review) is kept only when
-// it is one of the signed-in person's own staffing rows, read server-side under the verified identity; otherwise it is dropped (fail closed).
+// it is one of the signed-in person's own staffing rows, read server-side under the verified identity; rows without it, or a failed lookup, drop it
+// (fail closed); a person with no rows at all keeps it as self-declared (not verified).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Library } from '../src/library.js';
@@ -17,16 +18,21 @@ test('W1/W2: a Project ID from the person\'s own staffing rows is kept (case-ins
   assert.equal(h.s.projectVerified, true); assert.equal(h.s.evidenceNotes().project_ref, 'mtu-4411');
 });
 
-test('W1/W2: a Project ID that is not the person\'s own, or with no rows, is dropped; the page\'s own id files the interview', async () => {
-  for (const rows of [['MTU-1'], []]) {
-    const metrics = [], h = rig({ said: [ANSWER], metrics, session: { staffing: async () => rows } });
-    await opened(h, withId('MTU-4411'));
-    assert.equal(h.s.projectVerified, false); assert.equal(h.s.project.projectId, undefined);
-    assert.equal(h.s.evidenceNotes().project_ref, PROJECT.id, 'never someone else\'s project');
-    assert.ok(metrics.some(([n, v]) => n === 'project_unverified' && v.lookup === 1));
-    assert.ok(!JSON.stringify(metrics).includes('MTU'), 'metrics carry no project content');
-    cleanup();
-  }
+test('W1/W2: a Project ID that is not among the person\'s own staffing rows is dropped; the page\'s own id files the interview', async () => {
+  const metrics = [], h = rig({ said: [ANSWER], metrics, session: { staffing: async () => ['MTU-1'] } });
+  await opened(h, withId('MTU-4411'));
+  assert.equal(h.s.projectVerified, false); assert.equal(h.s.project.projectId, undefined);
+  assert.equal(h.s.evidenceNotes().project_ref, PROJECT.id, 'never someone else\'s project');
+  assert.ok(metrics.some(([n, v]) => n === 'project_unverified' && v.lookup === 1 && v.kept === 0));
+  assert.ok(!JSON.stringify(metrics).includes('MTU'), 'metrics carry no project content');
+});
+
+test('W1/W2: a person with no staffing rows at all keeps the Project ID as self-declared (not verified), as before the feed', async () => {
+  const metrics = [], h = rig({ said: [ANSWER], metrics, session: { staffing: async () => [] } });
+  await opened(h, withId('MTU-4411'));
+  assert.equal(h.s.projectVerified, false); assert.equal(h.s.project.projectId, 'MTU-4411'); assert.equal(h.s.evidenceNotes().project_ref, 'MTU-4411');
+  assert.ok(metrics.some(([n, v]) => n === 'project_unverified' && v.rows === 0 && v.kept === 1));
+  assert.ok(!JSON.stringify(metrics).includes('MTU'), 'metrics carry no project content');
 });
 
 for (const [name, staffing] of [['an error', async () => { throw new Error('down'); }], ['no answer', async () => null], ['a malformed answer', async () => ({ items: ['MTU-4411'] })], ['a timeout', () => new Promise(() => {})]]) {

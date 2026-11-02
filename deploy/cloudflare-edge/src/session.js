@@ -634,9 +634,11 @@ export class Session {
       if (this.finished || this.ending) return;
       if (doc && doc.project?.id !== this.project.id) { this.metric('resume_refused', { code: 'project' }); return this.fail(RESUME_PROJECT, 'resume-project'); }
     }
-    // W1/W2 (v2.2): the business Project ID routes the interview (the report's project_ref, Project Review), so it is kept only when it is one of
-    // the signed-in person's own staffing rows, read server-side for that verified identity. Otherwise (not theirs, no rows, or the lookup failed)
-    // it is dropped, fail closed, and the page's own id files the interview. Role, sector and stage stay the person's own words (untrusted data).
+    // W1/W2 (v2.2): the business Project ID routes the interview (the report's project_ref, Project Review). It is checked against the signed-in
+    // person's own staffing rows, read server-side for that verified identity: one of them, verified; rows that do not include it, or a lookup that
+    // failed, dropped (fail closed), and the page's own id files the interview. A person with NO staffing rows at all (the feed does not cover them
+    // yet) keeps the ID as self-declared (projectVerified false), as before; making that strict is a decision for the process owner once the feed
+    // covers everyone. Role, sector and stage stay the person's own words (untrusted data).
     if (this.project.projectId && this.staffing) {
       this.starting = true; // until checked, the browser may only leave (onText)
       let timer, mine = null;
@@ -646,7 +648,11 @@ export class Session {
       if (this.finished || this.ending) return;
       const want = this.project.projectId.trim().toLowerCase();
       this.projectVerified = Array.isArray(mine) && mine.some(id => typeof id === 'string' && id.trim().toLowerCase() === want);
-      if (!this.projectVerified) { delete this.project.projectId; this.metric('project_unverified', { lookup: Array.isArray(mine) ? 1 : 0 }); }
+      if (!this.projectVerified) {
+        const noRows = Array.isArray(mine) && mine.length === 0;
+        if (!noRows) delete this.project.projectId;
+        this.metric('project_unverified', { lookup: Array.isArray(mine) ? 1 : 0, rows: noRows ? 0 : 1, kept: noRows ? 1 : 0 });
+      }
     }
     // Aggregate win-loop guidance (both modes): started now, in parallel, and never awaited, so neither 'ready' nor the
     // opening waits for it. It joins the per-turn notes of the first reply composed after it resolves, and never touches
