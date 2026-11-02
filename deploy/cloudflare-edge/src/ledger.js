@@ -1,22 +1,64 @@
 // JavaScript port of atlas_voice/quality.py InterviewLedger and atlas_voice/analyst.py Analyst.
 // Behaviour must match the Python source exactly: test/parity.test.js replays Python-generated
 // scenarios and requires identical results. Candidate details are never verified facts.
-import { FIELDS, TO_TOPIC, NUMERIC_SRC, UNCERTAIN_SRC, UNKNOWN_SRC, ANALYST_POLICY, CONTEXT_SEGMENTS, SEGMENT_CHARS, MAX_CALLS } from './policy.generated.js';
+import { isNonAnswer } from './nonanswer.js';
+import { FIELDS, TO_TOPIC, NUMERIC_SRC, UNCERTAIN_SRC, UNKNOWN_SRC, ANALYST_POLICY, CONTEXT_SEGMENTS, SEGMENT_CHARS, MAX_CALLS, CONTEXT_LEAD_SRC, CONTEXT_TRAIL_SRC, CONTEXT_MAX, KEPT_PRIVATE_RUN } from './policy.generated.js';
 
 const FIELD_KEYS = Object.keys(FIELDS);
 const NUMERIC = new RegExp(NUMERIC_SRC, 'i');
 const UNCERTAIN = new RegExp(UNCERTAIN_SRC, 'i');
 const UNKNOWN = new RegExp(UNKNOWN_SRC, 'i');
+const CONTEXT_LEAD = new RegExp(CONTEXT_LEAD_SRC, 'i'), CONTEXT_TRAIL = new RegExp(CONTEXT_TRAIL_SRC, 'i');
+const SENTENCE_END = '.!?。！？।';
+// Where a candidate detail's words came from (as quality.py PROVENANCE): set only by the server, never by a model's tool call.
+export const PROVENANCE = ['unverified_speech_recognition', 'consultant_typed', 'consultant_corrected'];
 const ws = s => s.split(/\s+/).filter(Boolean).join(' ');
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const fail = m => { throw new Error(m); };
+// A quote that sits in a negated, hypothetical, reported or dictated sentence keeps that sentence (quality.py context_cue; red M6).
+function sentenceBounds(source, start, end) {
+  let a = start;
+  while (a > 1 && !(source[a - 1] === ' ' && SENTENCE_END.includes(source[a - 2]))) a -= 1;
+  if (a === 1) a = 0;
+  let b = end;
+  while (b < source.length && !(SENTENCE_END.includes(source[b - 1]) && source[b] === ' ')) b += 1;
+  return [a, b];
+}
+export function contextCue(source, quote) {
+  const start = source.indexOf(quote);
+  if (start < 0) return '';
+  const end = start + quote.length, [a, b] = sentenceBounds(source, start, end);
+  if (!(CONTEXT_LEAD.test(source.slice(a, start)) || CONTEXT_TRAIL.test(source.slice(end, b)))) return '';
+  if (b - a > CONTEXT_MAX) {
+    const a2 = Math.max(a, start - 120), b2 = Math.min(b, end + 120);
+    return (a2 > a ? '…' : '') + source.slice(a2, b2).trim() + (b2 < b ? '…' : '');
+  }
+  return source.slice(a, b).trim();
+}
+// The words of a text, lower case, edge punctuation removed (quality.py _words).
+const PUNCT = new Set('.,;:!?"\'()[]“”‘’—-');
+const trimPunct = t => { let i = 0, j = t.length; while (i < j && PUNCT.has(t[i])) i++; while (j > i && PUNCT.has(t[j - 1])) j--; return t.slice(i, j); };
+const words = text => text.split(/\s+/).map(t => trimPunct(t).toLowerCase()).filter(Boolean);
+export function overlapsPrivate(quote, privateTexts) {
+  const q = words(quote);
+  if (q.length < 4) return false; // a word or two is nothing of an utterance
+  for (const text of privateTexts) {
+    const t = words(text), n = Math.min(KEPT_PRIVATE_RUN, q.length, t.length), grams = new Set();
+    for (let i = 0; i + n <= t.length; i++) grams.add(t.slice(i, i + n).join('\u0000'));
+    for (let i = 0; i + n <= q.length; i++) if (grams.has(q.slice(i, i + n).join('\u0000'))) return true;
+  }
+  return false;
+}
 const stable = v => Array.isArray(v) ? '[' + v.map(stable).join(',') + ']' : isObj(v) ? '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + stable(v[k])).join(',') + '}' : JSON.stringify(v);
 
 export class InterviewLedger {
   constructor(stage = 'Unknown') {
     this.transcripts = new Map(); this.details = []; this.calls = new Map(); this.updates = 0;
-    this.probes = []; this.deferred = {}; this.callInputs = new Map(); this.stage = stage;
+    this.probes = []; this.deferred = {}; this.callInputs = new Map(); this.stage = stage; this.sealed = false;
+    this.langs = new Map(); // transcript item -> the language it was said in (v2.2 L1); a detail carries it as `lang`
   }
+
+  setLang(itemId, lang) { if (typeof itemId === 'string' && typeof lang === 'string' && /^[a-z]{2,3}$/.test(lang)) this.langs.set(itemId, lang); }
 
   addTranscript(itemId, text) {
     if (typeof itemId !== 'string' || !itemId || itemId.length > 160 || typeof text !== 'string') fail('Invalid transcription event');
@@ -28,13 +70,20 @@ export class InterviewLedger {
     this.transcripts.set(itemId, text);
   }
 
-  record(raw) {
+  record(raw, provenance = null) {
+    // provenance: trusted, from the server only (a typed correction, a confirmed correction); a model's tool call can never set it.
+    if (provenance !== null && !PROVENANCE.includes(provenance)) fail('Unknown provenance');
+    if (this.sealed) fail('The interview notes are confirmed and closed');
     if (!isObj(raw) || Object.keys(raw).length !== 1 || !('details' in raw) || !Array.isArray(raw.details) || raw.details.length < 1 || raw.details.length > 12) fail('Expected 1-12 candidate details');
+    // What the consultant kept private never comes back through a model's tool call: not from that utterance, not as the same words elsewhere (red M1).
+    const priv = new Set(this.details.filter(d => d.withheld).map(d => d.item_id)), privateTexts = [...priv].filter(i => this.transcripts.has(i)).map(i => this.transcripts.get(i));
     const pending = [];
     for (const x of raw.details) {
       if (!isObj(x) || Object.keys(x).some(k => !['field', 'item_id', 'quote', 'uncertain', 'supersedes'].includes(k))) fail('Invalid detail schema');
       if ('uncertain' in x && typeof x.uncertain !== 'boolean') fail('uncertain must be boolean');
       const f = x.field, ident = x.item_id, q = x.quote;
+      // A deferral, a refusal or a bare filler ("I don't know", "pass", "ok") is never a claim, whatever a model proposes: the point is marked open elsewhere (v2.2 Q1).
+      if (FIELD_KEYS.includes(f) && this.transcripts.has(ident) && typeof q === 'string' && isNonAnswer(q)) continue;
       if (!FIELD_KEYS.includes(f) || !this.transcripts.has(ident) || typeof q !== 'string' || q.length < 5 || q.length > 1800) fail('Invalid field, transcript reference or quote length');
       const quote = ws(q), source = ws(this.transcripts.get(ident));
       if (!source.includes(quote)) fail('Quote is not in the consultant transcript');
@@ -42,15 +91,35 @@ export class InterviewLedger {
       if (supersedes && !this.details.some(d => d.id === supersedes && d.field === f && d.active)) fail('Correction must reference an active same-field candidate');
       if ([...this.details, ...pending].some(d => d.field === f && d.item_id === ident && d.quote === quote && d.active)) continue;
       if (supersedes && pending.some(d => d.supersedes === supersedes)) fail('Only one correction per candidate in a batch');
-      pending.push({ id: 'D-' + String(this.details.length + pending.length + 1).padStart(3, '0'), field: f, item_id: ident, quote,
-        status: UNKNOWN.test(quote) ? 'unknown' : (x.uncertain === true || UNCERTAIN.test(quote)) ? 'uncertain' : 'reported',
-        active: true, supersedes, provenance: 'unverified_speech_recognition' });
+      if (provenance === null && privateTexts.length && (priv.has(ident) || overlapsPrivate(quote, privateTexts))) fail('Quote comes from words the consultant kept private');
+      // The sentence around a quote said in a negated, hypothetical, reported or dictated context travels with it (red M6). A typed correction is the consultant's own assertion.
+      const context = provenance === null ? contextCue(source, quote) : '';
+      const detail = { id: 'D-' + String(this.details.length + pending.length + 1).padStart(3, '0'), field: f, item_id: ident, quote,
+        status: UNKNOWN.test(quote) ? 'unknown' : (x.uncertain === true || UNCERTAIN.test(quote) || context) ? 'uncertain' : 'reported',
+        active: true, supersedes, provenance: provenance || 'unverified_speech_recognition' };
+      if (context) detail.context = context;
+      if (this.langs.has(ident)) detail.lang = this.langs.get(ident);
+      pending.push(detail);
     }
     if (this.details.length + pending.length > 100) fail('Candidate budget reached');
     for (const x of pending) { if (x.supersedes) for (const old of this.details) if (old.id === x.supersedes) old.active = false; this.details.push(x); }
     this.updates += 1;
     return this.inspect();
   }
+
+  // The consultant keeps one active detail private. It stays in the history (and the checkpoint) but leaves the notes, the report, the
+  // evidence and the story board, and its field is not asked about again (it counts as unresolved). One way: there is no un-withhold.
+  withhold(detailId) {
+    const d = this.details.find(x => x.id === detailId && x.active);
+    if (!d) fail('Only an active candidate detail can be kept private');
+    d.withheld = true;
+    // The same words filed under another field go with it: keeping a point private is not undone by a second copy of it.
+    for (const x of this.details) if (x !== d && x.active && !x.withheld && overlapsPrivate(x.quote, [d.quote])) x.withheld = true;
+    return this.inspect();
+  }
+
+  // The consultant confirmed the summary card: the notes are exactly what it showed. A late analyst entry is refused from here on.
+  seal() { this.sealed = true; }
 
   measurementGaps(active) {
     const text = active.filter(x => x.field === 'measurement').map(x => x.quote).join(' ');
@@ -65,7 +134,9 @@ export class InterviewLedger {
   }
 
   inspect() {
-    const active = this.details.filter(x => x.active);
+    const active = this.details.filter(x => x.active && !x.withheld);
+    // A field whose only active details are withheld is not asked again: the consultant chose to keep it private.
+    const kept = new Set(active.map(x => x.field)), withheld = new Set(this.details.filter(x => x.active && x.withheld && !kept.has(x.field)).map(x => x.field));
     const present = new Set(active.map(x => x.field));
     const missing = FIELD_KEYS.filter(f => !present.has(f));
     const numeric = active.some(x => x.field === 'outcome' && NUMERIC.test(x.quote));
@@ -78,7 +149,7 @@ export class InterviewLedger {
     const basis = numeric ? this.measurementGaps(active) : [];
     if (numeric && unknown.has('measurement')) flags.push('No verified measurement: preserve a qualitative account; do not repeat a demand for ROI');
     else if (numeric && present.has('measurement') && basis.length) flags.push('Measurement account still needs: ' + basis.join(', '));
-    const paused = new Set([...Object.keys(this.deferred), ...unknown]);
+    const paused = new Set([...Object.keys(this.deferred), ...unknown, ...withheld]);
     let priority = null, reason = 'Find the most decision-useful detail, not a bigger claim.';
     if (multi.length && !paused.has('measurement')) { priority = 'measurement'; reason = 'Multiple accounts need clarification before one result is selected.'; }
     else if (numeric && basis.length && !paused.has('measurement')) { priority = 'measurement'; reason = 'A numerical claim needs its denominator and comparison basis.'; }
@@ -98,7 +169,7 @@ export class InterviewLedger {
     return {
       candidate_details: active, missing, flags, next_field: priority, next_question: nextQuestion, why_this_question: reason,
       coverage: { present: present.size, total: FIELD_KEYS.length, meaning: 'candidate coverage; NOT quality, verification or approval' },
-      unresolved_fields: [...new Set([...unknown, ...Object.keys(this.deferred)])].sort(),
+      unresolved_fields: [...new Set([...unknown, ...Object.keys(this.deferred), ...withheld])].sort(),
       deferred_fields: { ...this.deferred }, measurement_gaps: basis,
       quality_state: flags.length || missing.length ? 'needs clarification' : 'ready for consultant correction; not verified',
       story_route: ['assessment', 'lessons learned'].includes(stage) ? 'learning or experience' : numeric && !basis.length && !unknown.has('measurement') ? 'quantified candidate' : 'qualitative candidate',
@@ -107,8 +178,8 @@ export class InterviewLedger {
     };
   }
 
-  planProbe() {
-    const keys = [...this.transcripts.keys()], turn = keys.length ? keys[keys.length - 1] : 'opening';
+  planProbe(turnId = null) {
+    const keys = [...this.transcripts.keys()], turn = turnId ?? (keys.length ? keys[keys.length - 1] : 'opening');
     if (this.probes.length && this.probes[this.probes.length - 1].turn === turn) return { ...this.inspect(), planned_question: this.probes[this.probes.length - 1].question, repeat_plan: true };
     let choice = this.inspect(), f = choice.next_field;
     while (f && this.probes.filter(p => p.field === f).length >= 2) {
@@ -132,17 +203,21 @@ export class InterviewLedger {
     return result;
   }
 
-  notes() {
+  // only: a set of detail ids (the items a confirmed card showed), or null for every active detail.
+  notes(only = null) {
     const sections = ['', '', '', '', '', ''];
-    for (const x of this.details) if (x.active) { const i = TO_TOPIC[x.field]; if (!sections[i].includes(x.quote)) sections[i] = (sections[i] + '\n' + x.quote).trim().slice(0, 6000); }
+    for (const x of this.details) if (x.active && !x.withheld && (!only || only.has(x.id))) { const i = TO_TOPIC[x.field]; if (!sections[i].includes(x.quote)) sections[i] = (sections[i] + '\n' + x.quote).trim().slice(0, 6000); }
     return sections;
   }
 }
 
 export function buildMessages(ledger, itemId) {
-  const ids = [...ledger.transcripts.keys()];
+  // An utterance the consultant kept private, and the details withheld from it, never go to the analyst again (red M1).
+  const priv = new Set(ledger.details.filter(d => d.withheld).map(d => d.item_id)); // read from the append-only history, not only active details: a superseded withheld detail stays private
+  // (the analyst may be behind the conversation: items heard after this one are not its context, so a late turn reads exactly as it would have in order)
+  const all = [...ledger.transcripts.keys()], upto = all.indexOf(itemId), ids = (upto < 0 ? all : all.slice(0, upto + 1)).filter(i => !priv.has(i) || i === itemId);
   const recent = ids.slice(-(CONTEXT_SEGMENTS + 1)).filter(i => i !== itemId).slice(-CONTEXT_SEGMENTS);
-  const active = ledger.details.filter(d => d.active).map(d => ({ id: d.id, field: d.field, quote: d.quote.slice(0, 200) })).slice(-20);
+  const active = ledger.details.filter(d => d.active && !d.withheld).map(d => ({ id: d.id, field: d.field, quote: d.quote.slice(0, 200) })).slice(-20);
   const context = { project_stage: ledger.stage, recent_segments: recent.map(i => ({ item_id: i, text: ledger.transcripts.get(i).slice(0, SEGMENT_CHARS) })),
     active_candidates: active, new_segment: { item_id: itemId, text: ledger.transcripts.get(itemId).slice(0, SEGMENT_CHARS * 4) } };
   return [{ role: 'system', content: ANALYST_POLICY }, { role: 'user', content: 'UNTRUSTED INTERVIEW DATA\n' + JSON.stringify(context) }];
@@ -156,9 +231,12 @@ export function guidance(plan) {
 
 export class Analyst {
   // complete(messages) -> [{id, name, arguments(string)}]. Only record_details is honoured.
-  constructor(complete, stage = 'Unknown', timeoutMs = 8000) { this.ledger = new InterviewLedger(stage); this.complete = complete; this.timeoutMs = timeoutMs; this.chain = Promise.resolve(); }
+  constructor(complete, stage = 'Unknown', timeoutMs = 8000) { this.ledger = new InterviewLedger(stage); this.complete = complete; this.timeoutMs = timeoutMs; this.chain = Promise.resolve(); this.missed = new Set(); this.retried = new Set(); }
 
   hear(itemId, text) {
+    // The words are in the transcript the moment they are heard (v2.2 Q1): the analyst may be many turns behind a fast conversation, and a turn it has not reached
+    // yet must still be in the notes and the report. (A refused one, over budget, is reported by its own queued job below, as before.)
+    try { this.ledger.addTranscript(itemId, text); } catch { /* _hear raises the same error in its turn */ }
     // Serialise turns so the ledger order equals speech order.
     const run = this.chain.then(() => this._hear(itemId, text));
     this.chain = run.catch(() => {});
@@ -167,11 +245,20 @@ export class Analyst {
 
   async _hear(itemId, text) {
     this.ledger.addTranscript(itemId, text);
+    // A turn that is only a deferral, a refusal or a filler ("I don't know", "pass", "ok") has nothing to file: the model is not called (v2.2 Q1).
+    const { status, rejected, ignored } = isNonAnswer(text) ? { status: 'analysed', rejected: 0, ignored: 0 } : await this._analyse(itemId);
+    const plan = this.ledger.planProbe(itemId); // (planned for THIS turn: later ones may already be in the transcript)
+    return { ...plan, analyst_status: status, rejected_proposals: rejected, ignored_tool_calls: ignored, guidance: guidance(plan) };
+  }
+
+  // The model call for one transcript item and the filing of what it proposes. A call that fails or times out leaves the item in `missed` (retryMissed).
+  async _analyse(itemId) {
     let status = 'analysed', rejected = 0, ignored = 0, calls = [];
     try {
       calls = await Promise.race([this.complete(buildMessages(this.ledger, itemId)), new Promise((_, r) => setTimeout(() => r(new Error('timeout')), this.timeoutMs))]);
       if (!Array.isArray(calls)) throw new Error('bad');
     } catch { calls = []; status = 'analyst-unavailable'; }
+    if (status === 'analysed') this.missed.delete(itemId); else this.missed.add(itemId);
     for (const call of calls.slice(0, MAX_CALLS)) {
       if (call?.name !== 'record_details') { ignored += 1; continue; }
       let details;
@@ -180,7 +267,16 @@ export class Analyst {
       details.forEach((detail, n) => { try { this.ledger.call(`${call.id ?? ''}#${n}`, 'record_details', { details: [detail] }); } catch { rejected += 1; } });
     }
     ignored += Math.max(0, calls.length - MAX_CALLS);
-    const plan = this.ledger.planProbe();
-    return { ...plan, analyst_status: status, rejected_proposals: rejected, ignored_tool_calls: ignored, guidance: guidance(plan) };
+    return { status, rejected, ignored };
+  }
+
+  // Once, for each turn whose analyst call failed: ask again (after the turns already queued, so the ledger order is still the speech order). Used when the read-back is built.
+  // Resolves with the item ids that were asked again.
+  retryMissed() {
+    const todo = [...this.missed].filter(i => !this.retried.has(i) && this.ledger.transcripts.has(i));
+    for (const i of todo) this.retried.add(i);
+    const run = this.chain.then(async () => { for (const i of todo) await this._analyse(i); return todo; });
+    this.chain = run.catch(() => {});
+    return run;
   }
 }

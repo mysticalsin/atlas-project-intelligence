@@ -5,6 +5,7 @@ import * as bids from './bids.js';      import * as ask from './ask.js';        
 import * as gaps from './gaps.js';      import * as claims from './claims.js';  import * as outreach from './outreach.js';
 import { teamsStatus } from './teams.js';
 import * as profile from './profile.js';
+import { evidenceWorkflowOn } from './adapters.js';
 
 // profile, people and directory (WOW_ZERO_CONFIG §6) work in both identity modes (keyed by x-atlas-user); externals get 403.
 export const WORDS = { bids: bids.routes, ask: ask.routes, wins: winloop.routes, gaps: gaps.routes,
@@ -43,5 +44,6 @@ export function flags(env = {}, ready = readyOf, { spokenAskApproved = SPOKEN_AS
     customerJev: on('bids') && !!env.TYPESAFE_API_KEY, pdfBriefs: on('bids'),
     gaps: on('gaps'), gapInterview: on('gaps'), claims: on('claims'),
     clientConfirm: on('claims') && env.CLIENT_CONFIRM === '1' && !!env.EXTERNAL_EMAILS,
-    outreach: on('outreach'), staffing: on('outreach'), teams: teamsStatus(env), phone: 'BLOCKED_EXTERNAL', profile: on('profile') };
+    outreach: on('outreach'), staffing: on('outreach'), teams: teamsStatus(env), phone: 'BLOCKED_EXTERNAL', profile: on('profile'),
+    evidence_workflow: evidenceWorkflowOn(env) }; // T15: the evidence workflow status (ATLAS_EVIDENCE_WORKFLOW=off turns it off)
 }

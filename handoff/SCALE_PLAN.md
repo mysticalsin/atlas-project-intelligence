@@ -8,7 +8,7 @@ Every figure below is an **assumption or a secondary-source estimate** until it 
 |---|---|---|---|
 | Interviews per person per year | 2 | 4 | every 6 / every 3 months |
 | Interviews per month | 2,000 | 4,000 | 12,000 × cadence ÷ 12 |
-| Talk time per interview | 15 min | 15 min | `ATLAS_MAX_SECONDS=900` cap, taken as the upper bound |
+| Talk time per interview | 20 min | 20 min | `ATLAS_MAX_SECONDS=1200` cap, taken as the upper bound |
 | Voice hours per month | 500 h | 1,000 h | |
 | Business hours per month (one region) | ~200 h | ~200 h | 22 days × 9 h; multiple time zones spread load further |
 | **Average simultaneous interviews** | **~2.5** | **~5** | voice hours ÷ business hours |
@@ -74,7 +74,7 @@ The fork's own README says the injection server is **one conversation per proces
 - **Staggered campaigns:** invite consultants in waves by business unit/country, over 2–4 weeks rather than one deadline. This cuts the peak 3–5× for free.
 - **Concurrency cap:** `ATLAS_MAX_INTERVIEWS` (start at 20). Beyond the cap, users see "All interview slots are in use. Try again shortly." Worst-case hosted spend per hour = slots × hourly per-session cost.
 - **Provider budget limit:** set a monthly budget/alert in the OpenAI project (operator action).
-- **Session length:** keep the 15-minute cap; review the median length after the first campaign.
+- **Session length:** keep the 20-minute cap; review the median length after the first campaign.
 - **Model choice:** mini by default; the full model only if the bake-off shows a material quality gain.
 
 ## 5. Gateway work items for many users (ordered)

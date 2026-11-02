@@ -19,6 +19,7 @@ import wave
 import aiohttp
 
 from .kyutai import TurnDetector, connect_stt, connect_tts, float_to_pcm16, pack, pcm16_to_float, unpack
+from .textfold import fold, plain
 
 SAMPLE_RATE = 24000
 CHUNK = 960
@@ -100,8 +101,8 @@ def is_echo(text, recent_agent_text):
     return sum(w in agent for w in words) / len(words) >= .7
 
 
-# A sentence end: . ! or ? (then any closing quote, bracket or markdown) before whitespace, or a CJK or Devanagari stop.
-_END = re.compile(r'([.!?]+)["\'\u201d\u2019\u00bb)\]*_`]*(\s+)|[\u3002\uff01\uff1f\u0964]\s*')
+# A sentence end: . ! ? or the Arabic question mark (then any closing quote, bracket or markdown) before whitespace, or a CJK or Devanagari stop.
+_END = re.compile(r'([.!?\u061f]+)["\'\u201d\u2019\u00bb)\]*_`]*(\s+)|[\u3002\uff01\uff1f\u0964]\s*')
 ABBREVIATIONS = frozenset('mr mrs ms dr prof st jr sr vs etc cf approx inc ltd corp dept mme mlle hr sra dott sig dhr mevr ca'.split())
 MIN_PIECE = 40  # characters: shorter sentences join the next piece, and the first clause goes early only from here
 _CLAUSE = re.compile(r'(.{%d,}?[,;:\u2014\u2013])\s+' % MIN_PIECE, re.S)
@@ -123,7 +124,7 @@ def _boundaries(text):
             end = m.start() + 1
         else:
             end, stops = nxt - len(m.group(2)), m.group(1)
-            if '!' not in stops and '?' not in stops:  # full stops only: maybe an initial, an abbreviation or a list number
+            if '!' not in stops and '?' not in stops and '\u061f' not in stops:  # full stops only: maybe an initial, an abbreviation or a list number
                 if nxt < len(text) and unicodedata.category(text[nxt]) == 'Ll':
                     continue  # a lowercase word continues the sentence ("data... and", "etc. were")
                 before = text[start:m.start()]
@@ -187,6 +188,327 @@ def speakable(text):
     text = re.sub(r'(?m)^\s*(?:#{1,6}|[-*\u2022]|[0-9]{1,2}[.)])\s+', '', text)
     text = ' '.join(re.sub(r'\*\*|__|[*`]', '', text).split())
     return text if any(c.isalnum() for c in text) else ''
+
+
+GUARD_MAX_WORDS = 45  # most words ATLAS says in one reply (v2.2 V1: the cap lands on a sentence end; a sentence that has begun is finished, never cut)
+CAP_SLACK_WORDS = 25  # ...unless that one sentence runs on this far past the cap: then it is cut, at a clause when it has one, else at a word
+PRAISE_MAX_WORDS = 8  # a sentence this short that is only praise is dropped
+REACTION_MAX_WORDS = 12  # a leading sentence longer than this is an answer, not a reaction: the repeated-opener rule leaves it alone
+DEFAULT_BANNED_PRAISE = r'\b(amazing|incredible|brilliant|awesome|fantastic)\b'  # persona.BANNED_PRAISE_SRC replaces it when wired
+_TERMINAL = re.compile(r'[.!?\u061f\u3002\uff01\uff1f\u0964]+$')
+_CLOSERS = re.compile('[\\s"\'\u201d\u2019\u00bb)\\]*_`]+$')
+_NUMBER = re.compile(r'[0-9]+(?:[.,][0-9]+)*')
+_THOUSANDS = re.compile(r'[0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]+)?')
+_TRIM = ' ,;:\u2014\u2013-'
+GUARD_STATS = ('dropped_after_question', 'dropped_praise', 'dropped_repeat_opener', 'capped_words', 'dropped_unknown_number', 'dropped_unverified_claim')
+
+# Figures a reply may state are compared as numerals, however they are written (red L3): full-width and other compatibility digits fold to ASCII (NFKC),
+# invisible format characters are dropped, and spelled-out numbers become digits ("forty percent" -> "40 percent", "twenty-five" -> "25", "two hundred" -> "200").
+# Magnitude words stay words, exactly as "2 million" has always been the figure 2. Words for 0 and 2-99 in the interview languages; "one" only inside a longer run
+# (a lone "one" is the pronoun), and no word for 1, 100 or "half" besides English (they double as articles, nouns and the French "pour cent").
+NUMBER_WORDS = {
+    'zero': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10, 'eleven': 11, 'twelve': 12, 'thirteen': 13, 'fourteen': 14,
+    'fifteen': 15, 'sixteen': 16, 'seventeen': 17, 'eighteen': 18, 'nineteen': 19, 'twenty': 20, 'thirty': 30, 'forty': 40, 'fifty': 50, 'sixty': 60, 'seventy': 70, 'eighty': 80, 'ninety': 90,
+    'hundred': 100,
+    'deux': 2, 'trois': 3, 'quatre': 4, 'cinq': 5, 'sept': 7, 'huit': 8, 'dix': 10, 'onze': 11, 'douze': 12, 'treize': 13, 'quatorze': 14, 'quinze': 15, 'seize': 16, 'vingt': 20, 'trente': 30,
+    'quarante': 40, 'cinquante': 50, 'soixante': 60, 'quatrevingt': 80, 'quatrevingts': 80,
+    'dos': 2, 'tres': 3, 'cuatro': 4, 'cinco': 5, 'seis': 6, 'siete': 7, 'ocho': 8, 'nueve': 9, 'diez': 10, 'doce': 12, 'trece': 13, 'catorce': 14, 'quince': 15, 'veinte': 20, 'treinta': 30,
+    'cuarenta': 40, 'cincuenta': 50, 'sesenta': 60, 'setenta': 70, 'ochenta': 80, 'noventa': 90,
+    'dois': 2, 'tr\u00eas': 3, 'quatro': 4, 'sete': 7, 'oito': 8, 'dez': 10, 'vinte': 20, 'trinta': 30, 'quarenta': 40, 'cinquenta': 50, 'sessenta': 60, 'oitenta': 80,
+    'zwei': 2, 'drei': 3, 'vier': 4, 'f\u00fcnf': 5, 'sechs': 6, 'sieben': 7, 'acht': 8, 'neun': 9, 'zehn': 10, 'elf': 11, 'zw\u00f6lf': 12, 'zwanzig': 20, 'drei\u00dfig': 30, 'vierzig': 40,
+    'f\u00fcnfzig': 50, 'sechzig': 60, 'siebzig': 70, 'achtzig': 80, 'neunzig': 90,
+    'due': 2, 'tre': 3, 'quattro': 4, 'cinque': 5, 'sette': 7, 'otto': 8, 'nove': 9, 'dieci': 10, 'venti': 20, 'trenta': 30, 'quaranta': 40, 'cinquanta': 50, 'sessanta': 60, 'settanta': 70,
+    'ottanta': 80, 'novanta': 90,
+    'twee': 2, 'drie': 3, 'vijf': 5, 'zes': 6, 'zeven': 7, 'negen': 9, 'tien': 10, 'twintig': 20, 'dertig': 30, 'veertig': 40, 'vijftig': 50, 'zestig': 60, 'zeventig': 70, 'tachtig': 80, 'negentig': 90,
+}
+NUMBER_CONNECTORS = ('and', 'y', 'et', 'und', 'e', 'en')  # between two number words: "thirty and five", "treinta y cinco"
+_NUM_ALT = '|'.join(sorted(NUMBER_WORDS, key=lambda w: (-len(w), w)))
+_L = r'[^\W\d_]'  # a letter
+_NUM_RUN = re.compile(r'(?<!' + _L + r')(?:' + _NUM_ALT + r')(?:(?:[\s-]+(?:' + '|'.join(NUMBER_CONNECTORS) + r')[\s-]+|[\s-]+)(?:' + _NUM_ALT + r'))*(?!' + _L + r')', re.I)
+_FOLD = re.compile(r'(?<!' + _L + r')(' + _NUM_ALT + r')fold(?!' + _L + r')', re.I)
+_HALF = re.compile(r'(?<!' + _L + r')half(?!' + _L + r')', re.I)
+_SPLIT = re.compile(r'[\s-]+')
+_QUATRE_VINGT = re.compile(r'(?<!' + _L + r')quatre[\s-]+vingts?(?!' + _L + r')', re.I)  # 80, not 4 + 20
+
+
+def _run_value(run):
+    """The number a run of number words says, or None when it is a lone "one"."""
+    parts = [w for w in _SPLIT.split(run.lower()) if w and w not in NUMBER_CONNECTORS]
+    if parts == ['one']: return None
+    total = 0
+    for w in parts:
+        v = NUMBER_WORDS.get(w, 0)
+        total = (total or 1) * v if w == 'hundred' else total + v
+    return total
+
+
+def _digit_reading(run):
+    """A run of single-digit words ("four zero", "deux cinq") can also be read digit by digit: "40", "25". None when it is not such a run."""
+    parts = [w for w in _SPLIT.split(run.lower()) if w and w not in NUMBER_CONNECTORS]
+    if len(parts) < 2 or any(w not in NUMBER_WORDS or NUMBER_WORDS[w] > 9 for w in parts): return None
+    return int(''.join(str(NUMBER_WORDS[w]) for w in parts))
+
+
+def _digits(match):
+    v = _run_value(match.group())
+    if v is None: return match.group()
+    d = _digit_reading(match.group())
+    return f' {v} ' if d is None or d == v else f' {v} {d} '
+
+
+# The zero of each script's decimal digits (Arabic-Indic, Extended Arabic-Indic, Devanagari, Bengali, Tamil, Telugu, Thai, Myanmar): a figure written in them is the same figure.
+DIGIT_ZEROS = (0x660, 0x6F0, 0x966, 0x9E6, 0xBE6, 0xC66, 0xE50, 0x1040)
+_DIGITS = {z + i: 48 + i for z in DIGIT_ZEROS for i in range(10)}
+# Other ways to say a figure (red M10): a roman numeral before a percent word ("XL percent"), "a dozen", "a couple of million", a product ("4x4"), and the compound
+# numerals of German and Dutch written as one word ("dreihunderttausend"), which cannot be read here: such a word stands for an unknown figure ('?').
+PERCENT_WORDS = r'(?:%|percent|per[\s-]?cent|pour[\s-]cent|prozent|por[\s-]ciento|por[\s-]cento|per[\s-]cento|procent)'
+_ROMAN = re.compile(r'(?<!' + _L + r')([ivxlcdm]{2,8})(?=\s*' + PERCENT_WORDS + r'(?!' + _L + r'))')
+_ROMAN_VALID = re.compile(r'm{0,3}(?:cm|cd|d?c{0,3})(?:xc|xl|l?x{0,3})(?:ix|iv|v?i{0,3})')
+_ROMAN_VALUES = {'i': 1, 'v': 5, 'x': 10, 'l': 50, 'c': 100, 'd': 500, 'm': 1000}
+_DOZEN = re.compile(r'(?<!' + _L + r')dozen(?!' + _L + r')')
+_COUPLE = re.compile(r'(?<!' + _L + r')couple(?=\s+of\s+(?:million|thousand|billion|hundred)(?!' + _L + r'))')
+_PRODUCT = re.compile(r'(?<![0-9.,])([0-9]+)\s*[x\u00d7*]\s*([0-9]+)(?![0-9.,])')
+_COMPOUND = re.compile(r'(?<!' + _L + r')' + _L + r'*(?:hundert|tausend|honderd|duizend)' + _L + r'*(?!' + _L + r')')
+
+
+def _roman(match):
+    s = match.group(1)
+    if not _ROMAN_VALID.fullmatch(s): return s
+    total = 0
+    for a, b in zip(s, s[1:] + ' '):
+        v = _ROMAN_VALUES[a]
+        total += -v if b != ' ' and _ROMAN_VALUES[b] > v else v
+    return f' {total} '
+
+
+def figures(text):
+    """Every figure in a text as a numeral (digits in any common script, full-width digits, spelled-out numbers, roman numerals before a percent word, "a dozen",
+    products and one-word compound numerals alike). Folded first (textfold.fold): look-alike letters of other scripts are the Latin letter."""
+    text = fold(text).translate(_DIGITS)
+    text = _HALF.sub(' 0.5 ', _FOLD.sub(lambda m: f' {_run_value(m.group(1))} ', _QUATRE_VINGT.sub('quatrevingt', text)))
+    text = _COUPLE.sub(' 2 ', _DOZEN.sub(' 12 ', _ROMAN.sub(_roman, text)))
+    extra = ['?'] if _COMPOUND.search(text) else []
+    products = [str(int(a) * int(b)) for a, b in _PRODUCT.findall(text)]
+    return [_number(m) for m in _NUMBER.findall(_NUM_RUN.sub(_digits, text))] + products + extra
+
+
+def has_unchecked_script(text):
+    """True when the text has a letter outside the Latin script (Cyrillic, Arabic, CJK, Greek ...): no number table exists for those languages, so a spelled-out figure
+    in them cannot be read (red M10). Summary mode voices no sentence like that."""
+    return any(c.isalpha() and c not in '\u00aa\u00ba' and not unicodedata.name(c, 'LATIN').startswith('LATIN') for c in unicodedata.normalize('NFKC', str(text)))
+
+
+# A reply sentence that asserts something was checked, approved or confirmed (red L3, red L4): the interviewer has verified nothing and approves nothing, and her
+# words are spoken to the consultant as if they were a status. Only a server status line may say so (ReplyGuard allow_status). A sentence that denies it, hedges it or asks
+# about it is fine ("that figure is not verified yet", "a reviewer will approve it later", "was it approved?").
+UNVERIFIED_CLAIM_SRC = (r"\b(?:verified|verify|verifies|verifying|approved|approves?|approving|validated|validates?|validating|certified|signed[\s-](?:(?:it|this|that|them)[\s-])?off|endorsed|"
+                        r"confirmed (?:by|with)|checked with|authori[sz]ed by|cleared by)\b")
+CLAIM_HEDGE_SRC = (r"\b(?:not|never|no|nothing|nobody|neither|nor|yet|until|unless|before|once|if|whether|without|cannot|need(?:s|ed)? to|has to|have to|must|should|will|would|could|"
+                   r"might|may|be|being|still)\b|n[\u2019']t\b")
+# The same two lists for the other bank languages (red M10), matched on the accent-free folded text (textfold.plain), so "vérifié", "verifie" and a Cyrillic-е "vеrifie" are one word.
+# A term ending in * is a stem (any letters may follow); a space inside a term is any run of spaces or hyphens. Wording hints only: a hedge anywhere in the sentence lets it through,
+# so a denial, a future, a question or a condition is never dropped, exactly as for English.
+CLAIM_TERMS = {
+    'fr': ['verifi*', 'approuv*', 'valide', 'validee*', 'valides', 'valider', 'validant', 'certifi*', 'autorise* par', 'confirme* par', 'confirme* avec', 'controle* par', 'signe* par', 'avalise*', 'homologue*', 'entérine*'],
+    'es': ['verific*', 'aprob*', 'valid*', 'certific*', 'autorizad* por', 'confirmad* por', 'confirmad* con', 'visto bueno', 'refrendad*', 'firmad* por'],
+    'it': ['verific*', 'approv*', 'valid*', 'certific*', 'autorizzat* da', 'confermat* da', 'confermat* con', 'firmat* da', 'convalid*', 'omologat*'],
+    'pt': ['verific*', 'aprov*', 'valid*', 'certific*', 'autorizad* por', 'confirmad* por', 'confirmad* com', 'assinad* por', 'homologad*'],
+    'de': ['gepruf*', 'freigegeben', 'freigabe', 'genehmig*', 'verifizier*', 'validier*', 'zertifizier*', 'abgesegnet', 'abgenommen', 'autorisiert', 'bestatigt von', 'bestatigt durch', 'kontrolliert von', 'uberpruf*', 'bewilligt'],
+    'nl': ['geverifieerd', 'verifieer*', 'gecontroleerd', 'goedgekeurd', 'goedkeur*', 'gevalideerd', 'valideer*', 'gecertificeerd', 'bevestigd door', 'bevestigd met', 'geautoriseerd', 'afgetekend', 'akkoord'],
+}
+HEDGE_TERMS = {
+    'fr': ['ne', "n'", 'pas', 'jamais', 'aucun*', 'rien', 'personne', 'sans', 'avant', 'jusqu*', 'tant que', 'si', "s'", 'sera', 'seront', 'devra', 'devront', 'doit', 'doivent', 'faut', 'pourra', 'pourrait', 'pourraient', 'serait', 'sauf', 'afin'],
+    'es': ['no', 'ni', 'nunca', 'jamas', 'nadie', 'nada', 'sin', 'antes de', 'hasta que', 'si', 'sera', 'seran', 'debera', 'debe', 'deben', 'tiene que', 'tendra', 'podria', 'podra', 'aun', 'todavia', 'salvo'],
+    'it': ['non', 'mai', 'nessun*', 'niente', 'nulla', 'senza', 'prima di', 'finche', 'se', 'sara', 'saranno', 'dovra', 'deve', 'devono', 'potrebbe', 'potra', 'ancora', 'purche'],
+    'pt': ['nao', 'nunca', 'ninguem', 'nada', 'sem', 'antes de', 'ate que', 'se', 'sera', 'serao', 'devera', 'deve', 'devem', 'tem que', 'podera', 'poderia', 'ainda', 'salvo'],
+    'de': ['nicht', 'nie', 'niemals', 'kein*', 'nichts', 'niemand', 'ohne', 'bevor', 'bis', 'wenn', 'ob', 'wird', 'werden', 'muss', 'mussen', 'soll', 'sollte', 'konnte', 'noch', 'erst', 'falls'],
+    'nl': ['niet', 'nooit', 'geen', 'niemand', 'niets', 'zonder', 'voordat', 'tot', 'als', 'zal', 'zullen', 'moet', 'moeten', 'zou', 'zouden', 'nog', 'pas', 'tenzij'],
+}
+_L_ = r'[^\W\d_]'  # a letter
+
+
+def _terms_re(terms):
+    """One case-insensitive regex for a term list: whole words, a trailing * for a stem, a space for any run of spaces and hyphens."""
+    alts = []
+    for t in terms:
+        stem = t.endswith('*')
+        body = r'[\s-]+'.join(re.escape(w) for w in plain(t.rstrip('*')).split(' ')) + (_L_ + '*' if stem else '')
+        alts.append(body + ('' if stem else '(?!' + _L_ + ')'))
+    return re.compile(r'(?<!' + _L_ + r')(?:' + '|'.join(alts) + ')', re.I)
+
+
+_CLAIM = re.compile(UNVERIFIED_CLAIM_SRC, re.I)
+_HEDGE = re.compile(CLAIM_HEDGE_SRC, re.I)
+_CLAIMS = _terms_re([t for terms in CLAIM_TERMS.values() for t in terms])
+_HEDGES = _terms_re([t for terms in HEDGE_TERMS.values() for t in terms])
+
+
+def asserts_verification(text):
+    """True when the sentence says something was verified, approved or confirmed by someone, without a hedge or a denial (the seven bank languages; folded text)."""
+    t = plain(text).replace('\u2019', "'")
+    return bool(_CLAIM.search(t) or _CLAIMS.search(t)) and not (_HEDGE.search(t) or _HEDGES.search(t))
+
+
+EDGE_CONSTANTS = {'DIGIT_ZEROS': list(DIGIT_ZEROS), 'NUMBER_WORDS': NUMBER_WORDS, 'NUMBER_CONNECTORS': list(NUMBER_CONNECTORS), 'UNVERIFIED_CLAIM_SRC': UNVERIFIED_CLAIM_SRC, 'CLAIM_HEDGE_SRC': CLAIM_HEDGE_SRC,
+                  'CLAIM_TERMS': CLAIM_TERMS, 'HEDGE_TERMS': HEDGE_TERMS, 'PERCENT_WORDS': PERCENT_WORDS}
+
+
+def _words(text):
+    """The words of a text: whitespace-separated tokens with a letter or digit (a dash or a bullet is not a word)."""
+    return [t for t in text.split() if any(c.isalnum() for c in t)]
+
+
+def _norm(text):
+    """Lower case, apostrophes and punctuation removed, whitespace collapsed: how two reactions are compared."""
+    text = text.lower().replace("'", '').replace('\u2019', '')
+    return ' '.join(''.join(c if c.isalnum() or c.isspace() else ' ' for c in text).split())
+
+
+def _number(token):
+    """A numeral in one form, so '35%' and '35', '1,200' and '1200', '3.50' and '3.5' are the same figure."""
+    token = token.replace(',', '') if _THOUSANDS.fullmatch(token) else token.replace(',', '.')
+    return token.rstrip('0').rstrip('.') if '.' in token else token
+
+
+def _is_question(sentence):
+    """A finished sentence whose closing punctuation holds a question mark ('?', the full-width one or the Arabic one), quotes and markup aside."""
+    m = _TERMINAL.search(_CLOSERS.sub('', sentence))
+    return bool(m) and ('?' in m.group() or '\uff1f' in m.group() or '\u061f' in m.group())
+
+
+def _first_words(text, count):
+    """The start of text up to its count-th word, trailing commas and dashes trimmed (an exact slice)."""
+    seen = 0
+    for m in re.finditer(r'\S+', text):
+        if any(c.isalnum() for c in m.group()):
+            seen += 1
+            if seen >= count:
+                return text[:m.end()].rstrip(_TRIM) if count > 0 else ''
+    return text if count > 0 else ''
+
+
+def _clause_cut(text, count):
+    """The start of text up to its count-th word, ended at the last clause mark (comma, semicolon, colon, dash) in its second half when it has one."""
+    head = _first_words(text, count)
+    at = max(head.rfind(c) for c in ',;:\u2014\u2013')
+    return head[:at].rstrip(_TRIM) if at >= len(head) // 2 and at > 0 else head
+
+
+class ReplyGuard:
+    """Streaming filter over the spoken pieces (Phrases) of one reply. It enforces the shape of a reply in code, whatever the
+    model wrote: at most one question, no empty praise, no repeated reaction, a short reply, and (in summary mode) no number
+    that is not one of the given facts.
+
+    push(piece) returns the pieces to voice: exact slices of the piece (so the on-screen text can be cut at them), possibly
+    trimmed or none. done turns true once the first question sentence has been reached (voiced or not) or the word cap has cut
+    the reply; the caller then stops reading the model stream. stats counts each rule's drops, never text.
+
+    Options: banned_praise, a regex source (case-insensitive); recent_openers, the leading reaction of the last replies
+    (only the last 3 count); max_words, None for no cap; summary_facts, None, or the list of figures the reply may use
+    (an empty list allows none): summary mode; allow_status, True for a factual status line from the server (else a sentence that says something was verified or approved is dropped).
+
+    A sentence is judged when its first piece arrives. A first clause already voiced is not taken back, and the rest of that
+    sentence follows it (a dropped first clause drops the rest). Words are whitespace-separated: a language written without
+    spaces is not capped."""
+
+    def __init__(self, banned_praise=None, recent_openers=(), max_words=GUARD_MAX_WORDS, summary_facts=None, allow_status=False):
+        self._praise = re.compile(DEFAULT_BANNED_PRAISE if banned_praise is None else banned_praise, re.I)
+        self._openers = [o for o in (_norm(o) for o in list(recent_openers or ())[-3:]) if o]
+        self._max = max_words
+        self._allowed = None if summary_facts is None else {m for fact in summary_facts for m in figures(fact)}
+        self._allow_status = bool(allow_status)  # a factual status line from the server may say that something was approved
+        self._stats = dict.fromkeys(GUARD_STATS, 0)
+        self._spoken = 0  # words voiced so far
+        self._open = None  # the sentence in progress when the last piece ended mid-sentence: 'voiced' or 'dropped'
+        self._lead = True  # the next sentence that gets this far is the reply's leading one
+        self._stop = None  # 'question' or 'cap'
+        self._finish = False  # the cap was reached inside a sentence that is being finished
+
+    @property
+    def done(self):
+        return self._stop is not None
+
+    @property
+    def stats(self):
+        return dict(self._stats)
+
+    def _repeats_opener(self, text):
+        words = _words(text)
+        n = _norm(text)
+        return bool(n) and len(words) <= REACTION_MAX_WORDS and any(n == o or n.startswith(o + ' ') or o.startswith(n + ' ') for o in self._openers)
+
+    def _judge(self, text, ended, continuing):
+        """(text to voice or '', whether the sentence is the first question). Applies the rules to one sentence or clause."""
+        stats = self._stats
+        question = ended and _is_question(text)
+        if continuing and self._open == 'dropped':
+            return '', question
+        if not continuing and not question:
+            if len(_words(text)) <= PRAISE_MAX_WORDS and self._praise.search(text):
+                stats['dropped_praise'] += 1
+                return '', question
+            if self._lead:
+                self._lead = False
+                if self._repeats_opener(text):
+                    stats['dropped_repeat_opener'] += 1
+                    return '', question
+        if not question and not self._allow_status and asserts_verification(text):
+            stats['dropped_unverified_claim'] += 1
+            return '', question
+        if self._allowed is not None and (has_unchecked_script(text) or any(m not in self._allowed for m in figures(text))):
+            stats['dropped_unknown_number'] += 1
+            return '', question
+        if self._max is not None:
+            n = len(_words(text))
+            if self._finish or n > self._max - self._spoken:
+                if continuing or not self._spoken:
+                    # A sentence already begun (or the reply's first one) is finished, never cut: the cap lands on its end. Only a sentence that
+                    # runs on far past the cap is cut, at a clause when it has one.
+                    if not self._finish:
+                        stats['capped_words'] += 1
+                        self._finish = True
+                    ceiling = self._max + CAP_SLACK_WORDS - self._spoken
+                    if n > ceiling:
+                        self._stop = 'cap'
+                        return _clause_cut(text, ceiling), False
+                    if ended:
+                        self._stop = 'cap'
+                    return text, question
+                stats['capped_words'] += 1
+                self._stop = 'cap'
+                return '', False  # a sentence that does not fit whole is left out
+        return text, question
+
+    def push(self, piece):
+        piece = piece or ''
+        cuts, start, spans = _boundaries(piece + ' '), 0, []
+        for end, nxt in cuts:
+            if piece[start:end].strip():
+                spans.append((start, min(end, len(piece)), True))
+            start = nxt
+        if piece[start:].strip():
+            spans.append((start, len(piece), False))
+        runs, last = [], -2
+        for i, (a, b, ended) in enumerate(spans):
+            while a < b and piece[a].isspace():
+                a += 1
+            if self._stop:
+                if self._stop == 'question':
+                    self._stats['dropped_after_question'] += 1
+                continue
+            text, question = self._judge(piece[a:b].strip(), ended, i == 0 and self._open is not None)
+            if text:
+                b = a + len(text)
+                self._spoken += len(_words(text))
+                if last == i - 1:
+                    runs[-1][1] = b
+                else:
+                    runs.append([a, b])
+                last = i
+            self._open = None if ended else ('voiced' if text else 'dropped')
+            if question and not self._stop:
+                self._stop = 'question'
+        return [piece[a:b] for a, b in runs]
 
 
 class KyutaiSpeech:

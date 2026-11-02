@@ -1,0 +1,50 @@
+{
+ "id": "S6",
+ "title": "A correction creates a new revision: the old detail stays in the history, the read-back and the draft carry the corrected one",
+ "pack": "07_Evaluation_and_QA/ATLAS_Evaluation_Framework.md section 3, scenario 6; Conversation Examples 'Example 7'",
+ "audit": [
+  "start",
+  "consent_given",
+  "request_summary"
+ ],
+ "turns": [
+  {
+   "said": "I led the whole migration project from start to finish.",
+   "file": [
+    {
+     "field": "contribution",
+     "quote": "I led the whole migration project"
+    }
+   ],
+   "expect": {}
+  },
+  {
+   "said": "Actually, correction: I only led the data migration, not the whole project.",
+   "file": [
+    {
+     "field": "contribution",
+     "quote": "I only led the data migration",
+     "supersedes": "D-001"
+    }
+   ],
+   "expect": {
+    "move": {
+     "kind": "accept_and_move",
+     "intent": "correction",
+     "why": "correction"
+    },
+    "ack": "correction_thanks",
+    "scripted_says": "I'll narrow that to the part you described\\."
+   }
+  },
+  {
+   "said": "That is everything, I am done.",
+   "elapsed": 960,
+   "expect": {
+    "move": {
+     "kind": "summary"
+    }
+   }
+  }
+ ]
+}

@@ -2,6 +2,7 @@
 // Privacy: the request carries only the story's shape (fields covered, statuses, flags, stage) and never
 // transcript text, quotes or project names. Guard rails: JEV only chooses when the ledger's rules leave a
 // free choice, and only overrides the default when clearly better and confident. No key or bad answer = no change.
+import { aiOff } from './kill-switches.js';
 import { FIELDS } from './policy.generated.js';
 
 export const LEVELS = ['Adds nothing useful now', 'Minor value', 'Useful, not the priority', 'Strong next step', 'The single most valuable next question'];
@@ -50,7 +51,7 @@ export function choose(plan, guidance, scores) {
 }
 
 export function jevRanker(env, fetcher = fetch) {
-  if (!env.TYPESAFE_API_KEY) return null;
+  if (!env.TYPESAFE_API_KEY || aiOff(env)) return null; // X1 (red M2): the AI kill switch
   return async (plan, guidance) => {
     const fields = candidates(plan);
     if (fields.length < 2) return null;

@@ -2,7 +2,7 @@
 No test in this file claims real NVIDIA inference or a live enterprise connection.
 """
 from pathlib import Path
-import ast,json,os,shutil
+import ast,json,os,re,shutil
 from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1]
 ADAPTER=(ROOT/'tests/fixtures/browser-adapter.js').read_text()
@@ -16,11 +16,14 @@ def load(context,adapter=False,reduced=False):
  p.on('pageerror',lambda e:ERRORS.append(str(e)))
  if reduced:p.emulate_media(reduced_motion='reduce')
  h=(ROOT/'ATLAS_Voice_Studio.html').read_text()
- if adapter:h=h.replace('/* SERVER_RUNTIME */',ADAPTER).replace("new URL('/api/voice',location.href)","new URL('/api/voice','http://localhost:8080')").replace("if(!['http:','https:'].includes(location.protocol))",'if(false)')
+ if adapter:
+  # The adapter is test code, so it goes in as an init script (the page's own scripts are hash-pinned by its <meta> CSP), and rewriting the page's script text means dropping that <meta>.
+  p.add_init_script(ADAPTER);p.goto('about:blank');h=re.sub(r'<meta content="[^"]*" http-equiv="Content-Security-Policy"/>','',h,count=1).replace("new URL('/api/voice',location.href)","new URL('/api/voice','http://localhost:8080')").replace("if(!['http:','https:'].includes(location.protocol))",'if(false)')
  p.set_content(h,wait_until='load');p.wait_for_timeout(200);return p
 def wait(p,phase):p.wait_for_function('(v)=>AtlasVoice.status().phase===v',arg=phase,timeout=6000)
 def project(p):
  p.locator('#studioProject').click();p.locator('#studioProjectDrawer [data-action=new-project]').click()
+ p.evaluate("document.getElementById('projectMore').open=true") # W1: these fields live under "More details"
  for k,v in {'projectTitle':'An authorized project alias','consultantName':'Alex Example','consultantRole':'Data engineer','sectorInput':'Financial services'}.items():p.locator('#'+k).fill(v)
  p.locator('#projectStage').select_option('Pilot');p.locator('#projectForm button[type=submit]').click()
 def start(p):
@@ -34,15 +37,15 @@ with sync_playwright() as pw:
   check('Default orb uses Mantu violet',p.evaluate('AtlasOrbUI.inspect().palette==="mantu"'))
   check('Disconnected state is explicit',p.locator('#voiceState').text_content()=='Not connected')
   check('Idle has no microphone',p.evaluate('!AtlasVoice.status().hasMicrophone'))
-  p.locator('#studioPreview').click();p.wait_for_timeout(160)
-  check('Preview is labelled separately from live voice',p.locator('#previewNotice').is_visible() and 'VISUAL PREVIEW' in p.locator('#previewNotice').inner_text())
+  p.evaluate("document.querySelector('.motion-language').open=true");p.locator('#studioPreview').click();p.wait_for_timeout(160)
+  check('Preview is labelled separately from live voice',p.locator('#previewNotice').is_visible() and 'Visual preview' in p.locator('#previewNotice').inner_text())
   check('Preview does not change transport state',p.evaluate('AtlasVoice.status().phase==="idle"'))
   check('Preview never opens the microphone',p.evaluate('!AtlasVoice.status().hasMicrophone'))
   check('Preview never invents agent speech',not p.locator('#agentText').text_content())
   check('Preview does not create a project',p.evaluate('(()=>{const c=ATLAS_VOICE_BRIDGE.context();return c===null||c.isNew===true;})()'))
   p.wait_for_timeout(4700)
   check('Preview reaches its speaking animation without claiming inference',p.evaluate('AtlasOrbUI.inspect().state==="speaking" && AtlasVoice.status().phase==="idle"'))
-  p.locator('#studioPreview').click();check('Stopping preview restores disconnected label',p.locator('#orbStateCaption').text_content()=='Not connected')
+  p.evaluate("document.querySelector('.motion-language').open=true");p.locator('#studioPreview').click();check('Stopping preview restores disconnected label',p.locator('#orbStateCaption').text_content()=='Not connected')
   p.locator('#studioAppearance').click();p.locator('button[data-palette=blue]').click()
   check('Jarvis-blue palette works',p.evaluate('AtlasOrbUI.inspect().palette==="blue"'))
   p.locator('button[data-palette=mantu]').click();check('Mantu palette restores',p.evaluate('AtlasOrbUI.inspect().palette==="mantu"'))
@@ -74,40 +77,40 @@ with sync_playwright() as pw:
   p.locator('#voiceConnectionDialog [data-voice-close]').click()
   # Project authoring and generated story are real DOM operations; native storage is unavailable in this set_content origin.
   project(p);check('Project context binds to the selected local project',p.locator('#orbProjectTitle').inner_text()=='An authorized project alias')
-  p.locator('#studioCloseContext').click();p.locator('#voiceTextToggle').click();check('Original text note editor retained',p.locator('.interview-layout').is_visible())
+  (p.locator('#studioCloseContext').click() if p.locator('#studioCloseContext').is_visible() else None);p.locator('#voiceTextToggle').click();check('Original text note editor retained',p.locator('.interview-layout').is_visible())
   p.locator('#answerInput').fill('I implemented a normalization pipeline for a pilot intake queue. The architecture lead owned the overall target design.')
   p.locator('#nextButton').click();check('Actual authored answer saved',p.evaluate('ATLAS_VOICE_BRIDGE.context().project.answers[0].includes("normalization")'))
   p.locator('#voiceTextToggle').click();p.locator('header [data-view=projects]').click();check('Project library remains usable',p.locator('#projectCards').is_visible() and 'authorized project alias' in p.locator('#projectCards').inner_text())
   check('Project page exits dark conversation mode',not p.evaluate('document.body.classList.contains("studio-view")'))
   p.locator('header [data-view=interview]').click();check('Conversation view restores dark orb layout',p.evaluate('document.body.classList.contains("studio-view")'))
   # Live lifecycle is tested with explicitly faked provider/microphone APIs.
-  live=load(context,adapter=True);project(live);live.locator('#studioCloseContext').click()
+  live=load(context,adapter=True);project(live);(live.locator('#studioCloseContext').click() if live.locator('#studioCloseContext').is_visible() else None)
   live.locator('#voiceStart').click();live.locator('#voiceConsentDialog').wait_for(state='visible')
   check('Consent is required before a microphone request',live.evaluate('__TEST.micStarts===0') and live.locator('#voiceConsentStart').is_disabled())
   live.locator('#modelConsent').check();live.locator('#voiceConsentStart').click();wait(live,'live');live.wait_for_timeout(250)
   check('Adapter model playback drives orb speaking state',live.evaluate('AtlasOrbUI.inspect().state==="speaking"'))
   check('Actual supplied adapter meter drives animation',live.evaluate('AtlasOrbUI.inspect().signals.output>0'))
   check('Preview unavailable during live connection',live.locator('#studioPreview').is_disabled())
-  check('Mute and end are visible during live connection',live.locator('#voiceMute').is_visible() and live.locator('#voiceEnd').is_visible())
+  check('Mute and Stop interview are visible during live connection',live.locator('#voiceMute').is_visible() and live.locator('#voiceEnd').is_visible())
   live.locator('#orbActivate').click();check('Orb mutes microphone track',live.evaluate('AtlasVoice.status().tracks[0].enabled===false'))
   check('Mute does not suppress agent playback state',live.evaluate('AtlasOrbUI.inspect().state==="speaking"'))
   live.evaluate('__TEST.speaker=0');live.wait_for_timeout(450);check('Muted silence stops the speaking state',live.evaluate('AtlasOrbUI.inspect().state==="muted"'))
   live.locator('#orbActivate').click();live.wait_for_timeout(200);check('Unmute resumes listening without new permission',live.evaluate('__TEST.micStarts===1 && AtlasOrbUI.inspect().state==="listening"'))
   check('Agent captions did not become consultant facts',not any(live.evaluate('ATLAS_VOICE_BRIDGE.context().project.answers')))
-  live.locator('#voiceEnd').click();wait(live,'idle');live.wait_for_timeout(150)
-  check('End closes microphone tracks',live.evaluate('__TEST.tracks.every(t=>t.readyState==="ended")'))
-  check('End clears levels and playback claim',live.evaluate('AtlasOrbUI.inspect().state==="idle" && AtlasOrbUI.inspect().signals.output===0'))
-  check('Privacy text no longer claims streaming after End','No audio is streaming' in live.locator('#voicePrivacy').inner_text())
+  live.locator('#voiceEnd').click(); live.locator('#voiceEndConfirm').click();wait(live,'idle');live.wait_for_timeout(150)
+  check('Stop closes microphone tracks',live.evaluate('__TEST.tracks.every(t=>t.readyState==="ended")'))
+  check('Stop clears levels and playback claim',live.evaluate('AtlasOrbUI.inspect().state==="idle" && AtlasOrbUI.inspect().signals.output===0'))
+  check('Privacy text no longer claims streaming after Stop','No audio is streaming' in live.locator('#voicePrivacy').inner_text())
   start(live);live.locator('header [data-view=projects]').click();check('Changing screens keeps the conversation live with a visible live pill',live.evaluate('__TEST.tracks.at(-1).readyState==="live"') and live.locator('#voiceLivePill').is_visible())
-  live.locator('#voiceLivePill [data-pill=end]').click();check('Ending from the live pill closes active audio',live.evaluate('__TEST.tracks.every(t=>t.readyState==="ended")'))
+  live.locator('#voiceLivePill [data-pill=end]').click();live.locator('#voiceEndConfirm').click();check('Stopping from the live pill closes active audio',live.evaluate('__TEST.tracks.every(t=>t.readyState==="ended")'))
   # Restart: throw the conversation away (discard, never end) and start a new one with the same consent.
   live.locator('header [data-view=interview]').click();live.wait_for_timeout(100);start(live);live.evaluate('__TEST.sent=[];__TEST.starts=0')
-  check('Restart is offered during a conversation',live.locator('#voiceRestart').is_visible() and live.locator('#voiceRestart').is_enabled() and not live.locator('#voiceStart').is_visible())
-  mics=live.evaluate('__TEST.micStarts');live.locator('#voiceRestart').click();live.locator('#voiceRestartDialog').wait_for(state='visible')
+  live.locator('#voiceEnd').click();check('Restart is not a second discard option in the Stop sheet (W1: one Discard everything), but stays enabled for the state machine',live.locator('#voiceRestart').is_hidden() and live.locator('#voiceRestart').is_enabled() and not live.locator('#voiceStart').is_visible());live.locator('#voiceEndDialog [data-voice-close]').first.click()
+  mics=live.evaluate('__TEST.micStarts');live.locator('#voiceEnd').click();live.locator('#voiceRestart').dispatch_event('click');live.locator('#voiceRestartDialog').wait_for(state='visible')
   check('Restart asks first and says nothing will be saved','Nothing from it is saved' in live.locator('#voiceRestartText').inner_text())
   live.keyboard.press('Escape');live.wait_for_timeout(150)
   check('Keep talking leaves the conversation running',live.evaluate(f'AtlasVoice.status().phase==="live" && __TEST.micStarts==={mics} && !__TEST.sent.includes("discard")') and not live.locator('#voiceRestartDialog').is_visible())
-  live.locator('#voiceRestart').focus();live.keyboard.press('Enter');live.locator('#voiceRestartDialog').wait_for(state='visible')
+  live.locator('#voiceEnd').click();live.locator('#voiceRestart').dispatch_event('click');live.locator('#voiceRestartDialog').wait_for(state='visible')
   live.locator('#voiceRestartConfirm').dblclick();live.wait_for_timeout(400);wait(live,'live');live.wait_for_timeout(250)
   check('Confirm discards (never ends) and starts exactly one new conversation',live.evaluate(f'__TEST.sent.includes("discard") && !__TEST.sent.includes("end") && __TEST.starts===1 && __TEST.micStarts==={mics}+1'))
   check('After a restart, keyboard focus is on a control, not lost',live.evaluate('document.activeElement && document.activeElement.tagName==="BUTTON" && !document.activeElement.disabled'))
@@ -115,16 +118,16 @@ with sync_playwright() as pw:
   check('The old microphone is released on restart',live.evaluate('__TEST.tracks.slice(0,-1).every(t=>t.readyState==="ended") && __TEST.tracks.at(-1).readyState==="live"'))
   check('Nothing from the discarded conversation was saved',not any(live.evaluate('ATLAS_VOICE_BRIDGE.context().project.answers')))
   live.set_viewport_size({'width':320,'height':740});live.wait_for_timeout(150)
-  check('Mute, Restart and End fit a 320 px phone',live.evaluate('document.documentElement.scrollWidth<=innerWidth') and all(live.locator(s).is_visible() for s in ('#voiceMute','#voiceRestart','#voiceEnd')))
+  check('Mute and Stop fit a 320 px phone',live.evaluate('document.documentElement.scrollWidth<=innerWidth') and all(live.locator(s).is_visible() for s in ('#voiceMute','#voiceEnd')))
   live.set_viewport_size({'width':1440,'height':1000});live.wait_for_timeout(100)
-  live.locator('#voiceRestart').click();live.locator('#voiceRestartDialog').wait_for(state='visible')
+  live.locator('#voiceEnd').click();live.locator('#voiceRestart').dispatch_event('click');live.locator('#voiceRestartDialog').wait_for(state='visible')
   live.evaluate('__TEST.socket.emit({type:"wrap_up"})');wait(live,'idle')
   check('If ATLAS wraps up meanwhile, the restart question closes and nothing more is discarded',not live.locator('#voiceRestartDialog').is_visible() and live.evaluate('__TEST.sent.filter(t=>t==="discard").length===1'))
   live.evaluate('__TEST.mode="error"');live.locator('#voiceStart').click();live.locator('#voiceConsentDialog').wait_for(state='visible');live.locator('#modelConsent').check();live.locator('#voiceConsentStart').click();wait(live,'error')
-  check('After an error, Restart is offered next to Start',live.locator('#voiceRestart').is_visible() and live.locator('#voiceStart').is_visible())
-  live.evaluate('__TEST.mode="normal"');live.locator('#voiceRestart').click();wait(live,'live');live.wait_for_timeout(200)
+  check('After an error, Restart is offered next to Start',live.locator('#voiceRestartQuiet').is_visible() and live.locator('#voiceStart').is_visible())
+  live.evaluate('__TEST.mode="normal"');live.locator('#voiceRestartQuiet').click();wait(live,'live');live.wait_for_timeout(200)
   check('Restart after an error starts at once (no question, no consent dialog)',not live.locator('#voiceRestartDialog').is_visible() and not live.locator('#voiceConsentDialog').is_visible())
-  live.locator('#voiceEnd').click();wait(live,'idle')
+  live.locator('#voiceEnd').click(); live.locator('#voiceEndConfirm').click();wait(live,'idle')
   # Responsive controls and reduced motion.
   for width in [320,390,768,1024,1440]:
    p.set_viewport_size({'width':width,'height':900});p.wait_for_timeout(150)

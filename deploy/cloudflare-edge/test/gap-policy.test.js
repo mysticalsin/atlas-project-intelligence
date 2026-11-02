@@ -28,9 +28,24 @@ test('the vectors cover what the spec names: analyst filed elsewhere, UNKNOWN, s
 
 test('generated gap constants (Python source of truth)', () => {
   assert.deepEqual([GAP_LIMIT_S, GAP_SPEAKING_S, GAP_WRAP_S, GAP_MAX, GAP_ATTEMPTS, GAP_ANSWER_WORDS], [300, 150, 40, 3, 2, 6]);
-  assert.deepEqual(TIME_PLAN, { depth_fraction: 0.45, closing_left_s: 210, gap_closing_left_s: 90 });
+  assert.deepEqual(TIME_PLAN, { depth_fraction: 0.45, closing_left_s: 270, gap_closing_left_s: 90 });
   assert.match(GAP_NOTE, /bracketed words such as \[company\] are masked names, never guess or ask for them/);
   assert.ok(GAP_LIST_LABEL.startsWith('UNTRUSTED GAP LIST'));
   assert.deepEqual(Object.keys(WIN_HINTS).sort(), ['confirmed', 'quantified']);
   assert.equal(TIME_UP_MESSAGE.replace('{minutes}', 5), 'The 5 minutes are up. Finishing your interview.');
+});
+
+test('v2.2 U2: "I don\'t know" / "pass" is re-angled twice before an ask is unknown; confidentiality is accepted at once; the prompt invites no skip', async () => {
+  const { GAP_REANGLES, GAP_REANGLE, GAP_REANGLE_KIND } = await import('../src/policy.generated.js');
+  assert.equal(GAP_REANGLES, 2); assert.deepEqual(GAP_REANGLE_KIND, { measurement: 'numeric', outcome: 'numeric', evidence: 'proof' });
+  for (const list of Object.values(GAP_REANGLE)) for (const q of list) assert.ok(q.split('?').length === 2 && !/skip|pass|leave it|don't have to/i.test(q), q);
+  assert.ok(!/accept 'I don't know'/.test(GAP_NOTE) && /never accept it at once and never tell them they may skip/.test(GAP_NOTE) && /confidential or they cannot share it, accept that/.test(GAP_NOTE));
+  const asks = [{ id: 'G1', field: 'outcome', label: 'Observed outcome', ask: 'x' }];
+  const st = (turns, attempts, lang) => policy.gapStatus(asks, { G1: attempts }, { G1: turns }, [], lang)[0];
+  assert.deepEqual([st(["I don't know"], 1).status, st(["I don't know", 'no idea'], 2).status, st(["I don't know", 'no idea', 'pass'], 3).status], ['open', 'open', 'unknown']);
+  assert.equal(policy.gapGuidance(asks, [st(["I don't know"], 1)]).reangle, GAP_REANGLE.numeric[0]);
+  assert.equal(policy.gapGuidance(asks, [st(["I don't know", 'next question'], 2)]).reangle, GAP_REANGLE.numeric[1]);
+  assert.equal(st(["I can't share that, it is under NDA"], 1).status, 'unknown');
+  assert.equal(st(['Maybe.', 'Depends.'], 2).status, 'deferred'); assert.equal(st(["I don't know"], 3).status, 'open', 'a refused ask is allowed its two easier angles before it is deferred');
+  assert.equal(st(['je ne sais pas', 'je passe', 'question suivante'], 3, 'fr').status, 'unknown');
 });

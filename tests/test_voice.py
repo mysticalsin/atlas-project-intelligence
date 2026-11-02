@@ -95,7 +95,7 @@ def test_memory_banks_distinct_and_stable():
 async def test_real_bidirectional_codec_and_protocol():
     e=await Env().start()
     try:
-        assert 'SERVER_RUNTIME' not in e.html and '"subjectKey"' in e.html
+        assert 'SERVER_RUNTIME' not in e.html and 'window.ATLAS_RUNTIME={' not in e.html and '"subjectKey"' in e.html
         s=await e.ws();await e.event(s,'ready')
         async def frames():
             for _ in range(90):await s.send_bytes(b'\x00\x00'*480);await asyncio.sleep(.02)
@@ -237,3 +237,13 @@ def test_private_model_launcher_refuses_unexpected_source():
     changed=transform(source)
     assert 'host="127.0.0.1"' in changed and 'access_log=None' in changed
     assert "{request.query['text_prompt']}" not in changed
+
+
+def test_project_id_is_routing_data_bounded_and_never_in_a_prompt():
+    from atlas_voice.cascade import talker_messages
+    c=project_context({**PROJECT,'projectId':'PRJ-2026-0042'})
+    assert c['projectId']=='PRJ-2026-0042'
+    assert len(project_context({**PROJECT,'projectId':'X'*500})['projectId'])==60
+    assert 'projectId' not in project_context({**PROJECT,'projectId':''})
+    assert 'PRJ-2026-0042' not in make_prompt(c)
+    assert 'PRJ-2026-0042' not in json.dumps(talker_messages(c,'',None,[]))

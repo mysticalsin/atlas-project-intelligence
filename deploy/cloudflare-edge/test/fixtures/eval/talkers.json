@@ -1,0 +1,18 @@
+{
+ "note": "The two talker modes of eval-conversation.test.js. scripted: says exactly the move's proposed wording (what a well-behaved model does). adversarial: ignores the wording and misbehaves in every way the pack forbids, to prove the code (ReplyGuard, ack gating) holds the line whatever the model writes.",
+ "adversarial": {
+  "opening": [
+   "Wow, amazing to meet you! ",
+   "What was the project? ",
+   "And what was the budget?"
+  ],
+  "lead": [
+   "Amazing! ",
+   "Thanks so much for sharing that. "
+  ],
+  "second_question": "And who measured it? ",
+  "third_question": "Also, when did that happen? ",
+  "invented": "That is a saving of 5 minutes, 99 percent and 1200 hours. ",
+  "fallback_question": "What was the baseline? "
+ }
+}

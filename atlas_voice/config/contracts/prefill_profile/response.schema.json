@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DNA profile read response (normalised, allowlisted fields only)",
+  "x-status": "draft — from Atlas side; owner to confirm",
+  "x-source": "profile.js FIELDS; WOW_ZERO_CONFIG §5",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {
+    "role": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "title": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "preferred_name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "manager_name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "manager_email": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "x-note": "Only these Atlas-side fields can come out of the connector. role is the only model-visible one; the rest are display-only."
+}

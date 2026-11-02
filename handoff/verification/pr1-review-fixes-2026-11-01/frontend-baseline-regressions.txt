@@ -1,0 +1,14 @@
+✖ PR1: late summary updates preserve unsaved correction text, focus and selection (11.557227ms)
+✖ PR1: the 100th detail and its complete quote can be inspected and withheld (2.392715ms)
+✖ PR1: sockets that open but never become ready time out, retry three times and release the microphone (213.966543ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 0
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 592.685762
+✖ PR1: late summary updates preserve unsaved correction text, focus and selection (11.557227ms)
+✖ PR1: the 100th detail and its complete quote can be inspected and withheld (2.392715ms)
+✖ PR1: sockets that open but never become ready time out, retry three times and release the microphone (213.966543ms)

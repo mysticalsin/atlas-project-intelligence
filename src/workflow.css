@@ -1,0 +1,15 @@
+/* Evidence workflow status cards (T15). Tone is a small dot before the status word (v2.2 F2, no coloured side stripe) and is always paired with words. */
+.workflow-status{margin:0 0 22px;padding:16px;border:1px solid var(--g2);border-radius:12px;background:var(--white)}
+.wf-head{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between}
+.wf-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.wf-tools select{max-width:min(100%,360px)}
+.wf-overall{margin:10px 0;color:var(--g6)}
+.wf-overall[data-overall="attention"]{font-weight:500;color:var(--p)}
+.wf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
+.wf-card{padding:12px;border:1px solid var(--g2);border-radius:var(--r-card);min-width:0}
+.wf-card-title{margin:0 0 4px;font-size:14px}
+.wf-card-status{margin:0 0 6px;font-size:12px;font-weight:500;overflow-wrap:anywhere}
+.wf-card p{margin:0 0 4px;overflow-wrap:anywhere}
+.wf-mock{display:inline-block;margin:2px 0 6px}
+.wf-note{margin:10px 0 0}
+@media (max-width:560px){.workflow-status{padding:12px}.wf-grid{grid-template-columns:1fr 1fr}}

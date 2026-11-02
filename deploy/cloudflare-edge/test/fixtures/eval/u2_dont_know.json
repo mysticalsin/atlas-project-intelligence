@@ -1,0 +1,72 @@
+{
+ "id": "U2-A",
+ "title": "\"I don't know\" is met with two easier angles on the same point, then the point is recorded open and ATLAS moves on",
+ "pack": "Tony, 2026-10-31 (v2.2 U2): challenge, do not invite a way out; DECISION_LOG D-U2-3 / D-U2-4",
+ "audit": [
+  "start",
+  "consent_given"
+ ],
+ "turns": [
+  {
+   "said": "We rebuilt the claims intake process for the insurance client during the pilot, a big change for the whole team.",
+   "expect": {
+    "move": {
+     "kind": "ask",
+     "intent": "team_ownership",
+     "field": "contribution"
+    }
+   }
+  },
+  {
+   "said": "I don't know",
+   "expect": {
+    "move": {
+     "kind": "ask",
+     "intent": "reangle_example",
+     "field": "contribution",
+     "why": "reangle:contribution:1"
+    },
+    "ack": "reangle",
+    "scripted_says": "Let me make it easier",
+    "scripted_not": "\\b(skip|pass on|don't have to|no need|leave it)\\b"
+   }
+  },
+  {
+   "said": "no idea",
+   "expect": {
+    "move": {
+     "kind": "ask",
+     "intent": "reangle_saw",
+     "field": "contribution",
+     "why": "reangle:contribution:2"
+    },
+    "ack": "reangle",
+    "scripted_says": "see or do yourself",
+    "scripted_not": "\\b(skip|pass on|don't have to|no need|leave it)\\b"
+   }
+  },
+  {
+   "said": "I really don't know that",
+   "expect": {
+    "move": {
+     "kind": "accept_and_move",
+     "why": "dont_know:contribution>ladder:outcome"
+    },
+    "ack": null,
+    "scripted_not": "\\b(skip|pass on|don't have to|no need)\\b"
+   }
+  },
+  {
+   "said": "We owned the data model and the routing rules ourselves.",
+   "expect": {
+    "not_intent": [
+     "ownership",
+     "role",
+     "team_ownership",
+     "reangle_example",
+     "reangle_saw"
+    ]
+   }
+  }
+ ]
+}

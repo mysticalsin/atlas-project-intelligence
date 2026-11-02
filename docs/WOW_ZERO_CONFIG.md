@@ -165,7 +165,7 @@ AtlasAuth.mode               // 'live' | 'offline' | 'network' | 'expired' (set 
 - **Effect.** The DO reads `memoryOff` at WebSocket connect (`worker.js:28`), which happens after this dialog, so recall follows the switch for this conversation. `rememberInterview` also checks `memoryOn` and **does not POST `/api/memory/remember` when it is off**. The server's refusal (`memory-routes.js:21`) stays as the second guard.
 - **`boot.memory` false**: no memory clause and no switch. This fixes today's false promise.
 - **Default**: memory is on when configured, as today, but now inside the consented sentence. If the DPO asks for opt-in, the DO default becomes "off unless explicitly turned on" in one line (`memory-routes.js:10`, `worker.js:28`). Nothing else changes.
-- Heading: "Ready when you are, {firstName}." only when a reliable first name exists (§5.7); otherwise the current "A conversation with ATLAS.".
+- Heading: "Ready when you are, {firstName}." only when a reliable first name exists (§5.7); otherwise the current "Your interview with ATLAS.".
 - `#consentTip`: "Your browser will then ask to use your microphone. Headphones give the clearest conversation." The admin sentence stays ("Admin mode" is asserted by `tests/autosave_browser.py:44`).
 - `#consentIdentity`: "Signed in as {name} · {email}" when a reliable name exists, otherwise "Signed in as {email}".
 - The Python gateway's non-`captureRequired` dialog (optional transcript and memory ticks) is unchanged.
@@ -538,7 +538,7 @@ CREATE TABLE IF NOT EXISTS directory_imports (batch TEXT PRIMARY KEY, source TEX
 
 **Consent (edge):**
 - Eyebrow: "BEFORE WE START".
-- Heading: "Ready when you are, {first name}." or "A conversation with ATLAS."
+- Heading: "Ready when you are, {first name}." or "Your interview with ATLAS."
 - Body (unchanged): "ATLAS will ask about this project out loud and listen to your answers. It takes fifteen minutes at most, and you can pause or stop at any time."
 - The one tick (memory on): "I agree that this conversation is transcribed and saved with a report to my project, and that, once reviewed and validated, it may be used as reference material for future Mantu projects. ATLAS also keeps a private memory of our conversations, stored with its memory service (Hindsight), so it can pick up where we left off. I can see or erase it in my profile. I am allowed to share this project's details."
 - The one tick (memory off or not configured): the same without the two memory sentences.

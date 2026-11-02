@@ -1,0 +1,42 @@
+{
+ "id": "S7",
+ "title": "Speech recognition doubts a number and a proper noun: ATLAS confirms each aloud, never converts silently",
+ "pack": "07_Evaluation_and_QA/ATLAS_Evaluation_Framework.md section 3, scenario 7; Personality doc section 8 ('Never silently convert an unclear number or proper noun')",
+ "audit": [
+  "start",
+  "consent_given"
+ ],
+ "turns": [
+  {
+   "heard": "it took twenty:0.4 five:0.4 minutes to finish the batch run every single morning",
+   "file": [
+    {
+     "field": "outcome",
+     "quote": "it took twenty five minutes to finish"
+    }
+   ],
+   "expect": {
+    "move": {
+     "kind": "confirm_asr",
+     "intent": "confirm_asr"
+    },
+    "ack": null,
+    "scripted_says": "was that twenty five\\?"
+   }
+  },
+  {
+   "heard": "no, it was thirty:0.4 five:0.4 minutes",
+   "file": [
+    {
+     "field": "outcome",
+     "quote": "it was thirty five minutes"
+    }
+   ],
+   "expect": {
+    "not_intent": [
+     "confirm_asr"
+    ]
+   }
+  }
+ ]
+}

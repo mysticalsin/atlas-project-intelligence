@@ -1,0 +1,55 @@
+{
+  "x-status": "ASSUMED: written by Atlas before the MiChat owners sent a contract. Replace every path below with the owners' real one (docs/MICHAT.md).",
+  "x-activation": "Used only when the Worker variable MICHAT_CV_CONTRACT is 'assumed'. Without it, michat_cv stays exactly as in connections.json (not_configured: mock or outbox, no outbound call).",
+  "owner": "MiChat (assumed contract, owners to confirm)",
+  "status": "configured_untested",
+  "auth": {
+    "type": "bearer",
+    "secret_names": ["MICHAT_CV_TOKEN"],
+    "secret_roles": {"token": "MICHAT_CV_TOKEN"},
+    "note": "Assumed: Authorization: Bearer <MICHAT_CV_TOKEN>. If MiChat uses an API key header instead, change type to api_key_header and set header_name."
+  },
+  "endpoints": {
+    "send": {"method": "POST", "path": "/v1/cv-entries"},
+    "health": {"method": "GET", "path": "/v1/health"}
+  },
+  "field_mapping": {
+    "entity_id": "external_id",
+    "source_revision": "external_revision",
+    "content_hash": "content_hash",
+    "approved_at": "approved_at",
+    "consultant_id": "consultant.id",
+    "profile_revision": "consultant.profile_revision",
+    "language": "cv.language",
+    "target_role": "cv.target_role",
+    "template": "cv.template",
+    "claims[].claim_id": "entries[].id",
+    "claims[].claim_type": "entries[].type",
+    "claims[].attribution": "entries[].attribution",
+    "claims[].statement": "entries[].text",
+    "claims[].statement_withheld": "entries[].text_withheld_reason",
+    "claims[].statement_language": "entries[].text_language",
+    "claims[].translation_confidence": "entries[].translation_confidence",
+    "claims[].value": "entries[].metric.value",
+    "claims[].unit": "entries[].metric.unit",
+    "claims[].baseline": "entries[].metric.baseline",
+    "claims[].after_state": "entries[].metric.after",
+    "claims[].period": "entries[].metric.period",
+    "permissions[].grant_id": "consents[].id",
+    "permissions[].purpose": "consents[].purpose",
+    "permissions[].scope": "consents[].scope",
+    "permissions[].expires_at": "consents[].expires_at",
+    "permissions[].revision": "consents[].revision"
+  },
+  "static_fields": {"source_system": "atlas"},
+  "ack_rule": {
+    "kind": "write",
+    "record_id_path": "cv_document_id",
+    "version_path": "version",
+    "destination_revision_path": null,
+    "revision_echo_path": "external_revision",
+    "hash_echo_path": "content_hash",
+    "hash_echo_required": false
+  },
+  "timeout_ms": 8000
+}

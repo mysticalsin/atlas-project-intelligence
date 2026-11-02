@@ -21,15 +21,21 @@ try:
    c=b.new_context(viewport={'width':1300,'height':1000});p=c.new_page();p.on('pageerror',lambda e:ERR.append(str(e)));p.goto(BASE+'/?as='+email);p.wait_for_timeout(600);return p
   o=page('alex@mantu.com')
   o.locator('[data-action=new-project]:visible').first.click();o.wait_for_timeout(200)
+  o.evaluate("document.getElementById('projectMore').open=true") # W1: these fields live under "More details"
   for k,v in {'projectTitle':'Claims triage alias','consultantName':'Alex','clientName':'Zebracorp','n1Name':'Sam','n1Email':'sam@mantu.com'}.items():o.locator('#'+k).fill(v)
   o.locator('#projectForm button[type=submit]').click();o.wait_for_timeout(300)
   o.evaluate("(rep)=>window.ATLAS_VOICE_BRIDGE.autoSave(window.ATLAS_VOICE_BRIDGE.context(),['Zebracorp had claims bouncing between three teams, slowing payouts.',null,null,'Triage fell from 40 to 12 minutes.',null,null],'I worked with Zebracorp on claims.',rep)",REP)
   o.wait_for_timeout(1500)
-  o.locator('#profileButton').click();o.wait_for_timeout(900)
+  first=o.evaluate("fetch('/api/memory').then(r=>r.json())")
+  check('memory is OFF by default (G2): the first interview remembered nothing',first['documents']==[] and first['off'] is True)
+  o.evaluate("window.ATLAS_VOICE_BRIDGE.setMemory(true)");o.wait_for_timeout(500)
+  o.evaluate("(rep)=>window.ATLAS_VOICE_BRIDGE.autoSave(window.ATLAS_VOICE_BRIDGE.context(),['Zebracorp had claims bouncing between three teams, slowing payouts.',null,null,'Triage fell from 40 to 12 minutes.',null,null],'I worked with Zebracorp on claims.',rep)",REP)
+  o.wait_for_timeout(1500)
+  o.locator('#profileButton').click();o.wait_for_timeout(900);o.locator('#stab-privacy').click();o.wait_for_timeout(200)  # V2: what ATLAS remembers is on the Privacy tab of the Settings sheet
   panel=o.locator('#hindsightPanel')
-  check('profile shows what ATLAS remembers, by project',panel.is_visible() and 'Claims triage alias' in o.locator('#memoryList').inner_text() and 'Conversation on' in o.locator('#memoryList').inner_text())
+  check('profile shows what ATLAS remembers, by project; the switch is on because the person turned it on',panel.is_visible() and 'Claims triage alias' in o.locator('#memoryList').inner_text() and 'Conversation on' not in o.locator('#memoryList').inner_text() and o.locator('#memoryOn').is_checked())
   stored=o.evaluate("fetch('/api/memory').then(r=>r.json())")
-  check('two memory documents for one interview (project state + conversation)',len(stored['documents'])==2)
+  check('one memory document for the interview: short project facts, no conversation document',len(stored['documents'])==1 and stored['documents'][0]['id'].startswith('project-'))
   o.evaluate("(rep)=>window.ATLAS_VOICE_BRIDGE.autoSave(window.ATLAS_VOICE_BRIDGE.context(),[null,'I designed the routing model.',null,null,null,null],'More words.',rep)",REP);o.wait_for_timeout(1500)
   docs=[d['id'] for d in o.evaluate("fetch('/api/memory').then(r=>r.json())")['documents']]
   check('the project memory is updated in place, not duplicated',sum(1 for d in docs if d.startswith('project-'))==1)
@@ -42,7 +48,7 @@ try:
   o.evaluate("(rep)=>window.ATLAS_VOICE_BRIDGE.autoSave(window.ATLAS_VOICE_BRIDGE.context(),[null,null,'We kept a fallback.',null,null,null],'x',rep)",REP);o.wait_for_timeout(1200)
   check('switched off: nothing new is remembered',o.evaluate("fetch('/api/memory').then(r=>r.json())")['documents']==[] and o.evaluate("fetch('/api/memory').then(r=>r.json())")['off'] is True)
   check('connection test hidden for non-admins',not o.locator('#connectionTest').is_visible())
-  a=page('tony.walteur@gmail.com');a.locator('#profileButton').click();a.wait_for_timeout(900);a.locator('#connectionTest').click();a.wait_for_timeout(900)
+  a=page('tony.walteur@gmail.com');a.locator('#profileButton').click();a.wait_for_timeout(900);a.locator('#stab-privacy').click();a.wait_for_timeout(200);a.locator('#connectionTest').click();a.wait_for_timeout(900)
   st=a.locator('#memoryStatus').inner_text()
   check('admin connection test: Hindsight working, JEV reports missing key','Hindsight: working' in st and 'JEV: not configured' in st)
   check('no page errors',not ERR);print(ERR)

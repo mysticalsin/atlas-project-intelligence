@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Spotlight CMS request (Atlas-side approved payload)",
+  "x-status": "draft — from Atlas side; owner to confirm",
+  "x-source": "ATLAS_Integration_Contracts.md §5; branches.js publishSpotlight",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "audience",
+    "channel",
+    "story_revision_id",
+    "revision_hash",
+    "content_hash",
+    "story"
+  ],
+  "properties": {
+    "audience": {
+      "enum": [
+        "public"
+      ]
+    },
+    "channel": {
+      "type": "string"
+    },
+    "story_revision_id": {
+      "type": "string"
+    },
+    "revision_hash": {
+      "type": "string"
+    },
+    "content_hash": {
+      "type": "string"
+    },
+    "story": {
+      "type": "object",
+      "x-note": "public audience projection (story-projection.js); fields limited to field_visibility_policy public_story"
+    }
+  }
+}

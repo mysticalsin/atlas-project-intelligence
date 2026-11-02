@@ -1,9 +1,10 @@
 /* ATLAS bid proof: pure presentation logic for the Bids view (verdict copy, footnotes, one-pager exports, win cells).
    No DOM, no network. UMD so node tests cover it (WOW_SPEC F1.7, F1.8, F7.3). Every string that reaches HTML goes through esc();
    the server's view (author or other) is rendered exactly as returned, never re-masked or un-masked here. */
-(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.AtlasBids=api;})(typeof globalThis!=='undefined'?globalThis:this,()=>{
+(function(root,factory){const api=factory(root);if(typeof module==='object'&&module.exports)module.exports=api;else root.AtlasBids=api;})(typeof globalThis!=='undefined'?globalThis:this,root=>{
 'use strict';
-const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc=(root.AtlasSafe||(typeof require==='function'?require('./safe-html.js'):null)).esc;  // the shared escape (src/safe-html.js, loaded first in the page)
+const own=(o,k)=>Object.hasOwn(o,k)?o[k]:undefined;  // table lookups never reach Object.prototype
 const str=v=>typeof v==='string'?v:v==null?'':String(v);
 const line=v=>str(v).replace(/\s+/g,' ').trim();
 const int=v=>Number.isInteger(v)&&v>=0?v:0;
@@ -25,10 +26,10 @@ function askVerdictCopy(v,results){const c=verdictCopy(v,{covered:0,total:0});if
  if(!arr(results).length)return {...c,cta:null,text:v==='empty_library'?c.text:ASK_EMPTY};
  return {...c,cta:null,text:v==='strong'?'Strong matches found for your question.':v==='none'?'No strong match in the library for this question.':c.text};}
 const TOPIC={context:'Context',contribution:'Contribution',approach:'Approach',outcome:'Outcome',evidence:'Evidence',customer_relevance:'Customer relevance'};
-const CONFIRMATION={manager_confirmed:'Confirmed by N+1',client_confirmed:'Confirmed by the client contact',corrected:'Corrected by N+1',cant_say:'N+1 couldn’t say',unverified:'Unverified'};
-const confirmationLabel=c=>CONFIRMATION[c]||CONFIRMATION.unverified;
+const CONFIRMATION={manager_confirmed:'Confirmed by N+1',client_confirmed:'Confirmed by the client contact',consultant_named:'Named by the consultant, not independently confirmed',corrected:'Corrected by N+1',cant_say:'N+1 couldn’t say',unverified:'Unverified'};
+const confirmationLabel=c=>own(CONFIRMATION,c)||CONFIRMATION.unverified;
 function sourceLabel(f){if(f?.kind==='evidence'){const s=[line(f.sourceName),line(f.sourceVersion)].filter(Boolean).join(' ');return 'Evidence'+(s?' · '+s:'');}
- return 'Consultant’s words'+(TOPIC[f?.topic]?' · '+TOPIC[f.topic]:'');}
+ return 'Consultant’s words'+(own(TOPIC,f?.topic)?' · '+TOPIC[f.topic]:'');}
 const refOf=(op,id)=>arr(op?.references).find(r=>r&&r.id===id)||null;
 const notesOf=c=>[...new Set(arr(c?.cites).filter(n=>Number.isInteger(n)&&n>0))];
 const claimsOf=op=>[{heading:'Summary',claims:arr(op?.summary)},...arr(op?.sections).map(s=>({heading:line(s?.heading),claims:arr(s?.claims)}))].filter(b=>b.claims.length);
@@ -43,7 +44,7 @@ function footnoteHTML(op){if(!op||typeof op!=='object')return '';
  const sup=c=>{const n=notesOf(c);return n.length?`<sup class="fn" aria-label="Sources ${esc(n.join(', '))}">${n.map(esc).join(',')}</sup>`:'';};
  const claim=c=>`<li class="claim ${c?.kind==='interpretation'?'interpretation':'fact'}">${c?.kind==='interpretation'?'<span class="claim-kind" aria-label="Interpretation">◇</span> ':''}${esc(line(c?.text))}${sup(c)}</li>`;
  const blocks=claimsOf(op).map(b=>`${b.heading?`<h4>${esc(b.heading)}</h4>`:''}<ul class="onepager-claims">${b.claims.map(claim).join('')}</ul>`).join('');
- const notes=footnotesOf(op).map(f=>{const r=refOf(op,f.refId),conf=CONFIRMATION[f.confirmation]?f.confirmation:'unverified';
+ const notes=footnotesOf(op).map(f=>{const r=refOf(op,f.refId),conf=own(CONFIRMATION,f.confirmation)?f.confirmation:'unverified';
   return `<li value="${f.n}" data-fn="${f.n}"><q>${esc(line(f.quote))}</q> <span class="fn-source">${esc(sourceLabel(f))}</span> · <span class="fn-ref">${esc(line(r?.title)||'Reference')} · r${int(f.revision)}</span> <span class="badge conf-${esc(conf)}">${esc(confirmationLabel(conf))}</span>${r&&line(r.client)?` <span class="fn-client">Client: ${esc(line(r.client))}</span>`:''}</li>`;}).join('');
  const dropped=arr(op.dropped).map(line).filter(Boolean);
  return `<article class="onepager-paper"><p class="eyebrow">PROOF ONE-PAGER${op.view==='other'?' · SHARED VIEW':''}</p><h3 class="onepager-title">${esc(line(op.title)||'Proof summary')}</h3>${line(op.subtitle)?`<p class="onepager-subtitle">${esc(line(op.subtitle))}</p>`:''}`
@@ -72,11 +73,11 @@ function winCell(row){const n=int(row?.decided),rate=row?.winRate;
  if(typeof rate!=='number'||!Number.isFinite(rate)||n<MIN_N)return {n,low:true,rate:null,ci:'',text:line(row?.caveat)||'Fewer than 5 decided bids: not shown.'};
  const ci=wilsonLabel(row.ci95),pct=Math.round(rate*100);return {n,low:false,rate:pct,ci,text:pct+'%'+(ci?' (95% CI '+ci+')':'')};}
 const PROOF_TYPES={'quantified+confirmed':'Quantified · confirmed','quantified+unconfirmed':'Quantified · unconfirmed','qualitative+confirmed':'Qualitative · confirmed','qualitative+unconfirmed':'Qualitative · unconfirmed'};
-const proofTypeLabel=t=>PROOF_TYPES[t]||line(t)||'Unknown';
+const proofTypeLabel=t=>own(PROOF_TYPES,t)||line(t)||'Unknown';
 // Outreach status chips (F2.6, F3.4, F4.7). Nothing is ever sent by ATLAS: email is a draft the person sends, Teams waits for an
 // approval and, while Teams is not connected, always reads "Teams: BLOCKED_EXTERNAL".
 const OUTREACH={pending_approval:'awaiting approval',drafted:'draft ready',sent:'sent',failed:'failed',blocked_external:'BLOCKED_EXTERNAL',dismissed:'dismissed'};
-const outreachLabel=s=>OUTREACH[s]||line(s)||'unknown';
+const outreachLabel=s=>own(OUTREACH,s)||line(s)||'unknown';
 function outreachChips(rows,teams){const list=arr(rows).filter(r=>r&&typeof r==='object'),t=list.find(r=>r.channel==='teams'),m=list.find(r=>r.channel==='email_draft');
  const chip=(text,cls)=>`<span class="tag chip-${cls}">${esc(text)}</span>`;
  return chip(teams!=='connected'||t?.status==='blocked_external'?'Teams: BLOCKED_EXTERNAL':'Teams: '+outreachLabel(t?.status||'pending_approval'),teams!=='connected'||t?.status==='blocked_external'?'blocked':'teams')

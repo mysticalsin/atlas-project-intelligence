@@ -6,7 +6,11 @@
       "passed": true
     },
     {
-      "name": "No measurement remains legitimate",
+      "name": "The wording lab has no \"No measurement\" sample button (it modelled an \"I don't know\")",
+      "passed": true
+    },
+    {
+      "name": "A typed \"I don't know\" is met with another angle",
       "passed": true
     },
     {

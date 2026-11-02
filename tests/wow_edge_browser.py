@@ -44,11 +44,17 @@ try:
   if off:print('NOT RUNNABLE: these features are not READY in this build: '+', '.join(off)+'. The integration step flips READY (WOW_SPEC 6.6 step 4), then runs this suite.');sys.exit(2)
   # --- a published reference (alex, N+1 sam)
   alex.locator('[data-action=new-project]:visible').first.click();alex.wait_for_timeout(200)
+  alex.evaluate("document.getElementById('projectMore').open=true") # W1: these fields live under "More details"
   for k,v in {'projectTitle':'Claims triage alias','consultantName':'Alex Martin','consultantRole':'Data engineer','clientName':'Zebracorp','clientLocation':'Lyon','n1Name':'Sam','n1Email':'sam@mantu.com'}.items():alex.locator('#'+k).fill(v)
   alex.locator('#projectForm button[type=submit]').click();alex.wait_for_timeout(300)
   alex.evaluate("([n,rep])=>window.ATLAS_VOICE_BRIDGE.autoSave(window.ATLAS_VOICE_BRIDGE.context(),n,'Consultant words.',rep)",[NOTES,REP]);alex.wait_for_timeout(1200);settle()
   rid=alex.evaluate('window.ATLAS_APP.project().library?.id')
-  check('reference synced to the shared library',bool(rid))
+  check('reference synced to the shared library as a private draft',bool(rid) and alex.evaluate('window.ATLAS_APP.project().library?.status')=='draft')
+  # G2: private until the consultant clicks Submit for review (the Library's own button, delegated handler); only then can the N+1 validate it
+  alex.evaluate("id=>{const b=document.createElement('button');b.dataset.submitRef=id;document.body.append(b);b.click();b.remove();}",rid)
+  alex.wait_for_function("id=>window.ATLAS_APP.profile().projects.some(x=>x.library&&x.library.id===id&&x.library.status!=='draft')",arg=rid,timeout=8000);settle()
+  # v2.2 (red-team H1): the N+1 who may validate is the one the staffing record names, not the one typed on the reference
+  api(page('reviewer@mantu.com'),'/staffing/import','POST',{'csv':'project_id,consultant_email,manager_email,manager_name,project_title,end_date\nPRJ-2291,alex@mantu.com,sam@mantu.com,Sam,,\n'})
   sam=page('sam@mantu.com');api(sam,'/'+rid+'/validate','POST',{'decision':'validate'});settle()
   check('N+1 validated: the reference is published',api(sam,'/'+rid)['status']=='published')
   # --- F1: bea creates a bid, matches, builds a one-pager
@@ -139,9 +145,11 @@ try:
   check('the map lights up the result country',kim.locator('#askMap path.geo-country[data-code="FRA"][data-state^="count-"]').count()==1)
   check('a public reader sees no email anywhere in the answer','@' not in kim.locator('#askAtlas').inner_text())
   # --- F7: five won bids; the reviewer sees the rate, a plain user no story table
+  carl=page('carl@mantu.com')  # v2.2 (red-team L1): one bidder counts at most 3 uses of a story, and (X1) a win-rate figure needs decided bids from at least 3 different people, so the five wins come from three bidders
   for i in range(4):
-   x=api(bea,'/bids','POST',{'title':f'Won bid {i}','alias':f'Heron {i}','prospectNames':[],'briefText':'An insurer needs proven claims triage automation with measured handling time.'})
-   api(bea,f"/bids/{x['id']}/use",'POST',{'refIds':[rid]});api(bea,f"/bids/{x['id']}/outcome",'POST',{'outcome':'won'})
+   who=[bea,carl,kim,carl][i]
+   x=api(who,'/bids','POST',{'title':f'Won bid {i}','alias':f'Heron {i}','prospectNames':[],'briefText':'An insurer needs proven claims triage automation with measured handling time.'})
+   api(who,f"/bids/{x['id']}/use",'POST',{'refIds':[rid]});api(who,f"/bids/{x['id']}/outcome",'POST',{'outcome':'won'})
   api(bea,f'/bids/{bid_id}/outcome','POST',{'outcome':'won'});settle()
   rv.locator('header nav [data-view=bids]').click();rv.wait_for_timeout(1200)
   ws=rv.locator('#winStats')

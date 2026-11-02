@@ -71,7 +71,8 @@ def inspect(root: Path, *, rebuild=True) -> dict:
         with tempfile.TemporaryDirectory(prefix='atlas-rebuild-') as td:
             dest=Path(td)
             for rel in seen:
-                if rel=='build.py' or rel.startswith(('src/','assets/','docs/')):
+                # build.py also imports atlas_voice.quality and bakes the ORIGIN from wrangler.jsonc into the pages, so a source-only rebuild needs both.
+                if rel in ('build.py','deploy/cloudflare-edge/wrangler.jsonc') or rel.startswith(('src/','assets/','docs/','atlas_voice/')):
                     target=dest/rel;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(root/rel,target)
             result=subprocess.run([sys.executable,str(dest/'build.py')],capture_output=True,text=True,timeout=30,check=False)
             check('clean-build',result.returncode==0,'Build executed in a temporary source-only directory.')

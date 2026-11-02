@@ -3,6 +3,8 @@ import asyncio
 import contextlib
 import html
 import json
+import os
+import re
 import secrets
 import shutil
 import time
@@ -15,6 +17,7 @@ from aiohttp import web
 from .audio import AudioCodec
 from .capacity import BUSY, VoiceCapacity
 from .config import Config, LOOPBACK, VOICES
+from .csp import RUNTIME_BLOCK, html_csp, legacy_csp, script_hashes
 from .identity import Identity, COOKIE
 from .interview import project_context, make_prompt
 from .memory import PrivateMemory
@@ -26,12 +29,44 @@ class SessionCancelled(Exception):
     pass
 
 
-def csp(config):
+def ws_origin(config):
     u = urlsplit(config.origin)
-    ws_origin = ('wss' if u.scheme == 'https' else 'ws') + '://' + u.netloc
-    return ("default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; "
-            f"connect-src 'self' {ws_origin}; img-src data: blob:; font-src 'self'; "
-            "worker-src blob:; media-src blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+    return ('wss' if u.scheme == 'https' else 'ws') + '://' + u.netloc
+
+
+def csp(config, hashes=()):
+    """The page policy (atlas_voice/csp.py; the edge Worker builds the same one in src/csp.js). Without hashes no inline script runs at all,
+    which is what every non-page response gets; the page itself passes the hashes of its own inline scripts. The gateway has no
+    violation-report endpoint, so it names no report target."""
+    return html_csp(hashes=hashes, connect=ws_origin(config), report=False)
+
+
+def csp_headers(config, hashes=()):
+    """ATLAS_CSP=report-only enforces the previous policy and only reports the strict one (the rollout switch); anything else enforces."""
+    if os.environ.get('ATLAS_CSP', '').strip().lower() == 'report-only':
+        return {'Content-Security-Policy': legacy_csp(connect=ws_origin(config)), 'Content-Security-Policy-Report-Only': csp(config, hashes)}
+    return {'Content-Security-Policy': csp(config, hashes)}
+
+
+# Security headers on every gateway response (the edge Worker ships the same set; deploy/cloudflare-edge/src/security-headers.js).
+# HSTS only on an https origin (browsers ignore it over plain http, and a local loopback gateway is not served over TLS).
+PERMISSIONS_POLICY = 'microphone=(self), camera=(), geolocation=(), payment=(), usb=(), display-capture=()'
+HSTS = 'max-age=63072000; includeSubDomains'
+
+
+def security_headers(config):
+    headers = {
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+        'Referrer-Policy': 'no-referrer',
+        'Cross-Origin-Opener-Policy': 'same-origin',
+        'Cross-Origin-Resource-Policy': 'same-origin',
+        'Permissions-Policy': PERMISSIONS_POLICY,
+    }
+    headers.update(csp_headers(config))
+    if urlsplit(config.origin).scheme == 'https':
+        headers['Strict-Transport-Security'] = HSTS
+    return headers
 
 
 def same_origin(request, config):
@@ -48,26 +83,25 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
 
     @web.middleware
     async def boundary(request, handler):
-        # Explicit Host validation also prevents DNS rebinding in local mode.
-        if request.host.lower() != urlsplit(config.origin).netloc.lower():
-            raise web.HTTPForbidden(text='Host is not the configured ATLAS origin.')
-        if config.auth_mode == 'local' and request.remote not in LOOPBACK:
-            raise web.HTTPForbidden(text='Local mode accepts loopback connections only.')
-        if request.method not in ('GET', 'HEAD'):
-            subject = identity.require(request)
-            if not same_origin(request, config) or not secrets.compare_digest(
-                    request.headers.get('X-Atlas-CSRF', ''), subject.csrf):
-                raise web.HTTPForbidden(text='Invalid request origin or session token.')
+        # Every outcome, including the refusals below, leaves through the header block at the end (security_headers).
         try:
+            # Explicit Host validation also prevents DNS rebinding in local mode.
+            if request.host.lower() != urlsplit(config.origin).netloc.lower():
+                raise web.HTTPForbidden(text='Host is not the configured ATLAS origin.')
+            if config.auth_mode == 'local' and request.remote not in LOOPBACK:
+                raise web.HTTPForbidden(text='Local mode accepts loopback connections only.')
+            if request.method not in ('GET', 'HEAD'):
+                subject = identity.require(request)
+                if not same_origin(request, config) or not secrets.compare_digest(
+                        request.headers.get('X-Atlas-CSRF', ''), subject.csrf):
+                    raise web.HTTPForbidden(text='Invalid request origin or session token.')
             response = await handler(request)
         except web.HTTPException as error:
             response = error
         if not response.prepared:
-            response.headers['Cache-Control'] = 'no-store'
-            response.headers['X-Content-Type-Options'] = 'nosniff'
-            response.headers['Referrer-Policy'] = 'no-referrer'
-            response.headers['Permissions-Policy'] = 'microphone=(self), camera=(), geolocation=()'
-            response.headers['Content-Security-Policy'] = csp(config)
+            for name, value in security_headers(config).items():
+                if name not in response.headers:  # a page that set its own policy (the main page: with its script hashes) keeps it
+                    response.headers[name] = value
         return response
 
     app = web.Application(middlewares=[boundary], client_max_size=131072)
@@ -99,13 +133,16 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
         if subject is None:
             return web.Response(text='''<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>ATLAS · Sign in</title><style>body{font:18px/1.6 Arial;background:#F8F8F8;color:#3E007A;padding:12vh 12vw}h1{font-size:54px}a{display:inline-block;background:#3E007A;color:white;padding:14px 25px;border-radius:9px;text-decoration:none}p{max-width:570px}</style><h1>Great work. Worth hearing.</h1><p>Sign in with your Mantu work account to use the ATLAS voice interview. Access requires the assigned ATLAS app role.</p><a href="/auth/login">Sign in with Microsoft Entra ID →</a></html>''', content_type='text/html')
         text = (ROOT / 'ATLAS_Voice.html').read_text()
-        runtime = json.dumps({'subjectKey': subject.subject_key, 'authMode': config.auth_mode,
-                              'name': subject.name}).replace('<', '\\u003c')
-        text = text.replace('/* SERVER_RUNTIME */', 'window.ATLAS_RUNTIME=' + runtime + ';')
+        # The person's facts go in as a JSON data block, never as script ("<" and the line separators escaped), so every executable script stays static.
+        runtime = json.dumps({'subjectKey': subject.subject_key, 'authMode': config.auth_mode, 'name': subject.name}
+                             ).replace('<', '\\u003c').replace('\u2028', '\\u2028').replace('\u2029', '\\u2029')
+        text = text.replace(RUNTIME_BLOCK, '<script id="atlas-runtime" type="application/json">' + runtime + '</script>', 1)
         # Header is authoritative; replace the file's restricted connect-src too.
-        text = text.replace("connect-src 'self';", "connect-src 'self' " +
-                            config.origin.replace('https://', 'wss://').replace('http://', 'ws://') + ';')
-        response = web.Response(text=text, content_type='text/html')
+        text = text.replace("connect-src 'self';", "connect-src 'self' " + ws_origin(config) + ';')
+        hashes = script_hashes(text)  # of the page as served: the data block is not code and has no hash
+        if os.environ.get('ATLAS_CSP', '').strip().lower() == 'report-only':
+            text = re.sub(r'<meta\b[^>]*\bhttp-equiv=["\']?Content-Security-Policy["\']?[^>]*>', '', text, count=1, flags=re.I)  # its own <meta> policy would enforce
+        response = web.Response(text=text, content_type='text/html', headers=csp_headers(config, hashes))
         if cookie:
             identity.set_cookie(response, cookie)
         return response

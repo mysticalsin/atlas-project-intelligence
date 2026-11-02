@@ -1,0 +1,16 @@
+✖ PR1 checkpoint fence rechecks ownership after an awaited read and serializes an in-flight put before replacement (5.35754ms)
+✖ PR1 privacy: superseding a withheld detail never restores its utterance, including after checkpoint restore (132.966643ms)
+✖ PR1 confirmation: all 100 active details and full quotes are reviewable and bind the saved draft (147.916824ms)
+✖ PR1 checkpoint ownership: a delayed abandoned analyst cannot overwrite or purge the replacement checkpoint (10917.664045ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 0
+ℹ fail 4
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 12120.364348
+✖ PR1 checkpoint fence rechecks ownership after an awaited read and serializes an in-flight put before replacement (5.35754ms)
+✖ PR1 privacy: superseding a withheld detail never restores its utterance, including after checkpoint restore (132.966643ms)
+✖ PR1 confirmation: all 100 active details and full quotes are reviewable and bind the saved draft (147.916824ms)
+✖ PR1 checkpoint ownership: a delayed abandoned analyst cannot overwrite or purge the replacement checkpoint (10917.664045ms)

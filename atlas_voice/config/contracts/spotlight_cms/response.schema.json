@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Spotlight CMS acknowledgement (normalised)",
+  "x-status": "draft — from Atlas side; owner to confirm",
+  "x-source": "ATLAS_Integration_Contracts.md §5: CMS ID, canonical URL, publication state, publish timestamp, revision hash",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "destination_record_id",
+    "destination_version",
+    "publication_state",
+    "canonical_url",
+    "published_at",
+    "revision_hash"
+  ],
+  "properties": {
+    "destination_record_id": {
+      "type": "string"
+    },
+    "destination_version": {
+      "type": [
+        "string",
+        "integer"
+      ]
+    },
+    "destination_revision": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "revision": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "hash": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "publication_state": {
+      "type": "string"
+    },
+    "canonical_url": {
+      "type": "string"
+    },
+    "published_at": {
+      "type": "string"
+    },
+    "revision_hash": {
+      "type": "string"
+    }
+  },
+  "x-note": "Normalised acknowledgement Atlas builds from the destination's response through ack_rule. These are Atlas-side semantic names, not the owner's field names; the owner's raw response is mapped by ack_rule paths (TO CONFIRM)."
+}

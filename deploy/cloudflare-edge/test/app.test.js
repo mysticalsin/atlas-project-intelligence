@@ -1,14 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { handle, verifyAccess, workersAI } from '../src/app.js';
+import { inlineScriptHashes } from '../src/csp.js';
+import { CONFIRM_HTML } from '../src/confirm-page.js';
 
 const TEAM = 'team.cloudflareaccess.com', AUD = 'aud-123', ORIGIN = 'https://atlas.example.workers.dev';
 const b64u = b => Buffer.from(b).toString('base64url');
 const { publicKey, privateKey } = await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);
 const jwk = { ...(await crypto.subtle.exportKey('jwk', publicKey)), kid: 'k1' };
 globalThis.fetch = async url => { assert.equal(String(url), `https://${TEAM}/cdn-cgi/access/certs`); return new Response(JSON.stringify({ keys: [jwk] })); };
+// One Access sign-in for the whole file: the CSRF token is bound to the token's iat (B1), so tokens minted per request must share it, as an Access session does.
+const IAT = Math.floor(Date.now() / 1000) - 5;
 async function jwt(claims = {}, header = { alg: 'RS256', kid: 'k1' }) {
-  const now = Math.floor(Date.now() / 1000), body = { aud: [AUD], iss: `https://${TEAM}`, sub: 'user-abc', email: 'tony@example.com', exp: now + 600, iat: now, ...claims };
+  const now = Math.floor(Date.now() / 1000), body = { aud: [AUD], iss: `https://${TEAM}`, sub: 'user-abc', email: 'tony@example.com', exp: now + 600, iat: IAT, ...claims };
   const input = b64u(JSON.stringify(header)) + '.' + b64u(JSON.stringify(body));
   return input + '.' + b64u(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, new TextEncoder().encode(input)));
 }
@@ -26,13 +30,13 @@ test('Access JWT verification accepts only valid, correctly scoped tokens', asyn
 });
 
 test('routes fail closed and serve the real page with runtime + CSP', async () => {
-  const page = "<meta http-equiv=x content=\"connect-src 'self';\"><script>/* SERVER_RUNTIME */</script></body>";
+  const page = "<meta http-equiv=x content=\"connect-src 'self';\"><script id=\"atlas-runtime\" type=\"application/json\">{}</script></body>";
   assert.equal((await handle(await req('/', { token: null }), ENV, page)).status, 401);
   assert.equal((await handle(await req('/', { host: 'https://evil.example' }), ENV, page)).status, 403);
   assert.equal((await handle(await req('/'), { ...ENV, CSRF_SECRET: '' }, page)).status, 500);
   const r = await handle(await req('/'), ENV, page), html = await r.text();
-  assert.equal(r.status, 200); assert.ok(html.includes('window.ATLAS_RUNTIME={"subjectKey"') && html.includes('"authMode":"access"'));
-  assert.ok(html.includes("connect-src 'self' wss://atlas.example.workers.dev;") && html.includes('SYNTHETIC DATA ONLY'));
+  assert.equal(r.status, 200); assert.ok(html.includes('<script id="atlas-runtime" type="application/json">{"subjectKey"') && html.includes('"authMode":"access"') && !html.includes('window.ATLAS_RUNTIME'));
+  assert.ok(html.includes("connect-src 'self' wss://atlas.example.workers.dev;") && html.includes('TEST DEPLOYMENT') && html.includes('DPO sign-off pending') && html.includes('href="/privacy"') && !html.includes('SYNTHETIC DATA ONLY'));
   assert.ok(r.headers.get('content-security-policy').includes("frame-ancestors 'none'") && r.headers.get('cache-control') === 'no-store');
   const boot = await (await handle(await req('/api/bootstrap'), ENV, page)).json();
   assert.equal(boot.provider, 'workers'); assert.equal(boot.csrf.length, 64); assert.equal(boot.identity.mode, 'access');
@@ -121,7 +125,7 @@ test('admin mode comes only from the verified sign-in email; a browser cannot cl
   assert.equal(await voice({}, {}), '1');
   assert.equal(await (async () => { forwarded = null; await handle(new Request(ORIGIN + '/api/voice', { headers: { 'cf-access-jwt-assertion': await jwt(), Upgrade: 'websocket', Origin: ORIGIN, 'x-atlas-admin': '1' } }), { ...env, ADMIN_EMAILS: '' }, ''); return forwarded.headers.get('x-atlas-admin'); })(), '0');
   const boot = await (await handle(await req('/api/bootstrap'), env, '')).json();
-  assert.equal(boot.admin, true); assert.equal(boot.speakingSeconds, 600);
+  assert.equal(boot.admin, true); assert.equal(boot.speakingSeconds, 800);
   const text = JSON.stringify(boot) + await (await handle(await req('/', { token: null }), env, '')).text();
   assert.doesNotMatch(text, /cloudflare|workers ai|harmonia/i);
 });
@@ -177,7 +181,7 @@ test('PM trigger endpoint: bearer secret only (constant-time), system role only 
 
 test('memory routes: forwarded to the person\'s own Durable Object with a server-derived bank; POST needs CSRF; bootstrap reports memory', async () => {
   let forwarded = null, name = null;
-  const env = { ...ENV, HINDSIGHT_URL: 'https://hs.example', HINDSIGHT_API_KEY: 'k', INTERVIEW: { idFromName: n => { name = n; return n; }, get: () => ({ fetch: r => { forwarded = r; return new Response('{}'); } }) } };
+  const env = { ...ENV, HINDSIGHT_URL: 'https://hs.example', HINDSIGHT_API_KEY: 'k', HINDSIGHT_BANK_SECRET: 'bank-secret', INTERVIEW: { idFromName: n => { name = n; return n; }, get: () => ({ fetch: r => { forwarded = r; return new Response('{}'); } }) } };
   await handle(await req('/api/memory', { headers: { 'x-atlas-bank': 'someone-elses-bank' } }), env, '');
   assert.equal(name, 'user-abc'); assert.match(forwarded.headers.get('x-atlas-bank'), /^atlas-[0-9a-f]{40}$/); assert.notEqual(forwarded.headers.get('x-atlas-bank'), 'someone-elses-bank');
   const boot = await (await handle(await req('/api/bootstrap'), env, '')).json(); assert.equal(boot.memory, true);
@@ -205,8 +209,16 @@ test('languages: automatic detection, native Spanish voice, ElevenLabs for the r
   assert.deepEqual(['fr', 'pt', 'de', 'xx'].map(l => withEleven.speaks(l)), [true, true, true, false]);
   assert.equal(detectedLanguage({ results: { channels: [{ alternatives: [{ words: [{ language: 'pt' }, { language: 'pt' }, { language: 'en' }] }] }] } }), 'pt');
   assert.equal(detectedLanguage({}), null); assert.equal(normalize('pt-BR'), 'pt'); assert.equal(normalize('zz'), null);
-  assert.match(languageNote('fr', 'fr'), /Reply only in natural French/);
-  assert.match(languageNote('pt', 'en'), /can only speak English right now\. Reply in English\..*understand Portuguese/);
+  assert.match(languageNote('fr', true), /Reply only in natural French/);
+  // v2.2 L1: no voice for a language means the reply is still in that language, on screen (never English); the talker announces it once when asked to
+  assert.match(languageNote('pt', false), /Reply only in natural Portuguese.*cannot speak Portuguese yet, so your reply is shown on screen as text only\./);
+  assert.doesNotMatch(languageNote('pt', false), /Reply in English|say once/); assert.match(languageNote('pt', false, { announce: true }), /say once, in one short sentence in Portuguese, that you cannot speak Portuguese aloud yet/);
+  // a language the consultant locked is asked of the recogniser alone; if that request is refused the automatic one is made
+  const lockEnv = { ...env, AI: { async run(model, input) { seen.push([model, input]); if (input.language === 'pl') throw new Error('unsupported'); return { results: { channels: [{ alternatives: [{ transcript: 'Cześć', languages: ['pl'] }] }] } }; } } };
+  seen.length = 0; await workersAI(lockEnv).transcribe(new Uint8Array(4), { language: 'fr' }); assert.deepEqual(seen.map(x => x[1].language), ['fr']);
+  seen.length = 0; await workersAI(lockEnv).transcribe(new Uint8Array(4), { language: 'pl' }); assert.deepEqual(seen.map(x => x[1].language), ['pl', 'multi']);
+  seen.length = 0; await workersAI(lockEnv).transcribe(new Uint8Array(4), { language: 'x; drop' }); assert.deepEqual(seen.map(x => x[1].language), ['multi'], 'only a language code reaches the recogniser');
+  assert.equal(normalize('pl'), 'pl'); assert.equal(normalize('pl-PL'), 'pl'); assert.equal(normalize('multi'), null); assert.equal(normalize('nb'), 'no'); assert.equal(normalize('uk'), 'uk'); assert.equal(normalize('el-GR'), 'el');
 });
 
 // ---- T1-S0 additions (WOW_SPEC §2.2, §2.5, §2.6, §F1.10). No earlier assertion in this file changed. ----
@@ -214,15 +226,28 @@ import { scheduled } from '../src/app.js';
 import { Library } from '../src/library.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import { memorySql } from './sqlite.js';
-const FEATURE_KEYS = ['bids', 'ask', 'spokenAsk', 'wins', 'customerJev', 'pdfBriefs', 'gaps', 'gapInterview', 'claims', 'clientConfirm', 'outreach', 'staffing', 'teams', 'phone', 'profile'];
+const FEATURE_KEYS = ['bids', 'ask', 'spokenAsk', 'wins', 'customerJev', 'pdfBriefs', 'gaps', 'gapInterview', 'claims', 'clientConfirm', 'outreach', 'staffing', 'teams', 'phone', 'profile', 'evidence_workflow'];
 const capture = () => { const c = { req: null, body: null }; c.stub = { idFromName: n => n, get: () => ({ fetch: async r => { c.req = r; c.body = r.body ? await r.text() : null; return new Response('{"ok":true}'); } }) }; return c; };
 const signed = async (path, claims = {}, init = {}) => new Request(ORIGIN + path, { ...init, headers: { 'cf-access-jwt-assertion': await jwt(claims), ...(init.headers || {}) } });
 
+test('U1 bootstrap: voice:false only when the server says it has no voice (ATLAS_VOICE=off); absent otherwise', async () => {
+  const on = await (await handle(await req('/api/bootstrap'), ENV, '')).json();
+  assert.equal('voice' in on, false); assert.equal(on.codecAvailable, true);
+  const off = await (await handle(await req('/api/bootstrap'), { ...ENV, ATLAS_VOICE: 'off' }, '')).json();
+  assert.equal(off.voice, false); assert.equal(off.textMode, true);
+  const explicit = await (await handle(await req('/api/bootstrap'), { ...ENV, ATLAS_VOICE: 'on' }, '')).json();
+  assert.equal('voice' in explicit, false);
+});
+
 test('T1-S0 bootstrap: verified email and every feature flag, conservative by default; existing keys unchanged', async () => {
   const boot = await (await handle(await req('/api/bootstrap'), ENV, '')).json();
-  assert.deepEqual(Object.keys(boot).slice(0, -2), ['provider', 'providerLabel', 'protocol', 'csrf', 'identity', 'model', 'admin', 'voices', 'defaultVoice', 'captureRequired', 'codecAvailable', 'busy', 'capacity',
-    'maxSeconds', 'speakingSeconds', 'memory', 'wiki', 'jev', 'jevClassify', 'library', 'libraryRole', 'sheet', 'transcription', 'structuredNotes', 'liveLedger', 'playbackAck', 'readiness']);
+  assert.deepEqual(Object.keys(boot).slice(0, -5), ['provider', 'providerLabel', 'protocol', 'csrf', 'identity', 'model', 'admin', 'voices', 'defaultVoice', 'captureRequired', 'codecAvailable', 'busy', 'capacity',
+    'maxSeconds', 'speakingSeconds', 'memory', 'wiki', 'jev', 'jevClassify', 'library', 'libraryRole', 'sheet', 'transcription', 'structuredNotes', 'liveLedger', 'playbackAck', 'textMode', 'languages', 'readiness']);
+  assert.deepEqual(Object.keys(boot).slice(-5), ['email', 'features', 'resumable', 'privacy', 'consent']); assert.equal(boot.resumable, null); assert.equal(boot.consent, null); // T10: nothing to resume without an Interview Durable Object
   assert.equal(boot.email, 'tony@example.com'); assert.deepEqual(Object.keys(boot.features), FEATURE_KEYS);
+  // v2.2 L1: the languages the page can offer (every one known by name) and the ones ATLAS can say aloud (Aura-2: English and Spanish; more only with an ElevenLabs key)
+  assert.equal(boot.languages.auto, true); assert.deepEqual(boot.languages.voice, ['en', 'es']); assert.ok(boot.languages.list.length >= 30 && boot.languages.list.every(l => /^[a-z]{2,3}$/.test(l.code) && l.name && l.native));
+  const eleven = await (await handle(await req('/api/bootstrap'), { ...ENV, ELEVENLABS_API_KEY: 'k' }, '')).json(); assert.ok(eleven.languages.voice.includes('pl') && eleven.languages.voice.includes('ja') && !eleven.languages.voice.includes('xx'));
   // D1 is the SPOKEN_ASK_APPROVED code constant (features.test.js pins its value): spoken Ask follows Ask when it is set.
   assert.equal(boot.features.spokenAsk, SPOKEN_ASK_APPROVED && boot.features.ask); assert.equal(boot.features.teams, 'BLOCKED_EXTERNAL'); assert.equal(boot.features.phone, 'BLOCKED_EXTERNAL');
   // WOW_ZERO_CONFIG D1: SPOKEN_ASK is no longer a variable; spoken Ask follows SPOKEN_ASK_APPROVED (a code constant).
@@ -308,8 +333,9 @@ test('T1-S0 GET /confirm is served only after sign-in, with the standard headers
   assert.equal((await handle(await req('/confirm', { token: null }), ENV, '')).status, 401);
   const home = await handle(await req('/'), ENV, '<html></body>'), r = await handle(await req('/confirm'), ENV, '');
   assert.equal(r.status, 200); assert.equal(r.headers.get('content-type'), 'text/html; charset=utf-8');
-  for (const h of ['content-security-policy', 'cache-control', 'x-content-type-options', 'referrer-policy', 'permissions-policy']) assert.equal(r.headers.get(h), home.headers.get(h), h);
+  for (const h of ['cache-control', 'x-content-type-options', 'referrer-policy', 'permissions-policy']) assert.equal(r.headers.get(h), home.headers.get(h), h);
   assert.match(r.headers.get('content-security-policy'), /default-src 'none'.*frame-ancestors 'none'/);
+  assert.ok(r.headers.get('content-security-policy').includes("script-src '" + (await inlineScriptHashes(CONFIRM_HTML))[0] + "';") && !r.headers.get('content-security-policy').includes('unsafe-inline\' blob'), 'the confirm page allows exactly its own script hash');
   const html = await r.text(); assert.match(html, /^<!doctype html>/i); assert.doesNotMatch(html, /<script[^>]+src|https?:\/\//i);
 });
 
@@ -451,7 +477,8 @@ test('Z /go/signed-in: a tiny page that tells the waiting tab over BroadcastChan
   const boot = await (await handle(await req('/api/bootstrap'), ENV, '')).json();
   for (const secret of ['tony@example.com', 'user-abc', boot.csrf, (await jwt()).slice(0, 20), 'ATLAS_RUNTIME']) assert.equal(html.includes(secret), false, secret);
   assert.doesNotMatch(html, /<script[^>]+src|https?:\/\//i);
-  for (const h of ['content-security-policy', 'cache-control', 'x-content-type-options', 'referrer-policy', 'permissions-policy']) assert.equal(r.headers.get(h), home.headers.get(h), h);
+  for (const h of ['cache-control', 'x-content-type-options', 'referrer-policy', 'permissions-policy']) assert.equal(r.headers.get(h), home.headers.get(h), h);
+  assert.ok(r.headers.get('content-security-policy').includes("script-src '" + (await inlineScriptHashes(SIGNED_IN_HTML))[0] + "';") && !r.headers.get('content-security-policy').includes("unsafe-inline' blob"), 'allows exactly its own script hash');
   assert.equal((await handle(await req('/go/signed-in', { token: null }), ENV, 'PAGE')).status, 401);
 });
 
@@ -489,12 +516,12 @@ test('Z /api/directory/push: bearer secret (constant-time), BLOCKED_EXTERNAL in 
 });
 
 test('Z DATA_MODE: the test banner and the readiness string follow it; nothing else changes', async () => {
-  const page = "<meta http-equiv=x content=\"connect-src 'self';\"><script>/* SERVER_RUNTIME */</script></body>";
+  const page = "<meta http-equiv=x content=\"connect-src 'self';\"><script id=\"atlas-runtime\" type=\"application/json\">{}</script></body>";
   for (const [env, banner, readiness] of [[ENV, true, 'edge-deployment-test-data-only'], [{ ...ENV, DATA_MODE: 'Production' }, true, 'edge-deployment-test-data-only'],
     [{ ...ENV, DATA_MODE: 'production' }, false, 'production']]) {
     const html = await (await handle(await req('/'), env, page)).text(), boot = await (await handle(await req('/api/bootstrap'), env, page)).json();
-    assert.equal(html.includes('TEST DEPLOYMENT · SYNTHETIC DATA ONLY'), banner, JSON.stringify(env.DATA_MODE)); assert.equal(boot.readiness, readiness);
-    assert.ok(html.includes('window.ATLAS_RUNTIME={"subjectKey"'));
+    assert.equal(html.includes('TEST DEPLOYMENT · DPO sign-off pending'), banner, JSON.stringify(env.DATA_MODE)); assert.ok(!html.includes('SYNTHETIC DATA ONLY'), 'real interviews run here: the banner never says synthetic only'); assert.equal(boot.readiness, readiness);
+    assert.ok(html.includes('<script id="atlas-runtime" type="application/json">{"subjectKey"'));
   }
 });
 

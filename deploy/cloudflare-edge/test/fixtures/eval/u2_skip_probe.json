@@ -1,0 +1,54 @@
+{
+ "id": "U2-B",
+ "title": "\"skip\", \"pass\" and \"next question\" are answers to probe: no topic change on request, nothing recorded as skipped",
+ "pack": "Tony, 2026-10-31 (v2.2 U2): challenge, do not invite a way out; DECISION_LOG D-U2-3 / D-U2-4",
+ "audit": [
+  "start",
+  "consent_given"
+ ],
+ "turns": [
+  {
+   "said": "We rebuilt the claims intake process for the insurance client during the pilot, a big change for the whole team.",
+   "expect": {
+    "move": {
+     "kind": "ask",
+     "intent": "team_ownership",
+     "field": "contribution"
+    }
+   }
+  },
+  {
+   "said": "skip",
+   "expect": {
+    "move": {
+     "kind": "ask",
+     "intent": "reangle_example",
+     "field": "contribution",
+     "why": "reangle:contribution:1"
+    },
+    "ack": "reangle"
+   }
+  },
+  {
+   "said": "pass",
+   "expect": {
+    "move": {
+     "kind": "ask",
+     "intent": "reangle_saw",
+     "field": "contribution",
+     "why": "reangle:contribution:2"
+    },
+    "ack": "reangle"
+   }
+  },
+  {
+   "said": "next question",
+   "expect": {
+    "move": {
+     "kind": "accept_and_move",
+     "why": "skip:contribution>ladder:outcome"
+    }
+   }
+  }
+ ]
+}

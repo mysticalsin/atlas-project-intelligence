@@ -31,8 +31,8 @@ class Config:
     port: int = 8080
     personaplex_url: str = 'ws://127.0.0.1:8998/api/chat'
     voice: str = 'NATM1.pt'
-    duration: int = 900
-    speaking_limit: int = 600
+    duration: int = 1200
+    speaking_limit: int = 800
     admin_role: str = 'ATLAS.Admin'
     handshake_timeout: int = 90
     auth_mode: str = 'local'
@@ -83,7 +83,7 @@ class Config:
             bind=e.get('ATLAS_BIND', '127.0.0.1'), port=int(e.get('ATLAS_PORT', '8080')),
             personaplex_url=e.get('PERSONAPLEX_WS_URL', 'ws://127.0.0.1:8998/api/chat'),
             voice=e.get('PERSONAPLEX_VOICE', 'NATM1.pt'),
-            duration=int(e.get('ATLAS_MAX_SECONDS', '900')), speaking_limit=int(e.get('ATLAS_SPEAKING_SECONDS', '600')),
+            duration=int(e.get('ATLAS_MAX_SECONDS', '1200')), speaking_limit=int(e.get('ATLAS_SPEAKING_SECONDS', '800')),
             admin_role=e.get('ENTRA_ADMIN_ROLE', 'ATLAS.Admin'),
             handshake_timeout=int(e.get('ATLAS_HANDSHAKE_TIMEOUT', '90')),
             auth_mode=e.get('ATLAS_AUTH', 'local'), tenant=e.get('ENTRA_TENANT_ID', ''),
@@ -147,7 +147,7 @@ class Config:
                 raise ValueError('That Kyutai voice set is licensed for non-commercial use only; choose a CC0/CC-BY voice.')
         if self.voice not in VOICES:
             raise ValueError('Select one of the bundled natural PersonaPlex voice filenames.')
-        if not 30 <= self.duration <= 900 or not 5 <= self.handshake_timeout <= 180 or not 60 <= self.speaking_limit <= 1800:
+        if not 30 <= self.duration <= 2700 or not 5 <= self.handshake_timeout <= 180 or not 60 <= self.speaking_limit <= 1800:
             raise ValueError('Invalid duration or handshake timeout.')
         if not 10 <= self.max_sessions <= 20000:
             raise ValueError('ATLAS_MAX_SESSIONS must be between 10 and 20000.')

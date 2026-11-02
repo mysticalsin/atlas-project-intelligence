@@ -1,0 +1,84 @@
+{
+  "project": {
+    "client_display": "CLIENTE TEST",
+    "industry": "TEST INDUSTRY",
+    "year": 2026,
+    "duration_months": 6,
+    "consultant_count": 2,
+    "main_role": "Data Engineer",
+    "country": "Chile",
+    "technologies": [
+      "Python",
+      "Azure"
+    ]
+  },
+  "summary": {
+    "text": "Resumen de prueba, no utilizar como caso real."
+  },
+  "kpis": [
+    {
+      "label": "Tiempo",
+      "after_value": "25",
+      "unit": "min",
+      "status": "measured"
+    },
+    {
+      "label": "Errores",
+      "after_value": "-30",
+      "unit": "%",
+      "status": "measured"
+    }
+  ],
+  "challenge": {
+    "problem": "Problema de prueba",
+    "why_important": "Impacto de prueba"
+  },
+  "solution": {
+    "what_we_did": "Solución de prueba",
+    "technologies": [
+      "Python",
+      "Azure"
+    ],
+    "client_working_model": "Trabajo integrado con el cliente"
+  },
+  "results": {
+    "before_after": [
+      {
+        "indicator": "Tiempo de proceso",
+        "before": "2 días",
+        "after": "25 min"
+      },
+      {
+        "indicator": "Errores",
+        "before": "100",
+        "after": "70",
+        "unit": "errores"
+      }
+    ],
+    "new_capability": "Capacidad nueva de prueba"
+  },
+  "amaris_differentiator": {
+    "why_selected": "Expertise de prueba",
+    "client_valued": "Comunicación de prueba",
+    "client_quote": {
+      "exact_text": "Cita de prueba",
+      "speaker": "Persona Test",
+      "title": "Cargo",
+      "company": "Cliente Test",
+      "permission": false
+    }
+  },
+  "internal_notes": {
+    "manager": "MANAGER_INTERNAL_TEST",
+    "consultant": "CONSULTANT_INTERNAL_TEST",
+    "date": "30/10/2026"
+  },
+  "approval_state": {
+    "evidence_validated": true,
+    "project_owner_approved": true,
+    "customer_approved": false,
+    "confidentiality_reviewed": false,
+    "brand_approved": false,
+    "public_release_authorized": false
+  }
+}

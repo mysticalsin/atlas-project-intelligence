@@ -1,0 +1,21 @@
+{
+ "id": "X1",
+ "title": "A difficult project experience gets a neutral acknowledgement, never an upbeat one, and no performance judgement",
+ "pack": "03_Conversation_Design/ATLAS_Conversation_Examples.md 'Example 5'; Personality doc section 3 'Difficult situation'",
+ "audit": [
+  "start",
+  "consent_given"
+ ],
+ "turns": [
+  {
+   "said": "It was chaotic and the scope kept changing, I had a hard time and it was a failed pilot.",
+   "expect": {
+    "ack": "setback_neutral",
+    "move": {
+     "kind": "ask"
+    },
+    "scripted_not": "\\b(great|wonderful|exciting|congratulations|well done)\\b"
+   }
+  }
+ ]
+}

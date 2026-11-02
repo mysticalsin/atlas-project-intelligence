@@ -5,12 +5,20 @@ application audience and required app role. No browser-supplied oid/tid is trust
 """
 from dataclasses import dataclass
 import hashlib
+import re
 import secrets
 import time
 import uuid
 from aiohttp import web
 
 COOKIE = 'atlas_voice_session'
+# Bidi controls and zero-width characters never reach a display name (red-team retest L2): one can reorder what follows it on screen. Same set as INVISIBLE in
+# deploy/cloudflare-edge/src/util.js.
+INVISIBLE = re.compile('[\u202a-\u202e\u2066-\u2069\u200e\u200f\u061c\u200b-\u200d\u2060\ufeff]')
+
+
+def display_name(value, limit=100):
+    return ' '.join(INVISIBLE.sub('', str(value)).split())[:limit]
 
 @dataclass
 class Session:
@@ -51,7 +59,7 @@ class Identity:
         if len(self.sessions) >= self.config.max_sessions:
             raise web.HTTPServiceUnavailable(text='Too many sessions. Try again later.')
         key = secrets.token_urlsafe(32)
-        session = Session(tid, oid, str(name)[:100], secrets.token_urlsafe(32), time.monotonic() + 3600)
+        session = Session(tid, oid, display_name(name) or 'Mantu colleague', secrets.token_urlsafe(32), time.monotonic() + 3600)
         self.sessions[key] = session
         return key, session
 

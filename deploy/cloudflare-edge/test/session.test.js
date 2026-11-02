@@ -1,8 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { INTERVIEW_LIMIT_S, SPEAKING_LIMIT_S, WRAP_S, TIME_PLAN } from '../src/policy.generated.js';
+import { timePlan } from '../src/gap-policy.js';
+import { fenceRule } from '../src/prompt-data.js';
 import { Session, projectContext, talkerMessages, paceNotes, MAX_SECONDS, TIME_UP, RESUME as RESUME_TEXT, STILL_THINKING, THINKING_PAUSE, clearPcmCache } from '../src/session.js';
-import { GREETINGS, FILLERS } from '../src/languages.js';
-const spoken = calls => calls.tts.filter(t => !FILLERS.en.includes(t));
+import { GREETINGS, FILLERS, GREETING_PIECES } from '../src/languages.js';
+import { ACKS } from '../src/policy.generated.js';
+// The opening is two cached pieces (v2.1 T6); the acknowledgements are the content-aware bank of ack.js plus the stock FILLERS of other languages.
+const GREETING = GREETING_PIECES.en;
+const ACK_TEXTS = new Set([...Object.values(FILLERS).flat(), ...Object.values(ACKS).flatMap(bank => Object.values(bank).flat())]);
+const spoken = calls => calls.tts.filter(t => !ACK_TEXTS.has(t));
 import { SAMPLE_RATE, EnergyTurns, rms } from '../src/speech.js';
 
 const PROJECT = { title: 'Project Falcon (synthetic)', consultant: 'Alex', role: 'Designer', sector: 'Insurance', stage: 'Pilot', answers: [] };
@@ -16,18 +23,20 @@ function frames(segments) {
   return out;
 }
 function harness(said = ['We cut triage time by about 40% after the rollout across all three regional support teams.'], extra = {}) {
-  const events = [], bytes = [], calls = { talker: [], analyst: [], stt: 0, tts: [] }; let t = 1000, closed = false;
+  const events = [], bytes = [], calls = { talker: [], analyst: [], stt: 0, tts: [], probes: 0, probeText: '' }; let t = 1000, closed = false;
   const ai = {
-    async transcribe(pcm) { calls.stt += 1; assert.ok(pcm.length > 0); return said[calls.stt - 1] || ''; },
+    // A probe is the check of a sound over her voice (v2.2 V1: she stops only for words): it is answered from calls.probeText and is not one of the turns' transcripts.
+    async transcribe(pcm, opts) { if (opts?.probe) { calls.probes += 1; return calls.probeText; } calls.stt += 1; assert.ok(pcm.length > 0); return said[calls.stt - 1] || ''; },
     async synthesize(text) { calls.tts.push(text); return new Uint8Array(4800).fill(1); },
     async *chatStream(messages) { calls.talker.push(messages); for (const d of ['Thanks. ', 'What was ', 'the baseline?']) yield d; },
     async analyst(messages) { calls.analyst.push(messages); const seg = JSON.parse(messages[1].content.split('\n').slice(1).join('\n')).new_segment;
       return [{ id: 'c-' + seg.item_id, name: 'record_details', arguments: JSON.stringify({ details: [{ field: 'outcome', item_id: seg.item_id, quote: 'We cut triage time by about 40%' }] }) }]; },
   };
-  const { session: _opts, ...aiExtra } = typeof extra === 'function' ? extra(calls) : extra;
+  const { session: opts = {}, ...aiExtra } = typeof extra === 'function' ? extra(calls) : extra;
   Object.assign(ai, aiExtra);
-  const opts = typeof extra === 'function' ? {} : (extra.session || {});
-  const s = new Session({ ...opts, io: { send: e => events.push(e), sendBytes: b => bytes.push(b.length), close: () => { closed = true; } }, ai, csrf: 'tok',
+  // These scripted talkers repeat the same opener ("Thanks.", "Oh nice.") and some say two questions, which is exactly what the reply
+  // guard (v2.1 T4/T6) removes; this file is about turn-taking and playback, so it runs without the guard (session-humane.test.js has its own).
+  const s = new Session({ flags: { replyGuard: 'off' }, ...opts, io: { send: e => events.push(e), sendBytes: b => bytes.push(b.length), close: () => { closed = true; } }, ai, csrf: 'tok',
     voice: 'asteria', model: 'test-talker', now: () => t, sleep: () => new Promise(r => setImmediate(r)) });
   open.add(s);
   const tick = () => { t += 0.02; };
@@ -42,7 +51,7 @@ test('full interview: opening, turn, transcript, evidence, guidance, notes', asy
   await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, voice: 'asteria', capture: true, memory: false }));
   assert.equal(h.events[0].type, 'ready');
   await until(() => h.bytes.length >= 10); // opening synthesized: 2 sentences x 4800 bytes
-  assert.deepEqual(spoken(h.calls), [GREETINGS.en, 'Thanks.', 'What was the baseline?']);
+  assert.deepEqual(spoken(h.calls), [...GREETING, 'Thanks.', 'What was the baseline?']);
   assert.ok(h.events.some(e => e.type === 'audio_turn' && e.item_id === 'agent-1'));
   await until(() => !h.s.busy());
   for (const f of frames([[0.6, .001], [1.2, .2], [1.3, .001]])) { h.tick(); h.s.onBinary(f); }
@@ -58,20 +67,22 @@ test('full interview: opening, turn, transcript, evidence, guidance, notes', asy
   assert.ok(third.some(m => m.content.startsWith('ANALYST_GUIDANCE') && m.content.includes('measurement')));
   await until(() => !h.s.busy()); // text reaches the screen with its audio
   const agent = h.events.filter(e => e.type === 'agent_text').map(e => e.text).join('');
-  assert.match(agent, /\n\n(Okay|Right|I see|Yeah)\. Thanks\./, 'a real answer gets a short acknowledgement, then the reply');
+  const ackShown = /\n\n(.+?) Thanks\./.exec(agent);
+  assert.ok(ackShown && ACK_TEXTS.has(ackShown[1]), 'a real answer gets a short acknowledgement, then the reply: ' + JSON.stringify(agent.slice(-80)));
   await h.s.onText(JSON.stringify({ type: 'end' }));
   const notes = h.events.find(e => e.type === 'notes');
   assert.equal(notes.status, 'candidate'); assert.equal(notes.sections[3], 'We cut triage time by about 40%');
   assert.ok(!notes.transcript.includes('Thanks') && h.events.at(-1).type === 'ended' && h.closed());
 });
 
-test('consultant speaking over ATLAS interrupts playback', async () => {
-  const h = harness([]);
+test('consultant speaking over ATLAS interrupts playback (v2.2 V1: once speech recognition hears words)', async () => {
+  const h = harness([]); h.calls.probeText = 'wait one moment';
   await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
   h.s.playedMs[h.s.protectedItem] = 1e9; // the greeting has played (browser acknowledgement)
   h.s.queue.push({ gen: h.s.gen, item: 'agent-1', bytes: new Uint8Array(960) }, { gen: h.s.gen, item: 'agent-1', bytes: new Uint8Array(960) });
-  for (const f of frames([[0.3, .001], [0.6, .5]])) { h.tick(); h.s.onBinary(f); } // sustained speech (> 450 ms) while ATLAS is audible
-  assert.ok(h.events.some(e => e.type === 'clear_audio') && h.events.some(e => e.type === 'user_speaking'));
+  for (const f of frames([[0.3, .001], [1.0, .5]])) { h.tick(); h.s.onBinary(f); } // sustained speech (> 450 ms, 600 ms voiced) while ATLAS is audible
+  await settle();
+  assert.ok(h.events.some(e => e.type === 'clear_audio') && h.events.some(e => e.type === 'user_speaking') && h.calls.probes >= 1);
   await h.s.onText(JSON.stringify({ type: 'end' }));
   assert.equal(h.events.find(e => e.type === 'notes').status, 'not-enabled');
 });
@@ -117,7 +128,7 @@ test('Z model boundary: projectContext drops the consultant; the talker never se
   const seen = JSON.stringify([z.calls.talker, z.calls.analyst, talkerMessages(z.s.project, z.s.guidance, z.s.history)]);
   assert.ok(!/Zelda|Quintero/.test(seen), 'no talker or analyst input carries the name');
   assert.ok(!('consultant' in z.s.project));
-  assert.equal(spoken(z.calls)[0], GREETINGS.en, 'the greeting names nobody');
+  assert.deepEqual(spoken(z.calls).slice(0, 2), GREETING, 'the greeting names nobody');
   assert.deepEqual(spoken(z.calls), spoken(a.calls), 'the same words whoever the consultant is');
 });
 
@@ -127,27 +138,27 @@ test('live regression: noise while ATLAS composes its opening cannot cancel it',
   const base = h.s.ai.chatStream; h.s.ai.chatStream = async function* (m) { await gate; yield* base(m); };
   await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
   for (const f of frames([[0.2, .001], [0.5, .4]])) { h.tick(); h.s.onBinary(f); } // loud room noise, nothing audible yet
-  assert.ok(!h.events.some(e => e.type === 'clear_audio' || e.type === 'user_speaking'));
+  assert.ok(!h.events.some(e => e.type === 'clear_audio'));
   release();
   for (let i = 0; i < 200; i++) await new Promise(r => setImmediate(r));
-  // the cached greeting (5 chunks) was already on its way before the noise began; the rest waits for quiet
-  assert.equal(h.bytes.length, 5, 'the rest of the opening waits while the sound is still going on');
   for (const f of frames([[1.3, .001]])) { h.tick(); h.s.onBinary(f); } // the noise stops: it transcribes to nothing
   await until(() => h.bytes.length >= 10);
-  assert.deepEqual(spoken(h.calls), [GREETINGS.en, 'Thanks.', 'What was the baseline?']);
+  assert.deepEqual(spoken(h.calls), [...GREETING, 'Thanks.', 'What was the baseline?']);
   await h.s.end(false);
 });
 
-test('live regression: an interruption that was only noise makes ATLAS re-ask', async () => {
-  const h = harness(['']); // barge-in audio transcribes to nothing
+test('v2.2 V1: noise over her voice only ducks her volume: she is not stopped, and nothing is re-asked', async () => {
+  const h = harness(['']); // the sound transcribes to nothing
   await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
   await until(() => !h.s.busy());
   h.s.playedMs[h.s.protectedItem] = 1e9; // the greeting has played (browser acknowledgement)
   h.s.queue.push({ gen: h.s.gen, item: 'agent-1', bytes: new Uint8Array(960) });
-  for (const f of frames([[0.1, .001], [0.6, .5], [1.3, .001]])) { h.tick(); h.s.onBinary(f); }
+  for (const f of frames([[0.1, .001], [1.0, .5], [1.3, .001]])) { h.tick(); h.s.onBinary(f); }
+  await settle();
   assert.ok(h.events.some(e => e.type === 'user_speaking'));
-  await until(() => h.calls.talker.length >= 2);
-  assert.ok(h.calls.talker[1].at(-1).content.startsWith('[The consultant made a sound'));
+  assert.ok(!h.events.some(e => e.type === 'clear_audio'), 'a sound that is not words never stops her');
+  assert.deepEqual(h.events.filter(e => e.type === 'duck').map(e => e.on), [true, false], 'her volume dipped and came back');
+  assert.equal(h.calls.talker.length, 1, 'no re-ask: she was never cut off');
   await h.s.end(false);
 });
 
@@ -215,7 +226,8 @@ test('when transcription consent is required, a start without it is refused', as
 
 const REPORT = { headline: 'Claims triage rebuilt', summary: 'The consultant rebuilt claims triage.', topics: { outcome: 'Triage time fell (stated).' }, highlights: ['Ownership'], gaps: ['No source'], follow_ups: [] };
 test('ATLAS ends the interview: end token never spoken or shown, wrap_up after playback, report in notes', async () => {
-  const h = harness(['That is everything, I am done.'], calls => ({
+  // (The consultant's words are an ordinary answer: "I am done" starts the read-back since T11, and nothing closes before the summary is confirmed.)
+  const h = harness(['That is the whole story of the intake rebuild.'], calls => ({
     async *chatStream(messages) { calls.talker.push(messages);
       const parts = calls.talker.length === 1 ? ['Hi, I am ATLAS. ', 'Tell me about it.'] : ['Thanks so much for sharing. ', 'I will prepare your report now. [', '[END', ']]'];
       for (const d of parts) yield d; },
@@ -233,7 +245,7 @@ test('ATLAS ends the interview: end token never spoken or shown, wrap_up after p
   const kinds = h.events.map(e => e.type), notes = h.events.find(e => e.type === 'notes');
   assert.ok(kinds.indexOf('reporting') < kinds.indexOf('notes'));
   assert.equal(notes.report.headline, 'Claims triage rebuilt'); assert.equal(notes.report.status, 'model_draft'); assert.equal(notes.report.topics.context, '');
-  assert.ok(JSON.parse(h.calls.report[1].content).interview_transcript.includes('Consultant: That is everything, I am done.'));
+  assert.ok(JSON.parse(h.calls.report[1].content).interview_transcript.some(t => t.speaker === 'consultant' && t.text.includes('That is the whole story of the intake rebuild.')));
 });
 test('report failure keeps the notes and sends report null', async () => {
   const h = harness(undefined, { async report() { throw new Error('model down'); } });
@@ -255,7 +267,7 @@ test('speaking limit: after her budget is spent the next reply is a forced wrap-
   await until(() => h.events.some(e => e.type === 'wrap_up'));
   const last = h.calls.talker.at(-1);
   assert.equal(last.at(-1).content, TIME_UP); assert.ok(h.s.timeUp);
-  assert.ok(last.some(m => m.role === 'system' && m.content.startsWith('INTERVIEW PACE') && m.content.includes('of 15 minutes used')));
+  assert.ok(last.some(m => m.role === 'system' && m.content.startsWith('INTERVIEW PACE') && m.content.includes('of 20 minutes used')));
 });
 test('admin note only in admin sessions; pace note lists areas without notes and never content', async () => {
   const a = harness(undefined, { session: { admin: true } }), n = harness();
@@ -305,7 +317,7 @@ test('the greeting plays instantly from cache and cannot be cut by noise; after 
   const h = harness([]);
   await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
   await until(() => h.events.some(e => e.type === 'audio_turn'));
-  assert.equal(h.events.find(e => e.type === 'agent_text').text.trim(), GREETINGS.en);
+  assert.equal(h.events.find(e => e.type === 'agent_text').text.trim(), GREETING[0], 'the first piece of the introduction is the one protected');
   assert.ok(h.s.greetingPlaying() && h.s.protectedMs > 0);
   h.s.queue.push({ gen: h.s.gen, item: 'agent-1', bytes: new Uint8Array(960) });
   for (const f of frames([[0.2, .001], [0.6, .5]])) { h.tick(); h.s.onBinary(f); }
@@ -322,7 +334,7 @@ test('second session reuses the cached greeting audio (no voice call)', async ()
     const h = harness([]);
     await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
     await until(() => h.calls.talker.length >= 1);
-    assert.equal(h.calls.tts.includes(GREETINGS.en), i === 0, i ? 'cached' : 'first synthesis');
+    assert.deepEqual(GREETING.map(p => h.calls.tts.includes(p)), [i === 0, i === 0], i ? 'cached' : 'first synthesis');
     await h.s.end(false); open.delete(h.s);
   }
 });
@@ -354,29 +366,27 @@ const say = (h, segs) => { for (const f of frames(segs)) { h.tick(); h.s.onBinar
 // Fillers are pre-synthesised into the cache at start, so check what ATLAS showed/said, not what was synthesised.
 // The browser's transcript reducer (src/voice-client.js): append agent_text, cut agent_retract's chars.
 const screen = h => h.events.reduce((t, e) => e.type === 'agent_text' ? t + e.text : e.type === 'agent_retract' ? t.slice(0, t.length - Math.min(e.chars, t.length)) : t, '');
-const acknowledged = h => h.events.some(e => e.type === 'agent_text' && e.text.startsWith('\n\n') && Object.values(FILLERS).flat().includes(e.text.trim()));
+const acknowledged = h => h.events.some(e => e.type === 'agent_text' && e.text.startsWith('\n\n') && ACK_TEXTS.has(e.text.trim()));
 
-test('the consultant keeps talking after a pause: ATLAS withdraws her started reply and answers the whole answer once', async () => {
+test('the consultant keeps talking after a pause: a reply they have heard is interrupted, never withdrawn (v2.2 V1)', async () => {
   let hold, gated = true;
   const h = harness(['We rebuilt the claims intake.', 'Then we cut the backlog by a third in two months.'], calls => ({
     async *chatStream(m) { calls.talker.push(m); yield 'Oh nice. '; if (calls.talker.length === 2 && gated) await new Promise(r => { hold = r; }); yield 'What changed for the team?'; } }));
   await opened(h);
   say(h, [[1.2, .2], [1.3, .001]]); // first part, then a 1.2 s pause: the turn ends
   await until(() => h.calls.talker.length === 2 && h.s.shown.item === 'agent-2'); // her reply has started (on screen, audible)
-  say(h, [[1.0, .2], [1.3, .001]]); // ...and they carry on before ATLAS has really answered
+  h.calls.probeText = 'then we cut the backlog'; // ...and they carry on before ATLAS has really answered
+  say(h, [[1.0, .2]]); await settle(); say(h, [[1.3, .001]]); // (speech recognition answers while they are still talking)
   await until(() => h.calls.talker.length === 3);
   gated = false; hold?.();
   await until(() => !h.s.busy());
-  assert.ok(h.events.some(e => e.type === 'agent_retract' && e.item_id === 'agent-2' && e.chars > 0), 'the started reply is taken back on screen');
+  assert.ok(!h.events.some(e => e.type === 'agent_retract'), 'what they heard stays on screen: it is never taken back');
+  assert.ok(h.events.some(e => e.type === 'clear_audio'), 'she stopped, as for any interruption');
   const users = h.s.history.filter(m => m.role === 'user');
-  assert.deepEqual(users.map(m => m.content), ['We rebuilt the claims intake. Then we cut the backlog by a third in two months.']);
-  assert.ok(!h.s.history.some(m => m.content.includes('[interrupted')), 'a withdrawn reply is not an interruption');
-  assert.equal(h.s.history.filter(m => m.role === 'assistant').length, 2, 'opening + one real answer');
+  assert.deepEqual(users.map(m => m.content), ['We rebuilt the claims intake.', 'Then we cut the backlog by a third in two months.']);
+  assert.ok(h.s.history.some(m => m.role === 'assistant' && /^(?:.* )?Oh nice\. \[interrupted by the consultant\]$/.test(m.content)), 'the interruption is recorded with what was heard');
   assert.ok(h.calls.talker[2].some(m => m.role === 'user' && m.content.endsWith('by a third in two months.')));
-  const opening = GREETINGS.en + ' Oh nice. What changed for the team?';
-  const shown = screen(h);
-  assert.ok(shown.startsWith(opening + '\n\n') && /^((Okay|Right|I see|Yeah)\. )?Oh nice\. What changed for the team\?$/.test(shown.slice(opening.length + 2)),
-    'exactly the opening and the one real reply on screen: ' + JSON.stringify(shown));
+  assert.ok(screen(h).includes('Oh nice.'), 'still on screen');
 });
 
 test('words that trail off ("and…") get an extra beat and no acknowledgement', async () => {
@@ -497,15 +507,16 @@ test('a failed transcript of the continuation still gets the held answer answere
   assert.ok(h.events.some(e => e.type === 'quality_warning' && /could not be transcribed/.test(e.message)));
 });
 
-test('a barge-in whose transcript fails still re-asks', async () => {
+test('v2.2 V1: a check of a sound over her voice that fails never stops her', async () => {
   const h = harness([], calls => ({ async transcribe() { calls.stt += 1; throw new Error('stt down'); } }));
   await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
   await until(() => !h.s.busy());
   h.s.playedMs[h.s.protectedItem] = 1e9;
   h.s.queue.push({ gen: h.s.gen, item: 'agent-1', bytes: new Uint8Array(960) });
-  say(h, [[0.1, .001], [0.6, .5], [1.3, .001]]);
-  await until(() => h.calls.talker.length >= 2);
-  assert.equal(h.calls.talker[1].at(-1).content, RESUME_TEXT);
+  say(h, [[0.1, .001], [1.0, .5], [1.3, .001]]);
+  await settle();
+  assert.ok(h.calls.stt >= 1 && !h.events.some(e => e.type === 'clear_audio') && h.calls.talker.length === 1, 'no cut, no re-ask');
+  assert.deepEqual(h.events.filter(e => e.type === 'duck').map(e => e.on), [true, false]);
 });
 
 test('the acknowledgement does not count toward the continuation window', async () => {
@@ -513,15 +524,16 @@ test('the acknowledgement does not count toward the continuation window', async 
     const metrics = []; let hold;
     const h = harness(['A short answer about the rollout.'], { session: { metric: (n, v) => metrics.push([n, v]) },
       async *chatStream() { await new Promise(r => { hold = r; }); yield 'Thanks.'; } });
+    h.calls.probeText = fillerMs ? '' : 'hold on a second';
     await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
-    hold(); await until(() => !h.s.busy() && h.bytes.length >= 5);
+    await until(() => typeof hold === 'function'); hold(); await until(() => !h.s.busy() && h.bytes.length >= 5);
     h.s.playedMs[h.s.protectedItem] = 1e9;
     say(h, [[1.2, .2], [1.3, .001]]);
     await until(() => h.s.replyTurn === 1 && h.s.busy());
     // 2.2 s sent (1.9 s heard, less 0.45 s to notice the barge-in), of which fillerMs is "Right."
     h.s.sentMs[h.s.replyItem] = 2200; h.s.fillerMs[h.s.replyItem] = fillerMs;
     h.s.queue.push({ gen: h.s.gen, item: h.s.replyItem, bytes: new Uint8Array(960) }); // audible
-    say(h, [[0.6, .5]]);
+    say(h, [[1.0, .5]]); await settle();
     assert.equal(metrics.some(([n]) => n === 'turn_resumed'), resumed, 'resumed with fillerMs=' + fillerMs);
     assert.equal(metrics.some(([n]) => n === 'barge_in'), !resumed);
     assert.equal(h.s.cutOff, !resumed);
@@ -580,20 +592,26 @@ test('without a turn model: 1.0 s of silence keeps the turn, 1.2 s ends it', asy
   await until(() => h.calls.stt === 1);
 });
 
-test('a reply already fully composed is taken back from the history too: a cough gets it re-answered, words get merged', async () => {
+test('a reply already fully composed and heard stays in the history: a cough changes nothing, words interrupt it (v2.2 V1)', async () => {
   for (const second of ['', 'and then we cut the backlog by a third in two months across the region.']) {
-    const h = harness(['A short answer about the rollout.', second]);
+    const h = harness(['A short answer about the rollout.', second]); h.calls.probeText = second ? 'and then we cut' : '';
     await opened(h);
     say(h, [[1.2, .2], [1.3, .001]]);
     await until(() => h.calls.talker.length === 2 && !h.s.speaking && h.s.history.at(-1).role === 'assistant'); // written to history
     h.s.queue.push({ gen: h.s.gen, item: h.s.replyItem, bytes: new Uint8Array(960) }); // its audio still playing
-    say(h, [[0.6, .5], [1.3, .001]]); // they carry on within the first second of it
-    await until(() => h.calls.talker.length === 3 && !h.s.busy());
+    say(h, [[1.0, .5]]); await settle(); say(h, [[1.3, .001]]); // they speak over it within the first second
+    await settle();
     const users = h.s.history.filter(m => m.role === 'user').map(m => m.content);
-    if (second) assert.deepEqual(users, ['A short answer about the rollout. ' + second], 'one merged answer');
-    else assert.deepEqual(users, ['A short answer about the rollout.'], 'the cough added nothing');
-    assert.equal(h.s.history.filter(m => m.role === 'assistant').length, 2, 'opening + the one reply that stands');
-    assert.equal(h.s.history.at(-1).role, 'assistant');
+    if (second) {
+      await until(() => h.calls.talker.length === 3);
+      assert.deepEqual(users, ['A short answer about the rollout.', second], 'two turns: she was interrupted, not withdrawn');
+      assert.ok(h.s.history.some(m => m.role === 'assistant' && m.content.endsWith('[interrupted by the consultant]')));
+    } else {
+      assert.deepEqual(users, ['A short answer about the rollout.'], 'the cough added nothing');
+      assert.equal(h.calls.talker.length, 2, 'and she was not stopped, so nothing is re-answered');
+      assert.ok(!h.events.some(e => e.type === 'clear_audio' || e.type === 'agent_retract') && !h.s.history.at(-1).content.includes('[interrupted'));
+    }
+    assert.ok(!h.events.some(e => e.type === 'agent_retract'));
     await h.s.end(false);
   }
 });
@@ -633,17 +651,17 @@ test('a cough that cut ATLAS off is not re-asked while the consultant is already
   assert.ok(h.calls.talker[1].some(m => m.role === 'user' && m.content.startsWith('We cut triage')));
 });
 
-test('a transcription that never returns counts as no words (timeout): the cut-off question is re-asked', async () => {
+test('a transcription that never returns counts as no words (timeout): nothing was cut, so nothing is re-asked (v2.2 V1)', async () => {
   const h = harness([], { session: { sttTimeout: 20 }, transcribe() { return new Promise(() => {}); } });
   await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
   await until(() => !h.s.busy());
   h.s.playedMs[h.s.protectedItem] = 1e9;
   h.s.queue.push({ gen: h.s.gen, item: 'agent-1', bytes: new Uint8Array(960) });
-  say(h, [[0.1, .001], [0.6, .5], [1.3, .001]]);
-  await new Promise(r => setTimeout(r, 80));
-  await until(() => h.calls.talker.length >= 2);
-  assert.equal(h.calls.talker[1].at(-1).content, RESUME_TEXT);
-  assert.equal(h.s.sttBusy, 0);
+  say(h, [[0.1, .001], [1.0, .5], [1.3, .001]]);
+  await new Promise(r => setTimeout(r, 80)); await settle();
+  assert.ok(!h.events.some(e => e.type === 'clear_audio'), 'neither the check nor the turn ever returned words: she was not stopped');
+  assert.equal(h.calls.talker.length, 1); assert.equal(h.s.sttBusy, 0);
+  assert.deepEqual(h.events.filter(e => e.type === 'duck').map(e => e.on), [true, false]);
 });
 
 test('a click while ATLAS prepares her answer neither holds her reply nor gets transcribed', async () => {
@@ -680,16 +698,18 @@ test('admin mode gets the same patience on words that trail off, without the nud
 // ---- second review round ----
 const LONG = 'We moved the whole billing platform to the new provider last spring with a team of five.';
 
-test('a cough over a reply still waiting on the model: the reply is taken back and the answer is still answered', async () => {
+test('a cough over a reply still waiting on the model changes nothing: she finishes it (v2.2 V1)', async () => {
   let stuck;
   const h = harness([LONG, ''], calls => ({ async *chatStream(m) { calls.talker.push(m); if (calls.talker.length === 2) await new Promise(r => { stuck = r; }); yield 'Thanks. '; yield 'Who owned the budget?'; } }));
   await opened(h);
   say(h, [[1.2, .2], [1.3, .001]]);
   await until(() => h.calls.talker.length === 2);
   h.s.queue.push({ gen: h.s.gen, item: h.s.replyItem, bytes: new Uint8Array(960) }); // the acknowledgement is playing
-  say(h, [[0.6, .5], [1.3, .001]]); // a cough over it
-  await until(() => h.calls.talker.length === 3); // not stuck behind the stale reply
+  say(h, [[1.0, .5], [1.3, .001]]); // a cough over it
+  await settle();
+  assert.ok(!h.events.some(e => e.type === 'clear_audio' || e.type === 'agent_retract'));
   stuck(); await until(() => !h.s.busy() && h.s.history.at(-1).role === 'assistant');
+  assert.equal(h.calls.talker.length, 2, 'the reply was not replaced');
   assert.equal(h.s.history.filter(m => m.role === 'assistant').length, 2, 'opening + one answer');
 });
 
@@ -703,24 +723,27 @@ test('a barge-in while her next sentence is still being voiced: the cut-off ques
   await until(() => h.calls.tts.includes('Who owned the budget?') && h.s.shown.item === h.s.replyItem);
   h.s.sentMs[h.s.replyItem] = 3000; // well into her reply: a real barge-in
   h.s.queue.push({ gen: h.s.gen, item: h.s.replyItem, bytes: new Uint8Array(960) });
-  say(h, [[0.6, .5], [1.3, .001]]);
+  h.calls.probeText = 'hold on please';
+  say(h, [[1.0, .5]]); await settle(); say(h, [[1.3, .001]]);
   await until(() => h.calls.talker.length === 3);
   assert.equal(h.calls.talker[2].at(-1).content, RESUME_TEXT);
   assert.ok(h.s.history.some(m => m.role === 'assistant' && m.content === 'Thanks. [interrupted by the consultant]'), 'what was heard, marked');
   voice();
 });
 
-test('her own reply coming back through the speakers after a withdrawal is recognised as echo, not merged', async () => {
+test('her own reply coming back through the speakers is recognised as echo: it neither stops her nor is merged (v2.2 V1)', async () => {
   const h = harness(['A short answer about the rollout.', 'Who owned the rollout budget?'], calls => ({
     async *chatStream(m) { calls.talker.push(m); yield 'Great. '; yield calls.talker.length === 2 ? 'Who owned the rollout budget?' : 'What was the baseline?'; } }));
+  h.calls.probeText = 'Who owned the rollout budget?';
   await opened(h);
   say(h, [[1.2, .2], [1.3, .001]]);
   await until(() => h.calls.talker.length === 2 && h.s.live?.item === h.s.replyItem && h.s.live.text.includes('Who owned')); // played
   h.s.queue.push({ gen: h.s.gen, item: h.s.replyItem, bytes: new Uint8Array(960) });
-  say(h, [[0.6, .5], [1.3, .001]]); // the microphone picks up her question
-  await until(() => h.calls.stt === 2 && h.calls.talker.length === 3);
+  say(h, [[1.0, .5], [1.3, .001]]); // the microphone picks up her question
+  await until(() => h.calls.stt === 2); await settle();
   assert.deepEqual(h.s.history.filter(m => m.role === 'user').map(m => m.content), ['A short answer about the rollout.'], 'her words are not the consultant\'s');
   assert.ok(h.events.some(e => e.type === 'quality_warning' && /its own voice/.test(e.message)));
+  assert.ok(!h.events.some(e => e.type === 'clear_audio') && h.calls.talker.length === 2, 'and her own echo never stopped her');
 });
 
 test('once the greeting is cut off by an answer, it is no longer protected', async () => {
@@ -794,7 +817,7 @@ test('a withdrawn reply only counts as possible echo for the next transcript: a 
 test('a click while the answer is transcribed, then real speech: ATLAS does not talk over it', async () => {
   let release; const slow = new Promise(r => { release = r; }); let hold;
   const h = harness([], calls => ({
-    async transcribe() { calls.stt += 1; if (calls.stt === 1) { await slow; return 'We rebuilt the claims intake.'; } return 'Then we cut the backlog by a third in two months.'; },
+    async transcribe(pcm, o) { if (o?.probe) return 'Then we cut the backlog'; calls.stt += 1; if (calls.stt === 1) { await slow; return 'We rebuilt the claims intake.'; } return 'Then we cut the backlog by a third in two months.'; },
     async *chatStream(m) { calls.talker.push(m); yield 'Thanks. '; if (calls.talker.length === 2) await new Promise(r => { hold = r; }); yield 'What was the baseline?'; } }));
   await opened(h);
   say(h, [[1.2, .2], [1.3, .001]]);
@@ -803,13 +826,13 @@ test('a click while the answer is transcribed, then real speech: ATLAS does not 
   await until(() => h.calls.talker.length === 2 && h.s.shown.item === 'agent-2'); // her reply is playing
   h.s.queue.push({ gen: h.s.gen, item: h.s.replyItem, bytes: new Uint8Array(960) });
   const cleared = h.events.filter(e => e.type === 'clear_audio').length;
-  say(h, [[0.6, .5]]); // then they really carry on
-  assert.ok(h.events.filter(e => e.type === 'clear_audio').length > cleared, 'she stops at once');
+  say(h, [[1.0, .5]]); await settle(); // then they really carry on
+  assert.ok(h.events.filter(e => e.type === 'clear_audio').length > cleared, 'she stops once it is words');
   say(h, [[1.3, .001]]);
   hold();
   await until(() => h.calls.talker.length === 3 && !h.s.busy());
   assert.equal(h.calls.stt, 2, 'the click was never transcribed');
-  assert.deepEqual(h.s.history.filter(m => m.role === 'user').map(m => m.content), ['We rebuilt the claims intake. Then we cut the backlog by a third in two months.']);
+  assert.deepEqual(h.s.history.filter(m => m.role === 'user').map(m => m.content), ['We rebuilt the claims intake.', 'Then we cut the backlog by a third in two months.']);
 });
 
 test('text on screen is exactly what is being voiced, even when the model streams word by word', async () => {
@@ -976,7 +999,7 @@ test('a short sound is joined by when the next speech began, not by when it was 
 
 test('after she is interrupted, a later answer that reuses her question is kept (the cut playback is over)', async () => {
   let hold;
-  const h = harness([...QA, 'Sorry, one moment.', 'I owned the rollout budget.'], calls => ({
+  const h = harness([...QA, 'Sorry, let me think.', 'I owned the rollout budget.'], calls => ({
     async *chatStream(m) { calls.talker.push(m); const n = calls.talker.length; if (n === 3) await new Promise(r => { hold = r; });
       yield 'Great. '; yield n === 2 ? 'Who owned the rollout budget?' : 'What was the baseline?'; } }));
   await opened(h);
@@ -1013,17 +1036,19 @@ test('speech that starts in the gap between two of her sentences is not taken fo
   assert.ok(!h.events.some(e => e.type === 'quality_warning' && /its own voice/.test(e.message)));
 });
 
-// ---- 15-minute interview ----
-test('the interview is planned for 15 minutes: breadth first, then depth, then only the most important question', () => {
-  assert.equal(MAX_SECONDS, 900);
+// ---- 20-minute interview (Tony, 2026-10-31: was 15, so there is time to go over what was done) ----
+test('the interview is planned for 20 minutes: breadth first, then depth (from 9 minutes), then only the most important question (the last 4.5 minutes, the read-back window)', () => {
+  assert.equal(MAX_SECONDS, 1200); assert.equal(INTERVIEW_LIMIT_S, 1200); assert.equal(SPEAKING_LIMIT_S, 800); assert.equal(WRAP_S, 90); assert.equal(TIME_PLAN.closing_left_s, 270);
+  assert.deepEqual(timePlan(MAX_SECONDS, 'full'), { depthAt: 540, closingAt: 930 });
   const none = ['', '', '', '', '', ''], some = ['a', '', 'c', '', '', ''];
-  assert.match(paceNotes(60, 900, none)[1], /about 1 of 15 minutes used\. Next uncovered area: what was going on\./);
-  assert.match(paceNotes(420, 900, some)[1], /about 7 of 15 minutes used\. Past halfway: challenge .* Still uncovered: their personal contribution, the outcome\./);
-  assert.match(paceNotes(720, 900, some)[1], /Under four minutes left: ask only the single most important remaining question, then move to ENDING\./);
+  assert.match(paceNotes(60, 1200, none)[1], /about 1 of 20 minutes used\. Next uncovered area: what was going on\./);
+  assert.match(paceNotes(560, 1200, some)[1], /about 9 of 20 minutes used\. Past halfway: challenge .* Still uncovered: their personal contribution, the outcome\./);
+  assert.match(paceNotes(930, 1200, some)[1], /Under five minutes left: ask only the single most important remaining question, then move to ENDING\./);
+  assert.match(paceNotes(1110, 1200, some)[1], /Time is up: close now/);
   assert.ok(TIME_UP.includes('the time for this interview is up'));
 });
 
-test('with 75 seconds of the interview left, her next reply is the closing, then the interview wraps up', async () => {
+test('with 90 seconds of the interview left, her next reply is the closing, then the interview wraps up', async () => {
   const h = harness(['Here is my project story.'], { session: { maxSeconds: 120 } });
   await opened(h);
   for (let i = 0; i < 2300; i++) h.tick(); // 46 s into a 120 s interview: 74 s left
@@ -1131,7 +1156,7 @@ async function gapOpened(h) {
   await until(() => !h.s.busy() && h.bytes.length >= 10);
   h.s.playedMs[h.s.protectedItem] = 1e9; // the greeting has played (browser acknowledgement)
 }
-const system = m => m[0].content;
+const system = m => m[0].content, dataOf = m => { assert.equal(m[1].role, 'user'); return m[1].content; }; // the system role is policy; the untrusted data is the fenced user message after it
 const notesOf = m => m.filter((x, i) => i > 0 && x.role === 'system' && !x.content.startsWith('ANALYST_GUIDANCE')).map(x => x.content);
 const lastQuality = h => h.events.filter(e => e.type === 'quality').at(-1);
 
@@ -1144,19 +1169,20 @@ test('gap start: resolved server-side, ready carries mode/timePlan/gaps (at most
   assert.deepEqual(ready.timePlan, { depthAt: null, closingAt: 210 });
   assert.deepEqual(ready.gaps, [{ id: 'G1', label: 'Supporting artifact', ask: ASKS[0].ask }, { id: 'G2', label: 'Measurement basis', ask: ASKS[1].ask },
     { id: 'G3', label: 'Customer relevance', ask: ASKS[2].ask }]);
-  const sys = system(h.calls.talker[0]);
+  const sys = dataOf(h.calls.talker[0]), policy = system(h.calls.talker[0]);
   const at = label => sys.indexOf(label);
   assert.ok(at('\nUNTRUSTED PROJECT DATA:\n') > 0 && at('\nUNTRUSTED PROJECT DATA:\n') < at('\nUNTRUSTED GAP LIST') && at('\nUNTRUSTED GAP LIST') < at('\nUNTRUSTED PRIVATE PREFERENCES'));
-  assert.ok(sys.endsWith('\nUNTRUSTED PRIVATE PREFERENCES (not evidence):\n'), 'nothing after the preferences label: the prefix is cache-stable');
+  assert.ok(/\nUNTRUSTED PRIVATE PREFERENCES \(not evidence\):\n<<END-[0-9a-f]{8}>>$/.test(sys) && sys.startsWith('<<DATA-'), 'fenced, nothing after the preferences label: the prefix is cache-stable');
+  assert.ok(!policy.includes(ASKS[0].ask) && !policy.includes('UNTRUSTED GAP LIST ('), 'the system role carries no gap-request text');
   assert.ok(sys.includes(JSON.stringify(ready.gaps)) && !sys.includes('Dropped'), 'ids, labels and asks only; the fourth ask is dropped');
   const opening = h.calls.talker[0];
   assert.equal(opening.at(-1).content, GAP_OPENING, 'the gap opening (it never asks for the Opp ID)');
-  assert.ok(opening.some(m => m.content.startsWith('ANALYST_GUIDANCE') && m.content.includes('"askId":"G1"') && m.content.includes(ASKS[0].ask)));
+  assert.ok(opening.some(m => m.role === 'system' && m.content.startsWith('ANALYST_GUIDANCE') && m.content.includes('"askId":"G1"') && !m.content.includes(ASKS[0].ask) && m.content.includes('ask with id G1')), 'the plan names the ask by id; its words are only in the fenced data'); 
   const notes = notesOf(opening);
   assert.equal(notes[0], GAP_NOTE, 'GAP_NOTE first (no admin note)');
   assert.ok(notes.includes('GAP PACE (server): about 0 of 5 minutes used. Open items: Supporting artifact, Measurement basis, Customer relevance.'));
   assert.ok(!notes.some(n => n.startsWith('INTERVIEW PACE') || n.startsWith('ADMIN MODE')), 'no full-mode pace');
-  assert.deepEqual(spoken(h.calls), [GREETINGS.en, 'Thanks.', 'What was the baseline?'], 'greeting first, then the gap opening');
+  assert.deepEqual(spoken(h.calls), [...GREETING, 'Thanks.', 'What was the baseline?'], 'greeting first, then the gap opening');
   assert.equal(h.s.gapAttempts.G1, 1, 'the opening carried G1 and was heard'); assert.equal(h.s.openAsk, 'G1');
 });
 
@@ -1196,7 +1222,7 @@ test('closing during gap resolution: a discard or End leaves no ready and no tim
 
 test('full mode: a clean End while private memory is still recalled creates no timer and no opening (timer-leak guard)', async () => {
   let release; const h = harness([], { session: { memory: () => new Promise(r => { release = r; }) } });
-  const starting = h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
+  const starting = h.s.onText(JSON.stringify({ type: 'start', consent: { transcription: true, memory: true }, csrf: 'tok', project: PROJECT, capture: false }));
   await settle(5);
   let sttDone; h.s.sttChain = new Promise(r => { sttDone = r; }); // End waits for the last words: ending, not yet finished
   const sleep = h.s.sleep; h.s.sleep = () => new Promise(() => {});
@@ -1248,7 +1274,7 @@ test('answer windows: the analyst files the answer under another field; the ask 
 });
 
 test('deferral after two heard attempts comes from the session\'s own counts (never the ledger\'s deferred_fields); the quality event names the current ask', async () => {
-  const h = harness(['Not sure.', 'No idea really.'], { session: { gaps: resolver() } });
+  const h = harness(['Maybe, it varied.', 'Depends on the team.'], { session: { gaps: resolver() } });
   await gapOpened(h);
   say(h, [[1.2, .2], [1.3, .001]]);
   await until(() => h.calls.talker.length >= 2 && !h.s.busy() && h.s.gapAttempts.G1 === 2);
@@ -1261,23 +1287,23 @@ test('deferral after two heard attempts comes from the session\'s own counts (ne
   assert.deepEqual([q.next_field, q.next_question, q.planned_question], ['measurement', ASKS[1].ask, ASKS[1].ask]);
   assert.ok(h.calls.talker[2].some(m => m.content.startsWith('ANALYST_GUIDANCE') && m.content.includes('"deferred":["evidence"]')));
   await h.s.onText(JSON.stringify({ type: 'end' }));
-  assert.deepEqual(h.events.find(e => e.type === 'notes').gap.results[0], { askId: 'G1', field: 'evidence', status: 'deferred', quotes: ['Not sure.', 'No idea really.'] });
+  assert.deepEqual(h.events.find(e => e.type === 'notes').gap.results[0], { askId: 'G1', field: 'evidence', status: 'deferred', quotes: ['Maybe, it varied.', 'Depends on the team.'] });
 });
 
-test('every ask answered: the plan is reflect-and-confirm and the gap pace says so; UNKNOWN answers count as unknown', async () => {
-  const h = harness(['The audit report was signed off by the client quality team.', 'Honestly I don\'t know how that was measured.', 'Mostly insurers with old mainframe claims platforms like this one.'],
+test('every ask answered: the plan is reflect-and-confirm and the gap pace says so; an item the consultant could not answer after two easier angles counts as unknown', async () => {
+  const h = harness(['The audit report was signed off by the client quality team.', 'Honestly I don\'t know how that was measured.', 'No idea at all.', 'Still no idea, sorry.', 'Mostly insurers with old mainframe claims platforms like this one.'],
     { session: { gaps: resolver() } });
   await gapOpened(h);
-  for (let n = 2; n <= 4; n++) { say(h, [[1.2, .2], [1.3, .001]]); await until(() => h.calls.talker.length >= n && !h.s.busy()); }
+  for (let n = 2; n <= 6; n++) { say(h, [[1.2, .2], [1.3, .001]]); await until(() => h.calls.talker.length >= n && !h.s.busy()); }
   await until(() => lastQuality(h)?.gap_status.every(s => s.status !== 'open'));
   const q = lastQuality(h);
   assert.deepEqual(q.gap_status.map(s => s.status), ['answered_unverified', 'unknown', 'answered_unverified']);
   assert.deepEqual([q.next_field, q.next_question, q.next_action], [null, GAP_REFLECT, 'reflect_and_confirm']);
-  assert.ok(notesOf(h.calls.talker[3]).some(n => n.endsWith('Every item has an answer: reflect back and close.')));
-  assert.deepEqual(h.s.gapAttempts, { G1: 1, G2: 1, G3: 1 }, 'a reflect-and-confirm reply carries no ask');
+  assert.ok(notesOf(h.calls.talker[5]).some(n => n.endsWith('Every item has an answer: reflect back and close.')));
+  assert.deepEqual(h.s.gapAttempts, { G1: 1, G2: 3, G3: 1 }, 'the ask and its two easier angles are three attempts; a reflect-and-confirm reply carries no ask');
 });
 
-test('a reply withdrawn because the consultant carried on is not an attempt; the continuation joins the same window entry as its own exact part', async () => {
+test('a reply the consultant heard counts as an attempt even when they carry on (v2.2 V1: never withdrawn); the continuation joins the same window entry as its own exact part', async () => {
   let hold, gated = true;
   const h = harness(['We rebuilt the claims intake.', 'Then we cut the backlog by a third in two months.'], calls => ({
     async *chatStream(m) { calls.talker.push(m); yield 'Oh nice. '; if (calls.talker.length === 2 && gated) await new Promise(r => { hold = r; }); yield 'What changed for the team?'; } }));
@@ -1286,13 +1312,14 @@ test('a reply withdrawn because the consultant carried on is not an attempt; the
   say(h, [[1.2, .2], [1.3, .001]]);
   await until(() => h.calls.talker.length === 2 && h.s.shown.item === 'agent-2');
   assert.equal(h.s.gapAttempts.G1, 2, 'her reply (still carrying G1) was heard');
-  say(h, [[1.0, .2], [1.3, .001]]);
+  h.calls.probeText = 'then we cut the backlog';
+  say(h, [[1.0, .2]]); await settle(); say(h, [[1.3, .001]]);
   await until(() => h.calls.talker.length === 3);
   gated = false; hold?.();
   await until(() => !h.s.busy());
-  assert.ok(h.events.some(e => e.type === 'agent_retract' && e.item_id === 'agent-2'));
-  assert.deepEqual(h.s.gapAttempts, { G1: 1, G2: 1 }, 'the withdrawn reply was taken back; the real reply carries G2');
-  assert.deepEqual(h.s.gapAnswers.G1, [['We rebuilt the claims intake.', 'Then we cut the backlog by a third in two months.']]);
+  assert.ok(!h.events.some(e => e.type === 'agent_retract'), 'what they heard is never taken back');
+  assert.deepEqual(h.s.gapAttempts, { G1: 2, G2: 1 }, 'the interrupted reply was heard, so it stays an attempt; the real reply carries G2');
+  assert.deepEqual(h.s.gapAnswers.G1, [['We rebuilt the claims intake.'], ['Then we cut the backlog by a third in two months.']]);
   await h.s.onText(JSON.stringify({ type: 'end' }));
   const r = h.events.find(e => e.type === 'notes').gap.results[0];
   assert.equal(r.status, 'answered_unverified', 'the two parts together answer it');
@@ -1358,9 +1385,12 @@ test('full mode is unchanged: ready adds mode and timePlan only, the system pref
   const h = harness();
   await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, voice: 'asteria', capture: true, memory: false }));
   const ready = h.events[0];
-  assert.equal(ready.mode, 'full'); assert.deepEqual(ready.timePlan, { depthAt: 405, closingAt: 690 }); assert.ok(!('gaps' in ready));
+  assert.equal(ready.mode, 'full'); assert.deepEqual(ready.timePlan, { depthAt: 540, closingAt: 930 }); assert.ok(!('gaps' in ready));
+  assert.equal(ready.maxSeconds, 1800, 'the clock runs to the hard cap'); assert.equal(ready.softSeconds, 1200, 'and shows the planned end');
   await until(() => h.calls.talker.length >= 1 && !h.s.busy());
-  assert.equal(system(h.calls.talker[0]), TALKER_POLICY + '\nUNTRUSTED PROJECT DATA:\n' + JSON.stringify(h.s.project) + '\nUNTRUSTED PRIVATE PREFERENCES (not evidence):\n');
+  const f = h.s.fence; assert.match(f, /^[0-9a-f]{8}$/);
+  assert.equal(system(h.calls.talker[0]), TALKER_POLICY + fenceRule(f));
+  assert.deepEqual(h.calls.talker[0][1], { role: 'user', content: `<<DATA-${f}>>\nUNTRUSTED PROJECT DATA:\n` + JSON.stringify(h.s.project) + `\nUNTRUSTED PRIVATE PREFERENCES (not evidence):\n<<END-${f}>>` });
   assert.deepEqual(talkerMessages(h.s.project, null, [], undefined, [], []), talkerMessages(h.s.project, null, [], undefined, []), 'an empty gap list adds nothing');
   assert.deepEqual(h.s.askByItem.size + Object.keys(h.s.gapAttempts).length, 0, 'no answer windows in full mode');
   await h.s.onText(JSON.stringify({ type: 'end' }));
@@ -1401,9 +1431,9 @@ const sayAsync = async (h, segs) => { for (const f of frames(segs)) { h.tick(); 
 test('gap: the reply after reflect-and-confirm is not filed as the last ask\'s answer (an unknown or deferred ask stays so, the confirmation is no quote)', async () => {
   const confirm = 'No, that all sounds right to me, thank you.';
   for (const [said, expected] of [
-    [['The audit report was signed off by the client quality team.', 'Honestly I don\'t know how that was measured.', 'Mostly insurers with old mainframe claims platforms like this one.'],
-      [['answered_unverified', 1], ['unknown', 1], ['answered_unverified', 1]]],
-    [['The audit report was signed off by the client quality team.', 'I am not sure.', 'Sorry, no idea.', 'Mostly insurers with old mainframe claims platforms like this one.'],
+    [['The audit report was signed off by the client quality team.', 'Honestly I don\'t know how that was measured.', 'No idea at all.', 'Still no idea, sorry.', 'Mostly insurers with old mainframe claims platforms like this one.'],
+      [['answered_unverified', 1], ['unknown', 3], ['answered_unverified', 1]]],
+    [['The audit report was signed off by the client quality team.', 'Maybe, it varied.', 'Depends on the team.', 'Mostly insurers with old mainframe claims platforms like this one.'],
       [['answered_unverified', 1], ['deferred', 2], ['answered_unverified', 1]]],
   ]) {
     const h = harness([...said, confirm], { session: { gaps: resolver() } });
@@ -1422,7 +1452,7 @@ test('gap: the reply after reflect-and-confirm is not filed as the last ask\'s a
   }
 });
 
-test('gap: the closing closes the answer window: a goodbye is no answer; a closing withdrawn because they carried on gives the window back', async () => {
+test('gap: the closing closes the answer window: a goodbye is no answer; a closing they carried on over (interrupted, never withdrawn) gives the window back', async () => {
   const h = harness(['Um, not sure.', 'Okay, thank you very much for your time today.'], { session: { gaps: resolver() } });
   await gapOpened(h);
   for (let i = 0; i < 262 / 0.02; i++) h.tick();
@@ -1444,13 +1474,14 @@ test('gap: the closing closes the answer window: a goodbye is no answer; a closi
   say(w, [[1.2, .2], [1.3, .001]]);
   await until(() => w.calls.talker.length === 2 && w.s.shown.item === 'agent-2');
   assert.equal(w.s.openAsk, null, 'the closing is being heard');
-  say(w, [[1.0, .2], [1.3, .001]]);
+  w.calls.probeText = 'then we cut the backlog';
+  say(w, [[1.0, .2]]); await settle(); say(w, [[1.3, .001]]);
   await until(() => w.calls.talker.length === 3);
   gated = false; hold?.();
   await until(() => !w.s.busy());
-  assert.ok(w.events.some(e => e.type === 'agent_retract' && e.item_id === 'agent-2'));
+  assert.ok(!w.events.some(e => e.type === 'agent_retract'), 'the closing they heard is interrupted, never taken back');
   assert.deepEqual(w.s.gapAttempts, { G1: 1 }, 'no attempt counted or taken back for a closing');
-  assert.deepEqual(w.s.gapAnswers.G1, [['We rebuilt the claims intake.', 'Then we cut the backlog by a third in two months.']], 'the continuation joins its ask');
+  assert.deepEqual(w.s.gapAnswers.G1, [['We rebuilt the claims intake.'], ['Then we cut the backlog by a third in two months.']], 'the continuation joins its ask');
 });
 
 test('gap: a still-thinking reply that asks the next item counts as asking it; a reply that only nudges does not', async () => {
@@ -1485,27 +1516,27 @@ const named = (metrics, name) => metrics.filter(([n]) => n === name).map(([, v])
 test('phrasing: markup is never voiced but stays on screen; short sentences join the next piece; text travels with its audio', async () => {
   const h = harness([], calls => ({ async *chatStream(m) { calls.talker.push(m); yield* ['**Great.** ', 'That is clear. ', 'So it worked. ', 'Who measured the change before and after?', ' Ok.']; } }));
   await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
-  await until(() => !h.s.busy() && spoken(h.calls).length === 4);
-  assert.deepEqual(spoken(h.calls), [GREETINGS.en, 'Great.', 'That is clear. So it worked. Who measured the change before and after?', 'Ok.']);
+  await until(() => !h.s.busy() && spoken(h.calls).length === 5);
+  assert.deepEqual(spoken(h.calls), [...GREETING, 'Great.', 'That is clear. So it worked. Who measured the change before and after?', 'Ok.']);
   assert.deepEqual(h.events.filter(e => e.type === 'agent_text').map(e => e.text),
-    [GREETINGS.en, ' **Great.**', ' That is clear. So it worked. Who measured the change before and after?', ' Ok.'], 'each piece shown exactly when its audio starts');
+    [GREETING[0], ' ' + GREETING[1], ' **Great.**', ' That is clear. So it worked. Who measured the change before and after?', ' Ok.'], 'each piece shown exactly when its audio starts');
 });
 
 test('pipelined synthesis: the next piece is synthesised while the one before it is, and audio stays in order', async () => {
   const gates = {}, long = 'Who owned the budget for the whole programme across all regions?';
   const h = harness([], calls => ({
     async *chatStream(m) { calls.talker.push(m); yield* ['Thanks. ', long + ' ', 'And when?']; },
-    async synthesize(t) { calls.tts.push(t); if (t !== GREETINGS.en) await new Promise(r => { gates[t] = r; }); return new Uint8Array(t === long ? 1000 : 4800).fill(1); } }));
+    async synthesize(t) { calls.tts.push(t); if (!GREETING.includes(t)) await new Promise(r => { gates[t] = r; }); return new Uint8Array(t === long ? 1000 : 4800).fill(1); } }));
   await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
-  await until(() => h.calls.tts.includes(long) && h.bytes.length === 5); await settle(); // the greeting has been sent
-  assert.ok(gates['Thanks.'] && h.bytes.length === 5, 'the second piece started before the first was voiced');
+  await until(() => h.calls.tts.includes(long) && h.bytes.length === 10); await settle(); // the greeting (two pieces) has been sent
+  assert.ok(gates['Thanks.'] && h.bytes.length === 10, 'the second piece started before the first was voiced');
   const sent = h.bytes.length;
   gates[long](); await settle();
   assert.equal(h.bytes.length, sent, 'nothing overtakes the first piece');
   gates['Thanks.'](); await until(() => h.calls.tts.includes('And when?')); gates['And when?']();
   await until(() => !h.s.busy() && h.bytes.length === sent + 12);
   assert.deepEqual(h.bytes.slice(sent), [960, 960, 960, 960, 960, 960, 40, 960, 960, 960, 960, 960], 'Thanks., then the question, then And when?');
-  assert.deepEqual(h.events.filter(e => e.type === 'agent_text').map(e => e.text).slice(1), [' Thanks.', ' ' + long, ' And when?']);
+  assert.deepEqual(h.events.filter(e => e.type === 'agent_text').map(e => e.text).slice(2), [' Thanks.', ' ' + long, ' And when?']);
   assert.equal(h.s.history.at(-1).content, GREETINGS.en + ' Thanks. ' + long + ' And when?');
 });
 
@@ -1513,13 +1544,13 @@ test('pipelined synthesis: an interruption drops every piece still being synthes
   const gates = {}, long = 'Who owned the budget for the whole programme across all regions?';
   const h = harness([], calls => ({
     async *chatStream(m) { calls.talker.push(m); yield* ['Thanks. ', long + ' ', 'And when?']; },
-    async synthesize(t) { calls.tts.push(t); if (t !== GREETINGS.en) await new Promise(r => { gates[t] = r; }); return new Uint8Array(4800).fill(1); } }));
+    async synthesize(t) { calls.tts.push(t); if (!GREETING.includes(t)) await new Promise(r => { gates[t] = r; }); return new Uint8Array(4800).fill(1); } }));
   await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
   await until(() => h.calls.tts.includes(long));
-  await until(() => h.bytes.length === 5); const shown = h.events.filter(e => e.type === 'agent_text').length;
+  await until(() => h.bytes.length === 10); const shown = h.events.filter(e => e.type === 'agent_text').length;
   h.s.interrupt(); gates[long](); gates['Thanks.'](); await settle();
   await until(() => !h.s.speaking);
-  assert.equal(h.bytes.length, 5, 'no audio after the interruption'); assert.equal(h.events.filter(e => e.type === 'agent_text').length, shown, 'and no text');
+  assert.equal(h.bytes.length, 10, 'no audio after the interruption'); assert.equal(h.events.filter(e => e.type === 'agent_text').length, shown, 'and no text');
   assert.ok(!h.calls.tts.includes('And when?'), 'the rest of the reply is not synthesised');
 });
 
@@ -1530,10 +1561,10 @@ test('tts metric: synthesis latency, audio length, characters and cache hits for
   say(h, [[1.2, .2], [1.3, .001]]);
   await until(() => h.calls.talker.length === 2 && !h.s.busy());
   const tts = named(metrics, 'tts');
-  assert.deepEqual(tts[0], { ms: 0, audio_ms: 100, chars: GREETINGS.en.length, cached: 0 });
+  assert.deepEqual(tts[0], { ms: 0, audio_ms: 100, chars: GREETING[0].length, cached: 0 });
   assert.ok(tts.some(v => v.cached === 1 && v.ms === 0), 'the acknowledgement came from cache');
   assert.ok(tts.every(v => Object.keys(v).join() === 'ms,audio_ms,chars,cached' && Object.values(v).every(Number.isFinite)));
-  assert.equal(tts.length, 1 + 2 + 1 + 2, 'greeting + 2 opening pieces, then acknowledgement + 2 reply pieces');
+  assert.equal(tts.length, 2 + 2 + 1 + 2, '2 greeting pieces + 2 opening pieces, then acknowledgement + 2 reply pieces');
 });
 
 test('underrun metric: the queue runs dry mid-reply while the next piece is still being voiced', async () => {
@@ -1543,10 +1574,10 @@ test('underrun metric: the queue runs dry mid-reply while the next piece is stil
     async synthesize(t) { calls.tts.push(t); if (t === long) await new Promise(r => { voice = r; }); return new Uint8Array(4800).fill(1); } }));
   h.s.metric = (n, v) => metrics.push([n, v]); // the function form of harness() takes no session options
   await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
-  await until(() => h.bytes.length === 10 && voice); await settle();
+  await until(() => h.bytes.length === 15 && voice); await settle();
   for (let i = 0; i < 50; i++) h.tick(); // 1 s passes: the greeting and "Thanks." (0.2 s) have long finished playing
-  voice(); await until(() => h.bytes.length === 15);
-  assert.deepEqual(named(metrics, 'underrun'), [{ gap_ms: 800 }]);
+  voice(); await until(() => h.bytes.length === 20);
+  assert.deepEqual(named(metrics, 'underrun'), [{ gap_ms: 700 }], 'one second of silence less the greeting (two 100 ms pieces) and "Thanks." (100 ms) already played');
 });
 
 test('underrun metric: the planned wait after a greeting before the model speaks is not an underrun', async () => {
@@ -1556,9 +1587,9 @@ test('underrun metric: the planned wait after a greeting before the model speaks
     async synthesize(t) { calls.tts.push(t); return new Uint8Array(4800).fill(1); } }));
   h.s.metric = (n, v) => metrics.push([n, v]);
   await h.s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, capture: false }));
-  await until(() => h.bytes.length === 5 && start); await settle();
+  await until(() => h.bytes.length === 10 && start); await settle(); // (v2.2 V1: the greeting goes out in one burst, the model is called in parallel with it)
   for (let i = 0; i < 75; i++) h.tick(); // 1.5 s: the greeting has long finished and the model is still composing
-  start(); await until(() => h.bytes.length === 10);
+  start(); await until(() => h.bytes.length === 15);
   assert.deepEqual(named(metrics, 'underrun'), []);
 });
 
@@ -1584,7 +1615,7 @@ test('every session starts with the spoken introduction, admin included (full mo
     await until(() => h.calls.talker.length >= 1);
     const said = notesOf(h.calls.talker[0]).find(n => n.startsWith('ALREADY SAID')) || '';
     assert.ok(said.includes(GREETINGS.en), (admin ? 'admin' : 'consultant') + ': the greeting was spoken first and the talker knows it');
-    await until(() => h.events.some(e => e.type === 'agent_text'));
-    assert.ok(h.events.find(e => e.type === 'agent_text').text.includes(GREETINGS.en), 'the first words on screen are the greeting');
+    await until(() => h.events.filter(e => e.type === 'agent_text').length >= 2);
+    assert.ok(h.events.filter(e => e.type === 'agent_text').slice(0, 2).map(e => e.text).join('').includes(GREETINGS.en), 'the first words on screen are the greeting');
   }
 });

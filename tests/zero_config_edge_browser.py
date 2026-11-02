@@ -36,10 +36,11 @@ def check(n, v):
     assert v, n
 
 
+# U1: the local edge announces voice:false (no speech service); this suite stands in for the voice socket, so it asks for the voice start (ATLAS_VOICE=on)
 def start_edge(extra=None):
     s = socket.socket(); s.bind(('127.0.0.1', 0)); port = s.getsockname()[1]; s.close()
     env = {k: v for k, v in os.environ.items() if k not in ('DATA_MODE', 'DIRECTORY_PUSH_SECRET') and not k.startswith('DNA_')}
-    proc = subprocess.Popen(['node', '--no-warnings', 'dev/local-edge.mjs', str(port)], cwd=EDGE, env={**env, **(extra or {})}, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    proc = subprocess.Popen(['node', '--no-warnings', 'dev/local-edge.mjs', str(port)], cwd=EDGE, env={**env, 'ATLAS_VOICE': 'on', **(extra or {})}, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     PROCS.append(proc)
     base = f'http://127.0.0.1:{port}'
     for _ in range(100):
@@ -115,7 +116,7 @@ try:
     check('a page navigation to an old path goes home; a non-navigation stays a JSON 404; /api/wiki stays 404',
           loc('/ATLAS_Voice.html', h={'Accept': 'text/html'}) == (302, '/') and loc('/index.html', h={'Sec-Fetch-Mode': 'navigate'}) == (302, '/')
           and get(BASE, '/ATLAS_Voice.html')[0] == 404 and get(BASE, '/api/wiki', headers={'Accept': 'text/html'})[0] == 404)
-    check('test mode: the banner stays and readiness says so', boot['readiness'] == 'edge-deployment-test-data-only' and 'TEST DEPLOYMENT · SYNTHETIC DATA ONLY' in get(BASE, '/')[2])
+    check('test mode: the banner stays and readiness says so', boot['readiness'] == 'edge-deployment-test-data-only' and 'TEST DEPLOYMENT · DPO sign-off pending' in get(BASE, '/')[2] and 'SYNTHETIC DATA ONLY' not in get(BASE, '/')[2])
     # D1 is the SPOKEN_ASK_APPROVED code constant (features.test.js pins its value); this check holds either way.
     approved = 'export const SPOKEN_ASK_APPROVED = true;' in (EDGE / 'src/features.js').read_text()
     def transcribe(headers):
@@ -193,29 +194,36 @@ try:
         check('fresh user: no project yet', jane.evaluate('window.ATLAS_LOCAL.snapshot().profiles[0].projects.length') == 0)
         jane.locator('#voiceStart').click(); jane.locator('#voiceConsentDialog').wait_for(state='visible', timeout=8000)
         dlg = jane.locator('#voiceConsentDialog')
-        check('Start opens the consent step at once: exactly one checkbox, the first name from the DNA export in the heading, the sign-in in the footer',
-              dlg.locator('input[type=checkbox]:visible').count() == 1 and jane.locator('#voiceConsentTitle').inner_text() == 'Ready when you are, Jane.'
+        check('Start opens the consent step at once: one REQUIRED checkbox (plus the optional saved-interview, memory and notice choices), the first name from the DNA export in the heading, the sign-in in the footer',
+              dlg.locator('input[type=checkbox]:visible').count() == 4 and jane.locator('#memoryConsent').is_visible() and not jane.locator('#memoryConsent').is_checked() and jane.locator('#voiceConsentTitle').inner_text() == 'Ready when you are, Jane'
               and jane.locator('#consentIdentity').inner_text() == 'Signed in as Jane Doe · jane@example.com' and not FORBIDDEN.search(dlg.inner_text()))
-        check('memory is configured here, so the one sentence names it', 'private memory' in jane.locator('#modelConsentText').inner_text())
+        check('memory is configured here: its own tick, OFF by default; the required sentence names a private draft', 'private draft' in jane.locator('#modelConsentText').inner_text() and 'Hindsight' not in jane.locator('#modelConsentText').inner_text())
+        check('X3 red M1/I3: EVERY consent box starts unticked (required, saved-interview, memory, notice, and the hidden transcript box), and the identity line isolates the name and the address in <bdi>',
+              all(not jane.locator('#' + i).is_checked() for i in ('modelConsent', 'checkpointConsent', 'memoryConsent', 'noticeAck', 'captureConsent'))
+              and jane.locator('#consentIdentity bdi').count() == 2 and jane.locator('#voiceConsentStart').is_disabled())
+        jane.locator('#memoryConsent').check()  # this person turns memory on for the interview
+        jane.evaluate('window.ATLAS_VOICE_BRIDGE.setMemory(true)')  # (this stand-in has no live interview object to receive the start frame's choice, so the same choice is made through the profile route: a receipt and the memory purpose)
         check('the microphone is not requested before the Start click', not jane.evaluate('AtlasVoice.status().hasMicrophone'))
         talk(jane)
         start = [f for f in jane.voice.frames if f.get('type') == 'start'][-1]
+        check('X3 red M1: the start frame records only what was ticked: transcription and draft (the required tick), memory (ticked), NOT the saved interview or the notice', all(start['consent'][k] is v for k, v in {'transcription': True, 'draft': True, 'checkpoint': False, 'memory': True, 'notice': False}.items()) and start['capture'] is True)
         check('the start frame carries no name and no email: consultant "", the profile title not sent', start['project']['consultant'] == '' and start['project'].get('role', '') == ''
               and '@' not in json.dumps(start) and 'Jane' not in json.dumps(start))
-        wait(jane, lambda: jane.locator('#storageStatus').text_content() == 'Saved to ATLAS', 10)
+        wait(jane, lambda: jane.locator('#storageStatus').text_content() == 'Saved', 10)
         x = jane.evaluate('window.ATLAS_LOCAL.snapshot().profiles[0].projects')
         check('the project is created after the interview, prefilled from the profile: name, title (roleFrom profile), N+1; managerStaff unticked',
               len(x) == 1 and x[0]['consultant'] == 'Jane Doe' and x[0]['role'] == 'Data lead' and x[0]['roleFrom'] == 'profile'
               and x[0]['validation']['manager'] == {'name': 'Sam Lead', 'email': 'sam@example.com'} and x[0]['validation']['managerStaff'] is False)
         rid = x[0]['library']['id']
         rec = api(jane, '/' + rid)
-        check('saved to the real library: "Saved to ATLAS", the record holds the profile values, no device prompt',
-              jane.locator('#storageStatus').text_content() == 'Saved to ATLAS' and rec['data']['consultant']['name'] == 'Jane Doe'
+        check('saved to the real library: "Saved", the record holds the profile values, no device prompt',
+              jane.locator('#storageStatus').text_content() == 'Saved' and rec['data']['consultant']['name'] == 'Jane Doe'
               and rec['data']['validation']['manager']['email'] == 'sam@example.com'
               and not (jane.locator('#confirmDialog').is_visible() and 'Save on this device' in jane.locator('#confirmTitle').inner_text()))
         check('no setup form was shown at any point', jane.locator('#voiceConnectionDialog').is_hidden() and jane.locator('#gatewayAddress').is_hidden())
+        wait(jane, lambda: len(jane.evaluate("fetch('/api/memory').then(r=>r.json())").get('documents') or []) >= 1, 8)  # the page reads the memory switch first, then remembers
         mem = jane.evaluate("fetch('/api/memory').then(r=>r.json())")
-        check('the private memory holds the conversation (Hindsight stand-in), without the name or the title', len(mem.get('documents') or []) >= 1
+        check('the private memory (Hindsight stand-in) holds short project facts only, without the name, the title or any conversation text', len(mem.get('documents') or []) >= 1 and not any(str(d.get('id', '')).startswith('conversation-') for d in mem.get('documents') or [])
               and 'Jane Doe' not in json.dumps(mem) and 'Data lead' not in json.dumps(mem))
         check('every API call from the page carried X-Requested-With', all(x == 'XMLHttpRequest' for m, path, b, x in jane.bodies if path.startswith('/api/') and path != '/api/memory'))
         jane.locator('#reportDialog').wait_for(state='visible', timeout=8000)  # the report opens by itself after an interview
@@ -240,7 +248,7 @@ try:
               and 'Head of Data' not in jane.evaluate("JSON.stringify({...localStorage,...sessionStorage})"))
         close_dialogs(jane)
         jane.locator('header [data-view=projects]').click(); jane.wait_for_timeout(300)
-        jane.locator('[data-action=new-project]:visible').first.click(); jane.locator('#projectDialog').wait_for(state='visible')
+        jane.locator('[data-action=new-project]:visible').first.click(); jane.locator('#projectDialog').wait_for(state='visible'); jane.evaluate("document.getElementById('projectMore').open=true")  # W1: the name and the N+1 are under More details
         fchip = lambda i: jane.locator(f'[data-chip="{i}"]').inner_text()
         check('the new-project form is prefilled from the profile with chips; the edited title reads "you edited"',
               jane.locator('#consultantName').input_value() == 'Jane Doe' and exp.match(fchip('consultantName')) and jane.locator('#consultantRole').input_value() == 'Head of Data'
@@ -261,10 +269,10 @@ try:
         mine = api(lee, '/profile')
         check('another user reads only their own profile', mine['email'] == 'lee@example.org' and 'Jane' not in json.dumps(mine) and 'Head of Data' not in json.dumps(mine)
               and api(lee, '/profile?email=jane@example.com')['email'] == 'lee@example.org')
-        who = api(lee, '/people?email=jane@example.com')
+        who = api(lee, '/people/lookup', 'POST', {'email': 'jane@example.com'})
         check('the people lookup: exactly {email, name, title, from} from the directory row, never the N+1 and never her own edits',
               who == {'email': 'jane@example.com', 'name': 'Jane Doe', 'title': 'Principal Data Lead', 'from': 'dna_export'})
-        miss = lee.evaluate("fetch('/api/library/people?email=bob@mantu.com',{headers:{'X-Requested-With':'XMLHttpRequest'}}).then(r=>r.status)")
+        miss = lee.evaluate("window.ATLAS_APP.libraryApi('/people/lookup',{method:'POST',body:{email:'bob@mantu.com'}}).then(()=>200,()=>404)")
         check('the refused real-domain row was never stored: the lookup answers 404', miss == 404)
         lee.context.close()
 
@@ -283,7 +291,7 @@ try:
         projects = jane.evaluate('window.ATLAS_LOCAL.snapshot().profiles[0].projects')
         check('expired after the interview: the banner, the page is not reloaded, the new project is kept in the tab',
               'Your sign-in expired. Your work is kept on this page.' in jane.locator('#authBanner').inner_text() and len(jane.loads) == loads and len(projects) == 2
-              and 'Not saved to ATLAS yet · kept in this tab' in jane.locator('#storageStatus').text_content())
+              and 'Not saved: kept in this tab' in jane.locator('#storageStatus').text_content())
         check('no project content reached sessionStorage or localStorage', 'Claims triage' not in store and 'routing design' not in store and 'Zebracorp' not in store)
         wait(jane, lambda: jane.locator('#confirmDialog').is_visible(), 5)
         check('the sync failed, so "Save on this device?" is offered (§3.8); the note says the work is only in this tab',
@@ -291,7 +299,7 @@ try:
         close_dialogs(jane)  # declined: the work stays in this tab only
         with jane.expect_popup() as pop: jane.locator('#authReconnect').click()
         check('Reconnect opens /go/signed-in in a small window; the navigation signs in again (as Access does)', urlparse(pop.value.url).path == '/go/signed-in')
-        wait(jane, lambda: jane.locator('#storageStatus').text_content() == 'Saved to ATLAS', 10)
+        wait(jane, lambda: jane.locator('#storageStatus').text_content() == 'Saved', 10)
         listed = [i for i in api(jane, '?mine=1')['items'] if i['mine']]
         check('signed in again: the pending sync is retried, the second project is in the library, nothing was reloaded',
               jane.locator('#authBanner').is_hidden() and len(listed) == 2 and len(jane.loads) == loads and 'signed in again' in jane.locator('#toast').inner_text())
@@ -321,12 +329,12 @@ try:
         new.evaluate("window.__acts=[];document.addEventListener('click',e=>{if(e.isTrusted)__acts.push(e.target.id||e.target.tagName)},true);"
                      "document.addEventListener('input',e=>{if(e.isTrusted&&e.target.type!=='checkbox')__acts.push('input '+(e.target.id||e.target.tagName))},true)")
         new.locator('#voiceStart').click(); new.locator('#voiceConsentDialog').wait_for(state='visible', timeout=8000)
-        check('new user, no DNA: the consent step holds one field (the tick); a guessed name is not used in the heading',
-              new.locator('#voiceConsentDialog').locator('input:visible, select:visible, textarea:visible').count() == 1
-              and new.locator('#voiceConsentTitle').inner_text() == 'A conversation with ATLAS.' and new.locator('#consentIdentity').inner_text() == 'Signed in as noor.haddad@example.net')
+        check('new user, no DNA: the consent step holds the required tick and the three optional choices (saved interview, memory, notice), nothing else; a guessed name is not used in the heading',
+              new.locator('#voiceConsentDialog').locator('input:visible, select:visible, textarea:visible').count() == 4 and new.locator('#voiceConsentDialog input[type=checkbox]:visible').count() == 4
+              and new.locator('#voiceConsentTitle').inner_text() == 'Your interview with ATLAS' and new.locator('#consentIdentity').inner_text() == 'Signed in as noor.haddad@example.net')
         talk(new)
         check('new user: exactly three actions reach the interview (Start, the tick, Start conversation)', new.evaluate('__acts') == ['voiceStart', 'modelConsent', 'voiceConsentStart'])
-        wait(new, lambda: new.locator('#storageStatus').text_content() == 'Saved to ATLAS', 10); new.locator('#reportDialog').wait_for(state='visible', timeout=8000)
+        wait(new, lambda: new.locator('#storageStatus').text_content() == 'Saved', 10); new.locator('#reportDialog').wait_for(state='visible', timeout=8000)
         nx = new.evaluate('window.ATLAS_LOCAL.snapshot().profiles[0].projects'); nrid = nx[0]['library']['id']
         q = new.locator('#reportStatus .guess-prompt')
         check('only a guess: the project says "Consultant", and the report that opens by itself asks "Is your name Noor Haddad?"',
@@ -345,7 +353,7 @@ try:
         kai.locator('#voiceStart').click(); kai.locator('#voiceConsentDialog').wait_for(state='visible', timeout=8000)
         check('sign-in claims fill the name and the first name ("from your sign-in"); only the verified token counts',
               kprof['fields']['name'] == {'value': 'Kai Test', 'from': 'signin', 'at': kprof['fields']['name']['at']} and kprof['firstName'] == 'Kai'
-              and kai.locator('#voiceConsentTitle').inner_text() == 'Ready when you are, Kai.'
+              and kai.locator('#voiceConsentTitle').inner_text() == 'Ready when you are, Kai'
               and kai.evaluate("fetch('/api/library/profile',{headers:{'X-Requested-With':'XMLHttpRequest','x-atlas-idp':'eyJuYW1lIjoiRXZlIn0'}}).then(r=>r.json())")['fields']['name']['value'] == 'Kai Test')
         kai.context.close()
 

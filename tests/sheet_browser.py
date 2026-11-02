@@ -19,6 +19,7 @@ try:
   b=pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH') or None)
   c=b.new_context(viewport={'width':1300,'height':1000},accept_downloads=True);p=c.new_page();p.on('pageerror',lambda e:ERR.append(str(e)));p.goto(BASE+'/?as=alex@mantu.com');p.wait_for_timeout(700)
   p.locator('[data-action=new-project]:visible').first.click();p.wait_for_timeout(200)
+  p.evaluate("document.getElementById('projectMore').open=true") # W1: these fields live under "More details"
   for k,v in {'projectTitle':'Claims triage','consultantName':'Alex Martin','sectorInput':'Insurance','clientName':'Zebracorp'}.items():p.locator('#'+k).fill(v)
   p.locator('#projectForm button[type=submit]').click();p.wait_for_timeout(300)
   p.locator('header [data-view=projects]').click();p.wait_for_timeout(400)

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Library, cleanReference, deriveStatus } from '../src/library.js';
 import { completeness, parseReview, forModel } from '../src/review.js';
+import * as outreach from '../src/outreach.js';
 import { memorySql } from './sqlite.js';
 
 const OWNER = { email: 'alex@mantu.com', role: 'user' }, N1 = { email: 'sam@mantu.com', role: 'user' }, OTHER = { email: 'kim@mantu.com', role: 'user' }, REV = { email: 'rev@mantu.com', role: 'reviewer' };
@@ -17,7 +18,13 @@ const GOOD = JSON.stringify({ score: 90, client_value_clear: true, issues: [{ fi
 function lib(reply = GOOD) {
   let t = 0; const seen = [];
   const l = new Library(memorySql(), { now: () => new Date(Date.UTC(2026, 8, 27, 0, 0, t++)).toISOString(), complete: async m => { seen.push(m); return typeof reply === 'function' ? reply() : reply; } });
+  // The resolved N+1 (staffing record, red-team H1): the N+1 a consultant types on a reference is only a name and cannot validate.
+  seedN1(l);
   return { l, seen };
+}
+function seedN1(l) {
+  outreach.ensure(l);
+  l.sql.exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at) VALUES ('PRJ-1', 'alex@mantu.com', 'sam@mantu.com', 'Sam', '', '', 'staffing-csv', 'x')");
 }
 
 test('cleanReference bounds input, drops unknown fields and unsafe links, lowercases emails', () => {
@@ -55,7 +62,7 @@ test('permissions: others see only published, anonymised; the N+1 and listed con
   assert.equal(l.list(OTHER).total, 1); assert.equal(l.list(OTHER).items[0].client, '');
   await assert.rejects(l.upsert(OTHER, { id: a.id, reference: REF() }), /cannot edit/);
   assert.throws(() => l.validate(OTHER, a.id, { decision: 'validate' }), /not found|Only the N\+1/);
-  assert.throws(() => l.validate(OWNER, a.id, { decision: 'validate' }), /Only the N\+1/);
+  assert.throws(() => l.validate(OWNER, a.id, { decision: 'validate' }), /cannot validate your own/);
 });
 
 test('quality gate: no review agent answer, missing core fields or unsupported claims can never publish', async () => {
@@ -85,8 +92,10 @@ test('N+1 can request changes with a note; manager staff needs no validation; wi
   const a = await l.upsert(OWNER, { localId: 'p1', reference: REF() }); await l.review(OWNER, a.id);
   assert.throws(() => l.validate(N1, a.id, { decision: 'request_changes' }), /Say what/);
   assert.equal(l.validate(N1, a.id, { decision: 'request_changes', note: 'Add the team size.' }).status, 'changes_requested');
-  const staff = REF(); staff.validation.managerStaff = true;
-  const b = await l.upsert(OWNER, { localId: 'p2', reference: staff }); await l.review(OWNER, b.id);
+  const staff = REF(); staff.validation.managerStaff = true; staff.details.consultants.push({ name: 'Alex', email: OWNER.email, role: 'Lead' });
+  const own = await l.upsert(OWNER, { localId: 'own-flag', reference: staff }); await l.review(OWNER, own.id);
+  assert.equal(l.get(OWNER, own.id).status, 'awaiting_validation', "red-team H1: the author's own managerStaff flag publishes nothing");
+  const b = await l.upsert(REV, { localId: 'p2', reference: staff }); await l.review(REV, b.id); // only a reviewer or admin can declare "no validation"
   assert.equal(l.get(OWNER, b.id).status, 'published');
   assert.equal(l.withdraw(OWNER, b.id, { note: 'client asked' }).status, 'withdrawn');
   assert.equal(l.list(OTHER).total, 0);
@@ -170,7 +179,7 @@ async function twoClients() {
   const l = new Library(memorySql(), { now: () => '2026-09-29T00:00:00.000Z', complete: async m => { seen.push(JSON.stringify(m)); return fake.complete(m); }, embed: async t => { seen.push(String(t)); return fake.embed(t); } });
   const [z, b] = TWO(), ids = [];
   for (const [k, ref] of [['z', z], ['b', b], ['c', { ...REF(), title: 'Payments alias', client: { name: 'Corvina Bank', location: '', contact: '' } }]]) ids.push((await l.upsert(OWNER, { localId: k, reference: ref })).id);
-  for (const id of ids) { await l.review(OWNER, id); l.validate(N1, id, { decision: 'validate' }); }
+  for (const id of ids) { await l.review(OWNER, id); l.validate(REV, id, { decision: 'validate' }); } // a reviewer: the three records have no staffing row (red-team H1)
   return { l, seen, ids };
 }
 

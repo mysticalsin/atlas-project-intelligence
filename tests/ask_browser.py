@@ -56,7 +56,7 @@ with sync_playwright() as pw:
  check('verdict copy mirrors F1',p.locator('#askVerdict .verdict-banner strong').inner_text()=='Partial matches only. Check each caveat.' and 'never ranked' in p.locator('#askVerdict').inner_text())
  res=p.locator('#askResults .ask-result')
  t=res.first.inner_text().lower()
- check('result cards with status, relevance, similarity, why, caveat and snippets with source labels',res.count()==2 and all(x in t for x in ['published','relevance 58','similarity 0.62','semantic','same claims backlog problem','caveat: smaller team','triage fell from 40 to 12 minutes per claim.','outcome','evidence · ops dashboard']))
+ check('result cards with status, relevance, similarity, why, caveat and snippets with source labels',res.count()==2 and all(x in t for x in ['shared in internal library','relevance 58','similarity 0.62','semantic','same claims backlog problem','caveat: smaller team','triage fell from 40 to 12 minutes per claim.','outcome','evidence · ops dashboard']))
  check('unranked result says so, keyword retrieval, numeric topic labelled','not ranked' in res.nth(1).inner_text() and 'keyword' in res.nth(1).inner_text() and 'Contribution' in res.nth(1).inner_text())
  check('hostile snippet text inert',res.first.locator('img').count()==0 and not p.evaluate('window.__pwned'))
  lit=p.locator('#askMap path.geo-country[data-state^="count-"]')

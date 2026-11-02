@@ -3,7 +3,7 @@
 // with exec(query, ...params) -> { toArray() } (Durable Object SQLite in production, node:sqlite in tests).
 // Confidential client details are visible only to the record's people and reviewers, and never reach a model.
 import { reviewReference, forModel, clientScrub, contactLead, READY_SCORE } from './review.js';
-import { searchText, cosine, lexical, TARGET_POLICY, parseTarget, RERANK_POLICY, parseRerankStrict, candidateCard, SLIDES_POLICY, parseSlides, INSIGHTS_POLICY, parseInsights } from './reuse.js';
+import { searchText, cosine, lexical, TARGET_POLICY, parseTarget, RERANK_POLICY, parseRerankStrict, candidateCard, boundedMerge, BOUNDED_NOTE, UNRATED, SLIDES_POLICY, parseSlides, INSIGHTS_POLICY, parseInsights } from './reuse.js';
 import { str, para, list, email, https, obj, fail } from './util.js';
 // Model input from a record goes through recordView (other library clients, contacts and PII masked too); text a
 // user types is pseudonymised and the caller gets their own words back (WOW_SPEC §2.3).
@@ -12,10 +12,14 @@ import { winSignals } from './winloop.js';
 // Story rating by TypeSafe JEV (docs/JEV_RATING.md): used only when a rater with a key exists and the owner consented.
 import { RatingError, ratingInput, questionPlan, requestBody, compose, agentQuality, noStoryQuality, sha256Hex, BUDGETS, RUBRIC_VERSION, METRIC_CODES, MODEL } from './rating.js';
 import { storedConsent } from './profile.js';
+import { appendAudit } from './audit-chain.js'; // B1: the one hook of the tamper-evident audit chain
+import { resolveN1 } from './claims.js'; // THE N+1 resolver: staffing record, then DNA directory; never the owner's own words (red-team H1)
+import { ensure as ensureEvidence } from './evidence.js';
+import * as privacy from './privacy.js'; // G2: consent receipts, restriction flags, erasure holds (additive tables) // additive evidence tables (T13); nothing else in this file knows about them
 const DUPLICATE = 0.9; // cosine similarity above which two references are flagged as the same or a related project
 export const PRACTICES = { data_ai: 'Data & AI', web_app: 'Web & App Development', telecom: 'Telecom & Networks', sap_erp: 'SAP & ERP', cloud_infra: 'Cloud & Infrastructure', cybersecurity: 'Cybersecurity', transformation: 'Transformation & Strategy', engineering: 'Engineering & Industry' };
 
-export const STATUSES = ['in_review', 'needs_work', 'changes_requested', 'awaiting_validation', 'published', 'withdrawn'];
+export const STATUSES = ['draft', 'in_review', 'needs_work', 'changes_requested', 'awaiting_validation', 'published', 'withdrawn'];
 const REVIEW_DAYS = 180; // references are due for an update six months after their last change
 
 // Server-side bounds for everything a browser may send. Unknown fields are dropped.
@@ -90,8 +94,11 @@ const waitAtMost = (p, ms) => new Promise(resolve => { const t = setTimeout(reso
 // Without a key (fallback no_key) the audit text is today's, including when the review agent did not answer.
 const auditDetail = q => `score ${q.score}, ${q.status}` + (q.engine === 'jev' ? ' · JEV' : q.escalatedFrom ? ' · review agent (second opinion)' : q.engine === 'rules' && q.fallbackReason !== 'no_key' ? ' · rules only' : '');
 
+// G2 (Tony, 2026-10-31): an interview's reference is a PRIVATE DRAFT until its owner clicks Submit for review (state.draft). A draft is owner-only (access),
+// is never rated, indexed, matched, counted or exported, and only submit() clears it.
 export function deriveStatus(state) {
   if (state.withdrawn) return 'withdrawn';
+  if (state.draft) return 'draft';
   if (!state.quality) return 'in_review';
   if (state.quality.status !== 'ready') return 'needs_work';
   if (state.validation?.status === 'changes_requested') return 'changes_requested';
@@ -106,9 +113,19 @@ const SCHEMA = [
   'CREATE UNIQUE INDEX IF NOT EXISTS refs_owner_local ON refs(owner, local_id)',
   'CREATE TABLE IF NOT EXISTS revisions (id TEXT, revision INTEGER, data TEXT, author TEXT, at TEXT, PRIMARY KEY (id, revision))',
   'CREATE TABLE IF NOT EXISTS audit (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT, actor TEXT, action TEXT, at TEXT, detail TEXT)',
+  // Possible duplicates live between two records, in neither (red-team M2): titles are resolved at read time through access().
+  'CREATE TABLE IF NOT EXISTS duplicate_pairs (a TEXT NOT NULL, b TEXT NOT NULL, similarity REAL, same_project_id INTEGER, PRIMARY KEY (a, b))',
+  'CREATE INDEX IF NOT EXISTS duplicate_pairs_b ON duplicate_pairs(b)',
   `CREATE TABLE IF NOT EXISTS invitations (id TEXT PRIMARY KEY, email TEXT, project_id TEXT, title TEXT, reason TEXT, slot TEXT, reference_id TEXT,
     status TEXT, created_at TEXT, source TEXT)`,
+  // Admin settings (v2.2 V2, settings.js): one row per setting. The ElevenLabs key is stored sealed (value is the AES-GCM record, never the key); key_id names the secret it was sealed under.
+  // updated_by is the pseudonymous subject key, never an email.
+  'CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value TEXT NOT NULL, key_id TEXT, updated_at TEXT, updated_by TEXT)',
 ];
+
+// X1 (red M6): a reference that erasure kept for the DPO (state.erasure_pending_review) is frozen: nobody can edit, validate or reinstate it. Only the DPO's resolution
+// (subject-rights.js holdRoutes) deals with it.
+const heldCheck = row => { if (row?.state?.erasure_pending_review) throw fail(409, 'This reference is held for the data protection officer after an erasure request. It cannot be changed, validated or reinstated.'); };
 
 export class Library {
   // services: outbound adapters for feature modules ({ teams } in production; empty in tests and local runs).
@@ -118,24 +135,43 @@ export class Library {
     Object.assign(this, { sql, now, newId, complete, embed, readyScore, model, services, rater, metric });
     this.inflight = new Map(); // `${id}:${revision}` -> { gen, engine, first, all }: one rating per revision at a time
     for (const q of SCHEMA) this.sql.exec(q);
+    ensureEvidence(this);
+    privacy.ensure(this);
   }
 
   rows(q, ...p) { return this.sql.exec(q, ...p).toArray(); }
+  // Admin settings (settings.js): the rows as { name: { value, keyId, updatedAt } }, a write and a delete. The routes that reach these check the role; names are checked there too.
+  getSettings() { return Object.fromEntries(this.rows('SELECT name, value, key_id, updated_at FROM settings').map(r => [r.name, { value: r.value, keyId: r.key_id, updatedAt: r.updated_at }])); }
+  putSetting(name, value, { keyId = null, by = '' } = {}) {
+    this.sql.exec('INSERT INTO settings (name, value, key_id, updated_at, updated_by) VALUES (?, ?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value, key_id = excluded.key_id, updated_at = excluded.updated_at, updated_by = excluded.updated_by',
+      String(name), String(value), keyId, this.now(), String(by).slice(0, 40));
+  }
+  deleteSetting(name) { this.sql.exec('DELETE FROM settings WHERE name = ?', String(name)); }
   row(id) {
     const r = this.rows('SELECT * FROM refs WHERE id = ?', String(id || ''))[0];
     return r ? { ...r, data: JSON.parse(r.data), state: JSON.parse(r.state) } : null;
   }
-  log(id, actor, action, detail = '') { this.sql.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', id, actor, action, this.now(), String(detail).slice(0, 300)); }
+  // G2: audit of a read of another person's record. No content, no detail; a repeat by the same actor on the same record within 10 minutes is not logged again.
+  logRead(id, actor, action, detail = '') {
+    const last = this.rows('SELECT at FROM audit WHERE id = ? AND actor = ? AND action = ? ORDER BY seq DESC LIMIT 1', String(id), actor, action)[0];
+    if (last && Date.parse(this.now()) - Date.parse(last.at) < 600000) return;
+    this.log(id, actor, action, detail);
+  }
+  log(id, actor, action, detail = '') { appendAudit(this.sql, { id, actor, action, at: this.now(), detail: String(detail).slice(0, 300) }); } // hash-chained (audit-chain.js, B1)
 
   // Who may see what. 'full' includes confidential client details; 'public' is the anonymised published view.
   access(row, user) {
     if (!row || row.merged_into) return null;
+    if (row.state?.draft) return user.email && row.owner === user.email ? 'full' : null; // a private draft: its owner only, never an admin, reviewer, member or N+1
     if (['admin', 'reviewer'].includes(user.role)) return 'full';
     const e = user.email;
     if (e && (row.owner === e || row.manager_email === e || (row.members || '').includes(',' + e + ','))) return 'full';
+    // The resolved N+1 must be able to open a reference that waits for validation, and keeps access once they validated it (red-team H1).
+    if (e && ['awaiting_validation', 'changes_requested'].includes(row.status) && resolveN1(this, row)?.to === e) return 'full';
+    if (e && row.state?.validation?.by === e) return 'full';
     return row.status === 'published' ? 'public' : null;
   }
-  canEdit(row, user) { return ['admin', 'reviewer'].includes(user.role) || row.owner === user.email || (row.members || '').includes(',' + user.email + ','); }
+  canEdit(row, user) { if (row.state?.draft) return !!user.email && row.owner === user.email; return ['admin', 'reviewer'].includes(user.role) || row.owner === user.email || (row.members || '').includes(',' + user.email + ','); }
 
   summary(row, level, user) {
     const d = row.data, q = row.state.quality;
@@ -148,16 +184,26 @@ export class Library {
   async upsert(user, body) {
     if (!user.email) throw fail(401, 'Sign in first.');
     body = obj(body);
-    const data = cleanReference(body.reference), localId = str(body.localId, 100), hash = await hashOf(data), at = this.now();
+    const data = cleanReference(body.reference), localId = str(body.localId, 100), at = this.now();
+    // Red-team H1: "my N+1 is not staff, so no validation" is a reviewer's or admin's call, never the author's own flag.
+    data.validation.managerStaff = data.validation.managerStaff && ['admin', 'reviewer'].includes(user.role);
+    const hash = await hashOf(data);
     const found = body.id ? { id: String(body.id) } : localId ? this.rows('SELECT id FROM refs WHERE owner = ? AND local_id = ?', user.email, localId)[0] : null;
     const row = found ? this.row(found.id) : null;
-    if (body.id && !row) throw fail(404, 'Reference not found.');
+    // X1 (red L10): a record the caller cannot see answers exactly like one that does not exist (404), so a draft id cannot be probed for existence.
+    if (body.id && (!row || !this.access(row, user))) throw fail(404, 'Reference not found.');
     if (row && !this.canEdit(row, user)) throw fail(403, 'You cannot edit this reference.');
+    if (row) heldCheck(row);
     if (row && row.merged_into) throw fail(409, 'This reference was merged into another one.');
     if (row && row.content_hash === hash) return { ...this.summary(row, 'full', user), unchanged: true };
+    // A second save without a localId would hit the (owner, local_id) unique index: say so instead of failing with a 500.
+    if (!row && !localId && this.rows("SELECT 1 AS x FROM refs WHERE owner = ? AND local_id = ''", user.email).length) throw fail(409, 'You already saved a reference without a localId. Send its id (or a localId) to update it, or a new localId for a new one.');
     const id = row ? row.id : this.newId(), revision = row ? row.revision + 1 : 1;
     const members = ',' + data.details.consultants.map(c => c.email).filter(Boolean).join(',') + ',';
-    const state = { ...(row ? row.state : {}), quality: null, withdrawn: false,
+    // Red-team H2: a withdrawal is carried across edits; only a reviewer's reinstate clears it.
+    // G2: a new reference starts as a private draft when the caller says so (`draft: true`: every save that comes from an interview); an existing one keeps its
+    // phase (only submit() ends a draft, and an edit never turns a submitted reference back into one).
+    const state = { ...(row ? row.state : {}), quality: null, withdrawn: !!row?.state?.withdrawn, draft: row ? !!row.state.draft : body.draft === true,
       validation: { status: data.validation.managerStaff ? 'not_required' : 'pending', by: '', at: '', note: '' } };
     const status = deriveStatus(state), next = new Date(Date.parse(at) + REVIEW_DAYS * 864e5).toISOString();
     if (row) this.sql.exec(`UPDATE refs SET title=?, status=?, revision=?, content_hash=?, practice=?, industry=?, country=?, manager_email=?, members=?, quality_score=NULL,
@@ -171,15 +217,17 @@ export class Library {
     return this.summary(this.row(id), 'full', user);
   }
 
-  get(user, id) {
+  // audit: true on the browser's own read route (library-routes.js): a read of someone else's record is audited (G2; ids only, at most once per 10 minutes).
+  get(user, id, { audit = false } = {}) {
     const row = this.row(id), level = this.access(row, user);
     if (!level) throw fail(404, 'Reference not found.');
     const full = level === 'full';
+    if (audit && full && !this.isOwnerOrMember(row, user)) this.logRead(row.id, user.email, 'viewed');
     return { ...this.summary(row, level, user), data: full ? row.data : anonymise(row.data),
-      state: { quality: full ? row.state.quality : publicQuality(row.state.quality), validation: full ? row.state.validation : { status: row.state.validation?.status }, withdrawn: !!row.state.withdrawn, duplicates: row.state.duplicates || [] },
+      state: { quality: full ? row.state.quality : publicQuality(row.state.quality), validation: full ? row.state.validation : { status: row.state.validation?.status }, withdrawn: !!row.state.withdrawn, duplicates: this.duplicatesOf(row, user) },
       revisions: full ? this.rows('SELECT revision, author, at FROM revisions WHERE id = ? ORDER BY revision DESC', row.id) : [],
       audit: full ? this.rows('SELECT actor, action, at, detail FROM audit WHERE id = ? ORDER BY seq DESC LIMIT 100', row.id) : [],
-      permissions: { edit: this.canEdit(row, user), validate: this.canValidate(row, user), withdraw: this.canEdit(row, user), review: this.canEdit(row, user), reinstate: ['admin', 'reviewer'].includes(user.role), merge: ['admin', 'reviewer'].includes(user.role) },
+      permissions: { submit: !!row.state.draft && row.owner === user.email, edit: this.canEdit(row, user), validate: this.canValidate(row, user), withdraw: this.canEdit(row, user), review: this.canEdit(row, user), reinstate: ['admin', 'reviewer'].includes(user.role), merge: ['admin', 'reviewer'].includes(user.role) },
       rating: { running: this.inflight.has(row.id + ':' + row.revision) }, ...(full ? { jevAllowed: this.jevAllowed(row) } : {}) };
   }
 
@@ -199,9 +247,11 @@ export class Library {
     return { ...r, data: JSON.parse(r.data) };
   }
 
-  visibleRows(user) {
-    const all = this.rows("SELECT * FROM refs WHERE merged_into IS NULL ORDER BY updated_at DESC").map(r => ({ ...r, data: JSON.parse(r.data), state: JSON.parse(r.state) }));
-    return all.map(r => [r, this.access(r, user)]).filter(([, level]) => level);
+  // processing: rows that may be PROCESSED for others (matching, Ask, bids, analytics, insights): never a private draft, never a restricted or objecting owner's.
+  // The plain library list keeps both so an owner still sees their own draft.
+  visibleRows(user, { processing = false } = {}) {
+    const all = this.rows("SELECT * FROM refs WHERE merged_into IS NULL ORDER BY updated_at DESC").map(r => ({ ...r, data: JSON.parse(r.data), state: JSON.parse(r.state) })), blocked = processing ? privacy.blockedOwners(this, 'matching') : null;
+    return all.map(r => [r, this.access(r, user)]).filter(([r, level]) => level && (!processing || (!r.state.draft && !blocked.has(r.owner))));
   }
 
   list(user, f = {}) {
@@ -216,7 +266,13 @@ export class Library {
         serviceLines: facet(r => r.data.details.serviceLines), technologies: facet(r => r.data.details.technologies) } };
   }
 
-  canValidate(row, user) { return ['admin', 'reviewer'].includes(user.role) || (!!user.email && row.manager_email === user.email); }
+  // Red-team H1: the owner and the listed consultants can never validate their own reference (even as a reviewer). Everyone else: a reviewer or
+  // admin, or the N+1 the staffing record or the DNA directory resolves for the owner. The N+1 the owner typed (refs.manager_email) is only a name.
+  isOwnerOrMember(row, user) { return !!user.email && (row.owner === user.email || (row.members || '').includes(',' + user.email + ',')); }
+  canValidate(row, user) {
+    if (!user.email || this.isOwnerOrMember(row, user)) return false;
+    return ['admin', 'reviewer'].includes(user.role) || resolveN1(this, row)?.to === user.email;
+  }
 
   setState(row, state, actor, action, detail) {
     const status = deriveStatus(state);
@@ -233,6 +289,8 @@ export class Library {
   async review(user, id, { budget = 'interactive', waitUntil = null } = {}) {
     const row = this.row(id);
     if (!row || !this.access(row, user)) throw fail(404, 'Reference not found.');
+    if (row.state.draft) throw fail(409, 'Submit this reference for review first. A private draft is never rated.');
+    if (!privacy.processable(this, row.owner, 'scoring')) throw fail(409, 'Scoring is switched off for this reference at its owner\'s request.');
     if (user.email !== 'atlas' && !this.canEdit(row, user)) throw fail(403, 'You cannot review this reference.');
     if (!this.complete && !this.rater?.available()) throw fail(503, 'The review agent is not available.');
     const engine = this.engineFor(row), key = row.id + ':' + row.revision, cur = this.inflight.get(key);
@@ -359,28 +417,33 @@ export class Library {
     }
   }
 
-  // Semantic index + duplicate detection (same project ID, or very similar anonymised content). Reciprocal flags.
+  // Semantic index + duplicate detection (same project ID, or very similar anonymised content). Pairs are stored between the two records
+  // (duplicate_pairs), never inside either one, and read back through access(): nobody learns a title, id or the existence of a record they
+  // cannot open, and no save ever writes into another person's record (red-team M2).
   async index(id) {
     const row = this.row(id); if (!row) return;
+    if (row.state.draft) { this.sql.exec('DELETE FROM duplicate_pairs WHERE a = ? OR b = ?', id, id); return; } // a private draft is neither embedded nor compared
     const vec = this.embed ? await this.embed(searchText(recordView(this, row.data))) : null;
     if (vec) this.sql.exec('UPDATE refs SET embedding = ? WHERE id = ?', JSON.stringify(vec), id);
-    const others = this.rows('SELECT id, title, data, state, embedding FROM refs WHERE merged_into IS NULL AND id != ?', id);
+    const others = this.rows('SELECT id, data, embedding, state FROM refs WHERE merged_into IS NULL AND id != ?', id).filter(o => !JSON.parse(o.state).draft);
     const mine = [], pid = row.data.details.projectId.toLowerCase();
     for (const o of others) {
       const od = JSON.parse(o.data), sim = vec && o.embedding ? cosine(vec, JSON.parse(o.embedding)) : lexical(searchText(forModel(row.data)), searchText(forModel(od)));
       const sameId = pid && od.details.projectId.toLowerCase() === pid;
-      if (sameId || sim >= DUPLICATE) {
-        const hit = { id: o.id, title: o.title, similarity: Math.round(sim * 100) / 100, sameProjectId: !!sameId };
-        mine.push(hit);
-        const os = JSON.parse(o.state), list = (os.duplicates || []).filter(x => x.id !== id);
-        list.push({ id, title: row.data.title, similarity: hit.similarity, sameProjectId: hit.sameProjectId });
-        this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...os, duplicates: list.slice(0, 10) }), o.id);
-      }
+      if (sameId || sim >= DUPLICATE) mine.push({ id: o.id, similarity: Math.round(sim * 100) / 100, sameProjectId: !!sameId });
     }
     mine.sort((a, b) => (b.sameProjectId - a.sameProjectId) || (b.similarity - a.similarity)); // strongest signal first
-    const fresh = this.row(id);
-    this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...fresh.state, duplicates: mine.slice(0, 10) }), id);
-    if (mine.length) this.log(id, 'atlas', 'possible duplicate', mine.map(m => m.title).join('; '));
+    this.sql.exec('DELETE FROM duplicate_pairs WHERE a = ? OR b = ?', id, id);
+    for (const m of mine.slice(0, 10)) this.sql.exec('INSERT OR REPLACE INTO duplicate_pairs (a, b, similarity, same_project_id) VALUES (?, ?, ?, ?)', id, m.id, m.similarity, m.sameProjectId ? 1 : 0);
+  }
+  // The possible duplicates of `row` that `user` may open (a published record, or one they own, share or review). Titles come from the other
+  // record at read time. The audit trail records nothing about a duplicate: it would show the owner a record they cannot open.
+  duplicatesOf(row, user) {
+    return this.rows('SELECT a, b, similarity, same_project_id FROM duplicate_pairs WHERE a = ? OR b = ?', row.id, row.id)
+      .map(p => ({ other: this.row(p.a === row.id ? p.b : p.a), similarity: p.similarity, sameProjectId: !!p.same_project_id }))
+      .filter(p => p.other && this.access(p.other, user))
+      .map(p => ({ id: p.other.id, title: p.other.title, similarity: p.similarity, sameProjectId: p.sameProjectId }))
+      .sort((x, y) => (y.sameProjectId - x.sameProjectId) || (y.similarity - x.similarity)).slice(0, 10);
   }
 
   // Natural-language recommendation: understand the context, retrieve by meaning, then rerank with reasons.
@@ -392,11 +455,11 @@ export class Library {
     // un-masked with its map, so they read their own words (no trace of which names ATLAS knows).
     const q = pseudonymise(this, query), mine = forAuthor(this, q.map, { authorText: q.text });
     const target = parseTarget(await this.complete([{ role: 'system', content: TARGET_POLICY }, { role: 'user', content: q.text }]).catch(() => ''), q.text);
-    const pool = this.visibleRows(user).filter(([r, level]) => r.status === 'published' || level === 'full');
+    const pool = this.visibleRows(user, { processing: true }).filter(([r, level]) => r.status === 'published' || level === 'full');
     if (!pool.length) return { target: mine(target), results: [], method: 'none', note: 'No references are available to you yet.' };
     const want = [target.searchText, target.industry, target.likelyChallenges.join('. '), target.capabilities.join(', ')].join('\n');
     const qv = this.embed ? await this.embed(want).catch(() => null) : null;
-    const wins = winSignals(this); // bounded win-history boost (F7): order only, never model relevance
+    const wins = winSignals(this); // bounded win-history boost (F7): order only, never model relevance (a pool row is already processable)
     const scored = pool.map(([r, level]) => {
       const m = forModel(r.data), sem = qv && r.embedding ? cosine(qv, JSON.parse(r.embedding)) : null, lex = lexical(want, searchText(m));
       const boost = (target.industry && (r.data.sector || '').toLowerCase().includes(target.industry.toLowerCase().split(/\s+/)[0]) ? 0.05 : 0) + (wins.get(r.id)?.boost || 0);
@@ -408,17 +471,21 @@ export class Library {
     // Unranked either way, but say which: the model did not answer (null) or nothing reached 30 ([]).
     const caveat = ranked ? 'Matched by similarity only; no candidate reached the relevance threshold of 30.' : 'Matched by similarity only; the ranking model did not answer.';
     const byId = new Map(scored.map(s => [s.r.id, s]));
-    const results = (ranked?.length ? ranked : scored.slice(0, limit).map(s => ({ id: s.r.id, relevance: null, why: '', transferable: [], caveat })))
+    // Red-team M4: bounded merge: the model reorders within a small window of the similarity order and cannot exclude a candidate.
+    const merged = ranked?.length ? boundedMerge(scored.map(s => s.r.id), ranked) : null;
+    const results = (merged ? merged.order.map(({ id, entry }) => entry || { id, relevance: null, why: '', transferable: [], caveat: UNRATED }) : scored.slice(0, limit).map(s => ({ id: s.r.id, relevance: null, why: '', transferable: [], caveat })))
       .slice(0, limit).map(x => { const s = byId.get(x.id); return { ...this.summary(s.r, s.level, user), ...x, why: mine(x.why), transferable: mine(x.transferable), caveat: mine(x.caveat), similarity: Math.round(s.similarity * 100) / 100 }; });
     this.log('library', user.email, 'recommendation', `${results.length} results`);
-    return { target: mine(target), results, method: (qv ? 'semantic' : 'lexical') + (ranked?.length ? ' + model ranking' : ''), label: 'Relevance and reasons are interpretation; open each reference for the facts.' };
+    return { target: mine(target), results, method: (qv ? 'semantic' : 'lexical') + (ranked?.length ? ' + model ranking' : ''), ...(merged?.bounded ? { note: BOUNDED_NOTE } : {}),
+      label: 'Relevance and reasons are interpretation; open each reference for the facts.' };
   }
 
   // Consolidation: one stronger reference; every consultant keeps access and their own contribution.
   async merge(user, body = {}) {
     if (!['admin', 'reviewer'].includes(user.role)) throw fail(403, 'Only a reviewer can merge references.');
     const keep = this.row(obj(body).keep), gone = this.row(obj(body).merge);
-    if (!keep || !gone || keep.id === gone.id || keep.merged_into || gone.merged_into) throw fail(400, 'Choose two different active references.');
+    if (!keep || !gone || keep.id === gone.id || keep.merged_into || gone.merged_into || keep.state.draft || gone.state.draft) throw fail(400, 'Choose two different active references.');
+    heldCheck(keep); heldCheck(gone);
     const k = structuredClone(keep.data), g = gone.data;
     const people = [...k.details.consultants];
     for (const c of [{ name: g.consultant.name, email: gone.owner, role: g.consultant.role }, ...g.details.consultants])
@@ -444,6 +511,7 @@ export class Library {
     const row = this.row(id), level = this.access(row, user);
     if (!level) throw fail(404, 'Reference not found.');
     if (row.status !== 'published' && level !== 'full') throw fail(403, 'Only published references can be turned into slides.');
+    if (!privacy.processable(this, row.owner, 'matching')) throw fail(409, 'This reference is switched off for matching and projections at its owner\'s request.'); // X1 (red M4)
     if (!this.complete) throw fail(503, 'Slide generation is not available.');
     // The context is typed text: pseudonymised for the model, the slide text un-masked for the caller; the audit row
     // keeps only its length (it may name the prospect).
@@ -458,7 +526,7 @@ export class Library {
   }
 
   analytics(user) {
-    const rows = this.visibleRows(user).map(([r, l]) => [r, l]), now = this.now();
+    const rows = this.visibleRows(user, { processing: true }).map(([r, l]) => [r, l]), now = this.now();
     const count = (key, pick) => { const out = {}; for (const [r] of rows) for (const v of [].concat(pick(r)).filter(Boolean)) out[v] = (out[v] || 0) + 1; return Object.entries(out).sort((a, b) => b[1] - a[1]).map(([name, n]) => ({ name, n })); };
     const pub = rows.filter(([r]) => r.status === 'published');
     const countries = [...new Set(rows.map(([r]) => r.data.details.country).filter(Boolean))];
@@ -480,7 +548,7 @@ export class Library {
   async insights(user) {
     if (!['admin', 'reviewer'].includes(user.role)) throw fail(403, 'Commercial insights are for reviewers.');
     if (!this.complete) throw fail(503, 'Insights are not available.');
-    const pub = this.visibleRows(user).filter(([r]) => r.status === 'published').slice(0, 60);
+    const pub = this.visibleRows(user, { processing: true }).filter(([r]) => r.status === 'published').slice(0, 60);
     if (pub.length < 3) return { repeatedNeeds: [], emergingExpertise: [], offeringIdeas: [], gaps: [], label: 'interpretation', note: 'At least three published references are needed.' };
     const cards = pub.map(([r]) => candidateCard(r.id, recordView(this, r.data)));
     const out = parseInsights(await this.complete([{ role: 'system', content: INSIGHTS_POLICY }, { role: 'user', content: JSON.stringify({ references: cards }) }], 4000).catch(() => ''), cards.map(c => c.id));
@@ -513,21 +581,28 @@ export class Library {
     const action = obj(body).action;
     if (action === 'schedule') { const slot = String(obj(body).slot || ''); if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(slot)) throw fail(400, 'Pick a date and time.'); this.sql.exec("UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ?", slot.slice(0, 25), inv.id); }
     else if (action === 'dismiss') this.sql.exec("UPDATE invitations SET status = 'dismissed' WHERE id = ?", inv.id);
-    else if (action === 'done') this.sql.exec("UPDATE invitations SET status = 'done', reference_id = ? WHERE id = ?", str(obj(body).referenceId, 40) || inv.reference_id, inv.id);
+    else if (action === 'done') {
+      // The reference an invitation points at must be one the person can edit (their own, one they are listed on, or any for a reviewer).
+      const rid = str(obj(body).referenceId, 40), target = rid ? this.row(rid) : null;
+      if (rid && (!target || !this.canEdit(target, user))) throw fail(404, 'Reference not found.');
+      this.sql.exec("UPDATE invitations SET status = 'done', reference_id = ? WHERE id = ?", rid || inv.reference_id, inv.id);
+    }
     else throw fail(400, 'Unknown action.');
     this.log(inv.reference_id || 'library', user.email, 'invitation ' + action, inv.reason);
     return this.rows('SELECT * FROM invitations WHERE id = ?', inv.id)[0];
   }
   // Daily: every reference not updated for six months gets one open update invitation for its owner.
   scanStale() {
-    const due = this.rows('SELECT id, owner, title, data FROM refs WHERE merged_into IS NULL AND next_review < ? AND status != ?', this.now(), 'withdrawn');
+    const due = this.rows('SELECT id, owner, title, data, state FROM refs WHERE merged_into IS NULL AND next_review < ? AND status NOT IN (?, ?)', this.now(), 'withdrawn', 'draft').filter(r => !JSON.parse(r.state).draft);
     return due.map(r => this.invite('atlas', { email: r.owner, reason: 'six_month_update', referenceId: r.id, projectId: JSON.parse(r.data).details.projectId, title: r.title, source: 'six-month scan' })).length;
   }
 
   // ---- Spotlight Ref contract: versioned JSON export / import (reviewers). ----
   exportAll(user) {
     if (!['admin', 'reviewer'].includes(user.role)) throw fail(403, 'Export is for reviewers.');
+    this.log('library', user.email, 'export', 'reference export'); // G2: a reviewer's export of everyone's references is itself audited (no content)
     return { schema: 'atlas.reference.v1', exportedAt: this.now(), references: this.rows('SELECT id, owner, status, revision, updated_at, data, state FROM refs WHERE merged_into IS NULL')
+      .filter(r => !JSON.parse(r.state).draft) // private drafts are never exported
       .map(r => ({ id: r.id, owner: r.owner, status: r.status, revision: r.revision, updatedAt: r.updated_at, quality: JSON.parse(r.state).quality?.score ?? null, reference: JSON.parse(r.data) })) };
   }
   async importAll(user, body = {}) {
@@ -542,10 +617,20 @@ export class Library {
     return out;
   }
 
+  // G2: the owner's explicit "Submit for review". The one way out of a private draft: only now can the N+1, reviewers and the rating see it. Idempotent.
+  submit(user, id) {
+    const row = this.row(id);
+    if (!row || !user.email || row.owner !== user.email || row.merged_into) throw fail(404, 'Reference not found.');
+    if (!row.state.draft) return { ...this.summary(row, 'full', user), unchanged: true };
+    this.setState(row, { ...row.state, draft: false, quality: null, submittedAt: this.now() }, user.email, 'submitted for review', 'revision ' + row.revision);
+    return { ...this.get(user, id), unchanged: false };
+  }
+
   validate(user, id, body = {}) {
     const row = this.row(id);
     if (!row || !this.access(row, user)) throw fail(404, 'Reference not found.');
-    if (!this.canValidate(row, user)) throw fail(403, 'Only the N+1 named on this reference, or a reviewer, can validate it.');
+    heldCheck(row);
+    if (!this.canValidate(row, user)) throw fail(403, this.isOwnerOrMember(row, user) ? 'You cannot validate your own reference: your N+1 or a reviewer does.' : 'Only the N+1 resolved from the staffing record or the directory, or a reviewer, can validate it.');
     const decision = body.decision === 'request_changes' ? 'changes_requested' : body.decision === 'validate' ? 'validated' : null;
     if (!decision) throw fail(400, 'Choose validate or request_changes.');
     const note = str(body.note, 500);
@@ -564,8 +649,9 @@ export class Library {
 
   reinstate(user, id) {
     const row = this.row(id);
-    if (!row) throw fail(404, 'Reference not found.');
+    if (!row || row.state.draft) throw fail(404, 'Reference not found.');
     if (!['admin', 'reviewer'].includes(user.role)) throw fail(403, 'Only a reviewer can reinstate a reference.');
+    heldCheck(row);
     this.setState(row, { ...row.state, withdrawn: false }, user.email, 'reinstated', '');
     return this.get(user, id);
   }

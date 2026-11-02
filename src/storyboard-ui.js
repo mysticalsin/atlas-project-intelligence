@@ -1,14 +1,17 @@
 /* ATLAS live story board in the Conversation view (WOW_SPEC F5.2) and the proof answers after a gap interview (F2.6, T5).
-   Driven only by window events: 'atlas-quality' (quality, user_text, reset) and 'atlas-session' (ready, time_up, wrap_up,
+   Driven only by window events: 'atlas-quality' (quality, user_text, user_text_private, reset) and 'atlas-session' (ready, time_up, wrap_up,
    audio_stopped, reporting, notes, ended, reset). Never by agent_text, and no requestAnimationFrame: the countdown is a
    one-second interval that only runs between ready and the end of the audio. All text goes through textContent; the only
    markup inserted is AtlasGeo's own escaped map SVG. Nothing leaves the browser except on an explicit click of #gapSend. */
 (()=>{'use strict';
+const {setHTML,trusted}=window.AtlasSafe,S=window.AtlasStory;
 const $=id=>document.getElementById(id),B=window.AtlasBoard,board=$('storyBoard'),panel=$('gapPanel');
 if(!B||!board||!panel)return;
+// Resuming an interview (T11): the server says how many interview seconds had been used, so the clock goes on from there and does not restart at zero.
+const used=d=>d.resumed===true&&num(d.activeSeconds)!==null&&d.activeSeconds>0?d.activeSeconds*1000:0;
 const LABEL='From the interview · unverified',SVG='http://www.w3.org/2000/svg',REQUEST=/^[a-f0-9]{32}$/;
 const PHASES={breadth:'Breadth: the whole story first',depth:'Depth: the details that matter',closing:'Closing',focused:'Focused: the proof requested'};
-const STATES={reported:'reported',uncertain:'uncertain',unknown:'unknown',deferred:'left open',empty:'not yet'};
+const STATES={reported:'reported',uncertain:'uncertain',unknown:'still open',deferred:'still open',empty:'not yet'};
 const GAP_WORDS={answered_unverified:'answered · unverified',unknown:'unknown',deferred:'deferred',open:'open'};
 const NEEDS={measure:'what is measured','before/after':'before and after values',unit:'the unit',period:'the periods',population:'who was measured'};
 const obj=v=>v&&typeof v==='object'&&!Array.isArray(v)?v:{},arr=v=>Array.isArray(v)?v:[],str=(v,n)=>typeof v==='string'?v.slice(0,n):'';
@@ -22,7 +25,7 @@ const motionOK=()=>!(window.matchMedia&&matchMedia('(prefers-reduced-motion: red
 const flagText=f=>f.replace(/^No verified measurement\b/i,'No measurement recorded');
 const fieldLabel=f=>{const x=obj(window.ATLAS_POLICY&&window.ATLAS_POLICY.FIELDS)[f];return Array.isArray(x)?str(x[0],80):'';};
 
-let s=blank(),prev=null,seq=0,ticker=null,mapKey=null,said='',pending='',saidAt=0,sayTimer=null,gap=null;
+let told=[],s=blank(),prev=null,seq=0,ticker=null,mapKey=null,said='',pending='',saidAt=0,sayTimer=null,gap=null;
 function blank(){return {quality:null,qualitySeq:null,heard:[],session:{},live:false,off:false};}
 function state(){return {quality:s.quality,heard:s.heard,qualitySeq:s.qualitySeq,session:s.session,now:Date.now(),policy:window.ATLAS_POLICY,geo:window.AtlasGeo};}
 
@@ -30,11 +33,16 @@ function state(){return {quality:s.quality,heard:s.heard,qualitySeq:s.qualitySeq
 function render(){
  board.hidden=s.off||!s.live;if(board.hidden)return;
  const m=B.model(state()),fresh=new Set(motionOK()?B.diff(prev,m):[]);prev=m;
- $('boardCoverage').textContent=m.coverage.present+'/'+m.coverage.total+' · '+m.coverage.meaning;
+ paintCaption(m);
  renderTime(m.time);renderGaps(m,fresh);renderMap(m,fresh);renderMetrics(m,fresh);renderDims(m,fresh);renderChallenge(m);
  announce(B.summaryText(m));}
+// One count of saved topics: the capture ring in the left rail is the source; this line follows it whenever it changes (not only at the next interview event), so the two never disagree.
+// ONE progress caption (v2.2 W3), in plain words. The saved-notes count is a different thing from what ATLAS has heard, so it is named as such and only shown once there is something in the notes (never "0 of 6 saved" beside "10 of 12 heard").
+function paintCaption(m){try{const n=parseInt($('captureCount')?.textContent,10)||0;$('boardTopics').textContent='Covered so far: '+m.coverage.present+' of '+m.coverage.total+' things a reader will want to know · '+m.coverage.meaning+(n>0?' · Your notes: '+n+' of 6 topics saved':'');}catch(e){}}
+function paintTopics(){if(prev&&!board.hidden)paintCaption(prev);}
+try{if(typeof MutationObserver==='function'&&$('captureCount'))new MutationObserver(paintTopics).observe($('captureCount'),{childList:true,characterData:true,subtree:true});}catch(e){}
 function renderTime(t){const sec=$('boardTime');sec.hidden=t.max===null;if(t.max===null)return;
- $('boardTimeLeft').textContent=clock(t.left)+' left';$('boardPhase').textContent=t.phase?PHASES[t.phase]:'';sec.dataset.phase=t.phase||'';
+ $('boardTimeLeft').textContent=t.soft?clock(t.elapsed)+' · about '+Math.round(t.soft/60)+'–'+Math.round(t.max/60)+' min':clock(t.left)+' left';$('boardPhase').textContent=t.phase?PHASES[t.phase]:'';sec.dataset.phase=t.phase||'';
  $('boardTimeBar').style.width=(t.max?Math.min(100,100*t.elapsed/t.max):0).toFixed(1)+'%';}
 function renderGaps(m,fresh){const sec=$('boardGaps'),list=body('boardGaps');sec.hidden=!m.gaps.length;list.replaceChildren();
  const asks=new Map(arr(s.session.gaps).map(a=>[obj(a).id,obj(a)]));
@@ -45,7 +53,7 @@ function renderMap(m,fresh){const G=window.AtlasGeo,key=m.pins.map(p=>p.code).jo
  if(key===mapKey)return;mapKey=key;const box=body('boardMap');box.replaceChildren();  // the SVG is rebuilt only when the places change
  if(m.pins.length&&G&&typeof G.worldSVG==='function'){
   const states={},titles={};for(const p of m.pins){states[p.code]='interview';titles[p.code]=p.name+': mentioned in the interview (not necessarily the project location)';}
-  const fig=el('div','board-map');fig.innerHTML=G.worldSVG({states,titles,idPrefix:'board',aspect:16/10});  // AtlasGeo escapes every title
+  const fig=el('div','board-map');setHTML(fig,trusted(G.worldSVG({states,titles,idPrefix:'board',aspect:16/10})));  // AtlasGeo escapes every title
   const svg=fig.querySelector('svg'),vb=svg?(svg.getAttribute('viewBox')||'').split(/\s+/).map(Number):[];
   if(svg&&vb.length===4&&typeof G.labelPoint==='function')for(const p of m.pins){const pt=G.labelPoint(p.code);if(!pt)continue;
    const pin=document.createElementNS(SVG,'circle'),t=document.createElementNS(SVG,'title');
@@ -72,8 +80,8 @@ function renderChallenge(m){const c=m.challenge,box=body('boardChallenge');box.r
  if(c.planned)box.append(el('p','board-question',c.planned));else box.append(el('p','board-empty','Nothing planned yet.'));
  if(c.next)box.append(el('p','board-note','About: '+c.next.label));
  for(const f of c.flags)box.append(el('p','board-note board-warn',flagText(f)));
- if(c.deferred.length)box.append(el('p','board-note','Left open for later: '+c.deferred.map(f=>fieldLabel(f)||f).join(', ')));
- if(c.route)box.append(el('p','board-note','Story route: '+c.route));}
+ if(c.deferred.length)box.append(el('p','board-note','Still open: '+c.deferred.map(f=>fieldLabel(f)||f).join(', ')));
+ if(c.route)box.append(el('p','board-note','Story route: '+({'quantified candidate':'a story with numbers, not yet checked','qualitative candidate':'a story without numbers so far','learning or experience':'a lessons-learned story'}[c.route]||c.route)));}
 // The polite live region changes at most once every 10 seconds, always to the latest summary.
 function announce(text){pending=text;if(text===said&&!sayTimer)return;const wait=saidAt+10000-Date.now();if(wait<=0)flush();else if(!sayTimer)sayTimer=setTimeout(flush,wait);}
 function flush(){sayTimer=null;if(pending===said)return;said=pending;saidAt=Date.now();$('boardSummary').textContent=said;}
@@ -82,25 +90,141 @@ function flush(){sayTimer=null;if(pending===said)return;said=pending;saidAt=Date
 function tick(){if(board.hidden)return;renderTime(B.model({session:s.session,now:Date.now()}).time);}
 function startTicker(){stopTicker();ticker=setInterval(tick,1000);}
 function stopTicker(){if(ticker!==null)clearInterval(ticker);ticker=null;}
-function clear(){stopTicker();clearTimeout(sayTimer);sayTimer=null;s=blank();prev=null;mapKey=null;said=pending='';saidAt=0;gap=null;
- board.hidden=true;$('boardSummary').textContent='';$('boardCoverage').textContent='';$('boardTime').hidden=true;$('boardGaps').hidden=true;
+function clear(){told=[];stopTicker();clearTimeout(sayTimer);sayTimer=null;s=blank();prev=null;mapKey=null;said=pending='';saidAt=0;gap=null;
+ board.hidden=true;$('boardSummary').textContent='';$('boardTopics').textContent='';$('boardTime').hidden=true;$('boardGaps').hidden=true;
  for(const id of ['boardGaps','boardMap','boardMetrics','boardDims','boardChallenge'])body(id).replaceChildren();
  renderGap();$('gapMessage').textContent='';}
 function stopClock(){if(s.session.readyAt&&!s.session.stoppedAt)s.session.stoppedAt=Date.now();stopTicker();}
 window.addEventListener('atlas-quality',e=>{const d=e.detail;if(!d||typeof d!=='object')return;
  if(d.type==='reset')clear();
  else if(d.type==='quality'){s.quality=d;s.qualitySeq=++seq;s.live=true;render();}  // accepted after audio_stopped too: the analyst finishes late
- else if(d.type==='user_text'&&typeof d.text==='string'){s.heard.push({item_id:str(d.item_id,160),text:d.text.slice(0,2000),seq:++seq});
-  if(s.heard.length>40)s.heard.splice(0,s.heard.length-40);s.live=true;render();}});
+ else if(d.type==='user_text'&&typeof d.text==='string'){if(!d.restored)told.push({text:d.text.slice(0,2000),at:Date.now()});if(told.length>60)told.shift();s.heard.push({item_id:str(d.item_id,160),text:d.text.slice(0,2000),seq:++seq});
+  if(s.heard.length>40)s.heard.splice(0,s.heard.length-40);s.live=true;render();}
+ else if(d.type==='user_text_private'&&Array.isArray(d.items)){const set=new Set(d.items.filter(x=>typeof x==='string'));  // kept private: the board forgets the words of those utterances too
+  for(const h of s.heard)if(set.has(h.item_id))h.text='[kept private]';render();}});
 window.addEventListener('atlas-session',e=>{const d=e.detail;if(!d||typeof d!=='object')return;
  if(d.type==='reset')clear();
  else if(d.type==='ready'){clear();const max=num(d.maxSeconds);
-  s.session={readyAt:Date.now(),maxSeconds:max!==null&&max>0?max:null,mode:d.mode==='gap'?'gap':'full',gaps:arr(d.gaps).filter(g=>g&&typeof g==='object').slice(0,5),timePlan:obj(d.timePlan)};
+  s.session={readyAt:Date.now()-used(d),maxSeconds:max!==null&&max>0?max:null,softSeconds:num(d.softSeconds),mode:d.mode==='gap'?'gap':'full',gaps:arr(d.gaps).filter(g=>g&&typeof g==='object').slice(0,5),timePlan:obj(d.timePlan)};
   s.off=d.liveLedger===false;s.live=true;if(!s.off&&s.session.maxSeconds)startTicker();render();}
+ else if(d.type==='time_extended'){const max=num(d.maxSeconds);if(max!==null&&max>0)s.session.maxSeconds=max;if(d.timePlan&&typeof d.timePlan==='object')s.session.timePlan=obj(d.timePlan);render();}  // the consultant agreed to a few more minutes
  else if(d.type==='audio_stopped'){stopClock();render();}
  else if(d.type==='ended'){stopClock();s.qualitySeq=++seq;render();}  // nothing is being analysed once the session has ended
  else if(d.type==='notes'){if(d.mode==='gap')showGap(d);}
  else if(d.type==='time_up'||d.type==='wrap_up')render();});
+
+/* ---------- The read-back card (T11, plan 3h, D19, Tony Q2) ----------
+   Driven by the server's `summary`, `summary_closed`, `summary_confirmed`, `evidence_draft` and `evidence_draft_unavailable` session events. Each button only asks
+   voice-client.js to send one message ('atlas-summary-action'); nothing is saved by the card itself. Confirming makes a PRIVATE draft (the server does that); sending
+   it to the reviewer is the separate Submit for review click below, a library POST with the revision the person saw. All text goes through textContent. */
+const card=$('summaryCard'),CONFIRM_WAIT_MS=15000;
+let sum=null,confirmTimer=null;
+function sumAct(kind,id,text){window.dispatchEvent(new CustomEvent('atlas-summary-action',{detail:{kind,detail_id:id,text}}));}
+function sumNote(text){const m=$('summaryMessage');if(m)m.textContent=text||'';}
+function sumClear(){clearTimeout(confirmTimer);confirmTimer=null;sum=null;resetSeen();sumNote('');renderSummary();}
+// The read-back is the one step that must not be missed: the first time it shows, the page brings it to the top and puts focus on its title (reduced motion: no smooth scroll).
+function reveal(){try{const reduced=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+ if(typeof card.scrollIntoView==='function')card.scrollIntoView({block:'start',behavior:reduced?'auto':'smooth'});
+ const t=$('summaryTitle');if(t&&typeof t.focus==='function')t.focus({preventScroll:true});}catch(e){}}
+/* ---------- The read-back as a finished case study (W1) ----------
+   The same server items, grouped by AtlasStory.caseStudy into Challenge / Approach / Your contribution / Outcome (and the evidence and fit lines). Every sentence is the consultant's own quote or a fixed
+   label; each block says where its words came from ("From your words, 10:42"); a before/after strip appears only from "from X to Y" in their words. Correct and Keep private stay on each quote as small text
+   buttons. A line kept private stays in its block as "Kept private. Not used." with its words gone. "n of N reviewed" counts quotes that were on screen for a moment or that the person acted on. */
+const SPANS=q=>{const src=window.ATLAS_POLICY&&window.ATLAS_POLICY.NUMERIC_SRC;return src?B.metricSpans(q,src):[];};
+let seenObs=null,seenTimers=new Map();
+function markSeen(id){if(!sum||!sum.seen||sum.seen.has(id))return;sum.seen.add(id);paintProgress();}
+function watchSeen(li){if(typeof IntersectionObserver!=='function')return;if(!seenObs)seenObs=new IntersectionObserver(es=>{for(const e of es){const id=e.target.dataset.detail;
+  if(e.isIntersecting){if(!seenTimers.has(id))seenTimers.set(id,setTimeout(()=>{seenTimers.delete(id);markSeen(id);},700));}else if(seenTimers.has(id)){clearTimeout(seenTimers.get(id));seenTimers.delete(id);}}},{root:$('summaryScroll'),threshold:.6});
+ seenObs.observe(li);}
+function resetSeen(){if(seenObs){seenObs.disconnect();seenObs=null;}for(const x of seenTimers.values())clearTimeout(x);seenTimers.clear();}
+function paintProgress(){const el=$('summaryProgress');if(!el||!sum)return;const v=B.summaryView(sum),cs=S.caseStudy({items:v.items},{seen:sum.seen,keeping:sum.keeping,kept:sum.kept});
+ const open=sum.phase==='open'||sum.phase==='confirming';el.hidden=!open||!cs.total;el.textContent=cs.total?cs.reviewed+' of '+cs.total+' reviewed':'';}
+function quoteItem(q){const li=el('li','summary-item'+(q.private?' is-kept':'')+(q.pending?' is-pending':''));li.dataset.detail=q.id;
+ const head=el('p','summary-item-head');head.append(el('b','',q.label));
+ if(q.private){li.append(head,el('p','summary-kept','Kept private. Not used.'));return li;}
+ for(const tg of q.tags)head.append(el('span','board-flag',' · '+tg));
+ const quote=el('q','summary-quote',q.quote);quote.setAttribute('dir','auto');if(q.lang){quote.setAttribute('lang',q.lang);if(q.lang!=='en')head.append(el('span','board-flag',' · '+q.lang.toUpperCase()));}
+ li.append(head,quote);
+ if(q.pending){li.append(el('p','summary-item-wait','Keeping that private…'));return li;}
+ if(q.editable){const row=el('div','summary-item-actions'),fix=el('button','board-btn','Correct'),keep=el('button','board-btn','Keep private');
+  fix.type='button';fix.dataset.action='correct';fix.setAttribute('aria-label','Correct: '+q.label);fix.setAttribute('aria-expanded',sum.editing===q.id?'true':'false');
+  keep.type='button';keep.dataset.action='withhold';keep.setAttribute('aria-label','Keep private: '+q.label);
+  fix.addEventListener('click',()=>{markSeen(q.id);sum.editing=sum.editing===q.id?null:q.id;sumNote('');renderSummary();const f=$('summaryItems').querySelector&&$('summaryItems').querySelector('.summary-edit input');if(f&&f.focus)f.focus();});
+  keep.addEventListener('click',()=>{if(!sum||sum.phase!=='open')return;markSeen(q.id);sum.keeping.add(q.id);sumNote('Keeping that private…');renderSummary();sumAct('withhold',q.id);
+   setTimeout(()=>{if(sum&&sum.keeping.delete(q.id))renderSummary();},6000);}); /* the server did not drop it in six seconds: it is shown as it is (not as private) */
+  row.append(fix,keep);li.append(row);
+  if(sum.editing===q.id){const form=el('div','summary-edit'),input=document.createElement('input'),lab=el('label','','Your correction, in your own words'),save=el('button','board-btn','Save correction'),cancel=el('button','board-btn','Cancel');
+   input.type='text';input.id='summaryEdit-'+q.id;input.dataset.detail=q.id;input.value=sum.edits?.[q.id]?.text||'';input.maxLength=1800;input.setAttribute('autocomplete','off');lab.setAttribute('for',input.id);save.type='button';cancel.type='button';save.dataset.action='save';cancel.dataset.action='cancel';
+   const go=()=>{const VC=window.AtlasVoiceControls;if(!sum||sum.phase!=='open')return;
+    if(VC&&typeof VC.summaryMessage==='function'&&!VC.summaryMessage('correct',q.id,input.value)){sumNote('Please type at least five characters, so your correction can be kept in your own words.');return;}
+    delete sum.edits?.[q.id];input.dataset.detail='';sum.editing=null;markSeen(q.id);sumNote('Sent. The summary updates when ATLAS has your correction.');sumAct('correct',q.id,input.value);renderSummary();};
+   save.addEventListener('click',go);cancel.addEventListener('click',()=>{delete sum.edits?.[q.id];input.dataset.detail='';sum.editing=null;sumNote('');renderSummary();});
+   input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault&&e.preventDefault();go();}else if(e.key==='Escape'){delete sum.edits?.[q.id];input.dataset.detail='';sum.editing=null;renderSummary();}});
+   form.append(lab,input,save,cancel);li.append(form);}}
+ return li;}
+function paintStory(v){const root=$('summaryItems');root.replaceChildren();resetSeen();
+ const cs=S.caseStudy({items:v.items.filter(x=>!sum.kept.has(x.id))},{heard:told,spans:SPANS,seen:sum.seen,keeping:sum.keeping,kept:sum.kept});
+ if(cs.numbers){const n=cs.numbers,box=el('section','story-numbers');box.setAttribute('aria-label',n.kind==='beforeAfter'?'Before and after':'Your numbers');box.dataset.kind=n.kind;
+  if(n.kind==='beforeAfter'){const a=el('div','story-num'),b=el('div','story-num');a.append(el('small','','Before'),el('b','',n.before.text));b.append(el('small','','After'),el('b','',n.after.text));box.append(a,el('span','story-arrow','→'),b);}
+  else for(const f of n.figures){const d=el('div','story-num');d.append(el('small','',f.label),el('b','',f.text));box.append(d);}
+  box.append(el('p','story-prov','From your words'));root.append(box);}
+ for(const sec of cs.sections){const block=el('section','story-block');block.dataset.block=sec.id;const h=el('h3','story-block-title',sec.title);h.id='story-'+sec.id;block.setAttribute('aria-labelledby',h.id);
+  const ul=el('ul','story-quotes');for(const q of sec.quotes){const li=quoteItem(q);ul.append(li);if(q.editable)watchSeen(li);}
+  block.append(h,ul);if(sec.provenance)block.append(el('p','story-prov',sec.provenance));root.append(block);}
+ paintProgress();}
+function rememberEdit(){if(!sum||!card)return;const input=$('summaryItems').querySelector&&$('summaryItems').querySelector('.summary-edit input');
+ if(!input||!input.dataset.detail)return;const id=input.dataset.detail;
+ (sum.edits||(sum.edits={}))[id]={text:input.value,focus:document.activeElement===input,start:input.selectionStart,end:input.selectionEnd,direction:input.selectionDirection};} /* an unsaved correction survives a summary refresh: text, focus, selection and its direction */
+function renderSummary(){if(!card)return;rememberEdit();
+ const v=B.summaryView(sum),panel=$('voicePanel');card.hidden=!v.visible;if(panel&&panel.dataset){panel.dataset.summary=String(v.visible);panel.dataset.readback=String(v.visible&&(v.phase==='open'||v.phase==='confirming'));} // readback: the card is asking for a decision, so it replaces the answer box and the controls until it is confirmed
+ if(!v.visible){if(card.dataset)card.dataset.shown='';return;}
+ if(card.dataset&&card.dataset.shown!=='1'){card.dataset.shown='1';setTimeout(reveal,0);}
+ $('summaryTitle').textContent=v.title;$('summaryIntro').textContent=sum.phase==='open'||sum.phase==='confirming'?v.intro:'';
+ paintStory(v);
+ const empty=$('summaryEmpty');empty.hidden=!v.empty;empty.textContent=v.empty;
+ const open=$('summaryOpen');open.hidden=!v.openPoints.length;const ol=$('summaryOpenList');ol.replaceChildren();for(const t of v.openPoints)ol.append(el('li','',t));
+ $('summaryNext').textContent=v.next;$('summaryNext').hidden=v.phase!=='open'&&v.phase!=='confirming'; // the promise before confirming goes stale once it is done
+ const c=$('summaryConfirm');c.hidden=v.confirm.hidden;c.disabled=v.confirm.disabled;c.textContent=v.confirm.label;
+ const spent=sum.submit&&sum.submit.status==='sent';$('summarySaved').textContent=spent?'':v.saved||v.notSaved; // after Submit one line says where it stands (summaryMessage), not two
+ const b=$('summarySubmit');b.hidden=v.submit.hidden||spent;b.disabled=v.submit.disabled;b.textContent=v.submit.label; // spent: the button is not shown a second time
+ if(!v.submit.hidden)sumNote(v.submit.message);
+ $('summaryLive').textContent=v.live;
+ const edit=sum.editing&&sum.edits?.[sum.editing],input=$('summaryItems').querySelector&&$('summaryItems').querySelector('.summary-edit input');
+ if(edit?.focus&&input?.dataset.detail===sum.editing){input.focus({preventScroll:true});if(typeof input.setSelectionRange==='function')input.setSelectionRange(edit.start,edit.end,edit.direction);}}
+
+$('summaryConfirm')&&$('summaryConfirm').addEventListener('click',()=>{if(!sum||sum.phase!=='open'||!sum.items.length)return;
+ if(sum.editing){sumNote('Save or cancel your correction before confirming the summary.');return;}
+ sum.phase='confirming';sum.editing=null;sumNote('');renderSummary();sumAct('confirm_summary');
+ clearTimeout(confirmTimer);confirmTimer=setTimeout(()=>{if(sum&&sum.phase==='confirming'){sum.phase='open';sumNote('The confirmation did not go through. Try again, or press End to finish.');renderSummary();}},CONFIRM_WAIT_MS);});
+// Submit for review: the person's own click, a library POST with the revision they were shown (the server refuses a stale one). The Worker checks Origin and CSRF as for every library POST.
+async function sumStatus(s){const app=window.ATLAS_APP,Core=window.AtlasWorkflowCore,list=$('summaryStatus');
+ if(!app||typeof app.libraryApi!=='function'||!Core||!list||!s.draft)return;
+ try{const m=Core.model(await app.libraryApi('/evidence/'+encodeURIComponent(s.draft.id)+'/status'));if(sum!==s)return;
+  list.replaceChildren();for(const c of m.cards)list.append(el('li','',c.label+': '+c.statusText+(c.badge?' ('+c.badge+')':'')));list.hidden=false;}
+ catch(e){list.hidden=true;}
+ try{window.AtlasWorkflowUI&&window.AtlasWorkflowUI.refresh();}catch(e){}}
+async function sumSubmit(){const s=sum,app=window.ATLAS_APP;if(!s||s.phase!=='confirmed'||!s.draft||s.submit.status==='sending'||s.submit.status==='sent')return;
+ if(!app||typeof app.libraryApi!=='function'){s.submit={status:'error',message:'The shared library is not available here.'};renderSummary();return;}
+ s.submit={status:'sending'};renderSummary();
+ try{const v=await app.libraryApi('/evidence/'+encodeURIComponent(s.draft.id)+'/submit',{method:'POST',body:{expected_revision:s.draft.revision}});
+  s.submit={status:'sent'};if(v&&Number.isInteger(v.revision))s.draft={...s.draft,revision:v.revision};
+  window.dispatchEvent(new CustomEvent('atlas-submitted'));} // the library story of this interview follows the same explicit click (app.js)
+ catch(e){s.submit={status:'error',message:(e&&e.message)||'It was not submitted.'};}
+ if(sum===s){renderSummary();sumStatus(s);}}
+$('summarySubmit')&&$('summarySubmit').addEventListener('click',sumSubmit);
+window.addEventListener('atlas-session',e=>{const d=e.detail;if(!d||typeof d!=='object'||!card)return;
+ if(d.type==='ready'||d.type==='reset')sumClear();
+ else if(d.type==='summary'){const was=sum&&sum.phase==='open'?sum:null;if(sum&&['confirming','confirmed'].includes(sum.phase))return;
+  rememberEdit();const carry=sum||{};sum={edits:was?.edits||{},items:arr(d.items).filter(x=>x&&typeof x==='object').slice(0,100),unknowns:arr(d.unknowns).filter(x=>x&&typeof x==='object').slice(0,12),phase:'open',editing:null,confirmed:false,draft:null,unavailable:null,submit:{status:'idle'},seen:carry.seen||new Set(),kept:carry.kept||new Map(),keeping:carry.keeping||new Set()};
+   for(const id of [...sum.keeping])if(!sum.items.some(x=>x&&x.detail_id===id)){const old=arr(carry.items).find(x=>x&&x.detail_id===id)||{};sum.keeping.delete(id);sum.kept.set(id,{id,field:str(old.field,40),label:str(old.label,80),quote:'',tags:[]});} /* the server dropped it: now it is kept private, its words gone */
+  if(was&&was.editing&&sum.items.some(x=>x.detail_id===was.editing))sum.editing=was.editing;sumNote('');renderSummary();}
+ else if(d.type==='summary_closed'){if(sum&&sum.phase==='open'){sum.phase='closed';sumNote('');renderSummary();}}
+ else if(d.type==='summary_confirmed'){if(sum){sum.confirmed=true;clearTimeout(confirmTimer);confirmTimer=null;if(sum.phase==='open')sum.phase='confirming';renderSummary();}}
+ else if(d.type==='evidence_draft'){if(sum){clearTimeout(confirmTimer);confirmTimer=null;sum.phase='confirmed';sum.confirmed=true;
+   sum.draft={id:str(d.id,100),revision:Number.isInteger(d.revision)?d.revision:1,unchanged:d.unchanged===true};sum.unavailable=null;sumNote('');renderSummary();sumStatus(sum);}}
+ else if(d.type==='evidence_draft_unavailable'){if(sum){clearTimeout(confirmTimer);confirmTimer=null;sum.phase='confirmed';sum.confirmed=true;sum.draft=null;sum.unavailable={reason:str(d.reason,40),message:str(d.message,300)};sumNote('');renderSummary();}}
+ else if(d.type==='ended'){if(sum&&['open','confirming'].includes(sum.phase)){clearTimeout(confirmTimer);confirmTimer=null;
+   if(sum.confirmed){sum.phase='confirmed';sum.unavailable={reason:'no_answer',message:'The summary was confirmed, but the interview ended before the library answered. Nothing was saved.'};}else sum.phase='ended';renderSummary();}}});
 
 /* ---------- Proof answers after a gap interview (F2.1 step 6): two separate explicit clicks ---------- */
 function showGap(m){const g=obj(m.gap),app=window.ATLAS_APP;

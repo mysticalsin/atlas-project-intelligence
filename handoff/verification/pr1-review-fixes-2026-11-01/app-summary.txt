@@ -1,0 +1,10 @@
+✔ playback acknowledgements count consumed samples, not queued generation (1.84752ms)
+✔ flushed unheard audio does not increase consumed count (5.091301ms)
+ℹ tests 513
+ℹ suites 0
+ℹ pass 512
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 26448.606197

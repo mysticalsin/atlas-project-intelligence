@@ -1,0 +1,154 @@
+// Destination adapters (plan §4, decisions D1-D5, D12; Integration Contracts §1-§5): contract-driven MOCKS only. No live DNA,
+// MiChat, IMP or Spotlight CMS endpoint, schema or credential exists in this repository, so nothing here calls a network; a mock
+// answers from memory and every acknowledgement carries mock:true. A mock acknowledgement is never "synced" or "published"
+// (D12): the policy gate refuses record_sync_complete / record_published unless destination_ack.mock === false.
+//
+// ATLAS_ADAPTERS = off (default) | mock | live. `live` is allowed only PER CONNECTION (connectors.js, atlas_voice/config/connections.json): a destination
+// whose connection is not ready (status, secrets, base URL, endpoint, mapping, ack rule) is reported BLOCKED_EXTERNAL exactly as before, and mock stays
+// the default. A live acknowledgement exists only when a real HTTP response satisfied the connection's ack_rule. Anything else is off.
+// Payloads are built ONLY from an approved revision's claims (statement and typed fields): never the interview transcript, never
+// source_refs, ledger or session ids. The Spotlight payload is the audience projection (story-projection.js), built elsewhere.
+// MAAP and Project Review are shells: their rubric is MUST_BE_CONFIGURED_BY_PROCESS_OWNER, so rating or closing is denied by the
+// gate with MAAP_NOT_CONFIGURED / PROJECT_REVIEW_NOT_CONFIGURED.
+import { decide } from './policy-gate.js';
+import { adapterReadiness, anyLiveEligible, createHttpConnector } from './connectors.js';
+import { effectiveConfig, createMichatAdapter } from './michat.js';
+
+const BLOCKED = { mode: 'blocked', code: 'BLOCKED_EXTERNAL', reason: 'Live adapters need the system owners\' endpoints, schemas and credentials; none are configured.' };
+export const adapterMode = env => {
+  const v = String(env?.ATLAS_ADAPTERS ?? 'off').trim().toLowerCase();
+  if (v === 'mock') return { mode: 'mock' };
+  if (v === 'live') return anyLiveEligible(env, effectiveConfig(env)) ? { mode: 'live' } : BLOCKED;
+  return { mode: 'off' };
+};
+// The mode for ONE adapter: under `live`, only a ready connection is live; the others stay blocked (never silently mock).
+export const adapterModeFor = (env, name) => {
+  const m = adapterMode(env);
+  if (m.mode !== 'live') return m;
+  const r = adapterReadiness(env, name, effectiveConfig(env));
+  return r.eligible ? m : { ...BLOCKED, reasons: r.reasons };
+};
+// The HTTP connector for a ready connection (an adapter with the same send(envelope, payload) interface as the mock).
+// MiChat goes through michat.js (the assumed contract when switched on, and translation into the CV's language); every other one is the plain connector.
+export const liveAdapter = (env, name, opts = {}) => name === 'MICHAT_CV' ? createMichatAdapter(env, opts) : createHttpConnector(name, { ...opts, env, config: effectiveConfig(env) });
+// ATLAS_EVIDENCE_WORKFLOW=off turns the fan-out, the status route and the sync route off (rollback); anything else is on.
+export const evidenceWorkflowOn = env => String(env?.ATLAS_EVIDENCE_WORKFLOW ?? 'on').trim().toLowerCase() !== 'off';
+
+// The four destination adapters. `destination` is the job envelope's destination, `branch` the status card it feeds.
+export const CONTRACTS = {
+  DNA_SKILLS_WRITEBACK: { branch: 'dna', destination: 'DNA', purpose: 'skills_profile', label: 'DNA — skills write-back (mock, not connected)' },
+  MICHAT_CV: { branch: 'michat', destination: 'MiChat', purpose: 'cv', label: 'MiChat CV — not connected, mock' },
+  IMP_CAPABILITY: { branch: 'imp', destination: 'IMP', purpose: 'matching', label: 'IMP — capability signal (mock, not connected)' },
+  SPOTLIGHT_CMS: { branch: 'spotlight', destination: 'Spotlight', purpose: 'public_spotlight', label: 'Spotlight CMS — mock, can never publish' },
+};
+export const ADAPTER_BY_DESTINATION = Object.fromEntries(Object.entries(CONTRACTS).map(([name, c]) => [c.destination, name]));
+export const ADAPTER_BY_BRANCH = Object.fromEntries(Object.entries(CONTRACTS).map(([name, c]) => [c.branch, name]));
+
+// ---- payloads, from the approved revision only ----
+const SKILL_TYPES = ['responsibility', 'deliverable', 'technology', 'credential'];
+const CV_TYPES = ['responsibility', 'deliverable', 'technology', 'credential', 'outcome', 'metric'];
+const typed = c => ({ claim_id: c.claim_id, claim_type: c.claim_type, statement: c.statement, attribution: c.attribution, origin: c.origin });
+const measured = c => ({ ...typed(c), value: c.value ?? null, unit: c.unit ?? null, baseline: c.baseline ?? null, after_state: c.after_state ?? null, period: c.period ?? null });
+// MiChat CV (G1, review L8): the statement of an approved claim is the consultant's raw speech-recognition quote until a person has put it in their
+// own words. A CV gets only REVIEWED wording: the claim's statement is sent when the revision is validated AND a person amended it (an owner's or a
+// reviewer's amendment; the approver is never its author), capped at CV_STATEMENT_MAX. Otherwise the claim travels as structured fields only, with
+// the reason code beside it. Outcome and metric claims can name the client, and no client_permission exists in the data model to say they may be
+// shown, so their text is never sent: value, unit, baseline, after state and period only.
+export const CV_STATEMENT_MAX = 400;
+const CLIENT_TEXT_TYPES = ['outcome', 'metric'];
+const verbatim = c => (c.source_refs || []).some(r => r && r.kind === 'interview' && r.quote === c.statement);
+// `mask` (michat.js cvTextMask, from branches.js) takes any library client or contact name out of the reviewed wording too (D-G14: no client names in CVs).
+const cvClaim = (c, mask = s => s) => {
+  const reason = CLIENT_TEXT_TYPES.includes(c.claim_type) ? 'CLIENT_PERMISSION_UNKNOWN' : verbatim(c) ? 'VERBATIM_ASR_NOT_REVIEWED' : null;
+  const { statement, ...rest } = measured(c);
+  return { ...rest, statement: reason ? null : mask(String(statement ?? '').slice(0, CV_STATEMENT_MAX)) || null, ...(reason ? { statement_withheld: reason } : {}) };
+};
+const grantRef = (grants, purpose) => (grants || []).filter(g => g.purpose === purpose && g.status === 'active')
+  .map(g => ({ grant_id: g.id, purpose: g.purpose, scope: g.scope ?? null, expires_at: g.expires_at ?? null, revision: g.revision }));
+const base = (entity, approval) => ({ entity_id: entity.id, source_revision: entity.revision, content_hash: entity.content_hash, approved_at: approval?.at ?? null });
+
+// `input` = { entity, claims, approval, grants }. Nothing about the interview itself (quotes, ledger ids, ASR meta) is in a payload.
+// `cv` = { language, template } (michat.js cvOptions, from the Worker's MICHAT_CV_* variables) and `mask` apply to MICHAT_CV only.
+export function buildPayload(adapter, { entity, claims, approval, grants, cv = {}, mask } = {}) {
+  const list = Array.isArray(claims) ? claims : [];
+  switch (adapter) {
+    case 'DNA_SKILLS_WRITEBACK': // proposal only: no taxonomy id or level is invented (null until DNA's taxonomy maps it); a story approval is not a skill approval
+      return { ...base(entity, approval), consultant_id: entity.owner_sub, reviewer: approval?.approver_sub ?? null, effective_date: String(approval?.at ?? '').slice(0, 10) || null,
+        assertions: list.filter(c => SKILL_TYPES.includes(c.claim_type) && c.attribution !== 'client')
+          .map(c => ({ ...typed(c), skill_taxonomy_id: null, level: null, status: 'proposed', evidence_refs: [{ claim_id: c.claim_id, revision: entity.revision }] })) };
+    case 'MICHAT_CV': // approved contribution claims only, with reviewed wording only (see cvClaim); context and learning may carry restricted client detail and stay out
+      return { ...base(entity, approval), consultant_id: entity.owner_sub, profile_revision: entity.revision, language: cv.language ?? null, target_role: null, template: cv.template ?? null,
+        claims: list.filter(c => CV_TYPES.includes(c.claim_type) && c.attribution !== 'client' && c.review_status === 'validated').map(c => cvClaim(c, mask)), permissions: grantRef(grants, 'cv') };
+    case 'IMP_CAPABILITY': // a capability signal; availability and allocation are IMP's, never computed here
+      return { ...base(entity, approval), consultant_id: entity.owner_sub, availability: null,
+        signals: list.filter(c => SKILL_TYPES.includes(c.claim_type) && c.attribution !== 'client').map(typed), permissions: grantRef(grants, 'matching') };
+    case 'PROJECT_REVIEW': // the project hand-off (contracts/project_review): the Project ID and the approved evidence reference only. No claim text, and no
+      // rubric, focus or rating is invented (D3: MUST_BE_CONFIGURED_BY_PROCESS_OWNER). null when the record has no Project ID: nothing to hand off.
+      return entity.project_ref ? { review_id: `atlas-${entity.id}-r${entity.revision}`, project_id: String(entity.project_ref), trigger: 'evidence_approved', focus: [], rubric_version: null,
+        evidence_refs: [{ entity_id: String(entity.id), revision: entity.revision }] } : null;
+    default: throw new Error(`No payload builder for ${adapter}.`);
+  }
+}
+
+// ---- mock destinations ----
+// Failure injection for tests: failNext(n, { error, retryable, throws }), failAlways(error), setDestinationRevision(entity, revision), reset().
+// `calls` records every attempt (payload included) so a test can assert what was, and was not, sent.
+const FORBIDDEN_IN_CMS = ['internal_notes', 'source_refs', 'approval_state', 'ledger_id', 'session_id', 'item_id'];
+export function createMockAdapter(name, { now = () => new Date().toISOString() } = {}) {
+  const contract = CONTRACTS[name];
+  if (!contract) throw new Error(`Unknown adapter ${name}.`);
+  const records = new Map(), acks = new Map(), failures = [], calls = [];
+  let always = null;
+  const adapter = {
+    name, label: contract.label, mock: true, calls, records,
+    failNext(n = 1, failure = {}) { for (let i = 0; i < n; i++) failures.push({ error: 'MOCK_INJECTED_FAILURE', ...failure }); },
+    failAlways(error = 'MOCK_INJECTED_FAILURE', retryable = true) { always = { error, retryable }; },
+    setDestinationRevision(entity, revision) { records.set(entity, { revision, version: (records.get(entity)?.version ?? 0) + 1 }); },
+    reset() { records.clear(); acks.clear(); failures.length = 0; calls.length = 0; always = null; },
+    async send(job, payload) {
+      calls.push({ job_id: job.job_id, idempotency_key: job.idempotency_key, destination: job.destination, source_revision: job.source_revision, payload_hash: job.payload_hash, payload });
+      const injected = failures.shift() || always;
+      if (injected) { if (injected.throws) throw new Error(injected.error); return { ok: false, retryable: injected.retryable !== false, error: injected.error }; }
+      if (name === 'SPOTLIGHT_CMS') {
+        const text = JSON.stringify(payload);
+        if (payload?.audience !== 'public' || FORBIDDEN_IN_CMS.some(k => text.includes(`"${k}"`))) return { ok: false, retryable: false, error: 'CMS_REJECTED_NOT_PUBLIC_SAFE' };
+      }
+      if (acks.has(job.idempotency_key)) return { ok: true, ack: acks.get(job.idempotency_key), duplicate: true }; // the destination dedupes by key
+      const known = records.get(job.source_entity_id);
+      if (known && known.revision > job.source_revision) return { ok: false, conflict: true, error: 'DESTINATION_NEWER_REVISION', destination_revision: known.revision }; // never overwrite
+      const version = (known?.version ?? 0) + 1;
+      records.set(job.source_entity_id, { revision: job.source_revision, version });
+      const ack = { mock: true, adapter: name, destination: contract.destination, destination_record_id: `mock-${name.toLowerCase()}-${job.source_entity_id}`, destination_version: version,
+        destination_revision: job.source_revision, revision: job.source_revision, hash: payload?.content_hash ?? null, payload_hash: job.payload_hash, acknowledged_at: now(),
+        note: 'Mock acknowledgement. Nothing was sent to a real system.' };
+      if (name === 'SPOTLIGHT_CMS') Object.assign(ack, { publication_state: 'mock_held', published: false, canonical_url: null, published_at: null, revision_hash: payload.revision_hash ?? null });
+      acks.set(job.idempotency_key, ack);
+      return { ok: true, ack };
+    },
+  };
+  return adapter;
+}
+
+// ---- MAAP and Project Review shells (D2, D3) ----
+export function createShell(name) {
+  const key = name === 'MAAP' ? 'maap' : 'project_review';
+  const denied = action => decide({ sub: 'atlas-system', roles: ['system'] }, `${key}_${action}`, {}, {});
+  // `calls` records each hand-off it was given (a contract test can check it); nothing is transmitted and nothing is ever acknowledged.
+  const calls = [];
+  return { name, mock: true, rubric: 'MUST_BE_CONFIGURED_BY_PROCESS_OWNER', configured: false, calls,
+    rate: () => denied('rate'), close: () => denied('close'), // { allow:false, reason:'MAAP_NOT_CONFIGURED' | 'PROJECT_REVIEW_NOT_CONFIGURED' }
+    reset() { calls.length = 0; },
+    async send(job, payload) { if (job) calls.push({ source_entity_id: job.source_entity_id ?? null, source_revision: job.source_revision ?? null, destination: job.destination ?? name, payload });
+      return { ok: false, retryable: false, error: `${name.toUpperCase()}_NOT_CONFIGURED` }; } };
+}
+
+// One registry per Library (Durable Object); tests may replace an entry or call the injection hooks on it.
+const registries = new WeakMap();
+export function registry(lib, { now } = {}) {
+  if (!registries.has(lib)) {
+    const r = Object.fromEntries(Object.keys(CONTRACTS).map(n => [n, createMockAdapter(n, { now })]));
+    r.MAAP = createShell('MAAP'); r.PROJECT_REVIEW = createShell('PROJECT_REVIEW');
+    registries.set(lib, r);
+  }
+  return registries.get(lib);
+}

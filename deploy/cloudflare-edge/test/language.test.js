@@ -12,7 +12,7 @@ test('ElevenLabs voice: verified endpoint, key header, raw 24 kHz PCM, Flash v2.
   globalThis.fetch = async (url, init) => { call = { url: String(url), init }; return new Response(new Uint8Array(9)); };
   try {
     const pcm = await workersAI({ ELEVENLABS_API_KEY: 'el-key', ELEVENLABS_VOICE_ID: 'voice1' }).synthesize('Bonjour.', 'atlas', 'fr');
-    assert.equal(call.url, 'https://api.elevenlabs.io/v1/text-to-speech/voice1?output_format=pcm_24000');
+    assert.equal(call.url, 'https://api.elevenlabs.io/v1/text-to-speech/voice1/stream?output_format=pcm_24000'); // v2.2 V1: the streaming endpoint
     assert.equal(call.init.headers['xi-api-key'], 'el-key');
     assert.deepEqual(JSON.parse(call.init.body), { text: 'Bonjour.', model_id: 'eleven_flash_v2_5', language_code: 'fr' });
     assert.equal(pcm.length, 8, 'odd byte trimmed: whole 16-bit samples only');
@@ -59,7 +59,7 @@ test('the browser language opens the conversation (French greeting in a French v
   const unknown = await interview({ browser: 'zz-ZZ' }); assert.match(note(unknown.talker[0]), /speaking English/); await unknown.done();
 });
 
-test('ATLAS follows a switch mid-interview once two utterances agree; short or echoed utterances never switch; no voice means an honest English reply', async () => {
+test('ATLAS follows a switch mid-interview once two utterances agree; short or echoed utterances never switch; no voice means a reply in the language, on screen, with one notice', async () => {
   const h = await interview({ browser: 'en-GB', speaks: l => ['en', 'es'].includes(l), heard: [
     { text: 'Sim', language: 'pt' },                                                   // too short: no switch
     { text: 'Nós reduzimos o tempo de triagem de quarenta para doze minutos', language: 'pt' }, // clear Portuguese: a candidate
@@ -68,10 +68,13 @@ test('ATLAS follows a switch mid-interview once two utterances agree; short or e
     { text: 'Y el equipo quedó muy contento con el resultado', language: 'es' }] });
   await h.speak(); assert.ok(!h.events.some(e => e.type === 'language'));
   await h.speak(); assert.ok(!h.events.some(e => e.type === 'language'), 'one utterance is not enough');
+  const spoken = h.tts.length;
   await h.speak();
   const pt = h.events.find(e => e.type === 'language');
-  assert.deepEqual([pt.language, pt.voice], ['pt', false]);
-  assert.match(note(h.talker.at(-1)), /speaking Portuguese, but your voice can only speak English right now/); assert.equal(h.tts.at(-1), 'en');
+  assert.deepEqual([pt.language, pt.voice], ['pt', false]); assert.match(pt.notice, /não consegue falar português em voz alta/);
+  assert.match(note(h.talker.at(-1)), /speaking Portuguese\. Reply only in natural Portuguese.*cannot speak Portuguese yet, so your reply is shown on screen as text only/); assert.doesNotMatch(note(h.talker.at(-1)), /Reply in English/);
+  assert.ok(!h.tts.slice(spoken).includes('pt') && !h.tts.slice(spoken).includes('en'), 'no voice for it: nothing is synthesised, and never in English instead');
+  assert.ok(h.events.some(e => e.type === 'agent_text' && /Reply 3/.test(e.text)), 'the reply is shown on screen');
   await h.speak(); await h.speak();
   assert.equal(h.events.filter(e => e.type === 'language').at(-1).language, 'es');
   assert.deepEqual(h.metrics.filter(([k]) => k.startsWith('language_')), [['language_candidate', { language: 'pt' }], ['language_switch', { language: 'pt', voice: 0 }],
@@ -114,25 +117,42 @@ test('unfinished: words that trail off, per language; finished answers and quest
     ['Genau das.', 'de'], ['Bis dann.', 'de'], ['Non so perché.', 'it'], ['E poi?', 'it'], ['Ik weet het.', 'nl'], ['Queremos más proyectos como este.', 'es'], ['It went well. Thanks', 'en'], ['Our sponsor was Dr. A', 'en'], ['', 'en']];
   for (const [t, l] of yes) assert.equal(unfinished(t, l), true, `${l}: ${t}`);
   for (const [t, l] of no) assert.equal(unfinished(t, l), false, `${l}: ${t}`);
-  assert.equal(unfinished('We moved the', 'xx'), true, 'an unknown language falls back to English');
+  assert.equal(unfinished('We moved the', 'xx'), false, 'a language without a word list is judged by its punctuation only, never by English words');
+  assert.equal(unfinished('Zrobiliśmy to, bo', 'pl'), false); assert.equal(unfinished('Zrobiliśmy to,', 'pl'), true); assert.equal(unfinished('これは…', 'ja'), true);
 });
 
-test('greetings are one short introduction in every language (no pitch, no review talk)', async () => {
+// The words of an invitation to skip, to pass or to say "I don't know", per bank language (the opening must hold none of them), and the confidentiality line (machine translated, D-L2).
+const NO_SKIP = { en: /skip|don.t know|can.t share/i, fr: /passer|sais pas|ne peux pas le partager/i, es: /saltar|no lo s[eé]|no puedo compartir/i, pt: /pular|n[aã]o sei|n[aã]o posso compartilhar/i,
+  de: /überspringen|weiß (?:es )?nicht|nicht teilen/i, it: /saltare|non lo so|non posso condividere/i, nl: /overslaan|weet (?:het )?niet|niet delen/i };
+const CONFIDENTIAL = { en: /client-confidential.*without the details/, fr: /confidentiel pour le client.*sans les détails/, es: /confidencial del cliente.*sin los detalles/, pt: /confidencial do cliente.*sem os detalhes/,
+  de: /vertraulich.*ohne die Details/, it: /riservato per il cliente.*senza i dettagli/, nl: /vertrouwelijk is voor de klant.*zonder de details/ };
+const words = t => t.split(/\s+/).filter(Boolean).length, sentences = t => (t.match(/[.!?](["”»]?)(\s|$)/g) || []).length;
+const OPENING_EN = `Hi, I'm ATLAS, and I'll help you tell the story of your project. I'll capture what you say, you review it first, and nothing is reused without your permission. If something is client-confidential, say so and I'll note it without the details. At the end, I'll read back a summary for you to correct before anything goes to review.`;
+test('greetings are the full pack opening in every language (purpose, capture, use, one confidentiality line, read-back), voice-short', async () => {
   const { GREETINGS } = await import('../src/languages.js');
-  assert.equal(GREETINGS.en, "Hi, I'm ATLAS, and I'll interview you about your project.");
+  assert.equal(GREETINGS.en, OPENING_EN);
+  assert.ok(words(GREETINGS.en) <= 62, `English is about 60 words (${words(GREETINGS.en)})`);
   for (const [lang, text] of Object.entries(GREETINGS)) {
     assert.ok(text.includes('ATLAS'), lang);
-    assert.equal((text.match(/[.!?](\s|$)/g) || []).length, 1, `${lang}: one sentence`);
-    assert.ok(text.length <= 80, `${lang}: short (${text.length})`);
+    assert.equal(sentences(text), 4, `${lang}: four short sentences, two spoken breaths`);
+    assert.ok(words(text) <= 75, `${lang}: voice-short (${words(text)} words)`);
+    assert.ok(!/[?？]/.test(text), `${lang}: an introduction asks nothing`);
+    assert.ok(!text.includes('\n'), lang);
+    // Tony, 2026-10-31 (U2): no invitation to skip a question or to say "I don't know" in any language (ATLAS is there to understand the work); one narrow confidentiality line instead
+    assert.ok(!NO_SKIP[lang].test(text), `${lang}: no invitation to skip or to say "I don't know": ${text}`);
+    assert.match(text, CONFIDENTIAL[lang], `${lang}: one client-confidentiality line`);
   }
+  assert.deepEqual(Object.keys(GREETINGS), ['en', 'fr', 'es', 'pt', 'de', 'it', 'nl'], 'every cached language has one');
 });
 
-test('the welcome-back greeting also says ATLAS will interview them (one short sentence)', async () => {
-  const { WELCOME_BACK } = await import('../src/languages.js');
-  assert.equal(WELCOME_BACK.en, "Hi, it's ATLAS again, and I'll interview you about your project.");
+test('the welcome-back greeting is the same opening, introduced as "again"', async () => {
+  const { GREETINGS, WELCOME_BACK } = await import('../src/languages.js');
+  assert.equal(WELCOME_BACK.en, OPENING_EN.replace("Hi, I'm ATLAS", "Hi, it's ATLAS again"));
+  assert.deepEqual(Object.keys(WELCOME_BACK), Object.keys(GREETINGS));
   for (const [lang, text] of Object.entries(WELCOME_BACK)) {
     assert.ok(text.includes('ATLAS'), lang);
-    assert.equal((text.match(/[.!?](\s|$)/g) || []).length, 1, `${lang}: one sentence`);
-    assert.ok(text.length <= 80, `${lang}: short (${text.length})`);
+    assert.equal(sentences(text), 4, `${lang}: four short sentences`);
+    assert.ok(words(text) <= 75, `${lang}: voice-short (${words(text)} words)`);
+    assert.ok(text.endsWith(GREETINGS[lang].split(/(?<=[.!?])\s/).slice(1).join(' ')), `${lang}: the same disclosure as the first greeting`);
   }
 });

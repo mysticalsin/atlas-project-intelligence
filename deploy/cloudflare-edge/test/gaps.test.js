@@ -325,7 +325,7 @@ test('end to end, the new model input: a gap interview talker never sees a prosp
     await s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 't', project: { title: 'Proof for [company]-style renewal' }, capture: true, gap: g.id }));
     for (let i = 0; i < 2000 && !talker.length; i++) await new Promise(r => setImmediate(r));
     assert.equal(events[0].type, 'ready'); assert.equal(events[0].gaps.length, 2);
-    assert.ok(talker[0][0].content.includes('Proof the bid needs: Claims routing for [company], like [company]'));
+    assert.ok(talker[0][1].content.includes('Proof the bid needs: Claims routing for [company], like [company]'));
     assert.doesNotMatch(JSON.stringify(talker) + JSON.stringify(events), NAMES);
   } finally { await s.end(false); }
 });

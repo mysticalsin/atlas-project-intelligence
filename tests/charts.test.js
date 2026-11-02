@@ -149,7 +149,7 @@ test('the export stylesheet styles every chart class the static dashboard emits'
  const p=full(),neg=full();Object.assign(neg.metric,{before:-5,after:5});const html=[C.dashboard(model(p)),C.dashboard(model(neg)),C.dashboard(model(E.project({title:'x'}))),C.qualityGauge({score:50,completeness:50,aiScore:50}),C.portfolioMap({byCountry:[{name:'France',n:1}]})].join('');
  const cls=new Set([...html.matchAll(/class="([^"]+)"/g)].flatMap(x=>x[1].split(' ')).filter(c=>/^ag-/.test(c)&&!hooks.has(c)));const missing=[...cls].filter(c=>!css.includes('.'+c));assert.deepEqual(missing,[]);});
 
-test('size regression guard (measured size, not the page budget; raised from 54,000 for the JEV story rating gauge, docs/JEV_RATING.md U5)',()=>{const js=fs.statSync(path.join(ROOT,'src/charts.js')).size,css=fs.statSync(path.join(ROOT,'src/charts.css')).size;assert.ok(js<=57000,'charts.js '+js);assert.ok(css<=3400,'charts.css '+css);});
+test('size regression guard (measured size, not the page budget; raised from 54,000 for the JEV story rating gauge, docs/JEV_RATING.md U5; to 57,300 for the F1 shared escape and own-key lookups)',()=>{const js=fs.statSync(path.join(ROOT,'src/charts.js')).size,css=fs.statSync(path.join(ROOT,'src/charts.css')).size;assert.ok(js<=57300,'charts.js '+js);assert.ok(css<=3400,'charts.css '+css);});
 
 test('a sector filled from the interview report is hatched and labelled wherever it is shown',()=>{const p=full();p.sector='';E.fillDetails(p,{industry:'Banking'});const m=model(p),[st,live]=both(m);
  assert.equal(m.scope.iSector,true);assert.ok(st.includes('<span class="ag-chip ag-iv" title="Sector: Banking · from interview · unverified">Sector: Banking</span>'));assert.ok(live.includes('data-tt="Sector: Banking" data-td="from interview · unverified"'));
@@ -312,3 +312,24 @@ test('U4 no key, no change: without opts.jev the gauge is byte-identical to the 
   assert.equal(C.qualityGauge(q,o),want,k+' '+JSON.stringify(o));if(!(o&&o.admin))assert.ok(!/JEV|TypeSafe/.test(C.qualityGauge(q,o)),k+' says nothing about JEV');}
  assert.ok(!C.qualityGauge(F.cases.reviewAgentNoKey,{jev:false}).includes('BLOCKED_EXTERNAL'),'nobody but an admin sees the hint');
  const J=C.qualityGauge(F.cases.reviewAgentNoKey,{jev:true,admin:true});assert.ok(J.includes('JEV: BLOCKED_EXTERNAL, needs TYPESAFE_API_KEY'));});
+
+// F1 audit: these producers are wrapped in trusted(), so every hostile input must come out inert (no tag, no attribute break-out).
+const inert=(h,k)=>{assert.ok(h.length,k);assert.ok(!/<img|<script|<svg[^>]*onload/i.test(h),k+' tag injected');for(const t of tagsOf(h))assert.ok(!/\son[a-z]+\s*=/i.test(t.replace(/"[^"]*"/g,'""')),k+' handler attribute: '+t.slice(0,80));
+ assert.ok(!h.includes(BREAK),k+' attribute break-out');assert.ok(!/function\s*\w*\(\)|\[object /.test(h),k+' prototype member printed');};
+const RENDERERS=['dashboard','mapCard','tiles','periodTimeline','readinessRings','evidenceMatrix','outcomeBars','jevRadar','sheetSquares'];
+test('F1 audit: a hostile project id, idPrefix and hand-built model strings stay inert in every renderer',()=>{const p=hostile();p.id=BREAK+HOSTILE;const m=model(p);
+ m.status=HOSTILE+BREAK;m.readiness[0].label=BREAK;m.readiness[1].label=HOSTILE;m.evidence.cols[0].ref=BREAK;m.evidence.cols[0].label=HOSTILE;m.jev.scores[0].label=BREAK;
+ for(const live of [false,true])for(const f of RENDERERS)for(const idPrefix of [undefined,BREAK+HOSTILE]){const h=C[f](m,{interactive:live,idPrefix});inert(h,f+(live?'·live':'')+(idPrefix?'·prefix':''));}
+ const h=C.dashboard(m,{interactive:true,idPrefix:BREAK});assert.ok(h.includes('data-key="'+escH(BREAK+HOSTILE)+'"'),'project id escaped in data-key');const un=C.jevRadar({...m,jev:{available:true}},{interactive:true});assert.ok(un.includes('data-score="'+escH(BREAK+HOSTILE)+'"'),'project id escaped in data-score');inert(un,'unscored jev');
+ assert.match(h,/aria-labelledby="[\w-]+-h"/,'idPrefix reduced to word characters');assert.match(h,/<pattern id="[\w-]+-h"/);});
+test('F1 audit: quality gauge and portfolio map treat server values as hostile, and a table key is never a prototype member',()=>{
+ const q={score:61,readyScore:75,completeness:50,aiScore:55,status:HOSTILE,engine:'jev',cached:false,ms:1200,fallbackReason:BREAK,holds:[HOSTILE],
+  jev:{dimensions:[{label:HOSTILE,levelLabel:BREAK,level:2,method:'model',band:'unsure',split:true,confidence:.5,p:[.1,.2,.7,0]},{label:BREAK,levelLabel:HOSTILE,level:'x',method:'rule'}],checks:[{label:HOSTILE,outcome:BREAK,probability:.2},{label:BREAK,outcome:'constructor'},{label:'t',outcome:'__proto__'}],fixFirst:{label:BREAK}}};
+ for(const o of [undefined,{jev:true},{jev:true,admin:true,interactive:true,idPrefix:BREAK}])inert(C.qualityGauge(q,o),'qualityGauge '+JSON.stringify(o));
+ inert(C.qualityGauge({...q,status:'constructor'},{jev:true}),'status constructor');assert.match(C.qualityGauge({...q,status:'constructor'}),/>constructor</,'an unknown status is printed as text');
+ const an={totals:{visible:'<b>',published:1},byCountry:[{name:HOSTILE,n:2},{name:'Congo',n:1},{name:'constructor',n:3},{name:'__proto__, '+BREAK,n:1}]};
+ for(const o of [undefined,{interactive:true,idPrefix:BREAK}])inert(C.portfolioMap(an,o),'portfolioMap');inert(C.portfolioMap({totals:{visible:0},byCountry:[]},{idPrefix:BREAK}),'portfolioMap empty');
+ const p=full();p.sheet.from={...p.sheet.from,scope:'constructor',issue:'__proto__',value:'toString'};inert(C.sheetSquares(model(p),{interactive:true}),'sheet provenance keys');});
+test('F1 audit: the plain-text rows of the chart model are text, never markup, and carry hostile input verbatim for the esc() of the caller',()=>{const m=model(hostile());
+ const rows=C.summaryRows(m);assert.ok(rows.some(([,v])=>v.includes(HOSTILE)),'text rows are not pre-escaped (the html tag escapes them once)');
+ const t=C.dashboard(m);const table=t.slice(t.indexOf('<table>'));assert.ok(!table.includes(HOSTILE)&&table.includes(escH(HOSTILE)));});

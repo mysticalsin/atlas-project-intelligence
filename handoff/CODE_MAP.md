@@ -32,6 +32,7 @@
 |---|---|
 | `src/shell.html`, `voice-panel.html`, `intelligence-panel.html` | Actual interface/templates. Preserve IDs used by JS and tests. |
 | `src/styles.css`, `voice.css`, `orb.css`, `sculpture.css`, `intelligence.css` | Existing cascade and responsive Mantu UI. Avoid adding conflicting duplicate state styling. |
+| `src/ui.css` (loaded last), tokens at the top of `src/styles.css` | v2.2 F2 interface pass: one dark theme and one header for every view (`body.ui2`), light dialogs, type floor 12px, line icons from the sprite in `shell.html`, read-back card, End sheet, connections panel, privacy and language styling. `orb.css`, `orb-renderer.js`, `orb-ui.js`, `assets/Mantu.svg` and the orb rules of `sculpture.css` are not edited. Method credit: unslop by Damir Sokolovsky (CC BY 4.0). |
 | `src/voice-client.js`, `voice-worklet.js` | Browser consent, mic/stream, PCM, playback acknowledgement and output energy. |
 | `src/orb-renderer.js`, `orb-ui.js`, `studio-panels.js` | Particle sculpture, phrase articulation, real audio signals, silent preview and visible project context. |
 | `src/engine.js`, `app.js` | Local profiles/projects, source excerpts, measurements, story versions, review UI, storage, backup. |
@@ -102,3 +103,59 @@ Valid server story audiences are `internal` and `customer-anonymized`. Local aut
 
 ## Added 2026-09-29
 - `deploy/cloudflare-edge/src/rating.js` — JEV story rating (docs/JEV_RATING.md): the rubric (`DIMENSIONS`, `CHECKS`, `LANGUAGE`), masking and the containment guard (`sensitiveTerms`, `ownMask`, `guard`, `ratingInput`), `requestBody`, `parseAnswers` (all or nothing), `compose` (weights, blockers, holds, robustness check, status), and `storyRater` (budgets, hedge, retries, circuit breaker). Called from `library.js` `review()`; wired in `worker.js`. Tests: `deploy/cloudflare-edge/test/rating.test.js`; local fake `dev/fake-typesafe.mjs`.
+
+## Added 2026-10-30 to 2026-10-31: Agent Brain v2.1
+Spec pack and status: `docs/agent-brain-v2.1/` (`README.md`, `DECISION_LOG.md`, `GAP_ANALYSIS.md`, `IMPLEMENTATION_STATUS.md`, `eval/COVERAGE.md`). How the agent works, with a diagram and the switches: `AGENT.md`. **Python is the source of truth; the edge ports are parity-tested against it.** Regenerate constants and vectors, never hand-edit them: `python deploy/cloudflare-edge/build_edge.py` (a Python with aiohttp, the project venv) writes `deploy/cloudflare-edge/src/policy.generated.js` (modules register in `EDGE_MODULES`), and `deploy/cloudflare-edge/test/gen_*_parity.py` write `*.vectors.json`.
+
+### Python (`atlas_voice/`)
+| File | Responsibility |
+|---|---|
+| `persona.py` | The one persona: blocks composed into `cascade.TALKER_POLICY`, `quality.INTERVIEW_POLICY`, `interview.ROLE`; `ACKS`, `BANNED_PRAISE_SRC`, pause and resume lines |
+| `turns.py` | `analyze_turn`: intents, event cues, field hints, numbers for one utterance (no person description, D18); control intents for en fr es pt de it nl (v2.2 L1), cues English only |
+| `languages.py` | v2.2 L1: language names, the bank languages, `detect(text)` (script ranges plus stopwords), fixed lines (screen notices, confirm-summary lines, read-back framing); exported as `LANG_*` |
+| `selector.py` | `select`: deterministic next move (question ladder, redundancy, deferrals, ASR confirm, summary, close); `QUESTION_BANK` |
+| `asr.py` | `uncertain_spans`, `replacement`, `TAU` (0.55; `ASR_CONFIRM_TAU`) |
+| `enforce.py` | v2.2 Q1: is the question spoken the move's question (`on_move`), the localized re-angle and held "that's all" lines (`local_say`); ported to `src/enforce.js` |
+| `nonanswer.py` | v2.2 Q1: what is not an answer ("I don't know", "pass", fillers) and an instruction to ATLAS (`kind`, `is_injection`); ported to `src/nonanswer.js` |
+| `conversation_state.py` | Interview and evidence state machines with audit (D8 to D11) |
+| `workflow_config.py`, `config/atlas_workflow.json`, `config/field_visibility_policy.json`, `config/success_story_template.schema.json` | Pack YAML as validated JSON; purposes, branches, visibility |
+| `success_story.py` | Schema validation, audience projection, pinned Spanish DOCX template filling (`assets/templates/amaris_success_story_es.docx`), leak scan; CLI `scripts/fill_success_story.py` |
+| `speech.py` (extended) | `ReplyGuard`: one question, no empty praise, no repeated opener, 45-word cap, read-back figure rule |
+| `quality.py` (extended) | Ledger provenance and withheld details; `inspect` feeds the selector |
+
+### Edge Worker (`deploy/cloudflare-edge/src/`)
+| File | Responsibility |
+|---|---|
+| `session.js` (extended) | One turn: hear, `turns.js`, `asr.js`, `selector.js`, `ack.js`, talker, ReplyGuard, speak; pause, resume, repeat, skip, typed and text mode; checkpoint; summary; evidence draft; flags (`sessionFlags`) |
+| `prompt-data.js` (R2) | Untrusted text for prompts: `cleanText` (bounds, drops control/invisible characters, neutralises chat-role tags in any spelling) and `fenced` (per-session random fences, one USER-role data message; the system role is policy only). Used by `session.js` (project, gap list, memory), `memory.js`. |
+| `extension.js` (R2) | Port of `atlas_voice/extension.py`: the one polite offer to continue from 20 to at most 30 minutes (`shouldOffer`, `extensionReply`, `hardLimit`, `offerText`). Wired in `Session.decide`. |
+| `turns.js`, `selector.js`, `asr.js`, `speech.js`, `conversation-state.js`, `story-projection.js` | JavaScript ports (parity-tested) |
+| `ack.js` | Content-aware acknowledgements |
+| `summary.js` | Read-back facts, card items and open points from the ledger |
+| `checkpoint.js` | `CheckpointStore`, `serialize`/`restore`, 24 h absolute expiry; `ATLAS_CHECKPOINT`; routes `GET /api/checkpoint`, `POST /api/checkpoint/discard` (wired in `app.js`, `worker.js`) |
+| `evidence.js` | Evidence store and review in the `LibraryStore` DO: claims, revisions, approvals, grants; `postDraftFromInterview` (server to server); routes `/api/library/evidence[/:id[/status|submit|sync|review|permissions[/:gid/revoke]]]` (browser) and `/api/evidence` (Interview DO only) via `library-routes.js` |
+| `policy-gate.js` | `decide(actor, action, entity, ctx)`: pure, default deny, stable reason codes |
+| `branches.js`, `jobs.js`, `adapters.js`, `spotlight.js` | Seven branch cards, job envelope with idempotency and retry, mock destination adapters and MAAP/Project Review shells, Spotlight hold; `ATLAS_ADAPTERS`, `ATLAS_EVIDENCE_WORKFLOW` |
+| `security-headers.js`, `security-log.js`, `ratelimit.js`, `bounded.js`, `kill-switches.js`, `audit-chain.js` | B1 platform security: headers on every response (`secure`), pseudonymous security events (`secEvent`), persistent per-person rate limits (`consume`, `enforce` for the library routes), streaming bounded body reads, operator kill switches, the tamper-evident audit hash chain (`appendAudit` is the single hook in `library.js` `log`; `verifyChain` runs in the daily `scan-stale`). Runbook: `handoff/SECURITY_RUNBOOK.md` |
+| `csp.js`, `csp-report.js`, `csp.generated.js` (generated by `build.py`), `atlas_voice/csp.py` | The strict script CSP for every HTML response (hashes of inline scripts, `blob:`, no inline handlers), the JSON runtime block, POST `/api/csp-report`, the `ATLAS_CSP` rollout switch. Browser side: `src/safe-html.js` (`html`, `setHTML`, `trusted`), `src/runtime.js`; lint `tests/safe-html-lint.test.js`, browser proof `tests/csp_browser.py` |
+| `privacy.js`, `privacy-routes.js`, `me-routes.js`, `subject-rights.js`, `retention.js`, `special.js` (G2) | Consent purposes, `parseConsent`, the consent state in the person's Interview DO (`applyState`, `recordConsent`) and the append-only `consent_receipts` in the LibraryStore; restriction and objection flags (`processable`, `blockedOwners`); the notice (`renderNoticeHtml`, `bootstrapView`); the library's internal `/api/privacy/*` (receipts, flags, export, erase); the Interview DO's `/api/consent`, `/api/me/export`, `/api/me/erase`; export, erasure and the DPO hold list; the daily retention sweep; the special-category phrase guard (port of `atlas_voice/privacy_config.py`, parity `special.vectors.json`). Config: `atlas_voice/config/{privacy,retention,special_categories}.json`. Docs: `docs/privacy/` |
+| `settings.js` | Admin voice settings (v2.2 V2): the sealed ElevenLabs key (AES-GCM, HKDF of `SETTINGS_KEY`), `/api/admin/voice*` routes, the LibraryStore side `/api/settings*`, `voiceConfig(env, library)` and `voiceStatus` for the voice engine. Tests: `test/v2-settings.test.js`; UI `src/settings-ui.js`, `src/settings.css`, `tests/settings_browser.py` |
+| `dispute-core.js`, `dispute-ui.js` (D-DSR) | The dispute panel: state badges, the rejection and the dispute side by side, owner Raise a dispute / Accept the rejection, reviewer Uphold / Overturn with a reason, buttons only from the record's `actions` and the reason beside a disabled one. Server rule: `evidence.js` `adjudicationRule` (single eligible reviewer settles their own rejection's dispute). Tests: `tests/dispute-core.test.js`, `tests/dispute-ui.test.js`, `tests/dispute_browser.py`, `deploy/cloudflare-edge/test/dispute-single-reviewer.test.js` |
+| `review-core.js`, `review-ui.js`, `review.css` (v2.2 W2) | The reviewer's queue ("Waiting for you (n)", oldest first), the one-screen review (claims with their quotes and `source_refs.context` beside Validate / Request changes / Amend; J K A R E U; a decision is written 8 s after the click so U can take it back; Amend asks for the existing confirmation), the owner's seven-step journey strip (home, Library), shimmer rows and "We couldn't load this. Your work is safe. [Try again]" (`AtlasLoad`), and the readable story-paper headings. The pure parts (names never ids, ages, queue order, the strip model, the deferred commit, keys, human errors) are in `review-core.js`. Server: `evidence.js` `queue(user)` (read-only `GET /api/library/evidence/queue`, reviewer and admin only, never their own records, names only from a reference that has left its private draft) and `library_id` on the owner's own evidence list. Tests: `tests/review-core.test.js`, `deploy/cloudflare-edge/test/w2-queue.test.js`, `tests/w2_browser.py` |
+| `app.js`, `worker.js` (extended) | `TALKER_MAX_TOKENS`, bootstrap `resumable` and `textMode`, `Interview` DO wiring (checkpoint store, evidence poster, alarm) |
+| `languages.js` (extended) | Language names (any BCP-47 code), the per-turn language note, two-piece cached greetings in seven languages, screen notices and read-back words per language, `languageList` for the bootstrap (translations need native review) |
+| `lang-detect.js` | `detect(text)`: script ranges plus stopword sets for typed or transcribed text; parity with `atlas_voice/languages.py` (`test/lang.vectors.json`) |
+
+### Browser (`src/`)
+`voice-controls.js` (pause, repeat, skip, typed turns, text-mode log; pure helpers), `voice-client.js` (consent, `Type instead`, reconnect, resume prompt, summary actions), `voice-panel.html`, `shell.html`, `voice.css`, `workflow-core.js` / `workflow-ui.js` / `workflow.css` (seven status cards), `storyboard-ui.js`. Rebuild every alias after a change (`python3 build.py`, then `build_edge.py`).
+
+### Tests
+| Area | Tests |
+|---|---|
+| Python policy and pure logic | `tests/test_persona.py`, `test_turns.py`, `test_selector.py`, `test_asr.py`, `test_conversation_state.py`, `test_workflow_config.py`, `test_success_story.py`, `test_speech.py`, `test_edge.py` (generated constants current, vectors) |
+| Edge parity | `test/turns.test.js`, `selector.test.js`, `asr.test.js`, `conversation-state.test.js`, `story-projection.test.js`, `speech.test.js`, `parity.test.js` with `*.vectors.json` |
+| Edge session | `test/session-humane.test.js`, `session-asr.test.js`, `session-pause.test.js`, `session-reconnect.test.js`, `session-summary.test.js`, `session-text.test.js`, `session-s1.test.js`, `h1-humane.test.js`, `h2-polish.test.js`, `worker-interview.test.js`, `app-resume.test.js`, `checkpoint.test.js` |
+| Edge workflow | `test/policy-gate.test.js`, `evidence.test.js`, `branches.test.js`, `jobs.test.js` |
+| Offline evaluation (`make test-eval`) | `test/eval-conversation.test.js`, `eval-workflow.test.js`, `eval-rubric.test.js`, fixtures `test/fixtures/eval/`, `docs/agent-brain-v2.1/eval/conversation_rubric.json` |
+| Browser client | `tests/voice-controls.test.js`, `voice-controls-dom.test.js`, `text-mode-dom.test.js`, `summary-card-dom.test.js`, `voice-reconnect-dom.test.js`, `workflow-core.test.js`, `workflow-ui.test.js`, `tests/humane_browser.py` |
+| `textfold.py` / `textfold.js` (v2.2 X2) | The one normal form for matching text against word lists (NFKC, invisible characters, look-alike letters, accents): used by the ReplyGuard claim lists, the special-category guard and the prompt-data fence checks. Parity: `test/fold.vectors.json`. |

@@ -1,7 +1,8 @@
 PYTHON ?= python3
-.PHONY: build preview gateway test test-ui test-edge doctor verify-package
+.PHONY: build preview gateway test test-ui test-edge test-eval test-e2e test-e2e-worker doctor verify-package
 build:
 	$(PYTHON) build.py
+	cp ATLAS_Voice.html deploy/cloudflare-edge/src/atlas.html
 preview: build
 	$(PYTHON) scripts/preview.py
 gateway: build
@@ -9,8 +10,20 @@ gateway: build
 test: build test-edge
 	node --test tests/*.test.js
 	$(PYTHON) -m pytest tests/test_*.py -q
-test-edge:
+test-edge: build
 	cd deploy/cloudflare-edge && node --test test/*.test.js
+# The v2.1 offline evaluation (docs/agent-brain-v2.1/eval/COVERAGE.md): pack scenarios 1-16 through the real Session and workflow code, W1-W12, the MAAP shell tests,
+# the release gates that can be checked offline, and the rubric linter. A regression aid, not a measure of the live model (that needs pilot users and is never run here).
+test-eval: build
+	cd deploy/cloudflare-edge && node --test test/eval-conversation.test.js test/eval-workflow.test.js test/eval-rubric.test.js test/e2e-core-flow.test.js test/eval-q1-conversation.test.js test/eval-q1-ledger.test.js test/eval-q1-numbers.test.js
+# The core flow alone: project ID -> scripted interview -> draft -> review -> skills (DNA), CV (MiChat), projects (Project Review, IMP), success stories (Spotlight).
+test-e2e: build
+	cd deploy/cloudflare-edge && node --test test/e2e-core-flow.test.js
+# The same core flow against the real Worker in workerd (wrangler dev, fully local: no account, no AI binding, no outbound fetch).
+test-e2e-worker: build
+	cd deploy/cloudflare-edge && node --test test-worker/e2e-worker.test.js
+# CHROMIUM_PATH: an explicit value wins; otherwise scripts/chromium_path.py picks a cached Chromium when Playwright's own revision is missing.
+test-ui: export CHROMIUM_PATH := $(or $(CHROMIUM_PATH),$(shell $(PYTHON) scripts/chromium_path.py))
 test-ui: build
 	$(PYTHON) tests/studio_browser.py
 	$(PYTHON) tests/sculpture_browser.py
@@ -32,6 +45,15 @@ test-ui: build
 	$(PYTHON) tests/zero_config_browser.py
 	$(PYTHON) tests/zero_config_edge_browser.py
 	$(PYTHON) tests/jev_rating_browser.py
+	$(PYTHON) tests/humane_browser.py
+	$(PYTHON) tests/csp_browser.py
+	$(PYTHON) tests/ux_fit_browser.py
+	$(PYTHON) tests/w1_browser.py
+	$(PYTHON) tests/settings_browser.py
+	$(PYTHON) tests/q1_browser.py
+	$(PYTHON) tests/w2_browser.py
+	$(PYTHON) tests/dispute_browser.py
+	$(PYTHON) tests/w3_browser.py
 doctor:
 	$(PYTHON) scripts/doctor.py --profile preview
 verify-package:

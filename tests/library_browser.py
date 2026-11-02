@@ -28,14 +28,19 @@ try:
   # --- owner
   o=page('alex@mantu.com')
   o.locator('[data-action=new-project]:visible').first.click();o.wait_for_timeout(200)
+  o.evaluate("document.getElementById('projectMore').open=true") # W1: these fields live under "More details"
   for k,v in {'projectTitle':'Claims triage alias','consultantName':'Alex','consultantRole':'Data engineer','clientName':'Zebracorp','clientLocation':'Lyon','n1Name':'Sam','n1Email':'sam@mantu.com'}.items():o.locator('#'+k).fill(v)
   o.locator('#projectForm button[type=submit]').click();o.wait_for_timeout(300)
   r=o.evaluate("([n,rep])=>window.ATLAS_VOICE_BRIDGE.autoSave(window.ATLAS_VOICE_BRIDGE.context(),n,'Consultant words.',rep)",[NOTES,REP])
   o.wait_for_timeout(1200);settle()
   o.locator('header [data-view=library]').click();o.wait_for_timeout(900)
   card=o.locator('#libraryList .project-card').first
-  check('interview synced to the shared library automatically',card.count()==1 and 'Claims triage rebuilt' in card.inner_text())
-  check('automatic quality review ran; awaiting the N+1','AWAITING N+1' in card.inner_text().upper())
+  check('interview saved as a PRIVATE DRAFT, not shared (G2)',card.count()==1 and 'Claims triage rebuilt' in card.inner_text() and 'PRIVATE DRAFT' in card.inner_text().upper())
+  check('a draft is not rated and shows a Submit for review button',card.locator('[data-submit-ref]').count()==1 and 'AWAITING N+1' not in card.inner_text().upper())
+  card.locator('[data-submit-ref]').click();o.wait_for_timeout(1500);settle()
+  o.locator('header [data-view=library]').click();o.wait_for_timeout(900)
+  card=o.locator('#libraryList .project-card').first
+  check('after Submit for review the automatic quality review ran; awaiting the N+1','AWAITING N+1' in card.inner_text().upper())
   card.locator('[data-open-record]').click();o.wait_for_timeout(700)
   body=o.locator('#recordBody').inner_text()
   check('record shows quality score and the full template',('Quality' in body) and 'PRJ-2291' in body and 'Zebracorp' in body and 'Python' in body)
@@ -48,11 +53,13 @@ try:
   doc=zipfile.ZipFile(dw.value.path()).read('word/document.xml').decode()
   check('library Word = the reference-sheet template (.docx): title, summary labels, 8 sections, gaps "To be completed"',dw.value.suggested_filename.endswith('.docx') and all(w in doc for w in ['Claims triage alias','Executive Summary','Detailed Information Sheet','Industry sector, size and type of client','Added value and ROI','Team size','Python','To be completed']))
   o.locator('#recordDialog [data-close]').click()
-  # --- N+1 via the direct link
+  # --- N+1 via the direct link (v2.2, red-team H1: the staffing record names the N+1 who may validate; the one typed on the reference is only a name)
+  rv=page('reviewer@mantu.com');st=rv.evaluate("""async ([csv])=>{const b=await (await fetch('/api/bootstrap')).json();const r=await fetch('/api/library/staffing/import',{method:'POST',headers:{'Content-Type':'application/json','X-Atlas-CSRF':b.csrf},body:JSON.stringify({csv})});return {status:r.status,body:await r.json()};}""",['project_id,consultant_email,manager_email,manager_name,project_title,end_date\nPRJ-2291,alex@mantu.com,sam@mantu.com,Sam,,\n'])
+  check('the staffing record names sam as the N+1 (reviewer import)',st['status']==200 and st['body']['staffed']==1)
   n=page('sam@mantu.com');n.goto(BASE+'/#library/'+rid);n.wait_for_timeout(1200)
   check('N+1 deep link opens the record with a Validate button',n.locator('#recordDialog').is_visible() and n.locator('[data-rec-validate]').count()==1)
   n.locator('[data-rec-validate]').click();n.wait_for_timeout(900)
-  check('validated and published',n.locator('#recordEyebrow').inner_text().find('PUBLISHED')>=0 and 'Validated by sam@mantu.com' in n.locator('#recordBody').inner_text())
+  check('validated and published',n.locator('#recordEyebrow').inner_text().find('SHARED IN INTERNAL LIBRARY')>=0 and 'Validated by sam@mantu.com' in n.locator('#recordBody').inner_text())
   # --- colleague
   k=page('kim@mantu.com');k.locator('header [data-view=library]').click();k.wait_for_timeout(900)
   check('colleague sees the published reference',k.locator('#libraryList .project-card').count()==1)

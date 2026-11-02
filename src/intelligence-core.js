@@ -1,9 +1,9 @@
 /* Deterministic local helpers. These are not a language model or live JEV scores. */
-(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.AtlasQuality=api;})(typeof globalThis!=='undefined'?globalThis:this,()=>{
+(function(root,factory){const api=factory(root);if(typeof module==='object'&&module.exports)module.exports=api;else root.AtlasQuality=api;})(typeof globalThis!=='undefined'?globalThis:this,root=>{
 'use strict';
 const sections=['challenge','contribution','approach','outcome','evidence','limitations','customer_fit','poor_fit'];
 const fields={problem:'Problem',stakes:'Business stakes',contribution:'Personal contribution',intervention:'What changed',decision:'Decision & trade-off',adoption:'Actual adoption',outcome:'Observed outcome',measurement:'Measurement basis',evidence:'Checkable source',limitations:'Limits',customer_fit:'Customer fit',poor_fit:'Poor-fit conditions'};
-const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const {esc}=root.AtlasSafe||require('./safe-html.js'); // the one shared escape; kept in the exports for the tests
 function challenge(text){
  const t=String(text||'').trim().slice(0,12000),unknown=/\b(don.t know|not measured|unsure|uncertain|no baseline|estimate)\b/i.test(t);
  const checks=[
@@ -18,7 +18,7 @@ function challenge(text){
  if(/\d|%|percent|saved|faster/i.test(t)&&!checks[2][1])next=checks[2][2];
  if(/assess|recommended|recommendation/.test(t.toLowerCase())&&/not implemented|nothing was implemented|not production|no implementation/.test(t.toLowerCase()))next='What decision did the assessment enable, rather than which production benefit did it deliver?';
  if(/cannot share|can.t share|under NDA|not authorized to disclose/i.test(t))next='We can leave restricted details out. Which non-identifying mechanism or lesson are you authorized to discuss?';
- if(unknown)next='Let’s keep that unknown explicit. What did you observe directly, and who could verify it later?';
+ if(unknown)next='Let’s come at that another way. What did you observe directly, and who could verify it later?';
  return {next,signals:checks.map(([id,present])=>({id,present})),flags:unknown?['Uncertainty preserved; no achieved benefit inferred']:[],
    notice:'Local wording checks only. Detailed language is not proof; these signals never approve a story.'};
 }

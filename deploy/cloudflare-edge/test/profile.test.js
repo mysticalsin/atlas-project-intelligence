@@ -288,22 +288,29 @@ test('DNA pull: 24 h cache, a stale value is served while waitUntil refreshes; o
   assert.deepEqual((await profile.resolveProfile(p.l, { ...PULL, DATA_MODE: undefined }, who(ALEX), {}, { fetcher: never })).sources[0], { id: 'dna', state: 'off' });
 });
 
-test('people lookup: one exact email, name and title only, stored rows only, 30 per hour, external 403', async () => {
+test('people lookup: one exact email in the POST body (never in a URL), name and title only, stored rows only, 30 per hour, external 403', async () => {
   const never = async () => { throw new Error('people lookup must never call DNA'); };
   const { l } = world({ fetch: never });
   await importRows(l, [{ email: 'jane@example.com', name: 'Jane Example', title: 'Analyst', managerName: 'Boss Person', managerEmail: 'boss@example.com' }]);
   await call(l, BEA, 'POST', 'profile', { set: { name: 'Bobby Secret', title: 'Hidden title' } });
-  const r = await call(l, ALEX, 'GET', 'people?email=Jane@Example.com', null, PULL);
+  const look = (user, email, lib = l, env = {}) => call(lib, user, 'POST', 'people/lookup', { email }, env);
+  const r = await look(ALEX, 'Jane@Example.com', l, PULL);
   assert.deepEqual(r, { status: 200, body: { email: 'jane@example.com', name: 'Jane Example', title: 'Analyst', from: 'dna_export' } }, 'never the N+1');
-  assert.equal((await call(l, ALEX, 'GET', 'people?email=bea@example.com', null, PULL)).status, 404, 'never another user\'s profile edits');
-  for (const q of ['people?email=jane', 'people?email=', 'people']) assert.equal((await call(l, ALEX, 'GET', q)).status, 400, q);
-  for (const q of ['people?email=*@example.com', 'people?email=jane%25@example.com', 'people?email=%25']) assert.ok([400, 404].includes((await call(l, ALEX, 'GET', q)).status), 'no wildcard: ' + q);
+  assert.equal((await look(ALEX, 'bea@example.com', l, PULL)).status, 404, 'never another user\'s profile edits');
+  for (const e of ['jane', '', undefined]) assert.equal((await look(ALEX, e)).status, 400, String(e));
+  assert.equal((await call(l, ALEX, 'POST', 'people/lookup', {})).status, 400);
+  for (const e of ['*@example.com', 'jane%@example.com', '%']) assert.ok([400, 404].includes((await look(ALEX, e)).status), 'no wildcard: ' + e);
+  // G2: the old GET with ?email= is gone, so an address can no longer land in a URL (and an access log).
+  for (const q of ['people?email=jane@example.com', 'people']) assert.equal((await call(l, ALEX, 'GET', q)).status, 404, q);
   const { l: l2 } = world({ fetch: never });
-  const got = []; for (let i = 0; i < 31; i++) got.push((await call(l2, ALEX, 'GET', 'people?email=nobody@example.com')).status);
+  const got = []; for (let i = 0; i < 31; i++) got.push((await look(ALEX, 'nobody@example.com', l2)).status);
   assert.deepEqual([got.slice(0, 30).every(s => s === 404), got[30]], [true, 429]);
-  assert.equal((await call(l2, BEA, 'GET', 'people?email=nobody@example.com')).status, 404, 'per user');
-  const ext = await call(l, { email: 'c@client.example', role: 'external' }, 'GET', 'people?email=jane@example.com');
+  assert.equal((await look(BEA, 'nobody@example.com', l2)).status, 404, 'per user');
+  const ext = await look({ email: 'c@client.example', role: 'external' }, 'jane@example.com');
   assert.equal(ext.status, 403);
+  // The lookup is audited without the looked-up address.
+  const audit = l.rows("SELECT actor, action, detail FROM audit WHERE action = 'people lookup'");
+  assert.ok(audit.length >= 1 && audit.every(x => !/example\.com/.test(x.detail)), JSON.stringify(audit));
   assert.deepEqual(profile.lookupPerson(l, 'JANE@example.com'), { email: 'jane@example.com', name: 'Jane Example', title: 'Analyst', from: 'dna_export' });
   assert.deepEqual(profile.directoryManager(l, 'jane@example.com'), { email: 'boss@example.com', name: 'Boss Person', from: 'dna_export' });
   assert.equal(profile.directoryManager(l, 'bea@example.com'), null, 'a user-edited N+1 never counts as directory');
@@ -412,6 +419,34 @@ test('idp claims: bounded name claims from x-atlas-idp; anything malformed is em
   for (const bad of ['', 'e30', '!!!', enc([1]), enc({ name: 5 }), 'a'.repeat(3000), null]) assert.deepEqual(profile.idpClaims(bad), {}, String(bad).slice(0, 10));
 });
 
+// X3 / red L2: a sign-in name never keeps a bidi control or a zero-width character (U+202E would make "‮moc.utnam@ynot" read as an address on the consent screen).
+test('name claims: bidi controls and zero-width characters are stripped at the source, whole code-point ranges, and the rest of the name is unchanged', async () => {
+  const { str, INVISIBLE } = await import('../src/util.js');
+  const enc = o => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const BAD = [];
+  for (const [a, b] of [[0x202A, 0x202E], [0x2066, 0x2069], [0x200B, 0x200D]]) for (let c = a; c <= b; c++) BAD.push(c);
+  BAD.push(0x200E, 0x200F, 0x061C, 0x2060, 0xFEFF);
+  for (const c of BAD) {
+    const ch = String.fromCodePoint(c), hex = 'U+' + c.toString(16).toUpperCase();
+    assert.equal(profile.nameClaims({ name: 'Tony' + ch + ' Walteur', given_name: ch + 'Tony', family_name: 'Walteur' + ch }).name, 'Tony Walteur', hex);
+    assert.deepEqual(profile.idpClaims(enc({ name: 'A' + ch + 'B', given_name: 'A' + ch, family_name: ch + 'B' })), { name: 'AB', given_name: 'A', family_name: 'B' }, hex);
+    assert.equal(str('x' + ch + 'y', 10), c === 0x200C || c === 0x200D ? 'x' + ch + 'y' : 'xy', hex); // free text keeps ZWNJ/ZWJ
+  }
+  // the red-team PoC: the markup stays text (client escapes it) and the reordering character is gone
+  const poc = profile.nameClaims({ name: 'Eve "\'><b data-pwn=idp>x</b>‮redli​ · idpname@mantu.com' }).name;
+  assert.ok(!/[‪-‮⁦-⁩​-‏؜⁠﻿]/.test(poc) && poc.includes('redli'), poc);
+  assert.equal(profile.nameClaims({ name: '‮moc.utnam@ynot' }).name, 'moc.utnam@ynot');
+  assert.deepEqual(profile.nameClaims({ name: '‮​' }), {}, 'a name of only invisible characters is no name');
+  assert.equal(profile.nameClaims({ name: 'Zoë  Lefèvre' }).name, 'Zoë Lefèvre', 'letters, accents and ordinary spaces are untouched');
+  assert.equal(profile.nameClaims({ name: 'محمد علي' }).name, 'محمد علي', 'a right-to-left name keeps its letters');
+  assert.ok(INVISIBLE.global);
+  // free text in other scripts keeps the joiners it is spelled with; only reordering characters go
+  assert.equal(str('می\u200Cخواهم', 20), 'می\u200Cخواهم', 'Persian ZWNJ kept');
+  assert.equal(str('क्\u200Dष', 20), 'क्\u200Dष', 'Devanagari ZWJ kept');
+  assert.equal(str('👩\u200D💻 dev', 20), '👩\u200D💻 dev', 'emoji ZWJ sequence kept');
+  assert.equal(str('a\u202Eb', 20), 'ab', 'bidi override still removed from free text');
+});
+
 // ---- The model boundary (§0.4, §5.9): the profile never reaches a model, whatever the path. ----
 test('leak: "Zelda Quintero, Principal Zebra" never reaches complete or embed across review, merge, bids and Ask; nor the talker', async () => {
   const LEAK = /zelda|quintero|principal zebra/i, ZELDA = { email: 'zelda.quintero@example.com', role: 'user' }, KAI = { email: 'kai@example.com', role: 'user' };
@@ -496,4 +531,12 @@ test('storedNames: the stored edit and sign-in names only, never DNA; [] without
   l.sql.exec("INSERT INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at) VALUES (?, 'dna', 'Dna Only Name', '', '', '', '', 'pull', ?)", ALEX.email, NOW);
   assert.ok(!profile.storedNames(l, ALEX.email).includes('Dna Only Name'), 'directory rows are not the person\'s stored names');
   assert.deepEqual(profile.storedNames(l, BEA.email), []);
+});
+
+test('the business Project ID is accepted and bounded, never reaches the talker, and files the evidence notes under it', () => {
+  const ctx = projectContext({ id: 'p-local', projectId: 'PRJ-2026-0042', title: 'Claims triage', role: 'Data engineer', answers: [] });
+  assert.equal(ctx.projectId, 'PRJ-2026-0042');
+  assert.equal(projectContext({ title: 'T', projectId: 'X'.repeat(500) }).projectId.length, 60);
+  assert.ok(!('projectId' in projectContext({ title: 'T', projectId: '   ' })));
+  assert.ok(!JSON.stringify(talkerMessages(ctx, null, [], null)).includes('PRJ-2026-0042'));
 });

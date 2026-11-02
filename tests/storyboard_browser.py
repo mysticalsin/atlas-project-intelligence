@@ -27,7 +27,7 @@ DETAILS=[D('D-001','problem','Our claims queue in Portugal and Spain was slow, a
  D('D-004','intervention','We laid 1.5 m of cable. Chad said it was fine.'),
  D('D-005','measurement',"No baseline, I don't know.",status='unknown')]
 QUALITY={'type':'quality','candidate_details':DETAILS,'deferred_fields':{'evidence':'Two clarification plans did not resolve this point'},
- 'measurement_gaps':['before/after'],'flags':['Uncertainty must remain in the story','No verified measurement: preserve a qualitative account; do not repeat a demand for ROI'],
+ 'measurement_gaps':['before/after','period'],'flags':['Uncertainty must remain in the story','No verified measurement: preserve a qualitative account; do not repeat a demand for ROI'],
  'next_field':'measurement','next_question':'What were the before and after values for that measure?','planned_question':'What were the before and after values for that measure?',
  'story_route':'qualitative candidate','coverage':{'present':5,'total':12},'probe_history':[{'field':'problem','question':'Earlier plan','turn':'user-1','status':'planned_not_confirmed_spoken'}]}
 READY={'type':'ready','mode':'full','maxSeconds':900,'liveLedger':True,'capture':True,'timePlan':{'depthAt':405,'closingAt':690}}
@@ -56,10 +56,10 @@ with sync_playwright() as pw:
  check('No pin from "Lisbon queue" or "Chad said"; Chad listed as not mapped',p.locator('#boardMap .board-pin[data-code=TCD]').count()==0 and 'Not mapped: Chad' in text(p,'#boardMap') and 'Lisbon' not in text(p,'#boardMap'))
  check('Pins say mentioned, not project location','not necessarily the project location' in text(p,'#boardMap'))
  check('Metric chips are exact spans',chips(p)==['40%','12 to 4 days','$3.5 million','€2 million','1.5 m (unit unclear)'])
- check('Measurement slot is dashed "to recover"','to recover: before and after values' in text(p,'#boardMetrics'))
+ check('Measurement slot is dashed "to recover" (and no before/after slot while "from 12 to 4 days" is said)','to recover: the periods' in text(p,'#boardMetrics') and 'before and after' not in text(p,'#boardMetrics'))
  st=p.evaluate("Object.fromEntries([...document.querySelectorAll('#boardDims .board-dim')].map(e=>[e.dataset.field,e.dataset.state]))")
  check('Twelve dimension cells in the right states',len(st)==12 and st['problem']=='reported' and st['measurement']=='unknown' and st['evidence']=='deferred' and st['decision']=='empty')
- check('Coverage reads as candidate coverage','5/12 · candidate coverage, not verification'==text(p,'#boardCoverage'))
+ check('Coverage reads in plain words: things a reader will want to know, not yet checked against sources','Covered so far: 5 of 12 things a reader will want to know · not yet checked against sources'==text(p,'#boardTopics'))
  check('"ATLAS may ask next", never "asked"','ATLAS may ask next' in text(p,'#boardChallenge') and 'before and after values' in text(p,'#boardChallenge') and not re.search(r'\basked\b',p.evaluate("document.querySelector('#storyBoard').textContent")))
  check('Lagging probe_history is not shown','Earlier plan' not in p.evaluate("document.querySelector('#storyBoard').textContent"))
  # ---- F5.3 #4: nothing claims a check; every section carries the label
@@ -88,7 +88,7 @@ with sync_playwright() as pw:
  check('Hostile text renders inert',p.evaluate("!document.querySelector('#storyBoard img,#storyBoard b b') && window.__xss===undefined") and '<img src=y' in text(p,'#boardChallenge'))
  # ---- F5.3 #3: reset clears everything
  s(p,{'type':'reset'})
- check('reset clears everything',p.locator('#storyBoard').is_hidden() and p.evaluate("['boardMap','boardMetrics','boardDims','boardChallenge'].every(id=>!document.querySelector('#'+id+' .board-body').children.length) && !document.getElementById('boardSummary').textContent && !document.getElementById('boardCoverage').textContent"))
+ check('reset clears everything',p.locator('#storyBoard').is_hidden() and p.evaluate("['boardMap','boardMetrics','boardDims','boardChallenge'].every(id=>!document.querySelector('#'+id+' .board-body').children.length) && !document.getElementById('boardSummary').textContent && !document.getElementById('boardTopics').textContent"))
  s(p,READY);q(p,QUALITY);q(p,{'type':'reset'})
  check('atlas-quality reset clears too',p.locator('#storyBoard').is_hidden() and p.locator('#boardMetrics .board-chip').count()==0)
  # ---- F5.3 #8: full-mode phases at the timePlan boundaries (page clock moved forward; the countdown ticks once a second)

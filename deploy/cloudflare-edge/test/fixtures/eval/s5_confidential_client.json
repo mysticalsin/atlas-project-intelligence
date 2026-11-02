@@ -1,0 +1,49 @@
+{
+ "id": "S5",
+ "title": "A client that cannot be named: ATLAS accepts it, offers to anonymise, and does not ask again",
+ "pack": "07_Evaluation_and_QA/ATLAS_Evaluation_Framework.md section 3, scenario 5; Conversation Examples 'Example 4'",
+ "audit": [
+  "start",
+  "consent_given",
+  "focus"
+ ],
+ "turns": [
+  {
+   "said": "We rebuilt the claims intake process for a large insurance client during the pilot, a big change for the whole team.",
+   "file": [
+    {
+     "field": "problem",
+     "quote": "the claims intake process for a large insurance client"
+    }
+   ],
+   "expect": {
+    "move": {
+     "kind": "ask",
+     "intent": "team_ownership",
+     "field": "contribution"
+    }
+   }
+  },
+  {
+   "said": "I cannot share the client name, it is under NDA.",
+   "expect": {
+    "move": {
+     "kind": "accept_and_move",
+     "intent": "anonymise",
+     "field": "contribution"
+    },
+    "ack": "confidential_client",
+    "scripted_says": "We can keep names out of this\\.",
+    "scripted_not": "\\b(why|must|need to know|have to tell)\\b"
+   }
+  },
+  {
+   "said": "It is a large insurer in southern Europe, I would rather not say more about it.",
+   "expect": {
+    "not_intent": [
+     "anonymise"
+    ]
+   }
+  }
+ ]
+}

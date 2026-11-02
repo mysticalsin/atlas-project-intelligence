@@ -1,0 +1,184 @@
+{
+  "date": "2026-11-01",
+  "parent_sha": "a937b747a8794668720fb8e5b047210533732f1f",
+  "environment": {
+    "node": "24.22.1",
+    "python": "3.12.14",
+    "playwright": "1.64.1",
+    "chromium": "134.0.6998.35 (headless shell 1161)",
+    "platform": "Linux"
+  },
+  "unit_suites": {
+    "app": {
+      "command": "node --test tests/*.test.js",
+      "tests": 513,
+      "pass": 512,
+      "fail": 0,
+      "skipped": 1
+    },
+    "edge": {
+      "command": "cd deploy/cloudflare-edge && node --test test/*.test.js",
+      "tests": 1228,
+      "pass": 1228,
+      "fail": 0,
+      "skipped": 0
+    },
+    "python": {
+      "command": "python -m pytest tests/test_*.py -q",
+      "passed": 807,
+      "failed": 0,
+      "warnings": 123
+    }
+  },
+  "regressions": {
+    "initial_cases_failed_on_parent": 7,
+    "initial_cases_pass_on_fixed": 7,
+    "additional_guards": [
+      "overlapping replacements keep newest session",
+      "confirmation cannot discard an open correction"
+    ],
+    "latest_privacy_assertion": "later analyst prompts exclude the superseded private utterance; passed"
+  },
+  "browser_sweep": {
+    "command": "make test-ui, then remaining suites individually after its first baseline failure",
+    "passed": 20,
+    "failed": 3,
+    "suites": [
+      {
+        "suite": "studio",
+        "exit_code": 0
+      },
+      {
+        "suite": "sculpture",
+        "exit_code": 0
+      },
+      {
+        "suite": "intelligence",
+        "exit_code": 0
+      },
+      {
+        "suite": "humane",
+        "exit_code": 0
+      },
+      {
+        "suite": "depth",
+        "exit_code": 1
+      },
+      {
+        "suite": "csp",
+        "exit_code": 0
+      },
+      {
+        "suite": "ux_fit",
+        "exit_code": 0
+      },
+      {
+        "suite": "autosave",
+        "exit_code": 0
+      },
+      {
+        "suite": "orb_touch",
+        "exit_code": 0
+      },
+      {
+        "suite": "library",
+        "exit_code": 0
+      },
+      {
+        "suite": "reuse",
+        "exit_code": 0
+      },
+      {
+        "suite": "memory",
+        "exit_code": 0
+      },
+      {
+        "suite": "sheet",
+        "exit_code": 0
+      },
+      {
+        "suite": "report",
+        "exit_code": 0
+      },
+      {
+        "suite": "bids",
+        "exit_code": 0
+      },
+      {
+        "suite": "ask",
+        "exit_code": 0
+      },
+      {
+        "suite": "trust",
+        "exit_code": 0
+      },
+      {
+        "suite": "storyboard",
+        "exit_code": 0
+      },
+      {
+        "suite": "confirm",
+        "exit_code": 0
+      },
+      {
+        "suite": "wow_edge",
+        "exit_code": 0
+      },
+      {
+        "suite": "zero_config",
+        "exit_code": 1
+      },
+      {
+        "suite": "zero_config_edge",
+        "exit_code": 1
+      },
+      {
+        "suite": "jev_rating",
+        "exit_code": 0
+      }
+    ],
+    "baseline_failures": [
+      {
+        "suite": "depth",
+        "assertion": "Editor responsive at 320",
+        "reproduced_on_parent": true
+      },
+      {
+        "suite": "zero_config",
+        "assertion": "the start frame: consultant empty and no email anywhere in it",
+        "reproduced_on_parent": true
+      },
+      {
+        "suite": "zero_config_edge",
+        "assertion": "the start frame carries no name and no email: consultant empty, the profile title not sent",
+        "reproduced_on_parent": true
+      }
+    ],
+    "in_suite_skips": [
+      "jev_rating: optional null-quality timing scenario requires JEV_BROWSER_MOCK=1"
+    ]
+  },
+  "build": {
+    "four_html_aliases_identical": true,
+    "html_git_blob": "ebcfa61b03ff97b6980d70dc07ffc67fb6376c49",
+    "strict_csp_regenerated": true,
+    "policy_unchanged": true,
+    "git_diff_check": "pass"
+  },
+  "package_integrity": {
+    "status": "partial",
+    "unavailable_archival_files": [
+      "docs/agent-brain-v2.1/10_Source_References/ATLAS_Workflow_Evidence_to_Publication.png",
+      "docs/agent-brain-v2.1/10_Source_References/image(20261030-193105).png"
+    ],
+    "remote_blobs_and_manifest_entries": "preserved unchanged; not a complete local integrity pass"
+  },
+  "remote_ci": {
+    "fixed_commit": "not yet run when this evidence was authored",
+    "parent_workflow_run": 41264870302,
+    "parent_conclusion": "failure"
+  },
+  "provider_verified": false,
+  "merged": false,
+  "deployed": false
+}

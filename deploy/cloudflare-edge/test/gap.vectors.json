@@ -71,7 +71,7 @@
    ],
    [
     "",
-    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; accept 'I don't know' or 'confidential' and move on; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
+    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; if they say an item is confidential or they cannot share it, accept that and move on; if they say 'I don't know', 'no idea', 'pass' or 'next question', never accept it at once and never tell them they may skip: ask the narrower angle in ANALYST_GUIDANCE (reangle), at most twice, after which the server records the item as open; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
     "GAP PACE (server): about 0 of 5 minutes used. Open items: Observed outcome, Supporting artifact."
    ]
   ],
@@ -87,7 +87,7 @@
    ],
    [
     "",
-    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; accept 'I don't know' or 'confidential' and move on; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
+    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; if they say an item is confidential or they cannot share it, accept that and move on; if they say 'I don't know', 'no idea', 'pass' or 'next question', never accept it at once and never tell them they may skip: ask the narrower angle in ANALYST_GUIDANCE (reangle), at most twice, after which the server records the item as open; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
     "GAP PACE (server): about 0 of 5 minutes used. Open items: Observed outcome, Supporting artifact."
    ]
   ],
@@ -103,7 +103,7 @@
    ],
    [
     "",
-    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; accept 'I don't know' or 'confidential' and move on; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
+    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; if they say an item is confidential or they cannot share it, accept that and move on; if they say 'I don't know', 'no idea', 'pass' or 'next question', never accept it at once and never tell them they may skip: ask the narrower angle in ANALYST_GUIDANCE (reangle), at most twice, after which the server records the item as open; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
     "GAP PACE (server): about 2 of 5 minutes used. Open items: Observed outcome, Supporting artifact."
    ]
   ],
@@ -119,7 +119,7 @@
    ],
    [
     "",
-    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; accept 'I don't know' or 'confidential' and move on; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
+    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; if they say an item is confidential or they cannot share it, accept that and move on; if they say 'I don't know', 'no idea', 'pass' or 'next question', never accept it at once and never tell them they may skip: ask the narrower angle in ANALYST_GUIDANCE (reangle), at most twice, after which the server records the item as open; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
     "GAP PACE (server): about 3 of 5 minutes used. Open items: Observed outcome, Supporting artifact."
    ]
   ],
@@ -135,7 +135,7 @@
    ],
    [
     "",
-    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; accept 'I don't know' or 'confidential' and move on; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
+    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; if they say an item is confidential or they cannot share it, accept that and move on; if they say 'I don't know', 'no idea', 'pass' or 'next question', never accept it at once and never tell them they may skip: ask the narrower angle in ANALYST_GUIDANCE (reangle), at most twice, after which the server records the item as open; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
     "GAP PACE (server): about 3 of 5 minutes used. Open items: Observed outcome, Supporting artifact."
    ]
   ],
@@ -151,7 +151,7 @@
    ],
    [
     "",
-    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; accept 'I don't know' or 'confidential' and move on; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
+    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; if they say an item is confidential or they cannot share it, accept that and move on; if they say 'I don't know', 'no idea', 'pass' or 'next question', never accept it at once and never tell them they may skip: ask the narrower angle in ANALYST_GUIDANCE (reangle), at most twice, after which the server records the item as open; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
     "GAP PACE (server): about 3 of 5 minutes used. Under ninety seconds left: ask only the single most important open item, then move to ENDING."
    ]
   ],
@@ -167,7 +167,7 @@
    ],
    [
     "",
-    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; accept 'I don't know' or 'confidential' and move on; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
+    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; if they say an item is confidential or they cannot share it, accept that and move on; if they say 'I don't know', 'no idea', 'pass' or 'next question', never accept it at once and never tell them they may skip: ask the narrower angle in ANALYST_GUIDANCE (reangle), at most twice, after which the server records the item as open; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
     "GAP PACE (server): about 3 of 5 minutes used. Under ninety seconds left: ask only the single most important open item, then move to ENDING."
    ]
   ],
@@ -183,7 +183,7 @@
    ],
    [
     "",
-    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; accept 'I don't know' or 'confidential' and move on; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
+    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; if they say an item is confidential or they cannot share it, accept that and move on; if they say 'I don't know', 'no idea', 'pass' or 'next question', never accept it at once and never tell them they may skip: ask the narrower angle in ANALYST_GUIDANCE (reangle), at most twice, after which the server records the item as open; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
     "GAP PACE (server): about 4 of 5 minutes used. Under ninety seconds left: ask only the single most important open item, then move to ENDING."
    ]
   ],
@@ -199,7 +199,7 @@
    ],
    [
     "",
-    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; accept 'I don't know' or 'confidential' and move on; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
+    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; if they say an item is confidential or they cannot share it, accept that and move on; if they say 'I don't know', 'no idea', 'pass' or 'next question', never accept it at once and never tell them they may skip: ask the narrower angle in ANALYST_GUIDANCE (reangle), at most twice, after which the server records the item as open; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
     "GAP PACE (server): about 4 of 5 minutes used. Time is up: close now, with no question."
    ]
   ],
@@ -215,7 +215,7 @@
    ],
    [
     "",
-    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; accept 'I don't know' or 'confidential' and move on; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
+    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; if they say an item is confidential or they cannot share it, accept that and move on; if they say 'I don't know', 'no idea', 'pass' or 'next question', never accept it at once and never tell them they may skip: ask the narrower angle in ANALYST_GUIDANCE (reangle), at most twice, after which the server records the item as open; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
     "GAP PACE (server): about 4 of 5 minutes used. Time is up: close now, with no question."
    ]
   ],
@@ -231,7 +231,7 @@
    ],
    [
     "",
-    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; accept 'I don't know' or 'confidential' and move on; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
+    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; if they say an item is confidential or they cannot share it, accept that and move on; if they say 'I don't know', 'no idea', 'pass' or 'next question', never accept it at once and never tell them they may skip: ask the narrower angle in ANALYST_GUIDANCE (reangle), at most twice, after which the server records the item as open; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
     "GAP PACE (server): about 5 of 5 minutes used. Time is up: close now, with no question."
    ]
   ],
@@ -247,7 +247,7 @@
    ],
    [
     "",
-    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; accept 'I don't know' or 'confidential' and move on; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
+    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; if they say an item is confidential or they cannot share it, accept that and move on; if they say 'I don't know', 'no idea', 'pass' or 'next question', never accept it at once and never tell them they may skip: ask the narrower angle in ANALYST_GUIDANCE (reangle), at most twice, after which the server records the item as open; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
     "GAP PACE (server): about 5 of 5 minutes used. Time is up: close now, with no question."
    ]
   ],
@@ -260,7 +260,7 @@
    ],
    [
     "",
-    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; accept 'I don't know' or 'confidential' and move on; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
+    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; if they say an item is confidential or they cannot share it, accept that and move on; if they say 'I don't know', 'no idea', 'pass' or 'next question', never accept it at once and never tell them they may skip: ask the narrower angle in ANALYST_GUIDANCE (reangle), at most twice, after which the server records the item as open; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
     "GAP PACE (server): about 1 of 5 minutes used. Every item has an answer: reflect back and close."
    ]
   ],
@@ -275,7 +275,7 @@
    ],
    [
     "ADMIN MODE (fixture): passed through first, unchanged.",
-    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; accept 'I don't know' or 'confidential' and move on; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
+    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; if they say an item is confidential or they cannot share it, accept that and move on; if they say 'I don't know', 'no idea', 'pass' or 'next question', never accept it at once and never tell them they may skip: ask the narrower angle in ANALYST_GUIDANCE (reangle), at most twice, after which the server records the item as open; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
     "GAP PACE (server): about 1 of 5 minutes used. Open items: Customer relevance."
    ]
   ],
@@ -288,7 +288,7 @@
    ],
    [
     "ADMIN MODE (fixture): passed through first, unchanged.",
-    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; accept 'I don't know' or 'confidential' and move on; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
+    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; if they say an item is confidential or they cannot share it, accept that and move on; if they say 'I don't know', 'no idea', 'pass' or 'next question', never accept it at once and never tell them they may skip: ask the narrower angle in ANALYST_GUIDANCE (reangle), at most twice, after which the server records the item as open; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
     "GAP PACE (server): about 4 of 5 minutes used. Under ninety seconds left: ask only the single most important open item, then move to ENDING."
    ]
   ],
@@ -303,7 +303,7 @@
    ],
    [
     "ADMIN MODE (fixture): passed through first, unchanged.",
-    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; accept 'I don't know' or 'confidential' and move on; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
+    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; if they say an item is confidential or they cannot share it, accept that and move on; if they say 'I don't know', 'no idea', 'pass' or 'next question', never accept it at once and never tell them they may skip: ask the narrower angle in ANALYST_GUIDANCE (reangle), at most twice, after which the server records the item as open; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
     "GAP PACE (server): about 4 of 5 minutes used. Time is up: close now, with no question."
    ]
   ],
@@ -318,7 +318,7 @@
    ],
    [
     "",
-    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; accept 'I don't know' or 'confidential' and move on; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
+    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; if they say an item is confidential or they cannot share it, accept that and move on; if they say 'I don't know', 'no idea', 'pass' or 'next question', never accept it at once and never tell them they may skip: ask the narrower angle in ANALYST_GUIDANCE (reangle), at most twice, after which the server records the item as open; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
     "GAP PACE (server): about 0 of 15 minutes used. Open items: Observed outcome."
    ]
   ],
@@ -333,7 +333,7 @@
    ],
    [
     "",
-    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; accept 'I don't know' or 'confidential' and move on; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
+    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; if they say an item is confidential or they cannot share it, accept that and move on; if they say 'I don't know', 'no idea', 'pass' or 'next question', never accept it at once and never tell them they may skip: ask the narrower angle in ANALYST_GUIDANCE (reangle), at most twice, after which the server records the item as open; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
     "GAP PACE (server): about 13 of 15 minutes used. Open items: Observed outcome."
    ]
   ],
@@ -346,7 +346,7 @@
    ],
    [
     "",
-    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; accept 'I don't know' or 'confidential' and move on; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
+    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; if they say an item is confidential or they cannot share it, accept that and move on; if they say 'I don't know', 'no idea', 'pass' or 'next question', never accept it at once and never tell them they may skip: ask the narrower angle in ANALYST_GUIDANCE (reangle), at most twice, after which the server records the item as open; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
     "GAP PACE (server): about 13 of 15 minutes used. Under ninety seconds left: ask only the single most important open item, then move to ENDING."
    ]
   ],
@@ -359,7 +359,7 @@
    ],
    [
     "",
-    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; accept 'I don't know' or 'confidential' and move on; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
+    "GAP MODE (server). This overrides ORDER OF THE INTERVIEW, REFERENCE DETAILS and TIME: about five minutes; ask only for the proof in UNTRUSTED GAP LIST, one item per question, in order; bracketed words such as [company] are masked names, never guess or ask for them; if they say an item is confidential or they cannot share it, accept that and move on; if they say 'I don't know', 'no idea', 'pass' or 'next question', never accept it at once and never tell them they may skip: ask the narrower angle in ANALYST_GUIDANCE (reangle), at most twice, after which the server records the item as open; do not ask for the Opp ID; when every item is answered, unknown or deferred, go to ENDING.",
     "GAP PACE (server): about 14 of 15 minutes used. Time is up: close now, with no question."
    ]
   ]
@@ -414,6 +414,7 @@
      "field": "outcome",
      "label": "Observed outcome",
      "status": "answered_unverified",
+     "refusals": 0,
      "details": []
     },
     {
@@ -421,6 +422,7 @@
      "field": "evidence",
      "label": "Supporting artifact",
      "status": "open",
+     "refusals": 0,
      "details": []
     },
     {
@@ -428,6 +430,7 @@
      "field": "customer_fit",
      "label": "Customer relevance",
      "status": "open",
+     "refusals": 0,
      "details": []
     }
    ]
@@ -477,7 +480,8 @@
      "id": "G1",
      "field": "outcome",
      "label": "Observed outcome",
-     "status": "unknown",
+     "status": "open",
+     "refusals": 1,
      "details": []
     },
     {
@@ -485,13 +489,15 @@
      "field": "evidence",
      "label": "Supporting artifact",
      "status": "unknown",
+     "refusals": 0,
      "details": []
     },
     {
      "id": "G3",
      "field": "customer_fit",
      "label": "Customer relevance",
-     "status": "unknown",
+     "status": "open",
+     "refusals": 1,
      "details": []
     }
    ]
@@ -542,6 +548,7 @@
      "field": "outcome",
      "label": "Observed outcome",
      "status": "open",
+     "refusals": 0,
      "details": []
     },
     {
@@ -549,6 +556,7 @@
      "field": "evidence",
      "label": "Supporting artifact",
      "status": "deferred",
+     "refusals": 0,
      "details": []
     },
     {
@@ -556,6 +564,7 @@
      "field": "customer_fit",
      "label": "Customer relevance",
      "status": "deferred",
+     "refusals": 0,
      "details": []
     }
    ]
@@ -595,6 +604,7 @@
      "field": "outcome",
      "label": "Observed outcome",
      "status": "deferred",
+     "refusals": 0,
      "details": []
     },
     {
@@ -602,6 +612,7 @@
      "field": "evidence",
      "label": "Supporting artifact",
      "status": "open",
+     "refusals": 0,
      "details": []
     },
     {
@@ -609,6 +620,7 @@
      "field": "customer_fit",
      "label": "Customer relevance",
      "status": "open",
+     "refusals": 0,
      "details": []
     }
    ]
@@ -680,6 +692,7 @@
      "field": "outcome",
      "label": "Observed outcome",
      "status": "answered_unverified",
+     "refusals": 0,
      "details": [
       "D-001"
      ]
@@ -688,7 +701,8 @@
      "id": "G2",
      "field": "evidence",
      "label": "Supporting artifact",
-     "status": "unknown",
+     "status": "deferred",
+     "refusals": 0,
      "details": [
       "D-002"
      ]
@@ -698,6 +712,7 @@
      "field": "customer_fit",
      "label": "Customer relevance",
      "status": "deferred",
+     "refusals": 0,
      "details": []
     }
    ]
@@ -764,7 +779,8 @@
      "id": "G1",
      "field": "outcome",
      "label": "Observed outcome",
-     "status": "unknown",
+     "status": "open",
+     "refusals": 0,
      "details": [
       "D-003"
      ]
@@ -774,6 +790,7 @@
      "field": "evidence",
      "label": "Supporting artifact",
      "status": "answered_unverified",
+     "refusals": 0,
      "details": [
       "D-001",
       "D-002"
@@ -784,6 +801,7 @@
      "field": "customer_fit",
      "label": "Customer relevance",
      "status": "open",
+     "refusals": 0,
      "details": []
     }
    ]
@@ -831,13 +849,15 @@
      "field": "outcome",
      "label": "Observed outcome",
      "status": "answered_unverified",
+     "refusals": 1,
      "details": []
     },
     {
      "id": "G2",
      "field": "evidence",
      "label": "Supporting artifact",
-     "status": "unknown",
+     "status": "open",
+     "refusals": 1,
      "details": []
     },
     {
@@ -845,6 +865,7 @@
      "field": "customer_fit",
      "label": "Customer relevance",
      "status": "open",
+     "refusals": 0,
      "details": []
     }
    ]
@@ -891,6 +912,7 @@
      "field": "outcome",
      "label": "Observed outcome",
      "status": "open",
+     "refusals": 0,
      "details": []
     },
     {
@@ -898,6 +920,7 @@
      "field": "evidence",
      "label": "Supporting artifact",
      "status": "answered_unverified",
+     "refusals": 0,
      "details": []
     },
     {
@@ -905,6 +928,7 @@
      "field": "customer_fit",
      "label": "Customer relevance",
      "status": "answered_unverified",
+     "refusals": 0,
      "details": []
     }
    ]
@@ -955,6 +979,7 @@
      "field": "outcome",
      "label": "Observed outcome",
      "status": "answered_unverified",
+     "refusals": 0,
      "details": []
     },
     {
@@ -962,6 +987,7 @@
      "field": "evidence",
      "label": "Supporting artifact",
      "status": "open",
+     "refusals": 0,
      "details": []
     },
     {
@@ -969,6 +995,7 @@
      "field": "customer_fit",
      "label": "Customer relevance",
      "status": "open",
+     "refusals": 0,
      "details": []
     }
    ]
@@ -997,6 +1024,7 @@
      "field": "outcome",
      "label": "Observed outcome",
      "status": "open",
+     "refusals": 0,
      "details": []
     }
    ]
@@ -1020,6 +1048,853 @@
     ]
    ],
    []
+  ],
+  [
+   [
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "ask": "Proof the bid needs: an ISO 27001 audit report"
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
+     }
+    ],
+    {
+     "G1": 1,
+     "G2": 1,
+     "G3": 1
+    },
+    {
+     "G1": [
+      "I don't know"
+     ],
+     "G2": [
+      "no idea"
+     ],
+     "G3": [
+      "pass"
+     ]
+    },
+    []
+   ],
+   [
+    {
+     "id": "G1",
+     "field": "outcome",
+     "label": "Observed outcome",
+     "status": "open",
+     "refusals": 1,
+     "details": []
+    },
+    {
+     "id": "G2",
+     "field": "evidence",
+     "label": "Supporting artifact",
+     "status": "open",
+     "refusals": 1,
+     "details": []
+    },
+    {
+     "id": "G3",
+     "field": "customer_fit",
+     "label": "Customer relevance",
+     "status": "open",
+     "refusals": 1,
+     "details": []
+    }
+   ]
+  ],
+  [
+   [
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "ask": "Proof the bid needs: an ISO 27001 audit report"
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
+     }
+    ],
+    {
+     "G1": 2,
+     "G2": 2,
+     "G3": 2
+    },
+    {
+     "G1": [
+      "I don't know",
+      "no idea"
+     ],
+     "G2": [
+      "pass",
+      "next question"
+     ],
+     "G3": [
+      "skip",
+      "dunno"
+     ]
+    },
+    []
+   ],
+   [
+    {
+     "id": "G1",
+     "field": "outcome",
+     "label": "Observed outcome",
+     "status": "open",
+     "refusals": 2,
+     "details": []
+    },
+    {
+     "id": "G2",
+     "field": "evidence",
+     "label": "Supporting artifact",
+     "status": "open",
+     "refusals": 2,
+     "details": []
+    },
+    {
+     "id": "G3",
+     "field": "customer_fit",
+     "label": "Customer relevance",
+     "status": "open",
+     "refusals": 2,
+     "details": []
+    }
+   ]
+  ],
+  [
+   [
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "ask": "Proof the bid needs: an ISO 27001 audit report"
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
+     }
+    ],
+    {
+     "G1": 3,
+     "G2": 3,
+     "G3": 3
+    },
+    {
+     "G1": [
+      "I don't know",
+      "no idea",
+      "honestly no clue"
+     ],
+     "G2": [
+      "pass",
+      "next question",
+      "skip it"
+     ],
+     "G3": [
+      "skip",
+      "I'm not sure",
+      "dunno"
+     ]
+    },
+    []
+   ],
+   [
+    {
+     "id": "G1",
+     "field": "outcome",
+     "label": "Observed outcome",
+     "status": "unknown",
+     "refusals": 3,
+     "details": []
+    },
+    {
+     "id": "G2",
+     "field": "evidence",
+     "label": "Supporting artifact",
+     "status": "unknown",
+     "refusals": 3,
+     "details": []
+    },
+    {
+     "id": "G3",
+     "field": "customer_fit",
+     "label": "Customer relevance",
+     "status": "unknown",
+     "refusals": 3,
+     "details": []
+    }
+   ]
+  ],
+  [
+   [
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "ask": "Proof the bid needs: an ISO 27001 audit report"
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
+     }
+    ],
+    {
+     "G1": 3,
+     "G2": 4,
+     "G3": 2
+    },
+    {
+     "G1": [
+      "no idea",
+      "Yes, about three."
+     ],
+     "G2": [
+      "pass",
+      "Not really."
+     ],
+     "G3": [
+      "Maybe banks."
+     ]
+    },
+    []
+   ],
+   [
+    {
+     "id": "G1",
+     "field": "outcome",
+     "label": "Observed outcome",
+     "status": "open",
+     "refusals": 1,
+     "details": []
+    },
+    {
+     "id": "G2",
+     "field": "evidence",
+     "label": "Supporting artifact",
+     "status": "deferred",
+     "refusals": 1,
+     "details": []
+    },
+    {
+     "id": "G3",
+     "field": "customer_fit",
+     "label": "Customer relevance",
+     "status": "deferred",
+     "refusals": 0,
+     "details": []
+    }
+   ]
+  ],
+  [
+   [
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "ask": "Proof the bid needs: an ISO 27001 audit report"
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
+     }
+    ],
+    {
+     "G1": 2,
+     "G2": 3,
+     "G3": 4
+    },
+    {
+     "G1": [
+      "I don't know",
+      "it was nine days before"
+     ],
+     "G2": [
+      "I don't know"
+     ],
+     "G3": [
+      "I don't know",
+      "no idea"
+     ]
+    },
+    []
+   ],
+   [
+    {
+     "id": "G1",
+     "field": "outcome",
+     "label": "Observed outcome",
+     "status": "open",
+     "refusals": 1,
+     "details": []
+    },
+    {
+     "id": "G2",
+     "field": "evidence",
+     "label": "Supporting artifact",
+     "status": "open",
+     "refusals": 1,
+     "details": []
+    },
+    {
+     "id": "G3",
+     "field": "customer_fit",
+     "label": "Customer relevance",
+     "status": "deferred",
+     "refusals": 2,
+     "details": []
+    }
+   ]
+  ],
+  [
+   [
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "ask": "Proof the bid needs: an ISO 27001 audit report"
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
+     }
+    ],
+    {
+     "G1": 2,
+     "G2": 2,
+     "G3": 2
+    },
+    {
+     "G1": [
+      "I don't know",
+      "We cut the average handling time from nine to four days."
+     ],
+     "G2": [
+      "I don't know",
+      "I can't share that, it is under NDA"
+     ],
+     "G3": [
+      "It is confidential"
+     ]
+    },
+    []
+   ],
+   [
+    {
+     "id": "G1",
+     "field": "outcome",
+     "label": "Observed outcome",
+     "status": "answered_unverified",
+     "refusals": 1,
+     "details": []
+    },
+    {
+     "id": "G2",
+     "field": "evidence",
+     "label": "Supporting artifact",
+     "status": "unknown",
+     "refusals": 1,
+     "details": []
+    },
+    {
+     "id": "G3",
+     "field": "customer_fit",
+     "label": "Customer relevance",
+     "status": "unknown",
+     "refusals": 0,
+     "details": []
+    }
+   ]
+  ],
+  [
+   [
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "ask": "Proof the bid needs: an ISO 27001 audit report"
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
+     }
+    ],
+    {
+     "G1": 2
+    },
+    {
+     "G1": [
+      "no idea",
+      "the ops team may know"
+     ]
+    },
+    [
+     {
+      "id": "D-001",
+      "field": "outcome",
+      "item_id": "user-1",
+      "quote": "xxxxx",
+      "status": "unknown",
+      "active": true,
+      "supersedes": "",
+      "provenance": "unverified_speech_recognition"
+     }
+    ]
+   ],
+   [
+    {
+     "id": "G1",
+     "field": "outcome",
+     "label": "Observed outcome",
+     "status": "open",
+     "refusals": 1,
+     "details": [
+      "D-001"
+     ]
+    },
+    {
+     "id": "G2",
+     "field": "evidence",
+     "label": "Supporting artifact",
+     "status": "open",
+     "refusals": 0,
+     "details": []
+    },
+    {
+     "id": "G3",
+     "field": "customer_fit",
+     "label": "Customer relevance",
+     "status": "open",
+     "refusals": 0,
+     "details": []
+    }
+   ]
+  ],
+  [
+   [
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "ask": "Proof the bid needs: an ISO 27001 audit report"
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
+     }
+    ],
+    {
+     "G1": 1,
+     "G2": 2,
+     "G3": 3
+    },
+    {
+     "G1": [
+      "je ne sais pas"
+     ],
+     "G2": [
+      "aucune id\u00e9e",
+      "je passe"
+     ],
+     "G3": [
+      "question suivante",
+      "passe",
+      "je ne sais pas"
+     ]
+    },
+    [],
+    "fr"
+   ],
+   [
+    {
+     "id": "G1",
+     "field": "outcome",
+     "label": "Observed outcome",
+     "status": "open",
+     "refusals": 1,
+     "details": []
+    },
+    {
+     "id": "G2",
+     "field": "evidence",
+     "label": "Supporting artifact",
+     "status": "open",
+     "refusals": 2,
+     "details": []
+    },
+    {
+     "id": "G3",
+     "field": "customer_fit",
+     "label": "Customer relevance",
+     "status": "unknown",
+     "refusals": 3,
+     "details": []
+    }
+   ]
+  ],
+  [
+   [
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "ask": "Proof the bid needs: an ISO 27001 audit report"
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
+     }
+    ],
+    {
+     "G1": 1,
+     "G2": 2,
+     "G3": 3
+    },
+    {
+     "G1": [
+      "wei\u00df ich nicht"
+     ],
+     "G2": [
+      "keine Ahnung",
+      "n\u00e4chste Frage"
+     ],
+     "G3": [
+      "pass",
+      "wei\u00df ich nicht",
+      "Das kann ich nicht teilen"
+     ]
+    },
+    [],
+    "de"
+   ],
+   [
+    {
+     "id": "G1",
+     "field": "outcome",
+     "label": "Observed outcome",
+     "status": "open",
+     "refusals": 1,
+     "details": []
+    },
+    {
+     "id": "G2",
+     "field": "evidence",
+     "label": "Supporting artifact",
+     "status": "open",
+     "refusals": 2,
+     "details": []
+    },
+    {
+     "id": "G3",
+     "field": "customer_fit",
+     "label": "Customer relevance",
+     "status": "unknown",
+     "refusals": 2,
+     "details": []
+    }
+   ]
+  ],
+  [
+   [
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "ask": "Proof the bid needs: an ISO 27001 audit report"
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
+     }
+    ],
+    {
+     "G1": 1,
+     "G2": 2,
+     "G3": 3
+    },
+    {
+     "G1": [
+      "no lo s\u00e9"
+     ],
+     "G2": [
+      "ni idea",
+      "siguiente pregunta"
+     ],
+     "G3": [
+      "paso",
+      "no s\u00e9",
+      "no tengo ni idea"
+     ]
+    },
+    [],
+    "es"
+   ],
+   [
+    {
+     "id": "G1",
+     "field": "outcome",
+     "label": "Observed outcome",
+     "status": "open",
+     "refusals": 1,
+     "details": []
+    },
+    {
+     "id": "G2",
+     "field": "evidence",
+     "label": "Supporting artifact",
+     "status": "open",
+     "refusals": 2,
+     "details": []
+    },
+    {
+     "id": "G3",
+     "field": "customer_fit",
+     "label": "Customer relevance",
+     "status": "unknown",
+     "refusals": 3,
+     "details": []
+    }
+   ]
+  ],
+  [
+   [
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "ask": "Proof the bid needs: an ISO 27001 audit report"
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
+     }
+    ],
+    {
+     "G1": 2,
+     "G2": 3,
+     "G3": 3
+    },
+    {
+     "G1": [
+      "non lo so",
+      "non posso condividerlo"
+     ],
+     "G2": [
+      "non ne ho idea",
+      "passo"
+     ],
+     "G3": [
+      "non lo so",
+      "prossima domanda",
+      "passo"
+     ]
+    },
+    [],
+    "it"
+   ],
+   [
+    {
+     "id": "G1",
+     "field": "outcome",
+     "label": "Observed outcome",
+     "status": "unknown",
+     "refusals": 1,
+     "details": []
+    },
+    {
+     "id": "G2",
+     "field": "evidence",
+     "label": "Supporting artifact",
+     "status": "open",
+     "refusals": 2,
+     "details": []
+    },
+    {
+     "id": "G3",
+     "field": "customer_fit",
+     "label": "Customer relevance",
+     "status": "unknown",
+     "refusals": 3,
+     "details": []
+    }
+   ]
+  ],
+  [
+   [
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "ask": "Proof the bid needs: an ISO 27001 audit report"
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
+     }
+    ],
+    {
+     "G1": 1,
+     "G2": 3,
+     "G3": 3
+    },
+    {
+     "G1": [
+      "weet ik niet"
+     ],
+     "G2": [
+      "geen idee",
+      "volgende vraag",
+      "ik pas"
+     ],
+     "G3": [
+      "weet ik niet",
+      "overslaan",
+      "ik pas"
+     ]
+    },
+    [],
+    "nl"
+   ],
+   [
+    {
+     "id": "G1",
+     "field": "outcome",
+     "label": "Observed outcome",
+     "status": "open",
+     "refusals": 1,
+     "details": []
+    },
+    {
+     "id": "G2",
+     "field": "evidence",
+     "label": "Supporting artifact",
+     "status": "unknown",
+     "refusals": 3,
+     "details": []
+    },
+    {
+     "id": "G3",
+     "field": "customer_fit",
+     "label": "Customer relevance",
+     "status": "unknown",
+     "refusals": 3,
+     "details": []
+    }
+   ]
   ]
  ],
  "gapGuidance": [
@@ -1051,6 +1926,7 @@
       "field": "outcome",
       "label": "Observed outcome",
       "status": "answered_unverified",
+      "refusals": 0,
       "details": []
      },
      {
@@ -1058,6 +1934,7 @@
       "field": "evidence",
       "label": "Supporting artifact",
       "status": "open",
+      "refusals": 0,
       "details": []
      },
      {
@@ -1065,6 +1942,7 @@
       "field": "customer_fit",
       "label": "Customer relevance",
       "status": "open",
+      "refusals": 0,
       "details": []
      }
     ]
@@ -1106,7 +1984,8 @@
       "id": "G1",
       "field": "outcome",
       "label": "Observed outcome",
-      "status": "unknown",
+      "status": "open",
+      "refusals": 1,
       "details": []
      },
      {
@@ -1114,24 +1993,27 @@
       "field": "evidence",
       "label": "Supporting artifact",
       "status": "unknown",
+      "refusals": 0,
       "details": []
      },
      {
       "id": "G3",
       "field": "customer_fit",
       "label": "Customer relevance",
-      "status": "unknown",
+      "status": "open",
+      "refusals": 1,
       "details": []
      }
     ]
    ],
    {
-    "askId": null,
-    "field": null,
-    "label": null,
-    "question": "Reflect back briefly what you heard for each item and ask if anything is wrong.",
-    "why": "Every requested item has an answer, an unknown or a deferral.",
-    "action": "reflect_and_confirm",
+    "askId": "G1",
+    "field": "outcome",
+    "label": "Observed outcome",
+    "question": "Proof the bid needs: a measured reduction in claims handling time for [company]",
+    "reangle": "What would a rough order of magnitude be, even approximately?",
+    "why": "The consultant could not answer this item as asked: ask the narrower, easier angle in `reangle`, in your own words, with no pressure.",
+    "action": "ask_one_question",
     "deferred": []
    }
   ],
@@ -1163,6 +2045,7 @@
       "field": "outcome",
       "label": "Observed outcome",
       "status": "open",
+      "refusals": 0,
       "details": []
      },
      {
@@ -1170,6 +2053,7 @@
       "field": "evidence",
       "label": "Supporting artifact",
       "status": "deferred",
+      "refusals": 0,
       "details": []
      },
      {
@@ -1177,6 +2061,7 @@
       "field": "customer_fit",
       "label": "Customer relevance",
       "status": "deferred",
+      "refusals": 0,
       "details": []
      }
     ]
@@ -1222,6 +2107,7 @@
       "field": "outcome",
       "label": "Observed outcome",
       "status": "deferred",
+      "refusals": 0,
       "details": []
      },
      {
@@ -1229,6 +2115,7 @@
       "field": "evidence",
       "label": "Supporting artifact",
       "status": "open",
+      "refusals": 0,
       "details": []
      },
      {
@@ -1236,6 +2123,7 @@
       "field": "customer_fit",
       "label": "Customer relevance",
       "status": "open",
+      "refusals": 0,
       "details": []
      }
     ]
@@ -1280,6 +2168,7 @@
       "field": "outcome",
       "label": "Observed outcome",
       "status": "answered_unverified",
+      "refusals": 0,
       "details": [
        "D-001"
       ]
@@ -1288,7 +2177,8 @@
       "id": "G2",
       "field": "evidence",
       "label": "Supporting artifact",
-      "status": "unknown",
+      "status": "deferred",
+      "refusals": 0,
       "details": [
        "D-002"
       ]
@@ -1298,6 +2188,7 @@
       "field": "customer_fit",
       "label": "Customer relevance",
       "status": "deferred",
+      "refusals": 0,
       "details": []
      }
     ]
@@ -1309,6 +2200,599 @@
     "question": "Reflect back briefly what you heard for each item and ask if anything is wrong.",
     "why": "Every requested item has an answer, an unknown or a deferral.",
     "action": "reflect_and_confirm",
+    "deferred": [
+     "evidence",
+     "customer_fit"
+    ]
+   }
+  ],
+  [
+   [
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "ask": "Proof the bid needs: an ISO 27001 audit report"
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
+     }
+    ],
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "status": "open",
+      "refusals": 0,
+      "details": [
+       "D-003"
+      ]
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "status": "answered_unverified",
+      "refusals": 0,
+      "details": [
+       "D-001",
+       "D-002"
+      ]
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "status": "open",
+      "refusals": 0,
+      "details": []
+     }
+    ]
+   ],
+   {
+    "askId": "G1",
+    "field": "outcome",
+    "label": "Observed outcome",
+    "question": "Proof the bid needs: a measured reduction in claims handling time for [company]",
+    "why": "The bid team asked for this proof.",
+    "action": "ask_one_question",
+    "deferred": []
+   }
+  ],
+  [
+   [
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "ask": "Proof the bid needs: an ISO 27001 audit report"
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
+     }
+    ],
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "status": "answered_unverified",
+      "refusals": 1,
+      "details": []
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "status": "open",
+      "refusals": 1,
+      "details": []
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "status": "open",
+      "refusals": 0,
+      "details": []
+     }
+    ]
+   ],
+   {
+    "askId": "G2",
+    "field": "evidence",
+    "label": "Supporting artifact",
+    "question": "Proof the bid needs: an ISO 27001 audit report",
+    "reangle": "Who on the project would know that best?",
+    "why": "The consultant could not answer this item as asked: ask the narrower, easier angle in `reangle`, in your own words, with no pressure.",
+    "action": "ask_one_question",
+    "deferred": []
+   }
+  ],
+  [
+   [
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "ask": "Proof the bid needs: an ISO 27001 audit report"
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
+     }
+    ],
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "status": "open",
+      "refusals": 0,
+      "details": []
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "status": "answered_unverified",
+      "refusals": 0,
+      "details": []
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "status": "answered_unverified",
+      "refusals": 0,
+      "details": []
+     }
+    ]
+   ],
+   {
+    "askId": "G1",
+    "field": "outcome",
+    "label": "Observed outcome",
+    "question": "Proof the bid needs: a measured reduction in claims handling time for [company]",
+    "why": "The bid team asked for this proof.",
+    "action": "ask_one_question",
+    "deferred": []
+   }
+  ],
+  [
+   [
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "ask": "Proof the bid needs: an ISO 27001 audit report"
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
+     }
+    ],
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "status": "answered_unverified",
+      "refusals": 0,
+      "details": []
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "status": "open",
+      "refusals": 0,
+      "details": []
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "status": "open",
+      "refusals": 0,
+      "details": []
+     }
+    ]
+   ],
+   {
+    "askId": "G2",
+    "field": "evidence",
+    "label": "Supporting artifact",
+    "question": "Proof the bid needs: an ISO 27001 audit report",
+    "why": "The bid team asked for this proof.",
+    "action": "ask_one_question",
+    "deferred": []
+   }
+  ],
+  [
+   [
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     }
+    ],
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "status": "open",
+      "refusals": 0,
+      "details": []
+     }
+    ]
+   ],
+   {
+    "askId": "G1",
+    "field": "outcome",
+    "label": "Observed outcome",
+    "question": "Proof the bid needs: a measured reduction in claims handling time for [company]",
+    "why": "The bid team asked for this proof.",
+    "action": "ask_one_question",
+    "deferred": []
+   }
+  ],
+  [
+   [
+    [],
+    []
+   ],
+   {
+    "askId": null,
+    "field": null,
+    "label": null,
+    "question": "Reflect back briefly what you heard for each item and ask if anything is wrong.",
+    "why": "Every requested item has an answer, an unknown or a deferral.",
+    "action": "reflect_and_confirm",
+    "deferred": []
+   }
+  ],
+  [
+   [
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "ask": "Proof the bid needs: an ISO 27001 audit report"
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
+     }
+    ],
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "status": "open",
+      "refusals": 1,
+      "details": []
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "status": "open",
+      "refusals": 1,
+      "details": []
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "status": "open",
+      "refusals": 1,
+      "details": []
+     }
+    ]
+   ],
+   {
+    "askId": "G1",
+    "field": "outcome",
+    "label": "Observed outcome",
+    "question": "Proof the bid needs: a measured reduction in claims handling time for [company]",
+    "reangle": "What would a rough order of magnitude be, even approximately?",
+    "why": "The consultant could not answer this item as asked: ask the narrower, easier angle in `reangle`, in your own words, with no pressure.",
+    "action": "ask_one_question",
+    "deferred": []
+   }
+  ],
+  [
+   [
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "ask": "Proof the bid needs: an ISO 27001 audit report"
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
+     }
+    ],
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "status": "open",
+      "refusals": 2,
+      "details": []
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "status": "open",
+      "refusals": 2,
+      "details": []
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "status": "open",
+      "refusals": 2,
+      "details": []
+     }
+    ]
+   ],
+   {
+    "askId": "G1",
+    "field": "outcome",
+    "label": "Observed outcome",
+    "question": "Proof the bid needs: a measured reduction in claims handling time for [company]",
+    "reangle": "Who on the project would know that best?",
+    "why": "The consultant could not answer this item as asked: ask the narrower, easier angle in `reangle`, in your own words, with no pressure.",
+    "action": "ask_one_question",
+    "deferred": []
+   }
+  ],
+  [
+   [
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "ask": "Proof the bid needs: an ISO 27001 audit report"
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
+     }
+    ],
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "status": "unknown",
+      "refusals": 3,
+      "details": []
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "status": "unknown",
+      "refusals": 3,
+      "details": []
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "status": "unknown",
+      "refusals": 3,
+      "details": []
+     }
+    ]
+   ],
+   {
+    "askId": null,
+    "field": null,
+    "label": null,
+    "question": "Reflect back briefly what you heard for each item and ask if anything is wrong.",
+    "why": "Every requested item has an answer, an unknown or a deferral.",
+    "action": "reflect_and_confirm",
+    "deferred": []
+   }
+  ],
+  [
+   [
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "ask": "Proof the bid needs: an ISO 27001 audit report"
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
+     }
+    ],
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "status": "open",
+      "refusals": 1,
+      "details": []
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "status": "deferred",
+      "refusals": 1,
+      "details": []
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "status": "deferred",
+      "refusals": 0,
+      "details": []
+     }
+    ]
+   ],
+   {
+    "askId": "G1",
+    "field": "outcome",
+    "label": "Observed outcome",
+    "question": "Proof the bid needs: a measured reduction in claims handling time for [company]",
+    "reangle": "What would a rough order of magnitude be, even approximately?",
+    "why": "The consultant could not answer this item as asked: ask the narrower, easier angle in `reangle`, in your own words, with no pressure.",
+    "action": "ask_one_question",
+    "deferred": [
+     "evidence",
+     "customer_fit"
+    ]
+   }
+  ],
+  [
+   [
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "ask": "Proof the bid needs: an ISO 27001 audit report"
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
+     }
+    ],
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "status": "open",
+      "refusals": 1,
+      "details": []
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "status": "open",
+      "refusals": 1,
+      "details": []
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "status": "deferred",
+      "refusals": 2,
+      "details": []
+     }
+    ]
+   ],
+   {
+    "askId": "G1",
+    "field": "outcome",
+    "label": "Observed outcome",
+    "question": "Proof the bid needs: a measured reduction in claims handling time for [company]",
+    "reangle": "What would a rough order of magnitude be, even approximately?",
+    "why": "The consultant could not answer this item as asked: ask the narrower, easier angle in `reangle`, in your own words, with no pressure.",
+    "action": "ask_one_question",
     "deferred": [
      "customer_fit"
     ]
@@ -1341,68 +2825,8 @@
       "id": "G1",
       "field": "outcome",
       "label": "Observed outcome",
-      "status": "unknown",
-      "details": [
-       "D-003"
-      ]
-     },
-     {
-      "id": "G2",
-      "field": "evidence",
-      "label": "Supporting artifact",
       "status": "answered_unverified",
-      "details": [
-       "D-001",
-       "D-002"
-      ]
-     },
-     {
-      "id": "G3",
-      "field": "customer_fit",
-      "label": "Customer relevance",
-      "status": "open",
-      "details": []
-     }
-    ]
-   ],
-   {
-    "askId": "G3",
-    "field": "customer_fit",
-    "label": "Customer relevance",
-    "question": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems",
-    "why": "The bid team asked for this proof.",
-    "action": "ask_one_question",
-    "deferred": []
-   }
-  ],
-  [
-   [
-    [
-     {
-      "id": "G1",
-      "field": "outcome",
-      "label": "Observed outcome",
-      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
-     },
-     {
-      "id": "G2",
-      "field": "evidence",
-      "label": "Supporting artifact",
-      "ask": "Proof the bid needs: an ISO 27001 audit report"
-     },
-     {
-      "id": "G3",
-      "field": "customer_fit",
-      "label": "Customer relevance",
-      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
-     }
-    ],
-    [
-     {
-      "id": "G1",
-      "field": "outcome",
-      "label": "Observed outcome",
-      "status": "answered_unverified",
+      "refusals": 1,
       "details": []
      },
      {
@@ -1410,24 +2834,26 @@
       "field": "evidence",
       "label": "Supporting artifact",
       "status": "unknown",
+      "refusals": 1,
       "details": []
      },
      {
       "id": "G3",
       "field": "customer_fit",
       "label": "Customer relevance",
-      "status": "open",
+      "status": "unknown",
+      "refusals": 0,
       "details": []
      }
     ]
    ],
    {
-    "askId": "G3",
-    "field": "customer_fit",
-    "label": "Customer relevance",
-    "question": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems",
-    "why": "The bid team asked for this proof.",
-    "action": "ask_one_question",
+    "askId": null,
+    "field": null,
+    "label": null,
+    "question": "Reflect back briefly what you heard for each item and ask if anything is wrong.",
+    "why": "Every requested item has an answer, an unknown or a deferral.",
+    "action": "reflect_and_confirm",
     "deferred": []
    }
   ],
@@ -1459,20 +2885,25 @@
       "field": "outcome",
       "label": "Observed outcome",
       "status": "open",
-      "details": []
+      "refusals": 1,
+      "details": [
+       "D-001"
+      ]
      },
      {
       "id": "G2",
       "field": "evidence",
       "label": "Supporting artifact",
-      "status": "answered_unverified",
+      "status": "open",
+      "refusals": 0,
       "details": []
      },
      {
       "id": "G3",
       "field": "customer_fit",
       "label": "Customer relevance",
-      "status": "answered_unverified",
+      "status": "open",
+      "refusals": 0,
       "details": []
      }
     ]
@@ -1482,7 +2913,8 @@
     "field": "outcome",
     "label": "Observed outcome",
     "question": "Proof the bid needs: a measured reduction in claims handling time for [company]",
-    "why": "The bid team asked for this proof.",
+    "reangle": "What would a rough order of magnitude be, even approximately?",
+    "why": "The consultant could not answer this item as asked: ask the narrower, easier angle in `reangle`, in your own words, with no pressure.",
     "action": "ask_one_question",
     "deferred": []
    }
@@ -1514,7 +2946,8 @@
       "id": "G1",
       "field": "outcome",
       "label": "Observed outcome",
-      "status": "answered_unverified",
+      "status": "open",
+      "refusals": 1,
       "details": []
      },
      {
@@ -1522,13 +2955,195 @@
       "field": "evidence",
       "label": "Supporting artifact",
       "status": "open",
+      "refusals": 2,
       "details": []
      },
      {
       "id": "G3",
       "field": "customer_fit",
       "label": "Customer relevance",
+      "status": "unknown",
+      "refusals": 3,
+      "details": []
+     }
+    ]
+   ],
+   {
+    "askId": "G1",
+    "field": "outcome",
+    "label": "Observed outcome",
+    "question": "Proof the bid needs: a measured reduction in claims handling time for [company]",
+    "reangle": "What would a rough order of magnitude be, even approximately?",
+    "why": "The consultant could not answer this item as asked: ask the narrower, easier angle in `reangle`, in your own words, with no pressure.",
+    "action": "ask_one_question",
+    "deferred": []
+   }
+  ],
+  [
+   [
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "ask": "Proof the bid needs: an ISO 27001 audit report"
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
+     }
+    ],
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
       "status": "open",
+      "refusals": 1,
+      "details": []
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "status": "open",
+      "refusals": 2,
+      "details": []
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "status": "unknown",
+      "refusals": 2,
+      "details": []
+     }
+    ]
+   ],
+   {
+    "askId": "G1",
+    "field": "outcome",
+    "label": "Observed outcome",
+    "question": "Proof the bid needs: a measured reduction in claims handling time for [company]",
+    "reangle": "What would a rough order of magnitude be, even approximately?",
+    "why": "The consultant could not answer this item as asked: ask the narrower, easier angle in `reangle`, in your own words, with no pressure.",
+    "action": "ask_one_question",
+    "deferred": []
+   }
+  ],
+  [
+   [
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "ask": "Proof the bid needs: an ISO 27001 audit report"
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
+     }
+    ],
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "status": "open",
+      "refusals": 1,
+      "details": []
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "status": "open",
+      "refusals": 2,
+      "details": []
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "status": "unknown",
+      "refusals": 3,
+      "details": []
+     }
+    ]
+   ],
+   {
+    "askId": "G1",
+    "field": "outcome",
+    "label": "Observed outcome",
+    "question": "Proof the bid needs: a measured reduction in claims handling time for [company]",
+    "reangle": "What would a rough order of magnitude be, even approximately?",
+    "why": "The consultant could not answer this item as asked: ask the narrower, easier angle in `reangle`, in your own words, with no pressure.",
+    "action": "ask_one_question",
+    "deferred": []
+   }
+  ],
+  [
+   [
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "ask": "Proof the bid needs: an ISO 27001 audit report"
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
+     }
+    ],
+    [
+     {
+      "id": "G1",
+      "field": "outcome",
+      "label": "Observed outcome",
+      "status": "unknown",
+      "refusals": 1,
+      "details": []
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "status": "open",
+      "refusals": 2,
+      "details": []
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "status": "unknown",
+      "refusals": 3,
       "details": []
      }
     ]
@@ -1538,7 +3153,8 @@
     "field": "evidence",
     "label": "Supporting artifact",
     "question": "Proof the bid needs: an ISO 27001 audit report",
-    "why": "The bid team asked for this proof.",
+    "reangle": "What is one concrete example you remember, however small?",
+    "why": "The consultant could not answer this item as asked: ask the narrower, easier angle in `reangle`, in your own words, with no pressure.",
     "action": "ask_one_question",
     "deferred": []
    }
@@ -1551,6 +3167,18 @@
       "field": "outcome",
       "label": "Observed outcome",
       "ask": "Proof the bid needs: a measured reduction in claims handling time for [company]"
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "ask": "Proof the bid needs: an ISO 27001 audit report"
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "ask": "Proof the bid needs: an insurer in \u00abEurope\u00bb with \u201clegacy\u201d claims\nsystems"
      }
     ],
     [
@@ -1559,6 +3187,23 @@
       "field": "outcome",
       "label": "Observed outcome",
       "status": "open",
+      "refusals": 1,
+      "details": []
+     },
+     {
+      "id": "G2",
+      "field": "evidence",
+      "label": "Supporting artifact",
+      "status": "unknown",
+      "refusals": 3,
+      "details": []
+     },
+     {
+      "id": "G3",
+      "field": "customer_fit",
+      "label": "Customer relevance",
+      "status": "unknown",
+      "refusals": 3,
       "details": []
      }
     ]
@@ -1568,23 +3213,9 @@
     "field": "outcome",
     "label": "Observed outcome",
     "question": "Proof the bid needs: a measured reduction in claims handling time for [company]",
-    "why": "The bid team asked for this proof.",
+    "reangle": "What would a rough order of magnitude be, even approximately?",
+    "why": "The consultant could not answer this item as asked: ask the narrower, easier angle in `reangle`, in your own words, with no pressure.",
     "action": "ask_one_question",
-    "deferred": []
-   }
-  ],
-  [
-   [
-    [],
-    []
-   ],
-   {
-    "askId": null,
-    "field": null,
-    "label": null,
-    "question": "Reflect back briefly what you heard for each item and ask if anything is wrong.",
-    "why": "Every requested item has an answer, an unknown or a deferral.",
-    "action": "reflect_and_confirm",
     "deferred": []
    }
   ],
@@ -1642,7 +3273,7 @@
    ],
    {
     "depthAt": 405,
-    "closingAt": 690
+    "closingAt": 630
    }
   ],
   [
@@ -1672,7 +3303,7 @@
    ],
    {
     "depthAt": 135,
-    "closingAt": 90
+    "closingAt": 30
    }
   ],
   [
@@ -1682,7 +3313,7 @@
    ],
    {
     "depthAt": 54,
-    "closingAt": -90
+    "closingAt": -150
    }
   ],
   [
@@ -1692,7 +3323,7 @@
    ],
    {
     "depthAt": 54,
-    "closingAt": -89
+    "closingAt": -149
    }
   ],
   [
@@ -1702,7 +3333,7 @@
    ],
    {
     "depthAt": 4,
-    "closingAt": -200
+    "closingAt": -260
    }
   ],
   [
@@ -1712,7 +3343,7 @@
    ],
    {
     "depthAt": 14,
-    "closingAt": -180
+    "closingAt": -240
    }
   ],
   [
@@ -1722,7 +3353,7 @@
    ],
    {
     "depthAt": 22,
-    "closingAt": -160
+    "closingAt": -220
    }
   ],
   [
@@ -1732,7 +3363,7 @@
    ],
    {
     "depthAt": 0,
-    "closingAt": -209
+    "closingAt": -269
    }
   ],
   [
@@ -1742,7 +3373,7 @@
    ],
    {
     "depthAt": 20,
-    "closingAt": -164.5
+    "closingAt": -224.5
    }
   ],
   [

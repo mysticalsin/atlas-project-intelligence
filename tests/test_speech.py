@@ -171,3 +171,120 @@ def test_echo_of_agent_words_is_detected_but_real_answers_are_not():
     assert is_echo('what problem were you trying to solve', agent)
     assert not is_echo('Tickets were bouncing between three support teams', agent)
     assert not is_echo('yes', agent) and not is_echo('a b c', '')
+
+
+# ---- ReplyGuard: one question, no empty praise, no repeated reaction, a short reply, summary-mode numbers. ----
+def run_guard(pieces,**opts):
+    from atlas_voice.speech import ReplyGuard
+    g=ReplyGuard(**opts);voiced=[];done_at=None
+    for i,p in enumerate(pieces):
+        voiced.append(g.push(p))
+        if g.done and done_at is None:done_at=i
+    return g,voiced,done_at
+
+def test_guard_first_question_ends_the_reply_and_the_stream():
+    g,voiced,done_at=run_guard(['Got it, thanks for that.','Who owned it? And what changed afterwards?','Tell me more.'])
+    assert voiced==[['Got it, thanks for that.'],['Who owned it?'],[]] and done_at==1
+    assert g.stats['dropped_after_question']==2
+    assert g.push('More?')==[] and g.stats['dropped_after_question']==3
+    # a question split across pieces is voiced whole: its first clause was already out
+    g,voiced,done_at=run_guard(['Before we get into the numbers and the detail,','tell me who owned it?','And the budget?'])
+    assert voiced==[['Before we get into the numbers and the detail,'],['tell me who owned it?'],[]] and done_at==1
+
+def test_guard_drops_standalone_praise_but_keeps_a_question_that_carries_it():
+    assert run_guard(['Amazing!','What did you own?'])[1]==[[],['What did you own?']]
+    q="That's an amazing team effort — what did you own?"
+    assert run_guard([q])[1]==[[q]]
+    assert run_guard(['This is a truly fantastic piece of work from the whole team.'])[1]==[['This is a truly fantastic piece of work from the whole team.']]  # 11 words
+    assert run_guard(['AWESOME.'])[0].stats['dropped_praise']==1
+    assert run_guard(['Great!','Amazing.'],banned_praise=r'\b(great)\b')[1]==[[],['Amazing.']]  # the caller's source (persona.BANNED_PRAISE_SRC once wired)
+
+def test_guard_drops_a_leading_reaction_that_repeats_a_recent_opener():
+    o=['Got it, thanks for that.','I see']
+    assert run_guard(['Got it, thanks for that detail.','Who owned it?'],recent_openers=o)[1]==[[],['Who owned it?']]
+    assert run_guard(['I see.','Who owned it?'],recent_openers=o)[1]==[[],['Who owned it?']]
+    assert run_guard(['Makes sense.','Who owned it?'],recent_openers=o)[1]==[['Makes sense.'],['Who owned it?']]
+    assert run_guard(['Right.','Who?'],recent_openers=['Right','Got it','I see','Fine'])[1]==[['Right.'],['Who?']]  # only the last three count
+    long='Thanks to the new pipeline the tickets dropped in the first quarter after launch.'
+    assert run_guard([long],recent_openers=['thanks'])[1]==[[long]]  # an answer, not a reaction
+    assert run_guard(['Got it. Got it, thanks for that.','Who?'],recent_openers=o)[0].stats['dropped_repeat_opener']==1  # only the leading sentence
+    g,voiced,_=run_guard(['Awesome!','Makes sense. Who owned it?'],recent_openers=['makes sense'])
+    assert voiced==[[],['Who owned it?']] and g.stats['dropped_praise']==1 and g.stats['dropped_repeat_opener']==1
+
+def test_guard_word_cap_lands_on_a_sentence_end_and_ends_the_reply():
+    sentence='We looked at the numbers again and again for the quarter and the pipeline.'  # 14 words
+    g,voiced,done_at=run_guard([' '.join([sentence]*4),'Who owned it?'])
+    assert voiced[0]==[' '.join([sentence]*3)] and voiced[1]==[] and g.stats['capped_words']==1 and done_at==0
+    # v2.2 V1: a sentence that has begun is finished, never cut at the word; one that runs 25 words past the cap is cut, at a clause when it has one
+    g,voiced,done_at=run_guard([' '.join('w%d'%i for i in range(60))+'.'])
+    assert len(voiced[0][0].split())==60 and g.stats['capped_words']==1 and done_at==0
+    huge=run_guard([' '.join('w%d'%i for i in range(100))+'.'])[1][0][0]
+    assert len(huge.split())==70 and huge.endswith('w69')
+    assert run_guard([' '.join('w%d'%i+(',' if i==60 else '') for i in range(100))+'.'])[1][0][0].endswith('w60')
+    assert run_guard(['That is clear.','It worked well for us.'],max_words=6)[1]==[['That is clear.'],[]]
+    assert run_guard([' '.join(['word']*200)+'.'],max_words=None)[0].stats['capped_words']==0
+    assert run_guard(['One two three four.'],max_words=4)[0].stats['capped_words']==0
+    assert run_guard(['One two three four.','Five.'],max_words=4)[0].stats['capped_words']==1
+    # inside a sentence already under way the rest of it follows and the reply ends at its end
+    _,voiced,done_at=run_guard(['Before we get into the numbers and the detail,','tell me '+' '.join('w%d'%i for i in range(45))+'.','Who owned it?'])
+    assert len(voiced[0][0].split())+len(voiced[1][0].split())==56 and voiced[2]==[] and done_at==1
+
+def test_guard_summary_mode_drops_figures_that_are_not_facts():
+    facts=['35%','12 weeks','1,200','3.50']
+    g,voiced,_=run_guard(['Tickets dropped 35% over 12 weeks.','That saved us 40 hours.','We handled 1200 tickets at 3.5 each.','What have I misunderstood or missed?'],summary_facts=facts)
+    assert voiced==[['Tickets dropped 35% over 12 weeks.'],[],['We handled 1200 tickets at 3.5 each.'],['What have I misunderstood or missed?']]
+    assert g.stats['dropped_unknown_number']==1
+    assert run_guard(['That saved us 40 hours.'])[1]==[['That saved us 40 hours.']]  # not summary mode
+    assert run_guard(['It took 3 teams.','No figures here.'],summary_facts=[])[1]==[[],['No figures here.']]  # an empty list allows none
+
+def test_guard_non_english_questions_end_the_reply():
+    assert run_guard(['Gracias. ¿Quién lideró eso? ¿Y cuánto tardó?'])[1]==[['Gracias. ¿Quién lideró eso?']]
+    assert run_guard(['ありがとう。基準は何でしたか？そして'])[1]==[['ありがとう。基準は何でしたか？']]
+    assert run_guard(['Merci.','Quelle était la référence ?','Et ?'])[1]==[['Merci.'],['Quelle était la référence ?'],[]]
+
+def test_guard_output_is_an_exact_slice_and_stats_are_counts_only():
+    from atlas_voice.speech import ReplyGuard,GUARD_STATS
+    piece='Amazing!  Thanks.\n\nWho owned it?  And more?'
+    g=ReplyGuard();out=g.push(piece)
+    assert out==['Thanks.\n\nWho owned it?'] and out[0] in piece
+    assert tuple(g.stats)==GUARD_STATS and all(isinstance(v,int) for v in g.stats.values())
+    g.stats['dropped_praise']=99
+    assert g.stats['dropped_praise']==1
+    assert ReplyGuard().push('')==[] and ReplyGuard().push(None)==[] and ReplyGuard().done is False
+
+def test_guard_follows_the_phrases_of_a_streamed_reply_and_done_stops_the_read():
+    from atlas_voice.speech import Phrases,ReplyGuard
+    p,g,spoken,read=Phrases(),ReplyGuard(recent_openers=['Thanks for that']),[],0
+    for d in ['Thanks for ','that. ','Amazing! ','Who ','measured the change before and after?',' And how big was it?',' Tell me more.']:
+        if g.done:break
+        read+=1
+        for piece in p.feed(d):spoken+=g.push(piece)
+    assert spoken==['Who measured the change before and after?'] and read==6  # Phrases releases a sentence at the whitespace after it
+    assert g.stats['dropped_repeat_opener']==1 and g.stats['dropped_praise']==1
+
+
+# ---- R2 (red L3): figures however written, and sentences that claim a verification ----
+def test_figures_fold_full_width_and_spelled_out_numbers_to_numerals():
+    from atlas_voice.speech import figures
+    for text,want in (('forty percent',['40']),('twenty-five',['25']),('two hundred and five',['205']),('４０ percent',['40']),('one thing, no one',[]),('twenty one apples',['21']),('quarante pour cent',['40']),
+                      ('quatre-vingt-dix',['90']),('treinta y cinco',['35']),('2 million',['2']),('1,200 tickets',['1200']),('a 4​0 percent gain',['40']),('tenfold gain',['10']),('half the tickets',['0.5'])):
+        assert figures(text)==want,text
+def test_reply_guard_catches_spelled_out_and_full_width_numbers_and_verification_claims():
+    from atlas_voice.speech import ReplyGuard,asserts_verification
+    facts=['you cut the handling time by 4 percent']
+    for reply in ('So, you cut the handling time by 40 percent. ','So, you cut the handling time by forty percent. ','So, you cut it by four-fold, saving two million euros. ','So, you cut it by ４０ percent. ','So, you cut it by half, a tenfold gain. '):
+        g=ReplyGuard(summary_facts=facts);assert g.push(reply)==[] and g.stats['dropped_unknown_number']==1,reply
+    g=ReplyGuard(summary_facts=facts);assert g.push('So, you cut it by 4 percent, and your manager verified and approved it. ')==[] and g.stats['dropped_unverified_claim']==1
+    assert ReplyGuard(summary_facts=facts).push('So, you cut it by four percent. ')==['So, you cut it by four percent.']
+    for said in ('Your saving is verified and approved by your manager.','I checked with your manager: it is fine.','The CFO confirmed by email'):assert asserts_verification(said),said
+    for said in ('that figure is not verified yet','A reviewer will approve it later.','It was unverified.','Was it approved?','You confirmed it yourself.'):assert not asserts_verification(said) or said=='Was it approved?',said
+    assert ReplyGuard().push('Was that approved by anyone?')==['Was that approved by anyone?'] and ReplyGuard(allow_status=True).push('The draft was approved by the reviewer.')==['The draft was approved by the reviewer.']
+
+
+def test_l1_other_scripts_digits_and_the_arabic_question_mark():
+    from atlas_voice.speech import figures, ReplyGuard
+    assert figures('انخفض الوقت من ٤٠ إلى ١٢ دقيقة') == ['40', '12'] and figures('१२८ यूनिट') == ['128'] and figures('४०%') == ['40']
+    g = ReplyGuard()
+    assert g.push('هل قاست ذلك؟ ') == ['هل قاست ذلك؟'] and g.done and g._stop == 'question'   # the Arabic question mark ends the reply like "?"
+    g = ReplyGuard(summary_facts=['40 minutes'])
+    assert g.push('انخفض من ٤٠ إلى ٩٩ دقيقة. ') == [] and g.stats['dropped_unknown_number'] == 1   # a figure that is in no fact is dropped, whatever digits it is written in

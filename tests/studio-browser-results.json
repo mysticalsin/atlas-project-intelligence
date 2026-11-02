@@ -166,7 +166,7 @@
       "passed": true
     },
     {
-      "name": "Mute and end are visible during live connection",
+      "name": "Mute and Stop interview are visible during live connection",
       "passed": true
     },
     {
@@ -190,15 +190,15 @@
       "passed": true
     },
     {
-      "name": "End closes microphone tracks",
+      "name": "Stop closes microphone tracks",
       "passed": true
     },
     {
-      "name": "End clears levels and playback claim",
+      "name": "Stop clears levels and playback claim",
       "passed": true
     },
     {
-      "name": "Privacy text no longer claims streaming after End",
+      "name": "Privacy text no longer claims streaming after Stop",
       "passed": true
     },
     {
@@ -206,11 +206,11 @@
       "passed": true
     },
     {
-      "name": "Ending from the live pill closes active audio",
+      "name": "Stopping from the live pill closes active audio",
       "passed": true
     },
     {
-      "name": "Restart is offered during a conversation",
+      "name": "Restart is not a second discard option in the Stop sheet (W1: one Discard everything), but stays enabled for the state machine",
       "passed": true
     },
     {
@@ -242,7 +242,7 @@
       "passed": true
     },
     {
-      "name": "Mute, Restart and End fit a 320 px phone",
+      "name": "Mute and Stop fit a 320 px phone",
       "passed": true
     },
     {

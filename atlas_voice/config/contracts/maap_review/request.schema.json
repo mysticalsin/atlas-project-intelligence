@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MAAP Review hand-off request (Atlas-side draft; rubric NOT configured)",
+  "x-status": "draft — from Atlas side; owner to confirm",
+  "x-source": "MAAP_Review_Specification.md §7 (MAAPReview data model); rubric and outcome fields TO CONFIRM",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "review_id",
+    "consultant_id",
+    "project_id",
+    "rubric_version"
+  ],
+  "properties": {
+    "review_id": {
+      "type": "string"
+    },
+    "consultant_id": {
+      "type": "string"
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "period_start": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "period_end": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "review_type": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "country": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "status": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "due_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "reviewer_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "participant_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "template_version": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "rubric_version": {
+      "type": "null",
+      "x-note": "MUST_BE_CONFIGURED_BY_PROCESS_OWNER; Atlas never fills it in"
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "entity_id",
+          "revision"
+        ],
+        "properties": {
+          "entity_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  }
+}

@@ -44,7 +44,7 @@ const shown=k=>k==='email'?profile?.email||'':profile?.fields?.[k]?.value||'';
 function chip(k,v){const f=profile?.fields?.[k];const t=k==='email'?'':C.chipFor(f,v);return h('span',{class:'tag field-chip','data-pf-chip':k,hidden:!t},t);}
 function say(t){const s=$('pfStatus');if(s)s.textContent=t||'';}
 function renderSection(){if(!section)return;section.replaceChildren();if(!profile){section.hidden=true;return;}section.hidden=false;
- section.append(h('h3',{text:'You'}),h('p',{class:'tiny muted',text:'ATLAS fills in forms with this, so you don’t have to. Change anything that’s wrong.'}));
+ section.append(h('p',{class:'small muted',text:'ATLAS fills in forms with this, so you don’t have to. Change anything that’s wrong.'}));
  if(profile.guessed&&C.value(profile,'name'))section.append(h('p',{class:'profile-guess small'},'Is this right? ',
   h('button',{class:'btn',type:'button',onclick:async e=>{e.currentTarget.disabled=true;try{await confirmGuess();say('Thanks. Your name is confirmed.');}catch(err){say(err.message);}}},'Yes, that’s me'),' ',
   h('button',{class:'quiet',type:'button',onclick:()=>$('pf_name')?.focus()},'Edit')));
@@ -75,9 +75,9 @@ function deleteProfile(){app()?.confirm('Delete my profile?','This deletes your 
  try{await app().libraryApi('/profile/delete',{method:'POST',body:{}});await load({fresh:true});app().toast('Your profile edits and consents were deleted.');if($('profileDialog')?.open)renderSection();}catch(e){app().toast(e.message);}});}
 // ---- the end-of-interview question when the name is only a guess (§3.5). It never blocks.
 function guessPrompt(el,projectId){const g=C.value(profile,'name');if(!el||!profile?.guessed||!g)return;
- const wrap=h('span',{class:'guess-prompt'},' Is your name '+g+'? ');
+ const wrap=h('span',{class:'guess-prompt'},' Is your name ',h('bdi',{},g),'? ');
  const yes=h('button',{class:'quiet',type:'button',onclick:async()=>{yes.disabled=true;edit.disabled=true;
-  try{await confirmGuess();await app()?.adoptProfileName?.(projectId);const t=' Thanks, '+(api.firstName()||api.confirmedName())+'.';document.querySelectorAll('.guess-prompt').forEach(w=>{w.textContent=t;});}catch(e){wrap.textContent=' '+e.message;}}},'Yes, that’s me');
+  try{await confirmGuess();await app()?.adoptProfileName?.(projectId);const n=api.firstName()||api.confirmedName();document.querySelectorAll('.guess-prompt').forEach(w=>{w.replaceChildren(' Thanks, ',h('bdi',{},n),'.');});}catch(e){wrap.textContent=' '+e.message;}}},'Yes, that’s me');
  const edit=h('button',{class:'quiet',type:'button',onclick:()=>{app()?.open('profileDialog');setTimeout(()=>$('pf_name')?.focus(),60);}},'Edit');
  wrap.append(yes,' ',edit);el.append(wrap);}
 // ---- project form: prefill chips computed at render time (§3.5)
@@ -95,11 +95,11 @@ function paintProjectForm({fresh=false,edit=false}={}){let fromProfile=false;
  const note=$('projectPrefillNote');if(note)note.hidden=!fromProfile;
  const hint=$('roleHint'),role=$('consultantRole')?.value.trim();if(hint)hint.hidden=!(profile&&role&&role===C.value(profile,'title'));}
 for(const [id] of FORM)$(id)?.addEventListener('input',()=>paintProjectForm());
-// §5.8: a typed N+1 email fills the N+1 name: your profile's N+1 when it is that email, else GET /people, which reads stored
+// §5.8: a typed N+1 email fills the N+1 name: your profile's N+1 when it is that email, else POST /people/lookup (the address in the body, never in a URL), which reads stored
 // directory rows only (never DNA, never anyone's profile). Only on a committed change, each found email once per page
 // (30 lookups an hour). Not found, refused or offline: nothing is filled and nothing is guessed.
 async function findPerson(e){if(n1Found.has(e))return n1Found.get(e);
- try{const p=await app().libraryApi('/people?email='+encodeURIComponent(e));
+ try{const p=await app().libraryApi('/people/lookup',{method:'POST',body:{email:e}}); // the address travels in the body, never in a URL (G2)
   if(typeof p?.name!=='string'||!p.name.trim()||!['dna','dna_export'].includes(p.from))return null;
   const hit={name:p.name.trim().slice(0,C.LIMITS.managerName),from:p.from};n1Found.set(e,hit);return hit;}catch{return null;}}
 $('n1Email')?.addEventListener('change',async()=>{const name=$('n1Name'),seq=++n1Seq,e=C.validEmail($('n1Email').value);if(!profile||!name)return;

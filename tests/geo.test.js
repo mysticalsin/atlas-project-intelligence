@@ -111,9 +111,9 @@ test('an explicit viewBox is honoured and non-numeric viewBoxes fall back to the
 test('output is deterministic',()=>{const o={states:{FRA:'recorded',DEU:'interview'},titles:{FRA:'a'},interactive:false};assert.equal(G.worldSVG(o),G.worldSVG(o));});
 
 test('browser mode: reads window.ATLAS_WORLD without require and runs with string code generation disabled (CSP, no eval)',()=>{const vm=require('node:vm');
- const ctx=vm.createContext({ATLAS_WORLD:JSON.parse(RAW)},{codeGeneration:{strings:false,wasm:false}});vm.runInContext(fs.readFileSync(path.join(ROOT,'src/geo.js'),'utf8'),ctx);
+ const ctx=vm.createContext({ATLAS_WORLD:JSON.parse(RAW)},{codeGeneration:{strings:false,wasm:false}});const SAFE=fs.readFileSync(path.join(ROOT,'src/safe-html.js'),'utf8');vm.runInContext(SAFE,ctx);vm.runInContext(fs.readFileSync(path.join(ROOT,'src/geo.js'),'utf8'),ctx);  // the page loads src/safe-html.js first
  const out=vm.runInContext("JSON.stringify([AtlasGeo.resolveLocations('Deutschland').countries[0].code,AtlasGeo.worldSVG({states:{DEU:'recorded'}}).length>1000,typeof require])",ctx);assert.equal(out,'["DEU",true,"undefined"]');
- const bare=vm.createContext({});vm.runInContext(fs.readFileSync(path.join(ROOT,'src/geo.js'),'utf8'),bare);assert.equal(vm.runInContext("AtlasGeo.worldSVG({})+'|'+JSON.stringify(AtlasGeo.resolveLocations('France'))",bare),'|{"countries":[],"unresolved":["France"],"ambiguous":[],"missing":false}');});
+ const bare=vm.createContext({});vm.runInContext(SAFE,bare);vm.runInContext(fs.readFileSync(path.join(ROOT,'src/geo.js'),'utf8'),bare);assert.equal(vm.runInContext("AtlasGeo.worldSVG({})+'|'+JSON.stringify(AtlasGeo.resolveLocations('France'))",bare),'|{"countries":[],"unresolved":["France"],"ambiguous":[],"missing":false}');});
 
 /* Generator */
 const python=()=>{const r=spawnSync('python3',['--version']);return r.status===0;};
@@ -122,3 +122,22 @@ test('generator refuses tampered input (hash mismatch) without writing output',{
  const r=spawnSync('python3',[SCRIPT,'--src',dir,'--out',out],{encoding:'utf8'});assert.notEqual(r.status,0);assert.match(r.stderr,/SHA-256 mismatch/);assert.ok(!fs.existsSync(out));fs.rmSync(dir,{recursive:true,force:true});});
 test('regeneration from the pinned sources is byte-identical to the committed asset',{skip:!process.env.ATLAS_NE_SRC&&'set ATLAS_NE_SRC to a folder holding the two pinned Natural Earth v5.1.2 files'},()=>{
  const r=spawnSync('python3',[SCRIPT,'--src',process.env.ATLAS_NE_SRC,'--check'],{encoding:'utf8'});assert.equal(r.status,0,r.stdout+r.stderr);assert.match(r.stdout,/identical/);});
+
+/* F1 audit: worldSVG is wrapped in trusted() by the page; every caller-supplied value and every value read from the data asset must be inert. */
+const inertSVG=(s,k)=>{assert.ok(s.startsWith('<svg')&&s.endsWith('</svg>'),k);assert.ok(!/<img|<script/i.test(s),k+' tag injected');for(const t of s.match(/<[a-zA-Z][^>]*>/g)||[])assert.ok(!/\son[a-z]+\s*=/i.test(t.replace(/"[^"]*"/g,'""')),k+' handler: '+t.slice(0,90));assert.ok(!s.includes(XSS2),k+' break-out');};
+test('F1 audit: hostile states, titles, label, idPrefix, viewBox and aspect cannot inject markup',()=>{
+ const H=XSS+XSS2,st={FRA:'recorded',DEU:'interview',ESP:'sheet',[XSS2]:'recorded',ITA:XSS2,GBR:'constructor',BEL:'count-3" onload="x',POL:'__proto__'};
+ const tt={FRA:H,DEU:XSS2,ESP:'ok',constructor:H,__proto__:H,[XSS2]:H};
+ for(const interactive of [false,true]){const s=G.worldSVG({states:st,titles:tt,label:H,idPrefix:H,interactive,viewBox:['"><x>',1,2,3],aspect:'"><x>'});inertSVG(s,'worldSVG '+interactive);
+  assert.equal((s.match(/data-state=/g)||[]).length,(s.match(/data-state="(recorded|interview|sheet|count-[1-5])"/g)||[]).length,'only whitelisted states are printed');
+  assert.ok(!/data-state="(constructor|__proto__)/.test(s)&&!/data-code="[^"]*[<>]/.test(s));assert.match(s,/<pattern id="[\w-]+-hatch"/);}
+ inertSVG(G.worldSVG({label:H}),'label only');inertSVG(G.worldSVG(),'no options');inertSVG(G.worldSVG({states:{FRA:'recorded'},titles:{FRA:12345}}),'non-string title');});
+test('F1 audit: values read from the data asset (paths, graticule, markers, size, country names) are escaped too',()=>{const vm=require('node:vm');
+ const w=JSON.parse(RAW),codes=Object.keys(w.countries),c0=codes.find(c=>w.countries[c][F.path]);
+ w.countries[c0][F.path]+=XSS2;w.countries[c0][F.name]=XSS;w.graticule+=XSS2;w.width=XSS2;w.height=XSS2;if(w.markers.length)w.markers[0]=[w.markers[0][0],XSS2,XSS];
+ const ctx=vm.createContext({ATLAS_WORLD:w});vm.runInContext(fs.readFileSync(path.join(ROOT,'src/safe-html.js'),'utf8'),ctx);vm.runInContext(fs.readFileSync(path.join(ROOT,'src/geo.js'),'utf8'),ctx);
+ ctx.o={states:{[c0]:'recorded'},interactive:true};ctx.mk=w.markers.length?w.markers[0][0]:null;if(ctx.mk)ctx.o.states[ctx.mk]='sheet';
+ const s=vm.runInContext('AtlasGeo.worldSVG(o)',ctx);assert.ok(s.length>0);assert.ok(!/<img|<script/i.test(s)&&!s.includes(XSS2),'asset values are inert');assert.ok(s.includes('&quot;&gt;&lt;script&gt;'));});
+test('F1 audit: the escape is the shared src/safe-html.js one and geo needs it loaded (page order), failing loudly otherwise',()=>{const vm=require('node:vm');
+ assert.throws(()=>vm.runInContext(fs.readFileSync(path.join(ROOT,'src/geo.js'),'utf8'),vm.createContext({})),{name:'TypeError'});
+ const ctx=vm.createContext({});vm.runInContext(fs.readFileSync(path.join(ROOT,'src/safe-html.js'),'utf8'),ctx);vm.runInContext(fs.readFileSync(path.join(ROOT,'src/geo.js'),'utf8'),ctx);assert.equal(typeof vm.runInContext('AtlasGeo.worldSVG',ctx),'function');});

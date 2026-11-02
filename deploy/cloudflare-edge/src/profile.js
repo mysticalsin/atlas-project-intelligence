@@ -4,7 +4,8 @@
 // Runs inside the LibraryStore DO; identity arrives only in headers the Worker overwrites (x-atlas-user, x-atlas-email,
 // x-atlas-idp). Every DNA or HR path is gated by DATA_MODE=production (§0.7): the test deployment accepts synthetic
 // addresses only. The pull connector's shape is ASSUMED (§5.3); push (§5.4) and the CSV export (§5.6) are equal options.
-import { str, email as validEmail, obj, fail, inList, rateLimit } from './util.js';
+import { str, name as nameText, email as validEmail, obj, fail, inList, rateLimit } from './util.js';
+import * as privacy from './privacy.js';
 
 // Flipped by the owning track only when the zero-config acceptance suites pass (WOW_SPEC §2.1, §2.5): flipped in Z-S2
 // after tests/zero_config_edge_browser.py and tests/zero_config_browser.py passed locally.
@@ -47,8 +48,8 @@ export function testAddress(address) {
 
 // ---- Sign-in name claims (§5.5): mapped from the verified Access JWT `custom` object, each at most 100 characters.
 export function nameClaims(custom) {
-  const c = obj(custom), s = k => typeof c[k] === 'string' ? str(c[k], 100) : '';
-  const given = s('given_name'), family = s('family_name'), name = s('name') || str([given, family].filter(Boolean).join(' '), 100), out = {};
+  const c = obj(custom), s = k => typeof c[k] === 'string' ? nameText(c[k], 100) : '';
+  const given = s('given_name'), family = s('family_name'), name = s('name') || nameText([given, family].filter(Boolean).join(' '), 100), out = {};
   if (name) out.name = name;
   if (given) out.given_name = given;
   if (family) out.family_name = family;
@@ -448,15 +449,19 @@ export async function routes(ctx) {
       if (!CONSENT_KINDS.includes(b.kind) || b.version !== 1 || typeof b.granted !== 'boolean') throw fail(400, 'Unknown consent.');
       const g = await gather(lib, env, user, user.idp, opts), consents = { ...g.consents };
       if (b.granted) consents[b.kind] = { version: 1, at: g.now }; else delete consents[b.kind];
+      // G2: every grant and every withdrawal is also appended as an immutable receipt (the profile row only holds the current state, and goes with the profile).
+      if (user.subj) privacy.recordReceipts(lib, user.subj, [{ purpose: b.kind === 'spokenAsk' ? 'spoken_ask' : 'jev_rating', granted: b.granted }], { channel: 'profile' });
       return { body: build(save(lib, g, { consents }, user.email, 'consent', b.kind + ' ' + (b.granted ? 'granted' : 'revoked'))) };
     }
   }
-  if (word === 'people' && method === 'GET' && !action) {
-    // One exact email -> name and job title from stored rows: never the N+1, never DNA, never anyone's profile.
+  if (word === 'people' && method === 'POST' && action === 'lookup') {
+    // One exact email -> name and job title from stored rows: never the N+1, never DNA, never anyone's profile. The address travels in the POST BODY (G2): a URL
+    // lands in access logs, a body does not. The old GET with ?email= is gone. The lookup of another person is audited (an id-free action row).
     if (!rateLimit(lib, 'people:' + user.email, 30, 3600000)) throw fail(429, 'Too many lookups. Try again in an hour.');
-    const e = validEmail(ctx.url?.searchParams.get('email'));
+    const e = validEmail(obj(ctx.body).email);
     if (!e) throw fail(400, 'Type one exact email address.');
     const p = lookupPerson(lib, e);
+    lib.logRead('people', user.email, 'people lookup', p ? 'found' : 'none'); // the audit names who looked, never whom
     if (!p) throw fail(404, 'Nobody with that email in the directory.');
     return { body: p };
   }

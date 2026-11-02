@@ -55,7 +55,7 @@ Open `http://localhost:8080` for the defaults. The safe preview is port 8000 and
 | `ATLAS_ORIGIN` | `http://localhost:8080` | Exact scheme/host/port, no path. Must match browser, proxy and callbacks. |
 | `ATLAS_BIND` / `ATLAS_PORT` | `127.0.0.1` / `8080` | Loopback in local mode. `localhost` versus `127.0.0.1` in the browser is not interchangeable under exact Host/Origin checks. |
 | `ATLAS_AUTH` | `local` | `local` for one trusted developer; `entra` for shared use. |
-| `ATLAS_MAX_SECONDS` | `900` | Whole-interview cap; code accepts 30–900 seconds (the interview is at most 15 minutes). |
+| `ATLAS_MAX_SECONDS` | `1200` | Whole-interview cap; code accepts 30–2700 seconds (the interview is at most 20 minutes). |
 | `ATLAS_MAX_INTERVIEWS` | `1` | Concurrent interviews per gateway process, 1–100; one per signed-in user. Must be 1 for the stock PersonaPlex worker. With `ATLAS_MAX_SECONDS` this bounds worst-case hosted spend. |
 | `ATLAS_MAX_SESSIONS` | `500` | Signed-in sessions (1 hour each) held by one process, 10–20000. Size from peak sign-ins per hour during a campaign; beyond it new sign-ins get HTTP 503. |
 | `ATLAS_HANDSHAKE_TIMEOUT` | `90` | Ready timeout; code accepts 5–180 seconds. |
@@ -102,7 +102,7 @@ The live site (`deploy/cloudflare-edge/`, docs/WOW_ZERO_CONFIG.md) needs nothing
 
 | Variable / decision | Contract |
 |---|---|
-| `DATA_MODE` | Unset = test mode: the "TEST DEPLOYMENT · SYNTHETIC DATA ONLY" banner, readiness `edge-deployment-test-data-only`, DNA push and pull `BLOCKED_EXTERNAL`, the DNA-export CSV accepts reserved test addresses only (`example.com`, `.test`, …). `production` only on a Mantu-owned Cloudflare account after Mantu IT approval and DPO sign-off on the six columns (email, name, first name, job title, N+1 name, N+1 email) and on the memory consent sentence. |
+| `DATA_MODE` | Unset = test mode: the "TEST DEPLOYMENT · DPO sign-off pending · Privacy notice" banner (it no longer says synthetic data only: real interviews run here), readiness `edge-deployment-test-data-only`, DNA push and pull `BLOCKED_EXTERNAL`, the DNA-export CSV accepts reserved test addresses only (`example.com`, `.test`, …). `production` only on a Mantu-owned Cloudflare account after Mantu IT approval and DPO sign-off on the six columns (email, name, first name, job title, N+1 name, N+1 email) and on the memory consent sentence. |
 | `DIRECTORY_PUSH_SECRET` (secret) | DNA push, the recommended option: a DNA/HR job posts rows to `POST /api/directory/push` with this bearer secret; add a Cloudflare Access bypass for `/api/directory/push` only. Production mode only. |
 | `DNA_PROFILE_URL`, `DNA_AUTH_HEADER`, `DNA_FIELD_MAP`, `DNA_API_KEY` (secret) | DNA pull, shape **ASSUMED** (not confirmed by Mantu IT): https template with one `{email}` or `{oid}`, header name (default `Authorization`), JSON field map, and the full header value. Never called when push is set. Production mode only. |
 | DNA export CSV | An admin uploads it in Insights → People directory; only the six approved columns leave the browser. Real exports only in production mode. |
@@ -113,7 +113,53 @@ The live site (`deploy/cloudflare-edge/`, docs/WOW_ZERO_CONFIG.md) needs nothing
 | **D1** spoken Ask (Tony confirms) | A code constant, `SPOKEN_ASK_APPROVED` in `deploy/cloudflare-edge/src/features.js`, `true` in this tree (D1 recorded as approved on 2026-09-29; set it back to `false` and spoken Ask is simply absent). A voice question in Ask asks for consent at the moment of use ("Allow this time" / "Always allow for me", stored in the profile, revocable), shows "Don't say client names" and a recording indicator on every recording, and the Worker checks the consent before transcribing. |
 | **D2** PDF briefs (recorded) | PDF briefs follow bids. Workers AI `toMarkdown` on a PDF is text extraction (re-verified 2026-09-29), run with PDF metadata off; images stay refused; a scanned PDF with no text gets an explicit message. Re-check at each dependency review. |
 
-Private memory stays in the one consent sentence whenever `HINDSIGHT_API_KEY` is set and the person's memory switch is on; without the key the sentence and the switch are absent.
+Private memory is **off by default** (v2.2 G2). With `HINDSIGHT_API_KEY` and `HINDSIGHT_BANK_SECRET` set the consent dialog offers it as its own tick and the profile as a switch, each recorded as a consent receipt; without the key the tick and the switch are absent. When on it keeps short structured project facts only (no conversation text).
+
+### Agent Brain v2.1 switches (Cloudflare edge Worker variables)
+All optional; each default is the new behaviour and the legacy value is the rollback. Verified in code (`session.js sessionFlags`, `app.js`, `checkpoint.js`, `adapters.js`); not exercised against a deployed Worker. Rollback of a deployed build is a Worker version rollback (Tony). Overview with the reasoning: `AGENT.md` section 5.
+
+| Variable | Default | Contract |
+|---|---|---|
+| `ATLAS_SELECTOR` | `v2` | `legacy` restores the analyst guidance one turn late (selector off) |
+| `ATLAS_REPLY_GUARD` | `on` | `off` removes the code enforcement of one question, praise, repeated openers and length |
+| `ATLAS_ACKS` | `content` | `legacy` restores the content-blind fillers |
+| `ANALYST_WAIT_MS` | `0` | Milliseconds (at most 1500) to wait for the analyst while the acknowledgement plays; Tony chose 0 |
+| `TALKER_MAX_TOKENS` | `160` | Maximum tokens of a spoken reply (was 300) |
+| `SPECULATIVE_STT` | off | Reserved. Read, no effect: speculative transcription is not built |
+| `ASR_CONFIRM_TAU` | `0.55` | Recogniser confidence below which a number or name is confirmed aloud. Uncalibrated pilot value |
+| `ATLAS_CHECKPOINT` | on | `off`: no interview checkpoints (no resume). Checkpoints need transcript consent and last 24 hours from the first write |
+| `ATLAS_EVIDENCE_WORKFLOW` | `on` | `off`: a confirmed summary is not filed; fan-out, status and sync routes off |
+| `ATLAS_ADAPTERS` | `off` | `mock` runs the four destination mocks; `live` is refused (`BLOCKED_EXTERNAL`: no owner contract exists) |
+| `ATLAS_CSP` | `enforce` | `report-only` enforces the pre-F1 policy and only reports the strict script CSP (rollout week; also read by the Python gateway). See `handoff/SECURITY_RUNBOOK.md` |
+
+Privacy facts for the consent text (24-hour checkpoint, text mode, keep private, drafts): `docs/INTEGRATIONS.md`, "Privacy and consent wording for the interview". The consent dialog now has the 24-hour saved-interview choice, memory, and the privacy notice as separate rows (v2.2 G2); wording lives in `atlas_voice/config/privacy.json` and the notice is served at `/privacy` (`docs/privacy/`).
+
+### Platform security (B1, 2026-10-31; runbook: `handoff/SECURITY_RUNBOOK.md`)
+Verified in code and unit tests; not exercised against a deployed Worker.
+
+| Variable | Default | Contract |
+|---|---|---|
+| `HINDSIGHT_BANK_SECRET` (secret) | none | **Required whenever `HINDSIGHT_API_KEY` is set.** Without it memory is switched off with a clear message (bootstrap `memory:false`, `/api/memory` 503, interviews start without memory). Derivation unchanged when set. Existing deployment: set it to `atlas-hindsight:` + the current `CSRF_SECRET` to keep every bank |
+| `HINDSIGHT_ALLOW_DERIVED_BANK` | off | `1`: the old derivation from `CSRF_SECRET` for a short transition (do not rotate `CSRF_SECRET` while on) |
+| `ATLAS_READ_ONLY` | off | `1`: every non-GET request and every new interview answers 503 |
+| `ATLAS_AI_OFF` | off | `1`: no model call anywhere; interview start and sheet/classify/transcribe answer 503 politely; library review/embeddings/JEV rating off |
+| `ATLAS_BLOCKED_SUBS` | none | Comma list of subject keys from the security log (`subj`, at least 12 hex characters): 403 for those people |
+| `ATLAS_EXTERNAL_OFF` | off | `1`: the external confirmer role, `/confirm` and `/api/library/confirmations/*` answer 403 |
+| `ATLAS_INBOUND_OFF` | off | `1`: triggers, DNA push, Teams bot and tab answer 503 before any secret is checked |
+| `RL_INTERVIEW_HOUR`, `RL_INTERVIEW_DAY` | 6, 20 | Fresh interview starts per person (a resume is not a start). Product-visible: Tony decides the numbers |
+| `RL_SHEET_HOUR`, `RL_CLASSIFY_HOUR`, `RL_TRANSCRIBE_HOUR` | 20, 30, 60 | Requests per person per hour |
+| `ATLAS_CSRF_BIND` | bound to the sign-in | `sub`: bind the CSRF token to the person only (the old behaviour). A rollback for one risk: if Access re-mints the application token (a new `iat`) while a page stays open, an open page's token goes stale until it reloads. **Not yet observed on a real Access deployment**; if 403 CSRF errors appear after long idle periods, set this and tell the owner |
+| `SETTINGS_KEY` (secret) | created by `deploy.sh` | **Seals the keys an admin saves in Settings → Voice** (v2.2 V2): AES-GCM-256 under a key derived from it with HKDF-SHA256 (info `atlas-settings`), a random 12-byte IV per write, additional data `atlas-settings:v1:elevenlabs`. At least 32 characters. Without it (or shorter) the Voice tab says keys cannot be stored here; an `ELEVENLABS_API_KEY` set by the operator still works. Rotating it makes saved keys unreadable until they are saved again |
+| `SETTINGS_KEY_PREVIOUS` (secret, optional) | none | Comma list of earlier `SETTINGS_KEY` values, tried to read a key sealed before a rotation. Remove it once the key has been saved again |
+| `ATLAS_SETTINGS_KEYS` | on | `off`: ignore any key and voice choice stored in Settings; only the environment (`ELEVENLABS_*`) and Workers AI are used. A rollback switch; the stored rows stay |
+| `ELEVENLABS_API_KEY` (secret), `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL` | none, `21m00Tcm4TlvDq8ikWAM`, `eleven_flash_v2_5` | The server-level ElevenLabs configuration (`set-keys.sh`). What an admin saves in Settings → Voice (provider, voice, model, key) wins over these; a bad voice id or an unlisted model here is replaced by the default |
+| `ELEVENLABS_PROVIDER` | `auto` | `auto` \| `aura` \| `elevenlabs`: the choice used when nobody has saved one in Settings. `auto` = Workers AI for English and Spanish, ElevenLabs only for the other languages (as before) |
+| `LOG_SALT` (secret, optional) | derived from `CSRF_SECRET` | Key for the hashed network address in security events |
+| `ACCESS_JWKS_TIMEOUT_MS` | 3000 | Timeout of the Access signing-key fetch (50 to 10000) |
+
+**Voice settings (v2.2 V2).** An admin opens Settings (avatar or Ctrl/Cmd + comma) → Voice: provider (Automatic, Workers AI, ElevenLabs), the ElevenLabs key (write-only; checked with `GET /v2/voices?page_size=1`, 5 s, no redirects, then `/v1/user` for the plan; stored sealed; never shown again, not even its last characters), a voice from the account, a model (Flash v2.5 default) and **Test voice** (a fixed phrase, played from a blob). Routes: `GET|PUT /api/admin/voice`, `PUT|DELETE /api/admin/voice/key`, `GET /api/admin/voice/voices`, `POST /api/admin/voice/test`: admin only, Origin + CSRF, rate limited (key 10/h, test 20/h, voices 60/h, settings 60/h), refused under `ATLAS_READ_ONLY`; the three that call ElevenLabs or Workers AI also stop under `ATLAS_AI_OFF`. The voice engine reads `voiceConfig(env, library)` (`settings.js`): stored admin choice, then the environment, then Workers AI; cached 60 s per isolate, so a running interview keeps its voice until it ends and another isolate sees a change within a minute. Voice previews from ElevenLabs are not played (the page allows media from `blob:` only); use Test voice. Not verified against the real ElevenLabs service: the tests use a fake.
+
+Switch values are `1`, `true`, `on` or `yes`; anything else is off. Switches are Worker variables: a change needs a deploy. The CSRF token is now bound to the Access sign-in (it changes at each new sign-in); the page re-reads it after its own re-sign-in flow, but not after a silent token re-issue (see `ATLAS_CSRF_BIND`; a later frontend wave should re-read `/api/bootstrap` once on a CSRF 403).
 
 ### Optional NVIDIA / Riva route
 Use `ATLAS_VOICE_PROVIDER=personaplex`; follow `docs/NVIDIA_SETUP.md`. Run `doctor.py --profile nvidia` for local prerequisite checks. Hosted credentials do not create a NVIDIA service.

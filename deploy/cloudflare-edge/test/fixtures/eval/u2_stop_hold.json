@@ -1,0 +1,53 @@
+{
+ "id": "U2-C",
+ "title": "\"That's all\" before the essentials are covered: ATLAS says what is missing and asks once more (at most twice); a third request is respected",
+ "pack": "Tony, 2026-10-31 (v2.2 U2): challenge, do not invite a way out; DECISION_LOG D-U2-3 / D-U2-4",
+ "audit": [
+  "start",
+  "consent_given",
+  "request_summary"
+ ],
+ "turns": [
+  {
+   "said": "We rebuilt the claims intake process for the insurance client during the pilot, a big change for the whole team.",
+   "expect": {
+    "move": {
+     "kind": "ask",
+     "intent": "team_ownership",
+     "field": "contribution"
+    }
+   }
+  },
+  {
+   "said": "That is everything, I am done.",
+   "expect": {
+    "move": {
+     "kind": "ask",
+     "why": "stop_missing:problem,contribution,outcome>ladder:problem"
+    },
+    "ack": null,
+    "scripted_says": "I'm still missing the problem, your part and the result"
+   }
+  },
+  {
+   "said": "No, that's all for now, thank you.",
+   "expect": {
+    "move": {
+     "kind": "ask",
+     "why": "stop_missing:problem,contribution,outcome>ladder:outcome"
+    },
+    "ack": null,
+    "scripted_says": "before we finish"
+   }
+  },
+  {
+   "said": "No, I think that is all, thank you.",
+   "expect": {
+    "move": {
+     "kind": "summary",
+     "why": "summary:stop"
+    }
+   }
+  }
+ ]
+}

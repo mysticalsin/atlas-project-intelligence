@@ -1,0 +1,19 @@
+// Local-only config for the Worker-backed e2e (make test-e2e-worker). Never deployed: no AI binding (fakes in dev/e2e-worker.mjs), no cron, no
+// routes, workers_dev off. The test passes ORIGIN, CSRF_SECRET and E2E_JWKS with --var at start-up.
+{
+  "name": "atlas-e2e-local",
+  "main": "./e2e-worker.mjs",
+  "compatibility_date": "2025-09-01",
+  "workers_dev": false,
+  "durable_objects": { "bindings": [{ "name": "INTERVIEW", "class_name": "Interview" }, { "name": "LIBRARY", "class_name": "LibraryStore" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Interview"] }, { "tag": "v2", "new_sqlite_classes": ["LibraryStore"] }],
+  "rules": [{ "type": "Text", "globs": ["**/*.html"], "fallthrough": true }],
+  "vars": {
+    "ACCESS_TEAM_DOMAIN": "access.e2e.invalid",
+    "ACCESS_AUD": "e2e-aud",
+    "TALKER_MODEL": "local", "ANALYST_MODEL": "local-analyst", "STT_MODEL": "local-stt", "TTS_MODEL": "local-tts", "TTS_VOICE": "local",
+    "ADMIN_EMAILS": "admin@mantu.com",
+    "REVIEWER_EMAILS": "rev@mantu.com",
+    "ATLAS_ADAPTERS": "mock"
+  }
+}

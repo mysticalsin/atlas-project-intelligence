@@ -5,17 +5,23 @@
 // bounds and the hint thresholds are uncalibrated pilot values (Q2). While READY is false the helpers called from
 // existing paths (winSignals from Library.recommend, guidance) keep their S0 neutral values.
 import { fail } from './util.js';
+import { processable } from './privacy.js';
 import { ensure } from './bids.js';
 import { claimSummary } from './claims.js';
 import { NUMERIC_SRC } from './policy.generated.js';
 
 export const READY = true;
 export const MIN_N = 5;
+const PER_BIDDER_CAP = 3, DECIDED_PER_BIDDER = 25; // see tallies(): per bidder and story; per bidder in the totals
+// X1 (red L1, old): a figure is shown or used only when it rests on decided bids of at least MIN_BIDDERS different people, and one person's bids count at most PER_BIDDER_CAP times per
+// proof type, so one account (or two) cannot move a company-wide statistic however many bids it makes.
+const MIN_BIDDERS = 3;
 const OVERALL_MIN = 10, HINT_GAP = 0.15, Z = 1.959963984540054; // Z: the two-sided 95% normal quantile
 const TYPES = ['quantified+confirmed', 'quantified+unconfirmed', 'qualitative+confirmed', 'qualitative+unconfirmed'];
 const HINTS = ['quantified', 'confirmed'];
 const LABEL = 'Association, not causation. Weights are uncalibrated.';
 const LOW_N = `Fewer than ${MIN_N} decided bids: not shown.`;
+const LOW_BIDDERS = `Decided bids from fewer than ${MIN_BIDDERS} different people: not shown.`;
 const NUMERIC = new RegExp(NUMERIC_SRC, 'i'); // the interview's own "quantified" rule (atlas_voice.quality.NUMERIC)
 const r4 = x => Math.round(x * 1e4) / 1e4;
 
@@ -31,7 +37,7 @@ export function wilson(won, n) {
 export function proofTypeOf(lib, row) {
   const a = Array.isArray(row?.data?.answers) ? row.data.answers : [];
   const quantified = NUMERIC.test(String(a[3] || '')) || NUMERIC.test(String(a[4] || ''));
-  const confirmed = (Number(claimSummary(lib, row)?.confirmed) || 0) > 0;
+  const confirmed = (Number(claimSummary(lib, row, { independent: true })?.confirmed) || 0) > 0; // a self-named confirmer is not the N+1 (red-team M3)
   return (quantified ? 'quantified' : 'qualitative') + '+' + (confirmed ? 'confirmed' : 'unconfirmed');
 }
 
@@ -47,20 +53,33 @@ function tallies(lib) {
   if (hit?.sig === sig) return hit;
   // Per story, one use is one bid ((bid_id, ref_id) is the key). Per proof type, `used` counts uses but outcomes count
   // distinct bids (bidsOf: type -> bid id -> outcome), so one bid citing five stories of a type is one decided bid.
-  const blank = () => ({ used: 0, won: 0, lost: 0, pending: 0 }), byType = new Map(TYPES.map(t => [t, blank()])), byRef = new Map(), bidsOf = new Map(TYPES.map(t => [t, new Map()]));
-  const count = (s, outcome) => { if (outcome === 'won') s.won++; else if (outcome === 'lost') s.lost++; else if (outcome === 'pending') s.pending++; };
-  for (const r of lib.rows('SELECT u.bid_id, u.ref_id, u.proof_type, b.outcome FROM bid_references u JOIN bids b ON b.id = u.bid_id')) {
-    if (byType.has(r.proof_type)) { byType.get(r.proof_type).used++; bidsOf.get(r.proof_type).set(r.bid_id, r.outcome); }
+  const blank = () => ({ used: 0, won: 0, lost: 0, pending: 0, bidders: new Set() }), byType = new Map(TYPES.map(t => [t, blank()])), byRef = new Map(), bidsOf = new Map(TYPES.map(t => [t, new Map()]));
+  const count = (s, outcome, bidder) => { if (outcome === 'won') s.won++; else if (outcome === 'lost') s.lost++; else if (outcome === 'pending') s.pending++; if (bidder && (outcome === 'won' || outcome === 'lost')) s.bidders.add(bidder); };
+  // Red-team L1: anyone can create bids and set their outcome, so a use counts only when (a) the bidder is not the story's own owner or a
+  // listed consultant (nobody promotes their own story), and (b) it is among the first PER_BIDDER_CAP uses of that story by that bidder
+  // (one account cannot move a rate alone; it takes several people). Totals count each bidder's decided bids up to a cap as well.
+  const seenBy = new Map(), typeBids = new Map();
+  for (const r of lib.rows(`SELECT u.bid_id, u.ref_id, u.proof_type, b.outcome, b.owner AS bidder, f.owner AS ref_owner, f.members AS ref_members
+      FROM bid_references u JOIN bids b ON b.id = u.bid_id LEFT JOIN refs f ON f.id = u.ref_id ORDER BY u.used_at, u.rowid`)) {
+    if (r.bidder && (r.bidder === r.ref_owner || String(r.ref_members || '').includes(',' + r.bidder + ','))) continue;
+    const key = r.bidder + '\n' + r.ref_id, n = (seenBy.get(key) || 0) + 1;
+    seenBy.set(key, n);
+    if (n > PER_BIDDER_CAP) continue;
+    if (byType.has(r.proof_type)) {
+      // one bidder's distinct bids per proof type, first PER_BIDDER_CAP only
+      const tk = r.bidder + '\n' + r.proof_type, mine = typeBids.get(tk) || typeBids.set(tk, new Set()).get(tk);
+      if (mine.has(r.bid_id) || mine.size < PER_BIDDER_CAP) { mine.add(r.bid_id); byType.get(r.proof_type).used++; bidsOf.get(r.proof_type).set(r.bid_id, { outcome: r.outcome, bidder: r.bidder }); }
+    }
     if (!byRef.has(r.ref_id)) byRef.set(r.ref_id, blank());
-    const s = byRef.get(r.ref_id); s.used++; count(s, r.outcome);
+    const s = byRef.get(r.ref_id); s.used++; count(s, r.outcome, r.bidder);
   }
-  for (const [type, outcomes] of bidsOf) for (const outcome of outcomes.values()) count(byType.get(type), outcome);
-  const t = lib.rows("SELECT COUNT(*) AS bids, SUM(CASE WHEN outcome IN ('won', 'lost') THEN 1 ELSE 0 END) AS decided FROM bids")[0] || {};
+  for (const [type, bids] of bidsOf) for (const { outcome, bidder } of bids.values()) count(byType.get(type), outcome, bidder);
+  const t = lib.rows("SELECT (SELECT COUNT(*) FROM bids) AS bids, SUM(CASE WHEN outcome IN ('won', 'lost') THEN 1 ELSE 0 END) AS decided FROM (SELECT outcome, ROW_NUMBER() OVER (PARTITION BY owner ORDER BY created_at, rowid) AS n FROM bids) WHERE n <= ?", DECIDED_PER_BIDDER)[0] || {};
   const entry = { sig, byType, bidsOf, byRef, totals: { bids: t.bids || 0, decided: t.decided || 0 } };
   cache.set(lib, entry);
   return entry;
 }
-const cell = s => { const decided = s.won + s.lost, shown = decided >= MIN_N; return { decided, winRate: shown ? r4(s.won / decided) : null, ci95: shown ? wilson(s.won, decided) : null, caveat: shown ? '' : LOW_N }; };
+const cell = s => { const decided = s.won + s.lost, shown = decided >= MIN_N && s.bidders.size >= MIN_BIDDERS; return { decided, winRate: shown ? r4(s.won / decided) : null, ci95: shown ? wilson(s.won, decided) : null, caveat: shown ? '' : decided >= MIN_N ? LOW_BIDDERS : LOW_N }; };
 
 // Ranking feedback for F1 match and Library.recommend: refId -> { decided, won, winRate, boost }. The boost is
 // clamp(0.1 x (story rate - overall rate), -0.03, +0.05), only with at least 10 decided bids overall and 5 decided
@@ -73,7 +92,7 @@ export function winSignals(lib) {
     for (const s of t.byRef.values()) { won += s.won; lost += s.lost; }
     const overall = won + lost ? won / (won + lost) : 0, enough = t.totals.decided >= OVERALL_MIN;
     t.signals = new Map([...t.byRef].map(([id, s]) => {
-      const decided = s.won + s.lost, rate = decided ? s.won / decided : 0, counts = decided >= MIN_N;
+      const decided = s.won + s.lost, rate = decided ? s.won / decided : 0, counts = decided >= MIN_N && s.bidders.size >= MIN_BIDDERS;
       return [id, { decided, won: s.won, winRate: counts ? r4(rate) : null, boost: enough && counts ? r4(Math.max(-0.03, Math.min(0.05, 0.1 * (rate - overall)))) : 0 }];
     }));
   }
@@ -90,10 +109,10 @@ export function guidance(lib) {
   if (!t.guidance) {
     const group = test => {
       const outcomes = new Map(); for (const [type, m] of t.bidsOf) if (test(type)) for (const [id, o] of m) outcomes.set(id, o);
-      let won = 0, lost = 0; for (const o of outcomes.values()) { if (o === 'won') won++; else if (o === 'lost') lost++; }
-      return { decided: won + lost, rate: won + lost ? won / (won + lost) : 0 };
+      let won = 0, lost = 0; const who = new Set(); for (const { outcome, bidder } of outcomes.values()) { if (outcome === 'won') won++; else if (outcome === 'lost') lost++; else continue; who.add(bidder); }
+      return { decided: won + lost, rate: won + lost ? won / (won + lost) : 0, who: who.size };
     };
-    const beats = (a, b) => a.decided >= MIN_N && b.decided >= MIN_N && a.rate - b.rate >= HINT_GAP - 1e-9;
+    const beats = (a, b) => a.decided >= MIN_N && b.decided >= MIN_N && a.who >= MIN_BIDDERS && b.who >= MIN_BIDDERS && a.rate - b.rate >= HINT_GAP - 1e-9;
     const pct = g => `${Math.round(g.rate * 100)}% of ${g.decided}`;
     const q = group(x => x.startsWith('quantified')), ql = group(x => x.startsWith('qualitative')), c = group(x => x.endsWith('+confirmed')), u = group(x => x.endsWith('+unconfirmed'));
     const decided = t.totals.decided;
@@ -111,7 +130,7 @@ function stats(lib, user) {
   const stories = [];
   for (const [refId, s] of t.byRef) {
     const row = lib.row(refId);
-    if (lib.access(row, user) !== 'full') continue; // reviewers and admins: every active story; anyone else: their own (Q13)
+    if (lib.access(row, user) !== 'full' || !processable(lib, row.owner, 'matching')) continue; // reviewers and admins: every active story; anyone else: their own (Q13); not a restricted or objecting owner's (G2)
     const c = cell(s);
     stories.push({ refId, title: row.data.title, used: s.used, won: s.won, lost: s.lost, pending: s.pending, decided: c.decided, winRate: c.winRate, ci95: c.ci95, caveat: c.caveat });
   }

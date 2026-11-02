@@ -141,11 +141,16 @@ try:
    p.goto((base or A)+'/?as='+email);p.wait_for_timeout(800);return p
   def create(p,title,consultant,notes):
    p.locator('[data-action=new-project]:visible').first.click();p.wait_for_timeout(200)
+   p.evaluate("document.getElementById('projectMore').open=true") # W1: these fields live under "More details"
    for k,v in {'projectTitle':title,'consultantName':consultant,'consultantRole':'Data engineer','clientName':'Zebracorp','clientLocation':'Lyon','n1Name':'Sam','n1Email':'sam@mantu.com'}.items():p.locator('#'+k).fill(v)
    p.locator('#projectForm button[type=submit]').click();p.wait_for_timeout(300)
    p.evaluate("([n,rep])=>{window.ATLAS_VOICE_BRIDGE.autoSave(window.ATLAS_VOICE_BRIDGE.context(),n,'Consultant words.',rep);}",[notes,REP])
    p.wait_for_function("()=>window.ATLAS_APP.profile().projects.some(x=>x.library&&x.library.id)",timeout=8000)
-   return p.evaluate("()=>window.ATLAS_APP.profile().projects.find(x=>x.library&&x.library.id).library.id")
+   rid=p.evaluate("()=>window.ATLAS_APP.profile().projects.find(x=>x.library&&x.library.id).library.id")
+   # G2: an interview is a private draft until the person clicks Submit for review (the Library's own button, delegated handler)
+   p.evaluate("id=>{const b=document.createElement('button');b.dataset.submitRef=id;document.body.append(b);b.click();b.remove();}",rid)
+   p.wait_for_function("id=>window.ATLAS_APP.profile().projects.some(x=>x.library&&x.library.id===id&&x.library.status!=='draft')",arg=rid,timeout=8000)
+   return rid
   def rec(p,rid):return p.evaluate("id=>fetch('/api/library/'+id).then(r=>r.json())",rid)
   def open_record(p,rid):   # the app's own delegated [data-open-record] handler, as a library card or project pill would do
    p.evaluate("id=>{const b=document.createElement('button');b.dataset.openRecord=id;document.body.append(b);b.click();b.remove();}",rid)
@@ -161,7 +166,7 @@ try:
   strip=o.locator('[data-jev-where="strip"]')
   check('1 the storage strip asks for consent right after the first library save',shows(o,'[data-jev-where="strip"]','Rate your stories with JEV',6000) and strip.count()==1)
   check('1 consent copy is the spec text, word for word',' '.join(strip.locator('p').inner_text().split())==COPY)
-  check('1 the row sits right under the storage strip',o.evaluate("()=>document.querySelector('.environment').nextElementSibling===document.querySelector('[data-jev-where=\"strip\"]')"))
+  check('1 the row sits at the top of the workspace, right under the sign-in banner (the save chip is in the header now)',o.evaluate("()=>document.querySelector('#authBanner').nextElementSibling===document.querySelector('[data-jev-where=\"strip\"]')"))
   # 2. Allow -> the record is rated by JEV within 3 s, and a late background agent rating does not overwrite it
   t0=time.time();strip.get_by_role('button',name='Allow for my stories').click()
   eng=None

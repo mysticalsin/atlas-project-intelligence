@@ -1,5 +1,5 @@
 """v12 browser/editor tests with an explicit fake API. No real provider calls."""
-import json,os,shutil
+import json,os,re,shutil
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 R=Path(__file__).resolve().parents[1];HTML=(R/'ATLAS_Project_Intelligence.html').read_text();checks=[];errors=[]
@@ -10,16 +10,19 @@ with sync_playwright() as pw:
  b=pw.chromium.launch(executable_path=os.getenv('CHROMIUM_PATH') or shutil.which('chromium'),args=['--no-sandbox']);p=b.new_page(viewport={'width':1440,'height':1000},accept_downloads=True);p.set_default_timeout(5000);p.on('pageerror',lambda e:errors.append(str(e)))
  try:
   # API adapters are visible in test source, not bundled in the application.
-  html=HTML.replace("if(!['http:','https:'].includes(location.protocol))","if(false)")
+  # rewriting the page's script text means dropping its hash-pinned <meta> CSP
+  html=re.sub(r'<meta content="[^"]*" http-equiv="Content-Security-Policy"/>','',HTML,count=1).replace("if(!['http:','https:'].includes(location.protocol))","if(false)")
   p.set_content(html,wait_until='load');p.wait_for_timeout(250)
-  p.locator('[data-intelligence=quality]').click();p.locator('#qualityAssessment').click()
+  p.evaluate("AtlasIntelligence.open('quality')");p.locator('#qualityAssessment').click()
   check('Assessment question does not assume production benefit','decision did the assessment enable' in p.locator('#qualityLabResult').inner_text())
-  p.locator('#qualityUnknown').click();check('No measurement remains legitimate','unknown explicit' in p.locator('#qualityLabResult').inner_text())
+  check('The wording lab has no "No measurement" sample button (it modelled an "I don\'t know")',p.locator('#qualityUnknown').count()==0)
+  p.locator('#qualityInput').fill("I don't know. We did not measure a before and after baseline.");p.locator('#qualityAnalyze').click();check('A typed "I don\'t know" is met with another angle','come at that another way' in p.locator('#qualityLabResult').inner_text())
   p.locator('#qualityInput').fill('I cannot share the confidential report under NDA.');p.locator('#qualityAnalyze').click()
   check('Confidentiality elicits authorized non-identifying context','non-identifying mechanism' in p.locator('#qualityLabResult').inner_text())
   p.locator('[data-intel-tab=wiki]').click();p.locator('.editor-fold>summary').click();p.locator('#editorRefine').click()
   check('Editor refuses unsaved candidate','Save a restricted' in p.locator('#editorMessage').inner_text())
   p.locator('#intelligenceDialog [data-close]').click();p.locator('.studio-left [data-action=new-project]').click()
+  p.evaluate("document.getElementById('projectMore').open=true") # W1: these fields live under "More details"
   for k,v in {'projectTitle':'SYNTHETIC editor test','consultantName':'Test Author','consultantRole':'Engineer','sectorInput':'Operations'}.items():p.locator('#'+k).fill(v)
   p.locator('#projectForm button[type=submit]').click();p.locator('[data-intelligence=wiki]').click();p.locator('#wikiCurrent').click()
   p.evaluate("""window.__fake={calls:[],story:null};

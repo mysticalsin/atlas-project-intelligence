@@ -1,0 +1,16 @@
+{
+  "entity_id": "ev-synthetic-0001",
+  "source_revision": 2,
+  "content_hash": "sha256-synthetic-0001",
+  "approved_at": "2026-11-02T12:00:00.000Z",
+  "consultant_id": "consultant-synthetic-01",
+  "profile_revision": 2,
+  "language": "en",
+  "target_role": null,
+  "template": "standard",
+  "claims": [
+    {"claim_id": "c1", "claim_type": "responsibility", "attribution": "individual", "origin": "interview", "statement": "Designed the routing model for a claims triage queue.", "statement_language": "en", "translation_confidence": "high", "value": null, "unit": null, "baseline": null, "after_state": null, "period": null},
+    {"claim_id": "c2", "claim_type": "metric", "attribution": "team", "origin": "interview", "statement": null, "statement_withheld": "CLIENT_PERMISSION_UNKNOWN", "value": 12, "unit": "minutes", "baseline": 40, "after_state": null, "period": "2025"}
+  ],
+  "permissions": [{"grant_id": "g1", "purpose": "cv", "scope": null, "expires_at": null, "revision": 2}]
+}
