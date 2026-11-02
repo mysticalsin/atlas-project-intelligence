@@ -15,7 +15,7 @@ When the spoken question is off the move, the Session replaces it with the selec
 language, one more talker call that renders exactly the move's question under the guard. The check is deliberately cheap and one-sided: a synonym the check does not know
 costs only a replacement by the selector's own, equally natural question, never a wrong one. Pure Python, no I/O; src/enforce.js ports it (parity vectors:
 test/gen_enforce_parity.py -> test/enforce.vectors.json). The localized lines are translations in the register of the cached opening (vous / tú / você / Sie / tu / je) and
-need a native-speaker review like the acknowledgement banks (languages.py REVIEW_STATUS).
+are machine translations like the acknowledgement banks (languages.py REVIEW_STATUS, D-L2: no native-speaker gate).
 """
 import re
 import unicodedata

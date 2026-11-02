@@ -71,3 +71,12 @@ test('the contract check catches a bad sample: wrong shape, a never-send key, an
   assert.deepEqual(checkContract(inbound, { response: { p: { job: 'Engineer', n: 'Real Name' } } }), []);
   assert.ok(checkContract({ ...inbound, field_mapping: { name: 'p.n' } }, { response: { p: { n: 'Real Name' } } }).includes('no allowlisted field came out of the sample'));
 });
+
+test('MiChat CV assumed contract (X2): the synthetic assumed samples satisfy the overlaid connection, schema, never-send list, mapping and ack rule', async () => {
+  const { michatConnection } = await import('../src/michat.js');
+  const dir = resolve(CONFIG_DIR, 'contracts', 'michat_cv', 'assumed');
+  const conn = michatConnection({ MICHAT_CV_CONTRACT: 'assumed' });
+  assert.equal(conn.status, 'configured_untested');
+  assert.deepEqual(checkContract(conn, { request: readJson(resolve(dir, 'request.sample.json')), response: readJson(resolve(dir, 'response.sample.json')) }), []);
+  assert.equal(michatConnection({}).status, 'not_configured', 'without MICHAT_CV_CONTRACT the registry is untouched');
+});

@@ -204,7 +204,7 @@ export function summaryFacts(items, { max = MAX_FACTS, basisOpen = false, skip =
 export function summaryNote(facts, unknowns = [], { reflect = false, question = '', again = false, lang = 'en', basis = '' } = {}) {
   const list = (Array.isArray(facts) ? facts : []).map((f, i) => `${i + 1}) ${JSON.stringify(String(f))}`).join(' ');
   const english = lang === 'en', name = languageName(lang);
-  // The opening and closing words: the bank language's own (localized, needs native review), else the English words for the talker to render in the language.
+  // The opening and closing words: the bank language's own (localized, machine translated, D-L2), else the English words for the talker to render in the language.
   const say = (key, en) => (english ? `"${en}"` : hasBank(lang) ? `"${readback(key, lang)}"` : `the ${name} equivalent of "${en}"`);
   const them = english ? '(each fact is already addressed to them as "you"; keep it that way, add nothing and use no figure that is not written here)'
     : `(each fact is their own words in whatever language they said it, first person; say it addressed to them, in ${name}, changing only the person, and use no figure that is not written here)`;

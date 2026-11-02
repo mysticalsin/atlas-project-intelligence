@@ -421,7 +421,7 @@ test('healthCheck makes one request to the health endpoint and returns the statu
 });
 
 // ======================= schemas and script =======================
-const schemaFiles = readdirSync(resolve(CONFIG_DIR, 'contracts'), { withFileTypes: true }).filter(d => d.isDirectory()).flatMap(d => readdirSync(resolve(CONFIG_DIR, 'contracts', d.name)).map(f => `contracts/${d.name}/${f}`));
+const schemaFiles = readdirSync(resolve(CONFIG_DIR, 'contracts'), { withFileTypes: true }).filter(d => d.isDirectory()).flatMap(d => readdirSync(resolve(CONFIG_DIR, 'contracts', d.name), { withFileTypes: true }).filter(f => f.isFile()).map(f => `contracts/${d.name}/${f.name}`)); // (michat_cv/assumed/ is the assumed contract overlay, checked in michat-connector.test.js)
 
 test('every contract schema parses, uses only supported keywords, and the drafts say so', () => {
   assert.ok(schemaFiles.length >= 17, `${schemaFiles.length} schema files`);

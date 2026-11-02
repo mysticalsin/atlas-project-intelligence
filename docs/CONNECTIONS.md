@@ -122,6 +122,7 @@ Every card has the same blockers until the owner provides the data: `STATUS_NOT_
 - **Variables**: `DNA_SKILLS_BASE_URL`. **Secrets**: `DNA_SKILLS_TOKEN`.
 
 ### michat_cv (step 10, outbound)
+- **Ready to connect (2026-11-02, X2)**: an assumed contract, the adapter, translation into the CV language and the health check are built behind `MICHAT_CV_CONTRACT=assumed`; see `docs/MICHAT.md` for the settings and what to replace when the owners answer.
 - **Sends (draft)**: identity and revision fields, `consultant_id`, `profile_revision`, `language`, `target_role`, `template` (null until defined), `claims[]` (reviewed wording only; outcome and metric claims send structured value, unit, baseline, after state and period but no client text) and `permissions[]`.
 - **Needs back**: CV document id, version, generated status, timestamp, validation warnings (Integration Contracts section 2).
 - **Needs from the owner (MiChat)**: base URL, sandbox, auth, CV schema, template and language rules, sample request and response, ack semantics, rate limits, DPA or transfer approval, and the client-permission model that would let outcome text be sent.

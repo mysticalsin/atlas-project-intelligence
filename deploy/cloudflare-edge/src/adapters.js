@@ -12,23 +12,25 @@
 // gate with MAAP_NOT_CONFIGURED / PROJECT_REVIEW_NOT_CONFIGURED.
 import { decide } from './policy-gate.js';
 import { adapterReadiness, anyLiveEligible, createHttpConnector } from './connectors.js';
+import { effectiveConfig, createMichatAdapter } from './michat.js';
 
 const BLOCKED = { mode: 'blocked', code: 'BLOCKED_EXTERNAL', reason: 'Live adapters need the system owners\' endpoints, schemas and credentials; none are configured.' };
 export const adapterMode = env => {
   const v = String(env?.ATLAS_ADAPTERS ?? 'off').trim().toLowerCase();
   if (v === 'mock') return { mode: 'mock' };
-  if (v === 'live') return anyLiveEligible(env) ? { mode: 'live' } : BLOCKED;
+  if (v === 'live') return anyLiveEligible(env, effectiveConfig(env)) ? { mode: 'live' } : BLOCKED;
   return { mode: 'off' };
 };
 // The mode for ONE adapter: under `live`, only a ready connection is live; the others stay blocked (never silently mock).
 export const adapterModeFor = (env, name) => {
   const m = adapterMode(env);
   if (m.mode !== 'live') return m;
-  const r = adapterReadiness(env, name);
+  const r = adapterReadiness(env, name, effectiveConfig(env));
   return r.eligible ? m : { ...BLOCKED, reasons: r.reasons };
 };
 // The HTTP connector for a ready connection (an adapter with the same send(envelope, payload) interface as the mock).
-export const liveAdapter = (env, name, opts = {}) => createHttpConnector(name, { ...opts, env });
+// MiChat goes through michat.js (the assumed contract when switched on, and translation into the CV's language); every other one is the plain connector.
+export const liveAdapter = (env, name, opts = {}) => name === 'MICHAT_CV' ? createMichatAdapter(env, opts) : createHttpConnector(name, { ...opts, env, config: effectiveConfig(env) });
 // ATLAS_EVIDENCE_WORKFLOW=off turns the fan-out, the status route and the sync route off (rollback); anything else is on.
 export const evidenceWorkflowOn = env => String(env?.ATLAS_EVIDENCE_WORKFLOW ?? 'on').trim().toLowerCase() !== 'off';
 
@@ -55,17 +57,19 @@ const measured = c => ({ ...typed(c), value: c.value ?? null, unit: c.unit ?? nu
 export const CV_STATEMENT_MAX = 400;
 const CLIENT_TEXT_TYPES = ['outcome', 'metric'];
 const verbatim = c => (c.source_refs || []).some(r => r && r.kind === 'interview' && r.quote === c.statement);
-const cvClaim = c => {
+// `mask` (michat.js cvTextMask, from branches.js) takes any library client or contact name out of the reviewed wording too (D-G14: no client names in CVs).
+const cvClaim = (c, mask = s => s) => {
   const reason = CLIENT_TEXT_TYPES.includes(c.claim_type) ? 'CLIENT_PERMISSION_UNKNOWN' : verbatim(c) ? 'VERBATIM_ASR_NOT_REVIEWED' : null;
   const { statement, ...rest } = measured(c);
-  return { ...rest, statement: reason ? null : String(statement ?? '').slice(0, CV_STATEMENT_MAX) || null, ...(reason ? { statement_withheld: reason } : {}) };
+  return { ...rest, statement: reason ? null : mask(String(statement ?? '').slice(0, CV_STATEMENT_MAX)) || null, ...(reason ? { statement_withheld: reason } : {}) };
 };
 const grantRef = (grants, purpose) => (grants || []).filter(g => g.purpose === purpose && g.status === 'active')
   .map(g => ({ grant_id: g.id, purpose: g.purpose, scope: g.scope ?? null, expires_at: g.expires_at ?? null, revision: g.revision }));
 const base = (entity, approval) => ({ entity_id: entity.id, source_revision: entity.revision, content_hash: entity.content_hash, approved_at: approval?.at ?? null });
 
 // `input` = { entity, claims, approval, grants }. Nothing about the interview itself (quotes, ledger ids, ASR meta) is in a payload.
-export function buildPayload(adapter, { entity, claims, approval, grants }) {
+// `cv` = { language, template } (michat.js cvOptions, from the Worker's MICHAT_CV_* variables) and `mask` apply to MICHAT_CV only.
+export function buildPayload(adapter, { entity, claims, approval, grants, cv = {}, mask } = {}) {
   const list = Array.isArray(claims) ? claims : [];
   switch (adapter) {
     case 'DNA_SKILLS_WRITEBACK': // proposal only: no taxonomy id or level is invented (null until DNA's taxonomy maps it); a story approval is not a skill approval
@@ -73,8 +77,8 @@ export function buildPayload(adapter, { entity, claims, approval, grants }) {
         assertions: list.filter(c => SKILL_TYPES.includes(c.claim_type) && c.attribution !== 'client')
           .map(c => ({ ...typed(c), skill_taxonomy_id: null, level: null, status: 'proposed', evidence_refs: [{ claim_id: c.claim_id, revision: entity.revision }] })) };
     case 'MICHAT_CV': // approved contribution claims only, with reviewed wording only (see cvClaim); context and learning may carry restricted client detail and stay out
-      return { ...base(entity, approval), consultant_id: entity.owner_sub, profile_revision: entity.revision, language: null, target_role: null, template: null,
-        claims: list.filter(c => CV_TYPES.includes(c.claim_type) && c.attribution !== 'client' && c.review_status === 'validated').map(cvClaim), permissions: grantRef(grants, 'cv') };
+      return { ...base(entity, approval), consultant_id: entity.owner_sub, profile_revision: entity.revision, language: cv.language ?? null, target_role: null, template: cv.template ?? null,
+        claims: list.filter(c => CV_TYPES.includes(c.claim_type) && c.attribution !== 'client' && c.review_status === 'validated').map(c => cvClaim(c, mask)), permissions: grantRef(grants, 'cv') };
     case 'IMP_CAPABILITY': // a capability signal; availability and allocation are IMP's, never computed here
       return { ...base(entity, approval), consultant_id: entity.owner_sub, availability: null,
         signals: list.filter(c => SKILL_TYPES.includes(c.claim_type) && c.attribution !== 'client').map(typed), permissions: grantRef(grants, 'matching') };

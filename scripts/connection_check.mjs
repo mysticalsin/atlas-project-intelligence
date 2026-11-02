@@ -14,6 +14,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readiness, healthCheck, parseAck, allowlist, getPath, STATUS_ORDER } from '../deploy/cloudflare-edge/src/connectors.js';
 import { validate, unsupported } from '../deploy/cloudflare-edge/src/schema-lite.js';
+import { effectiveConfig } from '../deploy/cloudflare-edge/src/michat.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -26,6 +27,8 @@ const configPath = resolve(val('--config') || resolve(ROOT, 'atlas_voice/config/
 const readJson = p => JSON.parse(readFileSync(p, 'utf8'));
 let config;
 try { config = readJson(configPath); } catch (e) { console.error(`Cannot read ${configPath}: ${e.message}`); process.exit(1); }
+// MiChat CV (X2, docs/MICHAT.md): with MICHAT_CV_CONTRACT=assumed the assumed contract is overlaid on michat_cv, as the Worker does.
+config = effectiveConfig(process.env, config);
 const CONFIG_DIR = dirname(configPath);
 
 // env: process.env plus an optional vars file. Values stay in this object; nothing below prints one.

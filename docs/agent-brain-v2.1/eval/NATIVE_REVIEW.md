@@ -1,6 +1,6 @@
-# Native-speaker review: machine pre-pass and checklist (2026-11-02)
+# Language quality: machine pre-pass (2026-11-02), no native-speaker gate
 
-Status: **a machine pre-pass only.** Every line below was read by the agent, not by a native speaker. Nothing in the code was changed by this pass: the strings are pinned by tests and the opening is Tony's own wording, so each suggestion waits for a native speaker (one per language) to accept, reject or rewrite it. `REVIEW_STATUS` in `atlas_voice/languages.py` stays `needs_native_review` for fr, es, pt, de, it and nl until that sign-off.
+**Tony decision 2026-11-02: no native-speaker dependency, auto-translate any language** (`DECISION_LOG.md` D-L2). ATLAS does not wait for a native speaker in any language. The banks for fr, es, pt, de, it and nl are machine translations used as they are (`REVIEW_STATUS` in `atlas_voice/languages.py` is `machine_translated`), and any other text is translated automatically into any language by `deploy/cloudflare-edge/src/translate.js`: language detection, any target language tag (a regional variety such as pt-PT or es-MX is kept), a glossary of terms kept as they are, and a confidence flag (high, medium, low, none) with reason flags. The confidence travels with every translation; it never blocks anything. The suggestions in sections B and C remain a list of optional improvements anyone may apply (a machine retranslation is enough); none is required.
 
 Scope: what ATLAS says or shows in a language other than English.
 - The opening and welcome-back (`INTRO`, `INTRO_AGAIN`, `INTRO_REST`, `deploy/cloudflare-edge/src/languages.js`), and the uptake fillers (`FILLERS`).
@@ -9,14 +9,14 @@ Scope: what ATLAS says or shows in a language other than English.
 - The trailing-word lists (`TRAIL`, `languages.js`) and the client-mention pattern (`CLIENT_MENTION_SRC`, `persona.py`).
 - Not in scope: the page itself (English only, not localised); English lines (authored).
 
-## A. Decisions before the line-by-line review (for Tony)
+## A. Decisions (resolved 2026-11-02 by Tony's D-L2: no native-speaker gate)
 
-1. **ATLAS's grammatical gender per language.** The copy is not consistent. Portuguese presents ATLAS as feminine ("eu sou a ATLAS", "A ATLAS ainda está respondendo") but she says "Obrigado" (masculine speaker form) everywhere; German and Dutch use masculine or neuter possessives ("seine eigene Stimme", "zijn eigen stem"); French and Italian speaker agreements are masculine ("Merci de m'avoir corrigé", "Content de vous retrouver", "Grazie per avermi corretto"). Pick one per language. If ATLAS is "she" (as in the English docs): pt "Obrigada", fr "corrigée" / "Contente", it "corretta", de "ihre eigene Stimme", nl "haar eigen stem".
-2. **The consultant's gender.** Every language addresses the consultant in the masculine: fr "quand vous êtes prêt", "que vous seul voyez"; es "cuando estés listo", "Bienvenido de nuevo"; pt "quando estiver pronto", "Bem-vindo de volta"; it "quando sei pronto", "Bentornato". Suggested neutral forms are in section B (no gender is known, and guessing one is worse than a neutral phrase).
-3. **Target varieties.** Spanish is Spain Spanish ("vale", "pulsa", "se me ha pasado", the present perfect); Portuguese is Brazilian ("você", "tela", "fones de ouvido", "aperte"). Confirm these match the consultants (for example Latin American Spanish speakers, or Portugal for Portuguese), or the reviewers will rewrite toward the wrong variety.
-4. **Quotation marks around button names.** «Confirm summary» is right for French, Spanish and Italian, but Brazilian Portuguese and Dutch normally use “ ”. The pause lines name Resume with no quotes at all. Decide whether a spoken line needs quotes at all (they are shown on screen as the transcript).
+1. **ATLAS's grammatical gender per language. Resolved:** no reviewer decides it. New and machine-translated text avoids gendered self-reference (`translate.js` asks for gender-neutral wording); where a language forces a form, the translation's choice stands. The existing bank lines stay as they are and may be retranslated at any time without a review.
+2. **The consultant's gender. Resolved:** translation uses gender-neutral address (no gender is known, and the translator is told never to assume one). The existing bank lines stay until retranslated; no sign-off is needed.
+3. **Target varieties. Resolved:** the banks keep Spain Spanish and Brazilian Portuguese as defaults. Any other variety is produced on demand by giving a regional tag (for example `pt-PT`, `es-MX`, `fr-CA`) to `translate.js` or `MICHAT_CV_LANGUAGE`; no reviewer is needed to switch.
+4. **Quotation marks around button names. Resolved:** kept as they are in the banks; machine translation uses the target language's usual quotation marks. Spoken lines do not depend on them.
 
-## B. Line-by-line suggestions (machine pre-pass; a native speaker decides)
+## B. Line-by-line suggestions (machine pre-pass; optional improvements, no reviewer needed)
 
 Format: current line → suggestion (why). "Minor" means it reads acceptably as is.
 
@@ -25,7 +25,7 @@ Format: current line → suggestion (why). "Minor" means it reads acceptably as 
 - `earned_result` "Cela ressemble à un solide résultat." → "Cela semble être un résultat solide." (word order)
 - `earned_result` "Cela ressemble à une bonne issue." → "Cela semble être un bon aboutissement." ("issue" is odd for a project)
 - `earned_result` "C'est un travail notable." → minor; check it is not cooler than meant
-- `PAUSE_LINES` "quand vous êtes prêt" → "quand vous le souhaitez" (neutral, see A2); `SUMMARY_LINES` "que vous seul voyez" → "visible par vous seul(e)" or "que vous êtes seul à voir" (still gendered: a native speaker should choose)
+- `PAUSE_LINES` "quand vous êtes prêt" → "quand vous le souhaitez" (neutral, see A2); `SUMMARY_LINES` "que vous seul voyez" → "visible par vous seul(e)" or "que vous êtes seul à voir" (still gendered: pick the neutral one)
 - `RESUME_LINES` "Content de vous retrouver." → "Rebonjour." or "Heureux de vous retrouver" with A1 applied
 - `correction_thanks_fact` "Merci de rétablir les faits." → minor, slightly heavy; "Merci pour la précision."
 
@@ -42,7 +42,7 @@ Format: current line → suggestion (why). "Minor" means it reads acceptably as 
 - `neutral` "Percebi." → "Compreendi." (in Brazil "percebi" means "I noticed")
 - `injection` "Sigo com a entrevista." → "Vou seguir com a entrevista." (reads as Spanish)
 - `PAUSE_LINES` "Leve todo o tempo de que precisar." → "Fique à vontade, sem pressa." (calque); "quando estiver pronto" → "quando quiser" (A2)
-- `RESUME_LINES` "Bem-vindo de volta." → "Que bom que voltou." (already used as line 1; a native speaker may prefer "Oi de novo.")
+- `RESUME_LINES` "Bem-vindo de volta." → "Que bom que voltou." (already used as line 1; "Oi de novo." also works)
 - `thanks_detail` "Isso me dá o panorama, obrigado." → "Agora tenho o panorama, obrigada."
 - Quotes «Confirm summary» → “Confirm summary” (A4)
 
@@ -68,7 +68,7 @@ Format: current line → suggestion (why). "Minor" means it reads acceptably as 
 - `thanks_detail` "Dat geeft me het beeld, dank je." → "Zo heb ik een beeld, dank je."
 - `echo` "zijn eigen stem" → see A1; quotes «» → “ ” (A4)
 
-## C. Trailing-word lists (`TRAIL`): what a native speaker should check
+## C. Trailing-word lists (`TRAIL`): optional checks
 
 The rule is precision first: a word on the list makes ATLAS treat an answer as unfinished and wait or nudge, so a word that often ENDS a finished answer is the harmful kind of mistake.
 - fr: "la" (could the recogniser write "la" for "là", as in "c'est là"?); is "que" worth adding ("je pense que")?
@@ -79,7 +79,7 @@ The rule is precision first: a word on the list makes ATLAS treat an answer as u
 - nl: good; "of" also ends tag-like phrases ("..., of niet?") only with a question mark.
 - All: confirm which hesitation sounds (euh, ähm, ehm) Nova-3 keeps at all; if it drops them, those entries are harmless but unused.
 
-## D. Checklist for each native reviewer (one per language)
+## D. Checklist (optional, if anyone fluent ever reads a language; not a gate)
 
 1. Read the opening aloud (both pieces). It is about 22 seconds in English; is it natural spoken language, not written language?
 2. Check the register (vous / tú / você / Sie / tu / je) is the right one for a consultant talking to a work tool, and that every bank line uses the same register.

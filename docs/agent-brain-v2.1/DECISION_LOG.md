@@ -129,6 +129,7 @@ Said by Tony on 2026-10-31, after trying the live app. His words: "She can't say
 3. **The rollout switch is unchanged**: `ATLAS_CSP=report-only` reports the strict policy (now with Trusted Types) while the old one is enforced.
 
 ## D-NR (2026-11-02): native-speaker review is prepared, not done
+**Superseded the same day by D-L2 (Tony): no native-speaker dependency.**
 A machine pre-pass of every non-English line is in `eval/NATIVE_REVIEW.md`, with four decisions for Tony first (ATLAS's grammatical gender per language, neutral address to the consultant, the Spanish and Portuguese varieties, quotes around button names) and a checklist per reviewer. No string was changed: the lines are pinned by tests and a non-native rewrite would need the same review.
 
 ## D-G14 (2026-11-02, Tony): client names stay out of CVs (G1-4 resolved by decision)
@@ -140,3 +141,17 @@ A machine pre-pass of every non-English line is in `eval/NATIVE_REVIEW.md`, with
 2. **Where each comes from.** Role: the staffing feed's optional `role` column for this person on this project. Sector: the feed's optional `customer_sector` (an industry, never a customer name; name columns stay ignored), else the industry of a published (N+1 validated) library reference under the same Project ID. Stage: the feed's optional `project_stage` (one of the six stages, anything else rejects the row), else Lessons learned once the end date has passed. Facts are kept in a new additive table `staffing_facts`; an import without a column keeps the stored value, an empty cell clears it.
 3. **Only derived values are prefilled** and replace the page's values for the interview (`ready.prefill` = verified). A field with nothing derived is not prefilled, so ATLAS asks for it, and reads `to_confirm` (the page declared one) or `unknown`. With no staffing rows, a Project ID not on the rows, no Project ID or a failed lookup, nothing is prefilled. A self-declared value is never marked verified. With no lookup configured (local tools only) the page prefill works as before.
 4. **The picker** fills role, sector and stage from the derived row and says which ones ATLAS will ask. No web fetching was added.
+
+## D-L2 (2026-11-02, Tony): no native-speaker dependency, auto-translate any language
+Tony decision 2026-11-02: no native-speaker dependency, auto-translate any language. Tony's words: "Don't have this dependant on a native speaker have this being able to translate any language".
+1. **No human gate.** `REVIEW_STATUS` for fr, es, pt, de, it and nl is `machine_translated` (was `needs_native_review`). Nothing waits for a native speaker. `eval/NATIVE_REVIEW.md` A1 to A4 are resolved by this decision; its suggestions become optional.
+2. **Any language, automatically.** `deploy/cloudflare-edge/src/translate.js`: source language detection (`lang-detect.js`), any target language tag with its regional variety, Workers AI chat model (`TRANSLATE_MODEL`, else `TALKER_MODEL`) with `@cf/meta/m2m100-1.2b` as fallback, a glossary (built in: ATLAS, MiChat, Mantu, DNA, IMP, Spotlight, MAAP; more with `TRANSLATE_GLOSSARY`), gender-neutral wording, and a confidence (high, medium, low, none) with reason flags (lost glossary term, changed numbers, wrong output language, unusual length, fallback engine). It never throws and respects `ATLAS_AI_OFF`. Route: `POST /api/translate` (signed in, CSRF, 4000 characters, `TRANSLATE_HOUR` per hour).
+3. **Used by the MiChat CV** (X2, `docs/MICHAT.md`): with `MICHAT_CV_LANGUAGE` set, approved CV statements are translated into it and each carries its language and confidence.
+
+## D-X2R (2026-11-02, Tony): MiChat CV built ready to connect on an assumed contract
+Tony: "I don't have the endpoint yet but build this as it ready to connect to that."
+1. **Assumed, never invented in the registry.** `connections.json` keeps `michat_cv` `not_configured` with no owner (no-invention rule). The assumed contract lives in `atlas_voice/config/contracts/michat_cv/assumed/contract.json`, validated at build time, and is used only when the Worker has `MICHAT_CV_CONTRACT=assumed`.
+2. **Real adapter** (`src/michat.js`): the generic HTTP connector with the overlaid config, bearer token, `Idempotency-Key`, job retries with backoff, 409/412 reconcile, sandbox acknowledgement by default, translation into the CV language, and an admin health check (`GET /api/connections/michat/health`).
+3. **Client names stay out of CVs** (D-G14): outcome and metric text is withheld as before, and every other statement is masked against the library's client and contact names.
+4. **Unconfigured means outbox**: without the variables nothing is sent and the branch behaves as before.
+

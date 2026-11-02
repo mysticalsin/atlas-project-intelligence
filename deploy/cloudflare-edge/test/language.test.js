@@ -121,7 +121,7 @@ test('unfinished: words that trail off, per language; finished answers and quest
   assert.equal(unfinished('Zrobiliśmy to, bo', 'pl'), false); assert.equal(unfinished('Zrobiliśmy to,', 'pl'), true); assert.equal(unfinished('これは…', 'ja'), true);
 });
 
-// The words of an invitation to skip, to pass or to say "I don't know", per bank language (the opening must hold none of them), and the confidentiality line (native review still due).
+// The words of an invitation to skip, to pass or to say "I don't know", per bank language (the opening must hold none of them), and the confidentiality line (machine translated, D-L2).
 const NO_SKIP = { en: /skip|don.t know|can.t share/i, fr: /passer|sais pas|ne peux pas le partager/i, es: /saltar|no lo s[eé]|no puedo compartir/i, pt: /pular|n[aã]o sei|n[aã]o posso compartilhar/i,
   de: /überspringen|weiß (?:es )?nicht|nicht teilen/i, it: /saltare|non lo so|non posso condividere/i, nl: /overslaan|weet (?:het )?niet|niet delen/i };
 const CONFIDENTIAL = { en: /client-confidential.*without the details/, fr: /confidentiel pour le client.*sans les détails/, es: /confidencial del cliente.*sin los detalles/, pt: /confidencial do cliente.*sem os detalhes/,

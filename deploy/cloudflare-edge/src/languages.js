@@ -63,7 +63,7 @@ export function languageNote(lang, voiced = true, { announce = false } = {}) {
 // before anything goes to review. Tony chose this full introduction on 2026-10-30 (Agent Brain v2.1, Q1); on 2026-10-31 he removed the invitation to skip or to say
 // "I don't know" (ATLAS is there to understand the work) and kept one narrow confidentiality sentence. It is four short
 // sentences, two spoken breaths. English was authored; every other language is a faithful translation that still needs a
-// native-speaker review (see docs/agent-brain-v2.1/IMPLEMENTATION_STATUS.md).
+// machine translation, used as is (D-L2, docs/agent-brain-v2.1/DECISION_LOG.md).
 const INTRO = {
   en: "Hi, I'm ATLAS, and I'll help you tell the story of your project.",
   fr: "Bonjour, je suis ATLAS, et je vais vous aider à raconter l'histoire de votre projet.",
@@ -109,7 +109,7 @@ export const FILLERS = {
 
 // Words a finished answer almost never ends on, per language (the one the speech recogniser heard). Precision beats
 // recall: a missed trailing word only falls back to the turn model plus merge-on-resume, while a false "unfinished"
-// answers a finished answer with a nudge. The lists need a native-speaker review. Hesitations ("um", "euh") only matter
+// answers a finished answer with a nudge. The lists are machine translations (D-L2). Hesitations ("um", "euh") only matter
 // when the recogniser keeps them (Nova-3 drops filler words by default); conjunctions and articles are the main signal.
 const TRAIL = Object.fromEntries(Object.entries({
   en: ['and but or because the an a um uh erm er hmm', ['and so', 'and then', 'such as']],

@@ -9,7 +9,7 @@ export const HOUR = 36e5, DAY = 864e5;
 // Defaults per person; each can be overridden by an environment variable of the same name prefixed RL_ (a product decision for the owner).
 export const LIMITS = Object.freeze({
   INTERVIEW_HOUR: 6, INTERVIEW_DAY: 20, // fresh interview starts (a reconnect/resume of a saved interview is not a start)
-  SHEET_HOUR: 20, CLASSIFY_HOUR: 30, TRANSCRIBE_HOUR: 60,
+  SHEET_HOUR: 20, CLASSIFY_HOUR: 30, TRANSCRIBE_HOUR: 60, TRANSLATE_HOUR: 120,
 });
 // Wave B: the library routes use these names with enforce(). Values are per person per window.
 export const LIBRARY_LIMITS = Object.freeze({

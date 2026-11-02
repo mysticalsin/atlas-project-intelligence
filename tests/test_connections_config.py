@@ -173,5 +173,22 @@ def test_schema_keyword_list_and_status_ladder_match_the_edge_code():
 
 
 def test_edge_receives_the_registry():
-    assert cc.EDGE_CONSTANTS == {'CONNECTIONS_CONFIG': CFG}
+    assert set(cc.EDGE_CONSTANTS) == {'CONNECTIONS_CONFIG', 'MICHAT_ASSUMED_CONTRACT'}
+    assert cc.EDGE_CONSTANTS['CONNECTIONS_CONFIG'] == CFG
     assert 'atlas_voice.connections_config' in (ROOT / 'deploy' / 'cloudflare-edge' / 'build_edge.py').read_text(encoding='utf-8')
+
+
+def test_michat_assumed_contract_is_separate_valid_and_never_in_the_registry():
+    """X2 (Tony 2026-11-02): ready to connect without inventing anything in connections.json; the overlay validates like any configured connection."""
+    assert BY_ID['michat_cv']['status'] == 'not_configured' and BY_ID['michat_cv']['owner'] is None
+    merged = cc.michat_assumed_connection()
+    assert merged['status'] == 'configured_untested' and merged['endpoints']['send']['path'] and merged['field_mapping'] and merged['ack_rule']['record_id_path']
+    assert merged['auth']['secret_names'] == ['MICHAT_CV_TOKEN'] and merged['base_url_var'] == 'MICHAT_CV_BASE_URL'
+    edge = cc.EDGE_CONSTANTS['MICHAT_ASSUMED_CONTRACT']
+    assert 'x-status' not in edge and set(edge) <= set(cc.MICHAT_ASSUMED_KEYS)
+    with pytest.raises(Exception):
+        cc.michat_assumed_connection(overlay={**cc.MICHAT_ASSUMED_CONTRACT, 'status': 'production_verified'})
+    with pytest.raises(Exception):
+        cc.michat_assumed_connection(overlay={**cc.MICHAT_ASSUMED_CONTRACT, 'field_mapping': {'transcript': 'x'}})
+    raw = (ROOT / 'atlas_voice' / 'config' / 'contracts' / 'michat_cv' / 'assumed' / 'request.sample.json').read_text(encoding='utf-8')
+    assert 'synthetic' in raw.lower()

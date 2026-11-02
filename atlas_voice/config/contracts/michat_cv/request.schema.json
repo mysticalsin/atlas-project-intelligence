@@ -119,6 +119,26 @@
               "string",
               "null"
             ]
+          },
+          "statement_language": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "translation_confidence": {
+            "enum": [
+              "high",
+              "medium",
+              "low",
+              "none"
+            ]
+          },
+          "translation_flags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       }

@@ -10,7 +10,8 @@ Tony, 2026-10-31: "make sure the agent can speak any language the user is speaki
 * detect() is a small deterministic detector for typed text (script ranges plus stopword sets), used with hysteresis in the session. Speech
   recognition gives its own language tag; this agrees with it or stands in for it.
 
-Every bank other than English is a faithful translation that still needs a native-speaker review: REVIEW_STATUS says so, and the docs list it.
+Every bank other than English is a machine translation, accepted as is (Tony decision 2026-11-02, D-L2: no native-speaker dependency, ATLAS translates any
+language automatically): REVIEW_STATUS says so, and translate.js renders any other text into any language with a confidence flag, never a human gate.
 Pure data and functions (no I/O, no clock). build_edge.py exports EDGE_CONSTANTS (prefix LANG_) and src/lang-detect.js ports detect() (parity
 vectors: test/gen_lang_parity.py -> test/lang.vectors.json).
 """
@@ -35,7 +36,7 @@ NATIVE_NAMES = {
 RTL = ('ar', 'he', 'fa', 'ur')
 # Languages the talker always speaks to in its own words but that also have fixed lines ATLAS can say with no model call.
 BANK_LANGUAGES = ('en', 'fr', 'es', 'pt', 'de', 'it', 'nl')
-REVIEW_STATUS = {'en': 'authored', **{lang: 'needs_native_review' for lang in BANK_LANGUAGES if lang != 'en'}}
+REVIEW_STATUS = {'en': 'authored', **{lang: 'machine_translated' for lang in BANK_LANGUAGES if lang != 'en'}}
 # What Deepgram Nova-3 "multi" (automatic language detection and code-switching) understands. A consultant can lock another language in the
 # UI; the Worker then asks the recogniser for that language alone (a monolingual request: live verification still open, see docs).
 STT_AUTO = ('en', 'es', 'fr', 'de', 'hi', 'ru', 'pt', 'ja', 'it', 'nl')

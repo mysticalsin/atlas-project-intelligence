@@ -179,4 +179,24 @@ def validate_connections(cfg):
 
 
 CONNECTIONS_CONFIG = validate_connections(json.loads((CONFIG_DIR / 'connections.json').read_text(encoding='utf-8')))
-EDGE_CONSTANTS = {'CONNECTIONS_CONFIG': CONNECTIONS_CONFIG}
+
+# MiChat CV, ready to connect (X2, Tony 2026-11-02): an ASSUMED contract kept beside the registry, never in it, so connections.json still says what is
+# true (no owner has confirmed anything). The Worker overlays it on michat_cv only when MICHAT_CV_CONTRACT=assumed (deploy/cloudflare-edge/src/michat.js).
+# The overlaid connection must pass the same validation as any configured connection. docs/MICHAT.md says what to replace when the owners answer.
+MICHAT_ASSUMED_KEYS = ('owner', 'status', 'auth', 'endpoints', 'field_mapping', 'static_fields', 'ack_rule', 'timeout_ms')
+
+
+def michat_assumed_connection(cfg=None, overlay=None):
+    cfg = cfg or CONNECTIONS_CONFIG
+    overlay = overlay if overlay is not None else MICHAT_ASSUMED_CONTRACT
+    base = next(c for c in cfg['connections'] if c['id'] == 'michat_cv')
+    merged = {**base, **{k: overlay[k] for k in MICHAT_ASSUMED_KEYS if k in overlay}}
+    _need(merged['status'] == 'configured_untested', 'the assumed MiChat contract can only be configured_untested (never verified)')
+    dm = cfg['data_minimisation']
+    return validate_connection(merged, dm['never_send_keys'], dm['never_to_model_keys'])
+
+
+MICHAT_ASSUMED_CONTRACT = json.loads((CONFIG_DIR / 'contracts' / 'michat_cv' / 'assumed' / 'contract.json').read_text(encoding='utf-8'))
+_need(set(MICHAT_ASSUMED_CONTRACT) - {'x-status', 'x-activation'} <= set(MICHAT_ASSUMED_KEYS), 'the assumed MiChat contract may only set ' + ', '.join(MICHAT_ASSUMED_KEYS))
+michat_assumed_connection()
+EDGE_CONSTANTS = {'CONNECTIONS_CONFIG': CONNECTIONS_CONFIG, 'MICHAT_ASSUMED_CONTRACT': {k: v for k, v in MICHAT_ASSUMED_CONTRACT.items() if k in MICHAT_ASSUMED_KEYS}}

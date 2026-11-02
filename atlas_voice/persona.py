@@ -73,8 +73,8 @@ BANNED_PRAISE_SRC = (r'\b(?:amazing|incredible|brilliant|awesome|fantastic'
 
 # Acknowledgement banks, category -> language -> variants (five each: ack.js never repeats a variant within the last
 # four). Short (<= 8 words), spoken-natural, no question, no praise word. English is authored; fr, es, pt, de, it and nl (BANK_LANGUAGES of
-# languages.py) are faithful translations in the same register as their cached opening (vous / tú / você / Sie / tu / je) and still need a
-# native-speaker review. For any other language there is no bank: ack.js plays nothing from cache (never English) and the talker answers in the language.
+# languages.py) are faithful translations in the same register as their cached opening (vous / tú / você / Sie / tu / je), machine
+# translated and used as is (D-L2). For any other language there is no bank: ack.js plays nothing from cache (never English) and the talker answers in the language.
 ACKS = {
     'neutral': {
         'en': ['Okay.', 'I see.', 'Right.', 'Got it.', 'Okay, I follow.'],
@@ -203,7 +203,7 @@ ACKS = {
 }
 
 # Spoken when the consultant pauses, and when they come back (followed by the last question, re-spoken by the server). The quoted button name is the
-# page's own (the page is not localised). fr, es, pt, de, it, nl need a native-speaker review; any other language: the talker writes the line.
+# page's own (the page is not localised). fr, es, pt, de, it, nl are machine translations (D-L2); any other language: the talker writes the line.
 PAUSE_LINES = {
     'en': ["No problem, I'll wait. Press Resume when you're ready.", "Pausing now. Take all the time you need.", "Okay, paused. Pick it up whenever you like."],
     'fr': ["Pas de souci, j'attends. Appuyez sur Resume quand vous êtes prêt.", "Je mets en pause. Prenez tout le temps qu'il vous faut.", "D'accord, c'est en pause. Reprenez quand vous voulez."],

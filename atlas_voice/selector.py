@@ -27,7 +27,7 @@ A question whose words are about 80% the same as one of the last six asked (3-gr
 Pure Python, no I/O. build_edge.py exports EDGE_CONSTANTS (CONFIG, QUESTION_BANK, LINES) and src/selector.js ports select()
 (parity vectors: test/gen_selector_parity.py -> test/selector.vectors.json). Every pattern is written in the regex subset that
 Python (re.I) and JavaScript (flag i) read the same way. English only: any other language gets the English wording (the
-pre-pass has cues for English only; fr/es wording would need native review).
+pre-pass has cues for English only; fr/es cues would be machine translated, D-L2).
 """
 import re
 import unicodedata

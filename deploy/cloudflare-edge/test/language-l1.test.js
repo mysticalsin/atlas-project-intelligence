@@ -3,7 +3,7 @@
 //   the talker is told to reply in the consultant's language (any language) and the move wording is English guidance; no English cached line is ever played to a
 //   speaker of another language; bank languages (en fr es pt de it nl) get localized openings, acknowledgements and stock lines, every other language has the talker
 //   write those lines; the language follows the consultant (speech and typed text, with hysteresis) and can be locked in the UI; a language without a voice is answered in
-//   text with one notice; every detail of the evidence carries the language it was said in. Banks other than English are translations awaiting native review.
+//   text with one notice; every detail of the evidence carries the language it was said in. Banks other than English are machine translations, used as is (D-L2).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Session, clearPcmCache, SUMMARY_LINES, CONTROLS } from '../src/session.js';
@@ -260,9 +260,9 @@ test('summary framing is localized for the bank languages and rendered by the ta
   assert.equal(withBasis.facts[0], 'Nous avons réduit le délai de 40 à 12 minutes', 'no English words glued into a French fact'); assert.match(withBasis.basis, /starting figure is still open/);
 });
 
-test('every bank is complete: acknowledgements, pause and resume lines, summary lines, notices and read-back words exist for all seven languages and are flagged for native review', () => {
+test('every bank is complete: acknowledgements, pause and resume lines, summary lines, notices and read-back words exist for all seven languages and are marked machine translated (D-L2, no native-speaker gate)', () => {
   assert.deepEqual([...BANK_LANGUAGES], ['en', 'fr', 'es', 'pt', 'de', 'it', 'nl']);
-  assert.deepEqual(Object.fromEntries(BANK_LANGUAGES.map(l => [l, REVIEW_STATUS[l]])), { en: 'authored', fr: 'needs_native_review', es: 'needs_native_review', pt: 'needs_native_review', de: 'needs_native_review', it: 'needs_native_review', nl: 'needs_native_review' });
+  assert.deepEqual(Object.fromEntries(BANK_LANGUAGES.map(l => [l, REVIEW_STATUS[l]])), { en: 'authored', fr: 'machine_translated', es: 'machine_translated', pt: 'machine_translated', de: 'machine_translated', it: 'machine_translated', nl: 'machine_translated' });
   for (const lang of BANK_LANGUAGES) {
     for (const [cat, langs] of Object.entries(ACKS)) assert.equal(langs[lang]?.length, 5, `${lang} ${cat}`);
     assert.ok(PAUSE_LINES[lang].length >= 3 && RESUME_LINES[lang].length >= 3, lang);

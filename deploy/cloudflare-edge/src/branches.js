@@ -12,6 +12,7 @@
 // Status codes are stable ids for the audit and the UI; user-facing words live in the browser (workflow-core.js).
 import { decide } from './policy-gate.js';
 import { jobs, configure as configureJobs, clock, idempotencyKey } from './jobs.js';
+import { cvOptions, cvTextMask } from './michat.js';
 import { adapterMode, adapterModeFor, liveAdapter, evidenceWorkflowOn, registry, buildPayload, CONTRACTS, ADAPTER_BY_DESTINATION, ADAPTER_BY_BRANCH } from './adapters.js';
 import { Spotlight, FINAL_GATE } from './spotlight.js';
 import { str, obj, fail } from './util.js';
@@ -139,7 +140,8 @@ async function destination(ev, rec, ap, branch) {
   const mode = modeFor(lib, name);
   if (mode.mode === 'blocked') return setBranch(ev, rec, branch, 'blocked_external', { reason: mode.code });
   if (mode.mode === 'off') return setBranch(ev, rec, branch, 'projection_pending', { reason: 'ADAPTERS_OFF' }); // nothing is queued or sent
-  const payload = buildPayload(name, { entity: rec, claims: ev.claimsOf(rec.id, rec.revision), approval: ap, grants });
+  const cv = name === 'MICHAT_CV' ? { cv: cvOptions(envOf(lib)), mask: cvTextMask(lib) } : {};
+  const payload = buildPayload(name, { entity: rec, claims: ev.claimsOf(rec.id, rec.revision), approval: ap, grants, ...cv });
   return dispatch(ev, rec, name, payload, SYSTEM.sub);
 }
 

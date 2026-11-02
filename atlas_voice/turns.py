@@ -103,7 +103,7 @@ INTENT_RULES = {
         _rule('deny', r"^\W*(?:(?:ok|vale|bueno|pues|eh)[, ]+)*(?:no" + _END + r"|no es (?:correcto|cierto|asi|verdad|eso)|para nada|incorrecto|falso|eso no es (?:correcto|cierto|asi|verdad)|asi no)"),
     ],
     # pt, de, it and nl (v2.2 L1): the control intents only (pause, resume, repeat, skip, cannot_disclose, dont_know, correction, rushed, stop, confirm, deny), written like the
-    # fr and es tables: accent-free lower case (the text is normalised first), a rule may look back only at earlier intents. Every table needs a native-speaker review.
+    # fr and es tables: accent-free lower case (the text is normalised first), a rule may look back only at earlier intents. Every table is a machine translation (D-L2).
     'pt': [
         _rule('pause', r"\b(?:(?:podemos|vamos|posso|quero) (?:fazer )?(?:uma )?pausa|preciso de (?:uma |um )?(?:pausa|intervalo|minuto|momento)|me da (?:um|uma) (?:momento|minuto|segundo)|ja volto|volto ja)\b|^\W*(?:(?:ok|certo|desculpe|um)[, ]+)*(?:pausa|espera|espere|aguarde)\b"),
         _rule('pause', r"\b(?:um|uma) (?:momento|momentinho|minuto|minutinho|segundo|segundinho|instante)\b", max_words=5),   # a bare "one moment" is a request only in a short remark ("em um momento do projeto..." is an answer)

@@ -18,7 +18,7 @@ Filled in from `08_Implementation/IMPLEMENTATION_STATUS_TEMPLATE.md`. Date: 2026
 - **Provider verified**: a real external service was exercised. The answer is **none** in every row; the column is kept so nobody has to infer it.
 - **PARTIAL**: built in part; the row says what is missing.
 - **BLOCKED_EXTERNAL**: needs an external system, key, schema or owner decision that does not exist in this repository. The row names the owner and the API needed.
-- **Needs native review / uncalibrated / unverified**: collected in section 6.
+- **Machine translated (no native gate, D-L2) / uncalibrated / unverified**: collected in section 6.
 
 Last verified date for every row: 2026-10-31 (offline suites on the tree above: root `node --test` 461 tests, 460 pass, 1 skipped by design; edge `node --test` 939; `pytest` 627; `make test-eval` 52; details in `handoff/BUILD_STATUS.md`, session T17).
 
@@ -78,7 +78,7 @@ Rows follow `GAP_ANALYSIS.md`. Owner is Tony unless stated.
 | ID | Requirement | Status | Evidence | Owner and API needed | Next action |
 |---|---|---|---|---|---|
 | X1 | DNA skills write-back | **BLOCKED_EXTERNAL**; mock only | `adapters.js` `DNA_SKILLS_WRITEBACK`. Proposal payload; `skill_taxonomy_id` and `level` are null. Tests: `branches.test.js`, `eval-workflow.test.js::S13` | Mantu DNA owners (IT): endpoint, authentication, skill taxonomy, level scale, write contract | Owners define the contract; then a live adapter behind `ATLAS_ADAPTERS=live` (today refused). |
-| X2 | MiChat CV | **BLOCKED_EXTERNAL**; mock only | `MICHAT_CV`. `language`, `target_role`, `template` are null. CV claims carry reviewed wording only (G1-4). Tests: `branches.test.js` | MiChat owners: endpoint, CV schema, template and language rules (client names: redacted by decision, G1-4) | As above. "MiChat" is an internal label for this interview (D1); no UI rename. |
+| X2 | MiChat CV | **READY_TO_CONNECT** on an assumed contract (2026-11-02, D-X2R); mock or outbox until configured | `src/michat.js` (adapter on the generic connector, assumed-contract overlay, translation into the CV language, client and contact masking, health check), `adapters.js` `MICHAT_CV`, `contracts/michat_cv/assumed/`. Retries and backoff (`jobs.js`), `Idempotency-Key`, sandbox ack by default. Tests: `michat-connector.test.js` (mock MiChat on 127.0.0.1), `connection-contracts.test.js`, `translate-route.test.js`, `test_connections_config.py`, `branches.test.js` | MiChat owners: confirm or replace endpoint, auth, field mapping, ack paths, template and language rules (`docs/MICHAT.md` lists each); Tony sets `MICHAT_CV_BASE_URL`, `MICHAT_CV_TOKEN`, `MICHAT_CV_CONTRACT=assumed`, `ATLAS_ADAPTERS=live` | When the owners answer: edit the assumed contract, replace the samples, `make test`, set the variables, check `/api/connections/michat/health`. Client names stay out (D-G14). |
 | X3 | IMP capability signal | **BLOCKED_EXTERNAL**; mock only | `IMP_CAPABILITY`. `availability` null; waits for its own `matching` permission. Tests: `branches.test.js` (W9) | IMP owners: endpoint, signal schema, matching purpose confirmation | As above. |
 | X4 | Spotlight CMS | **BLOCKED_EXTERNAL**; mock holds, never publishes | `SPOTLIGHT_CMS`, `spotlight.js`. `eval-workflow.test.js::W12`, `::S12` | Spotlight CMS owners: API and publication contract; brand approval; per-revision authorization | Atlas never sets `published` (D4, D12). |
 | X5 | MAAP review | **BLOCKED_EXTERNAL** (rubric); shell only | `createShell('MAAP')`. Rating or closing returns `MAAP_NOT_CONFIGURED`. `eval-workflow.test.js::S11`, `MAAP-1` to `MAAP-6` | Process owner: rubric, cadence, owners, data model (D2) | Nothing to build until supplied. No MAAP conversation exists. |
@@ -131,11 +131,12 @@ Details, test names and notes: `eval/COVERAGE.md`. Short test names (CONV, WF) l
 | Gate 6 human review of consequential decisions | Locally verified | WF `G6`, `W7`, `W12` | |
 | Gate 7 conversation quality target with pilot users | **Not started** | none | Needs consultants. The rubric linter is a regression aid only. |
 
-## 6. Needs native review, uncalibrated, or unverified
+## 6. Machine translated, uncalibrated, or unverified
 
 None of these can be settled offline.
 
-**Needs native review**
+**Language quality (no native-speaker gate since 2026-11-02, D-L2)**
+- Tony decision 2026-11-02: no native-speaker dependency, auto-translate any language. The banks below are machine translations used as they are (`REVIEW_STATUS` `machine_translated`); `translate.js` translates any text into any language with a confidence flag. The items below are kept as a record of what was machine authored; none blocks anything.
 - A machine pre-pass of every non-English line (2026-11-02) and the checklist for the native reviewers: `eval/NATIVE_REVIEW.md`. It changed no string; it lists four decisions first (ATLAS's grammatical gender per language, gender-neutral address to the consultant, the Spanish and Portuguese varieties, quotes around button names) and about 40 suggested rewrites.
 - Cached greetings in French, Spanish, Portuguese, German, Italian and Dutch (`languages.js`): faithful translations of the English opening, authored by the agent. Text-mode users see the same greetings.
 - v2.2 U2 (2026-10-31), authored by the agent and awaiting a native-speaker review in the six languages: the confidentiality sentence of the opening ("If something is client-confidential, say so and I'll note it without the details.", `languages.js`), the rewritten `no_number_fine` acknowledgements (the figure stays open, no invitation) and the new `reangle` acknowledgements (`persona.py`), and the turn-intent words added for a bare "pass" / "skip" / "no idea" (`turns.py`). The re-angle and "what is still missing" questions themselves are English wording (the talker says them in the consultant's language).
@@ -169,7 +170,7 @@ Each is built one way and can be changed; none was asked of the consultants.
 ## 8. Known open items
 
 - Evidence machine: disputes are wired (2026-11-02): the owner may accept a rejection (`accept_rejection`, reason required); a dispute is adjudicated by a reviewer who is neither the owner nor the reviewer who rejected it (`uphold_rejection` with a reason, or `reopen_review` back to the queue); the outcome is kept beside the rejection and the dispute (`adjudication`). The adjudication is API-level and in the reviewer screen; the owner-named `adjudicator` is recorded, not enforced (a decision for the process owner). `propose_downstream` is wired (v2.2 core, 2026-10-31): the system fires it once a destination (DNA skills, MiChat CV, IMP projects, Spotlight stories) holds a proposal for the approved revision.
-- CV payload carries structured fields only until a person has reworded a claim (G1-4). **Resolved by decision (2026-11-02, D-G14): client names stay out of CVs for now.** The current redaction stays and no client-permission model is built. Row X2 stays BLOCKED_EXTERNAL only on the MiChat contract (endpoint, CV schema, template and language rules).
+- CV payload carries structured fields only until a person has reworded a claim (G1-4). **Resolved by decision (2026-11-02, D-G14): client names stay out of CVs for now.** The current redaction stays and no client-permission model is built. Row X2 stays BLOCKED_EXTERNAL only on the MiChat contract (endpoint, CV schema, template and language rules). **Update 2026-11-02 (D-X2R):** X2 is now built ready to connect on an assumed contract (`docs/MICHAT.md`); reviewed statements are also masked against library client and contact names.
 - A reviewer-amended claim needs a second reviewer; the owner is asked nothing (G1-2).
 - Prefill: the Project ID is checked server-side against the person's staffing rows (W1, 2026-11-02; people with no rows keep it as self-declared until the feed covers them); role, sector and stage are self-declared (W2 needs a source of record or a decision to accept them). No artifact registry (W6). No MAAP or Project Review owners (W10).
 - `intelligence-ui.js` keeps an unused map with the original words of a kept-private item in browser memory; it is never displayed.
@@ -313,3 +314,10 @@ Open: `SETTINGS_KEY` must exist on the deployment (`deploy.sh` creates it on the
 ## 2026-11-01: PR #1 review fixes
 
 The privacy and checkpoint-concurrency findings, reconnect readiness and unsaved-correction defects are fixed and regression tested. Confirmation was revalidated: the existing snapshot/seal protects draft membership; the card now also exposes every ledger detail and its complete quote. Details, test results and remaining browser/environment limits: [PR1_REVIEW_FIXES.md](PR1_REVIEW_FIXES.md). Status remains **locally verified, provider verified: none, not deployed**.
+
+## 2026-11-02: MiChat CV ready to connect (X2) and automatic translation (D-L2)
+
+- X2: `deploy/cloudflare-edge/src/michat.js`, assumed contract `atlas_voice/config/contracts/michat_cv/assumed/` (validated by `connections_config.michat_assumed_connection`), admin `GET /api/connections/michat/health`, `scripts/connection_check.mjs` overlays it too. Settings and what the owners must confirm: `docs/MICHAT.md`.
+- D-L2: `deploy/cloudflare-edge/src/translate.js`, `POST /api/translate` (signed in, CSRF, `TRANSLATE_HOUR`), `REVIEW_STATUS` `machine_translated`, `eval/NATIVE_REVIEW.md` A1 to A4 resolved.
+- Status: locally verified; the Worker is deployed with none of the MiChat variables set, so MiChat stays in mock or outbox mode and no call to MiChat is made.
+

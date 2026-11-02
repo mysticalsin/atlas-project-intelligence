@@ -23,6 +23,8 @@ import { CONFIRM_HTML } from './confirm-page.js';
 import { nameClaims, pushConfig } from './profile.js';
 import { checkpointEnabled } from './checkpoint.js';
 import { connectionsView } from './connectors.js';
+import { effectiveConfig, michatHealth } from './michat.js';
+import { translateText, glossaryTerms, TRANSLATE_MAX_CHARS } from './translate.js';
 import * as privacy from './privacy.js';
 import { voiceAdminRoutes } from './settings.js';
 import { RETENTION } from './policy.generated.js';
@@ -322,7 +324,32 @@ async function route(request, env, page, { waitUntil = p => p, flagsOf = flags }
     // The admin Connections panel (v2.2 F2): read-only readiness of every connection in the framework, booleans and names only. Admins only; never any secret, URL or token value.
     if (url.pathname === '/api/connections/status' && request.method === 'GET') {
       if (role !== 'admin') { sec.log('access_denied', 'ADMIN_ONLY', 403); return json(env, { error: 'Only an ATLAS admin can see the connections.' }, 403); }
-      return new Response(JSON.stringify(connectionsView(env)), { headers: headers(env, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }) });
+      return new Response(JSON.stringify(connectionsView(env, effectiveConfig(env))), { headers: headers(env, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }) });
+    }
+    // MiChat CV health (X2): admins only. One GET to MiChat's health endpoint when the connection is set up (michat.js), else the reason codes; never a body, URL or token.
+    if (url.pathname === '/api/connections/michat/health' && request.method === 'GET') {
+      if (role !== 'admin') { sec.log('access_denied', 'ADMIN_ONLY', 403); return json(env, { error: 'Only an ATLAS admin can check MiChat.' }, 403); }
+      { const slow = await limited('michat-health', 30, HOUR); if (slow) return slow; }
+      let out;
+      try { out = await michatHealth(env); } catch { out = { ok: false, error: 'HEALTH_CHECK_FAILED' }; }
+      return new Response(JSON.stringify({ connection: 'michat_cv', ...out }), { headers: headers(env, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }) });
+    }
+    // Machine translation into any language (D-L2, translate.js): the signed-in person's own text, no native-speaker gate; the answer carries a confidence.
+    if (url.pathname === '/api/translate' && request.method === 'POST') {
+      { const bad = csrfRefusal(request, env, csrf, sec); if (bad) return bad; }
+      if (ks.aiOff(env)) { sec.log('kill_switch', 'AI_OFF', 503); return paused(ks.AI_OFF_MESSAGE); }
+      if (Number(request.headers.get('Content-Length') || 0) > 32768) return json(env, { error: 'Text too long to translate.' }, 413);
+      { const slow = await limited('translate', limitOf(env, 'TRANSLATE_HOUR'), HOUR); if (slow) return slow; }
+      const raw = await boundedBytes(request, 32768);
+      if (raw === null) return json(env, { error: 'Text too long to translate.' }, 413);
+      let body;
+      try { body = JSON.parse(new TextDecoder().decode(raw)); } catch { return json(env, { error: 'Invalid JSON.' }, 400); }
+      const text = typeof body?.text === 'string' ? body.text : '';
+      if (!text.trim()) return json(env, { error: 'Nothing to translate.' }, 400);
+      if (text.length > TRANSLATE_MAX_CHARS) return json(env, { error: 'Text too long to translate.' }, 413);
+      const out = await translateText(env, text, { target: body?.target, source: typeof body?.source === 'string' ? body.source : null, glossary: glossaryTerms(env) });
+      if (out.flags.includes('TARGET_INVALID')) return json(env, { error: 'Unknown target language.' }, 400);
+      return json(env, out);
     }
     // Admin voice settings (v2.2 V2, settings.js): the provider, the ElevenLabs key (write-only, sealed in the LibraryStore), the voice and the model. Admins only; the module checks the role, Origin and CSRF, rate limits and the AI-off switch.
     if (url.pathname === '/api/admin/voice' || url.pathname.startsWith('/api/admin/voice/')) {

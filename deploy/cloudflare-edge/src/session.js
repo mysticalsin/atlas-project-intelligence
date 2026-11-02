@@ -145,7 +145,7 @@ export const SATISFIED_WORDS = 6; // a reply this short to the read-back ("No, t
 const CORRECTION_ITEM_BASE = 1000; // typed corrections are transcript items user-typed-1001, 1002 ...: never a turn number (turns stop at 300)
 const DETAIL_ID = /^D-\d{3,6}$/;
 export const SUMMARY_UNAVAILABLE = 'There is no open summary to change. Wait for the read-back, then try again.';
-export const SUMMARY_LINES = Object.freeze(LANG_SUMMARY_LINES); // atlas_voice/languages.py: en authored, fr es pt de it nl need a native review; any other language: the talker's own words (below)
+export const SUMMARY_LINES = Object.freeze(LANG_SUMMARY_LINES); // atlas_voice/languages.py: en authored, fr es pt de it nl machine translated (D-L2); any other language: the talker's own words (below)
 // Languages without a bank: the talker closes (or prompts) in the consultant's language from these server instructions (no model-made claim about what was saved).
 const SUMMARY_PROMPT_INSTRUCTION = '[Server: the consultant has nothing to add to the read-back.] Thank them in one short sentence and tell them to press Confirm summary when ready: it saves a private draft only they can see, and nothing goes to a reviewer until they press Submit for review themselves. Ask no question.';
 const SUMMARY_CLOSE_INSTRUCTION = saved => '[Server: the consultant confirmed the summary.] Thank them warmly in one short sentence and say '
