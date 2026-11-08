@@ -93,3 +93,4 @@ body.studio-view{background:#101011}
 #voicePanel:fullscreen{background:#0b0b10;overflow:auto;padding:2vh 3vw;box-sizing:border-box;display:flex;flex-direction:column;justify-content:center}
 #voicePanel:fullscreen .orb-screen{width:min(80vh,92vw)!important;max-width:none!important;margin:0 auto!important}
 #voicePanel:fullscreen .studio-aside,#voicePanel:fullscreen .studio-heading{display:none}
+@media(min-width:541px) and (max-width:900px){.studio-view .topbar{height:auto;min-height:72px}.studio-view .topbar nav{flex-wrap:wrap;min-width:0}.studio-view .topbar nav button{padding:7px 9px;font-size:11px}}

@@ -4,7 +4,12 @@ import { Library, cleanReference, deriveStatus } from '../src/library.js';
 import { completeness, parseReview, forModel } from '../src/review.js';
 import { memorySql } from './sqlite.js';
 
-const OWNER = { email: 'alex@mantu.com', role: 'user' }, N1 = { email: 'sam@mantu.com', role: 'user' }, OTHER = { email: 'kim@mantu.com', role: 'user' }, REV = { email: 'rev@mantu.com', role: 'reviewer' };
+const OWNER = { email: 'alex@mantu.com', role: 'user' }, N1 = { email: 'sam@mantu.com', role: 'user' }, OTHER = { email: 'kim@mantu.com', role: 'user' }, REV = { email: 'rev@mantu.com', role: 'reviewer' }, PRE = { email: 'pre@mantu.com', role: 'presales' }, SYS = { email: 'directory', role: 'system' };
+function approve(l, id, owner = OWNER.email) {
+  l.bindTrust(SYS, { owner, email: N1.email, source: 'directory', sandbox: true });
+  l.validate(N1, id, { decision: 'validate', lane: 'manager' });
+  return l.validate(PRE, id, { decision: 'validate', lane: 'presales' });
+}
 const REF = () => ({ title: 'Claims triage alias', stage: 'Production', sector: 'Insurance', consultant: { name: 'Alex', role: 'Data engineer' },
   client: { name: 'Zebracorp', location: 'Lyon', contact: 'Head of Claims' },
   details: { projectId: 'PRJ-1', country: 'France', start: '2024-03', end: '2024-11', teamSize: 6, teamRoles: ['Data engineer'], technologies: ['Python'], deliverables: ['Routing model'], serviceLines: ['Data & AI'],
@@ -31,14 +36,14 @@ test('create, same content does not create a revision, a change does and reopens
   const a = await l.upsert(OWNER, { localId: 'p1', reference: REF() });
   assert.equal(a.revision, 1); assert.equal(a.status, 'in_review');
   assert.equal((await l.upsert(OWNER, { localId: 'p1', reference: REF() })).unchanged, true);
-  await l.review(OWNER, a.id); l.validate(N1, a.id, { decision: 'validate' });
+  await l.review(OWNER, a.id); approve(l, a.id);
   assert.equal(l.get(OWNER, a.id).status, 'published');
   const changed = REF(); changed.answers[3] += ' Payouts were faster.';
   const b = await l.upsert(OWNER, { localId: 'p1', reference: changed });
   assert.equal(b.revision, 2); assert.equal(b.status, 'in_review');
   const full = l.get(OWNER, a.id);
   assert.equal(full.state.validation.status, 'pending'); assert.deepEqual(full.revisions.map(r => r.revision), [2, 1]);
-  assert.deepEqual(full.audit.map(x => x.action), ['revised', 'validated', 'reviewed', 'created']);
+  assert.deepEqual(full.audit.map(x => x.action), ['revised', 'presales approved', 'manager approved', 'reviewed', 'created']);
   assert.equal(l.revision(OWNER, a.id, 1).data.answers[3].includes('faster'), false);
 });
 
@@ -46,16 +51,18 @@ test('permissions: others see only published, anonymised; the N+1 and listed con
   const { l } = lib();
   const a = await l.upsert(OWNER, { localId: 'p1', reference: REF() });
   assert.throws(() => l.get(OTHER, a.id), /not found/);
+  assert.throws(() => l.get(N1, a.id), /not found/, 'a typed manager email does not grant access');
+  l.bindTrust(SYS, { owner: OWNER.email, email: N1.email, source: 'directory', sandbox: true });
   assert.equal(l.get(N1, a.id).data.client.name, 'Zebracorp');
-  assert.equal(l.get({ email: 'jo@mantu.com', role: 'user' }, a.id).access, 'full');
-  await l.review(OWNER, a.id); l.validate(N1, a.id, { decision: 'validate' });
+  assert.throws(() => l.get({ email: 'jo@mantu.com', role: 'user' }, a.id), /not found/, 'a teammate email on the story does not grant access');
+  await l.review(OWNER, a.id); l.validate(N1, a.id, { decision: 'validate', lane: 'manager' }); l.validate(PRE, a.id, { decision: 'validate', lane: 'presales' });
   const pub = l.get(OTHER, a.id);
   assert.equal(pub.access, 'public'); assert.ok(!('client' in pub.data)); assert.doesNotMatch(JSON.stringify(pub), /Zebracorp|Lyon|jo@mantu/);
   assert.match(pub.data.answers[0], /^the client had claims/); assert.equal(pub.revisions.length, 0); assert.equal(pub.audit.length, 0);
   assert.equal(l.list(OTHER).total, 1); assert.equal(l.list(OTHER).items[0].client, '');
   await assert.rejects(l.upsert(OTHER, { id: a.id, reference: REF() }), /cannot edit/);
-  assert.throws(() => l.validate(OTHER, a.id, { decision: 'validate' }), /not found|Only the N\+1/);
-  assert.throws(() => l.validate(OWNER, a.id, { decision: 'validate' }), /Only the N\+1/);
+  assert.throws(() => l.validate(OTHER, a.id, { decision: 'validate', lane: 'manager' }), /not found|trusted manager/);
+  assert.throws(() => l.validate(OWNER, a.id, { decision: 'validate', lane: 'manager' }), /trusted manager/);
 });
 
 test('quality gate: no review agent answer, missing core fields or unsupported claims can never publish', async () => {
@@ -63,7 +70,8 @@ test('quality gate: no review agent answer, missing core fields or unsupported c
   const a = await l.upsert(OWNER, { localId: 'p1', reference: REF() });
   const r = await l.review(OWNER, a.id);
   assert.equal(r.state.quality.status, 'needs_work'); assert.match(r.state.quality.blockers.join(' '), /did not answer/);
-  l.validate(N1, a.id, { decision: 'validate' }); assert.equal(l.get(OWNER, a.id).status, 'needs_work');
+  l.bindTrust(SYS, { owner: OWNER.email, email: N1.email, source: 'directory', sandbox: true });
+  l.validate(N1, a.id, { decision: 'validate', lane: 'manager' }); l.validate(PRE, a.id, { decision: 'validate', lane: 'presales' }); assert.equal(l.get(OWNER, a.id).status, 'needs_work');
   const u = lib(JSON.stringify({ score: 95, client_value_clear: true, issues: [{ field: 'outcome', kind: 'unsupported_claim', detail: 'The 70% saving has no source.' }] })).l;
   const b = await u.upsert(OWNER, { localId: 'p2', reference: REF() });
   assert.equal((await u.review(OWNER, b.id)).state.quality.status, 'needs_work');
@@ -80,13 +88,17 @@ test('the review agent never sees confidential client details', async () => {
   assert.match(seen[0][1].content, /the client had claims/);
 });
 
-test('N+1 can request changes with a note; manager staff needs no validation; withdraw and reinstate', async () => {
+test('trusted manager can request changes; the manager-staff checkbox does not publish; withdraw and reinstate', async () => {
   const { l } = lib();
   const a = await l.upsert(OWNER, { localId: 'p1', reference: REF() }); await l.review(OWNER, a.id);
-  assert.throws(() => l.validate(N1, a.id, { decision: 'request_changes' }), /Say what/);
-  assert.equal(l.validate(N1, a.id, { decision: 'request_changes', note: 'Add the team size.' }).status, 'changes_requested');
+  l.bindTrust(SYS, { owner: OWNER.email, email: N1.email, source: 'directory', sandbox: true });
+  assert.throws(() => l.validate(N1, a.id, { decision: 'request_changes', lane: 'manager' }), /Say what/);
+  assert.equal(l.validate(N1, a.id, { decision: 'request_changes', lane: 'manager', note: 'Add the team size.' }).status, 'changes_requested');
   const staff = REF(); staff.validation.managerStaff = true;
   const b = await l.upsert(OWNER, { localId: 'p2', reference: staff }); await l.review(OWNER, b.id);
+  assert.notEqual(l.get(OWNER, b.id).status, 'published');
+  assert.equal(l.get(OWNER, b.id).state.validation.managerStaffIgnored, true);
+  approve(l, b.id);
   assert.equal(l.get(OWNER, b.id).status, 'published');
   assert.equal(l.withdraw(OWNER, b.id, { note: 'client asked' }).status, 'withdrawn');
   assert.equal(l.list(OTHER).total, 0);
@@ -122,9 +134,11 @@ test('library routes: save triggers an automatic review, then the N+1 validates 
   const saved = await (await call('POST', '/api/library', OWNER, { localId: 'p1', reference: REF() })).json();
   assert.equal(saved.status, 'in_review'); await Promise.all(pending);
   assert.equal((await (await call('GET', '/api/library/' + saved.id, OWNER)).json()).status, 'awaiting_validation');
-  assert.equal((await call('POST', `/api/library/${saved.id}/validate`, OTHER, { decision: 'validate' })).status, 404);
-  const v = await (await call('POST', `/api/library/${saved.id}/validate`, N1, { decision: 'validate' })).json();
-  assert.equal(v.status, 'published'); assert.equal(v.state.validation.by, 'sam@mantu.com');
+  l.bindTrust(SYS, { owner: OWNER.email, email: N1.email, source: 'directory', sandbox: true });
+  assert.equal((await call('POST', `/api/library/${saved.id}/validate`, OTHER, { decision: 'validate', lane: 'manager' })).status, 404);
+  assert.equal((await (await call('POST', `/api/library/${saved.id}/validate`, N1, { decision: 'validate', lane: 'manager' })).json()).status, 'awaiting_validation');
+  const v = await (await call('POST', `/api/library/${saved.id}/validate`, PRE, { decision: 'validate', lane: 'presales' })).json();
+  assert.equal(v.status, 'published'); assert.equal(v.state.validation.managerDecision, 'approved'); assert.equal(v.state.validation.presalesDecision, 'approved');
   assert.equal((await call('GET', '/api/library', { email: '', role: 'admin' })).status, 401);
   assert.equal((await call('GET', '/api/library/nope/whatever', OWNER)).status, 404);
 });
@@ -170,7 +184,7 @@ async function twoClients() {
   const l = new Library(memorySql(), { now: () => '2026-09-29T00:00:00.000Z', complete: async m => { seen.push(JSON.stringify(m)); return fake.complete(m); }, embed: async t => { seen.push(String(t)); return fake.embed(t); } });
   const [z, b] = TWO(), ids = [];
   for (const [k, ref] of [['z', z], ['b', b], ['c', { ...REF(), title: 'Payments alias', client: { name: 'Corvina Bank', location: '', contact: '' } }]]) ids.push((await l.upsert(OWNER, { localId: k, reference: ref })).id);
-  for (const id of ids) { await l.review(OWNER, id); l.validate(N1, id, { decision: 'validate' }); }
+  for (const id of ids) { await l.review(OWNER, id); approve(l, id); }
   return { l, seen, ids };
 }
 

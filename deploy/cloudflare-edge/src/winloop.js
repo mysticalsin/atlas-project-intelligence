@@ -8,6 +8,7 @@ import { fail } from './util.js';
 import { ensure } from './bids.js';
 import { claimSummary } from './claims.js';
 import { NUMERIC_SRC } from './policy.generated.js';
+import { TENANT_ID } from './authz.js';
 
 export const READY = true;
 export const MIN_N = 5;
@@ -39,23 +40,32 @@ export function proofTypeOf(lib, row) {
 // every outcome change: a rowid-weighted checksum of outcomes, so even two outcomes swapped at the same instant
 // invalidate it (a stricter key than §F7.1's COUNT/MAX pair).
 const cache = new WeakMap();
-function tallies(lib) {
+function winScope(user) {
+  if (user?.tenantEnforced === true) {
+    const tenant = String(user.tenant || '').toLowerCase();
+    return TENANT_ID.test(tenant) ? tenant : null;
+  }
+  return '';
+}
+function tallies(lib, user) {
   ensure(lib);
-  const u = lib.rows('SELECT COUNT(*) AS n, MAX(used_at) AS at FROM bid_references')[0] || {};
-  const b = lib.rows("SELECT COUNT(*) AS n, MAX(decided_at) AS at, SUM(rowid * (CASE outcome WHEN 'won' THEN 1 WHEN 'lost' THEN 2 WHEN 'withdrawn' THEN 3 ELSE 4 END)) AS sum FROM bids")[0] || {};
-  const sig = [u.n, u.at, b.n, b.at, b.sum].join('|'), hit = cache.get(lib);
+  const scope = winScope(user);
+  if (scope === null) return { sig: 'refused', byType: new Map(TYPES.map(t => [t, { used: 0, won: 0, lost: 0, pending: 0 }])), bidsOf: new Map(), byRef: new Map(), totals: { bids: 0, decided: 0 } };
+  const u = lib.rows("SELECT COUNT(*) AS n, MAX(u.used_at) AS at FROM bid_references u JOIN bids b ON b.id = u.bid_id WHERE lower(COALESCE(b.tenant, '')) = ?", scope)[0] || {};
+  const b = lib.rows("SELECT COUNT(*) AS n, MAX(decided_at) AS at, SUM(rowid * (CASE outcome WHEN 'won' THEN 1 WHEN 'lost' THEN 2 WHEN 'withdrawn' THEN 3 ELSE 4 END)) AS sum FROM bids WHERE lower(COALESCE(tenant, '')) = ?", scope)[0] || {};
+  const sig = [scope, u.n, u.at, b.n, b.at, b.sum].join('|'), hit = cache.get(lib);
   if (hit?.sig === sig) return hit;
   // Per story, one use is one bid ((bid_id, ref_id) is the key). Per proof type, `used` counts uses but outcomes count
   // distinct bids (bidsOf: type -> bid id -> outcome), so one bid citing five stories of a type is one decided bid.
   const blank = () => ({ used: 0, won: 0, lost: 0, pending: 0 }), byType = new Map(TYPES.map(t => [t, blank()])), byRef = new Map(), bidsOf = new Map(TYPES.map(t => [t, new Map()]));
   const count = (s, outcome) => { if (outcome === 'won') s.won++; else if (outcome === 'lost') s.lost++; else if (outcome === 'pending') s.pending++; };
-  for (const r of lib.rows('SELECT u.bid_id, u.ref_id, u.proof_type, b.outcome FROM bid_references u JOIN bids b ON b.id = u.bid_id')) {
+  for (const r of lib.rows("SELECT u.bid_id, u.ref_id, u.proof_type, b.outcome FROM bid_references u JOIN bids b ON b.id = u.bid_id WHERE lower(COALESCE(b.tenant, '')) = ?", scope)) {
     if (byType.has(r.proof_type)) { byType.get(r.proof_type).used++; bidsOf.get(r.proof_type).set(r.bid_id, r.outcome); }
     if (!byRef.has(r.ref_id)) byRef.set(r.ref_id, blank());
     const s = byRef.get(r.ref_id); s.used++; count(s, r.outcome);
   }
   for (const [type, outcomes] of bidsOf) for (const outcome of outcomes.values()) count(byType.get(type), outcome);
-  const t = lib.rows("SELECT COUNT(*) AS bids, SUM(CASE WHEN outcome IN ('won', 'lost') THEN 1 ELSE 0 END) AS decided FROM bids")[0] || {};
+  const t = lib.rows("SELECT COUNT(*) AS bids, SUM(CASE WHEN outcome IN ('won', 'lost') THEN 1 ELSE 0 END) AS decided FROM bids WHERE lower(COALESCE(tenant, '')) = ?", scope)[0] || {};
   const entry = { sig, byType, bidsOf, byRef, totals: { bids: t.bids || 0, decided: t.decided || 0 } };
   cache.set(lib, entry);
   return entry;
@@ -65,9 +75,9 @@ const cell = s => { const decided = s.won + s.lost, shown = decided >= MIN_N; re
 // Ranking feedback for F1 match and Library.recommend: refId -> { decided, won, winRate, boost }. The boost is
 // clamp(0.1 x (story rate - overall rate), -0.03, +0.05), only with at least 10 decided bids overall and 5 decided
 // uses of that story; callers add it to the order of rows ABOVE the similarity floor only, never to model relevance.
-export function winSignals(lib) {
+export function winSignals(lib, user) {
   if (!READY) return new Map();
-  const t = tallies(lib);
+  const t = tallies(lib, user);
   if (!t.signals) {
     let won = 0, lost = 0;
     for (const s of t.byRef.values()) { won += s.won; lost += s.lost; }
@@ -84,9 +94,9 @@ export function winSignals(lib) {
 // groups have 5+ decided bids and quantified proof's win rate beats qualitative by 15+ points; else 'confirmed' by
 // the same rule for confirmed vs unconfirmed; else null. A group is the set of distinct bids with a use in it. From
 // bids and bid_references only (no visibleRows scan).
-export function guidance(lib) {
+export function guidance(lib, user) {
   if (!READY) return { hint: null, decided: 0, basis: 'not built' };
-  const t = tallies(lib);
+  const t = tallies(lib, user);
   if (!t.guidance) {
     const group = test => {
       const outcomes = new Map(); for (const [type, m] of t.bidsOf) if (test(type)) for (const [id, o] of m) outcomes.set(id, o);
@@ -106,7 +116,7 @@ export function guidance(lib) {
 }
 
 function stats(lib, user) {
-  const t = tallies(lib);
+  const t = tallies(lib, user);
   const proofTypes = [...t.byType].map(([proofType, s]) => { const c = cell(s); return { proofType, used: s.used, won: s.won, lost: s.lost, decided: c.decided, winRate: c.winRate, ci95: c.ci95, caveat: c.caveat }; });
   const stories = [];
   for (const [refId, s] of t.byRef) {
@@ -121,8 +131,9 @@ function stats(lib, user) {
 
 export async function routes(ctx) {
   const { method, parts, lib, user } = ctx;
+  if (user?.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) return { status: 403, body: { error: 'A verified tenant is required.' } };
   if (method === 'GET' && parts.length === 1) return { body: stats(lib, user) };
-  if (method === 'GET' && parts.length === 2 && parts[1] === 'guidance') return { body: guidance(lib) };
+  if (method === 'GET' && parts.length === 2 && parts[1] === 'guidance') return { body: guidance(lib, user) };
   throw fail(404, 'Not found.');
 }
 
@@ -134,7 +145,8 @@ export async function fetchWinHint(env, identity, { timeoutMs = 1500 } = {}) {
   let timer = null;
   try {
     const request = new Request('https://atlas.internal/api/library/wins/guidance', { headers: {
-      'x-atlas-user': String(identity?.user || ''), 'x-atlas-role': String(identity?.role || 'user'), 'x-atlas-email': String(identity?.mail || '') } });
+      'x-atlas-user': String(identity?.user || ''), 'x-atlas-role': String(identity?.role || 'user'), 'x-atlas-email': String(identity?.mail || ''),
+      'x-atlas-tenant': String(identity?.tenant || ''), 'x-atlas-tenant-enforced': identity?.tenantEnforced ? '1' : '0' } });
     const work = (async () => {
       const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(request);
       if (!res?.ok) return null;

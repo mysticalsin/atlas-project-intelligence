@@ -37,8 +37,8 @@ function scrubReport(r,client){if(!r)return r;const names=[client?.name,client?.
  const esc=x=>x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),re=new RegExp(names.map(esc).join('|'),'gi'),fix=v=>typeof v==='string'?v.replace(re,'the client'):v;
  const facts=r.facts?Object.fromEntries(Object.entries(r.facts).map(([k,v])=>[k,Array.isArray(v)?v.map(fix):fix(v)])):r.facts;
  return {...r,headline:fix(r.headline),summary:fix(r.summary),topics:Object.fromEntries(Object.entries(r.topics).map(([k,v])=>[k,fix(v)])),highlights:r.highlights.map(fix),gaps:r.gaps.map(fix),follow_ups:r.follow_ups.map(fix),facts};}
-function requestValidation(p){const v=p.validation;v.status=v.managerStaff?'not_required':'awaiting';v.notifiedAt='';v.validatedAt='';v.by='';
- log(p,v.managerStaff?'Report saved; N+1 validation not required (self-declared manager staff)':'Report saved; awaiting N+1 validation'+(v.manager.name?' by '+v.manager.name:''));}
+function requestValidation(p){const v=p.validation;v.status='awaiting';v.notifiedAt='';v.validatedAt='';v.by='';
+ log(p,'Report saved; awaiting a trusted manager and a bid/pre-sales reviewer. A manager-staff checkbox does not skip either approval'+(v.manager.name?' (named '+v.manager.name+')':''));}
 function recordValidation(p){const v=p.validation;if(v.status!=='awaiting')throw Error('This report is not awaiting N+1 validation.');if(!v.manager.name)throw Error('Add your N+1 on the project first.');
  v.status='validated';v.validatedAt=now();v.by=v.manager.name;log(p,'N+1 validation recorded for '+v.manager.name+' (local record, not an authenticated approval)');}
 // Email draft for the N+1. The consultant sends it; the confidential client is deliberately left out.

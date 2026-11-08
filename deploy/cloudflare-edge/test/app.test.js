@@ -12,12 +12,13 @@ async function jwt(claims = {}, header = { alg: 'RS256', kid: 'k1' }) {
   const input = b64u(JSON.stringify(header)) + '.' + b64u(JSON.stringify(body));
   return input + '.' + b64u(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, new TextEncoder().encode(input)));
 }
-const ENV = { ORIGIN, ACCESS_AUD: AUD, ACCESS_TEAM_DOMAIN: TEAM, CSRF_SECRET: 'test-secret', TALKER_MODEL: 'talker', TTS_VOICE: 'harmonia' };
+const ENV = { ORIGIN, ACCESS_AUD: AUD, ACCESS_TEAM_DOMAIN: TEAM, CSRF_SECRET: 'test-secret', TALKER_MODEL: 'talker', TTS_VOICE: 'harmonia',
+  ATLAS_ADMIN_ROLES: 'ATLAS.Admin', ATLAS_PRESALES_ROLES: 'ATLAS.Presales,ATLAS.Publish', ATLAS_REVIEWER_ROLES: 'ATLAS.Reviewer,ATLAS.Review' };
 const req = async (path, { token, headers = {}, host = ORIGIN } = {}) => new Request(host + path, { headers: { ...(token === undefined ? { 'cf-access-jwt-assertion': await jwt() } : token ? { 'cf-access-jwt-assertion': token } : {}), ...headers } });
 
 test('Access JWT verification accepts only valid, correctly scoped tokens', async () => {
   const ok = await verifyAccess(await req('/'), ENV);
-  assert.deepEqual(ok, { sub: 'user-abc', email: 'tony@example.com' });
+  assert.deepEqual(ok, { sub: 'user-abc', email: 'tony@example.com', roles: [] });
   for (const bad of [await jwt({ aud: ['other'] }), await jwt({ exp: 1 }), await jwt({ iss: 'https://evil.example' }), await jwt({ sub: '' }),
     (await jwt()).slice(0, -4) + 'AAAA', await jwt({}, { alg: 'none', kid: 'k1' }), await jwt({}, { alg: 'RS256', kid: 'unknown' })])
     assert.equal(await verifyAccess(await req('/', { token: bad }), ENV), null);
@@ -41,7 +42,7 @@ test('routes fail closed and serve the real page with runtime + CSP', async () =
 
 test('voice upgrade: origin enforced, CSRF injected by the Worker, one DO per person', async () => {
   let forwarded = null, name = null;
-  const env = { ...ENV, INTERVIEW: { idFromName: n => { name = n; return 'id'; }, get: () => ({ fetch: r => { forwarded = r; return new Response('ok'); } }) } };
+  const env = { ...ENV, ATLAS_TENANT_ISOLATION: 'local-synthetic', INTERVIEW: { idFromName: n => { name = n; return 'id'; }, get: () => ({ fetch: r => { forwarded = r; return new Response('ok'); } }) } };
   assert.equal((await handle(await req('/api/voice'), env, '')).status, 426);
   assert.equal((await handle(await req('/api/voice', { headers: { Upgrade: 'websocket', Origin: 'https://evil.example' } }), env, '')).status, 403);
   const boot = await (await handle(await req('/api/bootstrap'), ENV, '')).json();
@@ -112,14 +113,15 @@ test('JEV classify route: needs CSRF + origin, refuses client fields, 503 withou
   assert.equal((await post({ 'X-Atlas-CSRF': boot.csrf, 'Content-Length': '999999' }, { project })).status, 413);
 });
 
-test('admin mode comes only from the verified sign-in email; a browser cannot claim it; no provider branding', async () => {
+test('admin mode comes only from a verified role or subject; a browser cannot claim it; no provider branding', async () => {
   let forwarded = null;
-  const env = { ...ENV, ADMIN_EMAILS: 'Someone@x.com, TONY@example.com', INTERVIEW: { idFromName: () => 'id', get: () => ({ fetch: r => { forwarded = r; return new Response('ok'); } }) } };
-  const voice = async (claims, headers = {}) => { forwarded = null; await handle(new Request(ORIGIN + '/api/voice', { headers: { 'cf-access-jwt-assertion': await jwt(claims), Upgrade: 'websocket', Origin: ORIGIN, ...headers } }), env, ''); return forwarded.headers.get('x-atlas-admin'); };
+  const env = { ...ENV, ATLAS_TENANT_ISOLATION: 'local-synthetic', ATLAS_ADMIN_SUBJECTS: 'user-abc', INTERVIEW: { idFromName: () => 'id', get: () => ({ fetch: r => { forwarded = r; return new Response('ok'); } }) } };
+  const voice = async (claims, headers = {}, e = env) => { forwarded = null; await handle(new Request(ORIGIN + '/api/voice', { headers: { 'cf-access-jwt-assertion': await jwt(claims), Upgrade: 'websocket', Origin: ORIGIN, ...headers } }), e, ''); return forwarded.headers.get('x-atlas-admin'); };
   assert.equal(await voice({}), '1');
-  assert.equal(await voice({ email: 'other@example.com' }, { 'x-atlas-admin': '1' }), '0');
-  assert.equal(await voice({}, {}), '1');
-  assert.equal(await (async () => { forwarded = null; await handle(new Request(ORIGIN + '/api/voice', { headers: { 'cf-access-jwt-assertion': await jwt(), Upgrade: 'websocket', Origin: ORIGIN, 'x-atlas-admin': '1' } }), { ...env, ADMIN_EMAILS: '' }, ''); return forwarded.headers.get('x-atlas-admin'); })(), '0');
+  assert.equal(await voice({ email: 'other@example.com', sub: 'other' }, { 'x-atlas-admin': '1' }), '0');
+  assert.equal(await voice({ custom: { roles: ['ATLAS.Admin'] }, sub: 'someone' }, {}), '1');
+  assert.equal(await voice({ email: 'tony.walteur@gmail.com', sub: 'gmail' }, { 'x-atlas-admin': '1' }, { ...ENV, ATLAS_TENANT_ISOLATION: 'local-synthetic', ADMIN_EMAILS: 'tony.walteur@gmail.com', INTERVIEW: env.INTERVIEW }), '0');
+  assert.equal(await (async () => { forwarded = null; await handle(new Request(ORIGIN + '/api/voice', { headers: { 'cf-access-jwt-assertion': await jwt(), Upgrade: 'websocket', Origin: ORIGIN, 'x-atlas-admin': '1' } }), { ...env, ATLAS_ADMIN_SUBJECTS: '', ATLAS_ADMIN_ROLES: '' }, ''); return forwarded.headers.get('x-atlas-admin'); })(), '0');
   const boot = await (await handle(await req('/api/bootstrap'), env, '')).json();
   assert.equal(boot.admin, true); assert.equal(boot.speakingSeconds, 600);
   const text = JSON.stringify(boot) + await (await handle(await req('/', { token: null }), env, '')).text();
@@ -144,15 +146,15 @@ test('reasoning effort is sent, and dropped if the binding rejects it', async ()
 
 test('library routes: identity and role come only from the verified sign-in; POST needs CSRF + origin', async () => {
   let forwarded = null;
-  const env = { ...ENV, REVIEWER_EMAILS: 'rev@example.com', LIBRARY: { idFromName: n => n, get: () => ({ fetch: r => { forwarded = r; return new Response('{"ok":true}'); } }) } };
+  const env = { ...ENV, LIBRARY: { idFromName: n => n, get: () => ({ fetch: r => { forwarded = r; return new Response('{"ok":true}'); } }) } };
   assert.equal((await handle(await req('/api/library'), ENV, '')).status, 404);
   await handle(await req('/api/library', { headers: { 'x-atlas-user': 'boss@example.com', 'x-atlas-role': 'admin' } }), env, '');
   assert.equal(forwarded.headers.get('x-atlas-user'), 'tony@example.com'); assert.equal(forwarded.headers.get('x-atlas-role'), 'user');
   const boot = await (await handle(await req('/api/bootstrap'), env, '')).json();
-  const post = async headers => { forwarded = null; return handle(new Request(ORIGIN + '/api/library', { method: 'POST', body: '{}', headers: { 'cf-access-jwt-assertion': await jwt({ email: 'rev@example.com', sub: 'user-rev' }), Origin: ORIGIN, ...headers } }), env, ''); };
+  const post = async headers => { forwarded = null; return handle(new Request(ORIGIN + '/api/library', { method: 'POST', body: '{}', headers: { 'cf-access-jwt-assertion': await jwt({ email: 'rev@example.com', sub: 'user-rev', custom: { roles: ['ATLAS.Reviewer'] } }), Origin: ORIGIN, ...headers } }), env, ''); };
   assert.equal((await post({ 'X-Atlas-CSRF': 'wrong' })).status, 403); assert.equal(forwarded, null);
   assert.equal((await post({ 'X-Atlas-CSRF': boot.csrf })).status, 403, 'CSRF is bound to the signed-in subject');
-  const revBoot = await (await handle(new Request(ORIGIN + '/api/bootstrap', { headers: { 'cf-access-jwt-assertion': await jwt({ email: 'rev@example.com', sub: 'user-rev' }) } }), env, '')).json();
+  const revBoot = await (await handle(new Request(ORIGIN + '/api/bootstrap', { headers: { 'cf-access-jwt-assertion': await jwt({ email: 'rev@example.com', sub: 'user-rev', custom: { roles: ['ATLAS.Reviewer'] } }) } }), env, '')).json();
   assert.equal((await post({ 'X-Atlas-CSRF': revBoot.csrf })).status, 200); assert.equal(forwarded.headers.get('x-atlas-role'), 'reviewer');
   assert.equal(revBoot.library, true);
   const TID = '11111111-2222-3333-4444-555555555555', OID = '99999999-8888-7777-6666-555555555555', entra = { ...env, IDENTITY_SOURCE: 'entra', ENTRA_TENANTS: TID, ADMIN_EMAILS: 'tony@example.com' };
@@ -163,21 +165,50 @@ test('library routes: identity and role come only from the verified sign-in; POS
 
 test('PM trigger endpoint: bearer secret only (constant-time), system role only via the Worker; browsers cannot claim it', async () => {
   let forwarded = null;
-  const env = { ...ENV, TRIGGER_SECRET: 's3cret-value', LIBRARY: { idFromName: n => n, get: () => ({ fetch: r => { forwarded = r; return new Response('{"id":"x"}', { status: 201 }); } }) } };
-  const trig = (auth, e = env) => handle(new Request(ORIGIN + '/api/triggers', { method: 'POST', body: '{"email":"a@b.co","reason":"project_end"}', headers: auth ? { Authorization: auth } : {} }), e, '');
+  const tid = '11111111-1111-4111-8111-111111111111';
+  const env = { ...ENV, TRIGGER_SECRET: 's3cret-value', ATLAS_SYSTEM_TENANT: tid, LIBRARY: { idFromName: n => n, get: () => ({ fetch: r => { forwarded = r; return new Response('{"id":"x"}', { status: 201 }); } }) } };
+  const trig = (auth, e = env, extra = {}) => handle(new Request(ORIGIN + '/api/triggers', { method: 'POST', body: extra.body || '{"email":"a@b.co","reason":"project_end"}', headers: { ...(auth ? { Authorization: auth } : {}), ...(extra.headers || {}) } }), e, '');
   assert.equal((await trig()).status, 401); assert.equal((await trig('Bearer wrong-value!')).status, 401); assert.equal((await trig('Bearer s3cret-value', { ...env, TRIGGER_SECRET: '' })).status, 401);
+  assert.equal((await trig('Bearer ' + tid)).status, 401, 'the tenant id is not a system token');
   assert.equal(forwarded, null);
   const ok = await trig('Bearer s3cret-value'); assert.equal(ok.status, 201);
-  assert.equal(forwarded.headers.get('x-atlas-role'), 'system'); assert.equal(new URL(forwarded.url).pathname, '/api/library/trigger');
+  assert.equal(forwarded.headers.get('x-atlas-role'), 'system'); assert.equal(forwarded.headers.get('x-atlas-tenant'), tid); assert.equal(forwarded.headers.get('x-atlas-tenant-enforced'), '1');
+  assert.equal(new URL(forwarded.url).pathname, '/api/library/trigger');
   forwarded = null;
   await handle(await req('/api/library/scan-stale', { headers: { 'x-atlas-role': 'system', 'x-atlas-user': 'atlas-cron' } }), env, '');
   assert.equal(forwarded.headers.get('x-atlas-role'), 'user'); assert.equal(forwarded.headers.get('x-atlas-user'), 'tony@example.com');
 });
 
 
+test('enforced voice and memory refuse a missing tenant and keep two tenants apart', async () => {
+  let name = null;
+  const env = { ...ENV, INTERVIEW: { idFromName: n => { name = n; return n; }, get: () => ({ fetch: () => new Response('ok') }) } };
+  const denied = await handle(await req('/api/voice', { headers: { Upgrade: 'websocket', Origin: ORIGIN } }), env, '');
+  assert.equal(denied.status, 403);
+  assert.equal(name, null);
+  const memoryDenied = await handle(await req('/api/memory'), env, '');
+  assert.equal(memoryDenied.status, 403);
+  assert.match((await memoryDenied.json()).error, /subject-only bank was not read/);
+  const TID = '11111111-1111-4111-8111-111111111111', OTHER = '22222222-2222-4222-8222-222222222222', OID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const entra = { ...env, IDENTITY_SOURCE: 'entra', ENTRA_TENANTS: `${TID},${OTHER}` };
+  const open = async tid => {
+    name = null;
+    const token = await jwt({ email: 'ada@example.com', sub: 'ignored', custom: { tid, oid: OID, roles: [] } });
+    return { name, res: await handle(new Request(ORIGIN + '/api/voice', { headers: { 'cf-access-jwt-assertion': token, Upgrade: 'websocket', Origin: ORIGIN } }), entra, '') };
+  };
+  const first = await open(TID);
+  assert.equal(first.res.status, 200);
+  const firstName = name;
+  const second = await open(OTHER);
+  assert.equal(second.res.status, 200);
+  assert.notEqual(name, firstName);
+  assert.match(firstName, new RegExp('^' + TID + ':'));
+  assert.match(name, new RegExp('^' + OTHER + ':'));
+});
+
 test('memory routes: forwarded to the person\'s own Durable Object with a server-derived bank; POST needs CSRF; bootstrap reports memory', async () => {
   let forwarded = null, name = null;
-  const env = { ...ENV, HINDSIGHT_URL: 'https://hs.example', HINDSIGHT_API_KEY: 'k', INTERVIEW: { idFromName: n => { name = n; return n; }, get: () => ({ fetch: r => { forwarded = r; return new Response('{}'); } }) } };
+  const env = { ...ENV, ATLAS_TENANT_ISOLATION: 'local-synthetic', HINDSIGHT_URL: 'https://hs.example', HINDSIGHT_API_KEY: 'k', HINDSIGHT_OPT_IN: '1', INTERVIEW: { idFromName: n => { name = n; return n; }, get: () => ({ fetch: r => { forwarded = r; return new Response('{}'); } }) } };
   await handle(await req('/api/memory', { headers: { 'x-atlas-bank': 'someone-elses-bank' } }), env, '');
   assert.equal(name, 'user-abc'); assert.match(forwarded.headers.get('x-atlas-bank'), /^atlas-[0-9a-f]{40}$/); assert.notEqual(forwarded.headers.get('x-atlas-bank'), 'someone-elses-bank');
   const boot = await (await handle(await req('/api/bootstrap'), env, '')).json(); assert.equal(boot.memory, true);
@@ -221,7 +252,7 @@ const signed = async (path, claims = {}, init = {}) => new Request(ORIGIN + path
 test('T1-S0 bootstrap: verified email and every feature flag, conservative by default; existing keys unchanged', async () => {
   const boot = await (await handle(await req('/api/bootstrap'), ENV, '')).json();
   assert.deepEqual(Object.keys(boot).slice(0, -2), ['provider', 'providerLabel', 'protocol', 'csrf', 'identity', 'model', 'admin', 'voices', 'defaultVoice', 'captureRequired', 'codecAvailable', 'busy', 'capacity',
-    'maxSeconds', 'speakingSeconds', 'memory', 'wiki', 'jev', 'jevClassify', 'library', 'libraryRole', 'sheet', 'transcription', 'structuredNotes', 'liveLedger', 'playbackAck', 'readiness']);
+    'maxSeconds', 'speakingSeconds', 'memory', 'wiki', 'jev', 'jevClassify', 'library', 'libraryRole', 'sheet', 'transcription', 'structuredNotes', 'liveLedger', 'playbackAck', 'readiness', 'privilege']);
   assert.equal(boot.email, 'tony@example.com'); assert.deepEqual(Object.keys(boot.features), FEATURE_KEYS);
   // D1 is the SPOKEN_ASK_APPROVED code constant (features.test.js pins its value): spoken Ask follows Ask when it is set.
   assert.equal(boot.features.spokenAsk, SPOKEN_ASK_APPROVED && boot.features.ask); assert.equal(boot.features.teams, 'BLOCKED_EXTERNAL'); assert.equal(boot.features.phone, 'BLOCKED_EXTERNAL');
@@ -260,12 +291,12 @@ test('T1-S0 library forward: x-atlas-email set and a spoofed one overwritten; ra
 });
 
 test('T1-S0 /api/voice forward SETS x-atlas-user, x-atlas-role and x-atlas-email (a browser cannot spoof them)', async () => {
-  let fwd = null; const env = { ...ENV, ADMIN_EMAILS: 'boss@example.com', REVIEWER_EMAILS: 'rev@example.com', INTERVIEW: { idFromName: n => n, get: () => ({ fetch: r => { fwd = r; return new Response('ok'); } }) } };
+  let fwd = null; const env = { ...ENV, ATLAS_TENANT_ISOLATION: 'local-synthetic', INTERVIEW: { idFromName: n => n, get: () => ({ fetch: r => { fwd = r; return new Response('ok'); } }) } };
   const voice = async (claims, headers = {}) => { fwd = null; await handle(await signed('/api/voice', claims, { headers: { Upgrade: 'websocket', Origin: ORIGIN, ...headers } }), env, ''); return ['x-atlas-user', 'x-atlas-role', 'x-atlas-email'].map(h => fwd.headers.get(h)); };
   const spoof = { 'x-atlas-user': 'boss@example.com', 'x-atlas-role': 'admin', 'x-atlas-email': 'boss@example.com' };
   assert.deepEqual(await voice({}, spoof), ['tony@example.com', 'user', 'tony@example.com']);
-  assert.deepEqual(await voice({ email: 'Rev@Example.com' }, spoof), ['rev@example.com', 'reviewer', 'rev@example.com']);
-  assert.deepEqual(await voice({ email: 'boss@example.com' }), ['boss@example.com', 'admin', 'boss@example.com']);
+  assert.deepEqual(await voice({ email: 'Rev@Example.com', custom: { roles: ['ATLAS.Reviewer'] } }, spoof), ['rev@example.com', 'reviewer', 'rev@example.com']);
+  assert.deepEqual(await voice({ email: 'boss@example.com', custom: { roles: ['ATLAS.Admin'] } }), ['boss@example.com', 'admin', 'boss@example.com']);
   assert.deepEqual(await voice({ email: undefined }, spoof), ['access service identity', 'user', ''], 'no valid email: empty x-atlas-email');
 });
 
@@ -295,10 +326,16 @@ test('T1-S0 external role: only explicitly listed emails; they reach /confirm, a
   // Only explicit listing makes someone external: any other domain stays a user; admin and reviewer lists come first.
   const roleOf = async email => (await (await handle(await signed('/api/bootstrap', { email }), env, '')).json()).libraryRole;
   assert.equal(await roleOf('consultant@othercorp.example'), 'user'); assert.equal(await roleOf('someone@acme.example'), 'user'); assert.equal(await roleOf('client@acme.example.evil'), 'user');
-  assert.equal(await roleOf('rev@acme.example'), 'reviewer');
-  assert.equal(await roleOf('boss@acme.example'), 'admin');
+  assert.equal(await roleOf('rev@acme.example'), 'user', 'an email list does not grant reviewer');
+  assert.equal(await roleOf('boss@acme.example'), 'user', 'an email list does not grant admin');
+  const roleClaims = async (email, roles) => (await (await handle(await signed('/api/bootstrap', { email, custom: { roles } }), env, '')).json()).libraryRole;
+  assert.equal(await roleClaims('rev@acme.example', ['ATLAS.Reviewer']), 'reviewer');
+  assert.equal(await roleClaims('boss@acme.example', ['ATLAS.Admin']), 'admin');
   const both = { ...env, EXTERNAL_EMAILS: 'rev@acme.example,boss@acme.example' };
-  assert.deepEqual([await (await handle(await signed('/api/bootstrap', { email: 'rev@acme.example' }), both, '')).json(), await (await handle(await signed('/api/bootstrap', { email: 'boss@acme.example' }), both, '')).json()].map(b => b.libraryRole), ['reviewer', 'admin']);
+  assert.deepEqual([
+    await (await handle(await signed('/api/bootstrap', { email: 'rev@acme.example', custom: { roles: ['ATLAS.Reviewer'] } }), both, '')).json(),
+    await (await handle(await signed('/api/bootstrap', { email: 'boss@acme.example', custom: { roles: ['ATLAS.Admin'] } }), both, '')).json(),
+  ].map(b => b.libraryRole), ['reviewer', 'admin']);
   const T = '11111111-2222-3333-4444-555555555555', O = '66666666-7777-8888-9999-000000000000';
   const entraBoot = await (await handle(await signed('/api/bootstrap', { email: 'client@acme.example', custom: { tid: T, oid: O, roles: [] } }), { ...env, IDENTITY_SOURCE: 'entra', ENTRA_TENANTS: T }, '')).json();
   assert.equal(entraBoot.libraryRole, 'user', 'Entra mode has no external role');
@@ -345,16 +382,18 @@ test('T1-S0 Teams: with TEAMS_* set but no bot secret (TEAMS_ENABLED is not read
 });
 
 test('T1-S0 scheduled(): the daily cron posts scan-stale to the LibraryStore as the system role; nothing without a library', async () => {
+  const blocked = []; await scheduled({}, { ...ENV, LIBRARY: capture().stub }, { waitUntil: p => blocked.push(p) });
+  assert.equal(blocked.length, 0, 'enforced deployment without ATLAS_SYSTEM_TENANT does not sweep every tenant');
   const c = capture(), waited = [];
-  await scheduled({}, { ...ENV, LIBRARY: c.stub }, { waitUntil: p => waited.push(p) });
+  const tid = '11111111-1111-4111-8111-111111111111';
+  await scheduled({}, { ...ENV, LIBRARY: c.stub, ATLAS_SYSTEM_TENANT: tid }, { waitUntil: p => waited.push(p) });
   await Promise.all(waited);
   assert.equal(waited.length, 1); assert.equal(c.req.method, 'POST'); assert.equal(new URL(c.req.url).pathname, '/api/library/scan-stale');
-  assert.deepEqual([c.req.headers.get('x-atlas-user'), c.req.headers.get('x-atlas-role'), c.body], ['atlas-cron', 'system', '{}']);
+  assert.deepEqual([c.req.headers.get('x-atlas-user'), c.req.headers.get('x-atlas-role'), c.req.headers.get('x-atlas-tenant'), c.body], ['atlas-cron', 'system', tid, '{}']);
   const none = []; await scheduled({}, { ...ENV }, { waitUntil: p => none.push(p) }); assert.equal(none.length, 0);
-  // End to end through the real routes: the cron response keeps its shape.
   const lib = new Library(memorySql(), {}); let out = null;
-  const real = { idFromName: n => n, get: () => ({ fetch: r => libraryRoutes(r, lib, { env: {} }) }) };
-  await scheduled({}, { ...ENV, LIBRARY: real }, { waitUntil: p => { out = p.then(r => r.json()); } });
+  const real = { idFromName: n => n, get: () => ({ fetch: r => libraryRoutes(r, lib, { env: { ATLAS_TENANT_ISOLATION: 'local-synthetic' } }) }) };
+  await scheduled({}, { ...ENV, LIBRARY: real, ATLAS_TENANT_ISOLATION: 'local-synthetic' }, { waitUntil: p => { out = p.then(r => r.json()); } });
   assert.deepEqual(await out, { invited: 0 });
 });
 
@@ -419,7 +458,7 @@ test('Z x-atlas-idp: always overwritten on every library forward, built only fro
   await handle(await signed('/api/library/profile', claims, { method: 'POST', body: '{}', headers: { Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'x-atlas-idp': spoof } }), env, '');
   assert.deepEqual(idpOf(c.req), { name: 'Zoë Lefèvre', given_name: 'Zoë', family_name: 'Lefèvre' }, 'POST forwards too');
   assert.equal(idpOf({ headers: new Headers({ 'x-atlas-idp': 'e30' }) }).name, undefined);
-  assert.deepEqual(await verifyAccess(await signed('/', claims), ENV), { sub: 'user-abc', email: 'tony@example.com' }, 'the verifyAccess result is unchanged');
+  assert.deepEqual(await verifyAccess(await signed('/', claims), ENV), { sub: 'user-abc', email: 'tony@example.com', roles: ['ATLAS.Admin'] }, 'verified roles travel with the token; a spoofed header does not');
   assert.equal(signinClaims(await signed('/', { custom: { name: 'x'.repeat(300), given_name: 7 } })).name.length, 100);
   assert.deepEqual(signinClaims(new Request(ORIGIN)), {}); assert.deepEqual(signinClaims(new Request(ORIGIN, { headers: { 'cf-access-jwt-assertion': 'a.%%%.c' } })), {});
   const [h, , s] = (await jwt(claims)).split('.'), forged = [h, b64u(JSON.stringify({ ...claims, sub: 'user-abc', custom: { name: 'Forged' } })), s].join('.');
@@ -470,7 +509,8 @@ test('Z navigation fallback: an unknown page navigation goes home; API paths, no
 
 test('Z /api/directory/push: bearer secret (constant-time), BLOCKED_EXTERNAL in test mode, forwarded as system in production; bounded body', async () => {
   const c = capture(), SECRET = 'push-secret-value', body = JSON.stringify({ batch: 'a'.repeat(32), part: 1, final: true, rows: [{ email: 'jane@example.com', name: 'Jane' }] });
-  const test_ = { ...ENV, LIBRARY: c.stub, DIRECTORY_PUSH_SECRET: SECRET }, prod = { ...test_, DATA_MODE: 'production' };
+  const tid = '11111111-1111-4111-8111-111111111111';
+  const test_ = { ...ENV, LIBRARY: c.stub, DIRECTORY_PUSH_SECRET: SECRET }, prod = { ...test_, DATA_MODE: 'production', ATLAS_SYSTEM_TENANT: tid };
   const push = (auth, env, data = body, headers = {}) => handle(new Request(ORIGIN + '/api/directory/push', { method: 'POST', body: data, headers: { ...(auth ? { Authorization: auth } : {}), ...headers } }), env, '');
   for (const [auth, env] of [[null, test_], ['Bearer wrong-secret-value', prod], ['Bearer ' + SECRET, { ...prod, DIRECTORY_PUSH_SECRET: '' }], ['Bearer ' + SECRET, { ...prod, LIBRARY: undefined }], [SECRET + 'x', prod]]) {
     const r = await push(auth, env); assert.equal(r.status, 401, String(auth)); assert.deepEqual(await r.json(), { error: 'Unauthorized.' });
@@ -480,12 +520,43 @@ test('Z /api/directory/push: bearer secret (constant-time), BLOCKED_EXTERNAL in 
   assert.equal(blocked.status, 503); assert.equal(b.status, 'BLOCKED_EXTERNAL'); assert.match(b.reason, /DATA_MODE/); assert.ok(b.needs.length); assert.equal(c.req, null, 'never forwarded in test mode');
   const ok = await push('Bearer ' + SECRET, prod, body, { 'x-atlas-role': 'admin', 'x-atlas-user': 'boss@example.com', 'x-atlas-idp': 'eyJuYW1lIjoiQm9zcyJ9', 'cf-access-jwt-assertion': 'x' });
   assert.equal(ok.status, 200); assert.equal(new URL(c.req.url).pathname, '/api/library/directory/import'); assert.equal(c.req.method, 'POST'); assert.equal(c.body, body);
-  assert.deepEqual(['x-atlas-user', 'x-atlas-role', 'x-atlas-email', 'x-atlas-idp'].map(h => c.req.headers.get(h)), ['dna-push', 'system', '', 'e30'], 'identity set by the Worker only');
+  assert.deepEqual(['x-atlas-user', 'x-atlas-role', 'x-atlas-email', 'x-atlas-idp', 'x-atlas-tenant', 'x-atlas-tenant-enforced'].map(h => c.req.headers.get(h)), ['dna-push', 'system', '', 'e30', tid, '1'], 'identity and the configured tenant are set by the Worker only');
   assert.equal(ok.headers.get('cache-control'), 'no-store');
   c.req = null;
   assert.equal((await push('Bearer ' + SECRET, prod, JSON.stringify({ rows: 'x'.repeat(262200) }))).status, 413); assert.equal(c.req, null);
   assert.equal((await push('Bearer ' + SECRET, prod, '{}', { 'Content-Length': '999999' })).status, 413, 'the declared length is checked first');
   assert.equal((await handle(new Request(ORIGIN + '/api/directory/push', { headers: { Authorization: 'Bearer ' + SECRET } }), prod, '')).status, 401, 'GET is not the push: it falls through to Access');
+});
+
+test('system ingress uses only ATLAS_SYSTEM_TENANT: missing, malformed, mismatch and a tenant-shaped token never reach the library', async () => {
+  const tid = '11111111-1111-4111-8111-111111111111', other = '22222222-2222-4222-8222-222222222222';
+  let calls = 0;
+  const stub = { idFromName: n => n, get: () => ({ fetch: () => { calls += 1; return new Response('{"id":"x"}', { status: 201 }); } }) };
+  const base = { ...ENV, TRIGGER_SECRET: 's3cret-value', DIRECTORY_PUSH_SECRET: 'push-secret', DATA_MODE: 'production', LIBRARY: stub };
+  const trigger = (env, { auth = 'Bearer s3cret-value', body = '{"email":"a@b.co","reason":"project_end"}', headers = {} } = {}) =>
+    handle(new Request(ORIGIN + '/api/triggers', { method: 'POST', body, headers: { Authorization: auth, ...headers } }), env, '');
+  const pushBody = JSON.stringify({ batch: 'a'.repeat(32), part: 1, final: true, rows: [{ email: 'jane@example.com', name: 'Jane' }] });
+  const push = (env, { auth = 'Bearer push-secret', body = pushBody, headers = {} } = {}) =>
+    handle(new Request(ORIGIN + '/api/directory/push', { method: 'POST', body, headers: { Authorization: auth, ...headers } }), env, '');
+  for (const [name, env] of [['missing', base], ['malformed', { ...base, ATLAS_SYSTEM_TENANT: 'not-a-tenant' }]]) {
+    const trig = await trigger(env), pushed = await push(env);
+    assert.equal(trig.status, 503, name); assert.match((await trig.json()).error, /ATLAS_SYSTEM_TENANT/);
+    assert.equal(pushed.status, 503, name); assert.match((await pushed.json()).error, /ATLAS_SYSTEM_TENANT/);
+  }
+  assert.equal(calls, 0, 'configuration errors do not call the library');
+  const scoped = { ...base, ATLAS_SYSTEM_TENANT: tid };
+  for (const extra of [{ body: JSON.stringify({ email: 'a@b.co', reason: 'project_end', tenant: other }) }, { headers: { 'x-atlas-tenant': other } }]) {
+    const trig = await trigger(scoped, extra);
+    assert.equal(trig.status, 403, JSON.stringify(extra)); assert.match((await trig.json()).error, /configured tenant/);
+  }
+  const pushed = await push(scoped, { headers: { 'x-atlas-tenant': other } });
+  assert.equal(pushed.status, 403); assert.equal(calls, 0, 'a mismatched tenant does not call the library');
+  const token = await trigger(scoped, { auth: 'Bearer ' + tid });
+  assert.equal(token.status, 401); assert.equal(calls, 0, 'a tenant id is not a system token');
+  const ok = await trigger(scoped, { body: JSON.stringify({ email: 'a@b.co', reason: 'project_end', tenant: tid.toUpperCase() }) });
+  assert.equal(ok.status, 201); assert.equal(calls, 1, 'the configured tenant is the only one forwarded');
+  const imported = await push(scoped);
+  assert.equal(imported.status, 201); assert.equal(calls, 2);
 });
 
 test('Z DATA_MODE: the test banner and the readiness string follow it; nothing else changes', async () => {
@@ -533,28 +604,29 @@ import * as profileModule from '../src/profile.js';
 test('Z spoken Ask end to end: the stored "always" consent is the one the Worker checks; per person; revocable', async () => {
   const runs = [], AI = { async run(model) { runs.push(model); return { results: { channels: [{ alternatives: [{ transcript: 'which claims projects' }] }] } }; } };
   const lib = new Library(memorySql(), {}), LIBRARY = { idFromName: n => n, get: () => ({ fetch: r => libraryRoutes(r, lib, { env: {} }) }) };
-  const env = { ...ENV, STT_MODEL: 'stt', AI, LIBRARY, ADMIN_EMAILS: '' };
-  const as = async (email, path, init = {}) => {
-    const token = await jwt({ sub: 'sub-' + email, email }), boot = await (await handle(await req('/api/bootstrap', { token }), env, '', APPROVED)).json();
+  const tid = '11111111-1111-4111-8111-111111111111', tony = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', kim = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const env = { ...ENV, STT_MODEL: 'stt', AI, LIBRARY, ADMIN_EMAILS: '', IDENTITY_SOURCE: 'entra', ENTRA_TENANTS: tid };
+  const as = async (email, oid, path, init = {}) => {
+    const token = await jwt({ sub: 'ignored-' + email, email, custom: { tid, oid, roles: [] } }), boot = await (await handle(await req('/api/bootstrap', { token }), env, '', APPROVED)).json();
     return handle(new Request(ORIGIN + path, { ...init, headers: { 'cf-access-jwt-assertion': token, Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, ...(init.headers || {}) } }), env, '', APPROVED);
   };
-  const consent = (email, granted) => as(email, '/api/library/profile/consent', { method: 'POST', body: JSON.stringify({ kind: 'spokenAsk', version: 1, granted }), headers: { 'Content-Type': 'application/json' } });
-  const ask = (email, kind) => as(email, '/api/transcribe', { method: 'POST', body: new Uint8Array(9600), headers: { 'Content-Type': 'audio/L16;rate=24000', 'X-Atlas-Consent': 'spoken-ask-v1; ' + kind } });
+  const consent = (email, oid, granted) => as(email, oid, '/api/library/profile/consent', { method: 'POST', body: JSON.stringify({ kind: 'spokenAsk', version: 1, granted }), headers: { 'Content-Type': 'application/json' } });
+  const ask = (email, oid, kind) => as(email, oid, '/api/transcribe', { method: 'POST', body: new Uint8Array(9600), headers: { 'Content-Type': 'audio/L16;rate=24000', 'X-Atlas-Consent': 'spoken-ask-v1; ' + kind } });
   const log = console.log; console.log = () => {};
   try {
-    if (!profileModule.READY) { assert.equal((await ask('tony@example.com', 'always')).status, 403, 'no stored consent while the profile module is not READY'); return; }
-    assert.equal((await ask('tony@example.com', 'always')).status, 403, 'nothing stored yet');
-    const granted = await consent('tony@example.com', true);
+    if (!profileModule.READY) { assert.equal((await ask('tony@example.com', tony, 'always')).status, 403, 'no stored consent while the profile module is not READY'); return; }
+    assert.equal((await ask('tony@example.com', tony, 'always')).status, 403, 'nothing stored yet');
+    const granted = await consent('tony@example.com', tony, true);
     assert.equal(granted.status, 200); assert.equal((await granted.json()).consents.spokenAsk.version, 1);
-    const ok = await ask('tony@example.com', 'always');
+    const ok = await ask('tony@example.com', tony, 'always');
     assert.equal(ok.status, 200); assert.equal((await ok.json()).text, 'which claims projects');
-    assert.equal((await ask('kim@example.com', 'always')).status, 403, "another person's consent never counts");
-    assert.equal((await ask('kim@example.com', 'once')).status, 200, '`once` needs the prompt only');
-    assert.equal((await consent('tony@example.com', false)).status, 200);
-    assert.equal((await ask('tony@example.com', 'always')).status, 403, 'revoked: asked again next time');
+    assert.equal((await ask('kim@example.com', kim, 'always')).status, 403, "another person's consent never counts");
+    assert.equal((await ask('kim@example.com', kim, 'once')).status, 200, '`once` needs the prompt only');
+    assert.equal((await consent('tony@example.com', tony, false)).status, 200);
+    assert.equal((await ask('tony@example.com', tony, 'always')).status, 403, 'revoked: asked again next time');
     assert.equal(runs.length, 2, 'speech-to-text ran only for the two consented requests');
-    const stored = lib.rows('SELECT subject, consents FROM profiles ORDER BY subject');
-    assert.deepEqual(stored.map(r => [r.subject, JSON.parse(r.consents).spokenAsk ?? null]), [['tony@example.com', null]], 'one profile row, keyed by the verified identity; nothing stored for kim');
+    const stored = lib.rows('SELECT subject, tenant, consents FROM profiles ORDER BY subject');
+    assert.deepEqual(stored.map(r => [r.subject, r.tenant, JSON.parse(r.consents).spokenAsk ?? null]), [[`${tid}:${tony}`, tid, null]], 'one profile row for this tenant and subject; nothing stored for kim');
   } finally { console.log = log; }
 });
 
@@ -565,4 +637,54 @@ test('Z D2: PDF conversion for briefs and sheets runs without PDF metadata', asy
   assert.equal(r.status, 200); assert.equal((await r.json()).text, 'Brief text');
   assert.deepEqual(calls, [['brief.pdf', { conversionOptions: { pdf: { metadata: false } } }]]);
   assert.equal(boot.features.pdfBriefs, boot.features.bids, 'pdfBriefs follows bids (no PDF_BRIEFS variable)');
+});
+
+test('tenant and persona headers from the browser are overwritten; a custom tenant claim is not a tenant', async () => {
+  let fwd = null;
+  const stub = { idFromName: () => 'g', get: () => ({ fetch: r => { fwd = r; return new Response('{}'); } }) };
+  const env = { ...ENV, LIBRARY: stub };
+  const tid = '11111111-1111-4111-8111-111111111111', oid = '99999999-8888-4777-8666-555555555555';
+  const spoof = { 'x-atlas-tenant': '22222222-2222-4222-8222-222222222222', 'x-atlas-tenant-enforced': '0', 'x-atlas-role': 'user', 'x-atlas-user': 'forged@evil.example', 'x-atlas-email': 'forged@evil.example' };
+  await handle(await signed('/api/library', { custom: { tid, oid, roles: ['ATLAS.Admin'], tenant: 'forged-tenant' } }, { headers: spoof }), { ...env, IDENTITY_SOURCE: 'entra', ENTRA_TENANTS: tid }, '');
+  assert.equal(fwd.headers.get('x-atlas-tenant'), tid);
+  assert.equal(fwd.headers.get('x-atlas-tenant-enforced'), '1');
+  assert.equal(fwd.headers.get('x-atlas-role'), 'admin');
+  assert.equal(fwd.headers.get('x-atlas-user'), `${tid}:${oid}`);
+  assert.notEqual(fwd.headers.get('x-atlas-email'), 'forged@evil.example');
+  await handle(await signed('/api/library', { sub: 'user-abc', email: 'tony@example.com', custom: { roles: ['ATLAS.Admin'], tenant: tid } }, { headers: spoof }), env, '');
+  assert.equal(fwd.headers.get('x-atlas-tenant'), '', 'an Access token has no tid, so a custom tenant claim is ignored');
+  assert.equal(fwd.headers.get('x-atlas-tenant-enforced'), '1');
+  await handle(await signed('/api/library'), { ...env, ATLAS_TENANT_ISOLATION: 'local-synthetic' }, '');
+  assert.equal(fwd.headers.get('x-atlas-tenant-enforced'), '0');
+  await handle(await signed('/api/library?as=boss@evil.example&idp=' + encodeURIComponent(JSON.stringify({ roles: ['ATLAS.Admin'], tenant: tid })), { sub: 'user-abc', email: 'tony@example.com' }), env, '');
+  assert.equal(fwd.headers.get('x-atlas-user'), 'tony@example.com');
+  assert.equal(fwd.headers.get('x-atlas-role'), 'user', 'a production query string cannot grant a role');
+  assert.equal(fwd.headers.get('x-atlas-tenant'), '');
+  const bare = { ...env }; delete bare.ATLAS_ADMIN_ROLES; delete bare.ATLAS_PRESALES_ROLES; delete bare.ATLAS_REVIEWER_ROLES;
+  await handle(await signed('/api/library', { sub: 'user-abc', email: 'tony@example.com', custom: { roles: ['ATLAS.Admin', 'ATLAS.Presales', 'ATLAS.Reviewer'] } }), bare, '');
+  assert.equal(fwd.headers.get('x-atlas-role'), 'user', 'missing role config grants nobody');
+  const boot = await (await handle(await signed('/api/bootstrap'), bare, '')).json();
+  assert.equal(boot.admin, false);
+  assert.equal(boot.privilege.ok, false);
+});
+
+test('production refuses local-synthetic and demo identity before any library fetch', async () => {
+  let fetches = 0;
+  const stub = { idFromName: () => 'g', get: () => ({ fetch: () => { fetches += 1; return new Response('{"opened":true}'); } }) };
+  const base = { ...ENV, LIBRARY: stub, INTERVIEW: stub };
+  const synthetic = await handle(await signed('/api/library'), { ...base, DATA_MODE: 'production', ATLAS_TENANT_ISOLATION: 'local-synthetic' }, '');
+  assert.equal(synthetic.status, 503);
+  assert.match((await synthetic.json()).error, /local-synthetic/);
+  const demo = await handle(await signed('/api/memory'), { ...base, DATA_MODE: 'production', ATLAS_DEV_IDENTITY: '1' }, '');
+  assert.equal(demo.status, 503);
+  assert.match((await demo.json()).error, /ATLAS_DEV_IDENTITY/);
+  const both = await handle(await signed('/api/voice', { headers: { Upgrade: 'websocket' } }), { ...base, DATA_MODE: 'production', ATLAS_TENANT_ISOLATION: 'local-synthetic', ATLAS_DEV_IDENTITY: 'yes' }, '');
+  assert.equal(both.status, 503);
+  assert.equal(fetches, 0, 'the durable object is not asked');
+  const trigger = await handle(new Request(ORIGIN + '/api/triggers', { method: 'POST', body: '{}', headers: { Authorization: 'Bearer secret' } }), { ...base, DATA_MODE: 'production', ATLAS_TENANT_ISOLATION: 'local-synthetic', TRIGGER_SECRET: 'secret' }, '');
+  assert.equal(trigger.status, 503);
+  assert.equal(fetches, 0);
+  const local = await handle(await signed('/api/library'), { ...base, ATLAS_TENANT_ISOLATION: 'local-synthetic', ATLAS_DEV_IDENTITY: '1' }, '');
+  assert.equal(local.status, 200);
+  assert.equal(fetches, 1, 'the local demo, without DATA_MODE=production, still reaches the library');
 });

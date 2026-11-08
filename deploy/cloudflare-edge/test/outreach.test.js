@@ -22,7 +22,7 @@ function setup({ teams = null } = {}) {
   const l = new Library(sql, { now: () => new Date(clock.t).toISOString(), newId: () => (++n).toString(16).padStart(32, '0'), services: { teams } });
   const call = async (u, method, path, body) => {
     const r = await libraryRoutes(new Request(ORIGIN + '/api/library/' + path, { method, headers: { 'x-atlas-user': u.email, 'x-atlas-role': u.role, 'x-atlas-email': u.mail, 'Content-Type': 'application/json' },
-      body: method === 'POST' ? JSON.stringify(body ?? {}) : undefined }), l, { env: { ORIGIN } });
+      body: method === 'POST' ? JSON.stringify(body ?? {}) : undefined }), l, { env: { ORIGIN, ATLAS_TENANT_ISOLATION: 'local-synthetic' } });
     return { status: r.status, body: await r.json() };
   };
   return { sql, l, clock, call, day: d => { clock.t += d * 864e5; } };
@@ -68,6 +68,22 @@ test('trigger: the invitation is unchanged; staffing and exactly 2 pending outre
   assert.deepEqual(rows.map(o => [o.kind, o.subject_id, o.channel, o.to_email, o.status]), [['interview_invite', r.body.id, 'email_draft', 'alex@mantu.com', 'pending_approval'], ['interview_invite', r.body.id, 'teams', 'alex@mantu.com', 'pending_approval']]);
   const again = await trigger(s, { managerEmail: 'sam@mantu.com', endDate: 'not a date' });
   assert.equal(again.body.id, r.body.id, 'lib.invite dedupe unchanged');
+  s.l.sql.exec("UPDATE invitations SET email = 'Alex@mantu.com' WHERE id = ?", r.body.id);
+  const cased = await trigger(s, { projectId: 'prj-9', managerEmail: 'sam@mantu.com' });
+  assert.equal(cased.body.id, r.body.id, 'project and email case share one open invitation');
+  assert.equal(s.l.rows("SELECT COUNT(*) AS n FROM invitations WHERE reason = 'project_end' AND lower(project_id) = 'prj-9'")[0].n, 1);
+  const lettered = 'abcdefab-cdef-4abc-8def-0123456789ab';
+  assert.notEqual(lettered.toUpperCase(), lettered);
+  s.l.sql.exec("INSERT INTO invitations (id, email, project_id, title, reason, slot, reference_id, status, created_at, source, tenant) VALUES ('inv-tenant-case', 'ada@example.test', 'PRJ-TENANT', 'Tenant case', 'project_end', '', '', 'open', ?, 'seed', ?)", s.l.now(), lettered.toUpperCase());
+  const tenantDupe = s.l.invite('pm-system', { email: 'Ada@example.test', projectId: 'prj-tenant', reason: 'project_end', tenant: lettered, referenceId: '' });
+  assert.equal(tenantDupe.id, 'inv-tenant-case');
+  assert.equal(s.l.rows("SELECT COUNT(*) AS n FROM invitations WHERE lower(project_id) = 'prj-tenant' AND reason = 'project_end'")[0].n, 1);
+  const storyId = (await s.l.upsert(who('kim@mantu.com'), { localId: 'opaque', reference: { title: 'Opaque' } })).id;
+  const withStory = s.l.invite('pm-system', { email: 'kim@mantu.com', projectId: 'PRJ-OPAQUE', reason: 'manual', referenceId: storyId });
+  const sameStory = s.l.invite('pm-system', { email: 'kim@mantu.com', projectId: 'prj-opaque', reason: 'manual', referenceId: storyId });
+  const otherRef = s.l.invite('pm-system', { email: 'kim@mantu.com', projectId: 'PRJ-OPAQUE', reason: 'manual', referenceId: '' });
+  assert.equal(sameStory.id, withStory.id);
+  assert.notEqual(otherRef.id, withStory.id);
   assert.equal(s.l.rows('SELECT COUNT(*) AS n FROM outreach')[0].n, 2, 'a repeat call adds no outreach row');
   assert.equal(s.l.rows('SELECT end_date FROM staffing')[0].end_date, '2026-10-02', 'an invalid end date never overwrites a valid one');
   const noMgr = await trigger(s, { email: 'kim@mantu.com', projectId: 'PRJ-10' });
@@ -125,8 +141,13 @@ test('staffing import: exact header, client columns never read or stored, bad ro
   const again = (await s.call(ADMIN, 'POST', 'staffing/import', { csv })).body;
   assert.deepEqual([again.staffed, again.invited, again.outreachQueued], [5, 0, 0]);
   // A dismissed invitation is never re-created by a later import or the daily sweep.
+  const other = s.l.rows("SELECT id, status FROM invitations WHERE project_id = 'Zebracorp-2026'")[0];
   s.l.sql.exec("UPDATE invitations SET status = 'dismissed' WHERE project_id = 'PRJ-1'");
+  assert.equal(s.l.rows("SELECT status FROM invitations WHERE project_id = 'PRJ-1'")[0].status, 'dismissed');
+  assert.equal(s.l.rows("SELECT status FROM invitations WHERE id = ?", other.id)[0].status, 'open');
   assert.equal((await s.call(ADMIN, 'POST', 'staffing/import', { csv })).body.invited, 0);
+  const variant = csv.replaceAll('PRJ-1,', 'prj-1,');
+  assert.equal((await s.call(ADMIN, 'POST', 'staffing/import', { csv: variant })).body.invited, 0);
   assert.deepEqual(outreach.daily(s.l), {});
   // Header and caps.
   const bad = await s.call(REV, 'POST', 'staffing/import', { csv: 'project_id,consultant_email,manager_email,project_title,end_date\nP,a@b.co,,,' });
@@ -141,7 +162,7 @@ test('staffing import: exact header, client columns never read or stored, bad ro
   for (const [method, path, body] of [['POST', 'staffing/import', { csv }], ['GET', 'staffing'], ['GET', 'outreach'], ['POST', 'outreach/x', { action: 'approve' }]])
     assert.deepEqual(await s.call(ALEX, method, path, body), { status: 403, body: { error: 'Outreach and staffing are for reviewers.' } }, path);
   const audit = s.l.rows("SELECT detail FROM audit WHERE action = 'staffing import'");
-  assert.ok(audit.length >= 3 && audit.every(a => /^\d+ rows, \d+ rejected, \d+ invited$/.test(a.detail)));
+  assert.ok(audit.length >= 3 && audit.every(a => /^\d+ rows, \d+ rejected, \d+ invited, \d+ blocked$/.test(a.detail)));
 });
 
 test('the N+1 from staffing is the one F3 asks (staffing beats self-declared)', async () => {
@@ -278,7 +299,7 @@ test('teams-event: install, duplicate activity, stop, uninstall, and card action
   // Send a card, then act on it.
   const inv = (await trigger(s)).body, card = (await s.call(REV, 'GET', 'outreach')).body.items.find(i => i.channel === 'teams');
   await s.call(REV, 'POST', 'outreach/' + card.id, { action: 'approve' });
-  const act = (id, extra) => s.call(BOT, 'POST', 'teams-event', { kind: 'action', activityId: id, tenantId: TID, aadObjectId: OID, verb: 'snooze', outreachId: card.id, ...extra });
+  const act = (id, extra) => s.call(BOT, 'POST', 'teams-event', { kind: 'action', activityId: id, tenantId: TID, aadObjectId: OID, conversationId: 'a:conv-alex', verb: 'snooze', outreachId: card.id, ...extra });
   const invitation = () => s.l.rows('SELECT slot, status FROM invitations WHERE id = ?', inv.id)[0];
   // Another Teams user who also has ATLAS installed (so has an active conversation) still cannot act on this card.
   await install(s, { activityId: 'install-kim', aadObjectId: OTHER, teamsUserId: '29:kim', conversationId: 'a:conv-kim', email: 'kim@mantu.com' });

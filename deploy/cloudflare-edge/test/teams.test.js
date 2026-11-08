@@ -2,6 +2,7 @@
 // crypto.subtle; fake OpenID metadata, JWKS (with endorsements), token and connector fetchers. No network, ever.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { teamsStatus, teamsClient, verifyBotActivity, interviewCard, messageCard, resetBotKeyCache, OPENID_URL, BOT_ISSUER } from '../src/teams.js';
 import { teamsRoutes, TAB_CSP, eventOf } from '../src/teams-routes.js';
 import { Library } from '../src/library.js';
@@ -12,7 +13,8 @@ const ORIGIN = 'https://atlas.example', JWKS_URL = 'https://login.botframework.c
 const TID = '11111111-2222-3333-4444-555555555555', OID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', BOTID = '22222222-3333-4444-5555-666666666666';
 const APPID = '33333333-4444-5555-6666-777777777777', ENV = { ORIGIN, TEAMS_APP_ID: APPID, TEAMS_BOT_APP_ID: BOTID, TEAMS_TENANT_ID: TID };
 // Connected (WOW_ZERO_CONFIG §4): the ids and the bot secret, with no separate on switch.
-const ON = { ...ENV, TEAMS_BOT_SECRET: 's' };
+const ATLAS_TENANT = '99999999-9999-4999-8999-999999999999';
+const ON = { ...ENV, TEAMS_BOT_SECRET: 's', ATLAS_SYSTEM_TENANT: ATLAS_TENANT };
 const SERVICE = 'https://smba.trafficmanager.net/emea/';
 const T0 = Date.parse('2026-09-29T08:00:00Z');
 const enc = new TextEncoder(), b64u = b => Buffer.from(b).toString('base64url');
@@ -174,7 +176,7 @@ test('teamsClient: null unless connected; tenant token cached until exp - 300 s;
 // ---- teamsRoutes: the pre-Access endpoint and the launcher.
 function stack(env = ON) {
   const lib = new Library(memorySql(), { now: () => new Date(T0).toISOString() }), seen = [];
-  const LIBRARY = { idFromName: n => n, get: () => ({ fetch: async r => { seen.push({ path: new URL(r.url).pathname, user: r.headers.get('x-atlas-user'), role: r.headers.get('x-atlas-role') }); return libraryRoutes(r, lib, { env: { ORIGIN } }); } }) };
+  const LIBRARY = { idFromName: n => n, get: () => ({ fetch: async r => { seen.push({ path: new URL(r.url).pathname, user: r.headers.get('x-atlas-user'), role: r.headers.get('x-atlas-role'), tenant: r.headers.get('x-atlas-tenant') }); return libraryRoutes(r, lib, { env: { ORIGIN, ATLAS_TENANT_ISOLATION: 'local-synthetic' } }); } }) };
   return { lib, seen, env: { ...env, LIBRARY } };
 }
 const live = () => claims({ exp: Math.floor(Date.now() / 1000) + 600, nbf: Math.floor(Date.now() / 1000) - 10 }); // teamsRoutes verifies with the real clock
@@ -223,7 +225,7 @@ test('teamsRoutes messages: verified events reach the LibraryStore as teams-even
   const installAct = activity({ type: 'installationUpdate', action: 'add', id: 'inst-1', text: undefined });
   const r = await post(env, installAct);
   assert.deepEqual([r.status, await r.json()], [200, {}]); SECURE(r);
-  assert.deepEqual(seen, [{ path: '/api/library/teams-event', user: 'teams-bot', role: 'system' }]);
+  assert.deepEqual(seen, [{ path: '/api/library/teams-event', user: 'teams-bot', role: 'system', tenant: ATLAS_TENANT }]);
   assert.deepEqual(lib.rows('SELECT subject, conversation_id, service_url, email, status FROM teams_conversations'),
     [{ subject: `${TID}:${OID}`, conversation_id: 'a:conv-alex', service_url: SERVICE, email: '', status: 'active' }], 'the member lookup failed: stored without an email');
   await post(env, installAct);
@@ -243,12 +245,28 @@ test('teamsRoutes messages: verified events reach the LibraryStore as teams-even
   assert.equal(s2.lib.rows('SELECT email FROM teams_conversations')[0].email, 'alex@mantu.com');
 });
 
+test('teams ingress uses ATLAS_SYSTEM_TENANT and does not take a tenant from the activity', async () => {
+  resetBotKeyCache();
+  const open = stack();
+  delete open.env.ATLAS_SYSTEM_TENANT;
+  const refused = await post(open.env, activity({ type: 'installationUpdate', action: 'add', id: 'no-tenant', text: undefined }));
+  assert.equal(refused.status, 503);
+  assert.match((await refused.json()).error, /ATLAS_SYSTEM_TENANT/);
+  assert.equal(open.seen.length, 0);
+  assert.equal(open.lib.rows("SELECT name FROM sqlite_master WHERE name = 'teams_seen'").length, 0);
+  const { env, seen, lib } = stack();
+  const ok = await post(env, activity({ type: 'installationUpdate', action: 'add', id: 'with-tenant', text: undefined }));
+  assert.equal(ok.status, 200);
+  assert.equal(seen[0].tenant, ATLAS_TENANT);
+  assert.equal(lib.rows('SELECT tenant_id FROM teams_conversations')[0].tenant_id, TID);
+});
+
 test('teamsRoutes invoke: the card action is answered in the HTTP 200 invoke response; others get "belongs to someone else"', async () => {
   resetBotKeyCache();
   const { env, lib } = stack();
   await post(env, activity({ type: 'installationUpdate', action: 'add', id: 'inst-1' }));
   const inv = lib.invite('pm-system', { email: 'alex@mantu.com', reason: 'project_end', projectId: 'PRJ-9', slot: '2026-10-01T09:30' });
-  lib.sql.exec(`INSERT INTO outreach (id, kind, subject_id, channel, to_email, status, reason, payload, aad_object_id, created_at) VALUES ('o1', 'interview_invite', ?, 'teams', 'alex@mantu.com', 'sent', '', '{"preview":{"title":"PRJ-9"}}', ?, 'x')`, inv.id, OID);
+  lib.sql.exec(`INSERT INTO outreach (id, kind, subject_id, channel, to_email, status, reason, payload, aad_object_id, created_at, directory_tenant, conversation_id) VALUES ('o1', 'interview_invite', ?, 'teams', 'alex@mantu.com', 'sent', '', '{"preview":{"title":"PRJ-9"}}', ?, 'x', ?, 'a:conv-alex')`, inv.id, OID, TID);
   const invoke = (id, extra = {}) => activity({ type: 'invoke', name: 'adaptiveCard/action', id, text: undefined, value: { action: { type: 'Action.Execute', verb: 'snooze', data: { outreachId: 'o1' } } }, ...extra });
   const other = await post(env, invoke('i1', { from: { id: '29:kim', aadObjectId: 'aaaaaaaa-bbbb-cccc-dddd-ffffffffffff' } }));
   const ob = await other.json();
@@ -284,10 +302,11 @@ test('teamsRoutes tab: the launcher with its route-specific CSP when TeamsJS is 
 
 test('vendored TeamsJS: @microsoft/teams-js 2.57.0 embedded byte for byte (pinned SHA-256); the launcher serves it inline', async () => {
   const { TEAMS_JS, TEAMS_JS_VERSION, TEAMS_JS_SHA256 } = await import('../teams/vendor/teams-js.mjs');
-  assert.equal(TEAMS_JS_VERSION, '2.57.0');
-  assert.equal(TEAMS_JS_SHA256, 'ee3403839e47f1338e6f6f8becdd4456ced589eca5a909b8e58ce31ff78cf068');
+  const lock = JSON.parse(readFileSync(new URL('../../../docs/SOURCE_LOCK.json', import.meta.url), 'utf8')).teams_js;
+  assert.equal(TEAMS_JS_VERSION, lock.version);
+  assert.equal(TEAMS_JS_SHA256, lock.file_sha256);
   const digest = [...new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(TEAMS_JS)))].map(b => b.toString(16).padStart(2, '0')).join('');
-  assert.equal(digest, TEAMS_JS_SHA256, 'the embedded string is the pinned file');
+  assert.equal(digest, lock.file_sha256, 'the embedded string matches docs/SOURCE_LOCK.json');
   assert.doesNotMatch(TEAMS_JS, /<\/script|<!--/i, 'safe to inline');
   const r = await teamsRoutes(new Request(ORIGIN + '/teams/tab'), ON);
   assert.equal(r.status, 200); assert.equal(r.headers.get('content-security-policy'), TAB_CSP);

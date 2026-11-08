@@ -103,7 +103,8 @@ export function projectContext(raw) {
 // and only then the per-turn server notes (guidance, language, memory, pace), which change every turn. A gap list (gap
 // mode) sits between the project data and the preferences label, so the prefix stays stable for the whole session.
 export function talkerMessages(project, guidance, history, instruction, notes = [], gaps = null) {
-  const messages = [{ role: 'system', content: TALKER_POLICY + '\nUNTRUSTED PROJECT DATA:\n' + JSON.stringify(project) + (gaps?.length ? gapSystemBlock(gaps) : '') + '\nUNTRUSTED PRIVATE PREFERENCES (not evidence):\n' }];
+  const untrusted = 'UNTRUSTED PROJECT DATA:\n' + JSON.stringify(project) + (gaps?.length ? gapSystemBlock(gaps) : '') + '\nUNTRUSTED PRIVATE PREFERENCES (not evidence):\n';
+  const messages = [{ role: 'system', content: TALKER_POLICY }, { role: 'user', content: untrusted }];
   messages.push(...history.slice(-HISTORY));
   if (guidance) messages.push({ role: 'system', content: 'ANALYST_GUIDANCE (server plan, not a script): ' + JSON.stringify(guidance) });
   for (const note of notes) if (note) messages.push({ role: 'system', content: note });

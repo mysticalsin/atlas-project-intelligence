@@ -3,7 +3,7 @@ node:sqlite, stand-in model, loopback only). Owner -> automatic sync and review 
 the published, anonymised reference -> an edit creates revision 2 and reopens the review.
   python3 tests/library_browser.py
 """
-import json,os,socket,subprocess,sys,time,urllib.request
+import json,os,socket,subprocess,sys,time,urllib.request,urllib.parse,urllib.error
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1];EDGE=ROOT/'deploy/cloudflare-edge';ERR=[]
@@ -14,6 +14,20 @@ for _ in range(100):
  try:urllib.request.urlopen(BASE+'/__settle',timeout=1);break
  except Exception:time.sleep(.1)
 settle=lambda:urllib.request.urlopen(BASE+'/__settle',timeout=30).read()
+def bind(owner, mgr):
+  req=urllib.request.Request(BASE+'/__trust',data=json.dumps({'owner':owner,'email':mgr,'source':'directory'}).encode(),headers={'Content-Type':'application/json'},method='POST')
+  urllib.request.urlopen(req).read()
+def edge_api(email, method, path, body=None, roles=None):
+  q='as='+urllib.parse.quote(email)+(('&idp='+urllib.parse.quote(json.dumps({'roles':roles}))) if roles else '')
+  boot=json.loads(urllib.request.urlopen(BASE+'/api/bootstrap?'+q,timeout=30).read())
+  url=BASE+path+('&' if '?' in path else '?')+q
+  data=json.dumps(body).encode() if body is not None else None
+  headers={'Origin':BASE}
+  if data is not None: headers.update({'Content-Type':'application/json','X-Atlas-CSRF':boot['csrf']})
+  req=urllib.request.Request(url,data=data,method=method,headers=headers)
+  try:
+    with urllib.request.urlopen(req,timeout=30) as r: return r.status, json.loads(r.read() or b'{}')
+  except urllib.error.HTTPError as e: return e.code, json.loads(e.read() or b'{}')
 REP={'headline':'Claims triage rebuilt with ML routing','summary':'The consultant rebuilt claims triage for the client.','topics':{},'highlights':[],'gaps':[],'follow_ups':[],'status':'model_draft',
  'facts':{'project_id':'PRJ-2291','country':'France','industry':'Insurance','start':'2024-03','end':'2024-11','duration':'','team_size':6,'team_roles':['Data engineer'],'technologies':['Python','Azure ML'],'deliverables':['Routing model'],'service_lines':['Data & AI']}}
 NOTES=['Zebracorp had claims bouncing between three teams, slowing payouts for customers across the region.','I designed and built the routing model and ran the pilot with two teams myself.',
@@ -22,9 +36,10 @@ NOTES=['Zebracorp had claims bouncing between three teams, slowing payouts for c
 try:
  with sync_playwright() as pw:
   b=pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH') or None)
-  def page(email):
+  def page(email, roles=None):
    c=b.new_context(viewport={'width':1400,'height':1000});p=c.new_page();p.on('pageerror',lambda e:ERR.append(str(e)))
-   p.goto(BASE+'/?as='+email);p.wait_for_timeout(700);return p
+   q='/?as='+urllib.parse.quote(email)+(('&idp='+urllib.parse.quote(json.dumps({'roles':roles}))) if roles else '')
+   p.goto(BASE+q);p.wait_for_timeout(700);return p
   # --- owner
   o=page('alex@mantu.com')
   o.locator('[data-action=new-project]:visible').first.click();o.wait_for_timeout(200)
@@ -48,11 +63,18 @@ try:
   doc=zipfile.ZipFile(dw.value.path()).read('word/document.xml').decode()
   check('library Word = the reference-sheet template (.docx): title, summary labels, 8 sections, gaps "To be completed"',dw.value.suggested_filename.endswith('.docx') and all(w in doc for w in ['Claims triage alias','Executive Summary','Detailed Information Sheet','Industry sector, size and type of client','Added value and ROI','Team size','Python','To be completed']))
   o.locator('#recordDialog [data-close]').click()
-  # --- N+1 via the direct link
+  # A typed manager address is not a binding. The old single click must not publish.
+  denied=edge_api('sam@mantu.com','POST',f'/api/library/{rid}/validate',{'decision':'validate','lane':'manager'})
+  check('typed manager without a trust row is refused',denied[0]==404)
+  bind('alex@mantu.com','sam@mantu.com')
   n=page('sam@mantu.com');n.goto(BASE+'/#library/'+rid);n.wait_for_timeout(1200)
-  check('N+1 deep link opens the record with a Validate button',n.locator('#recordDialog').is_visible() and n.locator('[data-rec-validate]').count()==1)
+  check('trusted manager sees one approval button',n.locator('#recordDialog').is_visible() and n.locator('[data-rec-validate]').count()==1)
   n.locator('[data-rec-validate]').click();n.wait_for_timeout(900)
-  check('validated and published',n.locator('#recordEyebrow').inner_text().find('PUBLISHED')>=0 and 'Validated by sam@mantu.com' in n.locator('#recordBody').inner_text())
+  check('manager approval alone does not publish', 'PUBLISHED' not in n.locator('#recordEyebrow').inner_text().upper() and 'manager approved' in n.locator('#recordBody').text_content())
+  pre=page('presales@example.test',['ATLAS.Presales']);pre.goto(BASE+'/#library/'+rid);pre.wait_for_timeout(1200)
+  check('pre-sales role sees its own lane',pre.locator('[data-rec-validate]').count()==1)
+  pre.locator('[data-rec-validate]').click();pre.wait_for_timeout(900)
+  check('both lanes publish', 'PUBLISHED' in pre.locator('#recordEyebrow').inner_text().upper() and 'presales approved' in pre.locator('#recordBody').text_content())
   # --- colleague
   k=page('kim@mantu.com');k.locator('header [data-view=library]').click();k.wait_for_timeout(900)
   check('colleague sees the published reference',k.locator('#libraryList .project-card').count()==1)
@@ -66,7 +88,7 @@ try:
   ey=o.locator('#recordEyebrow').inner_text();body=o.locator('#recordBody').inner_text()
   check('an edit creates revision 2 and reopens validation','REVISION 2' in ey and 'Awaiting N+1 validation' in body)
   o.locator('#recordBody summary').click();o.wait_for_timeout(200)
-  check('audit trail shows who did what',all(w in o.locator('#recordBody').inner_text() for w in ['created','reviewed','validated','revised','sam@mantu.com']))
+  check('audit trail shows who did what',all(w in o.locator('#recordBody').text_content() for w in ['created','reviewed','manager approved','presales approved','revised','sam@mantu.com']))
   check('no page errors',not ERR);print(ERR)
 finally:
  srv.terminate()

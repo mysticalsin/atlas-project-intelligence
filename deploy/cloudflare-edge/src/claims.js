@@ -11,6 +11,7 @@ import { recordText, piiText } from './scrub.js';
 import { clientScrub } from './review.js';
 import * as outreach from './outreach.js';
 import * as profile from './profile.js';
+import { sameTenant, TENANT_ID } from './authz.js';
 
 export const READY = true;
 // Claim currency (§2.4, Q12; Tony decides). 'sentence' (default): a confirmation stays current while its exact sentence
@@ -40,6 +41,8 @@ const ensured = new WeakSet();
 export function ensure(lib) {
   if (ensured.has(lib)) return;
   for (const q of DDL) lib.sql.exec(q);
+  const cols = lib.rows("SELECT name FROM pragma_table_info('confirmation_requests')").map(r => r.name);
+  if (cols.length && !cols.includes('tenant')) lib.sql.exec("ALTER TABLE confirmation_requests ADD COLUMN tenant TEXT NOT NULL DEFAULT ''");
   ensured.add(lib);
 }
 
@@ -145,10 +148,11 @@ async function propose(lib, user, body, currency) {
 // never the owner's own profile edits; WOW_ZERO_CONFIG §5.8), then the N+1 the consultant named on the reference.
 function managerOf(lib, row) {
   outreach.ensure(lib);
-  const pid = str(row.data?.details?.projectId, 60);
-  const staffed = pid ? email(lib.rows("SELECT manager_email FROM staffing WHERE project_id = ? COLLATE NOCASE AND consultant_email = ? AND manager_email != '' ORDER BY updated_at DESC", pid, row.owner)[0]?.manager_email) : '';
-  if (staffed) return { to: staffed, source: 'staffing' };
-  const listed = profile.READY ? email(profile.directoryManager(lib, row.owner)?.email) : ''; // a stub while the profile module is not READY
+  const staffed = currentStaffingManager(lib, row);
+  if (staffed.state === 'ambiguous') throw fail(409, 'This project assignment matches more than one staffing row. Nothing was asked.');
+  if (staffed.state === 'one') return { to: staffed.email, source: 'staffing' };
+  const tenant = String(row.state?.tenant || '').toLowerCase();
+  const listed = profile.READY ? email(profile.directoryManager(lib, row.owner, tenant)?.email) : ''; // a stub while the profile module is not READY
   if (listed) return { to: listed, source: 'directory' };
   const declared = email(row.data?.validation?.manager?.email);
   if (declared) return { to: declared, source: 'self_declared' };
@@ -183,46 +187,102 @@ function createRequest(ctx) {
   if (!cs.every(present)) throw fail(409, 'A point changed since it was proposed. Propose the current sentence again.');
   if (cs.some(answered(current))) throw fail(409, 'Already answered: edit the sentence to ask again.');
   const id = lib.newId(), at = lib.now(), expires = new Date(Date.parse(at) + EXPIRY_MS).toISOString();
-  lib.sql.exec(`INSERT INTO confirmation_requests (id, ref_id, revision, kind, to_email, manager_source, claim_ids, status, created_by, created_by_mail, created_at, expires_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`, id, row.id, row.revision, kind, to, source, JSON.stringify(ids), user.email, email(user.mail), at, expires);
+  const tenant = user.tenantEnforced === true ? String(user.tenant || '').toLowerCase() : '';
+  lib.sql.exec(`INSERT INTO confirmation_requests (id, ref_id, revision, kind, to_email, manager_source, claim_ids, status, created_by, created_by_mail, created_at, expires_at, tenant)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)`, id, row.id, row.revision, kind, to, source, JSON.stringify(ids), user.email, email(user.mail), at, expires, tenant);
   lib.log(row.id, user.email, 'confirmation requested', `rev ${row.revision} request ${id}: ${ids.length} claims (${kind}, ${source || 'none'})`);
   // The draft names the consultant and the number of points only: no claim text, no client name. Nothing is sent.
   const n = ids.length, name = str(row.data?.consultant?.name, 100) || 'a colleague', link = `${originOf(ctx)}/go/confirm/${id}`; // survives an interactive sign-in (§3.9)
   const subject = `Can you confirm ${n} point${n === 1 ? '' : 's'} from ${name}'s project? (about 60 seconds)`;
   const draft = { to, subject, body: link, link, mailto: `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(link)}` };
   const title = masked(lib, row.data)(row.data.title);
-  const queued = outreach.queue(lib, { kind: 'confirmation_request', subjectId: id, toEmail: to, subject,
+  const queued = outreach.queue(lib, { kind: 'confirmation_request', subjectId: id, toEmail: to, tenant, subject,
     preview: { title, text: `Confirm ${n} point${n === 1 ? '' : 's'} from ${name}'s project (about 60 seconds).` } });
   const request = lib.rows('SELECT * FROM confirmation_requests WHERE id = ?', id)[0];
   return { status: 201, body: { request: requestView(request), draft, outreach: queued.map(o => ({ id: o.id, channel: o.channel, status: o.status })) } };
 }
 
-// ---- GET /confirmations/inbox (any signed-in, external included): open, unexpired, every claim current.
-function inbox(lib, user, currency) {
-  const mail = email(user.mail);
-  if (!mail) return { items: [] };
-  const now = lib.now(), items = [];
-  for (const r of lib.rows("SELECT * FROM confirmation_requests WHERE to_email = ? AND status = 'open' AND expires_at > ? ORDER BY created_at DESC, rowid DESC LIMIT 50", mail, now)) {
-    const row = lib.row(r.ref_id);
-    if (staleRequest(lib, r, row, currency)) continue;
-    // A confirmer with full access (e.g. the declared N+1) sees the raw sentence; anyone else the record masking.
-    const mask = lib.access(row, user) === 'full' ? s => s : masked(lib, row.data);
-    items.push({ request: requestView(r), reference: { title: mask(row.data.title), consultant: { name: row.data.consultant?.name || '', role: row.data.consultant?.role || '' }, revision: row.revision },
-      claims: claimRows(lib, r.ref_id, idsOf(r)).map(c => ({ id: c.id, topic: c.topic, text: mask(c.text) })) });
+function linkedStory(lib, user, request) {
+  const row = lib.row(request.ref_id);
+  const storyTenant = String(row?.tenant || row?.state?.tenant || '').toLowerCase();
+  if (!row || storyTenant !== String(request.tenant || '').toLowerCase() || !sameTenant(storyTenant, user.tenant, user.tenantEnforced === true)) return null;
+  return row;
+}
+// A staffing-sourced confirmation is authority at use, not a permanent grant.
+// Directory, self-declared, and client requests are not staffing grants and stay as issued.
+function staffingHits(lib, row) {
+  outreach.ensure(lib);
+  const project = String(row?.data?.details?.projectId || '').trim().toLowerCase();
+  const tenant = String(row?.state?.tenant || row?.tenant || '').toLowerCase();
+  const owners = typeof lib.ownerKeys === 'function' ? lib.ownerKeys(row).map(v => String(v || '').toLowerCase()).filter(Boolean) : [String(row?.owner || '').toLowerCase()].filter(Boolean);
+  if (!project || !owners.length || !lib.rows("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'staffing'")[0]) return [];
+  const marks = owners.map(() => '?').join(', ');
+  // Blank manager rows still count. A case-variant duplicate with an empty manager is the same logical assignment.
+  return lib.rows(`SELECT project_id, consultant_email, manager_email FROM staffing WHERE lower(project_id) = ? AND lower(consultant_email) IN (${marks}) AND lower(COALESCE(tenant, '')) = ?`, project, ...owners, tenant);
+}
+function currentStaffingManager(lib, row) {
+  const hits = staffingHits(lib, row);
+  if (!hits.length) return { state: 'none', email: '' };
+  const physical = new Map();
+  for (const hit of hits) {
+    const key = String(hit.project_id || '').toLowerCase() + '\n' + String(hit.consultant_email || '').toLowerCase();
+    physical.set(key, (physical.get(key) || 0) + 1);
   }
-  return { items };
+  if (physical.size !== 1 || [...physical.values()][0] !== 1) return { state: 'ambiguous', email: '' };
+  const managers = new Set(hits.map(hit => String(hit.manager_email || '').trim().toLowerCase()).filter(Boolean));
+  if (managers.size !== 1) return { state: 'none', email: '' };
+  return { state: 'one', email: [...managers][0] };
+}
+function staffingHandleOpen(lib, request, row, mail) {
+  if (request?.kind !== 'manager' || request?.manager_source !== 'staffing') return true;
+  const current = currentStaffingManager(lib, row);
+  return current.state === 'one' && current.email === String(mail || '').trim().toLowerCase();
+}
+
+// ---- GET /confirmations/inbox (any signed-in, external included): open, unexpired, every claim current.
+function inbox(lib, user, currency, params) {
+  const mail = email(user.mail);
+  if (!mail) return { items: [], truncated: false, limit: 50, next: null };
+  if (user?.tenantEnforced === true && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
+  const q = params?.get ? params : { get: () => '' };
+  const afterAt = q.get('afterCreatedAt') || '', afterId = q.get('afterId') || '';
+  if ((afterAt && !afterId) || (!afterAt && afterId) || afterAt.length > 40 || afterId.length > 80) throw fail(400, 'The page cursor is not valid.');
+  const now = lib.now(), tenant = String(user.tenant || '').toLowerCase();
+  const where = ["to_email = ?", "status = 'open'", 'expires_at > ?', "lower(COALESCE(tenant, '')) = ?"];
+  const args = [mail, now, tenant];
+  if (afterAt) { where.push('(created_at < ? OR (created_at = ? AND id > ?))'); args.push(afterAt, afterAt, afterId); }
+  const limit = 50;
+  const rows = lib.rows(`SELECT * FROM confirmation_requests WHERE ${where.join(' AND ')} ORDER BY created_at DESC, id ASC LIMIT ?`, ...args, limit + 1);
+  const truncated = rows.length > limit, page = truncated ? rows.slice(0, limit) : rows;
+  const items = [];
+  for (const r of page) {
+    const row = linkedStory(lib, user, r);
+    if (!row || staleRequest(lib, r, row, currency) || !staffingHandleOpen(lib, r, row, mail)) continue;
+    // A confirmer with full access (e.g. the declared N+1) sees the raw sentence; anyone else the record masking.
+    const full = lib.access(row, user) === 'full';
+    const mask = full ? s => s : masked(lib, row.data);
+    const request = full ? requestView(r) : { id: r.id, kind: r.kind, status: r.status, expiresAt: r.expires_at };
+    const reference = full
+      ? { title: row.data.title, consultant: { name: row.data.consultant?.name || '', role: row.data.consultant?.role || '' }, revision: row.revision }
+      : { handle: r.id };
+    items.push({ request, reference, claims: claimRows(lib, r.ref_id, idsOf(r)).map(c => ({ id: c.id, topic: c.topic, text: mask(c.text) })) });
+  }
+  const last = page.at(-1);
+  return { items, truncated, limit, next: truncated && last ? { afterCreatedAt: last.created_at, afterId: last.id } : null };
 }
 
 // ---- POST /confirmations/:id (only the addressed, signed-in email): one decision per claim, all in one submit.
 function decide(lib, user, id, body, currency) {
   const r = lib.rows('SELECT * FROM confirmation_requests WHERE id = ?', str(id, 64))[0];
-  if (!r) throw fail(404, 'Request not found.');
+  if (!r || !sameTenant(r.tenant, user.tenant, user.tenantEnforced === true)) throw fail(404, 'Request not found.');
   const mail = email(user.mail);
   if (!mail || r.to_email !== mail) throw fail(403, 'This request is addressed to someone else.');
   const now = lib.now();
   if (r.status === 'expired' || (r.status === 'open' && r.expires_at <= now)) throw fail(410, 'This request has expired. The consultant can send a new one.');
   if (r.status !== 'open') throw fail(409, r.status === 'cancelled' ? 'This request was cancelled.' : 'This request is already answered.');
-  const row = lib.row(r.ref_id);
+  const row = linkedStory(lib, user, r);
+  if (!row) throw fail(404, 'Request not found.');
+  if (!staffingHandleOpen(lib, r, row, mail)) throw fail(403, 'This confirmation is no longer assigned to you.');
   const why = staleRequest(lib, r, row, currency);
   if (why) throw fail(409, why);
   const ids = idsOf(r), list = Array.isArray(obj(body).decisions) ? body.decisions : [], byId = new Map();
@@ -244,16 +304,24 @@ function decide(lib, user, id, body, currency) {
   }
   lib.sql.exec("UPDATE confirmation_requests SET status = 'done', decided_at = ? WHERE id = ?", now, r.id);
   const done = lib.rows('SELECT * FROM confirmation_requests WHERE id = ?', r.id)[0], { current } = currencyOf(row, currency);
-  const mask = lib.access(row, user) === 'full' ? s => s : masked(lib, row.data), deciders = decidersOf(lib, row.id);
-  return { request: requestView(done), claims: claimRows(lib, r.ref_id, ids).map(c => claimView(c, current(c), deciders, mask(c.text))) };
+  const full = lib.access(row, user) === 'full';
+  const mask = full ? s => s : masked(lib, row.data);
+  const claimsOut = claimRows(lib, r.ref_id, ids);
+  if (!full) return { request: { id: done.id, kind: done.kind, status: done.status, expiresAt: done.expires_at }, reference: { handle: done.id },
+    claims: claimsOut.map(c => ({ id: c.id, topic: c.topic, text: mask(c.text), status: c.status })) };
+  const deciders = decidersOf(lib, row.id);
+  return { request: requestView(done), claims: claimsOut.map(c => claimView(c, current(c), deciders, mask(c.text))) };
 }
 
 // ---- POST /confirmations/:id/cancel (creator, reviewer, admin; never external).
 function cancel(lib, user, id) {
   const r = lib.rows('SELECT * FROM confirmation_requests WHERE id = ?', str(id, 64))[0];
-  if (!r) throw fail(404, 'Request not found.');
-  if (r.created_by !== user.email && !['admin', 'reviewer'].includes(user.role)) throw fail(403, 'Only the requester or a reviewer can cancel this request.');
+  if (!r || !sameTenant(r.tenant, user.tenant, user.tenantEnforced === true)) throw fail(404, 'Request not found.');
+  const aliases = [...new Set([user.email, user.mail].map(v => String(v || '').trim().toLowerCase()).filter(Boolean))];
+  if (!aliases.includes(String(r.created_by || '').toLowerCase()) && !['admin', 'reviewer'].includes(user.role)) throw fail(403, 'Only the requester or a reviewer can cancel this request.');
   if (r.status !== 'open') throw fail(409, 'This request is already closed.');
+  const linked = linkedStory(lib, user, r);
+  if (!linked || !lib.access(linked, user)) throw fail(404, 'Request not found.');
   lib.sql.exec("UPDATE confirmation_requests SET status = 'cancelled' WHERE id = ?", r.id);
   lib.log(r.ref_id, user.email, 'confirmation cancelled', `rev ${r.revision} request ${r.id}`);
   return { request: requestView(lib.rows('SELECT * FROM confirmation_requests WHERE id = ?', r.id)[0]) };
@@ -264,12 +332,13 @@ export async function routes(ctx) {
   const { parts, method, user, lib } = ctx, [word, a, b, extra] = parts, currency = mode(ctx.currency);
   const decision = word === 'confirmations' && method === 'POST' && a && a !== 'inbox' && !b;
   if (user.role === 'external' && !(decision || (word === 'confirmations' && method === 'GET' && a === 'inbox' && !b))) return FORBIDDEN;
+  if (user?.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) return { status: 403, body: { error: 'A verified tenant is required.' } };
   ensure(lib);
   if (word === 'claims') {
     if (method === 'GET' && a && !b) return { body: claimsFor(lib, user, a, currency) };
     if (method === 'POST' && !a) return { status: 201, body: await propose(lib, user, ctx.body, currency) };
   } else if (word === 'confirmations') {
-    if (method === 'GET' && a === 'inbox' && !b) return { body: inbox(lib, user, currency) };
+    if (method === 'GET' && a === 'inbox' && !b) return { body: inbox(lib, user, currency, ctx.url?.searchParams) };
     if (method === 'POST' && !a) return createRequest(ctx);
     if (decision) return { body: decide(lib, user, a, ctx.body, currency) };
     if (method === 'POST' && a && b === 'cancel' && !extra) return { body: cancel(lib, user, a) };
@@ -297,11 +366,14 @@ export function confirmationStatus(lib, row, opts = {}) {
   return out;
 }
 // Marks open requests past expires_at as expired (daily sweep). Ensures its own tables first: safe on a fresh schema.
-export function expire(lib, now = lib.now()) {
+export function expire(lib, now = lib.now(), user = {}) {
   ensure(lib);
-  const n = lib.rows("SELECT COUNT(*) AS n FROM confirmation_requests WHERE status = 'open' AND expires_at <= ?", now)[0].n;
+  const enforced = user?.tenantEnforced === true;
+  const tenant = enforced ? String(user.tenant || '').toLowerCase() : '';
+  if (enforced && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenant)) return 0;
+  const n = lib.rows("SELECT COUNT(*) AS n FROM confirmation_requests WHERE status = 'open' AND expires_at <= ? AND lower(COALESCE(tenant, '')) = ?", now, tenant)[0].n;
   if (n) {
-    lib.sql.exec("UPDATE confirmation_requests SET status = 'expired' WHERE status = 'open' AND expires_at <= ?", now);
+    lib.sql.exec("UPDATE confirmation_requests SET status = 'expired' WHERE status = 'open' AND expires_at <= ? AND lower(COALESCE(tenant, '')) = ?", now, tenant);
     lib.log('library', 'atlas', 'confirmations expired', `${n} requests`);
   }
   return n;

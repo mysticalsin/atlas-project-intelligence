@@ -5,16 +5,23 @@
 import { featureRoutes } from './features.js';
 import * as outreach from './outreach.js';
 import * as profile from './profile.js';
+import { adminRoutes, journeyRoutes, privacyRoutes } from './operate.js';
+import { productionDemoConflict, resolveTenantEnforcement } from './authz.js';
 export const SYSTEM = { email: 'atlas', role: 'admin' }; // automatic review after a save
+function scopedReviewer(user = {}) {
+  return { email: 'atlas', role: 'admin', tenant: String(user.tenant || '').toLowerCase(), tenantEnforced: user.tenantEnforced === true };
+}
 // A rating engine exists: the review agent, or JEV with a key (docs/JEV_RATING.md §6.5).
 const canRate = lib => !!(lib.complete || lib.rater?.available());
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 
 export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {} } = {}) {
+  const demoConflict = productionDemoConflict(env);
+  if (demoConflict) return json(demoConflict, 503);
   // idp: the sign-in name claims (x-atlas-idp, always written by the Worker from the verified token; WOW_ZERO_CONFIG §5.5).
   const url = new URL(request.url), user = { email: request.headers.get('x-atlas-user') || '', mail: (request.headers.get('x-atlas-email') || '').toLowerCase(), role: request.headers.get('x-atlas-role') || 'user',
-    idp: profile.idpClaims(request.headers.get('x-atlas-idp')) };
+    tenant: request.headers.get('x-atlas-tenant') || '', tenantEnforced: resolveTenantEnforcement(env, request.headers.get('x-atlas-tenant-enforced')), idp: profile.idpClaims(request.headers.get('x-atlas-idp')) };
   if (!user.email) return json({ error: 'Sign in first.' }, 401);
   const parts = url.pathname.replace(/^\/api\/library\/?/, '').split('/').filter(Boolean), method = request.method;
   let body = {};
@@ -26,29 +33,35 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
     if (!parts.length && method === 'GET') return json(lib.list(user, Object.fromEntries(url.searchParams)));
     if (!parts.length && method === 'POST') {
       const saved = await lib.upsert(user, body);
-      if (!saved.unchanged && canRate(lib)) waitUntil(lib.review(SYSTEM, saved.id, { budget: 'background', waitUntil }).catch(() => {})); // automatic quality review
+      if (!saved.unchanged && canRate(lib)) waitUntil(lib.review(scopedReviewer(user), saved.id, { budget: 'background', waitUntil }).catch(() => {})); // automatic quality review of this tenant only
       return json(saved, saved.unchanged ? 200 : 201);
     }
     const [id, action, arg] = parts;
     // System calls (set only by the Worker's trigger endpoint or its daily cron).
     if (user.role === 'system') {
-      if (method === 'POST' && id === 'trigger') return json(outreach.onTrigger(lib, user.email, body), 201);
-      if (method === 'POST' && id === 'scan-stale') return json({ invited: lib.scanStale(), ...outreach.daily(lib), ...(profile.READY ? profile.daily(lib) : {}) });
+      if (user.tenantEnforced === true && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(user.tenant || ''))) {
+        return json({ error: 'ATLAS_SYSTEM_TENANT is not a verified tenant id. Maintenance was not run.' }, 403);
+      }
+      if (method === 'POST' && id === 'trigger') return json(outreach.onTrigger(lib, user, body), 201);
+      if (method === 'POST' && id === 'scan-stale') return json({ invited: lib.scanStale(user), ...outreach.daily(lib, user), ...(profile.READY ? profile.daily(lib, lib.now(), user) : {}) });
       const sys = await featureRoutes(ctx);
       if (sys) return json(sys.body, sys.status || 200);
       return json({ error: 'Not found.' }, 404);
     }
     const f = await featureRoutes(ctx);
     if (f) return json(f.body, f.status || 200);
+    if (id === 'admin') { const r = await adminRoutes(ctx); return json(r.body, r.status || 200); }
+    if (id === 'journey') { const r = await journeyRoutes(ctx); return json(r.body, r.status || 200); }
+    if (id === 'privacy') { const r = await privacyRoutes(ctx); return json(r.body, r.status || 200); }
     if (method === 'POST' && id === 'recommend') return json(await lib.recommend(user, body));
-    if (method === 'POST' && id === 'merge') { const saved = await lib.merge(user, body); if (canRate(lib)) waitUntil(lib.review(SYSTEM, saved.id, { budget: 'background', waitUntil }).catch(() => {})); return json(saved); }
+    if (method === 'POST' && id === 'merge') { const saved = await lib.merge(user, body); if (canRate(lib)) waitUntil(lib.review(scopedReviewer(user), saved.id, { budget: 'background', waitUntil }).catch(() => {})); return json(saved); }
     if (method === 'GET' && id === 'analytics') return json(lib.analytics(user));
     if (method === 'POST' && id === 'insights') return json(await lib.insights(user));
     if (method === 'GET' && id === 'export') return json(lib.exportAll(user));
     if (method === 'POST' && id === 'import') { const out = await lib.importAll(user, body); return json(out); }
     if (id === 'invitations') {
       if (method === 'GET' && !action) return json({ items: lib.invitations({ ...user, all: url.searchParams.get('all') === '1' }) });
-      if (method === 'POST' && !action) { if (!['admin', 'reviewer'].includes(user.role)) return json({ error: 'Only a reviewer can schedule interviews for others.' }, 403); return json(lib.invite(user.email, body), 201); }
+      if (method === 'POST' && !action) { if (!['admin', 'reviewer'].includes(user.role)) return json({ error: 'Only a reviewer can schedule interviews for others.' }, 403); return json(lib.invite(user.email, body, user), 201); }
       if (method === 'POST' && action) return json(lib.updateInvitation(user, action, body));
     }
     if (method === 'POST' && action === 'slides') return json(await lib.slides(user, id, body));

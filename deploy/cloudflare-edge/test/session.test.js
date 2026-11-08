@@ -1144,11 +1144,15 @@ test('gap start: resolved server-side, ready carries mode/timePlan/gaps (at most
   assert.deepEqual(ready.timePlan, { depthAt: null, closingAt: 210 });
   assert.deepEqual(ready.gaps, [{ id: 'G1', label: 'Supporting artifact', ask: ASKS[0].ask }, { id: 'G2', label: 'Measurement basis', ask: ASKS[1].ask },
     { id: 'G3', label: 'Customer relevance', ask: ASKS[2].ask }]);
-  const sys = system(h.calls.talker[0]);
-  const at = label => sys.indexOf(label);
-  assert.ok(at('\nUNTRUSTED PROJECT DATA:\n') > 0 && at('\nUNTRUSTED PROJECT DATA:\n') < at('\nUNTRUSTED GAP LIST') && at('\nUNTRUSTED GAP LIST') < at('\nUNTRUSTED PRIVATE PREFERENCES'));
-  assert.ok(sys.endsWith('\nUNTRUSTED PRIVATE PREFERENCES (not evidence):\n'), 'nothing after the preferences label: the prefix is cache-stable');
-  assert.ok(sys.includes(JSON.stringify(ready.gaps)) && !sys.includes('Dropped'), 'ids, labels and asks only; the fourth ask is dropped');
+  assert.equal(h.calls.talker[0][0].role, 'system');
+  assert.equal(h.calls.talker[0][0].content.includes('UNTRUSTED PROJECT DATA'), false, 'the policy stays separate from project data');
+  const dataMsg = h.calls.talker[0][1];
+  assert.equal(dataMsg.role, 'user');
+  const at = label => dataMsg.content.indexOf(label);
+  assert.ok(at('\nUNTRUSTED PROJECT DATA:\n') === 0 || dataMsg.content.startsWith('UNTRUSTED PROJECT DATA:\n'));
+  assert.ok(at('UNTRUSTED PROJECT DATA:\n') < at('\nUNTRUSTED GAP LIST') && at('\nUNTRUSTED GAP LIST') < at('\nUNTRUSTED PRIVATE PREFERENCES'));
+  assert.ok(dataMsg.content.endsWith('\nUNTRUSTED PRIVATE PREFERENCES (not evidence):\n'), 'nothing after the preferences label: the prefix is cache-stable');
+  assert.ok(dataMsg.content.includes(JSON.stringify(ready.gaps)) && !dataMsg.content.includes('Dropped'), 'ids, labels and asks only; the fourth ask is dropped');
   const opening = h.calls.talker[0];
   assert.equal(opening.at(-1).content, GAP_OPENING, 'the gap opening (it never asks for the Opp ID)');
   assert.ok(opening.some(m => m.content.startsWith('ANALYST_GUIDANCE') && m.content.includes('"askId":"G1"') && m.content.includes(ASKS[0].ask)));
@@ -1360,7 +1364,9 @@ test('full mode is unchanged: ready adds mode and timePlan only, the system pref
   const ready = h.events[0];
   assert.equal(ready.mode, 'full'); assert.deepEqual(ready.timePlan, { depthAt: 405, closingAt: 690 }); assert.ok(!('gaps' in ready));
   await until(() => h.calls.talker.length >= 1 && !h.s.busy());
-  assert.equal(system(h.calls.talker[0]), TALKER_POLICY + '\nUNTRUSTED PROJECT DATA:\n' + JSON.stringify(h.s.project) + '\nUNTRUSTED PRIVATE PREFERENCES (not evidence):\n');
+  assert.equal(h.calls.talker[0][0].role, 'system');
+  assert.equal(h.calls.talker[0][1].role, 'user');
+  assert.equal(h.calls.talker[0][1].content, 'UNTRUSTED PROJECT DATA:\n' + JSON.stringify(h.s.project) + '\nUNTRUSTED PRIVATE PREFERENCES (not evidence):\n');
   assert.deepEqual(talkerMessages(h.s.project, null, [], undefined, [], []), talkerMessages(h.s.project, null, [], undefined, []), 'an empty gap list adds nothing');
   assert.deepEqual(h.s.askByItem.size + Object.keys(h.s.gapAttempts).length, 0, 'no answer windows in full mode');
   await h.s.onText(JSON.stringify({ type: 'end' }));

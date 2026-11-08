@@ -8,7 +8,7 @@
 //   fake-jev-local) with a local key; /__typesafe_mode?m=ok|down|unsure switches it. Without FAKE_TYPESAFE there is no
 //   key, and every request to api.typesafe.ai is refused: a local run never reaches a paid provider.
 import http from 'node:http';
-import { readFileSync } from 'node:fs';
+import { readCanonicalPage } from './page-guard.mjs';
 import { handle } from '../src/app.js';
 import { Library } from '../src/library.js';
 import { libraryRoutes } from '../src/library-routes.js';
@@ -19,9 +19,14 @@ import { memoryRoutes } from '../src/memory-routes.js';
 import { fakeHindsight } from './fake-hindsight.mjs';
 import { fakeTypesafe } from './fake-typesafe.mjs';
 import { storyRater } from '../src/rating.js';
+import { recordUsage } from '../src/telemetry.js';
+import { saveJourney } from '../src/journey.js';
+import { devIdentityEnabled } from '../src/authz.js';
 
 const PORT = Number(process.argv[2] || 8787), ORIGIN = `http://127.0.0.1:${PORT}`, TEAM = 'local.invalid', AUD = 'local-aud';
-const page = readFileSync(new URL('../src/atlas.html', import.meta.url), 'utf8');
+const builtPage = new URL('../../../ATLAS_Voice.html', import.meta.url);
+const vendoredPage = new URL('../src/atlas.html', import.meta.url);
+const page = readCanonicalPage(vendoredPage, builtPage);
 const { publicKey, privateKey } = await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);
 const jwk = { ...(await crypto.subtle.exportKey('jwk', publicKey)), kid: 'local' };
 const realFetch = globalThis.fetch;
@@ -44,7 +49,8 @@ const model = fakeModel(), model_complete = m => model.complete(m);
 const pending = new Set(), stores = new Map();
 const waitUntil = p => { const q = Promise.resolve(p); pending.add(q); q.finally(() => pending.delete(q)).catch(() => {}); };
 // Opt-in feature vars pass through from the shell when set (never defaulted here): WOW_SPEC §5, WOW_ZERO_CONFIG §4.
-// DATA_MODE stays unset (test mode) unless the shell sets it; the DNA variables never have a local default.
+// DATA_MODE stays unset (test mode) unless the shell sets it. Do not set DATA_MODE=production here:
+// this process also sets local-synthetic and ATLAS_DEV_IDENTITY, and the Worker refuses that combination.
 const passthrough = Object.fromEntries(['EXTERNAL_EMAILS', 'CLIENT_CONFIRM', 'IDENTITY_SOURCE', 'DATA_MODE', 'DNA_PROFILE_URL', 'DNA_AUTH_HEADER', 'DNA_FIELD_MAP', 'DNA_API_KEY',
   'DIRECTORY_PUSH_SECRET'].filter(k => process.env[k]).map(k => [k, process.env[k]]));
 const storeFor = id => { if (!stores.has(id)) { const m = new Map(); stores.set(id, { get: async k => m.get(k), put: async (k, v) => m.set(k, v) }); } return stores.get(id); };
@@ -53,13 +59,32 @@ const env = { ORIGIN, ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, CSRF_SECRET: 'l
   // Stand-ins for the Workers AI binding: toMarkdown (documents and image descriptions) and chat completions.
   AI: { toMarkdown: async f => { const t = f.blob.type || ''; return t.startsWith('image/') ? { format: 'markdown', data: 'A diagram showing the project phases and approach' } : { format: 'markdown', data: new TextDecoder().decode(await f.blob.arrayBuffer()) }; },
     run: async (model, input) => ({ choices: [{ message: { content: await model_complete(input.messages) } }] }) },
-  ADMIN_EMAILS: process.env.ADMIN_EMAILS || 'tony.walteur@gmail.com', REVIEWER_EMAILS: process.env.REVIEWER_EMAILS || 'reviewer@mantu.com',
-  HINDSIGHT_URL: HS, HINDSIGHT_API_KEY: 'local-hindsight-key',
+  ATLAS_TENANT_ISOLATION: 'local-synthetic', ATLAS_DEV_IDENTITY: '1',
+  ATLAS_ADMIN_ROLES: 'ATLAS.Admin', ATLAS_PRESALES_ROLES: 'ATLAS.Presales,ATLAS.Publish', ATLAS_REVIEWER_ROLES: 'ATLAS.Reviewer,ATLAS.Review',
+  HINDSIGHT_URL: HS, HINDSIGHT_API_KEY: 'local-hindsight-key', HINDSIGHT_OPT_IN: '1',
+  ATLAS_TOKEN_RATE_IN: process.env.ATLAS_TOKEN_RATE_IN || '0.000002',
+  ATLAS_TOKEN_RATE_OUT: process.env.ATLAS_TOKEN_RATE_OUT || '0.000008',
+  ATLAS_COST_CURRENCY: process.env.ATLAS_COST_CURRENCY || 'USD',
   INTERVIEW: { idFromName: n => n, get: id => ({ fetch: r => memoryRoutes(r, { storage: storeFor(id), hs, env }) }) },
   LIBRARY: { idFromName: n => n, get: () => ({ fetch: r => libraryRoutes(r, lib, { waitUntil, env }) }) }, ...passthrough,
   ...(FAKE_TYPESAFE ? { TYPESAFE_API_KEY: 'local-fake-key' } : {}) }; // bootstrap then reports jev: true
 // The Library as worker.js builds it: with a story rater, which is only available when the environment has a key.
 const lib = new Library(memorySql(), { complete: model.complete, embed: model.embed, model: 'local stand-in', services: { teams: null }, rater: storyRater(env, (u, i) => globalThis.fetch(u, i)) });
+const consultant = { email: 'consultant@example.test', role: 'user', tenant: '' };
+const synthetic = { title: 'Northwind queue pilot', stage: 'Pilot', sector: 'Insurance', consultant: { name: 'Ada Example', role: 'Consultant' },
+  client: { name: 'Northwind Mutual', location: 'Example City', contact: 'Operations' },
+  details: { projectId: 'SYN-1', country: 'Exampleland', consultants: [] },
+  answers: ['A fictional insurer had a slow queue.', 'Ada rebuilt one routing step.', 'The team kept a manual fallback.', 'The queue was shorter on a sample dashboard.', 'Sample dashboard export.', 'Similar fictional service desks.'],
+  validation: { manager: { name: 'Sam Example', email: 'manager@example.test' }, managerStaff: false } };
+const first = await lib.upsert(consultant, { localId: 'northwind', reference: synthetic });
+lib.setState(lib.row(first.id), { ...lib.row(first.id).state, quality: { status: 'ready', score: 80, engine: 'rules' } }, 'seed', 'reviewed', 'synthetic');
+lib.bindTrust({ email: 'seed', role: 'system' }, { owner: consultant.email, email: 'manager@example.test', source: 'directory', tenant: '', sandbox: true });
+const second = await lib.upsert(consultant, { localId: 'admin-test', reference: { ...synthetic, title: 'Admin test copy' } });
+lib.setState(lib.row(second.id), { ...lib.row(second.id).state, quality: { status: 'ready', score: 70, engine: 'rules' } }, 'seed', 'reviewed', 'synthetic');
+await saveJourney(lib, consultant, { stage: 'project', fields: { title: { value: 'Northwind queue pilot', source: 'you', confirmed: true }, personalWork: { value: 'Ada rebuilt one routing step in this fictional pilot.', source: 'you', confirmed: true } }, confirmSkill: 'python', skillConfirmed: true, skillSource: 'you' });
+await recordUsage(lib, consultant, { kind: 'usage', feature: 'voice', outcome: 'ok', latencyMs: 120, tokenStatus: 'actual', tokensIn: 30, tokensOut: 12, model: 'local-stand-in' });
+await recordUsage(lib, consultant, { kind: 'usage', feature: 'journey', outcome: 'ok', tokenStatus: 'missing' });
+await recordUsage(lib, { email: 'admin@example.test', role: 'admin' }, { kind: 'error', feature: 'voice', outcome: 'error', latencyMs: 800, errorClass: 'timeout', tokenStatus: 'unknown' });
 
 const hs = hindsight(env);
 // Test hook /__expire: the Access application token has expired. Like Access (WOW_ZERO_CONFIG §3.7, §13), requests then
@@ -67,6 +92,12 @@ const hs = hindsight(env);
 let expired = false;
 http.createServer(async (req, res) => {
   const url = new URL(req.url, ORIGIN);
+  const helper = url.pathname === '/__settle' || url.pathname === '/__expire' || url.pathname === '/__trust' || url.pathname === '/__typesafe_mode';
+  if (helper && (env.DATA_MODE === 'production' || env.ATLAS_TENANT_ISOLATION !== 'local-synthetic' || env.ATLAS_DEV_IDENTITY !== '1')) {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Synthetic helper routes run only when DATA_MODE is not production, ATLAS_TENANT_ISOLATION is local-synthetic, and ATLAS_DEV_IDENTITY is 1.' }));
+    return;
+  }
   if (url.pathname === '/__settle') { await Promise.allSettled([...pending]); res.end('ok'); return; } // test hook: wait for background reviews
   if (url.pathname === '/__expire') { expired = true; res.end('ok'); return; }
   if (url.pathname === '/__typesafe_mode') { // test hook (FAKE_TYPESAFE only): ok | down (529) | unsure
@@ -75,10 +106,21 @@ http.createServer(async (req, res) => {
     return;
   }
   if (expired && req.headers['sec-fetch-mode'] === 'navigate') expired = false;
-  const as = url.searchParams.get('as') || /(?:^|;\s*)dev_as=([^;]+)/.exec(req.headers.cookie || '')?.[1] || 'consultant@mantu.com';
-  const idpRaw = url.searchParams.has('idp') ? url.searchParams.get('idp') : decodeURIComponent(/(?:^|;\s*)dev_idp=([^;]+)/.exec(req.headers.cookie || '')?.[1] || '');
+  const devIdentity = devIdentityEnabled(env);
+  if (!devIdentity && (url.searchParams.has('as') || url.searchParams.has('idp'))) { res.writeHead(403); res.end('Development identity overrides are off.'); return; }
+  const as = devIdentity ? (url.searchParams.get('as') || /(?:^|;\s*)dev_as=([^;]+)/.exec(req.headers.cookie || '')?.[1] || 'consultant@example.test') : 'consultant@example.test';
+  const idpRaw = devIdentity ? (url.searchParams.has('idp') ? url.searchParams.get('idp') : decodeURIComponent(/(?:^|;\s*)dev_idp=([^;]+)/.exec(req.headers.cookie || '')?.[1] || '')) : '';
   let custom = null; try { const c = JSON.parse(idpRaw || 'null'); custom = c && typeof c === 'object' && !Array.isArray(c) ? c : null; } catch { custom = null; }
   const chunks = []; for await (const c of req) chunks.push(c);
+  if (url.pathname === '/__trust' && req.method === 'POST') {
+    if (!devIdentity) { res.writeHead(403); res.end('Development identity overrides are off.'); return; }
+    try {
+      const spec = JSON.parse(Buffer.concat(chunks).toString() || '{}');
+      lib.bindTrust({ email: 'seed', role: 'system' }, { owner: spec.owner, email: spec.email, source: spec.source === 'staffing' ? 'staffing' : 'directory', tenant: '', sandbox: true });
+      res.writeHead(201, { 'Content-Type': 'application/json' }); res.end('{"ok":true}');
+    } catch (e) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: e.message || 'refused' })); }
+    return;
+  }
   const headers = new Headers(); for (const [k, v] of Object.entries(req.headers)) if (typeof v === 'string') headers.set(k, v);
   headers.delete('cf-access-jwt-assertion');
   if (!expired) headers.set('cf-access-jwt-assertion', await token(decodeURIComponent(as), custom));

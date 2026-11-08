@@ -420,7 +420,7 @@ test('R12 reuse: the last JEV answer is reused for the same body, never across c
   await grant(l, OWNER, false);
   q = (await l.review(OWNER, id)).state.quality;
   assert.deepEqual([fetcher.calls.length, q.engine, q.fallbackReason, q.cached], [3, 'review-agent', 'no_consent', false], 'consent is checked before reuse');
-  for (const out of [l.get(OWNER, id), l.list(OWNER), l.exportAll(REV)]) assert.doesNotMatch(JSON.stringify(out), /lastJev|ratingGen|bodyHash/);
+  for (const out of [l.get(OWNER, id), l.list(OWNER), l.exportAll({ email: 'admin@example.test', role: 'admin' })]) assert.doesNotMatch(JSON.stringify(out), /lastJev|ratingGen|bodyHash/);
 });
 
 test('R13a one rating per revision: concurrent calls with the same engine share one request; running while in flight', async () => {
@@ -577,7 +577,7 @@ test('R17 metrics are numbers only; no key, hash or client in stored ratings, re
   assert.deepEqual(metrics[0], { name: 'story_rating', engine: 1, fallback: 0, status: 1, ms: metrics[0].ms, attempts: 1, hedged: 0, http: 200, cached: 0, asked: 11, holds: 0, escalated: 0, strict: 0, language: 1, input_tokens: 2531 });
   const hash = l.row(id).state.lastJev.bodyHash;
   assert.doesNotMatch(JSON.stringify(metrics), new RegExp(['Zebracorp', 'Claims triage', 'jev-1\\.13', hash, KEY].join('|')));
-  const outputs = [l.row(id).state.quality, l.get(OWNER, id), l.list(OWNER), l.get(REV, id).audit, l.exportAll(REV)];
+  const outputs = [l.row(id).state.quality, l.get(OWNER, id), l.list(OWNER), l.get(REV, id).audit, l.exportAll({ email: 'admin@example.test', role: 'admin' })];
   for (const o of outputs) { assert.doesNotMatch(JSON.stringify(o), new RegExp(KEY)); assert.doesNotMatch(JSON.stringify(o), new RegExp(hash)); }
   for (const a of l.get(REV, id).audit) assert.doesNotMatch(a.detail, /Zebracorp|Claims triage|Lyon/);
   // The default metric writes one JSON line per rating.
@@ -588,7 +588,7 @@ test('R17 metrics are numbers only; no key, hash or client in stored ratings, re
   // No quality figure per person.
   for (const c of l.analytics(REV).byConsultant) assert.deepEqual(Object.keys(c), ['name', 'n']);
   // A public reader of a published record.
-  l.validate(N1, id, { decision: 'validate' });
+  { const row = l.row(id); l.setState(row, { ...row.state, validation: { ...(row.state.validation || {}), status: 'validated', managerDecision: 'approved', presalesDecision: 'approved' } }, 'test', 'validated', ''); }
   const pub = l.get(OTHER, id);
   assert.equal(pub.access, 'public'); assert.equal(pub.state.quality.jev, null); assert.deepEqual(pub.state.quality.holds, []);
   assert.equal('jevAllowed' in pub, false); assert.equal(pub.rating.running, false);
@@ -597,22 +597,15 @@ test('R17 metrics are numbers only; no key, hash or client in stored ratings, re
   assert.equal(l.get(OWNER, id).jevAllowed, true); assert.ok(l.get(OWNER, id).state.quality.jev);
 });
 
-test('R18 manager staff: JEV publishes on its own only when sure; otherwise the second opinion decides', async () => {
+test('R18 manager-staff checkbox does not make JEV strict and does not publish', async () => {
   const staff = () => { const r = REF(); r.validation.managerStaff = true; return r; };
-  let w = await world({ complete: counted(async () => 'not json'), reply: () => ({ spec: R7 }) });
-  let id = await saved(w.l, staff());
-  let r = await w.l.review(OWNER, id);
-  assert.deepEqual([r.state.quality.status, r.status, r.state.quality.jev.strict], ['needs_work', 'needs_work', true]);
-  assert.match(r.state.quality.summary, /publishing without N\+1 validation needs JEV to be sure/);
-  assert.equal(w.metrics.at(-1).strict, 1);
-  w = await world({ reply: () => ({ spec: R7 }) });
-  id = await saved(w.l, staff());
-  r = await w.l.review(OWNER, id);
-  assert.deepEqual([r.status, r.state.quality.engine, r.state.quality.escalatedFrom, r.state.quality.jev.strict], ['published', 'review-agent', 'jev', true], 'the agent decided');
-  w = await world({ reply: () => ({ spec: { ...SURE, story_language: { choice: 'en', confidence: 0.99 } } }) });
-  id = await saved(w.l, staff());
-  r = await w.l.review(OWNER, id);
-  assert.deepEqual([r.status, r.state.quality.engine, w.complete.calls.length], ['published', 'jev', 0]);
+  const w = await world({ reply: () => ({ spec: { ...SURE, story_language: { choice: 'en', confidence: 0.99 } } }) });
+  const id = await saved(w.l, staff());
+  const r = await w.l.review(OWNER, id);
+  assert.equal(r.state.validation.managerStaffIgnored, true);
+  assert.notEqual(r.status, 'published');
+  assert.equal(r.state.quality.jev?.strict, false);
+  assert.equal(w.metrics.at(-1).strict, 0);
 });
 
 test('R19 language and size: non-English never ready by JEV alone; long stories trim sources, then fall back', async () => {

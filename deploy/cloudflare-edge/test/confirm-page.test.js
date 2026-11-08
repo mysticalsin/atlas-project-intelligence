@@ -62,6 +62,11 @@ test('escaping: every text reaches the DOM through textContent only, even hostil
   assert.equal(find(n => ['IMG', 'SCRIPT', 'B', 'I'].includes(n.tagName)).length, 0, 'no element ever comes from data');
   assert.equal(api.el('p', { 'data-x': '"><img>' }, '<i>x</i>').textContent, '<i>x</i>');
   assert.equal(api.heading({ claims: [{}], reference: { consultant: { name: '' } } }), 'Confirm 1 point for a colleague, about 60 seconds');
+  const opaque = page();
+  opaque.api.render([{ request: { id: 'r9' }, reference: { handle: 'r9' }, claims: [{ id: 'c', topic: 1, text: 'A point.' }] }], '');
+  const line = opaque.find(n => n.getAttribute('class') === 'muted').map(n => n.textContent).join('\n');
+  assert.equal(line.includes('undefined'), false);
+  assert.match(line, /Confirmation request/);
 });
 
 test('flow: three buttons per claim; Correct reveals a required note; #confirmSubmit enables only when all are decided', () => {

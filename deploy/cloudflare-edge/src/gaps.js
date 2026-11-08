@@ -12,6 +12,7 @@ import { getRequirement, bidView, ensure as ensureBids } from './bids.js';
 import * as outreach from './outreach.js';
 import * as profile from './profile.js';
 import { FIELDS, GAP_MAX } from './policy.generated.js';
+import { sameTenant } from './authz.js';
 
 export const READY = true;
 
@@ -34,6 +35,8 @@ export function ensure(lib) {
   if (ensured.has(lib)) return;
   ensureBids(lib);
   for (const q of DDL) lib.sql.exec(q);
+  const cols = lib.rows("SELECT name FROM pragma_table_info('gap_requests')").map(r => r.name);
+  if (cols.length && !cols.includes('tenant')) lib.sql.exec("ALTER TABLE gap_requests ADD COLUMN tenant TEXT NOT NULL DEFAULT ''");
   ensured.add(lib);
 }
 
@@ -56,11 +59,14 @@ const cutoff = (now, days) => { const t = Date.parse(now instanceof Date ? now.t
 const expired = (lib, g) => g.status === 'open' && g.created_at < cutoff(lib.now(), EXPIRY_DAYS);
 
 // Requests open for more than 30 days become 'expired'. Called by outreach.daily; runs its own ensure. Returns the count.
-export function expire(lib, now) {
+export function expire(lib, now, user = {}) {
   if (!READY) return 0;
   ensure(lib);
-  const before = cutoff(now, EXPIRY_DAYS), n = lib.rows("SELECT COUNT(*) AS n FROM gap_requests WHERE status = 'open' AND created_at < ?", before)[0].n;
-  if (n) lib.sql.exec("UPDATE gap_requests SET status = 'expired' WHERE status = 'open' AND created_at < ?", before);
+  const enforced = user?.tenantEnforced === true;
+  const tenant = enforced ? String(user.tenant || '').toLowerCase() : '';
+  if (enforced && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenant)) return 0;
+  const before = cutoff(now, EXPIRY_DAYS), n = lib.rows("SELECT COUNT(*) AS n FROM gap_requests WHERE status = 'open' AND created_at < ? AND lower(COALESCE(tenant, '')) = ?", before, tenant)[0].n;
+  if (n) lib.sql.exec("UPDATE gap_requests SET status = 'expired' WHERE status = 'open' AND created_at < ? AND lower(COALESCE(tenant, '')) = ?", before, tenant);
   return n;
 }
 
@@ -68,9 +74,9 @@ export function expire(lib, now) {
 export function listForBid(lib, user, bidId) {
   if (!READY) return [];
   ensure(lib);
-  const bid = lib.rows('SELECT owner FROM bids WHERE id = ?', String(bidId ?? ''))[0];
-  if (!bid || !(bid.owner === user?.email || ['admin', 'reviewer'].includes(user?.role))) return [];
-  return lib.rows('SELECT * FROM gap_requests WHERE bid_id = ? ORDER BY created_at DESC LIMIT 50', String(bidId)).map(g => ({
+  const bid = lib.rows('SELECT owner, tenant FROM bids WHERE id = ?', String(bidId ?? ''))[0];
+  if (!bid || !sameTenant(bid.tenant, user?.tenant, user?.tenantEnforced === true) || !(bid.owner === user?.email || ['admin', 'reviewer'].includes(user?.role))) return [];
+  return lib.rows("SELECT * FROM gap_requests WHERE bid_id = ? AND lower(COALESCE(tenant, '')) = lower(COALESCE(?, '')) ORDER BY created_at DESC LIMIT 50", String(bidId), bid.tenant).map(g => ({
     id: g.id, requirementIds: parsed(g.requirement_ids, []), status: expired(lib, g) ? 'expired' : g.status, ...(g.assignee_name ? { assigneeName: g.assignee_name } : {}),
     answeredAt: g.answered_at || null }));
 }
@@ -127,18 +133,19 @@ function create(ctx) {
   const who = resolveAssignee(lib, env, user, b.assignee);
   if ([user.email, user.mail].includes(who.email) || ownsBid(lib, bidId, who.email)) throw fail(400, 'Ask someone else for proof.');
   // A blank name is filled from the stored DNA directory rows only (never DNA itself, never anyone's profile; §5.8).
-  if (!who.name && profile.READY) who.name = String(profile.lookupPerson(lib, who.email)?.name || '').slice(0, 100);
+  if (!who.name && profile.READY) who.name = String(profile.lookupPerson(lib, who.email, user.tenantEnforced === true ? String(user.tenant || '').toLowerCase() : '')?.name || '').slice(0, 100);
   let ref = who.row;
   if (b.referenceId !== undefined && b.referenceId !== null && b.referenceId !== '') {
     ref = lib.row(String(b.referenceId));
     if (!lib.access(ref, user)) throw fail(404, 'Reference not found.');
   }
   // The business project id only when the assignee may see that reference in full.
-  const projectId = ref && lib.access(ref, { email: who.email, role: 'user' }) === 'full' ? clientScrub(ref.data)(String(ref.data.details?.projectId || '')) : '';
+  const projectId = ref && lib.access(ref, { email: who.email, mail: who.email, role: 'user', tenant: user.tenant, tenantEnforced: user.tenantEnforced === true }) === 'full' ? clientScrub(ref.data)(String(ref.data.details?.projectId || '')) : '';
   const id = lib.newId(), at = lib.now();
+  const tenant = user.tenantEnforced === true ? String(user.tenant || '').toLowerCase() : '';
   lib.sql.exec(`INSERT INTO gap_requests (id, bid_id, requirement_ids, asks, email, assignee_name, reference_id, project_id, status, created_by, created_by_mail,
-    created_at, answered_at, results, pseudo, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, NULL, NULL, NULL, ?)`,
-    id, bidId, JSON.stringify(ids), JSON.stringify(asks), who.email, who.name, ref?.id || null, projectId || null, user.email, user.mail || '', at, who.source);
+    created_at, answered_at, results, pseudo, source, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, NULL, NULL, NULL, ?, ?)`,
+    id, bidId, JSON.stringify(ids), JSON.stringify(asks), who.email, who.name, ref?.id || null, projectId || null, user.email, user.mail || '', at, who.source, tenant);
   lib.log(id, user.email, 'gap requested', `bid ${bidId}; ${asks.length} asks; assignee ${who.source}`);
   // Nothing is sent. The draft names nobody (no client, prospect or person) and links to the request by id only;
   // outreach rows wait for an approver and preview the other view.
@@ -146,7 +153,7 @@ function create(ctx) {
   const g = rowOf(lib, id), out = render(lib, user, g), link = `${originOf(ctx)}/go/gap/${id}`, points = asks.length === 1 ? 'one specific proof point' : `${asks.length} specific proof points`;
   const text = `A bid team asks for ${points} from your project experience (${asks.map(a => a.label).join(', ')}). It takes about five minutes by voice with ATLAS, and nothing is shared until you choose to send your answers.`;
   let queued = [];
-  try { queued = outreach.queue(lib, { kind: 'gap_request', subjectId: id, toEmail: who.email, subject: SUBJECT, preview: { title: alias || 'A bid', text } }); }
+  try { queued = outreach.queue(lib, { kind: 'gap_request', subjectId: id, toEmail: who.email, tenant, subject: SUBJECT, preview: { title: alias || 'A bid', text } }); }
   catch { queued = []; } // the request and its draft stand even if the approval queue refuses a row
   return { status: 201, body: { ...out, draft: { to: out.assigneeEmail || '', subject: SUBJECT, body: `Hello,\n\n${text}\n\nOpen the request: ${link}\n`, link },
     outreach: queued.map(o => ({ id: o.id, channel: o.channel, status: o.status, reason: o.reason || '' })) } };
@@ -206,17 +213,37 @@ function dismiss(ctx, g) {
   return render(lib, user, rowOf(lib, g.id));
 }
 
+function gapPage(lib, user, which, params) {
+  if (user?.tenantEnforced === true && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
+  const q = params?.get ? params : { get: () => '' };
+  const prefix = which === 'assigned' ? 'assigned' : 'created';
+  const afterAt = q.get(prefix + 'AfterAt') || '', afterId = q.get(prefix + 'AfterId') || '';
+  if ((afterAt && !afterId) || (!afterAt && afterId) || afterAt.length > 40 || afterId.length > 80) throw fail(400, 'The page cursor is not valid.');
+  const who = which === 'assigned' ? user.mail : user.email;
+  if (!who) return { items: [], page: { truncated: false, limit: 100, next: null } };
+  const tenant = String(user.tenant || '').toLowerCase();
+  const where = [which === 'assigned' ? 'email = ? AND status = \'open\'' : 'created_by = ?', "lower(COALESCE(tenant, '')) = ?"];
+  const args = [who, tenant];
+  if (which === 'assigned') { where.push('created_at >= ?'); args.push(cutoff(lib.now(), EXPIRY_DAYS)); }
+  if (afterAt) { where.push('(created_at < ? OR (created_at = ? AND id > ?))'); args.push(afterAt, afterAt, afterId); }
+  const limit = 100;
+  const rows = lib.rows(`SELECT * FROM gap_requests WHERE ${where.join(' AND ')} ORDER BY created_at DESC, id ASC LIMIT ?`, ...args, limit + 1);
+  const truncated = rows.length > limit, page = truncated ? rows.slice(0, limit) : rows, last = page.at(-1);
+  return { items: page.map(g => render(lib, user, g)), page: { truncated, limit, next: truncated && last ? { afterAt: last.created_at, afterId: last.id } : null } };
+}
 export async function routes(ctx) {
   const { lib, user, method } = ctx, [, rawId, action, extra] = ctx.parts;
+  if (user?.tenantEnforced === true && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
   ensure(lib);
   if (!rawId && method === 'POST') return create(ctx);
   if (!rawId && method === 'GET') {
-    const assigned = user.mail ? lib.rows("SELECT * FROM gap_requests WHERE email = ? AND status = 'open' ORDER BY created_at DESC LIMIT 100", user.mail).filter(g => !expired(lib, g)) : [];
-    const created = lib.rows('SELECT * FROM gap_requests WHERE created_by = ? ORDER BY created_at DESC LIMIT 100', user.email);
-    return { body: { assigned: assigned.map(g => render(lib, user, g)), created: created.map(g => render(lib, user, g)) } };
+    const q = ctx.url?.searchParams;
+    const assigned = gapPage(lib, user, 'assigned', q);
+    const created = gapPage(lib, user, 'created', q);
+    return { body: { assigned: assigned.items, created: created.items, assignedPage: assigned.page, createdPage: created.page } };
   }
   const id = String(rawId || '').toLowerCase(), g = ID.test(id) && !extra ? rowOf(lib, id) : null;
-  if (!g) throw fail(404, 'Gap request not found.');
+  if (!g || !sameTenant(g.tenant, user.tenant, user.tenantEnforced === true)) throw fail(404, 'Gap request not found.');
   if (method === 'GET' && !action) {
     if (!isAssignee(g, user) && !isCreator(g, user) && !['admin', 'reviewer'].includes(user.role)) throw fail(404, 'Gap request not found.');
     return { body: render(lib, user, g) };
@@ -233,7 +260,7 @@ export async function resolveForInterview(env, identity, gapId) {
   const id = String(gapId ?? '');
   if (!ID.test(id) || !env?.LIBRARY || !identity?.user) return null;
   try {
-    const headers = new Headers({ 'x-atlas-user': String(identity.user), 'x-atlas-role': String(identity.role || 'user'), 'x-atlas-email': String(identity.mail || '') });
+    const headers = new Headers({ 'x-atlas-user': String(identity.user), 'x-atlas-role': String(identity.role || 'user'), 'x-atlas-email': String(identity.mail || ''), 'x-atlas-tenant': String(identity.tenant || ''), 'x-atlas-tenant-enforced': identity.tenantEnforced ? '1' : '0' });
     const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(new Request(`https://atlas.internal/api/library/gaps/${id}/interview`, { headers }));
     if (!res.ok) return null;
     const b = obj(await res.json());

@@ -12,6 +12,7 @@ import { snippetsOf, TOPIC_KEYS } from './snippets.js';
 import { RERANK_POLICY, parseRerankStrict, candidateCard, lexical, rankPool, retrievalOf } from './reuse.js';
 import { SIM_FLOOR, STRONG } from './bids.js';
 import { winSignals } from './winloop.js';
+import { TENANT_ID } from './authz.js';
 
 export const READY = true;
 const LABEL = 'Answers are interpretation over the library; open each reference for the facts. People are listed by the projects they worked on, never ranked.';
@@ -29,6 +30,7 @@ export async function routes(ctx) {
 }
 
 async function ask(lib, user, b) {
+  if (user?.tenantEnforced === true && !TENANT_ID.test(String(user?.tenant || ''))) throw fail(403, 'A verified tenant is required.');
   const question = str(b.question, 2000);
   if (question.length < 8 || question.length > 600) throw fail(400, 'Ask a question of 8 to 600 characters.');
   const limit = Math.max(1, Math.min(8, Math.round(Number(b.limit)) || 6));
@@ -57,7 +59,7 @@ async function ask(lib, user, b) {
       totals: { visible: results.length }, note: [note, extraNote].filter(Boolean).join(' '), label: LABEL };
   };
   if (!pool.length) return answer('empty_library', 'none', [], NOTE.empty_library);
-  const qv = lib.embed ? await lib.embed(q.text).catch(() => null) : null, wins = winSignals(lib);
+  const qv = lib.embed ? await lib.embed(q.text).catch(() => null) : null, wins = winSignals(lib, user);
   const kept = rankPool(pool, q.text, qv, { floor: note ? UNFLOORED : SIM_FLOOR, boost: r => wins.get(r.id)?.boost || 0 }).slice(0, 12);
   const retrieval = retrievalOf(kept) || (qv ? 'semantic' : 'lexical');
   if (!kept.length) return answer('none', retrieval, [], NOTE.none);

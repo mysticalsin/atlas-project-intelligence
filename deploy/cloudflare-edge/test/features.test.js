@@ -72,7 +72,7 @@ test('dispatch order: GET /api/library/bids is a feature word, never lib.get("bi
   const r = await call(l, 'GET', '/api/library/bids', OWNER);
   // Not READY: the registry's 404; READY: the caller's bid list. Either way never the reference whose id is "bids".
   if (!features.readyOf('bids', {})) { assert.equal(r.status, 404); assert.deepEqual(await r.json(), { error: NOT_AVAILABLE }); }
-  else { assert.equal(r.status, 200); assert.deepEqual(await r.json(), { items: [] }); }
+  else { assert.equal(r.status, 200); assert.deepEqual(await r.json(), { items: [], truncated: false, limit: 200, next: null }); }
   assert.equal((await call(l, 'GET', '/api/library/bids/anything/else', OWNER)).status, 404, 'deeper bid paths never fall through to the generic routes');
   for (const word of Object.keys(features.WORDS)) {
     const res = await call(l, 'GET', '/api/library/' + word, OWNER);
@@ -232,7 +232,7 @@ test('legacy-schema start: every module runs on the four old tables, twice (idem
     assert.equal(l.get(user, 'legacy1').title, 'Legacy', 'the legacy row still reads');
   }
   const cols = sql.exec('PRAGMA table_info(refs)').toArray().map(c => c.name);
-  assert.equal(cols.length, 21, 'refs was not altered');
+  assert.deepEqual([cols.length, cols.at(-1)], [22, 'tenant'], 'the only refs change is the stored tenant column');
   for (const t of ['bids', 'bid_references']) assert.equal(sql.exec("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name = ?", t).toArray()[0].n, 1, t);
 });
 

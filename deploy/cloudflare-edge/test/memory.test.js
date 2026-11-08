@@ -4,7 +4,7 @@ import { bankId, hindsight, projectDocument, retainItems, memoryNote, jevRelevan
 import { memoryRoutes } from '../src/memory-routes.js';
 import { Session, talkerMessages } from '../src/session.js';
 
-const ENV = { HINDSIGHT_URL: 'https://hs.example/', HINDSIGHT_API_KEY: 'hs-key', CSRF_SECRET: 'csrf' };
+const ENV = { HINDSIGHT_URL: 'https://hs.example/', HINDSIGHT_API_KEY: 'hs-key', HINDSIGHT_OPT_IN: '1', CSRF_SECRET: 'csrf', ATLAS_TENANT_ISOLATION: 'local-synthetic' };
 function fakeHS(reply = {}) {
   const calls = [];
   const fetcher = async (url, init) => { calls.push({ url, method: init.method, auth: init.headers.Authorization, body: init.body ? JSON.parse(init.body) : null });
@@ -21,6 +21,12 @@ test('bank id: server-derived per verified subject, stable, never guessable from
   const a = await bankId(ENV, 'user-a'), b = await bankId(ENV, 'user-b');
   assert.equal(a, await bankId(ENV, 'user-a')); assert.notEqual(a, b); assert.match(a, /^atlas-[0-9a-f]{40}$/);
   assert.notEqual(a, await bankId({ ...ENV, HINDSIGHT_BANK_SECRET: 'other' }, 'user-a'));
+  const tid = '11111111-1111-4111-8111-111111111111', other = '22222222-2222-4222-8222-222222222222';
+  const enforced = { ...ENV, ATLAS_TENANT_ISOLATION: 'enforced', DATA_MODE: 'production' };
+  const scoped = await bankId(enforced, 'user-a', tid);
+  assert.notEqual(scoped, a, 'a verified tenant does not open the subject-only bank');
+  assert.notEqual(scoped, await bankId(enforced, 'user-a', other));
+  await assert.rejects(bankId(enforced, 'user-a', ''), /verified tenant/);
 });
 
 test('project document: complete, labelled self-reported, client details scrubbed everywhere', () => {
@@ -45,8 +51,9 @@ test('Hindsight client: verified endpoints, Bearer key, bank configured once, as
   assert.deepEqual([calls[3].body.tags, calls[3].body.tags_match, calls[3].body.budget], [['project:p-123'], 'any', 'low']);
   assert.deepEqual(got.map(g => g.text), ['Baseline was not measured yet.']);
   assert.equal(hindsight({ ...ENV, HINDSIGHT_API_KEY: '' }, fetcher), null);
-  const cloud = []; await hindsight({ HINDSIGHT_API_KEY: 'k' }, async u => { cloud.push(String(u)); return new Response('{}'); }).stats('b');
-  assert.equal(cloud[0], 'https://api.hindsight.vectorize.io/v1/default/banks/b/stats', 'Hindsight Cloud is the default');
+  assert.equal(hindsight({ HINDSIGHT_API_KEY: 'k', HINDSIGHT_OPT_IN: '1' }, async () => new Response('{}')), null, 'no URL and the public host is not implied');
+  const cloud = []; await hindsight({ HINDSIGHT_API_KEY: 'k', HINDSIGHT_OPT_IN: '1', HINDSIGHT_URL: 'https://api.hindsight.vectorize.io', HINDSIGHT_ALLOW_CLOUD: '1' }, async u => { cloud.push(String(u)); return new Response('{}'); }).stats('b');
+  assert.equal(cloud[0], 'https://api.hindsight.vectorize.io/v1/default/banks/b/stats');
 });
 
 test('memory note is bounded and labelled; JEV keeps this project\'s memories and filters the others', async () => {
@@ -98,7 +105,7 @@ test('session: recalled memory reaches the talker as a private note on every tur
   const bad = await run(async () => { throw new Error('down'); });
   assert.ok(bad.talker.length, 'the opening still happens'); assert.ok(!bad.talker[0].some(m => m.content.startsWith('PRIVATE MEMORY')));
   const msgs = talkerMessages({ title: 'x' }, null, [], 'go', ['', 'PRIVATE MEMORY: y', 'pace']);
-  assert.deepEqual(msgs.slice(1, -1).map(m => m.content), ['PRIVATE MEMORY: y', 'pace']);
+  assert.deepEqual(msgs.filter(m => m.role === 'system').slice(1).map(m => m.content), ['PRIVATE MEMORY: y', 'pace']);
 });
 
 test('connection test explains Hindsight credit and key problems plainly', async () => {

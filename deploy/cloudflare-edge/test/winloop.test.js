@@ -167,7 +167,11 @@ test('fetchWinHint: forwards the interviewee identity to the global LibraryStore
   const id = { user: 'alex@mantu.com', role: 'reviewer', mail: 'alex@mantu.com' };
   assert.deepEqual(await winloop.fetchWinHint(store(() => Response.json({ hint: 'quantified', decided: 12, basis: 'b' })), id), { hint: 'quantified', decided: 12, basis: 'b' });
   assert.equal(seen.name, 'global'); assert.equal(seen.url, 'https://atlas.internal/api/library/wins/guidance');
-  assert.deepEqual([seen.headers['x-atlas-user'], seen.headers['x-atlas-role'], seen.headers['x-atlas-email']], ['alex@mantu.com', 'reviewer', 'alex@mantu.com']);
+  assert.deepEqual([seen.headers['x-atlas-user'], seen.headers['x-atlas-role'], seen.headers['x-atlas-email'], seen.headers['x-atlas-tenant'], seen.headers['x-atlas-tenant-enforced']], ['alex@mantu.com', 'reviewer', 'alex@mantu.com', '', '0']);
+  const scoped = { ...id, tenant: '11111111-1111-4111-8111-111111111111', tenantEnforced: true };
+  await winloop.fetchWinHint(store(() => Response.json({ hint: 'confirmed', decided: 10, basis: 'c' })), scoped);
+  assert.equal(seen.headers['x-atlas-tenant'], scoped.tenant);
+  assert.equal(seen.headers['x-atlas-tenant-enforced'], '1');
   assert.deepEqual(await winloop.fetchWinHint(store(() => Response.json({ hint: 'drop tables', decided: 'x' })), id), { hint: null, decided: 0, basis: '' });
   for (const reply of [() => new Response('{}', { status: 404 }), () => new Response('not json'), () => { throw new Error('down'); }])
     assert.equal(await winloop.fetchWinHint(store(reply), id), null);

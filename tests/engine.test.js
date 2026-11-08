@@ -45,7 +45,7 @@ test('JEV result is sanitised, clamped, and dropped when malformed',()=>{const p
 test('N+1 validation: awaiting, recorded, reopened by edits; manager staff not required',()=>{const p=filled();p.validation=E.cleanValidation({manager:{name:'Sam Lead',email:'sam@example.com'}});p.report=E.cleanReport({headline:'H',summary:'S',gaps:['No source']});
  E.requestValidation(p);assert.equal(p.validation.status,'awaiting');E.recordValidation(p);assert.equal(p.validation.status,'validated');assert.equal(p.validation.by,'Sam Lead');
  E.invalidate(p,'Edited');assert.equal(p.validation.status,'awaiting');assert.throws(()=>{p.validation.status='none';E.recordValidation(p);});
- const m=filled();m.validation=E.cleanValidation({managerStaff:true});E.requestValidation(m);assert.equal(m.validation.status,'not_required');
+ const m=filled();m.validation=E.cleanValidation({managerStaff:true});E.requestValidation(m);assert.equal(m.validation.status,'awaiting');
  assert.equal(E.cleanValidation({manager:{email:'not an email'}}).manager.email,'');assert.equal(E.cleanValidation({status:'approved-by-magic'}).status,'none');});
 test('N+1 email draft excludes the confidential client and stays mailto-sized',()=>{const p=filled();p.client={name:'Zebracorp Confidential',location:'Lyon',contact:'CIO'};p.validation=E.cleanValidation({manager:{name:'Sam',email:'sam@example.com'}});
  assert.throws(()=>E.validationEmail(p),/report/);p.report=E.cleanReport({headline:'Claims triage rebuilt',summary:'x'.repeat(900),highlights:['a'.repeat(200),'b'.repeat(200)],gaps:['c'.repeat(200)]});

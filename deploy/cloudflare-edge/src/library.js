@@ -12,10 +12,12 @@ import { winSignals } from './winloop.js';
 // Story rating by TypeSafe JEV (docs/JEV_RATING.md): used only when a rater with a key exists and the owner consented.
 import { RatingError, ratingInput, questionPlan, requestBody, compose, agentQuality, noStoryQuality, sha256Hex, BUDGETS, RUBRIC_VERSION, METRIC_CODES, MODEL } from './rating.js';
 import { storedConsent } from './profile.js';
+import { sameTenant, TENANT_ID } from './authz.js';
+import { recordUsage } from './telemetry.js';
 const DUPLICATE = 0.9; // cosine similarity above which two references are flagged as the same or a related project
 export const PRACTICES = { data_ai: 'Data & AI', web_app: 'Web & App Development', telecom: 'Telecom & Networks', sap_erp: 'SAP & ERP', cloud_infra: 'Cloud & Infrastructure', cybersecurity: 'Cybersecurity', transformation: 'Transformation & Strategy', engineering: 'Engineering & Industry' };
 
-export const STATUSES = ['in_review', 'needs_work', 'changes_requested', 'awaiting_validation', 'published', 'withdrawn'];
+export const STATUSES = ['in_review', 'needs_work', 'changes_requested', 'awaiting_validation', 'published', 'admin_test', 'withdrawn'];
 const REVIEW_DAYS = 180; // references are due for an update six months after their last change
 
 // Server-side bounds for everything a browser may send. Unknown fields are dropped.
@@ -92,10 +94,19 @@ const auditDetail = q => `score ${q.score}, ${q.status}` + (q.engine === 'jev' ?
 
 export function deriveStatus(state) {
   if (state.withdrawn) return 'withdrawn';
+  const v = state.validation || {};
+  // A verified admin bypass is explicit and audited. The manager-staff checkbox never arrives here as not_required.
+  if (v.status === 'admin_bypass') {
+    if (state.test) return 'admin_test';
+    if (!state.quality) return 'in_review';
+    if (state.quality.status !== 'ready') return 'needs_work';
+    return 'published';
+  }
   if (!state.quality) return 'in_review';
   if (state.quality.status !== 'ready') return 'needs_work';
-  if (state.validation?.status === 'changes_requested') return 'changes_requested';
-  if (['validated', 'not_required'].includes(state.validation?.status)) return 'published';
+  if (v.status === 'changes_requested' || v.managerDecision === 'changes_requested' || v.presalesDecision === 'changes_requested') return 'changes_requested';
+  const both = v.managerDecision === 'approved' && v.presalesDecision === 'approved';
+  if (v.status === 'validated' || both) return 'published';
   return 'awaiting_validation';
 }
 
@@ -110,14 +121,49 @@ const SCHEMA = [
     status TEXT, created_at TEXT, source TEXT)`,
 ];
 
+function migrateManagerTrust(lib) {
+  const exists = lib.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'manager_trust'")[0];
+  const create = `CREATE TABLE manager_trust_v2 (
+    owner TEXT NOT NULL, email TEXT NOT NULL, source TEXT, tenant TEXT NOT NULL DEFAULT '', at TEXT,
+    PRIMARY KEY (owner, email, tenant))`;
+  if (!exists) { lib.sql.exec(create.replace('manager_trust_v2', 'manager_trust')); return; }
+  const pk = lib.rows("SELECT name FROM pragma_table_info('manager_trust') WHERE pk > 0 ORDER BY pk").map(r => r.name);
+  if (pk.join(',') === 'owner,email,tenant') return;
+  const cols = lib.rows("SELECT name FROM pragma_table_info('manager_trust')").map(r => r.name);
+  lib.sql.exec(create);
+  const tenantSql = cols.includes('tenant') ? "COALESCE(tenant, '')" : "''";
+  lib.sql.exec(`INSERT INTO manager_trust_v2 (owner, email, source, tenant, at)
+    SELECT owner, email, source, ${tenantSql}, at FROM manager_trust`);
+  lib.sql.exec('DROP TABLE manager_trust');
+  lib.sql.exec('ALTER TABLE manager_trust_v2 RENAME TO manager_trust');
+}
+function migrateStoryTenant(lib) {
+  const cols = lib.rows("SELECT name FROM pragma_table_info('refs')").map(r => r.name);
+  if (cols.length && !cols.includes('tenant')) {
+    lib.sql.exec("ALTER TABLE refs ADD COLUMN tenant TEXT NOT NULL DEFAULT ''");
+    // Copy the tenant already stored on the story. Blank stays blank. Nothing is assigned.
+    lib.sql.exec("UPDATE refs SET tenant = COALESCE(json_extract(state, '$.tenant'), '')");
+  }
+  const idx = lib.rows("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'refs_owner_local'")[0]?.sql || '';
+  if (!idx.includes('tenant')) {
+    lib.sql.exec('DROP INDEX IF EXISTS refs_owner_local');
+    lib.sql.exec('CREATE UNIQUE INDEX refs_owner_local ON refs(owner, local_id, tenant)');
+  }
+}
 export class Library {
   // services: outbound adapters for feature modules ({ teams } in production; empty in tests and local runs).
   // rater: rating.storyRater(env) (null: no JEV); metric(name, values): numbers only (default: one console.log line).
   constructor(sql, { now = () => new Date().toISOString(), newId = () => crypto.randomUUID().replace(/-/g, ''), complete = null, embed = null, readyScore = READY_SCORE, model = '', services = {},
-    rater = null, metric = defaultMetric } = {}) {
-    Object.assign(this, { sql, now, newId, complete, embed, readyScore, model, services, rater, metric });
+    rater = null, metric = defaultMetric, transactionSync = null } = {}) {
+    const atomic = typeof transactionSync === 'function' ? transactionSync : (typeof sql?.transactionSync === 'function' ? sql.transactionSync.bind(sql) : null);
+    Object.assign(this, { sql, now, newId, complete, embed, readyScore, model, services, rater, metric, transactionSync: atomic });
     this.inflight = new Map(); // `${id}:${revision}` -> { gen, engine, first, all }: one rating per revision at a time
     for (const q of SCHEMA) this.sql.exec(q);
+    const inv = this.rows("SELECT name FROM pragma_table_info('invitations')").map(r => r.name);
+    if (inv.length && !inv.includes('tenant')) this.sql.exec('ALTER TABLE invitations ADD COLUMN tenant TEXT');
+    this.sql.exec("CREATE UNIQUE INDEX IF NOT EXISTS invitations_open_scope ON invitations(email, reason, project_id, reference_id, tenant) WHERE status IN ('open', 'scheduled')");
+    migrateManagerTrust(this);
+    migrateStoryTenant(this);
   }
 
   rows(q, ...p) { return this.sql.exec(q, ...p).toArray(); }
@@ -126,16 +172,93 @@ export class Library {
     return r ? { ...r, data: JSON.parse(r.data), state: JSON.parse(r.state) } : null;
   }
   log(id, actor, action, detail = '') { this.sql.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', id, actor, action, this.now(), String(detail).slice(0, 300)); }
+  // An invitation or card action may name a story. The audit id is that story only when the story's stored tenant
+  // is the caller's tenant. A foreign id is not an audit target.
+  auditId(refId, tenant) {
+    const id = String(refId || '');
+    if (!id) return 'library';
+    const row = this.row(id);
+    const stored = String(row?.tenant || row?.state?.tenant || '').toLowerCase();
+    return row && stored === String(tenant || '').toLowerCase() ? id : 'library';
+  }
+  auditFor(user, refId, tenant) {
+    const id = this.auditId(refId, tenant);
+    if (id === 'library') return 'library';
+    const row = this.row(id);
+    return row && this.access(row, user) ? id : 'library';
+  }
+  visibleDuplicates(row, user) {
+    const mine = String(row?.tenant || row?.state?.tenant || '').toLowerCase();
+    const out = [];
+    for (const d of row?.state?.duplicates || []) {
+      const other = this.row(d?.id);
+      if (!other || String(other.tenant || other.state?.tenant || '').toLowerCase() !== mine || !this.access(other, user)) continue;
+      out.push({ id: other.id, title: other.data?.title || '', similarity: d.similarity, sameProjectId: !!d.sameProjectId });
+    }
+    return out;
+  }
+  ownerKeys(row) {
+    const owner = String(row?.owner || '').toLowerCase();
+    const keys = new Set(owner ? [owner] : []);
+    const tenant = String(row?.tenant || row?.state?.tenant || '').toLowerCase();
+    if (!this.rows("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'profiles'")[0]) return [...keys];
+    for (const found of this.rows("SELECT email FROM profiles WHERE lower(subject) = ? AND lower(COALESCE(tenant, '')) = ?", owner, tenant)) {
+      const mail = String(found.email || '').trim().toLowerCase();
+      if (mail) keys.add(mail);
+    }
+    return [...keys];
+  }
+  reachableOwnerAddress(row) {
+    const owner = String(row?.owner || '').trim().toLowerCase();
+    if (email(owner)) return email(owner);
+    for (const key of this.ownerKeys(row)) if (email(key)) return email(key);
+    return '';
+  }
 
   // Who may see what. 'full' includes confidential client details; 'public' is the anonymised published view.
+  // Typed teammate emails do not grant full access. A trusted manager row does.
   access(row, user) {
-    if (!row || row.merged_into) return null;
-    if (['admin', 'reviewer'].includes(user.role)) return 'full';
+    if (!row || row.merged_into || !sameTenant(row.state?.tenant, user.tenant, user.tenantEnforced === true)) return null;
+    if (['admin', 'reviewer', 'presales'].includes(user.role)) return 'full';
     const e = user.email;
-    if (e && (row.owner === e || row.manager_email === e || (row.members || '').includes(',' + e + ','))) return 'full';
+    if (e && row.owner === e) return 'full';
+    if (e && Array.isArray(row.state?.sharedWith) && row.state.sharedWith.includes(e)) return 'full';
+    if (this.canManagerApprove(row, user)) return 'full';
     return row.status === 'published' ? 'public' : null;
   }
-  canEdit(row, user) { return ['admin', 'reviewer'].includes(user.role) || row.owner === user.email || (row.members || '').includes(',' + user.email + ','); }
+  canEdit(row, user) { return !!user.email && sameTenant(row.state?.tenant, user.tenant, user.tenantEnforced === true) && (['admin', 'reviewer'].includes(user.role) || row.owner === user.email); }
+  identityAliases(user = {}) {
+    return [...new Set([user.email, user.mail].map(v => String(v || '').trim().toLowerCase()).filter(Boolean))];
+  }
+  canManagerApprove(row, user) {
+    const aliases = this.identityAliases(user);
+    const owner = String(row?.owner || '').toLowerCase();
+    if (!aliases.length || !row || aliases.includes(owner)) return false;
+    if (!sameTenant(row.state?.tenant, user.tenant, user.tenantEnforced === true)) return false;
+    const want = String(user.tenant || '').toLowerCase();
+    const marks = aliases.map(() => '?').join(', ');
+    const owners = this.ownerKeys(row);
+    if (!owners.length || owners.some(o => aliases.includes(o))) return false;
+    const ownerMarks = owners.map(() => '?').join(', ');
+    const grants = this.rows(`SELECT source FROM manager_trust WHERE lower(owner) IN (${ownerMarks}) AND lower(email) IN (${marks}) AND lower(COALESCE(tenant, '')) = ?`, ...owners, ...aliases, want);
+    if (grants.some(g => g.source === 'directory')) return true;
+    if (!grants.some(g => g.source === 'staffing')) return false;
+    const project = String(row.data?.details?.projectId || '').trim().toLowerCase();
+    if (!project) return false;
+    if (!this.rows("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'staffing'")[0]) return false;
+    const hits = this.rows(`SELECT project_id, consultant_email, manager_email FROM staffing WHERE lower(project_id) = ? AND lower(consultant_email) IN (${ownerMarks}) AND lower(COALESCE(tenant, '')) = ?`, project, ...owners, want);
+    const physical = new Map();
+    for (const hit of hits) {
+      const key = String(hit.project_id || '').toLowerCase() + '\n' + String(hit.consultant_email || '').toLowerCase();
+      physical.set(key, (physical.get(key) || 0) + 1);
+    }
+    if (physical.size !== 1 || [...physical.values()][0] !== 1) return false;
+    return hits.some(hit => aliases.includes(String(hit.manager_email || '').toLowerCase()));
+  }
+  canPresalesApprove(row, user) {
+    if (!row || user.role !== 'presales' || !user.email || user.email === row.owner) return false;
+    return sameTenant(row.state?.tenant, user.tenant, user.tenantEnforced === true);
+  }
 
   summary(row, level, user) {
     const d = row.data, q = row.state.quality;
@@ -147,9 +270,11 @@ export class Library {
 
   async upsert(user, body) {
     if (!user.email) throw fail(401, 'Sign in first.');
+    if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
     body = obj(body);
     const data = cleanReference(body.reference), localId = str(body.localId, 100), hash = await hashOf(data), at = this.now();
-    const found = body.id ? { id: String(body.id) } : localId ? this.rows('SELECT id FROM refs WHERE owner = ? AND local_id = ?', user.email, localId)[0] : null;
+    const storyTenant = String(user.tenant || '').trim().toLowerCase();
+    const found = body.id ? { id: String(body.id) } : localId ? this.rows("SELECT id FROM refs WHERE owner = ? AND local_id = ? AND lower(COALESCE(tenant, '')) = ?", user.email, localId, storyTenant)[0] : null;
     const row = found ? this.row(found.id) : null;
     if (body.id && !row) throw fail(404, 'Reference not found.');
     if (row && !this.canEdit(row, user)) throw fail(403, 'You cannot edit this reference.');
@@ -157,38 +282,46 @@ export class Library {
     if (row && row.content_hash === hash) return { ...this.summary(row, 'full', user), unchanged: true };
     const id = row ? row.id : this.newId(), revision = row ? row.revision + 1 : 1;
     const members = ',' + data.details.consultants.map(c => c.email).filter(Boolean).join(',') + ',';
-    const state = { ...(row ? row.state : {}), quality: null, withdrawn: false,
-      validation: { status: data.validation.managerStaff ? 'not_required' : 'pending', by: '', at: '', note: '' } };
+    // An empty tenant is left empty. Enforcement hides that row until an operator backfill
+    // supplies the tenant from a verified source. This function does not invent one.
+    const keptTenant = row ? String(row.tenant || row.state?.tenant || '') : storyTenant;
+    const state = { ...(row ? row.state : {}), quality: null, withdrawn: false, test: false, tenant: keptTenant,
+      validation: { status: 'pending', managerDecision: 'pending', presalesDecision: 'pending', by: '', at: '', note: '', managerStaffIgnored: !!data.validation.managerStaff } };
     const status = deriveStatus(state), next = new Date(Date.parse(at) + REVIEW_DAYS * 864e5).toISOString();
     if (row) this.sql.exec(`UPDATE refs SET title=?, status=?, revision=?, content_hash=?, practice=?, industry=?, country=?, manager_email=?, members=?, quality_score=NULL,
       updated_at=?, updated_by=?, next_review=?, data=?, state=?, embedding=NULL WHERE id=?`,
       data.title, status, revision, hash, data.jev?.primary?.key || '', data.sector, data.details.country, data.validation.manager.email, members, at, user.email, next, JSON.stringify(data), JSON.stringify(state), id);
-    else this.sql.exec(`INSERT INTO refs (id, owner, local_id, title, status, revision, content_hash, practice, industry, country, manager_email, members, created_at, updated_at, updated_by, next_review, data, state)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      id, user.email, localId, data.title, status, revision, hash, data.jev?.primary?.key || '', data.sector, data.details.country, data.validation.manager.email, members, at, at, user.email, next, JSON.stringify(data), JSON.stringify(state));
+    else this.sql.exec(`INSERT INTO refs (id, owner, local_id, title, status, revision, content_hash, practice, industry, country, manager_email, members, created_at, updated_at, updated_by, next_review, data, state, tenant)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      id, user.email, localId, data.title, status, revision, hash, data.jev?.primary?.key || '', data.sector, data.details.country, data.validation.manager.email, members, at, at, user.email, next, JSON.stringify(data), JSON.stringify(state), keptTenant);
     this.sql.exec('INSERT INTO revisions (id, revision, data, author, at) VALUES (?, ?, ?, ?, ?)', id, revision, JSON.stringify(data), user.email, at);
-    this.log(id, user.email, row ? 'revised' : 'created', 'revision ' + revision + (row ? '; review and N+1 validation reopened' : ''));
+    this.log(id, user.email, row ? 'revised' : 'created', 'revision ' + revision + (row ? '; manager and pre-sales approval reopened' : ''));
     return this.summary(this.row(id), 'full', user);
   }
 
+  demandTenant(user) {
+    if (user?.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
+  }
+
   get(user, id) {
+    this.demandTenant(user);
     const row = this.row(id), level = this.access(row, user);
     if (!level) throw fail(404, 'Reference not found.');
     const full = level === 'full';
     return { ...this.summary(row, level, user), data: full ? row.data : anonymise(row.data),
-      state: { quality: full ? row.state.quality : publicQuality(row.state.quality), validation: full ? row.state.validation : { status: row.state.validation?.status }, withdrawn: !!row.state.withdrawn, duplicates: row.state.duplicates || [] },
+      state: { quality: full ? row.state.quality : publicQuality(row.state.quality), validation: full ? row.state.validation : { status: row.state.validation?.status }, withdrawn: !!row.state.withdrawn, duplicates: this.visibleDuplicates(row, user) },
       revisions: full ? this.rows('SELECT revision, author, at FROM revisions WHERE id = ? ORDER BY revision DESC', row.id) : [],
-      audit: full ? this.rows('SELECT actor, action, at, detail FROM audit WHERE id = ? ORDER BY seq DESC LIMIT 100', row.id) : [],
-      permissions: { edit: this.canEdit(row, user), validate: this.canValidate(row, user), withdraw: this.canEdit(row, user), review: this.canEdit(row, user), reinstate: ['admin', 'reviewer'].includes(user.role), merge: ['admin', 'reviewer'].includes(user.role) },
+      audit: full ? this.rows('SELECT actor, action, at, detail FROM audit WHERE id = ? ORDER BY seq DESC LIMIT 100', row.id).map(a => a.action === 'possible duplicate' ? { ...a, detail: '' } : a) : [],
+      permissions: { edit: this.canEdit(row, user), validate: this.canValidate(row, user), validateLane: this.canManagerApprove(row, user) ? 'manager' : this.canPresalesApprove(row, user) ? 'presales' : '', withdraw: this.canEdit(row, user), review: this.canEdit(row, user), reinstate: ['admin', 'reviewer'].includes(user.role), merge: ['admin', 'reviewer'].includes(user.role) },
       rating: { running: this.inflight.has(row.id + ':' + row.revision) }, ...(full ? { jevAllowed: this.jevAllowed(row) } : {}) };
   }
 
   // JEV may rate this story: a key, the OWNER's stored consent (whoever triggers the rating), and no rejected key.
-  jevAllowed(row) { return !!this.rater?.available() && this.rater.blocked() !== 'auth' && storedConsent(this, row.owner, 'jevRating'); }
+  jevAllowed(row) { return !!this.rater?.available() && this.rater.blocked() !== 'auth' && storedConsent(this, row.owner, 'jevRating', row.state?.tenant || ''); }
   engineFor(row) {
     // Without a key, a story with no text still goes to the review agent, exactly as before JEV (docs/JEV_RATING.md §0).
     if (!(row.data.answers || []).some(a => String(a ?? '').trim())) return this.rater?.available() ? 'rules' : 'review-agent';
-    return this.rater?.available() && storedConsent(this, row.owner, 'jevRating') ? 'jev' : 'review-agent';
+    return this.rater?.available() && storedConsent(this, row.owner, 'jevRating', row.state?.tenant || '') ? 'jev' : 'review-agent';
   }
 
   revision(user, id, n) {
@@ -205,6 +338,7 @@ export class Library {
   }
 
   list(user, f = {}) {
+    this.demandTenant(user);
     const q = str(f.q, 200).toLowerCase(), has = (arr, v) => !v || (arr || []).some(x => x.toLowerCase() === String(v).toLowerCase());
     const rows = this.visibleRows(user).filter(([r, level]) => (!f.status || r.status === f.status) && (!f.practice || r.practice === f.practice)
       && (!f.country || (r.country || '').toLowerCase() === String(f.country).toLowerCase()) && (!f.industry || (r.industry || '').toLowerCase() === String(f.industry).toLowerCase())
@@ -216,7 +350,27 @@ export class Library {
         serviceLines: facet(r => r.data.details.serviceLines), technologies: facet(r => r.data.details.technologies) } };
   }
 
-  canValidate(row, user) { return ['admin', 'reviewer'].includes(user.role) || (!!user.email && row.manager_email === user.email); }
+  canValidate(row, user) { return this.canManagerApprove(row, user) || this.canPresalesApprove(row, user); }
+  bindTrust(actor, spec = {}) {
+    if (!actor || !['system', 'admin'].includes(actor.role)) throw fail(403, 'Only a verified admin or a directory import can bind a manager.');
+    const source = spec.source === 'staffing' ? 'staffing' : spec.source === 'directory' ? 'directory' : '';
+    const owner = str(spec.owner, 200), who = String(spec.email || '').trim().toLowerCase();
+    const tenant = String(spec.tenant || '').trim().toLowerCase();
+    const enforced = actor.tenantEnforced === true || spec.tenantEnforced === true;
+    if (!source || !owner || !who || who === owner.toLowerCase()) throw fail(400, 'A trusted manager binding needs a directory or staffing source and two different people.');
+    if (!tenant) {
+      if (spec.sandbox !== true || enforced) throw fail(403, 'A tenantless manager binding is refused.');
+    } else if (enforced && (!TENANT_ID.test(tenant) || String(actor.tenant || '').toLowerCase() !== tenant)) {
+      throw fail(403, 'A verified tenant is required to bind a manager.');
+    }
+    this.sql.exec(`INSERT INTO manager_trust (owner, email, source, tenant, at) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(owner, email, tenant) DO UPDATE SET
+        source = CASE WHEN manager_trust.source = 'directory' AND excluded.source = 'staffing' THEN manager_trust.source ELSE excluded.source END,
+        at = excluded.at`,
+      owner, who, source, tenant, this.now());
+    this.log('library', actor.email || actor.role, 'manager trust', `${source}`);
+    return { owner, email: who, source };
+  }
 
   setState(row, state, actor, action, detail) {
     const status = deriveStatus(state);
@@ -338,7 +492,7 @@ export class Library {
       answers = r.answers; meta = { attempts: r.attempts, hedged: r.hedged, http: r.http, inputTokens: r.inputTokens ?? 0 };
       lastJev = { bodyHash, rubric: RUBRIC_VERSION, model: MODEL, answers, inputTokens: r.inputTokens ?? 0 };
     }
-    const strict = row.state.validation?.status === 'not_required'; // manager staff: no N+1 will look at it
+    const strict = row.state.validation?.status === 'admin_bypass' && !row.state.test;
     const opts = { asked, ruled: plan.ruled, readyScore: this.readyScore, strict, ms: Date.now() - t0, cached, model: answers.model, now: this.now, revision: row.revision, gen };
     const { quality, escalate } = compose(row.data, answers, { ...opts, second: this.complete ? 'running' : 'unanswered' });
     return { quality, escalate, lastJev, meta: { ...meta, asked: asked.length }, unanswered: escalate ? compose(row.data, answers, { ...opts, second: 'unanswered' }).quality : null };
@@ -364,23 +518,24 @@ export class Library {
     const row = this.row(id); if (!row) return;
     const vec = this.embed ? await this.embed(searchText(recordView(this, row.data))) : null;
     if (vec) this.sql.exec('UPDATE refs SET embedding = ? WHERE id = ?', JSON.stringify(vec), id);
-    const others = this.rows('SELECT id, title, data, state, embedding FROM refs WHERE merged_into IS NULL AND id != ?', id);
+    const storyTenant = String(row.tenant || row.state?.tenant || '').toLowerCase();
+    const others = this.rows("SELECT id, title, data, state, embedding, tenant FROM refs WHERE merged_into IS NULL AND id != ? AND lower(COALESCE(tenant, '')) = ?", id, storyTenant);
     const mine = [], pid = row.data.details.projectId.toLowerCase();
     for (const o of others) {
       const od = JSON.parse(o.data), sim = vec && o.embedding ? cosine(vec, JSON.parse(o.embedding)) : lexical(searchText(forModel(row.data)), searchText(forModel(od)));
       const sameId = pid && od.details.projectId.toLowerCase() === pid;
       if (sameId || sim >= DUPLICATE) {
-        const hit = { id: o.id, title: o.title, similarity: Math.round(sim * 100) / 100, sameProjectId: !!sameId };
+        const hit = { id: o.id, similarity: Math.round(sim * 100) / 100, sameProjectId: !!sameId };
         mine.push(hit);
         const os = JSON.parse(o.state), list = (os.duplicates || []).filter(x => x.id !== id);
-        list.push({ id, title: row.data.title, similarity: hit.similarity, sameProjectId: hit.sameProjectId });
+        list.push({ id, similarity: hit.similarity, sameProjectId: hit.sameProjectId });
         this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...os, duplicates: list.slice(0, 10) }), o.id);
       }
     }
     mine.sort((a, b) => (b.sameProjectId - a.sameProjectId) || (b.similarity - a.similarity)); // strongest signal first
     const fresh = this.row(id);
     this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...fresh.state, duplicates: mine.slice(0, 10) }), id);
-    if (mine.length) this.log(id, 'atlas', 'possible duplicate', mine.map(m => m.title).join('; '));
+    if (mine.length) this.log(id, 'atlas', 'possible duplicate', String(mine.length));
   }
 
   // Natural-language recommendation: understand the context, retrieve by meaning, then rerank with reasons.
@@ -396,7 +551,7 @@ export class Library {
     if (!pool.length) return { target: mine(target), results: [], method: 'none', note: 'No references are available to you yet.' };
     const want = [target.searchText, target.industry, target.likelyChallenges.join('. '), target.capabilities.join(', ')].join('\n');
     const qv = this.embed ? await this.embed(want).catch(() => null) : null;
-    const wins = winSignals(this); // bounded win-history boost (F7): order only, never model relevance
+    const wins = winSignals(this, user); // bounded win-history boost (F7): order only, never model relevance, this tenant only
     const scored = pool.map(([r, level]) => {
       const m = forModel(r.data), sem = qv && r.embedding ? cosine(qv, JSON.parse(r.embedding)) : null, lex = lexical(want, searchText(m));
       const boost = (target.industry && (r.data.sector || '').toLowerCase().includes(target.industry.toLowerCase().split(/\s+/)[0]) ? 0.05 : 0) + (wins.get(r.id)?.boost || 0);
@@ -416,9 +571,11 @@ export class Library {
 
   // Consolidation: one stronger reference; every consultant keeps access and their own contribution.
   async merge(user, body = {}) {
+    this.demandTenant(user);
     if (!['admin', 'reviewer'].includes(user.role)) throw fail(403, 'Only a reviewer can merge references.');
     const keep = this.row(obj(body).keep), gone = this.row(obj(body).merge);
     if (!keep || !gone || keep.id === gone.id || keep.merged_into || gone.merged_into) throw fail(400, 'Choose two different active references.');
+    if (!this.access(keep, user) || !this.access(gone, user)) throw fail(404, 'Reference not found.');
     const k = structuredClone(keep.data), g = gone.data;
     const people = [...k.details.consultants];
     for (const c of [{ name: g.consultant.name, email: gone.owner, role: g.consultant.role }, ...g.details.consultants])
@@ -432,7 +589,8 @@ export class Library {
     if (g.answers[1] && !k.answers[1].includes(g.answers[1])) k.answers[1] = (k.answers[1] + '\n\nContribution by another consultant: ' + g.answers[1]).trim().slice(0, 6000);
     for (const i of [0, 2, 3, 4, 5]) if (!k.answers[i] && g.answers[i]) k.answers[i] = g.answers[i];
     this.sql.exec('UPDATE refs SET merged_into = ?, status = ? WHERE id = ?', keep.id, 'withdrawn', gone.id);
-    this.sql.exec('UPDATE refs SET members = ? WHERE id = ?', (keep.members || ',') + [gone.owner, ...g.details.consultants.map(c => c.email)].filter(Boolean).join(',') + ',', keep.id);
+    const sharedWith = [...new Set([...(keep.state.sharedWith || []), gone.owner].filter(Boolean))];
+    this.sql.exec('UPDATE refs SET state = ?, members = ? WHERE id = ?', JSON.stringify({ ...keep.state, sharedWith }), (keep.members || ',') + sharedWith.join(',') + ',', keep.id);
     this.log(gone.id, user.email, 'merged into', keep.id);
     const saved = await this.upsert({ ...user }, { id: keep.id, reference: k });
     this.log(keep.id, user.email, 'consolidated', `merged ${gone.data.title} (${gone.id})`);
@@ -458,13 +616,15 @@ export class Library {
   }
 
   analytics(user) {
+    this.demandTenant(user);
     const rows = this.visibleRows(user).map(([r, l]) => [r, l]), now = this.now();
     const count = (key, pick) => { const out = {}; for (const [r] of rows) for (const v of [].concat(pick(r)).filter(Boolean)) out[v] = (out[v] || 0) + 1; return Object.entries(out).sort((a, b) => b[1] - a[1]).map(([name, n]) => ({ name, n })); };
     const pub = rows.filter(([r]) => r.status === 'published');
     const countries = [...new Set(rows.map(([r]) => r.data.details.country).filter(Boolean))];
     const coverage = Object.values(PRACTICES).map(p => ({ practice: p, countries: Object.fromEntries(countries.map(c => [c, pub.filter(([r]) => r.data.jev?.primary?.label === p && r.data.details.country === c).length])) }));
     const gaps = []; for (const row of coverage) for (const [c, n] of Object.entries(row.countries)) if (!n) gaps.push(`${row.practice} in ${c}`);
-    const openInvites = this.rows("SELECT project_id, title, email, reason FROM invitations WHERE status IN ('open','scheduled') AND (reference_id IS NULL OR reference_id = '')")
+    const inviteTenant = String(user.tenant || '').toLowerCase();
+    const openInvites = this.rows("SELECT project_id, title, email, reason FROM invitations WHERE status IN ('open','scheduled') AND (reference_id IS NULL OR reference_id = '') AND lower(COALESCE(tenant, '')) = ?", inviteTenant)
       .filter(i => ['admin', 'reviewer'].includes(user.role) || i.email === user.email);
     return {
       totals: { visible: rows.length, published: pub.length, byStatus: count('status', r => r.status) },
@@ -490,48 +650,115 @@ export class Library {
   }
 
   // ---- Interview invitations: lifecycle triggers and six-month updates. Nothing is ever sent automatically. ----
-  invite(actor, body = {}) {
+  invite(actor, body = {}, caller) {
     const b = obj(body), to = email(b.email);
     if (!to) throw fail(400, 'A consultant email is required.');
+    const user = caller && typeof caller === 'object' ? caller : null;
+    if (user?.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
+    const tenant = user ? String(user.tenant || '').toLowerCase() : String(b.tenant || '').toLowerCase();
+    if (b.tenant !== undefined && String(b.tenant).toLowerCase() !== tenant) throw fail(403, 'An invitation cannot choose a different tenant.');
     const reason = ['project_end', 'milestone', 'six_month_update', 'periodic_review', 'manual'].includes(b.reason) ? b.reason : 'manual';
     const refId = str(b.referenceId, 40), pid = str(b.projectId, 60);
-    const dupe = this.rows("SELECT id FROM invitations WHERE email = ? AND reason = ? AND status IN ('open','scheduled') AND (project_id = ? AND reference_id = ?)", to, reason, pid, refId)[0];
+    if (refId && user && !this.access(this.row(refId), user)) throw fail(404, 'Reference not found.');
+    if (refId && !user && this.auditId(refId, tenant) !== refId) throw fail(404, 'Reference not found.');
+    const dupe = this.rows("SELECT id FROM invitations WHERE lower(email) = ? AND reason = ? AND status IN ('open','scheduled') AND lower(project_id) = lower(?) AND reference_id = ? AND lower(COALESCE(tenant, '')) = ?", to, reason, pid, refId, tenant)[0];
     if (dupe) return this.rows('SELECT * FROM invitations WHERE id = ?', dupe.id)[0];
     const id = this.newId(), slot = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(b.slot || '')) ? String(b.slot).slice(0, 25) : '';
-    this.sql.exec('INSERT INTO invitations (id, email, project_id, title, reason, slot, reference_id, status, created_at, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      id, to, pid, str(b.title, 140), reason, slot, refId, slot ? 'scheduled' : 'open', this.now(), str(b.source || actor, 60));
-    this.log(refId || 'library', actor, 'interview invitation', `${reason} for ${to}`);
+    this.sql.exec('INSERT INTO invitations (id, email, project_id, title, reason, slot, reference_id, status, created_at, source, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      id, to, pid, str(b.title, 140), reason, slot, refId, slot ? 'scheduled' : 'open', this.now(), str(b.source || actor, 60), tenant);
+    this.log(this.auditId(refId, tenant), actor, 'interview invitation', `${reason} for ${to}`);
     return this.rows('SELECT * FROM invitations WHERE id = ?', id)[0];
   }
   invitations(user) {
-    return ['admin', 'reviewer'].includes(user.role) && user.all ? this.rows("SELECT * FROM invitations ORDER BY created_at DESC LIMIT 200")
-      : this.rows("SELECT * FROM invitations WHERE email = ? AND status IN ('open','scheduled') ORDER BY created_at DESC", user.email);
+    if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
+    const tenant = String(user.tenant || '').toLowerCase();
+    if (['admin', 'reviewer'].includes(user.role) && user.all) {
+      const sql = user.tenantEnforced === true
+        ? "SELECT * FROM invitations WHERE lower(COALESCE(tenant, '')) = ? ORDER BY created_at DESC LIMIT 200"
+        : "SELECT * FROM invitations WHERE lower(COALESCE(tenant, '')) = '' ORDER BY created_at DESC LIMIT 200";
+      const rows = user.tenantEnforced === true ? this.rows(sql, tenant) : this.rows(sql);
+      return rows.map(row => this.invitationView(user, row));
+    }
+    const aliases = [...new Set([user.email, user.mail].map(v => String(v || '').trim().toLowerCase()).filter(Boolean))];
+    if (!aliases.length) return [];
+    const marks = aliases.map(() => '?').join(', ');
+    return this.rows(`SELECT * FROM invitations WHERE lower(email) IN (${marks}) AND status IN ('open','scheduled') AND lower(COALESCE(tenant, '')) = ? ORDER BY created_at DESC`, ...aliases, user.tenantEnforced === true ? tenant : '')
+      .map(row => this.invitationView(user, row));
+  }
+  invitationView(user, row) {
+    const refId = String(row?.reference_id || '');
+    const base = { id: row.id, status: row.status, reason: row.reason, slot: row.slot || '', created_at: row.created_at, tenant: row.tenant || '' };
+    if (!refId) return { ...base, title: row.title || '', project_id: row.project_id || '' };
+    const linked = this.row(refId);
+    const linkedTenant = String(linked?.tenant || linked?.state?.tenant || '').toLowerCase();
+    if (!linked || !this.access(linked, user) || linkedTenant !== String(row.tenant || '').toLowerCase()) return base;
+    return { ...base, title: row.title || '', project_id: row.project_id || '', reference_id: refId };
   }
   updateInvitation(user, id, body = {}) {
     const inv = this.rows('SELECT * FROM invitations WHERE id = ?', String(id))[0];
-    if (!inv || (inv.email !== user.email && !['admin', 'reviewer'].includes(user.role))) throw fail(404, 'Invitation not found.');
+    const aliases = this.identityAliases(user);
+    if (!inv || (!aliases.includes(String(inv.email || '').toLowerCase()) && !['admin', 'reviewer'].includes(user.role))) throw fail(404, 'Invitation not found.');
+    if (user.tenantEnforced === true && !sameTenant(inv.tenant, user.tenant, true)) throw fail(404, 'Invitation not found.');
     const action = obj(body).action;
+    if (!['schedule', 'dismiss', 'done'].includes(action)) throw fail(400, 'Unknown action.');
+    const nextRef = str(obj(body).referenceId, 40);
+    const existingRef = String(inv.reference_id || '');
+    const openRef = refId => {
+      if (!refId) return false;
+      const linked = this.row(refId);
+      const linkedTenant = String(linked?.tenant || linked?.state?.tenant || '').toLowerCase();
+      return !!(linked && this.access(linked, user) && linkedTenant === String(inv.tenant || '').toLowerCase());
+    };
+    if (action === 'done') {
+      if (!nextRef && !existingRef) throw fail(400, 'A reference is required.');
+      if (existingRef && !openRef(existingRef)) throw fail(404, 'Reference not found.');
+      if (nextRef && !openRef(nextRef)) throw fail(404, 'Reference not found.');
+    }
+    const keptRef = action === 'done' && nextRef ? nextRef : existingRef;
+    const storyOpen = openRef(keptRef);
+    if (keptRef && !storyOpen) {
+      if (action !== 'dismiss') throw fail(404, 'Reference not found.');
+      this.sql.exec("UPDATE invitations SET status = 'dismissed' WHERE id = ?", inv.id);
+      return this.invitationView(user, this.rows('SELECT * FROM invitations WHERE id = ?', inv.id)[0]);
+    }
+    const auditOn = storyOpen ? this.auditFor(user, keptRef, inv.tenant) : 'library';
     if (action === 'schedule') { const slot = String(obj(body).slot || ''); if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(slot)) throw fail(400, 'Pick a date and time.'); this.sql.exec("UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ?", slot.slice(0, 25), inv.id); }
     else if (action === 'dismiss') this.sql.exec("UPDATE invitations SET status = 'dismissed' WHERE id = ?", inv.id);
-    else if (action === 'done') this.sql.exec("UPDATE invitations SET status = 'done', reference_id = ? WHERE id = ?", str(obj(body).referenceId, 40) || inv.reference_id, inv.id);
+    else if (action === 'done') this.sql.exec("UPDATE invitations SET status = 'done', reference_id = ? WHERE id = ?", nextRef || inv.reference_id, inv.id);
     else throw fail(400, 'Unknown action.');
-    this.log(inv.reference_id || 'library', user.email, 'invitation ' + action, inv.reason);
-    return this.rows('SELECT * FROM invitations WHERE id = ?', inv.id)[0];
+    this.log(auditOn, user.email, 'invitation ' + action, inv.reason);
+    return this.invitationView(user, this.rows('SELECT * FROM invitations WHERE id = ?', inv.id)[0]);
   }
   // Daily: every reference not updated for six months gets one open update invitation for its owner.
-  scanStale() {
-    const due = this.rows('SELECT id, owner, title, data FROM refs WHERE merged_into IS NULL AND next_review < ? AND status != ?', this.now(), 'withdrawn');
-    return due.map(r => this.invite('atlas', { email: r.owner, reason: 'six_month_update', referenceId: r.id, projectId: JSON.parse(r.data).details.projectId, title: r.title, source: 'six-month scan' })).length;
+  scanStale(user = {}) {
+    const due = this.rows('SELECT id, owner, title, data, state FROM refs WHERE merged_into IS NULL AND next_review < ? AND status != ?', this.now(), 'withdrawn')
+      .filter(r => { let tenant = ''; try { tenant = JSON.parse(r.state || '{}').tenant || ''; } catch { return false; } return sameTenant(tenant, user.tenant, user.tenantEnforced === true); });
+    const tenant = user.tenantEnforced === true ? String(user.tenant || '').toLowerCase() : '';
+    let invited = 0;
+    for (const r of due) {
+      let recordTenant = '';
+      try { recordTenant = JSON.parse(r.state || '{}').tenant || ''; } catch { continue; }
+      const to = this.reachableOwnerAddress({ owner: r.owner, tenant: recordTenant, state: { tenant: recordTenant } });
+      if (!to) continue;
+      this.invite('atlas', { email: to, reason: 'six_month_update', referenceId: r.id, projectId: JSON.parse(r.data).details.projectId, title: r.title, source: 'six-month scan', tenant });
+      invited++;
+    }
+    return invited;
   }
 
-  // ---- Spotlight Ref contract: versioned JSON export / import (reviewers). ----
+  // ---- Corporate export / import. Verified admins only, tenant-scoped, audited. No story text in the audit line. ----
   exportAll(user) {
-    if (!['admin', 'reviewer'].includes(user.role)) throw fail(403, 'Export is for reviewers.');
-    return { schema: 'atlas.reference.v1', exportedAt: this.now(), references: this.rows('SELECT id, owner, status, revision, updated_at, data, state FROM refs WHERE merged_into IS NULL')
-      .map(r => ({ id: r.id, owner: r.owner, status: r.status, revision: r.revision, updatedAt: r.updated_at, quality: JSON.parse(r.state).quality?.score ?? null, reference: JSON.parse(r.data) })) };
+    if (user.role !== 'admin') throw fail(403, 'Export is for a verified admin.');
+    if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
+    const references = this.rows('SELECT id, owner, status, revision, updated_at, data, state FROM refs WHERE merged_into IS NULL')
+      .filter(r => { let recordTenant = ''; try { recordTenant = JSON.parse(r.state || '{}').tenant || ''; } catch { return false; } return sameTenant(recordTenant, user.tenant, user.tenantEnforced === true); })
+      .map(r => ({ id: r.id, owner: r.owner, status: r.status, revision: r.revision, updatedAt: r.updated_at, quality: JSON.parse(r.state).quality?.score ?? null, reference: JSON.parse(r.data) }));
+    this.log('library', user.email, 'admin export', `${references.length} references`);
+    return { schema: 'atlas.reference.v1', exportedAt: this.now(), references };
   }
   async importAll(user, body = {}) {
-    if (!['admin', 'reviewer'].includes(user.role)) throw fail(403, 'Import is for reviewers.');
+    if (user.role !== 'admin') throw fail(403, 'Import is for a verified admin.');
+    if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
     const items = Array.isArray(obj(body).references) ? obj(body).references.slice(0, 500) : [];
     const out = { created: 0, unchanged: 0, rejected: [] };
     for (const [i, it] of items.entries()) {
@@ -543,14 +770,36 @@ export class Library {
   }
 
   validate(user, id, body = {}) {
+    this.demandTenant(user);
     const row = this.row(id);
     if (!row || !this.access(row, user)) throw fail(404, 'Reference not found.');
-    if (!this.canValidate(row, user)) throw fail(403, 'Only the N+1 named on this reference, or a reviewer, can validate it.');
-    const decision = body.decision === 'request_changes' ? 'changes_requested' : body.decision === 'validate' ? 'validated' : null;
+    const lane = body.lane === 'manager' ? 'manager' : body.lane === 'presales' ? 'presales' : '';
+    if (!lane) throw fail(400, 'Choose a lane: manager or presales.');
+    if (lane === 'manager' && !this.canManagerApprove(row, user)) throw fail(403, 'Only the trusted manager from directory or staffing can approve this lane.');
+    if (lane === 'presales' && !this.canPresalesApprove(row, user)) throw fail(403, 'Only a verified bid/pre-sales reviewer can approve this lane.');
+    const decision = body.decision === 'request_changes' ? 'changes_requested' : body.decision === 'validate' ? 'approved' : '';
     if (!decision) throw fail(400, 'Choose validate or request_changes.');
     const note = str(body.note, 500);
     if (decision === 'changes_requested' && !note) throw fail(400, 'Say what should change.');
-    this.setState(row, { ...row.state, validation: { status: decision, by: user.email, at: this.now(), note } }, user.email, decision === 'validated' ? 'validated' : 'changes requested', note);
+    const prev = row.state.validation || {};
+    const validation = { ...prev, by: user.email, at: this.now(), note, status: 'pending' };
+    if (lane === 'manager') validation.managerDecision = decision;
+    else validation.presalesDecision = decision;
+    if (validation.managerDecision === 'changes_requested' || validation.presalesDecision === 'changes_requested') validation.status = 'changes_requested';
+    else if (validation.managerDecision === 'approved' && validation.presalesDecision === 'approved') validation.status = 'validated';
+    this.setState(row, { ...row.state, validation }, user.email, lane + ' ' + decision, lane);
+    return this.get(user, id);
+  }
+
+  async adminPublish(user, id, body = {}) {
+    if (user.role !== 'admin') throw fail(403, 'Only a verified admin can publish without the two approvals.');
+    this.demandTenant(user);
+    const row = this.row(id);
+    if (!row || !this.access(row, user)) throw fail(404, 'Reference not found.');
+    const test = body.test === true;
+    const validation = { ...(row.state.validation || {}), status: 'admin_bypass', by: user.email, at: this.now(), note: test ? 'admin test' : 'admin publish' };
+    this.setState(row, { ...row.state, test, validation }, user.email, 'admin-publish-bypass', test ? 'test' : 'publish');
+    await recordUsage(this, user, { kind: 'admin_publish', feature: 'library', outcome: test ? 'test' : 'publish', tokenStatus: 'missing' });
     return this.get(user, id);
   }
 
@@ -563,8 +812,9 @@ export class Library {
   }
 
   reinstate(user, id) {
+    this.demandTenant(user);
     const row = this.row(id);
-    if (!row) throw fail(404, 'Reference not found.');
+    if (!row || !sameTenant(row.tenant || row.state?.tenant, user.tenant, user.tenantEnforced === true)) throw fail(404, 'Reference not found.');
     if (!['admin', 'reviewer'].includes(user.role)) throw fail(403, 'Only a reviewer can reinstate a reference.');
     this.setState(row, { ...row.state, withdrawn: false }, user.email, 'reinstated', '');
     return this.get(user, id);

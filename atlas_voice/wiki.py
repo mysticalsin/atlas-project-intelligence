@@ -137,8 +137,8 @@ class WikiVault:
     def approve(self,subject,ident,expected,kind,reference,expires):
         self.get(subject,ident) # verify canonical Markdown before approval
         r=self._row(subject,ident)
-        role='ATLAS.Review' if kind=='facts' else 'ATLAS.Publish' if kind=='permission' else None
-        if role is None or role not in getattr(subject,'roles',()):raise PermissionError('Assigned reviewer role required; local checkboxes cannot approve wiki content')
+        allowed=('ATLAS.Review','ATLAS.Reviewer','ATLAS.Admin') if kind=='facts' else ('ATLAS.Publish','ATLAS.Presales','ATLAS.Admin') if kind=='permission' else ()
+        if not allowed or not set(getattr(subject,'roles',()) or ()).intersection(allowed):raise PermissionError('Assigned reviewer role required; local checkboxes cannot approve wiki content')
         if subject.subject_key==r['owner']:raise PermissionError('An independent reviewer is required')
         if r['content_hash']!=expected or r['withdrawn']:raise ValueError('Review targets a stale or withdrawn revision')
         if not isinstance(expires,(int,float)) or not time.time()<expires<=time.time()+366*86400:raise ValueError('Review expiry must be within a year')
@@ -154,7 +154,7 @@ class WikiVault:
         return self.get(subject,ident)
     def withdraw(self,subject,ident,expected):
         r=self._row(subject,ident)
-        if r['owner']!=subject.subject_key and 'ATLAS.Publish' not in getattr(subject,'roles',()):raise PermissionError('Withdrawal authority required')
+        if r['owner']!=subject.subject_key and not set(getattr(subject,'roles',()) or ()).intersection(('ATLAS.Publish','ATLAS.Presales','ATLAS.Admin')):raise PermissionError('Withdrawal authority required')
         if expected!=r['content_hash']:raise ValueError('Revision conflict')
         with self.db:
             self.db.execute('UPDATE stories SET withdrawn=1 WHERE id=?',(ident,));self._audit(subject,ident,'withdraw',r['revision'])

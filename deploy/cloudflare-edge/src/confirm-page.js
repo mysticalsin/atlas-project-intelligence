@@ -85,7 +85,10 @@ const SCRIPT = String.raw`(function () {
     item = item || state.items[0]; state.current = item;
     var h = el('h1', { id: 'confirmTitle', tabindex: '-1', 'data-request': item.request.id }, heading(item));
     box.appendChild(h);
-    box.appendChild(el('p', { 'class': 'muted' }, (item.reference.title || 'A project reference') + ' · revision ' + item.reference.revision));
+    var refLine = item.reference && item.reference.title
+      ? item.reference.title + (item.reference.revision != null && item.reference.revision !== '' ? ' · revision ' + item.reference.revision : '')
+      : (item.reference && item.reference.handle ? 'Confirmation request' : 'A project reference');
+    box.appendChild(el('p', { 'class': 'muted' }, refLine));
     box.appendChild(el('p', {}, 'For each point, confirm it, correct it, or say you can’t tell. Only your decisions and notes are recorded.'));
     var list = el('ol', { 'class': 'claims' });
     item.claims.forEach(function (c, k) { list.appendChild(claimRow(c, k)); });

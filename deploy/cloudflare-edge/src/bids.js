@@ -5,6 +5,7 @@
 // changes with the library: the author reads unmask(stored, map), everyone else (reviewers included)
 // forOthers(recordText(stored)). T2 (gap asks) and T3 (outreach previews) import getRequirement and bidView.
 import { str, para, list, obj, fail, rateLimit } from './util.js';
+import { TENANT_ID, sameTenant } from './authz.js';
 import { pseudonymise, unmask, forOthers, recordText, recordMask, recordView, maskedPreview, safeSummary, piiText } from './scrub.js';
 import { clientScrub } from './review.js';
 import { splitSentences, snippetsOf, claimKey, TOPIC_KEYS } from './snippets.js';
@@ -131,18 +132,26 @@ const ensured = new WeakSet();
 export function ensure(lib) {
   if (ensured.has(lib)) return;
   for (const q of DDL) lib.sql.exec(q);
+  const cols = lib.rows("SELECT name FROM pragma_table_info('bids')").map(r => r.name);
+  if (cols.length && !cols.includes('tenant')) lib.sql.exec("ALTER TABLE bids ADD COLUMN tenant TEXT NOT NULL DEFAULT ''");
   ensured.add(lib);
 }
+function bidTenant(user = {}) { return String(user.tenant || '').trim().toLowerCase(); }
+function demandBidTenant(user) {
+  if (user?.tenantEnforced === true && !TENANT_ID.test(bidTenant(user))) throw fail(403, 'A verified tenant is required.');
+}
+function inBidTenant(row, user) { return !!row && sameTenant(row.tenant, user?.tenant, user?.tenantEnforced === true); }
 
 const parsed = (text, fallback) => { try { const v = JSON.parse(text); return v ?? fallback; } catch { return fallback; } };
-const isAuthor = (bid, user) => !!bid && (bid.owner === user?.email || user?.role === 'admin');
+const isAuthor = (bid, user) => !!bid && inBidTenant(bid, user) && (bid.owner === user?.email || user?.role === 'admin');
 
 // One requirement of a bid, for its owner or an admin only (anyone else: 404; a deleted bid: 409, so no gap request
 // opens on it). Text stays in placeholder form (the bid map); `prospects` (raw) and `pseudo` (the map) are
 // confidential and for server-side pseudonymising only.
 export function getRequirement(lib, user, bidId, reqId) {
   ensure(lib);
-  const bid = lib.rows('SELECT id, owner, alias, prospects, pseudo, requirements, purged_at FROM bids WHERE id = ?', String(bidId ?? ''))[0];
+  demandBidTenant(user);
+  const bid = lib.rows('SELECT id, owner, alias, prospects, pseudo, requirements, purged_at, tenant FROM bids WHERE id = ?', String(bidId ?? ''))[0];
   if (!isAuthor(bid, user)) throw fail(404, 'Bid not found.');
   if (bid.purged_at) throw fail(409, PURGED);
   const reqs = parsed(bid.requirements, []), requirement = (Array.isArray(reqs) ? reqs : []).find(r => obj(r).id === String(reqId ?? ''));
@@ -168,17 +177,24 @@ function viewOf(lib, user, bid) {
 }
 export function bidView(lib, user, bidId) {
   ensure(lib);
-  return viewOf(lib, user, lib.rows('SELECT owner, pseudo FROM bids WHERE id = ?', String(bidId ?? ''))[0]);
+  const bid = lib.rows('SELECT owner, pseudo, tenant FROM bids WHERE id = ?', String(bidId ?? ''))[0];
+  if (!inBidTenant(bid, user)) {
+    const render = value => forOthers(recordText(lib)(value));
+    render.view = 'other';
+    return render;
+  }
+  return viewOf(lib, user, bid);
 }
 
 // ---- Routes (§F1.2). The registry has already refused the external role; `load` answers 404 to anyone who is not
 // the owner, a reviewer or an admin. ----
 export async function routes(ctx) {
   const { method, parts, user, lib } = ctx, [, id, action, extra] = parts;
+  demandBidTenant(user);
   ensure(lib);
   if (extra === undefined) {
     if (!id && method === 'POST') return { status: 201, body: await create(ctx) };
-    if (!id && method === 'GET') return { body: { items: listBids(lib, user, ctx.url?.searchParams?.get('all') === '1') } };
+    if (!id && method === 'GET') return { body: listBids(lib, user, ctx.url?.searchParams) };
     if (id && !action && method === 'GET') return { body: bidOut(lib, user, load(lib, user, id)) };
     if (id && method === 'POST' && Object.hasOwn(ACTIONS, action)) return { body: await ACTIONS[action](ctx, load(lib, user, id)) };
   }
@@ -195,8 +211,9 @@ const refIdsOf = (v, max) => { const ids = [...new Set((Array.isArray(v) ? v : [
 const maskedTitle = (lib, data) => recordText(lib)(clientScrub(data)(piiText(String(data?.title || ''))));
 
 function load(lib, user, id) {
+  demandBidTenant(user);
   const row = lib.rows('SELECT * FROM bids WHERE id = ?', String(id))[0];
-  if (!row || !(row.owner === user.email || staff(user))) throw fail(404, 'Bid not found.');
+  if (!row || !inBidTenant(row, user) || !(row.owner === user.email || staff(user))) throw fail(404, 'Bid not found.');
   return row;
 }
 function requirementsOf(row) {
@@ -229,7 +246,9 @@ async function create({ lib, user, body }) {
   const prospects = list(declared, 10, 120);
   // Checked against the owner's own declared names only, so the refusal reveals nothing about the library.
   if (prospects.some(p => names(alias, p))) throw fail(400, 'The alias must not name the prospect.');
-  if (!rateLimit(lib, 'bid-create:' + user.email, 30, 864e5)) throw fail(429, 'You have created 30 bids today. Try again tomorrow.');
+  demandBidTenant(user);
+  const tenant = bidTenant(user);
+  if (!rateLimit(lib, 'bid-create:' + tenant + ':' + user.email, 30, 864e5)) throw fail(429, 'You have created 30 bids today. Try again tomorrow.');
   const a = pseudonymise(lib, alias, { prospects }), p = pseudonymise(lib, brief, { prospects, map: a.map });
   let reqs = null, customer = customerOf({}), method = 'keyword';
   if (lib.complete) {
@@ -244,9 +263,9 @@ async function create({ lib, user, body }) {
   // brief alone, and nothing reads the rest. Never a size-based refusal or label (a membership oracle, rule 5).
   const used = usedKeys([a.text, JSON.stringify(reqs), JSON.stringify(customer)]), pseudo = Object.fromEntries(Object.entries(p.map).filter(([k]) => used.has(k)));
   const id = lib.newId(), at = lib.now();
-  lib.sql.exec(`INSERT INTO bids (id, owner, owner_mail, title, alias, prospects, brief, pseudo, requirements, customer, req_method, match, status, outcome, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'open', 'pending', ?, ?)`, id, user.email, user.mail || '', title, a.text, JSON.stringify(prospects), brief,
-  JSON.stringify(pseudo), JSON.stringify(reqs), JSON.stringify(customer), method, at, at);
+  lib.sql.exec(`INSERT INTO bids (id, owner, owner_mail, title, alias, prospects, brief, pseudo, requirements, customer, req_method, match, status, outcome, created_at, updated_at, tenant)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'open', 'pending', ?, ?, ?)`, id, user.email, user.mail || '', title, a.text, JSON.stringify(prospects), brief,
+  JSON.stringify(pseudo), JSON.stringify(reqs), JSON.stringify(customer), method, at, at, tenant);
   lib.log(id, user.email, 'bid created', `${reqs.length} requirements, ${method}`);
   return bidOut(lib, user, load(lib, user, id));
 }
@@ -298,7 +317,7 @@ async function match({ lib, user, body, env }, row) {
   if (!query.trim()) throw fail(400, 'Add at least one requirement before matching.');
   if (!rateLimit(lib, 'bid-match:' + user.email, 60, 36e5)) throw fail(429, 'Too many match runs this hour. Try again later.');
   const pool = lib.visibleRows(user).filter(([r]) => r.status === 'published'); // drafts are never proof
-  const run = pool.length ? await rankRun(lib, env, { pool, query, reqs, customer, limit, jev: b.useJev === true && b.jevConsent === true })
+  const run = pool.length ? await rankRun(lib, env, { pool, query, reqs, customer, limit, user, jev: b.useJev === true && b.jevConsent === true })
     : { verdict: 'empty_library', method: 'none', results: [], coverage: cover(reqs, [], [], 'unmet'), note: NOTE.empty_library };
   const stored = { runAt: lib.now(), ...run, label: MATCH_LABEL };
   // The run comes from `row` as read before the model calls, and the Durable Object serves other requests while they
@@ -315,9 +334,9 @@ const industryBoost = (sectorText, row) => { const s = String(row.data?.sector |
 
 // Retrieval (reuse.rankPool: per-method floor, semantic first, boosts reorder only), then JEV when asked and
 // consented, else (or when JEV fails) BID_RANK_POLICY. Stored text is placeholder form with recordText applied.
-async function rankRun(lib, env, { pool, query, reqs, customer, limit, jev }) {
+async function rankRun(lib, env, { pool, query, reqs, customer, limit, jev, user }) {
   const qv = lib.embed ? await lib.embed(query).catch(() => null) : null;
-  const wins = winSignals(lib), sectorText = reqs.filter(r => r.kind === 'sector').map(r => r.text).join(' ').toLowerCase();
+  const wins = winSignals(lib, user), sectorText = reqs.filter(r => r.kind === 'sector').map(r => r.text).join(' ').toLowerCase();
   const kept = rankPool(pool, query, qv, { floor: SIM_FLOOR, boost: r => industryBoost(sectorText, r) + (wins.get(r.id)?.boost || 0) }).slice(0, 12);
   const retrieval = retrievalOf(kept) || (qv ? 'semantic' : 'lexical');
   if (!kept.length) return { verdict: 'none', method: retrieval, results: [], coverage: cover(reqs, [], [], 'unmet'), note: NOTE.none };
@@ -383,7 +402,7 @@ function suggest(rows) {
 // A stored run in the caller's view: SafeSummary per result the caller can still open, model text rendered,
 // winSignal only for reviewers, admins and full-access callers, current confirmed claims.
 function matchOut(lib, user, run, render) {
-  const wins = winSignals(lib), seen = new Map();
+  const wins = winSignals(lib, user), seen = new Map();
   const at = id => { if (!seen.has(id)) { const row = lib.row(id); seen.set(id, { row, level: lib.access(row, user) }); } return seen.get(id); };
   const results = [];
   for (const x of run.results || []) {
@@ -495,8 +514,9 @@ function purge({ lib, user }, row) {
     lib.sql.exec(`UPDATE bids SET title = NULL, brief = NULL, prospects = NULL, pseudo = NULL, customer = NULL, match = NULL, outcome_note = NULL,
       purged_at = ?, updated_at = ? WHERE id = ?`, at, at, row.id);
     ensureGaps(lib);
-    lib.sql.exec("UPDATE gap_requests SET status = 'dismissed' WHERE bid_id = ? AND status = 'open'", row.id);
-    lib.sql.exec('UPDATE gap_requests SET pseudo = NULL WHERE bid_id = ?', row.id);
+    const gapTenant = String(row.tenant || '').toLowerCase();
+    lib.sql.exec("UPDATE gap_requests SET status = 'dismissed' WHERE bid_id = ? AND status = 'open' AND lower(COALESCE(tenant, '')) = ?", row.id, gapTenant);
+    lib.sql.exec("UPDATE gap_requests SET pseudo = NULL WHERE bid_id = ? AND lower(COALESCE(tenant, '')) = ?", row.id, gapTenant);
     lib.log(row.id, user.email, 'bid purged', 'title, brief, customer summary, match, prospect names and name maps removed; open gap requests closed');
   }
   return bidOut(lib, user, load(lib, user, row.id));
@@ -513,12 +533,22 @@ function bidOut(lib, user, row) {
     createdAt: row.created_at, updatedAt: row.updated_at,
     permissions: { edit: isAuthor(row, user) && !purged, decide: true, delete: isAuthor(row, user) && !purged } };
 }
-function listBids(lib, user, all) {
-  const cols = 'id, owner, title, alias, pseudo, status, outcome, updated_at, requirements, match';
-  const rows = all && staff(user) ? lib.rows(`SELECT ${cols} FROM bids ORDER BY updated_at DESC LIMIT 200`) : lib.rows(`SELECT ${cols} FROM bids WHERE owner = ? ORDER BY updated_at DESC LIMIT 200`, user.email);
-  return rows.map(r => {
+function listBids(lib, user, params) {
+  demandBidTenant(user);
+  const q = params?.get ? params : { get: () => '' };
+  const all = q.get('all') === '1';
+  const afterUpdatedAt = q.get('afterUpdatedAt') || '', afterId = q.get('afterId') || '';
+  if ((afterUpdatedAt && !afterId) || (!afterUpdatedAt && afterId) || afterUpdatedAt.length > 40 || afterId.length > 80) throw fail(400, 'The page cursor is not valid.');
+  const cols = 'id, owner, title, alias, pseudo, status, outcome, updated_at, requirements, match, tenant';
+  const where = ["lower(COALESCE(tenant, '')) = ?"], args = [bidTenant(user)];
+  if (!(all && staff(user))) { where.push('owner = ?'); args.push(user.email || ''); }
+  if (afterUpdatedAt) { where.push('(updated_at < ? OR (updated_at = ? AND id > ?))'); args.push(afterUpdatedAt, afterUpdatedAt, afterId); }
+  const limit = 200;
+  const rows = lib.rows(`SELECT ${cols} FROM bids WHERE ${where.join(' AND ')} ORDER BY updated_at DESC, id ASC LIMIT ?`, ...args, limit + 1);
+  const truncated = rows.length > limit, page = truncated ? rows.slice(0, limit) : rows, last = page.at(-1);
+  return { items: page.map(r => {
     const render = viewOf(lib, user, r);
     return { id: r.id, alias: render(r.alias || ''), ...(render.view === 'author' ? { title: r.title || '' } : {}), status: r.status, outcome: r.outcome,
       updatedAt: r.updated_at, requirements: requirementsOf(r).length, verdict: parsed(r.match, null)?.verdict || null };
-  });
+  }), truncated, limit, next: truncated && last ? { afterUpdatedAt: last.updated_at, afterId: last.id } : null };
 }

@@ -42,9 +42,15 @@ settle = lambda: urllib.request.urlopen(BASE + '/__settle', timeout=30).read()
 CSRF = {}
 
 
-def api(email, method, path, body=None):
+def bind(owner, mgr):
+    req = urllib.request.Request(BASE + '/__trust', data=json.dumps({'owner': owner, 'email': mgr, 'source': 'directory'}).encode(), headers={'Content-Type': 'application/json'}, method='POST')
+    urllib.request.urlopen(req).read()
+
+
+def api(email, method, path, body=None, roles=None):
     """One API call as `email` (the local edge's ?as= switch), with Origin and the per-user CSRF token for POSTs."""
-    url = f'{BASE}{path}{"&" if "?" in path else "?"}as={urllib.parse.quote(email)}'
+    extra = ('&idp=' + urllib.parse.quote(json.dumps({'roles': roles}))) if roles else ''
+    url = f'{BASE}{path}{"&" if "?" in path else "?"}as={urllib.parse.quote(email)}{extra}'
     headers = {}
     if method == 'POST':
         if email not in CSRF:
@@ -76,8 +82,13 @@ try:
     check('alex saves a reference naming N+1 sam@mantu.com', st == 201 and saved.get('id'))
     rid = saved['id']
     settle()
-    st, validated = api('sam@mantu.com', 'POST', f'/api/library/{rid}/validate', {'decision': 'validate'})
-    check('sam validates the reference (existing N+1 flow)', st == 200 and validated['state']['validation']['status'] == 'validated')
+    st, rejected = api('sam@mantu.com', 'POST', f'/api/library/{rid}/validate', {'decision': 'validate', 'lane': 'manager'})
+    check('typed manager without a trust row cannot approve', st == 404 and rejected.get('status') != 'published')
+    bind('alex@mantu.com', 'sam@mantu.com')
+    st, manager = api('sam@mantu.com', 'POST', f'/api/library/{rid}/validate', {'decision': 'validate', 'lane': 'manager'})
+    check('trusted manager lane alone stays unpublished', st == 200 and manager['state']['validation']['managerDecision'] == 'approved' and manager['status'] != 'published')
+    st, validated = api('presales@example.test', 'POST', f'/api/library/{rid}/validate', {'decision': 'validate', 'lane': 'presales'}, ['ATLAS.Presales'])
+    check('pre-sales lane completes publication', st == 200 and validated['state']['validation']['status'] == 'validated' and validated['status'] == 'published')
     st, view = api('alex@mantu.com', 'GET', f'/api/library/claims/{rid}')
     cands = view['candidates']
     pick = [next(c for c in cands if c['topic'] == 1 and c['idx'] == 0), next(c for c in cands if c['topic'] == 3 and c['idx'] == 0)]

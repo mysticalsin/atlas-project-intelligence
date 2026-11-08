@@ -3,7 +3,7 @@ an interview is remembered after the automatic save, the profile lists it by pro
 switch memory off, admin connection test. Recall into the live conversation is covered by memory.test.js.
   python3 tests/memory_browser.py
 """
-import os,socket,subprocess,time,urllib.request
+import json,os,socket,subprocess,time,urllib.parse,urllib.request
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1];EDGE=ROOT/'deploy/cloudflare-edge';ERR=[]
@@ -17,8 +17,10 @@ REP={'headline':'Claims triage rebuilt','summary':'The consultant rebuilt claims
 try:
  with sync_playwright() as pw:
   b=pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH') or None)
-  def page(email):
-   c=b.new_context(viewport={'width':1300,'height':1000});p=c.new_page();p.on('pageerror',lambda e:ERR.append(str(e)));p.goto(BASE+'/?as='+email);p.wait_for_timeout(600);return p
+  def page(email, roles=None):
+   c=b.new_context(viewport={'width':1300,'height':1000});p=c.new_page();p.on('pageerror',lambda e:ERR.append(str(e)))
+   q='/?as='+urllib.parse.quote(email)+(('&idp='+urllib.parse.quote(json.dumps({'roles':roles}))) if roles else '')
+   p.goto(BASE+q);p.wait_for_timeout(600);return p
   o=page('alex@mantu.com')
   o.locator('[data-action=new-project]:visible').first.click();o.wait_for_timeout(200)
   for k,v in {'projectTitle':'Claims triage alias','consultantName':'Alex','clientName':'Zebracorp','n1Name':'Sam','n1Email':'sam@mantu.com'}.items():o.locator('#'+k).fill(v)
@@ -42,7 +44,9 @@ try:
   o.evaluate("(rep)=>window.ATLAS_VOICE_BRIDGE.autoSave(window.ATLAS_VOICE_BRIDGE.context(),[null,null,'We kept a fallback.',null,null,null],'x',rep)",REP);o.wait_for_timeout(1200)
   check('switched off: nothing new is remembered',o.evaluate("fetch('/api/memory').then(r=>r.json())")['documents']==[] and o.evaluate("fetch('/api/memory').then(r=>r.json())")['off'] is True)
   check('connection test hidden for non-admins',not o.locator('#connectionTest').is_visible())
-  a=page('tony.walteur@gmail.com');a.locator('#profileButton').click();a.wait_for_timeout(900);a.locator('#connectionTest').click();a.wait_for_timeout(900)
+  mailbox=page('person@example.test');mailbox.locator('#profileButton').click();mailbox.wait_for_timeout(900)
+  check('a mailbox without ATLAS.Admin does not show the connection test',not mailbox.locator('#connectionTest').is_visible())
+  a=page('admin@example.test',['ATLAS.Admin']);a.locator('#profileButton').click();a.wait_for_timeout(900);a.locator('#connectionTest').click();a.wait_for_timeout(900)
   st=a.locator('#memoryStatus').inner_text()
   check('admin connection test: Hindsight working, JEV reports missing key','Hindsight: working' in st and 'JEV: not configured' in st)
   check('no page errors',not ERR);print(ERR)

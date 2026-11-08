@@ -43,7 +43,11 @@ def start_edge(extra=None):
     PROCS.append(proc)
     base = f'http://127.0.0.1:{port}'
     for _ in range(100):
-        try: urllib.request.urlopen(base + '/__settle', timeout=1); break
+        try:
+            urllib.request.urlopen(base + '/__settle', timeout=1); break
+        except urllib.error.HTTPError as e:
+            if extra and extra.get('DATA_MODE') == 'production' and e.code == 403: break
+            time.sleep(.1)
         except Exception: time.sleep(.1)
     return base
 
@@ -134,14 +138,15 @@ try:
         br = pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH') or None,
                                 args=['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'])
 
-        def open_page(who, path='/', base=None, voice=None, w=1440):
+        def open_page(who, path='/', base=None, voice=None, w=1440, roles=None):
             ctx = br.new_context(permissions=['microphone'], viewport={'width': w, 'height': 1000}, accept_downloads=True)
             p = ctx.new_page(); p.on('pageerror', lambda e: ERR.append(who + ': ' + str(e)))
             p.loads = []; p.on('load', lambda _: p.loads.append(1))
             p.bodies = []; p.on('request', lambda r: p.bodies.append((r.method, urlparse(r.url).path, r.post_data or '', r.headers.get('x-requested-with'))) if '/api/' in r.url else None)
             p.voice = voice or Voice(); p.route_web_socket('**/api/voice', p.voice)
             h = path.split('#', 1); sep = '&' if '?' in h[0] else '?'
-            p.goto((base or BASE) + h[0] + sep + 'as=' + who + ('#' + h[1] if len(h) > 1 else '')); p.wait_for_timeout(900)
+            idp = ('&idp=' + urllib.parse.quote(json.dumps(roles))) if roles else ''
+            p.goto((base or BASE) + h[0] + sep + 'as=' + urllib.parse.quote(who) + idp + ('#' + h[1] if len(h) > 1 else '')); p.wait_for_timeout(900)
             return p
 
         def api(p, path, method='GET', body=None):
@@ -164,8 +169,14 @@ try:
             wait(p, lambda: 'people imported' in p.locator('#dirStatus').inner_text(), 8)
             return [json.loads(b) for m, path, b, _ in p.bodies[n:] if m == 'POST' and path == '/api/library/directory/import']
 
+        # A mailbox is not an admin. The directory stays hidden until a verified ATLAS.Admin role is present.
+        plain = open_page('person@example.test')
+        plain.evaluate("document.getElementById('openInsights').click()")
+        plain.wait_for_timeout(800)
+        check('a mailbox without ATLAS.Admin does not open the people directory', plain.locator('#peopleDirectory').is_hidden())
+        plain.context.close()
         # ---- the admin imports a DNA export (test mode: synthetic addresses only; only approved columns leave the browser)
-        adm = open_page('tony.walteur@gmail.com')
+        adm = open_page('admin@example.test', roles={'roles': ['ATLAS.Admin']})
         pd = adm.locator('#peopleDirectory')
         sent = import_csv(adm, CSV)
         txt = pd.inner_text()
@@ -376,23 +387,16 @@ try:
               and 'noopener' in (link.get_attribute('rel') or '') and f.locator('#voiceStart').is_hidden() and f.locator('#gatewayAddress').is_hidden() and not NET)
         ctx.close()
 
-        # ---- production mode without secrets: DNA pull and push BLOCKED_EXTERNAL, no test banner
+        # This process hardcodes local-synthetic and demo identity. DATA_MODE=production must not
+        # run on it. A clean production worker is a different process and is not started here.
         PROD = start_edge({'DATA_MODE': 'production'})
-        pb = json.loads(get(PROD, '/api/bootstrap', 'tony.walteur@gmail.com')[2])
-        check('production mode: readiness "production", no test banner', pb['readiness'] == 'production' and 'TEST DEPLOYMENT' not in get(PROD, '/', 'tony.walteur@gmail.com')[2])
-        pa = open_page('tony.walteur@gmail.com', base=PROD)
-        pa.evaluate("document.getElementById('openInsights').click()"); pa.locator('#peopleDirectory').wait_for(state='visible', timeout=8000)
-        pa.locator('#dirFile').wait_for(state='visible', timeout=8000)
-        ps = api(pa, '/directory'); ptxt = pa.locator('#peopleDirectory').inner_text()
-        check('production mode, no secrets: DNA pull and push stay BLOCKED_EXTERNAL and say what they need',
-              ps['dataMode'] == 'production' and ps['sources']['pull']['status'] == 'BLOCKED_EXTERNAL' and ps['sources']['push']['status'] == 'BLOCKED_EXTERNAL'
-              and 'DIRECTORY_PUSH_SECRET' in ps['sources']['push']['reason'] and 'DNA push: not connected' in ptxt and 'DNA pull: not connected' in ptxt
-              and 'Upload the DNA export as CSV' in ptxt)
+        boot_code, _, boot_body = get(PROD, '/api/bootstrap', 'admin@example.test')
+        check('production plus local-synthetic is refused before bootstrap data', boot_code == 503 and 'local-synthetic' in boot_body)
         push = urllib.request.Request(PROD + '/api/directory/push', data=b'{}', method='POST', headers={'Content-Type': 'application/json', 'Authorization': 'Bearer guess'})
         try: pcode = RAW.open(push, timeout=5).status
         except urllib.error.HTTPError as e: pcode = e.code
-        check('production mode, no push secret: /api/directory/push answers 401', pcode == 401)
-        pa.context.close(); adm.context.close()
+        check('production plus local-synthetic refuses directory push before the secret check', pcode == 503)
+        adm.context.close()
         br.close()
     if ERR: print('\n'.join(ERR))
     check('no page errors', not ERR)

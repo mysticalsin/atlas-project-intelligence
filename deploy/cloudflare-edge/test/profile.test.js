@@ -127,7 +127,7 @@ test('edits, clear and delete: delete removes edits and consents and leaves dire
   await call(l, ALEX, 'POST', 'profile/consent', { kind: 'spokenAsk', version: 1, granted: true });
   let p = (await call(l, ALEX, 'POST', 'profile', { clear: ['managerName'], set: { preferredName: '' } })).body;
   assert.deepEqual([p.fields.managerName, p.fields.preferredName.from, p.fields.title.from], [null, 'guess', 'you'], 'clear and an empty value both remove the edit');
-  assert.deepEqual((await call(l, ALEX, 'POST', 'profile/delete')).body, { deleted: true });
+  assert.deepEqual((await call(l, ALEX, 'POST', 'profile/delete')).body, { deleted: true, vendorDeletion: 'not-asserted' });
   assert.equal(l.rows('SELECT COUNT(*) AS n FROM profiles')[0].n, 0);
   assert.equal(l.rows("SELECT COUNT(*) AS n FROM directory WHERE source = 'dna_export'")[0].n, 1, 'the export row stays (admin-managed)');
   assert.deepEqual((await call(l, ALEX, 'GET', 'profile/consents')).body, { spokenAsk: null });
@@ -135,7 +135,7 @@ test('edits, clear and delete: delete removes edits and consents and leaves dire
   assert.deepEqual([p.fields.title.value, p.fields.title.from, p.consents], ['Data engineer', 'dna_export', {}], 'sources refill the profile');
   assert.deepEqual(l.rows("SELECT action, detail FROM audit WHERE id = 'profile' ORDER BY seq").map(a => [a.action, a.detail]), [
     ['profile edited', 'fields: title, preferredName, managerName'], ['consent', 'spokenAsk granted'], ['profile edited', 'fields: managerName, preferredName'],
-    ['profile deleted', 'edits and consents removed; directory rows unchanged']]);
+    ['profile deleted', 'this tenant only; directory rows unchanged']]);
   assert.doesNotMatch(JSON.stringify(l.rows('SELECT * FROM audit')), /Principal|Mia Chef|"Al"/, 'audit rows carry field names only, never values');
 });
 
@@ -401,7 +401,9 @@ test('old schema: two Library instances on one SQL (idempotent ensure), on top o
     assert.equal(profile.lookupPerson(l, 'r' + round + '@example.com').name, 'R');
   }
   assert.equal(sql.exec('SELECT COUNT(*) AS n FROM profiles').toArray()[0].n, 1);
-  assert.equal(sql.exec('PRAGMA table_info(refs)').toArray().length, 21, 'refs was not altered');
+  const cols = sql.exec('PRAGMA table_info(refs)').toArray().map(c => c.name);
+  assert.equal(cols.length, 22);
+  assert.equal(cols.at(-1), 'tenant', 'the story column copies a stored tenant and stays blank when none was stored');
 });
 
 test('idp claims: bounded name claims from x-atlas-idp; anything malformed is empty', () => {

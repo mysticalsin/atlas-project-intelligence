@@ -7,6 +7,7 @@
 // `teams-event` (which dedupes and applies them), and a card action is answered in the HTTP 200 invoke response.
 import { verifyBotActivity, teamsClient, messageCard, teamsStatus, botAppId } from './teams.js';
 import { str } from './util.js';
+import { TENANT_ID, tenantEnforced } from './authz.js';
 import { TEAMS_JS } from '../teams/vendor/teams-js.mjs';
 
 const MAX_BODY = 262144;
@@ -83,8 +84,16 @@ async function messages(request, env, fetcher) {
     const client = teamsClient(env, fetcher);
     if (client) { try { event.email = (await client.member(event, event.teamsUserId)).email; } catch { /* stored without an email */ } }
   }
+  const enforced = tenantEnforced(env);
+  const systemTenant = String(env.ATLAS_SYSTEM_TENANT || '').trim().toLowerCase();
+  // event.tenantId is the Teams directory tenant. ATLAS_SYSTEM_TENANT is the configured
+  // ATLAS tenant. They are different namespaces and are not compared to each other.
+  // A missing or malformed ATLAS tenant fails closed here. The handler then requires the
+  // outreach and invitation ATLAS tenants to equal this forwarded value, and the actor's
+  // directory tenant to equal the stored conversation tenant_id.
+  if (enforced && !TENANT_ID.test(systemTenant)) return json({ error: 'ATLAS_SYSTEM_TENANT is missing or not a verified tenant id. This ingress will not run, and no tenant was taken from the request.' }, 503);
   const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(new Request(new URL('/api/library/teams-event', request.url), { method: 'POST',
-    body: JSON.stringify(event), headers: { 'Content-Type': 'application/json', 'x-atlas-user': 'teams-bot', 'x-atlas-role': 'system' } }));
+    body: JSON.stringify(event), headers: { 'Content-Type': 'application/json', 'x-atlas-user': 'teams-bot', 'x-atlas-role': 'system', 'x-atlas-email': '', 'x-atlas-tenant': enforced ? systemTenant : '', 'x-atlas-tenant-enforced': enforced ? '1' : '0' } }));
   const out = await res.json().catch(() => ({}));
   if (!res.ok) return json({ error: 'The Teams event could not be recorded.' }, 502);
   if (event.kind !== 'action') return json({}, 200);

@@ -5,6 +5,8 @@
 // Teams card is sent only through a connected client (BLOCKED_EXTERNAL in this build), phone is always blocked.
 // Previews, cards and audit rows never carry client names (record masking; audit = kind and channel only).
 import { str, email, obj, fail, uuidish } from './util.js';
+import { TENANT_ID } from './authz.js';
+import { neutralizeFormula } from './csvsafe.js';
 import { recordText, forOthers } from './scrub.js';
 import * as claims from './claims.js';
 import * as gaps from './gaps.js';
@@ -33,9 +35,24 @@ const PATH = { interview_invite: id => `/go/invitation/${id}`, gap_request: id =
 const REASON_LABEL = { project_end: 'project ending', milestone: 'project milestone', six_month_update: 'six-month update', periodic_review: 'periodic review', manual: 'interview request' };
 
 // §2.4 DDL (new tables only). The unique index makes the per-(subject, channel) dedupe atomic.
+const STAFFING_TABLE = `CREATE TABLE staffing_v2 (
+    project_id TEXT NOT NULL, consultant_email TEXT NOT NULL, manager_email TEXT, manager_name TEXT, project_title TEXT,
+    end_date TEXT, source TEXT, updated_at TEXT, tenant TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (project_id, consultant_email, tenant))`;
+function migrateStaffing(lib) {
+  const exists = lib.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'staffing'")[0];
+  if (!exists) { lib.sql.exec(STAFFING_TABLE.replace('staffing_v2', 'staffing')); return; }
+  const pk = lib.rows("SELECT name FROM pragma_table_info('staffing') WHERE pk > 0 ORDER BY pk").map(r => r.name);
+  if (pk.length === 3 && pk[0] === 'project_id' && pk[1] === 'consultant_email' && pk[2] === 'tenant') return;
+  const cols = lib.rows("SELECT name FROM pragma_table_info('staffing')").map(r => r.name);
+  lib.sql.exec(STAFFING_TABLE);
+  const tenantSql = cols.includes('tenant') ? "COALESCE(tenant, '')" : "''";
+  lib.sql.exec(`INSERT INTO staffing_v2 (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, tenant)
+    SELECT project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, ${tenantSql} FROM staffing`);
+  lib.sql.exec('DROP TABLE staffing');
+  lib.sql.exec('ALTER TABLE staffing_v2 RENAME TO staffing');
+}
 const DDL = [
-  `CREATE TABLE IF NOT EXISTS staffing (project_id TEXT, consultant_email TEXT, manager_email TEXT, manager_name TEXT, project_title TEXT,
-    end_date TEXT, source TEXT, updated_at TEXT, PRIMARY KEY (project_id, consultant_email))`,
   `CREATE TABLE IF NOT EXISTS outreach (id TEXT PRIMARY KEY, kind TEXT, subject_id TEXT, channel TEXT, to_email TEXT, status TEXT, reason TEXT,
     payload TEXT, aad_object_id TEXT, created_at TEXT, approved_by TEXT, approved_at TEXT, sent_at TEXT, activity_id TEXT)`,
   'CREATE UNIQUE INDEX IF NOT EXISTS outreach_subject ON outreach(kind, subject_id, channel)',
@@ -48,7 +65,14 @@ const DDL = [
 const ensured = new WeakSet();
 export function ensure(lib) {
   if (ensured.has(lib)) return;
+  migrateStaffing(lib);
   for (const q of DDL) lib.sql.exec(q);
+  const outreachCols = lib.rows("SELECT name FROM pragma_table_info('outreach')").map(r => r.name);
+  if (outreachCols.length && !outreachCols.includes('tenant')) lib.sql.exec("ALTER TABLE outreach ADD COLUMN tenant TEXT NOT NULL DEFAULT ''");
+  const withDirectory = lib.rows("SELECT name FROM pragma_table_info('outreach')").map(r => r.name);
+  if (withDirectory.length && !withDirectory.includes('directory_tenant')) lib.sql.exec("ALTER TABLE outreach ADD COLUMN directory_tenant TEXT NOT NULL DEFAULT ''");
+  const withConversation = lib.rows("SELECT name FROM pragma_table_info('outreach')").map(r => r.name);
+  if (withConversation.length && !withConversation.includes('conversation_id')) lib.sql.exec("ALTER TABLE outreach ADD COLUMN conversation_id TEXT NOT NULL DEFAULT ''");
   ensured.add(lib);
 }
 
@@ -69,7 +93,7 @@ const rowOf = (lib, id) => lib.rows('SELECT * FROM outreach WHERE id = ?', id)[0
 // were new. Previews are masked here again (record masking, then the uniform labels), whatever the caller passed.
 function queueRows(lib, item) {
   ensure(lib);
-  const it = obj(item), kind = it.kind, subjectId = str(it.subjectId, 64), to = email(it.toEmail);
+  const it = obj(item), kind = it.kind, subjectId = str(it.subjectId, 64), to = email(it.toEmail), tenant = String(it.tenant || '').toLowerCase();
   if (!KINDS.includes(kind) || !subjectId || !to) throw fail(400, 'An outreach item needs a kind, a subject and an email.');
   const clean = (s, n) => forOthers(recordText(lib)(str(s, n)));
   const p = obj(it.preview), payload = JSON.stringify({ preview: { title: clean(p.title, 140), text: clean(p.text, 300) }, subject: clean(it.subject, 200) || SUBJECT[kind], path: PATH[kind](subjectId) });
@@ -78,8 +102,8 @@ function queueRows(lib, item) {
   for (const channel of QUEUED) {
     if (!lib.rows('SELECT id FROM outreach WHERE kind = ? AND subject_id = ? AND channel = ?', kind, subjectId, channel)[0]) {
       const id = lib.newId();
-      lib.sql.exec(`INSERT OR IGNORE INTO outreach (id, kind, subject_id, channel, to_email, status, reason, payload, created_at)
-        VALUES (?, ?, ?, ?, ?, 'pending_approval', '', ?, ?)`, id, kind, subjectId, channel, to, payload, lib.now());
+      lib.sql.exec(`INSERT OR IGNORE INTO outreach (id, kind, subject_id, channel, to_email, status, reason, payload, created_at, tenant)
+        VALUES (?, ?, ?, ?, ?, 'pending_approval', '', ?, ?, ?)`, id, kind, subjectId, channel, to, payload, lib.now(), tenant);
       lib.log(id, 'atlas', 'outreach pending_approval', `${kind} ${channel}`);
       created++;
     }
@@ -95,33 +119,101 @@ export function queue(lib, item) {
 // An invitation's outreach: its project reference is the project id or title through the record masking.
 function queueInvite(lib, inv) {
   const ref = recordText(lib)(str(inv.project_id, 60) || str(inv.title, 140)) || 'your recent project';
-  return queueRows(lib, { kind: 'interview_invite', subjectId: inv.id, toEmail: inv.email, subject: SUBJECT.interview_invite,
+  return queueRows(lib, { kind: 'interview_invite', subjectId: inv.id, toEmail: inv.email, tenant: inv.tenant || '', subject: SUBJECT.interview_invite,
     preview: { title: ref, text: `12 minutes while it's fresh? A short interview about ${ref} (${REASON_LABEL[inv.reason] || 'interview request'}).` } });
 }
 
-function upsertStaffing(lib, s) {
-  lib.sql.exec(`INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (project_id, consultant_email) DO UPDATE SET
-    manager_email = CASE WHEN excluded.manager_email != '' THEN excluded.manager_email ELSE staffing.manager_email END,
-    manager_name = CASE WHEN excluded.manager_email != '' THEN excluded.manager_name ELSE staffing.manager_name END,
-    project_title = CASE WHEN excluded.project_title != '' THEN excluded.project_title ELSE staffing.project_title END,
-    end_date = CASE WHEN excluded.end_date != '' THEN excluded.end_date ELSE staffing.end_date END,
-    source = excluded.source, updated_at = excluded.updated_at`,
-  s.projectId, s.consultantEmail, s.managerEmail, s.managerName, s.projectTitle, s.endDate, s.source, lib.now());
+function assignmentProject(id) {
+  return str(typeof id === 'string' ? id : '', 60);
 }
-
+function tenantKey(value) {
+  return String(value || '').trim().toLowerCase();
+}
+function personAliases(lib, address, tenant) {
+  const keys = new Set([String(address || '').trim().toLowerCase()].filter(Boolean));
+  const tenantKey = String(tenant || '').toLowerCase();
+  if (!lib.rows("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'profiles'")[0]) return [...keys];
+  const rows = lib.rows("SELECT subject, email FROM profiles WHERE lower(COALESCE(tenant, '')) = ?", tenantKey);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const row of rows) {
+      const subject = String(row.subject || '').trim().toLowerCase();
+      const mail = String(row.email || '').trim().toLowerCase();
+      if (!keys.has(subject) && !keys.has(mail)) continue;
+      if (subject && !keys.has(subject)) { keys.add(subject); grew = true; }
+      if (mail && !keys.has(mail)) { keys.add(mail); grew = true; }
+    }
+  }
+  return [...keys];
+}
+function reconcileStaffing(lib, s) {
+  const project = assignmentProject(s.projectId);
+  const consultant = email(s.consultantEmail) || String(s.consultantEmail || '').trim().toLowerCase();
+  const tenant = tenantKey(s.tenant);
+  if (!project || !consultant) throw fail(400, 'A staffing row needs a project id and a consultant email.');
+  const existing = lib.rows("SELECT project_id, consultant_email, tenant FROM staffing WHERE lower(project_id) = lower(?) AND lower(consultant_email) = ? AND lower(COALESCE(tenant, '')) = ?", project, consultant, tenant);
+  if (existing.length > 1) throw fail(409, 'This staffing assignment matches more than one stored row. Nothing was changed.');
+  const managerEmail = s.managerEmail || '';
+  if (existing.length === 1) {
+    const row = existing[0];
+    lib.sql.exec(`UPDATE staffing SET consultant_email = ?, tenant = ?,
+      manager_email = CASE WHEN ? != '' THEN ? ELSE manager_email END,
+      manager_name = CASE WHEN ? != '' THEN ? ELSE manager_name END,
+      project_title = CASE WHEN ? != '' THEN ? ELSE project_title END,
+      end_date = CASE WHEN ? != '' THEN ? ELSE end_date END,
+      source = ?, updated_at = ?
+      WHERE project_id = ? AND consultant_email = ? AND tenant = ?`,
+      consultant, tenant,
+      managerEmail, managerEmail,
+      managerEmail ? (s.managerName || '') : '', managerEmail ? (s.managerName || '') : '',
+      s.projectTitle || '', s.projectTitle || '',
+      s.endDate || '', s.endDate || '',
+      s.source || '', lib.now(),
+      row.project_id, row.consultant_email, row.tenant);
+    return row.project_id;
+  }
+  lib.sql.exec(`INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, tenant)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    project, consultant, managerEmail, managerEmail ? (s.managerName || '') : '', s.projectTitle || '', s.endDate || '', s.source || '', lib.now(), tenant);
+  return project;
+}
+function applyStaffingAssignment(lib, actor, s) {
+  const storedProject = reconcileStaffing(lib, s);
+  const consultant = email(s.consultantEmail) || String(s.consultantEmail || '').trim().toLowerCase();
+  const tenant = tenantKey(s.tenant);
+  lib.bindTrust(actor, { owner: consultant, email: s.managerEmail, source: 'staffing', tenant, tenantEnforced: actor.tenantEnforced === true });
+  s.projectId = storedProject;
+  const aliases = personAliases(lib, consultant, tenant);
+  const ownerMarks = aliases.map(() => '?').join(', ');
+  const current = new Set(lib.rows(`SELECT lower(manager_email) AS email FROM staffing WHERE lower(consultant_email) IN (${ownerMarks}) AND lower(COALESCE(tenant, '')) = ? AND trim(manager_email) != ''`, ...aliases, tenant).map(r => r.email));
+  for (const grant of lib.rows(`SELECT owner, email, source FROM manager_trust WHERE lower(owner) IN (${ownerMarks}) AND lower(COALESCE(tenant, '')) = ?`, ...aliases, tenant)) {
+    const source = String(grant.source || '');
+    if (source !== 'staffing' || current.has(String(grant.email || '').toLowerCase())) continue;
+    lib.sql.exec("DELETE FROM manager_trust WHERE lower(owner) = ? AND lower(email) = ? AND lower(COALESCE(tenant, '')) = ? AND source = 'staffing'", String(grant.owner || '').toLowerCase(), String(grant.email || '').toLowerCase(), tenant);
+  }
+}
+function inTransaction(lib, fn) {
+  if (typeof lib.transactionSync !== 'function') throw fail(503, 'Atomic staffing changes need storage.transactionSync.');
+  return lib.transactionSync(fn);
+}
 // Due staffing rows (end date within [today - 30, today + 7]) with no reference yet for (project, consultant) and no
 // earlier project_end invitation (any status, so a dismissed invitation is never re-created) get one invitation plus
 // pending outreach rows.
+function consultantOwners(lib, address, tenant) {
+  return personAliases(lib, address, tenant);
+}
 function inviteDue(lib, rows, today) {
   const ahead = addDays(today, DUE_AHEAD_DAYS), back = addDays(today, -DUE_BACK_DAYS);
   let invited = 0, queued = 0;
   for (const s of rows) {
     if (!s.endDate || s.endDate > ahead || s.endDate < back) continue;
-    const hasRef = lib.rows(`SELECT id FROM refs WHERE merged_into IS NULL AND (owner = ? OR instr(members, ?) > 0)
-      AND json_extract(data, '$.details.projectId') = ? COLLATE NOCASE LIMIT 1`, s.consultantEmail, ',' + s.consultantEmail + ',', s.projectId)[0];
-    if (hasRef || lib.rows("SELECT id FROM invitations WHERE email = ? AND project_id = ? AND reason = 'project_end' LIMIT 1", s.consultantEmail, s.projectId)[0]) continue;
-    const inv = lib.invite(s.source, { email: s.consultantEmail, reason: 'project_end', projectId: s.projectId, title: s.projectTitle, source: s.source });
+    const owners = consultantOwners(lib, s.consultantEmail, s.tenant);
+    const marks = owners.map(() => '?').join(', ');
+    const hasRef = lib.rows(`SELECT id FROM refs WHERE merged_into IS NULL AND lower(COALESCE(tenant, '')) = ? AND (lower(owner) IN (${marks}) OR instr(members, ?) > 0)
+      AND json_extract(data, '$.details.projectId') = ? COLLATE NOCASE LIMIT 1`, String(s.tenant || '').toLowerCase(), ...owners, ',' + s.consultantEmail + ',', s.projectId)[0];
+    if (hasRef || lib.rows("SELECT id FROM invitations WHERE lower(email) = ? AND lower(project_id) = lower(?) AND reason = 'project_end' AND lower(COALESCE(tenant, '')) = ? LIMIT 1", String(s.consultantEmail || '').toLowerCase(), s.projectId, tenantKey(s.tenant))[0]) continue;
+    const inv = lib.invite(s.source, { email: s.consultantEmail, reason: 'project_end', projectId: s.projectId, title: s.projectTitle, source: s.source, tenant: s.tenant || '' });
     invited++;
     queued += queueInvite(lib, inv).created;
   }
@@ -129,17 +221,34 @@ function inviteDue(lib, rows, today) {
 }
 
 // ---- Webhook (system `trigger`): today's invitation, unchanged; then staffing and outreach when READY.
-export function onTrigger(lib, actor, body) {
-  const inv = lib.invite(actor, { ...body, source: actor });
-  if (!READY) return inv;
-  ensure(lib);
-  const b = obj(body), pid = str(b.projectId, 60), who = email(b.email), mgr = email(b.managerEmail);
-  if (pid && who && mgr && mgr !== who) {
-    upsertStaffing(lib, { projectId: pid, consultantEmail: who, managerEmail: mgr, managerName: str(b.managerName, 100), projectTitle: str(b.title, 140), endDate: isoDate(b.endDate), source: str(actor, 60) });
-    lib.log('library', actor, 'staffing updated', 'webhook: 1 row');
+export function onTrigger(lib, actor, body, user) {
+  const caller = user || (actor && typeof actor === 'object' ? actor : null);
+  const name = typeof actor === 'string' ? actor : (caller?.email || 'system');
+  if (caller?.tenantEnforced === true && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(caller.tenant || ''))) {
+    throw fail(403, 'A verified tenant is required.');
   }
-  if (['open', 'scheduled'].includes(inv.status)) queueInvite(lib, inv);
-  return inv;
+  const tenant = caller?.tenantEnforced === true ? String(caller.tenant || '').toLowerCase() : '';
+  if (!READY) return lib.invite(name, { ...body, source: name, tenant });
+  ensure(lib);
+  const b = obj(body), pid = assignmentProject(b.projectId), who = email(b.email), mgr = email(b.managerEmail);
+  const finish = () => {
+    const inv = lib.invite(name, { ...body, source: name, tenant });
+    if (['open', 'scheduled'].includes(inv.status)) queueInvite(lib, inv);
+    return inv;
+  };
+  if (pid && who && mgr && mgr !== who) {
+    const row = { projectId: pid, consultantEmail: who, managerEmail: mgr, managerName: str(b.managerName, 100), projectTitle: str(b.title, 140), endDate: isoDate(b.endDate), source: str(name, 60), tenant };
+    const actor = { email: name, role: 'system', tenant, tenantEnforced: caller?.tenantEnforced === true };
+    const write = () => {
+      if (tenant && lib.bindTrust) applyStaffingAssignment(lib, actor, row);
+      else reconcileStaffing(lib, row);
+      lib.log('library', name, 'staffing updated', 'webhook: 1 row');
+      return finish();
+    };
+    if (tenant && lib.bindTrust) return inTransaction(lib, write);
+    return typeof lib.transactionSync === 'function' ? lib.transactionSync(write) : write();
+  }
+  return finish();
 }
 
 // Quote-aware CSV reader: quotes with "" escapes, commas and newlines inside quotes, CRLF/LF/CR, a leading BOM.
@@ -182,6 +291,10 @@ function importCsv(lib, user, body) {
   const missing = HEADER.filter(h => idx[h] < 0);
   if (missing.length) throw fail(400, `The first row must be the header ${HEADER.join(',')} (missing: ${missing.join(', ')}).`);
   const used = new Set(Object.values(idx)), ignoredColumns = p.header.map((h, i) => used.has(i) ? null : (str(h, 80) || `column ${i + 1}`)).filter(Boolean);
+  if (user.tenantEnforced === true && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(user.tenant || ''))) {
+    throw fail(403, 'A verified tenant is required before a staffing import.');
+  }
+  const tenant = user.tenantEnforced === true ? String(user.tenant || '').toLowerCase() : '';
   const rejected = [...p.rejected], staffed = [];
   for (const r of p.rows) {
     const cell = h => String(r.cells[idx[h]] ?? '').trim();
@@ -189,14 +302,55 @@ function importCsv(lib, user, body) {
     const error = !projectId ? 'project_id is required.' : !consultantEmail ? 'consultant_email is not a valid email.' : mgrRaw && !managerEmail ? 'manager_email is not a valid email.'
       : managerEmail && managerEmail === consultantEmail ? 'The N+1 cannot be the consultant.' : end && !isoDate(end) ? 'end_date must be a real date written YYYY-MM-DD.' : '';
     if (error) { rejected.push({ line: r.line, error }); continue; }
-    staffed.push({ projectId, consultantEmail, managerEmail, managerName: managerEmail ? str(cell('manager_name'), 100) : '', projectTitle: str(cell('project_title'), 140), endDate: isoDate(end), source: 'staffing-csv' });
+    staffed.push({ line: r.line, projectId: assignmentProject(neutralizeFormula(projectId)), consultantEmail, managerEmail, managerName: managerEmail ? neutralizeFormula(str(cell('manager_name'), 100)) : '', projectTitle: neutralizeFormula(str(cell('project_title'), 140)), endDate: isoDate(end), source: 'staffing-csv', tenant });
   }
-  for (const s of staffed) upsertStaffing(lib, s);
-  const { invited, queued } = inviteDue(lib, staffed, lib.now().slice(0, 10));
-  lib.log('library', user.email, 'staffing import', `${staffed.length} rows, ${rejected.length} rejected, ${invited} invited`);
-  return { rows: p.rows.length, staffed: staffed.length, invited, outreachQueued: queued, ignoredColumns, rejected: rejected.sort((a, b) => a.line - b.line) };
+  ensure(lib);
+  // Each CSV row is its own transaction. An earlier row that committed stays.
+  // A failed row writes no staffing, trust, or invitation. The request is not one atomic unit.
+  let trustSkipped = 0, invited = 0, queued = 0;
+  const applied = [], blocked = [];
+  const today = lib.now().slice(0, 10);
+  const actor = { email: 'staffing-csv', role: 'system', tenant, tenantEnforced: user.tenantEnforced === true };
+  for (const s of staffed) {
+    const write = () => {
+      if (s.managerEmail && tenant && lib.bindTrust) applyStaffingAssignment(lib, actor, s);
+      else reconcileStaffing(lib, s);
+      return inviteDue(lib, [s], today);
+    };
+    try {
+      if (s.managerEmail && tenant && lib.bindTrust && typeof lib.transactionSync !== 'function') throw fail(503, 'Atomic staffing changes need storage.transactionSync.');
+      const due = typeof lib.transactionSync === 'function' ? lib.transactionSync(write) : write();
+      applied.push(s);
+      invited += due.invited;
+      queued += due.queued;
+    } catch (error) {
+      trustSkipped++;
+      blocked.push({ line: s.line, projectId: s.projectId, error: error.message || 'The staffing row was not saved.' });
+    }
+  }
+  // The summary is a request log. A blocked row does not change staffing, trust, invitations, or claims.
+  lib.log('library', user.email, 'staffing import', `${applied.length} rows, ${rejected.length} rejected, ${invited} invited, ${blocked.length} blocked`);
+  return { rows: p.rows.length, staffed: applied.length, invited, outreachQueued: queued, ignoredColumns, trustSkipped, blocked, rejected: rejected.sort((a, b) => a.line - b.line) };
 }
 
+function staffingPage(lib, user, { project = '', afterUpdatedAt = '', afterProjectId = '', afterConsultant = '' } = {}) {
+  const enforced = user.tenantEnforced === true;
+  const tenant = String(user.tenant || '').toLowerCase();
+  if (enforced && !TENANT_ID.test(tenant)) return { status: 403, body: { error: 'A verified tenant is required.' } };
+  const cursor = [afterUpdatedAt, afterProjectId, afterConsultant];
+  if (cursor.some(Boolean) && cursor.some(v => !v)) return { status: 400, body: { error: 'The staffing page cursor is not valid.' } };
+  if (afterUpdatedAt.length > 40 || afterProjectId.length > 80 || afterConsultant.length > 200) return { status: 400, body: { error: 'The staffing page cursor is not valid.' } };
+  const where = ["lower(COALESCE(tenant, '')) = ?"], params = [tenant];
+  if (project) { where.push('project_id = ? COLLATE NOCASE'); params.push(project); }
+  if (afterUpdatedAt) {
+    where.push('(updated_at < ? OR (updated_at = ? AND (project_id > ? OR (project_id = ? AND consultant_email > ?))))');
+    params.push(afterUpdatedAt, afterUpdatedAt, afterProjectId, afterProjectId, afterConsultant);
+  }
+  const limit = 500;
+  const rows = lib.rows(`SELECT * FROM staffing WHERE ${where.join(' AND ')} ORDER BY updated_at DESC, project_id ASC, consultant_email ASC LIMIT ?`, ...params, limit + 1);
+  const truncated = rows.length > limit, page = truncated ? rows.slice(0, limit) : rows, last = page.at(-1);
+  return { body: { items: page.map(staffView), truncated, limit, next: truncated && last ? { afterUpdatedAt: last.updated_at, afterProjectId: last.project_id, afterConsultant: last.consultant_email } : null } };
+}
 const staffView = s => ({ projectId: s.project_id, consultantEmail: s.consultant_email, managerEmail: s.manager_email || '', managerName: s.manager_name || '',
   projectTitle: s.project_title || '', endDate: s.end_date || '', source: s.source || '', updatedAt: s.updated_at });
 
@@ -204,8 +358,8 @@ const staffView = s => ({ projectId: s.project_id, consultantEmail: s.consultant
 const inflight = new WeakMap(); // per Library instance: a Teams send in progress (the DO is the only writer)
 function setStatus(lib, o, status, reason, user, extra = {}) {
   const approved = extra.approved ? [user.email, lib.now()] : [o.approved_by, o.approved_at];
-  lib.sql.exec(`UPDATE outreach SET status = ?, reason = ?, approved_by = ?, approved_at = ?, sent_at = ?, activity_id = ?, aad_object_id = ? WHERE id = ?`,
-    status, reason, approved[0] ?? null, approved[1] ?? null, extra.sentAt ?? o.sent_at ?? null, extra.activityId ?? o.activity_id ?? null, extra.aadObjectId ?? o.aad_object_id ?? null, o.id);
+  lib.sql.exec(`UPDATE outreach SET status = ?, reason = ?, approved_by = ?, approved_at = ?, sent_at = ?, activity_id = ?, aad_object_id = ?, directory_tenant = ?, conversation_id = ? WHERE id = ?`,
+    status, reason, approved[0] ?? null, approved[1] ?? null, extra.sentAt ?? o.sent_at ?? null, extra.activityId ?? o.activity_id ?? null, extra.aadObjectId ?? o.aad_object_id ?? null, extra.directoryTenant ?? o.directory_tenant ?? '', extra.conversationId ?? o.conversation_id ?? '', o.id);
   lib.log(o.id, user.email, 'outreach ' + status, `${o.kind} ${o.channel}`);
   return view(rowOf(lib, o.id));
 }
@@ -245,8 +399,13 @@ function activityFor(o, origin, approver) {
 async function sendTeams(ctx, o) {
   const { lib, user } = ctx, teams = lib.services?.teams;
   if (!teams) return setStatus(lib, o, 'blocked_external', REASONS.teamsOff, user, { approved: true });
+  // The conversation tenant_id is the Teams directory. o.tenant is the ATLAS tenant.
+  // One active conversation with one directory id is the allowed mapping. Equality of the
+  // two namespaces is not required. Several directories, or none, is refused.
   const convs = lib.rows('SELECT * FROM teams_conversations WHERE email = ? ORDER BY updated_at DESC', o.to_email);
-  const conv = convs.find(c => c.status === 'active');
+  const active = convs.filter(c => c.status === 'active' && guid(c.tenant_id) && guid(c.aad_object_id) && c.conversation_id && /^https:/.test(String(c.service_url || '')));
+  const directories = new Set(active.map(c => String(c.tenant_id).toLowerCase()));
+  const conv = active.length === 1 && directories.size === 1 ? active[0] : null;
   if (!conv) return setStatus(lib, o, 'blocked_external', convs.some(c => c.status === 'stopped') ? REASONS.stopped : REASONS.notInstalled, user, { approved: true });
   const busy = inflight.get(lib) || new Set();
   if (busy.has(o.id)) throw fail(409, 'This item is being sent.');
@@ -254,7 +413,7 @@ async function sendTeams(ctx, o) {
   try {
     const sent = await teams.send({ serviceUrl: conv.service_url, conversationId: conv.conversation_id, tenantId: conv.tenant_id, aadObjectId: conv.aad_object_id },
       activityFor(o, originOf(ctx), user.email));
-    return setStatus(lib, rowOf(lib, o.id), 'sent', '', user, { approved: true, sentAt: lib.now(), activityId: str(sent?.id, 200) || null, aadObjectId: conv.aad_object_id });
+    return setStatus(lib, rowOf(lib, o.id), 'sent', '', user, { approved: true, sentAt: lib.now(), activityId: str(sent?.id, 200) || null, aadObjectId: conv.aad_object_id, directoryTenant: conv.tenant_id, conversationId: conv.conversation_id });
   } catch (e) {
     if (e?.status === 403 && /MessageWritesBlocked/i.test(`${e.code || ''} ${e.message || ''}`)) {
       lib.sql.exec("UPDATE teams_conversations SET status = 'stopped', updated_at = ? WHERE subject = ?", lib.now(), conv.subject);
@@ -264,11 +423,15 @@ async function sendTeams(ctx, o) {
   } finally { busy.delete(o.id); }
 }
 
+function sameOutreachTenant(row, user) {
+  return String(row?.tenant || '').toLowerCase() === String(user?.tenant || '').toLowerCase();
+}
 async function act(ctx, id) {
   const { lib, user } = ctx, action = obj(ctx.body).action;
+  if (user?.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
   if (action !== 'approve' && action !== 'dismiss') throw fail(400, "action must be 'approve' or 'dismiss'.");
   const o = rowOf(lib, str(id, 64));
-  if (!o) throw fail(404, 'Outreach item not found.');
+  if (!o || !sameOutreachTenant(o, user)) throw fail(404, 'Outreach item not found.');
   if (inflight.get(lib)?.has(o.id)) throw fail(409, 'This item is being sent.');
   // An approved email draft lives only in the approver's page: approving it again returns the same draft while its
   // subject is open. The row keeps its status and first approver; the audit gets one more `outreach drafted` row.
@@ -289,19 +452,23 @@ async function act(ctx, id) {
 export async function routes(ctx) {
   const { parts, method, user, lib } = ctx, [word, a, b] = parts, q = k => ctx.url?.searchParams?.get(k) || '';
   if (!REVIEWERS.includes(user.role)) return { status: 403, body: { error: 'Outreach and staffing are for reviewers.' } };
+  // Tenant rejection happens before ensure(). ensure() is schema initialization for an authorized caller.
+  // A rejected caller does not create the outreach tables. An authorized caller still does.
+  if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) return { status: 403, body: { error: 'A verified tenant is required.' } };
   ensure(lib);
   if (word === 'staffing') {
     if (method === 'POST' && a === 'import' && !b) return { body: importCsv(lib, user, ctx.body) };
-    if (method === 'GET' && !a) {
-      const pid = str(q('project'), 60);
-      return { body: { items: (pid ? lib.rows('SELECT * FROM staffing WHERE project_id = ? COLLATE NOCASE ORDER BY consultant_email', pid)
-        : lib.rows('SELECT * FROM staffing ORDER BY updated_at DESC, project_id LIMIT 500')).map(staffView) } };
-    }
+    if (method === 'GET' && !a) return staffingPage(lib, user, { project: str(q('project'), 60), afterUpdatedAt: q('afterUpdatedAt'), afterProjectId: q('afterProjectId'), afterConsultant: q('afterConsultant') });
   } else if (word === 'outreach') {
     if (method === 'GET' && !a) {
-      const st = q('status'), items = (STATUSES.includes(st) ? lib.rows('SELECT * FROM outreach WHERE status = ? ORDER BY created_at DESC LIMIT 200', st)
-        : lib.rows('SELECT * FROM outreach ORDER BY created_at DESC LIMIT 200')).map(view);
-      return { body: { items, channels: { teams: lib.services?.teams ? 'connected' : 'BLOCKED_EXTERNAL', email_draft: 'available', phone: 'BLOCKED_EXTERNAL' } } };
+      if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) return { status: 403, body: { error: 'A verified tenant is required.' } };
+      const tenant = String(user.tenant || '').toLowerCase();
+      const st = q('status');
+      const where = ["lower(COALESCE(tenant, '')) = ?"], args = [tenant];
+      if (STATUSES.includes(st)) { where.push('status = ?'); args.push(st); }
+      const rows = lib.rows(`SELECT * FROM outreach WHERE ${where.join(' AND ')} ORDER BY created_at DESC, id ASC LIMIT 201`, ...args);
+      const truncated = rows.length > 200, page = truncated ? rows.slice(0, 200) : rows;
+      return { body: { items: page.map(view), truncated, channels: { teams: lib.services?.teams ? 'connected' : 'BLOCKED_EXTERNAL', email_draft: 'available', phone: 'BLOCKED_EXTERNAL' } } };
     }
     if (method === 'POST' && a && !b) return { body: await act(ctx, a) };
   }
@@ -310,13 +477,17 @@ export async function routes(ctx) {
 
 // ---- Daily sweep (system `scan-stale`): expiries always run; staffing due dates and the Teams dedupe prune when READY.
 // Returns only the counts that are non-zero, so a quiet day adds nothing to the cron response. It never sends.
-export function daily(lib) {
-  const now = lib.now(), gapsExpired = gaps.expire(lib, now), claimsExpired = claims.expire(lib, now);
+export function daily(lib, user = {}) {
+  const now = lib.now(), gapsExpired = gaps.expire(lib, now, user), claimsExpired = claims.expire(lib, now, user);
   if (!READY) return {};
   ensure(lib);
   const today = now.slice(0, 10);
-  const due = lib.rows("SELECT * FROM staffing WHERE end_date != '' AND end_date <= ? AND end_date >= ?", addDays(today, DUE_AHEAD_DAYS), addDays(today, -DUE_BACK_DAYS))
-    .map(s => ({ projectId: s.project_id, consultantEmail: s.consultant_email, projectTitle: s.project_title || '', endDate: s.end_date, source: s.source || 'staffing' }));
+  const scoped = String(user.tenant || '').toLowerCase();
+  if (user.tenantEnforced === true && !TENANT_ID.test(scoped)) return { maintenanceRefused: 'A verified tenant is required.' };
+  const due = (user.tenantEnforced === true
+    ? lib.rows("SELECT * FROM staffing WHERE lower(tenant) = ? AND end_date != '' AND end_date <= ? AND end_date >= ?", scoped, addDays(today, DUE_AHEAD_DAYS), addDays(today, -DUE_BACK_DAYS))
+    : lib.rows("SELECT * FROM staffing WHERE lower(COALESCE(tenant, '')) = '' AND end_date != '' AND end_date <= ? AND end_date >= ?", addDays(today, DUE_AHEAD_DAYS), addDays(today, -DUE_BACK_DAYS)))
+    .map(s => ({ projectId: s.project_id, consultantEmail: s.consultant_email, projectTitle: s.project_title || '', endDate: s.end_date, source: s.source || 'staffing', tenant: user.tenantEnforced === true ? scoped : '' }));
   const { invited, queued } = inviteDue(lib, due, today);
   const cutoff = new Date(Date.parse(now) - SEEN_KEEP_MS).toISOString(), pruned = lib.rows('SELECT COUNT(*) AS n FROM teams_seen WHERE at < ?', cutoff)[0].n;
   if (pruned) lib.sql.exec('DELETE FROM teams_seen WHERE at < ?', cutoff);
@@ -326,6 +497,26 @@ export function daily(lib) {
 // ---- System word `teams-event` (from the Worker's verified bot endpoint only; user `teams-bot`, role `system`).
 const guid = v => { const s = uuidish(v); return s.includes('-') ? s : ''; };
 const OTHERS_CARD = () => messageCard({ title: 'This card belongs to someone else.', text: 'Nothing was changed.' });
+function teamsActionBound(lib, user, event) {
+  const o = rowOf(lib, str(event.outreachId, 64));
+  const inv = o?.kind === 'interview_invite' ? lib.rows('SELECT tenant FROM invitations WHERE id = ?', o.subject_id)[0] : null;
+  if (!o || !inv) return false;
+  const outreachTenant = String(o.tenant || '').toLowerCase();
+  const inviteTenant = String(inv.tenant || '').toLowerCase();
+  if (outreachTenant !== inviteTenant) return false;
+  if (user?.tenantEnforced === true && outreachTenant !== String(user.tenant || '').toLowerCase()) return false;
+  return true;
+}
+function teamsActorBound(lib, user, event, tid, oid) {
+  if (!teamsActionBound(lib, user, event)) return false;
+  const o = rowOf(lib, str(event.outreachId, 64));
+  const destination = String(o?.directory_tenant || '').toLowerCase();
+  const conversation = String(o?.conversation_id || '');
+  const eventConversation = String(event?.conversationId || '');
+  return !!(o && o.channel === 'teams' && o.status === 'sent' && o.aad_object_id === oid && destination && conversation && eventConversation
+    && destination === String(tid).toLowerCase() && conversation === eventConversation
+    && lib.rows('SELECT 1 AS ok FROM teams_conversations WHERE aad_object_id = ? AND lower(tenant_id) = ? AND conversation_id = ?', oid, destination, conversation)[0]);
+}
 export async function system(ctx) {
   const { lib } = ctx, e = obj(ctx.body), kind = e.kind, activityId = str(e.activityId, 256);
   if (!['install', 'uninstall', 'stop', 'action'].includes(kind) || !activityId) throw fail(400, 'Unknown Teams event.');
@@ -335,12 +526,39 @@ export async function system(ctx) {
   try { const u = new URL(String(e.serviceUrl || '')); service = u.protocol === 'https:' ? u.href : ''; } catch { service = ''; }
   const conversationId = str(e.conversationId, 512);
   if (kind === 'install' && (!service || !conversationId)) throw fail(400, 'An install event needs the conversation and its service URL.');
+  const user = ctx.user || {};
+  if (user.tenantEnforced === true && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
   ensure(lib);
-  // Dedupe here, in the LibraryStore (the one writer): a repeated activity id changes nothing. Validation comes first,
-  // so a rejected event is never marked as seen.
+  const now = lib.now();
+  if (kind === 'action') {
+    if (!teamsActorBound(lib, user, e, tid, oid)) return { body: { ok: true, card: OTHERS_CARD() } };
+    if (lib.rows('SELECT 1 AS seen FROM teams_seen WHERE activity_id = ?', activityId)[0]) return { body: { ok: true, duplicate: true } };
+    const o = rowOf(lib, str(e.outreachId, 64));
+    const inv = o?.kind === 'interview_invite' ? lib.rows('SELECT * FROM invitations WHERE id = ?', o.subject_id)[0] : null;
+    if (!inv || !['snooze', 'decline'].includes(e.verb)) return { body: { ok: true, card: messageCard({ title: 'Nothing to change.', text: 'Open ATLAS to see your interviews.' }) } };
+    if (!['open', 'scheduled'].includes(inv.status)) return { body: { ok: true, card: messageCard({ title: 'This invitation is closed.', text: 'Nothing was changed.' }) } };
+    const viewer = { email: String(inv.email || '').toLowerCase(), mail: String(inv.email || '').toLowerCase(), role: 'user', tenant: String(inv.tenant || ''), tenantEnforced: user.tenantEnforced === true };
+    const linked = inv.reference_id && lib.row ? lib.row(inv.reference_id) : null;
+    const storyOpen = !!(linked && lib.access && lib.access(linked, viewer));
+    const hiddenRef = !!inv.reference_id && !storyOpen;
+    if (hiddenRef && e.verb !== 'decline') return { body: { ok: true, card: messageCard({ title: 'Nothing was changed.', text: 'This invitation can only be declined from here.' }) } };
+    lib.sql.exec('INSERT OR IGNORE INTO teams_seen (activity_id, at) VALUES (?, ?)', activityId, now);
+    const auditOn = storyOpen && typeof lib.auditFor === 'function' ? lib.auditFor(viewer, inv.reference_id, inv.tenant) : 'library';
+    const p = parsed(o.payload), origin = originOf(ctx);
+    if (e.verb === 'decline') {
+      lib.sql.exec("UPDATE invitations SET status = 'dismissed' WHERE id = ?", inv.id);
+      if (!hiddenRef) lib.log(auditOn, inv.email, 'invitation dismiss', `${inv.reason} (Teams card)`);
+      return { body: { ok: true, card: messageCard({ title: 'Understood: no interview for this project.', text: 'Nothing else will be sent about it.' }) } };
+    }
+    const base = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(inv.slot || '') ? inv.slot.slice(0, 16) : now.slice(0, 16);
+    const slot = new Date(Date.parse(base + ':00Z') + 864e5).toISOString().slice(0, 16);
+    lib.sql.exec("UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ?", slot, inv.id);
+    lib.log(auditOn, inv.email, 'invitation schedule', `${inv.reason} (Teams card: tomorrow)`);
+    return { body: { ok: true, card: interviewCard({ invitationId: inv.id, outreachId: o.id, projectRef: obj(p.preview).title, origin, note: 'Moved to tomorrow. Start whenever it suits you.' }) } };
+  }
   if (lib.rows('SELECT 1 AS seen FROM teams_seen WHERE activity_id = ?', activityId)[0]) return { body: { ok: true, duplicate: true } };
-  lib.sql.exec('INSERT OR IGNORE INTO teams_seen (activity_id, at) VALUES (?, ?)', activityId, lib.now());
-  const subject = `${tid}:${oid}`, now = lib.now();
+  lib.sql.exec('INSERT OR IGNORE INTO teams_seen (activity_id, at) VALUES (?, ?)', activityId, now);
+  const subject = `${tid}:${oid}`;
   if (kind === 'install') {
     lib.sql.exec(`INSERT INTO teams_conversations (subject, aad_object_id, tenant_id, teams_user_id, conversation_id, service_url, email, status, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?) ON CONFLICT (subject) DO UPDATE SET aad_object_id = excluded.aad_object_id, tenant_id = excluded.tenant_id,
@@ -355,23 +573,5 @@ export async function system(ctx) {
     lib.log('teams', 'teams-bot', 'teams ' + kind, 'personal scope');
     return { body: { ok: true } };
   }
-  // Card action: only the Teams user the card was sent to (same object id, same tenant) can change anything.
-  const o = rowOf(lib, str(e.outreachId, 64));
-  const bound = o && o.channel === 'teams' && o.status === 'sent' && o.aad_object_id && o.aad_object_id === oid
-    && lib.rows('SELECT 1 AS ok FROM teams_conversations WHERE aad_object_id = ? AND tenant_id = ?', oid, tid)[0];
-  if (!bound) return { body: { ok: true, card: OTHERS_CARD() } };
-  const inv = o.kind === 'interview_invite' ? lib.rows('SELECT * FROM invitations WHERE id = ?', o.subject_id)[0] : null;
-  if (!inv || !['snooze', 'decline'].includes(e.verb)) return { body: { ok: true, card: messageCard({ title: 'Nothing to change.', text: 'Open ATLAS to see your interviews.' }) } };
-  if (!['open', 'scheduled'].includes(inv.status)) return { body: { ok: true, card: messageCard({ title: 'This invitation is closed.', text: 'Nothing was changed.' }) } };
-  const p = parsed(o.payload), origin = originOf(ctx);
-  if (e.verb === 'decline') {
-    lib.sql.exec("UPDATE invitations SET status = 'dismissed' WHERE id = ?", inv.id);
-    lib.log(inv.reference_id || 'library', inv.email, 'invitation dismiss', `${inv.reason} (Teams card)`);
-    return { body: { ok: true, card: messageCard({ title: 'Understood: no interview for this project.', text: 'Nothing else will be sent about it.' }) } };
-  }
-  const base = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(inv.slot || '') ? inv.slot.slice(0, 16) : now.slice(0, 16);
-  const slot = new Date(Date.parse(base + ':00Z') + 864e5).toISOString().slice(0, 16);
-  lib.sql.exec("UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ?", slot, inv.id);
-  lib.log(inv.reference_id || 'library', inv.email, 'invitation schedule', `${inv.reason} (Teams card: tomorrow)`);
-  return { body: { ok: true, card: interviewCard({ invitationId: inv.id, outreachId: o.id, projectRef: obj(p.preview).title, origin, note: 'Moved to tomorrow. Start whenever it suits you.' }) } };
+  throw fail(400, 'Unknown Teams event.');
 }

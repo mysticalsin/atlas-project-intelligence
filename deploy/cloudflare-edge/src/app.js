@@ -5,7 +5,7 @@ import { CHAT_TOOLS, SPEAKING_LIMIT_S } from './policy.generated.js';
 import { Session, MAX_SECONDS } from './session.js';
 import { wav, to16k } from './speech.js';
 import { classify } from './classify.js';
-import { bankId } from './memory.js';
+import { bankId, memoryConfigured } from './memory.js';
 import { sheetRoutes } from './sheet.js';
 import { detectedLanguage, NATIVE_VOICES, normalize } from './languages.js';
 import { email as validEmail, inList } from './util.js';
@@ -13,6 +13,7 @@ import { flags } from './features.js';
 import { teamsRoutes } from './teams-routes.js';
 import { CONFIRM_HTML } from './confirm-page.js';
 import { nameClaims, pushConfig } from './profile.js';
+import { elevatedRole, privilegeReadiness, productionDemoConflict, TENANT_ID, tenantEnforced, tenantOf, tokenRoles } from './authz.js';
 
 const enc = new TextEncoder();
 // One voice for everyone: @cf/deepgram/aura-2-en "harmonia" (Deepgram: empathetic, clear, calm, confident).
@@ -30,8 +31,11 @@ export async function verifyAccess(request, env, fetcher = fetch) {
   const header = JSON.parse(new TextDecoder().decode(b64url(h))), payload = JSON.parse(new TextDecoder().decode(b64url(p)));
   if (header.alg !== 'RS256') return null;
   if (Date.now() - certs.at > 600000 || !certs.keys.some(k => k.kid === header.kid)) {
-    const r = await fetcher(`https://${env.ACCESS_TEAM_DOMAIN}/cdn-cgi/access/certs`);
-    certs = { at: Date.now(), keys: (await r.json()).keys || [] };
+    try {
+      const r = await fetcher(`https://${env.ACCESS_TEAM_DOMAIN}/cdn-cgi/access/certs`);
+      const keys = r.ok ? (await r.json()).keys : null;
+      if (Array.isArray(keys) && keys.length) certs = { at: Date.now(), keys };
+    } catch { /* keep the previous keys; a bad directory must not replace a good cache or authenticate anyone */ }
   }
   const jwk = certs.keys.find(k => k.kid === header.kid);
   if (!jwk) return null;
@@ -39,7 +43,8 @@ export async function verifyAccess(request, env, fetcher = fetch) {
   if (!await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, b64url(s), enc.encode(h + '.' + p))) return null;
   const aud = Array.isArray(payload.aud) ? payload.aud : [payload.aud], now = Date.now() / 1000;
   if (!aud.includes(env.ACCESS_AUD) || payload.iss !== `https://${env.ACCESS_TEAM_DOMAIN}` || !(payload.exp > now) || (payload.nbf && payload.nbf > now + 60) || !payload.sub) return null;
-  return entraIdentity(payload, env) ?? (env.IDENTITY_SOURCE === 'entra' ? null : { sub: payload.sub, email: payload.email || 'Access service identity' });
+  const roles = tokenRoles({ roles: Array.isArray(payload.custom?.roles) ? payload.custom.roles : [] });
+  return entraIdentity(payload, env) ?? (env.IDENTITY_SOURCE === 'entra' ? null : { sub: payload.sub, email: payload.email || 'Access service identity', roles });
 }
 
 // Microsoft Entra ID (Windows / Microsoft 365 sign-in) through Cloudflare Access. BUILT, NOT ENABLED:
@@ -71,6 +76,11 @@ export const SIGNED_IN_HTML = `<!doctype html><html lang="en"><head><meta charse
 <script>try{new BroadcastChannel('atlas-auth').postMessage('ok')}catch(e){}setTimeout(function(){window.close()},400)</script></body></html>`;
 
 function timingSafe(a, b) { let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i); return d === 0; }
+function csrfOk(header, csrf) {
+  const a = String(header || ''), b = String(csrf || '');
+  if (!a || a.length !== b.length) return false;
+  return timingSafe(a, b);
+}
 
 async function hmac(secret, value) {
   const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -81,7 +91,7 @@ function headers(env, extra = {}) {
   const ws = env.ORIGIN.replace('https://', 'wss://');
   return { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
     'Permissions-Policy': 'microphone=(self), camera=(), geolocation=()',
-    'Content-Security-Policy': `default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; connect-src 'self' ${ws}; img-src data: blob:; font-src 'self'; worker-src blob:; media-src blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`,
+    'Content-Security-Policy': `default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; connect-src 'self' ${ws}; img-src data: blob:; font-src 'self'; worker-src blob:; media-src blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'${String(env.ORIGIN || '').startsWith('https:') ? '; upgrade-insecure-requests' : ''}`,
     ...extra };
 }
 const json = (env, body, status = 200) => new Response(JSON.stringify(body), { status, headers: headers(env, { 'Content-Type': 'application/json' }) });
@@ -105,18 +115,57 @@ async function boundedBytes(request, max) {
   return out;
 }
 
+// The cron and the two bearer ingresses share one configured tenant. A caller header or JSON
+// field is never the tenant. When isolation is on, a missing or malformed ATLAS_SYSTEM_TENANT
+// stops the request before the durable object. The local demo stays on the blank sandbox.
+function systemScope(env) {
+  const enforced = tenantEnforced(env);
+  const tenant = String(env.ATLAS_SYSTEM_TENANT || '').trim().toLowerCase();
+  if (!enforced) return { ok: true, tenant: '', flag: '0' };
+  if (!TENANT_ID.test(tenant)) return { ok: false, status: 503, body: { error: 'ATLAS_SYSTEM_TENANT is missing or not a verified tenant id. This ingress will not run, and no tenant was taken from the request.' } };
+  return { ok: true, tenant, flag: '1' };
+}
+function callerNamedTenant(request, raw) {
+  const named = [];
+  const header = String(request.headers.get('x-atlas-tenant') || '').trim().toLowerCase();
+  if (header) named.push(header);
+  try {
+    const text = typeof raw === 'string' ? raw : new TextDecoder().decode(raw);
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed.tenant === 'string' && parsed.tenant.trim()) named.push(parsed.tenant.trim().toLowerCase());
+  } catch { /* not JSON: there is no tenant field to accept */ }
+  return named;
+}
+function continuityScope(env, sub, tenant) {
+  if (!tenantEnforced(env)) return { ok: true, objectName: String(sub), tenant: '' };
+  const tid = String(tenant || '').trim().toLowerCase();
+  if (!TENANT_ID.test(tid)) return { ok: false };
+  return { ok: true, objectName: `${tid}:${sub}`, tenant: tid };
+}
+function systemForwardHeaders(user, scope) {
+  return { 'Content-Type': 'application/json', 'x-atlas-user': user, 'x-atlas-role': 'system', 'x-atlas-email': '', 'x-atlas-idp': 'e30', 'x-atlas-tenant': scope.tenant, 'x-atlas-tenant-enforced': scope.flag };
+}
+
 // flagsOf: the bootstrap feature flags (tests pass flags with D1 approved to exercise /api/transcribe before it flips).
 export async function handle(request, env, page, { waitUntil = p => p, flagsOf = flags } = {}) {
   {
     const url = new URL(request.url);
     if (!env.ORIGIN || url.origin !== env.ORIGIN) return new Response('Host is not the configured ATLAS origin.', { status: 403 });
     if (!env.CSRF_SECRET) return new Response('Deployment is not configured (CSRF_SECRET).', { status: 500 });
+    // Before triggers, directory push, voice, memory, or the library. A production flag must not
+    // disable tenant checks or turn on the local persona switch.
+    const demoConflict = productionDemoConflict(env);
+    if (demoConflict && url.pathname.startsWith('/api/')) return json(env, demoConflict, 503);
     // Project-management system trigger: its own bearer secret (Access bypass on this path only; see docs/INTEGRATIONS.md).
     if (url.pathname === '/api/triggers' && request.method === 'POST') {
       const secret = env.TRIGGER_SECRET || '', given = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
       if (!secret || !env.LIBRARY || given.length !== secret.length || !timingSafe(given, secret)) return json(env, { error: 'Unauthorized.' }, 401);
       if (Number(request.headers.get('Content-Length') || 0) > 16384) return json(env, { error: 'Request too large.' }, 413);
-      const fwd = new Request(new URL('/api/library/trigger', request.url), { method: 'POST', body: await request.text(), headers: { 'Content-Type': 'application/json', 'x-atlas-user': 'pm-system', 'x-atlas-role': 'system' } });
+      const raw = await request.text();
+      const scope = systemScope(env);
+      if (!scope.ok) return json(env, scope.body, scope.status);
+      if (callerNamedTenant(request, raw).some(t => t !== scope.tenant)) return json(env, { error: 'A system ingress uses only the configured tenant. The tenant on this request was not accepted.' }, 403);
+      const fwd = new Request(new URL('/api/library/trigger', request.url), { method: 'POST', body: raw, headers: systemForwardHeaders('pm-system', scope) });
       const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(fwd);
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
     }
@@ -129,24 +178,28 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
       if (push.status !== 'on') return json(env, { error: 'DNA push is not connected.', ...push }, 503);
       const bytes = Number(request.headers.get('Content-Length') || 0) > 262144 ? null : await boundedBytes(request, 262144);
       if (!bytes) return json(env, { error: 'Request too large.' }, 413);
-      const fwd = new Request(new URL('/api/library/directory/import', request.url), { method: 'POST', body: bytes,
-        headers: { 'Content-Type': 'application/json', 'x-atlas-user': 'dna-push', 'x-atlas-role': 'system', 'x-atlas-email': '', 'x-atlas-idp': 'e30' } });
+      const scope = systemScope(env);
+      if (!scope.ok) return json(env, scope.body, scope.status);
+      if (callerNamedTenant(request, bytes).some(t => t !== scope.tenant)) return json(env, { error: 'A system ingress uses only the configured tenant. The tenant on this request was not accepted.' }, 403);
+      const fwd = new Request(new URL('/api/library/directory/import', request.url), { method: 'POST', body: bytes, headers: systemForwardHeaders('dna-push', scope) });
       const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(fwd);
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
     }
     // Teams bot endpoint and launcher tab (pre-Access, like /api/triggers): exactly these two; every other
     // /api/teams/* path falls through to the signed-in handling. BLOCKED_EXTERNAL until Teams is connected.
     if ((url.pathname === '/api/teams/messages' && request.method === 'POST') || (url.pathname === '/teams/tab' && request.method === 'GET')) return teamsRoutes(request, env, { waitUntil });
+    // Identity comes from the verified Access token only. ?as= and &idp= are not read here.
     let who = null;
     try { who = await verifyAccess(request, env); } catch { who = null; }
     if (!who) return new Response('Sign in to use ATLAS.', { status: 401, headers: headers(env) });
     // Access email only: an Entra deployment must grant admin through an app role, never a username fallback.
-    const listed = (names, e) => (names || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean).includes(String(e || '').toLowerCase());
-    const admin = env.IDENTITY_SOURCE !== 'entra' && (env.ADMIN_EMAILS || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean).includes(String(who.email || '').toLowerCase());
-    // Library role. Entra: app roles only (never a username fallback); Access: verified email lists, then 'external'
-    // only for an email explicitly listed in EXTERNAL_EMAILS (never by domain), else 'user'.
-    const role = env.IDENTITY_SOURCE === 'entra' ? (who.roles?.includes('ATLAS.Admin') ? 'admin' : who.roles?.includes('ATLAS.Reviewer') ? 'reviewer' : 'user')
-      : admin ? 'admin' : listed(env.REVIEWER_EMAILS, who.email) ? 'reviewer' : inList(who.email, env.EXTERNAL_EMAILS) ? 'external' : 'user';
+    const elevated = elevatedRole(env, who);
+    const admin = elevated === 'admin';
+    // Elevated roles come from the verified token (or ATLAS_ADMIN_SUBJECTS). ADMIN_EMAILS and REVIEWER_EMAILS do not grant them.
+    // External confirmers remain an explicit server email allow-list, and only when no elevated role matched.
+    const role = elevated || (env.IDENTITY_SOURCE === 'entra' ? 'user' : (inList(who.email, env.EXTERNAL_EMAILS) ? 'external' : 'user'));
+    const tenant = tenantOf(who);
+    const tenantFlag = tenantEnforced(env) ? '1' : '0';
     const csrf = await hmac(env.CSRF_SECRET, who.sub), subjectKey = (await hmac('atlas-subject', who.sub)).slice(0, 32);
     // Forwarded identity: the library identity (Entra: stable tid:oid; Access: the verified email) and the verified
     // email when it is a valid address (else empty). Always overwritten on every forward.
@@ -186,21 +239,23 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
       return json(env, { provider: 'workers', providerLabel: 'ATLAS voice', protocol: 'atlas-personaplex-pcm-v1', csrf,
         identity, model: 'ATLAS conversational voice', admin,
         voices: ['atlas'], defaultVoice: 'atlas', captureRequired: true, codecAvailable: true, busy: false, capacity: 1, maxSeconds: MAX_SECONDS, speakingSeconds: SPEAKING_LIMIT_S,
-        memory: !!env.HINDSIGHT_API_KEY, wiki: false, jev: !!env.TYPESAFE_API_KEY, jevClassify: !!env.TYPESAFE_API_KEY, library: !!env.LIBRARY, libraryRole: role, sheet: true, transcription: true, structuredNotes: true, liveLedger: true, playbackAck: true,
-        readiness: env.DATA_MODE === 'production' ? 'production' : 'edge-deployment-test-data-only', email: mail, features: flagsOf(env) });
+        memory: memoryConfigured(env), wiki: false, jev: !!env.TYPESAFE_API_KEY, jevClassify: !!env.TYPESAFE_API_KEY, library: !!env.LIBRARY, libraryRole: role, sheet: true, transcription: true, structuredNotes: true, liveLedger: true, playbackAck: true,
+        readiness: env.DATA_MODE === 'production' ? 'production' : 'edge-deployment-test-data-only', privilege: privilegeReadiness(env), email: mail, features: flagsOf(env) });
     }
     if (url.pathname === '/api/voice') {
       if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected a WebSocket upgrade.', { status: 426 });
       if (request.headers.get('Origin') !== env.ORIGIN) return new Response('Invalid voice origin', { status: 403 });
       const forward = new Request(request, { headers: new Headers(request.headers) });
       forward.headers.set('x-atlas-admin', admin ? '1' : '0'); // always overwritten: a browser can never claim admin
-      forward.headers.set('x-atlas-user', libraryUser); forward.headers.set('x-atlas-role', role); forward.headers.set('x-atlas-email', mail); // always overwritten
-      forward.headers.set('x-atlas-bank', await bankId(env, who.sub)); // server-derived; the browser never picks a bank
+      forward.headers.set('x-atlas-user', libraryUser); forward.headers.set('x-atlas-role', role); forward.headers.set('x-atlas-email', mail); forward.headers.set('x-atlas-tenant', tenant); forward.headers.set('x-atlas-tenant-enforced', tenantFlag);
+      const scope = continuityScope(env, who.sub, tenant);
+      if (!scope.ok) return json(env, { error: 'A verified tenant is required before this interview can open. The subject-only object was not read.' }, 403);
+      forward.headers.set('x-atlas-bank', await bankId(env, who.sub, scope.tenant)); // server-derived; the browser never picks a bank
       forward.headers.set('x-atlas-csrf', csrf); // set by the Worker only; the DO is not reachable otherwise
-      return env.INTERVIEW.get(env.INTERVIEW.idFromName(who.sub)).fetch(forward);
+      return env.INTERVIEW.get(env.INTERVIEW.idFromName(scope.objectName)).fetch(forward);
     }
     if (url.pathname.startsWith('/api/sheet/') && request.method === 'POST') {
-      if (request.headers.get('Origin') !== env.ORIGIN || request.headers.get('X-Atlas-CSRF') !== csrf) return json(env, { error: 'Invalid request origin or session token.' }, 403);
+      if (request.headers.get('Origin') !== env.ORIGIN || !csrfOk(request.headers.get('X-Atlas-CSRF'), csrf)) return json(env, { error: 'Invalid request origin or session token.' }, 403);
       if (Number(request.headers.get('Content-Length') || 0) > 12 * 1024 * 1024) return json(env, { error: 'The file is larger than 10 MB.' }, 413);
       // PDF metadata (author, producer, title) is never extracted (D2, WOW_ZERO_CONFIG §4): text only.
       const ai = workersAI(env), res = await sheetRoutes(request, url.pathname.slice('/api/sheet/'.length), { complete: (m, n) => ai.complete(m, n),
@@ -208,16 +263,18 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
     }
     if (url.pathname === '/api/memory' || url.pathname.startsWith('/api/memory/')) {
-      if (request.method !== 'GET' && (request.headers.get('Origin') !== env.ORIGIN || request.headers.get('X-Atlas-CSRF') !== csrf)) return json(env, { error: 'Invalid request origin or session token.' }, 403);
+      if (request.method !== 'GET' && (request.headers.get('Origin') !== env.ORIGIN || !csrfOk(request.headers.get('X-Atlas-CSRF'), csrf))) return json(env, { error: 'Invalid request origin or session token.' }, 403);
       if (Number(request.headers.get('Content-Length') || 0) > 131072) return json(env, { error: 'Request too large.' }, 413);
       const forward = new Request(request, { headers: new Headers(request.headers) });
-      forward.headers.set('x-atlas-bank', await bankId(env, who.sub)); forward.headers.set('x-atlas-role', role); // always overwritten
-      const res = await env.INTERVIEW.get(env.INTERVIEW.idFromName(who.sub)).fetch(forward);
+      const scope = continuityScope(env, who.sub, tenant);
+      if (!scope.ok) return json(env, { error: 'A verified tenant is required before memory can open. The subject-only bank was not read.' }, 403);
+      forward.headers.set('x-atlas-bank', await bankId(env, who.sub, scope.tenant)); forward.headers.set('x-atlas-role', role); forward.headers.set('x-atlas-tenant', tenant); forward.headers.set('x-atlas-tenant-enforced', tenantFlag);
+      const res = await env.INTERVIEW.get(env.INTERVIEW.idFromName(scope.objectName)).fetch(forward);
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
     }
     if (url.pathname === '/api/library' || url.pathname.startsWith('/api/library/')) {
       if (!env.LIBRARY) return json(env, { error: 'The reference library is not configured on this deployment.' }, 404);
-      if (request.method !== 'GET' && (request.headers.get('Origin') !== env.ORIGIN || request.headers.get('X-Atlas-CSRF') !== csrf)) return json(env, { error: 'Invalid request origin or session token.' }, 403);
+      if (request.method !== 'GET' && (request.headers.get('Origin') !== env.ORIGIN || !csrfOk(request.headers.get('X-Atlas-CSRF'), csrf))) return json(env, { error: 'Invalid request origin or session token.' }, 403);
       if (Number(request.headers.get('Content-Length') || 0) > 262144) return json(env, { error: 'Request too large.' }, 413);
       // The declared length can be absent or wrong: read at most 256 KiB of the body actually sent, then forward it.
       const bodyless = request.method === 'GET' || request.method === 'HEAD', bytes = bodyless ? null : await boundedBytes(request, 262144);
@@ -225,7 +282,7 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
       const fwdHeaders = new Headers(request.headers); fwdHeaders.delete('content-length');
       const forward = new Request(request.url, { method: request.method, headers: fwdHeaders, body: bodyless ? undefined : bytes });
       // Entra: the stable tid:oid is the library identity (emails can change); Access: the verified email.
-      forward.headers.set('x-atlas-user', libraryUser); forward.headers.set('x-atlas-role', role); forward.headers.set('x-atlas-email', mail); // always overwritten
+      forward.headers.set('x-atlas-user', libraryUser); forward.headers.set('x-atlas-role', role); forward.headers.set('x-atlas-email', mail); forward.headers.set('x-atlas-tenant', tenant); forward.headers.set('x-atlas-tenant-enforced', tenantFlag);
       forward.headers.set('x-atlas-idp', toB64url(JSON.stringify(signinClaims(request)))); // always overwritten ('e30' = {}): never from the browser
       const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(forward);
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
@@ -234,10 +291,10 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
     // request needs the consent prompt's header, and `always` a consent stored in the person's profile. Stores nothing;
     // the log line carries numbers only.
     if (url.pathname === '/api/transcribe' && request.method === 'POST' && flagsOf(env).spokenAsk) {
-      if (request.headers.get('Origin') !== env.ORIGIN || request.headers.get('X-Atlas-CSRF') !== csrf) return json(env, { error: 'Invalid request origin or session token.' }, 403);
+      if (request.headers.get('Origin') !== env.ORIGIN || !csrfOk(request.headers.get('X-Atlas-CSRF'), csrf)) return json(env, { error: 'Invalid request origin or session token.' }, 403);
       // A UI gate: it proves the page showed the prompt, not that the person agreed; `always` is checked server-side.
       const consent = /^spoken-ask-v1;\s*(once|always)$/.exec((request.headers.get('X-Atlas-Consent') || '').trim());
-      if (!consent || (consent[1] === 'always' && !await storedSpokenAsk(env, { libraryUser, role, mail }))) return json(env, { error: 'Voice questions need your consent first.' }, 403);
+      if (!consent || (consent[1] === 'always' && !await storedSpokenAsk(env, { libraryUser, role, mail, tenant, tenantFlag }))) return json(env, { error: 'Voice questions need your consent first.' }, 403);
       if ((request.headers.get('Content-Type') || '').replace(/\s+/g, '').toLowerCase() !== 'audio/l16;rate=24000') return json(env, { error: 'Send 16-bit mono PCM at 24 kHz (audio/L16;rate=24000).' }, 415);
       const pcm = Number(request.headers.get('Content-Length') || 0) > AUDIO_MAX ? null : await boundedBytes(request, AUDIO_MAX);
       if (!pcm) return json(env, { error: 'The recording is longer than 30 seconds.' }, 413);
@@ -249,7 +306,7 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
       return json(env, { text: String(out?.text || '').slice(0, 600), language: out?.language || null });
     }
     if (url.pathname === '/api/jev/classify' && request.method === 'POST') {
-      if (request.headers.get('Origin') !== env.ORIGIN || request.headers.get('X-Atlas-CSRF') !== csrf) return json(env, { error: 'Invalid request origin or session token.' }, 403);
+      if (request.headers.get('Origin') !== env.ORIGIN || !csrfOk(request.headers.get('X-Atlas-CSRF'), csrf)) return json(env, { error: 'Invalid request origin or session token.' }, 403);
       if (Number(request.headers.get('Content-Length') || 0) > 65536) return json(env, { error: 'Project too large to score.' }, 413);
       const raw = await request.text();
       if (raw.length > 65536) return json(env, { error: 'Project too large to score.' }, 413);
@@ -275,11 +332,11 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
 
 // D1 "Always allow for me": the consent stored in the person's own profile (LibraryStore), read with the verified
 // identity only. Anything but a stored version-1 consent (not READY, revoked, unreachable) counts as no consent.
-async function storedSpokenAsk(env, { libraryUser, role, mail }) {
+async function storedSpokenAsk(env, { libraryUser, role, mail, tenant, tenantFlag }) {
   if (!env.LIBRARY) return false;
   try {
     const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(new Request('https://atlas.internal/api/library/profile/consents',
-      { headers: { 'x-atlas-user': libraryUser, 'x-atlas-role': role, 'x-atlas-email': mail, 'x-atlas-idp': 'e30' } }));
+      { headers: { 'x-atlas-user': libraryUser, 'x-atlas-role': role, 'x-atlas-email': mail, 'x-atlas-tenant': tenant || '', 'x-atlas-tenant-enforced': tenantFlag || '0', 'x-atlas-idp': 'e30' } }));
     return res.ok && (await res.json())?.spokenAsk?.version === 1;
   } catch { return false; }
 }
@@ -287,8 +344,11 @@ async function storedSpokenAsk(env, { libraryUser, role, mail }) {
 // Daily cron (worker.js delegates here so Node tests cover it): references not updated for six months get an
 // update invitation for their owner, plus the feature modules' daily housekeeping. Nothing is ever sent.
 export async function scheduled(controller, env, ctx) {
-  if (!env.LIBRARY) return;
-  const req = new Request('https://atlas.internal/api/library/scan-stale', { method: 'POST', body: '{}', headers: { 'Content-Type': 'application/json', 'x-atlas-user': 'atlas-cron', 'x-atlas-role': 'system' } });
+  if (!env.LIBRARY || productionDemoConflict(env)) return;
+  const enforced = tenantEnforced(env);
+  const tenant = String(env.ATLAS_SYSTEM_TENANT || '').trim().toLowerCase();
+  if (enforced && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenant)) return;
+  const req = new Request('https://atlas.internal/api/library/scan-stale', { method: 'POST', body: '{}', headers: { 'Content-Type': 'application/json', 'x-atlas-user': 'atlas-cron', 'x-atlas-role': 'system', 'x-atlas-tenant': enforced ? tenant : '', 'x-atlas-tenant-enforced': enforced ? '1' : '0' } });
   ctx.waitUntil(env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(req));
 }
 

@@ -27,7 +27,7 @@ function setup(env = {}) {
   const l = new Library(sql, { now: () => new Date(clock.t).toISOString(), newId: () => (++n).toString(16).padStart(32, '0') });
   const call = async (u, method, path, body, extra = {}) => {
     const r = await libraryRoutes(new Request(ORIGIN + '/api/library/' + path, { method, headers: { 'x-atlas-user': u.email, 'x-atlas-role': u.role, 'x-atlas-email': u.mail, 'Content-Type': 'application/json' },
-      body: method === 'POST' ? JSON.stringify(body ?? {}) : undefined }), l, { env: { ORIGIN, ...env, ...extra } });
+      body: method === 'POST' ? JSON.stringify(body ?? {}) : undefined }), l, { env: { ORIGIN, ATLAS_TENANT_ISOLATION: 'local-synthetic', ...env, ...extra } });
     return { status: r.status, body: await r.json() };
   };
   // Direct handler call, for the strict currency mode (ctx.currency is a test-only seam; library-routes never sets it).
@@ -41,7 +41,10 @@ function setup(env = {}) {
 async function withReference(s, ref = REF()) {
   // Another reference makes "Acme Bank" a library client name, so the record masking has something to mask.
   await s.l.upsert(JO, { localId: 'other', reference: { title: 'Card fraud rules', client: { name: 'Acme Bank' }, answers: ['Acme Bank wanted faster fraud rules.'] } });
-  return (await s.l.upsert(ALEX, { localId: 'r1', reference: ref })).id;
+  const id = (await s.l.upsert(ALEX, { localId: 'r1', reference: ref })).id;
+  const mgr = ref.validation?.manager?.email;
+  if (mgr) s.l.bindTrust({ email: 'directory', role: 'system' }, { owner: ALEX.email, email: mgr, source: 'directory', sandbox: true });
+  return id;
 }
 const pick = (cands, ...texts) => texts.map(t => { const c = cands.find(x => x.text === t); assert.ok(c, t); return c; });
 async function proposed(s, id, ...texts) {
@@ -139,7 +142,10 @@ test('Z N+1 from the directory: staffing, then a stored dna/dna_export row, then
   const [, , source] = await ask(), open = s.l.rows("SELECT id FROM confirmation_requests WHERE manager_source = 'directory' AND to_email = 'max@mantu.com' ORDER BY created_at DESC, rowid DESC")[0];
   assert.equal(source, 'directory');
   const done = await s.call(MAX, 'POST', 'confirmations/' + open.id, { decisions: [{ claimId: c.id, decision: 'confirm' }] });
-  assert.equal(done.status, 200, JSON.stringify(done.body)); assert.equal(done.body.claims[0].source, 'directory');
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+  assert.equal(done.body.claims[0].source, undefined);
+  assert.equal(done.body.request.refId, undefined);
+  assert.match(s.l.rows("SELECT detail FROM audit WHERE action = 'claim confirm' ORDER BY seq DESC")[0].detail, /\(manager, directory\)/);
 });
 
 test('independence: the owner, a member or the requester can never be the confirmer (409)', async () => {
@@ -196,9 +202,13 @@ test('inbox: by verified mail only; raw text with full access, record masking wi
   const req2 = (await s.call(ALEX, 'POST', 'confirmations', { refId: id, claimIds: [cs[0].id, cs[1].id] })).body.request;
   const [masked] = await inbox(MAX);
   assert.equal(masked.request.id, req2.id);
+  assert.equal(masked.request.refId, undefined);
+  assert.equal(masked.reference.handle, req2.id);
+  assert.equal(masked.reference.title, undefined);
+  assert.equal(masked.reference.consultant, undefined);
   assert.deepEqual(masked.claims.map(c => c.text), ['I built the routing model for the client myself.', 'We reused the another client playbook.']);
-  assert.equal(masked.reference.title, 'Claims triage for the client');
   assert.ok(!JSON.stringify(masked).includes('Zebracorp') && !JSON.stringify(masked).includes('Acme'));
+  assert.ok(!JSON.stringify(masked).includes('Alex Martin') && !JSON.stringify(masked).includes('Data engineer'));
   // Decisions.
   const decide = (u, body, rid = req.id) => s.call(u, 'POST', 'confirmations/' + rid, body);
   const all = (d, note) => ({ decisions: cs.map((c, i) => ({ claimId: c.id, decision: d[i], note: note?.[i] })) });
@@ -256,11 +266,18 @@ test('masked views (inbox, decision, outreach preview): PII is masked before the
   assert.equal(req.toEmail, 'max@mantu.com', 'a staffing N+1 without access to the record');
   const want = 'Jane ([email]) signed off; see [link] for the figures.';
   const [item] = (await s.call(MAX, 'GET', 'confirmations/inbox')).body.items;
-  assert.deepEqual([item.reference.title, item.claims.map(x => x.text)], ['Sign-off from [email]', [want]]);
+  assert.equal(item.reference.handle, req.id);
+  assert.equal(item.reference.title, undefined);
+  assert.equal(item.reference.consultant, undefined);
+  assert.deepEqual(item.claims.map(x => x.text), [want]);
   const previews = s.l.rows('SELECT payload FROM outreach WHERE subject_id = ?', req.id).map(o => JSON.parse(o.payload).preview.title);
   assert.deepEqual(previews, ['Sign-off from [email]', 'Sign-off from [email]']);
   const done = await s.call(MAX, 'POST', 'confirmations/' + req.id, { decisions: [{ claimId: c.id, decision: 'confirm' }] });
-  assert.equal(done.status, 200); assert.deepEqual(done.body.claims.map(x => [x.text, x.source]), [[want, 'staffing']], 'masked text back, and the badge source');
+  assert.equal(done.status, 200);
+  assert.equal(done.body.request.refId, undefined);
+  assert.equal(done.body.reference.handle, req.id);
+  assert.equal(done.body.claims[0].source, undefined);
+  assert.deepEqual(done.body.claims.map(x => [x.id, x.text, x.status]), [[c.id, want, 'manager_confirmed']]);
   for (const body of [item, done.body, previews]) assert.doesNotMatch(JSON.stringify(body), /jane\.doe|ops@|q3-report|portal|zebracorp/i);
 });
 
@@ -405,7 +422,9 @@ test('client contact: BLOCKED_EXTERNAL unless CLIENT_CONFIRM=1 and the email is 
   const items = (await s.call(EXT, 'GET', 'confirmations/inbox', null, on)).body.items;
   assert.deepEqual(items[0].claims.map(x => x.text), ['I built the routing model for the client myself.'], 'a client contact never has full access: masked');
   const done = await s.call(EXT, 'POST', 'confirmations/' + r.body.request.id, { decisions: [{ claimId: c.id, decision: 'confirm' }] }, on);
-  assert.deepEqual([done.status, done.body.claims[0].status, done.body.claims[0].kind], [200, 'client_confirmed', 'client']);
+  assert.deepEqual([done.status, done.body.claims[0].status, done.body.request.kind], [200, 'client_confirmed', 'client']);
+  assert.equal(done.body.claims[0].kind, undefined);
+  assert.equal(done.body.request.refId, undefined);
   assert.equal(s.l.rows("SELECT detail FROM audit WHERE action = 'claim confirm'")[0].detail, `rev 1 claim ${c.id} (client, none)`);
 });
 
@@ -417,7 +436,7 @@ test('external role: 403 on claims, on create and on cancel; only the inbox and 
     const r = await s.call(EXT, method, path, body);
     assert.deepEqual([r.status, r.body], [403, { error: 'Not available to external confirmers.' }], method + ' ' + path);
   }
-  assert.deepEqual((await s.call(EXT, 'GET', 'confirmations/inbox')).body, { items: [] });
+  assert.deepEqual((await s.call(EXT, 'GET', 'confirmations/inbox')).body, { items: [], truncated: false, limit: 50, next: null });
   assert.equal((await s.call(EXT, 'POST', 'confirmations/' + req.id, { decisions: [{ claimId: c.id, decision: 'confirm' }] })).status, 403, 'reachable, but addressed to someone else');
   assert.equal(s.l.rows("SELECT status FROM confirmation_requests WHERE id = ?", req.id)[0].status, 'open');
 });
@@ -440,7 +459,7 @@ test('F3 and F4 never call a model: complete and embed stay untouched through th
   const calls = [], sql = memorySql();
   const l = new Library(sql, { complete: async (...a) => { calls.push(['complete', a]); return '{}'; }, embed: async (...a) => { calls.push(['embed', a]); return null; } });
   const call = (u, method, path, body) => libraryRoutes(new Request(ORIGIN + '/api/library/' + path, { method, headers: { 'x-atlas-user': u.email, 'x-atlas-role': u.role, 'x-atlas-email': u.mail, 'Content-Type': 'application/json' },
-    body: method === 'POST' ? JSON.stringify(body ?? {}) : undefined }), l, { env: { ORIGIN } }).then(r => r.json());
+    body: method === 'POST' ? JSON.stringify(body ?? {}) : undefined }), l, { env: { ORIGIN, ATLAS_TENANT_ISOLATION: 'local-synthetic' } }).then(r => r.json());
   const id = (await l.upsert(ALEX, { localId: 'r1', reference: REF() })).id;
   const cands = (await call(ALEX, 'GET', 'claims/' + id)).candidates;
   const [c] = (await call(ALEX, 'POST', 'claims', { refId: id, items: [cands[0]] })).claims;
@@ -452,4 +471,163 @@ test('F3 and F4 never call a model: complete and embed stay untouched through th
   await call({ email: 'atlas-cron', mail: '', role: 'system' }, 'POST', 'scan-stale', {});
   claims.claimSummary(l, l.row(id)); claims.confirmationStatus(l, l.row(id));
   assert.deepEqual(calls, []);
+});
+
+test('a replaced staffing manager cannot use the confirmation handle opened for the old assignment', async () => {
+  const s = setup();
+  const A = 'abcdefab-cdef-4abc-8def-0123456789ab';
+  const person = (email, role = 'user') => ({ email, mail: email, role, tenant: A, tenantEnforced: true });
+  const alex = person('alex@mantu.com'), max = person('max@mantu.com'), noor = person('noor@mantu.com'), sam = person('sam@mantu.com'), rev = person('rev@mantu.com', 'reviewer');
+  const call = async (u, method, path, body) => {
+    const r = await libraryRoutes(new Request(ORIGIN + '/api/library/' + path, { method, headers: { 'x-atlas-user': u.email, 'x-atlas-role': u.role, 'x-atlas-email': u.mail, 'x-atlas-tenant': A, 'content-type': 'application/json' }, body: method === 'POST' ? JSON.stringify(body ?? {}) : undefined }), s.l, { env: { ORIGIN, DATA_MODE: 'test' } });
+    return { status: r.status, body: await r.json() };
+  };
+  const story = (await s.l.upsert(alex, { localId: 'r1', reference: REF() })).id;
+  const second = structuredClone(REF());
+  second.details.projectId = 'PRJ-2';
+  second.answers[1] = 'I rebuilt the second queue myself.';
+  const other = (await s.l.upsert(alex, { localId: 'r2', reference: second })).id;
+  const directoryRef = structuredClone(REF());
+  directoryRef.details.projectId = 'PRJ-DIR';
+  directoryRef.answers[4] = 'The directory note stayed on the dashboard export.';
+  const directoryId = (await s.l.upsert(alex, { localId: 'r3', reference: directoryRef })).id;
+  profile.ensure(s.l);
+  s.l.sql.exec("INSERT INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at, tenant) VALUES ('alex@mantu.com', 'dna', '', '', '', 'Sam', 'sam@mantu.com', 't', ?, ?)", s.l.now(), A);
+  s.l.bindTrust({ email: 'directory', role: 'system', tenant: A, tenantEnforced: true }, { owner: alex.email, email: sam.email, source: 'directory', tenant: A, tenantEnforced: true });
+  outreach.ensure(s.l);
+  for (const project of ['PRJ-1', 'PRJ-2']) s.l.sql.exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, tenant) VALUES (?, 'alex@mantu.com', 'max@mantu.com', 'Max', '', '', 'staffing-csv', ?, ?)", project, s.l.now(), A);
+  s.l.bindTrust({ email: 'staffing-csv', role: 'system', tenant: A, tenantEnforced: true }, { owner: alex.email, email: max.email, source: 'staffing', tenant: A, tenantEnforced: true });
+  const propose = async (id, text) => {
+    const candidates = (await call(alex, 'GET', 'claims/' + id)).body.candidates;
+    const sent = await call(alex, 'POST', 'claims', { refId: id, items: pick(candidates, text) });
+    assert.equal(sent.status, 201, JSON.stringify(sent.body));
+    return sent.body.claims[0];
+  };
+  const c1 = await propose(story, T1);
+  const cOther = await propose(other, 'I rebuilt the second queue myself.');
+  const cDir = await propose(directoryId, 'The directory note stayed on the dashboard export.');
+  const staffingReq = (await call(alex, 'POST', 'confirmations', { refId: story, claimIds: [c1.id] })).body.request;
+  const otherReq = (await call(alex, 'POST', 'confirmations', { refId: other, claimIds: [cOther.id] })).body.request;
+  const directoryReq = (await call(alex, 'POST', 'confirmations', { refId: directoryId, claimIds: [cDir.id] })).body.request;
+  assert.deepEqual([staffingReq.toEmail, staffingReq.managerSource], ['max@mantu.com', 'staffing']);
+  assert.equal(otherReq.managerSource, 'staffing');
+  assert.deepEqual([directoryReq.toEmail, directoryReq.managerSource], ['sam@mantu.com', 'directory']);
+  const header = 'project_id,consultant_email,manager_email,manager_name,project_title,end_date\n';
+  const replaced = await call(rev, 'POST', 'staffing/import', { csv: header + 'PRJ-1,alex@mantu.com,noor@mantu.com,Noor,Pilot,2026-12-01\n' });
+  assert.equal(replaced.status, 200, JSON.stringify(replaced.body));
+  assert.equal(replaced.body.staffed, 1);
+  const beforeClaims = s.l.rows('SELECT id, status FROM claims ORDER BY id');
+  const beforeValidation = JSON.stringify(s.l.row(story).state.validation);
+  const denied = await call(max, 'POST', 'confirmations/' + staffingReq.id, { decisions: [{ claimId: c1.id, decision: 'confirm' }] });
+  assert.equal(denied.status, 403);
+  assert.deepEqual(s.l.rows('SELECT id, status FROM claims ORDER BY id'), beforeClaims);
+  assert.equal(s.l.rows('SELECT status FROM confirmation_requests WHERE id = ?', staffingReq.id)[0].status, 'open');
+  assert.equal(JSON.stringify(s.l.row(story).state.validation), beforeValidation);
+  assert.deepEqual((await call(max, 'GET', 'confirmations/inbox')).body.items.map(item => item.request.id), [otherReq.id]);
+  assert.equal((await call(noor, 'POST', 'confirmations/' + staffingReq.id, { decisions: [{ claimId: c1.id, decision: 'confirm' }] })).status, 403);
+  const fresh = await propose(story, T3);
+  const next = (await call(alex, 'POST', 'confirmations', { refId: story, claimIds: [fresh.id] })).body.request;
+  assert.deepEqual([next.toEmail, next.managerSource], ['noor@mantu.com', 'staffing']);
+  assert.equal((await call(noor, 'POST', 'confirmations/' + next.id, { decisions: [{ claimId: fresh.id, decision: 'confirm' }] })).status, 200);
+  assert.equal(s.l.rows('SELECT status FROM claims WHERE id = ?', c1.id)[0].status, 'unverified');
+  assert.equal((await call(max, 'POST', 'confirmations/' + otherReq.id, { decisions: [{ claimId: cOther.id, decision: 'confirm' }] })).status, 200);
+  assert.equal((await call(sam, 'POST', 'confirmations/' + directoryReq.id, { decisions: [{ claimId: cDir.id, decision: 'confirm' }] })).status, 200);
+  assert.equal(s.l.canPresalesApprove(s.l.row(story), person('pre@mantu.com', 'presales')), true);
+  assert.equal(s.l.canManagerApprove(s.l.row(story), max), false);
+  assert.equal(s.l.canManagerApprove(s.l.row(story), noor), true);
+  assert.equal(s.l.canManagerApprove(s.l.row(story), sam), true);
+  const { isVerifiedAdmin } = await import('../src/authz.js');
+  assert.equal(isVerifiedAdmin({ ATLAS_ADMIN_ROLES: 'ATLAS.Admin' }, { roles: ['ATLAS.Admin'], sub: 'admin-1' }), true);
+  assert.equal(isVerifiedAdmin({}, { email: 'noor@mantu.com', roles: ['ATLAS.Admin'] }), false);
+});
+
+test('a blank-manager case variant is an ambiguous staffing assignment and does not confirm a claim', async () => {
+  const s = setup();
+  const A = 'abcdefab-cdef-4abc-8def-0123456789ab';
+  const upperA = A.toUpperCase();
+  const B = 'bbbbbbbb-cccc-4ddd-8eee-ffff00001111';
+  assert.notEqual(upperA, A);
+  const person = (email, role = 'user', tenant = A) => ({ email, mail: email, role, tenant, tenantEnforced: true });
+  const alex = person('alex@mantu.com'), max = person('max@mantu.com'), noor = person('noor@mantu.com'), sam = person('sam@mantu.com');
+  const alexB = person('bea@example.test', 'user', B), samB = person('sam-b@example.test', 'user', B);
+  const call = async (u, method, path, body) => {
+    const r = await libraryRoutes(new Request(ORIGIN + '/api/library/' + path, { method, headers: { 'x-atlas-user': u.email, 'x-atlas-role': u.role, 'x-atlas-email': u.mail, 'x-atlas-tenant': u.tenant, 'content-type': 'application/json' }, body: method === 'POST' ? JSON.stringify(body ?? {}) : undefined }), s.l, { env: { ORIGIN, DATA_MODE: 'test' } });
+    return { status: r.status, body: await r.json() };
+  };
+  const storyFor = async (user, localId, projectId, sentence) => {
+    const reference = structuredClone(REF());
+    reference.details.projectId = projectId;
+    reference.answers[1] = sentence;
+    return (await s.l.upsert(user, { localId, reference })).id;
+  };
+  const plant = (project, consultant, tenant, manager) => s.l.sql.exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, tenant) VALUES (?, ?, ?, '', '', '', 'legacy', ?, ?)", project, consultant, manager, s.l.now(), tenant);
+  const rows = () => s.l.rows('SELECT * FROM staffing ORDER BY project_id, consultant_email, tenant');
+  outreach.ensure(s.l);
+  profile.ensure(s.l);
+  s.l.sql.exec("INSERT INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at, tenant) VALUES ('alex@mantu.com', 'dna', '', '', '', 'Sam', 'sam@mantu.com', 't', ?, ?)", s.l.now(), A);
+  s.l.bindTrust({ email: 'directory', role: 'system', tenant: A, tenantEnforced: true }, { owner: alex.email, email: sam.email, source: 'directory', tenant: A, tenantEnforced: true });
+  s.l.bindTrust({ email: 'staffing-csv', role: 'system', tenant: A, tenantEnforced: true }, { owner: alex.email, email: max.email, source: 'staffing', tenant: A, tenantEnforced: true });
+  s.l.bindTrust({ email: 'staffing-csv', role: 'system', tenant: A, tenantEnforced: true }, { owner: alex.email, email: noor.email, source: 'staffing', tenant: A, tenantEnforced: true });
+  const projectStory = await storyFor(alex, 'proj', 'PRJ-CASE', T1);
+  const mailStory = await storyFor(alex, 'mail', 'PRJ-MAIL', 'I rebuilt the mail-case queue myself.');
+  const tenantStory = await storyFor(alex, 'ten', 'PRJ-TEN', 'I rebuilt the tenant-case queue myself.');
+  const reverseStory = await storyFor(alex, 'rev', 'PRJ-REV', 'I rebuilt the reverse-order queue myself.');
+  const blankStory = await storyFor(alex, 'blank', 'PRJ-BLANK', 'I kept the blank assignment unchanged.');
+  const cleanStory = await storyFor(alex, 'clean', 'PRJ-CLEAN', 'I kept one current manager.');
+  const otherStory = await storyFor(alex, 'other', 'PRJ-OTHER', 'I kept the other project manager.');
+  const foreignStory = await storyFor(alexB, 'foreign', 'PRJ-FOREIGN', 'I kept the other tenant manager.');
+  plant('PRJ-CASE', 'alex@mantu.com', A, 'max@mantu.com');
+  const [opened] = (await call(alex, 'POST', 'claims', { refId: projectStory, items: pick((await call(alex, 'GET', 'claims/' + projectStory)).body.candidates, T1) })).body.claims;
+  const openedReq = (await call(alex, 'POST', 'confirmations', { refId: projectStory, claimIds: [opened.id] })).body.request;
+  assert.deepEqual([openedReq.toEmail, openedReq.managerSource], ['max@mantu.com', 'staffing']);
+  plant('prj-case', 'Alex@mantu.com', upperA, '');
+  const before = rows();
+  const denied = await call(max, 'POST', 'confirmations/' + openedReq.id, { decisions: [{ claimId: opened.id, decision: 'confirm' }] });
+  assert.equal(denied.status, 403);
+  assert.equal(s.l.rows('SELECT status FROM claims WHERE id = ?', opened.id)[0].status, 'unverified');
+  assert.equal(s.l.rows('SELECT status FROM confirmation_requests WHERE id = ?', openedReq.id)[0].status, 'open');
+  assert.deepEqual((await call(max, 'GET', 'confirmations/inbox')).body.items.map(item => item.request.id).includes(openedReq.id), false);
+  assert.deepEqual(rows(), before);
+  plant('PRJ-MAIL', 'Alex@mantu.com', A, '');
+  plant('prj-mail', 'alex@mantu.com', A, 'max@mantu.com');
+  const mailClaim = (await call(alex, 'POST', 'claims', { refId: mailStory, items: pick((await call(alex, 'GET', 'claims/' + mailStory)).body.candidates, 'I rebuilt the mail-case queue myself.') })).body;
+  const mailAsk = await call(alex, 'POST', 'confirmations', { refId: mailStory, claimIds: [mailClaim.claims[0].id] });
+  assert.equal(mailAsk.status, 409);
+  assert.equal(s.l.rows("SELECT COUNT(*) AS n FROM staffing WHERE lower(project_id) = 'prj-mail'")[0].n, 2);
+  plant('PRJ-TEN', 'alex@mantu.com', A, 'max@mantu.com');
+  plant('prj-ten', 'alex@mantu.com', upperA, '');
+  const tenantAsk = await call(alex, 'POST', 'confirmations', { refId: tenantStory, claimIds: [(await call(alex, 'POST', 'claims', { refId: tenantStory, items: pick((await call(alex, 'GET', 'claims/' + tenantStory)).body.candidates, 'I rebuilt the tenant-case queue myself.') })).body.claims[0].id] });
+  assert.equal(tenantAsk.status, 409);
+  plant('prj-rev', 'alex@mantu.com', upperA, '');
+  plant('PRJ-REV', 'alex@mantu.com', A, 'max@mantu.com');
+  const reverseAsk = await call(alex, 'POST', 'confirmations', { refId: reverseStory, claimIds: [(await call(alex, 'POST', 'claims', { refId: reverseStory, items: pick((await call(alex, 'GET', 'claims/' + reverseStory)).body.candidates, 'I rebuilt the reverse-order queue myself.') })).body.claims[0].id] });
+  assert.equal(reverseAsk.status, 409);
+  assert.deepEqual(rows().filter(row => String(row.project_id).toLowerCase() === 'prj-rev').map(row => row.manager_email).sort(), ['', 'max@mantu.com']);
+  plant('PRJ-BLANK', 'alex@mantu.com', A, '');
+  const blankClaim = (await call(alex, 'POST', 'claims', { refId: blankStory, items: pick((await call(alex, 'GET', 'claims/' + blankStory)).body.candidates, 'I kept the blank assignment unchanged.') })).body.claims[0];
+  const blankReq = (await call(alex, 'POST', 'confirmations', { refId: blankStory, claimIds: [blankClaim.id] })).body.request;
+  assert.deepEqual([blankReq.toEmail, blankReq.managerSource], ['sam@mantu.com', 'directory']);
+  assert.equal((await call(sam, 'POST', 'confirmations/' + blankReq.id, { decisions: [{ claimId: blankClaim.id, decision: 'confirm' }] })).status, 200);
+  assert.equal(s.l.rows("SELECT manager_email FROM staffing WHERE project_id = 'PRJ-BLANK'")[0].manager_email, '');
+  plant('PRJ-CLEAN', 'alex@mantu.com', A, 'noor@mantu.com');
+  const cleanClaim = (await call(alex, 'POST', 'claims', { refId: cleanStory, items: pick((await call(alex, 'GET', 'claims/' + cleanStory)).body.candidates, 'I kept one current manager.') })).body.claims[0];
+  const cleanReq = (await call(alex, 'POST', 'confirmations', { refId: cleanStory, claimIds: [cleanClaim.id] })).body.request;
+  assert.deepEqual([cleanReq.toEmail, cleanReq.managerSource], ['noor@mantu.com', 'staffing']);
+  assert.equal((await call(noor, 'POST', 'confirmations/' + cleanReq.id, { decisions: [{ claimId: cleanClaim.id, decision: 'confirm' }] })).status, 200);
+  plant('PRJ-OTHER', 'alex@mantu.com', A, 'max@mantu.com');
+  const otherClaim = (await call(alex, 'POST', 'claims', { refId: otherStory, items: pick((await call(alex, 'GET', 'claims/' + otherStory)).body.candidates, 'I kept the other project manager.') })).body.claims[0];
+  const otherReq = (await call(alex, 'POST', 'confirmations', { refId: otherStory, claimIds: [otherClaim.id] })).body.request;
+  assert.equal((await call(max, 'POST', 'confirmations/' + otherReq.id, { decisions: [{ claimId: otherClaim.id, decision: 'confirm' }] })).status, 200);
+  s.l.bindTrust({ email: 'staffing-csv', role: 'system', tenant: B, tenantEnforced: true }, { owner: alexB.email, email: samB.email, source: 'staffing', tenant: B, tenantEnforced: true });
+  plant('PRJ-FOREIGN', 'bea@example.test', B, 'sam-b@example.test');
+  const foreignClaim = (await call(alexB, 'POST', 'claims', { refId: foreignStory, items: pick((await call(alexB, 'GET', 'claims/' + foreignStory)).body.candidates, 'I kept the other tenant manager.') })).body.claims[0];
+  const foreignReq = (await call(alexB, 'POST', 'confirmations', { refId: foreignStory, claimIds: [foreignClaim.id] })).body.request;
+  assert.equal((await call(samB, 'POST', 'confirmations/' + foreignReq.id, { decisions: [{ claimId: foreignClaim.id, decision: 'confirm' }] })).status, 200);
+  assert.equal(s.l.canManagerApprove(s.l.row(projectStory), max), false);
+  assert.equal(s.l.canManagerApprove(s.l.row(cleanStory), noor), true);
+  assert.equal(s.l.canManagerApprove(s.l.row(projectStory), sam), true);
+  assert.equal(s.l.canPresalesApprove(s.l.row(projectStory), person('pre@mantu.com', 'presales')), true);
+  const { isVerifiedAdmin } = await import('../src/authz.js');
+  assert.equal(isVerifiedAdmin({ ATLAS_ADMIN_ROLES: 'ATLAS.Admin' }, { roles: ['ATLAS.Admin'], sub: 'admin-1' }), true);
+  assert.equal(isVerifiedAdmin({}, { email: 'max@mantu.com', roles: ['ATLAS.Admin'] }), false);
 });

@@ -11,15 +11,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # Tag SHAs resolved from GitHub on 2026-11-08: actions/checkout v4, actions/setup-node v4, actions/setup-python v5.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with: { node-version: '22' }
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with: { python-version: '3.13' }
       - name: Python dependencies
         run: pip install -r requirements.txt -r requirements-test.txt msgpack pyjwt cryptography playwright python-docx
-      - name: Build the page (four aliases + edge copy)
-        run: python build.py && cp ATLAS_Voice.html deploy/cloudflare-edge/src/atlas.html
+      - name: Build the page twice and check the canonical hash
+        run: bash scripts/verify_page_build.sh
       - name: Generated edge policy is up to date
         run: python deploy/cloudflare-edge/build_edge.py && git diff --exit-code -- deploy/cloudflare-edge/src/policy.generated.js
       - name: App unit tests

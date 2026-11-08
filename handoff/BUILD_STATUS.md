@@ -626,3 +626,113 @@ Review answers:
 - Provider verified: nothing (no key; no call to TypeSafe was made).
 - **JEV key and provider check (2026-09-29):** `TYPESAFE_API_KEY` is set on the live Worker (secrets listed by name: `CSRF_SECRET`, `TYPESAFE_API_KEY`). Provider-verified from the Mac with synthetic stories through the real code (`questionPlan` -> `requestBody` -> `storyRater.rate` -> `parseAnswers` -> `compose`): jev-1.13.0 answered 11 questions in 262 ms (strong story: 70, needs_work, engine jev) and 7 in 220 ms (weak story: 14, insufficient), one attempt each; the existing classify path answered in 317 ms (impact 77.7). Remaining step: Tony deploys this commit when nobody is interviewing. Recommended: rotate the TypeSafe key (it appeared in the conversation) and replace the secret.
 - Open after deploy: the latency targets (p50 ≤ 400 ms, p95 ≤ 1,200 ms) are ASSUMED from the docs until the `story_rating` metric's `ms` confirms them; thresholds and weights are uncalibrated pilot values; acceptance is an escalation share under 20% over the first 100 JEV ratings (Workers Logs, `atlas_metric: story_rating`), else re-tune in code (answers are stored, no new calls needed).
+
+### Session: 2026-11-08 / tenant fail-closed and role config
+- Working tree only. No commit, push, pull request, deploy, grant, or live provider call. Baseline remains `efb4948fdc3fe03205c6ba149afd181f04904143`.
+- Frozen patch before this pass stays `1adf17eb8edce3ad76132e08124cf56b89a083561d1200a94ee02dbec6b948af` (196144 bytes). Updated source patch SHA256 `8f58e909fe1ed0fe1b4b41af617d7bbc78dc966f0d14ad0d857271f090f8c754` (223931 bytes). That patch excludes generated HTML and this status log. Report: `/opt/cursor/artifacts/atlas-implementation-report.md`.
+- Production protected reads, approvals, export, and metrics require a verified caller tenant equal to the row tenant. Empty-tenant trust imports are refused. Legacy rows are not assigned a tenant (`deploy/cloudflare-edge/TENANT_BACKFILL.md`). Missing admin, pre-sales, and reviewer env config grants nobody. `?as=` and `&idp=` are local-demo only.
+- Commands: `node --test deploy/cloudflare-edge/test/*.test.js tests/*.test.js` 884 passed, 1 skipped, 0 failed. `pytest tests/test_*.py -q` 264 passed. Browser: studio 79, sculpture 40, storyboard, intelligence 26, depth 20, autosave, orb_touch 8, report, bids, ask, trust passed after the 768px nav wrap. library, confirm, wow_edge, jev_rating, reuse, memory, zero_config, and zero_config_edge still fail under the new approval and admin rules or a missing `python-docx` (sheet). Not relaxed.
+
+### Session: 2026-11-08 / run4 production demo guard and browser fixtures
+- Same working tree. No commit, push, pull request, deploy, or live provider call. Frozen run2 and run3 patches were not overwritten.
+- `DATA_MODE=production` with `ATLAS_TENANT_ISOLATION=local-synthetic` or with `ATLAS_DEV_IDENTITY` returns 503 on `/api/*` before a durable-object fetch, and the library route returns 503 before SQL. The local demo leaves `DATA_MODE` unset and still serves.
+- Synthetic browser fixtures use `/__trust` plus explicit `ATLAS.Admin`, `ATLAS.Presales`, and `ATLAS.Reviewer` roles. A typed manager and a mailbox without those roles are negative checks. They do not publish or open admin screens.
+- Node after this session: 886 passed, 1 skipped, 0 failed. Browser results and the patch hash are in the run4 report artifact, not in this log.
+
+### Session: 2026-11-08 / run5 tenant scope
+- Run4 patch and delta were copied aside and not overwritten. No commit, push, deploy, or live call.
+- Telemetry purge and metrics are SQL-scoped to the caller tenant. Journey primary key is subject plus tenant. Staffing import refuses a missing enforced tenant before it writes. Production enforcement follows the deployment env, not the tenant-enforced header. The cron does not sweep every tenant.
+- Node 887 passed, 1 skipped, 0 failed. Pytest 264 passed. The run5 hash is in the run5 report artifact.
+
+### Session: 2026-11-08 / run6 profile ownership and system ingress
+- Same working tree. No commit, push, pull request, deploy, grant, or live provider call. Run5 artifacts and `snapshot-run5-frozen` were not overwritten. The hash of this candidate is in the run6 report, not here.
+- Profile rows use primary key `(subject, tenant)`. Reads, saves, consent, export, and delete use both. A DSAR delete removes only that pair. An older profiles table is copied with a blank tenant when the column was absent. Blank stays blank. `quarantineReport` only counts those rows.
+- `/api/triggers` and `/api/directory/push` forward `ATLAS_SYSTEM_TENANT` when enforcement is on. A missing or malformed value returns 503 before the durable object. A different tenant on the request is rejected. The bearer secret is still required. No directory or HR service was called.
+- Recommendation coverage in `tests/reuse_browser.py` now creates and approves a story outside the seed list and checks that recommendation and export see it, and that an unapproved story is not recommended.
+- Vendor deletion remains `not-asserted`. This is not a GDPR certification. Access-mode Hindsight banks and Interview object names stay keyed by the verified subject and were not rekeyed.
+
+### Session: 2026-11-08 / run7 staffing, invitations, pages, maintenance
+- Same working tree. No commit, push, pull request, deploy, or live call. Run5 and run6 artifacts were not overwritten. The hash is in the run7 report.
+- Staffing's primary key is project, consultant, and tenant. A blank legacy row stays blank. Invitations dedupe per tenant. Metrics and staffing pages keep the date window on every page and pass the cursor through the admin routes. An enforced sweep maintains only that tenant's profiles, gaps, and confirmation requests.
+- An enforced memory bank and Interview object use tenant plus subject. A missing tenant does not open the subject-only key. Those older keys are not deleted. DSAR `complete` stays false.
+- Synthetic helper routes refuse `DATA_MODE=production` and any dev switch other than `ATLAS_DEV_IDENTITY=1` with `local-synthetic`. `0`, `false`, and `off` do not count as demo identity.
+
+### Session: 2026-11-08 / run8 trust and directory keys
+- Same working tree. No commit, push, pull request, deploy, or live call. Run7 artifacts were not overwritten. Run7 is a superseded intermediate. The hash of this candidate is in the evidence archive, not here.
+- Manager trust is unique on owner, email, and tenant. Story local identity includes the stored tenant. Directory rows and staged imports include tenant on the key. A blank legacy row stays blank. A DSAR delete removes only that tenant's covered rows and still reports deletion incomplete.
+
+### Session: 2026-11-08 / run9 combined gate
+- Same working tree. No commit, push, pull request, deploy, grant, or live call. Run2 through run8 artifacts were not overwritten. The hash of this candidate is in the run9 evidence archive, not here.
+- Bids, gap lists, confirmation inbox, outreach, invitations, duplicate links, merge, and reinstate check the verified tenant before a write or a page. A request body cannot choose the tenant. Background review uses the saver's tenant. Staffing pages order by time, project, and consultant. DSAR deletes use the verified subject and the verified mail, report each store, and stay incomplete. `DATA_MODE=test` does not turn enforcement off.
+- Vendor deletion stays `not-asserted`. Quarantine is not deletion. Blank legacy rows and subject-only banks were not erased.
+
+### Session: 2026-11-08 / run10 combined gates
+- Same working tree. No commit, push, pull request, deploy, or live call. Run9 artifacts were not overwritten. This note is not part of the code patch. The hash is in the run10 evidence archive.
+- Run9 was not accepted. The cloud gate reported no high or medium findings and two low findings. The Mac command-line gate reported one high and six medium findings. The confirmed code issues are fixed in this candidate. One backfill prose citation did not match the current text and was left unconfirmed.
+- A stored duplicate link to another tenant is not returned by get. Invitation audit, bid purge, claim decisions, win totals, the Teams ingress, and directory deletion stay inside the verified tenant. An Entra subject deletes its mail key and its `oid:` key, not another person's key. Outreach rejection for a missing tenant is HTTP 403 and does not create the outreach tables. Opening the library still initializes the reference schema.
+- Vendor deletion stays `not-asserted`. Quarantine is not deletion.
+
+### Session: 2026-11-08 / run11 combined gates
+- Same working tree. No commit, push, pull request, deploy, or live call. Run10 and earlier archives were not overwritten. This note is not part of the code patch.
+- Run10 was not accepted. Duplicate links now require the caller to be able to open the other story. Historical duplicate audit text is not returned. Teams card actions stay in one tenant. Invitation reads use the verified subject and the verified mail. A reference id the caller cannot open is rejected before a write. Confirmation inbox and cancel check the linked story tenant before they show or change it. Bids, claims, gaps, and profile check the tenant before they initialize their tables.
+- The edge page is generated. It is not tracked. A clean baseline plus this patch, with ATLAS_HOME_URL unset, produced the same page hash on two builds. The local runner serves that file and refuses a different ATLAS_Voice.html.
+- Vendor deletion stays `not-asserted`. Quarantine is not deletion. The reference schema is still created when a library object is constructed.
+
+### Session: 2026-11-08 / run12 combined gates
+- Same working tree. No commit, push, pull request, deploy, or live call. Run11 and earlier archives were not overwritten. This note is not part of the code patch.
+- Run11 was not accepted. Invitation update, manager approval, and the stale scan use the verified subject and the verified mail. A stored invitation reference the caller cannot open is rejected before the row changes. A Teams card action is bound before the dedupe read. The page build check fails when the first comparison fails. The generated page is not tracked.
+- Vendor deletion stays `not-asserted`. Quarantine is not deletion. Stored duplicate links are not purged.
+
+### Session: 2026-11-08 / run13 combined gates
+- Same working tree. No commit, push, pull request, deploy, or live call. Run12 and earlier archives, including the run12 input supplement, were not overwritten. This note is not part of the code patch. The candidate hash is in the run13 evidence archive.
+- Run12 was not accepted. The staffing import still stores the consultant mail as the trust owner. Approval and the due-row check also accept the profile mail of that subject in the same tenant. The stale scan invites that verified mail and skips a subject that has none, instead of rejecting the address. Ask refuses a missing enforced tenant before the rate limit and before the audit write. A Teams decline or schedule resolves story access before the invitation update and writes the audit on the story only when that access exists. The Teams directory tenant and the configured ATLAS tenant stay different namespaces. A mismatch inside either namespace does not change the invitation.
+- New duplicate index rows do not copy the other title. Reads use the live title after an access check. Older stored titles and older duplicate audit text remain in SQLite. Get, list, export, revision, and recommend do not return a title the caller cannot open. Those rows were not deleted.
+- deploy.sh builds, copies, and checks the supplied page hash as separate commands. A failed build or a different hash does not call wrangler. The page verifier uses a unique temporary file. A corrupted first snapshot makes that script exit nonzero. SOURCE_LOCK still checks the vendored string against itself. It does not prove the bytes came from npm.
+- Vendor deletion stays `not-asserted`. Quarantine is not deletion. Legacy DSAR complete stays false. The reference schema is still created when a library object is constructed.
+
+### Session: 2026-11-08 / run14 combined gates
+- Same working tree. No commit, push, pull request, deploy, or live call. Run13 and earlier archives were not overwritten. This note is not part of the code patch. The candidate hash is in the run14 evidence archive.
+- Run13 was not accepted. A staffing replacement now grants the new manager and revokes only a staffing grant that is no longer an active assignment for that consultant and tenant. A directory grant, a grant in another tenant, a blank legacy source, and a manager who still has another project stay. The grant change is one transaction. A failed replacement leaves the previous grant and staffing row.
+- An invitation list omits the linked story id, title, and project when the caller cannot open that story. Dismiss and schedule still change only the invitation. Done still requires access to the story. The inbox omits the consultant name and role, and the story id, when access is not full.
+- A Teams send uses one active conversation's directory tenant. It does not require that id to equal the ATLAS tenant. Several directories are refused. The deploy script hashes the page after the tests. A failed build does not deploy a page that was already present.
+- Vendor deletion stays `not-asserted`. Quarantine is not deletion. Stored duplicate titles were not deleted.
+
+### Session: 2026-11-08 / run15 combined gates
+- Same working tree. No commit, push, pull request, deploy, or live call. Run14 and earlier archives were not overwritten. This note is not part of the code patch. The candidate hash is in the run15 evidence archive.
+- Run14 was not accepted. Staffing replacement uses storage.transactionSync. Application code does not send SQL BEGIN. The node sqlite adapter rejects BEGIN and SAVEPOINT and emulates transactionSync. A Cloudflare Durable Object runtime was not executed here.
+- A staffing grant approves only the project on the current assignment. A directory grant stays owner-wide. Subject and mail aliases are revoked together. A failed replacement does not count as saved, does not invite, and the webhook does not create the invitation first.
+- A confirmer without full access gets an opaque request handle. Decline of an inaccessible linked story changes only the invitation and writes no audit. Schedule and snooze do not. A sent Teams row stores its destination directory. A blank legacy directory is not guessed.
+- Vendor deletion stays `not-asserted`. Quarantine is not deletion. Stored duplicate titles were not deleted.
+
+### Session: 2026-11-08 / run16 combined gates
+- Same working tree. No commit, push, pull request, deploy, or live call. Run15 and earlier archives were not overwritten. This note is not part of the code patch. The candidate hash is in the run16 evidence archive.
+- Run15 was not accepted. A staffing project id is one lowercase key. A second spelling updates that row. Two already-stored spellings are refused and do not grant. Profile lookup errors inside the transaction are not swallowed. The webhook invitation is in the same transaction as the staffing change. Done checks the existing link and the supplied link before any write, and a done with no reference is refused.
+- A sent Teams row stores the conversation id. An action must match that conversation, the directory, the ATLAS tenant, and the actor. The deploy script's production npx command is what the positive stub records. A second page comparison has its own stage. The Durable Object runtime was not executed.
+- Vendor deletion stays `not-asserted`. Quarantine is not deletion. Stored duplicate titles were not deleted.
+
+### Session: 2026-11-08 / run17 combined gates
+- Same working tree. No commit, push, pull request, deploy, or live call. Run16 and earlier archives were not overwritten. This note is not part of the code patch. The candidate hash is in the run17 evidence archive.
+- Run16 was not accepted. A staffing row is matched on the lowercased project id, the lowercased consultant email, and the lowercased tenant UUID. Email and tenant UUID are normalized on that one row. The stored project spelling is kept. A new row keeps the caller's project spelling. Two stored rows for the same logical assignment are refused, and nothing is written. The managerless import uses that same reconcile. The old manager loses a replaced assignment. An ambiguous pair does not grant.
+- Invitation dedupe for a project end compares the project id case-insensitively. A refused Teams snooze does not write teams_seen, so the same activity can still decline. A profile query error rolls back the webhook. A CSV failure rolls back only that row. Earlier CSV rows stay. The import audit records the saved count. A missing profiles table is not a query error.
+- The factory test counts storage.transactionSync and requires the original error. Removing that wiring fails the test. The node sqlite adapter is still an emulation. A Cloudflare Durable Object runtime was not executed.
+- The deploy stub records one `wrangler@4 deploy` and one `secret list`. `secret put` did not run. No network.
+- Vendor deletion stays `not-asserted`. Quarantine is not deletion. Stored duplicate titles were not deleted.
+
+### Session: 2026-11-08 / run18 combined gates
+- Same working tree. No commit, push, pull request, deploy, or live call. Run17 and earlier archives were not overwritten. This note is not part of the code patch. The candidate hash is in the run18 evidence archive.
+- Run17 was not accepted. A staffing-sourced confirmation is checked again when it is shown and when it is decided. A manager removed from that assignment cannot confirm through the old handle. The request stays open and the claims stay unverified. A directory-sourced request, another project's current assignment, presales approval, and the verified-admin check stay. Gap requests name an assignee, not a staffing grant, and were not changed.
+- Webhook invitation dedupe uses the same project and email comparison as import. The story id stays an exact opaque key.
+- The tenant-case fixture uses a UUID that contains letters. A failed webhook replacement restores the preexisting staffing, trust, invitation, audit, and outreach rows. The thrown error is the injected object. A blocked CSV still writes one summary audit and does not change staffing, trust, invitations, or claims.
+- Vendor deletion stays `not-asserted`. Quarantine is not deletion. Stored duplicate titles were not deleted. A Cloudflare Durable Object runtime was not executed.
+
+### Session: 2026-11-08 / run19 combined gates
+- Same working tree. No commit, push, pull request, deploy, or live call. Run18 and earlier archives were not overwritten. This note is not part of the code patch. The candidate hash is in the run19 evidence archive.
+- Run18 was not accepted. A staffing confirmation now counts a blank-manager row in the same logical assignment. A managed row plus a case-variant blank row is ambiguous at claim creation, inbox, and decide. Nothing is rewritten. One blank row is not a staffing grant. One managed row still is. Directory confirmation, another project, and another tenant stay.
+- Rollback snapshots now read every column of staffing, trust, invitations, audit, and outreach. A library built without the factory transaction rejects the webhook with a different error and leaves those rows in place.
+- `docs/BUILD_NOTES.md` is a page-build input. `build.py` inlines it. The code archive holds the file body. This note does not.
+- Vendor deletion stays `not-asserted`. Quarantine is not deletion. Stored duplicate titles were not deleted. A Cloudflare Durable Object runtime was not executed.
+
+### Session: 2026-11-08 / local main, privacy delete scope
+- The frozen run19 archives were not rewritten. This note is the later local-main continuation.
+- A privacy delete now requires a verified tenant UUID before it writes. A blank tenant does not match quarantined rows. The response still says deletion is incomplete and vendor deletion is not-asserted. Stories, staffing, invitations, audit, blank profiles, and other tenants stay.
+- No push, deploy, or live provider call.

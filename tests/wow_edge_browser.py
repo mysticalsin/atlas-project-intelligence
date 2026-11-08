@@ -9,7 +9,7 @@ Flow: alex publishes a reference (N+1 sam validates) -> bea creates a bid with a
 Teams row (BLOCKED_EXTERNAL) -> Ask ATLAS lights the map -> 5 won bids -> the reviewer's win panel shows the rate; a plain user sees
 no story table.
 """
-import json,os,re,socket,subprocess,sys,time,urllib.request
+import json,os,re,socket,subprocess,sys,time,urllib.parse,urllib.request
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1];EDGE=ROOT/'deploy/cloudflare-edge';ERR=[]
@@ -35,9 +35,11 @@ code=0
 try:
  with sync_playwright() as pw:
   b=pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH') or None)
-  def page(email,path='/',w=1400):
+  def page(email,path='/',w=1400,roles=None):
    c=b.new_context(viewport={'width':w,'height':1000},accept_downloads=True);p=c.new_page();p.on('pageerror',lambda e:ERR.append(email+': '+str(e)))
-   sep='&' if '?' in path else '?';h=path.split('#',1);p.goto(BASE+h[0]+sep+'as='+email+('#'+h[1] if len(h)>1 else ''));p.wait_for_timeout(800);return p
+   sep='&' if '?' in path else '?';h=path.split('#',1)
+   idp=('&idp='+urllib.parse.quote(json.dumps({'roles':roles}))) if roles else ''
+   p.goto(BASE+h[0]+sep+'as='+urllib.parse.quote(email)+idp+('#'+h[1] if len(h)>1 else ''));p.wait_for_timeout(800);return p
   alex=page('alex@mantu.com')
   feats=alex.evaluate('window.ATLAS_APP.bootInfo()').get('features') or {}
   off=[k for k in NEEDED if feats.get(k) is not True]
@@ -49,8 +51,15 @@ try:
   alex.evaluate("([n,rep])=>window.ATLAS_VOICE_BRIDGE.autoSave(window.ATLAS_VOICE_BRIDGE.context(),n,'Consultant words.',rep)",[NOTES,REP]);alex.wait_for_timeout(1200);settle()
   rid=alex.evaluate('window.ATLAS_APP.project().library?.id')
   check('reference synced to the shared library',bool(rid))
-  sam=page('sam@mantu.com');api(sam,'/'+rid+'/validate','POST',{'decision':'validate'});settle()
-  check('N+1 validated: the reference is published',api(sam,'/'+rid)['status']=='published')
+  sam=page('sam@mantu.com')
+  refused=sam.evaluate("async p=>{try{await window.ATLAS_APP.libraryApi(p,{method:'POST',body:{decision:'validate',lane:'manager'}});return 'ok'}catch(e){return e.message}}",'/'+rid+'/validate')
+  check('typed manager without a trust row is refused','not found' in refused.lower())
+  urllib.request.urlopen(urllib.request.Request(BASE+'/__trust',data=json.dumps({'owner':'alex@mantu.com','email':'sam@mantu.com','source':'directory'}).encode(),headers={'Content-Type':'application/json'},method='POST')).read()
+  held=api(sam,'/'+rid+'/validate','POST',{'decision':'validate','lane':'manager'})
+  check('manager lane alone does not publish',held.get('status')!='published')
+  pre=page('presales@example.test',roles=['ATLAS.Presales'])
+  api(pre,'/'+rid+'/validate','POST',{'decision':'validate','lane':'presales'});settle()
+  check('both approval lanes publish the reference',api(sam,'/'+rid)['status']=='published')
   # --- F1: bea creates a bid, matches, builds a one-pager
   bea=page('bea@mantu.com');bea.locator('header nav [data-view=bids]').click();bea.wait_for_timeout(600)
   bea.locator('#bidTitle').fill('Acme Prospect claims RFP 2026');bea.locator('#bidProspects').fill('Acme Prospect');bea.locator('#bidProspects').press('Enter');bea.locator('#bidBrief').fill(BRIEF)
@@ -111,7 +120,9 @@ try:
   claimable=[li for li in bea.locator('#onePager .onepager-sources li').all() if re.search(r'Consultant’s words · (Contribution|Approach|Outcome|Evidence)',li.text_content())]
   check('footnote badge flips: every cited claimable sentence reads "Confirmed by N+1"',bool(claimable) and all('Confirmed by N+1' in li.text_content() for li in claimable))
   # --- F4: outreach approvals (reviewer)
-  rv=page('reviewer@mantu.com');rv.locator('header [data-view=library]').click();rv.wait_for_timeout(700);rv.locator('#openInsights').click();rv.wait_for_timeout(1500)
+  nobody=page('person@example.test');nobody.locator('header [data-view=library]').click();nobody.wait_for_timeout(400);nobody.locator('#openInsights').click();nobody.wait_for_timeout(800)
+  check('a mailbox without ATLAS.Reviewer does not see the outreach queue',not nobody.locator('#outreachQueue').is_visible())
+  rv=page('reviewer@mantu.com',roles=['ATLAS.Reviewer']);rv.locator('header [data-view=library]').click();rv.wait_for_timeout(700);rv.locator('#openInsights').click();rv.wait_for_timeout(1500)
   q=rv.locator('#outreachQueue')
   check('reviewer sees queued outreach rows, Teams BLOCKED_EXTERNAL',q.is_visible() and q.locator('[data-outreach-approve]').count()>=2 and 'Teams: BLOCKED_EXTERNAL' in q.inner_text())
   # The proof and confirmation requests above are answered by now, so approving their rows dismisses them. A staffing import

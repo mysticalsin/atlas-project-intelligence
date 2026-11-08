@@ -20,8 +20,15 @@
     "TTS_VOICE": "harmonia",
     "TALKER_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
     "ANALYST_MODEL": "@cf/openai/gpt-oss-120b",
-    "ADMIN_EMAILS": "tony.walteur@gmail.com",
     "REVIEWER_EMAILS": "",
+    // ATLAS_ADMIN_ROLES, ATLAS_ADMIN_SUBJECTS, ATLAS_PRESALES_ROLES and ATLAS_REVIEWER_ROLES are intentionally
+    // absent. A missing value grants nobody. Set them on the approved deployment before anyone is elevated.
+    // ATLAS_TENANT_ISOLATION is absent, so tenant checks fail closed. Do not set local-synthetic or ATLAS_DEV_IDENTITY here.
+    // ATLAS_SYSTEM_TENANT is intentionally absent. Do not put a tenant id, a grant, or a secret in this file.
+    // IDENTITY_SOURCE=entra is set on the deployment, not here. When isolation is on and this value is missing:
+    // POST /api/triggers, POST /api/directory/push, and POST /api/teams/messages return HTTP 503.
+    // The daily cron in app.js scheduled() returns without calling the library. It has no HTTP response, so it does not return 503.
+    // None of these paths take a tenant from the request.
     "READY_SCORE": "75",
     "EMBED_MODEL": "@cf/baai/bge-m3",
     "STT_LANGUAGE": "multi",

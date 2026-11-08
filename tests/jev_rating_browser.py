@@ -203,7 +203,10 @@ try:
   check('6 new revision, instant (saved rating)','REVISION 2' in o.locator('#recordEyebrow').inner_text() and 'Rated by JEV · instant (saved rating)' in body(o))
   close(o)
 
-  # 7. the N+1 sees the JEV gauge and is never asked (it is not their story)
+  # 7. the trusted manager sees the JEV gauge and is never asked. A typed address is not that binding.
+  stranger=page('person@example.test');denied=rec(stranger,rid)
+  check('a mailbox that is not the trusted manager cannot read the story',denied.get('error')=='Reference not found.' or denied.get('access')!='full')
+  urllib.request.urlopen(urllib.request.Request(A+'/__trust',data=json.dumps({'owner':'alex@mantu.com','email':'sam@mantu.com','source':'directory'}).encode(),headers={'Content-Type':'application/json'},method='POST')).read()
   n=page('sam@mantu.com');r7=rec(n,rid);open_record(n,rid);t=body(n)
   check('7 N+1: no consent row, JEV gauge visible',n.locator('.jev-consent').count()==0 and 'Rated by JEV' in t and (r7.get('access')!='full' or n.locator('#recordBody .ag-dim').count()==7))
 

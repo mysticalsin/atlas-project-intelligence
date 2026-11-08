@@ -4,7 +4,6 @@ import page from './atlas.html';
 import { handle, scheduled, workersAI } from './app.js';
 import { jevRanker } from './jev.js';
 import { Session } from './session.js';
-import { Library } from './library.js';
 import { storyRater } from './rating.js';
 import { libraryRoutes } from './library-routes.js';
 import { hindsight, recallQuery, memoryNote, jevRelevant } from './memory.js';
@@ -12,6 +11,7 @@ import { memoryRoutes } from './memory-routes.js';
 import { resolveForInterview } from './gaps.js';
 import { fetchWinHint } from './winloop.js';
 import { teamsClient } from './teams.js';
+import { libraryFromStorage } from './library-store.js';
 
 export default {
   fetch: (request, env, ctx) => handle(request, env, page, { waitUntil: p => ctx.waitUntil(p) }),
@@ -41,7 +41,7 @@ export class Interview extends DurableObject {
       await this.session.fail('This interview continued in another window. Nothing was approved.', 'voice-contract');
     }
     // The verified identity the Worker forwarded (always overwritten there), for gap requests and the win hint.
-    const identity = { user: request.headers.get('x-atlas-user') || '', role: request.headers.get('x-atlas-role') || 'user', mail: request.headers.get('x-atlas-email') || '' };
+    const identity = { user: request.headers.get('x-atlas-user') || '', role: request.headers.get('x-atlas-role') || 'user', mail: request.headers.get('x-atlas-email') || '', tenant: request.headers.get('x-atlas-tenant') || '', tenantEnforced: request.headers.get('x-atlas-tenant-enforced') === '1' };
     const session = new Session({
       io: { send: e => { try { server.send(JSON.stringify(e)); } catch { /* closed */ } }, sendBytes: b => { try { server.send(b); } catch { /* closed */ } },
         close: () => { try { server.close(1000, 'ended'); } catch { /* closed */ } } },
@@ -69,7 +69,7 @@ export class LibraryStore extends DurableObject {
     super(ctx, env);
     this.env = env;
     const ai = workersAI(env);
-    this.lib = new Library(ctx.storage.sql, { complete: messages => ai.complete(messages), embed: text => ai.embed(text),
+    this.lib = libraryFromStorage(ctx.storage, { complete: messages => ai.complete(messages), embed: text => ai.embed(text),
       readyScore: Number(env.READY_SCORE) || undefined, model: env.ANALYST_MODEL, services: { teams: teamsClient(env) }, rater: storyRater(env) }); // JEV only with TYPESAFE_API_KEY
   }
   fetch(request) { return libraryRoutes(request, this.lib, { waitUntil: p => this.ctx.waitUntil(p), env: this.env }); }

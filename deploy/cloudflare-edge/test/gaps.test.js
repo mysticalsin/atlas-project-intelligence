@@ -63,7 +63,7 @@ test('create, assign and permissions: bid owner or admin create; assignee, creat
   for (const who of [KIM, SAM, { email: 'alex@mantu.com', mail: '', role: 'user' }]) assert.equal((await call(lib, 'GET', 'gaps/' + g.id, who)).status, 404, who.email);
   assert.deepEqual((await call(lib, 'GET', 'gaps', ALEX)).body.assigned.map(x => x.id), [g.id]);
   assert.deepEqual((await call(lib, 'GET', 'gaps', OWNER)).body.created.map(x => x.id), [g.id]);
-  assert.deepEqual((await call(lib, 'GET', 'gaps', KIM)).body, { assigned: [], created: [] });
+  assert.deepEqual((await call(lib, 'GET', 'gaps', KIM)).body, { assigned: [], created: [], assignedPage: { truncated: false, limit: 100, next: null }, createdPage: { truncated: false, limit: 100, next: null } });
   assert.equal((await call(lib, 'GET', 'gaps/' + 'f'.repeat(32), ADMIN)).status, 404);
   assert.equal((await call(lib, 'GET', 'gaps/not-an-id', ADMIN)).status, 404);
   assert.equal((await call(lib, 'PUT', 'gaps/' + g.id, ADMIN)).status, 404);
@@ -235,7 +235,7 @@ function fakeEnv(lib, seen, respond = null) {
     get: id => ({ fetch: async req => {
       seen.push([id, req.method, req.url, Object.fromEntries(req.headers)]);
       if (respond) return respond(req);
-      const user = { email: req.headers.get('x-atlas-user') || '', mail: (req.headers.get('x-atlas-email') || '').toLowerCase(), role: req.headers.get('x-atlas-role') || 'user' };
+      const user = { email: req.headers.get('x-atlas-user') || '', mail: (req.headers.get('x-atlas-email') || '').toLowerCase(), role: req.headers.get('x-atlas-role') || 'user', tenant: req.headers.get('x-atlas-tenant') || '', tenantEnforced: req.headers.get('x-atlas-tenant-enforced') === '1' };
       const r = await call(lib, req.method, new URL(req.url).pathname.replace('/api/library/', ''), user);
       return new Response(JSON.stringify(r.body), { status: r.status });
     } }) } };
@@ -247,7 +247,7 @@ test('resolveForInterview: the verified identity only; spoofed or foreign identi
   assert.deepEqual(got, (await call(lib, 'GET', `gaps/${g.id}/interview`, ALEX)).body);
   assert.doesNotMatch(JSON.stringify(got), NAMES);
   assert.deepEqual(seen, [['idFromName', 'global'], ['do:global', 'GET', `https://atlas.internal/api/library/gaps/${g.id}/interview`,
-    { 'x-atlas-email': 'alex@mantu.com', 'x-atlas-role': 'user', 'x-atlas-user': 'alex@mantu.com' }]]);
+    { 'x-atlas-email': 'alex@mantu.com', 'x-atlas-role': 'user', 'x-atlas-tenant': '', 'x-atlas-tenant-enforced': '0', 'x-atlas-user': 'alex@mantu.com' }]]);
   assert.ok(await gaps.resolveForInterview(fakeEnv(lib, []), { user: 'alex@mantu.com', role: 'user', mail: 'ALEX@mantu.com' }, g.id), 'the email is compared lower-cased');
   for (const identity of [{ user: 'alex@mantu.com', role: 'admin', mail: 'kim@mantu.com' }, { user: 'olivia@mantu.com', role: 'user', mail: 'olivia@mantu.com' },
     { user: 'alex@mantu.com', role: 'user', mail: '' }, { user: 'tony@mantu.com', role: 'admin', mail: 'tony@mantu.com' }])
@@ -291,14 +291,15 @@ test('expire: open requests older than 30 days, with its own ensure, on a fresh 
   const l = new Library(legacy, { now: () => clock });
   assert.equal(gaps.expire(l, l.now()), 0);
   if (gaps.READY) assert.equal(legacy.exec("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'gap_requests'").toArray()[0].n, 1, 'expire ran its own ensure');
-  assert.equal(legacy.exec('PRAGMA table_info(refs)').toArray().length, 21, 'no ALTER');
+  const refCols = legacy.exec('PRAGMA table_info(refs)').toArray().map(c => c.name);
+  assert.deepEqual([refCols.length, refCols.at(-1)], [22, 'tenant'], 'the only refs change is the stored tenant column, left blank');
 });
 
 test('Access mode only: with IDENTITY_SOURCE=entra the word answers 404 through the registry', async () => {
   const { lib } = await setup();
   const ctx = env => ({ url: new URL('https://atlas.test/api/library/gaps'), method: 'GET', parts: ['gaps'], body: {}, user: ALEX, lib, env, waitUntil: p => p });
   for (const ready of [ON, features.readyOf]) assert.deepEqual(await features.featureRoutes(ctx({ IDENTITY_SOURCE: 'entra' }), ready), { status: 404, body: { error: 'This feature is not available in this deployment.' } });
-  assert.deepEqual((await features.featureRoutes(ctx({}), ON)).body, { assigned: [], created: [] });
+  assert.deepEqual((await features.featureRoutes(ctx({}), ON)).body, { assigned: [], created: [], assignedPage: { truncated: false, limit: 100, next: null }, createdPage: { truncated: false, limit: 100, next: null } });
   assert.equal(features.flags({ IDENTITY_SOURCE: 'entra' }, ON).gapInterview, false);
 });
 
@@ -325,7 +326,7 @@ test('end to end, the new model input: a gap interview talker never sees a prosp
     await s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 't', project: { title: 'Proof for [company]-style renewal' }, capture: true, gap: g.id }));
     for (let i = 0; i < 2000 && !talker.length; i++) await new Promise(r => setImmediate(r));
     assert.equal(events[0].type, 'ready'); assert.equal(events[0].gaps.length, 2);
-    assert.ok(talker[0][0].content.includes('Proof the bid needs: Claims routing for [company], like [company]'));
+    assert.ok(JSON.stringify(talker[0]).includes('Proof the bid needs: Claims routing for [company], like [company]'));
     assert.doesNotMatch(JSON.stringify(talker) + JSON.stringify(events), NAMES);
   } finally { await s.end(false); }
 });

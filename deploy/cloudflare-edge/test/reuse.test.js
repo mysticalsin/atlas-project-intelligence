@@ -10,7 +10,7 @@ const base = (title, industry, challenge, extra = {}) => ({ title, stage: 'Produ
   details: { projectId: extra.pid || '', country: extra.country || 'France', start: '2024-01', duration: '6 months', teamSize: 4, teamRoles: ['Engineer'], technologies: extra.tech || ['Python'], deliverables: ['Model'], serviceLines: ['Data & AI'], consultants: extra.people || [], links: [] },
   answers: [challenge, 'I led the design and delivery of the solution with the client team myself.', 'We compared options, chose a model-based approach and kept a manual fallback.', 'Processing time fell from 40 to 12 minutes according to the operations dashboard.', 'Operations dashboard export v3.', 'Any organisation with manual, slow operational routing would benefit from this approach.'],
   validation: { manager: { name: 'Sam', email: 'sam@mantu.com' }, managerStaff: false }, jev: extra.jev || { primary: { key: 'data_ai', label: 'Data & AI' }, also: [], impact: 70 } });
-async function published(l, owner, ref, localId) { const s = await l.upsert(owner, { localId, reference: ref }); await l.review({ email: 'atlas', role: 'admin' }, s.id); l.validate(N1, s.id, { decision: 'validate' }); return s.id; }
+async function published(l, owner, ref, localId) { const s = await l.upsert(owner, { localId, reference: ref }); await l.review({ email: 'atlas', role: 'admin' }, s.id); const row = l.row(s.id); l.setState(row, { ...row.state, validation: { ...(row.state.validation || {}), status: 'validated', managerDecision: 'approved', presalesDecision: 'approved' } }, 'test', 'validated', ''); return s.id; }
 function lib() { const m = fakeModel(); return new Library(memorySql(), { complete: m.complete, embed: m.embed }); }
 
 test('recommendation: understands the context, ranks by meaning, explains, never leaks client names or drafts to others', async () => {
@@ -34,7 +34,8 @@ test('duplicates are detected (same project id or near-identical story) and a re
   const jo = U('jo@mantu.com');
   const two = await l.upsert(jo, { localId: '2', reference: { ...base('Claims routing', 'Insurance', 'Claims bounced between teams and payouts were slow.', { pid: 'prj-7', tech: ['Azure ML'] }), consultant: { name: 'Jo', role: 'Data scientist' }, answers: ['Claims bounced between teams and payouts were slow.', 'I built and trained the routing model and coached the operations team.', '', '', '', ''] } });
   await l.review({ email: 'atlas', role: 'admin' }, two.id);
-  const dups = l.get(OWNER, one.id).state.duplicates;
+  assert.deepEqual(l.get(OWNER, one.id).state.duplicates, [], 'the owner does not receive a story they cannot open');
+  const dups = l.get(REV, one.id).state.duplicates;
   assert.equal(dups[0].id, two.id); assert.equal(dups[0].sameProjectId, true);
   await assert.rejects(l.merge(OWNER, { keep: one.id, merge: two.id }), /reviewer/);
   const merged = await l.merge(REV, { keep: one.id, merge: two.id });
@@ -95,14 +96,15 @@ test('invitations: lifecycle triggers, six-month scan, schedule/dismiss, no dupl
   assert.throws(() => l.invite('x', { email: 'bad' }), /email/);
 });
 
-test('Spotlight contract: reviewers export/import; import is idempotent and rejects bad rows', async () => {
-  const l = lib();
+test('Spotlight contract: verified admins export/import; import is idempotent and rejects bad rows', async () => {
+  const l = lib(), ADM = { email: 'admin@example.test', role: 'admin' };
   await l.upsert(OWNER, { localId: 'a', reference: base('A', 'Energy', 'Energy company with fragmented grid data and slow decisions in control rooms.') });
-  assert.throws(() => l.exportAll(OWNER), /reviewers/);
-  const ex = l.exportAll(REV); assert.equal(ex.schema, 'atlas.reference.v1'); assert.equal(ex.references.length, 1);
-  const imp = await l.importAll(REV, { references: [{ externalId: 'sp-1', reference: base('Spotlight ref', 'Telecom', 'Operator needed faster 5G site rollout planning across regions.') }, { externalId: 'sp-2', reference: { title: '' } }] });
+  assert.throws(() => l.exportAll(OWNER), /verified admin/);
+  assert.throws(() => l.exportAll(REV), /verified admin/);
+  const ex = l.exportAll(ADM); assert.equal(ex.schema, 'atlas.reference.v1'); assert.equal(ex.references.length, 1);
+  const imp = await l.importAll(ADM, { references: [{ externalId: 'sp-1', reference: base('Spotlight ref', 'Telecom', 'Operator needed faster 5G site rollout planning across regions.') }, { externalId: 'sp-2', reference: { title: '' } }] });
   assert.deepEqual([imp.created, imp.rejected.length], [1, 1]);
-  assert.equal((await l.importAll(REV, { references: [{ externalId: 'sp-1', reference: base('Spotlight ref', 'Telecom', 'Operator needed faster 5G site rollout planning across regions.') }] })).unchanged, 1);
+  assert.equal((await l.importAll(ADM, { references: [{ externalId: 'sp-1', reference: base('Spotlight ref', 'Telecom', 'Operator needed faster 5G site rollout planning across regions.') }] })).unchanged, 1);
 });
 
 test('reuse parsers are bounded and strict', () => {

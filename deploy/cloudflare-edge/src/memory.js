@@ -3,6 +3,7 @@
 // project (upserted, so nothing piles up); before an interview the relevant memories are recalled for the talker.
 // Memory is self-reported continuity, never evidence. Confidential client details are scrubbed before retention.
 // API contract checked against @vectorize-io/hindsight-client 0.10.1: /v1/default/banks/{bank_id}/..., Bearer key.
+import { TENANT_ID, tenantEnforced } from './authz.js';
 
 // Hindsight Cloud (docs.hindsight.vectorize.io/api-integration). HINDSIGHT_URL overrides it for a self-hosted server.
 export const HINDSIGHT_CLOUD = 'https://api.hindsight.vectorize.io';
@@ -14,9 +15,18 @@ async function hmacHex(secret, value) {
   const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   return [...new Uint8Array(await crypto.subtle.sign('HMAC', key, enc.encode(value)))].map(b => b.toString(16).padStart(2, '0')).join('');
 }
-// Bank id from the verified subject only. HINDSIGHT_BANK_SECRET if set, else a labelled derivation of CSRF_SECRET.
-export async function bankId(env, sub) {
+// Unenforced sandbox: subject-only bank, the historical key. Enforced: tenant plus subject.
+// A missing tenant does not fall back to the subject-only bank. That bank is not read and is not deleted.
+// HINDSIGHT_BANK_SECRET if set, else a labelled derivation of CSRF_SECRET.
+export async function bankId(env, sub, tenant = '') {
   const secret = env.HINDSIGHT_BANK_SECRET || ('atlas-hindsight:' + env.CSRF_SECRET);
+  const tid = String(tenant || '').trim().toLowerCase();
+  if (tenantEnforced(env)) {
+    if (!TENANT_ID.test(tid)) {
+      throw Object.assign(new Error('A verified tenant is required before a memory bank is derived.'), { status: 403 });
+    }
+    return 'atlas-' + (await hmacHex(secret, `hindsight-bank:${tid}:${sub}`)).slice(0, 40);
+  }
   return 'atlas-' + (await hmacHex(secret, 'hindsight-bank:' + sub)).slice(0, 40);
 }
 
@@ -54,9 +64,16 @@ export function recallQuery(project) {
     : 'This consultant\'s previous projects, what they already told ATLAS, and how they like to be interviewed.';
 }
 
+export function memoryConfigured(env = {}) {
+  if (env.HINDSIGHT_OPT_IN !== '1' || !env.HINDSIGHT_API_KEY) return false;
+  const base = String(env.HINDSIGHT_URL || '').replace(/\/+$/, '');
+  if (!base) return false;
+  if (/hindsight\.vectorize\.io/i.test(base) && env.HINDSIGHT_ALLOW_CLOUD !== '1') return false;
+  return true;
+}
 export function hindsight(env, fetcher = fetch) {
-  const base = String(env.HINDSIGHT_URL || HINDSIGHT_CLOUD).replace(/\/+$/, ''), key = env.HINDSIGHT_API_KEY || '';
-  if (!base || !key) return null;
+  if (!memoryConfigured(env)) return null;
+  const base = String(env.HINDSIGHT_URL).replace(/\/+$/, ''), key = env.HINDSIGHT_API_KEY || '';
   const call = async (method, path, body, timeoutMs = 8000) => {
     const r = await fetcher(base + path, { method, redirect: 'manual', signal: AbortSignal.timeout(timeoutMs),
       headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });

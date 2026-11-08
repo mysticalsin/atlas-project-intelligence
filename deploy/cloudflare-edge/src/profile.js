@@ -5,6 +5,7 @@
 // x-atlas-idp). Every DNA or HR path is gated by DATA_MODE=production (§0.7): the test deployment accepts synthetic
 // addresses only. The pull connector's shape is ASSUMED (§5.3); push (§5.4) and the CSV export (§5.6) are equal options.
 import { str, email as validEmail, obj, fail, inList, rateLimit } from './util.js';
+import { TENANT_ID } from './authz.js';
 
 // Flipped by the owning track only when the zero-config acceptance suites pass (WOW_SPEC §2.1, §2.5): flipped in Z-S2
 // after tests/zero_config_edge_browser.py and tests/zero_config_browser.py passed locally.
@@ -18,19 +19,89 @@ const LABEL = { name: 'name', preferredName: 'first name shown on screen', title
 const ROW_KEYS = ['email', 'name', 'givenName', 'familyName', 'title', 'managerName', 'managerEmail'];
 const SYNTHETIC = 'this test deployment accepts synthetic addresses only';
 
-const SCHEMA = [
-  `CREATE TABLE IF NOT EXISTS profiles (subject TEXT PRIMARY KEY, email TEXT, edits TEXT, signin TEXT, consents TEXT,
-    created_at TEXT, updated_at TEXT, seen_at TEXT)`,
-  `CREATE TABLE IF NOT EXISTS directory (key TEXT, source TEXT, name TEXT, given_name TEXT, title TEXT, manager_name TEXT,
-    manager_email TEXT, batch TEXT, fetched_at TEXT, PRIMARY KEY (key, source))`,
-  `CREATE TABLE IF NOT EXISTS directory_imports (batch TEXT PRIMARY KEY, source TEXT, by TEXT, started_at TEXT, finished_at TEXT,
-    rows INTEGER, rejected INTEGER, state TEXT)`,
-];
+const PROFILE_V2 = `CREATE TABLE profiles_v2 (
+    subject TEXT NOT NULL, tenant TEXT NOT NULL DEFAULT '', email TEXT, edits TEXT, signin TEXT, consents TEXT,
+    created_at TEXT, updated_at TEXT, seen_at TEXT, PRIMARY KEY (subject, tenant))`;
+const DIRECTORY_V2 = `CREATE TABLE directory_v2 (
+    key TEXT NOT NULL, source TEXT NOT NULL, name TEXT, given_name TEXT, title TEXT, manager_name TEXT,
+    manager_email TEXT, batch TEXT, fetched_at TEXT, tenant TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (key, source, tenant))`;
+const IMPORTS_V2 = `CREATE TABLE directory_imports_v2 (
+    batch TEXT NOT NULL, tenant TEXT NOT NULL DEFAULT '', source TEXT, by TEXT, started_at TEXT, finished_at TEXT,
+    rows INTEGER, rejected INTEGER, state TEXT, PRIMARY KEY (batch, tenant))`;
+const SCHEMA = [];
 // spokenAsk: spoken Ask (WOW_SPEC); jevRating: story rating by TypeSafe JEV for the owner's stories (docs/JEV_RATING.md §8).
 const CONSENT_KINDS = ['spokenAsk', 'jevRating'];
 const ensured = new WeakSet();
+function tenantKey(user = {}) { return String(user.tenant || '').trim().toLowerCase(); }
+function demandTenant(user) {
+  if (user?.tenantEnforced === true && !TENANT_ID.test(tenantKey(user))) throw fail(403, 'A verified tenant is required.');
+}
+// Rebuild a subject-only profiles table. Blank ownership stays blank. No tenant is invented.
+function migrateProfiles(lib) {
+  const exists = lib.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'profiles'")[0];
+  if (!exists) {
+    lib.sql.exec(PROFILE_V2.replace('profiles_v2', 'profiles'));
+    return;
+  }
+  const pk = lib.rows("SELECT name FROM pragma_table_info('profiles') WHERE pk > 0 ORDER BY pk").map(r => r.name);
+  if (pk.length === 2 && pk[0] === 'subject' && pk[1] === 'tenant') return;
+  const cols = lib.rows("SELECT name FROM pragma_table_info('profiles')").map(r => r.name);
+  lib.sql.exec(PROFILE_V2);
+  if (cols.includes('tenant')) {
+    lib.sql.exec(`INSERT INTO profiles_v2 (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+      SELECT subject, COALESCE(tenant, ''), email, edits, signin, consents, created_at, updated_at, seen_at FROM profiles`);
+  } else {
+    lib.sql.exec(`INSERT INTO profiles_v2 (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+      SELECT subject, '', email, edits, signin, consents, created_at, updated_at, seen_at FROM profiles`);
+  }
+  lib.sql.exec('DROP TABLE profiles');
+  lib.sql.exec('ALTER TABLE profiles_v2 RENAME TO profiles');
+}
+export function deleteOwnedProfile(lib, user) {
+  ensure(lib);
+  demandTenant(user);
+  const tenant = tenantKey(user);
+  const had = lib.rows('SELECT COUNT(*) AS n FROM profiles WHERE subject = ? AND tenant = ?', user.email, tenant)[0].n;
+  if (had) lib.sql.exec('DELETE FROM profiles WHERE subject = ? AND tenant = ?', user.email, tenant);
+  return had;
+}
+export function quarantineReport(lib) {
+  ensure(lib);
+  const blank = lib.rows("SELECT COUNT(*) AS n FROM profiles WHERE tenant = ''")[0].n;
+  return { blankProfiles: blank, action: 'none', note: 'Blank ownership stays blank until a reviewed operator migration. This report does not write a tenant.' };
+}
+function pkOf(lib, table) {
+  return lib.rows(`SELECT name FROM pragma_table_info('${table}') WHERE pk > 0 ORDER BY pk`).map(r => r.name);
+}
+function migrateDirectory(lib) {
+  const dir = lib.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'directory'")[0];
+  if (!dir) lib.sql.exec(DIRECTORY_V2.replace('directory_v2', 'directory'));
+  else if (pkOf(lib, 'directory').join(',') !== 'key,source,tenant') {
+    const cols = lib.rows("SELECT name FROM pragma_table_info('directory')").map(r => r.name);
+    lib.sql.exec(DIRECTORY_V2);
+    const tenantSql = cols.includes('tenant') ? "COALESCE(tenant, '')" : "''";
+    lib.sql.exec(`INSERT INTO directory_v2 (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at, tenant)
+      SELECT key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at, ${tenantSql} FROM directory`);
+    lib.sql.exec('DROP TABLE directory');
+    lib.sql.exec('ALTER TABLE directory_v2 RENAME TO directory');
+  }
+  const imp = lib.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'directory_imports'")[0];
+  if (!imp) lib.sql.exec(IMPORTS_V2.replace('directory_imports_v2', 'directory_imports'));
+  else if (pkOf(lib, 'directory_imports').join(',') !== 'batch,tenant') {
+    const cols = lib.rows("SELECT name FROM pragma_table_info('directory_imports')").map(r => r.name);
+    lib.sql.exec(IMPORTS_V2);
+    const tenantSql = cols.includes('tenant') ? "COALESCE(tenant, '')" : "''";
+    lib.sql.exec(`INSERT INTO directory_imports_v2 (batch, tenant, source, by, started_at, finished_at, rows, rejected, state)
+      SELECT batch, ${tenantSql}, source, by, started_at, finished_at, rows, rejected, state FROM directory_imports`);
+    lib.sql.exec('DROP TABLE directory_imports');
+    lib.sql.exec('ALTER TABLE directory_imports_v2 RENAME TO directory_imports');
+  }
+}
 export function ensure(lib) {
   if (ensured.has(lib)) return;
+  migrateProfiles(lib);
+  migrateDirectory(lib);
   for (const q of SCHEMA) lib.sql.exec(q);
   ensured.add(lib);
 }
@@ -134,21 +205,21 @@ export function dnaConfig(env = {}) {
 // ---- Stored directory rows (dna, dna_export). Readers never call DNA and never read profiles (§5.8). ----
 const pullState = new WeakMap(); // per LibraryStore instance: { lastOkAt, lastError } for the admin view
 const rowValues = r => r ? { name: r.name || '', preferredName: r.given_name || '', title: r.title || '', managerName: r.manager_name || '', managerEmail: r.manager_email || '', at: r.fetched_at || '' } : null;
-function storedRows(lib, keys) {
+function storedRows(lib, keys, tenant = '') {
   const k = keys.filter(Boolean);
-  return k.length ? lib.rows(`SELECT * FROM directory WHERE source IN ('dna', 'dna_export') AND key IN (${k.map(() => '?').join(', ')})`, ...k) : [];
+  return k.length ? lib.rows(`SELECT * FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND source IN ('dna', 'dna_export') AND key IN (${k.map(() => '?').join(', ')})`, String(tenant || '').toLowerCase(), ...k) : [];
 }
 const firstOf = (rows, test) => ['dna', 'dna_export'].map(s => rows.find(r => r.source === s && test(r))).find(Boolean) || null;
 
-export function lookupPerson(lib, address) {
+export function lookupPerson(lib, address, tenant = '') {
   ensure(lib);
-  const e = validEmail(address), r = e ? firstOf(storedRows(lib, [e]), x => x.name || x.title) : null;
+  const e = validEmail(address), r = e ? firstOf(storedRows(lib, [e], tenant), x => x.name || x.title) : null;
   return r ? { email: e, name: r.name || '', title: r.title || '', from: r.source } : null;
 }
 // The F3 confirmer's directory source: the owner's N+1 from a stored dna or dna_export row, never the owner's edits.
-export function directoryManager(lib, address) {
+export function directoryManager(lib, address, tenant = '') {
   ensure(lib);
-  const e = validEmail(address), r = e ? firstOf(storedRows(lib, [e]), x => x.manager_email) : null;
+  const e = validEmail(address), r = e ? firstOf(storedRows(lib, [e], tenant), x => x.manager_email) : null;
   return r ? { email: r.manager_email, name: r.manager_name || '', from: r.source } : null;
 }
 
@@ -170,11 +241,12 @@ async function boundedText(res, max) {
   return new TextDecoder().decode(out);
 }
 const oidOf = subject => { const m = /^[0-9a-f-]{36}:([0-9a-f-]{36})$/.exec(String(subject || '')); return m ? m[1] : ''; };
-async function pull(lib, env, cfg, key, { fetcher, now, timeoutMs }) {
+async function pull(lib, env, cfg, key, { fetcher, now, timeoutMs, tenant = '' }) {
   const t0 = Date.now(), ac = new AbortController(), last = pullState.get(lib) || {};
   let status = 0, timer;
-  const store = (row, outcome) => { if (ac.signal.aborted) throw new Error('timeout'); lib.sql.exec(`INSERT OR REPLACE INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at)
-    VALUES (?, 'dna', ?, ?, ?, ?, ?, 'pull', ?)`, key, row.name, row.given_name, row.title, row.manager_name, row.manager_email, now); return outcome; };
+  const scope = String(tenant || '').toLowerCase();
+  const store = (row, outcome) => { if (ac.signal.aborted) throw new Error('timeout'); lib.sql.exec(`INSERT OR REPLACE INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at, tenant)
+    VALUES (?, 'dna', ?, ?, ?, ?, ?, 'pull', ?, ?)`, key, row.name, row.given_name, row.title, row.manager_name, row.manager_email, now, scope); return outcome; };
   try {
     const value = key.startsWith('oid:') ? key.slice(4) : key, url = cfg.template.replace('{' + cfg.placeholder + '}', encodeURIComponent(value));
     const work = (async () => {
@@ -204,8 +276,8 @@ async function pull(lib, env, cfg, key, { fetcher, now, timeoutMs }) {
   }
 }
 async function dnaSource(lib, env, user, { fetcher, now, waitUntil, timeoutMs }) {
-  const mail = validEmail(user.mail), oid = oidOf(user.email), cfg = dnaConfig(env);
-  const read = key => lib.rows("SELECT * FROM directory WHERE source = 'dna' AND key = ?", key)[0] || null;
+  const mail = validEmail(user.mail), oid = oidOf(user.email), cfg = dnaConfig(env), tenant = tenantKey(user);
+  const read = key => lib.rows("SELECT * FROM directory WHERE source = 'dna' AND key = ? AND lower(COALESCE(tenant, '')) = ?", key, tenant)[0] || null;
   if (cfg.status !== 'on') {
     const r = firstOf([read(oid ? 'oid:' + oid : ''), read(mail)].filter(Boolean), x => x.name || x.title || x.manager_email);
     return { values: rowValues(r), state: r ? 'ok' : pushConfig(env).status === 'on' ? 'not_found' : 'off' };
@@ -215,37 +287,40 @@ async function dnaSource(lib, env, user, { fetcher, now, waitUntil, timeoutMs })
   const cached = read(key), filled = r => r && (r.name || r.title || r.manager_email);
   if (cached && Date.parse(now) - Date.parse(cached.fetched_at) < DAY) return { values: filled(cached) ? rowValues(cached) : null, state: filled(cached) ? 'ok' : 'not_found' };
   if (cached) { // stale: serve it, refresh in the background
-    waitUntil(pull(lib, env, cfg, key, { fetcher, now, timeoutMs }).catch(() => {}));
+    waitUntil(pull(lib, env, cfg, key, { fetcher, now, timeoutMs, tenant }).catch(() => {}));
     return { values: filled(cached) ? rowValues(cached) : null, state: filled(cached) ? 'ok' : 'not_found' };
   }
-  const state = await pull(lib, env, cfg, key, { fetcher, now, timeoutMs }), fresh = read(key);
+  const state = await pull(lib, env, cfg, key, { fetcher, now, timeoutMs, tenant }), fresh = read(key);
   return { values: state === 'ok' && filled(fresh) ? rowValues(fresh) : null, state: state === 'ok' && !filled(fresh) ? 'not_found' : state };
 }
 
 // ---- The profile row and the merge (§5.2). ----
 function touch(lib, user, idp, now) {
   const mail = validEmail(user.mail), claims = nameClaims(idp), signin = claims.name || claims.given_name ? { name: claims.name || '', givenName: str(claims.given_name, 40) } : {};
-  const row = lib.rows('SELECT * FROM profiles WHERE subject = ?', user.email)[0];
+  demandTenant(user);
+  const tenant = tenantKey(user);
+  const row = lib.rows('SELECT * FROM profiles WHERE subject = ? AND tenant = ?', user.email, tenant)[0];
   if (!row) {
-    lib.sql.exec('INSERT INTO profiles (subject, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      user.email, mail, '{}', JSON.stringify(signin.name || signin.givenName ? { ...signin, at: now } : {}), '{}', now, now, now);
-    return lib.rows('SELECT * FROM profiles WHERE subject = ?', user.email)[0];
+    lib.sql.exec('INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      user.email, tenant, mail, '{}', JSON.stringify(signin.name || signin.givenName ? { ...signin, at: now } : {}), '{}', now, now, now);
+    return lib.rows('SELECT * FROM profiles WHERE subject = ? AND tenant = ?', user.email, tenant)[0];
   }
   const old = json(row.signin), same = (old.name || '') === (signin.name || '') && (old.givenName || '') === (signin.givenName || '');
   const seen = String(row.seen_at || '').slice(0, 10) !== now.slice(0, 10);
   if (!same || seen || row.email !== mail) {
-    lib.sql.exec('UPDATE profiles SET email = ?, signin = ?, seen_at = ? WHERE subject = ?', mail, same ? row.signin : JSON.stringify(signin.name || signin.givenName ? { ...signin, at: now } : {}),
-      seen ? now : row.seen_at, user.email);
-    return lib.rows('SELECT * FROM profiles WHERE subject = ?', user.email)[0];
+    lib.sql.exec('UPDATE profiles SET email = ?, signin = ?, seen_at = ? WHERE subject = ? AND tenant = ?', mail, same ? row.signin : JSON.stringify(signin.name || signin.givenName ? { ...signin, at: now } : {}),
+      seen ? now : row.seen_at, user.email, tenant);
+    return lib.rows('SELECT * FROM profiles WHERE subject = ? AND tenant = ?', user.email, tenant)[0];
   }
   return row;
 }
 async function gather(lib, env, user, idp, { fetcher = fetch, now = lib.now(), waitUntil = p => p, timeoutMs = DNA_TIMEOUT_MS } = {}) {
+  demandTenant(user);
   ensure(lib);
   const row = touch(lib, user, idp, now), mail = validEmail(user.mail), signin = json(row.signin), guess = emailGuess(mail);
   const dna = await dnaSource(lib, env, user, { fetcher, now, waitUntil, timeoutMs });
-  const exportRow = firstOf(storedRows(lib, [mail]).filter(r => r.source === 'dna_export'), x => x.name || x.title || x.manager_email);
-  const anyExport = lib.rows("SELECT COUNT(*) AS n FROM directory WHERE source = 'dna_export'")[0].n > 0;
+  const exportRow = firstOf(storedRows(lib, [mail], row.tenant).filter(r => r.source === 'dna_export'), x => x.name || x.title || x.manager_email);
+  const anyExport = lib.rows("SELECT COUNT(*) AS n FROM directory WHERE source = 'dna_export' AND lower(COALESCE(tenant, '')) = ?", row.tenant)[0].n > 0;
   const sources = [
     ['dna', dna.values, dna.state],
     ['dna_export', rowValues(exportRow), exportRow ? 'ok' : anyExport ? 'not_found' : 'off'],
@@ -276,7 +351,7 @@ function build(g) {
 export async function resolveProfile(lib, env, user, idp = {}, opts = {}) { return build(await gather(lib, env, user, idp, opts)); }
 
 function save(lib, g, patch, actor, action, detail) {
-  lib.sql.exec('UPDATE profiles SET edits = ?, consents = ?, updated_at = ? WHERE subject = ?', JSON.stringify(patch.edits ?? g.edits), JSON.stringify(patch.consents ?? g.consents), g.now, g.row.subject);
+  lib.sql.exec('UPDATE profiles SET edits = ?, consents = ?, updated_at = ? WHERE subject = ? AND tenant = ?', JSON.stringify(patch.edits ?? g.edits), JSON.stringify(patch.consents ?? g.consents), g.now, g.row.subject, g.row.tenant);
   lib.log('profile', actor, action, detail); // field names and counts only, never values
   return { ...g, edits: patch.edits ?? g.edits, consents: patch.consents ?? g.consents, row: { ...g.row, updated_at: g.now } };
 }
@@ -329,15 +404,17 @@ function cleanRow(raw, production) {
   return { row: { key: e, name, given_name: given, title: str(raw.title, 100), manager_name: str(raw.managerName, 100), manager_email: m } };
 }
 function importPart(lib, env, user, body, source) {
+  demandTenant(user);
+  const tenant = tenantKey(user);
   const b = obj(body), batch = String(b.batch ?? ''), part = b.part, rows = b.rows, final = b.final === true, now = lib.now();
   if (!/^[a-f0-9]{32}$/.test(batch)) throw fail(400, 'batch must be 32 lower-case hex characters.');
   if (!Number.isInteger(part) || part < 1 || part > 40) throw fail(400, 'part must be a whole number from 1 to 40.');
   if (!Array.isArray(rows) || rows.length > 500) throw fail(400, 'Send at most 500 rows per part.');
   if (b.final !== undefined && typeof b.final !== 'boolean') throw fail(400, 'final must be true or false.');
-  let imp = lib.rows('SELECT * FROM directory_imports WHERE batch = ?', batch)[0];
+  let imp = lib.rows('SELECT * FROM directory_imports WHERE batch = ? AND lower(COALESCE(tenant, \'\')) = ?', batch, tenant)[0];
   if (imp && (imp.state !== 'staged' || imp.source !== source)) throw fail(409, 'This import batch is already finished.');
   if (!imp) {
-    lib.sql.exec("INSERT INTO directory_imports (batch, source, by, started_at, finished_at, rows, rejected, state) VALUES (?, ?, ?, ?, '', 0, 0, 'staged')", batch, source, user.email, now);
+    lib.sql.exec("INSERT INTO directory_imports (batch, tenant, source, by, started_at, finished_at, rows, rejected, state) VALUES (?, ?, ?, ?, ?, '', 0, 0, 'staged')", batch, tenant, source, user.email, now);
     imp = { rows: 0, rejected: 0 };
   }
   const stage = 'staged:' + batch, production = env.DATA_MODE === 'production', offset = imp.rows + imp.rejected, rejected = [];
@@ -346,29 +423,30 @@ function importPart(lib, env, user, body, source) {
     const r = cleanRow(raw, production);
     if (r.reason) { rejected.push({ row: offset + i + 1, reason: r.reason }); return; }
     const x = r.row; accepted++;
-    lib.sql.exec(`INSERT OR REPLACE INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      x.key, stage, x.name, x.given_name, x.title, x.manager_name, x.manager_email, batch, now);
+    lib.sql.exec(`INSERT OR REPLACE INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      x.key, stage, x.name, x.given_name, x.title, x.manager_name, x.manager_email, batch, now, tenant);
   });
-  lib.sql.exec('UPDATE directory_imports SET rows = rows + ?, rejected = rejected + ? WHERE batch = ?', accepted, rejected.length, batch);
+  lib.sql.exec('UPDATE directory_imports SET rows = rows + ?, rejected = rejected + ? WHERE batch = ? AND lower(COALESCE(tenant, \'\')) = ?', accepted, rejected.length, batch, tenant);
   if (!final) return { accepted, rejected };
-  const count = s => lib.rows("SELECT COUNT(*) AS n FROM directory WHERE source = ? AND batch != 'pull'", s)[0].n, from = count(source), to = count(stage);
-  const total = lib.rows('SELECT rows, rejected FROM directory_imports WHERE batch = ?', batch)[0];
+  const count = s => lib.rows("SELECT COUNT(*) AS n FROM directory WHERE source = ? AND lower(COALESCE(tenant, '')) = ? AND batch != 'pull'", s, tenant)[0].n, from = count(source), to = count(stage);
+  const total = lib.rows('SELECT rows, rejected FROM directory_imports WHERE batch = ? AND lower(COALESCE(tenant, \'\')) = ?', batch, tenant)[0];
   // Shrink guard: a partial export must never wipe the directory silently. A push cannot confirm, so it is refused.
   if (to < 0.8 * from && !(b.confirmShrink === true && user.role !== 'system')) {
-    lib.sql.exec('DELETE FROM directory WHERE source = ?', stage);
-    lib.sql.exec("UPDATE directory_imports SET state = 'refused', finished_at = ? WHERE batch = ?", now, batch);
+    lib.sql.exec("DELETE FROM directory WHERE source = ? AND lower(COALESCE(tenant, '')) = ?", stage, tenant);
+    lib.sql.exec("UPDATE directory_imports SET state = 'refused', finished_at = ? WHERE batch = ? AND lower(COALESCE(tenant, '')) = ?", now, batch, tenant);
     lib.log('directory', user.email, 'directory_import refused', `${source}: ${to} rows would replace ${from}`);
     throw fail(409, `This replaces ${from} rows with ${to}. That is far fewer people than before: confirm to replace anyway.`);
   }
-  lib.sql.exec('DELETE FROM directory WHERE source = ?', source);
-  lib.sql.exec('UPDATE directory SET source = ? WHERE source = ?', source, stage);
-  lib.sql.exec("UPDATE directory_imports SET state = 'applied', finished_at = ? WHERE batch = ?", now, batch);
+  lib.sql.exec("DELETE FROM directory WHERE source = ? AND lower(COALESCE(tenant, '')) = ?", source, tenant);
+  lib.sql.exec("UPDATE directory SET source = ? WHERE source = ? AND lower(COALESCE(tenant, '')) = ?", source, stage, tenant);
+  lib.sql.exec("UPDATE directory_imports SET state = 'applied', finished_at = ? WHERE batch = ? AND lower(COALESCE(tenant, '')) = ?", now, batch, tenant);
   lib.log('directory', user.email, 'directory_import', `${source}: ${to} rows, ${total.rejected} rejected, replaced ${from}`);
   return { accepted, rejected, replaced: { from, to } };
 }
-function directoryStatus(lib, env) {
-  const rows = s => lib.rows("SELECT COUNT(*) AS n FROM directory WHERE source = ? AND (name != '' OR title != '' OR manager_email != '')", s)[0].n;
-  const latest = (where, ...p) => lib.rows(`SELECT * FROM directory_imports WHERE ${where} ORDER BY finished_at DESC, rowid DESC LIMIT 1`, ...p)[0];
+function directoryStatus(lib, env, user = {}) {
+  const tenant = tenantKey(user);
+  const rows = s => lib.rows("SELECT COUNT(*) AS n FROM directory WHERE source = ? AND lower(COALESCE(tenant, '')) = ? AND (name != '' OR title != '' OR manager_email != '')", s, tenant)[0].n;
+  const latest = (where, ...p) => lib.rows(`SELECT * FROM directory_imports WHERE lower(COALESCE(tenant, '')) = ? AND ${where} ORDER BY finished_at DESC, rowid DESC LIMIT 1`, tenant, ...p)[0];
   const last = latest("state = 'applied'");
   const pullCfg = dnaConfig(env), pullRun = pullState.get(lib) || {}, pushCfg = pushConfig(env);
   const pull = pullCfg.status === 'on' ? { status: pullRun.lastErrorAt && pullRun.lastErrorAt >= (pullRun.lastOkAt || '') ? 'error' : 'on',
@@ -387,33 +465,37 @@ function directoryStatus(lib, env) {
 // ---- Stored reads for story rating (docs/JEV_RATING.md §3.2, §8.4). The profiles row only: never DNA, never a source.
 // They create no table: without a profiles table (profile never used on this library) nothing is stored, so the answer
 // is false / []. storedNames is used only to MASK names in model input; it is never sent anywhere.
-function storedProfile(lib, subject) {
+function storedProfile(lib, subject, tenant = '') {
   if (!READY || !subject) return null;
-  try { return lib.rows('SELECT edits, signin, consents FROM profiles WHERE subject = ?', String(subject))[0] || null; }
+  try { return lib.rows('SELECT edits, signin, consents FROM profiles WHERE subject = ? AND tenant = ?', String(subject), String(tenant || '').toLowerCase())[0] || null; }
   catch { return null; } // no profiles table yet
 }
-export function storedConsent(lib, subject, kind) {
-  const row = storedProfile(lib, subject);
+export function storedConsent(lib, subject, kind, tenant = '') {
+  const row = storedProfile(lib, subject, tenant);
   return !!row && CONSENT_KINDS.includes(kind) && json(row.consents)[kind]?.version === 1;
 }
-export function storedNames(lib, subject) {
-  const row = storedProfile(lib, subject);
+export function storedNames(lib, subject, tenant = '') {
+  const row = storedProfile(lib, subject, tenant);
   if (!row) return [];
   return [...new Set([json(row.edits).name?.value, json(row.signin).name].map(v => str(v, 100)).filter(Boolean))];
 }
 
 // ---- Daily housekeeping (called from the system `scan-stale` block once READY): counts only. ----
-export function daily(lib, now = lib.now()) {
+export function daily(lib, now = lib.now(), user = {}) {
   ensure(lib);
+  const enforced = user?.tenantEnforced === true;
+  const tenant = String(user?.tenant || '').toLowerCase();
+  if (enforced && !TENANT_ID.test(tenant)) return { maintenanceRefused: 'A verified tenant is required.' };
   const n = (q, ...p) => lib.rows(q, ...p)[0].n;
-  const profiles = n('SELECT COUNT(*) AS n FROM profiles WHERE seen_at < ?', isoBefore(now, 395));
-  if (profiles) lib.sql.exec('DELETE FROM profiles WHERE seen_at < ?', isoBefore(now, 395));
-  const cache = n("SELECT COUNT(*) AS n FROM directory WHERE source = 'dna' AND batch = 'pull' AND fetched_at < ?", isoBefore(now, 30));
-  if (cache) lib.sql.exec("DELETE FROM directory WHERE source = 'dna' AND batch = 'pull' AND fetched_at < ?", isoBefore(now, 30));
-  const staged = lib.rows("SELECT batch FROM directory_imports WHERE state = 'staged' AND started_at < ?", isoBefore(now, 1)).map(r => r.batch);
+  const scope = enforced ? tenant : '';
+  const profiles = n('SELECT COUNT(*) AS n FROM profiles WHERE tenant = ? AND seen_at < ?', scope, isoBefore(now, 395));
+  if (profiles) lib.sql.exec('DELETE FROM profiles WHERE tenant = ? AND seen_at < ?', scope, isoBefore(now, 395));
+  const cache = n("SELECT COUNT(*) AS n FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND source = 'dna' AND batch = 'pull' AND fetched_at < ?", scope, isoBefore(now, 30));
+  if (cache) lib.sql.exec("DELETE FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND source = 'dna' AND batch = 'pull' AND fetched_at < ?", scope, isoBefore(now, 30));
+  const staged = lib.rows("SELECT batch FROM directory_imports WHERE lower(COALESCE(tenant, '')) = ? AND state = 'staged' AND started_at < ?", scope, isoBefore(now, 1)).map(r => r.batch);
   for (const batch of staged) {
-    lib.sql.exec('DELETE FROM directory WHERE source = ?', 'staged:' + batch);
-    lib.sql.exec("UPDATE directory_imports SET state = 'refused', finished_at = ? WHERE batch = ?", now, batch);
+    lib.sql.exec("DELETE FROM directory WHERE source = ? AND lower(COALESCE(tenant, '')) = ?", 'staged:' + batch, scope);
+    lib.sql.exec("UPDATE directory_imports SET state = 'refused', finished_at = ? WHERE batch = ? AND lower(COALESCE(tenant, '')) = ?", now, batch, scope);
   }
   return Object.fromEntries(Object.entries({ profilesPurged: profiles, dnaCachePurged: cache, stagedImportsPurged: staged.length }).filter(([, v]) => v));
 }
@@ -422,6 +504,7 @@ export function daily(lib, now = lib.now()) {
 export async function routes(ctx) {
   const { method, parts, user, lib, env = {} } = ctx, [word, action, extra] = parts;
   if (extra !== undefined) throw fail(404, 'Not found.');
+  demandTenant(user);
   ensure(lib);
   const opts = { fetcher: lib.services?.fetch || fetch, waitUntil: ctx.waitUntil || (p => p) };
   if (user.role === 'system') {
@@ -433,15 +516,15 @@ export async function routes(ctx) {
   if (word === 'profile') {
     if (method === 'GET' && !action) return { body: await resolveProfile(lib, env, user, user.idp, opts) };
     if (method === 'GET' && action === 'consents') { // the profiles row only: no source is read
-      const row = lib.rows('SELECT consents FROM profiles WHERE subject = ?', user.email)[0];
+      demandTenant(user);
+      const row = lib.rows('SELECT consents FROM profiles WHERE subject = ? AND tenant = ?', user.email, tenantKey(user))[0];
       return { body: { spokenAsk: json(row?.consents).spokenAsk || null } };
     }
     if (method === 'POST' && !action) return { body: await editProfile(lib, env, user, ctx.body, opts) };
     if (method === 'POST' && action === 'delete') {
-      const had = lib.rows('SELECT COUNT(*) AS n FROM profiles WHERE subject = ?', user.email)[0].n;
-      lib.sql.exec('DELETE FROM profiles WHERE subject = ?', user.email);
-      if (had) lib.log('profile', user.email, 'profile deleted', 'edits and consents removed; directory rows unchanged');
-      return { body: { deleted: true } };
+      const had = deleteOwnedProfile(lib, user);
+      if (had) lib.log('profile', user.email, 'profile deleted', 'this tenant only; directory rows unchanged');
+      return { body: { deleted: !!had, vendorDeletion: 'not-asserted' } };
     }
     if (method === 'POST' && action === 'consent') {
       const b = obj(ctx.body);
@@ -453,21 +536,24 @@ export async function routes(ctx) {
   }
   if (word === 'people' && method === 'GET' && !action) {
     // One exact email -> name and job title from stored rows: never the N+1, never DNA, never anyone's profile.
-    if (!rateLimit(lib, 'people:' + user.email, 30, 3600000)) throw fail(429, 'Too many lookups. Try again in an hour.');
+    demandTenant(user);
+    if (!rateLimit(lib, 'people:' + tenantKey(user) + ':' + user.email, 30, 3600000)) throw fail(429, 'Too many lookups. Try again in an hour.');
     const e = validEmail(ctx.url?.searchParams.get('email'));
     if (!e) throw fail(400, 'Type one exact email address.');
-    const p = lookupPerson(lib, e);
+    const p = lookupPerson(lib, e, tenantKey(user));
     if (!p) throw fail(404, 'Nobody with that email in the directory.');
     return { body: p };
   }
   if (word === 'directory') {
     if (user.role !== 'admin') throw fail(403, 'Only an admin can manage the people directory.');
-    if (method === 'GET' && !action) return { body: directoryStatus(lib, env) };
+    if (method === 'GET' && !action) { demandTenant(user); return { body: directoryStatus(lib, env, user) }; }
     if (method === 'POST' && action === 'import') return { body: importPart(lib, env, user, ctx.body, 'dna_export') };
     if (method === 'POST' && action === 'clear') {
-      const cleared = lib.rows('SELECT COUNT(*) AS n FROM directory')[0].n;
-      lib.sql.exec('DELETE FROM directory');
-      lib.sql.exec("UPDATE directory_imports SET state = 'refused', finished_at = ? WHERE state = 'staged'", lib.now());
+      demandTenant(user);
+      const tenant = tenantKey(user);
+      const cleared = lib.rows("SELECT COUNT(*) AS n FROM directory WHERE lower(COALESCE(tenant, '')) = ?", tenant)[0].n;
+      lib.sql.exec("DELETE FROM directory WHERE lower(COALESCE(tenant, '')) = ?", tenant);
+      lib.sql.exec("UPDATE directory_imports SET state = 'refused', finished_at = ? WHERE state = 'staged' AND lower(COALESCE(tenant, '')) = ?", lib.now(), tenant);
       lib.log('directory', user.email, 'directory cleared', `${cleared} rows`);
       return { body: { cleared } };
     }

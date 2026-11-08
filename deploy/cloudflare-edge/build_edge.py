@@ -36,7 +36,7 @@ def render():
 
 
 if __name__ == '__main__':
-    (EDGE / 'src' / 'policy.generated.js').write_text(render())
+    (EDGE / 'src' / 'policy.generated.js').write_bytes(render().encode('utf-8'))
     if '--policy-only' in sys.argv[1:]:
         print('edge constants generated (page not copied)')
     else:
