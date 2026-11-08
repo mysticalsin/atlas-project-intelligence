@@ -748,3 +748,7 @@ Review answers:
 - Parent is the privacy-receipt commit. This note is the next forward commit. No push, pull request, deploy, or live call.
 - The Worker uses the library's own path match for a privacy or profile delete. A trailing slash, a repeated slash, a query string, and a later privacy segment take the same missing-tenant rejection before the library object is requested. A profile path with a third segment is not a delete. Percent-encoded slashes and a different letter case are not that match. The page was not rebuilt.
 - Quarantine is not deletion. Vendor deletion stays not-asserted. A Cloudflare Durable Object runtime was not executed.
+
+### Session: 2026-11-08 / owned stories in a verified tenant
+- Parent is the ffmpeg CI commit. This note is the next forward commit on an unpublished local branch. No push, pull request, merge, deploy, or live call.
+- A privacy delete for verified subject S in verified tenant T now removes story rows whose owner is S and whose tenant is T, and every revision of those stories. Blank-tenant rows, other tenants, another owner in T, a malformed tenant, staffing, invitations, and existing audit rows stay. complete stays false. Vendor deletion stays not-asserted. Quarantine is not deletion.

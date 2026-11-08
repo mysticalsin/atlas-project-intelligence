@@ -12,7 +12,7 @@ function metricQuery(url, bucket = 'day') {
 }
 function dsarStores() {
   return {
-    coveredLocal: ['journey for this subject and tenant', 'profile for this subject and tenant', 'telemetry for this persona and tenant', 'manager trust for this subject and tenant', 'this subject\'s directory row for this tenant'],
+    coveredLocal: ['journey for this subject and tenant', 'profile for this subject and tenant', 'telemetry for this persona and tenant', 'manager trust for this subject and tenant', 'this subject\'s directory row for this tenant', 'stories and revisions owned by this subject in this tenant'],
     retained: [
       { store: 'legacy-blank-tenant-rows', action: 'quarantined', note: 'Blank ownership stays blank. It was not assigned a tenant and was not deleted by this request.' },
       { store: 'hindsight-bank', action: 'not-contacted', note: 'The vendor bank was not called. A subject-only bank is not read when a verified tenant is present, and it was not deleted.' },
@@ -140,8 +140,22 @@ export async function privacyRoutes(ctx) {
       if (n) lib.sql.exec(`DELETE FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys);
       return n;
     });
+    const ownedStoryIds = lib.rows("SELECT id FROM refs WHERE lower(owner) = ? AND lower(COALESCE(tenant, '')) = ?", String(user.email || '').trim().toLowerCase(), tenant).map(row => row.id);
+    attempt('revisions', () => {
+      if (!ownedStoryIds.length) return 0;
+      const marks = ownedStoryIds.map(() => '?').join(', ');
+      const n = lib.rows(`SELECT COUNT(*) AS n FROM revisions WHERE id IN (${marks})`, ...ownedStoryIds)[0].n;
+      if (n) lib.sql.exec(`DELETE FROM revisions WHERE id IN (${marks})`, ...ownedStoryIds);
+      return n;
+    });
+    attempt('stories', () => {
+      if (!ownedStoryIds.length) return 0;
+      const marks = ownedStoryIds.map(() => '?').join(', ');
+      lib.sql.exec(`DELETE FROM refs WHERE id IN (${marks})`, ...ownedStoryIds);
+      return ownedStoryIds.length;
+    });
     lib.log('library', user.email, 'privacy delete', outcomes.map(o => o.store + (o.error ? ' failed' : ' ' + o.removed)).join(', '));
-    return { body: { outcomes, ...dsarStores(), complete: false, vendorDeletion: 'not-asserted', note: 'Each store reports only what this request removed for this subject and tenant. An error means that store was not removed. Other tenants, other people, and blank-tenant rows are not counted. Stories, staffing, invitations, and audit history are not deleted. Quarantine is not deletion. Vendor deletion is not-asserted. This is not a GDPR certification.' } };
+    return { body: { outcomes, ...dsarStores(), complete: false, vendorDeletion: 'not-asserted', note: 'Each store reports only what this request removed for this subject and tenant. An error means that store was not removed. Stories and revisions are removed only when the owner is this subject and the tenant is this verified tenant. Other tenants, other people, blank-tenant rows, staffing, invitations, and audit history are not deleted and are not counted. Quarantine is not deletion. Vendor deletion is not-asserted. This is not a GDPR certification.' } };
   }
   if (method === 'POST' && user.role === 'admin' && parts[1] === 'purge-telemetry') {
     if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');

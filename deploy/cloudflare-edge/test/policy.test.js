@@ -1294,7 +1294,8 @@ test('a privacy delete without a verified tenant leaves quarantined blank rows u
   assert.equal(l.rows("SELECT COUNT(*) AS n FROM staffing WHERE tenant = ''")[0].n, 1);
   assert.equal(l.rows('SELECT COUNT(*) AS n FROM staffing WHERE tenant = ?', A)[0].n, 1);
   assert.equal(l.rows("SELECT status FROM invitations WHERE id = 'inv-keep'")[0].status, 'open');
-  assert.equal(l.row(story.id).owner, 'ada@example.test');
+  assert.equal(l.row(story.id), null);
+  assert.equal(l.rows('SELECT COUNT(*) AS n FROM revisions WHERE id = ?', story.id)[0].n, 0);
   assert.equal(l.rows("SELECT detail FROM audit WHERE id = 'keep-audit'")[0].detail, 'stay');
   assert.equal(erased.retained.find(item => item.store === 'legacy-blank-tenant-rows').action, 'quarantined');
   assert.equal(erased.retained.find(item => item.store === 'vendor-logs').action, 'not-asserted');
@@ -1317,6 +1318,59 @@ test('a privacy delete without a verified tenant leaves quarantined blank rows u
   assert.equal(crowded.rows('SELECT COUNT(*) AS n FROM profiles WHERE subject = ? AND tenant = ?', 'kim@example.test', B)[0].n, 1);
   assert.equal(crowded.rows('SELECT COUNT(*) AS n FROM staffing WHERE tenant = ?', B)[0].n, 1);
   assert.equal(crowded.rows("SELECT COUNT(*) AS n FROM refs WHERE owner = 'ada@example.test' AND tenant = ?", B)[0].n, 1);
+});
+
+test('a privacy delete removes only this subject’s stories and revisions in the verified tenant', async () => {
+  const l = lib();
+  const A = 'abcdefab-cdef-4abc-8def-0123456789ab';
+  const B = 'bbbbbbbb-cccc-4ddd-8eee-ffff00001111';
+  const ada = { email: 'ada@example.test', mail: 'ada@example.test', role: 'user', tenant: A, tenantEnforced: true };
+  const owned = await l.upsert(ada, { localId: 'owned', reference: ref() });
+  await l.upsert(ada, { id: owned.id, reference: { ...ref(), title: 'Second revision' } });
+  const mixed = await l.upsert({ ...ada, email: 'Ada@example.test' }, { localId: 'mixed-case', reference: ref() });
+  const otherTenant = await l.upsert({ ...ada, tenant: B }, { localId: 'other-tenant', reference: ref() });
+  const blank = await l.upsert({ ...ada, tenant: '', tenantEnforced: false }, { localId: 'blank-tenant', reference: ref() });
+  const malformed = await l.upsert({ ...ada, tenant: 'not-a-tenant', tenantEnforced: false }, { localId: 'malformed-tenant', reference: ref() });
+  const neighbor = await l.upsert({ email: 'kim@example.test', mail: 'kim@example.test', role: 'user', tenant: A, tenantEnforced: true }, { localId: 'neighbor', reference: ref() });
+  const tidOwner = await l.upsert({ email: `${A}:cccccccc-dddd-4eee-8fff-000000000001`, mail: 'ada@example.test', role: 'user', tenant: A, tenantEnforced: true }, { localId: 'tid-owner', reference: ref() });
+  l.sql.exec("UPDATE refs SET members = ',ada@example.test,' WHERE id = ?", neighbor.id);
+  l.sql.exec("INSERT INTO revisions (id, revision, data, author, at) VALUES (?, 9, ?, 'ada@example.test', '2026-11-08T00:00:00.000Z')", neighbor.id, JSON.stringify(ref()));
+  ensureOutreach(l);
+  l.sql.exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, tenant) VALUES ('PRJ-KEEP', 'ada@example.test', 'sam@example.test', 'Sam', 'Keep', '', 'legacy', '2026-11-08T00:00:00.000Z', ?)", A);
+  l.sql.exec("INSERT INTO invitations (id, email, project_id, title, reason, slot, reference_id, status, created_at, source, tenant) VALUES ('inv-story', 'ada@example.test', 'PRJ-KEEP', 'Keep', 'manual', '', ?, 'open', '2026-11-08T00:00:00.000Z', 't', ?)", owned.id, A);
+  l.sql.exec("INSERT INTO audit (id, actor, action, at, detail) VALUES ('audit-story', 'ada@example.test', 'older', '2026-11-08T00:00:00.000Z', 'stay-story')");
+  const ownedRevisions = l.rows('SELECT COUNT(*) AS n FROM revisions WHERE id IN (?, ?)', owned.id, mixed.id)[0].n;
+  const before = {
+    staffing: l.rows('SELECT * FROM staffing'),
+    invitations: l.rows('SELECT * FROM invitations'),
+    audit: l.rows("SELECT id, actor, action, at, detail FROM audit WHERE id = 'audit-story'"),
+  };
+  const erased = await (await libraryRoutes(new Request('https://atlas.test/api/library/privacy/delete', { method: 'POST', body: '{}', headers: { 'x-atlas-user': 'ada@example.test', 'x-atlas-role': 'user', 'x-atlas-email': 'ada@example.test', 'x-atlas-tenant': A, 'x-atlas-tenant-enforced': '1' } }), l, { env: { DATA_MODE: 'production', ORIGIN: 'https://atlas.test', CSRF_SECRET: 's' } })).json();
+  assert.equal(erased.complete, false);
+  assert.equal(erased.vendorDeletion, 'not-asserted');
+  assert.equal(erased.retainedRows, undefined);
+  assert.equal(erased.outcomes.find(item => item.store === 'stories').removed, 2);
+  assert.equal(erased.outcomes.find(item => item.store === 'revisions').removed, ownedRevisions);
+  assert.ok(ownedRevisions >= 3);
+  assert.equal(l.row(owned.id), null);
+  assert.equal(l.row(mixed.id), null);
+  assert.equal(l.rows('SELECT COUNT(*) AS n FROM revisions WHERE id IN (?, ?)', owned.id, mixed.id)[0].n, 0);
+  assert.equal(l.row(otherTenant.id).tenant, B);
+  assert.equal(l.row(blank.id).tenant, '');
+  assert.equal(l.row(malformed.id).tenant, 'not-a-tenant');
+  assert.equal(l.row(neighbor.id).owner, 'kim@example.test');
+  assert.equal(l.row(neighbor.id).members, ',ada@example.test,');
+  assert.equal(l.row(tidOwner.id).owner, `${A}:cccccccc-dddd-4eee-8fff-000000000001`);
+  assert.equal(l.rows('SELECT COUNT(*) AS n FROM revisions WHERE id = ? AND revision = 9', neighbor.id)[0].n, 1);
+  assert.deepEqual(l.rows('SELECT * FROM staffing'), before.staffing);
+  assert.deepEqual(l.rows('SELECT * FROM invitations'), before.invitations);
+  assert.deepEqual(l.rows("SELECT id, actor, action, at, detail FROM audit WHERE id = 'audit-story'"), before.audit);
+  const again = await (await libraryRoutes(new Request('https://atlas.test/api/library/privacy/delete', { method: 'POST', body: '{}', headers: { 'x-atlas-user': 'ada@example.test', 'x-atlas-role': 'user', 'x-atlas-email': 'ada@example.test', 'x-atlas-tenant': A, 'x-atlas-tenant-enforced': '1' } }), l, { env: { DATA_MODE: 'production', ORIGIN: 'https://atlas.test', CSRF_SECRET: 's' } })).json();
+  assert.equal(again.outcomes.find(item => item.store === 'stories').removed, 0);
+  assert.equal(again.outcomes.find(item => item.store === 'revisions').removed, 0);
+  assert.equal(l.rows('SELECT COUNT(*) AS n FROM refs WHERE id IN (?, ?, ?, ?)', otherTenant.id, blank.id, malformed.id, neighbor.id)[0].n, 4);
+  assert.equal(JSON.stringify(again).includes(B), false);
+  assert.equal(JSON.stringify(again).includes('kim@example.test'), false);
 });
 
 test('csv formula characters are neutralized', () => {
