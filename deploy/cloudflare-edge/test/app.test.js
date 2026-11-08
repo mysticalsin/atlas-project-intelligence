@@ -689,28 +689,56 @@ test('production refuses local-synthetic and demo identity before any library fe
   assert.equal(fetches, 1, 'the local demo, without DATA_MODE=production, still reaches the library');
 });
 
-test('privacy and profile deletes without a subject tenant do not call the library', async () => {
+test('accepted privacy and profile delete variants without a subject tenant do not call the library', async () => {
   let calls = 0;
   const stub = { idFromName() { calls += 1; return 'g'; }, get() { calls += 1; return { fetch() { calls += 1; return new Response('{}'); } }; } };
   const env = { ...ENV, LIBRARY: stub };
   const boot = await (await handle(await req('/api/bootstrap'), env, '')).json();
-  for (const path of ['/api/library/privacy/delete', '/api/library/profile/delete']) {
+  const accepted = [
+    '/api/library/privacy/delete', '/api/library/privacy/delete/', '/api/library/privacy//delete', '/api/library/privacy/delete//',
+    '/api/library//privacy/delete', '/api/library/privacy/delete/anything', '/api/library/privacy/delete?x=1', '/api/library/privacy/delete/?x=1',
+    '/api/library/privacy/./delete', '/api/library/privacy/%2e/delete', '/api/library/privacy/%2E/delete', '/api/library/privacy/delete/.',
+    '/api/library/profile/delete', '/api/library/profile/delete/', '/api/library/profile//delete', '/api/library/profile/delete?x=1', '/api/library/./profile/delete',
+  ];
+  for (const path of accepted) {
     const res = await handle(await signed(path, {}, { method: 'POST', body: '{}', headers: { Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'content-type': 'application/json', 'x-atlas-tenant': 'abcdefab-cdef-4abc-8def-0123456789ab' } }), env, '');
     assert.equal(res.status, 403, path);
     assert.match((await res.json()).error, /verified tenant/);
   }
   assert.equal(calls, 0);
+  const other = await handle(await signed('/API/library/privacy/delete', {}, { method: 'POST', body: '{}', headers: { Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'content-type': 'application/json' } }), env, '');
+  assert.equal(other.status, 404);
+  assert.equal(calls, 0);
 });
 
-test('a verified subject tenant is forwarded for privacy delete and a client tenant is not', async () => {
-  let fwd = null, names = [];
-  const stub = { idFromName(name) { names.push(name); return name; }, get: () => ({ fetch: r => { fwd = r; return new Response('{"complete":false}'); } }) };
-  const tid = 'abcdefab-cdef-4abc-8def-0123456789ab', oid = 'bbbbbbbb-cccc-4ddd-8eee-ffff00001111';
+test('a path the library does not treat as a subject delete still reaches the library', async () => {
+  let calls = 0;
+  const stub = { idFromName() { calls += 1; return 'g'; }, get() { calls += 1; return { fetch() { calls += 1; return new Response('{}', { status: 200 }); } }; } };
+  const env = { ...ENV, LIBRARY: stub };
+  const boot = await (await handle(await req('/api/bootstrap'), env, '')).json();
+  const forwarded = [
+    '/api/library/privacy%2Fdelete', '/api/library/%70rivacy/delete', '/api/library/privacy/%64elete',
+    '/api/library/Privacy/Delete', '/api/library/profile/delete/extra', '/api/library/journey',
+  ];
+  for (const path of forwarded) {
+    const before = calls;
+    const res = await handle(await signed(path, {}, { method: 'POST', body: '{}', headers: { Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'content-type': 'application/json', 'x-atlas-tenant': 'abcdefab-cdef-4abc-8def-0123456789ab' } }), env, '');
+    assert.equal(res.status, 200, path);
+    assert.equal(calls - before, 3, path);
+  }
+});
+
+test('a verified subject tenant is forwarded for delete variants and a client tenant is not', async () => {
+  const seen = [];
+  const stub = { idFromName(name) { return name; }, get: () => ({ fetch: r => { seen.push(r); return new Response('{"complete":false}'); } }) };
+  const tid = 'abcdefab-cdef-4abc-8def-0123456789ab', oid = 'bbbbbbbb-cccc-4ddd-8eee-ffff00001111', spoof = 'cccccccc-dddd-4eee-8fff-000000000001';
   const env = { ...ENV, IDENTITY_SOURCE: 'entra', ENTRA_TENANTS: tid, LIBRARY: stub };
   const boot = await (await handle(await signed('/api/bootstrap', { custom: { tid, oid, roles: [] } }), env, '')).json();
-  const res = await handle(await signed('/api/library/privacy/delete', { custom: { tid, oid, roles: [] } }, { method: 'POST', body: '{}', headers: { Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'content-type': 'application/json', 'x-atlas-tenant': 'cccccccc-dddd-4eee-8fff-000000000001' } }), env, '');
-  assert.equal(res.status, 200);
-  assert.equal(fwd.headers.get('x-atlas-tenant'), tid);
-  assert.equal(fwd.headers.get('x-atlas-user'), `${tid}:${oid}`);
-  assert.deepEqual(names, ['global']);
+  for (const path of ['/api/library/privacy/delete/anything', '/api/library/profile//delete', '/api/library/privacy/delete/?kept=1']) {
+    const res = await handle(await signed(path, { custom: { tid, oid, roles: [] } }, { method: 'POST', body: '{}', headers: { Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'content-type': 'application/json', 'x-atlas-tenant': spoof } }), env, '');
+    assert.equal(res.status, 200, path);
+  }
+  assert.deepEqual(seen.map(r => r.headers.get('x-atlas-tenant')), [tid, tid, tid]);
+  assert.deepEqual(seen.map(r => r.headers.get('x-atlas-user')), [`${tid}:${oid}`, `${tid}:${oid}`, `${tid}:${oid}`]);
+  assert.equal(seen.some(r => r.headers.get('x-atlas-tenant') === spoof), false);
 });

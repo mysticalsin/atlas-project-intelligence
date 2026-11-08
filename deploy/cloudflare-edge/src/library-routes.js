@@ -16,6 +16,21 @@ const canRate = lib => !!(lib.complete || lib.rater?.available());
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 
+// Segments the library routes on. The platform URL parser has already resolved "." and "..", including "%2e".
+// It keeps a trailing slash, a repeated slash, and "%2F". Empty segments are dropped here, and the words stay case-sensitive.
+export function libraryParts(pathname) {
+  return String(pathname || '').replace(/^\/api\/library\/?/, '').split('/').filter(Boolean);
+}
+
+// The same match the handlers use. privacyRoutes treats any later segment as POST privacy/delete.
+// profile routes reject a third segment before delete, so only the two-segment form is a profile delete.
+export function acceptedSubjectDelete(method, pathname) {
+  if (method !== 'POST') return false;
+  const parts = libraryParts(pathname);
+  if (parts[0] === 'privacy' && parts[1] === 'delete') return true;
+  return parts[0] === 'profile' && parts[1] === 'delete' && parts.length === 2;
+}
+
 export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {} } = {}) {
   const demoConflict = productionDemoConflict(env);
   if (demoConflict) return json(demoConflict, 503);
@@ -23,7 +38,7 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
   const url = new URL(request.url), user = { email: request.headers.get('x-atlas-user') || '', mail: (request.headers.get('x-atlas-email') || '').toLowerCase(), role: request.headers.get('x-atlas-role') || 'user',
     tenant: request.headers.get('x-atlas-tenant') || '', tenantEnforced: resolveTenantEnforcement(env, request.headers.get('x-atlas-tenant-enforced')), idp: profile.idpClaims(request.headers.get('x-atlas-idp')) };
   if (!user.email) return json({ error: 'Sign in first.' }, 401);
-  const parts = url.pathname.replace(/^\/api\/library\/?/, '').split('/').filter(Boolean), method = request.method;
+  const parts = libraryParts(url.pathname), method = request.method;
   let body = {};
   if (method === 'POST') { try { body = await request.json(); } catch { return json({ error: 'Invalid JSON.' }, 400); } }
   const ctx = { request, url, method, parts, body, user, lib, env, waitUntil };
