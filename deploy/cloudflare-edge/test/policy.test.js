@@ -1467,6 +1467,127 @@ test('a privacy delete blocks an owned story that is another owner’s merge tar
   assert.equal(own.rows('SELECT COUNT(*) AS n FROM revisions WHERE id IN (?, ?)', mine.id, mineSource.id)[0].n, 0);
 });
 
+const DELETE_TENANT = 'abcdefab-cdef-4abc-8def-0123456789ab';
+const deleteHeaders = { 'x-atlas-user': 'ada@example.test', 'x-atlas-role': 'user', 'x-atlas-email': 'ada@example.test', 'x-atlas-tenant': DELETE_TENANT, 'x-atlas-tenant-enforced': '1' };
+const deleteEnv = { DATA_MODE: 'production', ORIGIN: 'https://atlas.test', CSRF_SECRET: 's' };
+const privacyDelete = async l => (await libraryRoutes(new Request('https://atlas.test/api/library/privacy/delete', { method: 'POST', body: '{}', headers: deleteHeaders }), l, { env: deleteEnv })).json();
+const outcome = (receipt, store) => receipt.outcomes.find(item => item.store === store);
+const storySnapshot = (l, ids) => ({ refs: l.rows(`SELECT * FROM refs WHERE id IN (${ids.map(() => '?').join(', ')}) ORDER BY id`, ...ids), revisions: l.rows(`SELECT * FROM revisions WHERE id IN (${ids.map(() => '?').join(', ')}) ORDER BY id, revision`, ...ids) });
+async function storyFixture(sql) {
+  const l = new Library(sql, { now: () => '2026-11-08T00:00:00.000Z', complete: async () => JSON.stringify({ score: 90, client_value_clear: true, issues: [], recommendations: [], summary: 'Enough.' }) });
+  const ada = { email: 'ada@example.test', mail: 'ada@example.test', role: 'user', tenant: DELETE_TENANT, tenantEnforced: true };
+  const kim = { ...ada, email: 'kim@example.test', mail: 'kim@example.test' };
+  const reviewer = { ...ada, email: 'rev@example.test', mail: 'rev@example.test', role: 'reviewer' };
+  const first = await l.upsert(ada, { localId: 'first', reference: { ...ref(), title: 'Ada first' } });
+  await l.upsert(ada, { id: first.id, reference: { ...ref(), title: 'Ada first, second revision' } });
+  const second = await l.upsert(ada, { localId: 'second', reference: { ...ref(), title: 'Ada second' } });
+  const target = await l.upsert(ada, { localId: 'target', reference: { ...ref(), title: 'Ada target' } });
+  const source = await l.upsert(kim, { localId: 'source', reference: { ...ref(), title: 'Kim source' } });
+  await l.merge(reviewer, { keep: target.id, merge: source.id });
+  await saveJourney(l, ada, { stage: 'project', fields: { title: { value: 'Alias', source: 'you', confirmed: true } } });
+  return { l, ids: { first: first.id, second: second.id, target: target.id, source: source.id } };
+}
+
+test('the disclosure states the deletion scope before any delete, and it matches the delete receipt', async () => {
+  const { l } = await storyFixture(memorySql());
+  const before = l.rows('SELECT COUNT(*) AS n FROM refs')[0].n;
+  const disclosure = await (await libraryRoutes(new Request('https://atlas.test/api/library/privacy/disclosure', { headers: deleteHeaders }), l, { env: deleteEnv })).json();
+  assert.equal(l.rows('SELECT COUNT(*) AS n FROM refs')[0].n, before, 'reading the disclosure deletes nothing');
+  const scope = disclosure.deletion.coveredLocal.join(' | ');
+  for (const word of ['journey', 'profile', 'stories and revisions owned by this subject']) assert.ok(scope.includes(word), word);
+  assert.ok(disclosure.deletion.notDeleted.some(t => /claims, bids/.test(t)) && disclosure.deletion.notDeleted.some(t => /audit/.test(t)));
+  assert.equal(disclosure.deletion.complete, false);
+  assert.equal(disclosure.deletion.vendorDeletion, 'not-asserted');
+  assert.equal(disclosure.deletion.undoable, false);
+  const receipt = await privacyDelete(l);
+  assert.deepEqual(receipt.coveredLocal, disclosure.deletion.coveredLocal);
+  assert.deepEqual(receipt.retained, disclosure.deletion.retained);
+});
+
+test('a privacy delete removes stories and revisions in one transaction and rolls both back on a failure', async () => {
+  const inner = memorySql();
+  let failRefs = true, refDeletes = 0;
+  const sql = {
+    exec(q, ...params) {
+      if (/^\s*DELETE FROM refs\b/i.test(q)) { refDeletes += 1; if (failRefs) throw new Error('synthetic refs delete failure'); }
+      return inner.exec(q, ...params);
+    },
+    transactionSync: fn => inner.transactionSync(fn),
+  };
+  const { l, ids } = await storyFixture(sql);
+  const all = Object.values(ids);
+  const before = storySnapshot(l, all);
+  assert.ok(before.revisions.filter(r => r.id === ids.first || r.id === ids.second).length >= 3);
+  const failed = await privacyDelete(l);
+  assert.equal(refDeletes, 1, 'the story delete was attempted');
+  assert.deepEqual(outcome(failed, 'stories'), { store: 'stories', removed: 0, error: 'delete-failed' });
+  assert.deepEqual(outcome(failed, 'revisions'), { store: 'revisions', removed: 0, error: 'delete-failed' });
+  assert.deepEqual(storySnapshot(l, all), before, 'a failed story delete leaves every story and every revision as it was');
+  assert.deepEqual(failed.blocked, [{ store: 'stories', id: ids.target, reason: 'another-owner-merge-target' }]);
+  assert.equal(outcome(failed, 'journey').removed, 1, 'the other stores are still reported one by one');
+  assert.equal(failed.complete, false);
+  assert.equal(failed.vendorDeletion, 'not-asserted');
+  failRefs = false;
+  const retried = await privacyDelete(l);
+  assert.equal(outcome(retried, 'stories').removed, 2);
+  assert.equal(outcome(retried, 'stories').error, null);
+  assert.equal(outcome(retried, 'revisions').removed, before.revisions.filter(r => r.id === ids.first || r.id === ids.second).length);
+  assert.deepEqual(retried.blocked, [{ store: 'stories', id: ids.target, reason: 'another-owner-merge-target' }]);
+  assert.equal(l.row(ids.first), null);
+  assert.equal(l.row(ids.second), null);
+  assert.equal(l.rows('SELECT COUNT(*) AS n FROM revisions WHERE id IN (?, ?)', ids.first, ids.second)[0].n, 0);
+  const after = storySnapshot(l, [ids.target, ids.source]);
+  assert.deepEqual(after.refs, before.refs.filter(r => r.id === ids.target || r.id === ids.source));
+  assert.deepEqual(after.revisions, before.revisions.filter(r => r.id === ids.target || r.id === ids.source));
+  assert.equal(outcome(retried, 'journey').removed, 0);
+});
+
+test('without a storage transaction a privacy delete leaves stories and revisions in place', async () => {
+  const inner = memorySql();
+  const { l, ids } = await storyFixture({ exec: (q, ...params) => inner.exec(q, ...params) });
+  assert.equal(l.transactionSync, null);
+  const all = Object.values(ids), before = storySnapshot(l, all);
+  const receipt = await privacyDelete(l);
+  assert.deepEqual(outcome(receipt, 'stories'), { store: 'stories', removed: 0, error: 'transaction-unavailable' });
+  assert.deepEqual(outcome(receipt, 'revisions'), { store: 'revisions', removed: 0, error: 'transaction-unavailable' });
+  assert.deepEqual(storySnapshot(l, all), before);
+  assert.equal(receipt.complete, false);
+});
+
+test('an index that resumes after its story was deleted writes no duplicate pointer and does not throw', async () => {
+  let release, arrived, reached, gate;
+  const arm = () => { reached = new Promise(r => { arrived = r; }); gate = new Promise(r => { release = r; }); };
+  arm();
+  const sql = memorySql();
+  const l = new Library(sql, { now: () => '2026-11-08T00:00:00.000Z', complete: async () => JSON.stringify({ score: 90, client_value_clear: true, issues: [], recommendations: [], summary: 'Enough.' }),
+    embed: async text => { if (text.includes('Ada racing')) { const wait = gate; arrived(); await wait; } return [1, 0, 0]; } });
+  const ada = { email: 'ada@example.test', mail: 'ada@example.test', role: 'user', tenant: DELETE_TENANT, tenantEnforced: true };
+  const kim = { ...ada, email: 'kim@example.test', mail: 'kim@example.test' };
+  const theirs = await l.upsert(kim, { localId: 'kim-same-project', reference: { ...ref(), title: 'Kim same project' } });
+  await l.index(theirs.id);
+  const mine = await l.upsert(ada, { localId: 'ada-racing', reference: { ...ref(), title: 'Ada racing' } });
+  const kimBefore = l.rows('SELECT * FROM refs WHERE id = ?', theirs.id);
+  const pending = [];
+  await l.review(ada, mine.id, { budget: 'interactive', waitUntil: p => pending.push(p) });
+  await reached;
+  const receipt = await privacyDelete(l);
+  assert.equal(outcome(receipt, 'stories').removed, 1);
+  assert.equal(l.row(mine.id), null);
+  release();
+  await Promise.all(pending);
+  assert.deepEqual(l.rows('SELECT * FROM refs WHERE id = ?', theirs.id), kimBefore, 'the other owner\'s row gains no pointer to the deleted story');
+  assert.equal(l.rows("SELECT COUNT(*) AS n FROM audit WHERE actor = 'atlas' AND action = 'possible duplicate' AND id = ?", mine.id)[0].n, 0);
+  assert.equal(l.row(mine.id), null);
+  arm();
+  const again = await l.upsert(ada, { localId: 'ada-racing-2', reference: { ...ref(), title: 'Ada racing again' } });
+  const direct = l.index(again.id);
+  await reached;
+  await privacyDelete(l);
+  release();
+  await assert.doesNotReject(direct);
+  assert.deepEqual(l.rows('SELECT * FROM refs WHERE id = ?', theirs.id), kimBefore);
+});
+
 test('csv formula characters are neutralized', () => {
   assert.equal(neutralizeFormula('=HYPERLINK("http://evil")'), `'=HYPERLINK("http://evil")`);
   assert.equal(neutralizeFormula('+1'), "'+1");

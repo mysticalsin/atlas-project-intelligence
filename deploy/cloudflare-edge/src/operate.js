@@ -23,6 +23,12 @@ function dsarStores() {
     complete: false,
   };
 }
+const NOT_DELETED = [
+  'stories owned by other people, including a story merged into one of yours',
+  'claims, bids, bid references, gap requests and invitations that point at your stories',
+  'staffing rows and audit history',
+  'rows in other tenants and rows with a blank tenant',
+];
 function deny(user) {
   if (user.role !== 'admin') throw fail(403, 'The admin dashboard is only for a verified admin.');
   if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
@@ -80,6 +86,7 @@ export async function privacyRoutes(ctx) {
       ],
       lawfulBasis: 'UNRESOLVED — this screen is not a GDPR certification or a DPO decision.',
       biometrics: 'ATLAS does not build a voiceprint or identify you by voice.',
+      deletion: { ...dsarStores(), notDeleted: NOT_DELETED, vendorDeletion: 'not-asserted', undoable: false },
     } };
   }
   if (method === 'GET' && parts[1] === 'export') {
@@ -141,23 +148,27 @@ export async function privacyRoutes(ctx) {
       return n;
     });
     const subject = String(user.email || '').trim().toLowerCase();
-    const ownedStoryIds = lib.rows("SELECT id FROM refs WHERE lower(owner) = ? AND lower(COALESCE(tenant, '')) = ?", subject, tenant).map(row => row.id);
-    const blockedStoryIds = ownedStoryIds.length ? lib.rows(`SELECT target.id AS id FROM refs AS target WHERE target.id IN (${ownedStoryIds.map(() => '?').join(', ')}) AND EXISTS (SELECT 1 FROM refs AS source WHERE source.merged_into = target.id AND lower(trim(source.owner)) != ?) ORDER BY target.id`, ...ownedStoryIds, subject).map(row => row.id) : [];
-    const blockedStorySet = new Set(blockedStoryIds);
-    const deletableStoryIds = ownedStoryIds.filter(id => !blockedStorySet.has(id));
-    attempt('revisions', () => {
-      if (!deletableStoryIds.length) return 0;
+    // Selection, revisions and stories commit together or not at all: a story is never left without its revisions.
+    let blockedStoryIds = [];
+    const deleteStories = () => {
+      const ownedStoryIds = lib.rows("SELECT id FROM refs WHERE lower(owner) = ? AND lower(COALESCE(tenant, '')) = ?", subject, tenant).map(row => row.id);
+      blockedStoryIds = ownedStoryIds.length ? lib.rows(`SELECT target.id AS id FROM refs AS target WHERE target.id IN (${ownedStoryIds.map(() => '?').join(', ')}) AND EXISTS (SELECT 1 FROM refs AS source WHERE source.merged_into = target.id AND lower(trim(source.owner)) != ?) ORDER BY target.id`, ...ownedStoryIds, subject).map(row => row.id) : [];
+      const blockedStorySet = new Set(blockedStoryIds);
+      const deletableStoryIds = ownedStoryIds.filter(id => !blockedStorySet.has(id));
+      if (!deletableStoryIds.length) return { revisions: 0, stories: 0 };
       const marks = deletableStoryIds.map(() => '?').join(', ');
-      const n = lib.rows(`SELECT COUNT(*) AS n FROM revisions WHERE id IN (${marks})`, ...deletableStoryIds)[0].n;
-      if (n) lib.sql.exec(`DELETE FROM revisions WHERE id IN (${marks})`, ...deletableStoryIds);
-      return n;
-    });
-    attempt('stories', () => {
-      if (!deletableStoryIds.length) return 0;
-      const marks = deletableStoryIds.map(() => '?').join(', ');
+      const revisions = lib.rows(`SELECT COUNT(*) AS n FROM revisions WHERE id IN (${marks})`, ...deletableStoryIds)[0].n;
+      if (revisions) lib.sql.exec(`DELETE FROM revisions WHERE id IN (${marks})`, ...deletableStoryIds);
       lib.sql.exec(`DELETE FROM refs WHERE id IN (${marks})`, ...deletableStoryIds);
-      return deletableStoryIds.length;
-    });
+      return { revisions, stories: deletableStoryIds.length };
+    };
+    let storyError = null, removedStories = { revisions: 0, stories: 0 };
+    if (typeof lib.transactionSync !== 'function') storyError = 'transaction-unavailable';
+    else {
+      try { removedStories = lib.transactionSync(deleteStories); }
+      catch { storyError = 'delete-failed'; removedStories = { revisions: 0, stories: 0 }; }
+    }
+    outcomes.push({ store: 'revisions', removed: removedStories.revisions, error: storyError }, { store: 'stories', removed: removedStories.stories, error: storyError });
     const blocked = blockedStoryIds.map(id => ({ store: 'stories', id, reason: 'another-owner-merge-target' }));
     lib.log('library', user.email, 'privacy delete', outcomes.map(o => o.store + (o.error ? ' failed' : ' ' + o.removed)).join(', ') + (blocked.length ? `; blocked ${blocked.length} another-owner-merge-target` : ''));
     return { body: { outcomes, blocked, ...dsarStores(), complete: false, vendorDeletion: 'not-asserted', note: 'Each store reports only what this request removed for this subject and tenant. An error means that store was not removed. Stories and revisions are removed only when the owner is this subject and the tenant is this verified tenant. A story is not deleted when another owner\'s story was merged into it. That other story is not changed and is not described here. Other tenants, other people, blank-tenant rows, staffing, invitations, and audit history are not deleted and are not counted. Quarantine is not deletion. Vendor deletion is not-asserted. This is not a GDPR certification.' } };

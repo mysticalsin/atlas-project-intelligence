@@ -59,9 +59,36 @@ async function renderJourney(){const root=$('journey');if(!root)return;root.repl
  const head=h('div',{class:'journey-head'},[h('div',{},[h('p',{class:'eyebrow',text:'CONSULTANT JOURNEY'}),h('h1',{id:'journeyTitle',text:'From the work to a reference.'}),h('p',{text:'Confirm what is true. Blocked systems stay blocked. Publication for everyone else needs both approvals.'})]),personaBar()]);
  layout.append(detail,queue);
  root.replaceChildren(head,stageList(data.stages,s=>{picked=s;paint();}),layout,h('section',{class:'panel'},[h('h2',{text:'Privacy'}),h('p',{id:'privacyNote',text:'Loading disclosure…'})]),h('p',{id:'privacyActions'}));
- api('/privacy/disclosure').then(d=>{const n=$('privacyNote');if(!n)return;n.textContent=`Consent ${d.consent.interview}. ${d.recording} ${d.textOnly} Telemetry retention ${d.retention.appTelemetryDays} days in this app. Vendor deletion: ${d.retention.vendorDeletion}. ${d.lawfulBasis} ${d.biometrics}`;}).catch(()=>{});
- const actions=$('privacyActions');if(actions){const exp=h('button',{class:'btn',type:'button',text:'Download my data'});const del=h('button',{class:'btn',type:'button',text:'Delete my journey data'});exp.addEventListener('click',async()=>{try{const pack=await api('/privacy/export');app().download('atlas-my-data.json',JSON.stringify(pack,null,2),'application/json');}catch(e){actions.append(banner('warn',e.message));}});del.addEventListener('click',async()=>{try{const r=await api('/privacy/delete',{method:'POST',body:{}});actions.append(banner('',JSON.stringify(r)));}catch(e){actions.append(banner('warn',e.message));}});actions.append(exp,del);}
+ let deletion=null;
+ api('/privacy/disclosure').then(d=>{const n=$('privacyNote');if(!n)return;n.textContent=`Consent ${d.consent.interview}. ${d.recording} ${d.textOnly} Telemetry retention ${d.retention.appTelemetryDays} days in this app. Vendor deletion: ${d.retention.vendorDeletion}. ${d.lawfulBasis} ${d.biometrics}`;
+  if(d.deletion&&Array.isArray(d.deletion.coveredLocal)){deletion=d.deletion;const b=$('privacyDeleteOpen');if(b)b.disabled=false;}}).catch(()=>{const n=$('privacyNote');if(n)n.textContent='The privacy disclosure could not be loaded, so deletion is not offered.';});
+ const actions=$('privacyActions');if(actions){const exp=h('button',{class:'btn',type:'button',text:'Download my data'});const del=h('button',{class:'btn',type:'button',id:'privacyDeleteOpen',text:'Delete my data…',disabled:''});exp.addEventListener('click',async()=>{try{const pack=await api('/privacy/export');app().download('atlas-my-data.json',JSON.stringify(pack,null,2),'application/json');}catch(e){actions.append(banner('warn',e.message));}});del.addEventListener('click',()=>confirmDelete(actions,del,deletion));actions.append(exp,del);}
 }
+// Nothing is sent until the person ticks the box and presses Delete permanently. Cancel sends nothing.
+function confirmDelete(actions,del,deletion){if(!deletion||$('privacyConfirm'))return;
+ const tick=h('input',{type:'checkbox',id:'privacyConfirmTick'});
+ const go=h('button',{class:'btn primary',type:'button',id:'privacyConfirmDelete',text:'Delete permanently',disabled:''});
+ const cancel=h('button',{class:'btn',type:'button',id:'privacyConfirmCancel',text:'Cancel'});
+ const kept=[...(deletion.notDeleted||[]),...(deletion.retained||[]).map(r=>r.store+': '+(r.note||r.action))];
+ const box=h('div',{class:'panel',id:'privacyConfirm',role:'alertdialog','aria-modal':'false','aria-labelledby':'privacyConfirmTitle','aria-describedby':'privacyConfirmScope'},[
+  h('h3',{id:'privacyConfirmTitle',text:'Delete your data in this tenant?'}),
+  h('p',{id:'privacyConfirmScope',text:'This permanently deletes, for you in this tenant only: your journey, your profile, every story you own and all of its revisions, and the other rows listed under Deleted. It cannot be undone.'}),
+  h('p',{class:'tiny',text:'Deleted:'}),h('ul',{id:'privacyConfirmDeleted'},deletion.coveredLocal.map(t=>h('li',{text:t}))),
+  h('p',{class:'tiny',text:'Not deleted:'}),h('ul',{id:'privacyConfirmKept'},kept.map(t=>h('li',{text:t}))),
+  h('p',{class:'tiny muted',text:'Deletion is not complete. Vendor deletion is not asserted. This is not a GDPR certification.'}),
+  h('label',{class:'field'},[tick,document.createTextNode(' I understand that my journey, my profile, every story I own here and all of their revisions will be permanently deleted.')]),
+  h('div',{},[go,cancel])]);
+ tick.addEventListener('change',()=>{go.disabled=!tick.checked;});
+ cancel.addEventListener('click',()=>{box.remove();del.disabled=false;del.focus();actions.append(banner('','Cancelled. Nothing was deleted.'));});
+ go.addEventListener('click',async()=>{if(!tick.checked)return;go.disabled=true;cancel.disabled=true;
+  try{const r=await api('/privacy/delete',{method:'POST',body:{}});box.replaceWith(deletionReceipt(r));}catch(e){box.remove();actions.append(banner('warn',e.message));}
+  del.disabled=false;});
+ del.disabled=true;actions.append(box);tick.focus();}
+function deletionReceipt(r){const box=h('div',{class:'panel',id:'privacyReceipt',role:'status'},[h('h3',{text:'Deletion receipt'})]);
+ box.append(h('ul',{},(r.outcomes||[]).map(o=>h('li',{text:o.error?`${o.store}: not removed (${o.error})`:`${o.store}: ${o.removed} removed`}))));
+ for(const b of r.blocked||[])box.append(h('p',{text:`Kept story ${b.id}: another person's story was merged into it.`}));
+ box.append(h('p',{class:'tiny muted',text:`Complete: ${r.complete===true?'yes':'no'}. Vendor deletion: ${r.vendorDeletion||'not-asserted'}. ${r.note||''}`}));
+ return box;}
 function bars(series){const max=Math.max(1,...series.map(p=>p.events||0));const fig=h('div',{class:'chart',role:'img','aria-label':'Events by day'});
  for(const p of series){const i=h('i');i.style.height=Math.round((p.events/max)*100)+'%';fig.append(h('div',{},[i,h('span',{text:String(p.bucket).slice(5)})]));}
  return fig;}

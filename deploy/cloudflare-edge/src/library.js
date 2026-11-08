@@ -517,6 +517,8 @@ export class Library {
   async index(id) {
     const row = this.row(id); if (!row) return;
     const vec = this.embed ? await this.embed(searchText(recordView(this, row.data))) : null;
+    // The story can be deleted while the embedding is awaited. Nothing below may point at a row that is gone.
+    if (!this.row(id)) return;
     if (vec) this.sql.exec('UPDATE refs SET embedding = ? WHERE id = ?', JSON.stringify(vec), id);
     const storyTenant = String(row.tenant || row.state?.tenant || '').toLowerCase();
     const others = this.rows("SELECT id, title, data, state, embedding, tenant FROM refs WHERE merged_into IS NULL AND id != ? AND lower(COALESCE(tenant, '')) = ?", id, storyTenant);
