@@ -766,3 +766,12 @@ Review answers:
 - An index that resumes after the embedding returns stops when its story is gone. It writes no duplicate pointer to a deleted row.
 - Still open, not implemented: the indirect merge chain and a same-email source in another or a blank tenant (D3 extension). Pointers written before this change, claims, bids, gaps, invitations, staffing and audit rows that point at a deleted story are not cleaned up. complete stays false. Vendor deletion stays not-asserted. This is not a GDPR certification.
 - Commands: python3 build.py; python3 deploy/cloudflare-edge/build_edge.py; node --test deploy/cloudflare-edge/test/*.test.js; node --test tests/*.test.js; python3 -m pytest tests/test_*.py -q; python3 tests/privacy_delete_browser.py; a local Miniflare/workerd run of the bundled Worker (synthetic data, local stand-ins only).
+
+### Session: 2026-11-08 / delete confirmation corrections
+- Parent is the delete confirmation writer note (6d9afb93). Code commit a590eaea; this note is the next forward commit on an unpublished local branch. No push, pull request, merge, deploy, live data, provider call, or provider deletion. No earlier commit was amended.
+- Touched: src/journey-ui.js, tests/privacy_delete_browser.py, and the four rebuilt HTML aliases. Worker source, the story delete transaction, the late-index guard and the merge-target block are unchanged.
+- The confirmation states the verified-tenant scope. A story that another person's story was merged into is kept with its revisions, and the receipt names it. The text no longer promises every owned story or all data.
+- While a delete is pending, the tick, Cancel and Delete permanently are disabled. Unticking and reticking, clicks and keys cannot send a second request. Before the fix, two POSTs reached the handler.
+- Only the disclosure for the current render can enable deletion. A disclosure without a deletion scope says why deletion is not offered. A pending or failed disclosure still offers nothing.
+- Still open, not implemented: the D3 extension (indirect chain, same-email source in another or a blank tenant), cleanup of older pointers and of rows that point at a deleted story. complete stays false. Vendor deletion stays not-asserted. This is not a GDPR certification.
+- Commands: python3 build.py; python3 deploy/cloudflare-edge/build_edge.py; python3 tests/privacy_delete_browser.py; a local Miniflare/workerd browser run of the bundled Worker with synthetic tenant tokens (local stand-ins only).
