@@ -736,3 +736,10 @@ Review answers:
 - The frozen run19 archives were not rewritten. This note is the later local-main continuation.
 - A privacy delete now requires a verified tenant UUID before it writes. A blank tenant does not match quarantined rows. The response still says deletion is incomplete and vendor deletion is not-asserted. Stories, staffing, invitations, audit, blank profiles, and other tenants stay.
 - No push, deploy, or live provider call.
+
+### Session: 2026-11-08 / local main, privacy delete receipt
+- Parent remains the prior local-main commit. This note is the next forward commit. No push, pull request, deploy, or live call. Frozen run19 archives and the prior packet were not rewritten.
+- The privacy-delete JSON no longer returns retained row counts. It returns this subject and tenant's own removal counts, complete false, and vendor deletion not-asserted. Adding or removing another tenant's rows, or another subject's rows, does not change that JSON. Those rows stay in the database.
+- The Worker rejects POST /api/library/privacy/delete and POST /api/library/profile/delete before it asks for the library object when the verified subject has no tenant UUID. A browser tenant header does not supply that UUID. A direct library call on an already constructed store can still have had its schema created earlier; that path is not a zero-write claim.
+- Profile delete requires a tenant UUID even when tenant enforcement is off, so a blank-tenant profile is not erased. On the Worker, tenant enforcement is on unless ATLAS_TENANT_ISOLATION is local-synthetic, and production refuses that combination. There is no public Durable Object route.
+- Quarantine is not deletion. Vendor deletion stays not-asserted. A Cloudflare Durable Object runtime was not executed.

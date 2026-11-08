@@ -122,16 +122,23 @@ test('edits carry a basis: a later source value shows as `newer`; Keep mine re-b
 
 test('edits, clear and delete: delete removes edits and consents and leaves directory rows', async () => {
   const { l } = world();
-  await importRows(l, [{ email: ALEX.email, name: 'Alex Martin', title: 'Data engineer' }]);
-  await call(l, ALEX, 'POST', 'profile', { set: { title: 'Principal', preferredName: 'Al', managerName: 'Mia Chef' } });
-  await call(l, ALEX, 'POST', 'profile/consent', { kind: 'spokenAsk', version: 1, granted: true });
-  let p = (await call(l, ALEX, 'POST', 'profile', { clear: ['managerName'], set: { preferredName: '' } })).body;
+  const T = 'abcdefab-cdef-4abc-8def-0123456789ab';
+  const owner = { ...ALEX, tenant: T, tenantEnforced: true };
+  const admin = { ...ADMIN, tenant: T, tenantEnforced: true };
+  await importRows(l, [{ email: ALEX.email, name: 'Alex Martin', title: 'Data engineer' }], { user: admin });
+  l.sql.exec("INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES (?, '', ?, '{}', '{}', '{}', ?, ?, ?)", ALEX.email, ALEX.email, NOW, NOW, NOW);
+  await call(l, owner, 'POST', 'profile', { set: { title: 'Principal', preferredName: 'Al', managerName: 'Mia Chef' } });
+  await call(l, owner, 'POST', 'profile/consent', { kind: 'spokenAsk', version: 1, granted: true });
+  let p = (await call(l, owner, 'POST', 'profile', { clear: ['managerName'], set: { preferredName: '' } })).body;
   assert.deepEqual([p.fields.managerName, p.fields.preferredName.from, p.fields.title.from], [null, 'guess', 'you'], 'clear and an empty value both remove the edit');
-  assert.deepEqual((await call(l, ALEX, 'POST', 'profile/delete')).body, { deleted: true, vendorDeletion: 'not-asserted' });
-  assert.equal(l.rows('SELECT COUNT(*) AS n FROM profiles')[0].n, 0);
+  assert.equal((await call(l, ALEX, 'POST', 'profile/delete')).status, 403);
+  assert.equal(l.rows("SELECT COUNT(*) AS n FROM profiles WHERE tenant = ''")[0].n, 1);
+  assert.deepEqual((await call(l, owner, 'POST', 'profile/delete')).body, { deleted: true, vendorDeletion: 'not-asserted' });
+  assert.equal(l.rows('SELECT COUNT(*) AS n FROM profiles WHERE tenant = ?', T)[0].n, 0);
+  assert.equal(l.rows("SELECT COUNT(*) AS n FROM profiles WHERE tenant = ''")[0].n, 1);
   assert.equal(l.rows("SELECT COUNT(*) AS n FROM directory WHERE source = 'dna_export'")[0].n, 1, 'the export row stays (admin-managed)');
-  assert.deepEqual((await call(l, ALEX, 'GET', 'profile/consents')).body, { spokenAsk: null });
-  p = (await call(l, ALEX, 'GET', 'profile')).body;
+  assert.deepEqual((await call(l, owner, 'GET', 'profile/consents')).body, { spokenAsk: null });
+  p = (await call(l, owner, 'GET', 'profile')).body;
   assert.deepEqual([p.fields.title.value, p.fields.title.from, p.consents], ['Data engineer', 'dna_export', {}], 'sources refill the profile');
   assert.deepEqual(l.rows("SELECT action, detail FROM audit WHERE id = 'profile' ORDER BY seq").map(a => [a.action, a.detail]), [
     ['profile edited', 'fields: title, preferredName, managerName'], ['consent', 'spokenAsk granted'], ['profile edited', 'fields: managerName, preferredName'],

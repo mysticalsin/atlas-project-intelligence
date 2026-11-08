@@ -279,6 +279,9 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
       // The declared length can be absent or wrong: read at most 256 KiB of the body actually sent, then forward it.
       const bodyless = request.method === 'GET' || request.method === 'HEAD', bytes = bodyless ? null : await boundedBytes(request, 262144);
       if (!bodyless && !bytes) return json(env, { error: 'Request too large.' }, 413);
+      if (request.method === 'POST' && (url.pathname === '/api/library/privacy/delete' || url.pathname === '/api/library/profile/delete') && !TENANT_ID.test(tenant)) {
+        return json(env, { error: 'A verified tenant is required.' }, 403);
+      }
       const fwdHeaders = new Headers(request.headers); fwdHeaders.delete('content-length');
       const forward = new Request(request.url, { method: request.method, headers: fwdHeaders, body: bodyless ? undefined : bytes });
       // Entra: the stable tid:oid is the library identity (emails can change); Access: the verified email.

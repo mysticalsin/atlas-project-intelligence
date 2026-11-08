@@ -16,9 +16,9 @@ function dsarStores() {
     retained: [
       { store: 'legacy-blank-tenant-rows', action: 'quarantined', note: 'Blank ownership stays blank. It was not assigned a tenant and was not deleted by this request.' },
       { store: 'hindsight-bank', action: 'not-contacted', note: 'The vendor bank was not called. A subject-only bank is not read when a verified tenant is present, and it was not deleted.' },
-      { store: 'interview-object', action: 'not-deleted', note: 'The Interview object for another tenant, and any legacy subject-only object, was not opened and was not erased.' },
+      { store: 'interview-object', action: 'not-deleted', note: 'The Interview object was not opened and was not erased.' },
       { store: 'vendor-logs', action: 'not-asserted' },
-      { store: 'directory-and-audit', action: 'retained', note: 'Directory keys for this subject and tenant are listed in outcomes. Every other directory row stays. Audit rows are not deleted.' },
+      { store: 'directory-and-audit', action: 'retained', note: 'Directory keys for this subject and tenant are listed in outcomes. Audit rows are not deleted. This response does not report any other row.' },
     ],
     complete: false,
   };
@@ -141,17 +141,7 @@ export async function privacyRoutes(ctx) {
       return n;
     });
     lib.log('library', user.email, 'privacy delete', outcomes.map(o => o.store + (o.error ? ' failed' : ' ' + o.removed)).join(', '));
-    const count = (sql, ...params) => { try { return lib.rows(sql, ...params)[0].n; } catch { return null; } };
-    const mail = String(user.mail || user.email || '').trim().toLowerCase();
-    const retainedRows = {
-      blankProfiles: count("SELECT COUNT(*) AS n FROM profiles WHERE subject = ? AND tenant = ''", user.email),
-      otherTenantProfiles: count("SELECT COUNT(*) AS n FROM profiles WHERE subject = ? AND tenant != ? AND tenant != ''", user.email, tenant),
-      stories: count('SELECT COUNT(*) AS n FROM refs WHERE owner = ?', user.email),
-      staffing: count('SELECT COUNT(*) AS n FROM staffing WHERE lower(consultant_email) = ? OR lower(manager_email) = ?', mail, mail),
-      invitations: count('SELECT COUNT(*) AS n FROM invitations WHERE lower(email) = ?', mail),
-      audit: count('SELECT COUNT(*) AS n FROM audit WHERE actor = ?', user.email),
-    };
-    return { body: { outcomes, ...dsarStores(), retainedRows, complete: false, vendorDeletion: 'not-asserted', note: 'Each store reports its own result. An error means that store was not removed. Blank-tenant rows were not assigned a tenant and were not deleted. Stories, staffing, invitations, and audit rows were not deleted. Vendor deletion is not-asserted. This is not a GDPR certification.' } };
+    return { body: { outcomes, ...dsarStores(), complete: false, vendorDeletion: 'not-asserted', note: 'Each store reports only what this request removed for this subject and tenant. An error means that store was not removed. Other tenants, other people, and blank-tenant rows are not counted. Stories, staffing, invitations, and audit history are not deleted. Quarantine is not deletion. Vendor deletion is not-asserted. This is not a GDPR certification.' } };
   }
   if (method === 'POST' && user.role === 'admin' && parts[1] === 'purge-telemetry') {
     if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');

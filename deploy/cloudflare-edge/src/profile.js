@@ -59,9 +59,9 @@ function migrateProfiles(lib) {
   lib.sql.exec('ALTER TABLE profiles_v2 RENAME TO profiles');
 }
 export function deleteOwnedProfile(lib, user) {
-  ensure(lib);
-  demandTenant(user);
   const tenant = tenantKey(user);
+  if (!TENANT_ID.test(tenant)) throw fail(403, 'A verified tenant is required.');
+  ensure(lib);
   const had = lib.rows('SELECT COUNT(*) AS n FROM profiles WHERE subject = ? AND tenant = ?', user.email, tenant)[0].n;
   if (had) lib.sql.exec('DELETE FROM profiles WHERE subject = ? AND tenant = ?', user.email, tenant);
   return had;
@@ -504,6 +504,7 @@ export function daily(lib, now = lib.now(), user = {}) {
 export async function routes(ctx) {
   const { method, parts, user, lib, env = {} } = ctx, [word, action, extra] = parts;
   if (extra !== undefined) throw fail(404, 'Not found.');
+  if (word === 'profile' && method === 'POST' && action === 'delete' && !TENANT_ID.test(tenantKey(user))) throw fail(403, 'A verified tenant is required.');
   demandTenant(user);
   ensure(lib);
   const opts = { fetcher: lib.services?.fetch || fetch, waitUntil: ctx.waitUntil || (p => p) };

@@ -1275,6 +1275,9 @@ test('a privacy delete without a verified tenant leaves quarantined blank rows u
   l.sql.exec("INSERT INTO invitations (id, email, project_id, title, reason, slot, reference_id, status, created_at, source, tenant) VALUES ('inv-keep', 'ada@example.test', 'PRJ-A', '', 'manual', '', '', 'open', '2026-11-08T00:00:00.000Z', 't', ?)", A);
   const story = await l.upsert({ email: 'ada@example.test', mail: 'ada@example.test', role: 'user', tenant: A, tenantEnforced: true }, { localId: 'dsar-story', reference: ref() });
   l.sql.exec("INSERT INTO audit (id, actor, action, at, detail) VALUES ('keep-audit', 'ada@example.test', 'older', '2026-11-08T00:00:00.000Z', 'stay')");
+  l.sql.exec("INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES ('kim@example.test', ?, 'kim@example.test', '{}', '{}', '{}', '2026-11-08T00:00:00.000Z', '2026-11-08T00:00:00.000Z', '2026-11-08T00:00:00.000Z')", A);
+  l.sql.exec("INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES ('kim@example.test', ?, 'kim@example.test', '{}', '{}', '{}', '2026-11-08T00:00:00.000Z', '2026-11-08T00:00:00.000Z', '2026-11-08T00:00:00.000Z')", B);
+  await l.upsert({ email: 'kim@example.test', mail: 'kim@example.test', role: 'user', tenant: B, tenantEnforced: true }, { localId: 'foreign-story', reference: ref() });
   const sandbox = await libraryRoutes(new Request('https://atlas.test/api/library/privacy/delete', { method: 'POST', body: '{}', headers: { 'x-atlas-user': 'ada@example.test', 'x-atlas-role': 'user', 'x-atlas-email': 'ada@example.test', 'x-atlas-tenant': '' } }), l, { env: { ATLAS_TENANT_ISOLATION: 'local-synthetic', ORIGIN: 'https://atlas.test' } });
   assert.equal(sandbox.status, 403);
   assert.equal(l.rows("SELECT COUNT(*) AS n FROM profiles WHERE subject = 'ada@example.test' AND tenant = ''")[0].n, 1);
@@ -1283,12 +1286,9 @@ test('a privacy delete without a verified tenant leaves quarantined blank rows u
   assert.equal(erased.complete, false);
   assert.equal(erased.vendorDeletion, 'not-asserted');
   assert.equal(erased.outcomes.find(item => item.store === 'profile').removed, 1);
-  assert.equal(erased.retainedRows.blankProfiles, 1);
-  assert.equal(erased.retainedRows.otherTenantProfiles, 1);
-  assert.equal(erased.retainedRows.staffing, 2);
-  assert.equal(erased.retainedRows.invitations, 1);
-  assert.equal(erased.retainedRows.stories, 1);
-  assert.ok(erased.retainedRows.audit >= 1);
+  assert.equal(erased.retainedRows, undefined);
+  assert.equal(JSON.stringify(erased).includes(B), false);
+  assert.equal(JSON.stringify(erased).includes('kim@example.test'), false);
   assert.equal(l.rows("SELECT COUNT(*) AS n FROM profiles WHERE tenant = ''")[0].n, 1);
   assert.equal(l.rows('SELECT COUNT(*) AS n FROM profiles WHERE subject = ? AND tenant = ?', 'ada@example.test', B)[0].n, 1);
   assert.equal(l.rows("SELECT COUNT(*) AS n FROM staffing WHERE tenant = ''")[0].n, 1);
@@ -1298,6 +1298,25 @@ test('a privacy delete without a verified tenant leaves quarantined blank rows u
   assert.equal(l.rows("SELECT detail FROM audit WHERE id = 'keep-audit'")[0].detail, 'stay');
   assert.equal(erased.retained.find(item => item.store === 'legacy-blank-tenant-rows').action, 'quarantined');
   assert.equal(erased.retained.find(item => item.store === 'vendor-logs').action, 'not-asserted');
+  const quiet = lib();
+  profile.ensure(quiet);
+  ensureOutreach(quiet);
+  quiet.sql.exec("INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES ('ada@example.test', ?, 'ada@example.test', '{}', '{}', '{}', '2026-11-08T00:00:00.000Z', '2026-11-08T00:00:00.000Z', '2026-11-08T00:00:00.000Z')", A);
+  const quietBody = await (await libraryRoutes(new Request('https://atlas.test/api/library/privacy/delete', { method: 'POST', body: '{}', headers: { 'x-atlas-user': 'ada@example.test', 'x-atlas-role': 'user', 'x-atlas-email': 'ada@example.test', 'x-atlas-tenant': A, 'x-atlas-tenant-enforced': '1' } }), quiet, { env: { DATA_MODE: 'production', ORIGIN: 'https://atlas.test', CSRF_SECRET: 's' } })).json();
+  const crowded = lib();
+  profile.ensure(crowded);
+  ensureOutreach(crowded);
+  crowded.sql.exec("INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES ('ada@example.test', ?, 'ada@example.test', '{}', '{}', '{}', '2026-11-08T00:00:00.000Z', '2026-11-08T00:00:00.000Z', '2026-11-08T00:00:00.000Z')", A);
+  crowded.sql.exec("INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES ('ada@example.test', ?, 'ada@example.test', '{}', '{}', '{}', '2026-11-08T00:00:00.000Z', '2026-11-08T00:00:00.000Z', '2026-11-08T00:00:00.000Z')", B);
+  crowded.sql.exec("INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES ('kim@example.test', ?, 'kim@example.test', '{}', '{}', '{}', '2026-11-08T00:00:00.000Z', '2026-11-08T00:00:00.000Z', '2026-11-08T00:00:00.000Z')", B);
+  crowded.sql.exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, tenant) VALUES ('PRJ-B', 'ada@example.test', 'sam@example.test', '', '', '', 'legacy', '2026-11-08T00:00:00.000Z', ?)", B);
+  await crowded.upsert({ email: 'ada@example.test', mail: 'ada@example.test', role: 'user', tenant: B, tenantEnforced: true }, { localId: 'other-tenant-story', reference: ref() });
+  const crowdedBody = await (await libraryRoutes(new Request('https://atlas.test/api/library/privacy/delete', { method: 'POST', body: '{}', headers: { 'x-atlas-user': 'ada@example.test', 'x-atlas-role': 'user', 'x-atlas-email': 'ada@example.test', 'x-atlas-tenant': A, 'x-atlas-tenant-enforced': '1' } }), crowded, { env: { DATA_MODE: 'production', ORIGIN: 'https://atlas.test', CSRF_SECRET: 's' } })).json();
+  assert.deepEqual(crowdedBody, quietBody);
+  assert.equal(crowded.rows('SELECT COUNT(*) AS n FROM profiles WHERE subject = ? AND tenant = ?', 'ada@example.test', B)[0].n, 1);
+  assert.equal(crowded.rows('SELECT COUNT(*) AS n FROM profiles WHERE subject = ? AND tenant = ?', 'kim@example.test', B)[0].n, 1);
+  assert.equal(crowded.rows('SELECT COUNT(*) AS n FROM staffing WHERE tenant = ?', B)[0].n, 1);
+  assert.equal(crowded.rows("SELECT COUNT(*) AS n FROM refs WHERE owner = 'ada@example.test' AND tenant = ?", B)[0].n, 1);
 });
 
 test('csv formula characters are neutralized', () => {

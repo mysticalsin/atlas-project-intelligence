@@ -688,3 +688,29 @@ test('production refuses local-synthetic and demo identity before any library fe
   assert.equal(local.status, 200);
   assert.equal(fetches, 1, 'the local demo, without DATA_MODE=production, still reaches the library');
 });
+
+test('privacy and profile deletes without a subject tenant do not call the library', async () => {
+  let calls = 0;
+  const stub = { idFromName() { calls += 1; return 'g'; }, get() { calls += 1; return { fetch() { calls += 1; return new Response('{}'); } }; } };
+  const env = { ...ENV, LIBRARY: stub };
+  const boot = await (await handle(await req('/api/bootstrap'), env, '')).json();
+  for (const path of ['/api/library/privacy/delete', '/api/library/profile/delete']) {
+    const res = await handle(await signed(path, {}, { method: 'POST', body: '{}', headers: { Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'content-type': 'application/json', 'x-atlas-tenant': 'abcdefab-cdef-4abc-8def-0123456789ab' } }), env, '');
+    assert.equal(res.status, 403, path);
+    assert.match((await res.json()).error, /verified tenant/);
+  }
+  assert.equal(calls, 0);
+});
+
+test('a verified subject tenant is forwarded for privacy delete and a client tenant is not', async () => {
+  let fwd = null, names = [];
+  const stub = { idFromName(name) { names.push(name); return name; }, get: () => ({ fetch: r => { fwd = r; return new Response('{"complete":false}'); } }) };
+  const tid = 'abcdefab-cdef-4abc-8def-0123456789ab', oid = 'bbbbbbbb-cccc-4ddd-8eee-ffff00001111';
+  const env = { ...ENV, IDENTITY_SOURCE: 'entra', ENTRA_TENANTS: tid, LIBRARY: stub };
+  const boot = await (await handle(await signed('/api/bootstrap', { custom: { tid, oid, roles: [] } }), env, '')).json();
+  const res = await handle(await signed('/api/library/privacy/delete', { custom: { tid, oid, roles: [] } }, { method: 'POST', body: '{}', headers: { Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'content-type': 'application/json', 'x-atlas-tenant': 'cccccccc-dddd-4eee-8fff-000000000001' } }), env, '');
+  assert.equal(res.status, 200);
+  assert.equal(fwd.headers.get('x-atlas-tenant'), tid);
+  assert.equal(fwd.headers.get('x-atlas-user'), `${tid}:${oid}`);
+  assert.deepEqual(names, ['global']);
+});
