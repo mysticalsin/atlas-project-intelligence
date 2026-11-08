@@ -1373,6 +1373,100 @@ test('a privacy delete removes only this subject’s stories and revisions in th
   assert.equal(JSON.stringify(again).includes('kim@example.test'), false);
 });
 
+test('a privacy delete blocks an owned story that is another owner’s merge target', async () => {
+  const l = lib();
+  const A = 'abcdefab-cdef-4abc-8def-0123456789ab';
+  const B = 'bbbbbbbb-cccc-4ddd-8eee-ffff00001111';
+  const ada = { email: 'ada@example.test', mail: 'ada@example.test', role: 'user', tenant: A, tenantEnforced: true };
+  const kim = { email: 'kim@example.test', mail: 'kim@example.test', role: 'user', tenant: A, tenantEnforced: true };
+  const reviewer = { email: 'rev@example.test', mail: 'rev@example.test', role: 'reviewer', tenant: A, tenantEnforced: true };
+  const target = await l.upsert(ada, { localId: 'merge-target', reference: { ...ref(), title: 'Ada target' } });
+  const loose = await l.upsert(ada, { localId: 'loose', reference: { ...ref(), title: 'Ada loose' } });
+  const source = await l.upsert(kim, { localId: 'foreign-source', reference: { ...ref(), title: 'Foreign source zeta' } });
+  const elsewhere = await l.upsert({ ...ada, tenant: B }, { localId: 'ada-elsewhere', reference: { ...ref(), title: 'Ada other tenant' } });
+  await l.merge(reviewer, { keep: target.id, merge: source.id });
+  l.sql.exec(`INSERT INTO refs (id, owner, local_id, title, status, revision, content_hash, practice, industry, country, manager_email, members, quality_score, created_at, updated_at, updated_by, next_review, merged_into, data, state, embedding, tenant)
+    VALUES ('blank-source', 'foreign@example.test', 'blank-source', 'Blank foreign source', 'withdrawn', 1, 'h', '', '', '', '', ',', NULL, '2026-11-08T00:00:00.000Z', '2026-11-08T00:00:00.000Z', 'foreign@example.test', '', ?, '{"title":"Blank foreign source"}', '{}', NULL, '')`, target.id);
+  l.sql.exec("INSERT INTO revisions (id, revision, data, author, at) VALUES ('blank-source', 1, ?, 'foreign@example.test', '2026-11-08T00:00:00.000Z')", '{"title":"Blank foreign source body"}');
+  claims.ensure(l);
+  bids.ensure(l);
+  gaps.ensure(l);
+  ensureOutreach(l);
+  l.sql.exec("INSERT INTO claims (id, ref_id, revision, topic, idx, text, sentence_hash, status, by_mail, at, confirmed_revision, note, created_by, created_at) VALUES ('claim-keep', ?, 1, 1, 0, 'synthetic claim', 'h', 'open', '', '2026-11-08T00:00:00.000Z', NULL, '', 'ada@example.test', '2026-11-08T00:00:00.000Z')", target.id);
+  l.sql.exec("INSERT INTO bids (id, owner, owner_mail, title, alias, prospects, brief, pseudo, requirements, customer, req_method, match, status, outcome, outcome_note, decided_at, decided_by, purged_at, created_at, updated_at, tenant) VALUES ('bid-keep', 'ada@example.test', 'ada@example.test', 'Bid', 'Alias', '', '', '', '[]', '', '', '', 'open', '', '', '', '', '', '2026-11-08T00:00:00.000Z', '2026-11-08T00:00:00.000Z', ?)", A);
+  l.sql.exec("INSERT INTO bid_references (bid_id, ref_id, revision, proof_type, used_at, used_by) VALUES ('bid-keep', ?, 1, 'story', '2026-11-08T00:00:00.000Z', 'ada@example.test')", target.id);
+  l.sql.exec("INSERT INTO gap_requests (id, bid_id, requirement_ids, asks, email, assignee_name, reference_id, project_id, status, created_by, created_by_mail, created_at, answered_at, results, pseudo, source, tenant) VALUES ('gap-keep', 'bid-keep', '[]', '[]', 'kim@example.test', '', ?, 'PRJ-SYN', 'open', 'ada@example.test', 'ada@example.test', '2026-11-08T00:00:00.000Z', '', '', '', 'manual', ?)", target.id, A);
+  l.sql.exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, tenant) VALUES ('PRJ-KEEP', 'ada@example.test', 'sam@example.test', 'Sam', 'Keep', '', 'legacy', '2026-11-08T00:00:00.000Z', ?)", A);
+  l.sql.exec("INSERT INTO invitations (id, email, project_id, title, reason, slot, reference_id, status, created_at, source, tenant) VALUES ('inv-target', 'ada@example.test', 'PRJ-KEEP', 'Keep', 'manual', '', ?, 'open', '2026-11-08T00:00:00.000Z', 't', ?)", target.id, A);
+  l.sql.exec("INSERT INTO audit (id, actor, action, at, detail) VALUES ('audit-merge', 'rev@example.test', 'older', '2026-11-08T00:00:00.000Z', 'stay-merge')");
+  const kept = {
+    target: l.rows('SELECT * FROM refs WHERE id = ?', target.id),
+    targetRevisions: l.rows('SELECT * FROM revisions WHERE id = ? ORDER BY revision', target.id),
+    source: l.rows('SELECT * FROM refs WHERE id = ?', source.id),
+    sourceRevisions: l.rows('SELECT * FROM revisions WHERE id = ? ORDER BY revision', source.id),
+    blank: l.rows("SELECT * FROM refs WHERE id = 'blank-source'"),
+    blankRevisions: l.rows("SELECT * FROM revisions WHERE id = 'blank-source'"),
+    elsewhere: l.rows('SELECT * FROM refs WHERE id = ?', elsewhere.id),
+    claims: l.rows('SELECT * FROM claims'),
+    bids: l.rows('SELECT * FROM bids'),
+    bidRefs: l.rows('SELECT * FROM bid_references'),
+    gaps: l.rows('SELECT * FROM gap_requests'),
+    staffing: l.rows('SELECT * FROM staffing'),
+    invitations: l.rows('SELECT * FROM invitations'),
+    audit: l.rows("SELECT id, actor, action, at, detail FROM audit WHERE id = 'audit-merge'"),
+  };
+  const looseRevisions = l.rows('SELECT COUNT(*) AS n FROM revisions WHERE id = ?', loose.id)[0].n;
+  const headers = { 'x-atlas-user': 'ada@example.test', 'x-atlas-role': 'user', 'x-atlas-email': 'ada@example.test', 'x-atlas-tenant': A, 'x-atlas-tenant-enforced': '1' };
+  const env = { DATA_MODE: 'production', ORIGIN: 'https://atlas.test', CSRF_SECRET: 's' };
+  const erased = await (await libraryRoutes(new Request('https://atlas.test/api/library/privacy/delete', { method: 'POST', body: '{}', headers }), l, { env })).json();
+  assert.equal(erased.complete, false);
+  assert.equal(erased.vendorDeletion, 'not-asserted');
+  assert.deepEqual(erased.blocked, [{ store: 'stories', id: target.id, reason: 'another-owner-merge-target' }]);
+  assert.equal(erased.outcomes.find(item => item.store === 'stories').removed, 1);
+  assert.equal(erased.outcomes.find(item => item.store === 'revisions').removed, looseRevisions);
+  const body = JSON.stringify(erased);
+  assert.equal(body.includes('kim@example.test'), false);
+  assert.equal(body.includes('foreign@example.test'), false);
+  assert.equal(body.includes(source.id), false);
+  assert.equal(body.includes('blank-source'), false);
+  assert.equal(body.includes(B), false);
+  assert.equal(body.includes('Foreign source zeta'), false);
+  assert.deepEqual(l.rows('SELECT * FROM refs WHERE id = ?', target.id), kept.target);
+  assert.deepEqual(l.rows('SELECT * FROM revisions WHERE id = ? ORDER BY revision', target.id), kept.targetRevisions);
+  assert.deepEqual(l.rows('SELECT * FROM refs WHERE id = ?', source.id), kept.source);
+  assert.deepEqual(l.rows('SELECT * FROM revisions WHERE id = ? ORDER BY revision', source.id), kept.sourceRevisions);
+  assert.deepEqual(l.rows("SELECT * FROM refs WHERE id = 'blank-source'"), kept.blank);
+  assert.deepEqual(l.rows("SELECT * FROM revisions WHERE id = 'blank-source'"), kept.blankRevisions);
+  assert.equal(l.row(loose.id), null);
+  assert.equal(l.rows('SELECT COUNT(*) AS n FROM revisions WHERE id = ?', loose.id)[0].n, 0);
+  assert.deepEqual(l.rows('SELECT * FROM refs WHERE id = ?', elsewhere.id), kept.elsewhere);
+  assert.deepEqual(l.rows('SELECT * FROM claims'), kept.claims);
+  assert.deepEqual(l.rows('SELECT * FROM bids'), kept.bids);
+  assert.deepEqual(l.rows('SELECT * FROM bid_references'), kept.bidRefs);
+  assert.deepEqual(l.rows('SELECT * FROM gap_requests'), kept.gaps);
+  assert.deepEqual(l.rows('SELECT * FROM staffing'), kept.staffing);
+  assert.deepEqual(l.rows('SELECT * FROM invitations'), kept.invitations);
+  assert.deepEqual(l.rows("SELECT id, actor, action, at, detail FROM audit WHERE id = 'audit-merge'"), kept.audit);
+  const again = await (await libraryRoutes(new Request('https://atlas.test/api/library/privacy/delete', { method: 'POST', body: '{}', headers }), l, { env })).json();
+  assert.deepEqual(again.blocked, [{ store: 'stories', id: target.id, reason: 'another-owner-merge-target' }]);
+  assert.equal(again.outcomes.find(item => item.store === 'stories').removed, 0);
+  assert.equal(again.outcomes.find(item => item.store === 'revisions').removed, 0);
+  assert.equal(again.complete, false);
+  assert.equal(again.vendorDeletion, 'not-asserted');
+  assert.deepEqual(l.rows('SELECT * FROM refs WHERE id = ?', target.id), kept.target);
+  assert.deepEqual(l.rows('SELECT * FROM refs WHERE id = ?', source.id), kept.source);
+  const own = lib();
+  const mine = await own.upsert(ada, { localId: 'self-target', reference: ref() });
+  const mineSource = await own.upsert({ ...ada, email: 'Ada@example.test' }, { localId: 'self-source', reference: ref() });
+  await own.merge(reviewer, { keep: mine.id, merge: mineSource.id });
+  const ownDelete = await (await libraryRoutes(new Request('https://atlas.test/api/library/privacy/delete', { method: 'POST', body: '{}', headers }), own, { env })).json();
+  assert.deepEqual(ownDelete.blocked, []);
+  assert.equal(ownDelete.outcomes.find(item => item.store === 'stories').removed, 2);
+  assert.equal(own.row(mine.id), null);
+  assert.equal(own.row(mineSource.id), null);
+  assert.equal(own.rows('SELECT COUNT(*) AS n FROM revisions WHERE id IN (?, ?)', mine.id, mineSource.id)[0].n, 0);
+});
+
 test('csv formula characters are neutralized', () => {
   assert.equal(neutralizeFormula('=HYPERLINK("http://evil")'), `'=HYPERLINK("http://evil")`);
   assert.equal(neutralizeFormula('+1'), "'+1");

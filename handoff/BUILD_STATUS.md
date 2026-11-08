@@ -752,3 +752,8 @@ Review answers:
 ### Session: 2026-11-08 / owned stories in a verified tenant
 - Parent is the ffmpeg CI commit. This note is the next forward commit on an unpublished local branch. No push, pull request, merge, deploy, or live call.
 - A privacy delete for verified subject S in verified tenant T now removes story rows whose owner is S and whose tenant is T, and every revision of those stories. Blank-tenant rows, other tenants, another owner in T, a malformed tenant, staffing, invitations, and existing audit rows stay. complete stays false. Vendor deletion stays not-asserted. Quarantine is not deletion.
+
+### Session: 2026-11-08 / block another owner's merge target
+- Parent is the owned-story delete commit. This note is the next forward commit on an unpublished local branch. No push, pull request, merge, deploy, or live call. The prior commit was not amended.
+- A privacy delete does not remove an owned story when another owner's story has been merged into it. The receipt names that story id and the reason another-owner-merge-target. The other owner's row is not changed. Other owned stories in the same tenant are still removed. complete stays false. Vendor deletion stays not-asserted.
+- The journey button, the non-atomic revision delete, and the index continuation are unchanged.
