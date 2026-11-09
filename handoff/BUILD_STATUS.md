@@ -813,3 +813,14 @@ Review answers:
 - Not changed: quality.py INTERVIEW_POLICY (the analyst and hosted route), the hosted realtime instructions, reference-sheet, report and email copy, and fillers.
 - Verification is deterministic only, covering prompt strings, greetings and built-page copy, plus a local file render smoke. Live model behaviour was not tested. The non-English greetings need a native-speaker review.
 - Commands: python3 build.py; python3 deploy/cloudflare-edge/build_edge.py; pytest tests/test_persona.py tests/test_cascade.py tests/test_edge.py tests/test_voice.py tests/test_report.py; node --test on the edge app, gap-policy, gaps, session and language tests.
+
+### Session: 2026-11-09 / voice turn latency (assessment, safe cancel, local bench)
+- Parent is the personality note (db5b5abc). Code commit 5dcb1cce; this note is the next forward commit on an unpublished local branch. No push, pull request, merge, deploy, CI change, live model, provider call, microphone or spend.
+- Tony, 2026-11-08 23:06 BRT: very low latency, starting on the next answer before the person has finished.
+- Finding: the edge pipeline has no partial transcript. It uses batch Nova-3 after end of turn, plus an audio-only turn model at a 0.7 s pause.
+- Revise and discard already exist at turn level: withdraw and merge on continuation, barge-in, and stale-generation drop.
+- Implemented: the abandoned talker stream now cancels its upstream body. Whether Workers AI stops generating or billing on cancel is not verified.
+- Bound by fixtures: test/turn-latency.test.js, 7 tests.
+- Measured: dev/latency-bench.mjs, using mocked AI with zero provider delay on a virtual clock. Last sound to first reply audio sent is 0.70 s when the turn model is confident, 1.20 s on plain silence and 2.50 s for an unfinished thought. In-process overhead is about 0.1 to 0.2 ms. Provider latency was not measured.
+- Not enabled and needs approval (docs/VOICE_LATENCY.md): speculative transcription (extra billed audio sent again), a speculative talker draft, streaming recognition (new model contract), and shorter windows (Tony's product trade-off). A live telemetry baseline export comes first.
+- Commands: cd deploy/cloudflare-edge && node --test test/turn-latency.test.js test/app.test.js test/session.test.js; node dev/latency-bench.mjs 20.
