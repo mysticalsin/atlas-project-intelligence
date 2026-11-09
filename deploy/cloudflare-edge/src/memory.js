@@ -4,6 +4,7 @@
 // Memory is self-reported continuity, never evidence. Confidential client details are scrubbed before retention.
 // API contract checked against @vectorize-io/hindsight-client 0.10.1: /v1/default/banks/{bank_id}/..., Bearer key.
 import { TENANT_ID, tenantEnforced } from './authz.js';
+import { paid, TYPESAFE_ENDPOINT } from './meter.js';
 
 // Hindsight Cloud (docs.hindsight.vectorize.io/api-integration). HINDSIGHT_URL overrides it for a self-hosted server.
 export const HINDSIGHT_CLOUD = 'https://api.hindsight.vectorize.io';
@@ -74,8 +75,9 @@ export function memoryConfigured(env = {}) {
 export function hindsight(env, fetcher = fetch) {
   if (!memoryConfigured(env)) return null;
   const base = String(env.HINDSIGHT_URL).replace(/\/+$/, ''), key = env.HINDSIGHT_API_KEY || '';
+  const meter = paid(env), estimate = () => ({ kind: 'memory', provider: 'hindsight', requests: 1 });
   const call = async (method, path, body, timeoutMs = 8000) => {
-    const r = await fetcher(base + path, { method, redirect: 'manual', signal: AbortSignal.timeout(timeoutMs),
+    const r = await meter.fetch(estimate, fetcher, base + path, { method, redirect: 'manual', signal: AbortSignal.timeout(timeoutMs),
       headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
     if (!r.ok) throw Object.assign(new Error('Hindsight HTTP ' + r.status), { status: r.status });
     return r.status === 204 ? {} : r.json().catch(() => ({}));
@@ -127,7 +129,7 @@ export async function jevRelevant(env, memories, project, fetcher = fetch) {
   if (!env.TYPESAFE_API_KEY || !other.length) return { memories, checked: 0 };
   const questions = Object.fromEntries(other.map((m, i) => ['m' + i, { type: 'noul',
     instructions: `Would \`memories[${i}]\` help an interviewer talking with this consultant about the project in \`project\`, either as a preference about how they like to be interviewed or as information about this same project, rather than about a different project?` }]));
-  const r = await fetcher('https://api.typesafe.ai/v1/systemone', { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(2500),
+  const r = await paid(env).fetch(() => ({ kind: 'jev', provider: 'typesafe', requests: 1 }), fetcher, TYPESAFE_ENDPOINT, { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(2500),
     headers: { Authorization: 'Bearer ' + env.TYPESAFE_API_KEY, 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: env.JEV_MODEL || 'jev-latest', state: { project: { title: str(project?.title, 140), stage: str(project?.stage, 40), sector: str(project?.sector, 80) }, memories: other.map(m => m.text) }, questions }) });
   if (!r.ok) throw new Error('JEV HTTP ' + r.status);

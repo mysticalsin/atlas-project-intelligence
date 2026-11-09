@@ -5,6 +5,7 @@
 // threshold and the weights are uncalibrated pilot values.
 // One deliberate difference: jev.py refuses a story without `eligible: true`; here the caller has already limited
 // the stories to published references the user may see, and the story shape of §F1.5 carries no such flag.
+import { paid, TYPESAFE_ENDPOINT } from './meter.js';
 export const RUBRIC_VERSION = 'customer-value-v1';
 export const DIMENSIONS = {
   problem_fit: ['Does the story address this customer problem and business stakes?', 0.30],
@@ -15,7 +16,7 @@ export const DIMENSIONS = {
 };
 export const LEVELS = ['No relevant support or missing context', 'Weak or indirect match', 'Partial match with material caveats', 'Strong supported match', 'Direct supported match with transferable conditions'];
 export const REVIEW_THRESHOLD = 0.70;
-const ENDPOINT = 'https://api.typesafe.ai/v1/systemone', BODY_MAX = 65000, TIMEOUT_MS = 18000;
+const ENDPOINT = TYPESAFE_ENDPOINT, BODY_MAX = 65000, TIMEOUT_MS = 18000;
 const CUSTOMER_KEYS = ['problem', 'buyer', 'constraints', 'desired_outcome'];
 const SCOPED = ['id', 'title', 'revision', 'content_hash', 'sections', 'sources', 'tags', 'stage', 'kind'];
 const NOTICE = 'Model-estimated relevance, not probability of customer success. Weights are proposed and uncalibrated.';
@@ -126,7 +127,7 @@ export function customerJev(env, fetcher = fetch, { today, sleep = ms => new Pro
       if (new TextEncoder().encode(body).length > BODY_MAX) throw new Error('Story exceeds ranking context budget; prepare a reviewed shorter variant');
       let scored = null;
       for (let attempt = 0; attempt < 3; attempt++) {
-        const r = await fetcher(ENDPOINT, { method: 'POST', redirect: 'manual', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body, signal: AbortSignal.timeout(TIMEOUT_MS) });
+        const r = await paid(env).fetch(() => ({ kind: 'jev', provider: 'typesafe', requests: 1 }), fetcher, ENDPOINT, { method: 'POST', redirect: 'manual', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body, signal: AbortSignal.timeout(TIMEOUT_MS) });
         if ((r.status === 429 || r.status === 529) && attempt < 2) { await sleep(400 * 2 ** attempt); continue; }
         if (r.status !== 200) throw new Error('JEV unavailable; do not reuse a stale or synthetic rank');
         scored = parseResult(await r.json(), freshness);

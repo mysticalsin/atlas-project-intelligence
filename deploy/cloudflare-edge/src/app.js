@@ -15,6 +15,8 @@ import { CONFIRM_HTML } from './confirm-page.js';
 import { nameClaims, pushConfig } from './profile.js';
 import { elevatedRole, privilegeReadiness, productionDemoConflict, TENANT_ID, tenantEnforced, tenantOf, tokenRoles } from './authz.js';
 import { acceptedSubjectDelete } from './library-routes.js';
+import { paid, budgetRefused, elevenLabsUrl, utf8Length } from './meter.js';
+import { estimateInputTokens, audioMs } from './speculation.js';
 
 const enc = new TextEncoder();
 // One voice for everyone: @cf/deepgram/aura-2-en "harmonia" (Deepgram: empathetic, clear, calm, confident).
@@ -260,7 +262,7 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
       if (Number(request.headers.get('Content-Length') || 0) > 12 * 1024 * 1024) return json(env, { error: 'The file is larger than 10 MB.' }, 413);
       // PDF metadata (author, producer, title) is never extracted (D2, WOW_ZERO_CONFIG §4): text only.
       const ai = workersAI(env), res = await sheetRoutes(request, url.pathname.slice('/api/sheet/'.length), { complete: (m, n) => ai.complete(m, n),
-        toMarkdown: f => env.AI.toMarkdown(f, { conversionOptions: { pdf: { metadata: false } } }) });
+        toMarkdown: f => paid(env).toMarkdown(() => ({ kind: 'markdown', files: Array.isArray(f) ? f.length : 1 }), f, { conversionOptions: { pdf: { metadata: false } } }) });
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
     }
     if (url.pathname === '/api/memory' || url.pathname.startsWith('/api/memory/')) {
@@ -372,15 +374,18 @@ export function responseToolCalls(r) {
   return (r?.tool_calls || []).map((c, i) => ({ id: c.id || 'call-' + i, name: c.name, arguments: args(c.arguments) }));
 }
 // Low reasoning effort keeps the hidden reasoning from eating the output budget; retried without it if the binding rejects the field.
+// A refusal by the spend ledger (enforce only) is not a rejected field and is not retried.
 async function runReasoning(env, input) {
-  try { return await env.AI.run(env.ANALYST_MODEL, { ...input, reasoning: { effort: 'low' } }); }
-  catch { return env.AI.run(env.ANALYST_MODEL, input); }
+  const meter = paid(env), estimate = () => ({ kind: 'analyst', model: env.ANALYST_MODEL,
+    inputTokens: estimateInputTokens(input.messages) + (input.tools ? utf8Length(JSON.stringify(input.tools)) : 0), outputTokens: input.max_tokens });
+  try { return await meter.run(estimate, env.ANALYST_MODEL, { ...input, reasoning: { effort: 'low' } }); }
+  catch (e) { if (budgetRefused(e)) throw e; return meter.run(estimate, env.ANALYST_MODEL, input); }
 }
 
 // ElevenLabs Flash v2.5 (32 languages) as raw 24 kHz PCM, the same format as Aura. Optional: ELEVENLABS_API_KEY.
 async function elevenLabs(env, text, lang, fetcher = fetch) {
   const voice = encodeURIComponent(env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM');
-  const r = await fetcher(`https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=pcm_24000`, { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(15000),
+  const r = await paid(env).fetch(() => ({ kind: 'tts', provider: 'elevenlabs', chars: utf8Length(text) }), fetcher, elevenLabsUrl(voice), { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(15000),
     headers: { 'xi-api-key': env.ELEVENLABS_API_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ text, model_id: env.ELEVENLABS_MODEL || 'eleven_flash_v2_5', language_code: lang }) });
   if (!r.ok) throw new Error('ElevenLabs HTTP ' + r.status);
   const pcm = new Uint8Array(await r.arrayBuffer());
@@ -391,10 +396,11 @@ export function workersAI(env) {
   const bytesOf = async r => r instanceof Uint8Array ? r : r instanceof ArrayBuffer ? new Uint8Array(r)
     : r instanceof ReadableStream || r instanceof Response ? new Uint8Array(await new Response(r.body ?? r).arrayBuffer())
     : r?.audio ? Uint8Array.from(atob(r.audio), c => c.charCodeAt(0)) : new Uint8Array(0);
+  const meter = paid(env);
   return {
     // Automatic language detection (Nova-3 "multi"): returns the text and the utterance's language.
     async transcribe(pcm) {
-      const r = await env.AI.run(env.STT_MODEL, { audio: { body: new Blob([wav(pcm)]).stream(), contentType: 'audio/wav' }, smart_format: true, punctuate: true, language: env.STT_LANGUAGE || 'multi' });
+      const r = await meter.run(() => ({ kind: 'stt', model: env.STT_MODEL, audioMs: audioMs(pcm) }), env.STT_MODEL, { audio: { body: new Blob([wav(pcm)]).stream(), contentType: 'audio/wav' }, smart_format: true, punctuate: true, language: env.STT_LANGUAGE || 'multi' });
       return { text: r?.results?.channels?.[0]?.alternatives?.[0]?.transcript || '', language: detectedLanguage(r) };
     },
     // Semantic end-of-turn (Pipecat smart-turn v2): has the consultant finished, or only paused? Last 8 s at 16 kHz.
@@ -402,20 +408,21 @@ export function workersAI(env) {
     async turnComplete(pcm) {
       const tail = pcm.length > 8 * 48000 ? pcm.subarray(pcm.length - 8 * 48000) : pcm, bytes = wav(to16k(tail), 16000);
       let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-      const r = await env.AI.run(env.TURN_MODEL || '@cf/pipecat-ai/smart-turn-v2', { audio: btoa(bin) });
+      const model = env.TURN_MODEL || '@cf/pipecat-ai/smart-turn-v2', r = await meter.run(() => ({ kind: 'turn', model, audioMs: audioMs(tail) }), model, { audio: btoa(bin) });
       // No boolean verdict is no verdict (the session logs it as NoVerdict and uses the silence rule), never "unfinished".
       return typeof r?.is_complete === 'boolean' ? { complete: r.is_complete, probability: Number(r.probability) || 0 } : null;
     },
     speaks(lang) { return NATIVE_VOICES.includes(lang) || (!!env.ELEVENLABS_API_KEY && !!normalize(lang)); },
     async synthesize(text, speaker = 'atlas', lang = 'en') { // 'atlas' = the configured voice; the browser never sees its real name
       if (lang !== 'en' && lang !== 'es' && env.ELEVENLABS_API_KEY) return elevenLabs(env, text, lang);
-      const es = lang === 'es';
-      const pcm = await bytesOf(await env.AI.run(es ? (env.TTS_MODEL_ES || '@cf/deepgram/aura-2-es') : env.TTS_MODEL, { text, speaker: es ? (env.TTS_VOICE_ES || 'celeste') : speaker === 'atlas' ? env.TTS_VOICE : speaker, encoding: 'linear16', container: 'none', sample_rate: 24000 }));
+      const es = lang === 'es', model = es ? (env.TTS_MODEL_ES || '@cf/deepgram/aura-2-es') : env.TTS_MODEL;
+      const pcm = await bytesOf(await meter.run(() => ({ kind: 'tts', model, lang: es ? 'es' : 'en', chars: utf8Length(text) }), model, { text, speaker: es ? (env.TTS_VOICE_ES || 'celeste') : speaker === 'atlas' ? env.TTS_VOICE : speaker, encoding: 'linear16', container: 'none', sample_rate: 24000 }));
       return pcm.length % 2 ? pcm.subarray(0, pcm.length - 1) : pcm;
     },
     // Session affinity keeps one interview on the same model instance, so the cached prompt prefix is reused.
     async *chatStream(messages, { affinity } = {}) {
-      const stream = await env.AI.run(env.TALKER_MODEL, { messages, stream: true, max_tokens: 300, temperature: 0.7 }, affinity ? { extraHeaders: { 'x-session-affinity': affinity } } : undefined);
+      const stream = await meter.run(() => ({ kind: 'talker', model: env.TALKER_MODEL, inputTokens: estimateInputTokens(messages), outputTokens: 300 }),
+        env.TALKER_MODEL, { messages, stream: true, max_tokens: 300, temperature: 0.7 }, affinity ? { extraHeaders: { 'x-session-affinity': affinity } } : undefined);
       const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
       let buffer = '';
       for (;;) {
@@ -436,7 +443,8 @@ export function workersAI(env) {
       return responseText(await runReasoning(env, { messages, temperature: 0.1, max_tokens: maxTokens }));
     },
     async embed(text) {
-      const r = await env.AI.run(env.EMBED_MODEL || '@cf/baai/bge-m3', { text: [String(text).slice(0, 8000)] });
+      const model = env.EMBED_MODEL || '@cf/baai/bge-m3', input = String(text).slice(0, 8000);
+      const r = await meter.run(() => ({ kind: 'embed', model, inputTokens: utf8Length(input) }), model, { text: [input] });
       const v = r?.data?.[0];
       return Array.isArray(v) && v.length ? v : null;
     },
