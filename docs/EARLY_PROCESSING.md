@@ -49,7 +49,7 @@ Reservations are **never refunded** on cancel or discard, because a provider may
 
 `speculationConfig` accepts only a ledger declaring `scope: 'global'`, meaning its authority spans every Durable Object instance and session. `MemoryLedger` (`src/speculation.js`) is a process-local implementation with explicit caps, used by the tests and the bench. It defaults to `scope: 'process'` and is refused for deployment: a session-local or isolate-local counter cannot enforce an experiment-wide cap. A real shared ledger would need a new binding or service, which this change does not provision.
 
-For the owner-approved local live test only, `src/spend-ledger.js` and the `SpendLedger` Durable Object in `live-test/entry.js` provide a global ledger. It is bound only in the test-only `live-test/wrangler.jsonc`, which is never deployed, so the deployed Worker still binds none. See `docs/LIVE_TEST_BOUND.md`.
+For the owner-approved local live test only, `src/spend-ledger.js` and the `SpendLedger` Durable Object in `live-test/entry.js` provide a global ledger. It is bound only in the test-only `live-test/wrangler.jsonc`, which is never deployed, so the deployed Worker still binds none. See `docs/LIVE_TEST_BOUND.md`. The production meter (`LEDGER_MODE`, off by default and unbound) is described in `docs/LEDGER_MODES.md`.
 
 Engineering bounds per request (`LIMITS`; these are not cost caps):
 

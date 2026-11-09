@@ -6,7 +6,9 @@ The privacy check is in `docs/LIVE_TEST_PRIVACY_CHECK.md`.
 
 ## What the ledger enforces
 
-There is one authority: the `SpendLedger` Durable Object, defined in `deploy/cloudflare-edge/live-test/entry.js`, with its state logic in `src/spend-ledger.js`.
+This section covers the **live-test path only**: the local `wrangler dev` process started with a `live-test/wrangler*.jsonc` config. The deployed application has a separate production meter, `LEDGER_MODE`, which is off by default and which reserves nothing in that state (`docs/LEDGER_MODES.md`). What the live-test ledger guarantees is therefore not a guarantee about production.
+
+For the live test there is one authority: the `SpendLedger` Durable Object, defined in `deploy/cloudflare-edge/live-test/entry.js`, with its state logic in `src/spend-ledger.js`. Underneath `meteredAI`, every call still passes through the production meter, `src/meter.js` `paid()`. No live-test config sets `LEDGER_MODE`, so that meter is off there and adds no second reservation; `test/ledger-livetest.test.js` checks that each admitted reservation makes exactly one upstream call.
 
 Every paid Workers AI call in the test path reserves with it before the request is made. That covers both baseline and Plan A:
 - speech recognition;
@@ -135,7 +137,7 @@ The fix is in `deploy/cloudflare-edge/src/session.js`: 5d461abd, then 41c2e12a.
   - a click or breath closed as a blip releases it at once.
 - **Decision (d): the latch is intended.** Whether an utterance is a continuation is decided once, at its onset, like the existing continuation flag. It holds for the whole utterance however long the consultant talks. Because the reply is held, what they hear of it after the onset is at most the rest of the piece that was playing. A continuation can therefore withdraw the reply after more than 1.2 s of it has been heard, by no more than that piece.
 
-Known risks, unchanged by this fix:
+Known risks that remain after run68 (the first one changed in run68, the others are as before the fix):
 - **A loud noise withdraws immediately.** Inside the window, any sound that passes the barge-in gate (4× the level, `BARGE_IN_S` 450 ms unbroken) withdraws her reply with no transcript and no turn-model call. This applies whether her reply is still audible or already paused by the hold (run68). So does a continuation that is not in the listening latch.
 - **An echo under 3 words can withdraw the reply.** `isEcho` judges only transcripts of 3 or more words, so a short echo such as "Thanks." counts as the consultant's words.
 - **Repeating her words in the echo tail is discarded.** A consultant who repeats most of her words (70% or more) while her audio may still be echoing is treated as echo, and the utterance is dropped.

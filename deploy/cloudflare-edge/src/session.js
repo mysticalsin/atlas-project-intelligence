@@ -220,8 +220,8 @@ export class Session {
       // reply) means the consultant had not finished: what follows is the rest of the same answer. An audible reply is
       // held (this.hold) if this speech was heard inside the continuation window (see BARGE_IN_S), otherwise stopped at
       // once. A reply not yet audible has nothing queued and needs no hold: its pieces wait in deliver() while they speak
-      // and while their words are transcribed, and it is withdrawn only if they actually add words. Decided once, at the
-      // whole utterance keeps it, however long it goes on (her held reply does not move on meanwhile).
+      // and while their words are transcribed, and it is withdrawn only if they actually add words. This is decided once,
+      // at the onset, and the whole utterance keeps that decision however long it goes on (her held reply does not move on meanwhile).
       const item = this.replyItem, heard = this.replyHeardMs(), replying = heard !== Infinity;
       this.continuing = carried || this.sttBusy > 0 || heard <= CONTINUE_MS;
       if (this.continuing) {
