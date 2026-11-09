@@ -32,6 +32,8 @@ The test sends synthetic audio (to Nova-3 and smart-turn-v2), synthetic text (to
 - **Deepgram's Model Improvement Program.** The Nova-3 schema exposes `mip_opt_out`, which this code does not set. It is not stated whether that program applies to Cloudflare-hosted inference. This is immaterial here because the audio is synthetic, but it must be resolved before any real consultant audio.
 - **Partner licence terms.** The text of the Deepgram and Pipecat terms linked from the model pages was not reviewed for this test.
 
+**REST route (2026-11-09).** The same synthetic material is sent to the same Workers AI models through the public REST API, from this VM. The data-usage terms above apply to Workers AI inference however it is reached. The token is Workers AI Read+Edit only and is held in process memory only. No content is logged: the harness records timings and status codes.
+
 ## Retention in this test
 
 - **Local only.** The driver writes timings, counts and ledger figures to the local output file, with no audio and no transcript text. The Durable Object state holds counts only. `wrangler dev` logs stay on this VM.

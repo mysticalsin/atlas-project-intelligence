@@ -3,9 +3,12 @@
 // writes timings and counts (no audio, no transcript text) to the output file. The ledger is the authority; the
 // headroom check here only avoids starting a session that would certainly be cut off mid-turn.
 //   node live-test/run.mjs http://127.0.0.1:8787 out.json [sessionsPerMode] [turnsPerSession]
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 
-const [base = 'http://127.0.0.1:8787', out = 'live-run.json', perMode = '1', perSession = '2'] = process.argv.slice(2);
+// perMode: one count for every mode, or comma-separated counts for baseline,early_stt,early_draft. prior: an earlier
+// /run result file (JSON) on the same ledger, counted as the first session of its mode.
+const [base = 'http://127.0.0.1:8787', out = 'live-run.json', perMode = '1', perSession = '2', prior = ''] = process.argv.slice(2);
+const counts = perMode.split(',').map(Number);
 // Scripted, fictional answers. The second part of a two-part answer follows a 1.0 s mid-answer pause, which exercises
 // the early pause (0.7 s) without ending the turn (1.2 s), so a discarded early transcription is part of the sample.
 const SCRIPT = [
@@ -32,9 +35,14 @@ function headroom(l, mode) {
 }
 
 const result = { kind: 'local-only live test (wrangler dev): synthetic speech, remote Workers AI binding, local ledger', base, started: new Date().toISOString(), runs: [], stopped: '' };
-for (const mode of ['baseline', 'early_stt', 'early_draft']) {
+if (prior) {
+  const r = JSON.parse(readFileSync(prior, 'utf8'));
+  result.runs.push(r); result.prior = prior;
+  seen[r.mode] = Object.fromEntries(UNITS.map(u => [u, u === 'usd' ? r.ledger.reserved.usd : r.ledger.reserved[u]]));
+}
+for (const [m, mode] of ['baseline', 'early_stt', 'early_draft'].entries()) {
   if (mode === 'early_draft' && (!result.runs.some(r => r.mode === 'early_stt') || result.runs.some(r => r.mode === 'early_stt' && (r.errors?.length || r.refused)))) { result.skipped_drafts = 'early_stt run was not clean'; break; }
-  for (let i = 0; i < Number(perMode); i++) {
+  for (let i = 0; i < (counts[m] ?? counts[0]); i++) {
     const turns = Number(perSession), before = await get('/ledger');
     if (!headroom(before, mode)) { result.stopped = `headroom before ${mode} session ${i + 1}`; break; }
     const r = await post('/run', { mode, turns: Array.from({ length: turns }, (_, k) => SCRIPT[k % SCRIPT.length]) });

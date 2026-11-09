@@ -101,7 +101,23 @@ A free mock run of the harness under workerd reserved 77,864 input tokens for:
 
 Under the original cap the driver stopped on headroom before drafts. With the raised cap, the driver plans each session against every remaining cap, including the dollar cap, from the spend actually observed per session so far. The ledger remains the authority.
 
-## How Phase 2 runs
+## REST route (owner decision, 2026-11-09)
+
+The token is Workers AI only, and the remote-binding route needs Workers Scripts, which was not added. So the live run calls the Workers AI REST API directly:
+- **Config:** `POST /accounts/{id}/ai/run/@cf/...`, from the local workerd process (`live-test/wrangler.rest.jsonc`, which has no AI binding and no proxy session).
+- **Client:** built only inside `meteredRestAI` (`src/spend-ledger.js`), behind the same `SpendLedger` admission. `test/spend-ledger.test.js` checks that no other file calls the API.
+- **Credentials:** declared secrets read from the dev process environment.
+
+On this route no proxy or Worker exists, so no proxy item is priced. The all-in bound is the provider bound from the unit caps, **$1.39946**, which is at most $1.50, with the ledger's $1.50 hard stop authoritative. All caps are those of 58d0fede.
+
+```sh
+cd deploy/cloudflare-edge
+wrangler dev -c live-test/wrangler.rest.jsonc --var LIVE_TEST_LOCAL:1 --ip 127.0.0.1 --port 8787 --persist-to /tmp/run65/live-state
+node live-test/run.mjs http://127.0.0.1:8787 /tmp/run65/live-run.json 2,3,3 3 /tmp/run65/smoke-baseline.json
+python3 live-test/analyse.py /tmp/run65/live-run.json /tmp/run65/network-rtt.json
+```
+
+## How Phase 2 runs (binding route)
 
 ```sh
 cd deploy/cloudflare-edge

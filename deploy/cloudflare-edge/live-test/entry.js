@@ -126,11 +126,12 @@ async function runSession(env, body) {
       for (let i = 0; i < parts.length; i++) { await mic.say(parts[i], i === parts.length - 1); if (i < parts.length - 1) await mic.say(silence(turn.pauseMs || 1000)); }
       const end = mic.lastSpeech, t0 = Date.now();
       while (Date.now() - t0 < 20000 && marks.firstBytes.length === from.bytes) await sleep(20);
+      if (!await waitIdle(s, 40000)) errors.push('reply_timeout');
+      // Recorded once the reply is idle, so the talker call and metrics after an acknowledgement belong to this turn.
       // Only what happens after the end of speech: a reply started and withdrawn at a mid-answer pause does not count.
       const since = (list, ok = () => true) => { const x = list.find(e => (e.t ?? e) >= end && ok(e)); return x === undefined ? null : (x.t ?? x) - end; };
       turns.push({ index: t.turn, transcript_ms: since(marks.metrics.slice(from.metrics), m => m.metric === 'stt'), first_token_ms: since(marks.events.slice(from.events), e => e.type === 'agent_text'),
         first_audio_sent_ms: since(marks.firstBytes.slice(from.bytes)), rest_calls: rest.slice(from.rest).map(({ t, ...c }) => ({ ...c, at_ms: t - end })), metrics: marks.metrics.slice(from.metrics).map(({ t, ...m }) => ({ ...m, at_ms: t - end })) });
-      if (!await waitIdle(s, 40000)) errors.push('reply_timeout');
       await sleep(300);
     }
   } catch (e) { errors.push(e?.name === 'BudgetRefused' ? 'budget_' + e.reason : (e?.name || 'Error')); }
