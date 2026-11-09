@@ -2,7 +2,7 @@
 
 Tony, 2026-11-08: ATLAS has a personality, is ATLAS from Mantu, and is here to help tell the story, with warmth that fits the moment. That applies to the routes that converse with the consultant. Analytic and report prompts keep their own factual roles and get no interview chat or praise.
 
-Contracts: `tests/test_persona.py` and `tests/test_persona_routes.py`. These are deterministic prompt checks. Live model behaviour and native-language review are not covered.
+Contracts: `tests/test_persona.py`, `tests/test_persona_routes.py` and `tests/test_persona_scenarios.py`. The last is a matrix of route by kind of answer (ordinary, proud, uncertain, distressed, brief, repetition, honesty, untrusted input), with each route's interruption tests named in it. These are deterministic prompt checks. Live model behaviour and native-language review are not covered.
 
 ## Conversational routes (aligned)
 | Route | Speaks with | Identity and story purpose | Proportionate warmth, choice on sensitive topics, AI not a person |
