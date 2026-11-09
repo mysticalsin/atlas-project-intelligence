@@ -1,6 +1,7 @@
 // Per-person memory API, served by that person's Interview Durable Object. The bank id arrives only in a header the
 // Worker overwrites after verifying the sign-in (x-atlas-bank); CSRF/Origin are checked by the Worker.
 import { retainItems, scrub } from './memory.js';
+import { paid, TYPESAFE_ENDPOINT } from './meter.js';
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 
@@ -43,7 +44,7 @@ export async function memoryRoutes(request, { storage, hs, env, fetcher = fetch 
       if (env.TYPESAFE_API_KEY) {
         const t0 = Date.now();
         try {
-          const r = await fetcher('https://api.typesafe.ai/v1/systemone', { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(8000), headers: { Authorization: 'Bearer ' + env.TYPESAFE_API_KEY, 'Content-Type': 'application/json' },
+          const r = await paid(env).fetch(() => ({ kind: 'jev', provider: 'typesafe', requests: 1 }), fetcher, TYPESAFE_ENDPOINT, { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(8000), headers: { Authorization: 'Bearer ' + env.TYPESAFE_API_KEY, 'Content-Type': 'application/json' },
             body: JSON.stringify({ model: env.JEV_MODEL || 'jev-latest', state: { text: 'The consultant cut claim triage time from 40 to 12 minutes.' }, questions: { ok: { type: 'noul', instructions: 'Does `text` describe a measurable result?' } } }) });
           const a = r.ok ? (await r.json())?.answers?.ok : null;
           out.jev.ok = typeof a?.noul === 'number'; if (!r.ok) out.jev.error = r.status === 401 || r.status === 403 ? 'key rejected' : r.status === 402 || r.status === 429 ? 'no credits or rate limited' : 'HTTP ' + r.status;

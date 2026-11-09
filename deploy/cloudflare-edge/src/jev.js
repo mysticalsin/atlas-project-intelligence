@@ -3,6 +3,7 @@
 // transcript text, quotes or project names. Guard rails: JEV only chooses when the ledger's rules leave a
 // free choice, and only overrides the default when clearly better and confident. No key or bad answer = no change.
 import { FIELDS } from './policy.generated.js';
+import { paid, TYPESAFE_ENDPOINT } from './meter.js';
 
 export const LEVELS = ['Adds nothing useful now', 'Minor value', 'Useful, not the priority', 'Strong next step', 'The single most valuable next question'];
 const FREE_CHOICE = 'Find the most decision-useful detail, not a bigger claim.';
@@ -54,7 +55,7 @@ export function jevRanker(env, fetcher = fetch) {
   return async (plan, guidance) => {
     const fields = candidates(plan);
     if (fields.length < 2) return null;
-    const r = await fetcher('https://api.typesafe.ai/v1/systemone', { method: 'POST', redirect: 'manual',
+    const r = await paid(env).fetch(() => ({ kind: 'jev', provider: 'typesafe', requests: 1 }), fetcher, TYPESAFE_ENDPOINT, { method: 'POST', redirect: 'manual',
       headers: { 'Authorization': 'Bearer ' + env.TYPESAFE_API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody(env.JEV_MODEL || 'jev-latest', plan, fields)), signal: AbortSignal.timeout(2500) });
     if (!r.ok) throw new Error('JEV HTTP ' + r.status);
