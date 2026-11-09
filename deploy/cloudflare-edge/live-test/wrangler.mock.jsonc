@@ -1,0 +1,22 @@
+// FREE harness check under workerd: no AI binding at all; run with --var LIVE_TEST_LOCAL:1 --var LIVE_TEST_MOCK_AI:1.
+// Same entry, same local ledger; the fixed-delay mock replaces every provider call.
+{
+  "name": "atlas-plan-a-live-test-mock",
+  "main": "entry.js",
+  "compatibility_date": "2025-09-01",
+  "workers_dev": false,
+  "preview_urls": false,
+  "durable_objects": { "bindings": [{ "name": "SPEND_LEDGER", "class_name": "SpendLedger" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SpendLedger"] }],
+  "rules": [{ "type": "Text", "globs": ["**/*.html"], "fallthrough": true }],
+  "vars": {
+    "STT_MODEL": "@cf/deepgram/nova-3",
+    "STT_LANGUAGE": "en",
+    "TTS_MODEL": "@cf/deepgram/aura-2-en",
+    "TTS_VOICE": "harmonia",
+    "TALKER_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "TURN_MODEL": "@cf/pipecat-ai/smart-turn-v2",
+    "SYNTH_VOICE": "arcas"
+  }
+  // LIVE_TEST_LOCAL is not set here: pass --var LIVE_TEST_LOCAL:1 on the dev command line. No secrets, no ElevenLabs key.
+}

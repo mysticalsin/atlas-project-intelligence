@@ -1,0 +1,23 @@
+// LOCAL-ONLY Plan A live test (docs/LIVE_TEST_BOUND.md). Run with `wrangler dev` only; never `wrangler deploy`.
+// No routes, no workers.dev, no previews. The ledger Durable Object stays local; only the AI binding is remote.
+{
+  "name": "atlas-plan-a-live-test-local",
+  "main": "entry.js",
+  "compatibility_date": "2025-09-01",
+  "workers_dev": false,
+  "preview_urls": false,
+  "ai": { "binding": "AI", "remote": true },
+  "durable_objects": { "bindings": [{ "name": "SPEND_LEDGER", "class_name": "SpendLedger" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SpendLedger"] }],
+  "rules": [{ "type": "Text", "globs": ["**/*.html"], "fallthrough": true }],
+  "vars": {
+    "STT_MODEL": "@cf/deepgram/nova-3",
+    "STT_LANGUAGE": "en",
+    "TTS_MODEL": "@cf/deepgram/aura-2-en",
+    "TTS_VOICE": "harmonia",
+    "TALKER_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "TURN_MODEL": "@cf/pipecat-ai/smart-turn-v2",
+    "SYNTH_VOICE": "arcas"
+  }
+  // LIVE_TEST_LOCAL is not set here: pass --var LIVE_TEST_LOCAL:1 on the dev command line. No secrets, no ElevenLabs key.
+}

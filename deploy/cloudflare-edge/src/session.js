@@ -313,7 +313,8 @@ export class Session {
     const admitted = await this.admit({ kind: 'stt', audioMs: ms, requests: 1 });
     if (!admitted) { if (this.spec === rec) this.spec = null; rec.open = false; return; }
     if (!rec.open) { this.settle(admitted.id, { kind: 'stt', sent: 0, audioMs: 0 }); return; } // withdrawn before sending: the reservation stands
-    const t0 = this.now(), call = Promise.resolve().then(() => this.ai.transcribe(pcm));
+    // reserved: a metering wrapper (spend-ledger.js) uses this admission instead of reserving the same request twice.
+    const t0 = this.now(), call = Promise.resolve().then(() => this.ai.transcribe(pcm, { reserved: admitted.id }));
     // Settled when the provider call itself settles, so a request still running after a cancel keeps its concurrency slot.
     call.then(() => this.settle(admitted.id, { kind: 'stt', sent: 1, audioMs: ms }), e => this.settle(admitted.id, { kind: 'stt', sent: 1, audioMs: ms, error: e?.name || 'Error' }));
     let timer;
@@ -373,7 +374,7 @@ export class Session {
     if (this.draft && !this.draft.adopted) this.cancelDraft(this.draft, 'replaced');
     this.draft = d; rec.draft = d;
     const t0 = this.now();
-    d.it = this.ai.chatStream(messages, { affinity: this.affinity, maxTokens: limits.draftOutputTokens })[Symbol.asyncIterator]();
+    d.it = this.ai.chatStream(messages, { affinity: this.affinity, maxTokens: limits.draftOutputTokens, reserved: admitted.id })[Symbol.asyncIterator]();
     d.timer = setTimeout(() => { if (!d.adopted) this.cancelDraft(d, 'timeout'); }, limits.draftTimeoutMs);
     this.metric('early_draft_sent', { input_tokens_estimate: inputTokens, output_tokens_max: limits.draftOutputTokens });
     const wake = () => { const w = d.wake; d.wake = null; if (w) w(); };
