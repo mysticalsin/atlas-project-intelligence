@@ -418,19 +418,22 @@ export function workersAI(env) {
       const stream = await env.AI.run(env.TALKER_MODEL, { messages, stream: true, max_tokens: 300, temperature: 0.7 }, affinity ? { extraHeaders: { 'x-session-affinity': affinity } } : undefined);
       const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
       let buffer = '';
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) return;
-        buffer += value;
-        let cut;
-        while ((cut = buffer.indexOf('\n')) >= 0) {
-          const line = buffer.slice(0, cut).trim(); buffer = buffer.slice(cut + 1);
-          if (!line.startsWith('data:')) continue;
-          const payload = line.slice(5).trim();
-          if (payload === '[DONE]') return;
-          try { const j = JSON.parse(payload), d = j.response ?? j.choices?.[0]?.delta?.content; if (d) yield d; } catch { /* keep-alive or partial */ }
+      // A reply the session stops reading (withdrawn, interrupted, ended) closes the upstream body instead of draining it.
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) return;
+          buffer += value;
+          let cut;
+          while ((cut = buffer.indexOf('\n')) >= 0) {
+            const line = buffer.slice(0, cut).trim(); buffer = buffer.slice(cut + 1);
+            if (!line.startsWith('data:')) continue;
+            const payload = line.slice(5).trim();
+            if (payload === '[DONE]') return;
+            try { const j = JSON.parse(payload), d = j.response ?? j.choices?.[0]?.delta?.content; if (d) yield d; } catch { /* keep-alive or partial */ }
+          }
         }
-      }
+      } finally { reader.cancel().catch(() => {}); }
     },
     async complete(messages, maxTokens = 2500) {
       return responseText(await runReasoning(env, { messages, temperature: 0.1, max_tokens: maxTokens }));
