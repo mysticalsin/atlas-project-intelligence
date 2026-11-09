@@ -5,6 +5,7 @@
 // (a cancelled or discarded request counts as billed in full), and any exhausted cap latches a hard stop. Every method
 // is synchronous on in-memory state, so a single Durable Object instance decides each request atomically.
 import { estimateInputTokens, audioMs } from './speculation.js';
+import { workersAI } from './app.js';
 
 export const PRICING_SOURCE = 'https://developers.cloudflare.com/workers-ai/platform/pricing/ (page last updated 2026-10-20, read 2026-11-09)';
 // List prices, no free allocation assumed. smart-turn-v2: the page lists $0.00033795 per audio minute and 0.51 neurons
@@ -26,14 +27,18 @@ export const CAPS = Object.freeze({ sessions: 10, turnsPerSession: 10, audioMs: 
 // Standard worst case per call (https://developers.cloudflare.com/workers/platform/pricing/, page updated 2026-10-02):
 // $0.30 per million requests plus the 5-minute CPU maximum per invocation at $0.02 per million CPU ms.
 export const PROXY_PER_CALL_USD = 0.30 / 1e6 + 300000 * 0.02 / 1e6;
+// route: 'binding' (wrangler dev with a remote AI binding: proxy worst case per call) or 'rest' (the Workers AI REST API
+// called directly; no proxy session or Worker exists on that route, so no proxy item is priced).
+export const ROUTES = Object.freeze({ binding: PROXY_PER_CALL_USD, rest: 0 });
 export const TURN_AUDIO_MAX_MS = 8000; // app.js turnComplete sends at most the last 8 s of audio
 export const TALKER_MAX_OUTPUT = 300;  // app.js chatStream max_tokens bound (maxTokens can only lower it)
 const NANO = 1e9;
 const utf8 = new TextEncoder();
 
 export class LedgerState {
-  constructor({ models, caps = CAPS, prices = PRICES, saved = null } = {}) {
-    this.caps = { ...caps }; this.prices = prices;
+  constructor({ models, caps = CAPS, prices = PRICES, saved = null, route = 'binding' } = {}) {
+    if (!(route in ROUTES)) throw new Error('Unknown route: ' + route);
+    this.caps = { ...caps }; this.prices = prices; this.route = route;
     this.models = { stt: models?.stt, turn: models?.turn, talker: models?.talker, tts: { en: models?.tts?.en, es: models?.tts?.es } };
     const s = saved || {};
     this.next = s.next || 0; this.stopped = s.stopped || ''; this.sessions = s.sessions || {}; this.open = s.open || {}; this.claimed = s.claimed || {};
@@ -72,7 +77,7 @@ export class LedgerState {
   // request, or null when it cannot be priced.
   price(req) {
     const priced = this.providerPrice(req);
-    return priced && { ...priced, nano: priced.nano + Math.ceil(PROXY_PER_CALL_USD * NANO) };
+    return priced && { ...priced, nano: priced.nano + Math.ceil(ROUTES[this.route] * NANO) };
   }
 
   providerPrice(req) {
@@ -134,7 +139,7 @@ export class LedgerState {
 
   snapshot() {
     return { stopped: this.stopped, caps: { ...this.caps }, sessions: Object.keys(this.sessions).length, turns: Object.values(this.sessions).reduce((n, s) => n + s.turns, 0),
-      reserved: { ...this.reserved, usd: this.reserved.nanoUsd / NANO }, byKind: { ...this.byKind }, refusals: { ...this.refusals }, observed: { ...this.observed }, inFlight: Object.keys(this.open).length, pricing: PRICING_SOURCE };
+      reserved: { ...this.reserved, usd: this.reserved.nanoUsd / NANO }, byKind: { ...this.byKind }, refusals: { ...this.refusals }, observed: { ...this.observed }, inFlight: Object.keys(this.open).length, route: this.route, pricing: PRICING_SOURCE };
   }
 }
 
@@ -186,4 +191,51 @@ export function meteredAI(ai, ledger) {
   };
   // Only what the wrapped AI offers: the session treats a missing turn model differently from a refused one.
   return Object.fromEntries(Object.entries(metered).filter(([k]) => k === 'speaks' || typeof ai[k] === 'function'));
+}
+
+// The Workers AI REST API as a stand-in for the env.AI binding, so app.js workersAI keeps its exact request shapes.
+// Not exported: the only way to obtain it is meteredRestAI below, which wraps every method in the ledger first.
+// onCall receives timings and status codes only (never the token, the account id or any content).
+function restBinding({ token, accountId, fetchImpl = fetch, onCall = () => {} }) {
+  if (!token || !accountId) throw new Error('Workers AI REST credentials are missing.');
+  const base = 'https://api.cloudflare.com/client/v4/accounts/' + encodeURIComponent(accountId) + '/ai/run/';
+  return {
+    async run(model, inputs, options = {}) {
+      const headers = { authorization: 'Bearer ' + token, ...(options.extraHeaders || {}) };
+      let url = base + model, body;
+      if (inputs?.audio?.body) {
+        const { audio, ...rest } = inputs, q = new URLSearchParams();
+        for (const [k, v] of Object.entries(rest)) if (['string', 'number', 'boolean'].includes(typeof v)) q.set(k, String(v));
+        body = new Uint8Array(await new Response(audio.body).arrayBuffer());
+        headers['content-type'] = audio.contentType;
+        if ([...q].length) url += '?' + q;
+      } else { body = JSON.stringify(inputs); headers['content-type'] = 'application/json'; }
+      const t0 = Date.now(), r = await fetchImpl(url, { method: 'POST', headers, body });
+      const call = { model, status: r.status, headers_ms: Date.now() - t0, stream: !!inputs?.stream };
+      if (!r.ok) {
+        let codes = [];
+        try { codes = ((await r.json())?.errors || []).map(e => e.code); } catch { /* not JSON */ }
+        onCall({ ...call, codes });
+        throw Object.assign(new Error(`Workers AI REST ${r.status} ${codes.join(',')}`.trim()), { name: 'RestAIError', status: r.status, codes });
+      }
+      if (inputs?.stream) { onCall(call); return r.body; }
+      const type = r.headers.get('content-type') || '';
+      if (type.includes('application/json')) {
+        const j = await r.json();
+        onCall({ ...call, done_ms: Date.now() - t0 });
+        if (j?.success === false) throw Object.assign(new Error('Workers AI REST error ' + (j.errors || []).map(e => e.code).join(',')), { name: 'RestAIError' });
+        return j?.result ?? j;
+      }
+      const bytes = new Uint8Array(await r.arrayBuffer());
+      onCall({ ...call, done_ms: Date.now() - t0, bytes: bytes.length });
+      return bytes;
+    },
+  };
+}
+
+// The REST route for the local live test: the client exists only inside this metered wrapper.
+export function meteredRestAI(env, ledger, { token, accountId, fetchImpl, onCall } = {}) {
+  const AI = restBinding({ token, accountId, fetchImpl, onCall });
+  const { ELEVENLABS_API_KEY, ...safe } = env;
+  return meteredAI(workersAI({ ...safe, AI }), ledger);
 }

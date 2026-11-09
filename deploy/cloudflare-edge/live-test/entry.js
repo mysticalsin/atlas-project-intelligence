@@ -7,13 +7,13 @@ import { DurableObject } from 'cloudflare:workers';
 import { Session } from '../src/session.js';
 import { workersAI } from '../src/app.js';
 import { speculationConfig } from '../src/speculation.js';
-import { LedgerState, ledgerClient, meteredAI, modelsOf } from '../src/spend-ledger.js';
+import { LedgerState, ledgerClient, meteredAI, meteredRestAI, modelsOf } from '../src/spend-ledger.js';
 import { SAMPLE_RATE } from '../src/speech.js';
 
 export class SpendLedger extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
-    ctx.blockConcurrencyWhile(async () => { this.state = new LedgerState({ models: modelsOf(env), saved: await ctx.storage.get('ledger') }); });
+    ctx.blockConcurrencyWhile(async () => { this.state = new LedgerState({ models: modelsOf(env), saved: await ctx.storage.get('ledger'), route: env.LIVE_TEST_REST === '1' ? 'rest' : 'binding' }); });
   }
   // Not awaited: the output gate holds each reply until the write is durable.
   save(r) { this.ctx.storage.put('ledger', this.state.toJSON()); return r; }
@@ -97,7 +97,12 @@ async function runSession(env, body) {
   const stub = env.SPEND_LEDGER.get(env.SPEND_LEDGER.idFromName('live-test'));
   const started = await stub.startSession();
   if (!started.ok) return { refused: started.reason, ledger: await stub.snapshot() };
-  const client = ledgerClient(stub, started.session), ai = meteredAI(env.LIVE_TEST_MOCK_AI === '1' ? mockAI() : workersAI(env), client);
+  const rest = [], client = ledgerClient(stub, started.session);
+  // REST route: the credential comes from the dev process environment (declared secrets in wrangler.rest.jsonc) and
+  // is read only here, into the metered wrapper; onCall records timings and status codes only.
+  const ai = env.LIVE_TEST_REST === '1'
+    ? meteredRestAI(env, client, { token: env.CLOUDFLARE_API_TOKEN, accountId: env.CLOUDFLARE_ACCOUNT_ID, onCall: c => rest.push({ t: Date.now(), ...c }) })
+    : meteredAI(env.LIVE_TEST_MOCK_AI === '1' ? mockAI() : workersAI(env), client);
   const mode = body.mode, flags = mode === 'baseline' ? {} : { EARLY_STT: '1', EARLY_DRAFT: mode === 'early_draft' ? '1' : '' };
   const spec = mode === 'baseline' ? null : speculationConfig(flags, client);
   if (spec && !spec.enabled) return { refused: 'speculation_' + spec.reason };
@@ -117,21 +122,21 @@ async function runSession(env, body) {
       if (!t.ok) { errors.push('turn_' + t.reason); break; }
       const parts = [];
       for (const text of turn.parts) parts.push(await voiceOf(ai, text, env.SYNTH_VOICE || 'arcas'));
-      const from = { events: marks.events.length, bytes: marks.firstBytes.length, metrics: marks.metrics.length };
+      const from = { events: marks.events.length, bytes: marks.firstBytes.length, metrics: marks.metrics.length, rest: rest.length };
       for (let i = 0; i < parts.length; i++) { await mic.say(parts[i], i === parts.length - 1); if (i < parts.length - 1) await mic.say(silence(turn.pauseMs || 1000)); }
       const end = mic.lastSpeech, t0 = Date.now();
       while (Date.now() - t0 < 20000 && marks.firstBytes.length === from.bytes) await sleep(20);
       // Only what happens after the end of speech: a reply started and withdrawn at a mid-answer pause does not count.
       const since = (list, ok = () => true) => { const x = list.find(e => (e.t ?? e) >= end && ok(e)); return x === undefined ? null : (x.t ?? x) - end; };
       turns.push({ index: t.turn, transcript_ms: since(marks.metrics.slice(from.metrics), m => m.metric === 'stt'), first_token_ms: since(marks.events.slice(from.events), e => e.type === 'agent_text'),
-        first_audio_sent_ms: since(marks.firstBytes.slice(from.bytes)), metrics: marks.metrics.slice(from.metrics).map(({ t, ...m }) => ({ ...m, at_ms: t - end })) });
+        first_audio_sent_ms: since(marks.firstBytes.slice(from.bytes)), rest_calls: rest.slice(from.rest).map(({ t, ...c }) => ({ ...c, at_ms: t - end })), metrics: marks.metrics.slice(from.metrics).map(({ t, ...m }) => ({ ...m, at_ms: t - end })) });
       if (!await waitIdle(s, 40000)) errors.push('reply_timeout');
       await sleep(300);
     }
   } catch (e) { errors.push(e?.name === 'BudgetRefused' ? 'budget_' + e.reason : (e?.name || 'Error')); }
   finally { await mic?.stop(); await s.end(false).catch(() => errors.push('end_error')); }
   const refusals = marks.metrics.filter(m => m.metric === 'early_refused').length;
-  return { mode, session: started.session, opening: marks.opening || null, tail: marks.metrics.slice(-12).map(({ t, ...m }) => m), turns, errors: [...errors, ...marks.events.filter(e => e.type === 'error').map(e => 'event_' + (e.code || 'error'))], early_refusals: refusals, ledger: await stub.snapshot() };
+  return { mode, route: env.LIVE_TEST_REST === '1' ? 'rest' : env.LIVE_TEST_MOCK_AI === '1' ? 'mock' : 'binding', session: started.session, rest_all: rest.map(({ t, ...c }) => c), opening: marks.opening || null, tail: marks.metrics.slice(-12).map(({ t, ...m }) => m), turns, errors: [...errors, ...marks.events.filter(e => e.type === 'error').map(e => 'event_' + (e.code || 'error'))], early_refusals: refusals, ledger: await stub.snapshot() };
 }
 
 export default {

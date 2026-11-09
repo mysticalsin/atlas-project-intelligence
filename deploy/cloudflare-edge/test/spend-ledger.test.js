@@ -237,3 +237,77 @@ test('session: a stopped ledger turns early work off and leaves no unmetered cal
   assert.equal(h.counter.stt + h.counter.talker + h.counter.tts, snap.reserved.requests);
   await h.s.end(false);
 });
+
+// REST route (owner decision 2026-11-09: the local harness calls the Workers AI REST API directly).
+const SECRET = 'tok_' + 'x'.repeat(40), ACCOUNT = 'acct0123456789';
+function fakeFetch(log, { status = 200 } = {}) {
+  return async (url, init) => {
+    log.push({ url, init });
+    const model = decodeURIComponent(new URL(url).pathname.split('/ai/run/')[1]);
+    if (status !== 200) return new Response(JSON.stringify({ success: false, errors: [{ code: 10000, message: 'Authentication error' }] }), { status, headers: { 'content-type': 'application/json' } });
+    if (model.includes('nova-3')) return Response.json({ success: true, result: { results: { channels: [{ alternatives: [{ transcript: 'synthetic words' }] }] } } });
+    if (model.includes('smart-turn')) return Response.json({ success: true, result: { is_complete: true, probability: 0.9 } });
+    if (model.includes('aura')) return new Response(new Uint8Array(4800), { headers: { 'content-type': 'audio/l16' } });
+    return new Response('data: {"response":"Which team?"}\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+  };
+}
+const ENV = { STT_MODEL: MODELS.stt, STT_LANGUAGE: 'en', TTS_MODEL: MODELS.tts.en, TTS_VOICE: 'harmonia', TALKER_MODEL: MODELS.talker, TURN_MODEL: MODELS.turn, ELEVENLABS_API_KEY: 'never-used' };
+
+test('REST route: no proxy item is priced on it; the binding route keeps it', () => {
+  need();
+  const rest = new L.LedgerState({ models: MODELS, route: 'rest' }), s = rest.startSession().session;
+  near(rest.reserve({ kind: 'tts', session: s, chars: 1000, lang: 'en' }).usd, 0.030);
+  const binding = withSession(state());
+  near(binding.st.reserve({ kind: 'tts', session: binding.session, chars: 1000, lang: 'en' }).usd, 0.030 + L.PROXY_PER_CALL_USD);
+  assert.throws(() => new L.LedgerState({ models: MODELS, route: 'other' }));
+});
+
+test('REST route: the client exists only inside the metered wrapper, and every request is admitted first', async () => {
+  need();
+  assert.deepEqual(Object.keys(L).filter(k => /rest/i.test(k)), ['meteredRestAI']);
+  const { readFileSync, readdirSync } = await import('node:fs');
+  const files = [...readdirSync(new URL('../src/', import.meta.url)).map(f => '../src/' + f), ...readdirSync(new URL('../live-test/', import.meta.url)).map(f => '../live-test/' + f)].filter(f => /\.(m?js)$/.test(f));
+  for (const f of files) {
+    const src = readFileSync(new URL(f, import.meta.url), 'utf8');
+    if (f === '../src/spend-ledger.js') {
+      assert.equal(src.match(/restBinding\(/g).length, 2, 'defined once, called once (inside meteredRestAI)');
+      assert.match(src, /export function meteredRestAI[^]*?const AI = restBinding\([^]*?return meteredAI\(workersAI\(/);
+      assert.doesNotMatch(src, /export\s+(function|const)\s+restBinding/);
+    } else assert.doesNotMatch(src, /api\.cloudflare\.com|\/ai\/run\//, f + ' must not call the REST API itself');
+  }
+  const log = [], st = new L.LedgerState({ models: MODELS, route: 'rest' }), stub = stubOf(st, { jitter: 0 });
+  const ai = L.meteredRestAI(ENV, L.ledgerClient(stub, (await stub.startSession()).session), { token: SECRET, accountId: ACCOUNT, fetchImpl: fakeFetch(log) });
+  assert.deepEqual((await ai.transcribe(new Uint8Array(48000))), { text: 'synthetic words', language: null });
+  assert.deepEqual(await ai.turnComplete(new Uint8Array(48000)), { complete: true, probability: 0.9 });
+  assert.equal((await ai.synthesize('Hello there.', 'atlas', 'en')).length, 4800);
+  let text = ''; for await (const d of ai.chatStream([{ role: 'user', content: 'hi' }], { affinity: 'a1' })) text += d;
+  assert.equal(text, 'Which team?');
+  await assert.rejects(ai.synthesize('Bonjour', 'atlas', 'fr'), { reason: 'unpriced_voice' });
+  assert.equal(ai.analyst, undefined); assert.equal(ai.report, undefined); assert.equal(ai.embed, undefined);
+  assert.equal(log.length, 4); assert.equal(st.snapshot().reserved.requests, 4);
+  const [stt, turn, tts, talker] = log;
+  assert.equal(stt.url, `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}/ai/run/@cf/deepgram/nova-3?smart_format=true&punctuate=true&language=en`);
+  assert.equal(stt.init.headers['content-type'], 'audio/wav');
+  assert.ok(stt.init.body instanceof Uint8Array && stt.init.body.length === 48000 + 44);
+  assert.equal(stt.init.headers.authorization, 'Bearer ' + SECRET);
+  assert.ok(turn.url.endsWith('/ai/run/@cf/pipecat-ai/smart-turn-v2') && typeof JSON.parse(turn.init.body).audio === 'string');
+  assert.deepEqual(JSON.parse(tts.init.body), { text: 'Hello there.', speaker: 'harmonia', encoding: 'linear16', container: 'none', sample_rate: 24000 });
+  assert.equal(talker.init.headers['x-session-affinity'], 'a1');
+  assert.equal(JSON.parse(talker.init.body).max_tokens, 300);
+});
+
+test('REST route: a refusal makes no request, and an API error never carries the credential', async () => {
+  need();
+  const log = [], stopped = new L.LedgerState({ models: MODELS, route: 'rest', caps: { ...L.CAPS, usd: 0 } }), stub = stubOf(stopped, { jitter: 0 });
+  const ai = L.meteredRestAI(ENV, L.ledgerClient(stub, (await stub.startSession()).session), { token: SECRET, accountId: ACCOUNT, fetchImpl: fakeFetch(log) });
+  for (const call of [() => ai.transcribe(new Uint8Array(4800)), () => ai.turnComplete(new Uint8Array(4800)), () => ai.synthesize('x', 'atlas', 'en'), async () => { for await (const _ of ai.chatStream([{ role: 'user', content: 'x' }])); }])
+    await assert.rejects(call(), { name: 'BudgetRefused' });
+  assert.equal(log.length, 0);
+  const calls = [], open = new L.LedgerState({ models: MODELS, route: 'rest' }), stub2 = stubOf(open, { jitter: 0 });
+  const failing = L.meteredRestAI(ENV, L.ledgerClient(stub2, (await stub2.startSession()).session), { token: SECRET, accountId: ACCOUNT, fetchImpl: fakeFetch([], { status: 403 }), onCall: c => calls.push(c) });
+  const e = await failing.transcribe(new Uint8Array(4800)).catch(x => x);
+  assert.equal(e.name, 'RestAIError'); assert.deepEqual(e.codes, [10000]);
+  assert.ok(!JSON.stringify({ m: e.message, s: e.stack, calls }).includes(SECRET) && !JSON.stringify({ m: e.message, calls }).includes(ACCOUNT));
+  assert.equal(open.snapshot().reserved.requests, 1, 'the failed request keeps its reservation');
+  assert.throws(() => L.meteredRestAI(ENV, null, {}), /credentials are missing/);
+});

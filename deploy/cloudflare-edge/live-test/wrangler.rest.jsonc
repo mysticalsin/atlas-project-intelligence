@@ -1,0 +1,25 @@
+// LOCAL-ONLY Plan A live test over the Workers AI REST API (owner decision 2026-11-09). Run with `wrangler dev` only;
+// never deploy. No AI binding (so no remote proxy session), no routes, no workers.dev, no previews. The ledger Durable
+// Object is local. The two secrets are read from the dev process environment, never from a file in this repository.
+{
+  "name": "atlas-plan-a-live-test-rest",
+  "main": "entry.js",
+  "compatibility_date": "2025-09-01",
+  "workers_dev": false,
+  "preview_urls": false,
+  "durable_objects": { "bindings": [{ "name": "SPEND_LEDGER", "class_name": "SpendLedger" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SpendLedger"] }],
+  "rules": [{ "type": "Text", "globs": ["**/*.html"], "fallthrough": true }],
+  "secrets": { "required": ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"] },
+  "vars": {
+    "LIVE_TEST_REST": "1",
+    "STT_MODEL": "@cf/deepgram/nova-3",
+    "STT_LANGUAGE": "en",
+    "TTS_MODEL": "@cf/deepgram/aura-2-en",
+    "TTS_VOICE": "harmonia",
+    "TALKER_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "TURN_MODEL": "@cf/pipecat-ai/smart-turn-v2",
+    "SYNTH_VOICE": "arcas"
+  }
+  // LIVE_TEST_LOCAL is not set here: pass --var LIVE_TEST_LOCAL:1 on the dev command line. No ElevenLabs key.
+}
