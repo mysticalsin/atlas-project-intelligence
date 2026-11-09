@@ -748,3 +748,8 @@ Review answers:
 - Parent is the privacy-receipt commit. This note is the next forward commit. No push, pull request, deploy, or live call.
 - The Worker uses the library's own path match for a privacy or profile delete. A trailing slash, a repeated slash, a query string, and a later privacy segment take the same missing-tenant rejection before the library object is requested. A profile path with a third segment is not a delete. Percent-encoded slashes and a different letter case are not that match. The page was not rebuilt.
 - Quarantine is not deletion. Vendor deletion stays not-asserted. A Cloudflare Durable Object runtime was not executed.
+
+### Session: 2026-11-09 / Ledger coverage: every paid call through one meter (run70, brought onto plan-a-cap-v2)
+- Brought from the ledger-mode base onto main. The live-test ledger, the session hold, early processing, privacy delete and persona were not brought.
+- `deploy/cloudflare-edge/src/meter.js` `paid(env)` wraps the edge AI calls. Prices live in `src/prices.js`. `LEDGER_MODE` off is still the code default in this commit. `docs/LEDGER_MODES.md` records the modes.
+- The live-test cap test and the early-processing docs were not carried, because those trees are not on this branch.
