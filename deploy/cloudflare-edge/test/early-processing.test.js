@@ -401,3 +401,54 @@ test('workersAI: maxTokens can only lower the talker bound', async () => {
   for (const maxTokens of [undefined, 50, 1000]) for await (const _ of workersAI(env).chatStream([], { maxTokens })) { /* drain */ }
   assert.deepEqual(seen, [300, 50, 300]);
 });
+
+// run65, session 8, turn 2: smart-turn was unsure (0.62) at a mid-answer pause, so the silence rule ended the turn and the
+// adopted draft started playing. The rest of the answer, spoken with ordinary gaps between words, began as her reply
+// became audible and was never heard: under the barge-in gate (4x level, 450 ms of unbroken loud audio) it was not speech.
+const WORDS = Array.from({ length: 6 }, () => [VOICE(0.3), QUIET(0.1)]).flat(); // about 2.4 s of speech with word gaps
+const PART1 = 'I owned the routing rules myself.', PART2 = 'The regional team adopted them in the second month.';
+function midAnswer({ echo = false } = {}) {
+  let long = false;
+  const h = harness({ draft: true, stt: [PART1, echo ? 'Thanks, that is a clear example of ownership.' : PART2],
+    ai: calls => ({
+      async turnComplete() { return { complete: true, probability: 0.62 }; },
+      async *chatStream(m, opts) { calls.talker.push({ m, opts }); if (!long) { yield 'Hello. Where shall we start?'; return; } yield 'Thanks, that is a clear example of ownership. '; yield 'What changed for the team?'; },
+      async synthesize(text) { calls.tts.push({ t: calls.clock?.t, text }); return new Uint8Array(long ? 48000 * 5 : 4800).fill(1); }, // her reply: 5 s each piece
+    }) });
+  return { h, speakLong: () => { long = true; } };
+}
+
+test('a turn ended at a mid-answer pause: the rest of the answer, spoken as her reply starts, is heard and merged into the same turn', async () => {
+  need();
+  const { h, speakLong } = midAnswer();
+  await opened(h);
+  speakLong();
+  await feed(h, [VOICE(1.2), QUIET(END_SILENCE + 0.1)]); // part one, then a pause the silence rule ends (the turn model was unsure)
+  // Only until her reply is first heard (the virtual clock moves only with microphone frames, so waiting longer would play it all).
+  const n0 = h.bytes.length; await until(() => named(h, 'early_draft_adopted').length === 1 && h.bytes.length > n0 && h.s.audible());
+  assert.deepEqual(users(h), [PART1], 'the turn ended at the pause');
+  await feed(h, [...WORDS, QUIET(END_SILENCE + 0.2)]); // ...and they carry on while her reply is playing
+  for (let i = 0; i < 20000 && !(h.calls.talker.length === 3 && !h.s.busy()); i++) await tick();
+  assert.deepEqual(users(h), [PART1 + ' ' + PART2], 'one turn: nothing they said is dropped');
+  assert.equal(named(h, 'turn_resumed').length, 1, 'a continuation, not a barge-in');
+  assert.equal(named(h, 'barge_in').length, 0);
+  assert.equal(named(h, 'reply_withdrawn').length, 1, 'the reply to the first part is taken back');
+  assert.ok(h.calls.talker[2].m.some(m => m.role === 'user' && m.content === PART1 + ' ' + PART2), 'the next reply answers the whole answer');
+  assert.ok(!h.s.history.some(m => m.content.includes('[interrupted')), 'not recorded as an interruption');
+});
+
+test('the same window does not let her own voice withdraw her reply: an echo is transcribed, ignored, and she carries on', async () => {
+  need();
+  const { h, speakLong } = midAnswer({ echo: true });
+  await opened(h);
+  speakLong();
+  await feed(h, [VOICE(1.2), QUIET(END_SILENCE + 0.1)]);
+  const n0 = h.bytes.length; await until(() => named(h, 'early_draft_adopted').length === 1 && h.bytes.length > n0 && h.s.audible());
+  await feed(h, [...WORDS, QUIET(END_SILENCE + 0.2)]); // the microphone picks up her own words
+  for (let i = 0; i < 20000 && !named(h, 'echo_ignored').length && h.calls.talker.length < 3; i++) await tick();
+  for (let i = 0; i < 50; i++) await tick();
+  assert.equal(named(h, 'echo_ignored').length, 1, 'heard and transcribed, then recognised as her own words');
+  assert.equal(named(h, 'reply_withdrawn').length, 0, 'no withdrawal on the sound alone');
+  assert.equal(h.calls.talker.length, 2, 'no new reply');
+  assert.deepEqual(users(h), [PART1]);
+});

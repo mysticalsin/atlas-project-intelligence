@@ -5,7 +5,7 @@ import { TALKER_POLICY, OPENING, HISTORY, TOPICS, ADMIN_NOTE, SPEAKING_LIMIT_S, 
   GAP_LIMIT_S, GAP_SPEAKING_S, GAP_WRAP_S, GAP_MAX, GAP_OPENING, WIN_HINTS } from './policy.generated.js';
 import { gapSystemBlock, gapNotes, gapStatus, gapGuidance, timePlan } from './gap-policy.js';
 import { Analyst, InterviewLedger } from './ledger.js';
-import { EnergyTurns, isEcho, Phrases, speakable } from './speech.js';
+import { EnergyTurns, isEcho, Phrases, rms, speakable } from './speech.js';
 import { EndMarker, parseReport, reportMessages } from './report.js';
 import { LANGUAGES, normalize, spokenFor, languageNote, GREETINGS, WELCOME_BACK, FILLERS, unfinished } from './languages.js';
 import { LIMITS, audioMs, estimateInputTokens } from './speculation.js';
@@ -22,6 +22,10 @@ export const STILL_THINKING = '[Server: the consultant went quiet mid-answer and
   + 'reply only with a short, warm nudge in their language (for example "Take your time." or "Go on, I\'m listening."), with no question. '
   + 'Otherwise continue the interview as usual.';
 export const CONTINUE_MS = 1200; // ms of her real reply (the acknowledgement does not count): speaking again before that is still answering
+// The barge-in gate of EnergyTurns while she is audible (4x the level, this long unbroken). Ordinary speech, with gaps
+// between words, rarely passes it, so inside the continuation window the rest of an answer is listened for at the
+// normal level and her reply is withdrawn only on a transcript with words that are not her echo, or once it passes this.
+export const BARGE_IN_S = 0.45;
 export const FILLER_WORDS = 12; // an acknowledgement only after a real answer, not after a few words
 export const MIN_VOICED = 0.15; // seconds of actual voice below which a sound may be a click or a breath
 export const BLIP_QUIET = 0.45; // such a sound is closed after this much quiet (longer than a comma pause), so ATLAS is not held by it
@@ -136,7 +140,7 @@ export class Session {
     this.mode = 'full'; this.wrapS = WRAP_S; this.winNote = ''; this.starting = false;
     this.gapAsks = []; this.gapRequest = null; this.askByItem = new Map(); this.gapAttempts = {}; this.gapAnswers = {}; this.openAsk = null; this.lastAnswer = null; this.askHeard = null;
     this.memoryNote = ''; this.language = 'en'; this.languageCandidate = null; this.dry = false; this.affinity = 'atlas-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
-    this.pause = ''; this.checkId = 0; this.continuing = false; this.replyTurn = -1; this.replyItem = null; this.shown = { item: null, chars: 0 }; this.discarded = new Set(); this.fillerMs = {}; this.committed = null; this.live = null; this.recorded = new Set(); this.voiced = 0; this.blip = null; this.echoable = false; this.acked = false; this.playbackDone = true; this.doneAt = 0; this.resumedAt = 0; this.lastFiller = -1; this.fillerTurn = -2; this.protectedItem = null; this.protectedMs = 0; this.protectedDeadline = 0;
+    this.pause = ''; this.checkId = 0; this.continuing = false; this.listening = false; this.held = false; this.loudRun = 0; this.replyTurn = -1; this.replyItem = null; this.shown = { item: null, chars: 0 }; this.discarded = new Set(); this.fillerMs = {}; this.committed = null; this.live = null; this.recorded = new Set(); this.voiced = 0; this.blip = null; this.echoable = false; this.acked = false; this.playbackDone = true; this.doneAt = 0; this.resumedAt = 0; this.lastFiller = -1; this.fillerTurn = -2; this.protectedItem = null; this.protectedMs = 0; this.protectedDeadline = 0;
     this.spokenMs = 0; this.timeUp = false; this.ending = null; this.sttBusy = 0;
     this.started = false; this.finished = false; this.capture = false; this.history = []; this.queue = []; this.waiter = null;
     this.gen = 0; this.replies = 0; this.turns = 0; this.guidance = null; this.speaking = null; this.pending = new Set();
@@ -177,9 +181,15 @@ export class Session {
     if (!bytes.length || bytes.length % 2 || bytes.length > 3840) return this.fail('Invalid PCM frame', 'voice-contract');
     this.bytesIn += bytes.length; this.lastInput = this.now();
     if (this.bytesIn > (this.lastInput - this.startedAt + 3) * 48000) return this.fail('Audio exceeds realtime input budget', 'voice-contract');
-    const audible = this.audible();
-    const [started, utterance] = this.turnDetector.feed(bytes, audible);
-    const d = this.turnDetector;
+    const audible = this.audible(), d = this.turnDetector;
+    // Inside the continuation window (or an utterance that began in it) the consultant is heard at the normal level.
+    const listen = d.active ? this.listening : this.continuationWindow();
+    const [started, utterance] = d.feed(bytes, audible && !listen);
+    if (started) { this.listening = listen; this.held = false; this.loudRun = 0; }
+    else if (this.held && d.active) {
+      this.loudRun = rms(bytes) > Math.max(0.012, d.floor * 3.2) * 4 ? this.loudRun + bytes.length / 48000 : 0;
+      if (this.loudRun >= BARGE_IN_S && audible) { this.held = false; this.withdraw(); }
+    }
     if (started || (d.active && d.quiet === 0)) { // voice: anything prepared early at a pause no longer matches what they are saying
       this.pauseKey += 1;
       if (this.spec) this.dropEarly('speech');
@@ -213,7 +223,7 @@ export class Session {
       const heard = replying ? (this.playedMs[item] ?? Math.max(0, (this.sentMs[item] || 0) - LEAD_MS)) - (this.fillerMs[item] || 0) - d.loud * 1000 : 0;
       this.continuing = carried || this.sttBusy > 0 || (replying && heard <= CONTINUE_MS);
       if (this.continuing) {
-        if (audible && !this.greetingPlaying()) this.withdraw();
+        if (audible && !this.greetingPlaying()) { if (this.listening) this.held = true; else this.withdraw(); }
         this.metric('turn_resumed', { heard_ms: replying ? Math.round(heard) : -1, filler_ms: replying ? Math.round(this.fillerMs[item] || 0) : -1, transcribing: this.sttBusy > 0 ? 1 : 0 });
         this.event('user_speaking');
       } else if (audible && !this.greetingPlaying()) {
@@ -425,7 +435,7 @@ export class Session {
   }
 
   // What is known about the utterance that just ended, taken once (the next utterance starts fresh).
-  takeUtterance() { const u = { continuing: this.continuing, echoable: this.echoable }; this.continuing = false; this.echoable = false; return u; }
+  takeUtterance() { const u = { continuing: this.continuing, echoable: this.echoable }; this.continuing = false; this.echoable = false; this.listening = false; this.held = false; return u; }
 
   // Take back the reply to the consultant's last turn: they had not finished. Not an interruption, not in the history,
   // and its text is removed from the on-screen transcript.
@@ -554,6 +564,14 @@ export class Session {
     else if (this.now() - this.lastInput > 12) this.fail('Microphone frames stopped', 'voice-unavailable');
     // The last half minute and nobody is talking: ATLAS closes on her own, so the interview ends with a goodbye.
     else if (left <= 30 && !this.timeUp && this.turns >= 1 && !this.busy() && !this.turnDetector.active && this.sttBusy === 0) this.startReply(TIME_UP);
+  }
+
+  // Her reply to the consultant's latest turn has barely started (CONTINUE_MS of it heard, the acknowledgement aside):
+  // speech now is the rest of the same answer (see onBinary), so it is listened for at the normal level.
+  continuationWindow() {
+    if (!(this.turns > 0 && this.replyTurn === this.turns && this.busy())) return false;
+    const item = this.replyItem;
+    return (this.playedMs[item] ?? Math.max(0, (this.sentMs[item] || 0) - LEAD_MS)) - (this.fillerMs[item] || 0) <= CONTINUE_MS;
   }
 
   // A reply that was withdrawn or interrupted but has not yet noticed (awaiting the model or the voice) is not busy.
