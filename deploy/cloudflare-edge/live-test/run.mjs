@@ -14,28 +14,33 @@ const SCRIPT = [
   { parts: ['Average handling time went from nine days to six, measured on the pilot queue only.'] },
   { parts: ['We rejected a full platform replacement because the budget was fixed.'] },
 ];
-// Per-turn ceiling used for planning only: one reply (and one draft) at the largest prompt seen so far, plus headroom.
-const PLAN = { inputPerCall: 14000, outputPerCall: 300 };
-
+// Planning only: a session starts when every remaining cap has room for 1.3x the largest per-session reservation seen
+// so far (drafts: twice the transcription-only figure before any draft session has run). The ledger stays the authority.
+const UNITS = ['usd', 'inputTokens', 'outputTokens', 'audioRequests', 'audioMs', 'ttsChars'];
+const FIRST = { usd: 0.25, inputTokens: 90000, outputTokens: 2400, audioRequests: 14, audioMs: 120000, ttsChars: 1500 };
+const used = l => ({ ...l.reserved, usd: l.reserved.usd });
+const capOf = (l, u) => u === 'usd' ? l.caps.usd : l.caps[u];
+const seen = {};
 const get = async p => (await fetch(base + p)).json();
 const post = async (p, b) => (await fetch(base + p, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) })).json();
 const pct = (xs, p) => { const v = xs.filter(x => typeof x === 'number').sort((a, b) => a - b); if (!v.length) return null; return v[Math.min(v.length - 1, Math.ceil(p / 100 * v.length) - 1)]; };
 const stats = xs => ({ n: xs.filter(x => typeof x === 'number').length, median: pct(xs, 50), p90: pct(xs, 90), p95: pct(xs, 95) });
-
-function headroom(l, calls) {
-  const r = l.reserved, c = l.caps;
-  return !l.stopped && r.inputTokens + calls * PLAN.inputPerCall <= c.inputTokens && r.outputTokens + calls * PLAN.outputPerCall <= c.outputTokens && l.sessions < c.sessions;
+function headroom(l, mode) {
+  if (l.stopped || l.sessions >= l.caps.sessions) return false;
+  const base = seen[mode] || (mode === 'early_draft' && seen.early_stt ? Object.fromEntries(UNITS.map(u => [u, seen.early_stt[u] * 2])) : seen.baseline || FIRST);
+  return UNITS.every(u => used(l)[u] + 1.3 * base[u] <= capOf(l, u));
 }
 
 const result = { kind: 'local-only live test (wrangler dev): synthetic speech, remote Workers AI binding, local ledger', base, started: new Date().toISOString(), runs: [], stopped: '' };
 for (const mode of ['baseline', 'early_stt', 'early_draft']) {
-  if (mode === 'early_draft' && result.runs.some(r => r.mode === 'early_stt' && (r.errors?.length || r.refused))) { result.skipped_drafts = 'early_stt run was not clean'; break; }
+  if (mode === 'early_draft' && (!result.runs.some(r => r.mode === 'early_stt') || result.runs.some(r => r.mode === 'early_stt' && (r.errors?.length || r.refused)))) { result.skipped_drafts = 'early_stt run was not clean'; break; }
   for (let i = 0; i < Number(perMode); i++) {
-    const turns = Number(perSession), calls = (1 + turns) * (mode === 'early_draft' ? 2 : 1);
-    const before = await get('/ledger');
-    if (!headroom(before, calls)) { result.stopped = `headroom before ${mode} session ${i + 1}`; break; }
-    const r = await post('/run', { mode, turns: SCRIPT.slice(0, turns) });
+    const turns = Number(perSession), before = await get('/ledger');
+    if (!headroom(before, mode)) { result.stopped = `headroom before ${mode} session ${i + 1}`; break; }
+    const r = await post('/run', { mode, turns: Array.from({ length: turns }, (_, k) => SCRIPT[k % SCRIPT.length]) });
     result.runs.push(r);
+    if (r.ledger) { const d = Object.fromEntries(UNITS.map(u => [u, used(r.ledger)[u] - used(before)[u]])); seen[r.mode] = Object.fromEntries(UNITS.map(u => [u, Math.max(seen[r.mode]?.[u] || 0, d[u])])); r.reserved_delta = d; }
+    console.log(JSON.stringify({ mode, session: i + 1, errors: r.errors, refused: r.refused, stopped: r.ledger?.stopped, usd: r.ledger?.reserved?.usd }));
     if (r.refused || r.ledger?.stopped) { result.stopped = r.refused || r.ledger.stopped; break; }
   }
   if (result.stopped && !result.stopped.startsWith('headroom')) break;

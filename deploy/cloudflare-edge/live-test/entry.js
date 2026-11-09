@@ -4,7 +4,7 @@
 // Test material is synthetic speech only: scripted fictional answers voiced by Workers AI speech synthesis (metered),
 // held in this process's memory and never written to disk (docs/LIVE_TEST_PRIVACY_CHECK.md).
 import { DurableObject } from 'cloudflare:workers';
-import { Session, clearPcmCache } from '../src/session.js';
+import { Session } from '../src/session.js';
 import { workersAI } from '../src/app.js';
 import { speculationConfig } from '../src/speculation.js';
 import { LedgerState, ledgerClient, meteredAI, modelsOf } from '../src/spend-ledger.js';
@@ -101,8 +101,8 @@ async function runSession(env, body) {
   const mode = body.mode, flags = mode === 'baseline' ? {} : { EARLY_STT: '1', EARLY_DRAFT: mode === 'early_draft' ? '1' : '' };
   const spec = mode === 'baseline' ? null : speculationConfig(flags, client);
   if (spec && !spec.enabled) return { refused: 'speculation_' + spec.reason };
-  const marks = { last: 0, events: [], firstBytes: [], metrics: [] }, errors = [];
-  clearPcmCache();
+  // The acknowledgement cache is kept across sessions in this process, as one Worker isolate keeps it.
+  const marks = { events: [], firstBytes: [], metrics: [] }, errors = [];
   const s = new Session({ ai, csrf: 'local', voice: 'atlas', model: env.TALKER_MODEL, speculation: spec,
     io: { send: e => marks.events.push({ t: Date.now(), type: e.type, chars: typeof e.text === 'string' ? e.text.length : undefined, code: e.code }), sendBytes: () => marks.firstBytes.push(Date.now()), close() {} },
     metric: (name, values) => marks.metrics.push({ t: Date.now(), ...values, metric: name }) });
