@@ -51,7 +51,7 @@ test('every cap is enforced at admission and latches a hard stop', () => {
   const cases = [
     ['audioMs', { kind: 'stt', audioMs: 60000 }, 30],
     ['audioRequests', { kind: 'turn', audioMs: 1000 }, 100],
-    ['inputTokens', { kind: 'talker', inputTokens: 10000, outputTokens: 1 }, 10],
+    ['inputTokens', { kind: 'talker', inputTokens: 80000, outputTokens: 1 }, 10],
     ['outputTokens', { kind: 'talker', inputTokens: 1, outputTokens: 200 }, 100],
     ['ttsChars', { kind: 'tts', chars: 1000, lang: 'en' }, 20],
   ];
@@ -80,7 +80,7 @@ test('no refund: settling, cancelling or failing keeps the full reservation; obs
 
 test('the default caps are the approved ones', () => {
   need();
-  assert.deepEqual({ ...L.CAPS, inFlight: undefined }, { sessions: 10, turnsPerSession: 10, audioMs: 1800000, audioRequests: 100, inputTokens: 100000, outputTokens: 20000, ttsChars: 20000, usd: 1.5, inFlight: undefined });
+  assert.deepEqual({ ...L.CAPS, inFlight: undefined }, { sessions: 10, turnsPerSession: 10, audioMs: 1800000, audioRequests: 100, inputTokens: 800000, outputTokens: 20000, ttsChars: 20000, usd: 1.5, inFlight: undefined });
 });
 
 test('a pre-reserved request is claimed once, by its own session and kind', () => {

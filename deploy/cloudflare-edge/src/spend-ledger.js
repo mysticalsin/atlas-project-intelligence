@@ -16,10 +16,11 @@ export const PRICES = Object.freeze({
   '@cf/deepgram/aura-2-en': { usdPer1kChars: 0.030 },
   '@cf/deepgram/aura-2-es': { usdPer1kChars: 0.030 },
 });
-// The owner-approved caps for the live test, combined across baseline and Plan A. audioRequests (speech recognition and
+// The owner-approved caps for the live test, combined across baseline and Plan A. inputTokens was raised from 100,000
+// to 800,000 on 2026-11-09 by owner decision ("raise only the input-token cap while keeping the $1.50 total"). audioRequests (speech recognition and
 // turn model together) keeps the bound within $1.50 even if each audio request were billed as a full minute; the
 // pricing page states no per-request minimum either way (docs/LIVE_TEST_BOUND.md).
-export const CAPS = Object.freeze({ sessions: 10, turnsPerSession: 10, audioMs: 30 * 60000, audioRequests: 100, inputTokens: 100000, outputTokens: 20000, ttsChars: 20000, usd: 1.50, inFlight: 8 });
+export const CAPS = Object.freeze({ sessions: 10, turnsPerSession: 10, audioMs: 30 * 60000, audioRequests: 100, inputTokens: 800000, outputTokens: 20000, ttsChars: 20000, usd: 1.50, inFlight: 8 });
 // wrangler dev reaches a remote binding through a proxy session; whether that bills as Worker usage is not stated
 // (https://developers.cloudflare.com/workers/development-testing/). Every reservation therefore also carries the Workers
 // Standard worst case per call (https://developers.cloudflare.com/workers/platform/pricing/, page updated 2026-10-02):
