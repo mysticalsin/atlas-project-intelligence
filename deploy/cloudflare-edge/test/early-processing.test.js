@@ -530,3 +530,18 @@ test('one definition of the 1.2 s: the window and the continuation decision both
     await h.s.end(false);
   }
 });
+
+test('held and paused: a sound that passes the barge-in gate still withdraws her reply at once, before any transcript', async () => {
+  need();
+  const { h, speakLong } = held();
+  await replyQueued(h, speakLong);
+  await feedAck(h, WORDS); // the hold: her first piece plays out, the second waits
+  assert.equal(h.s.audible(), false, 'paused for more than 300 ms: nothing audible');
+  assert.ok(h.s.hold && h.s.turnDetector.active);
+  const stt = h.calls.stt.length;
+  await feedAck(h, [VOICE(0.6)]); // 600 ms of unbroken loud sound
+  assert.equal(named(h, 'reply_withdrawn').length, 1, 'withdrawn on the gate alone');
+  assert.equal(h.calls.stt.length, stt, 'no transcript was needed');
+  assert.equal(h.s.hold, null);
+  assert.equal(started(h, SECOND), false);
+});

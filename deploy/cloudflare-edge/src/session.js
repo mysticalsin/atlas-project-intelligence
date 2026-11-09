@@ -190,7 +190,7 @@ export class Session {
     if (started) { this.listening = listen; this.loudRun = 0; }
     else if (this.hold && d.active && this.listening) {
       this.loudRun = rms(bytes) > Math.max(0.012, d.floor * 3.2) * 4 ? this.loudRun + bytes.length / 48000 : 0;
-      if (this.loudRun >= BARGE_IN_S && audible) this.withdraw();
+      if (this.loudRun >= BARGE_IN_S) this.withdraw(); // audible, or paused by this very hold: either way her reply is under way
     }
     if (started || (d.active && d.quiet === 0)) { // voice: anything prepared early at a pause no longer matches what they are saying
       this.pauseKey += 1;
@@ -217,9 +217,10 @@ export class Session {
     } else if (this.blip && !d.active && this.now() - d.loud - this.blip.at > BLIP_JOIN) this.expireBlip(); // speech already under way still joins
     if (started) {
       // Speaking again before ATLAS has really answered (still transcribing, composing, or only a second or so into her
-      // reply) means the consultant had not finished: what follows is the rest of the same answer. Her reply is held if
-      // this speech was heard inside the continuation window (see BARGE_IN_S), otherwise stopped at once if audible; a
-      // reply not yet audible is held and withdrawn only if they actually add words. Decided once, at the onset: the
+      // reply) means the consultant had not finished: what follows is the rest of the same answer. An audible reply is
+      // held (this.hold) if this speech was heard inside the continuation window (see BARGE_IN_S), otherwise stopped at
+      // once. A reply not yet audible has nothing queued and needs no hold: its pieces wait in deliver() while they speak
+      // and while their words are transcribed, and it is withdrawn only if they actually add words. Decided once, at the
       // whole utterance keeps it, however long it goes on (her held reply does not move on meanwhile).
       const item = this.replyItem, heard = this.replyHeardMs(), replying = heard !== Infinity;
       this.continuing = carried || this.sttBusy > 0 || heard <= CONTINUE_MS;
