@@ -14,7 +14,9 @@ The browser holds the disclosure and the delete responses so the races are repro
 - an older journey render that completes after a newer one does not replace it;
 - an empty deletion scope does not enable deletion;
 - at 390px the confirmation is ticked and submitted with native keyboard presses on focused controls;
-- the local edge identity has no tenant UUID, so the real POST is refused and the page shows the refusal, not a receipt.
+- the local edge identity has no tenant UUID, so the real POST is refused and the page shows the refusal, not a receipt;
+- after a mocked successful receipt, a later attempt refused by the real local edge handler leaves the earlier receipt
+  labelled as an earlier request (also after a re-render), and a later success is shown as the current receipt again.
 Receipts here are mocked responses in the delete receipt shape of deploy/cloudflare-edge/src/operate.js (outcomes with
 store/removed/error, blocked, complete, vendorDeletion), used for mixed success/failure rendering, focus and a single
 receipt across reopen. A receipt from the real handler is only exercised by a separate local workerd harness that is not
@@ -152,6 +154,33 @@ try:
     check('after a receipt, focus moves to the receipt',p.evaluate("()=>!!document.activeElement?.closest('#privacyReceipt')"))
   check('after a second confirmation there is one receipt and no duplicate ids',p.locator('#privacyReceipt').count()==1 and p.evaluate("()=>{const ids=[...document.querySelectorAll('[id]')].map(e=>e.id);return ids.length===new Set(ids).size}"))
   check('mocked receipts: two confirmations sent two deletes',len(sent)==2)
+  c.close()
+
+  # A failed attempt after an earlier receipt: the earlier receipt is labelled as earlier, not as the latest result.
+  OK={'outcomes':[{'store':s,'removed':1,'error':None} for s in ('journey','telemetry','profile','manager-trust','directory','revisions','stories')],
+   'blocked':[],'complete':False,'vendorDeletion':'not-asserted','note':'Synthetic mocked receipt.'}
+  c,p,sent=open_page('history@mantu.com');mode={'next':'mock'}
+  def history_route(route):
+   if mode['next']=='mock':route.fulfill(status=200,content_type='application/json',body=json.dumps(OK))
+   else:route.continue_()
+  p.route('**/api/library/privacy/delete',history_route)
+  p.locator('header nav [data-view=journey]').click();wait_open(p)
+  def confirm():p.locator('#privacyDeleteOpen').click();p.locator('#privacyConfirmTick').check();p.locator('#privacyConfirmDelete').click()
+  confirm();p.locator('#privacyReceipt').wait_for(timeout=10000);settle(p,300)
+  head=lambda:p.locator('#privacyReceipt h3').inner_text() if p.locator('#privacyReceipt').count() else ''
+  rtext=lambda:p.locator('#privacyReceipt').inner_text() if p.locator('#privacyReceipt').count() else ''
+  check('history: the first receipt is the current receipt',head()=='Deletion receipt' and 'earlier' not in rtext().lower())
+  mode['next']='real';confirm()
+  p.wait_for_function("()=>(document.getElementById('privacyActions')?.innerText||'').includes('verified tenant')",timeout=10000);settle(p,300)
+  acts=p.locator('#privacyActions').inner_text()
+  check('history: after the real refusal the earlier receipt is labelled as an earlier request',p.locator('#privacyReceipt').count()==1 and 'earlier' in head().lower() and 'not from the latest' in rtext())
+  check('history: the refusal says the latest request did not complete','latest deletion request' in acts.lower() and 'verified tenant' in acts)
+  check('history: one receipt, unique ids, the enabled opener has focus',p.evaluate("()=>{const ids=[...document.querySelectorAll('[id]')].map(e=>e.id);return ids.length===new Set(ids).size}") and disabled(p,'#privacyDeleteOpen') is False and p.evaluate("()=>document.activeElement?.id")=='privacyDeleteOpen')
+  p.evaluate("()=>window.dispatchEvent(new Event('atlas-auth'))");settle(p,200);disclosure_loaded(p);settle(p,300)
+  check('history: after a re-render the earlier receipt is still labelled as earlier','earlier' in head().lower() and 'not from the latest' in rtext())
+  mode['next']='mock';confirm();p.wait_for_function("()=>document.querySelector('#privacyReceipt h3')?.textContent==='Deletion receipt'",timeout=10000);settle(p,300)
+  check('history: a later success is shown as the current receipt with focus',head()=='Deletion receipt' and 'earlier' not in rtext().lower() and p.locator('#privacyReceipt').count()==1 and p.evaluate("()=>!!document.activeElement?.closest('#privacyReceipt')"))
+  check('history: three confirmations sent three deletes',len(sent)==3)
   c.close()
 
   # Scope wording, Cancel, single in-flight request, refusal.

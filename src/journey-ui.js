@@ -8,7 +8,7 @@ const PEOPLE=[
  {email:'admin@example.test',label:'Verified admin',roles:['ATLAS.Interview','ATLAS.Admin']}
 ];
 const localDemo=()=>/^(localhost|127\.0\.0\.1)$/.test(location.hostname);
-let journeyGen=0,pendingDelete=null,deleteReceipt=null;
+let journeyGen=0,pendingDelete=null,deleteReceipt=null,receiptIsLatest=false;
 function h(tag,attrs,children){const n=document.createElement(tag);if(attrs)for(const [k,v] of Object.entries(attrs)){if(k==='text')n.textContent=v;else if(k==='html')n.innerHTML=v;else if(v!=null)n.setAttribute(k,v);}(children||[]).forEach(c=>n.append(c));return n;}
 function app(){return window.ATLAS_APP;}
 async function api(path,opts){const A=app();if(!A?.libraryApi)throw Error('The library API is not on this page.');return A.libraryApi(path,opts);}
@@ -73,7 +73,7 @@ function showDeleteState(focus){const a=$('privacyActions');if(!a)return;$('priv
  if(pendingDelete){if(o)o.disabled=true;a.append(h('p',{class:'pill',id:'privacyPending',role:'status',text:'A deletion request is still being processed. Its result will appear here.'}));return;}
  if(o)o.disabled=!o.dataset.ready;
  if(!deleteReceipt)return;
- const out=deletionReceipt(deleteReceipt);a.append(out);
+ const out=deletionReceipt(deleteReceipt,receiptIsLatest);a.append(out);
  if(focus){out.tabIndex=-1;out.focus();}}
 // Nothing is sent until the person ticks the box and presses Delete permanently. Cancel sends nothing.
 function confirmDelete(actions,del,deletion){if(!deletion||pendingDelete||$('privacyConfirm'))return;
@@ -93,11 +93,12 @@ function confirmDelete(actions,del,deletion){if(!deletion||pendingDelete||$('pri
  cancel.addEventListener('click',()=>{box.remove();del.disabled=false;del.focus();actions.append(banner('','Cancelled. Nothing was deleted.'));});
  go.addEventListener('click',async()=>{if(pendingDelete||!tick.checked)return;go.disabled=true;cancel.disabled=true;tick.disabled=true;
   const req=pendingDelete=api('/privacy/delete',{method:'POST',body:{}});let error=null;
-  try{deleteReceipt=await req;}catch(e){error=e.message||'The deletion request failed.';}
+  try{deleteReceipt=await req;receiptIsLatest=true;}catch(e){error=e.message||'The deletion request failed.';receiptIsLatest=false;}
   pendingDelete=null;box.remove();$('privacyConfirm')?.remove();showDeleteState(!error);
-  if(error){$('privacyActions')?.append(banner('warn',error));const o=$('privacyDeleteOpen');if(o&&!o.disabled)o.focus();}});
+  if(error){$('privacyActions')?.append(banner('warn','The latest deletion request did not complete: '+error));const o=$('privacyDeleteOpen');if(o&&!o.disabled)o.focus();}});
  del.disabled=true;actions.append(box);tick.focus();}
-function deletionReceipt(r){const box=h('div',{class:'panel',id:'privacyReceipt',role:'status'},[h('h3',{text:'Deletion receipt'})]);
+function deletionReceipt(r,latest){const box=h('div',{class:'panel',id:'privacyReceipt',role:'status'},[h('h3',{text:latest?'Deletion receipt':'Earlier deletion receipt'})]);
+ if(!latest)box.append(h('p',{class:'tiny muted',text:'This receipt is from an earlier request, not from the latest attempt.'}));
  box.append(h('ul',{},(r.outcomes||[]).map(o=>h('li',{text:o.error?`${o.store}: not removed (${o.error})`:`${o.store}: ${o.removed} removed`}))));
  for(const b of r.blocked||[])box.append(h('p',{text:`Kept story ${b.id} and its revisions: another person's story was merged into it.`}));
  box.append(h('p',{class:'tiny muted',text:`Complete: ${r.complete===true?'yes':'no'}. Vendor deletion: ${r.vendorDeletion||'not-asserted'}. ${r.note||''}`}));
