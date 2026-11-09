@@ -525,8 +525,8 @@ test('one definition of the 1.2 s: the window and the continuation decision both
     assert.equal(named(h, 'turn_resumed').length, resumed ? 1 : 0, 'played ' + playedMs);
     assert.equal(named(h, 'barge_in').length, resumed ? 0 : 1);
     // A continuation is held (withdrawn on a transcript with words, or once it passes the barge-in gate), never cut at onset.
+    assert.equal(named(h, 'reply_withdrawn').length, 0, 'not withdrawn at the onset (played ' + playedMs + ')');
     assert.equal(!!h.s.hold, resumed);
-    assert.equal(named(h, 'reply_withdrawn').length, 0);
     await h.s.end(false);
   }
 });
