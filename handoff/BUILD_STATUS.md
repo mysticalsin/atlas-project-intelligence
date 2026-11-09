@@ -791,3 +791,11 @@ Review answers:
 - A failed delete after an earlier successful receipt no longer shows that receipt as if it were the latest result. It is titled Earlier deletion receipt and says it is not from the latest attempt, also after a re-render. The warning says the latest deletion request did not complete. A later success is shown as the current receipt again.
 - Still open: the D3 extension, cleanup of older pointers and orphans, and server idempotency. complete stays false. Vendor deletion stays not-asserted.
 - Commands: python3 build.py; python3 deploy/cloudflare-edge/build_edge.py; python3 tests/privacy_delete_browser.py; the existing local workerd receipt harness outside the repository, run on the bundled Worker.
+
+### Session: 2026-11-09 / latest failure across re-renders
+- Parent is the earlier-receipt note (bce46dce). Code commit 9a01204f; this note is the next forward commit on an unpublished local branch. No push, pull request, merge, deploy, CI change, live identity, provider call, or provider deletion. No earlier commit was amended.
+- Touched: src/journey-ui.js, tests/privacy_delete_browser.py, and the four rebuilt HTML aliases. All of deploy/cloudflare-edge is byte-identical to the parent.
+- The latest-failure warning now survives an auth re-render together with the earlier-receipt label. A new attempt clears it immediately, so a pending or successful later attempt never shows a stale failure.
+- The receipt and the warning are shown only to the bootstrap identity that sent the request. A fresh bootstrap with a different identity in the same tab sees neither. This was tested with a mocked bootstrap identity, not a real second account.
+- Still open: the D3 extension, cleanup of older pointers and orphans, and server idempotency. complete stays false. Vendor deletion stays not-asserted.
+- Commands: python3 build.py; python3 deploy/cloudflare-edge/build_edge.py; python3 tests/privacy_delete_browser.py.
