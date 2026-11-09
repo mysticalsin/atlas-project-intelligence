@@ -799,3 +799,17 @@ Review answers:
 - The receipt and the warning are shown only to the bootstrap identity that sent the request. A fresh bootstrap with a different identity in the same tab sees neither. This was tested with a mocked bootstrap identity, not a real second account.
 - Still open: the D3 extension, cleanup of older pointers and orphans, and server idempotency. complete stays false. Vendor deletion stays not-asserted.
 - Commands: python3 build.py; python3 deploy/cloudflare-edge/build_edge.py; python3 tests/privacy_delete_browser.py.
+
+### Session: 2026-11-09 / ATLAS from Mantu voice and personality
+- Parent is the latest-failure note (c2e6a3c7). Code commit 41bacfae; this note is the next forward commit on an unpublished local branch. No push, pull request, merge, deploy, CI change, live model, provider call or bot profile.
+- Tony, 2026-11-08 23:03 and 23:04 BRT: ATLAS has a personality and is ATLAS from Mantu, here to help tell the story. The conversation should feel warm and human, with appreciation when it fits.
+- Changed copy:
+  - the seven-language greeting and welcome back, still one sentence that says ATLAS will interview them, with no review talk;
+  - the talker's opening fallback, speaking guidance, what-I-can-help-with answer and the "are you a person" answer;
+  - the PersonaPlex role's opening sentence;
+  - the visible landing line in src/voice-panel.html.
+- Speaking guidance: proportionate warmth by moment (matter-of-fact, proud milestone, uncertain, difficult, brief). It forbids celebrating harm; inventing achievements, feelings or memories; claiming to be human; diagnosing; flattery; and encouraging reliance.
+- Unchanged: admin mode, the untrusted-input rule, the no-tools rule, the confidentiality and deletion non-promise, and the creator rule.
+- Not changed: quality.py INTERVIEW_POLICY (the analyst and hosted route), the hosted realtime instructions, reference-sheet, report and email copy, and fillers.
+- Verification is deterministic only, covering prompt strings, greetings and built-page copy, plus a local file render smoke. Live model behaviour was not tested. The non-English greetings need a native-speaker review.
+- Commands: python3 build.py; python3 deploy/cloudflare-edge/build_edge.py; pytest tests/test_persona.py tests/test_cascade.py tests/test_edge.py tests/test_voice.py tests/test_report.py; node --test on the edge app, gap-policy, gaps, session and language tests.
