@@ -50,6 +50,8 @@ These are the pipeline's own waits. A real reply adds on top:
 None of these provider times was measured here. Live values exist only as production telemetry (`reply_gap`, `stt`, `reply` first_text_ms / first_audio_ms, `turn_check`), which was not read.
 
 ## What starting before the end of the answer would need (approval questions)
+Options 1 and 2 below are now implemented as Plan A, off by default and fail-closed without an authoritative admission ledger (none is bound): see `docs/EARLY_PROCESSING.md`. Their spend, the ledger and the notice still need approval before any live use.
+
 The current interfaces have no partial transcript and no streaming recognition. Anything earlier than the end-of-turn windows means extra provider calls on the same audio, a new model, or a product trade-off. None of it is enabled.
 
 1. **Speculative transcription at the early pause.**

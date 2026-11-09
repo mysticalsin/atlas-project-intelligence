@@ -414,8 +414,9 @@ export function workersAI(env) {
       return pcm.length % 2 ? pcm.subarray(0, pcm.length - 1) : pcm;
     },
     // Session affinity keeps one interview on the same model instance, so the cached prompt prefix is reused.
-    async *chatStream(messages, { affinity } = {}) {
-      const stream = await env.AI.run(env.TALKER_MODEL, { messages, stream: true, max_tokens: 300, temperature: 0.7 }, affinity ? { extraHeaders: { 'x-session-affinity': affinity } } : undefined);
+    // maxTokens can only lower the reply bound (an early draft passes the same bound as a reply).
+    async *chatStream(messages, { affinity, maxTokens } = {}) {
+      const stream = await env.AI.run(env.TALKER_MODEL, { messages, stream: true, max_tokens: Math.min(300, Number(maxTokens) || 300), temperature: 0.7 }, affinity ? { extraHeaders: { 'x-session-affinity': affinity } } : undefined);
       const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
       let buffer = '';
       // A reply the session stops reading (withdrawn, interrupted, ended) closes the upstream body instead of draining it.

@@ -295,6 +295,7 @@ Old fragment links keep working.
 | `TYPESAFE_API_KEY` | (c) | Without it, the interview's `rankProbe` and memory relevance are skipped silently | Tony (optional key) |
 | Customer JEV ranking in bids | (b) | Already per-request consent (WOW F1.5) | |
 | `TEST_VOICE` | (a) | Test only; off | |
+| `EARLY_STT`, `EARLY_DRAFT` | (c) | Plan A early processing (`docs/EARLY_PROCESSING.md`). Off by default; separate flags. Even when set, the Worker binds no authoritative admission ledger, so it stays off and logs `early_unavailable` | Tony: spend caps, a shared ledger, the reviewed notice |
 | `TRIGGER_SECRET` + Access bypass for `/api/triggers` | (c) | PM-system invitations absent; the interview is unaffected | Staffing tool owner |
 | Module `READY` constants | (a) | Flipped at WOW integration by acceptance tests; not a variable | |
 | `SPOKEN_ASK` | (b) | **Variable removed.** `features.spokenAsk = on('ask') && SPOKEN_ASK_APPROVED`. The first voice question shows a consent prompt (§8): "Allow this time" or "Always allow for me" (stored server-side in `profiles.consents`, revocable). The reminder and a recording indicator show on **every** recording. See D1 | D1 approved by Tony (recorded 2026-09-29) |
