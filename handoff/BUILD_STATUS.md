@@ -775,3 +775,12 @@ Review answers:
 - Only the disclosure for the current render can enable deletion. A disclosure without a deletion scope says why deletion is not offered. A pending or failed disclosure still offers nothing.
 - Still open, not implemented: the D3 extension (indirect chain, same-email source in another or a blank tenant), cleanup of older pointers and of rows that point at a deleted story. complete stays false. Vendor deletion stays not-asserted. This is not a GDPR certification.
 - Commands: python3 build.py; python3 deploy/cloudflare-edge/build_edge.py; python3 tests/privacy_delete_browser.py; a local Miniflare/workerd browser run of the bundled Worker with synthetic tenant tokens (local stand-ins only).
+
+### Session: 2026-11-09 / delete confirmation lifetime and wording
+- Parent is the delete confirmation corrections writer note (ba6f3bb8). Code commit 42782cf8; this note is the next forward commit on an unpublished local branch. No push, pull request, merge, deploy, live data, provider call, or provider deletion. No earlier commit was amended.
+- Touched: src/journey-ui.js, tests/privacy_delete_browser.py, and the four rebuilt HTML aliases. All of deploy/cloudflare-edge is byte-identical to the parent.
+- The pending delete and the last receipt are kept outside any one render or dialog. A re-render, or navigating away and back, keeps deletion disabled until the pending request settles, and the result appears in the current page. Before this change, two POSTs reached the handler and only the second, empty receipt was shown.
+- A journey render that finishes after a newer render no longer replaces it. An empty deletion scope does not enable deletion. A new receipt replaces the previous one, so there are no duplicate ids. Focus moves to the receipt, or back to the opener after an error.
+- The confirmation says Atlas will try to delete the listed stores. It says the receipt reports each store, a store that fails keeps its data, and only a direct merge target is kept.
+- Still open, not implemented: the D3 extension, cleanup of older pointers and orphans, and server idempotency. complete stays false. Vendor deletion stays not-asserted. This is not a GDPR certification.
+- Commands: python3 build.py; python3 deploy/cloudflare-edge/build_edge.py; python3 tests/privacy_delete_browser.py; a local Miniflare/workerd browser harness outside the repository, run on the bundled Worker with synthetic tenant tokens and a synthetic SQLite failure trigger (local stand-ins only).
