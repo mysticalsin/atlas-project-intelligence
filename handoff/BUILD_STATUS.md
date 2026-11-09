@@ -784,3 +784,10 @@ Review answers:
 - The confirmation says Atlas will try to delete the listed stores. It says the receipt reports each store, a store that fails keeps its data, and only a direct merge target is kept.
 - Still open, not implemented: the D3 extension, cleanup of older pointers and orphans, and server idempotency. complete stays false. Vendor deletion stays not-asserted. This is not a GDPR certification.
 - Commands: python3 build.py; python3 deploy/cloudflare-edge/build_edge.py; python3 tests/privacy_delete_browser.py; a local Miniflare/workerd browser harness outside the repository, run on the bundled Worker with synthetic tenant tokens and a synthetic SQLite failure trigger (local stand-ins only).
+
+### Session: 2026-11-09 / earlier receipt after a failed attempt
+- Parent is the delete confirmation lifetime and wording note (e59fd725). Code commit 19591704; this note is the next forward commit on an unpublished local branch. No push, pull request, merge, deploy, CI change, live data, provider call, or provider deletion. No earlier commit was amended.
+- Touched: src/journey-ui.js, tests/privacy_delete_browser.py, and the four rebuilt HTML aliases. All of deploy/cloudflare-edge is byte-identical to the parent.
+- A failed delete after an earlier successful receipt no longer shows that receipt as if it were the latest result. It is titled Earlier deletion receipt and says it is not from the latest attempt, also after a re-render. The warning says the latest deletion request did not complete. A later success is shown as the current receipt again.
+- Still open: the D3 extension, cleanup of older pointers and orphans, and server idempotency. complete stays false. Vendor deletion stays not-asserted.
+- Commands: python3 build.py; python3 deploy/cloudflare-edge/build_edge.py; python3 tests/privacy_delete_browser.py; the existing local workerd receipt harness outside the repository, run on the bundled Worker.
