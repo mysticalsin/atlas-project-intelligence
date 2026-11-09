@@ -306,10 +306,11 @@ async def test_cascade_refuses_a_gap_start_and_never_advertises_gap_mode(tmp_pat
 
 def test_opening_is_a_simple_introduction_without_review_talk():
     # Tony, 2026-09-29: the start must be "Hi, I'm ATLAS and I'll interview you on your project", not "they will review everything".
+    # Tony, 2026-11-08: ATLAS from Mantu, here to help tell the story.
     from atlas_voice.cascade import OPENING
     assert 'will review' not in OPENING and 'review everything' not in OPENING
     assert 'do not talk about reviews, approvals or how the report is used unless they ask' in OPENING
-    assert 'you are ATLAS and will interview them about their project' in OPENING
+    assert 'you are ATLAS from Mantu and will interview them to help them tell the story of their project' in OPENING
 
 
 def test_admin_note_does_not_suppress_the_introduction():

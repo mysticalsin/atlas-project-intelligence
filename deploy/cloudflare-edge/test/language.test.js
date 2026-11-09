@@ -117,22 +117,28 @@ test('unfinished: words that trail off, per language; finished answers and quest
   assert.equal(unfinished('We moved the', 'xx'), true, 'an unknown language falls back to English');
 });
 
-test('greetings are one short introduction in every language (no pitch, no review talk)', async () => {
+// Tony, 2026-11-08: ATLAS from Mantu, here to help tell your story; still one sentence that says ATLAS will interview them.
+const REVIEW = /(^|[^\p{L}])(review|valid|approv|révis|revis|überprüf|beoordel|controll)/iu;
+test('greetings introduce ATLAS from Mantu and the story purpose in one sentence (no pitch, no review talk)', async () => {
   const { GREETINGS } = await import('../src/languages.js');
-  assert.equal(GREETINGS.en, "Hi, I'm ATLAS, and I'll interview you about your project.");
+  assert.equal(GREETINGS.en, "Hi, I'm ATLAS from Mantu, and I'll interview you to help you tell your project's story.");
   for (const [lang, text] of Object.entries(GREETINGS)) {
-    assert.ok(text.includes('ATLAS'), lang);
+    assert.ok(text.includes('ATLAS') && text.includes('Mantu'), lang);
     assert.equal((text.match(/[.!?](\s|$)/g) || []).length, 1, `${lang}: one sentence`);
-    assert.ok(text.length <= 80, `${lang}: short (${text.length})`);
+    assert.ok(text.length <= 130, `${lang}: short (${text.length})`);
+    assert.ok(!REVIEW.test(text), `${lang}: no review talk`);
   }
 });
 
-test('the welcome-back greeting also says ATLAS will interview them (one short sentence)', async () => {
-  const { WELCOME_BACK } = await import('../src/languages.js');
-  assert.equal(WELCOME_BACK.en, "Hi, it's ATLAS again, and I'll interview you about your project.");
+test('the welcome-back greeting also says ATLAS from Mantu will interview them to help tell the story', async () => {
+  const { GREETINGS, WELCOME_BACK } = await import('../src/languages.js');
+  assert.equal(WELCOME_BACK.en, "Hi, it's ATLAS from Mantu again, and I'll interview you to help you tell your project's story.");
+  assert.deepEqual(Object.keys(WELCOME_BACK), Object.keys(GREETINGS));
   for (const [lang, text] of Object.entries(WELCOME_BACK)) {
-    assert.ok(text.includes('ATLAS'), lang);
+    assert.ok(text.includes('ATLAS') && text.includes('Mantu'), lang);
     assert.equal((text.match(/[.!?](\s|$)/g) || []).length, 1, `${lang}: one sentence`);
-    assert.ok(text.length <= 80, `${lang}: short (${text.length})`);
+    assert.ok(text.length <= 130, `${lang}: short (${text.length})`);
+    assert.ok(!REVIEW.test(text), `${lang}: no review talk`);
+    assert.notEqual(text, GREETINGS[lang], `${lang}: says it is a return`);
   }
 });

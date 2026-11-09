@@ -34,22 +34,22 @@ export function languageNote(lang, spoken) {
 
 // Spoken instantly (cached audio) when the call connects: who ATLAS is and why she is there.
 export const GREETINGS = {
-  en: "Hi, I'm ATLAS, and I'll interview you about your project.",
-  fr: "Bonjour, je suis ATLAS, et je vais vous interviewer sur votre projet.",
-  es: 'Hola, soy ATLAS, y voy a entrevistarte sobre tu proyecto.',
-  pt: 'Olá, eu sou a ATLAS, e vou entrevistar você sobre o seu projeto.',
-  de: 'Hallo, ich bin ATLAS und interviewe Sie zu Ihrem Projekt.',
-  it: 'Ciao, sono ATLAS e ti intervisterò sul tuo progetto.',
-  nl: 'Hallo, ik ben ATLAS en ik ga je interviewen over je project.',
+  en: "Hi, I'm ATLAS from Mantu, and I'll interview you to help you tell your project's story.",
+  fr: "Bonjour, je suis ATLAS de Mantu, et je vais vous interviewer pour vous aider à raconter l'histoire de votre projet.",
+  es: 'Hola, soy ATLAS de Mantu, y voy a entrevistarte para ayudarte a contar la historia de tu proyecto.',
+  pt: 'Olá, eu sou a ATLAS da Mantu, e vou entrevistar você para ajudar a contar a história do seu projeto.',
+  de: 'Hallo, ich bin ATLAS von Mantu und interviewe Sie, um Ihnen zu helfen, die Geschichte Ihres Projekts zu erzählen.',
+  it: 'Ciao, sono ATLAS di Mantu e ti intervisterò per aiutarti a raccontare la storia del tuo progetto.',
+  nl: 'Hallo, ik ben ATLAS van Mantu en ik ga je interviewen om je te helpen het verhaal van je project te vertellen.',
 };
 export const WELCOME_BACK = {
-  en: "Hi, it's ATLAS again, and I'll interview you about your project.",
-  fr: "Bonjour, c'est encore ATLAS, et je vais vous interviewer sur votre projet.",
-  es: 'Hola, soy ATLAS otra vez, y voy a entrevistarte sobre tu proyecto.',
-  pt: 'Olá, é a ATLAS de novo, e vou entrevistar você sobre o seu projeto.',
-  de: 'Hallo, hier ist wieder ATLAS, und ich interviewe Sie zu Ihrem Projekt.',
-  it: 'Ciao, sono di nuovo ATLAS e ti intervisterò sul tuo progetto.',
-  nl: 'Hallo, hier is ATLAS weer, en ik ga je interviewen over je project.',
+  en: "Hi, it's ATLAS from Mantu again, and I'll interview you to help you tell your project's story.",
+  fr: "Bonjour, c'est encore ATLAS de Mantu, et je vais vous interviewer pour vous aider à raconter l'histoire de votre projet.",
+  es: 'Hola, soy ATLAS de Mantu otra vez, y voy a entrevistarte para ayudarte a contar la historia de tu proyecto.',
+  pt: 'Olá, é a ATLAS da Mantu de novo, e vou entrevistar você para ajudar a contar a história do seu projeto.',
+  de: 'Hallo, hier ist wieder ATLAS von Mantu, und ich interviewe Sie, um Ihnen zu helfen, die Geschichte Ihres Projekts zu erzählen.',
+  it: 'Ciao, sono di nuovo ATLAS di Mantu e ti intervisterò per aiutarti a raccontare la storia del tuo progetto.',
+  nl: 'Hallo, hier is ATLAS van Mantu weer, en ik ga je interviewen om je te helpen het verhaal van je project te vertellen.',
 };
 // Short uptake words ("Right.", "I see.") played from cache as ATLAS takes her turn, while the reply is prepared.
 // Not continuers like "Mm-hm", which mean "keep going" and contradict her taking the floor.
