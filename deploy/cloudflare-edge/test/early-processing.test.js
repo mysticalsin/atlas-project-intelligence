@@ -452,3 +452,81 @@ test('the same window does not let her own voice withdraw her reply: an echo is 
   assert.equal(h.calls.talker.length, 2, 'no new reply');
   assert.deepEqual(users(h), [PART1]);
 });
+
+// run67: the hold itself. Her reply has two pieces, both already queued for playback when the consultant carries on;
+// the browser acknowledges playback as it happens, so the pump runs in (virtual) real time.
+const FIRST = 'Thanks, that is a clear example of ownership.', SECOND = 'Which teams used the rules first?';
+function held({ second = PART2, third } = {}) {
+  let long = false;
+  const h = harness({ draft: true, stt: [PART1, second, ...(third ? [third] : [])],
+    ai: calls => ({
+      async turnComplete() { return { complete: true, probability: 0.62 }; },
+      async *chatStream(m, opts) { calls.talker.push({ m, opts }); if (!long) { yield 'Hello. Where shall we start?'; return; } if (calls.talker.length === 2) { yield FIRST + ' '; yield SECOND; } else yield 'What changed for the team?'; },
+      async synthesize(text) { calls.tts.push({ text }); return new Uint8Array(!long ? 4800 : text === FIRST ? 48000 * 0.5 : 48000 * 5).fill(1); },
+    }) });
+  return { h, speakLong: () => { long = true; } };
+}
+const feedAck = async (h, segs) => {
+  for (const f of frames(segs)) {
+    h.clock.t += 0.02; h.s.onBinary(f); await tick();
+    const item = h.s.currentItem; if (item && h.s.sentMs[item]) await h.s.onText(JSON.stringify({ type: 'playback', item_id: item, played_ms: h.s.sentMs[item] }));
+  }
+};
+const started = (h, text) => h.events.some(e => e.type === 'agent_text' && e.text.includes(text));
+async function replyQueued(h, speakLong) {
+  await opened(h);
+  speakLong();
+  await feedAck(h, [VOICE(1.2), QUIET(END_SILENCE + 0.1)]); // the silence rule ends the turn at the mid-answer pause
+  await until(() => named(h, 'early_draft_adopted').length === 1 && started(h, FIRST) && h.s.queue.some(c => c.text?.includes(SECOND)));
+}
+
+test('held: while they carry on, no new piece of her reply starts (the one playing may finish)', async () => {
+  need();
+  const { h, speakLong } = held();
+  await replyQueued(h, speakLong);
+  await feedAck(h, WORDS); // 2.4 s: longer than what is left of her first piece
+  assert.equal(named(h, 'turn_resumed').length, 1);
+  assert.equal(started(h, SECOND), false, 'the second piece did not start while they were speaking');
+  assert.ok(h.s.queue[0]?.text?.includes(SECOND) && !h.s.audible(), 'her first piece has played out; the second waits, silent');
+  await feedAck(h, [QUIET(END_SILENCE + 0.2)]);
+  for (let i = 0; i < 20000 && !(h.calls.talker.length === 3 && !h.s.busy()); i++) await tick();
+  assert.equal(started(h, SECOND), false, 'withdrawn before it was ever voiced');
+  assert.deepEqual(users(h), [PART1 + ' ' + PART2]);
+});
+
+for (const [how, result] of [['empty', () => ''], ['failed', () => Promise.reject(Object.assign(new Error('down'), { name: 'ProviderError' }))]]) {
+  test(`held until the transcription resolves; a ${how} transcription releases the hold and her reply continues`, async () => {
+    need();
+    const stt = deferred();
+    const { h, speakLong } = held({ second: () => stt.p, third: () => stt.p }); // the early call, and the fallback after an early failure
+    await replyQueued(h, speakLong);
+    await feedAck(h, [...WORDS, QUIET(END_SILENCE + 0.2)]); // the utterance has ended; its transcription is still out
+    assert.equal(h.s.turnDetector.active, false);
+    assert.ok(h.s.sttBusy > 0, 'still transcribing');
+    await feedAck(h, [QUIET(1.0)]);
+    assert.equal(started(h, SECOND), false, 'still held after the utterance ended, until its transcript is known');
+    stt.p.catch(() => {}); if (how === 'empty') stt.resolve(result()); else stt.reject(await result().catch(e => e));
+    await feedAck(h, [QUIET(0.6)]);
+    assert.equal(started(h, SECOND), true, 'released: her reply continues where it stopped');
+    assert.equal(named(h, 'reply_withdrawn').length, 0);
+    assert.equal(h.calls.talker.length, 2, 'no new reply');
+    assert.deepEqual(users(h), [PART1]);
+    if (how === 'failed') assert.equal(named(h, 'stt_error').length, 1, 'the transcription itself failed (early and fallback)');
+  });
+}
+
+test('one definition of the 1.2 s: the window and the continuation decision both discount the time spent noticing the speech', async () => {
+  need();
+  for (const [playedMs, resumed] of [[1500, true], [1800, false]]) {
+    const { h, speakLong } = held();
+    await replyQueued(h, speakLong);
+    h.s.playedMs[h.s.replyItem] = playedMs; // as acknowledged; no further acknowledgements below
+    await feed(h, [VOICE(0.6)]); // continuous loud speech
+    assert.equal(named(h, 'turn_resumed').length, resumed ? 1 : 0, 'played ' + playedMs);
+    assert.equal(named(h, 'barge_in').length, resumed ? 0 : 1);
+    // A continuation is held (withdrawn on a transcript with words, or once it passes the barge-in gate), never cut at onset.
+    assert.equal(!!h.s.hold, resumed);
+    assert.equal(named(h, 'reply_withdrawn').length, 0);
+    await h.s.end(false);
+  }
+});

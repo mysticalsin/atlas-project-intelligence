@@ -24,7 +24,9 @@ export const STILL_THINKING = '[Server: the consultant went quiet mid-answer and
 export const CONTINUE_MS = 1200; // ms of her real reply (the acknowledgement does not count): speaking again before that is still answering
 // The barge-in gate of EnergyTurns while she is audible (4x the level, this long unbroken). Ordinary speech, with gaps
 // between words, rarely passes it, so inside the continuation window the rest of an answer is listened for at the
-// normal level and her reply is withdrawn only on a transcript with words that are not her echo, or once it passes this.
+// normal level and her reply is held: the piece playing finishes and no new piece starts until the utterance's
+// transcript is known. Words that are not her echo withdraw the reply (one merged turn); an empty or failed transcript
+// releases the hold and she carries on. Speech that passes this gate while she is audible withdraws it at once.
 export const BARGE_IN_S = 0.45;
 export const FILLER_WORDS = 12; // an acknowledgement only after a real answer, not after a few words
 export const MIN_VOICED = 0.15; // seconds of actual voice below which a sound may be a click or a breath
@@ -140,7 +142,7 @@ export class Session {
     this.mode = 'full'; this.wrapS = WRAP_S; this.winNote = ''; this.starting = false;
     this.gapAsks = []; this.gapRequest = null; this.askByItem = new Map(); this.gapAttempts = {}; this.gapAnswers = {}; this.openAsk = null; this.lastAnswer = null; this.askHeard = null;
     this.memoryNote = ''; this.language = 'en'; this.languageCandidate = null; this.dry = false; this.affinity = 'atlas-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
-    this.pause = ''; this.checkId = 0; this.continuing = false; this.listening = false; this.held = false; this.loudRun = 0; this.replyTurn = -1; this.replyItem = null; this.shown = { item: null, chars: 0 }; this.discarded = new Set(); this.fillerMs = {}; this.committed = null; this.live = null; this.recorded = new Set(); this.voiced = 0; this.blip = null; this.echoable = false; this.acked = false; this.playbackDone = true; this.doneAt = 0; this.resumedAt = 0; this.lastFiller = -1; this.fillerTurn = -2; this.protectedItem = null; this.protectedMs = 0; this.protectedDeadline = 0;
+    this.pause = ''; this.checkId = 0; this.continuing = false; this.listening = false; this.hold = null; this.loudRun = 0; this.replyTurn = -1; this.replyItem = null; this.shown = { item: null, chars: 0 }; this.discarded = new Set(); this.fillerMs = {}; this.committed = null; this.live = null; this.recorded = new Set(); this.voiced = 0; this.blip = null; this.echoable = false; this.acked = false; this.playbackDone = true; this.doneAt = 0; this.resumedAt = 0; this.lastFiller = -1; this.fillerTurn = -2; this.protectedItem = null; this.protectedMs = 0; this.protectedDeadline = 0;
     this.spokenMs = 0; this.timeUp = false; this.ending = null; this.sttBusy = 0;
     this.started = false; this.finished = false; this.capture = false; this.history = []; this.queue = []; this.waiter = null;
     this.gen = 0; this.replies = 0; this.turns = 0; this.guidance = null; this.speaking = null; this.pending = new Set();
@@ -183,12 +185,12 @@ export class Session {
     if (this.bytesIn > (this.lastInput - this.startedAt + 3) * 48000) return this.fail('Audio exceeds realtime input budget', 'voice-contract');
     const audible = this.audible(), d = this.turnDetector;
     // Inside the continuation window (or an utterance that began in it) the consultant is heard at the normal level.
-    const listen = d.active ? this.listening : this.continuationWindow();
+    const listen = d.active ? this.listening : this.replyHeardMs() <= CONTINUE_MS;
     const [started, utterance] = d.feed(bytes, audible && !listen);
-    if (started) { this.listening = listen; this.held = false; this.loudRun = 0; }
-    else if (this.held && d.active) {
+    if (started) { this.listening = listen; this.loudRun = 0; }
+    else if (this.hold && d.active && this.listening) {
       this.loudRun = rms(bytes) > Math.max(0.012, d.floor * 3.2) * 4 ? this.loudRun + bytes.length / 48000 : 0;
-      if (this.loudRun >= BARGE_IN_S && audible) { this.held = false; this.withdraw(); }
+      if (this.loudRun >= BARGE_IN_S && audible) this.withdraw();
     }
     if (started || (d.active && d.quiet === 0)) { // voice: anything prepared early at a pause no longer matches what they are saying
       this.pauseKey += 1;
@@ -215,15 +217,14 @@ export class Session {
     } else if (this.blip && !d.active && this.now() - d.loud - this.blip.at > BLIP_JOIN) this.expireBlip(); // speech already under way still joins
     if (started) {
       // Speaking again before ATLAS has really answered (still transcribing, composing, or only a second or so into her
-      // reply) means the consultant had not finished: what follows is the rest of the same answer. Her reply stops at
-      // once if audible; a reply not yet audible is held and withdrawn only if they actually add words.
-      const replying = this.turns > 0 && this.replyTurn === this.turns && this.busy(), item = this.replyItem;
-      // What they have actually heard of her reply: acknowledged playback (else what was sent, less the lead), without
-      // the acknowledgement word and without the time it took to notice them speaking.
-      const heard = replying ? (this.playedMs[item] ?? Math.max(0, (this.sentMs[item] || 0) - LEAD_MS)) - (this.fillerMs[item] || 0) - d.loud * 1000 : 0;
-      this.continuing = carried || this.sttBusy > 0 || (replying && heard <= CONTINUE_MS);
+      // reply) means the consultant had not finished: what follows is the rest of the same answer. Her reply is held if
+      // this speech was heard inside the continuation window (see BARGE_IN_S), otherwise stopped at once if audible; a
+      // reply not yet audible is held and withdrawn only if they actually add words. Decided once, at the onset: the
+      // whole utterance keeps it, however long it goes on (her held reply does not move on meanwhile).
+      const item = this.replyItem, heard = this.replyHeardMs(), replying = heard !== Infinity;
+      this.continuing = carried || this.sttBusy > 0 || heard <= CONTINUE_MS;
       if (this.continuing) {
-        if (audible && !this.greetingPlaying()) { if (this.listening) this.held = true; else this.withdraw(); }
+        if (audible && !this.greetingPlaying()) { if (this.listening) this.hold = { item }; else this.withdraw(); }
         this.metric('turn_resumed', { heard_ms: replying ? Math.round(heard) : -1, filler_ms: replying ? Math.round(this.fillerMs[item] || 0) : -1, transcribing: this.sttBusy > 0 ? 1 : 0 });
         this.event('user_speaking');
       } else if (audible && !this.greetingPlaying()) {
@@ -267,6 +268,7 @@ export class Session {
 
   closeBlip() {
     if (this.spec) this.dropEarly('closed');
+    this.hold = null; // a click or a breath is no words: her reply continues (speech that picks it up again holds it anew)
     const d = this.turnDetector, endedAt = this.now() - d.quiet, pcm = d.flush();
     this.pause = '';
     this.blip = pcm ? { pcm, voiced: this.voiced, at: this.now(), endedAt, ...this.takeUtterance() } : null;
@@ -431,18 +433,18 @@ export class Session {
 
   queueTranscription(pcm, how = {}) {
     this.sttBusy += 1;
-    this.sttChain = this.sttChain.then(() => this.transcribe(pcm, how)).finally(() => { this.sttBusy -= 1; });
+    this.sttChain = this.sttChain.then(() => this.transcribe(pcm, how)).finally(() => { this.sttBusy -= 1; if (how.hold && this.hold === how.hold) this.hold = null; });
   }
 
   // What is known about the utterance that just ended, taken once (the next utterance starts fresh).
-  takeUtterance() { const u = { continuing: this.continuing, echoable: this.echoable }; this.continuing = false; this.echoable = false; this.listening = false; this.held = false; return u; }
+  takeUtterance() { const u = { continuing: this.continuing, echoable: this.echoable, hold: this.hold }; this.continuing = false; this.echoable = false; this.listening = false; return u; }
 
   // Take back the reply to the consultant's last turn: they had not finished. Not an interruption, not in the history,
   // and its text is removed from the on-screen transcript.
   withdraw() {
     if (this.replyTurn !== this.turns || !this.replyItem || this.discarded.has(this.replyItem) || !this.busy()) return;
     const item = this.replyItem;
-    this.discarded.add(item); this.gen += 1; this.queue = [];
+    this.discarded.add(item); this.gen += 1; this.queue = []; this.hold = null;
     this.stopped();
     // A withdrawn reply is not an attempt either: its ask goes back to where it was (gap mode).
     if (this.askHeard?.item === item) { const { id, before } = this.askHeard; if (id) this.gapAttempts[id] -= 1; this.openAsk = before; this.askHeard = null; }
@@ -566,18 +568,24 @@ export class Session {
     else if (left <= 30 && !this.timeUp && this.turns >= 1 && !this.busy() && !this.turnDetector.active && this.sttBusy === 0) this.startReply(TIME_UP);
   }
 
-  // Her reply to the consultant's latest turn has barely started (CONTINUE_MS of it heard, the acknowledgement aside):
-  // speech now is the rest of the same answer (see onBinary), so it is listened for at the normal level.
-  continuationWindow() {
-    if (!(this.turns > 0 && this.replyTurn === this.turns && this.busy())) return false;
+  // How much of her reply to the consultant's latest turn they have actually heard: acknowledged playback (else what was
+  // sent, less the lead), without the acknowledgement and without the time spent noticing their speech (the detector's
+  // loud run). Infinity when no such reply is under way. The one definition behind both the continuation window (the
+  // listening level, before speech is detected) and the continuation decision (at its onset): up to CONTINUE_MS, speech
+  // is the rest of the same answer.
+  replyHeardMs() {
+    if (!(this.turns > 0 && this.replyTurn === this.turns && this.busy())) return Infinity;
     const item = this.replyItem;
-    return (this.playedMs[item] ?? Math.max(0, (this.sentMs[item] || 0) - LEAD_MS)) - (this.fillerMs[item] || 0) <= CONTINUE_MS;
+    return (this.playedMs[item] ?? Math.max(0, (this.sentMs[item] || 0) - LEAD_MS)) - (this.fillerMs[item] || 0) - this.turnDetector.loud * 1000;
   }
+
+  // Held (the consultant carried on inside the continuation window): the piece playing finishes, the next one waits.
+  paused() { const c = this.queue[0]; return !!this.hold && !!c && c.start && c.gen === this.gen && c.item === this.hold.item; }
 
   // A reply that was withdrawn or interrupted but has not yet noticed (awaiting the model or the voice) is not busy.
   busy() { return (!!this.speaking && this.replyGen === this.gen) || this.queue.length > 0; }
 
-  audible() { return this.queue.length > 0 || this.now() - this.lastAudio < 0.3; }
+  audible() { return (this.queue.length > 0 && !this.paused()) || this.now() - this.lastAudio < 0.3; }
   greetingPlaying() { return !!this.protectedItem && (this.playedMs[this.protectedItem] || 0) < this.protectedMs - 50 && this.now() < this.protectedDeadline; }
 
   // What the consultant heard of a reply cut short (the text sent with its audio) is recorded now, before their next
@@ -598,6 +606,7 @@ export class Session {
   }
 
   interrupt() {
+    this.hold = null;
     this.recordLive();
     this.stopped();
     this.protectedItem = null; // nothing protected is playing any more
@@ -783,7 +792,7 @@ export class Session {
     const show = text => { pending += text; };
     const release = () => { // text with no audio of its own
       if (!pending || gen !== this.gen || this.finished) return;
-      this.push({ gen, item, bytes: new Uint8Array(0), text: pending }); pending = '';
+      this.push({ gen, item, bytes: new Uint8Array(0), text: pending, start: true }); pending = '';
     };
     // One piece of speech: its audio (being synthesised, or ready), sent for playback once the floor is hers.
     const deliver = async (sentence, synthesis, filler = false, lead = false) => {
@@ -800,7 +809,7 @@ export class Session {
       // The text of exactly this piece (and any separator before it), not the next sentence's first words already streamed.
       const at = pending.indexOf(sentence), cut = at >= 0 ? at + sentence.length : pending.length, piece = pending.slice(0, cut);
       pending = pending.slice(cut);
-      for (let i = 0; i < pcm.length; i += CHUNK) this.push({ gen, item, bytes: pcm.subarray(i, Math.min(pcm.length, i + CHUNK)), text: i ? '' : piece, lead });
+      for (let i = 0; i < pcm.length; i += CHUNK) this.push({ gen, item, bytes: pcm.subarray(i, Math.min(pcm.length, i + CHUNK)), text: i ? '' : piece, lead, start: i === 0 });
       if (filler) this.fillerMs[item] = (this.fillerMs[item] || 0) + pcm.length / 48; // the acknowledgement's own audio, not counted as her reply
     };
     // Pipelined: a piece is synthesised as soon as its text is complete, while the piece before it is still being
@@ -915,6 +924,7 @@ export class Session {
     // Real-time paced playback, identical to the Python route: 20 ms chunks, stale generations dropped.
     while (!this.finished) {
       if (!this.queue.length) { this.dry = true; await new Promise(r => { this.waiter = r; }); continue; }
+      if (this.paused()) { await this.sleep(20); continue; }
       const { gen, item, bytes, text, lead } = this.queue.shift();
       if (gen !== this.gen) continue;
       if (bytes.length) { // underrun: the queue ran dry mid-reply, and more of the same reply came after her audio had run out
