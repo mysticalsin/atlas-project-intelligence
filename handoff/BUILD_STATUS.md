@@ -890,3 +890,27 @@ Review answers:
 - **Tests.** Four new tests in `test/early-processing.test.js`. They fail at 3244e0f6 and pass at ccb53bf4.
 - **Docs.** `docs/LIVE_TEST_BOUND.md` records the hold behaviour, the decision that the onset latch is intended, and the known risks: an immediate withdrawal on a loud noise, echoes under 3 words, repeated words in the echo tail, and the Python path not covered.
 - **Not covered.** Nothing in run67 was exercised live. Suite outputs at the final head are in /opt/cursor/artifacts/atlas-plan-a-fix-run67-evidence.tar.
+
+### Session: 2026-11-09 / Ledger coverage: every paid call through one meter (run70, local only)
+- Base d88effdd on `cursor/plan-a-live-ledger-59c9`; new local commits only. No push, PR, deploy, live call, credential, spend, or change to the production `wrangler.jsonc` or any binding.
+- **Wrapper.** `deploy/cloudflare-edge/src/meter.js` `paid(env)` is the one factory. It covers:
+  - every `env.AI.run` (STT, smart-turn, Aura, talker, analyst/report/complete including the retry, embeddings);
+  - `env.AI.toMarkdown`;
+  - ElevenLabs;
+  - the six TypeSafe JEV fetches;
+  - the Hindsight client.
+
+  The `worker.js` paths reach these same functions. Prices moved to `src/prices.js`, with unchanged values.
+- **`LEDGER_MODE`:**
+  - off is the default and is set nowhere;
+  - observe never blocks and logs numbers only;
+  - enforce is opt-in, reserves first and fails closed;
+  - any other value refuses.
+
+  `PRODUCTION_DAILY_LIMIT_USD` is a null placeholder. The PROPOSED $15/day is in `docs/LEDGER_MODES.md` for Tony's decision.
+- **Tests (edge):**
+  - `ledger-static`, `ledger-modes`, `ledger-meter`: fail at d88effdd and pass now;
+  - `ledger-off` (golden of 20 upstream calls recorded at d88effdd) and `ledger-livetest` (the $1.50 and 800k exhaustion points): pass at both.
+- **Editorial.** Repaired the latch sentence in the `session.js` onset comment and the risks heading in `docs/LIVE_TEST_BOUND.md`. The live-test ledger section now states its scope.
+- **Suites at 118e5517.** Python 307, root node 384, edge 613, spend-ledger 16, early-processing 28, new ledger files 16, and 21 browser scripts, all passing.
+- **Known limits.** Under enforce, unpriced calls are refused: the analyst, embeddings, toMarkdown, ElevenLabs, TypeSafe and Hindsight have no sourced price. The budget is one global UTC-day budget, not per user. Nothing has been exercised live, and the Python path is not covered.
