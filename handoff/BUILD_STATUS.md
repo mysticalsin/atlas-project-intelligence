@@ -824,3 +824,15 @@ Review answers:
 - Measured: dev/latency-bench.mjs, using mocked AI with zero provider delay on a virtual clock. Last sound to first reply audio sent is 0.70 s when the turn model is confident, 1.20 s on plain silence and 2.50 s for an unfinished thought. In-process overhead has a p50 of 0.07 to 0.11 ms, with a maximum of 1.9 ms. Provider latency was not measured.
 - Not enabled and needs approval (docs/VOICE_LATENCY.md): speculative transcription (extra billed audio sent again), a speculative talker draft, streaming recognition (new model contract), and shorter windows (Tony's product trade-off). A live telemetry baseline export comes first.
 - Commands: cd deploy/cloudflare-edge && node --test test/turn-latency.test.js test/app.test.js test/session.test.js; node dev/latency-bench.mjs 20.
+
+### Session: 2026-11-09 / ATLAS from Mantu across conversational routes, and full safe test pass
+- Parent is the latency correction (5f87e441). Code commits 236fdaf8 and 05dcb9b6; this note is the next forward commit on an unpublished local branch. No push, pull request, merge, deploy, CI change, live model, provider call, credential, hardware microphone or spend.
+- Run27 MEDIUM: the hosted route's persona was not aligned.
+- The hosted OpenAI Realtime instructions (quality.py `INTERVIEW_POLICY`) now carry the persona of 41bacfae, and so does its first-response instruction (`realtime.HOSTED_OPENING`, previously an inline string): ATLAS from Mantu, proportionate warmth, a choice on difficult topics, no celebrating harm, no diagnosis, flattery or reliance, an AI-not-a-person answer, and shorter turns for brief answers.
+- The hosted route's evidence, tool, untrusted-data and no-approval rules are unchanged.
+- The PersonaPlex role has the same rules in short form.
+- The analyst, report, editor, review, sheet and ledger prompts are unchanged, and a contract keeps conversational warmth out of them.
+- Route map: docs/PERSONA_ROUTES.md. Contracts: tests/test_persona_routes.py and tests/test_persona_scenarios.py, a matrix of route by kind of answer that names each route's interruption tests.
+- Tony asked to "fully test it". Every repository test entry point was run on this note's commit in a detached worktree, or classified as skipped or blocked with a reason, in the review packet.
+- Test dependencies were installed into an isolated target directory from requirements-test.txt with constraints-tested.txt, with the user site disabled. Nothing global changed.
+- These are prompt contracts and local mocks, not live conversations. Live warmth, repetition and distress handling, and a native review of the 7 greetings, remain open.
