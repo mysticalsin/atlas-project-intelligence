@@ -123,6 +123,24 @@ python3 live-test/analyse.py /tmp/run65/live-run.json /tmp/run65/network-rtt.jso
 - **Inside a Worker, behaviour is unmeasured.** There the binding may answer within 350 ms, so turns end sooner (at a confident verdict of 0.85 or more) and leave less room for drafts. Nothing in run65 measures that.
 - **One draft-mode turn is excluded (session 8, turn 2).** The turn ended at the mid-answer pause. The rest of the answer, spoken as her reply became audible, was never detected: it failed the barge-in gate, which requires 4× the level for 450 ms unbroken. Fixed after run65 in 5d461abd (`BARGE_IN_S` and `continuationWindow` in `src/session.js`), and not yet exercised live.
 
+### Continuation hold: behaviour and known risks (run66 fix, completed in run67; not exercised live)
+
+The fix is in `deploy/cloudflare-edge/src/session.js`: 5d461abd, then 41c2e12a.
+- **The window.** Her reply to the consultant's latest turn, while they have heard at most `CONTINUE_MS` (1.2 s) of it. One definition, `replyHeardMs()`, sets both the listening level and the continuation decision at onset. It counts acknowledged playback (otherwise what was sent, less the lead), less the acknowledgement, less the time the detector spent noticing the speech.
+- **Speech inside the window is listened for at the normal level and holds her reply.** The piece playing finishes and no new piece starts, text or audio. A paused queue does not count as audible.
+- **The hold lasts until that utterance's transcription resolves**, not merely until the utterance ends:
+  - words that are not her echo withdraw the reply, and both parts become one turn;
+  - an empty or echo-only transcript releases the hold and her reply continues where it stopped;
+  - so does a failed transcript (provider error, or the 15 s transcription timeout);
+  - a click or breath closed as a blip releases it at once.
+- **Decision (d): the latch is intended.** Whether an utterance is a continuation is decided once, at its onset, like the existing continuation flag. It holds for the whole utterance however long the consultant talks. Because the reply is held, what they hear of it after the onset is at most the rest of the piece that was playing. A continuation can therefore withdraw the reply after more than 1.2 s of it has been heard, by no more than that piece.
+
+Known risks, unchanged by this fix:
+- **A loud noise withdraws immediately.** Inside the window, any sound that passes the barge-in gate (4× the level, `BARGE_IN_S` 450 ms unbroken) withdraws her reply with no transcript and no turn-model call. So does a continuation that is not in the listening latch.
+- **An echo under 3 words can withdraw the reply.** `isEcho` judges only transcripts of 3 or more words, so a short echo such as "Thanks." counts as the consultant's words.
+- **Repeating her words in the echo tail is discarded.** A consultant who repeats most of her words (70% or more) while her audio may still be echoing is treated as echo, and the utterance is dropped.
+- **The Python path is not covered.** `atlas_voice/cascade.py` has no continuation window. This fix and its tests cover the edge session only.
+
 ## How Phase 2 runs (binding route)
 
 ```sh
