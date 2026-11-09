@@ -874,7 +874,8 @@ Review answers:
   - it is withdrawn once a transcript with non-echo words arrives, or at once if the speech passes the barge-in gate (`BARGE_IN_S`);
   - both parts become one turn;
   - an echo is transcribed and ignored, and she carries on. With speakers and no echo cancellation, an echo can pause her next piece until it ends.
-- **Tests.** Two in `deploy/cloudflare-edge/test/early-processing.test.js`. They fail at 802f24f1 and pass at 5d461abd. Edge suite: 594 pass.
+- **Tests.** Two in `deploy/cloudflare-edge/test/early-processing.test.js`. They fail at 802f24f1 and pass at 5d461abd. Edge suite: 592 pass.
 - **Not covered.** The Python cascade has no continuation window, so this fix does not apply to it, and nothing has been run live.
 - **Docs.** `docs/LIVE_TEST_BOUND.md` now records the REST measurement limit: smart-turn missed its 350 ms budget in 29 of 34 checks, and in-Worker behaviour is unmeasured.
+- **Suites at the fix head.** Python 307, root node 384, edge 592, spend-ledger 16, early-processing 23 and 21 browser scripts, all passing.
 - **Evidence.** /opt/cursor/artifacts/atlas-plan-a-fix-run66-{code,evidence}.tar
