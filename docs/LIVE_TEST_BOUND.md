@@ -117,6 +117,12 @@ node live-test/run.mjs http://127.0.0.1:8787 /tmp/run65/live-run.json 2,3,3 3 /t
 python3 live-test/analyse.py /tmp/run65/live-run.json /tmp/run65/network-rtt.json
 ```
 
+### Known measurement limits of the REST run (run65)
+
+- **Smart-turn almost never decided the turn.** Over REST from this VM, smart-turn missed the session's 350 ms turn-check budget in **29 of 34** checks, with REST latency medians of 403–597 ms. In those turns the 1.2 s silence rule ended the turn, and the early transcription and draft had that whole window to finish. So the run65 discard rates and the early-processing gains describe a turn model that is effectively absent.
+- **Inside a Worker, behaviour is unmeasured.** There the binding may answer within 350 ms, so turns end sooner (at a confident verdict of 0.85 or more) and leave less room for drafts. Nothing in run65 measures that.
+- **One draft-mode turn is excluded (session 8, turn 2).** The turn ended at the mid-answer pause. The rest of the answer, spoken as her reply became audible, was never detected: it failed the barge-in gate, which requires 4× the level for 450 ms unbroken. Fixed after run65 in 5d461abd (`BARGE_IN_S` and `continuationWindow` in `src/session.js`), and not yet exercised live.
+
 ## How Phase 2 runs (binding route)
 
 ```sh

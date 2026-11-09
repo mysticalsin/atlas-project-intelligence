@@ -866,3 +866,15 @@ Review answers:
 - Early STT was used 23 of 23 (0% discarded); drafts were adopted 8 of 8. Real smart-turn over REST took a median of 400-600 ms against the session's 350 ms budget, so 29 of 34 turn checks timed out and turns ended on the 1.2 s silence rule.
 - Transcript median went from about 1.6 s (baseline) to 1.2 s (Plan A). First audio is a cached acknowledgement on about two-thirds of turns. Without one, a draft brought the first reply audio forward.
 - Evidence: /opt/cursor/artifacts/atlas-plan-a-live-run65-{code,evidence}.tar. Small n; measured from this VM over the internet, not inside a Worker. The turn-window fix is not yet exercised live.
+
+### Session: 2026-11-09 / Fix for the speech dropped in run65 session 8, turn 2 (run66, local only)
+- **Cause.** The turn ended at the mid-answer pause: smart-turn was unsure (0.62), so the 1.2 s silence rule ended it. The adopted draft then started playing. While she is audible, `EnergyTurns` accepts speech only at 4× the level and 450 ms unbroken. The rest of the answer, with ordinary gaps between words, never passed that gate. It was dropped: no continuation, no barge-in, no transcription.
+- **Fix (5d461abd, `src/session.js`).** Inside the existing continuation window, the consultant is listened for at the normal level. The window is her reply to that turn, at most `CONTINUE_MS` of it heard, the acknowledgement aside. Speech there takes the existing continuation semantics:
+  - the reply is held, so no new piece starts;
+  - it is withdrawn once a transcript with non-echo words arrives, or at once if the speech passes the barge-in gate (`BARGE_IN_S`);
+  - both parts become one turn;
+  - an echo is transcribed and ignored, and she carries on. With speakers and no echo cancellation, an echo can pause her next piece until it ends.
+- **Tests.** Two in `deploy/cloudflare-edge/test/early-processing.test.js`. They fail at 802f24f1 and pass at 5d461abd. Edge suite: 594 pass.
+- **Not covered.** The Python cascade has no continuation window, so this fix does not apply to it, and nothing has been run live.
+- **Docs.** `docs/LIVE_TEST_BOUND.md` now records the REST measurement limit: smart-turn missed its 350 ms budget in 29 of 34 checks, and in-Worker behaviour is unmeasured.
+- **Evidence.** /opt/cursor/artifacts/atlas-plan-a-fix-run66-{code,evidence}.tar
