@@ -836,3 +836,16 @@ Review answers:
 - Tony asked to "fully test it". Every repository test entry point was run on this note's commit in a detached worktree, or classified as skipped or blocked with a reason, in the review packet.
 - Test dependencies were installed into an isolated target directory from requirements-test.txt with constraints-tested.txt, with the user site disabled. Nothing global changed.
 - These are prompt contracts and local mocks, not live conversations. Live warmth, repetition and distress handling, and a native review of the 7 greetings, remain open.
+
+### Session: 2026-11-09 / Plan A early processing on the edge route (off by default, fail-closed)
+- Parent is the persona and full-test note (a941501b). Code commit f0ea602a; this note is the next forward commit on an unpublished local branch. No push, pull request, merge, deploy, CI change, live model, provider call, flag activation, telemetry read, credential, hardware microphone or spend.
+- Tony asked for Plan A (early batch transcription at the existing 0.7 s pause, then an optional cancellable text draft). The comparison document was planning input; its prices and caps are not runtime configuration.
+- Implemented on the edge `Session` only (deploy/cloudflare-edge/src/session.js, src/speculation.js), behind separate server flags `EARLY_STT` and `EARLY_DRAFT`, off by default. End-of-turn thresholds and timings are unchanged.
+- Admission: every speculative request is reserved first with an injected ledger (audio ms, estimated prompt tokens, max output tokens, requests, in-flight). There is no refund on cancel. Observations are recorded separately from estimates. An unconfigured, unavailable, slow or exhausted ledger fails closed.
+- Only a ledger with authority across every instance (`scope: 'global'`) enables it. The Worker binds none, so the flags alone cannot turn it on; `early_unavailable` is logged. `MemoryLedger` is process-local, for tests and the bench.
+- Reuse only on the same audio extended by silence, and a byte-identical reply prompt; otherwise the existing final batch path. Nothing speculative is shown, voiced, synthesised, added to history, the analyst, the report or memory before a reliable end of turn.
+- `workersAI.chatStream` accepts `maxTokens`, which can only lower the 300-token bound.
+- Kyutai cascade: unsupported and unchanged. Hosted Realtime and PersonaPlex: not applicable (no server-side batch recognition) and unchanged.
+- Docs: docs/EARLY_PROCESSING.md (behaviour, units, route coverage, conditional bench), docs/EARLY_PROCESSING_NOTICE_DRAFT.md (draft notice for review, not wired in), a row in docs/WOW_ZERO_CONFIG.md, a pointer in docs/VOICE_LATENCY.md.
+- Tests: deploy/cloudflare-edge/test/early-processing.test.js (21 fixtures; all 21 fail on the parent). Bench: dev/early-overlap-bench.mjs, with assumed delays, not a live gain.
+- Still needed before any live use: a shared authoritative ledger and approved caps, spend approval, notice and consent review, then a capped first-audible measurement.
