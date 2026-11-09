@@ -16,7 +16,10 @@ The browser holds the disclosure and the delete responses so the races are repro
 - at 390px the confirmation is ticked and submitted with native keyboard presses on focused controls;
 - the local edge identity has no tenant UUID, so the real POST is refused and the page shows the refusal, not a receipt;
 - after a mocked successful receipt, a later attempt refused by the real local edge handler leaves the earlier receipt
-  labelled as an earlier request (also after a re-render), and a later success is shown as the current receipt again.
+  labelled as an earlier request and the latest-failure warning stays (also after a re-render); a mocked bootstrap with a
+  different identity, fetched fresh in the same tab, shows neither the receipt nor the warning, and the original identity
+  sees both again; while a later attempt is pending and after it succeeds, no stale failure warning is shown, and the later
+  success is shown as the current receipt again.
 Receipts here are mocked responses in the delete receipt shape of deploy/cloudflare-edge/src/operate.js (outcomes with
 store/removed/error, blocked, complete, vendorDeletion), used for mixed success/failure rendering, focus and a single
 receipt across reopen. A receipt from the real handler is only exercised by a separate local workerd harness that is not
@@ -162,6 +165,7 @@ try:
   c,p,sent=open_page('history@mantu.com');mode={'next':'mock'}
   def history_route(route):
    if mode['next']=='mock':route.fulfill(status=200,content_type='application/json',body=json.dumps(OK))
+   elif mode['next']=='hold':held.append(route)
    else:route.continue_()
   p.route('**/api/library/privacy/delete',history_route)
   p.locator('header nav [data-view=journey]').click();wait_open(p)
@@ -178,9 +182,35 @@ try:
   check('history: one receipt, unique ids, the enabled opener has focus',p.evaluate("()=>{const ids=[...document.querySelectorAll('[id]')].map(e=>e.id);return ids.length===new Set(ids).size}") and disabled(p,'#privacyDeleteOpen') is False and p.evaluate("()=>document.activeElement?.id")=='privacyDeleteOpen')
   p.evaluate("()=>window.dispatchEvent(new Event('atlas-auth'))");settle(p,200);disclosure_loaded(p);settle(p,300)
   check('history: after a re-render the earlier receipt is still labelled as earlier','earlier' in head().lower() and 'not from the latest' in rtext())
-  mode['next']='mock';confirm();p.wait_for_function("()=>document.querySelector('#privacyReceipt h3')?.textContent==='Deletion receipt'",timeout=10000);settle(p,300)
+  warn=lambda:p.evaluate("()=>[...document.querySelectorAll('#privacyActions .pill.warn')].map(e=>e.innerText)")
+  w=warn()
+  check('history: after a re-render the latest-failure warning is still shown once',len(w)==1 and 'latest deletion request did not complete' in w[0].lower() and 'verified tenant' in w[0])
+  def other_identity(route):
+   r=route.fetch();d=r.json()
+   for k in ('identity','email'):
+    if k in d:d[k]='other-synthetic@mantu.com' if k=='email' else 'other-synthetic-identity'
+   route.fulfill(response=r,body=json.dumps(d))
+  def reboot():p.evaluate("()=>window.AtlasAuth.boot({fresh:true})");p.evaluate("()=>window.dispatchEvent(new Event('atlas-auth'))");settle(p,200);disclosure_loaded(p);settle(p,300)
+  p.route('**/api/bootstrap',other_identity);reboot()
+  check('history: a different identity in the same tab sees neither the receipt nor the failure warning',p.locator('#privacyReceipt').count()==0 and warn()==[] and 'did not complete' not in p.locator('#privacyActions').inner_text())
+  p.unroute('**/api/bootstrap');reboot()
+  w=warn()
+  check('history: the original identity sees the earlier receipt and the failure warning again','earlier' in head().lower() and len(w)==1 and 'did not complete' in w[0])
+  held=[];mode['next']='hold'
+  confirm();settle(p,300)
+  check('history: while a later attempt is pending no stale failure warning is shown',len(held)==1 and warn()==[] and 'did not complete' not in p.locator('#privacyActions').inner_text())
+  held[0].fulfill(status=200,content_type='application/json',body=json.dumps(OK))
+  p.wait_for_function("()=>document.querySelector('#privacyReceipt h3')?.textContent==='Deletion receipt'",timeout=10000);settle(p,300)
+  check('history: after the later success no failure warning is shown',warn()==[] and 'did not complete' not in p.locator('#privacyActions').inner_text())
   check('history: a later success is shown as the current receipt with focus',head()=='Deletion receipt' and 'earlier' not in rtext().lower() and p.locator('#privacyReceipt').count()==1 and p.evaluate("()=>!!document.activeElement?.closest('#privacyReceipt')"))
-  check('history: three confirmations sent three deletes',len(sent)==3)
+  mode['next']='real';confirm()
+  p.wait_for_function("()=>(document.getElementById('privacyActions')?.innerText||'').includes('did not complete')",timeout=10000);settle(p,300)
+  held.clear();mode['next']='hold';confirm();settle(p,300)
+  check('history: in the same page, a pending attempt right after a refusal shows no stale failure warning',len(held)==1 and warn()==[] and 'did not complete' not in p.locator('#privacyActions').inner_text())
+  held[0].fulfill(status=200,content_type='application/json',body=json.dumps(OK))
+  p.wait_for_function("()=>document.querySelector('#privacyReceipt h3')?.textContent==='Deletion receipt'",timeout=10000);settle(p,300)
+  check('history: in the same page, the success after a refusal shows no stale failure warning, one receipt, unique ids',warn()==[] and p.locator('#privacyReceipt').count()==1 and p.evaluate("()=>{const ids=[...document.querySelectorAll('[id]')].map(e=>e.id);return ids.length===new Set(ids).size}"))
+  check('history: five confirmations sent five deletes',len(sent)==5)
   c.close()
 
   # Scope wording, Cancel, single in-flight request, refusal.
