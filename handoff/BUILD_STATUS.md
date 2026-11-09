@@ -821,6 +821,6 @@ Review answers:
 - Revise and discard already exist at turn level: withdraw and merge on continuation, barge-in, and stale-generation drop.
 - Implemented: the abandoned talker stream now cancels its upstream body. Whether Workers AI stops generating or billing on cancel is not verified.
 - Bound by fixtures: test/turn-latency.test.js, 7 tests.
-- Measured: dev/latency-bench.mjs, using mocked AI with zero provider delay on a virtual clock. Last sound to first reply audio sent is 0.70 s when the turn model is confident, 1.20 s on plain silence and 2.50 s for an unfinished thought. In-process overhead is about 0.1 to 0.2 ms. Provider latency was not measured.
+- Measured: dev/latency-bench.mjs, using mocked AI with zero provider delay on a virtual clock. Last sound to first reply audio sent is 0.70 s when the turn model is confident, 1.20 s on plain silence and 2.50 s for an unfinished thought. In-process overhead has a p50 of 0.07 to 0.11 ms, with a maximum of 1.9 ms. Provider latency was not measured.
 - Not enabled and needs approval (docs/VOICE_LATENCY.md): speculative transcription (extra billed audio sent again), a speculative talker draft, streaming recognition (new model contract), and shorter windows (Tony's product trade-off). A live telemetry baseline export comes first.
 - Commands: cd deploy/cloudflare-edge && node --test test/turn-latency.test.js test/app.test.js test/session.test.js; node dev/latency-bench.mjs 20.

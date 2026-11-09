@@ -37,7 +37,7 @@ Each cell has 20 samples, as cold (first answer of a fresh session) and warm (a 
 | Turn model unsure, or no turn model | 1.20 s |
 | Unfinished thought | 2.50 s |
 
-In-process Node overhead from the transcription call to the first audio send is about 0.1 to 0.2 ms; the raw p50, p90 and max are in the evidence.
+In-process Node overhead from the transcription call to the first audio send has a p50 of 0.07 to 0.11 ms per cell, with a maximum of 1.9 ms on a cold first sample.
 
 These are the pipeline's own waits. A real reply adds on top:
 - the turn model call (≤ 0.35 s);
