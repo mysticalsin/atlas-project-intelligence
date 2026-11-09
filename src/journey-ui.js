@@ -8,7 +8,7 @@ const PEOPLE=[
  {email:'admin@example.test',label:'Verified admin',roles:['ATLAS.Interview','ATLAS.Admin']}
 ];
 const localDemo=()=>/^(localhost|127\.0\.0\.1)$/.test(location.hostname);
-let disclosureGen=0;
+let journeyGen=0,pendingDelete=null,deleteReceipt=null;
 function h(tag,attrs,children){const n=document.createElement(tag);if(attrs)for(const [k,v] of Object.entries(attrs)){if(k==='text')n.textContent=v;else if(k==='html')n.innerHTML=v;else if(v!=null)n.setAttribute(k,v);}(children||[]).forEach(c=>n.append(c));return n;}
 function app(){return window.ATLAS_APP;}
 async function api(path,opts){const A=app();if(!A?.libraryApi)throw Error('The library API is not on this page.');return A.libraryApi(path,opts);}
@@ -20,10 +20,12 @@ function stageList(stages,onPick){const list=h('ol',{class:'stage-grid'});
  for(const s of stages||[]){const b=h('button',{type:'button',class:'stage-card'},[h('strong',{text:s.title}),h('small',{text:s.blocked?'Blocked integration':s.current?'Current':'Open'})]);if(s.current)b.setAttribute('aria-current','step');b.addEventListener('click',()=>onPick(s));list.append(h('li',{},[b]));}
  return list;}
 function banner(kind,text){return h('p',{class:'pill'+(kind==='warn'?' warn':''),role:'status',text});}
-async function renderJourney(){const root=$('journey');if(!root)return;root.replaceChildren(h('p',{text:'Loading your journey…'}));
+async function renderJourney(){const root=$('journey');if(!root)return;const gen=++journeyGen;root.replaceChildren(h('p',{text:'Loading your journey…'}));
  let boot={};try{boot=await app().bootInfo();}catch{boot={};}
+ if(gen!==journeyGen)return;
  const adminNav=$('adminNav');if(adminNav)adminNav.hidden=boot.libraryRole!=='admin';
- let data;try{data=await api('/journey');}catch(e){root.replaceChildren(h('h1',{id:'journeyTitle',text:'Journey'}),banner('warn',e.message||'The journey could not be loaded.'),personaBar());return;}
+ let data;try{data=await api('/journey');}catch(e){if(gen!==journeyGen)return;root.replaceChildren(h('h1',{id:'journeyTitle',text:'Journey'}),banner('warn',e.message||'The journey could not be loaded.'),personaBar());return;}
+ if(gen!==journeyGen)return;
  let picked=data.stages.find(s=>s.current)||data.stages[0];
  const detail=h('div',{class:'panel'});
  const layout=h('div',{class:'journey-layout'});
@@ -60,31 +62,40 @@ async function renderJourney(){const root=$('journey');if(!root)return;root.repl
  const head=h('div',{class:'journey-head'},[h('div',{},[h('p',{class:'eyebrow',text:'CONSULTANT JOURNEY'}),h('h1',{id:'journeyTitle',text:'From the work to a reference.'}),h('p',{text:'Confirm what is true. Blocked systems stay blocked. Publication for everyone else needs both approvals.'})]),personaBar()]);
  layout.append(detail,queue);
  root.replaceChildren(head,stageList(data.stages,s=>{picked=s;paint();}),layout,h('section',{class:'panel'},[h('h2',{text:'Privacy'}),h('p',{id:'privacyNote',text:'Loading disclosure…'})]),h('p',{id:'privacyActions'}));
- let deletion=null;const gen=++disclosureGen;
- api('/privacy/disclosure').then(d=>{const n=$('privacyNote');if(!n||gen!==disclosureGen)return;n.textContent=`Consent ${d.consent.interview}. ${d.recording} ${d.textOnly} Telemetry retention ${d.retention.appTelemetryDays} days in this app. Vendor deletion: ${d.retention.vendorDeletion}. ${d.lawfulBasis} ${d.biometrics}`;
-  if(d.deletion&&Array.isArray(d.deletion.coveredLocal)){deletion=d.deletion;const b=$('privacyDeleteOpen');if(b)b.disabled=false;}else n.textContent+=' Deletion is not offered because this disclosure does not say what would be deleted.';}).catch(()=>{const n=$('privacyNote');if(n&&gen===disclosureGen)n.textContent='The privacy disclosure could not be loaded, so deletion is not offered.';});
- const actions=$('privacyActions');if(actions){const exp=h('button',{class:'btn',type:'button',text:'Download my data'});const del=h('button',{class:'btn',type:'button',id:'privacyDeleteOpen',text:'Delete my data…',disabled:''});exp.addEventListener('click',async()=>{try{const pack=await api('/privacy/export');app().download('atlas-my-data.json',JSON.stringify(pack,null,2),'application/json');}catch(e){actions.append(banner('warn',e.message));}});del.addEventListener('click',()=>confirmDelete(actions,del,deletion));actions.append(exp,del);}
+ let deletion=null;
+ api('/privacy/disclosure').then(d=>{const n=$('privacyNote');if(!n||gen!==journeyGen)return;n.textContent=`Consent ${d.consent.interview}. ${d.recording} ${d.textOnly} Telemetry retention ${d.retention.appTelemetryDays} days in this app. Vendor deletion: ${d.retention.vendorDeletion}. ${d.lawfulBasis} ${d.biometrics}`;
+  if(d.deletion&&Array.isArray(d.deletion.coveredLocal)&&d.deletion.coveredLocal.length){deletion=d.deletion;const b=$('privacyDeleteOpen');if(b){b.dataset.ready='1';b.disabled=!!pendingDelete;}}else n.textContent+=' Deletion is not offered because this disclosure does not say what would be deleted.';}).catch(()=>{const n=$('privacyNote');if(n&&gen===journeyGen)n.textContent='The privacy disclosure could not be loaded, so deletion is not offered.';});
+ const actions=$('privacyActions');if(actions){const exp=h('button',{class:'btn',type:'button',text:'Download my data'});const del=h('button',{class:'btn',type:'button',id:'privacyDeleteOpen',text:'Delete my data…',disabled:''});exp.addEventListener('click',async()=>{try{const pack=await api('/privacy/export');app().download('atlas-my-data.json',JSON.stringify(pack,null,2),'application/json');}catch(e){actions.append(banner('warn',e.message));}});del.addEventListener('click',()=>confirmDelete(actions,del,deletion));actions.append(exp,del);showDeleteState(false);}
 }
+// The pending request and the last receipt outlive any one render, so a re-render cannot send a second delete or lose the result.
+function showDeleteState(focus){const a=$('privacyActions');if(!a)return;$('privacyPending')?.remove();$('privacyReceipt')?.remove();
+ const o=$('privacyDeleteOpen');
+ if(pendingDelete){if(o)o.disabled=true;a.append(h('p',{class:'pill',id:'privacyPending',role:'status',text:'A deletion request is still being processed. Its result will appear here.'}));return;}
+ if(o)o.disabled=!o.dataset.ready;
+ if(!deleteReceipt)return;
+ const out=deletionReceipt(deleteReceipt);a.append(out);
+ if(focus){out.tabIndex=-1;out.focus();}}
 // Nothing is sent until the person ticks the box and presses Delete permanently. Cancel sends nothing.
-function confirmDelete(actions,del,deletion){if(!deletion||$('privacyConfirm'))return;
+function confirmDelete(actions,del,deletion){if(!deletion||pendingDelete||$('privacyConfirm'))return;
  const tick=h('input',{type:'checkbox',id:'privacyConfirmTick'});
  const go=h('button',{class:'btn primary',type:'button',id:'privacyConfirmDelete',text:'Delete permanently',disabled:''});
  const cancel=h('button',{class:'btn',type:'button',id:'privacyConfirmCancel',text:'Cancel'});
  const kept=[...(deletion.notDeleted||[]),...(deletion.retained||[]).map(r=>r.store+': '+(r.note||r.action))];
  const box=h('div',{class:'panel',id:'privacyConfirm',role:'alertdialog','aria-modal':'false','aria-labelledby':'privacyConfirmTitle','aria-describedby':'privacyConfirmScope'},[
   h('h3',{id:'privacyConfirmTitle',text:'Delete your data in this tenant?'}),
-  h('p',{id:'privacyConfirmScope',text:"This permanently deletes, for you in your verified tenant only: your journey, your profile, the stories you own and their revisions, and the other rows listed under Deleted. A story that another person's story was merged into is kept, with its revisions, and named in the receipt. This does not erase all data about you; see Not deleted. It cannot be undone."}),
+  h('p',{id:'privacyConfirmScope',text:"Atlas will try to permanently delete, for you in your verified tenant only: your journey, your profile, the stories you own and their revisions, and the other rows listed under Deleted. The receipt reports each store separately: if a store fails, its data is not removed and stays. When another person's story was merged into one of your stories directly, that story is kept, with its revisions, and named in the receipt. This does not erase all data about you; see Not deleted. Anything removed cannot be restored."}),
   h('p',{class:'tiny',text:'Deleted:'}),h('ul',{id:'privacyConfirmDeleted'},deletion.coveredLocal.map(t=>h('li',{text:t}))),
   h('p',{class:'tiny',text:'Not deleted:'}),h('ul',{id:'privacyConfirmKept'},kept.map(t=>h('li',{text:t}))),
   h('p',{class:'tiny muted',text:'Deletion is not complete. Vendor deletion is not asserted. This is not a GDPR certification.'}),
-  h('label',{class:'field'},[tick,document.createTextNode(" I understand that my journey, my profile and the stories I own in this tenant, with their revisions, will be permanently deleted, except a story that another person's story was merged into, which is kept with its revisions.")]),
+  h('label',{class:'field'},[tick,document.createTextNode(" I understand that Atlas will try to permanently delete the items listed under Deleted for me in this tenant, that the receipt shows anything a store fails to remove, and that a story another person's story was merged into directly is kept with its revisions.")]),
   h('div',{},[go,cancel])]);
- let sending=false;
- tick.addEventListener('change',()=>{go.disabled=sending||!tick.checked;});
+ tick.addEventListener('change',()=>{go.disabled=!!pendingDelete||!tick.checked;});
  cancel.addEventListener('click',()=>{box.remove();del.disabled=false;del.focus();actions.append(banner('','Cancelled. Nothing was deleted.'));});
- go.addEventListener('click',async()=>{if(sending||!tick.checked)return;sending=true;go.disabled=true;cancel.disabled=true;tick.disabled=true;
-  try{const r=await api('/privacy/delete',{method:'POST',body:{}});box.replaceWith(deletionReceipt(r));}catch(e){box.remove();actions.append(banner('warn',e.message));}
-  del.disabled=false;});
+ go.addEventListener('click',async()=>{if(pendingDelete||!tick.checked)return;go.disabled=true;cancel.disabled=true;tick.disabled=true;
+  const req=pendingDelete=api('/privacy/delete',{method:'POST',body:{}});let error=null;
+  try{deleteReceipt=await req;}catch(e){error=e.message||'The deletion request failed.';}
+  pendingDelete=null;box.remove();$('privacyConfirm')?.remove();showDeleteState(!error);
+  if(error){$('privacyActions')?.append(banner('warn',error));const o=$('privacyDeleteOpen');if(o&&!o.disabled)o.focus();}});
  del.disabled=true;actions.append(box);tick.focus();}
 function deletionReceipt(r){const box=h('div',{class:'panel',id:'privacyReceipt',role:'status'},[h('h3',{text:'Deletion receipt'})]);
  box.append(h('ul',{},(r.outcomes||[]).map(o=>h('li',{text:o.error?`${o.store}: not removed (${o.error})`:`${o.store}: ${o.removed} removed`}))));

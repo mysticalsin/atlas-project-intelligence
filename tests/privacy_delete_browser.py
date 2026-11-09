@@ -6,11 +6,21 @@ The browser holds the disclosure and the delete responses so the races are repro
 - a disclosure from an earlier render does not enable the current button;
 - the confirmation states the verified-tenant scope, that a story another person merged into is kept with its revisions,
   and does not promise that every story or all data is erased;
-- Cancel sends nothing; while a delete is pending, unticking and reticking, clicks and Enter send nothing more;
-- the local edge identity has no tenant UUID, so the one POST is refused and the page shows the refusal, not a receipt.
-Success and the partial (blocked) receipt need a tenant identity and are exercised against the bundled Worker in workerd.
+- the confirmation says the receipt reports each store, that a store which fails keeps its data, and that only a direct
+  merge target is kept; it does not say everything will be permanently deleted;
+- Cancel sends nothing; while a delete is pending, unticking and reticking (synthetic change events), JS clicks, synthetic
+  keydown events and native Enter/Space presses send nothing more; the pending delete also survives a re-render and
+  navigating away and back, and its result is shown in the current page;
+- an older journey render that completes after a newer one does not replace it;
+- an empty deletion scope does not enable deletion;
+- at 390px the confirmation is ticked and submitted with native keyboard presses on focused controls;
+- the local edge identity has no tenant UUID, so the real POST is refused and the page shows the refusal, not a receipt.
+Receipts here are mocked responses in the delete receipt shape of deploy/cloudflare-edge/src/operate.js (outcomes with
+store/removed/error, blocked, complete, vendorDeletion), used for mixed success/failure rendering, focus and a single
+receipt across reopen. A receipt from the real handler is only exercised by a separate local workerd harness that is not
+part of this repository.
 """
-import json,os,socket,subprocess,sys,time,urllib.parse,urllib.request
+import json,os,re,socket,subprocess,sys,time,urllib.parse,urllib.request
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1];EDGE=ROOT/'deploy/cloudflare-edge';ERR=[];FAILED=[]
@@ -75,6 +85,75 @@ try:
   check('no deletion scope: a click opens nothing and sends nothing',p.locator('#privacyConfirm').count()==0 and sent==[])
   c.close()
 
+  def disclosure_loaded(p):p.wait_for_function("()=>{const n=document.getElementById('privacyNote');return n&&n.textContent.startsWith('Consent')}",timeout=10000)
+  def settle(p,ms=500):p.evaluate("ms=>new Promise(r=>setTimeout(r,ms))",ms)
+  # A pending delete survives a re-render and navigating away and back.
+  c,p,sent=open_page('rerender@mantu.com');pending=[]
+  p.route('**/api/library/privacy/delete',lambda route:pending.append(route))
+  p.locator('header nav [data-view=journey]').click();wait_open(p)
+  p.locator('#privacyDeleteOpen').click();p.locator('#privacyConfirmTick').check();p.locator('#privacyConfirmDelete').click();settle(p,300)
+  check('re-render: one delete is held',len(pending)==1)
+  for how in ('a re-render','navigating away and back'):
+   if how=='a re-render':p.evaluate("()=>window.dispatchEvent(new Event('atlas-auth'))")
+   else:p.locator('header nav [data-view=projects]').click();settle(p,200);p.locator('header nav [data-view=journey]').click()
+   settle(p,200);disclosure_loaded(p);settle(p,300)
+   check(f'pending delete after {how}: the new opener is disabled',disabled(p,'#privacyDeleteOpen') is True)
+   p.evaluate(JS_CLICK,'privacyDeleteOpen');settle(p,200)
+   if p.locator('#privacyConfirm').count():p.locator('#privacyConfirmTick').check();p.locator('#privacyConfirmDelete').click();settle(p,300)
+   check(f'pending delete after {how}: no second delete is sent',len(sent)==1)
+  for r in pending:r.continue_()
+  p.wait_for_function("()=>(document.getElementById('privacyActions')?.innerText||'').includes('verified tenant')",timeout=10000);settle(p,300)
+  check('the held result appears in the current page and the opener is enabled and focused',p.locator('#privacyActions').is_visible() and disabled(p,'#privacyDeleteOpen') is False and p.evaluate("()=>document.activeElement?.id")=='privacyDeleteOpen')
+  check('re-render: exactly one delete reached the network',len(sent)==1)
+  c.close()
+
+  # An older journey render that finishes after a newer one does not replace it.
+  c,p,sent=open_page('order@mantu.com');jheld=[];disc=[]
+  p.on('request',lambda r:disc.append(r.url) if '/privacy/disclosure' in r.url else None)
+  def hold_first_journey(route):
+   if route.request.method=='GET' and not jheld:jheld.append(route)
+   else:route.continue_()
+  p.route(re.compile(r'.*/api/library/journey$'),hold_first_journey)
+  p.locator('header nav [data-view=journey]').click()
+  p.wait_for_function("()=>!!document.getElementById('journey')&&!document.getElementById('journey').hidden",timeout=10000);settle(p,500)
+  check('ordering: the first render is waiting for its journey',len(jheld)==1 and p.locator('#privacyActions').count()==0)
+  p.evaluate("()=>window.dispatchEvent(new Event('atlas-auth'))");wait_open(p)
+  p.evaluate("()=>{document.getElementById('privacyActions').dataset.render='newer'}");before=len(disc)
+  with p.expect_response(lambda r:r.request.method=='GET' and r.url.endswith('/api/library/journey')):jheld[0].continue_()
+  settle(p,800)
+  check('ordering: the older render does not replace the newer page',p.evaluate("()=>document.getElementById('privacyActions')?.dataset.render")=='newer')
+  check('ordering: the older render asks for no disclosure and the newer opener stays enabled',len(disc)==before and disabled(p,'#privacyDeleteOpen') is False)
+  c.close()
+
+  # An empty deletion scope does not enable deletion.
+  c,p,sent=open_page('empty@mantu.com')
+  def empty_scope(route):
+   r=route.fetch();d=r.json();d['deletion']['coveredLocal']=[];route.fulfill(response=r,body=json.dumps(d))
+  p.route('**/api/library/privacy/disclosure',empty_scope)
+  p.locator('header nav [data-view=journey]').click();disclosure_loaded(p);settle(p,300)
+  check('empty deletion scope: delete stays disabled and the page says why',disabled(p,'#privacyDeleteOpen') is True and 'not offered' in p.locator('#privacyNote').inner_text())
+  p.evaluate(JS_CLICK,'privacyDeleteOpen');settle(p,200)
+  check('empty deletion scope: a click opens nothing and sends nothing',p.locator('#privacyConfirm').count()==0 and sent==[])
+  c.close()
+
+  # Mocked receipts in the operate.js shape: mixed success and failure, focus, and one receipt across reopen.
+  RECEIPT={'outcomes':[{'store':'journey','removed':1,'error':None},{'store':'telemetry','removed':2,'error':None},{'store':'profile','removed':0,'error':'delete-failed'},
+   {'store':'manager-trust','removed':0,'error':None},{'store':'directory','removed':1,'error':None},{'store':'revisions','removed':0,'error':'delete-failed'},{'store':'stories','removed':0,'error':'delete-failed'}],
+   'blocked':[{'store':'stories','id':'synthetic-target','reason':'another-owner-merge-target'}],'complete':False,'vendorDeletion':'not-asserted','note':'Synthetic mocked receipt.'}
+  c,p,sent=open_page('receipt@mantu.com')
+  p.route('**/api/library/privacy/delete',lambda route:route.fulfill(status=200,content_type='application/json',body=json.dumps(RECEIPT)))
+  p.locator('header nav [data-view=journey]').click();wait_open(p)
+  for n in (1,2):
+   p.locator('#privacyDeleteOpen').click();p.locator('#privacyConfirmTick').check();p.locator('#privacyConfirmDelete').click()
+   p.locator('#privacyReceipt').first.wait_for(timeout=10000);settle(p,300)
+   rec=p.locator('#privacyReceipt').first.inner_text()
+   if n==1:
+    check('mixed receipt: removed stores, failed stores and the kept story are each shown',all(w in rec for w in ('journey: 1 removed','profile: not removed (delete-failed)','revisions: not removed (delete-failed)','stories: not removed (delete-failed)','Kept story synthetic-target and its revisions','Complete: no','not-asserted')))
+    check('after a receipt, focus moves to the receipt',p.evaluate("()=>!!document.activeElement?.closest('#privacyReceipt')"))
+  check('after a second confirmation there is one receipt and no duplicate ids',p.locator('#privacyReceipt').count()==1 and p.evaluate("()=>{const ids=[...document.querySelectorAll('[id]')].map(e=>e.id);return ids.length===new Set(ids).size}"))
+  check('mocked receipts: two confirmations sent two deletes',len(sent)==2)
+  c.close()
+
   # Scope wording, Cancel, single in-flight request, refusal.
   for width in (1400,390):
    tag=f'[{width}px] '
@@ -86,6 +165,8 @@ try:
    check(tag+'scope names the verified tenant, journey, profile and owned stories with their revisions',all(w in scope for w in ('verified tenant','journey','profile','stories you own','revisions')))
    check(tag+'scope and tick say a story another person merged into is kept with its revisions','merged into' in scope and 'kept' in scope and 'merged into' in label and 'kept' in label)
    check(tag+'no promise that every story or all data is erased',not any(w in (scope+' '+label).lower() for w in ('every story','all of your data','all your data','everything')) and 'does not erase all' in scope)
+   check(tag+'scope says the receipt reports each store, a failed store keeps its data, and only a direct merge target is kept',all(w in scope for w in ('receipt','fails','directly')) and 'directly' in label)
+   check(tag+'no unconditional promise that the listed data will be permanently deleted','will be permanently deleted' not in (scope+' '+label) and 'permanently deletes' not in scope)
    check(tag+'server lists: deleted scope and what is not deleted','except a story another owner merged into' in deleted and all(w in kept for w in ('claims, bids','audit','blank tenant','vendor-logs')))
    check(tag+'nothing sent before confirmation; Delete permanently disabled before the tick',sent==[] and disabled(p,'#privacyConfirmDelete') is True)
    check(tag+'the confirmation fits the viewport',p.evaluate('document.scrollingElement.scrollWidth<=document.scrollingElement.clientWidth+1'))
@@ -93,22 +174,31 @@ try:
    check(tag+'Cancel closes, sends nothing and keeps the journey',p.locator('#privacyConfirm').count()==0 and sent==[] and 'Nothing was deleted' in p.locator('#privacyActions').inner_text() and api(p,'/journey')['fields']['title']['value']=='Privacy alias')
    pending=[];p.route('**/api/library/privacy/delete',lambda route:pending.append(route))
    p.locator('#privacyDeleteOpen').click();p.locator('#privacyConfirm').wait_for()
-   p.locator('#privacyConfirmTick').check()
+   if width==390:
+    p.locator('#privacyConfirmTick').focus();p.keyboard.press('Space')
+   else:p.locator('#privacyConfirmTick').check()
    check(tag+'the tick enables Delete permanently',disabled(p,'#privacyConfirmDelete') is False)
-   p.locator('#privacyConfirmDelete').click();p.wait_for_timeout(300)
+   if width==390:
+    p.locator('#privacyConfirmDelete').focus()
+    check(tag+'native keyboard: Delete permanently has focus before Enter',p.evaluate("()=>document.activeElement?.id")=='privacyConfirmDelete')
+    p.keyboard.press('Enter');p.wait_for_timeout(300)
+   else:p.locator('#privacyConfirmDelete').click();p.wait_for_timeout(300)
    check(tag+'one delete is in flight',len(pending)==1)
    p.evaluate("()=>{const t=document.getElementById('privacyConfirmTick');for(const v of [false,true,false,true]){t.checked=v;t.dispatchEvent(new Event('change',{bubbles:true}));}}")
    check(tag+'untick and retick while pending keep Delete permanently disabled',disabled(p,'#privacyConfirmDelete') is True)
    p.evaluate(JS_CLICK,'privacyConfirmDelete');p.evaluate(JS_CLICK,'privacyConfirmDelete')
    p.evaluate("()=>{const g=document.getElementById('privacyConfirmDelete');g.focus();for(const k of ['Enter',' '])g.dispatchEvent(new KeyboardEvent('keydown',{key:k,bubbles:true}));}")
+   focused=p.evaluate("()=>{const e=document.activeElement;return e&&e.closest&&e.closest('#privacyConfirm')&&!e.disabled?e.id:''}")
    p.keyboard.press('Enter');p.keyboard.press('Space');p.wait_for_timeout(500)
-   check(tag+'clicks and keys while pending send no second delete',len(pending)==1 and len(sent)==1)
+   check(tag+'JS clicks, synthetic keydowns and native Enter/Space while pending send no second delete',len(pending)==1 and len(sent)==1)
+   check(tag+'while pending no enabled confirmation control has focus',focused=='')
    check(tag+'Cancel and the tick are disabled while pending',disabled(p,'#privacyConfirmCancel') is True and disabled(p,'#privacyConfirmTick') is True)
    for r in pending:r.continue_()
    p.wait_for_timeout(1200)
    text=p.locator('#privacyActions').inner_text()
    check(tag+'the refused delete shows the refusal, no receipt, and kept the journey','verified tenant' in text and p.locator('#privacyReceipt').count()==0 and api(p,'/journey')['fields']['title']['value']=='Privacy alias')
    check(tag+'exactly one delete request reached the network',len(sent)==1)
+   check(tag+'after the refusal the enabled opener has focus',disabled(p,'#privacyDeleteOpen') is False and p.evaluate("()=>document.activeElement?.id")=='privacyDeleteOpen')
    c.close()
   check('no page errors',not ERR)
   b.close()
