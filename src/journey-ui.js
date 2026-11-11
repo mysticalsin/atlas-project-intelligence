@@ -65,11 +65,12 @@ async function renderJourney(){const root=$('journey');if(!root)return;root.repl
 function bars(series){const max=Math.max(1,...series.map(p=>p.events||0));const fig=h('div',{class:'chart',role:'img','aria-label':'Events by day'});
  for(const p of series){const i=h('i');i.style.height=Math.round((p.events/max)*100)+'%';fig.append(h('div',{},[i,h('span',{text:String(p.bucket).slice(5)})]));}
  return fig;}
+function noteAdmin(result){if(result&&result.rejection){try{console.warn(JSON.stringify(result.rejection));}catch(e){}}return result;}
 async function renderAdmin(){const root=$('admin');if(!root)return;
  let metricsView=initialAdminMetrics();
  root.replaceChildren(h('p',{text:'Loading admin metrics…'}));
  let boot={};try{boot=await app().bootInfo();}catch{boot={};}
- const booted=adminMetricsTransition(metricsView,{type:'boot',role:boot.libraryRole});
+ const booted=noteAdmin(adminMetricsTransition(metricsView,{type:'boot',role:boot.libraryRole}));
  if(!booted.ok)return;
  metricsView=booted.state;
  if(metricsView.status==='denied'){root.replaceChildren(h('h1',{id:'adminTitle',text:'Admin'}),banner('warn','This dashboard is only for a verified admin. The API refuses everyone else.'));return;}
@@ -78,13 +79,13 @@ async function renderAdmin(){const root=$('admin');if(!root)return;
  const go=h('button',{class:'btn',type:'button',text:'Update'});const exp=h('button',{class:'btn',type:'button',text:'Export CSV'});
  const out=h('div');
  async function load(){
-  const step=adminMetricsTransition(metricsView,{type:'refresh'});
+  const step=noteAdmin(adminMetricsTransition(metricsView,{type:'refresh'}));
   if(!step.ok)return;
   metricsView=step.state;
   out.replaceChildren(h('p',{text:'Loading…'}));
   const to=new Date(),from=new Date(to.getTime()-Number(range.value)*864e5);
   try{const m=await api('/admin/metrics?from='+encodeURIComponent(from.toISOString())+'&to='+encodeURIComponent(to.toISOString())+'&bucket='+bucket.value);
-   const done=adminMetricsTransition(metricsView,{type:'loaded',count:m.series.length});
+   const done=noteAdmin(adminMetricsTransition(metricsView,{type:'loaded',count:m.series.length}));
    if(!done.ok)return;
    metricsView=done.state;
    const grid=h('div',{class:'metric-grid'});
@@ -92,12 +93,12 @@ async function renderAdmin(){const root=$('admin');if(!root)return;
    for(const [k,v] of cards)grid.append(h('div',{class:'metric'},[h('span',{class:'tiny',text:k}),h('b',{text:String(v)})]));
    const cost=m.estimatedCost?`Estimated ${m.estimatedCost.amount} ${m.estimatedCost.currency} from configured unit rates${m.estimatedCost.includesEstimatedTokens?' (includes estimated tokens)':''}.`:'No cost figure. Unit rates are not configured, so this is not shown as zero.';
    out.replaceChildren(grid,m.series.length?bars(m.series):h('p',{text:'No events in this range.'}),h('p',{text:cost}),h('p',{class:'tiny muted',text:m.note}));
-  }catch(e){const failed=adminMetricsTransition(metricsView,{type:'load_failed'});if(failed.ok)metricsView=failed.state;out.replaceChildren(banner('warn',e.message||'Metrics failed.'));}}
+  }catch(e){const failed=noteAdmin(adminMetricsTransition(metricsView,{type:'load_failed'}));if(failed.ok)metricsView=failed.state;out.replaceChildren(banner('warn',e.message||'Metrics failed.'));}}
  go.addEventListener('click',load);exp.addEventListener('click',async()=>{
-  const step=adminMetricsTransition(metricsView,{type:'export'});
+  const step=noteAdmin(adminMetricsTransition(metricsView,{type:'export'}));
   if(!step.ok)return;
   metricsView=step.state;
-  try{const pack=await api('/admin/export');app().download(pack.filename||'atlas-admin-metrics.csv',pack.csv||'','text/csv');}catch(e){const failed=adminMetricsTransition(metricsView,{type:'export_failed'});if(failed.ok)metricsView=failed.state;out.append(banner('warn',e.message));}});
+  try{const pack=await api('/admin/export');app().download(pack.filename||'atlas-admin-metrics.csv',pack.csv||'','text/csv');}catch(e){const failed=noteAdmin(adminMetricsTransition(metricsView,{type:'export_failed'}));if(failed.ok)metricsView=failed.state;out.append(banner('warn',e.message));}});
  root.replaceChildren(h('div',{class:'journey-head'},[h('div',{},[h('p',{class:'eyebrow',text:'ADMIN ONLY'}),h('h1',{id:'adminTitle',text:'Operations.'}),h('p',{text:'Pseudonymous counts. Tokens are actual only when a provider returned them.'})]),personaBar()]),h('div',{class:'filters'},[range,bucket,go,exp]),out);
  load();}
 function render(view){if(view==='admin')renderAdmin();else renderJourney();}

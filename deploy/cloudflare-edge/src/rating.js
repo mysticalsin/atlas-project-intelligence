@@ -437,7 +437,8 @@ export function storyRater(env, fetcher = fetch, opts = {}) {
   let breaker = initialBreaker();
   const available = () => !!env.TYPESAFE_API_KEY;
   const apply = event => {
-    const result = breakerTransition(breaker, event, { log: opts.log });
+    const result = breakerTransition(breaker, event);
+    if (result.rejection) (opts.log || (line => { try { console.warn(JSON.stringify(line)); } catch { /* logging never changes the decision */ } }))(result.rejection);
     if (result.ok) breaker = result.state;
     return result;
   };

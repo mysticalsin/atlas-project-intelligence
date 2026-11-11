@@ -14,7 +14,7 @@ import { RatingError, ratingInput, questionPlan, requestBody, compose, agentQual
 import { storedConsent } from './profile.js';
 import { sameTenant, TENANT_ID } from './authz.js';
 import { recordUsage } from './telemetry.js';
-import { publicationStatus, publicationTransition } from './publication.js';
+import { publicationEffect, publicationStatus, publicationTransition } from './publication.js';
 const DUPLICATE = 0.9; // cosine similarity above which two references are flagged as the same or a related project
 export const PRACTICES = { data_ai: 'Data & AI', web_app: 'Web & App Development', telecom: 'Telecom & Networks', sap_erp: 'SAP & ERP', cloud_infra: 'Cloud & Infrastructure', cybersecurity: 'Cybersecurity', transformation: 'Transformation & Strategy', engineering: 'Engineering & Industry' };
 
@@ -95,8 +95,19 @@ const auditDetail = q => `score ${q.score}, ${q.status}` + (q.engine === 'jev' ?
 
 // Status is the publication reducer. Callers that already built the next state use this.
 // A revision goes through publicationTransition({ type: 'revised' }) instead of writing the fields here.
+const publicationLog = line => { try { console.warn(JSON.stringify(line)); } catch { /* logging never changes the status */ } };
 export function deriveStatus(state) {
+  const effect = publicationEffect(state);
+  if (effect) publicationLog(effect);
   return publicationStatus(state);
+}
+function acceptPublication(result, event) {
+  if (result.rejection) publicationLog(result.rejection);
+  else {
+    const effect = publicationEffect(result.state, event);
+    if (effect) publicationLog(effect);
+  }
+  return result;
 }
 
 const SCHEMA = [
@@ -274,7 +285,7 @@ export class Library {
     // An empty tenant is left empty. Enforcement hides that row until an operator backfill
     // supplies the tenant from a verified source. This function does not invent one.
     const keptTenant = row ? String(row.tenant || row.state?.tenant || '') : storyTenant;
-    const revised = publicationTransition(row ? row.state : {}, { type: 'revised', id, tenant: keptTenant, managerStaffIgnored: !!data.validation.managerStaff });
+    const revised = acceptPublication(publicationTransition(row ? row.state : {}, { type: 'revised', id, tenant: keptTenant, managerStaffIgnored: !!data.validation.managerStaff }), { id, event: 'revised' });
     const state = revised.state, status = revised.status, next = new Date(Date.parse(at) + REVIEW_DAYS * 864e5).toISOString();
     if (row) this.sql.exec(`UPDATE refs SET title=?, status=?, revision=?, content_hash=?, practice=?, industry=?, country=?, manager_email=?, members=?, quality_score=NULL,
       updated_at=?, updated_by=?, next_review=?, data=?, state=?, embedding=NULL WHERE id=?`,
@@ -576,7 +587,7 @@ export class Library {
     // contributed stays in details.consultants and members.
     if (g.answers[1] && !k.answers[1].includes(g.answers[1])) k.answers[1] = (k.answers[1] + '\n\nContribution by another consultant: ' + g.answers[1]).trim().slice(0, 6000);
     for (const i of [0, 2, 3, 4, 5]) if (!k.answers[i] && g.answers[i]) k.answers[i] = g.answers[i];
-    const moved = publicationTransition(gone.state, { type: 'merged', id: gone.id });
+    const moved = acceptPublication(publicationTransition(gone.state, { type: 'merged', id: gone.id }), { id: gone.id, event: 'merged' });
     this.sql.exec('UPDATE refs SET merged_into = ?, status = ?, state = ? WHERE id = ?', keep.id, moved.status, JSON.stringify(moved.state), gone.id);
     const sharedWith = [...new Set([...(keep.state.sharedWith || []), gone.owner].filter(Boolean))];
     this.sql.exec('UPDATE refs SET state = ?, members = ? WHERE id = ?', JSON.stringify({ ...keep.state, sharedWith }), (keep.members || ',') + sharedWith.join(',') + ',', keep.id);

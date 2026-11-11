@@ -2,7 +2,7 @@
 // legacy load and round-trip. The 2560 status goldens stay in publication-golden.test.js.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PUBLICATION_EVENTS, PUBLICATION_PHASES, approvalUnknown, bothApproved, canPublish, changesRequested, initialPublication, isAdminBypass, isAdminTest, isWithdrawn, knownDecision, knownValidation, loadPublication, publicationStatus, publicationTransition, qualityMissing, qualityReady, validatedFlag } from '../src/publication.js';
+import { PUBLICATION_EVENTS, PUBLICATION_PHASES, approvalUnknown, bothApproved, canPublish, changesRequested, initialPublication, isAdminBypass, isAdminTest, isWithdrawn, knownDecision, knownValidation, loadPublication, publicationEffect, publicationStatus, publicationTransition, qualityMissing, qualityReady, validatedFlag } from '../src/publication.js';
 import { Library, deriveStatus } from '../src/library.js';
 import { memorySql } from './sqlite.js';
 
@@ -19,18 +19,22 @@ const phases = {
 
 test('every legal publication transition, and every other (phase, event) pair is rejected and logged', () => {
   const logged = [];
-  const log = line => logged.push(line);
+  const warns = [];
+  const original = console.warn;
+  console.warn = (...args) => warns.push(args);
   const extras = ['withdraw', 'publish'];
   let legal = 0, illegal = 0;
+  try {
   for (const phase of PUBLICATION_PHASES) {
     assert.equal(publicationStatus(phases[phase]), phase);
     for (const type of [...PUBLICATION_EVENTS, ...extras]) {
       const event = { type, id: 'story-1', tenant: 'tenant-1', managerStaffIgnored: false };
-      const result = publicationTransition(phases[phase], event, { log });
+      const result = publicationTransition(phases[phase], event);
       if (PUBLICATION_EVENTS.includes(type)) {
         legal++;
         assert.equal(result.ok, true, phase + ' ' + type);
         assert.equal(result.illegal, false);
+        assert.equal(result.rejection, undefined);
         if (type === 'revised') assert.equal(result.status, 'in_review');
         if (type === 'derive') assert.equal(result.status, phase);
         if (type === 'merged') {
@@ -43,12 +47,15 @@ test('every legal publication transition, and every other (phase, event) pair is
         assert.equal(result.ok, false, phase + ' ' + type);
         assert.equal(result.illegal, true);
         assert.equal(result.state, phases[phase]);
+        logged.push(result.rejection);
         assert.ok(Object.keys(logged.at(-1)).every(k => ['atlas_metric', 'id', 'phase', 'event'].includes(k)));
         assert.equal(logged.at(-1).id, 'story-1');
         assert.equal(logged.at(-1).event, type);
       }
     }
   }
+  } finally { console.warn = original; }
+  assert.equal(warns.length, 0, 'the transition does not log');
   assert.equal(legal, PUBLICATION_PHASES.length * PUBLICATION_EVENTS.length);
   assert.equal(illegal, PUBLICATION_PHASES.length * extras.length);
   assert.equal(logged.length, illegal);
@@ -75,9 +82,9 @@ test('guards: withdrawn, admin bypass, quality, changes, validated flag, both ap
   assert.equal(canPublish(ready), true);
   assert.equal(canPublish({ validation: { status: 'validated', managerDecision: 'pending', presalesDecision: 'pending' } }), false);
   assert.equal(canPublish({ validation: { status: 'validated', managerDecision: 'approved', presalesDecision: 'pending' } }), false);
-  const loggedDeny = [];
-  assert.equal(publicationStatus({ quality: { status: 'ready' }, validation: { status: 'validated', managerDecision: 'pending', presalesDecision: 'pending' } }, { log: line => loggedDeny.push(line) }), 'awaiting_validation');
-  assert.deepEqual(loggedDeny, []);
+  const held = { quality: { status: 'ready' }, validation: { status: 'validated', managerDecision: 'pending', presalesDecision: 'pending' } };
+  assert.equal(publicationStatus(held), 'awaiting_validation');
+  assert.equal(publicationEffect(held), null);
   assert.equal(publicationStatus({ quality: { status: 'ready' }, validation: { status: 'validated', managerDecision: 'approved', presalesDecision: 'approved' } }), 'published');
   assert.equal(knownValidation('pending'), true);
   assert.equal(knownValidation('legacy'), false);
@@ -85,13 +92,24 @@ test('guards: withdrawn, admin bypass, quality, changes, validated flag, both ap
   assert.equal(knownDecision(null), false);
   assert.equal(approvalUnknown({ validation: { status: 'validated', managerDecision: 'pending', presalesDecision: 'pending' } }), false);
   assert.equal(approvalUnknown({ validation: { status: 'legacy', managerDecision: 'approved', presalesDecision: 'approved' } }), true);
-  const logged = [];
-  const phase = publicationStatus({ id: 'story-9', quality: { status: 'ready' }, validation: { status: 'legacy', managerDecision: 'approved', presalesDecision: 'approved' } }, { log: line => logged.push(line), event: 'derive' });
+  const unknown = { id: 'story-9', quality: { status: 'ready' }, validation: { status: 'legacy', managerDecision: 'approved', presalesDecision: 'approved' } };
+  const warns = [];
+  const original = console.warn;
+  console.warn = (...args) => warns.push(args);
+  let phase;
+  try { phase = publicationStatus(unknown); }
+  finally { console.warn = original; }
   assert.equal(phase, 'awaiting_validation');
-  assert.equal(logged.length, 1);
-  assert.deepEqual(Object.keys(logged[0]).sort(), ['atlas_metric', 'event', 'id', 'phase']);
-  assert.equal(logged[0].id, 'story-9');
-  assert.equal(logged[0].event, 'derive');
+  assert.equal(warns.length, 0, 'publicationStatus does not log');
+  const effect = publicationEffect(unknown, { event: 'derive' });
+  assert.deepEqual(Object.keys(effect).sort(), ['atlas_metric', 'event', 'id', 'phase']);
+  assert.equal(effect.id, 'story-9');
+  assert.equal(effect.event, 'derive');
+  console.warn = (...args) => warns.push(args);
+  try { assert.equal(deriveStatus(unknown), 'awaiting_validation'); }
+  finally { console.warn = original; }
+  assert.equal(warns.length, 1);
+  assert.deepEqual(JSON.parse(warns[0][0]), effect);
 });
 
 test('revised reopens approvals from any phase and keeps fields the event does not own', () => {

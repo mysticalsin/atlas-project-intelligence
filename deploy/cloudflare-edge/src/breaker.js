@@ -11,7 +11,8 @@ export const BREAKER_EVENTS = Object.freeze(['begin', 'succeed', 'fail', 'auth_f
 // begin is illegal while a trial is already in flight (probing). Every other pair is legal; guards may still deny begin.
 // open:succeed and open:fail are legal on purpose. A request admitted while the breaker was closed can still
 // be in flight when a later failure opens it. That request has to settle. Dropping succeed or fail would leave
-// the count and the window wrong. A rejection log is phase and event only, never the key.
+// the count and the window wrong. A rejection marker is phase and event only, never the key.
+// storyRater logs that marker. transition does not.
 const LEGAL = new Set([
   'closed:begin', 'open:begin',
   'closed:succeed', 'open:succeed', 'probing:succeed',
@@ -19,8 +20,6 @@ const LEGAL = new Set([
   'closed:auth_fail', 'open:auth_fail', 'probing:auth_fail',
   'closed:ignore', 'open:ignore', 'probing:ignore',
 ]);
-
-const defaultLog = line => { try { console.warn(JSON.stringify(line)); } catch { /* logging never changes the decision */ } };
 
 export function initialBreaker() {
   return { version: BREAKER_VERSION, phase: 'closed', fails: 0, until: 0, authKey: null };
@@ -81,17 +80,19 @@ function done(state, extra = {}) {
 function deny(state, guard, reason) {
   return { ok: false, illegal: false, denied: true, guard, state, reason, trial: false };
 }
-function illegal(state, event, log) {
+function illegal(state, event) {
   // ids are not on this machine. phase and event only: never the key, a story, or an address.
-  log({ atlas_metric: 'breaker', illegal: true, phase: state?.phase || 'unknown', event });
-  return { ok: false, illegal: true, denied: false, state, reason: event === 'begin' ? 'circuit_open' : 'illegal', trial: false };
+  return {
+    ok: false, illegal: true, denied: false, state, reason: event === 'begin' ? 'circuit_open' : 'illegal', trial: false,
+    rejection: { atlas_metric: 'breaker', illegal: true, phase: state?.phase || 'unknown', event },
+  };
 }
 
 // Mirrors the previous note() and the trial admit. fail increments, and opens at 3 or immediately when event.trial.
 // A failure that does not open leaves `until` as it was, including a second failure note after the one that opened.
-export function transition(state, event, { log = defaultLog } = {}) {
+export function transition(state, event) {
   const type = event?.type;
-  if (!BREAKER_PHASES.includes(state?.phase) || !LEGAL.has(state.phase + ':' + type)) return illegal(state, type || 'unknown', log);
+  if (!BREAKER_PHASES.includes(state?.phase) || !LEGAL.has(state.phase + ':' + type)) return illegal(state, type || 'unknown');
   if (type === 'begin') {
     if (authKeyMatches(state, event.key)) return deny(state, 'authKeyMatches', 'auth');
     if (windowStillOpen(state, event.now)) return deny(state, 'windowStillOpen', 'circuit_open');
