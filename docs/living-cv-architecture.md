@@ -54,6 +54,8 @@ A fiche is the same published snippets, grouped by topic. Salary, compensation, 
 
 The CV and review views do not remove the application nav, autosave, backup, footer, or the synthetic-data badge. Those belong to the shell. Taking them off only on these two screens would still mean editing the shell, and taking them off everywhere would change every other screen. The spec's request to delete that chrome is recorded here and left undone.
 
+The brand subtitle, in the header and the footer, was a tagline, so it is gone from the shell rather than hidden on one view. The CV screen has no status line and no export hint: Export is disabled until approval, and Approve is the action when the viewer can approve. Gaps and flags render only when there is something to show, with no count. The need field keeps one placeholder, because that field has no other label. Skills, Education and Certifications stay as the document's own section names. Review topic headings stay.
+
 The global toast keeps its one fixed place on every view, including CV and review. The CV and review sections scroll inside a height that ends above that toast, so the card and the rail are not under it. The typeface stays the Atlas font. Inter is not bundled, and loading it would be a shell change.
 
 ## Consent, delete, tenant

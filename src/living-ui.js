@@ -12,7 +12,6 @@ async function post(path,body){
     return await api(path,{method:'POST',body});
   }
 }
-const STATUS={draft:'Draft',in_review:'In review',approved:'Approved',exported:'Exported',withdrawn:'Withdrawn'};
 const TOPIC_LABEL={context:'Context',contribution:'Contribution',approach:'Approach',outcome:'Outcome',evidence:'Evidence',customer_relevance:'Customer relevance'};
 function splitNeed(value){
   const text=String(value||'').trim();
@@ -59,20 +58,16 @@ function contextLine(line,artifact){
 }
 function actionBar(artifact,onChange){
   const bar=h('div',{class:'action-bar'});
-  bar.append(h('p',{class:'action-status',role:'status',text:STATUS[artifact.status]||artifact.status||''}));
-  const buttons=h('div',{class:'action-buttons'});
   if(artifact.canApprove&&artifact.status==='in_review'){
     const ok=h('button',{class:'btn living-go',type:'button',text:'Approve'});
     ok.addEventListener('click',async()=>{ok.disabled=true;try{onChange(await api('/living/artifacts/'+artifact.id+'/approve',{method:'POST',body:{}}));}catch(e){app().toast(e.message);ok.disabled=false;}});
-    buttons.append(ok);
+    bar.append(ok);
   }
   const ready=artifact.status==='approved'||artifact.status==='exported';
   const exp=h('button',{class:'btn living-go',type:'button',text:'Export'});
   exp.disabled=!ready;
   exp.addEventListener('click',async()=>{exp.disabled=true;try{const file=await api('/living/artifacts/'+artifact.id+'/export',{method:'POST',body:{format:'docx',adapter:'michat'}});saveFile(file);onChange({...artifact,status:file.status||'exported'});}catch(e){app().toast(e.message);exp.disabled=!(artifact.status==='approved'||artifact.status==='exported');}});
-  if(!ready)buttons.append(h('span',{class:'export-reason',text:'Approve to export'}));
-  buttons.append(exp);
-  bar.append(buttons);
+  bar.append(exp);
   return bar;
 }
 function skillChips(cf){
@@ -139,49 +134,32 @@ function cvDocument(artifact,onChange){
   return card;
 }
 function rail(artifact){
-  const aside=h('aside',{class:'cv-rail'});
   const gaps=artifact.gaps||[],flags=artifact.flags||[];
-  if(!gaps.length)aside.append(h('p',{class:'rail-none',text:'Gaps 0'}));
-  else{
-    const card=h('section',{class:'rail-card'});
-    card.append(h('h3',{text:'Gaps '+gaps.length}));
+  if(!gaps.length&&!flags.length)return null;
+  const aside=h('aside',{class:'cv-rail'});
+  if(gaps.length){
     const list=h('ul',{class:'gap-list'});
     for(const gap of gaps){
       const btn=h('button',{type:'button',class:'gap-chip',text:gap.keyword});
       btn.addEventListener('click',()=>highlight(gap.keyword));
       list.append(h('li',null,[btn]));
     }
-    card.append(list);
-    aside.append(card);
+    aside.append(h('section',{class:'rail-card'},[list]));
   }
-  if(flags.length){
-    const card=h('section',{class:'rail-card'});
-    card.append(h('h3',{text:'Flags '+flags.length}));
-    card.append(h('ul',{class:'flag-list'},flags.map(flag=>h('li',{text:flag.detail||flag.code}))));
-    aside.append(card);
-  }
+  if(flags.length)aside.append(h('section',{class:'rail-card'},[h('ul',{class:'flag-list'},flags.map(flag=>h('li',{text:flag.detail||flag.code})))]));
   return aside;
-}
-function summary(artifact){
-  const gaps=(artifact.gaps||[]).length,flags=(artifact.flags||[]).length;
-  const btn=h('button',{type:'button',class:'summary-row',text:gaps+' '+(gaps===1?'gap':'gaps')+' · '+flags+' '+(flags===1?'flag':'flags')});
-  const sheet=h('div',{class:'mobile-sheet',hidden:''});
-  const close=h('button',{type:'button',class:'btn',text:'Close'});
-  close.addEventListener('click',()=>{sheet.hidden=true;});
-  btn.addEventListener('click',()=>{sheet.hidden=false;});
-  sheet.append(rail(artifact),close);
-  return h('div',{class:'summary-wrap'},[btn,sheet]);
 }
 function skeleton(){return h('div',{class:'skeleton','aria-hidden':'true'},[h('span'),h('span'),h('span')]);}
 function stage(artifact,onChange){
-  return h('div',{class:'cv-stage'},[cvDocument(artifact,onChange),rail(artifact),summary(artifact)]);
+  const side=rail(artifact);
+  return h('div',{class:side?'cv-stage':'cv-stage solo'},side?[cvDocument(artifact,onChange),side]:[cvDocument(artifact,onChange)]);
 }
 let cache=null;
 async function load(){cache=await api('/living');return cache;}
 function paintCv(){
   const root=$('living');if(!root)return;
   const data=cache||{cv:null,queue:[]};
-  const field=h('textarea',{id:'livingNeed',rows:'2',placeholder:'Paste a need link or job description','aria-label':'Paste a need link or job description'});
+  const field=h('textarea',{id:'livingNeed',rows:'2',placeholder:'Need link or job description','aria-label':'Need link or job description'});
   const note=h('p',{id:'livingStatus',class:'living-note',role:'status'});
   const go=h('button',{class:'btn living-go',type:'button',text:data.cv?'Regenerate':'Generate CV'});
   go.disabled=true;
