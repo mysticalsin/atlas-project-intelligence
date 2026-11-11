@@ -2,7 +2,7 @@
 // touches the DOM. The view is not stored. loadAdminMetrics maps an unknown or legacy value to boot_loading,
 // which shows the loading line and does not export.
 export const ADMIN_METRICS_VERSION = 1;
-export const ADMIN_METRICS_STATES = Object.freeze(['boot_loading', 'denied', 'loading', 'ready', 'empty', 'error']);
+export const ADMIN_METRICS_STATES = Object.freeze(['boot_loading', 'boot_error', 'denied', 'loading', 'ready', 'empty', 'error']);
 export const ADMIN_METRICS_EVENTS = Object.freeze(['boot', 'refresh', 'loaded', 'load_failed', 'export', 'export_failed']);
 
 const SHELL = new Set(['loading', 'ready', 'empty', 'error']);
@@ -13,6 +13,11 @@ export function initialAdminMetrics() {
 
 export function isAdminRole(role) {
   return role === 'admin';
+}
+
+// A thrown bootInfo is not the same event as a resolved boot with no admin role.
+export function bootFailed(event) {
+  return event?.failed === true;
 }
 
 export function hasSeries(count) {
@@ -34,10 +39,12 @@ function ok(status, effects) {
 export function adminMetricsTransition(state, event, { log = defaultLog } = {}) {
   const type = event?.type;
   if (!ADMIN_METRICS_STATES.includes(state?.status) || !legal(state.status, type)) {
+    // status and event only. No role, address, or response body.
     log({ atlas_metric: 'admin_metrics', illegal: true, status: state?.status || 'unknown', event: type || 'unknown' });
     return { ok: false, illegal: true, state, effects: [] };
   }
   if (type === 'boot') {
+    if (bootFailed(event)) return ok('boot_error', ['show_boot_error']);
     if (!isAdminRole(event.role)) return ok('denied', ['show_denied']);
     return ok('loading', ['mount_shell', 'fetch_metrics']);
   }

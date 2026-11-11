@@ -2,7 +2,7 @@
 // and legacy load plus round-trip. No DOM.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ADMIN_METRICS_EVENTS, ADMIN_METRICS_STATES, adminMetricsTransition, hasSeries, initialAdminMetrics, isAdminRole, loadAdminMetrics } from '../src/admin-metrics-machine.js';
+import { ADMIN_METRICS_EVENTS, ADMIN_METRICS_STATES, adminMetricsTransition, bootFailed, hasSeries, initialAdminMetrics, isAdminRole, loadAdminMetrics } from '../src/admin-metrics-machine.js';
 
 const quiet = { log: () => {} };
 const at = status => ({ version: 1, status });
@@ -36,10 +36,10 @@ test('every legal admin transition, and every other pair is rejected and logged'
   assert.equal(legal + illegal, ADMIN_METRICS_STATES.length * ADMIN_METRICS_EVENTS.length);
   assert.equal(logged.length, illegal);
   assert.ok(illegal > 0);
-  assert.ok(logged.every(l => l.atlas_metric === 'admin_metrics' && l.illegal === true && l.event));
+  assert.ok(logged.every(l => l.atlas_metric === 'admin_metrics' && l.illegal === true && l.event && Object.keys(l).every(k => ['atlas_metric', 'illegal', 'status', 'event'].includes(k))));
 });
 
-test('guards: isAdminRole and hasSeries, allow and deny', () => {
+test('guards: isAdminRole, bootFailed and hasSeries, allow and deny', () => {
   assert.equal(isAdminRole('admin'), true);
   assert.equal(isAdminRole('reviewer'), false);
   assert.equal(isAdminRole(undefined), false);
@@ -49,8 +49,17 @@ test('guards: isAdminRole and hasSeries, allow and deny', () => {
   const deny = adminMetricsTransition(initialAdminMetrics(), { type: 'boot', role: 'consultant' }, quiet);
   assert.equal(deny.state.status, 'denied');
   assert.deepEqual(deny.effects, ['show_denied']);
-  const failedBoot = adminMetricsTransition(initialAdminMetrics(), { type: 'boot', role: undefined }, quiet);
-  assert.equal(failedBoot.state.status, 'denied', 'a failed bootInfo leaves no role, which is not an admin');
+  const noRole = adminMetricsTransition(initialAdminMetrics(), { type: 'boot', role: undefined }, quiet);
+  assert.equal(noRole.state.status, 'denied', 'a resolved boot with no role is not an admin');
+
+  assert.equal(bootFailed({ failed: true }), true);
+  assert.equal(bootFailed({ failed: false }), false);
+  assert.equal(bootFailed({}), false);
+  const outage = adminMetricsTransition(initialAdminMetrics(), { type: 'boot', failed: true, role: 'admin' }, quiet);
+  assert.equal(outage.state.status, 'boot_error');
+  assert.deepEqual(outage.effects, ['show_boot_error']);
+  const notOutage = adminMetricsTransition(initialAdminMetrics(), { type: 'boot', failed: false, role: 'admin' }, quiet);
+  assert.equal(notOutage.state.status, 'loading');
 
   assert.equal(hasSeries(3), true);
   assert.equal(hasSeries(0), false);
@@ -75,6 +84,20 @@ test('refresh, failure, and export stay on the shell and do not run from boot or
   }
   assert.equal(adminMetricsTransition(at('denied'), { type: 'export' }, quiet).illegal, true);
   assert.equal(adminMetricsTransition(at('boot_loading'), { type: 'refresh' }, quiet).illegal, true);
+});
+
+test('boot_error is legal only from a failed boot, and every shell event there is illegal', () => {
+  const logged = [];
+  const log = { log: line => logged.push(line) };
+  assert.equal(adminMetricsTransition(at('boot_loading'), { type: 'boot', failed: true }, quiet).state.status, 'boot_error');
+  for (const type of ADMIN_METRICS_EVENTS) {
+    const result = adminMetricsTransition(at('boot_error'), type === 'loaded' ? { type, count: 1 } : { type }, log);
+    assert.equal(result.illegal, true, type);
+    assert.equal(result.state.status, 'boot_error');
+    assert.deepEqual(result.effects, []);
+  }
+  assert.equal(logged.length, ADMIN_METRICS_EVENTS.length);
+  assert.ok(logged.every(l => Object.keys(l).every(k => ['atlas_metric', 'illegal', 'status', 'event'].includes(k))));
 });
 
 test('legacy and unknown views load as boot_loading; a known view round-trips', () => {

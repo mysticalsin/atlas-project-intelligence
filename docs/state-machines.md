@@ -22,7 +22,7 @@ Section 4 record. One row per candidate. Status in the summary table is the deci
 | 11 | Colleague confirm page | `deploy/cloudflare-edge/src/confirm-page.js:120` | Open a confirmation, submit, error | page fetches, request id | None newly reproduced. | H | LATER. Pending review. It records a human confirmation. |
 | 12 | Early speculation | `deploy/cloudflare-edge/src/speculation.js:24` and `MemoryLedger` at :46 | Off, admitted, cancelled, claimed by the final turn | `EARLY_STT`, `EARLY_DRAFT`, reservation ids, `scope` | Flags alone cannot turn it on (no global ledger in the Worker). | H | LATER. Pending review. It spends audio and draft tokens inside the interview. |
 | 13 | Story-rating circuit breaker | `deploy/cloudflare-edge/src/breaker.js` (writer: `rating.js` `storyRater`) | closed, open for 60 s, one trial, auth block until the key changes | was `fails`, `openUntil`, `authKey`; now one object written only by `transition` | **Fixed.** The old `rating.js` admit cleared `openUntil` before the trial returned, so a second `rate()` was sent. `test/rating.test.js` R16b. | M | FIXED |
-| 14 | Admin metrics view | `src/admin-metrics-machine.js` (writer: `src/journey-ui.js` `renderAdmin`) | boot loading, denied, metrics loading, ready, empty, error; export | was the DOM only; now `{version, status}` written only by `adminMetricsTransition` | None found. Export during loading and error stays legal. A failed `bootInfo()` is still shown as not-admin. | L | FIXED |
+| 14 | Admin metrics view | `src/admin-metrics-machine.js` (writer: `src/journey-ui.js` `renderAdmin`) | boot loading, boot error, denied, metrics loading, ready, empty, error; export | `{version, status}` written only by `adminMetricsTransition`. `bootFailed` is a separate guard from the role. | A thrown `bootInfo()` is still painted with the admin-only banner. A distinct outage sentence would replace that copy, so the page does not send `failed: true`. See the admin section. | L | FIXED in the reducer. Painting `boot_error` is LATER: the only sentence on that path today is the permissions banner, and a new sentence was not approved. |
 | 15 | `LEDGER_MODE` | `deploy/cloudflare-edge/src/meter.js:31` `ledgerMode` | none: the Worker boots in one mode | `env.LEDGER_MODE` (`off`, `observe`, `enforce`, anything else invalid) | None. Invalid values already refuse. Default remains off. | L | NOT A MACHINE. It is a boot-time config parse. The process does not move from off to observe. No ordering rule. |
 | 16 | Rating quality status | `deploy/cloudflare-edge/src/rating.js:366` and `noStoryQuality` at :410 | none | `ready` / `needs_work` / `insufficient` derived from the score | None. | L | NOT A MACHINE. Pure mapping from a score and blockers. Two or three labels, no transitions. |
 | 17 | Per-call provider retry | `deploy/cloudflare-edge/src/classify.js:95`, `customer-jev.js:129`, `teams.js:98` | one call, up to three tries | local `attempt` counter | None. | L | NOT A MACHINE. The counter dies with the call. Nothing is persisted and nothing else reads it. |
@@ -92,7 +92,8 @@ None. The auth-key guard reads the key the rater was constructed with. It is not
 | State | Data carried | Meaning |
 |---|---|---|
 | boot_loading | none | "Loading admin metrics…" |
-| denied | none | The signed-in role is not admin, including when boot itself failed. |
+| boot_error | none | `bootInfo()` threw. The effect is `show_boot_error`. The page does not paint it yet. |
+| denied | none | The boot call resolved and the role is not admin. |
 | loading | none | The shell is up and the metrics pane says "Loading…". Export is available. |
 | ready | none | Metrics are shown, and the series is not empty. The numbers stay in the effect, not in the state. |
 | empty | none | The same cards, plus "No events in this range." |
@@ -101,7 +102,7 @@ None. The auth-key guard reads the key the rater was constructed with. It is not
 ### Events
 | Event | Source |
 |---|---|
-| boot | `bootInfo()` resolved or threw |
+| boot | `bootInfo()` resolved, or threw (`failed: true`) |
 | refresh | the first load and the Update button |
 | loaded | a metrics response, with `count` = `series.length` |
 | load_failed | the metrics request threw, or the body had no series |
@@ -111,8 +112,9 @@ None. The auth-key guard reads the key the rater was constructed with. It is not
 ### Transitions
 | From | Event | Guard | To | Side effects |
 |---|---|---|---|---|
-| boot_loading | boot | `isAdminRole` | loading | mount the shell, fetch metrics |
-| boot_loading | boot | role is not admin | denied | the not-admin warning |
+| boot_loading | boot | `bootFailed` | boot_error | `show_boot_error` (not painted; the page does not send this event) |
+| boot_loading | boot | not `bootFailed`, and `isAdminRole` | loading | mount the shell, fetch metrics |
+| boot_loading | boot | not `bootFailed`, and the role is not admin | denied | the not-admin warning |
 | loading, ready, empty, error | refresh | none | loading | show "Loading…", fetch metrics |
 | loading, ready, empty, error | loaded | `hasSeries` | ready | paint the cards and the chart |
 | loading, ready, empty, error | loaded | count is 0 | empty | paint the cards and the empty sentence |
@@ -125,6 +127,7 @@ Anything not in this table is illegal and is rejected and logged. `renderAdmin` 
 ```mermaid
 stateDiagram-v2
   [*] --> boot_loading
+  boot_loading --> boot_error: boot [bootInfo threw]
   boot_loading --> loading: boot [admin]
   boot_loading --> denied: boot [not admin]
   loading --> ready: loaded [series]
@@ -137,3 +140,5 @@ stateDiagram-v2
 
 ### Platform / flag differences
 None for this view. `LEDGER_MODE` is a guard input on the paid-call wrapper, not a machine (row 15). Neither fixed machine forks by operating system.
+
+`renderAdmin` still does `catch { boot = {} }` and then boots with `role: boot.libraryRole`. A thrown `bootInfo()` therefore still takes the denied transition and the sentence "This dashboard is only for a verified admin. The API refuses everyone else." Sending `failed: true` and painting `show_boot_error` would replace that sentence. That copy is not approved, so the paint stays as it is. The reducer and the tests already have the state.
