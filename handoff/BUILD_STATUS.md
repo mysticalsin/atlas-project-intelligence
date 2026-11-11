@@ -936,3 +936,9 @@ Review answers:
 - **Unknown values (`5133aa5`).** A status outside the five known values, or a decision outside the four, derives `awaiting_validation` when quality is ready and `in_review` otherwise. It does not derive `published`. Withdrawn still wins. Before the change, 64 such inputs derived `published`. The new golden was run failing-first and reported `published`.
 - Rows other than 9 and 18 were not started.
 - **Both approvals.** `canPublish` is both lanes `approved`. `validated` with both decisions pending, or with only one approval, derives `awaiting_validation` when quality is ready. The test was run first and reported `published`. 32 of the 2560 golden rows move from `published` to `awaiting_validation` (16 field combinations, each with both `merged_into` values). Both lanes approved still publishes. Admin bypass is unchanged. Logs stay the story id, the phase and the event.
+
+### Session: 2026-11-11 / QA findings on the reviewed head (run74)
+- Continued `cursor/state-machines-atlas` from `a090e92`. No push of `main`, no PR, no deploy, no production wrangler or binding change, no cap or spend change, no live call.
+- **Pure transitions (`4a65ec5`).** The breaker, the admin view and the publication reducer return the previous state and a rejection marker. `storyRater`, `renderAdmin` and `deriveStatus` log the id, the phase and the event.
+- **Reviewed head (`e8786ba`).** `docs/state-machines.md` names `50c2dc05`.
+- **Pages.** The four HTML aliases are rebuilt from `build.py`. Two builds produced the same sha256. The old committed page was `012c65440bc9185b9fc5741e3aa1efddf1c4d6399dfe64d01e919038008c255f`. The old pin was `698ee1b911ebfb3fdfac212fc8019b59fa55f331dcb5c67dc6d2e7e71f6e3cc4`. The new pin is `f6ead6ee72d7fa99b1a859c62746d90e836b34bc2ecd8a2360bce7adcee5d670`. The page contains `adminMetricsTransition`. The publication reducer stays on the edge and is not in the page.

@@ -1,3 +1,20 @@
+# Second brain — run74
+
+## Completed this run
+- QA findings on `50c2dc05`, applied after run73 on `cursor/state-machines-atlas` from `a090e92`.
+- Transitions no longer log. The caller logs the rejection marker: id, phase and event.
+- The reviewed head in `docs/state-machines.md` is `50c2dc05`.
+- The four HTML aliases were rebuilt. Old page `012c65440bc9185b9fc5741e3aa1efddf1c4d6399dfe64d01e919038008c255f`. Old pin `698ee1b911ebfb3fdfac212fc8019b59fa55f331dcb5c67dc6d2e7e71f6e3cc4`. New pin `f6ead6ee72d7fa99b1a859c62746d90e836b34bc2ecd8a2360bce7adcee5d670`, reproduced by a second build.
+
+## Lessons
+- A browser suite can pass while the committed page is still the previous build. Rebuild the aliases in the same commit as the pin.
+- Logging is an effect. The reducer returns the previous state and a marker.
+
+## Follow-up
+- Painting admin `boot_error` is still LATER.
+- `LEDGER_MODE` remains off. The production daily limit is still unset.
+- This note is not a security or compliance claim.
+
 # Second brain — run73
 
 ## Completed this run
