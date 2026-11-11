@@ -1,6 +1,6 @@
 // Row 9 characterization. Every combination deriveStatus distinguishes, plus merged_into,
-// which it ignores. No reducer. Nothing here is logged: a rejection log would be ids,
-// phase and event only, and this file does not print story text.
+// which it ignores. The reducer must reproduce these strings. Nothing here is logged:
+// a rejection log would be an id, a phase and an event, and this file does not print story text.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Library, deriveStatus } from '../src/library.js';
