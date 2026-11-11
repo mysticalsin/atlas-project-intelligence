@@ -754,3 +754,9 @@ Review answers:
 - The carried ledger lows (`b00c303`) are not on this branch. They edit `meter.js` and `ledger-static.test.js`, which belong to the Plan A ledger and are not in this tree.
 - **Bug (`684266d`, then the machine).** `rating.js` admitted a half-open trial by clearing `openUntil` before the trial returned, so a second `rate()` was sent. `breaker.js` is the single writer. While the phase is `probing`, `blocked()` is `circuit_open`. Regression: `test/rating.test.js` R16b. Unit tests: `test/breaker.test.js`.
 - **Low.** Admin metrics view is `src/admin-metrics-machine.js`. `renderAdmin` is the only writer. Unknown or legacy loads become `boot_loading`. `build.py` inlines the machine into the page without `export` keywords.
+
+### Session: 2026-11-11 / State machines, review changes only (run72)
+- Continued from the run71 note on this branch, which starts at `main` `80bab333`. No push of `main`, no PR, no deploy, no live call, no spend. The Plan A ledger is not in this tree.
+- **Breaker.** A fail while `probing` re-opens when `state.phase === 'probing'`, not only when `event.trial` is set. `open:succeed` and `open:fail` stay legal. Rejection logs are phase and event only.
+- **Admin.** `boot_error` is a state. `bootFailed` is separate from a missing role. `renderAdmin` still paints the permissions banner when `bootInfo()` throws, because a distinct outage sentence would replace that copy. Painting it is LATER.
+- **Publication.** Golden tests only. No row 9 reducer. A revision resets `validation.status` to pending and derives `in_review`. Rows 18–21 added. Withdraw, reinstate and merge are folded into row 9.

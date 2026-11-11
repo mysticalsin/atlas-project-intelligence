@@ -1,3 +1,27 @@
+# Second brain — run72
+
+## Completed this run
+- Senior review of the run71 inventory was applied on `cursor/state-machines-atlas` from `50c2dc05`.
+- Breaker: a probing fail re-opens even without `event.trial` (`07a613b`).
+- Admin: `boot_error` is in the reducer and tested (`0663f26`). The page still shows the permissions banner. A new outage sentence was not approved.
+- Publication: golden tests for every `deriveStatus` combination (`6fc9aa1`). No reducer. A revision resets validation, so an unapproved revision derives `in_review`, not `published`.
+- Inventory rows 18–21: revision reopen (folded with row 9, LATER), invitation status (LATER), JEV consent (NOT A MACHINE), rating in flight (LATER).
+- Suites at `6fc9aa1`: pytest 307; root node 389 pass and 1 skip (390 tests); edge 623; spend-ledger 16; early-processing 28; browser 21 scripts, 822 PASS.
+
+## Lessons
+- A half-open phase is the trial. A flag on the event can be omitted by a caller, and the phase still has to re-open the breaker.
+- `open:succeed` and `open:fail` are legal because a request admitted while closed can settle after another request has opened the breaker.
+- Do not invent dashboard copy to distinguish an outage from a permissions refusal. Put the state in the reducer, leave the sentence, and mark the paint LATER.
+- A leftover `validated` flag publishes in `deriveStatus` (`library.js:109`). The revision writer at `library.js:288` replaces that object, so the stale flag is not what a revision stores. Pin both facts. Do not file an expected-fail for a shape the writer does not produce.
+- Rejection logs stay ids, phase and event. The breaker has no id. It must not log the key.
+
+## Follow-up
+- Painting admin `boot_error` is LATER until an outage sentence is approved. The permissions banner is still what a thrown `bootInfo()` shows.
+- Row 9 reducer is still unwritten. High rows 1–12 and 18 stay pending review. Invitation status (19) and in-flight rating (21) are medium and were not started.
+- `deriveStatus` ignores `merged_into`. `merge` writes the status column to `withdrawn` directly (`library.js:593`). A later `setState` would recompute from `withdrawn`, which merge does not set. `storeRating` and `access` refuse a merged row, so the column is not rewritten by those paths.
+- Run71 follow-ups still open: personality branch has no remote ref of its own; worker-coverage `52742f80` was not pushed; unpriced enforce calls; `LEDGER_MODE` remains off; the production daily limit is still unset.
+- This note is not a security or compliance claim. Nothing here was exercised against a live provider.
+
 # Second brain — run71
 
 ## Completed
