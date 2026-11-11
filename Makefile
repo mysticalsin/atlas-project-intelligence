@@ -34,6 +34,7 @@ test-ui: build
 	$(PYTHON) tests/jev_rating_browser.py
 	$(PYTHON) tests/privacy_delete_browser.py
 	$(PYTHON) tests/admin_metrics_browser.py
+	$(PYTHON) tests/csp_browser.py
 doctor:
 	$(PYTHON) scripts/doctor.py --profile preview
 verify-package:

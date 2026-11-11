@@ -1,5 +1,5 @@
 // F3.3 the /confirm page (WOW_SPEC §F3.3): the 60-second confirmation page for an N+1 or, when enabled, a client
-// contact. Served by app.js at GET /confirm after sign-in, under the standard CSP (inline script and style only,
+// contact. Served by app.js at GET /confirm after sign-in, under the shared CSP (this script's hash, inline style,
 // connect-src 'self'). Self-contained: no external asset, no <script src>, no web font, no animation.
 // All data is written with textContent (never innerHTML). The link carries only the request id in the #fragment;
 // authorisation is the sign-in (the inbox lists only requests addressed to the signed-in email).

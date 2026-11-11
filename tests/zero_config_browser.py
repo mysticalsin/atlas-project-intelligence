@@ -13,7 +13,8 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 H = (ROOT / 'ATLAS_Voice.html').read_text()
 HOME = json.loads(re.search(r'<script>window\.ATLAS_HOME=("[^"<]*");</script>', H).group(1))
-LIVE = H.replace('/* SERVER_RUNTIME */', "window.ATLAS_RUNTIME={subjectKey:'k-tony',authMode:'access',name:'tony.walteur@example.com'};", 1)
+LIVE = H.replace('<script type="application/json" id="atlas-runtime">null</script>',
+ '<script type="application/json" id="atlas-runtime">{"subjectKey":"k-tony","authMode":"access","name":"tony.walteur@example.com"}</script>', 1)
 SIGNED_IN = '<!doctype html><meta charset="utf-8"><title>Signed in</title><p>You’re signed in. This window closes by itself.</p><script>new BroadcastChannel("atlas-auth").postMessage("ok");close();</script>'
 FORBIDDEN = re.compile(r'gateway|localhost|GPU|\.env|NVIDIA|address', re.I)
 REP = {'headline': 'Claims triage rebuilt', 'summary': 'The consultant rebuilt claims triage for the client.', 'topics': {'context': 'Tickets bounced between teams.'},

@@ -12,6 +12,8 @@ import { email as validEmail, inList } from './util.js';
 import { flags } from './features.js';
 import { teamsRoutes } from './teams-routes.js';
 import { CONFIRM_HTML } from './confirm-page.js';
+import { SIGNED_IN_HTML } from './signed-in-page.js';
+import { PAGE_SCRIPT_SRC } from './page-script-hashes.js';
 import { nameClaims, pushConfig } from './profile.js';
 import { elevatedRole, privilegeReadiness, productionDemoConflict, TENANT_ID, tenantEnforced, tenantOf, tokenRoles } from './authz.js';
 import { acceptedSubjectDelete } from './library-routes.js';
@@ -72,11 +74,7 @@ export function signinClaims(request) {
   catch { return {}; }
 }
 
-// The re-sign-in landing page (§3.7): opened in a popup, it tells the waiting tab and closes. No data, no token.
-export const SIGNED_IN_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ATLAS</title>
-<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#15151c;color:#e8e8f0;font:15px/1.5 Arial,sans-serif;padding:16px;box-sizing:border-box}</style></head>
-<body><p>You're signed in. This window closes by itself.</p>
-<script>try{new BroadcastChannel('atlas-auth').postMessage('ok')}catch(e){}setTimeout(function(){window.close()},400)</script></body></html>`;
+export { SIGNED_IN_HTML };
 
 function timingSafe(a, b) { let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i); return d === 0; }
 function csrfOk(header, csrf) {
@@ -94,7 +92,7 @@ function headers(env, extra = {}) {
   const ws = env.ORIGIN.replace('https://', 'wss://');
   return { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
     'Permissions-Policy': 'microphone=(self), camera=(), geolocation=()',
-    'Content-Security-Policy': `default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; connect-src 'self' ${ws}; img-src data: blob:; font-src 'self'; worker-src blob:; media-src blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'${String(env.ORIGIN || '').startsWith('https:') ? '; upgrade-insecure-requests' : ''}`,
+    'Content-Security-Policy': `default-src 'none'; script-src ${PAGE_SCRIPT_SRC} blob:; style-src 'unsafe-inline'; connect-src 'self' ${ws}; img-src data: blob:; font-src 'self'; worker-src blob:; media-src blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'${String(env.ORIGIN || '').startsWith('https:') ? '; upgrade-insecure-requests' : ''}`,
     ...extra };
 }
 const json = (env, body, status = 200) => new Response(JSON.stringify(body), { status, headers: headers(env, { 'Content-Type': 'application/json' }) });
@@ -243,7 +241,12 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
     if (url.pathname === '/confirm' && request.method === 'GET') return new Response(CONFIRM_HTML, { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
     if (url.pathname === '/' && request.method === 'GET') {
       const runtime = JSON.stringify({ subjectKey, authMode: 'access', name: who.email }).replace(/</g, '\\u003c');
-      let body = page.replace('/* SERVER_RUNTIME */', 'window.ATLAS_RUNTIME=' + runtime + ';')
+      const island = '<script type="application/json" id="atlas-runtime">null</script>';
+      // The built page keeps its executable scripts byte-stable (their CSP hashes). The runtime value lives in the
+      // JSON island. A fixture that still has only the old comment is rewritten in place.
+      let body = (page.includes(island)
+        ? page.replace(island, '<script type="application/json" id="atlas-runtime">' + runtime + '</script>')
+        : page.replace('/* SERVER_RUNTIME */', 'window.ATLAS_RUNTIME=' + runtime + ';'))
         .replace("connect-src 'self';", "connect-src 'self' " + env.ORIGIN.replace('https://', 'wss://') + ';');
       const end = body.lastIndexOf('</body>'); // the page embeds an earlier '</body>' inside a script string
       // The test banner stays until Tony sets DATA_MODE=production on an approved deployment (WOW_ZERO_CONFIG §0.7, §11).

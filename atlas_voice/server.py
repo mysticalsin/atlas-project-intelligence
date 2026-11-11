@@ -3,6 +3,7 @@ import asyncio
 import contextlib
 import html
 import json
+import re
 import secrets
 import shutil
 import time
@@ -29,9 +30,15 @@ class SessionCancelled(Exception):
 def csp(config):
     u = urlsplit(config.origin)
     ws_origin = ('wss' if u.scheme == 'https' else 'ws') + '://' + u.netloc
-    return ("default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; "
+    page = (ROOT / 'ATLAS_Voice.html').read_text(encoding='utf-8')
+    meta = re.search(r'<meta content="([^"]+)" http-equiv="Content-Security-Policy"', page)
+    policy = meta.group(1) if meta else "default-src 'none'"
+    script = re.search(r"(?:^|; )script-src ([^;]+)", policy)
+    script_src = script.group(1) if script else "'none'"
+    return ("default-src 'none'; script-src " + script_src + "; style-src 'unsafe-inline'; "
             f"connect-src 'self' {ws_origin}; img-src data: blob:; font-src 'self'; "
-            "worker-src blob:; media-src blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+            "worker-src blob:; media-src blob:; object-src 'none'; "
+            "base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 
 
 def same_origin(request, config):
@@ -101,7 +108,11 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
         text = (ROOT / 'ATLAS_Voice.html').read_text()
         runtime = json.dumps({'subjectKey': subject.subject_key, 'authMode': config.auth_mode,
                               'name': subject.name}).replace('<', '\\u003c')
-        text = text.replace('/* SERVER_RUNTIME */', 'window.ATLAS_RUNTIME=' + runtime + ';')
+        island = '<script type="application/json" id="atlas-runtime">null</script>'
+        if island in text:
+            text = text.replace(island, '<script type="application/json" id="atlas-runtime">' + runtime + '</script>', 1)
+        else:
+            text = text.replace('/* SERVER_RUNTIME */', 'window.ATLAS_RUNTIME=' + runtime + ';', 1)
         # Header is authoritative; replace the file's restricted connect-src too.
         text = text.replace("connect-src 'self';", "connect-src 'self' " +
                             config.origin.replace('https://', 'wss://').replace('http://', 'ws://') + ';')

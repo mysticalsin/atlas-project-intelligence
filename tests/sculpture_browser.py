@@ -2,6 +2,7 @@
 from pathlib import Path
 import json,hashlib,os,shutil
 from playwright.sync_api import sync_playwright
+from csp_page import rehash_csp
 ROOT=Path(__file__).resolve().parents[1]
 HTML=(ROOT/'ATLAS_Voice_Studio.html').read_text()
 checks=[];errors=[];requests=[]
@@ -53,7 +54,7 @@ with sync_playwright() as pw:
   box=p.locator('#voiceOpenHome').bounding_box();check('Main call to action fits a 1366 × 768 screen',box['y']+box['height']<=768)  # offline copy: "Open ATLAS" (WOW_ZERO_CONFIG §3.3)
   p.locator('#studioAppearance').click();p.locator('[data-palette=blue]').click();check('Optional blue appearance works',p.evaluate('AtlasOrbUI.inspect().palette==="blue"'))
   reduced=load(reduced=True);f=reduced.evaluate('AtlasOrbUI.inspect().frames');reduced.wait_for_timeout(300);check('Reduced motion does not animate continuously',reduced.evaluate('AtlasOrbUI.inspect().frames')==f)
-  fail=load(HTML.replace('/* SERVER_RUNTIME */',"HTMLCanvasElement.prototype.getContext=function(){return null};"));check('Missing Canvas retains visible inline SVG',fail.locator('.orb-inline-fallback').is_visible())
+  fail=load(rehash_csp(HTML.replace('/* SERVER_RUNTIME */',"HTMLCanvasElement.prototype.getContext=function(){return null};")));check('Missing Canvas retains visible inline SVG',fail.locator('.orb-inline-fallback').is_visible())
   check('Canvas failure leaves connection controls available',fail.locator('#voiceOpenHome').is_visible())  # offline copy: "Open ATLAS" (WOW_ZERO_CONFIG §3.3)
   check('No JavaScript exceptions across checks',not errors)
  finally:

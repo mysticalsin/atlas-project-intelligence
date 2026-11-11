@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { handle, verifyAccess, workersAI } from '../src/app.js';
+import { CONFIRM_HTML } from '../src/confirm-page.js';
+import { PAGE_SCRIPT_SRC } from '../src/page-script-hashes.js';
 
 const TEAM = 'team.cloudflareaccess.com', AUD = 'aud-123', ORIGIN = 'https://atlas.example.workers.dev';
 const b64u = b => Buffer.from(b).toString('base64url');
@@ -15,6 +19,41 @@ async function jwt(claims = {}, header = { alg: 'RS256', kid: 'k1' }) {
 const ENV = { ORIGIN, ACCESS_AUD: AUD, ACCESS_TEAM_DOMAIN: TEAM, CSRF_SECRET: 'test-secret', TALKER_MODEL: 'talker', TTS_VOICE: 'harmonia',
   ATLAS_ADMIN_ROLES: 'ATLAS.Admin', ATLAS_PRESALES_ROLES: 'ATLAS.Presales,ATLAS.Publish', ATLAS_REVIEWER_ROLES: 'ATLAS.Reviewer,ATLAS.Review' };
 const req = async (path, { token, headers = {}, host = ORIGIN } = {}) => new Request(host + path, { headers: { ...(token === undefined ? { 'cf-access-jwt-assertion': await jwt() } : token ? { 'cf-access-jwt-assertion': token } : {}), ...headers } });
+
+function executableScripts(html) {
+  const out = [];
+  const re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+  const typeRe = /\btype\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i;
+  let m;
+  while ((m = re.exec(html))) {
+    const found = typeRe.exec(m[1] || '');
+    const kind = ((found ? (found[1] || found[2] || found[3] || '') : '')).toLowerCase();
+    if (kind && kind !== 'text/javascript' && kind !== 'application/javascript' && kind !== 'module') continue;
+    out.push(m[2]);
+  }
+  return out;
+}
+const scriptToken = body => "'sha256-" + createHash('sha256').update(Buffer.from(body, 'utf8')).digest('base64') + "'";
+
+test('built page scripts and the other edge documents match the CSP hashes', () => {
+  const html = readFileSync(new URL('../../../ATLAS_Voice.html', import.meta.url), 'utf8');
+  const meta = /<meta content="([^"]+)" http-equiv="Content-Security-Policy"/.exec(html)[1];
+  const metaScript = /(?:^|; )script-src ([^;]+)/.exec(meta)[1];
+  assert.equal(metaScript.includes("'unsafe-inline'"), false);
+  assert.equal(metaScript.includes('blob:'), true);
+  assert.equal(meta.includes('worklet-src'), false);
+  assert.equal(PAGE_SCRIPT_SRC.includes("'unsafe-inline'"), false);
+  assert.equal(PAGE_SCRIPT_SRC.includes('blob:'), false);
+  const page = executableScripts(html);
+  assert.ok(page.length > 1);
+  for (const body of page) {
+    const token = scriptToken(body);
+    assert.equal(metaScript.includes(token), true, token);
+    assert.equal(PAGE_SCRIPT_SRC.includes(token), true, token);
+  }
+  for (const body of [...executableScripts(CONFIRM_HTML), ...executableScripts(SIGNED_IN_HTML)])
+    assert.equal(PAGE_SCRIPT_SRC.includes(scriptToken(body)), true, scriptToken(body));
+});
 
 test('Access JWT verification accepts only valid, correctly scoped tokens', async () => {
   const ok = await verifyAccess(await req('/'), ENV);
@@ -34,7 +73,13 @@ test('routes fail closed and serve the real page with runtime + CSP', async () =
   const r = await handle(await req('/'), ENV, page), html = await r.text();
   assert.equal(r.status, 200); assert.ok(html.includes('window.ATLAS_RUNTIME={"subjectKey"') && html.includes('"authMode":"access"'));
   assert.ok(html.includes("connect-src 'self' wss://atlas.example.workers.dev;") && html.includes('SYNTHETIC DATA ONLY'));
-  assert.ok(r.headers.get('content-security-policy').includes("frame-ancestors 'none'") && r.headers.get('cache-control') === 'no-store');
+  const csp = r.headers.get('content-security-policy');
+  const scriptSrc = /(?:^|; )script-src ([^;]+)/.exec(csp)[1];
+  assert.equal(scriptSrc.includes("'unsafe-inline'"), false);
+  assert.equal(scriptSrc.includes('blob:'), true);
+  assert.match(scriptSrc, /'sha256-[A-Za-z0-9+/=]+'/);
+  assert.equal(csp.includes('worklet-src'), false);
+  assert.ok(csp.includes("frame-ancestors 'none'") && r.headers.get('cache-control') === 'no-store');
   const boot = await (await handle(await req('/api/bootstrap'), ENV, page)).json();
   assert.equal(boot.provider, 'workers'); assert.equal(boot.csrf.length, 64); assert.equal(boot.identity.mode, 'access');
   assert.equal((await handle(await req('/api/wiki'), ENV, page)).status, 404);
