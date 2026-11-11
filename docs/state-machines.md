@@ -1,5 +1,5 @@
 # State machines in ATLAS
-Last reviewed: 2026-11-11 on `cursor/state-machines-atlas` (run72, from 50c2dc05). High rows are pending review. Row 9 has golden tests and no reducer.
+Last reviewed: 2026-11-11 on `cursor/state-machines-atlas` (run73, from 2e012d6a). Rows other than publication stay as they were.
 
 Standard: portfolio implicit-state-machine standard v1 (2026-11-11), sha256 `c62dff48dc032e70df170c3161709ae7bfb79f1e25db473b730a300cedb82f0c`. High-risk rows are pending senior review. No high-risk fix is started in this branch.
 
@@ -17,7 +17,7 @@ Section 4 record. One row per candidate. Status in the summary table is the deci
 | 6 | Browser voice phase | `src/voice-client.js:7` (`status()` at :37, `begin` at :67, `cancel` at :100, `fail` at :101) | idle, preparing, connecting, live, ending, error | `phase`, `generation`, `restarting`, `permissionPending`, `consentStarting`, `muted` | None newly reproduced. Illegal combinations (live without a socket) are possible if a handler returns early. | H | LATER. Pending review. |
 | 7 | Live-test spend ledger | `deploy/cloudflare-edge/src/spend-ledger.js:38` `LedgerState` | Admit session, admit turn, reserve, claim, settle, latch stop | `stopped`, `sessions`, `open`, `reserved`, `claimed` | None newly reproduced. The caps ($1.50, 800k input tokens) are owner-approved and tested. | H | LATER. Pending review. This is the money authority for the live test. |
 | 8 | Production day budget | `deploy/cloudflare-edge/src/meter.js:70` `BudgetState` | Reserve, record, settle, roll the UTC day | `day`, `open`, `reserved`, `limitUsd` | The limit is the unset placeholder, so enforce refuses. Not a logic bug. | H | LATER. Pending review. Not bound in production. |
-| 9 | Story publication | `deploy/cloudflare-edge/src/library.js:95` `deriveStatus`. Writers: `setState` :375, `withdraw` :808, `reinstate` :816, `merge` :575. | in review, needs work, awaiting validation, changes requested, published, withdrawn, admin test | `validation.status`, `managerDecision`, `presalesDecision`, `withdrawn`, `quality.status`, `test`. `merged_into` is a column. `merge` sets the status column to `withdrawn` and does not call `deriveStatus`. | Withdraw, reinstate and merge share this status. Golden tests only: `test/publication-golden.test.js`. A revision resets `validation.status` (row 18). `deriveStatus` ignores `merged_into`. A leftover `validated` with the two decisions still pending derives `published`; `upsert` does not store that shape. | H | LATER. Pending review. No reducer in this run. |
+| 9 | Story publication | `deploy/cloudflare-edge/src/publication.js` (writer for a revision: `upsert`; `deriveStatus` is `publicationStatus`) | in review, needs work, awaiting validation, changes requested, published, withdrawn, admin test | `validation.status`, `managerDecision`, `presalesDecision`, `withdrawn`, `quality.status`, `test`. `merged_into` is still a column. | The 2560 goldens match the previous derive, including `validated` with both decisions pending and quality ready. Merge still writes the status column itself. | H | Reducer landed for derive and `revised`. Merge is the next commit. `validated` still publishes without both approvals. |
 | 10 | Privacy delete receipt | `src/journey-ui.js:11` and `confirmDelete` at :81; server attempts at `deploy/cloudflare-edge/src/operate.js:111` | disclosure, confirm, in flight, receipt, earlier receipt, failure, identity change | `pendingDelete`, `deleteReceipt`, `receiptIsLatest`, `deleteFailure`, `deleteOwner` | Fixed across the delete-receipt commits (latest failure, earlier receipt, one request). `complete` stays false. No new bug filed. | H | LATER. Pending review. Erasure and the receipt wording. |
 | 11 | Colleague confirm page | `deploy/cloudflare-edge/src/confirm-page.js:120` | Open a confirmation, submit, error | page fetches, request id | None newly reproduced. | H | LATER. Pending review. It records a human confirmation. |
 | 12 | Early speculation | `deploy/cloudflare-edge/src/speculation.js:24` and `MemoryLedger` at :46 | Off, admitted, cancelled, claimed by the final turn | `EARLY_STT`, `EARLY_DRAFT`, reservation ids, `scope` | Flags alone cannot turn it on (no global ledger in the Worker). | H | LATER. Pending review. It spends audio and draft tokens inside the interview. |
@@ -26,13 +26,53 @@ Section 4 record. One row per candidate. Status in the summary table is the deci
 | 15 | `LEDGER_MODE` | `deploy/cloudflare-edge/src/meter.js:31` `ledgerMode` | none: the Worker boots in one mode | `env.LEDGER_MODE` (`off`, `observe`, `enforce`, anything else invalid) | None. Invalid values already refuse. Default remains off. | L | NOT A MACHINE. It is a boot-time config parse. The process does not move from off to observe. No ordering rule. |
 | 16 | Rating quality status | `deploy/cloudflare-edge/src/rating.js:366` and `noStoryQuality` at :410 | none | `ready` / `needs_work` / `insufficient` derived from the score | None. | L | NOT A MACHINE. Pure mapping from a score and blockers. Two or three labels, no transitions. |
 | 17 | Per-call provider retry | `deploy/cloudflare-edge/src/classify.js:95`, `customer-jev.js:129`, `teams.js:98` | one call, up to three tries | local `attempt` counter | None. | L | NOT A MACHINE. The counter dies with the call. Nothing is persisted and nothing else reads it. |
-| 18 | Story revision reopens approvals | `deploy/cloudflare-edge/src/library.js:288` (audit text at :298) | a content change clears quality, withdrawn and test, and replaces both approval lanes with pending before `deriveStatus` | `quality`, `withdrawn`, `test`, `validation.status`, `managerDecision`, `presalesDecision` | None. The golden revision test shows the reset. | H | LATER. This is the revise step of row 9. It uses the same status. The reducer stays unwritten with row 9. |
+| 18 | Story revision reopens approvals | `publicationTransition` event `revised`, called from `library.js` `upsert` | a content change clears quality, withdrawn and test, and replaces both approval lanes with pending | `quality`, `withdrawn`, `test`, `validation.status`, `managerDecision`, `presalesDecision` | None. The golden revision test still expects `in_review`. | H | Folded into row 9. The `revised` event is the only writer of that reset. |
 | 19 | Interview invitation status | `deploy/cloudflare-edge/src/library.js:669` (updates :727, :728, :729); Teams card at `outreach.js:549` and :555 | open, scheduled, dismissed, done | `invitations.status`, `slot` | None newly reproduced. The column is assigned from the library and from the Teams card. | M | LATER. Persisted status, more than one writer, and a closed invitation is not scheduled again. Not started in this run. |
 | 20 | JEV rating consent | `deploy/cloudflare-edge/src/profile.js:473` `storedConsent`; grant and revoke at :530 | absent, or `{version:1}` for `jevRating`, one row per subject and tenant | `consents.jevRating` | None. Any version other than 1 counts as absent. | L | NOT A MACHINE. Two stored values, written in one route. No intermediate state and no retry. The tenant is the row key, not a state. |
 | 21 | Rating in flight per revision | `deploy/cloudflare-edge/src/library.js:160` (`review` at :392) | no entry, or one `{gen, engine}` for `id:revision`. The same engine joins. A different engine starts a new generation. | `this.inflight` | None newly reproduced. The map is the re-entrancy guard. | M | LATER. One rating at a time is an ordering rule. It is not the publication status. Not started in this run. |
 
-## Story publication, golden only
-No reducer. `deploy/cloudflare-edge/test/publication-golden.test.js` calls `deriveStatus` for every combination of the fields it reads, and checks that `merged_into` does not change the result.
+## Story publication
+- Purpose: decide the status column from the story's quality, validation and withdrawal, and reopen both approval lanes when the story is revised.
+- Code: `deploy/cloudflare-edge/src/publication.js`, tests: `deploy/cloudflare-edge/test/publication.test.js` and `test/publication-golden.test.js`.
+- Persisted: the story row. `loadPublication` round-trips a stored object and maps a missing value to a fresh in-review record. It does not rewrite the row. `revised` does not add a version field to the stored state.
+
+### States
+| State | Data carried | Meaning |
+|---|---|---|
+| in_review | quality missing, or not yet reviewed | The revision has no usable rating. |
+| needs_work | quality status other than ready | The rating is not ready to publish. |
+| changes_requested | a changes request on the status or either lane | Someone sent it back. |
+| awaiting_validation | quality ready, approvals not complete | Waiting for the lanes. |
+| published | quality ready, and `validated` or both lanes approved | Includes a leftover `validated` flag with both decisions pending. |
+| admin_test | admin bypass and `test` | An admin test, not a customer claim. |
+| withdrawn | `withdrawn` | Hidden. This wins over the other fields. |
+
+### Events
+| Event | Source |
+|---|---|
+| revised | `upsert` when the content hash changes, or on create |
+| derive | a caller that already built the next state (`setState`, and the golden table) |
+
+### Transitions
+| From | Event | Guard | To | Side effects |
+|---|---|---|---|---|
+| any | revised | none | in_review, pending lanes, quality null, withdrawn and test cleared | `upsert` stores the state and the status |
+| any | derive | none | the status of the current fields | none inside the reducer |
+
+Anything not in this table is illegal and is rejected and logged. The log line is the story id, the phase and the event.
+
+```mermaid
+stateDiagram-v2
+  [*] --> in_review
+  in_review --> in_review: revised
+  published --> in_review: revised
+  withdrawn --> in_review: revised
+```
+
+### Platform / flag differences
+None. `validated` publishes without both approvals. That rule is unchanged.
+
+`deploy/cloudflare-edge/test/publication-golden.test.js` calls `deriveStatus` for every combination of the fields it reads, and checks that `merged_into` does not change the result.
 
 Withdrawn wins. Then `admin_bypass` (test, missing quality, quality not ready, or published). Then missing quality is `in_review`, and quality that is not `ready` is `needs_work`. A `changes_requested` on the status or on either decision is `changes_requested`. `validated`, or both decisions `approved`, is `published`. Everything else that is ready is `awaiting_validation`.
 

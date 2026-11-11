@@ -14,6 +14,7 @@ import { RatingError, ratingInput, questionPlan, requestBody, compose, agentQual
 import { storedConsent } from './profile.js';
 import { sameTenant, TENANT_ID } from './authz.js';
 import { recordUsage } from './telemetry.js';
+import { publicationStatus, publicationTransition } from './publication.js';
 const DUPLICATE = 0.9; // cosine similarity above which two references are flagged as the same or a related project
 export const PRACTICES = { data_ai: 'Data & AI', web_app: 'Web & App Development', telecom: 'Telecom & Networks', sap_erp: 'SAP & ERP', cloud_infra: 'Cloud & Infrastructure', cybersecurity: 'Cybersecurity', transformation: 'Transformation & Strategy', engineering: 'Engineering & Industry' };
 
@@ -92,22 +93,10 @@ const waitAtMost = (p, ms) => new Promise(resolve => { const t = setTimeout(reso
 // Without a key (fallback no_key) the audit text is today's, including when the review agent did not answer.
 const auditDetail = q => `score ${q.score}, ${q.status}` + (q.engine === 'jev' ? ' · JEV' : q.escalatedFrom ? ' · review agent (second opinion)' : q.engine === 'rules' && q.fallbackReason !== 'no_key' ? ' · rules only' : '');
 
+// Status is the publication reducer. Callers that already built the next state use this.
+// A revision goes through publicationTransition({ type: 'revised' }) instead of writing the fields here.
 export function deriveStatus(state) {
-  if (state.withdrawn) return 'withdrawn';
-  const v = state.validation || {};
-  // A verified admin bypass is explicit and audited. The manager-staff checkbox never arrives here as not_required.
-  if (v.status === 'admin_bypass') {
-    if (state.test) return 'admin_test';
-    if (!state.quality) return 'in_review';
-    if (state.quality.status !== 'ready') return 'needs_work';
-    return 'published';
-  }
-  if (!state.quality) return 'in_review';
-  if (state.quality.status !== 'ready') return 'needs_work';
-  if (v.status === 'changes_requested' || v.managerDecision === 'changes_requested' || v.presalesDecision === 'changes_requested') return 'changes_requested';
-  const both = v.managerDecision === 'approved' && v.presalesDecision === 'approved';
-  if (v.status === 'validated' || both) return 'published';
-  return 'awaiting_validation';
+  return publicationStatus(state);
 }
 
 const SCHEMA = [
@@ -285,9 +274,8 @@ export class Library {
     // An empty tenant is left empty. Enforcement hides that row until an operator backfill
     // supplies the tenant from a verified source. This function does not invent one.
     const keptTenant = row ? String(row.tenant || row.state?.tenant || '') : storyTenant;
-    const state = { ...(row ? row.state : {}), quality: null, withdrawn: false, test: false, tenant: keptTenant,
-      validation: { status: 'pending', managerDecision: 'pending', presalesDecision: 'pending', by: '', at: '', note: '', managerStaffIgnored: !!data.validation.managerStaff } };
-    const status = deriveStatus(state), next = new Date(Date.parse(at) + REVIEW_DAYS * 864e5).toISOString();
+    const revised = publicationTransition(row ? row.state : {}, { type: 'revised', id, tenant: keptTenant, managerStaffIgnored: !!data.validation.managerStaff });
+    const state = revised.state, status = revised.status, next = new Date(Date.parse(at) + REVIEW_DAYS * 864e5).toISOString();
     if (row) this.sql.exec(`UPDATE refs SET title=?, status=?, revision=?, content_hash=?, practice=?, industry=?, country=?, manager_email=?, members=?, quality_score=NULL,
       updated_at=?, updated_by=?, next_review=?, data=?, state=?, embedding=NULL WHERE id=?`,
       data.title, status, revision, hash, data.jev?.primary?.key || '', data.sector, data.details.country, data.validation.manager.email, members, at, user.email, next, JSON.stringify(data), JSON.stringify(state), id);
