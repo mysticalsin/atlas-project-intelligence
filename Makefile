@@ -33,6 +33,7 @@ test-ui: build
 	$(PYTHON) tests/zero_config_edge_browser.py
 	$(PYTHON) tests/jev_rating_browser.py
 	$(PYTHON) tests/privacy_delete_browser.py
+	$(PYTHON) tests/admin_metrics_browser.py
 doctor:
 	$(PYTHON) scripts/doctor.py --profile preview
 verify-package:
