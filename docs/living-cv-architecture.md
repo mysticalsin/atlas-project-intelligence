@@ -40,7 +40,7 @@ Ledger detail ids are not copied onto the library revision. The sentence the con
 
 ## MiChat
 
-`toCompetencyFile` maps cited CV lines onto the competency-file fields. Years of experience and the summary stay empty, because neither is a field Atlas holds. Languages are not copied from the need. The adapter's `read` and `write` return `API_UNCONFIRMED`. `exportDocument` builds a local `.docx` and does not call MiChat.
+`toCompetencyFile` maps a CV onto the competency-file fields one for one: identity, summary, technical, soft, and functional skills, languages with spoken and written levels, education, certifications, and projects (company, role, dates, context, responsibilities, technologies, achievements). Years of experience and the summary stay null. A sentence that says "8 years" stays on the project. A language, a degree, or a certification is copied only when that sentence states it, and it is not copied from the need. Soft and functional skills stay empty unless the sentence itself uses those words. Every non-empty value keeps the snippet id. `exportDocument` writes that file as a local `.docx` and does not call MiChat. A connector only has to send the object.
 
 MiChat has an "Adapt CF to Project" action. Atlas already tailors from the Candidate Requirement before export. A future connector must not call that MiChat action, or the same CV would be adapted twice. The envelope records `operation: 'adapt'` and `michatAdapt: false` to keep that distinction.
 

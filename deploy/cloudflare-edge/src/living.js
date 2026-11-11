@@ -7,7 +7,7 @@ import { storedConsent } from './profile.js';
 import { recordUsage } from './telemetry.js';
 import {
   SmartNeedLinkAdapter, PastedJobDescriptionAdapter, composeCv, buildFiche, transition, hasTerm,
-  MiChatAdapter, atlasExport, bytesToBase64,
+  MiChatAdapter, atlasExport, bytesToBase64, toCompetencyFile,
 } from './living-core.js';
 
 export const READY = true;
@@ -112,6 +112,7 @@ function viewOf(lib, user, row) {
   return {
     id: row.id, type: row.type, status: row.status,
     consultant: { name: p.consultant?.name || '', role: p.consultant?.role || '' },
+    cf: p.cf || null,
     lines: (p.lines || []).map(line => ({ text: line.text, evidenceId: line.evidenceId, storyId: line.storyId, topic: line.topic, storyTitle: line.storyTitle || '' })),
     gaps: p.gaps || [], flags: p.flags || [],
     need: p.need ? { source: p.need.source, needId: p.need.needId || '', title: p.need.title || '', keywords: p.need.keywords || [], flags: p.need.flags || [] } : null,
@@ -208,6 +209,7 @@ export async function routes(ctx, adapters = {}) {
     const stories = publishedMine(lib, user);
     const lines = stories.flatMap(row => linesOf(lib, row, audience));
     const cv = composeCv({ consultant: consultantOf(stories), lines, need: parsed?.need || null, audience });
+    cv.cf = toCompetencyFile(cv);
     const row = createArtifact(lib, user, 'cv', cv);
     await recordUsage(lib, user, { kind: 'usage', feature: 'living', outcome: 'generate', tokenStatus: 'missing' });
     return { body: { ok: true, artifact: viewOf(lib, user, row) } };

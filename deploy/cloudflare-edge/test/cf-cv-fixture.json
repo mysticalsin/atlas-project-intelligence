@@ -1,0 +1,72 @@
+{
+  "consultant": {
+    "name": "Ada Example",
+    "nameEvidenceId": "story:consultant",
+    "role": "Software engineer",
+    "roleEvidenceId": "story:role"
+  },
+  "audience": "internal",
+  "lines": [
+    {
+      "text": "Northwind Synthetic needed a quieter alarm queue for the night shift.",
+      "evidenceId": "story:A1.1",
+      "storyId": "story",
+      "topic": "context",
+      "at": "2024-11",
+      "company": "Northwind Synthetic",
+      "companyEvidenceId": "story:client",
+      "role": "Software engineer",
+      "roleEvidenceId": "story:role",
+      "period": "2024-03 – 2024-11",
+      "periodEvidenceId": "story:period"
+    },
+    {
+      "text": "I designed the Windows service that routes alarms for the plant.",
+      "evidenceId": "story:A2.1",
+      "storyId": "story",
+      "topic": "contribution",
+      "at": "2024-11",
+      "technologies": ["Windows", "C++"]
+    },
+    {
+      "text": "The service was written in C# and covered the alarm queue.",
+      "evidenceId": "story:A3.1",
+      "storyId": "story",
+      "topic": "approach",
+      "at": "2024-11",
+      "technologies": ["C#"]
+    },
+    {
+      "text": "I have 8 years of Windows work on that same service.",
+      "evidenceId": "story:A4.1",
+      "storyId": "story",
+      "topic": "outcome",
+      "at": "2024-11"
+    },
+    {
+      "text": "Coaching the night-shift operators was part of the same alarm queue.",
+      "evidenceId": "story:A5.1",
+      "storyId": "story",
+      "topic": "contribution",
+      "at": "2024-11"
+    },
+    {
+      "text": "Speaks English at a fluent spoken level and a professional written level.",
+      "evidenceId": "story:A6.1",
+      "storyId": "story",
+      "topic": "customer_relevance"
+    },
+    {
+      "text": "Holds a university degree in software engineering.",
+      "evidenceId": "story:A7.1",
+      "storyId": "story",
+      "topic": "evidence"
+    },
+    {
+      "text": "Holds a certified Azure qualification from the same programme.",
+      "evidenceId": "story:A8.1",
+      "storyId": "story",
+      "topic": "evidence"
+    }
+  ]
+}

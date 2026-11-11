@@ -487,6 +487,33 @@ function cited(text, evidenceId) {
   return { text: String(text), evidenceId: String(evidenceId) };
 }
 
+const LANGUAGES = ['English', 'French', 'German', 'Spanish', 'Dutch', 'Italian', 'Portuguese', 'Arabic', 'Mandarin', 'Chinese'];
+const LEVELS = ['Native', 'Fluent', 'Professional', 'Intermediate', 'Basic', 'A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+const SOFT = ['coaching', 'mentoring', 'leadership', 'teamwork'];
+const FUNCTIONAL = ['business analysis', 'stakeholder management'];
+
+function sentence(line) { return line.source || line.text || ''; }
+
+function levelNear(source, kind) {
+  const names = LEVELS.join('|');
+  const matched = new RegExp(`\\b(${names})\\b\\s+${kind}|${kind}\\s+(?:at\\s+)?(?:a\\s+)?\\b(${names})\\b`, 'i').exec(source);
+  if (!matched) return '';
+  const word = matched[1] || matched[2];
+  return LEVELS.find(level => level.toLowerCase() === word.toLowerCase()) || '';
+}
+
+function languageOf(line) {
+  const source = sentence(line);
+  if (!/\b(speak|speaks|speaking|spoken|written|language|fluent|native|level)\b/i.test(source)) return null;
+  const language = LANGUAGES.find(name => hasTerm(source, name));
+  if (!language || !line.evidenceId) return null;
+  return { language, spoken: levelNear(source, 'spoken'), written: levelNear(source, 'written'), evidenceId: line.evidenceId };
+}
+
+function isEducation(line) { return /\b(university|bachelor|master|degree|phd|diploma)\b/i.test(sentence(line)); }
+function isTraining(line) { return /\b(certification|certified|certificate)\b/i.test(sentence(line)); }
+function supports(line, terms) { return terms.some(term => hasTerm(sentence(line), term)); }
+
 function splitName(name) {
   const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return { first: '', last: '' };
@@ -495,24 +522,40 @@ function splitName(name) {
 }
 
 // Atlas CV lines onto the competency-file fields a future MiChat adapter would send.
-// yearsOfExperience and summary stay empty: they are not inferred from a quote or from a need.
+// yearsOfExperience and summary stay null: a sentence that mentions years stays a project line.
+// Languages, education, and certifications are copied only when that sentence states them.
 export function toCompetencyFile(cv = {}) {
   const lines = (cv.lines || []).filter(line => line && line.text && line.evidenceId && !banned(line.text));
   const name = splitName(cv.consultant?.name);
   const nameId = cv.consultant?.nameEvidenceId || null;
-  const groups = new Map();
+  const languages = [];
+  const education = [];
+  const trainings = [];
+  const softSkills = [];
+  const functionalSkills = [];
+  const projectLines = [];
   for (const line of lines) {
+    const language = languageOf(line);
+    if (language) languages.push(language);
+    if (isEducation(line)) { const item = cited(line.text, line.evidenceId); if (item) education.push(item); }
+    if (isTraining(line)) { const item = cited(line.text, line.evidenceId); if (item) trainings.push(item); }
+    if (supports(line, SOFT)) { const item = cited(line.text, line.evidenceId); if (item) softSkills.push(item); }
+    if (supports(line, FUNCTIONAL)) { const item = cited(line.text, line.evidenceId); if (item) functionalSkills.push(item); }
+    if (!language && !isEducation(line) && !isTraining(line)) projectLines.push(line);
+  }
+  const groups = new Map();
+  for (const line of projectLines) {
     const id = line.storyId || 'story';
     if (!groups.has(id)) groups.set(id, []);
     groups.get(id).push(line);
   }
-  const projects = [...groups.entries()].map(([, group]) => {
-    const first = group[0];
+  const projects = [...groups.values()].map(group => {
+    const first = group.find(line => line.company || line.role || line.period) || group[0];
     const pick = topic => group.filter(line => line.topic === topic).map(line => cited(line.text, line.evidenceId)).filter(Boolean);
     const tech = [];
     const seen = new Set();
     for (const line of group) for (const item of line.technologies || []) {
-      if (seen.has(item) || !hasTerm(line.text, item)) continue;
+      if (seen.has(item) || !hasTerm(sentence(line), item)) continue;
       seen.add(item);
       tech.push(cited(item, line.evidenceId));
     }
@@ -529,8 +572,8 @@ export function toCompetencyFile(cv = {}) {
   });
   const technical = [];
   const seenTech = new Set();
-  for (const line of lines) for (const item of line.technologies || []) {
-    if (seenTech.has(item) || !hasTerm(line.text, item)) continue;
+  for (const line of projectLines) for (const item of line.technologies || []) {
+    if (seenTech.has(item) || !hasTerm(sentence(line), item)) continue;
     seenTech.add(item);
     technical.push(cited(item, line.evidenceId));
   }
@@ -540,12 +583,12 @@ export function toCompetencyFile(cv = {}) {
     yearsOfExperience: null,
     jobTitle: cited(cv.consultant?.role, cv.consultant?.roleEvidenceId),
     summary: null,
-    technicalSkills: technical.length ? [{ category: 'Validated project', lines: technical }] : [],
-    softSkills: [],
-    functionalSkills: [],
-    languages: [],
-    education: [],
-    trainings: [],
+    technicalSkills: technical.length ? [{ category: null, lines: technical }] : [],
+    softSkills,
+    functionalSkills,
+    languages,
+    education,
+    trainings,
     projects,
   };
 }
@@ -599,8 +642,42 @@ function xml(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;'
 function para(text) { return `<w:p><w:r><w:t xml:space="preserve">${xml(text)}</w:t></w:r></w:p>`; }
 
 function documentLines(cv) {
-  const lines = [`${cv.consultant?.name || 'Consultant'}${cv.consultant?.role ? ' — ' + cv.consultant.role : ''}`];
-  for (const line of cv.lines || []) lines.push(line.text, line.evidenceId);
+  const cf = toCompetencyFile(cv);
+  const lines = [];
+  const name = [cf.firstName?.text, cf.lastName?.text].filter(Boolean).join(' ');
+  lines.push(name || cv.consultant?.name || 'Consultant');
+  if (cf.jobTitle?.text) lines.push(cf.jobTitle.text);
+  const section = (title, items) => {
+    const rows = (items || []).map(item => item?.text).filter(Boolean);
+    if (!rows.length) return;
+    lines.push(title, ...rows);
+  };
+  section('Technical skills', (cf.technicalSkills || []).flatMap(group => group.lines || []));
+  section('Soft skills', cf.softSkills);
+  section('Functional skills', cf.functionalSkills);
+  section('Languages', (cf.languages || []).map(item => ({
+    text: [item.language, item.spoken && `spoken ${item.spoken}`, item.written && `written ${item.written}`].filter(Boolean).join(', '),
+  })));
+  section('Education', cf.education);
+  section('Certifications', cf.trainings);
+  for (const project of cf.projects || []) {
+    lines.push(project.company?.text || 'Experience');
+    if (project.role?.text) lines.push(project.role.text);
+    if (project.period?.text) lines.push(project.period.text);
+    section('Context', project.context);
+    section('Responsibilities', project.responsibilities);
+    section('Technologies', project.technologicalEnvironment);
+    section('Achievements', project.achievements);
+  }
+  const ids = [];
+  const walk = value => {
+    if (!value || typeof value !== 'object') return;
+    if (value.evidenceId && !ids.includes(value.evidenceId)) ids.push(value.evidenceId);
+    if (Array.isArray(value.evidenceIds)) for (const id of value.evidenceIds) if (id && !ids.includes(id)) ids.push(id);
+    for (const child of Object.values(value)) if (child && typeof child === 'object') walk(child);
+  };
+  walk(cf);
+  if (ids.length) lines.push('Evidence', ...ids);
   return lines;
 }
 

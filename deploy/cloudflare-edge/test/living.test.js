@@ -155,6 +155,49 @@ test('phraseLine turns a published sentence into a CV bullet and falls back when
   assert.equal(phraseLine(''), '');
 });
 
+test('a competency file matches the MiChat fields and cites only the fixture sentences', () => {
+  const fixture = JSON.parse(readFileSync(new URL('./cf-cv-fixture.json', import.meta.url), 'utf8'));
+  const need = new PastedJobDescriptionAdapter().resolve('Must have\nWindows\n\nLanguages\nFrench - Fluent').need;
+  const cv = composeCv({ ...fixture, need });
+  const cf = toCompetencyFile(cv);
+  assert.deepEqual(Object.keys(cf), ['firstName', 'lastName', 'yearsOfExperience', 'jobTitle', 'summary', 'technicalSkills', 'softSkills', 'functionalSkills', 'languages', 'education', 'trainings', 'projects']);
+  assert.equal(cf.yearsOfExperience, null);
+  assert.equal(cf.summary, null);
+  assert.deepEqual(cf.firstName, { text: 'Ada', evidenceId: 'story:consultant' });
+  assert.deepEqual(cf.lastName, { text: 'Example', evidenceId: 'story:consultant' });
+  assert.deepEqual(cf.jobTitle, { text: 'Software engineer', evidenceId: 'story:role' });
+  assert.equal(cf.technicalSkills[0].category, null);
+  assert.deepEqual(cf.technicalSkills[0].lines.map(item => item.text), ['Windows', 'C#']);
+  assert.equal(JSON.stringify(cf.technicalSkills).includes('C++'), false);
+  assert.deepEqual(cf.softSkills, [{ text: 'Coaching the night-shift operators was part of the same alarm queue.', evidenceId: 'story:A5.1' }]);
+  assert.deepEqual(cf.functionalSkills, []);
+  assert.deepEqual(cf.languages, [{ language: 'English', spoken: 'Fluent', written: 'Professional', evidenceId: 'story:A6.1' }]);
+  assert.equal(JSON.stringify(cf.languages).includes('French'), false);
+  assert.equal(cf.education[0].text, 'Holds a university degree in software engineering.');
+  assert.equal(cf.education[0].evidenceId, 'story:A7.1');
+  assert.equal(cf.trainings[0].text, 'Holds a certified Azure qualification from the same programme.');
+  assert.equal(cf.trainings[0].evidenceId, 'story:A8.1');
+  const project = cf.projects[0];
+  assert.deepEqual(project.company, { text: 'Northwind Synthetic', evidenceId: 'story:client' });
+  assert.deepEqual(project.role, { text: 'Software engineer', evidenceId: 'story:role' });
+  assert.deepEqual(project.period, { text: '2024-03 – 2024-11', evidenceId: 'story:period' });
+  assert.equal(project.context[0].text, 'Northwind Synthetic needed a quieter alarm queue for the night shift.');
+  assert.equal(project.responsibilities[0].text, 'Designed the Windows service that routes alarms for the plant.');
+  assert.equal(project.technologicalEnvironment.map(item => item.text).join(','), 'Windows,C#');
+  assert.equal(project.achievements[0].text, '8 years of Windows work on that same service.');
+  assert.equal(JSON.stringify(project).includes('university'), false);
+  assert.equal(JSON.stringify(project).includes('English'), false);
+  assert.equal(cf.yearsOfExperience, null);
+  const cited = value => {
+    if (Array.isArray(value)) return value.forEach(cited);
+    if (!value || typeof value !== 'object') return;
+    if (typeof value.text === 'string') assert.ok(value.evidenceId);
+    if (typeof value.language === 'string') assert.ok(value.evidenceId);
+    for (const child of Object.values(value)) if (child && typeof child === 'object') cited(child);
+  };
+  cited(cf);
+});
+
 test('gaps and conflicts stay off the CV; unsupported keywords are not claims', () => {
   const need = new SmartNeedLinkAdapter({ fixtures: new Map([['192497', CAPTURE]]) }).resolve(LINK).need;
   const lines = [

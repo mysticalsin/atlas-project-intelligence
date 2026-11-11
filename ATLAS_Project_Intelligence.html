@@ -4213,14 +4213,32 @@ function keywordList(title,items,textOf){
   box.append(h('ul',{class:'warn'},items.map(item=>h('li',{text:textOf(item)}))));
   return box;
 }
+function citedRows(items){return (items||[]).filter(item=>item&&item.text).map(item=>({text:item.text,evidenceId:item.evidenceId||''}));}
+function section(card,title,items){const rows=citedRows(items);if(rows.length)card.append(h('h5',{text:title}),bullets(rows));}
 function cvCard(artifact){
   const card=h('article',{class:'cv'});
   if(!artifact)return card;
+  const cf=artifact.cf;
   const who=artifact.consultant||{};
-  card.append(h('h4',{text:who.name||'CV'}));
-  if(who.role)card.append(h('p',{class:'cv-role',text:who.role}));
+  const name=cf?[cf.firstName&&cf.firstName.text,cf.lastName&&cf.lastName.text].filter(Boolean).join(' '):(who.name||'');
+  card.append(h('h4',{text:name||who.name||'CV'}));
+  const role=(cf&&cf.jobTitle&&cf.jobTitle.text)||who.role;
+  if(role)card.append(h('p',{class:'cv-role',text:role}));
   card.append(h('p',{class:'status '+(artifact.status||''),role:'status',text:STATUS[artifact.status]||artifact.status||''}));
-  if((artifact.lines||[]).length)card.append(h('h5',{text:'Experience'}),bullets(artifact.lines));
+  if(cf){
+    section(card,'Technical skills',(cf.technicalSkills||[]).flatMap(group=>group.lines||[]));
+    section(card,'Soft skills',cf.softSkills);
+    section(card,'Functional skills',cf.functionalSkills);
+    section(card,'Languages',(cf.languages||[]).map(item=>({text:[item.language,item.spoken&&('spoken '+item.spoken),item.written&&('written '+item.written)].filter(Boolean).join(', '),evidenceId:item.evidenceId})));
+    section(card,'Education',cf.education);
+    section(card,'Certifications',cf.trainings);
+    for(const project of cf.projects||[]){
+      const title=[project.company&&project.company.text,project.role&&project.role.text,project.period&&project.period.text].filter(Boolean).join(' · ')||'Experience';
+      card.append(h('h5',{text:title}));
+      const rows=[].concat(citedRows(project.context),citedRows(project.responsibilities),citedRows(project.technologicalEnvironment),citedRows(project.achievements));
+      if(rows.length)card.append(bullets(rows));
+    }
+  }else if((artifact.lines||[]).length)card.append(h('h5',{text:'Experience'}),bullets(artifact.lines));
   card.append(keywordList('Gaps',artifact.gaps||[],gap=>gap.keyword));
   card.append(keywordList('Conflicts',artifact.flags||[],flag=>flag.detail||flag.code));
   return card;
