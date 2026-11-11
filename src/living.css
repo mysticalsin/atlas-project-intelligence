@@ -1,0 +1,8 @@
+.living-sheet{max-width:40rem;display:grid;gap:12px;padding:24px 0 48px}
+.living-sheet h1{margin:0}
+.living-sheet h2{margin:16px 0 0;font-size:1rem}
+.living-sheet input,.living-sheet textarea,.living-sheet select{width:100%}
+.living-sheet ol,.living-sheet ul{margin:0;padding-left:1.2rem}
+.living-sheet li{margin:10px 0}
+.living-sheet .actions{display:flex;gap:8px}
+@media(max-width:420px){html body .topbar nav{flex-wrap:wrap;height:auto}html body .topbar nav button{flex:1 1 auto;min-width:4.8rem;overflow:visible;text-overflow:clip}}

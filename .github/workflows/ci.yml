@@ -32,6 +32,6 @@ jobs:
       - name: Browser suites
         run: |
           python -m playwright install --with-deps chromium
-          for t in studio sculpture intelligence depth autosave orb_touch library reuse memory sheet report bids ask trust storyboard confirm wow_edge zero_config zero_config_edge jev_rating; do
+          for t in studio sculpture intelligence depth autosave orb_touch library reuse memory sheet report bids ask trust storyboard confirm wow_edge zero_config zero_config_edge jev_rating living; do
             echo "::group::$t"; python tests/${t}_browser.py; echo "::endgroup::"
           done

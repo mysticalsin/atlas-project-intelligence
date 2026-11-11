@@ -5,6 +5,7 @@ import { queryMetrics, recordUsage, purgeTelemetry, personaKey, ensureTelemetry 
 import { toCsv } from './csvsafe.js';
 import { journeyView, saveJourney, mapDraft, ensureJourney } from './journey.js';
 import { deleteOwnedProfile } from './profile.js';
+import { deleteOwned as deleteOwnedLiving, ownedIds as ownedLiving } from './living.js';
 
 function metricQuery(url, bucket = 'day') {
   const q = url?.searchParams || new URLSearchParams();
@@ -12,7 +13,7 @@ function metricQuery(url, bucket = 'day') {
 }
 function dsarStores() {
   return {
-    coveredLocal: ['journey for this subject and tenant', 'profile for this subject and tenant', 'telemetry for this persona and tenant', 'manager trust for this subject and tenant', 'this subject\'s directory row for this tenant'],
+    coveredLocal: ['journey for this subject and tenant', 'profile for this subject and tenant', 'telemetry for this persona and tenant', 'manager trust for this subject and tenant', 'this subject\'s directory row for this tenant', 'living artifacts for this subject and tenant'],
     retained: [
       { store: 'legacy-blank-tenant-rows', action: 'quarantined', note: 'Blank ownership stays blank. It was not assigned a tenant and was not deleted by this request.' },
       { store: 'hindsight-bank', action: 'not-contacted', note: 'The vendor bank was not called. A subject-only bank is not read when a verified tenant is present, and it was not deleted.' },
@@ -98,7 +99,7 @@ export async function privacyRoutes(ctx) {
       if (row) ownedProfile = { edits: JSON.parse(row.edits || '{}'), consents: JSON.parse(row.consents || '{}'), updatedAt: row.updated_at };
     } catch { /* profile table may be absent */ }
     lib.log('library', user.email, 'dsar export', `${stories.length} stories`);
-    return { body: { subject: user.email, tenant: user.tenant || '', journey: journey ? JSON.parse(journey.payload) : null, profile: ownedProfile, stories,
+    return { body: { subject: user.email, tenant: user.tenant || '', journey: journey ? JSON.parse(journey.payload) : null, profile: ownedProfile, stories, living: ownedLiving(lib, user),
       stores: dsarStores(), note: 'This export lists the local rows for this subject and tenant. It is not a vendor-log extract and it does not mean every store was erased.' } };
   }
   if (method === 'POST' && parts[1] === 'delete') {
@@ -130,6 +131,7 @@ export async function privacyRoutes(ctx) {
       if (n) lib.sql.exec(`DELETE FROM manager_trust WHERE lower(COALESCE(tenant, '')) = ? AND (lower(owner) IN (${marks}) OR lower(email) IN (${marks}))`, tenant, ...aliases, ...aliases);
       return n;
     });
+    attempt('living-artifacts', () => deleteOwnedLiving(lib, user));
     attempt('directory', () => {
       const mail = String(user.mail || '').toLowerCase();
       const oid = /^[0-9a-f-]{36}:([0-9a-f-]{36})$/.exec(String(user.email || '').toLowerCase())?.[1] || '';

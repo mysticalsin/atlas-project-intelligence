@@ -1,0 +1,38 @@
+{
+  "source": "SMART need page https://need.arp.mantu.com/needs/192497, section 'Candidate Requirement' only, read-only capture 2026-11-11 15:35 BRT",
+  "need": {"id": "192497", "title": "Software Developer"},
+  "candidateRequirement": {
+    "profiles": ["ENG - Electronics - Embedded Software Engineer"],
+    "skills": {"must": ["Windows", "C++", "C#"], "niceToHave": []},
+    "languages": {"must": [{"language": "English", "level": "Fluent"}], "niceToHave": []},
+    "experience": {"label": "Middle - From 4 to 6 years", "level": "Middle", "minYears": 4, "maxYears": 6},
+    "missionDescription": [
+      "Push the product vision forward as a passionate advocate",
+      "Design, prototype and develop high quality applications on Windows for fire alarm systems",
+      "Spark idea generation and provide continuous feedback to address our customers' needs",
+      "Prioritize features and optimize our solutions to provide the best possible user experience",
+      "Actively participate in software planning and estimation activities",
+      "Support and mentor your teammates and other functional groups",
+      "Continuously strive to hone your skill set"
+    ],
+    "profileRequirement": [
+      "University degree in computer/software engineering or computer sciences",
+      "2+ years of direct experience and expertise in commercial desktop applications development Relevant experience using C#, .NET, WPF, SQL, Entity Framework and LINQ",
+      "Good knowledge of different design patterns (ex: MVVM, dependency injection) and object-oriented programming",
+      "Development experience with Agile methodology, CI/CD pipelining and versioning tools",
+      "Interest in the latest frameworks like WinUI 3, .NET 10",
+      "Knowledge of C++ an asset",
+      "Strong problem solving, troubleshooting, and analytical skills",
+      "Strong team player with well-developed interpersonal skills, results oriented and self-motivated"
+    ],
+    "additionalInformationCandidate": null,
+    "additionalInformationNeed": null
+  },
+  "rawQuirks": [
+    "Mission Description rich text is rendered twice; the last item of the first copy is concatenated with the first item of the second copy using a middle dot. Parser must de-duplicate.",
+    "Empty values render as '-'; map to empty/null.",
+    "Profile Requirement item 2 merges two bullets ('...development Relevant experience...') with no separator.",
+    "Conflicts inside the section: Level says 4-6 years but Profile Requirement says 2+ years; Skill (Must) lists C++ but Profile Requirement says C++ is 'an asset'. The ATS matcher should treat structured fields (Must tags, Level) as authoritative and surface the conflict, never resolve it silently.",
+    "Page served HTTP 404 status while rendering content; no API observed. No live SMART calls in code: fixture only."
+  ]
+}

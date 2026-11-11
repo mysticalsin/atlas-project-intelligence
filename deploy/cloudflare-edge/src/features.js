@@ -5,17 +5,18 @@ import * as bids from './bids.js';      import * as ask from './ask.js';        
 import * as gaps from './gaps.js';      import * as claims from './claims.js';  import * as outreach from './outreach.js';
 import { teamsStatus } from './teams.js';
 import * as profile from './profile.js';
+import * as living from './living.js';
 
 // profile, people and directory (WOW_ZERO_CONFIG §6) work in both identity modes (keyed by x-atlas-user); externals get 403.
 export const WORDS = { bids: bids.routes, ask: ask.routes, wins: winloop.routes, gaps: gaps.routes,
   claims: claims.routes, confirmations: claims.routes, outreach: outreach.routes, staffing: outreach.routes,
-  profile: profile.routes, people: profile.routes, directory: profile.routes };
+  profile: profile.routes, people: profile.routes, directory: profile.routes, living: living.routes };
 // `directory`: the DNA push forward (POST directory/import only; the Worker checked the bearer secret).
 export const SYSTEM_WORDS = { 'teams-event': outreach.system, directory: profile.routes };
 export const EXTERNAL_WORDS = new Set(['confirmations']);      // the only word an 'external' role may reach
 export const EMAIL_AUTH_WORDS = new Set(['gaps', 'claims', 'confirmations']); // Access mode only (Q6)
 const MODULE = { bids, ask, wins: winloop, gaps, claims, confirmations: claims, outreach, staffing: outreach, 'teams-event': outreach,
-  profile, people: profile, directory: profile };
+  profile, people: profile, directory: profile, living };
 // D1 (WOW_ZERO_CONFIG §4): spoken Ask is a per-user consent prompt at the moment of use, not a deployment variable.
 // A code constant like READY. Approved by Tony ("it should just work and ask for consent and that's it"): on wherever
 // Ask is on. Every recording still needs the consent prompt's header, and `always` a stored consent (app.js).
@@ -43,5 +44,5 @@ export function flags(env = {}, ready = readyOf, { spokenAskApproved = SPOKEN_AS
     customerJev: on('bids') && !!env.TYPESAFE_API_KEY, pdfBriefs: on('bids'),
     gaps: on('gaps'), gapInterview: on('gaps'), claims: on('claims'),
     clientConfirm: on('claims') && env.CLIENT_CONFIRM === '1' && !!env.EXTERNAL_EMAILS,
-    outreach: on('outreach'), staffing: on('outreach'), teams: teamsStatus(env), phone: 'BLOCKED_EXTERNAL', profile: on('profile') };
+    outreach: on('outreach'), staffing: on('outreach'), teams: teamsStatus(env), phone: 'BLOCKED_EXTERNAL', profile: on('profile'), living: on('living') };
 }

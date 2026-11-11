@@ -23,7 +23,7 @@ def atlas_home(environ=os.environ):
     return value if isinstance(value, str) and re.fullmatch(r'https://[a-z0-9.-]+', value) else ''
 ATLAS_HOME=atlas_home()
 logo='data:image/svg+xml;base64,'+base64.b64encode(logo_bytes).decode()
-slots={'__CSS__':read_text(ROOT/'src/styles.css')+'\n'+read_text(ROOT/'src/voice.css')+'\n'+read_text(ROOT/'src/orb.css')+'\n'+read_text(ROOT/'src/sculpture.css')+'\n'+read_text(ROOT/'src/intelligence.css')+'\n'+read_text(ROOT/'src/charts.css')+'\n'+read_text(ROOT/'src/wow.css')+'\n'+read_text(ROOT/'src/storyboard.css')+'\n'+read_text(ROOT/'src/journey.css'),
+slots={'__CSS__':read_text(ROOT/'src/styles.css')+'\n'+read_text(ROOT/'src/voice.css')+'\n'+read_text(ROOT/'src/orb.css')+'\n'+read_text(ROOT/'src/sculpture.css')+'\n'+read_text(ROOT/'src/intelligence.css')+'\n'+read_text(ROOT/'src/charts.css')+'\n'+read_text(ROOT/'src/wow.css')+'\n'+read_text(ROOT/'src/storyboard.css')+'\n'+read_text(ROOT/'src/journey.css')+'\n'+read_text(ROOT/'src/living.css'),
  '__LOGO__':logo,'__LOGOJSON__':json.dumps(logo), '__ARCH__':read_text(ROOT/'docs/architecture.svg'),
  '__INTELLIGENCE_PANEL__':read_text(ROOT/'src/intelligence-panel.html'),
  '__INTELLIGENCE_CORE__':read_text(ROOT/'src/intelligence-core.js'),
@@ -55,7 +55,7 @@ slots={'__CSS__':read_text(ROOT/'src/styles.css')+'\n'+read_text(ROOT/'src/voice
  '__SESSION_KEEPER__':read_text(ROOT/'src/session-keeper.js'),
  '__PROFILE_CORE__':read_text(ROOT/'src/profile-core.js'),
  '__PROFILE_UI__':read_text(ROOT/'src/profile-ui.js'),
- '__JOURNEY__':read_text(ROOT/'src/journey-ui.js')}
+ '__JOURNEY__':read_text(ROOT/'src/journey-ui.js')+'\n'+read_text(ROOT/'src/living-ui.js')}
 text=read_text(ROOT/'src/shell.html')
 for k,v in slots.items():text=text.replace(k,v)
 text=text.replace('<title>ATLAS Presence / Mantu — A rhythm you recognize</title>','<title>ATLAS Voice Studio / Mantu</title>')

@@ -19,6 +19,7 @@ import * as teams from '../src/teams.js';
 import * as teamsRoutes from '../src/teams-routes.js';
 import * as confirmPage from '../src/confirm-page.js';
 import * as profile from '../src/profile.js';
+import * as living from '../src/living.js';
 import { Library } from '../src/library.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import { memorySql } from './sqlite.js';
@@ -52,7 +53,7 @@ test('every module exports its §6.3 contract names', () => {
     for (const [name, type] of Object.entries(names)) assert.equal(typeof mod[name], type, `${file} ${name}`);
   assert.equal(winloop.MIN_N, 5); assert.ok(['sentence', 'revision'].includes(claims.CURRENCY));
   assert.ok(scrub.STOPLIST instanceof Set); assert.ok(Array.isArray(snippets.TOPIC_KEYS));
-  assert.deepEqual(Object.keys(features.WORDS).sort(), ['ask', 'bids', 'claims', 'confirmations', 'directory', 'gaps', 'outreach', 'people', 'profile', 'staffing', 'wins']);
+  assert.deepEqual(Object.keys(features.WORDS).sort(), ['ask', 'bids', 'claims', 'confirmations', 'directory', 'gaps', 'living', 'outreach', 'people', 'profile', 'staffing', 'wins']);
   assert.deepEqual(Object.keys(features.SYSTEM_WORDS), ['teams-event', 'directory']);
   assert.deepEqual([...features.EXTERNAL_WORDS], ['confirmations']); assert.deepEqual([...features.EMAIL_AUTH_WORDS].sort(), ['claims', 'confirmations', 'gaps']);
   assert.equal(features.WORDS.confirmations, claims.routes); assert.equal(features.WORDS.staffing, outreach.routes); assert.equal(features.SYSTEM_WORDS['teams-event'], outreach.system);
@@ -94,11 +95,11 @@ test('READY gating and the Entra rule: email-authorised words are off in Entra m
     assert.deepEqual(await features.featureRoutes(ctx(word, 'user', { IDENTITY_SOURCE: 'entra' }), allReady), { status: 404, body: { error: NOT_AVAILABLE } });
     assert.equal(allReady(word, {}), true);
   }
-  for (const word of ['bids', 'ask', 'wins', 'outreach', 'staffing', 'profile', 'people', 'directory']) assert.equal(allReady(word, { IDENTITY_SOURCE: 'entra' }), true, word);
+  for (const word of ['bids', 'ask', 'wins', 'outreach', 'staffing', 'profile', 'people', 'directory', 'living']) assert.equal(allReady(word, { IDENTITY_SOURCE: 'entra' }), true, word);
   const bidsCtx = { ...ctx('bids'), lib: new Library(memorySql(), {}) };
   assert.deepEqual(await features.featureRoutes(bidsCtx, () => true), await bids.routes(bidsCtx), 'a READY word reaches its module handler');
   for (const word of Object.keys(features.WORDS)) assert.equal(features.readyOf(word, {}), !!({ bids, ask, wins: winloop, gaps, claims, confirmations: claims, outreach, staffing: outreach,
-    profile, people: profile, directory: profile })[word].READY, word);
+    profile, people: profile, directory: profile, living })[word].READY, word);
   assert.equal(features.readyOf('directory', {}), profile.READY, 'the system push word follows profile.READY too');
 });
 
@@ -124,7 +125,7 @@ test('Z profile words: profile, people and directory are READY-gated, work in bo
 });
 
 test('flags: every key, conservative defaults, opt-in vars and the Entra rule', () => {
-  const keys = ['bids', 'ask', 'spokenAsk', 'wins', 'customerJev', 'pdfBriefs', 'gaps', 'gapInterview', 'claims', 'clientConfirm', 'outreach', 'staffing', 'teams', 'phone', 'profile'];
+  const keys = ['bids', 'ask', 'spokenAsk', 'wins', 'customerJev', 'pdfBriefs', 'gaps', 'gapInterview', 'claims', 'clientConfirm', 'outreach', 'staffing', 'teams', 'phone', 'profile', 'living'];
   const f = features.flags({});
   assert.deepEqual(Object.keys(f), keys);
   assert.equal(f.phone, 'BLOCKED_EXTERNAL'); assert.equal(f.teams, teams.teamsStatus({}));

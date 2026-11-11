@@ -31,7 +31,7 @@ const IMPORTS_V2 = `CREATE TABLE directory_imports_v2 (
     rows INTEGER, rejected INTEGER, state TEXT, PRIMARY KEY (batch, tenant))`;
 const SCHEMA = [];
 // spokenAsk: spoken Ask (WOW_SPEC); jevRating: story rating by TypeSafe JEV for the owner's stories (docs/JEV_RATING.md §8).
-const CONSENT_KINDS = ['spokenAsk', 'jevRating'];
+const CONSENT_KINDS = ['spokenAsk', 'jevRating', 'profileReuse'];
 const ensured = new WeakSet();
 function tenantKey(user = {}) { return String(user.tenant || '').trim().toLowerCase(); }
 function demandTenant(user) {
