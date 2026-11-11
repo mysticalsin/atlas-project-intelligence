@@ -113,7 +113,7 @@ function viewOf(lib, user, row) {
     id: row.id, type: row.type, status: row.status,
     consultant: { name: p.consultant?.name || '', role: p.consultant?.role || '' },
     cf: p.cf || null,
-    lines: (p.lines || []).map(line => ({ text: line.text, evidenceId: line.evidenceId, storyId: line.storyId, topic: line.topic, storyTitle: line.storyTitle || '' })),
+    lines: (p.lines || []).map(line => ({ text: line.text, source: line.source || line.text, evidenceId: line.evidenceId, storyId: line.storyId, topic: line.topic, storyTitle: line.storyTitle || '' })),
     gaps: p.gaps || [], flags: p.flags || [],
     need: p.need ? { source: p.need.source, needId: p.need.needId || '', title: p.need.title || '', keywords: p.need.keywords || [], flags: p.need.flags || [] } : null,
     fiche: p.fiche || null,

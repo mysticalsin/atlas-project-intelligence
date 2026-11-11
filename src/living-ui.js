@@ -14,82 +14,193 @@ async function post(path,body){
 }
 const STATUS={draft:'Draft',in_review:'In review',approved:'Approved',exported:'Exported',withdrawn:'Withdrawn'};
 const TOPIC_LABEL={context:'Context',contribution:'Contribution',approach:'Approach',outcome:'Outcome',evidence:'Evidence',customer_relevance:'Customer relevance'};
-function bullets(lines){const ol=h('ol');for(const line of lines||[]){const li=h('li',line.evidenceId?{'data-evidence':line.evidenceId}:null);li.append(h('p',{text:line.text||''}));ol.append(li);}return ol;}
+function splitNeed(value){
+  const text=String(value||'').trim();
+  if(/^https:\/\/need\.arp\.mantu\.com\/needs\/\S+$/i.test(text))return {link:text,text:''};
+  return {link:'',text};
+}
 function saveFile(file){const bin=atob(file.base64),bytes=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);const url=URL.createObjectURL(new Blob([bytes],{type:file.mime}));const a=document.createElement('a');a.href=url;a.download=file.filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);}
-function actions(artifact,onChange){
-  if(!artifact)return h('div');
-  const row=h('div',{class:'actions'});
-  if(artifact?.canApprove&&artifact.status==='in_review'){const ok=h('button',{class:'btn',type:'button',text:'Approve'});ok.addEventListener('click',async()=>{ok.disabled=true;try{onChange(await api('/living/artifacts/'+artifact.id+'/approve',{method:'POST',body:{}}));}catch(e){app().toast(e.message);ok.disabled=false;}});row.append(ok);}
-  const exp=h('button',{class:'btn',type:'button',text:'Export'});
-  exp.disabled=!(artifact&&(artifact.status==='approved'||artifact.status==='exported'));
-  exp.addEventListener('click',async()=>{exp.disabled=true;try{const file=await api('/living/artifacts/'+artifact.id+'/export',{method:'POST',body:{format:'docx',adapter:'michat'}});saveFile(file);onChange({...artifact,status:file.status||'exported'});}catch(e){app().toast(e.message);}exp.disabled=!(artifact&&(artifact.status==='approved'||artifact.status==='exported'));});
-  row.append(exp);
-  return row;
+let marked='';
+function highlight(key){
+  marked=marked===key?'':key;
+  document.querySelectorAll('#living .cv-lines li').forEach(li=>{
+    const text=(li.textContent||'').toLowerCase();
+    li.classList.toggle('mark',!!marked&&text.includes(String(marked).toLowerCase()));
+  });
+  document.querySelectorAll('#living .gap-chip').forEach(btn=>btn.classList.toggle('on',btn.textContent===marked));
 }
-function keywordList(title,items,textOf,itemClass){
-  const box=h('div');
-  if(!items.length)return box;
-  box.append(h('h5',{text:title}));
-  box.append(h('ul',{class:'warn'},items.map(item=>h('li',itemClass?{class:itemClass,text:textOf(item)}:{text:textOf(item)}))));
-  return box;
+function provenance(source){
+  const wrap=h('span',{class:'prov-wrap'});
+  const btn=h('button',{type:'button',class:'prov','aria-label':'Show the published sentence'});
+  const pop=h('span',{class:'prov-pop',role:'tooltip',text:source||''});
+  btn.addEventListener('click',event=>{event.stopPropagation();wrap.classList.toggle('open');});
+  wrap.append(btn,pop);
+  return wrap;
 }
-function citedRows(items){return (items||[]).filter(item=>item&&item.text).map(item=>({text:item.text,evidenceId:item.evidenceId||''}));}
-function section(card,title,items){const rows=citedRows(items);if(rows.length)card.append(h('h5',{text:title}),bullets(rows));}
-function cvCard(artifact){
-  const card=h('article',{class:'cv'});
+function bullet(line){
+  const li=h('li',line.evidenceId?{'data-evidence':line.evidenceId}:null);
+  const p=h('p',{text:line.text||''});
+  if(line.evidenceId)p.append(provenance(line.source||line.text||''));
+  li.append(p);
+  return li;
+}
+function bullets(lines){const ul=h('ul',{class:'cv-lines'});for(const line of lines||[])if(line&&line.text)ul.append(bullet(line));return ul;}
+function actionBar(artifact,onChange){
+  const bar=h('div',{class:'action-bar'});
+  bar.append(h('p',{class:'action-status',role:'status',text:STATUS[artifact.status]||artifact.status||''}));
+  const buttons=h('div',{class:'action-buttons'});
+  if(artifact.canApprove&&artifact.status==='in_review'){
+    const ok=h('button',{class:'btn living-go',type:'button',text:'Approve'});
+    ok.addEventListener('click',async()=>{ok.disabled=true;try{onChange(await api('/living/artifacts/'+artifact.id+'/approve',{method:'POST',body:{}}));}catch(e){app().toast(e.message);ok.disabled=false;}});
+    buttons.append(ok);
+  }
+  const ready=artifact.status==='approved'||artifact.status==='exported';
+  const exp=h('button',{class:'btn living-go',type:'button',text:'Export'});
+  exp.disabled=!ready;
+  exp.addEventListener('click',async()=>{exp.disabled=true;try{const file=await api('/living/artifacts/'+artifact.id+'/export',{method:'POST',body:{format:'docx',adapter:'michat'}});saveFile(file);onChange({...artifact,status:file.status||'exported'});}catch(e){app().toast(e.message);exp.disabled=!(artifact.status==='approved'||artifact.status==='exported');}});
+  if(!ready)buttons.append(h('span',{class:'export-reason',text:'Approve to export'}));
+  buttons.append(exp);
+  bar.append(buttons);
+  return bar;
+}
+function skillChips(cf){
+  const seen=new Set(),out=[];
+  for(const group of cf?.technicalSkills||[])for(const item of group.lines||[]){
+    if(!item?.text||seen.has(item.text))continue;
+    seen.add(item.text);
+    out.push({text:item.text,evidenceId:item.evidenceId});
+  }
+  for(const item of cf?.languages||[]){
+    if(!item?.language||seen.has(item.language))continue;
+    seen.add(item.language);
+    const levels=[item.spoken,item.written].filter(Boolean);
+    out.push({text:levels.length?item.language+' · '+levels.join(', '):item.language,evidenceId:item.evidenceId});
+  }
+  return out;
+}
+function projectTitle(artifact,lines){
+  const ids=new Set(lines.map(line=>line.evidenceId));
+  const project=(artifact.cf?.projects||[]).find(item=>(item.evidenceIds||[]).some(id=>ids.has(id)));
+  if(!project)return lines[0]?.storyTitle||'Experience';
+  return [project.company&&project.company.text,project.role&&project.role.text,project.period&&project.period.text].filter(Boolean).join(' · ')||'Experience';
+}
+function cvDocument(artifact,onChange){
+  const card=h('article',{class:'cv-doc'});
   if(!artifact)return card;
-  const cf=artifact.cf;
+  const cf=artifact.cf||{};
   const who=artifact.consultant||{};
-  const name=cf?[cf.firstName&&cf.firstName.text,cf.lastName&&cf.lastName.text].filter(Boolean).join(' '):(who.name||'');
-  card.append(h('h4',{text:name||who.name||'CV'}));
-  const role=(cf&&cf.jobTitle&&cf.jobTitle.text)||who.role;
+  const name=[cf.firstName&&cf.firstName.text,cf.lastName&&cf.lastName.text].filter(Boolean).join(' ')||who.name||'CV';
+  card.append(actionBar(artifact,onChange));
+  card.append(h('h2',{class:'cv-name',text:name}));
+  const role=(cf.jobTitle&&cf.jobTitle.text)||who.role;
   if(role)card.append(h('p',{class:'cv-role',text:role}));
-  card.append(h('p',{class:'status '+(artifact.status||''),role:'status',text:STATUS[artifact.status]||artifact.status||''}));
-  if(cf){
-    section(card,'Technical skills',(cf.technicalSkills||[]).flatMap(group=>group.lines||[]));
-    section(card,'Soft skills',cf.softSkills);
-    section(card,'Functional skills',cf.functionalSkills);
-    section(card,'Languages',(cf.languages||[]).map(item=>({text:[item.language,item.spoken&&('spoken '+item.spoken),item.written&&('written '+item.written)].filter(Boolean).join(', '),evidenceId:item.evidenceId})));
-    section(card,'Education',cf.education);
-    section(card,'Certifications',cf.trainings);
-    for(const project of cf.projects||[]){
-      const title=[project.company&&project.company.text,project.role&&project.role.text,project.period&&project.period.text].filter(Boolean).join(' · ')||'Experience';
-      card.append(h('h5',{text:title}));
-      const rows=[].concat(citedRows(project.context),citedRows(project.responsibilities),citedRows(project.technologicalEnvironment),citedRows(project.achievements));
-      if(rows.length)card.append(bullets(rows));
+  const skills=skillChips(cf);
+  if(skills.length){
+    card.append(h('h3',{text:'Skills'}));
+    const row=h('div',{class:'chips'});
+    for(const item of skills){
+      const chip=h('button',{type:'button',class:'chip',text:item.text});
+      chip.addEventListener('click',()=>highlight(item.text));
+      row.append(chip);
     }
-  }else if((artifact.lines||[]).length)card.append(h('h5',{text:'Experience'}),bullets(artifact.lines));
-  card.append(keywordList('Gaps',artifact.gaps||[],gap=>gap.keyword));
-  card.append(keywordList('Flags',artifact.flags||[],flag=>flag.detail||flag.code,'flag'));
+    card.append(row);
+  }
+  const aside=new Set([...(cf.education||[]),...(cf.trainings||[])].map(item=>item.evidenceId).filter(Boolean));
+  if((cf.education||[]).length){card.append(h('h3',{text:'Education'}));card.append(bullets(cf.education));}
+  if((cf.trainings||[]).length){card.append(h('h3',{text:'Certifications'}));card.append(bullets(cf.trainings));}
+  const groups=new Map();
+  for(const line of artifact.lines||[]){
+    if(!line?.text||aside.has(line.evidenceId))continue;
+    const id=line.storyId||'story';
+    if(!groups.has(id))groups.set(id,[]);
+    groups.get(id).push(line);
+  }
+  for(const lines of groups.values()){
+    card.append(h('h3',{text:projectTitle(artifact,lines)}));
+    card.append(bullets(lines));
+  }
   return card;
 }
-function ficheBody(artifact){
-  const box=h('div',{class:'cv'});
-  if(!artifact)return box;
-  box.append(h('p',{class:'status '+(artifact.status||''),role:'status',text:STATUS[artifact.status]||artifact.status||''}));
-  for(const [topic,items] of Object.entries(artifact.fiche?.sections||{})){if(!items.length)continue;box.append(h('h5',{text:TOPIC_LABEL[topic]||topic}),bullets(items));}
-  return box;
+function rail(artifact){
+  const aside=h('aside',{class:'cv-rail'});
+  const gaps=artifact.gaps||[],flags=artifact.flags||[];
+  if(!gaps.length)aside.append(h('p',{class:'rail-none',text:'Gaps 0'}));
+  else{
+    const card=h('section',{class:'rail-card'});
+    card.append(h('h3',{text:'Gaps '+gaps.length}));
+    const list=h('ul',{class:'gap-list'});
+    for(const gap of gaps){
+      const btn=h('button',{type:'button',class:'gap-chip',text:gap.keyword});
+      btn.addEventListener('click',()=>highlight(gap.keyword));
+      list.append(h('li',null,[btn]));
+    }
+    card.append(list);
+    aside.append(card);
+  }
+  if(flags.length){
+    const card=h('section',{class:'rail-card'});
+    card.append(h('h3',{text:'Flags '+flags.length}));
+    card.append(h('ul',{class:'flag-list'},flags.map(flag=>h('li',{text:flag.detail||flag.code}))));
+    aside.append(card);
+  }
+  return aside;
+}
+function summary(artifact){
+  const gaps=(artifact.gaps||[]).length,flags=(artifact.flags||[]).length;
+  const btn=h('button',{type:'button',class:'summary-row',text:gaps+' '+(gaps===1?'gap':'gaps')+' · '+flags+' '+(flags===1?'flag':'flags')});
+  const sheet=h('div',{class:'mobile-sheet',hidden:''});
+  const close=h('button',{type:'button',class:'btn',text:'Close'});
+  close.addEventListener('click',()=>{sheet.hidden=true;});
+  btn.addEventListener('click',()=>{sheet.hidden=false;});
+  sheet.append(rail(artifact),close);
+  return h('div',{class:'summary-wrap'},[btn,sheet]);
+}
+function skeleton(){return h('div',{class:'skeleton','aria-hidden':'true'},[h('span'),h('span'),h('span')]);}
+function stage(artifact,onChange){
+  return h('div',{class:'cv-stage'},[cvDocument(artifact,onChange),rail(artifact),summary(artifact)]);
 }
 let cache=null;
 async function load(){cache=await api('/living');return cache;}
-function queueBlock(items,type){const box=h('div');for(const item of (items||[]).filter(x=>x.type===type)){box.append(type==='cv'?cvCard(item):ficheBody(item),actions(item,async()=>{await load();if(type==='cv')paintCv();else paintReview();}));}return box;}
 function paintCv(){
   const root=$('living');if(!root)return;
-  const data=cache||{evidence:[],cv:null};
-  const link=h('input',{id:'livingLink',placeholder:'Need link','aria-label':'Need link'});
-  const text=h('textarea',{id:'livingText',rows:'6',placeholder:'Job description','aria-label':'Job description'});
-  const status=h('p',{role:'status'});
-  const preview=h('div');
-  const show=artifact=>{preview.replaceChildren(cvCard(artifact),actions(artifact,next=>{cache={...cache,cv:next};show(next);}));};
-  if(!data.evidence.length&&!data.cv&&!(data.queue||[]).some(item=>item.type==='cv'))status.textContent='No validated experience.';
+  const data=cache||{cv:null,queue:[]};
+  const field=h('textarea',{id:'livingNeed',rows:'2',placeholder:'Paste a need link or job description','aria-label':'Paste a need link or job description'});
+  const note=h('p',{id:'livingStatus',class:'living-note',role:'status'});
+  const go=h('button',{class:'btn living-go',type:'button',text:data.cv?'Regenerate':'Generate CV'});
+  go.disabled=true;
+  field.addEventListener('input',()=>{if(!go.classList.contains('busy'))go.disabled=!field.value.trim();});
+  const preview=h('div',{class:'cv-preview'});
+  const show=artifact=>{
+    const onChange=next=>{cache={...cache,cv:next};show(next);go.textContent='Regenerate';};
+    preview.replaceChildren(stage(artifact,onChange));
+    go.textContent='Regenerate';
+  };
   if(data.cv)show(data.cv);
-  const go=h('button',{class:'btn primary',type:'button',text:'Generate'});
-  go.addEventListener('click',async()=>{go.disabled=true;status.textContent='';try{
-    const out=await post('/living/generate',{link:link.value,text:text.value});
-    if(out.ok===false){status.textContent="This need link can't be read yet.";return;}
-    cache={...cache,cv:out.artifact,consent:true};show(out.artifact);
-  }catch(e){status.textContent=e.message;}finally{go.disabled=false;}});
-  root.replaceChildren(h('div',{class:'living-sheet'},[h('h1',{text:'CV'}),queueBlock(data.queue,'cv'),link,text,h('div',{class:'actions'},[go]),status,preview]));
+  go.addEventListener('click',async()=>{
+    const had=!!preview.querySelector('.cv-doc');
+    go.classList.add('busy');go.disabled=true;field.readOnly=true;note.textContent='';
+    if(!had)preview.replaceChildren(skeleton());
+    try{
+      const out=await post('/living/generate',splitNeed(field.value));
+      if(out.ok===false){note.textContent="Couldn't read that link. Paste the job description instead.";if(!had)preview.replaceChildren();return;}
+      if(!(out.artifact?.lines||[]).length){note.textContent='No published evidence matches this need.';if(!had)preview.replaceChildren();return;}
+      cache={...cache,cv:out.artifact,consent:true};show(out.artifact);
+    }catch(e){note.textContent=e.message||'The library did not answer.';if(!had)preview.replaceChildren();}
+    finally{go.classList.remove('busy');field.readOnly=false;go.disabled=!field.value.trim();}
+  });
+  const queue=h('div',{class:'cv-queue'});
+  for(const item of (data.queue||[]).filter(entry=>entry.type==='cv'))queue.append(stage(item,async()=>{await load();paintCv();}));
+  root.replaceChildren(h('div',{class:'living-page'},[h('div',{class:'need-row'},[field,go]),note,queue,preview]));
+}
+function ficheCard(artifact,onChange){
+  const card=h('article',{class:'cv-doc'});
+  if(!artifact?.fiche)return card;
+  card.append(actionBar(artifact,onChange));
+  for(const [topic,items] of Object.entries(artifact.fiche.sections||{})){
+    if(!items.length)continue;
+    card.append(h('h3',{text:TOPIC_LABEL[topic]||topic}),bullets(items));
+  }
+  return card;
 }
 function paintReview(){
   const root=$('fiche');if(!root)return;
@@ -97,21 +208,25 @@ function paintReview(){
   const pick=h('select',{'aria-label':'Story'});
   for(const story of data.stories||[])pick.append(h('option',{value:story.id,text:story.title||'Story'}));
   if(!(data.stories||[]).length)pick.append(h('option',{value:'',text:'No validated experience'}));
-  const status=h('p',{role:'status'});
-  const preview=h('div');
-  const show=artifact=>{preview.replaceChildren(ficheBody(artifact),actions(artifact,next=>{cache={...cache,fiche:next};show(next);}));};
-  show(data.fiche);
-  const go=h('button',{class:'btn primary',type:'button',text:'Generate'});
+  const note=h('p',{class:'living-note',role:'status'});
+  const go=h('button',{class:'btn living-go',type:'button',text:'Generate'});
   go.disabled=!(data.stories||[]).length;
-  go.addEventListener('click',async()=>{go.disabled=true;status.textContent='';try{
-    const out=await post('/living/review',{storyId:pick.value});
-    cache={...cache,fiche:out.artifact,consent:true};show(out.artifact);
-  }catch(e){status.textContent=e.message;}finally{go.disabled=!(data.stories||[]).length;}});
-  root.replaceChildren(h('div',{class:'living-sheet'},[h('h1',{text:'Review'}),queueBlock(data.queue,'fiche'),pick,h('div',{class:'actions'},[go]),status,preview]));
+  const preview=h('div');
+  const show=artifact=>{preview.replaceChildren(ficheCard(artifact,next=>{cache={...cache,fiche:next};show(next);}));};
+  if(data.fiche)show(data.fiche);
+  go.addEventListener('click',async()=>{
+    go.classList.add('busy');go.disabled=true;note.textContent='';
+    try{const out=await post('/living/review',{storyId:pick.value});cache={...cache,fiche:out.artifact,consent:true};show(out.artifact);}
+    catch(e){note.textContent=e.message||'The library did not answer.';}
+    finally{go.classList.remove('busy');go.disabled=!(data.stories||[]).length;}
+  });
+  const queue=h('div',{class:'cv-queue'});
+  for(const item of (data.queue||[]).filter(entry=>entry.type==='fiche'))queue.append(ficheCard(item,async()=>{await load();paintReview();}));
+  root.replaceChildren(h('div',{class:'living-page'},[h('div',{class:'review-row'},[pick,go]),note,queue,preview]));
 }
 async function render(view){
   if(view!=='living'&&view!=='fiche')return;
-  try{await load();}catch(e){const root=$(view==='living'?'living':'fiche');if(root)root.replaceChildren(h('h1',{text:view==='living'?'CV':'Review'}),h('p',{role:'status',text:e.message||'The library did not answer.'}));return;}
+  try{await load();}catch(e){const root=$(view==='living'?'living':'fiche');if(root)root.replaceChildren(h('p',{class:'living-note',role:'status',text:e.message||'The library did not answer.'}));return;}
   if(view==='living')paintCv();else paintReview();
 }
 window.AtlasLivingUI={render};
