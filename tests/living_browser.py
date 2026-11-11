@@ -161,6 +161,18 @@ try:
         shot(mobile, 'living-cv-mobile.png')
         toast_clear(mobile, 'generated mobile toast stays fixed and off the CV')
         check('mobile CV still shows the sentence', 'Windows service' in mobile.locator('.cv-doc').inner_text())
+        def period_clear(target, label):
+            period = target.locator('.role-period')
+            check(label + ' date is on its own line', period.count() == 1 and '2024' in period.first.inner_text() and '2024' not in target.locator('.role-head h3').first.inner_text())
+            target.locator('.role-period').first.evaluate("el => el.scrollIntoView({block:'end'})")
+            hit = target.evaluate("""() => {
+              const period = document.querySelector('.role-period').getBoundingClientRect();
+              const badge = [...document.querySelectorAll('div')].find(el => (el.textContent || '').trim() === 'TEST DEPLOYMENT · SYNTHETIC DATA ONLY');
+              const b = badge.getBoundingClientRect();
+              return period.bottom > b.top && period.top < b.bottom && period.right > b.left && period.left < b.right;
+            }""")
+            check(label + ' date clears the synthetic badge', hit is False)
+        period_clear(mobile, 'mobile')
         check('mobile gaps open from a summary', mobile.locator('.summary-row').count() == 1 and 'Gaps' not in mobile.locator('.cv-doc').inner_text())
         approver = browser.new_context(viewport={'width': 1400, 'height': 900}).new_page()
         approver.goto(BASE + '/?as=' + urllib.parse.quote('pre@example.test') + '&idp=' + urllib.parse.quote(json.dumps({'roles': ['ATLAS.Presales']})))

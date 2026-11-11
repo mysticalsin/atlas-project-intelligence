@@ -84,11 +84,14 @@ function skillChips(cf){
   }
   return out;
 }
-function projectTitle(artifact,lines){
+function roleHead(artifact,lines){
   const ids=new Set(lines.map(line=>line.evidenceId));
   const project=(artifact.cf?.projects||[]).find(item=>(item.evidenceIds||[]).some(id=>ids.has(id)));
-  if(!project)return lines[0]?.storyTitle||'Experience';
-  return [project.company&&project.company.text,project.role&&project.role.text,project.period&&project.period.text].filter(Boolean).join(' · ')||'Experience';
+  const title=project?[project.company&&project.company.text,project.role&&project.role.text].filter(Boolean).join(' · '):(lines[0]?.storyTitle||'Experience');
+  const head=h('div',{class:'role-head'},[h('h3',{text:title||'Experience'})]);
+  const period=project&&project.period&&project.period.text;
+  if(period)head.append(h('p',{class:'role-period',text:period}));
+  return head;
 }
 function cvDocument(artifact,onChange){
   const card=h('article',{class:'cv-doc'});
@@ -122,7 +125,7 @@ function cvDocument(artifact,onChange){
     groups.get(id).push(line);
   }
   for(const lines of groups.values()){
-    card.append(h('h3',{text:projectTitle(artifact,lines)}));
+    card.append(roleHead(artifact,lines));
     card.append(bullets(lines,artifact));
   }
   return card;
