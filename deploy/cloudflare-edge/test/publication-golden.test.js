@@ -72,6 +72,27 @@ test('named publication inputs', () => {
   assert.equal(deriveStatus({ validation: { status: 'validated', managerDecision: 'approved', presalesDecision: 'approved' } }), 'in_review', 'validated with no quality is not published');
 });
 
+test('unknown validation status or decision derives awaiting_validation or in_review, never published', () => {
+  const ready = { status: 'ready' };
+  const qualities = [null, ready, { status: 'needs_work' }];
+  const statuses = [...VSTATUS, 'legacy', '', null];
+  const decisions = [...DECISION, 'legacy', '', null];
+  let n = 0;
+  for (const quality of qualities) for (const status of statuses) for (const manager of decisions) for (const presales of decisions) {
+    const known = VSTATUS.includes(status) && DECISION.includes(manager) && DECISION.includes(presales);
+    if (known) continue;
+    const state = { quality, validation: { status, managerDecision: manager, presalesDecision: presales } };
+    const got = deriveStatus(state);
+    const expect = quality && quality.status === 'ready' ? 'awaiting_validation' : 'in_review';
+    assert.equal(got, expect);
+    assert.notEqual(got, 'published');
+    n++;
+  }
+  assert.equal(n, qualities.length * (statuses.length * decisions.length * decisions.length - VSTATUS.length * DECISION.length * DECISION.length));
+  assert.equal(deriveStatus({ withdrawn: true, quality: ready, validation: { status: 'legacy', managerDecision: 'approved', presalesDecision: 'approved' } }), 'withdrawn');
+  assert.equal(deriveStatus({ quality: ready, validation: { status: 'validated', managerDecision: 'pending', presalesDecision: 'pending' } }), 'published');
+});
+
 const OWNER = { email: 'alex@mantu.com', role: 'user' };
 const N1 = { email: 'sam@mantu.com', role: 'user' };
 const PRE = { email: 'pre@mantu.com', role: 'presales' };
