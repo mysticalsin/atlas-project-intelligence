@@ -748,3 +748,9 @@ Review answers:
 - Parent is the privacy-receipt commit. This note is the next forward commit. No push, pull request, deploy, or live call.
 - The Worker uses the library's own path match for a privacy or profile delete. A trailing slash, a repeated slash, a query string, and a later privacy segment take the same missing-tenant rejection before the library object is requested. A profile path with a third segment is not a delete. Percent-encoded slashes and a different letter case are not that match. The page was not rebuilt.
 - Quarantine is not deletion. Vendor deletion stays not-asserted. A Cloudflare Durable Object runtime was not executed.
+
+### Session: 2026-11-11 / State machines, medium and low only (run71 part B)
+- Base is `main` `80bab333`. Inventory committed first (`docs/state-machines.md`). High-risk rows 1–12 are pending senior review and were not changed. No push of `main`, no PR, no deploy, no production `wrangler.jsonc` or binding change, no live call, no spend.
+- The carried ledger lows (`b00c303`) are not on this branch. They edit `meter.js` and `ledger-static.test.js`, which belong to the Plan A ledger and are not in this tree.
+- **Bug (`684266d`, then the machine).** `rating.js` admitted a half-open trial by clearing `openUntil` before the trial returned, so a second `rate()` was sent. `breaker.js` is the single writer. While the phase is `probing`, `blocked()` is `circuit_open`. Regression: `test/rating.test.js` R16b. Unit tests: `test/breaker.test.js`.
+- **Low.** Admin metrics view is `src/admin-metrics-machine.js`. `renderAdmin` is the only writer. Unknown or legacy loads become `boot_loading`. `build.py` inlines the machine into the page without `export` keywords.
