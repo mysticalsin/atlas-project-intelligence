@@ -2,7 +2,7 @@
 // legacy load and round-trip. The 2560 status goldens stay in publication-golden.test.js.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PUBLICATION_EVENTS, PUBLICATION_PHASES, bothApproved, changesRequested, initialPublication, isAdminBypass, isAdminTest, isWithdrawn, loadPublication, publicationStatus, publicationTransition, qualityMissing, qualityReady, validatedFlag } from '../src/publication.js';
+import { PUBLICATION_EVENTS, PUBLICATION_PHASES, approvalUnknown, bothApproved, changesRequested, initialPublication, isAdminBypass, isAdminTest, isWithdrawn, knownDecision, knownValidation, loadPublication, publicationStatus, publicationTransition, qualityMissing, qualityReady, validatedFlag } from '../src/publication.js';
 import { Library, deriveStatus } from '../src/library.js';
 import { memorySql } from './sqlite.js';
 
@@ -73,6 +73,19 @@ test('guards: withdrawn, admin bypass, quality, changes, validated flag, both ap
   assert.equal(bothApproved(ready), true);
   assert.equal(bothApproved({ validation: { managerDecision: 'approved', presalesDecision: 'pending' } }), false);
   assert.equal(publicationStatus({ quality: { status: 'ready' }, validation: { status: 'validated', managerDecision: 'pending', presalesDecision: 'pending' } }), 'published');
+  assert.equal(knownValidation('pending'), true);
+  assert.equal(knownValidation('legacy'), false);
+  assert.equal(knownDecision('approved'), true);
+  assert.equal(knownDecision(null), false);
+  assert.equal(approvalUnknown({ validation: { status: 'validated', managerDecision: 'pending', presalesDecision: 'pending' } }), false);
+  assert.equal(approvalUnknown({ validation: { status: 'legacy', managerDecision: 'approved', presalesDecision: 'approved' } }), true);
+  const logged = [];
+  const phase = publicationStatus({ id: 'story-9', quality: { status: 'ready' }, validation: { status: 'legacy', managerDecision: 'approved', presalesDecision: 'approved' } }, { log: line => logged.push(line), event: 'derive' });
+  assert.equal(phase, 'awaiting_validation');
+  assert.equal(logged.length, 1);
+  assert.deepEqual(Object.keys(logged[0]).sort(), ['atlas_metric', 'event', 'id', 'phase']);
+  assert.equal(logged[0].id, 'story-9');
+  assert.equal(logged[0].event, 'derive');
 });
 
 test('revised reopens approvals from any phase and keeps fields the event does not own', () => {

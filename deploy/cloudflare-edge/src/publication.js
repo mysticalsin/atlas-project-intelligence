@@ -40,6 +40,16 @@ export function bothApproved(state) {
   const v = state.validation || {};
   return v.managerDecision === 'approved' && v.presalesDecision === 'approved';
 }
+export function knownValidation(status) {
+  return KNOWN_VALIDATION.includes(status);
+}
+export function knownDecision(decision) {
+  return KNOWN_DECISIONS.includes(decision);
+}
+export function approvalUnknown(state) {
+  const v = state.validation || {};
+  return !knownValidation(v.status) || !knownDecision(v.managerDecision) || !knownDecision(v.presalesDecision);
+}
 
 export function initialPublication() {
   return {
@@ -57,9 +67,15 @@ export function loadPublication(raw) {
   return { ...raw };
 }
 
-// Same branches as the previous deriveStatus. merged_into is not read.
-export function publicationStatus(state) {
+// Same branches as the previous deriveStatus for the known values. merged_into is not read.
+// An unknown validation status or decision is not allowed to publish. The log is the id, the phase and the event.
+export function publicationStatus(state, opts = {}) {
   if (isWithdrawn(state)) return 'withdrawn';
+  if (approvalUnknown(state)) {
+    const phase = qualityReady(state) ? 'awaiting_validation' : 'in_review';
+    if (opts.log !== false) (opts.log || defaultLog)({ atlas_metric: 'publication', id: opts.id ?? state.id ?? null, phase, event: opts.event || 'derive' });
+    return phase;
+  }
   // A verified admin bypass is explicit and audited. The manager-staff checkbox never arrives here as not_required.
   if (isAdminBypass(state)) {
     if (state.test) return 'admin_test';
@@ -78,7 +94,7 @@ function done(state, status) {
   return { ok: true, illegal: false, state, status, effects: [] };
 }
 function illegal(state, event, log) {
-  const phase = state && typeof state === 'object' ? publicationStatus(state) : 'in_review';
+  const phase = state && typeof state === 'object' ? publicationStatus(state, { log: false }) : 'in_review';
   log({ atlas_metric: 'publication', id: event?.id ?? state?.id ?? null, phase, event: event?.type || 'unknown' });
   return { ok: false, illegal: true, state, status: phase, effects: [] };
 }
