@@ -3,6 +3,8 @@
 // value and activities presented as outcomes. The agent never sees confidential client details.
 // A record is 'ready' only with the agent's review, a score at or above the threshold and no blocker.
 
+import { budgetOutcome, exhaustedError } from './budget-stop.js';
+
 export const READY_SCORE = 75;
 const TOPIC = ['context', 'contribution', 'approach', 'outcome', 'evidence', 'customer_relevance'];
 export const ISSUE_FIELDS = [...TOPIC, 'deliverables', 'general'];
@@ -108,7 +110,11 @@ export async function reviewReference(record, complete, { view = forModel, ready
   try {
     const text = await complete([{ role: 'system', content: REVIEW_POLICY }, { role: 'user', content: JSON.stringify(view(record)) }]);
     ai = parseReview(text);
-  } catch { ai = null; }
+  } catch (e) {
+    if (budgetOutcome(e)) throw exhaustedError();
+    if (e?.name === 'BudgetRefused') throw e;
+    ai = null;
+  }
   const score = ai ? Math.round(0.45 * c.score + 0.55 * ai.score) : Math.round(c.score * 0.8);
   const blockers = [...c.coreMissing.map(m => 'Missing: ' + m)];
   if (!ai) blockers.push('The review agent did not answer; run the review again.');

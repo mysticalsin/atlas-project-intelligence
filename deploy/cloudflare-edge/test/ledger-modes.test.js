@@ -84,27 +84,27 @@ test('enforce fails closed with no ledger, a throwing or rejecting ledger, a bro
 test('enforce with the shipped production ledger uses the $5 month default and still refuses an explicit empty limit', async () => {
   const { BudgetState } = await import('../src/meter.js');
   const open = await withConsole(() => enforced({ SPEND_LEDGER: nsOf(new BudgetState()) })).then(r => r.result);
-  assert.deepEqual(open.reasons, ['admitted', 'admitted', 'admitted', 'unpriced', 'admitted', 'unpriced', 'unpriced', 'unpriced', 'unpriced', 'unpriced', 'unpriced']);
-  assert.equal(open.calls.length, 4, 'the four priced voice calls fit inside $5');
+  assert.deepEqual(open.reasons, Array(11).fill('admitted'));
+  assert.equal(open.calls.length, 12, 'eleven calls, plus the analyst reasoning retry on complete');
   const closed = await withConsole(() => enforced({ SPEND_LEDGER: nsOf(new BudgetState({ limitUsd: null })) })).then(r => r.result);
   assert.deepEqual(closed.calls, []);
   assert.deepEqual([...new Set(closed.reasons)], ['limit_unset'], 'an explicit empty limit is checked before pricing');
 });
 
-test('enforce blocks over budget: admits priced calls until the limit, then refuses; unpriced calls never pass; analyst is not retried after a refusal', async () => {
+test('enforce blocks over budget: admits calls until the limit, then refuses; analyst is not retried after a refusal', async () => {
   // $0.013: 1 s of speech recognition and 1 s of the turn model, each plus the proxy worst case, fit; the next priced call does not.
   const { BudgetState } = await import('../src/meter.js');
   const budget = new BudgetState({ limitUsd: 0.013 }), reserves = [];
   const ns = nsOf({ reserve: req => { reserves.push(req.kind); return budget.reserve(req); }, settle: (id, o) => budget.settle(id, o) });
   const { calls, reasons } = await withConsole(() => enforced({ SPEND_LEDGER: ns })).then(r => r.result);
-  assert.deepEqual(reasons, ['admitted', 'admitted', 'exhausted:usd', 'unpriced', 'exhausted:usd', 'unpriced', 'unpriced', 'unpriced', 'unpriced', 'unpriced', 'unpriced']);
-  assert.equal(calls.length, 2, 'only the admitted calls reached the upstream');
+  // ElevenLabs has no Workers AI proxy, so the French line still fits after Aura's proxy ceiling does not.
+  assert.deepEqual(reasons, ['admitted', 'admitted', 'exhausted:usd', 'admitted', 'exhausted:usd', 'exhausted:usd', 'exhausted:usd', 'exhausted:usd', 'exhausted:usd', 'exhausted:usd', 'exhausted:usd']);
+  assert.equal(calls.length, 3, 'only the admitted calls reached the upstream');
   assert.equal(reserves.filter(k => k === 'analyst').length, 3, 'complete, analyst, report: one reservation each, no retry');
-  assert.equal(budget.snapshot().settled.ok, 2);
-  assert.equal(budget.snapshot().refusals['exhausted:usd'], 2);
-  // A generous limit admits every priced kind (nova-3, smart-turn, aura, llama) and still refuses the unpriced ones.
+  assert.equal(budget.snapshot().settled.ok, 3);
+  assert.equal(budget.snapshot().refusals['exhausted:usd'], 8);
   const rich = new BudgetState({ limitUsd: 5 });
   const r2 = await withConsole(() => enforced({ SPEND_LEDGER: nsOf(rich) })).then(r => r.result);
-  assert.deepEqual(r2.reasons, ['admitted', 'admitted', 'admitted', 'unpriced', 'admitted', 'unpriced', 'unpriced', 'unpriced', 'unpriced', 'unpriced', 'unpriced']);
+  assert.deepEqual(r2.reasons, Array(11).fill('admitted'));
 });
 

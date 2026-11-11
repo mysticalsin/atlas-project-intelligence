@@ -2,6 +2,7 @@
 // Worker overwrites after verifying the sign-in (x-atlas-bank); CSRF/Origin are checked by the Worker.
 import { retainItems, scrub } from './memory.js';
 import { paid, TYPESAFE_ENDPOINT } from './meter.js';
+import { budgetOutcome, httpBudget } from './budget-stop.js';
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 
@@ -14,7 +15,7 @@ export async function memoryRoutes(request, { storage, hs, env, fetcher = fetch 
   try {
     if (request.method === 'GET' && !path) {
       if (!hs) return json({ enabled: false, off, documents: [] });
-      const raw = await hs.documents(bank).catch(() => ({})), list = raw.items || raw.documents || raw.results || [];
+      const raw = await hs.documents(bank).catch(e => { if (budgetOutcome(e) || e?.name === 'BudgetRefused') throw e; return {}; }), list = raw.items || raw.documents || raw.results || [];
       return json({ enabled: true, off, documents: (Array.isArray(list) ? list : []).slice(0, 100).map(d => ({ id: String(d.id || d.document_id || ''), updatedAt: d.updated_at || d.created_at || '', memories: d.memory_unit_count ?? null, tags: d.tags || [] })).filter(d => d.id) });
     }
     if (request.method === 'POST' && path === 'remember') {
@@ -40,7 +41,7 @@ export async function memoryRoutes(request, { storage, hs, env, fetcher = fetch 
     if (request.method === 'GET' && path === 'test') {
       if (role !== 'admin') return json({ error: 'Admins only.' }, 403);
       const out = { hindsight: { configured: !!hs }, jev: { configured: !!env.TYPESAFE_API_KEY } };
-      if (hs) { const t0 = Date.now(); try { await hs.ensureBank(bank); await hs.stats(bank); out.hindsight.ok = true; } catch (e) { out.hindsight.ok = false; out.hindsight.error = e.status === 402 ? 'no credits: add credits in Hindsight Cloud → Billing' : e.status === 401 || e.status === 403 ? 'key rejected: create a new key under Connect → Create API Key' : e.message; } out.hindsight.ms = Date.now() - t0; }
+      if (hs) { const t0 = Date.now(); try { await hs.ensureBank(bank); await hs.stats(bank); out.hindsight.ok = true; } catch (e) { const stop = budgetOutcome(e); out.hindsight.ok = false; out.hindsight.error = stop ? stop.message : e.status === 402 ? 'no credits: add credits in Hindsight Cloud → Billing' : e.status === 401 || e.status === 403 ? 'key rejected: create a new key under Connect → Create API Key' : e.message; } out.hindsight.ms = Date.now() - t0; }
       if (env.TYPESAFE_API_KEY) {
         const t0 = Date.now();
         try {
@@ -48,13 +49,15 @@ export async function memoryRoutes(request, { storage, hs, env, fetcher = fetch 
             body: JSON.stringify({ model: env.JEV_MODEL || 'jev-latest', state: { text: 'The consultant cut claim triage time from 40 to 12 minutes.' }, questions: { ok: { type: 'noul', instructions: 'Does `text` describe a measurable result?' } } }) });
           const a = r.ok ? (await r.json())?.answers?.ok : null;
           out.jev.ok = typeof a?.noul === 'number'; if (!r.ok) out.jev.error = r.status === 401 || r.status === 403 ? 'key rejected' : r.status === 402 || r.status === 429 ? 'no credits or rate limited' : 'HTTP ' + r.status;
-        } catch (e) { out.jev.ok = false; out.jev.error = e.message; }
+        } catch (e) { const stop = budgetOutcome(e); out.jev.ok = false; out.jev.error = stop ? stop.message : e.message; }
         out.jev.ms = Date.now() - t0;
       }
       return json(out);
     }
     return json({ error: 'Not found.' }, 404);
   } catch (e) {
+    const stopped = httpBudget(e);
+    if (stopped) return json(stopped.body, stopped.status);
     return json({ error: e.status && e.status < 500 ? e.message : 'Memory is unavailable right now.' }, e.status === 400 ? 400 : 502);
   }
 }

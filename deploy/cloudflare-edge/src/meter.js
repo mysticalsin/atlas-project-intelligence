@@ -8,9 +8,9 @@
 //            changes the log line.
 //   enforce  the ledger must admit a reservation before the call is made. Over budget, an unset limit, an unpriced
 //            call, a missing ledger, a ledger error or a ledger timeout refuses the call (BudgetRefused) and nothing
-//            reaches the upstream. Opt-in only.
+//            reaches the upstream. Production wrangler.jsonc sets enforce. The code default stays off.
 // Any other LEDGER_MODE value is a configuration error and refuses every paid call, like enforce without a ledger.
-import { PRICES } from './prices.js';
+import { ELEVENLABS_USD_PER_1K_CHARS, HINDSIGHT_USD_PER_REQUEST, PRICES, TYPESAFE_USD_PER_REQUEST, markdownFileUsd } from './prices.js';
 import { isIllegal, loadMonth, monthKey, transition } from './month-budget.js';
 
 export const LEDGER_MODES = Object.freeze(['off', 'observe', 'enforce']);
@@ -19,11 +19,10 @@ export const DEFAULT_LEDGER_MODE = 'off';
 // Unset configuration uses this default. An explicit null, blank, zero, negative or unparseable value denies.
 export const PRODUCTION_MONTHLY_LIMIT_USD = 5;
 // Workers AI binding proxy, worst case, same formula as the live-test ledger: $0.30 / million requests plus
-// 300,000 ms at $0.02 / million ms. Added to STT, smart-turn, talker and TTS ceilings. The $1.50 live-test path is separate.
+// 300,000 ms at $0.02 / million ms. Added to every binding call (@cf models and toMarkdown). The $1.50 live-test path is separate.
 export const PROXY_PER_CALL_NANO = Math.round((0.30 / 1e6 + 300000 * 0.02 / 1e6) * 1e9);
 export const LEDGER_TIMEOUT_MS = 1000;
 export const PRODUCTION_LEDGER_NAME = 'production';
-const VOICE_KINDS = new Set(['stt', 'turn', 'talker', 'tts']);
 
 export const TYPESAFE_ENDPOINT = 'https://api.typesafe.ai/v1/systemone';
 export const elevenLabsUrl = voice => `https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=pcm_24000`;
@@ -53,16 +52,36 @@ export function sanitize(req) {
   return out;
 }
 
-// Conservative per-call ceiling in nano-dollars at list prices, or null when the call cannot be priced (an unpriced
-// model, or any provider outside Workers AI): enforce refuses those, observe records usd: null.
+// Conservative per-call ceiling in nano-dollars at list prices, or null when this request has no measurable size
+// (zero audio, zero tokens, zero characters). A known kind with its canonical estimate is never null.
 export function priceOf(req, prices = PRICES) {
+  if (req?.provider === 'elevenlabs') {
+    const c = Math.ceil(Number(req.chars));
+    return c > 0 ? Math.ceil(c / 1000 * ELEVENLABS_USD_PER_1K_CHARS * NANO) : null;
+  }
+  if (req?.kind === 'memory' || req?.provider === 'hindsight') {
+    const n = Math.ceil(Number(req.requests) || 1);
+    return n > 0 ? Math.ceil(n * HINDSIGHT_USD_PER_REQUEST * NANO) : null;
+  }
+  if (req?.kind === 'jev' || req?.provider === 'typesafe') {
+    const n = Math.ceil(Number(req.requests) || 1);
+    return n > 0 ? Math.ceil(n * TYPESAFE_USD_PER_REQUEST * NANO) : null;
+  }
+  if (req?.kind === 'markdown') {
+    const files = Math.max(1, Math.ceil(Number(req.files) || 1));
+    return Math.ceil(files * markdownFileUsd() * NANO);
+  }
   const pr = req?.model ? prices[req.model] : null;
   if (!pr) return null;
   if (pr.usdPerAudioMin) {
     const sec = Math.ceil((Number(req.audioMs) || 0) / 1000) * 1000, ms = req.kind === 'turn' ? Math.min(sec, TURN_AUDIO_MAX_MS) : sec;
     return ms > 0 ? Math.ceil(ms / 60000 * pr.usdPerAudioMin * NANO) : null;
   }
-  if (pr.usdPerMInput) {
+  if (pr.usdPerMInput != null && pr.usdPerMOutput == null) {
+    const i = Math.ceil(Number(req.inputTokens));
+    return i > 0 ? Math.ceil(i * pr.usdPerMInput / 1e6 * NANO) : null;
+  }
+  if (pr.usdPerMInput != null) {
     const i = Math.ceil(Number(req.inputTokens)), o = Math.ceil(Number(req.outputTokens));
     return i > 0 && o > 0 ? Math.ceil((i * pr.usdPerMInput + o * pr.usdPerMOutput) / 1e6 * NANO) : null;
   }
@@ -70,12 +89,13 @@ export function priceOf(req, prices = PRICES) {
   return null;
 }
 
-// Admission ceiling in nano-dollars. Voice calls (STT, smart-turn, talker, TTS) add the proxy worst case.
-// Unpriced models stay null: enforce refuses them and does not pretend the proxy alone is a price.
+// Admission ceiling in nano-dollars. A Workers AI binding call (a @cf model, or toMarkdown) adds the proxy worst case.
+// ElevenLabs, Hindsight and TypeSafe are direct fetches and do not. A null price stays null.
 export function callCeilingNano(req, prices = PRICES) {
   const base = priceOf(req, prices);
   if (base === null) return null;
-  return VOICE_KINDS.has(req?.kind) ? base + PROXY_PER_CALL_NANO : base;
+  const binding = (typeof req?.model === 'string' && req.model.startsWith('@cf/')) || req?.kind === 'markdown';
+  return binding ? base + PROXY_PER_CALL_NANO : base;
 }
 
 // undefined uses the $5 default. null, '', 0, a negative, or anything that is not a positive finite number denies.
@@ -97,7 +117,7 @@ function logIllegal(state, event) {
 }
 
 // The production budget: one UTC calendar month, never refunded, reservation before the call.
-// Month changes go through month-budget.js transition only. Not bound in wrangler.jsonc.
+// Month changes go through month-budget.js transition only. Bound as SPEND_LEDGER in wrangler.jsonc.
 export class BudgetState {
   constructor({ limitUsd, prices = PRICES, saved = null, now = () => Date.now() } = {}) {
     const parsed = resolveLimitUsd(limitUsd);
@@ -164,7 +184,7 @@ function configuredLimit(env, options) {
 }
 
 // Durable Object shape for the production budget (RPC methods). One writer: apply() runs load, mutate and put in order.
-// Exported from no Worker entry and bound nowhere.
+// Exported from worker.js and bound as SPEND_LEDGER.
 export class ProductionSpendLedger {
   constructor(state, env = {}, options = {}) {
     this.storage = state.storage;

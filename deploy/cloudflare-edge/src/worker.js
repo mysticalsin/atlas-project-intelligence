@@ -7,11 +7,14 @@ import { Session } from './session.js';
 import { storyRater } from './rating.js';
 import { libraryRoutes } from './library-routes.js';
 import { hindsight, recallQuery, memoryNote, jevRelevant } from './memory.js';
+import { budgetOutcome } from './budget-stop.js';
 import { memoryRoutes } from './memory-routes.js';
 import { resolveForInterview } from './gaps.js';
 import { fetchWinHint } from './winloop.js';
 import { teamsClient } from './teams.js';
 import { libraryFromStorage } from './library-store.js';
+
+export { ProductionSpendLedger } from './meter.js';
 
 export default {
   fetch: (request, env, ctx) => handle(request, env, page, { waitUntil: p => ctx.waitUntil(p) }),
@@ -29,7 +32,8 @@ export class Interview extends DurableObject {
     const memory = this.hs && bank && (await this.ctx.storage.get('memoryOff')) !== true ? async project => {
       const t0 = Date.now(); let found = await this.hs.recall(bank, recallQuery(project), { tags: project?.id && project.id !== 'new' ? ['project:' + project.id] : undefined });
       const n = found.length; let checked = 0;
-      try { const j = await jevRelevant(this.env, found, project); found = j.memories; checked = j.checked; } catch { metric('memory_jev_error', {}); }
+      try { const j = await jevRelevant(this.env, found, project); found = j.memories; checked = j.checked; }
+      catch (e) { if (budgetOutcome(e) || e?.name === 'BudgetRefused') throw e; metric('memory_jev_error', {}); }
       metric('memory_recall', { ms: Date.now() - t0, found: n, kept: found.length, jev_checked: checked });
       return memoryNote(found);
     } : null;

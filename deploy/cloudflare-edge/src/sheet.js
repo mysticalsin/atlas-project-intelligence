@@ -1,6 +1,8 @@
 // Project reference sheet (Amaris/Mantu template): document ingestion (Workers AI toMarkdown), drafting of the
 // Executive Summary and the eight-section fact sheet with challenge questions, and key-visual suggestions.
 // Nothing is invented: unsupported fields are "To be completed". Known client details are scrubbed before any model.
+import { budgetOutcome, exhaustedError, generatedText, httpBudget } from './budget-stop.js';
+
 export const TBD = 'To be completed';
 export const EXEC = ['summary', 'teamSize', 'duration', 'price', 'contacts'];
 export const SECTIONS = ['industry', 'issue', 'scope', 'methodology', 'deliverables', 'tools', 'team', 'value'];
@@ -86,14 +88,16 @@ export async function sheetRoutes(request, path, ai) {
       const bytes = new Uint8Array(await request.arrayBuffer());
       if (!bytes.length) return json({ error: 'The file is empty.' }, 400);
       if (bytes.length > MAX_FILE) return json({ error: 'The file is larger than 10 MB.' }, 413);
-      const r = await ai.toMarkdown({ name, blob: new Blob([bytes], { type }) });
+      let r;
+      try { r = await ai.toMarkdown({ name, blob: new Blob([bytes], { type }) }); }
+      catch (e) { if (budgetOutcome(e)) throw exhaustedError(); throw e; }
       const one = Array.isArray(r) ? r[0] : r;
       if (!one || one.format === 'error') return json({ error: 'This file type could not be read. Try PDF, Word (.docx), Excel, ODT, CSV, HTML or paste the text.' }, 415);
       return json({ text: String(one.data || '').slice(0, MAX_TEXT), truncated: String(one.data || '').length > MAX_TEXT, name });
     }
     let body; try { body = await request.json(); } catch { return json({ error: 'Invalid JSON.' }, 400); }
     if (path === 'draft') {
-      const draft = parseDraft(await ai.complete(draftMessages(body), 5000));
+      const draft = parseDraft(await generatedText(ai.complete(draftMessages(body), 5000)));
       if (!draft) return json({ error: 'The drafting model did not answer. Try again.' }, 502);
       return json(draft);
     }
@@ -102,15 +106,17 @@ export async function sheetRoutes(request, path, ai) {
       if (!images.length) return json({ selected: [] });
       const described = await Promise.all(images.map(async (im, index) => {
         try { const r = await ai.toMarkdown({ name: (im.name || 'image') + (im.img.type === 'jpeg' ? '.jpg' : '.png'), blob: new Blob([im.img.bytes], { type: 'image/' + im.img.type }) }); const one = Array.isArray(r) ? r[0] : r; return { index, description: one?.format === 'error' ? '' : str(one?.data, 1200) }; }
-        catch { return { index, description: '' }; }
+        catch (e) { if (budgetOutcome(e)) throw exhaustedError(); return { index, description: '' }; }
       }));
       const usable = described.filter(d => d.description);
       if (!usable.length) return json({ selected: [] });
-      const selected = parseVisuals(await ai.complete([{ role: 'system', content: VISUALS_POLICY }, { role: 'user', content: JSON.stringify({ project: str(body.context, 1500), images: usable }) }], 1500), images.length);
+      const selected = parseVisuals(await generatedText(ai.complete([{ role: 'system', content: VISUALS_POLICY }, { role: 'user', content: JSON.stringify({ project: str(body.context, 1500), images: usable }) }], 1500)), images.length);
       return json({ selected });
     }
     return json({ error: 'Not found.' }, 404);
   } catch (e) {
+    const stopped = httpBudget(e);
+    if (stopped) return json(stopped.body, stopped.status);
     return json({ error: e?.status && e.status < 500 ? e.message : 'The reference sheet service is unavailable right now.' }, 502);
   }
 }

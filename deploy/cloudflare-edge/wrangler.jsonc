@@ -6,8 +6,8 @@
   "workers_dev": true,
   "preview_urls": false,
   "ai": { "binding": "AI" },
-  "durable_objects": { "bindings": [{ "name": "INTERVIEW", "class_name": "Interview" }, { "name": "LIBRARY", "class_name": "LibraryStore" }] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Interview"] }, { "tag": "v2", "new_sqlite_classes": ["LibraryStore"] }],
+  "durable_objects": { "bindings": [{ "name": "INTERVIEW", "class_name": "Interview" }, { "name": "LIBRARY", "class_name": "LibraryStore" }, { "name": "SPEND_LEDGER", "class_name": "ProductionSpendLedger" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Interview"] }, { "tag": "v2", "new_sqlite_classes": ["LibraryStore"] }, { "tag": "v3", "new_sqlite_classes": ["ProductionSpendLedger"] }],
   "rules": [{ "type": "Text", "globs": ["**/*.html"], "fallthrough": true }],
   "observability": { "enabled": true },
   "triggers": { "crons": ["17 6 * * *"] },
@@ -35,7 +35,10 @@
     "TTS_MODEL_ES": "@cf/deepgram/aura-2-es",
     "TTS_VOICE_ES": "celeste",
     "ELEVENLABS_MODEL": "eleven_flash_v2_5",
-    "ELEVENLABS_VOICE_ID": "21m00Tcm4TlvDq8ikWAM"
+    "ELEVENLABS_VOICE_ID": "21m00Tcm4TlvDq8ikWAM",
+    // Tony, 2026-11-11, via Jarvis 18:19 BRT: every AI call shares one $5 UTC-month budget and fails closed.
+    // No limit override in this file, so the $5 default in meter.js applies.
+    "LEDGER_MODE": "enforce"
   }
   // Secrets (never committed): CSRF_SECRET (deploy.sh); optional via set-keys.sh: HINDSIGHT_API_KEY, TYPESAFE_API_KEY, ELEVENLABS_API_KEY
   // Optional WOW vars (docs/WOW_SPEC.md section 5), all unset by default; Tony decides and sets them, no values here:

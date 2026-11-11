@@ -758,3 +758,7 @@ Review answers:
 ### Session: 2026-11-11 / Production voice mode stays baseline (run78, brought onto plan-a-cap-v2)
 - `test/production-voice-mode.test.js` landed with this commit. It imports `speculation.js`, which belongs to early processing and was not carried. Production `wrangler.jsonc` has no early flags. The test will be restated against this branch so it does not pull that module in.
 
+
+### Session: 2026-11-11 / Every production AI call under the $5 month (run79, brought onto plan-a-cap-v2)
+- Prices, the visible stop, and `LEDGER_MODE=enforce` in production wrangler came with this commit. Early processing and the privacy-delete browser were not carried. The production entry does not call `speculationConfig`.
+
