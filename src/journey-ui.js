@@ -69,10 +69,12 @@ function noteAdmin(result){if(result&&result.rejection){try{console.warn(JSON.st
 async function renderAdmin(){const root=$('admin');if(!root)return;
  let metricsView=initialAdminMetrics();
  root.replaceChildren(h('p',{text:'Loading admin metrics…'}));
- let boot={};try{boot=await app().bootInfo();}catch{boot={};}
- const booted=noteAdmin(adminMetricsTransition(metricsView,{type:'boot',role:boot.libraryRole}));
+ let boot=null;try{boot=await app().bootInfo();}catch{boot=null;}
+ const bootFailed=!boot||boot.protocol!=='atlas-personaplex-pcm-v1';
+ const booted=noteAdmin(adminMetricsTransition(metricsView,{type:'boot',failed:bootFailed,role:boot&&boot.libraryRole}));
  if(!booted.ok)return;
  metricsView=booted.state;
+ if(metricsView.status==='boot_error'){root.replaceChildren(h('h1',{id:'adminTitle',text:'Admin'}),banner('warn','Metrics failed.'));return;}
  if(metricsView.status==='denied'){root.replaceChildren(h('h1',{id:'adminTitle',text:'Admin'}),banner('warn','This dashboard is only for a verified admin. The API refuses everyone else.'));return;}
  const range=h('select',{'aria-label':'Time range'});for(const [v,t] of [['7','7 days'],['30','30 days'],['90','90 days']])range.append(h('option',{value:v,text:t}));
  const bucket=h('select',{'aria-label':'Aggregation'});bucket.append(h('option',{value:'day',text:'By day'}),h('option',{value:'week',text:'By week'}));

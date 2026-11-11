@@ -77,6 +77,22 @@ with sync_playwright() as pw:
           and 'This dashboard is only for a verified admin. The API refuses everyone else.' in d.locator('#admin').inner_text()
           and d.locator('#admin .metric-grid').count() == 0 and d.locator('#admin .chart').count() == 0
           and d.locator('#admin button', has_text='Export CSV').count() == 0 and len(HELD) == before)
+    outage = b.new_context(viewport={'width': 1366, 'height': 1000})
+    o = outage.new_page(); o.on('pageerror', lambda e: ERR.append('boot: ' + str(e)))
+    def boot_down(r):
+        u = r.request.url.split('?', 1)[0].rstrip('/')
+        if u == 'https://atlas.test': return r.fulfill(body=H, content_type='text/html')
+        if u == 'https://atlas.test/api/bootstrap': return r.fulfill(status=503, body='down')
+        r.fulfill(status=404, body='')
+    o.route('**/*', boot_down); o.goto('https://atlas.test/')
+    o.locator('#adminNav').wait_for(state='attached')
+    o.evaluate("document.getElementById('adminNav').click()")
+    o.locator('#admin h1').wait_for()
+    outage_text = o.locator('#admin').inner_text()
+    check('a failed boot does not show the verified-admin sentence',
+          'Metrics failed.' in outage_text
+          and 'This dashboard is only for a verified admin. The API refuses everyone else.' not in outage_text
+          and o.locator('#admin .metric-grid').count() == 0 and o.locator('#admin button', has_text='Export CSV').count() == 0)
     with p.expect_download() as dl:
         p.locator('#admin button', has_text='Export CSV').click()
     got = Path(dl.value.path()).read_text()
