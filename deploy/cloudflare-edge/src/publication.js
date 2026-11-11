@@ -1,11 +1,11 @@
 // Story publication. Pure transitions. deriveStatus in library.js is this derive function.
 // upsert is the writer for a revision: it applies `revised` and stores that state and its status.
-// The status column for a review, an approval, a withdrawal or a reinstatement is deriveStatus of the
-// state those callers already built. Merge still writes its own column until the merged event.
+// The status column for a review, an approval, a withdrawal, a reinstatement or a merge is
+// publicationStatus of the state the reducer returned. Merge applies `merged`.
 // A rejection log is the story id, the phase and the event. Never the story text, an address or a key.
 export const PUBLICATION_VERSION = 1;
 export const PUBLICATION_PHASES = Object.freeze(['in_review', 'needs_work', 'changes_requested', 'awaiting_validation', 'published', 'admin_test', 'withdrawn']);
-export const PUBLICATION_EVENTS = Object.freeze(['revised', 'derive']);
+export const PUBLICATION_EVENTS = Object.freeze(['revised', 'derive', 'merged']);
 // The five validation statuses and four decisions the golden table distinguishes. undefined is the missing field.
 export const KNOWN_VALIDATION = Object.freeze([undefined, 'pending', 'validated', 'changes_requested', 'admin_bypass']);
 export const KNOWN_DECISIONS = Object.freeze([undefined, 'pending', 'approved', 'changes_requested']);
@@ -87,6 +87,11 @@ export function publicationTransition(state, event, { log = defaultLog } = {}) {
   const type = event?.type;
   if (!PUBLICATION_EVENTS.includes(type)) return illegal(state, event, log);
   if (type === 'derive') return done(state, publicationStatus(state));
+  if (type === 'merged') {
+    const prior = state && typeof state === 'object' ? state : {};
+    const next = { ...prior, withdrawn: true };
+    return done(next, publicationStatus(next));
+  }
   const prior = state && typeof state === 'object' ? state : {};
   const next = {
     ...prior,

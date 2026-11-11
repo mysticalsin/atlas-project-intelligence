@@ -3,6 +3,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PUBLICATION_EVENTS, PUBLICATION_PHASES, bothApproved, changesRequested, initialPublication, isAdminBypass, isAdminTest, isWithdrawn, loadPublication, publicationStatus, publicationTransition, qualityMissing, qualityReady, validatedFlag } from '../src/publication.js';
+import { Library, deriveStatus } from '../src/library.js';
+import { memorySql } from './sqlite.js';
 
 const quiet = { log: () => {} };
 const phases = {
@@ -18,7 +20,7 @@ const phases = {
 test('every legal publication transition, and every other (phase, event) pair is rejected and logged', () => {
   const logged = [];
   const log = line => logged.push(line);
-  const extras = ['merged', 'withdraw', 'publish'];
+  const extras = ['withdraw', 'publish'];
   let legal = 0, illegal = 0;
   for (const phase of PUBLICATION_PHASES) {
     assert.equal(publicationStatus(phases[phase]), phase);
@@ -31,6 +33,11 @@ test('every legal publication transition, and every other (phase, event) pair is
         assert.equal(result.illegal, false);
         if (type === 'revised') assert.equal(result.status, 'in_review');
         if (type === 'derive') assert.equal(result.status, phase);
+        if (type === 'merged') {
+          assert.equal(result.status, 'withdrawn');
+          assert.equal(result.state.withdrawn, true);
+          assert.equal(result.state.quality, phases[phase].quality);
+        }
       } else {
         illegal++;
         assert.equal(result.ok, false, phase + ' ' + type);
@@ -80,6 +87,20 @@ test('revised reopens approvals from any phase and keeps fields the event does n
   assert.deepEqual(result.state.sharedWith, ['a@example.test']);
   assert.equal(result.state.ratingGen, 4);
   assert.equal(result.state.duplicates[0].id, 'other');
+});
+
+test('merge stores the status the merged event returned', async () => {
+  let t = 0;
+  const l = new Library(memorySql(), { now: () => new Date(Date.UTC(2026, 8, 27, 0, 0, t++)).toISOString() });
+  const reviewer = { email: 'rev@example.test', role: 'reviewer' };
+  const keep = await l.upsert({ email: 'ada@example.test', role: 'user' }, { localId: 'keep', reference: { title: 'Keep' } });
+  const gone = await l.upsert({ email: 'kim@example.test', role: 'user' }, { localId: 'gone', reference: { title: 'Gone' } });
+  await l.merge(reviewer, { keep: keep.id, merge: gone.id });
+  const row = l.row(gone.id);
+  assert.equal(row.merged_into, keep.id);
+  assert.equal(row.state.withdrawn, true);
+  assert.equal(row.status, 'withdrawn');
+  assert.equal(row.status, deriveStatus(row.state));
 });
 
 test('legacy and unknown snapshots load to a defined state; a story state round-trips', () => {
