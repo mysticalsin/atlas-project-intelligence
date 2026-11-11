@@ -927,7 +927,13 @@ Review answers:
 ### Session: 2026-11-11 / One $5 month for every AI call (run82, local only)
 - Tony's decision, via Jarvis at 18:19 BRT: "Everything AI: price every model call and put all of it under the same $5." One UTC-month budget covers every paid call production can make. It fails closed. A feature may stop mid-month. The stop is the sentence "This month's AI budget is used up."
 - Prices are in `deploy/cloudflare-edge/src/prices.js`, cited in `docs/LEDGER_MODES.md` (read 2026-11-11). `detr-resnet-50` has no published price and is reserved at the Gemma ceiling. Hindsight operations other than retain and recall have no published unit and reserve the retain ceiling. TypeSafe reserves the published 64k context cap because the call sites do not pass a token count. `test/priced-kinds.test.js` fails if a paid estimate names a kind without a positive ceiling.
-- `src/budget-stop.js` is the pure reducer. `exhausted:usd` is the only user-facing stop. Other refusals stay closed and are not shown as that sentence. Voice mid-call keeps "Voice is paused for this month. No unmetered call was made."
+- `src/budget-stop.js` is the pure reducer. `exhausted:usd` is the only user-facing stop. Other refusals stay closed and are not shown as that sentence. Voice mid-call stays `voice-unavailable` and shows `BUDGET_MESSAGE`.
 - Production `wrangler.jsonc` exports nothing itself; `worker.js` exports `ProductionSpendLedger`, the binding is `SPEND_LEDGER`, migration `v3` `new_sqlite_classes`, and `LEDGER_MODE` is `enforce` with no limit override. Voice stays `speculationConfig(this.env, null)`. The live-test configs do not set `LEDGER_MODE`. The $1.50 ledger is unchanged.
 - Admin metrics were not changed. `queryMetrics` rolls up telemetry, and reserved spend lives in the spend ledger. Mixing them would make the metrics function impure or present the telemetry figure as the $5 cap.
 - Not exercised against a live provider. No deploy.
+
+### Session: 2026-11-11 / Plan A QA mediums
+- Voice STT and TTS read `BUDGET_MESSAGE` from `budget-stop.js`. The page shows that sentence alone. Other voice failures keep their own copy.
+- Background indexing still writes no vector when the embed is refused. The rating does not fall through to another model or a rules score, and it is not retried as a network error.
+- Ask and recommend stay HTTP 200 with the lexical cards and the budget object. `docs/LEDGER_MODES.md` says why.
+- Page pin `10617df96762c9cd77c69bb3ab714bc58a542a7f2a1a472fa0eb79ca422e9fa6`, 913270 bytes. `scripts/verify_page_build.sh` matched it on two runs. No deploy.
