@@ -212,7 +212,11 @@ test('gaps and conflicts stay off the CV; unsupported keywords are not claims', 
   assert.equal(cv.lines.find(line => line.evidenceId === 's:A4.1').text, '8 years of Windows work on that same service.');
   assert.equal(cv.lines.some(line => /^I\b/.test(line.text)), false);
   assert.equal(cv.lines.some(line => line.text.includes('Daily rate')), false);
-  assert.deepEqual(cv.gaps.map(gap => gap.keyword).sort(), ['C++', 'English', 'Middle - From 4 to 6 years']);
+  assert.deepEqual(cv.gaps.map(gap => gap.keyword).sort(), ['C++', 'English']);
+  assert.equal(cv.gaps.every(gap => gap.authority === 'must'), true);
+  assert.equal(cv.gaps.some(gap => gap.keyword === 'Middle - From 4 to 6 years'), false);
+  const withNice = composeCv({ consultant: cv.consultant, lines, need: { ...need, keywords: [...need.keywords, { text: 'WPF', authority: 'nice', kind: 'skill' }] }, audience: 'internal' });
+  assert.equal(withNice.gaps.some(gap => gap.keyword === 'WPF'), false);
   assert.equal(cv.gaps.some(gap => /2\+|an asset|WinUI|WPF/.test(gap.keyword)), false);
   assert.equal(cv.lines.some(line => /C\+\+|WinUI|2\+ years|an asset/.test(line.text)), false);
   assert.ok(cv.flags.some(flag => flag.code === 'skill_conflict'));

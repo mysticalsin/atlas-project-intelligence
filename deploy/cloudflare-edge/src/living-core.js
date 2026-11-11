@@ -456,7 +456,7 @@ export function composeCv({ consultant = {}, lines = [], need = null, audience =
   const matches = ranked.filter(item => item.n > 0);
   const rest = ranked.filter(item => item.n === 0);
   const kept = (need ? [...matches, ...rest] : ranked).slice(0, Math.max(16, matches.length)).map(item => item.line);
-  const gaps = keywords.filter(key => !kept.some(line => hasTerm(line.source || line.text, key.text))).map(key => ({ keyword: key.text, authority: key.authority, kind: key.kind }));
+  const gaps = keywords.filter(key => key.authority === 'must' && !kept.some(line => hasTerm(line.source || line.text, key.text))).map(key => ({ keyword: key.text, authority: key.authority, kind: key.kind }));
   return {
     consultant: {
       name: consultant.name || '',

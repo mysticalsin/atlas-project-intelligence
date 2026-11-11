@@ -13,4 +13,5 @@
 .cv li{margin:5px 0}
 .cv .warn{margin:8px 0 0;padding:0;list-style:none}
 .cv .warn li{font-size:13px;padding:8px 10px;border-radius:10px;margin:6px 0;background:#fff6d8;border:1px solid #f2d475;color:#5a4300}
+.cv .warn li.flag{background:#ffe8e4;border-color:#ffc7bd;color:#7a1f16}
 @media(max-width:420px){html body .topbar nav{flex-wrap:wrap;height:auto}html body .topbar nav button{flex:1 1 auto;min-width:4.8rem;overflow:visible;text-overflow:clip}}

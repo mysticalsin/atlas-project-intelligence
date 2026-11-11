@@ -26,11 +26,11 @@ function actions(artifact,onChange){
   row.append(exp);
   return row;
 }
-function keywordList(title,items,textOf){
+function keywordList(title,items,textOf,itemClass){
   const box=h('div');
   if(!items.length)return box;
   box.append(h('h5',{text:title}));
-  box.append(h('ul',{class:'warn'},items.map(item=>h('li',{text:textOf(item)}))));
+  box.append(h('ul',{class:'warn'},items.map(item=>h('li',itemClass?{class:itemClass,text:textOf(item)}:{text:textOf(item)}))));
   return box;
 }
 function citedRows(items){return (items||[]).filter(item=>item&&item.text).map(item=>({text:item.text,evidenceId:item.evidenceId||''}));}
@@ -60,7 +60,7 @@ function cvCard(artifact){
     }
   }else if((artifact.lines||[]).length)card.append(h('h5',{text:'Experience'}),bullets(artifact.lines));
   card.append(keywordList('Gaps',artifact.gaps||[],gap=>gap.keyword));
-  card.append(keywordList('Conflicts',artifact.flags||[],flag=>flag.detail||flag.code));
+  card.append(keywordList('Flags',artifact.flags||[],flag=>flag.detail||flag.code,'flag'));
   return card;
 }
 function ficheBody(artifact){

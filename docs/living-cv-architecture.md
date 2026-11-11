@@ -35,7 +35,7 @@ Ledger detail ids are not copied onto the library revision. The sentence the con
 
 - `SmartNeedLinkAdapter` accepts only `https://need.arp.mantu.com/needs/<id>`. It reads a fixture or HTML the caller already has. There is no fetch and no credential. An unknown link returns `unreadable` and `pasteFallback`.
 - The parser keeps the Candidate Requirement section. Must tags and Level are the ATS keywords. A dash is empty. A duplicated mission list joined by a middle dot is de-duplicated. A merged profile bullet stays one item and is flagged, not split into a claim.
-- A disagreement inside the section is a flag. Level 4–6 years stays the keyword when the prose says 2+ years. C++ stays a Must keyword when the prose says it is an asset. The CV composer never turns a flag or a gap into a line.
+- A disagreement inside the section is a flag for the consultant. Level 4–6 years stays the keyword when the prose says 2+ years. C++ stays a Must keyword when the prose says it is an asset. The screen lists those under Flags. A gap is only a must keyword that no published sentence supports. Level and nice-to-have keywords are not gaps. The CV composer never turns a flag or a gap into a line.
 - `PastedJobDescriptionAdapter` reads text the consultant pasted.
 
 ## MiChat
