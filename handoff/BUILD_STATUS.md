@@ -762,3 +762,6 @@ Review answers:
 ### Session: 2026-11-11 / Every production AI call under the $5 month (run79, brought onto plan-a-cap-v2)
 - Prices, the visible stop, and `LEDGER_MODE=enforce` in production wrangler came with this commit. Early processing and the privacy-delete browser were not carried. The production entry does not call `speculationConfig`.
 
+### Session: 2026-11-11 / Shared month sentence when voice stops (brought onto plan-a-cap-v2)
+- Voice refusals use `BUDGET_MESSAGE` and `{ budget: true }`. The page pin from the other branch was not kept; this branch will rebuild the page from its own sources.
+

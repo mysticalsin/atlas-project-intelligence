@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Session } from '../src/session.js';
 import { CAPS, PROXY_PER_CALL_USD } from '../src/spend-ledger.js';
+import { BUDGET_MESSAGE } from '../src/budget-stop.js';
 
 const M = await import('../src/meter.js');
 const SM = await import('../src/month-budget.js');
@@ -241,8 +242,41 @@ test('a budget refusal stops the voice session and does not call the provider ag
   assert.equal(calls, 1);
   const err = events.find(e => e.type === 'error');
   assert.equal(err.code, 'voice-unavailable');
-  assert.match(err.message, /No unmetered call was made/);
+  assert.equal(err.message, BUDGET_MESSAGE);
+  assert.equal(err.budget, true);
   await s.transcribe(new Uint8Array(4800));
   assert.equal(calls, 1, 'the session does not try the provider again');
   assert.equal(s.finished, true);
+});
+
+test('a budget refusal during synthesis keeps voice-unavailable and shows the shared sentence; another voice failure keeps its own copy', async () => {
+  const refused = () => Object.assign(new Error('cap'), { name: 'BudgetRefused', reason: 'exhausted:usd' });
+  const run = async synthesize => {
+    const events = [];
+    let calls = 0;
+    const s = new Session({
+      io: { send: e => events.push(e), sendBytes() {}, close() {} },
+      ai: {
+        async transcribe() { return 'hello there friend'; },
+        async synthesize() { calls += 1; throw synthesize(); },
+        async *chatStream() { yield 'Hello from the model.'; },
+        async analyst() { return []; },
+      },
+      csrf: 'tok', voice: 'asteria', now: () => 1000, sleep: () => Promise.resolve(),
+    });
+    s.startReply('Say hello.', { prefix: 'Hello.' });
+    await s.speaking;
+    return { events, calls };
+  };
+  const stopped = await run(refused);
+  assert.equal(stopped.calls, 1);
+  const err = stopped.events.find(e => e.type === 'error');
+  assert.equal(err.code, 'voice-unavailable');
+  assert.equal(err.message, BUDGET_MESSAGE);
+  assert.equal(err.budget, true);
+  const other = await run(() => new Error('tts down'));
+  const plain = other.events.find(e => e.type === 'error');
+  assert.equal(plain.code, 'voice-unavailable');
+  assert.equal(plain.message, 'The voice reply failed. No fallback voice was used.');
+  assert.equal(plain.budget, undefined);
 });
