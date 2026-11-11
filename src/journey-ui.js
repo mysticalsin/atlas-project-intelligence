@@ -110,23 +110,39 @@ function deletionReceipt(r,latest){const box=h('div',{class:'panel',id:'privacyR
 function bars(series){const max=Math.max(1,...series.map(p=>p.events||0));const fig=h('div',{class:'chart',role:'img','aria-label':'Events by day'});
  for(const p of series){const i=h('i');i.style.height=Math.round((p.events/max)*100)+'%';fig.append(h('div',{},[i,h('span',{text:String(p.bucket).slice(5)})]));}
  return fig;}
-async function renderAdmin(){const root=$('admin');if(!root)return;root.replaceChildren(h('p',{text:'Loading admin metrics…'}));
+async function renderAdmin(){const root=$('admin');if(!root)return;
+ let metricsView=initialAdminMetrics();
+ root.replaceChildren(h('p',{text:'Loading admin metrics…'}));
  let boot={};try{boot=await app().bootInfo();}catch{boot={};}
- if(boot.libraryRole!=='admin'){root.replaceChildren(h('h1',{id:'adminTitle',text:'Admin'}),banner('warn','This dashboard is only for a verified admin. The API refuses everyone else.'));return;}
+ const booted=adminMetricsTransition(metricsView,{type:'boot',role:boot.libraryRole});
+ if(!booted.ok)return;
+ metricsView=booted.state;
+ if(metricsView.status==='denied'){root.replaceChildren(h('h1',{id:'adminTitle',text:'Admin'}),banner('warn','This dashboard is only for a verified admin. The API refuses everyone else.'));return;}
  const range=h('select',{'aria-label':'Time range'});for(const [v,t] of [['7','7 days'],['30','30 days'],['90','90 days']])range.append(h('option',{value:v,text:t}));
  const bucket=h('select',{'aria-label':'Aggregation'});bucket.append(h('option',{value:'day',text:'By day'}),h('option',{value:'week',text:'By week'}));
  const go=h('button',{class:'btn',type:'button',text:'Update'});const exp=h('button',{class:'btn',type:'button',text:'Export CSV'});
  const out=h('div');
- async function load(){out.replaceChildren(h('p',{text:'Loading…'}));
+ async function load(){
+  const step=adminMetricsTransition(metricsView,{type:'refresh'});
+  if(!step.ok)return;
+  metricsView=step.state;
+  out.replaceChildren(h('p',{text:'Loading…'}));
   const to=new Date(),from=new Date(to.getTime()-Number(range.value)*864e5);
   try{const m=await api('/admin/metrics?from='+encodeURIComponent(from.toISOString())+'&to='+encodeURIComponent(to.toISOString())+'&bucket='+bucket.value);
+   const done=adminMetricsTransition(metricsView,{type:'loaded',count:m.series.length});
+   if(!done.ok)return;
+   metricsView=done.state;
    const grid=h('div',{class:'metric-grid'});
    const cards=[['Events',m.events],['Errors',m.errors],['Actual tokens in',m.tokens.actualIn],['Missing token events',m.tokens.missing],['Unknown token events',m.tokens.unknown],['Latency avg ms',m.latencyMs.average??'missing'],['Published',m.workflow.published],['Awaiting manager',m.workflow.awaiting_manager],['Awaiting pre-sales',m.workflow.awaiting_presales],['Admin tests',m.workflow.admin_test]];
    for(const [k,v] of cards)grid.append(h('div',{class:'metric'},[h('span',{class:'tiny',text:k}),h('b',{text:String(v)})]));
    const cost=m.estimatedCost?`Estimated ${m.estimatedCost.amount} ${m.estimatedCost.currency} from configured unit rates${m.estimatedCost.includesEstimatedTokens?' (includes estimated tokens)':''}.`:'No cost figure. Unit rates are not configured, so this is not shown as zero.';
    out.replaceChildren(grid,m.series.length?bars(m.series):h('p',{text:'No events in this range.'}),h('p',{text:cost}),h('p',{class:'tiny muted',text:m.note}));
-  }catch(e){out.replaceChildren(banner('warn',e.message||'Metrics failed.'));}}
- go.addEventListener('click',load);exp.addEventListener('click',async()=>{try{const pack=await api('/admin/export');app().download(pack.filename||'atlas-admin-metrics.csv',pack.csv||'','text/csv');}catch(e){out.append(banner('warn',e.message));}});
+  }catch(e){const failed=adminMetricsTransition(metricsView,{type:'load_failed'});if(failed.ok)metricsView=failed.state;out.replaceChildren(banner('warn',e.message||'Metrics failed.'));}}
+ go.addEventListener('click',load);exp.addEventListener('click',async()=>{
+  const step=adminMetricsTransition(metricsView,{type:'export'});
+  if(!step.ok)return;
+  metricsView=step.state;
+  try{const pack=await api('/admin/export');app().download(pack.filename||'atlas-admin-metrics.csv',pack.csv||'','text/csv');}catch(e){const failed=adminMetricsTransition(metricsView,{type:'export_failed'});if(failed.ok)metricsView=failed.state;out.append(banner('warn',e.message));}});
  root.replaceChildren(h('div',{class:'journey-head'},[h('div',{},[h('p',{class:'eyebrow',text:'ADMIN ONLY'}),h('h1',{id:'adminTitle',text:'Operations.'}),h('p',{text:'Pseudonymous counts. Tokens are actual only when a provider returned them.'})]),personaBar()]),h('div',{class:'filters'},[range,bucket,go,exp]),out);
  load();}
 function render(view){if(view==='admin')renderAdmin();else renderJourney();}
