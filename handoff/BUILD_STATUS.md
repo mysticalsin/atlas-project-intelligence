@@ -754,3 +754,7 @@ Review answers:
 - Tony's decision: production voice spend is $5 per UTC calendar month, fail closed. The live-test ledger was not brought onto this branch.
 - `src/month-budget.js` is the month machine. Admission is reserved nano plus the call ceiling within $5. A ledger error denies and makes no upstream call. A refusal ends the voice session. `LEDGER_MODE` off is still the code default in this commit.
 
+
+### Session: 2026-11-11 / Production voice mode stays baseline (run78, brought onto plan-a-cap-v2)
+- `test/production-voice-mode.test.js` landed with this commit. It imports `speculation.js`, which belongs to early processing and was not carried. Production `wrangler.jsonc` has no early flags. The test will be restated against this branch so it does not pull that module in.
+
