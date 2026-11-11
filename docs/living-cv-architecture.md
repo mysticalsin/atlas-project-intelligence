@@ -49,6 +49,12 @@ MiChat has an "Adapt CF to Project" action. Atlas already tailors from the Candi
 
 A fiche is the same published snippets, grouped by topic. Salary, compensation, and market value are dropped by key and by sentence. The projection does not add a score.
 
+## Screen chrome
+
+The CV and review views do not remove the application nav, autosave, backup, footer, or the synthetic-data badge. Those belong to the shell. Taking them off only on these two screens would still mean editing the shell, and taking them off everywhere would change every other screen. The spec's request to delete that chrome is recorded here and left undone.
+
+The global toast stays fixed on every other view. While CV or review is the open view, the same toast leaves the fixed layer and sits after the page, so it no longer covers the card. The typeface stays the Atlas font. Inter is not bundled, and loading it would be a shell change.
+
 ## Consent, delete, tenant
 
 `profileReuse` is a stored consent, the same path as the other profile consents. Generate and review ask for it. Privacy delete removes living artifacts for that subject and tenant. Another tenant cannot read them.
