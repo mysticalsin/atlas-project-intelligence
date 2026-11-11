@@ -26,7 +26,7 @@
 - Row 18 is the `revised` event. Other rows were not started.
 
 ## Lessons
-- A pure derive can publish from an unknown status when both decisions are approved, and from a `validated` flag when a decision is unknown. That was 64 inputs. Map those to `awaiting_validation` or `in_review` only after a failing test shows the old `published`.
+- A pure derive used to publish from an unknown status when both decisions were approved, and from a `validated` flag when a decision was unknown. The golden test asserts every unknown approval tuple in that grid stays non-published. Map an unknown approval to `awaiting_validation` or `in_review` only after a failing test shows the old `published`.
 - `validated` plus both decisions pending, and a single approval with the other pending, used to derive `published`. The failing test reported `published` before `canPublish` required both lanes.
 - `merge` was the remaining literal status write. The event sets `withdrawn` and the column stores the reducer's status, so a later derive agrees.
 - Rejection and unknown logs are the story id, the phase and the event. The both-approval refusal does not add a log line.
