@@ -1,11 +1,11 @@
 # State machines in ATLAS
-Last reviewed: 2026-11-11 on `cursor/state-machines-atlas` at `50c2dc05`.
+Last reviewed: 2026-11-11 on `cursor/state-machines-atlas` at `cb2ff2b27e896f7c34725839f3a66bfcea573409`. This stamp is that code commit, because this docs commit cannot name itself.
 
-Standard: portfolio implicit-state-machine standard v1 (2026-11-11), sha256 `c62dff48dc032e70df170c3161709ae7bfb79f1e25db473b730a300cedb82f0c`. High-risk rows are pending senior review. No high-risk fix is started in this branch.
+The rules are `docs/STATE-MACHINE-STANDARD.md`. This file keeps the ATLAS inventory and does not restate them. High-risk rows are pending senior review. No high-risk fix is started in this branch.
 
 ## Inventory
 
-Section 4 record. One row per candidate. Status in the summary table is the decision; it becomes FIXED only in the commit that lands that machine.
+Row shape: section 4 of `docs/STATE-MACHINE-STANDARD.md`. Status in the summary table is the decision; it becomes FIXED only in the commit that lands that machine.
 
 | # | Machine | Location | Lifecycle | Flags / fields | Known bugs | Risk | Decision |
 |---|---|---|---|---|---|---|---|
