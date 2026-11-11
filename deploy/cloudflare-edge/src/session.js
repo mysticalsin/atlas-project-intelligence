@@ -8,6 +8,7 @@ import { Analyst, InterviewLedger } from './ledger.js';
 import { EnergyTurns, isEcho, Phrases, speakable } from './speech.js';
 import { EndMarker, parseReport, reportMessages } from './report.js';
 import { LANGUAGES, normalize, spokenFor, languageNote, GREETINGS, WELCOME_BACK, FILLERS, unfinished } from './languages.js';
+import { budgetRefused } from './meter.js';
 
 export const RESUME = '[The consultant made a sound but no words were recognised, and your last reply was cut off.] Briefly re-ask your last question in fresh words.';
 
@@ -442,6 +443,7 @@ export class Session {
       text = (typeof heard === 'string' ? heard : heard?.text || '').trim(); heardIn = typeof heard === 'string' ? null : heard?.language || null;
       this.metric('stt', { ms: Math.round((this.now() - t0) * 1000), audio_ms: Math.round(pcm.length / 48), words: text ? text.split(/\s+/).length : 0 });
     } catch (e) {
+      if (budgetRefused(e)) { this.metric('spend_cap', { reason: String(e.reason || 'refused').slice(0, 40) }); clearTimeout(timer); return this.fail('Voice is paused for this month. No unmetered call was made.', 'voice-unavailable'); }
       // A failed (or hung) transcription counts as no words: whatever was waiting on it (a held answer, a re-ask) still happens.
       this.metric('stt_error', { name: e?.name || 'Error' }); this.event('quality_warning', { message: 'A speech segment could not be transcribed. Please repeat it or add it to your notes.' }); text = ''; heardIn = null;
     } finally { clearTimeout(timer); }
@@ -582,7 +584,11 @@ export class Session {
     this.replies += 1;
     const item = 'agent-' + this.replies, gen = ++this.gen;
     this.replyItem = item; this.replyTurn = turn; this.replyGen = gen;
-    const run = this.speak(item, gen, instruction, prefix || filler, !!filler, notBefore, endedAt, thinking).catch(e => { this.metric('reply_error', { name: e?.name || 'Error' }); if (!this.finished && gen === this.gen) this.event('error', { message: 'The voice reply failed. No fallback voice was used.', code: 'voice-unavailable' }); });
+    const run = this.speak(item, gen, instruction, prefix || filler, !!filler, notBefore, endedAt, thinking).catch(e => {
+      this.metric('reply_error', { name: e?.name || 'Error' });
+      if (budgetRefused(e)) return this.fail('Voice is paused for this month. No unmetered call was made.', 'voice-unavailable');
+      if (!this.finished && gen === this.gen) this.event('error', { message: 'The voice reply failed. No fallback voice was used.', code: 'voice-unavailable' });
+    });
     this.speaking = run;
     run.finally(() => { if (this.speaking === run) this.speaking = null; });
   }
@@ -627,7 +633,8 @@ export class Session {
       const text = speakable(piece); // markup is never voiced; the screen keeps it
       if (!text) return; // nothing to say: its text goes out with the next piece (or release())
       const synthesis = this.synth(text, lang, true); synthesis.catch(() => {}); // a failure surfaces where it is delivered
-      chain = chain.then(() => deliver(piece, synthesis)); chain.catch(() => {});
+      chain = chain.then(() => deliver(piece, synthesis));
+      chain.catch(e => { if (budgetRefused(e)) this.fail('Voice is paused for this month. No unmetered call was made.', 'voice-unavailable'); });
       inflight.push(chain);
       while (inflight.length >= SYNTH_AHEAD) await inflight.shift();
     };

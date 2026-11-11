@@ -57,25 +57,23 @@ Observe would also be safe to ship as the default: it cannot block a call, logs 
 
 The suggested order is off, then observe for a period to compare estimates with the Cloudflare bill, then enforce.
 
-## Production limit: placeholder only
+## Production limit: $5 per UTC month
 
-`PRODUCTION_DAILY_LIMIT_USD = null` in `src/meter.js`. While it is null, enforce refuses every call with `limit_unset`. The limit is not read from any environment variable.
+Tony's decision, relayed via Jarvis at 17:03 BRT on 2026-11-11: production voice spend is **$5 per calendar month** (UTC), fail closed. `PRODUCTION_MONTHLY_LIMIT_USD = 5` in `src/meter.js`. The earlier $15 per UTC day proposal is not the limit.
 
-**PROPOSED, for Tony's decision, not set:** $15 per UTC day for the pilot. This is an estimate, not a measurement. The rationale:
-- An interview is capped at 15 minutes. At the list-price ceilings the meter uses (no free allocation), the priced Workers AI calls come to roughly $0.40 to $0.50 per interview:
-  - speech recognition of about 9 consultant minutes, counted twice for early transcription: about $0.09;
-  - talker input and output including drafts: about $0.18;
-  - Aura: about 4,500 characters, about $0.14;
-  - smart-turn: well under $0.01.
-- So $15 covers about 30 full interviews a day, which is above the pilot's expected use, while keeping a runaway loop to a small daily loss.
+Admission is `month-to-date reserved nano + this call's worst case <= 5_000_000_000` nano-dollars (`Math.round(5 * 1e9)`). Equal to the cap is admitted. One nano over is `exhausted:usd`. Reservations are not refunded on settle, cancel or failure. The next UTC day in the same month does not reset the counter. At `YYYY-MM-01T00:00:00Z` the pure `rollover` event in `src/month-budget.js` opens the new month at zero. That file is the only writer of the month. `docs/STATE-MACHINE-STANDARD.md` is not vendored on this branch; the machine follows its rules (typed states and events, one pure transition, no I/O in the reducer, versioned persistence, unknown or legacy records deny and are not healed).
 
-The figure must be re-derived once observe has run against real bills.
+The worst case for STT, smart-turn, talker and TTS is the list-price ceiling plus the Workers AI binding proxy worst case, `0.30 / 1e6 + 300000 * 0.02 / 1e6` dollars (`PROXY_PER_CALL_NANO` = 6,000,300). Unpriced models stay unpriced and are refused under enforce. The live-test ledger's $1.50 cap is a different ledger and is unchanged.
+
+The default applies when the limit is omitted. An explicit null, blank, zero, negative or unparseable `limitUsd` or `PRODUCTION_MONTHLY_LIMIT_USD` denies with `limit_unset`. A ledger read or write failure denies with `ledger_error`. A legacy day record, a bad version or a month that is not `YYYY-MM` denies with `unknown_month` and stays denied across the next month boundary. None of these fall through to an unmetered provider call. A refusal ends the voice session with `error` / `voice-unavailable` and the words "No unmetered call was made." The page already shows that error as the stable stopped state.
+
+`LEDGER_MODE` is still unset in `wrangler.jsonc`, and `SPEND_LEDGER` is still not bound. Off remains the shipped mode, so this cap is what enforce admits against. Turning it on in production is a later configuration change, not part of this branch.
 
 ## Known limits
 
 - **Unpriced calls are refused under enforce.** `src/prices.js` has sourced list prices only for nova-3, smart-turn-v2, llama-3.3-70b-instruct-fp8-fast and Aura en/es. The analyst model (gpt-oss-120b), the embeddings model (bge-m3), `toMarkdown`, ElevenLabs, TypeSafe and Hindsight are therefore refused under enforce until their prices are read from the providers' pricing pages and added. Under observe they are recorded with `usd: null`.
 - **Estimates are ceilings, not bills.** Audio is rounded up to whole seconds; talker output is reserved at `max_tokens`; input tokens are UTF-8 bytes plus an allowance.
-- **One global day budget.** There is no per-user or per-tenant limit, and the window is a UTC day. One Durable Object instance serialises every reservation, and its throughput under many simultaneous interviews has not been measured.
+- **One global month budget.** There is no per-user or per-tenant limit, and the window is a UTC calendar month. `ProductionSpendLedger.apply` is the single writer. Its throughput under many simultaneous interviews has not been measured.
 - **Latency.** Enforce adds a ledger round trip before every call, at most 1 s before it refuses.
 - **How callers report a refusal.** Callers keep their existing failure handling. For example, `storyRater` reports a refused request as a `network` failure and retries within its own budget; each retry is refused too.
 - **Enabling needs production configuration changes, which are not made here:**

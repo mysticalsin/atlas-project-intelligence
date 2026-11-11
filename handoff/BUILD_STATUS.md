@@ -749,7 +749,8 @@ Review answers:
 - The Worker uses the library's own path match for a privacy or profile delete. A trailing slash, a repeated slash, a query string, and a later privacy segment take the same missing-tenant rejection before the library object is requested. A profile path with a third segment is not a delete. Percent-encoded slashes and a different letter case are not that match. The page was not rebuilt.
 - Quarantine is not deletion. Vendor deletion stays not-asserted. A Cloudflare Durable Object runtime was not executed.
 
-### Session: 2026-11-09 / Ledger coverage: every paid call through one meter (run70, brought onto plan-a-cap-v2)
-- Brought from the ledger-mode base onto main. The live-test ledger, the session hold, early processing, privacy delete and persona were not brought.
-- `deploy/cloudflare-edge/src/meter.js` `paid(env)` wraps the edge AI calls. Prices live in `src/prices.js`. `LEDGER_MODE` off is still the code default in this commit. `docs/LEDGER_MODES.md` records the modes.
-- The live-test cap test and the early-processing docs were not carried, because those trees are not on this branch.
+
+### Session: 2026-11-11 / Production month cap, $5, fail closed (run78, brought onto plan-a-cap-v2)
+- Tony's decision: production voice spend is $5 per UTC calendar month, fail closed. The live-test ledger was not brought onto this branch.
+- `src/month-budget.js` is the month machine. Admission is reserved nano plus the call ceiling within $5. A ledger error denies and makes no upstream call. A refusal ends the voice session. `LEDGER_MODE` off is still the code default in this commit.
+
