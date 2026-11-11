@@ -18,26 +18,33 @@ function legal(phase, type) {
 
 test('every legal transition, and every other (phase, event) pair is rejected and logged', () => {
   const logged = [];
-  const log = line => logged.push(line);
+  const warns = [];
+  const original = console.warn;
+  console.warn = (...args) => warns.push(args);
   let legalCount = 0, illegalCount = 0;
+  try {
   for (const state of samples()) {
     for (const type of BREAKER_EVENTS) {
       const event = { type, now: 2_000_000, key: 'other-key', trial: false };
-      const result = transition(state, event, { log });
+      const result = transition(state, event);
       if (legal(state.phase, type)) {
         legalCount++;
         assert.equal(result.ok, true, state.phase + ' ' + type);
         assert.equal(result.illegal, false);
         assert.equal(result.state.version, 1);
+        assert.equal(result.rejection, undefined);
       } else {
         illegalCount++;
         assert.equal(result.ok, false, state.phase + ' ' + type);
         assert.equal(result.illegal, true);
         assert.equal(result.state, state, 'an illegal move does not change state');
         assert.equal(result.reason, 'circuit_open');
+        logged.push(result.rejection);
       }
     }
   }
+  } finally { console.warn = original; }
+  assert.equal(warns.length, 0, 'the transition does not log');
   assert.equal(illegalCount, samples().filter(s => s.phase === 'probing').length);
   assert.equal(legalCount, samples().length * BREAKER_EVENTS.length - illegalCount);
   assert.equal(logged.length, illegalCount);
@@ -86,11 +93,10 @@ test('fail counting matches the old note(): three failures open, a trial failure
 });
 
 test('a probing fail re-opens even when the trial flag is absent', () => {
-  const logged = [];
-  const result = transition(probing(0), { type: 'fail', now: 110, trial: false }, { log: line => logged.push(line) });
+  const result = transition(probing(0), { type: 'fail', now: 110, trial: false });
   assert.equal(result.ok, true);
   assert.deepEqual(result.state, open(110 + BREAKER_OPEN_MS, 0));
-  assert.deepEqual(logged, [], 'a legal probing fail is not a rejection');
+  assert.equal(result.rejection, undefined, 'a legal probing fail is not a rejection');
   const later = transition(probing(2), { type: 'fail', now: 200 }, quiet);
   assert.equal(later.state.phase, 'open');
   assert.equal(later.state.fails, 0);

@@ -61,7 +61,7 @@ Section 4 record. One row per candidate. Status in the summary table is the deci
 | any | derive | none | the status of the current fields | none inside the reducer |
 | any | merged | none | withdrawn, other fields kept | `merge` stores that status and `merged_into` |
 
-Anything not in this table is illegal and is rejected and logged. The log line is the story id, the phase and the event.
+Anything not in this table is illegal and is rejected. The transition returns the previous state and a rejection marker. The caller logs the story id, the phase and the event.
 
 ```mermaid
 stateDiagram-v2
@@ -74,7 +74,7 @@ stateDiagram-v2
 ### Platform / flag differences
 None. `canPublish` is both approval lanes. The `validated` flag is not that guard.
 
-A validation status outside `undefined`, `pending`, `validated`, `changes_requested` and `admin_bypass`, or a decision outside `undefined`, `pending`, `approved` and `changes_requested`, does not publish. Quality ready maps to `awaiting_validation`. Anything else that is not withdrawn maps to `in_review`. The log is the story id, the phase and the event. Before this, both approved decisions with an unknown status, and a `validated` flag with an unknown decision, derived `published` when quality was ready.
+A validation status outside `undefined`, `pending`, `validated`, `changes_requested` and `admin_bypass`, or a decision outside `undefined`, `pending`, `approved` and `changes_requested`, does not publish. Quality ready maps to `awaiting_validation`. Anything else that is not withdrawn maps to `in_review`. `publicationEffect` is that marker. `deriveStatus` logs the story id, the phase and the event. Before this, both approved decisions with an unknown status, and a `validated` flag with an unknown decision, derived `published` when quality was ready.
 
 `deploy/cloudflare-edge/test/publication-golden.test.js` calls `deriveStatus` for every combination of the fields it reads, and checks that `merged_into` does not change the result.
 
@@ -121,7 +121,7 @@ Withdrawn wins. Then an unknown status or decision does not publish. Then `admin
 | any | auth_fail | none | same phase (probing becomes closed), auth key set | the rating fails |
 | any | ignore | none | same phase (probing becomes closed) | the rating fails; the count is unchanged |
 
-Anything not in this table is illegal and is rejected and logged. The log line is the phase and the event. It does not carry the key. Effects (the fetch, the retry sleeps, the `RatingError`) run in `storyRater`, not in `transition`.
+Anything not in this table is illegal and is rejected. The transition returns the previous state and a rejection marker. `storyRater` logs the phase and the event. It does not carry the key. Effects (the fetch, the retry sleeps, the `RatingError`) run in `storyRater`, not in `transition`.
 
 `open` plus `succeed`, and `open` plus `fail`, stay in the table. A rating admitted while the breaker was closed can still be running when another failure opens it. That first request then settles. The reducer has to accept the settlement, or the failure count and the open window would describe a request that already finished.
 
@@ -180,7 +180,7 @@ None. The auth-key guard reads the key the rater was constructed with. It is not
 | loading, ready, empty, error | export | none | same | download the CSV |
 | loading, ready, empty, error | export_failed | none | same | append the warning under the pane |
 
-Anything not in this table is illegal and is rejected and logged. `renderAdmin` does not change the pane when a transition is illegal.
+Anything not in this table is illegal and is rejected. The transition returns the previous state and a rejection marker. `renderAdmin` logs the status and the event, and does not change the pane.
 
 ```mermaid
 stateDiagram-v2

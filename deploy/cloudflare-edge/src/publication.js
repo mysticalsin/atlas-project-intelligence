@@ -2,15 +2,14 @@
 // upsert is the writer for a revision: it applies `revised` and stores that state and its status.
 // The status column for a review, an approval, a withdrawal, a reinstatement or a merge is
 // publicationStatus of the state the reducer returned. Merge applies `merged`.
-// A rejection log is the story id, the phase and the event. Never the story text, an address or a key.
+// A rejection marker is the story id, the phase and the event. The caller logs it.
+// Never the story text, an address or a key. publicationTransition does not log.
 export const PUBLICATION_VERSION = 1;
 export const PUBLICATION_PHASES = Object.freeze(['in_review', 'needs_work', 'changes_requested', 'awaiting_validation', 'published', 'admin_test', 'withdrawn']);
 export const PUBLICATION_EVENTS = Object.freeze(['revised', 'derive', 'merged']);
 // The five validation statuses and four decisions the golden table distinguishes. undefined is the missing field.
 export const KNOWN_VALIDATION = Object.freeze([undefined, 'pending', 'validated', 'changes_requested', 'admin_bypass']);
 export const KNOWN_DECISIONS = Object.freeze([undefined, 'pending', 'approved', 'changes_requested']);
-
-const defaultLog = line => { try { console.warn(JSON.stringify(line)); } catch { /* logging never changes the status */ } };
 
 export function isWithdrawn(state) {
   return !!state.withdrawn;
@@ -71,14 +70,9 @@ export function loadPublication(raw) {
 
 // Known values follow the previous derive, except that a validated flag publishes only with both approvals.
 // merged_into is not read. An unknown validation status or decision is not allowed to publish.
-// The log is the id, the phase and the event.
-export function publicationStatus(state, opts = {}) {
+export function publicationStatus(state) {
   if (isWithdrawn(state)) return 'withdrawn';
-  if (approvalUnknown(state)) {
-    const phase = qualityReady(state) ? 'awaiting_validation' : 'in_review';
-    if (opts.log !== false) (opts.log || defaultLog)({ atlas_metric: 'publication', id: opts.id ?? state.id ?? null, phase, event: opts.event || 'derive' });
-    return phase;
-  }
+  if (approvalUnknown(state)) return qualityReady(state) ? 'awaiting_validation' : 'in_review';
   // A verified admin bypass is explicit and audited. The manager-staff checkbox never arrives here as not_required.
   if (isAdminBypass(state)) {
     if (state.test) return 'admin_test';
@@ -96,15 +90,23 @@ export function publicationStatus(state, opts = {}) {
 function done(state, status) {
   return { ok: true, illegal: false, state, status, effects: [] };
 }
-function illegal(state, event, log) {
-  const phase = state && typeof state === 'object' ? publicationStatus(state, { log: false }) : 'in_review';
-  log({ atlas_metric: 'publication', id: event?.id ?? state?.id ?? null, phase, event: event?.type || 'unknown' });
-  return { ok: false, illegal: true, state, status: phase, effects: [] };
+// The caller logs this when a status is derived from an unknown approval. Withdrawn stays quiet.
+export function publicationEffect(state, event = {}) {
+  if (!state || typeof state !== 'object' || isWithdrawn(state) || !approvalUnknown(state)) return null;
+  return { atlas_metric: 'publication', id: event.id ?? state.id ?? null, phase: publicationStatus(state), event: event.event || 'derive' };
 }
 
-export function publicationTransition(state, event, { log = defaultLog } = {}) {
+function illegal(state, event) {
+  const phase = state && typeof state === 'object' ? publicationStatus(state) : 'in_review';
+  return {
+    ok: false, illegal: true, state, status: phase, effects: [],
+    rejection: { atlas_metric: 'publication', id: event?.id ?? state?.id ?? null, phase, event: event?.type || 'unknown' },
+  };
+}
+
+export function publicationTransition(state, event) {
   const type = event?.type;
-  if (!PUBLICATION_EVENTS.includes(type)) return illegal(state, event, log);
+  if (!PUBLICATION_EVENTS.includes(type)) return illegal(state, event);
   if (type === 'derive') return done(state, publicationStatus(state));
   if (type === 'merged') {
     const prior = state && typeof state === 'object' ? state : {};

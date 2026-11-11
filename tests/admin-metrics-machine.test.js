@@ -15,24 +15,32 @@ function expectLegal(status, type) {
 
 test('every legal admin transition, and every other pair is rejected and logged', () => {
   const logged = [];
+  const warns = [];
+  const original = console.warn;
+  console.warn = (...args) => warns.push(args);
   let legal = 0, illegal = 0;
+  try {
   for (const status of ADMIN_METRICS_STATES) {
     for (const type of ADMIN_METRICS_EVENTS) {
       const event = type === 'boot' ? { type, role: 'admin' } : type === 'loaded' ? { type, count: 2 } : { type };
-      const result = adminMetricsTransition(at(status), event, { log: line => logged.push(line) });
+      const result = adminMetricsTransition(at(status), event);
       if (expectLegal(status, type)) {
         legal++;
         assert.equal(result.ok, true, status + ' ' + type);
         assert.equal(result.illegal, false);
+        assert.equal(result.rejection, undefined);
       } else {
         illegal++;
         assert.equal(result.ok, false, status + ' ' + type);
         assert.equal(result.illegal, true);
         assert.equal(result.state.status, status);
         assert.deepEqual(result.effects, []);
+        logged.push(result.rejection);
       }
     }
   }
+  } finally { console.warn = original; }
+  assert.equal(warns.length, 0, 'the transition does not log');
   assert.equal(legal + illegal, ADMIN_METRICS_STATES.length * ADMIN_METRICS_EVENTS.length);
   assert.equal(logged.length, illegal);
   assert.ok(illegal > 0);
@@ -88,13 +96,13 @@ test('refresh, failure, and export stay on the shell and do not run from boot or
 
 test('boot_error is legal only from a failed boot, and every shell event there is illegal', () => {
   const logged = [];
-  const log = { log: line => logged.push(line) };
   assert.equal(adminMetricsTransition(at('boot_loading'), { type: 'boot', failed: true }, quiet).state.status, 'boot_error');
   for (const type of ADMIN_METRICS_EVENTS) {
-    const result = adminMetricsTransition(at('boot_error'), type === 'loaded' ? { type, count: 1 } : { type }, log);
+    const result = adminMetricsTransition(at('boot_error'), type === 'loaded' ? { type, count: 1 } : { type });
     assert.equal(result.illegal, true, type);
     assert.equal(result.state.status, 'boot_error');
     assert.deepEqual(result.effects, []);
+    logged.push(result.rejection);
   }
   assert.equal(logged.length, ADMIN_METRICS_EVENTS.length);
   assert.ok(logged.every(l => Object.keys(l).every(k => ['atlas_metric', 'illegal', 'status', 'event'].includes(k))));

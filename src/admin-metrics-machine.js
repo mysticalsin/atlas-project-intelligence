@@ -30,18 +30,18 @@ function legal(status, type) {
   return false;
 }
 
-const defaultLog = line => { try { console.warn(JSON.stringify(line)); } catch { /* logging never changes the view */ } };
-
 function ok(status, effects) {
   return { ok: true, illegal: false, state: { version: ADMIN_METRICS_VERSION, status }, effects };
 }
 
-export function adminMetricsTransition(state, event, { log = defaultLog } = {}) {
+export function adminMetricsTransition(state, event) {
   const type = event?.type;
   if (!ADMIN_METRICS_STATES.includes(state?.status) || !legal(state.status, type)) {
-    // status and event only. No role, address, or response body.
-    log({ atlas_metric: 'admin_metrics', illegal: true, status: state?.status || 'unknown', event: type || 'unknown' });
-    return { ok: false, illegal: true, state, effects: [] };
+    // Previous state, plus a marker. status and event only. No role, address, or response body.
+    return {
+      ok: false, illegal: true, state, effects: [],
+      rejection: { atlas_metric: 'admin_metrics', illegal: true, status: state?.status || 'unknown', event: type || 'unknown' },
+    };
   }
   if (type === 'boot') {
     if (bootFailed(event)) return ok('boot_error', ['show_boot_error']);
