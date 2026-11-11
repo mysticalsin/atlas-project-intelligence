@@ -1,5 +1,5 @@
 # State machines in ATLAS
-Last reviewed: 2026-11-11 at 69f0c01b (inventory; medium and low fixes follow on `cursor/state-machines-atlas`)
+Last reviewed: 2026-11-11 on `cursor/state-machines-atlas` (base 69f0c01b). High rows are pending review.
 
 Standard: portfolio implicit-state-machine standard v1 (2026-11-11), sha256 `c62dff48dc032e70df170c3161709ae7bfb79f1e25db473b730a300cedb82f0c`. High-risk rows are pending senior review. No high-risk fix is started in this branch.
 
@@ -21,14 +21,64 @@ Section 4 record. One row per candidate. Status in the summary table is the deci
 | 10 | Privacy delete receipt | `src/journey-ui.js:11` and `confirmDelete` at :81; server attempts at `deploy/cloudflare-edge/src/operate.js:111` | disclosure, confirm, in flight, receipt, earlier receipt, failure, identity change | `pendingDelete`, `deleteReceipt`, `receiptIsLatest`, `deleteFailure`, `deleteOwner` | Fixed across the delete-receipt commits (latest failure, earlier receipt, one request). `complete` stays false. No new bug filed. | H | LATER. Pending review. Erasure and the receipt wording. |
 | 11 | Colleague confirm page | `deploy/cloudflare-edge/src/confirm-page.js:120` | Open a confirmation, submit, error | page fetches, request id | None newly reproduced. | H | LATER. Pending review. It records a human confirmation. |
 | 12 | Early speculation | `deploy/cloudflare-edge/src/speculation.js:24` and `MemoryLedger` at :46 | Off, admitted, cancelled, claimed by the final turn | `EARLY_STT`, `EARLY_DRAFT`, reservation ids, `scope` | Flags alone cannot turn it on (no global ledger in the Worker). | H | LATER. Pending review. It spends audio and draft tokens inside the interview. |
-| 13 | Story-rating circuit breaker | `deploy/cloudflare-edge/src/rating.js:434` (`note` at :440, trial clear at :455) | closed, open for 60 s, one trial, auth block until the key changes | `fails`, `openUntil`, `authKey` | **Bug.** `rating.js:455` sets `openUntil = 0` at the start of the single half-open trial, before the request returns. `blocked()` at :439 then treats the breaker as closed. A second `rate()` that starts while that trial is in flight is admitted and sends another JEV request. Reproduction: open the breaker with three 529s, advance 60 s, start one `rate()` whose fetch does not return, start a second `rate()`; both reach the fetcher. The comment at :455 says this rating is the one trial request. | M | FIX now. |
+| 13 | Story-rating circuit breaker | `deploy/cloudflare-edge/src/breaker.js` (writer: `rating.js` `storyRater`) | closed, open for 60 s, one trial, auth block until the key changes | was `fails`, `openUntil`, `authKey`; now one object written only by `transition` | **Fixed.** The old `rating.js` admit cleared `openUntil` before the trial returned, so a second `rate()` was sent. `test/rating.test.js` R16b. | M | FIXED |
 | 14 | Admin metrics view | `src/journey-ui.js:113` `renderAdmin` | boot loading, denied, metrics loading, ready, empty, error; export | no status field; the DOM is the state (`out.replaceChildren`) | None. Export stays available during loading and error; that matches the buttons, which are outside the metrics pane. An empty series is the sentence "No events in this range." A failed `bootInfo()` is shown as not-admin (`catch` sets `boot` to `{}`). | L | FIX now. |
 | 15 | `LEDGER_MODE` | `deploy/cloudflare-edge/src/meter.js:31` `ledgerMode` | none: the Worker boots in one mode | `env.LEDGER_MODE` (`off`, `observe`, `enforce`, anything else invalid) | None. Invalid values already refuse. Default remains off. | L | NOT A MACHINE. It is a boot-time config parse. The process does not move from off to observe. No ordering rule. |
 | 16 | Rating quality status | `deploy/cloudflare-edge/src/rating.js:366` and `noStoryQuality` at :410 | none | `ready` / `needs_work` / `insufficient` derived from the score | None. | L | NOT A MACHINE. Pure mapping from a score and blockers. Two or three labels, no transitions. |
 | 17 | Per-call provider retry | `deploy/cloudflare-edge/src/classify.js:95`, `customer-jev.js:129`, `teams.js:98` | one call, up to three tries | local `attempt` counter | None. | L | NOT A MACHINE. The counter dies with the call. Nothing is persisted and nothing else reads it. |
 
 ## Story-rating circuit breaker
-Not landed yet. See row 13. The fix commit replaces this section.
+- Purpose: stop calling TypeSafe for story ratings after repeated failures, allow one trial after 60 s, and stop calling with a key that was rejected until that key changes.
+- Code: `deploy/cloudflare-edge/src/breaker.js`, tests: `deploy/cloudflare-edge/test/breaker.test.js`, regression: `deploy/cloudflare-edge/test/rating.test.js` (R16, R16b)
+- Persisted: no. One LibraryStore holds it in memory. `loadBreaker` maps a legacy `{fails, openUntil, authKey}` snapshot, a mid-request `probing` snapshot, and any unknown value to a defined state. Unknown, and a `fails` count that cannot happen, become closed with no auth key (what a new rater does). A valid version-1 closed or open snapshot round-trips. Nothing writes the snapshot today.
+
+### States
+| State | Data carried | Meaning |
+|---|---|---|
+| closed | `fails` 0, 1 or 2; `authKey` or null | Ratings are sent. `fails` is how many counted failures have not yet opened it. |
+| open | `until` (ms), `fails`, `authKey` or null | No rating is sent before `until`. `fails` can be 1 when a second failure note arrives in the request that opened it. |
+| probing | `fails`, `authKey` or null | The one trial has been admitted and has not settled. Another admit is illegal. |
+
+### Events
+| Event | Source |
+|---|---|
+| begin | `storyRater.rate`, before the fetch |
+| succeed | a 200 with a parseable answer |
+| fail | timeout, network, or HTTP 500–599 |
+| auth_fail | HTTP 401 or 403 |
+| ignore | 429, a non-200 2xx, or any other ending. It does not count toward opening. |
+
+### Transitions
+| From | Event | Guard | To | Side effects |
+|---|---|---|---|---|
+| closed | begin | auth key does not match | closed | one normal rating (up to the budget's attempts) |
+| open | begin | auth key does not match, and `now >= until` | probing | the one trial request |
+| open | begin | `windowStillOpen` (`now < until`) | open | no request. `RatingError('circuit_open')` |
+| closed or open | begin | `authKeyMatches` | same | no request. `RatingError('auth')` |
+| probing | begin | none: the pair is illegal | probing | logged, no request. `RatingError('circuit_open')` |
+| any | succeed | none | closed, fails 0, auth key kept | the rating is returned |
+| any | fail | `trial`, or `fails + 1 >= 3` | open for 60 s, fails 0 | the rating fails |
+| any | fail | not a trial, and the count stays under 3 | closed, or open if a window was already set | the rating fails; retries follow the existing budget |
+| any | auth_fail | none | same phase (probing becomes closed), auth key set | the rating fails |
+| any | ignore | none | same phase (probing becomes closed) | the rating fails; the count is unchanged |
+
+Anything not in this table is illegal and is rejected and logged. Effects (the fetch, the retry sleeps, the `RatingError`) run in `storyRater`, not in `transition`.
+
+```mermaid
+stateDiagram-v2
+  [*] --> closed
+  closed --> closed: begin
+  closed --> closed: fail [fails < 3]
+  closed --> open: fail [fails = 3]
+  open --> probing: begin [window elapsed]
+  open --> open: begin [window remaining]
+  probing --> open: fail
+  probing --> closed: succeed
+  closed --> closed: succeed
+```
+
+### Platform / flag differences
+None. The auth-key guard reads the key the rater was constructed with. It is not an operating-system fork.
 
 ## Admin metrics view
 Not landed yet. See row 14. The fix commit replaces this section.
