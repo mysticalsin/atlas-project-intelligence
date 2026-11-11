@@ -81,17 +81,20 @@ test('enforce fails closed with no ledger, a throwing or rejecting ledger, a bro
   }
 });
 
-test('enforce with the production ledger as shipped refuses: the daily limit is an unset placeholder', async () => {
+test('enforce with the shipped production ledger uses the $5 month default and still refuses an explicit empty limit', async () => {
   const { BudgetState } = await import('../src/meter.js');
-  const { calls, reasons } = await withConsole(() => enforced({ SPEND_LEDGER: nsOf(new BudgetState()) })).then(r => r.result);
-  assert.deepEqual(calls, []);
-  assert.deepEqual([...new Set(reasons)], ['limit_unset'], 'checked before pricing, so every call gets the same reason');
+  const open = await withConsole(() => enforced({ SPEND_LEDGER: nsOf(new BudgetState()) })).then(r => r.result);
+  assert.deepEqual(open.reasons, ['admitted', 'admitted', 'admitted', 'unpriced', 'admitted', 'unpriced', 'unpriced', 'unpriced', 'unpriced', 'unpriced', 'unpriced']);
+  assert.equal(open.calls.length, 4, 'the four priced voice calls fit inside $5');
+  const closed = await withConsole(() => enforced({ SPEND_LEDGER: nsOf(new BudgetState({ limitUsd: null })) })).then(r => r.result);
+  assert.deepEqual(closed.calls, []);
+  assert.deepEqual([...new Set(closed.reasons)], ['limit_unset'], 'an explicit empty limit is checked before pricing');
 });
 
 test('enforce blocks over budget: admits priced calls until the limit, then refuses; unpriced calls never pass; analyst is not retried after a refusal', async () => {
-  // 0.0001 USD: 1 s of speech recognition ($0.0000867) and 1 s of the turn model ($0.0000057) fit; the next priced call does not.
+  // $0.013: 1 s of speech recognition and 1 s of the turn model, each plus the proxy worst case, fit; the next priced call does not.
   const { BudgetState } = await import('../src/meter.js');
-  const budget = new BudgetState({ limitUsd: 0.0001 }), reserves = [];
+  const budget = new BudgetState({ limitUsd: 0.013 }), reserves = [];
   const ns = nsOf({ reserve: req => { reserves.push(req.kind); return budget.reserve(req); }, settle: (id, o) => budget.settle(id, o) });
   const { calls, reasons } = await withConsole(() => enforced({ SPEND_LEDGER: ns })).then(r => r.result);
   assert.deepEqual(reasons, ['admitted', 'admitted', 'exhausted:usd', 'unpriced', 'exhausted:usd', 'unpriced', 'unpriced', 'unpriced', 'unpriced', 'unpriced', 'unpriced']);

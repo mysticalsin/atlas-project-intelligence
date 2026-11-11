@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { paid, ledgerMode, BudgetState, ProductionSpendLedger, PRODUCTION_DAILY_LIMIT_USD, DEFAULT_LEDGER_MODE, priceOf, sanitize } from '../src/meter.js';
+import { paid, ledgerMode, BudgetState, ProductionSpendLedger, PRODUCTION_MONTHLY_LIMIT_USD, DEFAULT_LEDGER_MODE, priceOf, sanitize } from '../src/meter.js';
 
 const ROOT = new URL('../', import.meta.url);
 const read = p => readFileSync(new URL(p, ROOT), 'utf8');
@@ -10,7 +10,7 @@ const lines = () => { const out = []; return { out, log: l => out.push(l) }; };
 
 test('LEDGER_MODE: off by default; unknown values are not silently off', () => {
   assert.equal(DEFAULT_LEDGER_MODE, 'off');
-  assert.equal(PRODUCTION_DAILY_LIMIT_USD, null, 'the production limit is a placeholder, not set');
+  assert.equal(PRODUCTION_MONTHLY_LIMIT_USD, 5, 'the production month cap defaults to $5');
   for (const v of [undefined, null, '', 'off']) assert.equal(ledgerMode({ LEDGER_MODE: v }), 'off');
   assert.equal(ledgerMode({}), 'off'); assert.equal(ledgerMode(undefined), 'off');
   assert.equal(ledgerMode({ LEDGER_MODE: 'observe' }), 'observe');
@@ -62,9 +62,9 @@ test('enforce settles after success and after an upstream failure, and the upstr
   assert.deepEqual(settled, [['P1', {}], ['P1', { error: 'AiError' }]]);
 });
 
-test('BudgetState: priced ceilings, never refunded, one UTC day; ProductionSpendLedger persists', async () => {
+test('BudgetState: priced ceilings, never refunded, one UTC month; ProductionSpendLedger persists', async () => {
   let t = Date.parse('2026-11-09T23:59:00Z');
-  const b = new BudgetState({ limitUsd: 0.01, now: () => t });
+  const b = new BudgetState({ limitUsd: 0.02, now: () => t });
   assert.equal(priceOf({ kind: 'stt', model: '@cf/deepgram/nova-3', audioMs: 1 }), Math.ceil(1000 / 60000 * 0.0052 * 1e9), 'audio rounds up to a whole second');
   assert.equal(priceOf({ kind: 'turn', model: '@cf/pipecat-ai/smart-turn-v2', audioMs: 20000 }), Math.ceil(8000 / 60000 * 0.00033795 * 1e9), 'turn model at most 8 s');
   assert.equal(priceOf({ kind: 'analyst', model: '@cf/openai/gpt-oss-120b', inputTokens: 10, outputTokens: 10 }), null, 'no sourced price: unpriced');
@@ -72,12 +72,16 @@ test('BudgetState: priced ceilings, never refunded, one UTC day; ProductionSpend
   const r = b.reserve({ kind: 'tts', model: '@cf/deepgram/aura-2-en', chars: 100 });
   assert.ok(r.ok); assert.equal(b.settle(r.id, { error: 'x' }), true); assert.equal(b.settle(r.id), false);
   assert.equal(b.snapshot().reserved.requests, 1, 'a failed call keeps its reservation');
-  t += 120000; // next UTC day
+  t += 120000; // next UTC day, same month
+  assert.equal(b.snapshot().month, '2026-11');
+  assert.equal(b.snapshot().reserved.requests, 1, 'a new day does not reset the month');
+  t = Date.parse('2026-12-01T00:00:00Z');
+  assert.equal(b.snapshot().month, '2026-12');
   assert.equal(b.snapshot().reserved.requests, 0);
   assert.deepEqual(sanitize({ kind: 'stt', text: 'secret', audioMs: 12.2, model: 'm' }), { kind: 'stt', model: 'm', audioMs: 13 });
   const store = new Map(), state = { storage: { get: async k => store.get(k), put: async (k, v) => { store.set(k, structuredClone(v)); } } };
   const a = new ProductionSpendLedger(state, {}, { limitUsd: 1 });
   assert.ok((await a.reserve({ kind: 'stt', model: '@cf/deepgram/nova-3', audioMs: 1000 })).ok);
   assert.equal((await new ProductionSpendLedger(state, {}, { limitUsd: 1 }).snapshot()).reserved.requests, 1, 'state survives a restart');
-  assert.equal((await new ProductionSpendLedger(state, {}).reserve({ kind: 'stt', model: '@cf/deepgram/nova-3', audioMs: 1000 })).reason, 'limit_unset', 'the shipped placeholder refuses');
+  assert.equal((await new ProductionSpendLedger(state, {}, { limitUsd: null }).reserve({ kind: 'stt', model: '@cf/deepgram/nova-3', audioMs: 1000 })).reason, 'limit_unset', 'an explicit empty limit refuses');
 });
