@@ -101,12 +101,14 @@ export function deriveStatus(state) {
   if (effect) publicationLog(effect);
   return publicationStatus(state);
 }
+// A rejected transition is logged and dropped. Callers must not read its state or status.
 function acceptPublication(result, event) {
-  if (result.rejection) publicationLog(result.rejection);
-  else {
-    const effect = publicationEffect(result.state, event);
-    if (effect) publicationLog(effect);
+  if (!result || result.ok === false || result.rejection) {
+    if (result?.rejection) publicationLog(result.rejection);
+    return null;
   }
+  const effect = publicationEffect(result.state, event);
+  if (effect) publicationLog(effect);
   return result;
 }
 
@@ -286,13 +288,14 @@ export class Library {
     // supplies the tenant from a verified source. This function does not invent one.
     const keptTenant = row ? String(row.tenant || row.state?.tenant || '') : storyTenant;
     const revised = acceptPublication(publicationTransition(row ? row.state : {}, { type: 'revised', id, tenant: keptTenant, managerStaffIgnored: !!data.validation.managerStaff }), { id, event: 'revised' });
+    if (!revised) throw fail(409, 'That publication change is not allowed.');
     const state = revised.state, status = revised.status, next = new Date(Date.parse(at) + REVIEW_DAYS * 864e5).toISOString();
-    if (row) this.sql.exec(`UPDATE refs SET title=?, status=?, revision=?, content_hash=?, practice=?, industry=?, country=?, manager_email=?, members=?, quality_score=NULL,
-      updated_at=?, updated_by=?, next_review=?, data=?, state=?, embedding=NULL WHERE id=?`,
-      data.title, status, revision, hash, data.jev?.primary?.key || '', data.sector, data.details.country, data.validation.manager.email, members, at, user.email, next, JSON.stringify(data), JSON.stringify(state), id);
-    else this.sql.exec(`INSERT INTO refs (id, owner, local_id, title, status, revision, content_hash, practice, industry, country, manager_email, members, created_at, updated_at, updated_by, next_review, data, state, tenant)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      id, user.email, localId, data.title, status, revision, hash, data.jev?.primary?.key || '', data.sector, data.details.country, data.validation.manager.email, members, at, at, user.email, next, JSON.stringify(data), JSON.stringify(state), keptTenant);
+    if (row) this.writeStatus(`UPDATE refs SET title=?, status=?, revision=?, content_hash=?, practice=?, industry=?, country=?, manager_email=?, members=?, quality_score=NULL,
+      updated_at=?, updated_by=?, next_review=?, data=?, state=?, embedding=NULL WHERE id=? AND revision=? AND status=?`,
+      data.title, status, revision, hash, data.jev?.primary?.key || '', data.sector, data.details.country, data.validation.manager.email, members, at, user.email, next, JSON.stringify(data), JSON.stringify(state), id, row.revision, row.status);
+    else this.writeStatus(`INSERT INTO refs (id, owner, local_id, title, status, revision, content_hash, practice, industry, country, manager_email, members, created_at, updated_at, updated_by, next_review, data, state, tenant)
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM refs WHERE id = ?)`,
+      id, user.email, localId, data.title, status, revision, hash, data.jev?.primary?.key || '', data.sector, data.details.country, data.validation.manager.email, members, at, at, user.email, next, JSON.stringify(data), JSON.stringify(state), keptTenant, id);
     this.sql.exec('INSERT INTO revisions (id, revision, data, author, at) VALUES (?, ?, ?, ?, ?)', id, revision, JSON.stringify(data), user.email, at);
     this.log(id, user.email, row ? 'revised' : 'created', 'revision ' + revision + (row ? '; manager and pre-sales approval reopened' : ''));
     return this.summary(this.row(id), 'full', user);
@@ -371,9 +374,17 @@ export class Library {
     return { owner, email: who, source };
   }
 
+  // The status write matches the revision and status just read. A concurrent change matches no row.
+  writeStatus(query, ...params) {
+    this.sql.exec(query, ...params);
+    const changed = Number(this.rows('SELECT changes() AS n')[0]?.n || 0);
+    if (changed !== 1) throw fail(409, 'This reference changed. Open it again.');
+  }
+
   setState(row, state, actor, action, detail) {
     const status = deriveStatus(state);
-    this.sql.exec('UPDATE refs SET state = ?, status = ?, quality_score = ? WHERE id = ?', JSON.stringify(state), status, state.quality?.score ?? null, row.id);
+    this.writeStatus('UPDATE refs SET state = ?, status = ?, quality_score = ? WHERE id = ? AND revision = ? AND status = ?',
+      JSON.stringify(state), status, state.quality?.score ?? null, row.id, row.revision, row.status);
     this.log(row.id, actor, action, detail);
     return status;
   }
@@ -425,7 +436,9 @@ export class Library {
       if (lastJev) this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...fresh.state, lastJev }), fresh.id);
       return false;
     }
-    this.setState(fresh, { ...fresh.state, quality, ...(lastJev ? { lastJev } : {}) }, actor, 'reviewed', auditDetail(quality));
+    const reviewed = acceptPublication(publicationTransition(fresh.state, { type: 'reviewed', id: fresh.id, quality, lastJev }), { id: fresh.id, event: 'reviewed' });
+    if (!reviewed) return false;
+    this.setState(fresh, reviewed.state, actor, 'reviewed', auditDetail(quality));
     return true;
   }
 
@@ -588,7 +601,9 @@ export class Library {
     if (g.answers[1] && !k.answers[1].includes(g.answers[1])) k.answers[1] = (k.answers[1] + '\n\nContribution by another consultant: ' + g.answers[1]).trim().slice(0, 6000);
     for (const i of [0, 2, 3, 4, 5]) if (!k.answers[i] && g.answers[i]) k.answers[i] = g.answers[i];
     const moved = acceptPublication(publicationTransition(gone.state, { type: 'merged', id: gone.id }), { id: gone.id, event: 'merged' });
-    this.sql.exec('UPDATE refs SET merged_into = ?, status = ?, state = ? WHERE id = ?', keep.id, moved.status, JSON.stringify(moved.state), gone.id);
+    if (!moved) throw fail(409, 'That publication change is not allowed.');
+    this.writeStatus('UPDATE refs SET merged_into = ?, status = ?, state = ? WHERE id = ? AND revision = ? AND status = ? AND merged_into IS NULL',
+      keep.id, moved.status, JSON.stringify(moved.state), gone.id, gone.revision, gone.status);
     const sharedWith = [...new Set([...(keep.state.sharedWith || []), gone.owner].filter(Boolean))];
     this.sql.exec('UPDATE refs SET state = ?, members = ? WHERE id = ?', JSON.stringify({ ...keep.state, sharedWith }), (keep.members || ',') + sharedWith.join(',') + ',', keep.id);
     this.log(gone.id, user.email, 'merged into', keep.id);
@@ -781,13 +796,9 @@ export class Library {
     if (!decision) throw fail(400, 'Choose validate or request_changes.');
     const note = str(body.note, 500);
     if (decision === 'changes_requested' && !note) throw fail(400, 'Say what should change.');
-    const prev = row.state.validation || {};
-    const validation = { ...prev, by: user.email, at: this.now(), note, status: 'pending' };
-    if (lane === 'manager') validation.managerDecision = decision;
-    else validation.presalesDecision = decision;
-    if (validation.managerDecision === 'changes_requested' || validation.presalesDecision === 'changes_requested') validation.status = 'changes_requested';
-    else if (validation.managerDecision === 'approved' && validation.presalesDecision === 'approved') validation.status = 'validated';
-    this.setState(row, { ...row.state, validation }, user.email, lane + ' ' + decision, lane);
+    const decided = acceptPublication(publicationTransition(row.state, { type: 'decided', id: row.id, lane, decision, by: user.email, at: this.now(), note }), { id: row.id, event: 'decided' });
+    if (!decided) throw fail(409, 'That publication change is not allowed.');
+    this.setState(row, decided.state, user.email, lane + ' ' + decision, lane);
     return this.get(user, id);
   }
 
@@ -797,8 +808,9 @@ export class Library {
     const row = this.row(id);
     if (!row || !this.access(row, user)) throw fail(404, 'Reference not found.');
     const test = body.test === true;
-    const validation = { ...(row.state.validation || {}), status: 'admin_bypass', by: user.email, at: this.now(), note: test ? 'admin test' : 'admin publish' };
-    this.setState(row, { ...row.state, test, validation }, user.email, 'admin-publish-bypass', test ? 'test' : 'publish');
+    const published = acceptPublication(publicationTransition(row.state, { type: 'admin_published', id: row.id, test, by: user.email, at: this.now() }), { id: row.id, event: 'admin_published' });
+    if (!published) throw fail(409, 'That publication change is not allowed.');
+    this.setState(row, published.state, user.email, 'admin-publish-bypass', test ? 'test' : 'publish');
     await recordUsage(this, user, { kind: 'admin_publish', feature: 'library', outcome: test ? 'test' : 'publish', tokenStatus: 'missing' });
     return this.get(user, id);
   }
@@ -807,7 +819,9 @@ export class Library {
     const row = this.row(id);
     if (!row || !this.access(row, user)) throw fail(404, 'Reference not found.');
     if (!this.canEdit(row, user)) throw fail(403, 'You cannot withdraw this reference.');
-    this.setState(row, { ...row.state, withdrawn: true }, user.email, 'withdrawn', str(body.note, 300));
+    const withdrawn = acceptPublication(publicationTransition(row.state, { type: 'withdrawn', id: row.id }), { id: row.id, event: 'withdrawn' });
+    if (!withdrawn) throw fail(409, 'That publication change is not allowed.');
+    this.setState(row, withdrawn.state, user.email, 'withdrawn', str(body.note, 300));
     return this.get(user, id);
   }
 
@@ -816,7 +830,9 @@ export class Library {
     const row = this.row(id);
     if (!row || !sameTenant(row.tenant || row.state?.tenant, user.tenant, user.tenantEnforced === true)) throw fail(404, 'Reference not found.');
     if (!['admin', 'reviewer'].includes(user.role)) throw fail(403, 'Only a reviewer can reinstate a reference.');
-    this.setState(row, { ...row.state, withdrawn: false }, user.email, 'reinstated', '');
+    const reinstated = acceptPublication(publicationTransition(row.state, { type: 'reinstated', id: row.id, mergedInto: row.merged_into || '' }), { id: row.id, event: 'reinstated' });
+    if (!reinstated) throw fail(409, 'This reference was merged into another one.');
+    this.setState(row, reinstated.state, user.email, 'reinstated', '');
     return this.get(user, id);
   }
 }

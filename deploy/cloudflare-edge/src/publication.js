@@ -1,12 +1,24 @@
 // Story publication. Pure transitions. deriveStatus in library.js is this derive function.
-// upsert is the writer for a revision: it applies `revised` and stores that state and its status.
-// The status column for a review, an approval, a withdrawal, a reinstatement or a merge is
-// publicationStatus of the state the reducer returned. Merge applies `merged`.
+// The reducer is the only writer of validation, withdrawn and test.
+// upsert applies `revised`. A rating applies `reviewed`. A lane applies `decided`.
+// An admin bypass applies `admin_published`. Withdraw, reinstate and merge apply their events.
 // A rejection marker is the story id, the phase and the event. The caller logs it.
 // Never the story text, an address or a key. publicationTransition does not log.
 export const PUBLICATION_VERSION = 1;
 export const PUBLICATION_PHASES = Object.freeze(['in_review', 'needs_work', 'changes_requested', 'awaiting_validation', 'published', 'admin_test', 'withdrawn']);
-export const PUBLICATION_EVENTS = Object.freeze(['revised', 'derive', 'merged']);
+export const PUBLICATION_EVENTS = Object.freeze(['revised', 'derive', 'merged', 'reviewed', 'decided', 'admin_published', 'withdrawn', 'reinstated']);
+// Every named event is legal from every phase. The reinstated guard is mergedInto, not the phase.
+// Anything absent from this table is an illegal (phase, event) pair.
+export const PUBLICATION_TABLE = Object.freeze(PUBLICATION_EVENTS.map(event => Object.freeze({ from: 'any', event })));
+
+export function publicationPairs() {
+  const legal = new Set();
+  for (const row of PUBLICATION_TABLE) {
+    const from = row.from === 'any' ? PUBLICATION_PHASES : [row.from];
+    for (const phase of from) legal.add(phase + ':' + row.event);
+  }
+  return legal;
+}
 // The five validation statuses and four decisions the golden table distinguishes. undefined is the missing field.
 export const KNOWN_VALIDATION = Object.freeze([undefined, 'pending', 'validated', 'changes_requested', 'admin_bypass']);
 export const KNOWN_DECISIONS = Object.freeze([undefined, 'pending', 'approved', 'changes_requested']);
@@ -62,9 +74,11 @@ export function initialPublication() {
   };
 }
 
-// A stored story round-trips. A missing value becomes a fresh in-review record. Nothing here rewrites a row.
+// A versioned story round-trips. A missing value, a legacy object with no version, or an unknown
+// version becomes a fresh in-review record. This does not write the row, and it does not mutate raw.
 export function loadPublication(raw) {
-  if (!raw || typeof raw !== 'object') return initialPublication();
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return initialPublication();
+  if (raw.version !== PUBLICATION_VERSION) return initialPublication();
   return { ...raw };
 }
 
@@ -104,18 +118,61 @@ function illegal(state, event) {
   };
 }
 
+function priorOf(state) {
+  return state && typeof state === 'object' ? state : {};
+}
+
+// reinstated is the one guard: a row that was merged into another story stays withdrawn.
+export function mergedAway(event) {
+  return !!event?.mergedInto;
+}
+
+function applyDecided(prior, event) {
+  const lane = event.lane === 'manager' ? 'manager' : event.lane === 'presales' ? 'presales' : '';
+  const decision = event.decision === 'approved' || event.decision === 'changes_requested' ? event.decision : '';
+  if (!lane || !decision) return null;
+  const validation = { ...(prior.validation || {}), by: event.by || '', at: event.at || '', note: event.note || '', status: 'pending' };
+  if (lane === 'manager') validation.managerDecision = decision;
+  else validation.presalesDecision = decision;
+  if (validation.managerDecision === 'changes_requested' || validation.presalesDecision === 'changes_requested') validation.status = 'changes_requested';
+  else if (validation.managerDecision === 'approved' && validation.presalesDecision === 'approved') validation.status = 'validated';
+  return { ...prior, validation };
+}
+
 export function publicationTransition(state, event) {
   const type = event?.type;
-  if (!PUBLICATION_EVENTS.includes(type)) return illegal(state, event);
+  const phase = state && typeof state === 'object' ? publicationStatus(state) : 'in_review';
+  if (!PUBLICATION_EVENTS.includes(type) || !publicationPairs().has(phase + ':' + type)) return illegal(state, event);
+  const prior = priorOf(state);
   if (type === 'derive') return done(state, publicationStatus(state));
-  if (type === 'merged') {
-    const prior = state && typeof state === 'object' ? state : {};
+  if (type === 'merged' || type === 'withdrawn') {
     const next = { ...prior, withdrawn: true };
     return done(next, publicationStatus(next));
   }
-  const prior = state && typeof state === 'object' ? state : {};
+  if (type === 'reinstated') {
+    if (mergedAway(event)) return illegal(state, event);
+    const next = { ...prior, withdrawn: false };
+    return done(next, publicationStatus(next));
+  }
+  if (type === 'reviewed') {
+    const next = { ...prior, quality: event.quality ?? null };
+    if (event.lastJev) next.lastJev = event.lastJev;
+    return done(next, publicationStatus(next));
+  }
+  if (type === 'decided') {
+    const next = applyDecided(prior, event);
+    if (!next) return illegal(state, event);
+    return done(next, publicationStatus(next));
+  }
+  if (type === 'admin_published') {
+    const test = event.test === true;
+    const validation = { ...(prior.validation || {}), status: 'admin_bypass', by: event.by || '', at: event.at || '', note: test ? 'admin test' : 'admin publish' };
+    const next = { ...prior, test, validation };
+    return done(next, publicationStatus(next));
+  }
   const next = {
     ...prior,
+    version: PUBLICATION_VERSION,
     quality: null,
     withdrawn: false,
     test: false,

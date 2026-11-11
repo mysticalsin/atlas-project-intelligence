@@ -2,7 +2,7 @@
 // legacy load and round-trip. The 2560 status goldens stay in publication-golden.test.js.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PUBLICATION_EVENTS, PUBLICATION_PHASES, approvalUnknown, bothApproved, canPublish, changesRequested, initialPublication, isAdminBypass, isAdminTest, isWithdrawn, knownDecision, knownValidation, loadPublication, publicationEffect, publicationStatus, publicationTransition, qualityMissing, qualityReady, validatedFlag } from '../src/publication.js';
+import { PUBLICATION_EVENTS, PUBLICATION_PHASES, PUBLICATION_VERSION, approvalUnknown, bothApproved, canPublish, changesRequested, initialPublication, isAdminBypass, isAdminTest, isWithdrawn, knownDecision, knownValidation, loadPublication, mergedAway, publicationEffect, publicationPairs, publicationStatus, publicationTransition, qualityMissing, qualityReady, validatedFlag } from '../src/publication.js';
 import { Library, deriveStatus } from '../src/library.js';
 import { memorySql } from './sqlite.js';
 
@@ -17,48 +17,72 @@ const phases = {
   withdrawn: { withdrawn: true, quality: { status: 'ready' }, validation: { status: 'validated', managerDecision: 'approved', presalesDecision: 'approved' } },
 };
 
-test('every legal publication transition, and every other (phase, event) pair is rejected and logged', () => {
-  const logged = [];
+function payload(type, phase) {
+  const event = { type, id: 'story-1', tenant: 'tenant-1' };
+  if (type === 'revised') return { ...event, managerStaffIgnored: false };
+  if (type === 'reviewed') return { ...event, quality: phases[phase].quality ?? null };
+  if (type === 'decided') return { ...event, lane: 'manager', decision: 'approved', by: 'sam@example.test', at: '2026-11-11T00:00:00.000Z', note: '' };
+  if (type === 'admin_published') return { ...event, test: phases[phase].test === true, by: 'admin@example.test', at: '2026-11-11T00:00:00.000Z' };
+  if (type === 'reinstated') return { ...event, mergedInto: '' };
+  return event;
+}
+
+test('every legal publication transition, and every other real (phase, event) pair is rejected', () => {
+  const legal = publicationPairs();
   const warns = [];
   const original = console.warn;
   console.warn = (...args) => warns.push(args);
-  const extras = ['withdraw', 'publish'];
-  let legal = 0, illegal = 0;
+  const product = [];
+  let accepted = 0, rejected = 0;
   try {
   for (const phase of PUBLICATION_PHASES) {
     assert.equal(publicationStatus(phases[phase]), phase);
-    for (const type of [...PUBLICATION_EVENTS, ...extras]) {
-      const event = { type, id: 'story-1', tenant: 'tenant-1', managerStaffIgnored: false };
-      const result = publicationTransition(phases[phase], event);
-      if (PUBLICATION_EVENTS.includes(type)) {
-        legal++;
-        assert.equal(result.ok, true, phase + ' ' + type);
+    for (const type of PUBLICATION_EVENTS) {
+      const key = phase + ':' + type;
+      product.push(key);
+      const result = publicationTransition(phases[phase], payload(type, phase));
+      if (legal.has(key)) {
+        accepted++;
+        assert.equal(result.ok, true, key);
         assert.equal(result.illegal, false);
         assert.equal(result.rejection, undefined);
-        if (type === 'revised') assert.equal(result.status, 'in_review');
+        assert.ok(PUBLICATION_PHASES.includes(result.status), key);
+        if (type === 'revised') {
+          assert.equal(result.status, 'in_review');
+          assert.equal(result.state.version, PUBLICATION_VERSION);
+        }
         if (type === 'derive') assert.equal(result.status, phase);
-        if (type === 'merged') {
+        if (type === 'merged' || type === 'withdrawn') {
           assert.equal(result.status, 'withdrawn');
           assert.equal(result.state.withdrawn, true);
-          assert.equal(result.state.quality, phases[phase].quality);
         }
+        if (type === 'merged') assert.equal(result.state.quality, phases[phase].quality);
+        if (type === 'reinstated') assert.equal(result.state.withdrawn, false);
+        if (type === 'reviewed') {
+          assert.equal(result.state.quality, phases[phase].quality ?? null);
+          assert.equal(!!result.state.withdrawn, !!phases[phase].withdrawn);
+          assert.equal(!!result.state.test, !!phases[phase].test);
+          assert.deepEqual(result.state.validation, phases[phase].validation);
+        }
+        if (type === 'decided' || type === 'admin_published') assert.ok(result.state.validation);
       } else {
-        illegal++;
-        assert.equal(result.ok, false, phase + ' ' + type);
+        rejected++;
+        assert.equal(result.ok, false, key);
         assert.equal(result.illegal, true);
         assert.equal(result.state, phases[phase]);
-        logged.push(result.rejection);
-        assert.ok(Object.keys(logged.at(-1)).every(k => ['atlas_metric', 'id', 'phase', 'event'].includes(k)));
-        assert.equal(logged.at(-1).id, 'story-1');
-        assert.equal(logged.at(-1).event, type);
+        assert.equal(result.rejection.event, type);
+        assert.ok(Object.keys(result.rejection).every(k => ['atlas_metric', 'id', 'phase', 'event'].includes(k)));
       }
     }
   }
   } finally { console.warn = original; }
+  const illegal = product.filter(key => !legal.has(key));
   assert.equal(warns.length, 0, 'the transition does not log');
-  assert.equal(legal, PUBLICATION_PHASES.length * PUBLICATION_EVENTS.length);
-  assert.equal(illegal, PUBLICATION_PHASES.length * extras.length);
-  assert.equal(logged.length, illegal);
+  assert.equal(product.length, PUBLICATION_PHASES.length * PUBLICATION_EVENTS.length);
+  assert.equal(accepted, legal.size);
+  assert.equal(rejected, illegal.length);
+  assert.deepEqual(illegal, []);
+  assert.deepEqual([...PUBLICATION_EVENTS], ['revised', 'derive', 'merged', 'reviewed', 'decided', 'admin_published', 'withdrawn', 'reinstated']);
 });
 
 test('guards: withdrawn, admin bypass, quality, changes, validated flag, both approvals', () => {
@@ -140,10 +164,66 @@ test('merge stores the status the merged event returned', async () => {
   assert.equal(row.status, deriveStatus(row.state));
 });
 
-test('legacy and unknown snapshots load to a defined state; a story state round-trips', () => {
+test('legacy and unknown snapshots load to a safe state and are not rewritten', () => {
   assert.equal(publicationStatus(loadPublication(null)), 'in_review');
   assert.equal(publicationStatus(loadPublication('published')), 'in_review');
-  const live = phases.published;
+  const legacy = { ...phases.published };
+  const unknown = { ...phases.published, version: 99 };
+  assert.equal(publicationStatus(loadPublication(legacy)), 'in_review');
+  assert.equal(publicationStatus(loadPublication(unknown)), 'in_review');
+  assert.equal(legacy.version, undefined);
+  assert.equal(unknown.version, 99);
+  assert.equal(unknown.validation.status, 'validated');
+  const live = { ...phases.published, version: PUBLICATION_VERSION };
   assert.deepEqual(loadPublication(live), live);
-  assert.deepEqual(loadPublication(initialPublication()).version, 1);
+  assert.equal(loadPublication(initialPublication()).version, PUBLICATION_VERSION);
+});
+
+test('reinstated rejects a merged row from every phase and does not clear withdrawn', () => {
+  for (const phase of PUBLICATION_PHASES) {
+    assert.equal(mergedAway({ mergedInto: 'keep-id' }), true);
+    assert.equal(mergedAway({ mergedInto: '' }), false);
+    const prior = phases[phase];
+    const result = publicationTransition(prior, { type: 'reinstated', id: 'story-1', mergedInto: 'keep-id' });
+    assert.equal(result.ok, false, phase);
+    assert.equal(result.state, prior);
+    assert.equal(!!result.state.withdrawn, !!prior.withdrawn);
+  }
+});
+
+test('reinstate rejects a merged story and leaves the stored row withdrawn', async () => {
+  let t = 0;
+  const l = new Library(memorySql(), { now: () => new Date(Date.UTC(2026, 8, 27, 0, 0, t++)).toISOString() });
+  const reviewer = { email: 'rev@example.test', role: 'reviewer' };
+  const keep = await l.upsert({ email: 'ada@example.test', role: 'user' }, { localId: 'keep', reference: { title: 'Keep' } });
+  const gone = await l.upsert({ email: 'kim@example.test', role: 'user' }, { localId: 'gone', reference: { title: 'Gone' } });
+  await l.merge(reviewer, { keep: keep.id, merge: gone.id });
+  assert.throws(() => l.reinstate(reviewer, gone.id), e => e.status === 409 && /merged/.test(e.message));
+  const row = l.row(gone.id);
+  assert.equal(row.merged_into, keep.id);
+  assert.equal(row.state.withdrawn, true);
+  assert.equal(row.status, 'withdrawn');
+});
+
+test('a status write conflicts when the stored revision changed', async () => {
+  let t = 0;
+  const l = new Library(memorySql(), { now: () => new Date(Date.UTC(2026, 8, 27, 0, 0, t++)).toISOString() });
+  const owner = { email: 'ada@example.test', role: 'user' };
+  const saved = await l.upsert(owner, { localId: 'one', reference: { title: 'One' } });
+  const exec = l.sql.exec.bind(l.sql);
+  let armed = true;
+  l.sql.exec = (q, ...p) => {
+    const text = String(q);
+    if (armed && text.includes('UPDATE refs SET state = ?')) {
+      armed = false;
+      exec('UPDATE refs SET revision = revision + 1 WHERE id = ?', saved.id);
+    }
+    return exec(q, ...p);
+  };
+  const before = l.row(saved.id);
+  assert.throws(() => l.withdraw(owner, saved.id, { note: 'pause' }), e => e.status === 409 && /changed/.test(e.message));
+  const after = l.row(saved.id);
+  assert.equal(after.revision, before.revision + 1);
+  assert.equal(after.status, before.status);
+  assert.equal(after.state.withdrawn, false);
 });
