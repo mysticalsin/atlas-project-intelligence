@@ -1,5 +1,5 @@
 # State machines in ATLAS
-Last reviewed: 2026-11-11 on `cursor/state-machines-atlas` at `cb2ff2b27e896f7c34725839f3a66bfcea573409`. This stamp is that code commit, because this docs commit cannot name itself.
+Last reviewed: 2026-11-11 on `cursor/state-machines-atlas` at `21724fc390c674064e286720ed93bc87772a5b2c`. This stamp is that code commit, because this docs commit cannot name itself.
 
 The rules are `docs/STATE-MACHINE-STANDARD.md`. This file keeps the ATLAS inventory and does not restate them. High-risk rows are pending senior review. No high-risk fix is started in this branch.
 

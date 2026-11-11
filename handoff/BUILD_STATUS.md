@@ -948,3 +948,7 @@ Review answers:
 
 ### Session: 2026-11-11 / CI Python pins (run77 A-3)
 - `.github/workflows/ci.yml` installs with `-c constraints-tested.txt`. The file pins the tested closure with `==`. The ffmpeg install step is unchanged. Hashes were not added: a constraints file does not enforce them, and the wheels differ by Python version. CI still asks for Python 3.13; those versions publish 3.13 wheels.
+
+### Session: 2026-11-11 / State-machine follow-up (Relay)
+- `21724fc` registers `tests/privacy_delete_browser.py` in the CI browser loop, after `jev_rating` and before `admin_metrics`. The script already exits non-zero when a check fails.
+- The inventory stamp in `docs/state-machines.md` names `21724fc390c674064e286720ed93bc87772a5b2c`. The previous stamp named `cb2ff2b`, which is an ancestor, not the code this review sits on. This note is the docs commit, so it does not name itself. No production wrangler or binding change, no cap or spend change, no live call.
