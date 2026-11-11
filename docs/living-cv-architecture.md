@@ -54,7 +54,7 @@ A fiche is the same published snippets, grouped by topic. Salary, compensation, 
 
 The CV and review views do not remove the application nav, autosave, backup, footer, or the synthetic-data badge. Those belong to the shell. Taking them off only on these two screens would still mean editing the shell, and taking them off everywhere would change every other screen. The spec's request to delete that chrome is recorded here and left undone.
 
-The global toast stays fixed on every other view. While CV or review is the open view, the same toast leaves the fixed layer and sits after the page, so it no longer covers the card. The typeface stays the Atlas font. Inter is not bundled, and loading it would be a shell change.
+The global toast keeps its one fixed place on every view, including CV and review. The CV and review sections scroll inside a height that ends above that toast, so the card and the rail are not under it. The typeface stays the Atlas font. Inter is not bundled, and loading it would be a shell change.
 
 ## Consent, delete, tenant
 

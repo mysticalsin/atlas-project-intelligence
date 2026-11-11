@@ -64,6 +64,33 @@ try:
         page.wait_for_timeout(800)
         def shot(target, name):
             target.screenshot(path=str(SHOTS / name), full_page=True)
+        def toast_clear(target, label):
+            info = target.evaluate("""() => {
+              const toast = document.getElementById('toast');
+              toast.textContent = 'Your projects are back from ATLAS.';
+              toast.classList.add('show');
+              const style = getComputedStyle(toast);
+              const clip = (el) => {
+                const r = el.getBoundingClientRect();
+                let top = r.top, left = r.left, bottom = r.bottom, right = r.right;
+                for (let n = el.parentElement; n; n = n.parentElement) {
+                  const s = getComputedStyle(n);
+                  if (/(auto|scroll|hidden|clip)/.test(s.overflowY + s.overflowX + s.overflow)) {
+                    const p = n.getBoundingClientRect();
+                    top = Math.max(top, p.top); bottom = Math.min(bottom, p.bottom);
+                    left = Math.max(left, p.left); right = Math.min(right, p.right);
+                  }
+                }
+                top = Math.max(0, top); left = Math.max(0, left);
+                bottom = Math.min(innerHeight, bottom); right = Math.min(innerWidth, right);
+                return {top, left, bottom, right};
+              };
+              const hit = (a, b) => a.bottom > a.top && a.right > a.left && b.bottom > b.top && b.right > b.left && a.bottom > b.top && a.top < b.bottom && a.right > b.left && a.left < b.right;
+              const tb = clip(toast);
+              const bad = ['.cv-doc', '.cv-rail'].filter(sel => [...document.querySelectorAll(sel)].some(node => hit(clip(node), tb)));
+              return {fixed: style.position === 'fixed', bad};
+            }""")
+            check(label, info['fixed'] and info['bad'] == [])
         mobile = browser.new_context(viewport={'width': 390, 'height': 844}).new_page()
         mobile.goto(BASE + '/?as=' + urllib.parse.quote('ada@example.test'))
         mobile.wait_for_timeout(700)
@@ -75,6 +102,8 @@ try:
         check('snippet ids and the audience menu stay off the screen', page.locator('#living select').count() == 0 and 'Internal' not in opening and 'A2.1' not in opening)
         shot(page, 'living-empty.png')
         shot(mobile, 'living-empty-mobile.png')
+        toast_clear(page, 'empty desktop toast stays fixed and off the CV')
+        toast_clear(mobile, 'empty mobile toast stays fixed and off the CV')
         mobile.locator('#livingNeed').fill('https://need.arp.mantu.com/needs/192497')
         mobile.get_by_role('button', name='Generate CV').click()
         mobile.wait_for_timeout(800)
@@ -124,11 +153,13 @@ try:
         check('export waits for approval', page.get_by_role('button', name='Export').is_disabled() and 'Approve to export' in doc)
         check('owner has no approve button', page.get_by_role('button', name='Approve').count() == 0)
         shot(page, 'living-cv.png')
+        toast_clear(page, 'generated desktop toast stays fixed and off the CV')
         mobile.goto(BASE + '/?as=' + urllib.parse.quote('ada@example.test'))
         mobile.wait_for_timeout(700)
         mobile.locator('header [data-view=living]').click()
         mobile.wait_for_timeout(800)
         shot(mobile, 'living-cv-mobile.png')
+        toast_clear(mobile, 'generated mobile toast stays fixed and off the CV')
         check('mobile CV still shows the sentence', 'Windows service' in mobile.locator('.cv-doc').inner_text())
         check('mobile gaps open from a summary', mobile.locator('.summary-row').count() == 1 and 'Gaps' not in mobile.locator('.cv-doc').inner_text())
         approver = browser.new_context(viewport={'width': 1400, 'height': 900}).new_page()
@@ -144,11 +175,13 @@ try:
         page.wait_for_timeout(800)
         check('export is available after approval', page.get_by_role('button', name='Export').is_enabled() and 'Approve to export' not in page.locator('.cv-doc').inner_text())
         shot(page, 'living-ready.png')
+        toast_clear(page, 'ready desktop toast stays fixed and off the CV')
         mobile.goto(BASE + '/?as=' + urllib.parse.quote('ada@example.test'))
         mobile.wait_for_timeout(700)
         mobile.locator('header [data-view=living]').click()
         mobile.wait_for_timeout(800)
         shot(mobile, 'living-ready-mobile.png')
+        toast_clear(mobile, 'ready mobile toast stays fixed and off the CV')
         with page.expect_download() as download:
             page.get_by_role('button', name='Export').click()
         doc = zipfile.ZipFile(download.value.path()).read('word/document.xml').decode()
