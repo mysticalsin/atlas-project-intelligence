@@ -95,8 +95,8 @@ test('SMART fixture: Candidate Requirement only, quirks handled, conflicts flagg
   assert.equal(got.need.additionalInformationNeed, null);
   assert.deepEqual(got.need.keywords.filter(k => k.authority === 'must' && k.kind === 'skill').map(k => k.text), ['Windows', 'C++', 'C#']);
   assert.equal(got.need.keywords.find(k => k.authority === 'level').text, 'Middle - From 4 to 6 years');
-  assert.ok(got.need.flags.some(f => f.code === 'experience_conflict' && f.authoritative === '4-6 years' && f.other === '2+ years'));
-  assert.ok(got.need.flags.some(f => f.code === 'skill_conflict' && f.skill === 'C++' && f.authoritative === 'C++ must'));
+  assert.ok(got.need.flags.some(f => f.code === 'experience_conflict' && f.detail === 'Need asks 4–6 yrs; requirement says 2+. Confirm with requester.'));
+  assert.ok(got.need.flags.some(f => f.code === 'skill_conflict' && f.skill === 'C++' && f.detail === 'Need lists C++ as a must; the requirement calls it an asset. Confirm with requester.'));
   const merged = got.need.flags.find(f => f.code === 'merged_bullet');
   assert.equal(merged.text, MERGED);
   assert.equal(merged.parts[1].startsWith('Relevant experience'), true);
@@ -196,6 +196,25 @@ test('a competency file matches the MiChat fields and cites only the fixture sen
     for (const child of Object.values(value)) if (child && typeof child === 'object') cited(child);
   };
   cited(cf);
+});
+
+test('a years claim longer than the role dates is a flag and stays off the CV', () => {
+  const lines = [
+    { text: 'I designed the Windows service that routes alarms for the plant.', evidenceId: 's:A2.1', storyId: 's', topic: 'contribution', period: '2024-03 – 2024-11' },
+    { text: 'I have 8 years of Windows work on that same service.', evidenceId: 's:A4.1', storyId: 's', topic: 'outcome', period: '2024-03 – 2024-11' },
+  ];
+  const cv = composeCv({ consultant: { name: 'Ada Example' }, lines, need: null, audience: 'internal' });
+  assert.equal(cv.lines.some(line => line.evidenceId === 's:A4.1'), false);
+  assert.equal(cv.lines.some(line => /8 years/.test(line.text)), false);
+  const flag = cv.flags.find(item => item.code === 'date_conflict');
+  assert.equal(flag.evidenceId, 's:A4.1');
+  assert.match(flag.detail, /Line says 8 years; role dates cover 8 months/);
+  const cf = toCompetencyFile(cv);
+  assert.equal(JSON.stringify(cf).includes('8 years'), false);
+  assert.equal(cf.yearsOfExperience, null);
+  const file = Buffer.from(new MiChatAdapter().exportDocument(cv).bytes).toString('utf8');
+  assert.equal(file.includes('8 years'), false);
+  assert.equal(file.includes('Designed the Windows service'), true);
 });
 
 test('gaps and conflicts stay off the CV; unsupported keywords are not claims', () => {

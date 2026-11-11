@@ -240,7 +240,7 @@ export function conflictFlags(need) {
         flags.push({
           code: 'experience_conflict', topic: 'experience',
           authoritative: `${exp.minYears}-${exp.maxYears} years`, other: `${m[1]}+ years`,
-          detail: 'Level of Experience is authoritative. The profile requirement states a different range.',
+          detail: `Need asks ${exp.minYears}–${exp.maxYears} yrs; requirement says ${m[1]}+. Confirm with requester.`,
         });
         break;
       }
@@ -252,12 +252,12 @@ export function conflictFlags(need) {
     if (profile.some(text => re.test(text))) flags.push({
       code: 'skill_conflict', topic: 'skill', skill: name,
       authoritative: `${name} must`, other: `${name} an asset`,
-      detail: 'Skill (Must) is authoritative. The profile requirement calls this skill an asset.',
+      detail: `Need lists ${name} as a must; the requirement calls it an asset. Confirm with requester.`,
     });
   }
   for (const item of need.profileRequirement || []) {
     const parts = splitMerged(item.text || '');
-    if (parts) flags.push({ code: 'merged_bullet', topic: 'profile_requirement', text: item.text, parts });
+    if (parts) flags.push({ code: 'merged_bullet', topic: 'profile_requirement', text: item.text, parts, detail: 'One requirement joins two sentences. Confirm with requester before splitting them.' });
   }
   return flags;
 }
@@ -446,9 +446,36 @@ function voiced(line) {
   return { ...line, source, text: phraseLine(source) };
 }
 
+function roleSpanMonths(period) {
+  const match = String(period || '').match(/(\d{4})-(\d{2})\s*[–—-]\s*(\d{4})-(\d{2})/);
+  if (!match) return null;
+  const months = (Number(match[3]) - Number(match[1])) * 12 + (Number(match[4]) - Number(match[2]));
+  return months >= 0 ? months : null;
+}
+
+// A years claim that is longer than the role dates cannot stay on the CV. The sentence is kept on the flag.
+function dateFlag(line) {
+  const claimed = /(\d+)\s*\+?\s*years\b/i.exec(line.source || line.text || '');
+  const months = roleSpanMonths(line.period);
+  if (!claimed || months == null) return null;
+  const years = Number(claimed[1]);
+  if (years * 12 <= months + 2) return null;
+  return {
+    code: 'date_conflict', topic: 'dates', evidenceId: line.evidenceId,
+    detail: `Line says ${years} years; role dates cover ${months} months. Leave it off the CV until the dates are confirmed.`,
+  };
+}
+
 // Keywords are matched on the published sentence. The visible text is the phrased bullet.
 export function composeCv({ consultant = {}, lines = [], need = null, audience = 'internal' } = {}) {
-  const source = (Array.isArray(lines) ? lines : []).filter(line => line && line.text && line.evidenceId && !banned(line.text)).map(voiced);
+  const voicedLines = (Array.isArray(lines) ? lines : []).filter(line => line && line.text && line.evidenceId && !banned(line.text)).map(voiced);
+  const dateFlags = [];
+  const source = voicedLines.filter(line => {
+    const flag = dateFlag(line);
+    if (!flag) return true;
+    dateFlags.push(flag);
+    return false;
+  });
   const keywords = need?.keywords || [];
   const hits = line => keywords.reduce((n, key) => n + (hasTerm(line.source || line.text, key.text) ? 1 : 0), 0);
   const ranked = source.map(line => ({ line, n: need ? hits(line) : 0 }));
@@ -467,7 +494,7 @@ export function composeCv({ consultant = {}, lines = [], need = null, audience =
     audience: audience === 'external' ? 'external' : 'internal',
     lines: kept,
     gaps,
-    flags: need?.flags || [],
+    flags: [...(need?.flags || []), ...dateFlags],
     need: need ? { source: need.source, sourceRef: need.sourceRef || '', needId: need.needId || '', title: need.title || '', keywords, flags: need.flags || [] } : null,
   };
 }
