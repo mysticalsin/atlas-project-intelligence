@@ -921,3 +921,10 @@ Review answers:
 - **Bug (`684266d`, then the machine at `3535f75`).** `rating.js` admitted a half-open trial by clearing `openUntil` before the trial returned, so a second `rate()` was sent. `breaker.js` is the single writer. While the phase is `probing`, `blocked()` is `circuit_open`. Regression: `test/rating.test.js` R16b. Unit tests: `test/breaker.test.js`.
 - **Low (`580079e`).** Admin metrics view is `src/admin-metrics-machine.js`. `renderAdmin` is the only writer. Unknown or legacy loads become `boot_loading`. `build.py` inlines the machine into the page without `export` keywords.
 - **Suites at `580079e`.** pytest 307 passed. Root node 389 tests, 388 pass, 1 skip (the 4 new admin tests; the skip is the pre-existing Natural Earth regeneration). Edge 619 pass (613 + R16b + 5 breaker tests). Spend-ledger 16. Early-processing 28. Ledger files 16. Browser 21 scripts, 822 PASS, 0 FAIL. This note is docs-only on top of that head.
+
+### Session: 2026-11-11 / State machines, review changes only (run72)
+- Continued `cursor/state-machines-atlas` from `50c2dc05`. No push of `main`, no PR, no deploy, no production wrangler or binding change, no live call, no spend. `LEDGER_MODE` stays off.
+- **Breaker (`07a613b`).** A fail while `probing` re-opens when `state.phase === 'probing'`, not only when `event.trial` is set. `open:succeed` and `open:fail` stay legal. Rejection logs are phase and event only.
+- **Admin (`0663f26`).** `boot_error` is a state. `bootFailed` is separate from a missing role. `renderAdmin` still paints the permissions banner when `bootInfo()` throws, because a distinct outage sentence would replace that copy. Painting it is LATER.
+- **Publication (`6fc9aa1`).** Golden tests only. No row 9 reducer. A revision resets `validation.status` to pending and derives `in_review`. Rows 18–21 added. Withdraw, reinstate and merge are folded into row 9.
+- **Suites at `6fc9aa1`.** pytest 307. Root node 390 tests, 389 pass, 1 skip. Edge 623. Spend-ledger 16. Early-processing 28. Browser 21 scripts, 822 PASS, 0 FAIL. This note is docs-only on top of that head.
