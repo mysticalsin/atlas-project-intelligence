@@ -17,7 +17,7 @@ Section 4 record. One row per candidate. Status in the summary table is the deci
 | 6 | Browser voice phase | `src/voice-client.js:7` (`status()` at :37, `begin` at :67, `cancel` at :100, `fail` at :101) | idle, preparing, connecting, live, ending, error | `phase`, `generation`, `restarting`, `permissionPending`, `consentStarting`, `muted` | None newly reproduced. Illegal combinations (live without a socket) are possible if a handler returns early. | H | LATER. Pending review. |
 | 7 | Live-test spend ledger | `deploy/cloudflare-edge/src/spend-ledger.js:38` `LedgerState` | Admit session, admit turn, reserve, claim, settle, latch stop | `stopped`, `sessions`, `open`, `reserved`, `claimed` | None newly reproduced. The caps ($1.50, 800k input tokens) are owner-approved and tested. | H | LATER. Pending review. This is the money authority for the live test. |
 | 8 | Production day budget | `deploy/cloudflare-edge/src/meter.js:70` `BudgetState` | Reserve, record, settle, roll the UTC day | `day`, `open`, `reserved`, `limitUsd` | The limit is the unset placeholder, so enforce refuses. Not a logic bug. | H | LATER. Pending review. Not bound in production. |
-| 9 | Story publication | `deploy/cloudflare-edge/src/publication.js` (writer for a revision: `upsert`; `deriveStatus` is `publicationStatus`) | in review, needs work, awaiting validation, changes requested, published, withdrawn, admin test | `validation.status`, `managerDecision`, `presalesDecision`, `withdrawn`, `quality.status`, `test`. `merged_into` is still a column. | The 2560 goldens match the previous derive, including `validated` with both decisions pending and quality ready. Merge still writes the status column itself. | H | Reducer landed for derive and `revised`. Merge is the next commit. `validated` still publishes without both approvals. |
+| 9 | Story publication | `deploy/cloudflare-edge/src/publication.js` (`deriveStatus` is `publicationStatus`; `upsert` uses `revised`; `merge` uses `merged`) | in review, needs work, awaiting validation, changes requested, published, withdrawn, admin test | `validation.status`, `managerDecision`, `presalesDecision`, `withdrawn`, `quality.status`, `test`. `merged_into` stays a column. | The 2560 goldens match the previous derive, including `validated` with both decisions pending and quality ready. The merged row's status column is the reducer's `withdrawn`. | H | Reducer writes the status for derive, revise and merge. `validated` still publishes without both approvals. Unknown values are the next commit. |
 | 10 | Privacy delete receipt | `src/journey-ui.js:11` and `confirmDelete` at :81; server attempts at `deploy/cloudflare-edge/src/operate.js:111` | disclosure, confirm, in flight, receipt, earlier receipt, failure, identity change | `pendingDelete`, `deleteReceipt`, `receiptIsLatest`, `deleteFailure`, `deleteOwner` | Fixed across the delete-receipt commits (latest failure, earlier receipt, one request). `complete` stays false. No new bug filed. | H | LATER. Pending review. Erasure and the receipt wording. |
 | 11 | Colleague confirm page | `deploy/cloudflare-edge/src/confirm-page.js:120` | Open a confirmation, submit, error | page fetches, request id | None newly reproduced. | H | LATER. Pending review. It records a human confirmation. |
 | 12 | Early speculation | `deploy/cloudflare-edge/src/speculation.js:24` and `MemoryLedger` at :46 | Off, admitted, cancelled, claimed by the final turn | `EARLY_STT`, `EARLY_DRAFT`, reservation ids, `scope` | Flags alone cannot turn it on (no global ledger in the Worker). | H | LATER. Pending review. It spends audio and draft tokens inside the interview. |
@@ -52,12 +52,14 @@ Section 4 record. One row per candidate. Status in the summary table is the deci
 |---|---|
 | revised | `upsert` when the content hash changes, or on create |
 | derive | a caller that already built the next state (`setState`, and the golden table) |
+| merged | `merge`, for the story that is folded into another |
 
 ### Transitions
 | From | Event | Guard | To | Side effects |
 |---|---|---|---|---|
 | any | revised | none | in_review, pending lanes, quality null, withdrawn and test cleared | `upsert` stores the state and the status |
 | any | derive | none | the status of the current fields | none inside the reducer |
+| any | merged | none | withdrawn, other fields kept | `merge` stores that status and `merged_into` |
 
 Anything not in this table is illegal and is rejected and logged. The log line is the story id, the phase and the event.
 

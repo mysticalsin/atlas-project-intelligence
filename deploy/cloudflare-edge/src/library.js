@@ -576,7 +576,8 @@ export class Library {
     // contributed stays in details.consultants and members.
     if (g.answers[1] && !k.answers[1].includes(g.answers[1])) k.answers[1] = (k.answers[1] + '\n\nContribution by another consultant: ' + g.answers[1]).trim().slice(0, 6000);
     for (const i of [0, 2, 3, 4, 5]) if (!k.answers[i] && g.answers[i]) k.answers[i] = g.answers[i];
-    this.sql.exec('UPDATE refs SET merged_into = ?, status = ? WHERE id = ?', keep.id, 'withdrawn', gone.id);
+    const moved = publicationTransition(gone.state, { type: 'merged', id: gone.id });
+    this.sql.exec('UPDATE refs SET merged_into = ?, status = ?, state = ? WHERE id = ?', keep.id, moved.status, JSON.stringify(moved.state), gone.id);
     const sharedWith = [...new Set([...(keep.state.sharedWith || []), gone.owner].filter(Boolean))];
     this.sql.exec('UPDATE refs SET state = ?, members = ? WHERE id = ?', JSON.stringify({ ...keep.state, sharedWith }), (keep.members || ',') + sharedWith.join(',') + ',', keep.id);
     this.log(gone.id, user.email, 'merged into', keep.id);
