@@ -185,6 +185,8 @@ test('a competency file matches the MiChat fields and cites only the fixture sen
   assert.deepEqual(project.role, { text: 'Software engineer', evidenceId: 'story:role' });
   assert.deepEqual(project.period, { text: '2024-03 – 2024-11', evidenceId: 'story:period' });
   assert.equal(project.context[0].text, 'Northwind Synthetic needed a quieter alarm queue for the night shift.');
+  assert.equal(project.responsibilities.some(item => /quieter alarm queue/.test(item.text)), false);
+  assert.equal(cv.lines.some(line => line.topic === 'context' && /quieter alarm queue/.test(line.text)), true);
   assert.equal(project.responsibilities[0].text, 'Designed the Windows service that routes alarms for the plant.');
   assert.equal(project.technologicalEnvironment.map(item => item.text).join(','), 'Windows,C#');
   assert.equal(project.achievements[0].text, '8 years of Windows work on that same service.');

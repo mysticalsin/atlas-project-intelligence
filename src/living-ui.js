@@ -51,6 +51,12 @@ function bullet(line,artifact){
   return li;
 }
 function bullets(lines,artifact){const ul=h('ul',{class:'cv-lines'});for(const line of lines||[])if(line&&line.text)ul.append(bullet(line,artifact));return ul;}
+function contextLine(line,artifact){
+  const p=h('p',{class:'role-context',text:line.text||''});
+  const source=supportText(artifact,line);
+  if(line.evidenceId||source)p.append(provenance(source));
+  return p;
+}
 function actionBar(artifact,onChange){
   const bar=h('div',{class:'action-bar'});
   bar.append(h('p',{class:'action-status',role:'status',text:STATUS[artifact.status]||artifact.status||''}));
@@ -126,7 +132,9 @@ function cvDocument(artifact,onChange){
   }
   for(const lines of groups.values()){
     card.append(roleHead(artifact,lines));
-    card.append(bullets(lines,artifact));
+    for(const line of lines)if(line.topic==='context')card.append(contextLine(line,artifact));
+    const work=lines.filter(line=>line.topic==='contribution'||line.topic==='approach'||line.topic==='outcome');
+    if(work.length)card.append(bullets(work,artifact));
   }
   return card;
 }
