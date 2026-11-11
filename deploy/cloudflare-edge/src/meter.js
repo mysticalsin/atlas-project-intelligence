@@ -1,5 +1,5 @@
 // The one door to every paid upstream in the edge app: Workers AI (env.AI.run, env.AI.toMarkdown) and the paid
-// provider APIs (ElevenLabs, TypeSafe JEV, Hindsight). test/ledger-coverage.test.js fails if any other source file
+// provider APIs (ElevenLabs, TypeSafe JEV, Hindsight). test/ledger-static.test.js fails if any other source file
 // calls them directly. LEDGER_MODE selects what happens around each call (docs/LEDGER_MODES.md):
 //   off      (default, also when unset) the call is made exactly as before: same arguments, same result, and no ledger
 //            is looked up or contacted. The estimate function is never evaluated.

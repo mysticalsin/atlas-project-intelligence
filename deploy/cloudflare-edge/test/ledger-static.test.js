@@ -13,9 +13,31 @@ const sources = () => [
 // Line comments are removed so prose about env.AI does not count; '//' inside a URL (https://) is kept.
 const code = p => read(p).split('\n').map(l => l.replace(/(^|\s)\/\/.*$/, '$1')).join('\n');
 
-// The only files allowed to touch a paid upstream: the wrapper, and the live-test REST stand-in for the AI binding
-// (restBinding, reachable only through meteredRestAI and then through workersAI, i.e. through paid() as well).
-const WRAPPER = 'src/meter.js', REST_STANDIN = 'src/spend-ledger.js';
+// The only files allowed to touch a paid upstream: the wrapper, and the body of restBinding (the live-test REST
+// stand-in for the AI binding, reachable only through meteredRestAI and then through workersAI, i.e. through paid()).
+// The rest of spend-ledger.js is held to the same rule as every other file.
+const WRAPPER = 'src/meter.js';
+function functionBody(src, name) {
+  const start = src.indexOf('function ' + name);
+  if (start < 0) throw new Error('missing function ' + name);
+  let i = start + ('function ' + name).length;
+  while (src[i] === ' ' || src[i] === '\n') i++;
+  if (src[i] === '(') {
+    let paren = 0;
+    for (; i < src.length; i++) {
+      if (src[i] === '(') paren++;
+      else if (src[i] === ')') { paren--; if (paren === 0) { i++; break; } }
+    }
+  }
+  while (src[i] === ' ' || src[i] === '\n') i++;
+  if (src[i] !== '{') throw new Error('no body for ' + name);
+  let depth = 0;
+  for (; i < src.length; i++) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') { depth--; if (depth === 0) return src.slice(start, i + 1); }
+  }
+  throw new Error('unclosed function ' + name);
+}
 const PAID_HOSTS = /api\.typesafe\.ai|api\.elevenlabs\.io|api\.cloudflare\.com|\/ai\/run\/|gateway\.ai\.cloudflare\.com|api\.openai\.com|api\.anthropic\.com/;
 // Direct fetch calls that reach no paid provider, by file and count. A new direct fetch anywhere fails this test.
 const UNPAID_FETCHES = {
@@ -35,14 +57,19 @@ test('static: no file but the wrapper calls env.AI.run, the AI binding or a paid
     if (p === WRAPPER) continue;
     const c = code(p);
     if (/\.AI\b/.test(c) || /\[\s*['"]AI['"]\s*\]/.test(c) || /\{[^}]*\bAI\b[^}]*\}\s*=\s*(this\.)?env\b/.test(c)) offenders.push(p + ': reads the AI binding');
-    if (PAID_HOSTS.test(c) && p !== REST_STANDIN) offenders.push(p + ': names a paid endpoint');
-    const direct = (c.match(/(^|[^\w.$])(fetch|fetcher|fetchImpl)\s*\(/g) || []).length;
-    if (p !== REST_STANDIN && direct !== (UNPAID_FETCHES[p] || 0)) offenders.push(`${p}: ${direct} direct fetch calls, ${UNPAID_FETCHES[p] || 0} allowed (all unpaid)`);
+    if (p === 'src/spend-ledger.js') {
+      const fn = functionBody(c, 'restBinding'), outside = c.replace(fn, '');
+      if (PAID_HOSTS.test(outside)) offenders.push(p + ': paid endpoint outside restBinding');
+      if ((outside.match(/(^|[^\w.$])(fetch|fetcher|fetchImpl)\s*\(/g) || []).length) offenders.push(p + ': fetch outside restBinding');
+      if ((fn.match(/(^|[^\w.$])fetchImpl\s*\(/g) || []).length !== 1) offenders.push(p + ': restBinding must contain the one paid fetch');
+    } else if (PAID_HOSTS.test(c)) offenders.push(p + ': names a paid endpoint');
+    if (p !== 'src/spend-ledger.js') {
+      const direct = (c.match(/(^|[^\w.$])(fetch|fetcher|fetchImpl)\s*\(/g) || []).length;
+      if (direct !== (UNPAID_FETCHES[p] || 0)) offenders.push(`${p}: ${direct} direct fetch calls, ${UNPAID_FETCHES[p] || 0} allowed (all unpaid)`);
+    }
   }
   assert.deepEqual(offenders, []);
-  // The REST stand-in has exactly one fetch, inside restBinding, and restBinding is built only by meteredRestAI.
-  const rest = code(REST_STANDIN);
-  assert.equal((rest.match(/(^|[^\w.$])fetchImpl\s*\(/g) || []).length, 1);
+  const rest = code('src/spend-ledger.js');
   assert.equal((rest.match(/restBinding\(/g) || []).length, 2);
   // Each module that owns a paid call site uses the wrapper.
   for (const p of ['src/app.js', 'src/memory.js', 'src/memory-routes.js', 'src/jev.js', 'src/classify.js', 'src/rating.js', 'src/customer-jev.js'])
