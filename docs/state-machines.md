@@ -1,5 +1,5 @@
 # State machines in ATLAS
-Last reviewed: 2026-11-11 on `cursor/state-machines-atlas` (run73, from 2e012d6a). Rows other than publication stay as they were.
+Last reviewed: 2026-11-11 on `cursor/state-machines-atlas` at `50c2dc05`.
 
 Standard: portfolio implicit-state-machine standard v1 (2026-11-11), sha256 `c62dff48dc032e70df170c3161709ae7bfb79f1e25db473b730a300cedb82f0c`. High-risk rows are pending senior review. No high-risk fix is started in this branch.
 
