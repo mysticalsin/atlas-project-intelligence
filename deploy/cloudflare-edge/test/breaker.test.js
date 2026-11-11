@@ -85,6 +85,18 @@ test('fail counting matches the old note(): three failures open, a trial failure
   assert.equal(BREAKER_FAILS, 3);
 });
 
+test('a probing fail re-opens even when the trial flag is absent', () => {
+  const logged = [];
+  const result = transition(probing(0), { type: 'fail', now: 110, trial: false }, { log: line => logged.push(line) });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.state, open(110 + BREAKER_OPEN_MS, 0));
+  assert.deepEqual(logged, [], 'a legal probing fail is not a rejection');
+  const later = transition(probing(2), { type: 'fail', now: 200 }, quiet);
+  assert.equal(later.state.phase, 'open');
+  assert.equal(later.state.fails, 0);
+  assert.equal(later.state.until, 200 + BREAKER_OPEN_MS);
+});
+
 test('a 429 does not count, auth sticks until the key changes, and success does not clear a recorded key', () => {
   const after429 = transition(closed(1), { type: 'ignore' }, quiet).state;
   assert.deepEqual(after429, closed(1));

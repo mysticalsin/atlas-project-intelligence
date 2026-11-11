@@ -57,12 +57,15 @@ Section 4 record. One row per candidate. Status in the summary table is the deci
 | closed or open | begin | `authKeyMatches` | same | no request. `RatingError('auth')` |
 | probing | begin | none: the pair is illegal | probing | logged, no request. `RatingError('circuit_open')` |
 | any | succeed | none | closed, fails 0, auth key kept | the rating is returned |
-| any | fail | `trial`, or `fails + 1 >= 3` | open for 60 s, fails 0 | the rating fails |
-| any | fail | not a trial, and the count stays under 3 | closed, or open if a window was already set | the rating fails; retries follow the existing budget |
+| probing | fail | `state.phase === 'probing'`, with or without `event.trial` | open for 60 s, fails 0 | the trial failed |
+| closed or open | fail | `event.trial`, or `fails + 1 >= 3` | open for 60 s, fails 0 | the rating fails |
+| closed or open | fail | not a trial, and the count stays under 3 | closed, or open if a window was already set | the rating fails; retries follow the existing budget |
 | any | auth_fail | none | same phase (probing becomes closed), auth key set | the rating fails |
 | any | ignore | none | same phase (probing becomes closed) | the rating fails; the count is unchanged |
 
-Anything not in this table is illegal and is rejected and logged. Effects (the fetch, the retry sleeps, the `RatingError`) run in `storyRater`, not in `transition`.
+Anything not in this table is illegal and is rejected and logged. The log line is the phase and the event. It does not carry the key. Effects (the fetch, the retry sleeps, the `RatingError`) run in `storyRater`, not in `transition`.
+
+`open` plus `succeed`, and `open` plus `fail`, stay in the table. A rating admitted while the breaker was closed can still be running when another failure opens it. That first request then settles. The reducer has to accept the settlement, or the failure count and the open window would describe a request that already finished.
 
 ```mermaid
 stateDiagram-v2
