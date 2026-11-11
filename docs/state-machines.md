@@ -1,0 +1,37 @@
+# State machines in ATLAS
+Last reviewed: 2026-11-11 at 69f0c01b (inventory; medium and low fixes follow on `cursor/state-machines-atlas`)
+
+Standard: portfolio implicit-state-machine standard v1 (2026-11-11), sha256 `c62dff48dc032e70df170c3161709ae7bfb79f1e25db473b730a300cedb82f0c`. High-risk rows are pending senior review. No high-risk fix is started in this branch.
+
+## Inventory
+
+Section 4 record. One row per candidate. Status in the summary table is the decision; it becomes FIXED only in the commit that lands that machine.
+
+| # | Machine | Location | Lifecycle | Flags / fields | Known bugs | Risk | Decision |
+|---|---|---|---|---|---|---|---|
+| 1 | Edge interview session | `deploy/cloudflare-edge/src/session.js:126` (flags at :145, hold writes at :228, :272, :437, :448, :610) | One live interview: turn-taking, continuation hold, barge-in, playback, end | `hold`, `listening`, `continuing`, `echoable`, `acked`, `playbackDone`, `loudRun`, `gen`, queue | Run65 session 8 turn 2 was fixed in run66–run68. No new bug filed here. A wrong guard drops or doubles speech. | H | LATER. Pending review. The session is the voice product; a reducer rewrite can change what is heard. |
+| 2 | Edge interview ledger | `deploy/cloudflare-edge/src/ledger.js:15` | Which story field is open, recorded, or deferred during the interview | detail `status` strings, `next_field`, probe budget | None newly reproduced. | H | LATER. Pending review. It decides the next question. |
+| 3 | Python interview run | `atlas_voice/cascade.py:162` | Connect, speak, cancel, discard, end for the Kyutai/Workers cascade | task cancellation, `Discarded`, pacing notes | The cascade has no continuation window (documented in `docs/LIVE_TEST_BOUND.md`). | H | LATER. Pending review. |
+| 4 | Python interview ledger | `atlas_voice/quality.py:52` | Same field lifecycle as the edge ledger, on the hosted path | status strings on recorded details | None newly reproduced. | H | LATER. Pending review. |
+| 5 | Python voice socket | `atlas_voice/server.py:166` (`active` at :47) | Connect, stream, cancel, end, error for one browser socket | `active[cookie]`, session expiry, generation implicit in the handler | None newly reproduced. A double start can occupy the one slot. | H | LATER. Pending review. |
+| 6 | Browser voice phase | `src/voice-client.js:7` (`status()` at :37, `begin` at :67, `cancel` at :100, `fail` at :101) | idle, preparing, connecting, live, ending, error | `phase`, `generation`, `restarting`, `permissionPending`, `consentStarting`, `muted` | None newly reproduced. Illegal combinations (live without a socket) are possible if a handler returns early. | H | LATER. Pending review. |
+| 7 | Live-test spend ledger | `deploy/cloudflare-edge/src/spend-ledger.js:38` `LedgerState` | Admit session, admit turn, reserve, claim, settle, latch stop | `stopped`, `sessions`, `open`, `reserved`, `claimed` | None newly reproduced. The caps ($1.50, 800k input tokens) are owner-approved and tested. | H | LATER. Pending review. This is the money authority for the live test. |
+| 8 | Production day budget | `deploy/cloudflare-edge/src/meter.js:70` `BudgetState` | Reserve, record, settle, roll the UTC day | `day`, `open`, `reserved`, `limitUsd` | The limit is the unset placeholder, so enforce refuses. Not a logic bug. | H | LATER. Pending review. Not bound in production. |
+| 9 | Story publication | `deploy/cloudflare-edge/src/library.js:95` `deriveStatus` | in review, needs work, awaiting validation, changes requested, published, withdrawn, admin test | `state.validation.status`, `managerDecision`, `presalesDecision`, `withdrawn`, `quality.status`, `test` | None newly reproduced. Several fields combine; `validated` and the two approvals can disagree and still publish. | H | LATER. Pending review. Publication is an approval flow. |
+| 10 | Privacy delete receipt | `src/journey-ui.js:11` and `confirmDelete` at :81; server attempts at `deploy/cloudflare-edge/src/operate.js:111` | disclosure, confirm, in flight, receipt, earlier receipt, failure, identity change | `pendingDelete`, `deleteReceipt`, `receiptIsLatest`, `deleteFailure`, `deleteOwner` | Fixed across the delete-receipt commits (latest failure, earlier receipt, one request). `complete` stays false. No new bug filed. | H | LATER. Pending review. Erasure and the receipt wording. |
+| 11 | Colleague confirm page | `deploy/cloudflare-edge/src/confirm-page.js:120` | Open a confirmation, submit, error | page fetches, request id | None newly reproduced. | H | LATER. Pending review. It records a human confirmation. |
+| 12 | Early speculation | `deploy/cloudflare-edge/src/speculation.js:24` and `MemoryLedger` at :46 | Off, admitted, cancelled, claimed by the final turn | `EARLY_STT`, `EARLY_DRAFT`, reservation ids, `scope` | Flags alone cannot turn it on (no global ledger in the Worker). | H | LATER. Pending review. It spends audio and draft tokens inside the interview. |
+| 13 | Story-rating circuit breaker | `deploy/cloudflare-edge/src/rating.js:434` (`note` at :440, trial clear at :455) | closed, open for 60 s, one trial, auth block until the key changes | `fails`, `openUntil`, `authKey` | **Bug.** `rating.js:455` sets `openUntil = 0` at the start of the single half-open trial, before the request returns. `blocked()` at :439 then treats the breaker as closed. A second `rate()` that starts while that trial is in flight is admitted and sends another JEV request. Reproduction: open the breaker with three 529s, advance 60 s, start one `rate()` whose fetch does not return, start a second `rate()`; both reach the fetcher. The comment at :455 says this rating is the one trial request. | M | FIX now. |
+| 14 | Admin metrics view | `src/journey-ui.js:113` `renderAdmin` | boot loading, denied, metrics loading, ready, empty, error; export | no status field; the DOM is the state (`out.replaceChildren`) | None. Export stays available during loading and error; that matches the buttons, which are outside the metrics pane. An empty series is the sentence "No events in this range." A failed `bootInfo()` is shown as not-admin (`catch` sets `boot` to `{}`). | L | FIX now. |
+| 15 | `LEDGER_MODE` | `deploy/cloudflare-edge/src/meter.js:31` `ledgerMode` | none: the Worker boots in one mode | `env.LEDGER_MODE` (`off`, `observe`, `enforce`, anything else invalid) | None. Invalid values already refuse. Default remains off. | L | NOT A MACHINE. It is a boot-time config parse. The process does not move from off to observe. No ordering rule. |
+| 16 | Rating quality status | `deploy/cloudflare-edge/src/rating.js:366` and `noStoryQuality` at :410 | none | `ready` / `needs_work` / `insufficient` derived from the score | None. | L | NOT A MACHINE. Pure mapping from a score and blockers. Two or three labels, no transitions. |
+| 17 | Per-call provider retry | `deploy/cloudflare-edge/src/classify.js:95`, `customer-jev.js:129`, `teams.js:98` | one call, up to three tries | local `attempt` counter | None. | L | NOT A MACHINE. The counter dies with the call. Nothing is persisted and nothing else reads it. |
+
+## Story-rating circuit breaker
+Not landed yet. See row 13. The fix commit replaces this section.
+
+## Admin metrics view
+Not landed yet. See row 14. The fix commit replaces this section.
+
+### Platform / flag differences
+`LEDGER_MODE` is a guard input on the paid-call wrapper, not a machine (row 15). The rating breaker and the admin view do not fork by operating system.
