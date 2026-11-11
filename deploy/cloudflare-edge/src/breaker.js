@@ -1,7 +1,5 @@
 // Story-rating circuit breaker. Pure transitions: storyRater is the only writer and the only place that calls JEV.
-// In memory for one LibraryStore. Not written to the database. loadBreaker maps a legacy {fails, openUntil, authKey}
-// snapshot, or anything it does not recognise, to a safe state (closed, no auth key) so a bad snapshot cannot block
-// every rating or remember a key.
+// In memory for one LibraryStore. Not written to the database, so there is no snapshot codec.
 export const BREAKER_VERSION = 1;
 export const BREAKER_FAILS = 3;
 export const BREAKER_OPEN_MS = 60000;
@@ -32,40 +30,6 @@ export function authKeyMatches(state, key) {
 // The 60 s are not over. A probing trial has already cleared `until`, so this guard is only the open window.
 export function windowStillOpen(state, now) {
   return state.phase === 'open' && now < state.until;
-}
-
-function clampFails(n) {
-  return Number.isInteger(n) && n >= 0 && n < BREAKER_FAILS ? n : null;
-}
-
-export function loadBreaker(raw) {
-  const fresh = initialBreaker();
-  if (!raw || typeof raw !== 'object') return fresh;
-  const authKey = typeof raw.authKey === 'string' && raw.authKey ? raw.authKey : null;
-  if (raw.version === BREAKER_VERSION && (raw.phase === 'closed' || raw.phase === 'open')) {
-    if (raw.phase === 'open' && Number.isFinite(raw.until) && raw.until > 0) {
-      const fails = Number.isInteger(raw.fails) && raw.fails >= 0 && raw.fails < BREAKER_FAILS ? raw.fails : 0;
-      return { version: BREAKER_VERSION, phase: 'open', fails, until: raw.until, authKey };
-    }
-    const fails = clampFails(raw.fails);
-    if (raw.phase === 'closed' && fails !== null) return { version: BREAKER_VERSION, phase: 'closed', fails, until: 0, authKey };
-  }
-  // A probing snapshot is mid-request. The request is gone, so this is closed rather than stuck open.
-  if (raw.version === BREAKER_VERSION && raw.phase === 'probing') {
-    const fails = clampFails(raw.fails);
-    return { version: BREAKER_VERSION, phase: 'closed', fails: fails ?? 0, until: 0, authKey };
-  }
-  // Legacy in-memory shape from before the machine: { fails, openUntil, authKey }.
-  if (raw.version === undefined && ('fails' in raw || 'openUntil' in raw || 'authKey' in raw)) {
-    const until = Number(raw.openUntil);
-    if (Number.isFinite(until) && until > 0) {
-      const fails = Number.isInteger(Number(raw.fails)) && Number(raw.fails) >= 0 && Number(raw.fails) < BREAKER_FAILS ? Number(raw.fails) : 0;
-      return { version: BREAKER_VERSION, phase: 'open', fails, until, authKey };
-    }
-    const fails = clampFails(Number(raw.fails));
-    if (fails !== null) return { version: BREAKER_VERSION, phase: 'closed', fails, until: 0, authKey };
-  }
-  return fresh;
 }
 
 export function blocked(state, key, now) {

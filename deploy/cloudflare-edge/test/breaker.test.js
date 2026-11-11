@@ -1,8 +1,8 @@
 // Story-rating breaker: every legal pair, the full cross product of the rest, both sides of each guard,
-// legacy load and round-trip, and the half-open trial (the bug in rating.js before probing).
+// and the half-open trial (the bug in rating.js before probing). The breaker is not stored.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BREAKER_EVENTS, BREAKER_FAILS, BREAKER_OPEN_MS, BREAKER_PHASES, authKeyMatches, blocked, initialBreaker, loadBreaker, transition, windowStillOpen } from '../src/breaker.js';
+import { BREAKER_EVENTS, BREAKER_FAILS, BREAKER_OPEN_MS, BREAKER_PHASES, authKeyMatches, blocked, initialBreaker, transition, windowStillOpen } from '../src/breaker.js';
 
 const closed = (fails = 0, authKey = null) => ({ version: 1, phase: 'closed', fails, until: 0, authKey });
 const open = (until, fails = 0, authKey = null) => ({ version: 1, phase: 'open', fails, until, authKey });
@@ -114,16 +114,3 @@ test('a 429 does not count, auth sticks until the key changes, and success does 
   assert.equal(success.authKey, 'k'); assert.equal(success.phase, 'closed'); assert.equal(success.fails, 0);
 });
 
-test('legacy and unknown snapshots load to a defined state; a valid snapshot round-trips', () => {
-  assert.deepEqual(loadBreaker({ fails: 2, openUntil: 0, authKey: null }), closed(2));
-  assert.deepEqual(loadBreaker({ fails: 1, openUntil: 9000, authKey: 'k' }), open(9000, 1, 'k'));
-  assert.deepEqual(loadBreaker({ fails: 9, openUntil: 0 }), initialBreaker(), 'a fails count that cannot happen is not trusted');
-  assert.deepEqual(loadBreaker({ version: 1, phase: 'nope' }), initialBreaker());
-  assert.deepEqual(loadBreaker(null), initialBreaker());
-  assert.deepEqual(loadBreaker('closed'), initialBreaker());
-  const mid = loadBreaker({ version: 1, phase: 'probing', fails: 1, until: 0, authKey: 'k' });
-  assert.equal(mid.phase, 'closed'); assert.equal(mid.fails, 1); assert.equal(mid.authKey, 'k');
-  const live = open(42, 1, 'k');
-  assert.deepEqual(loadBreaker(live), live);
-  assert.deepEqual(loadBreaker(closed(2, 'k')), closed(2, 'k'));
-});

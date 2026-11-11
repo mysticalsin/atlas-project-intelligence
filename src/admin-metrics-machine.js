@@ -1,6 +1,5 @@
 // Admin metrics view. Pure transitions. renderAdmin in journey-ui.js is the only writer and the only thing that
-// touches the DOM. The view is not stored. loadAdminMetrics maps an unknown or legacy value to boot_loading,
-// which shows the loading line and does not export.
+// touches the DOM. The view is not stored, so there is no snapshot codec.
 export const ADMIN_METRICS_VERSION = 1;
 export const ADMIN_METRICS_STATES = Object.freeze(['boot_loading', 'boot_error', 'denied', 'loading', 'ready', 'empty', 'error']);
 export const ADMIN_METRICS_EVENTS = Object.freeze(['boot', 'refresh', 'loaded', 'load_failed', 'export', 'export_failed']);
@@ -55,7 +54,3 @@ export function adminMetricsTransition(state, event) {
   return { ok: true, illegal: false, state, effects: ['append_warning'] };
 }
 
-export function loadAdminMetrics(raw) {
-  if (raw && raw.version === ADMIN_METRICS_VERSION && ADMIN_METRICS_STATES.includes(raw.status)) return { version: ADMIN_METRICS_VERSION, status: raw.status };
-  return initialAdminMetrics();
-}

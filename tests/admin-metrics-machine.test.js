@@ -1,8 +1,8 @@
-// Admin metrics view: every legal transition, the full cross product of the rest, both sides of each guard,
-// and legacy load plus round-trip. No DOM.
+// Admin metrics view: every legal transition, the full cross product of the rest, and both sides of each guard.
+// The view is not stored. No DOM.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ADMIN_METRICS_EVENTS, ADMIN_METRICS_STATES, adminMetricsTransition, bootFailed, hasSeries, initialAdminMetrics, isAdminRole, loadAdminMetrics } from '../src/admin-metrics-machine.js';
+import { ADMIN_METRICS_EVENTS, ADMIN_METRICS_STATES, adminMetricsTransition, bootFailed, hasSeries, initialAdminMetrics, isAdminRole } from '../src/admin-metrics-machine.js';
 
 const quiet = { log: () => {} };
 const at = status => ({ version: 1, status });
@@ -108,9 +108,3 @@ test('boot_error is legal only from a failed boot, and every shell event there i
   assert.ok(logged.every(l => Object.keys(l).every(k => ['atlas_metric', 'illegal', 'status', 'event'].includes(k))));
 });
 
-test('legacy and unknown views load as boot_loading; a known view round-trips', () => {
-  assert.deepEqual(loadAdminMetrics(undefined), initialAdminMetrics());
-  assert.deepEqual(loadAdminMetrics({ status: 'Loading admin metrics…' }), initialAdminMetrics());
-  assert.deepEqual(loadAdminMetrics({ version: 1, status: 'nope' }), initialAdminMetrics());
-  for (const status of ADMIN_METRICS_STATES) assert.deepEqual(loadAdminMetrics(at(status)), at(status));
-});
