@@ -928,3 +928,10 @@ Review answers:
 - **Admin (`0663f26`).** `boot_error` is a state. `bootFailed` is separate from a missing role. `renderAdmin` still paints the permissions banner when `bootInfo()` throws, because a distinct outage sentence would replace that copy. Painting it is LATER.
 - **Publication (`6fc9aa1`).** Golden tests only. No row 9 reducer. A revision resets `validation.status` to pending and derives `in_review`. Rows 18–21 added. Withdraw, reinstate and merge are folded into row 9.
 - **Suites at `6fc9aa1`.** pytest 307. Root node 390 tests, 389 pass, 1 skip. Edge 623. Spend-ledger 16. Early-processing 28. Browser 21 scripts, 822 PASS, 0 FAIL. This note is docs-only on top of that head.
+
+### Session: 2026-11-11 / Publication reducer (run73)
+- Continued `cursor/state-machines-atlas` from `2e012d6a`. No push of `main`, no PR, no deploy, no production wrangler or binding change, no cap or spend change, no live call.
+- **Refactor (`ba42c04`).** `publication.js` replaces `deriveStatus`. `upsert` applies `revised`. The 2560 known goldens match, including `validated` with both decisions pending and quality ready.
+- **Single writer (`095a170`).** `merge` applies `merged`. The status column is that result. The stored state has `withdrawn: true`.
+- **Unknown values (`5133aa5`).** A status outside the five known values, or a decision outside the four, derives `awaiting_validation` when quality is ready and `in_review` otherwise. It does not derive `published`. Withdrawn still wins. Before the change, 64 such inputs derived `published`. The new golden was run failing-first and reported `published`.
+- Rows other than 9 and 18 were not started. `validated` still does not require both approvals.
