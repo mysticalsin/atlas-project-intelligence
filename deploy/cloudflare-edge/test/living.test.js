@@ -349,10 +349,11 @@ test('generate uses published snippets, refuses a live link, and blocks self-app
   const made = await living.routes(ctx({ link: LINK, audience: 'external' }), { smart: smart() });
   assert.equal(made.body.artifact.status, 'in_review');
   assert.equal(made.body.artifact.canApprove, false);
-  const joined = JSON.stringify(made.body.artifact.lines);
+  const joined = JSON.stringify(made.body.artifact.lines.map(line => line.text));
   assert.equal(joined.includes('Northwind Synthetic'), false);
   assert.equal(joined.includes('Designed the Windows service'), true);
   assert.equal(joined.includes('I designed'), false);
+  assert.equal(made.body.artifact.lines.some(line => (line.source || '').includes('I designed the Windows service')), true);
   assert.equal(made.body.artifact.lines.every(line => line.evidenceId.startsWith(id + ':')), true);
   assert.ok(made.body.artifact.gaps.some(gap => gap.keyword === 'C++'));
   assert.equal(made.body.artifact.lines.some(line => line.text.includes('C++')), false);
