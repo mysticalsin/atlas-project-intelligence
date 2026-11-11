@@ -145,8 +145,21 @@ function continuityScope(env, sub, tenant) {
   if (!TENANT_ID.test(tid)) return { ok: false };
   return { ok: true, objectName: `${tid}:${sub}`, tenant: tid };
 }
+// Every forward starts from this. Inbound x-atlas-* headers, including x-atlas-csrf, are gone
+// before the caller sets the verified values. A client cannot supply them.
+function atlasForwardHeaders(source) {
+  const headers = new Headers(source || undefined);
+  for (const name of [...headers.keys()]) {
+    if (name.toLowerCase().startsWith('x-atlas-')) headers.delete(name);
+  }
+  return headers;
+}
 function systemForwardHeaders(user, scope) {
-  return { 'Content-Type': 'application/json', 'x-atlas-user': user, 'x-atlas-role': 'system', 'x-atlas-email': '', 'x-atlas-idp': 'e30', 'x-atlas-tenant': scope.tenant, 'x-atlas-tenant-enforced': scope.flag };
+  const headers = atlasForwardHeaders();
+  headers.set('Content-Type', 'application/json');
+  headers.set('x-atlas-user', user); headers.set('x-atlas-role', 'system'); headers.set('x-atlas-email', '');
+  headers.set('x-atlas-idp', 'e30'); headers.set('x-atlas-tenant', scope.tenant); headers.set('x-atlas-tenant-enforced', scope.flag);
+  return headers;
 }
 
 // flagsOf: the bootstrap feature flags (tests pass flags with D1 approved to exercise /api/transcribe before it flips).
@@ -248,7 +261,7 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
     if (url.pathname === '/api/voice') {
       if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected a WebSocket upgrade.', { status: 426 });
       if (request.headers.get('Origin') !== env.ORIGIN) return new Response('Invalid voice origin', { status: 403 });
-      const forward = new Request(request, { headers: new Headers(request.headers) });
+      const forward = new Request(request, { headers: atlasForwardHeaders(request.headers) });
       forward.headers.set('x-atlas-admin', admin ? '1' : '0'); // always overwritten: a browser can never claim admin
       forward.headers.set('x-atlas-user', libraryUser); forward.headers.set('x-atlas-role', role); forward.headers.set('x-atlas-email', mail); forward.headers.set('x-atlas-tenant', tenant); forward.headers.set('x-atlas-tenant-enforced', tenantFlag);
       const scope = continuityScope(env, who.sub, tenant);
@@ -268,7 +281,7 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
     if (url.pathname === '/api/memory' || url.pathname.startsWith('/api/memory/')) {
       if (request.method !== 'GET' && (request.headers.get('Origin') !== env.ORIGIN || !csrfOk(request.headers.get('X-Atlas-CSRF'), csrf))) return json(env, { error: 'Invalid request origin or session token.' }, 403);
       if (Number(request.headers.get('Content-Length') || 0) > 131072) return json(env, { error: 'Request too large.' }, 413);
-      const forward = new Request(request, { headers: new Headers(request.headers) });
+      const forward = new Request(request, { headers: atlasForwardHeaders(request.headers) });
       const scope = continuityScope(env, who.sub, tenant);
       if (!scope.ok) return json(env, { error: 'A verified tenant is required before memory can open. The subject-only bank was not read.' }, 403);
       forward.headers.set('x-atlas-bank', await bankId(env, who.sub, scope.tenant)); forward.headers.set('x-atlas-role', role); forward.headers.set('x-atlas-tenant', tenant); forward.headers.set('x-atlas-tenant-enforced', tenantFlag);
@@ -285,7 +298,7 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
       if (acceptedSubjectDelete(request.method, url.pathname) && !TENANT_ID.test(tenant)) {
         return json(env, { error: 'A verified tenant is required.' }, 403);
       }
-      const fwdHeaders = new Headers(request.headers); fwdHeaders.delete('content-length');
+      const fwdHeaders = atlasForwardHeaders(request.headers); fwdHeaders.delete('content-length');
       const forward = new Request(request.url, { method: request.method, headers: fwdHeaders, body: bodyless ? undefined : bytes });
       // Entra: the stable tid:oid is the library identity (emails can change); Access: the verified email.
       forward.headers.set('x-atlas-user', libraryUser); forward.headers.set('x-atlas-role', role); forward.headers.set('x-atlas-email', mail); forward.headers.set('x-atlas-tenant', tenant); forward.headers.set('x-atlas-tenant-enforced', tenantFlag);

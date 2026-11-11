@@ -742,3 +742,36 @@ test('a verified subject tenant is forwarded for delete variants and a client te
   assert.deepEqual(seen.map(r => r.headers.get('x-atlas-user')), [`${tid}:${oid}`, `${tid}:${oid}`, `${tid}:${oid}`]);
   assert.equal(seen.some(r => r.headers.get('x-atlas-tenant') === spoof), false);
 });
+
+test('a client x-atlas-* header never reaches an upstream forward', async () => {
+  const spoof = {
+    'x-atlas-admin': 'spoof-admin', 'x-atlas-user': 'spoof-user@evil.test', 'x-atlas-email': 'spoof-mail@evil.test',
+    'x-atlas-bank': 'spoof-bank', 'x-atlas-role': 'spoof-role', 'x-atlas-csrf': 'spoof-csrf', 'X-Atlas-Extra': 'spoof-extra',
+  };
+  const banned = new Set(Object.values(spoof));
+  const seen = [];
+  const record = r => { seen.push(r); return new Response('{}', { status: 200 }); };
+  const interview = { idFromName: n => n, get: () => ({ fetch: record }) };
+  const library = { idFromName: n => n, get: () => ({ fetch: record }) };
+  const token = await jwt();
+  const env = { ...ENV, ATLAS_TENANT_ISOLATION: 'local-synthetic', INTERVIEW: interview, LIBRARY: library };
+  await handle(new Request(ORIGIN + '/api/memory', { headers: { 'cf-access-jwt-assertion': token, ...spoof } }), env, '');
+  await handle(new Request(ORIGIN + '/api/library', { headers: { 'cf-access-jwt-assertion': token, ...spoof } }), env, '');
+  await handle(new Request(ORIGIN + '/api/voice', { headers: { 'cf-access-jwt-assertion': token, Upgrade: 'websocket', Origin: ORIGIN, ...spoof } }), env, '');
+  const tid = '11111111-1111-4111-8111-111111111111';
+  await handle(new Request(ORIGIN + '/api/triggers', { method: 'POST', body: '{"email":"a@b.co","reason":"project_end"}', headers: { Authorization: 'Bearer s3cret-value', ...spoof } }), { ...ENV, TRIGGER_SECRET: 's3cret-value', ATLAS_SYSTEM_TENANT: tid, LIBRARY: library }, '');
+  const body = JSON.stringify({ batch: 'a'.repeat(32), part: 1, final: true, rows: [{ email: 'jane@example.com', name: 'Jane' }] });
+  await handle(new Request(ORIGIN + '/api/directory/push', { method: 'POST', body, headers: { Authorization: 'Bearer push-secret', ...spoof } }), { ...ENV, DATA_MODE: 'production', DIRECTORY_PUSH_SECRET: 'push-secret', ATLAS_SYSTEM_TENANT: tid, LIBRARY: library }, '');
+  assert.equal(seen.length, 5);
+  for (const req of seen) {
+    const path = new URL(req.url).pathname;
+    for (const [name, value] of req.headers) assert.equal(banned.has(value), false, path + ' kept ' + name);
+    assert.equal(req.headers.get('x-atlas-csrf') === 'spoof-csrf', false, path);
+    assert.notEqual(req.headers.get('x-atlas-admin'), 'spoof-admin', path);
+    assert.notEqual(req.headers.get('x-atlas-user'), 'spoof-user@evil.test', path);
+    assert.notEqual(req.headers.get('x-atlas-email'), 'spoof-mail@evil.test', path);
+    assert.notEqual(req.headers.get('x-atlas-bank'), 'spoof-bank', path);
+    assert.notEqual(req.headers.get('x-atlas-role'), 'spoof-role', path);
+    assert.equal(req.headers.get('x-atlas-extra'), null, path);
+  }
+});
