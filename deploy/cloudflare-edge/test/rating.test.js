@@ -561,6 +561,30 @@ test('R16 circuit breaker: three consecutive failures open it for 60 s; one tria
   assert.deepEqual([q.engine, fetcher.calls.length, rater.blocked()], ['jev', 5, null], 'a successful trial closes it');
 });
 
+test('R16b a second rating during the half-open trial does not send another JEV request', async () => {
+  // rating.js used to clear openUntil when the trial was admitted, so blocked() looked closed until the
+  // trial returned and a concurrent rate() was admitted too. The trial fetch here never returns.
+  let clock = 1e6, mode = 'down';
+  const fetcher = fakeTS(() => (mode === 'down' ? { status: 529 } : { hang: true }));
+  const opts = { now: () => clock, sleep: async ms => { clock += ms; }, random: () => 0 };
+  const { l, rater } = await world({ fetcher, raterOpts: opts });
+  const id = await saved(l);
+  await l.review(SYSTEM, id, { budget: 'background' });
+  assert.equal(fetcher.calls.length, 3);
+  clock += 60000;
+  assert.equal(rater.blocked(), null);
+  mode = 'hang';
+  const asked = ['clarity'], body = JSON.stringify(R.requestBody({ reference: { story: {} }, notice: R.NOTICE }, asked));
+  const trial = rater.rate(body, '{}', { asked, terms: [], budget: 'background' });
+  trial.catch(() => {});
+  await new Promise(r => setTimeout(r, 20));
+  assert.equal(fetcher.calls.length, 4, 'the one trial request was sent');
+  assert.equal(rater.blocked(), 'circuit_open');
+  await assert.rejects(rater.rate(body, '{}', { asked, terms: [], budget: 'interactive' }), e => e.code === 'circuit_open');
+  assert.equal(fetcher.calls.length, 4, 'no second request while the trial is in flight');
+  void trial;
+});
+
 test('R17 metrics are numbers only; no key, hash or client in stored ratings, reads or audit; public readers get no JEV detail', async () => {
   const { l, metrics } = await world({ reply: () => ({ spec: R7 }) });
   const id = await saved(l);

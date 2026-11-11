@@ -433,10 +433,13 @@ function retryAfterMs(headers) {
 export function storyRater(env, fetcher = fetch, opts = {}) {
   const budgets = { interactive: { ...BUDGETS.interactive, ...(opts.budgets?.interactive || {}) }, background: { ...BUDGETS.background, ...(opts.budgets?.background || {}) } };
   const now = opts.now || (() => Date.now()), random = opts.random || Math.random, sleep = opts.sleep || (ms => delay(ms));
-  let fails = 0, openUntil = 0, authKey = null;
+  let fails = 0, openUntil = 0, authKey = null, probing = false;
   const available = () => !!env.TYPESAFE_API_KEY;
-  const blocked = () => (authKey !== null && env.TYPESAFE_API_KEY === authKey ? 'auth' : openUntil && now() < openUntil ? 'circuit_open' : null);
+  // probing: the one half-open trial has been admitted and has not settled. Clearing openUntil at admit
+  // would otherwise make blocked() look closed, so a second rate() would send another request.
+  const blocked = () => (authKey !== null && env.TYPESAFE_API_KEY === authKey ? 'auth' : probing || (openUntil && now() < openUntil) ? 'circuit_open' : null);
   const note = (o, key, trial) => {
+    probing = false;
     if (o.ok) { fails = 0; openUntil = 0; return; }
     if (o.code === 'auth') { authKey = key; return; }
     if (o.code === 'timeout' || o.code === 'network' || (o.http >= 500 && o.http <= 599)) {
@@ -452,7 +455,7 @@ export function storyRater(env, fetcher = fetch, opts = {}) {
     if (b0) throw new RatingError(b0);
     if (!available()) throw new RatingError('no_key');
     const trial = openUntil !== 0; // the breaker's 60 s are over: this rating is the one trial request
-    if (trial) openUntil = 0;
+    if (trial) { openUntil = 0; probing = true; }
     // One request. Never rejects: every ending is an outcome.
     const one = async (signal, key) => {
       let res;
