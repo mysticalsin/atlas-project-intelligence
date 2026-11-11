@@ -934,4 +934,5 @@ Review answers:
 - **Refactor (`ba42c04`).** `publication.js` replaces `deriveStatus`. `upsert` applies `revised`. The 2560 known goldens match, including `validated` with both decisions pending and quality ready.
 - **Single writer (`095a170`).** `merge` applies `merged`. The status column is that result. The stored state has `withdrawn: true`.
 - **Unknown values (`5133aa5`).** A status outside the five known values, or a decision outside the four, derives `awaiting_validation` when quality is ready and `in_review` otherwise. It does not derive `published`. Withdrawn still wins. Before the change, 64 such inputs derived `published`. The new golden was run failing-first and reported `published`.
-- Rows other than 9 and 18 were not started. `validated` still does not require both approvals.
+- Rows other than 9 and 18 were not started.
+- **Both approvals.** `canPublish` is both lanes `approved`. `validated` with both decisions pending, or with only one approval, derives `awaiting_validation` when quality is ready. The test was run first and reported `published`. 32 of the 2560 golden rows move from `published` to `awaiting_validation` (16 field combinations, each with both `merged_into` values). Both lanes approved still publishes. Admin bypass is unchanged. Logs stay the story id, the phase and the event.

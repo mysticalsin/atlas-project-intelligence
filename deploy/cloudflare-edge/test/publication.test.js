@@ -2,7 +2,7 @@
 // legacy load and round-trip. The 2560 status goldens stay in publication-golden.test.js.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PUBLICATION_EVENTS, PUBLICATION_PHASES, approvalUnknown, bothApproved, changesRequested, initialPublication, isAdminBypass, isAdminTest, isWithdrawn, knownDecision, knownValidation, loadPublication, publicationStatus, publicationTransition, qualityMissing, qualityReady, validatedFlag } from '../src/publication.js';
+import { PUBLICATION_EVENTS, PUBLICATION_PHASES, approvalUnknown, bothApproved, canPublish, changesRequested, initialPublication, isAdminBypass, isAdminTest, isWithdrawn, knownDecision, knownValidation, loadPublication, publicationStatus, publicationTransition, qualityMissing, qualityReady, validatedFlag } from '../src/publication.js';
 import { Library, deriveStatus } from '../src/library.js';
 import { memorySql } from './sqlite.js';
 
@@ -12,7 +12,7 @@ const phases = {
   needs_work: { quality: { status: 'needs_work' }, validation: { status: 'pending' } },
   changes_requested: { quality: { status: 'ready' }, validation: { status: 'changes_requested', managerDecision: 'pending', presalesDecision: 'pending' } },
   awaiting_validation: { quality: { status: 'ready' }, validation: { status: 'pending', managerDecision: 'approved', presalesDecision: 'pending' } },
-  published: { quality: { status: 'ready' }, validation: { status: 'validated', managerDecision: 'pending', presalesDecision: 'pending' } },
+  published: { quality: { status: 'ready' }, validation: { status: 'validated', managerDecision: 'approved', presalesDecision: 'approved' } },
   admin_test: { test: true, validation: { status: 'admin_bypass' } },
   withdrawn: { withdrawn: true, quality: { status: 'ready' }, validation: { status: 'validated', managerDecision: 'approved', presalesDecision: 'approved' } },
 };
@@ -72,7 +72,13 @@ test('guards: withdrawn, admin bypass, quality, changes, validated flag, both ap
   assert.equal(validatedFlag({ validation: { status: 'pending', managerDecision: 'approved', presalesDecision: 'approved' } }), false);
   assert.equal(bothApproved(ready), true);
   assert.equal(bothApproved({ validation: { managerDecision: 'approved', presalesDecision: 'pending' } }), false);
-  assert.equal(publicationStatus({ quality: { status: 'ready' }, validation: { status: 'validated', managerDecision: 'pending', presalesDecision: 'pending' } }), 'published');
+  assert.equal(canPublish(ready), true);
+  assert.equal(canPublish({ validation: { status: 'validated', managerDecision: 'pending', presalesDecision: 'pending' } }), false);
+  assert.equal(canPublish({ validation: { status: 'validated', managerDecision: 'approved', presalesDecision: 'pending' } }), false);
+  const loggedDeny = [];
+  assert.equal(publicationStatus({ quality: { status: 'ready' }, validation: { status: 'validated', managerDecision: 'pending', presalesDecision: 'pending' } }, { log: line => loggedDeny.push(line) }), 'awaiting_validation');
+  assert.deepEqual(loggedDeny, []);
+  assert.equal(publicationStatus({ quality: { status: 'ready' }, validation: { status: 'validated', managerDecision: 'approved', presalesDecision: 'approved' } }), 'published');
   assert.equal(knownValidation('pending'), true);
   assert.equal(knownValidation('legacy'), false);
   assert.equal(knownDecision('approved'), true);

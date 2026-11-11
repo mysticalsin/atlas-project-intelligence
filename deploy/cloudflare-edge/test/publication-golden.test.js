@@ -20,7 +20,7 @@ function pinned(state) {
   if (!state.quality) return 'in_review';
   if (state.quality.status !== 'ready') return 'needs_work';
   if (v.status === 'changes_requested' || v.managerDecision === 'changes_requested' || v.presalesDecision === 'changes_requested') return 'changes_requested';
-  if (v.status === 'validated' || (v.managerDecision === 'approved' && v.presalesDecision === 'approved')) return 'published';
+  if (v.managerDecision === 'approved' && v.presalesDecision === 'approved') return 'published';
   return 'awaiting_validation';
 }
 
@@ -57,9 +57,78 @@ test('deriveStatus: every distinguished field combination, and merged_into chang
   assert.equal(n, WITHDRAWN.length * TEST.length * QUALITY.length * VSTATUS.length * DECISION.length * DECISION.length * MERGED.length);
 });
 
+// The oracle at 5133aa5, before both approvals were required. Used only to name the rows that moved.
+function pinnedBeforeBothRequired(state) {
+  if (state.withdrawn) return 'withdrawn';
+  const v = state.validation || {};
+  if (v.status === 'admin_bypass') {
+    if (state.test) return 'admin_test';
+    if (!state.quality) return 'in_review';
+    if (state.quality.status !== 'ready') return 'needs_work';
+    return 'published';
+  }
+  if (!state.quality) return 'in_review';
+  if (state.quality.status !== 'ready') return 'needs_work';
+  if (v.status === 'changes_requested' || v.managerDecision === 'changes_requested' || v.presalesDecision === 'changes_requested') return 'changes_requested';
+  if (v.status === 'validated' || (v.managerDecision === 'approved' && v.presalesDecision === 'approved')) return 'published';
+  return 'awaiting_validation';
+}
+
+test('the only golden rows that move are validated without both approvals', () => {
+  const changed = [];
+  let rows = 0, moved = 0;
+  for (const w of WITHDRAWN) for (const testFlag of TEST) for (const quality of QUALITY)
+    for (const status of VSTATUS) for (const manager of DECISION) for (const presales of DECISION) {
+      const bare = stateOf(w, testFlag, quality, status, manager, presales);
+      const before = pinnedBeforeBothRequired(bare);
+      const after = pinned(bare);
+      rows++;
+      assert.equal(deriveStatus(bare), after);
+      if (before !== after) {
+        moved++;
+        assert.equal(before, 'published');
+        assert.equal(after, 'awaiting_validation');
+        changed.push({ withdrawn: w, test: testFlag, quality: quality.status, status, manager: manager === undefined ? 'missing' : manager, presales: presales === undefined ? 'missing' : presales });
+      }
+      for (const merged of MERGED) assert.equal(deriveStatus(stateOf(w, testFlag, quality, status, manager, presales, merged)), after);
+    }
+  assert.equal(rows, 1280);
+  assert.equal(moved, 16);
+  assert.equal(moved * MERGED.length, 32);
+  assert.deepEqual(changed, [
+    { withdrawn: false, test: false, quality: 'ready', status: 'validated', manager: 'missing', presales: 'missing' },
+    { withdrawn: false, test: false, quality: 'ready', status: 'validated', manager: 'missing', presales: 'pending' },
+    { withdrawn: false, test: false, quality: 'ready', status: 'validated', manager: 'missing', presales: 'approved' },
+    { withdrawn: false, test: false, quality: 'ready', status: 'validated', manager: 'pending', presales: 'missing' },
+    { withdrawn: false, test: false, quality: 'ready', status: 'validated', manager: 'pending', presales: 'pending' },
+    { withdrawn: false, test: false, quality: 'ready', status: 'validated', manager: 'pending', presales: 'approved' },
+    { withdrawn: false, test: false, quality: 'ready', status: 'validated', manager: 'approved', presales: 'missing' },
+    { withdrawn: false, test: false, quality: 'ready', status: 'validated', manager: 'approved', presales: 'pending' },
+    { withdrawn: false, test: true, quality: 'ready', status: 'validated', manager: 'missing', presales: 'missing' },
+    { withdrawn: false, test: true, quality: 'ready', status: 'validated', manager: 'missing', presales: 'pending' },
+    { withdrawn: false, test: true, quality: 'ready', status: 'validated', manager: 'missing', presales: 'approved' },
+    { withdrawn: false, test: true, quality: 'ready', status: 'validated', manager: 'pending', presales: 'missing' },
+    { withdrawn: false, test: true, quality: 'ready', status: 'validated', manager: 'pending', presales: 'pending' },
+    { withdrawn: false, test: true, quality: 'ready', status: 'validated', manager: 'pending', presales: 'approved' },
+    { withdrawn: false, test: true, quality: 'ready', status: 'validated', manager: 'approved', presales: 'missing' },
+    { withdrawn: false, test: true, quality: 'ready', status: 'validated', manager: 'approved', presales: 'pending' },
+  ]);
+});
+
+test('validated does not publish unless both lanes approved', () => {
+  const ready = { status: 'ready' };
+  const bothPending = { quality: ready, validation: { status: 'validated', managerDecision: 'pending', presalesDecision: 'pending' } };
+  assert.equal(deriveStatus(bothPending), 'awaiting_validation');
+  for (const [manager, presales] of [['approved', 'pending'], ['pending', 'approved']]) {
+    assert.equal(deriveStatus({ quality: ready, validation: { status: 'validated', managerDecision: manager, presalesDecision: presales } }), 'awaiting_validation', manager + '/' + presales);
+    assert.equal(deriveStatus({ quality: ready, validation: { status: 'pending', managerDecision: manager, presalesDecision: presales } }), 'awaiting_validation', 'without the flag ' + manager + '/' + presales);
+  }
+});
+
 test('named publication inputs', () => {
   const ready = { status: 'ready' };
-  assert.equal(deriveStatus({ quality: ready, validation: { status: 'validated', managerDecision: 'pending', presalesDecision: 'pending' } }), 'published', 'leftover validated publishes without either approval');
+  assert.equal(deriveStatus({ quality: ready, validation: { status: 'validated', managerDecision: 'pending', presalesDecision: 'pending' } }), 'awaiting_validation', 'validated without both approvals does not publish');
+  assert.equal(deriveStatus({ quality: ready, validation: { status: 'validated', managerDecision: 'approved', presalesDecision: 'approved' } }), 'published', 'validated with both approvals still publishes');
   assert.equal(deriveStatus({ quality: ready, validation: { status: 'pending', managerDecision: 'approved', presalesDecision: 'pending' } }), 'awaiting_validation', 'one approval is not both');
   assert.equal(deriveStatus({ quality: ready, validation: { status: 'validated', managerDecision: 'changes_requested', presalesDecision: 'approved' } }), 'changes_requested', 'a changes request is checked before the validated flag');
   assert.equal(deriveStatus({ test: true, validation: { status: 'admin_bypass' } }), 'admin_test', 'admin test with no approvals and no quality');
@@ -90,7 +159,8 @@ test('unknown validation status or decision derives awaiting_validation or in_re
   }
   assert.equal(n, qualities.length * (statuses.length * decisions.length * decisions.length - VSTATUS.length * DECISION.length * DECISION.length));
   assert.equal(deriveStatus({ withdrawn: true, quality: ready, validation: { status: 'legacy', managerDecision: 'approved', presalesDecision: 'approved' } }), 'withdrawn');
-  assert.equal(deriveStatus({ quality: ready, validation: { status: 'validated', managerDecision: 'pending', presalesDecision: 'pending' } }), 'published');
+  assert.equal(deriveStatus({ quality: ready, validation: { status: 'validated', managerDecision: 'pending', presalesDecision: 'pending' } }), 'awaiting_validation');
+  assert.equal(deriveStatus({ quality: ready, validation: { status: 'validated', managerDecision: 'approved', presalesDecision: 'approved' } }), 'published');
 });
 
 const OWNER = { email: 'alex@mantu.com', role: 'user' };

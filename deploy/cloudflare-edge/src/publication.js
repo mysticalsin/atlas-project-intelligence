@@ -31,10 +31,12 @@ export function changesRequested(state) {
   const v = state.validation || {};
   return v.status === 'changes_requested' || v.managerDecision === 'changes_requested' || v.presalesDecision === 'changes_requested';
 }
-// The validated flag alone is enough. Both approvals are a separate way to publish. Requiring both
-// when the flag is set is a product rule and is not applied here.
 export function validatedFlag(state) {
   return (state.validation || {}).status === 'validated';
+}
+// Publish from the approval lanes requires both decisions. The validated flag does not publish by itself.
+export function canPublish(state) {
+  return bothApproved(state);
 }
 export function bothApproved(state) {
   const v = state.validation || {};
@@ -67,8 +69,9 @@ export function loadPublication(raw) {
   return { ...raw };
 }
 
-// Same branches as the previous deriveStatus for the known values. merged_into is not read.
-// An unknown validation status or decision is not allowed to publish. The log is the id, the phase and the event.
+// Known values follow the previous derive, except that a validated flag publishes only with both approvals.
+// merged_into is not read. An unknown validation status or decision is not allowed to publish.
+// The log is the id, the phase and the event.
 export function publicationStatus(state, opts = {}) {
   if (isWithdrawn(state)) return 'withdrawn';
   if (approvalUnknown(state)) {
@@ -86,7 +89,7 @@ export function publicationStatus(state, opts = {}) {
   if (qualityMissing(state)) return 'in_review';
   if (!qualityReady(state)) return 'needs_work';
   if (changesRequested(state)) return 'changes_requested';
-  if (validatedFlag(state) || bothApproved(state)) return 'published';
+  if (canPublish(state)) return 'published';
   return 'awaiting_validation';
 }
 

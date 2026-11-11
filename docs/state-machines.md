@@ -17,7 +17,7 @@ Section 4 record. One row per candidate. Status in the summary table is the deci
 | 6 | Browser voice phase | `src/voice-client.js:7` (`status()` at :37, `begin` at :67, `cancel` at :100, `fail` at :101) | idle, preparing, connecting, live, ending, error | `phase`, `generation`, `restarting`, `permissionPending`, `consentStarting`, `muted` | None newly reproduced. Illegal combinations (live without a socket) are possible if a handler returns early. | H | LATER. Pending review. |
 | 7 | Live-test spend ledger | `deploy/cloudflare-edge/src/spend-ledger.js:38` `LedgerState` | Admit session, admit turn, reserve, claim, settle, latch stop | `stopped`, `sessions`, `open`, `reserved`, `claimed` | None newly reproduced. The caps ($1.50, 800k input tokens) are owner-approved and tested. | H | LATER. Pending review. This is the money authority for the live test. |
 | 8 | Production day budget | `deploy/cloudflare-edge/src/meter.js:70` `BudgetState` | Reserve, record, settle, roll the UTC day | `day`, `open`, `reserved`, `limitUsd` | The limit is the unset placeholder, so enforce refuses. Not a logic bug. | H | LATER. Pending review. Not bound in production. |
-| 9 | Story publication | `deploy/cloudflare-edge/src/publication.js` (`deriveStatus` is `publicationStatus`; `upsert` uses `revised`; `merge` uses `merged`) | in review, needs work, awaiting validation, changes requested, published, withdrawn, admin test | `validation.status`, `managerDecision`, `presalesDecision`, `withdrawn`, `quality.status`, `test`. `merged_into` stays a column. | The 2560 known goldens match the previous derive, including `validated` with both decisions pending. An unknown status or decision used to be able to publish; it now derives `awaiting_validation` or `in_review`. Withdrawn still wins. | H | Reducer writes the status. `validated` still publishes without both approvals. Unknown approval values do not. |
+| 9 | Story publication | `deploy/cloudflare-edge/src/publication.js` (`deriveStatus` is `publicationStatus`; `upsert` uses `revised`; `merge` uses `merged`) | in review, needs work, awaiting validation, changes requested, published, withdrawn, admin test | `validation.status`, `managerDecision`, `presalesDecision`, `withdrawn`, `quality.status`, `test`. `merged_into` stays a column. | `canPublish` requires both approvals. 32 of the 2560 golden rows move from `published` to `awaiting_validation` (validated, quality ready, not both approved, including both `merged_into` values). Unknown approvals still do not publish. | H | Reducer writes the status. `validated` does not publish without both lanes. |
 | 10 | Privacy delete receipt | `src/journey-ui.js:11` and `confirmDelete` at :81; server attempts at `deploy/cloudflare-edge/src/operate.js:111` | disclosure, confirm, in flight, receipt, earlier receipt, failure, identity change | `pendingDelete`, `deleteReceipt`, `receiptIsLatest`, `deleteFailure`, `deleteOwner` | Fixed across the delete-receipt commits (latest failure, earlier receipt, one request). `complete` stays false. No new bug filed. | H | LATER. Pending review. Erasure and the receipt wording. |
 | 11 | Colleague confirm page | `deploy/cloudflare-edge/src/confirm-page.js:120` | Open a confirmation, submit, error | page fetches, request id | None newly reproduced. | H | LATER. Pending review. It records a human confirmation. |
 | 12 | Early speculation | `deploy/cloudflare-edge/src/speculation.js:24` and `MemoryLedger` at :46 | Off, admitted, cancelled, claimed by the final turn | `EARLY_STT`, `EARLY_DRAFT`, reservation ids, `scope` | Flags alone cannot turn it on (no global ledger in the Worker). | H | LATER. Pending review. It spends audio and draft tokens inside the interview. |
@@ -43,7 +43,7 @@ Section 4 record. One row per candidate. Status in the summary table is the deci
 | needs_work | quality status other than ready | The rating is not ready to publish. |
 | changes_requested | a changes request on the status or either lane | Someone sent it back. |
 | awaiting_validation | quality ready, approvals not complete | Waiting for the lanes. |
-| published | quality ready, and `validated` or both lanes approved | Includes a leftover `validated` flag with both decisions pending. |
+| published | quality ready and both lanes approved | A `validated` flag without both approvals stays `awaiting_validation`. |
 | admin_test | admin bypass and `test` | An admin test, not a customer claim. |
 | withdrawn | `withdrawn` | Hidden. This wins over the other fields. |
 
@@ -72,18 +72,18 @@ stateDiagram-v2
 ```
 
 ### Platform / flag differences
-None. `validated` publishes without both approvals. That rule is unchanged.
+None. `canPublish` is both approval lanes. The `validated` flag is not that guard.
 
 A validation status outside `undefined`, `pending`, `validated`, `changes_requested` and `admin_bypass`, or a decision outside `undefined`, `pending`, `approved` and `changes_requested`, does not publish. Quality ready maps to `awaiting_validation`. Anything else that is not withdrawn maps to `in_review`. The log is the story id, the phase and the event. Before this, both approved decisions with an unknown status, and a `validated` flag with an unknown decision, derived `published` when quality was ready.
 
 `deploy/cloudflare-edge/test/publication-golden.test.js` calls `deriveStatus` for every combination of the fields it reads, and checks that `merged_into` does not change the result.
 
-Withdrawn wins. Then `admin_bypass` (test, missing quality, quality not ready, or published). Then missing quality is `in_review`, and quality that is not `ready` is `needs_work`. A `changes_requested` on the status or on either decision is `changes_requested`. `validated`, or both decisions `approved`, is `published`. Everything else that is ready is `awaiting_validation`.
+Withdrawn wins. Then an unknown status or decision does not publish. Then `admin_bypass` (test, missing quality, quality not ready, or published). Then missing quality is `in_review`, and quality that is not `ready` is `needs_work`. A `changes_requested` on the status or on either decision is `changes_requested`. Both decisions `approved` is `published`. A `validated` flag without both approvals is `awaiting_validation`.
 
 ### Stale `validated`
-`upsert` replaces `validation` with `pending` on both lanes and sets `quality` to null (`library.js:288`). The stored revision then derives `in_review`. An unapproved revision does not derive `published`. That is a passing test, not an expected-fail.
+`upsert` replaces `validation` with `pending` on both lanes and sets `quality` to null. The stored revision derives `in_review`.
 
-`deriveStatus` still returns `published` for a hand-built state whose `validation.status` is `validated` while both decisions are `pending` and quality is `ready` (`library.js:109`). `upsert` does not write that state. It is pinned as current behavior. It is not a failing regression, because the revision path resets the flag.
+`canPublish` is both decisions `approved`. A hand-built `validated` flag with both decisions pending, or with only one approval, derives `awaiting_validation` when quality is ready. Both lanes approved still derives `published`. Admin bypass is a separate branch and is unchanged.
 
 ## Story-rating circuit breaker
 - Purpose: stop calling TypeSafe for story ratings after repeated failures, allow one trial after 60 s, and stop calling with a key that was rejected until that key changes.
