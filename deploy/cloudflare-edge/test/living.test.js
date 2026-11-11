@@ -7,7 +7,7 @@ import * as profile from '../src/profile.js';
 import * as living from '../src/living.js';
 import {
   transition, SmartNeedLinkAdapter, PastedJobDescriptionAdapter, composeCv, buildFiche, toCompetencyFile,
-  MiChatAdapter, atlasExport, omitCompensation,
+  MiChatAdapter, atlasExport, omitCompensation, phraseLine,
 } from '../src/living-core.js';
 
 const CAPTURE = JSON.parse(readFileSync(new URL('./smart-need-192497-candidate-requirement.json', import.meta.url), 'utf8'));
@@ -146,6 +146,15 @@ test('a SMART link with no fixture is unreadable and does not call the network',
   } finally { globalThis.fetch = orig; }
 });
 
+test('phraseLine turns a published sentence into a CV bullet and falls back when it cannot', () => {
+  assert.equal(phraseLine('I designed the Windows service that routes alarms for the plant.'), 'Designed the Windows service that routes alarms for the plant.');
+  assert.equal(phraseLine('I have 8 years of Windows work on that same service.'), '8 years of Windows work on that same service.');
+  assert.equal(phraseLine("I've built the Windows service for the plant."), 'Built the Windows service for the plant.');
+  assert.equal(phraseLine('The service was written in C# and covered the alarm queue.'), 'The service was written in C# and covered the alarm queue.');
+  assert.equal(phraseLine('I'), 'I');
+  assert.equal(phraseLine(''), '');
+});
+
 test('gaps and conflicts stay off the CV; unsupported keywords are not claims', () => {
   const need = new SmartNeedLinkAdapter({ fixtures: new Map([['192497', CAPTURE]]) }).resolve(LINK).need;
   const lines = [
@@ -155,7 +164,10 @@ test('gaps and conflicts stay off the CV; unsupported keywords are not claims', 
     { text: 'Daily rate was discussed and left out of the reference.', evidenceId: 's:A5.1', storyId: 's', topic: 'evidence', at: '2024-11' },
   ];
   const cv = composeCv({ consultant: { name: 'Ada Example', nameEvidenceId: 's:consultant', role: 'Software engineer', roleEvidenceId: 's:role' }, lines, need, audience: 'internal' });
-  assert.ok(cv.lines.every(line => lines.some(input => input.text === line.text && input.evidenceId === line.evidenceId)));
+  assert.ok(cv.lines.every(line => lines.some(input => input.text === line.source && input.evidenceId === line.evidenceId)));
+  assert.equal(cv.lines.find(line => line.evidenceId === 's:A2.1').text, 'Designed the Windows service that routes alarms for the plant.');
+  assert.equal(cv.lines.find(line => line.evidenceId === 's:A4.1').text, '8 years of Windows work on that same service.');
+  assert.equal(cv.lines.some(line => /^I\b/.test(line.text)), false);
   assert.equal(cv.lines.some(line => line.text.includes('Daily rate')), false);
   assert.deepEqual(cv.gaps.map(gap => gap.keyword).sort(), ['C++', 'English', 'Middle - From 4 to 6 years']);
   assert.equal(cv.gaps.some(gap => /2\+|an asset|WinUI|WPF/.test(gap.keyword)), false);
@@ -180,7 +192,8 @@ test('gaps and conflicts stay off the CV; unsupported keywords are not claims', 
   assert.equal(file.envelope.status, 'Ready');
   assert.equal(JSON.stringify(file.envelope).includes('mantumichat'), false);
   const xml = Buffer.from(file.bytes).toString('utf8');
-  assert.equal(xml.includes('I designed the Windows service'), true);
+  assert.equal(xml.includes('Designed the Windows service'), true);
+  assert.equal(xml.includes('I designed'), false);
   assert.equal(xml.includes('s:A2.1'), true);
   assert.equal(xml.includes('C++'), false);
   assert.equal(xml.includes('99123'), false);
@@ -272,7 +285,8 @@ test('generate uses published snippets, refuses a live link, and blocks self-app
   assert.equal(made.body.artifact.canApprove, false);
   const joined = JSON.stringify(made.body.artifact.lines);
   assert.equal(joined.includes('Northwind Synthetic'), false);
-  assert.equal(joined.includes('I designed the Windows service'), true);
+  assert.equal(joined.includes('Designed the Windows service'), true);
+  assert.equal(joined.includes('I designed'), false);
   assert.equal(made.body.artifact.lines.every(line => line.evidenceId.startsWith(id + ':')), true);
   assert.ok(made.body.artifact.gaps.some(gap => gap.keyword === 'C++'));
   assert.equal(made.body.artifact.lines.some(line => line.text.includes('C++')), false);

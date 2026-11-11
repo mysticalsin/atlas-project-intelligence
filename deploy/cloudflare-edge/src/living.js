@@ -167,7 +167,8 @@ function stillLive(lib, user, audience, lines) {
     if (!row) return false;
     const snip = snippetsOf(lib, row.data).find(item => `${row.id}:${item.id}` === line.evidenceId);
     if (!snip) return false;
-    return (audience === 'external' ? snip.text : snip.raw) === line.text;
+    const cited = line.source || line.text;
+    return (audience === 'external' ? snip.text : snip.raw) === cited;
   });
 }
 

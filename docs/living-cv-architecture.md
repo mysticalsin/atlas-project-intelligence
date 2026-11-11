@@ -19,6 +19,10 @@ No refactor of the interview pipeline. A CV is a document the consultant asks fo
 
 Ledger detail ids are not copied onto the library revision. The sentence the consultant applied, and both reviewers accepted, is the citation: `storyId:snippetId`. Keeping those session ids would mean changing the interview-to-library path, which this change does not do.
 
+## Phrasing
+
+`phraseLine` is a separate stage in `living-core.js`. It runs after a sentence is chosen and before the bullet is shown. It removes a leading "I" or "We" (and a following "have" or "am" when that is only the subject) and capitalises the bullet. Every remaining word has to occur in the published sentence. If that check fails, the stage keeps the published sentence. It does not call a model and it does not add a tool, a year count, or a skill that the sentence did not already contain. The published sentence stays on the line as `source`. Export still checks `source` against the live snippet, and the docx keeps the evidence id in the audit.
+
 ## Modules
 
 - `living-core.js` is pure. It holds the artifact state machine, both need adapters, CV composition, the fiche projection, the competency-file mapper, and the local docx/pdf writers. It does not log, write, or call the network.

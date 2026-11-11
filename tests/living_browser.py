@@ -71,7 +71,8 @@ try:
         page.get_by_role('button', name='Generate').click()
         page.wait_for_timeout(1200)
         body = page.locator('#living').inner_text()
-        check('tailored line stays the evidence sentence', 'I designed the Windows service' in body)
+        check('CV bullet is in CV voice', 'Designed the Windows service' in body and 'I designed' not in body)
+        check('the years bullet drops the leading I', '8 years of Windows work' in body and 'I have 8 years' not in body)
         check('unsupported keyword is a gap', 'C++' in body and 'Gaps' in body)
         check('status is in review', 'In review' in body)
         check('export waits for approval', page.get_by_role('button', name='Export').is_disabled())
@@ -99,7 +100,7 @@ try:
         with page.expect_download() as download:
             page.get_by_role('button', name='Export').click()
         doc = zipfile.ZipFile(download.value.path()).read('word/document.xml').decode()
-        check('export is a docx of the evidence line', 'I designed the Windows service' in doc and 'C++' not in doc)
+        check('export is a docx of the CV bullet', 'Designed the Windows service' in doc and 'I designed' not in doc and 'C++' not in doc)
         page.locator('header [data-view=fiche]').click()
         page.wait_for_timeout(600)
         page.locator('#fiche').get_by_role('button', name='Generate').click()

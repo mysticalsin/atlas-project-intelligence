@@ -423,17 +423,40 @@ export function hasTerm(text, term) {
   return new RegExp(`\\b${escaped}\\b`, 'i').test(String(text || ''));
 }
 
-// Every returned line is one of the input lines. Keywords that no line supports become gaps.
+function contentTokens(text) {
+  const marked = String(text || '').replace(/C\+\+/gi, ' cxx ').replace(/C#/gi, ' csharp ');
+  return (marked.toLowerCase().match(/[a-z0-9]+/g) || []).filter(token => token.length > 1 || /\d/.test(token));
+}
+
+// CV voice from one published sentence. Drops a leading I/We. Every remaining word is already in the sentence.
+// If that check fails, the published sentence is kept. There is no model call.
+export function phraseLine(text) {
+  const source = String(text || '').trim().replace(/\s+/g, ' ');
+  if (!source) return '';
+  const stripped = source.replace(/^(?:I|We)(?:\s+am|\s+have|\s+had|\s+was|\s+were|'m|'ve)?\s+/i, '');
+  if (!stripped || stripped === source) return source;
+  const phrased = stripped[0].toUpperCase() + stripped.slice(1);
+  const known = new Set(contentTokens(source));
+  if (contentTokens(phrased).some(token => !known.has(token))) return source;
+  return phrased;
+}
+
+function voiced(line) {
+  const source = String(line.text || '').trim();
+  return { ...line, source, text: phraseLine(source) };
+}
+
+// Keywords are matched on the published sentence. The visible text is the phrased bullet.
 export function composeCv({ consultant = {}, lines = [], need = null, audience = 'internal' } = {}) {
-  const source = (Array.isArray(lines) ? lines : []).filter(line => line && line.text && line.evidenceId && !banned(line.text));
+  const source = (Array.isArray(lines) ? lines : []).filter(line => line && line.text && line.evidenceId && !banned(line.text)).map(voiced);
   const keywords = need?.keywords || [];
-  const hits = line => keywords.reduce((n, key) => n + (hasTerm(line.text, key.text) ? 1 : 0), 0);
+  const hits = line => keywords.reduce((n, key) => n + (hasTerm(line.source || line.text, key.text) ? 1 : 0), 0);
   const ranked = source.map(line => ({ line, n: need ? hits(line) : 0 }));
   ranked.sort((a, b) => b.n - a.n || String(b.line.at || '').localeCompare(String(a.line.at || '')));
   const matches = ranked.filter(item => item.n > 0);
   const rest = ranked.filter(item => item.n === 0);
   const kept = (need ? [...matches, ...rest] : ranked).slice(0, Math.max(16, matches.length)).map(item => item.line);
-  const gaps = keywords.filter(key => !kept.some(line => hasTerm(line.text, key.text))).map(key => ({ keyword: key.text, authority: key.authority, kind: key.kind }));
+  const gaps = keywords.filter(key => !kept.some(line => hasTerm(line.source || line.text, key.text))).map(key => ({ keyword: key.text, authority: key.authority, kind: key.kind }));
   return {
     consultant: {
       name: consultant.name || '',
