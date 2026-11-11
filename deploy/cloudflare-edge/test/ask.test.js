@@ -17,7 +17,7 @@ const ref = (title, client, answers, extra = {}) => ({ title, stage: 'Production
   answers: [...answers, '', '', '', '', '', ''].slice(0, 6), sources: [], report: null, validation: { manager: { name: '', email: '' }, managerStaff: true } });
 async function publish(l, owner, data, { publish: pub = true } = {}) {
   const s = await l.upsert(owner, { localId: data.title, reference: data }), row = l.row(s.id);
-  if (pub) l.setState(row, { ...row.state, quality: { status: 'ready', score: 90 }, validation: { status: 'validated', by: 't', at: '', note: '' } }, 't', 'validated', '');
+  if (pub) l.setState(row, { ...row.state, quality: { status: 'ready', score: 90 }, validation: { status: 'validated', managerDecision: 'approved', presalesDecision: 'approved', by: 't', at: '', note: '' } }, 't', 'validated', '');
   await l.index(s.id);
   return s.id;
 }

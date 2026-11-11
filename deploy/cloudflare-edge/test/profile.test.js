@@ -445,7 +445,7 @@ test('leak: "Zelda Quintero, Principal Zebra" never reaches complete or embed ac
   const row = l.row(merged.id);
   assert.match(row.data.answers[1], /Contribution by another consultant: I designed the claims routing model/);
   assert.ok(row.data.details.consultants.some(c => c.name === 'Zelda Quintero'), 'who contributed is still recorded for people');
-  l.setState(row, { ...row.state, quality: { status: 'ready', score: 90 }, validation: { status: 'validated', by: 't', at: '', note: '' } }, 't', 'validated', '');
+  l.setState(row, { ...row.state, quality: { status: 'ready', score: 90 }, validation: { status: 'validated', managerDecision: 'approved', presalesDecision: 'approved', by: 't', at: '', note: '' } }, 't', 'validated', '');
   await l.index(merged.id);
   const u = { email: 'alex@example.com', mail: 'alex@example.com', role: 'user' }, url = path => new URL('https://atlas.test/api/library/' + path);
   const bidCall = (method, path, body) => bids.routes({ method, url: url(path), parts: path.split('/'), body, user: u, lib: l, env: {}, waitUntil: q => q });

@@ -1,19 +1,22 @@
 # Second brain — run73
 
 ## Completed this run
-- Publication reducer on `cursor/state-machines-atlas` from `2e012d6a`: `ba42c04` derive and `revised`, `095a170` `merged` as the status writer, `5133aa5` unknown approvals no longer publish.
-- The 2560 known goldens are unchanged, including validated with both decisions pending and quality ready.
+- Publication reducer on `cursor/state-machines-atlas` from `2e012d6a`: `ba42c04` derive and `revised` (2560 goldens unchanged, including validated with both decisions pending), `095a170` `merged` as the status writer, `5133aa5` unknown approvals no longer publish, then the both-approval guard.
+- The coordinator's rule: `validated` does not derive `published` unless both the manager and the presales decisions are `approved`.
+- 32 of the 2560 golden rows change, from `published` to `awaiting_validation`. They are the 16 field rows below, each counted twice because `merged_into` is varied and ignored. Every other row is unchanged.
+  - withdrawn false, quality ready, status validated, test false or true, and the decision pairs: missing/missing, missing/pending, missing/approved, pending/missing, pending/pending, pending/approved, approved/missing, approved/pending.
+- Both lanes approved still publishes. Admin bypass is unchanged. Unknown approvals still do not publish.
 - Row 18 is the `revised` event. Other rows were not started.
 
 ## Lessons
 - A pure derive can publish from an unknown status when both decisions are approved, and from a `validated` flag when a decision is unknown. That was 64 inputs. Map those to `awaiting_validation` or `in_review` only after a failing test shows the old `published`.
-- Do not require both approvals when the status is `validated`. That is a product rule, not this reducer.
+- `validated` plus both decisions pending, and a single approval with the other pending, used to derive `published`. The failing test reported `published` before `canPublish` required both lanes.
 - `merge` was the remaining literal status write. The event sets `withdrawn` and the column stores the reducer's status, so a later derive agrees.
-- Rejection and unknown logs are the story id, the phase and the event. Do not log the unknown string.
+- Rejection and unknown logs are the story id, the phase and the event. The both-approval refusal does not add a log line.
 
 ## Follow-up
 - Painting admin `boot_error` is still LATER.
-- Rows 1–8, 10–12, 19 and 21 stay unstarted. Row 9's `validated` flag still publishes without both approvals, on purpose, until Tony or Jarvis decides otherwise.
+- Rows 1–8, 10–12, 19 and 21 stay unstarted.
 - `LEDGER_MODE` remains off. The production daily limit is still unset.
 - This note is not a security or compliance claim.
 

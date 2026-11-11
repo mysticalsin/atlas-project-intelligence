@@ -17,7 +17,7 @@ const ref = (title, answers, extra = {}) => ({ title, stage: 'Production', secto
   validation: { manager: { name: '', email: '' }, managerStaff: true } });
 async function publish(l, owner, data) {
   const s = await l.upsert(owner, { localId: data.title, reference: data }), row = l.row(s.id);
-  l.setState(row, { ...row.state, quality: { status: 'ready', score: 90 }, validation: { status: 'validated', by: 't', at: '', note: '' } }, 't', 'validated', '');
+  l.setState(row, { ...row.state, quality: { status: 'ready', score: 90 }, validation: { status: 'validated', managerDecision: 'approved', presalesDecision: 'approved', by: 't', at: '', note: '' } }, 't', 'validated', '');
   return s.id;
 }
 let seq = 0;

@@ -99,7 +99,7 @@ const CLAIMS = ['Zebracorp had claims bouncing between three teams, slowing payo
   'Operations dashboard export v3, before and after quarters.', 'Any insurer with manual claims routing and a measurable queue would benefit.'];
 async function publish(l, owner, data, { index = true } = {}) {
   const s = await l.upsert(owner, { localId: data.title, reference: data }), row = l.row(s.id);
-  l.setState(row, { ...row.state, quality: { status: 'ready', score: 90 }, validation: { status: 'validated', by: 'test', at: '', note: '' } }, 'test', 'validated', '');
+  l.setState(row, { ...row.state, quality: { status: 'ready', score: 90 }, validation: { status: 'validated', managerDecision: 'approved', presalesDecision: 'approved', by: 'test', at: '', note: '' } }, 'test', 'validated', '');
   if (index) await l.index(s.id);
   return s.id;
 }
