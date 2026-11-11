@@ -17,7 +17,9 @@ test('LEDGER_MODE: off by default; unknown values are not silently off', () => {
   assert.equal(ledgerMode({ LEDGER_MODE: 'enforce' }), 'enforce');
   assert.equal(ledgerMode({ LEDGER_MODE: 'Observe' }), 'invalid');
   // Neither the production nor the live-test configuration sets it.
-  for (const f of ['wrangler.jsonc', 'live-test/wrangler.jsonc', 'live-test/wrangler.mock.jsonc', 'live-test/wrangler.rest.jsonc']) assert.doesNotMatch(read(f), /LEDGER_MODE/, f);
+  assert.match(read('wrangler.jsonc'), /"LEDGER_MODE": "enforce"/, 'production enforces the cap');
+  assert.doesNotMatch(read('wrangler.jsonc'), /"PRODUCTION_MONTHLY_LIMIT_USD"/, 'no limit override, so the $5 default applies');
+  for (const f of ['live-test/wrangler.jsonc', 'live-test/wrangler.mock.jsonc', 'live-test/wrangler.rest.jsonc']) assert.doesNotMatch(read(f), /LEDGER_MODE/, f);
 });
 
 test('off: toMarkdown and provider fetches pass the exact arguments through, with no estimate evaluated', async () => {
@@ -67,8 +69,9 @@ test('BudgetState: priced ceilings, never refunded, one UTC month; ProductionSpe
   const b = new BudgetState({ limitUsd: 0.02, now: () => t });
   assert.equal(priceOf({ kind: 'stt', model: '@cf/deepgram/nova-3', audioMs: 1 }), Math.ceil(1000 / 60000 * 0.0052 * 1e9), 'audio rounds up to a whole second');
   assert.equal(priceOf({ kind: 'turn', model: '@cf/pipecat-ai/smart-turn-v2', audioMs: 20000 }), Math.ceil(8000 / 60000 * 0.00033795 * 1e9), 'turn model at most 8 s');
-  assert.equal(priceOf({ kind: 'analyst', model: '@cf/openai/gpt-oss-120b', inputTokens: 10, outputTokens: 10 }), null, 'no sourced price: unpriced');
-  assert.equal(priceOf({ kind: 'jev', provider: 'typesafe', requests: 1 }), null);
+  assert.equal(priceOf({ kind: 'analyst', model: '@cf/openai/gpt-oss-120b', inputTokens: 10, outputTokens: 10 }), Math.ceil((10 * 0.35 + 10 * 0.75) / 1e6 * 1e9));
+  assert.equal(priceOf({ kind: 'jev', provider: 'typesafe', requests: 1 }), Math.ceil(64000 * 0.042 / 1e6 * 1e9));
+  assert.equal(priceOf({ kind: 'stt', model: 'not-a-model', audioMs: 1000 }), null, 'an unknown model is still refused');
   const r = b.reserve({ kind: 'tts', model: '@cf/deepgram/aura-2-en', chars: 100 });
   assert.ok(r.ok); assert.equal(b.settle(r.id, { error: 'x' }), true); assert.equal(b.settle(r.id), false);
   assert.equal(b.snapshot().reserved.requests, 1, 'a failed call keeps its reservation');

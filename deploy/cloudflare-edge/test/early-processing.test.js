@@ -71,7 +71,7 @@ test('config: off by default, separate flags, fail closed without a ledger whose
   assert.equal(both.enabled && both.draft, true);
   assert.throws(() => new S.MemoryLedger(), /Explicit caps/);
   const worker = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8');
-  assert.match(worker, /speculationConfig\(this\.env, null\)/, 'the deployed worker binds no ledger, so the flags alone cannot turn it on');
+  assert.match(worker, /speculationConfig\(this\.env, null\)/, 'the deployed worker passes no early-admission ledger, so the flags alone cannot turn it on');
   assert.match(worker, /speculation: early/);
 });
 

@@ -27,7 +27,8 @@ async function talkUntilRefused(ai, content, max = 500) {
 test('live-test caps and prices are unchanged: $1.50 total, 800,000 input tokens', () => {
   assert.deepEqual({ ...CAPS }, { sessions: 10, turnsPerSession: 10, audioMs: 1800000, audioRequests: 100, inputTokens: 800000, outputTokens: 20000, ttsChars: 20000, usd: 1.5, inFlight: 8 });
   assert.deepEqual(JSON.parse(JSON.stringify(PRICES)), { '@cf/deepgram/nova-3': { usdPerAudioMin: 0.0052 }, '@cf/pipecat-ai/smart-turn-v2': { usdPerAudioMin: 0.00033795 },
-    '@cf/meta/llama-3.3-70b-instruct-fp8-fast': { usdPerMInput: 0.293, usdPerMOutput: 2.253 }, '@cf/deepgram/aura-2-en': { usdPer1kChars: 0.03 }, '@cf/deepgram/aura-2-es': { usdPer1kChars: 0.03 } });
+    '@cf/meta/llama-3.3-70b-instruct-fp8-fast': { usdPerMInput: 0.293, usdPerMOutput: 2.253 }, '@cf/deepgram/aura-2-en': { usdPer1kChars: 0.03 }, '@cf/deepgram/aura-2-es': { usdPer1kChars: 0.03 },
+    '@cf/openai/gpt-oss-120b': { usdPerMInput: 0.35, usdPerMOutput: 0.75 }, '@cf/baai/bge-m3': { usdPerMInput: 0.012 } });
   for (const f of ['live-test/wrangler.jsonc', 'live-test/wrangler.mock.jsonc', 'live-test/wrangler.rest.jsonc'])
     assert.doesNotMatch(readFileSync(new URL('../' + f, import.meta.url), 'utf8'), /LEDGER_MODE/, f + ' leaves the production meter off');
 });

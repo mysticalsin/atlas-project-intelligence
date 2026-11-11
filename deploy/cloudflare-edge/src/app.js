@@ -16,6 +16,7 @@ import { nameClaims, pushConfig } from './profile.js';
 import { elevatedRole, privilegeReadiness, productionDemoConflict, TENANT_ID, tenantEnforced, tenantOf, tokenRoles } from './authz.js';
 import { acceptedSubjectDelete } from './library-routes.js';
 import { paid, budgetRefused, elevenLabsUrl, utf8Length } from './meter.js';
+import { httpBudget } from './budget-stop.js';
 import { estimateInputTokens, audioMs } from './speculation.js';
 
 const enc = new TextEncoder();
@@ -307,7 +308,13 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
       if (pcm.length < AUDIO_MIN || pcm.length % 2) return json(env, { error: 'The recording is too short or is not 16-bit audio.' }, 400);
       const t0 = Date.now(), metric = values => console.log(JSON.stringify({ atlas_metric: 'transcribe', ms: Date.now() - t0, bytes: pcm.length, ...values }));
       let out;
-      try { out = await workersAI(env).transcribe(pcm); } catch { metric({ failed: 1 }); return json(env, { error: 'Transcription failed. Type the question instead.' }, 502); }
+      try { out = await workersAI(env).transcribe(pcm); }
+      catch (e) {
+        metric({ failed: 1 });
+        const stopped = httpBudget(e);
+        if (stopped) return json(env, stopped.body, stopped.status);
+        return json(env, { error: 'Transcription failed. Type the question instead.' }, 502);
+      }
       metric({});
       return json(env, { text: String(out?.text || '').slice(0, 600), language: out?.language || null });
     }
@@ -319,7 +326,11 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
       let project;
       try { project = JSON.parse(raw).project; } catch { return json(env, { error: 'Invalid JSON.' }, 400); }
       try { return json(env, await classify(env, project)); }
-      catch (e) { return e.status ? json(env, { error: e.message }, e.status) : json(env, { error: 'Scoring is unavailable right now. Try again shortly.' }, 502); }
+      catch (e) {
+        const stopped = httpBudget(e);
+        if (stopped) return json(env, stopped.body, stopped.status);
+        return e.status ? json(env, { error: e.message }, e.status) : json(env, { error: 'Scoring is unavailable right now. Try again shortly.' }, 502);
+      }
     }
     if (url.pathname === '/api/test-voice' && env.TEST_VOICE === '1' && request.method === 'GET') {
       // Test-only (off unless TEST_VOICE=1, and still behind Access): synthesizes a scripted consultant line

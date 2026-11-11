@@ -923,3 +923,11 @@ Review answers:
 
 ### Session: 2026-11-11 / Production voice mode stays baseline (run78, local only)
 - Production config already resolves to baseline. `wrangler.jsonc` does not set `EARLY_STT` or `EARLY_DRAFT`, and `worker.js` calls `speculationConfig(this.env, null)`, so Plan A stays off even if those flags are present. No config change. The proof is `test/production-voice-mode.test.js`. Plan A enables only when a flag and a global admission ledger are both passed, which the production entry does not do.
+
+### Session: 2026-11-11 / One $5 month for every AI call (run82, local only)
+- Tony's decision, via Jarvis at 18:19 BRT: "Everything AI: price every model call and put all of it under the same $5." One UTC-month budget covers every paid call production can make. It fails closed. A feature may stop mid-month. The stop is the sentence "This month's AI budget is used up."
+- Prices are in `deploy/cloudflare-edge/src/prices.js`, cited in `docs/LEDGER_MODES.md` (read 2026-11-11). `detr-resnet-50` has no published price and is reserved at the Gemma ceiling. Hindsight operations other than retain and recall have no published unit and reserve the retain ceiling. TypeSafe reserves the published 64k context cap because the call sites do not pass a token count. `test/priced-kinds.test.js` fails if a paid estimate names a kind without a positive ceiling.
+- `src/budget-stop.js` is the pure reducer. `exhausted:usd` is the only user-facing stop. Other refusals stay closed and are not shown as that sentence. Voice mid-call keeps "Voice is paused for this month. No unmetered call was made."
+- Production `wrangler.jsonc` exports nothing itself; `worker.js` exports `ProductionSpendLedger`, the binding is `SPEND_LEDGER`, migration `v3` `new_sqlite_classes`, and `LEDGER_MODE` is `enforce` with no limit override. Voice stays `speculationConfig(this.env, null)`. The live-test configs do not set `LEDGER_MODE`. The $1.50 ledger is unchanged.
+- Admin metrics were not changed. `queryMetrics` rolls up telemetry, and reserved spend lives in the spend ledger. Mixing them would make the metrics function impure or present the telemetry figure as the $5 cap.
+- Not exercised against a live provider. No deploy.

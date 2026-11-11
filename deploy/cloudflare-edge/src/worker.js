@@ -8,11 +8,14 @@ import { speculationConfig } from './speculation.js';
 import { storyRater } from './rating.js';
 import { libraryRoutes } from './library-routes.js';
 import { hindsight, recallQuery, memoryNote, jevRelevant } from './memory.js';
+import { budgetOutcome } from './budget-stop.js';
 import { memoryRoutes } from './memory-routes.js';
 import { resolveForInterview } from './gaps.js';
 import { fetchWinHint } from './winloop.js';
 import { teamsClient } from './teams.js';
 import { libraryFromStorage } from './library-store.js';
+
+export { ProductionSpendLedger } from './meter.js';
 
 export default {
   fetch: (request, env, ctx) => handle(request, env, page, { waitUntil: p => ctx.waitUntil(p) }),
@@ -30,7 +33,8 @@ export class Interview extends DurableObject {
     const memory = this.hs && bank && (await this.ctx.storage.get('memoryOff')) !== true ? async project => {
       const t0 = Date.now(); let found = await this.hs.recall(bank, recallQuery(project), { tags: project?.id && project.id !== 'new' ? ['project:' + project.id] : undefined });
       const n = found.length; let checked = 0;
-      try { const j = await jevRelevant(this.env, found, project); found = j.memories; checked = j.checked; } catch { metric('memory_jev_error', {}); }
+      try { const j = await jevRelevant(this.env, found, project); found = j.memories; checked = j.checked; }
+      catch (e) { if (budgetOutcome(e) || e?.name === 'BudgetRefused') throw e; metric('memory_jev_error', {}); }
       metric('memory_recall', { ms: Date.now() - t0, found: n, kept: found.length, jev_checked: checked });
       return memoryNote(found);
     } : null;
@@ -43,8 +47,9 @@ export class Interview extends DurableObject {
     }
     // The verified identity the Worker forwarded (always overwritten there), for gap requests and the win hint.
     const identity = { user: request.headers.get('x-atlas-user') || '', role: request.headers.get('x-atlas-role') || 'user', mail: request.headers.get('x-atlas-email') || '', tenant: request.headers.get('x-atlas-tenant') || '', tenantEnforced: request.headers.get('x-atlas-tenant-enforced') === '1' };
-    // Plan A early processing needs an admission ledger whose authority spans every instance. None is bound in this
-    // deployment, so it stays off even when EARLY_STT / EARLY_DRAFT are set (logged, never silently on).
+    // Plan A early processing needs an admission ledger whose authority spans every instance. The production
+    // spend ledger is a different object and is not passed here, so voice stays baseline even when EARLY_STT
+    // or EARLY_DRAFT are set (logged, never silently on).
     const early = speculationConfig(this.env, null);
     if (!early.enabled && early.reason !== 'off') metric('early_unavailable', { reason: early.reason });
     const session = new Session({

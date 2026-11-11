@@ -458,7 +458,10 @@ export function storyRater(env, fetcher = fetch, opts = {}) {
     const one = async (signal, key) => {
       let res;
       try { res = await paid(env).fetch(() => ({ kind: 'jev', provider: 'typesafe', requests: 1 }), fetcher, ENDPOINT, { method: 'POST', redirect: 'manual', signal, headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: bodyText }); }
-      catch { return { code: signal.aborted ? 'timeout' : 'network', retryable: true, http: 0 }; }
+      catch (e) {
+        if (e?.name === 'BudgetRefused' || e?.code === 'budget_exhausted') throw e;
+        return { code: signal.aborted ? 'timeout' : 'network', retryable: true, http: 0 };
+      }
       const http = res.status;
       if (http === 200) {
         let text;
@@ -482,10 +485,11 @@ export function storyRater(env, fetcher = fetch, opts = {}) {
   // failure), the first valid answer wins, everything is aborted at the deadline, even a fetcher that ignores `signal`.
   function interactive(one, b, trial) {
     const deadlineAt = now() + b.deadlineMs, max = trial ? 1 : 2;
-    return new Promise(resolve => {
+    return new Promise((resolve, reject) => {
       const stop = new AbortController(), ctrls = [];
       let settled = false, attempts = 0, hedged = 0, http = 0, pending = 0;
       const end = o => { if (settled) return; settled = true; stop.abort(); for (const c of ctrls) c.abort(); resolve({ ...o, attempts, hedged, http }); };
+      const fail = e => { if (settled) return; settled = true; stop.abort(); for (const c of ctrls) c.abort(); reject(e); };
       const launch = () => {
         if (settled || attempts >= max || deadlineAt - now() < b.minAttemptMs) return false;
         attempts++; pending++; if (attempts > 1) hedged = 1;
@@ -498,6 +502,10 @@ export function storyRater(env, fetcher = fetch, opts = {}) {
           note(o, key, trial);
           if (o.ok || !o.retryable) return end(o);
           if (!launch() && pending === 0) end(o);
+        }).catch(e => {
+          pending--;
+          if (e?.name === 'BudgetRefused' || e?.code === 'budget_exhausted') return fail(e);
+          if (!settled && pending === 0) end({ code: 'network', retryable: true });
         });
         return true;
       };
@@ -521,7 +529,13 @@ export function storyRater(env, fetcher = fetch, opts = {}) {
       attempts++;
       const key = env.TYPESAFE_API_KEY, ac = new AbortController(), stop = new AbortController();
       const timer = delay(Math.min(b.attemptMs, remaining), stop.signal).then(fired => { if (fired) ac.abort(); return { code: 'timeout', retryable: true, http: 0 }; });
-      const o = await Promise.race([one(ac.signal, key), timer]);
+      let o;
+      try { o = await Promise.race([one(ac.signal, key), timer]); }
+      catch (e) {
+        stop.abort();
+        if (e?.name === 'BudgetRefused' || e?.code === 'budget_exhausted') throw e;
+        o = { code: 'network', retryable: true, http: 0 };
+      }
       stop.abort();
       if (o.http) http = o.http;
       note(o, key, trial);

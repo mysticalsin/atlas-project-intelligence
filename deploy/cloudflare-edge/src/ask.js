@@ -13,6 +13,7 @@ import { RERANK_POLICY, parseRerankStrict, candidateCard, lexical, rankPool, ret
 import { SIM_FLOOR, STRONG } from './bids.js';
 import { winSignals } from './winloop.js';
 import { TENANT_ID } from './authz.js';
+import { optionalModel } from './budget-stop.js';
 
 export const READY = true;
 const LABEL = 'Answers are interpretation over the library; open each reference for the facts. People are listed by the projects they worked on, never ranked.';
@@ -35,7 +36,7 @@ async function ask(lib, user, b) {
   if (question.length < 8 || question.length > 600) throw fail(400, 'Ask a question of 8 to 600 characters.');
   const limit = Math.max(1, Math.min(8, Math.round(Number(b.limit)) || 6));
   if (!rateLimit(lib, 'ask:' + user.email, 60, 36e5)) throw fail(429, 'Too many questions this hour. Try again later.');
-  let pool = lib.visibleRows(user).filter(([r, level]) => r.status === 'published' || level === 'full'), note = '';
+  let pool = lib.visibleRows(user).filter(([r, level]) => r.status === 'published' || level === 'full'), note = '', budget = null;
   const named = new Set();
   clientMatcher(lib)(question, (match, stored) => { named.add(norm(stored)); return match; });
   if (named.size) {
@@ -56,16 +57,20 @@ async function ask(lib, user, b) {
     }
     lib.log('library', user.email, 'ask', `${results.length} results`);
     return { verdict, method, results, people, countries: [...countries].map(([name, n]) => ({ name, n })).sort((x, y) => y.n - x.n || (x.name < y.name ? -1 : 1)),
-      totals: { visible: results.length }, note: [note, extraNote].filter(Boolean).join(' '), label: LABEL };
+      totals: { visible: results.length }, note: [note, extraNote].filter(Boolean).join(' '), label: LABEL, ...(budget ? { budget } : {}) };
   };
   if (!pool.length) return answer('empty_library', 'none', [], NOTE.empty_library);
-  const qv = lib.embed ? await lib.embed(q.text).catch(() => null) : null, wins = winSignals(lib, user);
+  const embedGot = lib.embed ? await optionalModel(lib.embed(q.text), null) : { value: null, budget: null };
+  const qv = embedGot.value, wins = winSignals(lib, user);
+  budget = embedGot.budget;
   const kept = rankPool(pool, q.text, qv, { floor: note ? UNFLOORED : SIM_FLOOR, boost: r => wins.get(r.id)?.boost || 0 }).slice(0, 12);
   const retrieval = retrievalOf(kept) || (qv ? 'semantic' : 'lexical');
   if (!kept.length) return answer('none', retrieval, [], NOTE.none);
   const cards = kept.map(k => candidateCard(k.row.id, recordView(lib, k.row.data)));
-  const ranked = lib.complete ? parseRerankStrict(await lib.complete([{ role: 'system', content: RERANK_POLICY },
-    { role: 'user', content: JSON.stringify({ context: { query: q.text }, candidates: cards }) }]).catch(() => ''), cards.map(c => c.id)) : null;
+  const rankGot = lib.complete ? await optionalModel(lib.complete([{ role: 'system', content: RERANK_POLICY },
+    { role: 'user', content: JSON.stringify({ context: { query: q.text }, candidates: cards }) }]), '') : { value: null, budget: null };
+  const ranked = !lib.complete ? null : parseRerankStrict(rankGot.value, cards.map(c => c.id));
+  budget = budget || rankGot.budget;
   if (ranked !== null && !ranked.length) return answer('none', retrieval + ' + model ranking', [], note ? NOTE.filteredNone : NOTE.none);
   const byId = new Map(kept.map(k => [k.row.id, k]));
   const picks = ranked ? [...ranked].sort((x, y) => y.relevance - x.relevance) : kept.map(k => ({ id: k.row.id, relevance: null, why: '', caveat: UNRANKED }));
