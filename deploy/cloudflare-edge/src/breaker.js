@@ -9,6 +9,9 @@ export const BREAKER_OPEN_MS = 60000;
 export const BREAKER_PHASES = Object.freeze(['closed', 'open', 'probing']);
 export const BREAKER_EVENTS = Object.freeze(['begin', 'succeed', 'fail', 'auth_fail', 'ignore']);
 // begin is illegal while a trial is already in flight (probing). Every other pair is legal; guards may still deny begin.
+// open:succeed and open:fail are legal on purpose. A request admitted while the breaker was closed can still
+// be in flight when a later failure opens it. That request has to settle. Dropping succeed or fail would leave
+// the count and the window wrong. A rejection log is phase and event only, never the key.
 const LEGAL = new Set([
   'closed:begin', 'open:begin',
   'closed:succeed', 'open:succeed', 'probing:succeed',
@@ -79,7 +82,8 @@ function deny(state, guard, reason) {
   return { ok: false, illegal: false, denied: true, guard, state, reason, trial: false };
 }
 function illegal(state, event, log) {
-  log({ atlas_metric: 'breaker', illegal: true, phase: state.phase, event });
+  // ids are not on this machine. phase and event only: never the key, a story, or an address.
+  log({ atlas_metric: 'breaker', illegal: true, phase: state?.phase || 'unknown', event });
   return { ok: false, illegal: true, denied: false, state, reason: event === 'begin' ? 'circuit_open' : 'illegal', trial: false };
 }
 
@@ -105,9 +109,10 @@ export function transition(state, event, { log = defaultLog } = {}) {
     const until = state.phase === 'probing' ? 0 : state.until;
     return done({ ...state, phase, until });
   }
-  // fail
+  // fail. A probing fail is the half-open trial even when the caller omits event.trial, so the phase
+  // re-opens the breaker on its own. event.trial covers a trial note that arrives after the phase moved on.
   const fails = state.fails + 1;
-  if (event.trial || fails >= BREAKER_FAILS) return done({ ...state, phase: 'open', fails: 0, until: event.now + BREAKER_OPEN_MS });
+  if (state.phase === 'probing' || event.trial || fails >= BREAKER_FAILS) return done({ ...state, phase: 'open', fails: 0, until: event.now + BREAKER_OPEN_MS });
   const until = state.phase === 'probing' ? 0 : state.until;
   return done({ ...state, phase: until > 0 ? 'open' : 'closed', fails, until });
 }
