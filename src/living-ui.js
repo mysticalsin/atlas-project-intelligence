@@ -14,7 +14,7 @@ async function post(path,body){
 }
 const STATUS={draft:'Draft',in_review:'In review',approved:'Approved',exported:'Exported',withdrawn:'Withdrawn'};
 const TOPIC_LABEL={context:'Context',contribution:'Contribution',approach:'Approach',outcome:'Outcome',evidence:'Evidence',customer_relevance:'Customer relevance'};
-function linesOf(lines){const ol=h('ol');for(const line of lines||[]){const li=h('li');li.append(h('p',{text:line.text||''}));if(line.evidenceId)li.append(h('p',{class:'tiny muted',text:line.evidenceId}));ol.append(li);}return ol;}
+function bullets(lines){const ol=h('ol');for(const line of lines||[]){const li=h('li',line.evidenceId?{'data-evidence':line.evidenceId}:null);li.append(h('p',{text:line.text||''}));ol.append(li);}return ol;}
 function saveFile(file){const bin=atob(file.base64),bytes=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);const url=URL.createObjectURL(new Blob([bytes],{type:file.mime}));const a=document.createElement('a');a.href=url;a.download=file.filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);}
 function actions(artifact,onChange){
   if(!artifact)return h('div');
@@ -26,39 +26,52 @@ function actions(artifact,onChange){
   row.append(exp);
   return row;
 }
-function artifactBody(artifact){
+function keywordList(title,items,textOf){
   const box=h('div');
+  if(!items.length)return box;
+  box.append(h('h5',{text:title}));
+  box.append(h('ul',{class:'warn'},items.map(item=>h('li',{text:textOf(item)}))));
+  return box;
+}
+function cvCard(artifact){
+  const card=h('article',{class:'cv'});
+  if(!artifact)return card;
+  const who=artifact.consultant||{};
+  card.append(h('h4',{text:who.name||'CV'}));
+  if(who.role)card.append(h('p',{class:'cv-role',text:who.role}));
+  card.append(h('p',{class:'status '+(artifact.status||''),role:'status',text:STATUS[artifact.status]||artifact.status||''}));
+  if((artifact.lines||[]).length)card.append(h('h5',{text:'Experience'}),bullets(artifact.lines));
+  card.append(keywordList('Gaps',artifact.gaps||[],gap=>gap.keyword));
+  card.append(keywordList('Conflicts',artifact.flags||[],flag=>flag.detail||flag.code));
+  return card;
+}
+function ficheBody(artifact){
+  const box=h('div',{class:'cv'});
   if(!artifact)return box;
-  box.append(h('p',{role:'status',text:STATUS[artifact.status]||artifact.status}));
-  if(artifact.fiche){for(const [topic,items] of Object.entries(artifact.fiche.sections||{})){if(!items.length)continue;const title=h('p');title.append(h('strong',{text:TOPIC_LABEL[topic]||topic}));box.append(title,linesOf(items));}}
-  else box.append(linesOf(artifact.lines));
-  if((artifact.gaps||[]).length)box.append(h('h2',{text:'Gaps'}),h('ul',{},artifact.gaps.map(gap=>h('li',{text:gap.keyword}))));
-  if((artifact.flags||[]).length)box.append(h('h2',{text:'Conflicts'}),h('ul',{},artifact.flags.map(flag=>h('li',{text:flag.detail||flag.text||flag.code}))));
+  box.append(h('p',{class:'status '+(artifact.status||''),role:'status',text:STATUS[artifact.status]||artifact.status||''}));
+  for(const [topic,items] of Object.entries(artifact.fiche?.sections||{})){if(!items.length)continue;box.append(h('h5',{text:TOPIC_LABEL[topic]||topic}),bullets(items));}
   return box;
 }
 let cache=null;
 async function load(){cache=await api('/living');return cache;}
-function queueBlock(items,type){const box=h('div');for(const item of (items||[]).filter(x=>x.type===type)){box.append(artifactBody(item),actions(item,async()=>{await load();if(type==='cv')paintCv();else paintReview();}));}return box;}
+function queueBlock(items,type){const box=h('div');for(const item of (items||[]).filter(x=>x.type===type)){box.append(type==='cv'?cvCard(item):ficheBody(item),actions(item,async()=>{await load();if(type==='cv')paintCv();else paintReview();}));}return box;}
 function paintCv(){
   const root=$('living');if(!root)return;
   const data=cache||{evidence:[],cv:null};
   const link=h('input',{id:'livingLink',placeholder:'Need link','aria-label':'Need link'});
   const text=h('textarea',{id:'livingText',rows:'6',placeholder:'Job description','aria-label':'Job description'});
-  const audience=h('select',{'aria-label':'Audience'});
-  audience.append(h('option',{value:'internal',text:'Internal'}),h('option',{value:'external',text:'Client'}));
   const status=h('p',{role:'status'});
   const preview=h('div');
-  const show=artifact=>{preview.replaceChildren(artifactBody(artifact),actions(artifact,next=>{cache={...cache,cv:next};show(next);}));};
+  const show=artifact=>{preview.replaceChildren(cvCard(artifact),actions(artifact,next=>{cache={...cache,cv:next};show(next);}));};
   if(!data.evidence.length&&!data.cv&&!(data.queue||[]).some(item=>item.type==='cv'))status.textContent='No validated experience.';
   if(data.cv)show(data.cv);
-  else if(data.evidence.length)preview.replaceChildren(linesOf(data.evidence));
   const go=h('button',{class:'btn primary',type:'button',text:'Generate'});
   go.addEventListener('click',async()=>{go.disabled=true;status.textContent='';try{
-    const out=await post('/living/generate',{link:link.value,text:text.value,audience:audience.value});
+    const out=await post('/living/generate',{link:link.value,text:text.value});
     if(out.ok===false){status.textContent="This need link can't be read yet.";return;}
     cache={...cache,cv:out.artifact,consent:true};show(out.artifact);
   }catch(e){status.textContent=e.message;}finally{go.disabled=false;}});
-  root.replaceChildren(h('div',{class:'living-sheet'},[h('h1',{text:'CV'}),queueBlock(data.queue,'cv'),link,text,audience,h('div',{class:'actions'},[go]),status,preview]));
+  root.replaceChildren(h('div',{class:'living-sheet'},[h('h1',{text:'CV'}),queueBlock(data.queue,'cv'),link,text,h('div',{class:'actions'},[go]),status,preview]));
 }
 function paintReview(){
   const root=$('fiche');if(!root)return;
@@ -68,7 +81,7 @@ function paintReview(){
   if(!(data.stories||[]).length)pick.append(h('option',{value:'',text:'No validated experience'}));
   const status=h('p',{role:'status'});
   const preview=h('div');
-  const show=artifact=>{preview.replaceChildren(artifactBody(artifact),actions(artifact,next=>{cache={...cache,fiche:next};show(next);}));};
+  const show=artifact=>{preview.replaceChildren(ficheBody(artifact),actions(artifact,next=>{cache={...cache,fiche:next};show(next);}));};
   show(data.fiche);
   const go=h('button',{class:'btn primary',type:'button',text:'Generate'});
   go.disabled=!(data.stories||[]).length;
