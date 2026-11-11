@@ -945,3 +945,6 @@ Review answers:
 
 ### Session: 2026-11-11 / Script hashes (run77 A-2)
 - The shared page and edge `script-src` no longer allows `'unsafe-inline'`. `build.py` hashes every executable inline script, writes `deploy/cloudflare-edge/src/page-script-hashes.js` for the Worker header, and puts the page hashes in the meta policy. The confirm page and the signed-in page are in that header too. Signed-in identity is a JSON island, so the executable scripts stay byte-stable. `script-src` still allows `blob:` because this Chrome ignores `worklet-src` and the voice worklet is loaded from a blob. The policy does not send `worklet-src` (this Chrome logs it as an unrecognized directive). The Teams tab policy is unchanged. Pin `c6a9a6f445c7403b7f3cef392c1f720e7004f82e1d4170b1561d29bce8800989`, 917955 bytes. `scripts/verify_page_build.sh` matched that hash on two runs.
+
+### Session: 2026-11-11 / CI Python pins (run77 A-3)
+- `.github/workflows/ci.yml` installs with `-c constraints-tested.txt`. The file pins the tested closure with `==`. The ffmpeg install step is unchanged. Hashes were not added: a constraints file does not enforce them, and the wheels differ by Python version. CI still asks for Python 3.13; those versions publish 3.13 wheels.

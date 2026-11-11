@@ -15,7 +15,7 @@ This is the map to **existing code**, not a claim that services are available. A
 | Riva notes | Separate Riva endpoint and `nvidia-riva-client` |
 | JEV / editor | Server-side key and accessible selected model; aiohttp is already used |
 
-`requirements-integrations.txt` installs **all** optional SDKs. To keep a hosted pilot small, use the new per-integration requirements files only when needed. Resolve and lock actual versions on the target host; `constraints-tested.txt` is an inherited snapshot, not a universal lock or compatibility guarantee.
+`requirements-integrations.txt` installs **all** optional SDKs. To keep a hosted pilot small, use the new per-integration requirements files only when needed. CI installs the test closure with `-c constraints-tested.txt`. That file pins those packages; it is not a lock for every host or for the optional integration SDKs.
 
 ## Local setup and complete checks
 ```sh
