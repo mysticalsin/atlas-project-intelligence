@@ -55,7 +55,8 @@ slots={'__CSS__':read_text(ROOT/'src/styles.css')+'\n'+read_text(ROOT/'src/voice
  '__SESSION_KEEPER__':read_text(ROOT/'src/session-keeper.js'),
  '__PROFILE_CORE__':read_text(ROOT/'src/profile-core.js'),
  '__PROFILE_UI__':read_text(ROOT/'src/profile-ui.js'),
- '__JOURNEY__':read_text(ROOT/'src/journey-ui.js')}
+ # The admin view machine is plain functions. Export keywords are for the node tests; the page is a classic script.
+ '__JOURNEY__':read_text(ROOT/'src/admin-metrics-machine.js').replace('export ','')+'\n'+read_text(ROOT/'src/journey-ui.js')}
 text=read_text(ROOT/'src/shell.html')
 for k,v in slots.items():text=text.replace(k,v)
 text=text.replace('<title>ATLAS Presence / Mantu — A rhythm you recognize</title>','<title>ATLAS Voice Studio / Mantu</title>')
