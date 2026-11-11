@@ -21,5 +21,6 @@ test('fiche, CV, and competency file drop compensation and keep the SMART confli
   assert.equal(cf.yearsOfExperience, null);
   assert.equal(cf.summary, null);
   assert.equal(cv.lines.some(line => line.text.includes('C++')), false);
-  assert.ok(cv.gaps.some(gap => gap.keyword === 'C++'));
+  assert.equal(cv.gaps.some(gap => gap.keyword === 'C++'), false);
+  assert.equal(cv.flags.filter(flag => flag.skill === 'C++').length, 1);
 });

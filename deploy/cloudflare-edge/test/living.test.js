@@ -240,6 +240,19 @@ test('a years claim longer than the role dates is a flag and stays off the CV', 
   assert.equal(file.includes('Designed the Windows service'), true);
 });
 
+test('a skill conflict on the 192497 fixture is a flag and not also a gap', () => {
+  const need = new SmartNeedLinkAdapter({ fixtures: new Map([['192497', CAPTURE]]) }).resolve(LINK).need;
+  const lines = [
+    { text: 'I designed the Windows service that routes alarms for the plant.', evidenceId: 's:A2.1', storyId: 's', topic: 'contribution' },
+    { text: 'The service was written in C# and covered the alarm queue.', evidenceId: 's:A3.1', storyId: 's', topic: 'approach' },
+  ];
+  const cv = composeCv({ consultant: { name: 'Ada Example' }, lines, need, audience: 'internal' });
+  assert.ok(cv.flags.some(flag => flag.code === 'skill_conflict' && flag.skill === 'C++'));
+  assert.equal(cv.gaps.some(gap => gap.keyword === 'C++'), false);
+  assert.ok(cv.gaps.some(gap => gap.keyword === 'English'));
+  assert.equal(cv.gaps.filter(gap => gap.keyword === 'C++').length + cv.flags.filter(flag => flag.skill === 'C++').length, 1);
+});
+
 test('gaps and conflicts stay off the CV; unsupported keywords are not claims', () => {
   const need = new SmartNeedLinkAdapter({ fixtures: new Map([['192497', CAPTURE]]) }).resolve(LINK).need;
   const lines = [
@@ -254,7 +267,7 @@ test('gaps and conflicts stay off the CV; unsupported keywords are not claims', 
   assert.equal(cv.lines.find(line => line.evidenceId === 's:A4.1').text, '8 years of Windows work on that same service.');
   assert.equal(cv.lines.some(line => /^I\b/.test(line.text)), false);
   assert.equal(cv.lines.some(line => line.text.includes('Daily rate')), false);
-  assert.deepEqual(cv.gaps.map(gap => gap.keyword).sort(), ['C++', 'English']);
+  assert.deepEqual(cv.gaps.map(gap => gap.keyword).sort(), ['English']);
   assert.equal(cv.gaps.every(gap => gap.authority === 'must'), true);
   assert.equal(cv.gaps.some(gap => gap.keyword === 'Middle - From 4 to 6 years'), false);
   const withNice = composeCv({ consultant: cv.consultant, lines, need: { ...need, keywords: [...need.keywords, { text: 'WPF', authority: 'nice', kind: 'skill' }] }, audience: 'internal' });
@@ -378,7 +391,9 @@ test('generate uses published snippets, refuses a live link, and blocks self-app
   assert.equal(joined.includes('I designed'), false);
   assert.equal(made.body.artifact.lines.some(line => (line.source || '').includes('I designed the Windows service')), true);
   assert.equal(made.body.artifact.lines.every(line => line.evidenceId.startsWith(id + ':')), true);
-  assert.ok(made.body.artifact.gaps.some(gap => gap.keyword === 'C++'));
+  assert.equal(made.body.artifact.gaps.some(gap => gap.keyword === 'C++'), false);
+  assert.ok(made.body.artifact.flags.some(flag => flag.code === 'skill_conflict' && flag.skill === 'C++'));
+  assert.ok(made.body.artifact.gaps.some(gap => gap.keyword === 'English'));
   assert.equal(made.body.artifact.lines.some(line => line.text.includes('C++')), false);
   const audits = l.rows('SELECT action, detail FROM audit WHERE action LIKE ? ', 'living %');
   assert.equal(JSON.stringify(audits).includes('I designed the Windows service'), false);
