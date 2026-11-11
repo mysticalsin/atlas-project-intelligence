@@ -42,7 +42,7 @@ function linesOf(lib, row, audience) {
     const text = audience === 'external' ? snip.text : snip.raw;
     const topic = TOPIC[snip.topic] || snip.kind;
     return {
-      text, evidenceId: `${row.id}:${snip.id}`, storyId: row.id, topic,
+      text, evidenceId: `${row.id}:${snip.id}`, storyId: row.id, topic, kind: snip.kind,
       at: row.data?.details?.end || row.updated_at || '',
       storyTitle: row.data?.title || '',
       role: row.data?.consultant?.role || '', roleEvidenceId: `${row.id}:role`,
@@ -114,6 +114,7 @@ function viewOf(lib, user, row) {
     consultant: { name: p.consultant?.name || '', role: p.consultant?.role || '' },
     cf: p.cf || null,
     lines: (p.lines || []).map(line => ({ text: line.text, source: line.source || line.text, evidenceId: line.evidenceId, storyId: line.storyId, topic: line.topic, storyTitle: line.storyTitle || '' })),
+    provenance: (p.provenance || []).map(line => ({ text: line.text, source: line.source || line.text, evidenceId: line.evidenceId, storyId: line.storyId, topic: line.topic })),
     gaps: p.gaps || [], flags: p.flags || [],
     need: p.need ? { source: p.need.source, needId: p.need.needId || '', title: p.need.title || '', keywords: p.need.keywords || [], flags: p.need.flags || [] } : null,
     fiche: p.fiche || null,

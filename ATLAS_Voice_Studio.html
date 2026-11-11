@@ -4259,14 +4259,20 @@ function provenance(source){
   wrap.append(btn,pop);
   return wrap;
 }
-function bullet(line){
+function supportText(artifact,line){
+  const own=line.source||line.text||'';
+  const extra=(artifact?.provenance||[]).filter(item=>!line.storyId||item.storyId===line.storyId).map(item=>item.source||item.text||'').filter(text=>text&&text!==own);
+  return [own,...extra].filter(Boolean).join('\n');
+}
+function bullet(line,artifact){
   const li=h('li',line.evidenceId?{'data-evidence':line.evidenceId}:null);
   const p=h('p',{text:line.text||''});
-  if(line.evidenceId)p.append(provenance(line.source||line.text||''));
+  const source=supportText(artifact,line);
+  if(line.evidenceId||source)p.append(provenance(source));
   li.append(p);
   return li;
 }
-function bullets(lines){const ul=h('ul',{class:'cv-lines'});for(const line of lines||[])if(line&&line.text)ul.append(bullet(line));return ul;}
+function bullets(lines,artifact){const ul=h('ul',{class:'cv-lines'});for(const line of lines||[])if(line&&line.text)ul.append(bullet(line,artifact));return ul;}
 function actionBar(artifact,onChange){
   const bar=h('div',{class:'action-bar'});
   bar.append(h('p',{class:'action-status',role:'status',text:STATUS[artifact.status]||artifact.status||''}));
@@ -4328,8 +4334,8 @@ function cvDocument(artifact,onChange){
     card.append(row);
   }
   const aside=new Set([...(cf.education||[]),...(cf.trainings||[])].map(item=>item.evidenceId).filter(Boolean));
-  if((cf.education||[]).length){card.append(h('h3',{text:'Education'}));card.append(bullets(cf.education));}
-  if((cf.trainings||[]).length){card.append(h('h3',{text:'Certifications'}));card.append(bullets(cf.trainings));}
+  if((cf.education||[]).length){card.append(h('h3',{text:'Education'}));card.append(bullets(cf.education,artifact));}
+  if((cf.trainings||[]).length){card.append(h('h3',{text:'Certifications'}));card.append(bullets(cf.trainings,artifact));}
   const groups=new Map();
   for(const line of artifact.lines||[]){
     if(!line?.text||aside.has(line.evidenceId))continue;
@@ -4339,7 +4345,7 @@ function cvDocument(artifact,onChange){
   }
   for(const lines of groups.values()){
     card.append(h('h3',{text:projectTitle(artifact,lines)}));
-    card.append(bullets(lines));
+    card.append(bullets(lines,artifact));
   }
   return card;
 }

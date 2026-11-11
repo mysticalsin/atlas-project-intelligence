@@ -446,6 +446,14 @@ function voiced(line) {
   return { ...line, source, text: phraseLine(source) };
 }
 
+// Snippet roles from the story model (snippets TOPIC_KEYS and kind). Support lines cite
+// the work. They are not the consultant's achievement or responsibility.
+const STORY_SUPPORT = new Set(['evidence', 'customer_relevance']);
+
+function supportLine(line) {
+  return line?.kind === 'evidence' || STORY_SUPPORT.has(line?.topic);
+}
+
 function roleSpanMonths(period) {
   const match = String(period || '').match(/(\d{4})-(\d{2})\s*[–—-]\s*(\d{4})-(\d{2})/);
   if (!match) return null;
@@ -469,8 +477,9 @@ function dateFlag(line) {
 // Keywords are matched on the published sentence. The visible text is the phrased bullet.
 export function composeCv({ consultant = {}, lines = [], need = null, audience = 'internal' } = {}) {
   const voicedLines = (Array.isArray(lines) ? lines : []).filter(line => line && line.text && line.evidenceId && !banned(line.text)).map(voiced);
+  const provenance = voicedLines.filter(supportLine);
   const dateFlags = [];
-  const source = voicedLines.filter(line => {
+  const source = voicedLines.filter(line => !supportLine(line)).filter(line => {
     const flag = dateFlag(line);
     if (!flag) return true;
     dateFlags.push(flag);
@@ -493,6 +502,7 @@ export function composeCv({ consultant = {}, lines = [], need = null, audience =
     },
     audience: audience === 'external' ? 'external' : 'internal',
     lines: kept,
+    provenance,
     gaps,
     flags: [...(need?.flags || []), ...dateFlags],
     need: need ? { source: need.source, sourceRef: need.sourceRef || '', needId: need.needId || '', title: need.title || '', keywords, flags: need.flags || [] } : null,
@@ -552,7 +562,7 @@ function splitName(name) {
 // yearsOfExperience and summary stay null: a sentence that mentions years stays a project line.
 // Languages, education, and certifications are copied only when that sentence states them.
 export function toCompetencyFile(cv = {}) {
-  const lines = (cv.lines || []).filter(line => line && line.text && line.evidenceId && !banned(line.text));
+  const lines = (cv.lines || []).filter(line => line && line.text && line.evidenceId && !banned(line.text) && !supportLine(line));
   const name = splitName(cv.consultant?.name);
   const nameId = cv.consultant?.nameEvidenceId || null;
   const languages = [];

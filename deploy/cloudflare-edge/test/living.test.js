@@ -171,12 +171,15 @@ test('a competency file matches the MiChat fields and cites only the fixture sen
   assert.equal(JSON.stringify(cf.technicalSkills).includes('C++'), false);
   assert.deepEqual(cf.softSkills, [{ text: 'Coaching the night-shift operators was part of the same alarm queue.', evidenceId: 'story:A5.1' }]);
   assert.deepEqual(cf.functionalSkills, []);
-  assert.deepEqual(cf.languages, [{ language: 'English', spoken: 'Fluent', written: 'Professional', evidenceId: 'story:A6.1' }]);
-  assert.equal(JSON.stringify(cf.languages).includes('French'), false);
-  assert.equal(cf.education[0].text, 'Holds a university degree in software engineering.');
-  assert.equal(cf.education[0].evidenceId, 'story:A7.1');
-  assert.equal(cf.trainings[0].text, 'Holds a certified Azure qualification from the same programme.');
-  assert.equal(cf.trainings[0].evidenceId, 'story:A8.1');
+  assert.deepEqual(cf.languages, []);
+  assert.deepEqual(cf.education, []);
+  assert.deepEqual(cf.trainings, []);
+  assert.equal(JSON.stringify(cf).includes('fluent spoken'), false);
+  assert.equal(JSON.stringify(cf).includes('university'), false);
+  assert.equal(JSON.stringify(cf).includes('certified Azure'), false);
+  assert.ok(cv.provenance.some(line => line.evidenceId === 'story:A6.1' && line.topic === 'customer_relevance'));
+  assert.ok(cv.provenance.some(line => line.evidenceId === 'story:A7.1' && line.topic === 'evidence'));
+  assert.ok(cv.provenance.some(line => line.evidenceId === 'story:A8.1'));
   const project = cf.projects[0];
   assert.deepEqual(project.company, { text: 'Northwind Synthetic', evidenceId: 'story:client' });
   assert.deepEqual(project.role, { text: 'Software engineer', evidenceId: 'story:role' });
@@ -196,6 +199,26 @@ test('a competency file matches the MiChat fields and cites only the fixture sen
     for (const child of Object.values(value)) if (child && typeof child === 'object') cited(child);
   };
   cited(cf);
+});
+
+test('evidence and customer-value roles stay out of the CV and the competency file', () => {
+  const lines = [
+    { text: 'I designed the Windows service that routes alarms for the plant.', evidenceId: 's:A2.1', storyId: 's', topic: 'contribution', kind: 'consultant_words' },
+    { text: 'The operations log for the quarter is the source for that queue time.', evidenceId: 's:A5.1', storyId: 's', topic: 'evidence', kind: 'consultant_words' },
+    { text: 'A building team with a manual alarm queue would recognise the same constraint.', evidenceId: 's:A6.1', storyId: 's', topic: 'customer_relevance', kind: 'consultant_words' },
+    { text: 'The excerpt names the alarm service.', evidenceId: 's:S1.1', storyId: 's', kind: 'evidence' },
+  ];
+  const cv = composeCv({ consultant: { name: 'Ada Example' }, lines, need: null, audience: 'internal' });
+  assert.deepEqual(cv.lines.map(line => line.evidenceId), ['s:A2.1']);
+  assert.equal(cv.lines[0].text, 'Designed the Windows service that routes alarms for the plant.');
+  assert.deepEqual(cv.provenance.map(line => line.evidenceId).sort(), ['s:A5.1', 's:A6.1', 's:S1.1']);
+  const cf = toCompetencyFile({ ...cv, lines: [...cv.lines, ...cv.provenance] });
+  const blob = JSON.stringify(cf);
+  assert.equal(blob.includes('operations log'), false);
+  assert.equal(blob.includes('building team'), false);
+  assert.equal(blob.includes('excerpt names'), false);
+  assert.equal(blob.includes('s:A5.1'), false);
+  assert.equal(blob.includes('Designed the Windows service'), true);
 });
 
 test('a years claim longer than the role dates is a flag and stays off the CV', () => {

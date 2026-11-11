@@ -109,6 +109,9 @@ try:
         doc = page.locator('.cv-doc').inner_text()
         rail = page.locator('.cv-stage > .cv-rail').inner_text()
         check('CV bullet is in CV voice', 'Designed the Windows service' in doc and 'I designed' not in doc)
+        check('evidence and customer value are not CV bullets', 'operations log' not in page.locator('.cv-doc .cv-lines').inner_text() and 'recognise the same constraint' not in page.locator('.cv-doc .cv-lines').inner_text())
+        page.locator('.cv-doc .prov').first.click()
+        check('evidence and customer value open from the source control', 'operations log' in page.locator('.prov-wrap.open .prov-pop').inner_text() and 'recognise the same constraint' in page.locator('.prov-wrap.open .prov-pop').inner_text())
         check('the CV card hides snippet ids', 'A2.1' not in doc and page.locator('#living select').count() == 0)
         check('a years claim that contradicts the role is a flag, not a CV line', '8 years of Windows work' not in doc and 'role dates cover' in rail and 'I have 8 years' not in body)
         check('unsupported must keyword is a gap beside the CV', 'C++' in rail and 'Gaps' not in doc and 'C++' not in doc)
@@ -148,7 +151,7 @@ try:
         with page.expect_download() as download:
             page.get_by_role('button', name='Export').click()
         doc = zipfile.ZipFile(download.value.path()).read('word/document.xml').decode()
-        check('export is a docx of the CV bullet', 'Designed the Windows service' in doc and 'I designed' not in doc and 'C++' not in doc and '8 years' not in doc and 'Gaps' not in doc)
+        check('export is a docx of the CV bullet', 'Designed the Windows service' in doc and 'I designed' not in doc and 'C++' not in doc and '8 years' not in doc and 'Gaps' not in doc and 'operations log' not in doc and 'recognise the same constraint' not in doc)
         page.locator('header [data-view=fiche]').click()
         page.wait_for_timeout(600)
         page.locator('#fiche').get_by_role('button', name='Generate').click()
