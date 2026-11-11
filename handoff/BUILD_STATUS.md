@@ -760,3 +760,10 @@ Review answers:
 - **Breaker.** A fail while `probing` re-opens when `state.phase === 'probing'`, not only when `event.trial` is set. `open:succeed` and `open:fail` stay legal. Rejection logs are phase and event only.
 - **Admin.** `boot_error` is a state. `bootFailed` is separate from a missing role. `renderAdmin` still paints the permissions banner when `bootInfo()` throws, because a distinct outage sentence would replace that copy. Painting it is LATER.
 - **Publication.** Golden tests only. No row 9 reducer. A revision resets `validation.status` to pending and derives `in_review`. Rows 18–21 added. Withdraw, reinstate and merge are folded into row 9.
+
+### Session: 2026-11-11 / Publication reducer (run73)
+- Continued on this branch from `main` `80bab333`. No push of `main`, no PR, no deploy, no live call. The Plan A ledger is not in this tree.
+- **Refactor.** `publication.js` replaces `deriveStatus`. `upsert` applies `revised`. The 2560 known goldens match, including `validated` with both decisions pending and quality ready.
+- **Single writer.** `merge` applies `merged`. The status column is that result. The stored state has `withdrawn: true`.
+- **Unknown values.** A status outside the five known values, or a decision outside the four, derives `awaiting_validation` when quality is ready and `in_review` otherwise. It does not derive `published`. Withdrawn still wins. Before the change, 64 such inputs derived `published`.
+- Rows other than 9 and 18 were not started. `validated` still does not require both approvals.

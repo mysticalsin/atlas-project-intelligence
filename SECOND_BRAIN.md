@@ -1,3 +1,22 @@
+# Second brain — run73
+
+## Completed this run
+- Publication reducer on `cursor/state-machines-atlas` from `2e012d6a`: `ba42c04` derive and `revised`, `095a170` `merged` as the status writer, `5133aa5` unknown approvals no longer publish.
+- The 2560 known goldens are unchanged, including validated with both decisions pending and quality ready.
+- Row 18 is the `revised` event. Other rows were not started.
+
+## Lessons
+- A pure derive can publish from an unknown status when both decisions are approved, and from a `validated` flag when a decision is unknown. That was 64 inputs. Map those to `awaiting_validation` or `in_review` only after a failing test shows the old `published`.
+- Do not require both approvals when the status is `validated`. That is a product rule, not this reducer.
+- `merge` was the remaining literal status write. The event sets `withdrawn` and the column stores the reducer's status, so a later derive agrees.
+- Rejection and unknown logs are the story id, the phase and the event. Do not log the unknown string.
+
+## Follow-up
+- Painting admin `boot_error` is still LATER.
+- Rows 1–8, 10–12, 19 and 21 stay unstarted. Row 9's `validated` flag still publishes without both approvals, on purpose, until Tony or Jarvis decides otherwise.
+- `LEDGER_MODE` remains off. The production daily limit is still unset.
+- This note is not a security or compliance claim.
+
 # Second brain — run72
 
 ## Completed this run
