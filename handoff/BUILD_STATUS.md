@@ -914,3 +914,10 @@ Review answers:
 - **Editorial.** Repaired the latch sentence in the `session.js` onset comment and the risks heading in `docs/LIVE_TEST_BOUND.md`. The live-test ledger section now states its scope.
 - **Suites at 118e5517.** Python 307, root node 384, edge 613, spend-ledger 16, early-processing 28, new ledger files 16, and 21 browser scripts, all passing.
 - **Known limits.** Under enforce, unpriced calls are refused: the analyst, embeddings, toMarkdown, ElevenLabs, TypeSafe and Hindsight have no sourced price. The budget is one global UTC-day budget, not per user. Nothing has been exercised live, and the Python path is not covered.
+
+### Session: 2026-11-11 / State machines, medium and low only (run71 part B)
+- Base `69f0c01b` on `cursor/state-machines-atlas`. Inventory committed first (`1854dbd`, `docs/state-machines.md`). High-risk rows 1–12 are pending senior review and were not changed. No push of `main`, no PR, no deploy, no production `wrangler.jsonc` or binding change, no live call, no spend. `LEDGER_MODE` stays off and is not a machine (row 15).
+- **Carried lows (`b00c303`).** `meter.js` line 2 now names `test/ledger-static.test.js`. `ledger-static.test.js` exempts only the `restBinding` function body.
+- **Bug (`684266d`, then the machine at `3535f75`).** `rating.js` admitted a half-open trial by clearing `openUntil` before the trial returned, so a second `rate()` was sent. `breaker.js` is the single writer. While the phase is `probing`, `blocked()` is `circuit_open`. Regression: `test/rating.test.js` R16b. Unit tests: `test/breaker.test.js`.
+- **Low (`580079e`).** Admin metrics view is `src/admin-metrics-machine.js`. `renderAdmin` is the only writer. Unknown or legacy loads become `boot_loading`. `build.py` inlines the machine into the page without `export` keywords.
+- **Suites at `580079e`.** pytest 307 passed. Root node 389 tests, 388 pass, 1 skip (the 4 new admin tests; the skip is the pre-existing Natural Earth regeneration). Edge 619 pass (613 + R16b + 5 breaker tests). Spend-ledger 16. Early-processing 28. Ledger files 16. Browser 21 scripts, 822 PASS, 0 FAIL. This note is docs-only on top of that head.
