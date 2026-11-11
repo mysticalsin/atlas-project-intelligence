@@ -1,7 +1,7 @@
 # State machines in ATLAS
-Last reviewed: 2026-11-11 on `cursor/state-machines-atlas` at `cb2ff2b27e896f7c34725839f3a66bfcea573409`. This stamp is that code commit, because this docs commit cannot name itself.
+Last reviewed: 2026-11-11 on `cursor/state-machines-atlas-v2` at `8d17dd10a577489507502c16cf472b3d59ba093d`. This stamp is that code commit, because this docs commit cannot name itself.
 
-The rules are `docs/STATE-MACHINE-STANDARD.md`. This file keeps the ATLAS inventory and does not restate them. High-risk rows are pending senior review. No high-risk fix is started in this branch.
+The rules are `docs/STATE-MACHINE-STANDARD.md`. This file keeps the ATLAS inventory and does not restate them. Row 9, story publication, is fixed in this branch. The other high-risk rows are still pending review.
 
 ## Inventory
 
@@ -15,26 +15,26 @@ Row shape: section 4 of `docs/STATE-MACHINE-STANDARD.md`. Status in the summary 
 | 4 | Python interview ledger | `atlas_voice/quality.py:52` | Same field lifecycle as the edge ledger, on the hosted path | status strings on recorded details | None newly reproduced. | H | LATER. Pending review. |
 | 5 | Python voice socket | `atlas_voice/server.py:166` (`active` at :47) | Connect, stream, cancel, end, error for one browser socket | `active[cookie]`, session expiry, generation implicit in the handler | None newly reproduced. A double start can occupy the one slot. | H | LATER. Pending review. |
 | 6 | Browser voice phase | `src/voice-client.js:7` (`status()` at :37, `begin` at :67, `cancel` at :100, `fail` at :101) | idle, preparing, connecting, live, ending, error | `phase`, `generation`, `restarting`, `permissionPending`, `consentStarting`, `muted` | None newly reproduced. Illegal combinations (live without a socket) are possible if a handler returns early. | H | LATER. Pending review. |
-| 7 | Live-test spend ledger | `deploy/cloudflare-edge/src/spend-ledger.js:38` `LedgerState` | Admit session, admit turn, reserve, claim, settle, latch stop | `stopped`, `sessions`, `open`, `reserved`, `claimed` | None newly reproduced. The caps ($1.50, 800k input tokens) are owner-approved and tested. | H | LATER. Pending review. This is the money authority for the live test. |
+| 7 | Live-test spend ledger | `deploy/cloudflare-edge/src/spend-ledger.js:30` `LedgerState` | Admit session, admit turn, reserve, claim, settle, latch stop | `stopped`, `sessions`, `open`, `reserved`, `claimed` | None newly reproduced. The caps ($1.50, 800k input tokens) are owner-approved and tested. | H | LATER. Pending review. This is the money authority for the live test. |
 | 8 | Production day budget | `deploy/cloudflare-edge/src/meter.js:70` `BudgetState` | Reserve, record, settle, roll the UTC day | `day`, `open`, `reserved`, `limitUsd` | The limit is the unset placeholder, so enforce refuses. Not a logic bug. | H | LATER. Pending review. Not bound in production. |
-| 9 | Story publication | `deploy/cloudflare-edge/src/publication.js` (`deriveStatus` is `publicationStatus`; `upsert` uses `revised`; `merge` uses `merged`) | in review, needs work, awaiting validation, changes requested, published, withdrawn, admin test | `validation.status`, `managerDecision`, `presalesDecision`, `withdrawn`, `quality.status`, `test`. `merged_into` stays a column. | `canPublish` requires both approvals. 32 of the 2560 golden rows move from `published` to `awaiting_validation` (validated, quality ready, not both approved, including both `merged_into` values). Unknown approvals still do not publish. | H | Reducer writes the status. `validated` does not publish without both lanes. |
+| 9 | Story publication | `deploy/cloudflare-edge/src/publication.js` (`deriveStatus` is `publicationStatus`; `upsert` uses `revised`; `merge` uses `merged`) | in review, needs work, awaiting validation, changes requested, published, withdrawn, admin test | `validation.status`, `managerDecision`, `presalesDecision`, `withdrawn`, `quality.status`, `test`. `merged_into` stays a column. | `canPublish` requires both approvals. 32 of the 2560 golden rows move from `published` to `awaiting_validation` (validated, quality ready, not both approved, including both `merged_into` values). Unknown approvals still do not publish. | H | FIXED. The reducer is the only writer of validation, withdrawn and test. `validated` does not publish without both lanes. |
 | 10 | Privacy delete receipt | `src/journey-ui.js:11` and `confirmDelete` at :81; server attempts at `deploy/cloudflare-edge/src/operate.js:111` | disclosure, confirm, in flight, receipt, earlier receipt, failure, identity change | `pendingDelete`, `deleteReceipt`, `receiptIsLatest`, `deleteFailure`, `deleteOwner` | Fixed across the delete-receipt commits (latest failure, earlier receipt, one request). `complete` stays false. No new bug filed. | H | LATER. Pending review. Erasure and the receipt wording. |
 | 11 | Colleague confirm page | `deploy/cloudflare-edge/src/confirm-page.js:120` | Open a confirmation, submit, error | page fetches, request id | None newly reproduced. | H | LATER. Pending review. It records a human confirmation. |
 | 12 | Early speculation | `deploy/cloudflare-edge/src/speculation.js:24` and `MemoryLedger` at :46 | Off, admitted, cancelled, claimed by the final turn | `EARLY_STT`, `EARLY_DRAFT`, reservation ids, `scope` | Flags alone cannot turn it on (no global ledger in the Worker). | H | LATER. Pending review. It spends audio and draft tokens inside the interview. |
 | 13 | Story-rating circuit breaker | `deploy/cloudflare-edge/src/breaker.js` (writer: `rating.js` `storyRater`) | closed, open for 60 s, one trial, auth block until the key changes | was `fails`, `openUntil`, `authKey`; now one object written only by `transition` | **Fixed.** The old `rating.js` admit cleared `openUntil` before the trial returned, so a second `rate()` was sent. `test/rating.test.js` R16b. | M | FIXED |
-| 14 | Admin metrics view | `src/admin-metrics-machine.js` (writer: `src/journey-ui.js` `renderAdmin`) | boot loading, boot error, denied, metrics loading, ready, empty, error; export | `{version, status}` written only by `adminMetricsTransition`. `bootFailed` is a separate guard from the role. | A thrown `bootInfo()` is still painted with the admin-only banner. A distinct outage sentence would replace that copy, so the page does not send `failed: true`. See the admin section. | L | FIXED in the reducer. Painting `boot_error` is LATER: the only sentence on that path today is the permissions banner, and a new sentence was not approved. |
+| 14 | Admin metrics view | `src/admin-metrics-machine.js` (writer: `src/journey-ui.js` `renderAdmin`) | boot loading, boot error, denied, metrics loading, ready, empty, error; export | `{version, status}` written only by `adminMetricsTransition`. `bootFailed` is a separate guard from the role. | A failed boot used to show the verified-admin sentence. `renderAdmin` now sends `failed: true` and paints `boot_error`. | L | FIXED. A failed boot is `boot_error` and does not show the verified-admin sentence. |
 | 15 | `LEDGER_MODE` | `deploy/cloudflare-edge/src/meter.js:31` `ledgerMode` | none: the Worker boots in one mode | `env.LEDGER_MODE` (`off`, `observe`, `enforce`, anything else invalid) | None. Invalid values already refuse. Default remains off. | L | NOT A MACHINE. It is a boot-time config parse. The process does not move from off to observe. No ordering rule. |
-| 16 | Rating quality status | `deploy/cloudflare-edge/src/rating.js:366` and `noStoryQuality` at :410 | none | `ready` / `needs_work` / `insufficient` derived from the score | None. | L | NOT A MACHINE. Pure mapping from a score and blockers. Two or three labels, no transitions. |
+| 16 | Rating quality status | `deploy/cloudflare-edge/src/rating.js:410` `noStoryQuality` | none | `ready` / `needs_work` / `insufficient` derived from the score | None. | L | NOT A MACHINE. Pure mapping from a score and blockers. Two or three labels, no transitions. |
 | 17 | Per-call provider retry | `deploy/cloudflare-edge/src/classify.js:95`, `customer-jev.js:129`, `teams.js:98` | one call, up to three tries | local `attempt` counter | None. | L | NOT A MACHINE. The counter dies with the call. Nothing is persisted and nothing else reads it. |
-| 18 | Story revision reopens approvals | `publicationTransition` event `revised`, called from `library.js` `upsert` | a content change clears quality, withdrawn and test, and replaces both approval lanes with pending | `quality`, `withdrawn`, `test`, `validation.status`, `managerDecision`, `presalesDecision` | None. The golden revision test still expects `in_review`. | H | Folded into row 9. The `revised` event is the only writer of that reset. |
-| 19 | Interview invitation status | `deploy/cloudflare-edge/src/library.js:669` (updates :727, :728, :729); Teams card at `outreach.js:549` and :555 | open, scheduled, dismissed, done | `invitations.status`, `slot` | None newly reproduced. The column is assigned from the library and from the Teams card. | M | LATER. Persisted status, more than one writer, and a closed invitation is not scheduled again. Not started in this run. |
+| 18 | Story revision reopens approvals | `publicationTransition` event `revised`, called from `library.js` `upsert` | a content change clears quality, withdrawn and test, and replaces both approval lanes with pending | `quality`, `withdrawn`, `test`, `validation.status`, `managerDecision`, `presalesDecision` | None. The golden revision test still expects `in_review`. | H | FIXED. Folded into row 9. `revised` is the only writer of that reset, and it stores version 1. |
+| 19 | Interview invitation status | `deploy/cloudflare-edge/src/library.js:712` (updates :736, :740, :741, :742); Teams card at `outreach.js:549` and :555 | open, scheduled, dismissed, done | `invitations.status`, `slot` | None newly reproduced. The column is assigned from the library and from the Teams card. | M | LATER. Persisted status, more than one writer, and a closed invitation is not scheduled again. Not started in this run. |
 | 20 | JEV rating consent | `deploy/cloudflare-edge/src/profile.js:473` `storedConsent`; grant and revoke at :530 | absent, or `{version:1}` for `jevRating`, one row per subject and tenant | `consents.jevRating` | None. Any version other than 1 counts as absent. | L | NOT A MACHINE. Two stored values, written in one route. No intermediate state and no retry. The tenant is the row key, not a state. |
-| 21 | Rating in flight per revision | `deploy/cloudflare-edge/src/library.js:160` (`review` at :392) | no entry, or one `{gen, engine}` for `id:revision`. The same engine joins. A different engine starts a new generation. | `this.inflight` | None newly reproduced. The map is the re-entrancy guard. | M | LATER. One rating at a time is an ordering rule. It is not the publication status. Not started in this run. |
+| 21 | Rating in flight per revision | `deploy/cloudflare-edge/src/library.js:397` (`inflight` at :160) | no entry, or one `{gen, engine}` for `id:revision`. The same engine joins. A different engine starts a new generation. | `this.inflight` | None newly reproduced. The map is the re-entrancy guard. | M | LATER. One rating at a time is an ordering rule. It is not the publication status. Not started in this run. |
 
 ## Story publication
 - Purpose: decide the status column from the story's quality, validation and withdrawal, and reopen both approval lanes when the story is revised.
 - Code: `deploy/cloudflare-edge/src/publication.js`, tests: `deploy/cloudflare-edge/test/publication.test.js` and `test/publication-golden.test.js`.
-- Persisted: the story row. `loadPublication` round-trips a stored object and maps a missing value to a fresh in-review record. It does not rewrite the row. `revised` does not add a version field to the stored state.
+- Persisted: the story row. `revised` stores `version` 1. `loadPublication` round-trips that version. A missing value, a legacy object with no version, or an unknown version loads as a fresh in-review record. The load does not mutate the stored object and does not rewrite the row.
 
 ### States
 | State | Data carried | Meaning |
@@ -51,17 +51,27 @@ Row shape: section 4 of `docs/STATE-MACHINE-STANDARD.md`. Status in the summary 
 | Event | Source |
 |---|---|
 | revised | `upsert` when the content hash changes, or on create |
-| derive | a caller that already built the next state (`setState`, and the golden table) |
+| derive | a caller that already built the next state, and the golden table |
 | merged | `merge`, for the story that is folded into another |
+| reviewed | `storeRating`, when a rating is stored |
+| decided | `validate`, one lane |
+| admin_published | `adminPublish` |
+| withdrawn | `withdraw` |
+| reinstated | `reinstate` |
 
 ### Transitions
 | From | Event | Guard | To | Side effects |
 |---|---|---|---|---|
-| any | revised | none | in_review, pending lanes, quality null, withdrawn and test cleared | `upsert` stores the state and the status |
+| any | revised | none | in_review, version 1, pending lanes, quality null, withdrawn and test cleared | `upsert` stores the state and the status |
 | any | derive | none | the status of the current fields | none inside the reducer |
 | any | merged | none | withdrawn, other fields kept | `merge` stores that status and `merged_into` |
+| any | reviewed | none | quality replaced; validation, withdrawn and test unchanged | `storeRating` stores the state and the status |
+| any | decided | `lane` is manager or presales, and the decision is approved or changes_requested | validation written by the reducer | `validate` stores the state and the status |
+| any | admin_published | none | `test` and validation status `admin_bypass` written by the reducer | `adminPublish` stores the state and the status |
+| any | withdrawn | none | withdrawn | `withdraw` stores the state and the status |
+| any | reinstated | `mergedInto` is empty | withdrawn cleared | `reinstate` stores the state and the status |
 
-Anything not in this table is illegal and is rejected. The transition returns the previous state and a rejection marker. The caller logs the story id, the phase and the event.
+Anything not in this table is illegal and is rejected. Every phase accepts every named event, so the phase-by-event complement is empty. `reinstated` with `mergedInto` set is the guard rejection from every phase. The transition returns the previous state and a rejection marker. The caller logs the story id, the phase and the event, and does not store that result. A status write matches the revision and status just read.
 
 ```mermaid
 stateDiagram-v2
@@ -88,7 +98,7 @@ Withdrawn wins. Then an unknown status or decision does not publish. Then `admin
 ## Story-rating circuit breaker
 - Purpose: stop calling TypeSafe for story ratings after repeated failures, allow one trial after 60 s, and stop calling with a key that was rejected until that key changes.
 - Code: `deploy/cloudflare-edge/src/breaker.js`, tests: `deploy/cloudflare-edge/test/breaker.test.js`, regression: `deploy/cloudflare-edge/test/rating.test.js` (R16, R16b)
-- Persisted: no. One LibraryStore holds it in memory. `loadBreaker` maps a legacy `{fails, openUntil, authKey}` snapshot, a mid-request `probing` snapshot, and any unknown value to a defined state. Unknown, and a `fails` count that cannot happen, become closed with no auth key (what a new rater does). A valid version-1 closed or open snapshot round-trips. Nothing writes the snapshot today.
+- Persisted: no. One LibraryStore holds it in memory. There is no snapshot codec.
 
 ### States
 | State | Data carried | Meaning |
@@ -144,13 +154,13 @@ None. The auth-key guard reads the key the rater was constructed with. It is not
 ## Admin metrics view
 - Purpose: show an admin either the loading line, the not-admin refusal, the metrics, an empty range, or the load error, and keep export on the shell.
 - Code: `src/admin-metrics-machine.js`, tests: `tests/admin-metrics-machine.test.js`. `renderAdmin` paints. `build.py` copies the machine into the page with the export keywords removed, because the page is a classic script.
-- Persisted: no. `loadAdminMetrics` maps a missing, legacy, or unknown value to `boot_loading`. A version-1 status in the state list round-trips. Nothing stores the view.
+- Persisted: no. There is no snapshot codec. Nothing stores the view.
 
 ### States
 | State | Data carried | Meaning |
 |---|---|---|
 | boot_loading | none | "Loading admin metrics…" |
-| boot_error | none | `bootInfo()` threw. The effect is `show_boot_error`. The page does not paint it yet. |
+| boot_error | none | `bootInfo()` threw, or the boot has no ATLAS protocol. The page paints `show_boot_error`. |
 | denied | none | The boot call resolved and the role is not admin. |
 | loading | none | The shell is up and the metrics pane says "Loading…". Export is available. |
 | ready | none | Metrics are shown, and the series is not empty. The numbers stay in the effect, not in the state. |
@@ -170,7 +180,7 @@ None. The auth-key guard reads the key the rater was constructed with. It is not
 ### Transitions
 | From | Event | Guard | To | Side effects |
 |---|---|---|---|---|
-| boot_loading | boot | `bootFailed` | boot_error | `show_boot_error` (not painted; the page does not send this event) |
+| boot_loading | boot | `bootFailed` | boot_error | `show_boot_error`. The page paints the existing metrics-failed sentence |
 | boot_loading | boot | not `bootFailed`, and `isAdminRole` | loading | mount the shell, fetch metrics |
 | boot_loading | boot | not `bootFailed`, and the role is not admin | denied | the not-admin warning |
 | loading, ready, empty, error | refresh | none | loading | show "Loading…", fetch metrics |
@@ -199,4 +209,4 @@ stateDiagram-v2
 ### Platform / flag differences
 None for this view. `LEDGER_MODE` is a guard input on the paid-call wrapper, not a machine (row 15). Neither fixed machine forks by operating system.
 
-`renderAdmin` still does `catch { boot = {} }` and then boots with `role: boot.libraryRole`. A thrown `bootInfo()` therefore still takes the denied transition and the sentence "This dashboard is only for a verified admin. The API refuses everyone else." Sending `failed: true` and painting `show_boot_error` would replace that sentence. That copy is not approved, so the paint stays as it is. The reducer and the tests already have the state.
+`renderAdmin` sends `failed: true` when `bootInfo()` throws or the boot has no ATLAS protocol. That is `boot_error`. The pane says "Metrics failed." and does not say "This dashboard is only for a verified admin. The API refuses everyone else." A resolved boot whose role is not admin still takes `denied` and that sentence.

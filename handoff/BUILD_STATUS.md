@@ -768,3 +768,9 @@ Review answers:
 - **Unknown values.** A status outside the five known values, or a decision outside the four, derives `awaiting_validation` when quality is ready and `in_review` otherwise. It does not derive `published`. Withdrawn still wins. The golden test asserts every unknown approval tuple in that grid stays non-published.
 - Rows other than 9 and 18 were not started.
 - **Both approvals.** `canPublish` is both lanes `approved`. `validated` with both decisions pending, or with only one approval, derives `awaiting_validation` when quality is ready. 32 of the 2560 golden rows move from `published` to `awaiting_validation` (16 field combinations, each with both `merged_into` values). Both lanes approved still publishes. Admin bypass is unchanged. Logs stay the story id, the phase and the event.
+
+### Session: 2026-11-11 / State machines v2, after the review gaps
+- New branch `cursor/state-machines-atlas-v2` from `main` `80bab333`. The Plan A ledger, the CSP and header commits, the CI pin, the privacy-delete CI registration, and the earlier page rebuild were not carried. No push of `main`, no PR, no deploy, no live call.
+- Publication events are `reviewed`, `decided`, `admin_published`, `withdrawn` and `reinstated`, plus the earlier `revised`, `derive` and `merged`. The reducer writes validation, withdrawn and test. `revised` stores version 1. A legacy or unknown version loads as in-review and is not rewritten. Reinstate rejects `merged_into`. A rejected transition is not stored. Each status write matches the prior revision and status.
+- The breaker and admin-metrics snapshot codecs are gone. A failed admin boot paints `boot_error` and does not show the verified-admin sentence.
+- Page pin `5371299c86ecf4c19f2bb2dc47b50191ab608b7012842d34c56b092265d663b6`, 910588 bytes. `scripts/verify_page_build.sh` matched it on two runs.
