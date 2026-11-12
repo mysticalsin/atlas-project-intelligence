@@ -55,6 +55,17 @@ test('enforce: an invalid LEDGER_MODE refuses every paid call', async () => {
   assert.equal(calls.length, 0);
 });
 
+test('enforce awaits a failed settle and leaves the reservation at its ceiling', async () => {
+  const b = new BudgetState({ limitUsd: 5, now: () => Date.parse('2026-11-12T00:00:00Z') });
+  const { out, log } = lines();
+  const ledger = { reserve: req => b.reserve(req), settle: async () => { throw new Error('settle down'); } };
+  const door = paid({ LEDGER_MODE: 'enforce', AI: { run: async () => 'out' } }, { ledger, log });
+  await assert.rejects(door.run(() => ({ kind: 'stt', model: '@cf/deepgram/nova-3', audioMs: 1000 }), 'm'), e => e.reason === 'ledger_error');
+  assert.equal(b.snapshot().inFlight, 1);
+  assert.ok(b.snapshot().reserved.nanoUsd > 0);
+  assert.ok(out.some(row => row.error === 'settle' && row.ledger === 'settle_failed'));
+});
+
 test('enforce settles after success and after an upstream failure, and the upstream error is unchanged', async () => {
   const settled = [], ledger = { reserve: async () => ({ ok: true, id: 'P1' }), settle: async (id, o) => settled.push([id, o]) };
   const ok = paid({ LEDGER_MODE: 'enforce', AI: { run: async () => 'out' } }, { ledger, log: () => {} });

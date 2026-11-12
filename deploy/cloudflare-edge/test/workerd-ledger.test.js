@@ -63,3 +63,39 @@ test('workerd RPC reserves, settles, snapshots, records an overrun, and refuses 
     await mf.dispose();
   }
 });
+
+test('workerd settle put failure leaves the full hold', async () => {
+  const mf = new Miniflare({
+    scriptPath: path.join(root, 'test/ledger-binding-fail.mjs'),
+    modules: true,
+    modulesRules: [
+      { type: 'ESModule', include: ['**/*.js', '**/*.mjs'], fallthrough: true },
+      { type: 'Text', include: ['**/*.html'], fallthrough: true },
+    ],
+    compatibilityDate: '2025-09-01',
+    durableObjects: { SPEND_LEDGER: { className: 'ProductionSpendLedger', useSQLite: true } },
+  });
+  const call = async body => {
+    const res = await mf.dispatchFetch('https://atlas.example/ledger', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    assert.equal(res.status, 200, text);
+    return JSON.parse(text);
+  };
+  try {
+    const reserved = await call({ op: 'reserve', req: { kind: 'memory', provider: 'hindsight', operation: 'recall', inputTokens: 1000, outputTokens: 100 } });
+    assert.equal(reserved.ok, true);
+    const before = await call({ op: 'snapshot' });
+    assert.equal(before.inFlight, 1);
+    await call({ op: 'arm' });
+    const settled = await call({ op: 'settle', id: reserved.id, observed: { usage: { inputTokens: 1, outputTokens: 1 } } });
+    assert.deepEqual(settled.settled, { ok: false, reason: 'ledger_error' });
+    const after = await call({ op: 'snapshot' });
+    assert.equal(after.reserved.nanoUsd, before.reserved.nanoUsd);
+    assert.equal(after.reserved.usd, before.reserved.usd);
+    assert.equal(after.inFlight, 1);
+  } finally {
+    await mf.dispose();
+  }
+});

@@ -27,7 +27,7 @@ function fresh(month) {
     v: MONTH_BUDGET_VERSION, phase: 'open', month, denyReason: '',
     next: 0, open: {}, reserved: { nanoUsd: 0, requests: 0 },
     observed: { nanoUsd: 0, requests: 0, unpriced: 0 },
-    byKind: {}, refusals: {}, settled: { ok: 0, errors: 0 },
+    byKind: {}, refusals: {}, settled: { ok: 0, errors: 0, unsettled: 0 },
     overruns: { requests: 0, nanoUsd: 0 },
   };
 }
@@ -56,7 +56,8 @@ function copy(saved) {
     next: saved.next, open: JSON.parse(JSON.stringify(saved.open)),
     reserved: { nanoUsd: saved.reserved.nanoUsd, requests: saved.reserved.requests },
     observed: { nanoUsd: saved.observed.nanoUsd, requests: saved.observed.requests, unpriced: saved.observed.unpriced },
-    byKind: { ...saved.byKind }, refusals: { ...saved.refusals }, settled: { ok: saved.settled.ok, errors: saved.settled.errors },
+    byKind: { ...saved.byKind }, refusals: { ...saved.refusals },
+    settled: { ok: saved.settled.ok, errors: saved.settled.errors, unsettled: count(saved.settled.unsettled) ? saved.settled.unsettled : 0 },
     overruns: saved.overruns && count(saved.overruns.requests) && count(saved.overruns.nanoUsd)
       ? { requests: saved.overruns.requests, nanoUsd: saved.overruns.nanoUsd }
       : { requests: 0, nanoUsd: 0 },
@@ -89,7 +90,21 @@ export function transition(state, event) {
     if (!MONTH_RE.test(event.month || '')) return denied();
     if (state.month === event.month) return illegal(state, event);
     if (state.month && event.month < state.month) return illegal(state, event);
-    return fresh(event.month);
+    // One month record. Open holds move with their ids; settled spend does not. Settle finds the id here.
+    const next = fresh(event.month);
+    const carried = {};
+    let nano = 0;
+    let requests = 0;
+    for (const [id, rec] of Object.entries(state.open || {})) {
+      if (!rec || !Number.isInteger(rec.nano) || rec.nano < 0) continue;
+      carried[id] = JSON.parse(JSON.stringify(rec));
+      nano += rec.nano;
+      requests += 1;
+    }
+    next.open = carried;
+    next.next = count(state.next) ? state.next : 0;
+    next.reserved = { nanoUsd: nano, requests };
+    return next;
   }
   if (!state.month) return illegal(state, event);
   if (event.type === 'reserve') {
@@ -128,7 +143,9 @@ export function transition(state, event) {
     }
     next.observed.nanoUsd += charged;
     next.observed.requests += 1;
-    if (event.error) next.settled.errors += 1; else next.settled.ok += 1;
+    if (event.unsettled) next.settled.unsettled = (next.settled.unsettled || 0) + 1;
+    else if (event.error) next.settled.errors += 1;
+    else next.settled.ok += 1;
     return next;
   }
   const next = clone(state);

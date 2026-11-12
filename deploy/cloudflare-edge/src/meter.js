@@ -246,7 +246,7 @@ export class BudgetState {
     const now = this.now();
     for (const [id, rec] of Object.entries(this.data.open)) {
       if (Number.isInteger(rec.at) && now - rec.at <= RESERVATION_TTL_MS) continue;
-      const next = transition(this.data, { type: 'settle', id });
+      const next = transition(this.data, { type: 'settle', id, unsettled: true });
       if (!isIllegal(next)) this.data = next;
     }
   }
@@ -434,8 +434,30 @@ export function paid(env, { ledger, log = defaultLog, timeoutMs = LEDGER_TIMEOUT
     try { r = await withTimeout(Promise.resolve().then(() => l.reserve(req)), timeoutMs); }
     catch (e) { refuse(e?.name === 'LedgerTimeout' ? 'ledger_timeout' : 'ledger_error'); }
     if (!r?.ok || typeof r.id !== 'string') refuse(String(r?.reason || 'refused').slice(0, 40));
-    const settle = observed => Promise.resolve().then(() => l.settle(r.id, observed)).catch(e => line({ kind: req.kind }, { ledger_error: e?.name || 'settle' }));
-    try { const out = await call(); settle(settlementOf(out)); return out; } catch (e) { settle({ error: e?.name || 'Error' }); throw e; }
+    const commit = async observed => {
+      try {
+        const result = await l.settle(r.id, observed);
+        if (result === false || (result && result.ok === false)) {
+          line({ kind: req.kind }, { error: 'settle', ledger: 'settle_failed', id: r.id, reason: result?.reason || 'settle' });
+          try { console.error(JSON.stringify({ atlas_metric: 'ledger', error: 'settle', ledger: 'settle_failed', id: r.id })); } catch { /* the refusal still propagates */ }
+          return false;
+        }
+        return true;
+      } catch (e) {
+        line({ kind: req.kind }, { error: 'settle', ledger: 'settle_failed', id: r.id, ledger_error: e?.name || 'Error' });
+        try { console.error(JSON.stringify({ atlas_metric: 'ledger', error: 'settle', ledger: 'settle_failed', id: r.id })); } catch { /* the refusal still propagates */ }
+        return false;
+      }
+    };
+    try {
+      const out = await call();
+      if (!(await commit(settlementOf(out)))) throw refused('ledger_error');
+      return out;
+    } catch (e) {
+      if (e?.name === 'BudgetRefused' && e.reason === 'ledger_error') throw e;
+      if (!(await commit({ error: e?.name || 'Error' }))) { try { e.ledger = 'settle_failed'; } catch { /* a frozen error still propagates */ } }
+      throw e;
+    }
   }
 
   const gate = mode === 'observe' ? observe : enforce;

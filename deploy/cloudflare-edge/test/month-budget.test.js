@@ -58,7 +58,7 @@ test('voice ceilings include the proxy worst case', () => {
   assert.equal(b.reserve(NOVA).reason, 'exhausted:usd');
 });
 
-test('a later UTC day in the same month keeps the reservation; the month boundary resets it', () => {
+test('a later UTC day in the same month keeps the reservation; an open hold carries into the next month', () => {
   let t = Date.parse('2026-11-30T23:59:59Z');
   const b = new M.BudgetState({ ...req(1_000_000_000), now: () => t });
   assert.equal(b.reserve(STT).ok, true);
@@ -76,11 +76,43 @@ test('a later UTC day in the same month keeps the reservation; the month boundar
   assert.equal(same.snapshot().reserved.nanoUsd, 1_000_000_000, 'a new UTC day is not a new budget');
   t = Date.parse('2026-12-01T00:00:00Z');
   assert.equal(same.snapshot().month, '2026-12');
-  assert.equal(same.snapshot().reserved.nanoUsd, 0);
-  assert.equal(same.snapshot().reserved.requests, 0);
-  assert.equal(same.reserve(STT).ok, true, 'the new month admits again');
+  assert.equal(same.snapshot().reserved.nanoUsd, 1_000_000_000, 'the open hold carries');
+  assert.equal(same.snapshot().reserved.requests, 1);
+  assert.equal(same.reserve(STT).ok, true, 'the new month admits a call that still fits');
   assert.equal(same.settle(id, { error: 'cancelled' }), false);
   void kept;
+});
+
+test('rollover carries an open reservation and settle still finds its id', () => {
+  let t = Date.parse('2026-11-30T23:50:00Z');
+  const b = new M.BudgetState({ limitUsd: 5, now: () => t });
+  const reserved = b.reserve({ kind: 'memory', provider: 'hindsight', operation: 'recall', inputTokens: 1000, outputTokens: 100 });
+  assert.equal(reserved.ok, true);
+  const held = b.snapshot().reserved.nanoUsd;
+  t = Date.parse('2026-12-01T00:00:01Z');
+  const rolled = b.snapshot();
+  assert.equal(rolled.month, '2026-12');
+  assert.equal(rolled.reserved.nanoUsd, held, 'the open hold is not dropped');
+  assert.equal(rolled.inFlight, 1);
+  assert.equal(b.settle(reserved.id, { usage: { inputTokens: 10, outputTokens: 4 } }), true);
+  const after = b.snapshot();
+  assert.equal(after.month, '2026-12');
+  assert.equal(after.inFlight, 0);
+  assert.ok(after.reserved.nanoUsd > 0);
+  assert.ok(after.reserved.nanoUsd < held);
+});
+
+test('an expired reservation stays charged at its ceiling and counts as unsettled', () => {
+  let t = Date.parse('2026-11-12T00:00:00Z');
+  const b = new M.BudgetState({ limitUsd: 5, now: () => t });
+  b.reserve(NOVA);
+  const held = b.snapshot().reserved.nanoUsd;
+  t += 120001;
+  assert.equal(b.reserve(NOVA).ok, true);
+  const snap = b.snapshot();
+  assert.equal(snap.reserved.nanoUsd, held + held, 'expiry does not release the hold');
+  assert.equal(snap.settled.unsettled, 1);
+  assert.equal(snap.inFlight, 1);
 });
 
 test('settling inside the month does not refund', () => {
@@ -201,8 +233,12 @@ test('month rollover is one pure transition: legal pairs, every illegal pair, gu
 
   const next = SM.transition(admitted, { type: 'rollover', month: '2026-12' });
   assert.equal(next.month, '2026-12');
-  assert.equal(next.reserved.nanoUsd, 0);
-  assert.equal(Object.keys(next.open).length, 0);
+  assert.equal(next.reserved.nanoUsd, FIVE, 'the open hold carries');
+  assert.deepEqual(next.open, admitted.open);
+  assert.equal(next.next, admitted.next);
+  const cleared = SM.transition(settled, { type: 'rollover', month: '2026-12' });
+  assert.equal(cleared.reserved.nanoUsd, 0, 'a settled month does not carry spend');
+  assert.equal(Object.keys(cleared.open).length, 0);
 
   assert.equal(SM.isIllegal(SM.transition(rolled, { type: 'rollover', month: '2026-11' })), true, 'same month');
   assert.equal(SM.isIllegal(SM.transition(next, { type: 'rollover', month: '2026-11' })), true, 'clock backwards');
