@@ -13,6 +13,7 @@ import { winSignals } from './winloop.js';
 import { RatingError, ratingInput, questionPlan, requestBody, compose, agentQuality, noStoryQuality, sha256Hex, BUDGETS, RUBRIC_VERSION, METRIC_CODES, MODEL } from './rating.js';
 import { storedConsent } from './profile.js';
 import { sameTenant, TENANT_ID } from './authz.js';
+import { appendAudit, ensureChain } from './audit-chain.js';
 import { recordUsage } from './telemetry.js';
 const DUPLICATE = 0.9; // cosine similarity above which two references are flagged as the same or a related project
 export const PRACTICES = { data_ai: 'Data & AI', web_app: 'Web & App Development', telecom: 'Telecom & Networks', sap_erp: 'SAP & ERP', cloud_infra: 'Cloud & Infrastructure', cybersecurity: 'Cybersecurity', transformation: 'Transformation & Strategy', engineering: 'Engineering & Industry' };
@@ -164,6 +165,7 @@ export class Library {
     this.sql.exec("CREATE UNIQUE INDEX IF NOT EXISTS invitations_open_scope ON invitations(email, reason, project_id, reference_id, tenant) WHERE status IN ('open', 'scheduled')");
     migrateManagerTrust(this);
     migrateStoryTenant(this);
+    ensureChain(this.sql);
   }
 
   rows(q, ...p) { return this.sql.exec(q, ...p).toArray(); }
@@ -171,7 +173,7 @@ export class Library {
     const r = this.rows('SELECT * FROM refs WHERE id = ?', String(id || ''))[0];
     return r ? { ...r, data: JSON.parse(r.data), state: JSON.parse(r.state) } : null;
   }
-  log(id, actor, action, detail = '') { this.sql.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', id, actor, action, this.now(), String(detail).slice(0, 300)); }
+  log(id, actor, action, detail = '') { appendAudit(this.sql, { id, actor, action, at: this.now(), detail: String(detail).slice(0, 300) }); }
   // An invitation or card action may name a story. The audit id is that story only when the story's stored tenant
   // is the caller's tenant. A foreign id is not an audit target.
   auditId(refId, tenant) {

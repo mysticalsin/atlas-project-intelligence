@@ -27,12 +27,14 @@ test('Access JWT verification accepts only valid, correctly scoped tokens', asyn
 });
 
 test('routes fail closed and serve the real page with runtime + CSP', async () => {
-  const page = "<meta http-equiv=x content=\"connect-src 'self';\"><script>/* SERVER_RUNTIME */</script></body>";
+  const page = "<meta http-equiv=x content=\"connect-src 'self';\"><script id=\"atlas-runtime\" type=\"application/json\">{}</script><script>/* page */</script></body>";
   assert.equal((await handle(await req('/', { token: null }), ENV, page)).status, 401);
   assert.equal((await handle(await req('/', { host: 'https://evil.example' }), ENV, page)).status, 403);
   assert.equal((await handle(await req('/'), { ...ENV, CSRF_SECRET: '' }, page)).status, 500);
   const r = await handle(await req('/'), ENV, page), html = await r.text();
-  assert.equal(r.status, 200); assert.ok(html.includes('window.ATLAS_RUNTIME={"subjectKey"') && html.includes('"authMode":"access"'));
+  assert.equal(r.status, 200); assert.equal(html.includes('window.ATLAS_RUNTIME='), false);
+  const runtime = JSON.parse(/<script id="atlas-runtime" type="application\/json">([\s\S]*?)<\/script>/.exec(html)[1]);
+  assert.equal(typeof runtime.subjectKey, 'string'); assert.ok(runtime.subjectKey.length > 0); assert.equal(runtime.authMode, 'access');
   assert.ok(html.includes("connect-src 'self' wss://atlas.example.workers.dev;") && html.includes('SYNTHETIC DATA ONLY'));
   assert.ok(r.headers.get('content-security-policy').includes("frame-ancestors 'none'") && r.headers.get('cache-control') === 'no-store');
   const boot = await (await handle(await req('/api/bootstrap'), ENV, page)).json();
@@ -345,8 +347,11 @@ test('T1-S0 GET /confirm is served only after sign-in, with the standard headers
   assert.equal((await handle(await req('/confirm', { token: null }), ENV, '')).status, 401);
   const home = await handle(await req('/'), ENV, '<html></body>'), r = await handle(await req('/confirm'), ENV, '');
   assert.equal(r.status, 200); assert.equal(r.headers.get('content-type'), 'text/html; charset=utf-8');
-  for (const h of ['content-security-policy', 'cache-control', 'x-content-type-options', 'referrer-policy', 'permissions-policy']) assert.equal(r.headers.get(h), home.headers.get(h), h);
-  assert.match(r.headers.get('content-security-policy'), /default-src 'none'.*frame-ancestors 'none'/);
+  for (const h of ['cache-control', 'x-content-type-options', 'referrer-policy', 'permissions-policy']) assert.equal(r.headers.get(h), home.headers.get(h), h);
+  for (const policy of [r.headers.get('content-security-policy'), home.headers.get('content-security-policy')]) {
+    assert.match(policy, /script-src-attr 'none'/); assert.match(policy, /frame-ancestors 'none'/);
+    assert.equal(/script-src[^;]*unsafe-inline/.test(policy), false);
+  }
   const html = await r.text(); assert.match(html, /^<!doctype html>/i); assert.doesNotMatch(html, /<script[^>]+src|https?:\/\//i);
 });
 
@@ -490,7 +495,11 @@ test('Z /go/signed-in: a tiny page that tells the waiting tab over BroadcastChan
   const boot = await (await handle(await req('/api/bootstrap'), ENV, '')).json();
   for (const secret of ['tony@example.com', 'user-abc', boot.csrf, (await jwt()).slice(0, 20), 'ATLAS_RUNTIME']) assert.equal(html.includes(secret), false, secret);
   assert.doesNotMatch(html, /<script[^>]+src|https?:\/\//i);
-  for (const h of ['content-security-policy', 'cache-control', 'x-content-type-options', 'referrer-policy', 'permissions-policy']) assert.equal(r.headers.get(h), home.headers.get(h), h);
+  for (const h of ['cache-control', 'x-content-type-options', 'referrer-policy', 'permissions-policy']) assert.equal(r.headers.get(h), home.headers.get(h), h);
+  for (const policy of [r.headers.get('content-security-policy'), home.headers.get('content-security-policy')]) {
+    assert.match(policy, /script-src-attr 'none'/); assert.match(policy, /frame-ancestors 'none'/);
+    assert.equal(/script-src[^;]*unsafe-inline/.test(policy), false);
+  }
   assert.equal((await handle(await req('/go/signed-in', { token: null }), ENV, 'PAGE')).status, 401);
 });
 
@@ -560,12 +569,13 @@ test('system ingress uses only ATLAS_SYSTEM_TENANT: missing, malformed, mismatch
 });
 
 test('Z DATA_MODE: the test banner and the readiness string follow it; nothing else changes', async () => {
-  const page = "<meta http-equiv=x content=\"connect-src 'self';\"><script>/* SERVER_RUNTIME */</script></body>";
+  const page = "<meta http-equiv=x content=\"connect-src 'self';\"><script id=\"atlas-runtime\" type=\"application/json\">{}</script><script>/* page */</script></body>";
   for (const [env, banner, readiness] of [[ENV, true, 'edge-deployment-test-data-only'], [{ ...ENV, DATA_MODE: 'Production' }, true, 'edge-deployment-test-data-only'],
     [{ ...ENV, DATA_MODE: 'production' }, false, 'production']]) {
     const html = await (await handle(await req('/'), env, page)).text(), boot = await (await handle(await req('/api/bootstrap'), env, page)).json();
     assert.equal(html.includes('TEST DEPLOYMENT · SYNTHETIC DATA ONLY'), banner, JSON.stringify(env.DATA_MODE)); assert.equal(boot.readiness, readiness);
-    assert.ok(html.includes('window.ATLAS_RUNTIME={"subjectKey"'));
+    const runtime = JSON.parse(/<script id="atlas-runtime" type="application\/json">([\s\S]*?)<\/script>/.exec(html)[1]);
+    assert.equal(typeof runtime.subjectKey, 'string'); assert.ok(runtime.subjectKey.length > 0);
   }
 });
 

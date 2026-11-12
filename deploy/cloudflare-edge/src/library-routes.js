@@ -6,6 +6,8 @@ import { featureRoutes } from './features.js';
 import * as outreach from './outreach.js';
 import * as profile from './profile.js';
 import { adminRoutes, journeyRoutes, privacyRoutes } from './operate.js';
+import { internalRoutes as privacyInternal } from './privacy-routes.js';
+import { sweep as retentionSweep } from './retention.js';
 import { productionDemoConflict, resolveTenantEnforcement } from './authz.js';
 export const SYSTEM = { email: 'atlas', role: 'admin' }; // automatic review after a save
 function scopedReviewer(user = {}) {
@@ -31,11 +33,26 @@ export function acceptedSubjectDelete(method, pathname) {
   return parts[0] === 'profile' && parts[1] === 'delete' && parts.length === 2;
 }
 
-export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {} } = {}) {
+export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}, storage = null } = {}) {
   const demoConflict = productionDemoConflict(env);
   if (demoConflict) return json(demoConflict, 503);
+  const url = new URL(request.url);
+  if (url.pathname.startsWith('/api/privacy/')) {
+    const user = { email: request.headers.get('x-atlas-user') || '', mail: (request.headers.get('x-atlas-email') || '').toLowerCase(), role: request.headers.get('x-atlas-role') || 'user',
+      tenant: request.headers.get('x-atlas-tenant') || '', tenantEnforced: resolveTenantEnforcement(env, request.headers.get('x-atlas-tenant-enforced')), subj: request.headers.get('x-atlas-subj') || '' };
+    if (!user.email) return json({ error: 'Sign in first.' }, 401);
+    let body = {};
+    if (request.method === 'POST') { try { body = await request.json(); } catch { return json({ error: 'Invalid JSON.' }, 400); } }
+    try {
+      const r = await privacyInternal({ lib, user, method: request.method, url, body, env, storage });
+      if (r?.response) return r.response;
+      return json(r.body, r.status || 200);
+    } catch (e) {
+      return e.status ? json({ error: e.message }, e.status) : json({ error: 'The library could not complete that request.' }, 500);
+    }
+  }
   // idp: the sign-in name claims (x-atlas-idp, always written by the Worker from the verified token; WOW_ZERO_CONFIG §5.5).
-  const url = new URL(request.url), user = { email: request.headers.get('x-atlas-user') || '', mail: (request.headers.get('x-atlas-email') || '').toLowerCase(), role: request.headers.get('x-atlas-role') || 'user',
+  const user = { email: request.headers.get('x-atlas-user') || '', mail: (request.headers.get('x-atlas-email') || '').toLowerCase(), role: request.headers.get('x-atlas-role') || 'user',
     tenant: request.headers.get('x-atlas-tenant') || '', tenantEnforced: resolveTenantEnforcement(env, request.headers.get('x-atlas-tenant-enforced')), idp: profile.idpClaims(request.headers.get('x-atlas-idp')) };
   if (!user.email) return json({ error: 'Sign in first.' }, 401);
   const parts = libraryParts(url.pathname), method = request.method;
@@ -58,7 +75,10 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
         return json({ error: 'ATLAS_SYSTEM_TENANT is not a verified tenant id. Maintenance was not run.' }, 403);
       }
       if (method === 'POST' && id === 'trigger') return json(outreach.onTrigger(lib, user, body), 201);
-      if (method === 'POST' && id === 'scan-stale') return json({ invited: lib.scanStale(user), ...outreach.daily(lib, user), ...(profile.READY ? profile.daily(lib, lib.now(), user) : {}) });
+      if (method === 'POST' && id === 'scan-stale') {
+        const retention = retentionSweep(lib, { tenant: user.tenantEnforced === true ? user.tenant : '' });
+        return json({ invited: lib.scanStale(user), ...outreach.daily(lib, user), ...(profile.READY ? profile.daily(lib, lib.now(), user) : {}), ...retention });
+      }
       const sys = await featureRoutes(ctx);
       if (sys) return json(sys.body, sys.status || 200);
       return json({ error: 'Not found.' }, 404);
