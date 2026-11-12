@@ -18,7 +18,10 @@ The live script is `atlas` (`deploy/cloudflare-edge/wrangler.jsonc`). Its top le
 - Workers AI is on only when that same build binds `SPEND_LEDGER` to `ProductionSpendLedger` and the v3 migration creates that class. If the binding is missing at runtime, every AI call fails closed. It does not log and continue. Hindsight, TypeSafe, ElevenLabs and OpenAI stay off: their secrets are not in the file and are not copied onto the Preview.
 - Every HTML page carries a visible banner: "Preview. Fake data only." The pages are `/`, `/confirm`, `/go/signed-in`, and the sign-in response. The banner is injected by the Worker. The built HTML file does not change.
 - The Preview does not copy the production origin `https://atlas.tony-walteur.workers.dev`, the production Access audience, or the production Access team. A request whose host is that production host is refused. A Preview host is `https://<label>-atlas.tony-walteur.workers.dev`.
+- `ACCESS_AUD` and `ACCESS_TEAM_DOMAIN` are not in `previews.vars`. `verifyAccess` (`app.js`) returns no identity without both, and the ledger route would otherwise skip its Access check when `ACCESS_AUD` is empty. A preview request with either value missing returns 403 `Preview Access is not configured.` It does not return the sign-in page, and it does not reach the ledger or a model call. There is no auth bypass.
+- The preview Access application is a different application from production. Pass its audience and its team on the upload command. Do not commit them. Do not pass the production audience `fc05e3d966db92b03ed3bf38b31e5c5254e1508bb0e090825a56ce12a933f386` or the production team `tony-walteur.cloudflareaccess.com`: the Worker answers 503. The JWT issuer and the certs host are the team domain, so an application on the production team cannot be used. Create the preview application on another Zero Trust team, for the preview hostname only.
 - The top-level cron stays on production. The `previews` block has no cron, no route, and no `script_name` pointing at `atlas`.
+- Durable Object classes and migrations stay at the top level, which is where Cloudflare's preview docs say they belong. `previews` has no `migrations` key, so it cannot replace that list. `wrangler preview` has no dry-run. Assembling the deployment request calls `getPreviewDeployment` before it attaches migrations, and that call needs the network, so this repository does not execute the upload. What was run offline is `getPreviewMigrationsToUpload` from the installed Wrangler 4.158.0 (the same decision is in the published preview source, and `--var` has been on `wrangler preview` since 4.132.0). With no current migration tag it returns `new_tag: "v3"` and three steps, `new_sqlite_classes` `Interview`, `LibraryStore`, then `ProductionSpendLedger`. A preview whose latest deployment is already tag `v3` sends no steps. Cloudflare applying that payload was not observed.
 
 ## Later commands
 
@@ -26,8 +29,10 @@ Run these from `deploy/cloudflare-edge`, with Wrangler 4.135.0 or later. They up
 
 `bash preview.sh` runs `node preview-guard.mjs` first. The guard reads this `wrangler.jsonc`. If the `previews` block has no `SPEND_LEDGER` binding to `ProductionSpendLedger`, or this file has no v3 migration that creates that class, or `LEDGER_MODE` is set to anything other than `enforce` or unset, the guard exits 1 and wrangler is not started.
 
+`ACCESS_AUD` and `ACCESS_TEAM_DOMAIN` are plain text, supplied on this command. They are not secrets and they are not written into the file. Without them the upload can still be built, and every request then returns 403.
+
 ```sh
-bash preview.sh
+bash preview.sh --var ACCESS_AUD:<preview audience> --var ACCESS_TEAM_DOMAIN:<preview team>
 npx --yes wrangler@4.135.0 preview secret put CSRF_SECRET --name gate8
 ```
 
@@ -39,6 +44,13 @@ Token scope: **Workers Scripts Write**. That is the group on the Preview update 
 
 ## What one session can spend
 
-One short hands-on session, priced at the list rates already in `prices.js`, with the Workers AI proxy of $0.0060003 on each binding call: 10 turns of 30 seconds of speech, a talker call of 2,000 input tokens and 300 output tokens, 400 spoken characters, and one analyst call of 8,000 input tokens and 3,000 output tokens. No memory, no JEV, no ElevenLabs, no realtime, no document conversion.
+One short hands-on session, priced by `callCeilingNano` in `meter.js` at the list rates in `prices.js`. The Workers AI proxy on each binding call is `PROXY_PER_CALL_NANO` = 6,000,300 nano-dollars = $0.0060003. The session is ten speech-to-text calls of 30 seconds, one talker call of 2,000 input tokens and 300 output tokens, one text-to-speech call of 400 characters, and one analyst call of 8,000 input tokens and 3,000 output tokens. No memory, no JEV, no ElevenLabs, no realtime, no document conversion, no turn-detection call.
 
-That session is about $0.35. The existing ledger stops the month at $5. The visible sentence is "This month's AI budget is used up." The provider is not called.
+`priceOf` rounds each call up to the next nano-dollar, then `callCeilingNano` adds the proxy because each model id starts with `@cf/`.
+
+- Speech, `@cf/deepgram/nova-3`, 30,000 ms: `ceil(30000/60000 * 0.0052 * 1e9)` = 2,600,000, plus the proxy = 8,600,300. Ten calls = 86,003,000.
+- Talker, `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, 2,000 in and 300 out: `ceil((2000*0.293 + 300*2.253) / 1e6 * 1e9)` = 1,261,900, plus the proxy = 7,262,200.
+- Speech output, `@cf/deepgram/aura-2-en`, 400 characters: `ceil(400/1000 * 0.030 * 1e9)` = 12,000,000, plus the proxy = 18,000,300.
+- Analyst, `@cf/openai/gpt-oss-120b`, 8,000 in and 3,000 out: `ceil((8000*0.35 + 3000*0.75) / 1e6 * 1e9)` = 5,050,000, plus the proxy = 11,050,300.
+
+The sum is 122,315,800 nano-dollars, which is $0.1223158. Thirteen binding calls carry the proxy. The existing ledger stops the month at $5. The visible sentence is "This month's AI budget is used up." The provider is not called.

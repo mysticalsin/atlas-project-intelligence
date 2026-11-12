@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import { handle } from '../src/app.js';
+import { callCeilingNano, PROXY_PER_CALL_NANO } from '../src/meter.js';
+import { previewMigrationUpload } from '../src/preview.js';
 import { dnaConfig, pushConfig } from '../src/profile.js';
 
 const PRODUCTION_ORIGIN = 'https://atlas.tony-walteur.workers.dev';
@@ -98,4 +101,71 @@ test('a preview page shows the fake-data banner and refuses production settings'
 
   const productionHost = await handle(new Request(PRODUCTION_ORIGIN + '/'), previewEnv(), page);
   assert.equal(productionHost.status, 403);
+});
+
+test('one hands-on session reserves $0.1223158 through callCeilingNano', () => {
+  const vars = parseJsonc(readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8')).previews.vars;
+  assert.equal(PROXY_PER_CALL_NANO, 6_000_300);
+  const speech = callCeilingNano({ kind: 'stt', model: vars.STT_MODEL, audioMs: 30_000 });
+  const talker = callCeilingNano({ kind: 'talker', model: vars.TALKER_MODEL, inputTokens: 2000, outputTokens: 300 });
+  const spoken = callCeilingNano({ kind: 'tts', model: vars.TTS_MODEL, chars: 400 });
+  const analyst = callCeilingNano({ kind: 'analyst', model: vars.ANALYST_MODEL, inputTokens: 8000, outputTokens: 3000 });
+  assert.equal(speech, 8_600_300);
+  assert.equal(talker, 7_262_200);
+  assert.equal(spoken, 18_000_300);
+  assert.equal(analyst, 11_050_300);
+  assert.equal(speech * 10 + talker + spoken + analyst, 122_315_800);
+});
+
+test('a preview with no Access audience or team returns 403 and does not spend', async () => {
+  const vars = parseJsonc(readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8')).previews.vars;
+  assert.equal(vars.ACCESS_AUD, undefined);
+  assert.equal(vars.ACCESS_TEAM_DOMAIN, undefined);
+  let reserves = 0;
+  const env = {
+    ...vars, CSRF_SECRET: 'preview-test-secret', ATLAS_LEDGER_TOKEN: 'tok',
+    SPEND_LEDGER: { idFromName() { return 'id'; }, get() { return { async reserve() { reserves += 1; return { ok: true, id: 'P1' }; } }; } },
+  };
+  const page = '<script>/* SERVER_RUNTIME */</script></body>';
+  const home = await handle(new Request(PREVIEW_HOST + '/'), env, page);
+  assert.equal(home.status, 403);
+  assert.match(await home.text(), /Preview Access is not configured/);
+  const spent = await handle(new Request(PREVIEW_HOST + '/api/ledger/reserve', {
+    method: 'POST', headers: { Authorization: 'Bearer tok', 'Content-Type': 'application/json' }, body: '{}',
+  }), env, page);
+  assert.equal(spent.status, 403);
+  assert.match(await spent.text(), /Preview Access is not configured/);
+  assert.equal(reserves, 0);
+});
+
+test('the preview upload payload carries the top-level v3 migration', () => {
+  const cfg = parseJsonc(readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8'));
+  assert.equal(cfg.previews.migrations, undefined);
+  const first = previewMigrationUpload(cfg.migrations);
+  assert.equal(first.new_tag, 'v3');
+  assert.equal(first.old_tag, undefined);
+  assert.deepEqual(first.steps.map(step => step.new_sqlite_classes), [
+    ['Interview'], ['LibraryStore'], ['ProductionSpendLedger'],
+  ]);
+  const rest = previewMigrationUpload(cfg.migrations, 'v2');
+  assert.equal(rest.old_tag, 'v2');
+  assert.equal(rest.new_tag, 'v3');
+  assert.deepEqual(rest.steps, [{ new_sqlite_classes: ['ProductionSpendLedger'] }]);
+  assert.equal(previewMigrationUpload(cfg.migrations, 'v3'), undefined);
+  const installed = ['/tmp/atlas-wrangler/node_modules/wrangler/wrangler-dist/cli.js'].find(existsSync);
+  if (!installed) return;
+  const src = readFileSync(installed, 'utf8');
+  const start = src.indexOf('function getPreviewMigrationsToUpload');
+  const end = src.indexOf('function buildResultToDeploymentModules');
+  assert.ok(start > 0 && end > start);
+  const script = new vm.Script(src.slice(start, end) + '\ngetPreviewMigrationsToUpload(workerName, config, current)');
+  const run = current => {
+    const sandbox = { workerName: 'atlas', current, config: { migrations: cfg.migrations, configPath: 'wrangler.jsonc', userConfigPath: 'wrangler.jsonc' }, logger: { warn() {} }, configFileName: () => 'wrangler.jsonc' };
+    vm.createContext(sandbox);
+    return script.runInContext(sandbox);
+  };
+  const plain = value => JSON.parse(JSON.stringify(value ?? null));
+  assert.deepEqual(plain(run(undefined)), first);
+  assert.deepEqual(plain(run('v2')), rest);
+  assert.equal(run('v3'), undefined);
 });

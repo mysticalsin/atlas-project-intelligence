@@ -6,6 +6,7 @@ export const PRODUCTION_ACCESS_AUD = 'fc05e3d966db92b03ed3bf38b31e5c5254e1508bb0
 export const PRODUCTION_ACCESS_TEAM = 'tony-walteur.cloudflareaccess.com';
 
 export const PREVIEW_BANNER = '<div id="atlas-preview-banner" role="status" style="position:fixed;left:12px;bottom:10px;z-index:99;font:11px/1.4 Arial,sans-serif;letter-spacing:.06em;color:#A9A9BC;background:#15151cdd;border:1px solid #2a2a36;border-radius:14px;padding:4px 10px">Preview. Fake data only.</div>';
+export const PREVIEW_ACCESS_MISSING = 'Preview Access is not configured.';
 
 // The same wrangler file the preview upload sends. The live Worker has neither the binding nor v3.
 // Unset LEDGER_MODE is enforce. Anything else is not this preview.
@@ -22,6 +23,23 @@ export function previewLedgerReady(cfg) {
   return { ok: true };
 }
 
+// The preview deployment payload from wrangler 4.158.0 getPreviewMigrationsToUpload.
+// Classes and migrations stay at the top level. Steps omit the tag. A preview that already
+// has the last tag sends nothing. This does not call Cloudflare.
+export function previewMigrationUpload(migrations, currentTag) {
+  const list = Array.isArray(migrations) ? migrations.filter(Boolean) : [];
+  if (!list.length) return undefined;
+  const stepsFrom = from => list.slice(from).map(({ tag, ...rest }) => rest);
+  const last = list[list.length - 1].tag;
+  if (currentTag) {
+    const found = list.findIndex(m => m.tag === currentTag);
+    if (found === -1) return { old_tag: currentTag, new_tag: last, steps: stepsFrom(0) };
+    if (found !== list.length - 1) return { old_tag: currentTag, new_tag: last, steps: stepsFrom(found + 1) };
+    return undefined;
+  }
+  return { new_tag: last, steps: stepsFrom(0) };
+}
+
 export function previewMisconfigured(env) {
   if (env?.ATLAS_PREVIEW !== '1') return null;
   const mode = env.LEDGER_MODE;
@@ -31,6 +49,12 @@ export function previewMisconfigured(env) {
   if (env.ACCESS_AUD === PRODUCTION_ACCESS_AUD) return 'Preview cannot use the production Access audience.';
   if (env.ACCESS_TEAM_DOMAIN === PRODUCTION_ACCESS_TEAM) return 'Preview cannot use the production Access team.';
   return null;
+}
+
+// A preview with no audience or team cannot verify a JWT. That is a closed door, not a sign-in page.
+export function previewAccessMissing(env) {
+  if (env?.ATLAS_PREVIEW !== '1') return false;
+  return !(typeof env.ACCESS_AUD === 'string' && env.ACCESS_AUD.length > 0 && typeof env.ACCESS_TEAM_DOMAIN === 'string' && env.ACCESS_TEAM_DOMAIN.length > 0);
 }
 
 // Preview hosts are https://<label>-atlas.tony-walteur.workers.dev. The production host is not one of them.

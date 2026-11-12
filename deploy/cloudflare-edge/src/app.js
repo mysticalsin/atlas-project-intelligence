@@ -18,7 +18,7 @@ import { acceptedSubjectDelete } from './library-routes.js';
 import { paid, elevenLabsUrl, utf8Length, analystCall, LIMITS, generationTokens, inputTokenCeiling, capPcm, capText, markdownPlan, ledgerMode } from './meter.js';
 import { usageFrom } from './usage.js';
 import { httpBudget } from './budget-stop.js';
-import { allowedOrigin, previewMisconfigured, stampPreview, withPreviewBanner } from './preview.js';
+import { allowedOrigin, PREVIEW_ACCESS_MISSING, previewAccessMissing, previewMisconfigured, stampPreview, withPreviewBanner } from './preview.js';
 import { audioMs } from './units.js';
 import { ledgerAccessOk, spendRoute } from './spend-route.js';
 
@@ -167,6 +167,7 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
     if (previewProblem) return new Response(previewProblem, { status: 503, headers: { 'Cache-Control': 'no-store', 'Content-Type': 'text/plain; charset=utf-8' } });
     const origin = allowedOrigin(env, url);
     if (!origin) return new Response('Host is not the configured ATLAS origin.', { status: 403 });
+    if (previewAccessMissing(env)) return new Response(PREVIEW_ACCESS_MISSING, { status: 403, headers: { 'Cache-Control': 'no-store', 'Content-Type': 'text/plain; charset=utf-8' } });
     env = { ...env, ORIGIN: origin };
     if (!env.CSRF_SECRET) return new Response('Deployment is not configured (CSRF_SECRET).', { status: 500 });
     // Before triggers, directory push, voice, memory, or the library. A production flag must not
