@@ -51,12 +51,17 @@ export function ensureJourney(lib) {
     lib.sql.exec(`CREATE TABLE journey (
       subject TEXT NOT NULL, tenant TEXT NOT NULL DEFAULT '', payload TEXT, updated_at TEXT,
       PRIMARY KEY (subject, tenant))`);
+    ensureJourneyIndex(lib);
     return;
   }
   const pk = lib.rows("SELECT name FROM pragma_table_info('journey') WHERE pk > 0 ORDER BY pk").map(r => r.name);
-  if (pk.length === 2 && pk[0] === 'subject' && pk[1] === 'tenant') return;
+  if (pk.length === 2 && pk[0] === 'subject' && pk[1] === 'tenant') {
+    ensureJourneyIndex(lib);
+    return;
+  }
   // Older builds keyed the journey on subject alone, so one person could overwrite another tenant.
   // Copy the stored tenant as-is, including blank. This does not assign a tenant to a legacy row.
+  // Mixed-case duplicates are copied as stored. This migration does not merge them.
   lib.sql.exec(`CREATE TABLE journey_v2 (
     subject TEXT NOT NULL, tenant TEXT NOT NULL DEFAULT '', payload TEXT, updated_at TEXT,
     PRIMARY KEY (subject, tenant))`);
@@ -64,14 +69,29 @@ export function ensureJourney(lib) {
     SELECT subject, COALESCE(tenant, ''), payload, updated_at FROM journey`);
   lib.sql.exec('DROP TABLE journey');
   lib.sql.exec('ALTER TABLE journey_v2 RENAME TO journey');
+  ensureJourneyIndex(lib);
 }
 
-function tenantKey(user = {}) {
+// The case-sensitive primary key can already hold more than one spelling of the same email.
+// Read and save share one choice: the newest updated_at, then the greatest rowid.
+// Export and erasure take every row this match finds. Nothing here merges the duplicates.
+export const JOURNEY_MATCH = 'lower(subject) = lower(?) AND tenant = ?';
+export const JOURNEY_READ_SQL = `SELECT rowid AS id, subject, tenant, payload, updated_at FROM journey WHERE ${JOURNEY_MATCH} ORDER BY updated_at DESC, rowid DESC LIMIT 1`;
+export const JOURNEY_ALL_SQL = `SELECT rowid AS id, subject, tenant, payload, updated_at FROM journey WHERE ${JOURNEY_MATCH} ORDER BY updated_at DESC, rowid DESC`;
+export const JOURNEY_COUNT_SQL = `SELECT COUNT(*) AS n FROM journey WHERE ${JOURNEY_MATCH}`;
+export const JOURNEY_DELETE_SQL = `DELETE FROM journey WHERE ${JOURNEY_MATCH}`;
+export const JOURNEY_UPDATE_SQL = 'UPDATE journey SET payload = ?, updated_at = ? WHERE rowid = ?';
+
+function ensureJourneyIndex(lib) {
+  lib.sql.exec('CREATE INDEX IF NOT EXISTS journey_tenant_subject ON journey(tenant, lower(subject))');
+}
+
+export function journeyTenant(user = {}) {
   return String(user.tenant || '').trim().toLowerCase();
 }
 
 function demandTenant(user) {
-  if (user?.tenantEnforced === true && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantKey(user))) {
+  if (user?.tenantEnforced === true && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(journeyTenant(user))) {
     throw fail(403, 'A verified tenant is required.');
   }
 }
@@ -86,10 +106,19 @@ function blank() {
   };
 }
 
+export function journeyChosen(lib, email, tenant) {
+  ensureJourney(lib);
+  return lib.rows(JOURNEY_READ_SQL, email, tenant)[0] || null;
+}
+
+export function journeyMatches(lib, email, tenant) {
+  ensureJourney(lib);
+  return lib.rows(JOURNEY_ALL_SQL, email, tenant);
+}
+
 function read(lib, user) {
   demandTenant(user);
-  ensureJourney(lib);
-  const row = lib.rows('SELECT * FROM journey WHERE subject = ? AND tenant = ?', user.email, tenantKey(user))[0];
+  const row = journeyChosen(lib, user.email, journeyTenant(user));
   if (!row) return { ...blank(), tenant: user.tenant || '' };
   try {
     const payload = JSON.parse(row.payload);
@@ -158,9 +187,11 @@ export async function saveJourney(lib, user, body = {}) {
   const stage = STAGES.some(s => s.id === body.stage) ? body.stage : current.stage;
   const payload = { version: 1, fields, confirmed, stage, disclaimer: blank().disclaimer };
   demandTenant(user);
-  lib.sql.exec(`INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)
-    ON CONFLICT(subject, tenant) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at`,
-    user.email, tenantKey(user), JSON.stringify(payload), lib.now());
+  const tenant = journeyTenant(user);
+  const chosen = journeyChosen(lib, user.email, tenant);
+  const at = lib.now();
+  if (chosen) lib.sql.exec(JOURNEY_UPDATE_SQL, JSON.stringify(payload), at, chosen.id);
+  else lib.sql.exec('INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)', user.email, tenant, JSON.stringify(payload), at);
   await recordUsage(lib, user, { kind: 'journey', feature: 'journey', outcome: 'saved', tokenStatus: 'missing' });
   return journeyView(lib, user);
 }

@@ -248,7 +248,7 @@ test('run5: purge, DSAR, journey key, staffing import, metrics page, header and 
   const call = (who, path, env, method = 'GET') => libraryRoutes(new Request('https://atlas.test' + path, { method, body: method === 'POST' ? '{}' : undefined, headers: {
     'x-atlas-user': who.email, 'x-atlas-role': who.role, 'x-atlas-tenant': who.tenant || '', 'x-atlas-tenant-enforced': '0' } }), l, { env });
   const exported = await (await call(adminA, '/api/library/privacy/export', {})).json();
-  assert.equal(exported.journey.fields.title.value, 'Tenant A story');
+  assert.equal(exported.journey[0].fields.title.value, 'Tenant A story');
   assert.equal(JSON.stringify(exported).includes('Tenant B'), false);
   const prodEnv = { ORIGIN: 'https://atlas.test', CSRF_SECRET: 'secret', DATA_MODE: 'production' };
   assert.equal((await call({ email: 'ada@example.test', role: 'admin', tenant: '' }, '/api/library/privacy/export', prodEnv)).status, 403);

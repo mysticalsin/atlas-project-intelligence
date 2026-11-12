@@ -40,7 +40,7 @@ test('a lowercased sign-in removes a journey whose subject saveJourney stored in
   const exported = await (await libraryRoutes(new Request('https://atlas.test/api/library/privacy/export', {
     headers: { 'x-atlas-user': 'ada@example.test', 'x-atlas-role': 'user', 'x-atlas-email': 'ada@example.test', 'x-atlas-tenant': TENANT, 'x-atlas-tenant-enforced': '1' },
   }), library, { env: { DATA_MODE: 'production', ORIGIN: 'https://atlas.test', CSRF_SECRET: 's' } })).json();
-  assert.equal(exported.journey.fields.title.value, 'Alias');
+  assert.equal(exported.journey[0].fields.title.value, 'Alias');
   const body = await erase(library, 'ada@example.test');
   assert.equal(body.note, NOTE);
   assert.equal(body.outcomes.find(item => item.store === 'journey').removed, 1);

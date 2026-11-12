@@ -3,7 +3,7 @@ import { fail } from './util.js';
 import { sameTenant, TENANT_ID } from './authz.js';
 import { queryMetrics, recordUsage, purgeTelemetry, personaKey, ensureTelemetry } from './telemetry.js';
 import { toCsv } from './csvsafe.js';
-import { journeyView, saveJourney, mapDraft, ensureJourney } from './journey.js';
+import { journeyView, saveJourney, mapDraft, ensureJourney, journeyMatches, journeyTenant, JOURNEY_COUNT_SQL, JOURNEY_DELETE_SQL } from './journey.js';
 import { deleteOwnedProfile } from './profile.js';
 import { readPublication } from './publication.js';
 
@@ -85,9 +85,8 @@ export async function privacyRoutes(ctx) {
   }
   if (method === 'GET' && parts[1] === 'export') {
     if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
-    ensureJourney(lib);
     const tenant = String(user.tenant || '').toLowerCase();
-    const journey = lib.rows('SELECT payload, updated_at FROM journey WHERE lower(subject) = lower(?) AND tenant = ?', user.email, tenant)[0] || null;
+    const journey = journeyMatches(lib, user.email, journeyTenant(user)).map(row => ({ subject: row.subject, updatedAt: row.updated_at, ...JSON.parse(row.payload) }));
     const stories = lib.rows('SELECT id, title, status, updated_at, state FROM refs WHERE owner = ?', user.email).filter(r => {
       let recordTenant = '';
       try { recordTenant = JSON.parse(r.state || '{}').tenant || ''; } catch { return false; }
@@ -104,11 +103,11 @@ export async function privacyRoutes(ctx) {
       if (row) ownedProfile = { edits: JSON.parse(row.edits || '{}'), consents: JSON.parse(row.consents || '{}'), updatedAt: row.updated_at };
     } catch { /* profile table may be absent */ }
     lib.log('library', user.email, 'dsar export', `${stories.length} stories`);
-    return { body: { subject: user.email, tenant: user.tenant || '', journey: journey ? JSON.parse(journey.payload) : null, profile: ownedProfile, stories,
+    return { body: { subject: user.email, tenant: user.tenant || '', journey, profile: ownedProfile, stories,
       stores: dsarStores(), note: 'This export lists the local rows for this subject and tenant. It is not a vendor-log extract and it does not mean every store was erased.' } };
   }
   if (method === 'POST' && parts[1] === 'delete') {
-    const tenant = String(user.tenant || '').trim().toLowerCase();
+    const tenant = journeyTenant(user);
     if (!TENANT_ID.test(tenant)) throw fail(403, 'A verified tenant is required.');
     const persona = await personaKey(user);
     ensureJourney(lib);
@@ -119,8 +118,8 @@ export async function privacyRoutes(ctx) {
       catch { outcomes.push({ store, removed: 0, error: 'delete-failed' }); }
     };
     attempt('journey', () => {
-      const n = lib.rows('SELECT COUNT(*) AS n FROM journey WHERE lower(subject) = lower(?) AND tenant = ?', user.email, tenant)[0].n;
-      if (n) lib.sql.exec('DELETE FROM journey WHERE lower(subject) = lower(?) AND tenant = ?', user.email, tenant);
+      const n = lib.rows(JOURNEY_COUNT_SQL, user.email, tenant)[0].n;
+      if (n) lib.sql.exec(JOURNEY_DELETE_SQL, user.email, tenant);
       return n;
     });
     attempt('telemetry', () => {
