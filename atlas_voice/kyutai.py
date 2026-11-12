@@ -101,6 +101,7 @@ async def _settle_stream(hold, usage, error=None):
         await hold.settle(usage, error=error)
     except BudgetRefused as refused:
         print(json.dumps({'atlas_metric': 'ledger', 'error': 'settle', 'reason': refused.reason}), flush=True)
+        raise
 
 
 async def stream_chat(http, url, model, key, messages, max_tokens=None):
@@ -141,7 +142,11 @@ async def stream_chat(http, url, model, key, messages, max_tokens=None):
                     if delta:
                         yield delta
     except asyncio.CancelledError:
-        await _settle_stream(hold, seen)
+        try:
+            await _settle_stream(hold, seen)
+        except BudgetRefused as refused:
+            hold.settle_error = refused.reason
+            print(json.dumps({'atlas_metric': 'ledger', 'error': 'settle', 'reason': refused.reason, 'recorded': 'cancel'}), flush=True)
         raise
     except Exception as error:
         await _settle_stream(hold, seen, error=type(error).__name__)

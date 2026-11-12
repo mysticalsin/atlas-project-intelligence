@@ -190,6 +190,77 @@ def test_riva_is_refused_under_enforce_until_it_is_priced(monkeypatch):
     asyncio.run(run())
 
 
+class _SSE:
+    def __init__(self, parts):
+        self.parts = parts
+
+    class _Body:
+        def __init__(self, parts):
+            self.parts = parts
+
+        async def iter_any(self):
+            for part in self.parts:
+                if part is None:
+                    await asyncio.sleep(5)
+                else:
+                    yield part
+
+    def post(self, *args, **kwargs):
+        body = self._Body(self.parts)
+        class Response:
+            content = body
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, *a):
+                return False
+            def raise_for_status(self):
+                return None
+        return Response()
+
+
+@pytest.mark.asyncio
+async def test_stream_chat_raises_when_settle_fails(monkeypatch, capsys):
+    monkeypatch.setenv('LEDGER_MODE', 'enforce')
+    ledger = Ledger(fail_settle=True)
+    use(ledger)
+    from atlas_voice.kyutai import stream_chat
+    chunks = []
+    with pytest.raises(BudgetRefused) as caught:
+        async for delta in stream_chat(_SSE([b'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n', b'data: [DONE]\n']),
+                                       'https://example.test/v1', 'm', '', [{'role': 'user', 'content': 'hi'}]):
+            chunks.append(delta)
+    assert chunks == ['Hi']
+    assert caught.value.reason == 'ledger_error'
+    lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.startswith('{')]
+    assert {'atlas_metric': 'ledger', 'error': 'settle', 'reason': 'ledger_error'} in lines
+    use(None)
+
+
+@pytest.mark.asyncio
+async def test_stream_chat_cancel_records_a_settle_failure_and_stays_cancelled(monkeypatch, capsys):
+    monkeypatch.setenv('LEDGER_MODE', 'enforce')
+    use(Ledger(fail_settle=True))
+    from atlas_voice.kyutai import stream_chat
+    seen = []
+
+    async def drive():
+        async for delta in stream_chat(_SSE([b'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n', None]),
+                                       'https://example.test/v1', 'm', '', [{'role': 'user', 'content': 'hi'}]):
+            seen.append(delta)
+
+    task = asyncio.create_task(drive())
+    for _ in range(50):
+        if seen:
+            break
+        await asyncio.sleep(0.01)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.startswith('{')]
+    assert any(row.get('recorded') == 'cancel' and row.get('error') == 'settle' for row in lines)
+    use(None)
+
+
 @pytest.mark.asyncio
 async def test_stream_chat_settles_when_cancelled(monkeypatch):
     monkeypatch.setenv('LEDGER_MODE', 'enforce')

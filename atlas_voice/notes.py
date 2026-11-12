@@ -40,8 +40,8 @@ async def make_notes(config, http, pcm):
         try:
             noted = await reserve({'kind': 'riva', 'provider': 'nvidia', 'model': config.riva_model, 'audioMs': audio_ms}, http)
             await noted.settle()
-        except BudgetRefused:
-            pass
+        except BudgetRefused as refused:
+            print(json.dumps({'atlas_metric': 'ledger', 'mode': 'observe', 'ledger_error': refused.reason}), flush=True)
     def transcribe():
         import riva.client
         metadata = []
