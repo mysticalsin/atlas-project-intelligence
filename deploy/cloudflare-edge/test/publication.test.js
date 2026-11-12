@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PUBLICATION_EVENTS, PUBLICATION_PHASES, PUBLICATION_VERSION, approvalUnknown, bothApproved, canPublish, changesRequested, initialPublication, isAdminBypass, isAdminTest, isWithdrawn, knownDecision, knownValidation, loadPublication, mergedAway, publicationEffect, publicationPairs, publicationStatus, publicationTransition, qualityMissing, qualityReady, validatedFlag } from '../src/publication.js';
-import { Library, deriveStatus } from '../src/library.js';
+import { Library, acceptPublication, deriveStatus } from '../src/library.js';
 import { memorySql } from './sqlite.js';
 
 const quiet = { log: () => {} };
@@ -226,4 +226,46 @@ test('a status write conflicts when the stored revision changed', async () => {
   assert.equal(after.revision, before.revision + 1);
   assert.equal(after.status, before.status);
   assert.equal(after.state.withdrawn, false);
+});
+
+test('a decided event with a bad lane or decision is illegal and is not accepted', () => {
+  const prior = phases.published;
+  const bad = [
+    { type: 'decided', id: 'story-1', lane: 'owner', decision: 'approved' },
+    { type: 'decided', id: 'story-1', lane: 'manager', decision: 'rejected' },
+    { type: 'decided', id: 'story-1', lane: '', decision: 'approved' },
+    { type: 'decided', id: 'story-1' },
+  ];
+  for (const event of bad) {
+    const result = publicationTransition(prior, event);
+    assert.equal(result.ok, false, JSON.stringify(event));
+    assert.equal(result.illegal, true);
+    assert.equal(result.state, prior);
+    assert.equal(result.rejection.event, 'decided');
+    assert.equal(acceptPublication(result, { id: 'story-1', event: 'decided' }), null);
+  }
+});
+
+test('an unknown-version row reads as not published and the stored JSON stays unchanged', async () => {
+  let t = 0;
+  const l = new Library(memorySql(), { now: () => new Date(Date.UTC(2026, 8, 27, 0, 0, t++)).toISOString() });
+  const owner = { email: 'ada@example.test', role: 'user' };
+  const saved = await l.upsert(owner, { localId: 'one', reference: { title: 'One' } });
+  const stored = {
+    ...l.row(saved.id).state,
+    version: 99,
+    quality: { status: 'ready', score: 90 },
+    withdrawn: false,
+    test: false,
+    validation: { status: 'validated', managerDecision: 'approved', presalesDecision: 'approved', by: 't', at: '', note: '' },
+  };
+  const json = JSON.stringify(stored);
+  l.sql.exec('UPDATE refs SET state = ?, status = ? WHERE id = ?', json, 'published', saved.id);
+  const read = l.row(saved.id);
+  assert.equal(read.status, 'in_review');
+  assert.equal(deriveStatus(read.state), 'in_review');
+  assert.notEqual(read.state.validation?.status, 'validated');
+  const raw = l.rows('SELECT state, status FROM refs WHERE id = ?', saved.id)[0];
+  assert.equal(raw.state, json);
+  assert.equal(raw.status, 'published');
 });

@@ -82,6 +82,17 @@ export function loadPublication(raw) {
   return { ...raw };
 }
 
+// One read of a stored publication. A current version round-trips and keeps the column status (status null).
+// A missing, legacy or unknown version is the safe in-review record over the other stored fields.
+// This does not mutate raw and does not write the row.
+export function readPublication(stored) {
+  const loaded = loadPublication(stored);
+  const current = !!stored && typeof stored === 'object' && !Array.isArray(stored) && stored.version === PUBLICATION_VERSION;
+  if (current) return { state: loaded, status: null };
+  const base = stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+  return { state: { ...base, ...loaded }, status: publicationStatus(loaded) };
+}
+
 // Known values follow the previous derive, except that a validated flag publishes only with both approvals.
 // merged_into is not read. An unknown validation status or decision is not allowed to publish.
 export function publicationStatus(state) {

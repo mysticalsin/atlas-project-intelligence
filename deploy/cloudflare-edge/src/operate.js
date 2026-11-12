@@ -5,6 +5,7 @@ import { queryMetrics, recordUsage, purgeTelemetry, personaKey, ensureTelemetry 
 import { toCsv } from './csvsafe.js';
 import { journeyView, saveJourney, mapDraft, ensureJourney } from './journey.js';
 import { deleteOwnedProfile } from './profile.js';
+import { readPublication } from './publication.js';
 
 function metricQuery(url, bucket = 'day') {
   const q = url?.searchParams || new URLSearchParams();
@@ -91,7 +92,12 @@ export async function privacyRoutes(ctx) {
       let recordTenant = '';
       try { recordTenant = JSON.parse(r.state || '{}').tenant || ''; } catch { return false; }
       return sameTenant(recordTenant, user.tenant, user.tenantEnforced === true);
-    }).map(r => ({ id: r.id, title: r.title, status: r.status, updatedAt: r.updated_at }));
+    }).map(r => {
+      let stored = null;
+      try { stored = JSON.parse(r.state || '{}'); } catch { stored = null; }
+      const viewed = readPublication(stored);
+      return { id: r.id, title: r.title, status: viewed.status == null ? r.status : viewed.status, updatedAt: r.updated_at };
+    });
     let ownedProfile = null;
     try {
       const row = lib.rows('SELECT edits, consents, updated_at FROM profiles WHERE subject = ? AND tenant = ?', user.email, tenant)[0];

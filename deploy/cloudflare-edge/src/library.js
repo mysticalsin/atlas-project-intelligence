@@ -14,7 +14,7 @@ import { RatingError, ratingInput, questionPlan, requestBody, compose, agentQual
 import { storedConsent } from './profile.js';
 import { sameTenant, TENANT_ID } from './authz.js';
 import { recordUsage } from './telemetry.js';
-import { publicationEffect, publicationStatus, publicationTransition } from './publication.js';
+import { publicationEffect, publicationStatus, publicationTransition, readPublication } from './publication.js';
 const DUPLICATE = 0.9; // cosine similarity above which two references are flagged as the same or a related project
 export const PRACTICES = { data_ai: 'Data & AI', web_app: 'Web & App Development', telecom: 'Telecom & Networks', sap_erp: 'SAP & ERP', cloud_infra: 'Cloud & Infrastructure', cybersecurity: 'Cybersecurity', transformation: 'Transformation & Strategy', engineering: 'Engineering & Industry' };
 
@@ -102,7 +102,12 @@ export function deriveStatus(state) {
   return publicationStatus(state);
 }
 // A rejected transition is logged and dropped. Callers must not read its state or status.
-function acceptPublication(result, event) {
+function readStoredStory(r) {
+  const viewed = readPublication(JSON.parse(r.state));
+  return { ...r, data: JSON.parse(r.data), state: viewed.state, status: viewed.status == null ? r.status : viewed.status };
+}
+
+export function acceptPublication(result, event) {
   if (!result || result.ok === false || result.rejection) {
     if (result?.rejection) publicationLog(result.rejection);
     return null;
@@ -171,7 +176,12 @@ export class Library {
   rows(q, ...p) { return this.sql.exec(q, ...p).toArray(); }
   row(id) {
     const r = this.rows('SELECT * FROM refs WHERE id = ?', String(id || ''))[0];
-    return r ? { ...r, data: JSON.parse(r.data), state: JSON.parse(r.state) } : null;
+    return r ? readStoredStory(r) : null;
+  }
+  columnState(id) {
+    const r = this.rows('SELECT state FROM refs WHERE id = ?', String(id || ''))[0];
+    if (!r) return null;
+    try { return JSON.parse(r.state); } catch { return null; }
   }
   log(id, actor, action, detail = '') { this.sql.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', id, actor, action, this.now(), String(detail).slice(0, 300)); }
   // An invitation or card action may name a story. The audit id is that story only when the story's stored tenant
@@ -335,7 +345,7 @@ export class Library {
   }
 
   visibleRows(user) {
-    const all = this.rows("SELECT * FROM refs WHERE merged_into IS NULL ORDER BY updated_at DESC").map(r => ({ ...r, data: JSON.parse(r.data), state: JSON.parse(r.state) }));
+    const all = this.rows("SELECT * FROM refs WHERE merged_into IS NULL ORDER BY updated_at DESC").map(readStoredStory);
     return all.map(r => [r, this.access(r, user)]).filter(([, level]) => level);
   }
 
@@ -422,8 +432,8 @@ export class Library {
 
   // refs.state.ratingGen: incremented and written back at once (a synchronous read-modify-write in the Durable Object).
   nextGen(id) {
-    const r = this.row(id), gen = (Number(r.state.ratingGen) || 0) + 1;
-    this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...r.state, ratingGen: gen }), id);
+    const stored = this.columnState(id) || {}, gen = (Number(stored.ratingGen) || 0) + 1;
+    this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...stored, ratingGen: gen }), id);
     return gen;
   }
 
@@ -433,7 +443,7 @@ export class Library {
     const fresh = this.row(row.id);
     if (!fresh || fresh.merged_into) return false;
     if (fresh.revision !== row.revision || (Number(fresh.state.ratingGen) || 0) > gen) {
-      if (lastJev) this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...fresh.state, lastJev }), fresh.id);
+      if (lastJev) this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...(this.columnState(fresh.id) || {}), lastJev }), fresh.id);
       return false;
     }
     const reviewed = acceptPublication(publicationTransition(fresh.state, { type: 'reviewed', id: fresh.id, quality, lastJev }), { id: fresh.id, event: 'reviewed' });
@@ -545,8 +555,8 @@ export class Library {
       }
     }
     mine.sort((a, b) => (b.sameProjectId - a.sameProjectId) || (b.similarity - a.similarity)); // strongest signal first
-    const fresh = this.row(id);
-    this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...fresh.state, duplicates: mine.slice(0, 10) }), id);
+    const fresh = this.columnState(id) || {};
+    this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...fresh, duplicates: mine.slice(0, 10) }), id);
     if (mine.length) this.log(id, 'atlas', 'possible duplicate', String(mine.length));
   }
 
@@ -605,7 +615,8 @@ export class Library {
     this.writeStatus('UPDATE refs SET merged_into = ?, status = ?, state = ? WHERE id = ? AND revision = ? AND status = ? AND merged_into IS NULL',
       keep.id, moved.status, JSON.stringify(moved.state), gone.id, gone.revision, gone.status);
     const sharedWith = [...new Set([...(keep.state.sharedWith || []), gone.owner].filter(Boolean))];
-    this.sql.exec('UPDATE refs SET state = ?, members = ? WHERE id = ?', JSON.stringify({ ...keep.state, sharedWith }), (keep.members || ',') + sharedWith.join(',') + ',', keep.id);
+    const keptState = this.columnState(keep.id) || {};
+    this.sql.exec('UPDATE refs SET state = ?, members = ? WHERE id = ?', JSON.stringify({ ...keptState, sharedWith }), (keep.members || ',') + sharedWith.join(',') + ',', keep.id);
     this.log(gone.id, user.email, 'merged into', keep.id);
     const saved = await this.upsert({ ...user }, { id: keep.id, reference: k });
     this.log(keep.id, user.email, 'consolidated', `merged ${gone.data.title} (${gone.id})`);
@@ -767,7 +778,7 @@ export class Library {
     if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
     const references = this.rows('SELECT id, owner, status, revision, updated_at, data, state FROM refs WHERE merged_into IS NULL')
       .filter(r => { let recordTenant = ''; try { recordTenant = JSON.parse(r.state || '{}').tenant || ''; } catch { return false; } return sameTenant(recordTenant, user.tenant, user.tenantEnforced === true); })
-      .map(r => ({ id: r.id, owner: r.owner, status: r.status, revision: r.revision, updatedAt: r.updated_at, quality: JSON.parse(r.state).quality?.score ?? null, reference: JSON.parse(r.data) }));
+      .map(r => { const viewed = readStoredStory(r); return { id: viewed.id, owner: viewed.owner, status: viewed.status, revision: viewed.revision, updatedAt: viewed.updated_at, quality: viewed.state.quality?.score ?? null, reference: viewed.data }; });
     this.log('library', user.email, 'admin export', `${references.length} references`);
     return { schema: 'atlas.reference.v1', exportedAt: this.now(), references };
   }
