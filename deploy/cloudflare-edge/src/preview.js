@@ -1,9 +1,10 @@
 // Gate 8. A Cloudflare Preview uses the existing ledger. It does not copy production
-// origin, Access, or secrets. Live AI stays on under the $5 default (no second cap).
+// origin, the production Access audience, or secrets. The team domain may be the
+// existing Zero Trust team: applications on that team are isolated by aud.
+// Live AI stays on under the $5 default (no second cap).
 
 export const PRODUCTION_ORIGIN = 'https://atlas.tony-walteur.workers.dev';
 export const PRODUCTION_ACCESS_AUD = 'fc05e3d966db92b03ed3bf38b31e5c5254e1508bb0e090825a56ce12a933f386';
-export const PRODUCTION_ACCESS_TEAM = 'tony-walteur.cloudflareaccess.com';
 
 export const PREVIEW_BANNER = '<div id="atlas-preview-banner" role="status" style="position:fixed;left:12px;bottom:10px;z-index:99;font:11px/1.4 Arial,sans-serif;letter-spacing:.06em;color:#A9A9BC;background:#15151cdd;border:1px solid #2a2a36;border-radius:14px;padding:4px 10px">Preview. Fake data only.</div>';
 export const PREVIEW_ACCESS_MISSING = 'Preview Access is not configured.';
@@ -47,7 +48,6 @@ export function previewMisconfigured(env) {
   if (env.DATA_MODE === 'production') return 'Preview cannot use production data.';
   if (env.ORIGIN === PRODUCTION_ORIGIN) return 'Preview cannot use the production origin.';
   if (env.ACCESS_AUD === PRODUCTION_ACCESS_AUD) return 'Preview cannot use the production Access audience.';
-  if (env.ACCESS_TEAM_DOMAIN === PRODUCTION_ACCESS_TEAM) return 'Preview cannot use the production Access team.';
   return null;
 }
 

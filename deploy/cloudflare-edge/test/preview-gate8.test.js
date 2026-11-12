@@ -10,6 +10,7 @@ import { dnaConfig, pushConfig } from '../src/profile.js';
 const PRODUCTION_ORIGIN = 'https://atlas.tony-walteur.workers.dev';
 const PRODUCTION_AUD = 'fc05e3d966db92b03ed3bf38b31e5c5254e1508bb0e090825a56ce12a933f386';
 const PRODUCTION_TEAM = 'tony-walteur.cloudflareaccess.com';
+const PREVIEW_AUD = 'preview-aud-distinct';
 const SUFFIX = '-atlas.tony-walteur.workers.dev';
 const PREVIEW_HOST = 'https://gate8-atlas.tony-walteur.workers.dev';
 
@@ -82,8 +83,8 @@ test('a preview page shows the fake-data banner and refuses production settings'
   assert.match(await audience.text(), /production Access audience/);
 
   const team = await handle(new Request(PREVIEW_HOST + '/'), previewEnv({ ACCESS_TEAM_DOMAIN: PRODUCTION_TEAM }), page);
-  assert.equal(team.status, 503);
-  assert.match(await team.text(), /production Access team/);
+  assert.equal(team.status, 401);
+  assert.match(await team.text(), /Sign in to use ATLAS/);
 
   const real = await handle(new Request(PREVIEW_HOST + '/'), previewEnv({ DATA_MODE: 'production' }), page);
   assert.equal(real.status, 503);
@@ -115,6 +116,79 @@ test('one hands-on session reserves $0.1223158 through callCeilingNano', () => {
   assert.equal(spoken, 18_000_300);
   assert.equal(analyst, 11_050_300);
   assert.equal(speech * 10 + talker + spoken + analyst, 122_315_800);
+});
+
+test('a preview on the production team verifies its own audience and still refuses the production audience', async () => {
+  const page = '<script>/* SERVER_RUNTIME */</script></body>';
+  const b64u = bytes => Buffer.from(bytes).toString('base64url');
+  const { publicKey, privateKey } = await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);
+  const jwk = { ...(await crypto.subtle.exportKey('jwk', publicKey)), kid: 'gate8-access' };
+  const previousFetch = globalThis.fetch;
+  const certUrls = [];
+  globalThis.fetch = async url => {
+    certUrls.push(String(url));
+    assert.equal(String(url), `https://${PRODUCTION_TEAM}/cdn-cgi/access/certs`);
+    return new Response(JSON.stringify({ keys: [jwk] }));
+  };
+  async function token(aud, iss = `https://${PRODUCTION_TEAM}`) {
+    const now = Math.floor(Date.now() / 1000);
+    const header = { alg: 'RS256', kid: 'gate8-access' };
+    const body = { aud: [aud], iss, sub: 'preview-user', email: 'preview@example.com', exp: now + 600, iat: now };
+    const input = b64u(JSON.stringify(header)) + '.' + b64u(JSON.stringify(body));
+    return input + '.' + b64u(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, new TextEncoder().encode(input)));
+  }
+  const ask = async (audEnv, teamEnv, jwtAud, iss) => {
+    const headers = {};
+    if (jwtAud) headers['cf-access-jwt-assertion'] = await token(jwtAud, iss);
+    return handle(new Request(PREVIEW_HOST + '/', { headers }), previewEnv({ ACCESS_AUD: audEnv, ACCESS_TEAM_DOMAIN: teamEnv }), page);
+  };
+  const failed = [];
+  const check = async (label, fn) => {
+    try { await fn(); }
+    catch (error) { failed.push(label + ': ' + error.message); }
+  };
+  try {
+    await check('1 same team and a distinct preview aud verifies that aud', async () => {
+      const res = await ask(PREVIEW_AUD, PRODUCTION_TEAM, PREVIEW_AUD);
+      assert.equal(res.status, 200);
+      const html = await res.text();
+      assert.match(html, /window\.ATLAS_RUNTIME=/);
+      assert.match(html, /preview@example\.com/);
+      assert.equal(certUrls.at(-1), `https://${PRODUCTION_TEAM}/cdn-cgi/access/certs`);
+    });
+    await check('2 the production aud still returns 503', async () => {
+      const res = await ask(PRODUCTION_AUD, PRODUCTION_TEAM);
+      assert.equal(res.status, 503);
+      assert.match(await res.text(), /production Access audience/);
+    });
+    await check('3 a production-aud jwt presented to the preview aud is rejected', async () => {
+      const res = await ask(PREVIEW_AUD, PRODUCTION_TEAM, PRODUCTION_AUD);
+      assert.equal(res.status, 401);
+      const html = await res.text();
+      assert.match(html, /Sign in to use ATLAS/);
+      assert.equal(html.includes('window.ATLAS_RUNTIME='), false);
+    });
+    await check('issuer stays the configured team domain', async () => {
+      const res = await ask(PREVIEW_AUD, PRODUCTION_TEAM, PREVIEW_AUD, 'https://other.cloudflareaccess.com');
+      assert.equal(res.status, 401);
+      assert.equal((await res.text()).includes('window.ATLAS_RUNTIME='), false);
+    });
+    await check('4 a missing aud or team still returns 403', async () => {
+      for (const extra of [
+        { ACCESS_AUD: '', ACCESS_TEAM_DOMAIN: PRODUCTION_TEAM },
+        { ACCESS_AUD: undefined, ACCESS_TEAM_DOMAIN: PRODUCTION_TEAM },
+        { ACCESS_AUD: PREVIEW_AUD, ACCESS_TEAM_DOMAIN: '' },
+        { ACCESS_AUD: PREVIEW_AUD, ACCESS_TEAM_DOMAIN: undefined },
+      ]) {
+        const res = await handle(new Request(PREVIEW_HOST + '/'), previewEnv(extra), page);
+        assert.equal(res.status, 403, JSON.stringify(extra));
+        assert.equal(await res.text(), 'Preview Access is not configured.');
+      }
+    });
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+  assert.deepEqual(failed, []);
 });
 
 test('a preview with no Access audience or team returns 403 and does not spend', async () => {
