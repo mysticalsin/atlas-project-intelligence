@@ -18,6 +18,7 @@ import { acceptedSubjectDelete } from './library-routes.js';
 import { paid, elevenLabsUrl, utf8Length, analystCall, LIMITS, generationTokens, inputTokenCeiling, capPcm, capText, markdownPlan, ledgerMode } from './meter.js';
 import { usageFrom } from './usage.js';
 import { httpBudget } from './budget-stop.js';
+import { accessAudience, accessTeamHost, allowedOrigin, PREVIEW_ACCESS_MISSING, previewAccessMissing, previewMisconfigured, stampPreview, withPreviewBanner } from './preview.js';
 import { audioMs } from './units.js';
 import { ledgerAccessOk, spendRoute } from './spend-route.js';
 
@@ -27,28 +28,45 @@ const enc = new TextEncoder();
 const b64url = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
 const toB64url = s => { let bin = ''; for (const b of enc.encode(s)) bin += String.fromCharCode(b); return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
 const hex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
-let certs = { at: 0, keys: [] };
+// Certs are kept per team host. Ten minutes is the bound. After that, a failed refetch authenticates nobody.
+export const ACCESS_CERT_TTL_MS = 600_000;
+const certsByTeam = new Map();
+
+async function accessCerts(team, kid, fetcher) {
+  const now = Date.now();
+  const cached = certsByTeam.get(team);
+  if (cached && now - cached.at <= ACCESS_CERT_TTL_MS && cached.keys.some(k => k.kid === kid)) return cached.keys;
+  let keys = null;
+  try {
+    const r = await fetcher(`https://${team}/cdn-cgi/access/certs`);
+    const body = r.ok ? await r.json() : null;
+    keys = body && Array.isArray(body.keys) ? body.keys : null;
+  } catch { keys = null; }
+  if (Array.isArray(keys) && keys.length) {
+    certsByTeam.set(team, { at: now, keys });
+    return keys;
+  }
+  if (cached && now - cached.at <= ACCESS_CERT_TTL_MS) return cached.keys;
+  certsByTeam.delete(team);
+  return null;
+}
 
 export async function verifyAccess(request, env, fetcher = fetch) {
   const token = request.headers.get('cf-access-jwt-assertion');
-  if (!token || !env.ACCESS_AUD || !env.ACCESS_TEAM_DOMAIN) return null;
+  const team = accessTeamHost(env.ACCESS_TEAM_DOMAIN);
+  const audience = accessAudience(env.ACCESS_AUD);
+  if (!token || !audience || !team) return null;
   const [h, p, s] = token.split('.');
   if (!h || !p || !s) return null;
   const header = JSON.parse(new TextDecoder().decode(b64url(h))), payload = JSON.parse(new TextDecoder().decode(b64url(p)));
   if (header.alg !== 'RS256') return null;
-  if (Date.now() - certs.at > 600000 || !certs.keys.some(k => k.kid === header.kid)) {
-    try {
-      const r = await fetcher(`https://${env.ACCESS_TEAM_DOMAIN}/cdn-cgi/access/certs`);
-      const keys = r.ok ? (await r.json()).keys : null;
-      if (Array.isArray(keys) && keys.length) certs = { at: Date.now(), keys };
-    } catch { /* keep the previous keys; a bad directory must not replace a good cache or authenticate anyone */ }
-  }
-  const jwk = certs.keys.find(k => k.kid === header.kid);
+  const keys = await accessCerts(team, header.kid, fetcher);
+  const jwk = keys?.find(k => k.kid === header.kid);
   if (!jwk) return null;
   const key = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
   if (!await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, b64url(s), enc.encode(h + '.' + p))) return null;
   const aud = Array.isArray(payload.aud) ? payload.aud : [payload.aud], now = Date.now() / 1000;
-  if (!aud.includes(env.ACCESS_AUD) || payload.iss !== `https://${env.ACCESS_TEAM_DOMAIN}` || !(payload.exp > now) || (payload.nbf && payload.nbf > now + 60) || !payload.sub) return null;
+  if (!aud.includes(audience) || payload.iss !== `https://${team}` || !(payload.exp > now) || (payload.nbf && payload.nbf > now + 60) || !payload.sub) return null;
   const roles = tokenRoles({ roles: Array.isArray(payload.custom?.roles) ? payload.custom.roles : [] });
   return entraIdentity(payload, env) ?? (env.IDENTITY_SOURCE === 'entra' ? null : { sub: payload.sub, email: payload.email || 'Access service identity', roles });
 }
@@ -153,10 +171,21 @@ function systemForwardHeaders(user, scope) {
 }
 
 // flagsOf: the bootstrap feature flags (tests pass flags with D1 approved to exercise /api/transcribe before it flips).
+function signIn(env) {
+  if (env.ATLAS_PREVIEW !== '1') return new Response('Sign in to use ATLAS.', { status: 401, headers: headers(env) });
+  const html = '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>ATLAS</title></head><body><p>Sign in to use ATLAS.</p></body></html>';
+  return new Response(withPreviewBanner(env, html), { status: 401, headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
+}
+
 export async function handle(request, env, page, { waitUntil = p => p, flagsOf = flags } = {}) {
   {
     const url = new URL(request.url);
-    if (!env.ORIGIN || url.origin !== env.ORIGIN) return new Response('Host is not the configured ATLAS origin.', { status: 403 });
+    const previewProblem = previewMisconfigured(env);
+    if (previewProblem) return new Response(previewProblem, { status: 503, headers: { 'Cache-Control': 'no-store', 'Content-Type': 'text/plain; charset=utf-8' } });
+    const origin = allowedOrigin(env, url);
+    if (!origin) return new Response('Host is not the configured ATLAS origin.', { status: 403 });
+    if (previewAccessMissing(env)) return new Response(PREVIEW_ACCESS_MISSING, { status: 403, headers: { 'Cache-Control': 'no-store', 'Content-Type': 'text/plain; charset=utf-8' } });
+    env = { ...env, ORIGIN: origin };
     if (!env.CSRF_SECRET) return new Response('Deployment is not configured (CSRF_SECRET).', { status: 500 });
     // Before triggers, directory push, voice, memory, or the library. A production flag must not
     // disable tenant checks or turn on the local persona switch.
@@ -193,13 +222,13 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
     }
     // Teams bot endpoint and launcher tab (pre-Access, like /api/triggers): exactly these two; every other
     // /api/teams/* path falls through to the signed-in handling. BLOCKED_EXTERNAL until Teams is connected.
-    if ((url.pathname === '/api/teams/messages' && request.method === 'POST') || (url.pathname === '/teams/tab' && request.method === 'GET')) return teamsRoutes(request, env, { waitUntil });
+    if ((url.pathname === '/api/teams/messages' && request.method === 'POST') || (url.pathname === '/teams/tab' && request.method === 'GET')) return stampPreview(env, await teamsRoutes(request, env, { waitUntil }));
     if (url.pathname === '/api/ledger/reserve' || url.pathname === '/api/ledger/settle' || url.pathname === '/api/ledger/record') {
       // Cloudflare Access is in front of this host when ACCESS_AUD is set. The bearer is the existing
       // ATLAS_LEDGER_TOKEN. A service token, when the operator has already issued one, is the existing
       // Access client id and secret. This route does not mint a second token. A live Access check is not run here.
       if (env.ACCESS_AUD && !(await ledgerAccessOk(request, env, verifyAccess))) {
-        return new Response('Sign in to use ATLAS.', { status: 401, headers: headers(env) });
+        return signIn(env);
       }
       const spent = await spendRoute(request, env);
       if (spent) return spent;
@@ -207,7 +236,7 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
     // Identity comes from the verified Access token only. ?as= and &idp= are not read here.
     let who = null;
     try { who = await verifyAccess(request, env); } catch { who = null; }
-    if (!who) return new Response('Sign in to use ATLAS.', { status: 401, headers: headers(env) });
+    if (!who) return signIn(env);
     // Access email only: an Entra deployment must grant admin through an app role, never a username fallback.
     const elevated = elevatedRole(env, who);
     const admin = elevated === 'admin';
@@ -234,20 +263,22 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
     // Links that survive an interactive sign-in (§3.9): /go/start, /go/{gap,invitation,bid,library,confirm}/<32 hex>.
     // Anything else under /go/ goes home. The ids are random, non-secret and grant nothing without sign-in (a recorded
     // deviation from WOW rule 7); no token ever goes in a path, and nothing here logs the path.
-    if (request.method === 'GET' && url.pathname === '/go/signed-in') return new Response(SIGNED_IN_HTML, { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
+    if (request.method === 'GET' && url.pathname === '/go/signed-in') return new Response(withPreviewBanner(env, SIGNED_IN_HTML), { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
     if (request.method === 'GET' && url.pathname.startsWith('/go/')) {
       const m = /^\/go\/(?:(start)|(gap|invitation|bid|library|confirm)\/([a-f0-9]{32}))$/.exec(url.pathname);
       const to = !m ? '/' : m[1] ? '/#start' : m[2] === 'confirm' ? '/confirm#' + m[3] : '/#' + m[2] + '/' + m[3];
       return new Response(null, { status: 302, headers: headers(env, { Location: to }) });
     }
-    if (url.pathname === '/confirm' && request.method === 'GET') return new Response(CONFIRM_HTML, { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
+    if (url.pathname === '/confirm' && request.method === 'GET') return new Response(withPreviewBanner(env, CONFIRM_HTML), { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
     if (url.pathname === '/' && request.method === 'GET') {
       const runtime = JSON.stringify({ subjectKey, authMode: 'access', name: who.email }).replace(/</g, '\\u003c');
       let body = page.replace('/* SERVER_RUNTIME */', 'window.ATLAS_RUNTIME=' + runtime + ';')
         .replace("connect-src 'self';", "connect-src 'self' " + env.ORIGIN.replace('https://', 'wss://') + ';');
       const end = body.lastIndexOf('</body>'); // the page embeds an earlier '</body>' inside a script string
       // The test banner stays until Tony sets DATA_MODE=production on an approved deployment (WOW_ZERO_CONFIG §0.7, §11).
-      if (env.DATA_MODE !== 'production') body = body.slice(0, end) + '<div style="position:fixed;left:12px;bottom:10px;z-index:99;font:11px/1.4 Arial;letter-spacing:.06em;color:#A9A9BC;background:#15151cdd;border:1px solid #2a2a36;border-radius:14px;padding:4px 10px">TEST DEPLOYMENT · SYNTHETIC DATA ONLY</div>' + body.slice(end);
+      // A Preview says so in its own banner. It does not also say test deployment.
+      if (env.ATLAS_PREVIEW === '1') body = withPreviewBanner(env, body);
+      else if (env.DATA_MODE !== 'production') body = body.slice(0, end) + '<div style="position:fixed;left:12px;bottom:10px;z-index:99;font:11px/1.4 Arial;letter-spacing:.06em;color:#A9A9BC;background:#15151cdd;border:1px solid #2a2a36;border-radius:14px;padding:4px 10px">TEST DEPLOYMENT · SYNTHETIC DATA ONLY</div>' + body.slice(end);
       return new Response(body, { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
     }
     if (url.pathname === '/api/bootstrap' && request.method === 'GET') {
@@ -442,7 +473,29 @@ export function workersAI(env) {
     async turnComplete(pcm) {
       const tail = capPcm(pcm, LIMITS.turn.maxAudioMs), bytes = wav(to16k(tail), 16000);
       let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-      const model = env.TURN_MODEL || '@cf/pipecat-ai/smart-turn-v2', r = await meter.run(() => ({ kind: 'turn', model, audioMs: audioMs(tail) }), model, { audio: btoa(bin) });
+      const model = env.TURN_MODEL || '@cf/pipecat-ai/smart-turn-v2';
+      const held = await meter.hold(() => ({ kind: 'turn', model, audioMs: audioMs(tail) }));
+      let timer;
+      const call = Promise.resolve().then(() => held.run(model, { audio: btoa(bin) }));
+      const boxed = call.then(result => ({ kind: 'result', result }), error => ({ kind: 'error', error }));
+      const winner = await Promise.race([
+        boxed,
+        new Promise(resolve => { timer = setTimeout(() => resolve({ kind: 'timeout' }), 350); }),
+      ]);
+      clearTimeout(timer);
+      if (winner.kind === 'timeout') {
+        // The reservation is the charge. A later verdict is not a result and is not settled again.
+        await held.finish({});
+        boxed.then(() => {}, () => {});
+        return null;
+      }
+      if (winner.kind === 'error') {
+        await held.finish({ error: winner.error?.name || 'Error' });
+        throw winner.error;
+      }
+      const r = winner.result;
+      const usage = usageFrom(r);
+      await held.finish(usage ? { usage } : {});
       // No boolean verdict is no verdict (the session logs it as NoVerdict and uses the silence rule), never "unfinished".
       return typeof r?.is_complete === 'boolean' ? { complete: r.is_complete, probability: Number(r.probability) || 0 } : null;
     },
@@ -461,10 +514,12 @@ export function workersAI(env) {
       const held = await meter.hold(() => ({ kind: 'talker', model: env.TALKER_MODEL, inputTokens: inputTokenCeiling(utf8Length(JSON.stringify(body))), outputTokens: cap }));
       let usage = null;
       let failed = null;
+      let accepted = 0;
       try {
         const stream = await held.run(env.TALKER_MODEL, body, affinity ? { extraHeaders: { 'x-session-affinity': affinity } } : undefined);
         const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
         let buffer = '';
+        const stop = async () => { try { await reader.cancel(); } catch { /* the provider is already closed */ } };
         try {
           for (;;) {
             const { value, done } = await reader.read();
@@ -481,7 +536,13 @@ export function workersAI(env) {
                 const found = usageFrom(j);
                 if (found) usage = found;
                 const d = j.response ?? j.choices?.[0]?.delta?.content;
-                if (d) yield d;
+                if (!d) continue;
+                const room = cap - accepted;
+                if (room <= 0) { await stop(); return; }
+                const piece = d.length > room ? d.slice(0, room) : d;
+                accepted += piece.length;
+                yield piece;
+                if (accepted >= cap) { await stop(); return; }
               } catch { /* keep-alive or partial */ }
             }
           }

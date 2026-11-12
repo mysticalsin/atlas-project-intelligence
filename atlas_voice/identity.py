@@ -8,7 +8,6 @@ import hashlib
 import secrets
 import time
 import uuid
-from aiohttp import web
 
 COOKIE = 'atlas_voice_session'
 
@@ -47,6 +46,7 @@ class Identity:
         return self.sessions.get(request.cookies.get(COOKIE, ''))
 
     def issue(self, tid, oid, name):
+        from aiohttp import web
         self.sweep()
         if len(self.sessions) >= self.config.max_sessions:
             raise web.HTTPServiceUnavailable(text='Too many sessions. Try again later.')
@@ -56,6 +56,7 @@ class Identity:
         return key, session
 
     def require(self, request):
+        from aiohttp import web
         session = self.get(request)
         if session is None:
             raise web.HTTPUnauthorized(text='Sign in before starting a voice session.')
@@ -77,6 +78,7 @@ class Identity:
         return tid, oid, claims.get('name', 'Mantu colleague')
 
     async def login(self, request):
+        from aiohttp import web
         if self.client is None:
             raise web.HTTPFound('/')
         import asyncio
@@ -93,6 +95,7 @@ class Identity:
         return response
 
     async def callback(self, request):
+        from aiohttp import web
         import asyncio
         self.sweep()
         record = self.flows.pop(request.cookies.get('atlas_login_flow', ''), None)

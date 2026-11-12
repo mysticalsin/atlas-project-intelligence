@@ -140,12 +140,12 @@ const HINDSIGHT_FLAT_OPS = new Set(['list', 'forget', 'delete', 'stats', 'bank']
 export function priceOf(req, prices = PRICES) {
   if (req?.kind === 'realtime' && req?.provider === 'openai') {
     const i = Math.ceil(Number(req.inputTokens) || 0), o = Math.ceil(Number(req.outputTokens) || 0);
-    if (req.settleUsage) return Math.ceil((i * REALTIME_USD_PER_M_INPUT + o * REALTIME_USD_PER_M_OUTPUT) / 1e6 * NANO);
-    return i > 0 || o > 0 ? Math.ceil((i * REALTIME_USD_PER_M_INPUT + o * REALTIME_USD_PER_M_OUTPUT) / 1e6 * NANO) : null;
+    if (!(i > 0 || o > 0)) return null;
+    return Math.ceil((i * REALTIME_USD_PER_M_INPUT + o * REALTIME_USD_PER_M_OUTPUT) / 1e6 * NANO);
   }
   if (req?.kind === 'transcribe' && req?.provider === 'openai') {
     const ms = Math.ceil(Number(req.audioMs) || 0);
-    if (req.settleUsage && ms === 0) return 0;
+    if (req.settleUsage && ms === 0) return null;
     if (!(ms > 0)) return null;
     return Math.ceil(ms / 1000 * LIMITS.realtime.transcribeUsdPerSecond * NANO);
   }
@@ -158,7 +158,7 @@ export function priceOf(req, prices = PRICES) {
     const rate = req.operation === 'recall' ? HINDSIGHT_RECALL_USD_PER_M : HINDSIGHT_RETAIN_USD_PER_M;
     const measured = Math.ceil(Math.max(req.settleUsage ? 0 : 1, tokens) * rate / 1e6 * NANO);
     if (HINDSIGHT_FLAT_OPS.has(req.operation) && !req.settleUsage) return Math.ceil(LIMITS.hindsightOps.flatUsd * NANO);
-    if (req.settleUsage) return Math.ceil(tokens * rate / 1e6 * NANO);
+    if (req.settleUsage) return tokens > 0 ? Math.ceil(tokens * rate / 1e6 * NANO) : null;
     return measured;
   }
   if (req?.kind === 'jev' || req?.provider === 'typesafe') {
@@ -418,7 +418,17 @@ function settlementOf(out) {
 }
 
 let offLogged = false;
+function previewLedgerMissing(env, ledger) {
+  if (env?.ATLAS_PREVIEW !== '1' || ledger) return false;
+  const ns = env?.SPEND_LEDGER;
+  return !(ns && typeof ns.get === 'function' && typeof ns.idFromName === 'function');
+}
 export function paid(env, { ledger, log = defaultLog, timeoutMs = LEDGER_TIMEOUT_MS } = {}) {
+  // A preview with no SPEND_LEDGER does not log and continue, and does not call the provider.
+  if (previewLedgerMissing(env, ledger)) {
+    const deny = () => { throw refused('no_ledger'); };
+    return { mode: 'enforce', run: async () => deny(), toMarkdown: async () => deny(), fetch: async () => deny(), call: async () => deny(), hold: async () => deny() };
+  }
   const mode = ledgerMode(env);
   if (mode === 'off') {
     if (!offLogged) { offLogged = true; try { log({ atlas_metric: 'ledger', mode: 'off' }); } catch { /* logging never affects the call */ } }

@@ -72,7 +72,7 @@ Pushing to the `live` branch deploys; `main` stays the working branch. One-time 
 
 The Worker name in `wrangler.jsonc` (`atlas`) must match the connected Worker. Secrets (`CSRF_SECRET`, `ELEVENLABS_API_KEY`, …) stay on the Worker; a build never reads or changes them. A failing edge test stops the deploy. Every deploy restarts the Durable Objects, so interviews in progress are cut: release with `git push origin main:live` only when nobody is interviewing.
 ## Tests
-One ceiling test spawns Python and imports `aiohttp`. Install the test requirements, then run the suite. From the repo root:
+The ceiling spawn imports the realtime meter without `aiohttp`. The rest of the Python suite still needs the test requirements. From the repo root:
 
 ```sh
 python3 -m pip install -r requirements-test.txt

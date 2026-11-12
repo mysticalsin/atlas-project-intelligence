@@ -6,8 +6,6 @@ before the upstream request.
 import json
 import os
 
-import aiohttp
-
 BUDGET_MESSAGE = "This month's AI budget is used up."
 LEDGER_CLOSE_MESSAGE = 'The spend ledger could not close this session.'
 
@@ -143,6 +141,7 @@ class HttpLedger:
         return headers
 
     async def _post(self, path, body):
+        import aiohttp
         try:
             async with self.session.post(self.url + path, json=body, headers=self._headers(),
                                          timeout=aiohttp.ClientTimeout(total=2), allow_redirects=False) as response:

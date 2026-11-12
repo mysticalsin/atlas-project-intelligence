@@ -12,8 +12,6 @@ import json
 import secrets
 import time
 from urllib.parse import urlencode
-import aiohttp
-from aiohttp import web
 from .capacity import BUSY
 from .identity import COOKIE
 from .interview import project_context
@@ -37,6 +35,8 @@ class RealtimeMeter:
         self.unsettled_out = 0
         self.unsettled_audio_ms = 0.0
         self.audio_bytes = 0
+        self.output_audio_tokens = 0
+        self.unmetered_responses = 0
         self.seen = False
         self.errors = []
 
@@ -91,6 +91,33 @@ class RealtimeMeter:
                     pass
                 raise refused
         raise BudgetRefused('exhausted:usd')
+
+    def _open_output(self):
+        return sum(hold['output'] for hold in self.holds if not hold['settled'])
+
+    def _output_demand(self):
+        cap = int(LIMITS['realtime']['maxResponseTokens'])
+        return self.output_audio_tokens + self.unmetered_responses * cap
+
+    async def _cover_output(self):
+        for _ in range(40):
+            if self._output_demand() <= self._open_output():
+                return
+            await self.open_increment()
+        raise BudgetRefused('exhausted:usd')
+
+    async def note_output_audio(self, nbytes):
+        # Usage, once it arrives, is the measurement. Until then the audio itself is the ceiling.
+        if self.seen or not nbytes:
+            return
+        rate = int(LIMITS['pcmBytesPerMs'])
+        per_second = int(LIMITS['realtime']['outputTokensPerSecond'])
+        self.output_audio_tokens += (int(nbytes) * per_second + rate * 1000 - 1) // (rate * 1000)
+        await self._cover_output()
+
+    async def note_unmetered_response(self):
+        self.unmetered_responses += 1
+        await self._cover_output()
 
     async def note_response(self, usage):
         if not usage:
@@ -156,6 +183,8 @@ class RealtimeMeter:
 
 
 async def run(request,config,identity,memory,http,gate,active):
+    import aiohttp
+    from aiohttp import web
     subject=identity.require(request)
     if request.headers.get('Origin')!=config.origin:raise web.HTTPForbidden(text='Invalid voice origin')
     ws=web.WebSocketResponse(max_msg_size=32768,heartbeat=20)
@@ -271,6 +300,7 @@ async def run(request,config,identity,memory,http,gate,active):
                     if not isinstance(ident,str):raise ValueError('Provider audio has no item ID')
                     pcm=base64.b64decode(e.get('delta',''),validate=True)
                     if len(pcm)%2 or len(pcm)>512000:raise ValueError('Invalid provider audio')
+                    await meter.note_output_audio(len(pcm))
                     for start in range(0,len(pcm),960):
                         try:queue.put_nowait((response,ident,pcm[start:start+960]))
                         except asyncio.QueueFull:raise ValueError('Audio backlog exceeded the bounded playback queue') from None
@@ -279,9 +309,12 @@ async def run(request,config,identity,memory,http,gate,active):
                 elif kind=='response.done':
                     response=e.get('response',{})
                     found=usage_from(response)
+                    cancelled_response = response.get('id') in cancelled
                     if found:
                         await meter.note_response(found)
-                    if response.get('id') in cancelled:continue
+                    elif not cancelled_response:
+                        await meter.note_unmetered_response()
+                    if cancelled_response:continue
                     calls=[v for v in response.get('output',[]) if v.get('type')=='function_call']
                     for call in calls:
                         tool_count+=1

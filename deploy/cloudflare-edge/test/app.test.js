@@ -765,3 +765,19 @@ test('a verified subject tenant is forwarded for delete variants and a client te
   assert.deepEqual(seen.map(r => r.headers.get('x-atlas-user')), [`${tid}:${oid}`, `${tid}:${oid}`, `${tid}:${oid}`]);
   assert.equal(seen.some(r => r.headers.get('x-atlas-tenant') === spoof), false);
 });
+
+test('Gate 8 preview banner is on every signed-in page', async () => {
+  const page = "<meta http-equiv=x content=\"connect-src 'self';\"><script>/* SERVER_RUNTIME */</script></body>";
+  const host = 'https://gate8-atlas.tony-walteur.workers.dev';
+  const env = { ...ENV, ATLAS_PREVIEW: '1', ATLAS_PREVIEW_HOST_SUFFIX: '-atlas.tony-walteur.workers.dev', LEDGER_MODE: 'enforce' };
+  for (const path of ['/', '/confirm', '/go/signed-in']) {
+    const res = await handle(await req(path, { host }), env, page);
+    const html = await res.text();
+    assert.equal(res.status, 200, path);
+    assert.match(html, /id="atlas-preview-banner"/, path);
+    assert.match(html, /Preview\. Fake data only\./, path);
+    assert.equal(/id="atlas-preview-banner"[^>]*hidden/.test(html), false, path);
+  }
+  const home = await (await handle(await req('/', { host }), env, page)).text();
+  assert.equal(home.includes('TEST DEPLOYMENT'), false);
+});
