@@ -60,8 +60,8 @@ export async function journeyRoutes(ctx) {
   throw fail(404, 'Not found.');
 }
 
-// Empty state is an empty object, as before. Anything that is not an object is unreadable.
-function storyState(raw) {
+// Empty text is an empty object. Anything that is not an object is unreadable.
+function jsonObject(raw) {
   try {
     const value = JSON.parse(raw || '{}');
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -75,7 +75,7 @@ function exportStories(rows, user) {
   const omitted = [];
   const enforced = user.tenantEnforced === true;
   for (const row of rows) {
-    const stored = storyState(row.state);
+    const stored = jsonObject(row.state);
     if (!stored) {
       if (sameTenant(row.tenant, user.tenant, enforced)) omitted.push(omittedRow(row.id, 'story'));
       continue;
@@ -86,6 +86,28 @@ function exportStories(rows, user) {
   }
   omitted.sort((a, b) => String(a.id).localeCompare(String(b.id)));
   return { stories, omitted };
+}
+
+// A missing table or a missing row is absence. An unreadable edits or consents value is an omission; the other part is returned.
+function exportProfile(lib, email, tenant) {
+  let row;
+  try {
+    row = lib.rows('SELECT edits, consents, updated_at FROM profiles WHERE subject = ? AND tenant = ?', email, tenant)[0] || null;
+  } catch (error) {
+    if (String(error && error.message).includes('no such table')) return { profile: null, omitted: [] };
+    throw error;
+  }
+  if (!row) return { profile: null, omitted: [] };
+  const omitted = [];
+  const profile = {};
+  const edits = jsonObject(row.edits);
+  const consents = jsonObject(row.consents);
+  if (edits) profile.edits = edits;
+  else omitted.push(omittedRow('edits', 'profile'));
+  if (consents) profile.consents = consents;
+  else omitted.push(omittedRow('consents', 'profile'));
+  profile.updatedAt = row.updated_at;
+  return { profile, omitted };
 }
 
 export async function privacyRoutes(ctx) {
@@ -116,15 +138,11 @@ export async function privacyRoutes(ctx) {
     const tenant = String(user.tenant || '').toLowerCase();
     const { journey, omitted: journeyOmitted } = journeyExport(journeyMatches(lib, user.email, journeyTenant(user)));
     const { stories, omitted: storyOmitted } = exportStories(lib.rows('SELECT id, title, status, updated_at, state, tenant FROM refs WHERE owner = ? ORDER BY id', user.email), user);
-    const omittedRows = [...journeyOmitted.rows, ...storyOmitted];
+    const { profile, omitted: profileOmitted } = exportProfile(lib, user.email, tenant);
+    const omittedRows = [...journeyOmitted.rows, ...storyOmitted, ...profileOmitted];
     const omitted = { count: omittedRows.length, rows: omittedRows };
-    let ownedProfile = null;
-    try {
-      const row = lib.rows('SELECT edits, consents, updated_at FROM profiles WHERE subject = ? AND tenant = ?', user.email, tenant)[0];
-      if (row) ownedProfile = { edits: JSON.parse(row.edits || '{}'), consents: JSON.parse(row.consents || '{}'), updatedAt: row.updated_at };
-    } catch { /* profile table may be absent */ }
     lib.log('library', user.email, 'dsar export', `${stories.length} stories`);
-    return { body: { subject: user.email, tenant: user.tenant || '', journey, omitted, profile: ownedProfile, stories,
+    return { body: { subject: user.email, tenant: user.tenant || '', journey, omitted, profile, stories,
       stores: dsarStores(), note: 'This export lists the local rows for this subject and tenant. It is not a vendor-log extract and it does not mean every store was erased.' } };
   }
   if (method === 'POST' && parts[1] === 'delete') {
