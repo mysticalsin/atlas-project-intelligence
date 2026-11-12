@@ -7,22 +7,23 @@ import pytest
 from atlas_voice.limits import LIMITS, realtime_increment
 from atlas_voice.memory import memory_estimate
 from atlas_voice.realtime import RealtimeMeter
-from atlas_voice.spend import BudgetRefused, HttpLedger, reserve, use
+from atlas_voice.spend import BUDGET_MESSAGE, BudgetRefused, HttpLedger, refusal_event, reserve, use
 
 
 class Ledger:
-    def __init__(self, fail_reserve_at=None, fail_settle=False):
+    def __init__(self, fail_reserve_at=None, fail_settle=False, fail_reason='exhausted:usd'):
         self.n = 0
         self.reserves = []
         self.settles = []
         self.records = []
         self.fail_reserve_at = fail_reserve_at
         self.fail_settle = fail_settle
+        self.fail_reason = fail_reason
 
     async def reserve(self, estimate):
         self.n += 1
         if self.fail_reserve_at and self.n >= self.fail_reserve_at:
-            raise BudgetRefused('exhausted:usd')
+            raise BudgetRefused(self.fail_reason)
         self.reserves.append(estimate)
         return 'P' + str(self.n)
 
@@ -63,6 +64,44 @@ async def test_a_long_realtime_session_settles_each_increment(monkeypatch):
     assert len(ledger.settles) == len(ledger.reserves)
     assert all(row['audioMs'] == step['audioMs'] for row in heard)
     use(None)
+
+
+def test_only_exhaustion_uses_the_month_sentence():
+    assert refusal_event(BudgetRefused('exhausted:usd')) == (BUDGET_MESSAGE, 'budget_exhausted')
+    message, code = refusal_event(BudgetRefused('no_ledger'))
+    assert code == 'no_ledger' and message != BUDGET_MESSAGE
+    message, code = refusal_event(BudgetRefused('ledger_error'))
+    assert code == 'ledger_error' and message != BUDGET_MESSAGE
+
+
+@pytest.mark.asyncio
+async def test_a_refusal_keeps_its_reason_and_settles_leftover_usage(monkeypatch):
+    monkeypatch.setenv('LEDGER_MODE', 'enforce')
+    step = realtime_increment()
+    cap_out = step['outputTokens'] + int(LIMITS['realtime']['maxResponseTokens'])
+    for reason in ('no_ledger', 'ledger_error', 'exhausted:usd'):
+        ledger = Ledger(fail_reserve_at=1, fail_reason=reason)
+        use(ledger)
+        meter = RealtimeMeter(object(), 'gpt-realtime-2.1', None, now=lambda: 10.0)
+        with pytest.raises(BudgetRefused) as caught:
+            await meter.open_increment()
+        assert caught.value.reason == reason
+        use(None)
+
+        ledger = Ledger(fail_reserve_at=3, fail_reason=reason)
+        use(ledger)
+        meter = RealtimeMeter(object(), 'gpt-realtime-2.1', 'gpt-transcribe', now=lambda: 10.0)
+        await meter.open_increment()
+        meter.seen = True
+        meter.unsettled_in = step['inputTokens'] + 50
+        meter.unsettled_out = cap_out + 25
+        with pytest.raises(BudgetRefused) as caught:
+            await meter.ensure()
+        assert caught.value.reason == reason
+        speech = [row for row in ledger.settles if row['usage'] and 'inputTokens' in row['usage']]
+        assert speech[-1]['usage']['inputTokens'] == step['inputTokens'] + 50
+        assert speech[-1]['usage']['outputTokens'] == cap_out + 25
+        use(None)
 
 
 @pytest.mark.asyncio

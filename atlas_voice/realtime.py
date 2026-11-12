@@ -20,7 +20,7 @@ from .interview import project_context
 from .quality import InterviewLedger, session_config
 from .limits import LIMITS, realtime_increment, realtime_reservation
 from .quality import transcription_estimate
-from .spend import BUDGET_MESSAGE, BudgetRefused, reserve, usage_from
+from .spend import BudgetRefused, refusal_event, reserve, usage_from
 
 VOICES=('cedar','marin','ash','sage','verse')
 
@@ -61,18 +61,15 @@ class RealtimeMeter:
     async def open_increment(self):
         book = realtime_increment()
         output = book['outputTokens'] + int(LIMITS['realtime']['maxResponseTokens'])
-        try:
-            hold = await reserve({'kind': 'realtime', 'provider': 'openai', 'model': self.model,
-                                  'inputTokens': book['inputTokens'], 'outputTokens': output}, self.http)
-        except BudgetRefused:
-            raise BudgetRefused('exhausted:usd')
+        hold = await reserve({'kind': 'realtime', 'provider': 'openai', 'model': self.model,
+                              'inputTokens': book['inputTokens'], 'outputTokens': output}, self.http)
         transcribe = None
         if self.transcribe_model:
             try:
                 transcribe = await reserve(transcription_estimate(self.transcribe_model, book['audioMs']), self.http)
             except BudgetRefused:
                 await self._settle(hold, {'inputTokens': 0, 'outputTokens': 0})
-                raise BudgetRefused('exhausted:usd')
+                raise
         self.holds.append({'hold': hold, 'transcribe': transcribe, 'opened': self.now(), 'input': book['inputTokens'],
                            'output': output, 'audio_ms': book['audioMs'], 'settled': False})
 
@@ -85,8 +82,8 @@ class RealtimeMeter:
             try:
                 await self.open_increment()
             except BudgetRefused:
-                await self.settle_all()
-                raise BudgetRefused('exhausted:usd')
+                await self.settle_outstanding()
+                raise
         raise BudgetRefused('exhausted:usd')
 
     async def note_response(self, usage):
@@ -110,12 +107,25 @@ class RealtimeMeter:
                 await self._settle_one(hold)
         await self.ensure()
 
-    async def _settle_one(self, hold):
+    async def settle_outstanding(self):
+        open_holds = [hold for hold in self.holds if not hold['settled']]
+        if not open_holds:
+            return
+        for hold in open_holds[:-1]:
+            await self._settle_one(hold)
+        await self._settle_one(open_holds[-1], overrun=True)
+
+    async def _settle_one(self, hold, overrun=False):
         if hold['settled']:
             return
-        take_in = min(self.unsettled_in, hold['input'])
-        take_out = min(self.unsettled_out, hold['output'])
-        take_audio = min(self.unsettled_audio_ms, hold['audio_ms'])
+        if overrun:
+            take_in = self.unsettled_in
+            take_out = self.unsettled_out
+            take_audio = self.unsettled_audio_ms
+        else:
+            take_in = min(self.unsettled_in, hold['input'])
+            take_out = min(self.unsettled_out, hold['output'])
+            take_audio = min(self.unsettled_audio_ms, hold['audio_ms'])
         self.unsettled_in -= take_in
         self.unsettled_out -= take_out
         self.unsettled_audio_ms -= take_audio
@@ -308,8 +318,10 @@ async def run(request,config,identity,memory,http,gate,active):
             if not t.cancelled() and t.exception():raise t.exception()
     except (ValueError,PermissionError) as e:
         clean_end=False;await event('error',message=str(e),code='voice-contract')
-    except BudgetRefused:
-        clean_end=False;await event('error',message=BUDGET_MESSAGE,code='budget_exhausted')
+    except BudgetRefused as refused:
+        clean_end=False
+        message, code = refusal_event(refused)
+        await event('error', message=message, code=code)
     except (aiohttp.ClientError,ConnectionError,TimeoutError):
         clean_end=False;await event('error',message='Selected voice provider unavailable. No fallback provider was used.',code='voice-unavailable')
     except Exception:
@@ -322,7 +334,8 @@ async def run(request,config,identity,memory,http,gate,active):
         except BudgetRefused as error:
             settle_error=error
         if settle_error is not None:
-            await event('error', message='The spend ledger could not close this session.', code='ledger_error')
+            message, code = refusal_event(settle_error)
+            await event('error', message=message, code=code)
         if upstream is not None:
             with contextlib.suppress(Exception):await upstream.close()
         if active.get(session_cookie) is ws:active.pop(session_cookie,None)

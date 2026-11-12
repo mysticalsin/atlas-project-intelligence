@@ -9,6 +9,17 @@ import os
 import aiohttp
 
 BUDGET_MESSAGE = "This month's AI budget is used up."
+LEDGER_CLOSE_MESSAGE = 'The spend ledger could not close this session.'
+
+
+def refusal_event(refused):
+    """The month sentence is only for a real exhausted:usd stop. Other reasons keep their code."""
+    if getattr(refused, 'reason', '') == 'exhausted:usd':
+        return BUDGET_MESSAGE, 'budget_exhausted'
+    if getattr(refused, 'reason', '') == 'ledger_error':
+        return LEDGER_CLOSE_MESSAGE, 'ledger_error'
+    reason = getattr(refused, 'reason', '') or 'refused'
+    return 'Spend ledger refused: ' + reason, getattr(refused, 'code', None) or reason
 _MODES = ('off', 'observe', 'enforce')
 _off_logged = False
 _installed = None
