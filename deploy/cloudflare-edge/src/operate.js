@@ -87,7 +87,7 @@ export async function privacyRoutes(ctx) {
     if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
     ensureJourney(lib);
     const tenant = String(user.tenant || '').toLowerCase();
-    const journey = lib.rows('SELECT payload, updated_at FROM journey WHERE subject = ? AND tenant = ?', user.email, tenant)[0] || null;
+    const journey = lib.rows('SELECT payload, updated_at FROM journey WHERE lower(subject) = lower(?) AND tenant = ?', user.email, tenant)[0] || null;
     const stories = lib.rows('SELECT id, title, status, updated_at, state FROM refs WHERE owner = ?', user.email).filter(r => {
       let recordTenant = '';
       try { recordTenant = JSON.parse(r.state || '{}').tenant || ''; } catch { return false; }
@@ -119,8 +119,8 @@ export async function privacyRoutes(ctx) {
       catch { outcomes.push({ store, removed: 0, error: 'delete-failed' }); }
     };
     attempt('journey', () => {
-      const n = lib.rows('SELECT COUNT(*) AS n FROM journey WHERE subject = ? AND tenant = ?', user.email, tenant)[0].n;
-      if (n) lib.sql.exec('DELETE FROM journey WHERE subject = ? AND tenant = ?', user.email, tenant);
+      const n = lib.rows('SELECT COUNT(*) AS n FROM journey WHERE lower(subject) = lower(?) AND tenant = ?', user.email, tenant)[0].n;
+      if (n) lib.sql.exec('DELETE FROM journey WHERE lower(subject) = lower(?) AND tenant = ?', user.email, tenant);
       return n;
     });
     attempt('telemetry', () => {

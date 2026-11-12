@@ -1,7 +1,7 @@
 # State machines in ATLAS
 Last reviewed: 2026-11-12 on `cursor/state-machines-atlas-v2` at `b8d006898f9071ff88913250ed82e0688886912f` (tree `0e13bc5cd4fb47f63f4c240c432f62bfe344d9f6`). This stamp is that code commit, because this docs commit cannot name itself.
 
-The rules are `docs/STATE-MACHINE-STANDARD.md`. This file keeps the ATLAS inventory and does not restate them. Row 9, story publication, is fixed in this branch. Rows 1, 7, 8, 10, 12 and 15 cite code that is not on this branch. The other high-risk rows are still pending review.
+The rules are `docs/STATE-MACHINE-STANDARD.md`. This file keeps the ATLAS inventory and does not restate them. Row 9, story publication, is fixed in this branch. Rows 1, 7, 8, 12 and 15 cite code that is not on this branch. The other high-risk rows are still pending review.
 
 ## Inventory
 
@@ -18,7 +18,7 @@ Row shape: section 4 of `docs/STATE-MACHINE-STANDARD.md`. Status in the summary 
 | 7 | Live-test spend ledger | Not on this branch. `spend-ledger.js` is not in the tree. | Admit session, admit turn, reserve, claim, settle, latch stop | `stopped`, `sessions`, `open`, `reserved`, `claimed` | The earlier `spend-ledger.js:30` citation is not a file on this branch. | H | LATER. Not reviewed here. |
 | 8 | Production day budget | Not on this branch. `meter.js` is not in the tree. | Reserve, record, settle, roll the UTC day | `day`, `open`, `reserved`, `limitUsd` | The earlier `meter.js:70` `BudgetState` citation is not a file on this branch. | H | LATER. Not reviewed here. |
 | 9 | Story publication | `deploy/cloudflare-edge/src/publication.js` (`deriveStatus` is `publicationStatus`; `upsert` uses `revised`; `merge` uses `merged`) | in review, needs work, awaiting validation, changes requested, published, withdrawn, admin test | `validation.status`, `managerDecision`, `presalesDecision`, `withdrawn`, `quality.status`, `test`. `merged_into` stays a column. | `canPublish` requires both approvals. 32 of the 2560 golden rows move from `published` to `awaiting_validation` (validated, quality ready, not both approved, including both `merged_into` values). Unknown approvals still do not publish. A version-less row is a main row: it decodes through `publicationStatus` and is not rewritten. An unknown version keeps every stored field, including `withdrawn`. Its decoded status is `withdrawn` when the row is withdrawn, otherwise `in_review`. The read overlays nothing and persists nothing. CAS still compares the stored status column (`library.js:328`, `:428`, `:659`). `scanStale` (`library.js:808`) uses the decoded status, so an unknown withdrawn row is not invited even when the column is `published`. A legacy row whose column is `published` and whose story decodes to `awaiting_validation` is covered. A merge without `transactionSync` returns 503. A rejected reinstate says the story was merged only when `merged_into` is set; otherwise it uses `PUBLICATION_CHANGE_REFUSED`. `index` (`library.js:570`) parses every other row with the same guard as `visibleRows` before it writes a duplicate. | H | FIXED. The reducer is the only writer of validation, withdrawn and test. `validated` does not publish without both lanes. Nine phase/event pairs are illegal. |
-| 10 | Privacy delete receipt | Not on this branch. `journey-ui.js` has no receipt at :11 and no `confirmDelete` at :81. | disclosure, confirm, in flight, receipt, earlier receipt, failure, identity change | `pendingDelete`, `deleteReceipt`, `receiptIsLatest`, `deleteFailure`, `deleteOwner` | The earlier `journey-ui.js:11` and `confirmDelete` :81 citation is not this branch. | H | LATER. Not reviewed here. |
+| 10 | Privacy erasure | `src/erasure-machine.js` (writer: the privacy button in `src/journey-ui.js`; journey match in `operate.js:90` and :122–:123) | idle, confirming, in flight, receipt, failed | `{status}` written only by `erasureTransition` | The button posted `/privacy/delete` on the first click and painted `JSON.stringify` of the response. A second click sent a second POST. `saveJourney` stores `user.email` unchanged, and the same string still deletes that row. A later sign-in is lowercased in `app.js`, so `subject = user.email` left a mixed-case subject in place. Export used the same comparison. `complete` stays false. The v1 receipt at `journey-ui.js:11` and `confirmDelete` :81 is still not on this branch. | H | FIXED. One confirmation, one POST while in flight, and the server note instead of raw JSON. |
 | 11 | Colleague confirm page | `deploy/cloudflare-edge/src/confirm-page.js:120` | Open a confirmation, submit, error | page fetches, request id | None newly reproduced. | H | LATER. Pending review. It records a human confirmation. |
 | 12 | Early speculation | Not on this branch. `speculation.js` is not in the tree. | Off, admitted, cancelled, claimed by the final turn | `EARLY_STT`, `EARLY_DRAFT`, reservation ids, `scope` | The earlier `speculation.js:24` and `MemoryLedger` at :46 citation is not a file on this branch. | H | LATER. Not reviewed here. |
 | 13 | Story-rating circuit breaker | `deploy/cloudflare-edge/src/breaker.js` (writer: `rating.js` `storyRater`) | closed, open for 60 s, one trial, auth block until the key changes | was `fails`, `openUntil`, `authKey`; now one object written only by `transition` | **Fixed.** The old `rating.js` admit cleared `openUntil` before the trial returned, so a second `rate()` was sent. `test/rating.test.js` R16b. A probing `ignore`, including a 429, goes back to open for a fresh 60 s. `storyRater` logs that move as phase and event only. Only `succeed` closes a probe. `auth_fail` while probing still closes it and records the key. `open` plus `succeed` is a rejection: `storyRater` logs it and the breaker stays open. `open` plus `fail` still settles. | M | FIXED |
@@ -213,3 +213,57 @@ stateDiagram-v2
 None for this view. `LEDGER_MODE` is a guard input on the paid-call wrapper, not a machine (row 15). Neither fixed machine forks by operating system.
 
 `renderAdmin` sends `failed: true` when `bootInfo()` throws or the boot has no ATLAS protocol. That is `boot_error`. The pane says "Metrics failed." and does not say "This dashboard is only for a verified admin. The API refuses everyone else." A resolved boot whose role is not admin still takes `denied` and that sentence.
+
+## Privacy erasure
+- Purpose: ask before deleting, send one deletion request, and show the server's note instead of the raw JSON body.
+- Code: `src/erasure-machine.js`, tests: `tests/erasure-machine.test.js` and `tests/erasure-button.test.js`. The journey match is `deploy/cloudflare-edge/src/operate.js` (`:90`, `:122`, `:123`), tested in `deploy/cloudflare-edge/test/privacy-delete.test.js`. `build.py` copies the machine into the page with the export keywords removed.
+- Persisted: no. There is no snapshot codec. An unknown phase is rejected and left as it was.
+
+### States
+| State | Data carried | Meaning |
+|---|---|---|
+| idle | none | The delete button is available. Nothing has been sent. |
+| confirming | none | The existing confirm dialog is open. Cancel sends nothing. |
+| in_flight | none | The one POST is open. Another ask or confirm is illegal. |
+| receipt | none | The server note and each outcome are shown. The JSON body is not. |
+| failed | none | The request threw. The existing warning banner shows `e.message`. |
+
+### Events
+| Event | Source |
+|---|---|
+| ask | Delete my journey data |
+| cancel | the confirm dialog closes without Continue |
+| confirm | Continue |
+| succeed | `/privacy/delete` resolved |
+| fail | `/privacy/delete` threw |
+
+### Transitions
+| From | Event | Guard | To | Side effects |
+|---|---|---|---|---|
+| idle, receipt, failed | ask | none | confirming | open the confirm dialog and disable the button |
+| confirming | cancel | none | idle | close nothing further; the button is available |
+| confirming | confirm | none | in_flight | POST `/privacy/delete` once |
+| in_flight | succeed | none | receipt | paint the server note and each outcome |
+| in_flight | fail | none | failed | the existing warning banner |
+
+Anything not in this table is illegal and is rejected. The cross product is 25 pairs. Seven are legal. The transition returns the previous state and a rejection marker whose only fields are `id`, `phase` and `event`. The id is `privacy-delete`. The button logs that marker. The transition does not log, and it does not receive the email, the note, or the response body.
+
+```mermaid
+stateDiagram-v2
+  [*] --> idle
+  idle --> confirming: ask
+  confirming --> idle: cancel
+  confirming --> in_flight: confirm
+  in_flight --> receipt: succeed
+  in_flight --> failed: fail
+  receipt --> confirming: ask
+  failed --> confirming: ask
+```
+
+### Platform / flag differences
+None.
+
+### Copy
+The button stays `Delete my journey data`. Download stays `Download my data`. The server note and the disclosure sentences are unchanged. The confirm dialog's existing buttons stay `Continue` and `Cancel`. The one new string is the confirm message: `Continue sends the deletion request. Cancel sends nothing.` The receipt lines are the server note, then each outcome as the store name, a space, and either the removed count or the server error string. No other sentence was added.
+
+`saveJourney` (`journey.js`) stores `user.email` as given. The same email still deletes that row. Export and delete now match `lower(subject)` to `lower(user.email)` in the same tenant, because the Worker lowercases the sign-in before `x-atlas-user` and a case-sensitive `=` left the mixed-case row in place.
