@@ -25,6 +25,9 @@ jobs:
         run: python deploy/cloudflare-edge/build_edge.py && git diff --exit-code -- deploy/cloudflare-edge/src/policy.generated.js
       - name: App unit tests
         run: node --test tests/*.test.js
+      - name: Edge test dependencies
+        working-directory: deploy/cloudflare-edge
+        run: npm ci
       - name: Edge unit tests
         run: cd deploy/cloudflare-edge && node --test test/*.test.js
       - name: Python tests (including the socket tests)
