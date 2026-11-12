@@ -758,7 +758,7 @@ Review answers:
 ### Session: 2026-11-11 / State machines, review changes only (run72)
 - Continued from the run71 note on this branch, which starts at `main` `80bab333`. No push of `main`, no PR, no deploy, no live call, no spend. The Plan A ledger is not in this tree.
 - **Breaker.** A fail while `probing` re-opens when `state.phase === 'probing'`, not only when `event.trial` is set. `open:succeed` and `open:fail` stay legal. Rejection logs are phase and event only.
-- **Admin.** `boot_error` is a state. `bootFailed` is separate from a missing role. `renderAdmin` still paints the permissions banner when `bootInfo()` throws, because a distinct outage sentence would replace that copy. Painting it is LATER.
+- **Admin.** `boot_error` is a state. `bootFailed` is separate from a missing role. A failed boot paints `boot_error` and does not show the verified-admin sentence.
 - **Publication.** Golden tests only. No row 9 reducer. A revision resets `validation.status` to pending and derives `in_review`. Rows 18–21 added. Withdraw, reinstate and merge are folded into row 9.
 
 ### Session: 2026-11-11 / Publication reducer (run73)
@@ -774,3 +774,11 @@ Review answers:
 - Publication events are `reviewed`, `decided`, `admin_published`, `withdrawn` and `reinstated`, plus the earlier `revised`, `derive` and `merged`. The reducer writes validation, withdrawn and test. `revised` stores version 1. A legacy or unknown version loads as in-review and is not rewritten. Reinstate rejects `merged_into`. A rejected transition is not stored. Each status write matches the prior revision and status.
 - The breaker and admin-metrics snapshot codecs are gone. A failed admin boot paints `boot_error` and does not show the verified-admin sentence.
 - Page pin `5371299c86ecf4c19f2bb2dc47b50191ab608b7012842d34c56b092265d663b6`, 910588 bytes. `scripts/verify_page_build.sh` matched it on two runs.
+
+### Session: 2026-11-12 / State machines v2, publication read path
+- Continued on `cursor/state-machines-atlas-v2` from `04ee147`. Code is `48e4bb5c7587fe5265d5fcb6810f21f867aabf4b`. This note is the following docs commit, so the inventory stamp cites the code commit and does not name itself. No rewrite, no force, no merge, no deploy, no live call. `cursor/plan-a-cap-v2` was not touched.
+- **Read path.** `readPublication` in `publication.js` is the stored-state read. `library.js` `row`, `visibleRows` and `exportAll` use it, as do the admin workflow counts and the DSAR story status. A current version keeps the status column. A missing, legacy or unknown version is the safe in-review record in memory. The stored JSON and the status column are not rewritten by the read. Non-publication writes (`ratingGen`, `lastJev`, duplicates, `sharedWith`) still persist the raw column, so they do not heal an unknown version.
+- **Decided.** A lane other than manager or presales, or a decision other than approved or changes_requested, is illegal. `acceptPublication` returns null and the caller does not store it.
+- **setState.** Left as the persistence primitive. Production publication events already pass reducer output. Tests and the local seed pass a hand-built validation object. Guarding `setState` would reject those callers.
+- **Docs.** Row 7 no longer cites `spend-ledger.js:30`. That file is not on this branch. The run72 admin note now says a failed boot paints `boot_error`.
+- Gates on this code: pytest 264 passed; root node 389 tests, 388 pass, 1 skip; edge 562 pass; page pin unchanged, 910588 bytes, two verifies; browsers 754 PASS, 21 suites, exit 0. Red-first: the unknown-version library read expected `in_review` and got `published` before the wiring (1 fail). After the wiring the publication file is 10 pass.
