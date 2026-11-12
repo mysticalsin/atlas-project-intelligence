@@ -5,14 +5,14 @@ export const BREAKER_OPEN_MS = 60000;
 
 export const BREAKER_PHASES = Object.freeze(['closed', 'open', 'probing']);
 export const BREAKER_EVENTS = Object.freeze(['begin', 'succeed', 'fail', 'auth_fail', 'ignore']);
-// begin is illegal while a trial is already in flight (probing). Every other pair is legal; guards may still deny begin.
-// open:succeed and open:fail are legal on purpose. A request admitted while the breaker was closed can still
-// be in flight when a later failure opens it. That request has to settle. Dropping succeed or fail would leave
-// the count and the window wrong. A rejection marker is phase and event only, never the key.
-// storyRater logs that marker. transition does not.
+// begin is illegal while a trial is already in flight (probing). Guards may still deny begin.
+// open:fail stays legal. A request admitted while the breaker was closed can still be in flight
+// when a later failure opens it, and that failure has to settle. open:succeed is stale: the open
+// window is already the failure outcome, so a late success is a rejection and does not close it.
+// A rejection marker is phase and event only, never the key. storyRater logs that marker. transition does not.
 const LEGAL = new Set([
   'closed:begin', 'open:begin',
-  'closed:succeed', 'open:succeed', 'probing:succeed',
+  'closed:succeed', 'probing:succeed',
   'closed:fail', 'open:fail', 'probing:fail',
   'closed:auth_fail', 'open:auth_fail', 'probing:auth_fail',
   'closed:ignore', 'open:ignore', 'probing:ignore',

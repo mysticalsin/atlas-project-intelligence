@@ -13,7 +13,8 @@ const samples = () => [closed(0), closed(1), closed(2), closed(0, 'old-key'), op
 
 function legal(phase, type) {
   if (type === 'begin') return phase === 'closed' || phase === 'open';
-  return ['succeed', 'fail', 'auth_fail', 'ignore'].includes(type);
+  if (type === 'succeed') return phase === 'closed' || phase === 'probing';
+  return ['fail', 'auth_fail', 'ignore'].includes(type);
 }
 
 test('every legal transition, and every other (phase, event) pair is rejected and logged', () => {
@@ -37,14 +38,14 @@ test('every legal transition, and every other (phase, event) pair is rejected an
         assert.equal(result.ok, false, state.phase + ' ' + type);
         assert.equal(result.illegal, true);
         assert.equal(result.state, state, 'an illegal move does not change state');
-        assert.equal(result.reason, 'circuit_open');
+        assert.equal(result.reason, type === 'begin' ? 'circuit_open' : 'illegal');
         logged.push(result.rejection);
       }
     }
   }
   } finally { console.warn = original; }
   assert.equal(warns.length, 0, 'the transition does not log');
-  assert.equal(illegalCount, samples().filter(s => s.phase === 'probing').length);
+  assert.equal(illegalCount, samples().filter(s => s.phase === 'probing').length + samples().filter(s => s.phase === 'open').length);
   assert.equal(legalCount, samples().length * BREAKER_EVENTS.length - illegalCount);
   assert.equal(logged.length, illegalCount);
   assert.ok(logged.every(l => l.atlas_metric === 'breaker' && l.illegal === true && !('key' in l) && !('authKey' in l)));
@@ -112,6 +113,20 @@ test('a probing ignore does not close and does not open a fresh window', () => {
   assert.equal(result.state.until, before.until);
   assert.equal(result.state.authKey, 'k');
   assert.notEqual(result.state.until, 500 + BREAKER_OPEN_MS);
+});
+
+test('open plus succeed is stale: it is logged and the breaker stays open', () => {
+  const before = open(5_000, 1);
+  const result = transition(before, { type: 'succeed', now: 100 });
+  assert.equal(result.ok, false);
+  assert.equal(result.illegal, true);
+  assert.equal(result.state, before);
+  assert.equal(result.state.phase, 'open');
+  assert.equal(result.state.until, 5_000);
+  assert.equal(result.rejection.atlas_metric, 'breaker');
+  assert.equal(result.rejection.phase, 'open');
+  assert.equal(result.rejection.event, 'succeed');
+  assert.equal('key' in result.rejection, false);
 });
 
 test('a 429 does not count, auth sticks until the key changes, and success does not clear a recorded key', () => {
