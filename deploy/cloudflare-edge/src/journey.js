@@ -125,6 +125,18 @@ export function journeyPayload(raw) {
   } catch { return null; }
 }
 
+// Rows are already the tenant-scoped match. An unreadable payload stays in the export as an omission, not a gap.
+export function journeyExport(rows) {
+  const journey = [];
+  const omitted = [];
+  for (const row of rows) {
+    const payload = journeyPayload(row.payload);
+    if (!payload) omitted.push({ id: row.id, reason: 'unparseable' });
+    else journey.push({ ...payload, subject: row.subject, updatedAt: row.updated_at });
+  }
+  return { journey, omitted: { count: omitted.length, rows: omitted } };
+}
+
 function read(lib, user) {
   demandTenant(user);
   const row = journeyChosen(lib, user.email, journeyTenant(user));

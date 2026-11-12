@@ -3,7 +3,7 @@ import { fail } from './util.js';
 import { sameTenant, TENANT_ID } from './authz.js';
 import { queryMetrics, recordUsage, purgeTelemetry, personaKey, ensureTelemetry } from './telemetry.js';
 import { toCsv } from './csvsafe.js';
-import { journeyView, saveJourney, mapDraft, ensureJourney, journeyMatches, journeyTenant, journeyPayload, JOURNEY_COUNT_SQL, JOURNEY_DELETE_SQL } from './journey.js';
+import { journeyView, saveJourney, mapDraft, ensureJourney, journeyMatches, journeyTenant, journeyExport, JOURNEY_COUNT_SQL, JOURNEY_DELETE_SQL } from './journey.js';
 import { deleteOwnedProfile } from './profile.js';
 import { readPublication } from './publication.js';
 
@@ -86,12 +86,7 @@ export async function privacyRoutes(ctx) {
   if (method === 'GET' && parts[1] === 'export') {
     if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
     const tenant = String(user.tenant || '').toLowerCase();
-    const journey = [];
-    for (const row of journeyMatches(lib, user.email, journeyTenant(user))) {
-      const payload = journeyPayload(row.payload);
-      if (!payload) continue;
-      journey.push({ ...payload, subject: row.subject, updatedAt: row.updated_at });
-    }
+    const { journey, omitted } = journeyExport(journeyMatches(lib, user.email, journeyTenant(user)));
     const stories = lib.rows('SELECT id, title, status, updated_at, state FROM refs WHERE owner = ?', user.email).filter(r => {
       let recordTenant = '';
       try { recordTenant = JSON.parse(r.state || '{}').tenant || ''; } catch { return false; }
@@ -108,7 +103,7 @@ export async function privacyRoutes(ctx) {
       if (row) ownedProfile = { edits: JSON.parse(row.edits || '{}'), consents: JSON.parse(row.consents || '{}'), updatedAt: row.updated_at };
     } catch { /* profile table may be absent */ }
     lib.log('library', user.email, 'dsar export', `${stories.length} stories`);
-    return { body: { subject: user.email, tenant: user.tenant || '', journey, profile: ownedProfile, stories,
+    return { body: { subject: user.email, tenant: user.tenant || '', journey, omitted, profile: ownedProfile, stories,
       stores: dsarStores(), note: 'This export lists the local rows for this subject and tenant. It is not a vendor-log extract and it does not mean every store was erased.' } };
   }
   if (method === 'POST' && parts[1] === 'delete') {
