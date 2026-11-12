@@ -165,6 +165,27 @@ async def test_the_next_increment_closes_when_it_cannot_be_reserved(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_a_rejected_flush_keeps_the_tokens_and_the_original_reason(monkeypatch, capsys):
+    monkeypatch.setenv('LEDGER_MODE', 'enforce')
+    step = realtime_increment()
+    ledger = Ledger(fail_reserve_at=2, fail_settle=True, fail_reason='no_ledger')
+    use(ledger)
+    meter = RealtimeMeter(object(), 'gpt-realtime-2.1', None, now=lambda: 10.0)
+    await meter.open_increment()
+    meter.seen = True
+    meter.unsettled_in = step['inputTokens'] + 50
+    meter.unsettled_out = 10
+    with pytest.raises(BudgetRefused) as caught:
+        await meter.ensure()
+    lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.startswith('{')]
+    logged = next(line for line in lines if line.get('error') == 'settle')
+    assert (caught.value.reason, meter.unsettled_in, meter.unsettled_out, meter.holds[0]['settled']) == ('no_ledger', step['inputTokens'] + 50, 10, False)
+    assert logged.get('id') == 'P1'
+    assert set(logged) == {'atlas_metric', 'error', 'id'}
+    use(None)
+
+
+@pytest.mark.asyncio
 async def test_a_settle_409_is_logged_and_raised(monkeypatch, capsys):
     monkeypatch.setenv('LEDGER_MODE', 'enforce')
     ledger = Ledger(fail_settle=True)
@@ -175,7 +196,7 @@ async def test_a_settle_409_is_logged_and_raised(monkeypatch, capsys):
         await meter.settle_all()
     assert caught.value.reason == 'ledger_error'
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.startswith('{')]
-    assert {'atlas_metric': 'ledger', 'error': 'settle', 'reason': 'ledger_error'} in lines
+    assert {'atlas_metric': 'ledger', 'error': 'settle', 'id': 'P1'} in lines
     use(None)
 
 

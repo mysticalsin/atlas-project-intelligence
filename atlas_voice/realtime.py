@@ -55,7 +55,10 @@ class RealtimeMeter:
             await hold.settle(usage)
         except BudgetRefused as error:
             self.errors.append(error)
-            print(json.dumps({'atlas_metric': 'ledger', 'error': 'settle', 'reason': error.reason}), flush=True)
+            line = {'atlas_metric': 'ledger', 'error': 'settle'}
+            if isinstance(hold.ident, str):
+                line['id'] = hold.ident
+            print(json.dumps(line), flush=True)
             raise
 
     async def open_increment(self):
@@ -81,9 +84,12 @@ class RealtimeMeter:
                     return
             try:
                 await self.open_increment()
-            except BudgetRefused:
-                await self.settle_outstanding()
-                raise
+            except BudgetRefused as refused:
+                try:
+                    await self.settle_outstanding()
+                except BudgetRefused:
+                    pass
+                raise refused
         raise BudgetRefused('exhausted:usd')
 
     async def note_response(self, usage):
@@ -126,14 +132,14 @@ class RealtimeMeter:
             take_in = min(self.unsettled_in, hold['input'])
             take_out = min(self.unsettled_out, hold['output'])
             take_audio = min(self.unsettled_audio_ms, hold['audio_ms'])
-        self.unsettled_in -= take_in
-        self.unsettled_out -= take_out
-        self.unsettled_audio_ms -= take_audio
-        hold['settled'] = True
         usage = {'inputTokens': int(take_in), 'outputTokens': int(take_out)} if self.seen else None
         await self._settle(hold['hold'], usage)
         if hold['transcribe'] is not None:
             await self._settle(hold['transcribe'], {'audioMs': int(take_audio)})
+        self.unsettled_in -= take_in
+        self.unsettled_out -= take_out
+        self.unsettled_audio_ms -= take_audio
+        hold['settled'] = True
 
     async def settle_all(self):
         first = None
