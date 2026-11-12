@@ -126,23 +126,12 @@ test('a merge with a legacy keeper completes or rolls back, and a conflict does 
   contributed.answers[1] = 'I built the routing model.';
   l.sql.exec('UPDATE refs SET data = ? WHERE id = ?', JSON.stringify(contributed), gone.id);
   plant(l, keep.id, 'published');
-  const before = l.rows('SELECT merged_into FROM refs WHERE id = ?', gone.id)[0].merged_into;
-  let failed = null;
-  try {
-    await l.merge(REVIEWER, { keep: keep.id, merge: gone.id });
-  } catch (error) {
-    failed = error;
-  }
+  assert.equal(l.rows('SELECT merged_into FROM refs WHERE id = ?', gone.id)[0].merged_into, null);
+  await l.merge(REVIEWER, { keep: keep.id, merge: gone.id });
   const source = l.rows('SELECT merged_into, status FROM refs WHERE id = ?', gone.id)[0];
-  if (failed) {
-    assert.equal(failed.status, 409);
-    assert.equal(source.merged_into, before);
-    assert.notEqual(source.status, 'withdrawn');
-  } else {
-    assert.equal(source.merged_into, keep.id);
-    assert.equal(source.status, 'withdrawn');
-    assert.match(l.row(keep.id).data.answers[1], /another consultant/);
-  }
+  assert.equal(source.merged_into, keep.id);
+  assert.equal(source.status, 'withdrawn');
+  assert.match(l.row(keep.id).data.answers[1], /another consultant/);
 
   const conflicted = library();
   const keeper = await story(conflicted, 'keeper');
@@ -207,6 +196,84 @@ test('illegal publication pairs are exactly the pairs the table leaves out', () 
   assert.deepEqual(missing.sort(), [...ILLEGAL].sort());
   assert.equal(missing.length, ILLEGAL.size);
   assert.ok(missing.length > 0);
+});
+
+// Column published, story validated with no lane decision: the read decodes awaiting_validation.
+// CAS has to use the column. A test whose decoded status equals the column stays green if that is reverted.
+function mismatch(l, id) {
+  const raw = JSON.parse(l.rows('SELECT state FROM refs WHERE id = ?', id)[0].state);
+  delete raw.version;
+  const state = { ...raw, withdrawn: false, test: false, quality: { status: 'ready', score: 90 }, validation: { status: 'validated' } };
+  delete state.validation.managerDecision;
+  delete state.validation.presalesDecision;
+  l.sql.exec('UPDATE refs SET state = ?, status = ? WHERE id = ?', JSON.stringify(state), 'published', id);
+  const row = l.row(id);
+  assert.equal(row.storedStatus, 'published');
+  assert.equal(row.status, 'awaiting_validation');
+  assert.equal(l.rows('SELECT status FROM refs WHERE id = ?', id)[0].status, 'published');
+  return row;
+}
+
+test('a legacy published column that decodes to awaiting_validation can withdraw, validate, upsert and merge', async () => {
+  const withdrawn = library();
+  const paused = await story(withdrawn, 'pause');
+  mismatch(withdrawn, paused.id);
+  assert.equal(withdrawn.withdraw(OWNER, paused.id, { note: 'pause' }).status, 'withdrawn');
+  assert.equal(withdrawn.rows('SELECT status FROM refs WHERE id = ?', paused.id)[0].status, 'withdrawn');
+
+  const checked = library();
+  const lane = await story(checked, 'lane');
+  mismatch(checked, lane.id);
+  checked.bindTrust(SYS, { owner: OWNER.email, email: N1.email, source: 'directory', sandbox: true });
+  const validated = checked.validate(N1, lane.id, { decision: 'validate', lane: 'manager' });
+  assert.equal(validated.status, 'awaiting_validation');
+  assert.equal(checked.rows('SELECT status FROM refs WHERE id = ?', lane.id)[0].status, 'awaiting_validation');
+  assert.equal(checked.row(lane.id).state.validation.managerDecision, 'approved');
+
+  const edited = library();
+  const draft = await story(edited, 'draft');
+  mismatch(edited, draft.id);
+  const data = edited.row(draft.id).data;
+  data.title += ' revised';
+  const saved = await edited.upsert(OWNER, { id: draft.id, reference: data });
+  assert.equal(saved.title, 'draft revised');
+  assert.equal(edited.rows('SELECT status FROM refs WHERE id = ?', draft.id)[0].status, 'in_review');
+
+  const retired = library();
+  const keep = await story(retired, 'keep');
+  const gone = await story(retired, 'gone');
+  mismatch(retired, gone.id);
+  await retired.merge(REVIEWER, { keep: keep.id, merge: gone.id });
+  assert.equal(retired.rows('SELECT merged_into, status FROM refs WHERE id = ?', gone.id)[0].merged_into, keep.id);
+  assert.equal(retired.rows('SELECT status FROM refs WHERE id = ?', gone.id)[0].status, 'withdrawn');
+
+  const keeper = library();
+  const held = await story(keeper, 'held');
+  const other = await story(keeper, 'other');
+  mismatch(keeper, held.id);
+  await keeper.merge(REVIEWER, { keep: held.id, merge: other.id });
+  assert.equal(keeper.rows('SELECT merged_into FROM refs WHERE id = ?', other.id)[0].merged_into, held.id);
+  assert.ok(keeper.row(held.id).revision > 1);
+
+  const bumped = library();
+  const stale = await story(bumped, 'stale');
+  mismatch(bumped, stale.id);
+  const exec = bumped.sql.exec.bind(bumped.sql);
+  bumped.sql.exec = (q, ...p) => {
+    if (String(q).includes('UPDATE refs SET state = ?')) exec('UPDATE refs SET revision = revision + 1 WHERE id = ?', stale.id);
+    return exec(q, ...p);
+  };
+  assert.throws(() => bumped.withdraw(OWNER, stale.id, { note: 'pause' }), e => e.status === 409 && /changed/.test(e.message));
+  assert.equal(bumped.rows('SELECT status FROM refs WHERE id = ?', stale.id)[0].status, 'published');
+});
+
+test('merge without a transaction is refused and does not retire the story', async () => {
+  const l = library();
+  const keep = await story(l, 'keep');
+  const gone = await story(l, 'gone');
+  l.transactionSync = null;
+  await assert.rejects(l.merge(REVIEWER, { keep: keep.id, merge: gone.id }), e => e.status === 503 && e.message === 'Atomic reference changes need storage.transactionSync.');
+  assert.equal(l.rows('SELECT merged_into FROM refs WHERE id = ?', gone.id)[0].merged_into, null);
 });
 
 test('scanStale uses the stored status: a legacy published row is invited and a legacy withdrawn row is not', async () => {

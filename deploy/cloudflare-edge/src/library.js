@@ -652,8 +652,10 @@ export class Library {
       if (!plan.unchanged) this.commitRevision(plan);
       this.log(keep.id, user.email, 'consolidated', `merged ${gone.data.title} (${gone.id})`);
     };
-    if (typeof this.transactionSync === 'function') this.transactionSync(apply);
-    else apply();
+    // A merge writes the retired row and then the keeper. Without a transaction those are two commits,
+    // and a crash between them leaves a story merged away. outreach.js refuses the same missing API.
+    if (typeof this.transactionSync !== 'function') throw fail(503, 'Atomic reference changes need storage.transactionSync.');
+    this.transactionSync(apply);
     return this.summary(this.row(keep.id), 'full', user);
   }
 
