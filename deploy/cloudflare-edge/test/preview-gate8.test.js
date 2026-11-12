@@ -86,10 +86,14 @@ test('a preview page shows the fake-data banner and refuses production settings'
   assert.equal(real.status, 503);
   assert.match(await real.text(), /production data/);
 
-  for (const mode of [undefined, '', 'off', 'observe']) {
+  for (const mode of ['off', 'observe']) {
     const refused = await handle(new Request(PREVIEW_HOST + '/'), previewEnv({ LEDGER_MODE: mode }), page);
     assert.equal(refused.status, 503, String(mode));
     assert.match(await refused.text(), /ledger mode must be enforce/);
+  }
+  for (const mode of [undefined, '']) {
+    const openMode = await handle(new Request(PREVIEW_HOST + '/'), previewEnv({ LEDGER_MODE: mode }), page);
+    assert.equal(openMode.status, 401, String(mode));
   }
 
   const productionHost = await handle(new Request(PRODUCTION_ORIGIN + '/'), previewEnv(), page);

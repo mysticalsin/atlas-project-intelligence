@@ -418,7 +418,17 @@ function settlementOf(out) {
 }
 
 let offLogged = false;
+function previewLedgerMissing(env, ledger) {
+  if (env?.ATLAS_PREVIEW !== '1' || ledger) return false;
+  const ns = env?.SPEND_LEDGER;
+  return !(ns && typeof ns.get === 'function' && typeof ns.idFromName === 'function');
+}
 export function paid(env, { ledger, log = defaultLog, timeoutMs = LEDGER_TIMEOUT_MS } = {}) {
+  // A preview with no SPEND_LEDGER does not log and continue, and does not call the provider.
+  if (previewLedgerMissing(env, ledger)) {
+    const deny = () => { throw refused('no_ledger'); };
+    return { mode: 'enforce', run: async () => deny(), toMarkdown: async () => deny(), fetch: async () => deny(), call: async () => deny(), hold: async () => deny() };
+  }
   const mode = ledgerMode(env);
   if (mode === 'off') {
     if (!offLogged) { offLogged = true; try { log({ atlas_metric: 'ledger', mode: 'off' }); } catch { /* logging never affects the call */ } }

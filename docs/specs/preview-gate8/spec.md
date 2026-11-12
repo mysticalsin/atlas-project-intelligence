@@ -14,18 +14,20 @@ The live script is `atlas` (`deploy/cloudflare-edge/wrangler.jsonc`). Its top le
 
 - Empty Durable Object storage. Cloudflare gives each Preview its own namespaces for `Interview`, `LibraryStore` and `ProductionSpendLedger`. Nothing is seeded. There is no file of people.
 - `DATA_MODE` is absent, so the existing test-mode rule stays: DNA pull and push stay `BLOCKED_EXTERNAL`, and a directory import accepts only synthetic addresses (`example.com`, `example.org`, `example.net`, `.test`). A real consultant address is rejected.
-- `LEDGER_MODE` is set to `enforce`. Unset, `off` and `observe` are refused before any page or call.
-- Workers AI is on. Hindsight, TypeSafe, ElevenLabs and OpenAI stay off: their secrets are not in the file and are not copied onto the Preview.
+- `LEDGER_MODE` is `enforce`, or unset. Unset means enforce. `off` and `observe` are refused. The live Worker has no `SPEND_LEDGER` and no v3 migration. This file has both, and the preview upload refuses without them.
+- Workers AI is on only when that same build binds `SPEND_LEDGER` to `ProductionSpendLedger` and the v3 migration creates that class. If the binding is missing at runtime, every AI call fails closed. It does not log and continue. Hindsight, TypeSafe, ElevenLabs and OpenAI stay off: their secrets are not in the file and are not copied onto the Preview.
 - Every HTML page carries a visible banner: "Preview. Fake data only." The pages are `/`, `/confirm`, `/go/signed-in`, and the sign-in response. The banner is injected by the Worker. The built HTML file does not change.
 - The Preview does not copy the production origin `https://atlas.tony-walteur.workers.dev`, the production Access audience, or the production Access team. A request whose host is that production host is refused. A Preview host is `https://<label>-atlas.tony-walteur.workers.dev`.
 - The top-level cron stays on production. The `previews` block has no cron, no route, and no `script_name` pointing at `atlas`.
 
 ## Later commands
 
-Run these from `deploy/cloudflare-edge`, with Wrangler 4.135.0 or later. They upload a Preview. They do not deploy production.
+Run these from `deploy/cloudflare-edge`, with Wrangler 4.135.0 or later. They upload a Preview. They do not deploy production, and they do not change the AI Gateway limit or account billing.
+
+`bash preview.sh` runs `node preview-guard.mjs` first. The guard reads this `wrangler.jsonc`. If the `previews` block has no `SPEND_LEDGER` binding to `ProductionSpendLedger`, or this file has no v3 migration that creates that class, or `LEDGER_MODE` is set to anything other than `enforce` or unset, the guard exits 1 and wrangler is not started.
 
 ```sh
-npx --yes wrangler@4.135.0 preview --name gate8
+bash preview.sh
 npx --yes wrangler@4.135.0 preview secret put CSRF_SECRET --name gate8
 ```
 
@@ -39,4 +41,4 @@ Token scope: **Workers Scripts Write**. That is the group on the Preview update 
 
 One short hands-on session, priced at the list rates already in `prices.js`, with the Workers AI proxy of $0.0060003 on each binding call: 10 turns of 30 seconds of speech, a talker call of 2,000 input tokens and 300 output tokens, 400 spoken characters, and one analyst call of 8,000 input tokens and 3,000 output tokens. No memory, no JEV, no ElevenLabs, no realtime, no document conversion.
 
-That session is about $0.35. The existing ledger stops the month at $5.
+That session is about $0.35. The existing ledger stops the month at $5. The visible sentence is "This month's AI budget is used up." The provider is not called.
