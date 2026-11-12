@@ -3,7 +3,7 @@ import { fail } from './util.js';
 import { sameTenant, TENANT_ID } from './authz.js';
 import { queryMetrics, recordUsage, purgeTelemetry, personaKey, ensureTelemetry } from './telemetry.js';
 import { toCsv } from './csvsafe.js';
-import { journeyView, saveJourney, mapDraft, ensureJourney, journeyMatches, journeyTenant, journeyExport, JOURNEY_COUNT_SQL, JOURNEY_DELETE_SQL } from './journey.js';
+import { journeyView, saveJourney, mapDraft, ensureJourney, journeyMatches, journeyTenant, journeyExport, omittedRow, JOURNEY_COUNT_SQL, JOURNEY_DELETE_SQL } from './journey.js';
 import { deleteOwnedProfile } from './profile.js';
 import { readPublication } from './publication.js';
 
@@ -60,6 +60,34 @@ export async function journeyRoutes(ctx) {
   throw fail(404, 'Not found.');
 }
 
+// Empty state is an empty object, as before. Anything that is not an object is unreadable.
+function storyState(raw) {
+  try {
+    const value = JSON.parse(raw || '{}');
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    return value;
+  } catch { return null; }
+}
+
+// A readable story keeps the tenant stored in its state. An unreadable one can only be scoped by the row's tenant column.
+function exportStories(rows, user) {
+  const stories = [];
+  const omitted = [];
+  const enforced = user.tenantEnforced === true;
+  for (const row of rows) {
+    const stored = storyState(row.state);
+    if (!stored) {
+      if (sameTenant(row.tenant, user.tenant, enforced)) omitted.push(omittedRow(row.id, 'story'));
+      continue;
+    }
+    if (!sameTenant(stored.tenant || '', user.tenant, enforced)) continue;
+    const viewed = readPublication(stored);
+    stories.push({ id: row.id, title: row.title, status: viewed.status == null ? row.status : viewed.status, updatedAt: row.updated_at });
+  }
+  omitted.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  return { stories, omitted };
+}
+
 export async function privacyRoutes(ctx) {
   const { method, user, lib, env = {}, parts } = ctx;
   if (!user.email) throw fail(401, 'Sign in first.');
@@ -86,17 +114,10 @@ export async function privacyRoutes(ctx) {
   if (method === 'GET' && parts[1] === 'export') {
     if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
     const tenant = String(user.tenant || '').toLowerCase();
-    const { journey, omitted } = journeyExport(journeyMatches(lib, user.email, journeyTenant(user)));
-    const stories = lib.rows('SELECT id, title, status, updated_at, state FROM refs WHERE owner = ?', user.email).filter(r => {
-      let recordTenant = '';
-      try { recordTenant = JSON.parse(r.state || '{}').tenant || ''; } catch { return false; }
-      return sameTenant(recordTenant, user.tenant, user.tenantEnforced === true);
-    }).map(r => {
-      let stored = null;
-      try { stored = JSON.parse(r.state || '{}'); } catch { stored = null; }
-      const viewed = readPublication(stored);
-      return { id: r.id, title: r.title, status: viewed.status == null ? r.status : viewed.status, updatedAt: r.updated_at };
-    });
+    const { journey, omitted: journeyOmitted } = journeyExport(journeyMatches(lib, user.email, journeyTenant(user)));
+    const { stories, omitted: storyOmitted } = exportStories(lib.rows('SELECT id, title, status, updated_at, state, tenant FROM refs WHERE owner = ? ORDER BY id', user.email), user);
+    const omittedRows = [...journeyOmitted.rows, ...storyOmitted];
+    const omitted = { count: omittedRows.length, rows: omittedRows };
     let ownedProfile = null;
     try {
       const row = lib.rows('SELECT edits, consents, updated_at FROM profiles WHERE subject = ? AND tenant = ?', user.email, tenant)[0];

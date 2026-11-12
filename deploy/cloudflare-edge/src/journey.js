@@ -125,13 +125,18 @@ export function journeyPayload(raw) {
   } catch { return null; }
 }
 
+// One omission shape for every skipped export row. Callers pass only rows already in the subject's tenant.
+export function omittedRow(id, source) {
+  return { id, source, reason: 'unparseable' };
+}
+
 // Rows are already the tenant-scoped match. An unreadable payload stays in the export as an omission, not a gap.
 export function journeyExport(rows) {
   const journey = [];
   const omitted = [];
   for (const row of rows) {
     const payload = journeyPayload(row.payload);
-    if (!payload) omitted.push({ id: row.id, reason: 'unparseable' });
+    if (!payload) omitted.push(omittedRow(row.id, 'journey'));
     else journey.push({ ...payload, subject: row.subject, updatedAt: row.updated_at });
   }
   return { journey, omitted: { count: omitted.length, rows: omitted } };
