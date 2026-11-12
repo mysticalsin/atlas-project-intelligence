@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { BudgetState, ProductionSpendLedger, analystCall, priceOf, markdownPlan, LIMITS } from '../src/meter.js';
 import { usageFrom } from '../src/usage.js';
-import { transition } from '../src/month-budget.js';
 import { monthSpend } from '../src/operate.js';
 import { ledgerAccessOk } from '../src/spend-route.js';
 
@@ -90,47 +89,85 @@ test('one storage get failure does not stick', async () => {
   const box = memory();
   box.failGet = true;
   const ledger = new ProductionSpendLedger({ storage: box.storage }, {}, { limitUsd: 5 });
-  const first = await ledger.reserve({ kind: 'memory', provider: 'hindsight', operation: 'recall', inputTokens: 10, outputTokens: 10 });
+  const first = await ledger.apply(l => l.reserve({ kind: 'memory', provider: 'hindsight', operation: 'recall', inputTokens: 10, outputTokens: 10 }));
   assert.equal(first.reason, 'ledger_error');
+  assert.equal(box.puts.length, 0);
   box.failGet = false;
-  const second = await ledger.reserve({ kind: 'memory', provider: 'hindsight', operation: 'recall', inputTokens: 10, outputTokens: 10 });
+  const second = await ledger.apply(l => l.reserve({ kind: 'memory', provider: 'hindsight', operation: 'recall', inputTokens: 10, outputTokens: 10 }));
   assert.equal(second.ok, true);
 });
 
 test('a settle put failure rolls the reservation back', async () => {
   const box = memory();
   const ledger = new ProductionSpendLedger({ storage: box.storage }, {}, { limitUsd: 5 });
-  const reserved = await ledger.reserve({ kind: 'memory', provider: 'hindsight', operation: 'recall', inputTokens: 20, outputTokens: 10 });
+  const reserved = await ledger.apply(l => l.reserve({ kind: 'memory', provider: 'hindsight', operation: 'recall', inputTokens: 20, outputTokens: 10 }));
   assert.equal(reserved.ok, true);
   const before = box.saved().reserved.nanoUsd;
   box.failPut = true;
-  const settled = await ledger.settle(reserved.id, { usage: { inputTokens: 1, outputTokens: 1 } });
+  const settled = await ledger.apply(l => l.settle(reserved.id, { usage: { inputTokens: 1, outputTokens: 1 } }));
   assert.deepEqual(settled, { ok: false, reason: 'ledger_error' });
   assert.equal(box.saved().reserved.nanoUsd, before);
   assert.ok(box.saved().open[reserved.id]);
+  const snap = await ledger.snapshot();
+  assert.equal(snap.inFlight, 1);
+  assert.equal(snap.reserved.nanoUsd, before);
+  box.failPut = false;
+  assert.equal(await ledger.apply(l => l.settle(reserved.id, { usage: { inputTokens: 1, outputTokens: 1 } })), true);
 });
 
 test('a concurrent burst through apply keeps one total', async () => {
   const box = memory();
   const ledger = new ProductionSpendLedger({ storage: box.storage }, {}, { limitUsd: 5 });
   const req = { kind: 'memory', provider: 'hindsight', operation: 'recall', inputTokens: 8, outputTokens: 4 };
-  const results = await Promise.all(Array.from({ length: 12 }, () => ledger.reserve(req)));
+  const results = await Promise.all(Array.from({ length: 12 }, () => ledger.apply(l => l.reserve(req))));
   const ok = results.filter(r => r.ok);
   assert.equal(ok.length, 12);
   const snap = await ledger.snapshot();
   assert.equal(snap.reserved.requests, 12);
   assert.equal(Object.keys(box.saved().open).length, 12);
+  const capped = new ProductionSpendLedger({ storage: memory().storage }, {}, {
+    limitUsd: 5,
+    prices: { '@cf/test/voice': { usdPerAudioMin: (3e9 - 6_000_300) * 60 / 1e9 } },
+  });
+  const burst = await Promise.all(Array.from({ length: 8 }, () => capped.apply(l => l.reserve({ kind: 'stt', model: '@cf/test/voice', audioMs: 1000 }))));
+  assert.equal(burst.filter(r => r.ok).length, 1);
+  const held = await capped.snapshot();
+  assert.equal(held.reserved.requests, 1);
+  assert.ok(held.reserved.nanoUsd <= 5e9);
 });
 
-test('settle after a sweep finds nothing to charge again', () => {
+test('settle after a sweep finds nothing to charge again', async () => {
   let now = NOW;
   const b = new BudgetState({ now: () => now });
   const reserved = b.reserve({ kind: 'stt', model: '@cf/deepgram/nova-3', audioMs: 1000 });
+  const ceiling = b.snapshot().reserved.nanoUsd;
   now += 120001;
   const next = b.reserve({ kind: 'stt', model: '@cf/deepgram/nova-3', audioMs: 1000 });
   assert.equal(next.ok, true);
+  assert.equal(b.toJSON().settled.unsettled, 1);
+  assert.equal(b.toJSON().open[reserved.id], undefined);
+  assert.ok(b.snapshot().reserved.nanoUsd >= ceiling);
+  const held = b.snapshot().reserved.nanoUsd;
   assert.equal(b.settle(reserved.id, { actualNano: 1 }), false);
-  assert.equal(transition(b.toJSON(), { type: 'settle', id: reserved.id }) === b.toJSON() || !b.toJSON().open[reserved.id], true);
+  assert.equal(b.snapshot().reserved.nanoUsd, held);
+  const month = new Date().toISOString().slice(0, 7);
+  const store = { budget: {
+    v: 1, phase: 'open', month, denyReason: '', next: 1,
+    open: { P1: { kind: 'stt', model: '@cf/deepgram/nova-3', nano: ceiling, at: Date.now() - 120001 } },
+    reserved: { nanoUsd: ceiling, requests: 1 },
+    observed: { nanoUsd: 0, requests: 0, unpriced: 0 },
+    byKind: { stt: 1 }, refusals: {},
+    settled: { ok: 0, errors: 0, unsettled: 0 },
+    overruns: { requests: 0, nanoUsd: 0 },
+  } };
+  const ledger = new ProductionSpendLedger({ storage: { get: async () => store.budget, put: async (_key, value) => { store.budget = value; } } }, {}, { limitUsd: 5 });
+  const again = await ledger.apply(l => l.reserve({ kind: 'stt', model: '@cf/deepgram/nova-3', audioMs: 1000 }));
+  assert.equal(again.ok, true);
+  const after = await ledger.snapshot();
+  assert.equal(after.settled.unsettled, 1);
+  assert.ok(after.reserved.nanoUsd >= ceiling);
+  assert.equal(await ledger.apply(l => l.settle('P1', { actualNano: 1 })), false);
+  assert.equal((await ledger.snapshot()).reserved.nanoUsd, after.reserved.nanoUsd);
 });
 
 test('each analyst attempt gets its own reservation', async () => {
