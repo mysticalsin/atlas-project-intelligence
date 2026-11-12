@@ -1,5 +1,5 @@
 # State machines in ATLAS
-Last reviewed: 2026-11-12 on `cursor/state-machines-atlas-v2` at `3a8b6de1a0a1bf179c2a2ddbfb5813c068f09d00`. This stamp is that code commit, because this docs commit cannot name itself.
+Last reviewed: 2026-11-12 on `cursor/state-machines-atlas-v2` at `d4c460605bd654d769605f8b61d834910d3ce2e2`. This stamp is that code commit, because this docs commit cannot name itself.
 
 The rules are `docs/STATE-MACHINE-STANDARD.md`. This file keeps the ATLAS inventory and does not restate them. Row 9, story publication, is fixed in this branch. The other high-risk rows are still pending review.
 
@@ -21,7 +21,7 @@ Row shape: section 4 of `docs/STATE-MACHINE-STANDARD.md`. Status in the summary 
 | 10 | Privacy delete receipt | `src/journey-ui.js:11` and `confirmDelete` at :81; server attempts at `deploy/cloudflare-edge/src/operate.js:117` | disclosure, confirm, in flight, receipt, earlier receipt, failure, identity change | `pendingDelete`, `deleteReceipt`, `receiptIsLatest`, `deleteFailure`, `deleteOwner` | Fixed across the delete-receipt commits (latest failure, earlier receipt, one request). `complete` stays false. No new bug filed. | H | LATER. Pending review. Erasure and the receipt wording. |
 | 11 | Colleague confirm page | `deploy/cloudflare-edge/src/confirm-page.js:120` | Open a confirmation, submit, error | page fetches, request id | None newly reproduced. | H | LATER. Pending review. It records a human confirmation. |
 | 12 | Early speculation | `deploy/cloudflare-edge/src/speculation.js:24` and `MemoryLedger` at :46 | Off, admitted, cancelled, claimed by the final turn | `EARLY_STT`, `EARLY_DRAFT`, reservation ids, `scope` | Flags alone cannot turn it on (no global ledger in the Worker). | H | LATER. Pending review. It spends audio and draft tokens inside the interview. |
-| 13 | Story-rating circuit breaker | `deploy/cloudflare-edge/src/breaker.js` (writer: `rating.js` `storyRater`) | closed, open for 60 s, one trial, auth block until the key changes | was `fails`, `openUntil`, `authKey`; now one object written only by `transition` | **Fixed.** The old `rating.js` admit cleared `openUntil` before the trial returned, so a second `rate()` was sent. `test/rating.test.js` R16b. A probing `ignore` stays probing. Only `succeed` closes a probe. `open` plus `succeed` is a rejection: `storyRater` logs it and the breaker stays open. `open` plus `fail` still settles. | M | FIXED |
+| 13 | Story-rating circuit breaker | `deploy/cloudflare-edge/src/breaker.js` (writer: `rating.js` `storyRater`) | closed, open for 60 s, one trial, auth block until the key changes | was `fails`, `openUntil`, `authKey`; now one object written only by `transition` | **Fixed.** The old `rating.js` admit cleared `openUntil` before the trial returned, so a second `rate()` was sent. `test/rating.test.js` R16b. A probing `ignore`, including a 429, goes back to open for a fresh 60 s. `storyRater` logs that move as phase and event only. Only `succeed` closes a probe. `auth_fail` while probing still closes it and records the key. `open` plus `succeed` is a rejection: `storyRater` logs it and the breaker stays open. `open` plus `fail` still settles. | M | FIXED |
 | 14 | Admin metrics view | `src/admin-metrics-machine.js` (writer: `src/journey-ui.js` `renderAdmin`) | boot loading, boot error, denied, metrics loading, ready, empty, error; export | `{status}` written only by `adminMetricsTransition`. `bootFailed` is a separate guard from the role. The view is not stored, so it has no version field. | A failed boot used to show the verified-admin sentence. `renderAdmin` now sends `failed: true` and paints `boot_error`. | L | FIXED. A failed boot is `boot_error` and does not show the verified-admin sentence. |
 | 15 | `LEDGER_MODE` | `deploy/cloudflare-edge/src/meter.js:31` `ledgerMode` | none: the Worker boots in one mode | `env.LEDGER_MODE` (`off`, `observe`, `enforce`, anything else invalid) | None. Invalid values already refuse. Default remains off. | L | NOT A MACHINE. It is a boot-time config parse. The process does not move from off to observe. No ordering rule. |
 | 16 | Rating quality status | `deploy/cloudflare-edge/src/rating.js:410` `noStoryQuality` | none | `ready` / `needs_work` / `insufficient` derived from the score | None. | L | NOT A MACHINE. Pure mapping from a score and blockers. Two or three labels, no transitions. |
@@ -71,7 +71,7 @@ Row shape: section 4 of `docs/STATE-MACHINE-STANDARD.md`. Status in the summary 
 | every phase except withdrawn | withdrawn | none | withdrawn | `withdraw` stores the state and the status |
 | withdrawn | reinstated | `mergedInto` is empty | withdrawn cleared | `reinstate` stores the state and the status |
 
-Anything not in this table is illegal and is rejected. The cross product is 56 pairs. Nine are rejected: `withdrawn` with `withdrawn`, `decided` or `admin_published`, and `reinstated` from every phase except `withdrawn`. `reinstated` with `mergedInto` set is still rejected from withdrawn. The transition returns the previous state and a rejection marker. The caller logs the story id, the phase and the event, and does not store that result. A status write matches the revision and the stored status column, not the decoded status. `scanStale` (`library.js:808`) uses the decoded status, so a withdrawn row is not invited, including an unknown version whose column is still `published`. A malformed story JSON is skipped and logged by `visibleRows`, `exportAll`, `scanStale` and `index`. `index` (`library.js:570`) parses every other row before it writes a duplicate, so one bad row cannot leave a partial write. It does not fail the tenant.
+Anything not in this table is illegal and is rejected. The cross product is 56 pairs. Nine are rejected: `withdrawn` with `withdrawn`, `decided` or `admin_published`, and `reinstated` from every phase except `withdrawn`. `reinstated` with `mergedInto` set is still rejected from withdrawn. The transition returns the previous state and a rejection marker. The caller logs the story id, the phase and the event, and does not store that result. A status write matches the revision and the stored status column, not the decoded status. `scanStale` (`library.js:808`) uses the decoded status, so a withdrawn row is not invited, including an unknown version whose column is still `published`. A malformed story JSON is skipped and logged by `visibleRows`, `exportAll`, `scanStale` and `index`. `index` (`library.js:570`) parses every other row before it writes a duplicate, so one bad row cannot leave a partial write. A parsed null state is unreadable: the id is logged, that row is not written, and the other rows continue. It does not fail the tenant.
 
 ```mermaid
 stateDiagram-v2
@@ -130,11 +130,12 @@ Withdrawn wins. Then an unknown status or decision does not publish. Then `admin
 | closed or open | fail | `event.trial`, or `fails + 1 >= 3` | open for 60 s, fails 0 | the rating fails |
 | closed or open | fail | not a trial, and the count stays under 3 | closed, or open if a window was already set | the rating fails; retries follow the existing budget |
 | any | auth_fail | none | same phase (probing becomes closed), auth key set | the rating fails |
-| any | ignore | none | same phase, including probing | the rating fails; the count is unchanged. A probe is not closed and no fresh 60 s window starts |
+| closed or open | ignore | none | same phase | the rating fails; the count is unchanged |
+| probing | ignore | the trial outcome is not a success | open for 60 s, fails 0 | `storyRater` logs `{atlas_metric:'breaker', phase:'open', event:'ignore'}`. `transition` does not log. The key is not in the line |
 
 Anything not in this table is illegal and is rejected. The transition returns the previous state and a rejection marker. `storyRater` logs the phase and the event. It does not carry the key. Effects (the fetch, the retry sleeps, the `RatingError`) run in `storyRater`, not in `transition`.
 
-`open` plus `fail` stays a legal settlement. A rating admitted while the breaker was closed can still be running when another failure opens it, and that failure still settles. `open` plus `succeed` is the stale pair in the table above: the open window is already the failure outcome, so a late success is a rejection. `storyRater` logs the phase and the event, and the breaker stays open. `transition` itself does not log. An `ignore` while probing stays probing. Only `succeed` closes a probe. `auth_fail` while probing still closes it and records the key.
+`open` plus `fail` stays a legal settlement. A rating admitted while the breaker was closed can still be running when another failure opens it, and that failure still settles. `open` plus `succeed` is the stale pair in the table above: the open window is already the failure outcome, so a late success is a rejection. `storyRater` logs the phase and the event, and the breaker stays open. `transition` itself does not log. An `ignore` while probing, including a 429, opens a fresh 60 s window. Only `succeed` closes a probe. `auth_fail` while probing still closes it and records the key; that does not conflict with the reopen, because an auth failure is still recorded against the key and the next call with that key stays blocked.
 
 ```mermaid
 stateDiagram-v2
@@ -145,6 +146,7 @@ stateDiagram-v2
   open --> probing: begin [window elapsed]
   open --> open: begin [window remaining]
   probing --> open: fail
+  probing --> open: ignore
   probing --> closed: succeed
   closed --> closed: succeed
 ```
