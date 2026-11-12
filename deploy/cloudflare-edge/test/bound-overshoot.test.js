@@ -1,7 +1,7 @@
 // A measurement of zero is not a usage report. The reserved ceiling stays.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BudgetState, priceOf } from '../src/meter.js';
+import { BudgetState, generationTokens, LIMITS, priceOf } from '../src/meter.js';
 
 const NOW = () => Date.parse('2026-11-12T12:00:00Z');
 
@@ -24,4 +24,28 @@ test('a zero realtime, transcribe or hindsight measurement keeps the ceiling', (
     assert.equal(snap.inFlight, 0, req.kind);
     assert.equal(snap.overruns.requests, 0, req.kind);
   }
+});
+
+test('a talker stream with no usage stops at the reserved output and keeps the ceiling', async () => {
+  const { workersAI } = await import('../src/app.js');
+  const cap = generationTokens(LIMITS.talker);
+  const b = new BudgetState({ limitUsd: 5, now: NOW });
+  const ledger = { async reserve(req) { return b.reserve(req); }, async settle(id, observed) { return b.settle(id, observed); } };
+  const model = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
+  const overflow = 'x'.repeat(cap + 40);
+  const sse = `data: {"choices":[{"delta":{"content":${JSON.stringify(overflow)}}}]}\n\ndata: [DONE]\n\n`;
+  const env = {
+    LEDGER_MODE: 'enforce', TALKER_MODEL: model,
+    SPEND_LEDGER: { idFromName: () => 'production', get: () => ledger },
+    AI: { async run() { return new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }); } },
+  };
+  let said = '';
+  for await (const delta of workersAI(env).chatStream([{ role: 'user', content: 'hi' }])) said += delta;
+  assert.equal(said.length, cap);
+  assert.equal(said, 'x'.repeat(cap));
+  const snap = b.snapshot();
+  assert.equal(snap.inFlight, 0);
+  assert.equal(snap.overruns.requests, 0);
+  assert.equal(snap.reserved.nanoUsd, snap.observed.nanoUsd);
+  assert.ok(snap.reserved.nanoUsd > 0);
 });

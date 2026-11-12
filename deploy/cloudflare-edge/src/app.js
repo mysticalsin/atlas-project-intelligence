@@ -461,10 +461,12 @@ export function workersAI(env) {
       const held = await meter.hold(() => ({ kind: 'talker', model: env.TALKER_MODEL, inputTokens: inputTokenCeiling(utf8Length(JSON.stringify(body))), outputTokens: cap }));
       let usage = null;
       let failed = null;
+      let accepted = 0;
       try {
         const stream = await held.run(env.TALKER_MODEL, body, affinity ? { extraHeaders: { 'x-session-affinity': affinity } } : undefined);
         const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
         let buffer = '';
+        const stop = async () => { try { await reader.cancel(); } catch { /* the provider is already closed */ } };
         try {
           for (;;) {
             const { value, done } = await reader.read();
@@ -481,7 +483,13 @@ export function workersAI(env) {
                 const found = usageFrom(j);
                 if (found) usage = found;
                 const d = j.response ?? j.choices?.[0]?.delta?.content;
-                if (d) yield d;
+                if (!d) continue;
+                const room = cap - accepted;
+                if (room <= 0) { await stop(); return; }
+                const piece = d.length > room ? d.slice(0, room) : d;
+                accepted += piece.length;
+                yield piece;
+                if (accepted >= cap) { await stop(); return; }
               } catch { /* keep-alive or partial */ }
             }
           }
