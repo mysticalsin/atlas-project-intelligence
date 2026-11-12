@@ -59,10 +59,12 @@ export const LIMITS = Object.freeze(JSON.parse(`{
 // https://developers.cloudflare.com/workers-ai/features/markdown-conversion/how-it-works/
 // Gemma 4 26B is on the pricing table at $0.100 per million input tokens and $0.300 per million output tokens.
 // detr-resnet-50 has no list price. Its model page says the model is not in the catalog (read 2026-11-11,
-// https://developers.cloudflare.com/workers-ai/models/detr-resnet-50/). Image uploads are refused (maxImages 0).
-// A known document is reserved as the Gemma image worst case for every page up to markdown.maxPages, because a
-// page can still take that path. Cloudflare does not publish toMarkdown's token counts. The gpt-oss model page
-// does not say whether max_tokens includes reasoning, so a call sends maxTokens + reasoningTokens and reserves that sum.
+// https://developers.cloudflare.com/workers-ai/models/detr-resnet-50/). meter.js markdownPlan refuses an image
+// (code unpriced_model, maxImages 0) and priceOf returns null for media image, so an image is not reserved.
+// A known document reserves markdown.maxPages files (30). Each file is two Gemma calls: imageInputTokens (8192)
+// in and imageOutputTokens (1024) out. callCeilingNano adds PROXY_PER_CALL_NANO once on that total. detr is not
+// in the reservation. More files than maxPages is not priced. The gpt-oss model page does not say whether
+// max_tokens includes reasoning, so a call sends maxTokens + reasoningTokens and reserves that sum.
 export const MARKDOWN_IMAGE_INPUT_TOKENS = LIMITS.markdown.imageInputTokens;
 export const MARKDOWN_IMAGE_OUTPUT_TOKENS = LIMITS.markdown.imageOutputTokens;
 export const GEMMA_USD_PER_M_INPUT = 0.100;
