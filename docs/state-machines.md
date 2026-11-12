@@ -27,7 +27,7 @@ Row shape: section 4 of `docs/STATE-MACHINE-STANDARD.md`. Status in the summary 
 | 16 | Rating quality status | `deploy/cloudflare-edge/src/rating.js:410` `noStoryQuality` | none | `ready` / `needs_work` / `insufficient` derived from the score | None. | L | NOT A MACHINE. Pure mapping from a score and blockers. Two or three labels, no transitions. |
 | 17 | Per-call provider retry | `deploy/cloudflare-edge/src/classify.js:95`, `customer-jev.js:129`, `teams.js:98` | one call, up to three tries | local `attempt` counter | None. | L | NOT A MACHINE. The counter dies with the call. Nothing is persisted and nothing else reads it. |
 | 18 | Story revision reopens approvals | `publicationTransition` event `revised`, called from `library.js` `upsert` | a content change clears quality, withdrawn and test, and replaces both approval lanes with pending | `quality`, `withdrawn`, `test`, `validation.status`, `managerDecision`, `presalesDecision` | None. The golden revision test still expects `in_review`. | H | FIXED. Folded into row 9. `revised` is the only writer of that reset, and it stores version 1. |
-| 19 | Interview invitation status | `deploy/cloudflare-edge/src/library.js:779` `updateInvitation` (UPDATEs at :803, :807, :808, :809); guard at `outreach.js:539`; Teams card UPDATEs at `outreach.js:549` and :555; unique index `library.js:185` | open, scheduled, dismissed, done | `invitations.status`, `slot` | None newly reproduced. The column is assigned from the library and from the Teams card. | M | LATER. Persisted status, more than one writer, and a closed invitation is not scheduled again. Not started in this run. |
+| 19 | Interview invitation status | `deploy/cloudflare-edge/src/invitation.js` (writers: `library.js` `updateInvitation` at :780, guard :787, UPDATEs :808, :813, :814, :815; `outreach.js` guard :540–:542, UPDATEs :552 and :562; unique index `library.js:185`) | open, scheduled, dismissed, done | `invitations.status` written only after `invitationTransition`; `slot` is the schedule effect | A done or dismissed invitation could be scheduled again. When another open row already held that scope, the `invitations_open_scope` index threw and the route returned 500. | M | FIXED. One transition, a status compare-and-swap, and a 409 refusal. |
 | 20 | JEV rating consent | `deploy/cloudflare-edge/src/profile.js:473` `storedConsent`; grant and revoke at :530 | absent, or `{version:1}` for `jevRating`, one row per subject and tenant | `consents.jevRating` | None. Any version other than 1 counts as absent. | L | NOT A MACHINE. Two stored values, written in one route. No intermediate state and no retry. The tenant is the row key, not a state. |
 | 21 | Rating in flight per revision | `deploy/cloudflare-edge/src/library.js:438`–:462 `review` (`inflight` at :181; join :444–:450; `nextGen` :465–:469; `storeRating` guard :473–:484) | no entry, or one `{gen, engine}` for `id:revision`. The same engine joins. A different engine starts a new generation. | `this.inflight` | None newly reproduced. The map is the re-entrancy guard. | M | LATER. One rating at a time is an ordering rule. It is not the publication status. Not started in this run. |
 
@@ -267,3 +267,49 @@ None.
 The button stays `Delete my journey data`. Download stays `Download my data`. The server note and the disclosure sentences are unchanged. The confirm dialog's existing buttons stay `Continue` and `Cancel`. The one new string is the confirm message: `Continue sends the deletion request. Cancel sends nothing.` The receipt lines are the server note, then each outcome as the store name, a space, and either the removed count or the server error string. No other sentence was added.
 
 `saveJourney` (`journey.js`) stores `user.email` as given. The same email still deletes that row. Export and delete now match `lower(subject)` to `lower(user.email)` in the same tenant, because the Worker lowercases the sign-in before `x-atlas-user` and a case-sensitive `=` left the mixed-case row in place.
+
+## Interview invitation status
+- Purpose: keep a closed invitation closed, and refuse a re-open instead of letting the open-scope unique index return 500.
+- Code: `deploy/cloudflare-edge/src/invitation.js`, tests: `deploy/cloudflare-edge/test/invitation-status.test.js`. Writers: `library.js` `updateInvitation` and `outreach.js` `system`.
+- Persisted: `invitations.status`. There is no version column. An unknown status is rejected and the row is not rewritten.
+
+### States
+| State | Data carried | Meaning |
+|---|---|---|
+| open | invitation id | No slot yet. |
+| scheduled | invitation id | A slot is set. |
+| dismissed | invitation id | Closed. |
+| done | invitation id | Closed, with a reference. |
+
+### Events
+| Event | Source |
+|---|---|
+| schedule | `updateInvitation` action `schedule`, or a Teams snooze |
+| dismiss | `updateInvitation` action `dismiss`, or a Teams decline |
+| done | `updateInvitation` action `done` |
+
+### Transitions
+| From | Event | Guard | To | Side effects |
+|---|---|---|---|---|
+| open, scheduled | schedule | none | scheduled | set the slot. The UPDATE also requires `status IN ('open','scheduled')` |
+| open, scheduled | dismiss | none | dismissed | the same compare-and-swap |
+| open, scheduled | done | the existing reference checks | done | the same compare-and-swap, and the reference id |
+
+Anything not in this table is illegal and is rejected. The cross product is 12 pairs. Six are legal. The transition returns the previous state and a rejection marker whose only fields are `id`, `phase` and `event`. The id is the invitation id. The email is not in the marker. `noteInvitation` logs that marker. The transition does not log. `updateInvitation` answers 409. The Teams card keeps its existing closed card. A compare-and-swap that changes no row is the same refusal.
+
+```mermaid
+stateDiagram-v2
+  [*] --> open
+  open --> scheduled: schedule
+  open --> dismissed: dismiss
+  open --> done: done
+  scheduled --> scheduled: schedule
+  scheduled --> dismissed: dismiss
+  scheduled --> done: done
+```
+
+### Platform / flag differences
+None.
+
+### Copy
+The Teams card still says `This invitation is closed.` and `Nothing was changed.` The library refusal joins those two existing sentences: `This invitation is closed. Nothing was changed.` No other sentence was added.

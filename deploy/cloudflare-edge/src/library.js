@@ -15,6 +15,7 @@ import { storedConsent } from './profile.js';
 import { sameTenant, TENANT_ID } from './authz.js';
 import { recordUsage } from './telemetry.js';
 import { publicationEffect, publicationStatus, publicationTransition, readPublication } from './publication.js';
+import { invitationTransition, noteInvitation, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
 const DUPLICATE = 0.9; // cosine similarity above which two references are flagged as the same or a related project
 export const PRACTICES = { data_ai: 'Data & AI', web_app: 'Web & App Development', telecom: 'Telecom & Networks', sap_erp: 'SAP & ERP', cloud_infra: 'Cloud & Infrastructure', cybersecurity: 'Cybersecurity', transformation: 'Transformation & Strategy', engineering: 'Engineering & Industry' };
 
@@ -783,6 +784,10 @@ export class Library {
     if (user.tenantEnforced === true && !sameTenant(inv.tenant, user.tenant, true)) throw fail(404, 'Invitation not found.');
     const action = obj(body).action;
     if (!['schedule', 'dismiss', 'done'].includes(action)) throw fail(400, 'Unknown action.');
+    const step = noteInvitation(invitationTransition({ id: inv.id, status: inv.status }, { type: action }));
+    if (!step.ok) throw fail(409, INVITATION_REFUSAL);
+    const held = () => this.rows('SELECT status FROM invitations WHERE id = ?', inv.id)[0]?.status;
+    const refuse = () => { noteInvitation({ rejection: { id: inv.id, phase: inv.status, event: action } }); throw fail(409, INVITATION_REFUSAL); };
     const nextRef = str(obj(body).referenceId, 40);
     const existingRef = String(inv.reference_id || '');
     const openRef = refId => {
@@ -800,14 +805,17 @@ export class Library {
     const storyOpen = openRef(keptRef);
     if (keptRef && !storyOpen) {
       if (action !== 'dismiss') throw fail(404, 'Reference not found.');
-      this.sql.exec("UPDATE invitations SET status = 'dismissed' WHERE id = ?", inv.id);
+      this.sql.exec(`UPDATE invitations SET status = 'dismissed' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, inv.id);
+      if (held() !== 'dismissed') refuse();
       return this.invitationView(user, this.rows('SELECT * FROM invitations WHERE id = ?', inv.id)[0]);
     }
     const auditOn = storyOpen ? this.auditFor(user, keptRef, inv.tenant) : 'library';
-    if (action === 'schedule') { const slot = String(obj(body).slot || ''); if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(slot)) throw fail(400, 'Pick a date and time.'); this.sql.exec("UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ?", slot.slice(0, 25), inv.id); }
-    else if (action === 'dismiss') this.sql.exec("UPDATE invitations SET status = 'dismissed' WHERE id = ?", inv.id);
-    else if (action === 'done') this.sql.exec("UPDATE invitations SET status = 'done', reference_id = ? WHERE id = ?", nextRef || inv.reference_id, inv.id);
+    if (action === 'schedule') { const slot = String(obj(body).slot || ''); if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(slot)) throw fail(400, 'Pick a date and time.'); this.sql.exec(`UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, slot.slice(0, 25), inv.id); }
+    else if (action === 'dismiss') this.sql.exec(`UPDATE invitations SET status = 'dismissed' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, inv.id);
+    else if (action === 'done') this.sql.exec(`UPDATE invitations SET status = 'done', reference_id = ? WHERE id = ? AND ${OPEN_INVITATION_SQL}`, nextRef || inv.reference_id, inv.id);
     else throw fail(400, 'Unknown action.');
+    const expectStatus = action === 'schedule' ? 'scheduled' : action === 'dismiss' ? 'dismissed' : 'done';
+    if (held() !== expectStatus) refuse();
     this.log(auditOn, user.email, 'invitation ' + action, inv.reason);
     return this.invitationView(user, this.rows('SELECT * FROM invitations WHERE id = ?', inv.id)[0]);
   }

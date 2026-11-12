@@ -11,6 +11,7 @@ import { recordText, forOthers } from './scrub.js';
 import * as claims from './claims.js';
 import * as gaps from './gaps.js';
 import { interviewCard, messageCard } from './teams.js';
+import { invitationTransition, noteInvitation, OPEN_INVITATION_SQL } from './invitation.js';
 
 export const READY = true;
 
@@ -536,7 +537,9 @@ export async function system(ctx) {
     const o = rowOf(lib, str(e.outreachId, 64));
     const inv = o?.kind === 'interview_invite' ? lib.rows('SELECT * FROM invitations WHERE id = ?', o.subject_id)[0] : null;
     if (!inv || !['snooze', 'decline'].includes(e.verb)) return { body: { ok: true, card: messageCard({ title: 'Nothing to change.', text: 'Open ATLAS to see your interviews.' }) } };
-    if (!['open', 'scheduled'].includes(inv.status)) return { body: { ok: true, card: messageCard({ title: 'This invitation is closed.', text: 'Nothing was changed.' }) } };
+    const inviteEvent = e.verb === 'decline' ? 'dismiss' : 'schedule';
+    const step = noteInvitation(invitationTransition({ id: inv.id, status: inv.status }, { type: inviteEvent }));
+    if (!step.ok) return { body: { ok: true, card: messageCard({ title: 'This invitation is closed.', text: 'Nothing was changed.' }) } };
     const viewer = { email: String(inv.email || '').toLowerCase(), mail: String(inv.email || '').toLowerCase(), role: 'user', tenant: String(inv.tenant || ''), tenantEnforced: user.tenantEnforced === true };
     const linked = inv.reference_id && lib.row ? lib.row(inv.reference_id) : null;
     const storyOpen = !!(linked && lib.access && lib.access(linked, viewer));
@@ -546,13 +549,21 @@ export async function system(ctx) {
     const auditOn = storyOpen && typeof lib.auditFor === 'function' ? lib.auditFor(viewer, inv.reference_id, inv.tenant) : 'library';
     const p = parsed(o.payload), origin = originOf(ctx);
     if (e.verb === 'decline') {
-      lib.sql.exec("UPDATE invitations SET status = 'dismissed' WHERE id = ?", inv.id);
+      lib.sql.exec(`UPDATE invitations SET status = 'dismissed' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, inv.id);
+      if (lib.rows('SELECT status FROM invitations WHERE id = ?', inv.id)[0]?.status !== 'dismissed') {
+        noteInvitation({ rejection: { id: inv.id, phase: inv.status, event: 'dismiss' } });
+        return { body: { ok: true, card: messageCard({ title: 'This invitation is closed.', text: 'Nothing was changed.' }) } };
+      }
       if (!hiddenRef) lib.log(auditOn, inv.email, 'invitation dismiss', `${inv.reason} (Teams card)`);
       return { body: { ok: true, card: messageCard({ title: 'Understood: no interview for this project.', text: 'Nothing else will be sent about it.' }) } };
     }
     const base = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(inv.slot || '') ? inv.slot.slice(0, 16) : now.slice(0, 16);
     const slot = new Date(Date.parse(base + ':00Z') + 864e5).toISOString().slice(0, 16);
-    lib.sql.exec("UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ?", slot, inv.id);
+    lib.sql.exec(`UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, slot, inv.id);
+    if (lib.rows('SELECT status FROM invitations WHERE id = ?', inv.id)[0]?.status !== 'scheduled') {
+      noteInvitation({ rejection: { id: inv.id, phase: inv.status, event: 'schedule' } });
+      return { body: { ok: true, card: messageCard({ title: 'This invitation is closed.', text: 'Nothing was changed.' }) } };
+    }
     lib.log(auditOn, inv.email, 'invitation schedule', `${inv.reason} (Teams card: tomorrow)`);
     return { body: { ok: true, card: interviewCard({ invitationId: inv.id, outreachId: o.id, projectRef: obj(p.preview).title, origin, note: 'Moved to tomorrow. Start whenever it suits you.' }) } };
   }
