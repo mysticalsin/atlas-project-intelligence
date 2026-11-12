@@ -137,11 +137,12 @@ class RealtimeMeter:
 
     async def settle_all(self):
         first = None
-        for hold in self.holds:
-            if hold['settled']:
-                continue
+        open_holds = [hold for hold in self.holds if not hold['settled']]
+        for index, hold in enumerate(open_holds):
             try:
-                await self._settle_one(hold)
+                # The last open hold carries every token the increments could not cover.
+                # The ledger stores that excess as spend plus overrun and latches the month.
+                await self._settle_one(hold, overrun=(index == len(open_holds) - 1))
             except BudgetRefused as error:
                 first = first or error
         if first:

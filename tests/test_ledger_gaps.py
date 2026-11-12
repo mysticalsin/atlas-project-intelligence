@@ -1,6 +1,8 @@
 """Gaps from the review of 13d99fe: realtime increments, observe record, Riva, and UTF-8 estimates."""
 import asyncio
 import json
+import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -102,6 +104,49 @@ async def test_a_refusal_keeps_its_reason_and_settles_leftover_usage(monkeypatch
         assert speech[-1]['usage']['inputTokens'] == step['inputTokens'] + 50
         assert speech[-1]['usage']['outputTokens'] == cap_out + 25
         use(None)
+
+
+@pytest.mark.asyncio
+async def test_a_62000_input_response_is_recorded_in_full(monkeypatch):
+    monkeypatch.setenv('LEDGER_MODE', 'enforce')
+    ledger = Ledger()
+    use(ledger)
+    meter = RealtimeMeter(object(), 'gpt-realtime-2.1', None, now=lambda: 10.0)
+    await meter.open_increment()
+    with pytest.raises(BudgetRefused) as caught:
+        await meter.note_response({'inputTokens': 62000, 'outputTokens': 0})
+    assert caught.value.reason == 'exhausted:usd'
+    await meter.settle_all()
+    charged = sum(row['usage']['inputTokens'] for row in ledger.settles if row['usage'] and 'inputTokens' in row['usage'])
+    assert charged == 62000 and meter.unsettled_in == 0, f'charged {charged}, left {meter.unsettled_in}'
+    edge = Path(__file__).resolve().parents[1] / 'deploy' / 'cloudflare-edge'
+    script = r'''
+import { BudgetState } from './src/meter.js';
+import { readFileSync } from 'node:fs';
+console.log = () => {};
+const body = JSON.parse(readFileSync(0, 'utf8'));
+const b = new BudgetState({ limitUsd: 5, now: () => Date.parse('2026-11-12T00:00:00Z') });
+const ids = [];
+for (const estimate of body.reserves) {
+  const reserved = b.reserve(estimate);
+  if (!reserved.ok) { process.stdout.write(JSON.stringify({ ok: false, stage: 'reserve', reason: reserved.reason }) + '\n'); process.exit(0); }
+  ids.push(reserved.id);
+}
+for (let i = 0; i < body.settles.length; i++) {
+  const row = body.settles[i];
+  const settled = b.settle(ids[i], row.usage ? { usage: row.usage } : {});
+  if (!settled) { process.stdout.write(JSON.stringify({ ok: false, stage: 'settle', id: ids[i] }) + '\n'); process.exit(0); }
+}
+const snap = b.snapshot();
+process.stdout.write(JSON.stringify({ ok: true, exhausted: snap.exhausted, unsettled: snap.settled.unsettled, overruns: snap.overruns.requests, observed: snap.observed.nanoUsd, inFlight: snap.inFlight }) + '\n');
+'''
+    proc = subprocess.run(['node', '--input-type=module', '-e', script], input=json.dumps({'reserves': ledger.reserves, 'settles': ledger.settles}), text=True, capture_output=True, cwd=edge, check=False)
+    assert proc.returncode == 0, proc.stderr
+    snap = json.loads(proc.stdout)
+    assert snap['ok'] is True
+    assert snap['exhausted'] is True and snap['overruns'] >= 1
+    assert snap['unsettled'] == 0 and snap['inFlight'] == 0 and snap['observed'] > 0
+    use(None)
 
 
 @pytest.mark.asyncio
