@@ -96,6 +96,8 @@ export function transition(state, event) {
     if (event.limitNano == null || !Number.isInteger(event.limitNano) || event.limitNano <= 0) return bump(state, 'limit_unset');
     if (event.nano == null) return bump(state, 'unpriced');
     if (!Number.isInteger(event.nano) || event.nano < 0 || typeof event.kind !== 'string' || !event.kind) return illegal(state, event);
+    // An overrun already recorded this month. The real amount stays; the next reservation is refused.
+    if (state.overruns && state.overruns.requests > 0) return bump(state, 'exhausted:usd');
     if (state.reserved.nanoUsd + event.nano > event.limitNano) return bump(state, 'exhausted:usd');
     const next = clone(state);
     next.next += 1;

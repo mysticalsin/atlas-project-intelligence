@@ -52,8 +52,13 @@ test('workerd RPC reserves, settles, snapshots, records an overrun, and refuses 
     assert.equal(overrun.settled, true);
     const blown = await call({ op: 'snapshot' });
     assert.equal(blown.overruns.requests, 1);
-    assert.ok(blown.reserved.usd > again.usd);
+    assert.ok(blown.reserved.usd > again.usd, 'the real amount is stored, not clamped to the hold or to $5');
     assert.ok(blown.overruns.nanoUsd > 0);
+    assert.equal(blown.exhausted, true);
+    assert.equal(blown.phase, 'exhausted');
+    const stopped = await call({ op: 'reserve', req: { kind: 'memory', provider: 'hindsight', operation: 'recall', inputTokens: 1000, outputTokens: 100 } });
+    assert.equal(stopped.ok, false);
+    assert.equal(stopped.reason, 'exhausted:usd');
   } finally {
     await mf.dispose();
   }

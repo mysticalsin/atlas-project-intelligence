@@ -30,6 +30,47 @@ test('settle still records an overrun and does not clamp it', () => {
   assert.equal(b.settle(reserved.id, { actualNano: ceiling + 50_000 }), true);
   assert.equal(b.snapshot().overruns.requests, 1);
   assert.equal(b.snapshot().overruns.nanoUsd, 50_000);
+  assert.equal(b.snapshot().exhausted, true);
+  assert.equal(b.reserve(req).reason, 'exhausted:usd');
+});
+
+test('a settle that stores $6 keeps the real amount, and an overrun under $5 still exhausts the month', () => {
+  const lines = [];
+  const orig = console.log;
+  console.log = line => lines.push(String(line));
+  try {
+    const six = new BudgetState({ limitUsd: 5, now: () => Date.parse('2026-11-12T00:00:00Z') });
+    const held = six.reserve({ kind: 'stt', model: NOVA, audioMs: 1000 });
+    const open = six.reserve({ kind: 'stt', model: NOVA, audioMs: 1000 });
+    assert.equal(six.settle(held.id, { actualNano: 6_000_000_000 }), true);
+    const blown = six.snapshot();
+    assert.ok(blown.reserved.nanoUsd >= 6_000_000_000, 'the $6 is stored');
+    assert.equal(blown.phase, 'exhausted');
+    assert.equal(blown.exhausted, true);
+    assert.equal(six.settle(open.id, { actualNano: 1 }), true, 'a hold that is already open still settles');
+    assert.ok(six.snapshot().observed.nanoUsd >= 6_000_000_000, 'the spend stays visible');
+    const logged = lines.map(line => { try { return JSON.parse(line); } catch { return null; } }).find(row => row && row.event === 'overrun');
+    assert.equal(logged.id, held.id);
+    assert.equal(logged.month, '2026-11');
+    assert.equal(logged.usd, undefined);
+    assert.equal(logged.nanoUsd, undefined);
+
+    const under = new BudgetState({ limitUsd: 5, now: () => Date.parse('2026-11-12T00:00:00Z') });
+    const req = { kind: 'memory', provider: 'hindsight', operation: 'recall', inputTokens: 1000, outputTokens: 100 };
+    const reserved = under.reserve(req);
+    const ceiling = callCeilingNano(req);
+    assert.equal(under.snapshot().reserved.nanoUsd, ceiling, 'the hold is the known input plus the max output');
+    assert.equal(under.settle(reserved.id, { usage: { inputTokens: 4_000_000, outputTokens: 0 } }), true);
+    const snap = under.snapshot();
+    assert.ok(snap.reserved.nanoUsd > ceiling);
+    assert.ok(snap.reserved.nanoUsd < 5e9, 'this overrun is still under $5');
+    assert.equal(snap.overruns.requests, 1);
+    assert.equal(snap.exhausted, true);
+    assert.equal(snap.phase, 'exhausted');
+    assert.equal(under.reserve(req).reason, 'exhausted:usd');
+  } finally {
+    console.log = orig;
+  }
 });
 
 test('text and reasoning ceilings are the max_tokens the call sends', () => {

@@ -291,12 +291,16 @@ export class BudgetState {
     const next = transition(before, event);
     if (isIllegal(next) || next === before) return false;
     this.data = next;
+    if ((next.overruns?.requests || 0) > (before.overruns?.requests || 0)) {
+      try { console.log(JSON.stringify({ atlas_metric: 'ledger', event: 'overrun', id: String(id), month: next.month || '' })); } catch { /* a log never hides the spend */ }
+    }
     return true;
   }
   snapshot() {
     this.align();
     const d = this.data;
-    return { month: d.month, phase: d.phase, denyReason: d.denyReason, limitUsd: this.limitUsd,
+    const exhausted = d.phase === 'open' && (((d.overruns && d.overruns.requests > 0) || (this.limitNano != null && d.reserved.nanoUsd > this.limitNano)));
+    return { month: d.month, phase: exhausted ? 'exhausted' : d.phase, exhausted, denyReason: d.denyReason, limitUsd: this.limitUsd,
       reserved: { ...d.reserved, usd: d.reserved.nanoUsd / NANO }, observed: { ...d.observed, usd: d.observed.nanoUsd / NANO },
       byKind: { ...d.byKind }, refusals: { ...d.refusals }, settled: { ...d.settled },
       overruns: { ...(d.overruns || { requests: 0, nanoUsd: 0 }) }, inFlight: Object.keys(d.open).length };
