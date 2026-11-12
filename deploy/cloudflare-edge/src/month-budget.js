@@ -28,6 +28,7 @@ function fresh(month) {
     next: 0, open: {}, reserved: { nanoUsd: 0, requests: 0 },
     observed: { nanoUsd: 0, requests: 0, unpriced: 0 },
     byKind: {}, refusals: {}, settled: { ok: 0, errors: 0 },
+    overruns: { requests: 0, nanoUsd: 0 },
   };
 }
 
@@ -56,6 +57,9 @@ function copy(saved) {
     reserved: { nanoUsd: saved.reserved.nanoUsd, requests: saved.reserved.requests },
     observed: { nanoUsd: saved.observed.nanoUsd, requests: saved.observed.requests, unpriced: saved.observed.unpriced },
     byKind: { ...saved.byKind }, refusals: { ...saved.refusals }, settled: { ok: saved.settled.ok, errors: saved.settled.errors },
+    overruns: saved.overruns && count(saved.overruns.requests) && count(saved.overruns.nanoUsd)
+      ? { requests: saved.overruns.requests, nanoUsd: saved.overruns.nanoUsd }
+      : { requests: 0, nanoUsd: 0 },
   };
 }
 
@@ -97,13 +101,28 @@ export function transition(state, event) {
     next.next += 1;
     next.reserved = { nanoUsd: state.reserved.nanoUsd + event.nano, requests: state.reserved.requests + 1 };
     next.byKind[event.kind] = (next.byKind[event.kind] || 0) + 1;
-    next.open['P' + next.next] = { kind: event.kind, nano: event.nano };
+    const held = { kind: event.kind, nano: event.nano };
+    if (Number.isInteger(event.at)) held.at = event.at;
+    next.open['P' + next.next] = held;
     return next;
   }
   if (event.type === 'settle') {
-    if (!state.open[event.id]) return state;
+    const rec = state.open[event.id];
+    if (!rec) return state;
     const next = clone(state);
     delete next.open[event.id];
+    const ceiling = rec.nano;
+    const hasActual = Number.isInteger(event.actualNano) && event.actualNano >= 0;
+    const charged = hasActual ? event.actualNano : ceiling;
+    if (charged < ceiling) next.reserved.nanoUsd -= ceiling - charged;
+    if (charged > ceiling) {
+      const extra = charged - ceiling;
+      next.reserved.nanoUsd += extra;
+      next.overruns.requests += 1;
+      next.overruns.nanoUsd += extra;
+    }
+    next.observed.nanoUsd += charged;
+    next.observed.requests += 1;
     if (event.error) next.settled.errors += 1; else next.settled.ok += 1;
     return next;
   }

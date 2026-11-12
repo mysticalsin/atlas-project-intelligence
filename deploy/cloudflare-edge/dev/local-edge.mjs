@@ -48,13 +48,14 @@ async function token(email, custom = null) {
 const model = fakeModel(), model_complete = m => model.complete(m);
 const pending = new Set(), stores = new Map();
 const waitUntil = p => { const q = Promise.resolve(p); pending.add(q); q.finally(() => pending.delete(q)).catch(() => {}); };
+console.log(JSON.stringify({ atlas_metric: 'ledger', mode: 'off' }));
 // Opt-in feature vars pass through from the shell when set (never defaulted here): WOW_SPEC §5, WOW_ZERO_CONFIG §4.
 // DATA_MODE stays unset (test mode) unless the shell sets it. Do not set DATA_MODE=production here:
 // this process also sets local-synthetic and ATLAS_DEV_IDENTITY, and the Worker refuses that combination.
 const passthrough = Object.fromEntries(['EXTERNAL_EMAILS', 'CLIENT_CONFIRM', 'IDENTITY_SOURCE', 'DATA_MODE', 'DNA_PROFILE_URL', 'DNA_AUTH_HEADER', 'DNA_FIELD_MAP', 'DNA_API_KEY',
   'DIRECTORY_PUSH_SECRET'].filter(k => process.env[k]).map(k => [k, process.env[k]]));
 const storeFor = id => { if (!stores.has(id)) { const m = new Map(); stores.set(id, { get: async k => m.get(k), put: async (k, v) => m.set(k, v) }); } return stores.get(id); };
-const env = { ORIGIN, ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, CSRF_SECRET: 'local-only', TALKER_MODEL: 'local', TTS_VOICE: 'local',
+const env = { LEDGER_MODE: 'off', ORIGIN, ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, CSRF_SECRET: 'local-only', TALKER_MODEL: 'local', TTS_VOICE: 'local',
   TRIGGER_SECRET: process.env.TRIGGER_SECRET || 'local-trigger-secret', ANALYST_MODEL: 'local-analyst',
   // Stand-ins for the Workers AI binding: toMarkdown (documents and image descriptions) and chat completions.
   AI: { toMarkdown: async f => { const t = f.blob.type || ''; return t.startsWith('image/') ? { format: 'markdown', data: 'A diagram showing the project phases and approach' } : { format: 'markdown', data: new TextDecoder().decode(await f.blob.arrayBuffer()) }; },

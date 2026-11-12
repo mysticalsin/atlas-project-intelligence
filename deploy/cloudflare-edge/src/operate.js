@@ -23,6 +23,16 @@ function dsarStores() {
     complete: false,
   };
 }
+async function monthSpend(env) {
+  const mode = env?.LEDGER_MODE === 'off' || env?.LEDGER_MODE === 'observe' || env?.LEDGER_MODE === 'enforce' ? env.LEDGER_MODE : 'enforce';
+  const ns = env?.SPEND_LEDGER;
+  if (!ns || typeof ns.get !== 'function' || typeof ns.idFromName !== 'function') return { mode, available: false };
+  try {
+    const snap = await ns.get(ns.idFromName('production')).snapshot();
+    if (!snap || typeof snap.reserved?.usd !== 'number') return { mode, available: false };
+    return { mode, available: true, usd: snap.reserved.usd, month: snap.month || '' };
+  } catch { return { mode, available: false }; }
+}
 function deny(user) {
   if (user.role !== 'admin') throw fail(403, 'The admin dashboard is only for a verified admin.');
   if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
@@ -34,7 +44,9 @@ export async function adminRoutes(ctx) {
   const action = parts[1] || '';
   if (method === 'GET' && action === 'metrics') {
     const q = url?.searchParams || new URLSearchParams();
-    return { body: queryMetrics(lib, user, env, metricQuery(url, q.get('bucket') || 'day')) };
+    const body = queryMetrics(lib, user, env, metricQuery(url, q.get('bucket') || 'day'));
+    body.spend = await monthSpend(env);
+    return { body };
   }
   if (method === 'GET' && action === 'export') {
     const metrics = queryMetrics(lib, user, env, metricQuery(url, 'day'));

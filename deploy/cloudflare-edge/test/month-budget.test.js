@@ -5,7 +5,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Session } from '../src/session.js';
-import { CAPS, PROXY_PER_CALL_USD } from '../src/spend-ledger.js';
 import { BUDGET_MESSAGE } from '../src/budget-stop.js';
 
 const M = await import('../src/meter.js');
@@ -24,11 +23,10 @@ function pricesFor(targetNano) {
 }
 const req = targetNano => ({ prices: pricesFor(targetNano), limitUsd: 5 });
 
-test('the safe default is $5 and the live-test cap is still $1.50', () => {
+test('the safe default is $5 and the binding proxy is the published formula', () => {
   assert.equal(M.PRODUCTION_MONTHLY_LIMIT_USD, 5);
-  assert.equal(CAPS.usd, 1.5);
-  assert.equal(PROXY_PER_CALL_USD, 0.30 / 1e6 + 300000 * 0.02 / 1e6);
   assert.equal(M.PROXY_PER_CALL_NANO, PROXY);
+  assert.equal(PROXY, Math.round((0.30 / 1e6 + 300000 * 0.02 / 1e6) * NANO));
 });
 
 test('exactly at the cap is admitted; one nano over is refused and reserves nothing', () => {
@@ -241,15 +239,14 @@ test('a budget refusal stops the voice session and does not call the provider ag
   await s.transcribe(new Uint8Array(4800));
   assert.equal(calls, 1);
   const err = events.find(e => e.type === 'error');
-  assert.equal(err.code, 'voice-unavailable');
+  assert.equal(err.code, 'budget_exhausted');
   assert.equal(err.message, BUDGET_MESSAGE);
-  assert.equal(err.budget, true);
   await s.transcribe(new Uint8Array(4800));
   assert.equal(calls, 1, 'the session does not try the provider again');
   assert.equal(s.finished, true);
 });
 
-test('a budget refusal during synthesis keeps voice-unavailable and shows the shared sentence; another voice failure keeps its own copy', async () => {
+test('a budget refusal during synthesis uses budget_exhausted and shows the shared sentence; another voice failure keeps its own copy', async () => {
   const refused = () => Object.assign(new Error('cap'), { name: 'BudgetRefused', reason: 'exhausted:usd' });
   const run = async synthesize => {
     const events = [];
@@ -271,9 +268,9 @@ test('a budget refusal during synthesis keeps voice-unavailable and shows the sh
   const stopped = await run(refused);
   assert.equal(stopped.calls, 1);
   const err = stopped.events.find(e => e.type === 'error');
-  assert.equal(err.code, 'voice-unavailable');
+  assert.equal(err.code, 'budget_exhausted');
   assert.equal(err.message, BUDGET_MESSAGE);
-  assert.equal(err.budget, true);
+  assert.equal(err.budget, undefined);
   const other = await run(() => new Error('tts down'));
   const plain = other.events.find(e => e.type === 'error');
   assert.equal(plain.code, 'voice-unavailable');

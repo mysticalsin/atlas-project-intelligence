@@ -765,3 +765,10 @@ Review answers:
 ### Session: 2026-11-11 / Shared month sentence when voice stops (brought onto plan-a-cap-v2)
 - Voice refusals use `BUDGET_MESSAGE` and `{ budget: true }`. The page pin from the other branch was not kept; this branch will rebuild the page from its own sources.
 
+### Session: 2026-11-11 / Plan A cap v2, same $5 ledger
+- Branch `cursor/plan-a-cap-v2` from `80bab333`. The ten ledger and cap commits were cherry-picked. Privacy delete, persona, voice latency, early processing, the live-test ledger and the session hold were not brought over. `cursor/plan-a-live-ledger-59c9` was not touched.
+- Unset `LEDGER_MODE` enforces. Explicit off logs once and is what `scripts/run_local_voice.sh`, `scripts/pod_setup.sh` and `dev/local-edge.mjs` set. Production wrangler stays enforce. Settle charges the usage the response returns, refunds the rest, and flags an overrun in the same step. Missing usage keeps the ceiling. Open reservations older than 120 seconds settle at the ceiling on the next reserve.
+- The Python gateway reserves on the same Durable Object through `POST /api/ledger/reserve` and `/settle` before each listed upstream call. No second database. No provider was called. Hindsight is priced per token, not the flat $0.20. A document conversion reserves only the binding proxy. An image stays two Gemma calls because detr-resnet-50 has no list price.
+- The page keys on `code` `budget_exhausted`. Page pin `fa41aed1c4047a1ffc66e6b7c0d31afdcdf2d8b7f7b6b037ec1741b232de6374`, 907916 bytes. Logo unchanged.
+- Local gates on this tree: pytest 269 passed; root node 384 pass, 1 skip; edge node 592 pass. Browser suites 756 checks after the local edge was set to off. No deploy.
+

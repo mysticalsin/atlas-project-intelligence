@@ -4,7 +4,7 @@
 // Memory is self-reported continuity, never evidence. Confidential client details are scrubbed before retention.
 // API contract checked against @vectorize-io/hindsight-client 0.10.1: /v1/default/banks/{bank_id}/..., Bearer key.
 import { TENANT_ID, tenantEnforced } from './authz.js';
-import { paid, TYPESAFE_ENDPOINT } from './meter.js';
+import { paid, TYPESAFE_ENDPOINT, utf8Length } from './meter.js';
 
 // Hindsight Cloud (docs.hindsight.vectorize.io/api-integration). HINDSIGHT_URL overrides it for a self-hosted server.
 export const HINDSIGHT_CLOUD = 'https://api.hindsight.vectorize.io';
@@ -75,10 +75,13 @@ export function memoryConfigured(env = {}) {
 export function hindsight(env, fetcher = fetch) {
   if (!memoryConfigured(env)) return null;
   const base = String(env.HINDSIGHT_URL).replace(/\/+$/, ''), key = env.HINDSIGHT_API_KEY || '';
-  const meter = paid(env), estimate = () => ({ kind: 'memory', provider: 'hindsight', requests: 1 });
-  const call = async (method, path, body, timeoutMs = 8000) => {
+  const meter = paid(env);
+  const call = async (method, path, body, timeoutMs = 8000, operation = 'bank') => {
+    const payload = body === undefined ? '' : JSON.stringify(body);
+    const estimate = () => ({ kind: 'memory', provider: 'hindsight', operation,
+      inputTokens: Math.max(1, Math.ceil(utf8Length(payload) / 4)), outputTokens: operation === 'recall' ? Math.ceil(Number(body?.max_tokens) || 0) : 0 });
     const r = await meter.fetch(estimate, fetcher, base + path, { method, redirect: 'manual', signal: AbortSignal.timeout(timeoutMs),
-      headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+      headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : payload });
     if (!r.ok) throw Object.assign(new Error('Hindsight HTTP ' + r.status), { status: r.status });
     return r.status === 204 ? {} : r.json().catch(() => ({}));
   };
@@ -87,21 +90,21 @@ export function hindsight(env, fetcher = fetch) {
   return {
     async ensureBank(b) {
       if (ready.has(b)) return;
-      await call('PUT', bank(b), { retain_mission: RETAIN_MISSION, reflect_mission: REFLECT_MISSION, enable_observations: true });
+      await call('PUT', bank(b), { retain_mission: RETAIN_MISSION, reflect_mission: REFLECT_MISSION, enable_observations: true }, 8000, 'bank');
       ready.add(b);
     },
     async retain(b, items) {
       await this.ensureBank(b);
-      return call('POST', bank(b) + '/memories', { items, async: true }, 15000);
+      return call('POST', bank(b) + '/memories', { items, async: true }, 15000, 'retain');
     },
     async recall(b, query, { tags, maxTokens = 700, timeoutMs = 3000 } = {}) {
-      const res = await call('POST', bank(b) + '/memories/recall', { query, budget: 'low', max_tokens: maxTokens, ...(tags ? { tags, tags_match: 'any' } : {}) }, timeoutMs);
+      const res = await call('POST', bank(b) + '/memories/recall', { query, budget: 'low', max_tokens: maxTokens, ...(tags ? { tags, tags_match: 'any' } : {}) }, timeoutMs, 'recall');
       return (Array.isArray(res.results) ? res.results : []).map(x => ({ text: str(x?.text, 400), tags: Array.isArray(x?.tags) ? x.tags : [], when: str(x?.mentioned_at || '', 40), documentId: str(x?.document_id || '', 80) })).filter(x => x.text);
     },
-    documents: b => call('GET', bank(b) + '/documents'),
-    forgetDocument: (b, id) => call('DELETE', bank(b) + '/documents/' + encodeURIComponent(id)),
-    forgetAll: b => call('DELETE', bank(b)).finally(() => ready.delete(b)),
-    stats: b => call('GET', bank(b) + '/stats'),
+    documents: b => call('GET', bank(b) + '/documents', undefined, 8000, 'list'),
+    forgetDocument: (b, id) => call('DELETE', bank(b) + '/documents/' + encodeURIComponent(id), undefined, 8000, 'forget'),
+    forgetAll: b => call('DELETE', bank(b), undefined, 8000, 'forget').finally(() => ready.delete(b)),
+    stats: b => call('GET', bank(b) + '/stats', undefined, 8000, 'stats'),
   };
 }
 

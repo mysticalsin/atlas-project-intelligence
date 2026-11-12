@@ -9,6 +9,8 @@ import re
 
 import aiohttp
 
+from .spend import reserve, usage_from
+
 END_TOKEN = '[[END]]'  # the talker is told to write exactly this; END_PATTERN also catches near misses
 REPORT_TOPICS = ('context', 'contribution', 'approach', 'outcome', 'evidence', 'customer_relevance')
 REPORT_LIMITS = {'headline': 120, 'summary': 900, 'topic': 900, 'item': 200}
@@ -126,9 +128,16 @@ def text_completer(http, url, model, key=''):
     """OpenAI-compatible chat completion returning the message text (used only for the end-of-interview report)."""
     async def complete(messages):
         headers = {'Authorization': f'Bearer {key}'} if key else {}
-        async with http.post(url, headers=headers, json={'model': model, 'messages': messages, 'temperature': 0.2, 'max_tokens': 1400},
-                             timeout=aiohttp.ClientTimeout(total=25)) as response:
-            response.raise_for_status()
-            data = await response.json()
+        body = {'model': model, 'messages': messages, 'temperature': 0.2, 'max_tokens': 1400}
+        hold = await reserve({'kind': 'report', 'provider': 'openai', 'model': model,
+                              'inputTokens': max(1, len(json.dumps(body)) // 4), 'outputTokens': 1400}, http)
+        try:
+            async with http.post(url, headers=headers, json=body, timeout=aiohttp.ClientTimeout(total=25)) as response:
+                response.raise_for_status()
+                data = await response.json()
+            await hold.settle(usage_from(data))
+        except Exception as error:
+            await hold.settle(error=type(error).__name__)
+            raise
         return data['choices'][0]['message'].get('content') or ''
     return complete

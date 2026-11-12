@@ -1,20 +1,21 @@
 // The one door to every paid upstream in the edge app: Workers AI (env.AI.run, env.AI.toMarkdown) and the paid
-// provider APIs (ElevenLabs, TypeSafe JEV, Hindsight). test/ledger-coverage.test.js fails if any other source file
+// provider APIs (ElevenLabs, TypeSafe JEV, Hindsight). test/ledger-static.test.js fails if any other source file
 // calls them directly. LEDGER_MODE selects what happens around each call (docs/LEDGER_MODES.md):
-//   off      (default, also when unset) the call is made exactly as before: same arguments, same result, and no ledger
-//            is looked up or contacted. The estimate function is never evaluated.
+//   off      explicit only. The call is made exactly as before. The estimate is never evaluated. One log line says so.
 //   observe  the estimate is logged (kind, model or provider, numbers only: never text) and recorded with the ledger
 //            without waiting for it. The call is never blocked or delayed; a missing, failing or hanging ledger only
 //            changes the log line.
-//   enforce  the ledger must admit a reservation before the call is made. Over budget, an unset limit, an unpriced
-//            call, a missing ledger, a ledger error or a ledger timeout refuses the call (BudgetRefused) and nothing
-//            reaches the upstream. Production wrangler.jsonc sets enforce. The code default stays off.
-// Any other LEDGER_MODE value is a configuration error and refuses every paid call, like enforce without a ledger.
-import { ELEVENLABS_USD_PER_1K_CHARS, HINDSIGHT_USD_PER_REQUEST, PRICES, TYPESAFE_USD_PER_REQUEST, markdownFileUsd } from './prices.js';
+//   enforce  (default, also when unset) the ledger must admit a reservation before the call is made. Over budget, an
+//            unset limit, an unpriced call, a missing ledger, a ledger error or a ledger timeout refuses the call
+//            (BudgetRefused) and nothing reaches the upstream. Production wrangler.jsonc sets enforce and must not set off.
+// Any other LEDGER_MODE value is a configuration error and refuses every paid call.
+import { ELEVENLABS_USD_PER_1K_CHARS, HINDSIGHT_RECALL_USD_PER_M, HINDSIGHT_RETAIN_USD_PER_M, PRICES, REALTIME_USD_PER_M_INPUT, REALTIME_USD_PER_M_OUTPUT, TYPESAFE_USD_PER_REQUEST, markdownFileUsd } from './prices.js';
 import { isIllegal, loadMonth, monthKey, transition } from './month-budget.js';
+import { usageFrom } from './usage.js';
 
 export const LEDGER_MODES = Object.freeze(['off', 'observe', 'enforce']);
-export const DEFAULT_LEDGER_MODE = 'off';
+export const DEFAULT_LEDGER_MODE = 'enforce';
+export const RESERVATION_TTL_MS = 120000;
 // Tony, 2026-11-11, via Jarvis 17:03 BRT: production voice spend is $5 per UTC calendar month, fail closed.
 // Unset configuration uses this default. An explicit null, blank, zero, negative or unparseable value denies.
 export const PRODUCTION_MONTHLY_LIMIT_USD = 5;
@@ -42,7 +43,7 @@ export const budgetRefused = e => e?.name === 'BudgetRefused';
 const refused = reason => Object.assign(new Error('Spend ledger refused: ' + reason), { name: 'BudgetRefused', reason });
 
 // Only these fields leave a call site: names from configuration and numbers. Never prompt, transcript or story text.
-const STRING_FIELDS = ['kind', 'model', 'provider', 'lang'];
+const STRING_FIELDS = ['kind', 'model', 'provider', 'lang', 'operation', 'media'];
 const NUMBER_FIELDS = ['audioMs', 'inputTokens', 'outputTokens', 'chars', 'files', 'requests'];
 export function sanitize(req) {
   const out = {};
@@ -55,19 +56,25 @@ export function sanitize(req) {
 // Conservative per-call ceiling in nano-dollars at list prices, or null when this request has no measurable size
 // (zero audio, zero tokens, zero characters). A known kind with its canonical estimate is never null.
 export function priceOf(req, prices = PRICES) {
+  if (req?.kind === 'realtime' && req?.provider === 'openai') {
+    const i = Math.ceil(Number(req.inputTokens) || 0), o = Math.ceil(Number(req.outputTokens) || 0);
+    return i > 0 || o > 0 ? Math.ceil((i * REALTIME_USD_PER_M_INPUT + o * REALTIME_USD_PER_M_OUTPUT) / 1e6 * NANO) : null;
+  }
   if (req?.provider === 'elevenlabs') {
     const c = Math.ceil(Number(req.chars));
     return c > 0 ? Math.ceil(c / 1000 * ELEVENLABS_USD_PER_1K_CHARS * NANO) : null;
   }
   if (req?.kind === 'memory' || req?.provider === 'hindsight') {
-    const n = Math.ceil(Number(req.requests) || 1);
-    return n > 0 ? Math.ceil(n * HINDSIGHT_USD_PER_REQUEST * NANO) : null;
+    const tokens = Math.max(1, Math.ceil(Number(req.inputTokens) || 0) + Math.ceil(Number(req.outputTokens) || 0));
+    const rate = req.operation === 'recall' ? HINDSIGHT_RECALL_USD_PER_M : HINDSIGHT_RETAIN_USD_PER_M;
+    return Math.ceil(tokens * rate / 1e6 * NANO);
   }
   if (req?.kind === 'jev' || req?.provider === 'typesafe') {
     const n = Math.ceil(Number(req.requests) || 1);
     return n > 0 ? Math.ceil(n * TYPESAFE_USD_PER_REQUEST * NANO) : null;
   }
   if (req?.kind === 'markdown') {
+    if (req.media === 'document') return 0;
     const files = Math.max(1, Math.ceil(Number(req.files) || 1));
     return Math.ceil(files * markdownFileUsd() * NANO);
   }
@@ -116,7 +123,7 @@ function logIllegal(state, event) {
   try { console.log(JSON.stringify({ atlas_metric: 'month_budget', phase: state?.phase || 'unknown', event: event?.type || 'unknown' })); } catch { /* a log never admits a call */ }
 }
 
-// The production budget: one UTC calendar month, never refunded, reservation before the call.
+// The production budget: one UTC calendar month. Reserve the ceiling, then settle the usage the response returns.
 // Month changes go through month-budget.js transition only. Bound as SPEND_LEDGER in wrangler.jsonc.
 export class BudgetState {
   constructor({ limitUsd, prices = PRICES, saved = null, now = () => Date.now() } = {}) {
@@ -138,17 +145,28 @@ export class BudgetState {
     if (this.data.phase === 'denied') return { ok: false, reason: this.data.denyReason || 'unknown_month' };
     return { ok: true };
   }
+  sweep() {
+    if (this.data.phase !== 'open') return;
+    const now = this.now();
+    for (const [id, rec] of Object.entries(this.data.open)) {
+      if (Number.isInteger(rec.at) && now - rec.at <= RESERVATION_TTL_MS) continue;
+      const next = transition(this.data, { type: 'settle', id });
+      if (!isIllegal(next)) this.data = next;
+    }
+  }
   reserve(raw) {
     const aligned = this.align();
     if (!aligned.ok) return { ok: false, reason: aligned.reason };
     if (this.data.phase === 'denied') return { ok: false, reason: this.data.denyReason || 'unknown_month' };
+    this.sweep();
     const req = sanitize(raw);
     const before = this.data;
-    const next = transition(before, { type: 'reserve', kind: req.kind, nano: callCeilingNano(req, this.prices), limitNano: this.limitNano });
+    const next = transition(before, { type: 'reserve', kind: req.kind, nano: callCeilingNano(req, this.prices), limitNano: this.limitNano, at: this.now() });
     if (isIllegal(next)) { logIllegal(before, { type: 'reserve' }); return { ok: false, reason: 'unknown_month' }; }
+    const id = 'P' + next.next;
     this.data = next;
-    if (next.reserved.nanoUsd === before.reserved.nanoUsd) return { ok: false, reason: refusalAdded(before, next) || 'exhausted:usd' };
-    return { ok: true, id: 'P' + next.next, usd: (next.reserved.nanoUsd - before.reserved.nanoUsd) / NANO };
+    if (next.next !== before.next + 1 || !next.open[id]) return { ok: false, reason: refusalAdded(before, next) || 'exhausted:usd' };
+    return { ok: true, id, usd: (next.reserved.nanoUsd - before.reserved.nanoUsd) / NANO };
   }
   record(raw) {
     const aligned = this.align();
@@ -163,7 +181,9 @@ export class BudgetState {
     const aligned = this.align();
     if (!aligned.ok || this.data.phase !== 'open') return false;
     const before = this.data;
-    const next = transition(before, { type: 'settle', id, error: !!observed.error });
+    const event = { type: 'settle', id, error: !!observed.error };
+    if (Number.isInteger(observed.actualNano) && observed.actualNano >= 0) event.actualNano = observed.actualNano;
+    const next = transition(before, event);
     if (isIllegal(next) || next === before) return false;
     this.data = next;
     return true;
@@ -173,7 +193,8 @@ export class BudgetState {
     const d = this.data;
     return { month: d.month, phase: d.phase, denyReason: d.denyReason, limitUsd: this.limitUsd,
       reserved: { ...d.reserved, usd: d.reserved.nanoUsd / NANO }, observed: { ...d.observed, usd: d.observed.nanoUsd / NANO },
-      byKind: { ...d.byKind }, refusals: { ...d.refusals }, settled: { ...d.settled }, inFlight: Object.keys(d.open).length };
+      byKind: { ...d.byKind }, refusals: { ...d.refusals }, settled: { ...d.settled },
+      overruns: { ...(d.overruns || { requests: 0, nanoUsd: 0 }) }, inFlight: Object.keys(d.open).length };
   }
 }
 
@@ -240,14 +261,34 @@ function withTimeout(p, ms) {
 
 // paid(env) -> { mode, run, toMarkdown, fetch }. Each takes an estimate function first, then exactly the arguments of
 // the upstream call: run(estimate, ...args) is env.AI.run(...args); fetch(estimate, fetcher, ...args) is fetcher(...args).
+// One reservation around the analyst call and the retry without the reasoning field. The binding read stays in this file.
+export function analystCall(env, estimate, input) {
+  return paid(env).call(estimate, async () => {
+    try { return await env.AI.run(env.ANALYST_MODEL, { ...input, reasoning: { effort: 'low' } }); }
+    catch (e) { if (e?.name === 'BudgetRefused') throw e; return env.AI.run(env.ANALYST_MODEL, input); }
+  });
+}
+
+function settlementOf(req, out) {
+  const usage = usageFrom(out);
+  if (!usage) return {};
+  const nano = priceOf({ ...req, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens });
+  return Number.isInteger(nano) ? { actualNano: nano } : {};
+}
+
+let offLogged = false;
 export function paid(env, { ledger, log = defaultLog, timeoutMs = LEDGER_TIMEOUT_MS } = {}) {
   const mode = ledgerMode(env);
-  if (mode === 'off') return {
-    mode,
-    run: (estimate, ...args) => env.AI.run(...args),
-    toMarkdown: (estimate, ...args) => env.AI.toMarkdown(...args),
-    fetch: (estimate, fetcher, ...args) => fetcher(...args),
-  };
+  if (mode === 'off') {
+    if (!offLogged) { offLogged = true; try { log({ atlas_metric: 'ledger', mode: 'off' }); } catch { /* logging never affects the call */ } }
+    return {
+      mode,
+      run: (estimate, ...args) => env.AI.run(...args),
+      toMarkdown: (estimate, ...args) => env.AI.toMarkdown(...args),
+      fetch: (estimate, fetcher, ...args) => fetcher(...args),
+      call: (estimate, fn) => fn(),
+    };
+  }
 
   let resolved;
   const book = () => {
@@ -278,7 +319,7 @@ export function paid(env, { ledger, log = defaultLog, timeoutMs = LEDGER_TIMEOUT
     catch (e) { refuse(e?.name === 'LedgerTimeout' ? 'ledger_timeout' : 'ledger_error'); }
     if (!r?.ok || typeof r.id !== 'string') refuse(String(r?.reason || 'refused').slice(0, 40));
     const settle = observed => Promise.resolve().then(() => l.settle(r.id, observed)).catch(() => {});
-    try { const out = await call(); settle({}); return out; } catch (e) { settle({ error: e?.name || 'Error' }); throw e; }
+    try { const out = await call(); settle(settlementOf(req, out)); return out; } catch (e) { settle({ error: e?.name || 'Error' }); throw e; }
   }
 
   const gate = mode === 'observe' ? observe : enforce;
@@ -287,5 +328,6 @@ export function paid(env, { ledger, log = defaultLog, timeoutMs = LEDGER_TIMEOUT
     run: (estimate, ...args) => gate(estimate, () => env.AI.run(...args)),
     toMarkdown: (estimate, ...args) => gate(estimate, () => env.AI.toMarkdown(...args)),
     fetch: (estimate, fetcher, ...args) => gate(estimate, () => fetcher(...args)),
+    call: (estimate, fn) => gate(estimate, fn),
   };
 }

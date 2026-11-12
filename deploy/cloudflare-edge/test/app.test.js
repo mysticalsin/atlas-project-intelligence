@@ -12,7 +12,7 @@ async function jwt(claims = {}, header = { alg: 'RS256', kid: 'k1' }) {
   const input = b64u(JSON.stringify(header)) + '.' + b64u(JSON.stringify(body));
   return input + '.' + b64u(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, new TextEncoder().encode(input)));
 }
-const ENV = { ORIGIN, ACCESS_AUD: AUD, ACCESS_TEAM_DOMAIN: TEAM, CSRF_SECRET: 'test-secret', TALKER_MODEL: 'talker', TTS_VOICE: 'harmonia',
+const ENV = { LEDGER_MODE: 'off', ORIGIN, ACCESS_AUD: AUD, ACCESS_TEAM_DOMAIN: TEAM, CSRF_SECRET: 'test-secret', TALKER_MODEL: 'talker', TTS_VOICE: 'harmonia',
   ATLAS_ADMIN_ROLES: 'ATLAS.Admin', ATLAS_PRESALES_ROLES: 'ATLAS.Presales,ATLAS.Publish', ATLAS_REVIEWER_ROLES: 'ATLAS.Reviewer,ATLAS.Review' };
 const req = async (path, { token, headers = {}, host = ORIGIN } = {}) => new Request(host + path, { headers: { ...(token === undefined ? { 'cf-access-jwt-assertion': await jwt() } : token ? { 'cf-access-jwt-assertion': token } : {}), ...headers } });
 
@@ -58,7 +58,7 @@ test('Workers AI adapters parse both response shapes', async () => {
     if (model === 't') return new ReadableStream({ start(c) { for (const s of sse) c.enqueue(new TextEncoder().encode(s)); c.close(); } });
     return input.messages[0].content === 'native' ? { tool_calls: [{ name: 'record_details', arguments: { details: [] } }] }
       : { choices: [{ message: { tool_calls: [{ id: 'x', function: { name: 'record_details', arguments: '{"details":[]}' } }] } }] };
-  } } };
+  } }, LEDGER_MODE: 'off' };
   const ai = workersAI(env);
   assert.deepEqual(await ai.transcribe(new Uint8Array(4)), { text: 'hello there', language: null });
   assert.equal((await ai.synthesize('Hi.')).length, 4);
@@ -139,7 +139,7 @@ test('analyst/report parsing accepts Chat Completions, Responses API and legacy 
 });
 test('reasoning effort is sent, and dropped if the binding rejects it', async () => {
   const seen = [];
-  const ai = workersAI({ ANALYST_MODEL: 'm', AI: { async run(model, input) { seen.push(input); if (input.reasoning) throw new Error('unknown field'); return { output: [{ type: 'message', content: [{ type: 'output_text', text: 'ok' }] }] }; } } });
+  const ai = workersAI({ LEDGER_MODE: 'off', ANALYST_MODEL: 'm', AI: { async run(model, input) { seen.push(input); if (input.reasoning) throw new Error('unknown field'); return { output: [{ type: 'message', content: [{ type: 'output_text', text: 'ok' }] }] }; } } });
   assert.equal(await ai.report([{ role: 'user', content: 'x' }]), 'ok');
   assert.deepEqual(seen.map(i => !!i.reasoning), [true, false]);
 });
@@ -225,7 +225,7 @@ test('languages: automatic detection, native Spanish voice, ElevenLabs for the r
   const seen = [];
   const env = { STT_MODEL: 'stt', TTS_MODEL: 'tts', TTS_VOICE: 'harmonia', AI: { async run(model, input) { seen.push([model, input]);
     if (model === 'stt') return { results: { channels: [{ alternatives: [{ transcript: 'Nous avons réduit le délai', languages: ['fr'] }] }] } };
-    return new Response(new Uint8Array(6)).body; } } };
+    return new Response(new Uint8Array(6)).body; } }, LEDGER_MODE: 'off' };
   const ai = workersAI(env);
   assert.deepEqual(await ai.transcribe(new Uint8Array(4)), { text: 'Nous avons réduit le délai', language: 'fr' });
   assert.equal(seen[0][1].language, 'multi');
@@ -421,7 +421,8 @@ test('T1 /api/transcribe: 404 while D1 is not approved; Origin and CSRF; type an
     const ok = await post(new Uint8Array(9600));
     assert.equal(ok.status, 200); const body = await ok.json();
     assert.equal(body.text.length, 600); assert.equal(body.language, 'en'); assert.deepEqual(runs, [['stt', 'audio/wav']]);
-    assert.equal(logs.length, 1); const m = JSON.parse(logs[0]);
+    const product = logs.filter(l => !l.includes('"mode":"off"'));
+    assert.equal(product.length, 1); const m = JSON.parse(product[0]);
     assert.deepEqual(Object.keys(m), ['atlas_metric', 'ms', 'bytes']); assert.equal(m.atlas_metric, 'transcribe'); assert.equal(m.bytes, 9600); assert.equal(typeof m.ms, 'number');
     assert.equal((await post(new Uint8Array(9600), { headers: { 'Content-Type': 'audio/l16; rate=24000' } })).status, 200, 'case and spaces in the type are tolerated');
     for (const [bytes, opts, status] of [[new Uint8Array(9600), { headers: { 'X-Atlas-CSRF': 'forged' } }, 403], [new Uint8Array(9600), { headers: { Origin: 'https://evil.example' } }, 403],
@@ -433,7 +434,8 @@ test('T1 /api/transcribe: 404 while D1 is not approved; Origin and CSRF; type an
     fail = true; logs.length = 0;
     const bad = await post(new Uint8Array(9600));
     assert.equal(bad.status, 502); assert.deepEqual(await bad.json(), { error: 'Transcription failed. Type the question instead.' });
-    assert.deepEqual(Object.keys(JSON.parse(logs[0])), ['atlas_metric', 'ms', 'bytes', 'failed']);
+    const failedLog = logs.filter(l => !l.includes('"mode":"off"'));
+    assert.deepEqual(Object.keys(JSON.parse(failedLog[0])), ['atlas_metric', 'ms', 'bytes', 'failed']);
     assert.doesNotMatch(logs.join('\n'), /Zebracorp|what did we/i, 'only numbers are logged');
     fail = false; runs.length = 0;
     const ext = await post(new Uint8Array(9600), { env: { ...on, EXTERNAL_EMAILS: 'client@acme.example' }, claims: { email: 'client@acme.example', sub: 'ext-1' } });

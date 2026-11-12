@@ -57,6 +57,7 @@ WAI="https://api.cloudflare.com/client/v4/accounts/$WORKERS_AI_ACCOUNT/ai/v1/cha
 umask 077
 cat > .env <<ENV
 ATLAS_VOICE_PROVIDER=kyutai
+LEDGER_MODE=off
 ATLAS_AUTH=local
 ATLAS_BIND=127.0.0.1
 ATLAS_PORT=8080
@@ -76,6 +77,7 @@ ANALYST_API_KEY=$(cat "$ATLAS/.workers-ai.key")
 ENV
 rm -f "$ATLAS/.workers-ai.key"
 umask 022
+echo '{"atlas_metric":"ledger","mode":"off"}'
 
 step "wait for speech servers (first start downloads models)"
 .venv/bin/python - <<'PY'

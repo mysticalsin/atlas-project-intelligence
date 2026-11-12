@@ -11,7 +11,7 @@ test('ElevenLabs voice: verified endpoint, key header, raw 24 kHz PCM, Flash v2.
   const real = globalThis.fetch; let call = null;
   globalThis.fetch = async (url, init) => { call = { url: String(url), init }; return new Response(new Uint8Array(9)); };
   try {
-    const pcm = await workersAI({ ELEVENLABS_API_KEY: 'el-key', ELEVENLABS_VOICE_ID: 'voice1' }).synthesize('Bonjour.', 'atlas', 'fr');
+    const pcm = await workersAI({ LEDGER_MODE: 'off', ELEVENLABS_API_KEY: 'el-key', ELEVENLABS_VOICE_ID: 'voice1' }).synthesize('Bonjour.', 'atlas', 'fr');
     assert.equal(call.url, 'https://api.elevenlabs.io/v1/text-to-speech/voice1?output_format=pcm_24000');
     assert.equal(call.init.headers['xi-api-key'], 'el-key');
     assert.deepEqual(JSON.parse(call.init.body), { text: 'Bonjour.', model_id: 'eleven_flash_v2_5', language_code: 'fr' });
@@ -23,7 +23,7 @@ test('turn model helper: base64 16 kHz WAV of the last 8 s; an answer without a 
   // The binding rejected the streamed {body, contentType} form for smart-turn-v2 (live logs: AiError on every turn); the
   // base64 WAV string is the documented form, and the live model answers it with a verdict.
   let input = null, reply = { is_complete: true, probability: 0.93 };
-  const ai = workersAI({ AI: { async run(model, body) { input = [model, body]; return reply; } } });
+  const ai = workersAI({ LEDGER_MODE: 'off', AI: { async run(model, body) { input = [model, body]; return reply; } } });
   assert.deepEqual(await ai.turnComplete(new Uint8Array(10 * 48000)), { complete: true, probability: 0.93 });
   assert.equal(typeof input[1].audio, 'string', 'audio is a base64 string');
   assert.deepEqual(Object.keys(input[1]), ['audio']);

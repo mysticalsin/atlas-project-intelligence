@@ -14,6 +14,8 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -H @<(printf 'Authorization: Beare
 [ "$code" = 200 ] || { echo "Workers AI rejected the token (HTTP $code). Re-save it, then retry." >&2; exit 1; }
 WAI="https://api.cloudflare.com/client/v4/accounts/$ACCOUNT/ai/v1/chat/completions"
 export ATLAS_VOICE_PROVIDER=workers ATLAS_AUTH=local ATLAS_BIND=127.0.0.1 ATLAS_PORT=8080 ATLAS_ORIGIN=http://localhost:8080
+export LEDGER_MODE=off
+echo '{"atlas_metric":"ledger","mode":"off"}'
 export ATLAS_MAX_INTERVIEWS=1 ATLAS_WIKI_ROOT="${ATLAS_WIKI_ROOT:-$HOME/.local/share/atlas/wiki}"
 export WORKERS_AI_ACCOUNT="$ACCOUNT" WORKERS_AI_API_KEY="$KEY" WORKERS_TTS_VOICE="${WORKERS_TTS_VOICE:-harmonia}"
 export CONVERSATION_CHAT_URL="$WAI" CONVERSATION_MODEL="${CONVERSATION_MODEL:-@cf/meta/llama-3.3-70b-instruct-fp8-fast}" CONVERSATION_API_KEY="$KEY"

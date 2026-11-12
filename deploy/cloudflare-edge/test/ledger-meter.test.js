@@ -8,22 +8,24 @@ const ROOT = new URL('../', import.meta.url);
 const read = p => readFileSync(new URL(p, ROOT), 'utf8');
 const lines = () => { const out = []; return { out, log: l => out.push(l) }; };
 
-test('LEDGER_MODE: off by default; unknown values are not silently off', () => {
-  assert.equal(DEFAULT_LEDGER_MODE, 'off');
+test('LEDGER_MODE: unset enforces; explicit off is off; unknown values are not silently off', () => {
+  assert.equal(DEFAULT_LEDGER_MODE, 'enforce');
   assert.equal(PRODUCTION_MONTHLY_LIMIT_USD, 5, 'the production month cap defaults to $5');
-  for (const v of [undefined, null, '', 'off']) assert.equal(ledgerMode({ LEDGER_MODE: v }), 'off');
-  assert.equal(ledgerMode({}), 'off'); assert.equal(ledgerMode(undefined), 'off');
+  for (const v of [undefined, null, '']) assert.equal(ledgerMode({ LEDGER_MODE: v }), 'enforce');
+  assert.equal(ledgerMode({}), 'enforce'); assert.equal(ledgerMode(undefined), 'enforce');
+  assert.equal(ledgerMode({ LEDGER_MODE: 'off' }), 'off');
   assert.equal(ledgerMode({ LEDGER_MODE: 'observe' }), 'observe');
   assert.equal(ledgerMode({ LEDGER_MODE: 'enforce' }), 'enforce');
   assert.equal(ledgerMode({ LEDGER_MODE: 'Observe' }), 'invalid');
-  // Neither the production nor the live-test configuration sets it.
   assert.match(read('wrangler.jsonc'), /"LEDGER_MODE": "enforce"/, 'production enforces the cap');
+  assert.doesNotMatch(read('wrangler.jsonc'), /"LEDGER_MODE": "off"/, 'production is never off');
   assert.doesNotMatch(read('wrangler.jsonc'), /"PRODUCTION_MONTHLY_LIMIT_USD"/, 'no limit override, so the $5 default applies');
-  for (const f of ['live-test/wrangler.jsonc', 'live-test/wrangler.mock.jsonc', 'live-test/wrangler.rest.jsonc']) assert.doesNotMatch(read(f), /LEDGER_MODE/, f);
+  for (const f of ['../../scripts/run_local_voice.sh', '../../scripts/pod_setup.sh']) assert.match(read(f), /LEDGER_MODE=off/, f + ' sets off explicitly');
+  assert.match(read('dev/local-edge.mjs'), /LEDGER_MODE: 'off'/, 'the local edge sets off explicitly');
 });
 
 test('off: toMarkdown and provider fetches pass the exact arguments through, with no estimate evaluated', async () => {
-  const seen = [], env = { AI: { toMarkdown: (...a) => { seen.push(a); return 'md'; }, run: (...a) => { seen.push(a); return 'r'; } } };
+  const seen = [], env = { LEDGER_MODE: 'off', AI: { toMarkdown: (...a) => { seen.push(a); return 'md'; }, run: (...a) => { seen.push(a); return 'r'; } } };
   Object.defineProperty(env, 'SPEND_LEDGER', { get() { throw new Error('looked up'); } });
   const never = () => { throw new Error('estimate evaluated in off mode'); };
   const m = paid(env), files = [{ name: 'a.pdf' }], opts = { conversionOptions: { pdf: { metadata: false } } };

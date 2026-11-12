@@ -29,7 +29,7 @@ test('observe never blocks: with no ledger, a throwing, rejecting or hanging led
     const { result, logged } = await withConsole(() => scenario('observe', extra));
     assert.deepEqual(result, golden, name + ': same upstream arguments and outputs as off');
     await new Promise(r => setTimeout(r, 10));
-    assert.ok(logged.length >= golden.calls.length, name + ': one line per paid call');
+    assert.ok(logged.length >= golden.calls.length - 1, name + ': one line per reservation; the analyst retry shares that reservation');
     for (const l of logged) {
       const j = JSON.parse(l);
       assert.equal(j.atlas_metric, 'ledger'); assert.equal(j.mode, 'observe');
@@ -38,8 +38,8 @@ test('observe never blocks: with no ledger, a throwing, rejecting or hanging led
     }
     if (name === 'none' || name === 'getThrows') assert.ok(JSON.parse(logged[0]).recorded === 'log_only', name);
   }
-  assert.ok(records.length >= golden.calls.length, 'the working ledger received a record per call');
-  assert.ok(records.every(r => Object.keys(r).every(k => ['kind', 'model', 'provider', 'lang', 'audioMs', 'inputTokens', 'outputTokens', 'chars', 'files', 'requests'].includes(k))));
+  assert.ok(records.length >= golden.calls.length - 1, 'the working ledger received a record per reservation');
+    assert.ok(records.every(r => Object.keys(r).every(k => ['kind', 'model', 'provider', 'lang', 'operation', 'media', 'audioMs', 'inputTokens', 'outputTokens', 'chars', 'files', 'requests'].includes(k))));
   const kinds = new Set(records.map(r => r.kind));
   for (const k of ['stt', 'turn', 'tts', 'talker', 'analyst', 'embed', 'memory', 'jev']) assert.ok(kinds.has(k), 'observed kind ' + k);
 });
@@ -98,11 +98,12 @@ test('enforce blocks over budget: admits calls until the limit, then refuses; an
   const ns = nsOf({ reserve: req => { reserves.push(req.kind); return budget.reserve(req); }, settle: (id, o) => budget.settle(id, o) });
   const { calls, reasons } = await withConsole(() => enforced({ SPEND_LEDGER: ns })).then(r => r.result);
   // ElevenLabs has no Workers AI proxy, so the French line still fits after Aura's proxy ceiling does not.
-  assert.deepEqual(reasons, ['admitted', 'admitted', 'exhausted:usd', 'admitted', 'exhausted:usd', 'exhausted:usd', 'exhausted:usd', 'exhausted:usd', 'exhausted:usd', 'exhausted:usd', 'exhausted:usd']);
-  assert.equal(calls.length, 3, 'only the admitted calls reached the upstream');
+  // Hindsight stats is a few retain-rate tokens and also fits in what remains. The flat $0.20 retain does not.
+  assert.deepEqual(reasons, ['admitted', 'admitted', 'exhausted:usd', 'admitted', 'exhausted:usd', 'exhausted:usd', 'exhausted:usd', 'exhausted:usd', 'exhausted:usd', 'admitted', 'exhausted:usd']);
+  assert.equal(calls.length, 4, 'only the admitted calls reached the upstream');
   assert.equal(reserves.filter(k => k === 'analyst').length, 3, 'complete, analyst, report: one reservation each, no retry');
-  assert.equal(budget.snapshot().settled.ok, 3);
-  assert.equal(budget.snapshot().refusals['exhausted:usd'], 8);
+  assert.equal(budget.snapshot().settled.ok, 4);
+  assert.equal(budget.snapshot().refusals['exhausted:usd'], 7);
   const rich = new BudgetState({ limitUsd: 5 });
   const r2 = await withConsole(() => enforced({ SPEND_LEDGER: nsOf(rich) })).then(r => r.result);
   assert.deepEqual(r2.reasons, Array(11).fill('admitted'));

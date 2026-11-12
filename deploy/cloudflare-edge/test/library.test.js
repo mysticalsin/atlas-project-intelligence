@@ -261,7 +261,7 @@ function jevLib({ complete = async () => GOOD, status = () => 200, fetcher = nul
     return new Response(JSON.stringify({ model: 'jev-1.13.0', answers, usage: { input_tokens: 100, output_tokens: 10 } }));
   });
   let t = 0;
-  const rater = storyRater({ TYPESAFE_API_KEY: key }, fetcher, { budgets: { background: { backoffMs: 1 } } });
+  const rater = storyRater({ LEDGER_MODE: 'off', TYPESAFE_API_KEY: key }, fetcher, { budgets: { background: { backoffMs: 1 } } });
   const l = new Library(memorySql(), { now: () => new Date(Date.UTC(2026, 8, 29, 0, 0, t++)).toISOString(), complete, rater, metric: () => {} });
   return { l, calls };
 }

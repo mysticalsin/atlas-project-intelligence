@@ -13,6 +13,8 @@ import struct
 from urllib.parse import quote
 
 import aiohttp
+
+from .spend import reserve, usage_from
 import msgpack
 
 SAMPLE_RATE = 24000
@@ -95,24 +97,40 @@ def connect_tts(http, base, key, voice):
 async def stream_chat(http, url, model, key, messages, max_tokens=300):
     """Yield text deltas from an OpenAI-compatible streaming chat completion (SSE)."""
     headers = {'Authorization': 'Bearer ' + key} if key else {}
-    async with http.post(url, headers=headers, json={'model': model, 'messages': messages, 'stream': True,
-                                                     'temperature': 0.6, 'max_tokens': max_tokens},
-                         timeout=aiohttp.ClientTimeout(total=45, sock_read=15)) as response:
-        response.raise_for_status()
-        buffer = b''
-        async for chunk in response.content.iter_any():
-            buffer += chunk
-            while b'\n' in buffer:
-                line, buffer = buffer.split(b'\n', 1)
-                line = line.strip()
-                if not line.startswith(b'data:'):
-                    continue
-                payload = line[5:].strip()
-                if payload == b'[DONE]':
-                    return
-                try:
-                    delta = json.loads(payload)['choices'][0].get('delta', {}).get('content') or ''
-                except (ValueError, KeyError, IndexError, TypeError):
-                    continue
-                if delta:
-                    yield delta
+    body = {'model': model, 'messages': messages, 'stream': True, 'temperature': 0.6, 'max_tokens': max_tokens}
+    hold = await reserve({'kind': 'talker', 'provider': 'openai', 'model': model,
+                          'inputTokens': max(1, len(json.dumps(body)) // 4), 'outputTokens': max_tokens}, http)
+    seen = None
+    try:
+        async with http.post(url, headers=headers, json=body,
+                             timeout=aiohttp.ClientTimeout(total=45, sock_read=15)) as response:
+            response.raise_for_status()
+            buffer = b''
+            async for chunk in response.content.iter_any():
+                buffer += chunk
+                while b'\n' in buffer:
+                    line, buffer = buffer.split(b'\n', 1)
+                    line = line.strip()
+                    if not line.startswith(b'data:'):
+                        continue
+                    payload = line[5:].strip()
+                    if payload == b'[DONE]':
+                        return
+                    try:
+                        parsed = json.loads(payload)
+                    except ValueError:
+                        continue
+                    found = usage_from(parsed)
+                    if found:
+                        seen = found
+                    try:
+                        delta = parsed['choices'][0].get('delta', {}).get('content') or ''
+                    except (KeyError, IndexError, TypeError):
+                        continue
+                    if delta:
+                        yield delta
+    except Exception as error:
+        await hold.settle(error=type(error).__name__)
+        raise
+    finally:
+        await hold.settle(seen)

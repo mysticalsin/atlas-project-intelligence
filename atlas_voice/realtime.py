@@ -18,6 +18,7 @@ from .capacity import BUSY
 from .identity import COOKIE
 from .interview import project_context
 from .quality import InterviewLedger, session_config
+from .spend import BUDGET_MESSAGE, BudgetRefused, reserve, usage_from
 
 VOICES=('cedar','marin','ash','sage','verse')
 
@@ -26,7 +27,7 @@ async def run(request,config,identity,memory,http,gate,active):
     if request.headers.get('Origin')!=config.origin:raise web.HTTPForbidden(text='Invalid voice origin')
     ws=web.WebSocketResponse(max_msg_size=32768,heartbeat=20)
     await ws.prepare(request)
-    ledger=InterviewLedger();upstream=None;tasks=[];held=False;capture=False;clean_end=False
+    ledger=InterviewLedger();upstream=None;tasks=[];held=False;capture=False;clean_end=False;hold=None;spent={'seen':False,'input':0,'output':0}
     session_cookie=request.cookies.get(COOKIE,'');bytes_in=0;last_input=time.monotonic();started=time.monotonic()
     queue=asyncio.Queue(maxsize=1500);sent={};played={};cancelled=set();current_item=None;current_response=None
     tool_count=0;pending_call_ids=set()
@@ -59,6 +60,8 @@ async def run(request,config,identity,memory,http,gate,active):
             try:preferences=await memory.recall(subject);await event('memory',message='Hindsight private continuity recalled; not project evidence.')
             except Exception:await event('memory',message='Hindsight unavailable; continuing without remembered context.')
         await event('status',state='connecting',message='Preparing the selected hosted voice model. Microphone audio is not sent until ready.')
+        seconds=max(1, int(getattr(config, 'duration', 900) or 900))
+        hold=await reserve({'kind':'realtime','provider':'openai','model':config.openai_model,'inputTokens':seconds*10,'outputTokens':seconds*20}, http)
         upstream=await http.ws_connect('wss://api.openai.com/v1/realtime',params={'model':config.openai_model},
             headers={'Authorization':'Bearer '+config.openai_key,'OpenAI-Safety-Identifier':subject.subject_key},
             max_msg_size=1048576,heartbeat=20)
@@ -138,6 +141,9 @@ async def run(request,config,identity,memory,http,gate,active):
                     if e.get('response_id') not in cancelled:await event('agent_text',text=e.get('delta',''))
                 elif kind=='response.done':
                     response=e.get('response',{})
+                    found=usage_from(response)
+                    if found:
+                        spent['seen']=True;spent['input']+=found['inputTokens'];spent['output']+=found['outputTokens']
                     if response.get('id') in cancelled:continue
                     calls=[v for v in response.get('output',[]) if v.get('type')=='function_call']
                     for call in calls:
@@ -181,6 +187,8 @@ async def run(request,config,identity,memory,http,gate,active):
             if not t.cancelled() and t.exception():raise t.exception()
     except (ValueError,PermissionError) as e:
         clean_end=False;await event('error',message=str(e),code='voice-contract')
+    except BudgetRefused:
+        clean_end=False;await event('error',message=BUDGET_MESSAGE,code='budget_exhausted')
     except (aiohttp.ClientError,ConnectionError,TimeoutError):
         clean_end=False;await event('error',message='Selected voice provider unavailable. No fallback provider was used.',code='voice-unavailable')
     except Exception:
@@ -188,6 +196,9 @@ async def run(request,config,identity,memory,http,gate,active):
     finally:
         for t in tasks:t.cancel()
         if tasks:await asyncio.gather(*tasks,return_exceptions=True)
+        if hold is not None:
+            with contextlib.suppress(Exception):
+                await hold.settle({'inputTokens':spent['input'],'outputTokens':spent['output']} if spent['seen'] else None)
         if upstream is not None:
             with contextlib.suppress(Exception):await upstream.close()
         if active.get(session_cookie) is ws:active.pop(session_cookie,None)

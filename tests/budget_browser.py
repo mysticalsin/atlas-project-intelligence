@@ -10,6 +10,12 @@ ROOT = Path(__file__).resolve().parents[1]
 H = (ROOT / 'ATLAS_Voice.html').read_text().replace('/* SERVER_RUNTIME */', "window.ATLAS_RUNTIME={subjectKey:'k',authMode:'access',name:'kim@mantu.com'};", 1)
 ERR = []
 MSG = "This month's AI budget is used up."
+SHOTS = Path('/opt/cursor/artifacts')
+def source_keys_on_the_code():
+    text = (ROOT / 'src/app.js').read_text()
+    voice = (ROOT / 'src/voice-client.js').read_text()
+    check('the page keys on code budget_exhausted', text.count("e.code==='budget_exhausted'") >= 3 and "code==='budget_exhausted'" in voice)
+    check('the page does not compare the sentence', MSG not in text and MSG not in voice)
 def check(n, v):
     print(('PASS ' if v else 'FAIL ') + n)
     assert v, n
@@ -52,8 +58,10 @@ def voice(ws):
         if d.get('type') == 'start':
             ws.send(json.dumps({'type': 'ready', 'mode': 'full', 'model': 'ATLAS', 'provider': 'ATLAS voice', 'sampleRate': 24000, 'capture': True,
                                 'liveLedger': False, 'maxSeconds': 900, 'speakingSeconds': 600, 'message': 'ready'}))
-            ws.send(json.dumps({'type': 'error', 'message': MSG, 'code': 'voice-unavailable', 'budget': True}))
+            ws.send(json.dumps({'type': 'error', 'message': MSG, 'code': 'budget_exhausted'}))
     ws.on_message(on)
+source_keys_on_the_code()
+SHOTS.mkdir(parents=True, exist_ok=True)
 with sync_playwright() as pw:
     br = pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH') or None,
                             args=['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'])
@@ -83,6 +91,7 @@ with sync_playwright() as pw:
     p.locator('#sheetDraft').click()
     p.wait_for_timeout(400)
     check('sheet draft shows the one sentence', p.locator('#sheetDraftStatus').inner_text() == MSG)
+    p.screenshot(path=str(SHOTS / 'budget-sheet.png'))
     check('sheet draft has no helper text', 'by hand' not in p.locator('#sheetDraftStatus').inner_text() and 'To be completed' not in p.locator('#sheetDraftStatus').inner_text())
     p.locator('#sheetDialog [data-close]').click()
     p.wait_for_timeout(200)
@@ -98,6 +107,7 @@ with sync_playwright() as pw:
     p.locator('#askGo').click()
     p.wait_for_timeout(400)
     check('ask status is the one sentence', p.locator('#askStatus').inner_text() == MSG)
+    p.screenshot(path=str(SHOTS / 'budget-ask.png'))
     check('ask hides the verdict helper', p.locator('#askVerdict').is_hidden() and 'Claims routing' in p.locator('#askResults').inner_text())
     p.locator('header [data-view=interview]').click()
     p.wait_for_timeout(200)
@@ -107,6 +117,7 @@ with sync_playwright() as pw:
     p.locator('#voiceConsentStart').click()
     p.wait_for_function('()=>AtlasVoice.status().phase==="error"', timeout=8000)
     check('voice month stop is the one sentence', p.locator('#voiceHeading').inner_text() == MSG and p.locator('#voiceMessage').inner_text() == '')
+    p.screenshot(path=str(SHOTS / 'budget-voice.png'))
     check('voice month stop has no helper sentence', 'No fallback voice' not in p.locator('#interview').inner_text() and 'unmetered' not in p.locator('#interview').inner_text() and 'paused for this month' not in p.locator('#interview').inner_text())
     check('no page errors', not ERR)
     print('BUDGET_BROWSER_OK')

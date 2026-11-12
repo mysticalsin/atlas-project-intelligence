@@ -6,6 +6,7 @@ import json
 import re
 from datetime import date
 import aiohttp
+from .spend import reserve, usage_from
 
 RUBRIC_VERSION='customer-value-v1'
 DIMENSIONS={
@@ -113,12 +114,23 @@ class JevRanker:
             scored=None
             for attempt in range(3):
                 if authorize is not None and not authorize(story):break
-                async with self.session.post('https://api.typesafe.ai/v1/systemone',json=body,
-                    headers={'Authorization':'Bearer '+self.key},timeout=aiohttp.ClientTimeout(total=18),allow_redirects=False) as r:
-                    if r.status in (429,529) and attempt<2:
-                        await asyncio.sleep(.4*2**attempt);continue
-                    if r.status!=200:raise ValueError('JEV unavailable; do not reuse a stale or synthetic rank')
-                    scored=parse_result(await r.json(),freshness=freshness);break
+                hold = await reserve({'kind': 'jev', 'provider': 'typesafe', 'model': self.model, 'requests': 1,
+                                      'inputTokens': max(1, len(json.dumps(body)) // 4)}, self.session)
+                try:
+                    async with self.session.post('https://api.typesafe.ai/v1/systemone',json=body,
+                        headers={'Authorization':'Bearer '+self.key},timeout=aiohttp.ClientTimeout(total=18),allow_redirects=False) as r:
+                        if r.status in (429,529) and attempt<2:
+                            await hold.settle(error='retry')
+                            await asyncio.sleep(.4*2**attempt);continue
+                        if r.status!=200:
+                            await hold.settle(error='http')
+                            raise ValueError('JEV unavailable; do not reuse a stale or synthetic rank')
+                        payload = await r.json()
+                        await hold.settle(usage_from(payload))
+                        scored=parse_result(payload,freshness=freshness);break
+                except Exception as error:
+                    await hold.settle(error=type(error).__name__)
+                    raise
             if scored is None:continue
             scored['freshness']=freshness
             scored.update({'id':story['id'],'revision':story['revision'],'content_hash':story['content_hash'],

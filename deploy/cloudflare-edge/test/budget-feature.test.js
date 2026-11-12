@@ -36,7 +36,7 @@ test('the evidence analyst names the month stop instead of an empty analysis', a
 
 test('a story rating refused for the month is not retried as a network error', async () => {
   let calls = 0;
-  const rater = storyRater({ TYPESAFE_API_KEY: 'test-key' }, async () => { calls += 1; throw refused(); }, { sleep: async () => {} });
+  const rater = storyRater({ LEDGER_MODE: 'off', TYPESAFE_API_KEY: 'test-key' }, async () => { calls += 1; throw refused(); }, { sleep: async () => {} });
   await assert.rejects(rater.rate('{"state":{}}', '{"title":"Claims triage"}', { asked: { ok: { type: 'noul', instructions: 'Is there a result?' } } }), e => e.name === 'BudgetRefused' && e.reason === 'exhausted:usd');
   assert.equal(calls, 1);
 });
@@ -73,7 +73,7 @@ test('background indexing leaves the embedding null and writes no vector when th
 test('an exhausted month does not fall through to another rating model, store a rules score, or retry the rating', async () => {
   for (const budget of ['interactive', 'background']) {
     let fetches = 0, completes = 0;
-    const rater = storyRater({ TYPESAFE_API_KEY: 'test-key' }, async () => { fetches += 1; throw refused(); }, { sleep: async () => {} });
+    const rater = storyRater({ LEDGER_MODE: 'off', TYPESAFE_API_KEY: 'test-key' }, async () => { fetches += 1; throw refused(); }, { sleep: async () => {} });
     const l = new Library(memorySql(), {
       now: () => '2026-11-11T00:00:00.000Z',
       complete: async () => { completes += 1; return '{"score":90}'; },

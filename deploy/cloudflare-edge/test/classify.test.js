@@ -43,7 +43,7 @@ test('no key means an honest 503, never a fabricated score', async () => {
 
 test('retries on 429 and returns parsed results', async () => {
   let calls = 0;
-  const r = await classify({ TYPESAFE_API_KEY: 'k' }, PROJECT, async (url, init) => {
+  const r = await classify({ LEDGER_MODE: 'off', TYPESAFE_API_KEY: 'k' }, PROJECT, async (url, init) => {
     calls++; assert.equal(JSON.parse(init.body).model, 'jev-latest');
     return calls === 1 ? new Response('', { status: 429 }) : new Response(JSON.stringify(answers({ primary: 'web_app' })));
   });

@@ -15,9 +15,10 @@ import { CONFIRM_HTML } from './confirm-page.js';
 import { nameClaims, pushConfig } from './profile.js';
 import { elevatedRole, privilegeReadiness, productionDemoConflict, TENANT_ID, tenantEnforced, tenantOf, tokenRoles } from './authz.js';
 import { acceptedSubjectDelete } from './library-routes.js';
-import { paid, budgetRefused, elevenLabsUrl, utf8Length } from './meter.js';
+import { paid, elevenLabsUrl, utf8Length, analystCall } from './meter.js';
 import { httpBudget } from './budget-stop.js';
-import { estimateInputTokens, audioMs } from './speculation.js';
+import { estimateInputTokens, audioMs } from './units.js';
+import { spendRoute } from './spend-route.js';
 
 const enc = new TextEncoder();
 // One voice for everyone: @cf/deepgram/aura-2-en "harmonia" (Deepgram: empathetic, clear, calm, confident).
@@ -192,6 +193,10 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
     // Teams bot endpoint and launcher tab (pre-Access, like /api/triggers): exactly these two; every other
     // /api/teams/* path falls through to the signed-in handling. BLOCKED_EXTERNAL until Teams is connected.
     if ((url.pathname === '/api/teams/messages' && request.method === 'POST') || (url.pathname === '/teams/tab' && request.method === 'GET')) return teamsRoutes(request, env, { waitUntil });
+    if (url.pathname === '/api/ledger/reserve' || url.pathname === '/api/ledger/settle') {
+      const spent = await spendRoute(request, env);
+      if (spent) return spent;
+    }
     // Identity comes from the verified Access token only. ?as= and &idp= are not read here.
     let who = null;
     try { who = await verifyAccess(request, env); } catch { who = null; }
@@ -263,7 +268,7 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
       if (Number(request.headers.get('Content-Length') || 0) > 12 * 1024 * 1024) return json(env, { error: 'The file is larger than 10 MB.' }, 413);
       // PDF metadata (author, producer, title) is never extracted (D2, WOW_ZERO_CONFIG §4): text only.
       const ai = workersAI(env), res = await sheetRoutes(request, url.pathname.slice('/api/sheet/'.length), { complete: (m, n) => ai.complete(m, n),
-        toMarkdown: f => paid(env).toMarkdown(() => ({ kind: 'markdown', files: Array.isArray(f) ? f.length : 1 }), f, { conversionOptions: { pdf: { metadata: false } } }) });
+        toMarkdown: f => paid(env).toMarkdown(() => ({ kind: 'markdown', files: Array.isArray(f) ? f.length : 1, media: markdownMedia(f) }), f, { conversionOptions: { pdf: { metadata: false } } }) });
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
     }
     if (url.pathname === '/api/memory' || url.pathname.startsWith('/api/memory/')) {
@@ -384,13 +389,18 @@ export function responseToolCalls(r) {
   if (Array.isArray(r?.output)) return r.output.filter(o => o?.type === 'function_call').map((c, i) => ({ id: c.call_id || c.id || 'call-' + i, name: c.name, arguments: args(c.arguments) }));
   return (r?.tool_calls || []).map((c, i) => ({ id: c.id || 'call-' + i, name: c.name, arguments: args(c.arguments) }));
 }
-// Low reasoning effort keeps the hidden reasoning from eating the output budget; retried without it if the binding rejects the field.
-// A refusal by the spend ledger (enforce only) is not a rejected field and is not retried.
+// Low reasoning effort keeps the hidden reasoning from eating the output budget. One reservation covers the
+// attempt and, if the binding rejects the field, the retry without it. A ledger refusal is not a rejected field.
 async function runReasoning(env, input) {
-  const meter = paid(env), estimate = () => ({ kind: 'analyst', model: env.ANALYST_MODEL,
+  const estimate = () => ({ kind: 'analyst', model: env.ANALYST_MODEL,
     inputTokens: estimateInputTokens(input.messages) + (input.tools ? utf8Length(JSON.stringify(input.tools)) : 0), outputTokens: input.max_tokens });
-  try { return await meter.run(estimate, env.ANALYST_MODEL, { ...input, reasoning: { effort: 'low' } }); }
-  catch (e) { if (budgetRefused(e)) throw e; return meter.run(estimate, env.ANALYST_MODEL, input); }
+  return analystCall(env, estimate, input);
+}
+
+function markdownMedia(file) {
+  const files = Array.isArray(file) ? file : [file];
+  const image = files.some(f => /^image\//.test(String(f?.blob?.type || f?.type || '')) || /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i.test(String(f?.name || '')));
+  return image ? 'image' : 'document';
 }
 
 // ElevenLabs Flash v2.5 (32 languages) as raw 24 kHz PCM, the same format as Aura. Optional: ELEVENLABS_API_KEY.

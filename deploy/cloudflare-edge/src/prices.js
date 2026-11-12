@@ -1,4 +1,4 @@
-// Workers AI list prices shared by the live-test ledger (spend-ledger.js) and the production meter (meter.js).
+// Workers AI list prices for the production meter (meter.js).
 // List prices, no free allocation assumed. Read 2026-11-11.
 // The live-test ledger reports this page as its pricing source. The other citations in this file are for the
 // production kinds priced below it.
@@ -46,12 +46,11 @@ export function markdownFileUsd() {
 
 // Hindsight Cloud, https://vectorize.io/pricing read 2026-11-11.
 // Retain is $10 per million tokens. Recall is $0.75 per million tokens. Reflect is $0.05 per call; ATLAS does not call it.
-// The dearest operation ATLAS sends is retain: the project document is cut at 12,000 characters and the conversation
-// note at 6,000, plus a 2,000-token allowance for JSON, tags and context. ensureBank, stats, document list and forget
-// have no published unit, so every Hindsight request reserves this retain ceiling.
-export const HINDSIGHT_RETAIN_TOKENS = 20000;
-export const HINDSIGHT_USD_PER_M_TOKENS = 10;
-export const HINDSIGHT_USD_PER_REQUEST = HINDSIGHT_RETAIN_TOKENS * HINDSIGHT_USD_PER_M_TOKENS / 1e6;
+// ensureBank, stats, document list and forget have no published unit. They reserve the bytes of the request at the
+// retain rate (the dearest published token rate), then settle on the usage the response returns. They are not the
+// flat 20,000-token retain ($0.20), which would exhaust the month after a handful of interviews.
+export const HINDSIGHT_RETAIN_USD_PER_M = 10;
+export const HINDSIGHT_RECALL_USD_PER_M = 0.75;
 
 // TypeSafe Jev 1.13 and 1.14: $0.042 per million input tokens, output free. Default context is 64k per request.
 // ATLAS does not send the long-context header. https://docs.typesafe.ai/models read 2026-11-11.
@@ -59,3 +58,8 @@ export const HINDSIGHT_USD_PER_REQUEST = HINDSIGHT_RETAIN_TOKENS * HINDSIGHT_USD
 export const TYPESAFE_USD_PER_M_INPUT = 0.042;
 export const TYPESAFE_CONTEXT_TOKENS = 64000;
 export const TYPESAFE_USD_PER_REQUEST = TYPESAFE_CONTEXT_TOKENS * TYPESAFE_USD_PER_M_INPUT / 1e6;
+
+// OpenAI Realtime audio is the dearer modality. Text is cheaper ($4 / $24 per million on gpt-realtime-2.1).
+// https://developers.openai.com/api/docs/models/gpt-realtime-2.1 read 2026-11-11. The ceiling uses audio.
+export const REALTIME_USD_PER_M_INPUT = 32;
+export const REALTIME_USD_PER_M_OUTPUT = 64;

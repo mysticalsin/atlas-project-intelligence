@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { PROXY_PER_CALL_NANO, callCeilingNano, priceOf } from '../src/meter.js';
-import { ELEVENLABS_USD_PER_1K_CHARS, HINDSIGHT_USD_PER_REQUEST, TYPESAFE_USD_PER_REQUEST, markdownFileUsd } from '../src/prices.js';
+import { ELEVENLABS_USD_PER_1K_CHARS, HINDSIGHT_RETAIN_USD_PER_M, TYPESAFE_USD_PER_REQUEST, markdownFileUsd } from '../src/prices.js';
 
 const SRC = new URL('../src/', import.meta.url);
 const code = name => readFileSync(new URL(name, SRC), 'utf8').split('\n').map(l => l.replace(/(^|\s)\/\/.*$/, '$1')).join('\n');
@@ -55,7 +55,7 @@ test('provider and markdown ceilings match the cited list prices', () => {
   assert.equal(priceOf({ kind: 'analyst', model: '@cf/openai/gpt-oss-120b', inputTokens: 1_000_000, outputTokens: 1_000_000 }), Math.ceil((0.35 + 0.75) * NANO));
   assert.equal(priceOf({ kind: 'embed', model: '@cf/baai/bge-m3', inputTokens: 1_000_000 }), Math.ceil(0.012 * NANO));
   assert.equal(priceOf({ kind: 'markdown', files: 2 }), Math.ceil(2 * markdownFileUsd() * NANO));
-  assert.equal(priceOf({ kind: 'memory', provider: 'hindsight', requests: 1 }), Math.ceil(HINDSIGHT_USD_PER_REQUEST * NANO));
+  assert.equal(priceOf({ kind: 'memory', provider: 'hindsight', requests: 1 }), Math.ceil(HINDSIGHT_RETAIN_USD_PER_M / 1e6 * NANO));
   assert.equal(priceOf({ kind: 'jev', provider: 'typesafe', requests: 1 }), Math.ceil(TYPESAFE_USD_PER_REQUEST * NANO));
   assert.equal(priceOf({ kind: 'jev', provider: 'typesafe' }), Math.ceil(TYPESAFE_USD_PER_REQUEST * NANO), 'a missing request count still has the context-cap ceiling');
 });
