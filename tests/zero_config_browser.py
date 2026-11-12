@@ -471,13 +471,20 @@ with sync_playwright() as pw:
     # ---- admin people directory: only the approved columns leave the browser (§5.6)
     s = Server(prof=profile(), role='admin'); s.dir_rows = 2
     p = open_page(s)
-    p.evaluate("document.getElementById('openInsights').click()"); p.locator('#peopleDirectory').wait_for(state='visible', timeout=5000)
+    p.evaluate("document.getElementById('openInsights').click()")
+    directory = p.locator('#peopleDirectory')
+    directory.wait_for(state='visible', timeout=5000)
+    # The panel is shown before /api/library/directory returns. Wait for the copy the fetch writes.
+    directory.get_by_text('only synthetic addresses').wait_for(timeout=8000)
+    directory.get_by_text('DNA push: not connected').wait_for(timeout=8000)
     check('directory: test mode says synthetic addresses only, and names what DNA pull and push need',
-          'only synthetic addresses' in p.locator('#peopleDirectory').inner_text() and 'DNA push: not connected' in p.locator('#peopleDirectory').inner_text())
+          'only synthetic addresses' in directory.inner_text() and 'DNA push: not connected' in directory.inner_text())
     csv = 'Email;Nom complet;Poste;Responsable;Mail responsable;Salaire;Date de naissance;Site\njane@example.com;Jane Doe;Data lead;Sam Lead;sam@example.com;85000;1980-02-03;Lyon\nbad-row;Nobody;;;;90000;1970-01-01;Paris\n'
-    p.locator('#dirFile').set_input_files(files=[{'name': 'dna.csv', 'mimeType': 'text/csv', 'buffer': csv.encode()}]); p.wait_for_timeout(300)
+    p.locator('#dirFile').set_input_files(files=[{'name': 'dna.csv', 'mimeType': 'text/csv', 'buffer': csv.encode()}])
+    p.locator('#dirMap').get_by_text('This replaces 2 rows with 1.').wait_for(timeout=8000)
     check('directory: columns suggested for the approved fields; the replace count shown first', p.locator('#dirCol_email').input_value() == '0' and 'This replaces 2 rows with 1.' in p.locator('#dirMap').inner_text())
-    p.locator('#dirShrink').check(); p.locator('#dirMap button.btn.primary').click(); p.wait_for_timeout(600)
+    p.locator('#dirShrink').check(); p.locator('#dirMap button.btn.primary').click()
+    p.locator('#dirStatus').get_by_text('1 people imported').wait_for(timeout=8000)
     imp = s.api('POST', '/api/library/directory/import')
     body = json.dumps(imp[0]['body']) if imp else ''
     check('directory: the upload carries only approved keys, never salary, birth date or site', imp and imp[0]['body']['rows'] == [{'email': 'jane@example.com', 'name': 'Jane Doe', 'title': 'Data lead', 'managerName': 'Sam Lead', 'managerEmail': 'sam@example.com'}]
