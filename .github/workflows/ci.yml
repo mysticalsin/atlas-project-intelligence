@@ -26,8 +26,9 @@ jobs:
       - name: App unit tests
         run: node --test tests/*.test.js
       - name: Edge test dependencies
-        working-directory: deploy/cloudflare-edge
-        run: npm ci
+        run: |
+          pip install -r requirements-test.txt
+          npm ci --prefix deploy/cloudflare-edge
       - name: Edge unit tests
         run: cd deploy/cloudflare-edge && node --test test/*.test.js
       - name: Python tests (including the socket tests)
