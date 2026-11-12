@@ -132,6 +132,37 @@ test('a document toMarkdown ceiling is the page cap, and an image stays one file
   assert.equal(callCeilingNano({ kind: 'markdown', files: 1 }), image + 6_000_300);
 });
 
+test('a streamed talker settles reported usage plus the proxy', async () => {
+  const { workersAI } = await import('../src/app.js');
+  const b = new BudgetState({ limitUsd: 5, now: NOW });
+  const ledger = { async reserve(req) { return b.reserve(req); }, async settle(id, observed) { return b.settle(id, observed); } };
+  const model = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
+  const sse = 'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\ndata: {"usage":{"prompt_tokens":12,"completion_tokens":3}}\n\ndata: [DONE]\n\n';
+  const env = {
+    LEDGER_MODE: 'enforce', TALKER_MODEL: model,
+    SPEND_LEDGER: { idFromName: () => 'production', get: () => ledger },
+    AI: { async run() { return new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }); } },
+  };
+  const said = [];
+  for await (const delta of workersAI(env).chatStream([{ role: 'user', content: 'hi' }])) said.push(delta);
+  assert.deepEqual(said, ['Hi']);
+  const priced = priceOf({ kind: 'talker', model, inputTokens: 12, outputTokens: 3, settleUsage: true });
+  assert.equal(b.snapshot().observed.nanoUsd, priced + 6_000_300);
+  assert.equal(b.snapshot().inFlight, 0);
+});
+
+test('a binding settle keeps the proxy on the usage price', () => {
+  const b = book();
+  const model = '@cf/openai/gpt-oss-120b';
+  const req = { kind: 'analyst', model, inputTokens: 1000, outputTokens: 1000 };
+  const reserved = b.reserve(req);
+  assert.equal(reserved.ok, true);
+  const usage = { inputTokens: 10, outputTokens: 4 };
+  const priced = priceOf({ kind: 'analyst', model, ...usage, settleUsage: true });
+  assert.equal(b.settle(reserved.id, { usage }), true);
+  assert.equal(b.snapshot().observed.nanoUsd, priced + 6_000_300);
+});
+
 test('the proxy fee is the published binding formula', () => {
   assert.equal(6_000_300, Math.round((0.30 / 1e6 + 300000 * 0.02 / 1e6) * NANO));
 });

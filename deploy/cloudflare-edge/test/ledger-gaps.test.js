@@ -72,7 +72,7 @@ test('settle prices the stored model, not the client fields', () => {
   assert.equal(row.kind, 'analyst');
   const priced = priceOf({ kind: 'analyst', model: GPT, inputTokens: 10, outputTokens: 4, settleUsage: true });
   assert.equal(b.settle(reserved.id, { usage: { inputTokens: 10, outputTokens: 4 }, actualNano: 1, model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast' }), true);
-  assert.equal(b.snapshot().observed.nanoUsd, priced);
+  assert.equal(b.snapshot().observed.nanoUsd, priced + 6_000_300, 'the binding proxy stays on the settled price');
   assert.notEqual(priced, 1);
 });
 

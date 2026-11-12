@@ -284,7 +284,10 @@ export class BudgetState {
     let actualNano;
     if (rec && usage) {
       const priced = priceOf({ kind: rec.kind, model: rec.model, provider: rec.provider, operation: rec.operation, media: rec.media, ...usage, settleUsage: true }, this.prices);
-      if (Number.isInteger(priced) && priced >= 0) actualNano = priced;
+      if (Number.isInteger(priced) && priced >= 0) {
+        const binding = (typeof rec.model === 'string' && rec.model.startsWith('@cf/')) || rec.kind === 'markdown';
+        actualNano = priced + (binding ? PROXY_PER_CALL_NANO : 0);
+      }
     } else if (!usage && Number.isInteger(observed.actualNano) && observed.actualNano >= 0) actualNano = observed.actualNano;
     const event = { type: 'settle', id, error: !!observed.error };
     if (actualNano !== undefined) event.actualNano = actualNano;
@@ -403,6 +406,7 @@ export function paid(env, { ledger, log = defaultLog, timeoutMs = LEDGER_TIMEOUT
       toMarkdown: (estimate, ...args) => env.AI.toMarkdown(...args),
       fetch: (estimate, fetcher, ...args) => fetcher(...args),
       call: (estimate, fn) => fn(),
+      hold: () => ({ run: (...args) => env.AI.run(...args), finish: async () => {} }),
     };
   }
 
@@ -461,11 +465,50 @@ export function paid(env, { ledger, log = defaultLog, timeoutMs = LEDGER_TIMEOUT
   }
 
   const gate = mode === 'observe' ? observe : enforce;
+  async function hold(estimate) {
+    if (mode === 'off') return { run: (...args) => env.AI.run(...args), finish: async () => {} };
+    if (mode === 'observe') {
+      const req = estimateOf(estimate), nano = priceOf(req), usd = nano === null ? null : nano / NANO, { ledger: l, error } = book();
+      if (!l) line(req, { usd, recorded: 'log_only', ...(error ? { ledger_error: error } : {}) });
+      else {
+        line(req, { usd, recorded: 'ledger' });
+        Promise.resolve().then(() => l.record(req)).catch(e => line({ kind: req.kind }, { recorded: 'log_only', ledger_error: e?.name || 'Error' }));
+      }
+      return { run: (...args) => env.AI.run(...args), finish: async () => {} };
+    }
+    const req = estimateOf(estimate);
+    const refuse = reason => { line(req, { refused: reason }); throw refused(reason); };
+    if (mode === 'invalid') refuse('invalid_mode');
+    const { ledger: l } = book();
+    if (!l) refuse('no_ledger');
+    let r;
+    try { r = await withTimeout(Promise.resolve().then(() => l.reserve(req)), timeoutMs); }
+    catch (e) { refuse(e?.name === 'LedgerTimeout' ? 'ledger_timeout' : 'ledger_error'); }
+    if (!r?.ok || typeof r.id !== 'string') refuse(String(r?.reason || 'refused').slice(0, 40));
+    const commit = async observed => {
+      try {
+        const result = await l.settle(r.id, observed);
+        if (result === false || (result && result.ok === false)) {
+          line({ kind: req.kind }, { error: 'settle', ledger: 'settle_failed', id: r.id, reason: result?.reason || 'settle' });
+          return false;
+        }
+        return true;
+      } catch (e) {
+        line({ kind: req.kind }, { error: 'settle', ledger: 'settle_failed', id: r.id, ledger_error: e?.name || 'Error' });
+        return false;
+      }
+    };
+    return {
+      run: (...args) => env.AI.run(...args),
+      finish: async observed => { if (!(await commit(observed || {}))) throw refused('ledger_error'); },
+    };
+  }
   return {
     mode,
     run: (estimate, ...args) => gate(estimate, () => env.AI.run(...args)),
     toMarkdown: (estimate, ...args) => gate(estimate, () => env.AI.toMarkdown(...args)),
     fetch: (estimate, fetcher, ...args) => gate(estimate, () => fetcher(...args)),
     call: (estimate, fn) => gate(estimate, fn),
+    hold,
   };
 }

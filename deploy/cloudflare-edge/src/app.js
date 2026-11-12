@@ -16,6 +16,7 @@ import { nameClaims, pushConfig } from './profile.js';
 import { elevatedRole, privilegeReadiness, productionDemoConflict, TENANT_ID, tenantEnforced, tenantOf, tokenRoles } from './authz.js';
 import { acceptedSubjectDelete } from './library-routes.js';
 import { paid, elevenLabsUrl, utf8Length, analystCall, LIMITS, generationTokens, inputTokenCeiling, capPcm, capText, markdownPlan, ledgerMode } from './meter.js';
+import { usageFrom } from './usage.js';
 import { httpBudget } from './budget-stop.js';
 import { audioMs } from './units.js';
 import { ledgerAccessOk, spendRoute } from './spend-route.js';
@@ -457,22 +458,42 @@ export function workersAI(env) {
     async *chatStream(messages, { affinity } = {}) {
       const cap = generationTokens(LIMITS.talker);
       const body = { messages, stream: true, max_tokens: cap, temperature: 0.7 };
-      const stream = await meter.run(() => ({ kind: 'talker', model: env.TALKER_MODEL, inputTokens: inputTokenCeiling(utf8Length(JSON.stringify(body))), outputTokens: cap }),
-        env.TALKER_MODEL, body, affinity ? { extraHeaders: { 'x-session-affinity': affinity } } : undefined);
-      const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
-      let buffer = '';
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) return;
-        buffer += value;
-        let cut;
-        while ((cut = buffer.indexOf('\n')) >= 0) {
-          const line = buffer.slice(0, cut).trim(); buffer = buffer.slice(cut + 1);
-          if (!line.startsWith('data:')) continue;
-          const payload = line.slice(5).trim();
-          if (payload === '[DONE]') return;
-          try { const j = JSON.parse(payload), d = j.response ?? j.choices?.[0]?.delta?.content; if (d) yield d; } catch { /* keep-alive or partial */ }
+      const held = await meter.hold(() => ({ kind: 'talker', model: env.TALKER_MODEL, inputTokens: inputTokenCeiling(utf8Length(JSON.stringify(body))), outputTokens: cap }));
+      let usage = null;
+      let failed = null;
+      try {
+        const stream = await held.run(env.TALKER_MODEL, body, affinity ? { extraHeaders: { 'x-session-affinity': affinity } } : undefined);
+        const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
+        let buffer = '';
+        try {
+          for (;;) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += value;
+            let cut;
+            while ((cut = buffer.indexOf('\n')) >= 0) {
+              const line = buffer.slice(0, cut).trim(); buffer = buffer.slice(cut + 1);
+              if (!line.startsWith('data:')) continue;
+              const payload = line.slice(5).trim();
+              if (payload === '[DONE]') return;
+              try {
+                const j = JSON.parse(payload);
+                const found = usageFrom(j);
+                if (found) usage = found;
+                const d = j.response ?? j.choices?.[0]?.delta?.content;
+                if (d) yield d;
+              } catch { /* keep-alive or partial */ }
+            }
+          }
+        } finally {
+          try { reader.releaseLock(); } catch { /* already released */ }
         }
+      } catch (e) {
+        failed = e;
+        throw e;
+      } finally {
+        try { await held.finish(failed ? { error: failed.name || 'Error' } : (usage ? { usage } : {})); }
+        catch (settleError) { if (!failed) throw settleError; }
       }
     },
     async complete(messages, spec = LIMITS.analystComplete) {
