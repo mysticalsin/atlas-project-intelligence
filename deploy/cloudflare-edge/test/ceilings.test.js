@@ -149,7 +149,9 @@ test('realtime reservation is the session limit plus one capped response', () =>
   assert.equal(callCeilingNano({ kind: 'realtime', provider: 'openai', inputTokens: book.inputTokens, outputTokens: book.outputTokens }), worst);
   assert.ok(past > worst);
   assert.match(py('realtime.py'), /realtime_increment\(/);
-  assert.match(py('realtime.py'), /code='budget_exhausted'/);
+  assert.match(py('realtime.py'), /raise BudgetRefused\('exhausted:usd'\)/);
+  assert.match(py('realtime.py'), /refusal_event\(refused\)/);
+  assert.match(py('spend.py'), /return BUDGET_MESSAGE, 'budget_exhausted'/);
   assert.match(py('quality.py'), /LIMITS\['realtime'\]\['maxResponseTokens'\]/);
 });
 
