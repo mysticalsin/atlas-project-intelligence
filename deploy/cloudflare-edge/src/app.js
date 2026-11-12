@@ -231,6 +231,7 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
       return null;
     };
     async function spend(bucket, max) {
+      // The counter lives on who.sub, not the tenant-scoped interview object. It stores counts only, never story content.
       if (!env.INTERVIEW) return null;
       try {
         const res = await env.INTERVIEW.get(env.INTERVIEW.idFromName(String(who.sub))).fetch(new Request('https://atlas.internal/api/limit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ checks: [{ bucket, max, windowMs: HOUR_MS }] }) }));
