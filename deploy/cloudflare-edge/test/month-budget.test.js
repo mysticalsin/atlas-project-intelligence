@@ -150,6 +150,107 @@ test('an explicit missing, unparseable or zero limit denies; the default admits'
   assert.equal(shipped.reserve(NOVA).ok, true);
 });
 
+function monthDoc(extra = {}) {
+  return {
+    v: 1, phase: 'open', month: '2026-11', denyReason: '',
+    next: 2,
+    open: { P1: { kind: 'memory', provider: 'hindsight', operation: 'recall', nano: 1000, at: Date.parse('2026-11-12T00:00:00Z') } },
+    reserved: { nanoUsd: 5000, requests: 2 },
+    observed: { nanoUsd: 4000, requests: 1, unpriced: 0 },
+    byKind: { memory: 1 }, refusals: { 'exhausted:usd': 1 },
+    settled: { ok: 1, errors: 2 },
+    overruns: { requests: 1, nanoUsd: 25 },
+    ...extra,
+  };
+}
+
+test('a stored v1 document decodes, and its spend and holds are preserved', () => {
+  const saved = monthDoc();
+  const loaded = SM.loadMonth(JSON.parse(JSON.stringify(saved)));
+  assert.equal(loaded.v, SM.MONTH_BUDGET_VERSION);
+  assert.equal(SM.MONTH_BUDGET_VERSION, 2);
+  assert.equal(loaded.reserved.nanoUsd, 5000);
+  assert.equal(loaded.reserved.requests, 2);
+  assert.equal(loaded.observed.nanoUsd, 4000);
+  assert.equal(loaded.settled.ok, 1);
+  assert.equal(loaded.settled.errors, 2);
+  assert.equal(loaded.settled.unsettled, 0);
+  assert.equal(loaded.carry, null);
+  assert.equal(loaded.overruns.nanoUsd, 25);
+  assert.deepEqual(loaded.open, saved.open);
+  const b = new M.BudgetState({ limitUsd: 5, now: () => Date.parse('2026-11-15T00:00:00Z'), saved });
+  assert.equal(b.snapshot().reserved.nanoUsd, 5000);
+  assert.equal(b.snapshot().inFlight, 1);
+  assert.equal(b.toJSON().settled.unsettled, 0);
+  assert.equal(b.toJSON().carry, null);
+});
+
+test('an unknown version refuses reserve, logs ids only, and writes nothing', async () => {
+  const saved = monthDoc({ v: 9, open: { P9: { kind: 'stt', nano: 50, model: 'secret-model' } } });
+  const before = JSON.stringify(saved);
+  const puts = [];
+  const storage = { get: async () => saved, put: async (k, v) => { puts.push([k, JSON.stringify(v)]); } };
+  const logs = [];
+  const original = console.log;
+  console.log = (...args) => logs.push(args.map(String).join(' '));
+  try {
+    const ledger = new M.ProductionSpendLedger({ storage }, {}, { limitUsd: 5 });
+    const refused = await ledger.reserve(NOVA);
+    assert.equal(refused.ok, false);
+    assert.equal(refused.reason, 'unknown_month');
+    const later = await ledger.settle('P9', { error: true });
+    assert.equal(later === false || later.ok === false, true);
+  } finally { console.log = original; }
+  assert.equal(puts.length, 0);
+  assert.equal(JSON.stringify(saved), before);
+  const line = logs.map(s => { try { return JSON.parse(s); } catch { return null; } }).find(x => x && x.event === 'unknown_version');
+  assert.ok(line);
+  assert.equal(line.v, 9);
+  assert.deepEqual(line.ids, ['P9']);
+  assert.equal(Object.hasOwn(line, 'nano'), false);
+  assert.equal(JSON.stringify(line).includes('secret-model'), false);
+  assert.equal(JSON.stringify(line).includes('5000'), false);
+});
+
+test('reserve, settle, sweep and rollover keep unsettled and the carry', () => {
+  const carry = { ids: ['P1'], nanoUsd: 1000 };
+  const at = Date.parse('2026-11-12T00:00:00Z');
+  const saved = monthDoc({
+    v: 2,
+    next: 2,
+    open: {
+      P1: { kind: 'memory', provider: 'hindsight', operation: 'recall', nano: 1000, at },
+      P2: { kind: 'stt', model: '@cf/deepgram/nova-3', nano: 10, at: at - 120001 },
+    },
+    reserved: { nanoUsd: 1010, requests: 2 },
+    settled: { ok: 2, errors: 1, unsettled: 4 },
+    overruns: { requests: 0, nanoUsd: 0 },
+    carry,
+  });
+  let t = at - 120000;
+  const b = new M.BudgetState({ limitUsd: 5, now: () => t, saved });
+  assert.equal(b.toJSON().settled.unsettled, 4);
+  assert.deepEqual(b.toJSON().carry, carry);
+  const reserved = b.reserve({ kind: 'memory', provider: 'hindsight', operation: 'recall', inputTokens: 10, outputTokens: 4 });
+  assert.equal(reserved.ok, true);
+  assert.equal(b.toJSON().settled.unsettled, 4);
+  assert.deepEqual(b.toJSON().carry, carry);
+  assert.equal(b.settle(reserved.id, { error: 'cancelled' }), true);
+  assert.equal(b.toJSON().settled.unsettled, 4);
+  assert.deepEqual(b.toJSON().carry, carry);
+  t = at;
+  const again = b.reserve({ kind: 'memory', provider: 'hindsight', operation: 'recall', inputTokens: 10, outputTokens: 4 });
+  assert.equal(again.ok, true);
+  assert.ok(b.toJSON().settled.unsettled >= 4);
+  assert.deepEqual(b.toJSON().carry, carry);
+  assert.equal(b.settle(again.id, { error: 'cancelled' }), true);
+  t = Date.parse('2026-12-01T00:00:00Z');
+  assert.equal(b.snapshot().month, '2026-12');
+  assert.ok(b.toJSON().settled.unsettled >= 4);
+  assert.ok(b.toJSON().carry && b.toJSON().carry.ids.includes('P1'));
+  assert.equal(b.toJSON().open.P1.nano, 1000);
+});
+
 test('a legacy day record, a bad version or a bad month denies and is not healed next month', () => {
   const now = () => Date.parse('2026-11-15T00:00:00Z');
   const cases = [
@@ -197,7 +298,7 @@ test('concurrent reservations cannot jointly exceed $5', async () => {
   assert.equal(admitted.length, 1, 'a $3 call fits once inside $5');
   const saved = store.get('budget');
   assert.ok(saved.reserved.nanoUsd <= FIVE);
-  assert.equal(saved.v, 1);
+  assert.equal(saved.v, 2);
   assert.equal(saved.month, new Date().toISOString().slice(0, 7));
 });
 

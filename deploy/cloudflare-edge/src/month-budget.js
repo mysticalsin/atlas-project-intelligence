@@ -1,10 +1,11 @@
 // UTC calendar-month budget for the production spend ledger.
 // docs/STATE-MACHINE-STANDARD.md is not vendored on this branch. This file follows that standard's rules:
 // typed states and events, one pure transition, no I/O in the reducer, a single writer (transition), versioned
-// persistence, and an unknown or legacy record maps to a deny state that is not healed into an open month.
+// persistence. Version 1 is read in place, with unsettled 0 and no carry. An unknown version is not
+// loaded and must not be rewritten. A malformed known version denies and is not healed into an open month.
 // Callers log an illegal pair. This reducer does not log.
 
-export const MONTH_BUDGET_VERSION = 1;
+export const MONTH_BUDGET_VERSION = 2;
 export const PHASES = Object.freeze(['open', 'denied']);
 export const EVENTS = Object.freeze(['rollover', 'reserve', 'settle', 'record']);
 const MONTH_RE = /^[0-9]{4}-(0[1-9]|1[0-2])$/;
@@ -28,7 +29,7 @@ function fresh(month) {
     next: 0, open: {}, reserved: { nanoUsd: 0, requests: 0 },
     observed: { nanoUsd: 0, requests: 0, unpriced: 0 },
     byKind: {}, refusals: {}, settled: { ok: 0, errors: 0, unsettled: 0 },
-    overruns: { requests: 0, nanoUsd: 0 },
+    overruns: { requests: 0, nanoUsd: 0 }, carry: null,
   };
 }
 
@@ -57,17 +58,26 @@ function copy(saved) {
     reserved: { nanoUsd: saved.reserved.nanoUsd, requests: saved.reserved.requests },
     observed: { nanoUsd: saved.observed.nanoUsd, requests: saved.observed.requests, unpriced: saved.observed.unpriced },
     byKind: { ...saved.byKind }, refusals: { ...saved.refusals },
-    settled: { ok: saved.settled.ok, errors: saved.settled.errors, unsettled: count(saved.settled.unsettled) ? saved.settled.unsettled : 0 },
+    // A version 1 document has no unsettled count and no carry. Those fields default here.
+    settled: { ok: saved.settled.ok, errors: saved.settled.errors, unsettled: saved.v === 1 ? 0 : (count(saved.settled.unsettled) ? saved.settled.unsettled : 0) },
     overruns: saved.overruns && count(saved.overruns.requests) && count(saved.overruns.nanoUsd)
       ? { requests: saved.overruns.requests, nanoUsd: saved.overruns.nanoUsd }
       : { requests: 0, nanoUsd: 0 },
+    carry: saved.v === 1 ? null : (saved.carry && typeof saved.carry === 'object' && !Array.isArray(saved.carry) ? JSON.parse(JSON.stringify(saved.carry)) : null),
   };
 }
 
-// null is a new ledger (open, no month yet). Anything else that is not version 1 of a known shape denies.
+// A future or unknown version is not a month this build can read. The caller must not replace the stored document.
+export function isForeignMonth(saved) {
+  return !!saved && typeof saved === 'object' && !Array.isArray(saved)
+    && Object.prototype.hasOwnProperty.call(saved, 'v') && saved.v !== 1 && saved.v !== MONTH_BUDGET_VERSION;
+}
+
+// null is a new ledger (open, no month yet). Version 1 is read with the new fields defaulted.
+// Any other version, or a version 1 or 2 document that is not a known shape, denies.
 export function loadMonth(saved) {
   if (saved == null) return fresh('');
-  if (typeof saved !== 'object' || saved.v !== MONTH_BUDGET_VERSION) return denied();
+  if (typeof saved !== 'object' || Array.isArray(saved) || (saved.v !== 1 && saved.v !== MONTH_BUDGET_VERSION)) return denied();
   if (saved.phase === 'denied') return saved.denyReason === 'unknown_month' ? denied() : denied();
   if (saved.phase !== 'open') return denied();
   if (saved.month !== '' && !MONTH_RE.test(saved.month || '')) return denied();
@@ -104,6 +114,10 @@ export function transition(state, event) {
     next.open = carried;
     next.next = count(state.next) ? state.next : 0;
     next.reserved = { nanoUsd: nano, requests };
+    next.settled.unsettled = count(state.settled && state.settled.unsettled) ? state.settled.unsettled : 0;
+    if (Object.keys(carried).length) next.carry = { ids: Object.keys(carried), nanoUsd: nano };
+    else if (state.carry && typeof state.carry === 'object' && !Array.isArray(state.carry)) next.carry = JSON.parse(JSON.stringify(state.carry));
+    else next.carry = null;
     return next;
   }
   if (!state.month) return illegal(state, event);

@@ -11,7 +11,7 @@
 // Any other LEDGER_MODE value is a configuration error and refuses every paid call.
 import { ELEVENLABS_USD_PER_1K_CHARS, HINDSIGHT_RECALL_USD_PER_M, HINDSIGHT_RETAIN_USD_PER_M, LIMITS, PRICES, REALTIME_USD_PER_M_INPUT, REALTIME_USD_PER_M_OUTPUT, TYPESAFE_USD_PER_REQUEST, markdownFileUsd } from './prices.js';
 export { LIMITS };
-import { isIllegal, loadMonth, monthKey, transition } from './month-budget.js';
+import { isForeignMonth, isIllegal, loadMonth, monthKey, transition } from './month-budget.js';
 import { usageFrom } from './usage.js';
 
 export const LEDGER_MODES = Object.freeze(['off', 'observe', 'enforce']);
@@ -219,6 +219,18 @@ function logIllegal(state, event) {
   try { console.log(JSON.stringify({ atlas_metric: 'month_budget', phase: state?.phase || 'unknown', event: event?.type || 'unknown' })); } catch { /* a log never admits a call */ }
 }
 
+// Ids only. The stored document, its amounts and its model names stay out of the log.
+function logUnknownMonth(saved) {
+  const line = { atlas_metric: 'month_budget', event: 'unknown_version' };
+  if (saved && (typeof saved.v === 'number' || typeof saved.v === 'string')) line.v = saved.v;
+  const ids = [];
+  if (saved && saved.open && typeof saved.open === 'object' && !Array.isArray(saved.open)) {
+    for (const id of Object.keys(saved.open)) if (typeof id === 'string') ids.push(id);
+  }
+  if (ids.length) line.ids = ids.slice(0, 20);
+  try { console.log(JSON.stringify(line)); } catch { /* a log never admits a call */ }
+}
+
 // The production budget: one UTC calendar month. Reserve the ceiling, then settle the usage the response returns.
 // Month changes go through month-budget.js transition only. Bound as SPEND_LEDGER in wrangler.jsonc.
 export class BudgetState {
@@ -227,11 +239,14 @@ export class BudgetState {
     this.limitUsd = parsed.ok ? parsed.usd : null;
     this.limitNano = parsed.ok ? Math.round(parsed.usd * NANO) : null;
     this.prices = prices; this.now = now;
-    this.data = loadMonth(saved);
+    this.frozen = isForeignMonth(saved);
+    this.preserved = saved;
+    this.data = this.frozen ? loadMonth(false) : loadMonth(saved);
   }
-  toJSON() { return this.data; }
+  toJSON() { return this.frozen ? this.preserved : this.data; }
   restore(json) { this.data = loadMonth(json); }
   align() {
+    if (this.frozen) return { ok: false, reason: 'unknown_month' };
     if (this.data.phase !== 'open') return { ok: true };
     const month = monthKey(this.now());
     if (!month || month === this.data.month) return month ? { ok: true } : { ok: false, reason: 'unknown_month' };
@@ -242,7 +257,7 @@ export class BudgetState {
     return { ok: true };
   }
   sweep() {
-    if (this.data.phase !== 'open') return;
+    if (this.frozen || this.data.phase !== 'open') return;
     const now = this.now();
     for (const [id, rec] of Object.entries(this.data.open)) {
       if (Number.isInteger(rec.at) && now - rec.at <= RESERVATION_TTL_MS) continue;
@@ -251,6 +266,7 @@ export class BudgetState {
     }
   }
   reserve(raw) {
+    if (this.frozen) { logUnknownMonth(this.preserved); return { ok: false, reason: 'unknown_month' }; }
     const aligned = this.align();
     if (!aligned.ok) return { ok: false, reason: aligned.reason };
     if (this.data.phase === 'denied') return { ok: false, reason: this.data.denyReason || 'unknown_month' };
@@ -267,6 +283,7 @@ export class BudgetState {
     return { ok: true, id, usd: (next.reserved.nanoUsd - before.reserved.nanoUsd) / NANO };
   }
   record(raw) {
+    if (this.frozen) { logUnknownMonth(this.preserved); return { ok: false, reason: 'unknown_month' }; }
     const aligned = this.align();
     if (!aligned.ok || this.data.phase !== 'open') return { ok: false, reason: 'unknown_month' };
     const req = sanitize(raw);
@@ -276,6 +293,7 @@ export class BudgetState {
     return { ok: true };
   }
   settle(id, observed = {}) {
+    if (this.frozen) { logUnknownMonth(this.preserved); return false; }
     const aligned = this.align();
     if (!aligned.ok || this.data.phase !== 'open') return false;
     const before = this.data;
@@ -300,6 +318,9 @@ export class BudgetState {
     return true;
   }
   snapshot() {
+    if (this.frozen) return { month: '', phase: 'denied', exhausted: false, denyReason: 'unknown_month', limitUsd: this.limitUsd,
+      reserved: { nanoUsd: 0, requests: 0, usd: 0 }, observed: { nanoUsd: 0, requests: 0, unpriced: 0, usd: 0 },
+      byKind: {}, refusals: {}, settled: { ok: 0, errors: 0, unsettled: 0 }, overruns: { requests: 0, nanoUsd: 0 }, inFlight: 0 };
     this.align();
     const d = this.data;
     const exhausted = d.phase === 'open' && (((d.overruns && d.overruns.requests > 0) || (this.limitNano != null && d.reserved.nanoUsd > this.limitNano)));
@@ -341,6 +362,7 @@ export class ProductionSpendLedger {
   async _apply(f) {
     const l = await this.load();
     if (!l) return { ok: false, reason: 'ledger_error' };
+    if (l.frozen) { logUnknownMonth(l.preserved); return { ok: false, reason: 'unknown_month' }; }
     const before = l.toJSON();
     let r;
     try { r = f(l); } catch { return { ok: false, reason: 'ledger_error' }; }

@@ -64,6 +64,52 @@ test('workerd RPC reserves, settles, snapshots, records an overrun, and refuses 
   }
 });
 
+test('workerd reads a v1 month and does not rewrite an unknown version', async () => {
+  const mf = new Miniflare({
+    scriptPath: path.join(root, 'test/ledger-binding-version.mjs'),
+    modules: true,
+    modulesRules: [
+      { type: 'ESModule', include: ['**/*.js', '**/*.mjs'], fallthrough: true },
+      { type: 'Text', include: ['**/*.html'], fallthrough: true },
+    ],
+    compatibilityDate: '2025-09-01',
+    durableObjects: { SPEND_LEDGER: { className: 'ProductionSpendLedger', useSQLite: true } },
+  });
+  const call = async body => {
+    const res = await mf.dispatchFetch('https://atlas.example/ledger', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    assert.equal(res.status, 200, text);
+    return JSON.parse(text);
+  };
+  const v1 = {
+    v: 1, phase: 'open', month: '2026-11', denyReason: '', next: 1,
+    open: { P1: { kind: 'memory', provider: 'hindsight', operation: 'recall', nano: 1000, at: Date.parse('2026-11-12T00:00:00Z') } },
+    reserved: { nanoUsd: 5000, requests: 1 },
+    observed: { nanoUsd: 4000, requests: 1, unpriced: 0 },
+    byKind: { memory: 1 }, refusals: {},
+    settled: { ok: 1, errors: 0 },
+    overruns: { requests: 0, nanoUsd: 0 },
+  };
+  try {
+    assert.equal((await call({ op: 'plant', doc: v1 })).ok, true);
+    const snap = await call({ op: 'snapshot' });
+    assert.equal(snap.reserved.nanoUsd, 5000);
+    assert.equal(snap.inFlight, 1);
+    assert.equal(snap.settled.unsettled, 0);
+    assert.deepEqual((await call({ op: 'stored' })).doc, v1);
+    const future = { v: 9, phase: 'open', month: '2026-11', open: { P9: { nano: 50 } }, note: 'leave this' };
+    assert.equal((await call({ op: 'plant', doc: future })).ok, true);
+    const refused = await call({ op: 'reserve', req: { kind: 'memory', provider: 'hindsight', operation: 'recall', inputTokens: 10, outputTokens: 4 } });
+    assert.equal(refused.ok, false);
+    assert.equal(refused.reason, 'unknown_month');
+    assert.deepEqual((await call({ op: 'stored' })).doc, future);
+  } finally {
+    await mf.dispose();
+  }
+});
+
 test('workerd settle put failure leaves the full hold', async () => {
   const mf = new Miniflare({
     scriptPath: path.join(root, 'test/ledger-binding-fail.mjs'),
