@@ -6,6 +6,7 @@ import { Library } from '../src/library.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import { memorySql } from './sqlite.js';
 import { ensureJourney, journeyView, saveJourney, JOURNEY_READ_SQL, JOURNEY_ALL_SQL, JOURNEY_COUNT_SQL, JOURNEY_DELETE_SQL, JOURNEY_UPDATE_SQL } from '../src/journey.js';
+import { privacyRoutes } from '../src/operate.js';
 
 const TENANT = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
@@ -93,6 +94,7 @@ test('export and erasure take every matching journey row and never another tenan
   seed(library, 'ada@example.test', OTHER, 'Other tenant', '2026-11-04T00:00:00.000Z');
   const pack = await exported(library, 'ada@example.test', TENANT);
   assert.deepEqual(exportTitles(pack.journey).sort(), ['Newer', 'Older']);
+  assert.deepEqual(pack.omitted, { count: 0, rows: [] });
   assert.equal(JSON.stringify(pack).includes('Other tenant'), false);
   const body = await erased(library, 'ada@example.test', TENANT);
   assert.equal(body.outcomes.find(item => item.store === 'journey').removed, 2);
@@ -117,12 +119,24 @@ test('a malformed or non-object journey payload does not fail the export', async
   seedRaw(library, 'Ada@Example.test', TENANT, '{', '2026-11-04T00:00:00.000Z');
   seedRaw(library, 'ADA@example.test', TENANT, '[]', '2026-11-04T00:00:01.000Z');
   seed(library, 'ada@example.test', TENANT, 'Kept', '2026-11-05T00:00:00.000Z');
+  seedRaw(library, 'Ada@Example.test', OTHER, '{', '2026-11-04T00:00:00.000Z');
   const response = await libraryRoutes(new Request('https://atlas.test/api/library/privacy/export', {
     headers: { 'x-atlas-user': 'ada@example.test', 'x-atlas-role': 'user', 'x-atlas-email': 'ada@example.test', 'x-atlas-tenant': TENANT, 'x-atlas-tenant-enforced': '1' },
   }), library, { env: { DATA_MODE: 'production', ORIGIN: 'https://atlas.test', CSRF_SECRET: 's' } });
   assert.equal(response.status, 200);
   const body = await response.json();
+  assert.equal(body.journey.length, 1);
   assert.deepEqual(exportTitles(body.journey), ['Kept']);
+  const ids = library.rows('SELECT rowid AS id, payload FROM journey WHERE tenant = ? ORDER BY updated_at DESC, rowid DESC', TENANT);
+  const unparsed = ids.filter(row => row.payload === '{' || row.payload === '[]').map(row => row.id);
+  const other = library.rows('SELECT rowid AS id FROM journey WHERE tenant = ?', OTHER)[0].id;
+  assert.deepEqual(body.omitted, { count: 2, rows: unparsed.map(id => ({ id, reason: 'unparseable' })) });
+  assert.equal(body.omitted.rows.some(row => row.id === other), false);
+  const direct = await privacyRoutes({
+    method: 'GET', parts: ['privacy', 'export'], user: lowerUser(), lib: library, env: { DATA_MODE: 'production' },
+  });
+  assert.deepEqual(direct.body.omitted, body.omitted);
+  assert.equal(direct.body.journey.length, 1);
 });
 
 test('export keeps the journey row subject and updatedAt when the payload repeats them', async () => {
