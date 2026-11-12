@@ -68,11 +68,9 @@ export function transition(state, event) {
     const until = state.phase === 'probing' ? 0 : state.until;
     return done({ ...state, phase, until, authKey: typeof event.key === 'string' ? event.key : state.authKey });
   }
-  if (type === 'ignore') {
-    const phase = state.phase === 'probing' ? 'closed' : state.phase;
-    const until = state.phase === 'probing' ? 0 : state.until;
-    return done({ ...state, phase, until });
-  }
+  // A 429 or any other ignored ending never closes a probe and never starts a new open window.
+  // Only succeed closes probing.
+  if (type === 'ignore') return done({ ...state });
   // fail. A probing fail is the half-open trial even when the caller omits event.trial, so the phase
   // re-opens the breaker on its own. event.trial covers a trial note that arrives after the phase moved on.
   const fails = state.fails + 1;

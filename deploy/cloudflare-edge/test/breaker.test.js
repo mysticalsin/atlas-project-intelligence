@@ -102,6 +102,18 @@ test('a probing fail re-opens even when the trial flag is absent', () => {
   assert.equal(later.state.until, 200 + BREAKER_OPEN_MS);
 });
 
+test('a probing ignore does not close and does not open a fresh window', () => {
+  const before = probing(2, 'k');
+  const result = transition(before, { type: 'ignore', now: 500 });
+  assert.equal(result.ok, true);
+  assert.equal(result.illegal, false);
+  assert.equal(result.state.phase, 'probing');
+  assert.equal(result.state.fails, 2);
+  assert.equal(result.state.until, before.until);
+  assert.equal(result.state.authKey, 'k');
+  assert.notEqual(result.state.until, 500 + BREAKER_OPEN_MS);
+});
+
 test('a 429 does not count, auth sticks until the key changes, and success does not clear a recorded key', () => {
   const after429 = transition(closed(1), { type: 'ignore' }, quiet).state;
   assert.deepEqual(after429, closed(1));
