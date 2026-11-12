@@ -570,21 +570,31 @@ export class Library {
   async index(id) {
     const row = this.row(id); if (!row) return;
     const vec = this.embed ? await this.embed(searchText(recordView(this, row.data))) : null;
-    if (vec) this.sql.exec('UPDATE refs SET embedding = ? WHERE id = ?', JSON.stringify(vec), id);
     const storyTenant = String(row.tenant || row.state?.tenant || '').toLowerCase();
     const others = this.rows("SELECT id, title, data, state, embedding, tenant FROM refs WHERE merged_into IS NULL AND id != ? AND lower(COALESCE(tenant, '')) = ?", id, storyTenant);
-    const mine = [], pid = row.data.details.projectId.toLowerCase();
+    // Same guard as visibleRows: one bad row is logged and skipped, and nothing is written until every row has been parsed.
+    const parsed = [];
     for (const o of others) {
-      const od = JSON.parse(o.data), sim = vec && o.embedding ? cosine(vec, JSON.parse(o.embedding)) : lexical(searchText(forModel(row.data)), searchText(forModel(od)));
-      const sameId = pid && od.details.projectId.toLowerCase() === pid;
+      try {
+        parsed.push({ id: o.id, data: JSON.parse(o.data), state: JSON.parse(o.state), embedding: o.embedding ? JSON.parse(o.embedding) : null });
+      } catch {
+        malformedRow(o.id);
+      }
+    }
+    const mine = [], pid = String(row.data?.details?.projectId || '').toLowerCase(), writes = [];
+    for (const o of parsed) {
+      const od = o.data, sim = vec && o.embedding ? cosine(vec, o.embedding) : lexical(searchText(forModel(row.data)), searchText(forModel(od)));
+      const sameId = !!(pid && String(od?.details?.projectId || '').toLowerCase() === pid);
       if (sameId || sim >= DUPLICATE) {
         const hit = { id: o.id, similarity: Math.round(sim * 100) / 100, sameProjectId: !!sameId };
         mine.push(hit);
-        const os = JSON.parse(o.state), list = (os.duplicates || []).filter(x => x.id !== id);
+        const list = (o.state.duplicates || []).filter(x => x.id !== id);
         list.push({ id, similarity: hit.similarity, sameProjectId: hit.sameProjectId });
-        this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...os, duplicates: list.slice(0, 10) }), o.id);
+        writes.push({ id: o.id, state: { ...o.state, duplicates: list.slice(0, 10) } });
       }
     }
+    if (vec) this.sql.exec('UPDATE refs SET embedding = ? WHERE id = ?', JSON.stringify(vec), id);
+    for (const write of writes) this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify(write.state), write.id);
     mine.sort((a, b) => (b.sameProjectId - a.sameProjectId) || (b.similarity - a.similarity)); // strongest signal first
     const fresh = this.columnState(id) || {};
     this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...fresh, duplicates: mine.slice(0, 10) }), id);

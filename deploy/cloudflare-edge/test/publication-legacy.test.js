@@ -276,6 +276,22 @@ test('merge without a transaction is refused and does not retire the story', asy
   assert.equal(l.rows('SELECT merged_into FROM refs WHERE id = ?', gone.id)[0].merged_into, null);
 });
 
+test('index parses every other row before writing, so one bad row is not a partial update', async () => {
+  const l = library();
+  const a = await l.upsert(OWNER, { localId: 'a', reference: { title: 'A', details: { projectId: 'PRJ-SAME' } } });
+  const b = await l.upsert(OWNER, { localId: 'b', reference: { title: 'B', details: { projectId: 'PRJ-SAME' } } });
+  const c = await l.upsert(OWNER, { localId: 'c', reference: { title: 'C', details: { projectId: 'PRJ-SAME' } } });
+  const broken = '{';
+  l.sql.exec('UPDATE refs SET state = ? WHERE id = ?', broken, c.id);
+  await l.index(a.id);
+  const bState = JSON.parse(l.rows('SELECT state FROM refs WHERE id = ?', b.id)[0].state);
+  const aState = JSON.parse(l.rows('SELECT state FROM refs WHERE id = ?', a.id)[0].state);
+  assert.ok((bState.duplicates || []).some(d => d.id === a.id));
+  assert.ok((aState.duplicates || []).some(d => d.id === b.id));
+  assert.equal((aState.duplicates || []).some(d => d.id === c.id), false);
+  assert.equal(l.rows('SELECT state FROM refs WHERE id = ?', c.id)[0].state, broken);
+});
+
 test('scanStale uses the stored status: a legacy published row is invited and a legacy withdrawn row is not', async () => {
   const l = library();
   const live = await story(l, 'due');
