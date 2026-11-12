@@ -7,9 +7,22 @@
 export const PUBLICATION_VERSION = 1;
 export const PUBLICATION_PHASES = Object.freeze(['in_review', 'needs_work', 'changes_requested', 'awaiting_validation', 'published', 'admin_test', 'withdrawn']);
 export const PUBLICATION_EVENTS = Object.freeze(['revised', 'derive', 'merged', 'reviewed', 'decided', 'admin_published', 'withdrawn', 'reinstated']);
-// Every named event is legal from every phase. The reinstated guard is mergedInto, not the phase.
-// Anything absent from this table is an illegal (phase, event) pair.
-export const PUBLICATION_TABLE = Object.freeze(PUBLICATION_EVENTS.map(event => Object.freeze({ from: 'any', event })));
+// revised, derive, merged and reviewed are legal from every phase. reviewed stays legal from withdrawn
+// so a rating already in flight can settle; withdrawn still wins the status.
+// decided, admin_published and withdrawn are not legal from withdrawn. reinstated is legal only from withdrawn.
+// mergedInto is a separate guard on reinstated. Anything absent from this table is an illegal pair.
+const ACTIVE_PHASES = Object.freeze(PUBLICATION_PHASES.filter(phase => phase !== 'withdrawn'));
+const tableRows = (phases, event) => phases.map(from => Object.freeze({ from, event }));
+export const PUBLICATION_TABLE = Object.freeze([
+  ...tableRows(PUBLICATION_PHASES, 'revised'),
+  ...tableRows(PUBLICATION_PHASES, 'derive'),
+  ...tableRows(PUBLICATION_PHASES, 'merged'),
+  ...tableRows(PUBLICATION_PHASES, 'reviewed'),
+  ...tableRows(ACTIVE_PHASES, 'decided'),
+  ...tableRows(ACTIVE_PHASES, 'admin_published'),
+  ...tableRows(ACTIVE_PHASES, 'withdrawn'),
+  Object.freeze({ from: 'withdrawn', event: 'reinstated' }),
+]);
 
 export function publicationPairs() {
   const legal = new Set();
@@ -74,22 +87,31 @@ export function initialPublication() {
   };
 }
 
-// A versioned story round-trips. A missing value, a legacy object with no version, or an unknown
-// version becomes a fresh in-review record. This does not write the row, and it does not mutate raw.
+function isRecord(raw) {
+  return !!raw && typeof raw === 'object' && !Array.isArray(raw);
+}
+
+// main never stored a version. Those rows keep their fields and derive through publicationStatus.
+// A missing value, or a version this build does not know, becomes a fresh in-review record.
+// This does not write the row, and it does not mutate raw.
 export function loadPublication(raw) {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return initialPublication();
+  if (!isRecord(raw)) return initialPublication();
+  if (raw.version == null) return { ...raw };
   if (raw.version !== PUBLICATION_VERSION) return initialPublication();
   return { ...raw };
 }
 
-// One read of a stored publication. A current version round-trips and keeps the column status (status null).
-// A missing, legacy or unknown version is the safe in-review record over the other stored fields.
-// This does not mutate raw and does not write the row.
+// One read of a stored publication. Version 1 round-trips and keeps the column status (status null).
+// A version-less row decodes through publicationStatus and is not rewritten. An unknown future
+// version is the safe in-review record over the other stored fields. This does not mutate raw.
 export function readPublication(stored) {
-  const loaded = loadPublication(stored);
-  const current = !!stored && typeof stored === 'object' && !Array.isArray(stored) && stored.version === PUBLICATION_VERSION;
-  if (current) return { state: loaded, status: null };
-  const base = stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+  if (isRecord(stored) && stored.version === PUBLICATION_VERSION) return { state: { ...stored }, status: null };
+  if (isRecord(stored) && stored.version == null) {
+    const state = { ...stored };
+    return { state, status: publicationStatus(state) };
+  }
+  const loaded = initialPublication();
+  const base = isRecord(stored) ? stored : {};
   return { state: { ...base, ...loaded }, status: publicationStatus(loaded) };
 }
 

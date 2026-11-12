@@ -4,9 +4,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { BREAKER_EVENTS, BREAKER_FAILS, BREAKER_OPEN_MS, BREAKER_PHASES, authKeyMatches, blocked, initialBreaker, transition, windowStillOpen } from '../src/breaker.js';
 
-const closed = (fails = 0, authKey = null) => ({ version: 1, phase: 'closed', fails, until: 0, authKey });
-const open = (until, fails = 0, authKey = null) => ({ version: 1, phase: 'open', fails, until, authKey });
-const probing = (fails = 0, authKey = null) => ({ version: 1, phase: 'probing', fails, until: 0, authKey });
+const closed = (fails = 0, authKey = null) => ({ phase: 'closed', fails, until: 0, authKey });
+const open = (until, fails = 0, authKey = null) => ({ phase: 'open', fails, until, authKey });
+const probing = (fails = 0, authKey = null) => ({ phase: 'probing', fails, until: 0, authKey });
 const quiet = { log: () => {} };
 
 const samples = () => [closed(0), closed(1), closed(2), closed(0, 'old-key'), open(1_000_000), open(1_000_000, 1), probing()];
@@ -31,7 +31,6 @@ test('every legal transition, and every other (phase, event) pair is rejected an
         legalCount++;
         assert.equal(result.ok, true, state.phase + ' ' + type);
         assert.equal(result.illegal, false);
-        assert.equal(result.state.version, 1);
         assert.equal(result.rejection, undefined);
       } else {
         illegalCount++;

@@ -1,13 +1,12 @@
 // Admin metrics view. Pure transitions. renderAdmin in journey-ui.js is the only writer and the only thing that
 // touches the DOM. The view is not stored, so there is no snapshot codec.
-export const ADMIN_METRICS_VERSION = 1;
 export const ADMIN_METRICS_STATES = Object.freeze(['boot_loading', 'boot_error', 'denied', 'loading', 'ready', 'empty', 'error']);
 export const ADMIN_METRICS_EVENTS = Object.freeze(['boot', 'refresh', 'loaded', 'load_failed', 'export', 'export_failed']);
 
 const SHELL = new Set(['loading', 'ready', 'empty', 'error']);
 
 export function initialAdminMetrics() {
-  return { version: ADMIN_METRICS_VERSION, status: 'boot_loading' };
+  return { status: 'boot_loading' };
 }
 
 export function isAdminRole(role) {
@@ -30,7 +29,7 @@ function legal(status, type) {
 }
 
 function ok(status, effects) {
-  return { ok: true, illegal: false, state: { version: ADMIN_METRICS_VERSION, status }, effects };
+  return { ok: true, illegal: false, state: { status }, effects };
 }
 
 export function adminMetricsTransition(state, event) {

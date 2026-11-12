@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { ADMIN_METRICS_EVENTS, ADMIN_METRICS_STATES, adminMetricsTransition, bootFailed, hasSeries, initialAdminMetrics, isAdminRole } from '../src/admin-metrics-machine.js';
 
 const quiet = { log: () => {} };
-const at = status => ({ version: 1, status });
+const at = status => ({ status });
 const SHELL = ['loading', 'ready', 'empty', 'error'];
 
 function expectLegal(status, type) {

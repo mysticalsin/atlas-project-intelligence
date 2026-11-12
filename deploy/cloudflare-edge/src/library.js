@@ -102,9 +102,21 @@ export function deriveStatus(state) {
   return publicationStatus(state);
 }
 // A rejected transition is logged and dropped. Callers must not read its state or status.
+function malformedRow(id) {
+  publicationLog({ atlas_metric: 'library', id: id ?? null, event: 'malformed_row' });
+}
 function readStoredStory(r) {
-  const viewed = readPublication(JSON.parse(r.state));
-  return { ...r, data: JSON.parse(r.data), state: viewed.state, status: viewed.status == null ? r.status : viewed.status };
+  let stored, data;
+  try {
+    stored = JSON.parse(r.state);
+    data = JSON.parse(r.data);
+  } catch {
+    malformedRow(r.id);
+    return null;
+  }
+  const viewed = readPublication(stored);
+  // storedStatus is the column. CAS uses it. status may be the decoded value.
+  return { ...r, data, state: viewed.state, status: viewed.status == null ? r.status : viewed.status, storedStatus: r.status };
 }
 
 export function acceptPublication(result, event) {
@@ -280,7 +292,7 @@ export class Library {
       updatedAt: row.updated_at, nextReview: row.next_review, owner: row.owner, client: level === 'full' ? d.client.name : '' };
   }
 
-  async upsert(user, body) {
+  async revisionPlan(user, body) {
     if (!user.email) throw fail(401, 'Sign in first.');
     if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
     body = obj(body);
@@ -291,24 +303,41 @@ export class Library {
     if (body.id && !row) throw fail(404, 'Reference not found.');
     if (row && !this.canEdit(row, user)) throw fail(403, 'You cannot edit this reference.');
     if (row && row.merged_into) throw fail(409, 'This reference was merged into another one.');
-    if (row && row.content_hash === hash) return { ...this.summary(row, 'full', user), unchanged: true };
-    const id = row ? row.id : this.newId(), revision = row ? row.revision + 1 : 1;
-    const members = ',' + data.details.consultants.map(c => c.email).filter(Boolean).join(',') + ',';
+    if (row && row.content_hash === hash) return { unchanged: true, summary: { ...this.summary(row, 'full', user), unchanged: true } };
+    return { user, data, localId, hash, at, storyTenant, id: row ? row.id : this.newId(), existing: !!row };
+  }
+
+  // Synchronous. The status compare is the stored column, read again here so a merge can fold
+  // the keeper in the same transaction as the story it retires.
+  commitRevision(plan) {
+    const row = plan.existing ? this.row(plan.id) : null;
+    if (plan.existing && (!row || row.merged_into)) throw fail(409, 'This reference changed. Open it again.');
+    if (row && row.content_hash === plan.hash) return { unchanged: true, id: row.id };
+    const id = row ? row.id : plan.id, revision = row ? row.revision + 1 : 1;
+    const data = plan.data, members = ',' + data.details.consultants.map(c => c.email).filter(Boolean).join(',') + ',';
     // An empty tenant is left empty. Enforcement hides that row until an operator backfill
     // supplies the tenant from a verified source. This function does not invent one.
-    const keptTenant = row ? String(row.tenant || row.state?.tenant || '') : storyTenant;
+    const keptTenant = row ? String(row.tenant || row.state?.tenant || '') : plan.storyTenant;
     const revised = acceptPublication(publicationTransition(row ? row.state : {}, { type: 'revised', id, tenant: keptTenant, managerStaffIgnored: !!data.validation.managerStaff }), { id, event: 'revised' });
     if (!revised) throw fail(409, 'That publication change is not allowed.');
-    const state = revised.state, status = revised.status, next = new Date(Date.parse(at) + REVIEW_DAYS * 864e5).toISOString();
+    const state = revised.state, status = revised.status, next = new Date(Date.parse(plan.at) + REVIEW_DAYS * 864e5).toISOString();
     if (row) this.writeStatus(`UPDATE refs SET title=?, status=?, revision=?, content_hash=?, practice=?, industry=?, country=?, manager_email=?, members=?, quality_score=NULL,
       updated_at=?, updated_by=?, next_review=?, data=?, state=?, embedding=NULL WHERE id=? AND revision=? AND status=?`,
-      data.title, status, revision, hash, data.jev?.primary?.key || '', data.sector, data.details.country, data.validation.manager.email, members, at, user.email, next, JSON.stringify(data), JSON.stringify(state), id, row.revision, row.status);
+      data.title, status, revision, plan.hash, data.jev?.primary?.key || '', data.sector, data.details.country, data.validation.manager.email, members, plan.at, plan.user.email, next, JSON.stringify(data), JSON.stringify(state), id, row.revision, row.storedStatus);
     else this.writeStatus(`INSERT INTO refs (id, owner, local_id, title, status, revision, content_hash, practice, industry, country, manager_email, members, created_at, updated_at, updated_by, next_review, data, state, tenant)
       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM refs WHERE id = ?)`,
-      id, user.email, localId, data.title, status, revision, hash, data.jev?.primary?.key || '', data.sector, data.details.country, data.validation.manager.email, members, at, at, user.email, next, JSON.stringify(data), JSON.stringify(state), keptTenant, id);
-    this.sql.exec('INSERT INTO revisions (id, revision, data, author, at) VALUES (?, ?, ?, ?, ?)', id, revision, JSON.stringify(data), user.email, at);
-    this.log(id, user.email, row ? 'revised' : 'created', 'revision ' + revision + (row ? '; manager and pre-sales approval reopened' : ''));
-    return this.summary(this.row(id), 'full', user);
+      id, plan.user.email, plan.localId, data.title, status, revision, plan.hash, data.jev?.primary?.key || '', data.sector, data.details.country, data.validation.manager.email, members, plan.at, plan.at, plan.user.email, next, JSON.stringify(data), JSON.stringify(state), keptTenant, id);
+    this.sql.exec('INSERT INTO revisions (id, revision, data, author, at) VALUES (?, ?, ?, ?, ?)', id, revision, JSON.stringify(data), plan.user.email, plan.at);
+    this.log(id, plan.user.email, row ? 'revised' : 'created', 'revision ' + revision + (row ? '; manager and pre-sales approval reopened' : ''));
+    return { id, unchanged: false };
+  }
+
+  async upsert(user, body) {
+    const plan = await this.revisionPlan(user, body);
+    if (plan.unchanged) return plan.summary;
+    const written = this.commitRevision(plan);
+    if (written.unchanged) return { ...this.summary(this.row(written.id), 'full', user), unchanged: true };
+    return this.summary(this.row(written.id), 'full', user);
   }
 
   demandTenant(user) {
@@ -345,7 +374,7 @@ export class Library {
   }
 
   visibleRows(user) {
-    const all = this.rows("SELECT * FROM refs WHERE merged_into IS NULL ORDER BY updated_at DESC").map(readStoredStory);
+    const all = this.rows("SELECT * FROM refs WHERE merged_into IS NULL ORDER BY updated_at DESC").map(readStoredStory).filter(Boolean);
     return all.map(r => [r, this.access(r, user)]).filter(([, level]) => level);
   }
 
@@ -394,7 +423,7 @@ export class Library {
   setState(row, state, actor, action, detail) {
     const status = deriveStatus(state);
     this.writeStatus('UPDATE refs SET state = ?, status = ?, quality_score = ? WHERE id = ? AND revision = ? AND status = ?',
-      JSON.stringify(state), status, state.quality?.score ?? null, row.id, row.revision, row.status);
+      JSON.stringify(state), status, state.quality?.score ?? null, row.id, row.revision, row.storedStatus);
     this.log(row.id, actor, action, detail);
     return status;
   }
@@ -612,15 +641,20 @@ export class Library {
     for (const i of [0, 2, 3, 4, 5]) if (!k.answers[i] && g.answers[i]) k.answers[i] = g.answers[i];
     const moved = acceptPublication(publicationTransition(gone.state, { type: 'merged', id: gone.id }), { id: gone.id, event: 'merged' });
     if (!moved) throw fail(409, 'That publication change is not allowed.');
-    this.writeStatus('UPDATE refs SET merged_into = ?, status = ?, state = ? WHERE id = ? AND revision = ? AND status = ? AND merged_into IS NULL',
-      keep.id, moved.status, JSON.stringify(moved.state), gone.id, gone.revision, gone.status);
-    const sharedWith = [...new Set([...(keep.state.sharedWith || []), gone.owner].filter(Boolean))];
-    const keptState = this.columnState(keep.id) || {};
-    this.sql.exec('UPDATE refs SET state = ?, members = ? WHERE id = ?', JSON.stringify({ ...keptState, sharedWith }), (keep.members || ',') + sharedWith.join(',') + ',', keep.id);
-    this.log(gone.id, user.email, 'merged into', keep.id);
-    const saved = await this.upsert({ ...user }, { id: keep.id, reference: k });
-    this.log(keep.id, user.email, 'consolidated', `merged ${gone.data.title} (${gone.id})`);
-    return saved;
+    const plan = await this.revisionPlan({ ...user }, { id: keep.id, reference: k });
+    const apply = () => {
+      this.writeStatus('UPDATE refs SET merged_into = ?, status = ?, state = ? WHERE id = ? AND revision = ? AND status = ? AND merged_into IS NULL',
+        keep.id, moved.status, JSON.stringify(moved.state), gone.id, gone.revision, gone.storedStatus);
+      const sharedWith = [...new Set([...(keep.state.sharedWith || []), gone.owner].filter(Boolean))];
+      const keptState = this.columnState(keep.id) || {};
+      this.sql.exec('UPDATE refs SET state = ?, members = ? WHERE id = ?', JSON.stringify({ ...keptState, sharedWith }), (keep.members || ',') + sharedWith.join(',') + ',', keep.id);
+      this.log(gone.id, user.email, 'merged into', keep.id);
+      if (!plan.unchanged) this.commitRevision(plan);
+      this.log(keep.id, user.email, 'consolidated', `merged ${gone.data.title} (${gone.id})`);
+    };
+    if (typeof this.transactionSync === 'function') this.transactionSync(apply);
+    else apply();
+    return this.summary(this.row(keep.id), 'full', user);
   }
 
   // Client-context slide content; the client name is added by code only for people allowed to see it.
@@ -756,17 +790,26 @@ export class Library {
     return this.invitationView(user, this.rows('SELECT * FROM invitations WHERE id = ?', inv.id)[0]);
   }
   // Daily: every reference not updated for six months gets one open update invitation for its owner.
+  // The status compare is the stored column. A legacy withdrawn row stays withdrawn, so it is not invited.
   scanStale(user = {}) {
     const due = this.rows('SELECT id, owner, title, data, state FROM refs WHERE merged_into IS NULL AND next_review < ? AND status != ?', this.now(), 'withdrawn')
-      .filter(r => { let tenant = ''; try { tenant = JSON.parse(r.state || '{}').tenant || ''; } catch { return false; } return sameTenant(tenant, user.tenant, user.tenantEnforced === true); });
+      .filter(r => {
+        let tenant = '';
+        try { tenant = JSON.parse(r.state || '{}').tenant || ''; }
+        catch { malformedRow(r.id); return false; }
+        return sameTenant(tenant, user.tenant, user.tenantEnforced === true);
+      });
     const tenant = user.tenantEnforced === true ? String(user.tenant || '').toLowerCase() : '';
     let invited = 0;
     for (const r of due) {
       let recordTenant = '';
       try { recordTenant = JSON.parse(r.state || '{}').tenant || ''; } catch { continue; }
+      let projectId = '';
+      try { projectId = JSON.parse(r.data).details.projectId; }
+      catch { malformedRow(r.id); continue; }
       const to = this.reachableOwnerAddress({ owner: r.owner, tenant: recordTenant, state: { tenant: recordTenant } });
       if (!to) continue;
-      this.invite('atlas', { email: to, reason: 'six_month_update', referenceId: r.id, projectId: JSON.parse(r.data).details.projectId, title: r.title, source: 'six-month scan', tenant });
+      this.invite('atlas', { email: to, reason: 'six_month_update', referenceId: r.id, projectId, title: r.title, source: 'six-month scan', tenant });
       invited++;
     }
     return invited;
@@ -777,8 +820,15 @@ export class Library {
     if (user.role !== 'admin') throw fail(403, 'Export is for a verified admin.');
     if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
     const references = this.rows('SELECT id, owner, status, revision, updated_at, data, state FROM refs WHERE merged_into IS NULL')
-      .filter(r => { let recordTenant = ''; try { recordTenant = JSON.parse(r.state || '{}').tenant || ''; } catch { return false; } return sameTenant(recordTenant, user.tenant, user.tenantEnforced === true); })
-      .map(r => { const viewed = readStoredStory(r); return { id: viewed.id, owner: viewed.owner, status: viewed.status, revision: viewed.revision, updatedAt: viewed.updated_at, quality: viewed.state.quality?.score ?? null, reference: viewed.data }; });
+      .filter(r => {
+        let recordTenant = '';
+        try { recordTenant = JSON.parse(r.state || '{}').tenant || ''; }
+        catch { malformedRow(r.id); return false; }
+        return sameTenant(recordTenant, user.tenant, user.tenantEnforced === true);
+      })
+      .map(readStoredStory)
+      .filter(Boolean)
+      .map(viewed => ({ id: viewed.id, owner: viewed.owner, status: viewed.status, revision: viewed.revision, updatedAt: viewed.updated_at, quality: viewed.state.quality?.score ?? null, reference: viewed.data }));
     this.log('library', user.email, 'admin export', `${references.length} references`);
     return { schema: 'atlas.reference.v1', exportedAt: this.now(), references };
   }

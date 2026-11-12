@@ -4070,14 +4070,13 @@ $('gapApply').addEventListener('click',async()=>{const g=gap,app=window.ATLAS_AP
 })();
 </script><script>// Admin metrics view. Pure transitions. renderAdmin in journey-ui.js is the only writer and the only thing that
 // touches the DOM. The view is not stored, so there is no snapshot codec.
-const ADMIN_METRICS_VERSION = 1;
 const ADMIN_METRICS_STATES = Object.freeze(['boot_loading', 'boot_error', 'denied', 'loading', 'ready', 'empty', 'error']);
 const ADMIN_METRICS_EVENTS = Object.freeze(['boot', 'refresh', 'loaded', 'load_failed', 'export', 'export_failed']);
 
 const SHELL = new Set(['loading', 'ready', 'empty', 'error']);
 
 function initialAdminMetrics() {
-  return { version: ADMIN_METRICS_VERSION, status: 'boot_loading' };
+  return { status: 'boot_loading' };
 }
 
 function isAdminRole(role) {
@@ -4100,7 +4099,7 @@ function legal(status, type) {
 }
 
 function ok(status, effects) {
-  return { ok: true, illegal: false, state: { version: ADMIN_METRICS_VERSION, status }, effects };
+  return { ok: true, illegal: false, state: { status }, effects };
 }
 
 function adminMetricsTransition(state, event) {

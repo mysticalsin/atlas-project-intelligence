@@ -81,7 +81,17 @@ test('every legal publication transition, and every other real (phase, event) pa
   assert.equal(product.length, PUBLICATION_PHASES.length * PUBLICATION_EVENTS.length);
   assert.equal(accepted, legal.size);
   assert.equal(rejected, illegal.length);
-  assert.deepEqual(illegal, []);
+  assert.deepEqual(illegal.sort(), [
+    'admin_test:reinstated',
+    'awaiting_validation:reinstated',
+    'changes_requested:reinstated',
+    'in_review:reinstated',
+    'needs_work:reinstated',
+    'published:reinstated',
+    'withdrawn:admin_published',
+    'withdrawn:decided',
+    'withdrawn:withdrawn',
+  ]);
   assert.deepEqual([...PUBLICATION_EVENTS], ['revised', 'derive', 'merged', 'reviewed', 'decided', 'admin_published', 'withdrawn', 'reinstated']);
 });
 
@@ -169,7 +179,8 @@ test('legacy and unknown snapshots load to a safe state and are not rewritten', 
   assert.equal(publicationStatus(loadPublication('published')), 'in_review');
   const legacy = { ...phases.published };
   const unknown = { ...phases.published, version: 99 };
-  assert.equal(publicationStatus(loadPublication(legacy)), 'in_review');
+  assert.equal(publicationStatus(loadPublication(legacy)), 'published');
+  assert.equal(loadPublication(legacy).validation.status, 'validated');
   assert.equal(publicationStatus(loadPublication(unknown)), 'in_review');
   assert.equal(legacy.version, undefined);
   assert.equal(unknown.version, 99);

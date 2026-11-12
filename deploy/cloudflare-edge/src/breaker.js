@@ -1,6 +1,5 @@
 // Story-rating circuit breaker. Pure transitions: storyRater is the only writer and the only place that calls JEV.
 // In memory for one LibraryStore. Not written to the database, so there is no snapshot codec.
-export const BREAKER_VERSION = 1;
 export const BREAKER_FAILS = 3;
 export const BREAKER_OPEN_MS = 60000;
 
@@ -20,7 +19,7 @@ const LEGAL = new Set([
 ]);
 
 export function initialBreaker() {
-  return { version: BREAKER_VERSION, phase: 'closed', fails: 0, until: 0, authKey: null };
+  return { phase: 'closed', fails: 0, until: 0, authKey: null };
 }
 
 export function authKeyMatches(state, key) {
