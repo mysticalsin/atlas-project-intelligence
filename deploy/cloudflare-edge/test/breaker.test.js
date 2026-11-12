@@ -103,16 +103,26 @@ test('a probing fail re-opens even when the trial flag is absent', () => {
   assert.equal(later.state.until, 200 + BREAKER_OPEN_MS);
 });
 
-test('a probing ignore does not close and does not open a fresh window', () => {
+test('a probing ignore reopens for 60 s and the transition itself does not log', () => {
   const before = probing(2, 'k');
-  const result = transition(before, { type: 'ignore', now: 500 });
+  const warns = [];
+  const original = console.warn;
+  console.warn = (...args) => warns.push(args);
+  let result;
+  try { result = transition(before, { type: 'ignore', now: 500 }); }
+  finally { console.warn = original; }
+  assert.equal(warns.length, 0);
   assert.equal(result.ok, true);
   assert.equal(result.illegal, false);
-  assert.equal(result.state.phase, 'probing');
-  assert.equal(result.state.fails, 2);
-  assert.equal(result.state.until, before.until);
+  assert.equal(result.state.phase, 'open');
+  assert.equal(result.state.fails, 0);
+  assert.equal(result.state.until, 500 + BREAKER_OPEN_MS);
   assert.equal(result.state.authKey, 'k');
-  assert.notEqual(result.state.until, 500 + BREAKER_OPEN_MS);
+  assert.deepEqual(result.notice, { atlas_metric: 'breaker', phase: 'open', event: 'ignore' });
+  const closedProbe = transition(probing(1), { type: 'auth_fail', key: 'k', now: 500 });
+  assert.equal(closedProbe.state.phase, 'closed');
+  assert.equal(closedProbe.state.until, 0);
+  assert.equal(closedProbe.state.authKey, 'k');
 });
 
 test('open plus succeed is stale: it is logged and the breaker stays open', () => {

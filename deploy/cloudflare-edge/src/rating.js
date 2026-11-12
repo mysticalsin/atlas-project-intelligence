@@ -436,9 +436,11 @@ export function storyRater(env, fetcher = fetch, opts = {}) {
   const now = opts.now || (() => Date.now()), random = opts.random || Math.random, sleep = opts.sleep || (ms => delay(ms));
   let breaker = initialBreaker();
   const available = () => !!env.TYPESAFE_API_KEY;
+  const emit = opts.log || (line => { try { console.warn(JSON.stringify(line)); } catch { /* logging never changes the decision */ } });
   const apply = event => {
     const result = breakerTransition(breaker, event);
-    if (result.rejection) (opts.log || (line => { try { console.warn(JSON.stringify(line)); } catch { /* logging never changes the decision */ } }))(result.rejection);
+    if (result.rejection) emit(result.rejection);
+    else if (result.notice) emit(result.notice);
     if (result.ok) breaker = result.state;
     return result;
   };

@@ -561,6 +561,36 @@ test('R16 circuit breaker: three consecutive failures open it for 60 s; one tria
   assert.deepEqual([q.engine, fetcher.calls.length, rater.blocked()], ['jev', 5, null], 'a successful trial closes it');
 });
 
+test('three 500s, a 429 on the trial, then a call 61 s later still fetches', async () => {
+  let clock = 1e6, status = 500;
+  const fetcher = fakeTS(() => ({ status }));
+  const logs = [];
+  const opts = { now: () => clock, sleep: async ms => { clock += ms; }, random: () => 0, log: line => logs.push(line) };
+  const { l, rater } = await world({ fetcher, raterOpts: opts });
+  const id = await saved(l);
+  const opened = (await l.review(SYSTEM, id, { budget: 'background' })).state.quality;
+  assert.equal(fetcher.calls.length, 3);
+  assert.equal(opened.fallbackReason, 'server_error');
+  assert.equal(rater.blocked(), 'circuit_open');
+  clock += 60000;
+  assert.equal(rater.blocked(), null);
+  status = 429;
+  const trial = (await l.review(SYSTEM, id, { budget: 'background' })).state.quality;
+  assert.equal(fetcher.calls.length, 4, 'the half-open trial is the one 429');
+  assert.equal(trial.fallbackReason, 'rate_limited');
+  assert.equal(rater.blocked(), 'circuit_open');
+  clock += 61000;
+  status = 200;
+  const again = (await l.review(OWNER, id)).state.quality;
+  assert.equal(fetcher.calls.length, 5, '61 s later the rating is fetched');
+  assert.equal(again.engine, 'jev');
+  const move = logs.find(line => line && line.event === 'ignore');
+  assert.ok(move);
+  assert.equal(move.phase, 'open');
+  assert.deepEqual(Object.keys(move).sort(), ['atlas_metric', 'event', 'phase']);
+  assert.equal(move.atlas_metric, 'breaker');
+});
+
 test('R16b a second rating during the half-open trial does not send another JEV request', async () => {
   // rating.js used to clear openUntil when the trial was admitted, so blocked() looked closed until the
   // trial returned and a concurrent rate() was admitted too. The trial fetch here never returns.
