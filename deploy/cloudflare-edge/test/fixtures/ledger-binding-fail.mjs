@@ -1,7 +1,7 @@
 // Same Durable Object shape as worker.js, with one storage.put failure armed from the test.
 // The production class stays the one wrangler binds. This script only injects the put failure.
 import { DurableObject } from 'cloudflare:workers';
-import { ProductionSpendLedger as Core } from '../src/meter.js';
+import { ProductionSpendLedger as Core } from '../../src/meter.js';
 
 export class ProductionSpendLedger extends DurableObject {
   constructor(ctx, env) {

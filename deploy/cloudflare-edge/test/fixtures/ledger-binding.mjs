@@ -1,4 +1,4 @@
-export { ProductionSpendLedger } from '../src/worker.js';
+export { ProductionSpendLedger } from '../../src/worker.js';
 export default {
   async fetch(request, env) {
     const stub = env.SPEND_LEDGER.get(env.SPEND_LEDGER.idFromName('production'));

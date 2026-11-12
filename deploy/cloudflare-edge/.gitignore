@@ -1,4 +1,7 @@
 src/atlas.html
-test/fixtures/
+test/fixtures/*
+!test/fixtures/ledger-binding.mjs
+!test/fixtures/ledger-binding-fail.mjs
+!test/fixtures/ledger-binding-version.mjs
 .wrangler/
 node_modules/

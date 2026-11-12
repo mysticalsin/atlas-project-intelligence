@@ -1,6 +1,6 @@
 // Test-only door. Plants a month document, then uses the same ledger core the Worker binds.
 import { DurableObject } from 'cloudflare:workers';
-import { ProductionSpendLedger as LedgerCore } from '../src/meter.js';
+import { ProductionSpendLedger as LedgerCore } from '../../src/meter.js';
 
 export class ProductionSpendLedger extends DurableObject {
   constructor(ctx, env) {
