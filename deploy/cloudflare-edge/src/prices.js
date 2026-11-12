@@ -25,18 +25,45 @@ export const PRICES = Object.freeze({
 // https://elevenlabs.io/pricing/api read 2026-11-11. Taxes are excluded there and here.
 export const ELEVENLABS_USD_PER_1K_CHARS = 0.04;
 
-// toMarkdown documents are free. An image is not: how-it-works (updated 2026-10-15, read 2026-11-11) sends the
+// The only copy of each kind's enforced limit. Call sites pass these numbers to the provider, and meter.js
+// prices the same numbers. reasoningTokens is added into the max_tokens that is sent: gpt-oss bills reasoning
+// as output, and that generation cap is the ceiling. pcmBytesPerMs is 24 kHz PCM16.
+export const LIMITS = Object.freeze(JSON.parse(`{
+  "pcmBytesPerMs": 48,
+  "talker": {"maxTokens": 300, "reasoningTokens": 0},
+  "analyst": {"maxTokens": 1500, "reasoningTokens": 1500},
+  "analystReport": {"maxTokens": 3000, "reasoningTokens": 3000},
+  "analystComplete": {"maxTokens": 2500, "reasoningTokens": 2500},
+  "analystSheet": {"maxTokens": 5000, "reasoningTokens": 5000},
+  "analystVisuals": {"maxTokens": 1500, "reasoningTokens": 1500},
+  "gatewayAnalyst": {"maxTokens": 800, "reasoningTokens": 800},
+  "notes": {"maxTokens": 3000, "reasoningTokens": 0},
+  "editor": {"maxTokens": 4500, "reasoningTokens": 0},
+  "gatewayReport": {"maxTokens": 1400, "reasoningTokens": 0},
+  "embed": {"maxChars": 8000},
+  "stt": {"maxAudioMs": 60000},
+  "tts": {"maxChars": 4000, "maxAudioMs": 120000},
+  "turn": {"maxAudioMs": 8000},
+  "realtime": {"inputTokensPerSecond": 10, "outputTokensPerSecond": 20, "maxSeconds": 900, "maxResponseTokens": 900},
+  "memoryRecall": {"maxTokens": 700},
+  "gatewayRecall": {"maxTokens": 300},
+  "memoryBody": {"maxBytes": 65536},
+  "jev": {"contextTokens": 64000},
+  "markdown": {"maxBytes": 10485760, "maxPages": 30, "maxImageBytes": 1600000, "imageInputTokens": 8192, "imageOutputTokens": 1024}
+}`));
+
+// toMarkdown documents are free at list price. An image is not: how-it-works (updated 2026-10-15, read 2026-11-11) sends the
 // image to @cf/facebook/detr-resnet-50 and then to @cf/google/gemma-4-26b-a4b-it.
 // https://developers.cloudflare.com/workers-ai/features/markdown-conversion/
 // https://developers.cloudflare.com/workers-ai/features/markdown-conversion/how-it-works/
 // Gemma 4 26B is on the pricing table at $0.100 per million input tokens and $0.300 per million output tokens.
 // detr-resnet-50 has no list price: its model page says the model is not in the catalog (read 2026-11-11,
 // https://developers.cloudflare.com/workers-ai/models/detr-resnet-50/). That call is reserved at the same Gemma
-// ceiling and flagged. Cloudflare does not publish toMarkdown's token counts. The ceiling assumes 8,192 input
-// tokens (a 1280×720 image plus the detection prompt) and 1,024 output tokens (longer than the 1,200 characters
-// the sheet keeps). Every toMarkdown call, including a document, reserves this image worst case.
-export const MARKDOWN_IMAGE_INPUT_TOKENS = 8192;
-export const MARKDOWN_IMAGE_OUTPUT_TOKENS = 1024;
+// ceiling and flagged. Cloudflare does not publish toMarkdown's token counts. The image token budget below is
+// the worst case for one file at or under markdown.maxImageBytes. A document is reserved as that same worst
+// case for every page up to markdown.maxPages, because a page can take the image path and detr has no list price.
+export const MARKDOWN_IMAGE_INPUT_TOKENS = LIMITS.markdown.imageInputTokens;
+export const MARKDOWN_IMAGE_OUTPUT_TOKENS = LIMITS.markdown.imageOutputTokens;
 export const GEMMA_USD_PER_M_INPUT = 0.100;
 export const GEMMA_USD_PER_M_OUTPUT = 0.300;
 export function markdownFileUsd() {
@@ -56,7 +83,7 @@ export const HINDSIGHT_RECALL_USD_PER_M = 0.75;
 // ATLAS does not send the long-context header. https://docs.typesafe.ai/models read 2026-11-11.
 // Call sites send requests: 1 and not a token count, so each call reserves the published 64k context cap.
 export const TYPESAFE_USD_PER_M_INPUT = 0.042;
-export const TYPESAFE_CONTEXT_TOKENS = 64000;
+export const TYPESAFE_CONTEXT_TOKENS = LIMITS.jev.contextTokens;
 export const TYPESAFE_USD_PER_REQUEST = TYPESAFE_CONTEXT_TOKENS * TYPESAFE_USD_PER_M_INPUT / 1e6;
 
 // OpenAI Realtime audio is the dearer modality. Text is cheaper ($4 / $24 per million on gpt-realtime-2.1).

@@ -15,9 +15,9 @@ import { CONFIRM_HTML } from './confirm-page.js';
 import { nameClaims, pushConfig } from './profile.js';
 import { elevatedRole, privilegeReadiness, productionDemoConflict, TENANT_ID, tenantEnforced, tenantOf, tokenRoles } from './authz.js';
 import { acceptedSubjectDelete } from './library-routes.js';
-import { paid, elevenLabsUrl, utf8Length, analystCall } from './meter.js';
+import { paid, elevenLabsUrl, utf8Length, analystCall, LIMITS, generationTokens, inputTokenCeiling, capPcm, capText, markdownPlan } from './meter.js';
 import { httpBudget } from './budget-stop.js';
-import { estimateInputTokens, audioMs } from './units.js';
+import { audioMs } from './units.js';
 import { spendRoute } from './spend-route.js';
 
 const enc = new TextEncoder();
@@ -267,8 +267,14 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
       if (request.headers.get('Origin') !== env.ORIGIN || !csrfOk(request.headers.get('X-Atlas-CSRF'), csrf)) return json(env, { error: 'Invalid request origin or session token.' }, 403);
       if (Number(request.headers.get('Content-Length') || 0) > 12 * 1024 * 1024) return json(env, { error: 'The file is larger than 10 MB.' }, 413);
       // PDF metadata (author, producer, title) is never extracted (D2, WOW_ZERO_CONFIG §4): text only.
-      const ai = workersAI(env), res = await sheetRoutes(request, url.pathname.slice('/api/sheet/'.length), { complete: (m, n) => ai.complete(m, n),
-        toMarkdown: f => paid(env).toMarkdown(() => ({ kind: 'markdown', files: Array.isArray(f) ? f.length : 1, media: markdownMedia(f) }), f, { conversionOptions: { pdf: { metadata: false } } }) });
+      const ai = workersAI(env), res = await sheetRoutes(request, url.pathname.slice('/api/sheet/'.length), { complete: (m, spec) => ai.complete(m, spec),
+        toMarkdown: async f => {
+          const one = Array.isArray(f) ? f[0] : f;
+          const buf = one?.blob && typeof one.blob.arrayBuffer === 'function' ? new Uint8Array(await one.blob.arrayBuffer()) : new Uint8Array(0);
+          const plan = markdownPlan(buf, one?.name || '', one?.blob?.type || one?.type || '');
+          if (!plan.ok) throw Object.assign(new Error(plan.error), { status: plan.status || 413 });
+          return paid(env).toMarkdown(() => ({ kind: 'markdown', files: plan.estimate.files, media: plan.estimate.media }), one, { conversionOptions: { pdf: { metadata: false } } });
+        } });
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
     }
     if (url.pathname === '/api/memory' || url.pathname.startsWith('/api/memory/')) {
@@ -391,23 +397,20 @@ export function responseToolCalls(r) {
 }
 // Low reasoning effort keeps the hidden reasoning from eating the output budget. One reservation covers the
 // attempt and, if the binding rejects the field, the retry without it. A ledger refusal is not a rejected field.
-async function runReasoning(env, input) {
+async function runReasoning(env, input, spec) {
+  const cap = generationTokens(spec);
+  const sent = { ...input, max_tokens: cap };
   const estimate = () => ({ kind: 'analyst', model: env.ANALYST_MODEL,
-    inputTokens: estimateInputTokens(input.messages) + (input.tools ? utf8Length(JSON.stringify(input.tools)) : 0), outputTokens: input.max_tokens });
-  return analystCall(env, estimate, input);
-}
-
-function markdownMedia(file) {
-  const files = Array.isArray(file) ? file : [file];
-  const image = files.some(f => /^image\//.test(String(f?.blob?.type || f?.type || '')) || /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i.test(String(f?.name || '')));
-  return image ? 'image' : 'document';
+    inputTokens: inputTokenCeiling(utf8Length(JSON.stringify(sent))), outputTokens: cap });
+  return analystCall(env, estimate, sent);
 }
 
 // ElevenLabs Flash v2.5 (32 languages) as raw 24 kHz PCM, the same format as Aura. Optional: ELEVENLABS_API_KEY.
 async function elevenLabs(env, text, lang, fetcher = fetch) {
+  const spoken = capText(text, LIMITS.tts.maxChars);
   const voice = encodeURIComponent(env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM');
-  const r = await paid(env).fetch(() => ({ kind: 'tts', provider: 'elevenlabs', chars: utf8Length(text) }), fetcher, elevenLabsUrl(voice), { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(15000),
-    headers: { 'xi-api-key': env.ELEVENLABS_API_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ text, model_id: env.ELEVENLABS_MODEL || 'eleven_flash_v2_5', language_code: lang }) });
+  const r = await paid(env).fetch(() => ({ kind: 'tts', provider: 'elevenlabs', chars: utf8Length(spoken) }), fetcher, elevenLabsUrl(voice), { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(15000),
+    headers: { 'xi-api-key': env.ELEVENLABS_API_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: spoken, model_id: env.ELEVENLABS_MODEL || 'eleven_flash_v2_5', language_code: lang }) });
   if (!r.ok) throw new Error('ElevenLabs HTTP ' + r.status);
   const pcm = new Uint8Array(await r.arrayBuffer());
   return pcm.length % 2 ? pcm.subarray(0, pcm.length - 1) : pcm;
@@ -421,13 +424,14 @@ export function workersAI(env) {
   return {
     // Automatic language detection (Nova-3 "multi"): returns the text and the utterance's language.
     async transcribe(pcm) {
-      const r = await meter.run(() => ({ kind: 'stt', model: env.STT_MODEL, audioMs: audioMs(pcm) }), env.STT_MODEL, { audio: { body: new Blob([wav(pcm)]).stream(), contentType: 'audio/wav' }, smart_format: true, punctuate: true, language: env.STT_LANGUAGE || 'multi' });
+      const audio = capPcm(pcm, LIMITS.stt.maxAudioMs);
+      const r = await meter.run(() => ({ kind: 'stt', model: env.STT_MODEL, audioMs: audioMs(audio) }), env.STT_MODEL, { audio: { body: new Blob([wav(audio)]).stream(), contentType: 'audio/wav' }, smart_format: true, punctuate: true, language: env.STT_LANGUAGE || 'multi' });
       return { text: r?.results?.channels?.[0]?.alternatives?.[0]?.transcript || '', language: detectedLanguage(r) };
     },
     // Semantic end-of-turn (Pipecat smart-turn v2): has the consultant finished, or only paused? Last 8 s at 16 kHz.
     // Sent as a base64 WAV string: the binding rejects the streamed {body, contentType} form for this model (AiError).
     async turnComplete(pcm) {
-      const tail = pcm.length > 8 * 48000 ? pcm.subarray(pcm.length - 8 * 48000) : pcm, bytes = wav(to16k(tail), 16000);
+      const tail = capPcm(pcm, LIMITS.turn.maxAudioMs), bytes = wav(to16k(tail), 16000);
       let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
       const model = env.TURN_MODEL || '@cf/pipecat-ai/smart-turn-v2', r = await meter.run(() => ({ kind: 'turn', model, audioMs: audioMs(tail) }), model, { audio: btoa(bin) });
       // No boolean verdict is no verdict (the session logs it as NoVerdict and uses the silence rule), never "unfinished".
@@ -435,15 +439,18 @@ export function workersAI(env) {
     },
     speaks(lang) { return NATIVE_VOICES.includes(lang) || (!!env.ELEVENLABS_API_KEY && !!normalize(lang)); },
     async synthesize(text, speaker = 'atlas', lang = 'en') { // 'atlas' = the configured voice; the browser never sees its real name
-      if (lang !== 'en' && lang !== 'es' && env.ELEVENLABS_API_KEY) return elevenLabs(env, text, lang);
+      const spoken = capText(text, LIMITS.tts.maxChars);
+      if (lang !== 'en' && lang !== 'es' && env.ELEVENLABS_API_KEY) return elevenLabs(env, spoken, lang);
       const es = lang === 'es', model = es ? (env.TTS_MODEL_ES || '@cf/deepgram/aura-2-es') : env.TTS_MODEL;
-      const pcm = await bytesOf(await meter.run(() => ({ kind: 'tts', model, lang: es ? 'es' : 'en', chars: utf8Length(text) }), model, { text, speaker: es ? (env.TTS_VOICE_ES || 'celeste') : speaker === 'atlas' ? env.TTS_VOICE : speaker, encoding: 'linear16', container: 'none', sample_rate: 24000 }));
+      const pcm = await bytesOf(await meter.run(() => ({ kind: 'tts', model, lang: es ? 'es' : 'en', chars: utf8Length(spoken) }), model, { text: spoken, speaker: es ? (env.TTS_VOICE_ES || 'celeste') : speaker === 'atlas' ? env.TTS_VOICE : speaker, encoding: 'linear16', container: 'none', sample_rate: 24000 }));
       return pcm.length % 2 ? pcm.subarray(0, pcm.length - 1) : pcm;
     },
     // Session affinity keeps one interview on the same model instance, so the cached prompt prefix is reused.
     async *chatStream(messages, { affinity } = {}) {
-      const stream = await meter.run(() => ({ kind: 'talker', model: env.TALKER_MODEL, inputTokens: estimateInputTokens(messages), outputTokens: 300 }),
-        env.TALKER_MODEL, { messages, stream: true, max_tokens: 300, temperature: 0.7 }, affinity ? { extraHeaders: { 'x-session-affinity': affinity } } : undefined);
+      const cap = generationTokens(LIMITS.talker);
+      const body = { messages, stream: true, max_tokens: cap, temperature: 0.7 };
+      const stream = await meter.run(() => ({ kind: 'talker', model: env.TALKER_MODEL, inputTokens: inputTokenCeiling(utf8Length(JSON.stringify(body))), outputTokens: cap }),
+        env.TALKER_MODEL, body, affinity ? { extraHeaders: { 'x-session-affinity': affinity } } : undefined);
       const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
       let buffer = '';
       for (;;) {
@@ -460,20 +467,21 @@ export function workersAI(env) {
         }
       }
     },
-    async complete(messages, maxTokens = 2500) {
-      return responseText(await runReasoning(env, { messages, temperature: 0.1, max_tokens: maxTokens }));
+    async complete(messages, spec = LIMITS.analystComplete) {
+      const chosen = spec && typeof spec === 'object' && spec.maxTokens ? spec : LIMITS.analystComplete;
+      return responseText(await runReasoning(env, { messages, temperature: 0.1 }, chosen));
     },
     async embed(text) {
-      const model = env.EMBED_MODEL || '@cf/baai/bge-m3', input = String(text).slice(0, 8000);
-      const r = await meter.run(() => ({ kind: 'embed', model, inputTokens: utf8Length(input) }), model, { text: [input] });
+      const model = env.EMBED_MODEL || '@cf/baai/bge-m3', input = capText(text, LIMITS.embed.maxChars);
+      const r = await meter.run(() => ({ kind: 'embed', model, inputTokens: inputTokenCeiling(utf8Length(input)) }), model, { text: [input] });
       const v = r?.data?.[0];
       return Array.isArray(v) && v.length ? v : null;
     },
     async report(messages) {
-      return responseText(await runReasoning(env, { messages, temperature: 0.2, max_tokens: 3000 }));
+      return responseText(await runReasoning(env, { messages, temperature: 0.2 }, LIMITS.analystReport));
     },
     async analyst(messages) {
-      return responseToolCalls(await runReasoning(env, { messages, tools: CHAT_TOOLS, tool_choice: 'auto', temperature: 0, max_tokens: 1500 }));
+      return responseToolCalls(await runReasoning(env, { messages, tools: CHAT_TOOLS, tool_choice: 'auto', temperature: 0 }, LIMITS.analyst));
     },
   };
 }

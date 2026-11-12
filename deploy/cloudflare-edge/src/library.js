@@ -652,7 +652,7 @@ export class Library {
     const pub = this.visibleRows(user).filter(([r]) => r.status === 'published').slice(0, 60);
     if (pub.length < 3) return { repeatedNeeds: [], emergingExpertise: [], offeringIdeas: [], gaps: [], label: 'interpretation', note: 'At least three published references are needed.' };
     const cards = pub.map(([r]) => candidateCard(r.id, recordView(this, r.data)));
-    const out = parseInsights(await generatedText(this.complete([{ role: 'system', content: INSIGHTS_POLICY }, { role: 'user', content: JSON.stringify({ references: cards }) }], 4000)), cards.map(c => c.id));
+    const out = parseInsights(await generatedText(this.complete([{ role: 'system', content: INSIGHTS_POLICY }, { role: 'user', content: JSON.stringify({ references: cards }) }])), cards.map(c => c.id));
     if (!out) throw fail(502, 'The insights model did not answer. Try again.');
     this.log('library', user.email, 'insights', `${pub.length} references`);
     return { ...out, titles: Object.fromEntries(pub.map(([r]) => [r.id, r.data.title])), basedOn: pub.length };

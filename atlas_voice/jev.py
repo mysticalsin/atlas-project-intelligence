@@ -6,6 +6,7 @@ import json
 import re
 from datetime import date
 import aiohttp
+from .limits import input_tokens, jev_body
 from .spend import reserve, usage_from
 
 RUBRIC_VERSION='customer-value-v1'
@@ -110,12 +111,12 @@ class JevRanker:
             scoped={k:story[k] for k in ('id','title','revision','content_hash','sections','sources','tags','stage','kind') if k in story}
             freshness=source_freshness(story)
             body=request_body(scoped,customer,self.model,deterministic_freshness=True)
-            if len(json.dumps(body))>65000:raise ValueError('Story exceeds ranking context budget; prepare a reviewed shorter variant')
+            jev_body(json.dumps(body))
             scored=None
             for attempt in range(3):
                 if authorize is not None and not authorize(story):break
                 hold = await reserve({'kind': 'jev', 'provider': 'typesafe', 'model': self.model, 'requests': 1,
-                                      'inputTokens': max(1, len(json.dumps(body)) // 4)}, self.session)
+                                      'inputTokens': input_tokens(json.dumps(body))}, self.session)
                 try:
                     async with self.session.post('https://api.typesafe.ai/v1/systemone',json=body,
                         headers={'Authorization':'Bearer '+self.key},timeout=aiohttp.ClientTimeout(total=18),allow_redirects=False) as r:

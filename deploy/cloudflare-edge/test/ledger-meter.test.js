@@ -70,7 +70,8 @@ test('BudgetState: priced ceilings, never refunded, one UTC month; ProductionSpe
   let t = Date.parse('2026-11-09T23:59:00Z');
   const b = new BudgetState({ limitUsd: 0.02, now: () => t });
   assert.equal(priceOf({ kind: 'stt', model: '@cf/deepgram/nova-3', audioMs: 1 }), Math.ceil(1000 / 60000 * 0.0052 * 1e9), 'audio rounds up to a whole second');
-  assert.equal(priceOf({ kind: 'turn', model: '@cf/pipecat-ai/smart-turn-v2', audioMs: 20000 }), Math.ceil(8000 / 60000 * 0.00033795 * 1e9), 'turn model at most 8 s');
+  assert.equal(priceOf({ kind: 'turn', model: '@cf/pipecat-ai/smart-turn-v2', audioMs: 8000 }), Math.ceil(8000 / 60000 * 0.00033795 * 1e9), 'turn at the 8 s cap');
+  assert.equal(priceOf({ kind: 'turn', model: '@cf/pipecat-ai/smart-turn-v2', audioMs: 20000 }), null, 'turn above the cap is not given a smaller ceiling');
   assert.equal(priceOf({ kind: 'analyst', model: '@cf/openai/gpt-oss-120b', inputTokens: 10, outputTokens: 10 }), Math.ceil((10 * 0.35 + 10 * 0.75) / 1e6 * 1e9));
   assert.equal(priceOf({ kind: 'jev', provider: 'typesafe', requests: 1 }), Math.ceil(64000 * 0.042 / 1e6 * 1e9));
   assert.equal(priceOf({ kind: 'stt', model: 'not-a-model', audioMs: 1000 }), null, 'an unknown model is still refused');

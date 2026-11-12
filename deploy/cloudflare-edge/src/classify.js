@@ -2,7 +2,7 @@
 // The model returns typed judgments; code owns the weights, the composite and the ranking, so weights can change
 // without re-scoring. Confidential client fields are never accepted here, so they can never reach a model.
 // Categories are a starting taxonomy from Tony's examples; replace with Mantu's official practice list when available.
-import { paid, TYPESAFE_ENDPOINT } from './meter.js';
+import { paid, TYPESAFE_ENDPOINT, boundedJevBody } from './meter.js';
 
 export const CATEGORIES = {
   data_ai: { label: 'Data & AI', what: 'data platforms, analytics and BI, data engineering, machine learning, generative AI, data governance' },
@@ -91,10 +91,10 @@ export function impact(scores, weights = Object.fromEntries(Object.entries(DIMEN
 export async function classify(env, rawProject, fetcher = fetch) {
   const state = projectState(rawProject); // invalid input is a 400 even when JEV is not configured
   if (!env.TYPESAFE_API_KEY) { const e = new Error('JEV is not configured on this deployment.'); e.status = 503; throw e; }
-  const body = requestBody(env.JEV_MODEL || 'jev-latest', state);
+  const body = boundedJevBody(JSON.stringify(requestBody(env.JEV_MODEL || 'jev-latest', state)));
   for (let attempt = 0; ; attempt++) {
     const r = await paid(env).fetch(() => ({ kind: 'jev', provider: 'typesafe', requests: 1 }), fetcher, TYPESAFE_ENDPOINT, { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(20000),
-      headers: { Authorization: 'Bearer ' + env.TYPESAFE_API_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      headers: { Authorization: 'Bearer ' + env.TYPESAFE_API_KEY, 'Content-Type': 'application/json' }, body });
     if ((r.status === 429 || r.status === 529) && attempt < 2) { await new Promise(res => setTimeout(res, 800 * 2 ** attempt)); continue; }
     if (!r.ok) { const e = new Error('JEV request failed (HTTP ' + r.status + ')'); e.status = 502; throw e; }
     return parse(await r.json());

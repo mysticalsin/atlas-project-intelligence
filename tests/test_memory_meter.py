@@ -65,7 +65,7 @@ async def test_recall_reserves_before_hindsight_and_a_missing_ledger_does_not_ca
         assert estimate['kind'] == 'memory' and estimate['provider'] == 'hindsight' and estimate['operation'] == 'recall'
         assert estimate['outputTokens'] == 300 and estimate['inputTokens'] >= 1
         body = json.dumps({'query': memory.RECALL_QUERY, 'budget': 'low', 'max_tokens': 300}, separators=(',', ':'), ensure_ascii=False)
-        assert estimate['inputTokens'] == max(1, (len(body.encode()) + 3) // 4)
+        assert estimate['inputTokens'] == max(1, len(body.encode()))
         assert ledger.settled[0]['usage'] == {'inputTokens': 8, 'outputTokens': 3}
         order.clear()
         ledger.reserved.clear()

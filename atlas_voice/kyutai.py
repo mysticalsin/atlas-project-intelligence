@@ -14,6 +14,7 @@ from urllib.parse import quote
 
 import aiohttp
 
+from .limits import input_tokens, output_tokens
 from .spend import reserve, usage_from
 import msgpack
 
@@ -94,12 +95,14 @@ def connect_tts(http, base, key, voice):
     return connect(http, base, TTS_PATH, key, '?format=PcmMessagePack&cfg_alpha=1.5&voice=' + quote(voice, safe=''))
 
 
-async def stream_chat(http, url, model, key, messages, max_tokens=300):
+async def stream_chat(http, url, model, key, messages, max_tokens=None):
     """Yield text deltas from an OpenAI-compatible streaming chat completion (SSE)."""
     headers = {'Authorization': 'Bearer ' + key} if key else {}
+    cap = output_tokens('talker')
+    max_tokens = cap if max_tokens is None else min(int(max_tokens), cap)
     body = {'model': model, 'messages': messages, 'stream': True, 'temperature': 0.6, 'max_tokens': max_tokens}
     hold = await reserve({'kind': 'talker', 'provider': 'openai', 'model': model,
-                          'inputTokens': max(1, len(json.dumps(body)) // 4), 'outputTokens': max_tokens}, http)
+                          'inputTokens': input_tokens(json.dumps(body)), 'outputTokens': max_tokens}, http)
     seen = None
     try:
         async with http.post(url, headers=headers, json=body,

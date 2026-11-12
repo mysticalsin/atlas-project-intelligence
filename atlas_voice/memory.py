@@ -9,31 +9,32 @@ import hashlib
 import hmac
 import json
 
+from .limits import LIMITS, input_tokens, output_tokens
 from .spend import reserve, usage_from
 
 
-def _utf8_tokens(payload):
-    """Same ceiling as memory.js: ceil(utf8(JSON body) / 4), and at least one token."""
+def memory_estimate(operation, payload=None, max_tokens=0):
+    """kind memory, provider hindsight. Input is one token per byte. Recall output is the max_tokens sent."""
     if payload is None:
         raw = b''
+    elif isinstance(payload, (bytes, bytearray)):
+        raw = bytes(payload)
     elif isinstance(payload, str):
         raw = payload.encode('utf-8')
     else:
         raw = json.dumps(payload, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
-    return max(1, (len(raw) + 3) // 4)
-
-
-def memory_estimate(operation, payload=None, max_tokens=0):
-    """kind memory, provider hindsight. Recall's output is the requested max_tokens. The Worker prices it."""
+    if len(raw) > int(LIMITS['memoryBody']['maxBytes']):
+        raise ValueError('Memory request exceeds the byte cap.')
     outgoing = 0
     if operation == 'recall':
+        cap = output_tokens('gatewayRecall')
         try:
             number = int(max_tokens)
         except (TypeError, ValueError):
             number = 0
-        outgoing = number if number > 0 else 0
+        outgoing = min(cap, number) if number > 0 else cap
     return {'kind': 'memory', 'provider': 'hindsight', 'operation': operation,
-            'inputTokens': _utf8_tokens(payload), 'outputTokens': outgoing}
+            'inputTokens': input_tokens(raw), 'outputTokens': outgoing}
 
 
 def _usage(result):
@@ -74,12 +75,13 @@ class PrivateMemory:
     async def recall(self, subject):
         if not self.enabled:
             return ''
-        payload = {'query': self.RECALL_QUERY, 'budget': 'low', 'max_tokens': 300}
-        hold = await reserve(memory_estimate('recall', payload, 300), self.session)
+        cap = output_tokens('gatewayRecall')
+        payload = {'query': self.RECALL_QUERY, 'budget': 'low', 'max_tokens': cap}
+        hold = await reserve(memory_estimate('recall', payload, cap), self.session)
         c = self.client()
         try:
             response = await asyncio.wait_for(c.arecall(bank_id=self.bank(subject),
-                query=self.RECALL_QUERY, budget='low', max_tokens=300), timeout=8)
+                query=self.RECALL_QUERY, budget='low', max_tokens=cap), timeout=8)
             await hold.settle(_usage(response))
             results = (response.results if hasattr(response, 'results') else response.get('results', [])) or []
             text = '\n'.join((r.text if hasattr(r, 'text') else r.get('text', '')) for r in results[:5])

@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { BudgetState, ProductionSpendLedger, paid, ledgerMode, priceOf, callCeilingNano } from '../src/meter.js';
+import { BudgetState, ProductionSpendLedger, paid, ledgerMode, priceOf, callCeilingNano, LIMITS } from '../src/meter.js';
 
 const NOW = () => Date.parse('2026-11-11T12:00:00Z');
 const NANO = 1e9;
@@ -123,12 +123,12 @@ test('gpt-oss reasoning is output and is not added on top of completion tokens',
   assert.ok(raised > ceiling);
 });
 
-test('a document toMarkdown ceiling is the proxy, and an image stays two Gemma calls', () => {
-  const document = priceOf({ kind: 'markdown', files: 1, media: 'document' });
+test('a document toMarkdown ceiling is the page cap, and an image stays one file of two Gemma calls', () => {
+  const pages = LIMITS.markdown.maxPages;
+  const document = priceOf({ kind: 'markdown', files: pages, media: 'document' });
   const image = priceOf({ kind: 'markdown', files: 1 });
-  assert.equal(document, 0, 'published document conversion is free');
-  assert.equal(callCeilingNano({ kind: 'markdown', files: 1, media: 'document' }), 6_000_300);
-  assert.ok(image > document);
+  assert.ok(document > image, 'a document reserves the image worst case for every page in the cap');
+  assert.equal(priceOf({ kind: 'markdown', files: pages + 1, media: 'document' }), null, 'more pages than the cap is not priced as the cap');
   assert.equal(callCeilingNano({ kind: 'markdown', files: 1 }), image + 6_000_300);
 });
 

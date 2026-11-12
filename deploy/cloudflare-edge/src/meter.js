@@ -9,7 +9,8 @@
 //            unset limit, an unpriced call, a missing ledger, a ledger error or a ledger timeout refuses the call
 //            (BudgetRefused) and nothing reaches the upstream. Production wrangler.jsonc sets enforce and must not set off.
 // Any other LEDGER_MODE value is a configuration error and refuses every paid call.
-import { ELEVENLABS_USD_PER_1K_CHARS, HINDSIGHT_RECALL_USD_PER_M, HINDSIGHT_RETAIN_USD_PER_M, PRICES, REALTIME_USD_PER_M_INPUT, REALTIME_USD_PER_M_OUTPUT, TYPESAFE_USD_PER_REQUEST, markdownFileUsd } from './prices.js';
+import { ELEVENLABS_USD_PER_1K_CHARS, HINDSIGHT_RECALL_USD_PER_M, HINDSIGHT_RETAIN_USD_PER_M, LIMITS, PRICES, REALTIME_USD_PER_M_INPUT, REALTIME_USD_PER_M_OUTPUT, TYPESAFE_USD_PER_REQUEST, markdownFileUsd } from './prices.js';
+export { LIMITS };
 import { isIllegal, loadMonth, monthKey, transition } from './month-budget.js';
 import { usageFrom } from './usage.js';
 
@@ -31,7 +32,78 @@ export const elevenLabsUrl = voice => `https://api.elevenlabs.io/v1/text-to-spee
 const NANO = 1e9;
 const utf8 = new TextEncoder();
 export const utf8Length = s => utf8.encode(String(s ?? '')).length;
-const TURN_AUDIO_MAX_MS = 8000;
+
+// The provider cap and the reserved output are this one number. reasoningTokens is inside it.
+export function generationTokens(spec) {
+  return Math.ceil(Number(spec?.maxTokens) || 0) + Math.ceil(Number(spec?.reasoningTokens) || 0);
+}
+
+// One token per UTF-8 byte of the body that is sent. A BPE token is at least one byte.
+export function inputTokenCeiling(bytes) {
+  const n = Math.ceil(Number(bytes) || 0);
+  return n > 0 ? n : 1;
+}
+
+export function capText(text, maxChars) {
+  const s = String(text ?? '');
+  const n = Math.max(0, Math.floor(Number(maxChars) || 0));
+  return s.length <= n ? s : s.slice(0, n);
+}
+
+// Keep the tail, on a 16-bit boundary. 24 kHz PCM16 is pcmBytesPerMs bytes per millisecond.
+export function capPcm(pcm, maxAudioMs) {
+  const bytes = pcm instanceof Uint8Array ? pcm : new Uint8Array(pcm || 0);
+  const maxBytes = Math.max(0, Math.floor(Number(maxAudioMs) || 0)) * LIMITS.pcmBytesPerMs;
+  if (bytes.length <= maxBytes) return bytes;
+  let start = bytes.length - maxBytes;
+  if (start % 2) start += 1;
+  return bytes.subarray(start);
+}
+
+export function realtimeReservation(seconds) {
+  const spec = LIMITS.realtime;
+  const raw = Math.ceil(Number(seconds) || spec.maxSeconds);
+  const s = Math.max(1, Math.min(raw, spec.maxSeconds));
+  const stopInput = s * spec.inputTokensPerSecond;
+  const stopOutput = s * spec.outputTokensPerSecond;
+  return { seconds: s, inputTokens: stopInput, outputTokens: stopOutput + spec.maxResponseTokens, stopInput, stopOutput };
+}
+
+export function boundedJevBody(text) {
+  const s = typeof text === 'string' ? text : JSON.stringify(text ?? '');
+  if (utf8Length(s) > LIMITS.jev.contextTokens) {
+    throw Object.assign(new Error('Story exceeds ranking context budget; prepare a reviewed shorter variant'), { status: 413 });
+  }
+  return s;
+}
+
+export function pdfPageCount(bytes) {
+  const text = new TextDecoder('latin1').decode(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || 0));
+  const matches = text.match(/\/Type\s*\/Page(?!s)/g);
+  return matches ? matches.length : 0;
+}
+
+// Refuse before toMarkdown. A document that is allowed reserves the page cap, not a smaller guess.
+export function markdownPlan(bytes, name = '', type = '') {
+  const lim = LIMITS.markdown;
+  const raw = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || 0);
+  const image = /^image\//.test(String(type)) || /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i.test(String(name));
+  if (image) {
+    if (raw.length > lim.maxImageBytes) return { ok: false, status: 413, error: 'The image is larger than the conversion cap.' };
+    return { ok: true, estimate: { kind: 'markdown', files: 1, media: 'image' } };
+  }
+  if (raw.length > lim.maxBytes) return { ok: false, status: 413, error: 'The file is larger than 10 MB.' };
+  const pdf = /pdf/i.test(String(type)) || /\.pdf$/i.test(String(name)) || (raw.length >= 4 && raw[0] === 0x25 && raw[1] === 0x50 && raw[2] === 0x44 && raw[3] === 0x46);
+  if (pdf && pdfPageCount(raw) > lim.maxPages) return { ok: false, status: 413, error: 'The document has more pages than the conversion cap.' };
+  return { ok: true, estimate: { kind: 'markdown', files: lim.maxPages, media: 'document' } };
+}
+
+function charsWithinCap(chars) {
+  const c = Math.ceil(Number(chars));
+  if (!(c > 0)) return null;
+  if (c > LIMITS.tts.maxChars * 3) return null;
+  return c;
+}
 
 export function ledgerMode(env) {
   const v = env?.LEDGER_MODE;
@@ -61,8 +133,8 @@ export function priceOf(req, prices = PRICES) {
     return i > 0 || o > 0 ? Math.ceil((i * REALTIME_USD_PER_M_INPUT + o * REALTIME_USD_PER_M_OUTPUT) / 1e6 * NANO) : null;
   }
   if (req?.provider === 'elevenlabs') {
-    const c = Math.ceil(Number(req.chars));
-    return c > 0 ? Math.ceil(c / 1000 * ELEVENLABS_USD_PER_1K_CHARS * NANO) : null;
+    const c = charsWithinCap(req.chars);
+    return c ? Math.ceil(c / 1000 * ELEVENLABS_USD_PER_1K_CHARS * NANO) : null;
   }
   if (req?.kind === 'memory' || req?.provider === 'hindsight') {
     const tokens = Math.max(1, Math.ceil(Number(req.inputTokens) || 0) + Math.ceil(Number(req.outputTokens) || 0));
@@ -74,15 +146,18 @@ export function priceOf(req, prices = PRICES) {
     return n > 0 ? Math.ceil(n * TYPESAFE_USD_PER_REQUEST * NANO) : null;
   }
   if (req?.kind === 'markdown') {
-    if (req.media === 'document') return 0;
-    const files = Math.max(1, Math.ceil(Number(req.files) || 1));
+    const files = Math.ceil(Number(req.files) || 1);
+    if (files < 1 || files > LIMITS.markdown.maxPages) return null;
     return Math.ceil(files * markdownFileUsd() * NANO);
   }
   const pr = req?.model ? prices[req.model] : null;
   if (!pr) return null;
   if (pr.usdPerAudioMin) {
-    const sec = Math.ceil((Number(req.audioMs) || 0) / 1000) * 1000, ms = req.kind === 'turn' ? Math.min(sec, TURN_AUDIO_MAX_MS) : sec;
-    return ms > 0 ? Math.ceil(ms / 60000 * pr.usdPerAudioMin * NANO) : null;
+    const ms = Math.ceil((Number(req.audioMs) || 0) / 1000) * 1000;
+    if (!(ms > 0)) return null;
+    const cap = req.kind === 'turn' ? LIMITS.turn.maxAudioMs : req.kind === 'stt' ? LIMITS.stt.maxAudioMs : null;
+    if (cap != null && ms > cap) return null;
+    return Math.ceil(ms / 60000 * pr.usdPerAudioMin * NANO);
   }
   if (pr.usdPerMInput != null && pr.usdPerMOutput == null) {
     const i = Math.ceil(Number(req.inputTokens));
@@ -92,7 +167,7 @@ export function priceOf(req, prices = PRICES) {
     const i = Math.ceil(Number(req.inputTokens)), o = Math.ceil(Number(req.outputTokens));
     return i > 0 && o > 0 ? Math.ceil((i * pr.usdPerMInput + o * pr.usdPerMOutput) / 1e6 * NANO) : null;
   }
-  if (pr.usdPer1kChars) { const c = Math.ceil(Number(req.chars)); return c > 0 ? Math.ceil(c / 1000 * pr.usdPer1kChars * NANO) : null; }
+  if (pr.usdPer1kChars) { const c = charsWithinCap(req.chars); return c ? Math.ceil(c / 1000 * pr.usdPer1kChars * NANO) : null; }
   return null;
 }
 

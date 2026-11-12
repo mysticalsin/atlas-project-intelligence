@@ -622,9 +622,9 @@ test('R19 language and size: non-English never ready by JEV alone; long stories 
   assert.deepEqual([q.fallbackReason, q.engine, w.fetcher.calls.length], ['too_long', 'review-agent', 0]);
   assert.equal(w.metrics.at(-1).fallback, 9);
   const sources = Array.from({ length: 10 }, (_, i) => ({ name: 'Source ' + i, version: 'v1', excerpt: 'い'.repeat(600) }));
-  q = (await w.l.review(OWNER, await saved(w.l, { ...REF(), answers: ja(3800), sources }, OWNER, 'p2'))).state.quality;
+  q = (await w.l.review(OWNER, await saved(w.l, { ...REF(), answers: ja(2800), sources }, OWNER, 'p2'))).state.quality;
   assert.equal(q.engine, 'jev'); assert.equal(w.fetcher.calls.length, 1);
-  assert.deepEqual(w.fetcher.calls[0].body.state.reference.sources.map(s => s.excerpt), Array(10).fill(''));
+  assert.deepEqual(w.fetcher.calls[0].body.state.reference.sources.map(s => s.excerpt), Array(10).fill('い'.repeat(200)));
   assert.equal(R.estimateTokens('abcd'), 1); assert.equal(R.estimateTokens('ああ'), 2); assert.equal(R.estimateTokens('é'.repeat(8)), 2);
 });
 

@@ -12,6 +12,7 @@ import json
 import aiohttp
 
 from .quality import FIELDS, TOOLS, InterviewLedger
+from .limits import input_tokens, output_tokens
 from .spend import reserve, usage_from
 
 RECORD_TOOL = next(t for t in TOOLS if t['name'] == 'record_details')
@@ -90,9 +91,10 @@ def chat_completer(http, url, model, key=''):
     headers = {'Authorization': 'Bearer ' + key} if key else {}
 
     async def complete(messages):
-        body = {'model': model, 'messages': messages, 'tools': CHAT_TOOLS, 'tool_choice': 'auto', 'temperature': 0, 'max_tokens': 800}
+        cap = output_tokens('gatewayAnalyst')
+        body = {'model': model, 'messages': messages, 'tools': CHAT_TOOLS, 'tool_choice': 'auto', 'temperature': 0, 'max_tokens': cap}
         hold = await reserve({'kind': 'analyst', 'provider': 'openai', 'model': model,
-                              'inputTokens': max(1, len(json.dumps(body)) // 4), 'outputTokens': 800}, http)
+                              'inputTokens': input_tokens(json.dumps(body)), 'outputTokens': cap}, http)
         try:
             async with http.post(url, headers=headers, json=body, timeout=aiohttp.ClientTimeout(total=20)) as response:
                 response.raise_for_status()

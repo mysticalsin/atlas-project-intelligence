@@ -9,6 +9,7 @@ import re
 
 import aiohttp
 
+from .limits import input_tokens, output_tokens
 from .spend import reserve, usage_from
 
 END_TOKEN = '[[END]]'  # the talker is told to write exactly this; END_PATTERN also catches near misses
@@ -128,9 +129,10 @@ def text_completer(http, url, model, key=''):
     """OpenAI-compatible chat completion returning the message text (used only for the end-of-interview report)."""
     async def complete(messages):
         headers = {'Authorization': f'Bearer {key}'} if key else {}
-        body = {'model': model, 'messages': messages, 'temperature': 0.2, 'max_tokens': 1400}
+        cap = output_tokens('gatewayReport')
+        body = {'model': model, 'messages': messages, 'temperature': 0.2, 'max_tokens': cap}
         hold = await reserve({'kind': 'report', 'provider': 'openai', 'model': model,
-                              'inputTokens': max(1, len(json.dumps(body)) // 4), 'outputTokens': 1400}, http)
+                              'inputTokens': input_tokens(json.dumps(body)), 'outputTokens': cap}, http)
         try:
             async with http.post(url, headers=headers, json=body, timeout=aiohttp.ClientTimeout(total=25)) as response:
                 response.raise_for_status()

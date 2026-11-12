@@ -18,6 +18,7 @@ from .capacity import BUSY
 from .identity import COOKIE
 from .interview import project_context
 from .quality import InterviewLedger, session_config
+from .limits import LIMITS, realtime_reservation
 from .spend import BUDGET_MESSAGE, BudgetRefused, reserve, usage_from
 
 VOICES=('cedar','marin','ash','sage','verse')
@@ -60,8 +61,9 @@ async def run(request,config,identity,memory,http,gate,active):
             try:preferences=await memory.recall(subject);await event('memory',message='Hindsight private continuity recalled; not project evidence.')
             except Exception:await event('memory',message='Hindsight unavailable; continuing without remembered context.')
         await event('status',state='connecting',message='Preparing the selected hosted voice model. Microphone audio is not sent until ready.')
-        seconds=max(1, int(getattr(config, 'duration', 900) or 900))
-        hold=await reserve({'kind':'realtime','provider':'openai','model':config.openai_model,'inputTokens':seconds*10,'outputTokens':seconds*20}, http)
+        book=realtime_reservation(getattr(config, 'duration', None))
+        seconds=book['seconds']
+        hold=await reserve({'kind':'realtime','provider':'openai','model':config.openai_model,'inputTokens':book['inputTokens'],'outputTokens':book['outputTokens']}, http)
         upstream=await http.ws_connect('wss://api.openai.com/v1/realtime',params={'model':config.openai_model},
             headers={'Authorization':'Bearer '+config.openai_key,'OpenAI-Safety-Identifier':subject.subject_key},
             max_msg_size=1048576,heartbeat=20)
@@ -82,7 +84,7 @@ async def run(request,config,identity,memory,http,gate,active):
             for task in (prepare,cancel):
                 if not task.done():task.cancel()
             await asyncio.gather(prepare,cancel,return_exceptions=True)
-        await event('ready',model=config.openai_model,provider='OpenAI Realtime',sampleRate=24000,capture=capture,maxSeconds=config.duration,
+        await event('ready',model=config.openai_model,provider='OpenAI Realtime',sampleRate=24000,capture=capture,maxSeconds=seconds,
           message='Voice session ready. Speak naturally. Candidate notes require your review.')
         await send({'type':'response.create','response':{'instructions':'Introduce yourself briefly as ATLAS, then ask the single most relevant opening question about the project. Do not assume a benefit or read the entire topic list.'}})
         started=last_input=time.monotonic()
@@ -95,6 +97,7 @@ async def run(request,config,identity,memory,http,gate,active):
                     if not data or len(data)%2 or len(data)>3840:raise ValueError('Invalid PCM frame')
                     bytes_in+=len(data);last_input=time.monotonic()
                     if bytes_in>(last_input-started+3)*48000:raise ValueError('Audio exceeds realtime input budget')
+                    if bytes_in>seconds*1000*int(LIMITS['pcmBytesPerMs']):raise BudgetRefused('reservation')
                     await send({'type':'input_audio_buffer.append','audio':base64.b64encode(data).decode()})
                 elif msg.type==aiohttp.WSMsgType.TEXT:
                     value=json.loads(msg.data)
@@ -144,6 +147,7 @@ async def run(request,config,identity,memory,http,gate,active):
                     found=usage_from(response)
                     if found:
                         spent['seen']=True;spent['input']+=found['inputTokens'];spent['output']+=found['outputTokens']
+                        if spent['input']>=book['stopInput'] or spent['output']>=book['stopOutput']:raise BudgetRefused('reservation')
                     if response.get('id') in cancelled:continue
                     calls=[v for v in response.get('output',[]) if v.get('type')=='function_call']
                     for call in calls:
@@ -179,7 +183,7 @@ async def run(request,config,identity,memory,http,gate,active):
             while True:
                 await asyncio.sleep(1)
                 if identity.sessions.get(session_cookie) is not subject or time.monotonic()>subject.expires:raise PermissionError('Sign-in expired; voice stopped')
-                if time.monotonic()-started>=config.duration:clean_end=True;return
+                if spent['input']>=book['stopInput'] or spent['output']>=book['stopOutput'] or time.monotonic()-started>=seconds:raise BudgetRefused('reservation')
                 if time.monotonic()-last_input>12:raise ConnectionError('Microphone frames stopped')
         tasks=[asyncio.create_task(f()) for f in (client_input,provider_output,paced_playback,watch)]
         done,_=await asyncio.wait(tasks,return_when=asyncio.FIRST_COMPLETED)

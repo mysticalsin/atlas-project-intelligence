@@ -13,6 +13,7 @@ import json
 import math
 import re
 import struct
+from .limits import LIMITS, cap_pcm, cap_text
 from .spend import reserve, usage_from
 import unicodedata
 import wave
@@ -280,8 +281,10 @@ class WorkersSpeech:
             await self.queue.put(('audio', utterance))
 
     async def transcribe(self, pcm):
+        pcm = cap_pcm(pcm, LIMITS['stt']['maxAudioMs'])
         audio = wav_bytes(pcm)
-        hold = await reserve({'kind': 'stt', 'provider': 'workers', 'model': self.config.workers_stt_model, 'audioMs': max(1, len(pcm) // 48)}, self.http)
+        width = int(LIMITS['pcmBytesPerMs'])
+        hold = await reserve({'kind': 'stt', 'provider': 'workers', 'model': self.config.workers_stt_model, 'audioMs': max(1, (len(pcm) + width - 1) // width)}, self.http)
         try:
             async with self.http.post(self.url(self.config.workers_stt_model), headers={**self.headers, 'Content-Type': 'audio/wav'},
                                       params={'smart_format': 'true', 'punctuate': 'true', 'language': 'en'}, data=audio,
@@ -299,7 +302,8 @@ class WorkersSpeech:
             return ''
 
     async def synthesize(self, text):
-        hold = await reserve({'kind': 'tts', 'provider': 'workers', 'model': self.config.workers_tts_model, 'chars': max(1, len(text))}, self.http)
+        text = cap_text(text, LIMITS['tts']['maxChars'])
+        hold = await reserve({'kind': 'tts', 'provider': 'workers', 'model': self.config.workers_tts_model, 'chars': max(1, len(text.encode('utf-8')))}, self.http)
         try:
             async with self.http.post(self.url(self.config.workers_tts_model), headers=self.headers,
                                       json={'text': text, 'speaker': self.config.workers_voice, 'encoding': 'linear16',

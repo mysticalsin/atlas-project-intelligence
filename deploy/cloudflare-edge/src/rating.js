@@ -11,7 +11,7 @@ import { completeness, contactLead } from './review.js';
 import { recordView, nameMatcher, STOPLIST } from './scrub.js';
 import { NUMERIC_SRC } from './policy.generated.js';
 import { storedNames } from './profile.js';
-import { paid, TYPESAFE_ENDPOINT } from './meter.js';
+import { paid, TYPESAFE_ENDPOINT, boundedJevBody, utf8Length, LIMITS } from './meter.js';
 
 export const MODEL = 'jev-1.13.0'; // pinned (https://docs.typesafe.ai/models.md); JEV_MODEL is deliberately not read
 export const RUBRIC_VERSION = 'story-quality-v2';
@@ -233,11 +233,16 @@ export function ratingInput(lib, data, { owner = '', view = maskedView } = {}) {
     story: Object.fromEntries(STORY.map((k, i) => [k, text(v.answers?.[i])])),
     sources: (v.sources || []).slice(0, 10).map(s => ({ name: text(s?.name), version: text(s?.version), excerpt: cut(text(s?.excerpt), 600) })) };
   const state = { reference, notice: NOTICE };
-  const fits = () => estimateTokens(JSON.stringify(state)) <= STATE_TOKENS_MAX;
+  const figure = NUMERIC.test(reference.story.outcome);
+  const asked = questionPlan(data, figure)?.asked || [];
+  // The published context is 64,000 tokens. One token per byte is the worst case, so the request
+  // itself is refused above that many bytes. The token estimate stays the tighter product limit.
+  const fits = () => estimateTokens(JSON.stringify(state)) <= STATE_TOKENS_MAX
+    && utf8Length(JSON.stringify(requestBody(state, asked))) <= LIMITS.jev.contextTokens;
   if (!fits()) for (const s of reference.sources) s.excerpt = cut(s.excerpt, 200);
   if (!fits()) for (const s of reference.sources) s.excerpt = '';
   if (!fits()) throw new RatingError('too_long'); // the story itself is never trimmed
-  return { state, terms, figure: NUMERIC.test(reference.story.outcome) };
+  return { state, terms, figure };
 }
 
 // §4.1: what code already knows is decided by rules and never asked. null: the story has no text at all.
@@ -457,7 +462,10 @@ export function storyRater(env, fetcher = fetch, opts = {}) {
     // One request. Never rejects: every ending is an outcome.
     const one = async (signal, key) => {
       let res;
-      try { res = await paid(env).fetch(() => ({ kind: 'jev', provider: 'typesafe', requests: 1 }), fetcher, ENDPOINT, { method: 'POST', redirect: 'manual', signal, headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: bodyText }); }
+      let bounded;
+      try { bounded = boundedJevBody(bodyText); }
+      catch (e) { if (e?.status === 413) throw new RatingError('too_long'); throw e; }
+      try { res = await paid(env).fetch(() => ({ kind: 'jev', provider: 'typesafe', requests: 1 }), fetcher, ENDPOINT, { method: 'POST', redirect: 'manual', signal, headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: bounded }); }
       catch (e) {
         if (e?.name === 'BudgetRefused' || e?.code === 'budget_exhausted') throw e;
         return { code: signal.aborted ? 'timeout' : 'network', retryable: true, http: 0 };
