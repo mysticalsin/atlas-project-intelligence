@@ -92,27 +92,26 @@ function isRecord(raw) {
 }
 
 // main never stored a version. Those rows keep their fields and derive through publicationStatus.
-// A missing value, or a version this build does not know, becomes a fresh in-review record.
-// This does not write the row, and it does not mutate raw.
+// An unknown version keeps its fields too. Nothing is overlaid and nothing is written.
+// This does not mutate raw.
 export function loadPublication(raw) {
   if (!isRecord(raw)) return initialPublication();
-  if (raw.version == null) return { ...raw };
-  if (raw.version !== PUBLICATION_VERSION) return initialPublication();
   return { ...raw };
 }
 
 // One read of a stored publication. Version 1 round-trips and keeps the column status (status null).
-// A version-less row decodes through publicationStatus and is not rewritten. An unknown future
-// version is the safe in-review record over the other stored fields. This does not mutate raw.
+// A version-less row decodes through publicationStatus and is not rewritten. An unknown version
+// keeps every stored field. Its decoded status is withdrawn when the row is withdrawn, otherwise
+// in_review. Nothing here is persisted. This does not mutate raw.
 export function readPublication(stored) {
-  if (isRecord(stored) && stored.version === PUBLICATION_VERSION) return { state: { ...stored }, status: null };
-  if (isRecord(stored) && stored.version == null) {
-    const state = { ...stored };
-    return { state, status: publicationStatus(state) };
+  if (!isRecord(stored)) {
+    const loaded = initialPublication();
+    return { state: loaded, status: publicationStatus(loaded) };
   }
-  const loaded = initialPublication();
-  const base = isRecord(stored) ? stored : {};
-  return { state: { ...base, ...loaded }, status: publicationStatus(loaded) };
+  const state = { ...stored };
+  if (stored.version === PUBLICATION_VERSION) return { state, status: null };
+  if (stored.version == null) return { state, status: publicationStatus(state) };
+  return { state, status: isWithdrawn(state) ? 'withdrawn' : 'in_review' };
 }
 
 // Known values follow the previous derive, except that a validated flag publishes only with both approvals.

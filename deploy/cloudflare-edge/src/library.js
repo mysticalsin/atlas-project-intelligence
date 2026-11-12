@@ -804,22 +804,17 @@ export class Library {
     return this.invitationView(user, this.rows('SELECT * FROM invitations WHERE id = ?', inv.id)[0]);
   }
   // Daily: every reference not updated for six months gets one open update invitation for its owner.
-  // The status compare is the stored column. A legacy withdrawn row stays withdrawn, so it is not invited.
+  // The status compare is the decoded publication status. CAS still compares the stored column.
   scanStale(user = {}) {
-    const due = this.rows('SELECT id, owner, title, data, state FROM refs WHERE merged_into IS NULL AND next_review < ? AND status != ?', this.now(), 'withdrawn')
-      .filter(r => {
-        let tenant = '';
-        try { tenant = JSON.parse(r.state || '{}').tenant || ''; }
-        catch { malformedRow(r.id); return false; }
-        return sameTenant(tenant, user.tenant, user.tenantEnforced === true);
-      });
+    const due = this.rows('SELECT id, owner, title, data, state, status FROM refs WHERE merged_into IS NULL AND next_review < ?', this.now())
+      .map(readStoredStory)
+      .filter(r => r && r.status !== 'withdrawn' && sameTenant(r.state?.tenant, user.tenant, user.tenantEnforced === true));
     const tenant = user.tenantEnforced === true ? String(user.tenant || '').toLowerCase() : '';
     let invited = 0;
     for (const r of due) {
-      let recordTenant = '';
-      try { recordTenant = JSON.parse(r.state || '{}').tenant || ''; } catch { continue; }
+      const recordTenant = String(r.state?.tenant || '');
       let projectId = '';
-      try { projectId = JSON.parse(r.data).details.projectId; }
+      try { projectId = r.data.details.projectId; }
       catch { malformedRow(r.id); continue; }
       const to = this.reachableOwnerAddress({ owner: r.owner, tenant: recordTenant, state: { tenant: recordTenant } });
       if (!to) continue;

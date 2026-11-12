@@ -2,7 +2,7 @@
 // legacy load and round-trip. The 2560 status goldens stay in publication-golden.test.js.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PUBLICATION_EVENTS, PUBLICATION_PHASES, PUBLICATION_VERSION, approvalUnknown, bothApproved, canPublish, changesRequested, initialPublication, isAdminBypass, isAdminTest, isWithdrawn, knownDecision, knownValidation, loadPublication, mergedAway, publicationEffect, publicationPairs, publicationStatus, publicationTransition, qualityMissing, qualityReady, validatedFlag } from '../src/publication.js';
+import { PUBLICATION_EVENTS, PUBLICATION_PHASES, PUBLICATION_VERSION, approvalUnknown, bothApproved, canPublish, changesRequested, initialPublication, isAdminBypass, isAdminTest, isWithdrawn, knownDecision, knownValidation, loadPublication, mergedAway, publicationEffect, publicationPairs, publicationStatus, publicationTransition, qualityMissing, qualityReady, readPublication, validatedFlag } from '../src/publication.js';
 import { Library, acceptPublication, deriveStatus } from '../src/library.js';
 import { memorySql } from './sqlite.js';
 
@@ -181,7 +181,12 @@ test('legacy and unknown snapshots load to a safe state and are not rewritten', 
   const unknown = { ...phases.published, version: 99 };
   assert.equal(publicationStatus(loadPublication(legacy)), 'published');
   assert.equal(loadPublication(legacy).validation.status, 'validated');
-  assert.equal(publicationStatus(loadPublication(unknown)), 'in_review');
+  assert.equal(loadPublication(unknown).version, 99);
+  assert.equal(loadPublication(unknown).validation.status, 'validated');
+  const viewed = readPublication(unknown);
+  assert.equal(viewed.status, 'in_review');
+  assert.equal(viewed.state.version, 99);
+  assert.equal(viewed.state.validation.status, 'validated');
   assert.equal(legacy.version, undefined);
   assert.equal(unknown.version, 99);
   assert.equal(unknown.validation.status, 'validated');
@@ -274,6 +279,27 @@ test('a decided event with a bad lane or decision is illegal and is not accepted
   }
 });
 
+test('an unknown version stays withdrawn and is not overlaid or persisted', async () => {
+  let t = 0;
+  const l = new Library(memorySql(), { now: () => new Date(Date.UTC(2026, 8, 27, 0, 0, t++)).toISOString() });
+  const owner = { email: 'ada@example.test', role: 'user' };
+  const saved = await l.upsert(owner, { localId: 'paused', reference: { title: 'Paused' } });
+  const stored = { ...l.row(saved.id).state, version: 99, withdrawn: true };
+  const json = JSON.stringify(stored);
+  l.sql.exec('UPDATE refs SET state = ?, status = ? WHERE id = ?', json, 'published', saved.id);
+  const read = l.row(saved.id);
+  assert.equal(read.status, 'withdrawn');
+  assert.equal(read.state.withdrawn, true);
+  assert.equal(read.state.version, 99);
+  assert.equal(read.storedStatus, 'published');
+  const raw = l.rows('SELECT state, status FROM refs WHERE id = ?', saved.id)[0];
+  assert.equal(raw.state, json);
+  assert.equal(raw.status, 'published');
+  l.sql.exec('UPDATE refs SET next_review = ? WHERE id = ?', '2000-01-01T00:00:00.000Z', saved.id);
+  assert.equal(l.scanStale(), 0);
+  assert.equal(l.rows('SELECT state, status FROM refs WHERE id = ?', saved.id)[0].state, json);
+});
+
 test('an unknown-version row reads as not published and the stored JSON stays unchanged', async () => {
   let t = 0;
   const l = new Library(memorySql(), { now: () => new Date(Date.UTC(2026, 8, 27, 0, 0, t++)).toISOString() });
@@ -291,9 +317,13 @@ test('an unknown-version row reads as not published and the stored JSON stays un
   l.sql.exec('UPDATE refs SET state = ?, status = ? WHERE id = ?', json, 'published', saved.id);
   const read = l.row(saved.id);
   assert.equal(read.status, 'in_review');
-  assert.equal(deriveStatus(read.state), 'in_review');
-  assert.notEqual(read.state.validation?.status, 'validated');
+  assert.equal(read.state.version, 99);
+  assert.equal(read.state.validation.status, 'validated');
+  assert.equal(read.storedStatus, 'published');
   const raw = l.rows('SELECT state, status FROM refs WHERE id = ?', saved.id)[0];
   assert.equal(raw.state, json);
   assert.equal(raw.status, 'published');
+  const withdrawn = l.withdraw(owner, saved.id, { note: 'stop' });
+  assert.equal(withdrawn.status, 'withdrawn');
+  assert.equal(l.rows('SELECT status FROM refs WHERE id = ?', saved.id)[0].status, 'withdrawn');
 });

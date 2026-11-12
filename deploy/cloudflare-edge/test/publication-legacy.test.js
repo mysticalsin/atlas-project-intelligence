@@ -1,5 +1,5 @@
 // Legacy rows are main's rows: the status column and the fields are real, and state.version was never stored.
-// A future version is the only snapshot that becomes a fresh in-review record. CAS matches the stored column.
+// An unknown version keeps its fields. Its decoded status fails safe, and CAS still matches the stored column.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PUBLICATION_EVENTS, PUBLICATION_PHASES, publicationPairs, publicationStatus, publicationTransition } from '../src/publication.js';
