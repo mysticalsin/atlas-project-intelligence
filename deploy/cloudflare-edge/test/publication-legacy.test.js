@@ -292,6 +292,29 @@ test('index parses every other row before writing, so one bad row is not a parti
   assert.equal(l.rows('SELECT state FROM refs WHERE id = ?', c.id)[0].state, broken);
 });
 
+test('index leaves a null state unread, writes nothing for it, and continues', async () => {
+  const l = library();
+  const a = await l.upsert(OWNER, { localId: 'a', reference: { title: 'A', details: { projectId: 'PRJ-SAME' } } });
+  const b = await l.upsert(OWNER, { localId: 'b', reference: { title: 'B', details: { projectId: 'PRJ-SAME' } } });
+  const c = await l.upsert(OWNER, { localId: 'c', reference: { title: 'C', details: { projectId: 'PRJ-SAME' } } });
+  l.sql.exec('UPDATE refs SET state = ? WHERE id = ?', 'null', c.id);
+  const warns = [];
+  const original = console.warn;
+  console.warn = (...args) => warns.push(args.map(String).join(' '));
+  try { await l.index(a.id); }
+  finally { console.warn = original; }
+  const bState = JSON.parse(l.rows('SELECT state FROM refs WHERE id = ?', b.id)[0].state);
+  const aState = JSON.parse(l.rows('SELECT state FROM refs WHERE id = ?', a.id)[0].state);
+  assert.ok((bState.duplicates || []).some(d => d.id === a.id));
+  assert.ok((aState.duplicates || []).some(d => d.id === b.id));
+  assert.equal((aState.duplicates || []).some(d => d.id === c.id), false);
+  assert.equal(l.rows('SELECT state FROM refs WHERE id = ?', c.id)[0].state, 'null');
+  const line = warns.map(s => { try { return JSON.parse(s); } catch { return null; } }).find(x => x && x.id === c.id);
+  assert.ok(line);
+  assert.equal(JSON.stringify(line).includes('PRJ-SAME'), false);
+  assert.equal(JSON.stringify(line).includes('null'), false);
+});
+
 test('scanStale uses the stored status: a legacy published row is invited and a legacy withdrawn row is not', async () => {
   const l = library();
   const live = await story(l, 'due');

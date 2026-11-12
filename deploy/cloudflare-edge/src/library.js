@@ -576,7 +576,15 @@ export class Library {
     const parsed = [];
     for (const o of others) {
       try {
-        parsed.push({ id: o.id, data: JSON.parse(o.data), state: JSON.parse(o.state), embedding: o.embedding ? JSON.parse(o.embedding) : null });
+        const data = JSON.parse(o.data);
+        const state = JSON.parse(o.state);
+        const embedding = o.embedding ? JSON.parse(o.embedding) : null;
+        // JSON.parse('null') does not throw. A null state is unreadable, same as an unknown version: log the id and write nothing for that row.
+        if (!data || typeof data !== 'object' || Array.isArray(data) || !state || typeof state !== 'object' || Array.isArray(state)) {
+          malformedRow(o.id);
+          continue;
+        }
+        parsed.push({ id: o.id, data, state, embedding });
       } catch {
         malformedRow(o.id);
       }
