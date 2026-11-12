@@ -143,11 +143,22 @@ export function transition(state, event) {
   if (event.type === 'settle') {
     const rec = state.open[event.id];
     if (!rec) return state;
+    // The TTL marks the hold. It stays open, still charged at its ceiling, until a real settle arrives.
+    if (event.expire) {
+      if (rec.expired) return state;
+      const next = clone(state);
+      next.open[event.id] = { ...next.open[event.id], expired: true };
+      next.settled.unsettled = (next.settled.unsettled || 0) + 1;
+      return next;
+    }
     const next = clone(state);
     delete next.open[event.id];
     const ceiling = rec.nano;
     const hasActual = Number.isInteger(event.actualNano) && event.actualNano >= 0;
-    const charged = hasActual ? event.actualNano : ceiling;
+    let charged = hasActual ? event.actualNano : ceiling;
+    // A late settle may raise the charge. It does not refund, so the freed room cannot admit new spend.
+    if (rec.expired && charged < ceiling) charged = ceiling;
+    if (rec.expired && hasActual && !event.unsettled && !event.error) next.settled.unsettled = Math.max(0, (next.settled.unsettled || 0) - 1);
     if (charged < ceiling) next.reserved.nanoUsd -= ceiling - charged;
     if (charged > ceiling) {
       const extra = charged - ceiling;

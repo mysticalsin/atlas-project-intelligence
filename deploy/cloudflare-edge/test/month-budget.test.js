@@ -102,17 +102,36 @@ test('rollover carries an open reservation and settle still finds its id', () =>
   assert.ok(after.reserved.nanoUsd < held);
 });
 
+test('a new month still settles a carried hold after the first reserve', () => {
+  let t = Date.parse('2026-11-12T00:00:00Z');
+  const b = new M.BudgetState({ limitUsd: 5, now: () => t });
+  const old = b.reserve(NOVA);
+  assert.equal(old.ok, true);
+  t = Date.parse('2026-12-01T00:00:00Z');
+  const first = b.reserve(NOVA);
+  assert.equal(first.ok, true);
+  assert.equal(b.settle(old.id, { actualNano: 6_000_000_000 }), true);
+  const snap = b.snapshot();
+  assert.ok(snap.observed.nanoUsd >= 6_000_000_000, 'the $6 is stored');
+  assert.equal(snap.overruns.requests >= 1, true);
+  assert.equal(snap.exhausted, true);
+  assert.equal(b.reserve(NOVA).reason, 'exhausted:usd');
+  assert.equal(b.settle(old.id, { actualNano: 6_000_000_000 }), false);
+  assert.ok(b.snapshot().reserved.nanoUsd >= 6_000_000_000, 'the late settle does not free budget');
+});
+
 test('an expired reservation stays charged at its ceiling and counts as unsettled', () => {
   let t = Date.parse('2026-11-12T00:00:00Z');
   const b = new M.BudgetState({ limitUsd: 5, now: () => t });
-  b.reserve(NOVA);
+  const first = b.reserve(NOVA);
   const held = b.snapshot().reserved.nanoUsd;
   t += 120001;
   assert.equal(b.reserve(NOVA).ok, true);
   const snap = b.snapshot();
   assert.equal(snap.reserved.nanoUsd, held + held, 'expiry does not release the hold');
   assert.equal(snap.settled.unsettled, 1);
-  assert.equal(snap.inFlight, 1);
+  assert.equal(snap.inFlight, 2, 'the expired hold stays until a real settle');
+  assert.equal(b.toJSON().open[first.id].expired, true);
 });
 
 test('settling inside the month does not refund', () => {

@@ -261,7 +261,7 @@ export class BudgetState {
     const now = this.now();
     for (const [id, rec] of Object.entries(this.data.open)) {
       if (Number.isInteger(rec.at) && now - rec.at <= RESERVATION_TTL_MS) continue;
-      const next = transition(this.data, { type: 'settle', id, unsettled: true });
+      const next = transition(this.data, { type: 'settle', id, expire: true });
       if (!isIllegal(next)) this.data = next;
     }
   }

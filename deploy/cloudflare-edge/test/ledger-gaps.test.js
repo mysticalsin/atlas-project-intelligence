@@ -136,7 +136,7 @@ test('a concurrent burst through apply keeps one total', async () => {
   assert.ok(held.reserved.nanoUsd <= 5e9);
 });
 
-test('settle after a sweep finds nothing to charge again', async () => {
+test('a late settle after the TTL records the actual and does not free the ceiling', async () => {
   let now = NOW;
   const b = new BudgetState({ now: () => now });
   const reserved = b.reserve({ kind: 'stt', model: '@cf/deepgram/nova-3', audioMs: 1000 });
@@ -145,11 +145,10 @@ test('settle after a sweep finds nothing to charge again', async () => {
   const next = b.reserve({ kind: 'stt', model: '@cf/deepgram/nova-3', audioMs: 1000 });
   assert.equal(next.ok, true);
   assert.equal(b.toJSON().settled.unsettled, 1);
-  assert.equal(b.toJSON().open[reserved.id], undefined);
+  assert.equal(b.toJSON().open[reserved.id].expired, true);
+  assert.equal(b.settle(reserved.id, { actualNano: 1 }), true);
   assert.ok(b.snapshot().reserved.nanoUsd >= ceiling);
-  const held = b.snapshot().reserved.nanoUsd;
   assert.equal(b.settle(reserved.id, { actualNano: 1 }), false);
-  assert.equal(b.snapshot().reserved.nanoUsd, held);
   const month = new Date().toISOString().slice(0, 7);
   const store = { budget: {
     v: 1, phase: 'open', month, denyReason: '', next: 1,
@@ -166,8 +165,12 @@ test('settle after a sweep finds nothing to charge again', async () => {
   const after = await ledger.snapshot();
   assert.equal(after.settled.unsettled, 1);
   assert.ok(after.reserved.nanoUsd >= ceiling);
+  assert.equal(await ledger.apply(l => l.settle('P1', { actualNano: 6_000_000_000 })), true);
+  const late = await ledger.snapshot();
+  assert.ok(late.observed.nanoUsd >= 6_000_000_000);
+  assert.equal(late.exhausted, true);
   assert.equal(await ledger.apply(l => l.settle('P1', { actualNano: 1 })), false);
-  assert.equal((await ledger.snapshot()).reserved.nanoUsd, after.reserved.nanoUsd);
+  assert.ok((await ledger.snapshot()).reserved.nanoUsd >= 6_000_000_000);
 });
 
 test('each analyst attempt gets its own reservation', async () => {

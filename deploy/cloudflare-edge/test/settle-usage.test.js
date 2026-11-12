@@ -98,7 +98,7 @@ test('explicit off writes one log line and still makes the call', async () => {
   assert.equal(lines.filter(l => l.mode === 'off').length, 1);
 });
 
-test('a reservation older than the TTL settles at the ceiling so open rows do not pile up', () => {
+test('a reservation older than the TTL stays open at its ceiling until the real settle', () => {
   let t = NOW();
   const b = new BudgetState({ now: () => t });
   const first = b.reserve({ kind: 'stt', model: '@cf/deepgram/nova-3', audioMs: 1000 });
@@ -107,9 +107,12 @@ test('a reservation older than the TTL settles at the ceiling so open rows do no
   const second = b.reserve({ kind: 'tts', model: '@cf/deepgram/aura-2-en', chars: 20 });
   assert.equal(second.ok, true);
   const snap = b.snapshot();
-  assert.equal(snap.inFlight, 1, 'the fresh reservation stays open');
-  assert.ok(snap.reserved.nanoUsd >= ceiling, 'the swept row kept its ceiling');
-  assert.equal(b.toJSON().open[first.id], undefined);
+  assert.equal(snap.inFlight, 2, 'the expired hold stays until it is settled');
+  assert.equal(b.toJSON().open[first.id].expired, true);
+  assert.ok(snap.reserved.nanoUsd >= ceiling, 'the expired row kept its ceiling');
+  assert.equal(b.settle(first.id, { actualNano: ceiling }), true);
+  assert.ok(b.snapshot().reserved.nanoUsd >= ceiling);
+  assert.equal(b.snapshot().inFlight, 1);
 });
 
 test('reasoning inside completion is not added again, and excluded reasoning is', async () => {
