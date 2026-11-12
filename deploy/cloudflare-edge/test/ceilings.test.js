@@ -3,6 +3,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { LIMITS } from '../src/prices.js';
 import { BudgetState, callCeilingNano, capPcm, capText, generationTokens, inputTokenCeiling, markdownPlan, priceOf, realtimeReservation } from '../src/meter.js';
 import { usageFrom } from '../src/usage.js';
@@ -149,7 +152,33 @@ test('realtime reservation is the session limit plus one capped response', () =>
   assert.equal(callCeilingNano({ kind: 'realtime', provider: 'openai', inputTokens: book.inputTokens, outputTokens: book.outputTokens }), worst);
   assert.ok(past > worst);
   assert.match(py('realtime.py'), /realtime_increment\(/);
-  assert.match(py('realtime.py'), /raise BudgetRefused\('exhausted:usd'\)/);
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+  const opened = spawnSync('python3', ['-c', `
+import asyncio, os
+os.environ['LEDGER_MODE'] = 'enforce'
+from atlas_voice.realtime import RealtimeMeter
+from atlas_voice.spend import BudgetRefused, use
+
+class Ledger:
+    async def reserve(self, estimate):
+        raise BudgetRefused('no_ledger')
+    async def settle(self, *args):
+        return None
+
+async def main():
+    use(Ledger())
+    meter = RealtimeMeter(object(), 'gpt-realtime-2.1', None, now=lambda: 1.0)
+    try:
+        await meter.open_increment()
+    except BudgetRefused as error:
+        print(error.reason)
+        return
+    print('none')
+
+asyncio.run(main())
+`], { cwd: root, encoding: 'utf8' });
+  assert.equal(opened.status, 0, opened.stderr);
+  assert.equal(opened.stdout.trim(), 'no_ledger');
   assert.match(py('realtime.py'), /refusal_event\(refused\)/);
   assert.match(py('spend.py'), /return BUDGET_MESSAGE, 'budget_exhausted'/);
   assert.match(py('quality.py'), /LIMITS\['realtime'\]\['maxResponseTokens'\]/);
