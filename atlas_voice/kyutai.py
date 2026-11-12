@@ -8,6 +8,7 @@ Protocol (verified against unmute/kyutai_constants.py, stt/speech_to_text.py, tt
 - TTS  /api/tts_streaming?format=PcmMessagePack&voice=...  send {"type":"Text","text"}, {"type":"Eos"};
   receive Ready, Audio{pcm}, Text{text,start_s,stop_s}, Error{message}.
 """
+import asyncio
 import json
 import struct
 from urllib.parse import quote
@@ -15,7 +16,7 @@ from urllib.parse import quote
 import aiohttp
 
 from .limits import input_tokens, output_tokens
-from .spend import reserve, usage_from
+from .spend import BudgetRefused, reserve, usage_from
 import msgpack
 
 SAMPLE_RATE = 24000
@@ -95,6 +96,13 @@ def connect_tts(http, base, key, voice):
     return connect(http, base, TTS_PATH, key, '?format=PcmMessagePack&cfg_alpha=1.5&voice=' + quote(voice, safe=''))
 
 
+async def _settle_stream(hold, usage, error=None):
+    try:
+        await hold.settle(usage, error=error)
+    except BudgetRefused as refused:
+        print(json.dumps({'atlas_metric': 'ledger', 'error': 'settle', 'reason': refused.reason}), flush=True)
+
+
 async def stream_chat(http, url, model, key, messages, max_tokens=None):
     """Yield text deltas from an OpenAI-compatible streaming chat completion (SSE)."""
     headers = {'Authorization': 'Bearer ' + key} if key else {}
@@ -132,8 +140,11 @@ async def stream_chat(http, url, model, key, messages, max_tokens=None):
                         continue
                     if delta:
                         yield delta
+    except asyncio.CancelledError:
+        await _settle_stream(hold, seen)
+        raise
     except Exception as error:
-        await hold.settle(error=type(error).__name__)
+        await _settle_stream(hold, seen, error=type(error).__name__)
         raise
     finally:
-        await hold.settle(seen)
+        await _settle_stream(hold, seen)

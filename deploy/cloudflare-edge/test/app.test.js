@@ -641,6 +641,27 @@ test('Z D2: PDF conversion for briefs and sheets runs without PDF metadata', asy
   assert.equal(boot.features.pdfBriefs, boot.features.bids, 'pdfBriefs follows bids (no PDF_BRIEFS variable)');
 });
 
+test('image conversion runs on the off stand-in and is refused with unpriced_model otherwise', async () => {
+  const calls = [];
+  const png = 'data:image/png;base64,' + Buffer.from([137, 80, 78, 71]).toString('base64');
+  const AI = {
+    toMarkdown: async f => { calls.push(f.name); return { format: 'markdown', data: 'A phase diagram' }; },
+    run: async () => ({ response: '{"selected":[{"index":0,"approach":true,"why":"Approach","caption":"Project approach"}]}' }),
+  };
+  const post = async env => {
+    const boot = await (await handle(await req('/api/bootstrap'), env, '')).json();
+    return handle(new Request(ORIGIN + '/api/sheet/visuals', { method: 'POST', body: JSON.stringify({ images: [{ name: 'approach.png', dataUrl: png }], context: 'ERP' }), headers: { 'cf-access-jwt-assertion': await jwt(), Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'Content-Type': 'application/json' } }), env, '');
+  };
+  const off = await post({ ...ENV, AI });
+  assert.equal(off.status, 200);
+  assert.equal((await off.json()).selected[0].caption, 'Project approach');
+  assert.equal(calls.length, 1);
+  const held = await post({ ...ENV, LEDGER_MODE: 'enforce', AI });
+  assert.equal(held.status, 413);
+  assert.equal((await held.json()).code, 'unpriced_model');
+  assert.equal(calls.length, 1, 'detr was not called');
+});
+
 test('tenant and persona headers from the browser are overwritten; a custom tenant claim is not a tenant', async () => {
   let fwd = null;
   const stub = { idFromName: () => 'g', get: () => ({ fetch: r => { fwd = r; return new Response('{}'); } }) };

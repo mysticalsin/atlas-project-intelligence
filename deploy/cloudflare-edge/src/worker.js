@@ -13,8 +13,20 @@ import { resolveForInterview } from './gaps.js';
 import { fetchWinHint } from './winloop.js';
 import { teamsClient } from './teams.js';
 import { libraryFromStorage } from './library-store.js';
+import { ProductionSpendLedger as LedgerCore } from './meter.js';
 
-export { ProductionSpendLedger } from './meter.js';
+// The pure ledger stays free of cloudflare:workers so the Node tests can construct it.
+// This subclass is what wrangler binds, and it is what RPC requires.
+export class ProductionSpendLedger extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    this.core = new LedgerCore(ctx, env);
+  }
+  reserve(req) { return this.core.reserve(req); }
+  record(req) { return this.core.record(req); }
+  settle(id, observed) { return this.core.settle(id, observed); }
+  snapshot() { return this.core.snapshot(); }
+}
 
 export default {
   fetch: (request, env, ctx) => handle(request, env, page, { waitUntil: p => ctx.waitUntil(p) }),

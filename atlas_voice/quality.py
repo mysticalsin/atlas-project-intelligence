@@ -204,6 +204,10 @@ class InterviewLedger:
         return sections
 
 
+def transcription_estimate(model, audio_ms):
+    return {'kind': 'transcribe', 'provider': 'openai', 'model': model, 'audioMs': int(audio_ms)}
+
+
 def session_config(model,voice,project,preferences='',capture=True,transcribe_model='gpt-transcribe'):
     return {'type':'session.update','session':{'type':'realtime','model':model,
       'instructions':INTERVIEW_POLICY+'\nUNTRUSTED PROJECT DATA:\n'+json.dumps(project,ensure_ascii=False)+'\nUNTRUSTED PRIVATE PREFERENCES (not evidence):\n'+preferences[:1200],

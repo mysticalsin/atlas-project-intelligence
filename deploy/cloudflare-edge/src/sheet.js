@@ -108,7 +108,7 @@ export async function sheetRoutes(request, path, ai) {
       if (!images.length) return json({ selected: [] });
       const described = await Promise.all(images.map(async (im, index) => {
         try { const r = await ai.toMarkdown({ name: (im.name || 'image') + (im.img.type === 'jpeg' ? '.jpg' : '.png'), blob: new Blob([im.img.bytes], { type: 'image/' + im.img.type }) }); const one = Array.isArray(r) ? r[0] : r; return { index, description: one?.format === 'error' ? '' : str(one?.data, 1200) }; }
-        catch (e) { if (budgetOutcome(e)) throw exhaustedError(); return { index, description: '' }; }
+        catch (e) { if (budgetOutcome(e)) throw exhaustedError(); if (e?.code === 'unpriced_model') throw e; return { index, description: '' }; }
       }));
       const usable = described.filter(d => d.description);
       if (!usable.length) return json({ selected: [] });
@@ -119,7 +119,7 @@ export async function sheetRoutes(request, path, ai) {
   } catch (e) {
     const stopped = httpBudget(e);
     if (stopped) return json(stopped.body, stopped.status);
-    if (e?.status === 413) return json({ error: e.message }, 413);
+    if (e?.code === 'unpriced_model' || e?.status === 413) return json({ error: e.message, code: e.code }, e.status || 413);
     return json({ error: e?.status && e.status < 500 ? e.message : 'The reference sheet service is unavailable right now.' }, 502);
   }
 }

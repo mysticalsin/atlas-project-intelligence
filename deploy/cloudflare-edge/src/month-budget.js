@@ -102,6 +102,9 @@ export function transition(state, event) {
     next.reserved = { nanoUsd: state.reserved.nanoUsd + event.nano, requests: state.reserved.requests + 1 };
     next.byKind[event.kind] = (next.byKind[event.kind] || 0) + 1;
     const held = { kind: event.kind, nano: event.nano };
+    for (const key of ['model', 'provider', 'operation', 'media']) {
+      if (typeof event[key] === 'string' && event[key]) held[key] = event[key];
+    }
     if (Number.isInteger(event.at)) held.at = event.at;
     next.open['P' + next.next] = held;
     return next;

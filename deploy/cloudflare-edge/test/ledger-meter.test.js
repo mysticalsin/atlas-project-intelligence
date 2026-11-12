@@ -20,7 +20,7 @@ test('LEDGER_MODE: unset enforces; explicit off is off; unknown values are not s
   assert.match(read('wrangler.jsonc'), /"LEDGER_MODE": "enforce"/, 'production enforces the cap');
   assert.doesNotMatch(read('wrangler.jsonc'), /"LEDGER_MODE": "off"/, 'production is never off');
   assert.doesNotMatch(read('wrangler.jsonc'), /"PRODUCTION_MONTHLY_LIMIT_USD"/, 'no limit override, so the $5 default applies');
-  for (const f of ['../../scripts/run_local_voice.sh', '../../scripts/pod_setup.sh']) assert.match(read(f), /LEDGER_MODE=off/, f + ' sets off explicitly');
+  for (const f of ['../../scripts/run_local_voice.sh', '../../scripts/pod_setup.sh']) assert.doesNotMatch(read(f), /LEDGER_MODE=off|ATLAS_LEDGER_DEV=1/, f + ' does not turn the ledger off');
   assert.match(read('dev/local-edge.mjs'), /LEDGER_MODE: 'off'/, 'the local edge sets off explicitly');
 });
 

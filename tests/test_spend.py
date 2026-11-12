@@ -68,12 +68,12 @@ async def test_a_reservation_settles_the_usage_the_response_returns(monkeypatch)
     use(None)
 
 
-def test_dev_launchers_set_off_explicitly():
+def test_paid_launchers_do_not_set_off():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     for name in ('scripts/run_local_voice.sh', 'scripts/pod_setup.sh'):
         text = open(os.path.join(root, name), encoding='utf-8').read()
-        assert 'LEDGER_MODE=off' in text, name
-        assert 'ATLAS_LEDGER_DEV=1' in text, name
+        assert 'LEDGER_MODE=off' not in text, name
+        assert 'ATLAS_LEDGER_DEV=1' not in text, name
 
 
 def test_production_startup_refuses_off_and_a_missing_ledger(monkeypatch, capsys):
@@ -83,17 +83,18 @@ def test_production_startup_refuses_off_and_a_missing_ledger(monkeypatch, capsys
     with pytest.raises(LedgerConfigError):
         require_ledger({})
     with pytest.raises(LedgerConfigError):
-        require_ledger({'LEDGER_MODE': 'off'})
+        require_ledger({'LEDGER_MODE': 'off', 'ATLAS_AUTH': 'local', 'ATLAS_BIND': '127.0.0.1', 'OPENAI_API_KEY': 'sk'})
     with pytest.raises(LedgerConfigError):
-        require_ledger({'LEDGER_MODE': 'off', 'ATLAS_LEDGER_DEV': '0'})
+        require_ledger({'LEDGER_MODE': 'off', 'ATLAS_AUTH': 'entra', 'ATLAS_BIND': '127.0.0.1'})
     with pytest.raises(LedgerConfigError):
         require_ledger({'LEDGER_MODE': 'enforce', 'ATLAS_LEDGER_URL': 'https://ledger.example'})
     with pytest.raises(LedgerConfigError):
         require_ledger({'LEDGER_MODE': 'observe'})
     with pytest.raises(LedgerConfigError):
         require_ledger({'LEDGER_MODE': 'enfroce', 'ATLAS_LEDGER_URL': 'https://ledger.example', 'ATLAS_LEDGER_TOKEN': 'tok'})
-    require_ledger({'LEDGER_MODE': 'off', 'ATLAS_LEDGER_DEV': '1'})
-    require_ledger({'LEDGER_MODE': 'off', 'ATLAS_LEDGER_DEV': 'test'})
+    require_ledger({'LEDGER_MODE': 'off', 'ATLAS_AUTH': 'local', 'ATLAS_BIND': '127.0.0.1'})
+    with pytest.raises(LedgerConfigError):
+        require_ledger({'LEDGER_MODE': 'off'})
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.startswith('{')]
     assert lines == [{'atlas_metric': 'ledger', 'mode': 'off'}]
     require_ledger({'LEDGER_MODE': 'enforce', 'ATLAS_LEDGER_URL': 'https://ledger.example', 'ATLAS_LEDGER_TOKEN': 'tok'})

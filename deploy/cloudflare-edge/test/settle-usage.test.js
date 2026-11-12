@@ -112,12 +112,12 @@ test('a reservation older than the TTL settles at the ceiling so open rows do no
   assert.equal(b.toJSON().open[first.id], undefined);
 });
 
-test('gpt-oss reasoning is output and is not added on top of completion tokens', async () => {
+test('reasoning inside completion is not added again, and excluded reasoning is', async () => {
   const { usageFrom } = await import('../src/usage.js');
   const included = usageFrom({ usage: { prompt_tokens: 10, completion_tokens: 8, completion_tokens_details: { reasoning_tokens: 3 } } });
   assert.equal(included.outputTokens, 8);
   const separate = usageFrom({ usage: { prompt_tokens: 10, completion_tokens: 4, completion_tokens_details: { reasoning_tokens: 9 } } });
-  assert.equal(separate.outputTokens, 9);
+  assert.equal(separate.outputTokens, 13);
   const ceiling = priceOf({ kind: 'analyst', model: '@cf/openai/gpt-oss-120b', inputTokens: 10, outputTokens: 8 });
   const raised = priceOf({ kind: 'analyst', model: '@cf/openai/gpt-oss-120b', inputTokens: 10, outputTokens: 9 });
   assert.ok(raised > ceiling);
@@ -136,11 +136,12 @@ test('the proxy fee is the published binding formula', () => {
   assert.equal(6_000_300, Math.round((0.30 / 1e6 + 300000 * 0.02 / 1e6) * NANO));
 });
 
-test('Hindsight operations without a published unit use the retain rate on the request, at least one token', () => {
+test('Hindsight list, stats and bank reserve the flat ceiling, not the request bytes', () => {
+  const flat = Math.ceil(LIMITS.hindsightOps.flatUsd * NANO);
   const one = priceOf({ kind: 'memory', provider: 'hindsight', operation: 'stats', inputTokens: 0, outputTokens: 0 });
   const bank = priceOf({ kind: 'memory', provider: 'hindsight', operation: 'bank', inputTokens: 80, outputTokens: 0 });
-  assert.equal(one, Math.ceil(1 * 10 / 1e6 * NANO));
-  assert.equal(bank, Math.ceil(80 * 10 / 1e6 * NANO));
+  assert.equal(one, flat);
+  assert.equal(bank, flat);
 });
 
 test('realtime audio uses the dearer published modality', () => {

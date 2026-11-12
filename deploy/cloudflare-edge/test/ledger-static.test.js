@@ -46,6 +46,6 @@ test('static: no file but the wrapper calls env.AI.run, the AI binding or a paid
   for (const p of ['src/app.js', 'src/memory.js', 'src/memory-routes.js', 'src/jev.js', 'src/classify.js', 'src/rating.js', 'src/customer-jev.js'])
     assert.match(read(p), /from '\.\/meter\.js'/, p);
   assert.ok((read('src/app.js').match(/paid\(env\)/g) || []).length >= 3, 'app.js: workersAI, ElevenLabs, toMarkdown');
-  assert.match(read('src/app.js'), /analystCall\(env/, 'runReasoning reserves once, including the reasoning retry');
+  assert.match(read('src/app.js'), /analystCall\(env/, 'runReasoning reserves each analyst attempt');
 });
 

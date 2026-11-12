@@ -16,6 +16,6 @@ test('production config enforces the $5 month and is never off', () => {
   assert.match(wrangler, /"LEDGER_MODE": "enforce"/);
   assert.match(wrangler, /"name": "SPEND_LEDGER", "class_name": "ProductionSpendLedger"/);
   assert.match(wrangler, /"tag": "v3", "new_sqlite_classes": \["ProductionSpendLedger"\]/);
-  assert.match(worker, /export \{ ProductionSpendLedger \} from '\.\/meter\.js'/);
+  assert.match(worker, /class ProductionSpendLedger extends DurableObject/);
   assert.doesNotMatch(worker, /speculationConfig/);
 });

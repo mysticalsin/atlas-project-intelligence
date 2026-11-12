@@ -47,6 +47,17 @@ def cap_text(text, max_chars):
     return s if len(s) <= n else s[:n]
 
 
+def realtime_increment():
+    spec = LIMITS['realtime']
+    seconds = int(spec['incrementSeconds'])
+    return {
+        'seconds': seconds,
+        'inputTokens': seconds * int(spec['inputTokensPerSecond']),
+        'outputTokens': seconds * int(spec['outputTokensPerSecond']),
+        'audioMs': seconds * 1000,
+    }
+
+
 def realtime_reservation(seconds):
     spec = LIMITS['realtime']
     try:

@@ -33,19 +33,44 @@ def ledger_mode(environ=None):
     return value if value in _MODES else 'invalid'
 
 
-def ledger_dev(environ=None):
-    """Off is allowed only for an explicit dev or test marker. 0, false and off do not count."""
+_PAID_KEYS = (
+    'OPENAI_API_KEY', 'WORKERS_AI_API_KEY', 'TYPESAFE_API_KEY', 'ELEVENLABS_API_KEY',
+    'HINDSIGHT_API_KEY', 'CONVERSATION_API_KEY', 'ANALYST_API_KEY', 'NOTES_API_KEY', 'RIVA_URI',
+)
+_PAID_URL_KEYS = ('CONVERSATION_CHAT_URL', 'ANALYST_CHAT_URL', 'NOTES_URL', 'HINDSIGHT_URL')
+_PAID_HOSTS = ('api.cloudflare.com', 'api.openai.com', 'api.elevenlabs.io', 'api.typesafe.ai', 'hindsight.vectorize.io')
+_LOOPBACK = ('127.0.0.1', 'localhost', '::1')
+
+
+def paid_upstream(environ=None):
+    """True when the process is configured to call a provider that can send Tony a bill."""
     source = os.environ if environ is None else environ
-    return str(source.get('ATLAS_LEDGER_DEV') or '').strip().lower() in ('1', 'dev', 'test')
+    for key in _PAID_KEYS:
+        if str(source.get(key) or '').strip():
+            return True
+    for key in _PAID_URL_KEYS:
+        value = str(source.get(key) or '')
+        if any(host in value for host in _PAID_HOSTS):
+            return True
+    return False
+
+
+def loopback_local(environ=None):
+    source = os.environ if environ is None else environ
+    if str(source.get('ATLAS_AUTH') or '') != 'local':
+        return False
+    return str(source.get('ATLAS_BIND') or '') in _LOOPBACK
 
 
 def require_ledger(environ=None):
-    """Refuse to start unless enforce or observe has a ledger, or off carries the dev marker."""
+    """Refuse to start unless enforce or observe has a ledger, or off has no paid upstream on loopback."""
     source = os.environ if environ is None else environ
     mode = ledger_mode(source)
     if mode == 'off':
-        if not ledger_dev(source):
-            raise LedgerConfigError('LEDGER_MODE=off is refused without ATLAS_LEDGER_DEV set to 1, dev or test.')
+        if paid_upstream(source):
+            raise LedgerConfigError('LEDGER_MODE=off is refused while a paid upstream is configured.')
+        if not loopback_local(source):
+            raise LedgerConfigError('LEDGER_MODE=off is refused unless ATLAS_AUTH=local and ATLAS_BIND is loopback.')
         _log_off_once()
         return
     if mode not in ('enforce', 'observe'):
@@ -96,9 +121,19 @@ class HttpLedger:
         self.url = url.rstrip('/')
         self.token = token
 
+    def _headers(self):
+        headers = {'Authorization': 'Bearer ' + self.token}
+        # The existing Cloudflare Access service token, when the operator has already set it. Not a new secret.
+        client_id = os.environ.get('CF_ACCESS_CLIENT_ID', '').strip()
+        client_secret = os.environ.get('CF_ACCESS_CLIENT_SECRET', '').strip()
+        if client_id and client_secret:
+            headers['CF-Access-Client-Id'] = client_id
+            headers['CF-Access-Client-Secret'] = client_secret
+        return headers
+
     async def _post(self, path, body):
         try:
-            async with self.session.post(self.url + path, json=body, headers={'Authorization': 'Bearer ' + self.token},
+            async with self.session.post(self.url + path, json=body, headers=self._headers(),
                                          timeout=aiohttp.ClientTimeout(total=2), allow_redirects=False) as response:
                 data = await response.json(content_type=None)
                 return response.status, data if isinstance(data, dict) else {}
@@ -110,6 +145,11 @@ class HttpLedger:
         if status != 200 or not data.get('ok') or not isinstance(data.get('id'), str):
             raise BudgetRefused(data.get('reason') or 'ledger_error')
         return data['id']
+
+    async def record(self, estimate):
+        status, data = await self._post('/api/ledger/record', estimate)
+        if status != 200 or not data.get('ok'):
+            raise BudgetRefused(data.get('reason') or 'ledger_error')
 
     async def settle(self, ident, estimate, usage, error):
         body = {'id': ident, 'estimate': estimate}
@@ -141,6 +181,12 @@ async def reserve(estimate, session=None):
         raise BudgetRefused('invalid_mode')
     if mode == 'observe':
         _log(json.dumps({'atlas_metric': 'ledger', 'mode': 'observe', 'kind': estimate.get('kind')}))
+        ledger = current(session)
+        if ledger is not None and hasattr(ledger, 'record'):
+            try:
+                await ledger.record(estimate)
+            except BudgetRefused as error:
+                _log(json.dumps({'atlas_metric': 'ledger', 'mode': 'observe', 'ledger_error': error.reason}))
         return Hold(None, None, estimate, skipped=True)
     ledger = current(session)
     if ledger is None:
@@ -170,4 +216,8 @@ def usage_from(payload):
             reasoning = value
     if incoming is None and completion is None and reasoning is None:
         return None
-    return {'inputTokens': incoming or 0, 'outputTokens': max(completion or 0, reasoning or 0)}
+    if completion is not None and reasoning is not None and reasoning > completion:
+        output = completion + reasoning
+    else:
+        output = max(completion or 0, reasoning or 0)
+    return {'inputTokens': incoming or 0, 'outputTokens': output}

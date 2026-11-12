@@ -107,8 +107,8 @@ test('realtime reservation is the session limit plus one capped response', () =>
   const past = priceOf({ kind: 'realtime', provider: 'openai', inputTokens: book.inputTokens, outputTokens: book.outputTokens + 1 });
   assert.equal(callCeilingNano({ kind: 'realtime', provider: 'openai', inputTokens: book.inputTokens, outputTokens: book.outputTokens }), worst);
   assert.ok(past > worst);
-  assert.match(py('realtime.py'), /realtime_reservation\(/);
-  assert.match(py('realtime.py'), /BudgetRefused\('reservation'\)/);
+  assert.match(py('realtime.py'), /realtime_increment\(/);
+  assert.match(py('realtime.py'), /code='budget_exhausted'/);
   assert.match(py('quality.py'), /LIMITS\['realtime'\]\['maxResponseTokens'\]/);
 });
 
@@ -147,8 +147,9 @@ test('toMarkdown is refused past the byte and page caps and priced from that pag
   assert.ok(priced > 0);
   assert.equal(priceOf({ kind: 'markdown', files: LIMITS.markdown.maxPages + 1, media: 'document' }), null);
   const image = markdownPlan(new Uint8Array([1, 2, 3]), 'diagram.png', 'image/png');
-  assert.equal(image.estimate.files, 1);
-  assert.equal(image.estimate.media, 'image');
+  assert.equal(image.ok, false);
+  assert.equal(image.code, 'unpriced_model');
+  assert.equal(priceOf({ kind: 'markdown', files: 1, media: 'image' }), null);
   assert.match(edge('app.js'), /markdownPlan\(/);
   assert.match(edge('sheet.js'), /markdownPlan\(/);
 });

@@ -5,6 +5,7 @@ import { queryMetrics, recordUsage, purgeTelemetry, personaKey, ensureTelemetry 
 import { toCsv } from './csvsafe.js';
 import { journeyView, saveJourney, mapDraft, ensureJourney } from './journey.js';
 import { deleteOwnedProfile } from './profile.js';
+import { ledgerMode, PRODUCTION_LEDGER_NAME } from './meter.js';
 
 function metricQuery(url, bucket = 'day') {
   const q = url?.searchParams || new URLSearchParams();
@@ -23,14 +24,14 @@ function dsarStores() {
     complete: false,
   };
 }
-async function monthSpend(env) {
-  const mode = env?.LEDGER_MODE === 'off' || env?.LEDGER_MODE === 'observe' || env?.LEDGER_MODE === 'enforce' ? env.LEDGER_MODE : 'enforce';
+export async function monthSpend(env) {
+  const mode = ledgerMode(env);
   const ns = env?.SPEND_LEDGER;
   if (!ns || typeof ns.get !== 'function' || typeof ns.idFromName !== 'function') return { mode, available: false };
   try {
-    const snap = await ns.get(ns.idFromName('production')).snapshot();
-    if (!snap || typeof snap.reserved?.usd !== 'number') return { mode, available: false };
-    return { mode, available: true, usd: snap.reserved.usd, month: snap.month || '' };
+    const snap = await ns.get(ns.idFromName(PRODUCTION_LEDGER_NAME)).snapshot();
+    if (!snap || typeof snap.reserved?.usd !== 'number') return { mode, available: false, overruns: snap?.overruns || { requests: 0, nanoUsd: 0 } };
+    return { mode, available: true, usd: snap.reserved.usd, month: snap.month || '', overruns: snap.overruns || { requests: 0, nanoUsd: 0 } };
   } catch { return { mode, available: false }; }
 }
 function deny(user) {

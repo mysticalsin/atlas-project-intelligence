@@ -15,10 +15,10 @@ import { CONFIRM_HTML } from './confirm-page.js';
 import { nameClaims, pushConfig } from './profile.js';
 import { elevatedRole, privilegeReadiness, productionDemoConflict, TENANT_ID, tenantEnforced, tenantOf, tokenRoles } from './authz.js';
 import { acceptedSubjectDelete } from './library-routes.js';
-import { paid, elevenLabsUrl, utf8Length, analystCall, LIMITS, generationTokens, inputTokenCeiling, capPcm, capText, markdownPlan } from './meter.js';
+import { paid, elevenLabsUrl, utf8Length, analystCall, LIMITS, generationTokens, inputTokenCeiling, capPcm, capText, markdownPlan, ledgerMode } from './meter.js';
 import { httpBudget } from './budget-stop.js';
 import { audioMs } from './units.js';
-import { spendRoute } from './spend-route.js';
+import { ledgerAccessOk, spendRoute } from './spend-route.js';
 
 const enc = new TextEncoder();
 // One voice for everyone: @cf/deepgram/aura-2-en "harmonia" (Deepgram: empathetic, clear, calm, confident).
@@ -193,7 +193,13 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
     // Teams bot endpoint and launcher tab (pre-Access, like /api/triggers): exactly these two; every other
     // /api/teams/* path falls through to the signed-in handling. BLOCKED_EXTERNAL until Teams is connected.
     if ((url.pathname === '/api/teams/messages' && request.method === 'POST') || (url.pathname === '/teams/tab' && request.method === 'GET')) return teamsRoutes(request, env, { waitUntil });
-    if (url.pathname === '/api/ledger/reserve' || url.pathname === '/api/ledger/settle') {
+    if (url.pathname === '/api/ledger/reserve' || url.pathname === '/api/ledger/settle' || url.pathname === '/api/ledger/record') {
+      // Cloudflare Access is in front of this host when ACCESS_AUD is set. The bearer is the existing
+      // ATLAS_LEDGER_TOKEN. A service token, when the operator has already issued one, is the existing
+      // Access client id and secret. This route does not mint a second token. A live Access check is not run here.
+      if (env.ACCESS_AUD && !(await ledgerAccessOk(request, env, verifyAccess))) {
+        return new Response('Sign in to use ATLAS.', { status: 401, headers: headers(env) });
+      }
       const spent = await spendRoute(request, env);
       if (spent) return spent;
     }
@@ -272,7 +278,9 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
           const one = Array.isArray(f) ? f[0] : f;
           const buf = one?.blob && typeof one.blob.arrayBuffer === 'function' ? new Uint8Array(await one.blob.arrayBuffer()) : new Uint8Array(0);
           const plan = markdownPlan(buf, one?.name || '', one?.blob?.type || one?.type || '');
-          if (!plan.ok) throw Object.assign(new Error(plan.error), { status: plan.status || 413 });
+          // Off has no paid upstream, so the local stand-in may describe an image. Enforce and observe never call detr-resnet-50.
+          if (!plan.ok && plan.code === 'unpriced_model' && ledgerMode(env) === 'off') return paid(env).toMarkdown(() => ({ kind: 'markdown', media: 'image', files: 1 }), one, { conversionOptions: { pdf: { metadata: false } } });
+          if (!plan.ok) throw Object.assign(new Error(plan.error), { status: plan.status || 413, code: plan.code });
           return paid(env).toMarkdown(() => ({ kind: 'markdown', files: plan.estimate.files, media: plan.estimate.media }), one, { conversionOptions: { pdf: { metadata: false } } });
         } });
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
@@ -395,8 +403,8 @@ export function responseToolCalls(r) {
   if (Array.isArray(r?.output)) return r.output.filter(o => o?.type === 'function_call').map((c, i) => ({ id: c.call_id || c.id || 'call-' + i, name: c.name, arguments: args(c.arguments) }));
   return (r?.tool_calls || []).map((c, i) => ({ id: c.id || 'call-' + i, name: c.name, arguments: args(c.arguments) }));
 }
-// Low reasoning effort keeps the hidden reasoning from eating the output budget. One reservation covers the
-// attempt and, if the binding rejects the field, the retry without it. A ledger refusal is not a rejected field.
+// Low reasoning effort keeps the hidden reasoning from eating the output budget. Each attempt reserves on its
+// own. A ledger refusal is not a rejected field and is not retried.
 async function runReasoning(env, input, spec) {
   const cap = generationTokens(spec);
   const sent = { ...input, max_tokens: cap };

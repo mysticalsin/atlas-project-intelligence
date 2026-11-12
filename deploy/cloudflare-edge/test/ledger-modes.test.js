@@ -98,12 +98,12 @@ test('enforce blocks over budget: admits calls until the limit, then refuses; an
   const ns = nsOf({ reserve: req => { reserves.push(req.kind); return budget.reserve(req); }, settle: (id, o) => budget.settle(id, o) });
   const { calls, reasons } = await withConsole(() => enforced({ SPEND_LEDGER: ns })).then(r => r.result);
   // ElevenLabs has no Workers AI proxy, so the French line still fits after Aura's proxy ceiling does not.
-  // Hindsight stats is a few retain-rate tokens and also fits in what remains. The flat $0.20 retain does not.
-  assert.deepEqual(reasons, ['admitted', 'admitted', 'exhausted:usd', 'admitted', 'exhausted:usd', 'exhausted:usd', 'exhausted:usd', 'exhausted:usd', 'exhausted:usd', 'admitted', 'exhausted:usd']);
-  assert.equal(calls.length, 4, 'only the admitted calls reached the upstream');
-  assert.equal(reserves.filter(k => k === 'analyst').length, 3, 'complete, analyst, report: one reservation each, no retry');
-  assert.equal(budget.snapshot().settled.ok, 4);
-  assert.equal(budget.snapshot().refusals['exhausted:usd'], 7);
+  // list, stats and bank reserve the flat ceiling, which does not fit in what remains.
+  assert.deepEqual(reasons, ['admitted', 'admitted', 'exhausted:usd', 'admitted', 'exhausted:usd', 'exhausted:usd', 'exhausted:usd', 'exhausted:usd', 'exhausted:usd', 'exhausted:usd', 'exhausted:usd']);
+  assert.equal(calls.length, 3, 'only the admitted calls reached the upstream');
+  assert.equal(reserves.filter(k => k === 'analyst').length, 3, 'complete, analyst and report each reserve once; a refusal is not retried');
+  assert.equal(budget.snapshot().settled.ok, 3);
+  assert.equal(budget.snapshot().refusals['exhausted:usd'], 8);
   const rich = new BudgetState({ limitUsd: 5 });
   const r2 = await withConsole(() => enforced({ SPEND_LEDGER: nsOf(rich) })).then(r => r.result);
   assert.deepEqual(r2.reasons, Array(11).fill('admitted'));

@@ -83,18 +83,26 @@ export function pdfPageCount(bytes) {
   return matches ? matches.length : 0;
 }
 
-// Refuse before toMarkdown. A document that is allowed reserves the page cap, not a smaller guess.
+const KNOWN_DOCUMENTS = new Set(LIMITS.markdown.knownTypes || []);
+
+function knownDocument(name, type) {
+  const ext = String(name || '').toLowerCase().split('.').pop();
+  if (KNOWN_DOCUMENTS.has(ext)) return true;
+  return /pdf|wordprocessingml|presentationml|spreadsheetml|text\/html|text\/plain|text\/csv/i.test(String(type || ''));
+}
+
+// Refuse before toMarkdown. Images are refused: detr-resnet-50 has no list price. A known document reserves the page cap.
 export function markdownPlan(bytes, name = '', type = '') {
   const lim = LIMITS.markdown;
   const raw = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || 0);
   const image = /^image\//.test(String(type)) || /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i.test(String(name));
-  if (image) {
-    if (raw.length > lim.maxImageBytes) return { ok: false, status: 413, error: 'The image is larger than the conversion cap.' };
-    return { ok: true, estimate: { kind: 'markdown', files: 1, media: 'image' } };
+  if (image || lim.maxImages < 1 && image) {
+    return { ok: false, status: 413, code: 'unpriced_model', error: 'Image conversion is refused until detr-resnet-50 has a list price.' };
   }
-  if (raw.length > lim.maxBytes) return { ok: false, status: 413, error: 'The file is larger than 10 MB.' };
+  if (raw.length > lim.maxBytes) return { ok: false, status: 413, code: 'too_large', error: 'The file is larger than 10 MB.' };
   const pdf = /pdf/i.test(String(type)) || /\.pdf$/i.test(String(name)) || (raw.length >= 4 && raw[0] === 0x25 && raw[1] === 0x50 && raw[2] === 0x44 && raw[3] === 0x46);
-  if (pdf && pdfPageCount(raw) > lim.maxPages) return { ok: false, status: 413, error: 'The document has more pages than the conversion cap.' };
+  if (!pdf && !knownDocument(name, type)) return { ok: false, status: 415, code: 'unsupported_document', error: 'Only known document types can be converted.' };
+  if (pdf && pdfPageCount(raw) > lim.maxPages) return { ok: false, status: 413, code: 'too_many_pages', error: 'The document has more pages than the conversion cap.' };
   return { ok: true, estimate: { kind: 'markdown', files: lim.maxPages, media: 'document' } };
 }
 
@@ -127,25 +135,38 @@ export function sanitize(req) {
 
 // Conservative per-call ceiling in nano-dollars at list prices, or null when this request has no measurable size
 // (zero audio, zero tokens, zero characters). A known kind with its canonical estimate is never null.
+const HINDSIGHT_FLAT_OPS = new Set(['list', 'forget', 'delete', 'stats', 'bank']);
+
 export function priceOf(req, prices = PRICES) {
   if (req?.kind === 'realtime' && req?.provider === 'openai') {
     const i = Math.ceil(Number(req.inputTokens) || 0), o = Math.ceil(Number(req.outputTokens) || 0);
+    if (req.settleUsage) return Math.ceil((i * REALTIME_USD_PER_M_INPUT + o * REALTIME_USD_PER_M_OUTPUT) / 1e6 * NANO);
     return i > 0 || o > 0 ? Math.ceil((i * REALTIME_USD_PER_M_INPUT + o * REALTIME_USD_PER_M_OUTPUT) / 1e6 * NANO) : null;
+  }
+  if (req?.kind === 'transcribe' && req?.provider === 'openai') {
+    const ms = Math.ceil(Number(req.audioMs) || 0);
+    if (req.settleUsage && ms === 0) return 0;
+    if (!(ms > 0)) return null;
+    return Math.ceil(ms / 1000 * LIMITS.realtime.transcribeUsdPerSecond * NANO);
   }
   if (req?.provider === 'elevenlabs') {
     const c = charsWithinCap(req.chars);
     return c ? Math.ceil(c / 1000 * ELEVENLABS_USD_PER_1K_CHARS * NANO) : null;
   }
   if (req?.kind === 'memory' || req?.provider === 'hindsight') {
-    const tokens = Math.max(1, Math.ceil(Number(req.inputTokens) || 0) + Math.ceil(Number(req.outputTokens) || 0));
+    const tokens = Math.max(0, Math.ceil(Number(req.inputTokens) || 0) + Math.ceil(Number(req.outputTokens) || 0));
     const rate = req.operation === 'recall' ? HINDSIGHT_RECALL_USD_PER_M : HINDSIGHT_RETAIN_USD_PER_M;
-    return Math.ceil(tokens * rate / 1e6 * NANO);
+    const measured = Math.ceil(Math.max(req.settleUsage ? 0 : 1, tokens) * rate / 1e6 * NANO);
+    if (HINDSIGHT_FLAT_OPS.has(req.operation) && !req.settleUsage) return Math.ceil(LIMITS.hindsightOps.flatUsd * NANO);
+    if (req.settleUsage) return Math.ceil(tokens * rate / 1e6 * NANO);
+    return measured;
   }
   if (req?.kind === 'jev' || req?.provider === 'typesafe') {
     const n = Math.ceil(Number(req.requests) || 1);
     return n > 0 ? Math.ceil(n * TYPESAFE_USD_PER_REQUEST * NANO) : null;
   }
   if (req?.kind === 'markdown') {
+    if (req.media === 'image') return null;
     const files = Math.ceil(Number(req.files) || 1);
     if (files < 1 || files > LIMITS.markdown.maxPages) return null;
     return Math.ceil(files * markdownFileUsd() * NANO);
@@ -236,7 +257,9 @@ export class BudgetState {
     this.sweep();
     const req = sanitize(raw);
     const before = this.data;
-    const next = transition(before, { type: 'reserve', kind: req.kind, nano: callCeilingNano(req, this.prices), limitNano: this.limitNano, at: this.now() });
+    const event = { type: 'reserve', kind: req.kind, nano: callCeilingNano(req, this.prices), limitNano: this.limitNano, at: this.now() };
+    for (const key of ['model', 'provider', 'operation', 'media']) if (req[key]) event[key] = req[key];
+    const next = transition(before, event);
     if (isIllegal(next)) { logIllegal(before, { type: 'reserve' }); return { ok: false, reason: 'unknown_month' }; }
     const id = 'P' + next.next;
     this.data = next;
@@ -256,8 +279,15 @@ export class BudgetState {
     const aligned = this.align();
     if (!aligned.ok || this.data.phase !== 'open') return false;
     const before = this.data;
+    const rec = before.open[id];
+    const usage = observed.usage && typeof observed.usage === 'object' && !Array.isArray(observed.usage) ? observed.usage : null;
+    let actualNano;
+    if (rec && usage) {
+      const priced = priceOf({ kind: rec.kind, model: rec.model, provider: rec.provider, operation: rec.operation, media: rec.media, ...usage, settleUsage: true }, this.prices);
+      if (Number.isInteger(priced) && priced >= 0) actualNano = priced;
+    } else if (!usage && Number.isInteger(observed.actualNano) && observed.actualNano >= 0) actualNano = observed.actualNano;
     const event = { type: 'settle', id, error: !!observed.error };
-    if (Number.isInteger(observed.actualNano) && observed.actualNano >= 0) event.actualNano = observed.actualNano;
+    if (actualNano !== undefined) event.actualNano = actualNano;
     const next = transition(before, event);
     if (isIllegal(next) || next === before) return false;
     this.data = next;
@@ -286,15 +316,14 @@ export class ProductionSpendLedger {
     this.storage = state.storage;
     this.limitUsd = configuredLimit(env, options);
     this.prices = options.prices;
-    this.ledger = null; this.broken = false; this.tail = Promise.resolve();
+    this.ledger = null; this.tail = Promise.resolve();
   }
   async load() {
-    if (this.broken) return null;
     if (this.ledger) return this.ledger;
     try {
       const saved = await this.storage.get('budget');
       this.ledger = new BudgetState({ limitUsd: this.limitUsd, prices: this.prices, saved: saved ?? null });
-    } catch { this.broken = true; this.ledger = null; return null; }
+    } catch { return null; }
     return this.ledger;
   }
   apply(f) {
@@ -315,7 +344,16 @@ export class ProductionSpendLedger {
   reserve(req) { return this.apply(l => l.reserve(req)); }
   record(req) { return this.apply(l => l.record(req)); }
   settle(id, observed) { return this.apply(l => l.settle(id, observed)); }
-  snapshot() { return this.apply(l => l.snapshot()); }
+  snapshot() {
+    const run = this.tail.then(async () => {
+      const l = await this.load();
+      if (!l) return { ok: false, reason: 'ledger_error' };
+      const view = new BudgetState({ limitUsd: this.limitUsd, prices: this.prices, saved: l.toJSON() });
+      return view.snapshot();
+    });
+    this.tail = run.then(() => {}, () => {});
+    return run;
+  }
 }
 
 const defaultLog = line => console.log(JSON.stringify(line));
@@ -336,19 +374,18 @@ function withTimeout(p, ms) {
 
 // paid(env) -> { mode, run, toMarkdown, fetch }. Each takes an estimate function first, then exactly the arguments of
 // the upstream call: run(estimate, ...args) is env.AI.run(...args); fetch(estimate, fetcher, ...args) is fetcher(...args).
-// One reservation around the analyst call and the retry without the reasoning field. The binding read stays in this file.
+// Each analyst attempt reserves on its own. A ledger refusal is not retried. The binding read stays in this file.
 export function analystCall(env, estimate, input) {
-  return paid(env).call(estimate, async () => {
-    try { return await env.AI.run(env.ANALYST_MODEL, { ...input, reasoning: { effort: 'low' } }); }
-    catch (e) { if (e?.name === 'BudgetRefused') throw e; return env.AI.run(env.ANALYST_MODEL, input); }
+  const door = paid(env);
+  return door.run(estimate, env.ANALYST_MODEL, { ...input, reasoning: { effort: 'low' } }).catch(e => {
+    if (e?.name === 'BudgetRefused') throw e;
+    return door.run(estimate, env.ANALYST_MODEL, input);
   });
 }
 
-function settlementOf(req, out) {
+function settlementOf(out) {
   const usage = usageFrom(out);
-  if (!usage) return {};
-  const nano = priceOf({ ...req, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens });
-  return Number.isInteger(nano) ? { actualNano: nano } : {};
+  return usage ? { usage } : {};
 }
 
 let offLogged = false;
@@ -393,8 +430,8 @@ export function paid(env, { ledger, log = defaultLog, timeoutMs = LEDGER_TIMEOUT
     try { r = await withTimeout(Promise.resolve().then(() => l.reserve(req)), timeoutMs); }
     catch (e) { refuse(e?.name === 'LedgerTimeout' ? 'ledger_timeout' : 'ledger_error'); }
     if (!r?.ok || typeof r.id !== 'string') refuse(String(r?.reason || 'refused').slice(0, 40));
-    const settle = observed => Promise.resolve().then(() => l.settle(r.id, observed)).catch(() => {});
-    try { const out = await call(); settle(settlementOf(req, out)); return out; } catch (e) { settle({ error: e?.name || 'Error' }); throw e; }
+    const settle = observed => Promise.resolve().then(() => l.settle(r.id, observed)).catch(e => line({ kind: req.kind }, { ledger_error: e?.name || 'settle' }));
+    try { const out = await call(); settle(settlementOf(out)); return out; } catch (e) { settle({ error: e?.name || 'Error' }); throw e; }
   }
 
   const gate = mode === 'observe' ? observe : enforce;
