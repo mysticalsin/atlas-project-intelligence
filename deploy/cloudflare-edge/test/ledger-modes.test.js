@@ -29,7 +29,7 @@ test('observe never blocks: with no ledger, a throwing, rejecting or hanging led
     const { result, logged } = await withConsole(() => scenario('observe', extra));
     assert.deepEqual(result, golden, name + ': same upstream arguments and outputs as off');
     await new Promise(r => setTimeout(r, 10));
-    assert.ok(logged.length >= golden.calls.length - 1, name + ': one line per reservation; the analyst retry shares that reservation');
+    assert.ok(logged.length >= golden.calls.length, name + ': one line per upstream call, including the analyst retry');
     for (const l of logged) {
       const j = JSON.parse(l);
       assert.equal(j.atlas_metric, 'ledger'); assert.equal(j.mode, 'observe');
@@ -38,7 +38,7 @@ test('observe never blocks: with no ledger, a throwing, rejecting or hanging led
     }
     if (name === 'none' || name === 'getThrows') assert.ok(JSON.parse(logged[0]).recorded === 'log_only', name);
   }
-  assert.ok(records.length >= golden.calls.length - 1, 'the working ledger received a record per reservation');
+  assert.ok(records.length >= golden.calls.length, 'the working ledger records each attempt, including the analyst retry');
     assert.ok(records.every(r => Object.keys(r).every(k => ['kind', 'model', 'provider', 'lang', 'operation', 'media', 'audioMs', 'inputTokens', 'outputTokens', 'chars', 'files', 'requests'].includes(k))));
   const kinds = new Set(records.map(r => r.kind));
   for (const k of ['stt', 'turn', 'tts', 'talker', 'analyst', 'embed', 'memory', 'jev']) assert.ok(kinds.has(k), 'observed kind ' + k);
@@ -83,9 +83,16 @@ test('enforce fails closed with no ledger, a throwing or rejecting ledger, a bro
 
 test('enforce with the shipped production ledger uses the $5 month default and still refuses an explicit empty limit', async () => {
   const { BudgetState } = await import('../src/meter.js');
-  const open = await withConsole(() => enforced({ SPEND_LEDGER: nsOf(new BudgetState()) })).then(r => r.result);
+  const budget = new BudgetState();
+  let reserves = 0, settles = 0;
+  const counted = nsOf({
+    reserve: req => { reserves += 1; return budget.reserve(req); },
+    settle: (id, observed) => { settles += 1; return budget.settle(id, observed); },
+  });
+  const open = await withConsole(() => enforced({ SPEND_LEDGER: counted })).then(r => r.result);
   assert.deepEqual(open.reasons, Array(11).fill('admitted'));
-  assert.equal(open.calls.length, 12, 'eleven calls, plus the analyst reasoning retry on complete');
+  assert.equal(open.calls.length, reserves, 'each upstream call, including the analyst retry, has its own reservation');
+  assert.equal(settles, reserves, 'each of those reservations is settled');
   const closed = await withConsole(() => enforced({ SPEND_LEDGER: nsOf(new BudgetState({ limitUsd: null })) })).then(r => r.result);
   assert.deepEqual(closed.calls, []);
   assert.deepEqual([...new Set(closed.reasons)], ['limit_unset'], 'an explicit empty limit is checked before pricing');
