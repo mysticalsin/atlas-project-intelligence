@@ -113,6 +113,7 @@ async def stream_chat(http, url, model, key, messages, max_tokens=None):
     hold = await reserve({'kind': 'talker', 'provider': 'openai', 'model': model,
                           'inputTokens': input_tokens(json.dumps(body)), 'outputTokens': max_tokens}, http)
     seen = None
+    accepted = 0
     try:
         async with http.post(url, headers=headers, json=body,
                              timeout=aiohttp.ClientTimeout(total=45, sock_read=15)) as response:
@@ -140,7 +141,15 @@ async def stream_chat(http, url, model, key, messages, max_tokens=None):
                     except (KeyError, IndexError, TypeError):
                         continue
                     if delta:
+                        room = max_tokens - accepted
+                        if room <= 0:
+                            return
+                        if len(delta) > room:
+                            delta = delta[:room]
+                        accepted += len(delta)
                         yield delta
+                        if accepted >= max_tokens:
+                            return
     except asyncio.CancelledError:
         try:
             await _settle_stream(hold, seen)
