@@ -61,7 +61,7 @@ test('a preview env still refuses real DNA', () => {
 function previewEnv(extra = {}) {
   return {
     ATLAS_PREVIEW: '1', ATLAS_PREVIEW_HOST_SUFFIX: SUFFIX, LEDGER_MODE: 'enforce', CSRF_SECRET: 'preview-test-secret',
-    ACCESS_AUD: 'preview-aud', ACCESS_TEAM_DOMAIN: 'preview.example.access', ...extra,
+    ACCESS_AUD: 'preview-aud', ACCESS_TEAM_DOMAIN: 'preview-team.cloudflareaccess.com', ...extra,
   };
 }
 

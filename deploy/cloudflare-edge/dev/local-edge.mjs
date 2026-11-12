@@ -23,7 +23,8 @@ import { recordUsage } from '../src/telemetry.js';
 import { saveJourney } from '../src/journey.js';
 import { devIdentityEnabled } from '../src/authz.js';
 
-const PORT = Number(process.argv[2] || 8787), ORIGIN = `http://127.0.0.1:${PORT}`, TEAM = 'local.invalid', AUD = 'local-aud';
+// The stand-in team is one Access host. verifyAccess fetches certs only for that shape, and this file's fetch mock answers it. Never deploy this file.
+const PORT = Number(process.argv[2] || 8787), ORIGIN = `http://127.0.0.1:${PORT}`, TEAM = 'local.cloudflareaccess.com', AUD = 'local-aud';
 const builtPage = new URL('../../../ATLAS_Voice.html', import.meta.url);
 const vendoredPage = new URL('../src/atlas.html', import.meta.url);
 const page = readCanonicalPage(vendoredPage, builtPage);

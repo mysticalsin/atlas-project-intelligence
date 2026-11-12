@@ -32,7 +32,7 @@ python tests/sculpture_browser.py
 python tests/intelligence_browser.py
 python tests/depth_browser.py
 ```
-The edge suite needs that same `requirements-test.txt` install. One ceiling test spawns Python and imports `aiohttp`. From the repo root, after `npm ci` in `deploy/cloudflare-edge`: `cd deploy/cloudflare-edge && node --test`.
+The edge suite needs that same `requirements-test.txt` install for the Python tests it spawns, except the ceiling check, which imports the realtime meter without `aiohttp`. From the repo root, after `npm ci` in `deploy/cloudflare-edge`: `cd deploy/cloudflare-edge && node --test`.
 
 Install FFmpeg with libopus using the approved OS package manager before Python codec tests. `CHROMIUM_PATH` may point to a known installed Chromium executable. Browser installation can require OS libraries; use the approved host procedure, not blind privileged commands. No tests above need a real provider key.
 

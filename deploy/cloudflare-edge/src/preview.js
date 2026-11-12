@@ -51,10 +51,22 @@ export function previewMisconfigured(env) {
   return null;
 }
 
+// One label, then .cloudflareaccess.com. No scheme, port, userinfo, path, or extra label.
+const ACCESS_TEAM_HOST = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.cloudflareaccess\.com$/;
+
+export function accessTeamHost(value) {
+  return typeof value === 'string' && ACCESS_TEAM_HOST.test(value) ? value : '';
+}
+
+export function accessAudience(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 // A preview with no audience or team cannot verify a JWT. That is a closed door, not a sign-in page.
+// A blank audience and a team domain that is not one Access host are the same closed door.
 export function previewAccessMissing(env) {
   if (env?.ATLAS_PREVIEW !== '1') return false;
-  return !(typeof env.ACCESS_AUD === 'string' && env.ACCESS_AUD.length > 0 && typeof env.ACCESS_TEAM_DOMAIN === 'string' && env.ACCESS_TEAM_DOMAIN.length > 0);
+  return !(accessAudience(env.ACCESS_AUD) && accessTeamHost(env.ACCESS_TEAM_DOMAIN));
 }
 
 // Preview hosts are https://<label>-atlas.tony-walteur.workers.dev. The production host is not one of them.

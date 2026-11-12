@@ -18,7 +18,7 @@ import { acceptedSubjectDelete } from './library-routes.js';
 import { paid, elevenLabsUrl, utf8Length, analystCall, LIMITS, generationTokens, inputTokenCeiling, capPcm, capText, markdownPlan, ledgerMode } from './meter.js';
 import { usageFrom } from './usage.js';
 import { httpBudget } from './budget-stop.js';
-import { allowedOrigin, PREVIEW_ACCESS_MISSING, previewAccessMissing, previewMisconfigured, stampPreview, withPreviewBanner } from './preview.js';
+import { accessAudience, accessTeamHost, allowedOrigin, PREVIEW_ACCESS_MISSING, previewAccessMissing, previewMisconfigured, stampPreview, withPreviewBanner } from './preview.js';
 import { audioMs } from './units.js';
 import { ledgerAccessOk, spendRoute } from './spend-route.js';
 
@@ -28,28 +28,45 @@ const enc = new TextEncoder();
 const b64url = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
 const toB64url = s => { let bin = ''; for (const b of enc.encode(s)) bin += String.fromCharCode(b); return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
 const hex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
-let certs = { at: 0, keys: [] };
+// Certs are kept per team host. Ten minutes is the bound. After that, a failed refetch authenticates nobody.
+export const ACCESS_CERT_TTL_MS = 600_000;
+const certsByTeam = new Map();
+
+async function accessCerts(team, kid, fetcher) {
+  const now = Date.now();
+  const cached = certsByTeam.get(team);
+  if (cached && now - cached.at <= ACCESS_CERT_TTL_MS && cached.keys.some(k => k.kid === kid)) return cached.keys;
+  let keys = null;
+  try {
+    const r = await fetcher(`https://${team}/cdn-cgi/access/certs`);
+    const body = r.ok ? await r.json() : null;
+    keys = body && Array.isArray(body.keys) ? body.keys : null;
+  } catch { keys = null; }
+  if (Array.isArray(keys) && keys.length) {
+    certsByTeam.set(team, { at: now, keys });
+    return keys;
+  }
+  if (cached && now - cached.at <= ACCESS_CERT_TTL_MS) return cached.keys;
+  certsByTeam.delete(team);
+  return null;
+}
 
 export async function verifyAccess(request, env, fetcher = fetch) {
   const token = request.headers.get('cf-access-jwt-assertion');
-  if (!token || !env.ACCESS_AUD || !env.ACCESS_TEAM_DOMAIN) return null;
+  const team = accessTeamHost(env.ACCESS_TEAM_DOMAIN);
+  const audience = accessAudience(env.ACCESS_AUD);
+  if (!token || !audience || !team) return null;
   const [h, p, s] = token.split('.');
   if (!h || !p || !s) return null;
   const header = JSON.parse(new TextDecoder().decode(b64url(h))), payload = JSON.parse(new TextDecoder().decode(b64url(p)));
   if (header.alg !== 'RS256') return null;
-  if (Date.now() - certs.at > 600000 || !certs.keys.some(k => k.kid === header.kid)) {
-    try {
-      const r = await fetcher(`https://${env.ACCESS_TEAM_DOMAIN}/cdn-cgi/access/certs`);
-      const keys = r.ok ? (await r.json()).keys : null;
-      if (Array.isArray(keys) && keys.length) certs = { at: Date.now(), keys };
-    } catch { /* keep the previous keys; a bad directory must not replace a good cache or authenticate anyone */ }
-  }
-  const jwk = certs.keys.find(k => k.kid === header.kid);
+  const keys = await accessCerts(team, header.kid, fetcher);
+  const jwk = keys?.find(k => k.kid === header.kid);
   if (!jwk) return null;
   const key = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
   if (!await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, b64url(s), enc.encode(h + '.' + p))) return null;
   const aud = Array.isArray(payload.aud) ? payload.aud : [payload.aud], now = Date.now() / 1000;
-  if (!aud.includes(env.ACCESS_AUD) || payload.iss !== `https://${env.ACCESS_TEAM_DOMAIN}` || !(payload.exp > now) || (payload.nbf && payload.nbf > now + 60) || !payload.sub) return null;
+  if (!aud.includes(audience) || payload.iss !== `https://${team}` || !(payload.exp > now) || (payload.nbf && payload.nbf > now + 60) || !payload.sub) return null;
   const roles = tokenRoles({ roles: Array.isArray(payload.custom?.roles) ? payload.custom.roles : [] });
   return entraIdentity(payload, env) ?? (env.IDENTITY_SOURCE === 'entra' ? null : { sub: payload.sub, email: payload.email || 'Access service identity', roles });
 }
@@ -456,7 +473,29 @@ export function workersAI(env) {
     async turnComplete(pcm) {
       const tail = capPcm(pcm, LIMITS.turn.maxAudioMs), bytes = wav(to16k(tail), 16000);
       let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-      const model = env.TURN_MODEL || '@cf/pipecat-ai/smart-turn-v2', r = await meter.run(() => ({ kind: 'turn', model, audioMs: audioMs(tail) }), model, { audio: btoa(bin) });
+      const model = env.TURN_MODEL || '@cf/pipecat-ai/smart-turn-v2';
+      const held = await meter.hold(() => ({ kind: 'turn', model, audioMs: audioMs(tail) }));
+      let timer;
+      const call = Promise.resolve().then(() => held.run(model, { audio: btoa(bin) }));
+      const boxed = call.then(result => ({ kind: 'result', result }), error => ({ kind: 'error', error }));
+      const winner = await Promise.race([
+        boxed,
+        new Promise(resolve => { timer = setTimeout(() => resolve({ kind: 'timeout' }), 350); }),
+      ]);
+      clearTimeout(timer);
+      if (winner.kind === 'timeout') {
+        // The reservation is the charge. A later verdict is not a result and is not settled again.
+        await held.finish({});
+        boxed.then(() => {}, () => {});
+        return null;
+      }
+      if (winner.kind === 'error') {
+        await held.finish({ error: winner.error?.name || 'Error' });
+        throw winner.error;
+      }
+      const r = winner.result;
+      const usage = usageFrom(r);
+      await held.finish(usage ? { usage } : {});
       // No boolean verdict is no verdict (the session logs it as NoVerdict and uses the silence rule), never "unfinished".
       return typeof r?.is_complete === 'boolean' ? { complete: r.is_complete, probability: Number(r.probability) || 0 } : null;
     },

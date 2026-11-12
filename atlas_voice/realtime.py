@@ -12,8 +12,6 @@ import json
 import secrets
 import time
 from urllib.parse import urlencode
-import aiohttp
-from aiohttp import web
 from .capacity import BUSY
 from .identity import COOKIE
 from .interview import project_context
@@ -185,6 +183,8 @@ class RealtimeMeter:
 
 
 async def run(request,config,identity,memory,http,gate,active):
+    import aiohttp
+    from aiohttp import web
     subject=identity.require(request)
     if request.headers.get('Origin')!=config.origin:raise web.HTTPForbidden(text='Invalid voice origin')
     ws=web.WebSocketResponse(max_msg_size=32768,heartbeat=20)
