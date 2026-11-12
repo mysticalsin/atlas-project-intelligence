@@ -5,6 +5,7 @@ import html
 import json
 import secrets
 import shutil
+import sys
 import time
 from pathlib import Path
 from urllib.parse import urlsplit, urlencode
@@ -81,6 +82,7 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
     async def startup(app):
         app['http'] = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=None, connect=10),
                                            trust_env=False)
+        memory.session = app['http']
 
     async def cleanup(app):
         for ws in list(active.values()):
@@ -398,6 +400,12 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
 
 
 def main():
+    from .spend import LedgerConfigError, require_ledger
+    try:
+        require_ledger()
+    except LedgerConfigError as error:
+        print(str(error), file=sys.stderr)
+        raise SystemExit(1) from error
     config = Config.env()
     print(f'ATLAS voice gateway: {config.origin}  |  authentication: {config.auth_mode}')
     print('No model inference is claimed until a PersonaPlex session handshake and audio are received.')

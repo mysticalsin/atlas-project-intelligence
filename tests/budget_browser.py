@@ -120,5 +120,32 @@ with sync_playwright() as pw:
     p.screenshot(path=str(SHOTS / 'budget-voice.png'))
     check('voice month stop has no helper sentence', 'No fallback voice' not in p.locator('#interview').inner_text() and 'unmetered' not in p.locator('#interview').inner_text() and 'paused for this month' not in p.locator('#interview').inner_text())
     check('no page errors', not ERR)
+    admin = br.new_context().new_page()
+    admin.on('pageerror', lambda e: ERR.append('admin ' + str(e)))
+    def admin_route(r):
+        req = r.request
+        path = urlparse(req.url).path
+        if req.url.rstrip('/') == 'https://atlas.test':
+            return r.fulfill(body=H, content_type='text/html')
+        if path == '/api/bootstrap':
+            body = boot()
+            body['libraryRole'] = 'admin'
+            return r.fulfill(json=body)
+        if path.startswith('/api/library/admin/metrics'):
+            return r.fulfill(json={'events': 3, 'errors': 0, 'tokens': {'actualIn': 10, 'missing': 0, 'unknown': 0},
+                'latencyMs': {'average': 12}, 'workflow': {'published': 1, 'awaiting_manager': 0, 'awaiting_presales': 0, 'admin_test': 0},
+                'estimatedCost': None, 'series': [], 'note': 'Counts are synthetic.',
+                'spend': {'mode': 'enforce', 'available': True, 'usd': 1.25, 'month': '2026-11'}})
+        if path.startswith('/api/'):
+            return r.fulfill(status=404, json={'error': 'not mocked: ' + path})
+        return r.fulfill(status=404, body='')
+    admin.route('**/*', admin_route)
+    admin.goto('https://atlas.test/')
+    admin.locator('#adminNav').wait_for(state='visible', timeout=8000)
+    admin.locator('#adminNav').click()
+    admin.wait_for_timeout(500)
+    check('admin shows the ledger mode and the month-to-date spend', 'Ledger enforce. Month-to-date $1.25.' in admin.locator('#admin').inner_text())
+    admin.screenshot(path=str(SHOTS / 'admin-spend.png'))
+    check('no page errors', not ERR)
     print('BUDGET_BROWSER_OK')
     br.close()

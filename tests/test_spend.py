@@ -4,7 +4,9 @@ import os
 
 import pytest
 
-from atlas_voice.spend import BudgetRefused, ledger_mode, reserve, usage_from, use
+import aiohttp
+
+from atlas_voice.spend import BudgetRefused, HttpLedger, ledger_mode, reserve, usage_from, use
 
 
 class Fake:
@@ -71,3 +73,72 @@ def test_dev_launchers_set_off_explicitly():
     for name in ('scripts/run_local_voice.sh', 'scripts/pod_setup.sh'):
         text = open(os.path.join(root, name), encoding='utf-8').read()
         assert 'LEDGER_MODE=off' in text, name
+        assert 'ATLAS_LEDGER_DEV=1' in text, name
+
+
+def test_production_startup_refuses_off_and_a_missing_ledger(monkeypatch, capsys):
+    from atlas_voice.spend import LedgerConfigError, require_ledger
+    import atlas_voice.spend as spend
+    spend._off_logged = False
+    with pytest.raises(LedgerConfigError):
+        require_ledger({})
+    with pytest.raises(LedgerConfigError):
+        require_ledger({'LEDGER_MODE': 'off'})
+    with pytest.raises(LedgerConfigError):
+        require_ledger({'LEDGER_MODE': 'off', 'ATLAS_LEDGER_DEV': '0'})
+    with pytest.raises(LedgerConfigError):
+        require_ledger({'LEDGER_MODE': 'enforce', 'ATLAS_LEDGER_URL': 'https://ledger.example'})
+    with pytest.raises(LedgerConfigError):
+        require_ledger({'LEDGER_MODE': 'observe'})
+    with pytest.raises(LedgerConfigError):
+        require_ledger({'LEDGER_MODE': 'enfroce', 'ATLAS_LEDGER_URL': 'https://ledger.example', 'ATLAS_LEDGER_TOKEN': 'tok'})
+    require_ledger({'LEDGER_MODE': 'off', 'ATLAS_LEDGER_DEV': '1'})
+    require_ledger({'LEDGER_MODE': 'off', 'ATLAS_LEDGER_DEV': 'test'})
+    lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.startswith('{')]
+    assert lines == [{'atlas_metric': 'ledger', 'mode': 'off'}]
+    require_ledger({'LEDGER_MODE': 'enforce', 'ATLAS_LEDGER_URL': 'https://ledger.example', 'ATLAS_LEDGER_TOKEN': 'tok'})
+    text = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'scripts/start_gateway.sh'), encoding='utf-8').read()
+    assert 'require_ledger' in text
+    monkeypatch.setenv('LEDGER_MODE', 'off')
+    monkeypatch.delenv('ATLAS_LEDGER_DEV', raising=False)
+
+
+class _Response:
+    def __init__(self, status, payload):
+        self.status = status
+        self.payload = payload
+
+    async def json(self, content_type=None):
+        if isinstance(self.payload, Exception):
+            raise self.payload
+        return self.payload
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return False
+
+
+class _Session:
+    def __init__(self, outcome):
+        self.outcome = outcome
+
+    def post(self, *args, **kwargs):
+        if isinstance(self.outcome, Exception):
+            raise self.outcome
+        return _Response(self.outcome[0], self.outcome[1])
+
+
+@pytest.mark.asyncio
+async def test_http_and_storage_failures_refuse_before_the_call(monkeypatch):
+    monkeypatch.setenv('LEDGER_MODE', 'enforce')
+    for outcome in (aiohttp.ClientConnectionError('down'), (500, {'ok': False, 'reason': 'ledger_error'}), (200, {'ok': False, 'reason': 'ledger_error'})):
+        use(HttpLedger(_Session(outcome), 'https://ledger.example', 'tok'))
+        called = []
+        with pytest.raises(BudgetRefused) as caught:
+            hold = await reserve({'kind': 'editor', 'provider': 'openai', 'inputTokens': 10, 'outputTokens': 10})
+            called.append(hold)
+        assert called == []
+        assert caught.value.reason == 'ledger_error'
+    use(None)

@@ -125,19 +125,19 @@ def install(app,identity):
     async def memory_write(request,subject):
         d=await body(request,('content','consent'))
         if d.get('consent') is not True:raise ValueError('Explicit consent required to store private continuity')
-        try:await PrivateMemory(app['config']).replace_continuity(subject,d.get('content'))
+        try:await PrivateMemory(app['config'], session=app.get('http')).replace_continuity(subject,d.get('content'))
         except ValueError:raise
         except Exception:raise web.HTTPBadGateway(text='Hindsight did not confirm replacement. Check the memory service before assuming success.') from None
         return web.json_response({'saved':True,'scope':'private user continuity, not project evidence'})
     @guarded
     async def memory_delete(request,subject):
-        try:result=await PrivateMemory(app['config']).delete_continuity(subject)
+        try:result=await PrivateMemory(app['config'], session=app.get('http')).delete_continuity(subject)
         except ValueError:raise
         except Exception:raise web.HTTPBadGateway(text='Hindsight did not confirm deletion. No success is assumed.') from None
         return web.json_response({'deleted':True,'scope':'ATLAS continuity document only','result':result})
     @guarded
     async def memory_read(request,subject):
-        try:text=await PrivateMemory(app['config']).get_continuity(subject)
+        try:text=await PrivateMemory(app['config'], session=app.get('http')).get_continuity(subject)
         except ValueError:raise
         except Exception:raise web.HTTPBadGateway(text='Private memory could not be read.') from None
         return web.json_response({'content':text})

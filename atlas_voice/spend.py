@@ -21,12 +21,39 @@ class BudgetRefused(Exception):
         super().__init__(BUDGET_MESSAGE if self.reason == 'exhausted:usd' else 'Spend ledger refused: ' + self.reason)
 
 
+class LedgerConfigError(RuntimeError):
+    """The process must not bind a port with the ledger off or unconfigured."""
+
+
 def ledger_mode(environ=None):
     source = os.environ if environ is None else environ
     value = source.get('LEDGER_MODE')
     if value is None or value == '':
         return 'enforce'
     return value if value in _MODES else 'invalid'
+
+
+def ledger_dev(environ=None):
+    """Off is allowed only for an explicit dev or test marker. 0, false and off do not count."""
+    source = os.environ if environ is None else environ
+    return str(source.get('ATLAS_LEDGER_DEV') or '').strip().lower() in ('1', 'dev', 'test')
+
+
+def require_ledger(environ=None):
+    """Refuse to start unless enforce or observe has a ledger, or off carries the dev marker."""
+    source = os.environ if environ is None else environ
+    mode = ledger_mode(source)
+    if mode == 'off':
+        if not ledger_dev(source):
+            raise LedgerConfigError('LEDGER_MODE=off is refused without ATLAS_LEDGER_DEV set to 1, dev or test.')
+        _log_off_once()
+        return
+    if mode not in ('enforce', 'observe'):
+        raise LedgerConfigError('LEDGER_MODE must be off, observe or enforce.')
+    url = str(source.get('ATLAS_LEDGER_URL') or '').strip()
+    token = str(source.get('ATLAS_LEDGER_TOKEN') or '').strip()
+    if not url or not token:
+        raise LedgerConfigError('ATLAS_LEDGER_URL and ATLAS_LEDGER_TOKEN are required.')
 
 
 def use(ledger):
@@ -37,6 +64,14 @@ def use(ledger):
 
 def _log(line):
     print(line, flush=True)
+
+
+def _log_off_once():
+    global _off_logged
+    if _off_logged:
+        return
+    _off_logged = True
+    _log(json.dumps({'atlas_metric': 'ledger', 'mode': 'off'}))
 
 
 class Hold:
@@ -98,12 +133,9 @@ def current(session):
 
 
 async def reserve(estimate, session=None):
-    global _off_logged
     mode = ledger_mode()
     if mode == 'off':
-        if not _off_logged:
-            _off_logged = True
-            _log(json.dumps({'atlas_metric': 'ledger', 'mode': 'off'}))
+        _log_off_once()
         return Hold(None, None, estimate, skipped=True)
     if mode != 'enforce' and mode != 'observe':
         raise BudgetRefused('invalid_mode')

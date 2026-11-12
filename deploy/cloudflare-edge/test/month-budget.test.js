@@ -1,6 +1,6 @@
 // Production month cap (Tony, 2026-11-11, via Jarvis 17:03 BRT): $5 per UTC calendar month, fail closed.
-// The live-test ledger ($1.50) is not this budget. These tests fail while the production budget is still a UTC day
-// with an unset limit, and while a voice refusal still continues into another provider call.
+// The live-test ledger ($1.50) is not this budget. Admission is reserved nano plus this call's ceiling
+// inside that UTC month. A voice refusal does not continue into another provider call.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
