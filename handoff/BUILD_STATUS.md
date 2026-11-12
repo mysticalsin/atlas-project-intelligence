@@ -772,3 +772,11 @@ Review answers:
 - The page keys on `code` `budget_exhausted`. Page pin `fa41aed1c4047a1ffc66e6b7c0d31afdcdf2d8b7f7b6b037ec1741b232de6374`, 907916 bytes. Logo unchanged.
 - Local gates on this tree: pytest 269 passed; root node 384 pass, 1 skip; edge node 592 pass. Browser suites 756 checks after the local edge was set to off. No deploy.
 
+### Session: 2026-11-12 / Plan A cap v2, Hindsight and the gateway door
+- Continued on `cursor/plan-a-cap-v2` from `4e4beab`. The code is `71b01bfc12e714adc34866a8d82ffe651c64ef6d`. This note is the following commit. No rewrite, no force, no merge, no deploy, no provider call. Other branches were not moved.
+- Python Hindsight recall, retain, continuity replace, document read and delete reserve through `spend.py` before the client is built. A missing ledger raises `BudgetRefused` and does not construct the client. The estimate is the edge memory formula: kind `memory`, provider `hindsight`, input tokens from the JSON body, recall output tokens from `max_tokens`.
+- `spend.require_ledger` runs from `server.main` before the port binds. Off starts only when `ATLAS_LEDGER_DEV` is `1`, `dev` or `test`, and that logs once. Enforce and observe require `ATLAS_LEDGER_URL` and `ATLAS_LEDGER_TOKEN`. `start_gateway.sh` relies on that check. The local voice scripts set the dev marker.
+- `spend-route.js` compares the bearer in one loop, including a missing secret or a different length. A non-object body is 400. Every failed settle, including `{ok:false}`, is 409. Negative, NaN and zero usage cannot drive the reserved nano below zero or refund more than the reservation.
+- The admin line at `journey-ui.js:82` was already painted. `budget_browser.py` now checks `Ledger enforce. Month-to-date $1.25.`
+- Gates on this code: pytest 273 passed; root node 385 tests, 384 pass, 1 skip; edge 598 pass. Page pin unchanged, `fa41aed1c4047a1ffc66e6b7c0d31afdcdf2d8b7f7b6b037ec1741b232de6374`, 907916 bytes, two verifies. Browsers 758 PASS, 21 suites, exit 0. Red-first: Hindsight ran before any reserve (`client` then `call`); a failed settle object returned 200; `[]` reserved and returned 429; `require_ledger` was not importable.
+
