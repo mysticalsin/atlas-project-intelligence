@@ -46,6 +46,33 @@
     // when those two Access variables are already set, the service-token headers. No token is minted here.
     // Holding ATLAS_LEDGER_TOKEN and passing that Access check spends this month's budget.
     "LEDGER_MODE": "enforce"
+  },
+  // Gate 8. A Preview does not inherit this file's top level. Live AI is on under the same $5
+  // ledger (no PRODUCTION_MONTHLY_LIMIT_USD). Do not copy the production origin, Access audience,
+  // Access team, cron, or secrets into this block. Upload later with wrangler preview, not deploy.
+  "previews": {
+    "ai": { "binding": "AI" },
+    "durable_objects": { "bindings": [
+      { "name": "INTERVIEW", "class_name": "Interview" },
+      { "name": "LIBRARY", "class_name": "LibraryStore" },
+      { "name": "SPEND_LEDGER", "class_name": "ProductionSpendLedger" }
+    ] },
+    "vars": {
+      "ATLAS_PREVIEW": "1",
+      "ATLAS_PREVIEW_HOST_SUFFIX": "-atlas.tony-walteur.workers.dev",
+      "LEDGER_MODE": "enforce",
+      "STT_MODEL": "@cf/deepgram/nova-3",
+      "TTS_MODEL": "@cf/deepgram/aura-2-en",
+      "TTS_VOICE": "harmonia",
+      "TALKER_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+      "ANALYST_MODEL": "@cf/openai/gpt-oss-120b",
+      "REVIEWER_EMAILS": "",
+      "READY_SCORE": "75",
+      "EMBED_MODEL": "@cf/baai/bge-m3",
+      "STT_LANGUAGE": "multi",
+      "TTS_MODEL_ES": "@cf/deepgram/aura-2-es",
+      "TTS_VOICE_ES": "celeste"
+    }
   }
   // Secrets (never committed): CSRF_SECRET (deploy.sh); optional via set-keys.sh: HINDSIGHT_API_KEY, TYPESAFE_API_KEY, ELEVENLABS_API_KEY
   // Optional WOW vars (docs/WOW_SPEC.md section 5), all unset by default; Tony decides and sets them, no values here:

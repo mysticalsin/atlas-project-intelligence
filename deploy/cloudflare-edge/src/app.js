@@ -18,6 +18,7 @@ import { acceptedSubjectDelete } from './library-routes.js';
 import { paid, elevenLabsUrl, utf8Length, analystCall, LIMITS, generationTokens, inputTokenCeiling, capPcm, capText, markdownPlan, ledgerMode } from './meter.js';
 import { usageFrom } from './usage.js';
 import { httpBudget } from './budget-stop.js';
+import { allowedOrigin, previewMisconfigured, stampPreview, withPreviewBanner } from './preview.js';
 import { audioMs } from './units.js';
 import { ledgerAccessOk, spendRoute } from './spend-route.js';
 
@@ -153,10 +154,20 @@ function systemForwardHeaders(user, scope) {
 }
 
 // flagsOf: the bootstrap feature flags (tests pass flags with D1 approved to exercise /api/transcribe before it flips).
+function signIn(env) {
+  if (env.ATLAS_PREVIEW !== '1') return new Response('Sign in to use ATLAS.', { status: 401, headers: headers(env) });
+  const html = '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>ATLAS</title></head><body><p>Sign in to use ATLAS.</p></body></html>';
+  return new Response(withPreviewBanner(env, html), { status: 401, headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
+}
+
 export async function handle(request, env, page, { waitUntil = p => p, flagsOf = flags } = {}) {
   {
     const url = new URL(request.url);
-    if (!env.ORIGIN || url.origin !== env.ORIGIN) return new Response('Host is not the configured ATLAS origin.', { status: 403 });
+    const previewProblem = previewMisconfigured(env);
+    if (previewProblem) return new Response(previewProblem, { status: 503, headers: { 'Cache-Control': 'no-store', 'Content-Type': 'text/plain; charset=utf-8' } });
+    const origin = allowedOrigin(env, url);
+    if (!origin) return new Response('Host is not the configured ATLAS origin.', { status: 403 });
+    env = { ...env, ORIGIN: origin };
     if (!env.CSRF_SECRET) return new Response('Deployment is not configured (CSRF_SECRET).', { status: 500 });
     // Before triggers, directory push, voice, memory, or the library. A production flag must not
     // disable tenant checks or turn on the local persona switch.
@@ -193,13 +204,13 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
     }
     // Teams bot endpoint and launcher tab (pre-Access, like /api/triggers): exactly these two; every other
     // /api/teams/* path falls through to the signed-in handling. BLOCKED_EXTERNAL until Teams is connected.
-    if ((url.pathname === '/api/teams/messages' && request.method === 'POST') || (url.pathname === '/teams/tab' && request.method === 'GET')) return teamsRoutes(request, env, { waitUntil });
+    if ((url.pathname === '/api/teams/messages' && request.method === 'POST') || (url.pathname === '/teams/tab' && request.method === 'GET')) return stampPreview(env, await teamsRoutes(request, env, { waitUntil }));
     if (url.pathname === '/api/ledger/reserve' || url.pathname === '/api/ledger/settle' || url.pathname === '/api/ledger/record') {
       // Cloudflare Access is in front of this host when ACCESS_AUD is set. The bearer is the existing
       // ATLAS_LEDGER_TOKEN. A service token, when the operator has already issued one, is the existing
       // Access client id and secret. This route does not mint a second token. A live Access check is not run here.
       if (env.ACCESS_AUD && !(await ledgerAccessOk(request, env, verifyAccess))) {
-        return new Response('Sign in to use ATLAS.', { status: 401, headers: headers(env) });
+        return signIn(env);
       }
       const spent = await spendRoute(request, env);
       if (spent) return spent;
@@ -207,7 +218,7 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
     // Identity comes from the verified Access token only. ?as= and &idp= are not read here.
     let who = null;
     try { who = await verifyAccess(request, env); } catch { who = null; }
-    if (!who) return new Response('Sign in to use ATLAS.', { status: 401, headers: headers(env) });
+    if (!who) return signIn(env);
     // Access email only: an Entra deployment must grant admin through an app role, never a username fallback.
     const elevated = elevatedRole(env, who);
     const admin = elevated === 'admin';
@@ -234,20 +245,22 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
     // Links that survive an interactive sign-in (§3.9): /go/start, /go/{gap,invitation,bid,library,confirm}/<32 hex>.
     // Anything else under /go/ goes home. The ids are random, non-secret and grant nothing without sign-in (a recorded
     // deviation from WOW rule 7); no token ever goes in a path, and nothing here logs the path.
-    if (request.method === 'GET' && url.pathname === '/go/signed-in') return new Response(SIGNED_IN_HTML, { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
+    if (request.method === 'GET' && url.pathname === '/go/signed-in') return new Response(withPreviewBanner(env, SIGNED_IN_HTML), { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
     if (request.method === 'GET' && url.pathname.startsWith('/go/')) {
       const m = /^\/go\/(?:(start)|(gap|invitation|bid|library|confirm)\/([a-f0-9]{32}))$/.exec(url.pathname);
       const to = !m ? '/' : m[1] ? '/#start' : m[2] === 'confirm' ? '/confirm#' + m[3] : '/#' + m[2] + '/' + m[3];
       return new Response(null, { status: 302, headers: headers(env, { Location: to }) });
     }
-    if (url.pathname === '/confirm' && request.method === 'GET') return new Response(CONFIRM_HTML, { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
+    if (url.pathname === '/confirm' && request.method === 'GET') return new Response(withPreviewBanner(env, CONFIRM_HTML), { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
     if (url.pathname === '/' && request.method === 'GET') {
       const runtime = JSON.stringify({ subjectKey, authMode: 'access', name: who.email }).replace(/</g, '\\u003c');
       let body = page.replace('/* SERVER_RUNTIME */', 'window.ATLAS_RUNTIME=' + runtime + ';')
         .replace("connect-src 'self';", "connect-src 'self' " + env.ORIGIN.replace('https://', 'wss://') + ';');
       const end = body.lastIndexOf('</body>'); // the page embeds an earlier '</body>' inside a script string
       // The test banner stays until Tony sets DATA_MODE=production on an approved deployment (WOW_ZERO_CONFIG §0.7, §11).
-      if (env.DATA_MODE !== 'production') body = body.slice(0, end) + '<div style="position:fixed;left:12px;bottom:10px;z-index:99;font:11px/1.4 Arial;letter-spacing:.06em;color:#A9A9BC;background:#15151cdd;border:1px solid #2a2a36;border-radius:14px;padding:4px 10px">TEST DEPLOYMENT · SYNTHETIC DATA ONLY</div>' + body.slice(end);
+      // A Preview says so in its own banner. It does not also say test deployment.
+      if (env.ATLAS_PREVIEW === '1') body = withPreviewBanner(env, body);
+      else if (env.DATA_MODE !== 'production') body = body.slice(0, end) + '<div style="position:fixed;left:12px;bottom:10px;z-index:99;font:11px/1.4 Arial;letter-spacing:.06em;color:#A9A9BC;background:#15151cdd;border:1px solid #2a2a36;border-radius:14px;padding:4px 10px">TEST DEPLOYMENT · SYNTHETIC DATA ONLY</div>' + body.slice(end);
       return new Response(body, { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
     }
     if (url.pathname === '/api/bootstrap' && request.method === 'GET') {
