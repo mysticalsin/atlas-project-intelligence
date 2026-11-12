@@ -4,6 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Library, deriveStatus } from '../src/library.js';
+import { PUBLICATION_VERSION, publicationTransition } from '../src/publication.js';
 import { memorySql } from './sqlite.js';
 
 // Pinned mapping of library.js deriveStatus. Kept here so a change to the function fails
@@ -113,6 +114,65 @@ test('the only golden rows that move are validated without both approvals', () =
     { withdrawn: false, test: true, quality: 'ready', status: 'validated', manager: 'approved', presales: 'missing' },
     { withdrawn: false, test: true, quality: 'ready', status: 'validated', manager: 'approved', presales: 'pending' },
   ]);
+});
+
+// deriveStatus of these 2560 rows does not move: withdrawn already wins before quality and lanes.
+// Applying revised used to clear withdrawn, so every revised outcome was in_review.
+// Tony, Q-9a: "Atlas withdrawn edit: stay withdrawn until a reviewer reinstates".
+// The movers are exactly the 1280 rows with withdrawn true, from in_review to withdrawn.
+test('revised keeps withdrawn on 1280 of the 2560 rows and leaves the other 1280 in_review', () => {
+  const moved = [];
+  const stayed = [];
+  let n = 0;
+  for (const w of WITHDRAWN) for (const testFlag of TEST) for (const quality of QUALITY)
+    for (const status of VSTATUS) for (const manager of DECISION) for (const presales of DECISION)
+      for (const merged of MERGED) {
+        n++;
+        const prior = stateOf(w, testFlag, quality, status, manager, presales, merged);
+        assert.equal(deriveStatus(prior), pinned(prior));
+        const result = publicationTransition(prior, { type: 'revised', id: 'golden', tenant: 'tenant-1', managerStaffIgnored: false });
+        const after = w ? 'withdrawn' : 'in_review';
+        assert.equal(result.ok, true);
+        assert.equal(result.status, after);
+        assert.equal(result.state.withdrawn, w);
+        assert.equal(result.state.version, PUBLICATION_VERSION);
+        assert.equal(result.state.quality, null);
+        assert.equal(result.state.test, false);
+        assert.equal(result.state.validation.status, 'pending');
+        assert.equal(result.state.validation.managerDecision, 'pending');
+        assert.equal(result.state.validation.presalesDecision, 'pending');
+        assert.equal(deriveStatus(result.state), after);
+        const row = {
+          withdrawn: w,
+          test: testFlag,
+          quality: quality ? quality.status : 'missing',
+          status: status === undefined ? 'missing' : status,
+          manager: manager === undefined ? 'missing' : manager,
+          presales: presales === undefined ? 'missing' : presales,
+          merged: merged === undefined ? 'missing' : merged,
+        };
+        if (w) moved.push(row);
+        else stayed.push(row);
+      }
+  assert.equal(n, 2560);
+  assert.equal(moved.length, 1280);
+  assert.equal(stayed.length, 1280);
+  const expected = [];
+  for (const testFlag of TEST) for (const quality of QUALITY)
+    for (const status of VSTATUS) for (const manager of DECISION) for (const presales of DECISION)
+      for (const merged of MERGED) {
+        expected.push({
+          withdrawn: true,
+          test: testFlag,
+          quality: quality ? quality.status : 'missing',
+          status: status === undefined ? 'missing' : status,
+          manager: manager === undefined ? 'missing' : manager,
+          presales: presales === undefined ? 'missing' : presales,
+          merged: merged === undefined ? 'missing' : merged,
+        });
+      }
+  assert.deepEqual(moved, expected);
+  assert.ok(stayed.every(row => row.withdrawn === false));
 });
 
 test('validated does not publish unless both lanes approved', () => {

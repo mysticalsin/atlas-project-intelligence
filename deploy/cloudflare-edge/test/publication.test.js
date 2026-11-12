@@ -48,8 +48,13 @@ test('every legal publication transition, and every other real (phase, event) pa
         assert.equal(result.rejection, undefined);
         assert.ok(PUBLICATION_PHASES.includes(result.status), key);
         if (type === 'revised') {
-          assert.equal(result.status, 'in_review');
+          assert.equal(result.status, phase === 'withdrawn' ? 'withdrawn' : 'in_review');
+          assert.equal(result.state.withdrawn, phase === 'withdrawn');
           assert.equal(result.state.version, PUBLICATION_VERSION);
+          assert.equal(result.state.quality, null);
+          assert.equal(result.state.test, false);
+          assert.equal(result.state.validation.managerDecision, 'pending');
+          assert.equal(result.state.validation.presalesDecision, 'pending');
         }
         if (type === 'derive') assert.equal(result.status, phase);
         if (type === 'merged' || type === 'withdrawn') {
@@ -146,7 +151,7 @@ test('guards: withdrawn, admin bypass, quality, changes, validated flag, both ap
   assert.deepEqual(JSON.parse(warns[0][0]), effect);
 });
 
-test('revised reopens approvals from any phase and keeps fields the event does not own', () => {
+test('revised reopens approvals and keeps fields the event does not own', () => {
   const prior = { ...phases.published, sharedWith: ['a@example.test'], duplicates: [{ id: 'other' }], ratingGen: 4, tenant: 'old' };
   const result = publicationTransition(prior, { type: 'revised', id: 'story-1', tenant: 'kept', managerStaffIgnored: true }, quiet);
   assert.equal(result.status, 'in_review');
@@ -158,6 +163,17 @@ test('revised reopens approvals from any phase and keeps fields the event does n
   assert.deepEqual(result.state.sharedWith, ['a@example.test']);
   assert.equal(result.state.ratingGen, 4);
   assert.equal(result.state.duplicates[0].id, 'other');
+  const held = publicationTransition({ ...phases.withdrawn, sharedWith: ['a@example.test'] }, { type: 'revised', id: 'story-1', tenant: 'kept', managerStaffIgnored: false });
+  assert.equal(held.ok, true);
+  assert.equal(held.status, 'withdrawn');
+  assert.equal(held.state.withdrawn, true);
+  assert.equal(held.state.quality, null);
+  assert.equal(held.state.test, false);
+  assert.equal(held.state.version, PUBLICATION_VERSION);
+  assert.equal(held.state.validation.status, 'pending');
+  assert.equal(held.state.validation.managerDecision, 'pending');
+  assert.equal(held.state.validation.presalesDecision, 'pending');
+  assert.deepEqual(held.state.sharedWith, ['a@example.test']);
 });
 
 test('merge stores the status the merged event returned', async () => {
@@ -326,4 +342,34 @@ test('an unknown-version row reads as not published and the stored JSON stays un
   const withdrawn = l.withdraw(owner, saved.id, { note: 'stop' });
   assert.equal(withdrawn.status, 'withdrawn');
   assert.equal(l.rows('SELECT status FROM refs WHERE id = ?', saved.id)[0].status, 'withdrawn');
+});
+
+test('an edit to a withdrawn story leaves it withdrawn, and only reinstate clears it', async () => {
+  let t = 0;
+  const l = new Library(memorySql(), { now: () => new Date(Date.UTC(2026, 8, 27, 0, 0, t++)).toISOString() });
+  const owner = { email: 'ada@example.test', role: 'user' };
+  const reviewer = { email: 'rev@example.test', role: 'reviewer' };
+  const saved = await l.upsert(owner, { localId: 'paused', reference: { title: 'Paused' } });
+  assert.equal(l.withdraw(owner, saved.id, { note: 'pause' }).status, 'withdrawn');
+  const data = l.row(saved.id).data;
+  data.title = 'Paused, edited';
+  const edited = await l.upsert(owner, { id: saved.id, reference: data });
+  const row = l.row(saved.id);
+  assert.equal(row.merged_into, null);
+  assert.equal(edited.title, 'Paused, edited');
+  assert.equal(row.status, 'withdrawn');
+  assert.equal(row.state.withdrawn, true);
+  assert.equal(row.state.version, PUBLICATION_VERSION);
+  assert.equal(row.state.quality, null);
+  assert.equal(row.state.test, false);
+  assert.equal(row.state.validation.status, 'pending');
+  assert.equal(row.state.validation.managerDecision, 'pending');
+  assert.equal(row.state.validation.presalesDecision, 'pending');
+  assert.throws(() => l.reinstate(owner, saved.id), error => error.status === 403 && error.message === 'Only a reviewer can reinstate a reference.');
+  assert.equal(l.row(saved.id).state.withdrawn, true);
+  assert.equal(l.row(saved.id).status, 'withdrawn');
+  const back = l.reinstate(reviewer, saved.id);
+  assert.equal(back.state.withdrawn, false);
+  assert.equal(back.status, 'in_review');
+  assert.equal(l.rows('SELECT status FROM refs WHERE id = ?', saved.id)[0].status, 'in_review');
 });

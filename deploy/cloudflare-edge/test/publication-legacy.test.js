@@ -16,7 +16,7 @@ const SYS = { email: 'directory', role: 'system' };
 
 // Withdrawing what is already withdrawn is not a second withdrawal.
 // Reinstating is only from withdrawn. A lane decision or an admin publish does not apply to a withdrawn row.
-// reviewed stays legal there: a rating that is already in flight still settles, and withdrawn still wins the status.
+// revised from withdrawn stays legal and keeps withdrawn. reviewed stays legal there: a rating that is already in flight still settles, and withdrawn still wins the status.
 const ILLEGAL = new Set([
   'withdrawn:withdrawn',
   'withdrawn:decided',

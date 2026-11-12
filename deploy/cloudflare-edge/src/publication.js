@@ -7,8 +7,9 @@
 export const PUBLICATION_VERSION = 1;
 export const PUBLICATION_PHASES = Object.freeze(['in_review', 'needs_work', 'changes_requested', 'awaiting_validation', 'published', 'admin_test', 'withdrawn']);
 export const PUBLICATION_EVENTS = Object.freeze(['revised', 'derive', 'merged', 'reviewed', 'decided', 'admin_published', 'withdrawn', 'reinstated']);
-// revised, derive, merged and reviewed are legal from every phase. reviewed stays legal from withdrawn
-// so a rating already in flight can settle; withdrawn still wins the status.
+// revised, derive, merged and reviewed are legal from every phase. revised from withdrawn keeps
+// withdrawn: version 1, quality reset and both lanes pending still apply. Only reinstated clears it.
+// reviewed stays legal from withdrawn so a rating already in flight can settle; withdrawn still wins the status.
 // decided, admin_published and withdrawn are not legal from withdrawn. reinstated is legal only from withdrawn.
 // mergedInto is a separate guard on reinstated. Anything absent from this table is an illegal pair.
 const ACTIVE_PHASES = Object.freeze(PUBLICATION_PHASES.filter(phase => phase !== 'withdrawn'));
@@ -206,7 +207,7 @@ export function publicationTransition(state, event) {
     ...prior,
     version: PUBLICATION_VERSION,
     quality: null,
-    withdrawn: false,
+    withdrawn: !!prior.withdrawn,
     test: false,
     tenant: event.tenant,
     validation: {
