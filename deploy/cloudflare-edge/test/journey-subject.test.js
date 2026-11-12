@@ -7,6 +7,7 @@ import { libraryRoutes } from '../src/library-routes.js';
 import { memorySql } from './sqlite.js';
 import { ensureJourney, journeyView, saveJourney, JOURNEY_READ_SQL, JOURNEY_ALL_SQL, JOURNEY_COUNT_SQL, JOURNEY_DELETE_SQL, JOURNEY_UPDATE_SQL } from '../src/journey.js';
 import { privacyRoutes } from '../src/operate.js';
+import { ensure as ensureProfile } from '../src/profile.js';
 
 const TENANT = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
@@ -197,10 +198,78 @@ function seedStory(library, id, tenant, state, title, owner = 'ada@example.test'
   id, owner, id, title, state, tenant);
 }
 
+function seedProfile(library, tenant, edits, consents, subject = 'ada@example.test') {
+  ensureProfile(library);
+  library.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+    VALUES (?, ?, ?, ?, '{}', ?, '2026-11-08T00:00:00.000Z', '2026-11-08T00:00:00.000Z', '2026-11-08T00:00:00.000Z')`,
+  subject, tenant, subject, edits, consents);
+}
+
 function seedRaw(library, subject, tenant, payload, updated) {
   ensureJourney(library);
   library.sql.exec('INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)', subject, tenant, payload, updated);
 }
+
+test('a missing profile stays null and an unreadable profile part is omitted', async () => {
+  const problems = [];
+  const check = async (label, fn) => {
+    try { await fn(); }
+    catch (error) { problems.push(label + ': ' + error.message); }
+  };
+  await check('missing table', async () => {
+    const library = lib();
+    assert.equal(library.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'profiles'").length, 0);
+    const body = await exported(library, 'ada@example.test', TENANT);
+    assert.equal(body.profile, null);
+    assert.deepEqual(body.omitted, { count: 0, rows: [] });
+  });
+  await check('no row', async () => {
+    const library = lib();
+    ensureProfile(library);
+    seedProfile(library, OTHER, '{', '{"hidden":true}');
+    const body = await exported(library, 'ada@example.test', TENANT);
+    assert.equal(body.profile, null);
+    assert.deepEqual(body.omitted, { count: 0, rows: [] });
+    assert.equal(JSON.stringify(body).includes('hidden'), false);
+  });
+  await check('bad edits', async () => {
+    const library = lib();
+    seedProfile(library, TENANT, '{', '{"spokenAsk":true}');
+    const body = await exported(library, 'ada@example.test', TENANT);
+    assert.equal(body.profile.edits, undefined);
+    assert.deepEqual(body.profile.consents, { spokenAsk: true });
+    assert.equal(body.profile.updatedAt, '2026-11-08T00:00:00.000Z');
+    assert.deepEqual(body.omitted, { count: 1, rows: [{ id: 'edits', source: 'profile', reason: 'unparseable' }] });
+  });
+  await check('bad consents', async () => {
+    const library = lib();
+    seedProfile(library, TENANT, '{"title":{"value":"Kept"}}', '[');
+    const body = await exported(library, 'ada@example.test', TENANT);
+    assert.deepEqual(body.profile.edits, { title: { value: 'Kept' } });
+    assert.equal(body.profile.consents, undefined);
+    assert.equal(body.profile.updatedAt, '2026-11-08T00:00:00.000Z');
+    assert.deepEqual(body.omitted, { count: 1, rows: [{ id: 'consents', source: 'profile', reason: 'unparseable' }] });
+    const direct = await privacyRoutes({
+      method: 'GET', parts: ['privacy', 'export'], user: lowerUser(), lib: library, env: { DATA_MODE: 'production' },
+    });
+    assert.deepEqual(direct.body.omitted, body.omitted);
+    assert.deepEqual(direct.body.profile, body.profile);
+  });
+  await check('both parts unreadable', async () => {
+    const library = lib();
+    seedProfile(library, TENANT, '{', '[]');
+    const body = await exported(library, 'ada@example.test', TENANT);
+    assert.deepEqual(body.profile, { updatedAt: '2026-11-08T00:00:00.000Z' });
+    assert.deepEqual(body.omitted, {
+      count: 2,
+      rows: [
+        { id: 'edits', source: 'profile', reason: 'unparseable' },
+        { id: 'consents', source: 'profile', reason: 'unparseable' },
+      ],
+    });
+  });
+  assert.deepEqual(problems, []);
+});
 
 test('journey read, save, export and erasure plans use the subject index and do not scan', () => {
   const library = lib();
