@@ -365,6 +365,7 @@ test('an edit to a withdrawn story leaves it withdrawn, and only reinstate clear
   assert.equal(row.state.validation.status, 'pending');
   assert.equal(row.state.validation.managerDecision, 'pending');
   assert.equal(row.state.validation.presalesDecision, 'pending');
+  assert.equal(l.rows("SELECT detail FROM audit WHERE id = ? AND action = 'revised' ORDER BY seq DESC", saved.id)[0].detail, 'revision 2; stays withdrawn until a reviewer reinstates');
   assert.throws(() => l.reinstate(owner, saved.id), error => error.status === 403 && error.message === 'Only a reviewer can reinstate a reference.');
   assert.equal(l.row(saved.id).state.withdrawn, true);
   assert.equal(l.row(saved.id).status, 'withdrawn');

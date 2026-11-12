@@ -116,14 +116,22 @@ export function journeyMatches(lib, email, tenant) {
   return lib.rows(JOURNEY_ALL_SQL, email, tenant);
 }
 
+// Shared by read and export. Malformed JSON and non-objects are unreadable; callers decide what to show.
+export function journeyPayload(raw) {
+  try {
+    const payload = JSON.parse(raw);
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+    return payload;
+  } catch { return null; }
+}
+
 function read(lib, user) {
   demandTenant(user);
   const row = journeyChosen(lib, user.email, journeyTenant(user));
   if (!row) return { ...blank(), tenant: user.tenant || '' };
-  try {
-    const payload = JSON.parse(row.payload);
-    return { ...blank(), ...payload, tenant: row.tenant || '' };
-  } catch { return { ...blank(), tenant: user.tenant || '' }; }
+  const payload = journeyPayload(row.payload);
+  if (!payload) return { ...blank(), tenant: user.tenant || '' };
+  return { ...blank(), ...payload, tenant: row.tenant || '' };
 }
 
 function field(raw, key) {

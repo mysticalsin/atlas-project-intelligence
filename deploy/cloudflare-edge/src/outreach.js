@@ -545,24 +545,33 @@ export async function system(ctx) {
     const storyOpen = !!(linked && lib.access && lib.access(linked, viewer));
     const hiddenRef = !!inv.reference_id && !storyOpen;
     if (hiddenRef && e.verb !== 'decline') return { body: { ok: true, card: messageCard({ title: 'Nothing was changed.', text: 'This invitation can only be declined from here.' }) } };
-    lib.sql.exec('INSERT OR IGNORE INTO teams_seen (activity_id, at) VALUES (?, ?)', activityId, now);
     const auditOn = storyOpen && typeof lib.auditFor === 'function' ? lib.auditFor(viewer, inv.reference_id, inv.tenant) : 'library';
     const p = parsed(o.payload), origin = originOf(ctx);
-    if (e.verb === 'decline') {
-      lib.sql.exec(`UPDATE invitations SET status = 'dismissed' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, inv.id);
-      if (lib.rows('SELECT status FROM invitations WHERE id = ?', inv.id)[0]?.status !== 'dismissed') {
-        noteInvitation({ rejection: { id: inv.id, phase: inv.status, event: 'dismiss' } });
-        return { body: { ok: true, card: messageCard({ title: 'This invitation is closed.', text: 'Nothing was changed.' }) } };
+    // teams_seen and the status compare-and-swap commit together. changes() is the guard.
+    // A missed update rolls both back, so a retry is not treated as a duplicate.
+    const commit = (query, ...params) => {
+      if (typeof lib.transactionSync !== 'function') throw fail(503, 'Atomic invitation changes need storage.transactionSync.');
+      lib.transactionSync(() => {
+        lib.sql.exec('INSERT OR IGNORE INTO teams_seen (activity_id, at) VALUES (?, ?)', activityId, now);
+        lib.sql.exec(query, ...params);
+        if (Number(lib.rows('SELECT changes() AS n')[0]?.n || 0) !== 1) throw fail(409, 'This invitation is closed. Nothing was changed.');
+      });
+    };
+    try {
+      if (e.verb === 'decline') commit(`UPDATE invitations SET status = 'dismissed' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, inv.id);
+      else {
+        const base = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(inv.slot || '') ? inv.slot.slice(0, 16) : now.slice(0, 16);
+        const slot = new Date(Date.parse(base + ':00Z') + 864e5).toISOString().slice(0, 16);
+        commit(`UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, slot, inv.id);
       }
+    } catch (err) {
+      if (err?.status !== 409) throw err;
+      noteInvitation({ rejection: { id: inv.id, phase: inv.status, event: inviteEvent } });
+      return { body: { ok: true, card: messageCard({ title: 'This invitation is closed.', text: 'Nothing was changed.' }) } };
+    }
+    if (e.verb === 'decline') {
       if (!hiddenRef) lib.log(auditOn, inv.email, 'invitation dismiss', `${inv.reason} (Teams card)`);
       return { body: { ok: true, card: messageCard({ title: 'Understood: no interview for this project.', text: 'Nothing else will be sent about it.' }) } };
-    }
-    const base = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(inv.slot || '') ? inv.slot.slice(0, 16) : now.slice(0, 16);
-    const slot = new Date(Date.parse(base + ':00Z') + 864e5).toISOString().slice(0, 16);
-    lib.sql.exec(`UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, slot, inv.id);
-    if (lib.rows('SELECT status FROM invitations WHERE id = ?', inv.id)[0]?.status !== 'scheduled') {
-      noteInvitation({ rejection: { id: inv.id, phase: inv.status, event: 'schedule' } });
-      return { body: { ok: true, card: messageCard({ title: 'This invitation is closed.', text: 'Nothing was changed.' }) } };
     }
     lib.log(auditOn, inv.email, 'invitation schedule', `${inv.reason} (Teams card: tomorrow)`);
     return { body: { ok: true, card: interviewCard({ invitationId: inv.id, outreachId: o.id, projectRef: obj(p.preview).title, origin, note: 'Moved to tomorrow. Start whenever it suits you.' }) } };

@@ -86,6 +86,7 @@ function harness() {
   const confirms = [];
   const warns = [];
   let hold = null;
+  let failDelete = null;
   const body = {
     outcomes: [{ store: 'journey', removed: 1, error: null }],
     complete: false,
@@ -136,6 +137,7 @@ function harness() {
         if (path === '/privacy/delete') {
           posts.push(opts);
           if (hold) await hold;
+          if (failDelete) throw failDelete;
           return body;
         }
         throw new Error('unexpected ' + path);
@@ -150,6 +152,7 @@ function harness() {
   return {
     sandbox, posts, confirms, warns, body, document,
     holdDelete() { let release; hold = new Promise(resolve => { release = resolve; }); return release; },
+    failDelete(error) { failDelete = error; },
     button() { return walk(document.getElementById('journey'), node => node.textContent === 'Delete my journey data'); },
     text(value) { return walk(document.getElementById('journey'), node => node.textContent === value); },
   };
@@ -214,4 +217,24 @@ test('a second erasure submit while the first request is open sends only one POS
   assert.deepEqual(JSON.parse(page.warns[0][0]), { id: 'privacy-delete', phase: 'in_flight', event: 'ask' });
   release();
   await flush();
+});
+
+test('a failed erasure re-enables the button on the page after a re-render', async () => {
+  const page = harness();
+  await page.sandbox.AtlasJourney.render('journey');
+  await flush();
+  const release = page.holdDelete();
+  page.button().click();
+  await flush();
+  page.document.getElementById('confirmYes').onclick();
+  await flush();
+  assert.equal(page.posts.length, 1);
+  await page.sandbox.AtlasJourney.render('journey');
+  await flush();
+  assert.equal(page.button().disabled, true);
+  page.failDelete(new Error('The deletion did not finish.'));
+  release();
+  await flush();
+  assert.equal(page.posts.length, 1);
+  assert.equal(page.button().disabled, false);
 });

@@ -285,6 +285,36 @@ test('daily: newly due staffing rows are invited once and queued (pending only);
   assert.deepEqual(s.l.rows('SELECT activity_id FROM teams_seen'), [{ activity_id: 'new' }]);
 });
 
+test('a Teams card action rolls back teams_seen when the status update changes nothing', async () => {
+  const fake = fakeTeams(), s = setup({ teams: fake });
+  await install(s);
+  const inv = (await trigger(s)).body;
+  const card = (await s.call(REV, 'GET', 'outreach')).body.items.find(i => i.channel === 'teams');
+  await s.call(REV, 'POST', 'outreach/' + card.id, { action: 'approve' });
+  const inner = s.l.sql.exec.bind(s.l.sql);
+  let inTx = false, sawChangesInTx = false;
+  const tx = s.l.transactionSync.bind(s.l);
+  s.l.transactionSync = fn => tx(() => { inTx = true; try { return fn(); } finally { inTx = false; } });
+  s.l.sql.exec = (query, ...params) => {
+    const text = String(query);
+    if (text.includes('changes()') && inTx) sawChangesInTx = true;
+    if (text.includes('UPDATE invitations') && text.includes("status IN ('open', 'scheduled')")) {
+      return inner(text.replace("status IN ('open', 'scheduled')", "status = 'no-such-status'"), ...params);
+    }
+    return inner(query, ...params);
+  };
+  const result = await s.call(BOT, 'POST', 'teams-event', {
+    kind: 'action', activityId: 'race-1', tenantId: TID, aadObjectId: OID, conversationId: 'a:conv-alex', verb: 'decline', outreachId: card.id,
+  });
+  const kept = s.l.rows("SELECT COUNT(*) AS n FROM teams_seen WHERE activity_id = 'race-1'")[0].n;
+  const status = s.l.rows('SELECT status FROM invitations WHERE id = ?', inv.id)[0].status;
+  assert.equal(result.status, 200);
+  assert.equal(result.body.card.body[0].text, 'This invitation is closed.');
+  assert.equal(status, 'scheduled');
+  assert.equal(kept, 0, 'teams_seen=' + kept + ' changesInTx=' + sawChangesInTx + ' status=' + status);
+  assert.equal(sawChangesInTx, true);
+});
+
 test('teams-event: install, duplicate activity, stop, uninstall, and card actions bound to the invitee only', async () => {
   const fake = fakeTeams(), s = setup({ teams: fake }); await others(s);
   assert.deepEqual((await install(s)).body, { ok: true });

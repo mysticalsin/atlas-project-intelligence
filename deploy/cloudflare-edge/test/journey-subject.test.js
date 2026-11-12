@@ -112,6 +112,41 @@ test('another tenant is not read or saved as this sign-in', async () => {
   assert.equal(JSON.stringify(pack).includes('Other tenant'), false);
 });
 
+test('a malformed or non-object journey payload does not fail the export', async () => {
+  const library = lib();
+  seedRaw(library, 'Ada@Example.test', TENANT, '{', '2026-11-04T00:00:00.000Z');
+  seedRaw(library, 'ADA@example.test', TENANT, '[]', '2026-11-04T00:00:01.000Z');
+  seed(library, 'ada@example.test', TENANT, 'Kept', '2026-11-05T00:00:00.000Z');
+  const response = await libraryRoutes(new Request('https://atlas.test/api/library/privacy/export', {
+    headers: { 'x-atlas-user': 'ada@example.test', 'x-atlas-role': 'user', 'x-atlas-email': 'ada@example.test', 'x-atlas-tenant': TENANT, 'x-atlas-tenant-enforced': '1' },
+  }), library, { env: { DATA_MODE: 'production', ORIGIN: 'https://atlas.test', CSRF_SECRET: 's' } });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(exportTitles(body.journey), ['Kept']);
+});
+
+test('export keeps the journey row subject and updatedAt when the payload repeats them', async () => {
+  const library = lib();
+  seedRaw(library, 'Ada@Example.test', TENANT, JSON.stringify({
+    subject: 'evil@example.test', updatedAt: '1999-01-01T00:00:00.000Z', version: 1,
+    fields: { title: { value: 'Kept', source: 'you', confirmed: true } }, confirmed: {}, stage: 'project',
+  }), '2026-11-04T00:00:00.000Z');
+  const response = await libraryRoutes(new Request('https://atlas.test/api/library/privacy/export', {
+    headers: { 'x-atlas-user': 'ada@example.test', 'x-atlas-role': 'user', 'x-atlas-email': 'ada@example.test', 'x-atlas-tenant': TENANT, 'x-atlas-tenant-enforced': '1' },
+  }), library, { env: { DATA_MODE: 'production', ORIGIN: 'https://atlas.test', CSRF_SECRET: 's' } });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.journey.length, 1);
+  assert.equal(body.journey[0].subject, 'Ada@Example.test');
+  assert.equal(body.journey[0].updatedAt, '2026-11-04T00:00:00.000Z');
+  assert.equal(body.journey[0].fields.title.value, 'Kept');
+});
+
+function seedRaw(library, subject, tenant, payload, updated) {
+  ensureJourney(library);
+  library.sql.exec('INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)', subject, tenant, payload, updated);
+}
+
 test('journey read, save, export and erasure plans use the subject index and do not scan', () => {
   const library = lib();
   ensureJourney(library);
@@ -126,7 +161,8 @@ test('journey read, save, export and erasure plans use the subject index and do 
   for (const [name, rows] of Object.entries(plans)) {
     const text = rows.map(row => row.detail).join('\n');
     assert.equal(text.includes('SCAN journey'), false, name + '\n' + text);
+    assert.equal(text.includes('SEARCH journey USING'), true, name + '\n' + text);
     if (name === 'update') assert.match(text, /INTEGER PRIMARY KEY/, name + '\n' + text);
-    else assert.match(text, /journey_tenant_subject/, name + '\n' + text);
+    else assert.equal(text.includes('journey_tenant_subject'), true, name + '\n' + text);
   }
 });
