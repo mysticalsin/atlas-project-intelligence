@@ -9,7 +9,7 @@ import json
 import time
 from .interview import TOPICS, validate_notes
 from .limits import input_tokens, output_tokens
-from .spend import BudgetRefused, ledger_mode, reserve, usage_from, BUDGET_MESSAGE
+from .spend import BudgetRefused, ledger_mode, refusal_event, reserve, usage_from
 
 async def resample_16k(pcm, ffmpeg):
     p = await asyncio.create_subprocess_exec(ffmpeg, '-hide_banner', '-loglevel', 'error',
@@ -110,9 +110,8 @@ async def make_notes(config, http, pcm):
         raw = json.loads(data['choices'][0]['message']['content'])
         result['sections'] = validate_notes(raw, transcript)
         result['status'] = 'extracted'
-    except BudgetRefused:
-        result['message'] = BUDGET_MESSAGE
-        result['code'] = 'budget_exhausted'
+    except BudgetRefused as refused:
+        result['message'], result['code'] = refusal_event(refused)
     except Exception:
         result['message'] += ' Automatic topic assignment did not pass validation; use the transcript directly.'
     return result

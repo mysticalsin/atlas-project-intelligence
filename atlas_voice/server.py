@@ -371,7 +371,7 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
 
         # Release the voice worker before optional transcription. Do not fabricate input text
         # from PersonaPlex's agent-only text stream. All raw bytes remain in RAM, not a file.
-        from .spend import BUDGET_MESSAGE, BudgetRefused
+        from .spend import BudgetRefused
         try:
             if clean_end and capture and pcm and not ws.closed:
                 await event('status', state='transcribing', message='Voice stopped. Preparing a consultant transcript for your review.')
@@ -382,8 +382,12 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
                 await event('notes', transcript='', sections=None, status='not-configured',
                             message='Voice interview ended. Consultant transcription was not enabled; no consultant words were invented.')
         except BudgetRefused as refused:
-            await event('notes', transcript='', sections=None, status='refused', code=refused.code,
-                        message='Transcription is not priced, so it was not sent.' if refused.reason == 'unpriced' else BUDGET_MESSAGE)
+            from .spend import refusal_event
+            if refused.reason == 'unpriced':
+                note_message, note_code = 'Transcription is not priced, so it was not sent.', refused.code
+            else:
+                note_message, note_code = refusal_event(refused)
+            await event('notes', transcript='', sections=None, status='refused', code=note_code, message=note_message)
         except Exception:
             await event('notes', transcript='', sections=None, status='failed',
                         message='Transcription did not complete. No transcript or project notes are claimed.')

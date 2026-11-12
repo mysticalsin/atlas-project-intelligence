@@ -11,6 +11,14 @@ import { LANGUAGES, normalize, spokenFor, languageNote, GREETINGS, WELCOME_BACK,
 import { budgetRefused } from './meter.js';
 import { BUDGET_MESSAGE, budgetOutcome } from './budget-stop.js';
 
+const VOICE_FAILED = 'The voice reply failed. No fallback voice was used.';
+function ledgerStop(error) {
+  if (!budgetRefused(error)) return null;
+  const stop = budgetOutcome(error);
+  if (stop) return { message: stop.message, code: stop.code };
+  return { message: VOICE_FAILED, code: 'voice-unavailable' };
+}
+
 export const RESUME = '[The consultant made a sound but no words were recognised, and your last reply was cut off.] Briefly re-ask your last question in fresh words.';
 
 const CHUNK = 960; // 20 ms of 24 kHz PCM16
@@ -296,7 +304,11 @@ export class Session {
     const id = ++this.checkId, d = this.turnDetector, snapshot = d.buffer.slice(), t0 = this.now();
     let verdict = null, timer, why = null;
     try { verdict = await Promise.race([this.ai.turnComplete(snapshot), new Promise(r => { timer = setTimeout(() => { why = { reason: 'timeout' }; r(null); }, 350); })]); }
-    catch (e) { verdict = null; why = { reason: 'error', name: e?.name || 'Error' }; } finally { clearTimeout(timer); }
+    catch (e) {
+      const stop = ledgerStop(e);
+      if (stop) { clearTimeout(timer); return this.fail(stop.message, stop.code); }
+      verdict = null; why = { reason: 'error', name: e?.name || 'Error' };
+    } finally { clearTimeout(timer); }
     // No verdict: say why (a name, never a message), so a turn model that always times out or fails shows in the logs.
     why = verdict ? {} : why || { reason: 'error', name: 'NoVerdict' };
     // Still the same pause? (new speech resets it, and an ended turn clears it)
@@ -451,7 +463,8 @@ export class Session {
       text = (typeof heard === 'string' ? heard : heard?.text || '').trim(); heardIn = typeof heard === 'string' ? null : heard?.language || null;
       this.metric('stt', { ms: Math.round((this.now() - t0) * 1000), audio_ms: Math.round(pcm.length / 48), words: text ? text.split(/\s+/).length : 0 });
     } catch (e) {
-      if (budgetRefused(e)) { this.metric('spend_cap', { reason: String(e.reason || 'refused').slice(0, 40) }); clearTimeout(timer); return this.fail(BUDGET_MESSAGE, 'budget_exhausted'); }
+      const stop = ledgerStop(e);
+      if (stop) { this.metric('spend_cap', { reason: String(e.reason || 'refused').slice(0, 40) }); clearTimeout(timer); return this.fail(stop.message, stop.code); }
       // A failed (or hung) transcription counts as no words: whatever was waiting on it (a held answer, a re-ask) still happens.
       this.metric('stt_error', { name: e?.name || 'Error' }); this.event('quality_warning', { message: 'A speech segment could not be transcribed. Please repeat it or add it to your notes.' }); text = ''; heardIn = null;
     } finally { clearTimeout(timer); }
@@ -595,7 +608,8 @@ export class Session {
     this.replyItem = item; this.replyTurn = turn; this.replyGen = gen;
     const run = this.speak(item, gen, instruction, prefix || filler, !!filler, notBefore, endedAt, thinking).catch(e => {
       this.metric('reply_error', { name: e?.name || 'Error' });
-      if (budgetRefused(e)) return this.fail(BUDGET_MESSAGE, 'budget_exhausted');
+      const stop = ledgerStop(e);
+      if (stop) return this.fail(stop.message, stop.code);
       if (!this.finished && gen === this.gen) this.event('error', { message: 'The voice reply failed. No fallback voice was used.', code: 'voice-unavailable' });
     });
     this.speaking = run;
@@ -643,7 +657,7 @@ export class Session {
       if (!text) return; // nothing to say: its text goes out with the next piece (or release())
       const synthesis = this.synth(text, lang, true); synthesis.catch(() => {}); // a failure surfaces where it is delivered
       chain = chain.then(() => deliver(piece, synthesis));
-      chain.catch(e => { if (budgetRefused(e)) this.fail(BUDGET_MESSAGE, 'budget_exhausted'); });
+      chain.catch(e => { const stop = ledgerStop(e); if (stop) this.fail(stop.message, stop.code); });
       inflight.push(chain);
       while (inflight.length >= SYNTH_AHEAD) await inflight.shift();
     };

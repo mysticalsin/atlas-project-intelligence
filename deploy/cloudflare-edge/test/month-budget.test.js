@@ -259,6 +259,46 @@ test('month rollover is one pure transition: legal pairs, every illegal pair, gu
   assert.equal(SM.loadMonth({ day: '2026-11-09' }).phase, 'denied');
 });
 
+test('only exhaustion uses the month sentence, and checkTurn stops instead of continuing', async () => {
+  const refuse = reason => Object.assign(new Error('x'), { name: 'BudgetRefused', reason });
+  const turn = async reason => {
+    const events = [];
+    const s = new Session({
+      io: { send: e => events.push(e), sendBytes() {}, close() {} },
+      ai: { async turnComplete() { throw refuse(reason); } },
+      csrf: 'tok', voice: 'asteria', now: () => 1000, sleep: () => Promise.resolve(),
+    });
+    await s.checkTurn();
+    return { events, finished: s.finished };
+  };
+  const exhausted = await turn('exhausted:usd');
+  assert.equal(exhausted.finished, true);
+  const month = exhausted.events.find(e => e.type === 'error');
+  assert.equal(month.code, 'budget_exhausted');
+  assert.equal(month.message, BUDGET_MESSAGE);
+  for (const reason of ['ledger_error', 'unpriced', 'ledger_timeout']) {
+    const stopped = await turn(reason);
+    assert.equal(stopped.finished, true, reason);
+    const err = stopped.events.find(e => e.type === 'error');
+    assert.equal(err.code, 'voice-unavailable', reason);
+    assert.equal(err.message, 'The voice reply failed. No fallback voice was used.', reason);
+  }
+  const events = [];
+  let calls = 0;
+  const heard = new Session({
+    io: { send: e => events.push(e), sendBytes() {}, close() {} },
+    ai: { async transcribe() { calls += 1; throw refuse('no_ledger'); } },
+    csrf: 'tok', voice: 'asteria', now: () => 1000, sleep: () => Promise.resolve(),
+  });
+  await heard.transcribe(new Uint8Array(4800));
+  assert.equal(calls, 1);
+  const err = events.find(e => e.type === 'error');
+  assert.equal(err.code, 'voice-unavailable');
+  assert.notEqual(err.message, BUDGET_MESSAGE);
+  await heard.transcribe(new Uint8Array(4800));
+  assert.equal(calls, 1);
+});
+
 test('a budget refusal stops the voice session and does not call the provider again', async () => {
   const events = [];
   let calls = 0;

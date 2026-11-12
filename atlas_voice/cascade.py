@@ -25,7 +25,7 @@ from .interview import project_context
 from .kyutai import stream_chat
 from .report import END_TOKEN, EndMarker, parse_report, report_messages, text_completer
 from .speech import KyutaiSpeech, WorkersSpeech, is_echo
-from .spend import BUDGET_MESSAGE, BudgetRefused
+from .spend import BudgetRefused, refusal_event
 from .quality import InterviewLedger
 
 HISTORY = 40  # long and stable, so the cached prompt prefix survives a whole interview
@@ -255,7 +255,8 @@ async def run(request, config, identity, memory, http, gate, active):
         error = task.exception()
         if error is not None and not ws.closed:
             if isinstance(error, BudgetRefused):
-                side_task(event('error', message=BUDGET_MESSAGE, code='budget_exhausted'))
+                message, code = refusal_event(error)
+                side_task(event('error', message=message, code=code))
                 return
             # A failed reply is reported honestly; no substitute voice is used.
             side_task(event('error', message='The voice reply failed. No fallback voice was used.', code='voice-unavailable'))
@@ -280,8 +281,9 @@ async def run(request, config, identity, memory, http, gate, active):
         except ValueError:
             await event('quality_warning', message='This turn exceeded the transcript budget and was not added to the evidence ledger.')
             return
-        except BudgetRefused:
-            await event('quality_warning', message=BUDGET_MESSAGE, code='budget_exhausted')
+        except BudgetRefused as refused:
+            message, code = refusal_event(refused)
+            await event('quality_warning', message=message, code=code)
             return
         state['guidance'] = result['guidance']
         await event('quality', **{k: v for k, v in result.items() if k != 'guidance'})
@@ -462,9 +464,10 @@ async def run(request, config, identity, memory, http, gate, active):
     except (ValueError, PermissionError) as error:
         clean_end = False
         await event('error', message=str(error), code='voice-contract')
-    except BudgetRefused:
+    except BudgetRefused as refused:
         clean_end = False
-        await event('error', message=BUDGET_MESSAGE, code='budget_exhausted')
+        message, code = refusal_event(refused)
+        await event('error', message=message, code=code)
     except (aiohttp.ClientError, ConnectionError, TimeoutError, asyncio.TimeoutError):
         clean_end = False
         await event('error', message='Selected voice service unavailable. No fallback provider was used.', code='voice-unavailable')
