@@ -191,6 +191,52 @@ test('a preview on the production team verifies its own audience and still refus
   assert.deepEqual(failed, []);
 });
 
+test('a production audience wrapped in whitespace is refused before any cert fetch', async () => {
+  const page = '<script>/* SERVER_RUNTIME */</script></body>';
+  const b64u = bytes => Buffer.from(bytes).toString('base64url');
+  const { publicKey, privateKey } = await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);
+  const jwk = { ...(await crypto.subtle.exportKey('jwk', publicKey)), kid: 'gate8-pad' };
+  const previousFetch = globalThis.fetch;
+  const certUrls = [];
+  globalThis.fetch = async url => { certUrls.push(String(url)); return new Response(JSON.stringify({ keys: [jwk] })); };
+  const token = async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const header = { alg: 'RS256', kid: 'gate8-pad' };
+    const body = { aud: [PRODUCTION_AUD], iss: `https://${PRODUCTION_TEAM}`, sub: 'preview-user', email: 'preview@example.com', exp: now + 600, iat: now };
+    const input = b64u(JSON.stringify(header)) + '.' + b64u(JSON.stringify(body));
+    return input + '.' + b64u(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, new TextEncoder().encode(input)));
+  };
+  const wraps = [
+    ['leading space', aud => ` ${aud}`],
+    ['trailing space', aud => `${aud} `],
+    ['trailing newline', aud => `${aud}\n`],
+    ['leading tab', aud => `\t${aud}`],
+    ['trailing crlf', aud => `${aud}\r\n`],
+    ['nbsp', aud => `\u00a0${aud}\u00a0`],
+    ['bom', aud => `\ufeff${aud}`],
+    ['em and ideographic space', aud => `\u2003${aud}\u3000`],
+    ['form feed and vertical tab', aud => `\f${aud}\v`],
+  ];
+  const failed = [];
+  try {
+    const jwt = await token();
+    for (const [label, wrap] of wraps) {
+      certUrls.length = 0;
+      const res = await handle(new Request(PREVIEW_HOST + '/', { headers: { 'cf-access-jwt-assertion': jwt } }), previewEnv({ ACCESS_AUD: wrap(PRODUCTION_AUD), ACCESS_TEAM_DOMAIN: PRODUCTION_TEAM }), page);
+      const html = await res.text();
+      const problems = [];
+      if (res.status !== 503) problems.push('status ' + res.status);
+      if (!/production Access audience/.test(html)) problems.push('body');
+      if (html.includes('window.ATLAS_RUNTIME=')) problems.push('runtime');
+      if (certUrls.length !== 0) problems.push('certs ' + certUrls.length);
+      if (problems.length) failed.push(label + ': ' + problems.join(', '));
+    }
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+  assert.deepEqual(failed, []);
+});
+
 test('a preview with no Access audience or team returns 403 and does not spend', async () => {
   const vars = parseJsonc(readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8')).previews.vars;
   assert.equal(vars.ACCESS_AUD, undefined);
