@@ -130,13 +130,48 @@ test('a malformed or non-object journey payload does not fail the export', async
   const ids = library.rows('SELECT rowid AS id, payload FROM journey WHERE tenant = ? ORDER BY updated_at DESC, rowid DESC', TENANT);
   const unparsed = ids.filter(row => row.payload === '{' || row.payload === '[]').map(row => row.id);
   const other = library.rows('SELECT rowid AS id FROM journey WHERE tenant = ?', OTHER)[0].id;
-  assert.deepEqual(body.omitted, { count: 2, rows: unparsed.map(id => ({ id, reason: 'unparseable' })) });
+  assert.deepEqual(body.omitted, { count: 2, rows: unparsed.map(id => ({ id, source: 'journey', reason: 'unparseable' })) });
   assert.equal(body.omitted.rows.some(row => row.id === other), false);
   const direct = await privacyRoutes({
     method: 'GET', parts: ['privacy', 'export'], user: lowerUser(), lib: library, env: { DATA_MODE: 'production' },
   });
   assert.deepEqual(direct.body.omitted, body.omitted);
   assert.equal(direct.body.journey.length, 1);
+});
+
+test('an unreadable story is named in the same export omission as an unreadable journey', async () => {
+  const library = lib();
+  seedRaw(library, 'Ada@Example.test', TENANT, '{', '2026-11-04T00:00:00.000Z');
+  seed(library, 'ada@example.test', TENANT, 'Kept', '2026-11-05T00:00:00.000Z');
+  seedStory(library, 'kept-story', TENANT, JSON.stringify({ version: 1, tenant: TENANT }), 'Kept story');
+  seedStory(library, 'brace-story', TENANT, '{', 'Brace');
+  seedStory(library, 'array-story', TENANT, '[]', 'Array');
+  seedStory(library, 'other-brace', OTHER, '{', 'Other brace');
+  seedStory(library, 'other-kept', OTHER, JSON.stringify({ version: 1, tenant: OTHER }), 'Other tenant story');
+  seedStory(library, 'foreign-brace', TENANT, '{', 'Foreign brace', 'other@example.test');
+  const response = await libraryRoutes(new Request('https://atlas.test/api/library/privacy/export', {
+    headers: { 'x-atlas-user': 'ada@example.test', 'x-atlas-role': 'user', 'x-atlas-email': 'ada@example.test', 'x-atlas-tenant': TENANT, 'x-atlas-tenant-enforced': '1' },
+  }), library, { env: { DATA_MODE: 'production', ORIGIN: 'https://atlas.test', CSRF_SECRET: 's' } });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(body.stories.map(row => row.id), ['kept-story']);
+  assert.equal(body.stories[0].title, 'Kept story');
+  const journeyId = library.rows('SELECT rowid AS id, payload FROM journey WHERE tenant = ?', TENANT).find(row => row.payload === '{').id;
+  assert.deepEqual(body.omitted, {
+    count: 3,
+    rows: [
+      { id: journeyId, source: 'journey', reason: 'unparseable' },
+      { id: 'array-story', source: 'story', reason: 'unparseable' },
+      { id: 'brace-story', source: 'story', reason: 'unparseable' },
+    ],
+  });
+  for (const id of ['other-brace', 'other-kept', 'foreign-brace', 'kept-story']) assert.equal(body.omitted.rows.some(row => row.id === id), false);
+  assert.equal(JSON.stringify(body).includes('Other tenant story'), false);
+  const direct = await privacyRoutes({
+    method: 'GET', parts: ['privacy', 'export'], user: lowerUser(), lib: library, env: { DATA_MODE: 'production' },
+  });
+  assert.deepEqual(direct.body.omitted, body.omitted);
+  assert.deepEqual(direct.body.stories.map(row => row.id), ['kept-story']);
 });
 
 test('export keeps the journey row subject and updatedAt when the payload repeats them', async () => {
@@ -155,6 +190,12 @@ test('export keeps the journey row subject and updatedAt when the payload repeat
   assert.equal(body.journey[0].updatedAt, '2026-11-04T00:00:00.000Z');
   assert.equal(body.journey[0].fields.title.value, 'Kept');
 });
+
+function seedStory(library, id, tenant, state, title, owner = 'ada@example.test') {
+  library.sql.exec(`INSERT INTO refs (id, owner, local_id, title, status, revision, content_hash, data, state, members, created_at, updated_at, next_review, tenant)
+    VALUES (?, ?, ?, ?, 'in_review', 1, 'h', '{}', ?, ',', '2026-11-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z', '2026-12-01T00:00:00.000Z', ?)`,
+  id, owner, id, title, state, tenant);
+}
 
 function seedRaw(library, subject, tenant, payload, updated) {
   ensureJourney(library);
