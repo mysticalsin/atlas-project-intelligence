@@ -11,7 +11,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 test('workerd RPC reserves, settles, snapshots, records an overrun, and refuses a call over $5', async () => {
   const mf = new Miniflare({
-    scriptPath: path.join(root, 'test/fixtures/ledger-binding.mjs'),
+    scriptPath: path.join(root, 'workerd-fixtures/ledger-binding.mjs'),
     modules: true,
     modulesRules: [
       { type: 'ESModule', include: ['**/*.js', '**/*.mjs'], fallthrough: true },
@@ -66,7 +66,7 @@ test('workerd RPC reserves, settles, snapshots, records an overrun, and refuses 
 
 test('workerd reads a v1 month and does not rewrite an unknown version', async () => {
   const mf = new Miniflare({
-    scriptPath: path.join(root, 'test/fixtures/ledger-binding-version.mjs'),
+    scriptPath: path.join(root, 'workerd-fixtures/ledger-binding-version.mjs'),
     modules: true,
     modulesRules: [
       { type: 'ESModule', include: ['**/*.js', '**/*.mjs'], fallthrough: true },
@@ -112,7 +112,7 @@ test('workerd reads a v1 month and does not rewrite an unknown version', async (
 
 test('workerd settle put failure leaves the full hold', async () => {
   const mf = new Miniflare({
-    scriptPath: path.join(root, 'test/fixtures/ledger-binding-fail.mjs'),
+    scriptPath: path.join(root, 'workerd-fixtures/ledger-binding-fail.mjs'),
     modules: true,
     modulesRules: [
       { type: 'ESModule', include: ['**/*.js', '**/*.mjs'], fallthrough: true },
