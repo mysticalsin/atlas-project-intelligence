@@ -19,6 +19,8 @@ const DUPLICATE = 0.9; // cosine similarity above which two references are flagg
 export const PRACTICES = { data_ai: 'Data & AI', web_app: 'Web & App Development', telecom: 'Telecom & Networks', sap_erp: 'SAP & ERP', cloud_infra: 'Cloud & Infrastructure', cybersecurity: 'Cybersecurity', transformation: 'Transformation & Strategy', engineering: 'Engineering & Industry' };
 
 export const STATUSES = ['in_review', 'needs_work', 'changes_requested', 'awaiting_validation', 'published', 'admin_test', 'withdrawn'];
+// Tony has not approved this sentence. It is one constant so the wording can change in one place.
+export const PUBLICATION_CHANGE_REFUSED = 'That publication change is not allowed.';
 const REVIEW_DAYS = 180; // references are due for an update six months after their last change
 
 // Server-side bounds for everything a browser may send. Unknown fields are dropped.
@@ -319,7 +321,7 @@ export class Library {
     // supplies the tenant from a verified source. This function does not invent one.
     const keptTenant = row ? String(row.tenant || row.state?.tenant || '') : plan.storyTenant;
     const revised = acceptPublication(publicationTransition(row ? row.state : {}, { type: 'revised', id, tenant: keptTenant, managerStaffIgnored: !!data.validation.managerStaff }), { id, event: 'revised' });
-    if (!revised) throw fail(409, 'That publication change is not allowed.');
+    if (!revised) throw fail(409, PUBLICATION_CHANGE_REFUSED);
     const state = revised.state, status = revised.status, next = new Date(Date.parse(plan.at) + REVIEW_DAYS * 864e5).toISOString();
     if (row) this.writeStatus(`UPDATE refs SET title=?, status=?, revision=?, content_hash=?, practice=?, industry=?, country=?, manager_email=?, members=?, quality_score=NULL,
       updated_at=?, updated_by=?, next_review=?, data=?, state=?, embedding=NULL WHERE id=? AND revision=? AND status=?`,
@@ -640,7 +642,7 @@ export class Library {
     if (g.answers[1] && !k.answers[1].includes(g.answers[1])) k.answers[1] = (k.answers[1] + '\n\nContribution by another consultant: ' + g.answers[1]).trim().slice(0, 6000);
     for (const i of [0, 2, 3, 4, 5]) if (!k.answers[i] && g.answers[i]) k.answers[i] = g.answers[i];
     const moved = acceptPublication(publicationTransition(gone.state, { type: 'merged', id: gone.id }), { id: gone.id, event: 'merged' });
-    if (!moved) throw fail(409, 'That publication change is not allowed.');
+    if (!moved) throw fail(409, PUBLICATION_CHANGE_REFUSED);
     const plan = await this.revisionPlan({ ...user }, { id: keep.id, reference: k });
     const apply = () => {
       this.writeStatus('UPDATE refs SET merged_into = ?, status = ?, state = ? WHERE id = ? AND revision = ? AND status = ? AND merged_into IS NULL',
@@ -860,7 +862,7 @@ export class Library {
     const note = str(body.note, 500);
     if (decision === 'changes_requested' && !note) throw fail(400, 'Say what should change.');
     const decided = acceptPublication(publicationTransition(row.state, { type: 'decided', id: row.id, lane, decision, by: user.email, at: this.now(), note }), { id: row.id, event: 'decided' });
-    if (!decided) throw fail(409, 'That publication change is not allowed.');
+    if (!decided) throw fail(409, PUBLICATION_CHANGE_REFUSED);
     this.setState(row, decided.state, user.email, lane + ' ' + decision, lane);
     return this.get(user, id);
   }
@@ -872,7 +874,7 @@ export class Library {
     if (!row || !this.access(row, user)) throw fail(404, 'Reference not found.');
     const test = body.test === true;
     const published = acceptPublication(publicationTransition(row.state, { type: 'admin_published', id: row.id, test, by: user.email, at: this.now() }), { id: row.id, event: 'admin_published' });
-    if (!published) throw fail(409, 'That publication change is not allowed.');
+    if (!published) throw fail(409, PUBLICATION_CHANGE_REFUSED);
     this.setState(row, published.state, user.email, 'admin-publish-bypass', test ? 'test' : 'publish');
     await recordUsage(this, user, { kind: 'admin_publish', feature: 'library', outcome: test ? 'test' : 'publish', tokenStatus: 'missing' });
     return this.get(user, id);
@@ -883,7 +885,7 @@ export class Library {
     if (!row || !this.access(row, user)) throw fail(404, 'Reference not found.');
     if (!this.canEdit(row, user)) throw fail(403, 'You cannot withdraw this reference.');
     const withdrawn = acceptPublication(publicationTransition(row.state, { type: 'withdrawn', id: row.id }), { id: row.id, event: 'withdrawn' });
-    if (!withdrawn) throw fail(409, 'That publication change is not allowed.');
+    if (!withdrawn) throw fail(409, PUBLICATION_CHANGE_REFUSED);
     this.setState(row, withdrawn.state, user.email, 'withdrawn', str(body.note, 300));
     return this.get(user, id);
   }
@@ -894,7 +896,7 @@ export class Library {
     if (!row || !sameTenant(row.tenant || row.state?.tenant, user.tenant, user.tenantEnforced === true)) throw fail(404, 'Reference not found.');
     if (!['admin', 'reviewer'].includes(user.role)) throw fail(403, 'Only a reviewer can reinstate a reference.');
     const reinstated = acceptPublication(publicationTransition(row.state, { type: 'reinstated', id: row.id, mergedInto: row.merged_into || '' }), { id: row.id, event: 'reinstated' });
-    if (!reinstated) throw fail(409, 'This reference was merged into another one.');
+    if (!reinstated) throw fail(409, row.merged_into ? 'This reference was merged into another one.' : PUBLICATION_CHANGE_REFUSED);
     this.setState(row, reinstated.state, user.email, 'reinstated', '');
     return this.get(user, id);
   }

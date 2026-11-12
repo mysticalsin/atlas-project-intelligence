@@ -202,6 +202,23 @@ test('reinstated rejects a merged row from every phase and does not clear withdr
   }
 });
 
+test('reinstate names a merge only when merged_into is set', async () => {
+  let t = 0;
+  const l = new Library(memorySql(), { now: () => new Date(Date.UTC(2026, 8, 27, 0, 0, t++)).toISOString() });
+  const owner = { email: 'ada@example.test', role: 'user' };
+  const reviewer = { email: 'rev@example.test', role: 'reviewer' };
+  const keep = await l.upsert(owner, { localId: 'keep', reference: { title: 'Keep' } });
+  const gone = await l.upsert({ email: 'kim@example.test', role: 'user' }, { localId: 'gone', reference: { title: 'Gone' } });
+  await l.merge(reviewer, { keep: keep.id, merge: gone.id });
+  assert.throws(() => l.reinstate(reviewer, gone.id), e => e.status === 409 && e.message === 'This reference was merged into another one.');
+  const live = await l.upsert(owner, { localId: 'live', reference: { title: 'Live' } });
+  assert.throws(() => l.reinstate(reviewer, live.id), e => e.status === 409 && e.message === 'That publication change is not allowed.');
+  assert.equal(l.rows('SELECT status FROM refs WHERE id = ?', live.id)[0].status, 'in_review');
+  const paused = await l.upsert(owner, { localId: 'paused', reference: { title: 'Paused' } });
+  l.withdraw(owner, paused.id, { note: 'pause' });
+  assert.equal(l.reinstate(reviewer, paused.id).status, 'in_review');
+});
+
 test('reinstate rejects a merged story and leaves the stored row withdrawn', async () => {
   let t = 0;
   const l = new Library(memorySql(), { now: () => new Date(Date.UTC(2026, 8, 27, 0, 0, t++)).toISOString() });
