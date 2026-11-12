@@ -6,6 +6,11 @@
 export const PRODUCTION_ORIGIN = 'https://atlas.tony-walteur.workers.dev';
 export const PRODUCTION_ACCESS_AUD = 'fc05e3d966db92b03ed3bf38b31e5c5254e1508bb0e090825a56ce12a933f386';
 
+// The only audience normalisation. The preview guard and verifyAccess both use it.
+export function accessAudience(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 export const PREVIEW_BANNER = '<div id="atlas-preview-banner" role="status" style="position:fixed;left:12px;bottom:10px;z-index:99;font:11px/1.4 Arial,sans-serif;letter-spacing:.06em;color:#A9A9BC;background:#15151cdd;border:1px solid #2a2a36;border-radius:14px;padding:4px 10px">Preview. Fake data only.</div>';
 export const PREVIEW_ACCESS_MISSING = 'Preview Access is not configured.';
 
@@ -47,7 +52,7 @@ export function previewMisconfigured(env) {
   if (!(mode === undefined || mode === null || mode === '' || mode === 'enforce')) return 'Preview ledger mode must be enforce.';
   if (env.DATA_MODE === 'production') return 'Preview cannot use production data.';
   if (env.ORIGIN === PRODUCTION_ORIGIN) return 'Preview cannot use the production origin.';
-  if (env.ACCESS_AUD === PRODUCTION_ACCESS_AUD) return 'Preview cannot use the production Access audience.';
+  if (accessAudience(env.ACCESS_AUD) === accessAudience(PRODUCTION_ACCESS_AUD)) return 'Preview cannot use the production Access audience.';
   return null;
 }
 
@@ -56,10 +61,6 @@ const ACCESS_TEAM_HOST = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.cloudflareacces
 
 export function accessTeamHost(value) {
   return typeof value === 'string' && ACCESS_TEAM_HOST.test(value) ? value : '';
-}
-
-export function accessAudience(value) {
-  return typeof value === 'string' ? value.trim() : '';
 }
 
 // A preview with no audience or team cannot verify a JWT. That is a closed door, not a sign-in page.

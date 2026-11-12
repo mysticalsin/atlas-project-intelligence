@@ -237,6 +237,31 @@ test('a production audience wrapped in whitespace is refused before any cert fet
   assert.deepEqual(failed, []);
 });
 
+test('a padded preview audience still verifies through the same trim', async () => {
+  const page = '<script>/* SERVER_RUNTIME */</script></body>';
+  const b64u = bytes => Buffer.from(bytes).toString('base64url');
+  const { publicKey, privateKey } = await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);
+  const jwk = { ...(await crypto.subtle.exportKey('jwk', publicKey)), kid: 'gate8-preview-pad' };
+  const previousFetch = globalThis.fetch;
+  const certUrls = [];
+  globalThis.fetch = async url => { certUrls.push(String(url)); return new Response(JSON.stringify({ keys: [jwk] })); };
+  const now = Math.floor(Date.now() / 1000);
+  const header = { alg: 'RS256', kid: 'gate8-preview-pad' };
+  const body = { aud: [PREVIEW_AUD], iss: `https://${PRODUCTION_TEAM}`, sub: 'preview-user', email: 'preview@example.com', exp: now + 600, iat: now };
+  const input = b64u(JSON.stringify(header)) + '.' + b64u(JSON.stringify(body));
+  const jwt = input + '.' + b64u(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, new TextEncoder().encode(input)));
+  try {
+    const res = await handle(new Request(PREVIEW_HOST + '/', { headers: { 'cf-access-jwt-assertion': jwt } }), previewEnv({ ACCESS_AUD: ` ${PREVIEW_AUD}\n`, ACCESS_TEAM_DOMAIN: PRODUCTION_TEAM }), page);
+    const html = await res.text();
+    assert.equal(res.status, 200);
+    assert.match(html, /window\.ATLAS_RUNTIME=/);
+    assert.match(html, /preview@example\.com/);
+    assert.equal(certUrls.length, 1);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test('a preview with no Access audience or team returns 403 and does not spend', async () => {
   const vars = parseJsonc(readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8')).previews.vars;
   assert.equal(vars.ACCESS_AUD, undefined);
