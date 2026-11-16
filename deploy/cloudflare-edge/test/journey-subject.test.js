@@ -7,7 +7,7 @@ import { libraryRoutes } from '../src/library-routes.js';
 import { memorySql } from './sqlite.js';
 import { ensureJourney, journeyView, saveJourney, JOURNEY_READ_SQL, JOURNEY_ALL_SQL, JOURNEY_COUNT_SQL, JOURNEY_DELETE_SQL, JOURNEY_UPDATE_SQL } from '../src/journey.js';
 import { privacyRoutes } from '../src/operate.js';
-import { ensure as ensureProfile } from '../src/profile.js';
+import { ensure as ensureProfile, routes as profileRoutes } from '../src/profile.js';
 
 const TENANT = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
@@ -273,10 +273,25 @@ test('a missing profile stays null and an unreadable profile part is omitted', a
 
 const LETTERED = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 
-async function privacyExport(library, tenant = TENANT) {
+function privacyHeaders(tenant, email = 'ada@example.test') {
+  return { 'x-atlas-user': email, 'x-atlas-role': 'user', 'x-atlas-email': email, 'x-atlas-tenant': tenant, 'x-atlas-tenant-enforced': '1' };
+}
+
+async function privacyExport(library, tenant = TENANT, email = 'ada@example.test') {
   return libraryRoutes(new Request('https://atlas.test/api/library/privacy/export', {
-    headers: { 'x-atlas-user': 'ada@example.test', 'x-atlas-role': 'user', 'x-atlas-email': 'ada@example.test', 'x-atlas-tenant': tenant, 'x-atlas-tenant-enforced': '1' },
+    headers: privacyHeaders(tenant, email),
   }), library, { env: { DATA_MODE: 'production', ORIGIN: 'https://atlas.test', CSRF_SECRET: 's' } });
+}
+
+async function privacyDelete(library, tenant = TENANT) {
+  return libraryRoutes(new Request('https://atlas.test/api/library/privacy/delete', {
+    method: 'POST', body: '{}', headers: privacyHeaders(tenant),
+  }), library, { env: { DATA_MODE: 'production', ORIGIN: 'https://atlas.test', CSRF_SECRET: 's' } });
+}
+
+function insertProfile(library, subject, tenant, edits, updated = '2026-11-01T00:00:00.000Z') {
+  library.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+    VALUES (?, ?, ?, ?, '{}', '{}', '2026-11-01T00:00:00.000Z', ?, ?)`, subject, tenant, subject, edits, updated, updated);
 }
 
 test('a legacy profile schema does not fail the export, and folded profile rows are named', async () => {
@@ -297,7 +312,16 @@ test('a legacy profile schema does not fail the export, and folded profile rows 
     assert.deepEqual(exportTitles(body.journey), ['Kept']);
     assert.equal(body.profile, null);
     assert.equal(JSON.stringify(body).includes('Legacy'), false);
-    assert.equal(body.omitted.rows.some(row => row.source === 'profile'), false);
+    const stored = library.rows('SELECT rowid AS id, subject, tenant FROM profiles');
+    assert.deepEqual(stored.map(row => ({ subject: row.subject, tenant: row.tenant })), [{ subject: 'ada@example.test', tenant: '' }]);
+    assert.deepEqual(body.omitted, { count: 1, rows: [{ id: stored[0].id, source: 'profile', reason: 'legacy_unscoped' }] });
+    const erased = await (await privacyDelete(library)).json();
+    assert.equal(erased.outcomes.find(item => item.store === 'profile').removed, 0);
+    assert.deepEqual(library.rows('SELECT subject, tenant FROM profiles'), [{ subject: 'ada@example.test', tenant: '' }]);
+    const again = await (await privacyExport(library)).json();
+    assert.equal(again.profile, null);
+    assert.equal(JSON.stringify(again).includes('Legacy'), false);
+    assert.deepEqual(again.omitted, { count: 1, rows: [{ id: stored[0].id, source: 'profile', reason: 'legacy_unscoped' }] });
   });
   await check('mixed-case subject', async () => {
     const library = lib();
@@ -337,6 +361,149 @@ test('a legacy profile schema does not fail the export, and folded profile rows 
     const response = await privacyExport(library);
     assert.equal(response.status, 500);
     assert.equal((await response.json()).error, 'The library could not complete that request.');
+  });
+  assert.deepEqual(problems, []);
+});
+
+test('export and erasure share one profile match, and a broken migration does not drop the row', async () => {
+  const problems = [];
+  const check = async (label, fn) => {
+    try { await fn(); }
+    catch (error) { problems.push(label + ': ' + error.message); }
+  };
+  await check('unscoped names the row and skips another tenant', async () => {
+    const library = lib();
+    ensureProfile(library);
+    insertProfile(library, 'ada@example.test', '', '{"title":{"value":"Legacy"}}');
+    insertProfile(library, 'ada@example.test', OTHER, '{"title":{"value":"Secret"}}');
+    const body = await (await privacyExport(library)).json();
+    assert.equal(body.profile, null);
+    assert.equal(JSON.stringify(body).includes('Legacy'), false);
+    assert.equal(JSON.stringify(body).includes('Secret'), false);
+    const id = library.rows("SELECT rowid AS id FROM profiles WHERE tenant = ''")[0].id;
+    assert.deepEqual(body.omitted, { count: 1, rows: [{ id, source: 'profile', reason: 'legacy_unscoped' }] });
+  });
+  await check('erasure removes every folded row in this tenant only', async () => {
+    const library = lib();
+    ensureProfile(library);
+    insertProfile(library, 'Ada@Example.test', LETTERED, '{"title":{"value":"One"}}', '2026-11-01T00:00:00.000Z');
+    insertProfile(library, 'ADA@example.test', '\t' + LETTERED.toUpperCase() + ' ', '{"title":{"value":"Two"}}', '2026-11-03T00:00:00.000Z');
+    insertProfile(library, 'ada@example.test', OTHER, '{"title":{"value":"Foreign"}}');
+    const erased = await (await privacyDelete(library, LETTERED)).json();
+    assert.equal(erased.outcomes.find(item => item.store === 'profile').removed, 2);
+    const body = await (await privacyExport(library, LETTERED)).json();
+    assert.equal(body.profile, null);
+    assert.deepEqual(body.omitted, { count: 0, rows: [] });
+    assert.equal(JSON.stringify(body).includes('Foreign'), false);
+    const foreign = library.rows('SELECT edits FROM profiles');
+    assert.equal(foreign.length, 1);
+    assert.equal(JSON.parse(foreign[0].edits).title.value, 'Foreign');
+  });
+  await check('a profile read keeps the folded legacy edits', async () => {
+    const library = lib();
+    ensureProfile(library);
+    insertProfile(library, 'Ada@Example.test', '\t' + TENANT, '{"title":{"value":"LEGACYEDIT"}}', '2026-11-01T00:00:00.000Z');
+    const user = { email: 'ada@example.test', mail: 'ada@example.test', role: 'user', tenant: TENANT, tenantEnforced: true, idp: {} };
+    const read = await profileRoutes({ method: 'GET', parts: ['profile'], user, lib: library, env: { DATA_MODE: 'production' }, body: {} });
+    assert.equal(read.body.fields.title.value, 'LEGACYEDIT');
+    const body = await (await privacyExport(library)).json();
+    assert.deepEqual(body.profile.edits, { title: { value: 'LEGACYEDIT' } });
+    assert.deepEqual(body.omitted, { count: 0, rows: [] });
+    const rows = library.rows('SELECT subject, tenant, edits FROM profiles');
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].subject, 'ada@example.test');
+    assert.equal(rows[0].tenant, TENANT);
+    assert.equal(JSON.parse(rows[0].edits).title.value, 'LEGACYEDIT');
+  });
+  await check('a profiles_v2 left by a failed migration is recovered', async () => {
+    const library = lib();
+    library.sql.exec(`CREATE TABLE profiles_v2 (
+      subject TEXT NOT NULL, tenant TEXT NOT NULL DEFAULT '', email TEXT, edits TEXT, signin TEXT, consents TEXT,
+      created_at TEXT, updated_at TEXT, seen_at TEXT, PRIMARY KEY (subject, tenant))`);
+    library.sql.exec(`INSERT INTO profiles_v2 (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+      VALUES ('ada@example.test', ?, 'ada@example.test', '{"title":{"value":"Recovered"}}', '{}', '{}', '2026-11-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z')`, TENANT);
+    const response = await privacyExport(library);
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual(body.profile.edits, { title: { value: 'Recovered' } });
+    assert.equal(library.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'profiles_v2'").length, 0);
+  });
+  await check('a rename failure does not drop the profile', async () => {
+    const library = lib();
+    library.sql.exec(`CREATE TABLE profiles (subject TEXT, tenant TEXT, email TEXT, edits TEXT, signin TEXT, consents TEXT, created_at TEXT, updated_at TEXT, seen_at TEXT)`);
+    library.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+      VALUES ('ada@example.test', ?, 'ada@example.test', '{"title":{"value":"Kept"}}', '{}', '{}', '2026-11-01T00:00:00.000Z', '2026-11-04T00:00:00.000Z', '2026-11-04T00:00:00.000Z')`, TENANT);
+    const exec = library.sql.exec.bind(library.sql);
+    library.sql.exec = (q, ...p) => {
+      if (String(q).includes('RENAME TO profiles')) throw new Error('rename failed');
+      return exec(q, ...p);
+    };
+    assert.equal((await privacyExport(library)).status, 500);
+    library.sql.exec = exec;
+    const body = await (await privacyExport(library)).json();
+    assert.deepEqual(body.profile.edits, { title: { value: 'Kept' } });
+  });
+  await check('legacy duplicate subjects keep the newer parsed time', async () => {
+    const library = lib();
+    library.sql.exec(`CREATE TABLE profiles (subject TEXT, tenant TEXT, email TEXT, edits TEXT, signin TEXT, consents TEXT, created_at TEXT, updated_at TEXT, seen_at TEXT)`);
+    library.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+      VALUES ('ada@example.test', ?, 'ada@example.test', '{"title":{"value":"Newer"}}', '{}', '{}', '2026-11-01T00:00:00.000Z', '2026-11-10T00:00:00.000Z', '2026-11-10T00:00:00.000Z')`, TENANT);
+    library.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+      VALUES ('ada@example.test', ?, 'ada@example.test', '{"title":{"value":"Older"}}', '{}', '{}', '2026-11-01T00:00:00.000Z', '2026-11-2T00:00:00.000Z', '2026-11-2T00:00:00.000Z')`, TENANT);
+    const response = await privacyExport(library);
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual(body.profile.edits, { title: { value: 'Newer' } });
+    assert.equal(body.profile.updatedAt, '2026-11-10T00:00:00.000Z');
+    assert.deepEqual(body.omitted, { count: 1, rows: [{ id: 2, source: 'profile', reason: 'duplicate' }] });
+    assert.equal(JSON.stringify(body).includes('Older'), false);
+  });
+  await check('folded rows sort by parsed time, not text or rowid', async () => {
+    const library = lib();
+    ensureProfile(library);
+    insertProfile(library, 'Ada@Example.test', TENANT, '{"title":{"value":"Newer"}}', '2026-11-10T00:00:00.000Z');
+    insertProfile(library, 'ADA@example.test', TENANT, '{"title":{"value":"Older"}}', '2026-11-2T00:00:00.000Z');
+    const body = await (await privacyExport(library)).json();
+    assert.deepEqual(body.profile.edits, { title: { value: 'Newer' } });
+    assert.equal(body.profile.updatedAt, '2026-11-10T00:00:00.000Z');
+    const older = library.rows("SELECT rowid AS id FROM profiles WHERE subject = 'ADA@example.test'")[0].id;
+    assert.deepEqual(body.omitted, { count: 1, rows: [{ id: older, source: 'profile', reason: 'duplicate' }] });
+  });
+  await check('a null timestamp loses and an equal timestamp keeps the greatest rowid', async () => {
+    const dated = lib();
+    ensureProfile(dated);
+    insertProfile(dated, 'ada@example.test', TENANT, '{"title":{"value":"Dated"}}', '2026-11-03T00:00:00.000Z');
+    insertProfile(dated, 'ADA@example.test', TENANT, '{"title":{"value":"Undated"}}', null);
+    const datedBody = await (await privacyExport(dated)).json();
+    assert.deepEqual(datedBody.profile.edits, { title: { value: 'Dated' } });
+    const tied = lib();
+    ensureProfile(tied);
+    insertProfile(tied, 'ada@example.test', TENANT, '{"title":{"value":"First"}}', '2026-11-03T00:00:00.000Z');
+    insertProfile(tied, 'ADA@example.test', TENANT, '{"title":{"value":"Second"}}', '2026-11-03T00:00:00.000Z');
+    const tiedBody = await (await privacyExport(tied)).json();
+    assert.deepEqual(tiedBody.profile.edits, { title: { value: 'Second' } });
+    assert.equal(tiedBody.omitted.rows[0].id, 1);
+    assert.equal(tiedBody.omitted.rows[0].reason, 'duplicate');
+  });
+  await check('a tab-padded tenant matches', async () => {
+    const library = lib();
+    ensureProfile(library);
+    insertProfile(library, 'ada@example.test', '\t' + TENANT, '{"title":{"value":"Tabbed"}}');
+    const body = await (await privacyExport(library)).json();
+    assert.deepEqual(body.profile.edits, { title: { value: 'Tabbed' } });
+    assert.deepEqual(body.omitted, { count: 0, rows: [] });
+  });
+  await check('the fold is JavaScript lower, not SQLite ASCII lower', async () => {
+    const library = lib();
+    ensureProfile(library);
+    const stored = 'İda@Example.test';
+    insertProfile(library, stored, TENANT, '{"title":{"value":"Folded"}}');
+    const direct = await privacyRoutes({
+      method: 'GET', parts: ['privacy', 'export'],
+      user: { email: stored.toLowerCase(), mail: stored.toLowerCase(), role: 'user', tenant: TENANT, tenantEnforced: true },
+      lib: library, env: { DATA_MODE: 'production' },
+    });
+    assert.deepEqual(direct.body.profile.edits, { title: { value: 'Folded' } });
   });
   assert.deepEqual(problems, []);
 });

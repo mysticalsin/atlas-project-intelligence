@@ -4,6 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as profile from '../src/profile.js';
+import * as rating from '../src/rating.js';
 import { featureRoutes, readyGate } from '../src/features.js';
 import { Library } from '../src/library.js';
 import { libraryRoutes } from '../src/library-routes.js';
@@ -491,6 +492,20 @@ test('storedConsent: false when nothing is stored, true after granting, per subj
   assert.equal(profile.storedConsent(l, ALEX.email, 'jevRating'), true);
   assert.equal(profile.storedConsent(l, BEA.email, 'jevRating'), false, 'per subject');
   assert.equal(profile.storedConsent(l, '', 'jevRating'), false);
+});
+
+test('storedNames reads the verified tenant and does not default to a blank-tenant row', () => {
+  const { l } = world();
+  const tenant = '11111111-1111-4111-8111-111111111111';
+  profile.ensure(l);
+  l.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+    VALUES ('ada@example.test', '', 'ada@example.test', '{}', '{"name":"Legacy Name"}', '{}', ?, ?, ?)`, NOW, NOW, NOW);
+  l.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+    VALUES ('Ada@Example.test', ?, 'Ada@Example.test', '{}', '{"name":"Tenant Name"}', '{}', ?, ?, ?)`, tenant, NOW, NOW, NOW);
+  assert.deepEqual(profile.storedNames(l, 'ada@example.test'), []);
+  assert.deepEqual(profile.storedNames(l, 'ada@example.test', tenant), ['Tenant Name']);
+  assert.ok(!rating.ratingInput(l, { title: 'x' }, { owner: 'ada@example.test', tenant }).terms.includes('Legacy Name'));
+  assert.ok(rating.ratingInput(l, { title: 'x' }, { owner: 'ada@example.test', tenant }).terms.includes('Tenant Name'));
 });
 
 test('storedNames: the stored edit and sign-in names only, never DNA; [] without a profile', async () => {
