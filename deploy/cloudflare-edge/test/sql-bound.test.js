@@ -158,6 +158,7 @@ test('manager approval still sees one staffing row when the owner has 100 keys',
   const row = await story(l, 'ada@example.test');
   padProfiles(l, 'ada@example.test', TENANT, 99);
   ensureOutreach(l);
+  trust(l, 'ada@example.test', 'sam@example.test', TENANT, 'staffing');
   l.sql.exec(`INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, tenant)
     VALUES ('PRJ-BOUND', 'ada@example.test', 'sam@example.test', 'Sam', 'Bound', '', 'staffing', ?, ?)`, NOW, TENANT);
   assert.equal(l.canManagerApprove(row, user('sam@example.test')), true);

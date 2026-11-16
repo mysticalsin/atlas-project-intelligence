@@ -6,6 +6,7 @@
 // addresses only. The pull connector's shape is ASSUMED (§5.3); push (§5.4) and the CSV export (§5.6) are equal options.
 import { str, email as validEmail, obj, fail, inList, rateLimit } from './util.js';
 import { TENANT_ID } from './authz.js';
+import { placeholders, readChunks, writeChunks } from './sql-bound.js';
 
 // Flipped by the owning track only when the zero-config acceptance suites pass (WOW_SPEC §2.1, §2.5): flipped in Z-S2
 // after tests/zero_config_edge_browser.py and tests/zero_config_browser.py passed locally.
@@ -153,9 +154,19 @@ export function deleteOwnedProfile(lib, user) {
   if (!TENANT_ID.test(tenant)) throw fail(403, 'A verified tenant is required.');
   ensure(lib);
   const { matched } = profileSelection(lib, user.email, tenant);
-  if (matched.length) lib.sql.exec(`DELETE FROM profiles WHERE rowid IN (${matched.map(() => '?').join(', ')})`, ...matched.map(row => row.id));
   const notes = profileSelection(lib, user.email, tenant).collapsed.filter(row => profileFold(row.tenant) === tenant);
-  if (notes.length) lib.sql.exec(`DELETE FROM profile_collapsed WHERE id IN (${notes.map(() => '?').join(', ')})`, ...notes.map(row => row.id));
+  writeChunks(lib, [
+    {
+      values: matched.map(row => row.id),
+      sql: chunk => `DELETE FROM profiles WHERE rowid IN (${placeholders(chunk.length)})`,
+      params: chunk => chunk,
+    },
+    {
+      values: notes.map(row => row.id),
+      sql: chunk => `DELETE FROM profile_collapsed WHERE id IN (${placeholders(chunk.length)})`,
+      params: chunk => chunk,
+    },
+  ]);
   return matched.length;
 }
 export function quarantineReport(lib) {
@@ -206,20 +217,6 @@ export function ensure(lib) {
 }
 
 const json = s => { try { const v = JSON.parse(s || '{}'); return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; } catch { return {}; } };
-// Durable Object SQL allows 100 bound parameters on one statement. Fixed parameters, including a
-// tenant filter when a statement has one, count toward that cap. These deletes bind only rowids.
-const BOUND_MAX = 100;
-function deleteRowids(lib, ids) {
-  const fixed = [];
-  const room = BOUND_MAX - fixed.length;
-  const run = () => {
-    for (let at = 0; at < ids.length; at += room) {
-      const chunk = ids.slice(at, at + room);
-      lib.sql.exec(`DELETE FROM profiles WHERE rowid IN (${chunk.map(() => '?').join(', ')})`, ...fixed, ...chunk);
-    }
-  };
-  lib.transactionSync(run);
-}
 const isoBefore = (now, days) => new Date(Date.parse(now) - days * DAY).toISOString();
 
 // ---- Reserved test addresses (RFC 2606 / 6761): the only emails a test deployment accepts from an import. ----
@@ -321,10 +318,14 @@ const rowValues = r => r ? { name: r.name || '', preferredName: r.given_name || 
 function storedRows(lib, keys, tenant = '') {
   return directoryRows(lib, keys, tenant);
 }
-// One parameter for the tenant, then one per directory key.
+// The tenant is one parameter. Keys are chunked so the statement stays at or under 100.
 export function directoryRows(lib, keys, tenant = '') {
   const k = keys.filter(Boolean);
-  return k.length ? lib.rows(`SELECT * FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND source IN ('dna', 'dna_export') AND key IN (${k.map(() => '?').join(', ')})`, String(tenant || '').toLowerCase(), ...k) : [];
+  return readChunks(lib, k, {
+    fixed: 1,
+    sql: chunk => `SELECT * FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND source IN ('dna', 'dna_export') AND key IN (${placeholders(chunk.length)})`,
+    params: chunk => [String(tenant || '').toLowerCase(), ...chunk],
+  });
 }
 const firstOf = (rows, test) => ['dna', 'dna_export'].map(s => rows.find(r => r.source === s && test(r))).find(Boolean) || null;
 
@@ -618,9 +619,13 @@ export function daily(lib, now = lib.now(), user = {}) {
       .filter(row => profileFold(row.tenant) === tenant && String(row.seen_at || '') !== '' && String(row.seen_at) < cutoff);
     profiles = stale.length;
     // The folded tenant filter already chose these rowids. A SQL tenant compare would miss a
-    // padded stored tenant. Each statement binds only its rowids, at most 100, and the chunks
-    // commit together. The directory purge below still runs after this transaction.
-    if (profiles) deleteRowids(lib, stale.map(row => row.id));
+    // padded stored tenant. The chunks bind only rowids and commit together. The directory
+    // purge below still runs after that transaction.
+    if (profiles) writeChunks(lib, [{
+      values: stale.map(row => row.id),
+      sql: chunk => `DELETE FROM profiles WHERE rowid IN (${placeholders(chunk.length)})`,
+      params: chunk => chunk,
+    }]);
   }
   // Residual: an unenforced scan still purges blank-tenant directory pull-cache rows and staged imports.
   // That sweep predates the profile fold and does not delete profiles.

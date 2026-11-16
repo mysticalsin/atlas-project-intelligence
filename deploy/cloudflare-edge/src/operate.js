@@ -5,6 +5,7 @@ import { queryMetrics, recordUsage, purgeTelemetry, personaKey, ensureTelemetry 
 import { toCsv } from './csvsafe.js';
 import { journeyView, saveJourney, mapDraft, ensureJourney, journeyMatches, journeyTenant, journeyExport, omittedRow, JOURNEY_COUNT_SQL, JOURNEY_DELETE_SQL } from './journey.js';
 import { deleteOwnedProfile, ensure as ensureProfile, profileSelection } from './profile.js';
+import { placeholders, readChunks, writeChunks } from './sql-bound.js';
 import { readPublication } from './publication.js';
 
 function metricQuery(url, bucket = 'day') {
@@ -116,13 +117,22 @@ function exportProfile(lib, email, tenant) {
   return { profile, omitted };
 }
 
-// One parameter for the tenant, then the alias list twice (owner and email).
+// The tenant is one parameter and the alias list is bound twice. Chunks of aliases stay
+// at or under 100, and the row deletes commit together.
 export function eraseManagerTrust(lib, tenant, aliases) {
   if (!aliases.length) return 0;
-  const marks = aliases.map(() => '?').join(', ');
-  const n = lib.rows(`SELECT COUNT(*) AS n FROM manager_trust WHERE lower(COALESCE(tenant, '')) = ? AND (lower(owner) IN (${marks}) OR lower(email) IN (${marks}))`, tenant, ...aliases, ...aliases)[0].n;
-  if (n) lib.sql.exec(`DELETE FROM manager_trust WHERE lower(COALESCE(tenant, '')) = ? AND (lower(owner) IN (${marks}) OR lower(email) IN (${marks}))`, tenant, ...aliases, ...aliases);
-  return n;
+  const ids = [...new Set(readChunks(lib, aliases, {
+    fixed: 1,
+    copies: 2,
+    sql: chunk => `SELECT rowid AS id FROM manager_trust WHERE lower(COALESCE(tenant, '')) = ? AND (lower(owner) IN (${placeholders(chunk.length)}) OR lower(email) IN (${placeholders(chunk.length)}))`,
+    params: chunk => [tenant, ...chunk, ...chunk],
+  }).map(row => row.id))];
+  writeChunks(lib, [{
+    values: ids,
+    sql: chunk => `DELETE FROM manager_trust WHERE rowid IN (${placeholders(chunk.length)})`,
+    params: chunk => chunk,
+  }]);
+  return ids.length;
 }
 
 export async function privacyRoutes(ctx) {
@@ -189,6 +199,7 @@ export async function privacyRoutes(ctx) {
       const oid = /^[0-9a-f-]{36}:([0-9a-f-]{36})$/.exec(String(user.email || '').toLowerCase())?.[1] || '';
       const keys = [...new Set([mail, oid ? 'oid:' + oid : ''].filter(Boolean))];
       if (!keys.length) return 0;
+      // sql-bound-fixed: 3
       const marks = keys.map(() => '?').join(', ');
       const n = lib.rows(`SELECT COUNT(*) AS n FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys)[0].n;
       if (n) lib.sql.exec(`DELETE FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys);

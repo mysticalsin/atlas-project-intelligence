@@ -13,6 +13,7 @@ import * as gaps from './gaps.js';
 import { interviewCard, messageCard } from './teams.js';
 import { invitationTransition, noteInvitation, OPEN_INVITATION_SQL } from './invitation.js';
 import { profileFold } from './profile.js';
+import { placeholders, readChunks } from './sql-bound.js';
 
 export const READY = true;
 
@@ -187,9 +188,16 @@ function applyStaffingAssignment(lib, actor, s) {
   lib.bindTrust(actor, { owner: consultant, email: s.managerEmail, source: 'staffing', tenant, tenantEnforced: actor.tenantEnforced === true });
   s.projectId = storedProject;
   const aliases = personAliases(lib, consultant, tenant);
-  const ownerMarks = aliases.map(() => '?').join(', ');
-  const current = new Set(lib.rows(`SELECT lower(manager_email) AS email FROM staffing WHERE lower(consultant_email) IN (${ownerMarks}) AND lower(COALESCE(tenant, '')) = ? AND trim(manager_email) != ''`, ...aliases, tenant).map(r => r.email));
-  for (const grant of lib.rows(`SELECT owner, email, source FROM manager_trust WHERE lower(owner) IN (${ownerMarks}) AND lower(COALESCE(tenant, '')) = ?`, ...aliases, tenant)) {
+  const current = new Set(readChunks(lib, aliases, {
+    fixed: 1,
+    sql: chunk => `SELECT lower(manager_email) AS email FROM staffing WHERE lower(consultant_email) IN (${placeholders(chunk.length)}) AND lower(COALESCE(tenant, '')) = ? AND trim(manager_email) != ''`,
+    params: chunk => [...chunk, tenant],
+  }).map(r => r.email));
+  for (const grant of readChunks(lib, aliases, {
+    fixed: 1,
+    sql: chunk => `SELECT owner, email, source FROM manager_trust WHERE lower(owner) IN (${placeholders(chunk.length)}) AND lower(COALESCE(tenant, '')) = ?`,
+    params: chunk => [...chunk, tenant],
+  })) {
     const source = String(grant.source || '');
     if (source !== 'staffing' || current.has(String(grant.email || '').toLowerCase())) continue;
     lib.sql.exec("DELETE FROM manager_trust WHERE lower(owner) = ? AND lower(email) = ? AND lower(COALESCE(tenant, '')) = ? AND source = 'staffing'", String(grant.owner || '').toLowerCase(), String(grant.email || '').toLowerCase(), tenant);
@@ -211,9 +219,12 @@ function inviteDue(lib, rows, today) {
   for (const s of rows) {
     if (!s.endDate || s.endDate > ahead || s.endDate < back) continue;
     const owners = consultantOwners(lib, s.consultantEmail, s.tenant);
-    const marks = owners.map(() => '?').join(', ');
-    const hasRef = lib.rows(`SELECT id FROM refs WHERE merged_into IS NULL AND lower(COALESCE(tenant, '')) = ? AND (lower(owner) IN (${marks}) OR instr(members, ?) > 0)
-      AND json_extract(data, '$.details.projectId') = ? COLLATE NOCASE LIMIT 1`, String(s.tenant || '').toLowerCase(), ...owners, ',' + s.consultantEmail + ',', s.projectId)[0];
+    const hasRef = readChunks(lib, owners, {
+      fixed: 3,
+      sql: chunk => `SELECT id FROM refs WHERE merged_into IS NULL AND lower(COALESCE(tenant, '')) = ? AND (lower(owner) IN (${placeholders(chunk.length)}) OR instr(members, ?) > 0)
+      AND json_extract(data, '$.details.projectId') = ? COLLATE NOCASE LIMIT 1`,
+      params: chunk => [String(s.tenant || '').toLowerCase(), ...chunk, ',' + s.consultantEmail + ',', s.projectId],
+    })[0];
     if (hasRef || lib.rows("SELECT id FROM invitations WHERE lower(email) = ? AND lower(project_id) = lower(?) AND reason = 'project_end' AND lower(COALESCE(tenant, '')) = ? LIMIT 1", String(s.consultantEmail || '').toLowerCase(), s.projectId, tenantKey(s.tenant))[0]) continue;
     const inv = lib.invite(s.source, { email: s.consultantEmail, reason: 'project_end', projectId: s.projectId, title: s.projectTitle, source: s.source, tenant: s.tenant || '' });
     invited++;

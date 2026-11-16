@@ -12,6 +12,7 @@ import { winSignals } from './winloop.js';
 // Story rating by TypeSafe JEV (docs/JEV_RATING.md): used only when a rater with a key exists and the owner consented.
 import { RatingError, ratingInput, questionPlan, requestBody, compose, agentQuality, noStoryQuality, sha256Hex, BUDGETS, RUBRIC_VERSION, METRIC_CODES, MODEL } from './rating.js';
 import { profileFold, profileSelection, storedConsent } from './profile.js';
+import { placeholders, readChunks } from './sql-bound.js';
 import { sameTenant, TENANT_ID } from './authz.js';
 import { recordUsage } from './telemetry.js';
 import { publicationEffect, publicationStatus, publicationTransition, readPublication } from './publication.js';
@@ -263,17 +264,23 @@ export class Library {
     if (!aliases.length || !row || aliases.includes(owner)) return false;
     if (!sameTenant(row.state?.tenant, user.tenant, user.tenantEnforced === true)) return false;
     const want = String(user.tenant || '').toLowerCase();
-    const marks = aliases.map(() => '?').join(', ');
     const owners = this.ownerKeys(row);
     if (!owners.length || owners.some(o => aliases.includes(o))) return false;
-    const ownerMarks = owners.map(() => '?').join(', ');
-    const grants = this.rows(`SELECT source FROM manager_trust WHERE lower(owner) IN (${ownerMarks}) AND lower(email) IN (${marks}) AND lower(COALESCE(tenant, '')) = ?`, ...owners, ...aliases, want);
+    const grants = readChunks(this, owners, {
+      fixed: aliases.length + 1,
+      sql: chunk => `SELECT source FROM manager_trust WHERE lower(owner) IN (${placeholders(chunk.length)}) AND lower(email) IN (${placeholders(aliases.length)}) AND lower(COALESCE(tenant, '')) = ?`,
+      params: chunk => [...chunk, ...aliases, want],
+    });
     if (grants.some(g => g.source === 'directory')) return true;
     if (!grants.some(g => g.source === 'staffing')) return false;
     const project = String(row.data?.details?.projectId || '').trim().toLowerCase();
     if (!project) return false;
     if (!this.rows("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'staffing'")[0]) return false;
-    const hits = this.rows(`SELECT project_id, consultant_email, manager_email FROM staffing WHERE lower(project_id) = ? AND lower(consultant_email) IN (${ownerMarks}) AND lower(COALESCE(tenant, '')) = ?`, project, ...owners, want);
+    const hits = readChunks(this, owners, {
+      fixed: 2,
+      sql: chunk => `SELECT project_id, consultant_email, manager_email FROM staffing WHERE lower(project_id) = ? AND lower(consultant_email) IN (${placeholders(chunk.length)}) AND lower(COALESCE(tenant, '')) = ?`,
+      params: chunk => [project, ...chunk, want],
+    });
     const physical = new Map();
     for (const hit of hits) {
       const key = String(hit.project_id || '').toLowerCase() + '\n' + String(hit.consultant_email || '').toLowerCase();
@@ -769,6 +776,7 @@ export class Library {
     }
     const aliases = [...new Set([user.email, user.mail].map(v => String(v || '').trim().toLowerCase()).filter(Boolean))];
     if (!aliases.length) return [];
+    // sql-bound-fixed: 3
     const marks = aliases.map(() => '?').join(', ');
     return this.rows(`SELECT * FROM invitations WHERE lower(email) IN (${marks}) AND status IN ('open','scheduled') AND lower(COALESCE(tenant, '')) = ? ORDER BY created_at DESC`, ...aliases, user.tenantEnforced === true ? tenant : '')
       .map(row => this.invitationView(user, row));
