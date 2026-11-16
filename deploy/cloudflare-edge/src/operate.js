@@ -4,7 +4,7 @@ import { sameTenant, TENANT_ID } from './authz.js';
 import { queryMetrics, recordUsage, purgeTelemetry, personaKey, ensureTelemetry } from './telemetry.js';
 import { toCsv } from './csvsafe.js';
 import { journeyView, saveJourney, mapDraft, ensureJourney, journeyMatches, journeyTenant, journeyExport, omittedRow, JOURNEY_COUNT_SQL, JOURNEY_DELETE_SQL } from './journey.js';
-import { deleteOwnedProfile } from './profile.js';
+import { deleteOwnedProfile, ensure as ensureProfile } from './profile.js';
 import { readPublication } from './publication.js';
 
 function metricQuery(url, bucket = 'day') {
@@ -88,16 +88,22 @@ function exportStories(rows, user) {
   return { stories, omitted };
 }
 
-// A missing table or a missing row is absence. An unreadable edits or consents value is an omission; the other part is returned.
+// The same profile migration the other profile reads use. A missing table or a row that does not match this
+// subject and tenant is absence. Subject and tenant compare case-insensitively. More than one folded match
+// exports the newest and names the rest. An unreadable edits or consents value is an omission; the other part is returned.
 function exportProfile(lib, email, tenant) {
-  let row;
+  ensureProfile(lib);
+  let rows;
   try {
-    row = lib.rows('SELECT edits, consents, updated_at FROM profiles WHERE subject = ? AND tenant = ?', email, tenant)[0] || null;
+    rows = lib.rows(`SELECT rowid AS id, edits, consents, updated_at FROM profiles
+      WHERE lower(subject) = lower(?) AND lower(trim(tenant)) = lower(trim(?))
+      ORDER BY updated_at DESC, rowid DESC`, email, tenant);
   } catch (error) {
     if (String(error && error.message).includes('no such table')) return { profile: null, omitted: [] };
     throw error;
   }
-  if (!row) return { profile: null, omitted: [] };
+  if (!rows.length) return { profile: null, omitted: [] };
+  const row = rows[0];
   const omitted = [];
   const profile = {};
   const edits = jsonObject(row.edits);
@@ -107,6 +113,7 @@ function exportProfile(lib, email, tenant) {
   if (consents) profile.consents = consents;
   else omitted.push(omittedRow('consents', 'profile'));
   profile.updatedAt = row.updated_at;
+  for (const extra of rows.slice(1)) omitted.push(omittedRow(extra.id, 'profile', 'duplicate'));
   return { profile, omitted };
 }
 

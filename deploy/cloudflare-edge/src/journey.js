@@ -126,8 +126,8 @@ export function journeyPayload(raw) {
 }
 
 // One omission shape for every skipped export row. Callers pass only rows already in the subject's tenant.
-export function omittedRow(id, source) {
-  return { id, source, reason: 'unparseable' };
+export function omittedRow(id, source, reason = 'unparseable') {
+  return { id, source, reason };
 }
 
 // Rows are already the tenant-scoped match. An unreadable payload stays in the export as an omission, not a gap.
