@@ -219,6 +219,38 @@ test('a second erasure submit while the first request is open sends only one POS
   await flush();
 });
 
+test('a failed erasure does not paint a success receipt', async () => {
+  const page = harness();
+  page.body.outcomes = [
+    { store: 'journey', removed: 1, error: null },
+    { store: 'manager-trust', removed: 0, error: 'delete-failed' },
+  ];
+  await page.sandbox.AtlasJourney.render('journey');
+  await flush();
+  page.button().click();
+  await flush();
+  page.document.getElementById('confirmYes').onclick();
+  await flush();
+  assert.equal(page.document.getElementById('privacyReceipt'), null);
+  assert.equal(page.text('manager-trust delete-failed'), null);
+  assert.equal(page.text(page.body.note), null);
+  assert.equal(page.text('The deletion did not finish. Nothing was removed.').textContent, 'The deletion did not finish. Nothing was removed.');
+  assert.equal(page.button().disabled, false);
+
+  const thrown = harness();
+  thrown.failDelete(new Error('The deletion did not finish. Nothing was removed.'));
+  await thrown.sandbox.AtlasJourney.render('journey');
+  await flush();
+  thrown.button().click();
+  await flush();
+  thrown.document.getElementById('confirmYes').onclick();
+  await flush();
+  assert.equal(thrown.document.getElementById('privacyReceipt'), null);
+  assert.equal(thrown.text('journey 1'), null);
+  assert.equal(thrown.text(page.body.note), null);
+  assert.equal(thrown.text('The deletion did not finish. Nothing was removed.').textContent, 'The deletion did not finish. Nothing was removed.');
+});
+
 test('a failed erasure re-enables the button on the page after a re-render', async () => {
   const page = harness();
   await page.sandbox.AtlasJourney.render('journey');
