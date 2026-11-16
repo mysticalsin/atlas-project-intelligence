@@ -748,3 +748,12 @@ Review answers:
 - Parent is the privacy-receipt commit. This note is the next forward commit. No push, pull request, deploy, or live call.
 - The Worker uses the library's own path match for a privacy or profile delete. A trailing slash, a repeated slash, a query string, and a later privacy segment take the same missing-tenant rejection before the library object is requested. A profile path with a third segment is not a delete. Percent-encoded slashes and a different letter case are not that match. The page was not rebuilt.
 - Quarantine is not deletion. Vendor deletion stays not-asserted. A Cloudflare Durable Object runtime was not executed.
+
+### Session: 2026-11-16 / UI follow-up Q10, Q12, Q9, Q8
+- Branch `cursor/ui-followup-q10-q12-q9-q8` off `80bab33`. Four hands-on QA fixes. Each regression test is its own commit and failed before the fix.
+- Q10: a second identical manager or pre-sales decision returns the current record and does not call `setState` or write another audit line. The Approve button is disabled before `recordAction`. Red commit `54d0dae`.
+- Q12: after the record dialog redraws, focus moves to the button labelled Close reference. Red commit `7321879`.
+- Q9: a bootstrap or library 503 keeps `body.error`. The journey and the library show that reason. Red commit `74417e1`.
+- Q8: the journey queue uses `STATUS_LABEL` (`Withdrawn`, `Needs work`). The admin-test and manager-waiting phrases stay. Red commit `ef3ab55`.
+- Gates on this host: `pytest tests/test_*.py -q` 264 passed, 106 warnings. `node --test tests/*.test.js` 386 tests, 385 passed, 1 skipped (Natural Earth regeneration needs `ATLAS_NE_SRC`). Edge `node --test test/*.test.js` 541 passed, and the same 541 with `--test-concurrency=16`. `scripts/verify_page_build.sh` twice, both exit 0 (907494 bytes). `make test-ui` exit 0, 754 PASS, 0 FAIL, 21 scripts. No provider call, no deploy.
+- Quarantine is not deletion. Vendor deletion stays not-asserted. A Cloudflare Durable Object runtime was not executed.
