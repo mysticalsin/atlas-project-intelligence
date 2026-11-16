@@ -82,18 +82,22 @@ export function devIdentityEnabled(env = {}) {
 }
 
 // Any non-off value counts. Production must not carry the demo switch at all.
+function switchConfigured(value) {
+  const text = String(value ?? '').trim().toLowerCase();
+  return text !== '' && text !== '0' && text !== 'false' && text !== 'off';
+}
 export function demoIdentityConfigured(env = {}) {
-  const value = String(env.ATLAS_DEV_IDENTITY ?? '').trim().toLowerCase();
-  return value !== '' && value !== '0' && value !== 'false' && value !== 'off';
+  return switchConfigured(env.ATLAS_DEV_IDENTITY);
 }
 
 // local-synthetic skips tenant equality. That is the local demo only.
-// DATA_MODE=production with that switch, or with demo identity, is a refused deployment.
+// DATA_MODE=production with that switch, with demo identity, or with ATLAS_LOCAL_TENANT, is a refused deployment.
 export function productionDemoConflict(env = {}) {
   if (env.DATA_MODE !== 'production') return null;
   const reasons = [];
   if (env.ATLAS_TENANT_ISOLATION === 'local-synthetic') reasons.push('ATLAS_TENANT_ISOLATION=local-synthetic');
   if (demoIdentityConfigured(env)) reasons.push('ATLAS_DEV_IDENTITY');
+  if (switchConfigured(env.ATLAS_LOCAL_TENANT)) reasons.push('ATLAS_LOCAL_TENANT');
   if (!reasons.length) return null;
   return {
     ok: false,

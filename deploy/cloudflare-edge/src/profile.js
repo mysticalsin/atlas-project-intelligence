@@ -206,6 +206,20 @@ export function ensure(lib) {
 }
 
 const json = s => { try { const v = JSON.parse(s || '{}'); return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; } catch { return {}; } };
+// Durable Object SQL allows 100 bound parameters on one statement. Fixed parameters, including a
+// tenant filter when a statement has one, count toward that cap. These deletes bind only rowids.
+const BOUND_MAX = 100;
+function deleteRowids(lib, ids) {
+  const fixed = [];
+  const room = BOUND_MAX - fixed.length;
+  const run = () => {
+    for (let at = 0; at < ids.length; at += room) {
+      const chunk = ids.slice(at, at + room);
+      lib.sql.exec(`DELETE FROM profiles WHERE rowid IN (${chunk.map(() => '?').join(', ')})`, ...fixed, ...chunk);
+    }
+  };
+  lib.transactionSync(run);
+}
 const isoBefore = (now, days) => new Date(Date.parse(now) - days * DAY).toISOString();
 
 // ---- Reserved test addresses (RFC 2606 / 6761): the only emails a test deployment accepts from an import. ----
@@ -599,8 +613,13 @@ export function daily(lib, now = lib.now(), user = {}) {
     const stale = lib.rows('SELECT rowid AS id, tenant, seen_at FROM profiles')
       .filter(row => profileFold(row.tenant) === tenant && String(row.seen_at || '') !== '' && String(row.seen_at) < cutoff);
     profiles = stale.length;
-    if (profiles) lib.sql.exec(`DELETE FROM profiles WHERE rowid IN (${stale.map(() => '?').join(', ')})`, ...stale.map(row => row.id));
+    // The folded tenant filter already chose these rowids. A SQL tenant compare would miss a
+    // padded stored tenant. Each statement binds only its rowids, at most 100, and the chunks
+    // commit together. The directory purge below still runs after this transaction.
+    if (profiles) deleteRowids(lib, stale.map(row => row.id));
   }
+  // Residual: an unenforced scan still purges blank-tenant directory pull-cache rows and staged imports.
+  // That sweep predates the profile fold and does not delete profiles.
   const cache = n("SELECT COUNT(*) AS n FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND source = 'dna' AND batch = 'pull' AND fetched_at < ?", scope, isoBefore(now, 30));
   if (cache) lib.sql.exec("DELETE FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND source = 'dna' AND batch = 'pull' AND fetched_at < ?", scope, isoBefore(now, 30));
   const staged = lib.rows("SELECT batch FROM directory_imports WHERE lower(COALESCE(tenant, '')) = ? AND state = 'staged' AND started_at < ?", scope, isoBefore(now, 1)).map(r => r.batch);
