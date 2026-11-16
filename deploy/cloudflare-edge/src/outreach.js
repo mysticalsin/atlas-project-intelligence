@@ -12,6 +12,7 @@ import * as claims from './claims.js';
 import * as gaps from './gaps.js';
 import { interviewCard, messageCard } from './teams.js';
 import { invitationTransition, noteInvitation, OPEN_INVITATION_SQL } from './invitation.js';
+import { profileFold } from './profile.js';
 
 export const READY = true;
 
@@ -131,16 +132,16 @@ function tenantKey(value) {
   return String(value || '').trim().toLowerCase();
 }
 function personAliases(lib, address, tenant) {
-  const keys = new Set([String(address || '').trim().toLowerCase()].filter(Boolean));
-  const tenantKey = String(tenant || '').toLowerCase();
+  const keys = new Set([profileFold(address)].filter(Boolean));
+  const want = profileFold(tenant);
   if (!lib.rows("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'profiles'")[0]) return [...keys];
-  const rows = lib.rows("SELECT subject, email FROM profiles WHERE lower(COALESCE(tenant, '')) = ?", tenantKey);
+  const rows = lib.rows('SELECT subject, email, tenant FROM profiles').filter(row => profileFold(row.tenant) === want);
   let grew = true;
   while (grew) {
     grew = false;
     for (const row of rows) {
-      const subject = String(row.subject || '').trim().toLowerCase();
-      const mail = String(row.email || '').trim().toLowerCase();
+      const subject = profileFold(row.subject);
+      const mail = profileFold(row.email);
       if (!keys.has(subject) && !keys.has(mail)) continue;
       if (subject && !keys.has(subject)) { keys.add(subject); grew = true; }
       if (mail && !keys.has(mail)) { keys.add(mail); grew = true; }

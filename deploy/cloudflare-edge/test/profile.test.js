@@ -390,8 +390,8 @@ test('daily: profiles unseen for 395 days, pull-cache rows older than 30 days an
   assert.equal(profile.lookupPerson(t.l, 'kim@example.com').name, 'Kim', 'push rows are replaced by the next push, not purged');
   await call(t.l, BEA, 'GET', 'profile'); // seen today
   t.clock += 365 * DAY;
-  assert.deepEqual(profile.daily(t.l, t.l.now()), { profilesPurged: 1 });
-  assert.deepEqual(t.l.rows('SELECT subject FROM profiles').map(r => r.subject), [BEA.email]);
+  assert.deepEqual(profile.daily(t.l, t.l.now()), {}, 'an unenforced scan does not purge blank-tenant profiles');
+  assert.deepEqual(t.l.rows('SELECT subject FROM profiles').map(r => r.subject).sort(), [ALEX.email, BEA.email].sort());
   // The system scan-stale block adds the profile counts only once profile is READY (WOW_SPEC §2.1 neutral helpers).
   const scan = await (await libraryRoutes(new Request('https://atlas.test/api/library/scan-stale', { method: 'POST', body: '{}', headers: { 'x-atlas-user': 'atlas-cron', 'x-atlas-role': 'system' } }), t.l)).json();
   if (!profile.READY) assert.equal('profilesPurged' in scan || 'dnaCachePurged' in scan || 'stagedImportsPurged' in scan, false);
@@ -487,11 +487,11 @@ test('storedConsent: false when nothing is stored, true after granting, per subj
   assert.equal(profile.storedConsent(l, ALEX.email, 'jevRating'), false);
   assert.deepEqual(l.rows("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").map(r => r.name), before, 'a read on a fresh library creates nothing');
   await call(l, ALEX, 'POST', 'profile/consent', { kind: 'spokenAsk', version: 1, granted: true });
-  assert.equal(profile.storedConsent(l, ALEX.email, 'jevRating'), false, 'another kind does not count');
+  assert.equal(profile.storedConsent(l, ALEX.email, 'jevRating', ''), false, 'another kind does not count');
   await call(l, ALEX, 'POST', 'profile/consent', { kind: 'jevRating', version: 1, granted: true });
-  assert.equal(profile.storedConsent(l, ALEX.email, 'jevRating'), true);
-  assert.equal(profile.storedConsent(l, BEA.email, 'jevRating'), false, 'per subject');
-  assert.equal(profile.storedConsent(l, '', 'jevRating'), false);
+  assert.equal(profile.storedConsent(l, ALEX.email, 'jevRating', ''), true);
+  assert.equal(profile.storedConsent(l, BEA.email, 'jevRating', ''), false, 'per subject');
+  assert.equal(profile.storedConsent(l, '', 'jevRating', ''), false);
 });
 
 test('ownerKeys finds a padded and uppercase subject in a padded tenant', () => {

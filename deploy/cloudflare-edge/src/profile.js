@@ -87,24 +87,33 @@ function demandTenant(user) {
 }
 // Rebuild a subject-only profiles table inside one transactionSync. Blank ownership stays blank. No tenant is
 // invented. Exact duplicate (subject, tenant) values cannot share the new primary key: the newest parsed
-// updated_at, then the greatest rowid, is kept, and the rest are recorded as duplicate. A profiles_v2 left
-// behind by an interrupted migration is renamed back before any empty table is created.
+// updated_at, then the greatest rowid, is kept, and the rest are recorded as duplicate. A parked copy left
+// behind by an interrupted migration is renamed back before any empty table is created. Two populated current
+// tables are refused: rows are never dropped to make the migration succeed.
+const PARKED = { profiles: 'profiles_v2', directory: 'directory_v2', directory_imports: 'directory_imports_v2' };
+function recoverParked(lib, live, isCurrent) {
+  const parked = PARKED[live];
+  if (!parked || !tableExists(lib, parked)) return;
+  if (!tableExists(lib, live)) {
+    lib.sql.exec(`ALTER TABLE ${parked} RENAME TO ${live}`);
+    return;
+  }
+  const extra = lib.rows(`SELECT COUNT(*) AS n FROM ${parked}`)[0].n;
+  if (isCurrent()) {
+    const kept = lib.rows(`SELECT COUNT(*) AS n FROM ${live}`)[0].n;
+    if (!kept && extra) {
+      lib.sql.exec(`DROP TABLE ${live}`);
+      lib.sql.exec(`ALTER TABLE ${parked} RENAME TO ${live}`);
+      return;
+    }
+    if (extra) throw new Error(`Refusing to drop ${parked}: both ${live} and ${parked} have rows.`);
+    lib.sql.exec(`DROP TABLE ${parked}`);
+    return;
+  }
+  lib.sql.exec(`DROP TABLE ${parked}`);
+}
 function recoverProfilesV2(lib) {
-  if (!tableExists(lib, 'profiles_v2')) return;
-  if (!tableExists(lib, 'profiles')) {
-    lib.sql.exec('ALTER TABLE profiles_v2 RENAME TO profiles');
-    return;
-  }
-  if (isProfileV2(lib)) {
-    const kept = lib.rows('SELECT COUNT(*) AS n FROM profiles')[0].n;
-    const parked = lib.rows('SELECT COUNT(*) AS n FROM profiles_v2')[0].n;
-    if (!kept && parked) {
-      lib.sql.exec('DROP TABLE profiles');
-      lib.sql.exec('ALTER TABLE profiles_v2 RENAME TO profiles');
-    } else lib.sql.exec('DROP TABLE profiles_v2');
-    return;
-  }
-  lib.sql.exec('DROP TABLE profiles_v2');
+  recoverParked(lib, 'profiles', () => isProfileV2(lib));
 }
 function collapseProfiles(lib) {
   const cols = lib.rows("SELECT name FROM pragma_table_info('profiles')").map(r => r.name);
@@ -158,9 +167,12 @@ function pkOf(lib, table) {
   return lib.rows(`SELECT name FROM pragma_table_info('${table}') WHERE pk > 0 ORDER BY pk`).map(r => r.name);
 }
 function migrateDirectory(lib) {
-  const dir = lib.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'directory'")[0];
+  const directoryCurrent = () => pkOf(lib, 'directory').join(',') === 'key,source,tenant';
+  const importsCurrent = () => pkOf(lib, 'directory_imports').join(',') === 'batch,tenant';
+  recoverParked(lib, 'directory', directoryCurrent);
+  const dir = tableExists(lib, 'directory');
   if (!dir) lib.sql.exec(DIRECTORY_V2.replace('directory_v2', 'directory'));
-  else if (pkOf(lib, 'directory').join(',') !== 'key,source,tenant') {
+  else if (!directoryCurrent()) {
     const cols = lib.rows("SELECT name FROM pragma_table_info('directory')").map(r => r.name);
     lib.sql.exec(DIRECTORY_V2);
     const tenantSql = cols.includes('tenant') ? "COALESCE(tenant, '')" : "''";
@@ -169,9 +181,10 @@ function migrateDirectory(lib) {
     lib.sql.exec('DROP TABLE directory');
     lib.sql.exec('ALTER TABLE directory_v2 RENAME TO directory');
   }
-  const imp = lib.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'directory_imports'")[0];
+  recoverParked(lib, 'directory_imports', importsCurrent);
+  const imp = tableExists(lib, 'directory_imports');
   if (!imp) lib.sql.exec(IMPORTS_V2.replace('directory_imports_v2', 'directory_imports'));
-  else if (pkOf(lib, 'directory_imports').join(',') !== 'batch,tenant') {
+  else if (!importsCurrent()) {
     const cols = lib.rows("SELECT name FROM pragma_table_info('directory_imports')").map(r => r.name);
     lib.sql.exec(IMPORTS_V2);
     const tenantSql = cols.includes('tenant') ? "COALESCE(tenant, '')" : "''";
@@ -183,9 +196,11 @@ function migrateDirectory(lib) {
 }
 export function ensure(lib) {
   if (ensured.has(lib)) return;
-  if (typeof lib.transactionSync === 'function') lib.transactionSync(() => migrateProfiles(lib));
-  else migrateProfiles(lib);
-  migrateDirectory(lib);
+  if (typeof lib.transactionSync !== 'function') throw new Error('Profile storage requires transactionSync.');
+  lib.transactionSync(() => {
+    migrateProfiles(lib);
+    migrateDirectory(lib);
+  });
   for (const q of SCHEMA) lib.sql.exec(q);
   ensured.add(lib);
 }
@@ -557,7 +572,8 @@ function storedProfile(lib, subject, tenant) {
   try { return profileSelection(lib, subject, tenant).matched[0] || null; }
   catch { return null; } // no profiles table yet
 }
-export function storedConsent(lib, subject, kind, tenant = '') {
+export function storedConsent(lib, subject, kind, tenant) {
+  if (tenant === undefined || tenant === null) return false;
   const row = storedProfile(lib, subject, tenant);
   return !!row && CONSENT_KINDS.includes(kind) && json(row.consents)[kind]?.version === 1;
 }
@@ -572,12 +588,19 @@ export function storedNames(lib, subject, tenant) {
 export function daily(lib, now = lib.now(), user = {}) {
   ensure(lib);
   const enforced = user?.tenantEnforced === true;
-  const tenant = String(user?.tenant || '').toLowerCase();
+  const tenant = profileFold(user?.tenant);
   if (enforced && !TENANT_ID.test(tenant)) return { maintenanceRefused: 'A verified tenant is required.' };
   const n = (q, ...p) => lib.rows(q, ...p)[0].n;
   const scope = enforced ? tenant : '';
-  const profiles = n('SELECT COUNT(*) AS n FROM profiles WHERE tenant = ? AND seen_at < ?', scope, isoBefore(now, 395));
-  if (profiles) lib.sql.exec('DELETE FROM profiles WHERE tenant = ? AND seen_at < ?', scope, isoBefore(now, 395));
+  // An unenforced scan has no verified tenant. It must not purge blank-tenant profiles.
+  let profiles = 0;
+  if (enforced) {
+    const cutoff = isoBefore(now, 395);
+    const stale = lib.rows('SELECT rowid AS id, tenant, seen_at FROM profiles')
+      .filter(row => profileFold(row.tenant) === tenant && String(row.seen_at || '') !== '' && String(row.seen_at) < cutoff);
+    profiles = stale.length;
+    if (profiles) lib.sql.exec(`DELETE FROM profiles WHERE rowid IN (${stale.map(() => '?').join(', ')})`, ...stale.map(row => row.id));
+  }
   const cache = n("SELECT COUNT(*) AS n FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND source = 'dna' AND batch = 'pull' AND fetched_at < ?", scope, isoBefore(now, 30));
   if (cache) lib.sql.exec("DELETE FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND source = 'dna' AND batch = 'pull' AND fetched_at < ?", scope, isoBefore(now, 30));
   const staged = lib.rows("SELECT batch FROM directory_imports WHERE lower(COALESCE(tenant, '')) = ? AND state = 'staged' AND started_at < ?", scope, isoBefore(now, 1)).map(r => r.batch);

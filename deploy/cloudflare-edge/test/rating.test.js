@@ -11,8 +11,9 @@ import { fakeTypesafe } from '../dev/fake-typesafe.mjs';
 import { memorySql } from './sqlite.js';
 
 const KEY = 'test-key-SECRET';
-const U = e => ({ email: e, role: 'user' });
-const OWNER = U('alex@mantu.com'), N1 = U('sam@mantu.com'), OTHER = U('kim@mantu.com'), REV = { email: 'rev@mantu.com', role: 'reviewer' }, SYSTEM = { email: 'atlas', role: 'admin' };
+const TENANT = '11111111-1111-4111-8111-111111111111';
+const U = e => ({ email: e, role: 'user', tenant: TENANT });
+const OWNER = U('alex@mantu.com'), N1 = U('sam@mantu.com'), OTHER = U('kim@mantu.com'), REV = { email: 'rev@mantu.com', role: 'reviewer', tenant: TENANT }, SYSTEM = { email: 'atlas', role: 'admin', tenant: TENANT };
 // The REF() fixture of test/library.test.js: every template field is filled (completeness 100).
 const REF = () => ({ title: 'Claims triage alias', stage: 'Production', sector: 'Insurance', consultant: { name: 'Alex', role: 'Data engineer' },
   client: { name: 'Zebracorp', location: 'Lyon', contact: 'Head of Claims' },
@@ -155,7 +156,7 @@ test('R2 leak test: no client, contact, colleague, owner name, project id, host,
   for (const re of [/the client/, /another client/, /the consultant/, /a colleague/, /the project/, /\[(email|link|phone)\]/]) assert.match(sent, re);
   assert.equal(fetcher.calls[0].init.headers.Authorization, 'Bearer test-key-SECRET', 'the key is only in the header');
   // The same record, unmasked, trips the guard on its own values.
-  const terms = R.sensitiveTerms(l.row(id).data, profile.storedNames(l, OWNER.email, ''));
+  const terms = R.sensitiveTerms(l.row(id).data, profile.storedNames(l, OWNER.email, OWNER.tenant));
   for (const t of ['Zebracorp', 'Lyon', 'Jane Doe', 'PRJ-ZEBRA-7', 'wiki.zebracorp.example', 'bi.zebracorp.example', 'Alex Martin', 'Jo Blake', 'Sam Reed', 'Alexandre Martin']) assert.ok(terms.includes(t), t);
   assert.throws(() => R.guard(JSON.stringify({ story: l.row(id).data.answers }), terms), e => e instanceof R.RatingError && e.code === 'guard');
   assert.equal(R.guard(JSON.stringify(fetcher.calls[0].body.state.reference), terms), true);
@@ -687,8 +688,8 @@ test('R20 old schema and idempotence: legacy rows are rated; a second Library ra
   const l = new Library(sql, { complete: counted(), rater: R.storyRater(env, fetcher), metric: () => {} });
   await grant(l, OWNER);
   const a = await saved(l), b = await saved(l, { ...REF(), title: 'Second alias' }, OWNER, 'p2');
-  sql.exec('UPDATE refs SET state = ? WHERE id = ?', '{}', a);
-  sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ quality: { score: 80, completeness: 100, aiScore: 70, status: 'ready', summary: 'Legacy.', model: 'old' }, validation: { status: 'pending' } }), b);
+  sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ tenant: TENANT }), a);
+  sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ tenant: TENANT, quality: { score: 80, completeness: 100, aiScore: 70, status: 'ready', summary: 'Legacy.', model: 'old' }, validation: { status: 'pending' } }), b);
   const tables = () => l.rows("SELECT name FROM sqlite_master ORDER BY name").map(r => r.name);
   const before = tables();
   assert.equal((await l.review(OWNER, a)).state.quality.engine, 'jev');

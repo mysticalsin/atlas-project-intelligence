@@ -11,7 +11,7 @@ import { recordView, pseudonymise, forAuthor, nameMatcher } from './scrub.js';
 import { winSignals } from './winloop.js';
 // Story rating by TypeSafe JEV (docs/JEV_RATING.md): used only when a rater with a key exists and the owner consented.
 import { RatingError, ratingInput, questionPlan, requestBody, compose, agentQuality, noStoryQuality, sha256Hex, BUDGETS, RUBRIC_VERSION, METRIC_CODES, MODEL } from './rating.js';
-import { storedConsent } from './profile.js';
+import { profileFold, profileSelection, storedConsent } from './profile.js';
 import { sameTenant, TENANT_ID } from './authz.js';
 import { recordUsage } from './telemetry.js';
 import { publicationEffect, publicationStatus, publicationTransition, readPublication } from './publication.js';
@@ -225,12 +225,12 @@ export class Library {
     return out;
   }
   ownerKeys(row) {
-    const owner = String(row?.owner || '').toLowerCase();
+    const owner = profileFold(row?.owner);
     const keys = new Set(owner ? [owner] : []);
-    const tenant = String(row?.tenant || row?.state?.tenant || '').toLowerCase();
+    const tenant = profileFold(row?.tenant || row?.state?.tenant);
     if (!this.rows("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'profiles'")[0]) return [...keys];
-    for (const found of this.rows("SELECT email FROM profiles WHERE lower(subject) = ? AND lower(COALESCE(tenant, '')) = ?", owner, tenant)) {
-      const mail = String(found.email || '').trim().toLowerCase();
+    for (const found of profileSelection(this, owner, tenant).matched) {
+      const mail = profileFold(found.email);
       if (mail) keys.add(mail);
     }
     return [...keys];
@@ -360,12 +360,17 @@ export class Library {
       rating: { running: this.inflight.has(row.id + ':' + row.revision) }, ...(full ? { jevAllowed: this.jevAllowed(row) } : {}) };
   }
 
+  // A story with no verified tenant does not read the blank-tenant profile. Consent for that story is false.
+  consentTenant(row) {
+    const tenant = profileFold(row?.state?.tenant ?? row?.tenant);
+    return TENANT_ID.test(tenant) ? tenant : undefined;
+  }
   // JEV may rate this story: a key, the OWNER's stored consent (whoever triggers the rating), and no rejected key.
-  jevAllowed(row) { return !!this.rater?.available() && this.rater.blocked() !== 'auth' && storedConsent(this, row.owner, 'jevRating', row.state?.tenant || ''); }
+  jevAllowed(row) { return !!this.rater?.available() && this.rater.blocked() !== 'auth' && storedConsent(this, row.owner, 'jevRating', this.consentTenant(row)); }
   engineFor(row) {
     // Without a key, a story with no text still goes to the review agent, exactly as before JEV (docs/JEV_RATING.md §0).
     if (!(row.data.answers || []).some(a => String(a ?? '').trim())) return this.rater?.available() ? 'rules' : 'review-agent';
-    return this.rater?.available() && storedConsent(this, row.owner, 'jevRating', row.state?.tenant || '') ? 'jev' : 'review-agent';
+    return this.rater?.available() && storedConsent(this, row.owner, 'jevRating', this.consentTenant(row)) ? 'jev' : 'review-agent';
   }
 
   revision(user, id, n) {
