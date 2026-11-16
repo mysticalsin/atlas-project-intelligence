@@ -271,6 +271,76 @@ test('a missing profile stays null and an unreadable profile part is omitted', a
   assert.deepEqual(problems, []);
 });
 
+const LETTERED = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+
+async function privacyExport(library, tenant = TENANT) {
+  return libraryRoutes(new Request('https://atlas.test/api/library/privacy/export', {
+    headers: { 'x-atlas-user': 'ada@example.test', 'x-atlas-role': 'user', 'x-atlas-email': 'ada@example.test', 'x-atlas-tenant': tenant, 'x-atlas-tenant-enforced': '1' },
+  }), library, { env: { DATA_MODE: 'production', ORIGIN: 'https://atlas.test', CSRF_SECRET: 's' } });
+}
+
+test('a legacy profile schema does not fail the export, and folded profile rows are named', async () => {
+  const problems = [];
+  const check = async (label, fn) => {
+    try { await fn(); }
+    catch (error) { problems.push(label + ': ' + error.message); }
+  };
+  await check('legacy table', async () => {
+    const library = lib();
+    seed(library, 'ada@example.test', TENANT, 'Kept', '2026-11-05T00:00:00.000Z');
+    library.sql.exec(`CREATE TABLE profiles (subject TEXT PRIMARY KEY, email TEXT, edits TEXT, signin TEXT, consents TEXT, created_at TEXT, updated_at TEXT, seen_at TEXT)`);
+    library.sql.exec(`INSERT INTO profiles (subject, email, edits, signin, consents, created_at, updated_at, seen_at)
+      VALUES ('ada@example.test', 'ada@example.test', '{"title":{"value":"Legacy"}}', '{}', '{}', '2026-11-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z')`);
+    const response = await privacyExport(library);
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual(exportTitles(body.journey), ['Kept']);
+    assert.equal(body.profile, null);
+    assert.equal(JSON.stringify(body).includes('Legacy'), false);
+    assert.equal(body.omitted.rows.some(row => row.source === 'profile'), false);
+  });
+  await check('mixed-case subject', async () => {
+    const library = lib();
+    seedProfile(library, TENANT, '{"title":{"value":"Kept"}}', '{}', 'Ada@Example.test');
+    const body = await (await privacyExport(library)).json();
+    assert.deepEqual(body.profile.edits, { title: { value: 'Kept' } });
+    assert.deepEqual(body.omitted, { count: 0, rows: [] });
+  });
+  await check('uppercase tenant', async () => {
+    const library = lib();
+    seedProfile(library, LETTERED.toUpperCase(), '{"title":{"value":"Upper"}}', '{}');
+    const body = await (await privacyExport(library, LETTERED)).json();
+    assert.deepEqual(body.profile.edits, { title: { value: 'Upper' } });
+    assert.deepEqual(body.omitted, { count: 0, rows: [] });
+  });
+  await check('folded duplicates', async () => {
+    const library = lib();
+    ensureProfile(library);
+    library.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+      VALUES ('Ada@Example.test', ?, 'Ada@Example.test', '{"title":{"value":"Older"}}', '{}', '{}', '2026-11-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z')`, TENANT);
+    library.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+      VALUES ('ADA@example.test', ?, 'ADA@example.test', '{"title":{"value":"Newer"}}', '{}', '{}', '2026-11-03T00:00:00.000Z', '2026-11-03T00:00:00.000Z', '2026-11-03T00:00:00.000Z')`, TENANT);
+    const older = library.rows("SELECT rowid AS id FROM profiles WHERE subject = 'Ada@Example.test'")[0].id;
+    const body = await (await privacyExport(library)).json();
+    assert.deepEqual(body.profile.edits, { title: { value: 'Newer' } });
+    assert.equal(body.profile.updatedAt, '2026-11-03T00:00:00.000Z');
+    assert.deepEqual(body.omitted, { count: 1, rows: [{ id: older, source: 'profile', reason: 'duplicate' }] });
+  });
+  await check('other sql still fails the export', async () => {
+    const library = lib();
+    ensureProfile(library);
+    const rows = library.rows.bind(library);
+    library.rows = (q, ...p) => {
+      if (String(q).includes('FROM profiles')) throw new Error('disk I/O error');
+      return rows(q, ...p);
+    };
+    const response = await privacyExport(library);
+    assert.equal(response.status, 500);
+    assert.equal((await response.json()).error, 'The library could not complete that request.');
+  });
+  assert.deepEqual(problems, []);
+});
+
 test('journey read, save, export and erasure plans use the subject index and do not scan', () => {
   const library = lib();
   ensureJourney(library);
