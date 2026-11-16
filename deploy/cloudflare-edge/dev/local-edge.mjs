@@ -21,7 +21,7 @@ import { fakeTypesafe } from './fake-typesafe.mjs';
 import { storyRater } from '../src/rating.js';
 import { recordUsage } from '../src/telemetry.js';
 import { saveJourney } from '../src/journey.js';
-import { devIdentityEnabled } from '../src/authz.js';
+import { TENANT_ID, devIdentityEnabled } from '../src/authz.js';
 
 const PORT = Number(process.argv[2] || 8787), ORIGIN = `http://127.0.0.1:${PORT}`, TEAM = 'local.invalid', AUD = 'local-aud';
 const builtPage = new URL('../../../ATLAS_Voice.html', import.meta.url);
@@ -40,8 +40,14 @@ globalThis.fetch = async (url, init) => {
   return realFetch(url, init);
 };
 const b64u = b => Buffer.from(b).toString('base64url');
+const LOCAL_TENANT = String(process.env.ATLAS_LOCAL_TENANT || '').trim().toLowerCase();
+function localSubject(email) {
+  // The blank sandbox stays the default. A verified tenant is opt-in so a local JEV run can
+  // store the story and the consent on the same tenant. A missing tenant still reads no consent.
+  return TENANT_ID.test(LOCAL_TENANT) ? `${LOCAL_TENANT}:${email}` : 'local:' + email;
+}
 async function token(email, custom = null) {
-  const now = Math.floor(Date.now() / 1000), body = { aud: [AUD], iss: `https://${TEAM}`, sub: 'local:' + email, email, exp: now + 3600, iat: now, ...(custom ? { custom } : {}) };
+  const now = Math.floor(Date.now() / 1000), body = { aud: [AUD], iss: `https://${TEAM}`, sub: localSubject(email), email, exp: now + 3600, iat: now, ...(custom ? { custom } : {}) };
   const input = b64u(JSON.stringify({ alg: 'RS256', kid: 'local' })) + '.' + b64u(JSON.stringify(body));
   return input + '.' + b64u(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, new TextEncoder().encode(input)));
 }
@@ -116,7 +122,8 @@ http.createServer(async (req, res) => {
     if (!devIdentity) { res.writeHead(403); res.end('Development identity overrides are off.'); return; }
     try {
       const spec = JSON.parse(Buffer.concat(chunks).toString() || '{}');
-      lib.bindTrust({ email: 'seed', role: 'system' }, { owner: spec.owner, email: spec.email, source: spec.source === 'staffing' ? 'staffing' : 'directory', tenant: '', sandbox: true });
+      const trustTenant = TENANT_ID.test(LOCAL_TENANT) ? LOCAL_TENANT : '';
+      lib.bindTrust({ email: 'seed', role: 'system' }, { owner: spec.owner, email: spec.email, source: spec.source === 'staffing' ? 'staffing' : 'directory', tenant: trustTenant, ...(trustTenant ? {} : { sandbox: true }) });
       res.writeHead(201, { 'Content-Type': 'application/json' }); res.end('{"ok":true}');
     } catch (e) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: e.message || 'refused' })); }
     return;
