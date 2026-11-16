@@ -782,6 +782,8 @@ export class Library {
     const note = str(body.note, 500);
     if (decision === 'changes_requested' && !note) throw fail(400, 'Say what should change.');
     const prev = row.state.validation || {};
+    const current = lane === 'manager' ? prev.managerDecision : prev.presalesDecision;
+    if (current === decision) return this.get(user, id);
     const validation = { ...prev, by: user.email, at: this.now(), note, status: 'pending' };
     if (lane === 'manager') validation.managerDecision = decision;
     else validation.presalesDecision = decision;
