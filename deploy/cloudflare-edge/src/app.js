@@ -4,7 +4,7 @@
 import { CHAT_TOOLS, SPEAKING_LIMIT_S } from './policy.generated.js';
 import { Session, MAX_SECONDS } from './session.js';
 import { wav, to16k } from './speech.js';
-import { classify } from './classify.js';
+import { classify, projectState } from './classify.js';
 import { bankId, memoryConfigured } from './memory.js';
 import { sheetRoutes } from './sheet.js';
 import { detectedLanguage, NATIVE_VOICES, normalize } from './languages.js';
@@ -21,7 +21,7 @@ import { baseSecurityHeaders, DATA_CSP, secure } from './security-headers.js';
 import { aiOff, assertAiOn, blockedSubject, externalOff, inboundOff, readOnly, securityFlags, AI_OFF_MESSAGE, BLOCKED_MESSAGE, EXTERNAL_OFF_MESSAGE, INBOUND_OFF_MESSAGE, INTERVIEW_PAUSED_MESSAGE, READ_ONLY_MESSAGE } from './kill-switches.js';
 import { limitOf } from './ratelimit.js';
 import { announceFlags, ipHash, requestLog, secEvent } from './security-log.js';
-import { boundedBytes } from './bounded.js';
+import { boundedBytes, boundedText } from './bounded.js';
 import { cspReport } from './csp-report.js';
 import { renderNoticeHtml } from './privacy.js';
 import { timingSafe } from './timing-safe.js';
@@ -362,18 +362,20 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
     if (url.pathname.startsWith('/api/sheet/') && request.method === 'POST') {
       if (aiOff(env)) return json(env, { error: AI_OFF_MESSAGE, code: 'AI_OFF' }, 503);
       const refused = sessionGuard(); if (refused) return refused;
-      if (Number(request.headers.get('Content-Length') || 0) > 12 * 1024 * 1024) { slog.log('body_too_large', 'BODY_TOO_LARGE', 413); return json(env, { error: 'The file is larger than 10 MB.' }, 413); }
       const sheetPath = url.pathname.slice('/api/sheet/'.length);
-      let sheetRequest = request;
+      if (!['ingest', 'draft', 'visuals'].includes(sheetPath)) return json(env, { error: 'Not found.' }, 404);
+      const sheetCap = 12 * 1024 * 1024;
+      if (Number(request.headers.get('Content-Length') || 0) > sheetCap) { slog.log('body_too_large', 'BODY_TOO_LARGE', 413); return json(env, { error: 'The file is larger than 10 MB.' }, 413); }
+      const sheetBytes = await boundedBytes(request, sheetCap);
+      if (!sheetBytes) { slog.log('body_too_large', 'BODY_TOO_LARGE', 413); return json(env, { error: 'The file is larger than 10 MB.' }, 413); }
       if (sheetPath === 'ingest') {
-        if (request.headers.has('Content-Length') && Number(request.headers.get('Content-Length') || 0) === 0) return json(env, { error: 'The file is empty.' }, 400);
+        if (!sheetBytes.length) return json(env, { error: 'The file is empty.' }, 400);
       } else {
-        const raw = await request.text();
-        if (raw.length > 12 * 1024 * 1024) { slog.log('body_too_large', 'BODY_TOO_LARGE', 413); return json(env, { error: 'The file is larger than 10 MB.' }, 413); }
-        try { JSON.parse(raw); } catch { return json(env, { error: 'Invalid JSON.' }, 400); }
-        sheetRequest = new Request(request.url, { method: 'POST', headers: request.headers, body: raw });
+        try { JSON.parse(new TextDecoder().decode(sheetBytes)); } catch { return json(env, { error: 'Invalid JSON.' }, 400); }
       }
       const limited = await spend('sheet', limitOf(env, 'SHEET_HOUR')); if (limited) return limited;
+      const sheetHeaders = new Headers(request.headers); sheetHeaders.delete('content-length');
+      const sheetRequest = new Request(request.url, { method: 'POST', headers: sheetHeaders, body: sheetBytes });
       // PDF metadata (author, producer, title) is never extracted (D2, WOW_ZERO_CONFIG §4): text only.
       const ai = workersAI(env), res = await sheetRoutes(sheetRequest, sheetPath, { complete: (m, n) => ai.complete(m, n),
         toMarkdown: f => env.AI.toMarkdown(f, { conversionOptions: { pdf: { metadata: false } } }) });
@@ -434,10 +436,11 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
       if (aiOff(env)) return json(env, { error: AI_OFF_MESSAGE, code: 'AI_OFF' }, 503);
       const refused = sessionGuard(); if (refused) return refused;
       if (Number(request.headers.get('Content-Length') || 0) > 65536) return json(env, { error: 'Project too large to score.' }, 413);
-      const raw = await request.text();
-      if (raw.length > 65536) return json(env, { error: 'Project too large to score.' }, 413);
+      const raw = await boundedText(request, 65536);
+      if (raw == null) return json(env, { error: 'Project too large to score.' }, 413);
       let project;
       try { project = JSON.parse(raw).project; } catch { return json(env, { error: 'Invalid JSON.' }, 400); }
+      try { projectState(project); } catch (e) { return json(env, { error: e.message }, e.status || 400); }
       const limited = await spend('classify', limitOf(env, 'CLASSIFY_HOUR')); if (limited) return limited;
       try { return json(env, await classify(env, project)); }
       catch (e) { return e.status ? json(env, { error: e.message }, e.status) : json(env, { error: 'Scoring is unavailable right now. Try again shortly.' }, 502); }

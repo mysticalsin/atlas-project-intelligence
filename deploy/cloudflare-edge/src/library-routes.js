@@ -22,7 +22,7 @@ async function reportChain(lib, env) {
   try {
     const r = verifyDaily(lib.sql, lib.auditKey);
     const head = String(r.head || '').slice(0, 16);
-    if (r.ok) await secEvent(env, 'audit_chain_ok', { reason: 'CHAIN_VERIFIED', n: r.checked, head });
+    if (r.ok) await secEvent(env, 'audit_chain_ok', { reason: 'CHAIN_VERIFIED', n: r.checked, head, legacy: r.legacyUnverified || 0 });
     else await secEvent(env, 'audit_chain_break', { reason: r.reason || 'VERIFY_FAILED', n: r.brokenSeq ?? r.checked, head });
     return r;
   } catch { await secEvent(env, 'audit_chain_break', { reason: 'VERIFY_FAILED' }); return { ok: false, reason: 'VERIFY_FAILED' }; }

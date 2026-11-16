@@ -15,6 +15,10 @@ export async function internalRoutes(ctx) {
   if (user.role === 'system' || user.role === 'external') throw fail(404, 'Not found.');
   privacy.ensure(lib);
   const subj = user.subj;
+  if (key === 'POST erase') {
+    if (!subj) throw fail(400, 'A subject key is required.');
+    if (obj(body).confirmed !== true) throw fail(400, 'Erasure needs the confirmation the Worker checks.'); // before the limiter, so a direct call with no confirmation does not spend
+  }
   if (BUCKET[key]) {
     const refused = await enforce(storage, BUCKET[key], subj || user.email);
     if (refused) { await secEvent(env, 'rate_limited', { route: url.pathname, method, status: 429, reason: 'RATE:' + BUCKET[key].toUpperCase().replace(/-/g, '_'), subj, role: user.role, bucket: BUCKET[key] }); return { status: 429, response: refused }; }
@@ -31,8 +35,6 @@ export async function internalRoutes(ctx) {
   if (key === 'POST flags') { const f = privacy.setFlags(lib, user.email, body, { subj }); await note('FLAGS_SET'); return { body: f }; }
   if (key === 'GET export') { if (!subj) throw fail(400, 'A subject key is required.'); const out = exportMine(lib, user, subj); await note('EXPORT_BUILT'); return { body: out }; }
   if (key === 'POST erase') {
-    if (!subj) throw fail(400, 'A subject key is required.');
-    if (obj(body).confirmed !== true) throw fail(400, 'Erasure needs the confirmation the Worker checks.'); // the Worker verified the confirmation token; a direct call cannot skip it
     const out = eraseMine(lib, user, subj);
     await note('ERASURE_DONE', { n: Object.values(out.counts).reduce((a, b) => a + b, 0) });
     if (out.auditHead) await secEvent(env, 'audit_chain_ok', { reason: 'AUDIT_PSEUDONYMISED', n: out.counts.auditRows || 0, head: String(out.auditHead).slice(0, 16) });

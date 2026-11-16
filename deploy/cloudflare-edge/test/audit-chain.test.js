@@ -60,7 +60,7 @@ test('a deleted oldest prefix (a retention sweep) leaves a valid chain; deleting
   sql.exec('DELETE FROM audit WHERE seq = 5'); const after = verifyChain(sql); assert.equal(after.ok, true); assert.notEqual(after.head, head5, 'the logged head no longer matches the anchor');
 });
 
-test('rows with no hashes and no anchor are not signed when the commit column is added', () => {
+test('rows with no hashes migrate to one chain-start and the old rows stay unsigned', () => {
   const sql = memorySql(); table(sql);
   for (let i = 1; i <= 3; i++) sql.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', ...Object.values(row(i)));
   assert.throws(() => sql.exec('SELECT hash FROM audit'));
@@ -69,9 +69,10 @@ test('rows with no hashes and no anchor are not signed when the commit column is
   assert.equal(rows[0].hash, null);
   assert.equal(rows[0].commit, null);
   assert.equal(rows[1].actor, 'a2@example.com');
+  assert.equal(rows.filter(r => r.action === 'chain-start').length, 1);
   const v = verifyChain(sql);
-  assert.equal(v.ok, false);
-  assert.equal(v.reason, 'UNSEALED');
+  assert.equal(v.ok, true);
+  assert.equal(v.legacyUnverified, 3);
   // a NULL hash and a NULL commit after the column exists are not sealed from the actor now in the row
   const sql2 = memorySql(); table(sql2); appendAudit(sql2, row(1));
   sql2.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', ...Object.values(row(2)));

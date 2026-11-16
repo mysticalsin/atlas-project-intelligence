@@ -149,7 +149,8 @@ export function eraseRefContent(lib, id, token, at) {
   if (tableExists(lib, 'confirmation_requests')) lib.sql.exec('DELETE FROM confirmation_requests WHERE ref_id = ?', id);
 }
 // Audit rows about a person (actor, or named in the detail text) become a tombstone: actor is the token, detail is empty.
-// rewriteRows stores the proof and does not recompute later hashes. A chain that does not verify is left untouched.
+// A keyed row keeps its hash and stores the proof. A legacy row is overwritten in place and stays unverified.
+// A broken keyed chain is not rewritten. Legacy rows are still tombstoned.
 // The audit table has no tenant column. Rows are rewritten only when their id is a reference in THIS tenant, or when
 // the row is a privacy, library, directory or profile log and it actually contains one of the identities.
 // Another tenant's story stays.
@@ -218,6 +219,7 @@ export function eraseMine(lib, user, subj, opts = {}) {
 }
 function eraseWithin(lib, user, subj, tenant, { now = lib.now() } = {}) {
   const email = user.email, token = randomToken(), counts = {}, pending = [], touched = [];
+  const addresses = subjectAddresses(user);
   const bump = (k, n = 1) => { if (n) counts[k] = (counts[k] || 0) + n; };
   const has = n => tableExists(lib, n);
   const hold = (kind, entity, reason) => {
@@ -266,9 +268,12 @@ function eraseWithin(lib, user, subj, tenant, { now = lib.now() } = {}) {
       continue;
     }
     if (!ready(lib, spec.table, [spec.column, spec.tenant])) continue;
-    const where = whereSubject(spec.tenant, `lower(${spec.column}) = ?`);
-    const n = lib.rows(`SELECT COUNT(*) AS n FROM ${spec.table} WHERE ${where}`, tenant, email)[0].n;
-    if (n) { lib.sql.exec(`DELETE FROM ${spec.table} WHERE ${where}`, tenant, email); bump(spec.key, n); }
+    const aliases = spec.table === 'outreach' ? addresses : [String(email || '').trim().toLowerCase()].filter(Boolean);
+    for (const alias of aliases) {
+      const where = whereSubject(spec.tenant, `lower(${spec.column}) = ?`);
+      const n = lib.rows(`SELECT COUNT(*) AS n FROM ${spec.table} WHERE ${where}`, tenant, alias)[0].n;
+      if (n) { lib.sql.exec(`DELETE FROM ${spec.table} WHERE ${where}`, tenant, alias); bump(spec.key, n); }
+    }
   }
   if (ready(lib, 'gap_requests', ['email', 'tenant'])) {
     const where = whereSubject('tenant', 'lower(email) = ?');
@@ -298,7 +303,6 @@ function eraseWithin(lib, user, subj, tenant, { now = lib.now() } = {}) {
   }
   // 5. the profile and the flags (the receipts stay), then the audit trail.
   // Another person's row stays. Only the address copied onto it, in this tenant, is replaced.
-  const addresses = subjectAddresses(user);
   bump('profileManagerEmail', scrubManagerEmails(lib, tenant, addresses, token));
   bump('directoryImports', scrubImportAuthors(lib, tenant, addresses, token));
   bump('outreachPayloads', scrubOutreachPayloads(lib, tenant, addresses, token));

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { handle } from '../src/app.js';
 import { Library } from '../src/library.js';
 import { memorySql } from './sqlite.js';
-import { appendAudit, contentCommit, sha256Hex, verifyChain, verifyDaily, GENESIS } from '../src/audit-chain.js';
+import { appendAudit, sha256Hex, verifyChain, verifyDaily, GENESIS } from '../src/audit-chain.js';
 import { eraseMine } from '../src/subject-rights.js';
 import { privacyRoutes } from '../src/operate.js';
 import { ensure as ensureOutreach } from '../src/outreach.js';
@@ -53,26 +53,22 @@ function plantLegacy(anchorHead) {
 }
 
 function forgeColumn(sql, alter) {
-  const before = sql.exec('SELECT n, head FROM audit_anchor').toArray()[0];
   sql.exec('UPDATE audit SET hash = NULL, prev_hash = NULL');
   sql.exec('UPDATE audit SET actor = ? WHERE seq = 2', 'mallory');
   sql.exec(alter);
-  const checked = verifyChain(fresh(sql));
-  assert.equal(checked.ok, false);
+  const daily = verifyDaily(fresh(sql));
+  assert.equal(daily.reason, 'CHAIN_VERIFIED');
+  assert.equal(daily.legacyUnverified, 2);
   const tail = sql.exec('SELECT * FROM audit WHERE seq = 2').toArray()[0];
   assert.equal(tail.actor, 'mallory');
-  assert.equal(tail.commit, null);
-  const head = sql.exec('SELECT hash FROM audit ORDER BY seq DESC LIMIT 1').toArray()[0]?.hash || before.head;
-  sql.exec('UPDATE audit_anchor SET n = ?, head = ? WHERE id = 1', 2, head);
-  const daily = verifyDaily(fresh(sql));
-  assert.equal(daily.ok, false);
-  assert.notEqual(daily.reason, 'CHAIN_VERIFIED');
+  assert.equal(tail.commit ?? null, null);
+  assert.equal(sql.exec('SELECT actor FROM audit WHERE "commit" IS NOT NULL').toArray().some(r => r.actor === 'mallory'), false);
 }
-test('dropping the commit column and forging the actor is not sealed', () => {
+test('clearing hashes and dropping commit does not sign the forged actor', () => {
   forgeColumn(modernPair(), 'ALTER TABLE audit DROP COLUMN "commit"');
 });
 
-test('renaming the commit column and forging the actor is not sealed', () => {
+test('clearing hashes and renaming commit does not sign the forged actor', () => {
   forgeColumn(modernPair(), 'ALTER TABLE audit RENAME COLUMN "commit" TO "old_commit"');
 });
 
@@ -87,19 +83,18 @@ test('cleared hashes with the commit column present stay unsealed', () => {
   assert.equal(tail.hash, null);
 });
 
-test('an intact legacy chain with a matching anchor is sealed once and then verifies', () => {
+test('an intact unkeyed chain with a matching anchor is not signed', () => {
   const { sql } = plantLegacy();
   const checked = verifyChain(fresh(sql));
-  assert.equal(checked.ok, true);
-  assert.equal(checked.checked, 2);
+  assert.equal(checked.ok, false);
+  assert.equal(checked.reason, 'TAMPERED');
   const stored = sql.exec('SELECT * FROM audit ORDER BY seq').toArray();
   assert.equal(stored[0].actor, 'a1@example.test');
   assert.equal(stored[1].actor, 'a2@example.test');
-  assert.equal(stored[0].commit, contentCommit('', stored[0].actor, stored[0].detail));
-  assert.equal(stored[1].commit, contentCommit('', stored[1].actor, stored[1].detail));
+  assert.equal(stored.every(r => r.commit == null), true);
   const daily = verifyDaily(fresh(sql));
-  assert.equal(daily.ok, true);
-  assert.equal(daily.reason, 'CHAIN_VERIFIED');
+  assert.equal(daily.ok, false);
+  assert.equal(daily.reason, 'TAMPERED');
 });
 
 test('a legacy chain whose anchor does not match is not signed', () => {
