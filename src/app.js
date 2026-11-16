@@ -201,9 +201,9 @@ $('connectionTest').onclick=async()=>{$('memoryStatus').textContent='Testing…'
 document.addEventListener('click',e=>{const b=e.target.closest('[data-forget]');if(!b)return;memoryApi('/forget',{method:'POST',body:{documentId:b.dataset.forget}}).then(()=>{toast('Forgotten.');renderMemoryPanel();}).catch(err=>toast(err.message));});
 // ---- Shared reference library (server system of record) ----
 const STATUS_LABEL={in_review:'In review',needs_work:'Needs work',changes_requested:'Changes requested',awaiting_validation:'Awaiting N+1',published:'Published',withdrawn:'Withdrawn'};
-async function libraryApi(path,{method='GET',body}={}){const b=await bootInfo();if(!b.library)throw Error('The shared library is not available here.');
+async function libraryApi(path,{method='GET',body}={}){const b=await bootInfo();if(!b.library)throw Error(b.ok===false&&typeof b.error==='string'&&b.error?b.error:'The shared library is not available here.');
  const r=await window.AtlasAuth.fetch('/api/library'+path,{method,headers:method==='GET'?{}:{'Content-Type':'application/json','X-Atlas-CSRF':b.csrf},body:body===undefined?undefined:JSON.stringify(body)});
- const data=await r.json().catch(()=>({}));if(!r.ok)throw Error(data.error||'The library did not answer.');return data;}
+ const data=await r.json().catch(()=>({}));if(r.status===503&&typeof data.error==='string'&&data.error)throw Error(data.error);if(!r.ok)throw Error(data.error||'The library did not answer.');return data;}
 function libraryPayload(p){const sh=p.sheet;return {sheet:sh&&(sh.oppId||sh.title||Object.values(sh.sections).some(Boolean))?{oppId:sh.oppId,oppIdPending:sh.oppIdPending,title:sh.title,exec:sh.exec,sections:sh.sections,file:sh.file,fileName:sh.fileName,confirmedAt:sh.confirmedAt}:null,title:p.title,stage:p.stage,sector:p.sector,consultant:{name:p.consultant,role:p.role},client:p.client,details:p.details,answers:p.answers,report:p.report,jev:p.jev,
  validation:{manager:p.validation.manager,managerStaff:p.validation.managerStaff},sources:p.sources.map(s=>({name:s.name,version:s.version,url:s.url,excerpt:String(s.text||'').slice(0,1000)}))};}
 async function syncToLibrary(id,{quiet=false}={}){const A=window.AtlasAuth,p=state.profiles.flatMap(u=>u.projects).find(x=>x.id===id);if(!p){A?.pending.delete(id);return null;}if(p.sample)return null;
