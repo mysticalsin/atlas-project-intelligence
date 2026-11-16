@@ -64,7 +64,7 @@ slots={'__CSS__':read_text(ROOT/'src/styles.css')+'\n'+read_text(ROOT/'src/voice
 text=read_text(ROOT/'src/shell.html')
 for k,v in slots.items():text=text.replace(k,v)
 hashes=script_hashes(text)
-text=text.replace('__CSP_META__', html_csp(hashes=hashes))
+text=text.replace('__CSP_META__', html_csp(hashes=hashes, script_blob=True, worker_blob=True, media_blob=True))
 generated='export const PAGE_SCRIPT_HASHES = '+json.dumps(hashes)+';\nexport const RUNTIME_BLOCK = '+json.dumps(RUNTIME_BLOCK)+';\n'
 csp_out=ROOT/'deploy/cloudflare-edge/src/csp.generated.js'
 csp_out.parent.mkdir(parents=True, exist_ok=True)

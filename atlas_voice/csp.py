@@ -42,20 +42,29 @@ def script_src(hashes):
 TT_POLICY = 'atlas-html'
 
 
-def html_csp(*, hashes=(), connect='', frame_ancestors="'none'", form_action="'self'", report=True, page=True, blob=True):
-    """The policy for an HTML response. `connect` is the extra connect-src origin (the websocket origin), `page` False is
-    the reduced policy of a small static page (no fetch, images only from data:), `report` adds the violation report target."""
-    sources = ' '.join(filter(None, [script_src(hashes) if hashes else '', 'blob:' if blob else ''])) or "'none'"
+def html_csp(*, hashes=(), connect='', connect_self=True, frame_ancestors="'none'", form_action="'self'", report=True,
+             script_blob=False, worker_blob=False, media_blob=False, font_self=True, img_src=None, trusted_types=TT_POLICY):
+    """One policy builder. Defaults are a quiet page (no blob). The voice page opts into script_blob, worker_blob and media_blob.
+    `connect` is an extra connect-src origin. img_src False omits img-src. trusted_types 'none' is a page that only uses textContent."""
+    sources = ' '.join(filter(None, [script_src(hashes) if hashes else '', 'blob:' if script_blob else ''])) or "'none'"
     d = ["default-src 'none'", 'script-src ' + sources, "script-src-attr 'none'", "style-src 'unsafe-inline'"]
-    if page:
-        d += ["connect-src 'self'" + (' ' + connect if connect else ''), 'img-src data: blob:' if blob else 'img-src data:', "font-src 'self'"]
-        if blob:  # the voice page only: the AudioWorklet module, the audio it plays, an image preview
-            d += ['worker-src blob:', 'media-src blob:']
+    connect_src = ' '.join(filter(None, ["'self'" if connect_self else '', connect]))
+    if connect_src:
+        d.append('connect-src ' + connect_src)
+    if img_src is None:
+        img = 'data: blob:' if script_blob else ('data:' if font_self or connect_self else '')
     else:
-        d += ['img-src data:']
+        img = img_src or ''
+    if img:
+        d.append('img-src ' + img)
+    if font_self:
+        d.append("font-src 'self'")
+    if worker_blob:
+        d.append('worker-src blob:')
+    if media_blob:
+        d.append('media-src blob:')
     d += ["object-src 'none'", "base-uri 'none'", f'form-action {form_action}', f'frame-ancestors {frame_ancestors}']
-    # Trusted Types: the full page may create the one policy safe-html.js makes; a small page none. No default policy.
-    d += ["require-trusted-types-for 'script'", 'trusted-types ' + (TT_POLICY if page else "'none'")]
+    d += ["require-trusted-types-for 'script'", 'trusted-types ' + ("'none'" if trusted_types == 'none' else trusted_types)]
     if report:
         d += [f'report-uri {REPORT_PATH}', f'report-to {REPORT_GROUP}']
     return '; '.join(d)

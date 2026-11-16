@@ -12,8 +12,7 @@ Tony, 2026-10-31: "make sure the agent can speak any language the user is speaki
 
 Every bank other than English is a machine translation, accepted as is (Tony decision 2026-11-02, D-L2: no native-speaker dependency, ATLAS translates any
 language automatically): REVIEW_STATUS says so, and translate.js renders any other text into any language with a confidence flag, never a human gate.
-Pure data and functions (no I/O, no clock). build_edge.py exports EDGE_CONSTANTS (prefix LANG_) and src/lang-detect.js ports detect() (parity
-vectors: test/gen_lang_parity.py -> test/lang.vectors.json).
+Pure data and functions (no I/O, no clock). The edge port of detect() moves to the interview slice with the code that calls it.
 """
 import unicodedata
 

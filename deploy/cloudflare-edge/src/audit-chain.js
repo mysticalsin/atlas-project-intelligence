@@ -1,10 +1,11 @@
 // Tamper-evident library audit trail (blue review G7). Every audit row carries `prev_hash` (the previous row's hash) and
-// `hash = SHA-256(canonical row incl. prev_hash)`. Changing, deleting or inserting a row in the middle breaks the chain from
-// that point, and verifyChain finds the first broken row. The daily cron runs the verification and logs `audit_chain_break`.
+// `hash = SHA-256(prev, id, action, at)`. actor and detail are outside the link: erasure may pseudonymise them without
+// rewriting later rows, including another tenant's prev_hash. Editing the action, the id or the time still breaks the chain
+// from that row. verifyChain finds the first broken row. The daily cron runs verifyDaily, which stores n and head and logs
+// `audit_chain_ok` or `audit_chain_break`. A shorter chain than the stored anchor is `TRUNCATED`.
 // SHA-256 is implemented here, synchronously, because Library.log is synchronous and WebCrypto is async-only.
-// Limits, honestly: whoever can rewrite the whole table AND recompute every hash is not stopped by an in-table chain, and
-// removing the newest rows (or the oldest, e.g. a retention sweep) leaves a shorter valid chain. The daily verification
-// therefore logs the chain head (`head`, `n`) to the log sink, which is the external anchor to compare against.
+// Limits, honestly: whoever can rewrite the whole table AND recompute every hash is not stopped by an in-table chain.
+// Deleting the oldest prefix leaves a valid in-table chain; the stored anchor is what notices the missing rows.
 export const GENESIS = '0'.repeat(64);
 
 const K = new Uint32Array([0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
@@ -32,7 +33,9 @@ export function sha256Hex(text) {
 }
 
 // JSON array, not a delimiter-joined string: no field value can shift a boundary. `seq` is excluded (an autoincrement may skip).
-export const rowHash = (prev, r) => sha256Hex(JSON.stringify([prev, String(r.id ?? ''), String(r.actor ?? ''), String(r.action ?? ''), String(r.at ?? ''), String(r.detail ?? '')]));
+// actor and detail are omitted on purpose. They are the fields a privacy rewrite is allowed to change, and including them
+// forced a reseal of every later row, including other tenants. id, action and at stay, so a changed action still mismatches.
+export const rowHash = (prev, r) => sha256Hex(JSON.stringify([prev, String(r.id ?? ''), String(r.action ?? ''), String(r.at ?? '')]));
 
 const sealed = new WeakSet();
 // Adds the two columns to an audit table created before the chain existed and seals every unsealed row in sequence order
@@ -79,25 +82,35 @@ export function verifyChain(sql) {
   }
 }
 
-// G2: a privacy rewrite (erasure of a person, the retention pseudonymisation). `edit(row)` returns the fields to change ({actor, detail}) or null. A changed row
-// gets its fields replaced and the chain is re-sealed from the first changed row to the end, so verifyChain keeps passing. This is the ONE sanctioned way to
-// alter history, and it moves the chain head: the caller logs both heads (the external anchor) and says why. The in-table chain never protected against
-// whoever can rewrite the whole table (see the limits above); what stays tamper-evident is everything that was not erased.
-// X1 (red M8): the chain is VERIFIED FIRST. Re-sealing a chain that no longer verifies would make the tampered rows look legitimate, so a broken chain is left
-// exactly as it is and the call returns { refused: true, reason, brokenSeq, changed: 0 }; the caller reports it (a security event) and the privacy action continues
-// without the audit rewrite (the DPO is told that part is pending).
+// G2: a privacy rewrite (erasure of a person, the retention pseudonymisation). `edit(row)` returns {actor, detail} or null.
+// Only those two columns are written. prev_hash and hash stay, so a later row's link does not move and another tenant's
+// row is not resealed. X1 (red M8): the chain is VERIFIED FIRST. A broken chain is left exactly as it is and the call
+// returns { refused: true, reason, brokenSeq, changed: 0 }.
 export function rewriteRows(sql, edit) {
   const before = verifyChain(sql);
   if (!before.ok) return { refused: true, reason: before.reason, brokenSeq: before.brokenSeq, changed: 0, head: before.head, previousHead: before.head };
-  let prev = GENESIS, changed = 0, resealing = false;
+  let changed = 0;
   for (const r of sql.exec('SELECT seq, id, actor, action, at, detail, prev_hash, hash FROM audit ORDER BY seq').toArray()) {
-    const patch = edit(r), next = patch ? { ...r, ...patch } : r;
-    if (patch && (next.actor !== r.actor || next.detail !== r.detail)) { changed++; resealing = true; }
-    if (resealing) {
-      const h = rowHash(prev, next);
-      sql.exec('UPDATE audit SET actor = ?, detail = ?, prev_hash = ?, hash = ? WHERE seq = ?', next.actor, next.detail, prev, h, r.seq);
-      prev = h;
-    } else prev = r.hash;
+    const patch = edit(r);
+    if (!patch) continue;
+    const actor = patch.actor ?? r.actor, detail = patch.detail ?? r.detail;
+    if (actor === r.actor && detail === r.detail) continue;
+    sql.exec('UPDATE audit SET actor = ?, detail = ? WHERE seq = ?', actor, detail, r.seq);
+    changed++;
   }
-  return { changed, head: prev, previousHead: before.head };
+  return { changed, head: before.head, previousHead: before.head };
+}
+
+// Daily check. Stores n and the head when the chain verifies and is not shorter than the last anchor.
+// A drop in n is TRUNCATED and the anchor is left, so the next run still reports it. A mid-chain edit keeps
+// verifyChain's reason and does not move the anchor.
+export function verifyDaily(sql) {
+  ensureChain(sql);
+  sql.exec('CREATE TABLE IF NOT EXISTS audit_anchor (id INTEGER PRIMARY KEY CHECK (id = 1), n INTEGER NOT NULL, head TEXT NOT NULL)');
+  const result = verifyChain(sql);
+  const prev = sql.exec('SELECT n, head FROM audit_anchor WHERE id = 1').toArray()[0] || null;
+  if (!result.ok) return result;
+  if (prev && result.checked < Number(prev.n)) return { ok: false, reason: 'TRUNCATED', checked: result.checked, head: result.head, previousN: Number(prev.n), previousHead: prev.head };
+  sql.exec('INSERT INTO audit_anchor (id, n, head) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET n = excluded.n, head = excluded.head', result.checked, result.head);
+  return { ok: true, checked: result.checked, head: result.head, reason: 'CHAIN_VERIFIED' };
 }

@@ -748,3 +748,12 @@ Review answers:
 - Parent is the privacy-receipt commit. This note is the next forward commit. No push, pull request, deploy, or live call.
 - The Worker uses the library's own path match for a privacy or profile delete. A trailing slash, a repeated slash, a query string, and a later privacy segment take the same missing-tenant rejection before the library object is requested. A profile path with a third segment is not a delete. Percent-encoded slashes and a different letter case are not that match. The page was not rebuilt.
 - Quarantine is not deletion. Vendor deletion stays not-asserted. A Cloudflare Durable Object runtime was not executed.
+
+### Session: 2026-11-16 / PR #5 review fixes
+- Same branch `cursor/pr1-port-s1-security-660c`. Red commit `a8c89f6` (failing tests). The following commit is the fix. No force push, no rebase, no deploy, no paid call, and `LOG_SALT` was not provisioned.
+- Pages name their CSP capabilities. JSON and a non-HTML response use the data policy. Sign-in is `script-src 'none'`. The voice page opts into `blob:`.
+- Export and erasure wrap the subject condition in parentheses under the verified tenant. `bid_references` is updated only through `bids.tenant`. Evidence, approvals, jobs, and job events are not touched. Staffing and `teams_conversations` use an explicit table map. Erasure is one `transactionSync`.
+- The Interview object is listed as not covered. `erased` is false. `libraryErased` is what the library erased.
+- The daily cron writes an audit anchor and, under `ATLAS_READ_ONLY`, only verifies the chain. `scan-stale` returns main's payload. Actor and detail are outside the audit hash, so a pseudonym does not reseal later rows.
+- Production without `LOG_SALT` returns 503. The limiter fails closed. `GET /api/me/export` checks origin and CSRF. An uncaught error returns a generic 500 with security headers. A log bucket is an allow-listed name. The Art. 9 edge matcher moves to slice 2. `createHTML` stays a passthrough, recorded next to `style-src 'unsafe-inline'`.
+- Local gates on this commit: pytest 293 passed, 122 warnings. Root `node --test tests/*.test.js`: 391 tests, 390 passed, 1 skipped. Edge `node --test test/*.test.js`: 594 passed. `verify_page_build.sh` twice, pin unchanged (`3730f65e…d20b`, 913444 bytes). `tests/confirm_csp_browser.py` loaded the confirm page, posted a synthetic answer, and blocked a foreign fetch.

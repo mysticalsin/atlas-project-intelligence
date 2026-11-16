@@ -106,16 +106,16 @@ test('sheet ingest and visuals share the same counter; classify and transcribe h
   const t2 = await tr(); assert.equal(t2.status, 429); assert.ok(t2.headers.get('retry-after'));
 });
 
-test('a request refused by CSRF or by size does not spend the budget, and the limiter fails open if its Durable Object is unreachable', async () => {
+test('a request refused by CSRF or by size does not spend the budget, and the limiter fails closed if its Durable Object is unreachable', async () => {
   const { st, env } = worldWith({ RL_SHEET_HOUR: '1' }), me = await session(env);
   assert.equal((await me.go('/api/sheet/draft', { method: 'POST', body: '{}', csrf: 'bad' })).status, 403);
   assert.equal((await me.go('/api/sheet/draft', { method: 'POST', body: '{}', headers: { 'Content-Length': String(13 * 1024 * 1024) } })).status, 413);
   assert.equal(st.keys().filter(k => k.startsWith('rl:')).length, 0);
   const broken = { ...env, INTERVIEW: { idFromName: n => n, get: () => ({ fetch: async () => { throw new Error('DO down'); } }) } }, me2 = await session({ ...env, INTERVIEW: ns() });
-  for (let i = 0; i < 3; i++) assert.notEqual((await me2.go('/api/sheet/draft', { method: 'POST', body: '{}' }, broken)).status, 429);
+  for (let i = 0; i < 3; i++) assert.equal((await me2.go('/api/sheet/draft', { method: 'POST', body: '{}' }, broken)).status, 503);
 });
 
-test('existing in-memory limits (ask, bids, profile) are unchanged and a deployment without INTERVIEW still works', async () => {
+test('existing in-memory limits (ask, bids, profile) are unchanged and a deployment without INTERVIEW refuses the limited route', async () => {
   const env = { ...ENV, LIBRARY: ns(), TYPESAFE_API_KEY: '', AI: { toMarkdown: async () => ({ format: 'markdown', data: 'x' }), run: async () => ({ response: '{}' }) } }, me = await session(env);
-  for (let i = 0; i < 40; i++) assert.notEqual((await me.go('/api/sheet/draft', { method: 'POST', body: '{}' })).status, 429);
+  for (let i = 0; i < 3; i++) assert.equal((await me.go('/api/sheet/draft', { method: 'POST', body: '{}' })).status, 503);
 });

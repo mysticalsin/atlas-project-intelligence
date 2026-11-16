@@ -8,7 +8,7 @@ text that is voiced, shown or stored is never replaced by it. The word lists tha
 
 The confusable table is a small hand-made subset of UTS #39 (the letters that are visually identical in common fonts), not the full table: it is a
 defence against the cheap tricks, and the deterministic bounds elsewhere (the policy gate, the bounded rerank merge) are what the system relies on.
-src/textfold.js ports it (parity vectors: test/gen_fold_parity.py -> test/fold.vectors.json; the table is the generated constant FOLD_CONFUSABLES).
+The edge port of fold() moves to the interview slice with the phrase matcher that uses it.
 Pure stdlib."""
 import unicodedata
 

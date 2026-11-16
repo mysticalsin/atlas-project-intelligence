@@ -18,7 +18,7 @@ export const TEAMS_ANCESTORS = 'https://teams.microsoft.com https://*.teams.micr
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status,
   headers: { ...BASE, 'Content-Type': 'application/json', 'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'" } });
 // Route-specific CSP: only Teams may frame the launcher; the main host keeps frame-ancestors 'none' everywhere else.
-export const tabPolicy = hashes => htmlCsp({ hashes, page: false, blob: false, report: false, formAction: "'none'", frameAncestors: TEAMS_ANCESTORS });
+export const tabPolicy = hashes => htmlCsp({ hashes, connectSelf: false, scriptBlob: false, imgSrc: 'data:', fontSelf: false, workerBlob: false, mediaBlob: false, trustedTypes: 'none', report: false, formAction: "'none'", frameAncestors: TEAMS_ANCESTORS });
 const NEEDS = ['TEAMS_APP_ID', 'TEAMS_TENANT_ID', 'TEAMS_BOT_SECRET (Worker secret)', 'TEAMS_BOT_APP_ID only when the bot uses another app registration than TEAMS_APP_ID',
   'Cloudflare Access bypass for /api/teams/messages and /teams/tab', 'Azure Bot resource (F0, single tenant) with the Teams channel on', 'Teams admin approval of the app package'];
 const configured = env => teamsStatus(env) === 'connected';

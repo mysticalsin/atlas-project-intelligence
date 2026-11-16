@@ -15,7 +15,7 @@ export async function jwt(claims = {}, header = { alg: 'RS256', kid: 'k1' }) {
   const input = b64u(JSON.stringify(header)) + '.' + b64u(JSON.stringify(body));
   return input + '.' + b64u(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, new TextEncoder().encode(input)));
 }
-export const ENV = { ORIGIN, ACCESS_AUD: AUD, ACCESS_TEAM_DOMAIN: TEAM, CSRF_SECRET: 'test-secret', TALKER_MODEL: 'talker', TTS_VOICE: 'harmonia', DATA_MODE: 'production' };
+export const ENV = { ORIGIN, ACCESS_AUD: AUD, ACCESS_TEAM_DOMAIN: TEAM, CSRF_SECRET: 'test-secret', TALKER_MODEL: 'talker', TTS_VOICE: 'harmonia', DATA_MODE: 'production', LOG_SALT: 'synthetic-log-salt' };
 
 // A Durable Object namespace stub: every call lands in `fn(request, name)`; `calls` records them.
 export const ns = fn => { const calls = []; return { calls, idFromName: n => n, get: name => ({ fetch: async r => { calls.push({ name, request: r }); return fn ? fn(r, name) : new Response('{}', { headers: { 'Content-Type': 'application/json' } }); } }) }; };

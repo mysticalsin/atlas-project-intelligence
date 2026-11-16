@@ -27,9 +27,11 @@ test('rows chain: each row\'s prev_hash is the previous hash, the first starts a
 test('tampering is found at the first broken row: edit (HASH_MISMATCH), delete in the middle or insert (LINK_BROKEN), unsealed row, edited hash', () => {
   const build = () => { const sql = memorySql(); table(sql); for (let i = 1; i <= 6; i++) appendAudit(sql, row(i)); return sql; };
   let sql = build(); sql.exec("UPDATE audit SET actor = 'mallory@evil' WHERE seq = 3");
-  assert.deepEqual(pick(verifyChain(sql)), { ok: false, brokenSeq: 3, reason: 'HASH_MISMATCH', checked: 2 });
+  assert.equal(verifyChain(sql).ok, true, 'actor is outside the link');
   sql = build(); sql.exec("UPDATE audit SET detail = 'quietly changed' WHERE seq = 6");
-  assert.deepEqual(pick(verifyChain(sql)), { ok: false, brokenSeq: 6, reason: 'HASH_MISMATCH', checked: 5 });
+  assert.equal(verifyChain(sql).ok, true, 'detail is outside the link');
+  sql = build(); sql.exec("UPDATE audit SET action = 'tampered' WHERE seq = 3");
+  assert.deepEqual(pick(verifyChain(sql)), { ok: false, brokenSeq: 3, reason: 'HASH_MISMATCH', checked: 2 });
   sql = build(); sql.exec('DELETE FROM audit WHERE seq = 4');
   assert.deepEqual(pick(verifyChain(sql)), { ok: false, brokenSeq: 5, reason: 'LINK_BROKEN', checked: 3 });
   sql = build(); sql.exec("INSERT INTO audit (id, actor, action, at, detail, prev_hash, hash) VALUES ('x','x','x','x','x', 'f', 'e')");
@@ -39,8 +41,8 @@ test('tampering is found at the first broken row: edit (HASH_MISMATCH), delete i
   sql = build(); sql.exec('UPDATE audit SET prev_hash = NULL WHERE seq = 2');
   assert.equal(verifyChain(sql).reason, 'UNSEALED');
   // an attacker who rewrites a row AND recomputes its hash is caught by the next row's link
-  sql = build(); const r2 = sql.exec('SELECT * FROM audit WHERE seq = 2').toArray()[0], forged = { ...r2, actor: 'forged' };
-  sql.exec('UPDATE audit SET actor = ?, hash = ? WHERE seq = 2', 'forged', rowHash(r2.prev_hash, forged));
+  sql = build(); const r2 = sql.exec('SELECT * FROM audit WHERE seq = 2').toArray()[0], forged = { ...r2, action: 'forged' };
+  sql.exec('UPDATE audit SET action = ?, hash = ? WHERE seq = 2', 'forged', rowHash(r2.prev_hash, forged));
   assert.deepEqual(pick(verifyChain(sql)), { ok: false, brokenSeq: 3, reason: 'LINK_BROKEN', checked: 2 });
 });
 const pick = v => ({ ok: v.ok, brokenSeq: v.brokenSeq, reason: v.reason, checked: v.checked });
@@ -77,6 +79,6 @@ test('Library: every audit write goes through the chain, the audit view is uncha
   const detail = lib.get(admin, saved.id);
   assert.deepEqual(Object.keys(detail.audit[0]).sort(), ['action', 'actor', 'at', 'detail']);
   assert.equal(sql.exec("SELECT detail FROM audit WHERE action = 'viewed'").toArray()[0].detail.length, 300, 'details are still cut at 300 characters');
-  sql.exec("UPDATE audit SET actor = 'someone-else' WHERE seq = 1");
+  sql.exec("UPDATE audit SET action = 'tampered' WHERE seq = 1");
   assert.equal(verifyChain(sql).ok, false);
 });

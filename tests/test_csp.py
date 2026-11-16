@@ -49,12 +49,14 @@ def test_every_built_page_alias_is_identical():
 @pytest.mark.skipif(shutil.which('node') is None, reason='node is needed to compare with the edge builder')
 def test_policy_is_byte_identical_to_the_edge_builder():
     cases = [
-        ({'hashes': ['sha256-aaa', 'sha256-bbb'], 'connect': 'wss://a.example'}, dict(hashes=['sha256-aaa', 'sha256-bbb'], connect='wss://a.example')),
+        ({'hashes': ['sha256-aaa', 'sha256-bbb'], 'connect': 'wss://a.example', 'scriptBlob': True, 'workerBlob': True, 'mediaBlob': True},
+         dict(hashes=['sha256-aaa', 'sha256-bbb'], connect='wss://a.example', script_blob=True, worker_blob=True, media_blob=True)),
         ({}, {}),
-        ({'hashes': ['sha256-aaa'], 'report': False, 'connect': 'ws://127.0.0.1:8080'}, dict(hashes=['sha256-aaa'], report=False, connect='ws://127.0.0.1:8080')),
-        ({'hashes': ['sha256-a', 'sha256-b'], 'page': False, 'blob': False, 'report': False, 'formAction': "'none'", 'frameAncestors': 'https://t.example https://*.t.example'},
-         dict(hashes=['sha256-a', 'sha256-b'], page=False, blob=False, report=False, form_action="'none'", frame_ancestors='https://t.example https://*.t.example')),
-        ({'blob': False}, dict(blob=False)),
+        ({'hashes': ['sha256-aaa'], 'report': False, 'connect': 'ws://127.0.0.1:8080', 'scriptBlob': True, 'workerBlob': True, 'mediaBlob': True},
+         dict(hashes=['sha256-aaa'], report=False, connect='ws://127.0.0.1:8080', script_blob=True, worker_blob=True, media_blob=True)),
+        ({'hashes': ['sha256-a', 'sha256-b'], 'connectSelf': False, 'scriptBlob': False, 'imgSrc': 'data:', 'fontSelf': False, 'workerBlob': False, 'mediaBlob': False, 'trustedTypes': 'none', 'report': False, 'formAction': "'none'", 'frameAncestors': 'https://t.example https://*.t.example'},
+         dict(hashes=['sha256-a', 'sha256-b'], connect_self=False, script_blob=False, img_src='data:', font_self=False, worker_blob=False, media_blob=False, trusted_types='none', report=False, form_action="'none'", frame_ancestors='https://t.example https://*.t.example')),
+        ({'scriptBlob': False, 'workerBlob': False, 'mediaBlob': False}, dict(script_blob=False, worker_blob=False, media_blob=False)),
     ]
     script = ("import('./csp.js').then(m=>{const cases=JSON.parse(process.argv[1]);console.log(JSON.stringify(cases.map(c=>m.htmlCsp(c)).concat(m.legacyCsp('wss://a.example'))))})")
     out = subprocess.run(['node', '-e', script, json.dumps([c[0] for c in cases])], cwd=EDGE, capture_output=True, text=True, check=True).stdout
@@ -95,15 +97,15 @@ def test_gateway_serves_the_page_with_its_own_hashes_and_the_runtime_as_json(mon
                 body, header = await r.text(), r.headers['Content-Security-Policy']
                 assert r.status == 200 and 'Content-Security-Policy-Report-Only' not in r.headers
             assert script_hashes(body) == script_hashes(PAGE), 'filling the data block changes no executable script'
-            assert header == csp(app['config'], script_hashes(body))
+            assert header == csp(app['config'], script_hashes(body), blob=True)
             assert re.search(r'script-src ((?:\'sha256-[^\']+\' )+)blob:;', header) and 'unsafe-inline' not in re.search(r'script-src ([^;]*)', header).group(1)
             assert "script-src-attr 'none'" in header and "frame-ancestors 'none'" in header and f"connect-src 'self' ws://{origin.split('//')[1]}" in header
             block = re.search(r'<script id="atlas-runtime" type="application/json">(.*?)</script>', body, re.S).group(1)
             assert '<' not in block and set(json.loads(block)) == {'subjectKey', 'authMode', 'name'}
             assert 'window.ATLAS_RUNTIME={' not in body and 'SERVER_RUNTIME' not in body
-            async with client.get(origin + '/api/bootstrap') as r:  # a data response: no page hashes, so no inline script at all
-                assert r.headers['Content-Security-Policy'] == csp(app['config'])
-                assert re.search(r'script-src blob:;', r.headers['Content-Security-Policy'])
+            async with client.get(origin + '/api/bootstrap') as r:  # JSON carries the data policy only
+                assert r.headers['Content-Security-Policy'] == "default-src 'none'; frame-ancestors 'none'"
+                assert 'blob:' not in r.headers['Content-Security-Policy'] and 'ws:' not in r.headers['Content-Security-Policy']
         finally:
             await client.close()
             await runner.cleanup()

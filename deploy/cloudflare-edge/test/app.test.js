@@ -12,7 +12,8 @@ async function jwt(claims = {}, header = { alg: 'RS256', kid: 'k1' }) {
   const input = b64u(JSON.stringify(header)) + '.' + b64u(JSON.stringify(body));
   return input + '.' + b64u(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, new TextEncoder().encode(input)));
 }
-const ENV = { ORIGIN, ACCESS_AUD: AUD, ACCESS_TEAM_DOMAIN: TEAM, CSRF_SECRET: 'test-secret', TALKER_MODEL: 'talker', TTS_VOICE: 'harmonia',
+const allowLimit = { idFromName: n => n, get: () => ({ fetch: async () => new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } }) }) };
+const ENV = { ORIGIN, ACCESS_AUD: AUD, ACCESS_TEAM_DOMAIN: TEAM, CSRF_SECRET: 'test-secret', TALKER_MODEL: 'talker', TTS_VOICE: 'harmonia', LOG_SALT: 'synthetic-log-salt', INTERVIEW: allowLimit,
   ATLAS_ADMIN_ROLES: 'ATLAS.Admin', ATLAS_PRESALES_ROLES: 'ATLAS.Presales,ATLAS.Publish', ATLAS_REVIEWER_ROLES: 'ATLAS.Reviewer,ATLAS.Review' };
 const req = async (path, { token, headers = {}, host = ORIGIN } = {}) => new Request(host + path, { headers: { ...(token === undefined ? { 'cf-access-jwt-assertion': await jwt() } : token ? { 'cf-access-jwt-assertion': token } : {}), ...headers } });
 

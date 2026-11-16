@@ -8,6 +8,9 @@ import * as profile from './profile.js';
 import { adminRoutes, journeyRoutes, privacyRoutes } from './operate.js';
 import { internalRoutes as privacyInternal } from './privacy-routes.js';
 import { sweep as retentionSweep } from './retention.js';
+import { holdRoutes } from './subject-rights.js';
+import { verifyDaily } from './audit-chain.js';
+import { secEvent } from './security-log.js';
 import { productionDemoConflict, resolveTenantEnforcement } from './authz.js';
 export const SYSTEM = { email: 'atlas', role: 'admin' }; // automatic review after a save
 function scopedReviewer(user = {}) {
@@ -15,6 +18,14 @@ function scopedReviewer(user = {}) {
 }
 // A rating engine exists: the review agent, or JEV with a key (docs/JEV_RATING.md §6.5).
 const canRate = lib => !!(lib.complete || lib.rater?.available());
+async function reportChain(lib, env) {
+  try {
+    const r = verifyDaily(lib.sql);
+    const head = String(r.head || '').slice(0, 16);
+    if (r.ok) await secEvent(env, 'audit_chain_ok', { reason: 'CHAIN_VERIFIED', n: r.checked, head });
+    else await secEvent(env, 'audit_chain_break', { reason: r.reason || 'VERIFY_FAILED', n: r.brokenSeq ?? r.checked, head });
+  } catch { await secEvent(env, 'audit_chain_break', { reason: 'VERIFY_FAILED' }); }
+}
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 
@@ -75,9 +86,14 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
         return json({ error: 'ATLAS_SYSTEM_TENANT is not a verified tenant id. Maintenance was not run.' }, 403);
       }
       if (method === 'POST' && id === 'trigger') return json(outreach.onTrigger(lib, user, body), 201);
+      if (method === 'POST' && id === 'verify-chain') { await reportChain(lib, env); return json({ verified: true }); }
       if (method === 'POST' && id === 'scan-stale') {
-        const retention = retentionSweep(lib, { tenant: user.tenantEnforced === true ? user.tenant : '' });
-        return json({ invited: lib.scanStale(user), ...outreach.daily(lib, user), ...(profile.READY ? profile.daily(lib, lib.now(), user) : {}), ...retention });
+        // The response is the same object main returns: scanStale, then the two dailies. Retention runs after that
+        // count is taken, so an old draft is still counted as invited, and its keys are not added to the body.
+        const payload = { invited: lib.scanStale(user), ...outreach.daily(lib, user), ...(profile.READY ? profile.daily(lib, lib.now(), user) : {}) };
+        retentionSweep(lib, { tenant: user.tenantEnforced === true ? user.tenant : '' });
+        await reportChain(lib, env);
+        return json(payload);
       }
       const sys = await featureRoutes(ctx);
       if (sys) return json(sys.body, sys.status || 200);
@@ -87,6 +103,7 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
     if (f) return json(f.body, f.status || 200);
     if (id === 'admin') { const r = await adminRoutes(ctx); return json(r.body, r.status || 200); }
     if (id === 'journey') { const r = await journeyRoutes(ctx); return json(r.body, r.status || 200); }
+    if (id === 'erasure-holds') { const r = holdRoutes(ctx); return json(r.body, r.status || 200); }
     if (id === 'privacy') { const r = await privacyRoutes(ctx); return json(r.body, r.status || 200); }
     if (method === 'POST' && id === 'recommend') return json(await lib.recommend(user, body));
     if (method === 'POST' && id === 'merge') { const saved = await lib.merge(user, body); if (canRate(lib)) waitUntil(lib.review(scopedReviewer(user), saved.id, { budget: 'background', waitUntil }).catch(() => {})); return json(saved); }

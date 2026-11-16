@@ -117,6 +117,8 @@ export function ensure(lib) {
     lib.sql.exec("CREATE TRIGGER IF NOT EXISTS consent_receipts_no_delete BEFORE DELETE ON consent_receipts WHEN COALESCE((SELECT open FROM privacy_gate WHERE name = 'receipts'), 0) != 1 BEGIN SELECT RAISE(ABORT, 'consent receipts are append-only'); END");
     lib.sql.exec("CREATE TRIGGER IF NOT EXISTS consent_receipts_no_replace BEFORE INSERT ON consent_receipts WHEN EXISTS (SELECT 1 FROM consent_receipts WHERE id = NEW.id) BEGIN SELECT RAISE(ABORT, 'consent receipts are append-only'); END");
   } catch { /* a platform without triggers: the module still exposes no update path */ }
+  const holds = lib.rows("SELECT name FROM pragma_table_info('erasure_holds')").map(r => r.name);
+  if (holds.length && !holds.includes('tenant')) lib.sql.exec('ALTER TABLE erasure_holds ADD COLUMN tenant TEXT');
   ensured.add(lib);
 }
 // Runs `fn` (the retention sweep's receipt delete) with the delete gate open, and always closes it again.

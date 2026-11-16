@@ -34,14 +34,14 @@ def _ws_origin(config):
     return ('wss' if u.scheme == 'https' else 'ws') + '://' + u.netloc
 
 
-def csp(config, hashes=()):
-    """Hash-only script policy. Empty hashes still allow blob: (the voice worklet) and the websocket origin."""
-    return html_csp(hashes=tuple(hashes), connect=_ws_origin(config))
+def csp(config, hashes=(), *, blob=False):
+    """Hash-only script policy. blob=True is the voice page (the worklet). Sign-in and JSON leave it false."""
+    return html_csp(hashes=tuple(hashes), connect=_ws_origin(config), script_blob=blob, worker_blob=blob, media_blob=blob)
 
 
-def csp_headers(config, hashes=()):
+def csp_headers(config, hashes=(), *, blob=False):
     connect = _ws_origin(config)
-    strict = html_csp(hashes=tuple(hashes), connect=connect)
+    strict = html_csp(hashes=tuple(hashes), connect=connect, script_blob=blob, worker_blob=blob, media_blob=blob)
     if os.environ.get('ATLAS_CSP', '').lower() == 'report-only':
         return {'Content-Security-Policy': legacy_csp(connect=connect), 'Content-Security-Policy-Report-Only': strict, 'Reporting-Endpoints': REPORTING_ENDPOINTS}
     return {'Content-Security-Policy': strict}
@@ -82,9 +82,14 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
             response.headers['Permissions-Policy'] = 'microphone=(self), camera=(), geolocation=()'
             if 'Content-Security-Policy' not in response.headers:
                 body = response.text if isinstance(getattr(response, 'text', None), str) else ''
-                hashes = script_hashes(body) if body and 'html' in (response.content_type or '') else ()
-                for key, value in csp_headers(config, hashes).items():
-                    response.headers[key] = value
+                is_html = bool(body) and 'html' in (response.content_type or '')
+                if not is_html:
+                    response.headers['Content-Security-Policy'] = "default-src 'none'; frame-ancestors 'none'"
+                else:
+                    # blob: only on the voice page. Sign-in has no script and no worklet, so script-src stays 'none'.
+                    voice = 'id="atlas-runtime"' in body
+                    for key, value in csp_headers(config, script_hashes(body), blob=voice).items():
+                        response.headers[key] = value
         return response
 
     app = web.Application(middlewares=[boundary], client_max_size=131072)

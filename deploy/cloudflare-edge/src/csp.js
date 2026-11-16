@@ -8,6 +8,8 @@
 //                through a private policy; any other innerHTML, script text or script URL is refused by the browser.
 //   style-src 'unsafe-inline'   STILL ALLOWED, a recorded residual: the page carries ~1.5 MB of <style> and style="" attributes. It lets an
 //                injected tag restyle the page but not run code or reach the network. Removing it is a design-system change (F2 or later).
+//   trusted-types atlas-html   the policy names the one sink. safe-html.js createHTML is a passthrough of a value html`` already built.
+//                That is the same class of residual as style-src: recorded here, not a sanitiser this slice invents.
 // The server's per-person facts go into a JSON data block (runtimeBlock), never into script. The same policy is built in Python by
 // atlas_voice/csp.py for the gateway; tests/test_csp.py holds the two byte-identical. ATLAS_CSP=report-only is the rollout switch.
 import { PAGE_SCRIPT_HASHES, RUNTIME_BLOCK } from './csp.generated.js';
@@ -23,15 +25,24 @@ export const cspMode = env => (String(env?.ATLAS_CSP || '').toLowerCase() === 'r
 
 const quoted = hashes => hashes.map(h => `'${h}'`).join(' ');
 
-export function htmlCsp({ hashes = [], connect = '', frameAncestors = "'none'", formAction = "'self'", report = true, page = true, blob = true } = {}) {
-  const d = ["default-src 'none'", 'script-src ' + ([hashes.length ? quoted(hashes) : '', blob ? 'blob:' : ''].filter(Boolean).join(' ') || "'none'"), "script-src-attr 'none'", "style-src 'unsafe-inline'"];
-  // blob: is for the voice page only (the AudioWorklet module it builds, the audio it plays, an image it previews). A page that sets blob: false gets none of them (red-team retest I2).
-  if (page) d.push("connect-src 'self'" + (connect ? ' ' + connect : ''), blob ? 'img-src data: blob:' : 'img-src data:', "font-src 'self'", ...(blob ? ['worker-src blob:', 'media-src blob:'] : []));
-  else d.push('img-src data:');
+// Each page names the capabilities it uses. Defaults are the quiet page: no blob, no worker, no media. The voice page opts into
+// scriptBlob, workerBlob and mediaBlob. connectSelf is the page's own origin; `connect` is an extra origin (the websocket).
+// imgSrc false omits img-src. trustedTypes 'none' is a page that only uses textContent.
+export function htmlCsp({
+  hashes = [], connect = '', connectSelf = true, frameAncestors = "'none'", formAction = "'self'", report = true,
+  scriptBlob = false, workerBlob = false, mediaBlob = false, fontSelf = true, imgSrc, trustedTypes = TT_POLICY,
+} = {}) {
+  const script = [hashes.length ? quoted(hashes) : '', scriptBlob ? 'blob:' : ''].filter(Boolean).join(' ') || "'none'";
+  const d = ["default-src 'none'", 'script-src ' + script, "script-src-attr 'none'", "style-src 'unsafe-inline'"];
+  const connectSrc = [connectSelf ? "'self'" : '', connect].filter(Boolean).join(' ');
+  if (connectSrc) d.push('connect-src ' + connectSrc);
+  const img = imgSrc === undefined ? (scriptBlob ? 'data: blob:' : (fontSelf || connectSelf ? 'data:' : '')) : (imgSrc || '');
+  if (img) d.push('img-src ' + img);
+  if (fontSelf) d.push("font-src 'self'");
+  if (workerBlob) d.push('worker-src blob:');
+  if (mediaBlob) d.push('media-src blob:');
   d.push("object-src 'none'", "base-uri 'none'", `form-action ${formAction}`, `frame-ancestors ${frameAncestors}`);
-  // Trusted Types: every HTML or script sink takes only a trusted value. The full page may create one policy, `atlas-html`, and only
-  // safe-html.js does (behind html``); a small page may create none. No default policy, no 'allow-duplicates'.
-  d.push("require-trusted-types-for 'script'", 'trusted-types ' + (page ? TT_POLICY : "'none'"));
+  d.push("require-trusted-types-for 'script'", 'trusted-types ' + (trustedTypes === 'none' ? "'none'" : trustedTypes));
   if (report) d.push(`report-uri ${REPORT_PATH}`, `report-to ${REPORT_GROUP}`);
   return d.join('; ');
 }

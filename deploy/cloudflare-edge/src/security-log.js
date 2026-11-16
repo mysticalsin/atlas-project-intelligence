@@ -7,6 +7,11 @@ const enc = new TextEncoder();
 export const EVENTS = Object.freeze(['authn_fail', 'csrf_fail', 'origin_fail', 'external_denied', 'bearer_fail', 'access_denied', 'rate_limited', 'body_too_large',
   'header_spoof', 'kill_switch', 'subject_blocked', 'flag_state', 'audit_chain_break', 'audit_chain_ok', 'internal_error', 'inbound_off', 'privacy_export', 'privacy_erase', 'privacy_flags', 'consent_change', 'csp_violation', 'voice_settings']);
 const FIELDS = ['route', 'method', 'status', 'reason', 'subj', 'role', 'ip_h', 'colo', 'ray', 'n', 'bucket', 'head', 'prev', 'directive', 'blocked'];
+// Limiter names only. A free-text bucket was stored with the punctuation stripped, so an email became a log field.
+const BUCKETS = new Set(['upsert', 'review', 'insights', 'recommend', 'slides', 'export', 'import', 'inbound', 'me-export', 'me-erase', 'flags', 'consent', 'submit', 'onepager', 'ask', 'bid-create', 'bid-edit', 'bid-match', 'people', 'sheet', 'classify', 'transcribe', 'translate', 'csp-report', 'interview-hour', 'interview-day']);
+const FLAG = '(?:READ_ONLY|AI_OFF|EXTERNAL_OFF|INBOUND_OFF|BLOCKED_SUBS|CSP:report-only|CSRF_BIND:sub|REPLY_GUARD:off|ADAPTERS:live|ADAPTERS:mock)';
+const FLAG_BUCKET = new RegExp('^' + FLAG + '(?:-' + FLAG + ')*$');
+const bucketOf = v => { const s = String(v); return BUCKETS.has(s) || FLAG_BUCKET.test(s) ? s : undefined; };
 
 // '/api/library/<32 hex>/validate' -> '/api/library/:id/validate'. Only short lower-case words survive; everything else (ids,
 // e-mail addresses, encoded text) becomes ':id', and at most six segments are kept. The query string is never read.
@@ -40,6 +45,7 @@ export async function secEvent(env, event, f = {}, write = line => console.log(l
     else if (k === 'blocked') v = String(v).toLowerCase().replace(/[^a-z0-9.:/-]/g, '').slice(0, 80); // an origin: scheme and host, never a path
     else if (k === 'role') v = ['user', 'reviewer', 'admin', 'external', 'system'].includes(v) ? v : undefined;
     else if (k === 'method') v = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(String(v).toUpperCase()) ? String(v).toUpperCase() : undefined;
+    else if (k === 'bucket') v = bucketOf(v);
     else v = String(v).replace(/[^A-Za-z0-9_.:-]/g, '').slice(0, 40);
     if (v !== undefined && v !== '') rec[k] = v;
   }

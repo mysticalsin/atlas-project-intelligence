@@ -73,7 +73,8 @@ test('secure() adds only what is missing, leaves a WebSocket upgrade alone and g
   const bare = secure(new Response('{}', { headers: { 'Content-Type': 'application/json' } }));
   assert.equal(bare.headers.get('content-security-policy'), "default-src 'none'; frame-ancestors 'none'");
   const html = secure(new Response('<p>', { headers: { 'Content-Type': 'text/html' } }));
-  assert.equal(html.headers.get('content-security-policy'), null);
+  assert.match(html.headers.get('content-security-policy'), /default-src 'none'/);
+  assert.match(html.headers.get('content-security-policy'), /script-src 'none'/);
   // a stub's immutable headers do not matter: the copy is new
   assert.deepEqual(Object.keys(baseSecurityHeaders()).sort(), ['Cache-Control', 'Cross-Origin-Opener-Policy', 'Cross-Origin-Resource-Policy', 'Permissions-Policy', 'Referrer-Policy', 'Strict-Transport-Security', 'X-Content-Type-Options']);
 });

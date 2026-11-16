@@ -2,8 +2,8 @@
 
 All four live as JSON in atlas_voice/config/ (privacy.json, retention.json, special_categories.json), loaded and validated at import, so a bad edit fails the
 build instead of production. The edge Worker receives them through EDGE_CONSTANTS (policy.generated.js): deploy/cloudflare-edge/src/privacy.js renders the
-notice and hashes the consent texts, retention.js sweeps by the periods, special.js matches the phrases. special_categories() is the source of truth for the
-matcher and special.vectors.json holds the JS port to it.
+notice and hashes the consent texts, retention.js sweeps by the periods. special_categories() is the source of truth for the phrase matcher.
+The edge port of that matcher moves to the interview slice with the code that calls it.
 
 Nothing here is a legal conclusion: wording, lawful bases and periods are proposals that Mantu's DPO and legal team must confirm. Pure stdlib."""
 import json

@@ -35,7 +35,7 @@ function scriptSrc(csp) {
 
 test('html responses use a hash-only script policy and every refusal carries the platform headers', async () => {
   const { htmlCsp, legacyCsp } = await import('../src/csp.js');
-  const built = htmlCsp({ hashes: ['sha256-abc'], connect: 'wss://atlas.example' });
+  const built = htmlCsp({ hashes: ['sha256-abc'], connect: 'wss://atlas.example', scriptBlob: true, workerBlob: true, mediaBlob: true });
   assert.equal(scriptSrc(built).includes('unsafe-inline'), false);
   assert.match(built, /script-src 'sha256-abc' blob:/);
   assert.match(built, /script-src-attr 'none'/);
@@ -47,7 +47,9 @@ test('html responses use a hash-only script policy and every refusal carries the
   assert.equal(refused.status, 401);
   const csp = refused.headers.get('content-security-policy');
   assert.equal(scriptSrc(csp).includes('unsafe-inline'), false);
-  assert.match(csp, /script-src-attr 'none'/);
+  assert.match(csp, /default-src 'none'/);
+  assert.equal(csp.includes('blob:'), false);
+  assert.equal(/wss:|ws:/.test(csp), false);
   assert.equal(refused.headers.get('strict-transport-security'), 'max-age=63072000; includeSubDomains');
   assert.equal(refused.headers.get('cross-origin-opener-policy'), 'same-origin');
   assert.equal(refused.headers.get('cross-origin-resource-policy'), 'same-origin');

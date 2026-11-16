@@ -6,6 +6,8 @@ export const HSTS = 'max-age=63072000; includeSubDomains';
 export const PERMISSIONS_POLICY = 'microphone=(self), camera=(), geolocation=(), payment=(), usb=(), display-capture=()';
 // A response that carries no CSP at all (a pass-through that forgot) gets the locked-down data-only policy; documents keep their own.
 export const DATA_CSP = "default-src 'none'; frame-ancestors 'none'";
+// HTML that arrived with no policy of its own. script-src 'none': it must not run a script the route forgot to hash.
+export const HTML_DENY_CSP = "default-src 'none'; script-src 'none'; script-src-attr 'none'; style-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 export const baseSecurityHeaders = () => ({
   'Cache-Control': 'no-store',
@@ -22,7 +24,7 @@ export const baseSecurityHeaders = () => ({
 export function secure(res) {
   if (!res || res.status === 101 || res.webSocket) return res;
   const add = Object.entries(baseSecurityHeaders()).filter(([k]) => !res.headers.has(k));
-  if (!res.headers.has('Content-Security-Policy') && !/html/i.test(res.headers.get('Content-Type') || '')) add.push(['Content-Security-Policy', DATA_CSP]);
+  if (!res.headers.has('Content-Security-Policy')) add.push(['Content-Security-Policy', /html/i.test(res.headers.get('Content-Type') || '') ? HTML_DENY_CSP : DATA_CSP]);
   if (!add.length) return res;
   const h = new Headers(res.headers);
   for (const [k, v] of add) h.set(k, v);

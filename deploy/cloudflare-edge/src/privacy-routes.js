@@ -35,8 +35,8 @@ export async function internalRoutes(ctx) {
     if (obj(body).confirmed !== true) throw fail(400, 'Erasure needs the confirmation the Worker checks.'); // the Worker verified the confirmation token; a direct call cannot skip it
     const out = eraseMine(lib, user, subj);
     await note('ERASURE_DONE', { n: Object.values(out.counts).reduce((a, b) => a + b, 0) });
-    if (out.auditHead) await secEvent(env, 'audit_chain_ok', { reason: 'CHAIN_RESEALED', n: out.counts.auditRows || 0, head: String(out.auditHead).slice(0, 16), prev: String(out.auditPreviousHead || '').slice(0, 16) });
-    if (out.auditRefused) await secEvent(env, 'audit_chain_break', { reason: 'REWRITE_REFUSED', n: out.auditRefused.brokenSeq }); // the chain failed its check, so erasure did not re-seal it (X1, red M8)
+    if (out.auditHead) await secEvent(env, 'audit_chain_ok', { reason: 'AUDIT_PSEUDONYMISED', n: out.counts.auditRows || 0, head: String(out.auditHead).slice(0, 16) });
+    if (out.auditRefused) await secEvent(env, 'audit_chain_break', { reason: 'REWRITE_REFUSED', n: out.auditRefused.brokenSeq });
     return { body: out };
   }
   throw fail(404, 'Not found.');

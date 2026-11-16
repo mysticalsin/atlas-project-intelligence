@@ -3,7 +3,7 @@
 // sweep. It returns COUNTS only (never an id or a word of content). Categories with `sweep: false` (security logs, private memory, the 24-hour checkpoint) are enforced by
 // the platform, a per-person prune or a Durable Object alarm (see notSwept).
 import { RETENTION } from './policy.generated.js';
-import { eraseRefContent, eraseEvidenceContent } from './subject-rights.js';
+import { eraseRefContent } from './subject-rights.js';
 import { rewriteRows } from './audit-chain.js';
 import * as privacy from './privacy.js';
 
@@ -31,10 +31,6 @@ export function sweep(lib, { now = lib.now(), retention = RETENTION, tenant } = 
   if (c('drafts')) {
     const cut = before(now, c('drafts'));
     for (const r of lib.rows("SELECT id, state FROM refs WHERE updated_at < ? AND " + scope + " AND (merged_into IS NULL OR merged_into != 'erased')", cut, tid)) if (parse(r.state, {}).draft) { eraseRefContent(lib, r.id, erasedToken, now); add('draftReferences', 1); }
-    if (tableExists(lib, 'evidence_records') && hasTenantColumn(lib, 'evidence_records')) for (const r of lib.rows("SELECT id, state_json FROM evidence_records WHERE status = 'evidence_draft' AND updated_at < ? AND " + scope, cut, tid)) {
-      const s = parse(r.state_json, {}); if (s.erased || s.ever_submitted || s.erasure_pending_review) continue;
-      eraseEvidenceContent(lib, r.id, erasedToken, now); add('draftEvidence', 1);
-    }
   }
   // Withdrawn references (counted from the withdrawal in the audit trail) that no bid uses and no erasure review still holds.
   if (c('withdrawn_refs')) {
@@ -45,14 +41,6 @@ export function sweep(lib, { now = lib.now(), retention = RETENTION, tenant } = 
       const w = lib.rows("SELECT at FROM audit WHERE id = ? AND action = 'withdrawn' ORDER BY seq DESC LIMIT 1", r.id)[0];
       if ((w?.at || r.updated_at) >= cut || (hasBids && lib.rows('SELECT 1 AS x FROM bid_references WHERE ref_id = ? LIMIT 1', r.id).length)) continue;
       eraseRefContent(lib, r.id, erasedToken, now); add('withdrawnReferences', 1);
-    }
-  }
-  // Rejected or withdrawn evidence.
-  if (c('rejected_evidence')) {
-    const cut = before(now, c('rejected_evidence'));
-    if (tableExists(lib, 'evidence_records') && hasTenantColumn(lib, 'evidence_records')) for (const r of lib.rows("SELECT id, state_json FROM evidence_records WHERE status IN ('rejected', 'closed_rejected', 'withdrawn') AND updated_at < ? AND " + scope, cut, tid)) {
-      const s = parse(r.state_json, {}); if (s.erased || s.erasure_pending_review) continue;
-      eraseEvidenceContent(lib, r.id, erasedToken, now); add('rejectedEvidence', 1);
     }
   }
   // Expired confirmation and proof requests (90 days after they expired; a proof request expires 30 days after it was made).
@@ -80,7 +68,7 @@ export function sweep(lib, { now = lib.now(), retention = RETENTION, tenant } = 
     const n = lib.rows("SELECT COUNT(*) AS n FROM staffing WHERE " + scope + " AND ((end_date != '' AND end_date < ?) OR (end_date = '' AND updated_at < ?))", tid, day, cut)[0].n;
     if (n) { lib.sql.exec("DELETE FROM staffing WHERE " + scope + " AND ((end_date != '' AND end_date < ?) OR (end_date = '' AND updated_at < ?))", tid, day, cut); add('staffingRows', n); }
   }
-  // Audit rows older than the period: the actor becomes a token and the detail is cleared; the hash chain is re-sealed (the new head is returned for the log).
+  // Audit rows older than the period: the actor becomes a token and the detail is cleared. Those fields are outside the hash, so the head does not move.
   if (c('audit')) {
     const cut = before(now, c('audit')), names = new Map();
     const r = rewriteRows(lib.sql, row => {
