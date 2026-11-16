@@ -7,7 +7,7 @@ import { Library } from '../src/library.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import { memorySql } from './sqlite.js';
 import { eraseMine, exportMine, pseudonymiseAudit } from '../src/subject-rights.js';
-import { verifyChain, verifyDaily, resealChain, sha256Hex, GENESIS, ensureChain } from '../src/audit-chain.js';
+import { verifyChain, verifyDaily, sha256Hex, GENESIS, ensureChain } from '../src/audit-chain.js';
 import * as profile from '../src/profile.js';
 import * as privacy from '../src/privacy.js';
 import * as outreach from '../src/outreach.js';
@@ -169,7 +169,7 @@ test('appending rows keeps the stored head in place and then advances the anchor
   assert.notEqual(again.head, first.head);
 });
 
-test('rows hashed under the previous formula stay broken until an explicit reseal', () => {
+test('rows hashed under the previous formula stay broken', () => {
   const lib = new Library(memorySql(), { now: () => '2026-11-16T00:00:00.000Z' });
   lib.log('r1', 'a@example.test', 'saved', 'd1');
   lib.log('r2', 'a@example.test', 'saved', 'd2');
@@ -185,12 +185,11 @@ test('rows hashed under the previous formula stay broken until an explicit resea
   ensureChainFresh(lib.sql);
   assert.deepEqual(lib.sql.exec('SELECT hash FROM audit ORDER BY seq').toArray().map(r => r.hash), before);
   assert.equal(verifyDaily(lib.sql).reason, 'HASH_MISMATCH');
-  assert.equal(resealChain(lib.sql, '').ok, true);
-  assert.equal(verifyChain(lib.sql).ok, true);
+  assert.equal(verifyChain(lib.sql).ok, false);
 });
 function ensureChainFresh(sql) { ensureChain({ exec: (...a) => sql.exec(...a) }); }
 
-test('reseal-chain runs only as a confirmed system call', async () => {
+test('reseal-chain is not a route', async () => {
   const lib = new Library(memorySql(), { now: () => '2026-11-16T00:00:00.000Z' });
   lib.log('r', EMAIL, 'saved', 'd');
   const env = { ATLAS_TENANT_ISOLATION: 'local-synthetic', ORIGIN, CSRF_SECRET: 's' };
@@ -198,9 +197,8 @@ test('reseal-chain runs only as a confirmed system call', async () => {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-atlas-user': 'atlas', 'x-atlas-role': role }, body: JSON.stringify(body),
   }), lib, { env });
   assert.equal((await post('user', { confirm: 'reseal-audit-chain' })).status, 404);
-  assert.equal((await post('system', {})).status, 400);
-  const body = await (await post('system', { confirm: 'reseal-audit-chain' })).json();
-  assert.equal(body.resealed, true);
+  assert.equal((await post('system', {})).status, 404);
+  assert.equal((await post('system', { confirm: 'reseal-audit-chain' })).status, 404);
   assert.equal(verifyChain(lib.sql).ok, true);
 });
 

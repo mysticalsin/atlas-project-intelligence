@@ -2,17 +2,18 @@
 // commit = HMAC(key, canonical(actor, detail)). hash = SHA-256(prev, id, action, at, commit).
 // A privacy rewrite may replace actor and detail only by writing an exact tombstone
 // (actor matches ^erased:[0-9a-f]{12}$, detail is empty) plus
-// proof = HMAC(key, 'tombstone' || seq || commit). It does not recompute hash or prev_hash,
-// so a later row, including another tenant's, is never resealed.
+// proof = HMAC(key, JSON.stringify(['tombstone', seq, commit, actor])).
+// It does not recompute hash or prev_hash, so a later row, including another tenant's, is never resealed.
 // verify accepts a row when the HMAC of the current actor and detail equals commit, or when
 // the tombstone and its proof both match. A direct edit of either field fails.
 // The daily check stores n and head. A shorter chain is TRUNCATED. The stored head must still
 // be the hash at that same position, so a prefix truncate padded with new rows is ANCHOR_MOVED.
-// ensureChain fills only rows whose hash is NULL. It does not reseal rows hashed by an earlier
-// formula. That is an explicit operator action: resealChain, never startup and never the cron.
+// ensureChain fills only rows whose hash is NULL. A row whose hash matches only an earlier
+// formula fails verify. There is no reseal and no upgrade.
 // SHA-256 and HMAC-SHA256 are synchronous because Library.log is synchronous.
 // Limits, honestly: whoever can rewrite the whole table and recompute every hash and commit
 // is not stopped by an in-table chain. The daily anchor is what notices a missing prefix.
+import { timingSafe } from './timing-safe.js';
 export const GENESIS = '0'.repeat(64);
 const TOMBSTONE_ACTOR = /^erased:[0-9a-f]{12}$/;
 
@@ -70,8 +71,13 @@ export function auditKey(env) {
 }
 const canonical = (actor, detail) => JSON.stringify([String(actor ?? ''), String(detail ?? '')]);
 export const contentCommit = (key, actor, detail) => hmacHex(key, canonical(actor, detail));
-// The review's proof: HMAC(key, 'tombstone' || seq || commit). seq is the row id, commit is hex.
-export const tombstoneProof = (key, seq, commit) => hmacHex(key, 'tombstone' + String(seq) + String(commit ?? ''));
+// One JSON array, so seq 1 cannot borrow seq 10's proof by shifting a character, and the actor token is inside the MAC.
+export const tombstoneProof = (key, seq, commit, actor) => hmacHex(key, JSON.stringify(['tombstone', Number(seq), String(commit ?? ''), String(actor ?? '')]));
+function sameText(a, b) {
+  const x = String(a ?? ''), y = String(b ?? '');
+  if (x.length !== y.length) return false;
+  return timingSafe(x, y);
+}
 
 // JSON array, not a delimiter-joined string: no field value can shift a boundary. seq is excluded.
 // commit is included, so actor and detail are bound without putting their text in the hash.
@@ -81,7 +87,7 @@ const sealed = new WeakSet();
 const qident = name => '"' + name + '"';
 const hasColumn = (sql, name) => { try { sql.exec('SELECT ' + qident(name) + ' FROM audit LIMIT 0'); return true; } catch { return false; } };
 // Adds the chain columns and seals rows that have never been hashed. Rows that already have a hash
-// are left alone, even when that hash used an earlier formula. Resealing those is resealChain.
+// are left alone. A hash from an earlier formula stays a mismatch.
 export function ensureChain(sql, key = '') {
   if (sealed.has(sql)) return;
   if (!hasColumn(sql, 'prev_hash')) sql.exec('ALTER TABLE audit ADD COLUMN prev_hash TEXT');
@@ -93,7 +99,7 @@ export function ensureChain(sql, key = '') {
     for (const r of sql.exec('SELECT seq, id, actor, action, at, detail, hash, "commit" FROM audit ORDER BY seq').toArray()) {
       if (r.hash) { prev = r.hash; continue; }
       const commit = r.commit || contentCommit(key, r.actor, r.detail);
-      const proof = TOMBSTONE_ACTOR.test(String(r.actor || '')) && String(r.detail ?? '') === '' ? tombstoneProof(key, r.seq, commit) : '';
+      const proof = TOMBSTONE_ACTOR.test(String(r.actor || '')) && String(r.detail ?? '') === '' ? tombstoneProof(key, r.seq, commit, r.actor) : '';
       const h = rowHash(prev, { ...r, commit });
       sql.exec('UPDATE audit SET prev_hash = ?, hash = ?, "commit" = ?, tombstone = ? WHERE seq = ?', prev, h, commit, proof, r.seq);
       prev = h;
@@ -115,8 +121,8 @@ export function appendAudit(sql, { id, actor, action, at, detail }, key = '') {
 const ROW = 'seq, id, actor, action, at, detail, prev_hash, hash, "commit", tombstone';
 function bound(key, r) {
   const commit = String(r.commit ?? '');
-  if (contentCommit(key, r.actor, r.detail) === commit) return true;
-  return TOMBSTONE_ACTOR.test(String(r.actor || '')) && String(r.detail ?? '') === '' && !!r.tombstone && r.tombstone === tombstoneProof(key, r.seq, commit);
+  if (sameText(contentCommit(key, r.actor, r.detail), commit)) return true;
+  return TOMBSTONE_ACTOR.test(String(r.actor || '')) && String(r.detail ?? '') === '' && !!r.tombstone && sameText(r.tombstone, tombstoneProof(key, r.seq, commit, r.actor));
 }
 // Walks the table in order (500 rows at a time). { ok, checked, head } or { ok: false, brokenSeq, reason, head }.
 // reasons: UNSEALED, HASH_MISMATCH, LINK_BROKEN, COMMIT_MISMATCH, LOG_SALT.
@@ -131,7 +137,7 @@ export function verifyChain(sql, key = '') {
       const bad = reason => ({ ok: false, checked, brokenSeq: r.seq, reason, head });
       if (!r.hash || !r.prev_hash) return bad('UNSEALED');
       if (prevHash !== null && r.prev_hash !== prevHash) return bad('LINK_BROKEN');
-      if (rowHash(r.prev_hash, r) !== r.hash) return bad('HASH_MISMATCH');
+      if (!sameText(rowHash(r.prev_hash, r), r.hash)) return bad('HASH_MISMATCH');
       if (!bound(key, r)) return bad('COMMIT_MISMATCH');
       prevHash = head = r.hash; after = r.seq; checked++;
     }
@@ -152,7 +158,7 @@ export function rewriteRows(sql, edit, key = '') {
     const actor = String(patch.actor ?? r.actor ?? ''), detail = String(patch.detail ?? r.detail ?? '');
     if (actor === String(r.actor ?? '') && detail === String(r.detail ?? '')) continue;
     if (!TOMBSTONE_ACTOR.test(actor) || detail !== '') continue;
-    sql.exec('UPDATE audit SET actor = ?, detail = ?, tombstone = ? WHERE seq = ?', actor, '', tombstoneProof(key, r.seq, String(r.commit ?? '')), r.seq);
+    sql.exec('UPDATE audit SET actor = ?, detail = ?, tombstone = ? WHERE seq = ?', actor, '', tombstoneProof(key, r.seq, String(r.commit ?? ''), actor), r.seq);
     changed++;
   }
   return { changed, head: before.head, previousHead: before.head };
@@ -171,36 +177,8 @@ export function verifyDaily(sql, key = '') {
   if (prev && result.checked < Number(prev.n)) return { ok: false, reason: 'TRUNCATED', checked: result.checked, head: result.head, previousN: Number(prev.n), previousHead: prev.head };
   if (prev && Number(prev.n) > 0) {
     const at = sql.exec('SELECT hash FROM audit ORDER BY seq LIMIT 1 OFFSET ?', Number(prev.n) - 1).toArray()[0];
-    if (!at || at.hash !== prev.head) return { ok: false, reason: 'ANCHOR_MOVED', checked: result.checked, head: result.head, previousN: Number(prev.n), previousHead: prev.head };
+    if (!at || !sameText(at.hash, prev.head)) return { ok: false, reason: 'ANCHOR_MOVED', checked: result.checked, head: result.head, previousN: Number(prev.n), previousHead: prev.head };
   }
   sql.exec('INSERT INTO audit_anchor (id, n, head) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET n = excluded.n, head = excluded.head', result.checked, result.head);
   return { ok: true, checked: result.checked, head: result.head, reason: 'CHAIN_VERIFIED' };
-}
-
-// One-time operator reseal for a library that already hashed rows under an earlier formula
-// (commits 91e5f2c1 or 1b1ea05f). Recomputes commit, proof, prev_hash and hash for every row.
-// Does not run from ensureChain, verifyDaily, startup or the cron. replaceAnchor is only for the
-// confirmed system route: it records the previous anchor, then stores the new n and head.
-export function resealChain(sql, key, { replaceAnchor = false } = {}) {
-  if (key == null) return { ok: false, reason: 'LOG_SALT', resealed: 0, head: GENESIS };
-  ensureChain(sql, key);
-  let prev = GENESIS, n = 0;
-  for (const r of sql.exec('SELECT seq, id, actor, action, at, detail FROM audit ORDER BY seq').toArray()) {
-    const commit = contentCommit(key, r.actor, r.detail);
-    const proof = TOMBSTONE_ACTOR.test(String(r.actor || '')) && String(r.detail ?? '') === '' ? tombstoneProof(key, r.seq, commit) : '';
-    const hash = rowHash(prev, { id: r.id, action: r.action, at: r.at, commit });
-    sql.exec('UPDATE audit SET prev_hash = ?, hash = ?, "commit" = ?, tombstone = ? WHERE seq = ?', prev, hash, commit, proof, r.seq);
-    prev = hash;
-    n++;
-  }
-  const head = n ? prev : GENESIS;
-  let previousHead = '', previousN = null;
-  if (replaceAnchor) {
-    sql.exec(ANCHOR);
-    const before = sql.exec('SELECT n, head FROM audit_anchor WHERE id = 1').toArray()[0] || null;
-    previousHead = before?.head || '';
-    previousN = before ? Number(before.n) : null;
-    sql.exec('INSERT INTO audit_anchor (id, n, head) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET n = excluded.n, head = excluded.head', n, head);
-  }
-  return { ok: true, resealed: n, head, reason: 'CHAIN_RESEALED', previousHead, previousN };
 }

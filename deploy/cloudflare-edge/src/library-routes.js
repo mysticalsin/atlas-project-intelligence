@@ -9,7 +9,7 @@ import { adminRoutes, journeyRoutes, privacyRoutes } from './operate.js';
 import { internalRoutes as privacyInternal } from './privacy-routes.js';
 import { sweep as retentionSweep } from './retention.js';
 import { holdRoutes } from './subject-rights.js';
-import { verifyDaily, resealChain } from './audit-chain.js';
+import { verifyDaily } from './audit-chain.js';
 import { secEvent } from './security-log.js';
 import { productionDemoConflict, resolveTenantEnforcement } from './authz.js';
 export const SYSTEM = { email: 'atlas', role: 'admin' }; // automatic review after a save
@@ -90,15 +90,6 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
       if (method === 'POST' && id === 'verify-chain') {
         const r = await reportChain(lib, env);
         return json({ verified: r.ok === true, reason: r.reason || (r.ok ? 'CHAIN_VERIFIED' : 'VERIFY_FAILED'), n: r.checked, head: String(r.head || '').slice(0, 16) });
-      }
-      // Operator-only reseal for a library hashed before the commit was part of the row. Not called by the cron.
-      if (method === 'POST' && id === 'reseal-chain') {
-        if (body?.confirm !== 'reseal-audit-chain') return json({ error: 'Reseal was not confirmed.', code: 'RESEAL_UNCONFIRMED' }, 400);
-        if (lib.auditKey == null) return json({ error: 'LOG_SALT is not set.', code: 'LOG_SALT' }, 503);
-        const r = resealChain(lib.sql, lib.auditKey, { replaceAnchor: true });
-        if (!r.ok) return json({ resealed: false, reason: r.reason }, 503);
-        await secEvent(env, 'audit_chain_reseal', { reason: 'CHAIN_RESEALED', n: r.resealed, head: String(r.head || '').slice(0, 16), prev: String(r.previousHead || '').slice(0, 16) });
-        return json({ resealed: true, n: r.resealed, head: String(r.head || '').slice(0, 16), previousHead: String(r.previousHead || '').slice(0, 16) });
       }
       if (method === 'POST' && id === 'scan-stale') {
         // The response is the same object main returns: scanStale, then the two dailies. Retention runs after that

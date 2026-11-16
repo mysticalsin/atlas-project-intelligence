@@ -12,7 +12,7 @@ function metricQuery(url, bucket = 'day') {
 }
 function dsarStores() {
   return {
-    coveredLocal: ['journey for this subject and tenant', 'profile for this subject and tenant', 'telemetry for this persona and tenant', 'manager trust for this subject and tenant', 'this subject\'s directory row for this tenant'],
+    coveredLocal: ['journey for this subject and tenant', 'profile for this subject and tenant', 'telemetry for this persona and tenant', 'manager trust owned by this subject in this tenant is deleted; a row where this subject is only the manager has that address replaced', 'this subject\'s directory row for this tenant is deleted; another person\'s manager address in this tenant is replaced'],
     retained: [
       { store: 'legacy-blank-tenant-rows', action: 'quarantined', note: 'Blank ownership stays blank. It was not assigned a tenant and was not deleted by this request.' },
       { store: 'hindsight-bank', action: 'not-contacted', note: 'The vendor bank was not called. A subject-only bank is not read when a verified tenant is present, and it was not deleted.' },
@@ -24,6 +24,11 @@ function dsarStores() {
   };
 }
 const tableReady = (lib, name) => lib.rows("SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = ?", name).length > 0;
+const erasureToken = () => 'erased:' + [...crypto.getRandomValues(new Uint8Array(6))].map(b => b.toString(16).padStart(2, '0')).join('');
+function tokenOf(ctx) {
+  const given = String(ctx?.token || '');
+  return /^erased:[0-9a-f]{12}$/.test(given) ? given : erasureToken();
+}
 function subjectAliases(user) {
   return [...new Set([user?.email, user?.mail].map(v => String(v || '').trim().toLowerCase()).filter(Boolean))];
 }
@@ -43,27 +48,47 @@ export function eraseTelemetryFor(lib, user) {
   if (n) lib.sql.exec("DELETE FROM telemetry WHERE persona = ? AND lower(COALESCE(tenant, '')) = ?", persona, tenant);
   return n;
 }
-export function eraseManagerTrustFor(lib, user) {
+export function eraseManagerTrustFor(lib, user, ctx = {}) {
   if (!tableReady(lib, 'manager_trust')) return 0;
   const tenant = String(user.tenant || '').trim().toLowerCase();
   const aliases = subjectAliases(user);
   if (!aliases.length) return 0;
   const marks = aliases.map(() => '?').join(', ');
-  const n = lib.rows(`SELECT COUNT(*) AS n FROM manager_trust WHERE lower(COALESCE(tenant, '')) = ? AND (lower(owner) IN (${marks}) OR lower(email) IN (${marks}))`, tenant, ...aliases, ...aliases)[0].n;
-  if (n) lib.sql.exec(`DELETE FROM manager_trust WHERE lower(COALESCE(tenant, '')) = ? AND (lower(owner) IN (${marks}) OR lower(email) IN (${marks}))`, tenant, ...aliases, ...aliases);
-  return n;
+  const token = tokenOf(ctx);
+  const managers = lib.rows(`SELECT owner, email FROM manager_trust WHERE lower(COALESCE(tenant, '')) = ? AND lower(email) IN (${marks}) AND lower(owner) NOT IN (${marks})`, tenant, ...aliases, ...aliases);
+  let n = 0;
+  for (const row of managers) {
+    const clash = lib.rows("SELECT 1 AS x FROM manager_trust WHERE owner = ? AND email = ? AND lower(COALESCE(tenant, '')) = ?", row.owner, token, tenant);
+    if (clash.length) lib.sql.exec("DELETE FROM manager_trust WHERE owner = ? AND email = ? AND lower(COALESCE(tenant, '')) = ?", row.owner, row.email, tenant);
+    else lib.sql.exec("UPDATE manager_trust SET email = ? WHERE owner = ? AND email = ? AND lower(COALESCE(tenant, '')) = ?", token, row.owner, row.email, tenant);
+    n++;
+  }
+  const own = lib.rows(`SELECT COUNT(*) AS n FROM manager_trust WHERE lower(COALESCE(tenant, '')) = ? AND lower(owner) IN (${marks})`, tenant, ...aliases)[0].n;
+  if (own) lib.sql.exec(`DELETE FROM manager_trust WHERE lower(COALESCE(tenant, '')) = ? AND lower(owner) IN (${marks})`, tenant, ...aliases);
+  return n + own;
 }
-export function eraseDirectoryFor(lib, user) {
+export function eraseDirectoryFor(lib, user, ctx = {}) {
   if (!tableReady(lib, 'directory')) return 0;
   const tenant = String(user.tenant || '').trim().toLowerCase();
+  const aliases = subjectAliases(user);
   const mail = String(user.mail || '').toLowerCase();
   const oid = /^[0-9a-f-]{36}:([0-9a-f-]{36})$/.exec(String(user.email || '').toLowerCase())?.[1] || '';
   const keys = [...new Set([mail, oid ? 'oid:' + oid : ''].filter(Boolean))];
-  if (!keys.length) return 0;
+  let n = 0;
+  if (aliases.length) {
+    const marks = aliases.map(() => '?').join(', ');
+    const exclude = keys.length ? ` AND lower(key) NOT IN (${keys.map(() => '?').join(', ')})` : '';
+    const refs = lib.rows(`SELECT COUNT(*) AS n FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(COALESCE(manager_email, '')) IN (${marks})${exclude}`, tenant, ...aliases, ...keys)[0].n;
+    if (refs) {
+      lib.sql.exec(`UPDATE directory SET manager_email = ? WHERE lower(COALESCE(tenant, '')) = ? AND lower(COALESCE(manager_email, '')) IN (${marks})${exclude}`, tokenOf(ctx), tenant, ...aliases, ...keys);
+      n += refs;
+    }
+  }
+  if (!keys.length) return n;
   const marks = keys.map(() => '?').join(', ');
-  const n = lib.rows(`SELECT COUNT(*) AS n FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys)[0].n;
-  if (n) lib.sql.exec(`DELETE FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys);
-  return n;
+  const own = lib.rows(`SELECT COUNT(*) AS n FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys)[0].n;
+  if (own) lib.sql.exec(`DELETE FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys);
+  return n + own;
 }
 function deny(user) {
   if (user.role !== 'admin') throw fail(403, 'The admin dashboard is only for a verified admin.');

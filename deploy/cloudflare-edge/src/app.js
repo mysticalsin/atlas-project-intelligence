@@ -24,6 +24,7 @@ import { announceFlags, ipHash, requestLog, secEvent } from './security-log.js';
 import { boundedBytes } from './bounded.js';
 import { cspReport } from './csp-report.js';
 import { renderNoticeHtml } from './privacy.js';
+import { timingSafe } from './timing-safe.js';
 
 const enc = new TextEncoder();
 // One voice for everyone: @cf/deepgram/aura-2-en "harmonia" (Deepgram: empathetic, clear, calm, confident).
@@ -85,7 +86,6 @@ export const SIGNED_IN_HTML = `<!doctype html><html lang="en"><head><meta charse
 <body><p>You're signed in. This window closes by itself.</p>
 <script>try{new BroadcastChannel('atlas-auth').postMessage('ok')}catch(e){}setTimeout(function(){window.close()},400)</script></body></html>`;
 
-function timingSafe(a, b) { let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i); return d === 0; }
 function csrfOk(header, csrf) {
   const a = String(header || ''), b = String(csrf || '');
   if (!a || a.length !== b.length) return false;

@@ -44,7 +44,8 @@ function whereSubject(tenantColumn, subjectSql) {
 }
 // Tables this slice creates and can bind to the verified tenant. teams_conversations.tenant_id is the only tenant column that table has.
 // Journey, telemetry, manager trust and the directory row use the same functions as privacy delete.
-// A staffing row where this person is only the manager is pseudonymised, not deleted.
+// A staffing or trust row where this person is only the manager is pseudonymised, not deleted.
+// Another person's directory row stays; the manager address in this tenant is replaced.
 const SUBJECT_TABLES = [
   { table: 'invitations', column: 'email', tenant: 'tenant', key: 'invitations' },
   { table: 'outreach', column: 'to_email', tenant: 'tenant', key: 'outreach' },
@@ -97,8 +98,9 @@ export function eraseRefContent(lib, id, token, at) {
 // Audit rows about a person (actor, or named in the detail text) become a tombstone: actor is the token, detail is empty.
 // rewriteRows stores the proof and does not recompute later hashes. A chain that does not verify is left untouched.
 // The audit table has no tenant column. Rows are rewritten only when their id is a reference in THIS tenant, or when
-// the row is this slice's privacy log and it actually contains one of the identities. Another tenant's story stays.
-const PRIVACY_LOG = new Set(['privacy']);
+// the row is a privacy, library, directory or profile log and it actually contains one of the identities.
+// Another tenant's story stays.
+const PRIVACY_LOG = new Set(['privacy', 'library', 'directory', 'profile']);
 export function pseudonymiseAudit(lib, emails, token, { ids = null } = {}) {
   const list = (Array.isArray(emails) ? emails : [emails]).map(e => String(e || '').toLowerCase()).filter(Boolean);
   if (!list.length) return { changed: 0, head: null };
