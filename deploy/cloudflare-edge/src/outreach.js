@@ -131,7 +131,7 @@ function assignmentProject(id) {
 function tenantKey(value) {
   return String(value || '').trim().toLowerCase();
 }
-function personAliases(lib, address, tenant) {
+export function personAliases(lib, address, tenant) {
   const keys = new Set([profileFold(address)].filter(Boolean));
   const want = profileFold(tenant);
   if (!lib.rows("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'profiles'")[0]) return [...keys];

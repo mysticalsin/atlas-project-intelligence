@@ -116,6 +116,15 @@ function exportProfile(lib, email, tenant) {
   return { profile, omitted };
 }
 
+// One parameter for the tenant, then the alias list twice (owner and email).
+export function eraseManagerTrust(lib, tenant, aliases) {
+  if (!aliases.length) return 0;
+  const marks = aliases.map(() => '?').join(', ');
+  const n = lib.rows(`SELECT COUNT(*) AS n FROM manager_trust WHERE lower(COALESCE(tenant, '')) = ? AND (lower(owner) IN (${marks}) OR lower(email) IN (${marks}))`, tenant, ...aliases, ...aliases)[0].n;
+  if (n) lib.sql.exec(`DELETE FROM manager_trust WHERE lower(COALESCE(tenant, '')) = ? AND (lower(owner) IN (${marks}) OR lower(email) IN (${marks}))`, tenant, ...aliases, ...aliases);
+  return n;
+}
+
 export async function privacyRoutes(ctx) {
   const { method, user, lib, env = {}, parts } = ctx;
   if (!user.email) throw fail(401, 'Sign in first.');
@@ -174,12 +183,7 @@ export async function privacyRoutes(ctx) {
       return n;
     });
     attempt('profile', () => deleteOwnedProfile(lib, user));
-    attempt('manager-trust', () => {
-      const marks = aliases.map(() => '?').join(', ');
-      const n = lib.rows(`SELECT COUNT(*) AS n FROM manager_trust WHERE lower(COALESCE(tenant, '')) = ? AND (lower(owner) IN (${marks}) OR lower(email) IN (${marks}))`, tenant, ...aliases, ...aliases)[0].n;
-      if (n) lib.sql.exec(`DELETE FROM manager_trust WHERE lower(COALESCE(tenant, '')) = ? AND (lower(owner) IN (${marks}) OR lower(email) IN (${marks}))`, tenant, ...aliases, ...aliases);
-      return n;
-    });
+    attempt('manager-trust', () => eraseManagerTrust(lib, tenant, aliases));
     attempt('directory', () => {
       const mail = String(user.mail || '').toLowerCase();
       const oid = /^[0-9a-f-]{36}:([0-9a-f-]{36})$/.exec(String(user.email || '').toLowerCase())?.[1] || '';

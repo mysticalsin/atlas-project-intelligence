@@ -319,6 +319,10 @@ export function dnaConfig(env = {}) {
 const pullState = new WeakMap(); // per LibraryStore instance: { lastOkAt, lastError } for the admin view
 const rowValues = r => r ? { name: r.name || '', preferredName: r.given_name || '', title: r.title || '', managerName: r.manager_name || '', managerEmail: r.manager_email || '', at: r.fetched_at || '' } : null;
 function storedRows(lib, keys, tenant = '') {
+  return directoryRows(lib, keys, tenant);
+}
+// One parameter for the tenant, then one per directory key.
+export function directoryRows(lib, keys, tenant = '') {
   const k = keys.filter(Boolean);
   return k.length ? lib.rows(`SELECT * FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND source IN ('dna', 'dna_export') AND key IN (${k.map(() => '?').join(', ')})`, String(tenant || '').toLowerCase(), ...k) : [];
 }
