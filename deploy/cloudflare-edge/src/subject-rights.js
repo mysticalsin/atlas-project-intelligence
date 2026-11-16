@@ -94,31 +94,40 @@ function replaceAddress(text, email, token) {
   }
   return out + src.slice(from);
 }
-function scrubManagerEmails(lib, tenant, email, token) {
-  if (!hasTenantColumn(lib, 'profiles')) return 0;
+function subjectAddresses(user) {
+  return [...new Set([user?.email, user?.mail].map(v => String(v || '').trim().toLowerCase()).filter(Boolean))];
+}
+function scrubManagerEmails(lib, tenant, addresses, token) {
+  if (!hasTenantColumn(lib, 'profiles') || !addresses.length) return 0;
+  const marks = addresses.map(() => '?').join(', ');
   let n = 0;
-  for (const row of lib.rows('SELECT subject, edits FROM profiles WHERE ' + TENANT_SQL + ' AND lower(subject) != ?', tenant, email)) {
+  for (const row of lib.rows('SELECT subject, edits FROM profiles WHERE ' + TENANT_SQL + ' AND lower(subject) NOT IN (' + marks + ')', tenant, ...addresses)) {
     const edits = parse(row.edits, {});
     const field = edits.managerEmail;
     const value = field && typeof field === 'object' ? field.value : field;
-    if (String(value || '').toLowerCase() !== email) continue;
+    if (!addresses.includes(String(value || '').toLowerCase())) continue;
     edits.managerEmail = field && typeof field === 'object' ? { ...field, value: token } : token;
     lib.sql.exec('UPDATE profiles SET edits = ? WHERE subject = ? AND ' + TENANT_SQL, JSON.stringify(edits), row.subject, tenant);
     n++;
   }
   return n;
 }
-function scrubImportAuthors(lib, tenant, email, token) {
-  if (!ready(lib, 'directory_imports', ['by', 'tenant'])) return 0;
-  const n = lib.rows('SELECT COUNT(*) AS n FROM directory_imports WHERE ' + TENANT_SQL + ' AND lower(by) = ?', tenant, email)[0].n;
-  if (n) lib.sql.exec('UPDATE directory_imports SET by = ? WHERE ' + TENANT_SQL + ' AND lower(by) = ?', token, tenant, email);
+function scrubImportAuthors(lib, tenant, addresses, token) {
+  if (!ready(lib, 'directory_imports', ['by', 'tenant']) || !addresses.length) return 0;
+  let n = 0;
+  for (const email of addresses) {
+    const count = lib.rows('SELECT COUNT(*) AS n FROM directory_imports WHERE ' + TENANT_SQL + ' AND lower(by) = ?', tenant, email)[0].n;
+    if (count) { lib.sql.exec('UPDATE directory_imports SET by = ? WHERE ' + TENANT_SQL + ' AND lower(by) = ?', token, tenant, email); n += count; }
+  }
   return n;
 }
-function scrubOutreachPayloads(lib, tenant, email, token) {
-  if (!ready(lib, 'outreach', ['payload', 'to_email', 'tenant'])) return 0;
+function scrubOutreachPayloads(lib, tenant, addresses, token) {
+  if (!ready(lib, 'outreach', ['payload', 'to_email', 'tenant']) || !addresses.length) return 0;
+  const marks = addresses.map(() => '?').join(', ');
   let n = 0;
-  for (const row of lib.rows('SELECT id, payload FROM outreach WHERE ' + TENANT_SQL + ' AND lower(to_email) != ?', tenant, email)) {
-    const next = replaceAddress(row.payload, email, token);
+  for (const row of lib.rows('SELECT id, payload FROM outreach WHERE ' + TENANT_SQL + ' AND lower(to_email) NOT IN (' + marks + ')', tenant, ...addresses)) {
+    let next = String(row.payload ?? '');
+    for (const email of addresses) next = replaceAddress(next, email, token);
     if (next === String(row.payload ?? '')) continue;
     lib.sql.exec('UPDATE outreach SET payload = ? WHERE id = ?', next, row.id);
     n++;
@@ -289,15 +298,15 @@ function eraseWithin(lib, user, subj, tenant, { now = lib.now() } = {}) {
   }
   // 5. the profile and the flags (the receipts stay), then the audit trail.
   // Another person's row stays. Only the address copied onto it, in this tenant, is replaced.
-  bump('profileManagerEmail', scrubManagerEmails(lib, tenant, email, token));
-  bump('directoryImports', scrubImportAuthors(lib, tenant, email, token));
-  bump('outreachPayloads', scrubOutreachPayloads(lib, tenant, email, token));
+  const addresses = subjectAddresses(user);
+  bump('profileManagerEmail', scrubManagerEmails(lib, tenant, addresses, token));
+  bump('directoryImports', scrubImportAuthors(lib, tenant, addresses, token));
+  bump('outreachPayloads', scrubOutreachPayloads(lib, tenant, addresses, token));
   if (hasTenantColumn(lib, 'profiles')) { const prof = lib.rows('SELECT COUNT(*) AS n FROM profiles WHERE subject = ? AND ' + TENANT_SQL, email, tenant)[0].n; if (prof) { lib.sql.exec('DELETE FROM profiles WHERE subject = ? AND ' + TENANT_SQL, email, tenant); bump('profile'); } }
   // privacy_flags is keyed by email and has no tenant. Leaving it keeps another tenant's restriction from being cleared or set by this erasure.
   lib.log('privacy', 'atlas', 'erasure completed', 'subject ' + subjectHash(subj).slice(0, 8)); // a pseudonym of a pseudonym, never an email; written before the rewrite so the head it returns is final
-  const identities = [...new Set([email, user.mail].map(v => String(v || '').trim().toLowerCase()).filter(Boolean))];
   const sameTenantRefs = has('refs') ? lib.rows('SELECT id FROM refs WHERE ' + TENANT_SQL, tenant).map(r => r.id) : [];
-  const audit = pseudonymiseAudit(lib, identities, token, { ids: [...new Set([...touched, ...sameTenantRefs])] });
+  const audit = pseudonymiseAudit(lib, addresses, token, { ids: [...new Set([...touched, ...sameTenantRefs])] });
   if (audit.refused) hold('audit', 'chain', 'audit_chain_unverified'); // X1 (red M8): a chain that does not verify is not re-sealed; the DPO is told the audit part is pending
   else bump('auditRows', audit.changed);
   lib.sql.exec('INSERT INTO erasure_log (id, subject_hash, at, counts) VALUES (?, ?, ?, ?)', lib.newId(), subjectHash(subj), now, JSON.stringify(counts));

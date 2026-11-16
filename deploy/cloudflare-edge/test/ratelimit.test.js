@@ -101,9 +101,11 @@ test('sheet ingest and visuals share the same counter; classify and transcribe h
   assert.equal((await me.go('/api/jev/classify', { method: 'POST', body: '{"project":{}}' })).status === 429, false);
   const c = await me.go('/api/jev/classify', { method: 'POST', body: '{"project":{}}' });
   assert.equal(c.status, 429); assert.ok(c.headers.get('retry-after'));
-  const tr = () => handle(new Request(ORIGIN + '/api/transcribe', { method: 'POST', headers: { 'cf-access-jwt-assertion': me.token, Origin: ORIGIN, 'X-Atlas-CSRF': me.csrf, 'X-Atlas-Consent': 'spoken-ask-v1; once', 'Content-Type': 'audio/L16;rate=24000' }, body: new Uint8Array(100) }), env, '', { flagsOf: () => ({ spokenAsk: true }) });
-  assert.equal((await tr()).status, 400); // allowed through the limiter, refused by the length rule
-  const t2 = await tr(); assert.equal(t2.status, 429); assert.ok(t2.headers.get('retry-after'));
+  const tr = bytes => handle(new Request(ORIGIN + '/api/transcribe', { method: 'POST', headers: { 'cf-access-jwt-assertion': me.token, Origin: ORIGIN, 'X-Atlas-CSRF': me.csrf, 'X-Atlas-Consent': 'spoken-ask-v1; once', 'Content-Type': 'audio/L16;rate=24000' }, body: new Uint8Array(bytes) }), env, '', { flagsOf: () => ({ spokenAsk: true }) });
+  assert.equal((await tr(100)).status, 400); // too short: refused before the limiter
+  assert.equal((await tr(100)).status, 400);
+  assert.notEqual((await tr(4800)).status, 429);
+  const t2 = await tr(4800); assert.equal(t2.status, 429); assert.ok(t2.headers.get('retry-after'));
 });
 
 test('a request refused by CSRF or by size does not spend the budget, and the limiter fails closed if its Durable Object is unreachable', async () => {

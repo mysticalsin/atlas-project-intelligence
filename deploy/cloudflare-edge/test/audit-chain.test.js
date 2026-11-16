@@ -60,15 +60,18 @@ test('a deleted oldest prefix (a retention sweep) leaves a valid chain; deleting
   sql.exec('DELETE FROM audit WHERE seq = 5'); const after = verifyChain(sql); assert.equal(after.ok, true); assert.notEqual(after.head, head5, 'the logged head no longer matches the anchor');
 });
 
-test('an audit table created before the chain gets the columns and its history sealed in order; later rows continue the chain', () => {
+test('rows with no hashes and no anchor are not signed when the commit column is added', () => {
   const sql = memorySql(); table(sql);
   for (let i = 1; i <= 3; i++) sql.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', ...Object.values(row(i)));
   assert.throws(() => sql.exec('SELECT hash FROM audit'));
   appendAudit(sql, row(4));
-  const v = verifyChain(sql); assert.deepEqual([v.ok, v.checked], [true, 4]);
-  const first = sql.exec('SELECT * FROM audit ORDER BY seq').toArray()[0]; assert.equal(first.prev_hash, GENESIS); assert.equal(first.hash, rowHash(GENESIS, first));
-  // tampering with sealed history is now detected
-  sql.exec("UPDATE audit SET action = 'approved' WHERE seq = 2"); assert.equal(verifyChain(sql).brokenSeq, 2);
+  const rows = sql.exec('SELECT * FROM audit ORDER BY seq').toArray();
+  assert.equal(rows[0].hash, null);
+  assert.equal(rows[0].commit, null);
+  assert.equal(rows[1].actor, 'a2@example.com');
+  const v = verifyChain(sql);
+  assert.equal(v.ok, false);
+  assert.equal(v.reason, 'UNSEALED');
   // a NULL hash and a NULL commit after the column exists are not sealed from the actor now in the row
   const sql2 = memorySql(); table(sql2); appendAudit(sql2, row(1));
   sql2.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', ...Object.values(row(2)));

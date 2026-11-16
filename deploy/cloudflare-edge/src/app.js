@@ -329,9 +329,16 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
       const refused = sessionGuard(); if (refused) return refused;
       if (!env.LIBRARY) return json(env, { error: 'The reference library is not configured on this deployment.' }, 404);
       const action = url.pathname.endsWith('/erase') ? 'erase' : 'export';
+      let eraseBody;
+      if (action === 'erase') {
+        eraseBody = await request.text();
+        let confirmed = false;
+        try { confirmed = JSON.parse(eraseBody).confirmed === true; } catch { confirmed = false; }
+        if (!confirmed) return json(env, { error: 'Erasure needs the confirmation the Worker checks.' }, 400);
+      }
       const limited = await spend(action === 'erase' ? 'me-erase' : 'me-export', action === 'erase' ? 3 : 5);
       if (limited) return limited;
-      const fwd = new Request('https://atlas.internal/api/privacy/' + action, { method: request.method, headers: { 'content-type': 'application/json', 'x-atlas-user': libraryUser, 'x-atlas-role': role, 'x-atlas-email': mail, 'x-atlas-tenant': tenant, 'x-atlas-tenant-enforced': tenantFlag, 'x-atlas-subj': subjectKey }, body: request.method === 'GET' ? undefined : await request.text() });
+      const fwd = new Request('https://atlas.internal/api/privacy/' + action, { method: request.method, headers: { 'content-type': 'application/json', 'x-atlas-user': libraryUser, 'x-atlas-role': role, 'x-atlas-email': mail, 'x-atlas-tenant': tenant, 'x-atlas-tenant-enforced': tenantFlag, 'x-atlas-subj': subjectKey }, body: action === 'erase' ? eraseBody : undefined });
       const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(fwd);
       let payload = {};
       try { payload = await res.json(); } catch { payload = {}; }
@@ -356,9 +363,19 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
       if (aiOff(env)) return json(env, { error: AI_OFF_MESSAGE, code: 'AI_OFF' }, 503);
       const refused = sessionGuard(); if (refused) return refused;
       if (Number(request.headers.get('Content-Length') || 0) > 12 * 1024 * 1024) { slog.log('body_too_large', 'BODY_TOO_LARGE', 413); return json(env, { error: 'The file is larger than 10 MB.' }, 413); }
+      const sheetPath = url.pathname.slice('/api/sheet/'.length);
+      let sheetRequest = request;
+      if (sheetPath === 'ingest') {
+        if (request.headers.has('Content-Length') && Number(request.headers.get('Content-Length') || 0) === 0) return json(env, { error: 'The file is empty.' }, 400);
+      } else {
+        const raw = await request.text();
+        if (raw.length > 12 * 1024 * 1024) { slog.log('body_too_large', 'BODY_TOO_LARGE', 413); return json(env, { error: 'The file is larger than 10 MB.' }, 413); }
+        try { JSON.parse(raw); } catch { return json(env, { error: 'Invalid JSON.' }, 400); }
+        sheetRequest = new Request(request.url, { method: 'POST', headers: request.headers, body: raw });
+      }
       const limited = await spend('sheet', limitOf(env, 'SHEET_HOUR')); if (limited) return limited;
       // PDF metadata (author, producer, title) is never extracted (D2, WOW_ZERO_CONFIG §4): text only.
-      const ai = workersAI(env), res = await sheetRoutes(request, url.pathname.slice('/api/sheet/'.length), { complete: (m, n) => ai.complete(m, n),
+      const ai = workersAI(env), res = await sheetRoutes(sheetRequest, sheetPath, { complete: (m, n) => ai.complete(m, n),
         toMarkdown: f => env.AI.toMarkdown(f, { conversionOptions: { pdf: { metadata: false } } }) });
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
     }
@@ -401,11 +418,12 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
       // Auth and consent before the limiter. A missing consent is 403 even when the limiter cannot be reached.
       const consent = /^spoken-ask-v1;\s*(once|always)$/.exec((request.headers.get('X-Atlas-Consent') || '').trim());
       if (!consent || (consent[1] === 'always' && !await storedSpokenAsk(env, { libraryUser, role, mail, tenant, tenantFlag }))) return json(env, { error: 'Voice questions need your consent first.' }, 403);
-      const limited = await spend('transcribe', limitOf(env, 'TRANSCRIBE_HOUR')); if (limited) return limited;
       if ((request.headers.get('Content-Type') || '').replace(/\s+/g, '').toLowerCase() !== 'audio/l16;rate=24000') return json(env, { error: 'Send 16-bit mono PCM at 24 kHz (audio/L16;rate=24000).' }, 415);
-      const pcm = Number(request.headers.get('Content-Length') || 0) > AUDIO_MAX ? null : await boundedBytes(request, AUDIO_MAX);
+      if (Number(request.headers.get('Content-Length') || 0) > AUDIO_MAX) return json(env, { error: 'The recording is longer than 30 seconds.' }, 413);
+      const pcm = await boundedBytes(request, AUDIO_MAX);
       if (!pcm) return json(env, { error: 'The recording is longer than 30 seconds.' }, 413);
       if (pcm.length < AUDIO_MIN || pcm.length % 2) return json(env, { error: 'The recording is too short or is not 16-bit audio.' }, 400);
+      const limited = await spend('transcribe', limitOf(env, 'TRANSCRIBE_HOUR')); if (limited) return limited;
       const t0 = Date.now(), metric = values => console.log(JSON.stringify({ atlas_metric: 'transcribe', ms: Date.now() - t0, bytes: pcm.length, ...values }));
       let out;
       try { out = await workersAI(env).transcribe(pcm); } catch { metric({ failed: 1 }); return json(env, { error: 'Transcription failed. Type the question instead.' }, 502); }
@@ -415,12 +433,12 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
     if (url.pathname === '/api/jev/classify' && request.method === 'POST') {
       if (aiOff(env)) return json(env, { error: AI_OFF_MESSAGE, code: 'AI_OFF' }, 503);
       const refused = sessionGuard(); if (refused) return refused;
-      const limited = await spend('classify', limitOf(env, 'CLASSIFY_HOUR')); if (limited) return limited;
       if (Number(request.headers.get('Content-Length') || 0) > 65536) return json(env, { error: 'Project too large to score.' }, 413);
       const raw = await request.text();
       if (raw.length > 65536) return json(env, { error: 'Project too large to score.' }, 413);
       let project;
       try { project = JSON.parse(raw).project; } catch { return json(env, { error: 'Invalid JSON.' }, 400); }
+      const limited = await spend('classify', limitOf(env, 'CLASSIFY_HOUR')); if (limited) return limited;
       try { return json(env, await classify(env, project)); }
       catch (e) { return e.status ? json(env, { error: e.message }, e.status) : json(env, { error: 'Scoring is unavailable right now. Try again shortly.' }, 502); }
     }

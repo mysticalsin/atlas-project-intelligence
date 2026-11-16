@@ -471,7 +471,7 @@ with sync_playwright() as pw:
     # ---- admin people directory: only the approved columns leave the browser (§5.6)
     s = Server(prof=profile(), role='admin'); s.dir_rows = 2
     p = open_page(s)
-    p.evaluate("document.getElementById('openInsights').click()"); p.locator('#peopleDirectory').wait_for(state='visible', timeout=5000)
+    p.evaluate("document.getElementById('openInsights').click()"); p.locator('#peopleDirectory').get_by_text('only synthetic addresses').wait_for(state='visible', timeout=5000)
     check('directory: test mode says synthetic addresses only, and names what DNA pull and push need',
           'only synthetic addresses' in p.locator('#peopleDirectory').inner_text() and 'DNA push: not connected' in p.locator('#peopleDirectory').inner_text())
     csv = 'Email;Nom complet;Poste;Responsable;Mail responsable;Salaire;Date de naissance;Site\njane@example.com;Jane Doe;Data lead;Sam Lead;sam@example.com;85000;1980-02-03;Lyon\nbad-row;Nobody;;;;90000;1970-01-01;Paris\n'

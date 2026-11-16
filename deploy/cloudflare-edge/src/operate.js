@@ -205,8 +205,8 @@ export async function privacyRoutes(ctx) {
       lib.log('library', user.email, 'privacy delete', outcomes.map(o => o.store + (o.error ? ' failed' : ' ' + o.removed)).join(', '));
       return { outcomes, ...dsarStores(), complete: false, vendorDeletion: 'not-asserted', note: 'Each store reports only what this request removed for this subject and tenant. An error means that store was not removed. Other tenants, other people, and blank-tenant rows are not counted. Stories, staffing, invitations, and audit history are not deleted. Quarantine is not deletion. Vendor deletion is not-asserted. This is not a GDPR certification.' };
     };
-    const body = typeof lib.transactionSync === 'function' ? lib.transactionSync(run) : run();
-    return { body };
+    if (typeof lib.transactionSync !== 'function') throw fail(500, 'Privacy delete cannot be made atomic on this store, so nothing was deleted.');
+    return { body: lib.transactionSync(run) };
   }
   if (method === 'POST' && user.role === 'admin' && parts[1] === 'purge-telemetry') {
     if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
