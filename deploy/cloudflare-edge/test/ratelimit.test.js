@@ -95,11 +95,14 @@ test('/api/sheet/*: the 21st request in an hour is a 429 with Retry-After, count
 });
 
 test('sheet ingest and visuals share the same counter; classify and transcribe have their own', async () => {
-  const { env } = worldWith({ RL_SHEET_HOUR: '2', RL_CLASSIFY_HOUR: '1', RL_TRANSCRIBE_HOUR: '1' }), me = await session(env);
+  const { env } = worldWith({ RL_SHEET_HOUR: '2', RL_CLASSIFY_HOUR: '1', RL_TRANSCRIBE_HOUR: '1', TYPESAFE_API_KEY: '' }), me = await session(env);
   await me.go('/api/sheet/ingest', { method: 'POST', body: new Uint8Array([1, 2, 3]) }); await me.go('/api/sheet/visuals', { method: 'POST', body: '{}' });
   assert.equal((await me.go('/api/sheet/draft', { method: 'POST', body: '{}' })).status, 429);
-  assert.equal((await me.go('/api/jev/classify', { method: 'POST', body: '{"project":{}}' })).status === 429, false);
-  const c = await me.go('/api/jev/classify', { method: 'POST', body: '{"project":{}}' });
+  const bad = await me.go('/api/jev/classify', { method: 'POST', body: '{"project":{}}' });
+  assert.equal(bad.status, 400);
+  const valid = JSON.stringify({ project: { title: 'Northwind pilot', answers: ['A queue was slow.', '', '', '', '', ''] } });
+  assert.equal((await me.go('/api/jev/classify', { method: 'POST', body: valid })).status === 429, false);
+  const c = await me.go('/api/jev/classify', { method: 'POST', body: valid });
   assert.equal(c.status, 429); assert.ok(c.headers.get('retry-after'));
   const tr = bytes => handle(new Request(ORIGIN + '/api/transcribe', { method: 'POST', headers: { 'cf-access-jwt-assertion': me.token, Origin: ORIGIN, 'X-Atlas-CSRF': me.csrf, 'X-Atlas-Consent': 'spoken-ask-v1; once', 'Content-Type': 'audio/L16;rate=24000' }, body: new Uint8Array(bytes) }), env, '', { flagsOf: () => ({ spokenAsk: true }) });
   assert.equal((await tr(100)).status, 400); // too short: refused before the limiter
