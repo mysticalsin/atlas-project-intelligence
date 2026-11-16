@@ -768,17 +768,14 @@ export class Library {
     if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
     const tenant = String(user.tenant || '').toLowerCase();
     if (['admin', 'reviewer'].includes(user.role) && user.all) {
-      const sql = user.tenantEnforced === true
-        ? "SELECT * FROM invitations WHERE lower(COALESCE(tenant, '')) = ? ORDER BY created_at DESC LIMIT 200"
-        : "SELECT * FROM invitations WHERE lower(COALESCE(tenant, '')) = '' ORDER BY created_at DESC LIMIT 200";
-      const rows = user.tenantEnforced === true ? this.rows(sql, tenant) : this.rows(sql);
+      const rows = this.rows("SELECT * FROM invitations WHERE lower(COALESCE(tenant, '')) = ? ORDER BY created_at DESC LIMIT 200", tenant);
       return rows.map(row => this.invitationView(user, row));
     }
     const aliases = [...new Set([user.email, user.mail].map(v => String(v || '').trim().toLowerCase()).filter(Boolean))];
     if (!aliases.length) return [];
     // sql-bound-fixed: 3
     const marks = aliases.map(() => '?').join(', ');
-    return this.rows(`SELECT * FROM invitations WHERE lower(email) IN (${marks}) AND status IN ('open','scheduled') AND lower(COALESCE(tenant, '')) = ? ORDER BY created_at DESC`, ...aliases, user.tenantEnforced === true ? tenant : '')
+    return this.rows(`SELECT * FROM invitations WHERE lower(email) IN (${marks}) AND status IN ('open','scheduled') AND lower(COALESCE(tenant, '')) = ? ORDER BY created_at DESC`, ...aliases, tenant)
       .map(row => this.invitationView(user, row));
   }
   invitationView(user, row) {

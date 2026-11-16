@@ -524,9 +524,10 @@ test('merge, duplicates, invites, outreach, DSAR aliases and staffing ties stay 
   l.sql.exec('INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)', sub, B, '{}', '2026-11-08T00:00:00.000Z');
   const real = l.sql.exec.bind(l.sql);
   l.sql.exec = (q, ...p) => { if (String(q).includes('DELETE FROM journey')) throw new Error('disk'); return real(q, ...p); };
-  const failed = await (await libraryRoutes(new Request('https://atlas.test/api/library/privacy/delete', { method: 'POST', body: '{}', headers: { 'x-atlas-user': sub, 'x-atlas-role': 'user', 'x-atlas-email': 'ada@example.test', 'x-atlas-tenant': B, 'x-atlas-tenant-enforced': '1' } }), l, { env: { DATA_MODE: 'production', ORIGIN: 'https://atlas.test', CSRF_SECRET: 's' } })).json();
-  assert.equal(failed.complete, false);
-  assert.equal(failed.outcomes.find(o => o.store === 'journey').error, 'delete-failed');
+  const failedResponse = await libraryRoutes(new Request('https://atlas.test/api/library/privacy/delete', { method: 'POST', body: '{}', headers: { 'x-atlas-user': sub, 'x-atlas-role': 'user', 'x-atlas-email': 'ada@example.test', 'x-atlas-tenant': B, 'x-atlas-tenant-enforced': '1' } }), l, { env: { DATA_MODE: 'production', ORIGIN: 'https://atlas.test', CSRF_SECRET: 's' } });
+  assert.equal(failedResponse.ok, false);
+  const failed = await failedResponse.json();
+  assert.equal(failed.error, 'The deletion did not finish. Nothing was removed.');
   assert.equal(l.rows('SELECT COUNT(*) AS n FROM journey WHERE subject = ? AND tenant = ?', sub, B)[0].n, 1);
   assert.equal(resolveTenantEnforcement({ DATA_MODE: 'test' }, '0'), true);
   assert.equal(resolveTenantEnforcement({ ATLAS_TENANT_ISOLATION: 'local-synthetic' }, '1'), false);

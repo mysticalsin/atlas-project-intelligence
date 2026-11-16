@@ -36,12 +36,25 @@ export function readChunks(lib, values, spec) {
   return rows;
 }
 
+// One transaction per caller. A chunked write joins it instead of opening another.
+const openTransaction = new WeakMap();
+
+export function withTransaction(lib, fn) {
+  if (typeof lib.transactionSync !== 'function') throw new Error('Chunked writes require transactionSync.');
+  if (openTransaction.get(lib)) return fn();
+  return lib.transactionSync(() => {
+    openTransaction.set(lib, true);
+    try { return fn(); }
+    finally { openTransaction.delete(lib); }
+  });
+}
+
 // Every chunk of every group commits in one transactionSync. A throw rolls them all back.
+// A caller already inside withTransaction keeps these chunks in that transaction.
 export function writeChunks(lib, groups) {
   const pending = (groups || []).filter(group => group.values?.length);
   if (!pending.length) return;
-  if (typeof lib.transactionSync !== 'function') throw new Error('Chunked writes require transactionSync.');
-  lib.transactionSync(() => {
+  withTransaction(lib, () => {
     for (const group of pending) {
       const fixed = group.fixed || 0;
       const copies = group.copies || 1;

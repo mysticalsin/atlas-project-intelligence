@@ -226,8 +226,8 @@ None for this view. `LEDGER_MODE` is a guard input on the paid-call wrapper, not
 | idle | none | The delete button is available. Nothing has been sent. |
 | confirming | none | The existing confirm dialog is open. Cancel sends nothing. |
 | in_flight | none | The one POST is open. Another ask or confirm is illegal. |
-| receipt | none | The server note and each outcome are shown. The JSON body is not. |
-| failed | none | The request threw. The existing warning banner shows `e.message`. |
+| receipt | none | The server note and each outcome are shown only when every store succeeded. The JSON body is not. A receipt never contains `delete-failed`. |
+| failed | none | The request was non-2xx, or an outcome carried an error. The warning banner shows the error. No receipt is appended. |
 
 ### Events
 | Event | Source |
@@ -235,8 +235,8 @@ None for this view. `LEDGER_MODE` is a guard input on the paid-call wrapper, not
 | ask | Delete my journey data |
 | cancel | the confirm dialog closes without Continue |
 | confirm | Continue |
-| succeed | `/privacy/delete` resolved |
-| fail | `/privacy/delete` threw |
+| succeed | `/privacy/delete` resolved and every outcome has no error |
+| fail | `/privacy/delete` was non-2xx, or any outcome has an error |
 
 ### Transitions
 | From | Event | Guard | To | Side effects |
@@ -245,7 +245,7 @@ None for this view. `LEDGER_MODE` is a guard input on the paid-call wrapper, not
 | confirming | cancel | none | idle | close nothing further; the button is available |
 | confirming | confirm | none | in_flight | POST `/privacy/delete` once |
 | in_flight | succeed | none | receipt | paint the server note and each outcome |
-| in_flight | fail | none | failed | the existing warning banner |
+| in_flight | fail | none | failed | the existing warning banner; no receipt |
 
 Anything not in this table is illegal and is rejected. The cross product is 25 pairs. Seven are legal. The transition returns the previous state and a rejection marker whose only fields are `id`, `phase` and `event`. The id is `privacy-delete`. The button logs that marker. The transition does not log, and it does not receive the email, the note, or the response body.
 

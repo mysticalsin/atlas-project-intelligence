@@ -5,7 +5,7 @@ import { queryMetrics, recordUsage, purgeTelemetry, personaKey, ensureTelemetry 
 import { toCsv } from './csvsafe.js';
 import { journeyView, saveJourney, mapDraft, ensureJourney, journeyMatches, journeyTenant, journeyExport, omittedRow, JOURNEY_COUNT_SQL, JOURNEY_DELETE_SQL } from './journey.js';
 import { deleteOwnedProfile, ensure as ensureProfile, profileSelection } from './profile.js';
-import { placeholders, readChunks, writeChunks } from './sql-bound.js';
+import { placeholders, readChunks, writeChunks, withTransaction } from './sql-bound.js';
 import { readPublication } from './publication.js';
 
 function metricQuery(url, bucket = 'day') {
@@ -118,7 +118,8 @@ function exportProfile(lib, email, tenant) {
 }
 
 // The tenant is one parameter and the alias list is bound twice. Chunks of aliases stay
-// at or under 100, and the row deletes commit together.
+// at or under 100. The row deletes share one transaction, and they join a transaction
+// the caller already opened.
 export function eraseManagerTrust(lib, tenant, aliases) {
   if (!aliases.length) return 0;
   const ids = [...new Set(readChunks(lib, aliases, {
@@ -175,37 +176,42 @@ export async function privacyRoutes(ctx) {
     if (!TENANT_ID.test(tenant)) throw fail(403, 'A verified tenant is required.');
     const persona = await personaKey(user);
     ensureJourney(lib);
+    ensureTelemetry(lib);
+    ensureProfile(lib);
     const aliases = [...new Set([user.email, user.mail].map(v => String(v || '').trim().toLowerCase()).filter(Boolean))];
-    const outcomes = [];
-    const attempt = (store, fn) => {
-      try { outcomes.push({ store, removed: fn(), error: null }); }
-      catch { outcomes.push({ store, removed: 0, error: 'delete-failed' }); }
-    };
-    attempt('journey', () => {
-      const n = lib.rows(JOURNEY_COUNT_SQL, user.email, tenant)[0].n;
-      if (n) lib.sql.exec(JOURNEY_DELETE_SQL, user.email, tenant);
-      return n;
-    });
-    attempt('telemetry', () => {
-      ensureTelemetry(lib);
-      const n = lib.rows("SELECT COUNT(*) AS n FROM telemetry WHERE persona = ? AND lower(COALESCE(tenant, '')) = ?", persona, tenant)[0].n;
-      if (n) lib.sql.exec("DELETE FROM telemetry WHERE persona = ? AND lower(COALESCE(tenant, '')) = ?", persona, tenant);
-      return n;
-    });
-    attempt('profile', () => deleteOwnedProfile(lib, user));
-    attempt('manager-trust', () => eraseManagerTrust(lib, tenant, aliases));
-    attempt('directory', () => {
-      const mail = String(user.mail || '').toLowerCase();
-      const oid = /^[0-9a-f-]{36}:([0-9a-f-]{36})$/.exec(String(user.email || '').toLowerCase())?.[1] || '';
-      const keys = [...new Set([mail, oid ? 'oid:' + oid : ''].filter(Boolean))];
-      if (!keys.length) return 0;
-      // sql-bound-fixed: 3
-      const marks = keys.map(() => '?').join(', ');
-      const n = lib.rows(`SELECT COUNT(*) AS n FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys)[0].n;
-      if (n) lib.sql.exec(`DELETE FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys);
-      return n;
-    });
-    lib.log('library', user.email, 'privacy delete', outcomes.map(o => o.store + (o.error ? ' failed' : ' ' + o.removed)).join(', '));
+    const count = (sql, ...params) => lib.rows(sql, ...params)[0].n;
+    let outcomes;
+    try {
+      outcomes = withTransaction(lib, () => {
+        const journey = count(JOURNEY_COUNT_SQL, user.email, tenant);
+        if (journey) lib.sql.exec(JOURNEY_DELETE_SQL, user.email, tenant);
+        const telemetry = count("SELECT COUNT(*) AS n FROM telemetry WHERE persona = ? AND lower(COALESCE(tenant, '')) = ?", persona, tenant);
+        if (telemetry) lib.sql.exec("DELETE FROM telemetry WHERE persona = ? AND lower(COALESCE(tenant, '')) = ?", persona, tenant);
+        const profile = deleteOwnedProfile(lib, user);
+        const trust = eraseManagerTrust(lib, tenant, aliases);
+        const mail = String(user.mail || '').toLowerCase();
+        const oid = /^[0-9a-f-]{36}:([0-9a-f-]{36})$/.exec(String(user.email || '').toLowerCase())?.[1] || '';
+        const keys = [...new Set([mail, oid ? 'oid:' + oid : ''].filter(Boolean))];
+        let directory = 0;
+        if (keys.length) {
+          // sql-bound-fixed: 3
+          const marks = keys.map(() => '?').join(', ');
+          directory = count(`SELECT COUNT(*) AS n FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys);
+          if (directory) lib.sql.exec(`DELETE FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys);
+        }
+        return [
+          { store: 'journey', removed: journey, error: null },
+          { store: 'telemetry', removed: telemetry, error: null },
+          { store: 'profile', removed: profile, error: null },
+          { store: 'manager-trust', removed: trust, error: null },
+          { store: 'directory', removed: directory, error: null },
+        ];
+      });
+    } catch (error) {
+      if (error.status) throw error;
+      throw fail(500, 'The deletion did not finish. Nothing was removed.');
+    }
+    lib.log('library', user.email, 'privacy delete', outcomes.map(o => o.store + ' ' + o.removed).join(', '));
     return { body: { outcomes, ...dsarStores(), complete: false, vendorDeletion: 'not-asserted', note: 'Each store reports only what this request removed for this subject and tenant. An error means that store was not removed. Other tenants, other people, and blank-tenant rows are not counted. Stories, staffing, invitations, and audit history are not deleted. Quarantine is not deletion. Vendor deletion is not-asserted. This is not a GDPR certification.' } };
   }
   if (method === 'POST' && user.role === 'admin' && parts[1] === 'purge-telemetry') {
