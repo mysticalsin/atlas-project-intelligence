@@ -226,8 +226,8 @@ function maskedView(lib, data, { names, terms }) {
     // Masked first, then cut: a cut through a raw name could leave a fragment no term matches.
     sources: (v.sources || []).slice(0, 10).map(s => ({ name: mask(s.name || ''), version: mask(s.version || ''), excerpt: cut(mask(s.excerpt || ''), 600) })) };
 }
-export function ratingInput(lib, data, { owner = '', view = maskedView } = {}) {
-  const names = storedNames(lib, owner), terms = sensitiveTerms(data, names), v = view(lib, data, { names, terms });
+export function ratingInput(lib, data, { owner = '', tenant, view = maskedView } = {}) {
+  const names = storedNames(lib, owner, tenant), terms = sensitiveTerms(data, names), v = view(lib, data, { names, terms });
   const text = x => typeof x === 'string' ? x : '';
   const reference = { title: text(v.title), industry: text(v.sector), service_lines: (v.serviceLines || []).map(text),
     story: Object.fromEntries(STORY.map((k, i) => [k, text(v.answers?.[i])])),

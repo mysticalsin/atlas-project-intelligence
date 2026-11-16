@@ -510,14 +510,14 @@ test('storedNames reads the verified tenant and does not default to a blank-tena
 
 test('storedNames: the stored edit and sign-in names only, never DNA; [] without a profile', async () => {
   const { l } = world({ fetch: async () => { throw new Error('DNA must never be called'); } });
-  assert.deepEqual(profile.storedNames(l, ALEX.email), [], 'no profile row');
+  assert.deepEqual(profile.storedNames(l, ALEX.email, ''), [], 'no profile row');
   const env = { ...PROD, DNA_PROFILE_URL: 'https://dna.example/people/{email}', DNA_FIELD_MAP: '{"name":"n"}', DNA_API_KEY: 'k' };
   const signedIn = { ...ALEX, idp: { name: 'Alexandre Martin', given_name: 'Alexandre' } };
   await call(l, signedIn, 'GET', 'profile', null, env);
-  assert.deepEqual(profile.storedNames(l, ALEX.email), ['Alexandre Martin'], 'the sign-in name');
+  assert.deepEqual(profile.storedNames(l, ALEX.email, ''), ['Alexandre Martin'], 'the sign-in name');
   await call(l, signedIn, 'POST', 'profile', { set: { name: 'Alex Martin-Roux' } });
-  assert.deepEqual(profile.storedNames(l, ALEX.email).sort(), ['Alex Martin-Roux', 'Alexandre Martin']);
+  assert.deepEqual(profile.storedNames(l, ALEX.email, '').sort(), ['Alex Martin-Roux', 'Alexandre Martin']);
   l.sql.exec("INSERT INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at) VALUES (?, 'dna', 'Dna Only Name', '', '', '', '', 'pull', ?)", ALEX.email, NOW);
-  assert.ok(!profile.storedNames(l, ALEX.email).includes('Dna Only Name'), 'directory rows are not the person\'s stored names');
-  assert.deepEqual(profile.storedNames(l, BEA.email), []);
+  assert.ok(!profile.storedNames(l, ALEX.email, '').includes('Dna Only Name'), 'directory rows are not the person\'s stored names');
+  assert.deepEqual(profile.storedNames(l, BEA.email, ''), []);
 });

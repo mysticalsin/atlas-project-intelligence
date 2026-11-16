@@ -532,7 +532,7 @@ export class Library {
   async jevRating(row, { gen, budget }) {
     const t0 = Date.now();
     if (this.rater.blocked() === 'auth') throw new RatingError('auth'); // skipped until the key changes; never reused
-    const input = ratingInput(this, row.data, { owner: row.owner, ...(this.ratingView ? { view: this.ratingView } : {}) });
+    const input = ratingInput(this, row.data, { owner: row.owner, tenant: row.state?.tenant ?? row.tenant, ...(this.ratingView ? { view: this.ratingView } : {}) });
     const plan = questionPlan(row.data, input.figure), asked = plan.asked;
     const bodyText = JSON.stringify(requestBody(input.state, asked)), bodyHash = await sha256Hex(bodyText);
     const last = this.row(row.id)?.state?.lastJev;

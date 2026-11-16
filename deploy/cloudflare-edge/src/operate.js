@@ -4,7 +4,7 @@ import { sameTenant, TENANT_ID } from './authz.js';
 import { queryMetrics, recordUsage, purgeTelemetry, personaKey, ensureTelemetry } from './telemetry.js';
 import { toCsv } from './csvsafe.js';
 import { journeyView, saveJourney, mapDraft, ensureJourney, journeyMatches, journeyTenant, journeyExport, omittedRow, JOURNEY_COUNT_SQL, JOURNEY_DELETE_SQL } from './journey.js';
-import { deleteOwnedProfile, ensure as ensureProfile } from './profile.js';
+import { deleteOwnedProfile, ensure as ensureProfile, profileSelection } from './profile.js';
 import { readPublication } from './publication.js';
 
 function metricQuery(url, bucket = 'day') {
@@ -15,7 +15,7 @@ function dsarStores() {
   return {
     coveredLocal: ['journey for this subject and tenant', 'profile for this subject and tenant', 'telemetry for this persona and tenant', 'manager trust for this subject and tenant', 'this subject\'s directory row for this tenant'],
     retained: [
-      { store: 'legacy-blank-tenant-rows', action: 'quarantined', note: 'Blank ownership stays blank. It was not assigned a tenant and was not deleted by this request.' },
+      { store: 'legacy-blank-tenant-rows', action: 'quarantined', note: 'Blank ownership stays blank. It was not assigned a tenant and was not deleted by this request. A privacy export names it legacy_unscoped and does not include its content. An operator resolves it by a reviewed migration that assigns the tenant.' },
       { store: 'hindsight-bank', action: 'not-contacted', note: 'The vendor bank was not called. A subject-only bank is not read when a verified tenant is present, and it was not deleted.' },
       { store: 'interview-object', action: 'not-deleted', note: 'The Interview object was not opened and was not erased.' },
       { store: 'vendor-logs', action: 'not-asserted' },
@@ -88,23 +88,22 @@ function exportStories(rows, user) {
   return { stories, omitted };
 }
 
-// The same profile migration the other profile reads use. A missing table or a row that does not match this
-// subject and tenant is absence. Subject and tenant compare case-insensitively. More than one folded match
-// exports the newest and names the rest. An unreadable edits or consents value is an omission; the other part is returned.
+// The same profile migration and the same profileSelection the read, write and erasure use. A missing table or
+// no folded match is absence. A blank-tenant row for this subject is named and not returned. An unreadable edits
+// or consents value is an omission; the other part is returned. Further folded matches are named and not merged.
 function exportProfile(lib, email, tenant) {
   ensureProfile(lib);
-  let rows;
-  try {
-    rows = lib.rows(`SELECT rowid AS id, edits, consents, updated_at FROM profiles
-      WHERE lower(subject) = lower(?) AND lower(trim(tenant)) = lower(trim(?))
-      ORDER BY updated_at DESC, rowid DESC`, email, tenant);
-  } catch (error) {
+  let selected;
+  try { selected = profileSelection(lib, email, tenant); }
+  catch (error) {
     if (String(error && error.message).includes('no such table')) return { profile: null, omitted: [] };
     throw error;
   }
-  if (!rows.length) return { profile: null, omitted: [] };
-  const row = rows[0];
   const omitted = [];
+  for (const row of selected.unscoped) omitted.push(omittedRow(row.id, 'profile', 'legacy_unscoped'));
+  for (const row of selected.collapsed) omitted.push(omittedRow(row.id, 'profile', row.reason || 'duplicate'));
+  if (!selected.matched.length) return { profile: null, omitted };
+  const row = selected.matched[0];
   const profile = {};
   const edits = jsonObject(row.edits);
   const consents = jsonObject(row.consents);
@@ -113,7 +112,7 @@ function exportProfile(lib, email, tenant) {
   if (consents) profile.consents = consents;
   else omitted.push(omittedRow('consents', 'profile'));
   profile.updatedAt = row.updated_at;
-  for (const extra of rows.slice(1)) omitted.push(omittedRow(extra.id, 'profile', 'duplicate'));
+  for (const extra of selected.matched.slice(1)) omitted.push(omittedRow(extra.id, 'profile', 'duplicate'));
   return { profile, omitted };
 }
 

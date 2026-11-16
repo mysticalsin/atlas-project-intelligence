@@ -155,7 +155,7 @@ test('R2 leak test: no client, contact, colleague, owner name, project id, host,
   for (const re of [/the client/, /another client/, /the consultant/, /a colleague/, /the project/, /\[(email|link|phone)\]/]) assert.match(sent, re);
   assert.equal(fetcher.calls[0].init.headers.Authorization, 'Bearer test-key-SECRET', 'the key is only in the header');
   // The same record, unmasked, trips the guard on its own values.
-  const terms = R.sensitiveTerms(l.row(id).data, profile.storedNames(l, OWNER.email));
+  const terms = R.sensitiveTerms(l.row(id).data, profile.storedNames(l, OWNER.email, ''));
   for (const t of ['Zebracorp', 'Lyon', 'Jane Doe', 'PRJ-ZEBRA-7', 'wiki.zebracorp.example', 'bi.zebracorp.example', 'Alex Martin', 'Jo Blake', 'Sam Reed', 'Alexandre Martin']) assert.ok(terms.includes(t), t);
   assert.throws(() => R.guard(JSON.stringify({ story: l.row(id).data.answers }), terms), e => e instanceof R.RatingError && e.code === 'guard');
   assert.equal(R.guard(JSON.stringify(fetcher.calls[0].body.state.reference), terms), true);
