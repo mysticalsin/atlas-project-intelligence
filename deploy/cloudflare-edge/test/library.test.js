@@ -370,3 +370,19 @@ test('JEV off (no key): a review agent that does not answer leaves today\'s audi
   assert.deepEqual([q.aiScore, q.fallbackReason], [null, 'no_key']);
   assert.equal(l.get(OWNER, a.id).audit[0].detail, `score ${q.score}, ${q.status}`, 'no "· rules only" suffix without JEV');
 });
+
+test('two identical approvals on one lane write one audit line', async () => {
+  const { l } = lib();
+  const a = await l.upsert(OWNER, { localId: 'p1', reference: REF() });
+  await l.review(OWNER, a.id);
+  l.bindTrust(SYS, { owner: OWNER.email, email: N1.email, source: 'directory', sandbox: true });
+  const first = l.validate(N1, a.id, { decision: 'validate', lane: 'manager' });
+  const second = l.validate(N1, a.id, { decision: 'validate', lane: 'manager' });
+  const lines = l.rows("SELECT action FROM audit WHERE id = ? AND action = 'manager approved'", a.id);
+  assert.equal(lines.length, 1);
+  assert.equal(second.state.validation.at, first.state.validation.at);
+  assert.equal(second.state.validation.managerDecision, 'approved');
+  const changed = l.validate(N1, a.id, { decision: 'request_changes', lane: 'manager', note: 'Add the source.' });
+  assert.equal(changed.status, 'changes_requested');
+  assert.equal(l.rows("SELECT action FROM audit WHERE id = ? AND action = 'manager changes_requested'", a.id).length, 1);
+});
