@@ -528,6 +528,33 @@ test('a verified daily purge matches a padded uppercase tenant', () => {
   assert.deepEqual(l.rows('SELECT subject FROM profiles').map(row => row.subject), ['other@example.test']);
 });
 
+test('a verified purge of more than 100 stale profiles still deletes every one and then the directory cache', () => {
+  const tenant = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  const other = '22222222-2222-4222-8222-222222222222';
+  const { l } = world();
+  profile.ensure(l);
+  const old = '2020-01-01T00:00:00.000Z';
+  const now = '2026-11-08T00:00:00.000Z';
+  const stored = '\t' + tenant.toUpperCase() + ' ';
+  for (let i = 0; i < 101; i++) {
+    l.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+      VALUES (?, ?, ?, '{}', '{}', '{}', ?, ?, ?)`, `stale-${i}@example.test`, stored, `stale-${i}@example.test`, old, old, old);
+  }
+  l.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+    VALUES ('fresh@example.test', ?, 'fresh@example.test', '{}', '{}', '{}', ?, ?, ?)`, stored, now, now, now);
+  l.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+    VALUES ('other@example.test', ?, 'other@example.test', '{}', '{}', '{}', ?, ?, ?)`, other, old, old, old);
+  l.sql.exec(`INSERT INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at, tenant)
+    VALUES ('ada@example.test', 'dna', 'Ada', '', '', '', '', 'pull', ?, ?)`, old, tenant);
+  l.sql.exec(`INSERT INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at, tenant)
+    VALUES ('ada@example.test', 'dna_export', 'Kept', '', '', '', '', 'push', ?, ?)`, old, tenant);
+  const result = profile.daily(l, now, { email: 'atlas-cron', role: 'system', tenant, tenantEnforced: true });
+  assert.equal(result.profilesPurged, 101);
+  assert.equal(result.dnaCachePurged, 1);
+  assert.deepEqual(l.rows('SELECT subject FROM profiles ORDER BY subject').map(row => row.subject), ['fresh@example.test', 'other@example.test']);
+  assert.deepEqual(l.rows('SELECT source FROM directory').map(row => row.source), ['dna_export']);
+});
+
 test('storedConsent and jevAllowed do not read a blank-tenant row when no tenant is given', () => {
   const { l } = world();
   profile.ensure(l);

@@ -678,6 +678,9 @@ test('production refuses local-synthetic and demo identity before any library fe
   const demo = await handle(await signed('/api/memory'), { ...base, DATA_MODE: 'production', ATLAS_DEV_IDENTITY: '1' }, '');
   assert.equal(demo.status, 503);
   assert.match((await demo.json()).error, /ATLAS_DEV_IDENTITY/);
+  const localTenant = await handle(await signed('/api/library'), { ...base, DATA_MODE: 'production', ATLAS_LOCAL_TENANT: '11111111-1111-4111-8111-111111111111' }, '');
+  assert.equal(localTenant.status, 503);
+  assert.match((await localTenant.json()).error, /ATLAS_LOCAL_TENANT/);
   const both = await handle(await signed('/api/voice', { headers: { Upgrade: 'websocket' } }), { ...base, DATA_MODE: 'production', ATLAS_TENANT_ISOLATION: 'local-synthetic', ATLAS_DEV_IDENTITY: 'yes' }, '');
   assert.equal(both.status, 503);
   assert.equal(fetches, 0, 'the durable object is not asked');

@@ -380,6 +380,19 @@ test('demo identity 0, false and off do not trip the production guard', () => {
   assert.match(productionDemoConflict({ DATA_MODE: 'production', ATLAS_DEV_IDENTITY: 'yes' }).error, /ATLAS_DEV_IDENTITY/);
 });
 
+test('ATLAS_LOCAL_TENANT is refused in production the same way as demo identity', async () => {
+  const tenant = '11111111-1111-4111-8111-111111111111';
+  assert.equal(productionDemoConflict({ ATLAS_LOCAL_TENANT: tenant }), null);
+  assert.match(productionDemoConflict({ DATA_MODE: 'production', ATLAS_LOCAL_TENANT: tenant }).error, /ATLAS_LOCAL_TENANT/);
+  for (const value of ['0', 'false', 'off', '']) assert.equal(productionDemoConflict({ DATA_MODE: 'production', ATLAS_LOCAL_TENANT: value }), null, value);
+  let reads = 0;
+  const lib = { sql: { exec() { reads += 1; } }, rows() { reads += 1; return []; } };
+  const res = await libraryRoutes(new Request('https://atlas.test/api/library', { headers: { 'x-atlas-user': 'ada@example.test', 'x-atlas-role': 'admin' } }), lib, { env: { DATA_MODE: 'production', ATLAS_LOCAL_TENANT: tenant } });
+  assert.equal(res.status, 503);
+  assert.match((await res.json()).error, /ATLAS_LOCAL_TENANT/);
+  assert.equal(reads, 0);
+});
+
 test('manager trust, story identity and directory cache do not cross tenants', async () => {
   const l = lib();
   const A = '11111111-1111-4111-8111-111111111111', B = '22222222-2222-4222-8222-222222222222';
