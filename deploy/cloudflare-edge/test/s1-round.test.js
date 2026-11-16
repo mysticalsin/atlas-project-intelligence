@@ -41,7 +41,7 @@ test('ensureChain does not seal a NULL commit from the actor now in the row', ()
   const checked = verifyChain(fresh);
   assert.equal(checked.ok, false);
   assert.equal(checked.reason, 'UNSEALED');
-  const tail = sql.exec('SELECT actor, "commit" AS commit, hash FROM audit WHERE seq = 2').toArray()[0];
+  const tail = sql.exec('SELECT * FROM audit WHERE seq = 2').toArray()[0];
   assert.equal(tail.actor, 'mallory');
   assert.equal(tail.commit, null);
   assert.equal(tail.hash, null);

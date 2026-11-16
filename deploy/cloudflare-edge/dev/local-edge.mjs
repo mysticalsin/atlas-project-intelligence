@@ -53,7 +53,24 @@ const waitUntil = p => { const q = Promise.resolve(p); pending.add(q); q.finally
 // this process also sets local-synthetic and ATLAS_DEV_IDENTITY, and the Worker refuses that combination.
 const passthrough = Object.fromEntries(['EXTERNAL_EMAILS', 'CLIENT_CONFIRM', 'IDENTITY_SOURCE', 'DATA_MODE', 'DNA_PROFILE_URL', 'DNA_AUTH_HEADER', 'DNA_FIELD_MAP', 'DNA_API_KEY',
   'DIRECTORY_PUSH_SECRET'].filter(k => process.env[k]).map(k => [k, process.env[k]]));
-const storeFor = id => { if (!stores.has(id)) { const m = new Map(); stores.set(id, { get: async k => m.get(k), put: async (k, v) => m.set(k, v) }); } return stores.get(id); };
+// Durable Object storage shape used by limitRoute and by memoryRoutes: get(key) or get(keys) -> Map,
+// put(key, value) or put({ key: value }), delete, and list. This is the Interview object's storage, not a skip.
+function interviewStorage() {
+  const m = new Map();
+  return {
+    async get(keys) {
+      if (Array.isArray(keys)) { const out = new Map(); for (const k of keys) if (m.has(k)) out.set(k, m.get(k)); return out; }
+      return m.get(keys);
+    },
+    async put(keyOrEntries, value) {
+      if (arguments.length === 1 && keyOrEntries && typeof keyOrEntries === 'object') { for (const [k, v] of Object.entries(keyOrEntries)) m.set(k, v); return; }
+      m.set(keyOrEntries, value);
+    },
+    async delete(keys) { for (const k of [].concat(keys)) m.delete(k); },
+    async list({ prefix } = {}) { const out = new Map(); for (const [k, v] of m) if (!prefix || String(k).startsWith(prefix)) out.set(k, v); return out; },
+  };
+}
+const storeFor = id => { if (!stores.has(id)) stores.set(id, interviewStorage()); return stores.get(id); };
 const env = { ORIGIN, ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, CSRF_SECRET: 'local-only', TALKER_MODEL: 'local', TTS_VOICE: 'local',
   TRIGGER_SECRET: process.env.TRIGGER_SECRET || 'local-trigger-secret', ANALYST_MODEL: 'local-analyst',
   // Stand-ins for the Workers AI binding: toMarkdown (documents and image descriptions) and chat completions.

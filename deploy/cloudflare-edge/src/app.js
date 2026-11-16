@@ -398,10 +398,10 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
     if (url.pathname === '/api/transcribe' && request.method === 'POST' && flagsOf(env).spokenAsk) {
       if (aiOff(env)) return json(env, { error: AI_OFF_MESSAGE, code: 'AI_OFF' }, 503);
       const refused = sessionGuard(); if (refused) return refused;
-      const limited = await spend('transcribe', limitOf(env, 'TRANSCRIBE_HOUR')); if (limited) return limited;
-      // A UI gate: it proves the page showed the prompt, not that the person agreed; `always` is checked server-side.
+      // Auth and consent before the limiter. A missing consent is 403 even when the limiter cannot be reached.
       const consent = /^spoken-ask-v1;\s*(once|always)$/.exec((request.headers.get('X-Atlas-Consent') || '').trim());
       if (!consent || (consent[1] === 'always' && !await storedSpokenAsk(env, { libraryUser, role, mail, tenant, tenantFlag }))) return json(env, { error: 'Voice questions need your consent first.' }, 403);
+      const limited = await spend('transcribe', limitOf(env, 'TRANSCRIBE_HOUR')); if (limited) return limited;
       if ((request.headers.get('Content-Type') || '').replace(/\s+/g, '').toLowerCase() !== 'audio/l16;rate=24000') return json(env, { error: 'Send 16-bit mono PCM at 24 kHz (audio/L16;rate=24000).' }, 415);
       const pcm = Number(request.headers.get('Content-Length') || 0) > AUDIO_MAX ? null : await boundedBytes(request, AUDIO_MAX);
       if (!pcm) return json(env, { error: 'The recording is longer than 30 seconds.' }, 413);

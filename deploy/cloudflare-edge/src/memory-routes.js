@@ -1,11 +1,15 @@
 // Per-person memory API, served by that person's Interview Durable Object. The bank id arrives only in a header the
 // Worker overwrites after verifying the sign-in (x-atlas-bank); CSRF/Origin are checked by the Worker.
 import { retainItems, scrub } from './memory.js';
+import { limitRoute } from './ratelimit.js';
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 
 export async function memoryRoutes(request, { storage, hs, env, fetcher = fetch }) {
-  const url = new URL(request.url), bank = request.headers.get('x-atlas-bank') || '', role = request.headers.get('x-atlas-role') || 'user';
+  const url = new URL(request.url);
+  // Same endpoint the Interview object serves (worker.js). The Worker calls it with no bank header.
+  if (url.pathname === '/api/limit') return limitRoute(request, storage);
+  const bank = request.headers.get('x-atlas-bank') || '', role = request.headers.get('x-atlas-role') || 'user';
   if (!bank) return json({ error: 'Sign in first.' }, 401);
   const path = url.pathname.replace(/^\/api\/memory\/?/, ''), off = (await storage.get('memoryOff')) === true;
   let body = {};

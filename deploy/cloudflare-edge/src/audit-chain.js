@@ -8,8 +8,11 @@
 // the tombstone and its proof both match. A direct edit of either field fails.
 // The daily check stores n and head. A shorter chain is TRUNCATED. The stored head must still
 // be the hash at that same position, so a prefix truncate padded with new rows is ANCHOR_MOVED.
-// ensureChain fills only rows whose hash is NULL. A row whose hash matches only an earlier
-// formula fails verify. There is no reseal and no upgrade.
+// ensureChain fills a hash only from a commit already stored on the row. A NULL commit is
+// sealed once, and only when this call is the one that adds the commit column: those rows
+// predate the chain. After the column exists, a NULL commit is left unsealed. It is not
+// derived from the actor now in the row. A row whose hash matches only an earlier formula
+// fails verify. There is no reseal and no upgrade.
 // SHA-256 and HMAC-SHA256 are synchronous because Library.log is synchronous.
 // Limits, honestly: whoever can rewrite the whole table and recompute every hash and commit
 // is not stopped by an in-table chain. The daily anchor is what notices a missing prefix.
@@ -86,18 +89,22 @@ export const rowHash = (prev, r) => sha256Hex(JSON.stringify([prev, String(r.id 
 const sealed = new WeakSet();
 const qident = name => '"' + name + '"';
 const hasColumn = (sql, name) => { try { sql.exec('SELECT ' + qident(name) + ' FROM audit LIMIT 0'); return true; } catch { return false; } };
-// Adds the chain columns and seals rows that have never been hashed. Rows that already have a hash
-// are left alone. A hash from an earlier formula stays a mismatch.
+// Adds the chain columns. A missing hash is filled from the commit already on the row.
+// The only commit written here is for rows that existed before the commit column: this call
+// is what adds that column, so the actor and detail on those rows predate the chain.
+// A NULL commit once the column exists is left unsealed.
 export function ensureChain(sql, key = '') {
   if (sealed.has(sql)) return;
   if (!hasColumn(sql, 'prev_hash')) sql.exec('ALTER TABLE audit ADD COLUMN prev_hash TEXT');
   if (!hasColumn(sql, 'hash')) sql.exec('ALTER TABLE audit ADD COLUMN hash TEXT');
-  if (!hasColumn(sql, 'commit')) sql.exec('ALTER TABLE audit ADD COLUMN "commit" TEXT');
+  const legacyCommit = !hasColumn(sql, 'commit');
+  if (legacyCommit) sql.exec('ALTER TABLE audit ADD COLUMN "commit" TEXT');
   if (!hasColumn(sql, 'tombstone')) sql.exec('ALTER TABLE audit ADD COLUMN tombstone TEXT');
   if (key != null && sql.exec('SELECT 1 AS x FROM audit WHERE hash IS NULL LIMIT 1').toArray().length) {
     let prev = GENESIS;
     for (const r of sql.exec('SELECT seq, id, actor, action, at, detail, hash, "commit" FROM audit ORDER BY seq').toArray()) {
       if (r.hash) { prev = r.hash; continue; }
+      if (!r.commit && !legacyCommit) break;
       const commit = r.commit || contentCommit(key, r.actor, r.detail);
       const proof = TOMBSTONE_ACTOR.test(String(r.actor || '')) && String(r.detail ?? '') === '' ? tombstoneProof(key, r.seq, commit, r.actor) : '';
       const h = rowHash(prev, { ...r, commit });
@@ -136,7 +143,7 @@ export function verifyChain(sql, key = '') {
     for (const r of rows) {
       const bad = reason => ({ ok: false, checked, brokenSeq: r.seq, reason, head });
       if (!r.hash || !r.prev_hash) return bad('UNSEALED');
-      if (prevHash !== null && r.prev_hash !== prevHash) return bad('LINK_BROKEN');
+      if (prevHash !== null && !sameText(r.prev_hash, prevHash)) return bad('LINK_BROKEN');
       if (!sameText(rowHash(r.prev_hash, r), r.hash)) return bad('HASH_MISMATCH');
       if (!bound(key, r)) return bad('COMMIT_MISMATCH');
       prevHash = head = r.hash; after = r.seq; checked++;

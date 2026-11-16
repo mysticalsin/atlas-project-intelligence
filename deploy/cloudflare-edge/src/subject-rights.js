@@ -43,9 +43,9 @@ function whereSubject(tenantColumn, subjectSql) {
   return `lower(COALESCE(${tenantColumn}, '')) = ? AND (${subjectSql})`;
 }
 // Tables this slice creates and can bind to the verified tenant. teams_conversations.tenant_id is the only tenant column that table has.
-// Journey, telemetry, manager trust and the directory row use the same functions as privacy delete.
-// A staffing or trust row where this person is only the manager is pseudonymised, not deleted.
-// Another person's directory row stays; the manager address in this tenant is replaced.
+// Journey and telemetry use the same functions as privacy delete.
+// Trust and directory are called with mode "subject": a manager-only trust address is replaced, and another person's directory manager address is replaced. Privacy delete calls them with mode "tenant" and keeps main's deletes.
+// A staffing row where this person is only the manager is pseudonymised, not deleted.
 const SUBJECT_TABLES = [
   { table: 'invitations', column: 'email', tenant: 'tenant', key: 'invitations' },
   { table: 'outreach', column: 'to_email', tenant: 'tenant', key: 'outreach' },
@@ -80,6 +80,50 @@ export function mentions(text, email) {
     if ((b === undefined || !/[a-z0-9._%+@-]/.test(b)) && (a === undefined || !(/[a-z0-9_%+@-]/.test(a) || (a === '.' && a2 !== undefined && /[a-z0-9]/.test(a2))))) return true;
   }
   return false;
+}
+// Replaces one whole address. A longer address that merely contains it is left as it is.
+function replaceAddress(text, email, token) {
+  const src = String(text ?? ''), needle = String(email || '').toLowerCase();
+  if (!needle) return src;
+  let out = '', from = 0;
+  const lower = src.toLowerCase();
+  for (let at = lower.indexOf(needle); at >= 0; at = lower.indexOf(needle, at + needle.length)) {
+    if (!mentions(src.slice(Math.max(0, at - 1), at + needle.length + 2), email)) continue;
+    out += src.slice(from, at) + token;
+    from = at + needle.length;
+  }
+  return out + src.slice(from);
+}
+function scrubManagerEmails(lib, tenant, email, token) {
+  if (!hasTenantColumn(lib, 'profiles')) return 0;
+  let n = 0;
+  for (const row of lib.rows('SELECT subject, edits FROM profiles WHERE ' + TENANT_SQL + ' AND lower(subject) != ?', tenant, email)) {
+    const edits = parse(row.edits, {});
+    const field = edits.managerEmail;
+    const value = field && typeof field === 'object' ? field.value : field;
+    if (String(value || '').toLowerCase() !== email) continue;
+    edits.managerEmail = field && typeof field === 'object' ? { ...field, value: token } : token;
+    lib.sql.exec('UPDATE profiles SET edits = ? WHERE subject = ? AND ' + TENANT_SQL, JSON.stringify(edits), row.subject, tenant);
+    n++;
+  }
+  return n;
+}
+function scrubImportAuthors(lib, tenant, email, token) {
+  if (!ready(lib, 'directory_imports', ['by', 'tenant'])) return 0;
+  const n = lib.rows('SELECT COUNT(*) AS n FROM directory_imports WHERE ' + TENANT_SQL + ' AND lower(by) = ?', tenant, email)[0].n;
+  if (n) lib.sql.exec('UPDATE directory_imports SET by = ? WHERE ' + TENANT_SQL + ' AND lower(by) = ?', token, tenant, email);
+  return n;
+}
+function scrubOutreachPayloads(lib, tenant, email, token) {
+  if (!ready(lib, 'outreach', ['payload', 'to_email', 'tenant'])) return 0;
+  let n = 0;
+  for (const row of lib.rows('SELECT id, payload FROM outreach WHERE ' + TENANT_SQL + ' AND lower(to_email) != ?', tenant, email)) {
+    const next = replaceAddress(row.payload, email, token);
+    if (next === String(row.payload ?? '')) continue;
+    lib.sql.exec('UPDATE outreach SET payload = ? WHERE id = ?', next, row.id);
+    n++;
+  }
+  return n;
 }
 
 // ---- tombstones shared with the retention sweep ----
@@ -208,7 +252,7 @@ function eraseWithin(lib, user, subj, tenant, { now = lib.now() } = {}) {
   // Each statement rewrites one subject column, and the tenant test wraps that condition.
   for (const spec of SUBJECT_TABLES) {
     if (typeof spec.erase === 'function') {
-      const n = spec.erase(lib, user, { tenant, token, email });
+      const n = spec.erase(lib, user, { mode: 'subject', tenant, token, email });
       if (n) bump(spec.key, n);
       continue;
     }
@@ -243,12 +287,17 @@ function eraseWithin(lib, user, subj, tenant, { now = lib.now() } = {}) {
   if (ready(lib, 'bids', ['id', 'tenant']) && ready(lib, 'bid_references', ['bid_id', 'used_by'])) {
     lib.sql.exec('UPDATE bid_references SET used_by = ? WHERE lower(used_by) = ? AND bid_id IN (SELECT id FROM bids WHERE lower(COALESCE(tenant, \'\')) = ?)', token, email, tenant);
   }
-  // 5. the profile and the flags (the receipts stay), then the audit trail
+  // 5. the profile and the flags (the receipts stay), then the audit trail.
+  // Another person's row stays. Only the address copied onto it, in this tenant, is replaced.
+  bump('profileManagerEmail', scrubManagerEmails(lib, tenant, email, token));
+  bump('directoryImports', scrubImportAuthors(lib, tenant, email, token));
+  bump('outreachPayloads', scrubOutreachPayloads(lib, tenant, email, token));
   if (hasTenantColumn(lib, 'profiles')) { const prof = lib.rows('SELECT COUNT(*) AS n FROM profiles WHERE subject = ? AND ' + TENANT_SQL, email, tenant)[0].n; if (prof) { lib.sql.exec('DELETE FROM profiles WHERE subject = ? AND ' + TENANT_SQL, email, tenant); bump('profile'); } }
   // privacy_flags is keyed by email and has no tenant. Leaving it keeps another tenant's restriction from being cleared or set by this erasure.
   lib.log('privacy', 'atlas', 'erasure completed', 'subject ' + subjectHash(subj).slice(0, 8)); // a pseudonym of a pseudonym, never an email; written before the rewrite so the head it returns is final
   const identities = [...new Set([email, user.mail].map(v => String(v || '').trim().toLowerCase()).filter(Boolean))];
-  const audit = pseudonymiseAudit(lib, identities, token, { ids: touched });
+  const sameTenantRefs = has('refs') ? lib.rows('SELECT id FROM refs WHERE ' + TENANT_SQL, tenant).map(r => r.id) : [];
+  const audit = pseudonymiseAudit(lib, identities, token, { ids: [...new Set([...touched, ...sameTenantRefs])] });
   if (audit.refused) hold('audit', 'chain', 'audit_chain_unverified'); // X1 (red M8): a chain that does not verify is not re-sealed; the DPO is told the audit part is pending
   else bump('auditRows', audit.changed);
   lib.sql.exec('INSERT INTO erasure_log (id, subject_hash, at, counts) VALUES (?, ?, ?, ?)', lib.newId(), subjectHash(subj), now, JSON.stringify(counts));
