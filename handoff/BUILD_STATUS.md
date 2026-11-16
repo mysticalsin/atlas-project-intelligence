@@ -920,3 +920,174 @@ Review answers:
 - Statements the suite did not take over the cap, left as they are. `deleteOwnedProfile` binds one parameter per matched row (`profile.js:156`) and one per collapsed note (`profile.js:158`). The privacy delete binds the tenant plus each alias twice (`operate.js:179-180`), so 50 aliases is 101 parameters. Directory lookup binds the tenant plus each key (`profile.js:323`). Manager approval binds owners, aliases and the tenant (`library.js:270`). Staffing binds owners and the tenant (`library.js:276`). Outreach binds aliases (`outreach.js:190`) and owners (`outreach.js:214`). Claims bind ids plus the ref (`claims.js:69`) and owners (`claims.js:219`). The erasure directory delete binds at most a mail and an oid (`operate.js:189-190`), so it stays under the cap.
 - There is no typecheck or lint script. Pytest ran on Python 3.12.3. Python 3.13, which `.github/workflows/ci.yml` requests, is not installed here.
 - Gates on `c1e65d76ff72c19dcadbb882541d259138f1ce5e`, before this note: pytest 265 passed, 106 warnings, 20.96s, exit 0, Python 3.12.3. Root node 397 tests, 396 pass, 1 skip (Natural Earth source pin), 0 fail, exit 0. Edge `env -u PYTHONPATH node --test test/*.test.js`: 614 pass, 0 fail, 0 skipped, exit 0. The two new tests are the 101-row purge and the production local-tenant refusal. Page pin unchanged, `fb6af364d95e8ed7030f50234b13f79c2aa9d1dd1c320603b68a4fb8fdfdce67`, 913939 bytes, `verify_page_build.sh` twice, exit 0. Browsers 754 PASS, 0 FAIL, 21 suites, exit 0. Logo SHA unchanged. No provider was called. UI acceptance was not claimed.
+
+### Session: 2026-11-16 / State machines v2, every growing parameter list
+- Continued on `cursor/state-machines-atlas-v2` from `d85b7be681edc095c0796c390107518120b14360` (tree `81059df3d8ff66ac772cc35323ce7ddac6a1770c`). Ordinary commits on top. No force, no rebase, no merge, no deploy, no provider call. `main` is still `80bab333cd28c2c488ef06fce0c3b77548b84f62`. Journey duplicates stay ATLAS-JOURNEY-MIXEDCASE-DUP and were not merged.
+- Red `50c38de09bb2556dbaeb25f35b6e748380d04118`, then `fcd5b222adeee22a282100108a0712f0fa46a662`. The red commit extracts `eraseManagerTrust`, `directoryRows` and `personAliases` so a test can pass a long list, and leaves the old SQL in place. Production privacy delete still passes email and mail. Directory lookup from a person, a manager, or gather still passes one key. Red `/tmp/sm-bound2-red.txt`: 626 tests, 614 pass, 12 fail, exit 1. The ten success tests threw `Durable Object SQL allows at most 100 bound parameters.` The two rollback tests expected `/disk/` and received that same cap error. The placeholder grep failed because `sql-bound.js` was absent and the two bounded builders had no allowlist comment. The existing 614 tests passed.
+- One helper. `deploy/cloudflare-edge/src/sql-bound.js` is the only place that builds a `?` list (`placeholders`). `BOUND_MAX` is 100. `fixed` counts every other bound parameter, including a tenant. `copies` is how many times the chunk itself is bound. `readChunks` concatenates rows and opens no transaction. `writeChunks` runs every group inside one `transactionSync`. A throw rolls the whole callback back. `room < 1` throws the cap error. The runtime check requires `bound.length === fixed + copies * chunk.length` and `bound.length <= 100`. `deleteRowids` is gone.
+- Chunked writes, one transaction each. `eraseManagerTrust` (`operate.js:122`) selects rowids with `fixed: 1, copies: 2` (`operate.js:124`) and deletes those rowids in `writeChunks` (`operate.js:130`). `deleteOwnedProfile` deletes profile rowids and collapsed-note ids in one `writeChunks` (`profile.js:158`). `daily` deletes the folded stale profile rowids in one `writeChunks` (`profile.js:624`). The folded tenant filter still chooses those rowids, so a padded stored tenant is deleted. The directory-cache purge still runs after that transaction.
+- Chunked reads. `directoryRows` (`profile.js:324`) uses `fixed: 1`. Manager grants (`library.js:269`) use `fixed: aliases.length + 1`, so the email `IN` list and the tenant are counted on every chunk. Identity aliases stay email and mail. Staffing hits in `canManagerApprove` (`library.js:279`) and `staffingHits` (`claims.js:225`) use `fixed: 2`. `applyStaffingAssignment` reads staffing managers (`outreach.js:191`) and staffing grants (`outreach.js:196`) with `fixed: 1`. The per-row grant delete stays three parameters (`outreach.js:203`) inside the caller's transaction. `inviteDue` (`outreach.js:222`) uses `fixed: 3` (tenant, members needle, project id). `claimRows` (`claims.js:70`) uses `fixed: 1`.
+- Rollback. `test/sql-bound.test.js` throws `Error('disk')` on the one-parameter second chunk of a manager-trust delete and of a profile delete. The manager-trust count stays 102. The profile count and the collapsed-note count both stay 101.
+- The staffing approval test inserts a staffing-source `manager_trust` row in the fix commit. `canManagerApprove` returns before the staffing SELECT when no grant has source `staffing`. On the red SQL the manager-trust `IN` still throws the cap first.
+- Allowlist. `operate.js:202` marks the directory erasure, and the count and delete are `operate.js:204` and `:205`. Keys are mail and an optional oid, so the maximum is 3. `library.js:779` marks the invitation list, and the statement is `library.js:781`. Aliases are email and mail plus the tenant, so the maximum is 3. The grep test strips comments, requires exactly one builder in `sql-bound.js`, and fails when any other `map(() => '?')`, `'?'.repeat`, `.fill('?')`, or `Array.from` placeholder builder is missing the `sql-bound-fixed` comment or states a maximum above 100. `test/sqlite.js` still throws before `prepare` when `params.length > 100`.
+- Residual. An unenforced scan still purges blank-tenant directory pull-cache rows and staged imports (`profile.js:630-638`). Those statements bind 2 or 3 parameters. They do not delete profiles.
+- Fixed parameter counts. Every `.rows` or `.exec` whose SQL string contains a fixed number of `?` placeholders is listed below as `file:line count`, relative to `deploy/cloudflare-edge/src`. The first nine lines are the local `n()` count at `profile.js:632`, the journey SQL constants (`JOURNEY_READ_SQL`, `JOURNEY_ALL_SQL`, `JOURNEY_UPDATE_SQL`, `JOURNEY_COUNT_SQL`, `JOURNEY_DELETE_SQL`), and the three allowlisted statements at their maximum. The remaining 144 are string literals at the call. Zero-placeholder DDL and existence checks are fixed at 0 and are not given a line. Chunked statements are listed above and are absent here because their SQL contains `${placeholders(...)}`.
+
+```
+profile.js:632 2
+journey.js:111 2
+journey.js:116 2
+journey.js:218 3
+operate.js:185 2
+operate.js:186 2
+operate.js:204 3
+operate.js:205 3
+library.js:781 3
+bids.js:154 1
+bids.js:180 1
+bids.js:215 1
+bids.js:266 14
+bids.js:291 1
+bids.js:307 4
+bids.js:325 1
+bids.js:328 3
+bids.js:473 1
+bids.js:488 2
+bids.js:490 6
+bids.js:493 2
+bids.js:501 7
+bids.js:514 3
+bids.js:518 2
+bids.js:519 2
+claims.js:101 1
+claims.js:120 1
+claims.js:121 1
+claims.js:138 1
+claims.js:141 9
+claims.js:143 2
+claims.js:146 1
+claims.js:196 12
+claims.js:206 1
+claims.js:284 1
+claims.js:309 7
+claims.js:313 2
+claims.js:314 1
+claims.js:326 1
+claims.js:333 1
+claims.js:335 1
+claims.js:362 1
+claims.js:373 1
+claims.js:382 2
+claims.js:384 2
+gaps.js:51 1
+gaps.js:56 1
+gaps.js:68 2
+gaps.js:69 2
+gaps.js:77 1
+gaps.js:79 2
+gaps.js:88 1
+gaps.js:146 13
+gaps.js:152 1
+gaps.js:168 1
+gaps.js:185 1
+gaps.js:199 5
+gaps.js:211 1
+journey.js:219 4
+library.js:194 1
+library.js:198 1
+library.js:202 5
+library.js:311 3
+library.js:340 5
+library.js:364 1
+library.js:365 1
+library.js:386 2
+library.js:422 5
+library.js:480 2
+library.js:490 2
+library.js:587 2
+library.js:617 2
+library.js:618 2
+library.js:621 2
+library.js:683 3
+library.js:722 1
+library.js:759 5
+library.js:760 1
+library.js:762 11
+library.js:765 1
+library.js:794 1
+library.js:802 1
+library.js:823 1
+library.js:833 1
+library.js:838 1
+operate.js:165 1
+operate.js:191 2
+operate.js:192 2
+outreach.js:93 1
+outreach.js:106 3
+outreach.js:108 8
+outreach.js:113 3
+outreach.js:158 3
+outreach.js:163 15
+outreach.js:179 9
+outreach.js:203 3
+outreach.js:228 3
+outreach.js:374 10
+outreach.js:381 1
+outreach.js:382 1
+outreach.js:384 1
+outreach.js:394 1
+outreach.js:418 1
+outreach.js:432 2
+outreach.js:501 3
+outreach.js:502 2
+outreach.js:505 1
+outreach.js:506 1
+outreach.js:515 1
+outreach.js:531 3
+outreach.js:548 1
+outreach.js:550 1
+outreach.js:567 2
+outreach.js:591 1
+outreach.js:592 2
+outreach.js:595 8
+outreach.js:604 3
+profile.js:45 1
+profile.js:82 2
+profile.js:135 9
+profile.js:137 3
+profile.js:366 8
+profile.js:398 2
+profile.js:423 9
+profile.js:431 6
+profile.js:443 1
+profile.js:475 6
+profile.js:535 2
+profile.js:538 5
+profile.js:547 10
+profile.js:550 4
+profile.js:552 2
+profile.js:553 2
+profile.js:556 2
+profile.js:557 3
+profile.js:561 2
+profile.js:562 3
+profile.js:563 3
+profile.js:569 2
+profile.js:633 2
+profile.js:634 2
+profile.js:636 2
+profile.js:637 3
+profile.js:694 1
+profile.js:695 1
+profile.js:696 2
+telemetry.js:35 13
+telemetry.js:160 2
+telemetry.js:161 2
+winloop.js:54 1
+winloop.js:55 1
+winloop.js:62 1
+winloop.js:68 1
+```
+
+- There is no typecheck or lint script. Pytest ran on Python 3.12.3. Python 3.13, which `.github/workflows/ci.yml` requests, is not installed here.
+- Gates on `fcd5b222adeee22a282100108a0712f0fa46a662`, before this note: pytest 265 passed, 106 warnings, 21.21s, exit 0, Python 3.12.3. Root node 397 tests, 396 pass, 1 skip (Natural Earth source pin), 0 fail, exit 0. Edge `env -u PYTHONPATH node --test test/*.test.js`: 626 pass, 0 fail, 0 skipped, exit 0. The 12 new tests are the long lists, the two rollbacks, and the placeholder grep. Page pin unchanged, `fb6af364d95e8ed7030f50234b13f79c2aa9d1dd1c320603b68a4fb8fdfdce67`, 913939 bytes, `verify_page_build.sh` twice, exit 0. Browsers 754 PASS, 0 FAIL, 21 suites, exit 0. Logo SHA unchanged. No provider was called. UI acceptance was not claimed.
