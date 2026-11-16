@@ -427,12 +427,24 @@ test('R13a one rating per revision: concurrent calls with the same engine share 
   let open; const gate = new Promise(r => { open = r; });
   const { l, fetcher } = await world({ reply: async () => { await gate; return {}; } });
   const id = await saved(l);
+  // The request starts only after sha256Hex resolves crypto.subtle.digest. That completion is a
+  // threadpool result delivered on libuv's poll phase, and a due timer runs first. tick(5) is a
+  // real setTimeout, so under load it resumes with rating.running already true and no request yet.
+  // Holding the hash makes that order deterministic: the timer is not the request.
+  const orig = crypto.subtle.digest.bind(crypto.subtle);
+  let releaseHash; const hashHeld = new Promise(r => { releaseHash = r; });
+  crypto.subtle.digest = (algo, data) => hashHeld.then(() => orig(algo, data));
   const a = l.review(OWNER, id), b = l.review(SYSTEM, id, { budget: 'background' });
-  await tick(5);
-  assert.equal(l.get(OWNER, id).rating.running, true); assert.equal(fetcher.calls.length, 1);
-  open(); const [ra, rb] = await Promise.all([a, b]);
-  assert.equal(fetcher.calls.length, 1); assert.equal(ra.state.quality.engine, 'jev'); assert.equal(rb.state.quality.gen, ra.state.quality.gen);
-  assert.equal(l.get(OWNER, id).rating.running, false);
+  try {
+    await tick(5);
+    assert.equal(l.get(OWNER, id).rating.running, true); assert.equal(fetcher.calls.length, 1);
+    open(); const [ra, rb] = await Promise.all([a, b]);
+    assert.equal(fetcher.calls.length, 1); assert.equal(ra.state.quality.engine, 'jev'); assert.equal(rb.state.quality.gen, ra.state.quality.gen);
+    assert.equal(l.get(OWNER, id).rating.running, false);
+  } finally {
+    crypto.subtle.digest = orig; releaseHash(); open();
+    await Promise.allSettled([a, b]);
+  }
 });
 
 test('R13b the consent race: a pending review-agent rating never overwrites the JEV rating that consent produced', async () => {
