@@ -1,7 +1,7 @@
 // Admin metrics, journey and privacy routes. Every handler checks the server role again.
 import { fail } from './util.js';
 import { sameTenant, TENANT_ID } from './authz.js';
-import { queryMetrics, recordUsage, purgeTelemetry, personaKey, ensureTelemetry } from './telemetry.js';
+import { queryMetrics, recordUsage, purgeTelemetry, ensureTelemetry, personaKeySync } from './telemetry.js';
 import { toCsv } from './csvsafe.js';
 import { journeyView, saveJourney, mapDraft, ensureJourney } from './journey.js';
 import { deleteOwnedProfile } from './profile.js';
@@ -22,6 +22,48 @@ function dsarStores() {
     ],
     complete: false,
   };
+}
+const tableReady = (lib, name) => lib.rows("SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = ?", name).length > 0;
+function subjectAliases(user) {
+  return [...new Set([user?.email, user?.mail].map(v => String(v || '').trim().toLowerCase()).filter(Boolean))];
+}
+// The privacy-delete path and the subject-erasure map both call these. One predicate per store.
+export function eraseJourneyFor(lib, user) {
+  if (!tableReady(lib, 'journey')) ensureJourney(lib);
+  const tenant = String(user.tenant || '').trim().toLowerCase();
+  const n = lib.rows('SELECT COUNT(*) AS n FROM journey WHERE subject = ? AND tenant = ?', user.email, tenant)[0].n;
+  if (n) lib.sql.exec('DELETE FROM journey WHERE subject = ? AND tenant = ?', user.email, tenant);
+  return n;
+}
+export function eraseTelemetryFor(lib, user) {
+  if (!tableReady(lib, 'telemetry')) ensureTelemetry(lib);
+  const tenant = String(user.tenant || '').trim().toLowerCase();
+  const persona = personaKeySync(user);
+  const n = lib.rows("SELECT COUNT(*) AS n FROM telemetry WHERE persona = ? AND lower(COALESCE(tenant, '')) = ?", persona, tenant)[0].n;
+  if (n) lib.sql.exec("DELETE FROM telemetry WHERE persona = ? AND lower(COALESCE(tenant, '')) = ?", persona, tenant);
+  return n;
+}
+export function eraseManagerTrustFor(lib, user) {
+  if (!tableReady(lib, 'manager_trust')) return 0;
+  const tenant = String(user.tenant || '').trim().toLowerCase();
+  const aliases = subjectAliases(user);
+  if (!aliases.length) return 0;
+  const marks = aliases.map(() => '?').join(', ');
+  const n = lib.rows(`SELECT COUNT(*) AS n FROM manager_trust WHERE lower(COALESCE(tenant, '')) = ? AND (lower(owner) IN (${marks}) OR lower(email) IN (${marks}))`, tenant, ...aliases, ...aliases)[0].n;
+  if (n) lib.sql.exec(`DELETE FROM manager_trust WHERE lower(COALESCE(tenant, '')) = ? AND (lower(owner) IN (${marks}) OR lower(email) IN (${marks}))`, tenant, ...aliases, ...aliases);
+  return n;
+}
+export function eraseDirectoryFor(lib, user) {
+  if (!tableReady(lib, 'directory')) return 0;
+  const tenant = String(user.tenant || '').trim().toLowerCase();
+  const mail = String(user.mail || '').toLowerCase();
+  const oid = /^[0-9a-f-]{36}:([0-9a-f-]{36})$/.exec(String(user.email || '').toLowerCase())?.[1] || '';
+  const keys = [...new Set([mail, oid ? 'oid:' + oid : ''].filter(Boolean))];
+  if (!keys.length) return 0;
+  const marks = keys.map(() => '?').join(', ');
+  const n = lib.rows(`SELECT COUNT(*) AS n FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys)[0].n;
+  if (n) lib.sql.exec(`DELETE FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys);
+  return n;
 }
 function deny(user) {
   if (user.role !== 'admin') throw fail(403, 'The admin dashboard is only for a verified admin.');
@@ -104,42 +146,16 @@ export async function privacyRoutes(ctx) {
   if (method === 'POST' && parts[1] === 'delete') {
     const tenant = String(user.tenant || '').trim().toLowerCase();
     if (!TENANT_ID.test(tenant)) throw fail(403, 'A verified tenant is required.');
-    const persona = await personaKey(user);
-    ensureJourney(lib);
-    const aliases = [...new Set([user.email, user.mail].map(v => String(v || '').trim().toLowerCase()).filter(Boolean))];
     const outcomes = [];
     const attempt = (store, fn) => {
       try { outcomes.push({ store, removed: fn(), error: null }); }
       catch { outcomes.push({ store, removed: 0, error: 'delete-failed' }); }
     };
-    attempt('journey', () => {
-      const n = lib.rows('SELECT COUNT(*) AS n FROM journey WHERE subject = ? AND tenant = ?', user.email, tenant)[0].n;
-      if (n) lib.sql.exec('DELETE FROM journey WHERE subject = ? AND tenant = ?', user.email, tenant);
-      return n;
-    });
-    attempt('telemetry', () => {
-      ensureTelemetry(lib);
-      const n = lib.rows("SELECT COUNT(*) AS n FROM telemetry WHERE persona = ? AND lower(COALESCE(tenant, '')) = ?", persona, tenant)[0].n;
-      if (n) lib.sql.exec("DELETE FROM telemetry WHERE persona = ? AND lower(COALESCE(tenant, '')) = ?", persona, tenant);
-      return n;
-    });
+    attempt('journey', () => eraseJourneyFor(lib, user));
+    attempt('telemetry', () => eraseTelemetryFor(lib, user));
     attempt('profile', () => deleteOwnedProfile(lib, user));
-    attempt('manager-trust', () => {
-      const marks = aliases.map(() => '?').join(', ');
-      const n = lib.rows(`SELECT COUNT(*) AS n FROM manager_trust WHERE lower(COALESCE(tenant, '')) = ? AND (lower(owner) IN (${marks}) OR lower(email) IN (${marks}))`, tenant, ...aliases, ...aliases)[0].n;
-      if (n) lib.sql.exec(`DELETE FROM manager_trust WHERE lower(COALESCE(tenant, '')) = ? AND (lower(owner) IN (${marks}) OR lower(email) IN (${marks}))`, tenant, ...aliases, ...aliases);
-      return n;
-    });
-    attempt('directory', () => {
-      const mail = String(user.mail || '').toLowerCase();
-      const oid = /^[0-9a-f-]{36}:([0-9a-f-]{36})$/.exec(String(user.email || '').toLowerCase())?.[1] || '';
-      const keys = [...new Set([mail, oid ? 'oid:' + oid : ''].filter(Boolean))];
-      if (!keys.length) return 0;
-      const marks = keys.map(() => '?').join(', ');
-      const n = lib.rows(`SELECT COUNT(*) AS n FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys)[0].n;
-      if (n) lib.sql.exec(`DELETE FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys);
-      return n;
-    });
+    attempt('manager-trust', () => eraseManagerTrustFor(lib, user));
+    attempt('directory', () => eraseDirectoryFor(lib, user));
     lib.log('library', user.email, 'privacy delete', outcomes.map(o => o.store + (o.error ? ' failed' : ' ' + o.removed)).join(', '));
     return { body: { outcomes, ...dsarStores(), complete: false, vendorDeletion: 'not-asserted', note: 'Each store reports only what this request removed for this subject and tenant. An error means that store was not removed. Other tenants, other people, and blank-tenant rows are not counted. Stories, staffing, invitations, and audit history are not deleted. Quarantine is not deletion. Vendor deletion is not-asserted. This is not a GDPR certification.' } };
   }

@@ -192,7 +192,9 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
     if (!env.ORIGIN || url.origin !== env.ORIGIN) return new Response('Host is not the configured ATLAS origin.', { status: 403, headers: headers(env) });
     if (!env.CSRF_SECRET) return new Response('Deployment is not configured (CSRF_SECRET).', { status: 500, headers: headers(env) });
     if (url.pathname === '/api/csp-report' && request.method === 'POST') {
-      const name = 'csp:' + ((await ipHash(env, request.headers.get('cf-connecting-ip') || '')) || 'anon');
+      const hashed = await ipHash(env, request.headers.get('cf-connecting-ip') || '');
+      if (hashed == null) return json(env, { error: 'Deployment is not configured (LOG_SALT).', code: 'LOG_SALT' }, 503);
+      const name = 'csp:' + (hashed || 'anon');
       return cspReport(request, slog, (bucket, max, windowMs) => consumeLimit(env, slog, name, [{ bucket, max, windowMs }]));
     }
     const mutating = (request.method !== 'GET' && request.method !== 'HEAD') || request.headers.get('Upgrade') === 'websocket';
@@ -284,16 +286,16 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
     // Links that survive an interactive sign-in (§3.9): /go/start, /go/{gap,invitation,bid,library,confirm}/<32 hex>.
     // Anything else under /go/ goes home. The ids are random, non-secret and grant nothing without sign-in (a recorded
     // deviation from WOW rule 7); no token ever goes in a path, and nothing here logs the path.
-    if (request.method === 'GET' && url.pathname === '/go/signed-in') return htmlResponse(env, SIGNED_IN_HTML, { hashes: await inlineScriptHashes(SIGNED_IN_HTML), ...QUIET_PAGE });
+    if (request.method === 'GET' && url.pathname === '/go/signed-in') return htmlResponse(env, SIGNED_IN_HTML, { hashes: await inlineScriptHashes(SIGNED_IN_HTML), ...QUIET_PAGE, enforceStrict: true });
     if (request.method === 'GET' && url.pathname.startsWith('/go/')) {
       const m = /^\/go\/(?:(start)|(gap|invitation|bid|library|confirm)\/([a-f0-9]{32}))$/.exec(url.pathname);
       const to = !m ? '/' : m[1] ? '/#start' : m[2] === 'confirm' ? '/confirm#' + m[3] : '/#' + m[2] + '/' + m[3];
       return new Response(null, { status: 302, headers: headers(env, { Location: to }) });
     }
-    if (url.pathname === '/confirm' && request.method === 'GET') return htmlResponse(env, CONFIRM_HTML, { hashes: await inlineScriptHashes(CONFIRM_HTML), ...QUIET_PAGE, connectSelf: true });
+    if (url.pathname === '/confirm' && request.method === 'GET') return htmlResponse(env, CONFIRM_HTML, { hashes: await inlineScriptHashes(CONFIRM_HTML), ...QUIET_PAGE, connectSelf: true, enforceStrict: true });
     if (url.pathname === '/privacy' && request.method === 'GET') {
       const notice = renderNoticeHtml(RETENTION);
-      return htmlResponse(env, notice, { hashes: await inlineScriptHashes(notice), ...QUIET_PAGE, reportOnlyStrip: true });
+      return htmlResponse(env, notice, { hashes: await inlineScriptHashes(notice), ...QUIET_PAGE, reportOnlyStrip: true, enforceStrict: true });
     }
     if (url.pathname === '/' && request.method === 'GET') {
       const block = runtimeBlock({ subjectKey, authMode: identity.mode, name: who.email });

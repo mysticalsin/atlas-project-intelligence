@@ -155,9 +155,9 @@ export class Library {
   // services: outbound adapters for feature modules ({ teams } in production; empty in tests and local runs).
   // rater: rating.storyRater(env) (null: no JEV); metric(name, values): numbers only (default: one console.log line).
   constructor(sql, { now = () => new Date().toISOString(), newId = () => crypto.randomUUID().replace(/-/g, ''), complete = null, embed = null, readyScore = READY_SCORE, model = '', services = {},
-    rater = null, metric = defaultMetric, transactionSync = null } = {}) {
+    rater = null, metric = defaultMetric, transactionSync = null, auditKey = '' } = {}) {
     const atomic = typeof transactionSync === 'function' ? transactionSync : (typeof sql?.transactionSync === 'function' ? sql.transactionSync.bind(sql) : null);
-    Object.assign(this, { sql, now, newId, complete, embed, readyScore, model, services, rater, metric, transactionSync: atomic });
+    Object.assign(this, { sql, now, newId, complete, embed, readyScore, model, services, rater, metric, transactionSync: atomic, auditKey });
     this.inflight = new Map(); // `${id}:${revision}` -> { gen, engine, first, all }: one rating per revision at a time
     for (const q of SCHEMA) this.sql.exec(q);
     const inv = this.rows("SELECT name FROM pragma_table_info('invitations')").map(r => r.name);
@@ -165,7 +165,7 @@ export class Library {
     this.sql.exec("CREATE UNIQUE INDEX IF NOT EXISTS invitations_open_scope ON invitations(email, reason, project_id, reference_id, tenant) WHERE status IN ('open', 'scheduled')");
     migrateManagerTrust(this);
     migrateStoryTenant(this);
-    ensureChain(this.sql);
+    ensureChain(this.sql, this.auditKey);
   }
 
   rows(q, ...p) { return this.sql.exec(q, ...p).toArray(); }
@@ -173,7 +173,10 @@ export class Library {
     const r = this.rows('SELECT * FROM refs WHERE id = ?', String(id || ''))[0];
     return r ? { ...r, data: JSON.parse(r.data), state: JSON.parse(r.state) } : null;
   }
-  log(id, actor, action, detail = '') { appendAudit(this.sql, { id, actor, action, at: this.now(), detail: String(detail).slice(0, 300) }); }
+  log(id, actor, action, detail = '') {
+    if (this.auditKey == null) throw fail(503, 'LOG_SALT is not set.');
+    appendAudit(this.sql, { id, actor, action, at: this.now(), detail: String(detail).slice(0, 300) }, this.auditKey);
+  }
   // An invitation or card action may name a story. The audit id is that story only when the story's stored tenant
   // is the caller's tenant. A foreign id is not an audit target.
   auditId(refId, tenant) {

@@ -7,7 +7,7 @@ import { Library } from '../src/library.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import { memorySql } from './sqlite.js';
 import { eraseMine, exportMine, pseudonymiseAudit } from '../src/subject-rights.js';
-import { verifyChain, verifyDaily } from '../src/audit-chain.js';
+import { verifyChain, verifyDaily, resealChain, sha256Hex, GENESIS, ensureChain } from '../src/audit-chain.js';
 import * as profile from '../src/profile.js';
 import * as privacy from '../src/privacy.js';
 import * as outreach from '../src/outreach.js';
@@ -62,7 +62,8 @@ test('a proper erasure tombstone still verifies and does not move the head', () 
   const row = lib.sql.exec('SELECT actor, detail, tombstone FROM audit WHERE seq = 1').toArray()[0];
   assert.equal(row.actor, 'erased:0123456789ab');
   assert.equal(row.detail, '');
-  assert.equal(typeof row.tombstone, 'string' && row.tombstone.length > 0, true);
+  assert.equal(typeof row.tombstone, 'string');
+  assert.equal(row.tombstone.length > 0, true);
   assert.equal(verifyChain(lib.sql).ok, true);
   assert.equal(lib.sql.exec('SELECT hash FROM audit WHERE seq = 2').toArray()[0].hash, head);
 });
@@ -124,6 +125,8 @@ test('report-only still enforces the strict policy on confirm, privacy and the r
     assert.equal(/script-src[^;]*'unsafe-inline'/.test(csp), false, path + ' ' + csp);
     assert.equal(csp.includes('blob:'), false, path + ' ' + csp);
   }
+  const home = await handle(new Request(ORIGIN + '/', { headers: { 'cf-access-jwt-assertion': token } }), env, '<html><body></body></html>');
+  assert.match(home.headers.get('content-security-policy') || '', /script-src[^;]*'unsafe-inline'/);
 });
 
 test('verify-chain returns the chain result, not a constant success', async () => {
@@ -153,6 +156,62 @@ test('a prefix truncate padded back to the same length does not move the anchor'
   const still = lib.sql.exec('SELECT n, head FROM audit_anchor WHERE id = 1').toArray()[0];
   assert.equal(still.n, anchor.n);
   assert.equal(still.head, anchor.head);
+});
+
+test('appending rows keeps the stored head in place and then advances the anchor', () => {
+  const lib = new Library(memorySql(), { now: () => '2026-11-16T00:00:00.000Z' });
+  for (let i = 1; i <= 3; i++) lib.log('r' + i, 'a@example.test', 'saved', 'd' + i);
+  const first = verifyDaily(lib.sql);
+  lib.log('r4', 'a@example.test', 'saved', 'd4');
+  const again = verifyDaily(lib.sql);
+  assert.equal(again.ok, true);
+  assert.equal(again.checked, 4);
+  assert.notEqual(again.head, first.head);
+});
+
+test('rows hashed under the previous formula stay broken until an explicit reseal', () => {
+  const lib = new Library(memorySql(), { now: () => '2026-11-16T00:00:00.000Z' });
+  lib.log('r1', 'a@example.test', 'saved', 'd1');
+  lib.log('r2', 'a@example.test', 'saved', 'd2');
+  const rows = lib.sql.exec('SELECT seq, id, action, at FROM audit ORDER BY seq').toArray();
+  let prev = GENESIS;
+  for (const r of rows) {
+    const hash = sha256Hex(JSON.stringify([prev, String(r.id), String(r.action), String(r.at)]));
+    lib.sql.exec('UPDATE audit SET prev_hash = ?, hash = ?, "commit" = NULL, tombstone = NULL WHERE seq = ?', prev, hash, r.seq);
+    prev = hash;
+  }
+  const before = lib.sql.exec('SELECT hash FROM audit ORDER BY seq').toArray().map(r => r.hash);
+  assert.equal(verifyChain(lib.sql).reason, 'HASH_MISMATCH');
+  ensureChainFresh(lib.sql);
+  assert.deepEqual(lib.sql.exec('SELECT hash FROM audit ORDER BY seq').toArray().map(r => r.hash), before);
+  assert.equal(verifyDaily(lib.sql).reason, 'HASH_MISMATCH');
+  assert.equal(resealChain(lib.sql, '').ok, true);
+  assert.equal(verifyChain(lib.sql).ok, true);
+});
+function ensureChainFresh(sql) { ensureChain({ exec: (...a) => sql.exec(...a) }); }
+
+test('reseal-chain runs only as a confirmed system call', async () => {
+  const lib = new Library(memorySql(), { now: () => '2026-11-16T00:00:00.000Z' });
+  lib.log('r', EMAIL, 'saved', 'd');
+  const env = { ATLAS_TENANT_ISOLATION: 'local-synthetic', ORIGIN, CSRF_SECRET: 's' };
+  const post = (role, body) => libraryRoutes(new Request('https://atlas.internal/api/library/reseal-chain', {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-atlas-user': 'atlas', 'x-atlas-role': role }, body: JSON.stringify(body),
+  }), lib, { env });
+  assert.equal((await post('user', { confirm: 'reseal-audit-chain' })).status, 404);
+  assert.equal((await post('system', {})).status, 400);
+  const body = await (await post('system', { confirm: 'reseal-audit-chain' })).json();
+  assert.equal(body.resealed, true);
+  assert.equal(verifyChain(lib.sql).ok, true);
+});
+
+test('a non-production CSP report still accepts the CSRF_SECRET fallback', async () => {
+  const env = { ORIGIN, CSRF_SECRET: 's', DATA_MODE: 'demo', INTERVIEW: ns(() => new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } })) };
+  const res = await handle(new Request(ORIGIN + '/api/csp-report', {
+    method: 'POST',
+    headers: { 'content-type': 'application/csp-report', origin: ORIGIN, 'cf-connecting-ip': '203.0.113.9' },
+    body: JSON.stringify({ 'csp-report': { 'effective-directive': 'connect-src', 'blocked-uri': 'https://evil.example/nope' } }),
+  }), env, '<html></html>');
+  assert.equal(res.status, 204);
 });
 
 test('a production CSP report without LOG_SALT does not hash the IP with CSRF_SECRET', async () => {

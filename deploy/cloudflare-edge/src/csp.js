@@ -51,10 +51,12 @@ export function htmlCsp({
 export const legacyCsp = (connect = '', extra = {}) => `default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; connect-src 'self'${connect ? ' ' + connect : ''}; img-src data: blob:; font-src 'self'; worker-src blob:; media-src blob:; object-src 'none'; base-uri 'none'; form-action ${extra.formAction || "'self'"}; frame-ancestors ${extra.frameAncestors || "'none'"}`;
 
 // The CSP headers of an HTML response. `opts` is htmlCsp's; `legacy` (a string) replaces the previous policy of a page that never had the default one.
+// enforceStrict: the page keeps its own strict policy as the enforced header even while ATLAS_CSP=report-only.
+// The voice page leaves this off, so only that page reverts to the legacy policy during the rollout.
 export function htmlCspHeaders(env, opts = {}, legacy = undefined) {
   const strict = htmlCsp(opts);
   const h = opts.report === false ? {} : { 'Reporting-Endpoints': REPORTING_ENDPOINTS };
-  if (cspMode(env) === 'report-only') return { ...h, 'Content-Security-Policy': legacy ?? legacyCsp(opts.connect, opts), 'Content-Security-Policy-Report-Only': strict };
+  if (cspMode(env) === 'report-only' && opts.enforceStrict !== true) return { ...h, 'Content-Security-Policy': legacy ?? legacyCsp(opts.connect, opts), 'Content-Security-Policy-Report-Only': strict };
   return { ...h, 'Content-Security-Policy': strict };
 }
 

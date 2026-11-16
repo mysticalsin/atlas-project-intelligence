@@ -77,20 +77,25 @@ def main():
     with sync_playwright() as pw:
         browser = pw.chromium.launch(executable_path=chrome, args=['--no-sandbox'])
         page = browser.new_context().new_page()
+        notes = []
+        page.on('console', lambda msg: notes.append(msg.text))
         page.goto(origin + '/confirm', wait_until='networkidle')
         page.get_by_role('heading', name='Confirm 1 point for Ada, about 60 seconds').wait_for()
         page.get_by_role('button', name='Confirm').click()
         page.get_by_role('button', name='Send my answers').click()
         page.get_by_role('heading', name='Recorded. Thank you. Nothing else is shared.').wait_for()
-        blocked = page.evaluate("""async () => {
-          try { await fetch('https://evil.example/nope'); return 'allowed'; }
-          catch (e) { return 'blocked'; }
-        }""")
+        blocked = page.evaluate("""() => new Promise(resolve => {
+          const hits = [];
+          document.addEventListener('securitypolicyviolation', e => hits.push((e.violatedDirective || '') + ' ' + (e.effectiveDirective || '')));
+          fetch('https://evil.example/nope').catch(() => {});
+          setTimeout(() => resolve(hits.join(' ')), 400);
+        })""")
         browser.close()
     server.shutdown()
-    assert blocked == 'blocked', blocked
+    evidence = blocked + '\n' + '\n'.join(notes)
+    assert 'connect-src' in evidence, evidence
     assert Handler.posted and b'c1' in Handler.posted[0]
-    print('confirm CSP browser: inbox loaded, answer posted, foreign fetch blocked')
+    print('confirm CSP browser: inbox loaded, answer posted, connect-src violation')
 
 
 if __name__ == '__main__':

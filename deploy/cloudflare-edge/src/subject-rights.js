@@ -12,6 +12,7 @@ import * as privacy from './privacy.js';
 import { subjectHash } from './privacy.js';
 import { str, obj, fail } from './util.js';
 import { TENANT_ID } from './authz.js';
+import { eraseJourneyFor, eraseTelemetryFor, eraseManagerTrustFor, eraseDirectoryFor } from './operate.js';
 
 const randomToken = () => 'erased:' + [...crypto.getRandomValues(new Uint8Array(6))].map(b => b.toString(16).padStart(2, '0')).join('');
 const parse = (s, fallback) => { try { return JSON.parse(s); } catch { return fallback; } };
@@ -42,12 +43,33 @@ function whereSubject(tenantColumn, subjectSql) {
   return `lower(COALESCE(${tenantColumn}, '')) = ? AND (${subjectSql})`;
 }
 // Tables this slice creates and can bind to the verified tenant. teams_conversations.tenant_id is the only tenant column that table has.
+// Journey, telemetry, manager trust and the directory row use the same functions as privacy delete.
+// A staffing row where this person is only the manager is pseudonymised, not deleted.
 const SUBJECT_TABLES = [
   { table: 'invitations', column: 'email', tenant: 'tenant', key: 'invitations' },
   { table: 'outreach', column: 'to_email', tenant: 'tenant', key: 'outreach' },
   { table: 'staffing', column: 'consultant_email', tenant: 'tenant', key: 'staffingRows' },
   { table: 'teams_conversations', column: 'email', tenant: 'tenant_id', key: 'teamsConversations' },
+  { table: 'journey', key: 'journey', erase: eraseJourneyFor },
+  { table: 'telemetry', key: 'telemetry', erase: eraseTelemetryFor },
+  { table: 'manager_trust', key: 'managerTrust', erase: eraseManagerTrustFor },
+  { table: 'directory', key: 'directory', erase: eraseDirectoryFor },
+  { table: 'staffing', key: 'staffingManager', erase: eraseStaffingManager },
 ];
+function eraseStaffingManager(lib, user, { tenant, token }) {
+  if (!ready(lib, 'staffing', ['manager_email', 'consultant_email', 'tenant'])) return 0;
+  const aliases = [...new Set([user.email, user.mail].map(v => String(v || '').trim().toLowerCase()).filter(Boolean))];
+  if (!aliases.length) return 0;
+  const marks = aliases.map(() => '?').join(', ');
+  let n = 0;
+  for (const alias of aliases) {
+    const where = whereSubject('tenant', `lower(manager_email) = ? AND lower(consultant_email) NOT IN (${marks})`);
+    const c = lib.rows(`SELECT COUNT(*) AS n FROM staffing WHERE ${where}`, tenant, alias, ...aliases)[0].n;
+    if (c) lib.sql.exec(`UPDATE staffing SET manager_email = ? WHERE ${where}`, token, tenant, alias, ...aliases);
+    n += c;
+  }
+  return n;
+}
 // X1 (red L6): an address is mentioned only as a whole address, never as part of a longer one (al@ is not hal@, al@x.com is not al@x.com.au).
 export function mentions(text, email) {
   const t = String(text || '').toLowerCase(), e = String(email || '').toLowerCase();
@@ -72,20 +94,23 @@ export function eraseRefContent(lib, id, token, at) {
   if (tableExists(lib, 'claims')) lib.sql.exec('DELETE FROM claims WHERE ref_id = ?', id);
   if (tableExists(lib, 'confirmation_requests')) lib.sql.exec('DELETE FROM confirmation_requests WHERE ref_id = ?', id);
 }
-// Audit rows about a person (actor, or named in the detail text): the actor becomes the token and the detail is cleared.
-// Those two fields are outside the hash, so later rows keep their links. The chain is verified first (rewriteRows).
-// X1 (red M8): the chain is verified first (rewriteRows); a chain that no longer verifies is left untouched and { refused: true, reason, brokenSeq } is returned instead.
+// Audit rows about a person (actor, or named in the detail text) become a tombstone: actor is the token, detail is empty.
+// rewriteRows stores the proof and does not recompute later hashes. A chain that does not verify is left untouched.
+// The audit table has no tenant column. Rows are rewritten only when their id is a reference in THIS tenant, or when
+// the row is this slice's privacy log and it actually contains one of the identities. Another tenant's story stays.
+const PRIVACY_LOG = new Set(['privacy']);
 export function pseudonymiseAudit(lib, emails, token, { ids = null } = {}) {
   const list = (Array.isArray(emails) ? emails : [emails]).map(e => String(e || '').toLowerCase()).filter(Boolean);
   if (!list.length) return { changed: 0, head: null };
-  // The audit table has no tenant column. Only rows whose id is a reference in THIS tenant are rewritten.
-  // library, privacy, and every other tenant's story stay as they are.
   const allow = ids == null ? null : new Set(ids);
   return rewriteRows(lib.sql, r => {
-    if (allow && !allow.has(String(r.id || ''))) return null;
-    const actor = list.includes(String(r.actor || '').toLowerCase());
-    return actor || list.some(e => mentions(r.detail, e)) ? { actor: actor ? token : r.actor, detail: '' } : null;
-  });
+    const id = String(r.id || '');
+    const actorHit = list.includes(String(r.actor || '').toLowerCase());
+    const detailHit = list.some(e => mentions(r.detail, e));
+    if (!actorHit && !detailHit) return null;
+    if (allow && !allow.has(id) && !PRIVACY_LOG.has(id)) return null;
+    return { actor: token, detail: '' };
+  }, lib.auditKey);
 }
 
 const inBids = (lib, refId) => tableExists(lib, 'bid_references') && lib.rows('SELECT 1 AS x FROM bid_references WHERE ref_id = ? LIMIT 1', refId).length > 0;
@@ -180,6 +205,11 @@ function eraseWithin(lib, user, subj, tenant, { now = lib.now() } = {}) {
   // evidence_records, approvals, jobs and job_events are not created by this slice. They are not rewritten here.
   // Each statement rewrites one subject column, and the tenant test wraps that condition.
   for (const spec of SUBJECT_TABLES) {
+    if (typeof spec.erase === 'function') {
+      const n = spec.erase(lib, user, { tenant, token, email });
+      if (n) bump(spec.key, n);
+      continue;
+    }
     if (!ready(lib, spec.table, [spec.column, spec.tenant])) continue;
     const where = whereSubject(spec.tenant, `lower(${spec.column}) = ?`);
     const n = lib.rows(`SELECT COUNT(*) AS n FROM ${spec.table} WHERE ${where}`, tenant, email)[0].n;
@@ -215,7 +245,8 @@ function eraseWithin(lib, user, subj, tenant, { now = lib.now() } = {}) {
   if (hasTenantColumn(lib, 'profiles')) { const prof = lib.rows('SELECT COUNT(*) AS n FROM profiles WHERE subject = ? AND ' + TENANT_SQL, email, tenant)[0].n; if (prof) { lib.sql.exec('DELETE FROM profiles WHERE subject = ? AND ' + TENANT_SQL, email, tenant); bump('profile'); } }
   // privacy_flags is keyed by email and has no tenant. Leaving it keeps another tenant's restriction from being cleared or set by this erasure.
   lib.log('privacy', 'atlas', 'erasure completed', 'subject ' + subjectHash(subj).slice(0, 8)); // a pseudonym of a pseudonym, never an email; written before the rewrite so the head it returns is final
-  const audit = pseudonymiseAudit(lib, [email], token, { ids: touched });
+  const identities = [...new Set([email, user.mail].map(v => String(v || '').trim().toLowerCase()).filter(Boolean))];
+  const audit = pseudonymiseAudit(lib, identities, token, { ids: touched });
   if (audit.refused) hold('audit', 'chain', 'audit_chain_unverified'); // X1 (red M8): a chain that does not verify is not re-sealed; the DPO is told the audit part is pending
   else bump('auditRows', audit.changed);
   lib.sql.exec('INSERT INTO erasure_log (id, subject_hash, at, counts) VALUES (?, ?, ?, ?)', lib.newId(), subjectHash(subj), now, JSON.stringify(counts));

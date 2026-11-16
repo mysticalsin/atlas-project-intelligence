@@ -157,7 +157,7 @@ test('pseudonymising one tenant does not rewrite later audit links', () => {
   lib.log('ref-a', EMAIL, 'saved', 'note ' + EMAIL);
   lib.log('ref-b', 'kim@example.test', 'saved', 'other tenant');
   const before = lib.sql.exec('SELECT seq, prev_hash, hash FROM audit ORDER BY seq').toArray();
-  const out = pseudonymiseAudit(lib, [EMAIL], 'erased:abcd01', { ids: ['ref-a'] });
+  const out = pseudonymiseAudit(lib, [EMAIL], 'erased:abcd01abcd01', { ids: ['ref-a'] });
   const after = lib.sql.exec('SELECT seq, prev_hash, hash, actor FROM audit ORDER BY seq').toArray();
   assert.equal(out.refused, undefined);
   assert.notEqual(after[0].actor, EMAIL);

@@ -5,7 +5,7 @@
 // (a keyed hash). Fields outside the whitelist below are dropped, so a caller cannot leak by accident.
 const enc = new TextEncoder();
 export const EVENTS = Object.freeze(['authn_fail', 'csrf_fail', 'origin_fail', 'external_denied', 'bearer_fail', 'access_denied', 'rate_limited', 'body_too_large',
-  'header_spoof', 'kill_switch', 'subject_blocked', 'flag_state', 'audit_chain_break', 'audit_chain_ok', 'internal_error', 'inbound_off', 'privacy_export', 'privacy_erase', 'privacy_flags', 'consent_change', 'csp_violation', 'voice_settings']);
+  'header_spoof', 'kill_switch', 'subject_blocked', 'flag_state', 'audit_chain_break', 'audit_chain_ok', 'audit_chain_reseal', 'internal_error', 'inbound_off', 'privacy_export', 'privacy_erase', 'privacy_flags', 'consent_change', 'csp_violation', 'voice_settings']);
 const FIELDS = ['route', 'method', 'status', 'reason', 'subj', 'role', 'ip_h', 'colo', 'ray', 'n', 'bucket', 'head', 'prev', 'directive', 'blocked'];
 // Limiter names only. A free-text bucket was stored with the punctuation stripped, so an email became a log field.
 const BUCKETS = new Set(['upsert', 'review', 'insights', 'recommend', 'slides', 'export', 'import', 'inbound', 'me-export', 'me-erase', 'flags', 'consent', 'submit', 'onepager', 'ask', 'bid-create', 'bid-edit', 'bid-match', 'people', 'sheet', 'classify', 'transcribe', 'translate', 'csp-report', 'interview-hour', 'interview-day']);
@@ -25,8 +25,15 @@ async function keyedHash(secret, value) {
   const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   return hex(await crypto.subtle.sign('HMAC', key, enc.encode(value)));
 }
-// The salt for hashed addresses: LOG_SALT when set, else a labelled derivation of CSRF_SECRET (rotating it only changes the pseudonyms).
-export const ipHash = async (env, ip) => (ip && (env?.LOG_SALT || env?.CSRF_SECRET) ? (await keyedHash(env.LOG_SALT || 'atlas-log-v1:' + env.CSRF_SECRET, 'ip:' + ip)).slice(0, 16) : '');
+// LOG_SALT when set. Production without it returns null: the CSP report route answers 503 and other events omit ip_h.
+// Outside production, a labelled derivation of CSRF_SECRET still works, so a local run can hash an address. No IP means ''.
+export async function ipHash(env, ip) {
+  if (!ip) return '';
+  if (env?.LOG_SALT) return (await keyedHash(env.LOG_SALT, 'ip:' + ip)).slice(0, 16);
+  if (String(env?.DATA_MODE || '').toLowerCase() === 'production') return null;
+  if (env?.CSRF_SECRET) return (await keyedHash('atlas-log-v1:' + env.CSRF_SECRET, 'ip:' + ip)).slice(0, 16);
+  return '';
+}
 
 // Builds the record (also returned, for tests) and writes it. `f` may carry: route (a template), method, status, reason (a code),
 // subj (a subject key), role, ip (raw, hashed here and dropped), colo, ray, n, bucket, head.

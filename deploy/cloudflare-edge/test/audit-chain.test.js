@@ -1,8 +1,8 @@
 // B1 (10): the library audit trail is a hash chain, verified by the daily cron.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
-import { sha256Hex, rowHash, appendAudit, verifyChain, ensureChain, GENESIS } from '../src/audit-chain.js';
+import { createHash, createHmac } from 'node:crypto';
+import { sha256Hex, hmacHex, rowHash, appendAudit, verifyChain, ensureChain, GENESIS } from '../src/audit-chain.js';
 import { Library } from '../src/library.js';
 import { memorySql } from './sqlite.js';
 
@@ -11,6 +11,12 @@ const table = (sql, extraCols = '') => sql.exec('CREATE TABLE IF NOT EXISTS audi
 
 test('sha256 is correct (vs node:crypto) for empty, block-boundary, long and non-ASCII input', () => {
   for (const s of ['', 'abc', 'a'.repeat(55), 'a'.repeat(56), 'a'.repeat(64), 'a'.repeat(1000), 'é€😀 mixed ünïcode'.repeat(30)]) assert.equal(sha256Hex(s), createHash('sha256').update(s).digest('hex'));
+});
+
+test('hmac-sha256 matches node:crypto, including a key longer than the block', () => {
+  for (const [k, m] of [['', 'abc'], ['key', 'msg'], ['k'.repeat(80), 'long key'], ['subject-v1:s', 'ada@example.test']]) {
+    assert.equal(hmacHex(k, m), createHmac('sha256', k).update(m).digest('hex'));
+  }
 });
 
 test('rows chain: each row\'s prev_hash is the previous hash, the first starts at GENESIS, an unchanged table verifies', () => {
@@ -27,9 +33,9 @@ test('rows chain: each row\'s prev_hash is the previous hash, the first starts a
 test('tampering is found at the first broken row: edit (HASH_MISMATCH), delete in the middle or insert (LINK_BROKEN), unsealed row, edited hash', () => {
   const build = () => { const sql = memorySql(); table(sql); for (let i = 1; i <= 6; i++) appendAudit(sql, row(i)); return sql; };
   let sql = build(); sql.exec("UPDATE audit SET actor = 'mallory@evil' WHERE seq = 3");
-  assert.equal(verifyChain(sql).ok, true, 'actor is outside the link');
+  assert.equal(verifyChain(sql).reason, 'COMMIT_MISMATCH');
   sql = build(); sql.exec("UPDATE audit SET detail = 'quietly changed' WHERE seq = 6");
-  assert.equal(verifyChain(sql).ok, true, 'detail is outside the link');
+  assert.equal(verifyChain(sql).reason, 'COMMIT_MISMATCH');
   sql = build(); sql.exec("UPDATE audit SET action = 'tampered' WHERE seq = 3");
   assert.deepEqual(pick(verifyChain(sql)), { ok: false, brokenSeq: 3, reason: 'HASH_MISMATCH', checked: 2 });
   sql = build(); sql.exec('DELETE FROM audit WHERE seq = 4');

@@ -68,7 +68,7 @@ export function sweep(lib, { now = lib.now(), retention = RETENTION, tenant } = 
     const n = lib.rows("SELECT COUNT(*) AS n FROM staffing WHERE " + scope + " AND ((end_date != '' AND end_date < ?) OR (end_date = '' AND updated_at < ?))", tid, day, cut)[0].n;
     if (n) { lib.sql.exec("DELETE FROM staffing WHERE " + scope + " AND ((end_date != '' AND end_date < ?) OR (end_date = '' AND updated_at < ?))", tid, day, cut); add('staffingRows', n); }
   }
-  // Audit rows older than the period: the actor becomes a token and the detail is cleared. Those fields are outside the hash, so the head does not move.
+  // Audit rows older than the period become a tombstone. The proof is stored and later hashes stay, so the head does not move.
   if (c('audit')) {
     const cut = before(now, c('audit')), names = new Map();
     const r = rewriteRows(lib.sql, row => {
@@ -76,9 +76,9 @@ export function sweep(lib, { now = lib.now(), retention = RETENTION, tenant } = 
       if (row.at >= cut || (String(row.actor || '').startsWith('erased:') && row.detail === '')) return null;
       const personal = row.actor && !SYSTEM_ACTORS.has(row.actor) && !String(row.actor).startsWith('erased:');
       if (!personal && row.detail === '') return null;
-      if (personal && !names.has(row.actor)) names.set(row.actor, token());
-      return { actor: personal ? names.get(row.actor) : row.actor, detail: '' };
-    });
+      if (!names.has(row.actor)) names.set(row.actor, token());
+      return { actor: names.get(row.actor), detail: '' };
+    }, lib.auditKey);
     if (r.refused) out.auditRefused = { reason: r.reason, brokenSeq: r.brokenSeq }; // X1 (red M8): a chain that does not verify is left untouched; the cron reports it
     else if (r.changed) { add('auditRows', r.changed); out.auditHead = r.head; out.auditPreviousHead = r.previousHead; }
   }
