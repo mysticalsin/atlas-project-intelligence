@@ -71,6 +71,7 @@ try:
   check('trusted manager sees one approval button',n.locator('#recordDialog').is_visible() and n.locator('[data-rec-validate]').count()==1)
   n.locator('[data-rec-validate]').click();n.wait_for_timeout(900)
   check('manager approval alone does not publish', 'PUBLISHED' not in n.locator('#recordEyebrow').inner_text().upper() and 'manager approved' in n.locator('#recordBody').text_content())
+  check('approval redraw focuses Close reference', n.evaluate("document.activeElement && document.activeElement.getAttribute('aria-label')")=='Close reference')
   pre=page('presales@example.test',['ATLAS.Presales']);pre.goto(BASE+'/#library/'+rid);pre.wait_for_timeout(1200)
   check('pre-sales role sees its own lane',pre.locator('[data-rec-validate]').count()==1)
   pre.locator('[data-rec-validate]').click();pre.wait_for_timeout(900)
