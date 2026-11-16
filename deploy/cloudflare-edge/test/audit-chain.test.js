@@ -46,10 +46,10 @@ test('tampering is found at the first broken row: edit (HASH_MISMATCH), delete i
   assert.equal(verifyChain(sql).ok, false);
   sql = build(); sql.exec('UPDATE audit SET prev_hash = NULL WHERE seq = 2');
   assert.equal(verifyChain(sql).reason, 'UNSEALED');
-  // an attacker who rewrites a row AND recomputes its hash is caught by the next row's link
+  // an attacker who rewrites the action and recomputes the hash is caught by the commit, which binds the action
   sql = build(); const r2 = sql.exec('SELECT * FROM audit WHERE seq = 2').toArray()[0], forged = { ...r2, action: 'forged' };
   sql.exec('UPDATE audit SET action = ?, hash = ? WHERE seq = 2', 'forged', rowHash(r2.prev_hash, forged));
-  assert.deepEqual(pick(verifyChain(sql)), { ok: false, brokenSeq: 3, reason: 'LINK_BROKEN', checked: 2 });
+  assert.deepEqual(pick(verifyChain(sql)), { ok: false, brokenSeq: 2, reason: 'COMMIT_MISMATCH', checked: 1 });
 });
 const pick = v => ({ ok: v.ok, brokenSeq: v.brokenSeq, reason: v.reason, checked: v.checked });
 

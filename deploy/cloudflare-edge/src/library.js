@@ -308,6 +308,22 @@ export class Library {
     if (user?.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
   }
 
+  // Rows written before chain-start were not signed. They stay visible and are marked unverified.
+  chainStartSeq() {
+    try {
+      const row = this.rows(`SELECT seq FROM audit WHERE action = 'chain-start' AND "commit" IS NOT NULL ORDER BY seq LIMIT 1`)[0];
+      return row ? Number(row.seq) : null;
+    } catch { return null; }
+  }
+  auditLines(id) {
+    const start = this.chainStartSeq();
+    return this.rows('SELECT seq, actor, action, at, detail FROM audit WHERE id = ? ORDER BY seq DESC LIMIT 100', id).map(a => {
+      const line = { actor: a.actor, action: a.action, at: a.at, detail: a.action === 'possible duplicate' ? '' : a.detail };
+      if (start != null && Number(a.seq) < start) return { ...line, legacy: true, unverified: true };
+      return line;
+    });
+  }
+
   get(user, id) {
     this.demandTenant(user);
     const row = this.row(id), level = this.access(row, user);
@@ -316,7 +332,7 @@ export class Library {
     return { ...this.summary(row, level, user), data: full ? row.data : anonymise(row.data),
       state: { quality: full ? row.state.quality : publicQuality(row.state.quality), validation: full ? row.state.validation : { status: row.state.validation?.status }, withdrawn: !!row.state.withdrawn, duplicates: this.visibleDuplicates(row, user) },
       revisions: full ? this.rows('SELECT revision, author, at FROM revisions WHERE id = ? ORDER BY revision DESC', row.id) : [],
-      audit: full ? this.rows('SELECT actor, action, at, detail FROM audit WHERE id = ? ORDER BY seq DESC LIMIT 100', row.id).map(a => a.action === 'possible duplicate' ? { ...a, detail: '' } : a) : [],
+      audit: full ? this.auditLines(row.id) : [],
       permissions: { edit: this.canEdit(row, user), validate: this.canValidate(row, user), validateLane: this.canManagerApprove(row, user) ? 'manager' : this.canPresalesApprove(row, user) ? 'presales' : '', withdraw: this.canEdit(row, user), review: this.canEdit(row, user), reinstate: ['admin', 'reviewer'].includes(user.role), merge: ['admin', 'reviewer'].includes(user.role) },
       rating: { running: this.inflight.has(row.id + ':' + row.revision) }, ...(full ? { jevAllowed: this.jevAllowed(row) } : {}) };
   }

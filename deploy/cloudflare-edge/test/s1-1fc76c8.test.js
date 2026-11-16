@@ -55,14 +55,14 @@ function plantLegacy(anchorHead) {
 function forgeColumn(sql, alter) {
   sql.exec('UPDATE audit SET hash = NULL, prev_hash = NULL');
   sql.exec('UPDATE audit SET actor = ? WHERE seq = 2', 'mallory');
+  sql.exec('DROP INDEX IF EXISTS audit_one_chain_start');
   sql.exec(alter);
   const daily = verifyDaily(fresh(sql));
-  assert.equal(daily.reason, 'CHAIN_VERIFIED');
-  assert.equal(daily.legacyUnverified, 2);
+  assert.equal(daily.ok, false);
+  assert.equal(daily.reason, 'TAMPERED');
   const tail = sql.exec('SELECT * FROM audit WHERE seq = 2').toArray()[0];
   assert.equal(tail.actor, 'mallory');
   assert.equal(tail.commit ?? null, null);
-  assert.equal(sql.exec('SELECT actor FROM audit WHERE "commit" IS NOT NULL').toArray().some(r => r.actor === 'mallory'), false);
 }
 test('clearing hashes and dropping commit does not sign the forged actor', () => {
   forgeColumn(modernPair(), 'ALTER TABLE audit DROP COLUMN "commit"');

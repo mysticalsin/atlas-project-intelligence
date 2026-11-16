@@ -81,6 +81,7 @@ test('dropping commit, recomputing the unkeyed chain and planting the anchor doe
   verifyDaily(sql);
   sql.exec('UPDATE audit SET actor = ? WHERE seq = 2', MALLORY);
   recomputeUnkeyed(sql);
+  sql.exec('DROP INDEX IF EXISTS audit_one_chain_start');
   sql.exec('ALTER TABLE audit DROP COLUMN "commit"');
   refusesForgery(sql);
 });
@@ -93,6 +94,7 @@ test('renaming commit, recomputing the unkeyed chain and planting the anchor doe
   verifyDaily(sql);
   sql.exec('UPDATE audit SET actor = ? WHERE seq = 2', MALLORY);
   recomputeUnkeyed(sql);
+  sql.exec('DROP INDEX IF EXISTS audit_one_chain_start');
   sql.exec('ALTER TABLE audit RENAME COLUMN "commit" TO "old_commit"');
   refusesForgery(sql);
 });
@@ -143,6 +145,7 @@ test('keyed rows without the commit column are tampered and are not re-signed', 
   sql.exec(MAIN);
   appendAudit(sql, { id: 'r1', actor: 'a1@example.test', action: 'saved', at: STAMP, detail: 'one' });
   appendAudit(sql, { id: 'r2', actor: MALLORY, action: 'saved', at: STAMP, detail: 'two' });
+  sql.exec('DROP INDEX IF EXISTS audit_one_chain_start');
   sql.exec('ALTER TABLE audit DROP COLUMN "commit"');
   refusesForgery(sql);
 });
@@ -237,11 +240,14 @@ test('eight concurrent callers migrate a main-shaped database to one chain-start
     insert.run('r2', MALLORY, 'saved', STAMP, 'two');
   });
   try {
+    const before = new DatabaseSync(built.file);
+    try { assert.equal(before.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'audit_anchor'").get().n, 0); }
+    finally { before.close(); }
     const results = await callers(built.file);
     assert.equal(results.length, 8);
     for (const result of results) {
       assert.equal(result.error || '', '');
-      assert.equal(result.ok, true);
+      assert.equal(result.ok, true, JSON.stringify(result));
       assert.equal(result.reason, 'CHAIN_VERIFIED');
       assert.equal(result.legacyUnverified, 2);
       assert.equal(result.signed.includes(MALLORY), false);
