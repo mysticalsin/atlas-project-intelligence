@@ -494,6 +494,53 @@ test('storedConsent: false when nothing is stored, true after granting, per subj
   assert.equal(profile.storedConsent(l, '', 'jevRating'), false);
 });
 
+test('ownerKeys finds a padded and uppercase subject in a padded tenant', () => {
+  const tenant = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  const { l } = world();
+  profile.ensure(l);
+  l.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+    VALUES ('Ada@Example.test', ?, 'alias@example.test', '{}', '{}', '{}', ?, ?, ?)`, '\t' + tenant.toUpperCase() + ' ', NOW, NOW, NOW);
+  const keys = l.ownerKeys({ owner: ' ada@example.test ', tenant, state: {} });
+  assert.ok(keys.includes('alias@example.test'), JSON.stringify(keys));
+  assert.equal(l.ownerKeys({ owner: 'ada@example.test', tenant: '22222222-2222-4222-8222-222222222222', state: {} }).includes('alias@example.test'), false);
+});
+
+test('an unenforced scan leaves an old blank-tenant profile in place', () => {
+  const { l } = world();
+  profile.ensure(l);
+  const old = '2020-01-01T00:00:00.000Z';
+  l.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+    VALUES ('bea@example.test', '', 'bea@example.test', '{}', '{}', '{}', ?, ?, ?)`, old, old, old);
+  assert.equal(profile.daily(l, '2026-11-08T00:00:00.000Z', { email: 'atlas-cron', role: 'system' }).profilesPurged || 0, 0);
+  assert.equal(l.rows("SELECT subject FROM profiles WHERE tenant = ''").length, 1);
+});
+
+test('a verified daily purge matches a padded uppercase tenant', () => {
+  const tenant = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  const { l } = world();
+  profile.ensure(l);
+  const old = '2020-01-01T00:00:00.000Z';
+  l.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+    VALUES ('Ada@Example.test', ?, 'ada@example.test', '{}', '{}', '{}', ?, ?, ?)`, '\t' + tenant.toUpperCase() + ' ', old, old, old);
+  l.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+    VALUES ('other@example.test', '22222222-2222-4222-8222-222222222222', 'other@example.test', '{}', '{}', '{}', ?, ?, ?)`, old, old, old);
+  assert.equal(profile.daily(l, '2026-11-08T00:00:00.000Z', { email: 'atlas-cron', role: 'system', tenant, tenantEnforced: true }).profilesPurged, 1);
+  assert.deepEqual(l.rows('SELECT subject FROM profiles').map(row => row.subject), ['other@example.test']);
+});
+
+test('storedConsent and jevAllowed do not read a blank-tenant row when no tenant is given', () => {
+  const { l } = world();
+  profile.ensure(l);
+  l.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+    VALUES ('ada@example.test', '', 'ada@example.test', '{}', '{}', '{"jevRating":{"version":1}}', ?, ?, ?)`, NOW, NOW, NOW);
+  assert.equal(profile.storedConsent(l, 'ada@example.test', 'jevRating'), false);
+  const rated = new Library(memorySql(), { rater: { available: () => true, blocked: () => false } });
+  profile.ensure(rated);
+  rated.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+    VALUES ('ada@example.test', '', 'ada@example.test', '{}', '{}', '{"jevRating":{"version":1}}', ?, ?, ?)`, NOW, NOW, NOW);
+  assert.equal(rated.jevAllowed({ owner: 'ada@example.test', data: { answers: ['I did the work.'] }, state: {} }), false);
+});
+
 test('storedNames reads the verified tenant and does not default to a blank-tenant row', () => {
   const { l } = world();
   const tenant = '11111111-1111-4111-8111-111111111111';

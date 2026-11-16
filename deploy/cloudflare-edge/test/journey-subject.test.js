@@ -449,7 +449,7 @@ test('export and erasure share one profile match, and a broken migration does no
     library.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
       VALUES ('ada@example.test', ?, 'ada@example.test', '{"title":{"value":"Newer"}}', '{}', '{}', '2026-11-01T00:00:00.000Z', '2026-11-10T00:00:00.000Z', '2026-11-10T00:00:00.000Z')`, TENANT);
     library.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
-      VALUES ('ada@example.test', ?, 'ada@example.test', '{"title":{"value":"Older"}}', '{}', '{}', '2026-11-01T00:00:00.000Z', '2026-11-2T00:00:00.000Z', '2026-11-2T00:00:00.000Z')`, TENANT);
+      VALUES ('ada@example.test', ?, 'ada@example.test', '{"title":{"value":"Older"}}', '{}', '{}', '2026-11-01T00:00:00.000Z', '2026-11-02T00:00:00.000Z', '2026-11-02T00:00:00.000Z')`, TENANT);
     const response = await privacyExport(library);
     assert.equal(response.status, 200);
     const body = await response.json();
@@ -462,7 +462,7 @@ test('export and erasure share one profile match, and a broken migration does no
     const library = lib();
     ensureProfile(library);
     insertProfile(library, 'Ada@Example.test', TENANT, '{"title":{"value":"Newer"}}', '2026-11-10T00:00:00.000Z');
-    insertProfile(library, 'ADA@example.test', TENANT, '{"title":{"value":"Older"}}', '2026-11-2T00:00:00.000Z');
+    insertProfile(library, 'ADA@example.test', TENANT, '{"title":{"value":"Older"}}', '2026-11-02T00:00:00.000Z');
     const body = await (await privacyExport(library)).json();
     assert.deepEqual(body.profile.edits, { title: { value: 'Newer' } });
     assert.equal(body.profile.updatedAt, '2026-11-10T00:00:00.000Z');
@@ -484,6 +484,12 @@ test('export and erasure share one profile match, and a broken migration does no
     assert.deepEqual(tiedBody.profile.edits, { title: { value: 'Second' } });
     assert.equal(tiedBody.omitted.rows[0].id, 1);
     assert.equal(tiedBody.omitted.rows[0].reason, 'duplicate');
+    const bad = lib();
+    ensureProfile(bad);
+    insertProfile(bad, 'ada@example.test', TENANT, '{"title":{"value":"Real"}}', '2026-11-02T00:00:00.000Z');
+    insertProfile(bad, 'ADA@example.test', TENANT, '{"title":{"value":"Garbage"}}', 'not-a-date');
+    const badBody = await (await privacyExport(bad)).json();
+    assert.deepEqual(badBody.profile.edits, { title: { value: 'Real' } });
   });
   await check('a tab-padded tenant matches', async () => {
     const library = lib();
@@ -526,4 +532,94 @@ test('journey read, save, export and erasure plans use the subject index and do 
     if (name === 'update') assert.match(text, /INTEGER PRIMARY KEY/, name + '\n' + text);
     else assert.equal(text.includes('journey_tenant_subject'), true, name + '\n' + text);
   }
+});
+
+const DIRECTORY = `CREATE TABLE directory (
+  key TEXT NOT NULL, source TEXT NOT NULL, name TEXT, given_name TEXT, title TEXT,
+  manager_name TEXT, manager_email TEXT, batch TEXT, fetched_at TEXT, tenant TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (key, source))`;
+const DIRECTORY_V2 = `CREATE TABLE directory_v2 (
+  key TEXT NOT NULL, source TEXT NOT NULL, name TEXT, given_name TEXT, title TEXT,
+  manager_name TEXT, manager_email TEXT, batch TEXT, fetched_at TEXT, tenant TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (key, source, tenant))`;
+const PROFILE_V2 = `CREATE TABLE profiles_v2 (
+  subject TEXT NOT NULL, tenant TEXT NOT NULL DEFAULT '', email TEXT, edits TEXT, signin TEXT, consents TEXT,
+  created_at TEXT, updated_at TEXT, seen_at TEXT, PRIMARY KEY (subject, tenant))`;
+
+function seedDirectory(library, table, name) {
+  library.sql.exec(`INSERT INTO ${table} (key, source, name, tenant) VALUES ('ada@example.test', 'dna', ?, '')`, name);
+}
+
+test('a DROP TABLE directory failure does not make the next export return 500', async () => {
+  const drop = lib();
+  drop.sql.exec(DIRECTORY);
+  seedDirectory(drop, 'directory', 'Kept');
+  const exec = drop.sql.exec.bind(drop.sql);
+  drop.sql.exec = (q, ...args) => {
+    if (String(q).trim() === 'DROP TABLE directory') throw new Error('drop failed');
+    return exec(q, ...args);
+  };
+  assert.equal((await privacyExport(drop)).status, 500);
+  drop.sql.exec = exec;
+  assert.equal((await privacyExport(drop)).status, 200);
+  assert.deepEqual(drop.rows('SELECT name FROM directory').map(row => row.name), ['Kept']);
+});
+
+test('a directory rename failure does not leave the live table empty', async () => {
+  const rename = lib();
+  rename.sql.exec(DIRECTORY);
+  seedDirectory(rename, 'directory', 'Kept');
+  const exec = rename.sql.exec.bind(rename.sql);
+  rename.sql.exec = (q, ...args) => {
+    if (String(q).includes('directory_v2 RENAME TO directory')) throw new Error('rename failed');
+    return exec(q, ...args);
+  };
+  assert.equal((await privacyExport(rename)).status, 500);
+  rename.sql.exec = exec;
+  assert.equal((await privacyExport(rename)).status, 200);
+  assert.deepEqual(rename.rows('SELECT name FROM directory').map(row => row.name), ['Kept']);
+});
+
+test('a directory that already has both the live table and directory_v2 still exports', async () => {
+  const both = lib();
+  both.sql.exec(DIRECTORY);
+  both.sql.exec(DIRECTORY_V2);
+  seedDirectory(both, 'directory', 'Kept');
+  seedDirectory(both, 'directory_v2', 'Kept');
+  assert.equal((await privacyExport(both)).status, 200);
+  assert.deepEqual(both.rows('SELECT name FROM directory').map(row => row.name), ['Kept']);
+  assert.equal(both.rows("SELECT name FROM sqlite_master WHERE name = 'directory_v2'").length, 0);
+});
+
+test('a stranded directory_v2 is renamed back to directory', () => {
+  const stranded = lib();
+  stranded.sql.exec(DIRECTORY_V2);
+  seedDirectory(stranded, 'directory_v2', 'Recovered');
+  ensureProfile(stranded);
+  assert.deepEqual(stranded.rows('SELECT name FROM directory').map(row => row.name), ['Recovered']);
+  assert.equal(stranded.rows("SELECT name FROM sqlite_master WHERE name = 'directory_v2'").length, 0);
+});
+
+test('profile storage without transactionSync is refused before any migration', () => {
+  const sql = memorySql();
+  const bare = { exec: (...args) => sql.exec(...args) };
+  const plain = new Library(bare, { now: () => '2026-11-08T00:00:00.000Z' });
+  assert.throws(() => ensureProfile(plain), /transactionSync/);
+  assert.equal(plain.rows("SELECT name FROM sqlite_master WHERE name = 'profiles'").length, 0);
+});
+
+test('a populated profiles_v2 is not dropped when the live profiles table already has rows', () => {
+  const library = lib();
+  library.sql.exec(PROFILE_V2.replace('CREATE TABLE profiles_v2', 'CREATE TABLE profiles'));
+  library.sql.exec(PROFILE_V2);
+  const stamp = '2026-11-08T00:00:00.000Z';
+  for (const [table, title] of [['profiles', 'Live'], ['profiles_v2', 'Parked']]) {
+    library.sql.exec(`INSERT INTO ${table} (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+      VALUES (?, ?, 'ada@example.test', ?, '{}', '{}', ?, ?, ?)`, 'ada@example.test', TENANT, JSON.stringify({ title: { value: title } }), stamp, stamp, stamp);
+  }
+  let error = null;
+  try { ensureProfile(library); } catch (e) { error = e; }
+  assert.equal(library.rows("SELECT COUNT(*) AS n FROM sqlite_master WHERE name = 'profiles_v2'")[0].n, 1, 'populated profiles_v2 was dropped');
+  assert.match(String(error && error.message), /profiles_v2/);
+  assert.equal(library.rows('SELECT COUNT(*) AS n FROM profiles')[0].n, 1);
 });

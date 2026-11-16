@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { Library } from '../src/library.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import * as outreach from '../src/outreach.js';
+import { ensure as ensureProfile } from '../src/profile.js';
 import * as claims from '../src/claims.js';
 import { memorySql } from './sqlite.js';
 
@@ -386,4 +387,21 @@ test('queue: deduped per subject and channel, previews masked again, bad items r
   assert.throws(() => outreach.queue(s.l, { ...item, toEmail: 'nope' }), e => e.status === 400);
   assert.equal(s.l.rows('SELECT COUNT(*) AS n FROM outreach')[0].n, 2);
   assert.ok(claims.READY && outreach.READY);
+});
+
+test('a due staffing row follows a profile alias stored under a padded uppercase tenant', () => {
+  const s = setup();
+  const tenant = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  outreach.ensure(s.l);
+  ensureProfile(s.l);
+  const at = s.l.now();
+  s.l.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+    VALUES ('Ada@Example.test', ?, 'alias@example.test', '{}', '{}', '{}', ?, ?, ?)`, '\t' + tenant.toUpperCase() + ' ', at, at, at);
+  s.l.sql.exec(`INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, tenant)
+    VALUES ('PRJ-1', 'alias@example.test', '', '', '', ?, 'staffing', ?, ?)`, at.slice(0, 10), at, tenant);
+  s.l.sql.exec(`INSERT INTO refs (id, owner, local_id, title, status, revision, content_hash, members, created_at, updated_at, data, state, tenant)
+    VALUES ('r1', 'ada@example.test', 'r1', 'T', 'in_review', 1, 'h', ',', ?, ?, ?, '{}', ?)`, at, at, JSON.stringify({ details: { projectId: 'PRJ-1' } }), tenant);
+  const result = outreach.daily(s.l, { email: 'atlas-cron', role: 'system', tenant, tenantEnforced: true });
+  assert.equal(result.staffingInvited || 0, 0);
+  assert.equal(s.l.rows('SELECT COUNT(*) AS n FROM invitations')[0].n, 0);
 });
