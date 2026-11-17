@@ -35,8 +35,7 @@ test('a signed suffix with the anchor deleted is not chain-verified and does not
   sql.exec('DELETE FROM audit_anchor');
   const daily = verifyDaily(fresh(sql));
   assert.equal(daily.ok, false);
-  assert.notEqual(daily.reason, 'CHAIN_VERIFIED');
-  assert.ok(daily.reason === 'TAMPERED' || daily.reason === 'TRUNCATED', daily.reason);
+  assert.equal(daily.reason, 'TAMPERED');
   assert.equal(anchorRows(sql).length, 0);
 });
 
