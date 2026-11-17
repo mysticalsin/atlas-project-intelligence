@@ -19,9 +19,11 @@
 // A null or empty commit is not a chain-start.
 // The column adds, the chain-start index, the chain-start insert and the anchor table write
 // of that first migration run in one storage.transactionSync. The callback is synchronous.
-// A store with no transactionSync is not migrated. A throw rolls the schema back to the
-// main-shaped table. Once an anchor row exists, or the commit column exists, the chain is
-// not migrated again.
+// A store with no transactionSync is not migrated. A null key is not migrated either:
+// production without LOG_SALT leaves the table main-shaped, writes nothing, and does not
+// seal the store, so a later open with a key migrates in that one transaction.
+// A throw rolls the schema back to the main-shaped table. Once an anchor row exists, or the
+// commit column exists, the chain is not migrated again.
 // A missing signed chain-start, keyed values that are all null, or a chain of only unsigned
 // rows is TAMPERED. That state does not gain a chain-start and does not delete the anchor.
 // A hash or previous-link column with no commit column is TAMPERED even when every stored
@@ -222,12 +224,14 @@ function indexChainStart(sql) {
 // Anything already claimed is left as stored: no new chain-start and no anchor delete.
 // transactionSync is storage.transactionSync from library-store.js. It is synchronous.
 // The first migration is one callback, so a crash rolls back to the main-shaped table.
+// A null key writes nothing and does not seal, so the next keyed open can still migrate.
 export function ensureChain(sql, key = '', transactionSync = null) {
   if (sealed.has(sql)) return;
   const atomic = typeof transactionSync === 'function' ? transactionSync
     : (typeof sql?.transactionSync === 'function' ? sql.transactionSync.bind(sql) : null);
   const kind = classifyChain(sql);
   if (kind !== 'migrate') { if (kind === 'open') indexChainStart(sql); sealed.add(sql); return; }
+  if (key == null) return;
   if (typeof atomic !== 'function') {
     const err = new Error('Audit migration cannot be made atomic on this store, so nothing was migrated.');
     err.status = 500;
@@ -374,8 +378,8 @@ export function verifyDaily(sql, key = '') {
   ensureChain(sql, key);
   const kind = classifyChain(sql);
   if (hashesWithoutCommit(sql) || kind === 'tampered') return verifyChain(sql, key);
-  sql.exec(ANCHOR);
   if (key == null) return { ok: false, reason: 'LOG_SALT', checked: 0, head: GENESIS, legacyUnverified: 0 };
+  sql.exec(ANCHOR);
   const result = anchoredVerdict(sql, verifyChain(sql, key));
   const legacyUnverified = result.legacyUnverified || 0;
   if (!result.ok) return { ...result, legacyUnverified };
