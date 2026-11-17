@@ -1,6 +1,7 @@
 // The LibraryStore constructor wires Durable Object storage into Library.
 // Queries use storage.sql. Atomic work uses storage.transactionSync.
-// This module does not run a Cloudflare isolate.
+// Library passes that same function into ensureChain, so the first audit migration
+// is one synchronous transaction. This module does not run a Cloudflare isolate.
 import { Library } from './library.js';
 
 export function libraryFromStorage(storage, options = {}) {

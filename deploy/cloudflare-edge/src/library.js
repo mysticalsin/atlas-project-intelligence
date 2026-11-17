@@ -165,7 +165,7 @@ export class Library {
     this.sql.exec("CREATE UNIQUE INDEX IF NOT EXISTS invitations_open_scope ON invitations(email, reason, project_id, reference_id, tenant) WHERE status IN ('open', 'scheduled')");
     migrateManagerTrust(this);
     migrateStoryTenant(this);
-    ensureChain(this.sql, this.auditKey);
+    ensureChain(this.sql, this.auditKey, this.transactionSync);
   }
 
   rows(q, ...p) { return this.sql.exec(q, ...p).toArray(); }
@@ -320,10 +320,14 @@ export class Library {
     try { this.sql.exec('SELECT "commit" FROM audit LIMIT 0'); }
     catch { keyed = false; }
     const start = keyed ? this.chainStartSeq() : null;
-    return this.rows('SELECT seq, actor, action, at, detail FROM audit WHERE id = ? ORDER BY seq DESC LIMIT 100', id).map(a => {
+    const query = keyed
+      ? 'SELECT seq, actor, action, at, detail, "commit" FROM audit WHERE id = ? ORDER BY seq DESC LIMIT 100'
+      : 'SELECT seq, actor, action, at, detail FROM audit WHERE id = ? ORDER BY seq DESC LIMIT 100';
+    return this.rows(query, id).map(a => {
       const line = { actor: a.actor, action: a.action, at: a.at, detail: a.action === 'possible duplicate' ? '' : a.detail };
       if (!keyed) return { ...line, unverified: true };
       if (start != null && Number(a.seq) < start) return { ...line, legacy: true, unverified: true };
+      if (a.commit == null) return { ...line, unverified: true };
       return line;
     });
   }

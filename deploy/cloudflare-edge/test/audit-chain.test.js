@@ -53,11 +53,18 @@ test('tampering is found at the first broken row: edit (HASH_MISMATCH), delete i
 });
 const pick = v => ({ ok: v.ok, brokenSeq: v.brokenSeq, reason: v.reason, checked: v.checked });
 
-test('a deleted oldest prefix (a retention sweep) leaves a valid chain; deleting the newest rows is not detectable in-table, which is why the head is logged', () => {
+test('a deleted oldest prefix is not a valid chain; deleting the newest rows is not detectable in-table, which is why the head is logged', () => {
+  const prefix = memorySql(); table(prefix); for (let i = 1; i <= 5; i++) appendAudit(prefix, row(i));
+  prefix.exec('DELETE FROM audit WHERE seq <= 2');
+  const cut = verifyChain(prefix);
+  assert.equal(cut.ok, false);
+  assert.ok(cut.reason === 'TAMPERED' || cut.reason === 'TRUNCATED', cut.reason);
   const sql = memorySql(); table(sql); for (let i = 1; i <= 5; i++) appendAudit(sql, row(i));
   const head5 = verifyChain(sql).head;
-  sql.exec('DELETE FROM audit WHERE seq <= 2'); assert.equal(verifyChain(sql).ok, true);
-  sql.exec('DELETE FROM audit WHERE seq = 5'); const after = verifyChain(sql); assert.equal(after.ok, true); assert.notEqual(after.head, head5, 'the logged head no longer matches the anchor');
+  sql.exec('DELETE FROM audit WHERE seq = 5');
+  const after = verifyChain(sql);
+  assert.equal(after.ok, true);
+  assert.notEqual(after.head, head5, 'the logged head no longer matches the anchor');
 });
 
 test('rows with no hashes migrate to one chain-start and the old rows stay unsigned', () => {

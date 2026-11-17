@@ -148,11 +148,10 @@ test('a prefix truncate padded back to the same length does not move the anchor'
   assert.equal(first.ok, true);
   const anchor = lib.sql.exec('SELECT n, head FROM audit_anchor WHERE id = 1').toArray()[0];
   lib.sql.exec('DELETE FROM audit WHERE seq <= 2');
-  lib.log('r5', 'a@example.test', 'saved', 'pad-1');
-  lib.log('r6', 'a@example.test', 'saved', 'pad-2');
+  assert.throws(() => lib.log('r5', 'a@example.test', 'saved', 'pad-1'), err => err.status === 409);
   const again = verifyDaily(lib.sql);
   assert.equal(again.ok, false);
-  assert.equal(again.reason, 'ANCHOR_MOVED');
+  assert.ok(again.reason === 'TAMPERED' || again.reason === 'TRUNCATED', again.reason);
   const still = lib.sql.exec('SELECT n, head FROM audit_anchor WHERE id = 1').toArray()[0];
   assert.equal(still.n, anchor.n);
   assert.equal(still.head, anchor.head);
