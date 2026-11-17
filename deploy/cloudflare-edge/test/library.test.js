@@ -322,12 +322,14 @@ test('JEV: "Rate again" returns after the primary rating; the second opinion lan
   assert.deepEqual([q.engine, q.escalatedFrom, l.get(OWNER, a.id).rating.running], ['review-agent', 'jev', false]);
 });
 
-test('JEV: list() items keep exactly today\'s fields', async () => {
+test('JEV: a full list() item adds the two lane decisions and nothing else', async () => {
   const { l } = jevLib();
   await consent(l, OWNER);
   const a = await l.upsert(OWNER, { localId: 'p1', reference: REF() }); await l.review(OWNER, a.id);
-  assert.deepEqual(Object.keys(l.list(OWNER).items[0]), ['id', 'title', 'status', 'revision', 'access', 'mine', 'practice', 'industry', 'country', 'serviceLines', 'technologies',
-    'headline', 'impact', 'qualityScore', 'qualityStatus', 'updatedAt', 'nextReview', 'owner', 'client']);
+  const item = l.list(OWNER).items[0];
+  assert.deepEqual(Object.keys(item), ['id', 'title', 'status', 'revision', 'access', 'mine', 'practice', 'industry', 'country', 'serviceLines', 'technologies',
+    'headline', 'impact', 'qualityScore', 'qualityStatus', 'updatedAt', 'nextReview', 'owner', 'client', 'managerDecision', 'presalesDecision']);
+  assert.deepEqual([item.managerDecision, item.presalesDecision], ['pending', 'pending']);
 });
 
 test('JEV: without a rater, today\'s semantics and audit text hold; the stored rating names the review agent', async () => {

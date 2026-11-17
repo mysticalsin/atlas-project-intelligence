@@ -54,7 +54,7 @@ async function renderJourney(){const root=$('journey');if(!root)return;root.repl
    if(boot.libraryRole==='admin'){const test=h('button',{class:'btn',type:'button',text:'Admin test bypass'});test.addEventListener('click',()=>bypass(item.id,true,test));const pub=h('button',{class:'btn',type:'button',text:'Admin publish bypass'});pub.addEventListener('click',()=>bypass(item.id,false,pub));box.append(test,pub);}
    queue.append(box);}
  }
- async function act(id,lane,decision,btn,note){btn.disabled=true;try{await api('/'+id+'/validate',{method:'POST',body:{lane,decision,note:note||''}});await paintQueue();}catch(e){queue.append(banner('warn',e.message));btn.disabled=false;}}
+ async function act(id,lane,decision,btn,note){btn.disabled=true;try{await api('/'+id+'/validate',{method:'POST',body:{lane,decision,note:note||''}});await paintQueue();}catch(e){queue.append(banner('warn',e.message));btn.disabled=false;btn.focus();}}
  async function bypass(id,test,btn){btn.disabled=true;try{await api('/admin/publish',{method:'POST',body:{id,test}});await paintQueue();}catch(e){queue.append(banner('warn',e.message));btn.disabled=false;}}
  paint();paintQueue();
  const head=h('div',{class:'journey-head'},[h('div',{},[h('p',{class:'eyebrow',text:'CONSULTANT JOURNEY'}),h('h1',{id:'journeyTitle',text:'From the work to a reference.'}),h('p',{text:'Confirm what is true. Blocked systems stay blocked. Publication for everyone else needs both approvals.'})]),personaBar()]);

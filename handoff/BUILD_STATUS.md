@@ -757,3 +757,12 @@ Review answers:
 - Q8: the journey queue uses `STATUS_LABEL` (`Withdrawn`, `Needs work`). The admin-test and manager-waiting phrases stay. Red commit `ef3ab55`.
 - Gates on this host: `pytest tests/test_*.py -q` 264 passed, 106 warnings. `node --test tests/*.test.js` 386 tests, 385 passed, 1 skipped (Natural Earth regeneration needs `ATLAS_NE_SRC`). Edge `node --test test/*.test.js` 541 passed, and the same 541 with `--test-concurrency=16`. `scripts/verify_page_build.sh` twice, both exit 0 (907494 bytes). `make test-ui` exit 0, 754 PASS, 0 FAIL, 21 scripts. No provider call, no deploy.
 - Quarantine is not deletion. Vendor deletion stays not-asserted. A Cloudflare Durable Object runtime was not executed.
+
+### Session: 2026-11-17 / PR8 residuals, approved lane and 503 session
+- Same branch. The review of `b4bc531` is closed here. Red commits failed on that head before the fix: `8ce4891` (approved lane, real `list()`, changed note) and `7c2d260` (503 boot session and the 500-character cap).
+- A full-access `list()` item carries `managerDecision` and `presalesDecision`. A public item does not. The record dialog and the journey queue omit a lane's buttons once that lane is approved. A failed approve enables the button and returns focus to it. An identical approve stays a no-op. A second `request_changes` with a different note stores the note and writes one audit line.
+- A 503 bootstrap keeps only `{ok:false, error}` and the error is at most 500 characters. `admin` and `libraryRole` on that body do not open admin or the journey. The journey and the library also cap a library-fetch 503 at 500 characters.
+- The short library-fetch reason in Q9 already reached the page on main, because a non-ok library response threw `data.error`. That half is not the regression. The library-fetch regression added here is the 500-character cap. The bootstrap half remains the Q9 regression.
+- The rolled-back privacy-erasure audit stays deferred. `origin/main` still has no `withTransaction`.
+- Gates on this host: pytest 264 passed, 106 warnings. Root `node --test tests/*.test.js` 386 tests, 385 passed, 1 skipped. Edge 543 passed, and the same 543 with `--test-concurrency=16`. `scripts/verify_page_build.sh` twice, both exit 0, 907846 bytes. `make test-ui` exit 0, 768 PASS, 0 FAIL. No provider call, no deploy.
+- Quarantine is not deletion. Vendor deletion stays not-asserted. A Cloudflare Durable Object runtime was not executed.

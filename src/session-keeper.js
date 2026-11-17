@@ -19,7 +19,7 @@ function load(){return (async()=>{
  if(!['http:','https:'].includes(location.protocol))return {b:{},state:'offline'}; // keep this exact expression: tests/studio_browser.py rewrites it
  try{const r=await raw('/api/bootstrap',{signal:timeout(8000)});
   if(lapsed(r))return {b:{},state:'expired'};
-  if(!r.ok){let b={};if(r.status===503){try{const d=await r.json();if(d&&typeof d==='object'&&!Array.isArray(d))b=d;}catch{}}return {b,state:'error'};}
+  if(!r.ok){let b={};if(r.status===503){let error='';try{const d=await r.json();if(d&&typeof d==='object'&&!Array.isArray(d))error=d.error;}catch{}b={ok:false,error:String(error??'').slice(0,500)};}return {b,state:'error'};}
   const b=await r.json(); // a Cloudflare 52x HTML page throws here
   return b&&typeof b==='object'?{b,state:b.protocol==='atlas-personaplex-pcm-v1'?'ok':'foreign'}:{b:{},state:'error'};
  }catch{return {b:{},state:'error'};}})();}

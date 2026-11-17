@@ -261,11 +261,16 @@ export class Library {
   }
 
   summary(row, level, user) {
-    const d = row.data, q = row.state.quality;
-    return { id: row.id, title: d.title, status: row.status, revision: row.revision, access: level, mine: row.owner === user.email,
+    const d = row.data, q = row.state.quality, v = row.state.validation || {};
+    const item = { id: row.id, title: d.title, status: row.status, revision: row.revision, access: level, mine: row.owner === user.email,
       practice: d.jev?.primary?.label || '', industry: d.sector, country: d.details.country, serviceLines: d.details.serviceLines, technologies: d.details.technologies,
       headline: d.report?.headline || '', impact: d.jev?.impact ?? null, qualityScore: q?.score ?? null, qualityStatus: q?.status || '',
       updatedAt: row.updated_at, nextReview: row.next_review, owner: row.owner, client: level === 'full' ? d.client.name : '' };
+    if (level === 'full') {
+      item.managerDecision = v.managerDecision || 'pending';
+      item.presalesDecision = v.presalesDecision || 'pending';
+    }
+    return item;
   }
 
   async upsert(user, body) {
@@ -783,7 +788,7 @@ export class Library {
     if (decision === 'changes_requested' && !note) throw fail(400, 'Say what should change.');
     const prev = row.state.validation || {};
     const current = lane === 'manager' ? prev.managerDecision : prev.presalesDecision;
-    if (current === decision) return this.get(user, id);
+    if (current === decision && (decision !== 'changes_requested' || (prev.note || '') === note)) return this.get(user, id);
     const validation = { ...prev, by: user.email, at: this.now(), note, status: 'pending' };
     if (lane === 'manager') validation.managerDecision = decision;
     else validation.presalesDecision = decision;
