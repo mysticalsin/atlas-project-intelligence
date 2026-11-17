@@ -316,9 +316,13 @@ export class Library {
     } catch { return null; }
   }
   auditLines(id) {
-    const start = this.chainStartSeq();
+    let keyed = true;
+    try { this.sql.exec('SELECT "commit" FROM audit LIMIT 0'); }
+    catch { keyed = false; }
+    const start = keyed ? this.chainStartSeq() : null;
     return this.rows('SELECT seq, actor, action, at, detail FROM audit WHERE id = ? ORDER BY seq DESC LIMIT 100', id).map(a => {
       const line = { actor: a.actor, action: a.action, at: a.at, detail: a.action === 'possible duplicate' ? '' : a.detail };
+      if (!keyed) return { ...line, unverified: true };
       if (start != null && Number(a.seq) < start) return { ...line, legacy: true, unverified: true };
       return line;
     });

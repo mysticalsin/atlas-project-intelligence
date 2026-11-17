@@ -3,7 +3,7 @@
 // hash = SHA-256(prev, id, action, at, commit).
 // A privacy rewrite may replace actor and detail only by writing an exact tombstone
 // (actor matches ^erased:[0-9a-f]{12}$, detail is empty) plus
-// proof = HMAC(key, JSON.stringify(['tombstone', seq, commit, actor])).
+// proof = HMAC(key, JSON.stringify(['tombstone', seq, commit, actor, id, action, at, and tenant when the column exists])).
 // It does not recompute hash or prev_hash, so a later row, including another tenant's, is never resealed.
 // verify accepts a row when the HMAC of the current actor and detail equals commit, or when
 // the tombstone and its proof both match. A direct edit of either field fails.
@@ -87,8 +87,14 @@ export function contentCommit(key, row, withTenant = false) {
   if (withTenant) parts.push(String(row.tenant ?? ''));
   return hmacHex(key, JSON.stringify(parts));
 }
-// One JSON array, so seq 1 cannot borrow seq 10's proof by shifting a character, and the actor token is inside the MAC.
-export const tombstoneProof = (key, seq, commit, actor) => hmacHex(key, JSON.stringify(['tombstone', Number(seq), String(commit ?? ''), String(actor ?? '')]));
+// One JSON array, so seq 1 cannot borrow seq 10's proof by shifting a character.
+// id, action, at and the tenant (when that column exists) are inside the MAC.
+// The previous actor-only proof is not accepted.
+export function tombstoneProof(key, row, withTenant = false) {
+  const parts = ['tombstone', Number(row.seq), String(row.commit ?? ''), String(row.actor ?? ''), String(row.id ?? ''), String(row.action ?? ''), String(row.at ?? '')];
+  if (withTenant) parts.push(String(row.tenant ?? ''));
+  return hmacHex(key, JSON.stringify(parts));
+}
 function sameText(a, b) {
   const x = String(a ?? ''), y = String(b ?? '');
   if (x.length !== y.length) return false;
@@ -210,7 +216,16 @@ function appendChainStart(sql, key) {
   } catch (e) { if (!uniqueRow(e)) throw e; }
 }
 function indexChainStart(sql) {
-  try { sql.exec('CREATE UNIQUE INDEX IF NOT EXISTS audit_one_chain_start ON audit(action) WHERE action = \'chain-start\' AND "commit" IS NOT NULL'); }
+  const partial = 'CREATE UNIQUE INDEX IF NOT EXISTS audit_one_chain_start ON audit(action) WHERE action = \'chain-start\' AND "commit" IS NOT NULL';
+  let current = '';
+  try { current = sql.exec("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'audit_one_chain_start'").toArray()[0]?.sql || ''; }
+  catch { current = ''; }
+  // IF NOT EXISTS would keep an older index that treats an unsigned chain-start as the one start.
+  if (current && !current.includes('"commit" IS NOT NULL')) {
+    try { sql.exec('DROP INDEX IF EXISTS audit_one_chain_start'); }
+    catch { /* a racer is dropping it */ }
+  }
+  try { sql.exec(partial); }
   catch { /* a racer is creating it, or two starts already exist and verify will say so */ }
 }
 // Adds the chain columns only for a database that has never had a commit column or an anchor row.
@@ -257,7 +272,7 @@ const ROW = 'seq, id, actor, action, at, detail, prev_hash, hash, "commit", tomb
 function bound(key, r, withTenant) {
   const commit = String(r.commit ?? '');
   if (sameText(contentCommit(key, r, withTenant), commit)) return true;
-  return TOMBSTONE_ACTOR.test(String(r.actor || '')) && String(r.detail ?? '') === '' && !!r.tombstone && sameText(r.tombstone, tombstoneProof(key, r.seq, commit, r.actor));
+  return TOMBSTONE_ACTOR.test(String(r.actor || '')) && String(r.detail ?? '') === '' && !!r.tombstone && sameText(r.tombstone, tombstoneProof(key, r, withTenant));
 }
 function finish(ok, fields, legacyUnverified) {
   return legacyUnverified ? { ...fields, ok, legacyUnverified } : { ...fields, ok };
@@ -301,8 +316,9 @@ export function rewriteRows(sql, edit, key = '') {
   const before = verifyChain(sql, key);
   const starts = chainStartSeqs(sql);
   const startSeq = starts.length === 1 ? starts[0] : null;
+  const withTenant = hasColumn(sql, 'tenant');
   let changed = 0, keyedSkipped = false, rows = [];
-  try { rows = sql.exec(`SELECT ${ROW} FROM audit ORDER BY seq`).toArray(); } catch { rows = []; }
+  try { rows = sql.exec(`SELECT ${withTenant ? ROW + ', tenant' : ROW} FROM audit ORDER BY seq`).toArray(); } catch { rows = []; }
   for (const r of rows) {
     const patch = edit(r);
     if (!patch) continue;
@@ -315,7 +331,7 @@ export function rewriteRows(sql, edit, key = '') {
       continue;
     }
     if (!before.ok) { keyedSkipped = true; continue; }
-    sql.exec('UPDATE audit SET actor = ?, detail = ?, tombstone = ? WHERE seq = ?', actor, '', tombstoneProof(key, r.seq, String(r.commit ?? ''), actor), r.seq);
+    sql.exec('UPDATE audit SET actor = ?, detail = ?, tombstone = ? WHERE seq = ?', actor, '', tombstoneProof(key, { ...r, actor }, withTenant), r.seq);
     changed++;
   }
   if (keyedSkipped || (!before.ok && changed === 0)) return { refused: true, reason: before.reason, brokenSeq: before.brokenSeq, changed: keyedSkipped ? changed : 0, head: before.head, previousHead: before.head };
