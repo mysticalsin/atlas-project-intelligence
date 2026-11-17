@@ -1,5 +1,9 @@
 """Production plus the local switches answers /api/bootstrap and /api/library with 503 and a specific reason.
 The journey and the library must show that reason.
+
+The short library-fetch reason already reached the page on main, because a non-ok library response threw data.error.
+That half is not the regression. The regression for a library fetch is the 500-character cap.
+A 503 bootstrap body is not a session: admin and libraryRole on that body must not open admin or the journey.
   python3 tests/refusal_browser.py
 """
 import json, os, socket, subprocess, time, urllib.error, urllib.request
@@ -84,6 +88,32 @@ try:
         library = show(fresh, 'library', library_reason)
         check('library shows a library-fetch 503 reason', library_reason in library)
         check('library does not replace a library-fetch refusal', GENERIC not in library)
+
+        long = ('L' * 500) + 'TAIL-MARKER'
+        capped = browser.new_context(viewport={'width': 1400, 'height': 1000}).new_page()
+        capped.route('**/api/library**', lambda route: route.fulfill(status=503, content_type='application/json', body=json.dumps({'ok': False, 'error': long})))
+        capped.goto(base + '/?as=ada@example.test')
+        capped.wait_for_timeout(700)
+        journey = show(capped, 'journey', long[:40])
+        check('a library-fetch 503 reason stops at 500 characters', long[:500] in journey and 'TAIL-MARKER' not in journey and GENERIC not in journey)
+        library = show(capped, 'library', long[:40])
+        check('the library view stops a 503 reason at 500 characters', long[:500] in library and 'TAIL-MARKER' not in library and GENERIC not in library)
+
+        poison_error = ('B' * 500) + 'BOOT-TAIL'
+        poison = {'error': poison_error, 'ok': True, 'admin': True, 'libraryRole': 'admin', 'library': True, 'protocol': 'atlas-personaplex-pcm-v1'}
+        poisoned = browser.new_context(viewport={'width': 1400, 'height': 1000}).new_page()
+        poisoned.route('**/api/bootstrap**', lambda route: route.fulfill(status=503, content_type='application/json', body=json.dumps(poison)))
+        poisoned.goto(base + '/?as=ada@example.test')
+        poisoned.wait_for_timeout(800)
+        check('a 503 bootstrap does not show admin', poisoned.locator('#adminNav').is_hidden())
+        keys = poisoned.evaluate('async () => Object.keys(await AtlasAuth.boot()).sort()')
+        stored = poisoned.evaluate('async () => (await AtlasAuth.boot()).error')
+        check('a 503 bootstrap keeps only ok and a capped error', keys == ['error', 'ok'] and stored == poison_error[:500] and 'BOOT-TAIL' not in stored)
+        poisoned.locator('header [data-view=journey]').click()
+        poisoned.wait_for_timeout(600)
+        journey = poisoned.locator('#journey').inner_text()
+        check('a 503 bootstrap does not show the journey', 'From the work to a reference' not in journey and poisoned.locator('#adminNav').is_hidden())
+        check('the journey shows the capped bootstrap reason', poison_error[:500] in journey and 'BOOT-TAIL' not in journey and GENERIC not in journey)
         browser.close()
 finally:
     if proc: proc.terminate()
