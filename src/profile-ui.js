@@ -111,8 +111,8 @@ $('n1Email')?.addEventListener('change',async()=>{const name=$('n1Name'),seq=++n
  n1Auto={email:e,...hit};name.value=hit.name;paintProjectForm();});
 // ---- admin: People directory (§5.6). Rows are built from the mapped approved columns only; nothing else is uploaded.
 const DIR={table:null,file:''};
-async function renderDirectory(){const el=$('peopleDirectory');if(!el)return;const b=await window.AtlasAuth.boot();
- if(b.libraryRole!=='admin'||!b.features?.profile||window.AtlasAuth.mode!=='live'){el.hidden=true;return;}
+async function renderDirectory(){const el=$('peopleDirectory');if(!el)return;el.hidden=true;const b=await window.AtlasAuth.boot();
+ if(b.libraryRole!=='admin'||!b.features?.profile||window.AtlasAuth.mode!=='live')return;
  let st;
  try{st=await app().libraryApi('/directory');}catch(e){el.replaceChildren(h('h3',{text:'People directory'}),h('p',{class:'tiny muted',text:e.message}));el.hidden=false;return;}
  const prod=st.dataMode==='production',n=Number(st.rows?.dna_export)||0; // an import replaces the DNA-export rows (the shrink guard compares with those)
