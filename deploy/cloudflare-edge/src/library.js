@@ -156,6 +156,7 @@ export class Library {
   // rater: rating.storyRater(env) (null: no JEV); metric(name, values): numbers only (default: one console.log line).
   constructor(sql, { now = () => new Date().toISOString(), newId = () => crypto.randomUUID().replace(/-/g, ''), complete = null, embed = null, readyScore = READY_SCORE, model = '', services = {},
     rater = null, metric = defaultMetric, transactionSync = null, auditKey = '', dbId = '' } = {}) {
+    if (auditKey == null) throw Object.assign(fail(503, 'LOG_SALT is not set.'), { code: 'LOG_SALT' });
     const atomic = typeof transactionSync === 'function' ? transactionSync : (typeof sql?.transactionSync === 'function' ? sql.transactionSync.bind(sql) : null);
     Object.assign(this, { sql, now, newId, complete, embed, readyScore, model, services, rater, metric, transactionSync: atomic, auditKey, dbId: String(dbId ?? '') });
     this.inflight = new Map(); // `${id}:${revision}` -> { gen, engine, first, all }: one rating per revision at a time

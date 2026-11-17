@@ -147,7 +147,8 @@ const NOT_COVERED = [
 const AUDIO_MIN = 4800, AUDIO_MAX = 1536000;
 const HOUR_MS = 36e5;
 
-// One check for the cron and both bearer ingresses. Production without LOG_SALT must not open the library.
+// Early check before LIBRARY.get for the cron and both bearer ingresses. The Library constructor is the
+// refusal for every other open. This stays so those three paths do not construct the object.
 function rejectUnkeyedAudit(env) {
   if (auditKey(env) != null) return null;
   return json(env, { error: 'LOG_SALT is not set.', code: 'LOG_SALT' }, 503);
@@ -189,7 +190,10 @@ export async function handle(request, env, page, opts = {}) {
   const slog = opts.log ? requestLog(request, env, opts.log) : noopLog;
   if (opts.log) await announceFlags(env, securityFlags(env), opts.log);
   try { return secure(await route(request, env, page, { waitUntil: opts.waitUntil || (p => p), flagsOf: opts.flagsOf || flags, slog })); }
-  catch { return secure(new Response('Something went wrong.', { status: 500, headers: { 'content-type': 'text/plain; charset=utf-8' } })); }
+  catch (e) {
+    if (e?.status === 503 && e?.code === 'LOG_SALT') return secure(json(env, { error: e.message, code: 'LOG_SALT' }, 503));
+    return secure(new Response('Something went wrong.', { status: 500, headers: { 'content-type': 'text/plain; charset=utf-8' } }));
+  }
   finally { await slog.flush(); }
 }
 async function route(request, env, page, { waitUntil, flagsOf, slog }) {

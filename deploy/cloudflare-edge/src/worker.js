@@ -11,7 +11,7 @@ import { memoryRoutes } from './memory-routes.js';
 import { resolveForInterview } from './gaps.js';
 import { fetchWinHint } from './winloop.js';
 import { teamsClient } from './teams.js';
-import { libraryFromStorage } from './library-store.js';
+import { openDurableLibrary } from './library-store.js';
 import { limitRoute } from './ratelimit.js';
 import { loadState, memoryAllowed, recordConsent } from './privacy.js';
 import { auditKey } from './audit-chain.js';
@@ -84,8 +84,8 @@ export class LibraryStore extends DurableObject {
     super(ctx, env);
     this.env = env;
     const ai = workersAI(env);
-    this.lib = libraryFromStorage(ctx.storage, { complete: messages => ai.complete(messages), embed: text => ai.embed(text),
-      readyScore: Number(env.READY_SCORE) || undefined, model: env.ANALYST_MODEL, services: { teams: teamsClient(env) }, rater: storyRater(env), auditKey: auditKey(env), dbId: String(ctx.id) }); // JEV only with TYPESAFE_API_KEY
+    this.lib = openDurableLibrary(ctx, env, { complete: messages => ai.complete(messages), embed: text => ai.embed(text),
+      readyScore: Number(env.READY_SCORE) || undefined, model: env.ANALYST_MODEL, services: { teams: teamsClient(env) }, rater: storyRater(env), auditKey: auditKey(env) }); // JEV only with TYPESAFE_API_KEY
   }
   fetch(request) { return libraryRoutes(request, this.lib, { waitUntil: p => this.ctx.waitUntil(p), env: this.env, storage: this.ctx.storage }); }
 }

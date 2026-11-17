@@ -494,6 +494,11 @@ export function daily(lib, user = {}) {
   return Object.fromEntries(Object.entries({ gapsExpired, claimsExpired, staffingInvited: invited, outreachQueued: queued, teamsSeenPruned: pruned }).filter(([, n]) => n));
 }
 
+// The seen row and the audit line commit together. A 503 from lib.log rolls both back.
+function recorded(lib, fn) {
+  if (typeof lib.transactionSync !== 'function') throw fail(500, 'The Teams event was not recorded.');
+  return lib.transactionSync(fn);
+}
 // ---- System word `teams-event` (from the Worker's verified bot endpoint only; user `teams-bot`, role `system`).
 const guid = v => { const s = uuidish(v); return s.includes('-') ? s : ''; };
 const OTHERS_CARD = () => messageCard({ title: 'This card belongs to someone else.', text: 'Nothing was changed.' });
@@ -542,36 +547,40 @@ export async function system(ctx) {
     const storyOpen = !!(linked && lib.access && lib.access(linked, viewer));
     const hiddenRef = !!inv.reference_id && !storyOpen;
     if (hiddenRef && e.verb !== 'decline') return { body: { ok: true, card: messageCard({ title: 'Nothing was changed.', text: 'This invitation can only be declined from here.' }) } };
-    lib.sql.exec('INSERT OR IGNORE INTO teams_seen (activity_id, at) VALUES (?, ?)', activityId, now);
-    const auditOn = storyOpen && typeof lib.auditFor === 'function' ? lib.auditFor(viewer, inv.reference_id, inv.tenant) : 'library';
-    const p = parsed(o.payload), origin = originOf(ctx);
-    if (e.verb === 'decline') {
-      lib.sql.exec("UPDATE invitations SET status = 'dismissed' WHERE id = ?", inv.id);
-      if (!hiddenRef) lib.log(auditOn, inv.email, 'invitation dismiss', `${inv.reason} (Teams card)`);
-      return { body: { ok: true, card: messageCard({ title: 'Understood: no interview for this project.', text: 'Nothing else will be sent about it.' }) } };
-    }
-    const base = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(inv.slot || '') ? inv.slot.slice(0, 16) : now.slice(0, 16);
-    const slot = new Date(Date.parse(base + ':00Z') + 864e5).toISOString().slice(0, 16);
-    lib.sql.exec("UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ?", slot, inv.id);
-    lib.log(auditOn, inv.email, 'invitation schedule', `${inv.reason} (Teams card: tomorrow)`);
-    return { body: { ok: true, card: interviewCard({ invitationId: inv.id, outreachId: o.id, projectRef: obj(p.preview).title, origin, note: 'Moved to tomorrow. Start whenever it suits you.' }) } };
+    return recorded(lib, () => {
+      lib.sql.exec('INSERT OR IGNORE INTO teams_seen (activity_id, at) VALUES (?, ?)', activityId, now);
+      const auditOn = storyOpen && typeof lib.auditFor === 'function' ? lib.auditFor(viewer, inv.reference_id, inv.tenant) : 'library';
+      const p = parsed(o.payload), origin = originOf(ctx);
+      if (e.verb === 'decline') {
+        lib.sql.exec("UPDATE invitations SET status = 'dismissed' WHERE id = ?", inv.id);
+        if (!hiddenRef) lib.log(auditOn, inv.email, 'invitation dismiss', `${inv.reason} (Teams card)`);
+        return { body: { ok: true, card: messageCard({ title: 'Understood: no interview for this project.', text: 'Nothing else will be sent about it.' }) } };
+      }
+      const base = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(inv.slot || '') ? inv.slot.slice(0, 16) : now.slice(0, 16);
+      const slot = new Date(Date.parse(base + ':00Z') + 864e5).toISOString().slice(0, 16);
+      lib.sql.exec("UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ?", slot, inv.id);
+      lib.log(auditOn, inv.email, 'invitation schedule', `${inv.reason} (Teams card: tomorrow)`);
+      return { body: { ok: true, card: interviewCard({ invitationId: inv.id, outreachId: o.id, projectRef: obj(p.preview).title, origin, note: 'Moved to tomorrow. Start whenever it suits you.' }) } };
+    });
   }
   if (lib.rows('SELECT 1 AS seen FROM teams_seen WHERE activity_id = ?', activityId)[0]) return { body: { ok: true, duplicate: true } };
-  lib.sql.exec('INSERT OR IGNORE INTO teams_seen (activity_id, at) VALUES (?, ?)', activityId, now);
   const subject = `${tid}:${oid}`;
-  if (kind === 'install') {
-    lib.sql.exec(`INSERT INTO teams_conversations (subject, aad_object_id, tenant_id, teams_user_id, conversation_id, service_url, email, status, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?) ON CONFLICT (subject) DO UPDATE SET aad_object_id = excluded.aad_object_id, tenant_id = excluded.tenant_id,
-      teams_user_id = excluded.teams_user_id, conversation_id = excluded.conversation_id, service_url = excluded.service_url,
-      email = CASE WHEN excluded.email != '' THEN excluded.email ELSE teams_conversations.email END, status = 'active', updated_at = excluded.updated_at`,
-    subject, oid, tid, str(e.teamsUserId, 256), conversationId, service, email(e.email), now);
-    lib.log('teams', 'teams-bot', 'teams install', 'personal scope');
-    return { body: { ok: true } };
-  }
-  if (kind === 'uninstall' || kind === 'stop') {
-    lib.sql.exec('UPDATE teams_conversations SET status = ?, updated_at = ? WHERE subject = ?', kind === 'stop' ? 'stopped' : 'uninstalled', now, subject);
-    lib.log('teams', 'teams-bot', 'teams ' + kind, 'personal scope');
-    return { body: { ok: true } };
-  }
-  throw fail(400, 'Unknown Teams event.');
+  return recorded(lib, () => {
+    lib.sql.exec('INSERT OR IGNORE INTO teams_seen (activity_id, at) VALUES (?, ?)', activityId, now);
+    if (kind === 'install') {
+      lib.sql.exec(`INSERT INTO teams_conversations (subject, aad_object_id, tenant_id, teams_user_id, conversation_id, service_url, email, status, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?) ON CONFLICT (subject) DO UPDATE SET aad_object_id = excluded.aad_object_id, tenant_id = excluded.tenant_id,
+        teams_user_id = excluded.teams_user_id, conversation_id = excluded.conversation_id, service_url = excluded.service_url,
+        email = CASE WHEN excluded.email != '' THEN excluded.email ELSE teams_conversations.email END, status = 'active', updated_at = excluded.updated_at`,
+      subject, oid, tid, str(e.teamsUserId, 256), conversationId, service, email(e.email), now);
+      lib.log('teams', 'teams-bot', 'teams install', 'personal scope');
+      return { body: { ok: true } };
+    }
+    if (kind === 'uninstall' || kind === 'stop') {
+      lib.sql.exec('UPDATE teams_conversations SET status = ?, updated_at = ? WHERE subject = ?', kind === 'stop' ? 'stopped' : 'uninstalled', now, subject);
+      lib.log('teams', 'teams-bot', 'teams ' + kind, 'personal scope');
+      return { body: { ok: true } };
+    }
+    throw fail(400, 'Unknown Teams event.');
+  });
 }

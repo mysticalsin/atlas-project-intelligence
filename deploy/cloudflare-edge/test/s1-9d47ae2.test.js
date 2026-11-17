@@ -35,12 +35,15 @@ function legacy(sql) {
 function open(sql, key) {
   return new Library(sql, { now: () => STAMP, auditKey: key });
 }
+function refused(sql, key) {
+  assert.throws(() => open(sql, key), err => err.status === 503 && err.code === 'LOG_SALT');
+}
 
 test('a production env without LOG_SALT leaves an empty table main-shaped', () => {
   const sql = memorySql();
   sql.exec(MAIN);
   assert.equal(auditKey(PROD), null);
-  open(sql, auditKey(PROD));
+  refused(sql, auditKey(PROD));
   mainShaped(sql, 0);
   ensureChain(fresh(sql), null, fn => sql.transactionSync(fn));
   verifyChain(fresh(sql), null);
@@ -51,7 +54,7 @@ test('a production env without LOG_SALT leaves an empty table main-shaped', () =
 test('a production env without LOG_SALT leaves a main-shaped table with its rows', () => {
   const sql = memorySql();
   legacy(sql);
-  open(sql, auditKey(PROD));
+  refused(sql, auditKey(PROD));
   mainShaped(sql, 1);
   const actor = sql.exec('SELECT actor, action, detail FROM audit').toArray()[0];
   assert.equal(actor.actor, EMAIL);
@@ -61,7 +64,7 @@ test('a production env without LOG_SALT leaves a main-shaped table with its rows
 test('opening with no key, then with LOG_SALT, migrates and verifies', () => {
   const sql = memorySql();
   legacy(sql);
-  open(sql, null);
+  refused(sql, null);
   mainShaped(sql, 1);
   open(sql, SALT);
   const daily = verifyDaily(sql, SALT);
@@ -75,8 +78,8 @@ test('opening with no key, then with LOG_SALT, migrates and verifies', () => {
 test('opening with no key twice, then with LOG_SALT, migrates and verifies', () => {
   const sql = memorySql();
   sql.exec(MAIN);
-  open(sql, auditKey(PROD));
-  open(sql, null);
+  refused(sql, auditKey(PROD));
+  refused(sql, null);
   mainShaped(sql, 0);
   open(sql, auditKey({ DATA_MODE: 'production', LOG_SALT: SALT }));
   assert.equal(verifyDaily(sql, SALT).reason, 'CHAIN_VERIFIED');
@@ -84,7 +87,7 @@ test('opening with no key twice, then with LOG_SALT, migrates and verifies', () 
   assert.equal(verifyChain(fresh(sql), SALT).ok, true);
 });
 
-test('no key on an already-migrated chain stays readable, returns 503, and does not re-migrate', () => {
+test('no key on an already-migrated chain refuses construction, returns LOG_SALT, and does not re-migrate', () => {
   const sql = memorySql();
   legacy(sql);
   const lib = open(sql, SALT);
@@ -92,14 +95,11 @@ test('no key on an already-migrated chain stays readable, returns 503, and does 
   verifyDaily(sql, SALT);
   const before = sql.exec('SELECT seq, action, "commit" FROM audit ORDER BY seq').toArray();
   const anchor = sql.exec('SELECT n, head FROM audit_anchor WHERE id = 1').toArray();
-  const again = open(sql, null);
+  refused(sql, null);
   const verdict = verifyChain(fresh(sql), null);
   assert.equal(verdict.reason, 'LOG_SALT');
   assert.notEqual(verdict.reason, 'TAMPERED');
   assert.equal(verifyDaily(fresh(sql), null).reason, 'LOG_SALT');
-  const lines = again.auditLines('story');
-  assert.equal(lines.some(line => line.action === 'saved'), true);
-  assert.throws(() => again.log('story', EMAIL, 'saved', 'nope'), err => err.status === 503);
   assert.throws(() => appendAudit(sql, { id: 'story', actor: EMAIL, action: 'saved', at: STAMP, detail: 'nope' }, null), err => err.status === 503);
   assert.deepEqual(sql.exec('SELECT seq, action, "commit" FROM audit ORDER BY seq').toArray(), before);
   assert.deepEqual(sql.exec('SELECT n, head FROM audit_anchor WHERE id = 1').toArray(), anchor);
