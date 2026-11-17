@@ -48,6 +48,11 @@ def http_error(base, path):
         return e.code, json.loads(e.read() or b'{}')
     raise AssertionError(path + ' did not fail')
 
+def settled(page):
+    page.locator('header [data-view=library]').click()
+    page.wait_for_function("() => (document.querySelector('#libraryStatusLine')?.innerText || '').trim().length > 0", timeout=8000)
+    return page.locator('#libraryStatusLine').inner_text()
+
 def show(page, view, needle):
     page.locator(f'header [data-view={view}]').click()
     box = '#journey' if view == 'journey' else '#libraryStatusLine'
@@ -106,13 +111,19 @@ try:
         array_page.wait_for_timeout(700)
         library = show(array_page, 'library', 'A' * 40)
         check('a library 503 array error is clipped to 500 characters', ('A' * 500) in library and ('A' * 501) not in library and GENERIC not in library)
-        object_detail = 'Z' * 2051
+        object_detail = 'Z' * 5000
         object_page = browser.new_context(viewport={'width': 1400, 'height': 1000}).new_page()
         object_page.route('**/api/library**', lambda route: route.fulfill(status=503, content_type='application/json', body=json.dumps({'error': {'detail': object_detail}})))
         object_page.goto(base + '/?as=ada@example.test')
         object_page.wait_for_timeout(700)
-        library = show(object_page, 'library', '[object Object]')
-        check('a library 503 object error is the clipped string form', '[object Object]' in library and object_detail not in library and GENERIC not in library)
+        library = settled(object_page)
+        check('a library 503 object error shows the clipped detail', ('Z' * 500) in library and ('Z' * 501) not in library and '[object Object]' not in library and GENERIC not in library and 'The library did not answer.' not in library)
+        null_page = browser.new_context(viewport={'width': 1400, 'height': 1000}).new_page()
+        null_page.route('**/api/library**', lambda route: route.fulfill(status=503, content_type='application/json', body=json.dumps({'error': None})))
+        null_page.goto(base + '/?as=ada@example.test')
+        null_page.wait_for_timeout(700)
+        library = settled(null_page)
+        check('a library 503 null error shows the refusal sentence', library.strip() == GENERIC)
 
         poison_error = ('B' * 500) + 'BOOT-TAIL'
         poison = {'error': poison_error, 'ok': True, 'admin': True, 'libraryRole': 'admin', 'library': True, 'protocol': 'atlas-personaplex-pcm-v1'}
