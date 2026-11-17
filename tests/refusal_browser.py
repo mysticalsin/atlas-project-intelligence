@@ -99,6 +99,21 @@ try:
         library = show(capped, 'library', long[:40])
         check('the library view stops a 503 reason at 500 characters', long[:500] in library and 'TAIL-MARKER' not in library and GENERIC not in library)
 
+        array_body = ['A' * 2051]
+        array_page = browser.new_context(viewport={'width': 1400, 'height': 1000}).new_page()
+        array_page.route('**/api/library**', lambda route: route.fulfill(status=503, content_type='application/json', body=json.dumps({'error': array_body})))
+        array_page.goto(base + '/?as=ada@example.test')
+        array_page.wait_for_timeout(700)
+        library = show(array_page, 'library', 'A' * 40)
+        check('a library 503 array error is clipped to 500 characters', ('A' * 500) in library and ('A' * 501) not in library and GENERIC not in library)
+        object_detail = 'Z' * 2051
+        object_page = browser.new_context(viewport={'width': 1400, 'height': 1000}).new_page()
+        object_page.route('**/api/library**', lambda route: route.fulfill(status=503, content_type='application/json', body=json.dumps({'error': {'detail': object_detail}})))
+        object_page.goto(base + '/?as=ada@example.test')
+        object_page.wait_for_timeout(700)
+        library = show(object_page, 'library', '[object Object]')
+        check('a library 503 object error is the clipped string form', '[object Object]' in library and object_detail not in library and GENERIC not in library)
+
         poison_error = ('B' * 500) + 'BOOT-TAIL'
         poison = {'error': poison_error, 'ok': True, 'admin': True, 'libraryRole': 'admin', 'library': True, 'protocol': 'atlas-personaplex-pcm-v1'}
         poisoned = browser.new_context(viewport={'width': 1400, 'height': 1000}).new_page()
