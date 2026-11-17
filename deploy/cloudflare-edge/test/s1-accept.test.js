@@ -7,7 +7,7 @@ import { Library } from '../src/library.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import { memorySql } from './sqlite.js';
 import { eraseMine, exportMine, pseudonymiseAudit } from '../src/subject-rights.js';
-import { verifyChain, verifyDaily, sha256Hex, GENESIS, ensureChain } from '../src/audit-chain.js';
+import { verifyChain, verifyDaily, sha256Hex, GENESIS, ensureChain, contentCommit, rowHash } from '../src/audit-chain.js';
 import * as profile from '../src/profile.js';
 import * as privacy from '../src/privacy.js';
 import * as outreach from '../src/outreach.js';
@@ -57,15 +57,15 @@ test('a forged erasure tombstone without the proof fails verify', () => {
 
 test('a proper erasure tombstone still verifies and does not move the head', () => {
   const lib = chain();
-  const head = lib.sql.exec('SELECT hash FROM audit WHERE seq = 2').toArray()[0].hash;
+  const head = lib.sql.exec("SELECT hash FROM audit WHERE id = 'r2'").toArray()[0].hash;
   pseudonymiseAudit(lib, [EMAIL], 'erased:0123456789ab', { ids: ['r'] });
-  const row = lib.sql.exec('SELECT actor, detail, tombstone FROM audit WHERE seq = 1').toArray()[0];
+  const row = lib.sql.exec("SELECT actor, detail, tombstone FROM audit WHERE id = 'r'").toArray()[0];
   assert.equal(row.actor, 'erased:0123456789ab');
   assert.equal(row.detail, '');
   assert.equal(typeof row.tombstone, 'string');
   assert.equal(row.tombstone.length > 0, true);
   assert.equal(verifyChain(lib.sql).ok, true);
-  assert.equal(lib.sql.exec('SELECT hash FROM audit WHERE seq = 2').toArray()[0].hash, head);
+  assert.equal(lib.sql.exec("SELECT hash FROM audit WHERE id = 'r2'").toArray()[0].hash, head);
 });
 
 test('erasure pseudonymises privacy logs that hold the mailbox or the library identity', async () => {
@@ -132,7 +132,7 @@ test('report-only still enforces the strict policy on confirm, privacy and the r
 test('verify-chain returns the chain result, not a constant success', async () => {
   const lib = fresh();
   lib.log('r', EMAIL, 'saved', 'd');
-  lib.sql.exec("UPDATE audit SET action = 'tampered' WHERE seq = 1");
+  lib.sql.exec("UPDATE audit SET action = 'tampered' WHERE id = 'r'");
   const res = await libraryRoutes(new Request('https://atlas.internal/api/library/verify-chain', {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-atlas-user': 'atlas', 'x-atlas-role': 'system' }, body: '{}',
   }), lib, { env: { ATLAS_TENANT_ISOLATION: 'local-synthetic', ORIGIN, CSRF_SECRET: 's' } });
@@ -141,17 +141,36 @@ test('verify-chain returns the chain result, not a constant success', async () =
   assert.equal(body.reason, 'HASH_MISMATCH');
 });
 
-test('a prefix truncate padded back to the same length does not move the anchor', () => {
+test('a tail truncation is TRUNCATED and does not move the anchor', () => {
   const lib = new Library(memorySql(), { now: () => '2026-11-16T00:00:00.000Z' });
   for (let i = 1; i <= 4; i++) lib.log('r' + i, 'a@example.test', 'saved', 'd' + i);
   const first = verifyDaily(lib.sql);
   assert.equal(first.ok, true);
   const anchor = lib.sql.exec('SELECT n, head FROM audit_anchor WHERE id = 1').toArray()[0];
-  lib.sql.exec('DELETE FROM audit WHERE seq <= 2');
+  lib.sql.exec('DELETE FROM audit WHERE seq = (SELECT MAX(seq) FROM audit)');
   assert.throws(() => lib.log('r5', 'a@example.test', 'saved', 'pad-1'), err => err.status === 409);
   const again = verifyDaily(lib.sql);
   assert.equal(again.ok, false);
-  assert.ok(again.reason === 'TAMPERED' || again.reason === 'TRUNCATED', again.reason);
+  assert.equal(again.reason, 'TRUNCATED');
+  const still = lib.sql.exec('SELECT n, head FROM audit_anchor WHERE id = 1').toArray()[0];
+  assert.equal(still.n, anchor.n);
+  assert.equal(still.head, anchor.head);
+});
+
+test('a same-length rewrite with a valid commit is ANCHOR_MOVED and does not move the anchor', () => {
+  const lib = new Library(memorySql(), { now: () => '2026-11-16T00:00:00.000Z' });
+  for (let i = 1; i <= 4; i++) lib.log('r' + i, 'a@example.test', 'saved', 'd' + i);
+  const first = verifyDaily(lib.sql);
+  assert.equal(first.ok, true);
+  const anchor = lib.sql.exec('SELECT n, head FROM audit_anchor WHERE id = 1').toArray()[0];
+  const last = lib.sql.exec('SELECT seq, id, action, at, actor, detail, prev_hash FROM audit ORDER BY seq DESC LIMIT 1').toArray()[0];
+  const commit = contentCommit(lib.auditKey, { ...last, detail: 'rewritten' });
+  const hash = rowHash(last.prev_hash, { ...last, commit });
+  lib.sql.exec('UPDATE audit SET detail = ?, "commit" = ?, hash = ? WHERE seq = ?', 'rewritten', commit, hash, last.seq);
+  assert.equal(verifyChain(lib.sql).ok, true);
+  const again = verifyDaily(lib.sql);
+  assert.equal(again.ok, false);
+  assert.equal(again.reason, 'ANCHOR_MOVED');
   const still = lib.sql.exec('SELECT n, head FROM audit_anchor WHERE id = 1').toArray()[0];
   assert.equal(still.n, anchor.n);
   assert.equal(still.head, anchor.head);
@@ -164,7 +183,7 @@ test('appending rows keeps the stored head in place and then advances the anchor
   lib.log('r4', 'a@example.test', 'saved', 'd4');
   const again = verifyDaily(lib.sql);
   assert.equal(again.ok, true);
-  assert.equal(again.checked, 4);
+  assert.equal(again.checked, 5);
   assert.notEqual(again.head, first.head);
 });
 

@@ -23,11 +23,16 @@ test('rows chain: each row\'s prev_hash is the previous hash, the first starts a
   const sql = memorySql(); table(sql);
   for (let i = 1; i <= 5; i++) appendAudit(sql, row(i));
   const rows = sql.exec('SELECT * FROM audit ORDER BY seq').toArray();
+  assert.equal(rows[0].action, 'chain-start');
   assert.equal(rows[0].prev_hash, GENESIS);
   for (let i = 1; i < rows.length; i++) assert.equal(rows[i].prev_hash, rows[i - 1].hash);
   assert.equal(rows[2].hash, rowHash(rows[1].hash, rows[2]));
-  const v = verifyChain(sql); assert.deepEqual([v.ok, v.checked, v.head], [true, 5, rows[4].hash]);
-  assert.deepEqual(verifyChain((() => { const s = memorySql(); table(s); return s; })()), { ok: true, checked: 0, head: GENESIS });
+  const v = verifyChain(sql); assert.deepEqual([v.ok, v.checked, v.head], [true, rows.length, rows[rows.length - 1].hash]);
+  const empty = memorySql(); table(empty);
+  const bare = verifyChain(empty);
+  assert.equal(bare.ok, true);
+  assert.equal(bare.checked, 1);
+  assert.equal(empty.exec('SELECT action FROM audit').toArray()[0].action, 'chain-start');
 });
 
 test('tampering is found at the first broken row: edit (HASH_MISMATCH), delete in the middle or insert (LINK_BROKEN), unsealed row, edited hash', () => {
@@ -58,10 +63,10 @@ test('a deleted oldest prefix is not a valid chain; deleting the newest rows is 
   prefix.exec('DELETE FROM audit WHERE seq <= 2');
   const cut = verifyChain(prefix);
   assert.equal(cut.ok, false);
-  assert.ok(cut.reason === 'TAMPERED' || cut.reason === 'TRUNCATED', cut.reason);
+  assert.equal(cut.reason, 'TAMPERED');
   const sql = memorySql(); table(sql); for (let i = 1; i <= 5; i++) appendAudit(sql, row(i));
   const head5 = verifyChain(sql).head;
-  sql.exec('DELETE FROM audit WHERE seq = 5');
+  sql.exec('DELETE FROM audit WHERE seq = (SELECT MAX(seq) FROM audit)');
   const after = verifyChain(sql);
   assert.equal(after.ok, true);
   assert.notEqual(after.head, head5, 'the logged head no longer matches the anchor');

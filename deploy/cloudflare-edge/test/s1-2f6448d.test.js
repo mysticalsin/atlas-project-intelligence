@@ -100,7 +100,8 @@ test('nulled keyed values with the commit column present stay tampered', () => {
   const still = anchorOf(sql);
   assert.equal(Number(still.n), Number(anchor.n));
   assert.equal(still.head, anchor.head);
-  assert.equal(starts(sql), 0);
+  assert.equal(sql.exec('SELECT COUNT(*) AS n FROM audit WHERE action = ? AND "commit" IS NOT NULL', 'chain-start').toArray()[0].n, 0);
+  assert.equal(starts(sql), 1);
 });
 
 test('deleting the signed chain-start stays tampered and does not clear the anchor', () => {

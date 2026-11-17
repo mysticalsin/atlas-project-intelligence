@@ -36,7 +36,8 @@ test('nulled keyed values with the commit column present are tampered and do not
   const still = anchorOf(sql);
   assert.equal(Number(still.n), Number(anchor.n));
   assert.equal(still.head, anchor.head);
-  assert.equal(starts(sql), 0);
+  assert.equal(sql.exec('SELECT COUNT(*) AS n FROM audit WHERE action = ? AND "commit" IS NOT NULL', 'chain-start').toArray()[0].n, 0);
+  assert.equal(starts(sql), 1);
   assert.equal(sql.exec('SELECT actor FROM audit WHERE seq = 2').toArray()[0].actor, MALLORY);
 });
 
@@ -78,7 +79,8 @@ test('a chain of only unsigned rows is tampered and does not re-seed or clear th
   const still = anchorOf(sql);
   assert.equal(Number(still.n), Number(anchor.n));
   assert.equal(still.head, anchor.head);
-  assert.equal(starts(sql), 0);
+  assert.equal(sql.exec('SELECT COUNT(*) AS n FROM audit WHERE action = ? AND "commit" IS NOT NULL', 'chain-start').toArray()[0].n, 0);
+  assert.equal(starts(sql), 1);
   assert.equal(sql.exec('SELECT actor, "commit" FROM audit WHERE seq = 2').toArray()[0].actor, MALLORY);
   assert.equal(sql.exec('SELECT "commit" FROM audit WHERE seq = 2').toArray()[0].commit, null);
 });
@@ -90,11 +92,11 @@ test('a fresh database with no anchor and no commit column migrates', () => {
   const daily = verifyDaily(sql);
   assert.equal(daily.ok, true);
   assert.equal(daily.reason, 'CHAIN_VERIFIED');
-  assert.equal(daily.checked, 0);
+  assert.equal(daily.checked, 1);
   appendAudit(sql, { id: 'r1', actor: EMAIL, action: 'saved', at: STAMP, detail: 'first' });
   const again = verifyDaily(fresh(sql));
   assert.equal(again.reason, 'CHAIN_VERIFIED');
-  assert.equal(again.checked, 1);
+  assert.equal(again.checked, 2);
 });
 
 test('a main-shaped database migrates and erasure tombstones the legacy row', () => {

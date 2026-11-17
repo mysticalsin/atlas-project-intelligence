@@ -160,11 +160,12 @@ test('pseudonymising one tenant does not rewrite later audit links', () => {
   const out = pseudonymiseAudit(lib, [EMAIL], 'erased:abcd01abcd01', { ids: ['ref-a'] });
   const after = lib.sql.exec('SELECT seq, prev_hash, hash, actor FROM audit ORDER BY seq').toArray();
   assert.equal(out.refused, undefined);
-  assert.notEqual(after[0].actor, EMAIL);
-  assert.equal(after[1].prev_hash, before[1].prev_hash);
+  assert.notEqual(after[1].actor, EMAIL);
   assert.equal(after[1].hash, before[1].hash);
+  assert.equal(after[2].prev_hash, before[2].prev_hash);
+  assert.equal(after[2].hash, before[2].hash);
   assert.equal(verifyChain(lib.sql).ok, true);
-  assert.equal(verifyChain(lib.sql).head, before[1].hash);
+  assert.equal(verifyChain(lib.sql).head, before[2].hash);
 });
 
 test('the daily cron records an anchor and reports head truncation, tail truncation and a mid-chain edit', async () => {
@@ -187,7 +188,7 @@ test('the daily cron records an anchor and reports head truncation, tail truncat
     };
     let lib = chain();
     const ok = await run(lib);
-    assert.equal(ok.some(e => e.event === 'audit_chain_ok' && e.n === 4 && /^[0-9a-f]{16}$/.test(e.head)), true);
+    assert.equal(ok.some(e => e.event === 'audit_chain_ok' && e.n === 5 && /^[0-9a-f]{16}$/.test(e.head)), true);
     assert.equal(lib.sql.exec("SELECT name FROM sqlite_master WHERE name = 'audit_anchor'").toArray().length, 1);
     lib.sql.exec('DELETE FROM audit WHERE seq = (SELECT MIN(seq) FROM audit)');
     const tail = await run(lib);

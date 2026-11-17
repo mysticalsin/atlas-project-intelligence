@@ -27,9 +27,9 @@ test('a copied commit on a new event is not chain-verified and does not advance 
   appendAudit(sql, { id: 'r2', actor: 'kim@example.test', action: 'saved', at: STAMP, detail: 'other' });
   const first = verifyDaily(sql);
   assert.equal(first.reason, 'CHAIN_VERIFIED');
-  assert.equal(first.checked, 2);
+  assert.equal(first.checked, 3);
   const anchor = sql.exec('SELECT n, head FROM audit_anchor WHERE id = 1').toArray()[0];
-  const source = sql.exec('SELECT * FROM audit WHERE seq = 1').toArray()[0];
+  const source = sql.exec("SELECT * FROM audit WHERE action = 'saved' ORDER BY seq LIMIT 1").toArray()[0];
   const prev = sql.exec('SELECT hash FROM audit ORDER BY seq DESC LIMIT 1').toArray()[0].hash;
   const forged = { id: 'forged', actor: source.actor, action: 'validated', at: '2099-01-01T00:00:00.000Z', detail: source.detail, commit: source.commit };
   sql.exec('INSERT INTO audit (id, actor, action, at, detail, prev_hash, hash, "commit", tombstone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -72,7 +72,7 @@ test('null hashes and a dropped commit column are tampered and do not migrate', 
   const still = sql.exec('SELECT n, head FROM audit_anchor WHERE id = 1').toArray()[0];
   assert.equal(Number(still.n), Number(anchor.n));
   assert.equal(still.head, anchor.head);
-  assert.equal(sql.exec("SELECT COUNT(*) AS n FROM audit WHERE action = 'chain-start'").toArray()[0].n, 0);
+  assert.equal(sql.exec("SELECT COUNT(*) AS n FROM audit WHERE action = 'chain-start'").toArray()[0].n, 1);
 });
 
 test('Library.get marks a pre-chain row legacy and unverified', () => {

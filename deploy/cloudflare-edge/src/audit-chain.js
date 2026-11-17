@@ -1,23 +1,27 @@
 // Tamper-evident library audit trail. Every row stores prev_hash, hash and commit.
-// commit = HMAC(key, canonical(seq, id, action, at, actor, detail, and tenant when the row has one)).
-// hash = SHA-256(prev, id, action, at, commit).
+// commit = HMAC(key, canonical(seq, id, action, at, actor, detail, prev_hash, and tenant when the row has one)).
+// hash = SHA-256(prev, id, action, at, commit). The public hash can be recomputed without the key.
+// The commit cannot: a relink or a reorder changes prev_hash and fails the MAC.
 // A privacy rewrite may replace actor and detail only by writing an exact tombstone
 // (actor matches ^erased:[0-9a-f]{12}$, detail is empty) plus
-// proof = HMAC(key, JSON.stringify(['tombstone', seq, commit, actor, id, action, at, and tenant when the column exists])).
+// proof = HMAC(key, JSON.stringify(['tombstone', seq, commit, actor, id, action, at, prev_hash, and tenant when the column exists])).
 // It does not recompute hash or prev_hash, so a later row, including another tenant's, is never resealed.
 // verify accepts a row when the HMAC of the current actor and detail equals commit, or when
 // the tombstone and its proof both match. A direct edit of either field fails.
 // The daily check stores n and head. A shorter chain is TRUNCATED. The stored head must still
 // be the hash at that same position, so a prefix truncate padded with new rows is ANCHOR_MOVED.
 // The server key signs a row only when this process writes it. A database from main has no
-// hashes, no commits and no anchor row. Opening it appends one keyed chain-start row that
-// records how many legacy rows there were and their max seq. Those older rows stay legacy and
-// unverified: counted, never signed, never a chain break. Rows from chain-start onward are the
-// keyed chain. A second chain-start is refused. A null commit is not a chain-start.
+// hashes, no commits and no anchor row. Opening it appends one keyed chain-start row, including
+// when the table is empty. The detail records how many legacy rows there were and their max seq.
+// Those older rows stay legacy and unverified: counted, never signed, never a chain break.
+// The first keyed row is that chain-start: action chain-start, prev_hash genesis, commit verified.
+// A chain of later events relinked to genesis is not a chain. A second chain-start is refused.
+// A null or empty commit is not a chain-start.
 // The column adds, the chain-start index, the chain-start insert and the anchor table write
 // of that first migration run in one storage.transactionSync. The callback is synchronous.
-// A throw rolls the schema back to the main-shaped table. Once an anchor row exists, or the
-// commit column exists, the chain is not migrated again.
+// A store with no transactionSync is not migrated. A throw rolls the schema back to the
+// main-shaped table. Once an anchor row exists, or the commit column exists, the chain is
+// not migrated again.
 // A missing signed chain-start, keyed values that are all null, or a chain of only unsigned
 // rows is TAMPERED. That state does not gain a chain-start and does not delete the anchor.
 // A hash or previous-link column with no commit column is TAMPERED even when every stored
@@ -83,10 +87,11 @@ export function auditKey(env) {
   if (env.CSRF_SECRET) return 'subject-v1:' + env.CSRF_SECRET;
   return '';
 }
-// seq, id, action and at are inside the MAC, so a copied commit fails on any other event.
+// seq, id, action, at and prev_hash are inside the MAC, so a copied commit fails on any other
+// event and a recomputed public hash cannot relink or reorder the row.
 // tenant is included only when the table has that column, and then it is always included.
 export function contentCommit(key, row, withTenant = false) {
-  const parts = [Number(row.seq), String(row.id ?? ''), String(row.action ?? ''), String(row.at ?? ''), String(row.actor ?? ''), String(row.detail ?? '')];
+  const parts = [Number(row.seq), String(row.id ?? ''), String(row.action ?? ''), String(row.at ?? ''), String(row.actor ?? ''), String(row.detail ?? ''), String(row.prev_hash ?? '')];
   if (withTenant) parts.push(String(row.tenant ?? ''));
   return hmacHex(key, JSON.stringify(parts));
 }
@@ -94,7 +99,7 @@ export function contentCommit(key, row, withTenant = false) {
 // id, action, at and the tenant (when that column exists) are inside the MAC.
 // The previous actor-only proof is not accepted.
 export function tombstoneProof(key, row, withTenant = false) {
-  const parts = ['tombstone', Number(row.seq), String(row.commit ?? ''), String(row.actor ?? ''), String(row.id ?? ''), String(row.action ?? ''), String(row.at ?? '')];
+  const parts = ['tombstone', Number(row.seq), String(row.commit ?? ''), String(row.actor ?? ''), String(row.id ?? ''), String(row.action ?? ''), String(row.at ?? ''), String(row.prev_hash ?? '')];
   if (withTenant) parts.push(String(row.tenant ?? ''));
   return hmacHex(key, JSON.stringify(parts));
 }
@@ -160,49 +165,21 @@ function keyedRows(sql) {
   return sql.exec('SELECT seq, prev_hash, hash, "commit" FROM audit ORDER BY seq').toArray();
 }
 // migrate: no anchor row and no commit column. One chain-start may be written.
-// open: verify the rows already stored. Do not seed and do not touch the anchor.
-// tampered: the anchor or the commit column is already there and the chain is not intact.
-// settling: a racer added the commit column and has not written chain-start yet. No anchor row.
+// open: one signed chain-start whose prev is genesis, and no signed row before it.
+// tampered: anything else once the commit column or an anchor row exists. No wait.
 function classifyChain(sql) {
   if (hashesWithoutCommit(sql)) return 'tampered';
   const commit = hasColumn(sql, 'commit');
   const anchored = !!anchorRow(sql);
   if (!commit && !anchored) return 'migrate';
   if (!commit) return 'tampered';
-  // A racer may see the commit column before the hash columns exist.
-  if (!hasColumn(sql, 'hash') || !hasColumn(sql, 'prev_hash')) return anchored ? 'tampered' : 'settling';
+  if (!hasColumn(sql, 'hash') || !hasColumn(sql, 'prev_hash')) return 'tampered';
   const starts = chainStartSeqs(sql);
-  if (starts.length > 1) return 'tampered';
+  if (starts.length !== 1) return 'tampered';
   const rows = keyedRows(sql);
-  // The keyed chain begins at the signed chain-start, and that row's prev is genesis.
-  // Genesis is the legacy-tail link: unsigned rows before chain-start were never hashed.
-  if (starts.length === 1) {
-    const start = rows.find(r => Number(r.seq) === starts[0]);
-    const signedBefore = rows.some(r => Number(r.seq) < starts[0] && r.commit);
-    if (start && !signedBefore && sameText(start.prev_hash, GENESIS)) return 'open';
-    return 'tampered';
-  }
-  if (!rows.length) return 'open';
-  if (rows.every(r => !r.commit)) {
-    const wiped = rows.every(r => !r.hash && !r.prev_hash);
-    if (wiped && !anchored) return 'settling';
-    return 'tampered';
-  }
-  // No chain-start. A chain written on an empty table starts at genesis. A suffix does not.
-  // A signed genesis row with a later hole is left to the walk, which reports UNSEALED.
-  const first = rows[0];
-  if (first.commit && sameText(first.prev_hash, GENESIS)) return 'open';
-  return 'tampered';
-}
-function resolved(sql) {
-  let kind = classifyChain(sql);
-  if (kind !== 'settling') return kind;
-  const pause = new Int32Array(new SharedArrayBuffer(4));
-  for (let i = 0; i < 50; i++) {
-    Atomics.wait(pause, 0, 0, 20);
-    kind = classifyChain(sql);
-    if (kind !== 'settling') return kind;
-  }
+  const start = rows.find(r => Number(r.seq) === starts[0]);
+  const signedBefore = rows.some(r => Number(r.seq) < starts[0] && r.commit);
+  if (start && !signedBefore && sameText(start.prev_hash, GENESIS)) return 'open';
   return 'tampered';
 }
 // One keyed row naming the legacy prefix. A null commit is not this row.
@@ -211,12 +188,11 @@ function appendChainStart(sql, key) {
   if (chainStartSeqs(sql).length || anchorRow(sql)) return;
   const stats = sql.exec('SELECT COUNT(*) AS n, MAX(seq) AS maxSeq FROM audit').toArray()[0] || {};
   const legacy = Number(stats.n) || 0;
-  if (!legacy) return;
   const detail = JSON.stringify({ legacy, maxSeq: Number(stats.maxSeq) || 0 });
   const at = new Date().toISOString();
   const seq = nextSeq(sql);
   const withTenant = hasColumn(sql, 'tenant');
-  const row = { seq, id: 'audit', actor: 'atlas', action: CHAIN_START, at, detail, tenant: '' };
+  const row = { seq, id: 'audit', actor: 'atlas', action: CHAIN_START, at, detail, tenant: '', prev_hash: GENESIS };
   const commit = contentCommit(key, row, withTenant);
   const prev = GENESIS;
   const hash = rowHash(prev, { id: row.id, action: row.action, at, commit });
@@ -250,13 +226,16 @@ export function ensureChain(sql, key = '', transactionSync = null) {
   if (sealed.has(sql)) return;
   const atomic = typeof transactionSync === 'function' ? transactionSync
     : (typeof sql?.transactionSync === 'function' ? sql.transactionSync.bind(sql) : null);
-  const kind = resolved(sql);
+  const kind = classifyChain(sql);
   if (kind !== 'migrate') { if (kind === 'open') indexChainStart(sql); sealed.add(sql); return; }
-  const migrate = () => {
+  if (typeof atomic !== 'function') {
+    const err = new Error('Audit migration cannot be made atomic on this store, so nothing was migrated.');
+    err.status = 500;
+    throw err;
+  }
+  atomic(() => {
     // The peer that held the write lock may have committed the whole migration.
     if (classifyChain(sql) !== 'migrate') return;
-    // commit first, so a caller without transactionSync never sees a hash column
-    // and decides the table is tampered while this migration is still adding columns.
     addColumn(sql, 'commit', 'ALTER TABLE audit ADD COLUMN "commit" TEXT');
     addColumn(sql, 'prev_hash', 'ALTER TABLE audit ADD COLUMN prev_hash TEXT');
     addColumn(sql, 'hash', 'ALTER TABLE audit ADD COLUMN hash TEXT');
@@ -264,11 +243,9 @@ export function ensureChain(sql, key = '', transactionSync = null) {
     indexChainStart(sql);
     if (key != null && !chainStartSeqs(sql).length) {
       const rows = sql.exec('SELECT hash, prev_hash, "commit" FROM audit').toArray();
-      if (rows.length && !rows.some(r => r.hash || r.prev_hash || r.commit)) appendChainStart(sql, key);
+      if (!rows.some(r => r.hash || r.prev_hash || r.commit)) appendChainStart(sql, key);
     }
-  };
-  if (atomic) atomic(migrate);
-  else migrate();
+  });
   sealed.add(sql);
 }
 
@@ -284,7 +261,7 @@ export function appendAudit(sql, { id, actor, action, at, detail, tenant }, key 
   const prev = last?.hash || GENESIS;
   const seq = nextSeq(sql);
   const withTenant = hasColumn(sql, 'tenant');
-  const commit = contentCommit(key, { seq, id, actor, action, at, detail, tenant }, withTenant);
+  const commit = contentCommit(key, { seq, id, actor, action, at, detail, tenant, prev_hash: prev }, withTenant);
   const hash = rowHash(prev, { id, action, at, commit });
   if (withTenant) sql.exec('INSERT INTO audit (seq, id, actor, action, at, detail, tenant, prev_hash, hash, "commit", tombstone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     seq, id, actor, action, at, detail, tenant ?? '', prev, hash, commit, '');
@@ -308,7 +285,7 @@ export function verifyChain(sql, key = '') {
   if (hashesWithoutCommit(sql)) return tamperedResult(sql);
   ensureChain(sql, key);
   const kind = classifyChain(sql);
-  if (hashesWithoutCommit(sql) || kind === 'tampered' || kind === 'settling') return tamperedResult(sql);
+  if (hashesWithoutCommit(sql) || kind === 'tampered') return tamperedResult(sql);
   if (key == null) return { ok: false, checked: 0, brokenSeq: null, reason: 'LOG_SALT', head: GENESIS };
   const starts = chainStartSeqs(sql);
   if (starts.length > 1) return { ok: false, checked: 0, brokenSeq: starts[1], reason: 'TAMPERED', head: GENESIS };
@@ -316,18 +293,27 @@ export function verifyChain(sql, key = '') {
   const legacyUnverified = startSeq == null ? 0 : Number(sql.exec('SELECT COUNT(*) AS n FROM audit WHERE seq < ?', startSeq).toArray()[0].n) || 0;
   const withTenant = hasColumn(sql, 'tenant');
   const columns = withTenant ? ROW + ', tenant' : ROW;
-  let after = startSeq == null ? 0 : startSeq - 1, prevHash = null, checked = 0, head = GENESIS;
+  // No floor of 0. A row at seq <= 0 is in this set when there is no chain-start, and
+  // keyedAt reads that same set. Rows before a chain-start stay outside it.
+  let after = null, prevHash = null, checked = 0, head = GENESIS;
+  const verifiedSeqs = [];
   for (;;) {
-    const rows = sql.exec(`SELECT ${columns} FROM audit WHERE seq > ? ORDER BY seq LIMIT 500`, after).toArray();
-    if (!rows.length) return finish(true, { checked, head }, legacyUnverified);
+    const rows = after == null
+      ? (startSeq == null
+        ? sql.exec(`SELECT ${columns} FROM audit ORDER BY seq LIMIT 500`).toArray()
+        : sql.exec(`SELECT ${columns} FROM audit WHERE seq >= ? ORDER BY seq LIMIT 500`, startSeq).toArray())
+      : sql.exec(`SELECT ${columns} FROM audit WHERE seq > ? ORDER BY seq LIMIT 500`, after).toArray();
+    if (!rows.length) return finish(true, { checked, head, verifiedSeqs }, legacyUnverified);
     for (const r of rows) {
-      const bad = reason => finish(false, { checked, brokenSeq: r.seq, reason, head }, legacyUnverified);
+      const bad = reason => finish(false, { checked, brokenSeq: r.seq, reason, head, verifiedSeqs }, legacyUnverified);
       if (!r.hash || !r.prev_hash) return bad('UNSEALED');
-      // The first keyed row must be genesis. A suffix left after deleting that row is not a chain.
-      if (prevHash === null) { if (!sameText(r.prev_hash, GENESIS)) return bad('TRUNCATED'); }
-      else if (!sameText(r.prev_hash, prevHash)) return bad('LINK_BROKEN');
+      if (prevHash === null) {
+        if (String(r.action) !== CHAIN_START) return bad('TAMPERED');
+        if (!sameText(r.prev_hash, GENESIS)) return bad('TRUNCATED');
+      } else if (!sameText(r.prev_hash, prevHash)) return bad('LINK_BROKEN');
       if (!sameText(rowHash(r.prev_hash, r), r.hash)) return bad('HASH_MISMATCH');
       if (!bound(key, r, withTenant)) return bad('COMMIT_MISMATCH');
+      verifiedSeqs.push(Number(r.seq));
       prevHash = head = r.hash; after = r.seq; checked++;
     }
   }
@@ -387,7 +373,7 @@ export function verifyDaily(sql, key = '') {
   if (hashesWithoutCommit(sql)) return verifyChain(sql, key);
   ensureChain(sql, key);
   const kind = classifyChain(sql);
-  if (hashesWithoutCommit(sql) || kind === 'tampered' || kind === 'settling') return verifyChain(sql, key);
+  if (hashesWithoutCommit(sql) || kind === 'tampered') return verifyChain(sql, key);
   sql.exec(ANCHOR);
   if (key == null) return { ok: false, reason: 'LOG_SALT', checked: 0, head: GENESIS, legacyUnverified: 0 };
   const result = anchoredVerdict(sql, verifyChain(sql, key));
