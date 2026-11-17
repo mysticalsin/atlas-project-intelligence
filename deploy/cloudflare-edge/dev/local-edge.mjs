@@ -71,6 +71,8 @@ function interviewStorage() {
   };
 }
 const storeFor = id => { if (!stores.has(id)) stores.set(id, interviewStorage()); return stores.get(id); };
+// Dev harness only. Production opens the library in worker.js. A null key still throws before any write.
+export const DEV_AUDIT_SALT = 'atlas-dev-audit-salt';
 const env = { ORIGIN, ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, CSRF_SECRET: 'local-only', TALKER_MODEL: 'local', TTS_VOICE: 'local',
   TRIGGER_SECRET: process.env.TRIGGER_SECRET || 'local-trigger-secret', ANALYST_MODEL: 'local-analyst',
   // Stand-ins for the Workers AI binding: toMarkdown (documents and image descriptions) and chat completions.
@@ -86,7 +88,7 @@ const env = { ORIGIN, ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, CSRF_SECRET: 'l
   LIBRARY: { idFromName: n => n, get: () => ({ fetch: r => libraryRoutes(r, lib, { waitUntil, env }) }) }, ...passthrough,
   ...(FAKE_TYPESAFE ? { TYPESAFE_API_KEY: 'local-fake-key' } : {}) }; // bootstrap then reports jev: true
 // The Library as worker.js builds it: with a story rater, which is only available when the environment has a key.
-const lib = new Library(memorySql(), { complete: model.complete, embed: model.embed, model: 'local stand-in', services: { teams: null }, rater: storyRater(env, (u, i) => globalThis.fetch(u, i)) });
+const lib = new Library(memorySql(), { complete: model.complete, embed: model.embed, model: 'local stand-in', services: { teams: null }, rater: storyRater(env, (u, i) => globalThis.fetch(u, i)), auditKey: DEV_AUDIT_SALT });
 const consultant = { email: 'consultant@example.test', role: 'user', tenant: '' };
 const synthetic = { title: 'Northwind queue pilot', stage: 'Pilot', sector: 'Insurance', consultant: { name: 'Ada Example', role: 'Consultant' },
   client: { name: 'Northwind Mutual', location: 'Example City', contact: 'Operations' },

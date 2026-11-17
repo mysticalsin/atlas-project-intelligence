@@ -63,6 +63,13 @@ def test_policy_is_byte_identical_to_the_edge_builder():
     theirs = json.loads(out)
     assert theirs[:-1] == [html_csp(**kw) for _, kw in cases]
     assert theirs[-1] == legacy_csp(connect='wss://a.example')
+    meta_script = "import('./csp.js').then(m=>console.log(m.metaCsp({hashes:['sha256-aaa'],scriptBlob:true,workerBlob:true,mediaBlob:true})))"
+    meta_out = subprocess.run(['node', '-e', meta_script], cwd=EDGE, capture_output=True, text=True, check=True).stdout.strip()
+    from atlas_voice.csp import meta_csp
+    meta = meta_csp(hashes=['sha256-aaa'], script_blob=True, worker_blob=True, media_blob=True)
+    assert meta_out == meta
+    for name in ('frame-ancestors', 'report-uri', 'report-to'):
+        assert name in html_csp(hashes=['sha256-aaa'], script_blob=True) and name not in meta
 
 
 def free_origin():

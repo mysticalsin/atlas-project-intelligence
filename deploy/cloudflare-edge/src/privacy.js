@@ -188,9 +188,11 @@ export function setFlags(lib, email, patch, { actor = email, subj = '' } = {}) {
   for (const k of FLAG_KEYS) if (p[k] !== undefined) { if (typeof p[k] !== 'boolean') throw fail(400, 'Each flag must be true or false.'); next[k] = p[k]; }
   if (FLAG_KEYS.some(k => cur[k] && !next[k]) && pendingHolds(lib, subj)) throw fail(409, 'Your data stays restricted while the DPO reviews what the erasure kept. It can be lifted once they have resolved it.');
   const at = lib.now();
-  lib.sql.exec('INSERT OR REPLACE INTO privacy_flags (subject, restricted, object_scoring, object_matching, object_memory, updated_at) VALUES (?, ?, ?, ?, ?, ?)', email, +next.restricted, +next.objectScoring, +next.objectMatching, +next.objectMemory, at);
-  lib.log('privacy', actor, 'privacy flags', FLAG_KEYS.filter(k => next[k] !== cur[k]).map(k => k + '=' + next[k]).join(',') || 'unchanged'); // names the flags, never the person's content
-  return { ...next, updatedAt: at };
+  return lib.recorded(() => {
+    lib.sql.exec('INSERT OR REPLACE INTO privacy_flags (subject, restricted, object_scoring, object_matching, object_memory, updated_at) VALUES (?, ?, ?, ?, ?, ?)', email, +next.restricted, +next.objectScoring, +next.objectMatching, +next.objectMemory, at);
+    lib.log('privacy', actor, 'privacy flags', FLAG_KEYS.filter(k => next[k] !== cur[k]).map(k => k + '=' + next[k]).join(',') || 'unchanged'); // names the flags, never the person's content
+    return { ...next, updatedAt: at };
+  });
 }
 
 // ---- the privacy notice, as one HTML page (no script) and as data ----

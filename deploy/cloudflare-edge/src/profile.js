@@ -351,9 +351,11 @@ function build(g) {
 export async function resolveProfile(lib, env, user, idp = {}, opts = {}) { return build(await gather(lib, env, user, idp, opts)); }
 
 function save(lib, g, patch, actor, action, detail) {
-  lib.sql.exec('UPDATE profiles SET edits = ?, consents = ?, updated_at = ? WHERE subject = ? AND tenant = ?', JSON.stringify(patch.edits ?? g.edits), JSON.stringify(patch.consents ?? g.consents), g.now, g.row.subject, g.row.tenant);
-  lib.log('profile', actor, action, detail); // field names and counts only, never values
-  return { ...g, edits: patch.edits ?? g.edits, consents: patch.consents ?? g.consents, row: { ...g.row, updated_at: g.now } };
+  return lib.recorded(() => {
+    lib.sql.exec('UPDATE profiles SET edits = ?, consents = ?, updated_at = ? WHERE subject = ? AND tenant = ?', JSON.stringify(patch.edits ?? g.edits), JSON.stringify(patch.consents ?? g.consents), g.now, g.row.subject, g.row.tenant);
+    lib.log('profile', actor, action, detail); // field names and counts only, never values
+    return { ...g, edits: patch.edits ?? g.edits, consents: patch.consents ?? g.consents, row: { ...g.row, updated_at: g.now } };
+  });
 }
 function cleanEdit(env, g, f, raw) {
   if (typeof raw !== 'string') throw fail(400, `The ${LABEL[f]} must be text.`);
@@ -432,15 +434,19 @@ function importPart(lib, env, user, body, source) {
   const total = lib.rows('SELECT rows, rejected FROM directory_imports WHERE batch = ? AND lower(COALESCE(tenant, \'\')) = ?', batch, tenant)[0];
   // Shrink guard: a partial export must never wipe the directory silently. A push cannot confirm, so it is refused.
   if (to < 0.8 * from && !(b.confirmShrink === true && user.role !== 'system')) {
-    lib.sql.exec("DELETE FROM directory WHERE source = ? AND lower(COALESCE(tenant, '')) = ?", stage, tenant);
-    lib.sql.exec("UPDATE directory_imports SET state = 'refused', finished_at = ? WHERE batch = ? AND lower(COALESCE(tenant, '')) = ?", now, batch, tenant);
-    lib.log('directory', user.email, 'directory_import refused', `${source}: ${to} rows would replace ${from}`);
+    lib.recorded(() => {
+      lib.sql.exec("DELETE FROM directory WHERE source = ? AND lower(COALESCE(tenant, '')) = ?", stage, tenant);
+      lib.sql.exec("UPDATE directory_imports SET state = 'refused', finished_at = ? WHERE batch = ? AND lower(COALESCE(tenant, '')) = ?", now, batch, tenant);
+      lib.log('directory', user.email, 'directory_import refused', `${source}: ${to} rows would replace ${from}`);
+    });
     throw fail(409, `This replaces ${from} rows with ${to}. That is far fewer people than before: confirm to replace anyway.`);
   }
-  lib.sql.exec("DELETE FROM directory WHERE source = ? AND lower(COALESCE(tenant, '')) = ?", source, tenant);
-  lib.sql.exec("UPDATE directory SET source = ? WHERE source = ? AND lower(COALESCE(tenant, '')) = ?", source, stage, tenant);
-  lib.sql.exec("UPDATE directory_imports SET state = 'applied', finished_at = ? WHERE batch = ? AND lower(COALESCE(tenant, '')) = ?", now, batch, tenant);
-  lib.log('directory', user.email, 'directory_import', `${source}: ${to} rows, ${total.rejected} rejected, replaced ${from}`);
+  lib.recorded(() => {
+    lib.sql.exec("DELETE FROM directory WHERE source = ? AND lower(COALESCE(tenant, '')) = ?", source, tenant);
+    lib.sql.exec("UPDATE directory SET source = ? WHERE source = ? AND lower(COALESCE(tenant, '')) = ?", source, stage, tenant);
+    lib.sql.exec("UPDATE directory_imports SET state = 'applied', finished_at = ? WHERE batch = ? AND lower(COALESCE(tenant, '')) = ?", now, batch, tenant);
+    lib.log('directory', user.email, 'directory_import', `${source}: ${to} rows, ${total.rejected} rejected, replaced ${from}`);
+  });
   return { accepted, rejected, replaced: { from, to } };
 }
 function directoryStatus(lib, env, user = {}) {
@@ -523,9 +529,11 @@ export async function routes(ctx) {
     }
     if (method === 'POST' && !action) return { body: await editProfile(lib, env, user, ctx.body, opts) };
     if (method === 'POST' && action === 'delete') {
-      const had = deleteOwnedProfile(lib, user);
-      if (had) lib.log('profile', user.email, 'profile deleted', 'this tenant only; directory rows unchanged');
-      return { body: { deleted: !!had, vendorDeletion: 'not-asserted' } };
+      return lib.recorded(() => {
+        const had = deleteOwnedProfile(lib, user);
+        if (had) lib.log('profile', user.email, 'profile deleted', 'this tenant only; directory rows unchanged');
+        return { body: { deleted: !!had, vendorDeletion: 'not-asserted' } };
+      });
     }
     if (method === 'POST' && action === 'consent') {
       const b = obj(ctx.body);
@@ -553,10 +561,12 @@ export async function routes(ctx) {
       demandTenant(user);
       const tenant = tenantKey(user);
       const cleared = lib.rows("SELECT COUNT(*) AS n FROM directory WHERE lower(COALESCE(tenant, '')) = ?", tenant)[0].n;
-      lib.sql.exec("DELETE FROM directory WHERE lower(COALESCE(tenant, '')) = ?", tenant);
-      lib.sql.exec("UPDATE directory_imports SET state = 'refused', finished_at = ? WHERE state = 'staged' AND lower(COALESCE(tenant, '')) = ?", lib.now(), tenant);
-      lib.log('directory', user.email, 'directory cleared', `${cleared} rows`);
-      return { body: { cleared } };
+      return lib.recorded(() => {
+        lib.sql.exec("DELETE FROM directory WHERE lower(COALESCE(tenant, '')) = ?", tenant);
+        lib.sql.exec("UPDATE directory_imports SET state = 'refused', finished_at = ? WHERE state = 'staged' AND lower(COALESCE(tenant, '')) = ?", lib.now(), tenant);
+        lib.log('directory', user.email, 'directory cleared', `${cleared} rows`);
+        return { body: { cleared } };
+      });
     }
   }
   throw fail(404, 'Not found.');

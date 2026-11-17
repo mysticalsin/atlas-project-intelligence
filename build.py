@@ -4,7 +4,7 @@ import base64, json, hashlib, os, re, sys
 ROOT=Path(__file__).resolve().parent
 sys.path.insert(0,str(ROOT))
 from atlas_voice.quality import NUMERIC, FIELDS, TO_TOPIC  # stdlib only: the ledger's field labels and number rule, one source
-from atlas_voice.csp import RUNTIME_BLOCK, html_csp, script_hashes
+from atlas_voice.csp import RUNTIME_BLOCK, meta_csp, script_hashes
 def read_text(path):
     return path.read_text(encoding='utf-8')
 def write_text(path, text):
@@ -64,7 +64,7 @@ slots={'__CSS__':read_text(ROOT/'src/styles.css')+'\n'+read_text(ROOT/'src/voice
 text=read_text(ROOT/'src/shell.html')
 for k,v in slots.items():text=text.replace(k,v)
 hashes=script_hashes(text)
-text=text.replace('__CSP_META__', html_csp(hashes=hashes, script_blob=True, worker_blob=True, media_blob=True))
+text=text.replace('__CSP_META__', meta_csp(hashes=hashes, script_blob=True, worker_blob=True, media_blob=True))
 generated='export const PAGE_SCRIPT_HASHES = '+json.dumps(hashes)+';\nexport const RUNTIME_BLOCK = '+json.dumps(RUNTIME_BLOCK)+';\n'
 csp_out=ROOT/'deploy/cloudflare-edge/src/csp.generated.js'
 csp_out.parent.mkdir(parents=True, exist_ok=True)

@@ -29,7 +29,7 @@ REP = {'headline': 'Claims triage rebuilt with ML routing', 'summary': 'The cons
        'facts': {'project_id': 'PRJ-2291', 'country': 'France', 'industry': 'Insurance', 'start': '2024-03', 'end': '2024-11',
                  'duration': '', 'team_size': 6, 'team_roles': ['Data engineer'], 'technologies': ['Python'],
                  'deliverables': ['Routing model'], 'service_lines': ['Data & AI']}}
-RID = re.compile(r'/api/library/[0-9a-f-]{16,}(?:\?|$)')
+RID = re.compile(r'/api/library/[0-9a-f-]{16,}(?:/[^?]*)?(?:\?|$)')
 
 
 def check(name, value):
@@ -39,10 +39,15 @@ def check(name, value):
 
 def rewrite(audit):
     def handle(route):
-        if route.request.method != 'GET' or not RID.search(route.request.url):
+        if not RID.search(route.request.url):
             return route.fallback()
         response = route.fetch()
-        data = response.json()
+        try:
+            data = response.json()
+        except Exception:
+            return route.fallback()
+        if not isinstance(data, dict) or 'audit' not in data:
+            return route.fallback()
         data['audit'] = audit
         route.fulfill(status=response.status, json=data)
     return handle
@@ -51,7 +56,7 @@ def rewrite(audit):
 try:
     with sync_playwright() as pw:
         browser = pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH') or None)
-        page = browser.new_context(viewport={'width': 390, 'height': 800}).new_page()
+        page = browser.new_context(viewport={'width': 1400, 'height': 1000}).new_page()
         page.goto(BASE + '/?as=' + urllib.parse.quote('ada@example.test'))
         page.wait_for_timeout(500)
         page.locator('[data-action=new-project]:visible').first.click()
@@ -64,7 +69,12 @@ try:
         page.wait_for_timeout(1200)
         urllib.request.urlopen(BASE + '/__settle', timeout=30).read()
         rid = page.evaluate("JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k=>k.startsWith('mantu.atlas')))||'null')?.profiles?.[0]?.projects?.[0]?.library?.id")
+        if not rid:
+            page.locator('header [data-view=library]').click()
+            page.wait_for_timeout(600)
+            rid = page.locator('[data-open-record]').first.get_attribute('data-open-record')
         check('library id known', bool(rid))
+        page.set_viewport_size({'width': 390, 'height': 800})
         page.goto(BASE + '/?as=' + urllib.parse.quote('ada@example.test') + '#library/' + rid)
         page.wait_for_timeout(800)
         page.locator('#recordBody summary').click()
@@ -74,8 +84,8 @@ try:
         def show(audit):
             page.unroute('**/api/library/**')
             page.route('**/api/library/**', rewrite(audit))
-            page.goto(BASE + '/?as=' + urllib.parse.quote('ada@example.test') + '#library/' + rid)
-            page.wait_for_timeout(800)
+            page.reload()
+            page.wait_for_timeout(900)
             page.locator('#recordBody summary').click()
 
         def marker(name):

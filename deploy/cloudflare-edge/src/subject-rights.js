@@ -337,10 +337,13 @@ export function holdRoutes(ctx) {
     const note = str(b.note, 300), now = lib.now();
     if (b.action === 'retain' && !note) throw fail(400, 'Record the legal ground for keeping it.');
     if (b.action === 'erase' && h.kind === 'audit') throw fail(409, 'The audit trail failed its integrity check. Investigate it first (handoff/SECURITY_RUNBOOK.md); the person then runs the erasure again.');
-    if (b.action === 'erase' && h.kind === 'reference') eraseRefContent(lib, h.entity, randomToken(), now);
-    lib.sql.exec(`UPDATE erasure_holds SET status = ?, resolved_at = ?, resolved_by = ?, note = ? WHERE id = ? AND ${mine}`, b.action === 'erase' ? 'erased' : 'retained', now, user.email, note, h.id, tenant);
-    lib.log('privacy', user.email, 'erasure hold ' + (b.action === 'erase' ? 'erased' : 'retained'), h.kind + ' ' + h.entity);
-    return { body: { id: h.id, status: b.action === 'erase' ? 'erased' : 'retained' } };
+    const status = b.action === 'erase' ? 'erased' : 'retained';
+    lib.recorded(() => {
+      if (b.action === 'erase' && h.kind === 'reference') eraseRefContent(lib, h.entity, randomToken(), now);
+      lib.sql.exec(`UPDATE erasure_holds SET status = ?, resolved_at = ?, resolved_by = ?, note = ? WHERE id = ? AND ${mine}`, status, now, user.email, note, h.id, tenant);
+      lib.log('privacy', user.email, 'erasure hold ' + status, h.kind + ' ' + h.entity);
+    });
+    return { body: { id: h.id, status } };
   }
   throw fail(404, 'Not found.');
 }

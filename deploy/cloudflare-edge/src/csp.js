@@ -47,6 +47,13 @@ export function htmlCsp({
   return d.join('; ');
 }
 
+// frame-ancestors, report-uri and report-to are ignored in a <meta> policy and Chrome logs that in enforce mode.
+// The HTTP header keeps them. The meta keeps every other directive.
+const META_ONLY = /^(frame-ancestors|report-uri|report-to)\b/;
+export function metaCsp(opts) {
+  return htmlCsp(opts).split(';').map(part => part.trim()).filter(part => part && !META_ONLY.test(part)).join('; ');
+}
+
 // The policy before F1. Used only while ATLAS_CSP=report-only, when it is the enforced one.
 export const legacyCsp = (connect = '', extra = {}) => `default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; connect-src 'self'${connect ? ' ' + connect : ''}; img-src data: blob:; font-src 'self'; worker-src blob:; media-src blob:; object-src 'none'; base-uri 'none'; form-action ${extra.formAction || "'self'"}; frame-ancestors ${extra.frameAncestors || "'none'"}`;
 

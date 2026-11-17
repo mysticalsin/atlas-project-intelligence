@@ -70,6 +70,14 @@ def html_csp(*, hashes=(), connect='', connect_self=True, frame_ancestors="'none
     return '; '.join(d)
 
 
+_META_ONLY = ('frame-ancestors', 'report-uri', 'report-to')
+
+
+def meta_csp(**kw):
+    """The page <meta> policy. Header-only directives stay on the HTTP header, where the browser enforces them."""
+    return '; '.join(part for part in (p.strip() for p in html_csp(**kw).split(';')) if part and not part.startswith(_META_ONLY))
+
+
 # The policy the page had before F1, kept only for ATLAS_CSP=report-only: it is ENFORCED while the strict one is reported.
 def legacy_csp(*, connect=''):
     return ("default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; connect-src 'self'" + (' ' + connect if connect else '') +

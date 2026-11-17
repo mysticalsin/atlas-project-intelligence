@@ -882,3 +882,11 @@ Review answers:
 - The tail-delete window still runs from the last `verify-chain` or `scan-stale`. Only a per-write checkpoint would close it (Backlog `ATLAS-AUDIT-PERWRITE-CHECKPOINT`).
 - The gate run is on this commit, after it is made. The counts are in the draft PR.
 
+### Session: 2026-11-17 / PR #5 atomic writes, history marker, meta CSP, dev salt
+- Same branch `cursor/pr1-port-s1-security-660c`. Red commit `4a5f78dd92ddd9e15e0c897a5254f8cd3c605d10` fails on `09ada7d3`. This commit is the fix. Ordinary fast-forward. No force push, no rebase, no merge, no deploy, no paid call, and `LOG_SALT` was not provisioned.
+- `Library.recorded` is one synchronous `transactionSync`. A business write and its `lib.log` run inside it, with no await. A 409 or a 503 rolls the business write back. `transactionSync` stays null when the store has no transaction. The save, revise, withdraw, erase, and Teams paths are in the red matrix, against a tampered chain, a truncated chain, and a null key. A clean chain writes the business row and the audit line.
+- Who did what shows the text "Legacy" or "Unverified" only when `auditLines` already set that flag. A verified line has no marker.
+- The page `<meta>` policy drops `frame-ancestors`, `report-uri`, and `report-to`. The HTTP header still sends them. `dev/local-edge.mjs` passes `DEV_AUDIT_SALT`. Production still uses `auditKey(env)`, and a null key still throws at the `Library` constructor.
+- Out of scope, left for the backlog: the Q2 `blockers.length` crash, Q5 withdraw-then-edit, duplicated paragraphs and the headline rewrite, the verify-chain and scan-stale system-only guard, and the erase tenant 403.
+- The gate run is on this commit, after it is made. The counts are in the draft PR. The page bytes change with the meta policy and the marker, so the page pin moves with them.
+

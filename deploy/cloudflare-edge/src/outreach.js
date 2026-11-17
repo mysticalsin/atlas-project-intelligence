@@ -102,9 +102,11 @@ function queueRows(lib, item) {
   for (const channel of QUEUED) {
     if (!lib.rows('SELECT id FROM outreach WHERE kind = ? AND subject_id = ? AND channel = ?', kind, subjectId, channel)[0]) {
       const id = lib.newId();
-      lib.sql.exec(`INSERT OR IGNORE INTO outreach (id, kind, subject_id, channel, to_email, status, reason, payload, created_at, tenant)
-        VALUES (?, ?, ?, ?, ?, 'pending_approval', '', ?, ?, ?)`, id, kind, subjectId, channel, to, payload, lib.now(), tenant);
-      lib.log(id, 'atlas', 'outreach pending_approval', `${kind} ${channel}`);
+      lib.recorded(() => {
+        lib.sql.exec(`INSERT OR IGNORE INTO outreach (id, kind, subject_id, channel, to_email, status, reason, payload, created_at, tenant)
+          VALUES (?, ?, ?, ?, ?, 'pending_approval', '', ?, ?, ?)`, id, kind, subjectId, channel, to, payload, lib.now(), tenant);
+        lib.log(id, 'atlas', 'outreach pending_approval', `${kind} ${channel}`);
+      });
       created++;
     }
     rows.push(lib.rows('SELECT * FROM outreach WHERE kind = ? AND subject_id = ? AND channel = ?', kind, subjectId, channel)[0]);
@@ -358,10 +360,12 @@ const staffView = s => ({ projectId: s.project_id, consultantEmail: s.consultant
 const inflight = new WeakMap(); // per Library instance: a Teams send in progress (the DO is the only writer)
 function setStatus(lib, o, status, reason, user, extra = {}) {
   const approved = extra.approved ? [user.email, lib.now()] : [o.approved_by, o.approved_at];
-  lib.sql.exec(`UPDATE outreach SET status = ?, reason = ?, approved_by = ?, approved_at = ?, sent_at = ?, activity_id = ?, aad_object_id = ?, directory_tenant = ?, conversation_id = ? WHERE id = ?`,
-    status, reason, approved[0] ?? null, approved[1] ?? null, extra.sentAt ?? o.sent_at ?? null, extra.activityId ?? o.activity_id ?? null, extra.aadObjectId ?? o.aad_object_id ?? null, extra.directoryTenant ?? o.directory_tenant ?? '', extra.conversationId ?? o.conversation_id ?? '', o.id);
-  lib.log(o.id, user.email, 'outreach ' + status, `${o.kind} ${o.channel}`);
-  return view(rowOf(lib, o.id));
+  return lib.recorded(() => {
+    lib.sql.exec(`UPDATE outreach SET status = ?, reason = ?, approved_by = ?, approved_at = ?, sent_at = ?, activity_id = ?, aad_object_id = ?, directory_tenant = ?, conversation_id = ? WHERE id = ?`,
+      status, reason, approved[0] ?? null, approved[1] ?? null, extra.sentAt ?? o.sent_at ?? null, extra.activityId ?? o.activity_id ?? null, extra.aadObjectId ?? o.aad_object_id ?? null, extra.directoryTenant ?? o.directory_tenant ?? '', extra.conversationId ?? o.conversation_id ?? '', o.id);
+    lib.log(o.id, user.email, 'outreach ' + status, `${o.kind} ${o.channel}`);
+    return view(rowOf(lib, o.id));
+  });
 }
 
 function subjectOpen(lib, o) {
