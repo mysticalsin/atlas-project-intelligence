@@ -108,11 +108,13 @@ test('an anchor planted before the first Library does not verify a forged actor'
   sql.exec('INSERT INTO audit_anchor (id, n, head) VALUES (1, 2, ?)', 'ab'.repeat(32));
   const lib = new Library(sql, { now: () => STAMP });
   const daily = verifyDaily(lib.sql, lib.auditKey);
-  assert.equal(daily.reason, 'CHAIN_VERIFIED');
-  assert.equal(daily.legacyUnverified, 2);
-  assert.equal(daily.checked, 1);
+  assert.equal(daily.ok, false);
+  assert.equal(daily.reason, 'TAMPERED');
   assert.equal(signedActors(lib.sql).includes(MALLORY), false);
-  assert.equal(lib.sql.exec("SELECT COUNT(*) AS n FROM audit WHERE action = 'chain-start'").toArray()[0].n, 1);
+  assert.equal(lib.sql.exec("SELECT COUNT(*) AS n FROM audit WHERE action = 'chain-start'").toArray()[0].n, 0);
+  const anchor = lib.sql.exec('SELECT n, head FROM audit_anchor WHERE id = 1').toArray()[0];
+  assert.equal(Number(anchor.n), 2);
+  assert.equal(anchor.head, 'ab'.repeat(32));
 });
 
 test('an anchor at n-1 with a forged tail is not chain-verified', () => {

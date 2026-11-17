@@ -181,10 +181,10 @@ test('rows hashed under the previous formula stay broken', () => {
     prev = hash;
   }
   const before = lib.sql.exec('SELECT hash FROM audit ORDER BY seq').toArray().map(r => r.hash);
-  assert.equal(verifyChain(lib.sql).reason, 'HASH_MISMATCH');
+  assert.equal(verifyChain(lib.sql).reason, 'TAMPERED');
   ensureChainFresh(lib.sql);
   assert.deepEqual(lib.sql.exec('SELECT hash FROM audit ORDER BY seq').toArray().map(r => r.hash), before);
-  assert.equal(verifyDaily(lib.sql).reason, 'HASH_MISMATCH');
+  assert.equal(verifyDaily(lib.sql).reason, 'TAMPERED');
   assert.equal(verifyChain(lib.sql).ok, false);
 });
 function ensureChainFresh(sql) { ensureChain({ exec: (...a) => sql.exec(...a) }); }
