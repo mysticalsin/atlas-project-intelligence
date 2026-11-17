@@ -131,6 +131,66 @@ async function settle(root, ready) {
   return queueRows(root);
 }
 
+test('a later status wins over a manager approval on real list() output', async () => {
+  const { Library } = await import('../deploy/cloudflare-edge/src/library.js');
+  const { memorySql } = await import('../deploy/cloudflare-edge/test/sqlite.js');
+  let t = 0;
+  let mode = 'good';
+  const l = new Library(memorySql(), {
+    now: () => new Date(Date.UTC(2026, 0, 3, 0, 0, t++)).toISOString(),
+    complete: async () => (mode === 'bad' ? 'not json' : GOOD),
+  });
+  const PRE = { email: 'pre@mantu.com', role: 'presales' };
+  const save = async title => l.upsert(OWNER, { localId: title, reference: reference(title) });
+  const pulled = await save('Withdrawn after approval');
+  await l.review(OWNER, pulled.id);
+  l.bindTrust(SYSTEM, { owner: OWNER.email, email: MANAGER.email, source: 'directory', sandbox: true });
+  l.validate(MANAGER, pulled.id, { decision: 'validate', lane: 'manager' });
+  l.withdraw(OWNER, pulled.id, { note: 'Withdrawn after the manager approved.' });
+  mode = 'bad';
+  const thin = await save('Needs work after approval');
+  await l.review(OWNER, thin.id);
+  mode = 'good';
+  l.validate(MANAGER, thin.id, { decision: 'validate', lane: 'manager' });
+  const changed = await save('Changes after approval');
+  await l.review(OWNER, changed.id);
+  l.validate(MANAGER, changed.id, { decision: 'validate', lane: 'manager' });
+  l.validate(PRE, changed.id, { decision: 'request_changes', lane: 'presales', note: 'Name the source.' });
+  const early = await save('In review after approval');
+  l.validate(MANAGER, early.id, { decision: 'validate', lane: 'manager' });
+  const waiting = await save('Still awaiting pre-sales');
+  await l.review(OWNER, waiting.id);
+  l.validate(MANAGER, waiting.id, { decision: 'validate', lane: 'manager' });
+  const listed = l.list(MANAGER);
+  const item = title => listed.items.find(row => row.title === title);
+  assert.equal(item('Withdrawn after approval').status, 'withdrawn');
+  assert.equal(item('Withdrawn after approval').managerDecision, 'approved');
+  assert.equal(item('Needs work after approval').status, 'needs_work');
+  assert.equal(item('Needs work after approval').managerDecision, 'approved');
+  assert.equal(item('Changes after approval').status, 'changes_requested');
+  assert.equal(item('Changes after approval').managerDecision, 'approved');
+  assert.equal(item('Changes after approval').presalesDecision, 'changes_requested');
+  assert.equal(item('In review after approval').status, 'in_review');
+  assert.equal(item('In review after approval').managerDecision, 'approved');
+  assert.equal(item('Still awaiting pre-sales').status, 'awaiting_validation');
+  assert.equal(item('Still awaiting pre-sales').managerDecision, 'approved');
+  const { window, document } = bootJourney(async path => {
+    if (path === '/journey') return JOURNEY;
+    if (path === '/privacy/disclosure') return DISCLOSURE;
+    if (path === '') return listed;
+    throw new Error('unexpected ' + path);
+  });
+  window.AtlasJourney.render('journey');
+  const root = document.getElementById('journey');
+  const rows = await settle(root, found => found.length >= listed.items.length);
+  const label = title => rows.find(row => row.title === title)?.label;
+  assert.equal(label('Withdrawn after approval'), 'Withdrawn');
+  assert.equal(label('Needs work after approval'), 'Needs work');
+  assert.equal(label('Changes after approval'), 'Changes requested');
+  assert.equal(label('In review after approval'), 'In review');
+  assert.equal(label('Still awaiting pre-sales'), 'Manager approved · awaiting pre-sales');
+});
+
 test('the journey queue labels real list() output and drops an approved lane after the click', async () => {
   const { l, waiting, open } = await libraryOfStories();
   const listed = l.list(MANAGER);
