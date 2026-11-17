@@ -949,9 +949,10 @@ $('n1Email')?.addEventListener('change',async()=>{const name=$('n1Name'),seq=++n
 const DIR={table:null,file:''};
 async function renderDirectory(){const el=$('peopleDirectory');if(!el)return;const b=await window.AtlasAuth.boot();
  if(b.libraryRole!=='admin'||!b.features?.profile||window.AtlasAuth.mode!=='live'){el.hidden=true;return;}
- el.hidden=false;el.replaceChildren(h('h3',{text:'People directory'}));let st;
- try{st=await app().libraryApi('/directory');}catch(e){el.append(h('p',{class:'tiny muted',text:e.message}));return;}
+ let st;
+ try{st=await app().libraryApi('/directory');}catch(e){el.replaceChildren(h('h3',{text:'People directory'}),h('p',{class:'tiny muted',text:e.message}));el.hidden=false;return;}
  const prod=st.dataMode==='production',n=Number(st.rows?.dna_export)||0; // an import replaces the DNA-export rows (the shrink guard compares with those)
+ el.replaceChildren(h('h3',{text:'People directory'}));
  el.append(h('p',{class:'tiny muted',text:prod?'Upload the DNA export as CSV. Only email, name, first name, job title and N+1 are read; every other column stays on your computer. Nobody can browse this directory.':'Test deployment: only synthetic addresses (example.com, .test) are accepted. Real DNA data needs the production deployment.'}),
   h('p',{class:'tiny',text:(st.rows?.dna||0)+' from DNA · '+(st.rows?.dna_export||0)+' from the DNA export'}));
  const line=(label,s,need)=>h('p',{class:'tiny muted',text:label+': '+(s?.status==='on'?'connected':'not connected ('+need+')')});
@@ -962,7 +963,8 @@ async function renderDirectory(){const el=$('peopleDirectory');if(!el)return;con
   if(f.size>5000000){out.textContent='This file is over 5 MB.';return;}
   try{DIR.table=C.parseCsv(await f.text());DIR.file=f.name;mapping(box,out,n);}catch(e){out.textContent=e.message;}});
  el.append(h('label',{class:'field-label',for:'dirFile'},'DNA export (CSV)'),file,box,out,
-  h('div',{class:'actions'},h('button',{class:'quiet',type:'button',onclick:()=>app().confirm('Clear the people directory?','This removes every imported DNA row. Profiles and your colleagues’ own edits are not affected.',async()=>{try{const r=await app().libraryApi('/directory/clear',{method:'POST',body:{}});app().toast((r.cleared||0)+' rows removed.');renderDirectory();}catch(e){app().toast(e.message);}})},'Clear directory')));}
+  h('div',{class:'actions'},h('button',{class:'quiet',type:'button',onclick:()=>app().confirm('Clear the people directory?','This removes every imported DNA row. Profiles and your colleagues’ own edits are not affected.',async()=>{try{const r=await app().libraryApi('/directory/clear',{method:'POST',body:{}});app().toast((r.cleared||0)+' rows removed.');renderDirectory();}catch(e){app().toast(e.message);}})},'Clear directory')));
+ el.hidden=false;}
 function mapping(box,out,before){const t=DIR.table,sug=C.suggestColumns(t.header),labels={email:'Email',name:'Name',givenName:'First name',title:'Job title',managerName:'N+1 name',managerEmail:'N+1 email'},sel={};
  box.append(h('p',{class:'tiny muted',text:'Check the columns ATLAS suggests. Other columns are never read or sent.'}));
  for(const k of C.APPROVED){const s=h('select',{id:'dirCol_'+k,'aria-label':labels[k]},h('option',{value:'-1'},'Not in this file'),...t.header.map((c,i)=>h('option',{value:String(i)},c||'Column '+(i+1))));s.value=String(sug[k]);sel[k]=s;box.append(h('label',{class:'field-label',for:'dirCol_'+k},labels[k]),s);}
@@ -2128,7 +2130,7 @@ const STATUS_LABEL={in_review:'In review',needs_work:'Needs work',changes_reques
 const clip=text=>String(text||'').slice(0,500);
 async function libraryApi(path,{method='GET',body}={}){const b=await bootInfo();if(!b.library)throw Error(b.ok===false&&typeof b.error==='string'&&b.error?clip(b.error):'The shared library is not available here.');
  const r=await window.AtlasAuth.fetch('/api/library'+path,{method,headers:method==='GET'?{}:{'Content-Type':'application/json','X-Atlas-CSRF':b.csrf},body:body===undefined?undefined:JSON.stringify(body)});
- const data=await r.json().catch(()=>({}));if(r.status===503&&typeof data.error==='string'&&data.error)throw Error(clip(data.error));if(!r.ok)throw Error(data.error||'The library did not answer.');return data;}
+ const data=await r.json().catch(()=>({}));if(r.status===503){const reason=clip(String(data.error??''));if(reason)throw Error(reason);}if(!r.ok)throw Error(data.error||'The library did not answer.');return data;}
 function libraryPayload(p){const sh=p.sheet;return {sheet:sh&&(sh.oppId||sh.title||Object.values(sh.sections).some(Boolean))?{oppId:sh.oppId,oppIdPending:sh.oppIdPending,title:sh.title,exec:sh.exec,sections:sh.sections,file:sh.file,fileName:sh.fileName,confirmedAt:sh.confirmedAt}:null,title:p.title,stage:p.stage,sector:p.sector,consultant:{name:p.consultant,role:p.role},client:p.client,details:p.details,answers:p.answers,report:p.report,jev:p.jev,
  validation:{manager:p.validation.manager,managerStaff:p.validation.managerStaff},sources:p.sources.map(s=>({name:s.name,version:s.version,url:s.url,excerpt:String(s.text||'').slice(0,1000)}))};}
 async function syncToLibrary(id,{quiet=false}={}){const A=window.AtlasAuth,p=state.profiles.flatMap(u=>u.projects).find(x=>x.id===id);if(!p){A?.pending.delete(id);return null;}if(p.sample)return null;
@@ -4120,7 +4122,7 @@ async function renderJourney(){const root=$('journey');if(!root)return;root.repl
  async function paintQueue(){queue.replaceChildren(h('h2',{text:'Stories you can open'}));
   let list={items:[]};try{list=await api('');}catch(e){queue.append(banner('warn',e.message||'Could not load stories.'));return;}
   const items=list.items||[];if(!items.length){queue.append(h('p',{text:'Nothing here yet. A consultant story appears after it is saved to the library.'}));return;}
-  for(const item of items){const box=h('article');const progress=item.status==='published'?'Published':item.status==='admin_test'?'Admin test, not public':item.managerDecision==='approved'&&item.presalesDecision!=='approved'?'Manager approved · awaiting pre-sales':(STATUS_LABEL[item.status]||item.status||'');box.append(h('strong',{text:item.title||'Untitled'}),h('p',{class:'tiny',text:progress}));
+  for(const item of items){const box=h('article');const progress=item.status==='published'?'Published':item.status==='admin_test'?'Admin test, not public':item.status==='awaiting_validation'&&item.managerDecision==='approved'&&item.presalesDecision!=='approved'?'Manager approved · awaiting pre-sales':(STATUS_LABEL[item.status]||item.status||'');box.append(h('strong',{text:item.title||'Untitled'}),h('p',{class:'tiny',text:progress}));
    if(boot.libraryRole==='user'&&item.access==='full'&&item.mine!==true&&item.managerDecision!=='approved'&&item.status!=='published'&&item.status!=='admin_test'){const ok=h('button',{class:'btn',type:'button',text:'Approve as trusted manager'});ok.addEventListener('click',()=>act(item.id,'manager','validate',ok));const no=h('button',{class:'btn',type:'button',text:'Ask for changes'});no.addEventListener('click',()=>act(item.id,'manager','request_changes',no,'Please add the evidence source.'));box.append(ok,no);}
    if(boot.libraryRole==='presales'&&item.presalesDecision!=='approved'&&item.status!=='published'&&item.status!=='admin_test'){const ok=h('button',{class:'btn primary',type:'button',text:'Approve for bid / pre-sales'});ok.addEventListener('click',()=>act(item.id,'presales','validate',ok));box.append(ok);}
    if(boot.libraryRole==='admin'){const test=h('button',{class:'btn',type:'button',text:'Admin test bypass'});test.addEventListener('click',()=>bypass(item.id,true,test));const pub=h('button',{class:'btn',type:'button',text:'Admin publish bypass'});pub.addEventListener('click',()=>bypass(item.id,false,pub));box.append(test,pub);}
