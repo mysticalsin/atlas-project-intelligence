@@ -443,7 +443,7 @@ test('R13a one rating per revision: concurrent calls with the same engine share 
     await tick(5);
     assert.equal(l.get(OWNER, id).rating.running, true); assert.equal(fetcher.calls.length, 0, 'a 5 ms timer is not the request');
     releaseHash();
-    await started;
+    await Promise.race([started, new Promise((_, reject) => { const t = setTimeout(() => reject(new Error('rating digest never started within 2000ms')), 2000); started.then(() => clearTimeout(t)); })]);
     assert.equal(l.get(OWNER, id).rating.running, true); assert.equal(fetcher.calls.length, 1);
     open(); const [ra, rb] = await Promise.all([a, b]);
     assert.equal(fetcher.calls.length, 1); assert.equal(ra.state.quality.engine, 'jev'); assert.equal(rb.state.quality.gen, ra.state.quality.gen);
