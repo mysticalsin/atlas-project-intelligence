@@ -766,3 +766,11 @@ Review answers:
 - The rolled-back privacy-erasure audit stays deferred. `origin/main` still has no `withTransaction`.
 - Gates on this host: pytest 264 passed, 106 warnings. Root `node --test tests/*.test.js` 386 tests, 385 passed, 1 skipped. Edge 543 passed, and the same 543 with `--test-concurrency=16`. `scripts/verify_page_build.sh` twice, both exit 0, 907846 bytes. `make test-ui` exit 0, 768 PASS, 0 FAIL. No provider call, no deploy.
 - Quarantine is not deletion. Vendor deletion stays not-asserted. A Cloudflare Durable Object runtime was not executed.
+
+### Session: 2026-11-17 / PR8 delta, status label, 503 clip, directory reveal
+- Same branch, from `dc42ef4`. Red commits failed on that head before the fix: `b596b88` (later status after a manager approval, real `list()`), `272c447` (library 503 array and object errors), `78def02` (people directory visible before `/directory` settles).
+- The phrase "Manager approved · awaiting pre-sales" is used only when `status` is `awaiting_validation`. Withdrawn, needs work, changes requested, and in review keep `STATUS_LABEL` even when `managerDecision` is approved. A library 503 stringifies `error` and clips it to 500 characters when that string is non-empty. The people directory stays hidden until that fetch settles, including a refresh.
+- The browser journey check follows the same rule on live `list()` output: the reviewed story keeps the waiting phrase, and a short story that is still needs work keeps "Needs work".
+- Gates on this host: pytest 264 passed, 106 warnings. Root `node --test tests/*.test.js` 388 tests, 387 passed, 1 skipped (Natural Earth regeneration needs `ATLAS_NE_SRC`). Edge 543 passed, and the same 543 with `--test-concurrency=16`. `scripts/verify_page_build.sh` twice, both exit 0, 907946 bytes. `make test-ui` ten consecutive first runs, each exit 0, 770 PASS, 0 FAIL. No provider call, no deploy.
+- The rolled-back privacy-erasure audit stays deferred. `origin/main` still has no `withTransaction`.
+- Quarantine is not deletion. Vendor deletion stays not-asserted. A Cloudflare Durable Object runtime was not executed.
