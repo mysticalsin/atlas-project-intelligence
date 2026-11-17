@@ -102,7 +102,12 @@ try:
   check('journey queue drops an approved lane', n.locator('#journey').get_by_role('button', name='Approve as trusted manager').count()==0)
   status,listing=edge_api('sam@mantu.com','GET','/api/library')
   items={item['id']:item for item in listing.get('items',[])}
-  check('journey label follows real list() output', status==200 and items[rid]['managerDecision']=='approved' and items[rid]['presalesDecision']=='pending' and items[eid]['managerDecision']=='approved' and queue.count('Manager approved · awaiting pre-sales')>=2)
+  labels = {'in_review': 'In review', 'needs_work': 'Needs work', 'changes_requested': 'Changes requested', 'awaiting_validation': 'Awaiting N+1', 'published': 'Published', 'withdrawn': 'Withdrawn'}
+  def progress(item):
+    if item.get('status') == 'awaiting_validation' and item.get('managerDecision') == 'approved' and item.get('presalesDecision') != 'approved':
+      return 'Manager approved · awaiting pre-sales'
+    return labels.get(item.get('status'), item.get('status') or '')
+  check('journey label follows real list() output', status==200 and items[rid]['status']=='awaiting_validation' and items[rid]['managerDecision']=='approved' and items[rid]['presalesDecision']=='pending' and items[eid]['managerDecision']=='approved' and items[eid]['status'] in ('needs_work', 'in_review') and progress(items[rid]) in queue and progress(items[eid]) in queue and queue.count('Manager approved · awaiting pre-sales')==1)
   pre=page('presales@example.test',['ATLAS.Presales']);pre.goto(BASE+'/#library/'+rid);pre.wait_for_timeout(1200)
   check('pre-sales role sees its own lane',pre.locator('[data-rec-validate]').count()==1)
   pre.locator('[data-rec-validate]').click();pre.wait_for_timeout(900)
