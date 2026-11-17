@@ -946,11 +946,13 @@ $('n1Email')?.addEventListener('change',async()=>{const name=$('n1Name'),seq=++n
  if(!hit||seq!==n1Seq||name.value.trim()||C.validEmail($('n1Email').value)!==e)return;  // a newer change, a reopened form or typing wins
  n1Auto={email:e,...hit};name.value=hit.name;paintProjectForm();});
 // ---- admin: People directory (§5.6). Rows are built from the mapped approved columns only; nothing else is uploaded.
-const DIR={table:null,file:''};
-async function renderDirectory(){const el=$('peopleDirectory');if(!el)return;el.hidden=true;const b=await window.AtlasAuth.boot();
+const DIR={table:null,file:''};let dirSeq=0;
+async function renderDirectory(){const el=$('peopleDirectory');if(!el)return;const mine=++dirSeq;el.hidden=true;const b=await window.AtlasAuth.boot();
+ if(mine!==dirSeq)return;
  if(b.libraryRole!=='admin'||!b.features?.profile||window.AtlasAuth.mode!=='live')return;
  let st;
- try{st=await app().libraryApi('/directory');}catch(e){el.replaceChildren(h('h3',{text:'People directory'}),h('p',{class:'tiny muted',text:e.message}));el.hidden=false;return;}
+ try{st=await app().libraryApi('/directory');}catch(e){if(mine!==dirSeq)return;el.replaceChildren(h('h3',{text:'People directory'}),h('p',{class:'tiny muted',text:e.message}));el.hidden=false;return;}
+ if(mine!==dirSeq)return;
  const prod=st.dataMode==='production',n=Number(st.rows?.dna_export)||0; // an import replaces the DNA-export rows (the shrink guard compares with those)
  el.replaceChildren(h('h3',{text:'People directory'}));
  el.append(h('p',{class:'tiny muted',text:prod?'Upload the DNA export as CSV. Only email, name, first name, job title and N+1 are read; every other column stays on your computer. Nobody can browse this directory.':'Test deployment: only synthetic addresses (example.com, .test) are accepted. Real DNA data needs the production deployment.'}),
@@ -2128,9 +2130,25 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-forget]');
 // ---- Shared reference library (server system of record) ----
 const STATUS_LABEL={in_review:'In review',needs_work:'Needs work',changes_requested:'Changes requested',awaiting_validation:'Awaiting N+1',published:'Published',withdrawn:'Withdrawn'};
 const clip=text=>String(text||'').slice(0,500);
+function libraryErrorText(error){
+ const clipValue=value=>String(value).slice(0,500);
+ const refusal='The shared library is not available here.';
+ if(typeof error==='string')return clipValue(error)||refusal;
+ if(typeof error==='number'&&Number.isFinite(error))return clipValue(error);
+ if(Array.isArray(error)){
+  const joined=error.filter(part=>typeof part==='string'||typeof part==='number').map(part=>String(part)).join(',');
+  return joined?clipValue(joined):refusal;
+ }
+ if(error&&typeof error==='object'){
+  if(typeof error.detail==='string'&&error.detail)return clipValue(error.detail);
+  if(typeof error.message==='string'&&error.message)return clipValue(error.message);
+  if(typeof error.error==='string'&&error.error)return clipValue(error.error);
+ }
+ return refusal;
+}
 async function libraryApi(path,{method='GET',body}={}){const b=await bootInfo();if(!b.library)throw Error(b.ok===false&&typeof b.error==='string'&&b.error?clip(b.error):'The shared library is not available here.');
  const r=await window.AtlasAuth.fetch('/api/library'+path,{method,headers:method==='GET'?{}:{'Content-Type':'application/json','X-Atlas-CSRF':b.csrf},body:body===undefined?undefined:JSON.stringify(body)});
- const data=await r.json().catch(()=>({}));if(r.status===503){const reason=clip(String(data.error??''));if(reason)throw Error(reason);}if(!r.ok)throw Error(data.error||'The library did not answer.');return data;}
+ const data=await r.json().catch(()=>({}));if(r.status===503)throw Error(libraryErrorText(data?data.error:undefined));if(!r.ok)throw Error(data.error||'The library did not answer.');return data;}
 function libraryPayload(p){const sh=p.sheet;return {sheet:sh&&(sh.oppId||sh.title||Object.values(sh.sections).some(Boolean))?{oppId:sh.oppId,oppIdPending:sh.oppIdPending,title:sh.title,exec:sh.exec,sections:sh.sections,file:sh.file,fileName:sh.fileName,confirmedAt:sh.confirmedAt}:null,title:p.title,stage:p.stage,sector:p.sector,consultant:{name:p.consultant,role:p.role},client:p.client,details:p.details,answers:p.answers,report:p.report,jev:p.jev,
  validation:{manager:p.validation.manager,managerStaff:p.validation.managerStaff},sources:p.sources.map(s=>({name:s.name,version:s.version,url:s.url,excerpt:String(s.text||'').slice(0,1000)}))};}
 async function syncToLibrary(id,{quiet=false}={}){const A=window.AtlasAuth,p=state.profiles.flatMap(u=>u.projects).find(x=>x.id===id);if(!p){A?.pending.delete(id);return null;}if(p.sample)return null;

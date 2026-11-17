@@ -110,11 +110,13 @@ $('n1Email')?.addEventListener('change',async()=>{const name=$('n1Name'),seq=++n
  if(!hit||seq!==n1Seq||name.value.trim()||C.validEmail($('n1Email').value)!==e)return;  // a newer change, a reopened form or typing wins
  n1Auto={email:e,...hit};name.value=hit.name;paintProjectForm();});
 // ---- admin: People directory (§5.6). Rows are built from the mapped approved columns only; nothing else is uploaded.
-const DIR={table:null,file:''};
-async function renderDirectory(){const el=$('peopleDirectory');if(!el)return;el.hidden=true;const b=await window.AtlasAuth.boot();
+const DIR={table:null,file:''};let dirSeq=0;
+async function renderDirectory(){const el=$('peopleDirectory');if(!el)return;const mine=++dirSeq;el.hidden=true;const b=await window.AtlasAuth.boot();
+ if(mine!==dirSeq)return;
  if(b.libraryRole!=='admin'||!b.features?.profile||window.AtlasAuth.mode!=='live')return;
  let st;
- try{st=await app().libraryApi('/directory');}catch(e){el.replaceChildren(h('h3',{text:'People directory'}),h('p',{class:'tiny muted',text:e.message}));el.hidden=false;return;}
+ try{st=await app().libraryApi('/directory');}catch(e){if(mine!==dirSeq)return;el.replaceChildren(h('h3',{text:'People directory'}),h('p',{class:'tiny muted',text:e.message}));el.hidden=false;return;}
+ if(mine!==dirSeq)return;
  const prod=st.dataMode==='production',n=Number(st.rows?.dna_export)||0; // an import replaces the DNA-export rows (the shrink guard compares with those)
  el.replaceChildren(h('h3',{text:'People directory'}));
  el.append(h('p',{class:'tiny muted',text:prod?'Upload the DNA export as CSV. Only email, name, first name, job title and N+1 are read; every other column stays on your computer. Nobody can browse this directory.':'Test deployment: only synthetic addresses (example.com, .test) are accepted. Real DNA data needs the production deployment.'}),

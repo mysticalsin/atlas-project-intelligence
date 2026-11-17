@@ -774,3 +774,11 @@ Review answers:
 - Gates on this host: pytest 264 passed, 106 warnings. Root `node --test tests/*.test.js` 388 tests, 387 passed, 1 skipped (Natural Earth regeneration needs `ATLAS_NE_SRC`). Edge 543 passed, and the same 543 with `--test-concurrency=16`. `scripts/verify_page_build.sh` twice, both exit 0, 907946 bytes. `make test-ui` ten consecutive first runs, each exit 0, 770 PASS, 0 FAIL. No provider call, no deploy.
 - The rolled-back privacy-erasure audit stays deferred. `origin/main` still has no `withTransaction`.
 - Quarantine is not deletion. Vendor deletion stays not-asserted. A Cloudflare Durable Object runtime was not executed.
+
+### Session: 2026-11-17 / PR8 library 503 shapes and directory overlap
+- Same branch, from `fd96fb5`. Red commit `86c77ec` failed on that head before the fix: an object library 503 still rendered `[object Object]`, a null error used `The library did not answer.`, and an older `renderDirectory` revealed the panel while a newer fetch was pending.
+- `libraryErrorText` is used only on the library 503 line. A string or number is clipped to 500 characters. An array of strings or numbers is joined and clipped. An object uses `detail`, then `message`, then `error` when that value is a non-empty string, clipped. Null, undefined, an empty string, and an unusable object use `The shared library is not available here.`
+- `renderDirectory` keeps a call counter. After each await, a call that is no longer the latest returns without changing `hidden` or the children.
+- Gates on this host: pytest 264 passed, 106 warnings. Root `node --test tests/*.test.js` 390 tests, 389 passed, 1 skipped (Natural Earth regeneration needs `ATLAS_NE_SRC`). Edge 543 passed, and the same 543 with `--test-concurrency=16`. `scripts/verify_page_build.sh` twice, both exit 0, 908818 bytes, pin `7fb4b831bc88c7c20352f8e9380ffd9ff7b93e083eb969bfa97d5e6d52bc0970`. `make test-ui` three consecutive first runs, each exit 0, 771 PASS, 0 FAIL. No provider call, no deploy.
+- The rolled-back privacy-erasure audit stays deferred.
+- Quarantine is not deletion. Vendor deletion stays not-asserted. A Cloudflare Durable Object runtime was not executed.
