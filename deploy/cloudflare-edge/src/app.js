@@ -25,6 +25,7 @@ import { boundedBytes, boundedText } from './bounded.js';
 import { cspReport } from './csp-report.js';
 import { renderNoticeHtml } from './privacy.js';
 import { timingSafe } from './timing-safe.js';
+import { auditKey } from './audit-chain.js';
 
 const enc = new TextEncoder();
 // One voice for everyone: @cf/deepgram/aura-2-en "harmonia" (Deepgram: empathetic, clear, calm, confident).
@@ -146,6 +147,11 @@ const NOT_COVERED = [
 const AUDIO_MIN = 4800, AUDIO_MAX = 1536000;
 const HOUR_MS = 36e5;
 
+// One check for the cron and both bearer ingresses. Production without LOG_SALT must not open the library.
+function rejectUnkeyedAudit(env) {
+  if (auditKey(env) != null) return null;
+  return json(env, { error: 'LOG_SALT is not set.', code: 'LOG_SALT' }, 503);
+}
 // The cron and the two bearer ingresses share one configured tenant. A caller header or JSON
 // field is never the tenant. When isolation is on, a missing or malformed ATLAS_SYSTEM_TENANT
 // stops the request before the durable object. The local demo stays on the blank sandbox.
@@ -214,6 +220,8 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
       const scope = systemScope(env);
       if (!scope.ok) return json(env, scope.body, scope.status);
       if (callerNamedTenant(request, raw).some(t => t !== scope.tenant)) return json(env, { error: 'A system ingress uses only the configured tenant. The tenant on this request was not accepted.' }, 403);
+      const unkeyed = rejectUnkeyedAudit(env);
+      if (unkeyed) return unkeyed;
       const fwd = new Request(new URL('/api/library/trigger', request.url), { method: 'POST', body: raw, headers: systemForwardHeaders('pm-system', scope) });
       const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(fwd);
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
@@ -230,6 +238,8 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
       const scope = systemScope(env);
       if (!scope.ok) return json(env, scope.body, scope.status);
       if (callerNamedTenant(request, bytes).some(t => t !== scope.tenant)) return json(env, { error: 'A system ingress uses only the configured tenant. The tenant on this request was not accepted.' }, 403);
+      const unkeyed = rejectUnkeyedAudit(env);
+      if (unkeyed) return unkeyed;
       const fwd = new Request(new URL('/api/library/directory/import', request.url), { method: 'POST', body: bytes, headers: systemForwardHeaders('dna-push', scope) });
       const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(fwd);
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
@@ -474,7 +484,7 @@ async function storedSpokenAsk(env, { libraryUser, role, mail, tenant, tenantFla
 // Daily cron (worker.js delegates here so Node tests cover it): references not updated for six months get an
 // update invitation for their owner, plus the feature modules' daily housekeeping. Nothing is ever sent.
 export async function scheduled(controller, env, ctx) {
-  if (!env.LIBRARY || productionDemoConflict(env)) return;
+  if (!env.LIBRARY || productionDemoConflict(env) || rejectUnkeyedAudit(env)) return;
   const enforced = tenantEnforced(env);
   const tenant = String(env.ATLAS_SYSTEM_TENANT || '').trim().toLowerCase();
   if (enforced && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenant)) return;

@@ -547,7 +547,7 @@ test('claims decisions, gap context and system ingress stay on the verified tena
   assert.equal(asked.asks.length, 1);
   const origin = 'https://atlas.example.workers.dev';
   const library = { idFromName: n => n, get: () => ({ fetch: req => libraryRoutes(req, l, { env: { DATA_MODE: 'production', ORIGIN: origin, CSRF_SECRET: 'test-secret', ATLAS_SYSTEM_TENANT: A } }) }) };
-  const env = { ORIGIN: origin, CSRF_SECRET: 'test-secret', DATA_MODE: 'production', TRIGGER_SECRET: 's3cret-value', ATLAS_SYSTEM_TENANT: A, LIBRARY: library };
+  const env = { ORIGIN: origin, CSRF_SECRET: 'test-secret', DATA_MODE: 'production', LOG_SALT: 'synthetic-log-salt', TRIGGER_SECRET: 's3cret-value', ATLAS_SYSTEM_TENANT: A, LIBRARY: library };
   const forged = await handle(new Request(origin + '/api/triggers', { method: 'POST', body: JSON.stringify({ email: 'ada@example.test', reason: 'manual', projectId: 'PRJ-FORGE', tenant: B }), headers: { Authorization: 'Bearer s3cret-value' } }), env, '');
   assert.equal(forged.status, 403);
   assert.equal(l.rows("SELECT COUNT(*) AS n FROM invitations WHERE project_id = 'PRJ-FORGE'")[0].n, 0);

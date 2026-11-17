@@ -166,7 +166,7 @@ export function pseudonymiseAudit(lib, emails, token, { ids = null } = {}) {
     if (!actorHit && !detailHit) return null;
     if (allow && !allow.has(id) && !PRIVACY_LOG.has(id)) return null;
     return { actor: token, detail: '' };
-  }, lib.auditKey);
+  }, lib.auditKey, lib.dbId);
 }
 
 const inBids = (lib, refId) => tableExists(lib, 'bid_references') && lib.rows('SELECT 1 AS x FROM bid_references WHERE ref_id = ? LIMIT 1', refId).length > 0;

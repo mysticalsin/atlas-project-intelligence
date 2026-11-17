@@ -19,9 +19,13 @@
 // A null or empty commit is not a chain-start.
 // The column adds, the chain-start index, the chain-start insert and the anchor table write
 // of that first migration run in one storage.transactionSync. The callback is synchronous.
-// A store with no transactionSync is not migrated. A null key is not migrated either:
-// production without LOG_SALT leaves the table main-shaped, writes nothing, and does not
-// seal the store, so a later open with a key migrates in that one transaction.
+// A store with no transactionSync is not migrated. A null key is not migrated either, and
+// verifyChain and verifyDaily return LOG_SALT before they call ensureChain. Production
+// without LOG_SALT leaves the table main-shaped, writes nothing, and does not seal the
+// store, so a later open with a key migrates in that one transaction.
+// The chain-start MAC also binds the Durable Object id passed in by the caller. Later rows
+// chain from that row and do not repeat the id. A chain signed under 9d47ae2, which omitted
+// the id, is COMMIT_MISMATCH. Nothing was shipped, so there is no upgrade.
 // A throw rolls the schema back to the main-shaped table. Once an anchor row exists, or the
 // commit column exists, the chain is not migrated again.
 // A missing signed chain-start, keyed values that are all null, or a chain of only unsigned
@@ -92,8 +96,11 @@ export function auditKey(env) {
 // seq, id, action, at and prev_hash are inside the MAC, so a copied commit fails on any other
 // event and a recomputed public hash cannot relink or reorder the row.
 // tenant is included only when the table has that column, and then it is always included.
-export function contentCommit(key, row, withTenant = false) {
+// A chain-start also binds the database id. That id comes from the caller, not from the row,
+// so copying the row into another database does not bring the identity with it.
+export function contentCommit(key, row, withTenant = false, dbId = '') {
   const parts = [Number(row.seq), String(row.id ?? ''), String(row.action ?? ''), String(row.at ?? ''), String(row.actor ?? ''), String(row.detail ?? ''), String(row.prev_hash ?? '')];
+  if (String(row.action) === 'chain-start') parts.push(String(dbId ?? ''));
   if (withTenant) parts.push(String(row.tenant ?? ''));
   return hmacHex(key, JSON.stringify(parts));
 }
@@ -186,7 +193,7 @@ function classifyChain(sql) {
 }
 // One keyed row naming the legacy prefix. A null commit is not this row.
 // An anchor row means this database already had a chain. Do not delete it and do not seed again.
-function appendChainStart(sql, key) {
+function appendChainStart(sql, key, dbId = '') {
   if (chainStartSeqs(sql).length || anchorRow(sql)) return;
   const stats = sql.exec('SELECT COUNT(*) AS n, MAX(seq) AS maxSeq FROM audit').toArray()[0] || {};
   const legacy = Number(stats.n) || 0;
@@ -195,7 +202,7 @@ function appendChainStart(sql, key) {
   const seq = nextSeq(sql);
   const withTenant = hasColumn(sql, 'tenant');
   const row = { seq, id: 'audit', actor: 'atlas', action: CHAIN_START, at, detail, tenant: '', prev_hash: GENESIS };
-  const commit = contentCommit(key, row, withTenant);
+  const commit = contentCommit(key, row, withTenant, dbId);
   const prev = GENESIS;
   const hash = rowHash(prev, { id: row.id, action: row.action, at, commit });
   clearAnchor(sql);
@@ -225,7 +232,7 @@ function indexChainStart(sql) {
 // transactionSync is storage.transactionSync from library-store.js. It is synchronous.
 // The first migration is one callback, so a crash rolls back to the main-shaped table.
 // A null key writes nothing and does not seal, so the next keyed open can still migrate.
-export function ensureChain(sql, key = '', transactionSync = null) {
+export function ensureChain(sql, key = '', transactionSync = null, dbId = '') {
   if (sealed.has(sql)) return;
   const atomic = typeof transactionSync === 'function' ? transactionSync
     : (typeof sql?.transactionSync === 'function' ? sql.transactionSync.bind(sql) : null);
@@ -247,19 +254,19 @@ export function ensureChain(sql, key = '', transactionSync = null) {
     indexChainStart(sql);
     if (key != null && !chainStartSeqs(sql).length) {
       const rows = sql.exec('SELECT hash, prev_hash, "commit" FROM audit').toArray();
-      if (!rows.some(r => r.hash || r.prev_hash || r.commit)) appendChainStart(sql, key);
+      if (!rows.some(r => r.hash || r.prev_hash || r.commit)) appendChainStart(sql, key, dbId);
     }
   });
   sealed.add(sql);
 }
 
 // The single write path for audit rows (called from Library.log).
-export function appendAudit(sql, { id, actor, action, at, detail, tenant }, key = '') {
+export function appendAudit(sql, { id, actor, action, at, detail, tenant }, key = '', dbId = '') {
   if (key == null) { const err = new Error('LOG_SALT is not set.'); err.status = 503; throw err; }
   if (String(action) === CHAIN_START) { const err = new Error('A second chain-start is refused.'); err.status = 409; throw err; }
-  ensureChain(sql, key);
+  ensureChain(sql, key, null, dbId);
   // Refuse every non-verified result, including a chain that is only shorter than its anchor.
-  const verdict = anchoredVerdict(sql, verifyChain(sql, key));
+  const verdict = anchoredVerdict(sql, verifyChain(sql, key, dbId));
   if (!verdict.ok) { const err = new Error('The audit chain is tampered.'); err.status = 409; throw err; }
   const last = sql.exec('SELECT hash FROM audit WHERE hash IS NOT NULL ORDER BY seq DESC LIMIT 1').toArray()[0];
   const prev = last?.hash || GENESIS;
@@ -274,9 +281,9 @@ export function appendAudit(sql, { id, actor, action, at, detail, tenant }, key 
 }
 
 const ROW = 'seq, id, actor, action, at, detail, prev_hash, hash, "commit", tombstone';
-function bound(key, r, withTenant) {
+function bound(key, r, withTenant, dbId) {
   const commit = String(r.commit ?? '');
-  if (sameText(contentCommit(key, r, withTenant), commit)) return true;
+  if (sameText(contentCommit(key, r, withTenant, dbId), commit)) return true;
   return TOMBSTONE_ACTOR.test(String(r.actor || '')) && String(r.detail ?? '') === '' && !!r.tombstone && sameText(r.tombstone, tombstoneProof(key, r, withTenant));
 }
 function finish(ok, fields, legacyUnverified) {
@@ -285,12 +292,12 @@ function finish(ok, fields, legacyUnverified) {
 // Walks the keyed rows in order (500 at a time). Legacy rows before chain-start are counted and not checked.
 // { ok, checked, head } or { ok: false, brokenSeq, reason, head }. legacyUnverified is set when it is not zero.
 // reasons: UNSEALED, HASH_MISMATCH, LINK_BROKEN, COMMIT_MISMATCH, TAMPERED, LOG_SALT.
-export function verifyChain(sql, key = '') {
+export function verifyChain(sql, key = '', dbId = '') {
+  if (key == null) return { ok: false, checked: 0, brokenSeq: null, reason: 'LOG_SALT', head: GENESIS };
   if (hashesWithoutCommit(sql)) return tamperedResult(sql);
-  ensureChain(sql, key);
+  ensureChain(sql, key, null, dbId);
   const kind = classifyChain(sql);
   if (hashesWithoutCommit(sql) || kind === 'tampered') return tamperedResult(sql);
-  if (key == null) return { ok: false, checked: 0, brokenSeq: null, reason: 'LOG_SALT', head: GENESIS };
   const starts = chainStartSeqs(sql);
   if (starts.length > 1) return { ok: false, checked: 0, brokenSeq: starts[1], reason: 'TAMPERED', head: GENESIS };
   const startSeq = starts.length ? starts[0] : null;
@@ -316,7 +323,7 @@ export function verifyChain(sql, key = '') {
         if (!sameText(r.prev_hash, GENESIS)) return bad('TRUNCATED');
       } else if (!sameText(r.prev_hash, prevHash)) return bad('LINK_BROKEN');
       if (!sameText(rowHash(r.prev_hash, r), r.hash)) return bad('HASH_MISMATCH');
-      if (!bound(key, r, withTenant)) return bad('COMMIT_MISMATCH');
+      if (!bound(key, r, withTenant, dbId)) return bad('COMMIT_MISMATCH');
       verifiedSeqs.push(Number(r.seq));
       prevHash = head = r.hash; after = r.seq; checked++;
     }
@@ -327,9 +334,9 @@ export function verifyChain(sql, key = '') {
 // A keyed row keeps prev_hash, hash and commit, and stores the proof, so later rows are not resealed.
 // A legacy row is only overwritten with the tombstone text. It was never signed, so erasure does not sign it
 // and does not refuse because of it. A broken keyed chain still refuses keyed rows.
-export function rewriteRows(sql, edit, key = '') {
+export function rewriteRows(sql, edit, key = '', dbId = '') {
   if (key == null) return { refused: true, reason: 'LOG_SALT', brokenSeq: null, changed: 0, head: null, previousHead: null };
-  const before = verifyChain(sql, key);
+  const before = verifyChain(sql, key, dbId);
   const starts = chainStartSeqs(sql);
   const startSeq = starts.length === 1 ? starts[0] : null;
   const withTenant = hasColumn(sql, 'tenant');
@@ -373,14 +380,14 @@ function keyedAt(sql, n) {
 // Daily check of the keyed chain. Legacy rows are a separate count and are not a break.
 // Stores n and the head when the keyed chain verifies, is not shorter than the last anchor,
 // and the stored head is still the hash of that keyed row. Otherwise the anchor stays.
-export function verifyDaily(sql, key = '') {
-  if (hashesWithoutCommit(sql)) return verifyChain(sql, key);
-  ensureChain(sql, key);
-  const kind = classifyChain(sql);
-  if (hashesWithoutCommit(sql) || kind === 'tampered') return verifyChain(sql, key);
+export function verifyDaily(sql, key = '', dbId = '') {
   if (key == null) return { ok: false, reason: 'LOG_SALT', checked: 0, head: GENESIS, legacyUnverified: 0 };
+  if (hashesWithoutCommit(sql)) return verifyChain(sql, key, dbId);
+  ensureChain(sql, key, null, dbId);
+  const kind = classifyChain(sql);
+  if (hashesWithoutCommit(sql) || kind === 'tampered') return verifyChain(sql, key, dbId);
   sql.exec(ANCHOR);
-  const result = anchoredVerdict(sql, verifyChain(sql, key));
+  const result = anchoredVerdict(sql, verifyChain(sql, key, dbId));
   const legacyUnverified = result.legacyUnverified || 0;
   if (!result.ok) return { ...result, legacyUnverified };
   sql.exec('INSERT INTO audit_anchor (id, n, head) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET n = excluded.n, head = excluded.head', result.checked, result.head);

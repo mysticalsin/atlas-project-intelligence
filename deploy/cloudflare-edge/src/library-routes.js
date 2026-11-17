@@ -20,7 +20,7 @@ function scopedReviewer(user = {}) {
 const canRate = lib => !!(lib.complete || lib.rater?.available());
 async function reportChain(lib, env) {
   try {
-    const r = verifyDaily(lib.sql, lib.auditKey);
+    const r = verifyDaily(lib.sql, lib.auditKey, lib.dbId);
     const head = String(r.head || '').slice(0, 16);
     if (r.ok) await secEvent(env, 'audit_chain_ok', { reason: 'CHAIN_VERIFIED', n: r.checked, head, legacy: r.legacyUnverified || 0 });
     else await secEvent(env, 'audit_chain_break', { reason: r.reason || 'VERIFY_FAILED', n: r.brokenSeq ?? r.checked, head });

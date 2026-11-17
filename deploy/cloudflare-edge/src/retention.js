@@ -78,7 +78,7 @@ export function sweep(lib, { now = lib.now(), retention = RETENTION, tenant } = 
       if (!personal && row.detail === '') return null;
       if (!names.has(row.actor)) names.set(row.actor, token());
       return { actor: names.get(row.actor), detail: '' };
-    }, lib.auditKey);
+    }, lib.auditKey, lib.dbId);
     if (r.refused) out.auditRefused = { reason: r.reason, brokenSeq: r.brokenSeq }; // X1 (red M8): a chain that does not verify is left untouched; the cron reports it
     else if (r.changed) { add('auditRows', r.changed); out.auditHead = r.head; out.auditPreviousHead = r.previousHead; }
   }
