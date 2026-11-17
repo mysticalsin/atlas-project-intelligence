@@ -267,7 +267,7 @@ export function appendAudit(sql, { id, actor, action, at, detail, tenant }, key 
   ensureChain(sql, key, null, dbId);
   // Refuse every non-verified result, including a chain that is only shorter than its anchor.
   const verdict = anchoredVerdict(sql, verifyChain(sql, key, dbId));
-  if (!verdict.ok) { const err = new Error('The audit chain is tampered.'); err.status = 409; throw err; }
+  if (!verdict.ok) { const err = new Error('The audit chain is tampered.'); err.status = 409; err.code = verdict.reason; throw err; }
   const last = sql.exec('SELECT hash FROM audit WHERE hash IS NOT NULL ORDER BY seq DESC LIMIT 1').toArray()[0];
   const prev = last?.hash || GENESIS;
   const seq = nextSeq(sql);
@@ -362,7 +362,7 @@ export function rewriteRows(sql, edit, key = '', dbId = '') {
 }
 
 // The in-table walk plus the stored anchor. Does not write the anchor.
-function anchoredVerdict(sql, result) {
+export function anchoredVerdict(sql, result) {
   if (!result.ok) return result;
   const prev = anchorRow(sql);
   if (prev && result.checked < Number(prev.n)) return { ...result, ok: false, reason: 'TRUNCATED', previousN: Number(prev.n), previousHead: prev.head };

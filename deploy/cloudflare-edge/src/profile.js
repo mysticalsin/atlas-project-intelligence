@@ -6,6 +6,7 @@
 // addresses only. The pull connector's shape is ASSUMED (§5.3); push (§5.4) and the CSV export (§5.6) are equal options.
 import { str, email as validEmail, obj, fail, inList, rateLimit } from './util.js';
 import { TENANT_ID } from './authz.js';
+import { anchoredVerdict, verifyChain } from './audit-chain.js';
 
 // Flipped by the owning track only when the zero-config acceptance suites pass (WOW_SPEC §2.1, §2.5): flipped in Z-S2
 // after tests/zero_config_edge_browser.py and tests/zero_config_browser.py passed locally.
@@ -413,41 +414,48 @@ function importPart(lib, env, user, body, source) {
   if (!Number.isInteger(part) || part < 1 || part > 40) throw fail(400, 'part must be a whole number from 1 to 40.');
   if (!Array.isArray(rows) || rows.length > 500) throw fail(400, 'Send at most 500 rows per part.');
   if (b.final !== undefined && typeof b.final !== 'boolean') throw fail(400, 'final must be true or false.');
+  const verdict = anchoredVerdict(lib.sql, verifyChain(lib.sql, lib.auditKey, lib.dbId));
+  if (!verdict.ok) { const err = fail(409, 'The audit chain is tampered.'); err.code = verdict.reason; throw err; }
   let imp = lib.rows('SELECT * FROM directory_imports WHERE batch = ? AND lower(COALESCE(tenant, \'\')) = ?', batch, tenant)[0];
   if (imp && (imp.state !== 'staged' || imp.source !== source)) throw fail(409, 'This import batch is already finished.');
-  if (!imp) {
-    lib.sql.exec("INSERT INTO directory_imports (batch, tenant, source, by, started_at, finished_at, rows, rejected, state) VALUES (?, ?, ?, ?, ?, '', 0, 0, 'staged')", batch, tenant, source, user.email, now);
-    imp = { rows: 0, rejected: 0 };
-  }
-  const stage = 'staged:' + batch, production = env.DATA_MODE === 'production', offset = imp.rows + imp.rejected, rejected = [];
-  let accepted = 0;
-  rows.forEach((raw, i) => {
-    const r = cleanRow(raw, production);
-    if (r.reason) { rejected.push({ row: offset + i + 1, reason: r.reason }); return; }
-    const x = r.row; accepted++;
-    lib.sql.exec(`INSERT OR REPLACE INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      x.key, stage, x.name, x.given_name, x.title, x.manager_name, x.manager_email, batch, now, tenant);
-  });
-  lib.sql.exec('UPDATE directory_imports SET rows = rows + ?, rejected = rejected + ? WHERE batch = ? AND lower(COALESCE(tenant, \'\')) = ?', accepted, rejected.length, batch, tenant);
-  if (!final) return { accepted, rejected };
-  const count = s => lib.rows("SELECT COUNT(*) AS n FROM directory WHERE source = ? AND lower(COALESCE(tenant, '')) = ? AND batch != 'pull'", s, tenant)[0].n, from = count(source), to = count(stage);
-  const total = lib.rows('SELECT rows, rejected FROM directory_imports WHERE batch = ? AND lower(COALESCE(tenant, \'\')) = ?', batch, tenant)[0];
-  // Shrink guard: a partial export must never wipe the directory silently. A push cannot confirm, so it is refused.
-  if (to < 0.8 * from && !(b.confirmShrink === true && user.role !== 'system')) {
-    lib.recorded(() => {
+  const stage = 'staged:' + batch, production = env.DATA_MODE === 'production';
+  const done = lib.recorded(() => {
+    if (!imp) {
+      lib.sql.exec("INSERT INTO directory_imports (batch, tenant, source, by, started_at, finished_at, rows, rejected, state) VALUES (?, ?, ?, ?, ?, '', 0, 0, 'staged')", batch, tenant, source, user.email, now);
+      imp = { rows: 0, rejected: 0 };
+    }
+    const offset = imp.rows + imp.rejected, rejected = [];
+    let accepted = 0;
+    rows.forEach((raw, i) => {
+      const r = cleanRow(raw, production);
+      if (r.reason) { rejected.push({ row: offset + i + 1, reason: r.reason }); return; }
+      const x = r.row; accepted++;
+      lib.sql.exec(`INSERT OR REPLACE INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        x.key, stage, x.name, x.given_name, x.title, x.manager_name, x.manager_email, batch, now, tenant);
+    });
+    lib.sql.exec('UPDATE directory_imports SET rows = rows + ?, rejected = rejected + ? WHERE batch = ? AND lower(COALESCE(tenant, \'\')) = ?', accepted, rejected.length, batch, tenant);
+    if (!final) {
+      lib.log('directory', user.email, 'directory_import', `${source}: staged part ${part}, ${accepted} rows, ${rejected.length} rejected`);
+      return { accepted, rejected };
+    }
+    const count = s => lib.rows("SELECT COUNT(*) AS n FROM directory WHERE source = ? AND lower(COALESCE(tenant, '')) = ? AND batch != 'pull'", s, tenant)[0].n;
+    const from = count(source), to = count(stage);
+    const total = lib.rows('SELECT rows, rejected FROM directory_imports WHERE batch = ? AND lower(COALESCE(tenant, \'\')) = ?', batch, tenant)[0];
+    // Shrink guard: a partial export must never wipe the directory silently. A push cannot confirm, so it is refused.
+    if (to < 0.8 * from && !(b.confirmShrink === true && user.role !== 'system')) {
       lib.sql.exec("DELETE FROM directory WHERE source = ? AND lower(COALESCE(tenant, '')) = ?", stage, tenant);
       lib.sql.exec("UPDATE directory_imports SET state = 'refused', finished_at = ? WHERE batch = ? AND lower(COALESCE(tenant, '')) = ?", now, batch, tenant);
       lib.log('directory', user.email, 'directory_import refused', `${source}: ${to} rows would replace ${from}`);
-    });
-    throw fail(409, `This replaces ${from} rows with ${to}. That is far fewer people than before: confirm to replace anyway.`);
-  }
-  lib.recorded(() => {
+      return { shrink: true, from, to };
+    }
     lib.sql.exec("DELETE FROM directory WHERE source = ? AND lower(COALESCE(tenant, '')) = ?", source, tenant);
     lib.sql.exec("UPDATE directory SET source = ? WHERE source = ? AND lower(COALESCE(tenant, '')) = ?", source, stage, tenant);
     lib.sql.exec("UPDATE directory_imports SET state = 'applied', finished_at = ? WHERE batch = ? AND lower(COALESCE(tenant, '')) = ?", now, batch, tenant);
     lib.log('directory', user.email, 'directory_import', `${source}: ${to} rows, ${total.rejected} rejected, replaced ${from}`);
+    return { accepted, rejected, replaced: { from, to } };
   });
-  return { accepted, rejected, replaced: { from, to } };
+  if (done.shrink) throw fail(409, `This replaces ${done.from} rows with ${done.to}. That is far fewer people than before: confirm to replace anyway.`);
+  return done;
 }
 function directoryStatus(lib, env, user = {}) {
   const tenant = tenantKey(user);

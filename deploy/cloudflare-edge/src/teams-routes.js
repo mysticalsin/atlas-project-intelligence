@@ -11,6 +11,7 @@ import { TENANT_ID, tenantEnforced } from './authz.js';
 import { TEAMS_JS } from '../teams/vendor/teams-js.mjs';
 import { baseSecurityHeaders } from './security-headers.js';
 import { htmlCsp, inlineScriptHashes } from './csp.js';
+import { auditKey } from './audit-chain.js';
 
 const MAX_BODY = 262144;
 const BASE = baseSecurityHeaders();
@@ -82,6 +83,7 @@ async function messages(request, env, fetcher) {
   const event = eventOf(v.activity, env);
   if (!event) return json({}, 200);
   if (!env.LIBRARY) return json({ error: 'The reference library is not configured on this deployment.' }, 503);
+  if (auditKey(env) == null) return json({ error: 'LOG_SALT is not set.', code: 'LOG_SALT' }, 503);
   if (event.kind === 'install') { // routing email from the member lookup, only when the outbound client exists (connected)
     const client = teamsClient(env, fetcher);
     if (client) { try { event.email = (await client.member(event, event.teamsUserId)).email; } catch { /* stored without an email */ } }

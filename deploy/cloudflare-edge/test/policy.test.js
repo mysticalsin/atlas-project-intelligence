@@ -776,7 +776,7 @@ test('subject and mail meet on the staffing route, the stale scan and a Teams ca
   assert.notEqual(inviteBefore.status, 'dismissed');
   assert.equal(JSON.stringify(l.row(hidden.id)), storyBefore);
   assert.equal(l.rows('SELECT COUNT(*) AS n FROM audit WHERE id = ?', hidden.id)[0].n, beforeHidden);
-  assert.equal(l.rows("SELECT COUNT(*) AS n FROM audit WHERE action = 'invitation dismiss' AND detail LIKE '%Teams card%'")[0].n, 0);
+  assert.equal(l.rows("SELECT id, detail FROM audit WHERE action = 'invitation dismiss' AND detail LIKE '%Teams card%'").map(r => r.id + ' ' + r.detail).join('|'), 'library manual (Teams card)');
   const second = await l.upsert({ email: 'kim@example.test', mail: 'kim@example.test', role: 'user', tenant: A, tenantEnforced: true }, { localId: 'same-project', reference: { ...ref(), title: 'Second live title' } });
   await l.review({ email: 'atlas', role: 'admin', tenant: A, tenantEnforced: true }, story.id);
   await l.review({ email: 'atlas', role: 'admin', tenant: A, tenantEnforced: true }, second.id);
@@ -942,7 +942,8 @@ test('an inaccessible reference allows only an invitation decline, over HTTP and
   assert.equal(JSON.stringify(replay.body).includes('Understood'), true);
   assert.equal(l.rows("SELECT status FROM invitations WHERE id = 'inv-http'")[0].status, 'dismissed');
   assert.equal(l.rows("SELECT COUNT(*) AS n FROM teams_seen WHERE activity_id = 'http-snooze'")[0].n, 1);
-  assert.equal(audits(), before);
+  assert.equal(audits(), before + 1);
+  assert.deepEqual(l.rows("SELECT id, detail FROM audit WHERE action = 'invitation dismiss'"), [{ id: 'library', detail: 'manual (Teams card)' }]);
   l.sql.exec("UPDATE invitations SET status = 'open' WHERE id = 'inv-http'");
   l.sql.exec('DELETE FROM teams_seen');
   const dismissed = await post({ action: 'dismiss' });
@@ -955,7 +956,8 @@ test('an inaccessible reference allows only an invitation decline, over HTTP and
   assert.equal(JSON.stringify(body).includes('Hidden story title'), false);
   assert.equal(JSON.stringify(body).includes('SECRET-PROJECT'), false);
   assert.equal(l.rows("SELECT reference_id FROM invitations WHERE id = 'inv-http'")[0].reference_id, hidden.id);
-  assert.equal(audits(), before);
+  assert.equal(audits(), before + 2);
+  assert.deepEqual(l.rows("SELECT id, detail FROM audit WHERE action = 'invitation dismiss' ORDER BY seq"), [{ id: 'library', detail: 'manual (Teams card)' }, { id: 'library', detail: 'manual' }]);
   assert.equal(JSON.stringify(l.row(hidden.id)), story);
   l.sql.exec("UPDATE invitations SET status = 'open' WHERE id = 'inv-http'");
   l.sql.exec('DELETE FROM teams_seen');
@@ -970,7 +972,8 @@ test('an inaccessible reference allows only an invitation decline, over HTTP and
   assert.equal(JSON.stringify(declined.body).includes('Understood'), true);
   assert.equal(JSON.stringify(declined.body).includes(hidden.id), false);
   assert.equal(l.rows("SELECT status, reference_id FROM invitations WHERE id = 'inv-http'")[0].status, 'dismissed');
-  assert.equal(audits(), before);
+  assert.equal(audits(), before + 3);
+  assert.equal(l.rows("SELECT COUNT(*) AS n FROM audit WHERE action = 'invitation dismiss' AND id = ?", hidden.id)[0].n, 0);
   assert.equal(JSON.stringify(l.row(hidden.id)), story);
 });
 

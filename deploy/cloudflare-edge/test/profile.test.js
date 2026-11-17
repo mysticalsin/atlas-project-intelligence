@@ -350,7 +350,7 @@ test('directory import: admin only, staged parts, final replace, row numbers wit
   assert.deepEqual((await call(l, ADMIN, 'POST', 'directory/clear')).body, { cleared: 2 });
   assert.equal(profile.lookupPerson(l, 'jane@example.com'), null);
   const audit = l.rows("SELECT action, detail FROM audit WHERE id = 'directory' ORDER BY seq").map(a => a.action + ': ' + a.detail);
-  assert.deepEqual(audit, ['directory_import: dna_export: 2 rows, 7 rejected, replaced 0', 'directory_import: dna_export: 2 rows, 0 rejected, replaced 2', 'directory cleared: 2 rows']);
+  assert.deepEqual(audit, ['directory_import: dna_export: staged part 1, 1 rows, 2 rejected', 'directory_import: dna_export: 2 rows, 7 rejected, replaced 0', 'directory_import: dna_export: 2 rows, 0 rejected, replaced 2', 'directory cleared: 2 rows']);
 });
 
 test('shrink guard: a final part with M < 0.8·N answers 409 without confirmShrink and discards the staged batch; a push can never confirm', async () => {

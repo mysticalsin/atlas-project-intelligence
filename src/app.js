@@ -14,7 +14,9 @@ let view='interview',editingProjectId=null,editingSourceId=null,inspectingId=nul
 let pendingGap=null;
 // Library sync bookkeeping, in this tab's memory only (WOW_ZERO_CONFIG §3.7, §3.8): a project is saved to ATLAS when the payload
 // last accepted by the library equals its current payload. Nothing here reaches browser storage.
-const syncing=new Set(),syncedHash=new Map();let stripTimer=0,lastStrip=null,memoryOn=null;
+const syncing=new Set(),syncedHash=new Map(),auditHold=new Map();let stripTimer=0,lastStrip=null,memoryOn=null;
+const CHAIN_REFUSAL=new Set(['TRUNCATED','TAMPERED','COMMIT_MISMATCH','HASH_MISMATCH','LINK_BROKEN','UNSEALED','ANCHOR_MOVED']);
+const CHAIN_LINE="Not saved: audit history can't be verified";
 try{const raw=localStorage.getItem(KEY);if(raw){state=E.validateState(JSON.parse(raw));persisted=true;lastDisk=raw;}}catch(err){storageError='Saved data could not be opened. Export or recover it before replacing it.';try{if(localStorage.getItem(KEY))blocked=true;}catch{storageError='Browser storage is unavailable. Use workspace backups.';}}
 const profile=()=>state.profiles.find(x=>x.id===state.activeProfile),project=()=>profile().projects.find(p=>p.id===profile().lastProject)||null;
 const emptyReview=()=>({facts:null,permission:null});
@@ -28,6 +30,7 @@ const payloadHash=p=>E.simpleHash(JSON.stringify(libraryPayload(p)));
 const unsynced=p=>syncedHash.get(p.id)!==payloadHash(p);
 const serverMode=()=>!!bootCache?.library&&['live','expired'].includes(window.AtlasAuth?.mode);
 function computeStrip(){const all=ownProjects();if(all.some(p=>syncing.has(p.id)))return {text:'Saving to ATLAS…',retry:false};
+ if(all.some(p=>auditHold.has(p.id)&&unsynced(p)))return {text:CHAIN_LINE,retry:false};
  const retry=all.some(unsynced);if(retry||all.some(p=>p.gapNotes))return {text:'Not saved to ATLAS yet · kept in this tab'+(retry?' ·':''),retry};return {text:'Saved to ATLAS',retry:false};}
 // Hashing every project on each keystroke would be wasteful: the strip settles 250 ms after the last change.
 function serverStrip(){if(persisted||!serverMode())return null;if(!lastStrip)lastStrip=computeStrip();clearTimeout(stripTimer);
@@ -206,15 +209,15 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-forget]');
 const STATUS_LABEL={in_review:'In review',needs_work:'Needs work',changes_requested:'Changes requested',awaiting_validation:'Awaiting N+1',published:'Published',withdrawn:'Withdrawn'};
 async function libraryApi(path,{method='GET',body}={}){const b=await bootInfo();if(!b.library)throw Error('The shared library is not available here.');
  const r=await window.AtlasAuth.fetch('/api/library'+path,{method,headers:method==='GET'?{}:{'Content-Type':'application/json','X-Atlas-CSRF':b.csrf},body:body===undefined?undefined:JSON.stringify(body)});
- const data=await r.json().catch(()=>({}));if(!r.ok)throw Error(data.error||'The library did not answer.');return data;}
+ const data=await r.json().catch(()=>({}));if(!r.ok){const err=Error(data.error||'The library did not answer.');err.status=r.status;if(data.code)err.code=data.code;throw err;}return data;}
 function libraryPayload(p){const sh=p.sheet;return {sheet:sh&&(sh.oppId||sh.title||Object.values(sh.sections).some(Boolean))?{oppId:sh.oppId,oppIdPending:sh.oppIdPending,title:sh.title,exec:sh.exec,sections:sh.sections,file:sh.file,fileName:sh.fileName,confirmedAt:sh.confirmedAt}:null,title:p.title,stage:p.stage,sector:p.sector,consultant:{name:p.consultant,role:p.role},client:p.client,details:p.details,answers:p.answers,report:p.report,jev:p.jev,
  validation:{manager:p.validation.manager,managerStaff:p.validation.managerStaff},sources:p.sources.map(s=>({name:s.name,version:s.version,url:s.url,excerpt:String(s.text||'').slice(0,1000)}))};}
 async function syncToLibrary(id,{quiet=false}={}){const A=window.AtlasAuth,p=state.profiles.flatMap(u=>u.projects).find(x=>x.id===id);if(!p){A?.pending.delete(id);return null;}if(p.sample)return null;
  // Old pages wrote the sign-in email as the consultant (§3.5): replaced here, so this sync sends the clean value.
  if(String(p.consultant||'').includes('@')){p.consultant=window.AtlasProfile?.confirmedName?.()||'Consultant';E.log(p,'Consultant name replaced: it was an email address');save();}
  const body=libraryPayload(p),hash=E.simpleHash(JSON.stringify(body));syncing.add(p.id);lastStrip=null;renderStorage();
- try{const r=await libraryApi('',{method:'POST',body:{localId:p.id,id:p.library?.id||undefined,reference:body}});A?.pending.delete(p.id);syncedHash.set(p.id,hash);p.library={id:r.id,revision:r.revision,status:r.status,syncedAt:E.now()};if(p.invitationId&&p.interview){libraryApi('/invitations/'+encodeURIComponent(p.invitationId),{method:'POST',body:{action:'done',referenceId:r.id}}).catch(()=>{});p.invitationId=null;}if(!r.unchanged)E.log(p,'Synced to the shared library (revision '+r.revision+')');save();if(view==='projects')renderProjects();if(!quiet)toast(r.unchanged?'Already up to date in the library.':jevOn()&&window.AtlasProfile?.jevRating?.()?'Saved to the shared library. JEV is rating it now.':'Saved to the shared library. The review agent is scoring it now.');jevStripAsk(r.id);return r;}
- catch(e){if(A&&e instanceof A.Expired)A.pending.add(p.id);else if(!quiet)toast(e.message);return null;}
+ try{const r=await libraryApi('',{method:'POST',body:{localId:p.id,id:p.library?.id||undefined,reference:body}});A?.pending.delete(p.id);syncedHash.set(p.id,hash);auditHold.delete(p.id);p.library={id:r.id,revision:r.revision,status:r.status,syncedAt:E.now()};if(p.invitationId&&p.interview){libraryApi('/invitations/'+encodeURIComponent(p.invitationId),{method:'POST',body:{action:'done',referenceId:r.id}}).catch(()=>{});p.invitationId=null;}if(!r.unchanged)E.log(p,'Synced to the shared library (revision '+r.revision+')');save();if(view==='projects')renderProjects();if(!quiet)toast(r.unchanged?'Already up to date in the library.':jevOn()&&window.AtlasProfile?.jevRating?.()?'Saved to the shared library. JEV is rating it now.':'Saved to the shared library. The review agent is scoring it now.');jevStripAsk(r.id);return r;}
+ catch(e){if(A&&e instanceof A.Expired)A.pending.add(p.id);else if(quiet&&e.status===409&&CHAIN_REFUSAL.has(e.code))auditHold.set(p.id,hash);else if(!quiet)toast(e.message);return null;}
  finally{syncing.delete(p.id);lastStrip=null;renderStorage();}}
 function libraryPill(p){if(!p.library)return '';return html`<button class="quiet library-pill status-${p.library.status}" data-open-record="${p.library.id}">Library · ${STATUS_LABEL[p.library.status]||p.library.status} <span>r${p.library.revision}</span></button>`;}
 let libraryTimer=null;

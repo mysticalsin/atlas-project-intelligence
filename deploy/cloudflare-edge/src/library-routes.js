@@ -60,7 +60,7 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
       if (r?.response) return r.response;
       return json(r.body, r.status || 200);
     } catch (e) {
-      return e.status ? json({ error: e.message }, e.status) : json({ error: 'The library could not complete that request.' }, 500);
+      return e.status ? json({ error: e.message, ...(e.code ? { code: e.code } : {}) }, e.status) : json({ error: 'The library could not complete that request.' }, 500);
     }
   }
   // idp: the sign-in name claims (x-atlas-idp, always written by the Worker from the verified token; WOW_ZERO_CONFIG §5.5).
@@ -130,6 +130,6 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
     if (method === 'POST' && action === 'reinstate') return json(lib.reinstate(user, id));
     return json({ error: 'Not found.' }, 404);
   } catch (e) {
-    return e.status ? json({ error: e.message }, e.status) : json({ error: 'The library could not complete that request.' }, 500);
+    return e.status ? json({ error: e.message, ...(e.code ? { code: e.code } : {}) }, e.status) : json({ error: 'The library could not complete that request.' }, 500);
   }
 }

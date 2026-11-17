@@ -13,7 +13,7 @@ import { winSignals } from './winloop.js';
 import { RatingError, ratingInput, questionPlan, requestBody, compose, agentQuality, noStoryQuality, sha256Hex, BUDGETS, RUBRIC_VERSION, METRIC_CODES, MODEL } from './rating.js';
 import { storedConsent } from './profile.js';
 import { sameTenant, TENANT_ID } from './authz.js';
-import { appendAudit, ensureChain, verifyChain } from './audit-chain.js';
+import { appendAudit, ensureChain, verifyChain, anchoredVerdict } from './audit-chain.js';
 import { recordUsage } from './telemetry.js';
 const DUPLICATE = 0.9; // cosine similarity above which two references are flagged as the same or a related project
 export const PRACTICES = { data_ai: 'Data & AI', web_app: 'Web & App Development', telecom: 'Telecom & Networks', sap_erp: 'SAP & ERP', cloud_infra: 'Cloud & Infrastructure', cybersecurity: 'Cybersecurity', transformation: 'Transformation & Strategy', engineering: 'Engineering & Industry' };
@@ -342,12 +342,13 @@ export class Library {
     const query = keyed
       ? 'SELECT seq, actor, action, at, detail, "commit" FROM audit WHERE id = ? ORDER BY seq DESC LIMIT 100'
       : 'SELECT seq, actor, action, at, detail FROM audit WHERE id = ? ORDER BY seq DESC LIMIT 100';
-    const verified = keyed ? new Set((verifyChain(this.sql, this.auditKey, this.dbId).verifiedSeqs) || []) : null;
+    const verdict = keyed ? anchoredVerdict(this.sql, verifyChain(this.sql, this.auditKey, this.dbId)) : null;
+    const verified = verdict?.ok ? new Set(verdict.verifiedSeqs || []) : null;
     return this.rows(query, id).map(a => {
       const line = { actor: a.actor, action: a.action, at: a.at, detail: a.action === 'possible duplicate' ? '' : a.detail };
       if (!keyed) return { ...line, unverified: true };
       if (start != null && Number(a.seq) < start) return { ...line, legacy: true, unverified: true };
-      if (!a.commit || !verified.has(Number(a.seq))) return { ...line, unverified: true };
+      if (!verdict?.ok || !a.commit || !verified.has(Number(a.seq))) return { ...line, unverified: true };
       return line;
     });
   }
@@ -776,8 +777,11 @@ export class Library {
     const storyOpen = openRef(keptRef);
     if (keptRef && !storyOpen) {
       if (action !== 'dismiss') throw fail(404, 'Reference not found.');
-      this.sql.exec("UPDATE invitations SET status = 'dismissed' WHERE id = ?", inv.id);
-      return this.invitationView(user, this.rows('SELECT * FROM invitations WHERE id = ?', inv.id)[0]);
+      return this.recorded(() => {
+        this.sql.exec("UPDATE invitations SET status = 'dismissed' WHERE id = ?", inv.id);
+        this.log('library', user.email, 'invitation dismiss', inv.reason);
+        return this.invitationView(user, this.rows('SELECT * FROM invitations WHERE id = ?', inv.id)[0]);
+      });
     }
     const auditOn = storyOpen ? this.auditFor(user, keptRef, inv.tenant) : 'library';
     if (action === 'schedule') { const slot = String(obj(body).slot || ''); if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(slot)) throw fail(400, 'Pick a date and time.'); }
