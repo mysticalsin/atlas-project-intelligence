@@ -59,29 +59,108 @@ function bootJourney(libraryApi) {
   return { window, document };
 }
 
-test('the journey queue uses status labels instead of raw tokens', async () => {
-  const { window, document } = bootJourney(async path => {
-    if (path === '/journey') return {
-      stages: [{ id: 'spotlight', title: 'Spotlight', current: true }],
-      fields: {}, confirmed: {}, publication: 'Not public.',
-      roles: { explanation: '', decision: '', matches: [] },
-      integrations: { spotlight: { reason: 'Blocked.' } },
-    };
-    if (path === '/privacy/disclosure') return { consent: { interview: 'recorded' }, recording: '', textOnly: '', retention: { appTelemetryDays: 30, vendorDeletion: 'not-asserted' }, lawfulBasis: '', biometrics: '' };
-    if (path === '') return { items: [
-      { id: 'w', title: 'Withdrawn story', status: 'withdrawn', access: 'public', mine: true },
-      { id: 'n', title: 'Needs work story', status: 'needs_work', access: 'public', mine: true },
-      { id: 'a', title: 'Admin test story', status: 'admin_test', access: 'public', mine: true },
-      { id: 'm', title: 'Waiting story', status: 'awaiting_validation', access: 'full', mine: false, managerDecision: 'approved', presalesDecision: 'pending' },
-    ] };
+const JOURNEY = {
+  stages: [{ id: 'spotlight', title: 'Spotlight', current: true }],
+  fields: {}, confirmed: {}, publication: 'Not public.',
+  roles: { explanation: '', decision: '', matches: [] },
+  integrations: { spotlight: { reason: 'Blocked.' } },
+};
+const DISCLOSURE = { consent: { interview: 'recorded' }, recording: '', textOnly: '', retention: { appTelemetryDays: 30, vendorDeletion: 'not-asserted' }, lawfulBasis: '', biometrics: '' };
+const GOOD = JSON.stringify({ score: 90, client_value_clear: true, issues: [], recommendations: [], summary: 'Strong.' });
+const OWNER = { email: 'alex@mantu.com', role: 'user' };
+const MANAGER = { email: 'sam@mantu.com', role: 'user' };
+const ADMIN = { email: 'admin@example.test', role: 'admin' };
+const SYSTEM = { email: 'directory', role: 'system' };
+
+function reference(title) {
+  return {
+    title, sector: 'Insurance', consultant: { name: 'Alex', role: 'Data engineer' },
+    client: { name: 'Zebracorp', location: 'Lyon', contact: 'Head of Claims' },
+    details: { projectId: 'PRJ-' + title.length, country: 'France', technologies: ['Python'], serviceLines: ['Data & AI'] },
+    answers: [
+      'Zebracorp had claims bouncing between three teams, slowing payouts for customers across the region.',
+      'I designed and built the routing model and ran the pilot with two teams.',
+      'We compared rules against a model, chose the model, and kept a manual fallback.',
+      'Triage fell from 40 to 12 minutes per claim according to the operations dashboard.',
+      'Operations dashboard export v3, before and after quarters.',
+      'Any insurer with a measurable queue would benefit.',
+    ],
+  };
+}
+
+async function libraryOfStories() {
+  const { Library } = await import('../deploy/cloudflare-edge/src/library.js');
+  const { memorySql } = await import('../deploy/cloudflare-edge/test/sqlite.js');
+  let t = 0;
+  let mode = 'good';
+  const l = new Library(memorySql(), {
+    now: () => new Date(Date.UTC(2026, 0, 2, 0, 0, t++)).toISOString(),
+    complete: async () => (mode === 'bad' ? 'not json' : GOOD),
+  });
+  const save = async title => l.upsert(OWNER, { localId: title, reference: reference(title) });
+  const withdrawn = await save('Withdrawn story');
+  l.withdraw(OWNER, withdrawn.id, { note: 'Withdrawn' });
+  mode = 'bad';
+  const needs = await save('Needs work story');
+  await l.review(OWNER, needs.id);
+  mode = 'good';
+  const testStory = await save('Admin test story');
+  await l.adminPublish(ADMIN, testStory.id, { test: true });
+  const waiting = await save('Waiting story');
+  await l.review(OWNER, waiting.id);
+  const open = await save('Open story');
+  await l.review(OWNER, open.id);
+  l.bindTrust(SYSTEM, { owner: OWNER.email, email: MANAGER.email, source: 'directory', sandbox: true });
+  l.validate(MANAGER, waiting.id, { decision: 'validate', lane: 'manager' });
+  return { l, waiting: waiting.id, open: open.id };
+}
+
+function queueRows(root) {
+  return root.all().filter(node => node.tagName === 'ARTICLE').map(node => ({
+    title: node.children.find(child => child.tagName === 'STRONG')?.textContent || '',
+    label: node.children.find(child => child.getAttribute('class') === 'tiny')?.textContent || '',
+    approve: node.all().find(child => child.tagName === 'BUTTON' && child.textContent === 'Approve as trusted manager') || null,
+  }));
+}
+
+async function settle(root, ready) {
+  for (let i = 0; i < 30; i++) {
+    await new Promise(resolve => setImmediate(resolve));
+    if (ready(queueRows(root))) return queueRows(root);
+  }
+  return queueRows(root);
+}
+
+test('the journey queue labels real list() output and drops an approved lane after the click', async () => {
+  const { l, waiting, open } = await libraryOfStories();
+  const listed = l.list(MANAGER);
+  const waitingItem = listed.items.find(item => item.id === waiting);
+  const openItem = listed.items.find(item => item.id === open);
+  assert.equal(waitingItem.managerDecision, 'approved');
+  assert.equal(waitingItem.presalesDecision, 'pending');
+  assert.equal(openItem.managerDecision, 'pending');
+  const { window, document } = bootJourney(async (path, opts) => {
+    if (path === '/journey') return JOURNEY;
+    if (path === '/privacy/disclosure') return DISCLOSURE;
+    if (path === '') return l.list(MANAGER);
+    const match = /^\/([^/]+)\/validate$/.exec(path);
+    if (match && opts?.method === 'POST') return l.validate(MANAGER, match[1], opts.body || {});
     throw new Error('unexpected ' + path);
   });
   window.AtlasJourney.render('journey');
   const root = document.getElementById('journey');
-  let labels = [];
-  for (let i = 0; i < 20 && labels.length < 4; i++) {
-    await new Promise(resolve => setImmediate(resolve));
-    labels = root.all().filter(node => node.getAttribute('class') === 'tiny').map(node => node.textContent);
-  }
-  assert.deepEqual(labels, ['Withdrawn', 'Needs work', 'Admin test, not public', 'Manager approved · awaiting pre-sales']);
+  let rows = await settle(root, found => found.length >= listed.items.length);
+  const byTitle = Object.fromEntries(rows.map(row => [row.title, row]));
+  assert.equal(byTitle['Withdrawn story'].label, 'Withdrawn');
+  assert.equal(byTitle['Needs work story'].label, 'Needs work');
+  assert.equal(byTitle['Admin test story'].label, 'Admin test, not public');
+  assert.equal(byTitle['Waiting story'].label, 'Manager approved · awaiting pre-sales');
+  assert.equal(byTitle['Waiting story'].approve, null);
+  assert.ok(byTitle['Open story'].approve);
+  for (const fn of byTitle['Open story'].approve.listeners.click) fn();
+  rows = await settle(root, found => !found.find(row => row.title === 'Open story' && row.approve));
+  const after = Object.fromEntries(rows.map(row => [row.title, row]));
+  assert.equal(l.list(MANAGER).items.find(item => item.id === open).managerDecision, 'approved');
+  assert.equal(after['Open story'].approve, null);
+  assert.equal(after['Open story'].label, 'Manager approved · awaiting pre-sales');
 });

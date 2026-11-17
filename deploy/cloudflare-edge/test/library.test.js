@@ -386,3 +386,44 @@ test('two identical approvals on one lane write one audit line', async () => {
   assert.equal(changed.status, 'changes_requested');
   assert.equal(l.rows("SELECT action FROM audit WHERE id = ? AND action = 'manager changes_requested'", a.id).length, 1);
 });
+
+test('a second request_changes with a different note stores that note and one audit line', async () => {
+  const { l } = lib();
+  const a = await l.upsert(OWNER, { localId: 'p1', reference: REF() });
+  await l.review(OWNER, a.id);
+  l.bindTrust(SYS, { owner: OWNER.email, email: N1.email, source: 'directory', sandbox: true });
+  l.validate(N1, a.id, { decision: 'request_changes', lane: 'manager', note: 'Add the source.' });
+  const changed = l.validate(N1, a.id, { decision: 'request_changes', lane: 'manager', note: 'Name the period.' });
+  assert.equal(changed.state.validation.note, 'Name the period.');
+  assert.equal(l.rows("SELECT action FROM audit WHERE id = ? AND action = 'manager changes_requested'", a.id).length, 2);
+  const repeat = l.validate(N1, a.id, { decision: 'request_changes', lane: 'manager', note: 'Name the period.' });
+  assert.equal(l.rows("SELECT action FROM audit WHERE id = ? AND action = 'manager changes_requested'", a.id).length, 2);
+  assert.equal(repeat.state.validation.at, changed.state.validation.at);
+  const approved = l.validate(N1, a.id, { decision: 'validate', lane: 'manager' });
+  const again = l.validate(N1, a.id, { decision: 'validate', lane: 'manager' });
+  assert.equal(l.rows("SELECT action FROM audit WHERE id = ? AND action = 'manager approved'", a.id).length, 1);
+  assert.equal(again.state.validation.at, approved.state.validation.at);
+});
+
+test('full-access list() items carry the lane decisions and a public item does not', async () => {
+  const { l } = lib();
+  const a = await l.upsert(OWNER, { localId: 'p1', reference: REF() });
+  await l.review(OWNER, a.id);
+  l.bindTrust(SYS, { owner: OWNER.email, email: N1.email, source: 'directory', sandbox: true });
+  const open = l.list(N1).items.find(item => item.id === a.id);
+  assert.equal(open.access, 'full');
+  assert.equal(open.managerDecision, 'pending');
+  assert.equal(open.presalesDecision, 'pending');
+  l.validate(N1, a.id, { decision: 'validate', lane: 'manager' });
+  const managed = l.list(N1).items.find(item => item.id === a.id);
+  assert.equal(managed.managerDecision, 'approved');
+  assert.equal(managed.presalesDecision, 'pending');
+  l.validate(PRE, a.id, { decision: 'validate', lane: 'presales' });
+  const hidden = l.list(OTHER).items.find(item => item.id === a.id);
+  assert.equal(hidden.access, 'public');
+  assert.equal('managerDecision' in hidden, false);
+  assert.equal('presalesDecision' in hidden, false);
+  const full = l.list(N1).items.find(item => item.id === a.id);
+  assert.equal(full.managerDecision, 'approved');
+  assert.equal(full.presalesDecision, 'approved');
+});
