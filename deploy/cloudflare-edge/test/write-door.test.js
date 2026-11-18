@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Library } from '../src/library.js';
+import { eraseRefContent } from '../src/subject-rights.js';
 import { memorySql } from './sqlite.js';
 import { lintDir, lintSource } from './write-lint.js';
 
@@ -44,6 +45,34 @@ test('schema and housekeeping write without an audit line', () => {
   lib.housekeeping('probe', () => lib.exec('INSERT INTO door_probe (id) VALUES (1)'));
   assert.equal(lib.rows('SELECT id FROM door_probe')[0].id, 1);
   assert.equal(lib.rows('SELECT COUNT(*) AS n FROM audit')[0].n, before);
+});
+
+test('schema refuses DML', () => {
+  const lib = new Library(memorySql(), { auditKey: SALT });
+  lib.schema(() => lib.exec('CREATE TABLE door_probe (id INTEGER)'));
+  assert.throws(
+    () => lib.schema(() => lib.exec('INSERT INTO door_probe (id) VALUES (1)')),
+    err => err.status === 500 && err.code === 'SCHEMA_DML',
+  );
+  assert.equal(lib.rows('SELECT COUNT(*) AS n FROM door_probe')[0].n, 0);
+});
+
+test('housekeeping refuses a statement that is not on its list', () => {
+  const lib = new Library(memorySql(), { auditKey: SALT });
+  lib.schema(() => lib.exec('CREATE TABLE door_probe (id INTEGER)'));
+  assert.throws(
+    () => lib.housekeeping('retention', () => lib.exec('INSERT INTO door_probe (id) VALUES (1)')),
+    err => err.status === 500 && err.code === 'HOUSEKEEPING_SQL',
+  );
+  assert.equal(lib.rows('SELECT COUNT(*) AS n FROM door_probe')[0].n, 0);
+});
+
+test('story erasure is audited', async () => {
+  const lib = new Library(memorySql(), { now: () => '2026-11-17T05:00:00.000Z', auditKey: SALT });
+  const owner = { email: 'ada@example.test', mail: 'ada@example.test', role: 'user', tenant: '11111111-1111-4111-8111-111111111111', tenantEnforced: true };
+  const saved = await lib.upsert(owner, { localId: 'p1', reference: { title: 'Claims triage alias' } });
+  eraseRefContent(lib, saved.id, 'erased:abcd', '2026-11-17T05:00:00.000Z');
+  assert.equal(lib.rows("SELECT action FROM audit WHERE action = 'story erased'").length, 1);
 });
 
 test('a missing LOG_SALT still throws JSON-shaped 503 before schema', () => {
