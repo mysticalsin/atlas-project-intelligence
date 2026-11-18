@@ -1,0 +1,54 @@
+// Red on 02a83b32: product modules still call sql.exec, and Library has no guarded exec.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { Library } from '../src/library.js';
+import { memorySql } from './sqlite.js';
+import { lintDir, lintSource } from './write-lint.js';
+
+const SRC = join(dirname(fileURLToPath(import.meta.url)), '../src');
+const SALT = 'synthetic-log-salt';
+
+test('mutating sql.exec stays in library.js, library-store.js, and audit-chain.js', () => {
+  const found = lintDir(SRC);
+  assert.deepEqual(found.exec, []);
+});
+
+test('a planted mutating sql.exec is a lint violation', () => {
+  const found = lintSource('plant.js', "lib.sql.exec('INSERT INTO door_probe (id) VALUES (1)')\n");
+  assert.equal(found.exec.length, 1);
+  assert.equal(found.exec[0].file, 'plant.js');
+  assert.equal(found.exec[0].line, 1);
+});
+
+test('the placeholder census is the helper plus the two bounded lists', () => {
+  const found = lintDir(SRC);
+  assert.equal(found.helper.length, 1);
+  assert.deepEqual(found.census.sort(), ['library.js:3', 'operate.js:3']);
+  assert.deepEqual(found.unbound, []);
+});
+
+test('exec outside a door is refused', () => {
+  const lib = new Library(memorySql(), { auditKey: SALT });
+  assert.throws(
+    () => lib.exec("CREATE TABLE door_probe (id INTEGER)"),
+    err => err.code === 'SQL_DOOR' && err.status === 500,
+  );
+});
+
+test('schema and housekeeping write without an audit line', () => {
+  const lib = new Library(memorySql(), { auditKey: SALT });
+  const before = lib.rows('SELECT COUNT(*) AS n FROM audit')[0].n;
+  lib.schema(() => lib.exec('CREATE TABLE door_probe (id INTEGER)'));
+  lib.housekeeping('probe', () => lib.exec('INSERT INTO door_probe (id) VALUES (1)'));
+  assert.equal(lib.rows('SELECT id FROM door_probe')[0].id, 1);
+  assert.equal(lib.rows('SELECT COUNT(*) AS n FROM audit')[0].n, before);
+});
+
+test('a missing LOG_SALT still throws JSON-shaped 503 before schema', () => {
+  assert.throws(
+    () => new Library(memorySql(), { auditKey: null }),
+    err => err.status === 503 && err.code === 'LOG_SALT' && err.message === 'LOG_SALT is not set.',
+  );
+});
