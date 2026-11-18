@@ -22,5 +22,5 @@ test('a quality object without issue arrays still renders the record dialog', ()
   const helper = take('function qualityLists', 'function showRecord');
   const qualityLists = vm.runInNewContext(`${helper}\nqualityLists`);
   const lists = qualityLists(q);
-  assert.deepEqual(lists, { blockers: [], holds: [], missing: [], issues: [], recommendations: [] });
+  assert.equal(JSON.stringify(lists), JSON.stringify({ blockers: [], holds: [], missing: [], issues: [], recommendations: [] }));
 });
