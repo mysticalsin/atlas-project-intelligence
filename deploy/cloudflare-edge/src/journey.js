@@ -46,9 +46,12 @@ const ROLE_CATALOG = Object.freeze([
 const SOURCES = new Set(['you', 'directory', 'staffing', 'document', 'interview']);
 
 export function ensureJourney(lib) {
+  lib.schema(() => ensureJourneySchema(lib));
+}
+function ensureJourneySchema(lib) {
   const exists = lib.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'journey'")[0];
   if (!exists) {
-    lib.sql.exec(`CREATE TABLE journey (
+    lib.exec(`CREATE TABLE journey (
       subject TEXT NOT NULL, tenant TEXT NOT NULL DEFAULT '', payload TEXT, updated_at TEXT,
       PRIMARY KEY (subject, tenant))`);
     ensureJourneyIndex(lib);
@@ -62,13 +65,13 @@ export function ensureJourney(lib) {
   // Older builds keyed the journey on subject alone, so one person could overwrite another tenant.
   // Copy the stored tenant as-is, including blank. This does not assign a tenant to a legacy row.
   // Mixed-case duplicates are copied as stored. This migration does not merge them.
-  lib.sql.exec(`CREATE TABLE journey_v2 (
+  lib.exec(`CREATE TABLE journey_v2 (
     subject TEXT NOT NULL, tenant TEXT NOT NULL DEFAULT '', payload TEXT, updated_at TEXT,
     PRIMARY KEY (subject, tenant))`);
-  lib.sql.exec(`INSERT INTO journey_v2 (subject, tenant, payload, updated_at)
+  lib.exec(`INSERT INTO journey_v2 (subject, tenant, payload, updated_at)
     SELECT subject, COALESCE(tenant, ''), payload, updated_at FROM journey`);
-  lib.sql.exec('DROP TABLE journey');
-  lib.sql.exec('ALTER TABLE journey_v2 RENAME TO journey');
+  lib.exec('DROP TABLE journey');
+  lib.exec('ALTER TABLE journey_v2 RENAME TO journey');
   ensureJourneyIndex(lib);
 }
 
@@ -83,7 +86,7 @@ export const JOURNEY_DELETE_SQL = `DELETE FROM journey WHERE ${JOURNEY_MATCH}`;
 export const JOURNEY_UPDATE_SQL = 'UPDATE journey SET payload = ?, updated_at = ? WHERE rowid = ?';
 
 function ensureJourneyIndex(lib) {
-  lib.sql.exec('CREATE INDEX IF NOT EXISTS journey_tenant_subject ON journey(tenant, lower(subject))');
+  lib.exec('CREATE INDEX IF NOT EXISTS journey_tenant_subject ON journey(tenant, lower(subject))');
 }
 
 export function journeyTenant(user = {}) {
@@ -215,8 +218,10 @@ export async function saveJourney(lib, user, body = {}) {
   const tenant = journeyTenant(user);
   const chosen = journeyChosen(lib, user.email, tenant);
   const at = lib.now();
-  if (chosen) lib.sql.exec(JOURNEY_UPDATE_SQL, JSON.stringify(payload), at, chosen.id);
-  else lib.sql.exec('INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)', user.email, tenant, JSON.stringify(payload), at);
+  lib.housekeeping('journey', () => {
+    if (chosen) lib.exec(JOURNEY_UPDATE_SQL, JSON.stringify(payload), at, chosen.id);
+    else lib.exec('INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)', user.email, tenant, JSON.stringify(payload), at);
+  });
   await recordUsage(lib, user, { kind: 'journey', feature: 'journey', outcome: 'saved', tokenStatus: 'missing' });
   return journeyView(lib, user);
 }

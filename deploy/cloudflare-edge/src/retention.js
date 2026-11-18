@@ -22,6 +22,7 @@ export function sweep(lib, { now = lib.now(), retention = RETENTION, tenant } = 
   if (tenant === undefined) return {};
   const tid = String(tenant || '').trim().toLowerCase();
   if (tid && !TENANT_RE.test(tid)) return {};
+  return lib.housekeeping('retention', () => {
   privacy.ensure(lib);
   const out = {}, add = (k, n) => { if (n) out[k] = (out[k] || 0) + n; };
   const c = id => cat(retention, id), erasedToken = token();
@@ -47,26 +48,26 @@ export function sweep(lib, { now = lib.now(), retention = RETENTION, tenant } = 
   if (c('expired_requests') && hasTenantColumn(lib, 'confirmation_requests')) {
     const cut = before(now, c('expired_requests')), gapCut = new Date(Date.parse(cut) - 30 * 864e5).toISOString();
     const n = lib.rows('SELECT COUNT(*) AS n FROM confirmation_requests WHERE expires_at < ? AND ' + scope, cut, tid)[0].n;
-    if (n) { lib.sql.exec('DELETE FROM confirmation_requests WHERE expires_at < ? AND ' + scope, cut, tid); add('confirmationRequests', n); }
+    if (n) { lib.exec('DELETE FROM confirmation_requests WHERE expires_at < ? AND ' + scope, cut, tid); add('confirmationRequests', n); }
     if (hasTenantColumn(lib, 'gap_requests')) {
       const g = lib.rows("SELECT COUNT(*) AS n FROM gap_requests WHERE status != 'open' AND created_at < ? AND " + scope, gapCut, tid)[0].n;
-      if (g) { lib.sql.exec("DELETE FROM gap_requests WHERE status != 'open' AND created_at < ? AND " + scope, gapCut, tid); add('proofRequests', g); }
+      if (g) { lib.exec("DELETE FROM gap_requests WHERE status != 'open' AND created_at < ? AND " + scope, gapCut, tid); add('proofRequests', g); }
     }
   }
   // Outreach messages and finished interview invitations.
   if (c('outreach')) {
     const cut = before(now, c('outreach'));
-    if (hasTenantColumn(lib, 'outreach')) { const n = lib.rows('SELECT COUNT(*) AS n FROM outreach WHERE created_at < ? AND ' + scope, cut, tid)[0].n; if (n) { lib.sql.exec('DELETE FROM outreach WHERE created_at < ? AND ' + scope, cut, tid); add('outreach', n); } }
+    if (hasTenantColumn(lib, 'outreach')) { const n = lib.rows('SELECT COUNT(*) AS n FROM outreach WHERE created_at < ? AND ' + scope, cut, tid)[0].n; if (n) { lib.exec('DELETE FROM outreach WHERE created_at < ? AND ' + scope, cut, tid); add('outreach', n); } }
     if (hasTenantColumn(lib, 'invitations')) {
       const i = lib.rows("SELECT COUNT(*) AS n FROM invitations WHERE status IN ('done', 'dismissed') AND created_at < ? AND " + scope, cut, tid)[0].n;
-      if (i) { lib.sql.exec("DELETE FROM invitations WHERE status IN ('done', 'dismissed') AND created_at < ? AND " + scope, cut, tid); add('invitations', i); }
+      if (i) { lib.exec("DELETE FROM invitations WHERE status IN ('done', 'dismissed') AND created_at < ? AND " + scope, cut, tid); add('invitations', i); }
     }
   }
   // Staffing import rows: N days after the project ended (the end date), else after the last import.
   if (c('staffing_imports') && tableExists(lib, 'staffing')) {
     const cut = before(now, c('staffing_imports')), day = cut.slice(0, 10);
     const n = lib.rows("SELECT COUNT(*) AS n FROM staffing WHERE " + scope + " AND ((end_date != '' AND end_date < ?) OR (end_date = '' AND updated_at < ?))", tid, day, cut)[0].n;
-    if (n) { lib.sql.exec("DELETE FROM staffing WHERE " + scope + " AND ((end_date != '' AND end_date < ?) OR (end_date = '' AND updated_at < ?))", tid, day, cut); add('staffingRows', n); }
+    if (n) { lib.exec("DELETE FROM staffing WHERE " + scope + " AND ((end_date != '' AND end_date < ?) OR (end_date = '' AND updated_at < ?))", tid, day, cut); add('staffingRows', n); }
   }
   // Audit rows older than the period become a tombstone. The proof is stored and later hashes stay, so the head does not move.
   if (c('audit')) {
@@ -87,9 +88,10 @@ export function sweep(lib, { now = lib.now(), retention = RETENTION, tenant } = 
   if (c('consent_receipts') && tid === '') {
     const cut = before(now, c('consent_receipts'));
     const n = lib.rows('SELECT COUNT(*) AS n FROM consent_receipts WHERE subject IN (SELECT subject FROM consent_receipts GROUP BY subject HAVING MAX(at) < ?)', cut)[0].n;
-    if (n) { privacy.retentionGate(lib, () => lib.sql.exec('DELETE FROM consent_receipts WHERE subject IN (SELECT subject FROM consent_receipts GROUP BY subject HAVING MAX(at) < ?)', cut)); add('consentReceipts', n); }
+    if (n) { privacy.retentionGate(lib, () => lib.exec('DELETE FROM consent_receipts WHERE subject IN (SELECT subject FROM consent_receipts GROUP BY subject HAVING MAX(at) < ?)', cut)); add('consentReceipts', n); }
   }
   return out;
+  });
 }
 // The periods the sweep does NOT enforce (platform, per-person prune, alarm): reported by the privacy notice and the docs, so nobody reads silence as "done".
 export const notSwept = (retention = RETENTION) => retention.categories.filter(x => !x.sweep).map(x => x.id);

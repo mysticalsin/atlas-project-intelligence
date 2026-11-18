@@ -44,16 +44,16 @@ const STAFFING_TABLE = `CREATE TABLE staffing_v2 (
     PRIMARY KEY (project_id, consultant_email, tenant))`;
 function migrateStaffing(lib) {
   const exists = lib.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'staffing'")[0];
-  if (!exists) { lib.sql.exec(STAFFING_TABLE.replace('staffing_v2', 'staffing')); return; }
+  if (!exists) { lib.exec(STAFFING_TABLE.replace('staffing_v2', 'staffing')); return; }
   const pk = lib.rows("SELECT name FROM pragma_table_info('staffing') WHERE pk > 0 ORDER BY pk").map(r => r.name);
   if (pk.length === 3 && pk[0] === 'project_id' && pk[1] === 'consultant_email' && pk[2] === 'tenant') return;
   const cols = lib.rows("SELECT name FROM pragma_table_info('staffing')").map(r => r.name);
-  lib.sql.exec(STAFFING_TABLE);
+  lib.exec(STAFFING_TABLE);
   const tenantSql = cols.includes('tenant') ? "COALESCE(tenant, '')" : "''";
-  lib.sql.exec(`INSERT INTO staffing_v2 (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, tenant)
+  lib.exec(`INSERT INTO staffing_v2 (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, tenant)
     SELECT project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, ${tenantSql} FROM staffing`);
-  lib.sql.exec('DROP TABLE staffing');
-  lib.sql.exec('ALTER TABLE staffing_v2 RENAME TO staffing');
+  lib.exec('DROP TABLE staffing');
+  lib.exec('ALTER TABLE staffing_v2 RENAME TO staffing');
 }
 const DDL = [
   `CREATE TABLE IF NOT EXISTS outreach (id TEXT PRIMARY KEY, kind TEXT, subject_id TEXT, channel TEXT, to_email TEXT, status TEXT, reason TEXT,
@@ -68,16 +68,18 @@ const DDL = [
 const ensured = new WeakSet();
 export function ensure(lib) {
   if (ensured.has(lib)) return;
+  lib.schema(() => {
   migrateStaffing(lib);
-  for (const q of DDL) lib.sql.exec(q);
+  for (const q of DDL) lib.exec(q);
   const outreachCols = lib.rows("SELECT name FROM pragma_table_info('outreach')").map(r => r.name);
-  if (outreachCols.length && !outreachCols.includes('tenant')) lib.sql.exec("ALTER TABLE outreach ADD COLUMN tenant TEXT NOT NULL DEFAULT ''");
+  if (outreachCols.length && !outreachCols.includes('tenant')) lib.exec("ALTER TABLE outreach ADD COLUMN tenant TEXT NOT NULL DEFAULT ''");
   const withDirectory = lib.rows("SELECT name FROM pragma_table_info('outreach')").map(r => r.name);
-  if (withDirectory.length && !withDirectory.includes('directory_tenant')) lib.sql.exec("ALTER TABLE outreach ADD COLUMN directory_tenant TEXT NOT NULL DEFAULT ''");
+  if (withDirectory.length && !withDirectory.includes('directory_tenant')) lib.exec("ALTER TABLE outreach ADD COLUMN directory_tenant TEXT NOT NULL DEFAULT ''");
   const withConversation = lib.rows("SELECT name FROM pragma_table_info('outreach')").map(r => r.name);
-  if (withConversation.length && !withConversation.includes('conversation_id')) lib.sql.exec("ALTER TABLE outreach ADD COLUMN conversation_id TEXT NOT NULL DEFAULT ''");
+  if (withConversation.length && !withConversation.includes('conversation_id')) lib.exec("ALTER TABLE outreach ADD COLUMN conversation_id TEXT NOT NULL DEFAULT ''");
   const withKey = lib.rows("SELECT name FROM pragma_table_info('outreach')").map(r => r.name);
-  if (withKey.length && !withKey.includes('idempotency_key')) lib.sql.exec('ALTER TABLE outreach ADD COLUMN idempotency_key TEXT');
+  if (withKey.length && !withKey.includes('idempotency_key')) lib.exec('ALTER TABLE outreach ADD COLUMN idempotency_key TEXT');
+  });
   ensured.add(lib);
 }
 
@@ -108,7 +110,7 @@ function queueRows(lib, item) {
     if (!lib.rows('SELECT id FROM outreach WHERE kind = ? AND subject_id = ? AND channel = ?', kind, subjectId, channel)[0]) {
       const id = lib.newId();
       lib.recorded(() => {
-        lib.sql.exec(`INSERT OR IGNORE INTO outreach (id, kind, subject_id, channel, to_email, status, reason, payload, created_at, tenant)
+        lib.exec(`INSERT OR IGNORE INTO outreach (id, kind, subject_id, channel, to_email, status, reason, payload, created_at, tenant)
           VALUES (?, ?, ?, ?, ?, 'pending_approval', '', ?, ?, ?)`, id, kind, subjectId, channel, to, payload, lib.now(), tenant);
         lib.log(id, 'atlas', 'outreach pending_approval', `${kind} ${channel}`);
       });
@@ -164,7 +166,7 @@ function reconcileStaffing(lib, s) {
   const managerEmail = s.managerEmail || '';
   if (existing.length === 1) {
     const row = existing[0];
-    lib.sql.exec(`UPDATE staffing SET consultant_email = ?, tenant = ?,
+    lib.exec(`UPDATE staffing SET consultant_email = ?, tenant = ?,
       manager_email = CASE WHEN ? != '' THEN ? ELSE manager_email END,
       manager_name = CASE WHEN ? != '' THEN ? ELSE manager_name END,
       project_title = CASE WHEN ? != '' THEN ? ELSE project_title END,
@@ -180,7 +182,7 @@ function reconcileStaffing(lib, s) {
       row.project_id, row.consultant_email, row.tenant);
     return row.project_id;
   }
-  lib.sql.exec(`INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, tenant)
+  lib.exec(`INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, tenant)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     project, consultant, managerEmail, managerEmail ? (s.managerName || '') : '', s.projectTitle || '', s.endDate || '', s.source || '', lib.now(), tenant);
   return project;
@@ -204,7 +206,7 @@ function applyStaffingAssignment(lib, actor, s) {
   })) {
     const source = String(grant.source || '');
     if (source !== 'staffing' || current.has(String(grant.email || '').toLowerCase())) continue;
-    lib.sql.exec("DELETE FROM manager_trust WHERE lower(owner) = ? AND lower(email) = ? AND lower(COALESCE(tenant, '')) = ? AND source = 'staffing'", String(grant.owner || '').toLowerCase(), String(grant.email || '').toLowerCase(), tenant);
+    lib.exec("DELETE FROM manager_trust WHERE lower(owner) = ? AND lower(email) = ? AND lower(COALESCE(tenant, '')) = ? AND source = 'staffing'", String(grant.owner || '').toLowerCase(), String(grant.email || '').toLowerCase(), tenant);
   }
 }
 function inTransaction(lib, fn) {
@@ -378,7 +380,7 @@ const inflight = new WeakMap(); // per Library instance: a Teams send in progres
 function setStatus(lib, o, status, reason, user, extra = {}) {
   const approved = extra.approved ? [user.email, lib.now()] : [o.approved_by, o.approved_at];
   return lib.recorded(() => {
-    lib.sql.exec(`UPDATE outreach SET status = ?, reason = ?, approved_by = ?, approved_at = ?, sent_at = ?, activity_id = ?, aad_object_id = ?, directory_tenant = ?, conversation_id = ? WHERE id = ?`,
+    lib.exec(`UPDATE outreach SET status = ?, reason = ?, approved_by = ?, approved_at = ?, sent_at = ?, activity_id = ?, aad_object_id = ?, directory_tenant = ?, conversation_id = ? WHERE id = ?`,
       status, reason, approved[0] ?? null, approved[1] ?? null, extra.sentAt ?? o.sent_at ?? null, extra.activityId ?? o.activity_id ?? null, extra.aadObjectId ?? o.aad_object_id ?? null, extra.directoryTenant ?? o.directory_tenant ?? '', extra.conversationId ?? o.conversation_id ?? '', o.id);
     lib.log(o.id, user.email, 'outreach ' + status, `${o.kind} ${o.channel}`);
     return view(rowOf(lib, o.id));
@@ -428,7 +430,7 @@ function claimSend(lib, o, user) {
       const status = String(cur?.status || '');
       throw fail(409, status === 'sending' ? SENDING : `This item is already ${status.replace(/_/g, ' ')}.`);
     }
-    lib.sql.exec("UPDATE outreach SET status = 'sending', reason = '', idempotency_key = ? WHERE id = ? AND status = ?", key, o.id, cur.status);
+    lib.exec("UPDATE outreach SET status = 'sending', reason = '', idempotency_key = ? WHERE id = ? AND status = ?", key, o.id, cur.status);
     const claimed = rowOf(lib, o.id);
     if (!claimed || claimed.status !== 'sending' || claimed.idempotency_key !== key) throw fail(409, SENDING);
     lib.log(o.id, user.email, 'outreach sending', `${o.kind} ${o.channel}`);
@@ -458,8 +460,8 @@ async function sendTeams(ctx, o) {
     } catch (e) {
       if (e?.status === 403 && /MessageWritesBlocked/i.test(`${e.code || ''} ${e.message || ''}`)) {
         return lib.recorded(() => {
-          lib.sql.exec("UPDATE teams_conversations SET status = 'stopped', updated_at = ? WHERE subject = ?", lib.now(), conv.subject);
-          lib.sql.exec('UPDATE outreach SET status = ?, reason = ?, approved_by = ?, approved_at = ? WHERE id = ?', 'failed', REASONS.blocked, user.email, lib.now(), o.id);
+          lib.exec("UPDATE teams_conversations SET status = 'stopped', updated_at = ? WHERE subject = ?", lib.now(), conv.subject);
+          lib.exec('UPDATE outreach SET status = ?, reason = ?, approved_by = ?, approved_at = ? WHERE id = ?', 'failed', REASONS.blocked, user.email, lib.now(), o.id);
           lib.log(o.id, user.email, 'outreach failed', `${o.kind} ${o.channel}`);
           return view(rowOf(lib, o.id));
         });
@@ -542,7 +544,7 @@ export function daily(lib, user = {}) {
     .map(s => ({ projectId: s.project_id, consultantEmail: s.consultant_email, projectTitle: s.project_title || '', endDate: s.end_date, source: s.source || 'staffing', tenant: user.tenantEnforced === true ? scoped : '' }));
   const { invited, queued } = inviteDue(lib, due, today);
   const cutoff = new Date(Date.parse(now) - SEEN_KEEP_MS).toISOString(), pruned = lib.rows('SELECT COUNT(*) AS n FROM teams_seen WHERE at < ?', cutoff)[0].n;
-  if (pruned) lib.sql.exec('DELETE FROM teams_seen WHERE at < ?', cutoff);
+  if (pruned) lib.housekeeping('teams-seen', () => lib.exec('DELETE FROM teams_seen WHERE at < ?', cutoff));
   return Object.fromEntries(Object.entries({ gapsExpired, claimsExpired, staffingInvited: invited, outreachQueued: queued, teamsSeenPruned: pruned }).filter(([, n]) => n));
 }
 
@@ -610,9 +612,9 @@ export async function system(ctx) {
     }
     try {
       return recorded(lib, () => {
-        lib.sql.exec('INSERT OR IGNORE INTO teams_seen (activity_id, at) VALUES (?, ?)', activityId, now);
-        if (e.verb === 'decline') lib.sql.exec(`UPDATE invitations SET status = 'dismissed' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, inv.id);
-        else lib.sql.exec(`UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, slot, inv.id);
+        lib.exec('INSERT OR IGNORE INTO teams_seen (activity_id, at) VALUES (?, ?)', activityId, now);
+        if (e.verb === 'decline') lib.exec(`UPDATE invitations SET status = 'dismissed' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, inv.id);
+        else lib.exec(`UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, slot, inv.id);
         if (Number(lib.rows('SELECT changes() AS n')[0]?.n || 0) !== 1) {
           const closed = fail(409, INVITATION_REFUSAL);
           closed.code = INVITATION_CLOSED;
@@ -634,9 +636,9 @@ export async function system(ctx) {
   if (lib.rows('SELECT 1 AS seen FROM teams_seen WHERE activity_id = ?', activityId)[0]) return { body: { ok: true, duplicate: true } };
   const subject = `${tid}:${oid}`;
   return recorded(lib, () => {
-    lib.sql.exec('INSERT OR IGNORE INTO teams_seen (activity_id, at) VALUES (?, ?)', activityId, now);
+    lib.exec('INSERT OR IGNORE INTO teams_seen (activity_id, at) VALUES (?, ?)', activityId, now);
     if (kind === 'install') {
-      lib.sql.exec(`INSERT INTO teams_conversations (subject, aad_object_id, tenant_id, teams_user_id, conversation_id, service_url, email, status, updated_at)
+      lib.exec(`INSERT INTO teams_conversations (subject, aad_object_id, tenant_id, teams_user_id, conversation_id, service_url, email, status, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?) ON CONFLICT (subject) DO UPDATE SET aad_object_id = excluded.aad_object_id, tenant_id = excluded.tenant_id,
         teams_user_id = excluded.teams_user_id, conversation_id = excluded.conversation_id, service_url = excluded.service_url,
         email = CASE WHEN excluded.email != '' THEN excluded.email ELSE teams_conversations.email END, status = 'active', updated_at = excluded.updated_at`,
@@ -645,7 +647,7 @@ export async function system(ctx) {
       return { body: { ok: true } };
     }
     if (kind === 'uninstall' || kind === 'stop') {
-      lib.sql.exec('UPDATE teams_conversations SET status = ?, updated_at = ? WHERE subject = ?', kind === 'stop' ? 'stopped' : 'uninstalled', now, subject);
+      lib.exec('UPDATE teams_conversations SET status = ?, updated_at = ? WHERE subject = ?', kind === 'stop' ? 'stopped' : 'uninstalled', now, subject);
       lib.log('teams', 'teams-bot', 'teams ' + kind, 'personal scope');
       return { body: { ok: true } };
     }

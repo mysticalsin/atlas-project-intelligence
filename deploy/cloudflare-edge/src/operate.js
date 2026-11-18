@@ -40,7 +40,7 @@ export function eraseJourneyFor(lib, user) {
   if (!tableReady(lib, 'journey')) ensureJourney(lib);
   const tenant = String(user.tenant || '').trim().toLowerCase();
   const n = lib.rows(JOURNEY_COUNT_SQL, user.email, tenant)[0].n;
-  if (n) lib.sql.exec(JOURNEY_DELETE_SQL, user.email, tenant);
+  if (n) lib.exec(JOURNEY_DELETE_SQL, user.email, tenant);
   return n;
 }
 export function eraseTelemetryFor(lib, user) {
@@ -48,7 +48,7 @@ export function eraseTelemetryFor(lib, user) {
   const tenant = String(user.tenant || '').trim().toLowerCase();
   const persona = personaKeySync(user);
   const n = lib.rows("SELECT COUNT(*) AS n FROM telemetry WHERE persona = ? AND lower(COALESCE(tenant, '')) = ?", persona, tenant)[0].n;
-  if (n) lib.sql.exec("DELETE FROM telemetry WHERE persona = ? AND lower(COALESCE(tenant, '')) = ?", persona, tenant);
+  if (n) lib.exec("DELETE FROM telemetry WHERE persona = ? AND lower(COALESCE(tenant, '')) = ?", persona, tenant);
   return n;
 }
 function requireMode(ctx) {
@@ -65,7 +65,7 @@ export function eraseManagerTrustFor(lib, user, ctx = {}) {
   const marks = placeholders(aliases.length);
   if (mode === 'tenant') {
     const n = lib.rows(`SELECT COUNT(*) AS n FROM manager_trust WHERE lower(COALESCE(tenant, '')) = ? AND (lower(owner) IN (${marks}) OR lower(email) IN (${marks}))`, tenant, ...aliases, ...aliases)[0].n;
-    if (n) lib.sql.exec(`DELETE FROM manager_trust WHERE lower(COALESCE(tenant, '')) = ? AND (lower(owner) IN (${marks}) OR lower(email) IN (${marks}))`, tenant, ...aliases, ...aliases);
+    if (n) lib.exec(`DELETE FROM manager_trust WHERE lower(COALESCE(tenant, '')) = ? AND (lower(owner) IN (${marks}) OR lower(email) IN (${marks}))`, tenant, ...aliases, ...aliases);
     return n;
   }
   const token = tokenOf(ctx);
@@ -73,12 +73,12 @@ export function eraseManagerTrustFor(lib, user, ctx = {}) {
   let n = 0;
   for (const row of managers) {
     const clash = lib.rows("SELECT 1 AS x FROM manager_trust WHERE owner = ? AND email = ? AND lower(COALESCE(tenant, '')) = ?", row.owner, token, tenant);
-    if (clash.length) lib.sql.exec("DELETE FROM manager_trust WHERE owner = ? AND email = ? AND lower(COALESCE(tenant, '')) = ?", row.owner, row.email, tenant);
-    else lib.sql.exec("UPDATE manager_trust SET email = ? WHERE owner = ? AND email = ? AND lower(COALESCE(tenant, '')) = ?", token, row.owner, row.email, tenant);
+    if (clash.length) lib.exec("DELETE FROM manager_trust WHERE owner = ? AND email = ? AND lower(COALESCE(tenant, '')) = ?", row.owner, row.email, tenant);
+    else lib.exec("UPDATE manager_trust SET email = ? WHERE owner = ? AND email = ? AND lower(COALESCE(tenant, '')) = ?", token, row.owner, row.email, tenant);
     n++;
   }
   const own = lib.rows(`SELECT COUNT(*) AS n FROM manager_trust WHERE lower(COALESCE(tenant, '')) = ? AND lower(owner) IN (${marks})`, tenant, ...aliases)[0].n;
-  if (own) lib.sql.exec(`DELETE FROM manager_trust WHERE lower(COALESCE(tenant, '')) = ? AND lower(owner) IN (${marks})`, tenant, ...aliases);
+  if (own) lib.exec(`DELETE FROM manager_trust WHERE lower(COALESCE(tenant, '')) = ? AND lower(owner) IN (${marks})`, tenant, ...aliases);
   return n + own;
 }
 function directoryKeys(user) {
@@ -90,7 +90,7 @@ function deleteDirectoryKeys(lib, tenant, keys) {
   if (!keys.length) return 0;
   const marks = placeholders(keys.length);
   const n = lib.rows(`SELECT COUNT(*) AS n FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys)[0].n;
-  if (n) lib.sql.exec(`DELETE FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys);
+  if (n) lib.exec(`DELETE FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys);
   return n;
 }
 export function eraseDirectoryFor(lib, user, ctx = {}) {
@@ -106,7 +106,7 @@ export function eraseDirectoryFor(lib, user, ctx = {}) {
     const exclude = keys.length ? ` AND lower(key) NOT IN (${placeholders(keys.length)})` : '';
     const refs = lib.rows(`SELECT COUNT(*) AS n FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(COALESCE(manager_email, '')) IN (${marks})${exclude}`, tenant, ...aliases, ...keys)[0].n;
     if (refs) {
-      lib.sql.exec(`UPDATE directory SET manager_email = ? WHERE lower(COALESCE(tenant, '')) = ? AND lower(COALESCE(manager_email, '')) IN (${marks})${exclude}`, tokenOf(ctx), tenant, ...aliases, ...keys);
+      lib.exec(`UPDATE directory SET manager_email = ? WHERE lower(COALESCE(tenant, '')) = ? AND lower(COALESCE(manager_email, '')) IN (${marks})${exclude}`, tokenOf(ctx), tenant, ...aliases, ...keys);
       n += refs;
     }
   }
@@ -273,7 +273,7 @@ export async function privacyRoutes(ctx) {
       outcomes = withTransaction(lib, () => {
         const journey = eraseJourneyFor(lib, user);
         const telemetry = count("SELECT COUNT(*) AS n FROM telemetry WHERE persona = ? AND lower(COALESCE(tenant, '')) = ?", persona, tenant);
-        if (telemetry) lib.sql.exec("DELETE FROM telemetry WHERE persona = ? AND lower(COALESCE(tenant, '')) = ?", persona, tenant);
+        if (telemetry) lib.exec("DELETE FROM telemetry WHERE persona = ? AND lower(COALESCE(tenant, '')) = ?", persona, tenant);
         const profile = deleteOwnedProfile(lib, user);
         const trust = eraseManagerTrust(lib, tenant, aliases);
         const mail = String(user.mail || '').toLowerCase();
@@ -284,7 +284,7 @@ export async function privacyRoutes(ctx) {
           // sql-bound-fixed: 3
           const marks = keys.map(() => '?').join(', ');
           directory = count(`SELECT COUNT(*) AS n FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys);
-          if (directory) lib.sql.exec(`DELETE FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys);
+          if (directory) lib.exec(`DELETE FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys);
         }
         const outcomes = [
           { store: 'journey', removed: journey, error: null },

@@ -18,6 +18,11 @@ import { appendAudit, ensureChain, verifyChain, anchoredVerdict } from './audit-
 import { recordUsage } from './telemetry.js';
 import { publicationEffect, publicationStatus, publicationTransition, readPublication } from './publication.js';
 import { invitationTransition, noteInvitation, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
+function mutatingSql(sql) {
+  const text = String(sql ?? '').replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ').trim();
+  if (/^(insert|update|delete|replace|create|drop|alter|reindex|vacuum)\b/i.test(text)) return true;
+  return /^with\b/i.test(text) && /\b(insert|update|delete|replace)\b/i.test(text);
+}
 const DUPLICATE = 0.9; // cosine similarity above which two references are flagged as the same or a related project
 export const PRACTICES = { data_ai: 'Data & AI', web_app: 'Web & App Development', telecom: 'Telecom & Networks', sap_erp: 'SAP & ERP', cloud_infra: 'Cloud & Infrastructure', cybersecurity: 'Cybersecurity', transformation: 'Transformation & Strategy', engineering: 'Engineering & Industry' };
 
@@ -150,28 +155,28 @@ function migrateManagerTrust(lib) {
   const create = `CREATE TABLE manager_trust_v2 (
     owner TEXT NOT NULL, email TEXT NOT NULL, source TEXT, tenant TEXT NOT NULL DEFAULT '', at TEXT,
     PRIMARY KEY (owner, email, tenant))`;
-  if (!exists) { lib.sql.exec(create.replace('manager_trust_v2', 'manager_trust')); return; }
+  if (!exists) { lib.exec(create.replace('manager_trust_v2', 'manager_trust')); return; }
   const pk = lib.rows("SELECT name FROM pragma_table_info('manager_trust') WHERE pk > 0 ORDER BY pk").map(r => r.name);
   if (pk.join(',') === 'owner,email,tenant') return;
   const cols = lib.rows("SELECT name FROM pragma_table_info('manager_trust')").map(r => r.name);
-  lib.sql.exec(create);
+  lib.exec(create);
   const tenantSql = cols.includes('tenant') ? "COALESCE(tenant, '')" : "''";
-  lib.sql.exec(`INSERT INTO manager_trust_v2 (owner, email, source, tenant, at)
+  lib.exec(`INSERT INTO manager_trust_v2 (owner, email, source, tenant, at)
     SELECT owner, email, source, ${tenantSql}, at FROM manager_trust`);
-  lib.sql.exec('DROP TABLE manager_trust');
-  lib.sql.exec('ALTER TABLE manager_trust_v2 RENAME TO manager_trust');
+  lib.exec('DROP TABLE manager_trust');
+  lib.exec('ALTER TABLE manager_trust_v2 RENAME TO manager_trust');
 }
 function migrateStoryTenant(lib) {
   const cols = lib.rows("SELECT name FROM pragma_table_info('refs')").map(r => r.name);
   if (cols.length && !cols.includes('tenant')) {
-    lib.sql.exec("ALTER TABLE refs ADD COLUMN tenant TEXT NOT NULL DEFAULT ''");
+    lib.exec("ALTER TABLE refs ADD COLUMN tenant TEXT NOT NULL DEFAULT ''");
     // Copy the tenant already stored on the story. Blank stays blank. Nothing is assigned.
-    lib.sql.exec("UPDATE refs SET tenant = COALESCE(json_extract(state, '$.tenant'), '')");
+    lib.exec("UPDATE refs SET tenant = COALESCE(json_extract(state, '$.tenant'), '')");
   }
   const idx = lib.rows("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'refs_owner_local'")[0]?.sql || '';
   if (!idx.includes('tenant')) {
-    lib.sql.exec('DROP INDEX IF EXISTS refs_owner_local');
-    lib.sql.exec('CREATE UNIQUE INDEX refs_owner_local ON refs(owner, local_id, tenant)');
+    lib.exec('DROP INDEX IF EXISTS refs_owner_local');
+    lib.exec('CREATE UNIQUE INDEX refs_owner_local ON refs(owner, local_id, tenant)');
   }
 }
 export class Library {
@@ -184,31 +189,57 @@ export class Library {
     // One synchronous transaction for a business write and its audit line. A 409 or a 503 rolls both back.
     // An inner call joins the open transaction. There is no await inside it: a returned promise is a mistake.
     // Without a real transaction the property stays null, so a caller that cannot be atomic still refuses.
+    // The door opens inside the transaction, so exec can write and a throw rolls the write back.
     const recorded = fn => {
       if (typeof fn !== 'function') throw fail(500, 'A library write needs a function.');
-      const run = () => {
-        const result = fn();
-        if (result && typeof result.then === 'function') throw fail(500, 'A library write cannot await inside its audit transaction.');
-        return result;
-      };
+      const run = () => this._enter(fn);
       if (this._auditTx) return run();
       if (typeof this._atomic !== 'function') throw fail(503, 'Atomic library writes need storage.transactionSync.');
       this._auditTx = 1;
       try { return this._atomic(run); }
       finally { this._auditTx = 0; }
     };
-    Object.assign(this, { sql, now, newId, complete, embed, readyScore, model, services, rater, metric, _atomic: atomic, _auditTx: 0, recorded, transactionSync: typeof atomic === 'function' ? recorded : null, auditKey, dbId: String(dbId ?? '') });
+    Object.assign(this, { sql, _sql: sql, _door: 0, now, newId, complete, embed, readyScore, model, services, rater, metric, _atomic: atomic, _auditTx: 0, recorded, transactionSync: typeof atomic === 'function' ? recorded : null, auditKey, dbId: String(dbId ?? '') });
     this.inflight = new Map(); // `${id}:${revision}` -> { gen, engine, first, all }: one rating per revision at a time
-    for (const q of SCHEMA) this.sql.exec(q);
-    const inv = this.rows("SELECT name FROM pragma_table_info('invitations')").map(r => r.name);
-    if (inv.length && !inv.includes('tenant')) this.sql.exec('ALTER TABLE invitations ADD COLUMN tenant TEXT');
-    this.sql.exec("CREATE UNIQUE INDEX IF NOT EXISTS invitations_open_scope ON invitations(email, reason, project_id, reference_id, tenant) WHERE status IN ('open', 'scheduled')");
-    migrateManagerTrust(this);
-    migrateStoryTenant(this);
+    this.schema(() => {
+      for (const q of SCHEMA) this.exec(q);
+      const inv = this.rows("SELECT name FROM pragma_table_info('invitations')").map(r => r.name);
+      if (inv.length && !inv.includes('tenant')) this.exec('ALTER TABLE invitations ADD COLUMN tenant TEXT');
+      this.exec("CREATE UNIQUE INDEX IF NOT EXISTS invitations_open_scope ON invitations(email, reason, project_id, reference_id, tenant) WHERE status IN ('open', 'scheduled')");
+      migrateManagerTrust(this);
+      migrateStoryTenant(this);
+    });
     ensureChain(this.sql, this.auditKey, this.transactionSync, this.dbId);
   }
 
-  rows(q, ...p) { return this.sql.exec(q, ...p).toArray(); }
+  // A mutating statement needs one of the three doors. Reads do not. sql stays the raw handle
+  // for audit-chain.js and for tests that seed or tamper below the door.
+  _enter(fn) {
+    if (typeof fn !== 'function') throw fail(500, 'A library write needs a function.');
+    this._door += 1;
+    try {
+      const result = fn();
+      if (result && typeof result.then === 'function') throw fail(500, 'A library write cannot await inside its audit transaction.');
+      return result;
+    } finally {
+      this._door -= 1;
+    }
+  }
+  exec(statement, ...params) {
+    if (mutatingSql(statement) && !this._door) throw Object.assign(fail(500, 'A SQL write must run inside recorded, housekeeping, or schema.'), { code: 'SQL_DOOR' });
+    return this._sql.exec(statement, ...params);
+  }
+  schema(fn) {
+    return this._enter(fn);
+  }
+  // No audit line and no verdict. A call already inside a door joins it. This does not start a
+  // transaction: a housekeeping statement still commits on its own, as it did before the door.
+  housekeeping(reason, fn) {
+    if (!String(reason || '').trim()) throw fail(500, 'Housekeeping needs a reason.');
+    return this._enter(fn);
+  }
+
+  rows(q, ...p) { return this.exec(q, ...p).toArray(); }
   row(id) {
     const r = this.rows('SELECT * FROM refs WHERE id = ?', String(id || ''))[0];
     return r ? readStoredStory(r) : null;
@@ -365,7 +396,7 @@ export class Library {
       else this.writeStatus(`INSERT INTO refs (id, owner, local_id, title, status, revision, content_hash, practice, industry, country, manager_email, members, created_at, updated_at, updated_by, next_review, data, state, tenant)
         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM refs WHERE id = ?)`,
         id, plan.user.email, plan.localId, data.title, status, revision, plan.hash, data.jev?.primary?.key || '', data.sector, data.details.country, data.validation.manager.email, members, plan.at, plan.at, plan.user.email, next, JSON.stringify(data), JSON.stringify(state), keptTenant, id);
-      this.sql.exec('INSERT INTO revisions (id, revision, data, author, at) VALUES (?, ?, ?, ?, ?)', id, revision, JSON.stringify(data), plan.user.email, plan.at);
+      this.exec('INSERT INTO revisions (id, revision, data, author, at) VALUES (?, ?, ?, ?, ?)', id, revision, JSON.stringify(data), plan.user.email, plan.at);
       this.log(id, plan.user.email, row ? 'revised' : 'created', 'revision ' + revision + (row ? (state.withdrawn ? '; stays withdrawn until a reviewer reinstates' : '; manager and pre-sales approval reopened') : ''));
       return { id, unchanged: false };
     });
@@ -392,7 +423,7 @@ export class Library {
   }
   auditLines(id) {
     let keyed = true;
-    try { this.sql.exec('SELECT "commit" FROM audit LIMIT 0'); }
+    try { this.exec('SELECT "commit" FROM audit LIMIT 0'); }
     catch { keyed = false; }
     const start = keyed ? this.chainStartSeq() : null;
     const query = keyed
@@ -475,7 +506,7 @@ export class Library {
       throw fail(403, 'A verified tenant is required to bind a manager.');
     }
     this.recorded(() => {
-      this.sql.exec(`INSERT INTO manager_trust (owner, email, source, tenant, at) VALUES (?, ?, ?, ?, ?)
+      this.exec(`INSERT INTO manager_trust (owner, email, source, tenant, at) VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(owner, email, tenant) DO UPDATE SET
           source = CASE WHEN manager_trust.source = 'directory' AND excluded.source = 'staffing' THEN manager_trust.source ELSE excluded.source END,
           at = excluded.at`,
@@ -487,7 +518,7 @@ export class Library {
 
   // The status write matches the revision and status just read. A concurrent change matches no row.
   writeStatus(query, ...params) {
-    this.sql.exec(query, ...params);
+    this.exec(query, ...params);
     const changed = Number(this.rows('SELECT changes() AS n')[0]?.n || 0);
     if (changed !== 1) throw fail(409, 'This reference changed. Open it again.');
   }
@@ -536,7 +567,9 @@ export class Library {
   // refs.state.ratingGen: incremented and written back at once (a synchronous read-modify-write in the Durable Object).
   nextGen(id) {
     const stored = this.columnState(id) || {}, gen = (Number(stored.ratingGen) || 0) + 1;
-    this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...stored, ratingGen: gen }), id);
+    this.housekeeping('rating-generation', () => {
+      this.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...stored, ratingGen: gen }), id);
+    });
     return gen;
   }
 
@@ -546,7 +579,9 @@ export class Library {
     const fresh = this.row(row.id);
     if (!fresh || fresh.merged_into) return false;
     if (fresh.revision !== row.revision || (Number(fresh.state.ratingGen) || 0) > gen) {
-      if (lastJev) this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...(this.columnState(fresh.id) || {}), lastJev }), fresh.id);
+      if (lastJev) this.housekeeping('rating-cache', () => {
+        this.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...(this.columnState(fresh.id) || {}), lastJev }), fresh.id);
+      });
       return false;
     }
     const reviewed = acceptPublication(publicationTransition(fresh.state, { type: 'reviewed', id: fresh.id, quality, lastJev }), { id: fresh.id, event: 'reviewed' });
@@ -674,11 +709,11 @@ export class Library {
         writes.push({ id: o.id, state: { ...o.state, duplicates: list.slice(0, 10) } });
       }
     }
-    if (vec) this.sql.exec('UPDATE refs SET embedding = ? WHERE id = ?', JSON.stringify(vec), id);
-    for (const write of writes) this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify(write.state), write.id);
+    if (vec) this.exec('UPDATE refs SET embedding = ? WHERE id = ?', JSON.stringify(vec), id);
+    for (const write of writes) this.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify(write.state), write.id);
     mine.sort((a, b) => (b.sameProjectId - a.sameProjectId) || (b.similarity - a.similarity)); // strongest signal first
     const fresh = this.columnState(id) || {};
-    this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...fresh, duplicates: mine.slice(0, 10) }), id);
+    this.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...fresh, duplicates: mine.slice(0, 10) }), id);
     if (mine.length) this.log(id, 'atlas', 'possible duplicate', String(mine.length));
     });
   }
@@ -742,7 +777,7 @@ export class Library {
         keep.id, moved.status, JSON.stringify(moved.state), gone.id, gone.revision, gone.storedStatus);
       const sharedWith = [...new Set([...(keep.state.sharedWith || []), gone.owner].filter(Boolean))];
       const keptState = this.columnState(keep.id) || {};
-      this.sql.exec('UPDATE refs SET state = ?, members = ? WHERE id = ?', JSON.stringify({ ...keptState, sharedWith }), (keep.members || ',') + sharedWith.join(',') + ',', keep.id);
+      this.exec('UPDATE refs SET state = ?, members = ? WHERE id = ?', JSON.stringify({ ...keptState, sharedWith }), (keep.members || ',') + sharedWith.join(',') + ',', keep.id);
       this.log(gone.id, user.email, 'merged into', keep.id);
       if (!plan.unchanged) this.commitRevision(plan);
       this.log(keep.id, user.email, 'consolidated', `merged ${gone.data.title} (${gone.id})`);
@@ -818,7 +853,7 @@ export class Library {
     if (dupe) return this.rows('SELECT * FROM invitations WHERE id = ?', dupe.id)[0];
     const id = this.newId(), slot = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(b.slot || '')) ? String(b.slot).slice(0, 25) : '';
     return this.recorded(() => {
-      this.sql.exec('INSERT INTO invitations (id, email, project_id, title, reason, slot, reference_id, status, created_at, source, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      this.exec('INSERT INTO invitations (id, email, project_id, title, reason, slot, reference_id, status, created_at, source, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         id, to, pid, str(b.title, 140), reason, slot, refId, slot ? 'scheduled' : 'open', this.now(), str(b.source || actor, 60), tenant);
       this.log(this.auditId(refId, tenant), actor, 'interview invitation', `${reason} for ${to}`);
       return this.rows('SELECT * FROM invitations WHERE id = ?', id)[0];
@@ -876,7 +911,7 @@ export class Library {
     if (keptRef && !storyOpen) {
       if (action !== 'dismiss') throw fail(404, 'Reference not found.');
       return this.recorded(() => {
-        this.sql.exec(`UPDATE invitations SET status = 'dismissed' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, inv.id);
+        this.exec(`UPDATE invitations SET status = 'dismissed' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, inv.id);
         if (held() !== 'dismissed') refuse();
         this.log('library', user.email, 'invitation dismiss', inv.reason);
         return this.invitationView(user, this.rows('SELECT * FROM invitations WHERE id = ?', inv.id)[0]);
@@ -885,9 +920,9 @@ export class Library {
     const auditOn = storyOpen ? this.auditFor(user, keptRef, inv.tenant) : 'library';
     if (action === 'schedule') { const slot = String(obj(body).slot || ''); if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(slot)) throw fail(400, 'Pick a date and time.'); }
     return this.recorded(() => {
-      if (action === 'schedule') this.sql.exec(`UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, String(obj(body).slot || '').slice(0, 25), inv.id);
-      else if (action === 'dismiss') this.sql.exec(`UPDATE invitations SET status = 'dismissed' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, inv.id);
-      else if (action === 'done') this.sql.exec(`UPDATE invitations SET status = 'done', reference_id = ? WHERE id = ? AND ${OPEN_INVITATION_SQL}`, nextRef || inv.reference_id, inv.id);
+      if (action === 'schedule') this.exec(`UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, String(obj(body).slot || '').slice(0, 25), inv.id);
+      else if (action === 'dismiss') this.exec(`UPDATE invitations SET status = 'dismissed' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, inv.id);
+      else if (action === 'done') this.exec(`UPDATE invitations SET status = 'done', reference_id = ? WHERE id = ? AND ${OPEN_INVITATION_SQL}`, nextRef || inv.reference_id, inv.id);
       else throw fail(400, 'Unknown action.');
       const expectStatus = action === 'schedule' ? 'scheduled' : action === 'dismiss' ? 'dismissed' : 'done';
       if (held() !== expectStatus) refuse();

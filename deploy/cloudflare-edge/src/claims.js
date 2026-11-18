@@ -41,9 +41,11 @@ const DDL = [
 const ensured = new WeakSet();
 export function ensure(lib) {
   if (ensured.has(lib)) return;
-  for (const q of DDL) lib.sql.exec(q);
-  const cols = lib.rows("SELECT name FROM pragma_table_info('confirmation_requests')").map(r => r.name);
-  if (cols.length && !cols.includes('tenant')) lib.sql.exec("ALTER TABLE confirmation_requests ADD COLUMN tenant TEXT NOT NULL DEFAULT ''");
+  lib.schema(() => {
+    for (const q of DDL) lib.exec(q);
+    const cols = lib.rows("SELECT name FROM pragma_table_info('confirmation_requests')").map(r => r.name);
+    if (cols.length && !cols.includes('tenant')) lib.exec("ALTER TABLE confirmation_requests ADD COLUMN tenant TEXT NOT NULL DEFAULT ''");
+  });
   ensured.add(lib);
 }
 
@@ -139,7 +141,7 @@ async function propose(lib, user, body, currency) {
   const out = new Map();
   lib.recorded(() => {
     asked.forEach((i, k) => {
-      lib.sql.exec(`INSERT OR IGNORE INTO claims (id, ref_id, revision, topic, idx, text, sentence_hash, status, created_by, created_at)
+      lib.exec(`INSERT OR IGNORE INTO claims (id, ref_id, revision, topic, idx, text, sentence_hash, status, created_by, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, 'unverified', ?, ?)`, lib.newId(), row.id, row.revision, i.topic, i.idx, i.text, hashes[k], user.email, at);
       const c = lib.rows('SELECT * FROM claims WHERE ref_id = ? AND sentence_hash = ?', row.id, hashes[k])[0];
       out.set(c.id, c);
@@ -196,7 +198,7 @@ function createRequest(ctx) {
   const id = lib.newId(), at = lib.now(), expires = new Date(Date.parse(at) + EXPIRY_MS).toISOString();
   const tenant = user.tenantEnforced === true ? String(user.tenant || '').toLowerCase() : '';
   lib.recorded(() => {
-    lib.sql.exec(`INSERT INTO confirmation_requests (id, ref_id, revision, kind, to_email, manager_source, claim_ids, status, created_by, created_by_mail, created_at, expires_at, tenant)
+    lib.exec(`INSERT INTO confirmation_requests (id, ref_id, revision, kind, to_email, manager_source, claim_ids, status, created_by, created_by_mail, created_at, expires_at, tenant)
       VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)`, id, row.id, row.revision, kind, to, source, JSON.stringify(ids), user.email, email(user.mail), at, expires, tenant);
     lib.log(row.id, user.email, 'confirmation requested', `rev ${row.revision} request ${id}: ${ids.length} claims (${kind}, ${source || 'none'})`);
   });
@@ -311,11 +313,11 @@ function decide(lib, user, id, body, currency) {
   lib.recorded(() => {
     for (const cid of ids) {
       const d = byId.get(cid);
-      lib.sql.exec('UPDATE claims SET status = ?, by_mail = ?, at = ?, note = ?, confirmed_revision = ? WHERE id = ? AND ref_id = ?',
+      lib.exec('UPDATE claims SET status = ?, by_mail = ?, at = ?, note = ?, confirmed_revision = ? WHERE id = ? AND ref_id = ?',
         status[d.decision], mail, now, d.note, row.revision, cid, r.ref_id);
       lib.log(r.ref_id, mail, 'claim ' + d.decision, `rev ${row.revision} claim ${cid} (${r.kind}, ${r.manager_source || 'none'})`);
     }
-    lib.sql.exec("UPDATE confirmation_requests SET status = 'done', decided_at = ? WHERE id = ?", now, r.id);
+    lib.exec("UPDATE confirmation_requests SET status = 'done', decided_at = ? WHERE id = ?", now, r.id);
   });
   const done = lib.rows('SELECT * FROM confirmation_requests WHERE id = ?', r.id)[0], { current } = currencyOf(row, currency);
   const full = lib.access(row, user) === 'full';
@@ -337,7 +339,7 @@ function cancel(lib, user, id) {
   const linked = linkedStory(lib, user, r);
   if (!linked || !lib.access(linked, user)) throw fail(404, 'Request not found.');
   lib.recorded(() => {
-    lib.sql.exec("UPDATE confirmation_requests SET status = 'cancelled' WHERE id = ?", r.id);
+    lib.exec("UPDATE confirmation_requests SET status = 'cancelled' WHERE id = ?", r.id);
     lib.log(r.ref_id, user.email, 'confirmation cancelled', `rev ${r.revision} request ${r.id}`);
   });
   return { request: requestView(lib.rows('SELECT * FROM confirmation_requests WHERE id = ?', r.id)[0]) };
@@ -389,7 +391,7 @@ export function expire(lib, now = lib.now(), user = {}) {
   if (enforced && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenant)) return 0;
   const n = lib.rows("SELECT COUNT(*) AS n FROM confirmation_requests WHERE status = 'open' AND expires_at <= ? AND lower(COALESCE(tenant, '')) = ?", now, tenant)[0].n;
   if (n) lib.recorded(() => {
-    lib.sql.exec("UPDATE confirmation_requests SET status = 'expired' WHERE status = 'open' AND expires_at <= ? AND lower(COALESCE(tenant, '')) = ?", now, tenant);
+    lib.exec("UPDATE confirmation_requests SET status = 'expired' WHERE status = 'open' AND expires_at <= ? AND lower(COALESCE(tenant, '')) = ?", now, tenant);
     lib.log('library', 'atlas', 'confirmations expired', `${n} requests`);
   });
   return n;

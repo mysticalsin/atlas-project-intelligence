@@ -2,9 +2,9 @@
 // current statements with a list that exceeds that cap, then require the whole write to roll back.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { PLACEHOLDER_ALLOW, lintDir } from './write-lint.js';
 import { Library } from '../src/library.js';
 import { memorySql } from './sqlite.js';
 import { deleteOwnedProfile, directoryRows, ensure as ensureProfile } from '../src/profile.js';
@@ -19,11 +19,7 @@ const OTHER = '22222222-2222-4222-8222-222222222222';
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '../src');
 
 // Bounded dynamic placeholder lists. The max is every bound parameter on that statement.
-const ALLOW = [
-  { file: 'operate.js', max: 3, why: 'directory erasure binds the tenant plus at most a mail and an oid' },
-  { file: 'library.js', max: 3, why: 'an invitation list binds at most the sign-in email, the mail claim, and the tenant' },
-];
-const BUILDER = /\.map\(\s*\(\s*\)\s*=>\s*['"`]\?['"`]\s*\)|['"`]\?['"`]\s*\.repeat\s*\(|\.fill\(\s*['"`]\?['"`]\s*\)|Array\.from\(\s*\{[^}]*\}\s*,\s*\(\s*\)\s*=>\s*['"`]\?['"`]\s*\)/;
+const ALLOW = PLACEHOLDER_ALLOW;
 
 function library() {
   return new Library(memorySql(), { now: () => NOW });
@@ -235,19 +231,7 @@ test('an inbox request with 100 claims still returns every claim', async () => {
 });
 
 test('dynamic placeholder lists stay in the chunk helper or on the bounded allowlist', () => {
-  const found = [];
-  for (const file of readdirSync(SRC).filter(name => name.endsWith('.js'))) {
-    const lines = readFileSync(join(SRC, file), 'utf8').split('\n');
-    lines.forEach((line, index) => {
-      const code = line.replace(/\/\/.*$/, '');
-      if (!BUILDER.test(code)) return;
-      const above = lines.slice(Math.max(0, index - 4), index).join('\n');
-      const marked = above.match(/sql-bound-fixed:\s*(\d+)/);
-      found.push({ file, line: index + 1, max: marked ? Number(marked[1]) : null });
-    });
-  }
-  const helper = found.filter(item => item.file === 'sql-bound.js');
-  const rest = found.filter(item => item.file !== 'sql-bound.js');
+  const { helper, rest } = lintDir(SRC);
   assert.equal(helper.length, 1, 'the chunk helper builds placeholders in one place');
   assert.deepEqual(rest.map(item => `${item.file}:${item.max}`).sort(), ALLOW.map(item => `${item.file}:${item.max}`).sort());
   for (const item of rest) {
