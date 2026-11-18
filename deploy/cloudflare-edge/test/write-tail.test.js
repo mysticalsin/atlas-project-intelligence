@@ -106,12 +106,14 @@ test('saveJourney writes an audit line', async () => {
   assert.equal(audited(lib, 'journey saved'), 1);
 });
 
-test('a consent receipt on a tampered chain is not stored', () => {
+test('a consent receipt on a tampered chain is stored and not audited', () => {
   const { lib } = open();
   return lib.upsert(OWNER, { localId: 'p1', reference: REF() }).then(async () => {
     tamper(lib);
-    assert.throws(() => recordReceipts(lib, SUBJECT, [{ purpose: 'transcription', granted: true }]), err => err.status === 409);
-    assert.equal(lib.rows('SELECT COUNT(*) AS n FROM consent_receipts')[0].n, 0);
+    const saved = recordReceipts(lib, SUBJECT, [{ purpose: 'transcription', granted: true }]);
+    assert.equal(saved.recorded.length, 1);
+    assert.equal(lib.rows('SELECT COUNT(*) AS n FROM consent_receipts')[0].n, 1);
+    assert.equal(lib.rows("SELECT action FROM audit WHERE action = 'consent receipt'").length, 0);
   });
 });
 

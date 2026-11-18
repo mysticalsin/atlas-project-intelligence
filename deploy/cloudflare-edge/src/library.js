@@ -14,7 +14,7 @@ import { RatingError, ratingInput, questionPlan, requestBody, compose, agentQual
 import { profileFold, profileSelection, storedConsent } from './profile.js';
 import { placeholders, readChunks } from './sql-bound.js';
 import { sameTenant, TENANT_ID } from './authz.js';
-import { appendAudit, ensureChain, verifyChain, anchoredVerdict } from './audit-chain.js';
+import { appendAudit, checkpointHead, ensureChain, verifyChain, anchoredVerdict } from './audit-chain.js';
 import { recordUsage } from './telemetry.js';
 import { publicationEffect, publicationStatus, publicationTransition, readPublication } from './publication.js';
 import { invitationTransition, noteInvitation, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
@@ -190,16 +190,29 @@ export class Library {
     // An inner call joins the open transaction. There is no await inside it: a returned promise is a mistake.
     // Without a real transaction the property stays null, so a caller that cannot be atomic still refuses.
     // The door opens inside the transaction, so exec can write and a throw rolls the write back.
-    const recorded = fn => {
+    const recorded = (fn, opts = {}) => {
       if (typeof fn !== 'function') throw fail(500, 'A library write needs a function.');
-      const run = () => this._enter(fn);
-      if (this._auditTx) return run();
+      if (this._auditTx) {
+        if (opts.allowDamaged === true) this._allowDamaged = true;
+        return this._enter(fn);
+      }
       if (typeof this._atomic !== 'function') throw fail(503, 'Atomic library writes need storage.transactionSync.');
+      const run = () => {
+        this._allowDamaged = opts.allowDamaged === true;
+        this._appended = false;
+        try {
+          const result = this._enter(fn);
+          if (this._appended && !this._allowDamaged) checkpointHead(this.sql, this.auditKey, this.dbId);
+          return result;
+        } finally {
+          this._allowDamaged = false;
+        }
+      };
       this._auditTx = 1;
       try { return this._atomic(run); }
       finally { this._auditTx = 0; }
     };
-    Object.assign(this, { sql, _sql: sql, _door: 0, now, newId, complete, embed, readyScore, model, services, rater, metric, _atomic: atomic, _auditTx: 0, recorded, transactionSync: typeof atomic === 'function' ? recorded : null, auditKey, dbId: String(dbId ?? '') });
+    Object.assign(this, { sql, _sql: sql, _door: 0, _appended: false, _allowDamaged: false, now, newId, complete, embed, readyScore, model, services, rater, metric, _atomic: atomic, _auditTx: 0, recorded, transactionSync: typeof atomic === 'function' ? recorded : null, auditKey, dbId: String(dbId ?? '') });
     this.inflight = new Map(); // `${id}:${revision}` -> { gen, engine, first, all }: one rating per revision at a time
     this.schema(() => {
       for (const q of SCHEMA) this.exec(q);
@@ -252,6 +265,7 @@ export class Library {
   log(id, actor, action, detail = '') {
     if (this.auditKey == null) throw fail(503, 'LOG_SALT is not set.');
     appendAudit(this.sql, { id, actor, action, at: this.now(), detail: String(detail).slice(0, 300) }, this.auditKey, this.dbId);
+    this._appended = true;
   }
   // An invitation or card action may name a story. The audit id is that story only when the story's stored tenant
   // is the caller's tenant. A foreign id is not an audit target.

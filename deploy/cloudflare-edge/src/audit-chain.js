@@ -393,3 +393,13 @@ export function verifyDaily(sql, key = '', dbId = '') {
   sql.exec('INSERT INTO audit_anchor (id, n, head) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET n = excluded.n, head = excluded.head', result.checked, result.head);
   return { ok: true, checked: result.checked, head: result.head, reason: 'CHAIN_VERIFIED', legacyUnverified };
 }
+
+// The anchor moves in the same transaction as a successful audit append. A tail delete then fails
+// the next verdict. Callers that pass allowDamaged do not call this.
+export function checkpointHead(sql, key, dbId = '') {
+  const result = anchoredVerdict(sql, verifyChain(sql, key, dbId));
+  if (!result.ok) return result;
+  sql.exec(ANCHOR);
+  sql.exec('INSERT INTO audit_anchor (id, n, head) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET n = excluded.n, head = excluded.head', result.checked, result.head);
+  return result;
+}

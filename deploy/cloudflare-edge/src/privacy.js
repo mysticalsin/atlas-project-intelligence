@@ -8,7 +8,7 @@
 // person's pseudonymous subject key, with the notice version, the SHA-256 of the exact wording shown, a timestamp and the channel.
 // Flags. restricted (Art 18) and the three objections (Art 21) stop scoring, matching and memory for the person's references. The person sets them for themselves only.
 import { PRIVACY } from './policy.generated.js';
-import { sha256Hex } from './audit-chain.js';
+import { anchoredVerdict, sha256Hex, verifyChain } from './audit-chain.js';
 import { obj, fail } from './util.js';
 
 export const NOTICE_VERSION = PRIVACY.version;
@@ -162,15 +162,17 @@ export function recordReceipts(lib, subject, items, { channel = 'api', now = lib
     latest[purpose] = { granted: i.granted, version: NOTICE_VERSION, at: now, channel: row.channel };
   }
   if (!pending.length) return { recorded: [], state: latest };
+  // allowDamaged stores the receipt when the chain does not verify, and never moves the anchor.
   return lib.recorded(() => {
     const out = [];
     for (const row of pending) {
       lib.exec('INSERT INTO consent_receipts (id, subject, purpose, granted, notice_version, text_sha256, at, channel) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', row.id, row.subject, row.purpose, row.granted, row.notice_version, row.text_sha256, row.at, row.channel);
       out.push({ purpose: row.purpose, granted: row.granted === 1, at: row.at, channel: row.channel });
     }
-    lib.log('privacy', subj, 'consent receipt', out.map(r => r.purpose).join(','));
+    const verdict = anchoredVerdict(lib.sql, verifyChain(lib.sql, lib.auditKey, lib.dbId));
+    if (verdict.ok) lib.log('privacy', subj, 'consent receipt', out.map(r => r.purpose).join(','));
     return { recorded: out, state: latest };
-  });
+  }, { allowDamaged: true });
 }
 export const receiptsOf = (lib, subject) => { ensure(lib); return lib.rows('SELECT id, purpose, granted, notice_version AS noticeVersion, text_sha256 AS textSha256, at, channel FROM consent_receipts WHERE subject = ? ORDER BY at, rowid', subject).map(r => ({ ...r, granted: r.granted === 1 })); };
 
