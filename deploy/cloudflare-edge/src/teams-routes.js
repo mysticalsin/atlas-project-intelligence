@@ -9,14 +9,17 @@ import { verifyBotActivity, teamsClient, messageCard, teamsStatus, botAppId } fr
 import { str } from './util.js';
 import { TENANT_ID, tenantEnforced } from './authz.js';
 import { TEAMS_JS } from '../teams/vendor/teams-js.mjs';
+import { baseSecurityHeaders } from './security-headers.js';
+import { htmlCsp, inlineScriptHashes } from './csp.js';
+import { auditKey } from './audit-chain.js';
 
 const MAX_BODY = 262144;
-const BASE = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' };
+const BASE = baseSecurityHeaders();
+export const TEAMS_ANCESTORS = 'https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft';
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status,
   headers: { ...BASE, 'Content-Type': 'application/json', 'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'" } });
 // Route-specific CSP: only Teams may frame the launcher; the main host keeps frame-ancestors 'none' everywhere else.
-export const TAB_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; "
-  + 'frame-ancestors https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft';
+export const tabPolicy = hashes => htmlCsp({ hashes, connectSelf: false, scriptBlob: false, imgSrc: 'data:', fontSelf: false, workerBlob: false, mediaBlob: false, trustedTypes: 'none', report: false, formAction: "'none'", frameAncestors: TEAMS_ANCESTORS });
 const NEEDS = ['TEAMS_APP_ID', 'TEAMS_TENANT_ID', 'TEAMS_BOT_SECRET (Worker secret)', 'TEAMS_BOT_APP_ID only when the bot uses another app registration than TEAMS_APP_ID',
   'Cloudflare Access bypass for /api/teams/messages and /teams/tab', 'Azure Bot resource (F0, single tenant) with the Teams channel on', 'Teams admin approval of the app package'];
 const configured = env => teamsStatus(env) === 'connected';
@@ -26,7 +29,7 @@ export async function teamsRoutes(request, env = {}, { waitUntil = p => p } = {}
   if (!configured(env)) return json({ error: 'Teams is not connected.', status: 'BLOCKED_EXTERNAL',
     reason: 'Teams is not connected: tenant app, bot credentials and TEAMS_* settings are missing.', needs: NEEDS }, 503);
   const url = new URL(request.url);
-  if (url.pathname === '/teams/tab' && request.method === 'GET') return tab(env, teamsJs);
+  if (url.pathname === '/teams/tab' && request.method === 'GET') return await tab(env, teamsJs);
   if (url.pathname === '/api/teams/messages' && request.method === 'POST') return messages(request, env, fetcher);
   return json({ error: 'Not found.' }, 404);
 }
@@ -80,6 +83,7 @@ async function messages(request, env, fetcher) {
   const event = eventOf(v.activity, env);
   if (!event) return json({}, 200);
   if (!env.LIBRARY) return json({ error: 'The reference library is not configured on this deployment.' }, 503);
+  if (auditKey(env) == null) return json({ error: 'LOG_SALT is not set.', code: 'LOG_SALT' }, 503);
   if (event.kind === 'install') { // routing email from the member lookup, only when the outbound client exists (connected)
     const client = teamsClient(env, fetcher);
     if (client) { try { event.email = (await client.member(event, event.teamsUserId)).email; } catch { /* stored without an email */ } }
@@ -103,7 +107,7 @@ async function messages(request, env, fetcher) {
 
 // GET /teams/tab: a static launcher with no user data and no API call. TeamsJS app.initialize(), then app.openLink to
 // /go/start, which opens the consent step (the microphone waits for the Start click; WOW_ZERO_CONFIG §3.1).
-function tab(env, js) {
+async function tab(env, js) {
   if (!js) return json({ error: 'TeamsJS not vendored', status: 'BLOCKED_EXTERNAL',
     reason: 'TeamsJS not vendored: the launcher tab needs the @microsoft/teams-js 2.57.0 UMD bundle in deploy/cloudflare-edge/teams/vendor/.',
     needs: ['@microsoft/teams-js 2.57.0 (MIT) vendored with teams/vendor_teamsjs.py, its SHA-256 recorded in docs/THIRD_PARTY.md and docs/SOURCE_LOCK.json'] }, 503);
@@ -121,5 +125,6 @@ function tab(env, js) {
     + 'else{msg.textContent="Open this tab inside Microsoft Teams, or open ATLAS in your browser.";}}'
     + 'document.getElementById("open").addEventListener("click",function(e){open(e,target);});document.getElementById("pending").addEventListener("click",function(e){open(e,home);});'
     + 'try{microsoftTeams.app.initialize().then(function(){ready=true;}).catch(function(){ready=false;});}catch(e){ready=false;}})();</script></body></html>';
-  return new Response(html, { status: 200, headers: { ...BASE, 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': TAB_CSP } });
+  const hashes = await inlineScriptHashes(html);
+  return new Response(html, { status: 200, headers: { ...BASE, 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': tabPolicy(hashes) } });
 }

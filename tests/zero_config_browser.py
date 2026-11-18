@@ -13,7 +13,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 H = (ROOT / 'ATLAS_Voice.html').read_text()
 HOME = json.loads(re.search(r'<script>window\.ATLAS_HOME=("[^"<]*");</script>', H).group(1))
-LIVE = H.replace('/* SERVER_RUNTIME */', "window.ATLAS_RUNTIME={subjectKey:'k-tony',authMode:'access',name:'tony.walteur@example.com'};", 1)
+LIVE = H.replace('<script id="atlas-runtime" type="application/json">{}</script>', '<script id="atlas-runtime" type="application/json">{"subjectKey":"k-tony","authMode":"access","name":"tony.walteur@example.com"}</script>', 1)
 SIGNED_IN = '<!doctype html><meta charset="utf-8"><title>Signed in</title><p>You’re signed in. This window closes by itself.</p><script>new BroadcastChannel("atlas-auth").postMessage("ok");close();</script>'
 FORBIDDEN = re.compile(r'gateway|localhost|GPU|\.env|NVIDIA|address', re.I)
 REP = {'headline': 'Claims triage rebuilt', 'summary': 'The consultant rebuilt claims triage for the client.', 'topics': {'context': 'Tickets bounced between teams.'},
@@ -471,7 +471,7 @@ with sync_playwright() as pw:
     # ---- admin people directory: only the approved columns leave the browser (§5.6)
     s = Server(prof=profile(), role='admin'); s.dir_rows = 2
     p = open_page(s)
-    p.evaluate("document.getElementById('openInsights').click()"); p.locator('#peopleDirectory').wait_for(state='visible', timeout=5000)
+    p.evaluate("document.getElementById('openInsights').click()"); p.locator('#peopleDirectory').get_by_text('only synthetic addresses').wait_for(state='visible', timeout=5000)
     check('directory: test mode says synthetic addresses only, and names what DNA pull and push need',
           'only synthetic addresses' in p.locator('#peopleDirectory').inner_text() and 'DNA push: not connected' in p.locator('#peopleDirectory').inner_text())
     csv = 'Email;Nom complet;Poste;Responsable;Mail responsable;Salaire;Date de naissance;Site\njane@example.com;Jane Doe;Data lead;Sam Lead;sam@example.com;85000;1980-02-03;Lyon\nbad-row;Nobody;;;;90000;1970-01-01;Paris\n'
