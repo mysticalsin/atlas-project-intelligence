@@ -34,5 +34,7 @@ test-ui: build
 	$(PYTHON) tests/jev_rating_browser.py
 doctor:
 	$(PYTHON) scripts/doctor.py --profile preview
+# Usage: make verify-package PACKAGE=path/to/extracted-release
 verify-package:
-	$(PYTHON) scripts/check_handoff.py
+	@test -n "$(PACKAGE)" || { echo 'Usage: make verify-package PACKAGE=path/to/extracted-release (directory or .zip/.tar archive)'; exit 1; }
+	$(PYTHON) scripts/check_handoff.py "$(PACKAGE)"

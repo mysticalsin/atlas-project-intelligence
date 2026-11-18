@@ -2,9 +2,12 @@
 import hashlib
 import json
 from pathlib import Path
+import subprocess
+import tarfile
+import zipfile
 import pytest
 from scripts.doctor import read_literal_env, probe, environment, main as doctor_main
-from scripts.check_handoff import safe_relative, inspect
+from scripts.check_handoff import safe_relative, inspect, main
 
 
 def test_env_reads_literals_without_execution(tmp_path):
@@ -110,3 +113,162 @@ def test_complete_make_targets():
     assert 'tests/test_*.py' in text
     assert 'tests/depth_browser.py' in text
     assert '\t$(PYTHON)' in text
+
+
+HTML = b'<!doctype html><title>synthetic release</title>\n'
+ALIASES = (
+    'ATLAS_Project_Intelligence.html', 'ATLAS_Intelligence.html',
+    'ATLAS_Voice_Studio.html', 'ATLAS_Voice.html',
+)
+REQUIRED = (
+    '00_START_HERE.md', 'CLAUDE.md', 'CLAUDE_BUILD_PROMPT.md',
+    'handoff/CURRENT_STATUS.md', 'handoff/BUILD_PLAN.md', 'handoff/CONFIGURATION.md',
+    'handoff/ACCEPTANCE.md', 'handoff/CODE_MAP.md',
+)
+BUILD_PY = (
+    'from pathlib import Path\n'
+    'html = ' + repr(HTML) + '\n'
+    'root = Path(__file__).resolve().parent\n'
+    'for name in ' + repr(ALIASES) + ':\n'
+    '    (root / name).write_bytes(html)\n'
+).encode()
+
+
+def run_verify(argv):
+    try:
+        return main(argv)
+    except SystemExit as exc:
+        return exc.code
+
+
+def _write(root, rel, data):
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+
+
+def _manifest(files):
+    rows = [{'path': rel, 'bytes': len(files[rel]), 'sha256': hashlib.sha256(files[rel]).hexdigest()}
+            for rel in sorted(files)]
+    return json.dumps({'version': 'synthetic', 'manifest_excludes': ['MANIFEST.json'], 'files': rows}, indent=2).encode()
+
+
+def synthetic_package(tmp_path, *, mutate=None, omit=None, extra=None):
+    """A release directory whose listed files match, unless a tamper argument says otherwise."""
+    root = tmp_path / 'release'
+    repo = Path(__file__).resolve().parents[1]
+    files = {
+        'build.py': BUILD_PY,
+        'assets/Mantu.svg': (repo / 'assets' / 'Mantu.svg').read_bytes(),
+        'notes/readme.txt': b'hello release\n',
+    }
+    for name in ALIASES:
+        files[name] = HTML
+    for name in REQUIRED:
+        files[name] = ('# ' + name + '\n').encode()
+    disk = dict(files)
+    if mutate:
+        disk[mutate] = disk[mutate][:-1] + bytes([(disk[mutate][-1] + 1) % 256])
+    if omit:
+        del disk[omit]
+    for rel, data in disk.items():
+        _write(root, rel, data)
+    if extra:
+        for rel, data in extra.items():
+            _write(root, rel, data)
+    _write(root, 'MANIFEST.json', _manifest(files))
+    return root
+
+
+def archive_of(root, dest, kind, prefix=''):
+    files = [p for p in root.rglob('*') if p.is_file()]
+    if kind == 'zip':
+        with zipfile.ZipFile(dest, 'w') as zf:
+            for path in files:
+                zf.write(path, prefix + path.relative_to(root).as_posix())
+    else:
+        with tarfile.open(dest, 'w:gz') as tf:
+            for path in files:
+                tf.add(path, arcname=prefix + path.relative_to(root).as_posix())
+    return dest
+
+
+def test_command_requires_a_package():
+    assert run_verify([]) == 2
+
+
+def test_clean_synthetic_package_passes(tmp_path, capsys):
+    assert run_verify([str(synthetic_package(tmp_path))]) == 0
+    out = capsys.readouterr().out
+    assert 'FAIL' not in out
+    assert 'PASS manifest-content:' in out
+
+
+def test_clean_zip_and_tar_and_wrapped_directory_pass(tmp_path):
+    package = synthetic_package(tmp_path)
+    assert run_verify([str(archive_of(package, tmp_path / 'release.zip', 'zip'))]) == 0
+    assert run_verify([str(archive_of(package, tmp_path / 'release.tar.gz', 'tar'))]) == 0
+    wrapped = archive_of(package, tmp_path / 'wrapped.zip', 'zip', prefix='ATLAS_Project_Intelligence/')
+    assert run_verify([str(wrapped)]) == 0
+
+
+def test_changed_byte_fails(tmp_path, capsys):
+    package = synthetic_package(tmp_path, mutate='notes/readme.txt')
+    assert run_verify([str(package)]) == 1
+    assert 'FAIL manifest-content: changed: notes/readme.txt' in capsys.readouterr().out
+
+
+def test_missing_file_fails(tmp_path, capsys):
+    package = synthetic_package(tmp_path, omit='notes/readme.txt')
+    assert run_verify([str(package)]) == 1
+    assert 'FAIL manifest-content: missing or symlink: notes/readme.txt' in capsys.readouterr().out
+
+
+def test_unlisted_file_fails(tmp_path, capsys):
+    package = synthetic_package(tmp_path, extra={'notes/extra.txt': b'not in the manifest\n'})
+    assert run_verify([str(package)]) == 1
+    assert 'FAIL manifest-content: unlisted: notes/extra.txt' in capsys.readouterr().out
+
+
+def test_tampered_zip_fails(tmp_path, capsys):
+    package = synthetic_package(tmp_path, mutate='notes/readme.txt')
+    archive = archive_of(package, tmp_path / 'tampered.zip', 'zip')
+    assert run_verify([str(archive)]) == 1
+    assert 'changed: notes/readme.txt' in capsys.readouterr().out
+
+
+def test_missing_package_and_unsafe_archive_fail(tmp_path, capsys):
+    assert run_verify([str(tmp_path / 'no-such-release')]) == 1
+    assert 'Package not found' in capsys.readouterr().out
+    archive = tmp_path / 'escape.zip'
+    with zipfile.ZipFile(archive, 'w') as zf:
+        zf.writestr('../escape.txt', b'nope')
+        zf.writestr('MANIFEST.json', b'{}')
+    assert run_verify([str(archive)]) == 1
+    assert 'Unsafe archive path' in capsys.readouterr().out
+
+
+def test_make_verify_package_requires_an_extracted_package(tmp_path):
+    repo = Path(__file__).resolve().parents[1]
+    bare = subprocess.run(['make', 'verify-package'], cwd=repo, capture_output=True, text=True)
+    bare_text = bare.stdout + bare.stderr
+    assert bare.returncode != 0
+    assert 'PACKAGE' in bare_text
+    assert 'changed:' not in bare_text
+    package = synthetic_package(tmp_path)
+    checked = subprocess.run(['make', 'verify-package', f'PACKAGE={package}'], cwd=repo, capture_output=True, text=True)
+    assert checked.returncode == 0, checked.stdout + checked.stderr
+    recipe = (repo / 'Makefile').read_text().split('test: ', 1)[1].split('\n', 1)[0]
+    assert 'verify-package' not in recipe
+
+
+def test_docs_do_not_use_the_checker_as_a_dev_gate():
+    repo = Path(__file__).resolve().parents[1]
+    start = (repo / '00_START_HERE.md').read_text()
+    plan = (repo / 'handoff' / 'BUILD_PLAN.md').read_text()
+    note = json.loads((repo / 'handoff' / 'verification' / 'RESULTS.json').read_text())['integrity_note']
+    assert 'python3 scripts/check_handoff.py\n' not in start
+    assert 'before editing' not in start
+    assert 'check_handoff.py` before changes' not in plan
+    assert 'before editing' not in note
+    assert 'enumerates package files except itself' in note
