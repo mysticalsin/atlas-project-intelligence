@@ -50,4 +50,19 @@ test('a tenant story write and its audit line commit or roll back together', asy
   assert.equal(count(lib, 'audit', "action IN ('created', 'revised') AND id != ?", saved.id), 0, 'the audit line rolled back');
   assert.equal(count(lib, 'refs', 'id = ?', saved.id), 1);
   assert.equal(count(lib, 'audit', "id = ? AND action = 'created'", saved.id), 1);
+
+  armed = true;
+  sql.exec = (query, ...params) => {
+    const text = String(query);
+    if (armed && text.includes('INSERT INTO audit') && params.includes('created')) {
+      armed = false;
+      throw new Error('disk');
+    }
+    return real(query, ...params);
+  };
+  await assert.rejects(() => lib.upsert(OWNER, { localId: 'audit-boom', reference: REF() }), /disk/);
+  assert.equal(count(lib, 'refs', 'local_id = ?', 'audit-boom'), 0, 'the story row is gone');
+  assert.equal(count(lib, 'audit', "action = 'created' AND id != ?", saved.id), 0, 'the audit line is absent');
+  assert.equal(count(lib, 'refs', 'id = ?', saved.id), 1);
+  assert.equal(count(lib, 'audit', "id = ? AND action = 'created'", saved.id), 1);
 });
