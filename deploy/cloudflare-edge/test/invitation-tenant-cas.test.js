@@ -25,12 +25,15 @@ test('a status write compares against the status that was read', () => {
   const lib = open();
   const inv = lib.invite(ada(A).email, { email: ada(A).email, reason: 'manual', projectId: 'PRJ-2', title: 'Race' }, ada(A));
   const orig = lib.exec.bind(lib);
+  let bound = null;
   lib.exec = (sql, ...params) => {
-    if (String(sql).includes('UPDATE invitations') && !String(sql).includes("status = 'scheduled'")) {
+    if (String(sql).includes('UPDATE invitations')) {
+      bound = params.slice();
       lib.sql.exec("UPDATE invitations SET status = 'scheduled' WHERE id = ?", inv.id);
     }
     return orig(sql, ...params);
   };
   assert.throws(() => lib.updateInvitation(ada(A), inv.id, { action: 'dismiss' }), err => err.status === 409);
-  assert.equal(lib.rows('SELECT status FROM invitations WHERE id = ?', inv.id)[0].status, 'scheduled');
+  assert.equal(bound.at(-1), 'open');
+  assert.equal(lib.rows('SELECT status FROM invitations WHERE id = ?', inv.id)[0].status, 'open');
 });

@@ -52,7 +52,7 @@ async function sentCard() {
 function throwOnInvitationWrite(lib, error) {
   const inner = lib.sql.exec.bind(lib.sql);
   lib.sql.exec = (query, ...params) => {
-    if (String(query).includes('UPDATE invitations') && String(query).includes("status IN ('open', 'scheduled')")) throw error;
+    if (String(query).includes('UPDATE invitations') && String(query).includes('status = ?')) throw error;
     return inner(query, ...params);
   };
 }

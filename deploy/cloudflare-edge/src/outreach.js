@@ -11,7 +11,7 @@ import { recordText, forOthers } from './scrub.js';
 import * as claims from './claims.js';
 import * as gaps from './gaps.js';
 import { interviewCard, messageCard } from './teams.js';
-import { invitationTransition, noteInvitation, INVITATION_CLOSED, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
+import { invitationTransition, noteInvitation, INVITATION_CLOSED, INVITATION_REFUSAL } from './invitation.js';
 import { profileFold } from './profile.js';
 import { placeholders, readChunks } from './sql-bound.js';
 
@@ -613,8 +613,8 @@ export async function system(ctx) {
     try {
       return recorded(lib, () => {
         lib.exec('INSERT OR IGNORE INTO teams_seen (activity_id, at) VALUES (?, ?)', activityId, now);
-        if (e.verb === 'decline') lib.exec(`UPDATE invitations SET status = 'dismissed' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, inv.id);
-        else lib.exec(`UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, slot, inv.id);
+        if (e.verb === 'decline') lib.exec('UPDATE invitations SET status = \'dismissed\' WHERE id = ? AND status = ?', inv.id, inv.status);
+        else lib.exec('UPDATE invitations SET slot = ?, status = \'scheduled\' WHERE id = ? AND status = ?', slot, inv.id, inv.status);
         if (Number(lib.rows('SELECT changes() AS n')[0]?.n || 0) !== 1) {
           const closed = fail(409, INVITATION_REFUSAL);
           closed.code = INVITATION_CLOSED;
