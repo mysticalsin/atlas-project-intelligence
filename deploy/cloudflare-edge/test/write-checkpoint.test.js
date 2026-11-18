@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { Library, sqlOf } from './hold.js';
 import { anchoredVerdict, verifyChain } from '../src/audit-chain.js';
 import { memorySql } from './sqlite.js';
-import { recordReceipts } from '../src/privacy.js';
+import { ensure, recordReceipts } from '../src/privacy.js';
 
 const SALT = 'synthetic-log-salt';
 const STAMP = '2026-11-17T05:00:00.000Z';
@@ -94,4 +94,39 @@ test('a failed checkpoint leaves no row', async () => {
   assert.throws(() => lib.nextGen(saved.id), err => err.status === 409);
   assert.equal(Number(lib.columnState(saved.id)?.ratingGen) || 0, beforeGen);
   assert.equal(lib.rows('SELECT COUNT(*) AS n FROM audit')[0].n, beforeAudit);
+});
+
+test('deleting the last receipt audit line on a healthy chain fails verify', () => {
+  const { lib } = open();
+  const saved = recordReceipts(lib, SUBJECT, [{ purpose: 'transcription', granted: true }]);
+  assert.equal(saved.recorded.length, 1);
+  sqlOf(lib).exec("DELETE FROM audit WHERE action = 'consent receipt'");
+  const after = anchoredVerdict(sqlOf(lib), verifyChain(sqlOf(lib), SALT, lib.dbId));
+  assert.equal(after.ok, false);
+});
+
+test('a nested recorded call keeps the outer checkpoint', async () => {
+  const { lib } = open();
+  const saved = await lib.upsert(OWNER, { localId: 'p1', reference: REF() });
+  lib.recorded(() => {
+    lib.log(saved.id, 'atlas', 'outer note', 'kept');
+    lib.recorded(() => {}, { allowDamaged: true });
+  });
+  sqlOf(lib).exec('DELETE FROM audit WHERE seq = (SELECT MAX(seq) FROM audit)');
+  const after = anchoredVerdict(sqlOf(lib), verifyChain(sqlOf(lib), SALT, lib.dbId));
+  assert.equal(after.ok, false);
+});
+
+test('a mixed write on a damaged chain is refused', async () => {
+  const { lib } = open();
+  const saved = await lib.upsert(OWNER, { localId: 'p1', reference: REF() });
+  const title = lib.rows('SELECT title FROM refs WHERE id = ?', saved.id)[0].title;
+  tamper(lib);
+  ensure(lib);
+  assert.throws(() => lib.recorded(() => {
+    lib.exec('INSERT INTO consent_receipts (id, subject, purpose, granted, notice_version, text_sha256, at, channel) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', 'r1', SUBJECT, 'memory', 1, 'n', 'h', STAMP, 'api');
+    lib.exec('UPDATE refs SET title = ? WHERE id = ?', 'changed', saved.id);
+  }), err => err.status === 409);
+  assert.equal(lib.rows('SELECT title FROM refs WHERE id = ?', saved.id)[0].title, title);
+  assert.equal(lib.rows('SELECT COUNT(*) AS n FROM consent_receipts')[0].n, 0);
 });
