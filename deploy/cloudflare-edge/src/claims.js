@@ -12,6 +12,7 @@ import { clientScrub } from './review.js';
 import * as outreach from './outreach.js';
 import * as profile from './profile.js';
 import { sameTenant, TENANT_ID } from './authz.js';
+import { placeholders, readChunks } from './sql-bound.js';
 
 export const READY = true;
 // Claim currency (§2.4, Q12; Tony decides). 'sentence' (default): a confirmation stays current while its exact sentence
@@ -66,7 +67,11 @@ function currencyOf(row, currency) {
 
 function claimRows(lib, refId, ids) {
   if (!ids.length) return [];
-  const byId = new Map(lib.rows(`SELECT * FROM claims WHERE ref_id = ? AND id IN (${ids.map(() => '?').join(',')})`, refId, ...ids).map(c => [c.id, c]));
+  const byId = new Map(readChunks(lib, ids, {
+    fixed: 1,
+    sql: chunk => `SELECT * FROM claims WHERE ref_id = ? AND id IN (${placeholders(chunk.length)})`,
+    params: chunk => [refId, ...chunk],
+  }).map(c => [c.id, c]));
   return ids.map(id => byId.get(id)).filter(Boolean);
 }
 
@@ -220,9 +225,12 @@ function staffingHits(lib, row) {
   const tenant = String(row?.state?.tenant || row?.tenant || '').toLowerCase();
   const owners = typeof lib.ownerKeys === 'function' ? lib.ownerKeys(row).map(v => String(v || '').toLowerCase()).filter(Boolean) : [String(row?.owner || '').toLowerCase()].filter(Boolean);
   if (!project || !owners.length || !lib.rows("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'staffing'")[0]) return [];
-  const marks = owners.map(() => '?').join(', ');
   // Blank manager rows still count. A case-variant duplicate with an empty manager is the same logical assignment.
-  return lib.rows(`SELECT project_id, consultant_email, manager_email FROM staffing WHERE lower(project_id) = ? AND lower(consultant_email) IN (${marks}) AND lower(COALESCE(tenant, '')) = ?`, project, ...owners, tenant);
+  return readChunks(lib, owners, {
+    fixed: 2,
+    sql: chunk => `SELECT project_id, consultant_email, manager_email FROM staffing WHERE lower(project_id) = ? AND lower(consultant_email) IN (${placeholders(chunk.length)}) AND lower(COALESCE(tenant, '')) = ?`,
+    params: chunk => [project, ...chunk, tenant],
+  });
 }
 function currentStaffingManager(lib, row) {
   const hits = staffingHits(lib, row);

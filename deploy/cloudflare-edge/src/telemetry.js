@@ -5,6 +5,7 @@
 import { fail, str } from './util.js';
 import { sameTenant, TENANT_ID } from './authz.js';
 import { sha256Hex } from './audit-chain.js';
+import { readPublication } from './publication.js';
 
 const DAY = 864e5;
 const KINDS = new Set(['interview', 'approval', 'export', 'admin_publish', 'journey', 'error', 'usage']);
@@ -137,12 +138,15 @@ function workflowCounts(lib, tenant, enforced) {
   try { rows = lib.rows('SELECT status, state, owner FROM refs WHERE merged_into IS NULL'); } catch { return { status: 'missing' }; }
   const out = { draft: 0, awaiting_manager: 0, awaiting_presales: 0, published: 0, admin_test: 0, withdrawn: 0 };
   for (const r of rows) {
-    let state = {};
-    try { state = JSON.parse(r.state || '{}'); } catch { state = {}; }
-    if (!sameTenant(state.tenant, tenant, enforced)) continue;
-    if (r.status === 'withdrawn') out.withdrawn += 1;
-    else if (r.status === 'published') out.published += 1;
-    else if (r.status === 'admin_test') out.admin_test += 1;
+    let stored = {};
+    try { stored = JSON.parse(r.state || '{}'); } catch { stored = {}; }
+    const viewed = readPublication(stored);
+    const state = viewed.state;
+    const status = viewed.status == null ? r.status : viewed.status;
+    if (!sameTenant(stored.tenant, tenant, enforced)) continue;
+    if (status === 'withdrawn') out.withdrawn += 1;
+    else if (status === 'published') out.published += 1;
+    else if (status === 'admin_test') out.admin_test += 1;
     else if (state.validation?.managerDecision === 'approved') out.awaiting_presales += 1;
     else out.awaiting_manager += 1;
     if (!state.quality) out.draft += 1;

@@ -390,7 +390,7 @@ test('acceptance 10: confirmationStatus keys equal the claimKey of the one-pager
     const ref = { ...REF(), title: 'Fixture ' + k, client: { name: f.client }, answers: f.answers };
     const id = (await s.l.upsert(ALEX, { localId: 'f' + k, reference: ref })).id;
     const row = s.l.row(id);
-    s.l.setState(row, { ...row.state, quality: { status: 'ready', score: 90 }, validation: { status: 'validated' } }, 'test', 'published', '');
+    s.l.setState(row, { ...row.state, quality: { status: 'ready', score: 90 }, validation: { status: 'validated', managerDecision: 'approved', presalesDecision: 'approved' } }, 'test', 'published', '');
     assert.equal(s.l.row(id).status, 'published');
     const cands = (await s.call(ALEX, 'GET', 'claims/' + id)).body.candidates;
     const cs = (await s.call(ALEX, 'POST', 'claims', { refId: id, items: cands })).body.claims;

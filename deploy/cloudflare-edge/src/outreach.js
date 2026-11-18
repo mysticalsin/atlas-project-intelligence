@@ -11,6 +11,9 @@ import { recordText, forOthers } from './scrub.js';
 import * as claims from './claims.js';
 import * as gaps from './gaps.js';
 import { interviewCard, messageCard } from './teams.js';
+import { invitationTransition, noteInvitation, INVITATION_CLOSED, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
+import { profileFold } from './profile.js';
+import { placeholders, readChunks } from './sql-bound.js';
 
 export const READY = true;
 
@@ -133,17 +136,17 @@ function assignmentProject(id) {
 function tenantKey(value) {
   return String(value || '').trim().toLowerCase();
 }
-function personAliases(lib, address, tenant) {
-  const keys = new Set([String(address || '').trim().toLowerCase()].filter(Boolean));
-  const tenantKey = String(tenant || '').toLowerCase();
+export function personAliases(lib, address, tenant) {
+  const keys = new Set([profileFold(address)].filter(Boolean));
+  const want = profileFold(tenant);
   if (!lib.rows("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'profiles'")[0]) return [...keys];
-  const rows = lib.rows("SELECT subject, email FROM profiles WHERE lower(COALESCE(tenant, '')) = ?", tenantKey);
+  const rows = lib.rows('SELECT subject, email, tenant FROM profiles').filter(row => profileFold(row.tenant) === want);
   let grew = true;
   while (grew) {
     grew = false;
     for (const row of rows) {
-      const subject = String(row.subject || '').trim().toLowerCase();
-      const mail = String(row.email || '').trim().toLowerCase();
+      const subject = profileFold(row.subject);
+      const mail = profileFold(row.email);
       if (!keys.has(subject) && !keys.has(mail)) continue;
       if (subject && !keys.has(subject)) { keys.add(subject); grew = true; }
       if (mail && !keys.has(mail)) { keys.add(mail); grew = true; }
@@ -189,9 +192,16 @@ function applyStaffingAssignment(lib, actor, s) {
   lib.bindTrust(actor, { owner: consultant, email: s.managerEmail, source: 'staffing', tenant, tenantEnforced: actor.tenantEnforced === true });
   s.projectId = storedProject;
   const aliases = personAliases(lib, consultant, tenant);
-  const ownerMarks = aliases.map(() => '?').join(', ');
-  const current = new Set(lib.rows(`SELECT lower(manager_email) AS email FROM staffing WHERE lower(consultant_email) IN (${ownerMarks}) AND lower(COALESCE(tenant, '')) = ? AND trim(manager_email) != ''`, ...aliases, tenant).map(r => r.email));
-  for (const grant of lib.rows(`SELECT owner, email, source FROM manager_trust WHERE lower(owner) IN (${ownerMarks}) AND lower(COALESCE(tenant, '')) = ?`, ...aliases, tenant)) {
+  const current = new Set(readChunks(lib, aliases, {
+    fixed: 1,
+    sql: chunk => `SELECT lower(manager_email) AS email FROM staffing WHERE lower(consultant_email) IN (${placeholders(chunk.length)}) AND lower(COALESCE(tenant, '')) = ? AND trim(manager_email) != ''`,
+    params: chunk => [...chunk, tenant],
+  }).map(r => r.email));
+  for (const grant of readChunks(lib, aliases, {
+    fixed: 1,
+    sql: chunk => `SELECT owner, email, source FROM manager_trust WHERE lower(owner) IN (${placeholders(chunk.length)}) AND lower(COALESCE(tenant, '')) = ?`,
+    params: chunk => [...chunk, tenant],
+  })) {
     const source = String(grant.source || '');
     if (source !== 'staffing' || current.has(String(grant.email || '').toLowerCase())) continue;
     lib.sql.exec("DELETE FROM manager_trust WHERE lower(owner) = ? AND lower(email) = ? AND lower(COALESCE(tenant, '')) = ? AND source = 'staffing'", String(grant.owner || '').toLowerCase(), String(grant.email || '').toLowerCase(), tenant);
@@ -213,9 +223,12 @@ function inviteDue(lib, rows, today) {
   for (const s of rows) {
     if (!s.endDate || s.endDate > ahead || s.endDate < back) continue;
     const owners = consultantOwners(lib, s.consultantEmail, s.tenant);
-    const marks = owners.map(() => '?').join(', ');
-    const hasRef = lib.rows(`SELECT id FROM refs WHERE merged_into IS NULL AND lower(COALESCE(tenant, '')) = ? AND (lower(owner) IN (${marks}) OR instr(members, ?) > 0)
-      AND json_extract(data, '$.details.projectId') = ? COLLATE NOCASE LIMIT 1`, String(s.tenant || '').toLowerCase(), ...owners, ',' + s.consultantEmail + ',', s.projectId)[0];
+    const hasRef = readChunks(lib, owners, {
+      fixed: 3,
+      sql: chunk => `SELECT id FROM refs WHERE merged_into IS NULL AND lower(COALESCE(tenant, '')) = ? AND (lower(owner) IN (${placeholders(chunk.length)}) OR instr(members, ?) > 0)
+      AND json_extract(data, '$.details.projectId') = ? COLLATE NOCASE LIMIT 1`,
+      params: chunk => [String(s.tenant || '').toLowerCase(), ...chunk, ',' + s.consultantEmail + ',', s.projectId],
+    })[0];
     if (hasRef || lib.rows("SELECT id FROM invitations WHERE lower(email) = ? AND lower(project_id) = lower(?) AND reason = 'project_end' AND lower(COALESCE(tenant, '')) = ? LIMIT 1", String(s.consultantEmail || '').toLowerCase(), s.projectId, tenantKey(s.tenant))[0]) continue;
     const inv = lib.invite(s.source, { email: s.consultantEmail, reason: 'project_end', projectId: s.projectId, title: s.projectTitle, source: s.source, tenant: s.tenant || '' });
     invited++;
@@ -580,27 +593,43 @@ export async function system(ctx) {
     const o = rowOf(lib, str(e.outreachId, 64));
     const inv = o?.kind === 'interview_invite' ? lib.rows('SELECT * FROM invitations WHERE id = ?', o.subject_id)[0] : null;
     if (!inv || !['snooze', 'decline'].includes(e.verb)) return { body: { ok: true, card: messageCard({ title: 'Nothing to change.', text: 'Open ATLAS to see your interviews.' }) } };
-    if (!['open', 'scheduled'].includes(inv.status)) return { body: { ok: true, card: messageCard({ title: 'This invitation is closed.', text: 'Nothing was changed.' }) } };
+    const inviteEvent = e.verb === 'decline' ? 'dismiss' : 'schedule';
+    const step = noteInvitation(invitationTransition({ id: inv.id, status: inv.status }, { type: inviteEvent }));
+    if (!step.ok) return { body: { ok: true, card: messageCard({ title: 'This invitation is closed.', text: 'Nothing was changed.' }) } };
     const viewer = { email: String(inv.email || '').toLowerCase(), mail: String(inv.email || '').toLowerCase(), role: 'user', tenant: String(inv.tenant || ''), tenantEnforced: user.tenantEnforced === true };
     const linked = inv.reference_id && lib.row ? lib.row(inv.reference_id) : null;
     const storyOpen = !!(linked && lib.access && lib.access(linked, viewer));
     const hiddenRef = !!inv.reference_id && !storyOpen;
     if (hiddenRef && e.verb !== 'decline') return { body: { ok: true, card: messageCard({ title: 'Nothing was changed.', text: 'This invitation can only be declined from here.' }) } };
-    return recorded(lib, () => {
-      lib.sql.exec('INSERT OR IGNORE INTO teams_seen (activity_id, at) VALUES (?, ?)', activityId, now);
-      const auditOn = storyOpen && typeof lib.auditFor === 'function' ? lib.auditFor(viewer, inv.reference_id, inv.tenant) : 'library';
-      const p = parsed(o.payload), origin = originOf(ctx);
-      if (e.verb === 'decline') {
-        lib.sql.exec("UPDATE invitations SET status = 'dismissed' WHERE id = ?", inv.id);
-        lib.log(hiddenRef ? 'library' : auditOn, inv.email, 'invitation dismiss', `${inv.reason} (Teams card)`);
-        return { body: { ok: true, card: messageCard({ title: 'Understood: no interview for this project.', text: 'Nothing else will be sent about it.' }) } };
-      }
+    const auditOn = storyOpen && typeof lib.auditFor === 'function' ? lib.auditFor(viewer, inv.reference_id, inv.tenant) : 'library';
+    const p = parsed(o.payload), origin = originOf(ctx);
+    let slot = '';
+    if (e.verb !== 'decline') {
       const base = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(inv.slot || '') ? inv.slot.slice(0, 16) : now.slice(0, 16);
-      const slot = new Date(Date.parse(base + ':00Z') + 864e5).toISOString().slice(0, 16);
-      lib.sql.exec("UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ?", slot, inv.id);
-      lib.log(auditOn, inv.email, 'invitation schedule', `${inv.reason} (Teams card: tomorrow)`);
-      return { body: { ok: true, card: interviewCard({ invitationId: inv.id, outreachId: o.id, projectRef: obj(p.preview).title, origin, note: 'Moved to tomorrow. Start whenever it suits you.' }) } };
-    });
+      slot = new Date(Date.parse(base + ':00Z') + 864e5).toISOString().slice(0, 16);
+    }
+    try {
+      return recorded(lib, () => {
+        lib.sql.exec('INSERT OR IGNORE INTO teams_seen (activity_id, at) VALUES (?, ?)', activityId, now);
+        if (e.verb === 'decline') lib.sql.exec(`UPDATE invitations SET status = 'dismissed' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, inv.id);
+        else lib.sql.exec(`UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, slot, inv.id);
+        if (Number(lib.rows('SELECT changes() AS n')[0]?.n || 0) !== 1) {
+          const closed = fail(409, INVITATION_REFUSAL);
+          closed.code = INVITATION_CLOSED;
+          throw closed;
+        }
+        if (e.verb === 'decline') {
+          lib.log(hiddenRef ? 'library' : auditOn, inv.email, 'invitation dismiss', `${inv.reason} (Teams card)`);
+          return { body: { ok: true, card: messageCard({ title: 'Understood: no interview for this project.', text: 'Nothing else will be sent about it.' }) } };
+        }
+        lib.log(auditOn, inv.email, 'invitation schedule', `${inv.reason} (Teams card: tomorrow)`);
+        return { body: { ok: true, card: interviewCard({ invitationId: inv.id, outreachId: o.id, projectRef: obj(p.preview).title, origin, note: 'Moved to tomorrow. Start whenever it suits you.' }) } };
+      });
+    } catch (err) {
+      if (err?.code !== INVITATION_CLOSED) throw err;
+      noteInvitation({ rejection: { id: inv.id, phase: inv.status, event: inviteEvent } });
+      return { body: { ok: true, card: messageCard({ title: 'This invitation is closed.', text: 'Nothing was changed.' }) } };
+    }
   }
   if (lib.rows('SELECT 1 AS seen FROM teams_seen WHERE activity_id = ?', activityId)[0]) return { body: { ok: true, duplicate: true } };
   const subject = `${tid}:${oid}`;

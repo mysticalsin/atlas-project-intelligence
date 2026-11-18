@@ -7,6 +7,7 @@
 import { str, email as validEmail, obj, fail, inList, rateLimit } from './util.js';
 import { TENANT_ID } from './authz.js';
 import { anchoredVerdict, verifyChain } from './audit-chain.js';
+import { placeholders, readChunks, writeChunks } from './sql-bound.js';
 
 // Flipped by the owning track only when the zero-config acceptance suites pass (WOW_SPEC §2.1, §2.5): flipped in Z-S2
 // after tests/zero_config_edge_browser.py and tests/zero_config_browser.py passed locally.
@@ -34,51 +35,156 @@ const SCHEMA = [];
 // spokenAsk: spoken Ask (WOW_SPEC); jevRating: story rating by TypeSafe JEV for the owner's stories (docs/JEV_RATING.md §8).
 const CONSENT_KINDS = ['spokenAsk', 'jevRating'];
 const ensured = new WeakSet();
-function tenantKey(user = {}) { return String(user.tenant || '').trim().toLowerCase(); }
+const COLLAPSED = `CREATE TABLE IF NOT EXISTS profile_collapsed (
+  id INTEGER PRIMARY KEY, subject TEXT NOT NULL, tenant TEXT NOT NULL, reason TEXT NOT NULL)`;
+// JavaScript trim removes every Unicode whitespace character, including tab. toLowerCase is the Unicode
+// default case conversion. Writers store this fold. SQLite lower() folds ASCII only, and SQLite trim()
+// removes the space character only, so the profile match does not use either.
+export function profileFold(value) { return String(value ?? '').trim().toLowerCase(); }
+function tenantKey(user = {}) { return profileFold(user.tenant); }
+function tableExists(lib, name) {
+  return !!lib.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", name)[0];
+}
+function profilePk(lib, table) {
+  return lib.rows(`SELECT name FROM pragma_table_info('${table}') WHERE pk > 0 ORDER BY pk`).map(r => r.name);
+}
+function isProfileV2(lib, table = 'profiles') {
+  const pk = profilePk(lib, table);
+  return pk.length === 2 && pk[0] === 'subject' && pk[1] === 'tenant';
+}
+function profileInstant(value) {
+  const n = Date.parse(value ?? '');
+  return Number.isFinite(n) ? n : Number.NEGATIVE_INFINITY;
+}
+function byNewestProfile(a, b) {
+  const delta = profileInstant(b.updated_at) - profileInstant(a.updated_at);
+  if (delta) return delta;
+  return Number(b.id) - Number(a.id);
+}
+function profileRows(lib) {
+  return lib.rows('SELECT rowid AS id, subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at FROM profiles');
+}
+// The one subject and tenant match. Export, erasure, read and write all use it. A blank tenant is not a match
+// for a verified tenant. Rows are newest parsed updated_at, then greatest rowid.
+export function profileSelection(lib, subject, tenant) {
+  const wantSubject = profileFold(subject);
+  const wantTenant = profileFold(tenant);
+  const rows = wantSubject ? profileRows(lib) : [];
+  const sameSubject = row => profileFold(row.subject) === wantSubject;
+  const matched = rows.filter(row => sameSubject(row) && profileFold(row.tenant) === wantTenant).sort(byNewestProfile);
+  const unscoped = wantTenant ? rows.filter(row => sameSubject(row) && profileFold(row.tenant) === '') : [];
+  const collapsed = wantSubject && tableExists(lib, 'profile_collapsed')
+    ? lib.rows('SELECT id, subject, tenant, reason FROM profile_collapsed').filter(row => sameSubject(row) && (profileFold(row.tenant) === wantTenant || (wantTenant && profileFold(row.tenant) === '')))
+    : [];
+  return { matched, unscoped, collapsed };
+}
+function storedIdentity(lib, row, subject, tenant) {
+  const nextSubject = profileFold(subject), nextTenant = profileFold(tenant);
+  const taken = lib.rows('SELECT rowid AS id FROM profiles WHERE subject = ? AND tenant = ?', nextSubject, nextTenant)[0];
+  if (taken && Number(taken.id) !== Number(row.id)) return { subject: row.subject, tenant: row.tenant };
+  return { subject: nextSubject, tenant: nextTenant };
+}
 function demandTenant(user) {
   if (user?.tenantEnforced === true && !TENANT_ID.test(tenantKey(user))) throw fail(403, 'A verified tenant is required.');
 }
-// Rebuild a subject-only profiles table. Blank ownership stays blank. No tenant is invented.
-function migrateProfiles(lib) {
-  const exists = lib.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'profiles'")[0];
-  if (!exists) {
-    lib.sql.exec(PROFILE_V2.replace('profiles_v2', 'profiles'));
+// Rebuild a subject-only profiles table inside one transactionSync. Blank ownership stays blank. No tenant is
+// invented. Exact duplicate (subject, tenant) values cannot share the new primary key: the newest parsed
+// updated_at, then the greatest rowid, is kept, and the rest are recorded as duplicate. A parked copy left
+// behind by an interrupted migration is renamed back before any empty table is created. Two populated current
+// tables are refused: rows are never dropped to make the migration succeed.
+const PARKED = { profiles: 'profiles_v2', directory: 'directory_v2', directory_imports: 'directory_imports_v2' };
+function recoverParked(lib, live, isCurrent) {
+  const parked = PARKED[live];
+  if (!parked || !tableExists(lib, parked)) return;
+  if (!tableExists(lib, live)) {
+    lib.sql.exec(`ALTER TABLE ${parked} RENAME TO ${live}`);
     return;
   }
-  const pk = lib.rows("SELECT name FROM pragma_table_info('profiles') WHERE pk > 0 ORDER BY pk").map(r => r.name);
-  if (pk.length === 2 && pk[0] === 'subject' && pk[1] === 'tenant') return;
+  const extra = lib.rows(`SELECT COUNT(*) AS n FROM ${parked}`)[0].n;
+  if (isCurrent()) {
+    const kept = lib.rows(`SELECT COUNT(*) AS n FROM ${live}`)[0].n;
+    if (!kept && extra) {
+      lib.sql.exec(`DROP TABLE ${live}`);
+      lib.sql.exec(`ALTER TABLE ${parked} RENAME TO ${live}`);
+      return;
+    }
+    if (extra) throw new Error(`Refusing to drop ${parked}: both ${live} and ${parked} have rows.`);
+    lib.sql.exec(`DROP TABLE ${parked}`);
+    return;
+  }
+  lib.sql.exec(`DROP TABLE ${parked}`);
+}
+function recoverProfilesV2(lib) {
+  recoverParked(lib, 'profiles', () => isProfileV2(lib));
+}
+function collapseProfiles(lib) {
   const cols = lib.rows("SELECT name FROM pragma_table_info('profiles')").map(r => r.name);
+  const hasTenant = cols.includes('tenant');
+  const raw = lib.rows(`SELECT rowid AS id, subject, ${hasTenant ? 'tenant' : "'' AS tenant"}, email, edits, signin, consents, created_at, updated_at, seen_at FROM profiles`);
+  const groups = new Map();
+  for (const row of raw) {
+    const tenant = row.tenant ?? '';
+    const key = String(row.subject) + '\0' + String(tenant);
+    const list = groups.get(key) || [];
+    list.push({ ...row, tenant });
+    groups.set(key, list);
+  }
   lib.sql.exec(PROFILE_V2);
-  if (cols.includes('tenant')) {
+  for (const list of groups.values()) {
+    list.sort(byNewestProfile);
+    const keep = list[0];
     lib.sql.exec(`INSERT INTO profiles_v2 (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
-      SELECT subject, COALESCE(tenant, ''), email, edits, signin, consents, created_at, updated_at, seen_at FROM profiles`);
-  } else {
-    lib.sql.exec(`INSERT INTO profiles_v2 (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
-      SELECT subject, '', email, edits, signin, consents, created_at, updated_at, seen_at FROM profiles`);
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, keep.subject, keep.tenant ?? '', keep.email, keep.edits, keep.signin, keep.consents, keep.created_at, keep.updated_at, keep.seen_at);
+    for (const extra of list.slice(1)) lib.sql.exec("INSERT INTO profile_collapsed (id, subject, tenant, reason) VALUES (?, ?, ?, 'duplicate')", extra.id, String(extra.subject ?? ''), String(extra.tenant ?? ''));
   }
   lib.sql.exec('DROP TABLE profiles');
   lib.sql.exec('ALTER TABLE profiles_v2 RENAME TO profiles');
+}
+function migrateProfiles(lib) {
+  lib.sql.exec(COLLAPSED);
+  recoverProfilesV2(lib);
+  if (!tableExists(lib, 'profiles')) {
+    lib.sql.exec(PROFILE_V2.replace('profiles_v2', 'profiles'));
+    return;
+  }
+  if (isProfileV2(lib)) return;
+  collapseProfiles(lib);
 }
 export function deleteOwnedProfile(lib, user) {
   const tenant = tenantKey(user);
   if (!TENANT_ID.test(tenant)) throw fail(403, 'A verified tenant is required.');
   ensure(lib);
-  const had = lib.rows('SELECT COUNT(*) AS n FROM profiles WHERE subject = ? AND tenant = ?', user.email, tenant)[0].n;
-  if (had) lib.sql.exec('DELETE FROM profiles WHERE subject = ? AND tenant = ?', user.email, tenant);
-  return had;
+  const { matched } = profileSelection(lib, user.email, tenant);
+  const notes = profileSelection(lib, user.email, tenant).collapsed.filter(row => profileFold(row.tenant) === tenant);
+  writeChunks(lib, [
+    {
+      values: matched.map(row => row.id),
+      sql: chunk => `DELETE FROM profiles WHERE rowid IN (${placeholders(chunk.length)})`,
+      params: chunk => chunk,
+    },
+    {
+      values: notes.map(row => row.id),
+      sql: chunk => `DELETE FROM profile_collapsed WHERE id IN (${placeholders(chunk.length)})`,
+      params: chunk => chunk,
+    },
+  ]);
+  return matched.length;
 }
 export function quarantineReport(lib) {
   ensure(lib);
   const blank = lib.rows("SELECT COUNT(*) AS n FROM profiles WHERE tenant = ''")[0].n;
-  return { blankProfiles: blank, action: 'none', note: 'Blank ownership stays blank until a reviewed operator migration. This report does not write a tenant.' };
+  return { blankProfiles: blank, action: 'none', note: 'Blank ownership stays blank until a reviewed operator migration. A privacy export names a matching subject as legacy_unscoped and does not include the row. Erasure does not delete it. This report does not write a tenant.' };
 }
 function pkOf(lib, table) {
   return lib.rows(`SELECT name FROM pragma_table_info('${table}') WHERE pk > 0 ORDER BY pk`).map(r => r.name);
 }
 function migrateDirectory(lib) {
-  const dir = lib.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'directory'")[0];
+  const directoryCurrent = () => pkOf(lib, 'directory').join(',') === 'key,source,tenant';
+  const importsCurrent = () => pkOf(lib, 'directory_imports').join(',') === 'batch,tenant';
+  recoverParked(lib, 'directory', directoryCurrent);
+  const dir = tableExists(lib, 'directory');
   if (!dir) lib.sql.exec(DIRECTORY_V2.replace('directory_v2', 'directory'));
-  else if (pkOf(lib, 'directory').join(',') !== 'key,source,tenant') {
+  else if (!directoryCurrent()) {
     const cols = lib.rows("SELECT name FROM pragma_table_info('directory')").map(r => r.name);
     lib.sql.exec(DIRECTORY_V2);
     const tenantSql = cols.includes('tenant') ? "COALESCE(tenant, '')" : "''";
@@ -87,9 +193,10 @@ function migrateDirectory(lib) {
     lib.sql.exec('DROP TABLE directory');
     lib.sql.exec('ALTER TABLE directory_v2 RENAME TO directory');
   }
-  const imp = lib.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'directory_imports'")[0];
+  recoverParked(lib, 'directory_imports', importsCurrent);
+  const imp = tableExists(lib, 'directory_imports');
   if (!imp) lib.sql.exec(IMPORTS_V2.replace('directory_imports_v2', 'directory_imports'));
-  else if (pkOf(lib, 'directory_imports').join(',') !== 'batch,tenant') {
+  else if (!importsCurrent()) {
     const cols = lib.rows("SELECT name FROM pragma_table_info('directory_imports')").map(r => r.name);
     lib.sql.exec(IMPORTS_V2);
     const tenantSql = cols.includes('tenant') ? "COALESCE(tenant, '')" : "''";
@@ -101,8 +208,11 @@ function migrateDirectory(lib) {
 }
 export function ensure(lib) {
   if (ensured.has(lib)) return;
-  migrateProfiles(lib);
-  migrateDirectory(lib);
+  if (typeof lib.transactionSync !== 'function') throw new Error('Profile storage requires transactionSync.');
+  lib.transactionSync(() => {
+    migrateProfiles(lib);
+    migrateDirectory(lib);
+  });
   for (const q of SCHEMA) lib.sql.exec(q);
   ensured.add(lib);
 }
@@ -207,8 +317,16 @@ export function dnaConfig(env = {}) {
 const pullState = new WeakMap(); // per LibraryStore instance: { lastOkAt, lastError } for the admin view
 const rowValues = r => r ? { name: r.name || '', preferredName: r.given_name || '', title: r.title || '', managerName: r.manager_name || '', managerEmail: r.manager_email || '', at: r.fetched_at || '' } : null;
 function storedRows(lib, keys, tenant = '') {
+  return directoryRows(lib, keys, tenant);
+}
+// The tenant is one parameter. Keys are chunked so the statement stays at or under 100.
+export function directoryRows(lib, keys, tenant = '') {
   const k = keys.filter(Boolean);
-  return k.length ? lib.rows(`SELECT * FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND source IN ('dna', 'dna_export') AND key IN (${k.map(() => '?').join(', ')})`, String(tenant || '').toLowerCase(), ...k) : [];
+  return readChunks(lib, k, {
+    fixed: 1,
+    sql: chunk => `SELECT * FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND source IN ('dna', 'dna_export') AND key IN (${placeholders(chunk.length)})`,
+    params: chunk => [String(tenant || '').toLowerCase(), ...chunk],
+  });
 }
 const firstOf = (rows, test) => ['dna', 'dna_export'].map(s => rows.find(r => r.source === s && test(r))).find(Boolean) || null;
 
@@ -299,19 +417,21 @@ async function dnaSource(lib, env, user, { fetcher, now, waitUntil, timeoutMs })
 function touch(lib, user, idp, now) {
   const mail = validEmail(user.mail), claims = nameClaims(idp), signin = claims.name || claims.given_name ? { name: claims.name || '', givenName: str(claims.given_name, 40) } : {};
   demandTenant(user);
-  const tenant = tenantKey(user);
-  const row = lib.rows('SELECT * FROM profiles WHERE subject = ? AND tenant = ?', user.email, tenant)[0];
+  const subject = profileFold(user.email), tenant = tenantKey(user);
+  const row = profileSelection(lib, subject, tenant).matched[0];
+  const signinJson = JSON.stringify(signin.name || signin.givenName ? { ...signin, at: now } : {});
   if (!row) {
     lib.sql.exec('INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      user.email, tenant, mail, '{}', JSON.stringify(signin.name || signin.givenName ? { ...signin, at: now } : {}), '{}', now, now, now);
-    return lib.rows('SELECT * FROM profiles WHERE subject = ? AND tenant = ?', user.email, tenant)[0];
+      subject, tenant, mail, '{}', signinJson, '{}', now, now, now);
+    return profileSelection(lib, subject, tenant).matched[0];
   }
+  const ident = storedIdentity(lib, row, subject, tenant);
   const old = json(row.signin), same = (old.name || '') === (signin.name || '') && (old.givenName || '') === (signin.givenName || '');
   const seen = String(row.seen_at || '').slice(0, 10) !== now.slice(0, 10);
-  if (!same || seen || row.email !== mail) {
-    lib.sql.exec('UPDATE profiles SET email = ?, signin = ?, seen_at = ? WHERE subject = ? AND tenant = ?', mail, same ? row.signin : JSON.stringify(signin.name || signin.givenName ? { ...signin, at: now } : {}),
-      seen ? now : row.seen_at, user.email, tenant);
-    return lib.rows('SELECT * FROM profiles WHERE subject = ? AND tenant = ?', user.email, tenant)[0];
+  if (!same || seen || row.email !== mail || ident.subject !== row.subject || ident.tenant !== row.tenant) {
+    lib.sql.exec('UPDATE profiles SET subject = ?, tenant = ?, email = ?, signin = ?, seen_at = ? WHERE rowid = ?', ident.subject, ident.tenant, mail,
+      same ? row.signin : signinJson, seen ? now : row.seen_at, row.id);
+    return profileSelection(lib, subject, tenant).matched[0];
   }
   return row;
 }
@@ -352,10 +472,11 @@ function build(g) {
 export async function resolveProfile(lib, env, user, idp = {}, opts = {}) { return build(await gather(lib, env, user, idp, opts)); }
 
 function save(lib, g, patch, actor, action, detail) {
+  const ident = storedIdentity(lib, g.row, g.row.subject, g.row.tenant);
   return lib.recorded(() => {
-    lib.sql.exec('UPDATE profiles SET edits = ?, consents = ?, updated_at = ? WHERE subject = ? AND tenant = ?', JSON.stringify(patch.edits ?? g.edits), JSON.stringify(patch.consents ?? g.consents), g.now, g.row.subject, g.row.tenant);
+    lib.sql.exec('UPDATE profiles SET subject = ?, tenant = ?, edits = ?, consents = ?, updated_at = ? WHERE rowid = ?', ident.subject, ident.tenant, JSON.stringify(patch.edits ?? g.edits), JSON.stringify(patch.consents ?? g.consents), g.now, g.row.id);
     lib.log('profile', actor, action, detail); // field names and counts only, never values
-    return { ...g, edits: patch.edits ?? g.edits, consents: patch.consents ?? g.consents, row: { ...g.row, updated_at: g.now } };
+    return { ...g, edits: patch.edits ?? g.edits, consents: patch.consents ?? g.consents, row: { ...g.row, subject: ident.subject, tenant: ident.tenant, updated_at: g.now } };
   });
 }
 function cleanEdit(env, g, f, raw) {
@@ -479,16 +600,18 @@ function directoryStatus(lib, env, user = {}) {
 // ---- Stored reads for story rating (docs/JEV_RATING.md §3.2, §8.4). The profiles row only: never DNA, never a source.
 // They create no table: without a profiles table (profile never used on this library) nothing is stored, so the answer
 // is false / []. storedNames is used only to MASK names in model input; it is never sent anywhere.
-function storedProfile(lib, subject, tenant = '') {
-  if (!READY || !subject) return null;
-  try { return lib.rows('SELECT edits, signin, consents FROM profiles WHERE subject = ? AND tenant = ?', String(subject), String(tenant || '').toLowerCase())[0] || null; }
+function storedProfile(lib, subject, tenant) {
+  if (!READY || !subject || tenant === undefined || tenant === null) return null;
+  try { return profileSelection(lib, subject, tenant).matched[0] || null; }
   catch { return null; } // no profiles table yet
 }
-export function storedConsent(lib, subject, kind, tenant = '') {
+export function storedConsent(lib, subject, kind, tenant) {
+  if (tenant === undefined || tenant === null) return false;
   const row = storedProfile(lib, subject, tenant);
   return !!row && CONSENT_KINDS.includes(kind) && json(row.consents)[kind]?.version === 1;
 }
-export function storedNames(lib, subject, tenant = '') {
+export function storedNames(lib, subject, tenant) {
+  if (tenant === undefined || tenant === null) return [];
   const row = storedProfile(lib, subject, tenant);
   if (!row) return [];
   return [...new Set([json(row.edits).name?.value, json(row.signin).name].map(v => str(v, 100)).filter(Boolean))];
@@ -498,12 +621,28 @@ export function storedNames(lib, subject, tenant = '') {
 export function daily(lib, now = lib.now(), user = {}) {
   ensure(lib);
   const enforced = user?.tenantEnforced === true;
-  const tenant = String(user?.tenant || '').toLowerCase();
+  const tenant = profileFold(user?.tenant);
   if (enforced && !TENANT_ID.test(tenant)) return { maintenanceRefused: 'A verified tenant is required.' };
   const n = (q, ...p) => lib.rows(q, ...p)[0].n;
   const scope = enforced ? tenant : '';
-  const profiles = n('SELECT COUNT(*) AS n FROM profiles WHERE tenant = ? AND seen_at < ?', scope, isoBefore(now, 395));
-  if (profiles) lib.sql.exec('DELETE FROM profiles WHERE tenant = ? AND seen_at < ?', scope, isoBefore(now, 395));
+  // An unenforced scan has no verified tenant. It must not purge blank-tenant profiles.
+  let profiles = 0;
+  if (enforced) {
+    const cutoff = isoBefore(now, 395);
+    const stale = lib.rows('SELECT rowid AS id, tenant, seen_at FROM profiles')
+      .filter(row => profileFold(row.tenant) === tenant && String(row.seen_at || '') !== '' && String(row.seen_at) < cutoff);
+    profiles = stale.length;
+    // The folded tenant filter already chose these rowids. A SQL tenant compare would miss a
+    // padded stored tenant. The chunks bind only rowids and commit together. The directory
+    // purge below still runs after that transaction.
+    if (profiles) writeChunks(lib, [{
+      values: stale.map(row => row.id),
+      sql: chunk => `DELETE FROM profiles WHERE rowid IN (${placeholders(chunk.length)})`,
+      params: chunk => chunk,
+    }]);
+  }
+  // Residual: an unenforced scan still purges blank-tenant directory pull-cache rows and staged imports.
+  // That sweep predates the profile fold and does not delete profiles.
   const cache = n("SELECT COUNT(*) AS n FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND source = 'dna' AND batch = 'pull' AND fetched_at < ?", scope, isoBefore(now, 30));
   if (cache) lib.sql.exec("DELETE FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND source = 'dna' AND batch = 'pull' AND fetched_at < ?", scope, isoBefore(now, 30));
   const staged = lib.rows("SELECT batch FROM directory_imports WHERE lower(COALESCE(tenant, '')) = ? AND state = 'staged' AND started_at < ?", scope, isoBefore(now, 1)).map(r => r.batch);
@@ -532,7 +671,7 @@ export async function routes(ctx) {
     if (method === 'GET' && !action) return { body: await resolveProfile(lib, env, user, user.idp, opts) };
     if (method === 'GET' && action === 'consents') { // the profiles row only: no source is read
       demandTenant(user);
-      const row = lib.rows('SELECT consents FROM profiles WHERE subject = ? AND tenant = ?', user.email, tenantKey(user))[0];
+      const row = profileSelection(lib, user.email, tenantKey(user)).matched[0];
       return { body: { spokenAsk: json(row?.consents).spokenAsk || null } };
     }
     if (method === 'POST' && !action) return { body: await editProfile(lib, env, user, ctx.body, opts) };

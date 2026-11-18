@@ -57,7 +57,9 @@ function bootJourney(libraryApi) {
     ATLAS_APP: { libraryApi, download() {}, bootInfo: async () => ({ library: true, libraryRole: 'user' }) },
   };
   const location = { hostname: 'atlas.example' };
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../src/journey-ui.js'), 'utf8'), { window, document, location }, { filename: 'journey-ui.js' });
+  const machine = fs.readFileSync(path.join(__dirname, '../src/erasure-machine.js'), 'utf8').replaceAll('export ', '');
+  const ui = fs.readFileSync(path.join(__dirname, '../src/journey-ui.js'), 'utf8');
+  vm.runInNewContext(machine + '\n' + ui, { window, document, location }, { filename: 'journey-ui.js' });
   return { window, document };
 }
 

@@ -21,6 +21,10 @@ function stageList(stages,onPick){const list=h('ol',{class:'stage-grid'});
  for(const s of stages||[]){const b=h('button',{type:'button',class:'stage-card'},[h('strong',{text:s.title}),h('small',{text:s.blocked?'Blocked integration':s.current?'Current':'Open'})]);if(s.current)b.setAttribute('aria-current','step');b.addEventListener('click',()=>onPick(s));list.append(h('li',{},[b]));}
  return list;}
 function banner(kind,text){return h('p',{class:'pill'+(kind==='warn'?' warn':''),role:'status',text});}
+let erasure=initialErasure();
+function noteErasure(result){if(result&&result.rejection){try{console.warn(JSON.stringify(result.rejection));}catch(e){}}return result;}
+function erasureReceipt(r){const box=h('div',{id:'privacyReceipt',role:'status'});box.append(h('p',{text:r&&typeof r.note==='string'?r.note:''}));for(const o of (r&&Array.isArray(r.outcomes)?r.outcomes:[]))box.append(h('p',{text:o&&o.error?String(o.store)+' '+String(o.error):String(o&&o.store)+' '+String(o&&o.removed)}));return box;}
+function liveErasureButton(fallback){const box=$('privacyActions');const kids=box&&box.children||[];for(const n of kids)if(n&&n.textContent==='Delete my journey data')return n;return fallback||null;}
 async function renderJourney(){const root=$('journey');if(!root)return;root.replaceChildren(h('p',{text:'Loading your journey…'}));
  let boot={};try{boot=await app().bootInfo();}catch{boot={};}
  const adminNav=$('adminNav');if(adminNav)adminNav.hidden=boot.libraryRole!=='admin';
@@ -62,28 +66,47 @@ async function renderJourney(){const root=$('journey');if(!root)return;root.repl
  layout.append(detail,queue);
  root.replaceChildren(head,stageList(data.stages,s=>{picked=s;paint();}),layout,h('section',{class:'panel'},[h('h2',{text:'Privacy'}),h('p',{id:'privacyNote',text:'Loading disclosure…'})]),h('p',{id:'privacyActions'}));
  api('/privacy/disclosure').then(d=>{const n=$('privacyNote');if(!n)return;n.textContent=`Consent ${d.consent.interview}. ${d.recording} ${d.textOnly} Telemetry retention ${d.retention.appTelemetryDays} days in this app. Vendor deletion: ${d.retention.vendorDeletion}. ${d.lawfulBasis} ${d.biometrics}`;}).catch(()=>{});
- const actions=$('privacyActions');if(actions){const exp=h('button',{class:'btn',type:'button',text:'Download my data'});const del=h('button',{class:'btn',type:'button',text:'Delete my journey data'});exp.addEventListener('click',async()=>{try{const pack=await api('/privacy/export');app().download('atlas-my-data.json',JSON.stringify(pack,null,2),'application/json');}catch(e){actions.append(banner('warn',e.message));}});del.addEventListener('click',async()=>{try{const r=await api('/privacy/delete',{method:'POST',body:{}});actions.append(banner('',JSON.stringify(r)));}catch(e){actions.append(banner('warn',e.message));}});const notice=document.createElement('a');notice.href='/privacy';notice.textContent='Privacy notice';actions.append(exp,del,document.createTextNode(' '),notice);}
+ const actions=$('privacyActions');if(actions){const exp=h('button',{class:'btn',type:'button',text:'Download my data'});const del=h('button',{class:'btn',type:'button',text:'Delete my journey data'});exp.addEventListener('click',async()=>{try{const pack=await api('/privacy/export');app().download('atlas-my-data.json',JSON.stringify(pack,null,2),'application/json');}catch(e){actions.append(banner('warn',e.message));}});del.disabled=erasure.status==='confirming'||erasure.status==='in_flight';del.addEventListener('click',()=>{const step=noteErasure(erasureTransition(erasure,{type:'ask'}));if(!step.ok)return;erasure=step.state;del.disabled=true;let decided=false;const dialog=$('confirmDialog');const onClose=()=>{if(dialog)dialog.removeEventListener('close',onClose);queueMicrotask(()=>{if(decided)return;const back=noteErasure(erasureTransition(erasure,{type:'cancel'}));if(back.ok)erasure=back.state;if(erasure.status!=='in_flight')del.disabled=false;});};if(dialog)dialog.addEventListener('close',onClose);app().confirm('Delete my journey data','Continue sends the deletion request. Cancel sends nothing.',async()=>{decided=true;const go=noteErasure(erasureTransition(erasure,{type:'confirm'}));if(!go.ok){if(erasure.status!=='in_flight')del.disabled=false;return;}erasure=go.state;try{const r=await api('/privacy/delete',{method:'POST',body:{}});const failedStore=r&&Array.isArray(r.outcomes)&&r.outcomes.some(o=>o&&o.error);if(failedStore){const failed=noteErasure(erasureTransition(erasure,{type:'fail'}));if(failed.ok)erasure=failed.state;($('privacyActions')||actions).append(banner('warn','The deletion did not finish. Nothing was removed.'));}else{const done=noteErasure(erasureTransition(erasure,{type:'succeed'}));if(done.ok)erasure=done.state;const live=$('privacyActions')||actions;live.querySelector('#privacyReceipt')?.remove();live.append(erasureReceipt(r));}}catch(e){const failed=noteErasure(erasureTransition(erasure,{type:'fail'}));if(failed.ok)erasure=failed.state;($('privacyActions')||actions).append(banner('warn',e.message));}const liveDel=liveErasureButton(del);if(liveDel&&erasure.status!=='in_flight')liveDel.disabled=false;});});actions.append(exp,del);}
 }
 function bars(series){const max=Math.max(1,...series.map(p=>p.events||0));const fig=h('div',{class:'chart',role:'img','aria-label':'Events by day'});
  for(const p of series){const i=h('i');i.style.height=Math.round((p.events/max)*100)+'%';fig.append(h('div',{},[i,h('span',{text:String(p.bucket).slice(5)})]));}
  return fig;}
-async function renderAdmin(){const root=$('admin');if(!root)return;root.replaceChildren(h('p',{text:'Loading admin metrics…'}));
- let boot={};try{boot=await app().bootInfo();}catch{boot={};}
- if(boot.libraryRole!=='admin'){root.replaceChildren(h('h1',{id:'adminTitle',text:'Admin'}),banner('warn','This dashboard is only for a verified admin. The API refuses everyone else.'));return;}
+function noteAdmin(result){if(result&&result.rejection){try{console.warn(JSON.stringify(result.rejection));}catch(e){}}return result;}
+async function renderAdmin(){const root=$('admin');if(!root)return;
+ let metricsView=initialAdminMetrics();
+ root.replaceChildren(h('p',{text:'Loading admin metrics…'}));
+ let boot=null;try{boot=await app().bootInfo();}catch{boot=null;}
+ const bootFailed=!boot||boot.protocol!=='atlas-personaplex-pcm-v1';
+ const booted=noteAdmin(adminMetricsTransition(metricsView,{type:'boot',failed:bootFailed,role:boot&&boot.libraryRole}));
+ if(!booted.ok)return;
+ metricsView=booted.state;
+ if(metricsView.status==='boot_error'){root.replaceChildren(h('h1',{id:'adminTitle',text:'Admin'}),banner('warn','Metrics failed.'));return;}
+ if(metricsView.status==='denied'){root.replaceChildren(h('h1',{id:'adminTitle',text:'Admin'}),banner('warn','This dashboard is only for a verified admin. The API refuses everyone else.'));return;}
  const range=h('select',{'aria-label':'Time range'});for(const [v,t] of [['7','7 days'],['30','30 days'],['90','90 days']])range.append(h('option',{value:v,text:t}));
  const bucket=h('select',{'aria-label':'Aggregation'});bucket.append(h('option',{value:'day',text:'By day'}),h('option',{value:'week',text:'By week'}));
  const go=h('button',{class:'btn',type:'button',text:'Update'});const exp=h('button',{class:'btn',type:'button',text:'Export CSV'});
  const out=h('div');
- async function load(){out.replaceChildren(h('p',{text:'Loading…'}));
+ async function load(){
+  const step=noteAdmin(adminMetricsTransition(metricsView,{type:'refresh'}));
+  if(!step.ok)return;
+  metricsView=step.state;
+  out.replaceChildren(h('p',{text:'Loading…'}));
   const to=new Date(),from=new Date(to.getTime()-Number(range.value)*864e5);
   try{const m=await api('/admin/metrics?from='+encodeURIComponent(from.toISOString())+'&to='+encodeURIComponent(to.toISOString())+'&bucket='+bucket.value);
+   const done=noteAdmin(adminMetricsTransition(metricsView,{type:'loaded',count:m.series.length}));
+   if(!done.ok)return;
+   metricsView=done.state;
    const grid=h('div',{class:'metric-grid'});
    const cards=[['Events',m.events],['Errors',m.errors],['Actual tokens in',m.tokens.actualIn],['Missing token events',m.tokens.missing],['Unknown token events',m.tokens.unknown],['Latency avg ms',m.latencyMs.average??'missing'],['Published',m.workflow.published],['Awaiting manager',m.workflow.awaiting_manager],['Awaiting pre-sales',m.workflow.awaiting_presales],['Admin tests',m.workflow.admin_test]];
    for(const [k,v] of cards)grid.append(h('div',{class:'metric'},[h('span',{class:'tiny',text:k}),h('b',{text:String(v)})]));
    const cost=m.estimatedCost?`Estimated ${m.estimatedCost.amount} ${m.estimatedCost.currency} from configured unit rates${m.estimatedCost.includesEstimatedTokens?' (includes estimated tokens)':''}.`:'No cost figure. Unit rates are not configured, so this is not shown as zero.';
    out.replaceChildren(grid,m.series.length?bars(m.series):h('p',{text:'No events in this range.'}),h('p',{text:cost}),h('p',{class:'tiny muted',text:m.note}));
-  }catch(e){out.replaceChildren(banner('warn',e.message||'Metrics failed.'));}}
- go.addEventListener('click',load);exp.addEventListener('click',async()=>{try{const pack=await api('/admin/export');app().download(pack.filename||'atlas-admin-metrics.csv',pack.csv||'','text/csv');}catch(e){out.append(banner('warn',e.message));}});
+  }catch(e){const failed=noteAdmin(adminMetricsTransition(metricsView,{type:'load_failed'}));if(failed.ok)metricsView=failed.state;out.replaceChildren(banner('warn',e.message||'Metrics failed.'));}}
+ go.addEventListener('click',load);exp.addEventListener('click',async()=>{
+  const step=noteAdmin(adminMetricsTransition(metricsView,{type:'export'}));
+  if(!step.ok)return;
+  metricsView=step.state;
+  try{const pack=await api('/admin/export');app().download(pack.filename||'atlas-admin-metrics.csv',pack.csv||'','text/csv');}catch(e){const failed=noteAdmin(adminMetricsTransition(metricsView,{type:'export_failed'}));if(failed.ok)metricsView=failed.state;out.append(banner('warn',e.message));}});
  root.replaceChildren(h('div',{class:'journey-head'},[h('div',{},[h('p',{class:'eyebrow',text:'ADMIN ONLY'}),h('h1',{id:'adminTitle',text:'Operations.'}),h('p',{text:'Pseudonymous counts. Tokens are actual only when a provider returned them.'})]),personaBar()]),h('div',{class:'filters'},[range,bucket,go,exp]),out);
  load();}
 function render(view){if(view==='admin')renderAdmin();else renderJourney();}

@@ -13,6 +13,7 @@ import { subjectHash } from './privacy.js';
 import { str, obj, fail } from './util.js';
 import { TENANT_ID } from './authz.js';
 import { eraseJourneyFor, eraseTelemetryFor, eraseManagerTrustFor, eraseDirectoryFor } from './operate.js';
+import { placeholders } from './sql-bound.js';
 
 const randomToken = () => 'erased:' + [...crypto.getRandomValues(new Uint8Array(6))].map(b => b.toString(16).padStart(2, '0')).join('');
 const parse = (s, fallback) => { try { return JSON.parse(s); } catch { return fallback; } };
@@ -61,7 +62,7 @@ function eraseStaffingManager(lib, user, { tenant, token }) {
   if (!ready(lib, 'staffing', ['manager_email', 'consultant_email', 'tenant'])) return 0;
   const aliases = [...new Set([user.email, user.mail].map(v => String(v || '').trim().toLowerCase()).filter(Boolean))];
   if (!aliases.length) return 0;
-  const marks = aliases.map(() => '?').join(', ');
+  const marks = placeholders(aliases.length);
   let n = 0;
   for (const alias of aliases) {
     const where = whereSubject('tenant', `lower(manager_email) = ? AND lower(consultant_email) NOT IN (${marks})`);
@@ -99,7 +100,7 @@ function subjectAddresses(user) {
 }
 function scrubManagerEmails(lib, tenant, addresses, token) {
   if (!hasTenantColumn(lib, 'profiles') || !addresses.length) return 0;
-  const marks = addresses.map(() => '?').join(', ');
+  const marks = placeholders(addresses.length);
   let n = 0;
   for (const row of lib.rows('SELECT subject, edits FROM profiles WHERE ' + TENANT_SQL + ' AND lower(subject) NOT IN (' + marks + ')', tenant, ...addresses)) {
     const edits = parse(row.edits, {});
@@ -123,7 +124,7 @@ function scrubImportAuthors(lib, tenant, addresses, token) {
 }
 function scrubOutreachPayloads(lib, tenant, addresses, token) {
   if (!ready(lib, 'outreach', ['payload', 'to_email', 'tenant']) || !addresses.length) return 0;
-  const marks = addresses.map(() => '?').join(', ');
+  const marks = placeholders(addresses.length);
   let n = 0;
   for (const row of lib.rows('SELECT id, payload FROM outreach WHERE ' + TENANT_SQL + ' AND lower(to_email) NOT IN (' + marks + ')', tenant, ...addresses)) {
     let next = String(row.payload ?? '');

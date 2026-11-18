@@ -4,11 +4,14 @@
 // This file emulates that method. It is not a Cloudflare Durable Object runtime.
 import { DatabaseSync } from 'node:sqlite';
 const CONTROL = /^(begin|commit|rollback|savepoint|release)\b/i;
+// Cloudflare Durable Object SQL rejects a statement with more than 100 bound parameters.
+const BOUND_MAX = 100;
 export function memorySql() {
   const db = new DatabaseSync(':memory:');
   const exec = (q, ...params) => {
     const text = String(q).trim();
     if (CONTROL.test(text)) throw new Error('Durable Object SQL does not accept ' + text.split(/\s+/)[0] + '. Use storage.transactionSync.');
+    if (params.length > BOUND_MAX) throw new Error('Durable Object SQL allows at most 100 bound parameters.');
     const rows = db.prepare(q).all(...params.map(p => p === undefined ? null : p));
     return { toArray: () => rows.map(r => ({ ...r })) };
   };

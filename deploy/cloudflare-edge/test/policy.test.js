@@ -248,7 +248,7 @@ test('run5: purge, DSAR, journey key, staffing import, metrics page, header and 
   const call = (who, path, env, method = 'GET') => libraryRoutes(new Request('https://atlas.test' + path, { method, body: method === 'POST' ? '{}' : undefined, headers: {
     'x-atlas-user': who.email, 'x-atlas-role': who.role, 'x-atlas-tenant': who.tenant || '', 'x-atlas-tenant-enforced': '0' } }), l, { env });
   const exported = await (await call(adminA, '/api/library/privacy/export', {})).json();
-  assert.equal(exported.journey.fields.title.value, 'Tenant A story');
+  assert.equal(exported.journey[0].fields.title.value, 'Tenant A story');
   assert.equal(JSON.stringify(exported).includes('Tenant B'), false);
   const prodEnv = { ORIGIN: 'https://atlas.test', CSRF_SECRET: 'secret', DATA_MODE: 'production' };
   assert.equal((await call({ email: 'ada@example.test', role: 'admin', tenant: '' }, '/api/library/privacy/export', prodEnv)).status, 403);
@@ -378,6 +378,19 @@ test('staffing, invitations, metrics pages and maintenance stay inside one tenan
 test('demo identity 0, false and off do not trip the production guard', () => {
   for (const value of ['0', 'false', 'off', '']) assert.equal(productionDemoConflict({ DATA_MODE: 'production', ATLAS_DEV_IDENTITY: value }), null, value);
   assert.match(productionDemoConflict({ DATA_MODE: 'production', ATLAS_DEV_IDENTITY: 'yes' }).error, /ATLAS_DEV_IDENTITY/);
+});
+
+test('ATLAS_LOCAL_TENANT is refused in production the same way as demo identity', async () => {
+  const tenant = '11111111-1111-4111-8111-111111111111';
+  assert.equal(productionDemoConflict({ ATLAS_LOCAL_TENANT: tenant }), null);
+  assert.match(productionDemoConflict({ DATA_MODE: 'production', ATLAS_LOCAL_TENANT: tenant }).error, /ATLAS_LOCAL_TENANT/);
+  for (const value of ['0', 'false', 'off', '']) assert.equal(productionDemoConflict({ DATA_MODE: 'production', ATLAS_LOCAL_TENANT: value }), null, value);
+  let reads = 0;
+  const lib = { sql: { exec() { reads += 1; } }, rows() { reads += 1; return []; } };
+  const res = await libraryRoutes(new Request('https://atlas.test/api/library', { headers: { 'x-atlas-user': 'ada@example.test', 'x-atlas-role': 'admin' } }), lib, { env: { DATA_MODE: 'production', ATLAS_LOCAL_TENANT: tenant } });
+  assert.equal(res.status, 503);
+  assert.match((await res.json()).error, /ATLAS_LOCAL_TENANT/);
+  assert.equal(reads, 0);
 });
 
 test('manager trust, story identity and directory cache do not cross tenants', async () => {
@@ -511,9 +524,10 @@ test('merge, duplicates, invites, outreach, DSAR aliases and staffing ties stay 
   l.sql.exec('INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)', sub, B, '{}', '2026-11-08T00:00:00.000Z');
   const real = l.sql.exec.bind(l.sql);
   l.sql.exec = (q, ...p) => { if (String(q).includes('DELETE FROM journey')) throw new Error('disk'); return real(q, ...p); };
-  const failed = await (await libraryRoutes(new Request('https://atlas.test/api/library/privacy/delete', { method: 'POST', body: '{}', headers: { 'x-atlas-user': sub, 'x-atlas-role': 'user', 'x-atlas-email': 'ada@example.test', 'x-atlas-tenant': B, 'x-atlas-tenant-enforced': '1' } }), l, { env: { DATA_MODE: 'production', ORIGIN: 'https://atlas.test', CSRF_SECRET: 's' } })).json();
-  assert.equal(failed.complete, false);
-  assert.equal(failed.outcomes.find(o => o.store === 'journey').error, 'delete-failed');
+  const failedResponse = await libraryRoutes(new Request('https://atlas.test/api/library/privacy/delete', { method: 'POST', body: '{}', headers: { 'x-atlas-user': sub, 'x-atlas-role': 'user', 'x-atlas-email': 'ada@example.test', 'x-atlas-tenant': B, 'x-atlas-tenant-enforced': '1' } }), l, { env: { DATA_MODE: 'production', ORIGIN: 'https://atlas.test', CSRF_SECRET: 's' } });
+  assert.equal(failedResponse.ok, false);
+  const failed = await failedResponse.json();
+  assert.equal(failed.error, 'The deletion did not finish. Nothing was removed.');
   assert.equal(l.rows('SELECT COUNT(*) AS n FROM journey WHERE subject = ? AND tenant = ?', sub, B)[0].n, 1);
   assert.equal(resolveTenantEnforcement({ DATA_MODE: 'test' }, '0'), true);
   assert.equal(resolveTenantEnforcement({ ATLAS_TENANT_ISOLATION: 'local-synthetic' }, '1'), false);

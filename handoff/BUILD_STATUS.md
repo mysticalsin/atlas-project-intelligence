@@ -933,3 +933,378 @@ Review answers:
 - The page bytes change with that strip, so the page pin moves with them. The gate run is on this commit, after it is made. The counts are in the draft PR.
 - Still out of scope, Backlog `ATLAS-AUDIT-RECORDED-COVERAGE-TAIL`: `storeRating` `lastJev`, `nextGen`, directory staging across requests, `recordReceipts`, profile touch, housekeeping deletes, `gaps.expire`, `saveJourney`, retention, DNA cache, sign-in touch, daily deletes, consent receipts, telemetry, `teams_seen`. `ATLAS-TEAMS-NOSALT-503` is closed by the Teams 503 above. Pre-chain rows cannot be proved untampered. This is not a certification of GDPR compliance.
 
+### Session: 2026-11-11 / State machines, medium and low only (run71 part B)
+- Base is `main` `80bab333`. Inventory committed first (`docs/state-machines.md`). High-risk rows 1–12 are pending senior review and were not changed. No push of `main`, no PR, no deploy, no production `wrangler.jsonc` or binding change, no live call, no spend.
+- The carried ledger lows (`b00c303`) are not on this branch. They edit `meter.js` and `ledger-static.test.js`, which belong to the Plan A ledger and are not in this tree.
+- **Bug (`684266d`, then the machine).** `rating.js` admitted a half-open trial by clearing `openUntil` before the trial returned, so a second `rate()` was sent. `breaker.js` is the single writer. While the phase is `probing`, `blocked()` is `circuit_open`. Regression: `test/rating.test.js` R16b. Unit tests: `test/breaker.test.js`.
+- **Low.** Admin metrics view is `src/admin-metrics-machine.js`. `renderAdmin` is the only writer. Unknown or legacy loads become `boot_loading`. `build.py` inlines the machine into the page without `export` keywords.
+
+### Session: 2026-11-11 / State machines, review changes only (run72)
+- Continued from the run71 note on this branch, which starts at `main` `80bab333`. No push of `main`, no PR, no deploy, no live call, no spend. The Plan A ledger is not in this tree.
+- **Breaker.** A fail while `probing` re-opens when `state.phase === 'probing'`, not only when `event.trial` is set. `open:succeed` and `open:fail` stay legal. Rejection logs are phase and event only.
+- **Admin.** `boot_error` is a state. `bootFailed` is separate from a missing role. A failed boot paints `boot_error` and does not show the verified-admin sentence.
+- **Publication.** Golden tests only. No row 9 reducer. A revision resets `validation.status` to pending and derives `in_review`. Rows 18–21 added. Withdraw, reinstate and merge are folded into row 9.
+
+### Session: 2026-11-11 / Publication reducer (run73)
+- Continued on this branch from `main` `80bab333`. No push of `main`, no PR, no deploy, no live call. The Plan A ledger is not in this tree.
+- **Refactor.** `publication.js` replaces `deriveStatus`. `upsert` applies `revised`. The 2560 known goldens match, including `validated` with both decisions pending and quality ready.
+- **Single writer.** `merge` applies `merged`. The status column is that result. The stored state has `withdrawn: true`.
+- **Unknown values.** A status outside the five known values, or a decision outside the four, derives `awaiting_validation` when quality is ready and `in_review` otherwise. It does not derive `published`. Withdrawn still wins. The golden test asserts every unknown approval tuple in that grid stays non-published.
+- Rows other than 9 and 18 were not started.
+- **Both approvals.** `canPublish` is both lanes `approved`. `validated` with both decisions pending, or with only one approval, derives `awaiting_validation` when quality is ready. 32 of the 2560 golden rows move from `published` to `awaiting_validation` (16 field combinations, each with both `merged_into` values). Both lanes approved still publishes. Admin bypass is unchanged. Logs stay the story id, the phase and the event.
+
+### Session: 2026-11-11 / State machines v2, after the review gaps
+- New branch `cursor/state-machines-atlas-v2` from `main` `80bab333`. The Plan A ledger, the CSP and header commits, the CI pin, the privacy-delete CI registration, and the earlier page rebuild were not carried. No push of `main`, no PR, no deploy, no live call.
+- Publication events are `reviewed`, `decided`, `admin_published`, `withdrawn` and `reinstated`, plus the earlier `revised`, `derive` and `merged`. The reducer writes validation, withdrawn and test. `revised` stores version 1. A legacy or unknown version loads as in-review and is not rewritten. Reinstate rejects `merged_into`. A rejected transition is not stored. Each status write matches the prior revision and status.
+- The breaker and admin-metrics snapshot codecs are gone. A failed admin boot paints `boot_error` and does not show the verified-admin sentence.
+- Page pin `5371299c86ecf4c19f2bb2dc47b50191ab608b7012842d34c56b092265d663b6`, 910588 bytes. `scripts/verify_page_build.sh` matched it on two runs.
+
+### Session: 2026-11-12 / State machines v2, publication read path
+- Continued on `cursor/state-machines-atlas-v2` from `04ee147`. Code is `48e4bb5c7587fe5265d5fcb6810f21f867aabf4b`. This note is the following docs commit, so the inventory stamp cites the code commit and does not name itself. No rewrite, no force, no merge, no deploy, no live call. `cursor/plan-a-cap-v2` was not touched.
+- **Read path.** `readPublication` in `publication.js` is the stored-state read. `library.js` `row`, `visibleRows` and `exportAll` use it, as do the admin workflow counts and the DSAR story status. A current version keeps the status column. A missing, legacy or unknown version is the safe in-review record in memory. The stored JSON and the status column are not rewritten by the read. Non-publication writes (`ratingGen`, `lastJev`, duplicates, `sharedWith`) still persist the raw column, so they do not heal an unknown version.
+- **Decided.** A lane other than manager or presales, or a decision other than approved or changes_requested, is illegal. `acceptPublication` returns null and the caller does not store it.
+- **setState.** Left as the persistence primitive. Production publication events already pass reducer output. Tests and the local seed pass a hand-built validation object. Guarding `setState` would reject those callers.
+- **Docs.** Row 7 no longer cites `spend-ledger.js:30`. That file is not on this branch. The run72 admin note now says a failed boot paints `boot_error`.
+- Gates on this code: pytest 264 passed; root node 389 tests, 388 pass, 1 skip; edge 562 pass; page pin unchanged, 910588 bytes, two verifies; browsers 754 PASS, 21 suites, exit 0. Red-first: the unknown-version library read expected `in_review` and got `published` before the wiring (1 fail). After the wiring the publication file is 10 pass.
+
+### Session: 2026-11-12 / State machines v2, legacy publication rows
+- Continued on `cursor/state-machines-atlas-v2` from `6f5947669bc1831a1075be3074ae3680e44403c5`. The code is `272653e6cf66e900ba1c7d2fb40c724650d0122c`. This note is the following commit. Ordinary fast-forward only. No force, no merge, no deploy, no provider call. Other branches were not moved.
+- H1, from `48e4bb5`. main never stored a publication version, so every existing row was decoded as a fresh in-review record (`readPublication`, previously `publication.js:90-96`). Published stories stopped being public. Withdrawn rows read as not withdrawn. CAS at `library.js` compared that decoded status, so a write to a published or withdrawn row returned 409, including `revised`, the event that stamps version 1. A merge wrote the retired row and then the keeper upsert failed, leaving the merge half done.
+- Version-less rows now decode through `publicationStatus` and are not rewritten (`publication.js:97`, `publication.js:107`). Only a missing value or an unknown future version becomes the safe in-review record. CAS uses `storedStatus`, the column, at `library.js:326`, `:426` and `:647`. `merge` applies the retired row and the keeper revision inside `transactionSync`, so a conflict rolls both back. `scanStale` (`library.js:794`) keeps reading the stored column.
+- Nine pairs are illegal: `withdrawn` with `withdrawn`, `decided` or `admin_published`, and `reinstated` from every other phase. `reviewed` stays legal from withdrawn so a rating already in flight can settle; withdrawn still wins the status. `revised`, `derive` and `merged` stay legal from every phase.
+- `BREAKER_VERSION` and `ADMIN_METRICS_VERSION` are deleted. Neither machine is stored. A malformed story JSON is skipped and logged by `visibleRows`, `exportAll` and `scanStale`. The log is the story id and `malformed_row`. It does not fail the tenant.
+- Red against `6f59476`, saved at `/tmp/legacy-red.txt`, 5 fail: a legacy published read was `in_review`; a legacy write threw `This reference changed. Open it again.`; a merge left `merged_into` set to the keeper id; `withdrawn:withdrawn` was accepted (`illegal` was false); a `{` state made `visibleRows` throw `Expected property name or '}' in JSON`. `scanStale` on the stored column and the upsert revision conflict already passed.
+- Gates on this code: pytest 264 passed, 106 warnings, 21.79s. Root node 389 tests, 388 pass, 1 skip, 0 fail. Edge node 569 pass, 0 fail. Page pin `ae560d30292cc8a96673e77bac26a04dc581b9741e040eabed2d647def01c782`, 910491 bytes, two verifies, exit 0. Browsers 754 PASS, 0 FAIL, 21 suites, exit 0. Logo SHA unchanged. No provider was called.
+
+### Session: 2026-11-12 / State machines v2, legacy CAS and reinstate wording
+- Continued on `cursor/state-machines-atlas-v2` from `7618c857b0c71acacbe703c6ca1d77023ae414b1`. Two code commits: `bdd5b2fbaa8eaf1b23595ad1e09a0b56b547cc8e` then `9f602308b4496a4a0d34ae7886d0c5128f325121`. This note is the following commit. Ordinary fast-forward only. No force, no merge, no deploy, no provider call, no PR. Other branches were not moved.
+- G1. A legacy row whose status column is `published` and whose story is validated with no lane decision decodes to `awaiting_validation`. Withdraw, validate, upsert, merge-as-retired and merge-as-keeper all succeed on that row. A revision bump during withdraw returns 409 and leaves the column `published`. The legacy-keeper merge test now asserts success. Red when each CAS line used the decoded status instead of the column, saved before the commit: `/tmp/g1-red-326.txt` fails in `commitRevision` at the upsert (`This reference changed. Open it again.`); `/tmp/g1-red-426.txt` fails in `setState` at the withdraw; `/tmp/g1-red-647.txt` fails in `merge` `apply` when the row is the one retired.
+- N1. The non-atomic `else apply()` is gone. If `transactionSync` is missing, merge returns 503 `Atomic reference changes need storage.transactionSync.` and writes nothing (`library.js:659`). That matches `outreach.js:197`: a merge writes two rows, and a crash between them would leave a story merged away. The else was reachable; nulling `transactionSync` used to let the merge succeed (`/tmp/g1-red-n1.txt`, `Missing expected rejection.`).
+- G2. Reinstate says `This reference was merged into another one.` only when `merged_into` is set. Otherwise it says `That publication change is not allowed.`, which is `PUBLICATION_CHANGE_REFUSED` at `library.js:23`. Tony has not approved that sentence. Red before the change: `/tmp/g2-red.txt`, a live row's reinstate threw `This reference was merged into another one.`
+- No workerd test and no new dependency.
+- Gates on `9f602308b4496a4a0d34ae7886d0c5128f325121`: pytest 264 passed, 106 warnings, 27.15s, exit 0. Root node 389 tests, 388 pass, 1 skip, 0 fail, exit 0. Edge node 572 pass, 0 fail, exit 0. Page pin unchanged, `ae560d30292cc8a96673e77bac26a04dc581b9741e040eabed2d647def01c782`, 910491 bytes, two verifies, exit 0. Browsers 754 PASS, 0 FAIL, 21 suites, exit 0. Logo SHA unchanged. No provider was called.
+
+### Session: 2026-11-12 / State machines v2, breaker ignore, stale succeed, index parse, unknown version
+- Continued on `cursor/state-machines-atlas-v2` from `17cfcedff30fca937d33a7e372e74fd9340fe999`. Four code commits, then this note. Ordinary fast-forward only. No force, no merge, no deploy, no provider call, no PR. Other branches were not moved. No new dependency. The publication reducer stays the only writer of validation, withdrawn and test. `storyRater` stays the only writer of the breaker.
+- SM-1 `4875b4e6efbdfea72963ec8d555ebb42e130045e`. From probing, `ignore` used to return `closed` with `until` 0. It did not open a fresh 60 s window; that reopen is `fail`. Only `succeed` closes a probe. `ignore` now stays probing, with the same fails, until and key. Red: `/tmp/sm-red-1-2.txt`, expected phase `probing`, actual `closed`.
+- SM-2 `d84d808341b0e6a353e69acf0ac813c034522a43`. `open` plus `succeed` is illegal. The rejection marker is phase and event. `storyRater` logs it. `transition` does not. The breaker stays open, with the same until. `open` plus `fail` still settles. Red: `/tmp/sm-red-1-2.txt`, `ok` was true before the pair was removed from the legal set.
+- SM-3 `746f7a0e6fc506a913c52dc0f797c789508c6952`. `index` (`library.js:570`) parses every other row with the same guard as `visibleRows` before any duplicate write. A bad row is logged as `malformed_row` and skipped. Red: `/tmp/sm-red-3.txt`, `JSON.parse` threw at `library.js:583` (`Expected property name or '}' in JSON at position 1`).
+- SM-4 `3a8b6de1a0a1bf179c2a2ddbfb5813c068f09d00`. An unknown publication version keeps every stored field. `withdrawn` stays withdrawn. The decoded status is `withdrawn` or `in_review`. Nothing is overlaid and nothing is written by the read. `scanStale` (`library.js:808`) uses that decoded status. CAS still compares the stored column (`library.js:328`, `:428`, `:659`). Red: `/tmp/sm-red-4.txt`, expected `withdrawn`, actual `in_review`.
+- `auth_fail` while probing still closes the probe and records the key. That pair was not part of this sweep.
+- Gates on `3a8b6de1a0a1bf179c2a2ddbfb5813c068f09d00`: pytest 264 passed, 106 warnings, 26.19s, exit 0. Root node 389 tests, 388 pass, 1 skip, 0 fail, exit 0. Edge node 576 pass, 0 fail, exit 0. Page pin unchanged, `ae560d30292cc8a96673e77bac26a04dc581b9741e040eabed2d647def01c782`, 910491 bytes, two verifies, exit 0. Browsers 754 PASS, 0 FAIL, 21 suites, exit 0. Logo SHA unchanged. No provider was called.
+
+### Session: 2026-11-12 / State machines v2, inventory restamp, erasure, invitations
+- Continued on `cursor/state-machines-atlas-v2` from `b8d006898f9071ff88913250ed82e0688886912f` (tree `0e13bc5cd4fb47f63f4c240c432f62bfe344d9f6`). Ordinary fast-forward only. No force, no merge, no deploy, no provider call, no PR. Row 18, withdraw/reinstate, and Q-9a were not touched. v1 session, meter, speculation, spend ledger, and the v1 delete-receipt UI were not ported.
+- Docs `e3b9e0186960726014d5c242ff2a43bd1ca85b75` (tree `b19aaa14ca66f5f7fd7c5e1d1281334e03ce44ea`). Rows 1, 8, 10, 12 and 15 restamped as not on this branch. Row 3 cites `cascade.py:154` `run`. Row 19 and row 21 citations match this tree.
+- Erasure `06d9ab2703df24436ec263e2706eded31f7207b1`, page pin `393da454ad8487eafa4e414270a080fb68015d64` (tree `b867be07b68cee7aa2948f4a32607b145212e5a8`). The privacy button confirms, sends one POST, and paints the server note. The one new string is `Continue sends the deletion request. Cancel sends nothing.` The button text and the server note are unchanged. `saveJourney` still stores `user.email` as given, and that same string still deletes the row. Export and delete also match `lower(subject)` to `lower(user.email)`, because a lowercased sign-in left a mixed-case subject in place. Red: `/tmp/sm-b-button-red.txt` (2 posts, expected 1) and `/tmp/sm-b-email-red.txt` (removed 0, expected 1). UI acceptance was not claimed.
+- Invitations `00fa09202056224cc152ca2a64ac9ceb0fec47e8` (tree `76a518946c9266ffa56160ad48b9d70defed958a`). `invitationTransition` is the only status decision. `updateInvitation` and the Teams card both use it, and the UPDATE requires `status IN ('open','scheduled')`. A done or dismissed invitation is not scheduled again. A re-open against `invitations_open_scope` is 409, not 500. The refusal joins the existing card sentences: `This invitation is closed. Nothing was changed.` Red: `/tmp/sm-c-red.txt` (no rejection, then 500 !== 409).
+- Gates on `00fa09202056224cc152ca2a64ac9ceb0fec47e8`: pytest 265 passed, 106 warnings, exit 0. Root node 396 tests, 395 pass, 1 skip (Natural Earth source pin), 0 fail, exit 0. Edge node 585 pass, 0 skip, 0 fail, exit 0. Page pin `4e03bcb1ff891cd37266a0b7afac9a54ff1dff50c6ab8cfe0f6b4232bd6cb01e`, 913689 bytes, two verifies, exit 0. Browsers 754 PASS, 0 FAIL, exit 0. One earlier browser run stopped on the existing directory-panel race in `tests/zero_config_browser.py`; the rerun passed. Logo SHA unchanged. No provider was called.
+
+### Session: 2026-11-12 / State machines v2, half-open ignore, null index, python-docx
+- Continued on `cursor/state-machines-atlas-v2` from `2914431f7767028e06c8c0826b3c967c579bd466`. Three code commits, then this note. Ordinary fast-forward only. No force, no merge, no deploy, no provider call, no PR. Other branches were not moved. `storyRater` stays the only writer of the breaker. CAS still compares the stored status column. The only added dependency is `python-docx` in `requirements-test.txt`.
+- NB-1 `3d33ba443290e185082be91e5c1247139a06b91d`. A 429 on the half-open trial left the breaker probing with `until` 0 (`breaker.js`, previously the ignore return at line 73). `blocked()` then stayed `circuit_open` with no clock, and `begin` was illegal, so the Library never sent another rating. Any non-success trial outcome, ignore and 429 included, now moves probing back to open for a fresh 60 s (`breaker.js:74-80`). `storyRater` logs `{atlas_metric:'breaker', phase:'open', event:'ignore'}`. `transition` does not log. Only `succeed` closes a probe. The replaced test is named `a probing ignore does not close and does not open a fresh window`. Red through `storyRater`, saved at `/tmp/nb1-red.txt`: three 500s, a 429 on the trial, then a call 61 s later. That call did not fetch (`4 !== 5`). After the fix it fetches.
+- `auth_fail` while probing still closes the probe and records the key (`breaker.js:66-69`). That does not conflict. An auth failure is recorded against the key, and the next call with that key stays blocked for auth. It is not left probing.
+- NB-2 `0f778951d1b08619f91124571d59f13e56582d7b`. `JSON.parse('null')` succeeds, and `index` then threw `Cannot read properties of null (reading 'duplicates')` at `library.js:591`. A parsed null state is unreadable, the same way an unknown version is left alone: the row is not written, the other rows continue, and the log is the id (`library.js:583`). Red: `/tmp/nb2-red.txt`.
+- N5 `d4c460605bd654d769605f8b61d834910d3ce2e2`. `requirements-test.txt` includes `python-docx>=1.1,<2`. `tests/test_python_docx.py` imports `docx.Document`. The installed package is 1.2.0. No other dependency was added.
+- Gates on `d4c460605bd654d769605f8b61d834910d3ce2e2`: pytest 265 passed, 106 warnings, 27.30s, exit 0. Root node 389 tests, 388 pass, 1 skip, 0 fail, exit 0. Edge node 578 pass, 0 fail, exit 0. Page pin unchanged, `ae560d30292cc8a96673e77bac26a04dc581b9741e040eabed2d647def01c782`, 910491 bytes, two verifies, exit 0. Browsers 754 PASS, 0 FAIL, 21 suites, exit 0. Logo SHA unchanged. No provider was called.
+
+### Session: 2026-11-12 / State machines v2, withdrawn edit stays withdrawn
+- Continued on `cursor/state-machines-atlas-v2` from `4676210de02dfd110b77fe75fc3ddd976d6eac25` (tree `4e630c2bbdd0f6bb5850989e106fcffa568073be`). One commit for Tony's Q-9a ruling. Ordinary fast-forward only. No force, no merge, no deploy, no provider call, no PR. `PUBLICATION_CHANGE_REFUSED` and the other publication copy are unchanged.
+- Tony, Q-9a, verbatim: "Atlas withdrawn edit: stay withdrawn until a reviewer reinstates". `revised` stays legal from `withdrawn` and keeps `withdrawn` (`publication.js` revised object). The revision still stores version 1, clears quality and test, and sets both lanes to pending. Only `reinstated` clears `withdrawn`. An owner edit of a withdrawn, non-merged story no longer stores `in_review`.
+- Goldens. None of the 2560 `deriveStatus` strings move, because `withdrawn` already wins. Applying `revised` moves 1280 of those 2560 outcomes from `in_review` to `withdrawn`: every row with `withdrawn` true, both `test` flags, qualities missing / ready / needs_work / insufficient, validation statuses missing / pending / validated / changes_requested / admin_bypass, both decisions over missing / pending / approved / changes_requested, and both `merged_into` values (missing and `keep-id`). The other 1280 stay `in_review`. The earlier 16 bare rows (32 with `merged_into`) that moved `published` to `awaiting_validation` are unchanged. The nine illegal pairs are unchanged. `withdrawn` with `revised` is not one of them.
+- Red before the transition change, `/tmp/sm-d-red.txt`: the withdrawn edit returned `in_review`, expected `withdrawn` (1 fail). After the change the publication files are 31 pass.
+- Gates on this working tree, before the commit: pytest 265 passed, 106 warnings, 27.50s, exit 0. Root node 396 tests, 395 pass, 1 skip (Natural Earth source pin), 0 fail, exit 0. Edge node 587 pass, 0 skip, 0 fail, exit 0. Page pin unchanged, `4e03bcb1ff891cd37266a0b7afac9a54ff1dff50c6ab8cfe0f6b4232bd6cb01e`, 913689 bytes, two verifies, exit 0. Browsers 754 PASS, 0 FAIL, 21 suites, exit 0. Logo SHA unchanged. No provider was called. UI acceptance was not claimed.
+
+### Session: 2026-11-12 / State machines v2, journey subject match
+- Continued on `cursor/state-machines-atlas-v2` from `4b81045a692934358351bb80eeb3683888cfc4f8` (tree `5f1a86392c5bb3515456663616a886e7b3d22d5e`). One commit. Ordinary fast-forward only. No force, no merge, no deploy, no provider call, no token, no PR.
+- Read, save, export and erasure share `JOURNEY_MATCH`: `lower(subject) = lower(?) AND tenant = ?`. Read and the save that follows it pick the newest `updated_at`, then the greatest `rowid`, and that save updates only that row. Export and erasure take every match. A new row is inserted only when nothing matches. `saveJourney` still stores `user.email` as given on insert. Existing mixed-case duplicates are not merged. That cleanup is a follow-up.
+- `ensureJourney` creates `journey_tenant_subject` on `(tenant, lower(subject))` for a new table, an already-migrated table, and the old subject-only table after it is copied. Plans, no `SCAN journey`: read and export `SEARCH journey USING INDEX journey_tenant_subject (tenant=? AND <expr>=?)` plus `USE TEMP B-TREE FOR ORDER BY`; count `SEARCH journey USING COVERING INDEX journey_tenant_subject`; delete `SEARCH journey USING INDEX journey_tenant_subject`; the chosen-row update `SEARCH journey USING INTEGER PRIMARY KEY (rowid=?)`.
+- The missing cascade note is `docs/LIVE_TEST_BOUND.md`. No other doc stated it. Inventory citations: the open-scope index is `library.js:186`, and `review` starts at `library.js:439`.
+- Red `/tmp/sm-m-red.txt` before the match changed: 7 tests, 1 pass, 6 fail, exit 1. A lower-case read of `Ada@Example.test` was `undefined`, expected `Alias`. Save made 2 rows, expected 1. Two seeded rows read as `undefined`, expected `Newer`. Save of those two inserted `ada@example.test` and left `ADA@example.test` as `Newer`. Export returned only `Older`. The plan for the read query was `SCAN journey`. The other-tenant case already passed.
+- Gates on this working tree, before the commit: pytest 265 passed, 106 warnings, 27.25s, exit 0. Root node 396 tests, 395 pass, 1 skip (Natural Earth source pin), 0 fail, exit 0. Edge `node --test` with `PYTHONPATH` empty: 594 pass, 0 fail, 0 skipped, exit 0. Page pin unchanged, `4e03bcb1ff891cd37266a0b7afac9a54ff1dff50c6ab8cfe0f6b4232bd6cb01e`, 913689 bytes, two verifies, exit 0. Browsers 754 PASS, 0 FAIL, 21 suites, exit 0. No page was rebuilt. No provider was called. UI acceptance was not claimed.
+- Correction, same head `6caaca3d7524c61e5164f8579969e0a9c5418301`. The 594 figure was bare `node --test`. That command also records `test/sqlite.js`, a helper with no tests, as one passing test. QA's `env -u PYTHONPATH node --test test/*.test.js` on that head is 593 pass, 0 fail. The suite was 593. The venv on `PATH` did not add or drop a test.
+
+### Session: 2026-11-12 / State machines v2, export parse, Teams card, withdrawn audit
+- Continued on `cursor/state-machines-atlas-v2` from `6caaca3d7524c61e5164f8579969e0a9c5418301` (tree `9eee6412cbc3b357a55382319c8f04136ea9b21f`). One commit. Ordinary fast-forward only. No force, no merge, no deploy, no provider call, no token, no PR. Existing mixed-case journey duplicates are not merged.
+- Export. `journeyPayload` (`journey.js`) is the parse `read` and the privacy export share. Malformed JSON and a non-object are unreadable. Export skips that row and still returns the others. `subject` and `updatedAt` are set from the row after the payload, so those keys in the payload do not replace the columns. Red `/tmp/sm-f-red-edge.txt`: a payload of `{` made the export return 500, expected 200. A payload carrying `subject` `evil@example.test` was exported as that address, expected `Ada@Example.test`.
+- Teams. `updateInvitation` still confirms with the later status read. That path is unchanged. The card action used to insert `teams_seen` and then update the invitation. Those two statements now run in one `transactionSync` (`outreach.js:554`), and `changes()` must be 1 or the transaction rolls back. A missed update does not leave the activity marked seen. Red: `teams_seen=1 changesInTx=false status=scheduled`, expected the seen row to be gone.
+- Audit. A withdrawn edit logs `revision 2; stays withdrawn until a reviewer reinstates`. A revision that is not withdrawn still logs that manager and pre-sales approval reopened. Red: the detail was `revision 2; manager and pre-sales approval reopened`.
+- Erasure. The in-flight guard is unchanged. A re-render does not send a second POST, because the new button stays disabled. The unlock after the request sets that flag on the button currently in the page. Red `/tmp/sm-f-red-ui.txt`: after a re-render and a failed request the visible button stayed disabled (`true !== false`).
+- Plans. The journey plan test requires `SEARCH journey USING` and, for the match queries, `journey_tenant_subject`. The rowid update still requires `INTEGER PRIMARY KEY`. That assertion already passed on this tree. The old check only rejected the substring `SCAN journey`, which a plan with neither phrase would pass (`/tmp/sm-f-red-plan.txt`).
+- Inventory stamp is the parent, `6caaca3d7524c61e5164f8579969e0a9c5418301` (tree `9eee6412cbc3b357a55382319c8f04136ea9b21f`). There is no typecheck or lint script. Pytest ran on Python 3.12.3. Python 3.13, which `.github/workflows/ci.yml` requests, is not installed here.
+- Gates on this working tree, before the commit: pytest 265 passed, 106 warnings, 30.21s, exit 0, Python 3.12.3. Root node 397 tests, 396 pass, 1 skip (Natural Earth source pin), 0 fail, exit 0. Edge `env -u PYTHONPATH node --test test/*.test.js`: 596 pass, 0 fail, 0 skipped, exit 0. Bare `node --test` in the same directory: 597 pass, 0 fail, exit 0. The extra count is `test/sqlite.js`. Page pin `fb6af364d95e8ed7030f50234b13f79c2aa9d1dd1c320603b68a4fb8fdfdce67`, 913939 bytes, two verifies, exit 0. Browsers 754 PASS, 0 FAIL, 21 suites, exit 0. Logo SHA unchanged. No provider was called. UI acceptance was not claimed.
+
+### Session: 2026-11-12 / State machines v2, export omissions and directory wait
+- Continued on `cursor/state-machines-atlas-v2` from `483b584cdd14558ac4c07cd2927d1a6eb28f3ec9` (tree `ca5cb995fca92da9064233a61f6b0ab3a11ef559`). Ordinary commits on top. No force, no rebase, no merge, no deploy, no provider call. `main` is still `80bab333cd28c2c488ef06fce0c3b77548b84f62`. Existing mixed-case journey duplicates are not merged. A story row whose JSON cannot be parsed is still dropped from the same export with no marker. That is not this slice.
+- M1, red then fix. `8a0acb40d2009bb55109b748edcfc19988afece1` records the failing export assertions. `8c9e7d8a97c0ff47d62f356d5b187d63d2d5610c` adds `journeyExport` (`journey.js:129`). It uses the same `journeyPayload` as read. The privacy export (`operate.js:89` and the body at `:106`) always returns `omitted: { count, rows }`. Each skipped row is `{ id, reason: 'unparseable' }`. The id is the tenant-scoped `rowid`. A clean export reports `{ count: 0, rows: [] }`. The raw payload is not copied into the omission. `libraryRoutes` and `privacyRoutes` share that body. Red `/tmp/sm-omit-red.txt`: 9 tests, 7 pass, 2 fail, exit 1. Both failures were `omitted` `undefined`. The clean export expected `{ count: 0, rows: [] }`. The `{` plus `[]` export expected count 2, row ids 2 then 1, reason `unparseable`. After the fix, `test/journey-subject.test.js`, `test/privacy-delete.test.js` and `test/policy.test.js` are 41 pass.
+- Docs. The inventory no longer names a commit. Last reviewed stays 2026-11-12 on this branch. Export and erasure citations are `operate.js:89` and `:121`–`:122`.
+- Directory flake, root-fixed in `7de36a0a54a236b77616e276dc9aa5d60f0438cf`. `renderDirectory` (`profile-ui.js:116`) unhides the panel and writes the heading before `libraryApi('/directory')` returns. The browser check waited only for visibility, then read the text. A 1.5 s delay on that route, not committed, failed the directory text check (`/tmp/sm-zc-red.txt`, exit 1). The same delay after the wait passed the four directory checks (`/tmp/sm-zc-wait.txt`, exit 0). The committed test waits for `only synthetic addresses`, `DNA push: not connected`, the replace sentence, and the import result. One full loop was enough.
+- There is no typecheck or lint script. Pytest ran on Python 3.12.3. Python 3.13, which `.github/workflows/ci.yml` requests, is not installed here.
+- Gates on `7de36a0a54a236b77616e276dc9aa5d60f0438cf` (tree `fbccbe034d734ec02da80df35d10b52e135a8d2a`), before this note: pytest 265 passed, 106 warnings, 27.29s, exit 0, Python 3.12.3. Root node 397 tests, 396 pass, 1 skip (Natural Earth source pin), 0 fail, exit 0. Edge `env -u PYTHONPATH node --test test/*.test.js`: 596 pass, 0 fail, 0 skipped, exit 0. Page pin unchanged, `fb6af364d95e8ed7030f50234b13f79c2aa9d1dd1c320603b68a4fb8fdfdce67`, 913939 bytes, two verifies, exit 0. Browsers 754 PASS, 0 FAIL, 21 suites, exit 0. Logo SHA unchanged. No provider was called. UI acceptance was not claimed.
+
+### Session: 2026-11-12 / State machines v2, story export omissions
+- Continued on `cursor/state-machines-atlas-v2` from `7bcee4180e7c3e3cf8dc1fc5f63643b7bf2ed99c` (tree `802698e44b7471f610c3a9eae779da31e11b26db`). Ordinary commits on top. No force, no rebase, no merge, no deploy, no provider call. `main` is still `80bab333cd28c2c488ef06fce0c3b77548b84f62`. Existing mixed-case journey duplicates are not merged.
+- Red `3e252ff51aaaf48fb3df2307f4c3efa859d42ad4`, then `56696d1ac4e709a67a3d78dd0f40a2ec712bc49d`. `omittedRow` (`journey.js`) is the one shape: `{ id, source, reason: 'unparseable' }`. `source` is `journey` or `story`. Journey rows are still the tenant-scoped match, and `subject` / `updatedAt` still come from the row. A story state that is not a JSON object is omitted when `sameTenant` accepts the refs tenant column. A readable story still uses the tenant inside its state. Another tenant, another owner, and a readable kept story stay out of `omitted`. `libraryRoutes` and `privacyRoutes` share `privacyRoutes`. Empty story state is still `{}`.
+- Red `/tmp/sm-story-red.txt`: 10 tests, 8 pass, 2 fail, exit 1. The journey export's omitted rows had no `source`. The story export returned `omitted.count` 1 (the bad journey only); the expected count was 3, including `array-story` and `brace-story`. After the fix, `test/journey-subject.test.js`, `test/privacy-delete.test.js` and `test/policy.test.js` are 42 pass.
+- Inventory citations for this export and the journey erasure are `operate.js:117` and `:142`–`:143`.
+- A profile whose `edits` or `consents` JSON cannot be parsed still becomes `profile: null` with no omission. The catch also covers a missing profile table. That store was not part of this slice.
+- There is no typecheck or lint script. Pytest ran on Python 3.12.3. Python 3.13, which `.github/workflows/ci.yml` requests, is not installed here.
+- Gates on `56696d1ac4e709a67a3d78dd0f40a2ec712bc49d` (tree `c60646dced3fc3654db18578ed6f09bc7cfe0293`), before this note: pytest 265 passed, 106 warnings, 29.97s, exit 0, Python 3.12.3. Root node 397 tests, 396 pass, 1 skip (Natural Earth source pin), 0 fail, exit 0. Edge `env -u PYTHONPATH node --test test/*.test.js`: 597 pass, 0 fail, 0 skipped, exit 0. The extra test is the story omission. Page pin unchanged, `fb6af364d95e8ed7030f50234b13f79c2aa9d1dd1c320603b68a4fb8fdfdce67`, 913939 bytes, two verifies, exit 0. Browsers 754 PASS, 0 FAIL, 21 suites, exit 0. Logo SHA unchanged. No provider was called. UI acceptance was not claimed.
+
+### Session: 2026-11-12 / State machines v2, profile export omissions
+- Continued on `cursor/state-machines-atlas-v2` from `4029d48e3438b72dc56c8539ebf844a282d04a12` (tree `d00c798daca20d523564798523cd05cf6138bb7b`). Ordinary commits on top. No force, no rebase, no merge, no deploy, no provider call. `main` is still `80bab333cd28c2c488ef06fce0c3b77548b84f62`. Mixed-case journey duplicates are not merged.
+- Red `aa4e48792dd024fe00011670eb28d87d6f41c5e7`, then `30bee19123040b85f778ff34d4fa70c63e9d135f`. `exportProfile` (`operate.js`) is the profile half of the same privacy export. A missing `profiles` table, or no row for this subject and tenant, stays `profile: null` with no omission. `edits` or `consents` that is not a JSON object is `{ id: 'edits'|'consents', source: 'profile', reason: 'unparseable' }`. The part that parses is returned, with `updatedAt`. Both unreadable parts leave `{ updatedAt }` and two omissions. `libraryRoutes` and `privacyRoutes` share `privacyRoutes`. Empty text is still `{}`. Another tenant's row is not selected.
+- Red `/tmp/sm-profile-red.txt`: 1 fail, exit 1. Missing table and no row already stayed null. Bad edits and bad consents threw `Cannot read properties of null (reading 'edits')`. Both parts unreadable returned `profile` null, expected `{ updatedAt }`. After the fix, `test/journey-subject.test.js`, `test/privacy-delete.test.js` and `test/policy.test.js` are 43 pass.
+- Inventory citations for this export and the journey erasure are `operate.js:139` and `:160`–`:161`.
+- Duplicate repro, not fixed. Two journey rows, tenant `11111111-1111-4111-8111-111111111111`, subjects `Ada@Example.test` (`Older`, `2026-11-01`) and `ADA@example.test` (`Newer`, `2026-11-02`). A lower-case read returns `Newer`. A save of title `Edited` updates only rowid 2. Export returns both subjects. The older row stays `Older`.
+- There is no typecheck or lint script. Pytest ran on Python 3.12.3. Python 3.13, which `.github/workflows/ci.yml` requests, is not installed here.
+- Gates on `30bee19123040b85f778ff34d4fa70c63e9d135f` (tree `c918886d5bb31d0e1da88e2119506e6b4c72b35b`), before this note: pytest 265 passed, 106 warnings, 26.87s, exit 0, Python 3.12.3. Root node 397 tests, 396 pass, 1 skip (Natural Earth source pin), 0 fail, exit 0. Edge `env -u PYTHONPATH node --test test/*.test.js`: 598 pass, 0 fail, 0 skipped, exit 0. The extra test is the profile omission. Page pin unchanged, `fb6af364d95e8ed7030f50234b13f79c2aa9d1dd1c320603b68a4fb8fdfdce67`, 913939 bytes, two verifies, exit 0. Browsers 754 PASS, 0 FAIL, 21 suites, exit 0. Logo SHA unchanged. No provider was called. UI acceptance was not claimed.
+
+### Session: 2026-11-16 / State machines v2, legacy profile export and folded rows
+- Continued on `cursor/state-machines-atlas-v2` from `073ea6d558b9363332d2ca569e42e0e613df00a0` (tree `90d2d59a04209a64abfc34fb5f3cb35a514b9de4`). Ordinary commits on top. No force, no rebase, no merge, no deploy, no provider call. `main` is still `80bab333cd28c2c488ef06fce0c3b77548b84f62`. Journey duplicates stay the backlog row ATLAS-JOURNEY-MIXEDCASE-DUP and were not merged.
+- Red `0db5dddcdedb9bbfb7af50ac0c5260128334c1e7`, then `86cd1b24c1e6549ff5e7f8eefb044d4da535142c`. Red `/tmp/sm-profile-schema-red.txt`: 12 tests, 11 pass, 1 fail, exit 1. The legacy subject-only `profiles` table returned HTTP 500, expected 200. `Ada@Example.test`, an uppercase tenant GUID, and two folded rows each threw `Cannot read properties of null (reading 'edits')`. A disk I/O error on the profile read already returned the generic 500 and was not one of the failures.
+- Schema path. `exportProfile` calls `ensure` (`operate.js:95`, `profile.js:101`) before the SELECT. Profile routes, delete, quarantine, gather and daily already migrate first. `storedProfile` (`profile.js:468`) does not, and it swallows every error, so it is not the schema path. `migrateProfiles` copies a subject-only row with tenant `''` and does not invent a tenant. The export then does not select that row for a verified tenant, so it does not return a row it cannot tie to the caller and does not add a `legacy-schema` omission. The journey and stories already built stay in the 200 body. A missing table or no matching row stays `profile: null` with no omission. Any other SQL error is rethrown (`operate.js:103`). `library-routes.js:91-92` still turns a status-less throw into the generic 500.
+- Case. The SELECT is `lower(subject) = lower(?) AND lower(trim(tenant)) = lower(trim(?))` (`operate.js:98-100`), ordered by `updated_at` DESC then `rowid` DESC. Writers store the tenant with trim and lower (`profile.js` `tenantKey`) and store the email as given. More than one folded match returns the newest as the one profile object and names the rest `{ id: rowid, source: 'profile', reason: 'duplicate' }` (`operate.js:116`, `journey.js:129`). They are not merged and not collapsed. `profile` stays one object. Inventory citations for the export and the journey erasure are `operate.js:146` and `:167`–`:168`.
+- After the fix, `test/journey-subject.test.js`, `test/privacy-delete.test.js` and `test/policy.test.js` are 44 pass.
+- There is no typecheck or lint script. Pytest ran on Python 3.12.3. Python 3.13, which `.github/workflows/ci.yml` requests, is not installed here.
+- Gates on `86cd1b24c1e6549ff5e7f8eefb044d4da535142c`, before this note: pytest 265 passed, 106 warnings, 21.26s, exit 0, Python 3.12.3. Root node 397 tests, 396 pass, 1 skip (Natural Earth source pin), 0 fail, exit 0. Edge `env -u PYTHONPATH node --test test/*.test.js`: 599 pass, 0 fail, 0 skipped, exit 0. The extra test is the legacy schema and folded profile rows. Page pin unchanged, `fb6af364d95e8ed7030f50234b13f79c2aa9d1dd1c320603b68a4fb8fdfdce67`, 913939 bytes, `verify_page_build.sh` twice, exit 0. Browsers 754 PASS, 0 FAIL, 21 suites, exit 0. Logo SHA unchanged. No provider was called. UI acceptance was not claimed.
+
+### Session: 2026-11-16 / State machines v2, one profile match
+- Continued on `cursor/state-machines-atlas-v2` from `43d3a516ef90b57d7c9a47939650bc16fce8ac99` (tree `f8911c0532376b9bdb33884abe6d0cbca7d53e86`). Ordinary commits on top. No force, no rebase, no merge, no deploy, no provider call. `main` is still `80bab333cd28c2c488ef06fce0c3b77548b84f62`. Journey duplicates stay ATLAS-JOURNEY-MIXEDCASE-DUP and were not merged.
+- Red `d6aa5f01400f7d0b7b99a9a9b2d8f9647a3c363d`, then `942ac8d692cf2088834f4a34f3c3accc980fbb5a`. Red `/tmp/sm-match-red.txt`: the legacy subject-only export omitted nothing. Erasure of `Ada@Example.test` plus a tab-padded uppercase tenant removed 0, expected 2. A profile read of that row returned no title. A stranded `profiles_v2` and a rename that threw both came back as `profile` null. Legacy duplicate subjects returned 500. Text order exported `Older` for `2026-11-2` ahead of `2026-11-10`. A tab-padded tenant and `İ` folded by JavaScript were `profile` null. `storedNames` with no tenant returned `Legacy Name`.
+- One matcher. `profileSelection` (`profile.js:67`) is the only subject and tenant match. `profileFold` (`profile.js:41`) is JavaScript `trim` plus `toLowerCase`: Unicode default case conversion, and every Unicode whitespace character, including tab. Writes store that fold (`touch` `profile.js:385-390`, `save` `profile.js:439-441`). It is not SQLite `lower()` or `trim()`. Newest is the parsed `updated_at`, then the greatest `rowid` (`profile.js` `byNewestProfile`). A null or unparseable timestamp is oldest. Equal timestamps keep the greatest rowid.
+- Cursor MED 1 and Devin B. Export (`operate.js:94`) and erasure (`deleteOwnedProfile` `profile.js:142-150`) both call `profileSelection`. Erasure deletes every folded row in the verified tenant, including a padded or uppercase tenant, and does not delete another tenant or a blank tenant. There is no second copy of the comparison.
+- Cursor MED 2. `migrateProfiles` (`profile.js:132`) runs inside `transactionSync` (`profile.js:186`). `recoverProfilesV2` (`profile.js:92`) renames a stranded `profiles_v2` back to `profiles` before an empty table can be created. Exact duplicate `(subject, tenant)` values keep the newest parsed row (`profile.js:125-127`) and record the rest in `profile_collapsed` with reason `duplicate`. Case variants stay as rows and are named by the export. They are not merged.
+- Devin A. A blank-tenant row for this subject is `{ id: rowid, source: 'profile', reason: 'legacy_unscoped' }` (`operate.js:103`). Its content is not copied. It stays stored with tenant `''`. Erasure does not delete it. Another tenant's row is neither returned nor named. An operator assigns the tenant in a reviewed migration. `quarantineReport` (`profile.js:155`) and the DSAR retained note (`operate.js:18`) say so, and neither writes a tenant.
+- Cursor (a). The newer `2026-11-10` row has the smaller rowid and wins over text-sorted `2026-11-2`. (b) The fold is JavaScript, documented at `profile.js:38-41` and in `docs/state-machines.md`. (c) The legacy test checks tenant `''` after export and after erasure, and the new test covers the other tenant, the tie, and the null timestamp.
+- Cursor C. `touch` (`profile.js:386`) uses the same selection, so a read of `ada@example.test` finds `Ada@Example.test` and does not insert an empty shadow. The write stores the folded subject and tenant when that primary key is free. The next export still has `LEGACYEDIT`.
+- Devin D. `storedNames` (`profile.js:564`) has no default tenant. A missing tenant returns `[]` and does not read the blank-tenant row. `ratingInput` (`rating.js:229-230`) passes the tenant through, and the rating call (`library.js:535`) passes `row.state.tenant` or the story tenant.
+- After the fix, `test/journey-subject.test.js`, `test/profile.test.js`, `test/privacy-delete.test.js`, `test/policy.test.js` and `test/rating.test.js` are 99 pass.
+- There is no typecheck or lint script. Pytest ran on Python 3.12.3. Python 3.13, which `.github/workflows/ci.yml` requests, is not installed here.
+- Gates on `942ac8d692cf2088834f4a34f3c3accc980fbb5a`, before this note: pytest 265 passed, 106 warnings, 21.14s, exit 0, Python 3.12.3. Root node 397 tests, 396 pass, 1 skip (Natural Earth source pin), 0 fail, exit 0. Edge `env -u PYTHONPATH node --test test/*.test.js`: 601 pass, 0 fail, 0 skipped, exit 0. Page pin unchanged, `fb6af364d95e8ed7030f50234b13f79c2aa9d1dd1c320603b68a4fb8fdfdce67`, 913939 bytes, `verify_page_build.sh` twice, exit 0. Browsers 754 PASS, 0 FAIL, 21 suites, exit 0. Logo SHA unchanged. No provider was called. UI acceptance was not claimed.
+
+### Session: 2026-11-16 / State machines v2, remaining profile reads and directory recovery
+- Continued on `cursor/state-machines-atlas-v2` from `8f0377974cdad6b705acac00e1c491f388b38c65` (tree `cf818d9bc6488ac96f3be86e04779d4d871e9fa5`). Ordinary commits on top. No force, no rebase, no merge, no deploy, no provider call. `main` is still `80bab333cd28c2c488ef06fce0c3b77548b84f62`. Journey duplicates stay ATLAS-JOURNEY-MIXEDCASE-DUP and were not merged.
+- Red `28cd84821d0d362212f5a970f0725dcbf5418fd0`, then `1b55261456609a13a98227c408bf2570fafefce6`. The local JEV browser opt-in is `2ced80d18783e278b00a81bc017cd761ca0cde82`. Red `/tmp/sm-residual-red.txt`: 60 tests, 49 pass, 11 fail, exit 1. A `DROP TABLE directory` throw left the next export at 500. A rename throw left the live directory empty. A database that already held both `directory` and `directory_v2` exported 500. A stranded `directory_v2` came back with no name. A store with no `transactionSync` did not throw. A populated `profiles_v2` next to a populated v2 `profiles` was dropped. A padded uppercase profile tenant made a due staffing row invite (`1 !== 0`). `ownerKeys` returned only the padded owner. An unenforced daily purge deleted the blank-tenant profile (`1 !== 0`). A padded tenant purge returned no `profilesPurged`. `storedConsent` with no tenant read the blank row (`true !== false`).
+- Cursor LOW 1. `ownerKeys` (`library.js:227`) uses `profileSelection`. `personAliases` (`outreach.js:134`) keeps the alias walk and filters subject, email and tenant with `profileFold`. One `profileSelection` call would miss a row found only by its email. `daily` (`profile.js:588`) purges profiles only for an enforced verified tenant, and the stored tenant is folded. An unenforced scan does not purge profiles, including blank-tenant rows. Directory cache and staged-import purge are unchanged.
+- Cursor LOW 2. The date-order fixtures use `2026-11-02T00:00:00.000Z` and `2026-11-10T00:00:00.000Z`. `not-a-date` stays an explicit unparseable timestamp and sorts oldest.
+- Cursor LOW 3 and QA (a). `ensure` (`profile.js:197`) throws `Profile storage requires transactionSync.` before any migration. `migrateProfiles` and `migrateDirectory` share that transaction. `recoverParked` renames a stranded `profiles_v2`, `directory_v2` or `directory_imports_v2` when the live table is missing or empty. When the live table is still the old shape, the parked copy is dropped and the copy runs again, so a committed drop that left both tables does not fail the next `CREATE`. A rename that throws rolls back inside the transaction, so the live rows are not left empty.
+- QA (b). When both the live table and the parked table are already current and both have rows, `recoverParked` (`profile.js:109`) throws and drops nothing. The rows are not merged. An empty parked table is still dropped. An empty live table with a populated parked table is still renamed.
+- QA (c). `storedConsent` (`profile.js:575`) has no default tenant. A missing argument returns false and does not read the blank-tenant row. A caller that means the sandbox row passes `''`.
+- QA (d). `consentTenant` (`library.js:364`) passes the story tenant to `jevAllowed` (`library.js:369`) and `engineFor` (`library.js:370`) only when it matches `TENANT_ID`. An unscoped story does not read the blank-tenant consent. The local JEV browser sets `ATLAS_LOCAL_TENANT` so that run's story, consent and manager binding share one verified tenant. The blank sandbox stays the default for every other local server.
+- There is no typecheck or lint script. Pytest ran on Python 3.12.3. Python 3.13, which `.github/workflows/ci.yml` requests, is not installed here.
+- Gates on `1b55261456609a13a98227c408bf2570fafefce6`, before this note: pytest 265 passed, 106 warnings, 20.69s, exit 0, Python 3.12.3. Root node 397 tests, 396 pass, 1 skip (Natural Earth source pin), 0 fail, exit 0. Edge `env -u PYTHONPATH node --test test/*.test.js`: 612 pass, 0 fail, 0 skipped, exit 0. The 11 new tests are the reads, the purge, the directory crashes, the populated parked table, and the missing-tenant consent. Page pin unchanged, `fb6af364d95e8ed7030f50234b13f79c2aa9d1dd1c320603b68a4fb8fdfdce67`, 913939 bytes, `verify_page_build.sh` twice, exit 0. Browsers, re-run after `2ced80d`, 754 PASS, 0 FAIL, 21 suites, exit 0. The first browser run failed the JEV allow check because the local story had no tenant. Logo SHA unchanged. No provider was called. UI acceptance was not claimed.
+
+### Session: 2026-11-16 / State machines v2, profile purge parameter cap
+- Continued on `cursor/state-machines-atlas-v2` from `1796b12eb1e54dc17f843497a5e6d1d1ef20ebc5` (tree `25a626d65c5ec643d7573574cf9a077de06432ee`). Ordinary commits on top. No force, no rebase, no merge, no deploy, no provider call. `main` is still `80bab333cd28c2c488ef06fce0c3b77548b84f62`. Journey duplicates stay ATLAS-JOURNEY-MIXEDCASE-DUP and were not merged.
+- Red `d9b63e46d03f362e5ff00324d8dc190fed727cbb`, then `c1e65d76ff72c19dcadbb882541d259138f1ce5e`. Red `/tmp/sm-bound-red.txt`: 614 tests, 611 pass, 3 fail, exit 1. The verified purge of 101 stale profiles threw `Durable Object SQL allows at most 100 bound parameters.` The production request with `ATLAS_LOCAL_TENANT` returned 200, expected 503. `productionDemoConflict` for that switch returned null (`Cannot read properties of null (reading 'error')`). No other test in that run bound more than 100 parameters.
+- Parameter cap. `test/sqlite.js` rejects a statement with more than 100 bound parameters before `prepare`, the same cap as Durable Object SQL. `deleteRowids` (`profile.js:212`) deletes the stale rowids in chunks of at most 100. The chunk count includes any fixed parameter, including a tenant filter when a statement has one. This delete binds only the rowids. The folded tenant filter (`profile.js:614`) already chose them, so a padded stored tenant is still deleted. The chunks run inside one `transactionSync` (`daily` `profile.js:602`, the delete at `:619`). The directory-cache purge (`profile.js:623`) runs after that transaction commits.
+- Production local tenant. `productionDemoConflict` (`authz.js:95-100`) refuses `ATLAS_LOCAL_TENANT` when `DATA_MODE=production`, the same way as `ATLAS_DEV_IDENTITY`. `0`, `false`, `off`, and empty do not count. A missing key does not count. Any other value does. Outside production the switch stays allowed, so the local JEV browser can still set it. `TENANT_BACKFILL.md` records the same refusal.
+- Residual. The unenforced blank-scope directory-cache and staged-import purge (`profile.js:623-628`) predates this change and does not delete profiles. An unenforced scan still uses scope `''` for those two statements. It is recorded here and in `docs/state-machines.md`.
+- Statements the suite did not take over the cap, left as they are. `deleteOwnedProfile` binds one parameter per matched row (`profile.js:156`) and one per collapsed note (`profile.js:158`). The privacy delete binds the tenant plus each alias twice (`operate.js:179-180`), so 50 aliases is 101 parameters. Directory lookup binds the tenant plus each key (`profile.js:323`). Manager approval binds owners, aliases and the tenant (`library.js:270`). Staffing binds owners and the tenant (`library.js:276`). Outreach binds aliases (`outreach.js:190`) and owners (`outreach.js:214`). Claims bind ids plus the ref (`claims.js:69`) and owners (`claims.js:219`). The erasure directory delete binds at most a mail and an oid (`operate.js:189-190`), so it stays under the cap.
+- There is no typecheck or lint script. Pytest ran on Python 3.12.3. Python 3.13, which `.github/workflows/ci.yml` requests, is not installed here.
+- Gates on `c1e65d76ff72c19dcadbb882541d259138f1ce5e`, before this note: pytest 265 passed, 106 warnings, 20.96s, exit 0, Python 3.12.3. Root node 397 tests, 396 pass, 1 skip (Natural Earth source pin), 0 fail, exit 0. Edge `env -u PYTHONPATH node --test test/*.test.js`: 614 pass, 0 fail, 0 skipped, exit 0. The two new tests are the 101-row purge and the production local-tenant refusal. Page pin unchanged, `fb6af364d95e8ed7030f50234b13f79c2aa9d1dd1c320603b68a4fb8fdfdce67`, 913939 bytes, `verify_page_build.sh` twice, exit 0. Browsers 754 PASS, 0 FAIL, 21 suites, exit 0. Logo SHA unchanged. No provider was called. UI acceptance was not claimed.
+
+### Session: 2026-11-16 / State machines v2, every growing parameter list
+- Continued on `cursor/state-machines-atlas-v2` from `d85b7be681edc095c0796c390107518120b14360` (tree `81059df3d8ff66ac772cc35323ce7ddac6a1770c`). Ordinary commits on top. No force, no rebase, no merge, no deploy, no provider call. `main` is still `80bab333cd28c2c488ef06fce0c3b77548b84f62`. Journey duplicates stay ATLAS-JOURNEY-MIXEDCASE-DUP and were not merged.
+- Red `50c38de09bb2556dbaeb25f35b6e748380d04118`, then `fcd5b222adeee22a282100108a0712f0fa46a662`. The red commit extracts `eraseManagerTrust`, `directoryRows` and `personAliases` so a test can pass a long list, and leaves the old SQL in place. Production privacy delete still passes email and mail. Directory lookup from a person, a manager, or gather still passes one key. Red `/tmp/sm-bound2-red.txt`: 626 tests, 614 pass, 12 fail, exit 1. The ten success tests threw `Durable Object SQL allows at most 100 bound parameters.` The two rollback tests expected `/disk/` and received that same cap error. The placeholder grep failed because `sql-bound.js` was absent and the two bounded builders had no allowlist comment. The existing 614 tests passed.
+- One helper. `deploy/cloudflare-edge/src/sql-bound.js` is the only place that builds a `?` list (`placeholders`). `BOUND_MAX` is 100. `fixed` counts every other bound parameter, including a tenant. `copies` is how many times the chunk itself is bound. `readChunks` concatenates rows and opens no transaction. `writeChunks` runs every group inside one `transactionSync`. A throw rolls the whole callback back. `room < 1` throws the cap error. The runtime check requires `bound.length === fixed + copies * chunk.length` and `bound.length <= 100`. `deleteRowids` is gone.
+- Chunked writes, one transaction each. `eraseManagerTrust` (`operate.js:122`) selects rowids with `fixed: 1, copies: 2` (`operate.js:124`) and deletes those rowids in `writeChunks` (`operate.js:130`). `deleteOwnedProfile` deletes profile rowids and collapsed-note ids in one `writeChunks` (`profile.js:158`). `daily` deletes the folded stale profile rowids in one `writeChunks` (`profile.js:624`). The folded tenant filter still chooses those rowids, so a padded stored tenant is deleted. The directory-cache purge still runs after that transaction.
+- Chunked reads. `directoryRows` (`profile.js:324`) uses `fixed: 1`. Manager grants (`library.js:269`) use `fixed: aliases.length + 1`, so the email `IN` list and the tenant are counted on every chunk. Identity aliases stay email and mail. Staffing hits in `canManagerApprove` (`library.js:279`) and `staffingHits` (`claims.js:225`) use `fixed: 2`. `applyStaffingAssignment` reads staffing managers (`outreach.js:191`) and staffing grants (`outreach.js:196`) with `fixed: 1`. The per-row grant delete stays three parameters (`outreach.js:203`) inside the caller's transaction. `inviteDue` (`outreach.js:222`) uses `fixed: 3` (tenant, members needle, project id). `claimRows` (`claims.js:70`) uses `fixed: 1`.
+- Rollback. `test/sql-bound.test.js` throws `Error('disk')` on the one-parameter second chunk of a manager-trust delete and of a profile delete. The manager-trust count stays 102. The profile count and the collapsed-note count both stay 101.
+- The staffing approval test inserts a staffing-source `manager_trust` row in the fix commit. `canManagerApprove` returns before the staffing SELECT when no grant has source `staffing`. On the red SQL the manager-trust `IN` still throws the cap first.
+- Allowlist. `operate.js:202` marks the directory erasure, and the count and delete are `operate.js:204` and `:205`. Keys are mail and an optional oid, so the maximum is 3. `library.js:779` marks the invitation list, and the statement is `library.js:781`. Aliases are email and mail plus the tenant, so the maximum is 3. The grep test strips comments, requires exactly one builder in `sql-bound.js`, and fails when any other `map(() => '?')`, `'?'.repeat`, `.fill('?')`, or `Array.from` placeholder builder is missing the `sql-bound-fixed` comment or states a maximum above 100. `test/sqlite.js` still throws before `prepare` when `params.length > 100`.
+- Residual. An unenforced scan still purges blank-tenant directory pull-cache rows and staged imports (`profile.js:630-638`). Those statements bind 2 or 3 parameters. They do not delete profiles.
+- Fixed parameter counts. Every `.rows` or `.exec` whose SQL string contains a fixed number of `?` placeholders is listed below as `file:line count`, relative to `deploy/cloudflare-edge/src`. The first nine lines are the local `n()` count at `profile.js:632`, the journey SQL constants (`JOURNEY_READ_SQL`, `JOURNEY_ALL_SQL`, `JOURNEY_UPDATE_SQL`, `JOURNEY_COUNT_SQL`, `JOURNEY_DELETE_SQL`), and the three allowlisted statements at their maximum. The remaining 144 are string literals at the call. Zero-placeholder DDL and existence checks are fixed at 0 and are not given a line. Chunked statements are listed above and are absent here because their SQL contains `${placeholders(...)}`.
+
+```
+profile.js:632 2
+journey.js:111 2
+journey.js:116 2
+journey.js:218 3
+operate.js:185 2
+operate.js:186 2
+operate.js:204 3
+operate.js:205 3
+library.js:781 3
+bids.js:154 1
+bids.js:180 1
+bids.js:215 1
+bids.js:266 14
+bids.js:291 1
+bids.js:307 4
+bids.js:325 1
+bids.js:328 3
+bids.js:473 1
+bids.js:488 2
+bids.js:490 6
+bids.js:493 2
+bids.js:501 7
+bids.js:514 3
+bids.js:518 2
+bids.js:519 2
+claims.js:101 1
+claims.js:120 1
+claims.js:121 1
+claims.js:138 1
+claims.js:141 9
+claims.js:143 2
+claims.js:146 1
+claims.js:196 12
+claims.js:206 1
+claims.js:284 1
+claims.js:309 7
+claims.js:313 2
+claims.js:314 1
+claims.js:326 1
+claims.js:333 1
+claims.js:335 1
+claims.js:362 1
+claims.js:373 1
+claims.js:382 2
+claims.js:384 2
+gaps.js:51 1
+gaps.js:56 1
+gaps.js:68 2
+gaps.js:69 2
+gaps.js:77 1
+gaps.js:79 2
+gaps.js:88 1
+gaps.js:146 13
+gaps.js:152 1
+gaps.js:168 1
+gaps.js:185 1
+gaps.js:199 5
+gaps.js:211 1
+journey.js:219 4
+library.js:194 1
+library.js:198 1
+library.js:202 5
+library.js:311 3
+library.js:340 5
+library.js:364 1
+library.js:365 1
+library.js:386 2
+library.js:422 5
+library.js:480 2
+library.js:490 2
+library.js:587 2
+library.js:617 2
+library.js:618 2
+library.js:621 2
+library.js:683 3
+library.js:722 1
+library.js:759 5
+library.js:760 1
+library.js:762 11
+library.js:765 1
+library.js:794 1
+library.js:802 1
+library.js:823 1
+library.js:833 1
+library.js:838 1
+operate.js:165 1
+operate.js:191 2
+operate.js:192 2
+outreach.js:93 1
+outreach.js:106 3
+outreach.js:108 8
+outreach.js:113 3
+outreach.js:158 3
+outreach.js:163 15
+outreach.js:179 9
+outreach.js:203 3
+outreach.js:228 3
+outreach.js:374 10
+outreach.js:381 1
+outreach.js:382 1
+outreach.js:384 1
+outreach.js:394 1
+outreach.js:418 1
+outreach.js:432 2
+outreach.js:501 3
+outreach.js:502 2
+outreach.js:505 1
+outreach.js:506 1
+outreach.js:515 1
+outreach.js:531 3
+outreach.js:548 1
+outreach.js:550 1
+outreach.js:567 2
+outreach.js:591 1
+outreach.js:592 2
+outreach.js:595 8
+outreach.js:604 3
+profile.js:45 1
+profile.js:82 2
+profile.js:135 9
+profile.js:137 3
+profile.js:366 8
+profile.js:398 2
+profile.js:423 9
+profile.js:431 6
+profile.js:443 1
+profile.js:475 6
+profile.js:535 2
+profile.js:538 5
+profile.js:547 10
+profile.js:550 4
+profile.js:552 2
+profile.js:553 2
+profile.js:556 2
+profile.js:557 3
+profile.js:561 2
+profile.js:562 3
+profile.js:563 3
+profile.js:569 2
+profile.js:633 2
+profile.js:634 2
+profile.js:636 2
+profile.js:637 3
+profile.js:694 1
+profile.js:695 1
+profile.js:696 2
+telemetry.js:35 13
+telemetry.js:160 2
+telemetry.js:161 2
+winloop.js:54 1
+winloop.js:55 1
+winloop.js:62 1
+winloop.js:68 1
+```
+
+- There is no typecheck or lint script. Pytest ran on Python 3.12.3. Python 3.13, which `.github/workflows/ci.yml` requests, is not installed here.
+- Gates on `fcd5b222adeee22a282100108a0712f0fa46a662`, before this note: pytest 265 passed, 106 warnings, 21.21s, exit 0, Python 3.12.3. Root node 397 tests, 396 pass, 1 skip (Natural Earth source pin), 0 fail, exit 0. Edge `env -u PYTHONPATH node --test test/*.test.js`: 626 pass, 0 fail, 0 skipped, exit 0. The 12 new tests are the long lists, the two rollbacks, and the placeholder grep. Page pin unchanged, `fb6af364d95e8ed7030f50234b13f79c2aa9d1dd1c320603b68a4fb8fdfdce67`, 913939 bytes, `verify_page_build.sh` twice, exit 0. Browsers 754 PASS, 0 FAIL, 21 suites, exit 0. Logo SHA unchanged. No provider was called. UI acceptance was not claimed.
+
+### Session: 2026-11-16 / State machines v2, atomic erasure and invitation tenant
+- Continued on `cursor/state-machines-atlas-v2` from `d6cf778fd6c9748d8f26a9e63085013ac7436af4` (tree `89ffe7a7f7008844800de61feb7f7513a14198f3`). Ordinary commits on top. No force, no rebase, no merge, no deploy, no provider call. `main` is still `80bab333cd28c2c488ef06fce0c3b77548b84f62`. Journey duplicates stay ATLAS-JOURNEY-MIXEDCASE-DUP and were not merged. Q8, Q9, Q10 and Q12 were left for a later round.
+- Red `0d88f37c3ba23fb15e9ffe1ef4d35644e319e06b`, then red `835c301fc5a4086f3e4cda8188fb95d9174aec72`, then `1371eb31b30c99e82671170cfa2fa486b9f0317e`. Red `/tmp/sm-atomic-red.txt`: 1 test, 0 pass, 1 fail, exit 1. Both manager-trust delete chunks ran (`[100, 1]`). The snapshot then differed: the tenant journey row, the telemetry row, the profile row and the directory row were gone, and the trust rows were still there. Red `/tmp/sm-atomic-ui-red.txt`: 5 tests, 4 pass, 1 fail, exit 1. The new test found `#privacyReceipt` after an outcome of `delete-failed`. Red `/tmp/sm-invite-red.txt`: 1 test, 0 pass, 1 fail, exit 1. `invite` stored the token tenant and `invitations` returned false at `invitation-tenant.test.js:15`.
+- Erasure. `withTransaction` (`sql-bound.js:42`) is the one transaction. `writeChunks` (`sql-bound.js:54`) joins it when the caller is already inside, and still opens its own transaction when it is not. Privacy delete (`operate.js:184-213`) runs journey, telemetry, profile, manager-trust and directory inside that one transaction. Schema ensure runs before it. A throw rolls every store back and the route returns 500 with `The deletion did not finish. Nothing was removed.` A successful response is still the five outcomes, `complete: false`, and `vendorDeletion: not-asserted`.
+- Page. The privacy button (`src/journey-ui.js`, the delete handler) takes `fail` when the request throws or any outcome has an error. It appends `#privacyReceipt` only when every outcome has no error. The rebuilt page pin is `d186fa43e15bbe41e4ce5f281ee790cbd46c522861067e1fd2d6d5e871259ba3`, 914248 bytes.
+- Invitations. `invite` stores `user.tenant` (`library.js:753`). `invitations` now filters on that same value for the reviewer list (`library.js:771`) and the person's list (`library.js:778`). A blank tenant still matches blank rows. An enforced caller still needs a verified tenant id before the query.
+- There is no `package.json` and no typecheck script. `npm test` exits 254 because `package.json` is absent. Pytest ran on Python 3.12.3. Python 3.13, which `.github/workflows/ci.yml` requests, is not installed here.
+- Gates on `1371eb31b30c99e82671170cfa2fa486b9f0317e`, before this note: pytest 265 passed, 106 warnings, 21.77s, exit 0, Python 3.12.3. Root `node --test tests/*.test.js`: 398 tests, 397 pass, 1 skip (Natural Earth source pin), 0 fail, exit 0. Edge `env -u PYTHONPATH node --test test/*.test.js`: 628 pass, 0 fail, exit 0. The same edge suite with `--test-concurrency=16`: 628 pass, 0 fail, exit 0. Page pin `d186fa43e15bbe41e4ce5f281ee790cbd46c522861067e1fd2d6d5e871259ba3`, 914248 bytes, `verify_page_build.sh` twice, exit 0. Browsers 754 PASS, 0 FAIL, 21 suites, exit 0. Logo SHA unchanged. No provider was called. UI acceptance was not claimed.
+
+### Session: 2026-11-18 / merge origin/main into cursor/state-machines-atlas-v2
+- Real merge of `origin/main` `a39f6a4318f84e51b17dc79990db9f80c6dd224b` into `971948fdda6093534f971085b6a6f1fce2c8d416`. No rebase, no force push, no merge to main, no deploy, no provider call, no spend. Python 3.12.3. Python 3.13 is not installed.
+- The red run is `deploy/cloudflare-edge/test/audit-pair.test.js` before `commitRevision` was wrapped in `this.recorded`. It failed: tests 1, pass 0, fail 1. The story row stayed (`1 !== 0`, "the story row rolled back"). Log: `/tmp/sm-merge-red.txt`. There is no separate red commit. A commit before this merge would replace parent `971948fd`, and a commit after it would make this head a non-merge. The failing run was captured, then the wrap was included in this merge commit. After the wrap the same test passes.
+- Both status appendices stay: main's "UI follow-up Q10, Q12, Q9, Q8" and this branch's "State machines, medium and low only".
+- Page pin `b81d08a5b57a9b75adb71dde74d59fe0e8f8b82098af8eb0e3d4efb0b2fbceea`, 923313 bytes, four aliases byte-identical, each written by `python3 build.py`. `scripts/verify_page_build.sh` matched twice. Logo SHA `92c5ff21779f09199097a2971c172453017f0d2581a0ced6f54fe486ba9b6c2b`. Not `9bc85c43` and not `d186fa43`.
+- Gates before this note, on the resolution: pytest 308 passed, 122 warnings, 21.71s, exit 0. Root `node --test tests/*.test.js`: 409 tests, 408 pass, 0 fail, 1 skip. Edge `env -u PYTHONPATH node --test test/*.test.js`: 812 pass. The same edge command with `--test-concurrency=16`: 812 pass. Eight-caller tests (`s1-2f6448d.test.js`, `s1-e639f7e.test.js`, name pattern "eight concurrent callers"): 50 runs at concurrency 16, each 3 pass, 50 pass, 0 fail. `make test-ui` three times: 805 PASS, 0 FAIL, exit 0 each. Not a production-ready claim.
+
+### Session: 2026-11-18 / PR3 delta, mixed-case journey erasure and the privacy note
+- Ordinary commits on `cursor/state-machines-atlas-v2` from merge `b9e534d4793f2d0db3375903076a819c7a7e1c7c`. `origin/main` was still `a39f6a4318f84e51b17dc79990db9f80c6dd224b`. No rebase, no force push, no merge to main, no deploy, no provider call, no spend. Python 3.12.3. Python 3.13 is not installed.
+- Red `a836b99d989fe162dd221381d8f47c23d8901a20`: `test/journey-case-erase.test.js` failed, tests 1, pass 0, fail 1. After eraseMine for ada@example.test, Ada@Example.test and ADA@example.test were still in the tenant. Log `/tmp/pr3-delta-journey-red.txt`. Fix `a7205e93e406500acd2f015c568c63ebed5151b0`: `eraseJourneyFor` uses `JOURNEY_COUNT_SQL` and `JOURNEY_DELETE_SQL`. Privacy delete calls `eraseJourneyFor` inside the existing `withTransaction`. Subject-rights erasure already called `eraseJourneyFor`.
+- Red `89923e790a6fe51c38a7fedbaa84be3fb52717b4`: `privacy-delete.test.js` failed, tests 2, pass 0, fail 2. The response still said an error leaves that one store. Log `/tmp/pr3-delta-note-red.txt`. Fix `6800b251e608a07259d482357db35727bcdd5aab`: the success note says a failure returns an error and removes nothing.
+- `6a3a20bfd884140ebcc218777f023d67a77c8a2c` adds the bound audit action `created` throw in `audit-pair.test.js`. That run passed on the first execution, tests 1, pass 1, fail 0, because the story write and the audit line were already one `recorded()` transaction. There is no failing red SHA for that assertion. Log `/tmp/pr3-delta-audit.txt`.
+- The same-subject row in another tenant is also asserted by the new erasure test. `tests/erasure-button.test.js` still carries the previous sentence as the mock response it paints. It is not a second lock of the server note.
+- Page sources did not change. Pin stays `b81d08a5b57a9b75adb71dde74d59fe0e8f8b82098af8eb0e3d4efb0b2fbceea`, 923313 bytes, checked twice. Not a production-ready claim.
+- Gates on `6a3a20bfd884140ebcc218777f023d67a77c8a2c`, before this paragraph: pytest 308 passed, 122 warnings, 22.29s. Root `node --test tests/*.test.js`: 409 tests, 408 pass, 0 fail, 1 skip (`tests/geo.test.js`, regeneration from the pinned Natural Earth sources, because `ATLAS_NE_SRC` is unset). Edge `env -u PYTHONPATH node --test test/*.test.js`: 813 pass. The same command with `--test-concurrency=16`: 813 pass. Eight-caller files, 50 runs at concurrency 16: 25 pass, 0 fail each run, including the three eight-caller tests. `make test-ui` three times: 805 PASS, 0 FAIL, exit 0 each.
+
+### Session: 2026-11-18 / PR3 closed-invitation error code
+- Ordinary commits on `cursor/state-machines-atlas-v2` from `1d3665fb605d19b97fc1a3b64b41a8f402d98545`. `origin/main` was still `a39f6a4318f84e51b17dc79990db9f80c6dd224b`. No rebase, no force push, no merge to main, no deploy, no provider call, no spend. Python 3.12.3. Python 3.13 is not installed.
+- Red `292793b4e19bde4fe688caaea8d54fe143c24cb8`: tests 1, pass 0, fail 1. An error coded `INVITATION_CLOSED` was rethrown (`coded close`). Log `/tmp/pr3-closed-red-a.txt`.
+- Red `e2ec961b6a4eae2f3a7fa5560431c873227cf53d`: tests 1, pass 0, fail 1. A 409 with the closed sentence and code `TAMPERED` was not rethrown. Log `/tmp/pr3-closed-red-b.txt`.
+- Fix `fe64d5956077957705d528bf1cc974f11b177403`: `outreach.js` throws `fail(409, INVITATION_REFUSAL)` with `code` `INVITATION_CLOSED` (`invitation.js`). The catch keys on that code. `3426157bb33c575878f344affc669f736435ade2` aligns the erasure-button mock sentence.
+- Page sources did not change. Pin stays `b81d08a5b57a9b75adb71dde74d59fe0e8f8b82098af8eb0e3d4efb0b2fbceea`, 923313 bytes, checked twice. Not a production-ready claim.
+- Gates on `3426157bb33c575878f344affc669f736435ade2`, before this paragraph: pytest 308 passed, 122 warnings, 22.55s. Root `node --test tests/*.test.js`: 409 tests, 408 pass, 0 fail, 1 skip (`tests/geo.test.js`, pinned Natural Earth regeneration, `ATLAS_NE_SRC` unset). Edge alone: 815 pass. Edge `--test-concurrency=16`: 815 pass. Eight-caller files, 50 runs at concurrency 16: 25 pass, 0 fail each run. `make test-ui` three times: 805 PASS, 0 FAIL, exit 0 each.
