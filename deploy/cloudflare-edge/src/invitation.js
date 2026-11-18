@@ -2,6 +2,7 @@
 // The row is the stored state. An unknown status is rejected and is not rewritten.
 export const INVITATION_STATUSES = Object.freeze(['open', 'scheduled', 'dismissed', 'done']);
 export const INVITATION_EVENTS = Object.freeze(['schedule', 'dismiss', 'done']);
+export const INVITATION_CLOSED = 'INVITATION_CLOSED';
 export const INVITATION_REFUSAL = 'This invitation is closed. Nothing was changed.';
 export const OPEN_INVITATION_SQL = "status IN ('open', 'scheduled')";
 

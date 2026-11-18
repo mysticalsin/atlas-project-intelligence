@@ -11,7 +11,7 @@ import { recordText, forOthers } from './scrub.js';
 import * as claims from './claims.js';
 import * as gaps from './gaps.js';
 import { interviewCard, messageCard } from './teams.js';
-import { invitationTransition, noteInvitation, OPEN_INVITATION_SQL } from './invitation.js';
+import { invitationTransition, noteInvitation, INVITATION_CLOSED, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
 import { profileFold } from './profile.js';
 import { placeholders, readChunks } from './sql-bound.js';
 
@@ -613,7 +613,11 @@ export async function system(ctx) {
         lib.sql.exec('INSERT OR IGNORE INTO teams_seen (activity_id, at) VALUES (?, ?)', activityId, now);
         if (e.verb === 'decline') lib.sql.exec(`UPDATE invitations SET status = 'dismissed' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, inv.id);
         else lib.sql.exec(`UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, slot, inv.id);
-        if (Number(lib.rows('SELECT changes() AS n')[0]?.n || 0) !== 1) throw fail(409, 'This invitation is closed. Nothing was changed.');
+        if (Number(lib.rows('SELECT changes() AS n')[0]?.n || 0) !== 1) {
+          const closed = fail(409, INVITATION_REFUSAL);
+          closed.code = INVITATION_CLOSED;
+          throw closed;
+        }
         if (e.verb === 'decline') {
           lib.log(hiddenRef ? 'library' : auditOn, inv.email, 'invitation dismiss', `${inv.reason} (Teams card)`);
           return { body: { ok: true, card: messageCard({ title: 'Understood: no interview for this project.', text: 'Nothing else will be sent about it.' }) } };
@@ -622,7 +626,7 @@ export async function system(ctx) {
         return { body: { ok: true, card: interviewCard({ invitationId: inv.id, outreachId: o.id, projectRef: obj(p.preview).title, origin, note: 'Moved to tomorrow. Start whenever it suits you.' }) } };
       });
     } catch (err) {
-      if (err?.status !== 409 || err.message !== 'This invitation is closed. Nothing was changed.') throw err;
+      if (err?.code !== INVITATION_CLOSED) throw err;
       noteInvitation({ rejection: { id: inv.id, phase: inv.status, event: inviteEvent } });
       return { body: { ok: true, card: messageCard({ title: 'This invitation is closed.', text: 'Nothing was changed.' }) } };
     }
