@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { Library } from '../src/library.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import * as outreach from '../src/outreach.js';
+import { INVITATION_REFUSAL } from '../src/invitation.js';
 import { memorySql } from './sqlite.js';
 
 const ORIGIN = 'https://atlas.example';
@@ -70,4 +71,15 @@ test('a closed invitation coded INVITATION_CLOSED produces the closed card', asy
   const result = await action(lib, outreachId, 'coded-close');
   assert.equal(result.body.card.body[0].text, 'This invitation is closed.');
   assert.equal(result.body.card.body[1].text, 'Nothing was changed.');
+});
+
+test('any other 409 and any other error are rethrown unchanged', async () => {
+  const tampered = Object.assign(new Error('The audit chain is tampered.'), { status: 409, code: 'TAMPERED' });
+  const sameWords = Object.assign(new Error(INVITATION_REFUSAL), { status: 409, code: 'TAMPERED' });
+  const other = Object.assign(new Error('disk'), { status: 500 });
+  for (const [name, error] of [['tampered chain', tampered], ['closed words with another code', sameWords], ['other error', other]]) {
+    const { lib, outreachId } = await sentCard();
+    throwOnInvitationWrite(lib, error);
+    await assert.rejects(action(lib, outreachId, 'rethrow-' + name), err => err === error && err.status === error.status && err.code === error.code && err.message === error.message, name);
+  }
 });
