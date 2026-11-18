@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "status": "PROPOSAL — DPO to confirm",
+  "note": "Every period below is a conservative engineering proposal, not a legal decision. Mantu's DPO and legal team set the real periods; change `days` here and the daily sweep follows (deploy/cloudflare-edge/src/retention.js). `sweep: false` means the period is documented but enforced elsewhere (platform, alarm or per-person prune).",
+  "categories": [
+    {"id": "drafts", "label": "Private drafts never submitted for review (library drafts and evidence drafts)", "days": 90, "from": "last change", "action": "delete", "sweep": true, "enforced_by": "LibraryStore daily sweep", "status": "PROPOSAL — DPO to confirm"},
+    {"id": "withdrawn_refs", "label": "Withdrawn references", "days": 90, "from": "withdrawal", "action": "erase_content", "sweep": true, "enforced_by": "LibraryStore daily sweep", "status": "PROPOSAL — DPO to confirm"},
+    {"id": "rejected_evidence", "label": "Rejected or withdrawn evidence records and their claims", "days": 180, "from": "last change", "action": "erase_content", "sweep": true, "enforced_by": "LibraryStore daily sweep", "status": "PROPOSAL — DPO to confirm"},
+    {"id": "expired_requests", "label": "Expired confirmation requests and proof (gap) requests", "days": 90, "from": "expiry", "action": "delete", "sweep": true, "enforced_by": "LibraryStore daily sweep", "status": "PROPOSAL — DPO to confirm"},
+    {"id": "outreach", "label": "Outreach messages and interview invitations that are finished", "days": 90, "from": "sent, dismissed, done or expired", "action": "delete", "sweep": true, "enforced_by": "LibraryStore daily sweep", "status": "PROPOSAL — DPO to confirm"},
+    {"id": "staffing_imports", "label": "Staffing import rows (who worked on which project, N+1)", "days": 180, "from": "project end date, else last import", "action": "delete", "sweep": true, "enforced_by": "LibraryStore daily sweep", "status": "PROPOSAL — DPO to confirm"},
+    {"id": "audit", "label": "Audit trail rows", "days": 730, "from": "row date", "action": "pseudonymise", "sweep": true, "enforced_by": "LibraryStore daily sweep (the audit hash chain is re-sealed and its new head logged)", "status": "PROPOSAL — DPO to confirm"},
+    {"id": "consent_receipts", "label": "Consent receipts (records that a choice was made)", "days": 2190, "from": "the person's latest receipt", "action": "delete", "sweep": true, "enforced_by": "LibraryStore daily sweep", "status": "PROPOSAL — DPO to confirm"},
+    {"id": "security_logs", "label": "Pseudonymous security-event log lines", "days": 90, "from": "event", "action": "platform", "sweep": false, "enforced_by": "the log sink or Cloudflare Workers Logs plan (to verify)", "status": "PROPOSAL — DPO to confirm"},
+    {"id": "memory", "label": "Private memory facts (Hindsight, only if the person turned memory on)", "days": 365, "from": "last update", "action": "forget", "sweep": false, "enforced_by": "pruned for that person each time memory is used; the person can erase it at any time", "status": "PROPOSAL — DPO to confirm"},
+    {"id": "checkpoint", "label": "Interview checkpoint (resume after a dropped connection)", "hours": 24, "from": "first write", "action": "delete", "sweep": false, "enforced_by": "Interview Durable Object alarm", "status": "Decided by Tony (24 h absolute)"}
+  ]
+}

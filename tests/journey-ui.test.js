@@ -39,6 +39,7 @@ class Node {
 function documentStub() {
   const doc = { ids: {} };
   doc.createElement = tag => new Node(tag, doc);
+  doc.createTextNode = text => ({ textContent: String(text ?? ''), parentNode: null, children: [], tagName: '#text', all() { return [this]; } });
   doc.getElementById = id => doc.ids[id] || null;
   const journey = doc.createElement('section');
   journey.setAttribute('id', 'journey');
@@ -51,6 +52,7 @@ function bootJourney(libraryApi) {
   const document = documentStub();
   const window = {
     addEventListener() {},
+    AtlasSafe: {},
     AtlasAuth: { boot: async () => ({}) },
     ATLAS_APP: { libraryApi, download() {}, bootInfo: async () => ({ library: true, libraryRole: 'user' }) },
   };

@@ -58,3 +58,4 @@
 .sheet-preview{border:1px solid var(--g2);border-radius:14px;padding:14px 16px;font-family:Calibri,Carlito,Arial,sans-serif}.sheet-preview h2{margin:0 0 4px}.sheet-visual{display:grid;grid-template-columns:140px 1fr;gap:10px;align-items:start;margin:8px 0}.sheet-visual img{width:140px;border-radius:8px;border:1px solid var(--g2)}
 .sheet-file{display:grid;gap:6px;max-width:520px}.sheet-filename{font-weight:600;overflow-wrap:anywhere}.sheet-link{display:block;margin:8px 0 0;padding:0;font-size:12px}
 @media (max-width:640px){.sheet-visual{grid-template-columns:1fr}}
+.audit-note{background:none;border:0;padding:0;margin:0 0 0 8px;color:var(--g5);font:inherit;font-size:11px;line-height:1.4;cursor:pointer}

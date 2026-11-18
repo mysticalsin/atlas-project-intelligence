@@ -20,6 +20,9 @@ test-ui: build
 	$(PYTHON) tests/orb_touch_browser.py
 	$(PYTHON) tests/library_browser.py
 	$(PYTHON) tests/refusal_browser.py
+	$(PYTHON) tests/audit_marker_browser.py
+	$(PYTHON) tests/csp_console_browser.py
+	$(PYTHON) tests/autosave_chain_browser.py
 	$(PYTHON) tests/reuse_browser.py
 	$(PYTHON) tests/memory_browser.py
 	$(PYTHON) tests/sheet_browser.py
@@ -35,5 +38,7 @@ test-ui: build
 	$(PYTHON) tests/jev_rating_browser.py
 doctor:
 	$(PYTHON) scripts/doctor.py --profile preview
+# Usage: make verify-package PACKAGE=path/to/extracted-release
 verify-package:
-	$(PYTHON) scripts/check_handoff.py
+	@test -n "$(PACKAGE)" || { echo 'Usage: make verify-package PACKAGE=path/to/extracted-release (directory or .zip/.tar archive)'; exit 1; }
+	$(PYTHON) scripts/check_handoff.py "$(PACKAGE)"

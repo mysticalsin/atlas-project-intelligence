@@ -1,5 +1,6 @@
 /* Journey and admin dashboard. Talks only to this deployment's library API. */
 (function(){'use strict';
+const {html,setHTML,insertHTML,trusted}=window.AtlasSafe;
 const $=id=>document.getElementById(id);
 const PEOPLE=[
  {email:'consultant@example.test',label:'Consultant',roles:['ATLAS.Interview']},
@@ -9,7 +10,7 @@ const PEOPLE=[
 ];
 const localDemo=()=>/^(localhost|127\.0\.0\.1)$/.test(location.hostname);
 const STATUS_LABEL={in_review:'In review',needs_work:'Needs work',changes_requested:'Changes requested',awaiting_validation:'Awaiting N+1',published:'Published',withdrawn:'Withdrawn'};
-function h(tag,attrs,children){const n=document.createElement(tag);if(attrs)for(const [k,v] of Object.entries(attrs)){if(k==='text')n.textContent=v;else if(k==='html')n.innerHTML=v;else if(v!=null)n.setAttribute(k,v);}(children||[]).forEach(c=>n.append(c));return n;}
+function h(tag,attrs,children){const n=document.createElement(tag);if(attrs)for(const [k,v] of Object.entries(attrs)){if(k==='text')n.textContent=v;else if(v!=null)n.setAttribute(k,v);}(children||[]).forEach(c=>n.append(c));return n;}
 function app(){return window.ATLAS_APP;}
 async function api(path,opts){const A=app();if(!A?.libraryApi)throw Error('The library API is not on this page.');return A.libraryApi(path,opts);}
 function personaBar(){if(!localDemo())return h('p',{class:'tiny muted',text:'Sign in with your work account. This page does not offer a persona you can type.'});
@@ -61,7 +62,7 @@ async function renderJourney(){const root=$('journey');if(!root)return;root.repl
  layout.append(detail,queue);
  root.replaceChildren(head,stageList(data.stages,s=>{picked=s;paint();}),layout,h('section',{class:'panel'},[h('h2',{text:'Privacy'}),h('p',{id:'privacyNote',text:'Loading disclosure…'})]),h('p',{id:'privacyActions'}));
  api('/privacy/disclosure').then(d=>{const n=$('privacyNote');if(!n)return;n.textContent=`Consent ${d.consent.interview}. ${d.recording} ${d.textOnly} Telemetry retention ${d.retention.appTelemetryDays} days in this app. Vendor deletion: ${d.retention.vendorDeletion}. ${d.lawfulBasis} ${d.biometrics}`;}).catch(()=>{});
- const actions=$('privacyActions');if(actions){const exp=h('button',{class:'btn',type:'button',text:'Download my data'});const del=h('button',{class:'btn',type:'button',text:'Delete my journey data'});exp.addEventListener('click',async()=>{try{const pack=await api('/privacy/export');app().download('atlas-my-data.json',JSON.stringify(pack,null,2),'application/json');}catch(e){actions.append(banner('warn',e.message));}});del.addEventListener('click',async()=>{try{const r=await api('/privacy/delete',{method:'POST',body:{}});actions.append(banner('',JSON.stringify(r)));}catch(e){actions.append(banner('warn',e.message));}});actions.append(exp,del);}
+ const actions=$('privacyActions');if(actions){const exp=h('button',{class:'btn',type:'button',text:'Download my data'});const del=h('button',{class:'btn',type:'button',text:'Delete my journey data'});exp.addEventListener('click',async()=>{try{const pack=await api('/privacy/export');app().download('atlas-my-data.json',JSON.stringify(pack,null,2),'application/json');}catch(e){actions.append(banner('warn',e.message));}});del.addEventListener('click',async()=>{try{const r=await api('/privacy/delete',{method:'POST',body:{}});actions.append(banner('',JSON.stringify(r)));}catch(e){actions.append(banner('warn',e.message));}});const notice=document.createElement('a');notice.href='/privacy';notice.textContent='Privacy notice';actions.append(exp,del,document.createTextNode(' '),notice);}
 }
 function bars(series){const max=Math.max(1,...series.map(p=>p.events||0));const fig=h('div',{class:'chart',role:'img','aria-label':'Events by day'});
  for(const p of series){const i=h('i');i.style.height=Math.round((p.events/max)*100)+'%';fig.append(h('div',{},[i,h('span',{text:String(p.bucket).slice(5)})]));}
