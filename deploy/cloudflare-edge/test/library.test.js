@@ -43,7 +43,7 @@ test('create, same content does not create a revision, a change does and reopens
   assert.equal(b.revision, 2); assert.equal(b.status, 'in_review');
   const full = l.get(OWNER, a.id);
   assert.equal(full.state.validation.status, 'pending'); assert.deepEqual(full.revisions.map(r => r.revision), [2, 1]);
-  assert.deepEqual(full.audit.map(x => x.action), ['revised', 'presales approved', 'manager approved', 'reviewed', 'created']);
+  assert.deepEqual(full.audit.map(x => x.action), ['revised', 'presales approved', 'manager approved', 'reviewed', 'rating generation', 'created']);
   assert.equal(l.revision(OWNER, a.id, 1).data.answers[3].includes('faster'), false);
 });
 

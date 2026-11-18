@@ -218,9 +218,10 @@ export async function saveJourney(lib, user, body = {}) {
   const tenant = journeyTenant(user);
   const chosen = journeyChosen(lib, user.email, tenant);
   const at = lib.now();
-  lib.housekeeping('journey', () => {
+  lib.recorded(() => {
     if (chosen) lib.exec(JOURNEY_UPDATE_SQL, JSON.stringify(payload), at, chosen.id);
     else lib.exec('INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)', user.email, tenant, JSON.stringify(payload), at);
+    lib.log('journey', user.email, 'journey saved', stage);
   });
   await recordUsage(lib, user, { kind: 'journey', feature: 'journey', outcome: 'saved', tokenStatus: 'missing' });
   return journeyView(lib, user);

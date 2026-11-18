@@ -68,8 +68,9 @@ export function expire(lib, now, user = {}) {
   const tenant = enforced ? String(user.tenant || '').toLowerCase() : '';
   if (enforced && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenant)) return 0;
   const before = cutoff(now, EXPIRY_DAYS), n = lib.rows("SELECT COUNT(*) AS n FROM gap_requests WHERE status = 'open' AND created_at < ? AND lower(COALESCE(tenant, '')) = ?", before, tenant)[0].n;
-  if (n) lib.housekeeping('gap-expire', () => {
+  if (n) lib.recorded(() => {
     lib.exec("UPDATE gap_requests SET status = 'expired' WHERE status = 'open' AND created_at < ? AND lower(COALESCE(tenant, '')) = ?", before, tenant);
+    lib.log('library', user.email || 'atlas', 'requests expired', String(n));
   });
   return n;
 }

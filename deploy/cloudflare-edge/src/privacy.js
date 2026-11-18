@@ -149,7 +149,7 @@ export function recordReceipts(lib, subject, items, { channel = 'api', now = lib
   ensure(lib);
   const subj = subjectOf(subject);
   if (!subj) throw fail(400, 'A subject key is required.');
-  const list = Array.isArray(items) ? items.slice(0, RECEIPT_PURPOSES.length * 2) : [], latest = stateFromReceipts(lib, subj), out = [];
+  const list = Array.isArray(items) ? items.slice(0, RECEIPT_PURPOSES.length * 2) : [], latest = stateFromReceipts(lib, subj), pending = [];
   for (const it of list) {
     const i = obj(it), purpose = String(i.purpose || '');
     if (!RECEIPT_PURPOSES.includes(purpose) || typeof i.granted !== 'boolean') continue;
@@ -158,11 +158,19 @@ export function recordReceipts(lib, subject, items, { channel = 'api', now = lib
     if (!prev && !i.granted) continue; // never granted and not granted now: nothing to evidence
     const mode = i.mode === 'text' ? 'text' : 'voice', ch = CHANNELS.includes(i.channel) ? i.channel : CHANNELS.includes(channel) ? channel : 'api';
     const row = { id: lib.newId(), subject: subj, purpose, granted: i.granted ? 1 : 0, notice_version: NOTICE_VERSION, text_sha256: textHash(purpose, mode), at: now, channel: ch };
-    lib.housekeeping('consent-receipt', () => lib.exec('INSERT INTO consent_receipts (id, subject, purpose, granted, notice_version, text_sha256, at, channel) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', row.id, row.subject, row.purpose, row.granted, row.notice_version, row.text_sha256, row.at, row.channel));
+    pending.push(row);
     latest[purpose] = { granted: i.granted, version: NOTICE_VERSION, at: now, channel: row.channel };
-    out.push({ purpose, granted: i.granted, at: now, channel: row.channel });
   }
-  return { recorded: out, state: latest };
+  if (!pending.length) return { recorded: [], state: latest };
+  return lib.recorded(() => {
+    const out = [];
+    for (const row of pending) {
+      lib.exec('INSERT INTO consent_receipts (id, subject, purpose, granted, notice_version, text_sha256, at, channel) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', row.id, row.subject, row.purpose, row.granted, row.notice_version, row.text_sha256, row.at, row.channel);
+      out.push({ purpose: row.purpose, granted: row.granted === 1, at: row.at, channel: row.channel });
+    }
+    lib.log('privacy', subj, 'consent receipt', out.map(r => r.purpose).join(','));
+    return { recorded: out, state: latest };
+  });
 }
 export const receiptsOf = (lib, subject) => { ensure(lib); return lib.rows('SELECT id, purpose, granted, notice_version AS noticeVersion, text_sha256 AS textSha256, at, channel FROM consent_receipts WHERE subject = ? ORDER BY at, rowid', subject).map(r => ({ ...r, granted: r.granted === 1 })); };
 

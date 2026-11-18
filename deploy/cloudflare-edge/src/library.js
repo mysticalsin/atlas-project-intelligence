@@ -567,8 +567,9 @@ export class Library {
   // refs.state.ratingGen: incremented and written back at once (a synchronous read-modify-write in the Durable Object).
   nextGen(id) {
     const stored = this.columnState(id) || {}, gen = (Number(stored.ratingGen) || 0) + 1;
-    this.housekeeping('rating-generation', () => {
+    this.recorded(() => {
       this.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...stored, ratingGen: gen }), id);
+      this.log(id, 'atlas', 'rating generation', String(gen));
     });
     return gen;
   }
@@ -579,8 +580,9 @@ export class Library {
     const fresh = this.row(row.id);
     if (!fresh || fresh.merged_into) return false;
     if (fresh.revision !== row.revision || (Number(fresh.state.ratingGen) || 0) > gen) {
-      if (lastJev) this.housekeeping('rating-cache', () => {
+      if (lastJev) this.recorded(() => {
         this.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...(this.columnState(fresh.id) || {}), lastJev }), fresh.id);
+        this.log(fresh.id, actor, 'rating kept', 'generation superseded');
       });
       return false;
     }
