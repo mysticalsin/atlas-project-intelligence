@@ -1,5 +1,5 @@
-// Red until a recorded append checkpoints the anchor, and until a consent
-// receipt may be stored on a damaged chain without moving that anchor.
+// A recorded append checkpoints the anchor. A consent receipt does too, unless
+// the chain is already damaged and the write is only that receipt.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Library, sqlOf } from './hold.js';
@@ -51,14 +51,16 @@ test('a recorded write checkpoints the chain, so a tail delete no longer verifie
   assert.equal(Number(lib.columnState(saved.id)?.ratingGen) || 0, 0);
 });
 
-test('a consent receipt on a clean chain is audited and does not advance the anchor', async () => {
+test('a consent receipt on a clean chain is audited and advances the anchor', async () => {
   const { lib } = open();
   await lib.upsert(OWNER, { localId: 'p1', reference: REF() });
   const before = anchor(lib);
   const saved = recordReceipts(lib, SUBJECT, [{ purpose: 'transcription', granted: true }]);
   assert.equal(saved.recorded.length, 1);
   assert.equal(lib.rows("SELECT action FROM audit WHERE action = 'consent receipt'").length, 1);
-  assert.deepEqual(anchor(lib), before);
+  const after = anchor(lib);
+  assert.ok(after.n > before.n);
+  assert.notEqual(after.head, before.head);
 });
 
 test('a damaged chain still accepts housekeeping and a consent receipt, and refuses a business write', async () => {
@@ -66,9 +68,9 @@ test('a damaged chain still accepts housekeeping and a consent receipt, and refu
   const saved = await lib.upsert(OWNER, { localId: 'p1', reference: REF() });
   const before = anchor(lib);
   tamper(lib);
-  lib.schema(() => lib.exec('CREATE TABLE door_probe (id INTEGER)'));
-  lib.housekeeping('probe', () => lib.exec('INSERT INTO door_probe (id) VALUES (7)'));
-  assert.equal(lib.rows('SELECT id FROM door_probe')[0].id, 7);
+  lib.schema(() => lib.exec('CREATE TABLE teams_seen (activity_id TEXT PRIMARY KEY, at TEXT)'));
+  lib.housekeeping('teams-seen', () => lib.exec("DELETE FROM teams_seen WHERE at < '2020-01-01T00:00:00.000Z'"));
+  assert.equal(lib.rows('SELECT COUNT(*) AS n FROM teams_seen')[0].n, 0);
   const receipt = recordReceipts(lib, SUBJECT, [{ purpose: 'memory', granted: true }]);
   assert.equal(receipt.recorded.length, 1);
   assert.equal(lib.rows('SELECT COUNT(*) AS n FROM consent_receipts')[0].n, 1);

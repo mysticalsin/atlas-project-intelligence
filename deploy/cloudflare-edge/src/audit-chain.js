@@ -395,7 +395,7 @@ export function verifyDaily(sql, key = '', dbId = '') {
 }
 
 // The anchor moves in the same transaction as a successful audit append. A tail delete then fails
-// the next verdict. Callers that pass allowDamaged do not call this.
+// the next verdict. A receipt-only write on an already damaged chain does not call this.
 export function checkpointHead(sql, key, dbId = '') {
   const result = anchoredVerdict(sql, verifyChain(sql, key, dbId));
   if (!result.ok) return result;

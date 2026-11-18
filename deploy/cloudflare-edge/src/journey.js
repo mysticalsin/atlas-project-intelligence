@@ -68,8 +68,11 @@ function ensureJourneySchema(lib) {
   lib.exec(`CREATE TABLE journey_v2 (
     subject TEXT NOT NULL, tenant TEXT NOT NULL DEFAULT '', payload TEXT, updated_at TEXT,
     PRIMARY KEY (subject, tenant))`);
-  lib.exec(`INSERT INTO journey_v2 (subject, tenant, payload, updated_at)
-    SELECT subject, COALESCE(tenant, ''), payload, updated_at FROM journey`);
+  lib.recorded(() => {
+    lib.exec(`INSERT INTO journey_v2 (subject, tenant, payload, updated_at)
+      SELECT subject, COALESCE(tenant, ''), payload, updated_at FROM journey`);
+    lib.log('schema', 'atlas', 'schema copy', 'journey');
+  });
   lib.exec('DROP TABLE journey');
   lib.exec('ALTER TABLE journey_v2 RENAME TO journey');
   ensureJourneyIndex(lib);

@@ -162,7 +162,7 @@ export function recordReceipts(lib, subject, items, { channel = 'api', now = lib
     latest[purpose] = { granted: i.granted, version: NOTICE_VERSION, at: now, channel: row.channel };
   }
   if (!pending.length) return { recorded: [], state: latest };
-  // allowDamaged stores the receipt when the chain does not verify, and never moves the anchor.
+  // A healthy chain checkpoints this line with the receipt. A damaged chain stores the receipt and does not append.
   return lib.recorded(() => {
     const out = [];
     for (const row of pending) {
@@ -172,7 +172,7 @@ export function recordReceipts(lib, subject, items, { channel = 'api', now = lib
     const verdict = lib.chainVerdict();
     if (verdict.ok) lib.log('privacy', subj, 'consent receipt', out.map(r => r.purpose).join(','));
     return { recorded: out, state: latest };
-  }, { allowDamaged: true });
+  });
 }
 export const receiptsOf = (lib, subject) => { ensure(lib); return lib.rows('SELECT id, purpose, granted, notice_version AS noticeVersion, text_sha256 AS textSha256, at, channel FROM consent_receipts WHERE subject = ? ORDER BY at, rowid', subject).map(r => ({ ...r, granted: r.granted === 1 })); };
 

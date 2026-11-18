@@ -18,10 +18,60 @@ import { appendAudit, checkpointHead, ensureChain, verifyChain, anchoredVerdict,
 import { recordUsage } from './telemetry.js';
 import { publicationEffect, publicationStatus, publicationTransition, readPublication } from './publication.js';
 import { invitationTransition, noteInvitation, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
+function sqlText(sql) {
+  return String(sql ?? '').replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ').trim();
+}
 function mutatingSql(sql) {
-  const text = String(sql ?? '').replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ').trim();
+  const text = sqlText(sql);
   if (/^(insert|update|delete|replace|create|drop|alter|reindex|vacuum)\b/i.test(text)) return true;
   return /^with\b/i.test(text) && /\b(insert|update|delete|replace)\b/i.test(text);
+}
+function receiptInsert(sql) {
+  return /^insert\s+into\s+consent_receipts\b/i.test(sqlText(sql));
+}
+function auditReady(sql) {
+  try {
+    return sql.exec("SELECT name FROM pragma_table_info('audit')").toArray().some(row => row.name === 'hash');
+  } catch { return false; }
+}
+function sqlShape(sql) {
+  return sqlText(sql).replace(/\s+/g, ' ').toLowerCase();
+}
+function schemaDdl(sql) {
+  return /^(create|drop|alter)\b/.test(sqlShape(sql));
+}
+// Each reason has a fixed list. A statement that is not on the list is refused.
+const HOUSEKEEPING = {
+  retention: [
+    /^delete from confirmation_requests\b/,
+    /^delete from gap_requests\b/,
+    /^delete from outreach\b/,
+    /^delete from invitations\b/,
+    /^delete from staffing\b/,
+  ],
+  'consent-retention': [
+    /^insert or replace into privacy_gate\b/,
+    /^delete from consent_receipts\b/,
+  ],
+  'dna-cache': [/^insert or replace into directory\b/],
+  'sign-in': [
+    /^insert into profiles\b/,
+    /^update profiles set subject\b/,
+  ],
+  'profile-daily': [
+    /^delete from directory where lower\(coalesce\(tenant, ''\)\) = \? and source = 'dna' and batch = 'pull'/,
+    /^delete from directory where source = \? and lower\(coalesce\(tenant, ''\)\) = \?$/,
+    /^update directory_imports set state = 'refused'/,
+  ],
+  telemetry: [/^insert into telemetry\b/],
+  'telemetry-purge': [/^delete from telemetry where at </],
+  'teams-seen': [/^delete from teams_seen where at </],
+};
+function housekeepingAllowed(reason, sql) {
+  const list = HOUSEKEEPING[reason];
+  if (!list) return false;
+  const shape = sqlShape(sql);
+  return list.some(pattern => pattern.test(shape));
 }
 // The storage handle stays in this map. It is not a property of Library.
 const HANDLES = new WeakMap();
@@ -168,23 +218,39 @@ function migrateManagerTrust(lib) {
   const cols = lib.rows("SELECT name FROM pragma_table_info('manager_trust')").map(r => r.name);
   lib.exec(create);
   const tenantSql = cols.includes('tenant') ? "COALESCE(tenant, '')" : "''";
-  lib.exec(`INSERT INTO manager_trust_v2 (owner, email, source, tenant, at)
-    SELECT owner, email, source, ${tenantSql}, at FROM manager_trust`);
-  lib.exec('DROP TABLE manager_trust');
-  lib.exec('ALTER TABLE manager_trust_v2 RENAME TO manager_trust');
+  return () => {
+    lib.recorded(() => {
+      lib.exec(`INSERT INTO manager_trust_v2 (owner, email, source, tenant, at)
+        SELECT owner, email, source, ${tenantSql}, at FROM manager_trust`);
+      lib.log('schema', 'atlas', 'schema copy', 'manager_trust');
+    });
+    lib.schema(() => {
+      lib.exec('DROP TABLE manager_trust');
+      lib.exec('ALTER TABLE manager_trust_v2 RENAME TO manager_trust');
+    });
+  };
 }
 function migrateStoryTenant(lib) {
   const cols = lib.rows("SELECT name FROM pragma_table_info('refs')").map(r => r.name);
+  let copy = false;
   if (cols.length && !cols.includes('tenant')) {
     lib.exec("ALTER TABLE refs ADD COLUMN tenant TEXT NOT NULL DEFAULT ''");
-    // Copy the tenant already stored on the story. Blank stays blank. Nothing is assigned.
-    lib.exec("UPDATE refs SET tenant = COALESCE(json_extract(state, '$.tenant'), '')");
+    copy = true;
   }
   const idx = lib.rows("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'refs_owner_local'")[0]?.sql || '';
   if (!idx.includes('tenant')) {
     lib.exec('DROP INDEX IF EXISTS refs_owner_local');
     lib.exec('CREATE UNIQUE INDEX refs_owner_local ON refs(owner, local_id, tenant)');
   }
+  if (!copy) return null;
+  return () => {
+    const pending = lib.rows("SELECT COUNT(*) AS n FROM refs WHERE COALESCE(json_extract(state, '$.tenant'), '') != ''")[0].n;
+    if (!pending) return;
+    lib.recorded(() => {
+      lib.exec("UPDATE refs SET tenant = COALESCE(json_extract(state, '$.tenant'), '')");
+      lib.log('schema', 'atlas', 'schema copy', 'refs tenant');
+    });
+  };
 }
 export class Library {
   // services: outbound adapters for feature modules ({ teams } in production; empty in tests and local runs).
@@ -198,39 +264,46 @@ export class Library {
     // An inner call joins the open transaction. There is no await inside it: a returned promise is a mistake.
     // Without a real transaction the property stays null, so a caller that cannot be atomic still refuses.
     // The door opens inside the transaction, so exec can write and a throw rolls the write back.
-    const recorded = (fn, opts = {}) => {
+    // A nested call joins this transaction and cannot turn the checkpoint off.
+    // The anchor moves for every recorded append while the chain is healthy, including a consent receipt.
+    // It stays put only when the chain is already damaged and every write was a consent receipt.
+    const recorded = (fn) => {
       if (typeof fn !== 'function') throw fail(500, 'A library write needs a function.');
-      if (this._auditTx) {
-        if (opts.allowDamaged === true) this._allowDamaged = true;
-        return this._enter(fn);
-      }
+      if (this._auditTx) return this._enter(fn, 'recorded');
       if (typeof this._atomic !== 'function') throw fail(503, 'Atomic library writes need storage.transactionSync.');
       const run = () => {
-        this._allowDamaged = opts.allowDamaged === true;
+        const sql = rawSql(this);
+        const ready = auditReady(sql);
+        const healthy = ready && anchoredVerdict(sql, verifyChain(sql, this.auditKey, this.dbId)).ok;
         this._appended = false;
-        try {
-          const result = this._enter(fn);
-          if (this._appended && !this._allowDamaged) checkpointHead(rawSql(this), this.auditKey, this.dbId);
-          return result;
-        } finally {
-          this._allowDamaged = false;
+        this._receiptOnly = true;
+        const result = this._enter(fn, 'recorded');
+        if (ready && !healthy && !this._receiptOnly) throw Object.assign(fail(409, 'The audit chain is tampered.'), { code: 'CHAIN_DAMAGED' });
+        if (this._appended && (healthy || !this._receiptOnly)) {
+          const checkpoint = checkpointHead(sql, this.auditKey, this.dbId);
+          if (!checkpoint.ok) throw Object.assign(fail(409, 'The audit chain is tampered.'), { code: checkpoint.reason });
         }
+        return result;
       };
       this._auditTx = 1;
       try { return this._atomic(run); }
       finally { this._auditTx = 0; }
     };
-    Object.assign(this, { _door: 0, _appended: false, _allowDamaged: false, now, newId, complete, embed, readyScore, model, services, rater, metric, _atomic: atomic, _auditTx: 0, recorded, transactionSync: typeof atomic === 'function' ? recorded : null, auditKey, dbId: String(dbId ?? '') });
+    Object.assign(this, { _door: 0, _appended: false, _receiptOnly: true, now, newId, complete, embed, readyScore, model, services, rater, metric, _atomic: atomic, _auditTx: 0, recorded, transactionSync: typeof atomic === 'function' ? recorded : null, auditKey, dbId: String(dbId ?? '') });
     this.inflight = new Map(); // `${id}:${revision}` -> { gen, engine, first, all }: one rating per revision at a time
+    let trustCopy = null;
+    let storyCopy = null;
     this.schema(() => {
       for (const q of SCHEMA) this.exec(q);
       const inv = this.rows("SELECT name FROM pragma_table_info('invitations')").map(r => r.name);
       if (inv.length && !inv.includes('tenant')) this.exec('ALTER TABLE invitations ADD COLUMN tenant TEXT');
       this.exec("CREATE UNIQUE INDEX IF NOT EXISTS invitations_open_scope ON invitations(email, reason, project_id, reference_id, tenant) WHERE status IN ('open', 'scheduled')");
-      migrateManagerTrust(this);
-      migrateStoryTenant(this);
+      trustCopy = migrateManagerTrust(this);
+      storyCopy = migrateStoryTenant(this);
     });
     ensureChain(rawSql(this), this.auditKey, this.transactionSync, this.dbId);
+    if (typeof trustCopy === 'function') trustCopy();
+    if (typeof storyCopy === 'function') storyCopy();
   }
 
   // A mutating statement needs one of the three doors. Reads do not. The one raw exec is below.
@@ -244,8 +317,10 @@ export class Library {
   dailyChain() {
     return verifyDaily(rawSql(this), this.auditKey, this.dbId);
   }
-  _enter(fn) {
+  _enter(fn, kind) {
     if (typeof fn !== 'function') throw fail(500, 'A library write needs a function.');
+    const prevKind = this._doorKind;
+    if (kind) this._doorKind = kind;
     this._door += 1;
     try {
       const result = fn();
@@ -253,21 +328,31 @@ export class Library {
       return result;
     } finally {
       this._door -= 1;
+      this._doorKind = prevKind;
     }
   }
   exec(statement, ...params) {
-    if (mutatingSql(statement) && !this._door) throw Object.assign(fail(500, 'A SQL write must run inside recorded, housekeeping, or schema.'), { code: 'SQL_DOOR' });
+    if (mutatingSql(statement)) {
+      if (!this._door) throw Object.assign(fail(500, 'A SQL write must run inside recorded, housekeeping, or schema.'), { code: 'SQL_DOOR' });
+      if (this._doorKind === 'schema' && !schemaDdl(statement)) throw Object.assign(fail(500, 'Schema accepts DDL only.'), { code: 'SCHEMA_DML' });
+      if (this._doorKind === 'housekeeping' && !housekeepingAllowed(this._houseReason, statement)) throw Object.assign(fail(500, 'That housekeeping statement is not allowed.'), { code: 'HOUSEKEEPING_SQL' });
+      if (!receiptInsert(statement)) this._receiptOnly = false;
+    }
     const _sql = rawSql(this);
     return _sql.exec(statement, ...params);
   }
   schema(fn) {
-    return this._enter(fn);
+    return this._enter(fn, 'schema');
   }
-  // No audit line and no verdict. A call already inside a door joins it. This does not start a
-  // transaction: a housekeeping statement still commits on its own, as it did before the door.
+  // No audit line and no verdict. The reason selects a fixed list of statements.
+  // A call already inside a door joins it. This does not start a transaction.
   housekeeping(reason, fn) {
-    if (!String(reason || '').trim()) throw fail(500, 'Housekeeping needs a reason.');
-    return this._enter(fn);
+    const name = String(reason || '').trim();
+    if (!HOUSEKEEPING[name]) throw Object.assign(fail(500, 'That housekeeping reason is not allowed.'), { code: 'HOUSEKEEPING_SQL' });
+    const prev = this._houseReason;
+    this._houseReason = name;
+    try { return this._enter(fn, 'housekeeping'); }
+    finally { this._houseReason = prev; }
   }
 
   rows(q, ...p) { return this.exec(q, ...p).toArray(); }
@@ -284,6 +369,7 @@ export class Library {
     if (this.auditKey == null) throw fail(503, 'LOG_SALT is not set.');
     appendAudit(rawSql(this), { id, actor, action, at: this.now(), detail: String(detail).slice(0, 300) }, this.auditKey, this.dbId);
     this._appended = true;
+    if (String(action) !== 'consent receipt') this._receiptOnly = false;
   }
   // An invitation or card action may name a story. The audit id is that story only when the story's stored tenant
   // is the caller's tenant. A foreign id is not an audit target.

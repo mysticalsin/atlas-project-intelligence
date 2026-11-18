@@ -50,8 +50,11 @@ function migrateStaffing(lib) {
   const cols = lib.rows("SELECT name FROM pragma_table_info('staffing')").map(r => r.name);
   lib.exec(STAFFING_TABLE);
   const tenantSql = cols.includes('tenant') ? "COALESCE(tenant, '')" : "''";
-  lib.exec(`INSERT INTO staffing_v2 (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, tenant)
-    SELECT project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, ${tenantSql} FROM staffing`);
+  lib.recorded(() => {
+    lib.exec(`INSERT INTO staffing_v2 (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, tenant)
+      SELECT project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, ${tenantSql} FROM staffing`);
+    lib.log('schema', 'atlas', 'schema copy', 'staffing');
+  });
   lib.exec('DROP TABLE staffing');
   lib.exec('ALTER TABLE staffing_v2 RENAME TO staffing');
 }

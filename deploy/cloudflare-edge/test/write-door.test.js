@@ -41,9 +41,9 @@ test('exec outside a door is refused', () => {
 test('schema and housekeeping write without an audit line', () => {
   const lib = new Library(memorySql(), { auditKey: SALT });
   const before = lib.rows('SELECT COUNT(*) AS n FROM audit')[0].n;
-  lib.schema(() => lib.exec('CREATE TABLE door_probe (id INTEGER)'));
-  lib.housekeeping('probe', () => lib.exec('INSERT INTO door_probe (id) VALUES (1)'));
-  assert.equal(lib.rows('SELECT id FROM door_probe')[0].id, 1);
+  lib.schema(() => lib.exec('CREATE TABLE teams_seen (activity_id TEXT PRIMARY KEY, at TEXT)'));
+  lib.housekeeping('teams-seen', () => lib.exec("DELETE FROM teams_seen WHERE at < '2020-01-01T00:00:00.000Z'"));
+  assert.equal(lib.rows('SELECT COUNT(*) AS n FROM teams_seen')[0].n, 0);
   assert.equal(lib.rows('SELECT COUNT(*) AS n FROM audit')[0].n, before);
 });
 

@@ -140,13 +140,16 @@ export const tombstoneRef = at => ({ ...cleanReference({ title: '[erased]' }), e
 // Replaces a reference's content (and every revision, claim and duplicate pair) with a tombstone. The row stays so ids and joins keep working; it is excluded everywhere
 // (merged_into = 'erased'), and its owner becomes an erasure token.
 export function eraseRefContent(lib, id, token, at) {
-  lib.exec(`UPDATE refs SET title = '[erased]', status = 'withdrawn', owner = ?, local_id = NULL, content_hash = '', practice = '', industry = '', country = '', manager_email = '', members = ',',
-    quality_score = NULL, updated_by = ?, data = ?, state = ?, embedding = NULL, merged_into = 'erased', updated_at = ? WHERE id = ?`,
-  token, token, JSON.stringify(tombstoneRef(at)), JSON.stringify({ erased: true, erasedAt: at, withdrawn: true, quality: null, validation: { status: 'pending' } }), at, id);
-  lib.exec('DELETE FROM revisions WHERE id = ?', id);
-  if (tableExists(lib, 'duplicate_pairs')) lib.exec('DELETE FROM duplicate_pairs WHERE a = ? OR b = ?', id, id);
-  if (tableExists(lib, 'claims')) lib.exec('DELETE FROM claims WHERE ref_id = ?', id);
-  if (tableExists(lib, 'confirmation_requests')) lib.exec('DELETE FROM confirmation_requests WHERE ref_id = ?', id);
+  lib.recorded(() => {
+    lib.exec(`UPDATE refs SET title = '[erased]', status = 'withdrawn', owner = ?, local_id = NULL, content_hash = '', practice = '', industry = '', country = '', manager_email = '', members = ',',
+      quality_score = NULL, updated_by = ?, data = ?, state = ?, embedding = NULL, merged_into = 'erased', updated_at = ? WHERE id = ?`,
+    token, token, JSON.stringify(tombstoneRef(at)), JSON.stringify({ erased: true, erasedAt: at, withdrawn: true, quality: null, validation: { status: 'pending' } }), at, id);
+    lib.exec('DELETE FROM revisions WHERE id = ?', id);
+    if (tableExists(lib, 'duplicate_pairs')) lib.exec('DELETE FROM duplicate_pairs WHERE a = ? OR b = ?', id, id);
+    if (tableExists(lib, 'claims')) lib.exec('DELETE FROM claims WHERE ref_id = ?', id);
+    if (tableExists(lib, 'confirmation_requests')) lib.exec('DELETE FROM confirmation_requests WHERE ref_id = ?', id);
+    lib.log(id, 'privacy', 'story erased', '1 reference');
+  });
 }
 // Audit rows about a person (actor, or named in the detail text) become a tombstone: actor is the token, detail is empty.
 // A keyed row keeps its hash and stores the proof. A legacy row is overwritten in place and stays unverified.
