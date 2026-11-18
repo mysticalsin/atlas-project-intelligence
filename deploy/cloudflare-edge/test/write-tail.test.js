@@ -2,7 +2,7 @@
 // share the recorded transaction with an audit line.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { memorySql } from './sqlite.js';
 import { ensure as ensureGaps, expire as expireGaps } from '../src/gaps.js';
 import { saveJourney } from '../src/journey.js';
@@ -30,7 +30,7 @@ function open() {
   return { lib };
 }
 function tamper(lib) {
-  lib.sql.exec("UPDATE audit SET detail = detail || ' tampered' WHERE action != 'chain-start'");
+  sqlOf(lib).exec("UPDATE audit SET detail = detail || ' tampered' WHERE action != 'chain-start'");
 }
 function audited(lib, action) {
   return lib.rows('SELECT action FROM audit WHERE action = ?', action).length;
@@ -76,7 +76,7 @@ test('gap expiry on a tampered chain leaves the request open', async () => {
   const { lib } = open();
   await lib.upsert(OWNER, { localId: 'p1', reference: REF() });
   ensureGaps(lib);
-  lib.sql.exec("INSERT INTO gap_requests (id, bid_id, status, created_at, tenant) VALUES ('g1', 'b1', 'open', '2020-01-01T00:00:00.000Z', '')");
+  sqlOf(lib).exec("INSERT INTO gap_requests (id, bid_id, status, created_at, tenant) VALUES ('g1', 'b1', 'open', '2020-01-01T00:00:00.000Z', '')");
   tamper(lib);
   assert.throws(() => expireGaps(lib, STAMP, {}), err => err.status === 409);
   assert.equal(lib.rows("SELECT status FROM gap_requests WHERE id = 'g1'")[0].status, 'open');
@@ -86,7 +86,7 @@ test('gap expiry writes an audit line', async () => {
   const { lib } = open();
   await lib.upsert(OWNER, { localId: 'p1', reference: REF() });
   ensureGaps(lib);
-  lib.sql.exec("INSERT INTO gap_requests (id, bid_id, status, created_at, tenant) VALUES ('g1', 'b1', 'open', '2020-01-01T00:00:00.000Z', '')");
+  sqlOf(lib).exec("INSERT INTO gap_requests (id, bid_id, status, created_at, tenant) VALUES ('g1', 'b1', 'open', '2020-01-01T00:00:00.000Z', '')");
   assert.equal(expireGaps(lib, STAMP, {}), 1);
   assert.equal(lib.rows("SELECT status FROM gap_requests WHERE id = 'g1'")[0].status, 'expired');
   assert.equal(audited(lib, 'requests expired'), 1);

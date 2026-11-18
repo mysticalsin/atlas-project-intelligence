@@ -4,7 +4,7 @@
 // The file callers in chain-callers.mjs use BEGIN IMMEDIATE. App code calls transactionSync only.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { memorySql } from './sqlite.js';
 import { appendAudit, verifyChain, verifyDaily, rowHash, GENESIS, ensureChain } from '../src/audit-chain.js';
 
@@ -25,21 +25,21 @@ function relink(events) {
   sql.exec(MAIN);
   sql.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', 'story', EMAIL, 'saved', STAMP, 'legacy');
   const lib = new Library(sql, { now: () => STAMP });
-  for (let i = 0; i < events; i++) appendAudit(lib.sql, { id: 'story', actor: EMAIL, action: 'saved', at: STAMP, detail: 'later-' + i });
-  const seeded = verifyDaily(lib.sql);
+  for (let i = 0; i < events; i++) appendAudit(sqlOf(lib), { id: 'story', actor: EMAIL, action: 'saved', at: STAMP, detail: 'later-' + i });
+  const seeded = verifyDaily(sqlOf(lib));
   assert.equal(seeded.reason, 'CHAIN_VERIFIED');
-  const kept = lib.sql.exec('SELECT seq, id, action, at, "commit" FROM audit WHERE action != ? AND "commit" IS NOT NULL ORDER BY seq', 'chain-start').toArray();
+  const kept = sqlOf(lib).exec('SELECT seq, id, action, at, "commit" FROM audit WHERE action != ? AND "commit" IS NOT NULL ORDER BY seq', 'chain-start').toArray();
   assert.equal(kept.length, events);
-  lib.sql.exec('DELETE FROM audit WHERE action = ? OR "commit" IS NULL', 'chain-start');
+  sqlOf(lib).exec('DELETE FROM audit WHERE action = ? OR "commit" IS NULL', 'chain-start');
   let prev = GENESIS;
   for (const row of kept) {
     const hash = rowHash(prev, row);
-    lib.sql.exec('UPDATE audit SET prev_hash = ?, hash = ? WHERE seq = ?', prev, hash, row.seq);
+    sqlOf(lib).exec('UPDATE audit SET prev_hash = ?, hash = ? WHERE seq = ?', prev, hash, row.seq);
     prev = hash;
   }
-  const left = lib.sql.exec('SELECT prev_hash FROM audit ORDER BY seq').toArray();
+  const left = sqlOf(lib).exec('SELECT prev_hash FROM audit ORDER BY seq').toArray();
   assert.equal(left[0].prev_hash, GENESIS);
-  return { sql: lib.sql, head: prev };
+  return { sql: sqlOf(lib), head: prev };
 }
 function refuses(sql) {
   const before = sql.exec('SELECT COUNT(*) AS n FROM audit').toArray()[0].n;
@@ -126,11 +126,11 @@ test('wiped keyed values with no anchor are tampered without waiting', () => {
   sql.exec(MAIN);
   sql.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', 'story', EMAIL, 'saved', STAMP, 'legacy');
   const lib = new Library(sql, { now: () => STAMP });
-  verifyDaily(lib.sql);
-  lib.sql.exec('UPDATE audit SET hash = NULL, prev_hash = NULL, "commit" = NULL');
-  lib.sql.exec('DELETE FROM audit_anchor');
+  verifyDaily(sqlOf(lib));
+  sqlOf(lib).exec('UPDATE audit SET hash = NULL, prev_hash = NULL, "commit" = NULL');
+  sqlOf(lib).exec('DELETE FROM audit_anchor');
   const started = Date.now();
-  const daily = verifyDaily(fresh(lib.sql));
+  const daily = verifyDaily(fresh(sqlOf(lib)));
   assert.equal(daily.reason, 'TAMPERED');
   assert.ok(Date.now() - started < 200, 'waited ' + (Date.now() - started) + 'ms');
 });

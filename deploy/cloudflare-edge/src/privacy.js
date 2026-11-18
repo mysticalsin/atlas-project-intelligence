@@ -8,7 +8,7 @@
 // person's pseudonymous subject key, with the notice version, the SHA-256 of the exact wording shown, a timestamp and the channel.
 // Flags. restricted (Art 18) and the three objections (Art 21) stop scoring, matching and memory for the person's references. The person sets them for themselves only.
 import { PRIVACY } from './policy.generated.js';
-import { anchoredVerdict, sha256Hex, verifyChain } from './audit-chain.js';
+import { sha256Hex } from './audit-chain.js';
 import { obj, fail } from './util.js';
 
 export const NOTICE_VERSION = PRIVACY.version;
@@ -169,7 +169,7 @@ export function recordReceipts(lib, subject, items, { channel = 'api', now = lib
       lib.exec('INSERT INTO consent_receipts (id, subject, purpose, granted, notice_version, text_sha256, at, channel) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', row.id, row.subject, row.purpose, row.granted, row.notice_version, row.text_sha256, row.at, row.channel);
       out.push({ purpose: row.purpose, granted: row.granted === 1, at: row.at, channel: row.channel });
     }
-    const verdict = anchoredVerdict(lib.sql, verifyChain(lib.sql, lib.auditKey, lib.dbId));
+    const verdict = lib.chainVerdict();
     if (verdict.ok) lib.log('privacy', subj, 'consent receipt', out.map(r => r.purpose).join(','));
     return { recorded: out, state: latest };
   }, { allowDamaged: true });

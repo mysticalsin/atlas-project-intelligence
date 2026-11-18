@@ -6,7 +6,6 @@
 // addresses only. The pull connector's shape is ASSUMED (§5.3); push (§5.4) and the CSV export (§5.6) are equal options.
 import { str, email as validEmail, obj, fail, inList, rateLimit } from './util.js';
 import { TENANT_ID } from './authz.js';
-import { anchoredVerdict, verifyChain } from './audit-chain.js';
 import { placeholders, readChunks, writeChunks } from './sql-bound.js';
 
 // Flipped by the owning track only when the zero-config acceptance suites pass (WOW_SPEC §2.1, §2.5): flipped in Z-S2
@@ -539,7 +538,7 @@ function importPart(lib, env, user, body, source) {
   if (!Number.isInteger(part) || part < 1 || part > 40) throw fail(400, 'part must be a whole number from 1 to 40.');
   if (!Array.isArray(rows) || rows.length > 500) throw fail(400, 'Send at most 500 rows per part.');
   if (b.final !== undefined && typeof b.final !== 'boolean') throw fail(400, 'final must be true or false.');
-  const verdict = anchoredVerdict(lib.sql, verifyChain(lib.sql, lib.auditKey, lib.dbId));
+  const verdict = lib.chainVerdict();
   if (!verdict.ok) { const err = fail(409, 'The audit chain is tampered.'); err.code = verdict.reason; throw err; }
   let imp = lib.rows('SELECT * FROM directory_imports WHERE batch = ? AND lower(COALESCE(tenant, \'\')) = ?', batch, tenant)[0];
   if (imp && (imp.state !== 'staged' || imp.source !== source)) throw fail(409, 'This import batch is already finished.');

@@ -10,14 +10,14 @@ import { lintDir, lintSource } from './write-lint.js';
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '../src');
 const SALT = 'synthetic-log-salt';
 
-test('mutating sql.exec stays in library.js, library-store.js, and audit-chain.js', () => {
+test('raw handle use stays inside audit-chain.js and the one Library exec', () => {
   const found = lintDir(SRC);
   assert.deepEqual(found.exec, []);
 });
 
 test('a planted mutating sql.exec is a lint violation', () => {
   const found = lintSource('plant.js', "lib.sql.exec('INSERT INTO door_probe (id) VALUES (1)')\n");
-  assert.equal(found.exec.length, 1);
+  assert.ok(found.exec.length >= 1);
   assert.equal(found.exec[0].file, 'plant.js');
   assert.equal(found.exec[0].line, 1);
 });

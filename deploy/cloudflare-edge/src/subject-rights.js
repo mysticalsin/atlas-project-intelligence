@@ -7,7 +7,6 @@
 // erasure_holds for the DPO, withdrawn from processing, and the person is told. Consent receipts stay (the record that a choice was made). Platform backups (Durable
 // Object point-in-time recovery) can outlast deletion for a period the notice states as to-verify.
 import { cleanReference } from './library.js';
-import { rewriteRows } from './audit-chain.js';
 import * as privacy from './privacy.js';
 import { subjectHash } from './privacy.js';
 import { str, obj, fail } from './util.js';
@@ -160,14 +159,14 @@ export function pseudonymiseAudit(lib, emails, token, { ids = null } = {}) {
   const list = (Array.isArray(emails) ? emails : [emails]).map(e => String(e || '').toLowerCase()).filter(Boolean);
   if (!list.length) return { changed: 0, head: null };
   const allow = ids == null ? null : new Set(ids);
-  return rewriteRows(lib.sql, r => {
+  return lib.rewriteAudit(r => {
     const id = String(r.id || '');
     const actorHit = list.includes(String(r.actor || '').toLowerCase());
     const detailHit = list.some(e => mentions(r.detail, e));
     if (!actorHit && !detailHit) return null;
     if (allow && !allow.has(id) && !PRIVACY_LOG.has(id)) return null;
     return { actor: token, detail: '' };
-  }, lib.auditKey, lib.dbId);
+  });
 }
 
 const inBids = (lib, refId) => tableExists(lib, 'bid_references') && lib.rows('SELECT 1 AS x FROM bid_references WHERE ref_id = ? LIMIT 1', refId).length > 0;

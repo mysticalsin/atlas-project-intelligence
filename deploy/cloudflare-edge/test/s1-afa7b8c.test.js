@@ -4,7 +4,7 @@
 // A production Teams message with no LOG_SALT returns JSON 503 before LIBRARY.get.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { verifyDaily } from '../src/audit-chain.js';
 import * as outreach from '../src/outreach.js';
 import * as profile from '../src/profile.js';
@@ -48,16 +48,16 @@ function open(extra = {}) {
   return { sql, lib };
 }
 function n(lib, table, where = '', ...p) {
-  if (!lib.sql.exec("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", table).toArray()[0]) return 0;
-  return lib.sql.exec(`SELECT COUNT(*) AS n FROM ${table}${where ? ' WHERE ' + where : ''}`, ...p).toArray()[0].n;
+  if (!sqlOf(lib).exec("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", table).toArray()[0]) return 0;
+  return sqlOf(lib).exec(`SELECT COUNT(*) AS n FROM ${table}${where ? ' WHERE ' + where : ''}`, ...p).toArray()[0].n;
 }
 function tamper(lib) {
-  lib.sql.exec("UPDATE audit SET detail = detail || ' tampered' WHERE action != 'chain-start'");
+  sqlOf(lib).exec("UPDATE audit SET detail = detail || ' tampered' WHERE action != 'chain-start'");
 }
 function truncate(lib) {
-  const daily = verifyDaily(lib.sql, SALT, lib.dbId);
+  const daily = verifyDaily(sqlOf(lib), SALT, lib.dbId);
   assert.equal(daily.reason, 'CHAIN_VERIFIED');
-  lib.sql.exec('DELETE FROM audit WHERE seq = (SELECT MAX(seq) FROM audit)');
+  sqlOf(lib).exec('DELETE FROM audit WHERE seq = (SELECT MAX(seq) FROM audit)');
 }
 
 test('an empty manager_email staffing row on a tampered chain leaves staffing count 0', async () => {
@@ -89,7 +89,7 @@ test('MessageWritesBlocked on a tampered chain leaves the conversation active', 
   const inv = lib.invite('atlas', { email: 'ada@example.test', reason: 'manual', projectId: 'PRJ-1', title: 'Pilot', source: 'test' });
   outreach.queue(lib, { kind: 'interview_invite', subjectId: inv.id, toEmail: 'ada@example.test', preview: { title: 'Pilot', text: 'A short interview.' } });
   const row = lib.rows("SELECT * FROM outreach WHERE channel = 'teams' AND subject_id = ?", inv.id)[0];
-  lib.sql.exec(`INSERT INTO teams_conversations (subject, aad_object_id, tenant_id, teams_user_id, conversation_id, service_url, email, status, updated_at)
+  sqlOf(lib).exec(`INSERT INTO teams_conversations (subject, aad_object_id, tenant_id, teams_user_id, conversation_id, service_url, email, status, updated_at)
     VALUES (?, ?, ?, '29:ada', 'a:conv', ?, 'ada@example.test', 'active', ?)`,
     `${TENANT}:${OID}`, OID, TENANT, SERVICE, STAMP);
   let sends = 0;
@@ -136,11 +136,11 @@ test('a Teams decline of a hidden reference on a tampered chain stays open', asy
   const { lib } = open();
   const saved = await lib.upsert(OWNER, { localId: 'p1', reference: REF() });
   outreach.ensure(lib);
-  lib.sql.exec(`INSERT INTO invitations (id, email, project_id, title, reason, slot, reference_id, status, created_at, source, tenant)
+  sqlOf(lib).exec(`INSERT INTO invitations (id, email, project_id, title, reason, slot, reference_id, status, created_at, source, tenant)
     VALUES ('inv-hidden', 'bea@example.test', 'PRJ-9', 'Hidden', 'manual', '', ?, 'open', ?, 'test', '')`, saved.id, STAMP);
-  lib.sql.exec(`INSERT INTO outreach (id, kind, subject_id, channel, to_email, status, reason, payload, aad_object_id, created_at, tenant, directory_tenant, conversation_id)
+  sqlOf(lib).exec(`INSERT INTO outreach (id, kind, subject_id, channel, to_email, status, reason, payload, aad_object_id, created_at, tenant, directory_tenant, conversation_id)
     VALUES ('out-hidden', 'interview_invite', 'inv-hidden', 'teams', 'bea@example.test', 'sent', '', '{}', ?, ?, '', ?, 'a:conv')`, OID, STAMP, TENANT);
-  lib.sql.exec(`INSERT INTO teams_conversations (subject, aad_object_id, tenant_id, teams_user_id, conversation_id, service_url, email, status, updated_at)
+  sqlOf(lib).exec(`INSERT INTO teams_conversations (subject, aad_object_id, tenant_id, teams_user_id, conversation_id, service_url, email, status, updated_at)
     VALUES (?, ?, ?, '29:bea', 'a:conv', ?, 'bea@example.test', 'active', ?)`, `${TENANT}:${OID}`, OID, TENANT, SERVICE, STAMP);
   tamper(lib);
   let statusCode = 200;
@@ -204,7 +204,7 @@ function teamsReady(lib) {
   const inv = lib.invite('atlas', { email: 'ada@example.test', reason: 'manual', projectId: 'PRJ-SEND', title: 'Pilot', source: 'test' });
   outreach.queue(lib, { kind: 'interview_invite', subjectId: inv.id, toEmail: 'ada@example.test', preview: { title: 'Pilot', text: 'A short interview.' } });
   const row = lib.rows("SELECT * FROM outreach WHERE channel = 'teams' AND subject_id = ?", inv.id)[0];
-  lib.sql.exec(`INSERT INTO teams_conversations (subject, aad_object_id, tenant_id, teams_user_id, conversation_id, service_url, email, status, updated_at)
+  sqlOf(lib).exec(`INSERT INTO teams_conversations (subject, aad_object_id, tenant_id, teams_user_id, conversation_id, service_url, email, status, updated_at)
     VALUES (?, ?, ?, '29:ada', 'a:send', ?, 'ada@example.test', 'active', ?)`,
     `${TENANT}:${OID}`, OID, TENANT, SERVICE, STAMP);
   return row;

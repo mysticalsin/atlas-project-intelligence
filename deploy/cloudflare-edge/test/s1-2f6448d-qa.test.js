@@ -1,7 +1,7 @@
 // Non-writer QA of 2f6448d5. These fail on that tree.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { memorySql } from './sqlite.js';
 import { appendAudit, verifyDaily, GENESIS } from '../src/audit-chain.js';
 
@@ -19,15 +19,15 @@ function suffix(sql) {
   sql.exec(MAIN);
   sql.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', 'story', EMAIL, 'saved', STAMP, 'legacy');
   const lib = new Library(sql, { now: () => STAMP });
-  appendAudit(lib.sql, { id: 'story', actor: EMAIL, action: 'saved', at: STAMP, detail: 'later' });
-  const seeded = verifyDaily(lib.sql);
+  appendAudit(sqlOf(lib), { id: 'story', actor: EMAIL, action: 'saved', at: STAMP, detail: 'later' });
+  const seeded = verifyDaily(sqlOf(lib));
   assert.equal(seeded.reason, 'CHAIN_VERIFIED');
   assert.equal(seeded.checked, 2);
-  lib.sql.exec('DELETE FROM audit WHERE action = ? OR "commit" IS NULL', 'chain-start');
-  const left = lib.sql.exec('SELECT prev_hash, hash FROM audit').toArray();
+  sqlOf(lib).exec('DELETE FROM audit WHERE action = ? OR "commit" IS NULL', 'chain-start');
+  const left = sqlOf(lib).exec('SELECT prev_hash, hash FROM audit').toArray();
   assert.equal(left.length, 1);
   assert.notEqual(left[0].prev_hash, GENESIS);
-  return { sql: lib.sql, hash: left[0].hash, anchor: anchorRows(lib.sql)[0] };
+  return { sql: sqlOf(lib), hash: left[0].hash, anchor: anchorRows(sqlOf(lib))[0] };
 }
 
 test('a signed suffix with the anchor deleted is not chain-verified and does not write an anchor', () => {
@@ -69,12 +69,12 @@ test('a lock error while probing a column is not read as a missing column', () =
   sql.exec(MAIN);
   sql.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', 'story', EMAIL, 'saved', STAMP, 'legacy');
   const lib = new Library(sql, { now: () => STAMP });
-  const daily = verifyDaily(lib.sql);
+  const daily = verifyDaily(sqlOf(lib));
   assert.equal(daily.reason, 'CHAIN_VERIFIED');
   const wrapped = {
     exec(q, ...params) {
       if (String(q).includes('SELECT "commit" FROM audit LIMIT 0')) throw new Error('database is locked');
-      return lib.sql.exec(q, ...params);
+      return sqlOf(lib).exec(q, ...params);
     },
   };
   assert.throws(() => verifyDaily(wrapped), /locked|busy/);

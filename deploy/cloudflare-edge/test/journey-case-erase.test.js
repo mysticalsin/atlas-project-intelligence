@@ -2,7 +2,7 @@
 // Another subject's row stays.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import { memorySql } from './sqlite.js';
 import { ensureJourney } from '../src/journey.js';
@@ -20,14 +20,14 @@ function library() {
 function seed(lib) {
   ensureJourney(lib);
   for (const subject of MINE) {
-    lib.sql.exec('INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)', subject, TENANT, '{}', '2026-11-18T00:00:00.000Z');
+    sqlOf(lib).exec('INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)', subject, TENANT, '{}', '2026-11-18T00:00:00.000Z');
   }
-  lib.sql.exec('INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)', OTHER, TENANT, '{}', '2026-11-18T00:00:00.000Z');
-  lib.sql.exec('INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)', MINE[0], OTHER_TENANT, '{}', '2026-11-18T00:00:00.000Z');
+  sqlOf(lib).exec('INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)', OTHER, TENANT, '{}', '2026-11-18T00:00:00.000Z');
+  sqlOf(lib).exec('INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)', MINE[0], OTHER_TENANT, '{}', '2026-11-18T00:00:00.000Z');
 }
 
 function subjects(lib) {
-  return lib.sql.exec('SELECT subject, tenant FROM journey ORDER BY tenant, subject').toArray();
+  return sqlOf(lib).exec('SELECT subject, tenant FROM journey ORDER BY tenant, subject').toArray();
 }
 
 test('mixed-case journey rows for one subject are removed by eraseMine and by privacy delete', async () => {

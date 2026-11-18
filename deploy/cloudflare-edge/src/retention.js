@@ -4,7 +4,6 @@
 // the platform, a per-person prune or a Durable Object alarm (see notSwept).
 import { RETENTION } from './policy.generated.js';
 import { eraseRefContent } from './subject-rights.js';
-import { rewriteRows } from './audit-chain.js';
 import * as privacy from './privacy.js';
 
 const parse = (s, fallback) => { try { return JSON.parse(s); } catch { return fallback; } };
@@ -72,14 +71,14 @@ export function sweep(lib, { now = lib.now(), retention = RETENTION, tenant } = 
   // Audit rows older than the period become a tombstone. The proof is stored and later hashes stay, so the head does not move.
   if (c('audit')) {
     const cut = before(now, c('audit')), names = new Map();
-    const r = rewriteRows(lib.sql, row => {
+    const r = lib.rewriteAudit(row => {
       if (!refIds.has(String(row.id || ''))) return null;
       if (row.at >= cut || (String(row.actor || '').startsWith('erased:') && row.detail === '')) return null;
       const personal = row.actor && !SYSTEM_ACTORS.has(row.actor) && !String(row.actor).startsWith('erased:');
       if (!personal && row.detail === '') return null;
       if (!names.has(row.actor)) names.set(row.actor, token());
       return { actor: names.get(row.actor), detail: '' };
-    }, lib.auditKey, lib.dbId);
+    });
     if (r.refused) out.auditRefused = { reason: r.reason, brokenSeq: r.brokenSeq }; // X1 (red M8): a chain that does not verify is left untouched; the cron reports it
     else if (r.changed) { add('auditRows', r.changed); out.auditHead = r.head; out.auditPreviousHead = r.previousHead; }
   }

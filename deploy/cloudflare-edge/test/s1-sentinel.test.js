@@ -1,7 +1,7 @@
 // Sentinel delta on cdb55bcc. These fail on that tree.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import { memorySql } from './sqlite.js';
 import { verifyChain } from '../src/audit-chain.js';
@@ -33,26 +33,26 @@ test('verifyChain compares prev_hash with the shared timing-safe helper', () => 
 test('tenant privacy delete removes a manager-only trust row, as on main', async () => {
   const lib = store();
   const stamp = '2026-11-16T00:00:00.000Z';
-  lib.sql.exec('INSERT INTO manager_trust (owner, email, source, tenant, at) VALUES (?, ?, ?, ?, ?)', 'kim@example.test', EMAIL, 'directory', A, stamp);
-  lib.sql.exec('INSERT INTO manager_trust (owner, email, source, tenant, at) VALUES (?, ?, ?, ?, ?)', EMAIL, 'sam@example.test', 'directory', A, stamp);
-  lib.sql.exec('INSERT INTO manager_trust (owner, email, source, tenant, at) VALUES (?, ?, ?, ?, ?)', 'kim@example.test', EMAIL, 'directory', B, stamp);
+  sqlOf(lib).exec('INSERT INTO manager_trust (owner, email, source, tenant, at) VALUES (?, ?, ?, ?, ?)', 'kim@example.test', EMAIL, 'directory', A, stamp);
+  sqlOf(lib).exec('INSERT INTO manager_trust (owner, email, source, tenant, at) VALUES (?, ?, ?, ?, ?)', EMAIL, 'sam@example.test', 'directory', A, stamp);
+  sqlOf(lib).exec('INSERT INTO manager_trust (owner, email, source, tenant, at) VALUES (?, ?, ?, ?, ?)', 'kim@example.test', EMAIL, 'directory', B, stamp);
   const res = await privacyDelete(lib);
   assert.equal(res.status, 200);
-  assert.equal(lib.sql.exec('SELECT owner FROM manager_trust WHERE tenant = ? AND owner = ?', A, 'kim@example.test').toArray().length, 0);
-  assert.equal(lib.sql.exec('SELECT owner FROM manager_trust WHERE tenant = ? AND owner = ?', A, EMAIL).toArray().length, 0);
-  assert.equal(lib.sql.exec('SELECT email FROM manager_trust WHERE tenant = ?', B).toArray()[0].email, EMAIL);
+  assert.equal(sqlOf(lib).exec('SELECT owner FROM manager_trust WHERE tenant = ? AND owner = ?', A, 'kim@example.test').toArray().length, 0);
+  assert.equal(sqlOf(lib).exec('SELECT owner FROM manager_trust WHERE tenant = ? AND owner = ?', A, EMAIL).toArray().length, 0);
+  assert.equal(sqlOf(lib).exec('SELECT email FROM manager_trust WHERE tenant = ?', B).toArray()[0].email, EMAIL);
 });
 
 test('tenant privacy delete leaves another person\'s directory manager address, as on main', async () => {
   const lib = store();
-  lib.sql.exec('INSERT INTO directory (key, source, name, manager_email, tenant) VALUES (?, ?, ?, ?, ?)', 'kim@example.test', 'dna', 'Kim', EMAIL, A);
-  lib.sql.exec('INSERT INTO directory (key, source, name, manager_email, tenant) VALUES (?, ?, ?, ?, ?)', EMAIL, 'dna', 'Ada', 'sam@example.test', A);
-  lib.sql.exec('INSERT INTO directory (key, source, name, manager_email, tenant) VALUES (?, ?, ?, ?, ?)', 'kim@example.test', 'dna', 'Kim', EMAIL, B);
+  sqlOf(lib).exec('INSERT INTO directory (key, source, name, manager_email, tenant) VALUES (?, ?, ?, ?, ?)', 'kim@example.test', 'dna', 'Kim', EMAIL, A);
+  sqlOf(lib).exec('INSERT INTO directory (key, source, name, manager_email, tenant) VALUES (?, ?, ?, ?, ?)', EMAIL, 'dna', 'Ada', 'sam@example.test', A);
+  sqlOf(lib).exec('INSERT INTO directory (key, source, name, manager_email, tenant) VALUES (?, ?, ?, ?, ?)', 'kim@example.test', 'dna', 'Kim', EMAIL, B);
   const res = await privacyDelete(lib);
   assert.equal(res.status, 200);
-  const kim = lib.sql.exec('SELECT key, manager_email FROM directory WHERE tenant = ? AND key = ?', A, 'kim@example.test').toArray()[0];
+  const kim = sqlOf(lib).exec('SELECT key, manager_email FROM directory WHERE tenant = ? AND key = ?', A, 'kim@example.test').toArray()[0];
   assert.equal(kim.key, 'kim@example.test');
   assert.equal(kim.manager_email, EMAIL);
-  assert.equal(lib.sql.exec('SELECT key FROM directory WHERE tenant = ? AND key = ?', A, EMAIL).toArray().length, 0);
-  assert.equal(lib.sql.exec('SELECT manager_email FROM directory WHERE tenant = ?', B).toArray()[0].manager_email, EMAIL);
+  assert.equal(sqlOf(lib).exec('SELECT key FROM directory WHERE tenant = ? AND key = ?', A, EMAIL).toArray().length, 0);
+  assert.equal(sqlOf(lib).exec('SELECT manager_email FROM directory WHERE tenant = ?', B).toArray()[0].manager_email, EMAIL);
 });

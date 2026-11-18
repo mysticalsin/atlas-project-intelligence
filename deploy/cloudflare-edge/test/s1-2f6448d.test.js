@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { Worker } from 'node:worker_threads';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { memorySql } from './sqlite.js';
 import { appendAudit, verifyDaily } from '../src/audit-chain.js';
 
@@ -77,10 +77,10 @@ test('a throw after each first-migration step leaves the main-shaped table and t
     assert.equal(starts(sql), 0, 'step ' + step);
     assert.equal(sql.exec('SELECT actor, detail FROM audit').toArray()[0].detail, 'legacy note');
     const lib = new Library(sql, { now: () => STAMP, auditKey: KEY });
-    const daily = verifyDaily(lib.sql, KEY);
+    const daily = verifyDaily(sqlOf(lib), KEY);
     assert.equal(daily.ok, true, 'step ' + step);
     assert.equal(daily.reason, 'CHAIN_VERIFIED', 'step ' + step);
-    assert.equal(starts(lib.sql), 1, 'step ' + step);
+    assert.equal(starts(sqlOf(lib)), 1, 'step ' + step);
   }
 });
 
@@ -109,18 +109,18 @@ test('deleting the signed chain-start stays tampered and does not clear the anch
   sql.exec(MAIN);
   sql.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', 'story', EMAIL, 'saved', STAMP, 'legacy');
   const lib = new Library(sql, { now: () => STAMP, auditKey: KEY });
-  appendAudit(lib.sql, { id: 'story', actor: EMAIL, action: 'saved', at: STAMP, detail: 'after' }, KEY);
-  const seeded = verifyDaily(lib.sql, KEY);
+  appendAudit(sqlOf(lib), { id: 'story', actor: EMAIL, action: 'saved', at: STAMP, detail: 'after' }, KEY);
+  const seeded = verifyDaily(sqlOf(lib), KEY);
   assert.equal(seeded.reason, 'CHAIN_VERIFIED');
-  const anchor = anchorOf(lib.sql);
-  lib.sql.exec("DELETE FROM audit WHERE action = 'chain-start'");
-  const daily = verifyDaily(fresh(lib.sql), KEY);
+  const anchor = anchorOf(sqlOf(lib));
+  sqlOf(lib).exec("DELETE FROM audit WHERE action = 'chain-start'");
+  const daily = verifyDaily(fresh(sqlOf(lib)), KEY);
   assert.equal(daily.ok, false);
   assert.equal(daily.reason, 'TAMPERED');
-  const still = anchorOf(lib.sql);
+  const still = anchorOf(sqlOf(lib));
   assert.equal(Number(still.n), Number(anchor.n));
   assert.equal(still.head, anchor.head);
-  assert.equal(starts(lib.sql), 0);
+  assert.equal(starts(sqlOf(lib)), 0);
 });
 
 test('an anchor planted on a main-shaped table stays tampered', () => {
@@ -131,14 +131,14 @@ test('an anchor planted on a main-shaped table stays tampered', () => {
   sql.exec('CREATE TABLE audit_anchor (id INTEGER PRIMARY KEY CHECK (id = 1), n INTEGER NOT NULL, head TEXT NOT NULL)');
   sql.exec('INSERT INTO audit_anchor (id, n, head) VALUES (1, 2, ?)', 'ab'.repeat(32));
   const lib = new Library(sql, { now: () => STAMP, auditKey: KEY });
-  const daily = verifyDaily(lib.sql, KEY);
+  const daily = verifyDaily(sqlOf(lib), KEY);
   assert.equal(daily.ok, false);
   assert.equal(daily.reason, 'TAMPERED');
-  assert.equal(starts(lib.sql), 0);
-  const anchor = anchorOf(lib.sql);
+  assert.equal(starts(sqlOf(lib)), 0);
+  const anchor = anchorOf(sqlOf(lib));
   assert.equal(Number(anchor.n), 2);
   assert.equal(anchor.head, 'ab'.repeat(32));
-  assert.equal(lib.sql.exec('SELECT actor FROM audit WHERE seq = 2').toArray()[0].actor, MALLORY);
+  assert.equal(sqlOf(lib).exec('SELECT actor FROM audit WHERE seq = 2').toArray()[0].actor, MALLORY);
 });
 
 test('a kept commit column with nulled commits marks the library line unverified', () => {
@@ -147,7 +147,7 @@ test('a kept commit column with nulled commits marks the library line unverified
   appendAudit(sql, { id: 'story', actor: MALLORY, action: 'saved', at: STAMP, detail: 'forged' }, KEY);
   sql.exec('UPDATE audit SET "commit" = NULL');
   const lib = new Library(sql, { now: () => STAMP, auditKey: KEY });
-  lib.sql.exec('INSERT INTO refs (id, owner, title, status, revision, data, state, tenant, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  sqlOf(lib).exec('INSERT INTO refs (id, owner, title, status, revision, data, state, tenant, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     'story', EMAIL, 'Story', 'draft', 1, DATA, STATE, A, STAMP, STAMP);
   const view = lib.get({ email: EMAIL, role: 'admin', tenant: A }, 'story');
   assert.equal(view.audit.length, 1);

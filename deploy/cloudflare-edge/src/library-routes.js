@@ -9,7 +9,6 @@ import { adminRoutes, journeyRoutes, privacyRoutes } from './operate.js';
 import { internalRoutes as privacyInternal } from './privacy-routes.js';
 import { sweep as retentionSweep } from './retention.js';
 import { holdRoutes } from './subject-rights.js';
-import { verifyDaily } from './audit-chain.js';
 import { secEvent } from './security-log.js';
 import { productionDemoConflict, resolveTenantEnforcement } from './authz.js';
 export const SYSTEM = { email: 'atlas', role: 'admin' }; // automatic review after a save
@@ -20,7 +19,7 @@ function scopedReviewer(user = {}) {
 const canRate = lib => !!(lib.complete || lib.rater?.available());
 async function reportChain(lib, env) {
   try {
-    const r = verifyDaily(lib.sql, lib.auditKey, lib.dbId);
+    const r = lib.dailyChain();
     const head = String(r.head || '').slice(0, 16);
     if (r.ok) await secEvent(env, 'audit_chain_ok', { reason: 'CHAIN_VERIFIED', n: r.checked, head, legacy: r.legacyUnverified || 0 });
     else await secEvent(env, 'audit_chain_break', { reason: r.reason || 'VERIFY_FAILED', n: r.brokenSeq ?? r.checked, head });

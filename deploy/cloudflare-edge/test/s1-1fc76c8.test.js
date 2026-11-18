@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { handle } from '../src/app.js';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { memorySql } from './sqlite.js';
 import { appendAudit, sha256Hex, verifyChain, verifyDaily, GENESIS } from '../src/audit-chain.js';
 import { eraseMine } from '../src/subject-rights.js';
@@ -150,10 +150,10 @@ test('invalid sheet JSON is 400 before the limiter', async () => {
 test('privacy delete refuses when the store has no transaction', async () => {
   const lib = new Library(memorySql(), { now: () => STAMP });
   ensureJourney(lib);
-  lib.sql.exec('INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)', EMAIL, A, '{}', STAMP);
+  sqlOf(lib).exec('INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)', EMAIL, A, '{}', STAMP);
   delete lib.transactionSync;
   await assert.rejects(() => privacyRoutes({ method: 'POST', parts: ['privacy', 'delete'], user: { email: EMAIL, mail: EMAIL, role: 'user', tenant: A, tenantEnforced: true }, lib, env: DELETE_ENV, body: {} }), /atomic/);
-  assert.equal(lib.sql.exec('SELECT subject FROM journey WHERE subject = ? AND tenant = ?', EMAIL, A).toArray().length, 1);
+  assert.equal(sqlOf(lib).exec('SELECT subject FROM journey WHERE subject = ? AND tenant = ?', EMAIL, A).toArray().length, 1);
 });
 
 test('subject erasure scrubs a copy that holds only the mail address', () => {
@@ -163,33 +163,33 @@ test('subject erasure scrubs a copy that holds only the mail address', () => {
   const mixed = 'Ada.Mail@Example.Test';
   const longer = MAIL + '.au';
   for (const tenant of [A, B]) {
-    lib.sql.exec('INSERT INTO refs (id, owner, title, status, revision, data, state, tenant, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    sqlOf(lib).exec('INSERT INTO refs (id, owner, title, status, revision, data, state, tenant, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       'story-' + tenant.slice(0, 4), 'kim@example.test', 'Kim', 'draft', 1, '{}', '{}', tenant, STAMP, STAMP);
     lib.log('story-' + tenant.slice(0, 4), 'kim@example.test', 'interview invitation', 'manual for ' + mixed);
-    lib.sql.exec('INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    sqlOf(lib).exec('INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       'kim@example.test', tenant, 'kim@example.test', JSON.stringify({ managerEmail: { value: mixed, at: STAMP } }), '{}', '{}', STAMP, STAMP, STAMP);
-    lib.sql.exec('INSERT INTO directory_imports (batch, tenant, source, by, started_at, finished_at, rows, rejected, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    sqlOf(lib).exec('INSERT INTO directory_imports (batch, tenant, source, by, started_at, finished_at, rows, rejected, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       'batch-' + tenant.slice(0, 4), tenant, 'csv', mixed, STAMP, STAMP, 1, 0, 'applied');
-    lib.sql.exec('INSERT INTO outreach (id, kind, subject_id, channel, to_email, status, payload, created_at, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    sqlOf(lib).exec('INSERT INTO outreach (id, kind, subject_id, channel, to_email, status, payload, created_at, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       'out-' + tenant.slice(0, 4), 'gap_request', 'subj-' + tenant.slice(0, 4), 'email_draft', 'kim@example.test', 'pending_approval', JSON.stringify({ note: 'please ask ' + mixed }), STAMP, tenant);
   }
-  lib.sql.exec('INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  sqlOf(lib).exec('INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     'sam@example.test', A, 'sam@example.test', JSON.stringify({ managerEmail: { value: longer, at: STAMP } }), '{}', '{}', STAMP, STAMP, STAMP);
   eraseMine(lib, { email: EMAIL, mail: MAIL, role: 'user', tenant: A, tenantEnforced: true, subj: 'ab'.repeat(16) }, 'ab'.repeat(16));
   const hasMail = value => String(value || '').toLowerCase().includes(MAIL);
-  const auditA = lib.sql.exec('SELECT actor, detail FROM audit WHERE id = ?', 'story-abcd').toArray()[0];
+  const auditA = sqlOf(lib).exec('SELECT actor, detail FROM audit WHERE id = ?', 'story-abcd').toArray()[0];
   assert.equal(hasMail(JSON.stringify(auditA)), false);
-  assert.equal(lib.sql.exec('SELECT detail FROM audit WHERE id = ?', 'story-bbbb').toArray()[0].detail, 'manual for ' + mixed);
-  const kimA = JSON.parse(lib.sql.exec('SELECT edits FROM profiles WHERE subject = ? AND tenant = ?', 'kim@example.test', A).toArray()[0].edits);
-  const kimB = JSON.parse(lib.sql.exec('SELECT edits FROM profiles WHERE subject = ? AND tenant = ?', 'kim@example.test', B).toArray()[0].edits);
-  const samA = JSON.parse(lib.sql.exec('SELECT edits FROM profiles WHERE subject = ? AND tenant = ?', 'sam@example.test', A).toArray()[0].edits);
+  assert.equal(sqlOf(lib).exec('SELECT detail FROM audit WHERE id = ?', 'story-bbbb').toArray()[0].detail, 'manual for ' + mixed);
+  const kimA = JSON.parse(sqlOf(lib).exec('SELECT edits FROM profiles WHERE subject = ? AND tenant = ?', 'kim@example.test', A).toArray()[0].edits);
+  const kimB = JSON.parse(sqlOf(lib).exec('SELECT edits FROM profiles WHERE subject = ? AND tenant = ?', 'kim@example.test', B).toArray()[0].edits);
+  const samA = JSON.parse(sqlOf(lib).exec('SELECT edits FROM profiles WHERE subject = ? AND tenant = ?', 'sam@example.test', A).toArray()[0].edits);
   assert.equal(hasMail(kimA.managerEmail.value), false);
   assert.equal(kimB.managerEmail.value, mixed);
   assert.equal(samA.managerEmail.value, longer);
-  assert.equal(lib.sql.exec('SELECT by FROM directory_imports WHERE tenant = ?', A).toArray()[0].by.toLowerCase() === MAIL, false);
-  assert.equal(lib.sql.exec('SELECT by FROM directory_imports WHERE tenant = ?', B).toArray()[0].by, mixed);
-  const outA = lib.sql.exec('SELECT payload FROM outreach WHERE tenant = ?', A).toArray()[0];
-  const outB = lib.sql.exec('SELECT payload FROM outreach WHERE tenant = ?', B).toArray()[0];
+  assert.equal(sqlOf(lib).exec('SELECT by FROM directory_imports WHERE tenant = ?', A).toArray()[0].by.toLowerCase() === MAIL, false);
+  assert.equal(sqlOf(lib).exec('SELECT by FROM directory_imports WHERE tenant = ?', B).toArray()[0].by, mixed);
+  const outA = sqlOf(lib).exec('SELECT payload FROM outreach WHERE tenant = ?', A).toArray()[0];
+  const outB = sqlOf(lib).exec('SELECT payload FROM outreach WHERE tenant = ?', B).toArray()[0];
   assert.equal(hasMail(outA.payload), false);
   assert.equal(outB.payload.includes(mixed), true);
 });

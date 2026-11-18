@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PUBLICATION_EVENTS, PUBLICATION_PHASES, publicationPairs, publicationStatus, publicationTransition } from '../src/publication.js';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { memorySql } from './sqlite.js';
 
 const OWNER = { email: 'ada@example.test', role: 'user' };
@@ -46,7 +46,7 @@ function plant(l, id, phase) {
   const state = { ...raw, ...fields };
   const json = JSON.stringify(state);
   assert.equal(Object.hasOwn(JSON.parse(json), 'version'), false);
-  l.sql.exec('UPDATE refs SET state = ?, status = ? WHERE id = ?', json, status, id);
+  sqlOf(l).exec('UPDATE refs SET state = ?, status = ? WHERE id = ?', json, status, id);
   return json;
 }
 
@@ -124,7 +124,7 @@ test('a merge with a legacy keeper completes or rolls back, and a conflict does 
   const gone = await story(l, 'folded');
   const contributed = l.row(gone.id).data;
   contributed.answers[1] = 'I built the routing model.';
-  l.sql.exec('UPDATE refs SET data = ? WHERE id = ?', JSON.stringify(contributed), gone.id);
+  sqlOf(l).exec('UPDATE refs SET data = ? WHERE id = ?', JSON.stringify(contributed), gone.id);
   plant(l, keep.id, 'published');
   assert.equal(l.rows('SELECT merged_into FROM refs WHERE id = ?', gone.id)[0].merged_into, null);
   await l.merge(REVIEWER, { keep: keep.id, merge: gone.id });
@@ -136,8 +136,8 @@ test('a merge with a legacy keeper completes or rolls back, and a conflict does 
   const conflicted = library();
   const keeper = await story(conflicted, 'keeper');
   const other = await story(conflicted, 'other');
-  const exec = conflicted.sql.exec.bind(conflicted.sql);
-  conflicted.sql.exec = (q, ...p) => {
+  const exec = sqlOf(conflicted).exec.bind(sqlOf(conflicted));
+  sqlOf(conflicted).exec = (q, ...p) => {
     const text = String(q);
     if (text.includes('UPDATE refs SET title=?')) exec('UPDATE refs SET revision = revision + 1 WHERE id = ?', keeper.id);
     return exec(q, ...p);
@@ -149,8 +149,8 @@ test('a merge with a legacy keeper completes or rolls back, and a conflict does 
 test('upsert conflicts on the stored revision and does not write the new revision', async () => {
   const l = library();
   const saved = await story(l, 'one');
-  const exec = l.sql.exec.bind(l.sql);
-  l.sql.exec = (q, ...p) => {
+  const exec = sqlOf(l).exec.bind(sqlOf(l));
+  sqlOf(l).exec = (q, ...p) => {
     const text = String(q);
     if (text.includes('UPDATE refs SET title=?')) exec('UPDATE refs SET revision = revision + 1 WHERE id = ?', saved.id);
     return exec(q, ...p);
@@ -207,7 +207,7 @@ function mismatch(l, id) {
   const state = { ...raw, withdrawn: false, test: false, quality: { status: 'ready', score: 90 }, validation: { status: 'validated' } };
   delete state.validation.managerDecision;
   delete state.validation.presalesDecision;
-  l.sql.exec('UPDATE refs SET state = ?, status = ? WHERE id = ?', JSON.stringify(state), 'published', id);
+  sqlOf(l).exec('UPDATE refs SET state = ?, status = ? WHERE id = ?', JSON.stringify(state), 'published', id);
   const row = l.row(id);
   assert.equal(row.storedStatus, 'published');
   assert.equal(row.status, 'awaiting_validation');
@@ -259,8 +259,8 @@ test('a legacy published column that decodes to awaiting_validation can withdraw
   const bumped = library();
   const stale = await story(bumped, 'stale');
   mismatch(bumped, stale.id);
-  const exec = bumped.sql.exec.bind(bumped.sql);
-  bumped.sql.exec = (q, ...p) => {
+  const exec = sqlOf(bumped).exec.bind(sqlOf(bumped));
+  sqlOf(bumped).exec = (q, ...p) => {
     if (String(q).includes('UPDATE refs SET state = ?')) exec('UPDATE refs SET revision = revision + 1 WHERE id = ?', stale.id);
     return exec(q, ...p);
   };
@@ -283,7 +283,7 @@ test('index parses every other row before writing, so one bad row is not a parti
   const b = await l.upsert(OWNER, { localId: 'b', reference: { title: 'B', details: { projectId: 'PRJ-SAME' } } });
   const c = await l.upsert(OWNER, { localId: 'c', reference: { title: 'C', details: { projectId: 'PRJ-SAME' } } });
   const broken = '{';
-  l.sql.exec('UPDATE refs SET state = ? WHERE id = ?', broken, c.id);
+  sqlOf(l).exec('UPDATE refs SET state = ? WHERE id = ?', broken, c.id);
   await l.index(a.id);
   const bState = JSON.parse(l.rows('SELECT state FROM refs WHERE id = ?', b.id)[0].state);
   const aState = JSON.parse(l.rows('SELECT state FROM refs WHERE id = ?', a.id)[0].state);
@@ -298,7 +298,7 @@ test('index leaves a null state unread, writes nothing for it, and continues', a
   const a = await l.upsert(OWNER, { localId: 'a', reference: { title: 'A', details: { projectId: 'PRJ-SAME' } } });
   const b = await l.upsert(OWNER, { localId: 'b', reference: { title: 'B', details: { projectId: 'PRJ-SAME' } } });
   const c = await l.upsert(OWNER, { localId: 'c', reference: { title: 'C', details: { projectId: 'PRJ-SAME' } } });
-  l.sql.exec('UPDATE refs SET state = ? WHERE id = ?', 'null', c.id);
+  sqlOf(l).exec('UPDATE refs SET state = ? WHERE id = ?', 'null', c.id);
   const warns = [];
   const original = console.warn;
   console.warn = (...args) => warns.push(args.map(String).join(' '));
@@ -322,7 +322,7 @@ test('scanStale uses the stored status: a legacy published row is invited and a 
   const hidden = await story(l, 'gone');
   plant(l, live.id, 'published');
   plant(l, hidden.id, 'withdrawn');
-  l.sql.exec('UPDATE refs SET next_review = ?', '2000-01-01T00:00:00.000Z');
+  sqlOf(l).exec('UPDATE refs SET next_review = ?', '2000-01-01T00:00:00.000Z');
   assert.equal(l.scanStale(), 1);
   assert.equal(l.scanStale(), 1);
 });
@@ -331,7 +331,7 @@ test('a malformed story is skipped by the batch readers and the tenant still lis
   const l = library();
   const good = await story(l, 'good');
   const bad = await story(l, 'bad');
-  l.sql.exec('UPDATE refs SET state = ? WHERE id = ?', '{', bad.id);
+  sqlOf(l).exec('UPDATE refs SET state = ? WHERE id = ?', '{', bad.id);
   const warns = [];
   const original = console.warn;
   console.warn = (...args) => warns.push(args);
@@ -339,7 +339,7 @@ test('a malformed story is skipped by the batch readers and the tenant still lis
     assert.equal(l.list(OWNER).total, 1);
     assert.equal(l.list(OWNER).items[0].id, good.id);
     assert.equal(l.exportAll(ADMIN).references.length, 1);
-    l.sql.exec('UPDATE refs SET next_review = ?', '2000-01-01T00:00:00.000Z');
+    sqlOf(l).exec('UPDATE refs SET next_review = ?', '2000-01-01T00:00:00.000Z');
     assert.equal(l.scanStale(), 1);
   } finally {
     console.warn = original;

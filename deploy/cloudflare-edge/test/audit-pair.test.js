@@ -2,7 +2,7 @@
 // write, still inside that transaction, leaves neither the row nor the audit line.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { memorySql } from './sqlite.js';
 
 const SALT = 'synthetic-log-salt';
@@ -21,7 +21,7 @@ const REF = () => ({
 });
 
 function count(lib, table, where = '', ...params) {
-  return lib.sql.exec(`SELECT COUNT(*) AS n FROM ${table}${where ? ' WHERE ' + where : ''}`, ...params).toArray()[0].n;
+  return sqlOf(lib).exec(`SELECT COUNT(*) AS n FROM ${table}${where ? ' WHERE ' + where : ''}`, ...params).toArray()[0].n;
 }
 
 test('a tenant story write and its audit line commit or roll back together', async () => {

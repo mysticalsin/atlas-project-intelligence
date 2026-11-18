@@ -14,7 +14,7 @@ import { RatingError, ratingInput, questionPlan, requestBody, compose, agentQual
 import { profileFold, profileSelection, storedConsent } from './profile.js';
 import { placeholders, readChunks } from './sql-bound.js';
 import { sameTenant, TENANT_ID } from './authz.js';
-import { appendAudit, checkpointHead, ensureChain, verifyChain, anchoredVerdict } from './audit-chain.js';
+import { appendAudit, checkpointHead, ensureChain, verifyChain, anchoredVerdict, rewriteRows, verifyDaily } from './audit-chain.js';
 import { recordUsage } from './telemetry.js';
 import { publicationEffect, publicationStatus, publicationTransition, readPublication } from './publication.js';
 import { invitationTransition, noteInvitation, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
@@ -22,6 +22,13 @@ function mutatingSql(sql) {
   const text = String(sql ?? '').replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ').trim();
   if (/^(insert|update|delete|replace|create|drop|alter|reindex|vacuum)\b/i.test(text)) return true;
   return /^with\b/i.test(text) && /\b(insert|update|delete|replace)\b/i.test(text);
+}
+// The storage handle stays in this map. It is not a property of Library.
+const HANDLES = new WeakMap();
+function rawSql(lib) {
+  const sql = HANDLES.get(lib);
+  if (!sql) throw fail(500, 'The raw SQL handle is private.');
+  return sql;
 }
 const DUPLICATE = 0.9; // cosine similarity above which two references are flagged as the same or a related project
 export const PRACTICES = { data_ai: 'Data & AI', web_app: 'Web & App Development', telecom: 'Telecom & Networks', sap_erp: 'SAP & ERP', cloud_infra: 'Cloud & Infrastructure', cybersecurity: 'Cybersecurity', transformation: 'Transformation & Strategy', engineering: 'Engineering & Industry' };
@@ -185,6 +192,7 @@ export class Library {
   constructor(sql, { now = () => new Date().toISOString(), newId = () => crypto.randomUUID().replace(/-/g, ''), complete = null, embed = null, readyScore = READY_SCORE, model = '', services = {},
     rater = null, metric = defaultMetric, transactionSync = null, auditKey = '', dbId = '' } = {}) {
     if (auditKey == null) throw Object.assign(fail(503, 'LOG_SALT is not set.'), { code: 'LOG_SALT' });
+    HANDLES.set(this, sql);
     const atomic = typeof transactionSync === 'function' ? transactionSync : (typeof sql?.transactionSync === 'function' ? sql.transactionSync.bind(sql) : null);
     // One synchronous transaction for a business write and its audit line. A 409 or a 503 rolls both back.
     // An inner call joins the open transaction. There is no await inside it: a returned promise is a mistake.
@@ -202,7 +210,7 @@ export class Library {
         this._appended = false;
         try {
           const result = this._enter(fn);
-          if (this._appended && !this._allowDamaged) checkpointHead(this.sql, this.auditKey, this.dbId);
+          if (this._appended && !this._allowDamaged) checkpointHead(rawSql(this), this.auditKey, this.dbId);
           return result;
         } finally {
           this._allowDamaged = false;
@@ -212,7 +220,7 @@ export class Library {
       try { return this._atomic(run); }
       finally { this._auditTx = 0; }
     };
-    Object.assign(this, { sql, _sql: sql, _door: 0, _appended: false, _allowDamaged: false, now, newId, complete, embed, readyScore, model, services, rater, metric, _atomic: atomic, _auditTx: 0, recorded, transactionSync: typeof atomic === 'function' ? recorded : null, auditKey, dbId: String(dbId ?? '') });
+    Object.assign(this, { _door: 0, _appended: false, _allowDamaged: false, now, newId, complete, embed, readyScore, model, services, rater, metric, _atomic: atomic, _auditTx: 0, recorded, transactionSync: typeof atomic === 'function' ? recorded : null, auditKey, dbId: String(dbId ?? '') });
     this.inflight = new Map(); // `${id}:${revision}` -> { gen, engine, first, all }: one rating per revision at a time
     this.schema(() => {
       for (const q of SCHEMA) this.exec(q);
@@ -222,11 +230,20 @@ export class Library {
       migrateManagerTrust(this);
       migrateStoryTenant(this);
     });
-    ensureChain(this.sql, this.auditKey, this.transactionSync, this.dbId);
+    ensureChain(rawSql(this), this.auditKey, this.transactionSync, this.dbId);
   }
 
-  // A mutating statement needs one of the three doors. Reads do not. sql stays the raw handle
-  // for audit-chain.js and for tests that seed or tamper below the door.
+  // A mutating statement needs one of the three doors. Reads do not. The one raw exec is below.
+  chainVerdict() {
+    const sql = rawSql(this);
+    return anchoredVerdict(sql, verifyChain(sql, this.auditKey, this.dbId));
+  }
+  rewriteAudit(edit) {
+    return rewriteRows(rawSql(this), edit, this.auditKey, this.dbId);
+  }
+  dailyChain() {
+    return verifyDaily(rawSql(this), this.auditKey, this.dbId);
+  }
   _enter(fn) {
     if (typeof fn !== 'function') throw fail(500, 'A library write needs a function.');
     this._door += 1;
@@ -240,7 +257,8 @@ export class Library {
   }
   exec(statement, ...params) {
     if (mutatingSql(statement) && !this._door) throw Object.assign(fail(500, 'A SQL write must run inside recorded, housekeeping, or schema.'), { code: 'SQL_DOOR' });
-    return this._sql.exec(statement, ...params);
+    const _sql = rawSql(this);
+    return _sql.exec(statement, ...params);
   }
   schema(fn) {
     return this._enter(fn);
@@ -264,7 +282,7 @@ export class Library {
   }
   log(id, actor, action, detail = '') {
     if (this.auditKey == null) throw fail(503, 'LOG_SALT is not set.');
-    appendAudit(this.sql, { id, actor, action, at: this.now(), detail: String(detail).slice(0, 300) }, this.auditKey, this.dbId);
+    appendAudit(rawSql(this), { id, actor, action, at: this.now(), detail: String(detail).slice(0, 300) }, this.auditKey, this.dbId);
     this._appended = true;
   }
   // An invitation or card action may name a story. The audit id is that story only when the story's stored tenant
@@ -443,7 +461,7 @@ export class Library {
     const query = keyed
       ? 'SELECT seq, actor, action, at, detail, "commit" FROM audit WHERE id = ? ORDER BY seq DESC LIMIT 100'
       : 'SELECT seq, actor, action, at, detail FROM audit WHERE id = ? ORDER BY seq DESC LIMIT 100';
-    const verdict = keyed ? anchoredVerdict(this.sql, verifyChain(this.sql, this.auditKey, this.dbId)) : null;
+    const verdict = keyed ? this.chainVerdict() : null;
     const verified = verdict?.ok ? new Set(verdict.verifiedSeqs || []) : null;
     return this.rows(query, id).map(a => {
       const line = { actor: a.actor, action: a.action, at: a.at, detail: a.action === 'possible duplicate' ? '' : a.detail };

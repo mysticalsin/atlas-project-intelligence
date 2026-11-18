@@ -4,7 +4,7 @@
 // database id, and a relink that only rebuilds the public hash must be COMMIT_MISMATCH.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { handle, scheduled } from '../src/app.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import { memorySql } from './sqlite.js';
@@ -81,9 +81,9 @@ test('the cron and both bearer ingresses refuse before opening the library when 
   mainShaped(sql, 0);
   env.LOG_SALT = SALT;
   const lib = new Library(sql, { now: () => STAMP, auditKey: auditKey(env) });
-  assert.equal(verifyDaily(lib.sql, SALT).reason, 'CHAIN_VERIFIED');
-  appendAudit(lib.sql, { id: 'story', actor: EMAIL, action: 'saved', at: STAMP, detail: 'after' }, SALT);
-  assert.equal(verifyDaily(fresh(lib.sql), SALT).reason, 'CHAIN_VERIFIED');
+  assert.equal(verifyDaily(sqlOf(lib), SALT).reason, 'CHAIN_VERIFIED');
+  appendAudit(sqlOf(lib), { id: 'story', actor: EMAIL, action: 'saved', at: STAMP, detail: 'after' }, SALT);
+  assert.equal(verifyDaily(fresh(sqlOf(lib)), SALT).reason, 'CHAIN_VERIFIED');
 });
 
 test('deleting a middle row and rebuilding only the public hash is COMMIT_MISMATCH', () => {

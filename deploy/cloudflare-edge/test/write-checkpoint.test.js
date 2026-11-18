@@ -2,7 +2,7 @@
 // receipt may be stored on a damaged chain without moving that anchor.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { anchoredVerdict, verifyChain } from '../src/audit-chain.js';
 import { memorySql } from './sqlite.js';
 import { recordReceipts } from '../src/privacy.js';
@@ -28,10 +28,10 @@ function open() {
   return { lib };
 }
 function tamper(lib) {
-  lib.sql.exec("UPDATE audit SET detail = detail || ' tampered' WHERE action != 'chain-start'");
+  sqlOf(lib).exec("UPDATE audit SET detail = detail || ' tampered' WHERE action != 'chain-start'");
 }
 function anchor(lib) {
-  const row = lib.sql.exec('SELECT n, head FROM audit_anchor WHERE id = 1').toArray()[0];
+  const row = sqlOf(lib).exec('SELECT n, head FROM audit_anchor WHERE id = 1').toArray()[0];
   assert.ok(row, 'a recorded write leaves an anchor');
   return { n: Number(row.n), head: row.head };
 }
@@ -39,13 +39,13 @@ function anchor(lib) {
 test('a recorded write checkpoints the chain, so a tail delete no longer verifies', async () => {
   const { lib } = open();
   const saved = await lib.upsert(OWNER, { localId: 'p1', reference: REF() });
-  const verdict = anchoredVerdict(lib.sql, verifyChain(lib.sql, SALT, lib.dbId));
+  const verdict = anchoredVerdict(sqlOf(lib), verifyChain(sqlOf(lib), SALT, lib.dbId));
   const row = anchor(lib);
   assert.equal(verdict.ok, true);
   assert.equal(row.n, verdict.checked);
   assert.equal(row.head, verdict.head);
-  lib.sql.exec('DELETE FROM audit WHERE seq = (SELECT MAX(seq) FROM audit)');
-  const after = anchoredVerdict(lib.sql, verifyChain(lib.sql, SALT, lib.dbId));
+  sqlOf(lib).exec('DELETE FROM audit WHERE seq = (SELECT MAX(seq) FROM audit)');
+  const after = anchoredVerdict(sqlOf(lib), verifyChain(sqlOf(lib), SALT, lib.dbId));
   assert.equal(after.ok, false);
   assert.throws(() => lib.nextGen(saved.id), err => err.status === 409);
   assert.equal(Number(lib.columnState(saved.id)?.ratingGen) || 0, 0);
