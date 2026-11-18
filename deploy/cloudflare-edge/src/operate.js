@@ -39,8 +39,8 @@ function subjectAliases(user) {
 export function eraseJourneyFor(lib, user) {
   if (!tableReady(lib, 'journey')) ensureJourney(lib);
   const tenant = String(user.tenant || '').trim().toLowerCase();
-  const n = lib.rows('SELECT COUNT(*) AS n FROM journey WHERE subject = ? AND tenant = ?', user.email, tenant)[0].n;
-  if (n) lib.sql.exec('DELETE FROM journey WHERE subject = ? AND tenant = ?', user.email, tenant);
+  const n = lib.rows(JOURNEY_COUNT_SQL, user.email, tenant)[0].n;
+  if (n) lib.sql.exec(JOURNEY_DELETE_SQL, user.email, tenant);
   return n;
 }
 export function eraseTelemetryFor(lib, user) {
@@ -271,8 +271,7 @@ export async function privacyRoutes(ctx) {
     let outcomes;
     try {
       outcomes = withTransaction(lib, () => {
-        const journey = count(JOURNEY_COUNT_SQL, user.email, tenant);
-        if (journey) lib.sql.exec(JOURNEY_DELETE_SQL, user.email, tenant);
+        const journey = eraseJourneyFor(lib, user);
         const telemetry = count("SELECT COUNT(*) AS n FROM telemetry WHERE persona = ? AND lower(COALESCE(tenant, '')) = ?", persona, tenant);
         if (telemetry) lib.sql.exec("DELETE FROM telemetry WHERE persona = ? AND lower(COALESCE(tenant, '')) = ?", persona, tenant);
         const profile = deleteOwnedProfile(lib, user);
