@@ -909,10 +909,7 @@ test('staffing grants follow the project, the subject alias, and a failed replac
   const bare = new Library(bareSql, { now: () => '2026-11-08T00:00:00.000Z' });
   ensureOutreach(bare);
   const beforeBare = bare.rows('SELECT COUNT(*) AS n FROM staffing')[0].n;
-  const skipped = await outreachRoutes({ method: 'POST', parts: ['staffing', 'import'], user: reviewer, lib: bare, url: new URL('https://atlas.test/api/library/staffing/import'), body: { csv: 'project_id,consultant_email,manager_email,manager_name,project_title,end_date\nPRJ-NEW,ada@example.test,sam-c@example.test,C,Pilot,2026-11-01\n' } });
-  assert.equal(skipped.body.trustSkipped, 1);
-  assert.equal(skipped.body.staffed, 0);
-  assert.equal(skipped.body.invited, 0);
+  await assert.rejects(() => outreachRoutes({ method: 'POST', parts: ['staffing', 'import'], user: reviewer, lib: bare, url: new URL('https://atlas.test/api/library/staffing/import'), body: { csv: 'project_id,consultant_email,manager_email,manager_name,project_title,end_date\nPRJ-NEW,ada@example.test,sam-c@example.test,C,Pilot,2026-11-01\n' } }), err => err.status === 503);
   assert.equal(bare.rows('SELECT COUNT(*) AS n FROM staffing')[0].n, beforeBare);
   const hook = lib();
   const calls = [];
@@ -1058,8 +1055,8 @@ test('project ids are one assignment, and a failed invite rolls back through Lib
   const before = snapshot();
   const trigger = () => onTrigger(wired, { email: 'pm-system', role: 'system', tenant: A, tenantEnforced: true }, { email: 'ada@example.test', managerEmail: 'sam-a@example.test', projectId: 'prj-wire', title: 'Pilot', endDate: '2026-11-10', reason: 'project_end' }, { email: 'pm-system', role: 'system', tenant: A, tenantEnforced: true });
   await assert.rejects(async () => trigger(), error => error === injected);
-  // Construction migrates the audit chain, the earlier manager binding is its own transaction, and the refused invite is the third.
-  assert.equal(txnCalls, 3);
+  // Construction migrates the audit chain, the manager binding is its own transaction, the baseline log is its own, and the refused invite is the fourth.
+  assert.equal(txnCalls, 4);
   assert.equal(typeof wired.transactionSync, 'function');
   assert.deepEqual(snapshot(), before);
   const unwired = new Library(storage.sql, { now: () => '2026-11-08T00:00:00.000Z' });
@@ -1193,8 +1190,8 @@ test('a profile read error rolls the webhook back and leaves earlier CSV rows', 
   assert.equal(csv.body.trustSkipped, 1);
   assert.equal(csv.body.blocked[0].projectId, 'PRJ-BAD');
   assert.equal(csv.body.blocked[0].error, 'profile read failed');
-  // Construction migrates the audit chain, the earlier manager binding is its own transaction, then the import uses two.
-  assert.equal(csvBox.txnCalls(), 4);
+  // Construction migrates the audit chain, the manager binding is its own transaction, the import uses two, and the summary log is its own.
+  assert.equal(csvBox.txnCalls(), 5);
   assert.equal(csvBox.wired.rows("SELECT COUNT(*) AS n FROM staffing WHERE project_id = 'PRJ-OK'")[0].n, 1);
   assert.equal(csvBox.wired.rows("SELECT COUNT(*) AS n FROM staffing WHERE project_id = 'PRJ-BAD'")[0].n, 0);
   assert.equal(csvBox.wired.rows("SELECT COUNT(*) AS n FROM invitations WHERE project_id = 'PRJ-BAD'")[0].n, 0);
@@ -1224,8 +1221,8 @@ test('a profile read error rolls the webhook back and leaves earlier CSV rows', 
     return original(q, ...p);
   };
   await assert.rejects(async () => onTrigger(hook.wired, { email: 'pm-system', role: 'system', tenant: A, tenantEnforced: true }, { email: 'ada@example.test', managerEmail: 'sam-a@example.test', projectId: 'PRJ-HOOK', title: 'Pilot', endDate: '2026-11-10', reason: 'project_end' }, { email: 'pm-system', role: 'system', tenant: A, tenantEnforced: true }), error => error === profileError);
-  // Construction migrates the audit chain, the earlier manager binding is its own transaction, and the refused trigger is the third.
-  assert.equal(hook.txnCalls(), 3);
+  // Construction migrates the audit chain, the manager binding is its own transaction, the baseline log is its own, and the refused trigger is the fourth.
+  assert.equal(hook.txnCalls(), 4);
   assert.deepEqual(hookShot(), hookBefore);
 });
 
