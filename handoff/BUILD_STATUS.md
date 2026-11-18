@@ -749,6 +749,39 @@ Review answers:
 - The Worker uses the library's own path match for a privacy or profile delete. A trailing slash, a repeated slash, a query string, and a later privacy segment take the same missing-tenant rejection before the library object is requested. A profile path with a third segment is not a delete. Percent-encoded slashes and a different letter case are not that match. The page was not rebuilt.
 - Quarantine is not deletion. Vendor deletion stays not-asserted. A Cloudflare Durable Object runtime was not executed.
 
+### Session: 2026-11-16 / UI follow-up Q10, Q12, Q9, Q8
+- Branch `cursor/ui-followup-q10-q12-q9-q8` off `80bab33`. Four hands-on QA fixes. Each regression test is its own commit and failed before the fix.
+- Q10: a second identical manager or pre-sales decision returns the current record and does not call `setState` or write another audit line. The Approve button is disabled before `recordAction`. Red commit `54d0dae`.
+- Q12: after the record dialog redraws, focus moves to the button labelled Close reference. Red commit `7321879`.
+- Q9: a bootstrap or library 503 keeps `body.error`. The journey and the library show that reason. Red commit `74417e1`.
+- Q8: the journey queue uses `STATUS_LABEL` (`Withdrawn`, `Needs work`). The admin-test and manager-waiting phrases stay. Red commit `ef3ab55`.
+- Gates on this host: `pytest tests/test_*.py -q` 264 passed, 106 warnings. `node --test tests/*.test.js` 386 tests, 385 passed, 1 skipped (Natural Earth regeneration needs `ATLAS_NE_SRC`). Edge `node --test test/*.test.js` 541 passed, and the same 541 with `--test-concurrency=16`. `scripts/verify_page_build.sh` twice, both exit 0 (907494 bytes). `make test-ui` exit 0, 754 PASS, 0 FAIL, 21 scripts. No provider call, no deploy.
+- Quarantine is not deletion. Vendor deletion stays not-asserted. A Cloudflare Durable Object runtime was not executed.
+
+### Session: 2026-11-17 / PR8 residuals, approved lane and 503 session
+- Same branch. The review of `b4bc531` is closed here. Red commits failed on that head before the fix: `8ce4891` (approved lane, real `list()`, changed note) and `7c2d260` (503 boot session and the 500-character cap).
+- A full-access `list()` item carries `managerDecision` and `presalesDecision`. A public item does not. The record dialog and the journey queue omit a lane's buttons once that lane is approved. A failed approve enables the button and returns focus to it. An identical approve stays a no-op. A second `request_changes` with a different note stores the note and writes one audit line.
+- A 503 bootstrap keeps only `{ok:false, error}` and the error is at most 500 characters. `admin` and `libraryRole` on that body do not open admin or the journey. The journey and the library also cap a library-fetch 503 at 500 characters.
+- The short library-fetch reason in Q9 already reached the page on main, because a non-ok library response threw `data.error`. That half is not the regression. The library-fetch regression added here is the 500-character cap. The bootstrap half remains the Q9 regression.
+- The rolled-back privacy-erasure audit stays deferred. `origin/main` still has no `withTransaction`.
+- Gates on this host: pytest 264 passed, 106 warnings. Root `node --test tests/*.test.js` 386 tests, 385 passed, 1 skipped. Edge 543 passed, and the same 543 with `--test-concurrency=16`. `scripts/verify_page_build.sh` twice, both exit 0, 907846 bytes. `make test-ui` exit 0, 768 PASS, 0 FAIL. No provider call, no deploy.
+- Quarantine is not deletion. Vendor deletion stays not-asserted. A Cloudflare Durable Object runtime was not executed.
+
+### Session: 2026-11-17 / PR8 delta, status label, 503 clip, directory reveal
+- Same branch, from `dc42ef4`. Red commits failed on that head before the fix: `b596b88` (later status after a manager approval, real `list()`), `272c447` (library 503 array and object errors), `78def02` (people directory visible before `/directory` settles).
+- The phrase "Manager approved · awaiting pre-sales" is used only when `status` is `awaiting_validation`. Withdrawn, needs work, changes requested, and in review keep `STATUS_LABEL` even when `managerDecision` is approved. A library 503 stringifies `error` and clips it to 500 characters when that string is non-empty. The people directory stays hidden until that fetch settles, including a refresh.
+- The browser journey check follows the same rule on live `list()` output: the reviewed story keeps the waiting phrase, and a short story that is still needs work keeps "Needs work".
+- Gates on this host: pytest 264 passed, 106 warnings. Root `node --test tests/*.test.js` 388 tests, 387 passed, 1 skipped (Natural Earth regeneration needs `ATLAS_NE_SRC`). Edge 543 passed, and the same 543 with `--test-concurrency=16`. `scripts/verify_page_build.sh` twice, both exit 0, 907946 bytes. `make test-ui` ten consecutive first runs, each exit 0, 770 PASS, 0 FAIL. No provider call, no deploy.
+- The rolled-back privacy-erasure audit stays deferred. `origin/main` still has no `withTransaction`.
+- Quarantine is not deletion. Vendor deletion stays not-asserted. A Cloudflare Durable Object runtime was not executed.
+
+### Session: 2026-11-17 / PR8 library 503 shapes and directory overlap
+- Same branch, from `fd96fb5`. Red commit `86c77ec` failed on that head before the fix: an object library 503 still rendered `[object Object]`, a null error used `The library did not answer.`, and an older `renderDirectory` revealed the panel while a newer fetch was pending.
+- `libraryErrorText` is used only on the library 503 line. A string or number is clipped to 500 characters. An array of strings or numbers is joined and clipped. An object uses `detail`, then `message`, then `error` when that value is a non-empty string, clipped. Null, undefined, an empty string, and an unusable object use `The shared library is not available here.`
+- `renderDirectory` keeps a call counter. After each await, a call that is no longer the latest returns without changing `hidden` or the children.
+- Gates on this host: pytest 264 passed, 106 warnings. Root `node --test tests/*.test.js` 390 tests, 389 passed, 1 skipped (Natural Earth regeneration needs `ATLAS_NE_SRC`). Edge 543 passed, and the same 543 with `--test-concurrency=16`. `scripts/verify_page_build.sh` twice, both exit 0, 908818 bytes, pin `7fb4b831bc88c7c20352f8e9380ffd9ff7b93e083eb969bfa97d5e6d52bc0970`. `make test-ui` three consecutive first runs, each exit 0, 771 PASS, 0 FAIL. No provider call, no deploy.
+- The rolled-back privacy-erasure audit stays deferred.
+- Quarantine is not deletion. Vendor deletion stays not-asserted. A Cloudflare Durable Object runtime was not executed.
 ### Session: 2026-11-16 / PR #5 review fixes
 - Same branch `cursor/pr1-port-s1-security-660c`. Red commit `a8c89f6` (failing tests). The following commit is the fix. No force push, no rebase, no deploy, no paid call, and `LOG_SALT` was not provisioned.
 - Pages name their CSP capabilities. JSON and a non-HTML response use the data policy. Sign-in is `script-src 'none'`. The voice page opts into `blob:`.

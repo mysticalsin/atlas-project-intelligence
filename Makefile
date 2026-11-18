@@ -19,6 +19,7 @@ test-ui: build
 	$(PYTHON) tests/autosave_browser.py
 	$(PYTHON) tests/orb_touch_browser.py
 	$(PYTHON) tests/library_browser.py
+	$(PYTHON) tests/refusal_browser.py
 	$(PYTHON) tests/audit_marker_browser.py
 	$(PYTHON) tests/csp_console_browser.py
 	$(PYTHON) tests/autosave_chain_browser.py

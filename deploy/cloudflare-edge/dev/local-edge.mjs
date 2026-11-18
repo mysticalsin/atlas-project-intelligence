@@ -73,7 +73,7 @@ function interviewStorage() {
 const storeFor = id => { if (!stores.has(id)) stores.set(id, interviewStorage()); return stores.get(id); };
 // Dev harness only. Production opens the library in worker.js. A null key still throws before any write.
 export const DEV_AUDIT_SALT = 'atlas-dev-audit-salt';
-const env = { ORIGIN, ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, CSRF_SECRET: 'local-only', TALKER_MODEL: 'local', TTS_VOICE: 'local',
+const env = { ORIGIN, ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, CSRF_SECRET: 'local-only', LOG_SALT: DEV_AUDIT_SALT, TALKER_MODEL: 'local', TTS_VOICE: 'local',
   TRIGGER_SECRET: process.env.TRIGGER_SECRET || 'local-trigger-secret', ANALYST_MODEL: 'local-analyst',
   // Stand-ins for the Workers AI binding: toMarkdown (documents and image descriptions) and chat completions.
   AI: { toMarkdown: async f => { const t = f.blob.type || ''; return t.startsWith('image/') ? { format: 'markdown', data: 'A diagram showing the project phases and approach' } : { format: 'markdown', data: new TextDecoder().decode(await f.blob.arrayBuffer()) }; },
