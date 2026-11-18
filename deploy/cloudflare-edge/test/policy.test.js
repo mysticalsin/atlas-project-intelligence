@@ -248,7 +248,7 @@ test('run5: purge, DSAR, journey key, staffing import, metrics page, header and 
   const call = (who, path, env, method = 'GET') => libraryRoutes(new Request('https://atlas.test' + path, { method, body: method === 'POST' ? '{}' : undefined, headers: {
     'x-atlas-user': who.email, 'x-atlas-role': who.role, 'x-atlas-tenant': who.tenant || '', 'x-atlas-tenant-enforced': '0' } }), l, { env });
   const exported = await (await call(adminA, '/api/library/privacy/export', {})).json();
-  assert.equal(exported.journey.fields.title.value, 'Tenant A story');
+  assert.equal(exported.journey[0].fields.title.value, 'Tenant A story');
   assert.equal(JSON.stringify(exported).includes('Tenant B'), false);
   const prodEnv = { ORIGIN: 'https://atlas.test', CSRF_SECRET: 'secret', DATA_MODE: 'production' };
   assert.equal((await call({ email: 'ada@example.test', role: 'admin', tenant: '' }, '/api/library/privacy/export', prodEnv)).status, 403);
@@ -378,6 +378,19 @@ test('staffing, invitations, metrics pages and maintenance stay inside one tenan
 test('demo identity 0, false and off do not trip the production guard', () => {
   for (const value of ['0', 'false', 'off', '']) assert.equal(productionDemoConflict({ DATA_MODE: 'production', ATLAS_DEV_IDENTITY: value }), null, value);
   assert.match(productionDemoConflict({ DATA_MODE: 'production', ATLAS_DEV_IDENTITY: 'yes' }).error, /ATLAS_DEV_IDENTITY/);
+});
+
+test('ATLAS_LOCAL_TENANT is refused in production the same way as demo identity', async () => {
+  const tenant = '11111111-1111-4111-8111-111111111111';
+  assert.equal(productionDemoConflict({ ATLAS_LOCAL_TENANT: tenant }), null);
+  assert.match(productionDemoConflict({ DATA_MODE: 'production', ATLAS_LOCAL_TENANT: tenant }).error, /ATLAS_LOCAL_TENANT/);
+  for (const value of ['0', 'false', 'off', '']) assert.equal(productionDemoConflict({ DATA_MODE: 'production', ATLAS_LOCAL_TENANT: value }), null, value);
+  let reads = 0;
+  const lib = { sql: { exec() { reads += 1; } }, rows() { reads += 1; return []; } };
+  const res = await libraryRoutes(new Request('https://atlas.test/api/library', { headers: { 'x-atlas-user': 'ada@example.test', 'x-atlas-role': 'admin' } }), lib, { env: { DATA_MODE: 'production', ATLAS_LOCAL_TENANT: tenant } });
+  assert.equal(res.status, 503);
+  assert.match((await res.json()).error, /ATLAS_LOCAL_TENANT/);
+  assert.equal(reads, 0);
 });
 
 test('manager trust, story identity and directory cache do not cross tenants', async () => {
@@ -511,9 +524,10 @@ test('merge, duplicates, invites, outreach, DSAR aliases and staffing ties stay 
   l.sql.exec('INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)', sub, B, '{}', '2026-11-08T00:00:00.000Z');
   const real = l.sql.exec.bind(l.sql);
   l.sql.exec = (q, ...p) => { if (String(q).includes('DELETE FROM journey')) throw new Error('disk'); return real(q, ...p); };
-  const failed = await (await libraryRoutes(new Request('https://atlas.test/api/library/privacy/delete', { method: 'POST', body: '{}', headers: { 'x-atlas-user': sub, 'x-atlas-role': 'user', 'x-atlas-email': 'ada@example.test', 'x-atlas-tenant': B, 'x-atlas-tenant-enforced': '1' } }), l, { env: { DATA_MODE: 'production', ORIGIN: 'https://atlas.test', CSRF_SECRET: 's' } })).json();
-  assert.equal(failed.complete, false);
-  assert.equal(failed.outcomes.find(o => o.store === 'journey').error, 'delete-failed');
+  const failedResponse = await libraryRoutes(new Request('https://atlas.test/api/library/privacy/delete', { method: 'POST', body: '{}', headers: { 'x-atlas-user': sub, 'x-atlas-role': 'user', 'x-atlas-email': 'ada@example.test', 'x-atlas-tenant': B, 'x-atlas-tenant-enforced': '1' } }), l, { env: { DATA_MODE: 'production', ORIGIN: 'https://atlas.test', CSRF_SECRET: 's' } });
+  assert.equal(failedResponse.ok, false);
+  const failed = await failedResponse.json();
+  assert.equal(failed.error, 'The deletion did not finish. Nothing was removed.');
   assert.equal(l.rows('SELECT COUNT(*) AS n FROM journey WHERE subject = ? AND tenant = ?', sub, B)[0].n, 1);
   assert.equal(resolveTenantEnforcement({ DATA_MODE: 'test' }, '0'), true);
   assert.equal(resolveTenantEnforcement({ ATLAS_TENANT_ISOLATION: 'local-synthetic' }, '1'), false);
@@ -547,7 +561,7 @@ test('claims decisions, gap context and system ingress stay on the verified tena
   assert.equal(asked.asks.length, 1);
   const origin = 'https://atlas.example.workers.dev';
   const library = { idFromName: n => n, get: () => ({ fetch: req => libraryRoutes(req, l, { env: { DATA_MODE: 'production', ORIGIN: origin, CSRF_SECRET: 'test-secret', ATLAS_SYSTEM_TENANT: A } }) }) };
-  const env = { ORIGIN: origin, CSRF_SECRET: 'test-secret', DATA_MODE: 'production', TRIGGER_SECRET: 's3cret-value', ATLAS_SYSTEM_TENANT: A, LIBRARY: library };
+  const env = { ORIGIN: origin, CSRF_SECRET: 'test-secret', DATA_MODE: 'production', LOG_SALT: 'synthetic-log-salt', TRIGGER_SECRET: 's3cret-value', ATLAS_SYSTEM_TENANT: A, LIBRARY: library };
   const forged = await handle(new Request(origin + '/api/triggers', { method: 'POST', body: JSON.stringify({ email: 'ada@example.test', reason: 'manual', projectId: 'PRJ-FORGE', tenant: B }), headers: { Authorization: 'Bearer s3cret-value' } }), env, '');
   assert.equal(forged.status, 403);
   assert.equal(l.rows("SELECT COUNT(*) AS n FROM invitations WHERE project_id = 'PRJ-FORGE'")[0].n, 0);
@@ -776,7 +790,7 @@ test('subject and mail meet on the staffing route, the stale scan and a Teams ca
   assert.notEqual(inviteBefore.status, 'dismissed');
   assert.equal(JSON.stringify(l.row(hidden.id)), storyBefore);
   assert.equal(l.rows('SELECT COUNT(*) AS n FROM audit WHERE id = ?', hidden.id)[0].n, beforeHidden);
-  assert.equal(l.rows("SELECT COUNT(*) AS n FROM audit WHERE action = 'invitation dismiss' AND detail LIKE '%Teams card%'")[0].n, 0);
+  assert.equal(l.rows("SELECT id, detail FROM audit WHERE action = 'invitation dismiss' AND detail LIKE '%Teams card%'").map(r => r.id + ' ' + r.detail).join('|'), 'library manual (Teams card)');
   const second = await l.upsert({ email: 'kim@example.test', mail: 'kim@example.test', role: 'user', tenant: A, tenantEnforced: true }, { localId: 'same-project', reference: { ...ref(), title: 'Second live title' } });
   await l.review({ email: 'atlas', role: 'admin', tenant: A, tenantEnforced: true }, story.id);
   await l.review({ email: 'atlas', role: 'admin', tenant: A, tenantEnforced: true }, second.id);
@@ -942,7 +956,8 @@ test('an inaccessible reference allows only an invitation decline, over HTTP and
   assert.equal(JSON.stringify(replay.body).includes('Understood'), true);
   assert.equal(l.rows("SELECT status FROM invitations WHERE id = 'inv-http'")[0].status, 'dismissed');
   assert.equal(l.rows("SELECT COUNT(*) AS n FROM teams_seen WHERE activity_id = 'http-snooze'")[0].n, 1);
-  assert.equal(audits(), before);
+  assert.equal(audits(), before + 1);
+  assert.deepEqual(l.rows("SELECT id, detail FROM audit WHERE action = 'invitation dismiss'"), [{ id: 'library', detail: 'manual (Teams card)' }]);
   l.sql.exec("UPDATE invitations SET status = 'open' WHERE id = 'inv-http'");
   l.sql.exec('DELETE FROM teams_seen');
   const dismissed = await post({ action: 'dismiss' });
@@ -955,7 +970,8 @@ test('an inaccessible reference allows only an invitation decline, over HTTP and
   assert.equal(JSON.stringify(body).includes('Hidden story title'), false);
   assert.equal(JSON.stringify(body).includes('SECRET-PROJECT'), false);
   assert.equal(l.rows("SELECT reference_id FROM invitations WHERE id = 'inv-http'")[0].reference_id, hidden.id);
-  assert.equal(audits(), before);
+  assert.equal(audits(), before + 2);
+  assert.deepEqual(l.rows("SELECT id, detail FROM audit WHERE action = 'invitation dismiss' ORDER BY seq"), [{ id: 'library', detail: 'manual (Teams card)' }, { id: 'library', detail: 'manual' }]);
   assert.equal(JSON.stringify(l.row(hidden.id)), story);
   l.sql.exec("UPDATE invitations SET status = 'open' WHERE id = 'inv-http'");
   l.sql.exec('DELETE FROM teams_seen');
@@ -970,7 +986,8 @@ test('an inaccessible reference allows only an invitation decline, over HTTP and
   assert.equal(JSON.stringify(declined.body).includes('Understood'), true);
   assert.equal(JSON.stringify(declined.body).includes(hidden.id), false);
   assert.equal(l.rows("SELECT status, reference_id FROM invitations WHERE id = 'inv-http'")[0].status, 'dismissed');
-  assert.equal(audits(), before);
+  assert.equal(audits(), before + 3);
+  assert.equal(l.rows("SELECT COUNT(*) AS n FROM audit WHERE action = 'invitation dismiss' AND id = ?", hidden.id)[0].n, 0);
   assert.equal(JSON.stringify(l.row(hidden.id)), story);
 });
 
@@ -1030,7 +1047,7 @@ test('project ids are one assignment, and a failed invite rolls back through Lib
   wired.sql.exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, tenant) VALUES ('PRJ-OTHER', 'bea@example.test', 'kept@example.test', 'Kept', 'Other', '', 'staffing-csv', ?, ?)", wired.now(), A);
   wired.bindTrust({ email: 'staffing-csv', role: 'system', tenant: A, tenantEnforced: true }, { owner: 'ada@example.test', email: 'old@example.test', source: 'staffing', tenant: A, tenantEnforced: true });
   wired.sql.exec("INSERT INTO invitations (id, email, project_id, title, reason, slot, reference_id, status, created_at, source, tenant) VALUES ('keep-inv', 'ada@example.test', 'PRJ-KEEP', 'Kept', 'manual', '', '', 'open', ?, 'seed', ?)", wired.now(), A);
-  wired.sql.exec("INSERT INTO audit (id, actor, action, at, detail) VALUES ('keep', 'seed', 'preexisting', ?, 'baseline')", wired.now());
+  wired.log('keep', 'seed', 'preexisting', 'baseline');
   const snapshot = () => ({
     staffing: wired.rows('SELECT * FROM staffing ORDER BY project_id, consultant_email, tenant'),
     trust: wired.rows('SELECT * FROM manager_trust ORDER BY owner, email, tenant'),
@@ -1041,7 +1058,8 @@ test('project ids are one assignment, and a failed invite rolls back through Lib
   const before = snapshot();
   const trigger = () => onTrigger(wired, { email: 'pm-system', role: 'system', tenant: A, tenantEnforced: true }, { email: 'ada@example.test', managerEmail: 'sam-a@example.test', projectId: 'prj-wire', title: 'Pilot', endDate: '2026-11-10', reason: 'project_end' }, { email: 'pm-system', role: 'system', tenant: A, tenantEnforced: true });
   await assert.rejects(async () => trigger(), error => error === injected);
-  assert.equal(txnCalls, 1);
+  // Construction migrates the audit chain, the earlier manager binding is its own transaction, and the refused invite is the third.
+  assert.equal(txnCalls, 3);
   assert.equal(typeof wired.transactionSync, 'function');
   assert.deepEqual(snapshot(), before);
   const unwired = new Library(storage.sql, { now: () => '2026-11-08T00:00:00.000Z' });
@@ -1175,7 +1193,8 @@ test('a profile read error rolls the webhook back and leaves earlier CSV rows', 
   assert.equal(csv.body.trustSkipped, 1);
   assert.equal(csv.body.blocked[0].projectId, 'PRJ-BAD');
   assert.equal(csv.body.blocked[0].error, 'profile read failed');
-  assert.equal(csvBox.txnCalls(), 2);
+  // Construction migrates the audit chain, the earlier manager binding is its own transaction, then the import uses two.
+  assert.equal(csvBox.txnCalls(), 4);
   assert.equal(csvBox.wired.rows("SELECT COUNT(*) AS n FROM staffing WHERE project_id = 'PRJ-OK'")[0].n, 1);
   assert.equal(csvBox.wired.rows("SELECT COUNT(*) AS n FROM staffing WHERE project_id = 'PRJ-BAD'")[0].n, 0);
   assert.equal(csvBox.wired.rows("SELECT COUNT(*) AS n FROM invitations WHERE project_id = 'PRJ-BAD'")[0].n, 0);
@@ -1189,7 +1208,7 @@ test('a profile read error rolls the webhook back and leaves earlier CSV rows', 
   const hook = opened(0);
   kept(hook, 'PRJ-HOOK', 'old@example.test');
   hook.wired.sql.exec("INSERT INTO invitations (id, email, project_id, title, reason, slot, reference_id, status, created_at, source, tenant) VALUES ('hook-keep', 'ada@example.test', 'PRJ-KEEP', '', 'manual', '', '', 'open', ?, 'seed', ?)", hook.wired.now(), A);
-  hook.wired.sql.exec("INSERT INTO audit (id, actor, action, at, detail) VALUES ('hook-keep', 'seed', 'preexisting', ?, 'baseline')", hook.wired.now());
+  hook.wired.log('hook-keep', 'seed', 'preexisting', 'baseline');
   const hookShot = () => ({
     staffing: hook.wired.rows('SELECT * FROM staffing ORDER BY project_id, consultant_email, tenant'),
     trust: hook.wired.rows('SELECT * FROM manager_trust ORDER BY owner, email, tenant'),
@@ -1205,7 +1224,8 @@ test('a profile read error rolls the webhook back and leaves earlier CSV rows', 
     return original(q, ...p);
   };
   await assert.rejects(async () => onTrigger(hook.wired, { email: 'pm-system', role: 'system', tenant: A, tenantEnforced: true }, { email: 'ada@example.test', managerEmail: 'sam-a@example.test', projectId: 'PRJ-HOOK', title: 'Pilot', endDate: '2026-11-10', reason: 'project_end' }, { email: 'pm-system', role: 'system', tenant: A, tenantEnforced: true }), error => error === profileError);
-  assert.equal(hook.txnCalls(), 1);
+  // Construction migrates the audit chain, the earlier manager binding is its own transaction, and the refused trigger is the third.
+  assert.equal(hook.txnCalls(), 3);
   assert.deepEqual(hookShot(), hookBefore);
 });
 
@@ -1274,7 +1294,7 @@ test('a privacy delete without a verified tenant leaves quarantined blank rows u
   l.sql.exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, tenant) VALUES ('PRJ-BLANK', 'ada@example.test', '', '', '', '', 'legacy', '2020-01-01T00:00:00.000Z', '')");
   l.sql.exec("INSERT INTO invitations (id, email, project_id, title, reason, slot, reference_id, status, created_at, source, tenant) VALUES ('inv-keep', 'ada@example.test', 'PRJ-A', '', 'manual', '', '', 'open', '2026-11-08T00:00:00.000Z', 't', ?)", A);
   const story = await l.upsert({ email: 'ada@example.test', mail: 'ada@example.test', role: 'user', tenant: A, tenantEnforced: true }, { localId: 'dsar-story', reference: ref() });
-  l.sql.exec("INSERT INTO audit (id, actor, action, at, detail) VALUES ('keep-audit', 'ada@example.test', 'older', '2026-11-08T00:00:00.000Z', 'stay')");
+  l.log('keep-audit', 'ada@example.test', 'older', 'stay');
   l.sql.exec("INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES ('kim@example.test', ?, 'kim@example.test', '{}', '{}', '{}', '2026-11-08T00:00:00.000Z', '2026-11-08T00:00:00.000Z', '2026-11-08T00:00:00.000Z')", A);
   l.sql.exec("INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES ('kim@example.test', ?, 'kim@example.test', '{}', '{}', '{}', '2026-11-08T00:00:00.000Z', '2026-11-08T00:00:00.000Z', '2026-11-08T00:00:00.000Z')", B);
   await l.upsert({ email: 'kim@example.test', mail: 'kim@example.test', role: 'user', tenant: B, tenantEnforced: true }, { localId: 'foreign-story', reference: ref() });

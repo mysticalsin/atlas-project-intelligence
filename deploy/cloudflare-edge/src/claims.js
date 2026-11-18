@@ -12,6 +12,7 @@ import { clientScrub } from './review.js';
 import * as outreach from './outreach.js';
 import * as profile from './profile.js';
 import { sameTenant, TENANT_ID } from './authz.js';
+import { placeholders, readChunks } from './sql-bound.js';
 
 export const READY = true;
 // Claim currency (§2.4, Q12; Tony decides). 'sentence' (default): a confirmation stays current while its exact sentence
@@ -66,7 +67,11 @@ function currencyOf(row, currency) {
 
 function claimRows(lib, refId, ids) {
   if (!ids.length) return [];
-  const byId = new Map(lib.rows(`SELECT * FROM claims WHERE ref_id = ? AND id IN (${ids.map(() => '?').join(',')})`, refId, ...ids).map(c => [c.id, c]));
+  const byId = new Map(readChunks(lib, ids, {
+    fixed: 1,
+    sql: chunk => `SELECT * FROM claims WHERE ref_id = ? AND id IN (${placeholders(chunk.length)})`,
+    params: chunk => [refId, ...chunk],
+  }).map(c => [c.id, c]));
   return ids.map(id => byId.get(id)).filter(Boolean);
 }
 
@@ -132,14 +137,16 @@ async function propose(lib, user, body, currency) {
   if (!asked.every(i => sentences(row.data, i.topic)[i.idx] === i.text)) throw fail(409, 'That sentence is not in the current revision. Reload the reference and choose again.');
   const at = lib.now(), before = lib.rows('SELECT COUNT(*) AS n FROM claims WHERE ref_id = ?', row.id)[0].n;
   const out = new Map();
-  asked.forEach((i, k) => {
-    lib.sql.exec(`INSERT OR IGNORE INTO claims (id, ref_id, revision, topic, idx, text, sentence_hash, status, created_by, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'unverified', ?, ?)`, lib.newId(), row.id, row.revision, i.topic, i.idx, i.text, hashes[k], user.email, at);
-    const c = lib.rows('SELECT * FROM claims WHERE ref_id = ? AND sentence_hash = ?', row.id, hashes[k])[0];
-    out.set(c.id, c);
+  lib.recorded(() => {
+    asked.forEach((i, k) => {
+      lib.sql.exec(`INSERT OR IGNORE INTO claims (id, ref_id, revision, topic, idx, text, sentence_hash, status, created_by, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'unverified', ?, ?)`, lib.newId(), row.id, row.revision, i.topic, i.idx, i.text, hashes[k], user.email, at);
+      const c = lib.rows('SELECT * FROM claims WHERE ref_id = ? AND sentence_hash = ?', row.id, hashes[k])[0];
+      out.set(c.id, c);
+    });
+    const added = lib.rows('SELECT COUNT(*) AS n FROM claims WHERE ref_id = ?', row.id)[0].n - before;
+    if (added) lib.log(row.id, user.email, 'claims proposed', `rev ${row.revision}: ${added} new`);
   });
-  const added = lib.rows('SELECT COUNT(*) AS n FROM claims WHERE ref_id = ?', row.id)[0].n - before;
-  if (added) lib.log(row.id, user.email, 'claims proposed', `rev ${row.revision}: ${added} new`);
   const { current } = currencyOf(row, currency), deciders = decidersOf(lib, row.id);
   return { claims: [...out.values()].map(c => claimView(c, current(c), deciders)) };
 }
@@ -188,9 +195,11 @@ function createRequest(ctx) {
   if (cs.some(answered(current))) throw fail(409, 'Already answered: edit the sentence to ask again.');
   const id = lib.newId(), at = lib.now(), expires = new Date(Date.parse(at) + EXPIRY_MS).toISOString();
   const tenant = user.tenantEnforced === true ? String(user.tenant || '').toLowerCase() : '';
-  lib.sql.exec(`INSERT INTO confirmation_requests (id, ref_id, revision, kind, to_email, manager_source, claim_ids, status, created_by, created_by_mail, created_at, expires_at, tenant)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)`, id, row.id, row.revision, kind, to, source, JSON.stringify(ids), user.email, email(user.mail), at, expires, tenant);
-  lib.log(row.id, user.email, 'confirmation requested', `rev ${row.revision} request ${id}: ${ids.length} claims (${kind}, ${source || 'none'})`);
+  lib.recorded(() => {
+    lib.sql.exec(`INSERT INTO confirmation_requests (id, ref_id, revision, kind, to_email, manager_source, claim_ids, status, created_by, created_by_mail, created_at, expires_at, tenant)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)`, id, row.id, row.revision, kind, to, source, JSON.stringify(ids), user.email, email(user.mail), at, expires, tenant);
+    lib.log(row.id, user.email, 'confirmation requested', `rev ${row.revision} request ${id}: ${ids.length} claims (${kind}, ${source || 'none'})`);
+  });
   // The draft names the consultant and the number of points only: no claim text, no client name. Nothing is sent.
   const n = ids.length, name = str(row.data?.consultant?.name, 100) || 'a colleague', link = `${originOf(ctx)}/go/confirm/${id}`; // survives an interactive sign-in (§3.9)
   const subject = `Can you confirm ${n} point${n === 1 ? '' : 's'} from ${name}'s project? (about 60 seconds)`;
@@ -216,9 +225,12 @@ function staffingHits(lib, row) {
   const tenant = String(row?.state?.tenant || row?.tenant || '').toLowerCase();
   const owners = typeof lib.ownerKeys === 'function' ? lib.ownerKeys(row).map(v => String(v || '').toLowerCase()).filter(Boolean) : [String(row?.owner || '').toLowerCase()].filter(Boolean);
   if (!project || !owners.length || !lib.rows("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'staffing'")[0]) return [];
-  const marks = owners.map(() => '?').join(', ');
   // Blank manager rows still count. A case-variant duplicate with an empty manager is the same logical assignment.
-  return lib.rows(`SELECT project_id, consultant_email, manager_email FROM staffing WHERE lower(project_id) = ? AND lower(consultant_email) IN (${marks}) AND lower(COALESCE(tenant, '')) = ?`, project, ...owners, tenant);
+  return readChunks(lib, owners, {
+    fixed: 2,
+    sql: chunk => `SELECT project_id, consultant_email, manager_email FROM staffing WHERE lower(project_id) = ? AND lower(consultant_email) IN (${placeholders(chunk.length)}) AND lower(COALESCE(tenant, '')) = ?`,
+    params: chunk => [project, ...chunk, tenant],
+  });
 }
 function currentStaffingManager(lib, row) {
   const hits = staffingHits(lib, row);
@@ -296,13 +308,15 @@ function decide(lib, user, id, body, currency) {
   }
   if (byId.size !== ids.length) throw fail(400, 'Decide every point before sending.');
   const status = { confirm: r.kind === 'client' ? 'client_confirmed' : 'manager_confirmed', correct: 'corrected', cant_say: 'cant_say' };
-  for (const cid of ids) {
-    const d = byId.get(cid);
-    lib.sql.exec('UPDATE claims SET status = ?, by_mail = ?, at = ?, note = ?, confirmed_revision = ? WHERE id = ? AND ref_id = ?',
-      status[d.decision], mail, now, d.note, row.revision, cid, r.ref_id);
-    lib.log(r.ref_id, mail, 'claim ' + d.decision, `rev ${row.revision} claim ${cid} (${r.kind}, ${r.manager_source || 'none'})`);
-  }
-  lib.sql.exec("UPDATE confirmation_requests SET status = 'done', decided_at = ? WHERE id = ?", now, r.id);
+  lib.recorded(() => {
+    for (const cid of ids) {
+      const d = byId.get(cid);
+      lib.sql.exec('UPDATE claims SET status = ?, by_mail = ?, at = ?, note = ?, confirmed_revision = ? WHERE id = ? AND ref_id = ?',
+        status[d.decision], mail, now, d.note, row.revision, cid, r.ref_id);
+      lib.log(r.ref_id, mail, 'claim ' + d.decision, `rev ${row.revision} claim ${cid} (${r.kind}, ${r.manager_source || 'none'})`);
+    }
+    lib.sql.exec("UPDATE confirmation_requests SET status = 'done', decided_at = ? WHERE id = ?", now, r.id);
+  });
   const done = lib.rows('SELECT * FROM confirmation_requests WHERE id = ?', r.id)[0], { current } = currencyOf(row, currency);
   const full = lib.access(row, user) === 'full';
   const mask = full ? s => s : masked(lib, row.data);
@@ -322,8 +336,10 @@ function cancel(lib, user, id) {
   if (r.status !== 'open') throw fail(409, 'This request is already closed.');
   const linked = linkedStory(lib, user, r);
   if (!linked || !lib.access(linked, user)) throw fail(404, 'Request not found.');
-  lib.sql.exec("UPDATE confirmation_requests SET status = 'cancelled' WHERE id = ?", r.id);
-  lib.log(r.ref_id, user.email, 'confirmation cancelled', `rev ${r.revision} request ${r.id}`);
+  lib.recorded(() => {
+    lib.sql.exec("UPDATE confirmation_requests SET status = 'cancelled' WHERE id = ?", r.id);
+    lib.log(r.ref_id, user.email, 'confirmation cancelled', `rev ${r.revision} request ${r.id}`);
+  });
   return { request: requestView(lib.rows('SELECT * FROM confirmation_requests WHERE id = ?', r.id)[0]) };
 }
 
@@ -372,9 +388,9 @@ export function expire(lib, now = lib.now(), user = {}) {
   const tenant = enforced ? String(user.tenant || '').toLowerCase() : '';
   if (enforced && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenant)) return 0;
   const n = lib.rows("SELECT COUNT(*) AS n FROM confirmation_requests WHERE status = 'open' AND expires_at <= ? AND lower(COALESCE(tenant, '')) = ?", now, tenant)[0].n;
-  if (n) {
+  if (n) lib.recorded(() => {
     lib.sql.exec("UPDATE confirmation_requests SET status = 'expired' WHERE status = 'open' AND expires_at <= ? AND lower(COALESCE(tenant, '')) = ?", now, tenant);
     lib.log('library', 'atlas', 'confirmations expired', `${n} requests`);
-  }
+  });
   return n;
 }

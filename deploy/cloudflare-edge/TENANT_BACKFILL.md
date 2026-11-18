@@ -4,7 +4,7 @@ This is an operator plan. This change does not run a migration against a product
 
 ## What the code does now
 
-When the deployment env is present (`DATA_MODE`, `ATLAS_TENANT_ISOLATION`, `ORIGIN`, or `CSRF_SECRET`), tenant enforcement comes from that env. `x-atlas-tenant-enforced` cannot turn it off. `DATA_MODE=production` with `ATLAS_TENANT_ISOLATION=local-synthetic` or with `ATLAS_DEV_IDENTITY` returns 503 before a durable-object fetch.
+When the deployment env is present (`DATA_MODE`, `ATLAS_TENANT_ISOLATION`, `ORIGIN`, or `CSRF_SECRET`), tenant enforcement comes from that env. `x-atlas-tenant-enforced` cannot turn it off. `DATA_MODE=production` with `ATLAS_TENANT_ISOLATION=local-synthetic`, with `ATLAS_DEV_IDENTITY`, or with `ATLAS_LOCAL_TENANT` returns 503 before a durable-object fetch.
 
 Enforced reads, approvals, exports, metrics, DSAR export, DSAR delete, and journey load use the caller's verified tenant. The journey primary key is `(subject, tenant)`. A save for one tenant does not overwrite another tenant's row. An older journey table is rebuilt in process by copying `tenant` as stored, including blank. That rebuild is not a production data migration and does not invent a tenant.
 
@@ -19,7 +19,7 @@ The daily cron does not run a cross-tenant sweep unless `ATLAS_SYSTEM_TENANT` is
 3. Review that mapping. A separate, reviewed migration may then write the mapped `tid`.
 4. Until that migration runs, enforced reads continue to exclude the blank rows.
 
-`ATLAS_DEV_IDENTITY` values `0`, `false`, `off`, and empty do not count as demo identity. Only any other value, together with `DATA_MODE=production`, is a refused deployment. `local-synthetic` with production is refused on its own.
+`ATLAS_DEV_IDENTITY` and `ATLAS_LOCAL_TENANT` values `0`, `false`, `off`, and empty do not count. Only any other value, together with `DATA_MODE=production`, is a refused deployment. `local-synthetic` with production is refused on its own.
 
 Staffing's primary key is `(project_id, consultant_email, tenant)`. An older table is copied with a blank tenant when the column was absent. A later import does not take over that row. The staffing list applies the tenant predicate before `LIMIT`. Invitations dedupe on email, reason, project, reference, and tenant, so one tenant's open invitation does not suppress another's. Nothing is sent.
 

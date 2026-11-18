@@ -1,6 +1,6 @@
 """Real rendered HTML; local lab is not LLM inference. No provider or microphone used."""
 from pathlib import Path
-import json,os,shutil
+import json,os,shutil,tempfile
 from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1];HTML=(ROOT/'ATLAS_Intelligence.html').read_text();checks=[];errors=[]
 def check(name,v):
@@ -52,7 +52,7 @@ with sync_playwright() as pw:
   p.locator('#intelligenceDialog [aria-label="Close story intelligence"]').click()
   # Captures label disconnected mode. Remove injected test content before screenshots.
   p.evaluate("window.dispatchEvent(new CustomEvent('atlas-quality',{detail:{type:'reset'}}));")
-  out=ROOT/'preview/v11';out.mkdir(parents=True,exist_ok=True)
+  out=Path(tempfile.mkdtemp(prefix='atlas-preview-'))
   p.set_viewport_size({'width':1512,'height':982});p.evaluate('scrollTo(0,0)');p.wait_for_timeout(250);p.screenshot(path=str(out/'desktop.png'),full_page=True)
   p.locator('[data-orb-preview=speaking]').click();p.wait_for_timeout(1200);p.screenshot(path=str(out/'speaking-preview.png'),full_page=True)
   p.locator('#studioPreview').click();p.locator('[data-intelligence=quality]').click();p.locator('#qualityDetailed').click();p.screenshot(path=str(out/'quality.png'),full_page=False)

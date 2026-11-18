@@ -143,10 +143,12 @@ function create(ctx) {
   const projectId = ref && lib.access(ref, { email: who.email, mail: who.email, role: 'user', tenant: user.tenant, tenantEnforced: user.tenantEnforced === true }) === 'full' ? clientScrub(ref.data)(String(ref.data.details?.projectId || '')) : '';
   const id = lib.newId(), at = lib.now();
   const tenant = user.tenantEnforced === true ? String(user.tenant || '').toLowerCase() : '';
-  lib.sql.exec(`INSERT INTO gap_requests (id, bid_id, requirement_ids, asks, email, assignee_name, reference_id, project_id, status, created_by, created_by_mail,
-    created_at, answered_at, results, pseudo, source, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, NULL, NULL, NULL, ?, ?)`,
-    id, bidId, JSON.stringify(ids), JSON.stringify(asks), who.email, who.name, ref?.id || null, projectId || null, user.email, user.mail || '', at, who.source, tenant);
-  lib.log(id, user.email, 'gap requested', `bid ${bidId}; ${asks.length} asks; assignee ${who.source}`);
+  lib.recorded(() => {
+    lib.sql.exec(`INSERT INTO gap_requests (id, bid_id, requirement_ids, asks, email, assignee_name, reference_id, project_id, status, created_by, created_by_mail,
+      created_at, answered_at, results, pseudo, source, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, NULL, NULL, NULL, ?, ?)`,
+      id, bidId, JSON.stringify(ids), JSON.stringify(asks), who.email, who.name, ref?.id || null, projectId || null, user.email, user.mail || '', at, who.source, tenant);
+    lib.log(id, user.email, 'gap requested', `bid ${bidId}; ${asks.length} asks; assignee ${who.source}`);
+  });
   // Nothing is sent. The draft names nobody (no client, prospect or person) and links to the request by id only;
   // outreach rows wait for an approver and preview the other view.
   const other = bidView(lib, null, bidId), alias = other(lib.rows('SELECT alias FROM bids WHERE id = ?', bidId)[0]?.alias || '');
@@ -196,10 +198,12 @@ function answer(ctx, g) {
   });
   // Where the assignee keeps these answers: only a reference they may see in full.
   const refId = typeof b.referenceId === 'string' && lib.access(lib.row(b.referenceId), user) === 'full' ? b.referenceId : g.reference_id;
-  lib.sql.exec("UPDATE gap_requests SET status = 'answered', answered_at = ?, results = ?, pseudo = ?, reference_id = ? WHERE id = ?",
-    lib.now(), JSON.stringify(results), JSON.stringify(map), refId || null, g.id);
   const count = s => results.filter(r => r.status === s).length;
-  lib.log(g.id, user.email, 'gap answered', `answered ${count('answered_unverified')}, unknown ${count('unknown')}, deferred ${count('deferred')}, open ${count('open')}`);
+  lib.recorded(() => {
+    lib.sql.exec("UPDATE gap_requests SET status = 'answered', answered_at = ?, results = ?, pseudo = ?, reference_id = ? WHERE id = ?",
+      lib.now(), JSON.stringify(results), JSON.stringify(map), refId || null, g.id);
+    lib.log(g.id, user.email, 'gap answered', `answered ${count('answered_unverified')}, unknown ${count('unknown')}, deferred ${count('deferred')}, open ${count('open')}`);
+  });
   return render(lib, user, rowOf(lib, g.id));
 }
 
@@ -208,8 +212,10 @@ function dismiss(ctx, g) {
   if (!mine && !isCreator(g, user)) throw fail(404, 'Gap request not found.');
   if (g.status !== 'open') throw fail(409, 'This request is no longer open.');
   para(obj(ctx.body).note, 300); // an optional note is accepted but not stored (the §2.4 table has no column for it)
-  lib.sql.exec("UPDATE gap_requests SET status = 'dismissed' WHERE id = ?", g.id);
-  lib.log(g.id, user.email, 'gap dismissed', mine ? 'by assignee' : 'by creator');
+  lib.recorded(() => {
+    lib.sql.exec("UPDATE gap_requests SET status = 'dismissed' WHERE id = ?", g.id);
+    lib.log(g.id, user.email, 'gap dismissed', mine ? 'by assignee' : 'by creator');
+  });
   return render(lib, user, rowOf(lib, g.id));
 }
 
