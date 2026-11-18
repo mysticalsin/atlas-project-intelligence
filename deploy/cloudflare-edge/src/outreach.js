@@ -76,6 +76,8 @@ export function ensure(lib) {
   if (withDirectory.length && !withDirectory.includes('directory_tenant')) lib.sql.exec("ALTER TABLE outreach ADD COLUMN directory_tenant TEXT NOT NULL DEFAULT ''");
   const withConversation = lib.rows("SELECT name FROM pragma_table_info('outreach')").map(r => r.name);
   if (withConversation.length && !withConversation.includes('conversation_id')) lib.sql.exec("ALTER TABLE outreach ADD COLUMN conversation_id TEXT NOT NULL DEFAULT ''");
+  const withKey = lib.rows("SELECT name FROM pragma_table_info('outreach')").map(r => r.name);
+  if (withKey.length && !withKey.includes('idempotency_key')) lib.sql.exec('ALTER TABLE outreach ADD COLUMN idempotency_key TEXT');
   ensured.add(lib);
 }
 
@@ -105,9 +107,11 @@ function queueRows(lib, item) {
   for (const channel of QUEUED) {
     if (!lib.rows('SELECT id FROM outreach WHERE kind = ? AND subject_id = ? AND channel = ?', kind, subjectId, channel)[0]) {
       const id = lib.newId();
-      lib.sql.exec(`INSERT OR IGNORE INTO outreach (id, kind, subject_id, channel, to_email, status, reason, payload, created_at, tenant)
-        VALUES (?, ?, ?, ?, ?, 'pending_approval', '', ?, ?, ?)`, id, kind, subjectId, channel, to, payload, lib.now(), tenant);
-      lib.log(id, 'atlas', 'outreach pending_approval', `${kind} ${channel}`);
+      lib.recorded(() => {
+        lib.sql.exec(`INSERT OR IGNORE INTO outreach (id, kind, subject_id, channel, to_email, status, reason, payload, created_at, tenant)
+          VALUES (?, ?, ?, ?, ?, 'pending_approval', '', ?, ?, ?)`, id, kind, subjectId, channel, to, payload, lib.now(), tenant);
+        lib.log(id, 'atlas', 'outreach pending_approval', `${kind} ${channel}`);
+      });
       created++;
     }
     rows.push(lib.rows('SELECT * FROM outreach WHERE kind = ? AND subject_id = ? AND channel = ?', kind, subjectId, channel)[0]);
@@ -328,7 +332,9 @@ function importCsv(lib, user, body) {
     const write = () => {
       if (s.managerEmail && tenant && lib.bindTrust) applyStaffingAssignment(lib, actor, s);
       else reconcileStaffing(lib, s);
-      return inviteDue(lib, [s], today);
+      const due = inviteDue(lib, [s], today);
+      lib.log('library', user.email, 'staffing updated', 'csv: 1 row');
+      return due;
     };
     try {
       if (s.managerEmail && tenant && lib.bindTrust && typeof lib.transactionSync !== 'function') throw fail(503, 'Atomic staffing changes need storage.transactionSync.');
@@ -371,10 +377,12 @@ const staffView = s => ({ projectId: s.project_id, consultantEmail: s.consultant
 const inflight = new WeakMap(); // per Library instance: a Teams send in progress (the DO is the only writer)
 function setStatus(lib, o, status, reason, user, extra = {}) {
   const approved = extra.approved ? [user.email, lib.now()] : [o.approved_by, o.approved_at];
-  lib.sql.exec(`UPDATE outreach SET status = ?, reason = ?, approved_by = ?, approved_at = ?, sent_at = ?, activity_id = ?, aad_object_id = ?, directory_tenant = ?, conversation_id = ? WHERE id = ?`,
-    status, reason, approved[0] ?? null, approved[1] ?? null, extra.sentAt ?? o.sent_at ?? null, extra.activityId ?? o.activity_id ?? null, extra.aadObjectId ?? o.aad_object_id ?? null, extra.directoryTenant ?? o.directory_tenant ?? '', extra.conversationId ?? o.conversation_id ?? '', o.id);
-  lib.log(o.id, user.email, 'outreach ' + status, `${o.kind} ${o.channel}`);
-  return view(rowOf(lib, o.id));
+  return lib.recorded(() => {
+    lib.sql.exec(`UPDATE outreach SET status = ?, reason = ?, approved_by = ?, approved_at = ?, sent_at = ?, activity_id = ?, aad_object_id = ?, directory_tenant = ?, conversation_id = ? WHERE id = ?`,
+      status, reason, approved[0] ?? null, approved[1] ?? null, extra.sentAt ?? o.sent_at ?? null, extra.activityId ?? o.activity_id ?? null, extra.aadObjectId ?? o.aad_object_id ?? null, extra.directoryTenant ?? o.directory_tenant ?? '', extra.conversationId ?? o.conversation_id ?? '', o.id);
+    lib.log(o.id, user.email, 'outreach ' + status, `${o.kind} ${o.channel}`);
+    return view(rowOf(lib, o.id));
+  });
 }
 
 function subjectOpen(lib, o) {
@@ -409,6 +417,24 @@ function activityFor(o, origin, approver) {
   return { type: 'message', attachments: [{ contentType: 'application/vnd.microsoft.card.adaptive', content: card }] };
 }
 
+const SENDING = 'This message is already sending. It stays sending until a reviewer releases it.';
+// Claim the row before the network call. A later mark that rolls back leaves status 'sending'
+// and the same idempotency key. A retry sees that status and does not send again.
+function claimSend(lib, o, user) {
+  const key = lib.newId();
+  return lib.recorded(() => {
+    const cur = rowOf(lib, o.id);
+    if (!cur || !ACTIONABLE.has(cur.status)) {
+      const status = String(cur?.status || '');
+      throw fail(409, status === 'sending' ? SENDING : `This item is already ${status.replace(/_/g, ' ')}.`);
+    }
+    lib.sql.exec("UPDATE outreach SET status = 'sending', reason = '', idempotency_key = ? WHERE id = ? AND status = ?", key, o.id, cur.status);
+    const claimed = rowOf(lib, o.id);
+    if (!claimed || claimed.status !== 'sending' || claimed.idempotency_key !== key) throw fail(409, SENDING);
+    lib.log(o.id, user.email, 'outreach sending', `${o.kind} ${o.channel}`);
+    return claimed;
+  });
+}
 async function sendTeams(ctx, o) {
   const { lib, user } = ctx, teams = lib.services?.teams;
   if (!teams) return setStatus(lib, o, 'blocked_external', REASONS.teamsOff, user, { approved: true });
@@ -424,15 +450,23 @@ async function sendTeams(ctx, o) {
   if (busy.has(o.id)) throw fail(409, 'This item is being sent.');
   busy.add(o.id); inflight.set(lib, busy);
   try {
-    const sent = await teams.send({ serviceUrl: conv.service_url, conversationId: conv.conversation_id, tenantId: conv.tenant_id, aadObjectId: conv.aad_object_id },
-      activityFor(o, originOf(ctx), user.email));
-    return setStatus(lib, rowOf(lib, o.id), 'sent', '', user, { approved: true, sentAt: lib.now(), activityId: str(sent?.id, 200) || null, aadObjectId: conv.aad_object_id, directoryTenant: conv.tenant_id, conversationId: conv.conversation_id });
-  } catch (e) {
-    if (e?.status === 403 && /MessageWritesBlocked/i.test(`${e.code || ''} ${e.message || ''}`)) {
-      lib.sql.exec("UPDATE teams_conversations SET status = 'stopped', updated_at = ? WHERE subject = ?", lib.now(), conv.subject);
-      return setStatus(lib, rowOf(lib, o.id), 'failed', REASONS.blocked, user, { approved: true });
+    claimSend(lib, o, user);
+    let sent;
+    try {
+      sent = await teams.send({ serviceUrl: conv.service_url, conversationId: conv.conversation_id, tenantId: conv.tenant_id, aadObjectId: conv.aad_object_id },
+        activityFor(o, originOf(ctx), user.email));
+    } catch (e) {
+      if (e?.status === 403 && /MessageWritesBlocked/i.test(`${e.code || ''} ${e.message || ''}`)) {
+        return lib.recorded(() => {
+          lib.sql.exec("UPDATE teams_conversations SET status = 'stopped', updated_at = ? WHERE subject = ?", lib.now(), conv.subject);
+          lib.sql.exec('UPDATE outreach SET status = ?, reason = ?, approved_by = ?, approved_at = ? WHERE id = ?', 'failed', REASONS.blocked, user.email, lib.now(), o.id);
+          lib.log(o.id, user.email, 'outreach failed', `${o.kind} ${o.channel}`);
+          return view(rowOf(lib, o.id));
+        });
+      }
+      return setStatus(lib, rowOf(lib, o.id), 'failed', `Teams did not accept the message (${e?.status ? 'HTTP ' + e.status : 'no answer'}).`, user, { approved: true });
     }
-    return setStatus(lib, rowOf(lib, o.id), 'failed', `Teams did not accept the message (${e?.status ? 'HTTP ' + e.status : 'no answer'}).`, user, { approved: true });
+    return setStatus(lib, rowOf(lib, o.id), 'sent', '', user, { approved: true, sentAt: lib.now(), activityId: str(sent?.id, 200) || null, aadObjectId: conv.aad_object_id, directoryTenant: conv.tenant_id, conversationId: conv.conversation_id });
   } finally { busy.delete(o.id); }
 }
 
@@ -442,10 +476,15 @@ function sameOutreachTenant(row, user) {
 async function act(ctx, id) {
   const { lib, user } = ctx, action = obj(ctx.body).action;
   if (user?.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
-  if (action !== 'approve' && action !== 'dismiss') throw fail(400, "action must be 'approve' or 'dismiss'.");
+  if (!['approve', 'dismiss', 'release'].includes(action)) throw fail(400, "action must be 'approve', 'dismiss' or 'release'.");
   const o = rowOf(lib, str(id, 64));
   if (!o || !sameOutreachTenant(o, user)) throw fail(404, 'Outreach item not found.');
   if (inflight.get(lib)?.has(o.id)) throw fail(409, 'This item is being sent.');
+  if (o.status === 'sending') {
+    if (action !== 'release') throw fail(409, SENDING);
+    return { item: setStatus(lib, o, 'failed', 'A reviewer released a send that did not finish.', user) };
+  }
+  if (action === 'release') throw fail(409, 'This item is not sending.');
   // An approved email draft lives only in the approver's page: approving it again returns the same draft while its
   // subject is open. The row keeps its status and first approver; the audit gets one more `outreach drafted` row.
   if (action === 'approve' && o.status === 'drafted' && o.channel === 'email_draft') {
@@ -507,6 +546,11 @@ export function daily(lib, user = {}) {
   return Object.fromEntries(Object.entries({ gapsExpired, claimsExpired, staffingInvited: invited, outreachQueued: queued, teamsSeenPruned: pruned }).filter(([, n]) => n));
 }
 
+// The seen row and the audit line commit together. A 503 from lib.log rolls both back.
+function recorded(lib, fn) {
+  if (typeof lib.transactionSync !== 'function') throw fail(500, 'The Teams event was not recorded.');
+  return lib.transactionSync(fn);
+}
 // ---- System word `teams-event` (from the Worker's verified bot endpoint only; user `teams-bot`, role `system`).
 const guid = v => { const s = uuidish(v); return s.includes('-') ? s : ''; };
 const OTHERS_CARD = () => messageCard({ title: 'This card belongs to someone else.', text: 'Nothing was changed.' });
@@ -559,51 +603,48 @@ export async function system(ctx) {
     if (hiddenRef && e.verb !== 'decline') return { body: { ok: true, card: messageCard({ title: 'Nothing was changed.', text: 'This invitation can only be declined from here.' }) } };
     const auditOn = storyOpen && typeof lib.auditFor === 'function' ? lib.auditFor(viewer, inv.reference_id, inv.tenant) : 'library';
     const p = parsed(o.payload), origin = originOf(ctx);
-    // teams_seen and the status compare-and-swap commit together. changes() is the guard.
-    // A missed update rolls both back, so a retry is not treated as a duplicate.
-    const commit = (query, ...params) => {
-      if (typeof lib.transactionSync !== 'function') throw fail(503, 'Atomic invitation changes need storage.transactionSync.');
-      lib.transactionSync(() => {
-        lib.sql.exec('INSERT OR IGNORE INTO teams_seen (activity_id, at) VALUES (?, ?)', activityId, now);
-        lib.sql.exec(query, ...params);
-        if (Number(lib.rows('SELECT changes() AS n')[0]?.n || 0) !== 1) throw fail(409, 'This invitation is closed. Nothing was changed.');
-      });
-    };
+    let slot = '';
+    if (e.verb !== 'decline') {
+      const base = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(inv.slot || '') ? inv.slot.slice(0, 16) : now.slice(0, 16);
+      slot = new Date(Date.parse(base + ':00Z') + 864e5).toISOString().slice(0, 16);
+    }
     try {
-      if (e.verb === 'decline') commit(`UPDATE invitations SET status = 'dismissed' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, inv.id);
-      else {
-        const base = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(inv.slot || '') ? inv.slot.slice(0, 16) : now.slice(0, 16);
-        const slot = new Date(Date.parse(base + ':00Z') + 864e5).toISOString().slice(0, 16);
-        commit(`UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, slot, inv.id);
-      }
+      return recorded(lib, () => {
+        lib.sql.exec('INSERT OR IGNORE INTO teams_seen (activity_id, at) VALUES (?, ?)', activityId, now);
+        if (e.verb === 'decline') lib.sql.exec(`UPDATE invitations SET status = 'dismissed' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, inv.id);
+        else lib.sql.exec(`UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, slot, inv.id);
+        if (Number(lib.rows('SELECT changes() AS n')[0]?.n || 0) !== 1) throw fail(409, 'This invitation is closed. Nothing was changed.');
+        if (e.verb === 'decline') {
+          lib.log(hiddenRef ? 'library' : auditOn, inv.email, 'invitation dismiss', `${inv.reason} (Teams card)`);
+          return { body: { ok: true, card: messageCard({ title: 'Understood: no interview for this project.', text: 'Nothing else will be sent about it.' }) } };
+        }
+        lib.log(auditOn, inv.email, 'invitation schedule', `${inv.reason} (Teams card: tomorrow)`);
+        return { body: { ok: true, card: interviewCard({ invitationId: inv.id, outreachId: o.id, projectRef: obj(p.preview).title, origin, note: 'Moved to tomorrow. Start whenever it suits you.' }) } };
+      });
     } catch (err) {
-      if (err?.status !== 409) throw err;
+      if (err?.status !== 409 || err.message !== 'This invitation is closed. Nothing was changed.') throw err;
       noteInvitation({ rejection: { id: inv.id, phase: inv.status, event: inviteEvent } });
       return { body: { ok: true, card: messageCard({ title: 'This invitation is closed.', text: 'Nothing was changed.' }) } };
     }
-    if (e.verb === 'decline') {
-      if (!hiddenRef) lib.log(auditOn, inv.email, 'invitation dismiss', `${inv.reason} (Teams card)`);
-      return { body: { ok: true, card: messageCard({ title: 'Understood: no interview for this project.', text: 'Nothing else will be sent about it.' }) } };
-    }
-    lib.log(auditOn, inv.email, 'invitation schedule', `${inv.reason} (Teams card: tomorrow)`);
-    return { body: { ok: true, card: interviewCard({ invitationId: inv.id, outreachId: o.id, projectRef: obj(p.preview).title, origin, note: 'Moved to tomorrow. Start whenever it suits you.' }) } };
   }
   if (lib.rows('SELECT 1 AS seen FROM teams_seen WHERE activity_id = ?', activityId)[0]) return { body: { ok: true, duplicate: true } };
-  lib.sql.exec('INSERT OR IGNORE INTO teams_seen (activity_id, at) VALUES (?, ?)', activityId, now);
   const subject = `${tid}:${oid}`;
-  if (kind === 'install') {
-    lib.sql.exec(`INSERT INTO teams_conversations (subject, aad_object_id, tenant_id, teams_user_id, conversation_id, service_url, email, status, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?) ON CONFLICT (subject) DO UPDATE SET aad_object_id = excluded.aad_object_id, tenant_id = excluded.tenant_id,
-      teams_user_id = excluded.teams_user_id, conversation_id = excluded.conversation_id, service_url = excluded.service_url,
-      email = CASE WHEN excluded.email != '' THEN excluded.email ELSE teams_conversations.email END, status = 'active', updated_at = excluded.updated_at`,
-    subject, oid, tid, str(e.teamsUserId, 256), conversationId, service, email(e.email), now);
-    lib.log('teams', 'teams-bot', 'teams install', 'personal scope');
-    return { body: { ok: true } };
-  }
-  if (kind === 'uninstall' || kind === 'stop') {
-    lib.sql.exec('UPDATE teams_conversations SET status = ?, updated_at = ? WHERE subject = ?', kind === 'stop' ? 'stopped' : 'uninstalled', now, subject);
-    lib.log('teams', 'teams-bot', 'teams ' + kind, 'personal scope');
-    return { body: { ok: true } };
-  }
-  throw fail(400, 'Unknown Teams event.');
+  return recorded(lib, () => {
+    lib.sql.exec('INSERT OR IGNORE INTO teams_seen (activity_id, at) VALUES (?, ?)', activityId, now);
+    if (kind === 'install') {
+      lib.sql.exec(`INSERT INTO teams_conversations (subject, aad_object_id, tenant_id, teams_user_id, conversation_id, service_url, email, status, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?) ON CONFLICT (subject) DO UPDATE SET aad_object_id = excluded.aad_object_id, tenant_id = excluded.tenant_id,
+        teams_user_id = excluded.teams_user_id, conversation_id = excluded.conversation_id, service_url = excluded.service_url,
+        email = CASE WHEN excluded.email != '' THEN excluded.email ELSE teams_conversations.email END, status = 'active', updated_at = excluded.updated_at`,
+      subject, oid, tid, str(e.teamsUserId, 256), conversationId, service, email(e.email), now);
+      lib.log('teams', 'teams-bot', 'teams install', 'personal scope');
+      return { body: { ok: true } };
+    }
+    if (kind === 'uninstall' || kind === 'stop') {
+      lib.sql.exec('UPDATE teams_conversations SET status = ?, updated_at = ? WHERE subject = ?', kind === 'stop' ? 'stopped' : 'uninstalled', now, subject);
+      lib.log('teams', 'teams-bot', 'teams ' + kind, 'personal scope');
+      return { body: { ok: true } };
+    }
+    throw fail(400, 'Unknown Teams event.');
+  });
 }

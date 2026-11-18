@@ -4,6 +4,7 @@ import base64, json, hashlib, os, re, sys
 ROOT=Path(__file__).resolve().parent
 sys.path.insert(0,str(ROOT))
 from atlas_voice.quality import NUMERIC, FIELDS, TO_TOPIC  # stdlib only: the ledger's field labels and number rule, one source
+from atlas_voice.csp import RUNTIME_BLOCK, meta_csp, script_hashes
 def read_text(path):
     return path.read_text(encoding='utf-8')
 def write_text(path, text):
@@ -56,9 +57,19 @@ slots={'__CSS__':read_text(ROOT/'src/styles.css')+'\n'+read_text(ROOT/'src/voice
  '__PROFILE_CORE__':read_text(ROOT/'src/profile-core.js'),
  '__PROFILE_UI__':read_text(ROOT/'src/profile-ui.js'),
  # The admin view machine is plain functions. Export keywords are for the node tests; the page is a classic script.
- '__JOURNEY__':read_text(ROOT/'src/admin-metrics-machine.js').replace('export ','')+'\n'+read_text(ROOT/'src/erasure-machine.js').replace('export ','')+'\n'+read_text(ROOT/'src/journey-ui.js')}
+ '__JOURNEY__':read_text(ROOT/'src/admin-metrics-machine.js').replace('export ','')+'\n'+read_text(ROOT/'src/erasure-machine.js').replace('export ','')+'\n'+read_text(ROOT/'src/journey-ui.js'),
+ # Loaded before every other script: the one HTML policy, then the JSON runtime block, then the reader that copies it onto window.ATLAS_RUNTIME.
+ '__SAFE_HTML__':read_text(ROOT/'src/safe-html.js'),
+ '__RUNTIME__':read_text(ROOT/'src/runtime.js'),
+ '__RUNTIME_BLOCK__':RUNTIME_BLOCK}
 text=read_text(ROOT/'src/shell.html')
 for k,v in slots.items():text=text.replace(k,v)
+hashes=script_hashes(text)
+text=text.replace('__CSP_META__', meta_csp(hashes=hashes, script_blob=True, worker_blob=True, media_blob=True))
+generated='export const PAGE_SCRIPT_HASHES = '+json.dumps(hashes)+';\nexport const RUNTIME_BLOCK = '+json.dumps(RUNTIME_BLOCK)+';\n'
+csp_out=ROOT/'deploy/cloudflare-edge/src/csp.generated.js'
+csp_out.parent.mkdir(parents=True, exist_ok=True)
+write_text(csp_out, generated)
 text=text.replace('<title>ATLAS Presence / Mantu — A rhythm you recognize</title>','<title>ATLAS Voice Studio / Mantu</title>')
 text=text.replace('<title>ATLAS Voice Studio / Mantu</title>','<title>ATLAS Intelligence / Mantu — Quality before storytelling</title>')
 text=text.replace('<title>ATLAS Intelligence / Mantu — Quality before storytelling</title>','<title>ATLAS Project Intelligence / Mantu</title>')

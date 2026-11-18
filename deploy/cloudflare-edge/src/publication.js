@@ -164,6 +164,11 @@ function applyDecided(prior, event) {
   const lane = event.lane === 'manager' ? 'manager' : event.lane === 'presales' ? 'presales' : '';
   const decision = event.decision === 'approved' || event.decision === 'changes_requested' ? event.decision : '';
   if (!lane || !decision) return null;
+  const prev = prior.validation || {};
+  const current = lane === 'manager' ? prev.managerDecision : prev.presalesDecision;
+  const note = event.note || '';
+  // A repeated approval, or the same changes request with the same note, is not a new decision.
+  if (current === decision && (decision !== 'changes_requested' || (prev.note || '') === note)) return { unchanged: true };
   const validation = { ...(prior.validation || {}), by: event.by || '', at: event.at || '', note: event.note || '', status: 'pending' };
   if (lane === 'manager') validation.managerDecision = decision;
   else validation.presalesDecision = decision;
@@ -195,6 +200,7 @@ export function publicationTransition(state, event) {
   if (type === 'decided') {
     const next = applyDecided(prior, event);
     if (!next) return illegal(state, event);
+    if (next.unchanged) return { ok: true, illegal: false, unchanged: true, state: prior, status: publicationStatus(prior), effects: [] };
     return done(next, publicationStatus(next));
   }
   if (type === 'admin_published') {

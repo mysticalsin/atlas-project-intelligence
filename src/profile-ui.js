@@ -110,12 +110,15 @@ $('n1Email')?.addEventListener('change',async()=>{const name=$('n1Name'),seq=++n
  if(!hit||seq!==n1Seq||name.value.trim()||C.validEmail($('n1Email').value)!==e)return;  // a newer change, a reopened form or typing wins
  n1Auto={email:e,...hit};name.value=hit.name;paintProjectForm();});
 // ---- admin: People directory (§5.6). Rows are built from the mapped approved columns only; nothing else is uploaded.
-const DIR={table:null,file:''};
-async function renderDirectory(){const el=$('peopleDirectory');if(!el)return;const b=await window.AtlasAuth.boot();
- if(b.libraryRole!=='admin'||!b.features?.profile||window.AtlasAuth.mode!=='live'){el.hidden=true;return;}
- el.hidden=false;el.replaceChildren(h('h3',{text:'People directory'}));let st;
- try{st=await app().libraryApi('/directory');}catch(e){el.append(h('p',{class:'tiny muted',text:e.message}));return;}
+const DIR={table:null,file:''};let dirSeq=0;
+async function renderDirectory(){const el=$('peopleDirectory');if(!el)return;const mine=++dirSeq;el.hidden=true;const b=await window.AtlasAuth.boot();
+ if(mine!==dirSeq)return;
+ if(b.libraryRole!=='admin'||!b.features?.profile||window.AtlasAuth.mode!=='live')return;
+ let st;
+ try{st=await app().libraryApi('/directory');}catch(e){if(mine!==dirSeq)return;el.replaceChildren(h('h3',{text:'People directory'}),h('p',{class:'tiny muted',text:e.message}));el.hidden=false;return;}
+ if(mine!==dirSeq)return;
  const prod=st.dataMode==='production',n=Number(st.rows?.dna_export)||0; // an import replaces the DNA-export rows (the shrink guard compares with those)
+ el.replaceChildren(h('h3',{text:'People directory'}));
  el.append(h('p',{class:'tiny muted',text:prod?'Upload the DNA export as CSV. Only email, name, first name, job title and N+1 are read; every other column stays on your computer. Nobody can browse this directory.':'Test deployment: only synthetic addresses (example.com, .test) are accepted. Real DNA data needs the production deployment.'}),
   h('p',{class:'tiny',text:(st.rows?.dna||0)+' from DNA · '+(st.rows?.dna_export||0)+' from the DNA export'}));
  const line=(label,s,need)=>h('p',{class:'tiny muted',text:label+': '+(s?.status==='on'?'connected':'not connected ('+need+')')});
@@ -126,7 +129,8 @@ async function renderDirectory(){const el=$('peopleDirectory');if(!el)return;con
   if(f.size>5000000){out.textContent='This file is over 5 MB.';return;}
   try{DIR.table=C.parseCsv(await f.text());DIR.file=f.name;mapping(box,out,n);}catch(e){out.textContent=e.message;}});
  el.append(h('label',{class:'field-label',for:'dirFile'},'DNA export (CSV)'),file,box,out,
-  h('div',{class:'actions'},h('button',{class:'quiet',type:'button',onclick:()=>app().confirm('Clear the people directory?','This removes every imported DNA row. Profiles and your colleagues’ own edits are not affected.',async()=>{try{const r=await app().libraryApi('/directory/clear',{method:'POST',body:{}});app().toast((r.cleared||0)+' rows removed.');renderDirectory();}catch(e){app().toast(e.message);}})},'Clear directory')));}
+  h('div',{class:'actions'},h('button',{class:'quiet',type:'button',onclick:()=>app().confirm('Clear the people directory?','This removes every imported DNA row. Profiles and your colleagues’ own edits are not affected.',async()=>{try{const r=await app().libraryApi('/directory/clear',{method:'POST',body:{}});app().toast((r.cleared||0)+' rows removed.');renderDirectory();}catch(e){app().toast(e.message);}})},'Clear directory')));
+ el.hidden=false;}
 function mapping(box,out,before){const t=DIR.table,sug=C.suggestColumns(t.header),labels={email:'Email',name:'Name',givenName:'First name',title:'Job title',managerName:'N+1 name',managerEmail:'N+1 email'},sel={};
  box.append(h('p',{class:'tiny muted',text:'Check the columns ATLAS suggests. Other columns are never read or sent.'}));
  for(const k of C.APPROVED){const s=h('select',{id:'dirCol_'+k,'aria-label':labels[k]},h('option',{value:'-1'},'Not in this file'),...t.header.map((c,i)=>h('option',{value:String(i)},c||'Column '+(i+1))));s.value=String(sug[k]);sel[k]=s;box.append(h('label',{class:'field-label',for:'dirCol_'+k},labels[k]),s);}

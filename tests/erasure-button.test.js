@@ -96,6 +96,7 @@ function harness() {
   const sandbox = {
     document,
     location: { hostname: 'atlas.example' },
+    AtlasSafe: { html() { return ''; }, setHTML() {}, insertHTML() {}, trusted(value) { return value; } },
     console: { warn: (...args) => warns.push(args), log() {}, error() {} },
     queueMicrotask,
     setTimeout,

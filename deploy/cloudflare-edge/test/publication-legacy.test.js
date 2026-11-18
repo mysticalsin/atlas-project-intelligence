@@ -159,7 +159,8 @@ test('upsert conflicts on the stored revision and does not write the new revisio
   data.title += ' edited';
   await assert.rejects(l.upsert(OWNER, { id: saved.id, reference: data }), e => e.status === 409 && /changed/.test(e.message));
   const raw = l.rows('SELECT revision, title FROM refs WHERE id = ?', saved.id)[0];
-  assert.equal(raw.revision, 2);
+  // The injected revision change runs inside the same audit transaction, so the refusal rolls it back too.
+  assert.equal(raw.revision, 1);
   assert.equal(raw.title, 'one');
 });
 

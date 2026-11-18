@@ -1,5 +1,6 @@
 /* Journey and admin dashboard. Talks only to this deployment's library API. */
 (function(){'use strict';
+const {html,setHTML,insertHTML,trusted}=window.AtlasSafe;
 const $=id=>document.getElementById(id);
 const PEOPLE=[
  {email:'consultant@example.test',label:'Consultant',roles:['ATLAS.Interview']},
@@ -8,7 +9,8 @@ const PEOPLE=[
  {email:'admin@example.test',label:'Verified admin',roles:['ATLAS.Interview','ATLAS.Admin']}
 ];
 const localDemo=()=>/^(localhost|127\.0\.0\.1)$/.test(location.hostname);
-function h(tag,attrs,children){const n=document.createElement(tag);if(attrs)for(const [k,v] of Object.entries(attrs)){if(k==='text')n.textContent=v;else if(k==='html')n.innerHTML=v;else if(v!=null)n.setAttribute(k,v);}(children||[]).forEach(c=>n.append(c));return n;}
+const STATUS_LABEL={in_review:'In review',needs_work:'Needs work',changes_requested:'Changes requested',awaiting_validation:'Awaiting N+1',published:'Published',withdrawn:'Withdrawn'};
+function h(tag,attrs,children){const n=document.createElement(tag);if(attrs)for(const [k,v] of Object.entries(attrs)){if(k==='text')n.textContent=v;else if(v!=null)n.setAttribute(k,v);}(children||[]).forEach(c=>n.append(c));return n;}
 function app(){return window.ATLAS_APP;}
 async function api(path,opts){const A=app();if(!A?.libraryApi)throw Error('The library API is not on this page.');return A.libraryApi(path,opts);}
 function personaBar(){if(!localDemo())return h('p',{class:'tiny muted',text:'Sign in with your work account. This page does not offer a persona you can type.'});
@@ -51,13 +53,13 @@ async function renderJourney(){const root=$('journey');if(!root)return;root.repl
  async function paintQueue(){queue.replaceChildren(h('h2',{text:'Stories you can open'}));
   let list={items:[]};try{list=await api('');}catch(e){queue.append(banner('warn',e.message||'Could not load stories.'));return;}
   const items=list.items||[];if(!items.length){queue.append(h('p',{text:'Nothing here yet. A consultant story appears after it is saved to the library.'}));return;}
-  for(const item of items){const box=h('article');const progress=item.status==='published'?'Published':item.status==='admin_test'?'Admin test, not public':item.managerDecision==='approved'&&item.presalesDecision!=='approved'?'Manager approved · awaiting pre-sales':(item.status||'');box.append(h('strong',{text:item.title||'Untitled'}),h('p',{class:'tiny',text:progress}));
+  for(const item of items){const box=h('article');const progress=item.status==='published'?'Published':item.status==='admin_test'?'Admin test, not public':item.status==='awaiting_validation'&&item.managerDecision==='approved'&&item.presalesDecision!=='approved'?'Manager approved · awaiting pre-sales':(STATUS_LABEL[item.status]||item.status||'');box.append(h('strong',{text:item.title||'Untitled'}),h('p',{class:'tiny',text:progress}));
    if(boot.libraryRole==='user'&&item.access==='full'&&item.mine!==true&&item.managerDecision!=='approved'&&item.status!=='published'&&item.status!=='admin_test'){const ok=h('button',{class:'btn',type:'button',text:'Approve as trusted manager'});ok.addEventListener('click',()=>act(item.id,'manager','validate',ok));const no=h('button',{class:'btn',type:'button',text:'Ask for changes'});no.addEventListener('click',()=>act(item.id,'manager','request_changes',no,'Please add the evidence source.'));box.append(ok,no);}
    if(boot.libraryRole==='presales'&&item.presalesDecision!=='approved'&&item.status!=='published'&&item.status!=='admin_test'){const ok=h('button',{class:'btn primary',type:'button',text:'Approve for bid / pre-sales'});ok.addEventListener('click',()=>act(item.id,'presales','validate',ok));box.append(ok);}
    if(boot.libraryRole==='admin'){const test=h('button',{class:'btn',type:'button',text:'Admin test bypass'});test.addEventListener('click',()=>bypass(item.id,true,test));const pub=h('button',{class:'btn',type:'button',text:'Admin publish bypass'});pub.addEventListener('click',()=>bypass(item.id,false,pub));box.append(test,pub);}
    queue.append(box);}
  }
- async function act(id,lane,decision,btn,note){btn.disabled=true;try{await api('/'+id+'/validate',{method:'POST',body:{lane,decision,note:note||''}});await paintQueue();}catch(e){queue.append(banner('warn',e.message));btn.disabled=false;}}
+ async function act(id,lane,decision,btn,note){btn.disabled=true;try{await api('/'+id+'/validate',{method:'POST',body:{lane,decision,note:note||''}});await paintQueue();}catch(e){queue.append(banner('warn',e.message));btn.disabled=false;btn.focus();}}
  async function bypass(id,test,btn){btn.disabled=true;try{await api('/admin/publish',{method:'POST',body:{id,test}});await paintQueue();}catch(e){queue.append(banner('warn',e.message));btn.disabled=false;}}
  paint();paintQueue();
  const head=h('div',{class:'journey-head'},[h('div',{},[h('p',{class:'eyebrow',text:'CONSULTANT JOURNEY'}),h('h1',{id:'journeyTitle',text:'From the work to a reference.'}),h('p',{text:'Confirm what is true. Blocked systems stay blocked. Publication for everyone else needs both approvals.'})]),personaBar()]);

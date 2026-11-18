@@ -272,7 +272,8 @@ test('a status write conflicts when the stored revision changed', async () => {
   const before = l.row(saved.id);
   assert.throws(() => l.withdraw(owner, saved.id, { note: 'pause' }), e => e.status === 409 && /changed/.test(e.message));
   const after = l.row(saved.id);
-  assert.equal(after.revision, before.revision + 1);
+  // The injected revision change runs inside the same audit transaction, so the refusal rolls it back too.
+  assert.equal(after.revision, before.revision);
   assert.equal(after.status, before.status);
   assert.equal(after.state.withdrawn, false);
 });

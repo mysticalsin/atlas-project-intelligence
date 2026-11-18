@@ -86,7 +86,7 @@ async def through_boundary(app, method, headers, cookies=None):
 def test_proxied_request_with_pinned_host_passes_and_direct_loopback_is_refused(tunnel_app):
     ok = asyncio.run(through_boundary(tunnel_app, 'GET', {'Host': HOST}))
     assert ok.status == 200 and ok.headers['Cache-Control'] == 'no-store'
-    assert f'wss://{HOST}' in ok.headers['Content-Security-Policy']
+    assert ok.headers['Content-Security-Policy'] == "default-src 'none'; frame-ancestors 'none'"
     direct = asyncio.run(through_boundary(tunnel_app, 'GET', {'Host': '127.0.0.1:8080'}))
     assert direct.status == 403
 

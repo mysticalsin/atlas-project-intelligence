@@ -14,6 +14,7 @@ import { RatingError, ratingInput, questionPlan, requestBody, compose, agentQual
 import { profileFold, profileSelection, storedConsent } from './profile.js';
 import { placeholders, readChunks } from './sql-bound.js';
 import { sameTenant, TENANT_ID } from './authz.js';
+import { appendAudit, ensureChain, verifyChain, anchoredVerdict } from './audit-chain.js';
 import { recordUsage } from './telemetry.js';
 import { publicationEffect, publicationStatus, publicationTransition, readPublication } from './publication.js';
 import { invitationTransition, noteInvitation, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
@@ -177,9 +178,26 @@ export class Library {
   // services: outbound adapters for feature modules ({ teams } in production; empty in tests and local runs).
   // rater: rating.storyRater(env) (null: no JEV); metric(name, values): numbers only (default: one console.log line).
   constructor(sql, { now = () => new Date().toISOString(), newId = () => crypto.randomUUID().replace(/-/g, ''), complete = null, embed = null, readyScore = READY_SCORE, model = '', services = {},
-    rater = null, metric = defaultMetric, transactionSync = null } = {}) {
+    rater = null, metric = defaultMetric, transactionSync = null, auditKey = '', dbId = '' } = {}) {
+    if (auditKey == null) throw Object.assign(fail(503, 'LOG_SALT is not set.'), { code: 'LOG_SALT' });
     const atomic = typeof transactionSync === 'function' ? transactionSync : (typeof sql?.transactionSync === 'function' ? sql.transactionSync.bind(sql) : null);
-    Object.assign(this, { sql, now, newId, complete, embed, readyScore, model, services, rater, metric, transactionSync: atomic });
+    // One synchronous transaction for a business write and its audit line. A 409 or a 503 rolls both back.
+    // An inner call joins the open transaction. There is no await inside it: a returned promise is a mistake.
+    // Without a real transaction the property stays null, so a caller that cannot be atomic still refuses.
+    const recorded = fn => {
+      if (typeof fn !== 'function') throw fail(500, 'A library write needs a function.');
+      const run = () => {
+        const result = fn();
+        if (result && typeof result.then === 'function') throw fail(500, 'A library write cannot await inside its audit transaction.');
+        return result;
+      };
+      if (this._auditTx) return run();
+      if (typeof this._atomic !== 'function') throw fail(503, 'Atomic library writes need storage.transactionSync.');
+      this._auditTx = 1;
+      try { return this._atomic(run); }
+      finally { this._auditTx = 0; }
+    };
+    Object.assign(this, { sql, now, newId, complete, embed, readyScore, model, services, rater, metric, _atomic: atomic, _auditTx: 0, recorded, transactionSync: typeof atomic === 'function' ? recorded : null, auditKey, dbId: String(dbId ?? '') });
     this.inflight = new Map(); // `${id}:${revision}` -> { gen, engine, first, all }: one rating per revision at a time
     for (const q of SCHEMA) this.sql.exec(q);
     const inv = this.rows("SELECT name FROM pragma_table_info('invitations')").map(r => r.name);
@@ -187,6 +205,7 @@ export class Library {
     this.sql.exec("CREATE UNIQUE INDEX IF NOT EXISTS invitations_open_scope ON invitations(email, reason, project_id, reference_id, tenant) WHERE status IN ('open', 'scheduled')");
     migrateManagerTrust(this);
     migrateStoryTenant(this);
+    ensureChain(this.sql, this.auditKey, this.transactionSync, this.dbId);
   }
 
   rows(q, ...p) { return this.sql.exec(q, ...p).toArray(); }
@@ -199,7 +218,10 @@ export class Library {
     if (!r) return null;
     try { return JSON.parse(r.state); } catch { return null; }
   }
-  log(id, actor, action, detail = '') { this.sql.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', id, actor, action, this.now(), String(detail).slice(0, 300)); }
+  log(id, actor, action, detail = '') {
+    if (this.auditKey == null) throw fail(503, 'LOG_SALT is not set.');
+    appendAudit(this.sql, { id, actor, action, at: this.now(), detail: String(detail).slice(0, 300) }, this.auditKey, this.dbId);
+  }
   // An invitation or card action may name a story. The audit id is that story only when the story's stored tenant
   // is the caller's tenant. A foreign id is not an audit target.
   auditId(refId, tenant) {
@@ -295,11 +317,16 @@ export class Library {
   }
 
   summary(row, level, user) {
-    const d = row.data, q = row.state.quality;
-    return { id: row.id, title: d.title, status: row.status, revision: row.revision, access: level, mine: row.owner === user.email,
+    const d = row.data, q = row.state.quality, v = row.state.validation || {};
+    const item = { id: row.id, title: d.title, status: row.status, revision: row.revision, access: level, mine: row.owner === user.email,
       practice: d.jev?.primary?.label || '', industry: d.sector, country: d.details.country, serviceLines: d.details.serviceLines, technologies: d.details.technologies,
       headline: d.report?.headline || '', impact: d.jev?.impact ?? null, qualityScore: q?.score ?? null, qualityStatus: q?.status || '',
       updatedAt: row.updated_at, nextReview: row.next_review, owner: row.owner, client: level === 'full' ? d.client.name : '' };
+    if (level === 'full') {
+      item.managerDecision = v.managerDecision || 'pending';
+      item.presalesDecision = v.presalesDecision || 'pending';
+    }
+    return item;
   }
 
   async revisionPlan(user, body) {
@@ -331,15 +358,17 @@ export class Library {
     const revised = acceptPublication(publicationTransition(row ? row.state : {}, { type: 'revised', id, tenant: keptTenant, managerStaffIgnored: !!data.validation.managerStaff }), { id, event: 'revised' });
     if (!revised) throw fail(409, PUBLICATION_CHANGE_REFUSED);
     const state = revised.state, status = revised.status, next = new Date(Date.parse(plan.at) + REVIEW_DAYS * 864e5).toISOString();
-    if (row) this.writeStatus(`UPDATE refs SET title=?, status=?, revision=?, content_hash=?, practice=?, industry=?, country=?, manager_email=?, members=?, quality_score=NULL,
-      updated_at=?, updated_by=?, next_review=?, data=?, state=?, embedding=NULL WHERE id=? AND revision=? AND status=?`,
-      data.title, status, revision, plan.hash, data.jev?.primary?.key || '', data.sector, data.details.country, data.validation.manager.email, members, plan.at, plan.user.email, next, JSON.stringify(data), JSON.stringify(state), id, row.revision, row.storedStatus);
-    else this.writeStatus(`INSERT INTO refs (id, owner, local_id, title, status, revision, content_hash, practice, industry, country, manager_email, members, created_at, updated_at, updated_by, next_review, data, state, tenant)
-      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM refs WHERE id = ?)`,
-      id, plan.user.email, plan.localId, data.title, status, revision, plan.hash, data.jev?.primary?.key || '', data.sector, data.details.country, data.validation.manager.email, members, plan.at, plan.at, plan.user.email, next, JSON.stringify(data), JSON.stringify(state), keptTenant, id);
-    this.sql.exec('INSERT INTO revisions (id, revision, data, author, at) VALUES (?, ?, ?, ?, ?)', id, revision, JSON.stringify(data), plan.user.email, plan.at);
-    this.log(id, plan.user.email, row ? 'revised' : 'created', 'revision ' + revision + (row ? (state.withdrawn ? '; stays withdrawn until a reviewer reinstates' : '; manager and pre-sales approval reopened') : ''));
-    return { id, unchanged: false };
+    return this.recorded(() => {
+      if (row) this.writeStatus(`UPDATE refs SET title=?, status=?, revision=?, content_hash=?, practice=?, industry=?, country=?, manager_email=?, members=?, quality_score=NULL,
+        updated_at=?, updated_by=?, next_review=?, data=?, state=?, embedding=NULL WHERE id=? AND revision=? AND status=?`,
+        data.title, status, revision, plan.hash, data.jev?.primary?.key || '', data.sector, data.details.country, data.validation.manager.email, members, plan.at, plan.user.email, next, JSON.stringify(data), JSON.stringify(state), id, row.revision, row.storedStatus);
+      else this.writeStatus(`INSERT INTO refs (id, owner, local_id, title, status, revision, content_hash, practice, industry, country, manager_email, members, created_at, updated_at, updated_by, next_review, data, state, tenant)
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM refs WHERE id = ?)`,
+        id, plan.user.email, plan.localId, data.title, status, revision, plan.hash, data.jev?.primary?.key || '', data.sector, data.details.country, data.validation.manager.email, members, plan.at, plan.at, plan.user.email, next, JSON.stringify(data), JSON.stringify(state), keptTenant, id);
+      this.sql.exec('INSERT INTO revisions (id, revision, data, author, at) VALUES (?, ?, ?, ?, ?)', id, revision, JSON.stringify(data), plan.user.email, plan.at);
+      this.log(id, plan.user.email, row ? 'revised' : 'created', 'revision ' + revision + (row ? (state.withdrawn ? '; stays withdrawn until a reviewer reinstates' : '; manager and pre-sales approval reopened') : ''));
+      return { id, unchanged: false };
+    });
   }
 
   async upsert(user, body) {
@@ -354,6 +383,32 @@ export class Library {
     if (user?.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
   }
 
+  // Rows written before chain-start were not signed. They stay visible and are marked unverified.
+  chainStartSeq() {
+    try {
+      const row = this.rows(`SELECT seq FROM audit WHERE action = 'chain-start' AND "commit" IS NOT NULL ORDER BY seq LIMIT 1`)[0];
+      return row ? Number(row.seq) : null;
+    } catch { return null; }
+  }
+  auditLines(id) {
+    let keyed = true;
+    try { this.sql.exec('SELECT "commit" FROM audit LIMIT 0'); }
+    catch { keyed = false; }
+    const start = keyed ? this.chainStartSeq() : null;
+    const query = keyed
+      ? 'SELECT seq, actor, action, at, detail, "commit" FROM audit WHERE id = ? ORDER BY seq DESC LIMIT 100'
+      : 'SELECT seq, actor, action, at, detail FROM audit WHERE id = ? ORDER BY seq DESC LIMIT 100';
+    const verdict = keyed ? anchoredVerdict(this.sql, verifyChain(this.sql, this.auditKey, this.dbId)) : null;
+    const verified = verdict?.ok ? new Set(verdict.verifiedSeqs || []) : null;
+    return this.rows(query, id).map(a => {
+      const line = { actor: a.actor, action: a.action, at: a.at, detail: a.action === 'possible duplicate' ? '' : a.detail };
+      if (!keyed) return { ...line, unverified: true };
+      if (start != null && Number(a.seq) < start) return { ...line, legacy: true, unverified: true };
+      if (!verdict?.ok || !a.commit || !verified.has(Number(a.seq))) return { ...line, unverified: true };
+      return line;
+    });
+  }
+
   get(user, id) {
     this.demandTenant(user);
     const row = this.row(id), level = this.access(row, user);
@@ -362,7 +417,7 @@ export class Library {
     return { ...this.summary(row, level, user), data: full ? row.data : anonymise(row.data),
       state: { quality: full ? row.state.quality : publicQuality(row.state.quality), validation: full ? row.state.validation : { status: row.state.validation?.status }, withdrawn: !!row.state.withdrawn, duplicates: this.visibleDuplicates(row, user) },
       revisions: full ? this.rows('SELECT revision, author, at FROM revisions WHERE id = ? ORDER BY revision DESC', row.id) : [],
-      audit: full ? this.rows('SELECT actor, action, at, detail FROM audit WHERE id = ? ORDER BY seq DESC LIMIT 100', row.id).map(a => a.action === 'possible duplicate' ? { ...a, detail: '' } : a) : [],
+      audit: full ? this.auditLines(row.id) : [],
       permissions: { edit: this.canEdit(row, user), validate: this.canValidate(row, user), validateLane: this.canManagerApprove(row, user) ? 'manager' : this.canPresalesApprove(row, user) ? 'presales' : '', withdraw: this.canEdit(row, user), review: this.canEdit(row, user), reinstate: ['admin', 'reviewer'].includes(user.role), merge: ['admin', 'reviewer'].includes(user.role) },
       rating: { running: this.inflight.has(row.id + ':' + row.revision) }, ...(full ? { jevAllowed: this.jevAllowed(row) } : {}) };
   }
@@ -419,12 +474,14 @@ export class Library {
     } else if (enforced && (!TENANT_ID.test(tenant) || String(actor.tenant || '').toLowerCase() !== tenant)) {
       throw fail(403, 'A verified tenant is required to bind a manager.');
     }
-    this.sql.exec(`INSERT INTO manager_trust (owner, email, source, tenant, at) VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(owner, email, tenant) DO UPDATE SET
-        source = CASE WHEN manager_trust.source = 'directory' AND excluded.source = 'staffing' THEN manager_trust.source ELSE excluded.source END,
-        at = excluded.at`,
-      owner, who, source, tenant, this.now());
-    this.log('library', actor.email || actor.role, 'manager trust', `${source}`);
+    this.recorded(() => {
+      this.sql.exec(`INSERT INTO manager_trust (owner, email, source, tenant, at) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(owner, email, tenant) DO UPDATE SET
+          source = CASE WHEN manager_trust.source = 'directory' AND excluded.source = 'staffing' THEN manager_trust.source ELSE excluded.source END,
+          at = excluded.at`,
+        owner, who, source, tenant, this.now());
+      this.log('library', actor.email || actor.role, 'manager trust', `${source}`);
+    });
     return { owner, email: who, source };
   }
 
@@ -437,9 +494,11 @@ export class Library {
 
   setState(row, state, actor, action, detail) {
     const status = deriveStatus(state);
-    this.writeStatus('UPDATE refs SET state = ?, status = ?, quality_score = ? WHERE id = ? AND revision = ? AND status = ?',
-      JSON.stringify(state), status, state.quality?.score ?? null, row.id, row.revision, row.storedStatus);
-    this.log(row.id, actor, action, detail);
+    this.recorded(() => {
+      this.writeStatus('UPDATE refs SET state = ?, status = ?, quality_score = ? WHERE id = ? AND revision = ? AND status = ?',
+        JSON.stringify(state), status, state.quality?.score ?? null, row.id, row.revision, row.storedStatus);
+      this.log(row.id, actor, action, detail);
+    });
     return status;
   }
 
@@ -583,6 +642,7 @@ export class Library {
   async index(id) {
     const row = this.row(id); if (!row) return;
     const vec = this.embed ? await this.embed(searchText(recordView(this, row.data))) : null;
+    return this.recorded(() => {
     const storyTenant = String(row.tenant || row.state?.tenant || '').toLowerCase();
     const others = this.rows("SELECT id, title, data, state, embedding, tenant FROM refs WHERE merged_into IS NULL AND id != ? AND lower(COALESCE(tenant, '')) = ?", id, storyTenant);
     // Same guard as visibleRows: one bad row is logged and skipped, and nothing is written until every row has been parsed.
@@ -620,6 +680,7 @@ export class Library {
     const fresh = this.columnState(id) || {};
     this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...fresh, duplicates: mine.slice(0, 10) }), id);
     if (mine.length) this.log(id, 'atlas', 'possible duplicate', String(mine.length));
+    });
   }
 
   // Natural-language recommendation: understand the context, retrieve by meaning, then rerank with reasons.
@@ -675,7 +736,8 @@ export class Library {
     const moved = acceptPublication(publicationTransition(gone.state, { type: 'merged', id: gone.id }), { id: gone.id, event: 'merged' });
     if (!moved) throw fail(409, PUBLICATION_CHANGE_REFUSED);
     const plan = await this.revisionPlan({ ...user }, { id: keep.id, reference: k });
-    const apply = () => {
+    if (typeof this.transactionSync !== 'function') throw fail(503, 'Atomic reference changes need storage.transactionSync.');
+    this.recorded(() => {
       this.writeStatus('UPDATE refs SET merged_into = ?, status = ?, state = ? WHERE id = ? AND revision = ? AND status = ? AND merged_into IS NULL',
         keep.id, moved.status, JSON.stringify(moved.state), gone.id, gone.revision, gone.storedStatus);
       const sharedWith = [...new Set([...(keep.state.sharedWith || []), gone.owner].filter(Boolean))];
@@ -684,11 +746,7 @@ export class Library {
       this.log(gone.id, user.email, 'merged into', keep.id);
       if (!plan.unchanged) this.commitRevision(plan);
       this.log(keep.id, user.email, 'consolidated', `merged ${gone.data.title} (${gone.id})`);
-    };
-    // A merge writes the retired row and then the keeper. Without a transaction those are two commits,
-    // and a crash between them leaves a story merged away. outreach.js refuses the same missing API.
-    if (typeof this.transactionSync !== 'function') throw fail(503, 'Atomic reference changes need storage.transactionSync.');
-    this.transactionSync(apply);
+    });
     return this.summary(this.row(keep.id), 'full', user);
   }
 
@@ -759,10 +817,12 @@ export class Library {
     const dupe = this.rows("SELECT id FROM invitations WHERE lower(email) = ? AND reason = ? AND status IN ('open','scheduled') AND lower(project_id) = lower(?) AND reference_id = ? AND lower(COALESCE(tenant, '')) = ?", to, reason, pid, refId, tenant)[0];
     if (dupe) return this.rows('SELECT * FROM invitations WHERE id = ?', dupe.id)[0];
     const id = this.newId(), slot = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(b.slot || '')) ? String(b.slot).slice(0, 25) : '';
-    this.sql.exec('INSERT INTO invitations (id, email, project_id, title, reason, slot, reference_id, status, created_at, source, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      id, to, pid, str(b.title, 140), reason, slot, refId, slot ? 'scheduled' : 'open', this.now(), str(b.source || actor, 60), tenant);
-    this.log(this.auditId(refId, tenant), actor, 'interview invitation', `${reason} for ${to}`);
-    return this.rows('SELECT * FROM invitations WHERE id = ?', id)[0];
+    return this.recorded(() => {
+      this.sql.exec('INSERT INTO invitations (id, email, project_id, title, reason, slot, reference_id, status, created_at, source, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        id, to, pid, str(b.title, 140), reason, slot, refId, slot ? 'scheduled' : 'open', this.now(), str(b.source || actor, 60), tenant);
+      this.log(this.auditId(refId, tenant), actor, 'interview invitation', `${reason} for ${to}`);
+      return this.rows('SELECT * FROM invitations WHERE id = ?', id)[0];
+    });
   }
   invitations(user) {
     if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
@@ -815,19 +875,25 @@ export class Library {
     const storyOpen = openRef(keptRef);
     if (keptRef && !storyOpen) {
       if (action !== 'dismiss') throw fail(404, 'Reference not found.');
-      this.sql.exec(`UPDATE invitations SET status = 'dismissed' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, inv.id);
-      if (held() !== 'dismissed') refuse();
-      return this.invitationView(user, this.rows('SELECT * FROM invitations WHERE id = ?', inv.id)[0]);
+      return this.recorded(() => {
+        this.sql.exec(`UPDATE invitations SET status = 'dismissed' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, inv.id);
+        if (held() !== 'dismissed') refuse();
+        this.log('library', user.email, 'invitation dismiss', inv.reason);
+        return this.invitationView(user, this.rows('SELECT * FROM invitations WHERE id = ?', inv.id)[0]);
+      });
     }
     const auditOn = storyOpen ? this.auditFor(user, keptRef, inv.tenant) : 'library';
-    if (action === 'schedule') { const slot = String(obj(body).slot || ''); if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(slot)) throw fail(400, 'Pick a date and time.'); this.sql.exec(`UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, slot.slice(0, 25), inv.id); }
-    else if (action === 'dismiss') this.sql.exec(`UPDATE invitations SET status = 'dismissed' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, inv.id);
-    else if (action === 'done') this.sql.exec(`UPDATE invitations SET status = 'done', reference_id = ? WHERE id = ? AND ${OPEN_INVITATION_SQL}`, nextRef || inv.reference_id, inv.id);
-    else throw fail(400, 'Unknown action.');
-    const expectStatus = action === 'schedule' ? 'scheduled' : action === 'dismiss' ? 'dismissed' : 'done';
-    if (held() !== expectStatus) refuse();
-    this.log(auditOn, user.email, 'invitation ' + action, inv.reason);
-    return this.invitationView(user, this.rows('SELECT * FROM invitations WHERE id = ?', inv.id)[0]);
+    if (action === 'schedule') { const slot = String(obj(body).slot || ''); if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(slot)) throw fail(400, 'Pick a date and time.'); }
+    return this.recorded(() => {
+      if (action === 'schedule') this.sql.exec(`UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, String(obj(body).slot || '').slice(0, 25), inv.id);
+      else if (action === 'dismiss') this.sql.exec(`UPDATE invitations SET status = 'dismissed' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, inv.id);
+      else if (action === 'done') this.sql.exec(`UPDATE invitations SET status = 'done', reference_id = ? WHERE id = ? AND ${OPEN_INVITATION_SQL}`, nextRef || inv.reference_id, inv.id);
+      else throw fail(400, 'Unknown action.');
+      const expectStatus = action === 'schedule' ? 'scheduled' : action === 'dismiss' ? 'dismissed' : 'done';
+      if (held() !== expectStatus) refuse();
+      this.log(auditOn, user.email, 'invitation ' + action, inv.reason);
+      return this.invitationView(user, this.rows('SELECT * FROM invitations WHERE id = ?', inv.id)[0]);
+    });
   }
   // Daily: every reference not updated for six months gets one open update invitation for its owner.
   // The status compare is the decoded publication status. CAS still compares the stored column.
@@ -894,6 +960,7 @@ export class Library {
     if (decision === 'changes_requested' && !note) throw fail(400, 'Say what should change.');
     const decided = acceptPublication(publicationTransition(row.state, { type: 'decided', id: row.id, lane, decision, by: user.email, at: this.now(), note }), { id: row.id, event: 'decided' });
     if (!decided) throw fail(409, PUBLICATION_CHANGE_REFUSED);
+    if (decided.unchanged) return this.get(user, id);
     this.setState(row, decided.state, user.email, lane + ' ' + decision, lane);
     return this.get(user, id);
   }

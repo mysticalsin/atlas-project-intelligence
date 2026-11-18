@@ -603,9 +603,8 @@ test('a stranded directory_v2 is renamed back to directory', () => {
 test('profile storage without transactionSync is refused before any migration', () => {
   const sql = memorySql();
   const bare = { exec: (...args) => sql.exec(...args) };
-  const plain = new Library(bare, { now: () => '2026-11-08T00:00:00.000Z' });
-  assert.throws(() => ensureProfile(plain), /transactionSync/);
-  assert.equal(plain.rows("SELECT name FROM sqlite_master WHERE name = 'profiles'").length, 0);
+  assert.throws(() => new Library(bare, { now: () => '2026-11-08T00:00:00.000Z' }), /atomic/);
+  assert.equal(sql.exec("SELECT name FROM sqlite_master WHERE name = 'profiles'").toArray().length, 0);
 });
 
 test('a populated profiles_v2 is not dropped when the live profiles table already has rows', () => {

@@ -4,16 +4,19 @@
 
 import { fail, str } from './util.js';
 import { sameTenant, TENANT_ID } from './authz.js';
+import { sha256Hex } from './audit-chain.js';
 import { readPublication } from './publication.js';
 
 const DAY = 864e5;
 const KINDS = new Set(['interview', 'approval', 'export', 'admin_publish', 'journey', 'error', 'usage']);
 const TOKEN = new Set(['actual', 'missing', 'unknown', 'estimated']);
 
-export async function personaKey(user = {}) {
+export function personaKeySync(user = {}) {
   const raw = `${String(user.tenant || '').toLowerCase()}|${String(user.email || user.sub || '').toLowerCase()}`;
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('atlas-persona:' + raw));
-  return [...new Uint8Array(buf)].slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join('');
+  return sha256Hex('atlas-persona:' + raw).slice(0, 16);
+}
+export async function personaKey(user = {}) {
+  return personaKeySync(user);
 }
 
 export function ensureTelemetry(lib) {
