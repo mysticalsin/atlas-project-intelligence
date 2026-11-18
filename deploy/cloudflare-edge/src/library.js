@@ -148,6 +148,7 @@ const SCHEMA = [
   'CREATE TABLE IF NOT EXISTS audit (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT, actor TEXT, action TEXT, at TEXT, detail TEXT)',
   `CREATE TABLE IF NOT EXISTS invitations (id TEXT PRIMARY KEY, email TEXT, project_id TEXT, title TEXT, reason TEXT, slot TEXT, reference_id TEXT,
     status TEXT, created_at TEXT, source TEXT)`,
+  'CREATE TABLE IF NOT EXISTS invitation_erasure (email TEXT NOT NULL, tenant TEXT NOT NULL, at TEXT NOT NULL, PRIMARY KEY (email, tenant))',
 ];
 
 function migrateManagerTrust(lib) {
@@ -861,6 +862,7 @@ export class Library {
     if (user?.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
     const tenant = user ? String(user.tenant || '').toLowerCase() : String(b.tenant || '').toLowerCase();
     if (b.tenant !== undefined && String(b.tenant).toLowerCase() !== tenant) throw fail(403, 'An invitation cannot choose a different tenant.');
+    if (this.rows('SELECT 1 AS n FROM invitation_erasure WHERE email = ? AND tenant = ?', to, tenant)[0]) throw Object.assign(fail(409, 'This subject was erased.'), { code: 'SUBJECT_ERASED' });
     const reason = ['project_end', 'milestone', 'six_month_update', 'periodic_review', 'manual'].includes(b.reason) ? b.reason : 'manual';
     const refId = str(b.referenceId, 40), pid = str(b.projectId, 60);
     if (refId && user && !this.access(this.row(refId), user)) throw fail(404, 'Reference not found.');
@@ -961,8 +963,12 @@ export class Library {
       catch { malformedRow(r.id); continue; }
       const to = this.reachableOwnerAddress({ owner: r.owner, tenant: recordTenant, state: { tenant: recordTenant } });
       if (!to) continue;
-      this.invite('atlas', { email: to, reason: 'six_month_update', referenceId: r.id, projectId, title: r.title, source: 'six-month scan', tenant });
-      invited++;
+      try {
+        const row = this.invite('atlas', { email: to, reason: 'six_month_update', referenceId: r.id, projectId, title: r.title, source: 'six-month scan', tenant });
+        if (row) invited++;
+      } catch (err) {
+        if (err.code !== 'SUBJECT_ERASED') throw err;
+      }
     }
     return invited;
   }

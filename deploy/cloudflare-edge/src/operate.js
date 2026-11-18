@@ -14,7 +14,7 @@ function metricQuery(url, bucket = 'day') {
 }
 function dsarStores() {
   return {
-    coveredLocal: ['journey for this subject and tenant', 'profile for this subject and tenant', 'telemetry for this persona and tenant', 'manager trust for this subject and tenant', 'this subject\'s directory row for this tenant'],
+    coveredLocal: ['journey for this subject and tenant', 'profile for this subject and tenant', 'telemetry for this persona and tenant', 'manager trust for this subject and tenant', 'this subject\'s directory row for this tenant', 'invitations for this subject and tenant'],
     retained: [
       { store: 'legacy-blank-tenant-rows', action: 'quarantined', note: 'Blank ownership stays blank. It was not assigned a tenant and was not deleted by this request. A privacy export names it legacy_unscoped and does not include its content. An operator resolves it by a reviewed migration that assigns the tenant.' },
       { store: 'hindsight-bank', action: 'not-contacted', note: 'The vendor bank was not called. A subject-only bank is not read when a verified tenant is present, and it was not deleted.' },
@@ -26,6 +26,18 @@ function dsarStores() {
   };
 }
 const tableReady = (lib, name) => lib.rows("SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = ?", name).length > 0;
+// Deletes this subject's invitations and records the address so a later scan cannot create another. Caller holds the write transaction.
+export function blockSubjectInvitations(lib, emails, tenant, at) {
+  let removed = 0;
+  const stamp = at || (typeof lib.now === 'function' ? lib.now() : new Date().toISOString());
+  for (const email of [...new Set((emails || []).map(v => String(v || '').trim().toLowerCase()).filter(Boolean))]) {
+    const n = lib.rows("SELECT COUNT(*) AS n FROM invitations WHERE lower(email) = ? AND lower(COALESCE(tenant, '')) = ?", email, tenant)[0].n;
+    if (n) lib.exec("DELETE FROM invitations WHERE lower(email) = ? AND lower(COALESCE(tenant, '')) = ?", email, tenant);
+    lib.exec('INSERT OR REPLACE INTO invitation_erasure (email, tenant, at) VALUES (?, ?, ?)', email, tenant, stamp);
+    removed += n;
+  }
+  return removed;
+}
 const erasureToken = () => 'erased:' + [...crypto.getRandomValues(new Uint8Array(6))].map(b => b.toString(16).padStart(2, '0')).join('');
 function tokenOf(ctx) {
   const given = String(ctx?.token || '');
@@ -286,12 +298,14 @@ export async function privacyRoutes(ctx) {
           directory = count(`SELECT COUNT(*) AS n FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys);
           if (directory) lib.exec(`DELETE FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys);
         }
+        const invitations = blockSubjectInvitations(lib, aliases, tenant);
         const outcomes = [
           { store: 'journey', removed: journey, error: null },
           { store: 'telemetry', removed: telemetry, error: null },
           { store: 'profile', removed: profile, error: null },
           { store: 'manager-trust', removed: trust, error: null },
           { store: 'directory', removed: directory, error: null },
+          { store: 'invitations', removed: invitations, error: null },
         ];
         lib.log('library', user.email, 'privacy delete', outcomes.map(o => o.store + ' ' + o.removed).join(', '));
         return outcomes;
@@ -300,7 +314,7 @@ export async function privacyRoutes(ctx) {
       if (error.status) throw error;
       throw fail(500, 'The deletion did not finish. Nothing was removed.');
     }
-    return { body: { outcomes, ...dsarStores(), complete: false, vendorDeletion: 'not-asserted', note: 'Each store reports only what this request removed for this subject and tenant. A failure returns an error and removes nothing. Other tenants, other people, and blank-tenant rows are not counted. Stories, staffing, invitations, and audit history are not deleted. Quarantine is not deletion. Vendor deletion is not-asserted. This is not a GDPR certification.' } };  }
+    return { body: { outcomes, ...dsarStores(), complete: false, vendorDeletion: 'not-asserted', note: 'Each store reports only what this request removed for this subject and tenant. A failure returns an error and removes nothing. Other tenants, other people, and blank-tenant rows are not counted. Stories, staffing, and audit history are not deleted. Invitations for this subject in this tenant are removed and are not created again. Quarantine is not deletion. Vendor deletion is not-asserted. This is not a GDPR certification.' } };  }
   if (method === 'POST' && user.role === 'admin' && parts[1] === 'purge-telemetry') {
     if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
     return { body: purgeTelemetry(lib, Number(env.ATLAS_TELEMETRY_DAYS) || 180, user) };

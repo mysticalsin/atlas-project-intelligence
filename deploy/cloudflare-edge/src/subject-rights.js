@@ -12,7 +12,7 @@ import * as privacy from './privacy.js';
 import { subjectHash } from './privacy.js';
 import { str, obj, fail } from './util.js';
 import { TENANT_ID } from './authz.js';
-import { eraseJourneyFor, eraseTelemetryFor, eraseManagerTrustFor, eraseDirectoryFor } from './operate.js';
+import { eraseJourneyFor, eraseTelemetryFor, eraseManagerTrustFor, eraseDirectoryFor, blockSubjectInvitations } from './operate.js';
 import { placeholders } from './sql-bound.js';
 
 const randomToken = () => 'erased:' + [...crypto.getRandomValues(new Uint8Array(6))].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -309,6 +309,7 @@ function eraseWithin(lib, user, subj, tenant, { now = lib.now() } = {}) {
   bump('outreachPayloads', scrubOutreachPayloads(lib, tenant, addresses, token));
   if (hasTenantColumn(lib, 'profiles')) { const prof = lib.rows('SELECT COUNT(*) AS n FROM profiles WHERE subject = ? AND ' + TENANT_SQL, email, tenant)[0].n; if (prof) { lib.exec('DELETE FROM profiles WHERE subject = ? AND ' + TENANT_SQL, email, tenant); bump('profile'); } }
   // privacy_flags is keyed by email and has no tenant. Leaving it keeps another tenant's restriction from being cleared or set by this erasure.
+  blockSubjectInvitations(lib, addresses, tenant, now);
   lib.log('privacy', 'atlas', 'erasure completed', 'subject ' + subjectHash(subj).slice(0, 8)); // a pseudonym of a pseudonym, never an email; written before the rewrite so the head it returns is final
   const sameTenantRefs = has('refs') ? lib.rows('SELECT id FROM refs WHERE ' + TENANT_SQL, tenant).map(r => r.id) : [];
   const audit = pseudonymiseAudit(lib, addresses, token, { ids: [...new Set([...touched, ...sameTenantRefs])] });

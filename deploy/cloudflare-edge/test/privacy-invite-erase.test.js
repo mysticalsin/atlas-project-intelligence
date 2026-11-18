@@ -46,4 +46,18 @@ test('privacy delete removes the subject invitations, and scanStale does not cre
   assert.equal(inviteCount(lib), 0);
   assert.equal(lib.scanStale(USER), 0);
   assert.equal(inviteCount(lib), 0);
+  assert.throws(() => lib.invite(EMAIL, { email: EMAIL, reason: 'manual', projectId: 'PRJ-2', title: 'Again', tenant: TENANT }, USER), err => err.code === 'SUBJECT_ERASED');
+  assert.equal(inviteCount(lib), 0);
+});
+
+test('a privacy delete that fails keeps the invitation and the erasure mark', async () => {
+  const lib = open();
+  const saved = await lib.upsert(USER, { localId: 'p2', reference: REF() });
+  lib.sql.exec('UPDATE refs SET next_review = ? WHERE id = ?', '2020-01-01T00:00:00.000Z', saved.id);
+  lib.invite(EMAIL, { email: EMAIL, reason: 'manual', projectId: 'PRJ-1', title: 'Open', tenant: TENANT }, USER);
+  const orig = lib.log.bind(lib);
+  lib.log = (...args) => { if (args[2] === 'privacy delete') throw new Error('stop'); return orig(...args); };
+  await assert.rejects(() => privacyRoutes({ method: 'POST', parts: ['privacy', 'delete'], user: USER, lib, env: {}, body: {} }));
+  assert.equal(inviteCount(lib), 1);
+  assert.equal(lib.rows('SELECT COUNT(*) AS n FROM invitation_erasure WHERE email = ? AND tenant = ?', EMAIL, TENANT)[0].n, 0);
 });
