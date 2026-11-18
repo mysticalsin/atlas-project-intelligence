@@ -76,3 +76,22 @@ test('a damaged chain still accepts housekeeping and a consent receipt, and refu
   assert.deepEqual(anchor(lib), before);
   assert.throws(() => lib.nextGen(saved.id), err => err.status === 409);
 });
+
+test('a failed checkpoint leaves no row', async () => {
+  const sql = memorySql();
+  const lib = new Library(sql, { now: () => STAMP, auditKey: SALT });
+  const saved = await lib.upsert(OWNER, { localId: 'p1', reference: REF() });
+  const beforeGen = Number(lib.columnState(saved.id)?.ratingGen) || 0;
+  const beforeAudit = lib.rows('SELECT COUNT(*) AS n FROM audit')[0].n;
+  const inner = sql.exec.bind(sql);
+  sql.exec = (query, ...params) => {
+    const result = inner(query, ...params);
+    if (String(query).includes('INSERT INTO audit') && params[3] === 'rating generation') {
+      inner("UPDATE audit SET hash = 'broken' WHERE action = 'chain-start'");
+    }
+    return result;
+  };
+  assert.throws(() => lib.nextGen(saved.id), err => err.status === 409);
+  assert.equal(Number(lib.columnState(saved.id)?.ratingGen) || 0, beforeGen);
+  assert.equal(lib.rows('SELECT COUNT(*) AS n FROM audit')[0].n, beforeAudit);
+});
