@@ -98,6 +98,14 @@ test('a failed checkpoint leaves no row', async () => {
   assert.equal(lib.rows('SELECT COUNT(*) AS n FROM audit')[0].n, beforeAudit);
 });
 
+test('a bare log is checkpointed, so deleting it fails verify', () => {
+  const { lib } = open();
+  lib.log('library', 'ada@example.test', 'ask', '1 results');
+  sqlOf(lib).exec('DELETE FROM audit WHERE seq = (SELECT MAX(seq) FROM audit)');
+  const after = anchoredVerdict(sqlOf(lib), verifyChain(sqlOf(lib), SALT, lib.dbId));
+  assert.equal(after.ok, false);
+});
+
 test('deleting the last receipt audit line on a healthy chain fails verify', () => {
   const { lib } = open();
   const saved = recordReceipts(lib, SUBJECT, [{ purpose: 'transcription', granted: true }]);
