@@ -366,6 +366,7 @@ export class Library {
     try { return JSON.parse(r.state); } catch { return null; }
   }
   log(id, actor, action, detail = '') {
+    if (!this._auditTx) return this.recorded(() => this.log(id, actor, action, detail));
     if (this.auditKey == null) throw fail(503, 'LOG_SALT is not set.');
     appendAudit(rawSql(this), { id, actor, action, at: this.now(), detail: String(detail).slice(0, 300) }, this.auditKey, this.dbId);
     this._appended = true;
