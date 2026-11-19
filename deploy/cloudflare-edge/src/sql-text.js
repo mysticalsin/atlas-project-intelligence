@@ -201,8 +201,9 @@ export function isMutatingStatement(sql) {
   const words = leadingWords(parts[0]);
   const verb = words[0] || '';
   if (verbOf(verb)) return true;
-  // EXPLAIN DELETE still names a mutation. It is not a read just because the first word is explain.
-  if (verb === 'explain' && words.some(word => verbOf(word))) return true;
+  // EXPLAIN DELETE still names a mutation. EXPLAIN QUERY PLAN only describes one, and a plan read stays a read.
+  const plan = verb === 'explain' && words[1] === 'query' && words[2] === 'plan';
+  if (verb === 'explain' && !plan && words.some(word => verbOf(word))) return true;
   if (verb !== 'with') return false;
   const text = parts[0];
   let depth = 0;
