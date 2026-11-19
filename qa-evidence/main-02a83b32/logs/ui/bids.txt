@@ -1,0 +1,70 @@
+PASS Bids nav shown when features.bids
+PASS Bids view renders the form, list and empty detail
+PASS #bidFile accepts .txt,.md,.docx,.pptx and not .pdf without pdfBriefs
+PASS hints: title private, alias for colleagues and AI, names kept away
+PASS .pdf refused without pdfBriefs and never sent
+PASS images refused
+PASS .docx brief read in the browser
+PASS .txt brief read
+PASS prospect becomes a chip
+PASS alias required: no request without it
+PASS alias naming a declared prospect refused
+PASS create posts title, alias, prospects, brief and file name with the CSRF header
+PASS detail shows the alias and the private title to the author
+PASS masked preview collapsed with the section 2.3 sentence
+PASS masked preview shows only what the server masked
+PASS requirements listed with kind and must, not matched yet
+PASS JEV consent hidden without customerJev
+PASS inline edit (owner): posts the edited list; a new row has no id
+PASS edited requirements shown and labelled as edited by the owner
+PASS verdict banner empty_library: "No published references are available to you yet."
+PASS verdict banner none: "No strong match in the library for this brief."
+PASS none: "Ask consultants for proof" call to action
+PASS verdict banner unranked: "Not ranked: the AI ranking did not answer. Similarity only."
+PASS unranked cards say not ranked, coverage unknown
+PASS verdict banner partial: "Partial matches only. Check each caveat."
+PASS verdict banner strong: "Strong proof found for 1 of 3 requirements."
+PASS uncalibrated thresholds labelled
+PASS result card: relevance, similarity, semantic retrieval, why, transfers, caveat, covers, status, claims x/y
+PASS hostile model text rendered inert
+PASS win signal shown when non-null, with n and "association not causation"
+PASS null win signal: the bounded-adjustment note instead
+PASS coverage chips per requirement
+PASS one-pager disabled until a reference is picked
+PASS one-pager: title, claims with superscript sources, interpretation marked
+PASS Sources: quote, label, reference title, r{revision}, confirmation badge, client where present
+PASS hostile quote inert; dropped claims listed
+PASS one-pager request carries the picked ids and includeClient false by default
+PASS .docx download: alias file name, superscript runs and a Sources section
+PASS .md download with [^n] footnotes
+PASS print: one-pager print mode during window.print, removed after
+PASS print layout: only the one-pager is displayed
+PASS mark as used posts once and the card says so
+PASS outcome saved
+PASS "Ask for proof" only on partial or unmet requirements
+PASS gap dialog: requirement checkboxes and suggested people (never ranked)
+PASS gap request sends {refId, person} for a suggested person and the reference id
+PASS draft shown as a mailto link plus Copy; nothing sent
+PASS outreach chip reads "Teams: BLOCKED_EXTERNAL"
+PASS #bid/<id> deep link opens the bid
+PASS gap answers render under the requirement as "answered · unverified", inert
+PASS gap result "answered_unverified" with quotes carries the unverified speech-recognition label
+PASS gap result "unknown" with quotes carries the unverified speech-recognition label
+PASS gap result "deferred" with quotes carries the unverified speech-recognition label
+PASS gap result "open" with quotes carries the unverified speech-recognition label
+PASS win panel: proof-type rows carry n, rate with a Wilson interval, low-n caveat
+PASS no story table for a plain user
+PASS no horizontal overflow at 320 px (form, detail, one-pager hidden after reload)
+PASS no horizontal overflow at 320 px with the one-pager open
+PASS gap dialog fits at 320 px
+PASS delete asks for confirmation and explains what is kept
+PASS delete posts once; the purged bid shows no title or preview
+PASS reviewer sees the other view: masked alias, no title, no prospects, no preview, no delete
+PASS reviewer win panel shows the story table
+PASS reviewer "All bids" lists aliases without titles
+PASS a non-owner non-reviewer gets "not available" and no bid
+PASS #bidFile accepts .pdf when pdfBriefs
+PASS .pdf goes through POST /api/sheet/ingest when flagged
+PASS JEV consent shown with customerJev, unchecked by default
+PASS match without consent never asks for JEV
+PASS no page errors

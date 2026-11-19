@@ -1,0 +1,13 @@
+PASS manifest-entries: Manifest must enumerate the received release files.
+FAIL manifest-content: changed: .env.example; changed: .gitignore; changed: 00_START_HERE.md; changed: ATLAS_Intelligence.html; changed: ATLAS_Project_Intelligence.html; changed: ATLAS_Voice.html; changed: ATLAS_Voice_Studio.html; changed: CLAUDE.md; changed: Makefile; changed: README.md; changed: atlas_voice/config.py; changed: atlas_voice/identity.py; changed: atlas_voice/interview.py; changed: atlas_voice/jev.py; changed: atlas_voice/realtime.py; changed: atlas_voice/server.py; changed: atlas_voice/wiki.py; changed: build.py; changed: docs/EVALUATION_v12.md; changed: docs/ORB_DESIGN.md; changed: docs/SOURCE_LOCK.json; changed: docs/THIRD_PARTY.md; changed: handoff/BUILD_PLAN.md; changed: handoff/BUILD_STATUS.md; changed: handoff/CHANGELOG.md
+PASS required:00_START_HERE.md: Required source/handoff file.
+PASS required:CLAUDE.md: Required source/handoff file.
+PASS required:CLAUDE_BUILD_PROMPT.md: Required source/handoff file.
+PASS required:handoff/CURRENT_STATUS.md: Required source/handoff file.
+PASS required:handoff/BUILD_PLAN.md: Required source/handoff file.
+PASS required:handoff/CONFIGURATION.md: Required source/handoff file.
+PASS required:handoff/ACCEPTANCE.md: Required source/handoff file.
+PASS required:handoff/CODE_MAP.md: Required source/handoff file.
+PASS release-hygiene: No known secret/runtime/font paths in the manifest; this is not a full content secret scan.
+PASS html-aliases: Four compatibility aliases must be byte-identical.
+PASS logo: Preserve the supplied Mantu asset bytes.

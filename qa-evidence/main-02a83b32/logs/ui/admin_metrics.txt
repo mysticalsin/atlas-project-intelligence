@@ -1,0 +1,10 @@
+PASS an admin sees the Admin control
+PASS loading shows the loading line and no metrics yet
+PASS ready shows each metric card
+PASS ready shows the day chart, the cost sentence and the note
+PASS denied keeps the Admin control hidden
+PASS denied shows the admin-only banner and no metrics or export
+PASS a failed boot does not show the verified-admin sentence
+PASS export allowed downloads the synthetic csv and leaves the metrics
+PASS export blocked keeps the metrics and shows the refusal
+PASS no page errors

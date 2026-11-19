@@ -1,0 +1,40 @@
+BACKEND: EDGE's fake TypeSafe (FAKE_TYPESAFE=1, /__typesafe_mode)
+PASS 1 the storage strip asks for consent right after the first library save
+PASS 1 consent copy is the spec text, word for word
+PASS 1 the row sits right under the storage strip
+PASS 2 Allow gives a JEV rating within 3 s (0.4 s)
+PASS 2 the consent row is gone after Allow
+PASS 2 after the background work settles the rating is still JEV
+PASS 3 dialog says Rated by JEV
+PASS 3 seven dimension rows and three checks
+PASS 3 no raw "conf 0." text
+PASS 3 quality line names the engine and the button reads Rate again
+PASS 4 profile: Story rating by JEV: allowed
+PASS 5 the strip asks the second owner too
+PASS 5 Not now removes the strip row
+PASS 5 the record dialog asks the owner (fallback)
+PASS 5 before consent the review agent rated it
+PASS 11 story markup is shown as text: no injected element
+PASS 5 Allow in the dialog gives Rated by JEV
+PASS 6 the save toast says JEV is rating it
+PASS 6 new revision, instant (saved rating)
+PASS a mailbox that is not the trusted manager cannot read the story
+PASS 7 N+1: no consent row, JEV gauge visible
+PASS fake mode unsure
+PASS 9 Rate again first answers with JEV needs_work and holds
+INFO 9 "To check" was not caught: the second opinion landed before the dialog redrew
+PASS 9 the dialog polls in the second opinion of that rating: Second opinion by the review agent · JEV was unsure
+PASS 9 without a reload
+PASS fake mode down
+PASS 8 down: the save was rated by the review agent · JEV did not answer
+PASS 8 down: Rate again falls back too (circuit_open)
+PASS fake mode ok
+PASS 10 profile: turned off
+PASS 10 after turning off, Rated by the review agent (no_consent)
+PASS 10 ATLAS asks again next time (dialog fallback)
+INFO 14 skipped: the null-quality timing checks need the contract mock (JEV_BROWSER_MOCK=1)
+PASS 13 no key: no consent row in the storage strip
+PASS 13 no key: no consent row in the record dialog
+PASS 13 no key: today's gauge (no engine line, no JEV text)
+PASS 12 no page errors and no alert
+[] []

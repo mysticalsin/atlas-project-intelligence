@@ -1,0 +1,6 @@
+PASS one line
+PASS no toast
+PASS draft kept
+PASS shown once
+PASS cleared after a successful save
+PASS draft still in the tab

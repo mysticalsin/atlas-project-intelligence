@@ -1,0 +1,35 @@
+PASS reference synced to the shared library
+PASS typed manager without a trust row is refused
+PASS manager lane alone does not publish
+PASS both approval lanes publish the reference
+PASS alias required before anything is sent
+PASS bid created with its requirements
+PASS masked preview masks the declared prospect and the email
+PASS match gives an honest verdict banner
+PASS the published reference is proposed as proof
+PASS one-pager with superscript sources and a Sources list
+PASS Markdown export named after the alias
+PASS marked as used
+PASS gap request created: mailto draft, nothing sent, Teams BLOCKED_EXTERNAL
+PASS alex sees the proof request with its alias
+PASS alex sees his own words back
+PASS the bid owner sees the answer labelled "answered · unverified", with the library client masked
+PASS confirmation request: a /go/confirm/<id> link (survives sign-in) and a mailto draft
+PASS claims start unverified
+PASS sam confirms on /confirm
+PASS record-dialog badge flips to "Confirmed by N+1"
+PASS footnote badge flips: every cited claimable sentence reads "Confirmed by N+1"
+PASS a mailbox without ATLAS.Reviewer does not see the outreach queue
+PASS reviewer sees queued outreach rows, Teams BLOCKED_EXTERNAL
+PASS approving a row whose request is answered sends nothing: dismissed, no longer open
+PASS staffing import: an invitation and its outreach rows queued, the client column ignored
+PASS email draft approved: drafted, mailto offered, nothing sent
+PASS Teams approval ends BLOCKED_EXTERNAL with the reason
+PASS Ask ATLAS answers with a verdict and results
+PASS the map lights up the result country
+PASS a public reader sees no email anywhere in the answer
+PASS reviewer win panel shows a rate with its 95% interval at n=5
+PASS reviewer sees the story table
+PASS a plain user sees proof types but no story table
+PASS no horizontal overflow at 320 px (Bids)
+PASS no page errors

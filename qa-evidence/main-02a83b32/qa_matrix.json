@@ -1,0 +1,1745 @@
+{
+  "commit": "02a83b320fdf635cdd8d603a54b791a3fef59152",
+  "results": [
+    {
+      "priority": "Info",
+      "feature": "bootstrap",
+      "role": "consultant",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "Open /?as=consultant@example.test",
+        "libraryRole=user"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "Info",
+      "feature": "bootstrap",
+      "role": "employee",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "Open /?as=alex@mantu.com",
+        "libraryRole=user"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "Info",
+      "feature": "bootstrap",
+      "role": "manager",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "Open /?as=manager@example.test",
+        "libraryRole=user"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "Info",
+      "feature": "bootstrap",
+      "role": "presales",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "Open /?as=presales@example.test",
+        "libraryRole=presales"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "Info",
+      "feature": "bootstrap",
+      "role": "reviewer",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "Open /?as=rev@example.test",
+        "libraryRole=reviewer"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "Info",
+      "feature": "bootstrap",
+      "role": "admin",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "Open /?as=admin@example.test",
+        "libraryRole=admin"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "Info",
+      "feature": "bootstrap",
+      "role": "plain_denied",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "Open /?as=stranger@example.test",
+        "libraryRole=user"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "High",
+      "feature": "surface_interview",
+      "role": "consultant",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As consultant@example.test (consultant)",
+        "Navigate to interview",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/interview_consultant_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_projects",
+      "role": "consultant",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As consultant@example.test (consultant)",
+        "Navigate to projects",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/projects_consultant_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_stories",
+      "role": "consultant",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As consultant@example.test (consultant)",
+        "Navigate to stories",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/stories_consultant_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_library",
+      "role": "consultant",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As consultant@example.test (consultant)",
+        "Navigate to library",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/library_consultant_desktop.png"
+    },
+    {
+      "priority": "Medium",
+      "feature": "surface_bids",
+      "role": "consultant",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As consultant@example.test (consultant)",
+        "Navigate to bids",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/bids_consultant_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_journey",
+      "role": "consultant",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As consultant@example.test (consultant)",
+        "Navigate to journey",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/journey_consultant_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "admin_nav_hidden",
+      "role": "consultant",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As consultant@example.test",
+        "Confirm #adminNav hidden"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "High",
+      "feature": "surface_interview",
+      "role": "employee",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As alex@mantu.com (employee)",
+        "Navigate to interview",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/interview_employee_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_projects",
+      "role": "employee",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As alex@mantu.com (employee)",
+        "Navigate to projects",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/projects_employee_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_stories",
+      "role": "employee",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As alex@mantu.com (employee)",
+        "Navigate to stories",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/stories_employee_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_library",
+      "role": "employee",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As alex@mantu.com (employee)",
+        "Navigate to library",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/library_employee_desktop.png"
+    },
+    {
+      "priority": "Medium",
+      "feature": "surface_bids",
+      "role": "employee",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As alex@mantu.com (employee)",
+        "Navigate to bids",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/bids_employee_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_journey",
+      "role": "employee",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As alex@mantu.com (employee)",
+        "Navigate to journey",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/journey_employee_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "admin_nav_hidden",
+      "role": "employee",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As alex@mantu.com",
+        "Confirm #adminNav hidden"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "High",
+      "feature": "surface_interview",
+      "role": "manager",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As manager@example.test (manager)",
+        "Navigate to interview",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/interview_manager_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_projects",
+      "role": "manager",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As manager@example.test (manager)",
+        "Navigate to projects",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/projects_manager_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_stories",
+      "role": "manager",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As manager@example.test (manager)",
+        "Navigate to stories",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/stories_manager_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_library",
+      "role": "manager",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As manager@example.test (manager)",
+        "Navigate to library",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/library_manager_desktop.png"
+    },
+    {
+      "priority": "Medium",
+      "feature": "surface_bids",
+      "role": "manager",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As manager@example.test (manager)",
+        "Navigate to bids",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/bids_manager_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_journey",
+      "role": "manager",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As manager@example.test (manager)",
+        "Navigate to journey",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/journey_manager_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "admin_nav_hidden",
+      "role": "manager",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As manager@example.test",
+        "Confirm #adminNav hidden"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "High",
+      "feature": "surface_interview",
+      "role": "presales",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As presales@example.test (presales)",
+        "Navigate to interview",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/interview_presales_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_projects",
+      "role": "presales",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As presales@example.test (presales)",
+        "Navigate to projects",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/projects_presales_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_stories",
+      "role": "presales",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As presales@example.test (presales)",
+        "Navigate to stories",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/stories_presales_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_library",
+      "role": "presales",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As presales@example.test (presales)",
+        "Navigate to library",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/library_presales_desktop.png"
+    },
+    {
+      "priority": "Medium",
+      "feature": "surface_bids",
+      "role": "presales",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As presales@example.test (presales)",
+        "Navigate to bids",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/bids_presales_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_journey",
+      "role": "presales",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As presales@example.test (presales)",
+        "Navigate to journey",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/journey_presales_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "admin_nav_hidden",
+      "role": "presales",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As presales@example.test",
+        "Confirm #adminNav hidden"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "High",
+      "feature": "surface_interview",
+      "role": "reviewer",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As rev@example.test (reviewer)",
+        "Navigate to interview",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/interview_reviewer_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_projects",
+      "role": "reviewer",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As rev@example.test (reviewer)",
+        "Navigate to projects",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/projects_reviewer_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_stories",
+      "role": "reviewer",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As rev@example.test (reviewer)",
+        "Navigate to stories",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/stories_reviewer_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_library",
+      "role": "reviewer",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As rev@example.test (reviewer)",
+        "Navigate to library",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/library_reviewer_desktop.png"
+    },
+    {
+      "priority": "Medium",
+      "feature": "surface_bids",
+      "role": "reviewer",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As rev@example.test (reviewer)",
+        "Navigate to bids",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/bids_reviewer_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_journey",
+      "role": "reviewer",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As rev@example.test (reviewer)",
+        "Navigate to journey",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/journey_reviewer_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "admin_nav_hidden",
+      "role": "reviewer",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As rev@example.test",
+        "Confirm #adminNav hidden"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "High",
+      "feature": "surface_interview",
+      "role": "admin",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As admin@example.test (admin)",
+        "Navigate to interview",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/interview_admin_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_projects",
+      "role": "admin",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As admin@example.test (admin)",
+        "Navigate to projects",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/projects_admin_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_stories",
+      "role": "admin",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As admin@example.test (admin)",
+        "Navigate to stories",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/stories_admin_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_library",
+      "role": "admin",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As admin@example.test (admin)",
+        "Navigate to library",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/library_admin_desktop.png"
+    },
+    {
+      "priority": "Medium",
+      "feature": "surface_bids",
+      "role": "admin",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As admin@example.test (admin)",
+        "Navigate to bids",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/bids_admin_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_journey",
+      "role": "admin",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As admin@example.test (admin)",
+        "Navigate to journey",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/journey_admin_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_admin",
+      "role": "admin",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As admin@example.test (admin)",
+        "Navigate to admin",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/admin_admin_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_interview",
+      "role": "plain_denied",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As stranger@example.test (plain_denied)",
+        "Navigate to interview",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/interview_plain-denied_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_projects",
+      "role": "plain_denied",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As stranger@example.test (plain_denied)",
+        "Navigate to projects",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/projects_plain-denied_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_stories",
+      "role": "plain_denied",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As stranger@example.test (plain_denied)",
+        "Navigate to stories",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/stories_plain-denied_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_library",
+      "role": "plain_denied",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As stranger@example.test (plain_denied)",
+        "Navigate to library",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/library_plain-denied_desktop.png"
+    },
+    {
+      "priority": "Medium",
+      "feature": "surface_bids",
+      "role": "plain_denied",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As stranger@example.test (plain_denied)",
+        "Navigate to bids",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/bids_plain-denied_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_journey",
+      "role": "plain_denied",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As stranger@example.test (plain_denied)",
+        "Navigate to journey",
+        "Viewport 1280\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/journey_plain-denied_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "admin_nav_hidden",
+      "role": "plain_denied",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As stranger@example.test",
+        "Confirm #adminNav hidden"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "High",
+      "feature": "admin_denied",
+      "role": "consultant",
+      "viewport": "desktop",
+      "status": "FAIL",
+      "steps": [
+        "As consultant@example.test",
+        "Open /#admin",
+        "Expect denial banner in #admin"
+      ],
+      "ref": "src/journey-ui.js:84",
+      "screenshot": "screenshots/admin-denied_consultant_desktop.png"
+    },
+    {
+      "priority": "High",
+      "feature": "admin_metrics_api",
+      "role": "consultant",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "As consultant",
+        "GET /api/library/admin/metrics",
+        "Expect 403 or empty denial in UI"
+      ],
+      "ref": "deploy/cloudflare-edge/src/library-routes.js",
+      "screenshot": ""
+    },
+    {
+      "priority": "Medium",
+      "feature": "interview_empty",
+      "role": "consultant",
+      "viewport": "desktop",
+      "status": "FAIL",
+      "steps": [
+        "New synthetic user",
+        "Open Conversation",
+        "Expect #emptyInterview visible"
+      ],
+      "ref": "src/app.js:53",
+      "screenshot": "screenshots/interview-empty_fresh_desktop.png"
+    },
+    {
+      "priority": "Medium",
+      "feature": "project_form_required",
+      "role": "consultant",
+      "viewport": "desktop",
+      "status": "PASS",
+      "steps": [
+        "Open new project dialog",
+        "Submit empty form",
+        "HTML5 validation blocks submit"
+      ],
+      "ref": "src/app.js:423",
+      "screenshot": "screenshots/project-invalid_desktop.png"
+    },
+    {
+      "priority": "Info",
+      "feature": "bootstrap",
+      "role": "consultant",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "Open /?as=consultant@example.test",
+        "libraryRole=user"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "Info",
+      "feature": "bootstrap",
+      "role": "employee",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "Open /?as=alex@mantu.com",
+        "libraryRole=user"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "Info",
+      "feature": "bootstrap",
+      "role": "manager",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "Open /?as=manager@example.test",
+        "libraryRole=user"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "Info",
+      "feature": "bootstrap",
+      "role": "presales",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "Open /?as=presales@example.test",
+        "libraryRole=presales"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "Info",
+      "feature": "bootstrap",
+      "role": "reviewer",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "Open /?as=rev@example.test",
+        "libraryRole=reviewer"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "Info",
+      "feature": "bootstrap",
+      "role": "admin",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "Open /?as=admin@example.test",
+        "libraryRole=admin"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "Info",
+      "feature": "bootstrap",
+      "role": "plain_denied",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "Open /?as=stranger@example.test",
+        "libraryRole=user"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "High",
+      "feature": "surface_interview",
+      "role": "consultant",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As consultant@example.test (consultant)",
+        "Navigate to interview",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/interview_consultant_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_projects",
+      "role": "consultant",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As consultant@example.test (consultant)",
+        "Navigate to projects",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/projects_consultant_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_stories",
+      "role": "consultant",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As consultant@example.test (consultant)",
+        "Navigate to stories",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/stories_consultant_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_library",
+      "role": "consultant",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As consultant@example.test (consultant)",
+        "Navigate to library",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/library_consultant_mobile.png"
+    },
+    {
+      "priority": "Medium",
+      "feature": "surface_bids",
+      "role": "consultant",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As consultant@example.test (consultant)",
+        "Navigate to bids",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/bids_consultant_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_journey",
+      "role": "consultant",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As consultant@example.test (consultant)",
+        "Navigate to journey",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/journey_consultant_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "admin_nav_hidden",
+      "role": "consultant",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As consultant@example.test",
+        "Confirm #adminNav hidden"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "High",
+      "feature": "surface_interview",
+      "role": "employee",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As alex@mantu.com (employee)",
+        "Navigate to interview",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/interview_employee_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_projects",
+      "role": "employee",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As alex@mantu.com (employee)",
+        "Navigate to projects",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/projects_employee_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_stories",
+      "role": "employee",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As alex@mantu.com (employee)",
+        "Navigate to stories",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/stories_employee_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_library",
+      "role": "employee",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As alex@mantu.com (employee)",
+        "Navigate to library",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/library_employee_mobile.png"
+    },
+    {
+      "priority": "Medium",
+      "feature": "surface_bids",
+      "role": "employee",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As alex@mantu.com (employee)",
+        "Navigate to bids",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/bids_employee_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_journey",
+      "role": "employee",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As alex@mantu.com (employee)",
+        "Navigate to journey",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/journey_employee_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "admin_nav_hidden",
+      "role": "employee",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As alex@mantu.com",
+        "Confirm #adminNav hidden"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "High",
+      "feature": "surface_interview",
+      "role": "manager",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As manager@example.test (manager)",
+        "Navigate to interview",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/interview_manager_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_projects",
+      "role": "manager",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As manager@example.test (manager)",
+        "Navigate to projects",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/projects_manager_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_stories",
+      "role": "manager",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As manager@example.test (manager)",
+        "Navigate to stories",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/stories_manager_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_library",
+      "role": "manager",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As manager@example.test (manager)",
+        "Navigate to library",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/library_manager_mobile.png"
+    },
+    {
+      "priority": "Medium",
+      "feature": "surface_bids",
+      "role": "manager",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As manager@example.test (manager)",
+        "Navigate to bids",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/bids_manager_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_journey",
+      "role": "manager",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As manager@example.test (manager)",
+        "Navigate to journey",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/journey_manager_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "admin_nav_hidden",
+      "role": "manager",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As manager@example.test",
+        "Confirm #adminNav hidden"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "High",
+      "feature": "surface_interview",
+      "role": "presales",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As presales@example.test (presales)",
+        "Navigate to interview",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/interview_presales_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_projects",
+      "role": "presales",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As presales@example.test (presales)",
+        "Navigate to projects",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/projects_presales_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_stories",
+      "role": "presales",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As presales@example.test (presales)",
+        "Navigate to stories",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/stories_presales_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_library",
+      "role": "presales",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As presales@example.test (presales)",
+        "Navigate to library",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/library_presales_mobile.png"
+    },
+    {
+      "priority": "Medium",
+      "feature": "surface_bids",
+      "role": "presales",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As presales@example.test (presales)",
+        "Navigate to bids",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/bids_presales_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_journey",
+      "role": "presales",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As presales@example.test (presales)",
+        "Navigate to journey",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/journey_presales_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "admin_nav_hidden",
+      "role": "presales",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As presales@example.test",
+        "Confirm #adminNav hidden"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "High",
+      "feature": "surface_interview",
+      "role": "reviewer",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As rev@example.test (reviewer)",
+        "Navigate to interview",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/interview_reviewer_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_projects",
+      "role": "reviewer",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As rev@example.test (reviewer)",
+        "Navigate to projects",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/projects_reviewer_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_stories",
+      "role": "reviewer",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As rev@example.test (reviewer)",
+        "Navigate to stories",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/stories_reviewer_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_library",
+      "role": "reviewer",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As rev@example.test (reviewer)",
+        "Navigate to library",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/library_reviewer_mobile.png"
+    },
+    {
+      "priority": "Medium",
+      "feature": "surface_bids",
+      "role": "reviewer",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As rev@example.test (reviewer)",
+        "Navigate to bids",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/bids_reviewer_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_journey",
+      "role": "reviewer",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As rev@example.test (reviewer)",
+        "Navigate to journey",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/journey_reviewer_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "admin_nav_hidden",
+      "role": "reviewer",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As rev@example.test",
+        "Confirm #adminNav hidden"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "High",
+      "feature": "surface_interview",
+      "role": "admin",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As admin@example.test (admin)",
+        "Navigate to interview",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/interview_admin_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_projects",
+      "role": "admin",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As admin@example.test (admin)",
+        "Navigate to projects",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/projects_admin_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_stories",
+      "role": "admin",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As admin@example.test (admin)",
+        "Navigate to stories",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/stories_admin_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_library",
+      "role": "admin",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As admin@example.test (admin)",
+        "Navigate to library",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/library_admin_mobile.png"
+    },
+    {
+      "priority": "Medium",
+      "feature": "surface_bids",
+      "role": "admin",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As admin@example.test (admin)",
+        "Navigate to bids",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/bids_admin_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_journey",
+      "role": "admin",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As admin@example.test (admin)",
+        "Navigate to journey",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/journey_admin_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_admin",
+      "role": "admin",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As admin@example.test (admin)",
+        "Navigate to admin",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/admin_admin_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_interview",
+      "role": "plain_denied",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As stranger@example.test (plain_denied)",
+        "Navigate to interview",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/interview_plain-denied_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_projects",
+      "role": "plain_denied",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As stranger@example.test (plain_denied)",
+        "Navigate to projects",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/projects_plain-denied_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_stories",
+      "role": "plain_denied",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As stranger@example.test (plain_denied)",
+        "Navigate to stories",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/stories_plain-denied_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_library",
+      "role": "plain_denied",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As stranger@example.test (plain_denied)",
+        "Navigate to library",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/library_plain-denied_mobile.png"
+    },
+    {
+      "priority": "Medium",
+      "feature": "surface_bids",
+      "role": "plain_denied",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As stranger@example.test (plain_denied)",
+        "Navigate to bids",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/bids_plain-denied_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "surface_journey",
+      "role": "plain_denied",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As stranger@example.test (plain_denied)",
+        "Navigate to journey",
+        "Viewport 320\u00d7800",
+        "Screenshot captured"
+      ],
+      "ref": "",
+      "screenshot": "screenshots/journey_plain-denied_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "admin_nav_hidden",
+      "role": "plain_denied",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As stranger@example.test",
+        "Confirm #adminNav hidden"
+      ],
+      "ref": "",
+      "screenshot": ""
+    },
+    {
+      "priority": "High",
+      "feature": "admin_denied",
+      "role": "consultant",
+      "viewport": "mobile",
+      "status": "FAIL",
+      "steps": [
+        "As consultant@example.test",
+        "Open /#admin",
+        "Expect denial banner in #admin"
+      ],
+      "ref": "src/journey-ui.js:84",
+      "screenshot": "screenshots/admin-denied_consultant_mobile.png"
+    },
+    {
+      "priority": "High",
+      "feature": "admin_metrics_api",
+      "role": "consultant",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "As consultant",
+        "GET /api/library/admin/metrics",
+        "Expect 403 or empty denial in UI"
+      ],
+      "ref": "deploy/cloudflare-edge/src/library-routes.js",
+      "screenshot": ""
+    },
+    {
+      "priority": "Medium",
+      "feature": "interview_empty",
+      "role": "consultant",
+      "viewport": "mobile",
+      "status": "FAIL",
+      "steps": [
+        "New synthetic user",
+        "Open Conversation",
+        "Expect #emptyInterview visible"
+      ],
+      "ref": "src/app.js:53",
+      "screenshot": "screenshots/interview-empty_fresh_mobile.png"
+    },
+    {
+      "priority": "Medium",
+      "feature": "project_form_required",
+      "role": "consultant",
+      "viewport": "mobile",
+      "status": "PASS",
+      "steps": [
+        "Open new project dialog",
+        "Submit empty form",
+        "HTML5 validation blocks submit"
+      ],
+      "ref": "src/app.js:423",
+      "screenshot": "screenshots/project-invalid_mobile.png"
+    }
+  ]
+}

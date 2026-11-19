@@ -1,0 +1,87 @@
+PASS 1 no setup text in the conversation view, the address form hidden, the pill reads "Ready"
+PASS 1 the connection pill is labelled "Connection and privacy"
+PASS 1 Start opens the consent step at once: exactly one visible checkbox, heading with the first name
+PASS 1 the consent step has no setup words and names who is signed in
+PASS 1 microphone not requested before the click
+PASS 1 the start frame: consultant "" and no email anywhere in it
+PASS 1 the project is created with the profile name, title and N+1
+PASS 1 the library accepted it: no "Save on this device?" prompt, the strip says "Saved to ATLAS"
+PASS 1 the end message names no device step
+PASS 1 every API call carried X-Requested-With
+PASS 2 memory on: the one sentence names private memory; the switch offers to turn it off
+PASS 2 after the interview exactly one /api/memory/remember
+PASS 2 Hindsight gets no consultant name or profile title; the client is still sent for scrubbing
+PASS 2 Turn off posts {off:true}; the sentence loses memory; the tick stays
+PASS 2 Turn on widens the sentence, so the tick is cleared
+PASS 2 memory off for this interview: no /api/memory/remember, and the start frame says memory false
+PASS 2 memory not configured: no "memory" anywhere in the consent step
+PASS 2 memory not configured: no remember request
+PASS 3 a library 401 after the interview: the banner shows and the page is not reloaded
+PASS 3 no project content reaches sessionStorage or localStorage
+PASS 3 the strip says the work is only in this tab
+PASS 3 Reconnect opens /go/signed-in in a small window
+PASS 3 signed in again: the sync is retried, the project is saved, and the toast says so
+PASS 3 a clean page with an expired session reloads exactly once
+PASS 3 a second expiry within 5 minutes shows the banner instead of reloading
+PASS 3 overnight tab, clean: never stuck in preparing; exactly one reload, to #start, which opens the consent step
+PASS 3 overnight tab with unsaved work: phase idle, the banner, no reload
+PASS 3 after signing in again the interrupted Start resumes: the consent step opens
+PASS 3 socket closed before ready with an expired sign-in: idle (not error), microphone released, the banner
+PASS 3 ... and the resume is "start": signing in again reopens the consent step
+PASS 3 expiry during a live interview: nothing shows and the conversation continues
+PASS 3 ... after "ended" the banner shows (the new project is not saved), with no reload
+PASS 3 popup blocked once: the banner stays, no fallback yet
+PASS 3 a second failed attempt adds "Backup, then Reload and sign in"; Reload waits for the backup
+PASS 3 after the backup, "Reload and sign in" is offered; nothing reloaded by itself
+PASS 3 unsent text in the Ask box: the banner, no reload
+PASS 4 file copy: one "Open ATLAS" link to ATLAS_HOME/go/start, new tab, noopener
+PASS 4 file copy: the address field stays hidden until "Use a different ATLAS address" opens
+PASS 4 file copy: the disclosure reveals the address form
+PASS 4 file copy: no network request
+PASS 4 live origin, bootstrap 522: "ATLAS isn't answering", Try again, never "Open ATLAS"
+PASS 4 Try again once ATLAS answers: Start and "Ready"
+PASS 5 #start opens the consent step on load; the microphone stays off; the hash is cleared
+PASS 5 the microphone opens only after the Start click
+PASS 6 a reload with an empty workspace rebuilds it from the library, linked to the record
+PASS 6 the restored project is listed in Projects
+PASS 6 the follow-up interview: model-safe context (no name; the profile title is not sent)
+PASS 6 the follow-up updates the same record: the POST carries id R, and no second record exists
+PASS 7 a proof request opens the consent step itself (live), naming the request
+PASS 7 gap mode: the start frame carries the request
+PASS 7 gap answers stay here: strip "Not saved to ATLAS yet · kept in this tab", the device prompt, no library POST
+PASS 8 a guess is not reliable: no first name in the heading, only the email in the footer
+PASS 8 with only a guess the new project's consultant is "Consultant"
+PASS 8 the end message asks "Is your name …?"
+PASS 8 "Yes, that's me" posts {confirmGuess:true}, then the project is updated and synced again
+PASS 8 a legacy project whose consultant is an email: the next sync sends the profile name, logged
+PASS 9 [1440px] the avatar shows the profile initials
+PASS 9 [1440px] the profile shows each value with its source
+PASS 9 [1440px] no horizontal overflow with the profile open
+PASS 9 editing a value relabels it "you edited" before saving
+PASS 9 Save posts only the change {set:{title}}, and the chip stays "you edited"
+PASS 9 [1440px] the new-project form is prefilled from the profile, with chips; managerStaff unticked
+PASS 9 [1440px] no horizontal overflow with the project form open
+PASS 9 a different role reads "you edited" and the hint goes
+PASS 9 the saved project keeps roleFrom "you" for a typed role
+PASS 9 [320px] the avatar shows the profile initials
+PASS 9 [320px] the profile shows each value with its source
+PASS 9 [320px] no horizontal overflow with the profile open
+PASS 9 [320px] the new-project form is prefilled from the profile, with chips; managerStaff unticked
+PASS 9 [320px] no horizontal overflow with the project form open
+PASS 5.8 no profile N+1: the N+1 fields start empty
+PASS 5.8 an incomplete email is never looked up
+PASS 5.8 a typed N+1 email fills the empty N+1 name from the directory, with its source chip
+PASS 5.8 a name the lookup filled follows the email
+PASS 5.8 not in the directory: the looked-up name of the old email goes, nothing is guessed
+PASS 5.8 a name you typed is never overwritten
+PASS 5.8 a found email is not looked up again (30 lookups an hour)
+PASS 5.8 the project keeps the looked-up N+1; no provenance is stored
+PASS 5.8 editing a project: its stored N+1 name is never replaced
+PASS 5.8 a prefilled N+1 name follows a new N+1 email
+PASS 5.8 back to the profile's N+1 email: its name and chip return, with no lookup
+PASS 5.8 without the profile feature there is no lookup
+PASS directory: test mode says synthetic addresses only, and names what DNA pull and push need
+PASS directory: columns suggested for the approved fields; the replace count shown first
+PASS directory: the upload carries only approved keys, never salary, birth date or site
+PASS directory: the result counts rows and names skipped rows by number only
+PASS no page errors

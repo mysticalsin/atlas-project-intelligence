@@ -1,0 +1,27 @@
+PASS interview synced to the shared library automatically
+PASS automatic quality review ran; awaiting the N+1
+PASS record shows quality score and the full template
+PASS owner cannot validate their own reference
+PASS library id known
+PASS library Word = the reference-sheet template (.docx): title, summary labels, 8 sections, gaps "To be completed"
+PASS typed manager without a trust row is refused
+PASS trusted manager sees one approval button
+PASS manager approval alone does not publish
+PASS approval redraw focuses Close reference
+PASS approve is disabled or absent after the click
+PASS second reference exists for Enter
+PASS second record offers approval
+PASS a failed approve enables the button again
+PASS a failed approve returns focus to the button
+PASS approve is disabled or absent after Enter
+PASS journey queue drops an approved lane
+PASS journey label follows real list() output
+PASS pre-sales role sees its own lane
+PASS both lanes publish
+PASS colleague sees the published reference
+PASS client hidden and scrubbed for colleagues
+PASS no validate / audit trail for colleagues
+PASS an edit creates revision 2 and reopens validation
+PASS audit trail shows who did what
+PASS no page errors
+[]

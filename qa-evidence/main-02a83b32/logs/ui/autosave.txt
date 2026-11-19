@@ -1,0 +1,34 @@
+PASS no voice preset visible
+PASS consent says saved with a report
+PASS admin hint shown for a server-flagged admin
+PASS client ended by itself after wrap_up (no click)
+PASS a withdrawn reply is removed from the on-screen transcript
+PASS microphone released
+PASS report opened automatically
+PASS review dialog not shown (seamless)
+PASS project created
+PASS no stray discard after a clean end
+PASS final status says saved
+PASS device-save opt-in offered when storage is off
+PASS workspace now stored on the device
+PASS existing project reused, persisted reported
+PASS edited story kept
+PASS client details scrubbed from the report
+PASS earlier transcript kept, new one appended
+PASS a failure mid-save removes the half-created project
+PASS manual fallback creates the project when there was none
+PASS restart: the server sees start, discard, start (never end)
+PASS restart: nothing saved, nothing sent to the library or memory
+PASS restart: the discarded conversation left the screen
+PASS full mode: still one automatic library save and one memory call
+PASS proof request: the local project linked to the reference is used, and the gap rides on its context
+PASS proof request: never offered on another project
+PASS gapConsumed: the next start on the same project is a full interview
+PASS gap mode: a malformed request id is refused
+PASS gap mode: no POST /api/library and no /api/memory/remember
+PASS gap mode: p.gapNotes set; answers and revision unchanged
+PASS apply: exactly one library save, to the same reference
+PASS apply: answers appended, notes cleared, revision bumped, no memory call
+PASS apply: a second click adds nothing and posts nothing
+PASS no page errors
+[] ['start', 'end']

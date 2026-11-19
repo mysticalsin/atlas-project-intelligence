@@ -1,0 +1,18 @@
+PASS the wizard opens on the Opp ID, before anything else
+PASS cannot continue without an Opp ID
+PASS sources step after the Opp ID
+PASS draft done: challenge step with grouped questions
+PASS fields filled from the sources, gaps marked "To be completed"
+PASS improve with answers fills the ROI section
+PASS validation shows the full summary and a suggested approach visual
+PASS generate disabled before the country/entity and the confirmation
+PASS file name follows the entity rule
+PASS still disabled until the whole selection is confirmed
+PASS downloaded with the template file name
+PASS Calibri on every run
+PASS title heading first, then 5 labelled summary paragraphs
+PASS one table, 8 rows x 2 columns, 3 cm label column
+PASS no consultant name in Part 1 (replaced), price reads "To be completed"
+PASS the approved visual is embedded with its caption
+PASS no page errors
+[]

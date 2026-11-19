@@ -1,0 +1,11 @@
+PASS profile shows what ATLAS remembers, by project
+PASS two memory documents for one interview (project state + conversation)
+PASS the project memory is updated in place, not duplicated
+PASS forget one project
+PASS forget everything
+PASS switched off: nothing new is remembered
+PASS connection test hidden for non-admins
+PASS a mailbox without ATLAS.Admin does not show the connection test
+PASS admin connection test: Hindsight working, JEV reports missing key
+PASS no page errors
+[]

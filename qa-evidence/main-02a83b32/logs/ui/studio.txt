@@ -1,0 +1,80 @@
+PASS Standalone opens on rendered orb, without project setup
+PASS First-screen canvas actually renders frames
+PASS Default orb uses Mantu violet
+PASS Disconnected state is explicit
+PASS Idle has no microphone
+PASS Preview is labelled separately from live voice
+PASS Preview does not change transport state
+PASS Preview never opens the microphone
+PASS Preview never invents agent speech
+PASS Preview does not create a project
+PASS Preview reaches its speaking animation without claiming inference
+PASS Stopping preview restores disconnected label
+PASS Jarvis-blue palette works
+PASS Mantu palette restores
+PASS Pause motion stops drawing
+PASS Motion resumes
+PASS Focus hides secondary panels
+PASS Escape exits focus
+PASS Transcript panel is visible by default
+PASS Transcript can be hidden
+PASS Transcript can be restored
+PASS Offline copy: Start is one "Open ATLAS" link to the live workspace
+PASS Offline connection panel says so; the address form waits under an advanced disclosure (§3.8)
+PASS Connection setup does not create a pretend live session
+PASS Executable gateway URL rejected
+PASS Credential-bearing URL rejected
+PASS Navigation needs explicit trust
+PASS Trusted origin becomes a plain navigation link
+PASS Gateway link does not transfer opener or referrer
+PASS Editing address clears trust
+PASS Local setup shortcut uses explicit localhost origin
+PASS Project context binds to the selected local project
+PASS Original text note editor retained
+PASS Actual authored answer saved
+PASS Project library remains usable
+PASS Project page exits dark conversation mode
+PASS Conversation view restores dark orb layout
+PASS Consent is required before a microphone request
+PASS Adapter model playback drives orb speaking state
+PASS Actual supplied adapter meter drives animation
+PASS Preview unavailable during live connection
+PASS Mute and end are visible during live connection
+PASS Orb mutes microphone track
+PASS Mute does not suppress agent playback state
+PASS Muted silence stops the speaking state
+PASS Unmute resumes listening without new permission
+PASS Agent captions did not become consultant facts
+PASS End closes microphone tracks
+PASS End clears levels and playback claim
+PASS Privacy text no longer claims streaming after End
+PASS Changing screens keeps the conversation live with a visible live pill
+PASS Ending from the live pill closes active audio
+PASS Restart is offered during a conversation
+PASS Restart asks first and says nothing will be saved
+PASS Keep talking leaves the conversation running
+PASS Confirm discards (never ends) and starts exactly one new conversation
+PASS After a restart, keyboard focus is on a control, not lost
+PASS Restart reuses the consent given on this page, without asking again
+PASS The old microphone is released on restart
+PASS Nothing from the discarded conversation was saved
+PASS Mute, Restart and End fit a 320 px phone
+PASS If ATLAS wraps up meanwhile, the restart question closes and nothing more is discarded
+PASS After an error, Restart is offered next to Start
+PASS Restart after an error starts at once (no question, no consent dialog)
+PASS No horizontal overflow at 320px
+PASS Orb and start are visible at 320px
+PASS No horizontal overflow at 390px
+PASS Orb and start are visible at 390px
+PASS No horizontal overflow at 768px
+PASS Orb and start are visible at 768px
+PASS No horizontal overflow at 1024px
+PASS Orb and start are visible at 1024px
+PASS No horizontal overflow at 1440px
+PASS Orb and start are visible at 1440px
+PASS System reduced-motion avoids continuous drawing
+PASS Reduced-motion control is honest
+PASS No browser read-aloud or recognition masquerades as NVIDIA
+PASS Self-contained render has no external script/font downloads
+PASS No JavaScript runtime errors
+79 assertions passed

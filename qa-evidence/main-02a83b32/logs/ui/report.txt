@@ -1,0 +1,20 @@
+PASS the draft report carries the "Project at a glance" dashboard
+PASS the DRAFT / UNVERIFIED banner stays above it
+PASS France and Germany ("France & Deutschland") are placed on the map
+PASS "Remote" is listed as not placed, never guessed
+PASS interview-sourced data is labelled unverified
+PASS the outcome card shows "To be completed" instead of an invented number
+PASS with no evidence yet, each story topic says so (no empty grid)
+PASS hovering a country shows the tooltip with what was typed
+PASS zoom in and reset change and restore the map view
+PASS no horizontal overflow at 320 px
+PASS no horizontal overflow at 390 px
+PASS no horizontal overflow at 768 px
+PASS the exported HTML carries the charts as static SVG
+PASS the export has no script and no event handlers
+PASS the export keeps its no-script CSP
+PASS the Markdown export has an "At a glance" summary with the placed countries
+PASS the sector taken from the interview is labelled as such
+PASS a sector the consultant retypes loses the "from interview" label
+PASS no page errors
+[]

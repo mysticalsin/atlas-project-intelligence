@@ -1,0 +1,52 @@
+PASS Board is hidden before any interview
+PASS Board model and policy are loaded
+PASS ready shows the board
+PASS Full mode starts in breadth with the 15:00 countdown
+PASS analysing… shows between user_text and quality
+PASS analysing… clears when the quality event arrives
+PASS Pins for Portugal and Spain only
+PASS Pinned countries use the hatched interview state
+PASS No pin from "Lisbon queue" or "Chad said"; Chad listed as not mapped
+PASS Pins say mentioned, not project location
+PASS Metric chips are exact spans
+PASS Measurement slot is dashed "to recover"
+PASS Twelve dimension cells in the right states
+PASS Coverage reads as candidate coverage
+PASS "ATLAS may ask next", never "asked"
+PASS Lagging probe_history is not shown
+PASS No element says verified, confirmed or approved
+PASS Every visible board section says unverified
+PASS Summary live region is polite and unverified
+PASS Superseded chip disappears and the board says corrected
+PASS Only the correction chips carry is-new (diff by D-id)
+PASS A new chip really animates when motion is allowed
+PASS Summary is throttled (no second update within 10 s)
+PASS Orb pause: a new chip does not animate
+PASS Quality after audio_stopped is still accepted
+PASS Hostile text renders inert
+PASS reset clears everything
+PASS atlas-quality reset clears too
+PASS Depth at timePlan.depthAt
+PASS Closing at timePlan.closingAt
+PASS Hidden when liveLedger is false
+PASS Gap mode: checklist, 5:00 countdown, focused phase
+PASS Checklist merges gap_status
+PASS Gap mode shows the current ask as what ATLAS may ask next
+PASS Gap results show the quotes per ask, labelled unverified
+PASS Gap quotes render inert
+PASS Nothing is sent before a click
+PASS Both actions are separate buttons with the agreed words
+PASS #gapSend posts exactly once, only on its click
+PASS Review #22: a send from the panel clears the stored results of the interviewed project (no second send from the Library)
+PASS The answer body carries askId, status and quotes, and the interviewed reference
+PASS Sending did not add to the reference
+PASS #gapApply calls ATLAS_APP.applyGapNotes once, for the interviewed project
+PASS No other library call was made
+PASS reset hides the proof answers
+PASS Reduced motion: no running animation inside #storyBoard
+PASS No overflow at 320 px
+PASS No overflow at 390 px
+PASS No overflow at 768 px
+PASS No overflow at 1366 px
+PASS Proof answers fit 320 px
+PASS No page errors

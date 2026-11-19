@@ -1,0 +1,2538 @@
+TAP version 13
+# Subtest: every legal admin transition, and every other pair is rejected and logged
+ok 1 - every legal admin transition, and every other pair is rejected and logged
+  ---
+  duration_ms: 1.446144
+  type: 'test'
+  ...
+# Subtest: guards: isAdminRole, bootFailed and hasSeries, allow and deny
+ok 2 - guards: isAdminRole, bootFailed and hasSeries, allow and deny
+  ---
+  duration_ms: 1.056609
+  type: 'test'
+  ...
+# Subtest: refresh, failure, and export stay on the shell and do not run from boot or denied
+ok 3 - refresh, failure, and export stay on the shell and do not run from boot or denied
+  ---
+  duration_ms: 0.209737
+  type: 'test'
+  ...
+# Subtest: boot_error is legal only from a failed boot, and every shell event there is illegal
+ok 4 - boot_error is legal only from a failed boot, and every shell event there is illegal
+  ---
+  duration_ms: 0.163593
+  type: 'test'
+  ...
+# Subtest: verdict copy: exact F1.7 wording for all five verdicts; the none CTA; unknown verdicts refused
+ok 5 - verdict copy: exact F1.7 wording for all five verdicts; the none CTA; unknown verdicts refused
+  ---
+  duration_ms: 0.788883
+  type: 'test'
+  ...
+# Subtest: ask verdict copy mirrors F1 and states an empty answer plainly
+ok 6 - ask verdict copy mirrors F1 and states an empty answer plainly
+  ---
+  duration_ms: 0.179938
+  type: 'test'
+  ...
+# Subtest: footnote HTML: superscripts, Sources list with quote, label, title, r{revision}, badge; hostile text escaped
+ok 7 - footnote HTML: superscripts, Sources list with quote, label, title, r{revision}, badge; hostile text escaped
+  ---
+  duration_ms: 0.767051
+  type: 'test'
+  ...
+# Subtest: footnote HTML: the per-reference client appears only where the server returned it
+ok 8 - footnote HTML: the per-reference client appears only where the server returned it
+  ---
+  duration_ms: 0.375521
+  type: 'test'
+  ...
+# Subtest: Markdown export: [^n] markers and definitions; text cannot forge markers, links or HTML
+ok 9 - Markdown export: [^n] markers and definitions; text cannot forge markers, links or HTML
+  ---
+  duration_ms: 0.601094
+  type: 'test'
+  ...
+# Subtest: docx model: blocks per section with note numbers; notes carry the source line
+ok 10 - docx model: blocks per section with note numbers; notes carry the source line
+  ---
+  duration_ms: 0.676486
+  type: 'test'
+  ...
+# Subtest: win cells: rates only from n >= 5, Wilson CI label, caveat otherwise
+ok 11 - win cells: rates only from n >= 5, Wilson CI label, caveat otherwise
+  ---
+  duration_ms: 0.25653
+  type: 'test'
+  ...
+# Subtest: outreach chips: Teams reads BLOCKED_EXTERNAL until connected; email is a draft; nothing claims sent unless the row says so
+ok 12 - outreach chips: Teams reads BLOCKED_EXTERNAL until connected; email is a draft; nothing claims sent unless the row says so
+  ---
+  duration_ms: 0.243645
+  type: 'test'
+  ...
+# Subtest: export file name uses the alias, never the title
+ok 13 - export file name uses the alias, never the title
+  ---
+  duration_ms: 0.555253
+  type: 'test'
+  ...
+# Subtest: model from a full project follows the engine shape and the paper gate
+ok 14 - model from a full project follows the engine shape and the paper gate
+  ---
+  duration_ms: 21.370334
+  type: 'test'
+  ...
+# Subtest: an empty project renders every card with a dashed To be completed slot and never a zero bar
+ok 15 - an empty project renders every card with a dashed To be completed slot and never a zero bar
+  ---
+  duration_ms: 1.390672
+  type: 'test'
+  ...
+# Subtest: interview-sourced fields are hatched and labelled from interview · unverified
+ok 16 - interview-sourced fields are hatched and labelled from interview · unverified
+  ---
+  duration_ms: 2.776848
+  type: 'test'
+  ...
+# Subtest: the outcome chart obeys the paper gate: issues, stale drafts and a missing metric draw no bars
+ok 17 - the outcome chart obeys the paper gate: issues, stale drafts and a missing metric draw no bars
+  ---
+  duration_ms: 3.541614
+  type: 'test'
+  ...
+# Subtest: a valid metric reuses the metricDisplay text verbatim and stays hatched until reviewed locally
+ok 18 - a valid metric reuses the metricDisplay text verbatim and stays hatched until reviewed locally
+  ---
+  duration_ms: 1.9049
+  type: 'test'
+  ...
+# Subtest: a negative value switches to a dumbbell on a number line that includes zero
+ok 19 - a negative value switches to a dumbbell on a number line that includes zero
+  ---
+  duration_ms: 1.87911
+  type: 'test'
+  ...
+# Subtest: every renderer escapes hostile strings in countries, sources, roles, labels and metric text
+ok 20 - every renderer escapes hostile strings in countries, sources, roles, labels and metric text
+  ---
+  duration_ms: 3.18766
+  type: 'test'
+  ...
+# Subtest: dashboard output carries no script, no inline event handlers and no external URLs
+ok 21 - dashboard output carries no script, no inline event handlers and no external URLs
+  ---
+  duration_ms: 5.941521
+  type: 'test'
+  ...
+# Subtest: a fictional sample is labelled in the panel header
+ok 22 - a fictional sample is labelled in the panel header
+  ---
+  duration_ms: 2.832802
+  type: 'test'
+  ...
+# Subtest: client name and client location never reach the charts, and sheet values never appear
+ok 23 - client name and client location never reach the charts, and sheet values never appear
+  ---
+  duration_ms: 1.898428
+  type: 'test'
+  ...
+# Subtest: the external audience sees evidence numbers only and no JEV card
+ok 24 - the external audience sees evidence numbers only and no JEV card
+  ---
+  duration_ms: 2.485891
+  type: 'test'
+  ...
+# Subtest: the timeline draws a bar only from two valid months and echoes stated text verbatim
+ok 25 - the timeline draws a bar only from two valid months and echoes stated text verbatim
+  ---
+  duration_ms: 1.357398
+  type: 'test'
+  ...
+# Subtest: textSummary gives the same facts for the Markdown and plain-text exports
+ok 26 - textSummary gives the same facts for the Markdown and plain-text exports
+  ---
+  duration_ms: 1.408381
+  type: 'test'
+  ...
+# Subtest: every number shown comes from the record, metricDisplay, a count or an axis tick
+ok 27 - every number shown comes from the record, metricDisplay, a count or an axis tick
+  ---
+  duration_ms: 1.781349
+  type: 'test'
+  ...
+# Subtest: palette contrast meets WCAG and the sequential scale steps are distinct
+ok 28 - palette contrast meets WCAG and the sequential scale steps are distinct
+  ---
+  duration_ms: 0.401385
+  type: 'test'
+  ...
+# Subtest: the portfolio map bins real counts, discloses merges and lists unplaced strings
+ok 29 - the portfolio map bins real counts, discloses merges and lists unplaced strings
+  ---
+  duration_ms: 0.235027
+  type: 'test'
+  ...
+# Subtest: the quality gauge shows the server score against its threshold and never as verification
+ok 30 - the quality gauge shows the server score against its threshold and never as verification
+  ---
+  duration_ms: 0.196656
+  type: 'test'
+  ...
+# Subtest: a failing or unsafe geo module degrades to text, never to an unsafe SVG
+ok 31 - a failing or unsafe geo module degrades to text, never to an unsafe SVG
+  ---
+  duration_ms: 1.391674
+  type: 'test'
+  ...
+# Subtest: bind is safe without a DOM and registers its delegated listeners once
+ok 32 - bind is safe without a DOM and registers its delegated listeners once
+  ---
+  duration_ms: 0.426471
+  type: 'test'
+  ...
+# Subtest: the export stylesheet styles every chart class the static dashboard emits
+ok 33 - the export stylesheet styles every chart class the static dashboard emits
+  ---
+  duration_ms: 2.356931
+  type: 'test'
+  ...
+# Subtest: size regression guard (measured size, not the page budget; raised from 54,000 for the JEV story rating gauge, docs/JEV_RATING.md U5)
+ok 34 - size regression guard (measured size, not the page budget; raised from 54,000 for the JEV story rating gauge, docs/JEV_RATING.md U5)
+  ---
+  duration_ms: 0.141582
+  type: 'test'
+  ...
+# Subtest: a sector filled from the interview report is hatched and labelled wherever it is shown
+ok 35 - a sector filled from the interview report is hatched and labelled wherever it is shown
+  ---
+  duration_ms: 1.512569
+  type: 'test'
+  ...
+# Subtest: sheet cells copied from the record keep their origin: interview and model values are hatched, typed details stay solid
+ok 36 - sheet cells copied from the record keep their origin: interview and model values are hatched, typed details stay solid
+  ---
+  duration_ms: 1.124953
+  type: 'test'
+  ...
+# Subtest: every focusable mark is named with its tooltip text, and an SVG with focusable marks is a group, not an image
+ok 37 - every focusable mark is named with its tooltip text, and an SVG with focusable marks is a group, not an image
+  ---
+  duration_ms: 2.299833
+  type: 'test'
+  ...
+# Subtest: the insights map separates "no references" from "no country recorded" and lists the unplaced parts of a placed string
+ok 38 - the insights map separates "no references" from "no country recorded" and lists the unplaced parts of a placed string
+  ---
+  duration_ms: 0.258632
+  type: 'test'
+  ...
+# Subtest: the quality gauge names the 0.45 completeness weight only when the review agent scored
+ok 39 - the quality gauge names the 0.45 completeness weight only when the review agent scored
+  ---
+  duration_ms: 0.194447
+  type: 'test'
+  ...
+# Subtest: breakpoints follow the dashboard width, the export map keeps its 16:9 frame, and the reveal leaves nothing clipped
+ok 40 - breakpoints follow the dashboard width, the export map keeps its 16:9 frame, and the reveal leaves nothing clipped
+  ---
+  duration_ms: 0.294262
+  type: 'test'
+  ...
+# Subtest: prepare names each map country with its tooltip text and makes the map a group, not an image
+ok 41 - prepare names each map country with its tooltip text and makes the map a group, not an image
+  ---
+  duration_ms: 0.880661
+  type: 'test'
+  ...
+# Subtest: a mouse click pins a map country: pointer capture starts only once a drag does
+ok 42 - a mouse click pins a map country: pointer capture starts only once a drag does
+  ---
+  duration_ms: 0.865888
+  type: 'test'
+  ...
+# Subtest: keyboard focus on a country outside the zoomed view pans to it, and its tooltip stays inside the dashboard
+ok 43 - keyboard focus on a country outside the zoomed view pans to it, and its tooltip stays inside the dashboard
+  ---
+  duration_ms: 0.412832
+  type: 'test'
+  ...
+# Subtest: a pinned tooltip whose mark a re-render replaced no longer blocks hover and focus tooltips
+ok 44 - a pinned tooltip whose mark a re-render replaced no longer blocks hover and focus tooltips
+  ---
+  duration_ms: 0.345888
+  type: 'test'
+  ...
+# Subtest: with the real AtlasGeo module
+ok 45 - with the real AtlasGeo module
+  ---
+  duration_ms: 23.719251
+  type: 'test'
+  ...
+# Subtest: U1 engine labels: JEV with seconds, a saved rating, the review agent, JEV did not answer, the second opinion and rules
+ok 46 - U1 engine labels: JEV with seconds, a saved rating, the review agent, JEV did not answer, the second opinion and rules
+  ---
+  duration_ms: 3.698415
+  type: 'test'
+  ...
+# Subtest: U2 dimensions sit at the most likely level with confidence in words; the numbers are only in the tooltip and the text table
+ok 47 - U2 dimensions sit at the most likely level with confidence in words; the numbers are only in the tooltip and the text table
+  ---
+  duration_ms: 1.704939
+  type: 'test'
+  ...
+# Subtest: U3 hostile labels, level labels, checks, holds and summaries are escaped
+ok 48 - U3 hostile labels, level labels, checks, holds and summaries are escaped
+  ---
+  duration_ms: 1.012467
+  type: 'test'
+  ...
+# Subtest: U4 no key, no change: without opts.jev the gauge is byte-identical to the one captured before this change
+ok 49 - U4 no key, no change: without opts.jev the gauge is byte-identical to the one captured before this change
+  ---
+  duration_ms: 4.541768
+  type: 'test'
+  ...
+# Subtest: the people directory stays hidden until /directory settles
+ok 50 - the people directory stays hidden until /directory settles
+  ---
+  duration_ms: 5.714121
+  type: 'test'
+  ...
+# Subtest: an older directory render leaves the panel hidden while a newer fetch is pending
+ok 51 - an older directory render leaves the panel hidden while a newer fetch is pending
+  ---
+  duration_ms: 2.333173
+  type: 'test'
+  ...
+# Subtest: fresh state has no seeded projects
+ok 52 - fresh state has no seeded projects
+  ---
+  duration_ms: 2.771874
+  type: 'test'
+  ...
+# Subtest: profiles have distinct identifiers
+ok 53 - profiles have distinct identifiers
+  ---
+  duration_ms: 0.185753
+  type: 'test'
+  ...
+# Subtest: projects use exactly six independent answers
+ok 54 - projects use exactly six independent answers
+  ---
+  duration_ms: 0.724245
+  type: 'test'
+  ...
+# Subtest: unknown stages normalize safely
+ok 55 - unknown stages normalize safely
+  ---
+  duration_ms: 0.251985
+  type: 'test'
+  ...
+# Subtest: vague team attribution prompts individual ownership
+ok 56 - vague team attribution prompts individual ownership
+  ---
+  duration_ms: 0.838878
+  type: 'test'
+  ...
+# Subtest: number without measurement triggers baseline/source follow-up
+ok 57 - number without measurement triggers baseline/source follow-up
+  ---
+  duration_ms: 0.36133
+  type: 'test'
+  ...
+# Subtest: coaching checks adoption
+ok 58 - coaching checks adoption
+  ---
+  duration_ms: 0.382081
+  type: 'test'
+  ...
+# Subtest: customer relevance asks poor fit and disclosure
+ok 59 - customer relevance asks poor fit and disclosure
+  ---
+  duration_ms: 0.305355
+  type: 'test'
+  ...
+# Subtest: coaching never returns an empty question
+ok 60 - coaching never returns an empty question
+  ---
+  duration_ms: 0.849062
+  type: 'test'
+  ...
+# Subtest: 42 to 26 is 38.1 percent reduction
+ok 61 - 42 to 26 is 38.1 percent reduction
+  ---
+  duration_ms: 11.247522
+  type: 'test'
+  ...
+# Subtest: growth calculation has correct direction
+ok 62 - growth calculation has correct direction
+  ---
+  duration_ms: 0.262424
+  type: 'test'
+  ...
+# Subtest: percentage rates use points, not relative headline
+ok 63 - percentage rates use points, not relative headline
+  ---
+  duration_ms: 0.149962
+  type: 'test'
+  ...
+# Subtest: zero baseline uses absolute change
+ok 64 - zero baseline uses absolute change
+  ---
+  duration_ms: 0.100624
+  type: 'test'
+  ...
+# Subtest: negative baseline does not create misleading ratio
+ok 65 - negative baseline does not create misleading ratio
+  ---
+  duration_ms: 0.078562
+  type: 'test'
+  ...
+# Subtest: NaN metric is not displayed
+ok 66 - NaN metric is not displayed
+  ---
+  duration_ms: 0.064722
+  type: 'test'
+  ...
+# Subtest: measurement needs comparison and source
+ok 67 - measurement needs comparison and source
+  ---
+  duration_ms: 0.13325
+  type: 'test'
+  ...
+# Subtest: generated story copies actual answers
+ok 68 - generated story copies actual answers
+  ---
+  duration_ms: 0.688281
+  type: 'test'
+  ...
+# Subtest: generation defaults to internal audience
+ok 69 - generation defaults to internal audience
+  ---
+  duration_ms: 0.149353
+  type: 'test'
+  ...
+# Subtest: draft does not inherit approval
+ok 70 - draft does not inherit approval
+  ---
+  duration_ms: 0.103408
+  type: 'test'
+  ...
+# Subtest: inspected coverage resolves evidence checks
+ok 71 - inspected coverage resolves evidence checks
+  ---
+  duration_ms: 0.169681
+  type: 'test'
+  ...
+# Subtest: deferred topics block review despite nonempty answer
+ok 72 - deferred topics block review despite nonempty answer
+  ---
+  duration_ms: 0.767491
+  type: 'test'
+  ...
+# Subtest: withdrawn evidence blocks review
+ok 73 - withdrawn evidence blocks review
+  ---
+  duration_ms: 0.208465
+  type: 'test'
+  ...
+# Subtest: missing source coverage blocks applicable claim
+ok 74 - missing source coverage blocks applicable claim
+  ---
+  duration_ms: 0.780676
+  type: 'test'
+  ...
+# Subtest: material edit invalidates review and stales draft
+ok 75 - material edit invalidates review and stales draft
+  ---
+  duration_ms: 0.176667
+  type: 'test'
+  ...
+# Subtest: story-only changes invalidate without changing record revision
+ok 76 - story-only changes invalidate without changing record revision
+  ---
+  duration_ms: 0.114367
+  type: 'test'
+  ...
+# Subtest: two local decisions enable readiness only with sources
+ok 77 - two local decisions enable readiness only with sources
+  ---
+  duration_ms: 0.084942
+  type: 'test'
+  ...
+# Subtest: imports reset source inspection and reviews
+ok 78 - imports reset source inspection and reviews
+  ---
+  duration_ms: 0.815071
+  type: 'test'
+  ...
+# Subtest: wrong import format is rejected
+ok 79 - wrong import format is rejected
+  ---
+  duration_ms: 0.172182
+  type: 'test'
+  ...
+# Subtest: oversized answer import is rejected
+ok 80 - oversized answer import is rejected
+  ---
+  duration_ms: 0.135787
+  type: 'test'
+  ...
+# Subtest: missing source name is rejected
+ok 81 - missing source name is rejected
+  ---
+  duration_ms: 0.246331
+  type: 'test'
+  ...
+# Subtest: duplicate evidence IDs are rejected
+ok 82 - duplicate evidence IDs are rejected
+  ---
+  duration_ms: 0.164431
+  type: 'test'
+  ...
+# Subtest: profile state roundtrip preserves legitimate records
+ok 83 - profile state roundtrip preserves legitimate records
+  ---
+  duration_ms: 0.394283
+  type: 'test'
+  ...
+# Subtest: duplicate profile IDs are rejected
+ok 84 - duplicate profile IDs are rejected
+  ---
+  duration_ms: 0.081217
+  type: 'test'
+  ...
+# Subtest: script URL and credentials are rejected
+ok 85 - script URL and credentials are rejected
+  ---
+  duration_ms: 0.087363
+  type: 'test'
+  ...
+# Subtest: legitimate HTTPS source link is preserved
+ok 86 - legitimate HTTPS source link is preserved
+  ---
+  duration_ms: 0.110749
+  type: 'test'
+  ...
+# Subtest: fingerprint changes with story wording
+ok 87 - fingerprint changes with story wording
+  ---
+  duration_ms: 0.315609
+  type: 'test'
+  ...
+# Subtest: memory preferences remain outside draft source
+ok 88 - memory preferences remain outside draft source
+  ---
+  duration_ms: 0.084116
+  type: 'test'
+  ...
+# Subtest: audit is bounded to 50 events
+ok 89 - audit is bounded to 50 events
+  ---
+  duration_ms: 0.21057
+  type: 'test'
+  ...
+# Subtest: confidential client is kept, bounded, and never enters the generated story
+ok 90 - confidential client is kept, bounded, and never enters the generated story
+  ---
+  duration_ms: 0.405505
+  type: 'test'
+  ...
+# Subtest: JEV result is sanitised, clamped, and dropped when malformed
+ok 91 - JEV result is sanitised, clamped, and dropped when malformed
+  ---
+  duration_ms: 0.373664
+  type: 'test'
+  ...
+# Subtest: N+1 validation: awaiting, recorded, reopened by edits; manager staff not required
+ok 92 - N+1 validation: awaiting, recorded, reopened by edits; manager staff not required
+  ---
+  duration_ms: 0.287799
+  type: 'test'
+  ...
+# Subtest: N+1 email draft excludes the confidential client and stays mailto-sized
+ok 93 - N+1 email draft excludes the confidential client and stays mailto-sized
+  ---
+  duration_ms: 0.501704
+  type: 'test'
+  ...
+# Subtest: report is bounded, dropped when empty, and survives a round trip
+ok 94 - report is bounded, dropped when empty, and survives a round trip
+  ---
+  duration_ms: 0.613608
+  type: 'test'
+  ...
+# Subtest: interview transcript is kept as unverified context, bounded, and dropped when empty
+ok 95 - interview transcript is kept as unverified context, bounded, and dropped when empty
+  ---
+  duration_ms: 0.294646
+  type: 'test'
+  ...
+# Subtest: report scrub replaces recorded client details (case-insensitive, regex-safe) in every field
+ok 96 - report scrub replaces recorded client details (case-insensitive, regex-safe) in every field
+  ---
+  duration_ms: 0.506187
+  type: 'test'
+  ...
+# Subtest: reference details: bounded, deduplicated, unsafe links and bad emails dropped
+ok 97 - reference details: bounded, deduplicated, unsafe links and bad emails dropped
+  ---
+  duration_ms: 0.369686
+  type: 'test'
+  ...
+# Subtest: interview facts fill only empty details, are marked unverified, and survive a round trip
+ok 98 - interview facts fill only empty details, are marked unverified, and survive a round trip
+  ---
+  duration_ms: 0.507892
+  type: 'test'
+  ...
+# Subtest: a sector filled from the interview report is marked as such and keeps that mark through a round trip; a typed sector has none
+ok 99 - a sector filled from the interview report is marked as such and keeps that mark through a round trip; a typed sector has none
+  ---
+  duration_ms: 0.368617
+  type: 'test'
+  ...
+# Subtest: reference sheet: bounded, entity rules, file name, issues and Part 1 name rule
+ok 100 - reference sheet: bounded, entity rules, file name, issues and Part 1 name rule
+  ---
+  duration_ms: 1.690542
+  type: 'test'
+  ...
+# Subtest: sheet baseline from the project, and merge never overwrites what a person typed
+ok 101 - sheet baseline from the project, and merge never overwrites what a person typed
+  ---
+  duration_ms: 0.373239
+  type: 'test'
+  ...
+# Subtest: new projects start without server links, invitation, quality or proof notes
+ok 102 - new projects start without server links, invitation, quality or proof notes
+  ---
+  duration_ms: 0.107388
+  type: 'test'
+  ...
+# Subtest: server link, invitation, quality and proof notes survive validateState, bounded
+ok 103 - server link, invitation, quality and proof notes survive validateState, bounded
+  ---
+  duration_ms: 1.332544
+  type: 'test'
+  ...
+# Subtest: importBackup drops the server link, invitation, quality and proof notes
+ok 104 - importBackup drops the server link, invitation, quality and proof notes
+  ---
+  duration_ms: 0.37657
+  type: 'test'
+  ...
+# Subtest: malformed server link, invitation, quality and proof notes are dropped
+ok 105 - malformed server link, invitation, quality and proof notes are dropped
+  ---
+  duration_ms: 0.893161
+  type: 'test'
+  ...
+# Subtest: proof notes keep the bounded per-ask results through validateState; results alone are enough; imports drop them
+ok 106 - proof notes keep the bounded per-ask results through validateState; results alone are enough; imports drop them
+  ---
+  duration_ms: 2.613303
+  type: 'test'
+  ...
+# Subtest: roleFrom: only profile or you are kept, anything else is blank
+ok 107 - roleFrom: only profile or you are kept, anything else is blank
+  ---
+  duration_ms: 0.209808
+  type: 'test'
+  ...
+# Subtest: roleFrom survives validateState and importBackup
+ok 108 - roleFrom survives validateState and importBackup
+  ---
+  duration_ms: 0.640791
+  type: 'test'
+  ...
+# Subtest: the erasure button waits for confirmation and paints the server note
+ok 109 - the erasure button waits for confirmation and paints the server note
+  ---
+  duration_ms: 9.139365
+  type: 'test'
+  ...
+# Subtest: cancel closes the confirmation and sends nothing
+ok 110 - cancel closes the confirmation and sends nothing
+  ---
+  duration_ms: 3.958734
+  type: 'test'
+  ...
+# Subtest: a second erasure submit while the first request is open sends only one POST
+ok 111 - a second erasure submit while the first request is open sends only one POST
+  ---
+  duration_ms: 7.436206
+  type: 'test'
+  ...
+# Subtest: a failed erasure does not paint a success receipt
+ok 112 - a failed erasure does not paint a success receipt
+  ---
+  duration_ms: 9.497667
+  type: 'test'
+  ...
+# Subtest: a failed erasure re-enables the button on the page after a re-render
+ok 113 - a failed erasure re-enables the button on the page after a re-render
+  ---
+  duration_ms: 6.97998
+  type: 'test'
+  ...
+# Subtest: every legal erasure transition, and every other pair is rejected with id, phase and event only
+ok 114 - every legal erasure transition, and every other pair is rejected with id, phase and event only
+  ---
+  duration_ms: 2.442772
+  type: 'test'
+  ...
+# Subtest: a second ask or confirm while the request is in flight is rejected
+ok 115 - a second ask or confirm while the request is in flight is rejected
+  ---
+  duration_ms: 0.233855
+  type: 'test'
+  ...
+# Subtest: confirm is legal only while confirming, and cancel returns to idle
+ok 116 - confirm is legal only while confirming, and cancel returns to idle
+  ---
+  duration_ms: 0.204981
+  type: 'test'
+  ...
+# Subtest: an unknown phase rejects every event and is not rewritten
+ok 117 - an unknown phase rejects every event and is not rewritten
+  ---
+  duration_ms: 0.121601
+  type: 'test'
+  ...
+# Subtest: resolves "France"
+ok 118 - resolves "France"
+  ---
+  duration_ms: 5.214902
+  type: 'test'
+  ...
+# Subtest: resolves "UK"
+ok 119 - resolves "UK"
+  ---
+  duration_ms: 0.407378
+  type: 'test'
+  ...
+# Subtest: resolves "Paris, France"
+ok 120 - resolves "Paris, France"
+  ---
+  duration_ms: 0.305712
+  type: 'test'
+  ...
+# Subtest: resolves "Deutschland"
+ok 121 - resolves "Deutschland"
+  ---
+  duration_ms: 0.206362
+  type: 'test'
+  ...
+# Subtest: resolves "USA"
+ok 122 - resolves "USA"
+  ---
+  duration_ms: 0.109217
+  type: 'test'
+  ...
+# Subtest: resolves "France & Spain"
+ok 123 - resolves "France & Spain"
+  ---
+  duration_ms: 0.289731
+  type: 'test'
+  ...
+# Subtest: resolves "France / Belgique / Luxembourg"
+ok 124 - resolves "France / Belgique / Luxembourg"
+  ---
+  duration_ms: 0.204397
+  type: 'test'
+  ...
+# Subtest: resolves "3 in Paris, 2 in Madrid"
+ok 125 - resolves "3 in Paris, 2 in Madrid"
+  ---
+  duration_ms: 0.219428
+  type: 'test'
+  ...
+# Subtest: resolves "Bosnia and Herzegovina"
+ok 126 - resolves "Bosnia and Herzegovina"
+  ---
+  duration_ms: 0.226411
+  type: 'test'
+  ...
+# Subtest: resolves "Niger"
+ok 127 - resolves "Niger"
+  ---
+  duration_ms: 0.286986
+  type: 'test'
+  ...
+# Subtest: resolves "Nigeria"
+ok 128 - resolves "Nigeria"
+  ---
+  duration_ms: 0.109973
+  type: 'test'
+  ...
+# Subtest: resolves "Guinea-Bissau"
+ok 129 - resolves "Guinea-Bissau"
+  ---
+  duration_ms: 0.0605
+  type: 'test'
+  ...
+# Subtest: resolves "Papua New Guinea"
+ok 130 - resolves "Papua New Guinea"
+  ---
+  duration_ms: 1.563674
+  type: 'test'
+  ...
+# Subtest: resolves "Newark, New Jersey, US"
+ok 131 - resolves "Newark, New Jersey, US"
+  ---
+  duration_ms: 0.211332
+  type: 'test'
+  ...
+# Subtest: resolves "Tbilisi, Georgia"
+ok 132 - resolves "Tbilisi, Georgia"
+  ---
+  duration_ms: 0.064664
+  type: 'test'
+  ...
+# Subtest: resolves "Congo"
+ok 133 - resolves "Congo"
+  ---
+  duration_ms: 0.041239
+  type: 'test'
+  ...
+# Subtest: resolves "Korea"
+ok 134 - resolves "Korea"
+  ---
+  duration_ms: 0.033422
+  type: 'test'
+  ...
+# Subtest: resolves "Remote"
+ok 135 - resolves "Remote"
+  ---
+  duration_ms: 0.035272
+  type: 'test'
+  ...
+# Subtest: resolves "EMEA"
+ok 136 - resolves "EMEA"
+  ---
+  duration_ms: 0.031511
+  type: 'test'
+  ...
+# Subtest: resolves "Hong Kong"
+ok 137 - resolves "Hong Kong"
+  ---
+  duration_ms: 0.033057
+  type: 'test'
+  ...
+# Subtest: resolves "Côte d'Ivoire"
+ok 138 - resolves "Côte d'Ivoire"
+  ---
+  duration_ms: 0.199885
+  type: 'test'
+  ...
+# Subtest: resolves "Ivory Coast"
+ok 139 - resolves "Ivory Coast"
+  ---
+  duration_ms: 0.037623
+  type: 'test'
+  ...
+# Subtest: resolves "Türkiye"
+ok 140 - resolves "Türkiye"
+  ---
+  duration_ms: 0.032789
+  type: 'test'
+  ...
+# Subtest: resolves "Czech Republic"
+ok 141 - resolves "Czech Republic"
+  ---
+  duration_ms: 0.032017
+  type: 'test'
+  ...
+# Subtest: resolves "Holland"
+ok 142 - resolves "Holland"
+  ---
+  duration_ms: 0.028792
+  type: 'test'
+  ...
+# Subtest: resolves "Royaume-Uni"
+ok 143 - resolves "Royaume-Uni"
+  ---
+  duration_ms: 0.029767
+  type: 'test'
+  ...
+# Subtest: resolves "États-Unis"
+ok 144 - resolves "États-Unis"
+  ---
+  duration_ms: 0.03974
+  type: 'test'
+  ...
+# Subtest: resolves "Monaco"
+ok 145 - resolves "Monaco"
+  ---
+  duration_ms: 0.035386
+  type: 'test'
+  ...
+# Subtest: resolves "Singapore"
+ok 146 - resolves "Singapore"
+  ---
+  duration_ms: 0.03808
+  type: 'test'
+  ...
+# Subtest: resolves "Indiana"
+ok 147 - resolves "Indiana"
+  ---
+  duration_ms: 0.042544
+  type: 'test'
+  ...
+# Subtest: resolves "India"
+ok 148 - resolves "India"
+  ---
+  duration_ms: 0.038195
+  type: 'test'
+  ...
+# Subtest: resolves "DE"
+ok 149 - resolves "DE"
+  ---
+  duration_ms: 0.03152
+  type: 'test'
+  ...
+# Subtest: resolves "in"
+ok 150 - resolves "in"
+  ---
+  duration_ms: 0.040025
+  type: 'test'
+  ...
+# Subtest: resolves "Suisse romande et Maroc"
+ok 151 - resolves "Suisse romande et Maroc"
+  ---
+  duration_ms: 0.066488
+  type: 'test'
+  ...
+# Subtest: resolves "Sydney, New South Wales"
+ok 152 - resolves "Sydney, New South Wales"
+  ---
+  duration_ms: 0.096666
+  type: 'test'
+  ...
+# Subtest: resolves "Trinidad and Tobago"
+ok 153 - resolves "Trinidad and Tobago"
+  ---
+  duration_ms: 0.056164
+  type: 'test'
+  ...
+# Subtest: resolves "Lyon (FR) + Casablanca"
+ok 154 - resolves "Lyon (FR) + Casablanca"
+  ---
+  duration_ms: 0.052123
+  type: 'test'
+  ...
+# Subtest: resolves "Atlanta, Georgia"
+ok 155 - resolves "Atlanta, Georgia"
+  ---
+  duration_ms: 0.066186
+  type: 'test'
+  ...
+# Subtest: resolves "Georgia, USA"
+ok 156 - resolves "Georgia, USA"
+  ---
+  duration_ms: 0.049747
+  type: 'test'
+  ...
+# Subtest: resolves "Guinea"
+ok 157 - resolves "Guinea"
+  ---
+  duration_ms: 0.042801
+  type: 'test'
+  ...
+# Subtest: resolves "Worldwide"
+ok 158 - resolves "Worldwide"
+  ---
+  duration_ms: 0.04096
+  type: 'test'
+  ...
+# Subtest: resolves "France, Spain and Portugal"
+ok 159 - resolves "France, Spain and Portugal"
+  ---
+  duration_ms: 0.20949
+  type: 'test'
+  ...
+# Subtest: resolves "España y Portugal"
+ok 160 - resolves "España y Portugal"
+  ---
+  duration_ms: 0.05909
+  type: 'test'
+  ...
+# Subtest: resolves "Espagne, Italie et Grèce"
+ok 161 - resolves "Espagne, Italie et Grèce"
+  ---
+  duration_ms: 0.063043
+  type: 'test'
+  ...
+# Subtest: resolves "Georgia"
+ok 162 - resolves "Georgia"
+  ---
+  duration_ms: 0.042148
+  type: 'test'
+  ...
+# Subtest: resolves "Peru, Indiana"
+ok 163 - resolves "Peru, Indiana"
+  ---
+  duration_ms: 0.046102
+  type: 'test'
+  ...
+# Subtest: resolves "New Mexico"
+ok 164 - resolves "New Mexico"
+  ---
+  duration_ms: 0.039729
+  type: 'test'
+  ...
+# Subtest: resolves "Mexico City"
+ok 165 - resolves "Mexico City"
+  ---
+  duration_ms: 0.040075
+  type: 'test'
+  ...
+# Subtest: resolves "New England"
+ok 166 - resolves "New England"
+  ---
+  duration_ms: 0.039469
+  type: 'test'
+  ...
+# Subtest: resolves "Jersey City"
+ok 167 - resolves "Jersey City"
+  ---
+  duration_ms: 0.068314
+  type: 'test'
+  ...
+# Subtest: resolves "Jersey"
+ok 168 - resolves "Jersey"
+  ---
+  duration_ms: 0.047427
+  type: 'test'
+  ...
+# Subtest: resolves "New Guinea"
+ok 169 - resolves "New Guinea"
+  ---
+  duration_ms: 0.038826
+  type: 'test'
+  ...
+# Subtest: resolves "South Georgia"
+ok 170 - resolves "South Georgia"
+  ---
+  duration_ms: 0.040552
+  type: 'test'
+  ...
+# Subtest: resolves "Equatorial Guinea"
+ok 171 - resolves "Equatorial Guinea"
+  ---
+  duration_ms: 0.035367
+  type: 'test'
+  ...
+# Subtest: resolves "DR Congo"
+ok 172 - resolves "DR Congo"
+  ---
+  duration_ms: 0.042386
+  type: 'test'
+  ...
+# Subtest: resolves "Republic of the Congo"
+ok 173 - resolves "Republic of the Congo"
+  ---
+  duration_ms: 0.054964
+  type: 'test'
+  ...
+# Subtest: resolves "Congo, Democratic Republic of the"
+ok 174 - resolves "Congo, Democratic Republic of the"
+  ---
+  duration_ms: 2.157194
+  type: 'test'
+  ...
+# Subtest: resolves "Korea, Republic of"
+ok 175 - resolves "Korea, Republic of"
+  ---
+  duration_ms: 0.118607
+  type: 'test'
+  ...
+# Subtest: resolves "South Korea"
+ok 176 - resolves "South Korea"
+  ---
+  duration_ms: 0.067448
+  type: 'test'
+  ...
+# Subtest: resolves "Saint Martin"
+ok 177 - resolves "Saint Martin"
+  ---
+  duration_ms: 0.056712
+  type: 'test'
+  ...
+# Subtest: resolves "Sint Maarten"
+ok 178 - resolves "Sint Maarten"
+  ---
+  duration_ms: 0.061599
+  type: 'test'
+  ...
+# Subtest: resolves "US Virgin Islands"
+ok 179 - resolves "US Virgin Islands"
+  ---
+  duration_ms: 0.056532
+  type: 'test'
+  ...
+# Subtest: resolves "U.S."
+ok 180 - resolves "U.S."
+  ---
+  duration_ms: 0.057101
+  type: 'test'
+  ...
+# Subtest: resolves "Irlande du Nord"
+ok 181 - resolves "Irlande du Nord"
+  ---
+  duration_ms: 1.444621
+  type: 'test'
+  ...
+# Subtest: resolves "Northern Ireland"
+ok 182 - resolves "Northern Ireland"
+  ---
+  duration_ms: 0.081109
+  type: 'test'
+  ...
+# Subtest: resolves "Großbritannien"
+ok 183 - resolves "Großbritannien"
+  ---
+  duration_ms: 0.07204
+  type: 'test'
+  ...
+# Subtest: resolves "Saint Kitts & Nevis"
+ok 184 - resolves "Saint Kitts & Nevis"
+  ---
+  duration_ms: 0.039454
+  type: 'test'
+  ...
+# Subtest: resolves "St Lucia"
+ok 185 - resolves "St Lucia"
+  ---
+  duration_ms: 0.033744
+  type: 'test'
+  ...
+# Subtest: resolves "Granada, Spain"
+ok 186 - resolves "Granada, Spain"
+  ---
+  duration_ms: 0.038623
+  type: 'test'
+  ...
+# Subtest: resolves "Salvador, Brazil"
+ok 187 - resolves "Salvador, Brazil"
+  ---
+  duration_ms: 0.03456
+  type: 'test'
+  ...
+# Subtest: resolves "Norfolk, UK"
+ok 188 - resolves "Norfolk, UK"
+  ---
+  duration_ms: 0.033318
+  type: 'test'
+  ...
+# Subtest: resolves "Island"
+ok 189 - resolves "Island"
+  ---
+  duration_ms: 0.031077
+  type: 'test'
+  ...
+# Subtest: resolves "South America"
+ok 190 - resolves "South America"
+  ---
+  duration_ms: 0.032991
+  type: 'test'
+  ...
+# Subtest: resolves "Antarctica"
+ok 191 - resolves "Antarctica"
+  ---
+  duration_ms: 0.029275
+  type: 'test'
+  ...
+# Subtest: resolves "FRA"
+ok 192 - resolves "FRA"
+  ---
+  duration_ms: 0.025774
+  type: 'test'
+  ...
+# Subtest: resolves "GB"
+ok 193 - resolves "GB"
+  ---
+  duration_ms: 1.751322
+  type: 'test'
+  ...
+# Subtest: resolves "fr"
+ok 194 - resolves "fr"
+  ---
+  duration_ms: 0.074898
+  type: 'test'
+  ...
+# Subtest: resolves "EU"
+ok 195 - resolves "EU"
+  ---
+  duration_ms: 0.036003
+  type: 'test'
+  ...
+# Subtest: resolves "FR, DE"
+ok 196 - resolves "FR, DE"
+  ---
+  duration_ms: 0.036318
+  type: 'test'
+  ...
+# Subtest: resolves "London, GB"
+ok 197 - resolves "London, GB"
+  ---
+  duration_ms: 0.031723
+  type: 'test'
+  ...
+# Subtest: resolves "Lyon (FR)"
+ok 198 - resolves "Lyon (FR)"
+  ---
+  duration_ms: 0.029383
+  type: 'test'
+  ...
+# Subtest: resolves "PARIS, FRANCE"
+ok 199 - resolves "PARIS, FRANCE"
+  ---
+  duration_ms: 0.036209
+  type: 'test'
+  ...
+# Subtest: resolves "Mumbai, IN"
+ok 200 - resolves "Mumbai, IN"
+  ---
+  duration_ms: 0.03161
+  type: 'test'
+  ...
+# Subtest: resolves "TEAM IN FRANCE"
+ok 201 - resolves "TEAM IN FRANCE"
+  ---
+  duration_ms: 0.035528
+  type: 'test'
+  ...
+# Subtest: resolves "Remote (France)"
+ok 202 - resolves "Remote (France)"
+  ---
+  duration_ms: 0.028342
+  type: 'test'
+  ...
+# Subtest: resolves "Team of 3 in Paris region"
+ok 203 - resolves "Team of 3 in Paris region"
+  ---
+  duration_ms: 0.071893
+  type: 'test'
+  ...
+# Subtest: resolves "us"
+ok 204 - resolves "us"
+  ---
+  duration_ms: 0.03552
+  type: 'test'
+  ...
+# Subtest: resolves "Россия"
+ok 205 - resolves "Россия"
+  ---
+  duration_ms: 0.627527
+  type: 'test'
+  ...
+# Subtest: resolves "Benin City, Nigeria"
+ok 206 - resolves "Benin City, Nigeria"
+  ---
+  duration_ms: 0.062095
+  type: 'test'
+  ...
+# Subtest: resolves "Panama City, Florida"
+ok 207 - resolves "Panama City, Florida"
+  ---
+  duration_ms: 0.051539
+  type: 'test'
+  ...
+# Subtest: resolves "Niger Delta"
+ok 208 - resolves "Niger Delta"
+  ---
+  duration_ms: 0.032803
+  type: 'test'
+  ...
+# Subtest: resolves "Lake Chad"
+ok 209 - resolves "Lake Chad"
+  ---
+  duration_ms: 0.028591
+  type: 'test'
+  ...
+# Subtest: resolves "South China Sea"
+ok 210 - resolves "South China Sea"
+  ---
+  duration_ms: 0.031381
+  type: 'test'
+  ...
+# Subtest: resolves "North Cyprus"
+ok 211 - resolves "North Cyprus"
+  ---
+  duration_ms: 0.027906
+  type: 'test'
+  ...
+# Subtest: resolves "Caribbean Netherlands"
+ok 212 - resolves "Caribbean Netherlands"
+  ---
+  duration_ms: 0.027677
+  type: 'test'
+  ...
+# Subtest: resolves "Netherlands Antilles"
+ok 213 - resolves "Netherlands Antilles"
+  ---
+  duration_ms: 0.029961
+  type: 'test'
+  ...
+# Subtest: resolves "Gulf of Guinea"
+ok 214 - resolves "Gulf of Guinea"
+  ---
+  duration_ms: 0.030236
+  type: 'test'
+  ...
+# Subtest: resolves "Congo Basin"
+ok 215 - resolves "Congo Basin"
+  ---
+  duration_ms: 0.027779
+  type: 'test'
+  ...
+# Subtest: resolves "Kuwait City"
+ok 216 - resolves "Kuwait City"
+  ---
+  duration_ms: 0.028033
+  type: 'test'
+  ...
+# Subtest: resolves "Northern Cyprus"
+ok 217 - resolves "Northern Cyprus"
+  ---
+  duration_ms: 0.027764
+  type: 'test'
+  ...
+# Subtest: resolves "Lebanon (Tennessee)"
+ok 218 - resolves "Lebanon (Tennessee)"
+  ---
+  duration_ms: 0.034278
+  type: 'test'
+  ...
+# Subtest: resolves "Lebanon, PA"
+ok 219 - resolves "Lebanon, PA"
+  ---
+  duration_ms: 0.033116
+  type: 'test'
+  ...
+# Subtest: resolves "Lebanon, Nashville, Tennessee"
+ok 220 - resolves "Lebanon, Nashville, Tennessee"
+  ---
+  duration_ms: 0.042084
+  type: 'test'
+  ...
+# Subtest: resolves "Lebanon"
+ok 221 - resolves "Lebanon"
+  ---
+  duration_ms: 0.02879
+  type: 'test'
+  ...
+# Subtest: resolves "India, IN"
+ok 222 - resolves "India, IN"
+  ---
+  duration_ms: 0.0333
+  type: 'test'
+  ...
+# Subtest: resolves "France, Spain and New York"
+ok 223 - resolves "France, Spain and New York"
+  ---
+  duration_ms: 0.046187
+  type: 'test'
+  ...
+# Subtest: resolves "USA and Mexico"
+ok 224 - resolves "USA and Mexico"
+  ---
+  duration_ms: 0.035393
+  type: 'test'
+  ...
+# Subtest: resolves "Athens, Georgia"
+ok 225 - resolves "Athens, Georgia"
+  ---
+  duration_ms: 2.075824
+  type: 'test'
+  ...
+# Subtest: resolves "Columbus, Georgia"
+ok 226 - resolves "Columbus, Georgia"
+  ---
+  duration_ms: 0.088051
+  type: 'test'
+  ...
+# Subtest: resolves "Albany, Georgia"
+ok 227 - resolves "Albany, Georgia"
+  ---
+  duration_ms: 0.038846
+  type: 'test'
+  ...
+# Subtest: resolves "Georgia Tech"
+ok 228 - resolves "Georgia Tech"
+  ---
+  duration_ms: 0.036602
+  type: 'test'
+  ...
+# Subtest: resolves "Georgia, GA"
+ok 229 - resolves "Georgia, GA"
+  ---
+  duration_ms: 0.031918
+  type: 'test'
+  ...
+# Subtest: resolves "North Georgia"
+ok 230 - resolves "North Georgia"
+  ---
+  duration_ms: 0.029192
+  type: 'test'
+  ...
+# Subtest: resolves "Athènes, Géorgie"
+ok 231 - resolves "Athènes, Géorgie"
+  ---
+  duration_ms: 0.033325
+  type: 'test'
+  ...
+# Subtest: resolves "Batumi, Georgia"
+ok 232 - resolves "Batumi, Georgia"
+  ---
+  duration_ms: 0.05654
+  type: 'test'
+  ...
+# Subtest: resolves "Georgia (Caucasus)"
+ok 233 - resolves "Georgia (Caucasus)"
+  ---
+  duration_ms: 0.032827
+  type: 'test'
+  ...
+# Subtest: resolves "Kutaisi, Georgien"
+ok 234 - resolves "Kutaisi, Georgien"
+  ---
+  duration_ms: 4.03161
+  type: 'test'
+  ...
+# Subtest: resolves "Tbilissi, Géorgie"
+ok 235 - resolves "Tbilissi, Géorgie"
+  ---
+  duration_ms: 0.099273
+  type: 'test'
+  ...
+# Subtest: resolves "Georgia and Armenia"
+ok 236 - resolves "Georgia and Armenia"
+  ---
+  duration_ms: 0.055033
+  type: 'test'
+  ...
+# Subtest: research case list is at least the 38 prototype inputs
+ok 237 - research case list is at least the 38 prototype inputs
+  ---
+  duration_ms: 0.118594
+  type: 'test'
+  ...
+# Subtest: empty, blank, punctuation-only and the engine placeholder are missing, never a default country
+ok 238 - empty, blank, punctuation-only and the engine placeholder are missing, never a default country
+  ---
+  duration_ms: 0.104517
+  type: 'test'
+  ...
+# Subtest: countries carry display name and the captured text for tooltips
+ok 239 - countries carry display name and the captured text for tooltips
+  ---
+  duration_ms: 0.073109
+  type: 'test'
+  ...
+# Subtest: non-empty input is never silently dropped
+ok 240 - non-empty input is never silently dropped
+  ---
+  duration_ms: 0.162619
+  type: 'test'
+  ...
+# Subtest: a country is reported once even when named twice
+ok 241 - a country is reported once even when named twice
+  ---
+  duration_ms: 0.059745
+  type: 'test'
+  ...
+# Subtest: unresolved text is quoted verbatim, never normalized or truncated
+ok 242 - unresolved text is quoted verbatim, never normalized or truncated
+  ---
+  duration_ms: 0.051448
+  type: 'test'
+  ...
+# Subtest: very long input is bounded
+ok 243 - very long input is bounded
+  ---
+  duration_ms: 5.953994
+  type: 'test'
+  ...
+# Subtest: ambiguous choices name both candidates
+ok 244 - ambiguous choices name both candidates
+  ---
+  duration_ms: 0.231551
+  type: 'test'
+  ...
+# Subtest: every gazetteer alias resolves to its own country (Python/JS normalization parity)
+ok 245 - every gazetteer alias resolves to its own country (Python/JS normalization parity)
+  ---
+  duration_ms: 11.254185
+  type: 'test'
+  ...
+# Subtest: every display name resolves to its own code unless the name itself is ambiguous
+ok 246 - every display name resolves to its own code unless the name itself is ambiguous
+  ---
+  duration_ms: 2.264004
+  type: 'test'
+  ...
+# Subtest: countryName and labelPoint are safe on unknown input
+ok 247 - countryName and labelPoint are safe on unknown input
+  ---
+  duration_ms: 0.15084
+  type: 'test'
+  ...
+# Subtest: world asset is within the 115,000 byte budget
+ok 248 - world asset is within the 115,000 byte budget
+  ---
+  duration_ms: 0.124135
+  type: 'test'
+  ...
+# Subtest: provenance pins Natural Earth v5.1.2 hashes and the generator pins the same values
+ok 249 - provenance pins Natural Earth v5.1.2 hashes and the generator pins the same values
+  ---
+  duration_ms: 0.387255
+  type: 'test'
+  ...
+# Subtest: ADM0_A3 codes are unique and well formed
+ok 250 - ADM0_A3 codes are unique and well formed
+  ---
+  duration_ms: 0.324223
+  type: 'test'
+  ...
+# Subtest: Antarctica is absent
+ok 251 - Antarctica is absent
+  ---
+  duration_ms: 0.09101
+  type: 'test'
+  ...
+# Subtest: map is Mercator 1000 wide with 668 height and only safe path characters
+ok 252 - map is Mercator 1000 wide with 668 height and only safe path characters
+  ---
+  duration_ms: 0.488751
+  type: 'test'
+  ...
+# Subtest: streak guard: no path segment is longer than 250 units
+ok 253 - streak guard: no path segment is longer than 250 units
+  ---
+  duration_ms: 8.997505
+  type: 'test'
+  ...
+# Subtest: all points lie inside the map frame
+ok 254 - all points lie inside the map frame
+  ---
+  duration_ms: 6.127722
+  type: 'test'
+  ...
+# Subtest: Russia and Fiji reach both map edges (split at the antimeridian, not streaked)
+ok 255 - Russia and Fiji reach both map edges (split at the antimeridian, not streaked)
+  ---
+  duration_ms: 0.258413
+  type: 'test'
+  ...
+# Subtest: small-territory markers exist
+ok 256 - small-territory markers exist
+  ---
+  duration_ms: 0.100213
+  type: 'test'
+  ...
+# Subtest: France main box ignores French Guiana; Norway main box ignores Svalbard
+ok 257 - France main box ignores French Guiana; Norway main box ignores Svalbard
+  ---
+  duration_ms: 0.130103
+  type: 'test'
+  ...
+# Subtest: graticule is straight lines every 10 degrees
+ok 258 - graticule is straight lines every 10 degrees
+  ---
+  duration_ms: 0.056022
+  type: 'test'
+  ...
+# Subtest: fitBox with no codes frames the whole world at the requested aspect
+ok 259 - fitBox with no codes frames the whole world at the requested aspect
+  ---
+  duration_ms: 0.209522
+  type: 'test'
+  ...
+# Subtest: fitBox frames France with context, at least 18% of world width, 16:9 and 4:3
+ok 260 - fitBox frames France with context, at least 18% of world width, 16:9 and 4:3
+  ---
+  duration_ms: 0.12119
+  type: 'test'
+  ...
+# Subtest: fitBox frames a union and stays inside the world frame
+ok 261 - fitBox frames a union and stays inside the world frame
+  ---
+  duration_ms: 0.079715
+  type: 'test'
+  ...
+# Subtest: fitBox falls back to 16:9 on a bad aspect
+ok 262 - fitBox falls back to 16:9 on a bad aspect
+  ---
+  duration_ms: 0.050994
+  type: 'test'
+  ...
+# Subtest: worldSVG is a complete, script-free SVG with prefixed hatch defs and one path per drawn country
+ok 263 - worldSVG is a complete, script-free SVG with prefixed hatch defs and one path per drawn country
+  ---
+  duration_ms: 1.024427
+  type: 'test'
+  ...
+# Subtest: titles and every inserted value are escaped
+ok 264 - titles and every inserted value are escaped
+  ---
+  duration_ms: 7.214486
+  type: 'test'
+  ...
+# Subtest: interview state is hatched via the prefixed pattern; sheet is a plain state
+ok 265 - interview state is hatched via the prefixed pattern; sheet is a plain state
+  ---
+  duration_ms: 0.273919
+  type: 'test'
+  ...
+# Subtest: unknown states, codes and injected values are ignored
+ok 266 - unknown states, codes and injected values are ignored
+  ---
+  duration_ms: 0.57919
+  type: 'test'
+  ...
+# Subtest: small territories get a circle marker only when they have a state
+ok 267 - small territories get a circle marker only when they have a state
+  ---
+  duration_ms: 0.702448
+  type: 'test'
+  ...
+# Subtest: highlighted countries are drawn after the others so outlines stay visible
+ok 268 - highlighted countries are drawn after the others so outlines stay visible
+  ---
+  duration_ms: 0.247189
+  type: 'test'
+  ...
+# Subtest: static export crops to the fitted view and has no tabindex
+ok 269 - static export crops to the fitted view and has no tabindex
+  ---
+  duration_ms: 0.333518
+  type: 'test'
+  ...
+# Subtest: static export also draws what a 4:3 phone frame letterboxes above and below a 16:9 view
+ok 270 - static export also draws what a 4:3 phone frame letterboxes above and below a 16:9 view
+  ---
+  duration_ms: 9.604432
+  type: 'test'
+  ...
+# Subtest: an explicit viewBox is honoured and non-numeric viewBoxes fall back to the fit
+ok 271 - an explicit viewBox is honoured and non-numeric viewBoxes fall back to the fit
+  ---
+  duration_ms: 0.471012
+  type: 'test'
+  ...
+# Subtest: output is deterministic
+ok 272 - output is deterministic
+  ---
+  duration_ms: 0.291131
+  type: 'test'
+  ...
+# Subtest: browser mode: reads window.ATLAS_WORLD without require and runs with string code generation disabled (CSP, no eval)
+ok 273 - browser mode: reads window.ATLAS_WORLD without require and runs with string code generation disabled (CSP, no eval)
+  ---
+  duration_ms: 20.051557
+  type: 'test'
+  ...
+# Subtest: generator refuses tampered input (hash mismatch) without writing output
+ok 274 - generator refuses tampered input (hash mismatch) without writing output
+  ---
+  duration_ms: 49.998827
+  type: 'test'
+  ...
+# Subtest: regeneration from the pinned sources is byte-identical to the committed asset
+ok 275 - regeneration from the pinned sources is byte-identical to the committed asset # SKIP set ATLAS_NE_SRC to a folder holding the two pinned Natural Earth v5.1.2 files
+  ---
+  duration_ms: 0.042965
+  type: 'test'
+  ...
+# Subtest: silent speaking state does not create a phrase gesture
+ok 276 - silent speaking state does not create a phrase gesture
+  ---
+  duration_ms: 3.095629
+  type: 'test'
+  ...
+# Subtest: audible onset gives one coherent gesture, not a per-frame twitch
+ok 277 - audible onset gives one coherent gesture, not a per-frame twitch
+  ---
+  duration_ms: 1.229949
+  type: 'test'
+  ...
+# Subtest: a new phrase needs an actual silence interval
+ok 278 - a new phrase needs an actual silence interval
+  ---
+  duration_ms: 0.616321
+  type: 'test'
+  ...
+# Subtest: gesture settles in silence with bounded position
+ok 279 - gesture settles in silence with bounded position
+  ---
+  duration_ms: 6.92542
+  type: 'test'
+  ...
+# Subtest: phrase gestures deterministic for identical audio histories
+ok 280 - phrase gestures deterministic for identical audio histories
+  ---
+  duration_ms: 1.571063
+  type: 'test'
+  ...
+# Subtest: vague numerical result prompts for measurement rather than endorsing claim
+ok 281 - vague numerical result prompts for measurement rather than endorsing claim
+  ---
+  duration_ms: 1.367156
+  type: 'test'
+  ...
+# Subtest: unknown is accepted without manufacturing a success
+ok 282 - unknown is accepted without manufacturing a success
+  ---
+  duration_ms: 1.216175
+  type: 'test'
+  ...
+# Subtest: source-less project is an explicit unverified Markdown draft
+ok 283 - source-less project is an explicit unverified Markdown draft
+  ---
+  duration_ms: 0.92494
+  type: 'test'
+  ...
+# Subtest: edited story narrative is not lost during Markdown handoff
+ok 284 - edited story narrative is not lost during Markdown handoff
+  ---
+  duration_ms: 0.124038
+  type: 'test'
+  ...
+# Subtest: only active mapped sources copied to new wiki draft
+ok 285 - only active mapped sources copied to new wiki draft
+  ---
+  duration_ms: 0.551577
+  type: 'test'
+  ...
+# Subtest: markdown source fence cannot be closed by embedded triple ticks
+ok 286 - markdown source fence cannot be closed by embedded triple ticks
+  ---
+  duration_ms: 0.258311
+  type: 'test'
+  ...
+# Subtest: untrusted excerpts are HTML escaped by UI helper
+ok 287 - untrusted excerpts are HTML escaped by UI helper
+  ---
+  duration_ms: 0.120234
+  type: 'test'
+  ...
+# Subtest: a speech phrase produces coherent posture then settles without audio
+ok 288 - a speech phrase produces coherent posture then settles without audio
+  ---
+  duration_ms: 2.448742
+  type: 'test'
+  ...
+# Subtest: speaking label without output never fabricates a speech phrase
+ok 289 - speaking label without output never fabricates a speech phrase
+  ---
+  duration_ms: 0.540968
+  type: 'test'
+  ...
+# (node:2458) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# {"atlas_metric":"story_rating","engine":2,"fallback":1,"status":1,"ms":8,"attempts":0,"hedged":0,"http":0,"cached":0,"asked":0,"holds":0,"escalated":0,"strict":0,"language":0,"input_tokens":0}
+# {"atlas_metric":"story_rating","engine":3,"fallback":1,"status":2,"ms":1,"attempts":0,"hedged":0,"http":0,"cached":0,"asked":0,"holds":0,"escalated":0,"strict":0,"language":0,"input_tokens":0}
+# {"atlas_metric":"story_rating","engine":2,"fallback":1,"status":1,"ms":0,"attempts":0,"hedged":0,"http":0,"cached":0,"asked":0,"holds":0,"escalated":0,"strict":0,"language":0,"input_tokens":0}
+# {"atlas_metric":"story_rating","engine":2,"fallback":1,"status":1,"ms":2,"attempts":0,"hedged":0,"http":0,"cached":0,"asked":0,"holds":0,"escalated":0,"strict":0,"language":0,"input_tokens":0}
+# Subtest: a later status wins over a manager approval on real list() output
+ok 290 - a later status wins over a manager approval on real list() output
+  ---
+  duration_ms: 116.932439
+  type: 'test'
+  ...
+# {"atlas_metric":"story_rating","engine":3,"fallback":1,"status":2,"ms":0,"attempts":0,"hedged":0,"http":0,"cached":0,"asked":0,"holds":0,"escalated":0,"strict":0,"language":0,"input_tokens":0}
+# {"atlas_metric":"story_rating","engine":2,"fallback":1,"status":1,"ms":0,"attempts":0,"hedged":0,"http":0,"cached":0,"asked":0,"holds":0,"escalated":0,"strict":0,"language":0,"input_tokens":0}
+# {"atlas_metric":"story_rating","engine":2,"fallback":1,"status":1,"ms":0,"attempts":0,"hedged":0,"http":0,"cached":0,"asked":0,"holds":0,"escalated":0,"strict":0,"language":0,"input_tokens":0}
+# Subtest: the journey queue labels real list() output and drops an approved lane after the click
+ok 291 - the journey queue labels real list() output and drops an approved lane after the click
+  ---
+  duration_ms: 31.955779
+  type: 'test'
+  ...
+# Subtest: libraryErrorText clips a usable body and refuses the rest
+ok 292 - libraryErrorText clips a usable body and refuses the rest
+  ---
+  duration_ms: 1.389765
+  type: 'test'
+  ...
+# Subtest: pptx: slide text in slide order, entities decoded (deflated entries)
+ok 293 - pptx: slide text in slide order, entities decoded (deflated entries)
+  ---
+  duration_ms: 31.85825
+  type: 'test'
+  ...
+# Subtest: media: embedded images found, tiny icons skipped
+ok 294 - media: embedded images found, tiny icons skipped
+  ---
+  duration_ms: 4.143664
+  type: 'test'
+  ...
+# Subtest: stored entries (ATLAS own .docx) round trip, and non-zip input is refused
+ok 295 - stored entries (ATLAS own .docx) round trip, and non-zip input is refused
+  ---
+  duration_ms: 3.79169
+  type: 'test'
+  ...
+# Subtest: one-pager docx: valid zip with every part and matching CRCs
+ok 296 - one-pager docx: valid zip with every part and matching CRCs
+  ---
+  duration_ms: 3.972369
+  type: 'test'
+  ...
+# Subtest: one-pager docx: superscript [n] runs per claim, interpretation marked, a final Sources section
+ok 297 - one-pager docx: superscript [n] runs per claim, interpretation marked, a final Sources section
+  ---
+  duration_ms: 1.008761
+  type: 'test'
+  ...
+# Subtest: one-pager docx: text is XML-escaped and control characters are removed
+ok 298 - one-pager docx: text is XML-escaped and control characters are removed
+  ---
+  duration_ms: 0.385378
+  type: 'test'
+  ...
+# Subtest: one-pager docx: built from the AtlasBids model end to end, and build() is unchanged
+ok 299 - one-pager docx: built from the AtlasBids model end to end, and build() is unchanged
+  ---
+  duration_ms: 2.011217
+  type: 'test'
+  ...
+# Subtest: particle geometry is deterministic, finite and bounded
+ok 300 - particle geometry is deterministic, finite and bounded
+  ---
+  duration_ms: 17.408907
+  type: 'test'
+  ...
+# Subtest: connections reference existing points and have no reverse duplicates
+ok 301 - connections reference existing points and have no reverse duplicates
+  ---
+  duration_ms: 4.327114
+  type: 'test'
+  ...
+# Subtest: geometry clamps malicious input
+ok 302 - geometry clamps malicious input
+  ---
+  duration_ms: 6.156144
+  type: 'test'
+  ...
+# Subtest: offline is never a listening or thinking claim
+ok 303 - offline is never a listening or thinking claim
+  ---
+  duration_ms: 0.233561
+  type: 'test'
+  ...
+# Subtest: only playback amplitude activates speaking
+ok 304 - only playback amplitude activates speaking
+  ---
+  duration_ms: 0.154931
+  type: 'test'
+  ...
+# Subtest: silence uses hysteresis, then returns to listening
+ok 305 - silence uses hysteresis, then returns to listening
+  ---
+  duration_ms: 0.09154
+  type: 'test'
+  ...
+# Subtest: muting suppresses input, not agent playback
+ok 306 - muting suppresses input, not agent playback
+  ---
+  duration_ms: 0.153219
+  type: 'test'
+  ...
+# Subtest: stale meters decay and never stay stuck speaking
+ok 307 - stale meters decay and never stay stuck speaking
+  ---
+  duration_ms: 0.072402
+  type: 'test'
+  ...
+# Subtest: NaN and out-of-range levels cannot corrupt scene state
+ok 308 - NaN and out-of-range levels cannot corrupt scene state
+  ---
+  duration_ms: 0.232582
+  type: 'test'
+  ...
+# Subtest: transport stages have explicit visual meanings, never generic thinking
+ok 309 - transport stages have explicit visual meanings, never generic thinking
+  ---
+  duration_ms: 0.289162
+  type: 'test'
+  ...
+# Subtest: end resets last input and speaker timestamps
+ok 310 - end resets last input and speaker timestamps
+  ---
+  duration_ms: 0.13945
+  type: 'test'
+  ...
+# Subtest: pptx: valid stored zip with every required part and matching CRCs
+ok 311 - pptx: valid stored zip with every required part and matching CRCs
+  ---
+  duration_ms: 4.320755
+  type: 'test'
+  ...
+# Subtest: pptx: text is XML-escaped, interpretation is marked, the provenance note is present, no client unless given
+ok 312 - pptx: text is XML-escaped, interpretation is marked, the provenance note is present, no client unless given
+  ---
+  duration_ms: 2.331114
+  type: 'test'
+  ...
+# Subtest: chip labels: computed from the profile field versus the form value
+ok 313 - chip labels: computed from the profile field versus the form value
+  ---
+  duration_ms: 0.734052
+  type: 'test'
+  ...
+# Subtest: profile to form mapping, and a guess is never a confirmed name
+ok 314 - profile to form mapping, and a guess is never a confirmed name
+  ---
+  duration_ms: 0.633334
+  type: 'test'
+  ...
+# Subtest: roleFrom on submit: profile when equal to the title, you when different, blank when empty
+ok 315 - roleFrom on submit: profile when equal to the title, you when different, blank when empty
+  ---
+  duration_ms: 0.109972
+  type: 'test'
+  ...
+# Subtest: modelProject, flat shape: name blanked; role blanked only for roleFrom profile; client and the rest kept
+ok 316 - modelProject, flat shape: name blanked; role blanked only for roleFrom profile; client and the rest kept
+  ---
+  duration_ms: 5.019488
+  type: 'test'
+  ...
+# Subtest: modelProject, library payload shape: consultant.name blanked; consultant.role blanked only for profile; client kept
+ok 317 - modelProject, library payload shape: consultant.name blanked; consultant.role blanked only for profile; client kept
+  ---
+  duration_ms: 0.862754
+  type: 'test'
+  ...
+# Subtest: first name shown on screen: validated, at most two words, no digits or brackets
+ok 318 - first name shown on screen: validated, at most two words, no digits or brackets
+  ---
+  duration_ms: 1.153672
+  type: 'test'
+  ...
+# Subtest: CSV parser: BOM, semicolons, quotes with delimiters and newlines, CRLF
+ok 319 - CSV parser: BOM, semicolons, quotes with delimiters and newlines, CRLF
+  ---
+  duration_ms: 10.992655
+  type: 'test'
+  ...
+# Subtest: header suggestions, French and English, approved fields only
+ok 320 - header suggestions, French and English, approved fields only
+  ---
+  duration_ms: 0.601324
+  type: 'test'
+  ...
+# Subtest: column minimisation: Salaire, Date de naissance and Site never reach a row
+ok 321 - column minimisation: Salaire, Date de naissance and Site never reach a row
+  ---
+  duration_ms: 0.753468
+  type: 'test'
+  ...
+# Subtest: batches of at most 500, and a 32-hex batch id
+ok 322 - batches of at most 500, and a 32-hex batch id
+  ---
+  duration_ms: 3.113626
+  type: 'test'
+  ...
+# \# passband 24000->48000: worst -0.04 dB (legacy -4.02 dB); at 10000 Hz -0.04 dB (legacy -4.02 dB)
+# \# passband 24000->44100: worst -0.04 dB (legacy -5.28 dB); at 10000 Hz -0.04 dB (legacy -5.28 dB)
+# \# passband 24000->32000: worst -0.04 dB (legacy -4.97 dB); at 10000 Hz -0.04 dB (legacy -4.97 dB)
+# \# passband 48000->24000: worst -0.04 dB (legacy -0.00 dB); at 10000 Hz -0.04 dB (legacy -0.00 dB)
+# \# passband 44100->24000: worst -0.04 dB (legacy -1.49 dB); at 10000 Hz -0.04 dB (legacy -1.49 dB)
+# \# passband 32000->24000: worst -0.04 dB (legacy -2.57 dB); at 10000 Hz -0.04 dB (legacy -2.57 dB)
+# \# passband 24000->16000: worst 0.00 dB (legacy -1.62 dB); at 6500 Hz 0.00 dB (legacy -1.62 dB)
+# \# passband 16000->24000: worst 0.00 dB (legacy -4.48 dB); at 6500 Hz 0.00 dB (legacy -4.48 dB)
+# \# images 24000->48000 1000 Hz tone: worst other component -94.0 dB (legacy -47.7 dB)
+# \# images 24000->48000 4000 Hz tone: worst other component -94.0 dB (legacy -23.2 dB)
+# \# images 24000->48000 8000 Hz tone: worst other component -94.0 dB (legacy -9.9 dB)
+# \# images 24000->48000 10000 Hz tone: worst other component -92.1 dB (legacy -5.0 dB)
+# \# images 24000->44100 1000 Hz tone: worst other component -93.0 dB (legacy -54.5 dB)
+# \# images 24000->44100 4000 Hz tone: worst other component -101.7 dB (legacy -28.4 dB)
+# \# images 24000->44100 8000 Hz tone: worst other component -99.0 dB (legacy -12.4 dB)
+# \# images 24000->44100 10000 Hz tone: worst other component -91.8 dB (legacy -6.1 dB)
+# \# images 24000->32000 1000 Hz tone: worst other component -105.9 dB (legacy -52.8 dB)
+# \# images 24000->32000 4000 Hz tone: worst other component -108.6 dB (legacy -25.1 dB)
+# \# images 24000->32000 10000 Hz tone: worst other component -92.8 dB (legacy -5.5 dB)
+# \# images 24000->16000 1000 Hz tone: worst other component -148.0 dB (legacy -47.3 dB)
+# \# images 24000->16000 4000 Hz tone: worst other component -240.0 dB (legacy -240.0 dB)
+# \# images 24000->16000 6000 Hz tone: worst other component -120.2 dB (legacy -15.3 dB)
+# \# images 48000->24000 1000 Hz tone: worst other component -94.0 dB (legacy -94.0 dB)
+# \# images 48000->24000 4000 Hz tone: worst other component -94.0 dB (legacy -94.0 dB)
+# \# images 48000->24000 10000 Hz tone: worst other component -94.0 dB (legacy -94.0 dB)
+# \# images 44100->24000 1000 Hz tone: worst other component -94.0 dB (legacy -65.4 dB)
+# \# images 44100->24000 4000 Hz tone: worst other component -94.0 dB (legacy -40.1 dB)
+# \# images 44100->24000 10000 Hz tone: worst other component -94.0 dB (legacy -21.3 dB)
+# \# images 16000->24000 1000 Hz tone: worst other component -94.0 dB (legacy -44.2 dB)
+# \# images 16000->24000 4000 Hz tone: worst other component -94.0 dB (legacy -15.4 dB)
+# \# images 16000->24000 6000 Hz tone: worst other component -98.2 dB (legacy -8.4 dB)
+# \# images 24000->44056 1000 Hz tone: worst other component -88.2 dB (legacy -55.2 dB)
+# \# images 24000->44056 10000 Hz tone: worst other component -68.2 dB (legacy -6.6 dB)
+# \# images 44056->24000 1000 Hz tone: worst other component -93.2 dB (legacy -65.4 dB)
+# \# images 44056->24000 10000 Hz tone: worst other component -73.2 dB (legacy -21.3 dB)
+# \# aliases 24000->16000 9000 Hz tone: strongest output -96.3 dB re input (legacy -3.2 dB)
+# \# aliases 24000->16000 10000 Hz tone: strongest output -96.8 dB re input (legacy -4.0 dB)
+# \# aliases 24000->16000 11000 Hz tone: strongest output -99.9 dB re input (legacy -5.0 dB)
+# \# aliases 48000->24000 13000 Hz tone: strongest output -91.1 dB re input (legacy -0.4 dB)
+# \# aliases 48000->24000 15000 Hz tone: strongest output -96.8 dB re input (legacy -0.0 dB)
+# \# aliases 48000->24000 20000 Hz tone: strongest output -114.4 dB re input (legacy -0.4 dB)
+# \# aliases 44100->24000 13000 Hz tone: strongest output -92.2 dB re input (legacy -2.9 dB)
+# \# aliases 44100->24000 15000 Hz tone: strongest output -95.1 dB re input (legacy -3.4 dB)
+# \# aliases 44100->24000 20000 Hz tone: strongest output -120.7 dB re input (legacy -6.7 dB)
+# \# 1 kHz 24000->48000: 1000.01 Hz, -0.000 dB
+# \# 1 kHz 24000->44100: 1000.00 Hz, -0.000 dB
+# \# 1 kHz 24000->32000: 1000.00 Hz, -0.000 dB
+# \# 1 kHz 24000->16000: 1000.00 Hz, -0.000 dB
+# \# 1 kHz 48000->24000: 1000.00 Hz, -0.000 dB
+# \# 1 kHz 44100->24000: 1000.00 Hz, -0.000 dB
+# \# 1 kHz 16000->24000: 1000.00 Hz, -0.000 dB
+# \# group delay 24000->48000: 1.35 ms (legacy 0.02 ms; added 1.33 ms)
+# \# group delay 24000->44100: 1.35 ms (legacy 0.02 ms; added 1.33 ms)
+# \# group delay 24000->16000: 1.97 ms (legacy -0.04 ms; added 2.02 ms)
+# \# group delay 48000->24000: 1.31 ms (legacy -0.02 ms; added 1.33 ms)
+# \# group delay 44100->24000: 1.32 ms (legacy -0.02 ms; added 1.34 ms)
+# \# group delay 16000->24000: 2.02 ms (legacy 0.02 ms; added 2.00 ms)
+# \# 48 kHz: playback 65 taps x 48000/s + microphone 129 taps x 24000/s = 6.22 M MAC/s
+# \# 10 s of duplex 48 kHz audio resampled in 77.7 ms (0.78% of one core)
+# \# 48 kHz speaker: 1 kHz at -0.00 dB, worst other component -94.0 dB
+# \# 48 kHz microphone: 1 kHz at -0.00 dB, worst other component -94.0 dB
+# \# 48 kHz microphone: 15 kHz tone reaches the 24 kHz frames at -240.0 dB
+# \# removed biquad at 48000 Hz: 0.00 to +1.74 dB over 100 Hz-10 kHz
+# \# removed biquad at 44100 Hz: 0.00 to +1.74 dB over 100 Hz-10 kHz
+# \# removed biquad at 32000 Hz: 0.00 to +1.74 dB over 100 Hz-10 kHz
+# Subtest: passband is flat within 1 dB (100 Hz-10 kHz; 100 Hz-6.5 kHz at 16 kHz), both directions
+ok 323 - passband is flat within 1 dB (100 Hz-10 kHz; 100 Hz-6.5 kHz at 16 kHz), both directions
+  ---
+  duration_ms: 797.341092
+  type: 'test'
+  ...
+# Subtest: images and aliases are at least 50 dB down (24k->48k, 24k->44.1k, 24k->16k and the microphone paths)
+ok 324 - images and aliases are at least 50 dB down (24k->48k, 24k->44.1k, 24k->16k and the microphone paths)
+  ---
+  duration_ms: 542.077398
+  type: 'test'
+  ...
+# Subtest: a 1 kHz tone keeps its frequency and its level
+ok 325 - a 1 kHz tone keeps its frequency and its level
+  ---
+  duration_ms: 60.934354
+  type: 'test'
+  ...
+# Subtest: group delay is small (under 3 ms) and stated
+ok 326 - group delay is small (under 3 ms) and stated
+  ---
+  duration_ms: 16.26936
+  type: 'test'
+  ...
+# Subtest: output schedule is unchanged: every block yields exactly as many samples as before, for any block split
+ok 327 - output schedule is unchanged: every block yields exactly as many samples as before, for any block split
+  ---
+  duration_ms: 126.913704
+  type: 'test'
+  ...
+# Subtest: streaming keeps filter state across blocks: any block split gives identical samples
+ok 328 - streaming keeps filter state across blocks: any block split gives identical samples
+  ---
+  duration_ms: 47.927425
+  type: 'test'
+  ...
+# Subtest: CPU: multiply-accumulates per second at 48 kHz, and real-time headroom
+ok 329 - CPU: multiply-accumulates per second at 48 kHz, and real-time headroom
+  ---
+  duration_ms: 86.691767
+  type: 'test'
+  ...
+# Subtest: process() reuses preallocated buffers (no per-sample or per-block allocation)
+ok 330 - process() reuses preallocated buffers (no per-sample or per-block allocation)
+  ---
+  duration_ms: 26.001408
+  type: 'test'
+  ...
+# Subtest: 48 kHz worklet: model speech plays back clean and a microphone tone reaches the 480-sample frames clean
+ok 331 - 48 kHz worklet: model speech plays back clean and a microphone tone reaches the 480-sample frames clean
+  ---
+  duration_ms: 70.338393
+  type: 'test'
+  ...
+# Subtest: flush discards the filter memory of cut-off speech: the next reply starts from silence
+ok 332 - flush discards the filter memory of cut-off speech: the next reply starts from silence
+  ---
+  duration_ms: 10.326523
+  type: 'test'
+  ...
+# Subtest: microphone graph has no extra biquad: its response alone breaks the 1 dB passband
+ok 333 - microphone graph has no extra biquad: its response alone breaks the 1 dB passband
+  ---
+  duration_ms: 1.03712
+  type: 'test'
+  ...
+# Subtest: no raw innerHTML/outerHTML (also computed or in an object), insertAdjacentHTML, document.write, srcdoc, eval, Function, string timers, DOMParser, createContextualFragment, setHTMLUnsafe, script elements, setAttribute on on*/URL attributes or a javascript: URL outside safe-html.js
+ok 334 - no raw innerHTML/outerHTML (also computed or in an object), insertAdjacentHTML, document.write, srcdoc, eval, Function, string timers, DOMParser, createContextualFragment, setHTMLUnsafe, script elements, setAttribute on on*/URL attributes or a javascript: URL outside safe-html.js
+  ---
+  duration_ms: 35.020922
+  type: 'test'
+  ...
+# Subtest: no inline event-handler attribute (on*=) in any markup the app serves
+ok 335 - no inline event-handler attribute (on*=) in any markup the app serves
+  ---
+  duration_ms: 9.660678
+  type: 'test'
+  ...
+# Subtest: trusted(...) wraps one call to an audited producer (charts.js, geo.js, the story paper) as its whole argument, and every use is counted
+ok 336 - trusted(...) wraps one call to an audited producer (charts.js, geo.js, the story paper) as its whole argument, and every use is counted
+  ---
+  duration_ms: 5.815809
+  type: 'test'
+  ...
+# Subtest: the lint itself: it catches every probe from the red-team retest (s15) and the other sinks, and passes the audited patterns
+ok 337 - the lint itself: it catches every probe from the red-team retest (s15) and the other sinks, and passes the audited patterns
+  ---
+  duration_ms: 1.294785
+  type: 'test'
+  ...
+# Subtest: src/safe-html.js: html escapes every interpolation, passes Safe through, joins arrays, setHTML refuses a plain string
+ok 338 - src/safe-html.js: html escapes every interpolation, passes Safe through, joins arrays, setHTML refuses a plain string
+  ---
+  duration_ms: 1.144303
+  type: 'test'
+  ...
+# Subtest: src/runtime.js reads the JSON data block (and tolerates the empty one, a missing one and junk)
+ok 339 - src/runtime.js reads the JSON data block (and tolerates the empty one, a missing one and junk)
+  ---
+  duration_ms: 0.373928
+  type: 'test'
+  ...
+# Subtest: idle is not a speech gesture
+ok 340 - idle is not a speech gesture
+  ---
+  duration_ms: 5.705601
+  type: 'test'
+  ...
+# Subtest: speaking state alone does not manufacture speech
+ok 341 - speaking state alone does not manufacture speech
+  ---
+  duration_ms: 0.46845
+  type: 'test'
+  ...
+# Subtest: audio reshapes the connected body
+ok 342 - audio reshapes the connected body
+  ---
+  duration_ms: 2.966302
+  type: 'test'
+  ...
+# Subtest: same input history produces the same pose
+ok 343 - same input history produces the same pose
+  ---
+  duration_ms: 3.317731
+  type: 'test'
+  ...
+# Subtest: silent release removes deformation after speech
+ok 344 - silent release removes deformation after speech
+  ---
+  duration_ms: 2.221401
+  type: 'test'
+  ...
+# Subtest: high frequencies affect highlights, not a fake output level
+ok 345 - high frequencies affect highlights, not a fake output level
+  ---
+  duration_ms: 0.453825
+  type: 'test'
+  ...
+# Subtest: bass deforms vertical mass
+ok 346 - bass deforms vertical mass
+  ---
+  duration_ms: 0.523057
+  type: 'test'
+  ...
+# Subtest: mid band twists the body without bass pumping
+ok 347 - mid band twists the body without bass pumping
+  ---
+  duration_ms: 0.478593
+  type: 'test'
+  ...
+# Subtest: spectral residue cannot animate silent playback
+ok 348 - spectral residue cannot animate silent playback
+  ---
+  duration_ms: 0.763648
+  type: 'test'
+  ...
+# Subtest: microphone alone does not trigger speaking articulation
+ok 349 - microphone alone does not trigger speaking articulation
+  ---
+  duration_ms: 0.662265
+  type: 'test'
+  ...
+# Subtest: muted state ignores microphone and playback until an actual speaking signal state
+ok 350 - muted state ignores microphone and playback until an actual speaking signal state
+  ---
+  duration_ms: 0.393794
+  type: 'test'
+  ...
+# Subtest: bounded state blending has no discontinuous jumps
+ok 351 - bounded state blending has no discontinuous jumps
+  ---
+  duration_ms: 0.639358
+  type: 'test'
+  ...
+# Subtest: pointer tracking is bounded and recenters
+ok 352 - pointer tracking is bounded and recenters
+  ---
+  duration_ms: 4.990435
+  type: 'test'
+  ...
+# Subtest: invalid input and sample timing stay finite
+ok 353 - invalid input and sample timing stay finite
+  ---
+  duration_ms: 0.117943
+  type: 'test'
+  ...
+# Subtest: reset preserves the chosen intensity
+ok 354 - reset preserves the chosen intensity
+  ---
+  duration_ms: 0.478472
+  type: 'test'
+  ...
+# Subtest: no motion state exposes a radial wave field
+ok 355 - no motion state exposes a radial wave field
+  ---
+  duration_ms: 7.721724
+  type: 'test'
+  ...
+# Subtest: speech deformations stay inside a safe scene bound
+ok 356 - speech deformations stay inside a safe scene bound
+  ---
+  duration_ms: 0.824556
+  type: 'test'
+  ...
+# Subtest: exports are the fixed contract
+ok 357 - exports are the fixed contract
+  ---
+  duration_ms: 1.103162
+  type: 'test'
+  ...
+# Subtest: pins: only cued country names
+ok 358 - pins: only cued country names
+  ---
+  duration_ms: 24.059558
+  type: 'test'
+  ...
+# Subtest: pins: aliases, cities and ambiguous names are never mapped
+ok 359 - pins: aliases, cities and ambiguous names are never mapped
+  ---
+  duration_ms: 8.284271
+  type: 'test'
+  ...
+# Subtest: pins: a cued country name still pins when an alias of it comes first
+ok 360 - pins: a cued country name still pins when an alias of it comes first
+  ---
+  duration_ms: 3.900465
+  type: 'test'
+  ...
+# Subtest: pins: lower-case speech recognition still needs the cue
+ok 361 - pins: lower-case speech recognition still needs the cue
+  ---
+  duration_ms: 0.319984
+  type: 'test'
+  ...
+# Subtest: metrics: exact substrings, grown spans, ranges, merging, unit flag
+ok 362 - metrics: exact substrings, grown spans, ranges, merging, unit flag
+  ---
+  duration_ms: 1.809138
+  type: 'test'
+  ...
+# Subtest: metrics: NUMERIC_SRC comes from the injected policy
+ok 363 - metrics: NUMERIC_SRC comes from the injected policy
+  ---
+  duration_ms: 0.799333
+  type: 'test'
+  ...
+# Subtest: model: the exact F5.1 shape and the synthetic interview
+ok 364 - model: the exact F5.1 shape and the synthetic interview
+  ---
+  duration_ms: 2.286424
+  type: 'test'
+  ...
+# Subtest: supersede: the corrected chip disappears and the board says corrected
+ok 365 - supersede: the corrected chip disappears and the board says corrected
+  ---
+  duration_ms: 0.651732
+  type: 'test'
+  ...
+# Subtest: a lagging probe_history is never shown as asked
+ok 366 - a lagging probe_history is never shown as asked
+  ---
+  duration_ms: 0.514119
+  type: 'test'
+  ...
+# Subtest: analysing: a turn newer than the last quality event
+ok 367 - analysing: a turn newer than the last quality event
+  ---
+  duration_ms: 0.229544
+  type: 'test'
+  ...
+# Subtest: time phases from ready.timePlan: full and gap
+ok 368 - time phases from ready.timePlan: full and gap
+  ---
+  duration_ms: 0.334189
+  type: 'test'
+  ...
+# Subtest: gap checklist: ready.gaps merged with quality.gap_status
+ok 369 - gap checklist: ready.gaps merged with quality.gap_status
+  ---
+  duration_ms: 0.301626
+  type: 'test'
+  ...
+# Subtest: diff: only items new by D-id, code, field state or ask status
+ok 370 - diff: only items new by D-id, code, field state or ask status
+  ---
+  duration_ms: 0.46208
+  type: 'test'
+  ...
+# Subtest: hostile text stays plain data, bounded, and nothing claims a check
+ok 371 - hostile text stays plain data, bounded, and nothing claims a check
+  ---
+  duration_ms: 0.63315
+  type: 'test'
+  ...
+# Subtest: HTTPS origin is normalized without opening a connection
+ok 372 - HTTPS origin is normalized without opening a connection
+  ---
+  duration_ms: 0.758803
+  type: 'test'
+  ...
+# Subtest: HTTP is restricted to exact loopback hosts
+ok 373 - HTTP is restricted to exact loopback hosts
+  ---
+  duration_ms: 0.253944
+  type: 'test'
+  ...
+# Subtest: No executable or data scheme is accepted
+ok 374 - No executable or data scheme is accepted
+  ---
+  duration_ms: 0.175565
+  type: 'test'
+  ...
+# Subtest: Credentials or URL tokens are rejected
+ok 375 - Credentials or URL tokens are rejected
+  ---
+  duration_ms: 0.197373
+  type: 'test'
+  ...
+# Subtest: Raw API/file paths are not app origins
+ok 376 - Raw API/file paths are not app origins
+  ---
+  duration_ms: 0.122415
+  type: 'test'
+  ...
+# Subtest: Malformed and oversized URLs fail without defaults
+ok 377 - Malformed and oversized URLs fail without defaults
+  ---
+  duration_ms: 0.949699
+  type: 'test'
+  ...
+# Subtest: Preview follows a finite visual-only state schedule
+ok 378 - Preview follows a finite visual-only state schedule
+  ---
+  duration_ms: 0.181841
+  type: 'test'
+  ...
+# Subtest: Preview carries no text, memory or transport command
+ok 379 - Preview carries no text, memory or transport command
+  ---
+  duration_ms: 0.613583
+  type: 'test'
+  ...
+# Subtest: Preview levels are finite and bounded
+ok 380 - Preview levels are finite and bounded
+  ---
+  duration_ms: 1.504568
+  type: 'test'
+  ...
+# Subtest: swarm is deterministic for the same history
+ok 381 - swarm is deterministic for the same history
+  ---
+  duration_ms: 329.778773
+  type: 'test'
+  ...
+# Subtest: speaking tightens the cloud relative to idle
+ok 382 - speaking tightens the cloud relative to idle
+  ---
+  duration_ms: 2094.284862
+  type: 'test'
+  ...
+# Subtest: long idle keeps a filled, bounded volume
+ok 383 - long idle keeps a filled, bounded volume
+  ---
+  duration_ms: 4526.837506
+  type: 'test'
+  ...
+# Subtest: played bass pushes outward only while speaking, and stays bounded
+ok 384 - played bass pushes outward only while speaking, and stays bounded
+  ---
+  duration_ms: 4662.010634
+  type: 'test'
+  ...
+# Subtest: electrons only mark pending work or an explicit pulse
+ok 385 - electrons only mark pending work or an explicit pulse
+  ---
+  duration_ms: 1211.822967
+  type: 'test'
+  ...
+# Subtest: state change triggers a decaying tumble on top of the resting turn
+ok 386 - state change triggers a decaying tumble on top of the resting turn
+  ---
+  duration_ms: 595.250786
+  type: 'test'
+  ...
+# Subtest: no motif exposes a wave or propagation radius
+ok 387 - no motif exposes a wave or propagation radius
+  ---
+  duration_ms: 0.501005
+  type: 'test'
+  ...
+# Subtest: invalid input stays finite
+ok 388 - invalid input stays finite
+  ---
+  duration_ms: 0.673944
+  type: 'test'
+  ...
+# Subtest: the body keeps turning at rest, faster when listening, slower while speaking
+ok 389 - the body keeps turning at rest, faster when listening, slower while speaking
+  ---
+  duration_ms: 3212.392887
+  type: 'test'
+  ...
+# Subtest: it wanders around the stage within bounds
+ok 390 - it wanders around the stage within bounds
+  ---
+  duration_ms: 1773.20135
+  type: 'test'
+  ...
+# Subtest: a click makes the body flinch, spin and spark, then it re-forms bounded
+ok 391 - a click makes the body flinch, spin and spark, then it re-forms bounded
+  ---
+  duration_ms: 2224.430902
+  type: 'test'
+  ...
+# Subtest: a drag spins and pulls the body, which springs back when released
+ok 392 - a drag spins and pulls the body, which springs back when released
+  ---
+  duration_ms: 316.469749
+  type: 'test'
+  ...
+# Subtest: hovering pushes nearby particles away and stays bounded
+ok 393 - hovering pushes nearby particles away and stays bounded
+  ---
+  duration_ms: 533.273045
+  type: 'test'
+  ...
+# Subtest: poke and drag ignore junk input
+ok 394 - poke and drag ignore junk input
+  ---
+  duration_ms: 1.292968
+  type: 'test'
+  ...
+# Subtest: disabled input does not leave the audio worklet
+ok 395 - disabled input does not leave the audio worklet
+  ---
+  duration_ms: 4.090584
+  type: 'test'
+  ...
+# Subtest: capture sends exactly mono 20ms PCM16 frames
+ok 396 - capture sends exactly mono 20ms PCM16 frames
+  ---
+  duration_ms: 2.224845
+  type: 'test'
+  ...
+# Subtest: mute zeroes microphone frames while preserving the model clock
+ok 397 - mute zeroes microphone frames while preserving the model clock
+  ---
+  duration_ms: 1.624155
+  type: 'test'
+  ...
+# Subtest: local microphone is never echoed to the speaker
+ok 398 - local microphone is never echoed to the speaker
+  ---
+  duration_ms: 0.930271
+  type: 'test'
+  ...
+# Subtest: only received model PCM plays and creates a speaker meter
+ok 399 - only received model PCM plays and creates a speaker meter
+  ---
+  duration_ms: 2.526395
+  type: 'test'
+  ...
+# Subtest: playback buffer is bounded to 350ms and flush removes old speech
+ok 400 - playback buffer is bounded to 350ms and flush removes old speech
+  ---
+  duration_ms: 5.343963
+  type: 'test'
+  ...
+# Subtest: 48k microphone is resampled to 24k with correct sample count
+ok 401 - 48k microphone is resampled to 24k with correct sample count
+  ---
+  duration_ms: 9.034388
+  type: 'test'
+  ...
+# Subtest: 24k output is resampled to 44.1k with correct sample count
+ok 402 - 24k output is resampled to 44.1k with correct sample count
+  ---
+  duration_ms: 14.263019
+  type: 'test'
+  ...
+# Subtest: mute clears partial untransmitted microphone samples
+ok 403 - mute clears partial untransmitted microphone samples
+  ---
+  duration_ms: 1.306979
+  type: 'test'
+  ...
+# Subtest: microphone audio cannot generate a model spectral signature
+ok 404 - microphone audio cannot generate a model spectral signature
+  ---
+  duration_ms: 2.151195
+  type: 'test'
+  ...
+# Subtest: low-frequency playback produces a measured low band
+ok 405 - low-frequency playback produces a measured low band
+  ---
+  duration_ms: 3.438452
+  type: 'test'
+  ...
+# Subtest: high-frequency playback produces a measured high band
+ok 406 - high-frequency playback produces a measured high band
+  ---
+  duration_ms: 3.307733
+  type: 'test'
+  ...
+# Subtest: 48k playback spectral values remain finite
+ok 407 - 48k playback spectral values remain finite
+  ---
+  duration_ms: 10.105461
+  type: 'test'
+  ...
+# Subtest: playback acknowledgements count consumed samples, not queued generation
+ok 408 - playback acknowledgements count consumed samples, not queued generation
+  ---
+  duration_ms: 1.751361
+  type: 'test'
+  ...
+# Subtest: flushed unheard audio does not increase consumed count
+ok 409 - flushed unheard audio does not increase consumed count
+  ---
+  duration_ms: 3.480914
+  type: 'test'
+  ...
+1..409
+# tests 409
+# suites 0
+# pass 408
+# fail 0
+# cancelled 0
+# skipped 1
+# todo 0
+# duration_ms 21778.310992

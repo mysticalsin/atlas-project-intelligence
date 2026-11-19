@@ -1,0 +1,51 @@
+PASS claims block shown in the record dialog for a full-access reader
+PASS badge "Unverified"
+PASS badge "Confirmed by N+1 (staffing record)"
+PASS badge "Confirmed by N+1 (named by the consultant) on r3; sentence unchanged"
+PASS badge "Corrected: It was 14 minutes, not 12"
+PASS badge "N+1 couldn’t say"
+PASS badge "Stale: confirmed on r3; the sentence changed"
+PASS no confirmed badge on a stale claim
+PASS hostile claim text rendered inert
+PASS candidate checkboxes: the unclaimed candidate plus the re-askable unverified claim
+PASS claims proposed with the exact candidate text, then one manager confirmation request
+PASS draft as a mailto link, the copyable /confirm#id link, nothing sent
+PASS outreach chips: Teams BLOCKED_EXTERNAL, email draft
+PASS record dialog with claims fits at 320 px
+PASS public-access record: no claims block and no claims request
+PASS proof requests listed next to your interviews with the asks
+PASS start: seeded from the full-access library record and linked to it
+PASS start: pending gap rides on that project only, and the Conversation view opens
+PASS no library write when starting
+PASS a second start reuses the linked project (no second copy)
+PASS no full access to the reference: a new "Proof for <alias>" project
+PASS answers kept on this device are offered for the reference, not synced
+PASS adding the answers asks for confirmation first
+PASS confirmed: exactly one sync of that same reference with the appended answer
+PASS gap mode keeps the per-ask results with the notes
+PASS after a new conversation the open request offers send and add; nothing sent yet
+PASS adding them first keeps the answers sendable
+PASS sending asks for confirmation first
+PASS confirmed: one POST with the stored results and the linked reference, with the CSRF header
+PASS once sent, the request leaves the list and nothing is left to send
+PASS dismiss posts once and the request leaves the list
+PASS #gap/<id> opens the Library with that request in focus
+PASS #invitation/<id> starts that interview once and clears the hash
+PASS outreach queue in Insights for a reviewer, with channel chips
+PASS rows show kind, channel, preview and status; preview inert
+PASS approving an email draft gives a mailto link, Copy and a .ics download; nothing sent
+PASS .ics download from draft.ics
+PASS approving Teams ends BLOCKED_EXTERNAL with the exact reason
+PASS after a reload a drafted email row offers its draft again
+PASS showing it again posts approve once and gives the mailto draft back; the row stays drafted
+PASS dismiss
+PASS staffing import shown for a reviewer
+PASS CSV file read into #staffingCsv
+PASS import posts the CSV and shows the result table
+PASS ignored columns shown with the explanation that client columns are never read
+PASS rejected rows listed with line numbers
+PASS Insights with the queue and the import fits at 320 px
+PASS plain user: no outreach queue or staffing import
+PASS flags off: queue, import and proof requests stay hidden
+PASS local N+1 note relabelled "Self-recorded (not a confirmation)", never "Validated by"
+PASS no page errors

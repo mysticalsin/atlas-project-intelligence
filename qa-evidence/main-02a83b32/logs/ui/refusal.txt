@@ -1,0 +1,18 @@
+PASS bootstrap and library both refuse
+PASS journey shows the bootstrap 503 reason
+PASS journey does not replace that reason
+PASS library shows the bootstrap 503 reason
+PASS library does not replace that reason
+PASS journey shows a library-fetch 503 reason
+PASS journey does not replace a library-fetch refusal
+PASS library shows a library-fetch 503 reason
+PASS library does not replace a library-fetch refusal
+PASS a library-fetch 503 reason stops at 500 characters
+PASS the library view stops a 503 reason at 500 characters
+PASS a library 503 array error is clipped to 500 characters
+PASS a library 503 object error shows the clipped detail
+PASS a library 503 null error shows the refusal sentence
+PASS a 503 bootstrap does not show admin
+PASS a 503 bootstrap keeps only ok and a capped error
+PASS a 503 bootstrap does not show the journey
+PASS the journey shows the capped bootstrap reason

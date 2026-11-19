@@ -1,0 +1,31 @@
+PASS typed manager without a trust row is not an approval
+PASS manager lane alone does not publish ff8144f801df4d3086b6b012bb0f1142
+PASS manager lane alone does not publish 32575856b1434af2a91fccff7cfb3109
+PASS manager lane alone does not publish 43eff2415952406c820f1285fcd6fad9
+PASS recommendation: context understood (industry, likely challenges)
+PASS recommendation: most relevant first, with why and what transfers
+PASS recommendation: no client names and no unpublished drafts
+PASS slides: a valid .pptx with the reference and interpretation marked
+PASS slides: invented numbers never reach the deck
+PASS colleague cannot include the client name on slides
+PASS slide preview separates facts from interpretation and reports removed claims
+PASS duplicate detected (same project ID, other consultant), strongest first
+PASS merge: one reference, both consultants, their contributions preserved
+PASS analytics: counts by country, service line, practice; coverage matrix and gaps
+PASS analytics: confidential client counts for reviewers only
+PASS commercial insights labelled as interpretation, citing references
+PASS a reviewer role does not get the whole-library export
+PASS Spotlight export: versioned JSON includes the published references
+PASS a newly created story is not published before both trusted lanes approve
+PASS manager lane on the new story still does not publish
+PASS presales completes publication of the new story
+PASS recommendation finds the newly approved story from its own content
+PASS recommendation does not surface the unpublished draft
+PASS export contains the newly approved story and keeps the unapproved story unpublished
+PASS PM trigger accepted with its secret
+PASS PM trigger rejected without the secret
+PASS consultant sees scheduled and triggered interviews
+PASS calendar invite (.ics) for the slot
+PASS start from an invitation opens the conversation on that project
+PASS no page errors
+[]

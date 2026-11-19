@@ -1,0 +1,54 @@
+PASS /go/start -> /#start
+PASS /go/{gap,invitation,bid,library}/<id> -> /#<kind>/<id>
+PASS /go/confirm/<id> -> /confirm#<id>, for a user and for an external confirmer
+PASS an external confirmer gets 403 on any other /go/ link
+PASS a bad /go/ path or a non-hex id goes home
+PASS /go/signed-in: a tiny page that tells the other tab, with no token and no email
+PASS a page navigation to an old path goes home; a non-navigation stays a JSON 404; /api/wiki stays 404
+PASS test mode: the banner stays and readiness says so
+PASS spoken Ask follows Ask once D1 is approved, and every recording needs the consent header (403 without it)
+PASS a mailbox without ATLAS.Admin does not open the people directory
+PASS directory (test mode): the admin view says synthetic addresses only; DNA push and pull are not connected
+PASS directory: the upload carries only the approved keys, never salary, birth date or site
+PASS directory: test mode imports jane@example.com and lee@example.org and refuses bob@mantu.com, by row number only
+PASS directory API: test mode, 2 DNA-export rows, DNA pull and push BLOCKED_EXTERNAL
+PASS fresh user: the pill reads "Ready"; no setup text in the conversation view; no address form, setup card or setup note
+PASS fresh user: no project yet
+PASS Start opens the consent step at once: exactly one checkbox, the first name from the DNA export in the heading, the sign-in in the footer
+PASS memory is configured here, so the one sentence names it
+PASS the microphone is not requested before the Start click
+PASS the start frame carries no name and no email: consultant "", the profile title not sent
+PASS the project is created after the interview, prefilled from the profile: name, title (roleFrom profile), N+1; managerStaff unticked
+PASS saved to the real library: "Saved to ATLAS", the record holds the profile values, no device prompt
+PASS no setup form was shown at any point
+PASS the private memory holds the conversation (Hindsight stand-in), without the name or the title
+PASS every API call from the page carried X-Requested-With
+PASS profile: each value names its source ("from the DNA export (date)"); the email is read-only
+PASS editing relabels the value "you edited" before saving
+PASS Save posts only the change
+PASS the edit survives a reload (stored on the server, not in the browser)
+PASS the new-project form is prefilled from the profile with chips; the edited title reads "you edited"
+PASS a second export replaces the rows (same count, no shrink confirmation)
+PASS the edit still wins, and the newer DNA value is offered
+PASS another user reads only their own profile
+PASS the people lookup: exactly {email, name, title, from} from the directory row, never the N+1 and never her own edits
+PASS the refused real-domain row was never stored: the lookup answers 404
+PASS expired after the interview: the banner, the page is not reloaded, the new project is kept in the tab
+PASS no project content reached sessionStorage or localStorage
+PASS the sync failed, so "Save on this device?" is offered (§3.8); the note says the work is only in this tab
+PASS Reconnect opens /go/signed-in in a small window; the navigation signs in again (as Access does)
+PASS signed in again: the pending sync is retried, the second project is in the library, nothing was reloaded
+PASS an unsaved profile edit blocks the automatic reload: the banner instead
+PASS signed in again (the profile reloads in the background): the typed title is kept, still unsaved
+PASS returning user: the workspace is rebuilt from the library (both records, linked)
+PASS new user, no DNA: the consent step holds one field (the tick); a guessed name is not used in the heading
+PASS new user: exactly three actions reach the interview (Start, the tick, Start conversation)
+PASS only a guess: the project says "Consultant", and the report that opens by itself asks "Is your name Noor Haddad?"
+PASS "Yes, that's me" in the report: the name is confirmed, the project and its library record carry it, every copy of the question says thanks
+PASS sign-in claims fill the name and the first name ("from your sign-in"); only the verified token counts
+PASS /go/start lands on the consent step; the microphone stays off
+PASS spoken Ask consent: stored in the profile, read back by the route the Worker checks, revocable
+PASS saved file: one "Open ATLAS" link to ATLAS_HOME/go/start (new tab, noopener); no Start button; no network
+PASS production plus local-synthetic is refused before bootstrap data
+PASS production plus local-synthetic refuses directory push before the secret check
+PASS no page errors

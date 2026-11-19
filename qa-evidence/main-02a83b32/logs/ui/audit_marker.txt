@@ -1,0 +1,18 @@
+PASS library id known
+PASS a verified history has no marker
+PASS verified history has no helper line
+PASS Unverified is one reachable marker
+PASS Unverified takes keyboard focus
+PASS Unverified fits at 390px
+PASS Unverified is text without a second label
+PASS an unverified line is not also marked legacy
+PASS Legacy is one reachable marker
+PASS Legacy takes keyboard focus
+PASS Legacy fits at 390px
+PASS Legacy is text without a second label
+PASS a legacy line is not also marked unverified
+PASS Unverified is one reachable marker
+PASS Unverified takes keyboard focus
+PASS Unverified fits at 390px
+PASS Unverified is text without a second label
+PASS a verified line beside a tampered one has no marker

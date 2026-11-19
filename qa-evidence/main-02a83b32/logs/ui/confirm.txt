@@ -1,0 +1,30 @@
+PASS claims feature is on in this build (Access mode)
+PASS alex saves a reference naming N+1 sam@mantu.com
+PASS typed manager without a trust row cannot approve
+PASS trusted manager lane alone stays unpublished
+PASS pre-sales lane completes publication
+PASS alex proposes 2 claims (exact sentences of the current revision)
+PASS confirmation requested from the self-declared N+1
+PASS the draft holds only the /go/confirm/ link: no claim text, no client name
+PASS outreach rows queued as pending_approval (nothing sent)
+PASS 320 px: no horizontal overflow on the request
+PASS the deep link focuses the request heading
+PASS heading reads "Confirm 2 points for Alex Martin, about 60 seconds"
+PASS the declared N+1 (full access) sees the exact sentences
+PASS three decision buttons per claim
+PASS reduced motion: emulated, no running animation, no transition
+PASS submit is disabled until every point is decided
+PASS keyboard: Space on "Confirm" presses it
+PASS "Correct" reveals a required note and focuses it
+PASS submit enables once every point is decided
+PASS #confirmDone: "Recorded. Thank you. Nothing else is shared."
+PASS 320 px after submitting: still no overflow
+PASS a done request leaves sam's inbox
+PASS claims API: confirmed and corrected, by sam, source self_declared
+PASS the reference validation is unchanged by confirmations
+PASS audit: one row per decision with rev N; no claim text or client name
+PASS jo's inbox is empty
+PASS jo cannot decide sam's request (403)
+PASS jo at 320 px: no overflow
+PASS no page errors
+[]

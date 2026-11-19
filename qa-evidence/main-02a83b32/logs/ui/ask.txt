@@ -1,0 +1,31 @@
+PASS Ask ATLAS hidden while features.ask is false
+PASS "Find references for a meeting" unchanged
+PASS Ask ATLAS at the top of the Library when features.ask
+PASS mic hidden when spokenAsk is false
+PASS a question under 8 characters is not sent
+PASS typed question posted once with CSRF
+PASS verdict copy mirrors F1
+PASS result cards with status, relevance, similarity, why, caveat and snippets with source labels
+PASS unranked result says so, keyword retrieval, numeric topic labelled
+PASS hostile snippet text inert
+PASS the map lights up the result countries (F6.4 #4)
+PASS people to call: record membership, never ranked, email only when present
+PASS no horizontal overflow at 320 px with results and the map
+PASS empty result stated plainly, nothing shown as a match
+PASS mic shown with spokenAsk and getUserMedia; nothing asked before it is used
+PASS consent asked at the moment of use: "Ask by voice", no client names; nothing recorded yet
+PASS "Always allow" is offered only where the profile can store it
+PASS Cancel: no recording and nothing sent
+PASS mic disabled while AtlasVoice.status().phase is live
+PASS mic disabled while the interview is preparing
+PASS mic disabled while the interview is connecting
+PASS mic disabled while the interview is ending
+PASS mic enabled again once the interview is idle
+PASS recording: the button becomes Stop, with the reminder and a recording indicator
+PASS stop posts raw PCM16 24 kHz once, with CSRF, even length within 4,800..1,536,000 bytes
+PASS the request carries the consent the page showed (a UI gate): spoken-ask-v1; once
+PASS about 1.5 s of audio at 24 kHz (default-rate context resampled by the worklet)
+PASS transcript shown, editable, and not asked automatically
+PASS the voice interview state is untouched by the question recording
+PASS a voice interview starting mid-recording discards the recording: nothing sent
+PASS no page errors

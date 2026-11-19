@@ -1,0 +1,9 @@
+PASS keeps rotating on its own
+PASS moves around the stage
+PASS drag turns it with the hand
+PASS drag never opens the start dialog
+PASS fling keeps spinning then settles
+PASS click makes it flinch and spark
+PASS click still does the button job (start flow began)
+PASS no page errors
+[]
