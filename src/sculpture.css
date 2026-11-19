@@ -94,3 +94,5 @@ body.studio-view{background:#101011}
 #voicePanel:fullscreen .orb-screen{width:min(80vh,92vw)!important;max-width:none!important;margin:0 auto!important}
 #voicePanel:fullscreen .studio-aside,#voicePanel:fullscreen .studio-heading{display:none}
 @media(min-width:541px) and (max-width:900px){.studio-view .topbar{height:auto;min-height:72px}.studio-view .topbar nav{flex-wrap:wrap;min-width:0}.studio-view .topbar nav button{padding:7px 9px;font-size:11px}}
+/* A 320 px phone keeps Mute, Restart and End on the first screen. The labels stay. */
+@media(max-width:320px){.studio-heading{padding-top:8px}.studio-heading h1{font-size:28px;line-height:1.08}.hero-subline{margin-top:6px}.studio-view .orb-screen{width:220px;max-width:220px;margin-left:auto;margin-right:auto}.orb-panel .voice-controls{margin-top:8px}}
