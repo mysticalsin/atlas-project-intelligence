@@ -1276,6 +1276,61 @@
       "sha256": "22a0488ffd0061be96ee2de6e82eb073adf27d9aea36dbabecf3b3bd020016d2"
     },
     {
+      "path": "docs/pr10/README.md",
+      "bytes": 865,
+      "sha256": "070da1efb616b00340046ea5bc20e908900c362322b8dff60a1549122ba38b53"
+    },
+    {
+      "path": "docs/pr10/after/m1-wiki-export.png",
+      "bytes": 15998,
+      "sha256": "4f92441b27ddaa693560cb52060b7dce0a8bd9ff79665a4ca831f7d1c746334f"
+    },
+    {
+      "path": "docs/pr10/after/m2-journey-320-admin.png",
+      "bytes": 102615,
+      "sha256": "d0472376e375d02ce2f3b71afc6db22164ecdde51a3b046d25742ef6385560ed"
+    },
+    {
+      "path": "docs/pr10/after/m2-journey-320-presales.png",
+      "bytes": 101017,
+      "sha256": "4da3eeaafb9d4ea7da16044cba4e8c9dde7edd07469d685fb5ba7dcd6f454841"
+    },
+    {
+      "path": "docs/pr10/after/m2-journey-320-reviewer.png",
+      "bytes": 98543,
+      "sha256": "adaf8019f422504f7844667e2e4346a09f8de5312ebe818d2261f06fdf930b4b"
+    },
+    {
+      "path": "docs/pr10/after/m3-admin-hash-refusal.png",
+      "bytes": 7242,
+      "sha256": "0fa2c0787b841db9f540fcdb1c5ecc37b2e9f7bff6fc9f18b8650c7944eeb489"
+    },
+    {
+      "path": "docs/pr10/before/m1-wiki-export.png",
+      "bytes": 18078,
+      "sha256": "d22d2f09b8cae48e669e3dd9f7e43521ef58c26f398f7eab162e58c74d04967f"
+    },
+    {
+      "path": "docs/pr10/before/m2-journey-320-admin.png",
+      "bytes": 102615,
+      "sha256": "d0472376e375d02ce2f3b71afc6db22164ecdde51a3b046d25742ef6385560ed"
+    },
+    {
+      "path": "docs/pr10/before/m2-journey-320-presales.png",
+      "bytes": 101017,
+      "sha256": "4da3eeaafb9d4ea7da16044cba4e8c9dde7edd07469d685fb5ba7dcd6f454841"
+    },
+    {
+      "path": "docs/pr10/before/m2-journey-320-reviewer.png",
+      "bytes": 98543,
+      "sha256": "adaf8019f422504f7844667e2e4346a09f8de5312ebe818d2261f06fdf930b4b"
+    },
+    {
+      "path": "docs/pr10/before/m3-admin-hash-refusal.png",
+      "bytes": 131197,
+      "sha256": "b578a249a831b10c3db59b6582f0ae488173c8cd3de446046323a3c35a13243b"
+    },
+    {
       "path": "docs/privacy/DPIA_DRAFT.md",
       "bytes": 9456,
       "sha256": "c1cc6fe7c4ffef2185879cacf983b50eb572fcaeecdbe876a2724afaa55bdfb8"
@@ -1337,8 +1392,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 268084,
-      "sha256": "e111fb6435e41bc625e3ad8c20ed9c9121a125eef9b28610a74437ec521ad460"
+      "bytes": 268351,
+      "sha256": "ddb780e9e41b94a91360c86bd5a8b40ab6f0a7a1fd264a25b3210ad5e8b984dd"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -1404,6 +1459,11 @@
       "path": "handoff/decisions/ask-browser-waits.md",
       "bytes": 757,
       "sha256": "0688945a88b531a2ffefa0046aef25f0d7b4d2fc6b66581ae45a56b4e7f4c6fa"
+    },
+    {
+      "path": "handoff/decisions/check-handoff-rebuild.md",
+      "bytes": 1069,
+      "sha256": "10ef77e01b4be81c3aee91a19799eee96bf6a775d64639ca01726734a47a94a6"
     },
     {
       "path": "handoff/decisions/post-pr9-unslop.md",
@@ -1669,6 +1729,11 @@
       "path": "scripts/build_world_map.py",
       "bytes": 19574,
       "sha256": "672e101911646a50e6d1a150b9f784fde640b63bea9ddd8d8cebcc5c543dff04"
+    },
+    {
+      "path": "scripts/capture_pr10_evidence.py",
+      "bytes": 9228,
+      "sha256": "c084edc5735412103d9c7f2e4a812c4e3c8ae7f915158a6000a224e43fd95b35"
     },
     {
       "path": "scripts/capture_v12.py",
