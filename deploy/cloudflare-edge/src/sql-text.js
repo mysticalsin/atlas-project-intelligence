@@ -16,6 +16,16 @@ function isIdentChar(c) {
   const n = codeAt(c);
   return (n >= 65 && n <= 90) || (n >= 97 && n <= 122) || n === 95;
 }
+// tokenize.c CC_ID: a byte at or above 128 starts an identifier. '$' does not.
+function identStart(c) {
+  if (!c) return false;
+  if (isIdentChar(c)) return true;
+  return codeAt(c) >= 128;
+}
+function isHexChar(c) {
+  const n = codeAt(c);
+  return (n >= 48 && n <= 57) || (n >= 65 && n <= 70) || (n >= 97 && n <= 102);
+}
 function isDigitChar(c) {
   const n = codeAt(c);
   return n >= 48 && n <= 57;
@@ -104,7 +114,7 @@ const WRITES = ['insert', 'update', 'delete', 'replace'];
 const NESTED_WRITES = ['insert', 'update', 'delete', 'drop', 'alter', 'create', 'attach', 'detach', 'pragma', 'vacuum', 'reindex', 'analyze'];
 // A second depth-0 verb. DROP, CREATE, ALTER, and ATTACH are not in WRITES,
 // so a read followed by one of them was still a proven read.
-const TRAILING = ['drop', 'create', 'alter', 'attach'];
+const TRAILING = ['drop', 'create', 'alter', 'attach', 'detach', 'vacuum', 'reindex', 'pragma'];
 function writeVerbAt(tokens, i) {
   const token = tokens[i];
   if (!(token && token.kind === 'word' && !token.quoted && listed(WRITES, token.text))) return false;
@@ -137,8 +147,34 @@ function explainsPlan(tokens) {
 // after the first depth-0 verb is a second write. REPLACE( is the function.
 // topVerb still returns only the first depth-0 verb. EXPLAIN QUERY PLAN
 // describes a statement, so its verb is not this check.
-function strayWrite(tokens) {
-  if (explainsPlan(tokens)) return false;
+function explainFirst(sql) {
+  let text;
+  try { text = mustText(sql); }
+  catch { return false; }
+  let i = 0;
+  while (i < text.length && isSqliteSpace(text[i])) i++;
+  if (!identStart(text[i])) return false;
+  return mustLower(wordAt(text, i)) === 'explain';
+}
+function depth0Explain(tokens) {
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token && token.kind === 'word' && !token.quoted && token.depth === 0 && token.text === 'explain' && !blockedVerb(tokens, i)) return true;
+  }
+  return false;
+}
+// The primary door allows EXPLAIN only when it is the first word of one statement.
+export function explainThenMore(sql) {
+  if (!explainFirst(sql)) return false;
+  try {
+    if (splitStatements(sql).length > 1) return true;
+    return bareSemicolon(sql) === true;
+  } catch {
+    return true;
+  }
+}
+function strayWrite(tokens, sql) {
+  if (explainsPlan(tokens) && explainFirst(sql)) return false;
   let seen = false;
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
@@ -225,8 +261,34 @@ function wordAt(text, i) {
 // A letter or '_' starts an identifier. '$' continues it (tokenize.c IdChar,
 // line 168) and is not a parameter. Call this before takeVariable.
 function skipIdent(text, i) {
-  if (!isIdentChar(text[i])) return -1;
+  if (!identStart(text[i])) return -1;
   return i + wordAt(text, i).length;
+}
+// tokenize.c CC_DIGIT, lines 433-497. A number swallows trailing IdChar and
+// that token is TK_ILLEGAL (line 493). `1$a` is not a `$` parameter.
+function skipNumeric(text, i) {
+  if (!text[i] || !isDigitChar(text[i])) return { next: -1, illegal: false };
+  let j = i;
+  if (text[i] === '0' && (text[i + 1] === 'x' || text[i + 1] === 'X') && isHexChar(text[i + 2])) {
+    j = i + 3;
+    while (j < text.length && (isHexChar(text[j]) || text[j] === '_')) j++;
+  } else {
+    while (j < text.length && (isDigitChar(text[j]) || text[j] === '_')) j++;
+    if (text[j] === '.' && (isDigitChar(text[j + 1]) || text[j + 1] === '_')) {
+      j++;
+      while (j < text.length && (isDigitChar(text[j]) || text[j] === '_')) j++;
+    }
+    if ((text[j] === 'e' || text[j] === 'E') && (isDigitChar(text[j + 1]) || ((text[j + 1] === '+' || text[j + 1] === '-') && isDigitChar(text[j + 2])))) {
+      j += 2;
+      while (j < text.length && (isDigitChar(text[j]) || text[j] === '_')) j++;
+    }
+  }
+  let illegal = false;
+  while (j < text.length && isSqlIdChar(text[j])) {
+    illegal = true;
+    j++;
+  }
+  return { next: j, illegal };
 }
 // SQLite 3.53.4 src/tokenize.c, the version this host's node:sqlite reports.
 // '?' and '?NNN' are CC_VARNUM, lines 504-507 (the class is line 35).
@@ -278,6 +340,8 @@ function splitBody(sql) {
   let atStatement = false;
   while (i < text.length) {
     const c = text[i];
+    const numeric = skipNumeric(text, i);
+    if (numeric.next > i) { i = numeric.next; continue; }
     const variable = takeVariable(text, i);
     if (variable) { i = variable.next; continue; }
     if (c === '-' && text[i + 1] === '-') {
@@ -322,7 +386,7 @@ function splitBody(sql) {
     }
     if (c === '(') { paren++; i++; continue; }
     if (c === ')') { paren = mustMost(0, paren - 1); i++; continue; }
-    if (isIdentChar(c)) {
+    if (identStart(c)) {
       const word = mustLower(wordAt(text, i));
       i += word.length;
       if (trigger === 0) {
@@ -404,6 +468,8 @@ export function placeholderCount(sql) {
       }
       continue;
     }
+    const numeric = skipNumeric(text, i);
+    if (numeric.next > i) { i = numeric.next; continue; }
     const ident = skipIdent(text, i);
     if (ident > i) { i = ident; continue; }
     const variable = takeVariable(text, i);
@@ -429,7 +495,7 @@ function nextIdent(text, i) {
       j = mustLeast(text.length, j + 2);
       continue;
     }
-    if (!isIdentChar(c)) return '';
+    if (!identStart(c)) return '';
     return mustLower(wordAt(text, j));
   }
   return '';
@@ -518,6 +584,7 @@ export function sqlTokens(sql) {
   let i = 0;
   let depth = 0;
   let unclosed = false;
+  let illegal = false;
   const push = (token) => {
     token.depth = depth;
     mustPush(tokens, token);
@@ -563,13 +630,13 @@ export function sqlTokens(sql) {
       continue;
     }
     if (isDigitChar(c)) {
-      const start = i;
-      i++;
-      while (i < text.length && isDigitChar(text[i])) i++;
-      push({ kind: 'word', text: mustSlice(text, start, i) });
+      const numeric = skipNumeric(text, i);
+      if (numeric.illegal) illegal = true;
+      push({ kind: 'word', text: mustLower(mustSlice(text, i, numeric.next)) });
+      i = numeric.next;
       continue;
     }
-    if (isIdentChar(c)) {
+    if (identStart(c)) {
       const word = wordAt(text, i);
       push({ kind: 'word', text: mustLower(word) });
       i += word.length;
@@ -578,6 +645,7 @@ export function sqlTokens(sql) {
     i++;
   }
   tokens.unclosed = unclosed;
+  tokens.illegal = illegal;
   return tokens;
 }
 
@@ -625,8 +693,10 @@ export function isMutatingStatement(sql) {
 
 function mutatingBody(sql) {
   const tokens = sqlTokens(sql);
-  if (strayWrite(tokens)) return true;
+  if (tokens.illegal) return true;
+  if (strayWrite(tokens, sql)) return true;
   if (extraStatement(tokens)) return true;
+  if (depth0Explain(tokens) && !explainFirst(sql)) return true;
   const words = leadingWords(sql);
   const verb = words[0] || '';
   if (writableAssignment(sql)) return true;
@@ -717,6 +787,8 @@ function scanSemi(text) {
   let i = 0;
   while (i < text.length) {
     const c = text[i];
+    const numeric = skipNumeric(text, i);
+    if (numeric.next > i) { i = numeric.next; continue; }
     const ident = skipIdent(text, i);
     if (ident > i) { i = ident; continue; }
     const variable = takeVariable(text, i);
@@ -784,8 +856,9 @@ export function provenRead(sql) {
       if (writableAssignment(sql)) return false;
       return pragmaRead(sql);
     }
+    if (tokens.illegal) return false;
     if (writableAssignment(sql)) return false;
-    return readWords(tokens);
+    return readWords(tokens, sql);
   } catch {
     return false;
   }
@@ -807,8 +880,8 @@ export function hiddenWrite(sql) {
   }
 }
 
-function readWords(tokens) {
-  if (strayWrite(tokens)) return false;
+function readWords(tokens, sql) {
+  if (strayWrite(tokens, sql)) return false;
   if (!tokens || !tokens.length) return false;
   let i = 0;
   while (i < tokens.length && tokens[i].kind !== 'word') i++;
