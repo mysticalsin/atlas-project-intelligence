@@ -34,11 +34,12 @@ function snapshot() {
   const charCodeAt = take(uncurry, String.prototype.charCodeAt);
   const toISOString = take(uncurry, Date.prototype.toISOString);
   const min = typeof Math.min === 'function' ? Math.min : null;
+  const max = typeof Math.max === 'function' ? Math.max : null;
   const find = take(uncurry, Array.prototype.find);
   const cast = typeof String === 'function' ? String : null;
   const dateParse = typeof Date.parse === 'function' ? Date.parse : null;
   const dateNow = typeof Date.now === 'function' ? Date.now : null;
-  const methods = [toLower, trim, replace, test, match, some, every, includes, slice, push, charCodeAt, toISOString, min, find, cast, dateParse, dateNow];
+  const methods = [toLower, trim, replace, test, match, some, every, includes, slice, push, charCodeAt, toISOString, min, max, find, cast, dateParse, dateNow];
   for (let i = 0; i < methods.length; i++) if (methods[i] == null) return null;
   try {
     if (toLower('Ab') !== 'ab') return null;
@@ -57,6 +58,7 @@ function snapshot() {
     if (charCodeAt('A', 0) !== 65) return null;
     if (toISOString(new Date(0)) !== '1970-01-01T00:00:00.000Z') return null;
     if (min(2, 5) !== 2 || min(5, 2) !== 2) return null;
+    if (max(2, 5) !== 5 || max(5, 2) !== 5 || max(0, -1) !== 0) return null;
     if (cast('Ab') !== 'Ab' || cast(1) !== '1') return null;
     const foundItem = find([{ id: 'a' }, { id: 'b' }], (item) => item.id === 'b');
     if (!foundItem || foundItem.id !== 'b') return null;
@@ -66,7 +68,7 @@ function snapshot() {
   } catch {
     return null;
   }
-  return { toLower, trim, replace, test, match, some, every, includes, slice, push, charCodeAt, toISOString, min, find, cast, dateParse, dateNow };
+  return { toLower, trim, replace, test, match, some, every, includes, slice, push, charCodeAt, toISOString, min, max, find, cast, dateParse, dateNow };
 }
 
 const captured = snapshot();
@@ -256,6 +258,20 @@ export function least(a, b) {
   try {
     const out = captured.min(x, y);
     if (typeof out !== 'number' || out !== (x < y ? x : y)) return null;
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+export function most(a, b) {
+  if (!captured) return null;
+  const x = Number(a);
+  const y = Number(b);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  try {
+    const out = captured.max(x, y);
+    if (typeof out !== 'number' || out !== (x > y ? x : y)) return null;
     return out;
   } catch {
     return null;

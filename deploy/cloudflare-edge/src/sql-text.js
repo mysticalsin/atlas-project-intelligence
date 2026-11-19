@@ -5,7 +5,7 @@
 // Neither path calls RegExp.prototype.exec. A non-boolean, a null, or a throw
 // from a snapshotted string or array method counts as a write.
 
-import { charCodeAt, includes, least, lower, primordialsHold, push, slice, some, textOf, trim } from './primordials.js';
+import { charCodeAt, includes, least, lower, most, primordialsHold, push, slice, some, textOf, trim } from './primordials.js';
 
 function codeAt(c) {
   const n = charCodeAt(c, 0);
@@ -53,6 +53,11 @@ function mustTrim(value) {
 }
 function mustLeast(a, b) {
   const n = least(a, b);
+  if (typeof n !== 'number') throw new Error('primordial');
+  return n;
+}
+function mustMost(a, b) {
+  const n = most(a, b);
   if (typeof n !== 'number') throw new Error('primordial');
   return n;
 }
@@ -141,7 +146,7 @@ function splitBody(sql) {
       continue;
     }
     if (c === '(') { paren++; i++; continue; }
-    if (c === ')') { paren = Math.max(0, paren - 1); i++; continue; }
+    if (c === ')') { paren = mustMost(0, paren - 1); i++; continue; }
     if (isIdentChar(c)) {
       const word = mustLower(wordAt(text, i));
       i += word.length;
@@ -375,7 +380,7 @@ function mutatingBody(sql) {
       continue;
     }
     if (c === '(') { depth++; i++; continue; }
-    if (c === ')') { depth = Math.max(0, depth - 1); i++; continue; }
+    if (c === ')') { depth = mustMost(0, depth - 1); i++; continue; }
     if (depth === 0 && isIdentChar(c)) {
       const word = mustLower(wordAt(text, i));
       if (writeOf(word)) return true;
@@ -619,35 +624,79 @@ export function pragmaSetter(sql) {
   return !pragmaRead(sql);
 }
 
+// Tokens of one pragma. Comments and strings are dropped. A quoted identifier
+// is its text, so the name is the word, not the quote that follows it.
+function pragmaTokens(text) {
+  const tokens = [];
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (isSpaceChar(c)) { i++; continue; }
+    if (c === '-' && text[i + 1] === '-') {
+      while (i < text.length && text[i] !== '\n') i++;
+      continue;
+    }
+    if (c === '/' && text[i + 1] === '*') {
+      i += 2;
+      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
+      i = mustLeast(text.length, i + 2);
+      continue;
+    }
+    if (c === "'") {
+      i++;
+      while (i < text.length) {
+        if (text[i] === "'") { if (text[i + 1] === "'") { i += 2; continue; } i++; break; }
+        i++;
+      }
+      continue;
+    }
+    if (c === '"' || c === '`' || c === '[') {
+      const end = c === '[' ? ']' : c;
+      i++;
+      let name = '';
+      while (i < text.length && text[i] !== end) {
+        if (text[i] === end && text[i + 1] === end) { name += end; i += 2; continue; }
+        name += text[i++];
+      }
+      if (i < text.length) i++;
+      if (name) tokens.push({ kind: 'word', text: name });
+      continue;
+    }
+    if (isIdentChar(c) || isDigitChar(c)) {
+      const start = i;
+      while (i < text.length && (isWordChar(text[i]))) i++;
+      tokens.push({ kind: 'word', text: mustSlice(text, start, i) });
+      continue;
+    }
+    if (c === '=' || c === '(') { tokens.push({ kind: 'op', text: c }); i++; continue; }
+    i++;
+  }
+  return tokens;
+}
+
 // PRAGMA writable_schema = ON, or the parenthesised form, writes the catalog flag.
+// The name is the unquoted token. Comments between the name and = or ( do not hide it.
 // A bare PRAGMA writable_schema reads it.
 export function writableAssignment(sql) {
-  let words;
-  try { words = leadingWords(sql); }
-  catch { return true; }
-  if (!words) return true;
-  let seen = false;
-  for (let i = 0; i < words.length; i++) if (words[i] === 'writable_schema') seen = true;
-  if (!seen) return false;
   let text;
   try { text = mustLower(mustText(sql)); }
   catch { return true; }
-  const name = 'writable_schema';
-  let at = -1;
-  for (let i = 0; i + name.length <= text.length; i++) {
-    let match = true;
-    for (let j = 0; j < name.length; j++) if (text[i + j] !== name[j]) { match = false; break; }
-    if (!match) continue;
-    at = i;
-    break;
+  try {
+    const tokens = pragmaTokens(text);
+    let i = 0;
+    if (tokens[0] && tokens[0].kind === 'word' && tokens[0].text === 'explain') {
+      i = 1;
+      if (tokens[1] && tokens[1].text === 'query' && tokens[2] && tokens[2].text === 'plan') i = 3;
+    }
+    if (!tokens[i] || tokens[i].kind !== 'word' || tokens[i].text !== 'pragma') return false;
+    i += 1;
+    let name = '';
+    while (tokens[i] && tokens[i].kind === 'word') { name = tokens[i].text; i += 1; }
+    if (name !== 'writable_schema') return false;
+    return !!(tokens[i] && tokens[i].kind === 'op' && (tokens[i].text === '=' || tokens[i].text === '('));
+  } catch {
+    return true;
   }
-  if (at < 0) return true;
-  for (let i = at + name.length; i < text.length; i++) {
-    const c = text[i];
-    if (isSpaceChar(c)) continue;
-    return c === '=' || c === '(';
-  }
-  return false;
 }
 
 export function hasCreateAsSelect(sql) {
@@ -655,7 +704,7 @@ export function hasCreateAsSelect(sql) {
   let depth = 0;
   for (let i = 0; i < words.length - 1; i++) {
     if (words[i] === '(') depth++;
-    else if (words[i] === ')') depth = Math.max(0, depth - 1);
+    else if (words[i] === ')') depth = mustMost(0, depth - 1);
     else if (depth === 0 && words[i] === 'as' && words[i + 1] === 'select') return true;
   }
   return false;

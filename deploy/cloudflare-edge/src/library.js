@@ -156,12 +156,39 @@ function writeTarget(words, i) {
   const names = namesAt(words, at);
   return hits(names, GUARDED_TABLES) || hits(names, CATALOG_TABLES);
 }
+function shadowCreate(sql) {
+  let words;
+  try { words = leadingWords(sql); }
+  catch { return true; }
+  if (!words) return true;
+  for (let i = 0; i < words.length; i++) if (words[i] === 'create' && createShadow(words, i)) return true;
+  return false;
+}
+function renameTarget(words, at) {
+  for (let k = at; k < words.length; k++) {
+    if (words[k] === 'rename' && words[k + 1] === 'to' && hits(namesAt(words, k + 2), GUARDED_TABLES)) return true;
+  }
+  return false;
+}
 function createShadow(words, i) {
   let at = i + 1;
-  if (words[at] !== 'temp' && words[at] !== 'temporary') return false;
+  let temp = false;
+  if (words[at] === 'temp' || words[at] === 'temporary') { temp = true; at += 1; }
+  if (words[at] === 'unique') at += 1;
+  if (words[at] === 'virtual') at += 1;
+  const kind = words[at];
+  if (kind !== 'table' && kind !== 'view' && kind !== 'index' && kind !== 'trigger') return false;
   at += 1;
-  if (words[at] !== 'table' && words[at] !== 'view') return false;
-  return targetHits(words, at + 1, GUARDED_TABLES);
+  at = skipExists(words, at);
+  const names = namesAt(words, at);
+  if (names[0] === 'temp' || names[0] === 'temporary') temp = true;
+  if (!temp) return false;
+  if (hits(names, GUARDED_TABLES)) return true;
+  if (kind === 'index' && indexForbidden(words, at)) return true;
+  if (kind === 'trigger') {
+    for (let k = at; k < words.length; k++) if (words[k] === 'on' && hits(namesAt(words, k + 1), GUARDED_TABLES)) return true;
+  }
+  return false;
 }
 function recordedForbidden(sql) {
   let words;
@@ -172,12 +199,26 @@ function recordedForbidden(sql) {
     if (words[i] === 'drop' && words[i + 1] === 'trigger') return true;
     if (words[i] === 'drop' && (words[i + 1] === 'table' || words[i + 1] === 'view') && targetHits(words, i + 2, GUARDED_TABLES)) return true;
     if (words[i] === 'drop' && words[i + 1] === 'index' && (targetHits(words, i + 2, GUARDED_TABLES) || indexForbidden(words, i + 2))) return true;
-    if (words[i] === 'alter' && words[i + 1] === 'table' && targetHits(words, i + 2, GUARDED_TABLES)) return true;
+    if (words[i] === 'alter' && words[i + 1] === 'table' && (targetHits(words, i + 2, GUARDED_TABLES) || renameTarget(words, i + 2))) return true;
     if (words[i] === 'delete' && words[i + 1] === 'from' && (targetHits(words, i + 2, GUARDED_TABLES) || targetHits(words, i + 2, CATALOG_TABLES))) return true;
     if ((words[i] === 'update' || words[i] === 'insert' || words[i] === 'replace') && writeTarget(words, i)) return true;
     if (words[i] === 'create' && (createShadow(words, i) || (words[i + 1] === 'index' || (words[i + 1] === 'unique' && words[i + 2] === 'index')) && indexForbidden(words, words[i + 1] === 'index' ? i + 2 : i + 3))) return true;
   }
   return false;
+}
+function setterAllowed(sql) {
+  let words;
+  try { words = leadingWords(sql); }
+  catch { return false; }
+  if (!words) return false;
+  const i = explainedStart(words);
+  if (words[i] !== 'pragma') return false;
+  let name = words[i + 1] || '';
+  if (name !== 'user_version' && name !== 'foreign_keys') {
+    const next = words[i + 2] || '';
+    if (next === 'user_version' || next === 'foreign_keys') name = next;
+  }
+  return name === 'user_version' || name === 'foreign_keys';
 }
 function explainedStart(words) {
   let i = 0;
@@ -620,6 +661,10 @@ export class Library {
     const sql = statement;
     // Preparing PRAGMA writable_schema = ON runs it, so the refusal comes first.
     if (writableAssignment(sql)) throw Object.assign(fail(500, 'This statement is not allowed.'), { code: 'SQL_DOOR' });
+    // A temp create of a protected name is refused before prepare. A name that
+    // collides with a table does not prepare, and the semicolon in a trigger
+    // body must not become SQL_MULTI ahead of this refusal.
+    if (this.#state.kind === 'recorded' && shadowCreate(sql)) throw Object.assign(fail(500, 'A recorded write cannot change audit or consent receipts.'), { code: 'SQL_DOOR' });
     // The boundary is the text SQLite prepared. The hand counter is not the authority.
     // Workerd's sql.exec does not return that tail, so a missing parser refuses a leftover semicolon.
     let tail = null;
@@ -648,6 +693,7 @@ export class Library {
     const reason = state.reason;
     const migration = state.migration;
     if (isMutatingStatement(sql) || (fallback && !provenRead(sql))) {
+      if (pragmaSetter(sql) && !setterAllowed(sql)) throw Object.assign(fail(500, 'This statement is not allowed.'), { code: 'SQL_DOOR' });
       if (pragmaSetter(sql) && kind !== 'schema' && kind !== 'registered') throw Object.assign(fail(500, 'This statement is not allowed.'), { code: 'SQL_DOOR' });
       if (isCreateTrigger(sql) && kind !== 'schema' && kind !== 'registered') {
         throw Object.assign(fail(500, 'A trigger is installed only by schema.'), { code: 'SCHEMA_DML' });
