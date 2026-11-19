@@ -43,3 +43,9 @@ Inspector J05r on `4c11808c`: an owner `POST /api/library/:id/reinstate` with no
 The generic parser stays strict. An empty body on upsert and the other body-using POSTs is still invalid JSON. A role check copied into the route, before the row lookup, would return 403 for a missing id, while `{}` returns 404. Those two statuses would still disagree.
 
 The route that does not use the body is the layer that changes. An empty reinstate body is `{}`, and then `reinstate()` runs. Non-empty invalid JSON is still 400. An owner of an existing row gets 403 either way. A reviewer gets the same status either way. A missing id is 404 either way.
+
+## Variable tokens (v13)
+
+`sqlTokens` follows SQLite `tokenize.c` for `?NNN` and for `$` `:` `@` `#`. A named token includes `::` segments and one `(...)` suffix. That suffix stops at the first `)`, at sqlite3Isspace (tab, LF, VT, FF, CR, space), or at the end. A quote or a comment inside the suffix is text. `splitBody`, `scanSemi`, and `placeholderCount` skip the same span, so a semicolon inside it is not a second statement and a `?` inside it is not a bind hole. `$` inside an identifier, as in `x$y`, stays part of that word.
+
+`Library.exec` calls `namedVariable` before prepare and before the multi-statement check. A `$` `:` `@` `#` token with at least one IdChar is `SQL_DOOR` on both doors. `?` and `?NNN` are not. The record is in `handoff/v13-decision-log.md`.
