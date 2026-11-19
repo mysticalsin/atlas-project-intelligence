@@ -118,7 +118,14 @@ with sync_playwright() as pw:
   check('The old microphone is released on restart',live.evaluate('__TEST.tracks.slice(0,-1).every(t=>t.readyState==="ended") && __TEST.tracks.at(-1).readyState==="live"'))
   check('Nothing from the discarded conversation was saved',not any(live.evaluate('ATLAS_VOICE_BRIDGE.context().project.answers')))
   live.set_viewport_size({'width':320,'height':740});live.wait_for_timeout(150)
-  check('Mute, Restart and End fit a 320 px phone',live.evaluate('document.documentElement.scrollWidth<=innerWidth') and all(live.locator(s).is_visible() for s in ('#voiceMute','#voiceRestart','#voiceEnd')))
+  check('Mute, Restart and End fit a 320 px phone',live.evaluate('''() => {
+    scrollTo(0,0);
+    if (document.documentElement.scrollWidth>innerWidth) return false;
+    return ['voiceMute','voiceRestart','voiceEnd'].every(id => {
+      const el=document.getElementById(id), s=getComputedStyle(el), r=el.getBoundingClientRect();
+      return s.display!=='none' && s.visibility!=='hidden' && r.width>8 && r.height>8 && r.top>=0 && r.left>=0 && r.right<=innerWidth && r.bottom<=innerHeight;
+    });
+  }'''))
   live.set_viewport_size({'width':1440,'height':1000});live.wait_for_timeout(100)
   live.locator('#voiceRestart').click();live.locator('#voiceRestartDialog').wait_for(state='visible')
   live.evaluate('__TEST.socket.emit({type:"wrap_up"})');wait(live,'idle')
