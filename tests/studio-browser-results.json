@@ -250,6 +250,10 @@
       "passed": true
     },
     {
+      "name": "End stays on the first screen at 375 by 812",
+      "passed": true
+    },
+    {
       "name": "If ATLAS wraps up meanwhile, the restart question closes and nothing more is discarded",
       "passed": true
     },

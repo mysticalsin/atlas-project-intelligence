@@ -140,6 +140,15 @@ with sync_playwright() as pw:
       return s.display!=='none' && s.visibility!=='hidden' && r.width>8 && r.height>8 && r.top>=0 && r.left>=0 && r.right<=320 && r.bottom<=innerHeight-8;
     });
   }'''))
+  live.set_viewport_size({'width':375,'height':812});live.wait_for_timeout(150)
+  check('End stays on the first screen at 375 by 812',live.evaluate('''() => {
+    scrollTo(0,0);
+    if (document.documentElement.scrollWidth>innerWidth) return false;
+    return ['voiceMute','voiceRestart','voiceEnd'].every(id => {
+      const el=document.getElementById(id), s=getComputedStyle(el), r=el.getBoundingClientRect();
+      return s.display!=='none' && s.visibility!=='hidden' && r.width>8 && r.height>8 && r.top>=0 && r.bottom<=innerHeight && r.left>=0 && r.right<=innerWidth;
+    });
+  }'''))
   live.set_viewport_size({'width':1440,'height':1000});live.wait_for_timeout(100)
   live.locator('#voiceRestart').click();live.locator('#voiceRestartDialog').wait_for(state='visible')
   live.evaluate('__TEST.socket.emit({type:"wrap_up"})');wait(live,'idle')
