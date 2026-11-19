@@ -213,6 +213,12 @@ function wordAt(text, i) {
   while (j < text.length && isSqlIdChar(text[j])) j++;
   return mustSlice(text, i, j);
 }
+// A letter or '_' starts an identifier. '$' continues it (tokenize.c IdChar,
+// line 168) and is not a parameter. Call this before takeVariable.
+function skipIdent(text, i) {
+  if (!isIdentChar(text[i])) return -1;
+  return i + wordAt(text, i).length;
+}
 // SQLite 3.53.4 src/tokenize.c, the version this host's node:sqlite reports.
 // '?' and '?NNN' are CC_VARNUM, lines 504-507 (the class is line 35).
 // '$' '@' ':' '#' are CC_DOLLAR / CC_VARALPHA, lines 509-537 (classes are lines 33-34).
@@ -389,6 +395,8 @@ export function placeholderCount(sql) {
       }
       continue;
     }
+    const ident = skipIdent(text, i);
+    if (ident > i) { i = ident; continue; }
     const variable = takeVariable(text, i);
     if (variable) {
       if (c === '?') n++;
@@ -700,6 +708,8 @@ function scanSemi(text) {
   let i = 0;
   while (i < text.length) {
     const c = text[i];
+    const ident = skipIdent(text, i);
+    if (ident > i) { i = ident; continue; }
     const variable = takeVariable(text, i);
     if (variable) { i = variable.next; continue; }
     if (c === '-' && text[i + 1] === '-') {
