@@ -18,7 +18,7 @@ import { appendAudit, checkpointHead, ensureChain, verifyChain, anchoredVerdict,
 import { recordUsage } from './telemetry.js';
 import { publicationEffect, publicationStatus, publicationTransition, readPublication } from './publication.js';
 import { invitationTransition, noteInvitation, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
-import { bareSemicolon, hasCreateAsSelect, hiddenWrite, isMutatingStatement, leadingWords, pragmaClass, pragmaSetter, pragmaSetterName, provenRead, remainderIsNoise, splitStatements, sqlShape, unparsedTail, writableAssignment } from './sql-text.js';
+import { bareSemicolon, hasCreateAsSelect, hiddenWrite, isMutatingStatement, leadingWords, namedVariable, pragmaClass, pragmaSetter, pragmaSetterName, provenRead, remainderIsNoise, splitStatements, sqlShape, unparsedTail, writableAssignment } from './sql-text.js';
 import { sqliteRemainder } from './sql-tail.js';
 import { clockIso, find, includes, isoFrom, parseDate, some, trim } from './primordials.js';
 import { RETENTION } from './policy.generated.js';
@@ -672,6 +672,9 @@ export class Library {
     if (typeof statement !== 'string') throw Object.assign(fail(500, 'A SQL write must be a string.'), { code: 'SQL_TEXT' });
     const sql = statement;
     // Preparing a pragma assignment runs it. Classify the whole string first.
+    // A named parameter is refused before the statement boundary, so a TCL suffix
+    // that hides a second statement is SQL_DOOR rather than a later code.
+    if (namedVariable(sql)) throw Object.assign(fail(500, 'This statement is not allowed.'), { code: 'SQL_DOOR' });
     if (refusePragma(sql, this.#state.kind)) throw Object.assign(fail(500, 'This statement is not allowed.'), { code: 'SQL_DOOR' });
     if (this.#state.kind === 'recorded' && recordedEarly(sql)) throw Object.assign(fail(500, 'A recorded write cannot change audit or consent receipts.'), { code: 'SQL_DOOR' });
     // The boundary is the text SQLite prepared. The hand counter is not the authority.

@@ -16,13 +16,23 @@ function isIdentChar(c) {
   const n = codeAt(c);
   return (n >= 65 && n <= 90) || (n >= 97 && n <= 122) || n === 95;
 }
-function isWordChar(c) {
-  const n = codeAt(c);
-  return isIdentChar(c) || (n >= 48 && n <= 57);
-}
 function isDigitChar(c) {
   const n = codeAt(c);
   return n >= 48 && n <= 57;
+}
+// SQLite IdChar: letters, digits, '_', '$', and a code unit at or above 128.
+function isSqlIdChar(c) {
+  const n = codeAt(c);
+  if (n >= 128) return true;
+  if (n >= 48 && n <= 57) return true;
+  if (n >= 65 && n <= 90) return true;
+  if (n >= 97 && n <= 122) return true;
+  return n === 95 || n === 36;
+}
+// sqlite3Isspace: tab, LF, VT, FF, CR, and space. A no-break space is not one.
+function isSqliteSpace(c) {
+  const n = codeAt(c);
+  return n === 9 || n === 10 || n === 11 || n === 12 || n === 13 || n === 32;
 }
 function isSpaceChar(c) {
   const n = codeAt(c);
@@ -89,6 +99,14 @@ function blockedVerb(tokens, i) {
   const next = tokens[i + 1];
   return !!(next && next.text === ')');
 }
+function skipGroup(tokens, j) {
+  if (!(tokens[j] && tokens[j].text === '(')) return -1;
+  const base = tokens[j].depth;
+  j++;
+  while (j < tokens.length && !(tokens[j].text === ')' && tokens[j].depth === base)) j++;
+  if (j >= tokens.length) return j;
+  return j + 1;
+}
 function afterCteList(tokens, withAt) {
   let i = withAt + 1;
   if (plain(tokens[i], 'recursive')) i++;
@@ -96,15 +114,22 @@ function afterCteList(tokens, withAt) {
     let j = i;
     const name = tokens[j];
     if (name && name.kind === 'word' && name.depth === 0 && !(name.text === 'as' && !name.quoted)) {
-      if (plain(tokens[j + 1], 'as')) j++;
-      else break;
+      j++;
+      if (tokens[j] && tokens[j].text === '(' && tokens[j].depth === name.depth) {
+        const after = skipGroup(tokens, j);
+        if (after < 0) break;
+        j = after;
+      }
+      if (!plain(tokens[j], 'as')) break;
     }
-    if (!(plain(tokens[j], 'as') && tokens[j + 1] && tokens[j + 1].text === '(')) break;
-    const base = tokens[j].depth;
-    j += 2;
-    while (j < tokens.length && !(tokens[j].text === ')' && tokens[j].depth === base)) j++;
-    if (j < tokens.length) j++;
-    i = j;
+    if (!plain(tokens[j], 'as')) break;
+    j++;
+    if (plain(tokens[j], 'not')) j++;
+    if (plain(tokens[j], 'materialized')) j++;
+    if (!(tokens[j] && tokens[j].text === '(')) break;
+    const after = skipGroup(tokens, j);
+    if (after < 0) break;
+    i = after;
   }
   return i;
 }
@@ -144,8 +169,35 @@ function openingVerb(sql) {
 
 function wordAt(text, i) {
   let j = i + 1;
-  while (j < text.length && isWordChar(text[j])) j++;
+  while (j < text.length && isSqlIdChar(text[j])) j++;
   return mustSlice(text, i, j);
+}
+// tokenize.c CC_VARNUM and CC_DOLLAR / CC_VARALPHA. '?' and '?NNN' are numeric.
+// '$' ':' '@' '#' take IdChar, then '::' segments, then one '(...)' that stops at
+// the first ')', space, or end. Quotes and comments inside that span are text.
+function takeVariable(text, i) {
+  const sigil = text[i];
+  if (sigil === '?') {
+    let j = i + 1;
+    while (j < text.length && isDigitChar(text[j])) j++;
+    return { next: j, named: false };
+  }
+  if (sigil !== '$' && sigil !== '@' && sigil !== ':' && sigil !== '#') return null;
+  let n = 0;
+  let j = i + 1;
+  while (j < text.length) {
+    const c = text[j];
+    if (isSqlIdChar(c)) { n++; j++; continue; }
+    if (c === '(' && n > 0) {
+      j++;
+      while (j < text.length && !isSqliteSpace(text[j]) && text[j] !== ')') j++;
+      if (j < text.length && text[j] === ')') j++;
+      break;
+    }
+    if (c === ':' && text[j + 1] === ':') { j += 2; continue; }
+    break;
+  }
+  return { next: j, named: n > 0 };
 }
 
 export function splitStatements(sql) {
@@ -167,6 +219,8 @@ function splitBody(sql) {
   let atStatement = false;
   while (i < text.length) {
     const c = text[i];
+    const variable = takeVariable(text, i);
+    if (variable) { i = variable.next; continue; }
     if (c === '-' && text[i + 1] === '-') {
       while (i < text.length && text[i] !== '\n') i++;
       continue;
@@ -291,10 +345,10 @@ export function placeholderCount(sql) {
       }
       continue;
     }
-    if (c === '?') {
-      n++;
-      i++;
-      while (i < text.length && isDigitChar(text[i])) i++;
+    const variable = takeVariable(text, i);
+    if (variable) {
+      if (c === '?') n++;
+      i = variable.next;
       continue;
     }
     i++;
@@ -407,6 +461,12 @@ export function sqlTokens(sql) {
   while (i < text.length) {
     const c = text[i];
     if (isSpaceChar(c)) { i++; continue; }
+    const variable = takeVariable(text, i);
+    if (variable) {
+      push({ kind: 'var', text: mustLower(mustSlice(text, i, variable.next)), named: variable.named });
+      i = variable.next;
+      continue;
+    }
     if (c === '-' && text[i + 1] === '-') {
       while (i < text.length && text[i] !== '\n') i++;
       continue;
@@ -447,6 +507,22 @@ export function sqlTokens(sql) {
     i++;
   }
   return tokens;
+}
+
+// A named parameter is '$' ':' '@' or '#' with at least one IdChar, the n>0
+// rule in tokenize.c. '?' and '?NNN' are not named. A sigil inside a string or
+// a quoted identifier is not a token of this kind. '$' inside 'x$y' is not one.
+export function namedVariable(sql) {
+  if (!primordialsHold()) return true;
+  try {
+    const tokens = sqlTokens(sql);
+    for (let i = 0; i < tokens.length; i++) {
+      if (tokens[i].kind === 'var' && tokens[i].named === true) return true;
+    }
+    return false;
+  } catch {
+    return true;
+  }
 }
 
 // Keywords and identifiers, in order. Comments are dropped. A quoted identifier
@@ -560,6 +636,8 @@ function scanSemi(text) {
   let i = 0;
   while (i < text.length) {
     const c = text[i];
+    const variable = takeVariable(text, i);
+    if (variable) { i = variable.next; continue; }
     if (c === '-' && text[i + 1] === '-') {
       while (i < text.length && text[i] !== '\n') i++;
       continue;

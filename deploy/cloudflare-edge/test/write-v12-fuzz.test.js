@@ -84,7 +84,7 @@ explicit.push('WITH /*`*/ `x(` AS (SELECT 1) /*;*/ DELETE FROM audit');
 explicit.push('WITH /*[*/ [x(] AS (SELECT 1) /*)*/ DELETE FROM audit');
 explicit.push('WITH "x(" AS (SELECT 1 AS "x(") DELETE FROM audit');
 
-const alphabet = ['(', ')', ';', "'", '"', '`', 'x', 'y'];
+const alphabet = ['(', ')', ';', "'", '"', '`', 'x', 'y', '$', ':', '@', '#', '?'];
 const next = lcg(SEED);
 const fuzz = [];
 for (let n = 0; n < FUZZ_N; n++) {

@@ -115,12 +115,19 @@ function asRefs(sql) {
     .replaceAll("REPLACE INTO audit (seq, actor, action, at, detail) VALUES (1, 'x', 'wiped', 't', '{}')", "REPLACE INTO refs (id, owner, title, status, revision, data, state) VALUES ('r1', 'ada@example.test', 'wiped', 'in_review', 1, '{}', '{}')");
 }
 
+function kept(raw, before, sql, refs) {
+  if (refs) unchanged(raw, before, sql);
+  else {
+    assert.equal(auditCount(raw), before.audit, sql);
+    assert.equal(chainOf(raw), before.chain, sql);
+  }
+}
 function doors(cases, { refs }) {
   for (const sql of cases) assert.equal(provenRead(sql), false, sql);
   const raw = memorySql();
   const lib = open(raw);
   if (refs) seed(lib);
-  const before = snap(raw);
+  const before = refs ? snap(raw) : { audit: auditCount(raw), chain: chainOf(raw) };
   if (refs) {
     assert.equal(before.refs, 1);
     assert.equal(before.title, 'kept');
@@ -128,16 +135,16 @@ function doors(cases, { refs }) {
   assert.equal(before.audit, 1);
   for (const sql of cases) {
     assert.equal(codeOf(() => lib.exec(sql)), 'SQL_DOOR', 'native ' + sql);
-    unchanged(raw, before, sql);
+    kept(raw, before, sql, refs);
   }
   hide(() => {
     const inner = memorySql();
     const door = shut(inner);
     if (refs) seed(door);
-    const innerBefore = snap(inner);
+    const innerBefore = refs ? snap(inner) : { audit: auditCount(inner), chain: chainOf(inner) };
     for (const sql of cases) {
       assert.equal(codeOf(() => door.exec(sql)), 'SQL_DOOR', 'fallback ' + sql);
-      unchanged(inner, innerBefore, sql);
+      kept(inner, innerBefore, sql, refs);
     }
   });
 }
