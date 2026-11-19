@@ -234,7 +234,7 @@ function parameterTaint(tree, file) {
 }
 
 function isEvalValue(node) {
-  node = unwrap(node);
+  node = peel(node);
   if (!node) return false;
   if (node.type === 'Identifier' && (node.name === 'eval' || evalAliases.has(node.name))) return true;
   return node.type === 'MemberExpression' && propName(node) === 'eval';

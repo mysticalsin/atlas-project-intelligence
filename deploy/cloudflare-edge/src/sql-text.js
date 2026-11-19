@@ -71,7 +71,7 @@ function mustIncludes(list, value) {
   if (out !== true && out !== false) throw new Error('primordial');
   return out;
 }
-const VERBS = ['insert', 'update', 'delete', 'replace', 'create', 'drop', 'alter', 'reindex', 'vacuum', 'attach', 'detach'];
+const VERBS = ['insert', 'update', 'delete', 'replace', 'create', 'drop', 'alter', 'reindex', 'vacuum', 'attach', 'detach', 'analyze', 'begin', 'commit', 'rollback', 'savepoint', 'release'];
 const WRITES = ['insert', 'update', 'delete', 'replace'];
 const BODY_NEXT = ['select', 'insert', 'update', 'delete', 'replace', 'with', 'values', 'begin', 'end'];
 function listed(list, word) {
@@ -658,8 +658,13 @@ function readPragma(tokens, i) {
         if (depth === 0) { closed = k; break; }
       }
     }
-    if (closed < 0 || eq || !listed(PRAGMA_TABLE_ARG, name)) {
-      return { name, kind: name === 'writable_schema' ? 'writable' : 'setter', start: i, end: tokens.length };
+    if (closed < 0) {
+      return { name, kind: name === 'writable_schema' ? 'writable' : 'setter', start: i, end: n };
+    }
+    if (eq || !listed(PRAGMA_TABLE_ARG, name)) {
+      let end = closed + 1;
+      if (tokens[end]?.text === ';') end++;
+      return { name, kind: name === 'writable_schema' ? 'writable' : 'setter', start: i, end };
     }
     n = closed + 1;
   }

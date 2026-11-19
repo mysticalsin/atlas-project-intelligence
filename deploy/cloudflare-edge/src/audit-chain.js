@@ -38,7 +38,7 @@
 // Whoever can rewrite the keyed rows and recompute every hash and commit is not stopped by
 // an in-table chain. The daily anchor is what notices a missing keyed prefix.
 import { timingSafe } from './timing-safe.js';
-import { charCodeAt, lower, slice } from './primordials.js';
+import { charCodeAt, find, lower, slice, some } from './primordials.js';
 export const GENESIS = '0'.repeat(64);
 // erased: and twelve lowercase hex digits. Anything else, including a null from
 // a snapshotted method, is not a tombstone.
@@ -149,6 +149,13 @@ function hasText(error, needle) {
   }
   return false;
 }
+function textHas(text, needle) {
+  if (typeof text !== 'string' || typeof needle !== 'string' || needle.length === 0 || text.length < needle.length) return false;
+  for (let i = 0; i + needle.length <= text.length; i++) {
+    if (slice(text, i, i + needle.length) === needle) return true;
+  }
+  return false;
+}
 const absentSchema = e => hasText(e, 'no such column') || hasText(e, 'no such table');
 // A lock is not a missing column. Treating SQLITE_BUSY as "absent" classified a live chain as tampered.
 const hasColumn = (sql, name) => {
@@ -177,7 +184,12 @@ function tamperedResult(sql) {
 }
 function chainStartSeqs(sql) {
   if (!hasColumn(sql, 'commit')) return [];
-  try { return sql.exec('SELECT seq FROM audit WHERE action = ? AND "commit" IS NOT NULL ORDER BY seq', CHAIN_START).toArray().map(r => Number(r.seq)); }
+  try {
+    const rows = sql.exec('SELECT seq FROM audit WHERE action = ? AND "commit" IS NOT NULL ORDER BY seq', CHAIN_START).toArray();
+    const seqs = [];
+    for (let i = 0; i < rows.length; i++) seqs[i] = Number(rows[i].seq);
+    return seqs;
+  }
   catch (e) { if (absentSchema(e)) return []; throw e; }
 }
 const ANCHOR = 'CREATE TABLE IF NOT EXISTS audit_anchor (id INTEGER PRIMARY KEY CHECK (id = 1), n INTEGER NOT NULL, head TEXT NOT NULL)';
@@ -210,9 +222,11 @@ function classifyChain(sql) {
   const starts = chainStartSeqs(sql);
   if (starts.length !== 1) return 'tampered';
   const rows = keyedRows(sql);
-  const start = rows.find(r => Number(r.seq) === starts[0]);
-  const signedBefore = rows.some(r => Number(r.seq) < starts[0] && r.commit);
-  if (start && !signedBefore && sameText(start.prev_hash, GENESIS)) return 'open';
+  const start = find(rows, (r) => Number(r.seq) === starts[0]);
+  if (start === null) return 'tampered';
+  const signedBefore = some(rows, (r) => Number(r.seq) < starts[0] && r.commit);
+  if (signedBefore !== false) return 'tampered';
+  if (start && sameText(start.prev_hash, GENESIS)) return 'open';
   return 'tampered';
 }
 // One keyed row naming the legacy prefix. A null commit is not this row.
@@ -243,7 +257,7 @@ function indexChainStart(sql) {
   try { current = sql.exec("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'audit_one_chain_start'").toArray()[0]?.sql || ''; }
   catch { current = ''; }
   // IF NOT EXISTS would keep an older index that treats an unsigned chain-start as the one start.
-  if (current && !current.includes('"commit" IS NOT NULL')) {
+  if (current && !textHas(current, '"commit" IS NOT NULL')) {
     try { sql.exec('DROP INDEX IF EXISTS audit_one_chain_start'); }
     catch { /* a racer is dropping it */ }
   }
@@ -278,7 +292,8 @@ export function ensureChain(sql, key = '', transactionSync = null, dbId = '') {
     indexChainStart(sql);
     if (key != null && !chainStartSeqs(sql).length) {
       const rows = sql.exec('SELECT hash, prev_hash, "commit" FROM audit').toArray();
-      if (!rows.some(r => r.hash || r.prev_hash || r.commit)) appendChainStart(sql, key, dbId);
+      const marked = some(rows, (r) => r.hash || r.prev_hash || r.commit);
+      if (marked === false) appendChainStart(sql, key, dbId);
     }
   });
   sealed.add(sql);
@@ -348,7 +363,7 @@ export function verifyChain(sql, key = '', dbId = '') {
       } else if (!sameText(r.prev_hash, prevHash)) return bad('LINK_BROKEN');
       if (!sameText(rowHash(r.prev_hash, r), r.hash)) return bad('HASH_MISMATCH');
       if (!bound(key, r, withTenant, dbId)) return bad('COMMIT_MISMATCH');
-      verifiedSeqs.push(Number(r.seq));
+      verifiedSeqs[checked] = Number(r.seq);
       prevHash = head = r.hash; after = r.seq; checked++;
     }
   }
