@@ -18,7 +18,7 @@ import { appendAudit, checkpointHead, ensureChain, verifyChain, anchoredVerdict,
 import { recordUsage } from './telemetry.js';
 import { publicationEffect, publicationStatus, publicationTransition, readPublication } from './publication.js';
 import { invitationTransition, noteInvitation, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
-import { hasCreateAsSelect, isMutatingStatement, leadingWords, remainderIsNoise, splitStatements, sqlShape, unparsedTail } from './sql-text.js';
+import { bareSemicolon, hasCreateAsSelect, isMutatingStatement, leadingWords, provenRead, remainderIsNoise, splitStatements, sqlShape, unparsedTail } from './sql-text.js';
 import { sqliteRemainder } from './sql-tail.js';
 import { some, trim } from './primordials.js';
 import { RETENTION } from './policy.generated.js';
@@ -83,6 +83,12 @@ const HOUSEKEEPING = freezeMap({
   ],
 });
 const HOUSE_KEYS = Object.freeze(Object.keys(HOUSEKEEPING));
+function consentTrigger(sql) {
+  const shape = sqlShape(sql);
+  if (!shape) return false;
+  const named = some(['consent-no-update', 'consent-no-delete', 'consent-no-replace'], (name) => sqlShape(ownValue(MIGRATIONS, MIGRATION_KEYS, name)) === shape);
+  return named === true;
+}
 function isCreateTrigger(sql) {
   const words = leadingWords(sql);
   if (words[0] !== 'create') return false;
@@ -488,16 +494,23 @@ export class Library {
       catch { tail = null; }
     }
     if (typeof tail !== 'string') tail = sqliteRemainder(sql);
-    if (typeof tail === 'string') {
+    // A real prepare boundary is one statement. Without it, a semicolon that is
+    // not one of the three consent triggers is not a proven statement, and a
+    // statement is a read only when the explained text is itself a read.
+    const fallback = typeof tail !== 'string';
+    const listedTrigger = consentTrigger(sql);
+    if (!fallback) {
       if (!remainderIsNoise(tail)) throw Object.assign(fail(500, 'A SQL write must be one statement.'), { code: 'SQL_MULTI' });
-    } else if (unparsedTail(sql)) throw Object.assign(fail(500, 'A SQL write must be one statement.'), { code: 'SQL_MULTI' });
-    if (splitStatements(sql).length !== 1) throw Object.assign(fail(500, 'A SQL write must be one statement.'), { code: 'SQL_MULTI' });
+    } else if ((bareSemicolon(sql) || unparsedTail(sql)) && !listedTrigger) {
+      throw Object.assign(fail(500, 'A SQL write must be one statement.'), { code: 'SQL_MULTI' });
+    }
+    if (splitStatements(sql).length !== 1 && !listedTrigger) throw Object.assign(fail(500, 'A SQL write must be one statement.'), { code: 'SQL_MULTI' });
     const state = this.#state;
     const open = state.open;
     const kind = state.kind;
     const reason = state.reason;
     const migration = state.migration;
-    if (isMutatingStatement(sql)) {
+    if (isMutatingStatement(sql) || (fallback && !provenRead(sql))) {
       if (isCreateTrigger(sql) && kind !== 'schema' && kind !== 'registered') {
         throw Object.assign(fail(500, 'A trigger is installed only by schema.'), { code: 'SCHEMA_DML' });
       }

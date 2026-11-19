@@ -383,9 +383,94 @@ export function remainderIsNoise(tail) {
 
 // The backstop for a driver that cannot prepare. It uses the same split as the
 // door, so a semicolon inside CREATE TRIGGER ... BEGIN ... END is one statement
-// and a statement after that END is a second one.
+// and a statement after that END is a second one. '' and ';' have length 0.
 export function unparsedTail(sql) {
   return splitStatements(sql).length > 1;
+}
+
+// A semicolon outside a quote, a comment, or a bracket. This does not look at
+// the word begin. The caller decides whether that semicolon is still one statement.
+export function bareSemicolon(sql) {
+  if (!primordialsHold()) return true;
+  try { return scanSemi(String(sql ?? '')); }
+  catch { return true; }
+}
+
+function scanSemi(text) {
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === '-' && text[i + 1] === '-') {
+      while (i < text.length && text[i] !== '\n') i++;
+      continue;
+    }
+    if (c === '/' && text[i + 1] === '*') {
+      i += 2;
+      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
+      i = Math.min(text.length, i + 2);
+      continue;
+    }
+    if (c === "'" || c === '"') {
+      const quote = c;
+      i++;
+      while (i < text.length) {
+        if (text[i] === quote) {
+          if (text[i + 1] === quote) { i += 2; continue; }
+          i++;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+    if (c === '[') {
+      while (i < text.length && text[i] !== ']') i++;
+      i = Math.min(text.length, i + 1);
+      continue;
+    }
+    if (c === '`') {
+      i++;
+      while (i < text.length && text[i] !== '`') i++;
+      i = Math.min(text.length, i + 1);
+      continue;
+    }
+    if (c === ';') return true;
+    i++;
+  }
+  return false;
+}
+
+const READS = ['select', 'pragma', 'values'];
+
+// True only when the text is one statement and that statement is a read.
+// EXPLAIN is a read only when the statement it explains is a read.
+export function provenRead(sql) {
+  if (!primordialsHold()) return false;
+  try {
+    if (scanSemi(String(sql ?? ''))) return false;
+    const parts = splitStatements(sql);
+    if (parts.length !== 1) return false;
+    return readWords(leadingWords(parts[0]));
+  } catch {
+    return false;
+  }
+}
+
+function readWords(words) {
+  if (!words || !words.length) return false;
+  let i = 0;
+  if (words[0] === 'explain') {
+    i = 1;
+    if (words[1] === 'query' && words[2] === 'plan') i = 3;
+  }
+  const verb = words[i] || '';
+  if (verb === 'with') {
+    for (let k = i + 1; k < words.length; k++) if (verbOf(words[k])) return false;
+    return true;
+  }
+  if (!listed(READS, verb)) return false;
+  for (let k = i + 1; k < words.length; k++) if (verbOf(words[k])) return false;
+  return true;
 }
 
 export function hasCreateAsSelect(sql) {
