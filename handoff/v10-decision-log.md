@@ -30,6 +30,14 @@ The registered door only executes a named migration. The test enters that door a
 
 `2ef51ba321acbb015c8495c2b94305be965c5eb5` is `sql-text.js`, `audit-chain.js`, and `test/write-lint.js`. It does not edit `test/write-v10-door.test.js`.
 
+## Reinstate and the 320 px controls
+
+Inspector's partial on `4c11808c` is folded here. `POST /api/library/:id/reinstate` with no body was 400 before the role check. `{}` was 403 for an owner. The insights change does not cover that path. The choice is in `handoff/untangle-decision-log.md`: the generic parser stays strict, and an empty reinstate body is the same call as `{}`.
+
+Red `a9d8676b2f5535c577368174bf6bab98306582d6` is `test/write-v10-reinstate.test.js` only: 1 test, 0 pass, 1 fail, `AssertionError` expected `403` actual `400`. Fix `c896702eba8a5e51eaeb01fd6c82026f338493fb` does not edit that test. Removing the reinstate exception was 0 pass, 1 fail, the same assertion (`/tmp/v10-mut-reinstate.txt`).
+
+Mute, Restart, and End at 320 px are `tests/studio_browser.py` line 121. `src/orb.css`, `src/voice.css`, `src/sculpture.css`, `src/shell.html`, the studio HTML aliases, and that test are identical to main `02a83b320fdf635cdd8d603a54b791a3fef59152`. PR9 does not change the UI. The overflow stays a pre-existing item. No unslop table.
+
 ## Mutations
 
 Each one was restored and was not committed.

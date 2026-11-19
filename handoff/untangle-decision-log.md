@@ -25,3 +25,11 @@ The schema door and a registered migration may set only `user_version` and `fore
 ## Manifest
 
 `MANIFEST.json` is the received 12.1 package dated 2026-09-26. Regenerating it is out of scope. Inspector F-4 stays a residual. `scripts/check_handoff.py` failing `manifest-content` is that staleness.
+
+## Reinstate body
+
+Inspector J05r on `4c11808c`: an owner `POST /api/library/:id/reinstate` with no body is 400 `Invalid JSON.` from the generic parse, before `reinstate()` and its role check. The same call with `{}` is 403. The insights empty-body change does not cover this path. Reinstate does not read the body.
+
+The generic parser stays strict. An empty body on upsert and the other body-using POSTs is still invalid JSON. A role check copied into the route, before the row lookup, would return 403 for a missing id, while `{}` returns 404. Those two statuses would still disagree.
+
+The route that does not use the body is the layer that changes. An empty reinstate body is `{}`, and then `reinstate()` runs. Non-empty invalid JSON is still 400. An owner of an existing row gets 403 either way. A reviewer gets the same status either way. A missing id is 404 either way.
