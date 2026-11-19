@@ -73,8 +73,8 @@ function ensureJourneySchema(lib) {
       SELECT subject, COALESCE(tenant, ''), payload, updated_at FROM journey`);
     lib.log('schema', 'atlas', 'schema copy', 'journey');
   });
-  lib.exec('DROP TABLE journey');
-  lib.exec('ALTER TABLE journey_v2 RENAME TO journey');
+  lib.registered('drop-journey');
+  lib.registered('rename-journey');
   ensureJourneyIndex(lib);
 }
 

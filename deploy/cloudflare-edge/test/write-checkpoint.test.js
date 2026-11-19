@@ -69,7 +69,7 @@ test('a damaged chain still accepts housekeeping and a consent receipt, and refu
   const before = anchor(lib);
   tamper(lib);
   lib.schema(() => lib.exec('CREATE TABLE teams_seen (activity_id TEXT PRIMARY KEY, at TEXT)'));
-  lib.housekeeping('teams-seen', () => lib.exec("DELETE FROM teams_seen WHERE at < '2020-01-01T00:00:00.000Z'"));
+  lib.housekeeping('teams-seen', () => lib.exec('DELETE FROM teams_seen WHERE at < ?', '2020-01-01T00:00:00.000Z'));
   assert.equal(lib.rows('SELECT COUNT(*) AS n FROM teams_seen')[0].n, 0);
   const receipt = recordReceipts(lib, SUBJECT, [{ purpose: 'memory', granted: true }]);
   assert.equal(receipt.recorded.length, 1);

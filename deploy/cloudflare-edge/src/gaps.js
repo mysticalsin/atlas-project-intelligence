@@ -37,7 +37,7 @@ export function ensure(lib) {
   lib.schema(() => {
     for (const q of DDL) lib.exec(q);
     const cols = lib.rows("SELECT name FROM pragma_table_info('gap_requests')").map(r => r.name);
-    if (cols.length && !cols.includes('tenant')) lib.exec("ALTER TABLE gap_requests ADD COLUMN tenant TEXT NOT NULL DEFAULT ''");
+    if (cols.length && !cols.includes('tenant')) lib.registered('gap-tenant');
   });
   ensured.add(lib);
 }

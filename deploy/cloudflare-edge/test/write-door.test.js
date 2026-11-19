@@ -42,29 +42,29 @@ test('schema and housekeeping write without an audit line', () => {
   const lib = new Library(memorySql(), { auditKey: SALT });
   const before = lib.rows('SELECT COUNT(*) AS n FROM audit')[0].n;
   lib.schema(() => lib.exec('CREATE TABLE teams_seen (activity_id TEXT PRIMARY KEY, at TEXT)'));
-  lib.housekeeping('teams-seen', () => lib.exec("DELETE FROM teams_seen WHERE at < '2020-01-01T00:00:00.000Z'"));
+  lib.housekeeping('teams-seen', () => lib.exec('DELETE FROM teams_seen WHERE at < ?', '2020-01-01T00:00:00.000Z'));
   assert.equal(lib.rows('SELECT COUNT(*) AS n FROM teams_seen')[0].n, 0);
   assert.equal(lib.rows('SELECT COUNT(*) AS n FROM audit')[0].n, before);
 });
 
 test('schema refuses DML', () => {
   const lib = new Library(memorySql(), { auditKey: SALT });
-  lib.schema(() => lib.exec('CREATE TABLE door_probe (id INTEGER)'));
+  lib.schema(() => lib.exec('CREATE TABLE teams_seen (activity_id TEXT PRIMARY KEY, at TEXT)'));
   assert.throws(
-    () => lib.schema(() => lib.exec('INSERT INTO door_probe (id) VALUES (1)')),
+    () => lib.schema(() => lib.exec("INSERT INTO teams_seen (activity_id, at) VALUES ('a', 'b')")),
     err => err.status === 500 && err.code === 'SCHEMA_DML',
   );
-  assert.equal(lib.rows('SELECT COUNT(*) AS n FROM door_probe')[0].n, 0);
+  assert.equal(lib.rows('SELECT COUNT(*) AS n FROM teams_seen')[0].n, 0);
 });
 
 test('housekeeping refuses a statement that is not on its list', () => {
   const lib = new Library(memorySql(), { auditKey: SALT });
-  lib.schema(() => lib.exec('CREATE TABLE door_probe (id INTEGER)'));
+  lib.schema(() => lib.exec('CREATE TABLE teams_seen (activity_id TEXT PRIMARY KEY, at TEXT)'));
   assert.throws(
-    () => lib.housekeeping('retention', () => lib.exec('INSERT INTO door_probe (id) VALUES (1)')),
+    () => lib.housekeeping('retention', () => lib.exec("INSERT INTO teams_seen (activity_id, at) VALUES ('a', 'b')")),
     err => err.status === 500 && err.code === 'HOUSEKEEPING_SQL',
   );
-  assert.equal(lib.rows('SELECT COUNT(*) AS n FROM door_probe')[0].n, 0);
+  assert.equal(lib.rows('SELECT COUNT(*) AS n FROM teams_seen')[0].n, 0);
 });
 
 test('story erasure is audited', async () => {

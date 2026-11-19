@@ -18,61 +18,118 @@ import { appendAudit, checkpointHead, ensureChain, verifyChain, anchoredVerdict,
 import { recordUsage } from './telemetry.js';
 import { publicationEffect, publicationStatus, publicationTransition, readPublication } from './publication.js';
 import { invitationTransition, noteInvitation, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
-function sqlText(sql) {
-  return String(sql ?? '').replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ').trim();
-}
-function mutatingSql(sql) {
-  const text = sqlText(sql);
-  if (/^(insert|update|delete|replace|create|drop|alter|reindex|vacuum)\b/i.test(text)) return true;
-  return /^with\b/i.test(text) && /\b(insert|update|delete|replace)\b/i.test(text);
-}
+import { hasCreateAsSelect, isMutatingStatement, leadingWords, splitStatements, sqlShape } from './sql-text.js';
 function receiptInsert(sql) {
-  return /^insert\s+into\s+consent_receipts\b/i.test(sqlText(sql));
+  const words = leadingWords(sql);
+  return words[0] === 'insert' && words[1] === 'into' && words[2] === 'consent_receipts';
 }
 function auditReady(sql) {
   try {
     return sql.exec("SELECT name FROM pragma_table_info('audit')").toArray().some(row => row.name === 'hash');
   } catch { return false; }
 }
-function sqlShape(sql) {
-  return sqlText(sql).replace(/\s+/g, ' ').toLowerCase();
-}
-function schemaDdl(sql) {
-  return /^(create|drop|alter)\b/.test(sqlShape(sql));
-}
-// Each reason has a fixed list. A statement that is not on the list is refused.
+// Housekeeping runs these statements and no others. The match is the whole statement.
 const HOUSEKEEPING = {
   retention: [
-    /^delete from confirmation_requests\b/,
-    /^delete from gap_requests\b/,
-    /^delete from outreach\b/,
-    /^delete from invitations\b/,
-    /^delete from staffing\b/,
+    "DELETE FROM confirmation_requests WHERE expires_at < ? AND lower(COALESCE(tenant, '')) = ?",
+    "DELETE FROM gap_requests WHERE status != 'open' AND created_at < ? AND lower(COALESCE(tenant, '')) = ?",
+    "DELETE FROM outreach WHERE created_at < ? AND lower(COALESCE(tenant, '')) = ?",
+    "DELETE FROM invitations WHERE status IN ('done', 'dismissed') AND created_at < ? AND lower(COALESCE(tenant, '')) = ?",
+    "DELETE FROM staffing WHERE lower(COALESCE(tenant, '')) = ? AND ((end_date != '' AND end_date < ?) OR (end_date = '' AND updated_at < ?))",
   ],
   'consent-retention': [
-    /^insert or replace into privacy_gate\b/,
-    /^delete from consent_receipts\b/,
+    "INSERT OR REPLACE INTO privacy_gate (name, open) VALUES ('receipts', 1)",
+    "INSERT OR REPLACE INTO privacy_gate (name, open) VALUES ('receipts', 0)",
+    'DELETE FROM consent_receipts WHERE subject IN (SELECT subject FROM consent_receipts GROUP BY subject HAVING MAX(at) < ?)',
   ],
-  'dna-cache': [/^insert or replace into directory\b/],
+  'dna-cache': [
+    `INSERT OR REPLACE INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at, tenant)
+      VALUES (?, 'dna', ?, ?, ?, ?, ?, 'pull', ?, ?)`,
+  ],
   'sign-in': [
-    /^insert into profiles\b/,
-    /^update profiles set subject\b/,
+    'INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'UPDATE profiles SET subject = ?, tenant = ?, email = ?, signin = ?, seen_at = ? WHERE rowid = ?',
   ],
   'profile-daily': [
-    /^delete from directory where lower\(coalesce\(tenant, ''\)\) = \? and source = 'dna' and batch = 'pull'/,
-    /^delete from directory where source = \? and lower\(coalesce\(tenant, ''\)\) = \?$/,
-    /^update directory_imports set state = 'refused'/,
+    "DELETE FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND source = 'dna' AND batch = 'pull' AND fetched_at < ?",
+    "DELETE FROM directory WHERE source = ? AND lower(COALESCE(tenant, '')) = ?",
+    "UPDATE directory_imports SET state = 'refused', finished_at = ? WHERE batch = ? AND lower(COALESCE(tenant, '')) = ?",
   ],
-  telemetry: [/^insert into telemetry\b/],
-  'telemetry-purge': [/^delete from telemetry where at </],
-  'teams-seen': [/^delete from teams_seen where at </],
+  telemetry: [
+    `INSERT INTO telemetry (id, at, tenant, persona, kind, feature, outcome, latency_ms, tokens_in, tokens_out, token_status, model, error_class)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ],
+  'telemetry-purge': [
+    "DELETE FROM telemetry WHERE at < ? AND lower(COALESCE(tenant, '')) = ?",
+  ],
+  'teams-seen': [
+    'DELETE FROM teams_seen WHERE at < ?',
+  ],
 };
 function housekeepingAllowed(reason, sql) {
   const list = HOUSEKEEPING[reason];
-  if (!list) return false;
+  if (!list || !sqlShape(sql)) return false;
   const shape = sqlShape(sql);
-  return list.some(pattern => pattern.test(shape));
+  return list.some(item => sqlShape(item) === shape);
 }
+// Schema accepts CREATE TABLE and CREATE INDEX IF NOT EXISTS on these names.
+// Drop, alter, trigger, and CREATE TABLE AS SELECT are not in this set.
+const KNOWN_TABLES = new Set([
+  'refs', 'revisions', 'audit', 'invitations', 'manager_trust', 'manager_trust_v2',
+  'staffing', 'staffing_v2', 'outreach', 'teams_conversations', 'teams_seen',
+  'journey', 'journey_v2', 'consent_receipts', 'privacy_flags', 'erasure_log', 'erasure_holds', 'privacy_gate',
+  'gap_requests', 'telemetry', 'claims', 'confirmation_requests', 'bids', 'bid_references',
+]);
+const KNOWN_INDEXES = new Set([
+  'refs_owner_local', 'invitations_open_scope', 'outreach_subject', 'outreach_status',
+  'teams_conversations_email', 'journey_tenant_subject', 'consent_receipts_subject',
+  'telemetry_at', 'claims_ref', 'claims_sentence', 'confirmation_requests_ref',
+  'confirmation_requests_to', 'bids_owner',
+]);
+function schemaAllowed(statement) {
+  if (splitStatements(statement).length !== 1 || hasCreateAsSelect(statement)) return false;
+  const words = leadingWords(statement);
+  if (words[0] !== 'create') return false;
+  if (words[1] === 'table') {
+    let at = 2;
+    if (words[at] === 'if' && words[at + 1] === 'not' && words[at + 2] === 'exists') at += 3;
+    const name = words[at];
+    return !!name && name !== 'audit_anchor' && KNOWN_TABLES.has(name);
+  }
+  let at = 1;
+  if (words[at] === 'unique') at++;
+  if (words[at] !== 'index') return false;
+  at++;
+  if (!(words[at] === 'if' && words[at + 1] === 'not' && words[at + 2] === 'exists')) return false;
+  at += 3;
+  const index = words[at];
+  const table = words[at + 2];
+  if (words[at + 1] !== 'on' || table === 'audit' || table === 'audit_anchor') return false;
+  return KNOWN_INDEXES.has(index) && KNOWN_TABLES.has(table);
+}
+// Named migrations. None of these target audit or audit_anchor. Triggers are named here, not accepted as free text.
+export const MIGRATIONS = Object.freeze({
+  'invitations-tenant': 'ALTER TABLE invitations ADD COLUMN tenant TEXT',
+  'refs-tenant': "ALTER TABLE refs ADD COLUMN tenant TEXT NOT NULL DEFAULT ''",
+  'drop-refs-owner-local': 'DROP INDEX IF EXISTS refs_owner_local',
+  'drop-manager-trust': 'DROP TABLE manager_trust',
+  'rename-manager-trust': 'ALTER TABLE manager_trust_v2 RENAME TO manager_trust',
+  'drop-staffing': 'DROP TABLE staffing',
+  'rename-staffing': 'ALTER TABLE staffing_v2 RENAME TO staffing',
+  'outreach-tenant': "ALTER TABLE outreach ADD COLUMN tenant TEXT NOT NULL DEFAULT ''",
+  'outreach-directory-tenant': "ALTER TABLE outreach ADD COLUMN directory_tenant TEXT NOT NULL DEFAULT ''",
+  'outreach-conversation': "ALTER TABLE outreach ADD COLUMN conversation_id TEXT NOT NULL DEFAULT ''",
+  'outreach-idempotency': 'ALTER TABLE outreach ADD COLUMN idempotency_key TEXT',
+  'drop-journey': 'DROP TABLE journey',
+  'rename-journey': 'ALTER TABLE journey_v2 RENAME TO journey',
+  'erasure-holds-tenant': 'ALTER TABLE erasure_holds ADD COLUMN tenant TEXT',
+  'gap-tenant': "ALTER TABLE gap_requests ADD COLUMN tenant TEXT NOT NULL DEFAULT ''",
+  'confirmation-tenant': "ALTER TABLE confirmation_requests ADD COLUMN tenant TEXT NOT NULL DEFAULT ''",
+  'bids-tenant': "ALTER TABLE bids ADD COLUMN tenant TEXT NOT NULL DEFAULT ''",
+  'consent-no-update': "CREATE TRIGGER IF NOT EXISTS consent_receipts_no_update BEFORE UPDATE ON consent_receipts BEGIN SELECT RAISE(ABORT, 'consent receipts are append-only'); END",
+  'consent-no-delete': "CREATE TRIGGER IF NOT EXISTS consent_receipts_no_delete BEFORE DELETE ON consent_receipts WHEN COALESCE((SELECT open FROM privacy_gate WHERE name = 'receipts'), 0) != 1 BEGIN SELECT RAISE(ABORT, 'consent receipts are append-only'); END",
+  'consent-no-replace': "CREATE TRIGGER IF NOT EXISTS consent_receipts_no_replace BEFORE INSERT ON consent_receipts WHEN EXISTS (SELECT 1 FROM consent_receipts WHERE id = NEW.id) BEGIN SELECT RAISE(ABORT, 'consent receipts are append-only'); END",
+});
 // The storage handle stays in this map. It is not a property of Library.
 const HANDLES = new WeakMap();
 function rawSql(lib) {
@@ -234,23 +291,21 @@ function migrateManagerTrust(lib) {
         SELECT owner, email, source, ${tenantSql}, at FROM manager_trust`);
       lib.log('schema', 'atlas', 'schema copy', 'manager_trust');
     });
-    lib.schema(() => {
-      lib.exec('DROP TABLE manager_trust');
-      lib.exec('ALTER TABLE manager_trust_v2 RENAME TO manager_trust');
-    });
+    lib.registered('drop-manager-trust');
+    lib.registered('rename-manager-trust');
   };
 }
 function migrateStoryTenant(lib) {
   const cols = lib.rows("SELECT name FROM pragma_table_info('refs')").map(r => r.name);
   let copy = false;
   if (cols.length && !cols.includes('tenant')) {
-    lib.exec("ALTER TABLE refs ADD COLUMN tenant TEXT NOT NULL DEFAULT ''");
+    lib.registered('refs-tenant');
     copy = true;
   }
   const idx = lib.rows("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'refs_owner_local'")[0]?.sql || '';
   if (!idx.includes('tenant')) {
-    lib.exec('DROP INDEX IF EXISTS refs_owner_local');
-    lib.exec('CREATE UNIQUE INDEX refs_owner_local ON refs(owner, local_id, tenant)');
+    lib.registered('drop-refs-owner-local');
+    lib.exec('CREATE UNIQUE INDEX IF NOT EXISTS refs_owner_local ON refs(owner, local_id, tenant)');
   }
   if (!copy) return null;
   return () => {
@@ -307,7 +362,7 @@ export class Library {
     this.schema(() => {
       for (const q of SCHEMA) this.exec(q);
       const inv = this.rows("SELECT name FROM pragma_table_info('invitations')").map(r => r.name);
-      if (inv.length && !inv.includes('tenant')) this.exec('ALTER TABLE invitations ADD COLUMN tenant TEXT');
+      if (inv.length && !inv.includes('tenant')) this.registered('invitations-tenant');
       this.exec("CREATE UNIQUE INDEX IF NOT EXISTS invitations_open_scope ON invitations(email, reason, project_id, reference_id, tenant) WHERE status IN ('open', 'scheduled')");
       trustCopy = migrateManagerTrust(this);
       storyCopy = migrateStoryTenant(this);
@@ -348,11 +403,13 @@ export class Library {
     }
   }
   exec(statement, ...params) {
+    if (splitStatements(statement).length !== 1) throw Object.assign(fail(500, 'A SQL write must be one statement.'), { code: 'SQL_MULTI' });
     const state = doorState(this);
-    if (mutatingSql(statement)) {
+    if (isMutatingStatement(statement)) {
       if (!state.open) throw Object.assign(fail(500, 'A SQL write must run inside recorded, housekeeping, or schema.'), { code: 'SQL_DOOR' });
-      if (state.kind === 'schema' && !schemaDdl(statement)) throw Object.assign(fail(500, 'Schema accepts DDL only.'), { code: 'SCHEMA_DML' });
+      if (state.kind === 'schema' && !schemaAllowed(statement)) throw Object.assign(fail(500, 'Schema accepts named CREATE TABLE and CREATE INDEX only.'), { code: 'SCHEMA_DML' });
       if (state.kind === 'housekeeping' && !housekeepingAllowed(state.reason, statement)) throw Object.assign(fail(500, 'That housekeeping statement is not allowed.'), { code: 'HOUSEKEEPING_SQL' });
+      if (state.kind === 'registered' && sqlShape(statement) !== sqlShape(state.migration)) throw Object.assign(fail(500, 'That migration is not registered.'), { code: 'SCHEMA_DML' });
       if (!receiptInsert(statement)) state.receiptOnly = false;
     }
     const _sql = rawSql(this);
@@ -360,6 +417,15 @@ export class Library {
   }
   schema(fn) {
     return this._enter(fn, 'schema');
+  }
+  registered(name) {
+    const statement = MIGRATIONS[name];
+    if (!statement) throw Object.assign(fail(500, 'That migration is not registered.'), { code: 'SCHEMA_DML' });
+    const state = doorState(this);
+    const prev = state.migration;
+    state.migration = statement;
+    try { return this._enter(() => { this.exec(statement); }, 'registered'); }
+    finally { state.migration = prev; }
   }
   // No audit line and no verdict. The reason selects a fixed list of statements.
   // A call already inside a door joins it. This does not start a transaction.

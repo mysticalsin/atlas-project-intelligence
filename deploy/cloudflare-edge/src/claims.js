@@ -44,7 +44,7 @@ export function ensure(lib) {
   lib.schema(() => {
     for (const q of DDL) lib.exec(q);
     const cols = lib.rows("SELECT name FROM pragma_table_info('confirmation_requests')").map(r => r.name);
-    if (cols.length && !cols.includes('tenant')) lib.exec("ALTER TABLE confirmation_requests ADD COLUMN tenant TEXT NOT NULL DEFAULT ''");
+    if (cols.length && !cols.includes('tenant')) lib.registered('confirmation-tenant');
   });
   ensured.add(lib);
 }

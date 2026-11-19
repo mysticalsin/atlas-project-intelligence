@@ -114,12 +114,12 @@ export function ensure(lib) {
   // delete triggers, so an insert that reuses an existing id is refused as well.
   try {
     lib.exec('CREATE TABLE IF NOT EXISTS privacy_gate (name TEXT PRIMARY KEY, open INTEGER)');
-    lib.exec("CREATE TRIGGER IF NOT EXISTS consent_receipts_no_update BEFORE UPDATE ON consent_receipts BEGIN SELECT RAISE(ABORT, 'consent receipts are append-only'); END");
-    lib.exec("CREATE TRIGGER IF NOT EXISTS consent_receipts_no_delete BEFORE DELETE ON consent_receipts WHEN COALESCE((SELECT open FROM privacy_gate WHERE name = 'receipts'), 0) != 1 BEGIN SELECT RAISE(ABORT, 'consent receipts are append-only'); END");
-    lib.exec("CREATE TRIGGER IF NOT EXISTS consent_receipts_no_replace BEFORE INSERT ON consent_receipts WHEN EXISTS (SELECT 1 FROM consent_receipts WHERE id = NEW.id) BEGIN SELECT RAISE(ABORT, 'consent receipts are append-only'); END");
+    lib.registered('consent-no-update');
+    lib.registered('consent-no-delete');
+    lib.registered('consent-no-replace');
   } catch { /* a platform without triggers: the module still exposes no update path */ }
   const holds = lib.rows("SELECT name FROM pragma_table_info('erasure_holds')").map(r => r.name);
-  if (holds.length && !holds.includes('tenant')) lib.exec('ALTER TABLE erasure_holds ADD COLUMN tenant TEXT');
+  if (holds.length && !holds.includes('tenant')) lib.registered('erasure-holds-tenant');
   });
   ensured.add(lib);
 }

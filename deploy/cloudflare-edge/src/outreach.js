@@ -55,8 +55,8 @@ function migrateStaffing(lib) {
       SELECT project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, ${tenantSql} FROM staffing`);
     lib.log('schema', 'atlas', 'schema copy', 'staffing');
   });
-  lib.exec('DROP TABLE staffing');
-  lib.exec('ALTER TABLE staffing_v2 RENAME TO staffing');
+  lib.registered('drop-staffing');
+  lib.registered('rename-staffing');
 }
 const DDL = [
   `CREATE TABLE IF NOT EXISTS outreach (id TEXT PRIMARY KEY, kind TEXT, subject_id TEXT, channel TEXT, to_email TEXT, status TEXT, reason TEXT,
@@ -75,13 +75,13 @@ export function ensure(lib) {
   migrateStaffing(lib);
   for (const q of DDL) lib.exec(q);
   const outreachCols = lib.rows("SELECT name FROM pragma_table_info('outreach')").map(r => r.name);
-  if (outreachCols.length && !outreachCols.includes('tenant')) lib.exec("ALTER TABLE outreach ADD COLUMN tenant TEXT NOT NULL DEFAULT ''");
+  if (outreachCols.length && !outreachCols.includes('tenant')) lib.registered('outreach-tenant');
   const withDirectory = lib.rows("SELECT name FROM pragma_table_info('outreach')").map(r => r.name);
-  if (withDirectory.length && !withDirectory.includes('directory_tenant')) lib.exec("ALTER TABLE outreach ADD COLUMN directory_tenant TEXT NOT NULL DEFAULT ''");
+  if (withDirectory.length && !withDirectory.includes('directory_tenant')) lib.registered('outreach-directory-tenant');
   const withConversation = lib.rows("SELECT name FROM pragma_table_info('outreach')").map(r => r.name);
-  if (withConversation.length && !withConversation.includes('conversation_id')) lib.exec("ALTER TABLE outreach ADD COLUMN conversation_id TEXT NOT NULL DEFAULT ''");
+  if (withConversation.length && !withConversation.includes('conversation_id')) lib.registered('outreach-conversation');
   const withKey = lib.rows("SELECT name FROM pragma_table_info('outreach')").map(r => r.name);
-  if (withKey.length && !withKey.includes('idempotency_key')) lib.exec('ALTER TABLE outreach ADD COLUMN idempotency_key TEXT');
+  if (withKey.length && !withKey.includes('idempotency_key')) lib.registered('outreach-idempotency');
   });
   ensured.add(lib);
 }

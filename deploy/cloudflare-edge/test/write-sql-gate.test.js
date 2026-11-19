@@ -6,7 +6,8 @@ import { Library, sqlOf } from './hold.js';
 import { memorySql } from './sqlite.js';
 import { ensure as ensureOutreach } from '../src/outreach.js';
 import { ensure as ensurePrivacy } from '../src/privacy.js';
-import { splitStatements } from '../src/sql-text.js';
+import { MIGRATIONS } from '../src/library.js';
+import { splitStatements, sqlShape } from '../src/sql-text.js';
 
 const SALT = 'synthetic-log-salt';
 const STAMP = '2026-11-17T05:00:00.000Z';
@@ -29,6 +30,15 @@ function open() {
 function tableExists(lib, name) {
   return lib.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", name).length === 1;
 }
+
+test('registered migrations do not target audit', () => {
+  for (const [name, sql] of Object.entries(MIGRATIONS)) {
+    assert.equal(splitStatements(sql).length, 1, name);
+    const shape = sqlShape(sql);
+    assert.doesNotMatch(shape, /\baudit\b/, name);
+    assert.doesNotMatch(shape, /\bas select\b/, name);
+  }
+});
 
 test('a trigger body is one statement, and a semicolon in a string is not a split', () => {
   const trigger = "CREATE TRIGGER IF NOT EXISTS consent_receipts_no_update BEFORE UPDATE ON consent_receipts BEGIN SELECT RAISE(ABORT, 'consent receipts are append-only'); END";
