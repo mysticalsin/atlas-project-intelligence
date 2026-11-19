@@ -62,4 +62,18 @@ Each change was restored and was not committed. On the fix, `test/write-v12-curs
 
 Both quote spellings of one verb are the same token path. Removing that verb kills both spellings. A quote-class change is not a separate kill, because the parenthesis inside the name never becomes a depth change once it is one token.
 
-The tests are `b5464eb596de267bcbc6d647047a747661be74bf`. The fix is `7bb17cb6468177f65f79809306df5c4f1c1df445`. This commit is the local head. The six gates were not run. They stay ready for the freeze.
+The tests are `b5464eb596de267bcbc6d647047a747661be74bf`. The fix is `7bb17cb6468177f65f79809306df5c4f1c1df445`. The six gates were not run on that commit.
+
+## Devin, one lexer
+
+verified. The fallback classifier uses one lexer. `sqlTokens` handles `'...'`, `"..."`, `[...]`, and `` `...` ``, drops comments, and stores parenthesis depth on each token. `hasStatementVerb`, `readWords`, and `mutatingBody` read those tokens and do not walk raw characters. The statement verb is the first verb keyword at depth 0 after the CTE list.
+
+The explicit set has 293 statements. It includes `WITH "x(" AS (SELECT 1) DELETE FROM audit`, the alias form, and the empty single-quote, double-quote, bracket, and backtick names, in every quote style, for `DELETE`, `UPDATE`, `INSERT`, and `REPLACE`. The seeded generator uses seed `20261119` and adds 384 statements. Together that is 677 statements and 1354 door checks. Each one is `SQL_DOOR` on the native door and the fallback door, and the audit row does not change.
+
+Dropping `"` from the lexer makes the explicit test fail: native `WITH "x(" AS (SELECT 1) DELETE FROM audit` is `ALLOW !== SQL_DOOR`. The quote-class change was restored and was not committed.
+
+`splitBody` stays the trigger-boundary splitter. `scanSemi` stays the door's bare-semicolon check. Neither decides the statement verb. The record is in `handoff/untangle-decision-log.md`.
+
+The tests are `51874d036609a23bb06b3ea60b0319065a2ec414`. The fix is `a64289cba866f655076880a283a721526912b8b9`.
+
+This commit is the local head. The six gates were not run. They stay ready for the freeze.

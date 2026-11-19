@@ -10,6 +10,14 @@ Parent is the frozen v8 head `b9d1ac135fd6ea5bf171a1832448419ea608e1f0`. No cons
 
 `splitBody` still walks characters. It is the trigger-boundary splitter: `BEGIN` / `END` depth and a dotted `begin` are a state machine, and the three consent triggers depend on that split. Pragma classification does not use it to decide whether a name is quoted or whether an equals sign is an assignment. The whole string is classified with `sqlTokens` before `statementTail` or `exec`, so a pragma later in a multi-statement string is refused before the first statement is prepared.
 
+## Fallback lexer (v12)
+
+The fallback classifier had a third bypass of the same shape: a second scan disagreed with the lexer about a parenthesis inside a quote, so a WITH write was treated as a read and the door did not run. The fix is not another quote special case.
+
+`sqlTokens` is the one lexer for that decision. It handles `'...'`, `"..."`, `[...]`, and `` `...` ``, drops comments, and records the parenthesis depth on every token. A parenthesis inside any of those quotes is not a depth change. `hasStatementVerb`, `readWords`, and `mutatingBody` read those tokens. None of them walks the raw characters. The statement verb is the first verb keyword at depth 0 after the CTE list. A name or an alias, including one spelled like a verb, is not that verb.
+
+`provenRead` uses the same semicolon tokens for a second statement. `splitBody` remains the trigger-boundary splitter, and `scanSemi` remains the door's bare-semicolon check. Those two are not the verb decision.
+
 ## Authorizer
 
 `node:sqlite` `DatabaseSync` on this host (Node v22.23.4) exposes `aggregate`, `applyChangeset`, `close`, `exec`, `function`, `prepare`, and the load-extension and session methods. It has no `authorizer` and no `setAuthorizer`. `StatementSync` has no `readonly` and no `readOnly`. `constants` has no `SQLITE_DBCONFIG_DEFENSIVE` and no db-config name. Devin's partial on `4c11808c` confirmed the same three gaps. The fallback path hides `process.getBuiltinModule('node:sqlite')`, so it cannot install a callback either. Both paths stay on the text classifier. A miss there is a direct bypass. No package was added.
