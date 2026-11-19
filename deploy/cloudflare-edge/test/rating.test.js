@@ -574,13 +574,12 @@ function fakeClock() {
     },
   };
 }
-// The current turn: microtasks plus the crypto tick. Timers are not fired.
-const microtasks = async () => {
-  for (let i = 0; i < 8; i++) {
-    await new Promise(r => setImmediate(r));
-    for (let j = 0; j < 50; j++) await Promise.resolve();
-  }
-};
+// Yield until the predicate. A fixed turn count returns before crypto.subtle
+// finishes when the machine is busy, and that is not a timer.
+async function spinUntil(pred, message) {
+  for (let i = 0; i < 100000 && !pred(); i++) await new Promise(r => setImmediate(r));
+  assert.ok(pred(), message);
+}
 
 test('R15 budgets and the hedge: the deadline holds against a fetcher that ignores abort; the fastest answer wins', async () => {
   const budgets = { interactive: { deadlineMs: 200, hedgeAtMs: 70, minAttemptMs: 30 }, background: { deadlineMs: 600, attemptMs: 200, retries: 2, backoffMs: 50, minAttemptMs: 30 } };
@@ -588,7 +587,7 @@ test('R15 budgets and the hedge: the deadline holds against a fetcher that ignor
   let clk = fakeClock();
   let w = await world({ reply: i => (i === 0 ? { status: 503 } : {}), raterOpts: { budgets, now: clk.now, delay: clk.delay } });
   let pending = w.l.review(OWNER, await saved(w.l));
-  await microtasks();
+  await spinUntil(() => w.fetcher.calls.length >= 2, 'the duplicate launched in this turn');
   assert.equal(w.fetcher.calls.length, 2);
   assert.ok(clk.held(budgets.interactive.hedgeAtMs) && !clk.elapsed(budgets.interactive.hedgeAtMs), 'no 70 ms timer resolved');
   const q3 = (await pending).state.quality;
@@ -596,11 +595,13 @@ test('R15 budgets and the hedge: the deadline holds against a fetcher that ignor
   // A fetcher that never answers falls back when the clock reaches the deadline.
   clk = fakeClock();
   w = await world({ reply: () => ({ hang: true }), raterOpts: { budgets, now: clk.now, delay: clk.delay } });
-  pending = w.l.review(OWNER, await saved(w.l));
-  await microtasks();
+  let settled = false;
+  pending = w.l.review(OWNER, await saved(w.l)).then(r => { settled = true; return r; });
+  await spinUntil(() => w.fetcher.calls.length >= 1 && clk.held(budgets.interactive.deadlineMs), 'the deadline wait is armed');
+  assert.equal(w.fetcher.calls.length, 1);
   await clk.advance(budgets.interactive.deadlineMs);
-  const q = (await Promise.race([pending, Promise.resolve(null)]))?.state?.quality;
-  assert.ok(q, 'deadline settled the review');
+  await spinUntil(() => settled, 'deadline settled the review');
+  const q = (await pending).state.quality;
   assert.equal(q.fallbackReason, 'timeout');
   assert.deepEqual([q.fallbackReason, q.engine, w.fetcher.calls.length], ['timeout', 'review-agent', 2]);
   assert.deepEqual([w.metrics.at(-1).attempts, w.metrics.at(-1).hedged, w.metrics.at(-1).fallback], [2, 1, 3]);
@@ -608,9 +609,10 @@ test('R15 budgets and the hedge: the deadline holds against a fetcher that ignor
   clk = fakeClock();
   w = await world({ reply: i => (i === 0 ? { hang: true } : { model: 'jev-duplicate' }), raterOpts: { budgets, now: clk.now, delay: clk.delay } });
   pending = w.l.review(OWNER, await saved(w.l));
-  await microtasks();
+  await spinUntil(() => w.fetcher.calls.length >= 1 && clk.held(budgets.interactive.hedgeAtMs), 'the hedge wait is armed');
   assert.equal(w.fetcher.calls.length, 1, 'the duplicate waits for the hedge timer');
   await clk.fire(budgets.interactive.hedgeAtMs);
+  await spinUntil(() => w.fetcher.calls.length >= 2, 'the hedge timer launches the duplicate');
   assert.equal(w.fetcher.calls.length, 2, 'the hedge timer launches the duplicate');
   const q2 = (await pending).state.quality;
   assert.deepEqual([q2.engine, q2.model, w.metrics.at(-1).hedged, w.metrics.at(-1).attempts], ['jev', 'jev-duplicate', 1, 2]);
