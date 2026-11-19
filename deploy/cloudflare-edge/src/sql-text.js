@@ -5,7 +5,7 @@
 // Neither path calls RegExp.prototype.exec. A non-boolean, a null, or a throw
 // from a snapshotted string or array method counts as a write.
 
-import { charCodeAt, includes, least, lower, most, primordialsHold, push, slice, some, textOf, trim } from './primordials.js';
+import { charCodeAt, includes, least, lower, most, primordialsHold, push, slice, textOf, trim } from './primordials.js';
 
 function codeAt(c) {
   const n = charCodeAt(c, 0);
@@ -79,11 +79,43 @@ function listed(list, word) {
   for (let i = 0; i < list.length; i++) if (list[i] === text) return true;
   return false;
 }
-function verbOf(word) {
-  return listed(VERBS, word);
-}
 function writeOf(word) {
   return listed(WRITES, word);
+}
+// A parenthesized write is a statement when a clause follows it. An argument,
+// an alias, or a quoted name is not.
+const NESTED = ['from', 'into', 'table', 'index', 'view', 'trigger', 'set', 'values', 'database', 'schema'];
+function hasStatementVerb(sql) {
+  const tokens = sqlTokens(sql);
+  let expect = true;
+  let prev = '';
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token.kind === 'op' && token.text === ';') { expect = true; prev = ''; continue; }
+    if (token.kind === 'op' && token.text === '(') { expect = 'nested'; prev = ''; continue; }
+    if (token.kind === 'op') { prev = token.text; continue; }
+    if (token.kind !== 'word') continue;
+    const next = tokens[i + 1];
+    const closed = next && (next.text === ')' || next.text === ',');
+    const explained = prev === 'explain' || prev === 'plan';
+    if (!token.quoted && prev !== 'as' && prev !== '.' && !closed && listed(VERBS, token.text)) {
+      if (expect === true || explained) return true;
+      if (expect === 'nested' && next && next.kind === 'word' && listed(NESTED, next.text)) return true;
+    }
+    if (!token.quoted && (token.text === 'explain' || token.text === 'plan' || (prev === 'explain' && token.text === 'query'))) expect = true;
+    else expect = false;
+    prev = token.quoted ? '' : token.text;
+  }
+  return false;
+}
+function openingVerb(sql) {
+  const tokens = sqlTokens(sql);
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token.kind !== 'word') continue;
+    return !token.quoted && listed(VERBS, token.text);
+  }
+  return false;
 }
 
 function wordAt(text, i) {
@@ -359,7 +391,7 @@ export function sqlTokens(sql) {
     if (c === '"' || c === '`' || c === '[') {
       const quoted = quotedName(text, i);
       i = quoted.next;
-      if (quoted.name) mustPush(tokens, { kind: 'word', text: mustLower(quoted.name) });
+      if (quoted.name) mustPush(tokens, { kind: 'word', text: mustLower(quoted.name), quoted: true });
       continue;
     }
     if (c === '=' || c === '(' || c === ')' || c === '.' || c === ';') {
@@ -410,11 +442,10 @@ function mutatingBody(sql) {
   const verb = words[0] || '';
   if (writableAssignment(sql)) return true;
   if (pragmaVerb(words) && !pragmaRead(sql)) return true;
-  if (verbOf(verb)) return true;
+  if (openingVerb(parts[0])) return true;
   // EXPLAIN DELETE still names a mutation. EXPLAIN QUERY PLAN only describes one, and a plan read stays a read.
   const plan = verb === 'explain' && words[1] === 'query' && words[2] === 'plan';
-  const named = some(words, (word) => verbOf(word));
-  if (named !== true && named !== false) return true;
+  const named = hasStatementVerb(parts[0]);
   if (verb === 'explain' && !plan && named) return true;
   if (verb !== 'with') return false;
   const text = parts[0];
@@ -593,13 +624,13 @@ export function provenRead(sql) {
     if (parts.length !== 1) return false;
     const words = leadingWords(parts[0]);
     if (pragmaVerb(words)) return false;
-    return readWords(words);
+    return readWords(words, parts[0]);
   } catch {
     return false;
   }
 }
 
-function readWords(words) {
+function readWords(words, sql) {
   if (!words || !words.length) return false;
   let i = 0;
   if (words[0] === 'explain') {
@@ -608,13 +639,8 @@ function readWords(words) {
   }
   const verb = words[i] || '';
   if (verb === 'attach' || verb === 'detach') return false;
-  if (verb === 'with') {
-    for (let k = i + 1; k < words.length; k++) if (verbOf(words[k])) return false;
-    return true;
-  }
-  if (!listed(READS, verb)) return false;
-  for (let k = i + 1; k < words.length; k++) if (verbOf(words[k])) return false;
-  return true;
+  if (verb === 'with' || listed(READS, verb)) return !hasStatementVerb(sql);
+  return false;
 }
 
 function pragmaVerb(words) {
