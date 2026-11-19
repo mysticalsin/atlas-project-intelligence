@@ -172,9 +172,12 @@ function wordAt(text, i) {
   while (j < text.length && isSqlIdChar(text[j])) j++;
   return mustSlice(text, i, j);
 }
-// tokenize.c CC_VARNUM and CC_DOLLAR / CC_VARALPHA. '?' and '?NNN' are numeric.
-// '$' ':' '@' '#' take IdChar, then '::' segments, then one '(...)' that stops at
-// the first ')', space, or end. Quotes and comments inside that span are text.
+// SQLite 3.53.4 src/tokenize.c, the version this host's node:sqlite reports.
+// '?' and '?NNN' are CC_VARNUM, lines 504-507 (the class is line 35).
+// '$' '@' ':' '#' are CC_DOLLAR / CC_VARALPHA, lines 509-537 (classes are lines 33-34).
+// IdChar is line 168. The '(' suffix is lines 519-528 and stops at sqlite3Isspace or ')'.
+// '::' is lines 529-530. n==0 is TK_ILLEGAL at line 536.
+// A quote or a comment inside the suffix is text. '$' inside an identifier is IdChar.
 function takeVariable(text, i) {
   const sigil = text[i];
   if (sigil === '?') {

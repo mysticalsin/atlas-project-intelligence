@@ -99,14 +99,52 @@ function bodyOf(form, draw) {
   }
   return 'a';
 }
+function wrapped(form, write) {
+  return 'WITH x AS (SELECT ' + form + ' ) ' + write;
+}
+// Every SQLite variable form, including an unbalanced suffix and a quote or a
+// comment marker inside it. The space before the CTE's ')' keeps that paren
+// outside a suffix that stops at the first ')' or at a space.
+const REQUIRED_FORMS = [
+  '?',
+  '?12',
+  ':name',
+  '@name',
+  '$name',
+  '#name',
+  '$name(x)',
+  '$a::b',
+  "$name(')",
+  '$name(")',
+  '$name(`)',
+  '$name(((x)',
+  '$name(--)',
+  '$name(/*)',
+  '$name(',
+  "$name('",
+  '$name(--',
+  '$name(/*',
+  '$a::b(x)',
+  "$a::b(')",
+  '$a::b(--)',
+  '$a::b(/*)',
+  ':name(((x)',
+  "@name(')",
+  '#name(--)',
+  '#name(/*)',
+];
 const next = lcg(SEED);
 const fuzz = [];
+for (const form of REQUIRED_FORMS) {
+  for (const write of AUDIT_WRITES) fuzz.push(wrapped(form, write));
+}
 for (let n = 0; n < FUZZ_N; n++) {
   const sigil = SIGILS[next() % SIGILS.length];
   const form = FORMS[next() % FORMS.length];
   const body = bodyOf(form, next);
   for (const write of AUDIT_WRITES) fuzz.push('WITH x AS (SELECT ' + sigil + body + ') ' + write);
 }
+const SUFFIX_FORMS = REQUIRED_FORMS.filter((form) => form.includes('(') || form.includes("'") || form.includes('"') || form.includes('`') || form.includes('-') || form.includes('/'));
 function asRefs(sql) {
   return sql
     .replaceAll('DELETE FROM audit', 'DELETE FROM refs')
@@ -176,10 +214,67 @@ test('both doors refuse a named variable and keep refs and audit', () => {
 
 test('a seeded variable fuzz stays a write on both doors', () => {
   assert.equal(SEED, 20261120);
-  assert.equal(fuzz.length, 96);
+  assert.equal(REQUIRED_FORMS.length, 26);
+  assert.equal(fuzz.length, 200);
+  for (const form of REQUIRED_FORMS) {
+    assert.ok(fuzz.includes(wrapped(form, 'DELETE FROM audit')), form);
+  }
   doors(fuzz, { refs: false });
   doors(fuzz.map(asRefs), { refs: true });
-  console.log('variable fuzz seed ' + SEED + ' explicit ' + EXPLICIT.length + ' generated ' + fuzz.length + ' audit-door-checks ' + (fuzz.length * 2) + ' refs-door-checks ' + (fuzz.length * 2));
+  console.log('variable fuzz seed ' + SEED + ' forms ' + REQUIRED_FORMS.length + ' explicit ' + EXPLICIT.length + ' generated ' + fuzz.length + ' audit-door-checks ' + (fuzz.length * 2) + ' refs-door-checks ' + (fuzz.length * 2));
+});
+
+test('a dollar suffix parenthesis stays inside the variable', () => {
+  const cases = [];
+  for (const form of SUFFIX_FORMS) {
+    cases.push(wrapped(form, 'DELETE FROM refs'));
+    cases.push(wrapped(form, 'DELETE FROM audit'));
+  }
+  assert.ok(cases.includes("WITH x AS (SELECT $name(') ) DELETE FROM refs"));
+  assert.ok(cases.includes('WITH x AS (SELECT $name(((x) ) DELETE FROM refs'));
+  assert.ok(cases.includes('WITH x AS (SELECT $name(--) ) DELETE FROM audit'));
+  assert.ok(cases.includes('WITH x AS (SELECT $name(/*) ) DELETE FROM audit'));
+  assert.ok(cases.includes('WITH x AS (SELECT $a::b(/*) ) DELETE FROM refs'));
+  doors(cases, { refs: true });
+});
+
+test('a variable is not a bare word', () => {
+  const reads = [
+    'WITH x AS (SELECT 1) $delete FROM refs',
+    'WITH x AS (SELECT 1) :delete FROM refs',
+    'WITH x AS (SELECT 1) @delete FROM refs',
+    'WITH x AS (SELECT 1) #delete FROM refs',
+    'WITH x AS (SELECT 1) $a::delete FROM refs',
+  ];
+  for (const sql of reads) assert.equal(provenRead(sql), true, sql);
+});
+
+test('a named parameter is refused on both doors', () => {
+  const named = ['SELECT $name', 'SELECT :name', 'SELECT @name', 'SELECT #name', 'SELECT $delete', 'SELECT $a::b', 'SELECT $name(x)', 'SELECT ?', 'SELECT ?12'];
+  const raw = memorySql();
+  const lib = open(raw);
+  seed(lib);
+  const before = snap(raw);
+  assert.equal(codeOf(() => lib.exec('SELECT ?', 7)), 'ALLOW');
+  assert.equal(codeOf(() => lib.exec('SELECT ?12', 7)), 'ALLOW');
+  for (const sql of named) {
+    if (sql === 'SELECT ?' || sql === 'SELECT ?12') continue;
+    assert.equal(codeOf(() => lib.exec(sql)), 'SQL_DOOR', sql);
+    unchanged(raw, before, sql);
+  }
+  hide(() => {
+    const inner = memorySql();
+    const door = shut(inner);
+    seed(door);
+    const innerBefore = snap(inner);
+    assert.equal(codeOf(() => door.exec('SELECT ?', 7)), 'ALLOW');
+    assert.equal(codeOf(() => door.exec('SELECT ?12', 7)), 'ALLOW');
+    for (const sql of named) {
+      if (sql === 'SELECT ?' || sql === 'SELECT ?12') continue;
+      assert.equal(codeOf(() => door.exec(sql)), 'SQL_DOOR', sql);
+      unchanged(inner, innerBefore, sql);
+    }
+  });
 });
 
 test('question-mark parameters stay bound and a dollar inside a name is not a parameter', () => {
@@ -189,24 +284,19 @@ test('question-mark parameters stay bound and a dollar inside a name is not a pa
   const before = snap(raw);
   assert.equal(codeOf(() => lib.exec('SELECT ?', 7)), 'ALLOW');
   assert.equal(codeOf(() => lib.exec('SELECT ?1', 7)), 'ALLOW');
+  assert.equal(codeOf(() => lib.exec('SELECT ?12', 7)), 'ALLOW');
   assert.equal(codeOf(() => lib.exec("SELECT '$a('")), 'ALLOW');
   assert.equal(codeOf(() => lib.exec('SELECT 1 AS x$y')), 'ALLOW');
-  assert.equal(codeOf(() => lib.exec('SELECT $a')), 'SQL_DOOR');
-  assert.equal(codeOf(() => lib.exec('SELECT :a')), 'SQL_DOOR');
-  assert.equal(codeOf(() => lib.exec('SELECT @a')), 'SQL_DOOR');
-  assert.equal(codeOf(() => lib.exec('SELECT #a')), 'SQL_DOOR');
-  assert.equal(codeOf(() => lib.exec('SELECT $a::b')), 'SQL_DOOR');
-  assert.equal(codeOf(() => lib.exec('SELECT $::b')), 'SQL_DOOR');
-  unchanged(raw, before, 'named reads');
+  unchanged(raw, before, 'question marks');
   hide(() => {
     const inner = memorySql();
     const door = shut(inner);
     seed(door);
     const innerBefore = snap(inner);
     assert.equal(codeOf(() => door.exec('SELECT ?', 7)), 'ALLOW');
-    assert.equal(codeOf(() => door.exec('SELECT $a')), 'SQL_DOOR');
+    assert.equal(codeOf(() => door.exec('SELECT ?12', 7)), 'ALLOW');
     assert.equal(codeOf(() => door.exec("SELECT '$a('")), 'ALLOW');
     assert.equal(codeOf(() => door.exec('SELECT 1 AS x$y')), 'ALLOW');
-    unchanged(inner, innerBefore, 'fallback named reads');
+    unchanged(inner, innerBefore, 'fallback question marks');
   });
 });
