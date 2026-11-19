@@ -1,6 +1,6 @@
 # v10 decision log
 
-Cursor bc-0baf72cc on frozen `4c11808ca219d2b8c8dcd83a537d27f20c9cefa5` is REQUEST CHANGES, so v9 is not the review head. v9 is not amended. This head starts from `2578349bd0d2d9951aff2e4d233bec9e33c5e644`, which already holds the Sentinel name-resolver, pragma-verb, eval-plant, and scanner fixes. No constitution file exists, and none was added. No specify CLI and no new dependency. No UI change. `statementTail` in `test/sqlite.js` stays. HEAD 2 stays parked at `89c630293019cf7285265a44fb7e03a4df333f8b`.
+Cursor bc-0baf72cc on frozen `4c11808ca219d2b8c8dcd83a537d27f20c9cefa5` is REQUEST CHANGES, so v9 is not the review head. v9 is not amended. This head starts from `2578349bd0d2d9951aff2e4d233bec9e33c5e644`, which already holds the Sentinel name-resolver, pragma-verb, eval-plant, and scanner fixes. No constitution file exists, and none was added. No specify CLI and no new dependency. The 320 px studio controls were changed later in this round. `statementTail` in `test/sqlite.js` stays. HEAD 2 stays parked at `89c630293019cf7285265a44fb7e03a4df333f8b`.
 
 ## Red
 

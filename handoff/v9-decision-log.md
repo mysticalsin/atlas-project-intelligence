@@ -58,13 +58,13 @@ Each one was restored and was not committed.
 - Removing the eval-binding walk: the object-pattern plant was 0 pass, 1 fail, `AssertionError` expected `true` actual `false` (`/tmp/v9-mut-eval.txt`).
 - Parsing the insights body before the role check: the owner with no body was 0 pass, 1 fail, `AssertionError` `400 !== 403` (`/tmp/v9-mut-insights.txt`).
 
-## Local follow-up, not pushed
+## Follow-up, now on the review branch
 
-Sentinel accepted `4c11808ca219d2b8c8dcd83a537d27f20c9cefa5` with residuals. That head stays frozen. This branch is `cursor/v9-sentinel-residuals-660c` and is not pushed. It ships only if another round is asked for.
+Sentinel accepted `4c11808ca219d2b8c8dcd83a537d27f20c9cefa5` with residuals. That head stays frozen. The follow-up was prepared on `cursor/v9-sentinel-residuals-660c`. Those commits are on the review branch as of v10. They are not an unpushed side branch.
 
 The name resolver keeps clause words and known table and index names in frozen arrays. It writes names by index and asks the captured `includes`. `provenRead` treats a pragma as a read only when the statement's verb is `PRAGMA`, including `EXPLAIN` and `EXPLAIN QUERY PLAN`. The eval tripwire also flags `[eval][0]()`, `({e: eval}).e`, `Reflect.apply(eval)`, `.map(eval)`, and `Function` that is not a bare identifier. A doubled quote inside `"..."` or `` `...` `` stays inside the identifier. `[...]` and doubled backticks are not placeholders, and a doubled backtick does not end the quoted span in the statement split or the semicolon scan. `DELETE FROM "audit""tail"` is `ERR_SQLITE_ERROR` on the recorded door. The four scanners are compared in `test/write-v9-sentinel.test.js`.
 
-Red `c84d7d23e7323a876fb1b3c1835d75d79db3fae3` is that test only: 4 tests, 0 pass, 4 fail, each an `AssertionError`. Fix `b2f7db8df5192abb097ce03c9599370a7a6eeaf0` is `library.js`, `sql-text.js`, and `test/write-lint.js`. It does not edit that test. After that commit, the new file is 4 pass, 0 fail, and `test/write-*.test.js` is 202 pass, 0 fail. The six gates were not run.
+Red `c84d7d23e7323a876fb1b3c1835d75d79db3fae3` is that test only: 4 tests, 0 pass, 4 fail, each an `AssertionError`. Fix `b2f7db8df5192abb097ce03c9599370a7a6eeaf0` is `library.js`, `sql-text.js`, and `test/write-lint.js`. It does not edit that test. After that commit, the new file is 4 pass, 0 fail, and `test/write-*.test.js` is 202 pass, 0 fail. The six gates were not run for that branch on its own. v10 carried the commits and gated them there.
 
 Each mutation below was restored and was not committed.
 
