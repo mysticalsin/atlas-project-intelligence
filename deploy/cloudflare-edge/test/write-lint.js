@@ -144,6 +144,11 @@ function taintPattern(id, file, node, tainted, exec) {
 function walk(node, file, tainted, exec, params) {
   if (!node || typeof node.type !== 'string') return;
   if (node.type === 'FunctionDeclaration' || node.type === 'FunctionExpression' || node.type === 'ArrowFunctionExpression') {
+    for (const param of node.params || []) {
+      if (param?.type === 'AssignmentPattern' && param.left?.type === 'ObjectPattern' && isHandleSource(param.right, file, tainted)) {
+        push(exec, file, param, 'raw handle');
+      }
+    }
     const next = new Set(tainted);
     const more = params?.get(node);
     if (more) for (const name of more) next.add(name);
@@ -162,7 +167,9 @@ function walk(node, file, tainted, exec, params) {
   if (node.type === 'AssignmentExpression' && node.left?.type === 'Identifier' && isTaintedInit(node.right, file, tainted)) tainted.add(node.left.name);
   if (isHandleMember(node, file)) push(exec, file, node, 'raw handle');
   if (node.type === 'MemberExpression' && (propName(node) === '_enter' || propName(node) === 'registered')) push(exec, file, node, 'private door');
-  if (node.type === 'CallExpression' && unwrap(node.callee)?.name === 'eval') push(exec, file, node, 'raw exec');
+  if (node.type === 'CallExpression' && isEvalCall(node)) push(exec, file, node, 'raw exec');
+  if (node.type === 'CallExpression' && isReflectApplyExec(node, file, tainted)) push(exec, file, node, 'raw exec');
+  if (node.type === 'AssignmentExpression' && isWeakMapPrototype(node.right)) push(exec, file, node, 'raw handle');
   if ((node.type === 'NewExpression' || node.type === 'CallExpression') && unwrap(node.callee)?.name === 'Function') push(exec, file, node, 'raw exec');
   if (node.type === 'CallExpression' && propName(peel(node.callee)) === 'rewriteAudit' && file !== 'subject-rights.js' && file !== 'retention.js') push(exec, file, node, 'audit erasure');
   if (node.type === 'CallExpression' && isRawCall(node, file, tainted) && !(file === 'library.js' && isPrivateExec(node))) push(exec, file, node, 'raw exec');
@@ -199,6 +206,7 @@ function parameterTaint(tree, file) {
         if (prop?.type === 'Property' && prop.value?.type === 'Identifier' && prop.key?.type === 'Identifier' && prop.key.name === 'get') primary.add(prop.value.name);
       }
     }
+    if (node.type === 'AssignmentExpression' && node.left?.type === 'Identifier' && isWeakMapPrototype(node.right)) aliases.add(node.left.name);
     if (node.type === 'AssignmentExpression' && node.left?.type === 'Identifier' && isHandleSource(node.right, file, primary)) primary.add(node.left.name);
     if (node.type === 'CallExpression' && unwrap(node.callee)?.type === 'Identifier') {
       const fn = functions.get(unwrap(node.callee).name);
@@ -217,6 +225,22 @@ function parameterTaint(tree, file) {
     }
   }
   return extra;
+}
+
+function isEvalCall(node) {
+  const callee = peel(node.callee);
+  if (callee?.type === 'Identifier' && callee.name === 'eval') return true;
+  return callee?.type === 'MemberExpression' && propName(callee) === 'eval';
+}
+
+function isReflectApplyExec(node, file, tainted) {
+  const callee = unwrap(node.callee);
+  if (callee?.type !== 'MemberExpression' || unwrap(callee.object)?.name !== 'Reflect' || propName(callee) !== 'apply') return false;
+  return (node.arguments || []).some((arg) => {
+    const value = unwrap(arg);
+    if (value?.type === 'MemberExpression' && propName(value) === 'exec') return true;
+    return isHandleLike(value, file, tainted);
+  });
 }
 
 function isWeakMapPrototype(node) {
