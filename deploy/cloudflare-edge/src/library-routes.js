@@ -71,7 +71,10 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
     return json({ error: 'Commercial insights are for reviewers.' }, 403);
   }
   let body = {};
-  if (method === 'POST' && parts[0] === 'insights') {
+  // Insights and reinstate equate an empty body with {}. Reinstate does not read the
+  // body; the role check stays in reinstate() so a missing row is still 404.
+  // Every other POST still rejects an empty body as invalid JSON.
+  if (method === 'POST' && (parts[0] === 'insights' || parts[1] === 'reinstate')) {
     const raw = await request.text();
     if (!String(raw || '').trim()) body = {};
     else { try { body = JSON.parse(raw); } catch { return json({ error: 'Invalid JSON.' }, 400); } }
