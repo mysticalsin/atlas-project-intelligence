@@ -498,6 +498,7 @@ export class Library {
     }
     const _sql = this.#sql;
     const consentSweep = kind === 'housekeeping' && reason === 'consent-retention' && sqlShape(sql) === sqlShape(CONSENT_DELETE);
+    if (consentSweep && !this.chainVerdict().ok) throw Object.assign(fail(409, 'The audit chain is tampered.'), { code: 'CHAIN_DAMAGED' });
     const bound = consentSweep ? [consentCutoff(this.now())] : params;
     const prior = consentSweep ? Number(this.rows('SELECT COUNT(*) AS n FROM consent_receipts')[0].n) : 0;
     const result = _sql.exec(sql, ...bound);
