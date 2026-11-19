@@ -47,3 +47,15 @@ Each one was restored and was not committed.
 - `classifyChain` calling live `rows.some`: the poisoned verdict was 0 pass, 1 fail, `AssertionError` expected `false` actual `true` (`/tmp/v10-mut-some.txt`).
 - Treating a null `some` result as not tampered: the same verdict was 0 pass, 1 fail, `AssertionError` expected `false` actual `true` (`/tmp/v10-mut-some-null.txt`).
 - Removing `analyze` from the verb list: a shut `ANALYZE` was 0 pass, 1 fail, `AssertionError` `ALLOW !== SQL_DOOR` (`/tmp/v10-mut-analyze.txt`).
+
+## Devin partial
+
+Devin's partial on `4c11808c` confirmed Node v22.23.4 has no `setAuthorizer`, no statement `readOnly`, and no `DBCONFIG_DEFENSIVE`. Re-checked here: `DatabaseSync` has no `setAuthorizer`, `StatementSync` has no `readonly` or `readOnly`, and `node:sqlite` constants have no defensive or db-config name. The classifier is the only layer. That is recorded in `handoff/untangle-decision-log.md`.
+
+Each Cursor item is its own test in `test/write-v10-door.test.js`. The file is 4 tests. A mutant of that fix, restored and not committed, turns that one test red and leaves the other three green.
+
+- Setter end put back to `tokens.length`: `a pragma setter with a tail is refused before prepare on both paths` is `AssertionError` `SQL_MULTI !== SQL_DOOR` on `PRAGMA foreign_keys(OFF); SELECT 1` in `schema()`, native. The same test also runs the registered migration.
+- `isEvalValue` leaving the sequence in place: `a comma eval binding is a violation` is `AssertionError` expected `true` actual `false` on `const e = (0, eval); e('1');`.
+- `classifyChain` calling `rows.some`: `a patched some cannot make a tampered chain ok` is `AssertionError` expected `false` actual `true`.
+- `analyze` removed from the verb list: `a shut door refuses ANALYZE and transaction control on both paths` is `AssertionError` `ALLOW !== SQL_DOOR` on `ANALYZE` native.
+- `begin`, `savepoint`, and `release` removed, with `analyze` left in place: the same shut-door test is `AssertionError` `ERR !== SQL_DOOR` on `SAVEPOINT s` native.

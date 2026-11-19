@@ -12,7 +12,7 @@ Parent is the frozen v8 head `b9d1ac135fd6ea5bf171a1832448419ea608e1f0`. No cons
 
 ## Authorizer
 
-`node:sqlite` `DatabaseSync` on this host (Node v22.23.4) exposes `aggregate`, `applyChangeset`, `close`, `exec`, `function`, `prepare`, and the load-extension and session methods. It has no `authorizer` and no `setAuthorizer`. `StatementSync` has no `readonly`. The fallback path hides `process.getBuiltinModule('node:sqlite')`, so it cannot install a callback either. Both paths stay on the text classifier. No package was added.
+`node:sqlite` `DatabaseSync` on this host (Node v22.23.4) exposes `aggregate`, `applyChangeset`, `close`, `exec`, `function`, `prepare`, and the load-extension and session methods. It has no `authorizer` and no `setAuthorizer`. `StatementSync` has no `readonly` and no `readOnly`. `constants` has no `SQLITE_DBCONFIG_DEFENSIVE` and no db-config name. Devin's partial on `4c11808c` confirmed the same three gaps. The fallback path hides `process.getBuiltinModule('node:sqlite')`, so it cannot install a callback either. Both paths stay on the text classifier. A miss there is a direct bypass. No package was added.
 
 ## Empty trailing statements
 
