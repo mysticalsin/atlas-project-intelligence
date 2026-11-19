@@ -2,18 +2,16 @@
 // The memory driver and workerd 2026-10-23 both run that tail. The gate has to reject it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { Library } from '../src/library.js';
 import { splitStatements } from '../src/sql-text.js';
 import { memorySql } from './sqlite.js';
 import { ensure as ensurePrivacy } from '../src/privacy.js';
+import { locateWorkerd, SKIP_REASON } from './workerd-bin.js';
 
 const SALT = 'synthetic-log-salt';
 const STAMP = '2026-11-17T05:00:00.000Z';
-const WORKERD_ROOT = '/tmp/atlas-workerd-20261023';
-const WORKERD_BIN = WORKERD_ROOT + '/node_modules/workerd/bin/workerd';
 const WORDS = ['begin', 'BEGIN', 'Begin', 'end', 'END', 'End', 'case', 'CASE', 'trigger', 'TRIGGER'];
 
 function open() {
@@ -59,13 +57,19 @@ test('a consent receipt insert followed by DELETE does not run the delete', () =
   assert.equal(lib.rows('SELECT COUNT(*) AS n FROM refs')[0].n, before);
 });
 
-test('workerd 2026-10-23 runs an alias-begin tail and the gate rejects that family', async () => {
-  assert.equal(existsSync(WORKERD_BIN), true, 'workerd 2026-10-23 is on this box');
-  const version = spawnSync(WORKERD_BIN, ['--version'], { encoding: 'utf8' });
-  assert.equal(version.status, 0);
-  assert.match(version.stdout + version.stderr, /2026-10-23/);
+test('workerd 2026-10-23 runs an alias-begin tail and the gate rejects that family', async (t) => {
+  const found = locateWorkerd();
+  if (!found) {
+    t.skip(SKIP_REASON);
+    return;
+  }
+  const version = spawnSync(found.bin, ['--version'], { encoding: 'utf8' });
+  if (version.status !== 0 || !/2026-10-23/.test((version.stdout || '') + (version.stderr || ''))) {
+    t.skip('workerd binary is not 2026-10-23; set ATLAS_WORKERD_ROOT');
+    return;
+  }
   const require = createRequire(import.meta.url);
-  const { Miniflare } = require(WORKERD_ROOT + '/node_modules/miniflare/dist/src/index.js');
+  const { Miniflare } = require(found.root + '/node_modules/miniflare/dist/src/index.js');
   const script = [
     'import { DurableObject } from "cloudflare:workers";',
     'export class Box extends DurableObject {}',
