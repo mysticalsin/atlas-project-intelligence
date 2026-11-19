@@ -27,35 +27,75 @@ export function isMutatingSql(sql) {
   return /^with\b/i.test(text) && /\b(insert|update|delete|replace)\b/i.test(text);
 }
 
+function unwrap(node) {
+  if (node?.type === 'ChainExpression') return unwrap(node.expression);
+  return node;
+}
+
+function foldString(node) {
+  if (!node) return null;
+  if (node.type === 'Literal' && typeof node.value === 'string') return node.value;
+  if (node.type === 'TemplateLiteral' && node.expressions.length === 0) return node.quasis.map(part => part.value.cooked).join('');
+  if (node.type === 'BinaryExpression' && node.operator === '+') {
+    const left = foldString(node.left);
+    const right = foldString(node.right);
+    if (left == null || right == null) return null;
+    return left + right;
+  }
+  return null;
+}
+
 function propName(node) {
-  if (!node) return '';
+  node = unwrap(node);
+  if (!node || node.type !== 'MemberExpression') return '';
   if (!node.computed && node.property?.type === 'Identifier') return node.property.name;
-  if (node.computed && node.property?.type === 'Literal') return String(node.property.value);
+  if (node.computed) {
+    const folded = foldString(node.property);
+    if (folded != null) return folded;
+  }
   return '';
 }
 
 function exemptHandle(file, node) {
-  if (node.object?.type !== 'Identifier') return false;
-  const name = node.object.name;
+  const object = unwrap(node.object);
+  if (object?.type !== 'Identifier') return false;
+  const name = object.name;
   if (file === 'library-store.js' && name === 'storage') return true;
   if (file === 'sql-bound.js' && (name === 'spec' || name === 'group')) return true;
   return false;
 }
 
 function isHandleMember(node, file) {
+  node = unwrap(node);
   if (!node || node.type !== 'MemberExpression') return false;
   const name = propName(node);
   if (name !== 'sql' && name !== '_sql') return false;
   if (exemptHandle(file, node)) return false;
-  return node.object?.type === 'Identifier' || node.object?.type === 'ThisExpression';
+  const object = unwrap(node.object);
+  if (object?.type === 'Identifier' || object?.type === 'ThisExpression') return true;
+  return object?.type === 'MemberExpression' && propName(object) === 'storage';
 }
 
 function isPrivateExec(node) {
+  const callee = unwrap(node?.callee);
   return node?.type === 'CallExpression'
-    && node.callee?.type === 'MemberExpression'
-    && propName(node.callee) === 'exec'
-    && node.callee.object?.type === 'Identifier'
-    && node.callee.object.name === '_sql';
+    && callee?.type === 'MemberExpression'
+    && !callee.computed
+    && propName(callee) === 'exec'
+    && unwrap(callee.object)?.type === 'Identifier'
+    && unwrap(callee.object).name === '_sql';
+}
+
+function isReflectOrValues(node) {
+  node = unwrap(node);
+  if (node?.type !== 'CallExpression') return false;
+  const callee = unwrap(node.callee);
+  if (callee?.type !== 'MemberExpression') return false;
+  const object = unwrap(callee.object);
+  const name = propName(callee);
+  if (object?.type !== 'Identifier') return false;
+  if (object.name === 'Reflect' && (name === 'get' || name === 'apply')) return true;
+  return object.name === 'Object' && (name === 'values' || name === 'entries');
 }
 
 function children(node) {
@@ -77,6 +117,17 @@ function push(exec, file, node, text) {
   exec.push({ file, line: lineOf(node), text: String(text || node.type).trim() });
 }
 
+function taintPattern(id, file, node, tainted, exec) {
+  if (id?.type !== 'ObjectPattern') return;
+  for (const prop of id.properties) {
+    if (prop?.type !== 'Property') continue;
+    const key = prop.computed ? foldString(prop.key) : (prop.key?.name || (typeof prop.key?.value === 'string' ? prop.key.value : ''));
+    if (key !== 'sql' && key !== '_sql' && key !== 'exec') continue;
+    push(exec, file, node, 'raw handle');
+    if (prop.value?.type === 'Identifier') tainted.add(prop.value.name);
+  }
+}
+
 function walk(node, file, tainted, exec) {
   if (!node || typeof node.type !== 'string') return;
   if (node.type === 'FunctionDeclaration' || node.type === 'FunctionExpression' || node.type === 'ArrowFunctionExpression') {
@@ -85,33 +136,55 @@ function walk(node, file, tainted, exec) {
     return;
   }
   if (node.type === 'VariableDeclarator' && node.id?.type === 'Identifier' && isTaintedInit(node.init, file, tainted)) tainted.add(node.id.name);
+  if (node.type === 'VariableDeclarator') taintPattern(node.id, file, node, tainted, exec);
   if (node.type === 'AssignmentExpression' && node.left?.type === 'Identifier' && isTaintedInit(node.right, file, tainted)) tainted.add(node.left.name);
   if (isHandleMember(node, file)) push(exec, file, node, 'raw handle');
-  if (node.type === 'CallExpression' && calleeIsRaw(node.callee, file, tainted)) push(exec, file, node, 'raw exec');
+  if (node.type === 'CallExpression' && isRawCall(node, file, tainted) && !(file === 'library.js' && isPrivateExec(node))) push(exec, file, node, 'raw exec');
   for (const child of children(node)) walk(child, file, tainted, exec);
 }
 
 function isTaintedInit(node, file, tainted) {
+  node = unwrap(node);
   if (!node) return false;
   if (isHandleMember(node, file)) return true;
   if (node.type === 'Identifier' && tainted.has(node.name)) return true;
-  if (node.type === 'MemberExpression' && propName(node) === 'exec' && isHandleLike(node.object, file, tainted)) return true;
-  if (node.type === 'CallExpression' && node.callee?.type === 'MemberExpression' && propName(node.callee) === 'bind' && isHandleLike(node.callee.object, file, tainted)) return true;
+  if (node.type === 'CallExpression' && node.callee?.type === 'Identifier' && node.callee.name === 'rawSql') return true;
+  if (isReflectOrValues(node)) return true;
+  if (node.type === 'MemberExpression' && isHandleLike(node.object, file, tainted)) return true;
+  if (node.type === 'CallExpression') {
+    const callee = unwrap(node.callee);
+    const name = propName(callee);
+    if ((name === 'bind' || name === 'call' || name === 'apply') && receiverIsExec(callee?.object, file, tainted)) return true;
+  }
   return false;
 }
 
 function isHandleLike(node, file, tainted) {
+  node = unwrap(node);
   if (!node) return false;
   if (isHandleMember(node, file)) return true;
   if (node.type === 'Identifier' && tainted.has(node.name)) return true;
-  if (node.type === 'MemberExpression' && propName(node) === 'exec' && isHandleLike(node.object, file, tainted)) return true;
+  if (isReflectOrValues(node)) return true;
+  if (node.type === 'MemberExpression' && isHandleLike(node.object, file, tainted)) return true;
+  if (node.type === 'CallExpression' && isHandleLike(node.callee, file, tainted)) return true;
   return false;
 }
 
-function calleeIsRaw(callee, file, tainted) {
+function receiverIsExec(node, file, tainted) {
+  node = unwrap(node);
+  if (!node) return false;
+  if (node.type === 'MemberExpression' && propName(node) === 'exec') return true;
+  return isHandleLike(node, file, tainted);
+}
+
+function isRawCall(node, file, tainted) {
+  const callee = unwrap(node?.callee);
   if (!callee) return false;
   if (callee.type === 'Identifier' && tainted.has(callee.name)) return true;
-  if (callee.type === 'MemberExpression' && propName(callee) === 'exec' && isHandleLike(callee.object, file, tainted)) return true;
+  if (callee.type !== 'MemberExpression') return false;
+  const name = propName(callee);
+  if (name === 'exec' && isHandleLike(callee.object, file, tainted)) return true;
+  if ((name === 'call' || name === 'apply' || name === 'bind') && receiverIsExec(callee.object, file, tainted)) return true;
   return false;
 }
 
