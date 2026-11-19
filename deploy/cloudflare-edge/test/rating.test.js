@@ -577,8 +577,9 @@ function fakeClock() {
 // Yield until the predicate. A fixed turn count returns before crypto.subtle
 // finishes when the machine is busy, and that is not a timer.
 async function spinUntil(pred, message) {
-  for (let i = 0; i < 100000 && !pred(); i++) await new Promise(r => setImmediate(r));
-  assert.ok(pred(), message);
+  const cap = 1000;
+  for (let i = 0; i < cap && !pred(); i++) await new Promise(r => setImmediate(r));
+  assert.ok(pred(), message + ' (yield cap ' + cap + ')');
 }
 
 test('R15 budgets and the hedge: the deadline holds against a fetcher that ignores abort; the fastest answer wins', async () => {
@@ -631,6 +632,40 @@ test('R15 budgets and the hedge: the deadline holds against a fetcher that ignor
   const slept3 = [], r3 = R.storyRater({ TYPESAFE_API_KEY: KEY }, fakeTS(() => ({ status: 500 })), { sleep: async ms => { slept3.push(ms); }, random: () => 1 });
   await assert.rejects(r3.rate(body, '{}', { asked, terms: [], budget: 'background' }), e => e.code === 'server_error');
   assert.deepEqual(slept3, [375, 750], '0.5 s doubling, minus the full 25% jitter at random() = 1');
+});
+
+test('interactive rating without an injected delay uses the real setTimeout helper', async () => {
+  const seen = [];
+  const ids = [];
+  const orig = globalThis.setTimeout;
+  globalThis.setTimeout = (fn, ms, ...args) => {
+    seen.push(ms);
+    const id = orig(fn, ms, ...args);
+    ids.push(id);
+    return id;
+  };
+  try {
+    const budgets = { interactive: { deadlineMs: 60000, hedgeAtMs: 250, minAttemptMs: 30 } };
+    const w = await world({ reply: () => ({ hang: true }), raterOpts: { budgets } });
+    const pending = w.l.review(OWNER, await saved(w.l));
+    pending.catch(() => {});
+    await spinUntil(() => seen.includes(250), 'the real delay armed the hedge');
+    assert.equal(w.fetcher.calls.length, 1, 'the real delay has not fired yet');
+  } finally {
+    for (const id of ids) clearTimeout(id);
+    globalThis.setTimeout = orig;
+  }
+});
+
+test('a retryable 503 launches the duplicate before the hedge wait elapses', async () => {
+  const budgets = { interactive: { deadlineMs: 200, hedgeAtMs: 70, minAttemptMs: 30 } };
+  const clk = fakeClock();
+  const w = await world({ reply: i => (i === 0 ? { status: 503 } : {}), raterOpts: { budgets, now: clk.now, delay: clk.delay } });
+  const pending = w.l.review(OWNER, await saved(w.l));
+  await spinUntil(() => w.fetcher.calls.length >= 2, 'same-turn duplicate');
+  assert.equal(w.fetcher.calls.length, 2, 'same-turn duplicate');
+  assert.ok(clk.held(70) && !clk.elapsed(70), 'the hedge wait did not elapse');
+  await pending;
 });
 
 test('R16 circuit breaker: three consecutive failures open it for 60 s; one trial after that closes it', async () => {
