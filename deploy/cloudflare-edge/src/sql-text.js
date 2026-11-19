@@ -99,6 +99,37 @@ function blockedVerb(tokens, i) {
   const next = tokens[i + 1];
   return !!(next && next.text === ')');
 }
+const WRITES = ['insert', 'update', 'delete', 'replace'];
+function writeVerbAt(tokens, i) {
+  const token = tokens[i];
+  if (!(token && token.kind === 'word' && !token.quoted && listed(WRITES, token.text))) return false;
+  if (blockedVerb(tokens, i)) return false;
+  if (token.text === 'replace' && tokens[i + 1] && tokens[i + 1].text === '(') return false;
+  return true;
+}
+function explainsPlan(tokens) {
+  const words = [];
+  for (let i = 0; i < tokens.length && words.length < 3; i++) {
+    const token = tokens[i];
+    if (token.kind === 'word' && !token.quoted) words.push(token.text);
+  }
+  return words[0] === 'explain' && words[1] === 'query' && words[2] === 'plan';
+}
+// A write verb at depth > 0 is inside a CTE body or a subquery. A write verb
+// after the first depth-0 verb is a second write. REPLACE( is the function.
+// EXPLAIN QUERY PLAN describes a statement, so its verb is not this check.
+function strayWrite(tokens) {
+  if (explainsPlan(tokens)) return false;
+  let seen = false;
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (writeVerbAt(tokens, i) && (token.depth > 0 || seen)) return true;
+    if (token && token.kind === 'word' && !token.quoted && token.depth === 0 && !blockedVerb(tokens, i)) {
+      if (listed(VERBS, token.text) || listed(READS, token.text) || token.text === 'with' || token.text === 'explain') seen = true;
+    }
+  }
+  return false;
+}
 function skipGroup(tokens, j) {
   if (!(tokens[j] && tokens[j].text === '(')) return -1;
   const base = tokens[j].depth;
@@ -425,11 +456,11 @@ function skipQuote(text, i, end) {
   while (i < text.length) {
     if (text[i] === end) {
       if (text[i + 1] === end) { i += 2; continue; }
-      return i + 1;
+      return { next: i + 1, closed: true };
     }
     i++;
   }
-  return i;
+  return { next: i, closed: false };
 }
 
 function quotedName(text, i) {
@@ -437,15 +468,17 @@ function quotedName(text, i) {
   const start = i + 1;
   let j = start;
   let name = '';
+  let closed = false;
   while (j < text.length) {
     if (text[j] === end) {
       if (end !== ']' && text[j + 1] === end) { name += end; j += 2; continue; }
       j++;
+      closed = true;
       break;
     }
     name += text[j++];
   }
-  return { name, next: j, start };
+  return { name, next: j, start, closed };
 }
 
 // One lexer. Comments are dropped. A string literal is omitted. A quoted
@@ -457,6 +490,7 @@ export function sqlTokens(sql) {
   const tokens = [];
   let i = 0;
   let depth = 0;
+  let unclosed = false;
   const push = (token) => {
     token.depth = depth;
     mustPush(tokens, token);
@@ -477,14 +511,21 @@ export function sqlTokens(sql) {
     if (c === '/' && text[i + 1] === '*') {
       i += 2;
       while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
-      i = mustLeast(text.length, i + 2);
+      if (i >= text.length) unclosed = true;
+      else i += 2;
       continue;
     }
-    if (c === "'") { i = skipQuote(text, i, "'"); continue; }
+    if (c === "'") {
+      const quote = skipQuote(text, i, "'");
+      if (!quote.closed) unclosed = true;
+      i = quote.next;
+      continue;
+    }
     if (c === '"' || c === '`' || c === '[') {
       const quoted = quotedName(text, i);
       i = quoted.next;
-      if (quoted.name) push({ kind: 'word', text: mustLower(quoted.name), quoted: true });
+      if (!quoted.closed) unclosed = true;
+      else if (quoted.name) push({ kind: 'word', text: mustLower(quoted.name), quoted: true });
       continue;
     }
     if (c === '=' || c === '(' || c === ')' || c === '.' || c === ';') {
@@ -509,7 +550,16 @@ export function sqlTokens(sql) {
     }
     i++;
   }
+  tokens.unclosed = unclosed;
   return tokens;
+}
+
+// An unterminated ', ", [, `, or /* consumes the rest of the input. That is not
+// a proven read. A finished quote, identifier, or block comment is not this.
+export function unclosedLexeme(sql) {
+  if (!primordialsHold()) return true;
+  try { return sqlTokens(sql).unclosed === true; }
+  catch { return true; }
 }
 
 // A named parameter is '$' ':' '@' or '#' with at least one IdChar, the n>0
@@ -548,6 +598,7 @@ export function isMutatingStatement(sql) {
 
 function mutatingBody(sql) {
   const tokens = sqlTokens(sql);
+  if (strayWrite(tokens)) return true;
   if (extraStatement(tokens)) return true;
   const words = leadingWords(sql);
   const verb = words[0] || '';
@@ -696,6 +747,7 @@ const PRAGMA_TABLE_ARG = ['table_info', 'table_xinfo', 'index_list', 'index_info
 export function provenRead(sql) {
   if (!primordialsHold()) return false;
   try {
+    if (unclosedLexeme(sql)) return false;
     const tokens = sqlTokens(sql);
     if (extraStatement(tokens)) return false;
     const opened = leadingWords(sql);
@@ -727,6 +779,7 @@ export function hiddenWrite(sql) {
 }
 
 function readWords(tokens) {
+  if (strayWrite(tokens)) return false;
   if (!tokens || !tokens.length) return false;
   let i = 0;
   while (i < tokens.length && tokens[i].kind !== 'word') i++;
