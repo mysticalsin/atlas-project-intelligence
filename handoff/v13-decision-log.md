@@ -105,3 +105,11 @@ PASS on `8cdef06`, one Low. That head stays frozen. This follow-up is still loca
 Removing the depth>0 call leaves that test red: `provenRead('SELECT (DROP TABLE audit)')` is true (`true !== false`). `REPLACE( stays a function and a depth-0 alias stays a read` stays green. The change was restored and was not left in place. The fix is the `nestedWrite` check in `strayWrite`. `topVerb` is unchanged.
 
 Info F-2: `audit-chain.js` line 226, `if (start === null) return 'tampered'`, is dead code. It is an equivalent mutant. `find` returns null when the captured search misses and undefined when the row is absent. The null check and the later genesis check both return tampered. No input makes those paths differ, so no test is possible. No code change. The earlier record is in `handoff/v12-decision-log.md`.
+
+## Freeze
+
+Cursor bc-9e93ee0a on `8cdef06` is APPROVE WITH RESIDUALS, 0 High, 0 Medium. It is no longer pending. This commit is the v13 freeze head. It fast-forwards `d6e4a49dae82a57557148043ae4833b50e60c696` through `80a0ab6014a4b715c3d50f6497f453e3513eb166`. The push is one ordinary fast-forward onto `cursor/atlas-write-chokepoint`. `main` is not updated. `8cdef06` and `d6e4a49` stay in the history and are not amended.
+
+L1 is in this head: an unterminated quote, identifier, or block comment is `SQL_DOOR` on both doors. L2 is in this head: a write verb that is not the first depth-0 verb is `SQL_DOOR` on both doors, including `WITH x AS (DELETE FROM refs RETURNING *) SELECT 1` and `WITH select(a) AS (SELECT 1) DELETE FROM refs`. L3 stays a residual: `EXPLAIN QUERY PLAN` of one delete is allowed on the primary door and `SQL_DOOR` on the fallback. F-L stays a residual: `forEach(eval)`, `eval.call`, and `const F = Function` are not caught. No code change for those two.
+
+Gate counts are not in this file.
