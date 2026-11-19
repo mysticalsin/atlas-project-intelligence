@@ -345,6 +345,7 @@ function mutatingBody(sql) {
   const words = leadingWords(parts[0]);
   const verb = words[0] || '';
   if (writableAssignment(sql)) return true;
+  if (pragmaVerb(words) && !pragmaRead(sql)) return true;
   if (verbOf(verb)) return true;
   // EXPLAIN DELETE still names a mutation. EXPLAIN QUERY PLAN only describes one, and a plan read stays a read.
   const plan = verb === 'explain' && words[1] === 'query' && words[2] === 'plan';
@@ -502,7 +503,9 @@ function scanSemi(text) {
   return false;
 }
 
-const READS = ['select', 'pragma', 'values'];
+const READS = ['select', 'values'];
+const PRAGMA_READS = ['user_version', 'table_info', 'table_xinfo', 'index_list', 'index_info', 'database_list', 'foreign_key_list', 'schema_version', 'integrity_check', 'quick_check', 'compile_options', 'writable_schema'];
+const PRAGMA_TABLE_ARG = ['table_info', 'table_xinfo', 'index_list', 'index_info', 'foreign_key_list', 'integrity_check', 'quick_check'];
 
 // True only when the text is one statement and that statement is a read.
 // EXPLAIN is a read only when the statement it explains is a read.
@@ -511,9 +514,12 @@ export function provenRead(sql) {
   try {
     if (scanSemi(mustText(sql))) return false;
     if (writableAssignment(sql)) return false;
+    if (pragmaRead(sql)) return true;
     const parts = splitStatements(sql);
     if (parts.length !== 1) return false;
-    return readWords(leadingWords(parts[0]));
+    const words = leadingWords(parts[0]);
+    if (pragmaVerb(words)) return false;
+    return readWords(words);
   } catch {
     return false;
   }
@@ -535,6 +541,82 @@ function readWords(words) {
   if (!listed(READS, verb)) return false;
   for (let k = i + 1; k < words.length; k++) if (verbOf(words[k])) return false;
   return true;
+}
+
+function pragmaVerb(words) {
+  if (!words) return false;
+  let i = 0;
+  if (words[0] === 'explain') {
+    i = 1;
+    if (words[1] === 'query' && words[2] === 'plan') i = 3;
+  }
+  return words[i] === 'pragma';
+}
+
+function nameAt(text, name, from) {
+  for (let i = from; i + name.length <= text.length; i++) {
+    let match = true;
+    for (let j = 0; j < name.length; j++) if (text[i + j] !== name[j]) { match = false; break; }
+    if (!match) continue;
+    if (i > 0 && isWordChar(text[i - 1])) continue;
+    if (i + name.length < text.length && isWordChar(text[i + name.length])) continue;
+    return i;
+  }
+  return -1;
+}
+
+// A read is a listed pragma with no assignment. Parentheses are a read only
+// for the table-argument names. writable_schema and schema_version are bare.
+export function pragmaRead(sql) {
+  let words;
+  try { words = leadingWords(sql); }
+  catch { return false; }
+  if (!pragmaVerb(words)) return false;
+  let i = 0;
+  if (words[0] === 'explain') {
+    i = 1;
+    if (words[1] === 'query' && words[2] === 'plan') i = 3;
+  }
+  let name = words[i + 1] || '';
+  if (!listed(PRAGMA_READS, name) && listed(PRAGMA_READS, words[i + 2] || '')) name = words[i + 2];
+  if (!listed(PRAGMA_READS, name)) return false;
+  let text;
+  try { text = mustLower(mustText(sql)); }
+  catch { return false; }
+  const pragmaAt = nameAt(text, 'pragma', 0);
+  if (pragmaAt < 0) return false;
+  const at = nameAt(text, name, pragmaAt + 'pragma'.length);
+  if (at < 0) return false;
+  let j = at + name.length;
+  if (text[j] === '"' || text[j] === '`' || text[j] === ']') j++;
+  while (j < text.length && isSpaceChar(text[j])) j++;
+  if (j >= text.length) return true;
+  if (text[j] === '=') return false;
+  if (text[j] === '(') {
+    if (!listed(PRAGMA_TABLE_ARG, name)) return false;
+    let depth = 0;
+    let closed = false;
+    for (let k = j; k < text.length; k++) {
+      if (text[k] === '=') return false;
+      if (text[k] === '(') depth++;
+      else if (text[k] === ')') {
+        depth--;
+        if (depth === 0) { j = k + 1; closed = true; break; }
+      }
+    }
+    if (!closed) return false;
+    while (j < text.length && isSpaceChar(text[j])) j++;
+    return j >= text.length || onlyNoise(text, j);
+  }
+  return onlyNoise(text, j);
+}
+
+export function pragmaSetter(sql) {
+  let words;
+  try { words = leadingWords(sql); }
+  catch { return true; }
+  if (!pragmaVerb(words)) return false;
+  return !pragmaRead(sql);
 }
 
 // PRAGMA writable_schema = ON, or the parenthesised form, writes the catalog flag.

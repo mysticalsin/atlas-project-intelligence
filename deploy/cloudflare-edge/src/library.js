@@ -18,7 +18,7 @@ import { appendAudit, checkpointHead, ensureChain, verifyChain, anchoredVerdict,
 import { recordUsage } from './telemetry.js';
 import { publicationEffect, publicationStatus, publicationTransition, readPublication } from './publication.js';
 import { invitationTransition, noteInvitation, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
-import { bareSemicolon, hasCreateAsSelect, isMutatingStatement, leadingWords, provenRead, remainderIsNoise, splitStatements, sqlShape, unparsedTail, writableAssignment } from './sql-text.js';
+import { bareSemicolon, hasCreateAsSelect, isMutatingStatement, leadingWords, pragmaSetter, provenRead, remainderIsNoise, splitStatements, sqlShape, unparsedTail, writableAssignment } from './sql-text.js';
 import { sqliteRemainder } from './sql-tail.js';
 import { clockIso, find, includes, isoFrom, parseDate, some, trim } from './primordials.js';
 import { RETENTION } from './policy.generated.js';
@@ -648,12 +648,13 @@ export class Library {
     const reason = state.reason;
     const migration = state.migration;
     if (isMutatingStatement(sql) || (fallback && !provenRead(sql))) {
+      if (pragmaSetter(sql) && kind !== 'schema' && kind !== 'registered') throw Object.assign(fail(500, 'This statement is not allowed.'), { code: 'SQL_DOOR' });
       if (isCreateTrigger(sql) && kind !== 'schema' && kind !== 'registered') {
         throw Object.assign(fail(500, 'A trigger is installed only by schema.'), { code: 'SCHEMA_DML' });
       }
       if (!open) throw Object.assign(fail(500, 'A SQL write must run inside recorded, housekeeping, or schema.'), { code: 'SQL_DOOR' });
       if (kind === 'recorded' && recordedForbidden(sql)) throw Object.assign(fail(500, 'A recorded write cannot change audit or consent receipts.'), { code: 'SQL_DOOR' });
-      if (kind === 'schema' && !schemaAllowed(sql)) throw Object.assign(fail(500, 'Schema accepts named CREATE TABLE and CREATE INDEX only.'), { code: 'SCHEMA_DML' });
+      if (kind === 'schema' && !pragmaSetter(sql) && !schemaAllowed(sql)) throw Object.assign(fail(500, 'Schema accepts named CREATE TABLE and CREATE INDEX only.'), { code: 'SCHEMA_DML' });
       if (kind === 'housekeeping' && !housekeepingAllowed(reason, sql)) throw Object.assign(fail(500, 'That housekeeping statement is not allowed.'), { code: 'HOUSEKEEPING_SQL' });
       if (kind === 'registered' && sqlShape(sql) !== sqlShape(migration)) throw Object.assign(fail(500, 'That migration is not registered.'), { code: 'SCHEMA_DML' });
       if (!receiptInsert(sql)) state.receiptOnly = false;
