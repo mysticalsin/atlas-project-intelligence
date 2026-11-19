@@ -72,7 +72,7 @@ The red commit is `801e2dd51ecbbc3a2fddb2611310121b0bcf7c92`. `provenRead("SELEC
 
 ## Chain line 226
 
-No product change. Deleting `if (start === null) return 'tampered'` does not change a verdict. `find` returns null when the captured search misses and undefined when the row is absent. Both fail the genesis check and return tampered. The source regex is gone. The record is in `handoff/v12-decision-log.md`.
+No product change. Deleting `if (start === null) return 'tampered'` does not change a verdict. `audit-chain.js:226` is unchanged. `primordials.js:294` is the captured `find` call, and a miss returns undefined, not null. The wrapper returns null only when that value is not an element of the list. An absent row is the undefined miss, so it does not take the `start === null` line. It fails `start && sameText(start.prev_hash, GENESIS)` and returns tampered. The source regex is gone. The record is in `handoff/v12-decision-log.md`.
 
 The variable fix is `3f8729654c97017a754fc8e957afa9af9b3b0947`. The form coverage is `bada15b7045e863081b4d5425fe50a4ff26b3c1b`. The unclosed and nested-write fix is `07f8a304c2b9688b5139cc5caa89dc18fb1521de`. `d6e4a49dae82a57557148043ae4833b50e60c696` is the head that was pushed. Gate counts are not in this file.
 
@@ -104,7 +104,7 @@ PASS on `8cdef06`, one Low. That head stays frozen. This follow-up is still loca
 
 Removing the depth>0 call leaves that test red: `provenRead('SELECT (DROP TABLE audit)')` is true (`true !== false`). `REPLACE( stays a function and a depth-0 alias stays a read` stays green. The change was restored and was not left in place. The fix is the `nestedWrite` check in `strayWrite`. `topVerb` is unchanged.
 
-Info F-2: `audit-chain.js` line 226, `if (start === null) return 'tampered'`, is dead code. It is an equivalent mutant. `find` returns null when the captured search misses and undefined when the row is absent. The null check and the later genesis check both return tampered. No input makes those paths differ, so no test is possible. No code change. The earlier record is in `handoff/v12-decision-log.md`.
+Info F-2: `audit-chain.js` line 226, `if (start === null) return 'tampered'`, is unchanged. It is dead code and an equivalent mutant. `primordials.js:294` returns undefined, not null, when the captured search misses. The wrapper returns null only when that value is not an element of the list. An absent row skips the null check and returns tampered from `start && sameText(start.prev_hash, GENESIS)`. The earlier note swapped those two results. No input makes the verdict differ, so no test is possible. No code change. The earlier record is in `handoff/v12-decision-log.md`.
 
 ## Freeze
 
