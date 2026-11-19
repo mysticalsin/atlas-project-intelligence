@@ -1,20 +1,34 @@
 """Orb touch layer in a real browser: it keeps turning and wandering on its own; a drag turns it with the hand and
 never triggers the orb button; a click makes it flinch and still starts the interview flow.
-The animation clock is installed before the page loads. Every wait advances that clock, so a busy machine cannot
-starve requestAnimationFrame and make the fling look still. The fling check still requires a coast, then a later
-window of the same length that has slowed down.
+Frames are stepped inside the page at a fixed 1/60 s. A busy machine can only slow the call; it cannot change the
+step. The fling check still requires a coast, then a later window of the same length that has slowed down.
   python3 tests/orb_touch_browser.py
 """
-import datetime,os
+import os
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-ROOT=Path(__file__).resolve().parents[1];H=(ROOT/'ATLAS_Voice.html').read_text();ERR=[]
+ROOT=Path(__file__).resolve().parents[1];ERR=[]
+CLOCK="""(() => {
+  let now = 0; const q = []; let seq = 1;
+  performance.now = () => now;
+  window.requestAnimationFrame = cb => { const id = seq++; q.push({ id, cb }); return id; };
+  window.cancelAnimationFrame = id => { const i = q.findIndex(x => x.id === id); if (i >= 0) q.splice(i, 1); };
+  window.__advance = ms => {
+    const step = 1000 / 60; let left = ms, guard = 0;
+    while (left > 0.01 && guard < 100000) {
+      guard++; const dt = Math.min(step, left); now += dt; left -= dt;
+      const batch = q.splice(0, q.length);
+      for (const item of batch) item.cb(now);
+    }
+    return now;
+  };
+})();"""
+H=(ROOT/'ATLAS_Voice.html').read_text().replace('<head>','<head><script>'+CLOCK+'</script>',1)
 def check(n,v):print(('PASS ' if v else 'FAIL ')+n);assert v,n
 with sync_playwright() as pw:
  b=pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH') or None);p=b.new_page(viewport={'width':1440,'height':1000});p.on('pageerror',lambda e:ERR.append(str(e)))
- p.clock.install(time=datetime.datetime(2026,11,19,12,0,0))
  p.set_content(H,wait_until='load')
- def advance(ms):p.clock.run_for(ms)
+ def advance(ms):p.evaluate('ms => window.__advance(ms)',ms)
  advance(600)
  T=lambda:p.evaluate('AtlasOrbUI.inspect().touch')
  a=T();advance(2000);b2=T()
@@ -28,6 +42,7 @@ with sync_playwright() as pw:
  check('drag never opens the start dialog',not p.locator('#voiceConsentDialog').is_visible() and not p.locator('#voiceConnectionDialog').is_visible())
  after=T();advance(700);coast=T();spun=coast['spinY']-after['spinY']
  advance(4000);base=T();advance(700);rest=T()['spinY']-base['spinY']
+ print('fling spun=%s rest=%s dragging=%s'%(spun,rest,coast['dragging']))
  check('fling keeps spinning then settles',spun>.2 and not coast['dragging'] and rest<spun)
  # WOW_ZERO_CONFIG §3.3: in an offline copy the orb forwards to the "Open ATLAS" link (a new tab). Every request from here on is
  # recorded and aborted, so the new tab never reaches the network.
