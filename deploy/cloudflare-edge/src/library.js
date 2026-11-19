@@ -386,7 +386,8 @@ export class Library {
       try { return this._atomic(run); }
       finally { state.auditTx = 0; }
     };
-    Object.assign(this, { now, newId, complete, embed, readyScore, model, services, rater, metric, _atomic: atomic, recorded, transactionSync: typeof atomic === 'function' ? recorded : null, auditKey, dbId: String(dbId ?? '') });
+    Object.assign(this, { newId, complete, embed, readyScore, model, services, rater, metric, _atomic: atomic, recorded, transactionSync: typeof atomic === 'function' ? recorded : null, auditKey, dbId: String(dbId ?? '') });
+    Object.defineProperty(this, 'now', { value: now, writable: false, enumerable: true, configurable: false });
     this.inflight = new Map(); // `${id}:${revision}` -> { gen, engine, first, all }: one rating per revision at a time
     let trustCopy = null;
     let storyCopy = null;
