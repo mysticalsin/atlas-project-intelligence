@@ -413,7 +413,7 @@
     {
       "path": "deploy/cloudflare-edge/src/csp.generated.js",
       "bytes": 1675,
-      "sha256": "d9e932787f83cbaaed3f2376e51bf2af9662890169b40685915fd784c367a0ee"
+      "sha256": "3a46fba684ac236d65628a67f6171eb03cf938d06d5fe730916ab28a932798e0"
     },
     {
       "path": "deploy/cloudflare-edge/src/csp.js",
@@ -1337,8 +1337,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 267235,
-      "sha256": "c930b9d54432d3c94208d93c48afe268d0cbab3213e3ce9d171dbc5d49b38107"
+      "bytes": 268084,
+      "sha256": "e111fb6435e41bc625e3ad8c20ed9c9121a125eef9b28610a74437ec521ad460"
     },
     {
       "path": "handoff/CHANGELOG.md",
