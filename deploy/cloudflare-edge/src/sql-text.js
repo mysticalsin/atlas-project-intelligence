@@ -5,7 +5,7 @@
 // Neither path calls RegExp.prototype.exec. A non-boolean, a null, or a throw
 // from a snapshotted string or array method counts as a write.
 
-import { charCodeAt, includes, lower, primordialsHold, push, slice, some, trim } from './primordials.js';
+import { charCodeAt, includes, least, lower, primordialsHold, push, slice, some, textOf, trim } from './primordials.js';
 
 function codeAt(c) {
   const n = charCodeAt(c, 0);
@@ -51,12 +51,22 @@ function mustTrim(value) {
   if (typeof out !== 'string') throw new Error('primordial');
   return out;
 }
+function mustLeast(a, b) {
+  const n = least(a, b);
+  if (typeof n !== 'number') throw new Error('primordial');
+  return n;
+}
+function mustText(value) {
+  const out = textOf(value == null ? '' : value);
+  if (typeof out !== 'string') throw new Error('primordial');
+  return out;
+}
 function mustIncludes(list, value) {
   const out = includes(list, value);
   if (out !== true && out !== false) throw new Error('primordial');
   return out;
 }
-const VERBS = ['insert', 'update', 'delete', 'replace', 'create', 'drop', 'alter', 'reindex', 'vacuum'];
+const VERBS = ['insert', 'update', 'delete', 'replace', 'create', 'drop', 'alter', 'reindex', 'vacuum', 'attach', 'detach'];
 const WRITES = ['insert', 'update', 'delete', 'replace'];
 const BODY_NEXT = ['select', 'insert', 'update', 'delete', 'replace', 'with', 'values', 'begin', 'end'];
 function listed(list, word) {
@@ -78,13 +88,13 @@ function wordAt(text, i) {
 }
 
 export function splitStatements(sql) {
-  if (!primordialsHold()) return [String(sql ?? ''), ''];
+  if (!primordialsHold()) return [mustText(sql), ''];
   try { return splitBody(sql); }
-  catch { return [String(sql ?? ''), '']; }
+  catch { return [mustText(sql), '']; }
 }
 
 function splitBody(sql) {
-  const text = String(sql ?? '');
+  const text = mustText(sql);
   const parts = [];
   let start = 0;
   let i = 0;
@@ -103,7 +113,7 @@ function splitBody(sql) {
     if (c === '/' && text[i + 1] === '*') {
       i += 2;
       while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
-      i = Math.min(text.length, i + 2);
+      i = mustLeast(text.length, i + 2);
       continue;
     }
     if (c === "'" || c === '"') {
@@ -121,13 +131,13 @@ function splitBody(sql) {
     }
     if (c === '[') {
       while (i < text.length && text[i] !== ']') i++;
-      i = Math.min(text.length, i + 1);
+      i = mustLeast(text.length, i + 1);
       continue;
     }
     if (c === '`') {
       i++;
       while (i < text.length && text[i] !== '`') i++;
-      i = Math.min(text.length, i + 1);
+      i = mustLeast(text.length, i + 1);
       continue;
     }
     if (c === '(') { paren++; i++; continue; }
@@ -140,7 +150,7 @@ function splitBody(sql) {
         else if (sawCreate && word === 'trigger') { trigger = 1; sawCreate = false; }
         else if (!mustIncludes(['or', 'replace', 'temp', 'temporary', 'if', 'not', 'exists'], word)) sawCreate = false;
       } else if (trigger === 1) {
-        if (paren === 0 && word === 'begin' && listed(BODY_NEXT, nextIdent(text, i))) {
+        if (paren === 0 && word === 'begin' && !dotted(text, i - word.length) && listed(BODY_NEXT, nextIdent(text, i))) {
           trigger = 2;
           atStatement = true;
         }
@@ -164,12 +174,12 @@ function splitBody(sql) {
     i++;
   }
   const tail = mustTrim(mustSlice(text, start));
-  if (tail) mustPush(parts, tail);
+  if (tail && !onlyNoise(tail, 0)) mustPush(parts, tail);
   return parts;
 }
 
 export function placeholderCount(sql) {
-  const text = String(sql ?? '');
+  const text = mustText(sql);
   let n = 0;
   let i = 0;
   while (i < text.length) {
@@ -181,7 +191,7 @@ export function placeholderCount(sql) {
     if (c === '/' && text[i + 1] === '*') {
       i += 2;
       while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
-      i = Math.min(text.length, i + 2);
+      i = mustLeast(text.length, i + 2);
       continue;
     }
     if (c === "'" || c === '"') {
@@ -217,7 +227,7 @@ function nextIdent(text, i) {
     if (c === '/' && text[j + 1] === '*') {
       j += 2;
       while (j < text.length && !(text[j] === '*' && text[j + 1] === '/')) j++;
-      j = Math.min(text.length, j + 2);
+      j = mustLeast(text.length, j + 2);
       continue;
     }
     if (!isIdentChar(c)) return '';
@@ -227,7 +237,7 @@ function nextIdent(text, i) {
 }
 
 function flattenShape(sql) {
-  const text = String(sql ?? '');
+  const text = mustText(sql);
   let out = '';
   let i = 0;
   while (i < text.length) {
@@ -240,7 +250,7 @@ function flattenShape(sql) {
     if (c === '/' && text[i + 1] === '*') {
       i += 2;
       while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
-      i = Math.min(text.length, i + 2);
+      i = mustLeast(text.length, i + 2);
       out += ' ';
       continue;
     }
@@ -272,7 +282,7 @@ export function sqlShape(sql) {
 // Keywords and identifiers, in order. Comments are dropped. A quoted identifier
 // is its text. A string literal is omitted, so it cannot impersonate a verb.
 export function leadingWords(sql) {
-  const text = String(sql ?? '');
+  const text = mustText(sql);
   const words = [];
   let i = 0;
   while (i < text.length) {
@@ -285,7 +295,7 @@ export function leadingWords(sql) {
     if (c === '/' && text[i + 1] === '*') {
       i += 2;
       while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
-      i = Math.min(text.length, i + 2);
+      i = mustLeast(text.length, i + 2);
       continue;
     }
     if (c === "'") {
@@ -334,6 +344,7 @@ function mutatingBody(sql) {
   if (parts.length !== 1) return true;
   const words = leadingWords(parts[0]);
   const verb = words[0] || '';
+  if (writableAssignment(sql)) return true;
   if (verbOf(verb)) return true;
   // EXPLAIN DELETE still names a mutation. EXPLAIN QUERY PLAN only describes one, and a plan read stays a read.
   const plan = verb === 'explain' && words[1] === 'query' && words[2] === 'plan';
@@ -350,7 +361,7 @@ function mutatingBody(sql) {
     if (c === '/' && text[i + 1] === '*') {
       i += 2;
       while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
-      i = Math.min(text.length, i + 2);
+      i = mustLeast(text.length, i + 2);
       continue;
     }
     if (c === "'" || c === '"') {
@@ -375,13 +386,22 @@ function mutatingBody(sql) {
   return false;
 }
 
-// True when the text after SQLite's prepared statement is only space, semicolons, or comments.
+// True when the text after SQLite's prepared statement is space, comments, or one semicolon.
 export function remainderIsNoise(tail) {
-  const text = String(tail ?? '');
+  let text;
+  try { text = mustText(tail); }
+  catch { return false; }
   let i = 0;
+  let semis = 0;
   while (i < text.length) {
     const c = text[i];
-    if (c === ' ' || c === '\n' || c === '\t' || c === '\r' || c === '\f' || c === ';') { i++; continue; }
+    if (c === ';') {
+      semis += 1;
+      if (semis > 1) return false;
+      i++;
+      continue;
+    }
+    if (c === ' ' || c === '\n' || c === '\t' || c === '\r' || c === '\f') { i++; continue; }
     if (c === '-' && text[i + 1] === '-') {
       while (i < text.length && text[i] !== '\n') i++;
       continue;
@@ -389,7 +409,7 @@ export function remainderIsNoise(tail) {
     if (c === '/' && text[i + 1] === '*') {
       i += 2;
       while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
-      i = Math.min(text.length, i + 2);
+      i = mustLeast(text.length, i + 2);
       continue;
     }
     return false;
@@ -404,11 +424,37 @@ export function unparsedTail(sql) {
   return splitStatements(sql).length > 1;
 }
 
-// A semicolon outside a quote, a comment, or a bracket. This does not look at
-// the word begin. The caller decides whether that semicolon is still one statement.
+function dotted(text, start) {
+  let j = start - 1;
+  while (j >= 0 && isSpaceChar(text[j])) j--;
+  return j >= 0 && text[j] === '.';
+}
+
+function onlyNoise(text, i) {
+  while (i < text.length) {
+    const c = text[i];
+    if (isSpaceChar(c)) { i++; continue; }
+    if (c === '-' && text[i + 1] === '-') {
+      while (i < text.length && text[i] !== '\n') i++;
+      continue;
+    }
+    if (c === '/' && text[i + 1] === '*') {
+      i += 2;
+      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
+      i = mustLeast(text.length, i + 2);
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
+// A semicolon outside a quote, a comment, or a bracket. One trailing semicolon
+// whose remainder is only whitespace or comments is not a second statement.
+// This does not look at the word begin.
 export function bareSemicolon(sql) {
   if (!primordialsHold()) return true;
-  try { return scanSemi(String(sql ?? '')); }
+  try { return scanSemi(mustText(sql)); }
   catch { return true; }
 }
 
@@ -423,7 +469,7 @@ function scanSemi(text) {
     if (c === '/' && text[i + 1] === '*') {
       i += 2;
       while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
-      i = Math.min(text.length, i + 2);
+      i = mustLeast(text.length, i + 2);
       continue;
     }
     if (c === "'" || c === '"') {
@@ -441,16 +487,16 @@ function scanSemi(text) {
     }
     if (c === '[') {
       while (i < text.length && text[i] !== ']') i++;
-      i = Math.min(text.length, i + 1);
+      i = mustLeast(text.length, i + 1);
       continue;
     }
     if (c === '`') {
       i++;
       while (i < text.length && text[i] !== '`') i++;
-      i = Math.min(text.length, i + 1);
+      i = mustLeast(text.length, i + 1);
       continue;
     }
-    if (c === ';') return true;
+    if (c === ';') return !onlyNoise(text, i + 1);
     i++;
   }
   return false;
@@ -463,7 +509,8 @@ const READS = ['select', 'pragma', 'values'];
 export function provenRead(sql) {
   if (!primordialsHold()) return false;
   try {
-    if (scanSemi(String(sql ?? ''))) return false;
+    if (scanSemi(mustText(sql))) return false;
+    if (writableAssignment(sql)) return false;
     const parts = splitStatements(sql);
     if (parts.length !== 1) return false;
     return readWords(leadingWords(parts[0]));
@@ -480,6 +527,7 @@ function readWords(words) {
     if (words[1] === 'query' && words[2] === 'plan') i = 3;
   }
   const verb = words[i] || '';
+  if (verb === 'attach' || verb === 'detach') return false;
   if (verb === 'with') {
     for (let k = i + 1; k < words.length; k++) if (verbOf(words[k])) return false;
     return true;
@@ -487,6 +535,37 @@ function readWords(words) {
   if (!listed(READS, verb)) return false;
   for (let k = i + 1; k < words.length; k++) if (verbOf(words[k])) return false;
   return true;
+}
+
+// PRAGMA writable_schema = ON, or the parenthesised form, writes the catalog flag.
+// A bare PRAGMA writable_schema reads it.
+export function writableAssignment(sql) {
+  let words;
+  try { words = leadingWords(sql); }
+  catch { return true; }
+  if (!words) return true;
+  let seen = false;
+  for (let i = 0; i < words.length; i++) if (words[i] === 'writable_schema') seen = true;
+  if (!seen) return false;
+  let text;
+  try { text = mustLower(mustText(sql)); }
+  catch { return true; }
+  const name = 'writable_schema';
+  let at = -1;
+  for (let i = 0; i + name.length <= text.length; i++) {
+    let match = true;
+    for (let j = 0; j < name.length; j++) if (text[i + j] !== name[j]) { match = false; break; }
+    if (!match) continue;
+    at = i;
+    break;
+  }
+  if (at < 0) return true;
+  for (let i = at + name.length; i < text.length; i++) {
+    const c = text[i];
+    if (isSpaceChar(c)) continue;
+    return c === '=' || c === '(';
+  }
+  return false;
 }
 
 export function hasCreateAsSelect(sql) {

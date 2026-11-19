@@ -197,6 +197,7 @@ function parameterTaint(tree, file) {
   for (const fn of functions.values()) extra.set(fn, new Set());
   primary = new Set();
   aliases = new Set();
+  evalAliases = new Set();
   const see = (node) => {
     if (!node || typeof node.type !== 'string') return;
     if (node.type === 'VariableDeclarator' && node.id?.type === 'Identifier' && isHandleSource(node.init, file, primary)) primary.add(node.id.name);
@@ -208,6 +209,8 @@ function parameterTaint(tree, file) {
     }
     if (node.type === 'AssignmentExpression' && node.left?.type === 'Identifier' && isWeakMapPrototype(node.right)) aliases.add(node.left.name);
     if (node.type === 'AssignmentExpression' && node.left?.type === 'Identifier' && isHandleSource(node.right, file, primary)) primary.add(node.left.name);
+    if (node.type === 'VariableDeclarator' && node.id?.type === 'Identifier' && isEvalValue(node.init)) evalAliases.add(node.id.name);
+    if (node.type === 'AssignmentExpression' && node.left?.type === 'Identifier' && isEvalValue(node.right)) evalAliases.add(node.left.name);
     if (node.type === 'CallExpression' && unwrap(node.callee)?.type === 'Identifier') {
       const fn = functions.get(unwrap(node.callee).name);
       if (fn) (node.arguments || []).forEach((arg, index) => {
@@ -227,9 +230,16 @@ function parameterTaint(tree, file) {
   return extra;
 }
 
+function isEvalValue(node) {
+  node = unwrap(node);
+  if (!node) return false;
+  if (node.type === 'Identifier' && (node.name === 'eval' || evalAliases.has(node.name))) return true;
+  return node.type === 'MemberExpression' && propName(node) === 'eval';
+}
+
 function isEvalCall(node) {
   const callee = peel(node.callee);
-  if (callee?.type === 'Identifier' && callee.name === 'eval') return true;
+  if (callee?.type === 'Identifier' && (callee.name === 'eval' || evalAliases.has(callee.name))) return true;
   return callee?.type === 'MemberExpression' && propName(callee) === 'eval';
 }
 
@@ -265,6 +275,7 @@ function isWeakMapGet(node) {
 // Object.entries is tainted for the exec check and is not a handle being passed on.
 let primary = new Set();
 let aliases = new Set();
+let evalAliases = new Set();
 
 function isHandlesGet(node) {
   node = unwrap(node);

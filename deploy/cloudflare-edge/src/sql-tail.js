@@ -3,7 +3,7 @@
 // the unconsumed tail. This module is the equivalent real-SQLite check. On an
 // isolate where node:sqlite is absent it returns null, and Library then refuses
 // a semicolon that still has SQL after it.
-import { slice } from './primordials.js';
+import { slice, textOf } from './primordials.js';
 let scratch = null;
 let unavailable = false;
 
@@ -32,7 +32,8 @@ export function sqliteRemainder(sql) {
       return null;
     }
   }
-  const text = String(sql ?? '');
+  const text = textOf(sql ?? '');
+  if (typeof text !== 'string') return null;
   let stmt;
   try { stmt = scratch.prepare(text); }
   catch { return null; }

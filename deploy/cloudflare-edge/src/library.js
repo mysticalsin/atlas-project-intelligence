@@ -18,18 +18,21 @@ import { appendAudit, checkpointHead, ensureChain, verifyChain, anchoredVerdict,
 import { recordUsage } from './telemetry.js';
 import { publicationEffect, publicationStatus, publicationTransition, readPublication } from './publication.js';
 import { invitationTransition, noteInvitation, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
-import { bareSemicolon, hasCreateAsSelect, isMutatingStatement, leadingWords, provenRead, remainderIsNoise, splitStatements, sqlShape, unparsedTail } from './sql-text.js';
+import { bareSemicolon, hasCreateAsSelect, isMutatingStatement, leadingWords, provenRead, remainderIsNoise, splitStatements, sqlShape, unparsedTail, writableAssignment } from './sql-text.js';
 import { sqliteRemainder } from './sql-tail.js';
-import { includes, isoFrom, some, trim } from './primordials.js';
+import { clockIso, find, includes, isoFrom, parseDate, some, trim } from './primordials.js';
 import { RETENTION } from './policy.generated.js';
 function receiptInsert(sql) {
   const words = leadingWords(sql);
   return words[0] === 'insert' && words[1] === 'into' && words[2] === 'consent_receipts';
 }
 function auditReady(sql) {
-  try {
-    return sql.exec("SELECT name FROM pragma_table_info('audit')").toArray().some(row => row.name === 'hash');
-  } catch { return false; }
+  let rows;
+  try { rows = sql.exec("SELECT name FROM pragma_table_info('audit')").toArray(); }
+  catch { return false; }
+  const found = some(rows, (row) => row && row.name === 'hash');
+  if (found !== true && found !== false) throw Object.assign(fail(409, 'The audit chain is tampered.'), { code: 'CHAIN_DAMAGED' });
+  return found === true;
 }
 // A null prototype, a frozen key list, and Object.hasOwn. A polluted prototype is not a name.
 function freezeMap(source) {
@@ -89,13 +92,76 @@ function consentTrigger(sql) {
   const named = some(['consent-no-update', 'consent-no-delete', 'consent-no-replace'], (name) => sqlShape(ownValue(MIGRATIONS, MIGRATION_KEYS, name)) === shape);
   return named === true;
 }
-const GUARDED_TABLES = ['audit', 'audit_anchor', 'consent_receipts'];
-function guardedName(words, at) {
-  let i = at;
-  if (words[i] === 'if' && words[i + 1] === 'exists') i += 2;
-  const named = includes(GUARDED_TABLES, words[i]);
+const GUARDED_TABLES = ['audit', 'audit_anchor', 'consent_receipts', 'privacy_gate'];
+const AUDIT_TABLES = ['audit', 'audit_anchor'];
+const CATALOG_TABLES = ['sqlite_master', 'sqlite_schema'];
+const CONFLICT = ['replace', 'ignore', 'fail', 'abort', 'rollback'];
+const CLAUSE = new Set(['where', 'set', 'values', 'select', 'from', 'limit', 'order', 'group', 'having', 'returning', 'on', 'left', 'inner', 'join', 'cross', 'as', 'and', 'or', 'not', 'indexed', 'null', 'default', 'add', 'column', 'rename', 'to', 'cascade', 'restrict', 'when', 'begin', 'end', 'into', 'by', 'asc', 'desc', 'offset', 'union', 'nothing', 'do']);
+function namedIn(list, name) {
+  const named = includes(list, name);
   if (named !== true && named !== false) return true;
-  return named;
+  return named === true;
+}
+function skipExists(words, i) {
+  if (words[i] === 'if' && words[i + 1] === 'not' && words[i + 2] === 'exists') return i + 3;
+  if (words[i] === 'if' && words[i + 1] === 'exists') return i + 2;
+  return i;
+}
+function skipOr(words, i) {
+  if (words[i] !== 'or') return i;
+  for (let k = 0; k < CONFLICT.length; k++) if (CONFLICT[k] === words[i + 1]) return i + 2;
+  return i;
+}
+function namesAt(words, i) {
+  const names = [];
+  if (!words[i]) return names;
+  names.push(words[i]);
+  const next = words[i + 1];
+  if (next && !CLAUSE.has(next)) names.push(next);
+  return names;
+}
+function hits(names, list) {
+  for (let i = 0; i < names.length; i++) if (namedIn(list, names[i])) return true;
+  return false;
+}
+function auditIndexName(name) {
+  if (name === 'audit' || name === 'audit_one_chain_start') return true;
+  if (typeof name !== 'string' || name.length < 6) return false;
+  return name[0] === 'a' && name[1] === 'u' && name[2] === 'd' && name[3] === 'i' && name[4] === 't' && name[5] === '_';
+}
+function targetHits(words, at, list) {
+  return hits(namesAt(words, skipExists(words, at)), list);
+}
+function indexForbidden(words, at) {
+  const names = namesAt(words, skipExists(words, at));
+  for (let i = 0; i < names.length; i++) if (auditIndexName(names[i])) return true;
+  for (let i = at; i < words.length; i++) {
+    if (words[i] === 'on' && hits(namesAt(words, i + 1), AUDIT_TABLES)) return true;
+  }
+  return false;
+}
+function writeTarget(words, i) {
+  const verb = words[i];
+  let at = skipOr(words, i + 1);
+  if (verb === 'insert' || verb === 'replace') {
+    if (words[at] !== 'into') return false;
+    at += 1;
+    const names = namesAt(words, at);
+    const rest = [];
+    for (let n = 1; n < names.length; n++) rest.push(names[n]);
+    if (verb === 'insert' && words[i + 1] !== 'or' && names[0] === 'consent_receipts' && !hits(rest, GUARDED_TABLES) && !hits(rest, CATALOG_TABLES)) return false;
+    return hits(names, GUARDED_TABLES) || hits(names, CATALOG_TABLES);
+  }
+  if (verb !== 'update') return false;
+  const names = namesAt(words, at);
+  return hits(names, GUARDED_TABLES) || hits(names, CATALOG_TABLES);
+}
+function createShadow(words, i) {
+  let at = i + 1;
+  if (words[at] !== 'temp' && words[at] !== 'temporary') return false;
+  at += 1;
+  if (words[at] !== 'table' && words[at] !== 'view') return false;
+  return targetHits(words, at + 1, GUARDED_TABLES);
 }
 function recordedForbidden(sql) {
   let words;
@@ -104,11 +170,38 @@ function recordedForbidden(sql) {
   if (!words) return true;
   for (let i = 0; i < words.length; i++) {
     if (words[i] === 'drop' && words[i + 1] === 'trigger') return true;
-    if (words[i] === 'drop' && (words[i + 1] === 'table' || words[i + 1] === 'index') && guardedName(words, i + 2)) return true;
-    if (words[i] === 'alter' && words[i + 1] === 'table' && guardedName(words, i + 2)) return true;
-    if (words[i] === 'delete' && words[i + 1] === 'from' && guardedName(words, i + 2)) return true;
-    if (words[i] === 'update' && guardedName(words, i + 1)) return true;
+    if (words[i] === 'drop' && (words[i + 1] === 'table' || words[i + 1] === 'view') && targetHits(words, i + 2, GUARDED_TABLES)) return true;
+    if (words[i] === 'drop' && words[i + 1] === 'index' && (targetHits(words, i + 2, GUARDED_TABLES) || indexForbidden(words, i + 2))) return true;
+    if (words[i] === 'alter' && words[i + 1] === 'table' && targetHits(words, i + 2, GUARDED_TABLES)) return true;
+    if (words[i] === 'delete' && words[i + 1] === 'from' && (targetHits(words, i + 2, GUARDED_TABLES) || targetHits(words, i + 2, CATALOG_TABLES))) return true;
+    if ((words[i] === 'update' || words[i] === 'insert' || words[i] === 'replace') && writeTarget(words, i)) return true;
+    if (words[i] === 'create' && (createShadow(words, i) || (words[i + 1] === 'index' || (words[i + 1] === 'unique' && words[i + 2] === 'index')) && indexForbidden(words, words[i + 1] === 'index' ? i + 2 : i + 3))) return true;
   }
+  return false;
+}
+function explainedStart(words) {
+  let i = 0;
+  if (words[0] === 'explain') {
+    i = 1;
+    if (words[1] === 'query' && words[2] === 'plan') i = 3;
+  }
+  return i;
+}
+function alwaysBlocked(sql) {
+  let words;
+  try { words = leadingWords(sql); }
+  catch { return true; }
+  if (!words || !words.length) return false;
+  const i = explainedStart(words);
+  const verb = words[i] || '';
+  if (verb === 'attach' || verb === 'detach') return true;
+  if (writableAssignment(sql)) return true;
+  if (verb === 'delete' && words[i + 1] === 'from' && targetHits(words, i + 2, CATALOG_TABLES)) return true;
+  if ((verb === 'update' || verb === 'insert' || verb === 'replace' || verb === 'drop' || verb === 'alter') && recordedForbidden(sql)) {
+    for (let k = 0; k < words.length; k++) if (namedIn(CATALOG_TABLES, words[k]) || words[k] === 'writable_schema') return true;
+  }
+  if (verb === 'drop' && words[i + 1] === 'index' && indexForbidden(words, i + 2)) return true;
+  if (verb === 'create' && (words[i + 1] === 'index' || (words[i + 1] === 'unique' && words[i + 2] === 'index')) && indexForbidden(words, words[i + 1] === 'index' ? i + 2 : i + 3)) return true;
   return false;
 }
 function isCreateTrigger(sql) {
@@ -130,9 +223,12 @@ function housekeepingAllowed(reason, sql) {
 // A date supplied by the caller is not bound. Other housekeeping statements still carry their own row values.
 const CONSENT_DELETE = 'DELETE FROM consent_receipts WHERE subject IN (SELECT subject FROM consent_receipts GROUP BY subject HAVING MAX(at) < ?)';
 function consentCutoff(now) {
-  const category = RETENTION.categories.find(item => item.id === 'consent_receipts');
+  const category = find(RETENTION.categories, (item) => item.id === 'consent_receipts');
+  if (category === null) throw Object.assign(fail(500, 'The consent cutoff is not a finite time.'), { code: 'SQL_DOOR' });
   const span = category && category.hours ? category.hours * 36e5 : ((category && category.days) || 0) * 864e5;
-  const ms = Date.parse(now) - span;
+  const parsed = parseDate(now);
+  if (parsed == null) throw Object.assign(fail(500, 'The consent cutoff is not a finite time.'), { code: 'SQL_DOOR' });
+  const ms = parsed - span;
   const cutoff = isoFrom(ms);
   if (cutoff == null) throw Object.assign(fail(500, 'The consent cutoff is not a finite time.'), { code: 'SQL_DOOR' });
   return cutoff;
@@ -380,6 +476,11 @@ function migrateStoryTenant(lib) {
     });
   };
 }
+function defaultNow() {
+  const out = clockIso();
+  if (typeof out !== 'string') throw Object.assign(fail(500, 'The clock is not a finite time.'), { code: 'SQL_DOOR' });
+  return out;
+}
 export class Library {
   // Door flags are private. A callback cannot read or replace them.
   // open, receiptOnly, and appended are copied into locals at the check, so a getter cannot flip the decision.
@@ -388,7 +489,7 @@ export class Library {
   #sql;
   // services: outbound adapters for feature modules ({ teams } in production; empty in tests and local runs).
   // rater: rating.storyRater(env) (null: no JEV); metric(name, values): numbers only (default: one console.log line).
-  constructor(sql, { now = () => new Date().toISOString(), newId = () => crypto.randomUUID().replace(/-/g, ''), complete = null, embed = null, readyScore = READY_SCORE, model = '', services = {},
+  constructor(sql, { now = defaultNow, newId = () => crypto.randomUUID().replace(/-/g, ''), complete = null, embed = null, readyScore = READY_SCORE, model = '', services = {},
     rater = null, metric = defaultMetric, transactionSync = null, auditKey = '', dbId = '' } = {}) {
     if (auditKey == null) throw Object.assign(fail(503, 'LOG_SALT is not set.'), { code: 'LOG_SALT' });
     this.#sql = sql;
@@ -414,6 +515,12 @@ export class Library {
         const result = this.#enter(fn, 'recorded');
         const appended = state.appended === true;
         const receiptOnly = state.receiptOnly === true;
+        if (ready && receiptOnly !== true) {
+          let verdict;
+          try { verdict = anchoredVerdict(sql, verifyChain(sql, this.auditKey, this.dbId)); }
+          catch { verdict = { ok: false }; }
+          if (!verdict || verdict.ok !== true) throw Object.assign(fail(409, 'The audit chain is tampered.'), { code: 'CHAIN_DAMAGED' });
+        }
         if (ready && !healthy && !receiptOnly) throw Object.assign(fail(409, 'The audit chain is tampered.'), { code: 'CHAIN_DAMAGED' });
         if (appended && (healthy || !receiptOnly)) {
           const checkpoint = checkpointHead(sql, this.auditKey, this.dbId);
@@ -511,6 +618,8 @@ export class Library {
   exec(statement, ...params) {
     if (typeof statement !== 'string') throw Object.assign(fail(500, 'A SQL write must be a string.'), { code: 'SQL_TEXT' });
     const sql = statement;
+    // Preparing PRAGMA writable_schema = ON runs it, so the refusal comes first.
+    if (writableAssignment(sql)) throw Object.assign(fail(500, 'This statement is not allowed.'), { code: 'SQL_DOOR' });
     // The boundary is the text SQLite prepared. The hand counter is not the authority.
     // Workerd's sql.exec does not return that tail, so a missing parser refuses a leftover semicolon.
     let tail = null;
@@ -525,11 +634,14 @@ export class Library {
     const fallback = typeof tail !== 'string';
     const listedTrigger = consentTrigger(sql);
     if (!fallback) {
-      if (!remainderIsNoise(tail)) throw Object.assign(fail(500, 'A SQL write must be one statement.'), { code: 'SQL_MULTI' });
+      let extra = false;
+      for (let i = 0; tail && i < tail.length; i++) if (tail[i] === ';') extra = true;
+      if (!remainderIsNoise(tail) || (extra && bareSemicolon(sql) && !listedTrigger)) throw Object.assign(fail(500, 'A SQL write must be one statement.'), { code: 'SQL_MULTI' });
     } else if ((bareSemicolon(sql) || unparsedTail(sql)) && !listedTrigger) {
       throw Object.assign(fail(500, 'A SQL write must be one statement.'), { code: 'SQL_MULTI' });
     }
     if (splitStatements(sql).length !== 1 && !listedTrigger) throw Object.assign(fail(500, 'A SQL write must be one statement.'), { code: 'SQL_MULTI' });
+    if (alwaysBlocked(sql)) throw Object.assign(fail(500, 'This statement is not allowed.'), { code: 'SQL_DOOR' });
     const state = this.#state;
     const open = state.open;
     const kind = state.kind;

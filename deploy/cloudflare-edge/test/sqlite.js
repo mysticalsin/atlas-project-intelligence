@@ -5,6 +5,28 @@
 import { DatabaseSync } from 'node:sqlite';
 import { placeholderCount } from '../src/sql-text.js';
 const CONTROL = /^(begin|commit|rollback|savepoint|release)\b/i;
+// sqlite3_prepare_v2 consumes one statement and leaves a comment as no statement.
+// node:sqlite throws when that leftover is prepared on its own.
+function lead(text) {
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === ' ' || c === '\n' || c === '\t' || c === '\r' || c === '\f' || c === ';') { i++; continue; }
+    if (c === '-' && text[i + 1] === '-') {
+      while (i < text.length && text[i] !== '\n') i++;
+      continue;
+    }
+    if (c === '/' && text[i + 1] === '*') {
+      i += 2;
+      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
+      i += 2;
+      if (i > text.length) i = text.length;
+      continue;
+    }
+    break;
+  }
+  return text.slice(i);
+}
 // Cloudflare Durable Object SQL rejects a statement with more than 100 bound parameters.
 const BOUND_MAX = 100;
 export function memorySql() {
@@ -18,7 +40,7 @@ export function memorySql() {
     let rows = [];
     let offset = 0;
     while (rest.trim()) {
-      rest = rest.replace(/^(\s*;)+/, '');
+      rest = lead(rest);
       if (!rest.trim()) break;
       const stmt = db.prepare(rest);
       const src = stmt.sourceSQL;

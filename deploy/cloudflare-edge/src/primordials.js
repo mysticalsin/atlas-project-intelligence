@@ -33,7 +33,12 @@ function snapshot() {
   const push = take(uncurry, Array.prototype.push);
   const charCodeAt = take(uncurry, String.prototype.charCodeAt);
   const toISOString = take(uncurry, Date.prototype.toISOString);
-  const methods = [toLower, trim, replace, test, match, some, every, includes, slice, push, charCodeAt, toISOString];
+  const min = typeof Math.min === 'function' ? Math.min : null;
+  const find = take(uncurry, Array.prototype.find);
+  const cast = typeof String === 'function' ? String : null;
+  const dateParse = typeof Date.parse === 'function' ? Date.parse : null;
+  const dateNow = typeof Date.now === 'function' ? Date.now : null;
+  const methods = [toLower, trim, replace, test, match, some, every, includes, slice, push, charCodeAt, toISOString, min, find, cast, dateParse, dateNow];
   for (let i = 0; i < methods.length; i++) if (methods[i] == null) return null;
   try {
     if (toLower('Ab') !== 'ab') return null;
@@ -51,10 +56,17 @@ function snapshot() {
     if (push(probe, 'a') !== 1 || probe.length !== 1 || probe[0] !== 'a') return null;
     if (charCodeAt('A', 0) !== 65) return null;
     if (toISOString(new Date(0)) !== '1970-01-01T00:00:00.000Z') return null;
+    if (min(2, 5) !== 2 || min(5, 2) !== 2) return null;
+    if (cast('Ab') !== 'Ab' || cast(1) !== '1') return null;
+    const foundItem = find([{ id: 'a' }, { id: 'b' }], (item) => item.id === 'b');
+    if (!foundItem || foundItem.id !== 'b') return null;
+    if (find([{ id: 'a' }], (item) => item.id === 'z') !== undefined) return null;
+    if (dateParse('1970-01-01T00:00:00.000Z') !== 0) return null;
+    if (typeof dateNow() !== 'number' || !Number.isFinite(dateNow())) return null;
   } catch {
     return null;
   }
-  return { toLower, trim, replace, test, match, some, every, includes, slice, push, charCodeAt, toISOString };
+  return { toLower, trim, replace, test, match, some, every, includes, slice, push, charCodeAt, toISOString, min, find, cast, dateParse, dateNow };
 }
 
 const captured = snapshot();
@@ -73,18 +85,28 @@ function text(fn, value) {
   }
 }
 
+function asText(value) {
+  if (!captured) return '';
+  try {
+    const out = captured.cast(value ?? '');
+    return typeof out === 'string' ? out : '';
+  } catch {
+    return '';
+  }
+}
+
 export function lower(value) {
-  return text(captured && captured.toLower, String(value ?? ''));
+  return text(captured && captured.toLower, asText(value));
 }
 
 export function trim(value) {
-  return text(captured && captured.trim, String(value ?? ''));
+  return text(captured && captured.trim, asText(value));
 }
 
 export function replace(value, pattern, replacement) {
   if (!captured) return null;
   try {
-    const out = captured.replace(String(value ?? ''), pattern, replacement);
+    const out = captured.replace(asText(value), pattern, replacement);
     return typeof out === 'string' ? out : null;
   } catch {
     return null;
@@ -166,7 +188,8 @@ function spanOf(text, start, end) {
 // Null when the captured slice is missing or the text is not the requested span.
 export function slice(value, start, end) {
   if (!captured) return null;
-  const text = String(value ?? '');
+    const text = captured.cast(value ?? '');
+    if (typeof text !== 'string') return null;
   try {
     const out = end === undefined ? captured.slice(text, start) : captured.slice(text, start, end);
     if (typeof out !== 'string') return null;
@@ -192,7 +215,9 @@ export function push(list, value) {
 export function charCodeAt(value, index) {
   if (!captured) return null;
   try {
-    const out = captured.charCodeAt(String(value ?? ''), index);
+    const text = captured.cast(value ?? '');
+    if (typeof text !== 'string') return null;
+    const out = captured.charCodeAt(text, index);
     return typeof out === 'number' && Number.isFinite(out) ? out : null;
   } catch {
     return null;
@@ -207,8 +232,7 @@ function finiteIso(text) {
     const n = charCodeAt(text, i);
     if (typeof n !== 'number' || n < 48 || n > 57) return false;
   }
-  const parsed = Date.parse(text);
-  return Number.isFinite(parsed);
+  return parseDate(text) != null;
 }
 
 // A finite UTC timestamp, or null. A patched toISOString does not move it.
@@ -217,9 +241,72 @@ export function isoFrom(ms) {
   try {
     const out = captured.toISOString(new Date(ms));
     if (!finiteIso(out)) return null;
-    if (Date.parse(out) !== ms) return null;
+    if (parseDate(out) !== ms) return null;
     return out;
   } catch {
     return null;
   }
+}
+
+export function least(a, b) {
+  if (!captured) return null;
+  const x = Number(a);
+  const y = Number(b);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  try {
+    const out = captured.min(x, y);
+    if (typeof out !== 'number' || out !== (x < y ? x : y)) return null;
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+export function textOf(value) {
+  if (!captured) return null;
+  try {
+    const out = captured.cast(value);
+    return typeof out === 'string' ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+export function find(list, fn) {
+  if (!captured || typeof fn !== 'function' || list == null) return null;
+  try {
+    const out = captured.find(list, fn);
+    if (out === undefined) return undefined;
+    let seen = false;
+    for (let i = 0; i < list.length; i++) if (list[i] === out) seen = true;
+    return seen ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+export function parseDate(value) {
+  if (!captured) return null;
+  try {
+    const out = captured.dateParse(value);
+    return typeof out === 'number' && Number.isFinite(out) ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+export function nowMs() {
+  if (!captured) return null;
+  try {
+    const out = captured.dateNow();
+    return typeof out === 'number' && Number.isFinite(out) ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clockIso() {
+  const ms = nowMs();
+  if (typeof ms !== 'number') return null;
+  return isoFrom(ms);
 }
