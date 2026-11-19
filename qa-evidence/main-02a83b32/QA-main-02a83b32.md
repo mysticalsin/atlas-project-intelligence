@@ -34,9 +34,105 @@ Canonical mapping: `deploy/cloudflare-edge/src/authz.js`, persona chips `src/jou
 
 ## Top findings
 1. **All primary regression suites green** at head `02a83b32` under local mocked edge — no pytest, edge, or UI script failures.
-2. **High — Admin denial via `/#admin` deep link (consultant):** Opening `/#admin` as a non-admin does not surface the verified-admin refusal copy tested in `admin_metrics_browser.py` (which reaches admin through the gated nav). Supplemental repro failed desktop + mobile; screenshots `screenshots/admin-denied_consultant_*.png`. Expected text per `src/journey-ui.js:84`.
-3. **Medium — “Empty interview” sentinel on edge:** A brand-new `?as=` identity on the edge deployment shows the zero-config “Ready” conversation chrome (`zero_config_edge` PASS) rather than `#emptyInterview` (`src/app.js:53`). Supplemental empty-state probe failed; may be spec/UI drift, not a functional blocker.
+2. **Low / UX (triage) — `/#admin` deep link (consultant):** The hash does not switch views (`openFromHash` has no `#admin` handler), so the user stays on **Conversation** with an empty hidden `#admin` section—no refusal banner. **No admin metrics in DOM or network on load**; explicit `fetch` to admin APIs returns **403**. Gated navigation (`adminNav.click()` → `renderAdmin`) shows the refusal copy **without** calling metrics first. See **TRIAGE §1**.
+3. **Test-expectation error (triage) — `#emptyInterview` on live edge:** On edge/zero-config, the intentional empty state is the **page intro + voice “Ready”** chrome, not the welcome card. `#emptyInterview` stays in the DOM but is **not shown** (`body.studio-view` + `orb.css`). Official suites: `zero_config_edge` / `WOW_ZERO_CONFIG.md` §3.8. See **TRIAGE §2**.
 4. **Info — `check_handoff` manifest drift:** Validating the live tree after `build.py` reports changed compiled HTML vs manifest; use packaged release verification separately.
+5. **Info — Edge count vs PR #9:** This head runs **815** edge tests (0 skipped). PR #9 (`cursor/atlas-write-chokepoint`, draft) reports **1027** with workerd (+ **4** skipped only when workerd is absent). Delta is PR9’s write-path / SQL-door suites—not a skipped suite on `02a83b32`. See **TRIAGE §3**.
+
+## TRIAGE (read-only follow-up)
+
+Evidence: `triage/admin_hash_evidence.json`, `triage/hash_admin.png`, `triage/hash_admin_navclick.png`, `triage/fresh_interview.png`.
+
+### 1. Consultant loads `/#admin` — **severity: Low / UX** (not data exposure)
+
+**What actually renders**
+
+| Signal | `...#admin` (deep link only) | After `adminNav.click()` (gated path, matches `admin_metrics_browser.py:73–79`) |
+|---|---|---|
+| Active workspace view | **Conversation** (`#interview`, nav `interview` active) | **Admin** (`#admin` visible, nav `admin` active) |
+| `#adminNav` | `hidden: true`, not visible | Still hidden for consultant, but click is programmatically allowed in tests |
+| `#admin` section | `hidden: true`, `innerHTML` length **0**, no children | `hidden: false`, heading **Admin** + warning pill |
+| Refusal copy (`journey-ui.js:84`) | **Absent** — `renderAdmin()` never runs | **Present:** `This dashboard is only for a verified admin. The API refuses everyone else.` |
+| Metric cards / export / charts | **None** (`.metric-grid` count 0) | **None** (denied branch returns before `load()`) |
+
+**DOM snippets (consultant, `ATLAS.Interview`, local edge)**
+
+Deep link only — user sees Conversation chrome; admin panel is an empty hidden sibling:
+
+```text
+#interview  hidden=false  (activeView)
+  page-intro: "Ready" / "No project selected" / zero-config voice chrome
+#admin      hidden=true   innerText=""
+#adminNav   hidden=true
+location.hash = "#admin"   (hash is not consumed)
+```
+
+Gated `adminNav.click()` — same user, refusal without metrics shell:
+
+```text
+#admin      hidden=false  innerText:
+  Admin
+
+  This dashboard is only for a verified admin. The API refuses everyone else.
+```
+
+**Network after navigation**
+
+`/#admin` load (consultant) — API requests observed (no admin routes):
+
+| Method | URL | Status |
+|---|---|---:|
+| GET | `/api/bootstrap` | 200 |
+| GET | `/api/library/profile` | 200 |
+| GET | `/api/library` | 200 |
+| GET | `/api/library/<id>` | 200 (×2, seeded synthetic refs for this persona) |
+
+**No** `GET /api/library/admin/metrics` or `/api/library/admin/export` on this path.
+
+Explicit probe from the same signed-in page (supplemental):
+
+| Method | Path | Status | Body (truncated) |
+|---|---|---:|---|
+| GET | `/api/library/admin/metrics` | **403** | `{"error":"The admin dashboard is only for a verified admin."}` |
+| GET | `/api/library/admin/export` | **403** | same |
+
+Server gate: `deploy/cloudflare-edge/src/operate.js` (`user.role !== 'admin'` → 403).
+
+**Why `admin_metrics_browser.py` passes but `/#admin` fails the supplemental matrix**
+
+- The browser test uses **mocked** `bootInfo` and forces `document.getElementById('adminNav').click()`, which calls `switchView('admin')` → `AtlasJourney.render('admin')` → `renderAdmin()` → `adminMetricsTransition` **denied** at boot (`libraryRole !== 'admin'`) **before** any metrics `fetch` (`src/admin-metrics-machine.js:44–47`; `admin_metrics_browser.py:73–79` asserts `HELD` length unchanged).
+- `openFromHash()` only handles `#library/…`, `#invitation/…`, `#bid|gap/…` — **not** `#admin` (`src/app.js:362–370`). The hash is therefore inert for admin; supplemental failure was **missing refusal copy on an unsupported deep link**, not missing authz on the API.
+
+**Verdict:** No admin data in DOM or passive network on `/#admin`. APIs refuse 403 when called. **Regrade original “High” finding → Low / UX** (optional: wire `#admin` to `switchView('admin')` or strip hash).
+
+### 2. `interview_empty` / `#emptyInterview` on edge — **test-expectation error** (not a product bug on this path)
+
+**Observed for `freshuser@example.test` (no local projects)**
+
+- **Visible UX:** Conversation `#interview` with zero-config copy: pill **Ready**, **No project selected**, Start/consent flow (`triage/fresh_interview.png`; matches `tests/zero_config_edge.py` PASS: *“fresh user: no project yet”*, *“pill reads Ready”*).
+- **`#emptyInterview`:** In DOM with `hidden=false` but **`offsetParent === null`** (not painted). Root cause: compiled pages use `body.studio-view` and `src/orb.css:9`:
+
+  `.studio-view #emptyInterview { display: none !important; }`
+
+- **`renderInterview()`** (`src/app.js:53`) still toggles the `hidden` attribute for gateway/offline semantics, but CSS overrides display on this shell.
+- **Spec:** `docs/WOW_ZERO_CONFIG.md` §3.8 — live mode removes gateway setup text on `#emptyInterview`; §5 / acceptance rows require **no setup text**, **Ready** pill, consent-at-Start — not the legacy welcome card.
+
+**Verdict:** On edge/live, **`#emptyInterview` is not the designated empty state**; zero-config intro + voice panel is. Supplemental matrix FAIL rows are **false positives** vs `zero_config_edge` / WOW spec. **Not classified as a regression at `02a83b32`.** (`#emptyInterview` remains relevant for offline/gateway-only contexts without `studio-view` suppression, e.g. some `set_content` UI tests.)
+
+### 3. Edge tests **815** here vs **1027** on PR #9
+
+| Context | Command | pass | fail | skipped |
+|---|---|---:|---:|---:|
+| **This QA (`02a83b32`)** | `cd deploy/cloudflare-edge && node --test test/*.test.js` | **815** | 0 | **0** |
+| **PR #9 head** (`dd87761f`, per [PR #9](https://github.com/mysticalsin/atlas-project-intelligence/pull/9) body) | Edge with **workerd** binary installed | **1027** | 0 | **0** |
+| **PR #9** (same, no workerd) | `ATLAS_WORKERD_ROOT` unset / missing | **1023** | 0 | **4** (workerd-only cases) |
+
+**Explanation**
+
+- **Δ ≈ 212 tests** on PR #9 branch `cursor/atlas-write-chokepoint` vs `main` at `02a83b32`.
+- `git diff --diff-filter=A 02a83b32..origin/cursor/atlas-write-chokepoint -- deploy/cloudflare-edge/test` adds **48 files**, including the `write-v8-door`, `write-v9-door`, `write-v10-door`, `write-v11-verb`, `write-sql-gate`, `write-recorded-guard`, … family from PR #9 (“write-path chokepoint”).
+- Those files **do not exist** on `02a83b32`; this run did **not** omit them — they are simply not in the tree yet.
+- On `02a83b32`, the edge suite completed with **zero skipped** (no workerd harness on this branch).
 
 ## What was NOT RUN (and why)
 - **Live Microsoft Entra sign-in / role revocation:** Hard rule: no live Entra; local JWT via `?as=` + `idp` only.

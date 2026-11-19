@@ -1,0 +1,428 @@
+{
+  "base": "http://127.0.0.1:55211",
+  "scenarios": [
+    {
+      "name": "hash_admin",
+      "url": "http://127.0.0.1:55211/?as=consultant%40example.test&idp=%7B%22roles%22%3A%20%5B%22ATLAS.Interview%22%5D%7D#admin",
+      "dom": {
+        "title": "ATLAS Project Intelligence \u00b7 Mantu",
+        "hash": "#admin",
+        "viewButtons": [
+          {
+            "view": "interview",
+            "hidden": false,
+            "active": true
+          },
+          {
+            "view": "projects",
+            "hidden": false,
+            "active": false
+          },
+          {
+            "view": "stories",
+            "hidden": false,
+            "active": false
+          },
+          {
+            "view": "library",
+            "hidden": false,
+            "active": false
+          },
+          {
+            "view": "bids",
+            "hidden": false,
+            "active": false
+          },
+          {
+            "view": "journey",
+            "hidden": false,
+            "active": false
+          },
+          {
+            "view": "admin",
+            "hidden": true,
+            "active": false
+          }
+        ],
+        "adminNav": {
+          "hidden": true,
+          "visible": false
+        },
+        "adminSection": {
+          "hidden": true,
+          "innerHTML_len": 0,
+          "innerText": "",
+          "childCount": 0
+        },
+        "emptyInterview": {
+          "hidden": false,
+          "visible": false,
+          "text": "A CLEAR PATH FROM EXPERIENCE TO EVIDENCEStart with your project.Let ATLAS ask.Your voice interviewer listens, challenges vague claims and asks useful follow-ups. Project notes, evidence and stories stay in this one workspace.Start my project \u2192Explore a fictional exampleVoice requires the included ga"
+        },
+        "interviewLayout": {
+          "hidden": true
+        },
+        "activeView": "interview",
+        "views": [
+          {
+            "id": "interview",
+            "hidden": false,
+            "textLen": 1416,
+            "textSample": "VOICE INTELLIGENCE / MANTU\nReady\n\u2197\n\nA CONVERSATION, NOT A QUESTIONNAIRE.\n\nGreat work deserves\na real conversation.\n\nYour experience. The right questions. A story grounded in facts.\n\n\u25c7\nProject context\n\u2197\nYour next great story.\n\nChoose a project. ATLAS will help you explain what you actually did.\n\nNo project selected\nPrivate workspace\n+ Add a project\nExplore a fictional example \u2197\n\u25ce\nStory capture\n0/ 6"
+          },
+          {
+            "id": "projects",
+            "hidden": true,
+            "textLen": 493,
+            "textSample": "THE WORK, NOT JUST THE KEYWORDSFind experienceyou can explain.People, contributions, evidence and the limits of the story.Search this workspace+ New projectImport backupFilter delivery stageAll stagesAssessmentProof of conceptPilotProductionOngoing operationLessons learnedFilter practice areaAll practice areasData & AIWeb & App DevelopmentTelecom & NetworksSAP & ERPCloud & InfrastructureCybersecur"
+          },
+          {
+            "id": "stories",
+            "hidden": true,
+            "textLen": 1238,
+            "textSample": "RELEVANT. CREDIBLE. READY TO DISCUSS.Tell a better story.Not a bigger one.Project referenceAdmin test copyNorthwind queue pilotA draft from your record\u2014not a fabricated referenceYour next story starts with the work.Capture a project first. Then choose its customer angle and review the evidence.Go to interview \u2192\nMake it relevant toAn operations leaderA technology leaderA transformation leaderIntend"
+          },
+          {
+            "id": "library",
+            "hidden": true,
+            "textLen": 444,
+            "textSample": "SHARED REFERENCE LIBRARYEvery reference, reviewed and ready to reuse.Interviews land here automatically. A review agent scores each record; the N+1 validates it; only validated, ready references are published to everyone, with client details hidden.\n\nFind references for a meetingFind references\nAnalytics & insights\nFilter referencesAll statusesIn reviewNeeds workChanges requestedAwaiting N+1Publis"
+          },
+          {
+            "id": "bids",
+            "hidden": true,
+            "textLen": 0,
+            "textSample": ""
+          },
+          {
+            "id": "journey",
+            "hidden": true,
+            "textLen": 0,
+            "textSample": ""
+          },
+          {
+            "id": "admin",
+            "hidden": true,
+            "textLen": 0,
+            "textSample": ""
+          }
+        ]
+      },
+      "api_requests": [
+        {
+          "method": "GET",
+          "url": "http://127.0.0.1:55211/api/bootstrap",
+          "resource": "fetch",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "url": "http://127.0.0.1:55211/api/library/profile",
+          "resource": "fetch",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "url": "http://127.0.0.1:55211/api/library",
+          "resource": "fetch",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "url": "http://127.0.0.1:55211/api/library/e05b73f139fa404891190e9c87674387",
+          "resource": "fetch",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "url": "http://127.0.0.1:55211/api/library/28d3684797ab484dadb2d7462f2dfda2",
+          "resource": "fetch",
+          "status": 200
+        }
+      ],
+      "screenshot": "qa-evidence/main-02a83b32/triage/hash_admin.png"
+    },
+    {
+      "name": "hash_admin_navclick",
+      "url": "http://127.0.0.1:55211/?as=consultant%40example.test&idp=%7B%22roles%22%3A%20%5B%22ATLAS.Interview%22%5D%7D",
+      "dom": {
+        "title": "ATLAS Project Intelligence \u00b7 Mantu",
+        "hash": "",
+        "viewButtons": [
+          {
+            "view": "interview",
+            "hidden": false,
+            "active": false
+          },
+          {
+            "view": "projects",
+            "hidden": false,
+            "active": false
+          },
+          {
+            "view": "stories",
+            "hidden": false,
+            "active": false
+          },
+          {
+            "view": "library",
+            "hidden": false,
+            "active": false
+          },
+          {
+            "view": "bids",
+            "hidden": false,
+            "active": false
+          },
+          {
+            "view": "journey",
+            "hidden": false,
+            "active": false
+          },
+          {
+            "view": "admin",
+            "hidden": true,
+            "active": true
+          }
+        ],
+        "adminNav": {
+          "hidden": true,
+          "visible": false
+        },
+        "adminSection": {
+          "hidden": false,
+          "innerHTML_len": 144,
+          "innerText": "Admin\n\nThis dashboard is only for a verified admin. The API refuses everyone else.",
+          "childCount": 2
+        },
+        "emptyInterview": {
+          "hidden": false,
+          "visible": false,
+          "text": "A CLEAR PATH FROM EXPERIENCE TO EVIDENCEStart with your project.Let ATLAS ask.Your voice interviewer listens, challenges vague claims and asks useful follow-ups. Project notes, evidence and stories stay in this one workspace.Start my project \u2192Explore a fictional exampleVoice requires the included ga"
+        },
+        "interviewLayout": {
+          "hidden": true
+        },
+        "activeView": "admin",
+        "views": [
+          {
+            "id": "interview",
+            "hidden": true,
+            "textLen": 4901,
+            "textSample": "THE EXPERIENCE IS YOURS. THE NEXT QUESTION IS OURS.Great work. Let\u2019s hear it.A familiar voice. One useful question at a time. Your experience, turned into a story worth sharing.Your projectAdmin test copyNorthwind queue pilotMy workspace \u00b7 local \u2197+ New project\nA CLEAR PATH FROM EXPERIENCE TO EVIDENCEStart with your project.Let ATLAS ask.Your voice interviewer listens, challenges vague claims and a"
+          },
+          {
+            "id": "projects",
+            "hidden": true,
+            "textLen": 493,
+            "textSample": "THE WORK, NOT JUST THE KEYWORDSFind experienceyou can explain.People, contributions, evidence and the limits of the story.Search this workspace+ New projectImport backupFilter delivery stageAll stagesAssessmentProof of conceptPilotProductionOngoing operationLessons learnedFilter practice areaAll practice areasData & AIWeb & App DevelopmentTelecom & NetworksSAP & ERPCloud & InfrastructureCybersecur"
+          },
+          {
+            "id": "stories",
+            "hidden": true,
+            "textLen": 1238,
+            "textSample": "RELEVANT. CREDIBLE. READY TO DISCUSS.Tell a better story.Not a bigger one.Project referenceAdmin test copyNorthwind queue pilotA draft from your record\u2014not a fabricated referenceYour next story starts with the work.Capture a project first. Then choose its customer angle and review the evidence.Go to interview \u2192\nMake it relevant toAn operations leaderA technology leaderA transformation leaderIntend"
+          },
+          {
+            "id": "library",
+            "hidden": true,
+            "textLen": 444,
+            "textSample": "SHARED REFERENCE LIBRARYEvery reference, reviewed and ready to reuse.Interviews land here automatically. A review agent scores each record; the N+1 validates it; only validated, ready references are published to everyone, with client details hidden.\n\nFind references for a meetingFind references\nAnalytics & insights\nFilter referencesAll statusesIn reviewNeeds workChanges requestedAwaiting N+1Publis"
+          },
+          {
+            "id": "bids",
+            "hidden": true,
+            "textLen": 0,
+            "textSample": ""
+          },
+          {
+            "id": "journey",
+            "hidden": true,
+            "textLen": 0,
+            "textSample": ""
+          },
+          {
+            "id": "admin",
+            "hidden": false,
+            "textLen": 82,
+            "textSample": "Admin\n\nThis dashboard is only for a verified admin. The API refuses everyone else."
+          }
+        ]
+      },
+      "api_requests": [
+        {
+          "method": "GET",
+          "url": "http://127.0.0.1:55211/api/bootstrap",
+          "resource": "fetch",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "url": "http://127.0.0.1:55211/api/library/profile",
+          "resource": "fetch",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "url": "http://127.0.0.1:55211/api/library",
+          "resource": "fetch",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "url": "http://127.0.0.1:55211/api/library/e05b73f139fa404891190e9c87674387",
+          "resource": "fetch",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "url": "http://127.0.0.1:55211/api/library/28d3684797ab484dadb2d7462f2dfda2",
+          "resource": "fetch",
+          "status": 200
+        }
+      ],
+      "screenshot": "qa-evidence/main-02a83b32/triage/hash_admin_navclick.png"
+    },
+    {
+      "name": "fresh_interview",
+      "url": "http://127.0.0.1:55211/?as=freshuser%40example.test&idp=%7B%22roles%22%3A%20%5B%22ATLAS.Interview%22%5D%7D",
+      "dom": {
+        "title": "ATLAS Project Intelligence \u00b7 Mantu",
+        "hash": "",
+        "viewButtons": [
+          {
+            "view": "interview",
+            "hidden": false,
+            "active": true
+          },
+          {
+            "view": "projects",
+            "hidden": false,
+            "active": false
+          },
+          {
+            "view": "stories",
+            "hidden": false,
+            "active": false
+          },
+          {
+            "view": "library",
+            "hidden": false,
+            "active": false
+          },
+          {
+            "view": "bids",
+            "hidden": false,
+            "active": false
+          },
+          {
+            "view": "journey",
+            "hidden": false,
+            "active": false
+          },
+          {
+            "view": "admin",
+            "hidden": true,
+            "active": false
+          }
+        ],
+        "adminNav": {
+          "hidden": true,
+          "visible": false
+        },
+        "adminSection": {
+          "hidden": true,
+          "innerHTML_len": 0,
+          "innerText": "",
+          "childCount": 0
+        },
+        "emptyInterview": {
+          "hidden": false,
+          "visible": false,
+          "text": "A CLEAR PATH FROM EXPERIENCE TO EVIDENCEStart with your project.Let ATLAS ask.Your voice interviewer listens, challenges vague claims and asks useful follow-ups. Project notes, evidence and stories stay in this one workspace.Start my project \u2192Explore a fictional exampleVoice requires the included ga"
+        },
+        "interviewLayout": {
+          "hidden": true
+        },
+        "activeView": "interview",
+        "views": [
+          {
+            "id": "interview",
+            "hidden": false,
+            "textLen": 1416,
+            "textSample": "VOICE INTELLIGENCE / MANTU\nReady\n\u2197\n\nA CONVERSATION, NOT A QUESTIONNAIRE.\n\nGreat work deserves\na real conversation.\n\nYour experience. The right questions. A story grounded in facts.\n\n\u25c7\nProject context\n\u2197\nYour next great story.\n\nChoose a project. ATLAS will help you explain what you actually did.\n\nNo project selected\nPrivate workspace\n+ Add a project\nExplore a fictional example \u2197\n\u25ce\nStory capture\n0/ 6"
+          },
+          {
+            "id": "projects",
+            "hidden": true,
+            "textLen": 493,
+            "textSample": "THE WORK, NOT JUST THE KEYWORDSFind experienceyou can explain.People, contributions, evidence and the limits of the story.Search this workspace+ New projectImport backupFilter delivery stageAll stagesAssessmentProof of conceptPilotProductionOngoing operationLessons learnedFilter practice areaAll practice areasData & AIWeb & App DevelopmentTelecom & NetworksSAP & ERPCloud & InfrastructureCybersecur"
+          },
+          {
+            "id": "stories",
+            "hidden": true,
+            "textLen": 1216,
+            "textSample": "RELEVANT. CREDIBLE. READY TO DISCUSS.Tell a better story.Not a bigger one.Project referenceNo project yetA draft from your record\u2014not a fabricated referenceYour next story starts with the work.Capture a project first. Then choose its customer angle and review the evidence.Go to interview \u2192\nMake it relevant toAn operations leaderA technology leaderA transformation leaderIntended useInternal working"
+          },
+          {
+            "id": "library",
+            "hidden": true,
+            "textLen": 444,
+            "textSample": "SHARED REFERENCE LIBRARYEvery reference, reviewed and ready to reuse.Interviews land here automatically. A review agent scores each record; the N+1 validates it; only validated, ready references are published to everyone, with client details hidden.\n\nFind references for a meetingFind references\nAnalytics & insights\nFilter referencesAll statusesIn reviewNeeds workChanges requestedAwaiting N+1Publis"
+          },
+          {
+            "id": "bids",
+            "hidden": true,
+            "textLen": 0,
+            "textSample": ""
+          },
+          {
+            "id": "journey",
+            "hidden": true,
+            "textLen": 0,
+            "textSample": ""
+          },
+          {
+            "id": "admin",
+            "hidden": true,
+            "textLen": 0,
+            "textSample": ""
+          }
+        ]
+      },
+      "api_requests": [
+        {
+          "method": "GET",
+          "url": "http://127.0.0.1:55211/api/bootstrap",
+          "resource": "fetch",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "url": "http://127.0.0.1:55211/api/library/profile",
+          "resource": "fetch",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "url": "http://127.0.0.1:55211/api/library",
+          "resource": "fetch",
+          "status": 200
+        }
+      ],
+      "screenshot": "qa-evidence/main-02a83b32/triage/fresh_interview.png"
+    }
+  ],
+  "admin_api_probe_consultant": [
+    {
+      "path": "/api/library/admin/metrics",
+      "status": 403,
+      "body": "{\"error\":\"The admin dashboard is only for a verified admin.\"}"
+    },
+    {
+      "path": "/api/library/admin/export",
+      "status": 403,
+      "body": "{\"error\":\"The admin dashboard is only for a verified admin.\"}"
+    }
+  ]
+}
