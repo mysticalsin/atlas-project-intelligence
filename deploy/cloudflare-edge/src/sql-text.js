@@ -629,6 +629,22 @@ export function provenRead(sql) {
   }
 }
 
+// The primary door asks the same lexer as provenRead. A WITH or EXPLAIN whose
+// statement is not a read is a write even when the first word is not the verb.
+// EXPLAIN QUERY PLAN only describes a statement, so it is not this check.
+export function hiddenWrite(sql) {
+  if (!primordialsHold()) return true;
+  try {
+    const words = leadingWords(sql);
+    const verb = words[0] || '';
+    if (verb === 'explain' && words[1] === 'query' && words[2] === 'plan') return false;
+    if (verb !== 'with' && verb !== 'explain') return false;
+    return !provenRead(sql);
+  } catch {
+    return true;
+  }
+}
+
 function readWords(tokens) {
   if (!tokens || !tokens.length) return false;
   let i = 0;
