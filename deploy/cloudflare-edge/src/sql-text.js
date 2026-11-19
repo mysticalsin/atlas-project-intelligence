@@ -201,6 +201,8 @@ export function isMutatingStatement(sql) {
   const words = leadingWords(parts[0]);
   const verb = words[0] || '';
   if (verbOf(verb)) return true;
+  // EXPLAIN DELETE still names a mutation. It is not a read just because the first word is explain.
+  if (verb === 'explain' && words.some(word => verbOf(word))) return true;
   if (verb !== 'with') return false;
   const text = parts[0];
   let depth = 0;
@@ -231,6 +233,64 @@ export function isMutatingStatement(sql) {
       i += word.length;
       continue;
     }
+    i++;
+  }
+  return false;
+}
+
+// True when the text after SQLite's prepared statement is only space, semicolons, or comments.
+export function remainderIsNoise(tail) {
+  const text = String(tail ?? '');
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === ' ' || c === '\n' || c === '\t' || c === '\r' || c === '\f' || c === ';') { i++; continue; }
+    if (c === '-' && text[i + 1] === '-') {
+      while (i < text.length && text[i] !== '\n') i++;
+      continue;
+    }
+    if (c === '/' && text[i + 1] === '*') {
+      i += 2;
+      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
+      i = Math.min(text.length, i + 2);
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
+// A semicolon outside quotes and comments, with more SQL after it.
+// This is the backstop for a driver that cannot prepare. It does not track BEGIN/END.
+export function unparsedTail(sql) {
+  const text = String(sql ?? '');
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === '-' && text[i + 1] === '-') {
+      while (i < text.length && text[i] !== '\n') i++;
+      continue;
+    }
+    if (c === '/' && text[i + 1] === '*') {
+      i += 2;
+      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
+      i = Math.min(text.length, i + 2);
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`' || c === '[') {
+      const end = c === '[' ? ']' : c;
+      i++;
+      while (i < text.length) {
+        if (text[i] === end) {
+          if (text[i + 1] === end) { i += 2; continue; }
+          i++;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+    if (c === ';') return !remainderIsNoise(text.slice(i + 1));
     i++;
   }
   return false;

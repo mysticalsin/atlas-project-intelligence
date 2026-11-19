@@ -44,5 +44,16 @@ export function memorySql() {
       throw error;
     }
   };
-  return { exec, transactionSync };
+  // SQLite's own boundary: sourceSQL is the text sqlite3_prepare_v2 consumed.
+  // A throw means this string did not prepare; the caller does not treat that as a tail.
+  const statementTail = (q) => {
+    const text = String(q ?? '');
+    let stmt;
+    try { stmt = db.prepare(text); }
+    catch { return null; }
+    const src = stmt.sourceSQL;
+    if (!text.startsWith(src)) return null;
+    return text.slice(src.length);
+  };
+  return { exec, transactionSync, statementTail };
 }

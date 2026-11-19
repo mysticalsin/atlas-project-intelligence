@@ -18,7 +18,8 @@ import { appendAudit, checkpointHead, ensureChain, verifyChain, anchoredVerdict,
 import { recordUsage } from './telemetry.js';
 import { publicationEffect, publicationStatus, publicationTransition, readPublication } from './publication.js';
 import { invitationTransition, noteInvitation, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
-import { hasCreateAsSelect, isMutatingStatement, leadingWords, splitStatements, sqlShape } from './sql-text.js';
+import { hasCreateAsSelect, isMutatingStatement, leadingWords, remainderIsNoise, splitStatements, sqlShape, unparsedTail } from './sql-text.js';
+import { sqliteRemainder } from './sql-tail.js';
 import { RETENTION } from './policy.generated.js';
 function receiptInsert(sql) {
   const words = leadingWords(sql);
@@ -466,6 +467,17 @@ export class Library {
   exec(statement, ...params) {
     if (typeof statement !== 'string') throw Object.assign(fail(500, 'A SQL write must be a string.'), { code: 'SQL_TEXT' });
     const sql = statement;
+    // The boundary is the text SQLite prepared. The hand counter is not the authority.
+    // Workerd's sql.exec does not return that tail, so a missing parser refuses a leftover semicolon.
+    let tail = null;
+    if (typeof this.#sql?.statementTail === 'function') {
+      try { tail = this.#sql.statementTail(sql); }
+      catch { tail = null; }
+    }
+    if (typeof tail !== 'string') tail = sqliteRemainder(sql);
+    if (typeof tail === 'string') {
+      if (!remainderIsNoise(tail)) throw Object.assign(fail(500, 'A SQL write must be one statement.'), { code: 'SQL_MULTI' });
+    } else if (unparsedTail(sql)) throw Object.assign(fail(500, 'A SQL write must be one statement.'), { code: 'SQL_MULTI' });
     if (splitStatements(sql).length !== 1) throw Object.assign(fail(500, 'A SQL write must be one statement.'), { code: 'SQL_MULTI' });
     const state = this.#state;
     const open = state.open;
