@@ -490,6 +490,10 @@ export class Library {
     const reason = state.reason;
     const migration = state.migration;
     if (isMutatingStatement(sql)) {
+      const words = leadingWords(sql);
+      if (words[0] === 'create' && words[1] === 'trigger' && kind !== 'schema' && kind !== 'registered') {
+        throw Object.assign(fail(500, 'A trigger is installed only by schema.'), { code: 'SCHEMA_DML' });
+      }
       if (!open) throw Object.assign(fail(500, 'A SQL write must run inside recorded, housekeeping, or schema.'), { code: 'SQL_DOOR' });
       if (kind === 'schema' && !schemaAllowed(sql)) throw Object.assign(fail(500, 'Schema accepts named CREATE TABLE and CREATE INDEX only.'), { code: 'SCHEMA_DML' });
       if (kind === 'housekeeping' && !housekeepingAllowed(reason, sql)) throw Object.assign(fail(500, 'That housekeeping statement is not allowed.'), { code: 'HOUSEKEEPING_SQL' });
