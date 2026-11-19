@@ -32,7 +32,8 @@ function snapshot() {
   const slice = take(uncurry, String.prototype.slice);
   const push = take(uncurry, Array.prototype.push);
   const charCodeAt = take(uncurry, String.prototype.charCodeAt);
-  const methods = [toLower, trim, replace, test, match, some, every, includes, slice, push, charCodeAt];
+  const toISOString = take(uncurry, Date.prototype.toISOString);
+  const methods = [toLower, trim, replace, test, match, some, every, includes, slice, push, charCodeAt, toISOString];
   for (let i = 0; i < methods.length; i++) if (methods[i] == null) return null;
   try {
     if (toLower('Ab') !== 'ab') return null;
@@ -49,10 +50,11 @@ function snapshot() {
     const probe = [];
     if (push(probe, 'a') !== 1 || probe.length !== 1 || probe[0] !== 'a') return null;
     if (charCodeAt('A', 0) !== 65) return null;
+    if (toISOString(new Date(0)) !== '1970-01-01T00:00:00.000Z') return null;
   } catch {
     return null;
   }
-  return { toLower, trim, replace, test, match, some, every, includes, slice, push, charCodeAt };
+  return { toLower, trim, replace, test, match, some, every, includes, slice, push, charCodeAt, toISOString };
 }
 
 const captured = snapshot();
@@ -189,6 +191,31 @@ export function charCodeAt(value, index) {
   try {
     const out = captured.charCodeAt(String(value ?? ''), index);
     return typeof out === 'number' && Number.isFinite(out) ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+function finiteIso(text) {
+  if (typeof text !== 'string' || text.length !== 24) return false;
+  if (text[4] !== '-' || text[7] !== '-' || text[10] !== 'T' || text[13] !== ':' || text[16] !== ':' || text[19] !== '.' || text[23] !== 'Z') return false;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '-' || text[i] === 'T' || text[i] === ':' || text[i] === '.' || text[i] === 'Z') continue;
+    const n = charCodeAt(text, i);
+    if (typeof n !== 'number' || n < 48 || n > 57) return false;
+  }
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed);
+}
+
+// A finite UTC timestamp, or null. A patched toISOString does not move it.
+export function isoFrom(ms) {
+  if (!captured || typeof ms !== 'number' || !Number.isFinite(ms)) return null;
+  try {
+    const out = captured.toISOString(new Date(ms));
+    if (!finiteIso(out)) return null;
+    if (Date.parse(out) !== ms) return null;
+    return out;
   } catch {
     return null;
   }

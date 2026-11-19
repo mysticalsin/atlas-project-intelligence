@@ -20,7 +20,7 @@ import { publicationEffect, publicationStatus, publicationTransition, readPublic
 import { invitationTransition, noteInvitation, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
 import { bareSemicolon, hasCreateAsSelect, isMutatingStatement, leadingWords, provenRead, remainderIsNoise, splitStatements, sqlShape, unparsedTail } from './sql-text.js';
 import { sqliteRemainder } from './sql-tail.js';
-import { some, trim } from './primordials.js';
+import { isoFrom, some, trim } from './primordials.js';
 import { RETENTION } from './policy.generated.js';
 function receiptInsert(sql) {
   const words = leadingWords(sql);
@@ -110,7 +110,10 @@ const CONSENT_DELETE = 'DELETE FROM consent_receipts WHERE subject IN (SELECT su
 function consentCutoff(now) {
   const category = RETENTION.categories.find(item => item.id === 'consent_receipts');
   const span = category && category.hours ? category.hours * 36e5 : ((category && category.days) || 0) * 864e5;
-  return new Date(Date.parse(now) - span).toISOString();
+  const ms = Date.parse(now) - span;
+  const cutoff = isoFrom(ms);
+  if (cutoff == null) throw Object.assign(fail(500, 'The consent cutoff is not a finite time.'), { code: 'SQL_DOOR' });
+  return cutoff;
 }
 // Schema accepts CREATE TABLE and CREATE INDEX IF NOT EXISTS on these names.
 // Drop, alter, trigger, and CREATE TABLE AS SELECT are not in this set.
