@@ -71,16 +71,26 @@ export function sweep(lib, { now = lib.now(), retention = RETENTION, tenant } = 
   // Audit rows older than the period become a tombstone. The proof is stored and later hashes stay, so the head does not move.
   if (c('audit')) {
     const cut = before(now, c('audit')), names = new Map();
-    const r = lib.rewriteAudit(row => {
-      if (!refIds.has(String(row.id || ''))) return null;
-      if (row.at >= cut || (String(row.actor || '').startsWith('erased:') && row.detail === '')) return null;
+    const groups = new Map();
+    for (const row of lib.rows('SELECT seq, id, actor, detail, at FROM audit')) {
+      if (!refIds.has(String(row.id || ''))) continue;
+      if (row.at >= cut || (String(row.actor || '').startsWith('erased:') && row.detail === '')) continue;
       const personal = row.actor && !SYSTEM_ACTORS.has(row.actor) && !String(row.actor).startsWith('erased:');
-      if (!personal && row.detail === '') return null;
+      if (!personal && row.detail === '') continue;
       if (!names.has(row.actor)) names.set(row.actor, token());
-      return { actor: names.get(row.actor), detail: '' };
-    });
-    if (r.refused) out.auditRefused = { reason: r.reason, brokenSeq: r.brokenSeq }; // X1 (red M8): a chain that does not verify is left untouched; the cron reports it
-    else if (r.changed) { add('auditRows', r.changed); out.auditHead = r.head; out.auditPreviousHead = r.previousHead; }
+      const tombstone = names.get(row.actor);
+      if (!groups.has(tombstone)) groups.set(tombstone, []);
+      groups.get(tombstone).push(Number(row.seq));
+    }
+    let changed = 0, refused = null, head = null, previousHead = null;
+    for (const [tombstone, seqs] of groups) {
+      const r = lib.rewriteAudit(tombstone, seqs);
+      changed += r.changed || 0;
+      if (r.head) { head = r.head; previousHead = r.previousHead; }
+      if (r.refused) refused = r;
+    }
+    if (refused) out.auditRefused = { reason: refused.reason, brokenSeq: refused.brokenSeq }; // X1 (red M8): a chain that does not verify is left untouched; the cron reports it
+    else if (changed) { add('auditRows', changed); out.auditHead = head; out.auditPreviousHead = previousHead; }
   }
   // Consent receipts are keyed by subject hash and have no tenant column. Only the blank local sandbox may sweep them.
   // A verified tenant must not delete another tenant's receipts for the same person.

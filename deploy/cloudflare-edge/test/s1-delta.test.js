@@ -34,8 +34,9 @@ test('swapping a tombstone token fails verify', () => {
 
 test('splicing a seq-10 tombstone proof onto seq 1 fails verify and does not anchor', () => {
   const store = chain(10);
-  sqlOf(store).exec('DELETE FROM audit_anchor');
   pseudonymiseAudit(store, ['a10@example.test'], TOKEN, { ids: ['r10'] });
+  assert.equal(sqlOf(store).exec('SELECT head FROM audit_anchor').toArray().length, 1);
+  sqlOf(store).exec('DELETE FROM audit_anchor');
   const rows = sqlOf(store).exec('SELECT seq, id, action, at, prev_hash, "commit", actor, tombstone FROM audit ORDER BY seq').toArray();
   const donor = rows[9];
   const commit = '0' + donor.commit;

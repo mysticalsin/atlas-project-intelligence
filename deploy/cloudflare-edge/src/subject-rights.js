@@ -162,14 +162,16 @@ export function pseudonymiseAudit(lib, emails, token, { ids = null } = {}) {
   const list = (Array.isArray(emails) ? emails : [emails]).map(e => String(e || '').toLowerCase()).filter(Boolean);
   if (!list.length) return { changed: 0, head: null };
   const allow = ids == null ? null : new Set(ids);
-  return lib.rewriteAudit(r => {
+  const seqs = lib.rows('SELECT seq, id, actor, detail FROM audit').filter(r => {
     const id = String(r.id || '');
     const actorHit = list.includes(String(r.actor || '').toLowerCase());
     const detailHit = list.some(e => mentions(r.detail, e));
-    if (!actorHit && !detailHit) return null;
-    if (allow && !allow.has(id) && !PRIVACY_LOG.has(id)) return null;
-    return { actor: token, detail: '' };
-  });
+    if (!actorHit && !detailHit) return false;
+    if (allow && !allow.has(id) && !PRIVACY_LOG.has(id)) return false;
+    return true;
+  }).map(r => Number(r.seq));
+  if (!seqs.length) return { changed: 0, head: null };
+  return lib.rewriteAudit(token, seqs);
 }
 
 const inBids = (lib, refId) => tableExists(lib, 'bid_references') && lib.rows('SELECT 1 AS x FROM bid_references WHERE ref_id = ? LIMIT 1', refId).length > 0;

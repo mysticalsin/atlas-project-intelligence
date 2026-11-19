@@ -158,14 +158,17 @@ test('pseudonymising one tenant does not rewrite later audit links', () => {
   lib.log('ref-b', 'kim@example.test', 'saved', 'other tenant');
   const before = sqlOf(lib).exec('SELECT seq, prev_hash, hash FROM audit ORDER BY seq').toArray();
   const out = pseudonymiseAudit(lib, [EMAIL], 'erased:abcd01abcd01', { ids: ['ref-a'] });
-  const after = sqlOf(lib).exec('SELECT seq, prev_hash, hash, actor FROM audit ORDER BY seq').toArray();
+  const after = sqlOf(lib).exec('SELECT seq, prev_hash, hash, actor, action FROM audit ORDER BY seq').toArray();
   assert.equal(out.refused, undefined);
   assert.notEqual(after[1].actor, EMAIL);
   assert.equal(after[1].hash, before[1].hash);
   assert.equal(after[2].prev_hash, before[2].prev_hash);
   assert.equal(after[2].hash, before[2].hash);
-  assert.equal(verifyChain(sqlOf(lib)).ok, true);
-  assert.equal(verifyChain(sqlOf(lib)).head, before[2].hash);
+  assert.equal(after.at(-1).action, 'audit erasure');
+  assert.equal(after.at(-1).prev_hash, before[2].hash);
+  const verdict = verifyChain(sqlOf(lib));
+  assert.equal(verdict.ok, true);
+  assert.equal(verdict.head, after.at(-1).hash);
 });
 
 test('the daily cron records an anchor and reports head truncation, tail truncation and a mid-chain edit', async () => {

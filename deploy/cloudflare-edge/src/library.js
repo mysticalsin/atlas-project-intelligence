@@ -14,7 +14,7 @@ import { RatingError, ratingInput, questionPlan, requestBody, compose, agentQual
 import { profileFold, profileSelection, storedConsent } from './profile.js';
 import { placeholders, readChunks } from './sql-bound.js';
 import { sameTenant, TENANT_ID } from './authz.js';
-import { appendAudit, checkpointHead, ensureChain, verifyChain, anchoredVerdict, rewriteRows, verifyDaily } from './audit-chain.js';
+import { appendAudit, checkpointHead, ensureChain, verifyChain, anchoredVerdict, rewriteRows, verifyDaily, TOMBSTONE_ACTOR } from './audit-chain.js';
 import { recordUsage } from './telemetry.js';
 import { publicationEffect, publicationStatus, publicationTransition, readPublication } from './publication.js';
 import { invitationTransition, noteInvitation, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
@@ -392,14 +392,23 @@ export class Library {
   // A mutating statement needs one of the three doors. Reads do not. The one raw exec is below.
   // Callers outside Library use these three because the raw handle is private.
   // chainVerdict: privacy.js records a receipt only when the chain is healthy, and profile.js does the same for a directory import. auditLines uses it too.
-  // rewriteAudit: subject-rights.js tombstones an erased story, and retention.js tombstones old audit rows.
+  // rewriteAudit: subject-rights.js and retention.js pass a tombstone and the row numbers. A predicate is refused.
   // dailyChain: library-routes.js is the daily check.
   chainVerdict() {
     const sql = rawSql(this);
     return anchoredVerdict(sql, verifyChain(sql, this.auditKey, this.dbId));
   }
-  rewriteAudit(edit) {
-    return rewriteRows(rawSql(this), edit, this.auditKey, this.dbId);
+  rewriteAudit(pseudonym, seqs) {
+    const rows = Array.isArray(seqs) ? seqs : null;
+    if (typeof pseudonym !== 'string' || !TOMBSTONE_ACTOR.test(pseudonym) || !rows || rows.some(n => !Number.isInteger(n) || n < 1)) {
+      throw Object.assign(fail(500, 'An audit erasure needs a tombstone and the row numbers.'), { code: 'AUDIT_ERASURE' });
+    }
+    const want = new Set(rows);
+    return this.recorded(() => {
+      const result = rewriteRows(rawSql(this), row => want.has(Number(row.seq)) ? { actor: pseudonym, detail: '' } : null, this.auditKey, this.dbId);
+      if (result.changed && !result.refused) this.log('audit', 'privacy', 'audit erasure', String(result.changed));
+      return result;
+    });
   }
   dailyChain() {
     return verifyDaily(rawSql(this), this.auditKey, this.dbId);
