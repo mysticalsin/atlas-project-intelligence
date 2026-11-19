@@ -71,7 +71,7 @@ function mustIncludes(list, value) {
   if (out !== true && out !== false) throw new Error('primordial');
   return out;
 }
-const VERBS = ['insert', 'update', 'delete', 'replace', 'create', 'drop', 'alter', 'reindex', 'vacuum', 'attach', 'detach', 'analyze', 'begin', 'commit', 'rollback', 'savepoint', 'release'];
+const VERBS = ['insert', 'update', 'delete', 'replace', 'create', 'drop', 'alter', 'reindex', 'vacuum', 'attach', 'detach', 'analyze', 'begin', 'commit', 'end', 'rollback', 'savepoint', 'release'];
 const WRITES = ['insert', 'update', 'delete', 'replace'];
 const BODY_NEXT = ['select', 'insert', 'update', 'delete', 'replace', 'with', 'values', 'begin', 'end'];
 function listed(list, word) {
@@ -82,28 +82,41 @@ function listed(list, word) {
 function writeOf(word) {
   return listed(WRITES, word);
 }
-// A parenthesized write is a statement when a clause follows it. An argument,
-// an alias, or a quoted name is not.
-const NESTED = ['from', 'into', 'table', 'index', 'view', 'trigger', 'set', 'values', 'database', 'schema'];
+// Statement position is the token depth, not a second character scan.
+// A parenthesis opens a statement after AS or when one is already expected.
+// A call, an alias, a dotted name, and a quoted name are not verbs.
 function hasStatementVerb(sql) {
   const tokens = sqlTokens(sql);
-  let expect = true;
+  const stack = [];
+  let mode = 'stmt';
   let prev = '';
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
-    if (token.kind === 'op' && token.text === ';') { expect = true; prev = ''; continue; }
-    if (token.kind === 'op' && token.text === '(') { expect = 'nested'; prev = ''; continue; }
+    if (token.kind === 'op' && token.text === ';') { mode = 'stmt'; prev = ''; continue; }
+    if (token.kind === 'op' && token.text === '(') {
+      mustPush(stack, mode);
+      mode = mode === 'as' || mode === 'stmt' ? 'stmt' : 'expr';
+      prev = '';
+      continue;
+    }
+    if (token.kind === 'op' && token.text === ')') {
+      const opened = stack.length ? stack[stack.length - 1] : 'body';
+      if (stack.length) stack.length = stack.length - 1;
+      mode = opened === 'as' || opened === 'stmt' ? 'stmt' : 'body';
+      prev = ')';
+      continue;
+    }
     if (token.kind === 'op') { prev = token.text; continue; }
     if (token.kind !== 'word') continue;
     const next = tokens[i + 1];
-    const closed = next && (next.text === ')' || next.text === ',');
+    const closed = next && next.text === ')';
     const explained = prev === 'explain' || prev === 'plan';
     if (!token.quoted && prev !== 'as' && prev !== '.' && !closed && listed(VERBS, token.text)) {
-      if (expect === true || explained) return true;
-      if (expect === 'nested' && next && next.kind === 'word' && listed(NESTED, next.text)) return true;
+      if (mode === 'stmt' || explained) return true;
     }
-    if (!token.quoted && (token.text === 'explain' || token.text === 'plan' || (prev === 'explain' && token.text === 'query'))) expect = true;
-    else expect = false;
+    if (!token.quoted && token.text === 'as') mode = 'as';
+    else if (!token.quoted && (token.text === 'explain' || token.text === 'plan' || (prev === 'explain' && token.text === 'query'))) mode = 'stmt';
+    else if (mode === 'stmt') mode = 'body';
     prev = token.quoted ? '' : token.text;
   }
   return false;
@@ -460,13 +473,19 @@ function mutatingBody(sql) {
       i = mustLeast(text.length, i + 2);
       continue;
     }
-    if (c === "'" || c === '"') {
+    if (c === "'" || c === '"' || c === '`') {
       const quote = c;
       i++;
       while (i < text.length) {
         if (text[i] === quote) { if (text[i + 1] === quote) { i += 2; continue; } i++; break; }
         i++;
       }
+      continue;
+    }
+    if (c === '[') {
+      i++;
+      while (i < text.length && text[i] !== ']') i++;
+      i = mustLeast(text.length, i + 1);
       continue;
     }
     if (c === '(') { depth++; i++; continue; }
