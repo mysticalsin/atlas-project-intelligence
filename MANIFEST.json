@@ -67,8 +67,8 @@
     },
     {
       "path": "Makefile",
-      "bytes": 1661,
-      "sha256": "67031749a23ad3e98cb7fb5bef7493fe2b2401bc440de6806b5404634c677995"
+      "bytes": 1704,
+      "sha256": "f682870bfd662d2e98034a98848a64cbebe164d399580c527af6ccef13f8115c"
     },
     {
       "path": "Preview.command",
@@ -1396,6 +1396,16 @@
       "sha256": "e69e8b14f8022b39a5d7d3e3ee17f375cab48f4643abdabe1706baf5042879cf"
     },
     {
+      "path": "handoff/decisions/MANIFEST-regenerate.md",
+      "bytes": 661,
+      "sha256": "b1d575c20a28716ec1cf2e15ade308b3c2d78c1e49eb2675a0d7ddb9a97f5836"
+    },
+    {
+      "path": "handoff/decisions/ask-browser-waits.md",
+      "bytes": 757,
+      "sha256": "0688945a88b531a2ffefa0046aef25f0d7b4d2fc6b66581ae45a56b4e7f4c6fa"
+    },
+    {
       "path": "handoff/decisions/post-pr9-unslop.md",
       "bytes": 414,
       "sha256": "5ae00d8a348f5cf1c18afaad9e78984946d2903196c0544b52999014c6d6a30c"
@@ -1977,8 +1987,8 @@
     },
     {
       "path": "tests/ask_browser.py",
-      "bytes": 11814,
-      "sha256": "1fb1f301a7f8a1a08a59b25570c3253d27c594d15ce5ed9ba10b8645fe1f559c"
+      "bytes": 12672,
+      "sha256": "2d527650a76389451d99ac01dd8146cc7167e2e412a3cafb7c1ed9cb3b739aba"
     },
     {
       "path": "tests/audit_marker_browser.py",
