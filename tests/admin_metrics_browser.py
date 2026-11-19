@@ -77,6 +77,15 @@ with sync_playwright() as pw:
           and 'This dashboard is only for a verified admin. The API refuses everyone else.' in d.locator('#admin').inner_text()
           and d.locator('#admin .metric-grid').count() == 0 and d.locator('#admin .chart').count() == 0
           and d.locator('#admin button', has_text='Export CSV').count() == 0 and len(HELD) == before)
+    deep = b.new_context(viewport={'width': 1366, 'height': 1000})
+    dp = deep.new_page()
+    dp.route('**/*', route_for('user'))
+    dp.goto('https://atlas.test/#admin')
+    dp.locator('#admin h1').wait_for()
+    check('consultant #admin deep link shows the refusal state',
+          not dp.locator('#admin').is_hidden() and dp.locator('#admin h1').inner_text() == 'Admin'
+          and 'This dashboard is only for a verified admin. The API refuses everyone else.' in dp.locator('#admin').inner_text()
+          and dp.locator('#admin .metric-grid').count() == 0 and dp.locator('#admin button', has_text='Export CSV').count() == 0)
     outage = b.new_context(viewport={'width': 1366, 'height': 1000})
     o = outage.new_page(); o.on('pageerror', lambda e: ERR.append('boot: ' + str(e)))
     def boot_down(r):
