@@ -26,7 +26,7 @@ Canonical mapping: `deploy/cloudflare-edge/src/authz.js`, persona chips `src/jou
 | Root `node --test tests/*.test.js` | 409 tests (408 pass, 1 skipped) | 0 | `logs/node-root.txt` |
 | `pytest tests/test_*.py -q` | 308 passed | 0 | `logs/pytest.txt` |
 | Edge `node --test deploy/cloudflare-edge/test/*.test.js` | 815 passed | 0 | `logs/test-edge.txt` |
-| UI Playwright (`make test-ui` set) | 805 `PASS` assertions across 26 scripts | 0 (all scripts exit 0) | `logs/ui/*.txt` |
+| UI Playwright (`make test-ui` set) | 805 `PASS` lines + `csp_console_browser.py` (3 silent asserts, no stdout) | 0 (all scripts exit 0) | `logs/ui/*.txt` |
 | `scripts/check_handoff.py .` | 11 checks: **1 FAIL** (`manifest-content` — tree differs from frozen `MANIFEST.json` after `build.py`); 10 PASS | 1 | `logs/check_handoff.txt` |
 | Supplemental journey matrix (this QA) | 120 rows | 4 FAIL, remainder PASS/WARN/NOT_RUN/Info | `qa_matrix.json` |
 
