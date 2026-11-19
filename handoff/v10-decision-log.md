@@ -36,7 +36,7 @@ Inspector's partial on `4c11808c` is folded here. `POST /api/library/:id/reinsta
 
 Red `a9d8676b2f5535c577368174bf6bab98306582d6` is `test/write-v10-reinstate.test.js` only: 1 test, 0 pass, 1 fail, `AssertionError` expected `403` actual `400`. Fix `c896702eba8a5e51eaeb01fd6c82026f338493fb` does not edit that test. Removing the reinstate exception was 0 pass, 1 fail, the same assertion (`/tmp/v10-mut-reinstate.txt`).
 
-Mute, Restart, and End at 320 px are `tests/studio_browser.py` line 121. `src/orb.css`, `src/voice.css`, `src/sculpture.css`, `src/shell.html`, the studio HTML aliases, and that test are identical to main `02a83b320fdf635cdd8d603a54b791a3fef59152`. PR9 does not change the UI. The overflow stays a pre-existing item. No unslop table.
+Mute, Restart, and End at 320 px are in this head even though the same screen is on main `02a83b320fdf635cdd8d603a54b791a3fef59152`. At scroll 0 on a 320×740 live page, Mute and Restart end at 781.7 and End runs from 793.7 to 839.7, below the viewport. The old check treated that as a fit because `is_visible` does not require the first screen. Red `efb8eaa6a0cb252a8744e10b3e301ab84a7c5e99` scrolls to the top and requires each box inside the viewport. It was 0 pass, 1 fail, `AssertionError: Mute, Restart and End fit a 320 px phone`. Fix `39d1e822d2aee25561ea7f6863bb6d764084ba90` does not edit that test. At `max-width:320px` the heading is tighter and the orb is 220 px wide. The labels stay: Mute microphone, Restart conversation, End interview. After the fix, at scroll 0, Mute and Restart run from 615.9 to 661.9 and End runs from 673.9 to 719.9. Removing the 320 px rule was the same assertion (`/tmp/v10-mut-320.txt`).
 
 ## Mutations
 
