@@ -88,4 +88,16 @@ Dropping backtick and bracket quotes makes `WITH a AS (SELECT 1 AS [x(]) DELETE 
 
 The tests are `dc76dc077ef9f269d69cd29ecbf733ce00e9d122`. The fix is `5796812ed0827ce68fe201f8fadc78c421cb8aad`. The fix does not edit those assertions.
 
-This commit is the local head. The six gates were not run. They stay ready for the freeze.
+## Inspector 27c82cc6
+
+verified. F-1 is the same miss as Sentinel M-1. On `dd87761f`, `readWords` returned `!hasStatementVerb(sql)` and `expect` became false after the CTE body, so `provenRead('WITH x AS (SELECT 1) DELETE FROM audit')` was true. The statement verb is the first depth-0 verb after the CTE list. That string is not a proven read. Both doors return `SQL_DOOR` and the audit count stays 1. The same holds for `UPDATE` and `INSERT` of that shape. `WITH a AS (SELECT 1 AS [x(]) DELETE FROM refs` is `SQL_DOOR` on both doors and `refsRowsLeft` stays 1.
+
+Returning `''` from the WITH step, instead of reading the verb after the list, makes both strings proven reads. A direct primary run then takes the audit count from 1 to 0 and the refs count from 1 to 0. That mutant was restored and was not committed. The test is `3a7d5bfd75685324869cbf1e3bef3f524522513b`. It does not change the lexer. The lexer that makes the string false is `a64289cba866f655076880a283a721526912b8b9`.
+
+F-2: the source match at `write-v11-verb.test.js:78-83` on `dd87761f` is gone. Deleting `if (start === null) return 'tampered'` leaves the four v11 verb tests green, including the signed row before the chain start. `find` returns `null` when the captured search misses and `undefined` when the row is absent. A null start and a missing start both fail `start && sameText(start.prev_hash, GENESIS)` and return `tampered`. There is no input that makes those two returns differ. The signed-before line is a different check: deleting it makes that chain verify, `true !== false`.
+
+Low 1 and Low 2 stay closed. `src/journey.css` line 26 and `src/sculpture.css` line 98 are unchanged. At 320×740 the three controls are the same boxes as the v11 after shot, and the page stays 320 px wide.
+
+At 375×812, End was below the fold: top 822.7, bottom 868.7. A new rule, from 321 px to 375 px and only when the screen is at most 812 px tall, sets the orb to 280 px. End is then top 735.7, bottom 781.7, inside the screen. The labels stay Mute microphone, Restart conversation, and End interview. The check is in `tests/studio_browser.py`. The layout commit is `fd6fa5d8e02b25ee9ffb6c83d38f74fda32b89be`.
+
+This commit is the freeze head. Gate counts are not in this file.
