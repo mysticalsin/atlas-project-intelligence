@@ -18,6 +18,8 @@ The fallback classifier had a third bypass of the same shape: a second scan disa
 
 `provenRead` uses the same semicolon tokens for a second statement. `splitBody` remains the trigger-boundary splitter, and `scanSemi` remains the door's bare-semicolon check. Those two are not the verb decision.
 
+The primary door asks that same lexer. `hiddenWrite` is `!provenRead` when the first word is `WITH` or `EXPLAIN`. `EXPLAIN QUERY PLAN` stays a description on the primary door. The door refuses a statement when it is a mutation, when `hiddenWrite` is true, or, on the fallback door, when it is not a proven read. A parenthesis inside `'...'`, `"..."`, `[...]`, or `` `...` `` cannot make a WITH write look like a read on either door.
+
 ## Authorizer
 
 `node:sqlite` `DatabaseSync` on this host (Node v22.23.4) exposes `aggregate`, `applyChangeset`, `close`, `exec`, `function`, `prepare`, and the load-extension and session methods. It has no `authorizer` and no `setAuthorizer`. `StatementSync` has no `readonly` and no `readOnly`. `constants` has no `SQLITE_DBCONFIG_DEFENSIVE` and no db-config name. Devin's partial on `4c11808c` confirmed the same three gaps. The fallback path hides `process.getBuiltinModule('node:sqlite')`, so it cannot install a callback either. Both paths stay on the text classifier. A miss there is a direct bypass. No package was added.

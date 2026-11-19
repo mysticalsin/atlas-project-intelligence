@@ -74,6 +74,18 @@ Dropping `"` from the lexer makes the explicit test fail: native `WITH "x(" AS (
 
 `splitBody` stays the trigger-boundary splitter. `scanSemi` stays the door's bare-semicolon check. Neither decides the statement verb. The record is in `handoff/untangle-decision-log.md`.
 
-The tests are `51874d036609a23bb06b3ea60b0319065a2ec414`. The fix is `a64289cba866f655076880a283a721526912b8b9`.
+The tests are `51874d036609a23bb06b3ea60b0319065a2ec414`. The fix is `a64289cba866f655076880a283a721526912b8b9`. The six gates were not run.
+
+## Devin, primary path
+
+verified. On `dd87761f` the alias `[x(]` and the backtick form made `provenRead` true, and `WITH ... DELETE` removed a refs row on the fallback door and on the primary door. `"x("` was `SQL_DOOR` and the row stayed. The same lexer now backs both doors. `'...'`, `"..."`, `[...]`, and `` `...` `` are one token, so a parenthesis inside any of them does not hide the verb after the CTE list.
+
+`hiddenWrite` asks `provenRead` for a statement whose first word is `WITH` or `EXPLAIN`. `EXPLAIN QUERY PLAN` is not that check: a plan of one `DELETE` stays allowed on the primary door and `SQL_DOOR` on the fallback door. The door is `isMutatingStatement` or `hiddenWrite` or, on the fallback door, not a proven read.
+
+The regression is 32 refs statements and 32 audit statements: four quote styles, the name and the alias, `DELETE`, `UPDATE`, `INSERT`, and `REPLACE`. Each is not a proven read. Both doors return `SQL_DOOR`. The refs row stays at 1 with title `kept`, and the audit chain-start stays at 1. The quoted-paren fuzz, seed `20261119`, is 677 statements. It runs on both doors for audit (1354 checks) and again for refs (1354 checks).
+
+Dropping backtick and bracket quotes makes `WITH a AS (SELECT 1 AS [x(]) DELETE FROM refs` a proven read, `true !== false`, and both doors `ALLOW`. A direct primary run then takes the refs count from 1 to 0. A door that consults `provenRead` only on the fallback path `ALLOW`s that write on the primary door. Returning false from the WITH branch of `mutatingBody` leaves the new tests green, because `hiddenWrite` still asks `provenRead`. Those mutants were restored and were not committed.
+
+The tests are `dc76dc077ef9f269d69cd29ecbf733ce00e9d122`. The fix is `5796812ed0827ce68fe201f8fadc78c421cb8aad`. The fix does not edit those assertions.
 
 This commit is the local head. The six gates were not run. They stay ready for the freeze.
