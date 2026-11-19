@@ -170,7 +170,7 @@ function walk(node, file, tainted, exec, params) {
   if (node.type === 'CallExpression' && isEvalCall(node)) push(exec, file, node, 'raw exec');
   if (node.type === 'CallExpression' && isReflectApplyExec(node, file, tainted)) push(exec, file, node, 'raw exec');
   if (node.type === 'AssignmentExpression' && isWeakMapPrototype(node.right)) push(exec, file, node, 'raw handle');
-  if ((node.type === 'NewExpression' || node.type === 'CallExpression') && unwrap(node.callee)?.name === 'Function') push(exec, file, node, 'raw exec');
+  if ((node.type === 'NewExpression' || node.type === 'CallExpression') && isFunctionValue(node.callee)) push(exec, file, node, 'raw exec');
   if (node.type === 'CallExpression' && propName(peel(node.callee)) === 'rewriteAudit' && file !== 'subject-rights.js' && file !== 'retention.js') push(exec, file, node, 'audit erasure');
   if (node.type === 'CallExpression' && isRawCall(node, file, tainted) && !(file === 'library.js' && isPrivateExec(node))) push(exec, file, node, 'raw exec');
   if (node.type === 'CallExpression' && passesHandle(node, file, tainted)) push(exec, file, node, 'raw handle');
@@ -259,9 +259,49 @@ function noteEvalBinding(id, init) {
   }
 }
 
+function isIndexEval(node) {
+  if (node?.type !== 'MemberExpression' || !node.computed) return false;
+  const list = unwrap(node.object);
+  if (list?.type !== 'ArrayExpression') return false;
+  const index = node.property?.type === 'Literal' ? node.property.value : null;
+  if (typeof index !== 'number') return false;
+  return isEvalValue(list.elements[index]);
+}
+
+function isObjectEval(node) {
+  if (node?.type !== 'MemberExpression' || node.computed) return false;
+  const obj = unwrap(node.object);
+  if (obj?.type !== 'ObjectExpression') return false;
+  const key = propName(node);
+  for (const prop of obj.properties || []) {
+    if (prop?.type !== 'Property') continue;
+    const name = prop.key?.type === 'Identifier' ? prop.key.name : '';
+    if (name === key && isEvalValue(prop.value)) return true;
+  }
+  return false;
+}
+
+function isReflectApplyEval(node) {
+  const callee = unwrap(node.callee);
+  if (propName(callee) !== 'apply' || unwrap(callee?.object)?.name !== 'Reflect') return false;
+  return isEvalValue((node.arguments || [])[0]);
+}
+
+function isMapEval(node) {
+  if (propName(peel(node.callee)) !== 'map') return false;
+  return (node.arguments || []).some((arg) => isEvalValue(arg));
+}
+
+function isFunctionValue(node) {
+  node = peel(node);
+  if (node?.type === 'Identifier' && node.name === 'Function') return true;
+  return node?.type === 'MemberExpression' && propName(node) === 'Function';
+}
+
 function isEvalCall(node) {
   const callee = peel(node.callee);
   if (callee?.type === 'Identifier' && (callee.name === 'eval' || evalAliases.has(callee.name))) return true;
+  if (isIndexEval(callee) || isObjectEval(callee) || isReflectApplyEval(node) || isMapEval(node)) return true;
   if (callee?.type === 'MemberExpression' && callee.computed && callee.property?.type === 'Identifier' && evalStrings.has(callee.property.name)) return true;
   return callee?.type === 'MemberExpression' && propName(callee) === 'eval';
 }

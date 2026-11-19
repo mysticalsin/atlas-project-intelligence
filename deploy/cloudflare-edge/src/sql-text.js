@@ -141,8 +141,14 @@ function splitBody(sql) {
     }
     if (c === '`') {
       i++;
-      while (i < text.length && text[i] !== '`') i++;
-      i = mustLeast(text.length, i + 1);
+      while (i < text.length) {
+        if (text[i] === '`') {
+          if (text[i + 1] === '`') { i += 2; continue; }
+          i++;
+          break;
+        }
+        i++;
+      }
       continue;
     }
     if (c === '(') { paren++; i++; continue; }
@@ -205,6 +211,23 @@ export function placeholderCount(sql) {
       while (i < text.length) {
         if (text[i] === quote) {
           if (text[i + 1] === quote) { i += 2; continue; }
+          i++;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+    if (c === '[') {
+      while (i < text.length && text[i] !== ']') i++;
+      i = mustLeast(text.length, i + 1);
+      continue;
+    }
+    if (c === '`') {
+      i++;
+      while (i < text.length) {
+        if (text[i] === '`') {
+          if (text[i + 1] === '`') { i += 2; continue; }
           i++;
           break;
         }
@@ -301,11 +324,14 @@ function quotedName(text, i) {
   const start = i + 1;
   let j = start;
   let name = '';
-  while (j < text.length && text[j] !== end) {
-    if (text[j] === end && text[j + 1] === end) { name += end; j += 2; continue; }
+  while (j < text.length) {
+    if (text[j] === end) {
+      if (end !== ']' && text[j + 1] === end) { name += end; j += 2; continue; }
+      j++;
+      break;
+    }
     name += text[j++];
   }
-  if (j < text.length) j++;
   return { name, next: j, start };
 }
 
@@ -531,8 +557,14 @@ function scanSemi(text) {
     }
     if (c === '`') {
       i++;
-      while (i < text.length && text[i] !== '`') i++;
-      i = mustLeast(text.length, i + 1);
+      while (i < text.length) {
+        if (text[i] === '`') {
+          if (text[i + 1] === '`') { i += 2; continue; }
+          i++;
+          break;
+        }
+        i++;
+      }
       continue;
     }
     if (c === ';') return !onlyNoise(text, i + 1);
@@ -551,8 +583,12 @@ export function provenRead(sql) {
   if (!primordialsHold()) return false;
   try {
     if (scanSemi(mustText(sql))) return false;
+    const opened = leadingWords(sql);
+    if (pragmaVerb(opened)) {
+      if (writableAssignment(sql)) return false;
+      return pragmaRead(sql);
+    }
     if (writableAssignment(sql)) return false;
-    if (pragmaRead(sql)) return true;
     const parts = splitStatements(sql);
     if (parts.length !== 1) return false;
     const words = leadingWords(parts[0]);

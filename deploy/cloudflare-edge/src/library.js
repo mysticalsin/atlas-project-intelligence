@@ -96,7 +96,7 @@ const GUARDED_TABLES = ['audit', 'audit_anchor', 'consent_receipts', 'privacy_ga
 const AUDIT_TABLES = ['audit', 'audit_anchor'];
 const CATALOG_TABLES = ['sqlite_master', 'sqlite_schema'];
 const CONFLICT = ['replace', 'ignore', 'fail', 'abort', 'rollback'];
-const CLAUSE = new Set(['where', 'set', 'values', 'select', 'from', 'limit', 'order', 'group', 'having', 'returning', 'on', 'left', 'inner', 'join', 'cross', 'as', 'and', 'or', 'not', 'indexed', 'null', 'default', 'add', 'column', 'rename', 'to', 'cascade', 'restrict', 'when', 'begin', 'end', 'into', 'by', 'asc', 'desc', 'offset', 'union', 'nothing', 'do']);
+const CLAUSE = Object.freeze(['where', 'set', 'values', 'select', 'from', 'limit', 'order', 'group', 'having', 'returning', 'on', 'left', 'inner', 'join', 'cross', 'as', 'and', 'or', 'not', 'indexed', 'null', 'default', 'add', 'column', 'rename', 'to', 'cascade', 'restrict', 'when', 'begin', 'end', 'into', 'by', 'asc', 'desc', 'offset', 'union', 'nothing', 'do']);
 function namedIn(list, name) {
   const named = includes(list, name);
   if (named !== true && named !== false) return true;
@@ -112,12 +112,22 @@ function skipOr(words, i) {
   for (let k = 0; k < CONFLICT.length; k++) if (CONFLICT[k] === words[i + 1]) return i + 2;
   return i;
 }
+function clauseWord(word) {
+  const named = includes(CLAUSE, word);
+  if (named !== true && named !== false) return false;
+  return named === true;
+}
+function listedName(list, name) {
+  const named = includes(list, name);
+  if (named !== true && named !== false) return false;
+  return named === true;
+}
 function namesAt(words, i) {
   const names = [];
   if (!words[i]) return names;
-  names.push(words[i]);
+  names[0] = words[i];
   const next = words[i + 1];
-  if (next && !CLAUSE.has(next)) names.push(next);
+  if (next && !clauseWord(next)) names[1] = next;
   return names;
 }
 function hits(names, list) {
@@ -148,7 +158,7 @@ function writeTarget(words, i) {
     at += 1;
     const names = namesAt(words, at);
     const rest = [];
-    for (let n = 1; n < names.length; n++) rest.push(names[n]);
+    for (let n = 1; n < names.length; n++) rest[n - 1] = names[n];
     if (verb === 'insert' && words[i + 1] !== 'or' && names[0] === 'consent_receipts' && !hits(rest, GUARDED_TABLES) && !hits(rest, CATALOG_TABLES)) return false;
     return hits(names, GUARDED_TABLES) || hits(names, CATALOG_TABLES);
   }
@@ -278,14 +288,14 @@ function consentCutoff(now) {
 }
 // Schema accepts CREATE TABLE and CREATE INDEX IF NOT EXISTS on these names.
 // Drop, alter, trigger, and CREATE TABLE AS SELECT are not in this set.
-const KNOWN_TABLES = new Set([
+const KNOWN_TABLES = Object.freeze([
   'refs', 'revisions', 'audit', 'invitations', 'manager_trust', 'manager_trust_v2',
   'staffing', 'staffing_v2', 'outreach', 'teams_conversations', 'teams_seen',
   'journey', 'journey_v2', 'consent_receipts', 'privacy_flags', 'erasure_log', 'erasure_holds', 'privacy_gate',
   'gap_requests', 'telemetry', 'claims', 'confirmation_requests', 'bids', 'bid_references',
   'profiles', 'profiles_v2', 'profile_collapsed', 'directory', 'directory_v2', 'directory_imports', 'directory_imports_v2',
 ]);
-const KNOWN_INDEXES = new Set([
+const KNOWN_INDEXES = Object.freeze([
   'refs_owner_local', 'invitations_open_scope', 'outreach_subject', 'outreach_status',
   'teams_conversations_email', 'journey_tenant_subject', 'consent_receipts_subject',
   'telemetry_at', 'claims_ref', 'claims_sentence', 'confirmation_requests_ref',
@@ -304,7 +314,7 @@ function schemaAllowed(statement) {
     let at = 2;
     if (words[at] === 'if' && words[at + 1] === 'not' && words[at + 2] === 'exists') at += 3;
     const name = words[at];
-    return !!name && name !== 'audit_anchor' && KNOWN_TABLES.has(name);
+    return !!name && name !== 'audit_anchor' && listedName(KNOWN_TABLES, name);
   }
   let at = 1;
   if (words[at] === 'unique') at++;
@@ -315,7 +325,7 @@ function schemaAllowed(statement) {
   const index = words[at];
   const table = words[at + 2];
   if (words[at + 1] !== 'on' || table === 'audit' || table === 'audit_anchor') return false;
-  return KNOWN_INDEXES.has(index) && KNOWN_TABLES.has(table);
+  return listedName(KNOWN_INDEXES, index) && listedName(KNOWN_TABLES, table);
 }
 // Named migrations. None of these target audit or audit_anchor. Triggers are named here, not accepted as free text.
 export const MIGRATIONS = freezeMap({
