@@ -23,6 +23,6 @@
 .metric{border:1px solid var(--line, #2a2a36);border-radius:12px;padding:12px}
 .metric b{display:block;font-size:26px;letter-spacing:-.6px}
 .filters{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:12px}
-.recording-live{margin:8px 0;padding:8px 12px;border:1px solid var(--p);border-radius:999px;width:max-content}
+.recording-live{margin:8px 0;padding:8px 12px;border:1px solid var(--p);border-radius:999px;max-width:100%;box-sizing:border-box}
 @media(max-width:960px){.stage-grid,.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.journey-layout{grid-template-columns:1fr}}
 @media(max-width:800px){.stage-grid,.journey-layout,.metric-grid{grid-template-columns:1fr}.journey-head{display:block}.persona-switch{margin-top:12px}}

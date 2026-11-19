@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { handle, scheduled } from '../src/app.js';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import { memorySql } from './sqlite.js';
 import { secure } from '../src/security-headers.js';
@@ -78,15 +78,15 @@ test('a subject export and erase stay inside one tenant for confirmations and bi
   const lib = fresh();
   claims.ensure(lib);
   bids.ensure(lib);
-  const insertReq = (id, refId, tenant, to, by) => lib.sql.exec(
+  const insertReq = (id, refId, tenant, to, by) => sqlOf(lib).exec(
     'INSERT INTO confirmation_requests (id, ref_id, to_email, created_by, created_at, status, tenant) VALUES (?, ?, ?, ?, ?, ?, ?)',
     id, refId, to, by, '2026-01-01T00:00:00.000Z', 'open', tenant);
   insertReq('req-a-to', 'ref-a', A, EMAIL, 'sam@example.test');
   insertReq('req-b-to', 'ref-b', B, EMAIL, 'sam@example.test');
   insertReq('req-a-by', 'ref-a2', A, 'sam@example.test', EMAIL);
   insertReq('req-b-by', 'ref-b2', B, 'sam@example.test', EMAIL);
-  lib.sql.exec("INSERT INTO bids (id, owner, title, created_at, updated_at, tenant) VALUES ('bid-a', ?, 'A', '2026-01-01', '2026-01-01', ?), ('bid-b', ?, 'B', '2026-01-01', '2026-01-01', ?)", EMAIL, A, EMAIL, B);
-  lib.sql.exec("INSERT INTO bid_references (bid_id, ref_id, used_by) VALUES ('bid-a', 'ref-a', ?), ('bid-b', 'ref-b', ?)", EMAIL, EMAIL);
+  sqlOf(lib).exec("INSERT INTO bids (id, owner, title, created_at, updated_at, tenant) VALUES ('bid-a', ?, 'A', '2026-01-01', '2026-01-01', ?), ('bid-b', ?, 'B', '2026-01-01', '2026-01-01', ?)", EMAIL, A, EMAIL, B);
+  sqlOf(lib).exec("INSERT INTO bid_references (bid_id, ref_id, used_by) VALUES ('bid-a', 'ref-a', ?), ('bid-b', 'ref-b', ?)", EMAIL, EMAIL);
   const exported = exportMine(lib, ada(A), 'ab'.repeat(16));
   const ids = exported.confirmationRequests.map(r => r.id).sort();
   const refIds = exported.confirmationRequests.map(r => r.refId).sort();
@@ -95,45 +95,45 @@ test('a subject export and erase stay inside one tenant for confirmations and bi
   assert.equal(JSON.stringify(exported).includes('req-b'), false);
   assert.equal(JSON.stringify(exported).includes('ref-b'), false);
   eraseMine(lib, ada(A), 'ab'.repeat(16));
-  const left = lib.sql.exec('SELECT id, to_email, created_by, tenant FROM confirmation_requests ORDER BY id').toArray();
+  const left = sqlOf(lib).exec('SELECT id, to_email, created_by, tenant FROM confirmation_requests ORDER BY id').toArray();
   const byId = Object.fromEntries(left.map(r => [r.id, r]));
   assert.equal(byId['req-b-to'].to_email, EMAIL);
   assert.equal(byId['req-b-by'].created_by, EMAIL);
   assert.notEqual(byId['req-a-to'].to_email, EMAIL);
   assert.notEqual(byId['req-a-by'].created_by, EMAIL);
-  const used = Object.fromEntries(lib.sql.exec('SELECT bid_id, used_by FROM bid_references').toArray().map(r => [r.bid_id, r.used_by]));
+  const used = Object.fromEntries(sqlOf(lib).exec('SELECT bid_id, used_by FROM bid_references').toArray().map(r => [r.bid_id, r.used_by]));
   assert.equal(used['bid-b'], EMAIL);
   assert.notEqual(used['bid-a'], EMAIL);
 });
 
 test('staffing and teams rows are erased for this tenant without an outreach table, and the other tenant stays', () => {
   const lib = fresh();
-  assert.equal(lib.sql.exec("SELECT name FROM sqlite_master WHERE name = 'outreach'").toArray().length, 0);
-  lib.sql.exec('CREATE TABLE staffing (project_id TEXT, consultant_email TEXT, tenant TEXT)');
-  lib.sql.exec('CREATE TABLE teams_conversations (subject TEXT PRIMARY KEY, email TEXT, tenant_id TEXT)');
-  lib.sql.exec('INSERT INTO staffing (project_id, consultant_email, tenant) VALUES (?, ?, ?), (?, ?, ?)', 'p', EMAIL, A, 'p', EMAIL, B);
-  lib.sql.exec('INSERT INTO teams_conversations (subject, email, tenant_id) VALUES (?, ?, ?), (?, ?, ?)', 'sa', EMAIL, A, 'sb', EMAIL, B);
+  assert.equal(sqlOf(lib).exec("SELECT name FROM sqlite_master WHERE name = 'outreach'").toArray().length, 0);
+  sqlOf(lib).exec('CREATE TABLE staffing (project_id TEXT, consultant_email TEXT, tenant TEXT)');
+  sqlOf(lib).exec('CREATE TABLE teams_conversations (subject TEXT PRIMARY KEY, email TEXT, tenant_id TEXT)');
+  sqlOf(lib).exec('INSERT INTO staffing (project_id, consultant_email, tenant) VALUES (?, ?, ?), (?, ?, ?)', 'p', EMAIL, A, 'p', EMAIL, B);
+  sqlOf(lib).exec('INSERT INTO teams_conversations (subject, email, tenant_id) VALUES (?, ?, ?), (?, ?, ?)', 'sa', EMAIL, A, 'sb', EMAIL, B);
   eraseMine(lib, ada(A), 'ab'.repeat(16));
-  assert.deepEqual(lib.sql.exec('SELECT tenant FROM staffing ORDER BY tenant').toArray().map(r => r.tenant), [B]);
-  assert.deepEqual(lib.sql.exec('SELECT tenant_id FROM teams_conversations ORDER BY tenant_id').toArray().map(r => r.tenant_id), [B]);
+  assert.deepEqual(sqlOf(lib).exec('SELECT tenant FROM staffing ORDER BY tenant').toArray().map(r => r.tenant), [B]);
+  assert.deepEqual(sqlOf(lib).exec('SELECT tenant_id FROM teams_conversations ORDER BY tenant_id').toArray().map(r => r.tenant_id), [B]);
 });
 
 test('erasure does not run SQL for evidence, approvals or jobs, which this slice does not create', () => {
   const lib = fresh();
-  lib.sql.exec("CREATE TABLE evidence_records (id TEXT PRIMARY KEY, owner_sub TEXT, status TEXT, state_json TEXT)");
-  lib.sql.exec("INSERT INTO evidence_records (id, owner_sub, status, state_json) VALUES ('ev', ?, 'draft', '{}')", EMAIL);
-  lib.sql.exec('CREATE TABLE approvals (id TEXT, approver_sub TEXT)');
-  lib.sql.exec("INSERT INTO approvals (id, approver_sub) VALUES ('ap', ?)", EMAIL);
-  lib.sql.exec('CREATE TABLE jobs (id TEXT, actor TEXT)');
-  lib.sql.exec('CREATE TABLE job_events (id TEXT, actor TEXT)');
-  lib.sql.exec("INSERT INTO jobs (id, actor) VALUES ('job', ?)", EMAIL);
-  lib.sql.exec("INSERT INTO job_events (id, actor) VALUES ('evt', ?)", EMAIL);
+  sqlOf(lib).exec("CREATE TABLE evidence_records (id TEXT PRIMARY KEY, owner_sub TEXT, status TEXT, state_json TEXT)");
+  sqlOf(lib).exec("INSERT INTO evidence_records (id, owner_sub, status, state_json) VALUES ('ev', ?, 'draft', '{}')", EMAIL);
+  sqlOf(lib).exec('CREATE TABLE approvals (id TEXT, approver_sub TEXT)');
+  sqlOf(lib).exec("INSERT INTO approvals (id, approver_sub) VALUES ('ap', ?)", EMAIL);
+  sqlOf(lib).exec('CREATE TABLE jobs (id TEXT, actor TEXT)');
+  sqlOf(lib).exec('CREATE TABLE job_events (id TEXT, actor TEXT)');
+  sqlOf(lib).exec("INSERT INTO jobs (id, actor) VALUES ('job', ?)", EMAIL);
+  sqlOf(lib).exec("INSERT INTO job_events (id, actor) VALUES ('evt', ?)", EMAIL);
   const out = eraseMine(lib, ada(A), 'ab'.repeat(16));
   assert.equal(out.erased === true || out.libraryErased === true || out.counts, true);
-  assert.equal(lib.sql.exec('SELECT owner_sub FROM evidence_records').toArray()[0].owner_sub, EMAIL);
-  assert.equal(lib.sql.exec('SELECT approver_sub FROM approvals').toArray()[0].approver_sub, EMAIL);
-  assert.equal(lib.sql.exec('SELECT actor FROM jobs').toArray()[0].actor, EMAIL);
-  assert.equal(lib.sql.exec('SELECT actor FROM job_events').toArray()[0].actor, EMAIL);
+  assert.equal(sqlOf(lib).exec('SELECT owner_sub FROM evidence_records').toArray()[0].owner_sub, EMAIL);
+  assert.equal(sqlOf(lib).exec('SELECT approver_sub FROM approvals').toArray()[0].approver_sub, EMAIL);
+  assert.equal(sqlOf(lib).exec('SELECT actor FROM jobs').toArray()[0].actor, EMAIL);
+  assert.equal(sqlOf(lib).exec('SELECT actor FROM job_events').toArray()[0].actor, EMAIL);
 });
 
 test('a failure mid-erase rolls the whole erase back', async () => {
@@ -141,9 +141,9 @@ test('a failure mid-erase rolls the whole erase back', async () => {
   const user = ada(A);
   const first = await lib.upsert(user, { localId: 'one', reference: ref() });
   const second = await lib.upsert(user, { localId: 'two', reference: ref() });
-  const real = lib.sql.exec.bind(lib.sql);
+  const real = sqlOf(lib).exec.bind(sqlOf(lib));
   let n = 0;
-  lib.sql.exec = (q, ...p) => {
+  sqlOf(lib).exec = (q, ...p) => {
     if (String(q).includes("title = '[erased]'") && ++n === 2) throw new Error('injected mid-erase');
     return real(q, ...p);
   };
@@ -156,16 +156,19 @@ test('pseudonymising one tenant does not rewrite later audit links', () => {
   const lib = fresh();
   lib.log('ref-a', EMAIL, 'saved', 'note ' + EMAIL);
   lib.log('ref-b', 'kim@example.test', 'saved', 'other tenant');
-  const before = lib.sql.exec('SELECT seq, prev_hash, hash FROM audit ORDER BY seq').toArray();
+  const before = sqlOf(lib).exec('SELECT seq, prev_hash, hash FROM audit ORDER BY seq').toArray();
   const out = pseudonymiseAudit(lib, [EMAIL], 'erased:abcd01abcd01', { ids: ['ref-a'] });
-  const after = lib.sql.exec('SELECT seq, prev_hash, hash, actor FROM audit ORDER BY seq').toArray();
+  const after = sqlOf(lib).exec('SELECT seq, prev_hash, hash, actor, action FROM audit ORDER BY seq').toArray();
   assert.equal(out.refused, undefined);
   assert.notEqual(after[1].actor, EMAIL);
   assert.equal(after[1].hash, before[1].hash);
   assert.equal(after[2].prev_hash, before[2].prev_hash);
   assert.equal(after[2].hash, before[2].hash);
-  assert.equal(verifyChain(lib.sql).ok, true);
-  assert.equal(verifyChain(lib.sql).head, before[2].hash);
+  assert.equal(after.at(-1).action, 'audit erasure');
+  assert.equal(after.at(-1).prev_hash, before[2].hash);
+  const verdict = verifyChain(sqlOf(lib));
+  assert.equal(verdict.ok, true);
+  assert.equal(verdict.head, after.at(-1).hash);
 });
 
 test('the daily cron records an anchor and reports head truncation, tail truncation and a mid-chain edit', async () => {
@@ -189,18 +192,18 @@ test('the daily cron records an anchor and reports head truncation, tail truncat
     let lib = chain();
     const ok = await run(lib);
     assert.equal(ok.some(e => e.event === 'audit_chain_ok' && e.n === 5 && /^[0-9a-f]{16}$/.test(e.head)), true);
-    assert.equal(lib.sql.exec("SELECT name FROM sqlite_master WHERE name = 'audit_anchor'").toArray().length, 1);
-    lib.sql.exec('DELETE FROM audit WHERE seq = (SELECT MIN(seq) FROM audit)');
+    assert.equal(sqlOf(lib).exec("SELECT name FROM sqlite_master WHERE name = 'audit_anchor'").toArray().length, 1);
+    sqlOf(lib).exec('DELETE FROM audit WHERE seq = (SELECT MIN(seq) FROM audit)');
     const tail = await run(lib);
     assert.equal(tail.some(e => e.event === 'audit_chain_break'), true, 'dropping the oldest rows must not still look like a full chain');
     lib = chain();
     await run(lib);
-    lib.sql.exec('DELETE FROM audit WHERE seq = (SELECT MAX(seq) FROM audit)');
+    sqlOf(lib).exec('DELETE FROM audit WHERE seq = (SELECT MAX(seq) FROM audit)');
     const head = await run(lib);
     assert.equal(head.some(e => e.event === 'audit_chain_break' && e.reason === 'TRUNCATED'), true);
     lib = chain();
     await run(lib);
-    lib.sql.exec("UPDATE audit SET action = 'tampered' WHERE seq = 2");
+    sqlOf(lib).exec("UPDATE audit SET action = 'tampered' WHERE seq = 2");
     const mid = await run(lib);
     assert.equal(mid.some(e => e.event === 'audit_chain_break' && e.reason === 'HASH_MISMATCH'), true);
   } finally { console.log = orig; }
@@ -209,7 +212,7 @@ test('the daily cron records an anchor and reports head truncation, tail truncat
 test('read-only freezes the cron after the audit-chain check', async () => {
   const lib = fresh();
   const saved = await lib.upsert({ email: EMAIL, role: 'user', tenant: '', tenantEnforced: false }, { localId: 'old', reference: ref() });
-  lib.sql.exec("UPDATE refs SET updated_at = '2020-01-01T00:00:00.000Z', next_review = '2020-06-01T00:00:00.000Z', state = ? WHERE id = ?", JSON.stringify({ draft: true, tenant: '' }), saved.id);
+  sqlOf(lib).exec("UPDATE refs SET updated_at = '2020-01-01T00:00:00.000Z', next_review = '2020-06-01T00:00:00.000Z', state = ? WHERE id = ?", JSON.stringify({ draft: true, tenant: '' }), saved.id);
   const events = [];
   const orig = console.log;
   console.log = line => { try { const j = JSON.parse(line); if (j.atlas_sec) events.push(j); } catch { /* ignore */ } };
@@ -219,7 +222,7 @@ test('read-only freezes the cron after the audit-chain check', async () => {
     await scheduled({}, { LIBRARY: gateway, ATLAS_TENANT_ISOLATION: 'local-synthetic', ATLAS_READ_ONLY: '1', ORIGIN, CSRF_SECRET: 's' }, { waitUntil: p => waited.push(p) });
     await Promise.all(waited);
   } finally { console.log = orig; }
-  assert.equal(lib.sql.exec('SELECT COUNT(*) AS n FROM invitations').toArray()[0].n, 0);
+  assert.equal(sqlOf(lib).exec('SELECT COUNT(*) AS n FROM invitations').toArray()[0].n, 0);
   assert.equal(lib.row(saved.id).data.title, 'Northwind pilot alias');
   assert.equal(lib.row(saved.id).merged_into || null, null);
   assert.equal(events.some(e => e.event === 'audit_chain_ok' || e.event === 'audit_chain_break'), true);
@@ -229,7 +232,7 @@ test('scan-stale returns the same payload main returns when the cron tenant has 
   const make = async () => {
     const lib = fresh();
     const saved = await lib.upsert({ email: EMAIL, role: 'user', tenant: '', tenantEnforced: false }, { localId: 'old', reference: ref() });
-    lib.sql.exec("UPDATE refs SET updated_at = '2020-01-01T00:00:00.000Z', next_review = '2020-06-01T00:00:00.000Z', state = ? WHERE id = ?", JSON.stringify({ draft: true, tenant: '' }), saved.id);
+    sqlOf(lib).exec("UPDATE refs SET updated_at = '2020-01-01T00:00:00.000Z', next_review = '2020-06-01T00:00:00.000Z', state = ? WHERE id = ?", JSON.stringify({ draft: true, tenant: '' }), saved.id);
     return lib;
   };
   const user = { email: 'atlas-cron', role: 'system', tenant: '', tenantEnforced: false };
@@ -337,8 +340,8 @@ test('an uncaught error still returns security headers, and HTML without a polic
 test('erasure holds are listed only for the verified tenant', async () => {
   const lib = fresh();
   privacy.ensure(lib);
-  try { lib.sql.exec('ALTER TABLE erasure_holds ADD COLUMN tenant TEXT'); } catch { /* the fix may already add it */ }
-  lib.sql.exec("INSERT INTO erasure_holds (id, kind, entity, subject_hash, reason, at, status, tenant) VALUES ('h-a', 'reference', 'a-hold', 'h', 'published_reference', '2026-01-01', 'pending_dpo', ?), ('h-b', 'reference', 'b-hold', 'h', 'published_reference', '2026-01-01', 'pending_dpo', ?)", A, B);
+  try { sqlOf(lib).exec('ALTER TABLE erasure_holds ADD COLUMN tenant TEXT'); } catch { /* the fix may already add it */ }
+  sqlOf(lib).exec("INSERT INTO erasure_holds (id, kind, entity, subject_hash, reason, at, status, tenant) VALUES ('h-a', 'reference', 'a-hold', 'h', 'published_reference', '2026-01-01', 'pending_dpo', ?), ('h-b', 'reference', 'b-hold', 'h', 'published_reference', '2026-01-01', 'pending_dpo', ?)", A, B);
   const headers = { 'x-atlas-user': 'ada@example.test', 'x-atlas-role': 'admin', 'x-atlas-email': EMAIL, 'x-atlas-tenant': A, 'x-atlas-tenant-enforced': '1' };
   const res = await libraryRoutes(new Request('https://atlas.internal/api/library/erasure-holds', { headers }), lib, { env: libEnv });
   assert.equal(res.status, 200);
@@ -346,7 +349,7 @@ test('erasure holds are listed only for the verified tenant', async () => {
   assert.deepEqual(items.map(i => i.entity), ['a-hold']);
   const other = await libraryRoutes(new Request('https://atlas.internal/api/library/erasure-holds/h-b/resolve', { method: 'POST', body: '{"action":"retain"}', headers }), lib, { env: libEnv });
   assert.equal(other.status, 404);
-  assert.equal(lib.sql.exec("SELECT status FROM erasure_holds WHERE id = 'h-b'").toArray()[0].status, 'pending_dpo');
+  assert.equal(sqlOf(lib).exec("SELECT status FROM erasure_holds WHERE id = 'h-b'").toArray()[0].status, 'pending_dpo');
 });
 
 test('a log bucket is an allow-listed name, never free text', async () => {

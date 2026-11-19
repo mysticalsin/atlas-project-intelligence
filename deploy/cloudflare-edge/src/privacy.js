@@ -7,6 +7,7 @@
 // receipt in the LibraryStore: consent_receipts is append-only (an UPDATE is refused by a trigger; withdrawing appends a "withdrawn" row, it deletes nothing), keyed by the
 // person's pseudonymous subject key, with the notice version, the SHA-256 of the exact wording shown, a timestamp and the channel.
 // Flags. restricted (Art 18) and the three objections (Art 21) stop scoring, matching and memory for the person's references. The person sets them for themselves only.
+import { Library, MIGRATIONS } from './library.js';
 import { PRIVACY } from './policy.generated.js';
 import { sha256Hex } from './audit-chain.js';
 import { obj, fail } from './util.js';
@@ -102,30 +103,39 @@ const DDL = [
   'CREATE INDEX IF NOT EXISTS consent_receipts_subject ON consent_receipts(subject, purpose, at)',
   'CREATE TABLE IF NOT EXISTS privacy_flags (subject TEXT PRIMARY KEY, restricted INTEGER, object_scoring INTEGER, object_matching INTEGER, object_memory INTEGER, updated_at TEXT)',
   'CREATE TABLE IF NOT EXISTS erasure_log (id TEXT PRIMARY KEY, subject_hash TEXT, at TEXT, counts TEXT)',
-  `CREATE TABLE IF NOT EXISTS erasure_holds (id TEXT PRIMARY KEY, kind TEXT, entity TEXT, subject_hash TEXT, reason TEXT, at TEXT, status TEXT, resolved_at TEXT, resolved_by TEXT, note TEXT)`,
+  `CREATE TABLE IF NOT EXISTS erasure_holds (id TEXT PRIMARY KEY, kind TEXT, entity TEXT, subject_hash TEXT, reason TEXT, at TEXT, status TEXT, resolved_at TEXT, resolved_by TEXT, note TEXT, tenant TEXT)`,
 ];
 const ensured = new WeakSet();
 export function ensure(lib) {
   if (ensured.has(lib)) return;
-  for (const q of DDL) lib.sql.exec(q);
+  lib.schema(() => {
+  for (const q of DDL) lib.exec(q);
   // Append-only: a receipt is never edited, deleted or replaced. The one exception is the retention sweep, which removes a whole person's old receipts and opens the gate
   // (retentionGate below) for exactly that statement. X1 (red L9): REPLACE (a delete plus an insert) was allowed; SQLite runs a REPLACE's implicit delete without firing
   // delete triggers, so an insert that reuses an existing id is refused as well.
-  try {
-    lib.sql.exec('CREATE TABLE IF NOT EXISTS privacy_gate (name TEXT PRIMARY KEY, open INTEGER)');
-    lib.sql.exec("CREATE TRIGGER IF NOT EXISTS consent_receipts_no_update BEFORE UPDATE ON consent_receipts BEGIN SELECT RAISE(ABORT, 'consent receipts are append-only'); END");
-    lib.sql.exec("CREATE TRIGGER IF NOT EXISTS consent_receipts_no_delete BEFORE DELETE ON consent_receipts WHEN COALESCE((SELECT open FROM privacy_gate WHERE name = 'receipts'), 0) != 1 BEGIN SELECT RAISE(ABORT, 'consent receipts are append-only'); END");
-    lib.sql.exec("CREATE TRIGGER IF NOT EXISTS consent_receipts_no_replace BEFORE INSERT ON consent_receipts WHEN EXISTS (SELECT 1 FROM consent_receipts WHERE id = NEW.id) BEGIN SELECT RAISE(ABORT, 'consent receipts are append-only'); END");
-  } catch { /* a platform without triggers: the module still exposes no update path */ }
+  lib.exec('CREATE TABLE IF NOT EXISTS privacy_gate (name TEXT PRIMARY KEY, open INTEGER)');
+  lib.exec(MIGRATIONS['consent-no-update']);
+  lib.exec(MIGRATIONS['consent-no-delete']);
+  lib.exec(MIGRATIONS['consent-no-replace']);
   const holds = lib.rows("SELECT name FROM pragma_table_info('erasure_holds')").map(r => r.name);
-  if (holds.length && !holds.includes('tenant')) lib.sql.exec('ALTER TABLE erasure_holds ADD COLUMN tenant TEXT');
+  if (holds.length && !holds.includes('tenant')) Library.migrate(lib, 'erasure-holds-tenant');
+  });
+  if (typeof lib._atomic === 'function') {
+    lib.housekeeping('consent-retention', () => {
+      lib.exec("INSERT OR REPLACE INTO privacy_gate (name, open) VALUES ('receipts', 0)");
+    });
+  }
   ensured.add(lib);
 }
 // Runs `fn` (the retention sweep's receipt delete) with the delete gate open, and always closes it again.
+// housekeeping already holds one transaction for this reason, so a failed close rolls the open back.
 export function retentionGate(lib, fn) {
   ensure(lib);
-  try { lib.sql.exec("INSERT OR REPLACE INTO privacy_gate (name, open) VALUES ('receipts', 1)"); } catch { /* no gate table: no triggers either */ }
-  try { return fn(); } finally { try { lib.sql.exec("INSERT OR REPLACE INTO privacy_gate (name, open) VALUES ('receipts', 0)"); } catch { /* as above */ } }
+  return lib.housekeeping('consent-retention', () => {
+    lib.exec("INSERT OR REPLACE INTO privacy_gate (name, open) VALUES ('receipts', 1)");
+    try { return fn(); }
+    finally { lib.exec("INSERT OR REPLACE INTO privacy_gate (name, open) VALUES ('receipts', 0)"); }
+  });
 }
 // The hash of the pseudonymous subject key kept on an erasure hold: enough to show that a subject was erased, not enough to identify who.
 export const subjectHash = subj => sha256Hex('erasure|' + subj).slice(0, 24);
@@ -145,7 +155,7 @@ export function recordReceipts(lib, subject, items, { channel = 'api', now = lib
   ensure(lib);
   const subj = subjectOf(subject);
   if (!subj) throw fail(400, 'A subject key is required.');
-  const list = Array.isArray(items) ? items.slice(0, RECEIPT_PURPOSES.length * 2) : [], latest = stateFromReceipts(lib, subj), out = [];
+  const list = Array.isArray(items) ? items.slice(0, RECEIPT_PURPOSES.length * 2) : [], latest = stateFromReceipts(lib, subj), pending = [];
   for (const it of list) {
     const i = obj(it), purpose = String(i.purpose || '');
     if (!RECEIPT_PURPOSES.includes(purpose) || typeof i.granted !== 'boolean') continue;
@@ -154,11 +164,21 @@ export function recordReceipts(lib, subject, items, { channel = 'api', now = lib
     if (!prev && !i.granted) continue; // never granted and not granted now: nothing to evidence
     const mode = i.mode === 'text' ? 'text' : 'voice', ch = CHANNELS.includes(i.channel) ? i.channel : CHANNELS.includes(channel) ? channel : 'api';
     const row = { id: lib.newId(), subject: subj, purpose, granted: i.granted ? 1 : 0, notice_version: NOTICE_VERSION, text_sha256: textHash(purpose, mode), at: now, channel: ch };
-    lib.sql.exec('INSERT INTO consent_receipts (id, subject, purpose, granted, notice_version, text_sha256, at, channel) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', row.id, row.subject, row.purpose, row.granted, row.notice_version, row.text_sha256, row.at, row.channel);
+    pending.push(row);
     latest[purpose] = { granted: i.granted, version: NOTICE_VERSION, at: now, channel: row.channel };
-    out.push({ purpose, granted: i.granted, at: now, channel: row.channel });
   }
-  return { recorded: out, state: latest };
+  if (!pending.length) return { recorded: [], state: latest };
+  // A healthy chain checkpoints this line with the receipt. A damaged chain stores the receipt and does not append.
+  return lib.recorded(() => {
+    const out = [];
+    for (const row of pending) {
+      lib.exec('INSERT INTO consent_receipts (id, subject, purpose, granted, notice_version, text_sha256, at, channel) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', row.id, row.subject, row.purpose, row.granted, row.notice_version, row.text_sha256, row.at, row.channel);
+      out.push({ purpose: row.purpose, granted: row.granted === 1, at: row.at, channel: row.channel });
+    }
+    const verdict = lib.chainVerdict();
+    if (verdict.ok) lib.log('privacy', subj, 'consent receipt', out.map(r => r.purpose).join(','));
+    return { recorded: out, state: latest };
+  });
 }
 export const receiptsOf = (lib, subject) => { ensure(lib); return lib.rows('SELECT id, purpose, granted, notice_version AS noticeVersion, text_sha256 AS textSha256, at, channel FROM consent_receipts WHERE subject = ? ORDER BY at, rowid', subject).map(r => ({ ...r, granted: r.granted === 1 })); };
 
@@ -189,7 +209,7 @@ export function setFlags(lib, email, patch, { actor = email, subj = '' } = {}) {
   if (FLAG_KEYS.some(k => cur[k] && !next[k]) && pendingHolds(lib, subj)) throw fail(409, 'Your data stays restricted while the DPO reviews what the erasure kept. It can be lifted once they have resolved it.');
   const at = lib.now();
   return lib.recorded(() => {
-    lib.sql.exec('INSERT OR REPLACE INTO privacy_flags (subject, restricted, object_scoring, object_matching, object_memory, updated_at) VALUES (?, ?, ?, ?, ?, ?)', email, +next.restricted, +next.objectScoring, +next.objectMatching, +next.objectMemory, at);
+    lib.exec('INSERT OR REPLACE INTO privacy_flags (subject, restricted, object_scoring, object_matching, object_memory, updated_at) VALUES (?, ?, ?, ?, ?, ?)', email, +next.restricted, +next.objectScoring, +next.objectMatching, +next.objectMemory, at);
     lib.log('privacy', actor, 'privacy flags', FLAG_KEYS.filter(k => next[k] !== cur[k]).map(k => k + '=' + next[k]).join(',') || 'unchanged'); // names the flags, never the person's content
     return { ...next, updatedAt: at };
   });

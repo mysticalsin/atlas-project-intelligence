@@ -1,7 +1,7 @@
 // Review of a5ba30c. These fail on that tree.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { memorySql } from './sqlite.js';
 import { appendAudit, rowHash, verifyDaily } from '../src/audit-chain.js';
 import { eraseMine } from '../src/subject-rights.js';
@@ -80,9 +80,9 @@ test('Library.get marks a pre-chain row legacy and unverified', () => {
   sql.exec(MAIN);
   sql.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', 'story', MALLORY, 'saved', STAMP, 'forged');
   const lib = new Library(sql, { now: () => STAMP });
-  story(lib.sql);
+  story(sqlOf(lib));
   const view = lib.get({ email: EMAIL, role: 'admin', tenant: A }, 'story');
-  const daily = verifyDaily(lib.sql, lib.auditKey);
+  const daily = verifyDaily(sqlOf(lib), lib.auditKey);
   assert.equal(daily.reason, 'CHAIN_VERIFIED');
   assert.equal(view.audit.length, 1);
   assert.equal(view.audit[0].actor, MALLORY);
@@ -97,15 +97,15 @@ test('an unsigned chain-start does not squat the keyed start or block erasure', 
   sql.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', 'audit', MALLORY, 'chain-start', STAMP, 'squat');
   sql.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', 'story', EMAIL, 'saved', STAMP, 'note ' + EMAIL);
   const lib = new Library(sql, { now: () => STAMP });
-  const daily = verifyDaily(lib.sql, lib.auditKey);
+  const daily = verifyDaily(sqlOf(lib), lib.auditKey);
   assert.equal(daily.ok, true);
   assert.equal(daily.reason, 'CHAIN_VERIFIED');
-  const starts = lib.sql.exec('SELECT seq, actor, "commit" FROM audit WHERE action = ? ORDER BY seq', 'chain-start').toArray();
+  const starts = sqlOf(lib).exec('SELECT seq, actor, "commit" FROM audit WHERE action = ? ORDER BY seq', 'chain-start').toArray();
   const committed = starts.filter(r => r.commit);
   assert.equal(committed.length, 1);
   assert.equal(starts.some(r => r.commit == null), true);
   assert.ok(committed.every(r => starts.filter(s => s.commit == null).every(s => Number(r.seq) !== Number(s.seq))));
-  story(lib.sql);
+  story(sqlOf(lib));
   const out = eraseMine(lib, { email: EMAIL, mail: EMAIL, role: 'user', tenant: A, tenantEnforced: true, subj: 'ab'.repeat(16) }, 'ab'.repeat(16));
   assert.equal(out.auditRefused, undefined);
 });

@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { Worker } from 'node:worker_threads';
 import { handle } from '../src/app.js';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import { memorySql } from './sqlite.js';
 import { internalRoutes } from '../src/privacy-routes.js';
@@ -107,12 +107,12 @@ test('an anchor planted before the first Library does not verify a forged actor'
   sql.exec('CREATE TABLE audit_anchor (id INTEGER PRIMARY KEY CHECK (id = 1), n INTEGER NOT NULL, head TEXT NOT NULL)');
   sql.exec('INSERT INTO audit_anchor (id, n, head) VALUES (1, 2, ?)', 'ab'.repeat(32));
   const lib = new Library(sql, { now: () => STAMP });
-  const daily = verifyDaily(lib.sql, lib.auditKey);
+  const daily = verifyDaily(sqlOf(lib), lib.auditKey);
   assert.equal(daily.ok, false);
   assert.equal(daily.reason, 'TAMPERED');
-  assert.equal(signedActors(lib.sql).includes(MALLORY), false);
-  assert.equal(lib.sql.exec("SELECT COUNT(*) AS n FROM audit WHERE action = 'chain-start'").toArray()[0].n, 0);
-  const anchor = lib.sql.exec('SELECT n, head FROM audit_anchor WHERE id = 1').toArray()[0];
+  assert.equal(signedActors(sqlOf(lib)).includes(MALLORY), false);
+  assert.equal(sqlOf(lib).exec("SELECT COUNT(*) AS n FROM audit WHERE action = 'chain-start'").toArray()[0].n, 0);
+  const anchor = sqlOf(lib).exec('SELECT n, head FROM audit_anchor WHERE id = 1').toArray()[0];
   assert.equal(Number(anchor.n), 2);
   assert.equal(anchor.head, 'ab'.repeat(32));
 });
@@ -208,17 +208,17 @@ test('a main-shaped database migrates once, reports legacy rows as unverified, a
   sql.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', 'story', EMAIL, 'saved', STAMP, 'the note');
   sql.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', 'story', 'kim@example.test', 'saved', STAMP, 'other');
   const lib = new Library(sql, { now: () => STAMP });
-  const daily = verifyDaily(lib.sql, lib.auditKey);
+  const daily = verifyDaily(sqlOf(lib), lib.auditKey);
   assert.equal(daily.ok, true);
   assert.equal(daily.reason, 'CHAIN_VERIFIED');
   assert.equal(daily.legacyUnverified, 2);
   assert.equal(daily.checked, 1);
-  const starts = lib.sql.exec('SELECT actor, action, detail, "commit", hash FROM audit WHERE action = ?', 'chain-start').toArray();
+  const starts = sqlOf(lib).exec('SELECT actor, action, detail, "commit", hash FROM audit WHERE action = ?', 'chain-start').toArray();
   assert.equal(starts.length, 1);
   assert.deepEqual(JSON.parse(starts[0].detail), { legacy: 2, maxSeq: 2 });
   assert.equal(typeof starts[0].commit, 'string');
   assert.equal(starts[0].commit.length > 0, true);
-  const legacy = lib.sql.exec("SELECT actor, hash, \"commit\" FROM audit WHERE action != 'chain-start'").toArray();
+  const legacy = sqlOf(lib).exec("SELECT actor, hash, \"commit\" FROM audit WHERE action != 'chain-start'").toArray();
   assert.equal(legacy.length, 2);
   assert.equal(legacy.every(r => r.commit == null && r.hash == null), true);
   const events = [];
@@ -263,14 +263,14 @@ test('erasure tombstones legacy rows and does not refuse', () => {
   sql.exec(MAIN);
   sql.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', 'story', EMAIL, 'saved', STAMP, 'note ' + EMAIL);
   const lib = new Library(sql, { now: () => STAMP });
-  lib.sql.exec('INSERT INTO refs (id, owner, title, status, revision, data, state, tenant, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  sqlOf(lib).exec('INSERT INTO refs (id, owner, title, status, revision, data, state, tenant, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     'story', EMAIL, 'Story', 'draft', 1, '{}', '{}', A, STAMP, STAMP);
   const out = eraseMine(lib, { email: EMAIL, mail: EMAIL, role: 'user', tenant: A, tenantEnforced: true, subj: 'ab'.repeat(16) }, 'ab'.repeat(16));
   assert.equal(out.auditRefused, undefined);
-  const legacy = lib.sql.exec("SELECT actor, detail FROM audit WHERE action != 'chain-start' AND id = 'story'").toArray()[0];
+  const legacy = sqlOf(lib).exec("SELECT actor, detail FROM audit WHERE action != 'chain-start' AND id = 'story'").toArray()[0];
   assert.match(legacy.actor, /^erased:[0-9a-f]{12}$/);
   assert.equal(legacy.detail, '');
-  assert.equal(verifyDaily(lib.sql, lib.auditKey).ok, true);
+  assert.equal(verifyDaily(sqlOf(lib), lib.auditKey).ok, true);
 });
 
 test('a second chain-start is refused', () => {
@@ -278,11 +278,11 @@ test('a second chain-start is refused', () => {
   sql.exec(MAIN);
   sql.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', 'r1', 'a1@example.test', 'saved', STAMP, 'one');
   const lib = new Library(sql, { now: () => STAMP });
-  assert.equal(lib.sql.exec("SELECT COUNT(*) AS n FROM audit WHERE action = 'chain-start'").toArray()[0].n, 1);
+  assert.equal(sqlOf(lib).exec("SELECT COUNT(*) AS n FROM audit WHERE action = 'chain-start'").toArray()[0].n, 1);
   assert.throws(() => lib.log('audit', MALLORY, 'chain-start', '{"legacy":9,"maxSeq":9}'), /chain-start/);
-  assert.throws(() => lib.sql.exec('INSERT INTO audit (id, actor, action, at, detail, prev_hash, hash, "commit", tombstone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  assert.throws(() => sqlOf(lib).exec('INSERT INTO audit (id, actor, action, at, detail, prev_hash, hash, "commit", tombstone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     'audit', MALLORY, 'chain-start', STAMP, '{"legacy":9,"maxSeq":9}', GENESIS, 'ab'.repeat(32), 'cd'.repeat(32), ''));
-  assert.equal(lib.sql.exec("SELECT COUNT(*) AS n FROM audit WHERE action = 'chain-start'").toArray()[0].n, 1);
+  assert.equal(sqlOf(lib).exec("SELECT COUNT(*) AS n FROM audit WHERE action = 'chain-start'").toArray()[0].n, 1);
 });
 
 function limitEnv(extra = {}) {
@@ -388,20 +388,20 @@ test('outreach addressed to the Entra mail is deleted with the library identity'
   ensureOutreach(lib);
   const email = (A + ':' + OID).toLowerCase();
   const mixed = 'Ada@Example.Test';
-  lib.sql.exec('INSERT INTO outreach (id, kind, subject_id, channel, to_email, status, payload, created_at, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  sqlOf(lib).exec('INSERT INTO outreach (id, kind, subject_id, channel, to_email, status, payload, created_at, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     'out-mail', 'gap_request', 'subj-mail', 'email_draft', mixed, 'pending_approval', JSON.stringify({ note: mixed }), STAMP, A);
-  lib.sql.exec('INSERT INTO outreach (id, kind, subject_id, channel, to_email, status, payload, created_at, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  sqlOf(lib).exec('INSERT INTO outreach (id, kind, subject_id, channel, to_email, status, payload, created_at, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     'out-id', 'gap_request', 'subj-id', 'email_draft', email, 'pending_approval', '{}', STAMP, A);
-  lib.sql.exec('INSERT INTO outreach (id, kind, subject_id, channel, to_email, status, payload, created_at, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  sqlOf(lib).exec('INSERT INTO outreach (id, kind, subject_id, channel, to_email, status, payload, created_at, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     'out-other', 'gap_request', 'subj-other', 'email_draft', 'kim@example.test', 'pending_approval', JSON.stringify({ note: 'ask ' + mixed }), STAMP, A);
-  lib.sql.exec('INSERT INTO outreach (id, kind, subject_id, channel, to_email, status, payload, created_at, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  sqlOf(lib).exec('INSERT INTO outreach (id, kind, subject_id, channel, to_email, status, payload, created_at, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     'out-b', 'gap_request', 'subj-b', 'email_draft', mixed, 'pending_approval', JSON.stringify({ note: mixed }), STAMP, B);
-  lib.sql.exec('INSERT INTO outreach (id, kind, subject_id, channel, to_email, status, payload, created_at, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  sqlOf(lib).exec('INSERT INTO outreach (id, kind, subject_id, channel, to_email, status, payload, created_at, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     'out-long', 'gap_request', 'subj-long', 'email_draft', mixed + '.au', 'pending_approval', '{}', STAMP, A);
   eraseMine(lib, { email, mail: EMAIL, role: 'user', tenant: A, tenantEnforced: true, subj: 'ab'.repeat(16) }, 'ab'.repeat(16));
-  assert.equal(lib.sql.exec('SELECT id FROM outreach WHERE id = ?', 'out-mail').toArray().length, 0);
-  assert.equal(lib.sql.exec('SELECT id FROM outreach WHERE id = ?', 'out-id').toArray().length, 0);
-  assert.equal(lib.sql.exec('SELECT to_email FROM outreach WHERE id = ?', 'out-b').toArray()[0].to_email, mixed);
-  assert.equal(lib.sql.exec('SELECT to_email FROM outreach WHERE id = ?', 'out-long').toArray()[0].to_email, mixed + '.au');
-  assert.equal(String(lib.sql.exec('SELECT payload FROM outreach WHERE id = ?', 'out-other').toArray()[0].payload).toLowerCase().includes(EMAIL), false);
+  assert.equal(sqlOf(lib).exec('SELECT id FROM outreach WHERE id = ?', 'out-mail').toArray().length, 0);
+  assert.equal(sqlOf(lib).exec('SELECT id FROM outreach WHERE id = ?', 'out-id').toArray().length, 0);
+  assert.equal(sqlOf(lib).exec('SELECT to_email FROM outreach WHERE id = ?', 'out-b').toArray()[0].to_email, mixed);
+  assert.equal(sqlOf(lib).exec('SELECT to_email FROM outreach WHERE id = ?', 'out-long').toArray()[0].to_email, mixed + '.au');
+  assert.equal(String(sqlOf(lib).exec('SELECT payload FROM outreach WHERE id = ?', 'out-other').toArray()[0].payload).toLowerCase().includes(EMAIL), false);
 });

@@ -2,7 +2,7 @@
 // Mixed-case duplicates are left in place. Read and save use one row: newest updated_at, then greatest rowid.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import { memorySql } from './sqlite.js';
 import { ensureJourney, journeyView, saveJourney, JOURNEY_READ_SQL, JOURNEY_ALL_SQL, JOURNEY_COUNT_SQL, JOURNEY_DELETE_SQL, JOURNEY_UPDATE_SQL } from '../src/journey.js';
@@ -22,7 +22,7 @@ function lowerUser(tenant = TENANT) {
 
 function seed(library, subject, tenant, title, updated) {
   ensureJourney(library);
-  library.sql.exec('INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)', subject, tenant,
+  sqlOf(library).exec('INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)', subject, tenant,
     JSON.stringify({ version: 1, fields: { title: { value: title, source: 'you', confirmed: true } }, confirmed: {}, stage: 'project' }), updated);
 }
 
@@ -193,21 +193,21 @@ test('export keeps the journey row subject and updatedAt when the payload repeat
 });
 
 function seedStory(library, id, tenant, state, title, owner = 'ada@example.test') {
-  library.sql.exec(`INSERT INTO refs (id, owner, local_id, title, status, revision, content_hash, data, state, members, created_at, updated_at, next_review, tenant)
+  sqlOf(library).exec(`INSERT INTO refs (id, owner, local_id, title, status, revision, content_hash, data, state, members, created_at, updated_at, next_review, tenant)
     VALUES (?, ?, ?, ?, 'in_review', 1, 'h', '{}', ?, ',', '2026-11-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z', '2026-12-01T00:00:00.000Z', ?)`,
   id, owner, id, title, state, tenant);
 }
 
 function seedProfile(library, tenant, edits, consents, subject = 'ada@example.test') {
   ensureProfile(library);
-  library.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+  sqlOf(library).exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
     VALUES (?, ?, ?, ?, '{}', ?, '2026-11-08T00:00:00.000Z', '2026-11-08T00:00:00.000Z', '2026-11-08T00:00:00.000Z')`,
   subject, tenant, subject, edits, consents);
 }
 
 function seedRaw(library, subject, tenant, payload, updated) {
   ensureJourney(library);
-  library.sql.exec('INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)', subject, tenant, payload, updated);
+  sqlOf(library).exec('INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)', subject, tenant, payload, updated);
 }
 
 test('a missing profile stays null and an unreadable profile part is omitted', async () => {
@@ -290,7 +290,7 @@ async function privacyDelete(library, tenant = TENANT) {
 }
 
 function insertProfile(library, subject, tenant, edits, updated = '2026-11-01T00:00:00.000Z') {
-  library.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+  sqlOf(library).exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
     VALUES (?, ?, ?, ?, '{}', '{}', '2026-11-01T00:00:00.000Z', ?, ?)`, subject, tenant, subject, edits, updated, updated);
 }
 
@@ -303,8 +303,8 @@ test('a legacy profile schema does not fail the export, and folded profile rows 
   await check('legacy table', async () => {
     const library = lib();
     seed(library, 'ada@example.test', TENANT, 'Kept', '2026-11-05T00:00:00.000Z');
-    library.sql.exec(`CREATE TABLE profiles (subject TEXT PRIMARY KEY, email TEXT, edits TEXT, signin TEXT, consents TEXT, created_at TEXT, updated_at TEXT, seen_at TEXT)`);
-    library.sql.exec(`INSERT INTO profiles (subject, email, edits, signin, consents, created_at, updated_at, seen_at)
+    sqlOf(library).exec(`CREATE TABLE profiles (subject TEXT PRIMARY KEY, email TEXT, edits TEXT, signin TEXT, consents TEXT, created_at TEXT, updated_at TEXT, seen_at TEXT)`);
+    sqlOf(library).exec(`INSERT INTO profiles (subject, email, edits, signin, consents, created_at, updated_at, seen_at)
       VALUES ('ada@example.test', 'ada@example.test', '{"title":{"value":"Legacy"}}', '{}', '{}', '2026-11-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z')`);
     const response = await privacyExport(library);
     assert.equal(response.status, 200);
@@ -340,9 +340,9 @@ test('a legacy profile schema does not fail the export, and folded profile rows 
   await check('folded duplicates', async () => {
     const library = lib();
     ensureProfile(library);
-    library.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+    sqlOf(library).exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
       VALUES ('Ada@Example.test', ?, 'Ada@Example.test', '{"title":{"value":"Older"}}', '{}', '{}', '2026-11-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z')`, TENANT);
-    library.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+    sqlOf(library).exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
       VALUES ('ADA@example.test', ?, 'ADA@example.test', '{"title":{"value":"Newer"}}', '{}', '{}', '2026-11-03T00:00:00.000Z', '2026-11-03T00:00:00.000Z', '2026-11-03T00:00:00.000Z')`, TENANT);
     const older = library.rows("SELECT rowid AS id FROM profiles WHERE subject = 'Ada@Example.test'")[0].id;
     const body = await (await privacyExport(library)).json();
@@ -417,10 +417,10 @@ test('export and erasure share one profile match, and a broken migration does no
   });
   await check('a profiles_v2 left by a failed migration is recovered', async () => {
     const library = lib();
-    library.sql.exec(`CREATE TABLE profiles_v2 (
+    sqlOf(library).exec(`CREATE TABLE profiles_v2 (
       subject TEXT NOT NULL, tenant TEXT NOT NULL DEFAULT '', email TEXT, edits TEXT, signin TEXT, consents TEXT,
       created_at TEXT, updated_at TEXT, seen_at TEXT, PRIMARY KEY (subject, tenant))`);
-    library.sql.exec(`INSERT INTO profiles_v2 (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+    sqlOf(library).exec(`INSERT INTO profiles_v2 (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
       VALUES ('ada@example.test', ?, 'ada@example.test', '{"title":{"value":"Recovered"}}', '{}', '{}', '2026-11-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z')`, TENANT);
     const response = await privacyExport(library);
     assert.equal(response.status, 200);
@@ -430,25 +430,25 @@ test('export and erasure share one profile match, and a broken migration does no
   });
   await check('a rename failure does not drop the profile', async () => {
     const library = lib();
-    library.sql.exec(`CREATE TABLE profiles (subject TEXT, tenant TEXT, email TEXT, edits TEXT, signin TEXT, consents TEXT, created_at TEXT, updated_at TEXT, seen_at TEXT)`);
-    library.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+    sqlOf(library).exec(`CREATE TABLE profiles (subject TEXT, tenant TEXT, email TEXT, edits TEXT, signin TEXT, consents TEXT, created_at TEXT, updated_at TEXT, seen_at TEXT)`);
+    sqlOf(library).exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
       VALUES ('ada@example.test', ?, 'ada@example.test', '{"title":{"value":"Kept"}}', '{}', '{}', '2026-11-01T00:00:00.000Z', '2026-11-04T00:00:00.000Z', '2026-11-04T00:00:00.000Z')`, TENANT);
-    const exec = library.sql.exec.bind(library.sql);
-    library.sql.exec = (q, ...p) => {
+    const exec = sqlOf(library).exec.bind(sqlOf(library));
+    sqlOf(library).exec = (q, ...p) => {
       if (String(q).includes('RENAME TO profiles')) throw new Error('rename failed');
       return exec(q, ...p);
     };
     assert.equal((await privacyExport(library)).status, 500);
-    library.sql.exec = exec;
+    sqlOf(library).exec = exec;
     const body = await (await privacyExport(library)).json();
     assert.deepEqual(body.profile.edits, { title: { value: 'Kept' } });
   });
   await check('legacy duplicate subjects keep the newer parsed time', async () => {
     const library = lib();
-    library.sql.exec(`CREATE TABLE profiles (subject TEXT, tenant TEXT, email TEXT, edits TEXT, signin TEXT, consents TEXT, created_at TEXT, updated_at TEXT, seen_at TEXT)`);
-    library.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+    sqlOf(library).exec(`CREATE TABLE profiles (subject TEXT, tenant TEXT, email TEXT, edits TEXT, signin TEXT, consents TEXT, created_at TEXT, updated_at TEXT, seen_at TEXT)`);
+    sqlOf(library).exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
       VALUES ('ada@example.test', ?, 'ada@example.test', '{"title":{"value":"Newer"}}', '{}', '{}', '2026-11-01T00:00:00.000Z', '2026-11-10T00:00:00.000Z', '2026-11-10T00:00:00.000Z')`, TENANT);
-    library.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+    sqlOf(library).exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
       VALUES ('ada@example.test', ?, 'ada@example.test', '{"title":{"value":"Older"}}', '{}', '{}', '2026-11-01T00:00:00.000Z', '2026-11-02T00:00:00.000Z', '2026-11-02T00:00:00.000Z')`, TENANT);
     const response = await privacyExport(library);
     assert.equal(response.status, 200);
@@ -547,43 +547,43 @@ const PROFILE_V2 = `CREATE TABLE profiles_v2 (
   created_at TEXT, updated_at TEXT, seen_at TEXT, PRIMARY KEY (subject, tenant))`;
 
 function seedDirectory(library, table, name) {
-  library.sql.exec(`INSERT INTO ${table} (key, source, name, tenant) VALUES ('ada@example.test', 'dna', ?, '')`, name);
+  sqlOf(library).exec(`INSERT INTO ${table} (key, source, name, tenant) VALUES ('ada@example.test', 'dna', ?, '')`, name);
 }
 
 test('a DROP TABLE directory failure does not make the next export return 500', async () => {
   const drop = lib();
-  drop.sql.exec(DIRECTORY);
+  sqlOf(drop).exec(DIRECTORY);
   seedDirectory(drop, 'directory', 'Kept');
-  const exec = drop.sql.exec.bind(drop.sql);
-  drop.sql.exec = (q, ...args) => {
+  const exec = sqlOf(drop).exec.bind(sqlOf(drop));
+  sqlOf(drop).exec = (q, ...args) => {
     if (String(q).trim() === 'DROP TABLE directory') throw new Error('drop failed');
     return exec(q, ...args);
   };
   assert.equal((await privacyExport(drop)).status, 500);
-  drop.sql.exec = exec;
+  sqlOf(drop).exec = exec;
   assert.equal((await privacyExport(drop)).status, 200);
   assert.deepEqual(drop.rows('SELECT name FROM directory').map(row => row.name), ['Kept']);
 });
 
 test('a directory rename failure does not leave the live table empty', async () => {
   const rename = lib();
-  rename.sql.exec(DIRECTORY);
+  sqlOf(rename).exec(DIRECTORY);
   seedDirectory(rename, 'directory', 'Kept');
-  const exec = rename.sql.exec.bind(rename.sql);
-  rename.sql.exec = (q, ...args) => {
+  const exec = sqlOf(rename).exec.bind(sqlOf(rename));
+  sqlOf(rename).exec = (q, ...args) => {
     if (String(q).includes('directory_v2 RENAME TO directory')) throw new Error('rename failed');
     return exec(q, ...args);
   };
   assert.equal((await privacyExport(rename)).status, 500);
-  rename.sql.exec = exec;
+  sqlOf(rename).exec = exec;
   assert.equal((await privacyExport(rename)).status, 200);
   assert.deepEqual(rename.rows('SELECT name FROM directory').map(row => row.name), ['Kept']);
 });
 
 test('a directory that already has both the live table and directory_v2 still exports', async () => {
   const both = lib();
-  both.sql.exec(DIRECTORY);
-  both.sql.exec(DIRECTORY_V2);
+  sqlOf(both).exec(DIRECTORY);
+  sqlOf(both).exec(DIRECTORY_V2);
   seedDirectory(both, 'directory', 'Kept');
   seedDirectory(both, 'directory_v2', 'Kept');
   assert.equal((await privacyExport(both)).status, 200);
@@ -593,7 +593,7 @@ test('a directory that already has both the live table and directory_v2 still ex
 
 test('a stranded directory_v2 is renamed back to directory', () => {
   const stranded = lib();
-  stranded.sql.exec(DIRECTORY_V2);
+  sqlOf(stranded).exec(DIRECTORY_V2);
   seedDirectory(stranded, 'directory_v2', 'Recovered');
   ensureProfile(stranded);
   assert.deepEqual(stranded.rows('SELECT name FROM directory').map(row => row.name), ['Recovered']);
@@ -609,11 +609,11 @@ test('profile storage without transactionSync is refused before any migration', 
 
 test('a populated profiles_v2 is not dropped when the live profiles table already has rows', () => {
   const library = lib();
-  library.sql.exec(PROFILE_V2.replace('CREATE TABLE profiles_v2', 'CREATE TABLE profiles'));
-  library.sql.exec(PROFILE_V2);
+  sqlOf(library).exec(PROFILE_V2.replace('CREATE TABLE profiles_v2', 'CREATE TABLE profiles'));
+  sqlOf(library).exec(PROFILE_V2);
   const stamp = '2026-11-08T00:00:00.000Z';
   for (const [table, title] of [['profiles', 'Live'], ['profiles_v2', 'Parked']]) {
-    library.sql.exec(`INSERT INTO ${table} (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+    sqlOf(library).exec(`INSERT INTO ${table} (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
       VALUES (?, ?, 'ada@example.test', ?, '{}', '{}', ?, ?, ?)`, 'ada@example.test', TENANT, JSON.stringify({ title: { value: title } }), stamp, stamp, stamp);
   }
   let error = null;

@@ -61,7 +61,7 @@ export function writeChunks(lib, groups) {
       const room = roomFor(fixed, copies);
       for (let at = 0; at < group.values.length; at += room) {
         const chunk = group.values.slice(at, at + room);
-        lib.sql.exec(group.sql(chunk), ...boundParams(chunk, fixed, copies, group.params));
+        lib.exec(group.sql(chunk), ...boundParams(chunk, fixed, copies, group.params));
       }
     }
   });

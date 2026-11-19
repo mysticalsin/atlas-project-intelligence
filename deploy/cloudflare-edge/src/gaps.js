@@ -5,6 +5,7 @@
 // author (owner or admin) sees the asks un-masked; everyone else, the assignee and the talker included, sees uniform
 // labels. The assignee sees their own words back; everyone else sees the answers with uniform labels. Nothing is sent:
 // the response carries a mailto draft, and outreach rows wait for an approver (outreach.js).
+import { Library } from './library.js';
 import { obj, email, para, fail, inList } from './util.js';
 import { pseudonymise, unmask, forOthers, recordText } from './scrub.js';
 import { clientScrub } from './review.js';
@@ -29,14 +30,17 @@ const ID = /^[a-f0-9]{32}$/;
 // §2.4 DDL (new table only; nothing ALTERs an existing table). Memoised per Library instance. Gap requests read the bid
 // they belong to, so the bids tables are ensured too (bids.js owns that DDL).
 const DDL = [`CREATE TABLE IF NOT EXISTS gap_requests (id TEXT PRIMARY KEY, bid_id TEXT, requirement_ids TEXT, asks TEXT, email TEXT, assignee_name TEXT,
-  reference_id TEXT, project_id TEXT, status TEXT, created_by TEXT, created_by_mail TEXT, created_at TEXT, answered_at TEXT, results TEXT, pseudo TEXT, source TEXT)`];
+  reference_id TEXT, project_id TEXT, status TEXT, created_by TEXT, created_by_mail TEXT, created_at TEXT, answered_at TEXT, results TEXT, pseudo TEXT, source TEXT,
+  tenant TEXT NOT NULL DEFAULT '')`];
 const ensured = new WeakSet();
 export function ensure(lib) {
   if (ensured.has(lib)) return;
   ensureBids(lib);
-  for (const q of DDL) lib.sql.exec(q);
-  const cols = lib.rows("SELECT name FROM pragma_table_info('gap_requests')").map(r => r.name);
-  if (cols.length && !cols.includes('tenant')) lib.sql.exec("ALTER TABLE gap_requests ADD COLUMN tenant TEXT NOT NULL DEFAULT ''");
+  lib.schema(() => {
+    for (const q of DDL) lib.exec(q);
+    const cols = lib.rows("SELECT name FROM pragma_table_info('gap_requests')").map(r => r.name);
+    if (cols.length && !cols.includes('tenant')) Library.migrate(lib, 'gap-tenant');
+  });
   ensured.add(lib);
 }
 
@@ -66,7 +70,10 @@ export function expire(lib, now, user = {}) {
   const tenant = enforced ? String(user.tenant || '').toLowerCase() : '';
   if (enforced && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenant)) return 0;
   const before = cutoff(now, EXPIRY_DAYS), n = lib.rows("SELECT COUNT(*) AS n FROM gap_requests WHERE status = 'open' AND created_at < ? AND lower(COALESCE(tenant, '')) = ?", before, tenant)[0].n;
-  if (n) lib.sql.exec("UPDATE gap_requests SET status = 'expired' WHERE status = 'open' AND created_at < ? AND lower(COALESCE(tenant, '')) = ?", before, tenant);
+  if (n) lib.recorded(() => {
+    lib.exec("UPDATE gap_requests SET status = 'expired' WHERE status = 'open' AND created_at < ? AND lower(COALESCE(tenant, '')) = ?", before, tenant);
+    lib.log('library', user.email || 'atlas', 'requests expired', String(n));
+  });
   return n;
 }
 
@@ -144,7 +151,7 @@ function create(ctx) {
   const id = lib.newId(), at = lib.now();
   const tenant = user.tenantEnforced === true ? String(user.tenant || '').toLowerCase() : '';
   lib.recorded(() => {
-    lib.sql.exec(`INSERT INTO gap_requests (id, bid_id, requirement_ids, asks, email, assignee_name, reference_id, project_id, status, created_by, created_by_mail,
+    lib.exec(`INSERT INTO gap_requests (id, bid_id, requirement_ids, asks, email, assignee_name, reference_id, project_id, status, created_by, created_by_mail,
       created_at, answered_at, results, pseudo, source, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, NULL, NULL, NULL, ?, ?)`,
       id, bidId, JSON.stringify(ids), JSON.stringify(asks), who.email, who.name, ref?.id || null, projectId || null, user.email, user.mail || '', at, who.source, tenant);
     lib.log(id, user.email, 'gap requested', `bid ${bidId}; ${asks.length} asks; assignee ${who.source}`);
@@ -200,7 +207,7 @@ function answer(ctx, g) {
   const refId = typeof b.referenceId === 'string' && lib.access(lib.row(b.referenceId), user) === 'full' ? b.referenceId : g.reference_id;
   const count = s => results.filter(r => r.status === s).length;
   lib.recorded(() => {
-    lib.sql.exec("UPDATE gap_requests SET status = 'answered', answered_at = ?, results = ?, pseudo = ?, reference_id = ? WHERE id = ?",
+    lib.exec("UPDATE gap_requests SET status = 'answered', answered_at = ?, results = ?, pseudo = ?, reference_id = ? WHERE id = ?",
       lib.now(), JSON.stringify(results), JSON.stringify(map), refId || null, g.id);
     lib.log(g.id, user.email, 'gap answered', `answered ${count('answered_unverified')}, unknown ${count('unknown')}, deferred ${count('deferred')}, open ${count('open')}`);
   });
@@ -213,7 +220,7 @@ function dismiss(ctx, g) {
   if (g.status !== 'open') throw fail(409, 'This request is no longer open.');
   para(obj(ctx.body).note, 300); // an optional note is accepted but not stored (the §2.4 table has no column for it)
   lib.recorded(() => {
-    lib.sql.exec("UPDATE gap_requests SET status = 'dismissed' WHERE id = ?", g.id);
+    lib.exec("UPDATE gap_requests SET status = 'dismissed' WHERE id = ?", g.id);
     lib.log(g.id, user.email, 'gap dismissed', mine ? 'by assignee' : 'by creator');
   });
   return render(lib, user, rowOf(lib, g.id));

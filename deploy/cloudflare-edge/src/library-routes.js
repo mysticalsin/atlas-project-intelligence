@@ -9,7 +9,6 @@ import { adminRoutes, journeyRoutes, privacyRoutes } from './operate.js';
 import { internalRoutes as privacyInternal } from './privacy-routes.js';
 import { sweep as retentionSweep } from './retention.js';
 import { holdRoutes } from './subject-rights.js';
-import { verifyDaily } from './audit-chain.js';
 import { secEvent } from './security-log.js';
 import { productionDemoConflict, resolveTenantEnforcement } from './authz.js';
 export const SYSTEM = { email: 'atlas', role: 'admin' }; // automatic review after a save
@@ -20,7 +19,7 @@ function scopedReviewer(user = {}) {
 const canRate = lib => !!(lib.complete || lib.rater?.available());
 async function reportChain(lib, env) {
   try {
-    const r = verifyDaily(lib.sql, lib.auditKey, lib.dbId);
+    const r = lib.dailyChain();
     const head = String(r.head || '').slice(0, 16);
     if (r.ok) await secEvent(env, 'audit_chain_ok', { reason: 'CHAIN_VERIFIED', n: r.checked, head, legacy: r.legacyUnverified || 0 });
     else await secEvent(env, 'audit_chain_break', { reason: r.reason || 'VERIFY_FAILED', n: r.brokenSeq ?? r.checked, head });
@@ -68,8 +67,18 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
     tenant: request.headers.get('x-atlas-tenant') || '', tenantEnforced: resolveTenantEnforcement(env, request.headers.get('x-atlas-tenant-enforced')), idp: profile.idpClaims(request.headers.get('x-atlas-idp')) };
   if (!user.email) return json({ error: 'Sign in first.' }, 401);
   const parts = libraryParts(url.pathname), method = request.method;
+  if (method === 'POST' && parts[0] === 'insights' && !['admin', 'reviewer'].includes(user.role)) {
+    return json({ error: 'Commercial insights are for reviewers.' }, 403);
+  }
   let body = {};
-  if (method === 'POST') { try { body = await request.json(); } catch { return json({ error: 'Invalid JSON.' }, 400); } }
+  // Insights and reinstate equate an empty body with {}. Reinstate does not read the
+  // body; the role check stays in reinstate() so a missing row is still 404.
+  // Every other POST still rejects an empty body as invalid JSON.
+  if (method === 'POST' && (parts[0] === 'insights' || parts[1] === 'reinstate')) {
+    const raw = await request.text();
+    if (!String(raw || '').trim()) body = {};
+    else { try { body = JSON.parse(raw); } catch { return json({ error: 'Invalid JSON.' }, 400); } }
+  } else if (method === 'POST') { try { body = await request.json(); } catch { return json({ error: 'Invalid JSON.' }, 400); } }
   const ctx = { request, url, method, parts, body, user, lib, env, waitUntil };
   try {
     // External confirmers reach feature words only (the registry limits them to `confirmations`); nothing else.
@@ -94,9 +103,17 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
       if (method === 'POST' && id === 'scan-stale') {
         // The response is the same object main returns: scanStale, then the two dailies. Retention runs after that
         // count is taken, so an old draft is still counted as invited, and its keys are not added to the body.
-        const payload = { invited: lib.scanStale(user), ...outreach.daily(lib, user), ...(profile.READY ? profile.daily(lib, lib.now(), user) : {}) };
+        const invited = lib.scanStale(user);
+        const outreachDaily = outreach.daily(lib, user);
+        let profileDaily = {};
+        let profileError = null;
+        try {
+          if (profile.READY) profileDaily = profile.daily(lib, lib.now(), user);
+        } catch (error) { profileError = error; }
+        const payload = { invited, ...outreachDaily, ...profileDaily };
         retentionSweep(lib, { tenant: user.tenantEnforced === true ? user.tenant : '' });
         await reportChain(lib, env);
+        if (profileError) throw profileError;
         return json(payload);
       }
       const sys = await featureRoutes(ctx);

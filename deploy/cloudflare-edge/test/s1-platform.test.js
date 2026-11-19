@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { handle } from '../src/app.js';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import { memorySql } from './sqlite.js';
 import * as profile from '../src/profile.js';
@@ -99,7 +99,7 @@ test('library erasure stays inside the verified tenant and does not report the o
   const ada = { email: 'ada@example.test', mail: 'ada@example.test', role: 'user', tenantEnforced: true };
   const mine = await l.upsert({ ...ada, tenant: A }, { localId: 'mine', reference: ref() });
   const other = await l.upsert({ ...ada, tenant: B }, { localId: 'other', reference: ref() });
-  l.sql.exec("INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES ('ada@example.test', '', 'ada@example.test', '{}', '{}', '{}', '2020-01-01T00:00:00.000Z', '2020-01-01T00:00:00.000Z', '2020-01-01T00:00:00.000Z')");
+  sqlOf(l).exec("INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES ('ada@example.test', '', 'ada@example.test', '{}', '{}', '{}', '2020-01-01T00:00:00.000Z', '2020-01-01T00:00:00.000Z', '2020-01-01T00:00:00.000Z')");
   const headers = { 'x-atlas-user': 'ada@example.test', 'x-atlas-role': 'user', 'x-atlas-email': 'ada@example.test', 'x-atlas-tenant-enforced': '1', 'x-atlas-subj': 'ab'.repeat(16) };
   const env = { DATA_MODE: 'production', ORIGIN: 'https://atlas.test', CSRF_SECRET: 's' };
   const missing = await libraryRoutes(new Request('https://atlas.internal/api/privacy/erase', { method: 'POST', body: '{"confirmed":true}', headers: { ...headers, 'x-atlas-tenant': '' } }), l, { env });

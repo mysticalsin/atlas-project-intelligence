@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { verifyDaily } from '../src/audit-chain.js';
 import { eraseMine } from '../src/subject-rights.js';
 import * as outreach from '../src/outreach.js';
@@ -31,8 +31,8 @@ function open() {
   return { sql, lib };
 }
 function n(lib, table, where = '', ...p) {
-  if (!lib.sql.exec("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", table).toArray()[0]) return 0;
-  return lib.sql.exec(`SELECT COUNT(*) AS n FROM ${table}${where ? ' WHERE ' + where : ''}`, ...p).toArray()[0].n;
+  if (!sqlOf(lib).exec("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", table).toArray()[0]) return 0;
+  return sqlOf(lib).exec(`SELECT COUNT(*) AS n FROM ${table}${where ? ' WHERE ' + where : ''}`, ...p).toArray()[0].n;
 }
 async function seeded() {
   const box = open();
@@ -40,12 +40,12 @@ async function seeded() {
   return { ...box, id: row.id };
 }
 function tamper(lib) {
-  lib.sql.exec("UPDATE audit SET detail = detail || ' tampered' WHERE action != 'chain-start'");
+  sqlOf(lib).exec("UPDATE audit SET detail = detail || ' tampered' WHERE action != 'chain-start'");
 }
 function truncate(lib) {
-  const daily = verifyDaily(lib.sql, SALT, lib.dbId);
+  const daily = verifyDaily(sqlOf(lib), SALT, lib.dbId);
   assert.equal(daily.reason, 'CHAIN_VERIFIED');
-  lib.sql.exec('DELETE FROM audit WHERE seq = (SELECT MAX(seq) FROM audit)');
+  sqlOf(lib).exec('DELETE FROM audit WHERE seq = (SELECT MAX(seq) FROM audit)');
 }
 function unkey(lib) { lib.auditKey = null; }
 function snap(lib, id) {

@@ -2,7 +2,7 @@
 // must put every store back and answer with a non-2xx error.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import { memorySql } from './sqlite.js';
 import { ensureJourney } from '../src/journey.js';
@@ -35,22 +35,22 @@ test('a later manager-trust chunk rolls back every store and the response is not
   ensureTelemetry(l);
   const user = { email: EMAIL, mail: EMAIL, role: 'user', tenant: TENANT, tenantEnforced: true };
   const persona = await personaKey(user);
-  l.sql.exec('INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)', EMAIL, TENANT, '{"title":"Kept"}', NOW);
-  l.sql.exec('INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)', EMAIL, OTHER, '{"title":"Other"}', NOW);
-  l.sql.exec(`INSERT INTO telemetry (id, at, tenant, persona, kind, feature, outcome, latency_ms, tokens_in, tokens_out, token_status, model, error_class)
+  sqlOf(l).exec('INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)', EMAIL, TENANT, '{"title":"Kept"}', NOW);
+  sqlOf(l).exec('INSERT INTO journey (subject, tenant, payload, updated_at) VALUES (?, ?, ?, ?)', EMAIL, OTHER, '{"title":"Other"}', NOW);
+  sqlOf(l).exec(`INSERT INTO telemetry (id, at, tenant, persona, kind, feature, outcome, latency_ms, tokens_in, tokens_out, token_status, model, error_class)
     VALUES ('tel-ada', ?, ?, ?, 'journey', 'app', 'ok', NULL, NULL, NULL, 'missing', '', '')`, NOW, TENANT, persona);
-  l.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+  sqlOf(l).exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
     VALUES (?, ?, ?, '{}', '{}', '{}', ?, ?, ?)`, EMAIL, TENANT, EMAIL, NOW, NOW, NOW);
   for (let i = 0; i < 101; i++) {
-    l.sql.exec('INSERT INTO manager_trust (owner, email, source, tenant, at) VALUES (?, ?, ?, ?, ?)', EMAIL, `mgr-${i}@example.test`, 'directory', TENANT, NOW);
+    sqlOf(l).exec('INSERT INTO manager_trust (owner, email, source, tenant, at) VALUES (?, ?, ?, ?, ?)', EMAIL, `mgr-${i}@example.test`, 'directory', TENANT, NOW);
   }
-  l.sql.exec('INSERT INTO manager_trust (owner, email, source, tenant, at) VALUES (?, ?, ?, ?, ?)', 'other@example.test', 'kept@example.test', 'directory', TENANT, NOW);
-  l.sql.exec(`INSERT INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at, tenant)
+  sqlOf(l).exec('INSERT INTO manager_trust (owner, email, source, tenant, at) VALUES (?, ?, ?, ?, ?)', 'other@example.test', 'kept@example.test', 'directory', TENANT, NOW);
+  sqlOf(l).exec(`INSERT INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at, tenant)
     VALUES (?, 'dna', 'Ada', '', '', '', '', 'pull', ?, ?)`, EMAIL, NOW, TENANT);
   const before = snap(l);
   const chunks = [];
-  const orig = l.sql.exec.bind(l.sql);
-  l.sql.exec = (q, ...p) => {
+  const orig = sqlOf(l).exec.bind(sqlOf(l));
+  sqlOf(l).exec = (q, ...p) => {
     if (String(q).startsWith('DELETE FROM manager_trust')) {
       chunks.push(p.length);
       if (p.length === 1) throw new Error('disk');

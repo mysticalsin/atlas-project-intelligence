@@ -433,7 +433,7 @@ function retryAfterMs(headers) {
 }
 export function storyRater(env, fetcher = fetch, opts = {}) {
   const budgets = { interactive: { ...BUDGETS.interactive, ...(opts.budgets?.interactive || {}) }, background: { ...BUDGETS.background, ...(opts.budgets?.background || {}) } };
-  const now = opts.now || (() => Date.now()), random = opts.random || Math.random, sleep = opts.sleep || (ms => delay(ms));
+  const now = opts.now || (() => Date.now()), random = opts.random || Math.random, sleep = opts.sleep || (ms => delay(ms)), wait = opts.delay || delay;
   let breaker = initialBreaker();
   const available = () => !!env.TYPESAFE_API_KEY;
   const emit = opts.log || (line => { try { console.warn(JSON.stringify(line)); } catch { /* logging never changes the decision */ } });
@@ -491,7 +491,13 @@ export function storyRater(env, fetcher = fetch, opts = {}) {
     return new Promise(resolve => {
       const stop = new AbortController(), ctrls = [];
       let settled = false, attempts = 0, hedged = 0, http = 0, pending = 0;
-      const end = o => { if (settled) return; settled = true; stop.abort(); for (const c of ctrls) c.abort(); resolve({ ...o, attempts, hedged, http }); };
+      const end = o => {
+        if (settled) return;
+        settled = true; stop.abort(); for (const c of ctrls) c.abort();
+        const result = { ...o, attempts, hedged, http };
+        if (typeof opts.onEnd === 'function') opts.onEnd(result);
+        resolve(result);
+      };
       const launch = () => {
         if (settled || attempts >= max || deadlineAt - now() < b.minAttemptMs) return false;
         attempts++; pending++; if (attempts > 1) hedged = 1;
@@ -508,10 +514,10 @@ export function storyRater(env, fetcher = fetch, opts = {}) {
         return true;
       };
       launch();
-      if (max > 1) delay(b.hedgeAtMs, stop.signal).then(fired => { if (fired && !settled && pending > 0) launch(); });
-      delay(b.deadlineMs, stop.signal).then(fired => {
-        if (!fired || settled) return;
-        for (let i = 0; i < pending; i++) note({ code: 'timeout' }, null, trial);
+      if (max > 1) wait(b.hedgeAtMs, stop.signal).then(fired => { if (fired && !settled && pending > 0) launch(); });
+      wait(b.deadlineMs, stop.signal).then(fired => {
+        if (!fired) return;
+        if (!settled) for (let i = 0; i < pending; i++) note({ code: 'timeout' }, null, trial);
         end({ code: 'timeout', retryable: true });
       });
     });

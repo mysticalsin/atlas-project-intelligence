@@ -1,5 +1,5 @@
 PYTHON ?= python3
-.PHONY: build preview gateway test test-ui test-edge doctor verify-package
+.PHONY: build preview gateway test test-ui test-edge geo-ne-check doctor verify-package
 build:
 	$(PYTHON) build.py
 preview: build
@@ -11,6 +11,8 @@ test: build test-edge
 	$(PYTHON) -m pytest tests/test_*.py -q
 test-edge:
 	cd deploy/cloudflare-edge && node --test test/*.test.js
+geo-ne-check:
+	node tests/geo-ne-check.js
 test-ui: build
 	$(PYTHON) tests/studio_browser.py
 	$(PYTHON) tests/sculpture_browser.py
