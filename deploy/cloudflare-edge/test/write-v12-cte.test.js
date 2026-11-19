@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Library } from '../src/library.js';
-import { provenRead } from '../src/sql-text.js';
+import { provenRead, isMutatingStatement } from '../src/sql-text.js';
 import { memorySql } from './sqlite.js';
 
 const SALT = 'synthetic-log-salt';
@@ -26,8 +26,9 @@ function codeOf(fn) {
   catch (error) { return error.code || 'ERR'; }
 }
 
-function refuses(sql) {
+function refuses(sql, mutating) {
   assert.equal(provenRead(sql), false, sql);
+  if (mutating) assert.equal(isMutatingStatement(sql), true, sql);
   hide(() => {
     const raw = memorySql();
     const lib = new Library({ exec: raw.exec.bind(raw), transactionSync: raw.transactionSync.bind(raw) }, { auditKey: SALT, now: () => STAMP });
@@ -36,15 +37,15 @@ function refuses(sql) {
 }
 
 test('a bracketed parenthesis does not hide a CTE delete on the fallback door', () => {
-  refuses(BRACKET);
+  refuses(BRACKET, true);
 });
 
 test('a backtick parenthesis does not hide a CTE delete on the fallback door', () => {
-  refuses(TICK);
+  refuses(TICK, true);
 });
 
 test('a double-quoted parenthesis does not hide a CTE delete on the fallback door', () => {
-  refuses(QUOTED);
+  refuses(QUOTED, true);
 });
 
 test('nested parentheses do not hide a CTE delete on the fallback door', () => {
