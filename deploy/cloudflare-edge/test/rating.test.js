@@ -670,6 +670,46 @@ test('a retryable 503 launches the duplicate before the hedge wait elapses', asy
   await pending;
 });
 
+test('the production yield cap stays 100000', () => {
+  assert.equal(spinUntil.cap, 100000);
+});
+
+test('the yield guard fires at exactly the injected cap and not one yield earlier', async () => {
+  let yields = 0;
+  const tick = async () => { yields++; };
+  await assert.rejects(
+    () => spinUntil(() => false, 'stuck fetcher', { cap: 4, tick }),
+    e => e instanceof assert.AssertionError && /yield cap 4/.test(e.message)
+  );
+  assert.equal(yields, 4, 'the guard fires at exactly cap yields');
+  yields = 0;
+  let checks = 0;
+  const early = () => { checks++; return checks > 3; };
+  const used = await spinUntil(early, 'should not trip', { cap: 4, tick });
+  assert.equal(used, 3, 'a predicate that becomes true at cap-1 does not trip the guard');
+  assert.equal(yields, 3);
+});
+
+test('end() after settle does not resolve or callback again', async () => {
+  const seen = [];
+  const budgets = { interactive: { deadlineMs: 200, hedgeAtMs: 70, minAttemptMs: 30 } };
+  const queued = [];
+  const delay = (ms, signal) => new Promise(resolve => {
+    if (signal?.aborted) return resolve(false);
+    queued.push({ ms, resolve });
+  });
+  const w = await world({ reply: () => ({}), raterOpts: { budgets, now: () => 1e6, delay, onEnd: result => seen.push(result) } });
+  const id = await saved(w.l);
+  const result = await w.l.review(OWNER, id);
+  const deadline = queued.find(q => q.ms === budgets.interactive.deadlineMs);
+  assert.ok(deadline, 'the deadline wait is still held');
+  deadline.resolve(true);
+  await new Promise(r => setImmediate(r));
+  assert.equal(seen.length, 1, 'end() after settle does not callback again');
+  assert.equal(result.state.quality.status !== 'error', true);
+  assert.equal(seen[0].ok, true, 'the first settle stays the success');
+});
+
 test('R16 circuit breaker: three consecutive failures open it for 60 s; one trial after that closes it', async () => {
   let clock = 1e6, mode = 'down';
   const fetcher = fakeTS(() => (mode === 'down' ? { status: 529 } : {}));
