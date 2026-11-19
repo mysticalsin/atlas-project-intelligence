@@ -67,8 +67,15 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
     tenant: request.headers.get('x-atlas-tenant') || '', tenantEnforced: resolveTenantEnforcement(env, request.headers.get('x-atlas-tenant-enforced')), idp: profile.idpClaims(request.headers.get('x-atlas-idp')) };
   if (!user.email) return json({ error: 'Sign in first.' }, 401);
   const parts = libraryParts(url.pathname), method = request.method;
+  if (method === 'POST' && parts[0] === 'insights' && !['admin', 'reviewer'].includes(user.role)) {
+    return json({ error: 'Commercial insights are for reviewers.' }, 403);
+  }
   let body = {};
-  if (method === 'POST') { try { body = await request.json(); } catch { return json({ error: 'Invalid JSON.' }, 400); } }
+  if (method === 'POST' && parts[0] === 'insights') {
+    const raw = await request.text();
+    if (!String(raw || '').trim()) body = {};
+    else { try { body = JSON.parse(raw); } catch { return json({ error: 'Invalid JSON.' }, 400); } }
+  } else if (method === 'POST') { try { body = await request.json(); } catch { return json({ error: 'Invalid JSON.' }, 400); } }
   const ctx = { request, url, method, parts, body, user, lib, env, waitUntil };
   try {
     // External confirmers reach feature words only (the registry limits them to `confirmations`); nothing else.

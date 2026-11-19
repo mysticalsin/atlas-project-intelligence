@@ -198,6 +198,7 @@ function parameterTaint(tree, file) {
   primary = new Set();
   aliases = new Set();
   evalAliases = new Set();
+  evalStrings = new Set();
   const see = (node) => {
     if (!node || typeof node.type !== 'string') return;
     if (node.type === 'VariableDeclarator' && node.id?.type === 'Identifier' && isHandleSource(node.init, file, primary)) primary.add(node.id.name);
@@ -211,6 +212,8 @@ function parameterTaint(tree, file) {
     if (node.type === 'AssignmentExpression' && node.left?.type === 'Identifier' && isHandleSource(node.right, file, primary)) primary.add(node.left.name);
     if (node.type === 'VariableDeclarator' && node.id?.type === 'Identifier' && isEvalValue(node.init)) evalAliases.add(node.id.name);
     if (node.type === 'AssignmentExpression' && node.left?.type === 'Identifier' && isEvalValue(node.right)) evalAliases.add(node.left.name);
+    if (node.type === 'VariableDeclarator') noteEvalBinding(node.id, node.init);
+    if (node.type === 'AssignmentExpression') noteEvalBinding(node.left, node.right);
     if (node.type === 'CallExpression' && unwrap(node.callee)?.type === 'Identifier') {
       const fn = functions.get(unwrap(node.callee).name);
       if (fn) (node.arguments || []).forEach((arg, index) => {
@@ -237,9 +240,29 @@ function isEvalValue(node) {
   return node.type === 'MemberExpression' && propName(node) === 'eval';
 }
 
+function noteEvalBinding(id, init) {
+  if (!id) return;
+  if (id.type === 'Identifier' && foldString(init) === 'eval') evalStrings.add(id.name);
+  if (id.type === 'ObjectPattern') {
+    for (const prop of id.properties || []) {
+      if (prop?.type !== 'Property' || prop.value?.type !== 'Identifier') continue;
+      const key = prop.key?.type === 'Identifier' ? prop.key.name : (prop.key?.type === 'Literal' ? String(prop.key.value) : '');
+      if (key === 'eval') evalAliases.add(prop.value.name);
+    }
+  }
+  if (id.type === 'ArrayPattern' && init?.type === 'ArrayExpression') {
+    const left = id.elements || [];
+    const right = init.elements || [];
+    for (let n = 0; n < left.length; n++) {
+      if (left[n]?.type === 'Identifier' && isEvalValue(right[n])) evalAliases.add(left[n].name);
+    }
+  }
+}
+
 function isEvalCall(node) {
   const callee = peel(node.callee);
   if (callee?.type === 'Identifier' && (callee.name === 'eval' || evalAliases.has(callee.name))) return true;
+  if (callee?.type === 'MemberExpression' && callee.computed && callee.property?.type === 'Identifier' && evalStrings.has(callee.property.name)) return true;
   return callee?.type === 'MemberExpression' && propName(callee) === 'eval';
 }
 
@@ -276,6 +299,7 @@ function isWeakMapGet(node) {
 let primary = new Set();
 let aliases = new Set();
 let evalAliases = new Set();
+let evalStrings = new Set();
 
 function isHandlesGet(node) {
   node = unwrap(node);

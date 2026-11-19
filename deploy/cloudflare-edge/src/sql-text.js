@@ -5,7 +5,7 @@
 // Neither path calls RegExp.prototype.exec. A non-boolean, a null, or a throw
 // from a snapshotted string or array method counts as a write.
 
-import { charCodeAt, includes, least, lower, primordialsHold, push, slice, some, textOf, trim } from './primordials.js';
+import { charCodeAt, includes, least, lower, most, primordialsHold, push, slice, some, textOf, trim } from './primordials.js';
 
 function codeAt(c) {
   const n = charCodeAt(c, 0);
@@ -53,6 +53,11 @@ function mustTrim(value) {
 }
 function mustLeast(a, b) {
   const n = least(a, b);
+  if (typeof n !== 'number') throw new Error('primordial');
+  return n;
+}
+function mustMost(a, b) {
+  const n = most(a, b);
   if (typeof n !== 'number') throw new Error('primordial');
   return n;
 }
@@ -141,7 +146,7 @@ function splitBody(sql) {
       continue;
     }
     if (c === '(') { paren++; i++; continue; }
-    if (c === ')') { paren = Math.max(0, paren - 1); i++; continue; }
+    if (c === ')') { paren = mustMost(0, paren - 1); i++; continue; }
     if (isIdentChar(c)) {
       const word = mustLower(wordAt(text, i));
       i += word.length;
@@ -279,11 +284,37 @@ export function sqlShape(sql) {
   }
 }
 
-// Keywords and identifiers, in order. Comments are dropped. A quoted identifier
-// is its text. A string literal is omitted, so it cannot impersonate a verb.
-export function leadingWords(sql) {
+function skipQuote(text, i, end) {
+  i++;
+  while (i < text.length) {
+    if (text[i] === end) {
+      if (text[i + 1] === end) { i += 2; continue; }
+      return i + 1;
+    }
+    i++;
+  }
+  return i;
+}
+
+function quotedName(text, i) {
+  const end = text[i] === '[' ? ']' : text[i];
+  const start = i + 1;
+  let j = start;
+  let name = '';
+  while (j < text.length && text[j] !== end) {
+    if (text[j] === end && text[j + 1] === end) { name += end; j += 2; continue; }
+    name += text[j++];
+  }
+  if (j < text.length) j++;
+  return { name, next: j, start };
+}
+
+// One scan. Comments are dropped, string literals are omitted, and a quoted
+// identifier is one lowercased word. Operators that change a pragma or a name
+// stay in the stream so a later check never reads the raw text again.
+export function sqlTokens(sql) {
   const text = mustText(sql);
-  const words = [];
+  const tokens = [];
   let i = 0;
   while (i < text.length) {
     const c = text[i];
@@ -298,37 +329,44 @@ export function leadingWords(sql) {
       i = mustLeast(text.length, i + 2);
       continue;
     }
-    if (c === "'") {
-      i++;
-      while (i < text.length) {
-        if (text[i] === "'") {
-          if (text[i + 1] === "'") { i += 2; continue; }
-          i++;
-          break;
-        }
-        i++;
-      }
+    if (c === "'") { i = skipQuote(text, i, "'"); continue; }
+    if (c === '"' || c === '`' || c === '[') {
+      const quoted = quotedName(text, i);
+      i = quoted.next;
+      if (quoted.name) mustPush(tokens, { kind: 'word', text: mustLower(quoted.name) });
       continue;
     }
-    if (c === '"' || c === '`' || c === '[') {
-      const end = c === '[' ? ']' : c;
+    if (c === '=' || c === '(' || c === ')' || c === '.' || c === ';') {
+      mustPush(tokens, { kind: 'op', text: c });
       i++;
-      let name = '';
-      while (i < text.length && text[i] !== end) {
-        if (text[i] === end && text[i + 1] === end) { name += end; i += 2; continue; }
-        name += text[i++];
-      }
-      if (i < text.length) i++;
-      if (name) mustPush(words, mustLower(name));
+      continue;
+    }
+    if (isDigitChar(c)) {
+      const start = i;
+      i++;
+      while (i < text.length && isDigitChar(text[i])) i++;
+      mustPush(tokens, { kind: 'word', text: mustSlice(text, start, i) });
       continue;
     }
     if (isIdentChar(c)) {
       const word = wordAt(text, i);
-      mustPush(words, mustLower(word));
+      mustPush(tokens, { kind: 'word', text: mustLower(word) });
       i += word.length;
       continue;
     }
     i++;
+  }
+  return tokens;
+}
+
+// Keywords and identifiers, in order. Comments are dropped. A quoted identifier
+// is its text. A string literal is omitted, so it cannot impersonate a verb.
+export function leadingWords(sql) {
+  const tokens = sqlTokens(sql);
+  const words = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token.kind === 'word' || token.text === '(' || token.text === ')') mustPush(words, token.text);
   }
   return words;
 }
@@ -375,7 +413,7 @@ function mutatingBody(sql) {
       continue;
     }
     if (c === '(') { depth++; i++; continue; }
-    if (c === ')') { depth = Math.max(0, depth - 1); i++; continue; }
+    if (c === ')') { depth = mustMost(0, depth - 1); i++; continue; }
     if (depth === 0 && isIdentChar(c)) {
       const word = mustLower(wordAt(text, i));
       if (writeOf(word)) return true;
@@ -553,101 +591,105 @@ function pragmaVerb(words) {
   return words[i] === 'pragma';
 }
 
-function nameAt(text, name, from) {
-  for (let i = from; i + name.length <= text.length; i++) {
-    let match = true;
-    for (let j = 0; j < name.length; j++) if (text[i + j] !== name[j]) { match = false; break; }
-    if (!match) continue;
-    if (i > 0 && isWordChar(text[i - 1])) continue;
-    if (i + name.length < text.length && isWordChar(text[i + name.length])) continue;
-    return i;
+// A pragma name is the word after PRAGMA, or the word after a schema dot.
+// An equals sign is an assignment. Parentheses are a read only for the
+// table-argument names. One trailing semicolon is still that statement.
+function readPragma(tokens, i) {
+  let n = i + 1;
+  if (tokens[n]?.kind !== 'word') return { name: '', kind: 'setter', start: i, end: n };
+  let name = tokens[n].text;
+  n++;
+  if (tokens[n]?.kind === 'op' && tokens[n].text === '.' && tokens[n + 1]?.kind === 'word') {
+    name = tokens[n + 1].text;
+    n += 2;
   }
-  return -1;
-}
-
-// A read is a listed pragma with no assignment. Parentheses are a read only
-// for the table-argument names. writable_schema and schema_version are bare.
-export function pragmaRead(sql) {
-  let words;
-  try { words = leadingWords(sql); }
-  catch { return false; }
-  if (!pragmaVerb(words)) return false;
-  let i = 0;
-  if (words[0] === 'explain') {
-    i = 1;
-    if (words[1] === 'query' && words[2] === 'plan') i = 3;
+  if (tokens[n]?.kind === 'op' && tokens[n].text === '=') {
+    n++;
+    if (n < tokens.length) n++;
+    if (tokens[n]?.text === ';') n++;
+    const kind = name === 'writable_schema' ? 'writable' : 'setter';
+    return { name, kind, start: i, end: n };
   }
-  let name = words[i + 1] || '';
-  if (!listed(PRAGMA_READS, name) && listed(PRAGMA_READS, words[i + 2] || '')) name = words[i + 2];
-  if (!listed(PRAGMA_READS, name)) return false;
-  let text;
-  try { text = mustLower(mustText(sql)); }
-  catch { return false; }
-  const pragmaAt = nameAt(text, 'pragma', 0);
-  if (pragmaAt < 0) return false;
-  const at = nameAt(text, name, pragmaAt + 'pragma'.length);
-  if (at < 0) return false;
-  let j = at + name.length;
-  if (text[j] === '"' || text[j] === '`' || text[j] === ']') j++;
-  while (j < text.length && isSpaceChar(text[j])) j++;
-  if (j >= text.length) return true;
-  if (text[j] === '=') return false;
-  if (text[j] === '(') {
-    if (!listed(PRAGMA_TABLE_ARG, name)) return false;
+  if (tokens[n]?.kind === 'op' && tokens[n].text === '(') {
     let depth = 0;
-    let closed = false;
-    for (let k = j; k < text.length; k++) {
-      if (text[k] === '=') return false;
-      if (text[k] === '(') depth++;
-      else if (text[k] === ')') {
-        depth--;
-        if (depth === 0) { j = k + 1; closed = true; break; }
+    let eq = false;
+    let closed = -1;
+    for (let k = n; k < tokens.length; k++) {
+      if (tokens[k].text === '=') eq = true;
+      if (tokens[k].text === '(') depth++;
+      else if (tokens[k].text === ')') {
+        depth = mustMost(0, depth - 1);
+        if (depth === 0) { closed = k; break; }
       }
     }
-    if (!closed) return false;
-    while (j < text.length && isSpaceChar(text[j])) j++;
-    return j >= text.length || onlyNoise(text, j);
+    if (closed < 0 || eq || !listed(PRAGMA_TABLE_ARG, name)) {
+      return { name, kind: name === 'writable_schema' ? 'writable' : 'setter', start: i, end: tokens.length };
+    }
+    n = closed + 1;
   }
-  return onlyNoise(text, j);
+  if (tokens[n]?.text === ';') n++;
+  if (!listed(PRAGMA_READS, name)) return { name, kind: 'setter', start: i, end: n };
+  if (n < tokens.length && tokens[n - 1]?.text !== ';') return { name, kind: 'setter', start: i, end: n };
+  return { name, kind: 'read', start: i, end: n };
+}
+
+// none, read, setter, or writable. writable wins. A throw is a setter.
+export function pragmaClass(sql) {
+  try {
+    if (!primordialsHold()) return 'setter';
+    const tokens = sqlTokens(sql);
+    let saw = 'none';
+    for (let i = 0; i < tokens.length; i++) {
+      if (tokens[i].kind !== 'word' || tokens[i].text !== 'pragma') continue;
+      const found = readPragma(tokens, i);
+      if (found.kind === 'writable') return 'writable';
+      if (found.kind === 'setter') saw = 'setter';
+      else if (saw === 'none') saw = 'read';
+      if (found.end > i) i = found.end - 1;
+    }
+    return saw;
+  } catch {
+    return 'setter';
+  }
+}
+
+// The schema door may set only these two, and only as the whole statement.
+export function pragmaSetterName(sql) {
+  try {
+    const tokens = sqlTokens(sql);
+    let found = null;
+    for (let i = 0; i < tokens.length; i++) {
+      if (tokens[i].kind !== 'word' || tokens[i].text !== 'pragma') continue;
+      found = readPragma(tokens, i);
+      break;
+    }
+    if (!found || found.kind !== 'setter' || found.start !== 0 || found.end < tokens.length) return '';
+    if (found.name !== 'user_version' && found.name !== 'foreign_keys') return '';
+    return found.name;
+  } catch {
+    return '';
+  }
+}
+
+export function pragmaRead(sql) {
+  try { return pragmaClass(sql) === 'read'; }
+  catch { return false; }
 }
 
 export function pragmaSetter(sql) {
-  let words;
-  try { words = leadingWords(sql); }
-  catch { return true; }
-  if (!pragmaVerb(words)) return false;
-  return !pragmaRead(sql);
+  try {
+    const klass = pragmaClass(sql);
+    return klass === 'setter' || klass === 'writable';
+  } catch {
+    return true;
+  }
 }
 
 // PRAGMA writable_schema = ON, or the parenthesised form, writes the catalog flag.
-// A bare PRAGMA writable_schema reads it.
+// A bare PRAGMA writable_schema reads it. Quotes and comments are already gone.
 export function writableAssignment(sql) {
-  let words;
-  try { words = leadingWords(sql); }
+  try { return pragmaClass(sql) === 'writable'; }
   catch { return true; }
-  if (!words) return true;
-  let seen = false;
-  for (let i = 0; i < words.length; i++) if (words[i] === 'writable_schema') seen = true;
-  if (!seen) return false;
-  let text;
-  try { text = mustLower(mustText(sql)); }
-  catch { return true; }
-  const name = 'writable_schema';
-  let at = -1;
-  for (let i = 0; i + name.length <= text.length; i++) {
-    let match = true;
-    for (let j = 0; j < name.length; j++) if (text[i + j] !== name[j]) { match = false; break; }
-    if (!match) continue;
-    at = i;
-    break;
-  }
-  if (at < 0) return true;
-  for (let i = at + name.length; i < text.length; i++) {
-    const c = text[i];
-    if (isSpaceChar(c)) continue;
-    return c === '=' || c === '(';
-  }
-  return false;
 }
 
 export function hasCreateAsSelect(sql) {
@@ -655,7 +697,7 @@ export function hasCreateAsSelect(sql) {
   let depth = 0;
   for (let i = 0; i < words.length - 1; i++) {
     if (words[i] === '(') depth++;
-    else if (words[i] === ')') depth = Math.max(0, depth - 1);
+    else if (words[i] === ')') depth = mustMost(0, depth - 1);
     else if (depth === 0 && words[i] === 'as' && words[i + 1] === 'select') return true;
   }
   return false;

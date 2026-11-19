@@ -18,7 +18,7 @@ import { appendAudit, checkpointHead, ensureChain, verifyChain, anchoredVerdict,
 import { recordUsage } from './telemetry.js';
 import { publicationEffect, publicationStatus, publicationTransition, readPublication } from './publication.js';
 import { invitationTransition, noteInvitation, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
-import { bareSemicolon, hasCreateAsSelect, isMutatingStatement, leadingWords, pragmaSetter, provenRead, remainderIsNoise, splitStatements, sqlShape, unparsedTail, writableAssignment } from './sql-text.js';
+import { bareSemicolon, hasCreateAsSelect, isMutatingStatement, leadingWords, pragmaClass, pragmaSetter, pragmaSetterName, provenRead, remainderIsNoise, splitStatements, sqlShape, unparsedTail, writableAssignment } from './sql-text.js';
 import { sqliteRemainder } from './sql-tail.js';
 import { clockIso, find, includes, isoFrom, parseDate, some, trim } from './primordials.js';
 import { RETENTION } from './policy.generated.js';
@@ -158,10 +158,53 @@ function writeTarget(words, i) {
 }
 function createShadow(words, i) {
   let at = i + 1;
-  if (words[at] !== 'temp' && words[at] !== 'temporary') return false;
-  at += 1;
-  if (words[at] !== 'table' && words[at] !== 'view') return false;
-  return targetHits(words, at + 1, GUARDED_TABLES);
+  if (words[at] === 'or') {
+    at += 1;
+    if (words[at] === 'replace') at += 1;
+  }
+  if (words[at] === 'temp' || words[at] === 'temporary') at += 1;
+  if (words[at] === 'unique') at += 1;
+  if (words[at] === 'virtual' && words[at + 1] === 'table') at += 2;
+  else if (words[at] === 'table' || words[at] === 'view' || words[at] === 'index' || words[at] === 'trigger') at += 1;
+  else return false;
+  return targetHits(words, at, GUARDED_TABLES);
+}
+function renameGuarded(words, i) {
+  if (words[i] !== 'alter' || words[i + 1] !== 'table') return false;
+  for (let k = i + 2; k < words.length - 1; k++) {
+    if (words[k] === 'rename' && words[k + 1] === 'to') return targetHits(words, k + 2, GUARDED_TABLES);
+  }
+  return false;
+}
+function receiptIndex(words, at) {
+  const tables = ['consent_receipts', 'privacy_gate'];
+  for (let i = at; i < words.length; i++) {
+    if (words[i] === 'on' && hits(namesAt(words, i + 1), tables)) return true;
+  }
+  return false;
+}
+function recordedEarly(sql) {
+  let words;
+  try { words = leadingWords(sql); }
+  catch { return true; }
+  if (!words) return true;
+  for (let i = 0; i < words.length; i++) {
+    if (words[i] === 'create' && (createShadow(words, i) || receiptIndex(words, i))) return true;
+    if (renameGuarded(words, i)) return true;
+  }
+  return false;
+}
+function refusePragma(sql, kind) {
+  let klass = 'setter';
+  try { klass = pragmaClass(sql); }
+  catch { klass = 'setter'; }
+  if (klass === 'writable' || klass === 'setter') {
+    if (klass === 'writable') return true;
+    if (kind !== 'schema' && kind !== 'registered') return true;
+    const name = pragmaSetterName(sql);
+    return name !== 'user_version' && name !== 'foreign_keys';
+  }
+  return false;
 }
 function recordedForbidden(sql) {
   let words;
@@ -172,10 +215,10 @@ function recordedForbidden(sql) {
     if (words[i] === 'drop' && words[i + 1] === 'trigger') return true;
     if (words[i] === 'drop' && (words[i + 1] === 'table' || words[i + 1] === 'view') && targetHits(words, i + 2, GUARDED_TABLES)) return true;
     if (words[i] === 'drop' && words[i + 1] === 'index' && (targetHits(words, i + 2, GUARDED_TABLES) || indexForbidden(words, i + 2))) return true;
-    if (words[i] === 'alter' && words[i + 1] === 'table' && targetHits(words, i + 2, GUARDED_TABLES)) return true;
+    if (words[i] === 'alter' && words[i + 1] === 'table' && (targetHits(words, i + 2, GUARDED_TABLES) || renameGuarded(words, i))) return true;
     if (words[i] === 'delete' && words[i + 1] === 'from' && (targetHits(words, i + 2, GUARDED_TABLES) || targetHits(words, i + 2, CATALOG_TABLES))) return true;
     if ((words[i] === 'update' || words[i] === 'insert' || words[i] === 'replace') && writeTarget(words, i)) return true;
-    if (words[i] === 'create' && (createShadow(words, i) || (words[i + 1] === 'index' || (words[i + 1] === 'unique' && words[i + 2] === 'index')) && indexForbidden(words, words[i + 1] === 'index' ? i + 2 : i + 3))) return true;
+    if (words[i] === 'create' && (createShadow(words, i) || receiptIndex(words, i) || (words[i + 1] === 'index' || (words[i + 1] === 'unique' && words[i + 2] === 'index')) && indexForbidden(words, words[i + 1] === 'index' ? i + 2 : i + 3))) return true;
   }
   return false;
 }
@@ -618,8 +661,9 @@ export class Library {
   exec(statement, ...params) {
     if (typeof statement !== 'string') throw Object.assign(fail(500, 'A SQL write must be a string.'), { code: 'SQL_TEXT' });
     const sql = statement;
-    // Preparing PRAGMA writable_schema = ON runs it, so the refusal comes first.
-    if (writableAssignment(sql)) throw Object.assign(fail(500, 'This statement is not allowed.'), { code: 'SQL_DOOR' });
+    // Preparing a pragma assignment runs it. Classify the whole string first.
+    if (refusePragma(sql, this.#state.kind)) throw Object.assign(fail(500, 'This statement is not allowed.'), { code: 'SQL_DOOR' });
+    if (this.#state.kind === 'recorded' && recordedEarly(sql)) throw Object.assign(fail(500, 'A recorded write cannot change audit or consent receipts.'), { code: 'SQL_DOOR' });
     // The boundary is the text SQLite prepared. The hand counter is not the authority.
     // Workerd's sql.exec does not return that tail, so a missing parser refuses a leftover semicolon.
     let tail = null;
