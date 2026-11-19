@@ -72,15 +72,11 @@ function mustIncludes(list, value) {
   return out;
 }
 const VERBS = ['insert', 'update', 'delete', 'replace', 'create', 'drop', 'alter', 'reindex', 'vacuum', 'attach', 'detach', 'analyze', 'begin', 'commit', 'end', 'rollback', 'savepoint', 'release'];
-const WRITES = ['insert', 'update', 'delete', 'replace'];
 const BODY_NEXT = ['select', 'insert', 'update', 'delete', 'replace', 'with', 'values', 'begin', 'end'];
 function listed(list, word) {
   const text = mustLower(word);
   for (let i = 0; i < list.length; i++) if (list[i] === text) return true;
   return false;
-}
-function writeOf(word) {
-  return listed(WRITES, word);
 }
 // Statement position is the token depth, not a second character scan.
 // A parenthesis opens a statement after AS or when one is already expected.
@@ -460,44 +456,8 @@ function mutatingBody(sql) {
   const plan = verb === 'explain' && words[1] === 'query' && words[2] === 'plan';
   const named = hasStatementVerb(parts[0]);
   if (verb === 'explain' && !plan && named) return true;
-  if (verb !== 'with') return false;
-  const text = parts[0];
-  let depth = 0;
-  let i = 0;
-  while (i < text.length) {
-    const c = text[i];
-    if (c === '-' && text[i + 1] === '-') { while (i < text.length && text[i] !== '\n') i++; continue; }
-    if (c === '/' && text[i + 1] === '*') {
-      i += 2;
-      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
-      i = mustLeast(text.length, i + 2);
-      continue;
-    }
-    if (c === "'" || c === '"' || c === '`') {
-      const quote = c;
-      i++;
-      while (i < text.length) {
-        if (text[i] === quote) { if (text[i + 1] === quote) { i += 2; continue; } i++; break; }
-        i++;
-      }
-      continue;
-    }
-    if (c === '[') {
-      i++;
-      while (i < text.length && text[i] !== ']') i++;
-      i = mustLeast(text.length, i + 1);
-      continue;
-    }
-    if (c === '(') { depth++; i++; continue; }
-    if (c === ')') { depth = mustMost(0, depth - 1); i++; continue; }
-    if (depth === 0 && isIdentChar(c)) {
-      const word = mustLower(wordAt(text, i));
-      if (writeOf(word)) return true;
-      i += word.length;
-      continue;
-    }
-    i++;
-  }
+  // WITH is not itself a verb. The same tokens decide whether its main verb is a write.
+  if (verb === 'with') return named;
   return false;
 }
 
