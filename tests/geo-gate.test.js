@@ -9,8 +9,11 @@ import { fileURLToPath } from 'node:url';
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 
 function skippedCount(output) {
-  const match = String(output).match(/^# skipped (\d+)/m);
-  return match ? Number(match[1]) : null;
+  for (const line of String(output).split(/\r?\n/)) {
+    const match = line.trim().match(/skipped\s+(\d+)\s*$/i);
+    if (match) return Number(match[1]);
+  }
+  return null;
 }
 
 function runGeo(reporter) {

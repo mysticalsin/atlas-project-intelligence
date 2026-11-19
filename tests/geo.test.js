@@ -115,7 +115,7 @@ test('browser mode: reads window.ATLAS_WORLD without require and runs with strin
  const out=vm.runInContext("JSON.stringify([AtlasGeo.resolveLocations('Deutschland').countries[0].code,AtlasGeo.worldSVG({states:{DEU:'recorded'}}).length>1000,typeof require])",ctx);assert.equal(out,'["DEU",true,"undefined"]');
  const bare=vm.createContext({});vm.runInContext(fs.readFileSync(path.join(ROOT,'src/geo.js'),'utf8'),bare);assert.equal(vm.runInContext("AtlasGeo.worldSVG({})+'|'+JSON.stringify(AtlasGeo.resolveLocations('France'))",bare),'|{"countries":[],"unresolved":["France"],"ambiguous":[],"missing":false}');});
 
-/* Generator. The committed asset is checked by the hash pins in the generator. Regenerating it needs the real Natural Earth files, which are not in this tree. */
+/* Generator. The committed asset is checked by the hash pins in the generator. Regenerating it from the real Natural Earth files is the opt-in check in tests/geo-ne-check.js, outside this default gate. */
 test('generator refuses tampered input (hash mismatch) without writing output',()=>{const dir=fs.mkdtempSync(path.join(os.tmpdir(),'atlas-ne-'));
  for(const f of Object.keys(PINS))fs.writeFileSync(path.join(dir,f),'{"type":"FeatureCollection","features":[]}');const out=path.join(dir,'out.json');
  const r=spawnSync('python3',[SCRIPT,'--src',dir,'--out',out],{encoding:'utf8'});assert.notEqual(r.status,0);assert.match(r.stderr,/SHA-256 mismatch/);assert.ok(!fs.existsSync(out));fs.rmSync(dir,{recursive:true,force:true});});
