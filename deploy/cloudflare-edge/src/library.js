@@ -20,7 +20,7 @@ import { publicationEffect, publicationStatus, publicationTransition, readPublic
 import { invitationTransition, noteInvitation, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
 import { bareSemicolon, hasCreateAsSelect, isMutatingStatement, leadingWords, provenRead, remainderIsNoise, splitStatements, sqlShape, unparsedTail } from './sql-text.js';
 import { sqliteRemainder } from './sql-tail.js';
-import { isoFrom, some, trim } from './primordials.js';
+import { includes, isoFrom, some, trim } from './primordials.js';
 import { RETENTION } from './policy.generated.js';
 function receiptInsert(sql) {
   const words = leadingWords(sql);
@@ -88,6 +88,28 @@ function consentTrigger(sql) {
   if (!shape) return false;
   const named = some(['consent-no-update', 'consent-no-delete', 'consent-no-replace'], (name) => sqlShape(ownValue(MIGRATIONS, MIGRATION_KEYS, name)) === shape);
   return named === true;
+}
+const GUARDED_TABLES = ['audit', 'audit_anchor', 'consent_receipts'];
+function guardedName(words, at) {
+  let i = at;
+  if (words[i] === 'if' && words[i + 1] === 'exists') i += 2;
+  const named = includes(GUARDED_TABLES, words[i]);
+  if (named !== true && named !== false) return true;
+  return named;
+}
+function recordedForbidden(sql) {
+  let words;
+  try { words = leadingWords(sql); }
+  catch { return true; }
+  if (!words) return true;
+  for (let i = 0; i < words.length; i++) {
+    if (words[i] === 'drop' && words[i + 1] === 'trigger') return true;
+    if (words[i] === 'drop' && (words[i + 1] === 'table' || words[i + 1] === 'index') && guardedName(words, i + 2)) return true;
+    if (words[i] === 'alter' && words[i + 1] === 'table' && guardedName(words, i + 2)) return true;
+    if (words[i] === 'delete' && words[i + 1] === 'from' && guardedName(words, i + 2)) return true;
+    if (words[i] === 'update' && guardedName(words, i + 1)) return true;
+  }
+  return false;
 }
 function isCreateTrigger(sql) {
   const words = leadingWords(sql);
@@ -518,6 +540,7 @@ export class Library {
         throw Object.assign(fail(500, 'A trigger is installed only by schema.'), { code: 'SCHEMA_DML' });
       }
       if (!open) throw Object.assign(fail(500, 'A SQL write must run inside recorded, housekeeping, or schema.'), { code: 'SQL_DOOR' });
+      if (kind === 'recorded' && recordedForbidden(sql)) throw Object.assign(fail(500, 'A recorded write cannot change audit or consent receipts.'), { code: 'SQL_DOOR' });
       if (kind === 'schema' && !schemaAllowed(sql)) throw Object.assign(fail(500, 'Schema accepts named CREATE TABLE and CREATE INDEX only.'), { code: 'SCHEMA_DML' });
       if (kind === 'housekeeping' && !housekeepingAllowed(reason, sql)) throw Object.assign(fail(500, 'That housekeeping statement is not allowed.'), { code: 'HOUSEKEEPING_SQL' });
       if (kind === 'registered' && sqlShape(sql) !== sqlShape(migration)) throw Object.assign(fail(500, 'That migration is not registered.'), { code: 'SCHEMA_DML' });
