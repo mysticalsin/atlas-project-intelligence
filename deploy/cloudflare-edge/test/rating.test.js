@@ -526,25 +526,94 @@ test('R14 fallback matrix: the reason, the engine and the request count; no JEV 
   await assert.rejects(none.l.review(OWNER, await saved(none.l)), e => e.status === 503);
 });
 
+// Queued waits. The test resolves them. Nothing here reads the wall clock.
+function fakeClock() {
+  let t = 0;
+  const queued = [];
+  const delay = (ms, signal) => new Promise(resolve => {
+    if (signal?.aborted) return resolve(false);
+    const item = { ms, settled: false, elapsed: false };
+    const finish = elapsed => {
+      if (item.settled) return;
+      item.settled = true;
+      item.elapsed = elapsed;
+      resolve(elapsed);
+    };
+    item.finish = finish;
+    queued.push(item);
+    signal?.addEventListener('abort', () => finish(false), { once: true });
+  });
+  const flush = async () => {
+    for (let i = 0; i < 8; i++) {
+      await new Promise(r => setImmediate(r));
+      for (let j = 0; j < 50; j++) await Promise.resolve();
+    }
+  };
+  return {
+    delay,
+    now: () => t,
+    held: ms => queued.some(q => q.ms === ms),
+    elapsed: ms => queued.some(q => q.ms === ms && q.elapsed),
+    async fire(ms) {
+      const item = queued.find(q => q.ms === ms && !q.settled);
+      assert.ok(item, 'timer ' + ms + ' was not armed');
+      t = ms;
+      item.finish(true);
+      await flush();
+    },
+    async advance(ms) {
+      const due = () => queued.filter(q => !q.settled && q.ms <= ms).sort((a, b) => a.ms - b.ms);
+      let item = due()[0];
+      while (item) {
+        t = item.ms;
+        item.finish(true);
+        await flush();
+        item = due()[0];
+      }
+      t = ms;
+    },
+  };
+}
+// The current turn: microtasks plus the crypto tick. Timers are not fired.
+const microtasks = async () => {
+  for (let i = 0; i < 8; i++) {
+    await new Promise(r => setImmediate(r));
+    for (let j = 0; j < 50; j++) await Promise.resolve();
+  }
+};
+
 test('R15 budgets and the hedge: the deadline holds against a fetcher that ignores abort; the fastest answer wins', async () => {
   const budgets = { interactive: { deadlineMs: 200, hedgeAtMs: 70, minAttemptMs: 30 }, background: { deadlineMs: 600, attemptMs: 200, retries: 2, backoffMs: 50, minAttemptMs: 30 } };
-  let w = await world({ reply: () => ({ hang: true }), raterOpts: { budgets } });
-  const id = await saved(w.l), t0 = performance.now();
-  const q = (await w.l.review(OWNER, id)).state.quality;
-  const took = performance.now() - t0;
-  assert.ok(took < 300, 'fell back within deadline + 100 ms: ' + took);
+  // A retryable 503 starts the duplicate in that same turn. The hedge wait stays armed and does not elapse.
+  let clk = fakeClock();
+  let w = await world({ reply: i => (i === 0 ? { status: 503 } : {}), raterOpts: { budgets, now: clk.now, delay: clk.delay } });
+  let pending = w.l.review(OWNER, await saved(w.l));
+  await microtasks();
+  assert.equal(w.fetcher.calls.length, 2);
+  assert.ok(clk.held(budgets.interactive.hedgeAtMs) && !clk.elapsed(budgets.interactive.hedgeAtMs), 'no 70 ms timer resolved');
+  const q3 = (await pending).state.quality;
+  assert.equal(q3.engine, 'jev');
+  // A fetcher that never answers falls back when the clock reaches the deadline.
+  clk = fakeClock();
+  w = await world({ reply: () => ({ hang: true }), raterOpts: { budgets, now: clk.now, delay: clk.delay } });
+  pending = w.l.review(OWNER, await saved(w.l));
+  await microtasks();
+  await clk.advance(budgets.interactive.deadlineMs);
+  const q = (await Promise.race([pending, Promise.resolve(null)]))?.state?.quality;
+  assert.ok(q, 'deadline settled the review');
+  assert.equal(q.fallbackReason, 'timeout');
   assert.deepEqual([q.fallbackReason, q.engine, w.fetcher.calls.length], ['timeout', 'review-agent', 2]);
-  const gap = w.fetcher.calls[1].at - w.fetcher.calls[0].at;
-  assert.ok(gap >= 60 && gap < 150, 'the duplicate starts at hedgeAtMs: ' + gap);
   assert.deepEqual([w.metrics.at(-1).attempts, w.metrics.at(-1).hedged, w.metrics.at(-1).fallback], [2, 1, 3]);
-  // The duplicate answers first (80 ms) while the first request answers at 150 ms.
-  w = await world({ reply: i => (i === 0 ? { delay: 150, model: 'jev-first' } : { delay: 10, model: 'jev-duplicate' }), raterOpts: { budgets } });
-  const q2 = (await w.l.review(OWNER, await saved(w.l))).state.quality;
+  // The duplicate stays unsent until the test fires the hedge wait. The first request is still hanging.
+  clk = fakeClock();
+  w = await world({ reply: i => (i === 0 ? { hang: true } : { model: 'jev-duplicate' }), raterOpts: { budgets, now: clk.now, delay: clk.delay } });
+  pending = w.l.review(OWNER, await saved(w.l));
+  await microtasks();
+  assert.equal(w.fetcher.calls.length, 1, 'the duplicate waits for the hedge timer');
+  await clk.fire(budgets.interactive.hedgeAtMs);
+  assert.equal(w.fetcher.calls.length, 2, 'the hedge timer launches the duplicate');
+  const q2 = (await pending).state.quality;
   assert.deepEqual([q2.engine, q2.model, w.metrics.at(-1).hedged, w.metrics.at(-1).attempts], ['jev', 'jev-duplicate', 1, 2]);
-  // A retryable failure before the hedge point starts the duplicate at once.
-  w = await world({ reply: i => (i === 0 ? { status: 503 } : {}), raterOpts: { budgets } });
-  const t1 = performance.now(), q3 = (await w.l.review(OWNER, await saved(w.l))).state.quality;
-  assert.equal(q3.engine, 'jev'); assert.ok(performance.now() - t1 < 60, 'no wait for the hedge point');
   // Background: retry-after-ms (milliseconds) wins over retry-after (seconds); at most 3 attempts.
   const slept = [], fake = fakeTS(() => ({ status: 429, headers: { 'retry-after-ms': '800', 'retry-after': '5' } }));
   const rater = R.storyRater({ TYPESAFE_API_KEY: KEY }, fake, { sleep: async ms => { slept.push(ms); } });
