@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Library } from '../src/library.js';
+import { provenRead } from '../src/sql-text.js';
 import { memorySql } from './sqlite.js';
 
 const SALT = 'synthetic-log-salt';
@@ -96,7 +97,23 @@ for (let n = 0; n < FUZZ_N; n++) {
   }
 }
 
+function asRefs(sql) {
+  return sql
+    .replaceAll('DELETE FROM audit', 'DELETE FROM refs')
+    .replaceAll("UPDATE audit SET action = 'wiped'", "UPDATE refs SET title = 'wiped'")
+    .replaceAll("INSERT INTO audit (actor, action, at, detail) VALUES ('x', 'wiped', 't', '{}')", "INSERT INTO refs (id, owner, title, status, revision, data, state) VALUES ('pwn', 'ada@example.test', 'wiped', 'in_review', 1, '{}', '{}')")
+    .replaceAll("REPLACE INTO audit (seq, actor, action, at, detail) VALUES (1, 'x', 'wiped', 't', '{}')", "REPLACE INTO refs (id, owner, title, status, revision, data, state) VALUES ('r1', 'ada@example.test', 'wiped', 'in_review', 1, '{}', '{}')");
+}
+function refsCount(raw) {
+  return Number(raw.exec('SELECT COUNT(*) AS n FROM refs').toArray()[0].n);
+}
+function refsTitle(raw) {
+  return raw.exec("SELECT title FROM refs WHERE id = 'r1'").toArray()[0].title;
+}
+const REFS_SEED = "INSERT INTO refs (id, owner, title, status, revision, data, state) VALUES ('r1', 'ada@example.test', 'kept', 'in_review', 1, '{}', '{}')";
+
 function doors(cases) {
+  for (const sql of cases) assert.equal(provenRead(sql), false, sql);
   const raw = memorySql();
   const lib = open(raw);
   const count = countOf(raw);
@@ -137,4 +154,40 @@ test('a seeded fuzz of quoted CTE names and aliases stays a write on both doors'
   assert.equal(fuzz.length, 384);
   doors(fuzz);
   console.log('fuzz seed ' + SEED + ' explicit ' + explicit.length + ' generated ' + fuzz.length + ' statements ' + (explicit.length + fuzz.length) + ' door-checks ' + ((explicit.length + fuzz.length) * 2));
+});
+
+function refsDoors(cases) {
+  for (const sql of cases) assert.equal(provenRead(sql), false, sql);
+  const raw = memorySql();
+  const lib = open(raw);
+  lib.recorded(() => lib.exec(REFS_SEED));
+  assert.equal(refsCount(raw), 1);
+  assert.equal(refsTitle(raw), 'kept');
+  for (const sql of cases) {
+    assert.equal(codeOf(() => lib.exec(sql)), 'SQL_DOOR', 'native ' + sql);
+    assert.equal(refsCount(raw), 1, 'native refs ' + sql);
+    assert.equal(refsTitle(raw), 'kept', 'native title ' + sql);
+  }
+  hide(() => {
+    const inner = memorySql();
+    const door = shut(inner);
+    door.recorded(() => door.exec(REFS_SEED));
+    assert.equal(refsCount(inner), 1);
+    for (const sql of cases) {
+      assert.equal(codeOf(() => door.exec(sql)), 'SQL_DOOR', 'fallback ' + sql);
+      assert.equal(refsCount(inner), 1, 'fallback refs ' + sql);
+      assert.equal(refsTitle(inner), 'kept', 'fallback title ' + sql);
+    }
+  });
+}
+
+test('the quoted-paren fuzz keeps a refs row on both doors', () => {
+  const cases = explicit.concat(fuzz).map(asRefs);
+  assert.equal(cases.length, 677);
+  assert.ok(cases.includes('WITH a AS (SELECT 1 AS [x(]) DELETE FROM refs'));
+  assert.ok(cases.includes('WITH a AS (SELECT 1 AS `x(`) DELETE FROM refs'));
+  assert.ok(cases.includes('WITH a AS (SELECT 1 AS "x(") DELETE FROM refs'));
+  assert.ok(cases.includes("WITH a AS (SELECT 1 AS 'x(') DELETE FROM refs"));
+  refsDoors(cases);
+  console.log('refs fuzz seed ' + SEED + ' statements ' + cases.length + ' door-checks ' + (cases.length * 2));
 });
