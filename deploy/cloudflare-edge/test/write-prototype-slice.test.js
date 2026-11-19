@@ -138,17 +138,30 @@ const SWEEP = [
   ['Array', 'some', () => false],
   ['Array', 'includes', () => false],
   ['Array', 'every', () => true],
+  ['Array', 'find', () => ({ id: 'consent_receipts', hours: -1 })],
   ['RegExp', 'exec', () => null],
   ['RegExp', 'test', () => false],
   ['Object', 'hasOwn', () => false],
   ['Object', 'keys', () => []],
   ['Reflect', 'apply', () => undefined],
+  ['Math', 'min', (a) => a],
+  ['Date', 'parse', () => 0],
 ];
+
+function sweepHost(kind) {
+  if (kind === 'String') return String.prototype;
+  if (kind === 'Array') return Array.prototype;
+  if (kind === 'RegExp') return RegExp.prototype;
+  if (kind === 'Object') return Object;
+  if (kind === 'Math') return Math;
+  if (kind === 'Date') return Date;
+  return Reflect;
+}
 
 test('poisoning a built-in the classifier can reach still refuses the delete', () => {
   const lib = libraryWithTail();
   for (const [kind, name, fn] of SWEEP) {
-    const host = kind === 'String' ? String.prototype : kind === 'Array' ? Array.prototype : kind === 'RegExp' ? RegExp.prototype : kind === 'Object' ? Object : Reflect;
+    const host = sweepHost(kind);
     const orig = host[name];
     host[name] = fn;
     let err;
