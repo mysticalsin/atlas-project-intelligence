@@ -1,6 +1,7 @@
 // Consultant journey state. Confirmed fields are human-asserted. Blocked stages name the missing
 // integration and do not call DNA, MAP, Spotlight, Teams or any other network endpoint.
 
+import { Library } from './library.js';
 import { str, obj, fail, email } from './util.js';
 import { recordUsage } from './telemetry.js';
 
@@ -73,8 +74,8 @@ function ensureJourneySchema(lib) {
       SELECT subject, COALESCE(tenant, ''), payload, updated_at FROM journey`);
     lib.log('schema', 'atlas', 'schema copy', 'journey');
   });
-  lib.registered('drop-journey');
-  lib.registered('rename-journey');
+  Library.migrate(lib, 'drop-journey');
+  Library.migrate(lib, 'rename-journey');
   ensureJourneyIndex(lib);
 }
 

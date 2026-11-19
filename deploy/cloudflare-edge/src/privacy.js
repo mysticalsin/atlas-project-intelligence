@@ -7,6 +7,7 @@
 // receipt in the LibraryStore: consent_receipts is append-only (an UPDATE is refused by a trigger; withdrawing appends a "withdrawn" row, it deletes nothing), keyed by the
 // person's pseudonymous subject key, with the notice version, the SHA-256 of the exact wording shown, a timestamp and the channel.
 // Flags. restricted (Art 18) and the three objections (Art 21) stop scoring, matching and memory for the person's references. The person sets them for themselves only.
+import { Library, MIGRATIONS } from './library.js';
 import { PRIVACY } from './policy.generated.js';
 import { sha256Hex } from './audit-chain.js';
 import { obj, fail } from './util.js';
@@ -102,7 +103,7 @@ const DDL = [
   'CREATE INDEX IF NOT EXISTS consent_receipts_subject ON consent_receipts(subject, purpose, at)',
   'CREATE TABLE IF NOT EXISTS privacy_flags (subject TEXT PRIMARY KEY, restricted INTEGER, object_scoring INTEGER, object_matching INTEGER, object_memory INTEGER, updated_at TEXT)',
   'CREATE TABLE IF NOT EXISTS erasure_log (id TEXT PRIMARY KEY, subject_hash TEXT, at TEXT, counts TEXT)',
-  `CREATE TABLE IF NOT EXISTS erasure_holds (id TEXT PRIMARY KEY, kind TEXT, entity TEXT, subject_hash TEXT, reason TEXT, at TEXT, status TEXT, resolved_at TEXT, resolved_by TEXT, note TEXT)`,
+  `CREATE TABLE IF NOT EXISTS erasure_holds (id TEXT PRIMARY KEY, kind TEXT, entity TEXT, subject_hash TEXT, reason TEXT, at TEXT, status TEXT, resolved_at TEXT, resolved_by TEXT, note TEXT, tenant TEXT)`,
 ];
 const ensured = new WeakSet();
 export function ensure(lib) {
@@ -114,12 +115,12 @@ export function ensure(lib) {
   // delete triggers, so an insert that reuses an existing id is refused as well.
   try {
     lib.exec('CREATE TABLE IF NOT EXISTS privacy_gate (name TEXT PRIMARY KEY, open INTEGER)');
-    lib.registered('consent-no-update');
-    lib.registered('consent-no-delete');
-    lib.registered('consent-no-replace');
+    lib.exec(MIGRATIONS['consent-no-update']);
+    lib.exec(MIGRATIONS['consent-no-delete']);
+    lib.exec(MIGRATIONS['consent-no-replace']);
   } catch { /* a platform without triggers: the module still exposes no update path */ }
   const holds = lib.rows("SELECT name FROM pragma_table_info('erasure_holds')").map(r => r.name);
-  if (holds.length && !holds.includes('tenant')) lib.registered('erasure-holds-tenant');
+  if (holds.length && !holds.includes('tenant')) Library.migrate(lib, 'erasure-holds-tenant');
   });
   ensured.add(lib);
 }

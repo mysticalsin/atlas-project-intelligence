@@ -5,6 +5,7 @@
 // - Confirmations never touch refs.state.validation or the publication status (per-record N+1 validation stays apart).
 // - Nothing is sent: a request returns a mailto draft and queues PENDING outreach rows (outreach.js) for approval.
 // - Audit rows carry revisions and ids only, never claim text or names.
+import { Library } from './library.js';
 import { str, email, obj, fail, inList } from './util.js';
 import { splitSentences, claimKey } from './snippets.js';
 import { recordText, piiText } from './scrub.js';
@@ -34,7 +35,7 @@ const DDL = [
   'CREATE INDEX IF NOT EXISTS claims_ref ON claims(ref_id)',
   'CREATE UNIQUE INDEX IF NOT EXISTS claims_sentence ON claims(ref_id, sentence_hash)',
   `CREATE TABLE IF NOT EXISTS confirmation_requests (id TEXT PRIMARY KEY, ref_id TEXT, revision INTEGER, kind TEXT, to_email TEXT, manager_source TEXT,
-    claim_ids TEXT, status TEXT, created_by TEXT, created_by_mail TEXT, created_at TEXT, expires_at TEXT, decided_at TEXT)`,
+    claim_ids TEXT, status TEXT, created_by TEXT, created_by_mail TEXT, created_at TEXT, expires_at TEXT, decided_at TEXT, tenant TEXT NOT NULL DEFAULT '')`,
   'CREATE INDEX IF NOT EXISTS confirmation_requests_ref ON confirmation_requests(ref_id)',
   'CREATE INDEX IF NOT EXISTS confirmation_requests_to ON confirmation_requests(to_email, status)',
 ];
@@ -44,7 +45,7 @@ export function ensure(lib) {
   lib.schema(() => {
     for (const q of DDL) lib.exec(q);
     const cols = lib.rows("SELECT name FROM pragma_table_info('confirmation_requests')").map(r => r.name);
-    if (cols.length && !cols.includes('tenant')) lib.registered('confirmation-tenant');
+    if (cols.length && !cols.includes('tenant')) Library.migrate(lib, 'confirmation-tenant');
   });
   ensured.add(lib);
 }

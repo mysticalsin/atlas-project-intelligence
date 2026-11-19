@@ -20,7 +20,7 @@ test('a prototype property is not a registered migration', () => {
   Object.prototype[key] = 'DROP TABLE audit';
   try {
     let err;
-    try { lib.registered(key); }
+    try { Library.migrate(lib, key); }
     catch (error) { err = error; }
     assert.equal(err && err.code, 'SCHEMA_DML');
     assert.equal(auditTable(lib), 1);
@@ -35,7 +35,7 @@ test('a prototype property cannot install a trigger', () => {
   Object.prototype[key] = 'CREATE TRIGGER pwn_audit BEFORE DELETE ON refs BEGIN SELECT 1; END';
   try {
     let err;
-    try { lib.registered(key); }
+    try { Library.migrate(lib, key); }
     catch (error) { err = error; }
     assert.equal(err && err.code, 'SCHEMA_DML');
     assert.equal(lib.rows("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = 'pwn_audit'").length, 0);

@@ -4,6 +4,7 @@
 // or reviewer approves that exact row: an email becomes a draft the approver sends from their own mail client, a
 // Teams card is sent only through a connected client (BLOCKED_EXTERNAL in this build), phone is always blocked.
 // Previews, cards and audit rows never carry client names (record masking; audit = kind and channel only).
+import { Library } from './library.js';
 import { str, email, obj, fail, uuidish } from './util.js';
 import { TENANT_ID } from './authz.js';
 import { neutralizeFormula } from './csvsafe.js';
@@ -55,12 +56,13 @@ function migrateStaffing(lib) {
       SELECT project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, ${tenantSql} FROM staffing`);
     lib.log('schema', 'atlas', 'schema copy', 'staffing');
   });
-  lib.registered('drop-staffing');
-  lib.registered('rename-staffing');
+  Library.migrate(lib, 'drop-staffing');
+  Library.migrate(lib, 'rename-staffing');
 }
 const DDL = [
   `CREATE TABLE IF NOT EXISTS outreach (id TEXT PRIMARY KEY, kind TEXT, subject_id TEXT, channel TEXT, to_email TEXT, status TEXT, reason TEXT,
-    payload TEXT, aad_object_id TEXT, created_at TEXT, approved_by TEXT, approved_at TEXT, sent_at TEXT, activity_id TEXT)`,
+    payload TEXT, aad_object_id TEXT, created_at TEXT, approved_by TEXT, approved_at TEXT, sent_at TEXT, activity_id TEXT,
+    tenant TEXT NOT NULL DEFAULT '', directory_tenant TEXT NOT NULL DEFAULT '', conversation_id TEXT NOT NULL DEFAULT '', idempotency_key TEXT)`,
   'CREATE UNIQUE INDEX IF NOT EXISTS outreach_subject ON outreach(kind, subject_id, channel)',
   'CREATE INDEX IF NOT EXISTS outreach_status ON outreach(status, created_at)',
   `CREATE TABLE IF NOT EXISTS teams_conversations (subject TEXT PRIMARY KEY, aad_object_id TEXT, tenant_id TEXT, teams_user_id TEXT,
@@ -75,13 +77,13 @@ export function ensure(lib) {
   migrateStaffing(lib);
   for (const q of DDL) lib.exec(q);
   const outreachCols = lib.rows("SELECT name FROM pragma_table_info('outreach')").map(r => r.name);
-  if (outreachCols.length && !outreachCols.includes('tenant')) lib.registered('outreach-tenant');
+  if (outreachCols.length && !outreachCols.includes('tenant')) Library.migrate(lib, 'outreach-tenant');
   const withDirectory = lib.rows("SELECT name FROM pragma_table_info('outreach')").map(r => r.name);
-  if (withDirectory.length && !withDirectory.includes('directory_tenant')) lib.registered('outreach-directory-tenant');
+  if (withDirectory.length && !withDirectory.includes('directory_tenant')) Library.migrate(lib, 'outreach-directory-tenant');
   const withConversation = lib.rows("SELECT name FROM pragma_table_info('outreach')").map(r => r.name);
-  if (withConversation.length && !withConversation.includes('conversation_id')) lib.registered('outreach-conversation');
+  if (withConversation.length && !withConversation.includes('conversation_id')) Library.migrate(lib, 'outreach-conversation');
   const withKey = lib.rows("SELECT name FROM pragma_table_info('outreach')").map(r => r.name);
-  if (withKey.length && !withKey.includes('idempotency_key')) lib.registered('outreach-idempotency');
+  if (withKey.length && !withKey.includes('idempotency_key')) Library.migrate(lib, 'outreach-idempotency');
   });
   ensured.add(lib);
 }

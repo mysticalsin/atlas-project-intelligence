@@ -4,6 +4,7 @@
 // output is bounded and allow-listed, then passed through recordText BEFORE it is stored, so a stored value never
 // changes with the library: the author reads unmask(stored, map), everyone else (reviewers included)
 // forOthers(recordText(stored)). T2 (gap asks) and T3 (outreach previews) import getRequirement and bidView.
+import { Library } from './library.js';
 import { str, para, list, obj, fail, rateLimit } from './util.js';
 import { TENANT_ID, sameTenant } from './authz.js';
 import { pseudonymise, unmask, forOthers, recordText, recordMask, recordView, maskedPreview, safeSummary, piiText } from './scrub.js';
@@ -123,7 +124,7 @@ export function parseOnePager(text, snippetById, reqIds) {
 const DDL = [
   `CREATE TABLE IF NOT EXISTS bids (id TEXT PRIMARY KEY, owner TEXT NOT NULL, owner_mail TEXT, title TEXT, alias TEXT, prospects TEXT, brief TEXT,
     pseudo TEXT, requirements TEXT, customer TEXT, req_method TEXT, match TEXT, status TEXT, outcome TEXT, outcome_note TEXT, decided_at TEXT,
-    decided_by TEXT, purged_at TEXT, created_at TEXT, updated_at TEXT)`,
+    decided_by TEXT, purged_at TEXT, created_at TEXT, updated_at TEXT, tenant TEXT NOT NULL DEFAULT '')`,
   'CREATE INDEX IF NOT EXISTS bids_owner ON bids(owner)',
   `CREATE TABLE IF NOT EXISTS bid_references (bid_id TEXT, ref_id TEXT, revision INTEGER, proof_type TEXT, used_at TEXT, used_by TEXT,
     PRIMARY KEY (bid_id, ref_id))`,
@@ -134,7 +135,7 @@ export function ensure(lib) {
   lib.schema(() => {
     for (const q of DDL) lib.exec(q);
     const cols = lib.rows("SELECT name FROM pragma_table_info('bids')").map(r => r.name);
-    if (cols.length && !cols.includes('tenant')) lib.registered('bids-tenant');
+    if (cols.length && !cols.includes('tenant')) Library.migrate(lib, 'bids-tenant');
   });
   ensured.add(lib);
 }

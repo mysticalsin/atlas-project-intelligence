@@ -5,6 +5,7 @@
 // author (owner or admin) sees the asks un-masked; everyone else, the assignee and the talker included, sees uniform
 // labels. The assignee sees their own words back; everyone else sees the answers with uniform labels. Nothing is sent:
 // the response carries a mailto draft, and outreach rows wait for an approver (outreach.js).
+import { Library } from './library.js';
 import { obj, email, para, fail, inList } from './util.js';
 import { pseudonymise, unmask, forOthers, recordText } from './scrub.js';
 import { clientScrub } from './review.js';
@@ -29,7 +30,8 @@ const ID = /^[a-f0-9]{32}$/;
 // §2.4 DDL (new table only; nothing ALTERs an existing table). Memoised per Library instance. Gap requests read the bid
 // they belong to, so the bids tables are ensured too (bids.js owns that DDL).
 const DDL = [`CREATE TABLE IF NOT EXISTS gap_requests (id TEXT PRIMARY KEY, bid_id TEXT, requirement_ids TEXT, asks TEXT, email TEXT, assignee_name TEXT,
-  reference_id TEXT, project_id TEXT, status TEXT, created_by TEXT, created_by_mail TEXT, created_at TEXT, answered_at TEXT, results TEXT, pseudo TEXT, source TEXT)`];
+  reference_id TEXT, project_id TEXT, status TEXT, created_by TEXT, created_by_mail TEXT, created_at TEXT, answered_at TEXT, results TEXT, pseudo TEXT, source TEXT,
+  tenant TEXT NOT NULL DEFAULT '')`];
 const ensured = new WeakSet();
 export function ensure(lib) {
   if (ensured.has(lib)) return;
@@ -37,7 +39,7 @@ export function ensure(lib) {
   lib.schema(() => {
     for (const q of DDL) lib.exec(q);
     const cols = lib.rows("SELECT name FROM pragma_table_info('gap_requests')").map(r => r.name);
-    if (cols.length && !cols.includes('tenant')) lib.registered('gap-tenant');
+    if (cols.length && !cols.includes('tenant')) Library.migrate(lib, 'gap-tenant');
   });
   ensured.add(lib);
 }

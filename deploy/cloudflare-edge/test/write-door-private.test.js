@@ -44,7 +44,7 @@ test('lib._enter cannot delete rows', () => {
   try { lib._enter(() => lib.exec('DELETE FROM refs'), 'recorded'); }
   catch (error) { err = error; }
   assert.equal(lib.rows('SELECT COUNT(*) AS n FROM refs')[0].n, 1);
-  assert.equal(lib.rows("SELECT COUNT(*) AS n FROM audit WHERE action = 'schema migration' OR detail = 'DELETE FROM refs'").length, 0);
+  assert.equal(lib.rows("SELECT COUNT(*) AS n FROM audit WHERE action = 'schema migration' OR detail = 'DELETE FROM refs'")[0].n, 0);
   assert.equal(typeof lib._enter, 'undefined');
   assert.equal(err instanceof Error, true);
 });

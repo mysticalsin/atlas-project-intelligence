@@ -104,6 +104,10 @@ function schemaAllowed(statement) {
   if (splitStatements(statement).length !== 1 || hasCreateAsSelect(statement)) return false;
   const words = leadingWords(statement);
   if (words[0] !== 'create') return false;
+  if (words[1] === 'trigger') {
+    const shape = sqlShape(statement);
+    return ['consent-no-update', 'consent-no-delete', 'consent-no-replace'].some(name => sqlShape(ownValue(MIGRATIONS, MIGRATION_KEYS, name)) === shape);
+  }
   if (words[1] === 'table') {
     let at = 2;
     if (words[at] === 'if' && words[at + 1] === 'not' && words[at + 2] === 'exists') at += 3;
@@ -151,16 +155,6 @@ function rawSql(lib) {
   const sql = HANDLES.get(lib);
   if (!sql) throw fail(500, 'The raw SQL handle is private.');
   return sql;
-}
-// Door flags stay here too. A callback can assign lib._door and it changes nothing.
-const DOORS = new WeakMap();
-function doorState(lib) {
-  let state = DOORS.get(lib);
-  if (!state) {
-    state = { open: 0, kind: '', reason: '', auditTx: 0, appended: false, receiptOnly: true, migration: '' };
-    DOORS.set(lib, state);
-  }
-  return state;
 }
 const DUPLICATE = 0.9; // cosine similarity above which two references are flagged as the same or a related project
 export const PRACTICES = { data_ai: 'Data & AI', web_app: 'Web & App Development', telecom: 'Telecom & Networks', sap_erp: 'SAP & ERP', cloud_infra: 'Cloud & Infrastructure', cybersecurity: 'Cybersecurity', transformation: 'Transformation & Strategy', engineering: 'Engineering & Industry' };
@@ -281,12 +275,11 @@ export function acceptPublication(result, event) {
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS refs (id TEXT PRIMARY KEY, owner TEXT NOT NULL, local_id TEXT, title TEXT, status TEXT, revision INTEGER, content_hash TEXT,
     practice TEXT, industry TEXT, country TEXT, manager_email TEXT, members TEXT, quality_score INTEGER, created_at TEXT, updated_at TEXT, updated_by TEXT,
-    next_review TEXT, merged_into TEXT, data TEXT, state TEXT, embedding TEXT)`,
-  'CREATE UNIQUE INDEX IF NOT EXISTS refs_owner_local ON refs(owner, local_id)',
+    next_review TEXT, merged_into TEXT, data TEXT, state TEXT, embedding TEXT, tenant TEXT NOT NULL DEFAULT '')`,
   'CREATE TABLE IF NOT EXISTS revisions (id TEXT, revision INTEGER, data TEXT, author TEXT, at TEXT, PRIMARY KEY (id, revision))',
   'CREATE TABLE IF NOT EXISTS audit (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT, actor TEXT, action TEXT, at TEXT, detail TEXT)',
   `CREATE TABLE IF NOT EXISTS invitations (id TEXT PRIMARY KEY, email TEXT, project_id TEXT, title TEXT, reason TEXT, slot TEXT, reference_id TEXT,
-    status TEXT, created_at TEXT, source TEXT)`,
+    status TEXT, created_at TEXT, source TEXT, tenant TEXT)`,
 ];
 
 function migrateManagerTrust(lib) {
@@ -306,20 +299,20 @@ function migrateManagerTrust(lib) {
         SELECT owner, email, source, ${tenantSql}, at FROM manager_trust`);
       lib.log('schema', 'atlas', 'schema copy', 'manager_trust');
     });
-    lib.registered('drop-manager-trust');
-    lib.registered('rename-manager-trust');
+    Library.migrate(lib, 'drop-manager-trust');
+    Library.migrate(lib, 'rename-manager-trust');
   };
 }
 function migrateStoryTenant(lib) {
   const cols = lib.rows("SELECT name FROM pragma_table_info('refs')").map(r => r.name);
   let copy = false;
   if (cols.length && !cols.includes('tenant')) {
-    lib.registered('refs-tenant');
+    Library.migrate(lib, 'refs-tenant');
     copy = true;
   }
   const idx = lib.rows("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'refs_owner_local'")[0]?.sql || '';
   if (!idx.includes('tenant')) {
-    lib.registered('drop-refs-owner-local');
+    Library.migrate(lib, 'drop-refs-owner-local');
     lib.exec('CREATE UNIQUE INDEX IF NOT EXISTS refs_owner_local ON refs(owner, local_id, tenant)');
   }
   if (!copy) return null;
@@ -333,6 +326,9 @@ function migrateStoryTenant(lib) {
   };
 }
 export class Library {
+  // Door flags are private. A callback cannot read or replace them.
+  // open, receiptOnly, and appended are copied into locals at the check, so a getter cannot flip the decision.
+  #state = { open: 0, kind: '', reason: '', auditTx: 0, appended: false, receiptOnly: true, migration: '' };
   // services: outbound adapters for feature modules ({ teams } in production; empty in tests and local runs).
   // rater: rating.storyRater(env) (null: no JEV); metric(name, values): numbers only (default: one console.log line).
   constructor(sql, { now = () => new Date().toISOString(), newId = () => crypto.randomUUID().replace(/-/g, ''), complete = null, embed = null, readyScore = READY_SCORE, model = '', services = {},
@@ -349,8 +345,8 @@ export class Library {
     // It stays put only when the chain is already damaged and every write was a consent receipt.
     const recorded = (fn) => {
       if (typeof fn !== 'function') throw fail(500, 'A library write needs a function.');
-      const state = doorState(this);
-      if (state.auditTx) return this._enter(fn, 'recorded');
+      const state = this.#state;
+      if (state.auditTx) return this.#enter(fn, 'recorded');
       if (typeof this._atomic !== 'function') throw fail(503, 'Atomic library writes need storage.transactionSync.');
       const run = () => {
         const sql = rawSql(this);
@@ -358,9 +354,11 @@ export class Library {
         const healthy = ready && anchoredVerdict(sql, verifyChain(sql, this.auditKey, this.dbId)).ok;
         state.appended = false;
         state.receiptOnly = true;
-        const result = this._enter(fn, 'recorded');
-        if (ready && !healthy && !state.receiptOnly) throw Object.assign(fail(409, 'The audit chain is tampered.'), { code: 'CHAIN_DAMAGED' });
-        if (state.appended && (healthy || !state.receiptOnly)) {
+        const result = this.#enter(fn, 'recorded');
+        const appended = state.appended === true;
+        const receiptOnly = state.receiptOnly === true;
+        if (ready && !healthy && !receiptOnly) throw Object.assign(fail(409, 'The audit chain is tampered.'), { code: 'CHAIN_DAMAGED' });
+        if (appended && (healthy || !receiptOnly)) {
           const checkpoint = checkpointHead(sql, this.auditKey, this.dbId);
           if (!checkpoint.ok) throw Object.assign(fail(409, 'The audit chain is tampered.'), { code: checkpoint.reason });
         }
@@ -376,13 +374,17 @@ export class Library {
     let storyCopy = null;
     this.schema(() => {
       for (const q of SCHEMA) this.exec(q);
-      const inv = this.rows("SELECT name FROM pragma_table_info('invitations')").map(r => r.name);
-      if (inv.length && !inv.includes('tenant')) this.registered('invitations-tenant');
-      this.exec("CREATE UNIQUE INDEX IF NOT EXISTS invitations_open_scope ON invitations(email, reason, project_id, reference_id, tenant) WHERE status IN ('open', 'scheduled')");
+      const refCols = this.rows("SELECT name FROM pragma_table_info('refs')").map(r => r.name);
+      if (refCols.includes('tenant')) this.exec('CREATE UNIQUE INDEX IF NOT EXISTS refs_owner_local ON refs(owner, local_id, tenant)');
       trustCopy = migrateManagerTrust(this);
-      storyCopy = migrateStoryTenant(this);
     });
     ensureChain(rawSql(this), this.auditKey, this.transactionSync, this.dbId);
+    const inv = this.rows("SELECT name FROM pragma_table_info('invitations')").map(r => r.name);
+    if (inv.length && !inv.includes('tenant')) this.#registered('invitations-tenant');
+    this.schema(() => {
+      this.exec("CREATE UNIQUE INDEX IF NOT EXISTS invitations_open_scope ON invitations(email, reason, project_id, reference_id, tenant) WHERE status IN ('open', 'scheduled')");
+    });
+    this.schema(() => { storyCopy = migrateStoryTenant(this); });
     if (typeof trustCopy === 'function') trustCopy();
     if (typeof storyCopy === 'function') storyCopy();
   }
@@ -402,57 +404,73 @@ export class Library {
   dailyChain() {
     return verifyDaily(rawSql(this), this.auditKey, this.dbId);
   }
-  _enter(fn, kind) {
+  #enter(fn, kind) {
     if (typeof fn !== 'function') throw fail(500, 'A library write needs a function.');
-    const state = doorState(this);
+    const state = this.#state;
     const prevKind = state.kind;
+    const prevOpen = state.open;
     if (kind) state.kind = kind;
-    state.open += 1;
+    state.open = prevOpen + 1;
     try {
       const result = fn();
       if (result && typeof result.then === 'function') throw fail(500, 'A library write cannot await inside its audit transaction.');
       return result;
     } finally {
-      state.open -= 1;
+      state.open = prevOpen;
       state.kind = prevKind;
     }
+  }
+  static migrate(lib, name) {
+    return lib.#registered(name);
+  }
+  #registered(name) {
+    const statement = ownValue(MIGRATIONS, MIGRATION_KEYS, name);
+    if (typeof statement !== 'string') throw Object.assign(fail(500, 'That migration is not registered.'), { code: 'SCHEMA_DML' });
+    const run = () => {
+      const state = this.#state;
+      const prev = state.migration;
+      state.migration = statement;
+      try {
+        this.#enter(() => { this.exec(statement); }, 'registered');
+        this.log('schema', 'atlas', 'schema migration', name);
+      } finally {
+        state.migration = prev;
+      }
+    };
+    if (this.#state.auditTx) return run();
+    return this.recorded(run);
   }
   exec(statement, ...params) {
     if (typeof statement !== 'string') throw Object.assign(fail(500, 'A SQL write must be a string.'), { code: 'SQL_TEXT' });
     const sql = statement;
     if (splitStatements(sql).length !== 1) throw Object.assign(fail(500, 'A SQL write must be one statement.'), { code: 'SQL_MULTI' });
-    const state = doorState(this);
+    const state = this.#state;
+    const open = state.open;
+    const kind = state.kind;
+    const reason = state.reason;
+    const migration = state.migration;
     if (isMutatingStatement(sql)) {
-      if (!state.open) throw Object.assign(fail(500, 'A SQL write must run inside recorded, housekeeping, or schema.'), { code: 'SQL_DOOR' });
-      if (state.kind === 'schema' && !schemaAllowed(sql)) throw Object.assign(fail(500, 'Schema accepts named CREATE TABLE and CREATE INDEX only.'), { code: 'SCHEMA_DML' });
-      if (state.kind === 'housekeeping' && !housekeepingAllowed(state.reason, sql)) throw Object.assign(fail(500, 'That housekeeping statement is not allowed.'), { code: 'HOUSEKEEPING_SQL' });
-      if (state.kind === 'registered' && sqlShape(sql) !== sqlShape(state.migration)) throw Object.assign(fail(500, 'That migration is not registered.'), { code: 'SCHEMA_DML' });
+      if (!open) throw Object.assign(fail(500, 'A SQL write must run inside recorded, housekeeping, or schema.'), { code: 'SQL_DOOR' });
+      if (kind === 'schema' && !schemaAllowed(sql)) throw Object.assign(fail(500, 'Schema accepts named CREATE TABLE and CREATE INDEX only.'), { code: 'SCHEMA_DML' });
+      if (kind === 'housekeeping' && !housekeepingAllowed(reason, sql)) throw Object.assign(fail(500, 'That housekeeping statement is not allowed.'), { code: 'HOUSEKEEPING_SQL' });
+      if (kind === 'registered' && sqlShape(sql) !== sqlShape(migration)) throw Object.assign(fail(500, 'That migration is not registered.'), { code: 'SCHEMA_DML' });
       if (!receiptInsert(sql)) state.receiptOnly = false;
     }
     const _sql = rawSql(this);
     return _sql.exec(sql, ...params);
   }
   schema(fn) {
-    return this._enter(fn, 'schema');
-  }
-  registered(name) {
-    const statement = ownValue(MIGRATIONS, MIGRATION_KEYS, name);
-    if (!statement) throw Object.assign(fail(500, 'That migration is not registered.'), { code: 'SCHEMA_DML' });
-    const state = doorState(this);
-    const prev = state.migration;
-    state.migration = statement;
-    try { return this._enter(() => { this.exec(statement); }, 'registered'); }
-    finally { state.migration = prev; }
+    return this.#enter(fn, 'schema');
   }
   // No audit line and no verdict. The reason selects a fixed list of statements.
   // A call already inside a door joins it. This does not start a transaction.
   housekeeping(reason, fn) {
     const name = String(reason || '').trim();
     if (!ownValue(HOUSEKEEPING, HOUSE_KEYS, name)) throw Object.assign(fail(500, 'That housekeeping reason is not allowed.'), { code: 'HOUSEKEEPING_SQL' });
-    const state = doorState(this);
+    const state = this.#state;
     const prev = state.reason;
     state.reason = name;
-    try { return this._enter(fn, 'housekeeping'); }
+    try { return this.#enter(fn, 'housekeeping'); }
     finally { state.reason = prev; }
   }
 
@@ -467,7 +485,7 @@ export class Library {
     try { return JSON.parse(r.state); } catch { return null; }
   }
   log(id, actor, action, detail = '') {
-    const state = doorState(this);
+    const state = this.#state;
     if (!state.auditTx) return this.recorded(() => this.log(id, actor, action, detail));
     if (this.auditKey == null) throw fail(503, 'LOG_SALT is not set.');
     appendAudit(rawSql(this), { id, actor, action, at: this.now(), detail: String(detail).slice(0, 300) }, this.auditKey, this.dbId);
