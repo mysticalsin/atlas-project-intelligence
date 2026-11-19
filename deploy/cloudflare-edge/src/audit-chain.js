@@ -38,8 +38,21 @@
 // Whoever can rewrite the keyed rows and recompute every hash and commit is not stopped by
 // an in-table chain. The daily anchor is what notices a missing keyed prefix.
 import { timingSafe } from './timing-safe.js';
+import { charCodeAt, slice } from './primordials.js';
 export const GENESIS = '0'.repeat(64);
-export const TOMBSTONE_ACTOR = /^erased:[0-9a-f]{12}$/;
+// erased: and twelve lowercase hex digits. Anything else, including a null from
+// a snapshotted method, is not a tombstone.
+export function isTombstoneActor(actor) {
+  if (typeof actor !== 'string' || actor.length !== 19) return false;
+  const prefix = slice(actor, 0, 7);
+  if (prefix !== 'erased:') return false;
+  for (let i = 7; i < 19; i++) {
+    const n = charCodeAt(actor, i);
+    if (typeof n !== 'number') return false;
+    if (!((n >= 48 && n <= 57) || (n >= 97 && n <= 102))) return false;
+  }
+  return true;
+}
 
 const K = new Uint32Array([0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
   0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
@@ -284,7 +297,7 @@ const ROW = 'seq, id, actor, action, at, detail, prev_hash, hash, "commit", tomb
 function bound(key, r, withTenant, dbId) {
   const commit = String(r.commit ?? '');
   if (sameText(contentCommit(key, r, withTenant, dbId), commit)) return true;
-  return TOMBSTONE_ACTOR.test(String(r.actor || '')) && String(r.detail ?? '') === '' && !!r.tombstone && sameText(r.tombstone, tombstoneProof(key, r, withTenant));
+  return isTombstoneActor(String(r.actor || '')) === true && String(r.detail ?? '') === '' && !!r.tombstone && sameText(r.tombstone, tombstoneProof(key, r, withTenant));
 }
 function finish(ok, fields, legacyUnverified) {
   return legacyUnverified ? { ...fields, ok, legacyUnverified } : { ...fields, ok };
@@ -347,7 +360,7 @@ export function rewriteRows(sql, edit, key = '', dbId = '') {
     if (!patch) continue;
     const actor = String(patch.actor ?? r.actor ?? ''), detail = String(patch.detail ?? r.detail ?? '');
     if (actor === String(r.actor ?? '') && detail === String(r.detail ?? '')) continue;
-    if (!TOMBSTONE_ACTOR.test(actor) || detail !== '') continue;
+    if (isTombstoneActor(actor) !== true || detail !== '') continue;
     if (startSeq != null && Number(r.seq) < startSeq) {
       sql.exec('UPDATE audit SET actor = ?, detail = ? WHERE seq = ?', actor, '', r.seq);
       changed++;

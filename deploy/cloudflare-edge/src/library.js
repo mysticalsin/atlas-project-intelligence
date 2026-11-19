@@ -14,7 +14,7 @@ import { RatingError, ratingInput, questionPlan, requestBody, compose, agentQual
 import { profileFold, profileSelection, storedConsent } from './profile.js';
 import { placeholders, readChunks } from './sql-bound.js';
 import { sameTenant, TENANT_ID } from './authz.js';
-import { appendAudit, checkpointHead, ensureChain, verifyChain, anchoredVerdict, rewriteRows, verifyDaily, TOMBSTONE_ACTOR } from './audit-chain.js';
+import { appendAudit, checkpointHead, ensureChain, verifyChain, anchoredVerdict, rewriteRows, verifyDaily, isTombstoneActor } from './audit-chain.js';
 import { recordUsage } from './telemetry.js';
 import { publicationEffect, publicationStatus, publicationTransition, readPublication } from './publication.js';
 import { invitationTransition, noteInvitation, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
@@ -459,7 +459,7 @@ export class Library {
   rewriteAudit(pseudonym, seqs) {
     const rows = Array.isArray(seqs) ? seqs : null;
     const badRow = !rows || some(rows, (n) => !Number.isInteger(n) || n < 1) !== false;
-    if (typeof pseudonym !== 'string' || !TOMBSTONE_ACTOR.test(pseudonym) || badRow) {
+    if (typeof pseudonym !== 'string' || isTombstoneActor(pseudonym) !== true || badRow) {
       throw Object.assign(fail(500, 'An audit erasure needs a tombstone and the row numbers.'), { code: 'AUDIT_ERASURE' });
     }
     const want = new Set(rows);
