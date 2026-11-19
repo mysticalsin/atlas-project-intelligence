@@ -418,17 +418,19 @@ export class Library {
     }
   }
   exec(statement, ...params) {
-    if (splitStatements(statement).length !== 1) throw Object.assign(fail(500, 'A SQL write must be one statement.'), { code: 'SQL_MULTI' });
+    if (typeof statement !== 'string') throw Object.assign(fail(500, 'A SQL write must be a string.'), { code: 'SQL_TEXT' });
+    const sql = statement;
+    if (splitStatements(sql).length !== 1) throw Object.assign(fail(500, 'A SQL write must be one statement.'), { code: 'SQL_MULTI' });
     const state = doorState(this);
-    if (isMutatingStatement(statement)) {
+    if (isMutatingStatement(sql)) {
       if (!state.open) throw Object.assign(fail(500, 'A SQL write must run inside recorded, housekeeping, or schema.'), { code: 'SQL_DOOR' });
-      if (state.kind === 'schema' && !schemaAllowed(statement)) throw Object.assign(fail(500, 'Schema accepts named CREATE TABLE and CREATE INDEX only.'), { code: 'SCHEMA_DML' });
-      if (state.kind === 'housekeeping' && !housekeepingAllowed(state.reason, statement)) throw Object.assign(fail(500, 'That housekeeping statement is not allowed.'), { code: 'HOUSEKEEPING_SQL' });
-      if (state.kind === 'registered' && sqlShape(statement) !== sqlShape(state.migration)) throw Object.assign(fail(500, 'That migration is not registered.'), { code: 'SCHEMA_DML' });
-      if (!receiptInsert(statement)) state.receiptOnly = false;
+      if (state.kind === 'schema' && !schemaAllowed(sql)) throw Object.assign(fail(500, 'Schema accepts named CREATE TABLE and CREATE INDEX only.'), { code: 'SCHEMA_DML' });
+      if (state.kind === 'housekeeping' && !housekeepingAllowed(state.reason, sql)) throw Object.assign(fail(500, 'That housekeeping statement is not allowed.'), { code: 'HOUSEKEEPING_SQL' });
+      if (state.kind === 'registered' && sqlShape(sql) !== sqlShape(state.migration)) throw Object.assign(fail(500, 'That migration is not registered.'), { code: 'SCHEMA_DML' });
+      if (!receiptInsert(sql)) state.receiptOnly = false;
     }
     const _sql = rawSql(this);
-    return _sql.exec(statement, ...params);
+    return _sql.exec(sql, ...params);
   }
   schema(fn) {
     return this._enter(fn, 'schema');
