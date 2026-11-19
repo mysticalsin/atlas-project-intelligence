@@ -126,6 +126,20 @@ with sync_playwright() as pw:
       return s.display!=='none' && s.visibility!=='hidden' && r.width>8 && r.height>8 && r.top>=0 && r.left>=0 && r.right<=innerWidth && r.bottom<=innerHeight;
     });
   }'''))
+  check('A 320 px page stays on screen and the three controls stay inside',live.evaluate('''() => {
+    scrollTo(0,0);
+    const sw=document.documentElement.scrollWidth;
+    if (sw>320 || sw>innerWidth) return false;
+    const rules=[...document.styleSheets].flatMap(sheet=>{try{return [...sheet.cssRules]}catch(e){return []}});
+    const pill=rules.find(rule=>rule.selectorText==='.recording-live');
+    if (!pill || pill.style.width==='max-content') return false;
+    const rec=document.getElementById('recordingLive'), rr=rec.getBoundingClientRect();
+    if (!rec.hidden && (rr.left<0 || rr.right>320 || rr.width>320)) return false;
+    return ['voiceMute','voiceRestart','voiceEnd'].every(id => {
+      const el=document.getElementById(id), s=getComputedStyle(el), r=el.getBoundingClientRect();
+      return s.display!=='none' && s.visibility!=='hidden' && r.width>8 && r.height>8 && r.top>=0 && r.left>=0 && r.right<=320 && r.bottom<=innerHeight-8;
+    });
+  }'''))
   live.set_viewport_size({'width':1440,'height':1000});live.wait_for_timeout(100)
   live.locator('#voiceRestart').click();live.locator('#voiceRestartDialog').wait_for(state='visible')
   live.evaluate('__TEST.socket.emit({type:"wrap_up"})');wait(live,'idle')
