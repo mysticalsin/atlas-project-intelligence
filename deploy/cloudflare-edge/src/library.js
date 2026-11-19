@@ -19,6 +19,7 @@ import { recordUsage } from './telemetry.js';
 import { publicationEffect, publicationStatus, publicationTransition, readPublication } from './publication.js';
 import { invitationTransition, noteInvitation, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
 import { hasCreateAsSelect, isMutatingStatement, leadingWords, splitStatements, sqlShape } from './sql-text.js';
+import { RETENTION } from './policy.generated.js';
 function receiptInsert(sql) {
   const words = leadingWords(sql);
   return words[0] === 'insert' && words[1] === 'into' && words[2] === 'consent_receipts';
@@ -85,6 +86,14 @@ function housekeepingAllowed(reason, sql) {
   if (!list || !sqlShape(sql)) return false;
   const shape = sqlShape(sql);
   return list.some(item => sqlShape(item) === shape);
+}
+// The consent-retention delete's only parameter is the cutoff. It is this clock minus the policy period.
+// A date supplied by the caller is not bound. Other housekeeping statements still carry their own row values.
+const CONSENT_DELETE = 'DELETE FROM consent_receipts WHERE subject IN (SELECT subject FROM consent_receipts GROUP BY subject HAVING MAX(at) < ?)';
+function consentCutoff(now) {
+  const category = RETENTION.categories.find(item => item.id === 'consent_receipts');
+  const span = category && category.hours ? category.hours * 36e5 : ((category && category.days) || 0) * 864e5;
+  return new Date(Date.parse(now) - span).toISOString();
 }
 // Schema accepts CREATE TABLE and CREATE INDEX IF NOT EXISTS on these names.
 // Drop, alter, trigger, and CREATE TABLE AS SELECT are not in this set.
@@ -476,13 +485,22 @@ export class Library {
       if (!receiptInsert(sql)) state.receiptOnly = false;
     }
     const _sql = rawSql(this);
-    return _sql.exec(sql, ...params);
+    const consentSweep = kind === 'housekeeping' && reason === 'consent-retention' && sqlShape(sql) === sqlShape(CONSENT_DELETE);
+    const bound = consentSweep ? [consentCutoff(this.now())] : params;
+    const prior = consentSweep ? Number(this.rows('SELECT COUNT(*) AS n FROM consent_receipts')[0].n) : 0;
+    const result = _sql.exec(sql, ...bound);
+    if (consentSweep) {
+      const left = Number(this.rows('SELECT COUNT(*) AS n FROM consent_receipts')[0].n);
+      try { this.log('privacy', 'atlas', 'consent retention', String(prior - left)); }
+      catch (error) { if (error.status !== 409) throw error; }
+    }
+    return result;
   }
   schema(fn) {
     return this.#enter(fn, 'schema');
   }
-  // No audit line and no verdict. The reason selects a fixed list of statements.
-  // A call already inside a door joins it. This does not start a transaction.
+  // The reason selects a fixed list of statements. A call already inside a door joins it.
+  // This does not start a transaction. The consent-retention delete writes one metadata line.
   housekeeping(reason, fn) {
     const name = String(reason || '').trim();
     if (!ownValue(HOUSEKEEPING, HOUSE_KEYS, name)) throw Object.assign(fail(500, 'That housekeeping reason is not allowed.'), { code: 'HOUSEKEEPING_SQL' });
