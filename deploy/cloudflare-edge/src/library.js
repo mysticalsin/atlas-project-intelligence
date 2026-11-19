@@ -83,6 +83,14 @@ const HOUSEKEEPING = freezeMap({
   ],
 });
 const HOUSE_KEYS = Object.freeze(Object.keys(HOUSEKEEPING));
+function isCreateTrigger(sql) {
+  const words = leadingWords(sql);
+  if (words[0] !== 'create') return false;
+  let i = 1;
+  if (words[i] === 'temp' || words[i] === 'temporary') i++;
+  if (words[i] === 'if' && words[i + 1] === 'not' && words[i + 2] === 'exists') i += 3;
+  return words[i] === 'trigger';
+}
 function housekeepingAllowed(reason, sql) {
   const list = ownValue(HOUSEKEEPING, HOUSE_KEYS, reason);
   if (!list || !sqlShape(sql)) return false;
@@ -490,8 +498,7 @@ export class Library {
     const reason = state.reason;
     const migration = state.migration;
     if (isMutatingStatement(sql)) {
-      const words = leadingWords(sql);
-      if (words[0] === 'create' && words[1] === 'trigger' && kind !== 'schema' && kind !== 'registered') {
+      if (isCreateTrigger(sql) && kind !== 'schema' && kind !== 'registered') {
         throw Object.assign(fail(500, 'A trigger is installed only by schema.'), { code: 'SCHEMA_DML' });
       }
       if (!open) throw Object.assign(fail(500, 'A SQL write must run inside recorded, housekeeping, or schema.'), { code: 'SQL_DOOR' });
@@ -508,8 +515,9 @@ export class Library {
     const result = _sql.exec(sql, ...bound);
     if (consentSweep) {
       const left = Number(this.rows('SELECT COUNT(*) AS n FROM consent_receipts')[0].n);
-      try { this.log('privacy', 'atlas', 'consent retention', String(prior - left)); }
-      catch (error) { if (error.status !== 409) throw error; }
+      this.log('privacy', 'atlas', 'consent retention', String(prior - left));
+      const checkpoint = checkpointHead(this.#sql, this.auditKey, this.dbId);
+      if (!checkpoint.ok) throw Object.assign(fail(409, 'The audit chain is tampered.'), { code: checkpoint.reason || 'CHAIN_DAMAGED' });
     }
     return result;
   }
@@ -517,15 +525,23 @@ export class Library {
     return this.#enter(fn, 'schema');
   }
   // The reason selects a fixed list of statements. A call already inside a door joins it.
-  // This does not start a transaction. The consent-retention delete writes one metadata line.
+  // Consent retention opens one transaction for the gate, the delete, and the audit line.
+  // Other reasons do not start a transaction.
   housekeeping(reason, fn) {
     const name = trim(String(reason || '')) || '';
     if (!ownValue(HOUSEKEEPING, HOUSE_KEYS, name)) throw Object.assign(fail(500, 'That housekeeping reason is not allowed.'), { code: 'HOUSEKEEPING_SQL' });
     const state = this.#state;
     const prev = state.reason;
     state.reason = name;
-    try { return this.#enter(fn, 'housekeeping'); }
-    finally { state.reason = prev; }
+    try {
+      if (name === 'consent-retention' && !state.auditTx) {
+        if (typeof this._atomic !== 'function') throw fail(503, 'Atomic library writes need storage.transactionSync.');
+        state.auditTx = 1;
+        try { return this._atomic(() => this.#enter(fn, 'housekeeping')); }
+        finally { state.auditTx = 0; }
+      }
+      return this.#enter(fn, 'housekeeping');
+    } finally { state.reason = prev; }
   }
 
   rows(q, ...p) { return this.exec(q, ...p).toArray(); }
