@@ -65,9 +65,8 @@ test('standalone ANALYZE and transaction control stay refused on both paths', ()
 test('a signed row before the chain start stays tampered', () => {
   const driver = memorySql();
   new Library(driver, { auditKey: SALT, now: () => STAMP });
-  driver.exec('UPDATE audit SET seq = seq + 1');
   driver.exec(
-    'INSERT INTO audit (seq, id, actor, action, at, detail, prev_hash, hash, "commit", tombstone) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO audit (seq, id, actor, action, at, detail, prev_hash, hash, "commit", tombstone) VALUES (0, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     'story', 'ada@example.test', 'saved', STAMP, 'note', '0'.repeat(64), 'aa', 'bb', ''
   );
   const verdict = verifyChain(driver, SALT, '');
