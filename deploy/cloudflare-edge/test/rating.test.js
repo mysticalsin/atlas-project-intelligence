@@ -576,8 +576,10 @@ function fakeClock() {
 }
 // Yield until the predicate. A fixed turn count returns before crypto.subtle
 // finishes when the machine is busy, and that is not a timer.
+// Bounded so a stuck fetcher fails the assertion instead of hanging.
+// 1000 yields was not enough for crypto.subtle while 32 loops were busy.
 async function spinUntil(pred, message) {
-  const cap = 1000;
+  const cap = 100000;
   for (let i = 0; i < cap && !pred(); i++) await new Promise(r => setImmediate(r));
   assert.ok(pred(), message + ' (yield cap ' + cap + ')');
 }
