@@ -74,4 +74,22 @@ The red commit is `801e2dd51ecbbc3a2fddb2611310121b0bcf7c92`. `provenRead("SELEC
 
 No product change. Deleting `if (start === null) return 'tampered'` does not change a verdict. `find` returns null when the captured search misses and undefined when the row is absent. Both fail the genesis check and return tampered. The source regex is gone. The record is in `handoff/v12-decision-log.md`.
 
-The variable fix is `3f8729654c97017a754fc8e957afa9af9b3b0947`. The form coverage is `bada15b7045e863081b4d5425fe50a4ff26b3c1b`. The unclosed and nested-write fix is `07f8a304c2b9688b5139cc5caa89dc18fb1521de`. This commit is the freeze head. Gate counts are not in this file.
+The variable fix is `3f8729654c97017a754fc8e957afa9af9b3b0947`. The form coverage is `bada15b7045e863081b4d5425fe50a4ff26b3c1b`. The unclosed and nested-write fix is `07f8a304c2b9688b5139cc5caa89dc18fb1521de`. `d6e4a49dae82a57557148043ae4833b50e60c696` is the head that was pushed. Gate counts are not in this file.
+
+## Devin partial gate (local, not pushed)
+
+The findings file `e279900d` was not in this checkout. The statements below are the ones named with that gate. This follow-up is local on `cursor/v13-devin-depth-660c`. It is not pushed. `cursor/atlas-write-chokepoint` stays at `d6e4a49dae82a57557148043ae4833b50e60c696`. `main` is not updated. This is not a freeze. On that pushed head, stopping the parenthesis-depth updates still leaves the existing tests green. The test that kills it is in this follow-up.
+
+`WITH x AS (SELECT (1) FROM (SELECT 2)) DELETE FROM refs` is not a proven read. Both doors return `SQL_DOOR` and the refs row stays. The same holds for `audit`. Stopping the depth updates does not turn that test red: `DELETE` is still after `WITH`, so `strayWrite` still refuses it.
+
+`WITH x AS (SELECT (1) FROM (SELECT 2)) SELECT title FROM refs` is a proven read. Both doors allow it and the row stays. The inner `SELECT` is not the statement verb.
+
+`WITH x AS (SELECT (1) FROM (SELECT 2)) DROP TABLE refs` is not a proven read. Both doors return `SQL_DOOR` and the refs row stays. Stopping the depth updates makes `provenRead` of that statement true (`true !== false`). The inner `SELECT` was counted as the statement verb, and `DROP` was missed. That is the kill for "stop updating paren depth". The test is `a depth greater than zero verb is not the statement verb`.
+
+On `8cdef06`, `WITH x AS (SELECT ?1(') ) DELETE FROM refs` was a proven read. SQLite rejected it (`near "("`) and the row stayed. It is `SQL_DOOR` on both doors now. `unclosedLexeme` returning false makes `provenRead` of that statement true (`true !== false`). The test is `a quoted ?1 suffix does not hide a delete`.
+
+On `8cdef06`, `SELECT ?1 DELETE FROM refs` was a proven read. SQLite rejected it (`near "DELETE"`) and the row stayed. It is `SQL_DOOR` on both doors now. `SELECT ?1` stays allowed. `strayWrite` returning false makes `provenRead('SELECT ?1 DELETE FROM refs')` true (`true !== false`). The test is `a delete after ?1 is not a proven read`.
+
+`SELECT /* delete */ 1 FROM refs` is a proven read. Both doors allow it and the row stays. Stopping the `/* */` skip in `sqlTokens` makes that `provenRead` false (`false !== true`). The test is `a block comment does not hide or invent a write`. `WITH /*(*/ "x(" AS (SELECT 1) /*;*/ DELETE FROM refs` is `SQL_DOOR` on both doors and the row stays. That form is not only in the fuzz file.
+
+Each mutant was restored and was not committed. The new file is `deploy/cloudflare-edge/test/write-v13-depth.test.js`. No product source changed. No new dependency. Not a production-ready claim.
