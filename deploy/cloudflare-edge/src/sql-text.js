@@ -78,42 +78,57 @@ function listed(list, word) {
   for (let i = 0; i < list.length; i++) if (list[i] === text) return true;
   return false;
 }
-// Statement position is the token depth, not a second character scan.
-// A parenthesis opens a statement after AS or when one is already expected.
-// A call, an alias, a dotted name, and a quoted name are not verbs.
-function hasStatementVerb(sql) {
-  const tokens = sqlTokens(sql);
-  const stack = [];
-  let mode = 'stmt';
-  let prev = '';
-  for (let i = 0; i < tokens.length; i++) {
+// The statement verb is the first verb keyword at depth 0 after a WITH list.
+// A call, an alias, a dotted name, and a quoted name are not that verb.
+function plain(token, text) {
+  return !!(token && token.kind === 'word' && !token.quoted && token.text === text && token.depth === 0);
+}
+function blockedVerb(tokens, i) {
+  const prev = tokens[i - 1];
+  if (prev && ((prev.text === 'as' && !prev.quoted) || prev.text === '.')) return true;
+  const next = tokens[i + 1];
+  return !!(next && next.text === ')');
+}
+function afterCteList(tokens, withAt) {
+  let i = withAt + 1;
+  if (plain(tokens[i], 'recursive')) i++;
+  while (i < tokens.length) {
+    let j = i;
+    const name = tokens[j];
+    if (name && name.kind === 'word' && name.depth === 0 && !(name.text === 'as' && !name.quoted)) {
+      if (plain(tokens[j + 1], 'as')) j++;
+      else break;
+    }
+    if (!(plain(tokens[j], 'as') && tokens[j + 1] && tokens[j + 1].text === '(')) break;
+    const base = tokens[j].depth;
+    j += 2;
+    while (j < tokens.length && !(tokens[j].text === ')' && tokens[j].depth === base)) j++;
+    if (j < tokens.length) j++;
+    i = j;
+  }
+  return i;
+}
+function topVerb(tokens) {
+  let i = 0;
+  while (i < tokens.length) {
     const token = tokens[i];
-    if (token.kind === 'op' && token.text === ';') { mode = 'stmt'; prev = ''; continue; }
-    if (token.kind === 'op' && token.text === '(') {
-      mustPush(stack, mode);
-      mode = mode === 'as' || mode === 'stmt' ? 'stmt' : 'expr';
-      prev = '';
+    if (plain(token, 'with') && !blockedVerb(tokens, i)) {
+      i = afterCteList(tokens, i);
       continue;
     }
-    if (token.kind === 'op' && token.text === ')') {
-      const opened = stack.length ? stack[stack.length - 1] : 'body';
-      if (stack.length) stack.length = stack.length - 1;
-      mode = opened === 'as' || opened === 'stmt' ? 'stmt' : 'body';
-      prev = ')';
-      continue;
+    if (token && token.kind === 'word' && !token.quoted && token.depth === 0 && !blockedVerb(tokens, i)) {
+      if (listed(VERBS, token.text) || listed(READS, token.text)) return token.text;
     }
-    if (token.kind === 'op') { prev = token.text; continue; }
-    if (token.kind !== 'word') continue;
-    const next = tokens[i + 1];
-    const closed = next && next.text === ')';
-    const explained = prev === 'explain' || prev === 'plan';
-    if (!token.quoted && prev !== 'as' && prev !== '.' && !closed && listed(VERBS, token.text)) {
-      if (mode === 'stmt' || explained) return true;
-    }
-    if (!token.quoted && token.text === 'as') mode = 'as';
-    else if (!token.quoted && (token.text === 'explain' || token.text === 'plan' || (prev === 'explain' && token.text === 'query'))) mode = 'stmt';
-    else if (mode === 'stmt') mode = 'body';
-    prev = token.quoted ? '' : token.text;
+    i++;
+  }
+  return '';
+}
+function hasStatementVerb(sql) {
+  return listed(VERBS, topVerb(sqlTokens(sql)));
+}
+function extraStatement(tokens) {
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i].text === ';' && i < tokens.length - 1) return true;
   }
   return false;
 }
@@ -376,13 +391,19 @@ function quotedName(text, i) {
   return { name, next: j, start };
 }
 
-// One scan. Comments are dropped, string literals are omitted, and a quoted
-// identifier is one lowercased word. Operators that change a pragma or a name
-// stay in the stream so a later check never reads the raw text again.
+// One lexer. Comments are dropped. A string literal is omitted. A quoted
+// identifier, in ", `, or [], is one lowercased word. Each token carries the
+// parenthesis depth it sits at. Operators that change a pragma or a name stay
+// in the stream so a later check never reads the raw text again.
 export function sqlTokens(sql) {
   const text = mustText(sql);
   const tokens = [];
   let i = 0;
+  let depth = 0;
+  const push = (token) => {
+    token.depth = depth;
+    mustPush(tokens, token);
+  };
   while (i < text.length) {
     const c = text[i];
     if (isSpaceChar(c)) { i++; continue; }
@@ -400,11 +421,13 @@ export function sqlTokens(sql) {
     if (c === '"' || c === '`' || c === '[') {
       const quoted = quotedName(text, i);
       i = quoted.next;
-      if (quoted.name) mustPush(tokens, { kind: 'word', text: mustLower(quoted.name), quoted: true });
+      if (quoted.name) push({ kind: 'word', text: mustLower(quoted.name), quoted: true });
       continue;
     }
     if (c === '=' || c === '(' || c === ')' || c === '.' || c === ';') {
-      mustPush(tokens, { kind: 'op', text: c });
+      if (c === ')') depth = mustMost(0, depth - 1);
+      push({ kind: 'op', text: c });
+      if (c === '(') depth++;
       i++;
       continue;
     }
@@ -412,12 +435,12 @@ export function sqlTokens(sql) {
       const start = i;
       i++;
       while (i < text.length && isDigitChar(text[i])) i++;
-      mustPush(tokens, { kind: 'word', text: mustSlice(text, start, i) });
+      push({ kind: 'word', text: mustSlice(text, start, i) });
       continue;
     }
     if (isIdentChar(c)) {
       const word = wordAt(text, i);
-      mustPush(tokens, { kind: 'word', text: mustLower(word) });
+      push({ kind: 'word', text: mustLower(word) });
       i += word.length;
       continue;
     }
@@ -445,18 +468,18 @@ export function isMutatingStatement(sql) {
 }
 
 function mutatingBody(sql) {
-  const parts = splitStatements(sql);
-  if (parts.length !== 1) return true;
-  const words = leadingWords(parts[0]);
+  const tokens = sqlTokens(sql);
+  if (extraStatement(tokens)) return true;
+  const words = leadingWords(sql);
   const verb = words[0] || '';
   if (writableAssignment(sql)) return true;
   if (pragmaVerb(words) && !pragmaRead(sql)) return true;
-  if (openingVerb(parts[0])) return true;
+  if (openingVerb(sql)) return true;
   // EXPLAIN DELETE still names a mutation. EXPLAIN QUERY PLAN only describes one, and a plan read stays a read.
   const plan = verb === 'explain' && words[1] === 'query' && words[2] === 'plan';
-  const named = hasStatementVerb(parts[0]);
+  const named = hasStatementVerb(sql);
   if (verb === 'explain' && !plan && named) return true;
-  // WITH is not itself a verb. The same tokens decide whether its main verb is a write.
+  // WITH is not itself a verb. The same tokens decide the verb after its list.
   if (verb === 'with') return named;
   return false;
 }
@@ -592,33 +615,35 @@ const PRAGMA_TABLE_ARG = ['table_info', 'table_xinfo', 'index_list', 'index_info
 export function provenRead(sql) {
   if (!primordialsHold()) return false;
   try {
-    if (scanSemi(mustText(sql))) return false;
+    const tokens = sqlTokens(sql);
+    if (extraStatement(tokens)) return false;
     const opened = leadingWords(sql);
     if (pragmaVerb(opened)) {
       if (writableAssignment(sql)) return false;
       return pragmaRead(sql);
     }
     if (writableAssignment(sql)) return false;
-    const parts = splitStatements(sql);
-    if (parts.length !== 1) return false;
-    const words = leadingWords(parts[0]);
-    if (pragmaVerb(words)) return false;
-    return readWords(words, parts[0]);
+    return readWords(tokens);
   } catch {
     return false;
   }
 }
 
-function readWords(words, sql) {
-  if (!words || !words.length) return false;
+function readWords(tokens) {
+  if (!tokens || !tokens.length) return false;
   let i = 0;
-  if (words[0] === 'explain') {
-    i = 1;
-    if (words[1] === 'query' && words[2] === 'plan') i = 3;
+  while (i < tokens.length && tokens[i].kind !== 'word') i++;
+  if (tokens[i] && tokens[i].text === 'explain' && !tokens[i].quoted) {
+    i++;
+    while (i < tokens.length && tokens[i].kind !== 'word') i++;
+    if (tokens[i] && tokens[i].text === 'query' && !tokens[i].quoted && tokens[i + 1] && tokens[i + 1].text === 'plan' && !tokens[i + 1].quoted) {
+      i += 2;
+      while (i < tokens.length && tokens[i].kind !== 'word') i++;
+    }
   }
-  const verb = words[i] || '';
+  const verb = tokens[i] && !tokens[i].quoted ? tokens[i].text : '';
   if (verb === 'attach' || verb === 'detach') return false;
-  if (verb === 'with' || listed(READS, verb)) return !hasStatementVerb(sql);
+  if (verb === 'with' || listed(READS, verb)) return !listed(VERBS, topVerb(tokens));
   return false;
 }
 
