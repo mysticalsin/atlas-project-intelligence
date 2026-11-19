@@ -1,10 +1,22 @@
 // One statement in, one statement out. The split understands quotes, comments,
 // and a trigger body, so a semicolon inside those is not a second statement.
 // Classification uses these tokens. A prefix of the text is not a statement.
+// The methods below are the originals from module load. A later patch of
+// String.prototype.toLowerCase or RegExp.prototype.test / exec does not reach them.
+
+const lower = String.prototype.toLowerCase;
+const reTest = RegExp.prototype.test;
+const reExec = RegExp.prototype.exec;
+const isWord = (c) => reTest.call(/[A-Za-z0-9_]/, c);
+const isIdent = (c) => reTest.call(/[A-Za-z_]/, c);
+const isDigit = (c) => reTest.call(/[0-9]/, c);
+const isSpace = (c) => reTest.call(/\s/, c);
+const verbOf = (word) => reExec.call(/^(insert|update|delete|replace|create|drop|alter|reindex|vacuum)$/, word);
+const writeOf = (word) => reExec.call(/^(insert|update|delete|replace)$/, word);
 
 function wordAt(text, i) {
   let j = i + 1;
-  while (j < text.length && /[A-Za-z0-9_]/.test(text[j])) j++;
+  while (j < text.length && isWord(text[j])) j++;
   return text.slice(i, j);
 }
 
@@ -56,8 +68,8 @@ export function splitStatements(sql) {
     }
     if (c === '(') { paren++; i++; continue; }
     if (c === ')') { paren = Math.max(0, paren - 1); i++; continue; }
-    if (/[A-Za-z_]/.test(c)) {
-      const word = wordAt(text, i).toLowerCase();
+    if (isIdent(c)) {
+      const word = lower.call(wordAt(text, i));
       i += word.length;
       if (trigger === 0) {
         if (paren === 0 && word === 'create') sawCreate = true;
@@ -115,7 +127,7 @@ export function placeholderCount(sql) {
     if (c === '?') {
       n++;
       i++;
-      while (i < text.length && /[0-9]/.test(text[i])) i++;
+      while (i < text.length && isDigit(text[i])) i++;
       continue;
     }
     i++;
@@ -126,7 +138,7 @@ export function placeholderCount(sql) {
 export function sqlShape(sql) {
   const parts = splitStatements(sql);
   if (parts.length !== 1) return '';
-  return parts[0].replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+  return lower.call(parts[0].replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ').replace(/\s+/g, ' ').trim());
 }
 
 // Keywords and identifiers, in order. Comments are dropped. A quoted identifier
@@ -137,7 +149,7 @@ export function leadingWords(sql) {
   let i = 0;
   while (i < text.length) {
     const c = text[i];
-    if (/\s/.test(c)) { i++; continue; }
+    if (isSpace(c)) { i++; continue; }
     if (c === '-' && text[i + 1] === '-') {
       while (i < text.length && text[i] !== '\n') i++;
       continue;
@@ -169,12 +181,12 @@ export function leadingWords(sql) {
         name += text[i++];
       }
       if (i < text.length) i++;
-      if (name) words.push(name.toLowerCase());
+      if (name) words.push(lower.call(name));
       continue;
     }
-    if (/[A-Za-z_]/.test(c)) {
+    if (isIdent(c)) {
       const word = wordAt(text, i);
-      words.push(word.toLowerCase());
+      words.push(lower.call(word));
       i += word.length;
       continue;
     }
@@ -188,7 +200,7 @@ export function isMutatingStatement(sql) {
   if (parts.length !== 1) return true;
   const words = leadingWords(parts[0]);
   const verb = words[0] || '';
-  if (/^(insert|update|delete|replace|create|drop|alter|reindex|vacuum)$/.test(verb)) return true;
+  if (verbOf(verb)) return true;
   if (verb !== 'with') return false;
   const text = parts[0];
   let depth = 0;
@@ -213,9 +225,9 @@ export function isMutatingStatement(sql) {
     }
     if (c === '(') { depth++; i++; continue; }
     if (c === ')') { depth = Math.max(0, depth - 1); i++; continue; }
-    if (depth === 0 && /[A-Za-z_]/.test(c)) {
-      const word = wordAt(text, i).toLowerCase();
-      if (/^(insert|update|delete|replace)$/.test(word)) return true;
+    if (depth === 0 && isIdent(c)) {
+      const word = lower.call(wordAt(text, i));
+      if (writeOf(word)) return true;
       i += word.length;
       continue;
     }

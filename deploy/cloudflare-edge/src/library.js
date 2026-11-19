@@ -168,13 +168,6 @@ export const MIGRATIONS = freezeMap({
   'consent-no-replace': "CREATE TRIGGER IF NOT EXISTS consent_receipts_no_replace BEFORE INSERT ON consent_receipts WHEN EXISTS (SELECT 1 FROM consent_receipts WHERE id = NEW.id) BEGIN SELECT RAISE(ABORT, 'consent receipts are append-only'); END",
 });
 const MIGRATION_KEYS = Object.freeze(Object.keys(MIGRATIONS));
-// The storage handle stays in this map. It is not a property of Library.
-const HANDLES = new WeakMap();
-function rawSql(lib) {
-  const sql = HANDLES.get(lib);
-  if (!sql) throw fail(500, 'The raw SQL handle is private.');
-  return sql;
-}
 const DUPLICATE = 0.9; // cosine similarity above which two references are flagged as the same or a related project
 export const PRACTICES = { data_ai: 'Data & AI', web_app: 'Web & App Development', telecom: 'Telecom & Networks', sap_erp: 'SAP & ERP', cloud_infra: 'Cloud & Infrastructure', cybersecurity: 'Cybersecurity', transformation: 'Transformation & Strategy', engineering: 'Engineering & Industry' };
 
@@ -347,13 +340,15 @@ function migrateStoryTenant(lib) {
 export class Library {
   // Door flags are private. A callback cannot read or replace them.
   // open, receiptOnly, and appended are copied into locals at the check, so a getter cannot flip the decision.
+  // The driver is a private field. It is not stored in a WeakMap.
   #state = { open: 0, kind: '', reason: '', auditTx: 0, appended: false, receiptOnly: true, migration: '' };
+  #sql;
   // services: outbound adapters for feature modules ({ teams } in production; empty in tests and local runs).
   // rater: rating.storyRater(env) (null: no JEV); metric(name, values): numbers only (default: one console.log line).
   constructor(sql, { now = () => new Date().toISOString(), newId = () => crypto.randomUUID().replace(/-/g, ''), complete = null, embed = null, readyScore = READY_SCORE, model = '', services = {},
     rater = null, metric = defaultMetric, transactionSync = null, auditKey = '', dbId = '' } = {}) {
     if (auditKey == null) throw Object.assign(fail(503, 'LOG_SALT is not set.'), { code: 'LOG_SALT' });
-    HANDLES.set(this, sql);
+    this.#sql = sql;
     const atomic = typeof transactionSync === 'function' ? transactionSync : (typeof sql?.transactionSync === 'function' ? sql.transactionSync.bind(sql) : null);
     // One synchronous transaction for a business write and its audit line. A 409 or a 503 rolls both back.
     // An inner call joins the open transaction. There is no await inside it: a returned promise is a mistake.
@@ -368,7 +363,7 @@ export class Library {
       if (state.auditTx) return this.#enter(fn, 'recorded');
       if (typeof this._atomic !== 'function') throw fail(503, 'Atomic library writes need storage.transactionSync.');
       const run = () => {
-        const sql = rawSql(this);
+        const sql = this.#sql;
         const ready = auditReady(sql);
         const healthy = ready && anchoredVerdict(sql, verifyChain(sql, this.auditKey, this.dbId)).ok;
         state.appended = false;
@@ -397,7 +392,7 @@ export class Library {
       if (refCols.includes('tenant')) this.exec('CREATE UNIQUE INDEX IF NOT EXISTS refs_owner_local ON refs(owner, local_id, tenant)');
       trustCopy = migrateManagerTrust(this);
     });
-    ensureChain(rawSql(this), this.auditKey, this.transactionSync, this.dbId);
+    ensureChain(this.#sql, this.auditKey, this.transactionSync, this.dbId);
     const inv = this.rows("SELECT name FROM pragma_table_info('invitations')").map(r => r.name);
     if (inv.length && !inv.includes('tenant')) this.#registered('invitations-tenant');
     this.schema(() => {
@@ -414,7 +409,7 @@ export class Library {
   // rewriteAudit: subject-rights.js and retention.js pass a tombstone and the row numbers. A predicate is refused.
   // dailyChain: library-routes.js is the daily check.
   chainVerdict() {
-    const sql = rawSql(this);
+    const sql = this.#sql;
     return anchoredVerdict(sql, verifyChain(sql, this.auditKey, this.dbId));
   }
   rewriteAudit(pseudonym, seqs) {
@@ -424,13 +419,13 @@ export class Library {
     }
     const want = new Set(rows);
     return this.recorded(() => {
-      const result = rewriteRows(rawSql(this), row => want.has(Number(row.seq)) ? { actor: pseudonym, detail: '' } : null, this.auditKey, this.dbId);
+      const result = rewriteRows(this.#sql, row => want.has(Number(row.seq)) ? { actor: pseudonym, detail: '' } : null, this.auditKey, this.dbId);
       if (result.changed && !result.refused) this.log('audit', 'privacy', 'audit erasure', String(result.changed));
       return result;
     });
   }
   dailyChain() {
-    return verifyDaily(rawSql(this), this.auditKey, this.dbId);
+    return verifyDaily(this.#sql, this.auditKey, this.dbId);
   }
   #enter(fn, kind) {
     if (typeof fn !== 'function') throw fail(500, 'A library write needs a function.');
@@ -484,7 +479,7 @@ export class Library {
       if (kind === 'registered' && sqlShape(sql) !== sqlShape(migration)) throw Object.assign(fail(500, 'That migration is not registered.'), { code: 'SCHEMA_DML' });
       if (!receiptInsert(sql)) state.receiptOnly = false;
     }
-    const _sql = rawSql(this);
+    const _sql = this.#sql;
     const consentSweep = kind === 'housekeeping' && reason === 'consent-retention' && sqlShape(sql) === sqlShape(CONSENT_DELETE);
     const bound = consentSweep ? [consentCutoff(this.now())] : params;
     const prior = consentSweep ? Number(this.rows('SELECT COUNT(*) AS n FROM consent_receipts')[0].n) : 0;
@@ -525,7 +520,7 @@ export class Library {
     const state = this.#state;
     if (!state.auditTx) return this.recorded(() => this.log(id, actor, action, detail));
     if (this.auditKey == null) throw fail(503, 'LOG_SALT is not set.');
-    appendAudit(rawSql(this), { id, actor, action, at: this.now(), detail: String(detail).slice(0, 300) }, this.auditKey, this.dbId);
+    appendAudit(this.#sql, { id, actor, action, at: this.now(), detail: String(detail).slice(0, 300) }, this.auditKey, this.dbId);
     state.appended = true;
     if (String(action) !== 'consent receipt') state.receiptOnly = false;
   }
