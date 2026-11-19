@@ -150,7 +150,7 @@ function walk(node, file, tainted, exec, params) {
     for (const child of children(node)) walk(child, file, next, exec, params);
     return;
   }
-  if (node.type === 'VariableDeclarator' && node.id?.type === 'Identifier' && isTaintedInit(node.init, file, tainted)) tainted.add(node.id.name);
+  if (node.type === 'VariableDeclarator' && node.id?.type === 'Identifier' && (isTaintedInit(node.init, file, tainted) || isPrivateField(node.init))) tainted.add(node.id.name);
   if (node.type === 'VariableDeclarator') taintPattern(node.id, file, node, tainted, exec);
   if (node.type === 'VariableDeclarator' && node.id?.type === 'ObjectPattern' && isDirectLibrary(node.init)) {
     for (const prop of node.id.properties) {
@@ -162,6 +162,8 @@ function walk(node, file, tainted, exec, params) {
   if (node.type === 'AssignmentExpression' && node.left?.type === 'Identifier' && isTaintedInit(node.right, file, tainted)) tainted.add(node.left.name);
   if (isHandleMember(node, file)) push(exec, file, node, 'raw handle');
   if (node.type === 'MemberExpression' && (propName(node) === '_enter' || propName(node) === 'registered')) push(exec, file, node, 'private door');
+  if (node.type === 'CallExpression' && unwrap(node.callee)?.name === 'eval') push(exec, file, node, 'raw exec');
+  if ((node.type === 'NewExpression' || node.type === 'CallExpression') && unwrap(node.callee)?.name === 'Function') push(exec, file, node, 'raw exec');
   if (node.type === 'CallExpression' && propName(peel(node.callee)) === 'rewriteAudit' && file !== 'subject-rights.js' && file !== 'retention.js') push(exec, file, node, 'audit erasure');
   if (node.type === 'CallExpression' && isRawCall(node, file, tainted) && !(file === 'library.js' && isPrivateExec(node))) push(exec, file, node, 'raw exec');
   if (node.type === 'CallExpression' && passesHandle(node, file, tainted)) push(exec, file, node, 'raw handle');
@@ -187,9 +189,16 @@ function parameterTaint(tree, file) {
   const extra = new Map();
   for (const fn of functions.values()) extra.set(fn, new Set());
   primary = new Set();
+  aliases = new Set();
   const see = (node) => {
     if (!node || typeof node.type !== 'string') return;
     if (node.type === 'VariableDeclarator' && node.id?.type === 'Identifier' && isHandleSource(node.init, file, primary)) primary.add(node.id.name);
+    if (node.type === 'VariableDeclarator' && node.id?.type === 'Identifier' && isWeakMapPrototype(node.init)) aliases.add(node.id.name);
+    if (node.type === 'VariableDeclarator' && node.id?.type === 'ObjectPattern' && isWeakMapPrototype(node.init)) {
+      for (const prop of node.id.properties) {
+        if (prop?.type === 'Property' && prop.value?.type === 'Identifier' && prop.key?.type === 'Identifier' && prop.key.name === 'get') primary.add(prop.value.name);
+      }
+    }
     if (node.type === 'AssignmentExpression' && node.left?.type === 'Identifier' && isHandleSource(node.right, file, primary)) primary.add(node.left.name);
     if (node.type === 'CallExpression' && unwrap(node.callee)?.type === 'Identifier') {
       const fn = functions.get(unwrap(node.callee).name);
@@ -202,19 +211,36 @@ function parameterTaint(tree, file) {
     for (const child of children(node)) see(child);
   };
   see(tree);
+  for (const fn of functions.values()) {
+    for (const param of fn.params || []) {
+      if (param?.type === 'AssignmentPattern' && param.left?.type === 'Identifier' && isHandleSource(param.right, file, primary)) extra.get(fn).add(param.left.name);
+    }
+  }
   return extra;
+}
+
+function isWeakMapPrototype(node) {
+  node = unwrap(node);
+  return node?.type === 'MemberExpression' && unwrap(node.object)?.name === 'WeakMap' && propName(node) === 'prototype';
+}
+
+function isPrivateField(node) {
+  node = unwrap(node);
+  return node?.type === 'MemberExpression' && node.property?.type === 'PrivateIdentifier' && (node.property.name === '#sql' || node.property.name === 'sql');
 }
 
 function isWeakMapGet(node) {
   node = unwrap(node);
   if (node?.type !== 'MemberExpression' || propName(node) !== 'get') return false;
   const proto = unwrap(node.object);
-  return proto?.type === 'MemberExpression' && unwrap(proto.object)?.name === 'WeakMap' && propName(proto) === 'prototype';
+  if (proto?.type === 'Identifier' && aliases.has(proto.name)) return true;
+  return isWeakMapPrototype(proto);
 }
 
 // Names assigned from rawSql, HANDLES, or WeakMap.prototype.get. Not every tainted binding:
 // Object.entries is tainted for the exec check and is not a handle being passed on.
 let primary = new Set();
+let aliases = new Set();
 
 function isHandlesGet(node) {
   node = unwrap(node);
@@ -230,7 +256,7 @@ function isHandleSource(node, file, tainted) {
   if (node.type === 'Identifier' && (node.name === 'rawSql' || node.name === 'HANDLES' || primary.has(node.name))) return true;
   if (isWeakMapGet(node) || isHandlesGet(node)) return true;
   if (node.type === 'CallExpression') {
-    const callee = unwrap(node.callee);
+    const callee = peelCall(node.callee);
     if (callee?.type === 'Identifier' && (callee.name === 'rawSql' || primary.has(callee.name))) return true;
     const name = propName(callee);
     if ((name === 'call' || name === 'apply' || name === 'bind') && isHandleSource(callee?.object, file, tainted)) return true;
@@ -273,10 +299,16 @@ function isReflectGet(node) {
   return node?.type === 'MemberExpression' && unwrap(node.object)?.name === 'Reflect' && propName(node) === 'get';
 }
 
+function peelCall(node) {
+  node = unwrap(node);
+  while (node?.type === 'SequenceExpression') node = unwrap(node.expressions[node.expressions.length - 1]);
+  return node;
+}
+
 function isHandleFactory(node) {
   node = unwrap(node);
   if (node?.type !== 'CallExpression') return false;
-  const callee = unwrap(node.callee);
+  const callee = peelCall(node.callee);
   if (callee?.type === 'Identifier' && callee.name === 'rawSql') return true;
   if (callee?.type !== 'MemberExpression') return false;
   const object = unwrap(callee.object);
@@ -299,7 +331,7 @@ function isRawCall(node, file, tainted) {
   if (callee.type === 'Identifier' && tainted.has(callee.name)) return true;
   if (callee.type !== 'MemberExpression') return false;
   const name = propName(callee);
-  if (name === 'exec' && isHandleLike(callee.object, file, tainted)) return true;
+  if (name === 'exec' && (isHandleLike(callee.object, file, tainted) || isPrivateField(callee.object))) return true;
   if ((name === 'call' || name === 'apply' || name === 'bind') && receiverIsExec(callee.object, file, tainted)) return true;
   return false;
 }
