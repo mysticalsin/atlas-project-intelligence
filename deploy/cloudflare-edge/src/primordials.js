@@ -29,7 +29,10 @@ function snapshot() {
   const some = take(uncurry, Array.prototype.some);
   const every = take(uncurry, Array.prototype.every);
   const includes = take(uncurry, Array.prototype.includes);
-  const methods = [toLower, trim, replace, test, match, some, every, includes];
+  const slice = take(uncurry, String.prototype.slice);
+  const push = take(uncurry, Array.prototype.push);
+  const charCodeAt = take(uncurry, String.prototype.charCodeAt);
+  const methods = [toLower, trim, replace, test, match, some, every, includes, slice, push, charCodeAt];
   for (let i = 0; i < methods.length; i++) if (methods[i] == null) return null;
   try {
     if (toLower('Ab') !== 'ab') return null;
@@ -42,10 +45,14 @@ function snapshot() {
     if (some([1], (n) => n === 1) !== true || some([1], (n) => n === 2) !== false) return null;
     if (every([1], (n) => n === 1) !== true) return null;
     if (includes(['or'], 'or') !== true || includes(['or'], 'no') !== false) return null;
+    if (slice('abcd', 1, 3) !== 'bc' || slice('abcd', 2) !== 'cd') return null;
+    const probe = [];
+    if (push(probe, 'a') !== 1 || probe.length !== 1 || probe[0] !== 'a') return null;
+    if (charCodeAt('A', 0) !== 65) return null;
   } catch {
     return null;
   }
-  return { toLower, trim, replace, test, match, some, every, includes };
+  return { toLower, trim, replace, test, match, some, every, includes, slice, push, charCodeAt };
 }
 
 const captured = snapshot();
@@ -128,6 +135,60 @@ export function includes(list, value) {
   try {
     const out = captured.includes(list, value);
     return out === true || out === false ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+function spanOf(text, start, end) {
+  const n = text.length;
+  let a = start === undefined ? 0 : Number(start);
+  let b = end === undefined ? n : Number(end);
+  if (!Number.isFinite(a)) a = 0;
+  if (!Number.isFinite(b)) b = n;
+  a = Math.trunc(a);
+  b = Math.trunc(b);
+  if (a < 0) a = Math.max(n + a, 0);
+  else if (a > n) a = n;
+  if (b < 0) b = Math.max(n + b, 0);
+  else if (b > n) b = n;
+  if (b < a) b = a;
+  let out = '';
+  for (let i = a; i < b; i++) out += text[i];
+  return out;
+}
+
+// Null when the captured slice is missing or the text is not the requested span.
+export function slice(value, start, end) {
+  if (!captured) return null;
+  const text = String(value ?? '');
+  try {
+    const out = end === undefined ? captured.slice(text, start) : captured.slice(text, start, end);
+    if (typeof out !== 'string') return null;
+    if (out !== spanOf(text, start, end)) return null;
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+export function push(list, value) {
+  if (!captured || list == null) return null;
+  try {
+    const before = list.length;
+    const out = captured.push(list, value);
+    if (typeof out !== 'number' || list.length !== before + 1 || list[before] !== value) return null;
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+export function charCodeAt(value, index) {
+  if (!captured) return null;
+  try {
+    const out = captured.charCodeAt(String(value ?? ''), index);
+    return typeof out === 'number' && Number.isFinite(out) ? out : null;
   } catch {
     return null;
   }

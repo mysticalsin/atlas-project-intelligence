@@ -5,25 +5,41 @@
 // Neither path calls RegExp.prototype.exec. A non-boolean, a null, or a throw
 // from a snapshotted string or array method counts as a write.
 
-import { includes, lower, primordialsHold, some, trim } from './primordials.js';
+import { charCodeAt, includes, lower, primordialsHold, push, slice, some, trim } from './primordials.js';
 
+function codeAt(c) {
+  const n = charCodeAt(c, 0);
+  if (typeof n !== 'number') throw new Error('primordial');
+  return n;
+}
 function isIdentChar(c) {
-  const n = c.charCodeAt(0);
+  const n = codeAt(c);
   return (n >= 65 && n <= 90) || (n >= 97 && n <= 122) || n === 95;
 }
 function isWordChar(c) {
-  const n = c.charCodeAt(0);
+  const n = codeAt(c);
   return isIdentChar(c) || (n >= 48 && n <= 57);
 }
 function isDigitChar(c) {
-  const n = c.charCodeAt(0);
+  const n = codeAt(c);
   return n >= 48 && n <= 57;
 }
 function isSpaceChar(c) {
-  const n = c.charCodeAt(0);
+  const n = codeAt(c);
   return n === 9 || n === 10 || n === 11 || n === 12 || n === 13 || n === 32 || n === 0xa0
     || n === 0x1680 || (n >= 0x2000 && n <= 0x200a) || n === 0x2028 || n === 0x2029
     || n === 0x202f || n === 0x205f || n === 0x3000 || n === 0xfeff;
+}
+function mustSlice(text, start, end) {
+  const out = slice(text, start, end);
+  if (typeof out !== 'string') throw new Error('primordial');
+  return out;
+}
+function mustPush(list, value) {
+  const before = list.length;
+  const out = push(list, value);
+  if (typeof out !== 'number' || list.length !== before + 1 || list[before] !== value) throw new Error('primordial');
+  return out;
 }
 function mustLower(value) {
   const out = lower(value);
@@ -58,7 +74,7 @@ function writeOf(word) {
 function wordAt(text, i) {
   let j = i + 1;
   while (j < text.length && isWordChar(text[j])) j++;
-  return text.slice(i, j);
+  return mustSlice(text, i, j);
 }
 
 export function splitStatements(sql) {
@@ -139,16 +155,16 @@ function splitBody(sql) {
     }
     if (c === ';' && trigger >= 2) { atStatement = true; i++; continue; }
     if (c === ';' && trigger < 2) {
-      const slice = mustTrim(text.slice(start, i));
-      if (slice) parts.push(slice);
+      const piece = mustTrim(mustSlice(text, start, i));
+      if (piece) mustPush(parts, piece);
       i++;
       start = i;
       continue;
     }
     i++;
   }
-  const tail = mustTrim(text.slice(start));
-  if (tail) parts.push(tail);
+  const tail = mustTrim(mustSlice(text, start));
+  if (tail) mustPush(parts, tail);
   return parts;
 }
 
@@ -293,12 +309,12 @@ export function leadingWords(sql) {
         name += text[i++];
       }
       if (i < text.length) i++;
-      if (name) words.push(mustLower(name));
+      if (name) mustPush(words, mustLower(name));
       continue;
     }
     if (isIdentChar(c)) {
       const word = wordAt(text, i);
-      words.push(mustLower(word));
+      mustPush(words, mustLower(word));
       i += word.length;
       continue;
     }
