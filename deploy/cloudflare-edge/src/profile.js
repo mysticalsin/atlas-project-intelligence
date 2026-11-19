@@ -4,6 +4,7 @@
 // Runs inside the LibraryStore DO; identity arrives only in headers the Worker overwrites (x-atlas-user, x-atlas-email,
 // x-atlas-idp). Every DNA or HR path is gated by DATA_MODE=production (§0.7): the test deployment accepts synthetic
 // addresses only. The pull connector's shape is ASSUMED (§5.3); push (§5.4) and the CSV export (§5.6) are equal options.
+import { Library } from './library.js';
 import { str, email as validEmail, obj, fail, inList, rateLimit } from './util.js';
 import { TENANT_ID } from './authz.js';
 import { placeholders, readChunks, writeChunks } from './sql-bound.js';
@@ -96,19 +97,19 @@ function recoverParked(lib, live, isCurrent) {
   const parked = PARKED[live];
   if (!parked || !tableExists(lib, parked)) return;
   if (!tableExists(lib, live)) {
-    lib.exec(`ALTER TABLE ${parked} RENAME TO ${live}`);
+    Library.migrate(lib, live === 'profiles' ? 'rename-profiles' : live === 'directory' ? 'rename-directory' : 'rename-directory-imports');
     return;
   }
   const extra = lib.rows(`SELECT COUNT(*) AS n FROM ${parked}`)[0].n;
   if (isCurrent()) {
     const kept = lib.rows(`SELECT COUNT(*) AS n FROM ${live}`)[0].n;
     if (!kept && extra) {
-      lib.exec(`DROP TABLE ${live}`);
-      lib.exec(`ALTER TABLE ${parked} RENAME TO ${live}`);
+      Library.migrate(lib, live === 'profiles' ? 'drop-profiles' : live === 'directory' ? 'drop-directory' : 'drop-directory-imports');
+      Library.migrate(lib, live === 'profiles' ? 'rename-profiles' : live === 'directory' ? 'rename-directory' : 'rename-directory-imports');
       return;
     }
     if (extra) throw new Error(`Refusing to drop ${parked}: both ${live} and ${parked} have rows.`);
-    lib.exec(`DROP TABLE ${parked}`);
+    Library.migrate(lib, live === 'profiles' ? 'drop-profiles-v2' : live === 'directory' ? 'drop-directory-v2' : 'drop-directory-imports-v2');
     return;
   }
   lib.exec(`DROP TABLE ${parked}`);
@@ -136,8 +137,8 @@ function collapseProfiles(lib) {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, keep.subject, keep.tenant ?? '', keep.email, keep.edits, keep.signin, keep.consents, keep.created_at, keep.updated_at, keep.seen_at);
     for (const extra of list.slice(1)) lib.exec("INSERT INTO profile_collapsed (id, subject, tenant, reason) VALUES (?, ?, ?, 'duplicate')", extra.id, String(extra.subject ?? ''), String(extra.tenant ?? ''));
   }
-  lib.exec('DROP TABLE profiles');
-  lib.exec('ALTER TABLE profiles_v2 RENAME TO profiles');
+  Library.migrate(lib, 'drop-profiles');
+  Library.migrate(lib, 'rename-profiles');
 }
 function migrateProfiles(lib) {
   lib.exec(COLLAPSED);
@@ -189,8 +190,8 @@ function migrateDirectory(lib) {
     const tenantSql = cols.includes('tenant') ? "COALESCE(tenant, '')" : "''";
     lib.exec(`INSERT INTO directory_v2 (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at, tenant)
       SELECT key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at, ${tenantSql} FROM directory`);
-    lib.exec('DROP TABLE directory');
-    lib.exec('ALTER TABLE directory_v2 RENAME TO directory');
+    Library.migrate(lib, 'drop-directory');
+    Library.migrate(lib, 'rename-directory');
   }
   recoverParked(lib, 'directory_imports', importsCurrent);
   const imp = tableExists(lib, 'directory_imports');
@@ -201,16 +202,33 @@ function migrateDirectory(lib) {
     const tenantSql = cols.includes('tenant') ? "COALESCE(tenant, '')" : "''";
     lib.exec(`INSERT INTO directory_imports_v2 (batch, tenant, source, by, started_at, finished_at, rows, rejected, state)
       SELECT batch, ${tenantSql}, source, by, started_at, finished_at, rows, rejected, state FROM directory_imports`);
-    lib.exec('DROP TABLE directory_imports');
-    lib.exec('ALTER TABLE directory_imports_v2 RENAME TO directory_imports');
+    Library.migrate(lib, 'drop-directory-imports');
+    Library.migrate(lib, 'rename-directory-imports');
   }
+}
+function needsRebuild(lib) {
+  if (tableExists(lib, 'profiles') && !isProfileV2(lib)) return true;
+  if (tableExists(lib, 'directory') && pkOf(lib, 'directory').join(',') !== 'key,source,tenant') return true;
+  if (tableExists(lib, 'directory_imports') && pkOf(lib, 'directory_imports').join(',') !== 'batch,tenant') return true;
+  return ['profiles', 'directory', 'directory_imports'].some(live => tableExists(lib, PARKED[live]));
 }
 export function ensure(lib) {
   if (ensured.has(lib)) return;
   if (typeof lib.transactionSync !== 'function') throw new Error('Profile storage requires transactionSync.');
-  lib.transactionSync(() => {
+  if (!needsRebuild(lib)) {
+    lib.schema(() => {
+      if (!tableExists(lib, 'profiles')) lib.exec(PROFILE_V2.replace('profiles_v2', 'profiles'));
+      if (!tableExists(lib, 'directory')) lib.exec(DIRECTORY_V2.replace('directory_v2', 'directory'));
+      if (!tableExists(lib, 'directory_imports')) lib.exec(IMPORTS_V2.replace('directory_imports_v2', 'directory_imports'));
+      lib.exec(COLLAPSED);
+    });
+    ensured.add(lib);
+    return;
+  }
+  lib.recorded(() => {
     migrateProfiles(lib);
     migrateDirectory(lib);
+    lib.log('profile', 'atlas', 'profile rebuild', 'profiles');
   });
   lib.schema(() => { for (const q of SCHEMA) lib.exec(q); });
   ensured.add(lib);

@@ -30,7 +30,13 @@ export function sweep(lib, { now = lib.now(), retention = RETENTION, tenant } = 
   // Private drafts nobody submitted: the reference (owner-only) and the evidence draft.
   if (c('drafts')) {
     const cut = before(now, c('drafts'));
-    for (const r of lib.rows("SELECT id, state FROM refs WHERE updated_at < ? AND " + scope + " AND (merged_into IS NULL OR merged_into != 'erased')", cut, tid)) if (parse(r.state, {}).draft) { eraseRefContent(lib, r.id, erasedToken, now); add('draftReferences', 1); }
+    for (const r of lib.rows("SELECT id, state FROM refs WHERE updated_at < ? AND " + scope + " AND (merged_into IS NULL OR merged_into != 'erased')", cut, tid)) if (parse(r.state, {}).draft) {
+      try { eraseRefContent(lib, r.id, erasedToken, now); add('draftReferences', 1); }
+      catch (error) {
+        if (error.status !== 409) throw error;
+        out.auditRefused = out.auditRefused || { reason: error.code || 'CHAIN_DAMAGED', brokenSeq: error.brokenSeq };
+      }
+    }
   }
   // Withdrawn references (counted from the withdrawal in the audit trail) that no bid uses and no erasure review still holds.
   if (c('withdrawn_refs')) {
@@ -40,7 +46,11 @@ export function sweep(lib, { now = lib.now(), retention = RETENTION, tenant } = 
       if (!s.withdrawn || s.erased || s.erasure_pending_review) continue;
       const w = lib.rows("SELECT at FROM audit WHERE id = ? AND action = 'withdrawn' ORDER BY seq DESC LIMIT 1", r.id)[0];
       if ((w?.at || r.updated_at) >= cut || (hasBids && lib.rows('SELECT 1 AS x FROM bid_references WHERE ref_id = ? LIMIT 1', r.id).length)) continue;
-      eraseRefContent(lib, r.id, erasedToken, now); add('withdrawnReferences', 1);
+      try { eraseRefContent(lib, r.id, erasedToken, now); add('withdrawnReferences', 1); }
+      catch (error) {
+        if (error.status !== 409) throw error;
+        out.auditRefused = out.auditRefused || { reason: error.code || 'CHAIN_DAMAGED', brokenSeq: error.brokenSeq };
+      }
     }
   }
   // Expired confirmation and proof requests (90 days after they expired; a proof request expires 30 days after it was made).

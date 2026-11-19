@@ -93,6 +93,7 @@ const KNOWN_TABLES = new Set([
   'staffing', 'staffing_v2', 'outreach', 'teams_conversations', 'teams_seen',
   'journey', 'journey_v2', 'consent_receipts', 'privacy_flags', 'erasure_log', 'erasure_holds', 'privacy_gate',
   'gap_requests', 'telemetry', 'claims', 'confirmation_requests', 'bids', 'bid_references',
+  'profiles', 'profiles_v2', 'profile_collapsed', 'directory', 'directory_v2', 'directory_imports', 'directory_imports_v2',
 ]);
 const KNOWN_INDEXES = new Set([
   'refs_owner_local', 'invitations_open_scope', 'outreach_subject', 'outreach_status',
@@ -144,6 +145,15 @@ export const MIGRATIONS = freezeMap({
   'gap-tenant': "ALTER TABLE gap_requests ADD COLUMN tenant TEXT NOT NULL DEFAULT ''",
   'confirmation-tenant': "ALTER TABLE confirmation_requests ADD COLUMN tenant TEXT NOT NULL DEFAULT ''",
   'bids-tenant': "ALTER TABLE bids ADD COLUMN tenant TEXT NOT NULL DEFAULT ''",
+  'drop-profiles': 'DROP TABLE profiles',
+  'rename-profiles': 'ALTER TABLE profiles_v2 RENAME TO profiles',
+  'drop-profiles-v2': 'DROP TABLE profiles_v2',
+  'drop-directory': 'DROP TABLE directory',
+  'rename-directory': 'ALTER TABLE directory_v2 RENAME TO directory',
+  'drop-directory-v2': 'DROP TABLE directory_v2',
+  'drop-directory-imports': 'DROP TABLE directory_imports',
+  'rename-directory-imports': 'ALTER TABLE directory_imports_v2 RENAME TO directory_imports',
+  'drop-directory-imports-v2': 'DROP TABLE directory_imports_v2',
   'consent-no-update': "CREATE TRIGGER IF NOT EXISTS consent_receipts_no_update BEFORE UPDATE ON consent_receipts BEGIN SELECT RAISE(ABORT, 'consent receipts are append-only'); END",
   'consent-no-delete': "CREATE TRIGGER IF NOT EXISTS consent_receipts_no_delete BEFORE DELETE ON consent_receipts WHEN COALESCE((SELECT open FROM privacy_gate WHERE name = 'receipts'), 0) != 1 BEGIN SELECT RAISE(ABORT, 'consent receipts are append-only'); END",
   'consent-no-replace': "CREATE TRIGGER IF NOT EXISTS consent_receipts_no_replace BEFORE INSERT ON consent_receipts WHEN EXISTS (SELECT 1 FROM consent_receipts WHERE id = NEW.id) BEGIN SELECT RAISE(ABORT, 'consent receipts are append-only'); END",
@@ -435,19 +445,19 @@ export class Library {
   #registered(name) {
     const statement = ownValue(MIGRATIONS, MIGRATION_KEYS, name);
     if (typeof statement !== 'string') throw Object.assign(fail(500, 'That migration is not registered.'), { code: 'SCHEMA_DML' });
-    const run = () => {
+    const apply = () => {
       const state = this.#state;
       const prev = state.migration;
       state.migration = statement;
-      try {
-        this.#enter(() => { this.exec(statement); }, 'registered');
-        this.log('schema', 'atlas', 'schema migration', name);
-      } finally {
-        state.migration = prev;
-      }
+      try { this.#enter(() => { this.exec(statement); }, 'registered'); }
+      finally { state.migration = prev; }
     };
-    if (this.#state.auditTx) return run();
-    return this.recorded(run);
+    // A caller that already opened recorded writes the one line for the whole rebuild.
+    if (this.#state.auditTx) return apply();
+    return this.recorded(() => {
+      apply();
+      this.log('schema', 'atlas', 'schema migration', name);
+    });
   }
   exec(statement, ...params) {
     if (typeof statement !== 'string') throw Object.assign(fail(500, 'A SQL write must be a string.'), { code: 'SQL_TEXT' });

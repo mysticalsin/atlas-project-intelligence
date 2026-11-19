@@ -52,12 +52,14 @@ test('the daily sweep still erases an old draft when the profile rebuild cannot 
   const lib = open(sql);
   lib.recorded(() => {
     lib.exec("INSERT INTO refs (id, owner, title, status, revision, data, state, updated_at, tenant) VALUES ('draft-1', 'ada@example.test', 'old draft', 'in_review', 1, '{}', '{\"draft\":true}', '2020-01-01T00:00:00.000Z', '')");
+    lib.exec("INSERT INTO invitations (id, email, status, created_at, tenant) VALUES ('old-inv', 'ada@example.test', 'done', '2020-01-01T00:00:00.000Z', '')");
     lib.log('draft-1', 'ada@example.test', 'saved', 'draft');
   });
   tamper(lib);
   const res = await libraryRoutes(new Request('https://atlas.internal/api/library/scan-stale', {
     method: 'POST', body: '{}', headers: { 'content-type': 'application/json', 'x-atlas-user': 'atlas-cron', 'x-atlas-role': 'system' },
   }), lib, { env: { ATLAS_TENANT_ISOLATION: 'local-synthetic' } });
-  assert.equal(lib.rows("SELECT merged_into FROM refs WHERE id = 'draft-1'")[0].merged_into, 'erased');
-  assert.equal(res.status === 200 || res.status === 409, true);
+  assert.equal(lib.rows("SELECT COUNT(*) AS n FROM invitations WHERE id = 'old-inv'")[0].n, 0);
+  assert.equal(lib.rows("SELECT merged_into FROM refs WHERE id = 'draft-1'")[0].merged_into, null);
+  assert.equal(res.status, 409);
 });

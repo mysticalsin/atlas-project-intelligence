@@ -93,9 +93,17 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
       if (method === 'POST' && id === 'scan-stale') {
         // The response is the same object main returns: scanStale, then the two dailies. Retention runs after that
         // count is taken, so an old draft is still counted as invited, and its keys are not added to the body.
-        const payload = { invited: lib.scanStale(user), ...outreach.daily(lib, user), ...(profile.READY ? profile.daily(lib, lib.now(), user) : {}) };
+        const invited = lib.scanStale(user);
+        const outreachDaily = outreach.daily(lib, user);
+        let profileDaily = {};
+        let profileError = null;
+        try {
+          if (profile.READY) profileDaily = profile.daily(lib, lib.now(), user);
+        } catch (error) { profileError = error; }
+        const payload = { invited, ...outreachDaily, ...profileDaily };
         retentionSweep(lib, { tenant: user.tenantEnforced === true ? user.tenant : '' });
         await reportChain(lib, env);
+        if (profileError) throw profileError;
         return json(payload);
       }
       const sys = await featureRoutes(ctx);
