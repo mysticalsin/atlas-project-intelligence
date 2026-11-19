@@ -113,12 +113,10 @@ export function ensure(lib) {
   // Append-only: a receipt is never edited, deleted or replaced. The one exception is the retention sweep, which removes a whole person's old receipts and opens the gate
   // (retentionGate below) for exactly that statement. X1 (red L9): REPLACE (a delete plus an insert) was allowed; SQLite runs a REPLACE's implicit delete without firing
   // delete triggers, so an insert that reuses an existing id is refused as well.
-  try {
-    lib.exec('CREATE TABLE IF NOT EXISTS privacy_gate (name TEXT PRIMARY KEY, open INTEGER)');
-    lib.exec(MIGRATIONS['consent-no-update']);
-    lib.exec(MIGRATIONS['consent-no-delete']);
-    lib.exec(MIGRATIONS['consent-no-replace']);
-  } catch { /* a platform without triggers: the module still exposes no update path */ }
+  lib.exec('CREATE TABLE IF NOT EXISTS privacy_gate (name TEXT PRIMARY KEY, open INTEGER)');
+  lib.exec(MIGRATIONS['consent-no-update']);
+  lib.exec(MIGRATIONS['consent-no-delete']);
+  lib.exec(MIGRATIONS['consent-no-replace']);
   const holds = lib.rows("SELECT name FROM pragma_table_info('erasure_holds')").map(r => r.name);
   if (holds.length && !holds.includes('tenant')) Library.migrate(lib, 'erasure-holds-tenant');
   });

@@ -316,40 +316,11 @@ export function remainderIsNoise(tail) {
   return true;
 }
 
-// A semicolon outside quotes and comments, with more SQL after it.
-// This is the backstop for a driver that cannot prepare. It does not track BEGIN/END.
+// The backstop for a driver that cannot prepare. It uses the same split as the
+// door, so a semicolon inside CREATE TRIGGER ... BEGIN ... END is one statement
+// and a statement after that END is a second one.
 export function unparsedTail(sql) {
-  const text = String(sql ?? '');
-  let i = 0;
-  while (i < text.length) {
-    const c = text[i];
-    if (c === '-' && text[i + 1] === '-') {
-      while (i < text.length && text[i] !== '\n') i++;
-      continue;
-    }
-    if (c === '/' && text[i + 1] === '*') {
-      i += 2;
-      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
-      i = Math.min(text.length, i + 2);
-      continue;
-    }
-    if (c === "'" || c === '"' || c === '`' || c === '[') {
-      const end = c === '[' ? ']' : c;
-      i++;
-      while (i < text.length) {
-        if (text[i] === end) {
-          if (text[i + 1] === end) { i += 2; continue; }
-          i++;
-          break;
-        }
-        i++;
-      }
-      continue;
-    }
-    if (c === ';') return !remainderIsNoise(text.slice(i + 1));
-    i++;
-  }
-  return false;
+  return splitStatements(sql).length > 1;
 }
 
 export function hasCreateAsSelect(sql) {

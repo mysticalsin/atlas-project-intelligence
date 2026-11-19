@@ -4,20 +4,32 @@
 // isolate where node:sqlite is absent it returns null, and Library then refuses
 // a semicolon that still has SQL after it.
 let scratch = null;
+let unavailable = false;
 
 function databaseSync() {
-  const mod = globalThis.process?.getBuiltinModule?.('node:sqlite');
-  return mod?.DatabaseSync || null;
+  try {
+    const mod = globalThis.process?.getBuiltinModule?.('node:sqlite');
+    return mod?.DatabaseSync || null;
+  } catch {
+    return null;
+  }
 }
 
 export function sqliteRemainder(sql) {
+  if (unavailable) return null;
   const DatabaseSync = databaseSync();
   if (!DatabaseSync) return null;
   if (!scratch) {
-    scratch = new DatabaseSync(':memory:');
-    scratch.exec('CREATE TABLE refs (id, title, begin)');
-    scratch.exec('CREATE TABLE audit (id, seq)');
-    scratch.exec('CREATE TABLE consent_receipts (id)');
+    try {
+      const db = new DatabaseSync(':memory:');
+      db.exec('CREATE TABLE refs (id, title, begin)');
+      db.exec('CREATE TABLE audit (id, seq)');
+      db.exec('CREATE TABLE consent_receipts (id)');
+      scratch = db;
+    } catch {
+      unavailable = true;
+      return null;
+    }
   }
   const text = String(sql ?? '');
   let stmt;
