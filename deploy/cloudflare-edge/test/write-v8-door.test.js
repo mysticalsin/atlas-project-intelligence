@@ -128,6 +128,29 @@ const MATRIX = [
   ['SELECT 1; DELETE FROM refs', 'direct', 'SQL_MULTI'],
   ['SELECT 1;;', 'direct', 'SQL_MULTI'],
   ['PRAGMA user_version', 'direct', 'ALLOW'],
+  ['PRAGMA table_info(refs)', 'direct', 'ALLOW'],
+  ['PRAGMA table_xinfo(refs)', 'direct', 'ALLOW'],
+  ['PRAGMA index_list(refs)', 'direct', 'ALLOW'],
+  ['PRAGMA index_info(refs_owner_local)', 'direct', 'ALLOW'],
+  ['PRAGMA database_list', 'direct', 'ALLOW'],
+  ['PRAGMA foreign_key_list(refs)', 'direct', 'ALLOW'],
+  ['PRAGMA schema_version', 'direct', 'ALLOW'],
+  ['PRAGMA integrity_check', 'direct', 'ALLOW'],
+  ['PRAGMA quick_check', 'direct', 'ALLOW'],
+  ['PRAGMA compile_options', 'direct', 'ALLOW'],
+  ['PRAGMA writable_schema', 'direct', 'ALLOW'],
+  ['PRAGMA user_version = 7', 'direct', 'SQL_DOOR'],
+  ['PRAGMA user_version = 7', 'recorded', 'SQL_DOOR'],
+  ['PRAGMA user_version = 7', 'house', 'SQL_DOOR'],
+  ['PRAGMA user_version = 7', 'schema', 'ALLOW'],
+  ['PRAGMA user_version(7)', 'direct', 'SQL_DOOR'],
+  ['PRAGMA schema_version = 1', 'direct', 'SQL_DOOR'],
+  ['PRAGMA schema_version(4)', 'direct', 'SQL_DOOR'],
+  ['PRAGMA writable_schema(1)', 'direct', 'SQL_DOOR'],
+  ['PRAGMA journal_mode = WAL', 'direct', 'SQL_DOOR'],
+  ['PRAGMA foreign_keys = ON', 'direct', 'SQL_DOOR'],
+  ['PRAGMA foreign_keys = ON', 'schema', 'ALLOW'],
+  ['PRAGMA nosuch', 'direct', 'SQL_DOOR'],
   ['PRAGMA writable_schema = ON', 'direct', 'SQL_DOOR'],
   ['PRAGMA writable_schema = ON', 'recorded', 'SQL_DOOR'],
   ['PRAGMA writable_schema = ON', 'schema', 'SQL_DOOR'],
@@ -152,6 +175,11 @@ test('native and fallback agree on the statement matrix', () => {
       const { lib } = native();
       run(lib, sql, door);
       assert.equal(lib.rows('PRAGMA writable_schema')[0].writable_schema, 0, door);
+    }
+    if (sql === 'PRAGMA user_version = 7') {
+      const { lib } = native();
+      run(lib, sql, door);
+      assert.equal(lib.rows('PRAGMA user_version')[0].user_version, door === 'schema' ? 7 : 0, door);
     }
     if (sql.startsWith('ATTACH')) {
       const { lib } = native();
