@@ -1,18 +1,45 @@
 // One statement in, one statement out. The split understands quotes, comments,
 // and a trigger body, so a semicolon inside those is not a second statement.
 // Classification uses these tokens. A prefix of the text is not a statement.
-// The methods below are the originals from module load. A later patch of
-// String.prototype.toLowerCase or RegExp.prototype.test / exec does not reach them.
+// The character and word tests come from primordials.js, captured at load.
+// A non-boolean, a null, or a throw counts as a write.
 
-const lower = String.prototype.toLowerCase;
-const reTest = RegExp.prototype.test;
-const reExec = RegExp.prototype.exec;
-const isWord = (c) => reTest.call(/[A-Za-z0-9_]/, c);
-const isIdent = (c) => reTest.call(/[A-Za-z_]/, c);
-const isDigit = (c) => reTest.call(/[0-9]/, c);
-const isSpace = (c) => reTest.call(/\s/, c);
-const verbOf = (word) => reExec.call(/^(insert|update|delete|replace|create|drop|alter|reindex|vacuum)$/, word);
-const writeOf = (word) => reExec.call(/^(insert|update|delete|replace)$/, word);
+import { includes, lower, match, primordialsHold, replace, some, test, trim } from './primordials.js';
+
+function mustTest(pattern, value) {
+  const out = test(pattern, value);
+  if (out !== true && out !== false) throw new Error('primordial');
+  return out;
+}
+function mustLower(value) {
+  const out = lower(value);
+  if (typeof out !== 'string') throw new Error('primordial');
+  return out;
+}
+function mustTrim(value) {
+  const out = trim(value);
+  if (typeof out !== 'string') throw new Error('primordial');
+  return out;
+}
+function mustIncludes(list, value) {
+  const out = includes(list, value);
+  if (out !== true && out !== false) throw new Error('primordial');
+  return out;
+}
+function verbOf(word) {
+  const found = match(/^(insert|update|delete|replace|create|drop|alter|reindex|vacuum)$/, word);
+  if (found === undefined) return true;
+  return found != null;
+}
+function writeOf(word) {
+  const found = match(/^(insert|update|delete|replace)$/, word);
+  if (found === undefined) return true;
+  return found != null;
+}
+const isWord = (c) => mustTest(/[A-Za-z0-9_]/, c);
+const isIdent = (c) => mustTest(/[A-Za-z_]/, c);
+const isDigit = (c) => mustTest(/[0-9]/, c);
+const isSpace = (c) => mustTest(/\s/, c);
 
 function wordAt(text, i) {
   let j = i + 1;
@@ -21,6 +48,12 @@ function wordAt(text, i) {
 }
 
 export function splitStatements(sql) {
+  if (!primordialsHold()) return [String(sql ?? ''), ''];
+  try { return splitBody(sql); }
+  catch { return [String(sql ?? ''), '']; }
+}
+
+function splitBody(sql) {
   const text = String(sql ?? '');
   const parts = [];
   let start = 0;
@@ -69,12 +102,12 @@ export function splitStatements(sql) {
     if (c === '(') { paren++; i++; continue; }
     if (c === ')') { paren = Math.max(0, paren - 1); i++; continue; }
     if (isIdent(c)) {
-      const word = lower.call(wordAt(text, i));
+      const word = mustLower(wordAt(text, i));
       i += word.length;
       if (trigger === 0) {
         if (paren === 0 && word === 'create') sawCreate = true;
         else if (sawCreate && word === 'trigger') { trigger = 1; sawCreate = false; }
-        else if (!['or', 'replace', 'temp', 'temporary', 'if', 'not', 'exists'].includes(word)) sawCreate = false;
+        else if (!mustIncludes(['or', 'replace', 'temp', 'temporary', 'if', 'not', 'exists'], word)) sawCreate = false;
       } else if (trigger === 1) {
         if (paren === 0 && word === 'begin') trigger = 2;
       } else if (paren === 0 && word === 'begin') trigger++;
@@ -82,7 +115,7 @@ export function splitStatements(sql) {
       continue;
     }
     if (c === ';' && trigger < 2) {
-      const slice = text.slice(start, i).trim();
+      const slice = mustTrim(text.slice(start, i));
       if (slice) parts.push(slice);
       i++;
       start = i;
@@ -90,7 +123,7 @@ export function splitStatements(sql) {
     }
     i++;
   }
-  const tail = text.slice(start).trim();
+  const tail = mustTrim(text.slice(start));
   if (tail) parts.push(tail);
   return parts;
 }
@@ -136,9 +169,23 @@ export function placeholderCount(sql) {
 }
 
 export function sqlShape(sql) {
-  const parts = splitStatements(sql);
-  if (parts.length !== 1) return '';
-  return lower.call(parts[0].replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ').replace(/\s+/g, ' ').trim());
+  if (!primordialsHold()) return '';
+  try {
+    const parts = splitBody(sql);
+    if (parts.length !== 1) return '';
+    let text = replace(parts[0], /\/\*[\s\S]*?\*\//g, ' ');
+    if (typeof text !== 'string') return '';
+    text = replace(text, /--[^\n]*/g, ' ');
+    if (typeof text !== 'string') return '';
+    text = replace(text, /\s+/g, ' ');
+    if (typeof text !== 'string') return '';
+    text = trim(text);
+    if (typeof text !== 'string') return '';
+    const out = lower(text);
+    return typeof out === 'string' ? out : '';
+  } catch {
+    return '';
+  }
 }
 
 // Keywords and identifiers, in order. Comments are dropped. A quoted identifier
@@ -181,12 +228,12 @@ export function leadingWords(sql) {
         name += text[i++];
       }
       if (i < text.length) i++;
-      if (name) words.push(lower.call(name));
+      if (name) words.push(mustLower(name));
       continue;
     }
     if (isIdent(c)) {
       const word = wordAt(text, i);
-      words.push(lower.call(word));
+      words.push(mustLower(word));
       i += word.length;
       continue;
     }
@@ -196,6 +243,12 @@ export function leadingWords(sql) {
 }
 
 export function isMutatingStatement(sql) {
+  if (!primordialsHold()) return true;
+  try { return mutatingBody(sql); }
+  catch { return true; }
+}
+
+function mutatingBody(sql) {
   const parts = splitStatements(sql);
   if (parts.length !== 1) return true;
   const words = leadingWords(parts[0]);
@@ -203,7 +256,9 @@ export function isMutatingStatement(sql) {
   if (verbOf(verb)) return true;
   // EXPLAIN DELETE still names a mutation. EXPLAIN QUERY PLAN only describes one, and a plan read stays a read.
   const plan = verb === 'explain' && words[1] === 'query' && words[2] === 'plan';
-  if (verb === 'explain' && !plan && words.some(word => verbOf(word))) return true;
+  const named = some(words, (word) => verbOf(word));
+  if (named !== true && named !== false) return true;
+  if (verb === 'explain' && !plan && named) return true;
   if (verb !== 'with') return false;
   const text = parts[0];
   let depth = 0;
@@ -229,7 +284,7 @@ export function isMutatingStatement(sql) {
     if (c === '(') { depth++; i++; continue; }
     if (c === ')') { depth = Math.max(0, depth - 1); i++; continue; }
     if (depth === 0 && isIdent(c)) {
-      const word = lower.call(wordAt(text, i));
+      const word = mustLower(wordAt(text, i));
       if (writeOf(word)) return true;
       i += word.length;
       continue;

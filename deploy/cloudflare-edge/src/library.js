@@ -20,6 +20,7 @@ import { publicationEffect, publicationStatus, publicationTransition, readPublic
 import { invitationTransition, noteInvitation, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
 import { hasCreateAsSelect, isMutatingStatement, leadingWords, remainderIsNoise, splitStatements, sqlShape, unparsedTail } from './sql-text.js';
 import { sqliteRemainder } from './sql-tail.js';
+import { some, trim } from './primordials.js';
 import { RETENTION } from './policy.generated.js';
 function receiptInsert(sql) {
   const words = leadingWords(sql);
@@ -86,7 +87,8 @@ function housekeepingAllowed(reason, sql) {
   const list = ownValue(HOUSEKEEPING, HOUSE_KEYS, reason);
   if (!list || !sqlShape(sql)) return false;
   const shape = sqlShape(sql);
-  return list.some(item => sqlShape(item) === shape);
+  const allowed = some(list, (item) => sqlShape(item) === shape);
+  return allowed === true;
 }
 // The consent-retention delete's only parameter is the cutoff. It is this clock minus the policy period.
 // A date supplied by the caller is not bound. Other housekeeping statements still carry their own row values.
@@ -117,7 +119,8 @@ function schemaAllowed(statement) {
   if (words[0] !== 'create') return false;
   if (words[1] === 'trigger') {
     const shape = sqlShape(statement);
-    return ['consent-no-update', 'consent-no-delete', 'consent-no-replace'].some(name => sqlShape(ownValue(MIGRATIONS, MIGRATION_KEYS, name)) === shape);
+    const named = some(['consent-no-update', 'consent-no-delete', 'consent-no-replace'], (name) => sqlShape(ownValue(MIGRATIONS, MIGRATION_KEYS, name)) === shape);
+    return named === true;
   }
   if (words[1] === 'table') {
     let at = 2;
@@ -415,7 +418,8 @@ export class Library {
   }
   rewriteAudit(pseudonym, seqs) {
     const rows = Array.isArray(seqs) ? seqs : null;
-    if (typeof pseudonym !== 'string' || !TOMBSTONE_ACTOR.test(pseudonym) || !rows || rows.some(n => !Number.isInteger(n) || n < 1)) {
+    const badRow = !rows || some(rows, (n) => !Number.isInteger(n) || n < 1) !== false;
+    if (typeof pseudonym !== 'string' || !TOMBSTONE_ACTOR.test(pseudonym) || badRow) {
       throw Object.assign(fail(500, 'An audit erasure needs a tombstone and the row numbers.'), { code: 'AUDIT_ERASURE' });
     }
     const want = new Set(rows);
@@ -509,7 +513,7 @@ export class Library {
   // The reason selects a fixed list of statements. A call already inside a door joins it.
   // This does not start a transaction. The consent-retention delete writes one metadata line.
   housekeeping(reason, fn) {
-    const name = String(reason || '').trim();
+    const name = trim(String(reason || '')) || '';
     if (!ownValue(HOUSEKEEPING, HOUSE_KEYS, name)) throw Object.assign(fail(500, 'That housekeeping reason is not allowed.'), { code: 'HOUSEKEEPING_SQL' });
     const state = this.#state;
     const prev = state.reason;
