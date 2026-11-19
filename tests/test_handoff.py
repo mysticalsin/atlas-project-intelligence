@@ -262,6 +262,17 @@ def test_make_verify_package_requires_an_extracted_package(tmp_path):
     assert 'verify-package' not in recipe
 
 
+def test_repository_full_handoff_includes_clean_rebuild():
+    """Release tree on disk must pass manifest checks and a source-only rebuild."""
+    repo = Path(__file__).resolve().parents[1]
+    report = inspect(repo, rebuild=True)
+    by_name = {c['name']: c for c in report['checks']}
+    assert by_name.get('manifest-content', {}).get('pass'), by_name.get('manifest-content', {}).get('detail')
+    assert by_name.get('clean-build', {}).get('pass'), by_name.get('clean-build', {}).get('detail')
+    assert by_name.get('clean-build-byte-match', {}).get('pass'), by_name.get('clean-build-byte-match', {}).get('detail')
+    assert report['passed']
+
+
 def test_docs_do_not_use_the_checker_as_a_dev_gate():
     repo = Path(__file__).resolve().parents[1]
     start = (repo / '00_START_HERE.md').read_text()

@@ -413,7 +413,7 @@
     {
       "path": "deploy/cloudflare-edge/src/csp.generated.js",
       "bytes": 1675,
-      "sha256": "3a46fba684ac236d65628a67f6171eb03cf938d06d5fe730916ab28a932798e0"
+      "sha256": "d9e932787f83cbaaed3f2376e51bf2af9662890169b40685915fd784c367a0ee"
     },
     {
       "path": "deploy/cloudflare-edge/src/csp.js",
@@ -1677,8 +1677,8 @@
     },
     {
       "path": "scripts/check_handoff.py",
-      "bytes": 11893,
-      "sha256": "7483b299ba64e7c444e5a1e7dd4daf85a5b36ac492f780358c23ae5186e8d1ea"
+      "bytes": 12164,
+      "sha256": "a6b024075ccd844e7f223b6a80456e235250aaf2cda85b4eac889cf0c5627bea"
     },
     {
       "path": "scripts/check_workers_speech.py",
@@ -2342,8 +2342,8 @@
     },
     {
       "path": "tests/test_handoff.py",
-      "bytes": 11013,
-      "sha256": "8deb1c6d54f814b55e2b5e508e930cf30a328443dcea0f28a24430f6d4abfc43"
+      "bytes": 11661,
+      "sha256": "bd913eaad67b97cb3c6342aa7b3676693bbe217ecf5b56ab75bb1e2a5ce7479e"
     },
     {
       "path": "tests/test_page_harness.py",

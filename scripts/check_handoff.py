@@ -55,6 +55,13 @@ def package_files(root: Path):
     return found
 
 
+_REBUILD_SOURCE_PREFIXES = ('src/', 'assets/', 'docs/', 'atlas_voice/', 'deploy/cloudflare-edge/')
+
+
+def include_in_clean_rebuild(rel: str) -> bool:
+    return rel == 'build.py' or rel.startswith(_REBUILD_SOURCE_PREFIXES)
+
+
 def release_file_list(root: Path) -> list[str]:
     if (root / '.git').is_dir():
         lines = subprocess.check_output(['git', '-C', str(root), 'ls-files'], text=True).splitlines()
@@ -105,7 +112,8 @@ def inspect(root: Path, *, rebuild=True) -> dict:
         for item in excludes:
             if isinstance(item, str) and safe_relative(item):
                 allowed.add(item)
-    for rel in sorted(package_files(root)):
+    present = release_file_list(root) if (root / '.git').is_dir() else package_files(root)
+    for rel in sorted(present):
         if rel not in seen and rel not in allowed:
             bad.append('unlisted: '+rel)
     check('manifest-content',not bad, '; '.join(bad[:25]) if bad else f'{len(seen)} release files match size and SHA-256.')
@@ -133,7 +141,7 @@ def inspect(root: Path, *, rebuild=True) -> dict:
         with tempfile.TemporaryDirectory(prefix='atlas-rebuild-') as td:
             dest=Path(td)
             for rel in seen:
-                if rel=='build.py' or rel.startswith(('src/','assets/','docs/')):
+                if include_in_clean_rebuild(rel):
                     target=dest/rel;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(root/rel,target)
             result=subprocess.run([sys.executable,str(dest/'build.py')],capture_output=True,text=True,timeout=30,check=False)
             check('clean-build',result.returncode==0,'Build executed in a temporary source-only directory.')

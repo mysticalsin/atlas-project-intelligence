@@ -5,10 +5,11 @@
 - M-1 wiki export: gateway CSP middleware no longer UTF-8-decodes ZIP; red `346b036` → fix `9d8a616`.
 - M-2 journey layout: `journey.css` grid minima/breakpoints; red `ad59341` → fix `5e09557`; `tests/journey_layout_browser.py` added.
 - M-3 `/#admin` deep link: `openFromHash` → `switchView('admin')`; red `76b02eb` → fix `a9878d6`.
-- MANIFEST: `python3 scripts/check_handoff.py --write-manifest .` → 486 files; `check_handoff.py . --no-rebuild` pass; `clean-build` still fails (pre-existing).
+- MANIFEST: `python3 scripts/check_handoff.py .` passes **with full rebuild** (486 files); fix copies `atlas_voice/` + `deploy/cloudflare-edge/` and uses `git ls-files` for unlisted on dev trees (`handoff/decisions/check-handoff-rebuild.md`).
 - ask_browser: deterministic waits; commit `bd95020`.
-- Suites (this host): pytest **309**; root node **408** pass / **1** skip; edge **815**; UI **816** PASS (`make test-ui` including new journey layout).
-- PR open draft into `main`; held for rebase after PR9.
+- `docs/pr10/` before (`02a83b32`) / after PNGs for M-1–M-3 via `scripts/capture_pr10_evidence.py` (local only until authorized push).
+- Suites (this host): pytest **310**; root node **408** pass / **1** skip (310 after `test_repository_full_handoff_includes_clean_rebuild`).
+- PR #10 draft; **hold:** no `git merge main`, no push, no rebase/force — merge `origin/main` only on Tony’s go.
 
 ## Next task
 - **2026-09-29, JEV story rating ("make sure Atlas has Jev integreated into it so its very fast and relable to rate stories"):** built on `a45b140` in two tracks (EDGE, UI), then an integration review fixed 4 defects (a privacy gap for multi-word names and 3 no-key differences); locally verified, not committed, not deployed. Live JEV is `BLOCKED_EXTERNAL` until Tony sets `TYPESAFE_API_KEY` on the Worker and deploys (when nobody is interviewing). Read the session "2026-09-29 / JEV story rating" below first: "What Tony must do", the cost per rating, Tony's one open decision (§12.2: four other TypeSafe paths run without this consent) and the post-deploy checks.
