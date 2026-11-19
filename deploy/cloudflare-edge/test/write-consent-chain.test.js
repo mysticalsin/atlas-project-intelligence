@@ -13,6 +13,7 @@ const DELETE_SQL = 'DELETE FROM consent_receipts WHERE subject IN (SELECT subjec
 test('a damaged chain keeps the consent receipt', () => {
   const lib = new Library(memorySql(), { now: () => STAMP, auditKey: SALT });
   ensure(lib);
+  lib.log('library', 'atlas', 'note', 'seed');
   lib.recorded(() => lib.exec(
     'INSERT INTO consent_receipts (id, subject, purpose, granted, notice_version, text_sha256, at, channel) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     'r-old', OLD, 'memory', 1, 'n', 'h', '2000-01-01T00:00:00.000Z', 'api',
