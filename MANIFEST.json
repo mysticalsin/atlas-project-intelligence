@@ -31,29 +31,614 @@
       "sha256": "695cdbdc0f98b182442489ee69392497d1e31b363bf20a9224490a639c89ca4e"
     },
     {
+      "path": ".specify/bugs/attach-detach/assessment.md",
+      "bytes": 423,
+      "sha256": "d811a069420a5b3aa68bbcee6d8d74678b52257561335b23041304e05096dc47"
+    },
+    {
+      "path": ".specify/bugs/attach-detach/fix.md",
+      "bytes": 151,
+      "sha256": "dfbc72f8e6857d2ed5f8fbc35ef16c6142982290e6d286f5b2a1f760af6f534b"
+    },
+    {
+      "path": ".specify/bugs/attach-detach/test.md",
+      "bytes": 135,
+      "sha256": "e4e2efc4176d3f4f612aa13de5da607e308c7f255a3cae352520ead0cf29d097"
+    },
+    {
+      "path": ".specify/bugs/audit-ready-some/assessment.md",
+      "bytes": 446,
+      "sha256": "939ecd6f99bf257c555ac9eed039f4bb808f62601e1b08800b4ed1bcc5e479b2"
+    },
+    {
+      "path": ".specify/bugs/audit-ready-some/fix.md",
+      "bytes": 177,
+      "sha256": "37c54c82ae1a61dd13f50f8210733aa213410356bb3d4cb4dcffe26abc4881de"
+    },
+    {
+      "path": ".specify/bugs/audit-ready-some/test.md",
+      "bytes": 152,
+      "sha256": "4e15a5cfb8157991ec0ec8c767dc5d452b4802364ef57345132df2eccbc6ca52"
+    },
+    {
+      "path": ".specify/bugs/chain-reverify/assessment.md",
+      "bytes": 548,
+      "sha256": "3614bb1708814330127645e3fd587ce9abbc16fc927a8c26dfc08bae4970b93d"
+    },
+    {
+      "path": ".specify/bugs/chain-reverify/fix.md",
+      "bytes": 167,
+      "sha256": "c586e95f91ae72bfc89f7a3bcd65dd4a4bbc4961839aaf97d34b0186a8565178"
+    },
+    {
+      "path": ".specify/bugs/chain-reverify/test.md",
+      "bytes": 152,
+      "sha256": "cb8f103b29a68fb203fc995cfe5ba60fea1f012d257733798881f1447112360b"
+    },
+    {
+      "path": ".specify/bugs/consent-chain-damaged/assessment.md",
+      "bytes": 793,
+      "sha256": "edfeec089d0496cb850ea3bf3ee35d4a13802b19c03807087a1dc74fdacb7e0d"
+    },
+    {
+      "path": ".specify/bugs/consent-chain-damaged/fix.md",
+      "bytes": 384,
+      "sha256": "383ca2764c5caa330a86f9195c70a55f25f1793ea392d9b5b342b32041f90a7b"
+    },
+    {
+      "path": ".specify/bugs/consent-chain-damaged/test.md",
+      "bytes": 367,
+      "sha256": "6e864efc8c19024b66a4470735fde897e42df9c8b8046b8bf5b408b22437df53"
+    },
+    {
+      "path": ".specify/bugs/consent-trigger-fallback/assessment.md",
+      "bytes": 636,
+      "sha256": "39c5cd26cf19423983e71a5bbe0ac922d043a0972f279c4744b44c450897af8b"
+    },
+    {
+      "path": ".specify/bugs/consent-trigger-fallback/fix.md",
+      "bytes": 350,
+      "sha256": "b394660a0c386922d7fce8d9d7292710d1767a5025df43baf75fa8643139da64"
+    },
+    {
+      "path": ".specify/bugs/consent-trigger-fallback/test.md",
+      "bytes": 483,
+      "sha256": "6d1c8363d1c894721010b59fa360e13ed58576e6c3ba9ae6e8f9b522be79adf5"
+    },
+    {
+      "path": ".specify/bugs/cutoff-clock/assessment.md",
+      "bytes": 481,
+      "sha256": "3ad2a65e299330558a572f61eebda61f0641c62bfbeccde80ee2a310de1f4618"
+    },
+    {
+      "path": ".specify/bugs/cutoff-clock/fix.md",
+      "bytes": 277,
+      "sha256": "8e0dfdc234acd7feb88192d2844f201422a030cfe479528cfe2171ea8d1e4aa7"
+    },
+    {
+      "path": ".specify/bugs/cutoff-clock/test.md",
+      "bytes": 269,
+      "sha256": "545ba420c7ffaffc31b0b5a19ac4d9c364a002448962e644dcbf60eb3b0481cf"
+    },
+    {
+      "path": ".specify/bugs/date-parse/assessment.md",
+      "bytes": 502,
+      "sha256": "d2ed096ca71ce5f071f605e61d89f45f72e309c880c17e2dc8deb8fe18272234"
+    },
+    {
+      "path": ".specify/bugs/date-parse/fix.md",
+      "bytes": 82,
+      "sha256": "a1376202391f855313d38c3f6d0f9117ec701a0b101a50af727257aa37677405"
+    },
+    {
+      "path": ".specify/bugs/date-parse/test.md",
+      "bytes": 121,
+      "sha256": "1555823005ba4083d5c69a87e9937d0a491b4cbd15de20cf244b5c6dd17a833d"
+    },
+    {
+      "path": ".specify/bugs/eval-alias/assessment.md",
+      "bytes": 346,
+      "sha256": "5034f5c952122065c6a9b4f8173790b30e0dfa931a16f10ddc8e08f2054af200"
+    },
+    {
+      "path": ".specify/bugs/eval-alias/fix.md",
+      "bytes": 181,
+      "sha256": "faff116ba7b659856beea788b80ff609ddacf0629887dd566e84d654c69c8481"
+    },
+    {
+      "path": ".specify/bugs/eval-alias/test.md",
+      "bytes": 169,
+      "sha256": "008fb688c9316d73bca65bae83e2129398d3f6a30b769b57eb20b1eada761577"
+    },
+    {
+      "path": ".specify/bugs/eval-binding/assessment.md",
+      "bytes": 388,
+      "sha256": "c4a12b9932287e26b590dc72d51377512484917f8809271ac3b8efe8f6177a15"
+    },
+    {
+      "path": ".specify/bugs/eval-binding/fix.md",
+      "bytes": 171,
+      "sha256": "43d238240f9381f796c07e20515a8fdcc2ee4550d320e0780e870fc1f04cde23"
+    },
+    {
+      "path": ".specify/bugs/eval-binding/test.md",
+      "bytes": 152,
+      "sha256": "2ba6bc7318c670e0b2e80e116e737678891407382fa81b2c1332887b0095c7a5"
+    },
+    {
+      "path": ".specify/bugs/exec-capture/assessment.md",
+      "bytes": 651,
+      "sha256": "94cc43453715020fb548f69fc983012c1e43f954acb8dd9319d0d778b39b4412"
+    },
+    {
+      "path": ".specify/bugs/exec-capture/fix.md",
+      "bytes": 245,
+      "sha256": "e3cd6b1d261ab9fe1004f32c6d75612cf6d82f5afd9672ca1c8ec5e148d137b8"
+    },
+    {
+      "path": ".specify/bugs/exec-capture/test.md",
+      "bytes": 366,
+      "sha256": "185e8a8a75cc6b4adeafff794e84fe548cb8365004736078bc09d2dd4ec92740"
+    },
+    {
+      "path": ".specify/bugs/fallback-explain/assessment.md",
+      "bytes": 825,
+      "sha256": "1526fdda3ca801f7f2fcb513dd6ff148dce60216e0e74c6d3dc5dd9563a9eefe"
+    },
+    {
+      "path": ".specify/bugs/fallback-explain/fix.md",
+      "bytes": 482,
+      "sha256": "910aa908edfd4f875ef7bbd193843a9d3692a09f1dbb9d512e1cba40cf1312db"
+    },
+    {
+      "path": ".specify/bugs/fallback-explain/test.md",
+      "bytes": 716,
+      "sha256": "4a98bd19dc598d0eeba7d33a1cb4a4d3d5314e2aeef152771d228158e0d17a5d"
+    },
+    {
+      "path": ".specify/bugs/gate-head-binding/assessment.md",
+      "bytes": 401,
+      "sha256": "d2cc8b5bc566aff858f638e62b2cd80e3ad4daf4282ec441f2c1b342646f7c5e"
+    },
+    {
+      "path": ".specify/bugs/gate-head-binding/fix.md",
+      "bytes": 419,
+      "sha256": "277cb4b25442a7e47eaf3f85cc05de914a0084612716c619ea9f49cd7a37d260"
+    },
+    {
+      "path": ".specify/bugs/gate-head-binding/test.md",
+      "bytes": 601,
+      "sha256": "f2d9028502ff9a29208a6cb7a6f775522cc614c4540b4bb2efbd0b3a6d631ae3"
+    },
+    {
+      "path": ".specify/bugs/guarded-create/assessment.md",
+      "bytes": 574,
+      "sha256": "b3e9d1fb90046ce3e5e9e6e7c2e8ffde9b685316ebd3e3043e68f129be3c3475"
+    },
+    {
+      "path": ".specify/bugs/guarded-create/fix.md",
+      "bytes": 209,
+      "sha256": "65dd21b842f22dc03329aa4199a4f7099f9dc1f9b5b628b082a115866663898f"
+    },
+    {
+      "path": ".specify/bugs/guarded-create/test.md",
+      "bytes": 182,
+      "sha256": "2af0e9794599085fe6af002dc13a1d5f972df19d2bc75b48a421110063976699"
+    },
+    {
+      "path": ".specify/bugs/insights-body/assessment.md",
+      "bytes": 443,
+      "sha256": "25724ae82eebcf81261bca5a9ba87ca7efb2a63605c67ef7e85cf44020ac702e"
+    },
+    {
+      "path": ".specify/bugs/insights-body/fix.md",
+      "bytes": 173,
+      "sha256": "c00fac0efa4193945724bf24baf8b416205072abe729458e793cb92f81ae0d21"
+    },
+    {
+      "path": ".specify/bugs/insights-body/test.md",
+      "bytes": 165,
+      "sha256": "382a6c6d90c78e5641cfd5dbb90b9045c205133597d96bcdc47d41db45b56b67"
+    },
+    {
+      "path": ".specify/bugs/lint-gap/assessment.md",
+      "bytes": 418,
+      "sha256": "ce747663badd4f22f52fd38753dc64358d44856c53390e425f3742d936be6122"
+    },
+    {
+      "path": ".specify/bugs/lint-gap/fix.md",
+      "bytes": 296,
+      "sha256": "d9d6cbcbc846d3482a0f891b382d0c8eaef8b9537934afa6ba14e77ab5b4aa0a"
+    },
+    {
+      "path": ".specify/bugs/lint-gap/test.md",
+      "bytes": 214,
+      "sha256": "bcc01cb8127b3229ab7aad21d31207ba17091da6014cf53fb58e3c46ff9d16f3"
+    },
+    {
+      "path": ".specify/bugs/lint-handle-plants/assessment.md",
+      "bytes": 728,
+      "sha256": "a4116c8ef70ea51cd64e4cf5512484eaf7954452e6e9af8b338ff7447641b503"
+    },
+    {
+      "path": ".specify/bugs/lint-handle-plants/fix.md",
+      "bytes": 531,
+      "sha256": "6499322a5f1d3aa93ed58a5d4e5b9292b8dc3e22763fe4f634be5850d68d73f4"
+    },
+    {
+      "path": ".specify/bugs/lint-handle-plants/test.md",
+      "bytes": 325,
+      "sha256": "c0509c9303196c17fc35019e083b51b848df25b859d4e8315f3ec63354d0b8b6"
+    },
+    {
+      "path": ".specify/bugs/math-max/assessment.md",
+      "bytes": 376,
+      "sha256": "c5e52e2a19a5de545595820dd168eb45cde337b6912b6136ed6dd9bf493c897f"
+    },
+    {
+      "path": ".specify/bugs/math-max/fix.md",
+      "bytes": 135,
+      "sha256": "cdd1ded193739d402f29eab768022d823186f2700fa8b851e9df74edcebb5a2e"
+    },
+    {
+      "path": ".specify/bugs/math-max/test.md",
+      "bytes": 140,
+      "sha256": "e8baf509adaa99db1b4e5fcbee34f098aa796faf02a9b5fce95435404e382bb8"
+    },
+    {
+      "path": ".specify/bugs/math-min/assessment.md",
+      "bytes": 426,
+      "sha256": "9e7dfa4a2e3aeee28e5452f11f5c4ab7a1e94cc796fc0f417292848993c9b482"
+    },
+    {
+      "path": ".specify/bugs/math-min/fix.md",
+      "bytes": 181,
+      "sha256": "3d9002a1c6e061337b33144dcf8b31536747b4052f5a9f24b2d034b473e02039"
+    },
+    {
+      "path": ".specify/bugs/math-min/test.md",
+      "bytes": 161,
+      "sha256": "423d9ff0f77ac2fe36a77e5b4cdb7515fff74e61f4b66d52fe955ebedb446f5f"
+    },
+    {
+      "path": ".specify/bugs/pragma-equals/assessment.md",
+      "bytes": 494,
+      "sha256": "a372466f10bfea21842d4b835388eea832e9be6c7c474900aaf74de26c87f521"
+    },
+    {
+      "path": ".specify/bugs/pragma-equals/fix.md",
+      "bytes": 264,
+      "sha256": "da7ef693e1c5a63d0f48594b5497c2a3ad5d70b0f38a88fe08141d4a7c624fb3"
+    },
+    {
+      "path": ".specify/bugs/pragma-equals/test.md",
+      "bytes": 255,
+      "sha256": "acdcf6819b9df331f0e0958ecbb012c590f1567944cbcda87fd1a31b5d149501"
+    },
+    {
+      "path": ".specify/bugs/pragma-setter-allowlist/assessment.md",
+      "bytes": 468,
+      "sha256": "691c23757ab984842fef2b237688971ac3ee8c4ec70e5654667467c4fbf5dd67"
+    },
+    {
+      "path": ".specify/bugs/pragma-setter-allowlist/fix.md",
+      "bytes": 208,
+      "sha256": "305c99193948ae2fc7d74cbc9f20464f6793e3ff7dfa4ba8104474b8118042c8"
+    },
+    {
+      "path": ".specify/bugs/pragma-setter-allowlist/test.md",
+      "bytes": 195,
+      "sha256": "2c78b6fb0bd12a91ea3e5eb34562caf7dfc1d648757b7088d14946fcb86fbbee"
+    },
+    {
+      "path": ".specify/bugs/pragma-tokens/assessment.md",
+      "bytes": 557,
+      "sha256": "ac2d7ef406d8987a36b530e4e66476b51147b362eb23475c05f462eea3d87f22"
+    },
+    {
+      "path": ".specify/bugs/pragma-tokens/fix.md",
+      "bytes": 283,
+      "sha256": "b621db210a5da8b212df037af8eba5316c03e0b201fc65c1a31c767bb02cbf3d"
+    },
+    {
+      "path": ".specify/bugs/pragma-tokens/test.md",
+      "bytes": 182,
+      "sha256": "f8d6753faad98f567ab952de95385195d0674bf1e601045158c6dfaabe9739e0"
+    },
+    {
+      "path": ".specify/bugs/primordial-call/assessment.md",
+      "bytes": 952,
+      "sha256": "9e35f18c4bc7730be50dc49edc5d9deaf78464e65d0ab5013cf2a8ba9db0f6b7"
+    },
+    {
+      "path": ".specify/bugs/primordial-call/fix.md",
+      "bytes": 711,
+      "sha256": "53b28c5d7cff0e5859dc0116e8aa065f18372885e04e932eba118e443346d869"
+    },
+    {
+      "path": ".specify/bugs/primordial-call/test.md",
+      "bytes": 596,
+      "sha256": "2992e85aba09df609c9dfec7ce24efb14e06aadfe7b16b409aeb37f6c96a67d4"
+    },
+    {
+      "path": ".specify/bugs/production-clock/assessment.md",
+      "bytes": 420,
+      "sha256": "655f28513e82378b2b62b08383e9afe6dd3f4639a4813a32928b8e9fde7420c1"
+    },
+    {
+      "path": ".specify/bugs/production-clock/fix.md",
+      "bytes": 157,
+      "sha256": "15e4055d644255855803e63b1f0acab4ae70eb23bc81527714f81333ed5ab059"
+    },
+    {
+      "path": ".specify/bugs/production-clock/test.md",
+      "bytes": 176,
+      "sha256": "d6089adf55d1ac7c0720c891cedf24d67463dbf850f71510cf500c3b93dafb31"
+    },
+    {
+      "path": ".specify/bugs/prototype-slice/assessment.md",
+      "bytes": 568,
+      "sha256": "17a38419339740717d3a8b65ed5dfe22b83cb1aa14a20b9a8f876ddf6e2c7f61"
+    },
+    {
+      "path": ".specify/bugs/prototype-slice/fix.md",
+      "bytes": 330,
+      "sha256": "cbfc4b8d76036f4834f26074e5b7c210dc32fce9ddd090bbf698d1ea0df269af"
+    },
+    {
+      "path": ".specify/bugs/prototype-slice/test.md",
+      "bytes": 274,
+      "sha256": "cf071e7e662a918367181811377442dd75728d67c363b0ec85b5d0c223d9e483"
+    },
+    {
+      "path": ".specify/bugs/qualified-audit/assessment.md",
+      "bytes": 556,
+      "sha256": "559edb688c13ec4140b6edc357b5c56eb9a1b2fa338a3543ee578bf981c637ef"
+    },
+    {
+      "path": ".specify/bugs/qualified-audit/fix.md",
+      "bytes": 312,
+      "sha256": "491c8e5f534070d6db28ae55afdbd7387e6e6e7b09d517fa73d0b4fd0a2a8cb0"
+    },
+    {
+      "path": ".specify/bugs/qualified-audit/test.md",
+      "bytes": 232,
+      "sha256": "21c9c79ad83eb26d52416b44404c841e33e840b1a820b9fc53eda02388306085"
+    },
+    {
+      "path": ".specify/bugs/receipt-index/assessment.md",
+      "bytes": 495,
+      "sha256": "72d98309aa4d1a4a47559a43823e1e89bcc7ade33b7c8041dc5fe67350ade14b"
+    },
+    {
+      "path": ".specify/bugs/receipt-index/fix.md",
+      "bytes": 122,
+      "sha256": "93347556275becdaa712e1b0da4af642a90fe34bc3e3ba4040a241efcc7622b5"
+    },
+    {
+      "path": ".specify/bugs/receipt-index/test.md",
+      "bytes": 161,
+      "sha256": "6fc17ab8430c8837c299727ca61c44150060a40dc6398f2dfd3158bceba59268"
+    },
+    {
+      "path": ".specify/bugs/recorded-guard/assessment.md",
+      "bytes": 592,
+      "sha256": "e1ce9601dc7a146e15f9cc37810ec72c8bc4394f01209fe799d35c558131cf71"
+    },
+    {
+      "path": ".specify/bugs/recorded-guard/fix.md",
+      "bytes": 297,
+      "sha256": "fe79d1be6a7211a4569b4f4147e2bf95a6740131e7aaf7e4d085f97a806b77dc"
+    },
+    {
+      "path": ".specify/bugs/recorded-guard/test.md",
+      "bytes": 273,
+      "sha256": "1f1704d83b916c6e359508e30eab80f965a5bde5b7ee3e4733d45596e9ad8fbc"
+    },
+    {
+      "path": ".specify/bugs/recorded-trigger-audit/assessment.md",
+      "bytes": 456,
+      "sha256": "c93467917879841487bc938e65d70ee53adfad01ba6d454d9294bdf60ec59eb5"
+    },
+    {
+      "path": ".specify/bugs/recorded-trigger-audit/fix.md",
+      "bytes": 282,
+      "sha256": "9b318ac56ec3889b7c61226629e8b4ef0d5a3252e8f49500ac7ed103873e9a64"
+    },
+    {
+      "path": ".specify/bugs/recorded-trigger-audit/test.md",
+      "bytes": 353,
+      "sha256": "7ca963f7fdda89fc9d3a0a7e70f2ec8c1072fa9df394c3e87c8a865c6f8fe5ac"
+    },
+    {
+      "path": ".specify/bugs/rename-protected/assessment.md",
+      "bytes": 368,
+      "sha256": "e248d4cfef47d37b4ba490b0edb280b5f7642341f7786bdbf5ffc94cf5725266"
+    },
+    {
+      "path": ".specify/bugs/rename-protected/fix.md",
+      "bytes": 125,
+      "sha256": "51837707c7b6cc958980f63453766a0483419ca2bdb330ab2b47d71b1c3a3ff6"
+    },
+    {
+      "path": ".specify/bugs/rename-protected/test.md",
+      "bytes": 122,
+      "sha256": "7a75f98d938e80be43dacbf0a934188174582fb454d6989ba76ecd4a61abbc79"
+    },
+    {
+      "path": ".specify/bugs/retention-find/assessment.md",
+      "bytes": 500,
+      "sha256": "e25a6743a44f54ceeeaf0c9caa6481a5e8ac7ab85520c521918f450c05f65b09"
+    },
+    {
+      "path": ".specify/bugs/retention-find/fix.md",
+      "bytes": 104,
+      "sha256": "1d52d416df0e34bc87cc96a795a55167bbf271411dc3721457126fab64428f3f"
+    },
+    {
+      "path": ".specify/bugs/retention-find/test.md",
+      "bytes": 124,
+      "sha256": "e17b4d9019b7053550dcdd0e71f8d8bb1236ac91cec742c4e8aee3370de22948"
+    },
+    {
+      "path": ".specify/bugs/sql-tail-illegal-constructor/assessment.md",
+      "bytes": 641,
+      "sha256": "1f6af4acc5f8dde53081bab1f053c0d080e1b50c5e7c8e65abd32b275d2d3e4e"
+    },
+    {
+      "path": ".specify/bugs/sql-tail-illegal-constructor/fix.md",
+      "bytes": 308,
+      "sha256": "4e779c28636c6873a12fd49602a08d7820d8af9f4d204ae27b764cbb28b50a41"
+    },
+    {
+      "path": ".specify/bugs/sql-tail-illegal-constructor/test.md",
+      "bytes": 448,
+      "sha256": "86f9d2c98848f178668ac4473b30eb9d72aecb2edc93bdb79ec5d38c0736aa37"
+    },
+    {
+      "path": ".specify/bugs/sqlshape-trim/assessment.md",
+      "bytes": 552,
+      "sha256": "d5f11cf951484f7f4b931d832087c0e73f97ebd80c2daf459a9a28429dc601c5"
+    },
+    {
+      "path": ".specify/bugs/sqlshape-trim/fix.md",
+      "bytes": 357,
+      "sha256": "9d96f5b8fd8a8cf0ba2289dd2f9d4aed9275e11a6a79a2a8ef57d1f3c4f11546"
+    },
+    {
+      "path": ".specify/bugs/sqlshape-trim/test.md",
+      "bytes": 244,
+      "sha256": "584227732e135537fd184594781e8a90c9855493f57e93b818ed409e9d33eef1"
+    },
+    {
+      "path": ".specify/bugs/string-cast/assessment.md",
+      "bytes": 512,
+      "sha256": "dc372da8f4a8e64d43d2ea8894d21a2cc4a34069d74ab9d2b2f01470a84fd49e"
+    },
+    {
+      "path": ".specify/bugs/string-cast/fix.md",
+      "bytes": 130,
+      "sha256": "8bd256590245f70ef6f39683b2649becd04abf9e0a42b7f4b6bf2baa64b4e2d3"
+    },
+    {
+      "path": ".specify/bugs/string-cast/test.md",
+      "bytes": 191,
+      "sha256": "7fc9ca1b90ed0b2f4f0bddc35dc7fd0736a6783db75c244440e0263c0720fca3"
+    },
+    {
+      "path": ".specify/bugs/temp-shadow/assessment.md",
+      "bytes": 389,
+      "sha256": "ee3d5dd3c725edd970fb0443234ac12772fb2bedc6e17a55d5f21d814a0be51c"
+    },
+    {
+      "path": ".specify/bugs/temp-shadow/fix.md",
+      "bytes": 152,
+      "sha256": "3d98f085b1e10f825b88582b5d5470f0505b6d708dd1ee51ae5743b29cbe4b71"
+    },
+    {
+      "path": ".specify/bugs/temp-shadow/test.md",
+      "bytes": 141,
+      "sha256": "b86309defe4a11ad218f68a580950157c349fff7513926d7894b22d8aa8d1362"
+    },
+    {
+      "path": ".specify/bugs/tombstone-test/assessment.md",
+      "bytes": 482,
+      "sha256": "76e874c4dccc0a0cc3e4c344f15519fc6389fe13b984e9e0966d8a087cd226dd"
+    },
+    {
+      "path": ".specify/bugs/tombstone-test/fix.md",
+      "bytes": 239,
+      "sha256": "912ef3902196ca47e0afbbabea64eefac836a13b7433db7edaa1652fb9e1557f"
+    },
+    {
+      "path": ".specify/bugs/tombstone-test/test.md",
+      "bytes": 265,
+      "sha256": "d18a763c3ee6f77e4022b6548ab1bbfa761029a9fd3f6a5dc2c62d8b37dd77c5"
+    },
+    {
+      "path": ".specify/bugs/trailing-semicolon/assessment.md",
+      "bytes": 480,
+      "sha256": "65d907a7723b7ce8e8040c66892ef7ee6177364ab521db49d71bc3ba74a0831b"
+    },
+    {
+      "path": ".specify/bugs/trailing-semicolon/fix.md",
+      "bytes": 185,
+      "sha256": "5ca7d6125875cc3beb4ce36ba1b0a574f73d1ebe1a8bb209091b12a2f473287a"
+    },
+    {
+      "path": ".specify/bugs/trailing-semicolon/test.md",
+      "bytes": 229,
+      "sha256": "fb67bc42225ab08ac59650401ea42ba388ecce9f80f6be9b0838999dacb1dd2a"
+    },
+    {
+      "path": ".specify/bugs/trigger-dotted-begin/assessment.md",
+      "bytes": 452,
+      "sha256": "85448ad5d73141fcb8dd26034f7ea626ed5d51dd3afe7d18b45e7053ec4ad79b"
+    },
+    {
+      "path": ".specify/bugs/trigger-dotted-begin/fix.md",
+      "bytes": 131,
+      "sha256": "4db641d324efdd14cb9f1c846293f7124280ed72bd822f32a1219dd81f665d1d"
+    },
+    {
+      "path": ".specify/bugs/trigger-dotted-begin/test.md",
+      "bytes": 123,
+      "sha256": "78a3bcf088f3b30c3e7665e88a7a190ea55dc7d7b71e4016e8b3b59183dfbc06"
+    },
+    {
+      "path": ".specify/bugs/writable-now/assessment.md",
+      "bytes": 408,
+      "sha256": "068c01490290f47859376e60c3af1b4538e585a11a67b003aaa243b3133822bb"
+    },
+    {
+      "path": ".specify/bugs/writable-now/fix.md",
+      "bytes": 265,
+      "sha256": "303c03eaa8144a5079aca92ec57d7ed0546d11da8004929b417941427c8e8f70"
+    },
+    {
+      "path": ".specify/bugs/writable-now/test.md",
+      "bytes": 451,
+      "sha256": "09d0f37cc69bf2dd1ef85995e10fe35768aa262e4254bc2030963fcd307607c9"
+    },
+    {
+      "path": ".specify/bugs/writable-schema/assessment.md",
+      "bytes": 475,
+      "sha256": "a678019fe594d4fa2f53406b8c519ca85f12515ae6aeb7faef25a3156e5453a3"
+    },
+    {
+      "path": ".specify/bugs/writable-schema/fix.md",
+      "bytes": 147,
+      "sha256": "cf876ca2571d59515d4b4e99c85e8d12bdde635b599796893736731698a36caf"
+    },
+    {
+      "path": ".specify/bugs/writable-schema/test.md",
+      "bytes": 170,
+      "sha256": "1028fc6c0fadfe29118f03c6871a05c143bbc7ff0f49a07f5cd8f752d40d782f"
+    },
+    {
       "path": "00_START_HERE.md",
       "bytes": 3884,
       "sha256": "7c7975870bb5d008fd21e22d26578dbcb69276cdbedea66f539e191c4981b11e"
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 923589,
-      "sha256": "ebefde677da3722eca1acda20ae32042a5c77e3c7340936e82d66789e35f9dd0"
+      "bytes": 924242,
+      "sha256": "950ad7e41c75ab8a124c19a850e4116e064aa62c6677aad2efba231910c7ee08"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 923589,
-      "sha256": "ebefde677da3722eca1acda20ae32042a5c77e3c7340936e82d66789e35f9dd0"
+      "bytes": 924242,
+      "sha256": "950ad7e41c75ab8a124c19a850e4116e064aa62c6677aad2efba231910c7ee08"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 923589,
-      "sha256": "ebefde677da3722eca1acda20ae32042a5c77e3c7340936e82d66789e35f9dd0"
+      "bytes": 924242,
+      "sha256": "950ad7e41c75ab8a124c19a850e4116e064aa62c6677aad2efba231910c7ee08"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 923589,
-      "sha256": "ebefde677da3722eca1acda20ae32042a5c77e3c7340936e82d66789e35f9dd0"
+      "bytes": 924242,
+      "sha256": "950ad7e41c75ab8a124c19a850e4116e064aa62c6677aad2efba231910c7ee08"
     },
     {
       "path": "CLAUDE.md",
@@ -67,8 +652,8 @@
     },
     {
       "path": "Makefile",
-      "bytes": 1704,
-      "sha256": "f682870bfd662d2e98034a98848a64cbebe164d399580c527af6ccef13f8115c"
+      "bytes": 1759,
+      "sha256": "9d02b4a7117abd6576e12c45e91da49075b1b81986323102b737c6bb5737b85b"
     },
     {
       "path": "Preview.command",
@@ -348,7 +933,7 @@
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
       "bytes": 146,
-      "sha256": "3014acf7bed98140d4c75ed6b1600d598c5d421477a0dad5c2a2ded3a186c037"
+      "sha256": "2c09b4389860818179ce2db8f5ee4310b27b5c46d2643bcc94969254af12ab61"
     },
     {
       "path": "deploy/cloudflare-edge/set-keys.sh",
@@ -367,8 +952,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/audit-chain.js",
-      "bytes": 25593,
-      "sha256": "505102f1e484734f7f348f0d45992d05bd2c0239b95a5a6fffc397e4014d6c45"
+      "bytes": 27673,
+      "sha256": "a3d5a0c52bc403060f3116a12e7d157ebbf7222687b1257dbb199e799ca3f487"
     },
     {
       "path": "deploy/cloudflare-edge/src/authz.js",
@@ -377,8 +962,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/bids.js",
-      "bytes": 43001,
-      "sha256": "01dd998060def72cfc28eda2f0c1761ce29c3c8a011ed55b2ae1e5952d9043a0"
+      "bytes": 43027,
+      "sha256": "6c9cfa199fb79d889dd0ff11fca06231f048b5e2723686091a65b50e3997408b"
     },
     {
       "path": "deploy/cloudflare-edge/src/bounded.js",
@@ -392,8 +977,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/claims.js",
-      "bytes": 29007,
-      "sha256": "8ca7019096695d12a3710bce929749bb71454bb19d9ea8e25841a558b1f4fe2d"
+      "bytes": 29036,
+      "sha256": "14338989082ce5804a4b0c4a0e08d4d7374891450d4711682fe5d824265b9f5c"
     },
     {
       "path": "deploy/cloudflare-edge/src/classify.js",
@@ -442,8 +1027,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/gaps.js",
-      "bytes": 21206,
-      "sha256": "4306346ddf231da0ddf1cc6ac093a153e072869d7888c9b94b8924ffe376f8f2"
+      "bytes": 21354,
+      "sha256": "5b74cde68a73a6666a59e4a8ce8a41b4d45a11a674eb236abcdf1a01afd2005f"
     },
     {
       "path": "deploy/cloudflare-edge/src/invitation.js",
@@ -457,8 +1042,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/journey.js",
-      "bytes": 11274,
-      "sha256": "21e08a52772ea80a21ea05e567d970db7dee94c051ed3f25bff44c2af50a27fa"
+      "bytes": 11542,
+      "sha256": "b8aadbaa3e8014238bfd29b57428303ebef01c2ad00b2c97045eefd0c9508189"
     },
     {
       "path": "deploy/cloudflare-edge/src/kill-switches.js",
@@ -477,8 +1062,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/library-routes.js",
-      "bytes": 10227,
-      "sha256": "026521d9527896530446a519e0290962c86758f820db317e54af67f20ebbe9a9"
+      "bytes": 11115,
+      "sha256": "1678a87c96e32d42d384c53020d71164784d183731816551faff3282a87ede2b"
     },
     {
       "path": "deploy/cloudflare-edge/src/library-store.js",
@@ -487,8 +1072,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/library.js",
-      "bytes": 74567,
-      "sha256": "816816698a16b2b3d675edb824eca3d8f647ff9c40f28810c27b4c1130d8817b"
+      "bytes": 104636,
+      "sha256": "50922dbbcc3c9088ba7c16ca32cd3fd4f2d8af9667f35a3b7e4297e84e6735dc"
     },
     {
       "path": "deploy/cloudflare-edge/src/memory-routes.js",
@@ -502,13 +1087,13 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/operate.js",
-      "bytes": 18941,
-      "sha256": "876215fdd71a12c1ee15688f5a88410a4094cf68ddf818771c10f4f183da535c"
+      "bytes": 18901,
+      "sha256": "d45ecb469140e6e7d0a9f12e67794199384694ee0e94e1cf933e0ef6d827e8ef"
     },
     {
       "path": "deploy/cloudflare-edge/src/outreach.js",
-      "bytes": 47015,
-      "sha256": "12a090f92f1ad60f0b97c81b216d2448f35f463ceeb90742c3867e0a9acac87d"
+      "bytes": 47116,
+      "sha256": "542013df8e28ff4e7ba19d35b8f640ccc6b5596ccba669e021fdba3848d869b9"
     },
     {
       "path": "deploy/cloudflare-edge/src/package.json",
@@ -521,19 +1106,24 @@
       "sha256": "5af2918ad51ce4de687bc687feca64ade770f345bfb2a2823f3ac74cd4a02c3e"
     },
     {
+      "path": "deploy/cloudflare-edge/src/primordials.js",
+      "bytes": 10375,
+      "sha256": "4c221f3075bcbf15a9846b4b083ee8d42ea5ab9df5f4a64dc9fbb4aacba5a635"
+    },
+    {
       "path": "deploy/cloudflare-edge/src/privacy-routes.js",
       "bytes": 3591,
       "sha256": "b99f25d2b6bf72aa208492219ffb078ff6dc471dccdbcf38893a7593ccd301df"
     },
     {
       "path": "deploy/cloudflare-edge/src/privacy.js",
-      "bytes": 19413,
-      "sha256": "5e61fced59511667242b0e7b0dce256a485de54648d46aab76560350d63f31bd"
+      "bytes": 19569,
+      "sha256": "73db65006e8bfd4ef8269a63ae322923c51f055cd62e1c3fd7e1be9486cb9151"
     },
     {
       "path": "deploy/cloudflare-edge/src/profile.js",
-      "bytes": 48099,
-      "sha256": "1eacd73742dc6ff991d551b99e28b08fa853d410d2846813167564c0665b8fe4"
+      "bytes": 49365,
+      "sha256": "0cf2f6dba5fdf0132eb2c4c65f57347449c41f4382fa2b07fb4c4626bfe9487e"
     },
     {
       "path": "deploy/cloudflare-edge/src/publication.js",
@@ -547,8 +1137,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/rating.js",
-      "bytes": 41025,
-      "sha256": "26d638b6d3e49a00624c12e6b5f32f2ea94a6650b04201ce7a087af972e206eb"
+      "bytes": 41181,
+      "sha256": "5a85d3c43c5b58162255f9fc469f3ac2ce0e106e57b550df3c257a458fb072f6"
     },
     {
       "path": "deploy/cloudflare-edge/src/report.js",
@@ -557,8 +1147,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/retention.js",
-      "bytes": 7963,
-      "sha256": "f7f936c9b61e9b4b9f240fd26035fad11252345e0d5babe100336bb5c4238d5b"
+      "bytes": 8804,
+      "sha256": "4c85f31d22356552bf595ca385384e355493d05b3c297fe0da17ba0a1d749e35"
     },
     {
       "path": "deploy/cloudflare-edge/src/reuse.js",
@@ -607,13 +1197,23 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/sql-bound.js",
-      "bytes": 2571,
-      "sha256": "19d62579439244fcfab2615b6a5965ebec51cd0380b1f0e2871af6ecff2cc21e"
+      "bytes": 2567,
+      "sha256": "a6caed83cfd5dc7bcc1d3c984e3ac9aa8161f9a14fbf2d9b5afbc60ce9b1f9f7"
+    },
+    {
+      "path": "deploy/cloudflare-edge/src/sql-tail.js",
+      "bytes": 1427,
+      "sha256": "e4378b66f7679a3eb85f68097ac1f50a13b0cb80b4dceba2f180339a76c34c4e"
+    },
+    {
+      "path": "deploy/cloudflare-edge/src/sql-text.js",
+      "bytes": 34205,
+      "sha256": "d3f460a85259ceaca4f89d06169d06a4b6b0a00ba9649045e9545002778604d3"
     },
     {
       "path": "deploy/cloudflare-edge/src/subject-rights.js",
-      "bytes": 29139,
-      "sha256": "41a442999d25cca898d9f1f5145294aa9da9e37ff3168ef8656501a223929a75"
+      "bytes": 29207,
+      "sha256": "a048ffdc4902b21bee099a2b0e7646f062bd56c5f0ae6f56f7c803bc43652862"
     },
     {
       "path": "deploy/cloudflare-edge/src/teams-routes.js",
@@ -627,8 +1227,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/telemetry.js",
-      "bytes": 9519,
-      "sha256": "9a3198c6d4f5190e7db2ace4195f9a2c8100810831a7979e82bd2b1b00fcbb28"
+      "bytes": 9656,
+      "sha256": "485e8446b646d38f12ac9783029d109e42ca3fdc9a746e790453b7c93a84cbb6"
     },
     {
       "path": "deploy/cloudflare-edge/src/timing-safe.js",
@@ -712,13 +1312,13 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/audit-pair.test.js",
-      "bytes": 3974,
-      "sha256": "a4509187038b58a275510650bbf07e45d87bff935752e4ee87c1635ac368b4c9"
+      "bytes": 3976,
+      "sha256": "644f30029d9be83c444d0f33dd72487bbb671a07c80dc4a2240280f74e3e27c1"
     },
     {
       "path": "deploy/cloudflare-edge/test/bids.test.js",
-      "bytes": 59613,
-      "sha256": "eda8893c88736b391250f816a6ff26d1ad90546e5be65a78a2ee6c4c7ac68a64"
+      "bytes": 59639,
+      "sha256": "4bfd50829b45fa5cc12850250be1fc1815a033c2481c5508b214979eabf940df"
     },
     {
       "path": "deploy/cloudflare-edge/test/breaker.test.js",
@@ -732,8 +1332,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/claims.test.js",
-      "bytes": 58805,
-      "sha256": "8fb324fce57ff0b83ae25831ec3342344d60f426b7ed4a8c0f3cf32526ae3302"
+      "bytes": 58846,
+      "sha256": "a45c196d871a27ef4b317a1acac887d1d6cb7f64dc59c6b7f3c52c802e95a781"
     },
     {
       "path": "deploy/cloudflare-edge/test/classify.test.js",
@@ -752,8 +1352,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/erasure-atomic.test.js",
-      "bytes": 3912,
-      "sha256": "9bb491cd323f3da1b14f4e74b29a639e151a420793a8d67faede6a96fe4e4dad"
+      "bytes": 3941,
+      "sha256": "319154b32e1944851b6d165082b5421dae3570c5f6ec5caf91e3df055b2bfe9f"
     },
     {
       "path": "deploy/cloudflare-edge/test/features.test.js",
@@ -772,8 +1372,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/gaps.test.js",
-      "bytes": 33757,
-      "sha256": "b593bfc1d61d973b0e8eae88561121c86dc10e155e4a1d5a2fd7391775c8cc14"
+      "bytes": 33774,
+      "sha256": "10307ef856e646cd086a4fce8044a85cf1798891ea1f84dc47490b38b0e6c0ab"
     },
     {
       "path": "deploy/cloudflare-edge/test/gen_gap_parity.py",
@@ -806,9 +1406,14 @@
       "sha256": "4ddeaa366dafd174677abecb337877b2cefdabaf2c53003566f25400b0ddd8ed"
     },
     {
+      "path": "deploy/cloudflare-edge/test/hold.js",
+      "bytes": 532,
+      "sha256": "215875b52702ab9cb98a0a30eb157c9504bca0f73a41a701795756a96734e456"
+    },
+    {
       "path": "deploy/cloudflare-edge/test/invitation-closed-code.test.js",
-      "bytes": 4547,
-      "sha256": "7c0ceec610b12f8e129b8f275d86f69c6b1ef25757ec8c6c78a55a0dd6aec7bf"
+      "bytes": 4555,
+      "sha256": "5f6d85934d67e786fe17640eed1e0c62d932036465526681cf5a87bd4b28ce63"
     },
     {
       "path": "deploy/cloudflare-edge/test/invitation-status.test.js",
@@ -832,13 +1437,13 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/journey-case-erase.test.js",
-      "bytes": 2460,
-      "sha256": "684377c4e95735e2183199b78c3f9d15590d415e42061be9fe04e400ffd65a1b"
+      "bytes": 2471,
+      "sha256": "905a78cbff28453060647167387733d56c114e5f2267550cc2be3299dd98edbd"
     },
     {
       "path": "deploy/cloudflare-edge/test/journey-subject.test.js",
-      "bytes": 37255,
-      "sha256": "8eda5cb56eed725b6d2f9dfdc29bfe90f24055dccdcafb81548c808cf02f2ec4"
+      "bytes": 37365,
+      "sha256": "e76d20b918f3a8ee831472d84890b75e8da2f6fda95e3d090f6d952e2d833f82"
     },
     {
       "path": "deploy/cloudflare-edge/test/kill-switches.test.js",
@@ -852,8 +1457,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/library.test.js",
-      "bytes": 35209,
-      "sha256": "98a66acf8705dea5f446818cc92e2058fd7af8881e6b9fb6d041f72cc66d0b39"
+      "bytes": 35230,
+      "sha256": "fc3285d69961d8326f2bf2240787d50354d7fdd30b762f744330ae709c1d0aa9"
     },
     {
       "path": "deploy/cloudflare-edge/test/masking-routes.test.js",
@@ -867,8 +1472,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/outreach.test.js",
-      "bytes": 37117,
-      "sha256": "4a8b698ab25999fb9ca872b4106df2ff74daa79d321522b0897fcade8f7dcada"
+      "bytes": 37149,
+      "sha256": "768766be5deaee28a2689ca2cbb089303c86f1357e0d992463d71a3f83543e3e"
     },
     {
       "path": "deploy/cloudflare-edge/test/pace.test.js",
@@ -902,8 +1507,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/policy.test.js",
-      "bytes": 138296,
-      "sha256": "d0424894c66b6c2bcb27a760f882270eb8bab02a6220d915d5e44c174d4de30c"
+      "bytes": 138547,
+      "sha256": "72e2be77d5dbe38cd73d369fb140cc5063731f47f22e08525806e2e652b0b22d"
     },
     {
       "path": "deploy/cloudflare-edge/test/privacy-delete.test.js",
@@ -912,8 +1517,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/profile.test.js",
-      "bytes": 56758,
-      "sha256": "4d7a38f63e4e67005ef532f4641a3f5256d46a1f4c79d35487a13c9e735d65ce"
+      "bytes": 56802,
+      "sha256": "df8b9c65cc7d20a99ae4f7d46ba497c3f75f92240419ba21b92bddcd85354d7a"
     },
     {
       "path": "deploy/cloudflare-edge/test/publication-golden.test.js",
@@ -922,13 +1527,13 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/publication-legacy.test.js",
-      "bytes": 18193,
-      "sha256": "c19f483d877fe1e03139da0e5e6807f6b0ebc1babac1f392f7d2e0a3cd9380cf"
+      "bytes": 18243,
+      "sha256": "6e344908761b57df6102ace1e5ebb094445633a8131422918e2f6161b5950d41"
     },
     {
       "path": "deploy/cloudflare-edge/test/publication.test.js",
-      "bytes": 22134,
-      "sha256": "d27c116373f56abdf34bf98c783b7feb954ec8a994f66e68285f0653a9c978a3"
+      "bytes": 22187,
+      "sha256": "3cd7fe5e5bbbab798d940bb5d409a7a7ff44f50c1d8663047a9a567fc478bdd5"
     },
     {
       "path": "deploy/cloudflare-edge/test/ratelimit.test.js",
@@ -937,8 +1542,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/rating.test.js",
-      "bytes": 61402,
-      "sha256": "27e986d486cf7da35c90d9da02c5e756817ec6fa8d253e0c7617a7bf650bf579"
+      "bytes": 67951,
+      "sha256": "02f2ba24fe10aff30b2a25b9769061f8022275f72e5269e96320d1ba74a903eb"
     },
     {
       "path": "deploy/cloudflare-edge/test/reconnect-harness.js",
@@ -962,33 +1567,33 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-03046ed.test.js",
-      "bytes": 7099,
-      "sha256": "e90ef71c08f426bdf7fcd26892cb625a551dc67dba57c1dd1bbe60e5c1feceb7"
+      "bytes": 7107,
+      "sha256": "a24cc0c12bb18bbf3241cc4cb70aede2f84f79d9049fbe71a1788b96f9c4febf"
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-09ada7d.test.js",
-      "bytes": 7435,
-      "sha256": "e46c20c19ecb160c21aa6d56b8b68fa30229f549354f52d2f85583863aff8497"
+      "bytes": 7449,
+      "sha256": "df509a98e71ea3ebb2827a7e7f402d18bddf90e12d56a14cc414a7a83ec95e8e"
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-1fc76c8.test.js",
-      "bytes": 11785,
-      "sha256": "12e0aafea18757dacf0c1495ae8a3001afd5a4978c020f24bb1c97524f5ee792"
+      "bytes": 11832,
+      "sha256": "511c025d0cc21c3d3b70355a38daad7f5a417e01eaca73cd60504a8395ea69f4"
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-2f6448d-qa.test.js",
-      "bytes": 3909,
-      "sha256": "d214ca7ebebdc61682cbae7146889d8532bebce5c66e83a747bc9b1248f71c58"
+      "bytes": 3932,
+      "sha256": "94f1413c85eeeef6e5f946afca41e8dbcdd8a53d63c5679633165903142cadaf"
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-2f6448d.test.js",
-      "bytes": 9419,
-      "sha256": "073b491b761a07a7caed288dddc1b12a84e5fdc6aee3ae2a8be9fc62afd0fe10"
+      "bytes": 9460,
+      "sha256": "300ac8257f7a6ea1446447600e00024eddbe0f29779267b4e345dadcbeabfb79"
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-61bbb9d.test.js",
-      "bytes": 7123,
-      "sha256": "8ebe69e0151aba465068444c86aa8ed2ae41e98360c3109f944aa92ea6bcacf6"
+      "bytes": 7155,
+      "sha256": "fd6df7c1bffb435e88e15ba4718cb87aa12da0743042f23b5caa2b160c018c99"
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-9d47ae2.test.js",
@@ -997,28 +1602,28 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-a5ba30c.test.js",
-      "bytes": 6350,
-      "sha256": "46a50484b4f8c2e41a6a6392453108e4c7f430c0f0d431fc913e85c35f16c660"
+      "bytes": 6364,
+      "sha256": "539cb8869da604988e1d7076c3c29c647fb7b876ebfe154efb9d4a2b3b14562f"
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-accept.test.js",
-      "bytes": 14525,
-      "sha256": "310da4e97fe7c37728a26d9b4e0ed6fc6e315fea06101b81b18dc04bed85dbc4"
+      "bytes": 14647,
+      "sha256": "3dff20389d5b2cfe5c4bd8d4a5103510b2293eb09a36595a97249d450c2f50c2"
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-afa7b8c.test.js",
-      "bytes": 15180,
-      "sha256": "50323417b56691212a87392d2108c55c30bec4b2fb56a803835048d40d6fc7c4"
+      "bytes": 15209,
+      "sha256": "d02c3accffcef5024cfdc74c76912cedc7b6a72ba16d1ed84786385c31a9a735"
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-b8df2ab-low.test.js",
-      "bytes": 6123,
-      "sha256": "3af85caa107ebc9ea3a8b2ca7c211a50aa6d79550b93bdae5055d5d86ce72cf2"
+      "bytes": 6134,
+      "sha256": "f5d34529babbf450bfbabb2da3eede25f69cd2ce4f4b70931ba90ce3c14b1072"
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-b8df2ab.test.js",
-      "bytes": 6295,
-      "sha256": "bf346669da7690bf1067dc86a2ec9f96cc9cdde1bb2357f0c63be0e7168d2b2c"
+      "bytes": 6339,
+      "sha256": "0113ea43b1467ce9386dc88c140a11cbad3f601aaf159934237c485672e4ca9e"
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-de9e44c.test.js",
@@ -1027,33 +1632,33 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-delta.test.js",
-      "bytes": 5837,
-      "sha256": "f93b29cf7b0ac22c2e56200b869f92ef4333cde4c56e9591518d73753ad7ff3a"
+      "bytes": 6027,
+      "sha256": "b0b328dcfff68def5e17d73c60dd645631454ca3dbd31c208454b59b3a0068e9"
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-e639f7e.test.js",
-      "bytes": 22595,
-      "sha256": "9f54a50ae87771bacb9fd8c442fc4777b7d407eed72e38346bf929aabc8429c5"
+      "bytes": 22663,
+      "sha256": "c5146422af3aa2f7a4927ec41b2398c35743174530fc12511b879241cb477967"
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-platform.test.js",
-      "bytes": 9127,
-      "sha256": "8c7130c8dc7c52e474311c8b9e246d37aee0aee7b5f5ccb630759f2e7b98b8d8"
+      "bytes": 9129,
+      "sha256": "a108701f64dc5927c013524518e4f8c124ef88ee4606fcfeea3a9757f117f204"
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-review.test.js",
-      "bytes": 22779,
-      "sha256": "fe9f854285439407334321d0c36c5cd87890f62b62af4664bf2ebe671b902820"
+      "bytes": 23033,
+      "sha256": "1d1f65c0f011bf9a2c8dfa0a608ecc53c428f6efce2f291ad4a71d03c439734c"
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-round.test.js",
-      "bytes": 9277,
-      "sha256": "efdec6ba644a3bbca91ac5e148d44f1695871d08c073b88b1b1feb012fb0f742"
+      "bytes": 9330,
+      "sha256": "63f3fecbe815122af2c48a333593fdc6df787da5784cd5cb1234c63eaaf70f66"
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-sentinel.test.js",
-      "bytes": 3498,
-      "sha256": "0f15c28c0876fb57571520fff07150b027b1171e561b0d2769612854b3904d94"
+      "bytes": 3533,
+      "sha256": "3e5f006f412b4435dfc648d5c10359abea6aad5fc310b41b4e8f46c2212f91c2"
     },
     {
       "path": "deploy/cloudflare-edge/test/scrub.test.js",
@@ -1102,23 +1707,328 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/sql-bound.test.js",
-      "bytes": 15187,
-      "sha256": "968654f44f6ae63df83972b7aab0089b3f4364b3774bcff59fe1c41602bdcd1d"
+      "bytes": 14231,
+      "sha256": "2fc6ddb52340bb6da7fb3bd9d94547ca082069bb372b00f783907b13ea271c5b"
     },
     {
       "path": "deploy/cloudflare-edge/test/sqlite.js",
-      "bytes": 1429,
-      "sha256": "2f0fd7422feab69872d4c519e44f9e7d8b5216b310a159ec804bc5a52a1d58f8"
+      "bytes": 3391,
+      "sha256": "e1bd38b2b9a3d9f2c72bfcf9d5ca74e1af9696cf6fb54bb58556483c4ac8f0b5"
     },
     {
       "path": "deploy/cloudflare-edge/test/teams.test.js",
-      "bytes": 27442,
-      "sha256": "119fbb43c0d9b41660dc100130d77b7d1b6675e6126602590f76b05328bd91f7"
+      "bytes": 27444,
+      "sha256": "cae7c6de0a57cee362da5d360d62c75280b922269f87e7116ad6b8dc9e9e8ad9"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/vendor/acorn-LICENSE",
+      "bytes": 1099,
+      "sha256": "76a876cf886ff9be2a8b5e2e86514fed06223c8c9f0c1e9ee9606e93841e00b7"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/vendor/acorn-NOTICE.txt",
+      "bytes": 107,
+      "sha256": "cfd213c7311619012ce037c611ea9a95339a086063e896be4201b7cdf58a1380"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/vendor/acorn.mjs",
+      "bytes": 234658,
+      "sha256": "76254fc76529713b4dfd2532972d17a991ffd9aafeebb1f977445b5506b9fb0b"
     },
     {
       "path": "deploy/cloudflare-edge/test/winloop.test.js",
-      "bytes": 16609,
-      "sha256": "744e54a95213af5980cd49915fb9bd233b0718d2212ddab043d3401a59acc3f2"
+      "bytes": 16623,
+      "sha256": "edad7b97e75c7829be7771d101208d1f8c575bab341a6773586b6e5082210051"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/workerd-bin.js",
+      "bytes": 1136,
+      "sha256": "6f7a16085156e4f9f45e88939a8922410006efe74b3e4bf5f7db20fd4d5edff3"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-begin-ident.test.js",
+      "bytes": 2253,
+      "sha256": "10e5deca5e46dbf39f57877e08b75c55bcb468a2271d348e52020a2a962633e3"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-checkpoint.test.js",
+      "bytes": 7674,
+      "sha256": "f830784fd21b6d66a7ee723a509e0f1550e1502af32c8a79b870fce32ec78888"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-consent-atomic.test.js",
+      "bytes": 1847,
+      "sha256": "c0f448264eca91c6bbd3557849344c4b6aac4384ebefeb5e735296860c968479"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-consent-chain.test.js",
+      "bytes": 1565,
+      "sha256": "a7d8bd1f17af50e03bf7fdb03581d42f12a201b2ed6aadf79ad801262af9f934"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-consent-cutoff.test.js",
+      "bytes": 2282,
+      "sha256": "5acb907c89825171df27713224e79fb353819aa2214a567b7551db37753697b3"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-consent-trigger.test.js",
+      "bytes": 6176,
+      "sha256": "57c9462ffd1d16f6316e05bc5303d02c8e8f424f4dd54636ca485bef735f8781"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-cutoff-clock.test.js",
+      "bytes": 1586,
+      "sha256": "b6e935075874d8237327d05ae25a17d1bfec1b410fa9d30d103797d5627a9dfe"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-door-private.test.js",
+      "bytes": 4848,
+      "sha256": "61e4299a52989c24831da61110924cfaadc28ec29e12bb0426055104e13298db"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-door-state.test.js",
+      "bytes": 3923,
+      "sha256": "8f09feafb276f4d4c6f6c929472ad819ec0b1870e4b1806bedb6768f7e9f7f12"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-door.test.js",
+      "bytes": 3897,
+      "sha256": "d3f1c50eeee692361faf8cd1838ebb40126d611065ebb0023b86ee789776f96a"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-erasure.test.js",
+      "bytes": 1871,
+      "sha256": "db358ba3e31369469a52216d783dad97eed6fdc7107190ff79e1623ba5d9e5d0"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-exec-capture.test.js",
+      "bytes": 1752,
+      "sha256": "506a25ca357e9761e55d69d62b0643d2cce16e57abfddd7b6e32bc517c348215"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-fallback-read.test.js",
+      "bytes": 7183,
+      "sha256": "7cf47ff092c3d8fe6cb4bd43c3e49f71eb01e8b6f6f2cb22e49881399cf6ab1b"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-gate-close.test.js",
+      "bytes": 1473,
+      "sha256": "2351dbded0e7f727ef569ef8cbda460f3abed7079a7ccbd7b000368edadb4f7a"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-lint-alias.test.js",
+      "bytes": 994,
+      "sha256": "072c0baa0ba361d5a6582dfca893ec5e06da19f3dde489dcbb1b49ba0813177f"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-lint-evasion.test.js",
+      "bytes": 2783,
+      "sha256": "0b9cfacf469f5c4e23b6e9ff854d9fd487826917f74bfba4dc35c8b8922a7c66"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-lint-gap.test.js",
+      "bytes": 733,
+      "sha256": "b9e1b23a224d25261ef9f7f89fbaeecc64473efcfd9b1050c1c2897defff4c15"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-lint-more.test.js",
+      "bytes": 1401,
+      "sha256": "2a7b2e49d9d4d0ef21ea50e57b496670173c4f41a17a11d1e83ef848a1304f78"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-lint-plant.test.js",
+      "bytes": 1513,
+      "sha256": "767ea112fee1fd29895174307f25d24a947bb9ce479d8379c9ad0fe20c9555d3"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-lint.js",
+      "bytes": 21994,
+      "sha256": "a361a6aa78c1c80eff3348903757c9d5d387ae3cbef9b3243dceb6ff433de186"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-now.test.js",
+      "bytes": 1480,
+      "sha256": "045849696c743982a4e8edee78f4daeab724b74c59257c4d2f143c4832396c13"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-primordial-call.test.js",
+      "bytes": 3989,
+      "sha256": "02d83d2bb059b86d644b0f872cff8c5744eff62a7159da5637d64af4d200ce26"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-primordials.test.js",
+      "bytes": 2638,
+      "sha256": "c90f8bd0a9e545d4b24a136fd4bbbaece19935e1eed2fb9ae3a6f6eed5a1389e"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-profile-rebuild.test.js",
+      "bytes": 3658,
+      "sha256": "e3c4dd52f487e69cdeee6ec8daf42930a926dafc744802eb4eb148e6f59bcfc7"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-prototype-slice.test.js",
+      "bytes": 5873,
+      "sha256": "37881bfe50f1e56e9252f71e3bd5902b1a41bbfc4d1be3631b563ccd6779c6f0"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-prototype.test.js",
+      "bytes": 1904,
+      "sha256": "d8883d8340bb59860aded840833cd96002af4fd567a45748b672db168135a2a7"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-recorded-guard.test.js",
+      "bytes": 3933,
+      "sha256": "e5b7e4c419214d38e729b6c59eff6b8f166b9329918c9395750e0b8bb959172f"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-regexp-exec.test.js",
+      "bytes": 986,
+      "sha256": "d10ce3349fb221b0e8dabe88dc541bb5c60c942f0abc02f192fbf5fad5a9b096"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-sql-gate.test.js",
+      "bytes": 7433,
+      "sha256": "700d5979f528f293d7c697000a3dee28ca01bff7890098d7b08a8ebbd2d8fc6f"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-sql-tail.test.js",
+      "bytes": 5496,
+      "sha256": "5c86a8cde673e95e0acb7d70da76e10dbe4f185e4a8fcae7ac348a8218cff202"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-sql-type.test.js",
+      "bytes": 948,
+      "sha256": "3c7903ebc42e39f983c9816b4dfd512de988b022d21e9cf7ecf4cba68e91b838"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-tail.test.js",
+      "bytes": 6357,
+      "sha256": "a8683fce5dae6e784509b6344e5cd056628a0c14fe96e669c72b26e6a3dc1035"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-temp-trigger.test.js",
+      "bytes": 1038,
+      "sha256": "738da3e19a7d7a6fe89f0027fd366ed14dfea7b719eb546eaba6c7c319863ab8"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-tombstone-test.test.js",
+      "bytes": 1330,
+      "sha256": "e6edcfb60c298ebefad610b18ec283c946ba7f4b37d0880d656b17134e745b4a"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-trigger-recorded.test.js",
+      "bytes": 940,
+      "sha256": "898c25ba453bb73a294b3b76ed524ac5a32895babb7aedcf9494d3d64cc7ba99"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-trigger-tail.test.js",
+      "bytes": 4659,
+      "sha256": "44195e075e9341de89a2eb34a9dd81d129d37f13a08ffe27366482f517504b35"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-v10-door.test.js",
+      "bytes": 4732,
+      "sha256": "3b5e799202e37cac01e2a5eca8fce812fb30c11fd8eaf5281bd929c975d819ae"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-v10-reinstate.test.js",
+      "bytes": 1998,
+      "sha256": "e2aaf63a4d5ba642acfc39133d76b4a3c360354fb4d3158b39555529bc511f4f"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-v11-verb.test.js",
+      "bytes": 3349,
+      "sha256": "89c8299c72bbc34ffad5da5f3e05d08ca51dcc7290e69439e475a34b31101f75"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-v12-cte.test.js",
+      "bytes": 1998,
+      "sha256": "ee8c49a8fdf820b90ef28f7cf9c9db939bf6891567d81d7f8d00a951ea54b786"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-v12-cursor.test.js",
+      "bytes": 3254,
+      "sha256": "59a6cc739ff775daac84cf3d801d1325266284d7d80e9732c71f6224be31312d"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-v12-fuzz.test.js",
+      "bytes": 8242,
+      "sha256": "0bd331ae9cd0f41eb935c8945618a6e84e41768f3d56de5573f201b70c8cb3b4"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-v12-inspector.test.js",
+      "bytes": 3336,
+      "sha256": "e14bd78b3285dfad6fbf9f15de7225c5f7d2c57d0989e13f1a0b522bfc2b25f4"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-v12-primary.test.js",
+      "bytes": 5753,
+      "sha256": "d2ebe78f6afe58a84b87f4b6266163cefaeb27d16eefeae8e37001b01f5b9fbe"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-v13-cursor.test.js",
+      "bytes": 9662,
+      "sha256": "0061d9255cc0e1d9894bb9504d46c3724307065a089a07940204486b26f0dfa1"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-v13-depth.test.js",
+      "bytes": 4450,
+      "sha256": "f2dda994fbf44e93256c6c001f7139d2518f961587287237470bce4e4f7b66ff"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-v13-inspector.test.js",
+      "bytes": 4835,
+      "sha256": "cbeadb2ea08b3a6e05973108a2813febc6003aaa9946e397c0d1bd5ca9b0301f"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-v13-variable.test.js",
+      "bytes": 12508,
+      "sha256": "ebb9522a08e61bbb49dd78c9065ad565c833883edc822f5606e1166c7b85557f"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-v14-depth.test.js",
+      "bytes": 3559,
+      "sha256": "70af14b96be4db9074080ddf0d687b581b1dda1d30825a05f240a331b31dcaed"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-v14-gap.test.js",
+      "bytes": 4358,
+      "sha256": "c24f88caf193f3d299bee24565d8fb4b80b468e11faa4e2f39b7fee97e30caff"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-v14-hold.test.js",
+      "bytes": 7700,
+      "sha256": "848ddca3bbe6f985a236690e5a7b1a86480e17ad3d1cba5f9c9d3c5b3b7e6219"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-v14-ident.test.js",
+      "bytes": 1099,
+      "sha256": "1a01c1a44591870b6d7c5a965654c6824b66c904edc9d120a63d8431543d49a5"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-v14-trailing.test.js",
+      "bytes": 3245,
+      "sha256": "d46b071d9950634a8d3e8067d0b716c5aa3a71f96d0da455ce3d36e54af6939b"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-v8-door.test.js",
+      "bytes": 14869,
+      "sha256": "ae520f6dc1fc80d2abfeae77853c0fd26e5a2760d7b0638667aa46b22309dc02"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-v9-door.test.js",
+      "bytes": 9272,
+      "sha256": "c77f107c3265025e37ce98642de6e221e84463693c112e2c112d3b7c3c20f42f"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-v9-sentinel.test.js",
+      "bytes": 3874,
+      "sha256": "c84867246b0756e26630e348a244db1f52eb4bfb5c25c0da4eee9938ecc5955c"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-workerd-skip.test.js",
+      "bytes": 458,
+      "sha256": "9454e36f36db7cf1c6cc3f0dda395ea7fc3973ed49239eeb39d5a3d320c7aa50"
     },
     {
       "path": "deploy/cloudflare-edge/wrangler.jsonc",
@@ -1392,8 +2302,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 268351,
-      "sha256": "ddb780e9e41b94a91360c86bd5a8b40ab6f0a7a1fd264a25b3210ad5e8b984dd"
+      "bytes": 320834,
+      "sha256": "c7913fca424f7762775eca8137e059d185a2642c9055bcc56739b57aecd5d46c"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -1524,6 +2434,46 @@
       "path": "handoff/status/Z.md",
       "bytes": 36303,
       "sha256": "5169aa6a43024019bc0b143e126cc1f91695f6743de27d5fc11a11c587b84aa5"
+    },
+    {
+      "path": "handoff/untangle-decision-log.md",
+      "bytes": 6391,
+      "sha256": "ce19a81b0d5683fe06121fe38cabe03aa635958c0236efdc281bd8d08f9e2fb0"
+    },
+    {
+      "path": "handoff/v10-decision-log.md",
+      "bytes": 7288,
+      "sha256": "9c79fc5d8ad145e376653c7f80ef2960f125fd791156076dcee8181816bdae74"
+    },
+    {
+      "path": "handoff/v11-decision-log.md",
+      "bytes": 4610,
+      "sha256": "93fecb72a8a88c56af7f60c61a600986496dc0faceb6f99b0a26df4910037484"
+    },
+    {
+      "path": "handoff/v12-decision-log.md",
+      "bytes": 12713,
+      "sha256": "75c5f451759113d12eace76b6bf3abfa1abb7b6621a1696a2378fd15541b794f"
+    },
+    {
+      "path": "handoff/v13-decision-log.md",
+      "bytes": 16426,
+      "sha256": "5585c7c1580d9b303f55b9122542847fba62c87c354b042f3cf8aa5fdc22fadc"
+    },
+    {
+      "path": "handoff/v7-decision-log.md",
+      "bytes": 5546,
+      "sha256": "00add93f11c56c115152eb52c761b3edf138036c5682d666f1f1d20dd99bd61d"
+    },
+    {
+      "path": "handoff/v8-decision-log.md",
+      "bytes": 10348,
+      "sha256": "cd6ff1cd548d32e1fd0abebb6fb132b1d135a23db1edab18c790efc13dc443e2"
+    },
+    {
+      "path": "handoff/v9-decision-log.md",
+      "bytes": 8290,
+      "sha256": "8da14772ff6bd8b1f72f4e18e45a5c34c7005b4cdb1c03f753cddba76d0c2995"
     },
     {
       "path": "handoff/verification/RESULTS.json",
@@ -1897,8 +2847,8 @@
     },
     {
       "path": "src/journey.css",
-      "bytes": 2512,
-      "sha256": "0ab49c701e234ed6e18966bad66cd664de285416d7ad9404bcacdd55d0c1a4e0"
+      "bytes": 2531,
+      "sha256": "b5b29fe54a31b503eedd941670fdef9b681aefe62382405b6e404c1ade904f83"
     },
     {
       "path": "src/office.js",
@@ -1947,8 +2897,8 @@
     },
     {
       "path": "src/sculpture.css",
-      "bytes": 16133,
-      "sha256": "12fb5844f86fc95956289a724e43efff4fe3acde0c640fa0be8b707e8f39d069"
+      "bytes": 16767,
+      "sha256": "a70d77049b3a966843f8ad86fb234ebaabb92c00287bb6398b9a7490ee5999ec"
     },
     {
       "path": "src/session-keeper.js",
@@ -2146,9 +3096,24 @@
       "sha256": "4e077db6fe5c9273b199c7c604a523fb290a1a3b0cc2bf11163f7422f6c30468"
     },
     {
+      "path": "tests/geo-gate.test.js",
+      "bytes": 2218,
+      "sha256": "4fcc297e6634480d03259e218a9987d24696e18368c45b9cc9f6fb1df365cc30"
+    },
+    {
+      "path": "tests/geo-make.test.js",
+      "bytes": 1015,
+      "sha256": "d920aeb0e5ab32fd5b659ffac27e9031ba126203a6fb010a301f4aeb20335ec7"
+    },
+    {
+      "path": "tests/geo-ne-check.js",
+      "bytes": 1125,
+      "sha256": "d96bf96fe85f0fe45e6617d91f3d43d86fb6c5842b25df32c81d6ebb9df49e9e"
+    },
+    {
       "path": "tests/geo.test.js",
-      "bytes": 19056,
-      "sha256": "a17f60a82958641f83e40e01f363960a339361c780e75a56f87f6bb078214752"
+      "bytes": 18734,
+      "sha256": "209eddae621fed8585bfc4badac1bbe329f2999187f4ea6d5f5c6537e9e084ad"
     },
     {
       "path": "tests/gesture.test.js",
@@ -2222,8 +3187,8 @@
     },
     {
       "path": "tests/orb_touch_browser.py",
-      "bytes": 2504,
-      "sha256": "1bfe26ec2b4bf7090553f25c6d08ec36f6fe70771e37174d5d7ad229c1c2aea0"
+      "bytes": 3547,
+      "sha256": "e038dceb0ce5304cfb9bf7f9b3c0316d7fe727cf5bc750b10626366ec99c873f"
     },
     {
       "path": "tests/page_harness.py",
@@ -2332,8 +3297,8 @@
     },
     {
       "path": "tests/studio-browser-results.json",
-      "bytes": 7563,
-      "sha256": "54e2fc74a9a45d29405213eb10264c621d3779526337a05146a0d3b640743277"
+      "bytes": 7774,
+      "sha256": "3e21c47919417664138fdd60b52b5af641f8dccce6ba6b3a4449d2704833f0d7"
     },
     {
       "path": "tests/studio-core.test.js",
@@ -2342,8 +3307,8 @@
     },
     {
       "path": "tests/studio_browser.py",
-      "bytes": 16745,
-      "sha256": "a5214f1137ad27e14020980383985d66814f7480f3f4c28f8dc4118514699d3d"
+      "bytes": 18603,
+      "sha256": "ff7d7856d213aa2a845065dd491747203988b44ed80c40701d625358c3147c36"
     },
     {
       "path": "tests/swarm.test.js",
