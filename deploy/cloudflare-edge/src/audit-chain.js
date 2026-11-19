@@ -3,7 +3,7 @@
 // hash = SHA-256(prev, id, action, at, commit). The public hash can be recomputed without the key.
 // The commit cannot: a relink or a reorder changes prev_hash and fails the MAC.
 // A privacy rewrite may replace actor and detail only by writing an exact tombstone
-// (actor matches ^erased:[0-9a-f]{12}$, detail is empty) plus
+// (actor is erased: plus 12 lowercase hex digits, detail is empty) plus
 // proof = HMAC(key, JSON.stringify(['tombstone', seq, commit, actor, id, action, at, prev_hash, and tenant when the column exists])).
 // It does not recompute hash or prev_hash, so a later row, including another tenant's, is never resealed.
 // verify accepts a row when the HMAC of the current actor and detail equals commit, or when
@@ -38,7 +38,7 @@
 // Whoever can rewrite the keyed rows and recompute every hash and commit is not stopped by
 // an in-table chain. The daily anchor is what notices a missing keyed prefix.
 import { timingSafe } from './timing-safe.js';
-import { charCodeAt, slice } from './primordials.js';
+import { charCodeAt, lower, slice } from './primordials.js';
 export const GENESIS = '0'.repeat(64);
 // erased: and twelve lowercase hex digits. Anything else, including a null from
 // a snapshotted method, is not a tombstone.
@@ -138,14 +138,25 @@ export const rowHash = (prev, r) => sha256Hex(JSON.stringify([prev, String(r.id 
 const sealed = new WeakSet();
 const CHAIN_START = 'chain-start';
 const qident = name => '"' + name + '"';
-const absentSchema = e => /no such (column|table)/i.test(String(e?.message || e));
+function hasText(error, needle) {
+  const text = lower(String(error?.message || error));
+  const folded = lower(needle);
+  if (typeof text !== 'string' || typeof folded !== 'string' || folded.length === 0 || text.length < folded.length) return false;
+  for (let i = 0; i <= text.length - folded.length; i++) {
+    let same = true;
+    for (let j = 0; j < folded.length; j++) if (text[i + j] !== folded[j]) { same = false; break; }
+    if (same) return true;
+  }
+  return false;
+}
+const absentSchema = e => hasText(e, 'no such column') || hasText(e, 'no such table');
 // A lock is not a missing column. Treating SQLITE_BUSY as "absent" classified a live chain as tampered.
 const hasColumn = (sql, name) => {
   try { sql.exec('SELECT ' + qident(name) + ' FROM audit LIMIT 0'); return true; }
   catch (e) { if (absentSchema(e)) return false; throw e; }
 };
-const duplicateColumn = e => /duplicate column/i.test(String(e?.message || e));
-const uniqueRow = e => /unique/i.test(String(e?.message || e));
+const duplicateColumn = e => hasText(e, 'duplicate column');
+const uniqueRow = e => hasText(e, 'unique');
 function addColumn(sql, name, ddl) {
   if (hasColumn(sql, name)) return;
   try { sql.exec(ddl); } catch (e) { if (!duplicateColumn(e) && !hasColumn(sql, name)) throw e; }
@@ -181,7 +192,7 @@ function clearAnchor(sql) {
 }
 function anchorRow(sql) {
   try { return sql.exec('SELECT n, head FROM audit_anchor WHERE id = 1').toArray()[0] || null; }
-  catch (e) { if (/no such table/i.test(String(e?.message || e))) return null; throw e; }
+  catch (e) { if (hasText(e, 'no such table')) return null; throw e; }
 }
 function keyedRows(sql) {
   return sql.exec('SELECT seq, prev_hash, hash, "commit" FROM audit ORDER BY seq').toArray();

@@ -91,11 +91,14 @@ export function replace(value, pattern, replacement) {
   }
 }
 
+// Calls the exec captured at load. RegExp.prototype.test would look exec up
+// on the live prototype, so a later patch of exec would decide the answer.
 export function test(pattern, value) {
   if (!captured) return null;
   try {
-    const out = captured.test(pattern, value);
-    return out === true || out === false ? out : null;
+    const out = captured.match(pattern, value);
+    if (out == null) return false;
+    return typeof out === 'object' ? true : null;
   } catch {
     return null;
   }
