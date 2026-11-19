@@ -1,6 +1,6 @@
 # v12 decision log
 
-Sentinel's delta on frozen `dd87761f93d3793b9aff95c9770e6279763d8b2e` is CHANGES REQUIRED. v11 is not amended. This head starts there. No new dependency. The branch is local and is not pushed. Cursor bc-1a397a61 and Inspector are still reviewing `dd87761f`. Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open.
+Sentinel's delta on frozen `dd87761f93d3793b9aff95c9770e6279763d8b2e` is CHANGES REQUIRED. v11 is not amended. This head starts there. No new dependency. The branch is local and is not pushed. Cursor bc-1a397a61 is folded into the same head below. Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open.
 
 ## Verdict
 
@@ -32,4 +32,34 @@ Each change was restored and was not committed. `test/write-v12-cte.test.js` and
 - A second parenthesis does not push a frame: the nested test fails, `true !== false`.
 - `end` removed from `VERBS`: the standalone test fails, `END` native `ERR_SQLITE_ERROR !== SQL_DOOR`.
 
-The fix is `0deaa77e2d89584eff9e58160948b52f1e1de933`. This commit is the local head. The six gates were not run. They stay ready for the freeze.
+The fix is `0deaa77e2d89584eff9e58160948b52f1e1de933`. The six gates were not run on that commit.
+
+## Cursor bc-1a397a61
+
+verified. `WITH \`x(y\` AS (SELECT 1) DELETE FROM audit`, and the same shape with `UPDATE`, `INSERT`, and `REPLACE`, in both the backtick and the `[x(y]` form, are `SQL_DOOR` on the native door and on the fallback door. The audit chain-start row stays, and its count stays 1. `EXPLAIN WITH x AS (SELECT 1) DELETE FROM audit` is a mutation on both doors. `END` and `END TRANSACTION` are verbs. `WITH x AS (SELECT 1) SELECT 1` stays a read. The v10, v11, and earlier v12 write tests stay green.
+
+These strings were already refused on `0deaa77e` because the token walk put the main verb back in statement position. The remaining gap was a second character scan in `mutatingBody`. That scan is gone. `hasStatementVerb`, `readWords`, and `mutatingBody` now use `sqlTokens`. After a WITH list closes at depth 0, the next keyword is in statement position. A parenthesis inside a quoted name is one token, so it does not change that depth.
+
+`openingVerb` is still the first word. That is the right check for `END` and `END TRANSACTION`. `WITH` is not itself a verb, so the WITH path asks the same token walk. `readWords` still uses the first word to choose a read, then the same walk. `EXPLAIN QUERY PLAN` of a write stays a description: native allows it, and the fallback door refuses it because it is not a proven read. A shut door still refuses `WITH \`x(y\` AS (SELECT 1) DELETE FROM sqlite_master` because that statement is a mutation. `splitStatements` remains its own quote-aware splitter and fails closed when it sees more than one statement.
+
+## Chain line 226, again
+
+Still no behavioral kill. The source regex stays removed. Deleting `if (start === null) return 'tampered'` does not change a verdict: `find` returns `null` when the captured search misses and `undefined` when the row is absent, and both paths fall through to `tampered`. No product change. The signed-row test still kills the signed-before line.
+
+## Cursor mutants
+
+Each change was restored and was not committed. On the fix, `test/write-v12-cursor.test.js`, `test/write-v12-cte.test.js`, `test/write-v11-verb.test.js`, and `test/write-v10-door.test.js` were green before each mutant.
+
+- Closing a parenthesis does not return to statement position: all eight CTE-name writes and the `EXPLAIN WITH` test fail, native and fallback `ALLOW !== SQL_DOOR`. A direct run of the backtick `DELETE` then takes the audit count from 1 to 0 on both doors. The four earlier CTE tests fail with them. `END TRANSACTION` and the plain `WITH ... SELECT` stay green.
+- The WITH path ignores the token walk: the eight CTE-name writes fail, native `ALLOW !== SQL_DOOR`. `EXPLAIN WITH` stays green, because that path is separate.
+- `delete` removed from `VERBS`: the two `DELETE` forms and `EXPLAIN WITH` fail. `UPDATE`, `INSERT`, and `REPLACE` stay green.
+- `update` removed from `VERBS`: only the two `UPDATE` forms fail.
+- `insert` removed from `VERBS`: only the two `INSERT` forms fail.
+- `replace` removed from `VERBS`: only the two `REPLACE` forms fail.
+- The explain branch is removed: only `EXPLAIN WITH` fails, native `ALLOW !== SQL_DOOR`.
+- `end` removed from `VERBS`: `END TRANSACTION` fails, native `ERR_SQLITE_ERROR !== SQL_DOOR`. The v11 standalone test fails on `END` as well.
+- Every WITH is a write: only `WITH x AS (SELECT 1) SELECT 1` fails, `SQL_DOOR !== ALLOW`.
+
+Both quote spellings of one verb are the same token path. Removing that verb kills both spellings. A quote-class change is not a separate kill, because the parenthesis inside the name never becomes a depth change once it is one token.
+
+The tests are `b5464eb596de267bcbc6d647047a747661be74bf`. The fix is `7bb17cb6468177f65f79809306df5c4f1c1df445`. This commit is the local head. The six gates were not run. They stay ready for the freeze.
