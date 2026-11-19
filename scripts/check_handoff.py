@@ -29,6 +29,11 @@ import subprocess
 import sys
 import tempfile
 
+RELEASE_SKIP = frozenset({
+    '.git', '__pycache__', 'node_modules', '.venv', '.pytest_cache',
+    '.wrangler', '.npm', '.claude', '.playwright-mcp',
+})
+
 
 def safe_relative(value: str) -> bool:
     p = PurePosixPath(value)
@@ -39,6 +44,7 @@ def package_files(root: Path):
     found=[]
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
         base=Path(dirpath)
+        dirnames[:] = [name for name in dirnames if name not in RELEASE_SKIP]
         for name in list(dirnames):
             path=base/name
             if path.is_symlink():
@@ -47,6 +53,25 @@ def package_files(root: Path):
         for name in filenames:
             found.append((base/name).relative_to(root).as_posix())
     return found
+
+
+def release_file_list(root: Path) -> list[str]:
+    if (root / '.git').is_dir():
+        lines = subprocess.check_output(['git', '-C', str(root), 'ls-files'], text=True).splitlines()
+        return sorted(line for line in lines if line and line != 'MANIFEST.json' and safe_relative(line))
+    return sorted(rel for rel in package_files(root) if rel != 'MANIFEST.json')
+
+
+def write_manifest(root: Path) -> int:
+    path = root / 'MANIFEST.json'
+    meta = json.loads(path.read_text(encoding='utf-8'))
+    rows = []
+    for rel in release_file_list(root):
+        data = (root / rel).read_bytes()
+        rows.append({'path': rel, 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
+    meta['files'] = rows
+    path.write_text(json.dumps(meta, indent=2) + '\n', encoding='utf-8')
+    return len(rows)
 
 
 def inspect(root: Path, *, rebuild=True) -> dict:
@@ -205,10 +230,23 @@ def open_package(path: Path):
 
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('package', help='Extracted release directory, or a .zip/.tar archive of one.')
+    p.add_argument('package', help='Extracted release directory, or a .zip/.tar archive of one.', nargs='?')
     p.add_argument('--no-rebuild', action='store_true')
     p.add_argument('--json', action='store_true')
+    p.add_argument('--write-manifest', action='store_true',
+                   help='Refresh MANIFEST.json hashes from the git index (when present).')
     args=p.parse_args(argv)
+    if args.write_manifest:
+        if not args.package:
+            p.error('PACKAGE path is required with --write-manifest')
+        root = Path(args.package)
+        if not (root / 'MANIFEST.json').is_file():
+            p.error('MANIFEST.json is missing in ' + str(root))
+        count = write_manifest(root)
+        print(f'Wrote {count} file entries to MANIFEST.json')
+        return 0
+    if not args.package:
+        p.error('PACKAGE path is required')
     try:
         with open_package(Path(args.package)) as root:
             report=inspect(root, rebuild=not args.no_rebuild)
