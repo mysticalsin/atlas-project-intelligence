@@ -28,8 +28,21 @@ function auditReady(sql) {
     return sql.exec("SELECT name FROM pragma_table_info('audit')").toArray().some(row => row.name === 'hash');
   } catch { return false; }
 }
+// A null prototype, a frozen key list, and Object.hasOwn. A polluted prototype is not a name.
+function freezeMap(source) {
+  const map = Object.create(null);
+  for (const key of Object.keys(source)) {
+    const value = source[key];
+    map[key] = Array.isArray(value) ? Object.freeze(value.slice()) : value;
+  }
+  return Object.freeze(map);
+}
+function ownValue(map, keys, name) {
+  if (typeof name !== 'string' || !Object.hasOwn(map, name)) return;
+  for (let i = 0; i < keys.length; i++) if (keys[i] === name) return map[name];
+}
 // Housekeeping runs these statements and no others. The match is the whole statement.
-const HOUSEKEEPING = {
+const HOUSEKEEPING = freezeMap({
   retention: [
     "DELETE FROM confirmation_requests WHERE expires_at < ? AND lower(COALESCE(tenant, '')) = ?",
     "DELETE FROM gap_requests WHERE status != 'open' AND created_at < ? AND lower(COALESCE(tenant, '')) = ?",
@@ -65,9 +78,10 @@ const HOUSEKEEPING = {
   'teams-seen': [
     'DELETE FROM teams_seen WHERE at < ?',
   ],
-};
+});
+const HOUSE_KEYS = Object.freeze(Object.keys(HOUSEKEEPING));
 function housekeepingAllowed(reason, sql) {
-  const list = HOUSEKEEPING[reason];
+  const list = ownValue(HOUSEKEEPING, HOUSE_KEYS, reason);
   if (!list || !sqlShape(sql)) return false;
   const shape = sqlShape(sql);
   return list.some(item => sqlShape(item) === shape);
@@ -108,7 +122,7 @@ function schemaAllowed(statement) {
   return KNOWN_INDEXES.has(index) && KNOWN_TABLES.has(table);
 }
 // Named migrations. None of these target audit or audit_anchor. Triggers are named here, not accepted as free text.
-export const MIGRATIONS = Object.freeze({
+export const MIGRATIONS = freezeMap({
   'invitations-tenant': 'ALTER TABLE invitations ADD COLUMN tenant TEXT',
   'refs-tenant': "ALTER TABLE refs ADD COLUMN tenant TEXT NOT NULL DEFAULT ''",
   'drop-refs-owner-local': 'DROP INDEX IF EXISTS refs_owner_local',
@@ -130,6 +144,7 @@ export const MIGRATIONS = Object.freeze({
   'consent-no-delete': "CREATE TRIGGER IF NOT EXISTS consent_receipts_no_delete BEFORE DELETE ON consent_receipts WHEN COALESCE((SELECT open FROM privacy_gate WHERE name = 'receipts'), 0) != 1 BEGIN SELECT RAISE(ABORT, 'consent receipts are append-only'); END",
   'consent-no-replace': "CREATE TRIGGER IF NOT EXISTS consent_receipts_no_replace BEFORE INSERT ON consent_receipts WHEN EXISTS (SELECT 1 FROM consent_receipts WHERE id = NEW.id) BEGIN SELECT RAISE(ABORT, 'consent receipts are append-only'); END",
 });
+const MIGRATION_KEYS = Object.freeze(Object.keys(MIGRATIONS));
 // The storage handle stays in this map. It is not a property of Library.
 const HANDLES = new WeakMap();
 function rawSql(lib) {
@@ -419,7 +434,7 @@ export class Library {
     return this._enter(fn, 'schema');
   }
   registered(name) {
-    const statement = MIGRATIONS[name];
+    const statement = ownValue(MIGRATIONS, MIGRATION_KEYS, name);
     if (!statement) throw Object.assign(fail(500, 'That migration is not registered.'), { code: 'SCHEMA_DML' });
     const state = doorState(this);
     const prev = state.migration;
@@ -431,7 +446,7 @@ export class Library {
   // A call already inside a door joins it. This does not start a transaction.
   housekeeping(reason, fn) {
     const name = String(reason || '').trim();
-    if (!HOUSEKEEPING[name]) throw Object.assign(fail(500, 'That housekeeping reason is not allowed.'), { code: 'HOUSEKEEPING_SQL' });
+    if (!ownValue(HOUSEKEEPING, HOUSE_KEYS, name)) throw Object.assign(fail(500, 'That housekeeping reason is not allowed.'), { code: 'HOUSEKEEPING_SQL' });
     const state = doorState(this);
     const prev = state.reason;
     state.reason = name;
