@@ -1,13 +1,13 @@
-.journey{max-width:1100px}
+.journey{max-width:1100px;width:100%;min-width:0}
 .journey-head{display:flex;justify-content:space-between;gap:24px;align-items:flex-end;margin-bottom:22px}
 .journey-head h1{font-size:clamp(32px,4vw,48px);letter-spacing:-1.6px;margin:0 0 8px}
 .persona-switch{display:flex;flex-wrap:wrap;gap:8px}
 .persona-switch a,.journey button.btn{text-decoration:none}
-.stage-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 22px;padding:0;list-style:none}
-.stage-card{border:1px solid var(--line, #2a2a36);border-radius:12px;padding:12px 14px;background:transparent;text-align:left;color:inherit;width:100%}
+.stage-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 22px;padding:0;list-style:none;min-width:0}
+.stage-card{border:1px solid var(--line, #2a2a36);border-radius:12px;padding:12px 14px;background:transparent;text-align:left;color:inherit;width:100%;min-width:0;overflow-wrap:anywhere}
 .stage-card[aria-current="step"]{border-color:var(--p)}
 .stage-card small{display:block;color:var(--g5);margin-top:6px}
-.journey-layout{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(260px,.8fr);gap:18px}
+.journey-layout{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,.8fr);gap:18px;min-width:0}
 .panel{border:1px solid var(--line, #2a2a36);border-radius:14px;padding:16px 18px}
 .panel h2{font-size:22px;margin-bottom:8px}
 .field{display:flex;flex-direction:column;gap:6px;margin:0 0 12px}
@@ -19,9 +19,10 @@
 .chart div{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:6px;height:100%}
 .chart i{display:block;width:100%;background:var(--p);border-radius:6px 6px 0 0;min-height:2px}
 .chart span{font-size:11px;color:var(--g5)}
-.metric-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.metric-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;min-width:0}
 .metric{border:1px solid var(--line, #2a2a36);border-radius:12px;padding:12px}
 .metric b{display:block;font-size:26px;letter-spacing:-.6px}
 .filters{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:12px}
 .recording-live{margin:8px 0;padding:8px 12px;border:1px solid var(--p);border-radius:999px;width:max-content}
+@media(max-width:960px){.stage-grid,.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.journey-layout{grid-template-columns:1fr}}
 @media(max-width:800px){.stage-grid,.journey-layout,.metric-grid{grid-template-columns:1fr}.journey-head{display:block}.persona-switch{margin-top:12px}}
