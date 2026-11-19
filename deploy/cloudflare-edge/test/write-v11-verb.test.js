@@ -4,7 +4,6 @@
 // transaction verbs stay refused on both paths.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { Library } from '../src/library.js';
 import { provenRead } from '../src/sql-text.js';
 import { verifyChain } from '../src/audit-chain.js';
@@ -14,7 +13,7 @@ const SALT = 'synthetic-log-salt';
 const STAMP = '2026-11-17T05:00:00.000Z';
 const QUOTED = 'SELECT "commit" FROM audit LIMIT 0';
 const ALIAS = 'SELECT 1 AS begin';
-const STANDALONE = ['ANALYZE', 'BEGIN', 'COMMIT', 'ROLLBACK', 'SAVEPOINT s', 'RELEASE s'];
+const STANDALONE = ['ANALYZE', 'BEGIN', 'COMMIT', 'ROLLBACK', 'SAVEPOINT s', 'RELEASE s', 'END'];
 
 function hide(run) {
   const orig = process.getBuiltinModule.bind(process);
@@ -72,13 +71,4 @@ test('a signed row before the chain start stays tampered', () => {
   const verdict = verifyChain(driver, SALT, '');
   assert.equal(verdict.ok, false);
   assert.equal(verdict.reason, 'TAMPERED');
-});
-
-test('classifyChain keeps the missing-start and signed-before refusals', () => {
-  const src = readFileSync(new URL('../src/audit-chain.js', import.meta.url), 'utf8');
-  const from = src.indexOf('function classifyChain');
-  const to = src.indexOf('function appendChainStart');
-  const body = src.slice(from, to);
-  assert.match(body, /if \(start === null\) return 'tampered';/);
-  assert.match(body, /if \(signedBefore !== false\) return 'tampered';/);
 });
