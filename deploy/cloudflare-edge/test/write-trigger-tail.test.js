@@ -14,8 +14,13 @@ const TAILS = [
   ['trigger named begin', "CREATE TRIGGER begin BEFORE INSERT ON refs BEGIN SELECT 1; END; DELETE FROM audit"],
   ['UPDATE OF begin', "CREATE TRIGGER t BEFORE UPDATE OF begin ON refs BEGIN SELECT 1; END; DELETE FROM audit"],
   ['WHEN begin', "CREATE TRIGGER t BEFORE INSERT ON refs WHEN begin = 1 BEGIN SELECT 1; END; DELETE FROM audit"],
+  // EXPLAIN is allowed only as the first word of one statement, so the tail is SQL_DOOR.
   ['EXPLAIN QUERY PLAN', "EXPLAIN QUERY PLAN CREATE TRIGGER t BEFORE INSERT ON refs BEGIN SELECT 1 AS begin; END; DROP TABLE audit"],
 ];
+
+function expectCode(name) {
+  return name === 'EXPLAIN QUERY PLAN' ? 'SQL_DOOR' : 'SQL_MULTI';
+}
 
 function open() {
   return new Library(memorySql(), { auditKey: SALT });
@@ -37,7 +42,7 @@ for (const [name, sql] of TAILS) {
     const after = auditLeft(lib);
     assert.equal(after.table, 1, name);
     assert.equal(after.rows, before.rows, name);
-    assert.equal(err && err.code, 'SQL_MULTI', name);
+    assert.equal(err && err.code, expectCode(name), name);
   });
 }
 
@@ -94,13 +99,13 @@ test('workerd 2026-10-23 runs a trigger-body tail until the gate rejects it', as
       let err;
       try { lib.recorded(() => lib.exec(statement)); }
       catch (error) { err = error; }
-      if (!(err && err.code === 'SQL_MULTI')) await storage.exec(statement);
+      if (!(err && err.code === expectCode(name))) await storage.exec(statement);
       const tables = await storage.exec("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'audit'");
       const left = tables[0].n;
       let rows = 0;
       if (left === 1) rows = (await storage.exec('SELECT COUNT(*) AS n FROM audit'))[0].n;
       assert.equal(left === 1 && rows === 1, true, 'workerd executed the tail: ' + name);
-      assert.equal(err && err.code, 'SQL_MULTI', name);
+      assert.equal(err && err.code, expectCode(name), name);
     }
   } finally {
     await mf.dispose();

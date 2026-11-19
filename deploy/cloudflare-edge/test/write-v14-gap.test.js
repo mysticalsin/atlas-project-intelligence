@@ -3,9 +3,11 @@
 // consumes a number and then every trailing IdChar, and line 493 marks that
 // token TK_ILLEGAL. `1$a` is one illegal token, not a `$a` parameter. CC_ID
 // at line 571 starts an identifier on a non-ASCII byte, and line 592 keeps
-// the following `$`. A comment is not a token, so the first word is still
-// EXPLAIN; the primary door may allow EXPLAIN only when the text, after
-// whitespace, starts with that word and the statement is one statement.
+// the following `$`. A comment is not a token, so the classifier's first
+// word is still EXPLAIN. That is not the bare form. The primary door allows
+// EXPLAIN only when the text, after whitespace, starts with that word and
+// the statement is one statement. `/* x */ EXPLAIN ...` does not, so both
+// doors return SQL_DOOR.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Library } from '../src/library.js';

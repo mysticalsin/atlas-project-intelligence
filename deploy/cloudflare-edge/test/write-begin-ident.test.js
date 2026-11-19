@@ -57,5 +57,6 @@ test('an identifier begin does not hide a following delete', () => {
     process.getBuiltinModule = orig;
   }
   assert.equal(left, 1);
-  assert.equal(err && err.code, 'SQL_MULTI');
+  // EXPLAIN is allowed only as the first word of one statement. The tail is SQL_DOOR.
+  assert.equal(err && err.code, 'SQL_DOOR');
 });
