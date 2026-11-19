@@ -2,7 +2,7 @@
 // including a tampered audit chain, is the same error the caller threw.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import * as outreach from '../src/outreach.js';
 import { INVITATION_REFUSAL } from '../src/invitation.js';
@@ -50,8 +50,8 @@ async function sentCard() {
 }
 
 function throwOnInvitationWrite(lib, error) {
-  const inner = lib.sql.exec.bind(lib.sql);
-  lib.sql.exec = (query, ...params) => {
+  const inner = sqlOf(lib).exec.bind(sqlOf(lib));
+  sqlOf(lib).exec = (query, ...params) => {
     if (String(query).includes('UPDATE invitations') && String(query).includes("status IN ('open', 'scheduled')")) throw error;
     return inner(query, ...params);
   };

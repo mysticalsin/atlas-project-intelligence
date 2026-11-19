@@ -1,7 +1,7 @@
 // Cursor delta on 1d17c810. These fail on that tree.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import { memorySql } from './sqlite.js';
 import { eraseMine, pseudonymiseAudit } from '../src/subject-rights.js';
@@ -27,28 +27,30 @@ function chain(n = 10) {
 test('swapping a tombstone token fails verify', () => {
   const store = chain(2);
   pseudonymiseAudit(store, ['a1@example.test'], TOKEN, { ids: ['r1'] });
-  assert.equal(verifyChain(store.sql).ok, true);
-  store.sql.exec('UPDATE audit SET actor = ? WHERE seq = 1', OTHER);
-  assert.equal(verifyChain(store.sql).ok, false);
+  assert.equal(verifyChain(sqlOf(store)).ok, true);
+  sqlOf(store).exec('UPDATE audit SET actor = ? WHERE seq = 1', OTHER);
+  assert.equal(verifyChain(sqlOf(store)).ok, false);
 });
 
 test('splicing a seq-10 tombstone proof onto seq 1 fails verify and does not anchor', () => {
   const store = chain(10);
   pseudonymiseAudit(store, ['a10@example.test'], TOKEN, { ids: ['r10'] });
-  const rows = store.sql.exec('SELECT seq, id, action, at, prev_hash, "commit", actor, tombstone FROM audit ORDER BY seq').toArray();
+  assert.equal(sqlOf(store).exec('SELECT head FROM audit_anchor').toArray().length, 1);
+  sqlOf(store).exec('DELETE FROM audit_anchor');
+  const rows = sqlOf(store).exec('SELECT seq, id, action, at, prev_hash, "commit", actor, tombstone FROM audit ORDER BY seq').toArray();
   const donor = rows[9];
   const commit = '0' + donor.commit;
   const first = rows[0];
   let prev = rowHash(first.prev_hash, { ...first, commit });
-  store.sql.exec('UPDATE audit SET actor = ?, detail = ?, "commit" = ?, hash = ?, tombstone = ? WHERE seq = 1', donor.actor, '', commit, prev, donor.tombstone);
+  sqlOf(store).exec('UPDATE audit SET actor = ?, detail = ?, "commit" = ?, hash = ?, tombstone = ? WHERE seq = 1', donor.actor, '', commit, prev, donor.tombstone);
   for (const r of rows.slice(1)) {
     const hash = rowHash(prev, r);
-    store.sql.exec('UPDATE audit SET prev_hash = ?, hash = ? WHERE seq = ?', prev, hash, r.seq);
+    sqlOf(store).exec('UPDATE audit SET prev_hash = ?, hash = ? WHERE seq = ?', prev, hash, r.seq);
     prev = hash;
   }
-  const checked = verifyDaily(store.sql);
+  const checked = verifyDaily(sqlOf(store));
   assert.equal(checked.ok, false);
-  assert.equal(store.sql.exec('SELECT head FROM audit_anchor').toArray().length, 0);
+  assert.equal(sqlOf(store).exec('SELECT head FROM audit_anchor').toArray().length, 0);
 });
 
 test('the reseal route is gone', async () => {
@@ -70,7 +72,7 @@ test('erasure tombstones library, directory and profile audit rows', () => {
   store.log('profile', EMAIL, 'profile deleted', 'this tenant only');
   store.log('other', 'kim@example.test', 'saved', 'kept');
   eraseMine(store, user, user.subj);
-  const rows = store.sql.exec('SELECT id, actor, detail FROM audit').toArray();
+  const rows = sqlOf(store).exec('SELECT id, actor, detail FROM audit').toArray();
   const text = JSON.stringify(rows);
   assert.equal(text.includes(EMAIL), false);
   assert.equal(rows.some(r => r.actor === 'kim@example.test' && r.detail === 'kept'), true);
@@ -81,11 +83,11 @@ test('erasure pseudonymises another person\'s directory manager address and keep
   profile.ensure(store);
   const user = { email: EMAIL, mail: EMAIL, role: 'user', tenant: A, tenantEnforced: true, subj: 'ab'.repeat(16) };
   for (const tenant of [A, B]) {
-    store.sql.exec('INSERT INTO directory (key, source, name, manager_email, tenant) VALUES (?, ?, ?, ?, ?)', 'kim@example.test', 'dna', 'Kim', EMAIL, tenant);
+    sqlOf(store).exec('INSERT INTO directory (key, source, name, manager_email, tenant) VALUES (?, ?, ?, ?, ?)', 'kim@example.test', 'dna', 'Kim', EMAIL, tenant);
   }
   eraseMine(store, user, user.subj);
-  const mine = store.sql.exec('SELECT key, manager_email FROM directory WHERE tenant = ?', A).toArray()[0];
-  const theirs = store.sql.exec('SELECT manager_email FROM directory WHERE tenant = ?', B).toArray()[0];
+  const mine = sqlOf(store).exec('SELECT key, manager_email FROM directory WHERE tenant = ?', A).toArray()[0];
+  const theirs = sqlOf(store).exec('SELECT manager_email FROM directory WHERE tenant = ?', B).toArray()[0];
   assert.equal(mine.key, 'kim@example.test');
   assert.equal(String(mine.manager_email).toLowerCase() === EMAIL, false);
   assert.equal(theirs.manager_email, EMAIL);
@@ -95,14 +97,14 @@ test('erasure pseudonymises a manager-only trust binding and deletes the subject
   const store = lib();
   const user = { email: EMAIL, mail: EMAIL, role: 'user', tenant: A, tenantEnforced: true, subj: 'ab'.repeat(16) };
   const stamp = '2026-11-16T00:00:00.000Z';
-  store.sql.exec('INSERT INTO manager_trust (owner, email, source, tenant, at) VALUES (?, ?, ?, ?, ?)', 'kim@example.test', EMAIL, 'directory', A, stamp);
-  store.sql.exec('INSERT INTO manager_trust (owner, email, source, tenant, at) VALUES (?, ?, ?, ?, ?)', EMAIL, 'sam@example.test', 'directory', A, stamp);
-  store.sql.exec('INSERT INTO manager_trust (owner, email, source, tenant, at) VALUES (?, ?, ?, ?, ?)', 'kim@example.test', EMAIL, 'directory', B, stamp);
+  sqlOf(store).exec('INSERT INTO manager_trust (owner, email, source, tenant, at) VALUES (?, ?, ?, ?, ?)', 'kim@example.test', EMAIL, 'directory', A, stamp);
+  sqlOf(store).exec('INSERT INTO manager_trust (owner, email, source, tenant, at) VALUES (?, ?, ?, ?, ?)', EMAIL, 'sam@example.test', 'directory', A, stamp);
+  sqlOf(store).exec('INSERT INTO manager_trust (owner, email, source, tenant, at) VALUES (?, ?, ?, ?, ?)', 'kim@example.test', EMAIL, 'directory', B, stamp);
   eraseMine(store, user, user.subj);
-  const kept = store.sql.exec('SELECT owner, email FROM manager_trust WHERE tenant = ? AND owner = ?', A, 'kim@example.test').toArray()[0];
+  const kept = sqlOf(store).exec('SELECT owner, email FROM manager_trust WHERE tenant = ? AND owner = ?', A, 'kim@example.test').toArray()[0];
   assert.ok(kept, 'the consultant binding stays');
   assert.equal(kept.owner, 'kim@example.test');
   assert.equal(String(kept.email).toLowerCase() === EMAIL, false);
-  assert.equal(store.sql.exec('SELECT owner FROM manager_trust WHERE tenant = ? AND owner = ?', A, EMAIL).toArray().length, 0);
-  assert.equal(store.sql.exec('SELECT email FROM manager_trust WHERE tenant = ?', B).toArray()[0].email, EMAIL);
+  assert.equal(sqlOf(store).exec('SELECT owner FROM manager_trust WHERE tenant = ? AND owner = ?', A, EMAIL).toArray().length, 0);
+  assert.equal(sqlOf(store).exec('SELECT email FROM manager_trust WHERE tenant = ?', B).toArray()[0].email, EMAIL);
 });

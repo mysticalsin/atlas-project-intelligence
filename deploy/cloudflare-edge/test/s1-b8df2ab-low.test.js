@@ -1,7 +1,7 @@
 // Cursor review of b8df2ab. These fail on that tree.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { memorySql } from './sqlite.js';
 import { appendAudit, rewriteRows, rowHash, verifyChain, verifyDaily } from '../src/audit-chain.js';
 
@@ -87,7 +87,7 @@ test('null hashes and a dropped commit column mark every library audit line unve
   sql.exec('DROP INDEX IF EXISTS audit_one_chain_start');
   sql.exec('ALTER TABLE audit DROP COLUMN "commit"');
   const lib = new Library(sql, { now: () => STAMP });
-  lib.sql.exec('INSERT INTO refs (id, owner, title, status, revision, data, state, tenant, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  sqlOf(lib).exec('INSERT INTO refs (id, owner, title, status, revision, data, state, tenant, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     'story', EMAIL, 'Story', 'draft', 1, DATA, STATE, A, STAMP, STAMP);
   const view = lib.get({ email: EMAIL, role: 'admin', tenant: A }, 'story');
   assert.equal(view.audit.length > 0, true);
@@ -102,11 +102,11 @@ test('an old non-partial chain-start index is replaced and does not block the si
   sql.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', 'story', EMAIL, 'saved', STAMP, 'note');
   sql.exec("CREATE UNIQUE INDEX audit_one_chain_start ON audit(action) WHERE action = 'chain-start'");
   const lib = new Library(sql, { now: () => STAMP });
-  const daily = verifyDaily(lib.sql, lib.auditKey);
+  const daily = verifyDaily(sqlOf(lib), lib.auditKey);
   assert.equal(daily.reason, 'CHAIN_VERIFIED');
-  const idx = lib.sql.exec("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'audit_one_chain_start'").toArray()[0].sql;
+  const idx = sqlOf(lib).exec("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'audit_one_chain_start'").toArray()[0].sql;
   assert.match(idx, /"commit" IS NOT NULL/);
-  const starts = lib.sql.exec('SELECT "commit" FROM audit WHERE action = ?', 'chain-start').toArray();
+  const starts = sqlOf(lib).exec('SELECT "commit" FROM audit WHERE action = ?', 'chain-start').toArray();
   assert.equal(starts.filter(r => r.commit).length, 1);
   assert.equal(starts.some(r => r.commit == null), true);
 });

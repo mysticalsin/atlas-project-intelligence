@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { teamsStatus, teamsClient, verifyBotActivity, interviewCard, messageCard, resetBotKeyCache, OPENID_URL, BOT_ISSUER } from '../src/teams.js';
 import { teamsRoutes, tabPolicy, eventOf } from '../src/teams-routes.js';
 import { inlineScriptHashes } from '../src/csp.js';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import { memorySql } from './sqlite.js';
 
@@ -267,7 +267,7 @@ test('teamsRoutes invoke: the card action is answered in the HTTP 200 invoke res
   const { env, lib } = stack();
   await post(env, activity({ type: 'installationUpdate', action: 'add', id: 'inst-1' }));
   const inv = lib.invite('pm-system', { email: 'alex@mantu.com', reason: 'project_end', projectId: 'PRJ-9', slot: '2026-10-01T09:30' });
-  lib.sql.exec(`INSERT INTO outreach (id, kind, subject_id, channel, to_email, status, reason, payload, aad_object_id, created_at, directory_tenant, conversation_id) VALUES ('o1', 'interview_invite', ?, 'teams', 'alex@mantu.com', 'sent', '', '{"preview":{"title":"PRJ-9"}}', ?, 'x', ?, 'a:conv-alex')`, inv.id, OID, TID);
+  sqlOf(lib).exec(`INSERT INTO outreach (id, kind, subject_id, channel, to_email, status, reason, payload, aad_object_id, created_at, directory_tenant, conversation_id) VALUES ('o1', 'interview_invite', ?, 'teams', 'alex@mantu.com', 'sent', '', '{"preview":{"title":"PRJ-9"}}', ?, 'x', ?, 'a:conv-alex')`, inv.id, OID, TID);
   const invoke = (id, extra = {}) => activity({ type: 'invoke', name: 'adaptiveCard/action', id, text: undefined, value: { action: { type: 'Action.Execute', verb: 'snooze', data: { outreachId: 'o1' } } }, ...extra });
   const other = await post(env, invoke('i1', { from: { id: '29:kim', aadObjectId: 'aaaaaaaa-bbbb-cccc-dddd-ffffffffffff' } }));
   const ob = await other.json();

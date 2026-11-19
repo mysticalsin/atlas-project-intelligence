@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as bids from '../src/bids.js';
 import { pseudonymise } from '../src/scrub.js';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { memorySql } from './sqlite.js';
 
 const OWNER = { email: 'alex@mantu.com', role: 'user' }, ADMIN = { email: 'tony@mantu.com', role: 'admin' }, REV = { email: 'rev@mantu.com', role: 'reviewer' }, OTHER = { email: 'kim@mantu.com', role: 'user' };
@@ -16,7 +16,7 @@ async function setup(sql = memorySql()) {
   // A bid as step 2 will store it: raw title/prospects/brief, placeholder-form alias and requirements, the map.
   const alias = pseudonymise(l, 'Zebracorp-style rollout', { prospects: ['Acme Prospect'] });
   const req = pseudonymise(l, 'Proof of claims routing for Acme Prospect, like Zebracorp', { prospects: ['Acme Prospect'], map: alias.map });
-  l.sql.exec(`INSERT INTO bids (id, owner, owner_mail, title, alias, prospects, brief, pseudo, requirements, customer, req_method, status, outcome, created_at, updated_at)
+  sqlOf(l).exec(`INSERT INTO bids (id, owner, owner_mail, title, alias, prospects, brief, pseudo, requirements, customer, req_method, status, outcome, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 'b1', OWNER.email, OWNER.email, 'Acme Prospect claims bid', alias.text, JSON.stringify(['Acme Prospect']),
     'Brief text', JSON.stringify(req.map), JSON.stringify([{ id: 'R1', text: req.text, kind: 'capability', must: true }]), '{}', 'manual', 'open', 'pending', 'now', 'now');
   return { l, sql, alias, req };
@@ -36,8 +36,8 @@ test('ensure: new tables only, idempotent on a second Library over the same SQL'
   bids.ensure(l); bids.ensure(l);
   const again = new Library(sql, {}); bids.ensure(again);
   assert.equal(again.rows('SELECT COUNT(*) AS n FROM bids')[0].n, 1);
-  again.sql.exec('INSERT INTO bid_references (bid_id, ref_id, revision, proof_type, used_at, used_by) VALUES (?, ?, ?, ?, ?, ?)', 'b1', 'r', 1, 'qualitative+unconfirmed', 'now', OWNER.email);
-  assert.throws(() => again.sql.exec('INSERT INTO bid_references (bid_id, ref_id) VALUES (?, ?)', 'b1', 'r'), /UNIQUE|constraint/i, 'one row per bid and reference');
+  sqlOf(again).exec('INSERT INTO bid_references (bid_id, ref_id, revision, proof_type, used_at, used_by) VALUES (?, ?, ?, ?, ?, ?)', 'b1', 'r', 1, 'qualitative+unconfirmed', 'now', OWNER.email);
+  assert.throws(() => sqlOf(again).exec('INSERT INTO bid_references (bid_id, ref_id) VALUES (?, ?)', 'b1', 'r'), /UNIQUE|constraint/i, 'one row per bid and reference');
   assert.ok(again.rows("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'bids_owner'").length);
 });
 
@@ -72,7 +72,7 @@ test('bidView: the author sees their own words; everyone else uniform labels and
       why: ['[company] and another client did this', '[company]'] });
   }
   assert.equal(bids.bidView(l, OWNER, 'missing').view, 'other');
-  l.sql.exec('UPDATE bids SET title = NULL, brief = NULL, prospects = NULL, pseudo = NULL, purged_at = ? WHERE id = ?', 'now', 'b1');
+  sqlOf(l).exec('UPDATE bids SET title = NULL, brief = NULL, prospects = NULL, pseudo = NULL, purged_at = ? WHERE id = ?', 'now', 'b1');
   const purged = bids.bidView(l, OWNER, 'b1');
   assert.equal(purged.view, 'other'); assert.equal(purged(alias.text), '[company]-style rollout', 'after a purge the owner renders like the other view');
   assert.throws(() => bids.getRequirement(l, OWNER, 'b1', 'R1'), e => e.status === 409, 'no new gap request on a deleted bid (review #17)');
@@ -198,7 +198,7 @@ test('rate limits: 30 bid creations per user per day, 60 match runs per user per
 test('verdicts: empty_library without any model call, none, unranked (garbage or hallucinated ids), strong and partial', async () => {
   const empty = world(), eb = (await call(empty.l, OWNER, 'POST', 'bids', NEW_BID)).body;
   await publish(empty.l, LEE, { ...ref('Draft only', 'Insurance', 'Draftco', CLAIMS) }, { index: false });
-  empty.l.sql.exec("UPDATE refs SET status = 'in_review'"); empty.seen.complete.length = 0; empty.seen.embed.length = 0;
+  sqlOf(empty.l).exec("UPDATE refs SET status = 'in_review'"); empty.seen.complete.length = 0; empty.seen.embed.length = 0;
   const e = (await call(empty.l, OWNER, 'POST', `bids/${eb.id}/match`)).body;
   assert.deepEqual([e.verdict, e.method, e.results, e.note], ['empty_library', 'none', [], 'No published references are available to you yet.']);
   assert.deepEqual([empty.seen.complete.length, empty.seen.embed.length], [0, 0], 'no model call of any kind');
@@ -308,7 +308,7 @@ test('F1.9 #3 record masking: another library client named inside a record never
 
 test('F1.9 #5, #6 one-pager: footnotes by first use with the exact masked snippet text; invented figures dropped; client only with includeClient and full access', async () => {
   const w = await library(), { l } = w;
-  l.sql.exec('UPDATE refs SET data = json_set(data, \'$.report\', json(?)) WHERE id = ?', JSON.stringify({ headline: 'Model draft headline', summary: 'Report summary text that is a model draft.', topics: {} }), w.z);
+  sqlOf(l).exec('UPDATE refs SET data = json_set(data, \'$.report\', json(?)) WHERE id = ?', JSON.stringify({ headline: 'Model draft headline', summary: 'Report summary text that is a model draft.', topics: {} }), w.z);
   const bid = (await call(l, OWNER, 'POST', 'bids', NEW_BID)).body;
   assert.deepEqual(await call(l, OWNER, 'POST', `bids/${bid.id}/onepager`, { refIds: [] }), { status: 400, body: { error: 'Choose one to three references.' } });
   assert.equal((await call(l, OWNER, 'POST', `bids/${bid.id}/onepager`, { refIds: ['a', 'b', 'c', 'd'] })).status, 400);
@@ -425,8 +425,8 @@ test('one-pager: a footnote\'s confirmation comes from claims.confirmationStatus
   const w = await library(), { l } = w, bid = (await call(l, OWNER, 'POST', 'bids', NEW_BID)).body;
   claims.ensure(l);
   const sentence = splitSentences(l.row(w.z).data.answers[3])[0];
-  l.sql.exec("INSERT INTO claims (id, ref_id, revision, topic, idx, text, sentence_hash, status, by_mail, at, confirmed_revision, created_by, created_at) VALUES ('c1', ?, 1, 3, 0, ?, 'h1', 'manager_confirmed', 'sam@mantu.com', 'now', 1, 'lee@mantu.com', 'now')", w.z, sentence);
-  l.sql.exec("INSERT INTO claims (id, ref_id, revision, topic, idx, text, sentence_hash, status, by_mail, at, confirmed_revision, created_by, created_at) VALUES ('c2', ?, 1, 0, 0, 'A sentence that is no longer in the answer.', 'h2', 'manager_confirmed', 'sam@mantu.com', 'now', 1, 'lee@mantu.com', 'now')", w.z);
+  sqlOf(l).exec("INSERT INTO claims (id, ref_id, revision, topic, idx, text, sentence_hash, status, by_mail, at, confirmed_revision, created_by, created_at) VALUES ('c1', ?, 1, 3, 0, ?, 'h1', 'manager_confirmed', 'sam@mantu.com', 'now', 1, 'lee@mantu.com', 'now')", w.z, sentence);
+  sqlOf(l).exec("INSERT INTO claims (id, ref_id, revision, topic, idx, text, sentence_hash, status, by_mail, at, confirmed_revision, created_by, created_at) VALUES ('c2', ?, 1, 0, 0, 'A sentence that is no longer in the answer.', 'h2', 'manager_confirmed', 'sam@mantu.com', 'now', 1, 'lee@mantu.com', 'now')", w.z);
   const p = (await call(l, OWNER, 'POST', `bids/${bid.id}/onepager`, { refIds: [w.z] })).body;
   assert.deepEqual(p.footnotes.map(f => [f.topic, f.confirmation]), [['context', 'unverified'], ['contribution', 'unverified'], ['approach', 'unverified'], ['outcome', claims.READY ? 'manager_confirmed' : 'unverified']]);
   const matched = (await call(l, OWNER, 'POST', `bids/${bid.id}/match`)).body.results.find(x => x.id === w.z);
@@ -549,7 +549,7 @@ test('review #21 JEV: an empty customer field is named and JEV is not called; "J
   const fields = { problem: 'A regional insurer has slow claims triage.', buyer: '', constraints: 'Within twelve months.', desired_outcome: 'Faster payouts.' };
   const w = await library({ jev: async () => { throw new Error('JEV must not be called'); } }), { l, seen } = w, env = { TYPESAFE_API_KEY: 'k' };
   const bid = (await call(l, OWNER, 'POST', 'bids', NEW_BID)).body;
-  l.sql.exec('UPDATE bids SET customer = ? WHERE id = ?', JSON.stringify(fields), bid.id);
+  sqlOf(l).exec('UPDATE bids SET customer = ? WHERE id = ?', JSON.stringify(fields), bid.id);
   const out = (await call(l, OWNER, 'POST', `bids/${bid.id}/match`, { useJev: true, jevConsent: true }, env)).body;
   assert.equal(out.method, 'semantic + model ranking (JEV not asked: no buyer was taken from the brief; ranked by Workers AI)');
   assert.equal(seen.fetch.length, 0);

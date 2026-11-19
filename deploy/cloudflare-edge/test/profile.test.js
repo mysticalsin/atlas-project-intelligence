@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import * as profile from '../src/profile.js';
 import * as rating from '../src/rating.js';
 import { featureRoutes, readyGate } from '../src/features.js';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import { projectContext, talkerMessages } from '../src/session.js';
 import * as bids from '../src/bids.js';
@@ -127,7 +127,7 @@ test('edits, clear and delete: delete removes edits and consents and leaves dire
   const owner = { ...ALEX, tenant: T, tenantEnforced: true };
   const admin = { ...ADMIN, tenant: T, tenantEnforced: true };
   await importRows(l, [{ email: ALEX.email, name: 'Alex Martin', title: 'Data engineer' }], { user: admin });
-  l.sql.exec("INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES (?, '', ?, '{}', '{}', '{}', ?, ?, ?)", ALEX.email, ALEX.email, NOW, NOW, NOW);
+  sqlOf(l).exec("INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES (?, '', ?, '{}', '{}', '{}', ?, ?, ?)", ALEX.email, ALEX.email, NOW, NOW, NOW);
   await call(l, owner, 'POST', 'profile', { set: { title: 'Principal', preferredName: 'Al', managerName: 'Mia Chef' } });
   await call(l, owner, 'POST', 'profile/consent', { kind: 'spokenAsk', version: 1, granted: true });
   let p = (await call(l, owner, 'POST', 'profile', { clear: ['managerName'], set: { preferredName: '' } })).body;
@@ -498,7 +498,7 @@ test('ownerKeys finds a padded and uppercase subject in a padded tenant', () => 
   const tenant = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
   const { l } = world();
   profile.ensure(l);
-  l.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+  sqlOf(l).exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
     VALUES ('Ada@Example.test', ?, 'alias@example.test', '{}', '{}', '{}', ?, ?, ?)`, '\t' + tenant.toUpperCase() + ' ', NOW, NOW, NOW);
   const keys = l.ownerKeys({ owner: ' ada@example.test ', tenant, state: {} });
   assert.ok(keys.includes('alias@example.test'), JSON.stringify(keys));
@@ -509,7 +509,7 @@ test('an unenforced scan leaves an old blank-tenant profile in place', () => {
   const { l } = world();
   profile.ensure(l);
   const old = '2020-01-01T00:00:00.000Z';
-  l.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+  sqlOf(l).exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
     VALUES ('bea@example.test', '', 'bea@example.test', '{}', '{}', '{}', ?, ?, ?)`, old, old, old);
   assert.equal(profile.daily(l, '2026-11-08T00:00:00.000Z', { email: 'atlas-cron', role: 'system' }).profilesPurged || 0, 0);
   assert.equal(l.rows("SELECT subject FROM profiles WHERE tenant = ''").length, 1);
@@ -520,9 +520,9 @@ test('a verified daily purge matches a padded uppercase tenant', () => {
   const { l } = world();
   profile.ensure(l);
   const old = '2020-01-01T00:00:00.000Z';
-  l.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+  sqlOf(l).exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
     VALUES ('Ada@Example.test', ?, 'ada@example.test', '{}', '{}', '{}', ?, ?, ?)`, '\t' + tenant.toUpperCase() + ' ', old, old, old);
-  l.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+  sqlOf(l).exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
     VALUES ('other@example.test', '22222222-2222-4222-8222-222222222222', 'other@example.test', '{}', '{}', '{}', ?, ?, ?)`, old, old, old);
   assert.equal(profile.daily(l, '2026-11-08T00:00:00.000Z', { email: 'atlas-cron', role: 'system', tenant, tenantEnforced: true }).profilesPurged, 1);
   assert.deepEqual(l.rows('SELECT subject FROM profiles').map(row => row.subject), ['other@example.test']);
@@ -537,16 +537,16 @@ test('a verified purge of more than 100 stale profiles still deletes every one a
   const now = '2026-11-08T00:00:00.000Z';
   const stored = '\t' + tenant.toUpperCase() + ' ';
   for (let i = 0; i < 101; i++) {
-    l.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+    sqlOf(l).exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
       VALUES (?, ?, ?, '{}', '{}', '{}', ?, ?, ?)`, `stale-${i}@example.test`, stored, `stale-${i}@example.test`, old, old, old);
   }
-  l.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+  sqlOf(l).exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
     VALUES ('fresh@example.test', ?, 'fresh@example.test', '{}', '{}', '{}', ?, ?, ?)`, stored, now, now, now);
-  l.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+  sqlOf(l).exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
     VALUES ('other@example.test', ?, 'other@example.test', '{}', '{}', '{}', ?, ?, ?)`, other, old, old, old);
-  l.sql.exec(`INSERT INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at, tenant)
+  sqlOf(l).exec(`INSERT INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at, tenant)
     VALUES ('ada@example.test', 'dna', 'Ada', '', '', '', '', 'pull', ?, ?)`, old, tenant);
-  l.sql.exec(`INSERT INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at, tenant)
+  sqlOf(l).exec(`INSERT INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at, tenant)
     VALUES ('ada@example.test', 'dna_export', 'Kept', '', '', '', '', 'push', ?, ?)`, old, tenant);
   const result = profile.daily(l, now, { email: 'atlas-cron', role: 'system', tenant, tenantEnforced: true });
   assert.equal(result.profilesPurged, 101);
@@ -558,12 +558,12 @@ test('a verified purge of more than 100 stale profiles still deletes every one a
 test('storedConsent and jevAllowed do not read a blank-tenant row when no tenant is given', () => {
   const { l } = world();
   profile.ensure(l);
-  l.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+  sqlOf(l).exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
     VALUES ('ada@example.test', '', 'ada@example.test', '{}', '{}', '{"jevRating":{"version":1}}', ?, ?, ?)`, NOW, NOW, NOW);
   assert.equal(profile.storedConsent(l, 'ada@example.test', 'jevRating'), false);
   const rated = new Library(memorySql(), { rater: { available: () => true, blocked: () => false } });
   profile.ensure(rated);
-  rated.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+  sqlOf(rated).exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
     VALUES ('ada@example.test', '', 'ada@example.test', '{}', '{}', '{"jevRating":{"version":1}}', ?, ?, ?)`, NOW, NOW, NOW);
   assert.equal(rated.jevAllowed({ owner: 'ada@example.test', data: { answers: ['I did the work.'] }, state: {} }), false);
 });
@@ -572,9 +572,9 @@ test('storedNames reads the verified tenant and does not default to a blank-tena
   const { l } = world();
   const tenant = '11111111-1111-4111-8111-111111111111';
   profile.ensure(l);
-  l.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+  sqlOf(l).exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
     VALUES ('ada@example.test', '', 'ada@example.test', '{}', '{"name":"Legacy Name"}', '{}', ?, ?, ?)`, NOW, NOW, NOW);
-  l.sql.exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+  sqlOf(l).exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
     VALUES ('Ada@Example.test', ?, 'Ada@Example.test', '{}', '{"name":"Tenant Name"}', '{}', ?, ?, ?)`, tenant, NOW, NOW, NOW);
   assert.deepEqual(profile.storedNames(l, 'ada@example.test'), []);
   assert.deepEqual(profile.storedNames(l, 'ada@example.test', tenant), ['Tenant Name']);
@@ -591,7 +591,7 @@ test('storedNames: the stored edit and sign-in names only, never DNA; [] without
   assert.deepEqual(profile.storedNames(l, ALEX.email, ''), ['Alexandre Martin'], 'the sign-in name');
   await call(l, signedIn, 'POST', 'profile', { set: { name: 'Alex Martin-Roux' } });
   assert.deepEqual(profile.storedNames(l, ALEX.email, '').sort(), ['Alex Martin-Roux', 'Alexandre Martin']);
-  l.sql.exec("INSERT INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at) VALUES (?, 'dna', 'Dna Only Name', '', '', '', '', 'pull', ?)", ALEX.email, NOW);
+  sqlOf(l).exec("INSERT INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at) VALUES (?, 'dna', 'Dna Only Name', '', '', '', '', 'pull', ?)", ALEX.email, NOW);
   assert.ok(!profile.storedNames(l, ALEX.email, '').includes('Dna Only Name'), 'directory rows are not the person\'s stored names');
   assert.deepEqual(profile.storedNames(l, BEA.email, ''), []);
 });

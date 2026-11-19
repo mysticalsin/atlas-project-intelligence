@@ -20,10 +20,12 @@ export async function personaKey(user = {}) {
 }
 
 export function ensureTelemetry(lib) {
-  lib.sql.exec(`CREATE TABLE IF NOT EXISTS telemetry (
+  lib.schema(() => {
+  lib.exec(`CREATE TABLE IF NOT EXISTS telemetry (
     id TEXT PRIMARY KEY, at TEXT, tenant TEXT, persona TEXT, kind TEXT, feature TEXT, outcome TEXT,
     latency_ms INTEGER, tokens_in INTEGER, tokens_out INTEGER, token_status TEXT, model TEXT, error_class TEXT)`);
-  lib.sql.exec('CREATE INDEX IF NOT EXISTS telemetry_at ON telemetry(at)');
+  lib.exec('CREATE INDEX IF NOT EXISTS telemetry_at ON telemetry(at)');
+  });
 }
 
 function num(v) {
@@ -35,11 +37,14 @@ export async function recordUsage(lib, user, event = {}) {
   const tokenStatus = TOKEN.has(event.tokenStatus) ? event.tokenStatus : (event.tokensIn == null && event.tokensOut == null ? 'missing' : 'unknown');
   const tokensIn = tokenStatus === 'actual' || tokenStatus === 'estimated' ? num(event.tokensIn) : null;
   const tokensOut = tokenStatus === 'actual' || tokenStatus === 'estimated' ? num(event.tokensOut) : null;
-  lib.sql.exec(`INSERT INTO telemetry (id, at, tenant, persona, kind, feature, outcome, latency_ms, tokens_in, tokens_out, token_status, model, error_class)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    lib.newId(), event.at || lib.now(), str(user.tenant, 80), await personaKey(user),
-    KINDS.has(event.kind) ? event.kind : 'usage', str(event.feature, 40) || 'app', str(event.outcome, 40) || 'ok',
-    num(event.latencyMs), tokensIn, tokensOut, tokenStatus, str(event.model, 80), str(event.errorClass, 60));
+  const persona = await personaKey(user);
+  lib.housekeeping('telemetry', () => {
+    lib.exec(`INSERT INTO telemetry (id, at, tenant, persona, kind, feature, outcome, latency_ms, tokens_in, tokens_out, token_status, model, error_class)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      lib.newId(), event.at || lib.now(), str(user.tenant, 80), persona,
+      KINDS.has(event.kind) ? event.kind : 'usage', str(event.feature, 40) || 'app', str(event.outcome, 40) || 'ok',
+      num(event.latencyMs), tokensIn, tokensOut, tokenStatus, str(event.model, 80), str(event.errorClass, 60));
+  });
 }
 
 function rates(env = {}) {
@@ -161,6 +166,6 @@ export function purgeTelemetry(lib, days = 180, user = {}) {
   const n = Math.min(3650, Math.max(7, Number(days) || 180));
   const cut = new Date(Date.parse(lib.now()) - n * DAY).toISOString();
   const before = lib.rows("SELECT COUNT(*) AS n FROM telemetry WHERE at < ? AND lower(COALESCE(tenant, '')) = ?", cut, tenant)[0]?.n || 0;
-  if (before) lib.sql.exec("DELETE FROM telemetry WHERE at < ? AND lower(COALESCE(tenant, '')) = ?", cut, tenant);
+  if (before) lib.housekeeping('telemetry-purge', () => lib.exec("DELETE FROM telemetry WHERE at < ? AND lower(COALESCE(tenant, '')) = ?", cut, tenant));
   return { purged: before, retainDays: n, tenant };
 }

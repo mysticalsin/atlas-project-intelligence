@@ -9,7 +9,7 @@ import * as outreach from '../src/outreach.js';
 import * as features from '../src/features.js';
 import * as profile from '../src/profile.js';
 import { pseudonymise } from '../src/scrub.js';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import { FIELDS } from '../src/policy.generated.js';
 import { memorySql } from './sqlite.js';
@@ -33,7 +33,7 @@ async function setup(sql = memorySql()) {
   const lib = new Library(sql, { now: () => clock });
   const saved = await lib.upsert(ALEX, { localId: 'z', reference: { title: 'Claims triage', client: { name: 'Zebracorp', contact: 'Jane Doe' },
     consultant: { name: 'Alex Martin', role: 'Lead' }, details: { projectId: 'OPP-42', consultants: [{ name: 'Sam Lee', email: 'sam@mantu.com', role: 'Analyst' }, { name: 'Noa Nomail', role: 'Dev' }] } } });
-  lib.sql.exec("UPDATE refs SET status = 'published' WHERE id = ?", saved.id); // readable by everyone at the public level
+  sqlOf(lib).exec("UPDATE refs SET status = 'published' WHERE id = ?", saved.id); // readable by everyone at the public level
   bids.ensure(lib);
   let map = {};
   const pz = t => { const p = pseudonymise(lib, t, { prospects: ['Acme Prospect'], map }); map = p.map; return p.text; };
@@ -41,7 +41,7 @@ async function setup(sql = memorySql()) {
   const reqs = [['R1', 'Claims routing for Acme Prospect, like Zebracorp', 'capability'], ['R2', 'Measured cycle-time cut', 'outcome'], ['R3', 'ISO 27001 audit report', 'credential'],
     ['R4', 'Workflow redesign', 'capability'], ['R5', 'Automation', 'capability'], ['R6', 'Insurance claims', 'sector'], ['R7', 'On-premise only', 'constraint'],
     ['R8', 'A second audit', 'credential'], ['R9', 'Odd', 'mystery']].map(([id, text, kind]) => ({ id, text: pz(text), kind, must: true }));
-  lib.sql.exec(`INSERT INTO bids (id, owner, owner_mail, title, alias, prospects, brief, pseudo, requirements, customer, req_method, status, outcome, created_at, updated_at)
+  sqlOf(lib).exec(`INSERT INTO bids (id, owner, owner_mail, title, alias, prospects, brief, pseudo, requirements, customer, req_method, status, outcome, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 'b1', OWNER.email, OWNER.email, 'Acme Prospect claims bid', alias, JSON.stringify(['Acme Prospect']),
     'Brief text', JSON.stringify(map), JSON.stringify(reqs), '{}', 'manual', 'open', 'pending', clock, clock);
   return { lib, sql, ref: saved.id };
@@ -91,7 +91,7 @@ test('{refId, person}: 0 is the reference owner, n a listed consultant; a missin
   for (const assignee of [{ email: 'not-an-email' }, {}, null, { refId: 'missing', person: 0 }]) assert.ok([400, 404].includes((await ask(lib, ['R1'], assignee)).status));
   const typed = await ask(lib, ['R1'], { email: ' Kim@Mantu.com ' });
   assert.equal(typed.body.assigneeEmail, 'kim@mantu.com'); assert.equal(typed.body.draft.to, 'kim@mantu.com'); assert.ok(!('assigneeName' in typed.body));
-  lib.sql.exec("UPDATE refs SET status = 'in_review' WHERE id = ?", ref);
+  sqlOf(lib).exec("UPDATE refs SET status = 'in_review' WHERE id = ?", ref);
   assert.deepEqual((await ask(lib, ['R1'], { refId: ref, person: 0 })).body, { error: 'Reference not found.' }, 'at least public access to the reference');
   assert.equal((await call(lib, 'POST', 'gaps', OWNER, { bidId: 'b1', requirementIds: ['R1'], assignee: { email: 'kim@mantu.com' }, referenceId: ref })).status, 404);
 });
@@ -100,9 +100,9 @@ test('{refId, person}: 0 is the reference owner, n a listed consultant; a missin
 test('Z assignee name: a blank name is filled from stored directory rows only; never from anyone\'s profile edits, never a typed name overwritten', async () => {
   const { lib, ref } = await setup(), at = '2026-09-01T00:00:00.000Z';
   profile.ensure(lib);
-  const dir = (key, source, name) => lib.sql.exec('INSERT OR REPLACE INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  const dir = (key, source, name) => sqlOf(lib).exec('INSERT OR REPLACE INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     key, source, name, '', 'Data lead', 'Boss', 'boss@mantu.com', 'b1', at);
-  lib.sql.exec('INSERT INTO profiles (subject, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', 'lee@mantu.com', 'lee@mantu.com',
+  sqlOf(lib).exec('INSERT INTO profiles (subject, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', 'lee@mantu.com', 'lee@mantu.com',
     JSON.stringify({ name: { value: 'Lee From Profile', at, basis: '' } }), '{}', '{}', at, at, at);
   const lee = await ask(lib, ['R1'], { email: 'lee@mantu.com' });
   assert.equal(lee.status, 201); assert.ok(!('assigneeName' in lee.body), 'a profile edit is never read for someone else');
@@ -345,7 +345,7 @@ test('no self-assignment: neither the requester nor the bid owner can be the ass
   }
   assert.deepEqual(count(), before, 'a refused request stores nothing and logs nothing');
   const g = (await ask(lib, ['R1'], { email: 'kim@mantu.com' })).body;
-  lib.sql.exec('UPDATE gap_requests SET email = ? WHERE id = ?', OWNER.mail, g.id); // stored before this rule existed
+  sqlOf(lib).exec('UPDATE gap_requests SET email = ? WHERE id = ?', OWNER.mail, g.id); // stored before this rule existed
   assert.equal((await call(lib, 'GET', `gaps/${g.id}/interview`, OWNER)).status, 404);
   assert.equal(await gaps.resolveForInterview(fakeEnv(lib, []), { user: OWNER.email, role: 'user', mail: OWNER.mail }, g.id), null);
   assert.equal((await call(lib, 'GET', 'gaps/' + g.id, OWNER)).body.asks[0].ask, 'Proof the bid needs: Claims routing for Acme Prospect, like Zebracorp', 'the owner keeps the author view');

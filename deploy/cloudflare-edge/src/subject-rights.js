@@ -7,7 +7,6 @@
 // erasure_holds for the DPO, withdrawn from processing, and the person is told. Consent receipts stay (the record that a choice was made). Platform backups (Durable
 // Object point-in-time recovery) can outlast deletion for a period the notice states as to-verify.
 import { cleanReference } from './library.js';
-import { rewriteRows } from './audit-chain.js';
 import * as privacy from './privacy.js';
 import { subjectHash } from './privacy.js';
 import { str, obj, fail } from './util.js';
@@ -67,7 +66,7 @@ function eraseStaffingManager(lib, user, { tenant, token }) {
   for (const alias of aliases) {
     const where = whereSubject('tenant', `lower(manager_email) = ? AND lower(consultant_email) NOT IN (${marks})`);
     const c = lib.rows(`SELECT COUNT(*) AS n FROM staffing WHERE ${where}`, tenant, alias, ...aliases)[0].n;
-    if (c) lib.sql.exec(`UPDATE staffing SET manager_email = ? WHERE ${where}`, token, tenant, alias, ...aliases);
+    if (c) lib.exec(`UPDATE staffing SET manager_email = ? WHERE ${where}`, token, tenant, alias, ...aliases);
     n += c;
   }
   return n;
@@ -108,7 +107,7 @@ function scrubManagerEmails(lib, tenant, addresses, token) {
     const value = field && typeof field === 'object' ? field.value : field;
     if (!addresses.includes(String(value || '').toLowerCase())) continue;
     edits.managerEmail = field && typeof field === 'object' ? { ...field, value: token } : token;
-    lib.sql.exec('UPDATE profiles SET edits = ? WHERE subject = ? AND ' + TENANT_SQL, JSON.stringify(edits), row.subject, tenant);
+    lib.exec('UPDATE profiles SET edits = ? WHERE subject = ? AND ' + TENANT_SQL, JSON.stringify(edits), row.subject, tenant);
     n++;
   }
   return n;
@@ -118,7 +117,7 @@ function scrubImportAuthors(lib, tenant, addresses, token) {
   let n = 0;
   for (const email of addresses) {
     const count = lib.rows('SELECT COUNT(*) AS n FROM directory_imports WHERE ' + TENANT_SQL + ' AND lower(by) = ?', tenant, email)[0].n;
-    if (count) { lib.sql.exec('UPDATE directory_imports SET by = ? WHERE ' + TENANT_SQL + ' AND lower(by) = ?', token, tenant, email); n += count; }
+    if (count) { lib.exec('UPDATE directory_imports SET by = ? WHERE ' + TENANT_SQL + ' AND lower(by) = ?', token, tenant, email); n += count; }
   }
   return n;
 }
@@ -130,7 +129,7 @@ function scrubOutreachPayloads(lib, tenant, addresses, token) {
     let next = String(row.payload ?? '');
     for (const email of addresses) next = replaceAddress(next, email, token);
     if (next === String(row.payload ?? '')) continue;
-    lib.sql.exec('UPDATE outreach SET payload = ? WHERE id = ?', next, row.id);
+    lib.exec('UPDATE outreach SET payload = ? WHERE id = ?', next, row.id);
     n++;
   }
   return n;
@@ -141,13 +140,16 @@ export const tombstoneRef = at => ({ ...cleanReference({ title: '[erased]' }), e
 // Replaces a reference's content (and every revision, claim and duplicate pair) with a tombstone. The row stays so ids and joins keep working; it is excluded everywhere
 // (merged_into = 'erased'), and its owner becomes an erasure token.
 export function eraseRefContent(lib, id, token, at) {
-  lib.sql.exec(`UPDATE refs SET title = '[erased]', status = 'withdrawn', owner = ?, local_id = NULL, content_hash = '', practice = '', industry = '', country = '', manager_email = '', members = ',',
-    quality_score = NULL, updated_by = ?, data = ?, state = ?, embedding = NULL, merged_into = 'erased', updated_at = ? WHERE id = ?`,
-  token, token, JSON.stringify(tombstoneRef(at)), JSON.stringify({ erased: true, erasedAt: at, withdrawn: true, quality: null, validation: { status: 'pending' } }), at, id);
-  lib.sql.exec('DELETE FROM revisions WHERE id = ?', id);
-  if (tableExists(lib, 'duplicate_pairs')) lib.sql.exec('DELETE FROM duplicate_pairs WHERE a = ? OR b = ?', id, id);
-  if (tableExists(lib, 'claims')) lib.sql.exec('DELETE FROM claims WHERE ref_id = ?', id);
-  if (tableExists(lib, 'confirmation_requests')) lib.sql.exec('DELETE FROM confirmation_requests WHERE ref_id = ?', id);
+  lib.recorded(() => {
+    lib.exec(`UPDATE refs SET title = '[erased]', status = 'withdrawn', owner = ?, local_id = NULL, content_hash = '', practice = '', industry = '', country = '', manager_email = '', members = ',',
+      quality_score = NULL, updated_by = ?, data = ?, state = ?, embedding = NULL, merged_into = 'erased', updated_at = ? WHERE id = ?`,
+    token, token, JSON.stringify(tombstoneRef(at)), JSON.stringify({ erased: true, erasedAt: at, withdrawn: true, quality: null, validation: { status: 'pending' } }), at, id);
+    lib.exec('DELETE FROM revisions WHERE id = ?', id);
+    if (tableExists(lib, 'duplicate_pairs')) lib.exec('DELETE FROM duplicate_pairs WHERE a = ? OR b = ?', id, id);
+    if (tableExists(lib, 'claims')) lib.exec('DELETE FROM claims WHERE ref_id = ?', id);
+    if (tableExists(lib, 'confirmation_requests')) lib.exec('DELETE FROM confirmation_requests WHERE ref_id = ?', id);
+    lib.log(id, 'privacy', 'story erased', '1 reference');
+  });
 }
 // Audit rows about a person (actor, or named in the detail text) become a tombstone: actor is the token, detail is empty.
 // A keyed row keeps its hash and stores the proof. A legacy row is overwritten in place and stays unverified.
@@ -160,14 +162,16 @@ export function pseudonymiseAudit(lib, emails, token, { ids = null } = {}) {
   const list = (Array.isArray(emails) ? emails : [emails]).map(e => String(e || '').toLowerCase()).filter(Boolean);
   if (!list.length) return { changed: 0, head: null };
   const allow = ids == null ? null : new Set(ids);
-  return rewriteRows(lib.sql, r => {
+  const seqs = lib.rows('SELECT seq, id, actor, detail FROM audit').filter(r => {
     const id = String(r.id || '');
     const actorHit = list.includes(String(r.actor || '').toLowerCase());
     const detailHit = list.some(e => mentions(r.detail, e));
-    if (!actorHit && !detailHit) return null;
-    if (allow && !allow.has(id) && !PRIVACY_LOG.has(id)) return null;
-    return { actor: token, detail: '' };
-  }, lib.auditKey, lib.dbId);
+    if (!actorHit && !detailHit) return false;
+    if (allow && !allow.has(id) && !PRIVACY_LOG.has(id)) return false;
+    return true;
+  }).map(r => Number(r.seq));
+  if (!seqs.length) return { changed: 0, head: null };
+  return lib.rewriteAudit(token, seqs);
 }
 
 const inBids = (lib, refId) => tableExists(lib, 'bid_references') && lib.rows('SELECT 1 AS x FROM bid_references WHERE ref_id = ? LIMIT 1', refId).length > 0;
@@ -224,7 +228,7 @@ function eraseWithin(lib, user, subj, tenant, { now = lib.now() } = {}) {
   const bump = (k, n = 1) => { if (n) counts[k] = (counts[k] || 0) + n; };
   const has = n => tableExists(lib, n);
   const hold = (kind, entity, reason) => {
-    lib.sql.exec('INSERT INTO erasure_holds (id, kind, entity, subject_hash, reason, at, status, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', lib.newId(), kind, entity, subjectHash(subj), reason, now, 'pending_dpo', tenant);
+    lib.exec('INSERT INTO erasure_holds (id, kind, entity, subject_hash, reason, at, status, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', lib.newId(), kind, entity, subjectHash(subj), reason, now, 'pending_dpo', tenant);
     pending.push({ kind, entity, reason });
   };
   // X1 (red M5): a reference that was EVER shared (validated or published, cited in a bid, used or put into a one-pager) is held for the DPO even if its owner withdrew it first.
@@ -234,8 +238,8 @@ function eraseWithin(lib, user, subj, tenant, { now = lib.now() } = {}) {
   for (const r of lib.rows("SELECT id, status, state FROM refs WHERE owner = ? AND " + TENANT_SQL + " AND (merged_into IS NULL OR merged_into != 'erased')", email, tenant)) {
     const s = parse(r.state, {}), reason = s.draft ? '' : heldReason(r, s);
     if (reason) {
-      lib.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...s, withdrawn: true, erasure_pending_review: { reason, at: now } }), r.id);
-      lib.sql.exec("UPDATE refs SET status = 'withdrawn' WHERE id = ?", r.id);
+      lib.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...s, withdrawn: true, erasure_pending_review: { reason, at: now } }), r.id);
+      lib.exec("UPDATE refs SET status = 'withdrawn' WHERE id = ?", r.id);
       hold('reference', r.id, reason); bump('referencesPendingReview'); touched.push(r.id);
     } else { eraseRefContent(lib, r.id, token, now); bump('referencesErased'); touched.push(r.id); }
   }
@@ -252,14 +256,14 @@ function eraseWithin(lib, user, subj, tenant, { now = lib.now() } = {}) {
     };
     const st = parse(r.state, {}); if (st.validation?.by === email) st.validation.by = token;
     const rest = String(r.members).split(',').filter(m => m && m !== email).join(',');
-    lib.sql.exec('UPDATE refs SET data = ?, state = ?, members = ?, manager_email = ?, updated_by = ? WHERE id = ?', scrub(r.data), JSON.stringify(st), rest ? ',' + rest + ',' : ',',
+    lib.exec('UPDATE refs SET data = ?, state = ?, members = ?, manager_email = ?, updated_by = ? WHERE id = ?', scrub(r.data), JSON.stringify(st), rest ? ',' + rest + ',' : ',',
       r.manager_email === email ? '' : r.manager_email, r.updated_by === email ? token : r.updated_by, r.id);
-    for (const v of lib.rows('SELECT revision, data FROM revisions WHERE id = ?', r.id)) lib.sql.exec('UPDATE revisions SET data = ? WHERE id = ? AND revision = ?', scrub(v.data), r.id, v.revision);
+    for (const v of lib.rows('SELECT revision, data FROM revisions WHERE id = ?', r.id)) lib.exec('UPDATE revisions SET data = ? WHERE id = ? AND revision = ?', scrub(v.data), r.id, v.revision);
     touched.push(r.id);
     bump(listed ? 'listingsRemoved' : 'otherRecordsScrubbed');
   }
   { const n = lib.rows('SELECT COUNT(*) AS n FROM revisions WHERE author = ? AND id IN (SELECT id FROM refs WHERE owner != ? AND ' + TENANT_SQL + ')', email, email, tenant)[0].n;
-    if (n) { lib.sql.exec('UPDATE revisions SET author = ? WHERE author = ? AND id IN (SELECT id FROM refs WHERE owner != ? AND ' + TENANT_SQL + ')', token, email, email, tenant); bump('revisionAuthors', n); } }
+    if (n) { lib.exec('UPDATE revisions SET author = ? WHERE author = ? AND id IN (SELECT id FROM refs WHERE owner != ? AND ' + TENANT_SQL + ')', token, email, email, tenant); bump('revisionAuthors', n); } }
   // evidence_records, approvals, jobs and job_events are not created by this slice. They are not rewritten here.
   // Each statement rewrites one subject column, and the tenant test wraps that condition.
   for (const spec of SUBJECT_TABLES) {
@@ -273,48 +277,48 @@ function eraseWithin(lib, user, subj, tenant, { now = lib.now() } = {}) {
     for (const alias of aliases) {
       const where = whereSubject(spec.tenant, `lower(${spec.column}) = ?`);
       const n = lib.rows(`SELECT COUNT(*) AS n FROM ${spec.table} WHERE ${where}`, tenant, alias)[0].n;
-      if (n) { lib.sql.exec(`DELETE FROM ${spec.table} WHERE ${where}`, tenant, alias); bump(spec.key, n); }
+      if (n) { lib.exec(`DELETE FROM ${spec.table} WHERE ${where}`, tenant, alias); bump(spec.key, n); }
     }
   }
   if (ready(lib, 'gap_requests', ['email', 'tenant'])) {
     const where = whereSubject('tenant', 'lower(email) = ?');
     const n = lib.rows(`SELECT COUNT(*) AS n FROM gap_requests WHERE ${where}`, tenant, email)[0].n;
-    if (n) { lib.sql.exec(`UPDATE gap_requests SET email = ?, assignee_name = '', results = NULL, pseudo = NULL WHERE ${where}`, token, tenant, email); bump('proofRequests', n); }
+    if (n) { lib.exec(`UPDATE gap_requests SET email = ?, assignee_name = '', results = NULL, pseudo = NULL WHERE ${where}`, token, tenant, email); bump('proofRequests', n); }
   }
   if (ready(lib, 'gap_requests', ['created_by', 'tenant', 'created_by_mail'])) {
     const where = whereSubject('tenant', 'lower(created_by) = ?');
-    lib.sql.exec(`UPDATE gap_requests SET created_by = ?, created_by_mail = '' WHERE ${where}`, token, tenant, email);
+    lib.exec(`UPDATE gap_requests SET created_by = ?, created_by_mail = '' WHERE ${where}`, token, tenant, email);
   }
   if (ready(lib, 'confirmation_requests', ['to_email', 'tenant'])) {
     const where = whereSubject('tenant', 'lower(to_email) = ?');
-    lib.sql.exec(`UPDATE confirmation_requests SET to_email = ? WHERE ${where}`, token, tenant, email);
+    lib.exec(`UPDATE confirmation_requests SET to_email = ? WHERE ${where}`, token, tenant, email);
   }
   if (ready(lib, 'confirmation_requests', ['created_by', 'tenant'])) {
     const mail = ready(lib, 'confirmation_requests', ['created_by_mail']) ? ", created_by_mail = ''" : '';
     const where = whereSubject('tenant', 'lower(created_by) = ?');
-    lib.sql.exec(`UPDATE confirmation_requests SET created_by = ?${mail} WHERE ${where}`, token, tenant, email);
+    lib.exec(`UPDATE confirmation_requests SET created_by = ?${mail} WHERE ${where}`, token, tenant, email);
   }
   if (has('claims')) {
-    lib.sql.exec('UPDATE claims SET by_mail = ? WHERE by_mail = ? AND ref_id IN (SELECT id FROM refs WHERE ' + TENANT_SQL + ')', token, email, tenant);
-    lib.sql.exec('UPDATE claims SET created_by = ? WHERE created_by = ? AND ref_id IN (SELECT id FROM refs WHERE ' + TENANT_SQL + ')', token, email, tenant);
+    lib.exec('UPDATE claims SET by_mail = ? WHERE by_mail = ? AND ref_id IN (SELECT id FROM refs WHERE ' + TENANT_SQL + ')', token, email, tenant);
+    lib.exec('UPDATE claims SET created_by = ? WHERE created_by = ? AND ref_id IN (SELECT id FROM refs WHERE ' + TENANT_SQL + ')', token, email, tenant);
   }
   if (hasTenantColumn(lib, 'bids')) for (const b of lib.rows('SELECT id FROM bids WHERE ' + whereSubject('tenant', 'lower(owner) = ?'), tenant, email)) { hold('bid', b.id, 'bid_record'); bump('bidsPendingReview'); }
   if (ready(lib, 'bids', ['id', 'tenant']) && ready(lib, 'bid_references', ['bid_id', 'used_by'])) {
-    lib.sql.exec('UPDATE bid_references SET used_by = ? WHERE lower(used_by) = ? AND bid_id IN (SELECT id FROM bids WHERE lower(COALESCE(tenant, \'\')) = ?)', token, email, tenant);
+    lib.exec('UPDATE bid_references SET used_by = ? WHERE lower(used_by) = ? AND bid_id IN (SELECT id FROM bids WHERE lower(COALESCE(tenant, \'\')) = ?)', token, email, tenant);
   }
   // 5. the profile and the flags (the receipts stay), then the audit trail.
   // Another person's row stays. Only the address copied onto it, in this tenant, is replaced.
   bump('profileManagerEmail', scrubManagerEmails(lib, tenant, addresses, token));
   bump('directoryImports', scrubImportAuthors(lib, tenant, addresses, token));
   bump('outreachPayloads', scrubOutreachPayloads(lib, tenant, addresses, token));
-  if (hasTenantColumn(lib, 'profiles')) { const prof = lib.rows('SELECT COUNT(*) AS n FROM profiles WHERE subject = ? AND ' + TENANT_SQL, email, tenant)[0].n; if (prof) { lib.sql.exec('DELETE FROM profiles WHERE subject = ? AND ' + TENANT_SQL, email, tenant); bump('profile'); } }
+  if (hasTenantColumn(lib, 'profiles')) { const prof = lib.rows('SELECT COUNT(*) AS n FROM profiles WHERE subject = ? AND ' + TENANT_SQL, email, tenant)[0].n; if (prof) { lib.exec('DELETE FROM profiles WHERE subject = ? AND ' + TENANT_SQL, email, tenant); bump('profile'); } }
   // privacy_flags is keyed by email and has no tenant. Leaving it keeps another tenant's restriction from being cleared or set by this erasure.
   lib.log('privacy', 'atlas', 'erasure completed', 'subject ' + subjectHash(subj).slice(0, 8)); // a pseudonym of a pseudonym, never an email; written before the rewrite so the head it returns is final
   const sameTenantRefs = has('refs') ? lib.rows('SELECT id FROM refs WHERE ' + TENANT_SQL, tenant).map(r => r.id) : [];
   const audit = pseudonymiseAudit(lib, addresses, token, { ids: [...new Set([...touched, ...sameTenantRefs])] });
   if (audit.refused) hold('audit', 'chain', 'audit_chain_unverified'); // X1 (red M8): a chain that does not verify is not re-sealed; the DPO is told the audit part is pending
   else bump('auditRows', audit.changed);
-  lib.sql.exec('INSERT INTO erasure_log (id, subject_hash, at, counts) VALUES (?, ?, ?, ?)', lib.newId(), subjectHash(subj), now, JSON.stringify(counts));
+  lib.exec('INSERT INTO erasure_log (id, subject_hash, at, counts) VALUES (?, ?, ?, ?)', lib.newId(), subjectHash(subj), now, JSON.stringify(counts));
   return { erased: true, at: now, counts, pendingReview: pending, auditHead: audit.refused ? null : audit.head, auditPreviousHead: audit.refused ? null : audit.previousHead,
     ...(audit.refused ? { auditRefused: { reason: audit.reason, brokenSeq: audit.brokenSeq } } : {}),
     note: (pending.length ? 'Approved or published material, and bids, are kept for the DPO to review before deletion (legal-hold exception); they are withdrawn from processing.' + (audit.refused ? ' Your name could not be removed from the audit trail yet: it failed its integrity check and the DPO has been asked to look at it first.' : '') : '') + ' Rows in other tenants were not changed. This is not a certification of GDPR compliance.',
@@ -341,7 +345,7 @@ export function holdRoutes(ctx) {
     const status = b.action === 'erase' ? 'erased' : 'retained';
     lib.recorded(() => {
       if (b.action === 'erase' && h.kind === 'reference') eraseRefContent(lib, h.entity, randomToken(), now);
-      lib.sql.exec(`UPDATE erasure_holds SET status = ?, resolved_at = ?, resolved_by = ?, note = ? WHERE id = ? AND ${mine}`, status, now, user.email, note, h.id, tenant);
+      lib.exec(`UPDATE erasure_holds SET status = ?, resolved_at = ?, resolved_by = ?, note = ? WHERE id = ? AND ${mine}`, status, now, user.email, note, h.id, tenant);
       lib.log('privacy', user.email, 'erasure hold ' + status, h.kind + ' ' + h.entity);
     });
     return { body: { id: h.id, status } };

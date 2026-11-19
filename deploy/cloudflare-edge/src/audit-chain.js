@@ -3,7 +3,7 @@
 // hash = SHA-256(prev, id, action, at, commit). The public hash can be recomputed without the key.
 // The commit cannot: a relink or a reorder changes prev_hash and fails the MAC.
 // A privacy rewrite may replace actor and detail only by writing an exact tombstone
-// (actor matches ^erased:[0-9a-f]{12}$, detail is empty) plus
+// (actor is erased: plus 12 lowercase hex digits, detail is empty) plus
 // proof = HMAC(key, JSON.stringify(['tombstone', seq, commit, actor, id, action, at, prev_hash, and tenant when the column exists])).
 // It does not recompute hash or prev_hash, so a later row, including another tenant's, is never resealed.
 // verify accepts a row when the HMAC of the current actor and detail equals commit, or when
@@ -38,8 +38,21 @@
 // Whoever can rewrite the keyed rows and recompute every hash and commit is not stopped by
 // an in-table chain. The daily anchor is what notices a missing keyed prefix.
 import { timingSafe } from './timing-safe.js';
+import { charCodeAt, find, lower, slice, some } from './primordials.js';
 export const GENESIS = '0'.repeat(64);
-const TOMBSTONE_ACTOR = /^erased:[0-9a-f]{12}$/;
+// erased: and twelve lowercase hex digits. Anything else, including a null from
+// a snapshotted method, is not a tombstone.
+export function isTombstoneActor(actor) {
+  if (typeof actor !== 'string' || actor.length !== 19) return false;
+  const prefix = slice(actor, 0, 7);
+  if (prefix !== 'erased:') return false;
+  for (let i = 7; i < 19; i++) {
+    const n = charCodeAt(actor, i);
+    if (typeof n !== 'number') return false;
+    if (!((n >= 48 && n <= 57) || (n >= 97 && n <= 102))) return false;
+  }
+  return true;
+}
 
 const K = new Uint32Array([0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
   0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
@@ -125,14 +138,32 @@ export const rowHash = (prev, r) => sha256Hex(JSON.stringify([prev, String(r.id 
 const sealed = new WeakSet();
 const CHAIN_START = 'chain-start';
 const qident = name => '"' + name + '"';
-const absentSchema = e => /no such (column|table)/i.test(String(e?.message || e));
+function hasText(error, needle) {
+  const text = lower(String(error?.message || error));
+  const folded = lower(needle);
+  if (typeof text !== 'string' || typeof folded !== 'string' || folded.length === 0 || text.length < folded.length) return false;
+  for (let i = 0; i <= text.length - folded.length; i++) {
+    let same = true;
+    for (let j = 0; j < folded.length; j++) if (text[i + j] !== folded[j]) { same = false; break; }
+    if (same) return true;
+  }
+  return false;
+}
+function textHas(text, needle) {
+  if (typeof text !== 'string' || typeof needle !== 'string' || needle.length === 0 || text.length < needle.length) return false;
+  for (let i = 0; i + needle.length <= text.length; i++) {
+    if (slice(text, i, i + needle.length) === needle) return true;
+  }
+  return false;
+}
+const absentSchema = e => hasText(e, 'no such column') || hasText(e, 'no such table');
 // A lock is not a missing column. Treating SQLITE_BUSY as "absent" classified a live chain as tampered.
 const hasColumn = (sql, name) => {
   try { sql.exec('SELECT ' + qident(name) + ' FROM audit LIMIT 0'); return true; }
   catch (e) { if (absentSchema(e)) return false; throw e; }
 };
-const duplicateColumn = e => /duplicate column/i.test(String(e?.message || e));
-const uniqueRow = e => /unique/i.test(String(e?.message || e));
+const duplicateColumn = e => hasText(e, 'duplicate column');
+const uniqueRow = e => hasText(e, 'unique');
 function addColumn(sql, name, ddl) {
   if (hasColumn(sql, name)) return;
   try { sql.exec(ddl); } catch (e) { if (!duplicateColumn(e) && !hasColumn(sql, name)) throw e; }
@@ -153,7 +184,12 @@ function tamperedResult(sql) {
 }
 function chainStartSeqs(sql) {
   if (!hasColumn(sql, 'commit')) return [];
-  try { return sql.exec('SELECT seq FROM audit WHERE action = ? AND "commit" IS NOT NULL ORDER BY seq', CHAIN_START).toArray().map(r => Number(r.seq)); }
+  try {
+    const rows = sql.exec('SELECT seq FROM audit WHERE action = ? AND "commit" IS NOT NULL ORDER BY seq', CHAIN_START).toArray();
+    const seqs = [];
+    for (let i = 0; i < rows.length; i++) seqs[i] = Number(rows[i].seq);
+    return seqs;
+  }
   catch (e) { if (absentSchema(e)) return []; throw e; }
 }
 const ANCHOR = 'CREATE TABLE IF NOT EXISTS audit_anchor (id INTEGER PRIMARY KEY CHECK (id = 1), n INTEGER NOT NULL, head TEXT NOT NULL)';
@@ -168,7 +204,7 @@ function clearAnchor(sql) {
 }
 function anchorRow(sql) {
   try { return sql.exec('SELECT n, head FROM audit_anchor WHERE id = 1').toArray()[0] || null; }
-  catch (e) { if (/no such table/i.test(String(e?.message || e))) return null; throw e; }
+  catch (e) { if (hasText(e, 'no such table')) return null; throw e; }
 }
 function keyedRows(sql) {
   return sql.exec('SELECT seq, prev_hash, hash, "commit" FROM audit ORDER BY seq').toArray();
@@ -186,9 +222,11 @@ function classifyChain(sql) {
   const starts = chainStartSeqs(sql);
   if (starts.length !== 1) return 'tampered';
   const rows = keyedRows(sql);
-  const start = rows.find(r => Number(r.seq) === starts[0]);
-  const signedBefore = rows.some(r => Number(r.seq) < starts[0] && r.commit);
-  if (start && !signedBefore && sameText(start.prev_hash, GENESIS)) return 'open';
+  const start = find(rows, (r) => Number(r.seq) === starts[0]);
+  if (start === null) return 'tampered';
+  const signedBefore = some(rows, (r) => Number(r.seq) < starts[0] && r.commit);
+  if (signedBefore !== false) return 'tampered';
+  if (start && sameText(start.prev_hash, GENESIS)) return 'open';
   return 'tampered';
 }
 // One keyed row naming the legacy prefix. A null commit is not this row.
@@ -219,7 +257,7 @@ function indexChainStart(sql) {
   try { current = sql.exec("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'audit_one_chain_start'").toArray()[0]?.sql || ''; }
   catch { current = ''; }
   // IF NOT EXISTS would keep an older index that treats an unsigned chain-start as the one start.
-  if (current && !current.includes('"commit" IS NOT NULL')) {
+  if (current && !textHas(current, '"commit" IS NOT NULL')) {
     try { sql.exec('DROP INDEX IF EXISTS audit_one_chain_start'); }
     catch { /* a racer is dropping it */ }
   }
@@ -254,7 +292,8 @@ export function ensureChain(sql, key = '', transactionSync = null, dbId = '') {
     indexChainStart(sql);
     if (key != null && !chainStartSeqs(sql).length) {
       const rows = sql.exec('SELECT hash, prev_hash, "commit" FROM audit').toArray();
-      if (!rows.some(r => r.hash || r.prev_hash || r.commit)) appendChainStart(sql, key, dbId);
+      const marked = some(rows, (r) => r.hash || r.prev_hash || r.commit);
+      if (marked === false) appendChainStart(sql, key, dbId);
     }
   });
   sealed.add(sql);
@@ -284,7 +323,7 @@ const ROW = 'seq, id, actor, action, at, detail, prev_hash, hash, "commit", tomb
 function bound(key, r, withTenant, dbId) {
   const commit = String(r.commit ?? '');
   if (sameText(contentCommit(key, r, withTenant, dbId), commit)) return true;
-  return TOMBSTONE_ACTOR.test(String(r.actor || '')) && String(r.detail ?? '') === '' && !!r.tombstone && sameText(r.tombstone, tombstoneProof(key, r, withTenant));
+  return isTombstoneActor(String(r.actor || '')) === true && String(r.detail ?? '') === '' && !!r.tombstone && sameText(r.tombstone, tombstoneProof(key, r, withTenant));
 }
 function finish(ok, fields, legacyUnverified) {
   return legacyUnverified ? { ...fields, ok, legacyUnverified } : { ...fields, ok };
@@ -324,7 +363,7 @@ export function verifyChain(sql, key = '', dbId = '') {
       } else if (!sameText(r.prev_hash, prevHash)) return bad('LINK_BROKEN');
       if (!sameText(rowHash(r.prev_hash, r), r.hash)) return bad('HASH_MISMATCH');
       if (!bound(key, r, withTenant, dbId)) return bad('COMMIT_MISMATCH');
-      verifiedSeqs.push(Number(r.seq));
+      verifiedSeqs[checked] = Number(r.seq);
       prevHash = head = r.hash; after = r.seq; checked++;
     }
   }
@@ -347,7 +386,7 @@ export function rewriteRows(sql, edit, key = '', dbId = '') {
     if (!patch) continue;
     const actor = String(patch.actor ?? r.actor ?? ''), detail = String(patch.detail ?? r.detail ?? '');
     if (actor === String(r.actor ?? '') && detail === String(r.detail ?? '')) continue;
-    if (!TOMBSTONE_ACTOR.test(actor) || detail !== '') continue;
+    if (isTombstoneActor(actor) !== true || detail !== '') continue;
     if (startSeq != null && Number(r.seq) < startSeq) {
       sql.exec('UPDATE audit SET actor = ?, detail = ? WHERE seq = ?', actor, '', r.seq);
       changed++;
@@ -392,4 +431,14 @@ export function verifyDaily(sql, key = '', dbId = '') {
   if (!result.ok) return { ...result, legacyUnverified };
   sql.exec('INSERT INTO audit_anchor (id, n, head) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET n = excluded.n, head = excluded.head', result.checked, result.head);
   return { ok: true, checked: result.checked, head: result.head, reason: 'CHAIN_VERIFIED', legacyUnverified };
+}
+
+// The anchor moves in the same transaction as a successful audit append. A tail delete then fails
+// the next verdict. A receipt-only write on an already damaged chain does not call this.
+export function checkpointHead(sql, key, dbId = '') {
+  const result = anchoredVerdict(sql, verifyChain(sql, key, dbId));
+  if (!result.ok) return result;
+  sql.exec(ANCHOR);
+  sql.exec('INSERT INTO audit_anchor (id, n, head) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET n = excluded.n, head = excluded.head', result.checked, result.head);
+  return result;
 }

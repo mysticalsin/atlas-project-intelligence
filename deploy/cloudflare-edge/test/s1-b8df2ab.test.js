@@ -1,7 +1,7 @@
 // Review of b8df2ab. The three tamper shapes fail on that tree.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { memorySql } from './sqlite.js';
 import { appendAudit, verifyDaily } from '../src/audit-chain.js';
 import { eraseMine } from '../src/subject-rights.js';
@@ -46,21 +46,21 @@ test('deleting the signed chain-start is tampered and does not re-seed or clear 
   sql.exec(MAIN);
   sql.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', 'story', EMAIL, 'saved', STAMP, 'legacy');
   const lib = new Library(sql, { now: () => STAMP });
-  appendAudit(lib.sql, { id: 'story', actor: EMAIL, action: 'saved', at: STAMP, detail: 'after the start' });
-  const seeded = verifyDaily(lib.sql, lib.auditKey);
+  appendAudit(sqlOf(lib), { id: 'story', actor: EMAIL, action: 'saved', at: STAMP, detail: 'after the start' });
+  const seeded = verifyDaily(sqlOf(lib), lib.auditKey);
   assert.equal(seeded.reason, 'CHAIN_VERIFIED');
-  assert.equal(starts(lib.sql), 1);
-  const anchor = anchorOf(lib.sql);
-  const kept = lib.sql.exec('SELECT seq, "commit" FROM audit WHERE action = ? AND "commit" IS NOT NULL', 'saved').toArray()[0];
-  lib.sql.exec("DELETE FROM audit WHERE action = 'chain-start'");
-  const daily = verifyDaily(fresh(lib.sql), lib.auditKey);
+  assert.equal(starts(sqlOf(lib)), 1);
+  const anchor = anchorOf(sqlOf(lib));
+  const kept = sqlOf(lib).exec('SELECT seq, "commit" FROM audit WHERE action = ? AND "commit" IS NOT NULL', 'saved').toArray()[0];
+  sqlOf(lib).exec("DELETE FROM audit WHERE action = 'chain-start'");
+  const daily = verifyDaily(fresh(sqlOf(lib)), lib.auditKey);
   assert.equal(daily.ok, false);
   assert.equal(daily.reason, 'TAMPERED');
-  const still = anchorOf(lib.sql);
+  const still = anchorOf(sqlOf(lib));
   assert.equal(Number(still.n), Number(anchor.n));
   assert.equal(still.head, anchor.head);
-  assert.equal(starts(lib.sql), 0);
-  assert.equal(lib.sql.exec('SELECT "commit" FROM audit WHERE seq = ?', kept.seq).toArray()[0].commit, kept.commit);
+  assert.equal(starts(sqlOf(lib)), 0);
+  assert.equal(sqlOf(lib).exec('SELECT "commit" FROM audit WHERE seq = ?', kept.seq).toArray()[0].commit, kept.commit);
 });
 
 test('a chain of only unsigned rows is tampered and does not re-seed or clear the anchor', () => {
@@ -104,16 +104,16 @@ test('a main-shaped database migrates and erasure tombstones the legacy row', ()
   sql.exec(MAIN);
   sql.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', 'story', EMAIL, 'saved', STAMP, 'note ' + EMAIL);
   const lib = new Library(sql, { now: () => STAMP });
-  const daily = verifyDaily(lib.sql, lib.auditKey);
+  const daily = verifyDaily(sqlOf(lib), lib.auditKey);
   assert.equal(daily.reason, 'CHAIN_VERIFIED');
   assert.equal(daily.legacyUnverified, 1);
-  assert.equal(starts(lib.sql), 1);
-  lib.sql.exec('INSERT INTO refs (id, owner, title, status, revision, data, state, tenant, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  assert.equal(starts(sqlOf(lib)), 1);
+  sqlOf(lib).exec('INSERT INTO refs (id, owner, title, status, revision, data, state, tenant, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     'story', EMAIL, 'Story', 'draft', 1, '{}', '{}', A, STAMP, STAMP);
   const out = eraseMine(lib, { email: EMAIL, mail: EMAIL, role: 'user', tenant: A, tenantEnforced: true, subj: 'ab'.repeat(16) }, 'ab'.repeat(16));
   assert.equal(out.auditRefused, undefined);
-  const legacy = lib.sql.exec("SELECT actor, detail FROM audit WHERE action != 'chain-start' AND id = 'story'").toArray()[0];
+  const legacy = sqlOf(lib).exec("SELECT actor, detail FROM audit WHERE action != 'chain-start' AND id = 'story'").toArray()[0];
   assert.match(legacy.actor, /^erased:[0-9a-f]{12}$/);
   assert.equal(legacy.detail, '');
-  assert.equal(verifyDaily(lib.sql, lib.auditKey).ok, true);
+  assert.equal(verifyDaily(sqlOf(lib), lib.auditKey).ok, true);
 });

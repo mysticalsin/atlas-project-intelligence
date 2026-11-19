@@ -3,7 +3,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PUBLICATION_EVENTS, PUBLICATION_PHASES, PUBLICATION_VERSION, approvalUnknown, bothApproved, canPublish, changesRequested, initialPublication, isAdminBypass, isAdminTest, isWithdrawn, knownDecision, knownValidation, loadPublication, mergedAway, publicationEffect, publicationPairs, publicationStatus, publicationTransition, qualityMissing, qualityReady, readPublication, validatedFlag } from '../src/publication.js';
-import { Library, acceptPublication, deriveStatus } from '../src/library.js';
+import { acceptPublication, deriveStatus } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { memorySql } from './sqlite.js';
 
 const quiet = { log: () => {} };
@@ -259,9 +260,9 @@ test('a status write conflicts when the stored revision changed', async () => {
   const l = new Library(memorySql(), { now: () => new Date(Date.UTC(2026, 8, 27, 0, 0, t++)).toISOString() });
   const owner = { email: 'ada@example.test', role: 'user' };
   const saved = await l.upsert(owner, { localId: 'one', reference: { title: 'One' } });
-  const exec = l.sql.exec.bind(l.sql);
+  const exec = sqlOf(l).exec.bind(sqlOf(l));
   let armed = true;
-  l.sql.exec = (q, ...p) => {
+  sqlOf(l).exec = (q, ...p) => {
     const text = String(q);
     if (armed && text.includes('UPDATE refs SET state = ?')) {
       armed = false;
@@ -303,7 +304,7 @@ test('an unknown version stays withdrawn and is not overlaid or persisted', asyn
   const saved = await l.upsert(owner, { localId: 'paused', reference: { title: 'Paused' } });
   const stored = { ...l.row(saved.id).state, version: 99, withdrawn: true };
   const json = JSON.stringify(stored);
-  l.sql.exec('UPDATE refs SET state = ?, status = ? WHERE id = ?', json, 'published', saved.id);
+  sqlOf(l).exec('UPDATE refs SET state = ?, status = ? WHERE id = ?', json, 'published', saved.id);
   const read = l.row(saved.id);
   assert.equal(read.status, 'withdrawn');
   assert.equal(read.state.withdrawn, true);
@@ -312,7 +313,7 @@ test('an unknown version stays withdrawn and is not overlaid or persisted', asyn
   const raw = l.rows('SELECT state, status FROM refs WHERE id = ?', saved.id)[0];
   assert.equal(raw.state, json);
   assert.equal(raw.status, 'published');
-  l.sql.exec('UPDATE refs SET next_review = ? WHERE id = ?', '2000-01-01T00:00:00.000Z', saved.id);
+  sqlOf(l).exec('UPDATE refs SET next_review = ? WHERE id = ?', '2000-01-01T00:00:00.000Z', saved.id);
   assert.equal(l.scanStale(), 0);
   assert.equal(l.rows('SELECT state, status FROM refs WHERE id = ?', saved.id)[0].state, json);
 });
@@ -331,7 +332,7 @@ test('an unknown-version row reads as not published and the stored JSON stays un
     validation: { status: 'validated', managerDecision: 'approved', presalesDecision: 'approved', by: 't', at: '', note: '' },
   };
   const json = JSON.stringify(stored);
-  l.sql.exec('UPDATE refs SET state = ?, status = ? WHERE id = ?', json, 'published', saved.id);
+  sqlOf(l).exec('UPDATE refs SET state = ?, status = ? WHERE id = ?', json, 'published', saved.id);
   const read = l.row(saved.id);
   assert.equal(read.status, 'in_review');
   assert.equal(read.state.version, 99);
