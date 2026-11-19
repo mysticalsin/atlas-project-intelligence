@@ -13,7 +13,7 @@ const SALT = 'synthetic-log-salt';
 const STAMP = '2026-11-17T05:00:00.000Z';
 const QUOTED = 'SELECT "commit" FROM audit LIMIT 0';
 const ALIAS = 'SELECT 1 AS begin';
-const STANDALONE = ['ANALYZE', 'BEGIN', 'COMMIT', 'ROLLBACK', 'SAVEPOINT s', 'RELEASE s', 'END'];
+const STANDALONE = ['ANALYZE', 'BEGIN', 'COMMIT', 'ROLLBACK', 'SAVEPOINT s', 'RELEASE s', 'END', 'END TRANSACTION'];
 
 function hide(run) {
   const orig = process.getBuiltinModule.bind(process);
