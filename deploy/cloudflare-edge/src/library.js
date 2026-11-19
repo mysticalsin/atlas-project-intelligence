@@ -80,6 +80,16 @@ function rawSql(lib) {
   if (!sql) throw fail(500, 'The raw SQL handle is private.');
   return sql;
 }
+// Door flags stay here too. A callback can assign lib._door and it changes nothing.
+const DOORS = new WeakMap();
+function doorState(lib) {
+  let state = DOORS.get(lib);
+  if (!state) {
+    state = { open: 0, kind: '', reason: '', auditTx: 0, appended: false, receiptOnly: true, migration: '' };
+    DOORS.set(lib, state);
+  }
+  return state;
+}
 const DUPLICATE = 0.9; // cosine similarity above which two references are flagged as the same or a related project
 export const PRACTICES = { data_ai: 'Data & AI', web_app: 'Web & App Development', telecom: 'Telecom & Networks', sap_erp: 'SAP & ERP', cloud_infra: 'Cloud & Infrastructure', cybersecurity: 'Cybersecurity', transformation: 'Transformation & Strategy', engineering: 'Engineering & Industry' };
 
@@ -269,27 +279,28 @@ export class Library {
     // It stays put only when the chain is already damaged and every write was a consent receipt.
     const recorded = (fn) => {
       if (typeof fn !== 'function') throw fail(500, 'A library write needs a function.');
-      if (this._auditTx) return this._enter(fn, 'recorded');
+      const state = doorState(this);
+      if (state.auditTx) return this._enter(fn, 'recorded');
       if (typeof this._atomic !== 'function') throw fail(503, 'Atomic library writes need storage.transactionSync.');
       const run = () => {
         const sql = rawSql(this);
         const ready = auditReady(sql);
         const healthy = ready && anchoredVerdict(sql, verifyChain(sql, this.auditKey, this.dbId)).ok;
-        this._appended = false;
-        this._receiptOnly = true;
+        state.appended = false;
+        state.receiptOnly = true;
         const result = this._enter(fn, 'recorded');
-        if (ready && !healthy && !this._receiptOnly) throw Object.assign(fail(409, 'The audit chain is tampered.'), { code: 'CHAIN_DAMAGED' });
-        if (this._appended && (healthy || !this._receiptOnly)) {
+        if (ready && !healthy && !state.receiptOnly) throw Object.assign(fail(409, 'The audit chain is tampered.'), { code: 'CHAIN_DAMAGED' });
+        if (state.appended && (healthy || !state.receiptOnly)) {
           const checkpoint = checkpointHead(sql, this.auditKey, this.dbId);
           if (!checkpoint.ok) throw Object.assign(fail(409, 'The audit chain is tampered.'), { code: checkpoint.reason });
         }
         return result;
       };
-      this._auditTx = 1;
+      state.auditTx = 1;
       try { return this._atomic(run); }
-      finally { this._auditTx = 0; }
+      finally { state.auditTx = 0; }
     };
-    Object.assign(this, { _door: 0, _appended: false, _receiptOnly: true, now, newId, complete, embed, readyScore, model, services, rater, metric, _atomic: atomic, _auditTx: 0, recorded, transactionSync: typeof atomic === 'function' ? recorded : null, auditKey, dbId: String(dbId ?? '') });
+    Object.assign(this, { now, newId, complete, embed, readyScore, model, services, rater, metric, _atomic: atomic, recorded, transactionSync: typeof atomic === 'function' ? recorded : null, auditKey, dbId: String(dbId ?? '') });
     this.inflight = new Map(); // `${id}:${revision}` -> { gen, engine, first, all }: one rating per revision at a time
     let trustCopy = null;
     let storyCopy = null;
@@ -307,6 +318,10 @@ export class Library {
   }
 
   // A mutating statement needs one of the three doors. Reads do not. The one raw exec is below.
+  // Callers outside Library use these three because the raw handle is private.
+  // chainVerdict: privacy.js records a receipt only when the chain is healthy, and profile.js does the same for a directory import. auditLines uses it too.
+  // rewriteAudit: subject-rights.js tombstones an erased story, and retention.js tombstones old audit rows.
+  // dailyChain: library-routes.js is the daily check.
   chainVerdict() {
     const sql = rawSql(this);
     return anchoredVerdict(sql, verifyChain(sql, this.auditKey, this.dbId));
@@ -319,24 +334,26 @@ export class Library {
   }
   _enter(fn, kind) {
     if (typeof fn !== 'function') throw fail(500, 'A library write needs a function.');
-    const prevKind = this._doorKind;
-    if (kind) this._doorKind = kind;
-    this._door += 1;
+    const state = doorState(this);
+    const prevKind = state.kind;
+    if (kind) state.kind = kind;
+    state.open += 1;
     try {
       const result = fn();
       if (result && typeof result.then === 'function') throw fail(500, 'A library write cannot await inside its audit transaction.');
       return result;
     } finally {
-      this._door -= 1;
-      this._doorKind = prevKind;
+      state.open -= 1;
+      state.kind = prevKind;
     }
   }
   exec(statement, ...params) {
+    const state = doorState(this);
     if (mutatingSql(statement)) {
-      if (!this._door) throw Object.assign(fail(500, 'A SQL write must run inside recorded, housekeeping, or schema.'), { code: 'SQL_DOOR' });
-      if (this._doorKind === 'schema' && !schemaDdl(statement)) throw Object.assign(fail(500, 'Schema accepts DDL only.'), { code: 'SCHEMA_DML' });
-      if (this._doorKind === 'housekeeping' && !housekeepingAllowed(this._houseReason, statement)) throw Object.assign(fail(500, 'That housekeeping statement is not allowed.'), { code: 'HOUSEKEEPING_SQL' });
-      if (!receiptInsert(statement)) this._receiptOnly = false;
+      if (!state.open) throw Object.assign(fail(500, 'A SQL write must run inside recorded, housekeeping, or schema.'), { code: 'SQL_DOOR' });
+      if (state.kind === 'schema' && !schemaDdl(statement)) throw Object.assign(fail(500, 'Schema accepts DDL only.'), { code: 'SCHEMA_DML' });
+      if (state.kind === 'housekeeping' && !housekeepingAllowed(state.reason, statement)) throw Object.assign(fail(500, 'That housekeeping statement is not allowed.'), { code: 'HOUSEKEEPING_SQL' });
+      if (!receiptInsert(statement)) state.receiptOnly = false;
     }
     const _sql = rawSql(this);
     return _sql.exec(statement, ...params);
@@ -349,10 +366,11 @@ export class Library {
   housekeeping(reason, fn) {
     const name = String(reason || '').trim();
     if (!HOUSEKEEPING[name]) throw Object.assign(fail(500, 'That housekeeping reason is not allowed.'), { code: 'HOUSEKEEPING_SQL' });
-    const prev = this._houseReason;
-    this._houseReason = name;
+    const state = doorState(this);
+    const prev = state.reason;
+    state.reason = name;
     try { return this._enter(fn, 'housekeeping'); }
-    finally { this._houseReason = prev; }
+    finally { state.reason = prev; }
   }
 
   rows(q, ...p) { return this.exec(q, ...p).toArray(); }
@@ -366,11 +384,12 @@ export class Library {
     try { return JSON.parse(r.state); } catch { return null; }
   }
   log(id, actor, action, detail = '') {
-    if (!this._auditTx) return this.recorded(() => this.log(id, actor, action, detail));
+    const state = doorState(this);
+    if (!state.auditTx) return this.recorded(() => this.log(id, actor, action, detail));
     if (this.auditKey == null) throw fail(503, 'LOG_SALT is not set.');
     appendAudit(rawSql(this), { id, actor, action, at: this.now(), detail: String(detail).slice(0, 300) }, this.auditKey, this.dbId);
-    this._appended = true;
-    if (String(action) !== 'consent receipt') this._receiptOnly = false;
+    state.appended = true;
+    if (String(action) !== 'consent receipt') state.receiptOnly = false;
   }
   // An invitation or card action may name a story. The audit id is that story only when the story's stored tenant
   // is the caller's tenant. A foreign id is not an audit target.
