@@ -57,3 +57,20 @@ Each one was restored and was not committed.
 - `receiptIndex` returning false: the consent index was 0 pass, 1 fail, `AssertionError` `ERR_SQLITE_ERROR !== SQL_DOOR` (`/tmp/v9-mut-index.txt`). Without the check SQLite reports `no such table: main.consent_receipts` because that table is not installed on this path. The door refuses first.
 - Removing the eval-binding walk: the object-pattern plant was 0 pass, 1 fail, `AssertionError` expected `true` actual `false` (`/tmp/v9-mut-eval.txt`).
 - Parsing the insights body before the role check: the owner with no body was 0 pass, 1 fail, `AssertionError` `400 !== 403` (`/tmp/v9-mut-insights.txt`).
+
+## Local follow-up, not pushed
+
+Sentinel accepted `4c11808ca219d2b8c8dcd83a537d27f20c9cefa5` with residuals. That head stays frozen. This branch is `cursor/v9-sentinel-residuals-660c` and is not pushed. It ships only if another round is asked for.
+
+The name resolver keeps clause words and known table and index names in frozen arrays. It writes names by index and asks the captured `includes`. `provenRead` treats a pragma as a read only when the statement's verb is `PRAGMA`, including `EXPLAIN` and `EXPLAIN QUERY PLAN`. The eval tripwire also flags `[eval][0]()`, `({e: eval}).e`, `Reflect.apply(eval)`, `.map(eval)`, and `Function` that is not a bare identifier. A doubled quote inside `"..."` or `` `...` `` stays inside the identifier. `[...]` and doubled backticks are not placeholders, and a doubled backtick does not end the quoted span in the statement split or the semicolon scan. `DELETE FROM "audit""tail"` is `ERR_SQLITE_ERROR` on the recorded door. The four scanners are compared in `test/write-v9-sentinel.test.js`.
+
+Red `c84d7d23e7323a876fb1b3c1835d75d79db3fae3` is that test only: 4 tests, 0 pass, 4 fail, each an `AssertionError`. Fix `b2f7db8df5192abb097ce03c9599370a7a6eeaf0` is `library.js`, `sql-text.js`, and `test/write-lint.js`. It does not edit that test. After that commit, the new file is 4 pass, 0 fail, and `test/write-*.test.js` is 202 pass, 0 fail. The six gates were not run.
+
+Each mutation below was restored and was not committed.
+
+- Index assignment replaced by live `push`: `DELETE FROM audit` was 0 pass, 1 fail, `AssertionError` `CHAIN_DAMAGED !== SQL_DOOR` (`/tmp/v9s-mut-push.txt`).
+- `clauseWord` returning true: `DELETE FROM main.audit` was 0 pass, 1 fail, `AssertionError` `CHAIN_DAMAGED !== SQL_DOOR` (`/tmp/v9s-mut-clause.txt`).
+- `listedName` refusing `refs_owner_local`: Library construction threw `SCHEMA_DML` before the assertion, 0 pass, 1 fail (`/tmp/v9s-mut-known.txt`).
+- `provenRead` returning on any later pragma read: `DELETE FROM refs PRAGMA user_version` was 0 pass, 1 fail, `AssertionError` expected `false` actual `true` (`/tmp/v9s-mut-pragma.txt`).
+- The new eval-call checks removed: the first plant was 0 pass, 1 fail, `AssertionError` expected `true` actual `false` (`/tmp/v9s-mut-eval.txt`).
+- The doubled-quote loop restored to the dead branch: the quoted identifier split into `a;` and `b?`, 0 pass, 1 fail, `AssertionError` (`/tmp/v9s-mut-quote.txt`).
