@@ -141,11 +141,13 @@ function taintPattern(id, file, node, tainted, exec) {
   }
 }
 
-function walk(node, file, tainted, exec) {
+function walk(node, file, tainted, exec, params) {
   if (!node || typeof node.type !== 'string') return;
   if (node.type === 'FunctionDeclaration' || node.type === 'FunctionExpression' || node.type === 'ArrowFunctionExpression') {
     const next = new Set(tainted);
-    for (const child of children(node)) walk(child, file, next, exec);
+    const more = params?.get(node);
+    if (more) for (const name of more) next.add(name);
+    for (const child of children(node)) walk(child, file, next, exec, params);
     return;
   }
   if (node.type === 'VariableDeclarator' && node.id?.type === 'Identifier' && isTaintedInit(node.init, file, tainted)) tainted.add(node.id.name);
@@ -162,12 +164,84 @@ function walk(node, file, tainted, exec) {
   if (node.type === 'MemberExpression' && (propName(node) === '_enter' || propName(node) === 'registered')) push(exec, file, node, 'private door');
   if (node.type === 'CallExpression' && propName(peel(node.callee)) === 'rewriteAudit' && file !== 'subject-rights.js' && file !== 'retention.js') push(exec, file, node, 'audit erasure');
   if (node.type === 'CallExpression' && isRawCall(node, file, tainted) && !(file === 'library.js' && isPrivateExec(node))) push(exec, file, node, 'raw exec');
-  for (const child of children(node)) walk(child, file, tainted, exec);
+  if (node.type === 'CallExpression' && passesHandle(node, file, tainted)) push(exec, file, node, 'raw handle');
+  for (const child of children(node)) walk(child, file, tainted, exec, params);
+}
+
+function passesHandle(node, file, tainted) {
+  const callee = unwrap(node.callee);
+  const name = callee?.type === 'MemberExpression' ? propName(callee) : '';
+  if (name === 'exec' || name === 'call' || name === 'apply' || name === 'bind') return false;
+  return (node.arguments || []).some(arg => isHandleSource(arg, file, tainted));
+}
+
+function functionsIn(node, out = new Map()) {
+  if (!node || typeof node.type !== 'string') return out;
+  if (node.type === 'FunctionDeclaration' && node.id?.type === 'Identifier') out.set(node.id.name, node);
+  for (const child of children(node)) functionsIn(child, out);
+  return out;
+}
+
+function parameterTaint(tree, file) {
+  const functions = functionsIn(tree);
+  const extra = new Map();
+  for (const fn of functions.values()) extra.set(fn, new Set());
+  primary = new Set();
+  const see = (node) => {
+    if (!node || typeof node.type !== 'string') return;
+    if (node.type === 'VariableDeclarator' && node.id?.type === 'Identifier' && isHandleSource(node.init, file, primary)) primary.add(node.id.name);
+    if (node.type === 'AssignmentExpression' && node.left?.type === 'Identifier' && isHandleSource(node.right, file, primary)) primary.add(node.left.name);
+    if (node.type === 'CallExpression' && unwrap(node.callee)?.type === 'Identifier') {
+      const fn = functions.get(unwrap(node.callee).name);
+      if (fn) (node.arguments || []).forEach((arg, index) => {
+        if (!isHandleSource(arg, file, primary)) return;
+        const param = fn.params[index];
+        if (param?.type === 'Identifier') extra.get(fn).add(param.name);
+      });
+    }
+    for (const child of children(node)) see(child);
+  };
+  see(tree);
+  return extra;
+}
+
+function isWeakMapGet(node) {
+  node = unwrap(node);
+  if (node?.type !== 'MemberExpression' || propName(node) !== 'get') return false;
+  const proto = unwrap(node.object);
+  return proto?.type === 'MemberExpression' && unwrap(proto.object)?.name === 'WeakMap' && propName(proto) === 'prototype';
+}
+
+// Names assigned from rawSql, HANDLES, or WeakMap.prototype.get. Not every tainted binding:
+// Object.entries is tainted for the exec check and is not a handle being passed on.
+let primary = new Set();
+
+function isHandlesGet(node) {
+  node = unwrap(node);
+  if (node?.type !== 'MemberExpression' || propName(node) !== 'get') return false;
+  const object = unwrap(node.object);
+  if (object?.type !== 'Identifier') return false;
+  return object.name === 'HANDLES' || primary.has(object.name);
+}
+
+function isHandleSource(node, file, tainted) {
+  node = unwrap(node);
+  if (!node) return false;
+  if (node.type === 'Identifier' && (node.name === 'rawSql' || node.name === 'HANDLES' || primary.has(node.name))) return true;
+  if (isWeakMapGet(node) || isHandlesGet(node)) return true;
+  if (node.type === 'CallExpression') {
+    const callee = unwrap(node.callee);
+    if (callee?.type === 'Identifier' && (callee.name === 'rawSql' || primary.has(callee.name))) return true;
+    const name = propName(callee);
+    if ((name === 'call' || name === 'apply' || name === 'bind') && isHandleSource(callee?.object, file, tainted)) return true;
+  }
+  return false;
 }
 
 function isTaintedInit(node, file, tainted) {
   node = unwrap(node);
   if (!node) return false;
+  if (isHandleSource(node, file, tainted)) return true;
   if (isHandleMember(node, file)) return true;
   if (node.type === 'Identifier' && tainted.has(node.name)) return true;
   if (node.type === 'CallExpression' && node.callee?.type === 'Identifier' && node.callee.name === 'rawSql') return true;
@@ -185,6 +259,7 @@ function isTaintedInit(node, file, tainted) {
 function isHandleLike(node, file, tainted) {
   node = unwrap(node);
   if (!node) return false;
+  if (isHandleSource(node, file, tainted)) return true;
   if (isHandleMember(node, file)) return true;
   if (node.type === 'Identifier' && (tainted.has(node.name) || node.name === '_sql')) return true;
   if (isReflectOrValues(node)) return true;
@@ -249,7 +324,7 @@ function lintHandles(file, text) {
     see(tree);
     if (calls.length !== 1) exec.push({ file, line: calls[0] ? lineOf(calls[0]) : 1, text: `library.js has ${calls.length} _sql.exec calls` });
   }
-  walk(tree, file, new Set(), exec);
+  walk(tree, file, new Set(), exec, parameterTaint(tree, file));
   return exec;
 }
 
