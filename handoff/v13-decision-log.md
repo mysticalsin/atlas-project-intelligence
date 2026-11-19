@@ -92,4 +92,16 @@ On `8cdef06`, `SELECT ?1 DELETE FROM refs` was a proven read. SQLite rejected it
 
 `SELECT /* delete */ 1 FROM refs` is a proven read. Both doors allow it and the row stays. Stopping the `/* */` skip in `sqlTokens` makes that `provenRead` false (`false !== true`). The test is `a block comment does not hide or invent a write`. `WITH /*(*/ "x(" AS (SELECT 1) /*;*/ DELETE FROM refs` is `SQL_DOOR` on both doors and the row stays. That form is not only in the fuzz file.
 
-Each mutant was restored and was not committed. The new file is `deploy/cloudflare-edge/test/write-v13-depth.test.js`. No product source changed. No new dependency. Not a production-ready claim.
+Each mutant was restored and was not committed. The new file is `deploy/cloudflare-edge/test/write-v13-depth.test.js`. No product source changed in that commit. No new dependency. Not a production-ready claim.
+
+## Inspector 4c1ee8f4
+
+PASS on `8cdef06`, one Low. That head stays frozen. This follow-up is still local and is not pushed. Cursor bc-9e93ee0a is still pending. This is not a freeze.
+
+`topVerb` still returns only the first depth-0 verb. A bare unquoted write verb at depth greater than 0 is a separate refusal. The list is `DELETE`, `UPDATE`, `INSERT`, `DROP`, `ALTER`, `CREATE`, `ATTACH`, `DETACH`, `PRAGMA`, `VACUUM`, `REINDEX`, and `ANALYZE`. An alias (`AS`) and a dotted name are not that token. `REPLACE(` is the function and stays a read, including `SELECT (REPLACE(title, 'a', 'b')) FROM refs`. `REPLACE INTO` inside parentheses is a write. `SELECT 1 FROM (SELECT 2) ANALYZE` stays a read: that `ANALYZE` is at depth 0.
+
+`SELECT (DELETE FROM audit)` and `SELECT 1 FROM (DELETE FROM audit)` were already `SQL_DOOR` on both doors. `SELECT (DROP TABLE audit)` was a proven read (`true !== false`) and the door returned `ERR_SQLITE_ERROR`. The same was true for `ALTER`, `CREATE`, `ATTACH`, `DETACH`, `VACUUM`, `REINDEX`, and `ANALYZE`. `SELECT (PRAGMA user_version)` was a proven read and the door was already `SQL_DOOR` through the pragma check. All of them are now not proven reads. Both doors return `SQL_DOOR` and the refs row stays. SQLite still rejects the text. The red commit is `8cb6a6c923b722002fb1c185bcb4b8bcefa2d1a1`. The test is `a parenthesised write verb is not a proven read`.
+
+Removing the depth>0 call leaves that test red: `provenRead('SELECT (DROP TABLE audit)')` is true (`true !== false`). `REPLACE( stays a function and a depth-0 alias stays a read` stays green. The change was restored and was not left in place. The fix is the `nestedWrite` check in `strayWrite`. `topVerb` is unchanged.
+
+Info F-2: `audit-chain.js` line 226, `if (start === null) return 'tampered'`, is dead code. It is an equivalent mutant. `find` returns null when the captured search misses and undefined when the row is absent. The null check and the later genesis check both return tampered. No input makes those paths differ, so no test is possible. No code change. The earlier record is in `handoff/v12-decision-log.md`.

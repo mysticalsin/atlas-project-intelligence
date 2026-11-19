@@ -100,11 +100,20 @@ function blockedVerb(tokens, i) {
   return !!(next && next.text === ')');
 }
 const WRITES = ['insert', 'update', 'delete', 'replace'];
+// A bare unquoted token inside parentheses. REPLACE is not here: REPLACE( is a function.
+const NESTED_WRITES = ['insert', 'update', 'delete', 'drop', 'alter', 'create', 'attach', 'detach', 'pragma', 'vacuum', 'reindex', 'analyze'];
 function writeVerbAt(tokens, i) {
   const token = tokens[i];
   if (!(token && token.kind === 'word' && !token.quoted && listed(WRITES, token.text))) return false;
   if (blockedVerb(tokens, i)) return false;
   if (token.text === 'replace' && tokens[i + 1] && tokens[i + 1].text === '(') return false;
+  return true;
+}
+function nestedWrite(tokens, i) {
+  const token = tokens[i];
+  if (!(token && token.kind === 'word' && !token.quoted && token.depth > 0 && listed(NESTED_WRITES, token.text))) return false;
+  const prev = tokens[i - 1];
+  if (prev && ((prev.text === 'as' && !prev.quoted) || prev.text === '.')) return false;
   return true;
 }
 function explainsPlan(tokens) {
@@ -117,13 +126,14 @@ function explainsPlan(tokens) {
 }
 // A write verb at depth > 0 is inside a CTE body or a subquery. A write verb
 // after the first depth-0 verb is a second write. REPLACE( is the function.
-// EXPLAIN QUERY PLAN describes a statement, so its verb is not this check.
+// topVerb still returns only the first depth-0 verb. EXPLAIN QUERY PLAN
+// describes a statement, so its verb is not this check.
 function strayWrite(tokens) {
   if (explainsPlan(tokens)) return false;
   let seen = false;
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
-    if (writeVerbAt(tokens, i) && (token.depth > 0 || seen)) return true;
+    if (nestedWrite(tokens, i) || (writeVerbAt(tokens, i) && (token.depth > 0 || seen))) return true;
     if (token && token.kind === 'word' && !token.quoted && token.depth === 0 && !blockedVerb(tokens, i)) {
       if (listed(VERBS, token.text) || listed(READS, token.text) || token.text === 'with' || token.text === 'explain') seen = true;
     }
