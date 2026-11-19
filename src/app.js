@@ -362,6 +362,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-slides-for
 // Deep links: #library/<id> (N+1 email), #invitation/<id> (interview card), #bid/<id> and #gap/<id> (bid proof, AtlasWowUI).
 function openFromHash(){const h=location.hash;let m=/^#library\/([a-f0-9]{32})$/.exec(h);if(m){switchView('library');openRecord(m[1]);return;}
  m=/^#invitation\/([a-f0-9]{32})$/.exec(h);if(m){openInvitation(m[1]);return;}
+ if(h==='#admin'){switchView('admin');return;}
  if(/^#(bid|gap)\/[a-f0-9]{32}$/.test(h))window.AtlasWowUI?.openHash?.(h);}
 async function openInvitation(id){try{const {items}=await libraryApi('/invitations'),inv=items.find(i=>i.id===id);
   if(!inv){switchView('library');toast('This interview invitation is no longer open for you.');return;}
