@@ -491,7 +491,13 @@ export function storyRater(env, fetcher = fetch, opts = {}) {
     return new Promise(resolve => {
       const stop = new AbortController(), ctrls = [];
       let settled = false, attempts = 0, hedged = 0, http = 0, pending = 0;
-      const end = o => { if (settled) return; settled = true; stop.abort(); for (const c of ctrls) c.abort(); resolve({ ...o, attempts, hedged, http }); };
+      const end = o => {
+        if (settled) return;
+        settled = true; stop.abort(); for (const c of ctrls) c.abort();
+        const result = { ...o, attempts, hedged, http };
+        if (typeof opts.onEnd === 'function') opts.onEnd(result);
+        resolve(result);
+      };
       const launch = () => {
         if (settled || attempts >= max || deadlineAt - now() < b.minAttemptMs) return false;
         attempts++; pending++; if (attempts > 1) hedged = 1;
@@ -510,8 +516,8 @@ export function storyRater(env, fetcher = fetch, opts = {}) {
       launch();
       if (max > 1) wait(b.hedgeAtMs, stop.signal).then(fired => { if (fired && !settled && pending > 0) launch(); });
       wait(b.deadlineMs, stop.signal).then(fired => {
-        if (!fired || settled) return;
-        for (let i = 0; i < pending; i++) note({ code: 'timeout' }, null, trial);
+        if (!fired) return;
+        if (!settled) for (let i = 0; i < pending; i++) note({ code: 'timeout' }, null, trial);
         end({ code: 'timeout', retryable: true });
       });
     });

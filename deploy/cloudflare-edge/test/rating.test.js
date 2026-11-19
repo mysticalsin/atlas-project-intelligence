@@ -578,11 +578,17 @@ function fakeClock() {
 // finishes when the machine is busy, and that is not a timer.
 // Bounded so a stuck fetcher fails the assertion instead of hanging.
 // 1000 yields was not enough for crypto.subtle while 32 loops were busy.
-async function spinUntil(pred, message) {
-  const cap = 100000;
-  for (let i = 0; i < cap && !pred(); i++) await new Promise(r => setImmediate(r));
+// The production default is spinUntil.cap. A test passes { cap, tick } so the
+// boundary is exact without spinning that default.
+async function spinUntil(pred, message, opts) {
+  const cap = opts && Object.hasOwn(opts, 'cap') ? opts.cap : spinUntil.cap;
+  const tick = opts && opts.tick ? opts.tick : (() => new Promise(r => setImmediate(r)));
+  let yields = 0;
+  for (let i = 0; i < cap && !pred(); i++) { yields++; await tick(); }
   assert.ok(pred(), message + ' (yield cap ' + cap + ')');
+  return yields;
 }
+spinUntil.cap = 100000;
 
 test('R15 budgets and the hedge: the deadline holds against a fetcher that ignores abort; the fastest answer wins', async () => {
   const budgets = { interactive: { deadlineMs: 200, hedgeAtMs: 70, minAttemptMs: 30 }, background: { deadlineMs: 600, attemptMs: 200, retries: 2, backoffMs: 50, minAttemptMs: 30 } };
