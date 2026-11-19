@@ -120,14 +120,21 @@ export function ensure(lib) {
   const holds = lib.rows("SELECT name FROM pragma_table_info('erasure_holds')").map(r => r.name);
   if (holds.length && !holds.includes('tenant')) Library.migrate(lib, 'erasure-holds-tenant');
   });
+  if (typeof lib._atomic === 'function') {
+    lib.housekeeping('consent-retention', () => {
+      lib.exec("INSERT OR REPLACE INTO privacy_gate (name, open) VALUES ('receipts', 0)");
+    });
+  }
   ensured.add(lib);
 }
 // Runs `fn` (the retention sweep's receipt delete) with the delete gate open, and always closes it again.
+// housekeeping already holds one transaction for this reason, so a failed close rolls the open back.
 export function retentionGate(lib, fn) {
   ensure(lib);
   return lib.housekeeping('consent-retention', () => {
-    try { lib.exec("INSERT OR REPLACE INTO privacy_gate (name, open) VALUES ('receipts', 1)"); } catch { /* no gate table: no triggers either */ }
-    try { return fn(); } finally { try { lib.exec("INSERT OR REPLACE INTO privacy_gate (name, open) VALUES ('receipts', 0)"); } catch { /* as above */ } }
+    lib.exec("INSERT OR REPLACE INTO privacy_gate (name, open) VALUES ('receipts', 1)");
+    try { return fn(); }
+    finally { lib.exec("INSERT OR REPLACE INTO privacy_gate (name, open) VALUES ('receipts', 0)"); }
   });
 }
 // The hash of the pseudonymous subject key kept on an erasure hold: enough to show that a subject was erased, not enough to identify who.
