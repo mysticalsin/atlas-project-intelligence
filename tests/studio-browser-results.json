@@ -246,6 +246,10 @@
       "passed": true
     },
     {
+      "name": "A 320 px page stays on screen and the three controls stay inside",
+      "passed": true
+    },
+    {
       "name": "If ATLAS wraps up meanwhile, the restart question closes and nothing more is discarded",
       "passed": true
     },
