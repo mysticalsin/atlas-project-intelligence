@@ -32,6 +32,18 @@ function unwrap(node) {
   return node;
 }
 
+function peel(node) {
+  node = unwrap(node);
+  if (node?.type === 'SequenceExpression') return peel(node.expressions.at(-1));
+  return node;
+}
+
+function isDirectLibrary(node) {
+  node = unwrap(node);
+  if (node?.type === 'ThisExpression') return true;
+  return node?.type === 'Identifier' && node.name === 'lib';
+}
+
 function foldString(node) {
   if (!node) return null;
   if (node.type === 'Literal' && typeof node.value === 'string') return node.value;
@@ -68,10 +80,11 @@ function exemptHandle(file, node) {
 function isHandleMember(node, file) {
   node = unwrap(node);
   if (!node || node.type !== 'MemberExpression') return false;
-  const name = propName(node);
-  if (name !== 'sql' && name !== '_sql') return false;
   if (exemptHandle(file, node)) return false;
   const object = unwrap(node.object);
+  if (node.computed && foldString(node.property) == null && isDirectLibrary(object)) return true;
+  const name = propName(node);
+  if (name !== 'sql' && name !== '_sql') return false;
   if (object?.type === 'Identifier' || object?.type === 'ThisExpression') return true;
   return object?.type === 'MemberExpression' && propName(object) === 'storage';
 }
@@ -137,8 +150,17 @@ function walk(node, file, tainted, exec) {
   }
   if (node.type === 'VariableDeclarator' && node.id?.type === 'Identifier' && isTaintedInit(node.init, file, tainted)) tainted.add(node.id.name);
   if (node.type === 'VariableDeclarator') taintPattern(node.id, file, node, tainted, exec);
+  if (node.type === 'VariableDeclarator' && node.id?.type === 'ObjectPattern' && isDirectLibrary(node.init)) {
+    for (const prop of node.id.properties) {
+      if (prop?.type !== 'Property' || !prop.computed || foldString(prop.key) != null) continue;
+      push(exec, file, node, 'raw handle');
+      if (prop.value?.type === 'Identifier') tainted.add(prop.value.name);
+    }
+  }
   if (node.type === 'AssignmentExpression' && node.left?.type === 'Identifier' && isTaintedInit(node.right, file, tainted)) tainted.add(node.left.name);
   if (isHandleMember(node, file)) push(exec, file, node, 'raw handle');
+  if (node.type === 'MemberExpression' && (propName(node) === '_enter' || propName(node) === 'registered')) push(exec, file, node, 'private door');
+  if (node.type === 'CallExpression' && propName(peel(node.callee)) === 'rewriteAudit' && file !== 'subject-rights.js' && file !== 'retention.js') push(exec, file, node, 'audit erasure');
   if (node.type === 'CallExpression' && isRawCall(node, file, tainted) && !(file === 'library.js' && isPrivateExec(node))) push(exec, file, node, 'raw exec');
   for (const child of children(node)) walk(child, file, tainted, exec);
 }
@@ -149,6 +171,7 @@ function isTaintedInit(node, file, tainted) {
   if (isHandleMember(node, file)) return true;
   if (node.type === 'Identifier' && tainted.has(node.name)) return true;
   if (node.type === 'CallExpression' && node.callee?.type === 'Identifier' && node.callee.name === 'rawSql') return true;
+  if (isReflectGet(node)) return true;
   if (isReflectOrValues(node)) return true;
   if (node.type === 'MemberExpression' && isHandleLike(node.object, file, tainted)) return true;
   if (node.type === 'CallExpression') {
@@ -163,11 +186,29 @@ function isHandleLike(node, file, tainted) {
   node = unwrap(node);
   if (!node) return false;
   if (isHandleMember(node, file)) return true;
-  if (node.type === 'Identifier' && tainted.has(node.name)) return true;
+  if (node.type === 'Identifier' && (tainted.has(node.name) || node.name === '_sql')) return true;
   if (isReflectOrValues(node)) return true;
   if (node.type === 'MemberExpression' && isHandleLike(node.object, file, tainted)) return true;
-  if (node.type === 'CallExpression' && isHandleLike(node.callee, file, tainted)) return true;
+  if (node.type === 'CallExpression' && (isHandleFactory(node) || isHandleLike(node.callee, file, tainted))) return true;
   return false;
+}
+
+function isReflectGet(node) {
+  node = unwrap(node);
+  return node?.type === 'MemberExpression' && unwrap(node.object)?.name === 'Reflect' && propName(node) === 'get';
+}
+
+function isHandleFactory(node) {
+  node = unwrap(node);
+  if (node?.type !== 'CallExpression') return false;
+  const callee = unwrap(node.callee);
+  if (callee?.type === 'Identifier' && callee.name === 'rawSql') return true;
+  if (callee?.type !== 'MemberExpression') return false;
+  const object = unwrap(callee.object);
+  const name = propName(callee);
+  if (object?.type !== 'Identifier') return false;
+  if (object.name === 'Object' && (name === 'assign' || name === 'getOwnPropertyDescriptor')) return true;
+  return object.name === 'HANDLES' && name === 'get';
 }
 
 function receiverIsExec(node, file, tainted) {
@@ -178,7 +219,7 @@ function receiverIsExec(node, file, tainted) {
 }
 
 function isRawCall(node, file, tainted) {
-  const callee = unwrap(node?.callee);
+  const callee = peel(node?.callee);
   if (!callee) return false;
   if (callee.type === 'Identifier' && tainted.has(callee.name)) return true;
   if (callee.type !== 'MemberExpression') return false;
