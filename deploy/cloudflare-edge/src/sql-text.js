@@ -1,15 +1,29 @@
 // One statement in, one statement out. The split understands quotes, comments,
 // and a trigger body, so a semicolon inside those is not a second statement.
 // Classification uses these tokens. A prefix of the text is not a statement.
-// The character and word tests come from primordials.js, captured at load.
-// A non-boolean, a null, or a throw counts as a write.
+// Character classes are code points. Verb checks are exact strings.
+// Neither path calls RegExp.prototype.exec. A non-boolean, a null, or a throw
+// from a snapshotted string or array method counts as a write.
 
-import { includes, lower, match, primordialsHold, replace, some, test, trim } from './primordials.js';
+import { includes, lower, primordialsHold, some, trim } from './primordials.js';
 
-function mustTest(pattern, value) {
-  const out = test(pattern, value);
-  if (out !== true && out !== false) throw new Error('primordial');
-  return out;
+function isIdentChar(c) {
+  const n = c.charCodeAt(0);
+  return (n >= 65 && n <= 90) || (n >= 97 && n <= 122) || n === 95;
+}
+function isWordChar(c) {
+  const n = c.charCodeAt(0);
+  return isIdentChar(c) || (n >= 48 && n <= 57);
+}
+function isDigitChar(c) {
+  const n = c.charCodeAt(0);
+  return n >= 48 && n <= 57;
+}
+function isSpaceChar(c) {
+  const n = c.charCodeAt(0);
+  return n === 9 || n === 10 || n === 11 || n === 12 || n === 13 || n === 32 || n === 0xa0
+    || n === 0x1680 || (n >= 0x2000 && n <= 0x200a) || n === 0x2028 || n === 0x2029
+    || n === 0x202f || n === 0x205f || n === 0x3000 || n === 0xfeff;
 }
 function mustLower(value) {
   const out = lower(value);
@@ -26,24 +40,24 @@ function mustIncludes(list, value) {
   if (out !== true && out !== false) throw new Error('primordial');
   return out;
 }
+const VERBS = ['insert', 'update', 'delete', 'replace', 'create', 'drop', 'alter', 'reindex', 'vacuum'];
+const WRITES = ['insert', 'update', 'delete', 'replace'];
+const BODY_NEXT = ['select', 'insert', 'update', 'delete', 'replace', 'with', 'values', 'begin', 'end'];
+function listed(list, word) {
+  const text = mustLower(word);
+  for (let i = 0; i < list.length; i++) if (list[i] === text) return true;
+  return false;
+}
 function verbOf(word) {
-  const found = match(/^(insert|update|delete|replace|create|drop|alter|reindex|vacuum)$/, word);
-  if (found === undefined) return true;
-  return found != null;
+  return listed(VERBS, word);
 }
 function writeOf(word) {
-  const found = match(/^(insert|update|delete|replace)$/, word);
-  if (found === undefined) return true;
-  return found != null;
+  return listed(WRITES, word);
 }
-const isWord = (c) => mustTest(/[A-Za-z0-9_]/, c);
-const isIdent = (c) => mustTest(/[A-Za-z_]/, c);
-const isDigit = (c) => mustTest(/[0-9]/, c);
-const isSpace = (c) => mustTest(/\s/, c);
 
 function wordAt(text, i) {
   let j = i + 1;
-  while (j < text.length && isWord(text[j])) j++;
+  while (j < text.length && isWordChar(text[j])) j++;
   return text.slice(i, j);
 }
 
@@ -63,6 +77,7 @@ function splitBody(sql) {
   let trigger = 0;
   let paren = 0;
   let sawCreate = false;
+  let atStatement = false;
   while (i < text.length) {
     const c = text[i];
     if (c === '-' && text[i + 1] === '-') {
@@ -101,7 +116,7 @@ function splitBody(sql) {
     }
     if (c === '(') { paren++; i++; continue; }
     if (c === ')') { paren = Math.max(0, paren - 1); i++; continue; }
-    if (isIdent(c)) {
+    if (isIdentChar(c)) {
       const word = mustLower(wordAt(text, i));
       i += word.length;
       if (trigger === 0) {
@@ -109,11 +124,20 @@ function splitBody(sql) {
         else if (sawCreate && word === 'trigger') { trigger = 1; sawCreate = false; }
         else if (!mustIncludes(['or', 'replace', 'temp', 'temporary', 'if', 'not', 'exists'], word)) sawCreate = false;
       } else if (trigger === 1) {
-        if (paren === 0 && word === 'begin') trigger = 2;
-      } else if (paren === 0 && word === 'begin') trigger++;
-      else if (paren === 0 && word === 'end') trigger = trigger > 2 ? trigger - 1 : 0;
+        if (paren === 0 && word === 'begin' && listed(BODY_NEXT, nextIdent(text, i))) {
+          trigger = 2;
+          atStatement = true;
+        }
+      } else if (paren === 0 && atStatement && word === 'begin') {
+        trigger++;
+        atStatement = true;
+      } else if (paren === 0 && atStatement && word === 'end') {
+        trigger = trigger > 2 ? trigger - 1 : 0;
+        atStatement = true;
+      } else if (trigger >= 2) atStatement = false;
       continue;
     }
+    if (c === ';' && trigger >= 2) { atStatement = true; i++; continue; }
     if (c === ';' && trigger < 2) {
       const slice = mustTrim(text.slice(start, i));
       if (slice) parts.push(slice);
@@ -160,7 +184,7 @@ export function placeholderCount(sql) {
     if (c === '?') {
       n++;
       i++;
-      while (i < text.length && isDigit(text[i])) i++;
+      while (i < text.length && isDigitChar(text[i])) i++;
       continue;
     }
     i++;
@@ -168,20 +192,61 @@ export function placeholderCount(sql) {
   return n;
 }
 
+function nextIdent(text, i) {
+  let j = i;
+  while (j < text.length) {
+    const c = text[j];
+    if (isSpaceChar(c)) { j++; continue; }
+    if (c === '-' && text[j + 1] === '-') { while (j < text.length && text[j] !== '\n') j++; continue; }
+    if (c === '/' && text[j + 1] === '*') {
+      j += 2;
+      while (j < text.length && !(text[j] === '*' && text[j + 1] === '/')) j++;
+      j = Math.min(text.length, j + 2);
+      continue;
+    }
+    if (!isIdentChar(c)) return '';
+    return mustLower(wordAt(text, j));
+  }
+  return '';
+}
+
+function flattenShape(sql) {
+  const text = String(sql ?? '');
+  let out = '';
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === '-' && text[i + 1] === '-') {
+      while (i < text.length && text[i] !== '\n') i++;
+      out += ' ';
+      continue;
+    }
+    if (c === '/' && text[i + 1] === '*') {
+      i += 2;
+      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
+      i = Math.min(text.length, i + 2);
+      out += ' ';
+      continue;
+    }
+    if (isSpaceChar(c)) {
+      out += ' ';
+      while (i < text.length && isSpaceChar(text[i])) i++;
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
 export function sqlShape(sql) {
   if (!primordialsHold()) return '';
   try {
     const parts = splitBody(sql);
     if (parts.length !== 1) return '';
-    let text = replace(parts[0], /\/\*[\s\S]*?\*\//g, ' ');
-    if (typeof text !== 'string') return '';
-    text = replace(text, /--[^\n]*/g, ' ');
-    if (typeof text !== 'string') return '';
-    text = replace(text, /\s+/g, ' ');
-    if (typeof text !== 'string') return '';
-    text = trim(text);
-    if (typeof text !== 'string') return '';
-    const out = lower(text);
+    const flat = trim(flattenShape(parts[0]));
+    if (typeof flat !== 'string') return '';
+    const out = lower(flat);
     return typeof out === 'string' ? out : '';
   } catch {
     return '';
@@ -196,7 +261,7 @@ export function leadingWords(sql) {
   let i = 0;
   while (i < text.length) {
     const c = text[i];
-    if (isSpace(c)) { i++; continue; }
+    if (isSpaceChar(c)) { i++; continue; }
     if (c === '-' && text[i + 1] === '-') {
       while (i < text.length && text[i] !== '\n') i++;
       continue;
@@ -231,7 +296,7 @@ export function leadingWords(sql) {
       if (name) words.push(mustLower(name));
       continue;
     }
-    if (isIdent(c)) {
+    if (isIdentChar(c)) {
       const word = wordAt(text, i);
       words.push(mustLower(word));
       i += word.length;
@@ -283,7 +348,7 @@ function mutatingBody(sql) {
     }
     if (c === '(') { depth++; i++; continue; }
     if (c === ')') { depth = Math.max(0, depth - 1); i++; continue; }
-    if (depth === 0 && isIdent(c)) {
+    if (depth === 0 && isIdentChar(c)) {
       const word = mustLower(wordAt(text, i));
       if (writeOf(word)) return true;
       i += word.length;
