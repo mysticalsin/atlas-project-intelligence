@@ -102,6 +102,9 @@ function blockedVerb(tokens, i) {
 const WRITES = ['insert', 'update', 'delete', 'replace'];
 // A bare unquoted token inside parentheses. REPLACE is not here: REPLACE( is a function.
 const NESTED_WRITES = ['insert', 'update', 'delete', 'drop', 'alter', 'create', 'attach', 'detach', 'pragma', 'vacuum', 'reindex', 'analyze'];
+// A second depth-0 verb. DROP, CREATE, ALTER, and ATTACH are not in WRITES,
+// so a read followed by one of them was still a proven read.
+const TRAILING = ['drop', 'create', 'alter', 'attach'];
 function writeVerbAt(tokens, i) {
   const token = tokens[i];
   if (!(token && token.kind === 'word' && !token.quoted && listed(WRITES, token.text))) return false;
@@ -114,6 +117,12 @@ function nestedWrite(tokens, i) {
   if (!(token && token.kind === 'word' && !token.quoted && token.depth > 0 && listed(NESTED_WRITES, token.text))) return false;
   const prev = tokens[i - 1];
   if (prev && ((prev.text === 'as' && !prev.quoted) || prev.text === '.')) return false;
+  return true;
+}
+function trailingVerb(tokens, i) {
+  const token = tokens[i];
+  if (!(token && token.kind === 'word' && !token.quoted && token.depth === 0 && listed(TRAILING, token.text))) return false;
+  if (blockedVerb(tokens, i)) return false;
   return true;
 }
 function explainsPlan(tokens) {
@@ -133,7 +142,7 @@ function strayWrite(tokens) {
   let seen = false;
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
-    if (nestedWrite(tokens, i) || (writeVerbAt(tokens, i) && (token.depth > 0 || seen))) return true;
+    if (nestedWrite(tokens, i) || (writeVerbAt(tokens, i) && (token.depth > 0 || seen)) || (seen && trailingVerb(tokens, i))) return true;
     if (token && token.kind === 'word' && !token.quoted && token.depth === 0 && !blockedVerb(tokens, i)) {
       if (listed(VERBS, token.text) || listed(READS, token.text) || token.text === 'with' || token.text === 'explain') seen = true;
     }
