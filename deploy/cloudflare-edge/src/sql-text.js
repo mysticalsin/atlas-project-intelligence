@@ -13,8 +13,11 @@ export function splitStatements(sql) {
   const parts = [];
   let start = 0;
   let i = 0;
-  let beginDepth = 0;
-  let caseDepth = 0;
+  // 0: ordinary SQL. 1: CREATE TRIGGER header. 2+: inside that trigger body.
+  // A bare identifier begin, end, case, or trigger does not start a body.
+  let trigger = 0;
+  let paren = 0;
+  let sawCreate = false;
   while (i < text.length) {
     const c = text[i];
     if (c === '-' && text[i + 1] === '-') {
@@ -51,18 +54,22 @@ export function splitStatements(sql) {
       i = Math.min(text.length, i + 1);
       continue;
     }
+    if (c === '(') { paren++; i++; continue; }
+    if (c === ')') { paren = Math.max(0, paren - 1); i++; continue; }
     if (/[A-Za-z_]/.test(c)) {
       const word = wordAt(text, i).toLowerCase();
       i += word.length;
-      if (word === 'begin') beginDepth++;
-      else if (word === 'case') caseDepth++;
-      else if (word === 'end') {
-        if (caseDepth) caseDepth--;
-        else if (beginDepth) beginDepth--;
-      }
+      if (trigger === 0) {
+        if (paren === 0 && word === 'create') sawCreate = true;
+        else if (sawCreate && word === 'trigger') { trigger = 1; sawCreate = false; }
+        else if (!['or', 'replace', 'temp', 'temporary', 'if', 'not', 'exists'].includes(word)) sawCreate = false;
+      } else if (trigger === 1) {
+        if (paren === 0 && word === 'begin') trigger = 2;
+      } else if (paren === 0 && word === 'begin') trigger++;
+      else if (paren === 0 && word === 'end') trigger = trigger > 2 ? trigger - 1 : 0;
       continue;
     }
-    if (c === ';' && beginDepth === 0) {
+    if (c === ';' && trigger < 2) {
       const slice = text.slice(start, i).trim();
       if (slice) parts.push(slice);
       i++;
