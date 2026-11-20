@@ -622,23 +622,23 @@
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 924242,
-      "sha256": "950ad7e41c75ab8a124c19a850e4116e064aa62c6677aad2efba231910c7ee08"
+      "bytes": 924012,
+      "sha256": "f9c2a2018c947b0c0fac7aa90a31206736fefba21529690a31b732530948f76c"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 924242,
-      "sha256": "950ad7e41c75ab8a124c19a850e4116e064aa62c6677aad2efba231910c7ee08"
+      "bytes": 924012,
+      "sha256": "f9c2a2018c947b0c0fac7aa90a31206736fefba21529690a31b732530948f76c"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 924242,
-      "sha256": "950ad7e41c75ab8a124c19a850e4116e064aa62c6677aad2efba231910c7ee08"
+      "bytes": 924012,
+      "sha256": "f9c2a2018c947b0c0fac7aa90a31206736fefba21529690a31b732530948f76c"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 924242,
-      "sha256": "950ad7e41c75ab8a124c19a850e4116e064aa62c6677aad2efba231910c7ee08"
+      "bytes": 924012,
+      "sha256": "f9c2a2018c947b0c0fac7aa90a31206736fefba21529690a31b732530948f76c"
     },
     {
       "path": "CLAUDE.md",
@@ -652,8 +652,8 @@
     },
     {
       "path": "Makefile",
-      "bytes": 1759,
-      "sha256": "9d02b4a7117abd6576e12c45e91da49075b1b81986323102b737c6bb5737b85b"
+      "bytes": 1716,
+      "sha256": "0acb8fee9bbdc8f44a9a1d18976ca2c6abf9d5f8226bfb38221a1fedb7307ef5"
     },
     {
       "path": "Preview.command",
@@ -2186,6 +2186,11 @@
       "sha256": "22a0488ffd0061be96ee2de6e82eb073adf27d9aea36dbabecf3b3bd020016d2"
     },
     {
+      "path": "docs/pr10/PR_BODY.md",
+      "bytes": 5907,
+      "sha256": "f610139e4de638eecc9e10872e4dc5cd860d9405f0bbb45c3f008447f4b4a330"
+    },
+    {
       "path": "docs/pr10/README.md",
       "bytes": 865,
       "sha256": "070da1efb616b00340046ea5bc20e908900c362322b8dff60a1549122ba38b53"
@@ -2196,21 +2201,6 @@
       "sha256": "4f92441b27ddaa693560cb52060b7dce0a8bd9ff79665a4ca831f7d1c746334f"
     },
     {
-      "path": "docs/pr10/after/m2-journey-320-admin.png",
-      "bytes": 102615,
-      "sha256": "d0472376e375d02ce2f3b71afc6db22164ecdde51a3b046d25742ef6385560ed"
-    },
-    {
-      "path": "docs/pr10/after/m2-journey-320-presales.png",
-      "bytes": 101017,
-      "sha256": "4da3eeaafb9d4ea7da16044cba4e8c9dde7edd07469d685fb5ba7dcd6f454841"
-    },
-    {
-      "path": "docs/pr10/after/m2-journey-320-reviewer.png",
-      "bytes": 98543,
-      "sha256": "adaf8019f422504f7844667e2e4346a09f8de5312ebe818d2261f06fdf930b4b"
-    },
-    {
       "path": "docs/pr10/after/m3-admin-hash-refusal.png",
       "bytes": 7242,
       "sha256": "0fa2c0787b841db9f540fcdb1c5ecc37b2e9f7bff6fc9f18b8650c7944eeb489"
@@ -2219,21 +2209,6 @@
       "path": "docs/pr10/before/m1-wiki-export.png",
       "bytes": 18078,
       "sha256": "d22d2f09b8cae48e669e3dd9f7e43521ef58c26f398f7eab162e58c74d04967f"
-    },
-    {
-      "path": "docs/pr10/before/m2-journey-320-admin.png",
-      "bytes": 102615,
-      "sha256": "d0472376e375d02ce2f3b71afc6db22164ecdde51a3b046d25742ef6385560ed"
-    },
-    {
-      "path": "docs/pr10/before/m2-journey-320-presales.png",
-      "bytes": 101017,
-      "sha256": "4da3eeaafb9d4ea7da16044cba4e8c9dde7edd07469d685fb5ba7dcd6f454841"
-    },
-    {
-      "path": "docs/pr10/before/m2-journey-320-reviewer.png",
-      "bytes": 98543,
-      "sha256": "adaf8019f422504f7844667e2e4346a09f8de5312ebe818d2261f06fdf930b4b"
     },
     {
       "path": "docs/pr10/before/m3-admin-hash-refusal.png",
@@ -2352,8 +2327,8 @@
     },
     {
       "path": "handoff/decisions/M-2-journey-layout.md",
-      "bytes": 678,
-      "sha256": "9f3ae372f00286477df4577d172afc55bee98b5fcc3ce532033543285e10e836"
+      "bytes": 1625,
+      "sha256": "b1f0522a5b309dd79d418228dd1471e963f4c295c45e4c78aa941823979bcdf4"
     },
     {
       "path": "handoff/decisions/M-3-admin-hash.md",
@@ -2721,6 +2696,11 @@
       "sha256": "e1abb719ae17b5500787e2c23c8a2cb5ab6a1e6450072fc7118d81476b7812d6"
     },
     {
+      "path": "scripts/measure_journey_overflow.py",
+      "bytes": 4571,
+      "sha256": "b3f8387d5a46a7af0fc841cce377dd66a88e2bd53814f6e16db888b43b49c6c8"
+    },
+    {
       "path": "scripts/pod_setup.sh",
       "bytes": 5639,
       "sha256": "4aaa567d0cc5246349f8e5c7ebf1e1f5204eca3132c3027edb07e6ca8ca909e9"
@@ -2847,8 +2827,8 @@
     },
     {
       "path": "src/journey.css",
-      "bytes": 2531,
-      "sha256": "b5b29fe54a31b503eedd941670fdef9b681aefe62382405b6e404c1ade904f83"
+      "bytes": 2301,
+      "sha256": "7ea96610b610174d0884945bede2141dd01ef3ac91c3c6b9f052e8f04648a52b"
     },
     {
       "path": "src/office.js",
@@ -3144,11 +3124,6 @@
       "path": "tests/journey-ui.test.js",
       "bytes": 11852,
       "sha256": "2b8465b3b2bf60f5d742572e4f9bab15400c16aed569d24391a14db24125e391"
-    },
-    {
-      "path": "tests/journey_layout_browser.py",
-      "bytes": 4694,
-      "sha256": "79a9441ad969e5b50ccf2cf4702c923a73904771ff63987ebbcb888c8eba4798"
     },
     {
       "path": "tests/library-error.test.js",
