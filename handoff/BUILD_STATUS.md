@@ -1,6 +1,26 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-20 — check_handoff fence follow-ups (`cursor/atlas-checkhandoff-nested-git`)
+
+Four rows on `scripts/check_handoff.py`, base `3d9239c112b5c5853fc49ce15424bbd29d94cfb2`. Red tests are the commit before the fix. `MANIFEST.json` is regenerated last with `python3 scripts/check_handoff.py . --dev-git-index --write-manifest`.
+
+- ATLAS-CHECKHANDOFF-NESTED-GIT: any path component that casefolds to `.git` is `refused:` before `manifest_excludes`. `test_manifest_excludes_cannot_hide_nested_git` is the ordering guard.
+- ATLAS-HANDOFF-DEVGITINDEX-UNBOUND: `--dev-git-index` outside a checkout sets `present = []`, reports `dev-git-index requires a git checkout`, and exits 1 with no traceback.
+- ATLAS-PR10-C2-VERIFY-PACKAGE-BUILD-ENV: the rebuild `subprocess.run` gets seven names only (`PATH`, fresh `HOME`, `LANG=C.utf8`, `LC_ALL=C.utf8`, `PYTHONHASHSEED=0`, `PYTHONNOUSERSITE=1`, `PYTHONDONTWRITEBYTECODE=1`). The test reads that `env` by monkeypatching `scripts.check_handoff.subprocess.run`.
+- ATLAS-PR10-C4-GIT-ENV-TEMPHOME-PATH: `git_environ` reuses one `atlas-git-home-*` directory and removes it with `atexit`. `PATH` is copied from the caller. `LD_PRELOAD` and `LD_LIBRARY_PATH` are not passed.
+
+Exit codes: **1** is an inspection failure, including `--dev-git-index` when the directory is not a git checkout. **2** is argparse / `p.error` only (`--write-manifest` without the flag, or without a checkout, stays 2).
+
+Owner decision (case): a `.git` component is refused case-insensitively (`str.casefold`), because the fence is Windows-first and Windows and macOS fold `.GIT` onto `.git`. `.gitignore`, `.github`, and `something.git` stay allowed.
+
+Residuals:
+
+- Unicode homoglyph components (zero-width space, fullwidth dot, dotless i, a leading BOM) do not casefold to `.git` and are not refused.
+- A trailing-space component (`.git `) or `.git.` is not the metadata name and is not refused.
+- `atexit` does not run on SIGKILL, so one `atlas-git-home-*` directory can remain after a killed process.
+- Rebuild behaviour change: a caller `ATLAS_HOME_URL` used to make `clean-build-byte-match` fail closed. The scrubbed rebuild ignores that variable and bakes `deploy/cloudflare-edge/wrangler.jsonc` `vars.ORIGIN`. On this host the seven-name rebuild matches the shipped aliases (`7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a`, 924015 bytes).
+
 ## 2026-11-20 — PR10 fix loop 3/3 (`cursor/atlas-post-pr9-fixes`)
 - F-3: `tests/run_ask_browser_stamped.sh` per-run `rc` capture (Sentinel **5ca83528** @ `b459f77`); BUILD_STATUS before **final** `MANIFEST.json` regen.
 - Loop 2 closed @ `b459f77` (F-1, manifest ordering **39b36033**). F-2 **Backlog**; `check_handoff.py` still `196aee0`.

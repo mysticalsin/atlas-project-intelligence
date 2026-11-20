@@ -14,8 +14,14 @@ Usage:
 
 Issue a new reviewed manifest when cutting a release package. This integrity
 check is not a cryptographic signature or a security audit.
+
+Dev-mode git copies PATH from the caller and passes no other caller variable.
+A package rebuild runs build.py with seven names: PATH, a fresh HOME, LANG,
+LC_ALL, PYTHONHASHSEED, PYTHONNOUSERSITE, and PYTHONDONTWRITEBYTECODE.
+Inspection failures exit 1. argparse usage errors exit 2.
 """
 from __future__ import annotations
+import atexit
 import argparse
 import hashlib
 import json
@@ -41,19 +47,60 @@ def is_dev_tree(root: Path) -> bool:
 
 
 def is_git_metadata_path(rel: str) -> bool:
-    return rel == '.git' or rel.startswith('.git/')
+    """True when any path component is ``.git``, compared case-insensitively.
+
+    Windows and macOS fold ``.GIT`` onto the git metadata name. A component
+    that only contains those letters (``.gitignore``, ``.github``,
+    ``something.git``) is not metadata.
+    """
+    return any(part.casefold() == '.git' for part in PurePosixPath(rel).parts)
+
+
+_GIT_HOME: str | None = None
+
+
+def _shared_git_home() -> str:
+    global _GIT_HOME
+    if _GIT_HOME is None or not os.path.isdir(_GIT_HOME):
+        _GIT_HOME = tempfile.mkdtemp(prefix='atlas-git-home-')
+        atexit.register(shutil.rmtree, _GIT_HOME, True)
+    return _GIT_HOME
 
 
 def git_environ() -> dict[str, str]:
-    empty_home = tempfile.mkdtemp(prefix='atlas-git-home-')
+    """Environment for every git subprocess.
+
+    PATH is copied from the caller, or ``/usr/bin:/bin`` when the caller
+    has no PATH, so the operator's git is the binary that runs. The
+    package cannot choose it. HOME is one empty directory for this
+    process and is removed at exit.
+    """
     return {
         'PATH': os.environ.get('PATH', '/usr/bin:/bin'),
-        'HOME': empty_home,
+        'HOME': _shared_git_home(),
         'LANG': 'C',
         'LC_ALL': 'C',
         'GIT_CONFIG_NOSYSTEM': '1',
         'GIT_CONFIG_GLOBAL': '/dev/null',
         'GIT_TERMINAL_PROMPT': '0',
+    }
+
+
+def rebuild_environ(home: str) -> dict[str, str]:
+    """Seven names for one package rebuild. PATH is the caller's.
+
+    HOME is an empty directory removed by the caller. build.py does not
+    see ATLAS_HOME_URL or any other caller variable. LD_PRELOAD and
+    LD_LIBRARY_PATH are omitted.
+    """
+    return {
+        'PATH': os.environ.get('PATH', '/usr/bin:/bin'),
+        'HOME': home,
+        'LANG': 'C.utf8',
+        'LC_ALL': 'C.utf8',
+        'PYTHONHASHSEED': '0',
+        'PYTHONNOUSERSITE': '1',
+        'PYTHONDONTWRITEBYTECODE': '1',
     }
 
 
@@ -222,6 +269,7 @@ def inspect(root: Path, *, rebuild=True, dev_git_index: bool = False) -> dict:
     if dev_git_index:
         if not is_dev_tree(root):
             bad.append('dev-git-index requires a git checkout')
+            present = []
         else:
             tracked, untracked_dev = git_index_file_list(root)
             present = tracked
@@ -297,7 +345,12 @@ def inspect(root: Path, *, rebuild=True, dev_git_index: bool = False) -> dict:
                     if symlink_in_package_path(root, rel):
                         continue
                     shutil.copy2(resolve_in_package(root, rel), target)
-            result = subprocess.run([sys.executable, str(dest / 'build.py')], capture_output=True, text=True, timeout=30, check=False)
+            with tempfile.TemporaryDirectory(prefix='atlas-rebuild-home-') as home:
+                result = subprocess.run(
+                    [sys.executable, str(dest / 'build.py')],
+                    capture_output=True, text=True, timeout=30, check=False,
+                    env=rebuild_environ(home),
+                )
             check('clean-build', result.returncode == 0, 'Build executed in a temporary source-only directory.')
             same = result.returncode == 0 and all(
                 (dest / p).is_file() and (dest / p).read_bytes() == read_package_bytes(root, p) for p in aliases)
