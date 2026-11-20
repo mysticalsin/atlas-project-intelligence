@@ -7,11 +7,7 @@
   "claude_instructions": "CLAUDE.md",
   "prompt": "CLAUDE_BUILD_PROMPT.md",
   "manifest_excludes": [
-    "MANIFEST.json",
-    "deploy/cloudflare-edge/src/atlas.html",
-    "tests/last-local-story.md",
-    "tests/report-screens/report-1366.png",
-    "tests/report-screens/report-390.png"
+    "MANIFEST.json"
   ],
   "files": [
     {
@@ -626,23 +622,23 @@
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 924012,
-      "sha256": "f9c2a2018c947b0c0fac7aa90a31206736fefba21529690a31b732530948f76c"
+      "bytes": 924015,
+      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 924012,
-      "sha256": "f9c2a2018c947b0c0fac7aa90a31206736fefba21529690a31b732530948f76c"
+      "bytes": 924015,
+      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 924012,
-      "sha256": "f9c2a2018c947b0c0fac7aa90a31206736fefba21529690a31b732530948f76c"
+      "bytes": 924015,
+      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 924012,
-      "sha256": "f9c2a2018c947b0c0fac7aa90a31206736fefba21529690a31b732530948f76c"
+      "bytes": 924015,
+      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
     },
     {
       "path": "CLAUDE.md",
@@ -656,8 +652,8 @@
     },
     {
       "path": "Makefile",
-      "bytes": 1866,
-      "sha256": "7983e0709c92eb98cbb5e57d3c281f37e8985a63283f74a14e0ccc0b7cbd91f2"
+      "bytes": 1916,
+      "sha256": "a8625edc3eec8bd3a37a87b5af306d08b525ec82df6050b7c7028604de80f140"
     },
     {
       "path": "Preview.command",
@@ -937,7 +933,7 @@
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
       "bytes": 146,
-      "sha256": "2c09b4389860818179ce2db8f5ee4310b27b5c46d2643bcc94969254af12ab61"
+      "sha256": "e1aab304ead080c0079bfacd41334187cc9ca97c9dee3da4c8d8bd85d5ac739d"
     },
     {
       "path": "deploy/cloudflare-edge/set-keys.sh",
@@ -1002,7 +998,7 @@
     {
       "path": "deploy/cloudflare-edge/src/csp.generated.js",
       "bytes": 1675,
-      "sha256": "d9e932787f83cbaaed3f2376e51bf2af9662890169b40685915fd784c367a0ee"
+      "sha256": "7d54de0b2fed28db9dd1f20106b9cf4526cadd3a9641495c3e68762620bd6dbf"
     },
     {
       "path": "deploy/cloudflare-edge/src/csp.js",
@@ -2281,8 +2277,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 320834,
-      "sha256": "c7913fca424f7762775eca8137e059d185a2642c9055bcc56739b57aecd5d46c"
+      "bytes": 324852,
+      "sha256": "706b697d670941096d99eff33615c477d7b5e177ccc6ef7b4036dabdf744a24f"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2358,6 +2354,11 @@
       "path": "handoff/decisions/post-pr9-unslop.md",
       "bytes": 414,
       "sha256": "5ae00d8a348f5cf1c18afaad9e78984946d2903196c0544b52999014c6d6a30c"
+    },
+    {
+      "path": "handoff/decisions/record-dialog-quality-crash.md",
+      "bytes": 3816,
+      "sha256": "9f7947bffb235354679ffd69cc65c919d7c8be2ad41bccc7f43f8417fd29b350"
     },
     {
       "path": "handoff/provenance/original-v12-manifest.json",
@@ -2756,8 +2757,8 @@
     },
     {
       "path": "src/app.js",
-      "bytes": 146229,
-      "sha256": "405dce71060d9a58281bbfb08328a1d9dff5b703f1d9b0e27c3aafe10af93275"
+      "bytes": 146232,
+      "sha256": "43f6d8d62381d022a6cc09d6cc09084266875387761735380dcb5b9862eea186"
     },
     {
       "path": "src/ask-ui.js",
@@ -3185,6 +3186,11 @@
       "sha256": "733d8322199904034e848867907dd011e7a648125428963cc657b92ad3163e87"
     },
     {
+      "path": "tests/record_dialog_quality_browser.py",
+      "bytes": 5463,
+      "sha256": "6e941aea6aac9962c15d69b670fa4cec5015dddc46e41720e41aa91aef37df57"
+    },
+    {
       "path": "tests/refusal_browser.py",
       "bytes": 8605,
       "sha256": "384b2497d1c1201d739ccb0057c7e32524485e2d16e2501fc10d8df70a76c97d"
@@ -3351,8 +3357,8 @@
     },
     {
       "path": "tests/test_handoff.py",
-      "bytes": 31210,
-      "sha256": "b2b3b1993c48d179d1ad27caeccbe82bc8f005b7f47a4370ab2c8b4b35e060fa"
+      "bytes": 31983,
+      "sha256": "d1336bb44888887df12be3394aa2b16ace09bcdbff528df39efafb698b09707f"
     },
     {
       "path": "tests/test_page_harness.py",

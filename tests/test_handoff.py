@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tarfile
 import zipfile
 import pytest
@@ -734,3 +735,19 @@ def test_docs_do_not_use_the_checker_as_a_dev_gate():
     assert 'check_handoff.py` before changes' not in plan
     assert 'before editing' not in note
     assert 'enumerates package files except itself' in note
+
+
+def test_git_archive_of_head_passes_check_handoff(tmp_path):
+    """A clean git archive of HEAD is the release package the checker scores."""
+    repo = Path(__file__).resolve().parents[1]
+    extracted = tmp_path / 'head'
+    extracted.mkdir()
+    archived = subprocess.run(['git', 'archive', '--format=tar', 'HEAD'], cwd=repo, capture_output=True)
+    assert archived.returncode == 0, archived.stderr
+    unpacked = subprocess.run(['tar', '-x', '-C', str(extracted)], input=archived.stdout)
+    assert unpacked.returncode == 0, unpacked.stderr
+    result = subprocess.run(
+        [sys.executable, 'scripts/check_handoff.py', '.'],
+        cwd=extracted, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
