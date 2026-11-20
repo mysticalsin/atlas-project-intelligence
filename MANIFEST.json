@@ -621,8 +621,8 @@
     },
     {
       "path": "00_START_HERE.md",
-      "bytes": 3884,
-      "sha256": "7c7975870bb5d008fd21e22d26578dbcb69276cdbedea66f539e191c4981b11e"
+      "bytes": 4085,
+      "sha256": "e5030bf1167aa3a81ff53074b659409509b37e02d3ffa27606a345797447d8d8"
     },
     {
       "path": "ATLAS_Intelligence.html",
@@ -656,8 +656,8 @@
     },
     {
       "path": "Makefile",
-      "bytes": 1716,
-      "sha256": "0acb8fee9bbdc8f44a9a1d18976ca2c6abf9d5f8226bfb38221a1fedb7307ef5"
+      "bytes": 1866,
+      "sha256": "7983e0709c92eb98cbb5e57d3c281f37e8985a63283f74a14e0ccc0b7cbd91f2"
     },
     {
       "path": "Preview.command",
@@ -2341,8 +2341,8 @@
     },
     {
       "path": "handoff/decisions/MANIFEST-regenerate.md",
-      "bytes": 661,
-      "sha256": "b1d575c20a28716ec1cf2e15ade308b3c2d78c1e49eb2675a0d7ddb9a97f5836"
+      "bytes": 682,
+      "sha256": "1a2b5c794cb914646c880dbf62d7529bfc3cf6f0626d402f530d0873c3ca38d1"
     },
     {
       "path": "handoff/decisions/ask-browser-waits.md",
@@ -2351,8 +2351,8 @@
     },
     {
       "path": "handoff/decisions/check-handoff-rebuild.md",
-      "bytes": 1069,
-      "sha256": "10ef77e01b4be81c3aee91a19799eee96bf6a775d64639ca01726734a47a94a6"
+      "bytes": 1125,
+      "sha256": "352c8f6b527134e44dcf5a5923b87333502019f013fede3514ecdaefaed66b4c"
     },
     {
       "path": "handoff/decisions/post-pr9-unslop.md",
@@ -2671,8 +2671,8 @@
     },
     {
       "path": "scripts/check_handoff.py",
-      "bytes": 16077,
-      "sha256": "c3e08471ce06b2d70895a9e463bba3536bb1788db359d16145798d0ed1500d75"
+      "bytes": 16888,
+      "sha256": "92530edd2f44d81241166093597917b65e19aa4a3c9737b956aadec51a3ac656"
     },
     {
       "path": "scripts/check_workers_speech.py",
@@ -3351,8 +3351,8 @@
     },
     {
       "path": "tests/test_handoff.py",
-      "bytes": 17368,
-      "sha256": "70311db1294fb888a27c9d07b8bea4f9efac76b6707dfddd9b5f4836169cb633"
+      "bytes": 21842,
+      "sha256": "a61c7fb299774792aacea652fd728826a1f322af5cd15fcc2018652dc2380042"
     },
     {
       "path": "tests/test_page_harness.py",

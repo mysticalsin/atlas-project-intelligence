@@ -283,7 +283,7 @@ def test_git_dev_tree_untracked_file_fails_manifest(tmp_path):
                          'sha256': hashlib.sha256(data).hexdigest()}],
                 'manifest_excludes': ['MANIFEST.json']}
     (root / 'MANIFEST.json').write_text(json.dumps(manifest), encoding='utf-8')
-    result = inspect(root, rebuild=False)
+    result = inspect(root, rebuild=False, dev_git_index=True)
     assert not result['passed']
     detail = next(c['detail'] for c in result['checks'] if c['name'] == 'manifest-content')
     assert 'notes/extra.txt' in detail and ('unlisted:' in detail or 'untracked:' in detail)
@@ -361,8 +361,12 @@ def _plant_attacker_dotgit(package: Path, tmp_path: Path, sentinel: Path) -> Non
     include_cfg = tmp_path / 'attacker-include.cfg'
     include_cfg.write_text('[core]\n\thooksPath = ' + str(hook_dir) + '\n', encoding='utf-8')
     env_init, _ = _isolated_git_env(tmp_path)
-    (package / '.gitignore').write_text('node_modules/\n.claude/\n', encoding='utf-8')
     subprocess.run(['git', 'init', '-q'], cwd=package, check=True, env=env_init)
+    exclude = package / '.git' / 'info' / 'exclude'
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    exclude.write_text('node_modules/\n.claude/\n', encoding='utf-8')
+    subprocess.run(['git', 'add', '-A'], cwd=package, check=True, env=env_init)
+    subprocess.run(['git', 'commit', '-qm', 'release'], cwd=package, check=True, env=env_init)
     cfg = package / '.git' / 'config'
     cfg.write_text(
         '[core]\n'
@@ -373,8 +377,6 @@ def _plant_attacker_dotgit(package: Path, tmp_path: Path, sentinel: Path) -> Non
         '\tpath = ' + str(include_cfg) + '\n',
         encoding='utf-8',
     )
-    subprocess.run(['git', 'add', '-A'], cwd=package, check=True, env=env_init)
-    subprocess.run(['git', 'commit', '-qm', 'release'], cwd=package, check=True, env=env_init)
 
 
 def planted_dotgit_attack_package(tmp_path):
@@ -395,9 +397,10 @@ def test_planted_dotgit_package_inspect_stays_package_mode(tmp_path):
   assert not result['passed']
   assert not sentinel.exists()
   detail = next(c['detail'] for c in result['checks'] if c['name'] == 'manifest-content')
-  assert 'node_modules/evil' in detail
-  assert '.claude/x' in detail
-  assert '.git' in detail
+  details = ' '.join(c['detail'] for c in result['checks'])
+  assert 'node_modules/evil' in details
+  assert '.claude/x' in details
+  assert '.git' in details
 
 
 def test_planted_dotgit_package_cli_stays_package_mode(tmp_path, capsys):
@@ -414,7 +417,9 @@ def test_planted_dotgit_package_cli_stays_package_mode(tmp_path, capsys):
 def test_write_manifest_requires_explicit_dev_git_index():
   repo = Path(__file__).resolve().parents[1]
   assert (repo / '.git' / 'HEAD').is_file()
-  assert main([str(repo), '--write-manifest']) != 0
+  with pytest.raises(SystemExit) as error:
+    main([str(repo), '--write-manifest'])
+  assert error.value.code == 2
 
 
 def test_dev_git_index_ignores_hostile_local_git_config(tmp_path):
@@ -432,14 +437,14 @@ def test_dev_git_index_ignores_hostile_local_git_config(tmp_path):
   (hook_dir / 'pre-commit').write_text('#!/bin/sh\ntouch "' + str(sentinel) + '"\n', encoding='utf-8')
   (hook_dir / 'pre-commit').chmod(0o755)
   subprocess.run(['git', 'init', '-q'], cwd=root, check=True, env=env_init)
+  subprocess.run(['git', 'add', 'notes/readme.txt'], cwd=root, check=True, env=env_init)
+  subprocess.run(['git', 'commit', '-qm', 'init'], cwd=root, check=True, env=env_init)
   cfg = root / '.git' / 'config'
   cfg.write_text(
       '[core]\n\tfsmonitor = true\n\tfsmonitorHookPath = ' + str(mark) + '\n'
       '\thooksPath = ' + str(hook_dir) + '\n',
       encoding='utf-8',
   )
-  subprocess.run(['git', 'add', 'notes/readme.txt'], cwd=root, check=True, env=env_init)
-  subprocess.run(['git', 'commit', '-qm', 'init'], cwd=root, check=True, env=env_init)
   data = b'listed\n'
   manifest = {'files': [{'path': 'notes/readme.txt', 'bytes': len(data),
                          'sha256': hashlib.sha256(data).hexdigest()}],
@@ -497,7 +502,7 @@ def test_make_verify_package_requires_an_extracted_package(tmp_path):
 def test_repository_full_handoff_includes_clean_rebuild():
     """Release tree on disk must pass manifest checks and a source-only rebuild."""
     repo = Path(__file__).resolve().parents[1]
-    report = inspect(repo, rebuild=True)
+    report = inspect(repo, rebuild=True, dev_git_index=True)
     by_name = {c['name']: c for c in report['checks']}
     assert by_name.get('manifest-content', {}).get('pass'), by_name.get('manifest-content', {}).get('detail')
     assert by_name.get('clean-build', {}).get('pass'), by_name.get('clean-build', {}).get('detail')

@@ -4,11 +4,12 @@
 Pass a directory or a .zip/.tar archive. Listed files must match the recorded
 size and SHA-256. The manifest enumerates the package except exact paths in
 ``manifest_excludes`` (the received manifest excludes only itself in packages).
-Dev checkouts with ``.git`` use tracked git paths unless given an explicit
-extracted package without a git work tree.
+Dev checkouts must pass ``--dev-git-index`` to enumerate git-tracked paths.
+Received packages are always verified by filesystem walk (package mode).
 
 Usage:
   python3 scripts/check_handoff.py path/to/extracted-release
+  python3 scripts/check_handoff.py . --dev-git-index
   make verify-package PACKAGE=path/to/extracted-release
 
 Issue a new reviewed manifest when cutting a release package. This integrity
@@ -37,6 +38,14 @@ def safe_relative(value: str) -> bool:
 
 def is_dev_tree(root: Path) -> bool:
     return (root / '.git' / 'HEAD').is_file()
+
+
+def is_git_metadata_path(rel: str) -> bool:
+    return rel == '.git' or rel.startswith('.git/')
+
+
+def git_environ() -> dict[str, str]:
+    return {**os.environ, 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null'}
 
 
 def resolve_in_package(root: Path, rel: str) -> Path:
@@ -90,12 +99,17 @@ def include_in_clean_rebuild(rel: str) -> bool:
     return rel == 'build.py' or rel.startswith(_REBUILD_SOURCE_PREFIXES)
 
 
-_GIT_SAFE = ('git', '-c', 'core.fsmonitor=', '-c', 'core.hooksPath=/dev/null')
+_GIT_INVOCATION = (
+    'git',
+    '-c', 'core.fsmonitor=false',
+    '-c', 'core.hooksPath=/dev/null',
+    '--no-optional-locks',
+)
 
 
 def _git_z_lines(root: Path, *extra: str) -> list[str]:
-    prefix = list(_GIT_SAFE) + ['-C', str(root)] + list(extra)
-    raw = subprocess.check_output(prefix, stderr=subprocess.DEVNULL)
+    prefix = list(_GIT_INVOCATION) + ['-C', str(root)] + list(extra)
+    raw = subprocess.check_output(prefix, stderr=subprocess.DEVNULL, env=git_environ())
     return [line for line in raw.decode('utf-8', 'surrogateescape').split('\0') if line]
 
 
@@ -128,9 +142,7 @@ def write_manifest(root: Path, *, dev_git_index: bool = False) -> int:
     return len(rows)
 
 
-def inspect(root: Path, *, rebuild=True, dev_git_index: bool | None = None) -> dict:
-    if dev_git_index is None:
-        dev_git_index = is_dev_tree(root)
+def inspect(root: Path, *, rebuild=True, dev_git_index: bool = False) -> dict:
     package_mode = not dev_git_index
     checks = []
     def check(name, ok, detail):
@@ -192,10 +204,23 @@ def inspect(root: Path, *, rebuild=True, dev_git_index: bool | None = None) -> d
         except ValueError:
             bad.append('outside package root: ' + rel)
             continue
+        if package_mode and is_git_metadata_path(rel):
+            bad.append('refused: ' + rel)
+            continue
         if rel in seen or rel in allowed or manifest_allows_path(rel, excludes, package_mode=package_mode):
             continue
         bad.append('unlisted: ' + rel)
-    check('manifest-content', not bad, '; '.join(bad[:25]) if bad else f'{len(seen)} release files match size and SHA-256.')
+    if bad:
+        def _bad_key(item: str) -> tuple[int, str]:
+            if item.startswith('unlisted:'):
+                return (0, item)
+            if item.startswith('refused:'):
+                return (2, item)
+            return (1, item)
+        detail_bad = '; '.join(sorted(bad, key=_bad_key)[:25])
+    else:
+        detail_bad = f'{len(seen)} release files match size and SHA-256.'
+    check('manifest-content', not bad, detail_bad)
     for name in ('00_START_HERE.md', 'CLAUDE.md', 'CLAUDE_BUILD_PROMPT.md', 'handoff/CURRENT_STATUS.md', 'handoff/BUILD_PLAN.md', 'handoff/CONFIGURATION.md', 'handoff/ACCEPTANCE.md', 'handoff/CODE_MAP.md'):
         check('required:' + name, (root / name).is_file(), 'Required source/handoff file.')
     disallowed = []
@@ -357,19 +382,21 @@ def main(argv=None):
     if args.write_manifest:
         if not args.package:
             p.error('PACKAGE path is required with --write-manifest')
-        if not args.dev_git_index and not is_dev_tree(Path(args.package)):
-            p.error('--write-manifest requires --dev-git-index or a git checkout')
+        if not args.dev_git_index:
+            p.error('--write-manifest requires --dev-git-index')
         root = Path(args.package)
         if not (root / 'MANIFEST.json').is_file():
             p.error('MANIFEST.json is missing in ' + str(root))
-        count = write_manifest(root, dev_git_index=args.dev_git_index or is_dev_tree(root))
+        if not is_dev_tree(root):
+            p.error('--write-manifest requires a git checkout (--dev-git-index)')
+        count = write_manifest(root, dev_git_index=True)
         print(f'Wrote {count} file entries to MANIFEST.json')
         return 0
     if not args.package:
         p.error('PACKAGE path is required')
     try:
         with open_package(Path(args.package)) as root:
-            report = inspect(root, rebuild=not args.no_rebuild)
+            report = inspect(root, rebuild=not args.no_rebuild, dev_git_index=bool(args.dev_git_index))
     except (OSError, ValueError, subprocess.TimeoutExpired, subprocess.CalledProcessError) as error:
         report = {'passed': False, 'checks': [{'name': 'verification', 'pass': False, 'detail': str(error)}]}
     if args.json:

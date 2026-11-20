@@ -1,5 +1,5 @@
 PYTHON ?= python3
-.PHONY: build preview gateway test test-ui test-edge geo-ne-check doctor verify-package
+.PHONY: build preview gateway test test-ui test-edge geo-ne-check doctor verify-package verify-dev-tree
 build:
 	$(PYTHON) build.py
 preview: build
@@ -45,3 +45,6 @@ doctor:
 verify-package:
 	@test -n "$(PACKAGE)" || { echo 'Usage: make verify-package PACKAGE=path/to/extracted-release (directory or .zip/.tar archive)'; exit 1; }
 	$(PYTHON) scripts/check_handoff.py "$(PACKAGE)"
+# Dev checkout only (never used on received release packages).
+verify-dev-tree:
+	$(PYTHON) scripts/check_handoff.py . --dev-git-index
