@@ -14,12 +14,30 @@ Usage:
 
 Issue a new reviewed manifest when cutting a release package. This integrity
 check is not a cryptographic signature or a security audit.
+
+Dev-mode git copies PATH from the caller and passes no other caller variable.
+A package rebuild runs build.py with seven names: PATH, a fresh HOME, LANG,
+LC_ALL, PYTHONHASHSEED, PYTHONNOUSERSITE, and PYTHONDONTWRITEBYTECODE.
+Inspection failures exit 1. argparse usage errors exit 2.
+
+A git metadata component is one shared check. ASCII components are casefolded
+and trailing dots and spaces are stripped. Any non-ASCII component is refused
+with ``refused: non-ASCII path component``. A short name ``git~<digits>`` with
+an optional suffix (``GIT~1.DIR``) is refused. Checkout detection is the exact
+top-level name ``.git`` only. A git failure on that path exits cleanly with
+``dev-git-index requires a git checkout`` (1 on the check, 2 on
+``--write-manifest``). Owner decisions, 2026-11-20, Atlas.
+
+Still open: SIGKILL does not run atexit, so the one ``atlas-git-home-*``
+directory can remain.
 """
 from __future__ import annotations
+import atexit
 import argparse
 import hashlib
 import json
 import os
+import re
 import stat
 import tarfile
 import zipfile
@@ -36,24 +54,167 @@ def safe_relative(value: str) -> bool:
     return bool(value) and not p.is_absolute() and '..' not in p.parts and '\\' not in value and ':' not in value
 
 
-def is_dev_tree(root: Path) -> bool:
-    return (root / '.git' / 'HEAD').is_file()
+_ADS_SUFFIX = '::$index_allocation'
+_GIT_SHORT = re.compile(r'^git~[0-9]+(\..*)?$')
+
+
+def _strip_ads(part: str) -> str:
+    text = part
+    while text.casefold().endswith(_ADS_SUFFIX):
+        text = text[:-len(_ADS_SUFFIX)]
+    return text
+
+
+def _normalize_component(part: str) -> str:
+    """Casefold an ASCII component and strip trailing dots and spaces."""
+    text = _strip_ads(part)
+    text = text.casefold()
+    while text.endswith('.') or text.endswith(' '):
+        text = text[:-1]
+    return text
+
+
+def path_has_non_ascii(rel: str) -> bool:
+    return any(any(ord(ch) > 127 for ch in part) for part in _path_components(rel))
+
+
+def non_ascii_paths(root: Path) -> list[str]:
+    """Every file or directory under root with a non-ASCII component."""
+    found = []
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        base = Path(dirpath)
+        rel_base = base.relative_to(root).as_posix()
+        if rel_base == '.':
+            rel_base = ''
+        for name in list(dirnames):
+            rel = name if not rel_base else rel_base + '/' + name
+            path = base / name
+            if path_has_non_ascii(rel):
+                found.append(rel)
+            if path.is_symlink():
+                dirnames.remove(name)
+        for name in filenames:
+            rel = name if not rel_base else rel_base + '/' + name
+            if path_has_non_ascii(rel):
+                found.append(rel)
+    return found
+
+
+def _refuse_non_ascii(bad: list[str], rel: str, seen: set[str]) -> bool:
+    if not path_has_non_ascii(rel):
+        return False
+    for msg in ('refused: non-ASCII path component: ' + rel, 'refused: ' + rel):
+        if msg not in seen:
+            bad.append(msg)
+            seen.add(msg)
+    return True
+
+
+def is_git_metadata_component(part: str) -> bool:
+    """True when one path component is git metadata after normalization."""
+    if part in ('', '.', '..'):
+        return False
+    normalized = _normalize_component(part)
+    if normalized == '.git':
+        return True
+    return _GIT_SHORT.fullmatch(normalized) is not None
+
+
+def _path_components(rel: str) -> tuple[str, ...]:
+    text = rel.replace('\\', '/')
+    return tuple(part for part in PurePosixPath(text).parts if part not in ('', '.'))
 
 
 def is_git_metadata_path(rel: str) -> bool:
-    return rel == '.git' or rel.startswith('.git/')
+    """True when any component is git metadata.
+
+    Windows and macOS fold ``.GIT`` onto the git metadata name. A component
+    that only contains those letters (``.gitignore``, ``.github``,
+    ``something.git``, ``.git.bak``) is not metadata. Backslash spellings
+    and ``::$INDEX_ALLOCATION`` names are metadata.
+    """
+    return any(is_git_metadata_component(part) for part in _path_components(rel))
+
+
+class CheckoutRequired(Exception):
+    """Git could not read an exact top-level checkout."""
+
+
+def _exit_checkout_required() -> None:
+    """Exit 2. The message is on stdout so a caught SystemExit stays visible."""
+    print('dev-git-index requires a git checkout')
+    raise SystemExit(2)
+
+
+def _is_checkout_metadata(rel: str) -> bool:
+    """The checkout's own top-level directory, the exact name ``.git`` only."""
+    parts = _path_components(rel)
+    return bool(parts) and parts[0] == '.git'
+
+
+def is_dev_tree(root: Path) -> bool:
+    """True only when the exact top-level ``.git/HEAD`` is a regular file."""
+    head = root / '.git' / 'HEAD'
+    try:
+        return head.is_file() and not head.is_symlink()
+    except OSError:
+        return False
+
+
+_GIT_HOME: str | None = None
+_GIT_HOME_CLEANUP = False
+
+
+def _remove_shared_git_home() -> None:
+    home = _GIT_HOME
+    if home and os.path.isdir(home):
+        shutil.rmtree(home, ignore_errors=True)
+
+
+def _shared_git_home() -> str:
+    global _GIT_HOME, _GIT_HOME_CLEANUP
+    if not _GIT_HOME_CLEANUP:
+        atexit.register(_remove_shared_git_home)
+        _GIT_HOME_CLEANUP = True
+    if _GIT_HOME is None or not os.path.isdir(_GIT_HOME):
+        _GIT_HOME = tempfile.mkdtemp(prefix='atlas-git-home-')
+    return _GIT_HOME
 
 
 def git_environ() -> dict[str, str]:
-    empty_home = tempfile.mkdtemp(prefix='atlas-git-home-')
+    """Environment for every git subprocess.
+
+    PATH is copied from the caller, or ``/usr/bin:/bin`` when the caller
+    has no PATH, so the operator's git is the binary that runs. The
+    package cannot choose it. HOME is one empty directory for this
+    process and is removed at exit.
+    """
     return {
         'PATH': os.environ.get('PATH', '/usr/bin:/bin'),
-        'HOME': empty_home,
+        'HOME': _shared_git_home(),
         'LANG': 'C',
         'LC_ALL': 'C',
         'GIT_CONFIG_NOSYSTEM': '1',
         'GIT_CONFIG_GLOBAL': '/dev/null',
         'GIT_TERMINAL_PROMPT': '0',
+    }
+
+
+def rebuild_environ(home: str) -> dict[str, str]:
+    """Seven names for one package rebuild. PATH is the caller's.
+
+    HOME is an empty directory removed by the caller. build.py does not
+    see ATLAS_HOME_URL or any other caller variable. LD_PRELOAD and
+    LD_LIBRARY_PATH are omitted.
+    """
+    return {
+        'PATH': os.environ.get('PATH', '/usr/bin:/bin'),
+        'HOME': home,
+        'LANG': 'C.utf8',
+        'LC_ALL': 'C.utf8',
+        'PYTHONHASHSEED': '0',
+        'PYTHONNOUSERSITE': '1',
+        'PYTHONDONTWRITEBYTECODE': '1',
     }
 
 
@@ -91,20 +252,48 @@ def read_package_bytes(root: Path, rel: str) -> bytes:
 
 
 def package_files(root: Path) -> list[str]:
+    """Files, symlink directories, and git-metadata directories. Do not follow links."""
     found = []
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
         base = Path(dirpath)
-        for name in list(dirnames):
+        rel_base = base.relative_to(root).as_posix()
+        if rel_base == '.':
+            rel_base = ''
+        for name in dirnames:
             path = base / name
-            if path.is_symlink():
-                found.append(path.relative_to(root).as_posix())
-                dirnames.remove(name)
-        for name in filenames:
-            path = base / name
-            rel = path.relative_to(root).as_posix()
-            if path.is_symlink():
+            rel = name if not rel_base else rel_base + '/' + name
+            if path.is_symlink() or is_git_metadata_component(name):
                 found.append(rel)
-            else:
+        for name in filenames:
+            rel = name if not rel_base else rel_base + '/' + name
+            found.append(rel)
+    return found
+
+
+def nested_git_metadata_paths(root: Path) -> list[str]:
+    """Git metadata under the checkout, not the checkout's own top-level git dir."""
+    found = []
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        base = Path(dirpath)
+        rel_base = base.relative_to(root).as_posix()
+        if rel_base == '.':
+            rel_base = ''
+        for name in list(dirnames):
+            rel = name if not rel_base else rel_base + '/' + name
+            if _is_checkout_metadata(rel):
+                dirnames.remove(name)
+                continue
+            path = base / name
+            if path.is_symlink():
+                if is_git_metadata_path(rel):
+                    found.append(rel)
+                dirnames.remove(name)
+                continue
+            if is_git_metadata_component(name):
+                found.append(rel)
+        for name in filenames:
+            rel = name if not rel_base else rel_base + '/' + name
+            if is_git_metadata_path(rel) and not _is_checkout_metadata(rel):
                 found.append(rel)
     return found
 
@@ -143,7 +332,10 @@ _GIT_INVOCATION = (
 
 def _git_z_lines(root: Path, *extra: str) -> list[str]:
     prefix = list(_GIT_INVOCATION) + ['-C', str(root)] + list(extra)
-    raw = subprocess.check_output(prefix, stderr=subprocess.DEVNULL, env=git_environ())
+    try:
+        raw = subprocess.check_output(prefix, stderr=subprocess.DEVNULL, env=git_environ())
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise CheckoutRequired('dev-git-index requires a git checkout') from error
     return [line for line in raw.decode('utf-8', 'surrogateescape').split('\0') if line]
 
 
@@ -222,21 +414,34 @@ def inspect(root: Path, *, rebuild=True, dev_git_index: bool = False) -> dict:
     if dev_git_index:
         if not is_dev_tree(root):
             bad.append('dev-git-index requires a git checkout')
+            present = []
         else:
-            tracked, untracked_dev = git_index_file_list(root)
-            present = tracked
-            for rel in untracked_dev:
-                if rel not in allowed and not manifest_allows_path(rel, excludes, package_mode=False):
-                    bad.append('untracked: ' + rel)
+            try:
+                tracked, untracked_dev = git_index_file_list(root)
+            except CheckoutRequired:
+                bad.append('dev-git-index requires a git checkout')
+                present = []
+            else:
+                present = tracked
+                for rel in untracked_dev:
+                    if rel not in allowed and not manifest_allows_path(rel, excludes, package_mode=False):
+                        bad.append('untracked: ' + rel)
+                for rel in nested_git_metadata_paths(root):
+                    bad.append('refused: ' + rel)
     else:
         present = package_files(root)
+    non_ascii_seen: set[str] = set()
+    for rel in non_ascii_paths(root):
+        _refuse_non_ascii(bad, rel, non_ascii_seen)
     for rel in sorted(present):
         try:
             resolve_in_package(root, rel)
         except ValueError:
             bad.append('outside package root: ' + rel)
             continue
-        if package_mode and is_git_metadata_path(rel):
+        if _refuse_non_ascii(bad, rel, non_ascii_seen):
+            continue
+        if is_git_metadata_path(rel) and not (dev_git_index and _is_checkout_metadata(rel)):
             bad.append('refused: ' + rel)
             continue
         if rel in seen or rel in allowed or manifest_allows_path(rel, excludes, package_mode=package_mode):
@@ -262,7 +467,7 @@ def inspect(root: Path, *, rebuild=True, dev_git_index: bool = False) -> dict:
             disallowed.append(rel)
         if p.name == '.env' or (p.name.startswith('.env.') and p.name != '.env.example'):
             disallowed.append(rel)
-        if any(x in ('data', 'vault', 'knowledge-vault', 'secrets', 'credentials', 'backups', '.git', '.venv', '__pycache__') for x in p.parts):
+        if any(is_git_metadata_component(x) or x in ('data', 'vault', 'knowledge-vault', 'secrets', 'credentials', 'backups', '.venv', '__pycache__') for x in p.parts):
             disallowed.append(rel)
     check('release-hygiene', not disallowed, '; '.join(disallowed[:20]) if disallowed else 'No known secret/runtime/font paths in the manifest; this is not a full content secret scan.')
     aliases = ['ATLAS_Project_Intelligence.html', 'ATLAS_Intelligence.html', 'ATLAS_Voice_Studio.html', 'ATLAS_Voice.html']
@@ -297,7 +502,12 @@ def inspect(root: Path, *, rebuild=True, dev_git_index: bool = False) -> dict:
                     if symlink_in_package_path(root, rel):
                         continue
                     shutil.copy2(resolve_in_package(root, rel), target)
-            result = subprocess.run([sys.executable, str(dest / 'build.py')], capture_output=True, text=True, timeout=30, check=False)
+            with tempfile.TemporaryDirectory(prefix='atlas-rebuild-home-') as home:
+                result = subprocess.run(
+                    [sys.executable, str(dest / 'build.py')],
+                    capture_output=True, text=True, timeout=30, check=False,
+                    env=rebuild_environ(home),
+                )
             check('clean-build', result.returncode == 0, 'Build executed in a temporary source-only directory.')
             same = result.returncode == 0 and all(
                 (dest / p).is_file() and (dest / p).read_bytes() == read_package_bytes(root, p) for p in aliases)
@@ -421,8 +631,16 @@ def main(argv=None):
         if not (root / 'MANIFEST.json').is_file():
             p.error('MANIFEST.json is missing in ' + str(root))
         if not is_dev_tree(root):
-            p.error('--write-manifest requires a git checkout (--dev-git-index)')
-        count = write_manifest(root, dev_git_index=True)
+            _exit_checkout_required()
+        blocked = non_ascii_paths(root)
+        if blocked:
+            for rel in blocked:
+                print('FAIL manifest-content: refused: non-ASCII path component: ' + rel)
+            return 1
+        try:
+            count = write_manifest(root, dev_git_index=True)
+        except CheckoutRequired:
+            _exit_checkout_required()
         print(f'Wrote {count} file entries to MANIFEST.json')
         return 0
     if not args.package:

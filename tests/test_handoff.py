@@ -751,3 +751,565 @@ def test_git_archive_of_head_passes_check_handoff(tmp_path):
         cwd=extracted, capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+# Follow-ups on the package fence. Appended only; the nine fence tests above are unchanged.
+# Rebuild env is the seven names captured from scripts.check_handoff.subprocess.run.
+_REBUILD_ENV_ALLOWLIST = (
+    'HOME',
+    'LANG',
+    'LC_ALL',
+    'PATH',
+    'PYTHONDONTWRITEBYTECODE',
+    'PYTHONHASHSEED',
+    'PYTHONNOUSERSITE',
+)
+
+
+def _manifest_detail(result):
+    return next(c['detail'] for c in result['checks'] if c['name'] == 'manifest-content')
+
+
+def _exclude(package, extra_paths):
+    manifest = json.loads((package / 'MANIFEST.json').read_text(encoding='utf-8'))
+    manifest['manifest_excludes'] = ['MANIFEST.json', *extra_paths]
+    (package / 'MANIFEST.json').write_text(json.dumps(manifest), encoding='utf-8')
+
+
+@pytest.mark.parametrize('rel,expected', [
+    ('.git', True),
+    ('.git/HEAD', True),
+    ('.git/config', True),
+    ('vendor/demo/.git/HEAD', True),
+    ('vendor/demo/.git/config', True),
+    ('vendor/demo/.git', True),
+    ('vendor/demo/.git/', True),
+    ('./.git/HEAD', True),
+    ('vendor/./.git/HEAD', True),
+    ('.gitignore', False),
+    ('.gitattributes', False),
+    ('.github/workflows/ci.yml', False),
+    ('vendor/.github/workflows/ci.yml', False),
+    ('something.git/README', False),
+    ('foo/bar/.git.bak', False),
+    ('notes/readme.txt', False),
+    ('vendor\\.git\\HEAD', True),
+])
+def test_is_git_metadata_path_any_component(rel, expected):
+    from scripts.check_handoff import is_git_metadata_path
+    assert is_git_metadata_path(rel) is expected
+
+
+@pytest.mark.parametrize('rel', [
+    '.GIT/HEAD',
+    'vendor/x/.Git/config',
+    'Vendor/.Git/HEAD',
+])
+def test_git_metadata_path_refuses_case_variants(rel):
+    """Windows and macOS fold the case of a .git component. The fence does too."""
+    from scripts.check_handoff import is_git_metadata_path
+    assert is_git_metadata_path(rel) is True
+
+
+@pytest.mark.parametrize('rel', [
+    '.gitignore',
+    '.gitattributes',
+    '.github/workflows/ci.yml',
+    'vendor/.github/CODEOWNERS',
+    'something.git/README',
+])
+def test_git_metadata_path_allows_near_names(rel):
+    from scripts.check_handoff import is_git_metadata_path
+    assert is_git_metadata_path(rel) is False
+
+
+def test_manifest_excludes_cannot_hide_nested_git(tmp_path):
+    """Ordering guard: a .git component is refused before manifest_excludes apply."""
+    package = synthetic_package(tmp_path)
+    for rel, data in {
+        'vendor/demo/.git/HEAD': b'ref: refs/heads/main\n',
+        'vendor/demo/.git/config': b'[core]\n\trepositoryformatversion = 0\n',
+    }.items():
+        path = package / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    _exclude(package, ['vendor/demo/.git/HEAD', 'vendor/demo/.git/config'])
+    result = inspect(package, rebuild=False)
+    detail = _manifest_detail(result)
+    assert 'refused: vendor/demo/.git/HEAD' in detail, detail
+    assert 'refused: vendor/demo/.git/config' in detail, detail
+    assert result['passed'] is False
+
+
+def test_excluded_gitlink_file_is_refused(tmp_path):
+    package = synthetic_package(tmp_path)
+    gitlink = package / 'vendor' / 'app' / '.git'
+    gitlink.parent.mkdir(parents=True, exist_ok=True)
+    gitlink.write_bytes(b'gitdir: /tmp/not-a-real-git\n')
+    _exclude(package, ['vendor/app/.git'])
+    result = inspect(package, rebuild=False)
+    detail = _manifest_detail(result)
+    assert 'refused: vendor/app/.git' in detail, detail
+    assert result['passed'] is False
+
+
+def test_unlisted_nested_git_is_refused(tmp_path):
+    package = synthetic_package(tmp_path)
+    path = package / 'vendor' / 'demo' / '.git' / 'HEAD'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b'ref: refs/heads/main\n')
+    result = inspect(package, rebuild=False)
+    detail = _manifest_detail(result)
+    assert 'refused: vendor/demo/.git/HEAD' in detail, detail
+    assert result['passed'] is False
+
+
+def test_dev_git_index_outside_checkout_exits_nonzero_without_traceback(tmp_path, capsys):
+    package = synthetic_package(tmp_path)
+    assert not (package / '.git' / 'HEAD').is_file()
+    code = run_verify([str(package), '--dev-git-index', '--no-rebuild'])
+    captured = capsys.readouterr()
+    text = captured.out + captured.err
+    assert code == 1
+    assert 'dev-git-index requires a git checkout' in text
+    assert 'Traceback' not in text
+    assert 'UnboundLocalError' not in text
+
+
+def test_clean_rebuild_build_py_sees_only_allowlist_env(tmp_path, monkeypatch):
+    """The rebuild env is whatever scripts.check_handoff.subprocess.run receives."""
+    monkeypatch.setenv('OPENAI_API_KEY', 'sk-caller-secret')
+    monkeypatch.setenv('ATLAS_HOME_URL', 'https://evil.example')
+    monkeypatch.setenv('PYTHONPATH', str(tmp_path / 'attacker-path'))
+    monkeypatch.setenv('GIT_DIR', '/tmp/evil-git-dir')
+    monkeypatch.setenv('LD_PRELOAD', '/tmp/attacker.so')
+    monkeypatch.setenv('LD_LIBRARY_PATH', '/tmp/attacker-lib')
+    captured = {}
+    real_run = subprocess.run
+
+    def spy(cmd, *args, **kwargs):
+        command = list(cmd)
+        if command and str(command[-1]).endswith('build.py'):
+            captured['env'] = kwargs.get('env')
+            captured['saw'] = True
+        return real_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr('scripts.check_handoff.subprocess.run', spy)
+    package = synthetic_package(tmp_path)
+    result = inspect(package, rebuild=True, dev_git_index=False)
+    assert captured.get('saw') is True
+    env = captured.get('env')
+    assert isinstance(env, dict), env
+    assert sorted(env) == list(_REBUILD_ENV_ALLOWLIST)
+    assert env['LANG'] == 'C.utf8'
+    assert env['LC_ALL'] == 'C.utf8'
+    assert env['PYTHONHASHSEED'] == '0'
+    assert env['PYTHONNOUSERSITE'] == '1'
+    assert env['PYTHONDONTWRITEBYTECODE'] == '1'
+    assert env['PATH'] == os.environ['PATH']
+    assert env['HOME'] != str(Path.home())
+    assert not Path(env['HOME']).exists()
+    for banned in (
+        'OPENAI_API_KEY', 'ATLAS_HOME_URL', 'PYTHONPATH', 'GIT_DIR',
+        'LD_PRELOAD', 'LD_LIBRARY_PATH',
+    ):
+        assert banned not in env
+    assert result['passed'], result
+
+
+def test_git_environ_does_not_leak_a_home_per_call(monkeypatch):
+    monkeypatch.setenv('PATH', '/usr/bin:/bin')
+    first = git_environ()
+    second = git_environ()
+    assert first['HOME'] == second['HOME']
+    assert Path(first['HOME']).is_dir()
+    assert first['PATH'] == '/usr/bin:/bin'
+
+
+def test_git_environ_documents_path_inheritance():
+    doc = git_environ.__doc__ or ''
+    assert 'PATH' in doc
+    assert 'caller' in doc.lower()
+
+
+# Loop 2. The backslash expectation above moved to True: a backslash spelling is refused.
+_LOOKALIKE_COMPONENTS = (
+    ('trailing-dot', '.git.'),
+    ('trailing-space', '.git '),
+    ('zwsp', '.g\u200bit'),
+    ('zwnj', '.g\u200cit'),
+    ('nbsp', '.git\u00a0'),
+    ('bom', '\ufeff.git'),
+    ('dotless-i', '.g\u0131t'),
+    ('fullwidth-dot', '\uff0egit'),
+    ('fullwidth-git', '.\uff27\uff29\uff34'),
+    ('short-83', 'GIT~1'),
+)
+
+
+def _excluded_lookalike(tmp_path, component):
+    package = synthetic_package(tmp_path)
+    target = package / 'vendor' / 'demo' / component / 'HEAD'
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b'ref: refs/heads/main\n')
+    rel = target.relative_to(package).as_posix()
+    parent = target.parent.relative_to(package).as_posix()
+    _exclude(package, [rel, parent])
+    return package, rel
+
+
+@pytest.mark.parametrize('component', [item[1] for item in _LOOKALIKE_COMPONENTS], ids=[item[0] for item in _LOOKALIKE_COMPONENTS])
+def test_excluded_lookalike_git_component_is_refused(tmp_path, component):
+    """Fail closed: an exclude must not certify a disguised .git component."""
+    package, rel = _excluded_lookalike(tmp_path, component)
+    result = inspect(package, rebuild=False)
+    detail = _manifest_detail(result)
+    assert 'refused: ' + rel in detail, detail
+    assert result['passed'] is False
+
+
+@pytest.mark.parametrize('rel', [
+    '.gitignore',
+    '.gitattributes',
+    '.github/workflows/ci.yml',
+    'something.git/README',
+    'foo/.git.bak',
+])
+def test_normalized_near_names_stay_allowed(rel):
+    from scripts.check_handoff import is_git_metadata_path
+    assert is_git_metadata_path(rel) is False
+
+
+def test_listed_near_names_are_not_refused(tmp_path):
+    package = synthetic_package(tmp_path)
+    extra = {
+        '.gitignore': b'*.log\n',
+        '.gitattributes': b'* text\n',
+        '.github/workflows/ci.yml': b'name: ci\n',
+        'something.git/README': b'hi\n',
+        'foo/.git.bak': b'old\n',
+    }
+    manifest = json.loads((package / 'MANIFEST.json').read_text(encoding='utf-8'))
+    for rel, data in extra.items():
+        path = package / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        manifest['files'].append({
+            'path': rel,
+            'bytes': len(data),
+            'sha256': hashlib.sha256(data).hexdigest(),
+        })
+    (package / 'MANIFEST.json').write_text(json.dumps(manifest), encoding='utf-8')
+    result = inspect(package, rebuild=False)
+    detail = _manifest_detail(result)
+    assert 'refused:' not in detail, detail
+    assert result['passed'], detail
+
+
+def test_empty_nested_git_directory_is_refused(tmp_path):
+    package = synthetic_package(tmp_path)
+    (package / 'vendor' / 'demo' / '.git').mkdir(parents=True)
+    _exclude(package, ['vendor/demo/.git'])
+    result = inspect(package, rebuild=False)
+    detail = _manifest_detail(result)
+    assert 'refused: vendor/demo/.git' in detail, detail
+    assert result['passed'] is False
+
+
+def test_backslash_git_spelling_is_refused_not_unlisted(tmp_path):
+    package = synthetic_package(tmp_path)
+    path = package / 'vendor\\.git\\HEAD'
+    path.write_bytes(b'ref: refs/heads/main\n')
+    result = inspect(package, rebuild=False)
+    detail = _manifest_detail(result)
+    shown = 'vendor\\.git\\HEAD'
+    assert 'refused: ' + shown in detail, detail
+    assert 'unlisted: ' + shown not in detail, detail
+    assert result['passed'] is False
+
+
+def test_index_allocation_git_name_is_refused_not_unlisted(tmp_path):
+    package = synthetic_package(tmp_path)
+    name = '.git::$INDEX_ALLOCATION'
+    path = package / 'vendor' / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b'dir\n')
+    result = inspect(package, rebuild=False)
+    detail = _manifest_detail(result)
+    shown = 'vendor/' + name
+    assert 'refused: ' + shown in detail, detail
+    assert 'unlisted: ' + shown not in detail, detail
+    assert result['passed'] is False
+
+
+def test_package_walk_does_not_follow_directory_symlinks(tmp_path):
+    package = synthetic_package(tmp_path)
+    data = b'visible through the real directory\n'
+    real = package / 'real'
+    real.mkdir()
+    (real / 'file.txt').write_bytes(data)
+    (package / 'extras').symlink_to(real, target_is_directory=True)
+    manifest = json.loads((package / 'MANIFEST.json').read_text(encoding='utf-8'))
+    manifest['files'].append({
+        'path': 'real/file.txt',
+        'bytes': len(data),
+        'sha256': hashlib.sha256(data).hexdigest(),
+    })
+    manifest['manifest_excludes'] = ['MANIFEST.json', 'extras']
+    (package / 'MANIFEST.json').write_text(json.dumps(manifest), encoding='utf-8')
+    result = inspect(package, rebuild=False)
+    detail = _manifest_detail(result)
+    assert 'extras/file.txt' not in detail, detail
+    assert result['passed'], detail
+
+
+def test_git_home_is_removed_at_process_exit():
+    repo = Path(__file__).resolve().parents[1]
+    script = 'import scripts.check_handoff as handoff\nprint(handoff.git_environ()["HOME"])\n'
+    proc = subprocess.run([sys.executable, '-c', script], cwd=repo, capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+    home = Path(proc.stdout.strip())
+    assert home.name.startswith('atlas-git-home-')
+    assert not home.exists()
+
+
+def test_git_home_cleanup_is_registered_once(monkeypatch):
+    import atexit
+    import shutil
+    import scripts.check_handoff as handoff
+    calls = []
+    real_register = atexit.register
+
+    def spy(callback, *args, **kwargs):
+        calls.append(callback)
+        return real_register(callback, *args, **kwargs)
+
+    monkeypatch.setattr(handoff.atexit, 'register', spy)
+    handoff._GIT_HOME = None
+    if hasattr(handoff, '_GIT_HOME_CLEANUP'):
+        handoff._GIT_HOME_CLEANUP = False
+    first = handoff.git_environ()['HOME']
+    shutil.rmtree(first)
+    handoff._GIT_HOME = None
+    handoff.git_environ()
+    assert len(calls) == 1
+
+
+def test_is_dev_tree_accepts_casefolded_git_directory(tmp_path):
+    from scripts.check_handoff import is_dev_tree
+    root = tmp_path / 'repo'
+    (root / '.GIT').mkdir(parents=True)
+    (root / '.GIT' / 'HEAD').write_text('ref: refs/heads/main\n', encoding='utf-8')
+    assert is_dev_tree(root) is False
+
+
+def test_release_hygiene_uses_the_git_metadata_helper(tmp_path):
+    package = synthetic_package(tmp_path)
+    data = b'[core]\n'
+    rel = 'vendor/.git./config'
+    path = package / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+    manifest = json.loads((package / 'MANIFEST.json').read_text(encoding='utf-8'))
+    manifest['files'].append({
+        'path': rel,
+        'bytes': len(data),
+        'sha256': hashlib.sha256(data).hexdigest(),
+    })
+    (package / 'MANIFEST.json').write_text(json.dumps(manifest), encoding='utf-8')
+    result = inspect(package, rebuild=False)
+    hygiene = next(c for c in result['checks'] if c['name'] == 'release-hygiene')
+    assert hygiene['pass'] is False
+    assert rel in hygiene['detail']
+
+
+def _mini_checkout(tmp_path):
+    root = tmp_path / 'repo'
+    root.mkdir()
+    env_init, _env_commit = _isolated_git_env(tmp_path)
+    subprocess.run(['git', 'init', '-q'], cwd=root, check=True, env=env_init)
+    (root / 'notes').mkdir()
+    (root / 'notes' / 'readme.txt').write_bytes(b'listed\n')
+    (root / '.gitignore').write_text('vendor/\n', encoding='utf-8')
+    subprocess.run(['git', 'add', 'notes/readme.txt', '.gitignore'], cwd=root, check=True, env=env_init)
+    subprocess.run(['git', 'commit', '-qm', 'init'], cwd=root, check=True, env=env_init)
+    rows = []
+    for rel in ('notes/readme.txt', '.gitignore'):
+        data = (root / rel).read_bytes()
+        rows.append({'path': rel, 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
+    manifest = {'files': rows, 'manifest_excludes': ['MANIFEST.json']}
+    (root / 'MANIFEST.json').write_text(json.dumps(manifest), encoding='utf-8')
+    return root
+
+
+def test_dev_git_index_refuses_nested_git_under_gitignore(tmp_path, capsys):
+    root = _mini_checkout(tmp_path)
+    hidden = root / 'vendor' / 'demo' / '.git' / 'HEAD'
+    hidden.parent.mkdir(parents=True)
+    hidden.write_bytes(b'ref: refs/heads/main\n')
+    code = run_verify([str(root), '--dev-git-index', '--no-rebuild'])
+    text = capsys.readouterr().out + capsys.readouterr().err
+    assert code == 1
+    assert 'refused: vendor/demo/.git/HEAD' in text
+    assert 'Traceback' not in text
+
+
+def test_dev_git_index_does_not_refuse_the_checkout_git_dir(tmp_path):
+    root = _mini_checkout(tmp_path)
+    result = inspect(root, rebuild=False, dev_git_index=True)
+    detail = _manifest_detail(result)
+    assert 'refused: .git' not in detail
+    assert 'refused: .git/' not in detail
+
+
+# Loop 3. Any non-ASCII component is refused. Short names include a suffix.
+_NON_ASCII_PATHS = (
+    ('u0131', 'vendor/\u0131.txt'),
+    ('u0456', 'vendor/\u0456.txt'),
+    ('u0261', 'vendor/\u0261.txt'),
+    ('u2024', 'vendor/\u2024.txt'),
+    ('cafe', 'notes/caf\u00e9.txt'),
+)
+
+
+def _excluded_extra(tmp_path, rel, data=b'x\n'):
+    package = synthetic_package(tmp_path)
+    path = package / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+    _exclude(package, [rel])
+    return package
+
+
+@pytest.mark.parametrize('rel', [item[1] for item in _NON_ASCII_PATHS], ids=[item[0] for item in _NON_ASCII_PATHS])
+def test_excluded_non_ascii_component_is_refused(tmp_path, rel):
+    package = _excluded_extra(tmp_path, rel)
+    result = inspect(package, rebuild=False)
+    detail = _manifest_detail(result)
+    assert 'refused: non-ASCII path component' in detail, detail
+    assert result['passed'] is False
+
+
+@pytest.mark.parametrize('name', ['GIT~1.DIR', 'git~12.x'])
+def test_git_short_name_with_suffix_is_refused(tmp_path, name):
+    rel = 'vendor/' + name
+    package = _excluded_extra(tmp_path, rel)
+    result = inspect(package, rebuild=False)
+    detail = _manifest_detail(result)
+    assert 'refused: ' + rel in detail, detail
+    assert result['passed'] is False
+
+
+def test_dev_git_index_refuses_non_ascii_path(tmp_path, capsys):
+    root = _mini_checkout(tmp_path)
+    (root / 'notes' / 'caf\u00e9.txt').write_bytes(b'x\n')
+    code = run_verify([str(root), '--dev-git-index', '--no-rebuild'])
+    text = capsys.readouterr().out + capsys.readouterr().err
+    assert code == 1
+    assert 'refused: non-ASCII path component' in text
+    assert 'Traceback' not in text
+
+
+def test_write_manifest_refuses_non_ascii_path(tmp_path, capsys):
+    root = _mini_checkout(tmp_path)
+    (root / 'notes' / 'caf\u00e9.txt').write_bytes(b'x\n')
+    before = (root / 'MANIFEST.json').read_bytes()
+    code = run_verify([str(root), '--dev-git-index', '--write-manifest'])
+    text = capsys.readouterr().out + capsys.readouterr().err
+    assert code == 1
+    assert 'refused: non-ASCII path component' in text
+    assert (root / 'MANIFEST.json').read_bytes() == before
+
+
+# Loop 4. Checkout detection is the exact top-level .git. Disguised top-level
+# names are refused. The symlink refusal and the repeated trim are load-bearing.
+def _disguised_checkout(tmp_path, dirname):
+    root = tmp_path / 'pkg'
+    root.mkdir()
+    (root / dirname).mkdir()
+    (root / dirname / 'HEAD').write_text('ref: refs/heads/main\n', encoding='utf-8')
+    (root / 'MANIFEST.json').write_text(
+        json.dumps({'files': [], 'manifest_excludes': ['MANIFEST.json']}),
+        encoding='utf-8')
+    return root
+
+
+@pytest.mark.parametrize('dirname', ['.GIT', 'GIT~1'])
+def test_disguised_checkout_dev_git_index_exits_clean(tmp_path, capsys, dirname):
+    root = _disguised_checkout(tmp_path, dirname)
+    code = run_verify([str(root), '--dev-git-index', '--no-rebuild'])
+    text = capsys.readouterr().out + capsys.readouterr().err
+    assert code == 1
+    assert 'dev-git-index requires a git checkout' in text
+    assert 'Traceback' not in text
+
+
+@pytest.mark.parametrize('dirname', ['.GIT', 'GIT~1'])
+def test_disguised_checkout_write_manifest_exits_clean(tmp_path, capsys, dirname):
+    root = _disguised_checkout(tmp_path, dirname)
+    before = (root / 'MANIFEST.json').read_bytes()
+    code = run_verify([str(root), '--dev-git-index', '--write-manifest'])
+    text = capsys.readouterr().out + capsys.readouterr().err
+    assert code == 2
+    assert 'dev-git-index requires a git checkout' in text
+    assert 'Traceback' not in text
+    assert (root / 'MANIFEST.json').read_bytes() == before
+
+
+def test_git_failure_on_exact_dotgit_check_is_clean(tmp_path, capsys):
+    root = _disguised_checkout(tmp_path, '.git')
+    code = run_verify([str(root), '--dev-git-index', '--no-rebuild'])
+    text = capsys.readouterr().out + capsys.readouterr().err
+    assert code == 1
+    assert 'dev-git-index requires a git checkout' in text
+    assert 'Traceback' not in text
+
+
+def test_git_failure_on_exact_dotgit_write_manifest_is_clean(tmp_path, capsys):
+    root = _disguised_checkout(tmp_path, '.git')
+    before = (root / 'MANIFEST.json').read_bytes()
+    code = run_verify([str(root), '--dev-git-index', '--write-manifest'])
+    text = capsys.readouterr().out + capsys.readouterr().err
+    assert code == 2
+    assert 'dev-git-index requires a git checkout' in text
+    assert 'Traceback' not in text
+    assert (root / 'MANIFEST.json').read_bytes() == before
+
+
+@pytest.mark.parametrize('name', ['.GIT', '.git.', 'GIT~1', 'GIT~1.DIR'])
+def test_dev_mode_refuses_top_level_disguised_git_dir(tmp_path, capsys, name):
+    root = _mini_checkout(tmp_path)
+    hidden = root / name / 'HEAD'
+    hidden.parent.mkdir()
+    hidden.write_bytes(b'ref: refs/heads/main\n')
+    code = run_verify([str(root), '--dev-git-index', '--no-rebuild'])
+    text = capsys.readouterr().out + capsys.readouterr().err
+    refused = [line for line in text.splitlines() if 'refused:' in line]
+    assert code == 1
+    assert any(name in line for line in refused), text
+    assert not any(line.endswith('refused: .git') or 'refused: .git/' in line for line in refused)
+    assert 'Traceback' not in text
+
+
+def test_dev_git_index_refuses_nested_git_symlink(tmp_path, capsys):
+    root = _mini_checkout(tmp_path)
+    target = tmp_path / 'elsewhere'
+    target.mkdir()
+    link = root / 'vendor' / 'demo' / '.git'
+    link.parent.mkdir(parents=True)
+    link.symlink_to(target, target_is_directory=True)
+    code = run_verify([str(root), '--dev-git-index', '--no-rebuild'])
+    text = capsys.readouterr().out + capsys.readouterr().err
+    assert code == 1
+    assert 'refused: vendor/demo/.git' in text
+    assert 'Traceback' not in text
+
+
+@pytest.mark.parametrize('name', ['.git. .', '.git . '])
+def test_repeated_trailing_dot_and_space_is_refused(tmp_path, name):
+    rel = 'vendor/' + name
+    package = _excluded_extra(tmp_path, rel)
+    result = inspect(package, rebuild=False)
+    detail = _manifest_detail(result)
+    assert 'refused: ' + rel in detail, detail
+    assert result['passed'] is False

@@ -1,6 +1,122 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
+
+Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.
+
+One existing assertion changed with the red tests: `test_is_dev_tree_accepts_casefolded_git_directory` now expects `is_dev_tree` to reject `.GIT/HEAD`. The nine original fence-test bodies stay byte-identical. The rest of `tests/test_handoff.py` is append-only, plus a split of the git-failure case so each exit is read once.
+
+Owner decision, 2026-11-20, Tony, also in `handoff/decisions/check-handoff-git-metadata.md`:
+
+- Checkout detection is the exact top-level `.git` only. `.GIT` and `GIT~1` are not a checkout.
+- A git failure prints `dev-git-index requires a git checkout` with no traceback. The check exits 1. `--write-manifest` exits 2, and it does not rewrite `MANIFEST.json`.
+- In a real checkout, top-level `.GIT/`, `.git./`, `GIT~1/`, and `GIT~1.DIR/` are `refused:`. The exact `.git` is not.
+- A nested `.git` directory symlink is `refused:`. Removing that append is killed by `test_dev_git_index_refuses_nested_git_symlink`.
+- Trailing dots and spaces are stripped repeatedly. `.git. .` and `.git . ` are refused. Stripping only once is killed by `test_repeated_trailing_dot_and_space_is_refused`.
+
+Still open after this loop: SIGKILL does not run `atexit`, so the one `atlas-git-home-*` directory can remain. That is the only residual.
+
+PR 13 was still open at this manifest (`mergedAt` null). `origin/main` was still `3d9239c112b5c5853fc49ce15424bbd29d94cfb2`. No merge.
+
+Red on `7050ae3`: 10 failed, 3 passed, exit 1. The three that already passed are the symlink refusal and the repeated trim, which lock the mutants.
+
+Measured on `4b956ee01b0c3baddfc4fbe5fd75ea8b27be5571` with `ATLAS_DEPLOY_STUB` unset, before this paragraph's manifest refresh.
+
+- Red commit `7050ae3`: 10 failed, 3 passed, 0.36s, exit 1.
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 413 passed, 127 warnings, 25.44s, exit 0.
+- `node --test tests/*.test.js`: 413 tests, 413 pass, 0 fail, 0 skipped.
+- Edge `node --test test/*.test.js` with miniflare `5.20261023.3-beta` and workerd `2026-10-23`: 1117 tests, 1117 pass, 0 fail, 0 skipped, 232.3s. The alias-begin tail test passed.
+- `make test-ui` (`CHROMIUM_PATH=/usr/local/bin/google-chrome`): 834 PASS, 0 FAIL, exit 0.
+- `python3 scripts/check_handoff.py . --dev-git-index` on the pre-count tree: exit 0, 695 release files.
+
+## 2026-11-20 — check_handoff fence loop 3 (`cursor/atlas-checkhandoff-nested-git`)
+
+Final loop. Red tests are `9ec906ba30502d116bf83dd5970be6248cea68bb`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `e36aa900ad93a4833af6e925a186cf6a7eacc675`. `MANIFEST.json` is regenerated after this note.
+
+Before any code, the working tree and `git ls-files` were scanned for a path component with a character above U+007F. The count was 0, including `.git` (697 tracked paths, 0 non-ASCII). PR 13 was still open; `origin/main` was still `3d9239c112b5c5853fc49ce15424bbd29d94cfb2`. No merge.
+
+Owner decision, 2026-11-20, Atlas, also in `handoff/decisions/check-handoff-git-metadata.md`:
+
+- Refuse any non-ASCII path component in inspect, verify-package, write-manifest, and `--dev-git-index`. The message contains `refused: non-ASCII path component` and the command exits 1. The confusable fold table is gone.
+- ASCII components still casefold and drop trailing dots and spaces. `::$INDEX_ALLOCATION` is still stripped. A backslash spelling is still split and reported as `refused:`.
+- After casefold, a component matching `^git~[0-9]+(\..*)?$` is refused (`GIT~1`, `GIT~1.DIR`, `git~12.x`).
+- `.gitignore`, `.gitattributes`, `.github/`, `something.git`, and `foo/.git.bak` stay allowed.
+
+Still open after this loop: SIGKILL does not run `atexit`, so the one `atlas-git-home-*` directory can remain. That is the only residual.
+
+Accepted, not open: a caller `ATLAS_HOME_URL` is not visible to the rebuild. The rebuild bakes `deploy/cloudflare-edge/wrangler.jsonc` `vars.ORIGIN`.
+
+Red on `9ec906b`, the nine new tests only: 9 failed, exit 1. An excluded `café.txt` and components U+0131, U+0456, U+0261, and U+2024 were certified. `GIT~1.DIR` and `git~12.x` were certified. `--write-manifest` exited 0.
+
+Mutants, each exit 1, checker restored to sha256 `03960268d94974b18f76b24295778b4faef6c1ec6d63f955c8f6e73a59c68d77`: ordering, present, rebuild-env, git-home, case, followlinks, atexit, normalization, dev-nested, symlink-control, environ-control, non-ASCII refusal removed, short-name regex reverted to `^git~[0-9]+$`.
+
+Measured on this loop with `ATLAS_DEPLOY_STUB` unset, before this paragraph's manifest refresh. The record commit is `5455e4b16c708cea8b3d77810787b2da9bb0e3c4`.
+
+- Red commit `9ec906b`: the nine new tests, 9 failed, exit 1. An excluded `café.txt` and U+0131, U+0456, U+0261, and U+2024 were certified (`15 release files match`). `GIT~1.DIR` and `git~12.x` were certified. `--write-manifest` exited 0. The full `tests/test_handoff.py` on that commit also fails the two stale-manifest tests named above.
+- `python3 -m pytest tests/test_handoff.py -q`: 130 passed, 3.23s, exit 0.
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 400 passed, 127 warnings, 26.63s, exit 0.
+- `node --test tests/*.test.js`: 413 tests, 413 pass, 0 fail, 0 skipped.
+- Edge `node --test test/*.test.js` with miniflare `5.20261023.3-beta` and workerd `2026-10-23`: 1117 tests, 1117 pass, 0 fail, 0 skipped, 232.5s. The alias-begin tail test passed (`workerd 2026-10-23 runs an alias-begin tail`).
+- `make test-ui` (`CHROMIUM_PATH=/usr/local/bin/google-chrome`): 834 PASS, 0 FAIL, exit 0.
+- `python3 scripts/check_handoff.py . --dev-git-index`: exit 0, 695 release files, `clean-build` and `clean-build-byte-match` pass.
+
+## 2026-11-20 — check_handoff fence loop 2 (`cursor/atlas-checkhandoff-nested-git`)
+
+Red tests are `8bd62711d902d6cc90373182580e0af5dd90c87e`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `d55ef53`. `MANIFEST.json` is regenerated after this note.
+
+Owner decisions, 2026-11-20, Atlas, also in `handoff/decisions/check-handoff-git-metadata.md`:
+
+- Casefold: a component that casefolds to `.git` is refused. Windows and macOS fold `.GIT` onto `.git`.
+- Fail closed: each component is NFKC, casefold, drop Cf/Zs/Mn, strip trailing dots, then confusable-fold. Refuse when that is `.git`, when it is `git~<digits>` (`GIT~1`), or when a non-ASCII raw component folds to `.git`. Backslash spellings and `::$INDEX_ALLOCATION` are `refused:`, not `unlisted:`.
+- `--dev-git-index` refuses a nested `.git` on disk when `.gitignore` hides it. An empty nested `.git` directory is refused in package mode. The checkout's own top-level git directory is not refused in dev mode.
+
+Still open after this loop:
+
+- SIGKILL does not run `atexit`, so the one `atlas-git-home-*` directory can remain.
+- A non-ASCII character that NFKC, casefold, Cf/Zs/Mn removal, trailing-dot strip, and the fold table (U+0131 dotless i, U+0456 Cyrillic i, U+0261 script g, U+2024 one-dot leader) do not map onto `.git` is not refused.
+- A short name that is not exactly `git~<digits>` after that fold (for example `GIT~1.DIR`) is not refused.
+
+Accepted, not open: a caller `ATLAS_HOME_URL` is not visible to the rebuild. The rebuild bakes `deploy/cloudflare-edge/wrangler.jsonc` `vars.ORIGIN`.
+
+Measured on this loop with `ATLAS_DEPLOY_STUB` unset, before this paragraph's manifest refresh:
+
+- Red commit `8bd6271`: the new tests, 18 failed, 25 passed. The full `tests/test_handoff.py` on that commit also fails the two stale-manifest tests named above.
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 391 passed, 127 warnings, 26.63s, exit 0.
+- `node --test tests/*.test.js`: 413 tests, 413 pass, 0 fail, 0 skipped.
+- Edge `node --test test/*.test.js` with miniflare `5.20261023.3-beta` and workerd `2026-10-23`: 1117 tests, 1117 pass, 0 fail, 0 skipped. The alias-begin tail test passed.
+- `make test-ui` (`CHROMIUM_PATH=/usr/local/bin/google-chrome`): 834 PASS, 0 FAIL, exit 0.
+- `python3 scripts/check_handoff.py . --dev-git-index` before this paragraph: exit 0, 695 release files, `clean-build` and `clean-build-byte-match` pass.
+
+## 2026-11-20 — check_handoff fence follow-ups (`cursor/atlas-checkhandoff-nested-git`)
+
+Four rows on `scripts/check_handoff.py`, base `3d9239c112b5c5853fc49ce15424bbd29d94cfb2`. Red tests are the commit before the fix. `MANIFEST.json` is regenerated last with `python3 scripts/check_handoff.py . --dev-git-index --write-manifest`.
+
+- ATLAS-CHECKHANDOFF-NESTED-GIT: any path component that casefolds to `.git` is `refused:` before `manifest_excludes`. `test_manifest_excludes_cannot_hide_nested_git` is the ordering guard.
+- ATLAS-HANDOFF-DEVGITINDEX-UNBOUND: `--dev-git-index` outside a checkout sets `present = []`, reports `dev-git-index requires a git checkout`, and exits 1 with no traceback.
+- ATLAS-PR10-C2-VERIFY-PACKAGE-BUILD-ENV: the rebuild `subprocess.run` gets seven names only (`PATH`, fresh `HOME`, `LANG=C.utf8`, `LC_ALL=C.utf8`, `PYTHONHASHSEED=0`, `PYTHONNOUSERSITE=1`, `PYTHONDONTWRITEBYTECODE=1`). The test reads that `env` by monkeypatching `scripts.check_handoff.subprocess.run`.
+- ATLAS-PR10-C4-GIT-ENV-TEMPHOME-PATH: `git_environ` reuses one `atlas-git-home-*` directory and removes it with `atexit`. `PATH` is copied from the caller. `LD_PRELOAD` and `LD_LIBRARY_PATH` are not passed.
+
+Exit codes: **1** is an inspection failure, including `--dev-git-index` when the directory is not a git checkout. **2** is argparse / `p.error` only (`--write-manifest` without the flag, or without a checkout, stays 2).
+
+Owner decision (case): a `.git` component is refused case-insensitively (`str.casefold`), because the fence is Windows-first and Windows and macOS fold `.GIT` onto `.git`. `.gitignore`, `.github`, and `something.git` stay allowed.
+
+Residuals:
+
+- Unicode homoglyph components (zero-width space, fullwidth dot, dotless i, a leading BOM) do not casefold to `.git` and are not refused.
+- A trailing-space component (`.git `) or `.git.` is not the metadata name and is not refused.
+- `atexit` does not run on SIGKILL, so one `atlas-git-home-*` directory can remain after a killed process.
+- Rebuild behaviour change: a caller `ATLAS_HOME_URL` used to make `clean-build-byte-match` fail closed. The scrubbed rebuild ignores that variable and bakes `deploy/cloudflare-edge/wrangler.jsonc` `vars.ORIGIN`. On this host the seven-name rebuild matches the shipped aliases (`7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a`, 924015 bytes).
+
+Measured on `3f254111b63bb2035e1a9e3192a3858c15575333` before this paragraph. `ATLAS_DEPLOY_STUB` was unset.
+
+- Red commit `f656ecfca32817f4fb7b77c52236ab5dd44da4bf`: the new tests, 16 failed, 16 passed, exit 1.
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 365 passed, 127 warnings, 27.65s, exit 0.
+- `node --test tests/*.test.js`: 413 tests, 413 pass, 0 fail, 0 skipped.
+- Edge `node --test test/*.test.js` with miniflare `5.20261023.3-beta` and workerd `2026-10-23`: 1117 tests, 1117 pass, 0 fail, 0 skipped. The alias-begin tail test passed.
+- `make test-ui` (`CHROMIUM_PATH=/usr/local/bin/google-chrome`): 834 PASS, 0 FAIL, exit 0.
+- `python3 scripts/check_handoff.py . --dev-git-index` on the fix tree: exit 0, 694 release files, `clean-build` and `clean-build-byte-match` pass.
+
 ## 2026-11-20 — PR10 fix loop 3/3 (`cursor/atlas-post-pr9-fixes`)
 - F-3: `tests/run_ask_browser_stamped.sh` per-run `rc` capture (Sentinel **5ca83528** @ `b459f77`); BUILD_STATUS before **final** `MANIFEST.json` regen.
 - Loop 2 closed @ `b459f77` (F-1, manifest ordering **39b36033**). F-2 **Backlog**; `check_handoff.py` still `196aee0`.
