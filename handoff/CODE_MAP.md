@@ -35,6 +35,7 @@
 | `src/voice-client.js`, `voice-worklet.js` | Browser consent, mic/stream, PCM, playback acknowledgement and output energy. |
 | `src/orb-renderer.js`, `orb-ui.js`, `studio-panels.js` | Particle sculpture, phrase articulation, real audio signals, silent preview and visible project context. |
 | `src/engine.js`, `app.js` | Local profiles/projects, source excerpts, measurements, story versions, review UI, storage, backup. |
+| `src/display-value.js` | Text for one record value: a string, a finite number, an object's own label, or an em dash. The record dialog uses it for a consultant role and an issue detail. |
 | `src/intelligence-core.js`, `intelligence-ui.js` | Quality lab, private resume, server wiki editor, narrative suggestion and matching workflow. |
 | `src/studio-core.js`, `studio-connection.js` | Preview state and configured gateway address controls. |
 | `build.py` | Standard-library template/asset inliner. `docs/BUILD_NOTES.md` and `docs/architecture.svg` are embedded build inputs. |
