@@ -8,15 +8,6 @@
   "prompt": "CLAUDE_BUILD_PROMPT.md",
   "manifest_excludes": [
     "MANIFEST.json",
-    ".git/",
-    "__pycache__/",
-    "node_modules/",
-    ".venv/",
-    ".pytest_cache/",
-    ".wrangler/",
-    ".npm/",
-    ".claude/",
-    ".playwright-mcp/",
     "deploy/cloudflare-edge/src/atlas.html",
     "tests/last-local-story.md",
     "tests/report-screens/report-1366.png",
@@ -2680,8 +2671,8 @@
     },
     {
       "path": "scripts/check_handoff.py",
-      "bytes": 14970,
-      "sha256": "939927eb8441d7e755d8be2a94f26aa0e2205ab3fc14a73a5e4445553087e4cf"
+      "bytes": 16077,
+      "sha256": "c3e08471ce06b2d70895a9e463bba3536bb1788db359d16145798d0ed1500d75"
     },
     {
       "path": "scripts/check_workers_speech.py",
@@ -3360,8 +3351,8 @@
     },
     {
       "path": "tests/test_handoff.py",
-      "bytes": 14047,
-      "sha256": "94724ed2fb11c2a5846d2d9f3972874fd562a159c46a547a40f76afcdf7884d6"
+      "bytes": 17368,
+      "sha256": "70311db1294fb888a27c9d07b8bea4f9efac76b6707dfddd9b5f4836169cb633"
     },
     {
       "path": "tests/test_page_harness.py",

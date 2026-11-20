@@ -2,10 +2,10 @@
 """Verify an extracted release package against its own MANIFEST.json.
 
 Pass a directory or a .zip/.tar archive. Listed files must match the recorded
-size and SHA-256. The manifest enumerates the package except manifest_excludes
-(the received manifest excludes only itself, plus optional prefix rules ending
-in ``/``). The same pass checks release hygiene, required handoff files,
-identical HTML aliases, the supplied logo, and a clean source rebuild.
+size and SHA-256. The manifest enumerates the package except exact paths in
+``manifest_excludes`` (the received manifest excludes only itself in packages).
+Dev checkouts with ``.git`` use tracked git paths unless given an explicit
+extracted package without a git work tree.
 
 Usage:
   python3 scripts/check_handoff.py path/to/extracted-release
@@ -35,6 +35,18 @@ def safe_relative(value: str) -> bool:
     return bool(value) and not p.is_absolute() and '..' not in p.parts and '\\' not in value and ':' not in value
 
 
+def is_dev_tree(root: Path) -> bool:
+    return (root / '.git' / 'HEAD').is_file()
+
+
+def resolve_in_package(root: Path, rel: str) -> Path:
+    root_res = root.resolve()
+    target = (root / rel).resolve()
+    if target != root_res and root_res not in target.parents:
+        raise ValueError('Outside package root: ' + rel)
+    return target
+
+
 def package_files(root: Path) -> list[str]:
     found = []
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
@@ -46,20 +58,23 @@ def package_files(root: Path) -> list[str]:
                 dirnames.remove(name)
         for name in filenames:
             path = base / name
+            rel = path.relative_to(root).as_posix()
             if path.is_symlink():
-                found.append(path.relative_to(root).as_posix())
+                found.append(rel)
             else:
-                found.append(path.relative_to(root).as_posix())
+                found.append(rel)
     return found
 
 
-def manifest_allows_path(rel: str, excludes: list) -> bool:
+def manifest_allows_path(rel: str, excludes: list, *, package_mode: bool) -> bool:
     if not isinstance(excludes, list):
         return False
     for item in excludes:
         if not isinstance(item, str) or not safe_relative(item):
             continue
         if item.endswith('/'):
+            if package_mode:
+                continue
             bare = item.rstrip('/')
             if rel == bare or rel.startswith(item) or ('/' + bare + '/') in ('/' + rel):
                 return True
@@ -85,7 +100,6 @@ def _git_z_lines(root: Path, *extra: str) -> list[str]:
 
 
 def git_index_file_list(root: Path) -> tuple[list[str], list[str]]:
-    """Tracked paths and untracked non-ignored paths from the git index (dev only)."""
     tracked = sorted(
         line for line in _git_z_lines(root, 'ls-files', '-z')
         if line and line != 'MANIFEST.json' and safe_relative(line))
@@ -107,14 +121,17 @@ def write_manifest(root: Path, *, dev_git_index: bool = False) -> int:
     meta = json.loads(path.read_text(encoding='utf-8'))
     rows = []
     for rel in release_file_list(root, dev_git_index=dev_git_index):
-        data = (root / rel).read_bytes()
+        data = resolve_in_package(root, rel).read_bytes()
         rows.append({'path': rel, 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
     meta['files'] = rows
     path.write_text(json.dumps(meta, indent=2) + '\n', encoding='utf-8')
     return len(rows)
 
 
-def inspect(root: Path, *, rebuild=True, dev_git_index=False) -> dict:
+def inspect(root: Path, *, rebuild=True, dev_git_index: bool | None = None) -> dict:
+    if dev_git_index is None:
+        dev_git_index = is_dev_tree(root)
+    package_mode = not dev_git_index
     checks = []
     def check(name, ok, detail):
         checks.append({'name': name, 'pass': bool(ok), 'detail': detail})
@@ -133,49 +150,54 @@ def inspect(root: Path, *, rebuild=True, dev_git_index=False) -> dict:
             bad.append('invalid manifest path')
             continue
         rel = row['path']
-        p = root / rel
         if rel in seen:
             bad.append('duplicate: ' + rel)
             continue
         seen.add(rel)
-        if not p.is_file() or p.is_symlink():
+        try:
+            target = resolve_in_package(root, rel)
+        except ValueError:
+            bad.append('outside package root: ' + rel)
+            continue
+        if not target.is_file() or target.is_symlink():
             bad.append('missing or symlink: ' + rel)
             continue
         try:
-            data = p.read_bytes()
+            data = target.read_bytes()
         except OSError:
             bad.append('unreadable: ' + rel)
             continue
         if len(data) != row.get('bytes') or hashlib.sha256(data).hexdigest() != row.get('sha256'):
             bad.append('changed: ' + rel)
-    # The manifest lists every on-disk package file except manifest_excludes (exact paths or prefix rules ending in /).
-    # Extracted packages fail when extra files are present; dev trees may declare local-only prefixes instead of calling git.
     excludes = manifest.get('manifest_excludes', ['MANIFEST.json'])
     allowed = {'MANIFEST.json'}
     if isinstance(excludes, list):
         for item in excludes:
             if isinstance(item, str) and safe_relative(item) and not item.endswith('/'):
                 allowed.add(item)
-    untracked_dev: list[str] = []
     if dev_git_index:
-        if not (root / '.git').is_dir():
+        if not is_dev_tree(root):
             bad.append('dev-git-index requires a git checkout')
         else:
             tracked, untracked_dev = git_index_file_list(root)
             present = tracked
             for rel in untracked_dev:
-                if not manifest_allows_path(rel, excludes):
+                if rel not in allowed and not manifest_allows_path(rel, excludes, package_mode=False):
                     bad.append('untracked: ' + rel)
     else:
         present = package_files(root)
     for rel in sorted(present):
-        if rel in seen or rel in allowed or manifest_allows_path(rel, excludes):
+        try:
+            resolve_in_package(root, rel)
+        except ValueError:
+            bad.append('outside package root: ' + rel)
+            continue
+        if rel in seen or rel in allowed or manifest_allows_path(rel, excludes, package_mode=package_mode):
             continue
         bad.append('unlisted: ' + rel)
     check('manifest-content', not bad, '; '.join(bad[:25]) if bad else f'{len(seen)} release files match size and SHA-256.')
     for name in ('00_START_HERE.md', 'CLAUDE.md', 'CLAUDE_BUILD_PROMPT.md', 'handoff/CURRENT_STATUS.md', 'handoff/BUILD_PLAN.md', 'handoff/CONFIGURATION.md', 'handoff/ACCEPTANCE.md', 'handoff/CODE_MAP.md'):
         check('required:' + name, (root / name).is_file(), 'Required source/handoff file.')
-    # Only release-manifest files are assessed, not the user's legitimate local .env.
     disallowed = []
     for rel in seen:
         p = PurePosixPath(rel)
@@ -188,9 +210,25 @@ def inspect(root: Path, *, rebuild=True, dev_git_index=False) -> dict:
     check('release-hygiene', not disallowed, '; '.join(disallowed[:20]) if disallowed else 'No known secret/runtime/font paths in the manifest; this is not a full content secret scan.')
     aliases = ['ATLAS_Project_Intelligence.html', 'ATLAS_Intelligence.html', 'ATLAS_Voice_Studio.html', 'ATLAS_Voice.html']
     try:
-        contents = [(root / p).read_bytes() for p in aliases]
-        check('html-aliases', len(set(contents)) == 1, 'Four compatibility aliases must be byte-identical.')
-        check('logo', hashlib.sha256((root / 'assets/Mantu.svg').read_bytes()).hexdigest() == '92c5ff21779f09199097a2971c172453017f0d2581a0ced6f54fe486ba9b6c2b', 'Preserve the supplied Mantu asset bytes.')
+        contents = []
+        for name in aliases:
+            try:
+                target = resolve_in_package(root, name)
+            except ValueError:
+                check('html-logo-files', False, 'outside package root: ' + name)
+                break
+            if target.is_symlink():
+                check('html-logo-files', False, 'missing or symlink: ' + name)
+                break
+            contents.append(target.read_bytes())
+        else:
+            check('html-aliases', len(set(contents)) == 1, 'Four compatibility aliases must be byte-identical.')
+            try:
+                logo = resolve_in_package(root, 'assets/Mantu.svg').read_bytes()
+            except ValueError:
+                check('logo', False, 'outside package root: assets/Mantu.svg')
+            else:
+                check('logo', hashlib.sha256(logo).hexdigest() == '92c5ff21779f09199097a2971c172453017f0d2581a0ced6f54fe486ba9b6c2b', 'Preserve the supplied Mantu asset bytes.')
     except OSError:
         check('html-logo-files', False, 'Missing compiled alias or logo.')
     if rebuild and not bad:
@@ -200,10 +238,11 @@ def inspect(root: Path, *, rebuild=True, dev_git_index=False) -> dict:
                 if include_in_clean_rebuild(rel):
                     target = dest / rel
                     target.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(root / rel, target)
+                    shutil.copy2(resolve_in_package(root, rel), target)
             result = subprocess.run([sys.executable, str(dest / 'build.py')], capture_output=True, text=True, timeout=30, check=False)
             check('clean-build', result.returncode == 0, 'Build executed in a temporary source-only directory.')
-            same = result.returncode == 0 and all((dest / p).is_file() and (dest / p).read_bytes() == (root / p).read_bytes() for p in aliases)
+            same = result.returncode == 0 and all(
+                (dest / p).is_file() and (dest / p).read_bytes() == resolve_in_package(root, p).read_bytes() for p in aliases)
             check('clean-build-byte-match', same, 'Temporary clean source rebuild must match all delivered HTML aliases.')
     return {'passed': all(c['pass'] for c in checks), 'offline_only': True, 'checks': checks,
             'scope': 'Extracted package manifest and clean rebuild; no providers, deployment, digital signature or production-security certification.'}
@@ -310,7 +349,7 @@ def main(argv=None):
     p.add_argument('package', help='Extracted release directory, or a .zip/.tar archive of one.', nargs='?')
     p.add_argument('--no-rebuild', action='store_true')
     p.add_argument('--dev-git-index', action='store_true',
-                   help='Dev checkout only: enumerate tracked git paths and reject untracked non-ignored files (never used on extracted packages).')
+                   help='Dev checkout only: enumerate tracked git paths and reject untracked non-ignored files.')
     p.add_argument('--json', action='store_true')
     p.add_argument('--write-manifest', action='store_true',
                    help='Refresh MANIFEST.json hashes from the tree (requires --dev-git-index on a git checkout).')
@@ -318,20 +357,19 @@ def main(argv=None):
     if args.write_manifest:
         if not args.package:
             p.error('PACKAGE path is required with --write-manifest')
-        if not args.dev_git_index:
-            p.error('--write-manifest requires --dev-git-index')
+        if not args.dev_git_index and not is_dev_tree(Path(args.package)):
+            p.error('--write-manifest requires --dev-git-index or a git checkout')
         root = Path(args.package)
         if not (root / 'MANIFEST.json').is_file():
             p.error('MANIFEST.json is missing in ' + str(root))
-        count = write_manifest(root, dev_git_index=True)
+        count = write_manifest(root, dev_git_index=args.dev_git_index or is_dev_tree(root))
         print(f'Wrote {count} file entries to MANIFEST.json')
         return 0
     if not args.package:
         p.error('PACKAGE path is required')
-    dev = bool(args.dev_git_index)
     try:
         with open_package(Path(args.package)) as root:
-            report = inspect(root, rebuild=not args.no_rebuild, dev_git_index=dev)
+            report = inspect(root, rebuild=not args.no_rebuild)
     except (OSError, ValueError, subprocess.TimeoutExpired, subprocess.CalledProcessError) as error:
         report = {'passed': False, 'checks': [{'name': 'verification', 'pass': False, 'detail': str(error)}]}
     if args.json:

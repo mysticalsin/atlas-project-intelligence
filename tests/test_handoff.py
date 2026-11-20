@@ -276,17 +276,17 @@ def test_git_dev_tree_untracked_file_fails_manifest(tmp_path):
     (root / 'notes').mkdir()
     (root / 'notes' / 'readme.txt').write_bytes(b'listed\n')
     subprocess.run(['git', 'add', 'notes/readme.txt'], cwd=root, check=True, env=env_init)
-    subprocess.run(['git', 'commit', '-qm', 'init'], cwd=root, check=True, env=env_commit)
+    subprocess.run(['git', 'commit', '-qm', 'init'], cwd=root, check=True, env=env_init)
     (root / 'notes' / 'extra.txt').write_bytes(b'untracked\n')
     data = b'listed\n'
     manifest = {'files': [{'path': 'notes/readme.txt', 'bytes': len(data),
                          'sha256': hashlib.sha256(data).hexdigest()}],
-                'manifest_excludes': ['MANIFEST.json', '.git/']}
+                'manifest_excludes': ['MANIFEST.json']}
     (root / 'MANIFEST.json').write_text(json.dumps(manifest), encoding='utf-8')
     result = inspect(root, rebuild=False)
     assert not result['passed']
     detail = next(c['detail'] for c in result['checks'] if c['name'] == 'manifest-content')
-    assert 'unlisted: notes/extra.txt' in detail
+    assert 'notes/extra.txt' in detail and ('unlisted:' in detail or 'untracked:' in detail)
 
 
 def test_node_modules_payload_fails_without_git(tmp_path, capsys):
