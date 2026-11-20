@@ -1,12 +1,16 @@
 // ATLAS-INVITE-TENANT-UNENFORCED and ATLAS-ERASE-LEAVES-INVITATIONS.
 // Harness: test/sqlite.js memorySql, the Durable Object SQL stand-in.
-// workerd 2026-10-23 is not required for these four tests. The full edge
+// Round 1 creates the sender through Library.invite and erases through
+// POST /api/library/privacy/delete and POST /api/me/erase.
+// workerd 2026-10-23 is not required for this file. The full edge
 // suite still runs the workerd probes when that binary is installed.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Library, sqlOf } from './hold.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import { memorySql } from './sqlite.js';
+import { str } from '../src/util.js';
+import { session, ENV as ACCESS_ENV, ORIGIN } from './security-harness.js';
 
 const A = '11111111-1111-4111-8111-111111111111';
 const B = '22222222-2222-4222-8222-222222222222';
@@ -135,4 +139,168 @@ test('a privacy erase leaves other subjects\' invitations untouched', async () =
   assert.equal(response.status, 200);
   const after = lib.rows("SELECT * FROM invitations WHERE id IN ('other-same', 'other-tenant', 'blank') ORDER BY id");
   assert.deepEqual(after, before);
+});
+
+const ENTRA = '11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const LONG_MAIL = 'alexandra.consultant.security.review@corporate-division.example.test';
+const ALT_MAIL = 'ada.alt@example.test';
+const ERASED = /^erased:[0-9a-f]{12}$/;
+
+function privacyDelete(lib, email, mail = email, tenant = A) {
+  return libraryRoutes(new Request('https://atlas.test/api/library/privacy/delete', {
+    method: 'POST', body: '{}',
+    headers: {
+      'x-atlas-user': email, 'x-atlas-role': 'user', 'x-atlas-email': mail,
+      'x-atlas-tenant': tenant, 'x-atlas-tenant-enforced': '1',
+    },
+  }), lib, { env: ENV });
+}
+
+function caller(email, mail, tenant = A, enforced = true) {
+  return { email, mail, role: 'user', tenant, tenantEnforced: enforced };
+}
+
+function boundLibrary(sql) {
+  const door = { DATA_MODE: 'production', ORIGIN, CSRF_SECRET: ACCESS_ENV.CSRF_SECRET };
+  return {
+    idFromName: () => 'global',
+    get() {
+      const live = new Library(sql, { now: () => STAMP });
+      return { fetch: request => libraryRoutes(request, live, { env: door }) };
+    },
+  };
+}
+
+function limitOk() {
+  return { idFromName: () => 'i', get: () => ({ fetch: async () => new Response('{"ok":true}', { headers: { 'content-type': 'application/json' } }) }) };
+}
+
+async function scrubbedSender(actor, mail, project) {
+  const lib = open();
+  const sent = lib.invite(actor, { email: OTHER, title: 'Sent', projectId: project }, caller(actor, mail));
+  assert.equal(sent.source, str(actor, 60));
+  assert.equal(sent.source.length, 60);
+  assert.notEqual(sent.source, actor);
+  const response = await privacyDelete(lib, actor, mail);
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  const stored = lib.rows('SELECT source FROM invitations WHERE id = ?', sent.id)[0];
+  assert.match(stored.source, ERASED);
+  assert.equal(stored.source.startsWith(A), false);
+  const counted = body.outcomes.find(row => row.store === 'invitations');
+  assert.ok(counted, 'receipt counts invitations');
+  assert.equal(counted.scrubbed >= 1, true);
+}
+
+test('a privacy delete scrubs the sender invite stored for a 73-character Entra id', async () => {
+  assert.equal(ENTRA.length, 73);
+  await scrubbedSender(ENTRA, ALT_MAIL, 'PRJ-ENTRA-SENT');
+});
+
+test('a privacy delete scrubs the sender invite stored for a 68-character email', async () => {
+  assert.equal(LONG_MAIL.length, 68);
+  await scrubbedSender(LONG_MAIL, LONG_MAIL, 'PRJ-LONG-SENT');
+});
+
+test('POST /api/me/erase deletes an Entra subject\'s received invitations and scrubs the stored sender', async () => {
+  const sql = memorySql();
+  const lib = new Library(sql, { now: () => STAMP });
+  const who = caller(ENTRA, ALT_MAIL);
+  const sent = lib.invite(ENTRA, { email: OTHER, title: 'Sent', projectId: 'PRJ-ME-SENT' }, who);
+  const toMail = lib.invite(OTHER, { email: ALT_MAIL, title: 'To mail', projectId: 'PRJ-ME-MAIL' }, caller(OTHER, OTHER));
+  // invite() refuses a tid:oid: it is not an email. The row is still that subject address.
+  seed(lib, { id: 'recv-entra-id', email: ENTRA, project: 'PRJ-ME-ID', title: 'To id', source: OTHER, tenant: A });
+  assert.equal(sent.source, str(ENTRA, 60));
+  const env = {
+    ...ACCESS_ENV, IDENTITY_SOURCE: 'entra', ENTRA_TENANTS: A,
+    LIBRARY: boundLibrary(sql), INTERVIEW: limitOk(),
+  };
+  const me = await session(env, { email: ALT_MAIL, custom: { tid: A, oid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', roles: [] } });
+  const response = await me.go('/api/me/erase', { method: 'POST', body: '{"confirmed":true}', headers: { 'content-type': 'application/json' } });
+  assert.equal(response.status, 200);
+  const stored = lib.rows('SELECT source FROM invitations WHERE id = ?', sent.id)[0];
+  assert.match(stored.source, ERASED);
+  assert.equal(stored.source.startsWith(A), false);
+  assert.equal(lib.rows('SELECT COUNT(*) AS n FROM invitations WHERE id = ?', toMail.id)[0].n, 0);
+  assert.equal(lib.rows("SELECT COUNT(*) AS n FROM invitations WHERE id = 'recv-entra-id'")[0].n, 0);
+});
+
+test('POST /api/me/erase scrubs the sender invite stored for a long email', async () => {
+  const sql = memorySql();
+  const lib = new Library(sql, { now: () => STAMP });
+  const who = caller(LONG_MAIL, LONG_MAIL);
+  const sent = lib.invite(LONG_MAIL, { email: OTHER, title: 'Sent', projectId: 'PRJ-ME-LONG' }, who);
+  const received = lib.invite(OTHER, { email: LONG_MAIL, title: 'To long', projectId: 'PRJ-ME-LONG-IN' }, caller(OTHER, OTHER));
+  assert.equal(sent.source, str(LONG_MAIL, 60));
+  assert.equal(sent.source.length, 60);
+  const env = { ...ACCESS_ENV, LIBRARY: boundLibrary(sql), INTERVIEW: limitOk() };
+  const me = await session(env, { sub: ENTRA, email: LONG_MAIL });
+  const response = await me.go('/api/me/erase', { method: 'POST', body: '{"confirmed":true}', headers: { 'content-type': 'application/json' } });
+  assert.equal(response.status, 200);
+  const stored = lib.rows('SELECT source FROM invitations WHERE id = ?', sent.id)[0];
+  assert.match(stored.source, ERASED);
+  assert.equal(stored.source.startsWith(A), false);
+  assert.equal(lib.rows('SELECT COUNT(*) AS n FROM invitations WHERE id = ?', received.id)[0].n, 0);
+});
+
+test('a privacy delete audit line records scrubbed 0', async () => {
+  const empty = open();
+  const quiet = await privacyDelete(empty, 'ada@example.test');
+  assert.equal(quiet.status, 200);
+  const quietAudit = empty.rows("SELECT detail FROM audit WHERE action = 'privacy delete'");
+  assert.equal(quietAudit.length, 1);
+  assert.match(quietAudit[0].detail, /invitations 0 scrubbed 0/);
+
+  const received = open();
+  seed(received, { id: 'recv-only', email: 'ada@example.test', project: 'PRJ-RECV-ONLY', title: 'Received', source: OTHER, tenant: A });
+  const response = await privacyDelete(received, 'ada@example.test');
+  assert.equal(response.status, 200);
+  assert.equal(received.rows("SELECT COUNT(*) AS n FROM invitations WHERE id = 'recv-only'")[0].n, 0);
+  const audit = received.rows("SELECT detail FROM audit WHERE action = 'privacy delete'");
+  assert.match(audit[0].detail, /invitations 1 scrubbed 0/);
+});
+
+test('a privacy delete erases an invitation whose stored tenant has a trailing space', async () => {
+  const lib = open();
+  const padded = A + ' ';
+  const owner = caller('ada@example.test', 'ada@example.test', padded, false);
+  const received = lib.invite(OTHER, { email: 'ada@example.test', title: 'Padded in', projectId: 'PRJ-PAD-IN' }, caller(OTHER, OTHER, padded, false));
+  const sent = lib.invite('ada@example.test', { email: OTHER, title: 'Padded out', projectId: 'PRJ-PAD-OUT' }, owner);
+  assert.equal(received.tenant, padded);
+  assert.equal(sent.tenant, padded);
+  const response = await privacyDelete(lib, 'ada@example.test', 'ada@example.test', A);
+  assert.equal(response.status, 200);
+  assert.equal(lib.rows('SELECT COUNT(*) AS n FROM invitations WHERE id = ?', received.id)[0].n, 0);
+  const stored = lib.rows('SELECT source, tenant FROM invitations WHERE id = ?', sent.id)[0];
+  assert.match(stored.source, ERASED);
+  assert.equal(stored.tenant, padded);
+});
+
+test('one privacy delete gives each sent invitation its own erased token', async () => {
+  const lib = open();
+  const owner = caller('ada@example.test', 'ada@example.test');
+  const first = lib.invite('ada@example.test', { email: OTHER, title: 'One', projectId: 'PRJ-TOK-1' }, owner);
+  const second = lib.invite('ada@example.test', { email: 'sam@example.test', title: 'Two', projectId: 'PRJ-TOK-2' }, owner);
+  const response = await privacyDelete(lib, 'ada@example.test');
+  assert.equal(response.status, 200);
+  const rows = lib.rows('SELECT source FROM invitations WHERE id IN (?, ?) ORDER BY id', first.id, second.id);
+  assert.equal(rows.length, 2);
+  for (const row of rows) assert.match(row.source, ERASED);
+  assert.notEqual(rows[0].source, rows[1].source);
+});
+
+test('with enforcement off, a blank tenant can update its invitation and a present tenant cannot', () => {
+  const lib = open();
+  seed(lib, { id: 'blank-own', email: 'ada@example.test', project: 'PRJ-BLANK-OWN', title: 'Blank', source: 'ada@example.test', tenant: '' });
+  const sandbox = user('', false);
+  assert.equal(lib.updateInvitation(sandbox, 'blank-own', { action: 'schedule', slot: '2026-11-20T09:00' }).status, 'scheduled');
+  assert.equal(statusOf(lib, 'blank-own'), 'scheduled');
+
+  seed(lib, { id: 'blank-cross', email: 'ada@example.test', project: 'PRJ-BLANK-CROSS', title: 'Blank cross', source: 'pm', tenant: '' });
+  assert.equal(lib.updateInvitation(sandbox, 'blank-cross', { action: 'schedule', slot: '2026-11-20T10:00' }).status, 'scheduled');
+  assert.throws(
+    () => lib.updateInvitation(user(A, false), 'blank-cross', { action: 'dismiss' }),
+    err => err.status === 404 && err.message === 'Invitation not found.',
+  );
+  assert.equal(statusOf(lib, 'blank-cross'), 'scheduled');
 });
