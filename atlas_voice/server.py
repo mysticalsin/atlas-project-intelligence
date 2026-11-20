@@ -85,7 +85,7 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
                 if 'html' not in content_type:
                     response.headers['Content-Security-Policy'] = "default-src 'none'; frame-ancestors 'none'"
                 else:
-                    body = response.text
+                    body = response.text if isinstance(getattr(response, 'text', None), str) else ''
                     # blob: only on the voice page. Sign-in has no script and no worklet, so script-src stays 'none'.
                     voice = 'id="atlas-runtime"' in body
                     for key, value in csp_headers(config, script_hashes(body), blob=voice).items():

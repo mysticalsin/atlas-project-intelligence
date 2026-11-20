@@ -7,7 +7,20 @@
   "claude_instructions": "CLAUDE.md",
   "prompt": "CLAUDE_BUILD_PROMPT.md",
   "manifest_excludes": [
-    "MANIFEST.json"
+    "MANIFEST.json",
+    ".git/",
+    "__pycache__/",
+    "node_modules/",
+    ".venv/",
+    ".pytest_cache/",
+    ".wrangler/",
+    ".npm/",
+    ".claude/",
+    ".playwright-mcp/",
+    "deploy/cloudflare-edge/src/atlas.html",
+    "tests/last-local-story.md",
+    "tests/report-screens/report-1366.png",
+    "tests/report-screens/report-390.png"
   ],
   "files": [
     {
@@ -812,8 +825,8 @@
     },
     {
       "path": "atlas_voice/server.py",
-      "bytes": 23760,
-      "sha256": "53130c9111caff30b60debf20609f3a082e13c1c5d691c6deebf7de157a695f3"
+      "bytes": 23820,
+      "sha256": "acacb393cb4f4737508add39a53c21ac24e6b6751407dbf315eff5d858c7c79a"
     },
     {
       "path": "atlas_voice/speech.py",
@@ -2667,8 +2680,8 @@
     },
     {
       "path": "scripts/check_handoff.py",
-      "bytes": 12164,
-      "sha256": "a6b024075ccd844e7f223b6a80456e235250aaf2cda85b4eac889cf0c5627bea"
+      "bytes": 14970,
+      "sha256": "939927eb8441d7e755d8be2a94f26aa0e2205ab3fc14a73a5e4445553087e4cf"
     },
     {
       "path": "scripts/check_workers_speech.py",
@@ -3347,8 +3360,8 @@
     },
     {
       "path": "tests/test_handoff.py",
-      "bytes": 11661,
-      "sha256": "bd913eaad67b97cb3c6342aa7b3676693bbe217ecf5b56ab75bb1e2a5ce7479e"
+      "bytes": 14047,
+      "sha256": "94724ed2fb11c2a5846d2d9f3972874fd562a159c46a547a40f76afcdf7884d6"
     },
     {
       "path": "tests/test_page_harness.py",
