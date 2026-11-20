@@ -21,7 +21,14 @@ PR 13 was still open at this manifest (`mergedAt` null). `origin/main` was still
 
 Red on `7050ae3`: 10 failed, 3 passed, exit 1. The three that already passed are the symlink refusal and the repeated trim, which lock the mutants.
 
-Suite counts are recorded after the full run on the manifest commit.
+Measured on `4b956ee01b0c3baddfc4fbe5fd75ea8b27be5571` with `ATLAS_DEPLOY_STUB` unset, before this paragraph's manifest refresh.
+
+- Red commit `7050ae3`: 10 failed, 3 passed, 0.36s, exit 1.
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 413 passed, 127 warnings, 25.44s, exit 0.
+- `node --test tests/*.test.js`: 413 tests, 413 pass, 0 fail, 0 skipped.
+- Edge `node --test test/*.test.js` with miniflare `5.20261023.3-beta` and workerd `2026-10-23`: 1117 tests, 1117 pass, 0 fail, 0 skipped, 232.3s. The alias-begin tail test passed.
+- `make test-ui` (`CHROMIUM_PATH=/usr/local/bin/google-chrome`): 834 PASS, 0 FAIL, exit 0.
+- `python3 scripts/check_handoff.py . --dev-git-index` on the pre-count tree: exit 0, 695 release files.
 
 ## 2026-11-20 — check_handoff fence loop 3 (`cursor/atlas-checkhandoff-nested-git`)
 
