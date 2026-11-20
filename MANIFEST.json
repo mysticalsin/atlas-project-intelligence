@@ -1202,8 +1202,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/sql-tail.js",
-      "bytes": 1427,
-      "sha256": "e4378b66f7679a3eb85f68097ac1f50a13b0cb80b4dceba2f180339a76c34c4e"
+      "bytes": 9909,
+      "sha256": "c16137a6b3f596c9c1f28bff3811e86d8aa118ac1ca02e36ed05828c92baf251"
     },
     {
       "path": "deploy/cloudflare-edge/src/sql-text.js",
@@ -1717,8 +1717,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/sqlite.js",
-      "bytes": 3391,
-      "sha256": "e1bd38b2b9a3d9f2c72bfcf9d5ca74e1af9696cf6fb54bb58556483c4ac8f0b5"
+      "bytes": 3497,
+      "sha256": "cbb579d95df886dc86a2b1e051f1f756d78680eed3dcc91f2bbf29aa86edcf82"
     },
     {
       "path": "deploy/cloudflare-edge/test/teams.test.js",
@@ -1904,6 +1904,11 @@
       "path": "deploy/cloudflare-edge/test/write-sql-type.test.js",
       "bytes": 948,
       "sha256": "3c7903ebc42e39f983c9816b4dfd512de988b022d21e9cf7ecf4cba68e91b838"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-sqltail-lifecycle.test.js",
+      "bytes": 14214,
+      "sha256": "6edcdaf94257cb80f3bd23deda73d9713ef32e72e82592a0d3f4a12a1fe74f1f"
     },
     {
       "path": "deploy/cloudflare-edge/test/write-sqltext-alias-explain.test.js",
@@ -2257,8 +2262,8 @@
     },
     {
       "path": "docs/state-machines.md",
-      "bytes": 36413,
-      "sha256": "539433097004d7c60ca526e287eb14d67ca7e466a6f9209d9cf81eb80798c68a"
+      "bytes": 40908,
+      "sha256": "9df71e6939a83c0cf80fcd81c57c4e988f7222b7e8042bdad97499c7a31f3757"
     },
     {
       "path": "examples/claude_customer_brief.json",
@@ -2287,8 +2292,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 349895,
-      "sha256": "0edf3b80dc2ea7bb0f4441297e65cfdae2f1586f793e1e5c8e0330ebb310b46c"
+      "bytes": 353185,
+      "sha256": "12ea9443304b406355fb43c8c8b72180dd18e6a56fb4080733d3320c466d57e8"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2389,6 +2394,11 @@
       "path": "handoff/decisions/record-dialog-quality-crash.md",
       "bytes": 3816,
       "sha256": "9f7947bffb235354679ffd69cc65c919d7c8be2ad41bccc7f43f8417fd29b350"
+    },
+    {
+      "path": "handoff/decisions/sqltail-statement-lifecycle.md",
+      "bytes": 7688,
+      "sha256": "398e965a6c26c4edd9bd4f0224e4ce57a6243e33528e69dde7232b8f2c97349c"
     },
     {
       "path": "handoff/decisions/sqltext-alias-explain.md",
