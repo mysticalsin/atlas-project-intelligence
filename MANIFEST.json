@@ -2282,8 +2282,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 332190,
-      "sha256": "ee0341c117a22d6858fb5617dfc2e960248accc8471427a8b3628ab4f83cdc4d"
+      "bytes": 334727,
+      "sha256": "4e9d45f694b3e909df0504bc71a5085c1d361eacc500fac1eadd26b1c9178851"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2362,8 +2362,8 @@
     },
     {
       "path": "handoff/decisions/page-pin-refresh.md",
-      "bytes": 5542,
-      "sha256": "12619813932482169c4e8d2a2b1e260b3cbe17cc687fc29fb7b828323dfb4509"
+      "bytes": 9138,
+      "sha256": "9fbf717019131a6ce0b3cba35b4986160d786c21cbf9b39478ff8545a462e197"
     },
     {
       "path": "handoff/decisions/post-pr9-unslop.md",
@@ -2762,8 +2762,8 @@
     },
     {
       "path": "scripts/verify_page_build.sh",
-      "bytes": 2145,
-      "sha256": "f8237a1b386aad5d3bb2f9cb9b4d4dc6a8b979dec4c0b7ce219ca73c3e276cb0"
+      "bytes": 3534,
+      "sha256": "96f0545abab7870d2228886d95ae8317ba37bf9d3a13d2a8d276095e20dbd57b"
     },
     {
       "path": "scripts/wiki_access.py",
@@ -3197,8 +3197,8 @@
     },
     {
       "path": "tests/page-pin.test.js",
-      "bytes": 810,
-      "sha256": "f09db67a30f076be332ab83d98fe364a96747ac88500e6d9af6f073377dd1a32"
+      "bytes": 6118,
+      "sha256": "5f694777edb6b67d3b1bf1cf4026ade2a3458f67a6c756a7def42070dc313894"
     },
     {
       "path": "tests/page_harness.py",
