@@ -622,23 +622,23 @@
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924871,
+      "sha256": "c11282a8205f6866a92b0b56c411656128ee102065d69ba19657d95f31b67f9a"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924871,
+      "sha256": "c11282a8205f6866a92b0b56c411656128ee102065d69ba19657d95f31b67f9a"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924871,
+      "sha256": "c11282a8205f6866a92b0b56c411656128ee102065d69ba19657d95f31b67f9a"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924871,
+      "sha256": "c11282a8205f6866a92b0b56c411656128ee102065d69ba19657d95f31b67f9a"
     },
     {
       "path": "CLAUDE.md",
@@ -652,8 +652,8 @@
     },
     {
       "path": "Makefile",
-      "bytes": 1916,
-      "sha256": "a8625edc3eec8bd3a37a87b5af306d08b525ec82df6050b7c7028604de80f140"
+      "bytes": 1955,
+      "sha256": "79265064b11859995594389b191067bce75343822690acac5e2538712d454e14"
     },
     {
       "path": "Preview.command",
@@ -933,7 +933,7 @@
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
       "bytes": 146,
-      "sha256": "93196c1732d530e8a0ad455ed9b3198c7dd2df0457e1fd9b47582c5a456c0005"
+      "sha256": "76948367d3b677695194c4791dc774163738fe97a2ae288b5cc019478212dd8a"
     },
     {
       "path": "deploy/cloudflare-edge/set-keys.sh",
@@ -2282,8 +2282,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 346929,
-      "sha256": "311bfd60630ba451016b72b88b0b6a981fd92c70e54ef68b5d665c65b2522b05"
+      "bytes": 349734,
+      "sha256": "600bf9d874364534defcaf8d1fe7d8add4f607c99d6c1128584928af57a43cc6"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2364,6 +2364,11 @@
       "path": "handoff/decisions/invitation-tenant-erase.md",
       "bytes": 10770,
       "sha256": "a2897b411214cfe6a5da5f8aa118b7cc15c27e5fac489e802de18e7daff0491f"
+    },
+    {
+      "path": "handoff/decisions/long-title-overflow.md",
+      "bytes": 6351,
+      "sha256": "df7806bd944354cfdb3146494c21ab4074b75178f3b10a7edb0adf0fad37905e"
     },
     {
       "path": "handoff/decisions/page-pin-refresh.md",
@@ -2952,8 +2957,8 @@
     },
     {
       "path": "src/styles.css",
-      "bytes": 38940,
-      "sha256": "5b545ed263fb14045449136e11d886409c87246b4741edf8eaa2589bcde43343"
+      "bytes": 39796,
+      "sha256": "3ca8f3b1119aba42da4a6913abb94fe69b07900093e336b0f3721874fbee20ba"
     },
     {
       "path": "src/trust-ui.js",
@@ -3169,6 +3174,11 @@
       "path": "tests/library_browser.py",
       "bytes": 12134,
       "sha256": "c6bebc0cf77b0fa036e0fadcd5404d478582aff732fed017be3f2e638756a731"
+    },
+    {
+      "path": "tests/long_title_browser.py",
+      "bytes": 13375,
+      "sha256": "8a44e0b3d7a96c3f36e4742388a7892016fe616959de0da3e63663eb5938c2d1"
     },
     {
       "path": "tests/memory_browser.py",
