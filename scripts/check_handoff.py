@@ -23,8 +23,10 @@ Inspection failures exit 1. argparse usage errors exit 2.
 A git metadata component is one shared check. ASCII components are casefolded
 and trailing dots and spaces are stripped. Any non-ASCII component is refused
 with ``refused: non-ASCII path component``. A short name ``git~<digits>`` with
-an optional suffix (``GIT~1.DIR``) is refused. Owner decisions, 2026-11-20,
-Atlas.
+an optional suffix (``GIT~1.DIR``) is refused. Checkout detection is the exact
+top-level name ``.git`` only. A git failure on that path exits cleanly with
+``dev-git-index requires a git checkout`` (1 on the check, 2 on
+``--write-manifest``). Owner decisions, 2026-11-20, Atlas.
 
 Still open: SIGKILL does not run atexit, so the one ``atlas-git-home-*``
 directory can remain.
@@ -134,26 +136,29 @@ def is_git_metadata_path(rel: str) -> bool:
     return any(is_git_metadata_component(part) for part in _path_components(rel))
 
 
+class CheckoutRequired(Exception):
+    """Git could not read an exact top-level checkout."""
+
+
+def _exit_checkout_required() -> None:
+    """Exit 2. The message is on stdout so a caught SystemExit stays visible."""
+    print('dev-git-index requires a git checkout')
+    raise SystemExit(2)
+
+
 def _is_checkout_metadata(rel: str) -> bool:
+    """The checkout's own top-level directory, the exact name ``.git`` only."""
     parts = _path_components(rel)
-    return bool(parts) and is_git_metadata_component(parts[0])
+    return bool(parts) and parts[0] == '.git'
 
 
 def is_dev_tree(root: Path) -> bool:
+    """True only when the exact top-level ``.git/HEAD`` is a regular file."""
+    head = root / '.git' / 'HEAD'
     try:
-        names = os.listdir(root)
+        return head.is_file() and not head.is_symlink()
     except OSError:
         return False
-    for name in names:
-        if not is_git_metadata_component(name):
-            continue
-        head = root / name / 'HEAD'
-        try:
-            if head.is_file() and not head.is_symlink():
-                return True
-        except OSError:
-            continue
-    return False
 
 
 _GIT_HOME: str | None = None
@@ -327,7 +332,10 @@ _GIT_INVOCATION = (
 
 def _git_z_lines(root: Path, *extra: str) -> list[str]:
     prefix = list(_GIT_INVOCATION) + ['-C', str(root)] + list(extra)
-    raw = subprocess.check_output(prefix, stderr=subprocess.DEVNULL, env=git_environ())
+    try:
+        raw = subprocess.check_output(prefix, stderr=subprocess.DEVNULL, env=git_environ())
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise CheckoutRequired('dev-git-index requires a git checkout') from error
     return [line for line in raw.decode('utf-8', 'surrogateescape').split('\0') if line]
 
 
@@ -408,13 +416,18 @@ def inspect(root: Path, *, rebuild=True, dev_git_index: bool = False) -> dict:
             bad.append('dev-git-index requires a git checkout')
             present = []
         else:
-            tracked, untracked_dev = git_index_file_list(root)
-            present = tracked
-            for rel in untracked_dev:
-                if rel not in allowed and not manifest_allows_path(rel, excludes, package_mode=False):
-                    bad.append('untracked: ' + rel)
-            for rel in nested_git_metadata_paths(root):
-                bad.append('refused: ' + rel)
+            try:
+                tracked, untracked_dev = git_index_file_list(root)
+            except CheckoutRequired:
+                bad.append('dev-git-index requires a git checkout')
+                present = []
+            else:
+                present = tracked
+                for rel in untracked_dev:
+                    if rel not in allowed and not manifest_allows_path(rel, excludes, package_mode=False):
+                        bad.append('untracked: ' + rel)
+                for rel in nested_git_metadata_paths(root):
+                    bad.append('refused: ' + rel)
     else:
         present = package_files(root)
     non_ascii_seen: set[str] = set()
@@ -618,13 +631,16 @@ def main(argv=None):
         if not (root / 'MANIFEST.json').is_file():
             p.error('MANIFEST.json is missing in ' + str(root))
         if not is_dev_tree(root):
-            p.error('--write-manifest requires a git checkout (--dev-git-index)')
+            _exit_checkout_required()
         blocked = non_ascii_paths(root)
         if blocked:
             for rel in blocked:
                 print('FAIL manifest-content: refused: non-ASCII path component: ' + rel)
             return 1
-        count = write_manifest(root, dev_git_index=True)
+        try:
+            count = write_manifest(root, dev_git_index=True)
+        except CheckoutRequired:
+            _exit_checkout_required()
         print(f'Wrote {count} file entries to MANIFEST.json')
         return 0
     if not args.package:

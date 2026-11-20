@@ -1256,18 +1256,24 @@ def test_disguised_checkout_write_manifest_exits_clean(tmp_path, capsys, dirname
     assert (root / 'MANIFEST.json').read_bytes() == before
 
 
-def test_git_failure_on_exact_dotgit_is_a_clean_checkout_error(tmp_path, capsys):
+def test_git_failure_on_exact_dotgit_check_is_clean(tmp_path, capsys):
     root = _disguised_checkout(tmp_path, '.git')
     code = run_verify([str(root), '--dev-git-index', '--no-rebuild'])
     text = capsys.readouterr().out + capsys.readouterr().err
     assert code == 1
     assert 'dev-git-index requires a git checkout' in text
     assert 'Traceback' not in text
+
+
+def test_git_failure_on_exact_dotgit_write_manifest_is_clean(tmp_path, capsys):
+    root = _disguised_checkout(tmp_path, '.git')
+    before = (root / 'MANIFEST.json').read_bytes()
     code = run_verify([str(root), '--dev-git-index', '--write-manifest'])
     text = capsys.readouterr().out + capsys.readouterr().err
     assert code == 2
     assert 'dev-git-index requires a git checkout' in text
     assert 'Traceback' not in text
+    assert (root / 'MANIFEST.json').read_bytes() == before
 
 
 @pytest.mark.parametrize('name', ['.GIT', '.git.', 'GIT~1', 'GIT~1.DIR'])
