@@ -45,7 +45,16 @@ def is_git_metadata_path(rel: str) -> bool:
 
 
 def git_environ() -> dict[str, str]:
-    return {**os.environ, 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null'}
+    empty_home = tempfile.mkdtemp(prefix='atlas-git-home-')
+    return {
+        'PATH': os.environ.get('PATH', '/usr/bin:/bin'),
+        'HOME': empty_home,
+        'LANG': 'C',
+        'LC_ALL': 'C',
+        'GIT_CONFIG_NOSYSTEM': '1',
+        'GIT_CONFIG_GLOBAL': '/dev/null',
+        'GIT_TERMINAL_PROMPT': '0',
+    }
 
 
 def resolve_in_package(root: Path, rel: str) -> Path:

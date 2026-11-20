@@ -2671,8 +2671,8 @@
     },
     {
       "path": "scripts/check_handoff.py",
-      "bytes": 16888,
-      "sha256": "92530edd2f44d81241166093597917b65e19aa4a3c9737b956aadec51a3ac656"
+      "bytes": 17122,
+      "sha256": "5363ae98479253fdaf37a74f2f52b8f7fdacfafebf760ca7a176c45292a4deb0"
     },
     {
       "path": "scripts/check_workers_speech.py",
@@ -3351,8 +3351,8 @@
     },
     {
       "path": "tests/test_handoff.py",
-      "bytes": 21842,
-      "sha256": "a61c7fb299774792aacea652fd728826a1f322af5cd15fcc2018652dc2380042"
+      "bytes": 26896,
+      "sha256": "be5dc0ca735fb78eff03d756a514299a964288f1a1ff90e324eb11d80536b89c"
     },
     {
       "path": "tests/test_page_harness.py",
