@@ -22,7 +22,15 @@ Red on `9ec906b`, the nine new tests only: 9 failed, exit 1. An excluded `café.
 
 Mutants, each exit 1, checker restored to sha256 `03960268d94974b18f76b24295778b4faef6c1ec6d63f955c8f6e73a59c68d77`: ordering, present, rebuild-env, git-home, case, followlinks, atexit, normalization, dev-nested, symlink-control, environ-control, non-ASCII refusal removed, short-name regex reverted to `^git~[0-9]+$`.
 
-Suite counts are recorded after the full run on the manifest commit.
+Measured on this loop with `ATLAS_DEPLOY_STUB` unset, before this paragraph's manifest refresh. The record commit is `5455e4b16c708cea8b3d77810787b2da9bb0e3c4`.
+
+- Red commit `9ec906b`: the nine new tests, 9 failed, exit 1. An excluded `café.txt` and U+0131, U+0456, U+0261, and U+2024 were certified (`15 release files match`). `GIT~1.DIR` and `git~12.x` were certified. `--write-manifest` exited 0. The full `tests/test_handoff.py` on that commit also fails the two stale-manifest tests named above.
+- `python3 -m pytest tests/test_handoff.py -q`: 130 passed, 3.23s, exit 0.
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 400 passed, 127 warnings, 26.63s, exit 0.
+- `node --test tests/*.test.js`: 413 tests, 413 pass, 0 fail, 0 skipped.
+- Edge `node --test test/*.test.js` with miniflare `5.20261023.3-beta` and workerd `2026-10-23`: 1117 tests, 1117 pass, 0 fail, 0 skipped, 232.5s. The alias-begin tail test passed (`workerd 2026-10-23 runs an alias-begin tail`).
+- `make test-ui` (`CHROMIUM_PATH=/usr/local/bin/google-chrome`): 834 PASS, 0 FAIL, exit 0.
+- `python3 scripts/check_handoff.py . --dev-git-index`: exit 0, 695 release files, `clean-build` and `clean-build-byte-match` pass.
 
 ## 2026-11-20 — check_handoff fence loop 2 (`cursor/atlas-checkhandoff-nested-git`)
 
