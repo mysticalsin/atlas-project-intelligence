@@ -43,6 +43,7 @@ def snap(page):
         tbd,
         toast: norm(document.getElementById('toast')?.textContent),
         body: norm(document.getElementById('recordBody')?.innerText),
+        quality: norm(document.querySelector('#recordBody .quality')?.innerText),
         rejects: window.__atlasRejects || []
       };
     }""")
@@ -75,6 +76,9 @@ VARIANTS = [
     ('consultant array items do not render as undefined',
      lambda q, d: d['details'].__setitem__('consultants', [1, {'name': 5}, ['x']]),
      lambda view: view['open'] and 'undefined' not in view['body'] and '[object Object]' not in view['body'] and not view['rejects'] and not ERR),
+    ('a nameless object list item is dropped and not JSON',
+     lambda q, d: q.__setitem__('blockers', [{'a': 1}, {}, {'label': {'nested': True}}, {'name': None}, {'text': ''}]),
+     lambda view: view['open'] and 'Blocking publication' not in view['quality'] and '{' not in view['quality'] and '"' not in view['quality'] and '[object Object]' not in view['quality'] and not view['rejects'] and not ERR),
 ]
 BOOM = """
 (() => {
@@ -97,6 +101,27 @@ BOOM = """
   };
 })();
 """
+# JSON cannot keep a url property on an array, so this check attaches one after parse.
+ARRAY_LINK = """
+(() => {
+  const orig = window.fetch;
+  window.fetch = async function(input, init) {
+    const res = await orig.apply(this, arguments);
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    const path = url.split('?')[0];
+    const method = (init && init.method) || 'GET';
+    if (method !== 'GET' || !/\\/api\\/library\\/[^/]+$/.test(path)) return res;
+    let data;
+    try { data = await res.clone().json(); } catch (e) { return res; }
+    if (!data || !data.data || !data.data.details) return res;
+    const link = ['not-a-url-field'];
+    link.url = 'https://array-link.example/secret';
+    link.label = 'Array link';
+    data.data.details.links = [{label: 'Ticket', url: 'https://ok.example/1'}, link];
+    return { ok: res.ok, status: res.status, json: async () => data };
+  };
+})();
+"""
 try:
     status, listing = edge_api('GET', '/api/library')
     item = next((i for i in listing.get('items', []) if i.get('title') == 'Northwind queue pilot'), None)
@@ -107,13 +132,15 @@ try:
     rid = item['id']
     with sync_playwright() as pw:
         browser = pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH') or None)
-        def open_record(width, mutate=None, boom=False):
+        def open_record(width, mutate=None, boom=False, script=None):
             ERR.clear()
             ctx = browser.new_context(viewport={'width': width, 'height': 800})
             page = ctx.new_page()
             page.add_init_script("window.__atlasRejects=[];window.addEventListener('unhandledrejection',e=>{window.__atlasRejects.push(String(e.reason&&e.reason.stack||e.reason));});")
             if boom:
                 page.add_init_script(BOOM)
+            if script:
+                page.add_init_script(script)
             page.on('pageerror', lambda e: ERR.append('pageerror: ' + str(e)))
             if mutate:
                 def handle(route):
@@ -152,6 +179,8 @@ try:
         check('completeness placeholder stays and the formula note does not', view['open'] and 'Completeness' in view['tbd'] and all('0.8' not in t for t in view['tracks']) and not view['rejects'] and not ERR, detail_of(view))
         view = open_record(1280, boom=True)
         check('a throwing record field does not reject', (not view['open']) and 'record field threw' in view['toast'] and not view['rejects'] and not ERR, detail_of(view))
+        view = open_record(1280, script=ARRAY_LINK)
+        check('an array link is dropped and an object link stays', view['open'] and 'Ticket: https://ok.example/1' in view['body'] and 'array-link.example' not in view['body'] and 'Array link' not in view['body'] and 'not-a-url-field' not in view['body'] and not view['rejects'] and not ERR, detail_of(view))
         browser.close()
 finally:
     srv.terminate()
