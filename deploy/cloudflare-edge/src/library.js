@@ -1406,7 +1406,8 @@ export class Library {
     const inv = this.rows('SELECT * FROM invitations WHERE id = ?', String(id))[0];
     const aliases = this.identityAliases(user);
     if (!inv || (!aliases.includes(String(inv.email || '').toLowerCase()) && !['admin', 'reviewer'].includes(user.role))) throw fail(404, 'Invitation not found.');
-    if (user.tenantEnforced === true && !sameTenant(inv.tenant, user.tenant, true)) throw fail(404, 'Invitation not found.');
+    // Present tenants are compared even when enforcement is off. Two blanks stay the local sandbox.
+    if (!sameTenant(inv.tenant, user.tenant, user.tenantEnforced === true)) throw fail(404, 'Invitation not found.');
     const action = obj(body).action;
     if (!['schedule', 'dismiss', 'done'].includes(action)) throw fail(400, 'Unknown action.');
     const step = noteInvitation(invitationTransition({ id: inv.id, status: inv.status }, { type: action }));
