@@ -3112,8 +3112,8 @@
     },
     {
       "path": "tests/record_dialog_quality_browser.py",
-      "bytes": 4134,
-      "sha256": "a98c5ff19fbc1487e22076ae2a79b05ca8fd9fd5d7dc4e20eca34c8d9206d5d5"
+      "bytes": 5463,
+      "sha256": "6e941aea6aac9962c15d69b670fa4cec5015dddc46e41720e41aa91aef37df57"
     },
     {
       "path": "tests/refusal_browser.py",
@@ -3282,8 +3282,8 @@
     },
     {
       "path": "tests/test_handoff.py",
-      "bytes": 11013,
-      "sha256": "8deb1c6d54f814b55e2b5e508e930cf30a328443dcea0f28a24430f6d4abfc43"
+      "bytes": 11786,
+      "sha256": "17de182bd31f6e310f0fde485fc7041ccd0301ee36bd1b0c495137dd14fdd9b6"
     },
     {
       "path": "tests/test_page_harness.py",
