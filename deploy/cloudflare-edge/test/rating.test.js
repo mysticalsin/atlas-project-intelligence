@@ -926,18 +926,35 @@ test('R2b fused and re-separated spellings of multi-word names never reach TypeS
 
 // interactive() resolves with one outcome. onEnd is an observer of that outcome.
 const RATE_KEYS = ['answers', 'attempts', 'hedged', 'http', 'inputTokens', 'model', 'ms'];
-function armInteractive(onEnd) {
+function armInteractive(onEnd, extra = {}) {
   const budgets = { interactive: { deadlineMs: 200, hedgeAtMs: 70, minAttemptMs: 30 } };
   const queued = [];
   const delay = (ms, signal) => new Promise(resolve => {
     if (signal?.aborted) return resolve(false);
     queued.push({ ms, resolve });
   });
-  const rater = R.storyRater({ TYPESAFE_API_KEY: KEY }, fakeTS(() => ({})), { budgets, now: () => 1e6, delay, onEnd });
+  const rater = R.storyRater({ TYPESAFE_API_KEY: KEY }, fakeTS(() => ({})), { budgets, now: () => 1e6, delay, onEnd, ...extra });
   const asked = ['clarity'];
   const body = JSON.stringify(R.requestBody({ reference: { story: {} }, notice: R.NOTICE }, asked));
   const rate = () => rater.rate(body, '{}', { asked, terms: [], budget: 'interactive' });
   return { budgets, queued, rate };
+}
+// end() resolves the interactive promise with the only object that has both ok and attempts.
+// Wrapping Promise records that call so a test can see it happen before onEnd.
+function watchOutcome(order) {
+  const Real = globalThis.Promise;
+  function Wrapped(executor) {
+    return new Real((resolve, reject) => {
+      executor(value => {
+        if (value && value.ok === true && Object.hasOwn(value, 'attempts')) order.push('resolve');
+        resolve(value);
+      }, reject);
+    });
+  }
+  Object.setPrototypeOf(Wrapped, Real);
+  Wrapped.prototype = Real.prototype;
+  globalThis.Promise = Wrapped;
+  return () => { globalThis.Promise = Real; };
 }
 function trackRate(rate) {
   let settled = null, value = null, error = null;
@@ -1009,6 +1026,40 @@ test('a throwing onEnd does not escape the rating call', async () => {
   } finally {
     await held.restore();
   }
+});
+
+test('resolve runs before onEnd and a throw still settles', async () => {
+  const order = [];
+  const restore = watchOutcome(order);
+  const held = holdRejections();
+  try {
+    const { rate } = armInteractive(() => { order.push('onEnd'); throw new Error('observer failed'); });
+    const tracked = trackRate(rate);
+    await spinUntil(() => tracked.settled !== null, 'throwing onEnd still settles the rating', { cap: 20 });
+    assert.equal(tracked.settled, 'resolved', 'throwing onEnd still resolves');
+    assert.equal(tracked.error, null);
+    assert.equal(tracked.value.model, 'jev-1.13.0');
+    assert.equal(tracked.value.attempts, 1);
+    assert.deepEqual(order, ['resolve', 'onEnd'], 'resolve runs before onEnd');
+  } finally {
+    restore();
+    await held.restore();
+  }
+});
+
+test('a throwing onEnd is reported and the rating still resolves', async () => {
+  const logs = [];
+  const { rate } = armInteractive(() => { throw new Error('observer failed'); }, { log: line => logs.push(line) });
+  const tracked = trackRate(rate);
+  await spinUntil(() => tracked.settled !== null, 'throwing onEnd still settles the rating', { cap: 20 });
+  assert.equal(tracked.settled, 'resolved', 'throwing onEnd still resolves');
+  assert.equal(tracked.error, null);
+  assert.deepEqual(Object.keys(tracked.value).sort(), RATE_KEYS);
+  assert.equal(tracked.value.model, 'jev-1.13.0');
+  assert.deepEqual(logs, [{ atlas_metric: 'rating', event: 'onend_throw', name: 'Error' }]);
+  const text = JSON.stringify(logs);
+  assert.equal(text.includes(KEY), false);
+  assert.equal(text.includes('observer failed'), false);
 });
 
 test('a normal onEnd runs exactly once and a late settle does not call it again', async () => {
