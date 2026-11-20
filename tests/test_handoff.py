@@ -1160,3 +1160,62 @@ def test_dev_git_index_does_not_refuse_the_checkout_git_dir(tmp_path):
     detail = _manifest_detail(result)
     assert 'refused: .git' not in detail
     assert 'refused: .git/' not in detail
+
+
+# Loop 3. Any non-ASCII component is refused. Short names include a suffix.
+_NON_ASCII_PATHS = (
+    ('u0131', 'vendor/\u0131.txt'),
+    ('u0456', 'vendor/\u0456.txt'),
+    ('u0261', 'vendor/\u0261.txt'),
+    ('u2024', 'vendor/\u2024.txt'),
+    ('cafe', 'notes/caf\u00e9.txt'),
+)
+
+
+def _excluded_extra(tmp_path, rel, data=b'x\n'):
+    package = synthetic_package(tmp_path)
+    path = package / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+    _exclude(package, [rel])
+    return package
+
+
+@pytest.mark.parametrize('rel', [item[1] for item in _NON_ASCII_PATHS], ids=[item[0] for item in _NON_ASCII_PATHS])
+def test_excluded_non_ascii_component_is_refused(tmp_path, rel):
+    package = _excluded_extra(tmp_path, rel)
+    result = inspect(package, rebuild=False)
+    detail = _manifest_detail(result)
+    assert 'refused: non-ASCII path component' in detail, detail
+    assert result['passed'] is False
+
+
+@pytest.mark.parametrize('name', ['GIT~1.DIR', 'git~12.x'])
+def test_git_short_name_with_suffix_is_refused(tmp_path, name):
+    rel = 'vendor/' + name
+    package = _excluded_extra(tmp_path, rel)
+    result = inspect(package, rebuild=False)
+    detail = _manifest_detail(result)
+    assert 'refused: ' + rel in detail, detail
+    assert result['passed'] is False
+
+
+def test_dev_git_index_refuses_non_ascii_path(tmp_path, capsys):
+    root = _mini_checkout(tmp_path)
+    (root / 'notes' / 'caf\u00e9.txt').write_bytes(b'x\n')
+    code = run_verify([str(root), '--dev-git-index', '--no-rebuild'])
+    text = capsys.readouterr().out + capsys.readouterr().err
+    assert code == 1
+    assert 'refused: non-ASCII path component' in text
+    assert 'Traceback' not in text
+
+
+def test_write_manifest_refuses_non_ascii_path(tmp_path, capsys):
+    root = _mini_checkout(tmp_path)
+    (root / 'notes' / 'caf\u00e9.txt').write_bytes(b'x\n')
+    before = (root / 'MANIFEST.json').read_bytes()
+    code = run_verify([str(root), '--dev-git-index', '--write-manifest'])
+    text = capsys.readouterr().out + capsys.readouterr().err
+    assert code == 1
+    assert 'refused: non-ASCII path component' in text
+    assert (root / 'MANIFEST.json').read_bytes() == before
