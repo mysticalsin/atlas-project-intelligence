@@ -4,6 +4,7 @@
 // This file emulates that method. It is not a Cloudflare Durable Object runtime.
 import { DatabaseSync } from 'node:sqlite';
 import { placeholderCount } from '../src/sql-text.js';
+import { preparesNoStatement } from '../src/sql-tail.js';
 const CONTROL = /^(begin|commit|rollback|savepoint|release)\b/i;
 // sqlite3_prepare_v2 consumes one statement and leaves a comment as no statement.
 // node:sqlite throws when that leftover is prepared on its own.
@@ -70,6 +71,7 @@ export function memorySql() {
   // A throw means this string did not prepare; the caller does not treat that as a tail.
   const statementTail = (q) => {
     const text = String(q ?? '');
+    if (preparesNoStatement(text)) return null;
     let stmt;
     try { stmt = db.prepare(text); }
     catch { return null; }

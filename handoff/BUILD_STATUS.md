@@ -1,6 +1,25 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-20 — SQL tail statement lifecycle S4 (`cursor/s4-sqltail-statement-lifecycle`)
+
+ATLAS-SQLTAIL-EMPTY-ERRSTATE. Decision: `handoff/decisions/sqltail-statement-lifecycle.md`. Stacked on PR #19 head `b1fa82d2772bee79b45e97197bcb5728c707b241` (`cursor/atlas-sqltext-lows`). No deploy, no provider call, no secrets. `library.js` was not edited. `python3 build.py` was not run for this change; `build.py` does not embed `sql-tail.js`.
+
+Empty input, whitespace, `;`, `/* delete */`, and `-- drop` prepare no statement. The primary door used to throw `ERR_INVALID_STATE` (`statement has been finalized`) because `sqliteRemainder` read `sourceSQL` outside the prepare try. The rows did not change. The door now returns `SQL_EMPTY`, status 500, message `This input prepares no statement.` A comment in front of a real verb stays that verb. The lifecycle is `statementTransition` in `deploy/cloudflare-edge/src/sql-tail.js`. Ten of the 30 phase/event pairs are legal. An illegal pair is `SQL_EMPTY`, not the native error. `test/sqlite.js` `statementTail` uses `preparesNoStatement` so the test driver does not prepare that input. Preparing it and leaving the handle open crashes `node:sqlite` at process shutdown.
+
+Red `a49cc9dd1e8e5c7c3f7faf7ef00057123a48b446` is the test file only. `cd deploy/cloudflare-edge && node --test test/write-sqltail-lifecycle.test.js`: 11 tests, 1 pass, 10 fail, 0 skipped, 136.2ms, exit 1. The pass is the existing tail of a real statement. Fix `79cc711399eb3bca5d0a258030917eeda3381404` is the machine. `0a1d28a7bf2e46eb70f3eced69287ddb6bb4dcce` stops the runner from preparing a NUL-terminated empty string, because that prepare crashed the edge file with `SIGSEGV` (1125 pass, 1 fail, 4 skipped, exit 1, 236.1s). The same focused command on `0a1d28a` is 11 pass, 0 fail, exit 0.
+
+Mutants, restored and not committed, same focused command, on `0a1d28a`: 14 killed, 0 survived. `drop-empty-guard` and `driver-prepares-noise` exit 1 with `SIGSEGV`. The other twelve exit 1 on the lifecycle tests: `guard-always-empty`, `prefix-always`, `finalized-read`, `illegal-ok`, `drop-catch`, `silent-note`, `blank-tail`, `empty-as-fallback`, `message`, `status-400`, `execute-drops-tail`, `unknown-kept`.
+
+Measured on `0a1d28a` before this note's manifest refresh. `ATLAS_DEPLOY_STUB` stayed unset. `/tmp/atlas-workerd-20261023` is not installed. `workerd` is not on `PATH`.
+
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 411 passed, 2 failed, 127 warnings, 25.54s, exit 1. The failures are `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. Both are the stale manifest. `MANIFEST.json` is regenerated after this note.
+- `node --test tests/*.test.js`: 419 tests, 419 pass, 0 fail, 0 skipped, 22.4s, exit 0.
+- Edge `node --test test/*.test.js` after `0a1d28a`: 1129 tests, 1125 pass, 0 fail, 4 skipped, 230.1s, exit 0. The four skips are the workerd 2026-10-23 proofs. The skip reason is `workerd 2026-10-23 is not installed; set ATLAS_WORKERD_ROOT`.
+- `make test-ui` (`CHROMIUM_PATH=/usr/bin/google-chrome`): 834 PASS, 0 FAIL, 26 scripts, exit 0. The log closed 438s after the run started.
+
+Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open.
+
 ## 2026-11-20 — SQL text alias and explain plan (`cursor/atlas-sqltext-lows`)
 
 Low rows ATLAS-SQLTEXT-ALIAS-VERB-INCONSISTENT and ATLAS-SQLTEXT-EXPLAIN-TRAILING-VERB-READ. Decision: `handoff/decisions/sqltext-alias-explain.md`. Base `main` `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. No deploy, no provider call, no secrets. `library.js` was not edited. `python3 build.py` was not run for this change; `build.py` does not embed `sql-text.js`.
