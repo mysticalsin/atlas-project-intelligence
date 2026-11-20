@@ -231,8 +231,13 @@ def main():
                     detail_of(preview, 'preview') + ' dialog %s/%s' % (preview['dialogSW'], preview['dialogCW']),
                 )
                 if shots:
+                    page.evaluate("""() => {
+                      document.getElementById('recordDialog').close();
+                      document.getElementById('sheetDialog').close();
+                    }""")
                     page.evaluate("(v) => window.ATLAS_APP.switchView(v)", 'projects')
                     page.evaluate(PROBE, {'token': token, 'what': 'projects'})
+                    page.evaluate("() => document.querySelector('#projectCards .project-card')?.scrollIntoView({block: 'center'})")
                     page.screenshot(path=str(Path(shots) / ('%s-projects-%s-%s.png' % (prefix, kind, width))))
                     page.evaluate(PROBE, {'token': token, 'what': 'record'})
                     page.locator('#recordDialog').screenshot(path=str(Path(shots) / ('%s-dialog-%s-%s.png' % (prefix, kind, width))))
