@@ -751,3 +751,182 @@ def test_git_archive_of_head_passes_check_handoff(tmp_path):
         cwd=extracted, capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+# Follow-ups on the package fence. Appended only; the nine fence tests above are unchanged.
+# Rebuild env is the seven names captured from scripts.check_handoff.subprocess.run.
+_REBUILD_ENV_ALLOWLIST = (
+    'HOME',
+    'LANG',
+    'LC_ALL',
+    'PATH',
+    'PYTHONDONTWRITEBYTECODE',
+    'PYTHONHASHSEED',
+    'PYTHONNOUSERSITE',
+)
+
+
+def _manifest_detail(result):
+    return next(c['detail'] for c in result['checks'] if c['name'] == 'manifest-content')
+
+
+def _exclude(package, extra_paths):
+    manifest = json.loads((package / 'MANIFEST.json').read_text(encoding='utf-8'))
+    manifest['manifest_excludes'] = ['MANIFEST.json', *extra_paths]
+    (package / 'MANIFEST.json').write_text(json.dumps(manifest), encoding='utf-8')
+
+
+@pytest.mark.parametrize('rel,expected', [
+    ('.git', True),
+    ('.git/HEAD', True),
+    ('.git/config', True),
+    ('vendor/demo/.git/HEAD', True),
+    ('vendor/demo/.git/config', True),
+    ('vendor/demo/.git', True),
+    ('vendor/demo/.git/', True),
+    ('./.git/HEAD', True),
+    ('vendor/./.git/HEAD', True),
+    ('.gitignore', False),
+    ('.gitattributes', False),
+    ('.github/workflows/ci.yml', False),
+    ('vendor/.github/workflows/ci.yml', False),
+    ('something.git/README', False),
+    ('foo/bar/.git.bak', False),
+    ('notes/readme.txt', False),
+    ('vendor\\.git\\HEAD', False),
+])
+def test_is_git_metadata_path_any_component(rel, expected):
+    from scripts.check_handoff import is_git_metadata_path
+    assert is_git_metadata_path(rel) is expected
+
+
+@pytest.mark.parametrize('rel', [
+    '.GIT/HEAD',
+    'vendor/x/.Git/config',
+    'Vendor/.Git/HEAD',
+])
+def test_git_metadata_path_refuses_case_variants(rel):
+    """Windows and macOS fold the case of a .git component. The fence does too."""
+    from scripts.check_handoff import is_git_metadata_path
+    assert is_git_metadata_path(rel) is True
+
+
+@pytest.mark.parametrize('rel', [
+    '.gitignore',
+    '.gitattributes',
+    '.github/workflows/ci.yml',
+    'vendor/.github/CODEOWNERS',
+    'something.git/README',
+])
+def test_git_metadata_path_allows_near_names(rel):
+    from scripts.check_handoff import is_git_metadata_path
+    assert is_git_metadata_path(rel) is False
+
+
+def test_manifest_excludes_cannot_hide_nested_git(tmp_path):
+    """Ordering guard: a .git component is refused before manifest_excludes apply."""
+    package = synthetic_package(tmp_path)
+    for rel, data in {
+        'vendor/demo/.git/HEAD': b'ref: refs/heads/main\n',
+        'vendor/demo/.git/config': b'[core]\n\trepositoryformatversion = 0\n',
+    }.items():
+        path = package / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    _exclude(package, ['vendor/demo/.git/HEAD', 'vendor/demo/.git/config'])
+    result = inspect(package, rebuild=False)
+    detail = _manifest_detail(result)
+    assert 'refused: vendor/demo/.git/HEAD' in detail, detail
+    assert 'refused: vendor/demo/.git/config' in detail, detail
+    assert result['passed'] is False
+
+
+def test_excluded_gitlink_file_is_refused(tmp_path):
+    package = synthetic_package(tmp_path)
+    gitlink = package / 'vendor' / 'app' / '.git'
+    gitlink.parent.mkdir(parents=True, exist_ok=True)
+    gitlink.write_bytes(b'gitdir: /tmp/not-a-real-git\n')
+    _exclude(package, ['vendor/app/.git'])
+    result = inspect(package, rebuild=False)
+    detail = _manifest_detail(result)
+    assert 'refused: vendor/app/.git' in detail, detail
+    assert result['passed'] is False
+
+
+def test_unlisted_nested_git_is_refused(tmp_path):
+    package = synthetic_package(tmp_path)
+    path = package / 'vendor' / 'demo' / '.git' / 'HEAD'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b'ref: refs/heads/main\n')
+    result = inspect(package, rebuild=False)
+    detail = _manifest_detail(result)
+    assert 'refused: vendor/demo/.git/HEAD' in detail, detail
+    assert result['passed'] is False
+
+
+def test_dev_git_index_outside_checkout_exits_nonzero_without_traceback(tmp_path, capsys):
+    package = synthetic_package(tmp_path)
+    assert not (package / '.git' / 'HEAD').is_file()
+    code = run_verify([str(package), '--dev-git-index', '--no-rebuild'])
+    captured = capsys.readouterr()
+    text = captured.out + captured.err
+    assert code == 1
+    assert 'dev-git-index requires a git checkout' in text
+    assert 'Traceback' not in text
+    assert 'UnboundLocalError' not in text
+
+
+def test_clean_rebuild_build_py_sees_only_allowlist_env(tmp_path, monkeypatch):
+    """The rebuild env is whatever scripts.check_handoff.subprocess.run receives."""
+    monkeypatch.setenv('OPENAI_API_KEY', 'sk-caller-secret')
+    monkeypatch.setenv('ATLAS_HOME_URL', 'https://evil.example')
+    monkeypatch.setenv('PYTHONPATH', str(tmp_path / 'attacker-path'))
+    monkeypatch.setenv('GIT_DIR', '/tmp/evil-git-dir')
+    monkeypatch.setenv('LD_PRELOAD', '/tmp/attacker.so')
+    monkeypatch.setenv('LD_LIBRARY_PATH', '/tmp/attacker-lib')
+    captured = {}
+    real_run = subprocess.run
+
+    def spy(cmd, *args, **kwargs):
+        command = list(cmd)
+        if command and str(command[-1]).endswith('build.py'):
+            captured['env'] = kwargs.get('env')
+            captured['saw'] = True
+        return real_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr('scripts.check_handoff.subprocess.run', spy)
+    package = synthetic_package(tmp_path)
+    result = inspect(package, rebuild=True, dev_git_index=False)
+    assert captured.get('saw') is True
+    env = captured.get('env')
+    assert isinstance(env, dict), env
+    assert sorted(env) == list(_REBUILD_ENV_ALLOWLIST)
+    assert env['LANG'] == 'C.utf8'
+    assert env['LC_ALL'] == 'C.utf8'
+    assert env['PYTHONHASHSEED'] == '0'
+    assert env['PYTHONNOUSERSITE'] == '1'
+    assert env['PYTHONDONTWRITEBYTECODE'] == '1'
+    assert env['PATH'] == os.environ['PATH']
+    assert env['HOME'] != str(Path.home())
+    assert not Path(env['HOME']).exists()
+    for banned in (
+        'OPENAI_API_KEY', 'ATLAS_HOME_URL', 'PYTHONPATH', 'GIT_DIR',
+        'LD_PRELOAD', 'LD_LIBRARY_PATH',
+    ):
+        assert banned not in env
+    assert result['passed'], result
+
+
+def test_git_environ_does_not_leak_a_home_per_call(monkeypatch):
+    monkeypatch.setenv('PATH', '/usr/bin:/bin')
+    first = git_environ()
+    second = git_environ()
+    assert first['HOME'] == second['HOME']
+    assert Path(first['HOME']).is_dir()
+    assert first['PATH'] == '/usr/bin:/bin'
+
+
+def test_git_environ_documents_path_inheritance():
+    doc = git_environ.__doc__ or ''
+    assert 'PATH' in doc
+    assert 'caller' in doc.lower()
