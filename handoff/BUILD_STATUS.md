@@ -1,6 +1,29 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-20 — ask runner count (`cursor/atlas-askrunner-count`)
+
+ATLAS-ASKRUNNER-COUNT-VALIDATION and ATLAS-PR10-DOC-PRBODY-STALE. Base `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. The runner is `tests/run_ask_browser_stamped.sh`. Red tests are `a68a8ee7a8594fe250d8e1ecd1fe12715eb49d6b`. That commit does not change the runner. `python3 -m pytest tests/test_ask_runner_count.py -q` on it: 29 failed, 6 passed, 10.62s, exit 1. The six that passed are omitted 8, explicit 8, 1, 32, the mixed run, and the missing-log usage line. The fix is `3d8136861f25f72a13fee75e1c1bdfd59d5818f9`. The same command on the fix: 35 passed, 0.35s, exit 0. `MANIFEST.json` is regenerated after this note.
+
+Refusal, not a clamp. Also in `handoff/decisions/askrunner-count.md`. A count is a canonical decimal integer from 1 to 32. Omitted means 8. Anything else exits 2 with `invalid count: '<value>' is not an integer from 1 to 32`. The log is not truncated. Python is not started. A real `ask_browser.py` failure still exits 1. Canonical 1 through 32 keep the same loop and the same stamp lines. 32 is the cap because this script repeats a Playwright file; `1e2` ran 100 times on the base. Bash `10#` wraps a 19-digit integer, so a longer digit string is refused before arithmetic.
+
+`docs/pr10/PR_BODY.md` told a checkout to run `python3 scripts/check_handoff.py .` and said the dev tree uses `git ls-files` for unlisted paths. Current main enumerates those paths only with `--dev-git-index`. The commands and that sentence now say so. Bare `.` stays described as the received-package walk. The PR10-era 687 count and the historical SHAs stay. `docs/pr10/README.md` has no check_handoff sentence.
+
+Mutants, restored, not committed. Each run is `python3 -m pytest tests/test_ask_runner_count.py -q`:
+
+- Drop the refusal: 29 failed, 6 passed, 10.57s, exit 1.
+- Clamp a canonical integer above 32 down to 32: 4 failed, 31 passed, 0.90s, exit 1. The failures are 33, 100, 1000000, and the 19-digit string.
+- Accept a trailing `.0`: 1 failed, 34 passed, 0.42s, exit 1. The failure is `8.0`.
+
+Suites on the fix plus these doc edits, before this paragraph's manifest refresh. `ATLAS_DEPLOY_STUB` was unset. No deploy, no provider call.
+
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 446 passed, 2 failed, 127 warnings, 25.29s, exit 1. Both failures are `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The detail is `unlisted: tests/test_ask_runner_count.py; changed: docs/pr10/PR_BODY.md; changed: tests/run_ask_browser_stamped.sh; untracked: handoff/decisions/askrunner-count.md`.
+- `node --test tests/*.test.js`: 419 tests, 419 pass, 0 fail, 0 skipped, 21.5s, exit 0.
+- Edge `node --test test/*.test.js` with `ATLAS_WORKERD_ROOT=/tmp/atlas-workerd-20261023`, miniflare `5.20261023.3-beta`, workerd `2026-10-23`: 1117 tests, 1117 pass, 0 fail, 0 skipped, 228.6s, exit 0. The alias-begin tail test passed.
+- `make test-ui` (`CHROMIUM_PATH=/usr/bin/google-chrome`): 834 PASS, 0 FAIL, 26 scripts, exit 0.
+
+Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open.
+
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.

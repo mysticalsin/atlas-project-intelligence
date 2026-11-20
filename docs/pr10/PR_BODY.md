@@ -11,7 +11,7 @@ Consultants need authorized wiki ZIP bytes they can open, not an opaque 500 from
 - **M-1:** CSP boundary classifies from `content_type`; HTML bodies only touch `response.text` so ZIP is never UTF-8-decoded.
 - **M-3:** `openFromHash` handles `#admin` via `switchView('admin')`; existing `renderAdmin()` denial copy unchanged.
 - **M-2:** **Withdrawn** — measured on `main` `c143025` at 320 / 375 / 1280, `#journey` has no horizontal overflow with synthetic fixtures; PR9 layout stands. See `handoff/decisions/M-2-journey-layout.md`.
-- **MANIFEST / check_handoff:** 687 tracked files; dev tree uses `git ls-files` for unlisted; clean rebuild copies `atlas_voice/` and `deploy/cloudflare-edge/`.
+- **MANIFEST / check_handoff:** 687 tracked files in this PR10 note. On current main, unlisted paths come from `git ls-files` only with explicit `--dev-git-index` (`python3 scripts/check_handoff.py . --dev-git-index`, or `make verify-dev-tree`). Bare `python3 scripts/check_handoff.py .` is the received-package walk, not the dev-tree check. Clean rebuild copies `atlas_voice/` and `deploy/cloudflare-edge/`.
 - **ask_browser:** deterministic Playwright waits (prior commit on branch).
 
 Screenshots (synthetic, hosted on **`pr-assets`** only — not on this branch):
@@ -28,7 +28,7 @@ Screenshots (synthetic, hosted on **`pr-assets`** only — not on this branch):
 - [ ] **t10-M-1** — Authorized wiki export returns HTTP **200** and a valid ZIP (no CSP UTF-8 decode on binary).
 - [ ] **t10-M-3** — Consultant `/#admin` shows the verified-admin refusal (no blank admin shell).
 - [ ] **t10-MANIFEST** — `manifest-content` passes for **687** git-tracked release files.
-- [ ] **t10-check_handoff** — `python3 scripts/check_handoff.py .` passes including **clean-build** and **clean-build-byte-match**.
+- [ ] **t10-check_handoff** — `python3 scripts/check_handoff.py . --dev-git-index` passes including **clean-build** and **clean-build-byte-match**.
 - [ ] **t10-ask_browser** — `python3 tests/ask_browser.py` stable without fixed sleeps (regression on branch).
 
 ---
@@ -39,8 +39,8 @@ Screenshots (synthetic, hosted on **`pr-assets`** only — not on this branch):
 |--------|------|--------------|--------------|-----|-----|
 | **t10-M-1** | medium (binary response / CSP) | `tests/test_quality.py::test_wiki_export_http_roundtrip_returns_zip` | `python3 -m pytest tests/test_quality.py::test_wiki_export_http_roundtrip_returns_zip -q` | `346b036` | `9d8a616` |
 | **t10-M-3** | low (deep link UX; access unchanged) | `tests/admin_metrics_browser.py` → `consultant #admin deep link shows the refusal state` | `python3 tests/admin_metrics_browser.py` | `76b02eb` | `a9878d6` |
-| **t10-MANIFEST** | low (release integrity) | `check_handoff` → `manifest-content` | `python3 scripts/check_handoff.py . --no-rebuild` | drift at `02a83b32` / post-merge | `18f5d5e`, `8ed15b0` manifest |
-| **t10-check_handoff** | low | `tests/test_handoff.py::test_repository_full_handoff_includes_clean_rebuild` | `python3 -m pytest tests/test_handoff.py::test_repository_full_handoff_includes_clean_rebuild -q` and `python3 scripts/check_handoff.py .` | `dfc4636` (rebuild staging) | `76536e4`, `bb14e2e` |
+| **t10-MANIFEST** | low (release integrity) | `check_handoff` → `manifest-content` | `python3 scripts/check_handoff.py . --dev-git-index --no-rebuild` | drift at `02a83b32` / post-merge | `18f5d5e`, `8ed15b0` manifest |
+| **t10-check_handoff** | low | `tests/test_handoff.py::test_repository_full_handoff_includes_clean_rebuild` | `python3 -m pytest tests/test_handoff.py::test_repository_full_handoff_includes_clean_rebuild -q` and `python3 scripts/check_handoff.py . --dev-git-index` | `dfc4636` (rebuild staging) | `76536e4`, `bb14e2e` |
 | **t10-ask_browser** | low (flake) | `tests/ask_browser.py` | `python3 tests/ask_browser.py` | prior fixed sleeps | `bd95020` |
 
 **M-2:** withdrawn — no ticket row. Measurement: `python3 scripts/measure_journey_overflow.py /path/to/main/checkout` → all `#journey` rows `overflow=False` at 320 / 375 / 1280 on `c143025`.
@@ -63,7 +63,7 @@ Screenshots (synthetic, hosted on **`pr-assets`** only — not on this branch):
 | M-1 | `content_type` gate before reading body | Always read `response.text` | ZIP is not UTF-8 |
 | M-3 | `switchView('admin')` | New refusal copy | Existing denial UI |
 | M-2 | Withdraw; `journey.css` = `main` `c143025` | 960px rule + `journey_layout_browser.py` | Test never red on main; identical measures |
-| check_handoff | Copy `atlas_voice/` + edge paths; git index unlisted | Filesystem walk on dev tree | Rebuild + gitignored artifacts |
+| check_handoff | Copy `atlas_voice/` + edge paths; `git ls-files` only with explicit `--dev-git-index` | Implicit git index on a checkout, or a filesystem walk of that checkout | Rebuild + gitignored artifacts |
 | Top bar 600px | **Out of scope** (Backlog) | Fold into PR10 | Pre-existing on main (615–671 px); not journey panel |
 
 Logs: `handoff/decisions/M-1-wiki-export-csp.md`, `M-2-journey-layout.md`, `M-3-admin-hash.md`, `check-handoff-rebuild.md`.
@@ -84,7 +84,7 @@ node --test tests/*.test.js
 python3 -m pytest tests/test_*.py -q
 cd deploy/cloudflare-edge && ATLAS_WORKERD_ROOT=/tmp/atlas-workerd-20261023 node --test test/*.test.js
 make test-ui   # ×3 on release gate
-python3 scripts/check_handoff.py .
+python3 scripts/check_handoff.py . --dev-git-index
 ```
 
 Non-author exact-head review (Devin loop 2+, Cursor, Inspector): **pending** after next push.
