@@ -19,6 +19,18 @@ Dev-mode git copies PATH from the caller and passes no other caller variable.
 A package rebuild runs build.py with seven names: PATH, a fresh HOME, LANG,
 LC_ALL, PYTHONHASHSEED, PYTHONNOUSERSITE, and PYTHONDONTWRITEBYTECODE.
 Inspection failures exit 1. argparse usage errors exit 2.
+
+A git metadata component is one shared check (NFKC, casefold, drop Cf / Zs / Mn,
+strip trailing dots, confusable fold, ``git~<digits>``, backslash, and
+``::$INDEX_ALLOCATION``). Owner decisions, 2026-11-20, Atlas: casefold, and
+fail closed on the disguised names above.
+
+Still open: SIGKILL does not run atexit, so the one ``atlas-git-home-*``
+directory can remain. A non-ASCII character that NFKC, casefold, Cf/Zs/Mn
+removal, trailing-dot strip, and the fold table (U+0131, U+0456, U+0261,
+U+2024) do not map onto ``.git`` is not refused. A short name that is not
+exactly ``git~<digits>`` after that fold (for example ``GIT~1.DIR``) is not
+refused.
 """
 from __future__ import annotations
 import atexit
@@ -26,8 +38,10 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import stat
 import tarfile
+import unicodedata
 import zipfile
 from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
@@ -42,28 +56,105 @@ def safe_relative(value: str) -> bool:
     return bool(value) and not p.is_absolute() and '..' not in p.parts and '\\' not in value and ':' not in value
 
 
-def is_dev_tree(root: Path) -> bool:
-    return (root / '.git' / 'HEAD').is_file()
+# Confusables NFKC does not fold onto ASCII .git letters.
+_CONFUSABLE = {
+    '\u0131': 'i',  # dotless i
+    '\u0456': 'i',  # Cyrillic small i
+    '\u0261': 'g',  # Latin small script g
+    '\u2024': '.',  # one-dot leader
+}
+_ADS_SUFFIX = '::$index_allocation'
+_GIT_SHORT = re.compile(r'git~\d+')
+
+
+def _strip_ads(part: str) -> str:
+    text = part
+    while text.casefold().endswith(_ADS_SUFFIX):
+        text = text[:-len(_ADS_SUFFIX)]
+    return text
+
+
+def _normalize_component(part: str) -> str:
+    """NFKC, casefold, drop Cf/Zs/Mn, confusable-fold, strip trailing dots."""
+    text = _strip_ads(part)
+    text = unicodedata.normalize('NFKC', text).casefold()
+    kept = []
+    for ch in text:
+        category = unicodedata.category(ch)
+        if category == 'Cf' or category == 'Mn' or category.startswith('Z'):
+            continue
+        kept.append(_CONFUSABLE.get(ch, ch))
+    text = ''.join(kept)
+    while text.endswith('.'):
+        text = text[:-1]
+    return text
+
+
+def is_git_metadata_component(part: str) -> bool:
+    """True when one path component is git metadata after normalization."""
+    if part in ('', '.', '..'):
+        return False
+    normalized = _normalize_component(part)
+    if normalized == '.git':
+        return True
+    return _GIT_SHORT.fullmatch(normalized) is not None
+
+
+def _path_components(rel: str) -> tuple[str, ...]:
+    text = rel.replace('\\', '/')
+    return tuple(part for part in PurePosixPath(text).parts if part not in ('', '.'))
 
 
 def is_git_metadata_path(rel: str) -> bool:
-    """True when any path component is ``.git``, compared case-insensitively.
+    """True when any component is git metadata.
 
     Windows and macOS fold ``.GIT`` onto the git metadata name. A component
     that only contains those letters (``.gitignore``, ``.github``,
-    ``something.git``) is not metadata.
+    ``something.git``, ``.git.bak``) is not metadata. Backslash spellings
+    and ``::$INDEX_ALLOCATION`` names are metadata.
     """
-    return any(part.casefold() == '.git' for part in PurePosixPath(rel).parts)
+    return any(is_git_metadata_component(part) for part in _path_components(rel))
+
+
+def _is_checkout_metadata(rel: str) -> bool:
+    parts = _path_components(rel)
+    return bool(parts) and is_git_metadata_component(parts[0])
+
+
+def is_dev_tree(root: Path) -> bool:
+    try:
+        names = os.listdir(root)
+    except OSError:
+        return False
+    for name in names:
+        if not is_git_metadata_component(name):
+            continue
+        head = root / name / 'HEAD'
+        try:
+            if head.is_file() and not head.is_symlink():
+                return True
+        except OSError:
+            continue
+    return False
 
 
 _GIT_HOME: str | None = None
+_GIT_HOME_CLEANUP = False
+
+
+def _remove_shared_git_home() -> None:
+    home = _GIT_HOME
+    if home and os.path.isdir(home):
+        shutil.rmtree(home, ignore_errors=True)
 
 
 def _shared_git_home() -> str:
-    global _GIT_HOME
+    global _GIT_HOME, _GIT_HOME_CLEANUP
+    if not _GIT_HOME_CLEANUP:
+        atexit.register(_remove_shared_git_home)
+        _GIT_HOME_CLEANUP = True
     if _GIT_HOME is None or not os.path.isdir(_GIT_HOME):
         _GIT_HOME = tempfile.mkdtemp(prefix='atlas-git-home-')
-        atexit.register(shutil.rmtree, _GIT_HOME, True)
     return _GIT_HOME
 
 
@@ -138,20 +229,48 @@ def read_package_bytes(root: Path, rel: str) -> bytes:
 
 
 def package_files(root: Path) -> list[str]:
+    """Files, symlink directories, and git-metadata directories. Do not follow links."""
     found = []
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
         base = Path(dirpath)
-        for name in list(dirnames):
+        rel_base = base.relative_to(root).as_posix()
+        if rel_base == '.':
+            rel_base = ''
+        for name in dirnames:
             path = base / name
-            if path.is_symlink():
-                found.append(path.relative_to(root).as_posix())
-                dirnames.remove(name)
-        for name in filenames:
-            path = base / name
-            rel = path.relative_to(root).as_posix()
-            if path.is_symlink():
+            rel = name if not rel_base else rel_base + '/' + name
+            if path.is_symlink() or is_git_metadata_component(name):
                 found.append(rel)
-            else:
+        for name in filenames:
+            rel = name if not rel_base else rel_base + '/' + name
+            found.append(rel)
+    return found
+
+
+def nested_git_metadata_paths(root: Path) -> list[str]:
+    """Git metadata under the checkout, not the checkout's own top-level git dir."""
+    found = []
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        base = Path(dirpath)
+        rel_base = base.relative_to(root).as_posix()
+        if rel_base == '.':
+            rel_base = ''
+        for name in list(dirnames):
+            rel = name if not rel_base else rel_base + '/' + name
+            if _is_checkout_metadata(rel):
+                dirnames.remove(name)
+                continue
+            path = base / name
+            if path.is_symlink():
+                if is_git_metadata_path(rel):
+                    found.append(rel)
+                dirnames.remove(name)
+                continue
+            if is_git_metadata_component(name):
+                found.append(rel)
+        for name in filenames:
+            rel = name if not rel_base else rel_base + '/' + name
+            if is_git_metadata_path(rel) and not _is_checkout_metadata(rel):
                 found.append(rel)
     return found
 
@@ -276,6 +395,8 @@ def inspect(root: Path, *, rebuild=True, dev_git_index: bool = False) -> dict:
             for rel in untracked_dev:
                 if rel not in allowed and not manifest_allows_path(rel, excludes, package_mode=False):
                     bad.append('untracked: ' + rel)
+            for rel in nested_git_metadata_paths(root):
+                bad.append('refused: ' + rel)
     else:
         present = package_files(root)
     for rel in sorted(present):
@@ -284,7 +405,7 @@ def inspect(root: Path, *, rebuild=True, dev_git_index: bool = False) -> dict:
         except ValueError:
             bad.append('outside package root: ' + rel)
             continue
-        if package_mode and is_git_metadata_path(rel):
+        if is_git_metadata_path(rel) and not (dev_git_index and _is_checkout_metadata(rel)):
             bad.append('refused: ' + rel)
             continue
         if rel in seen or rel in allowed or manifest_allows_path(rel, excludes, package_mode=package_mode):
@@ -310,7 +431,7 @@ def inspect(root: Path, *, rebuild=True, dev_git_index: bool = False) -> dict:
             disallowed.append(rel)
         if p.name == '.env' or (p.name.startswith('.env.') and p.name != '.env.example'):
             disallowed.append(rel)
-        if any(x in ('data', 'vault', 'knowledge-vault', 'secrets', 'credentials', 'backups', '.git', '.venv', '__pycache__') for x in p.parts):
+        if any(is_git_metadata_component(x) or x in ('data', 'vault', 'knowledge-vault', 'secrets', 'credentials', 'backups', '.venv', '__pycache__') for x in p.parts):
             disallowed.append(rel)
     check('release-hygiene', not disallowed, '; '.join(disallowed[:20]) if disallowed else 'No known secret/runtime/font paths in the manifest; this is not a full content secret scan.')
     aliases = ['ATLAS_Project_Intelligence.html', 'ATLAS_Intelligence.html', 'ATLAS_Voice_Studio.html', 'ATLAS_Voice.html']
