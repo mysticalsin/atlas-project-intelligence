@@ -2282,8 +2282,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 334727,
-      "sha256": "4e9d45f694b3e909df0504bc71a5085c1d361eacc500fac1eadd26b1c9178851"
+      "bytes": 346929,
+      "sha256": "311bfd60630ba451016b72b88b0b6a981fd92c70e54ef68b5d665c65b2522b05"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2349,6 +2349,11 @@
       "path": "handoff/decisions/ask-browser-waits.md",
       "bytes": 757,
       "sha256": "0688945a88b531a2ffefa0046aef25f0d7b4d2fc6b66581ae45a56b4e7f4c6fa"
+    },
+    {
+      "path": "handoff/decisions/check-handoff-git-metadata.md",
+      "bytes": 2461,
+      "sha256": "4c44841756678914bd3e0a231c37aabd420f489e2625f01aed950d72487fff09"
     },
     {
       "path": "handoff/decisions/check-handoff-rebuild.md",
@@ -2692,8 +2697,8 @@
     },
     {
       "path": "scripts/check_handoff.py",
-      "bytes": 17884,
-      "sha256": "daa3da95d0cceb836216cbcc267c276ab2e9de548d26e7073ca53057a4886f74"
+      "bytes": 25828,
+      "sha256": "13c2d7ee1e44db14291abfef2f3d30696dbbd2d3e3ca6a9e588e59d183fc3f2a"
     },
     {
       "path": "scripts/check_workers_speech.py",
@@ -3392,8 +3397,8 @@
     },
     {
       "path": "tests/test_handoff.py",
-      "bytes": 31983,
-      "sha256": "d1336bb44888887df12be3394aa2b16ace09bcdbff528df39efafb698b09707f"
+      "bytes": 53489,
+      "sha256": "c2f0a00daea024cde0a7a83562820a9bc66ff424141c8ce5e4fd188b9e70bae4"
     },
     {
       "path": "tests/test_page_harness.py",
