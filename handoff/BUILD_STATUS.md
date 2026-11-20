@@ -1,6 +1,25 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-20 — SQL text alias and explain plan (`cursor/atlas-sqltext-lows`)
+
+Low rows ATLAS-SQLTEXT-ALIAS-VERB-INCONSISTENT and ATLAS-SQLTEXT-EXPLAIN-TRAILING-VERB-READ. Decision: `handoff/decisions/sqltext-alias-explain.md`. Base `main` `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. No deploy, no provider call, no secrets. `library.js` was not edited. `python3 build.py` was not run for this change; `build.py` does not embed `sql-text.js`.
+
+`SELECT 1 VACUUM` and `SELECT 1 REINDEX` are column aliases. They are proven reads. A real `VACUUM` or `REINDEX` statement stays a write on both doors. `write-v14-gap.test.js` no longer calls the two alias strings writes. It keeps `SELECT 1 DETACH other`, `SELECT 1 PRAGMA user_version`, `VACUUM`, `VACUUM main`, `REINDEX`, and `REINDEX refs` as writes. `EXPLAIN QUERY PLAN` of one write verb stays a plan on the primary door and is not a proven read, so the fallback door still returns `SQL_DOOR`. A second verb or a nested write inside that plan is a write on both doors. `EXPLAIN` of a write stays a mutation. `EXPLAIN QUERY PLAN PRAGMA writable_schema = ON` stays a write.
+
+Red `73edbf5d8f494e1e1a0a3310eb232058ca8fcec1` is tests only. `node --test test/write-sqltext-alias-explain.test.js test/write-v14-gap.test.js`: 5 tests, 4 pass, 1 fail, exit 1. The failure is `alias and explain table`. The gap test passes. Fix `9c72ebeca5e6e0ac4011f1cbe56a1cd8d4a39a6b` is `deploy/cloudflare-edge/src/sql-text.js` only. The same command on the fix is 5 pass, 0 fail, exit 0.
+
+Mutants, restored and not committed, same command: removing the alias exemption (4 pass, 1 fail, `SELECT 1 VACUUM` is `read false !== true`); removing `vacuum` and `reindex` from `VERBS` (3 pass, 2 fail, real `VACUUM` is `mut false !== true` and the gap test fails); restoring the `EXPLAIN QUERY PLAN` early return (4 pass, 1 fail, `EXPLAIN QUERY PLAN SELECT 1 DELETE FROM refs` is `read true !== false`); forcing the explained index to `-1` (4 pass, 1 fail, `EXPLAIN QUERY PLAN DELETE FROM refs` is `mut true !== false`).
+
+Measured on the fix commit before this note's manifest refresh. `ATLAS_DEPLOY_STUB` stayed unset.
+
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 411 passed, 2 failed, 127 warnings, 210.67s, exit 1. The failures are `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. Both are the stale manifest. `MANIFEST.json` is regenerated after this note.
+- `node --test tests/*.test.js`: 419 tests, 419 pass, 0 fail, 0 skipped, 31.3s, exit 0.
+- Edge `node --test test/*.test.js` with workerd `2026-10-23` from `/tmp/atlas-workerd-20261023` (`miniflare@5.20261023.3-beta`): 1118 tests, 1118 pass, 0 fail, 0 skipped, 261.2s, exit 0. The alias-begin tail test passed.
+- `make test-ui CHROMIUM_PATH=/usr/bin/google-chrome`: 834 PASS, 0 FAIL, 26 scripts, exit 0.
+
+Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open.
+
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.
