@@ -2282,8 +2282,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 330277,
-      "sha256": "7de96b72fa9ec75f6ab11aa6a43012929d1693e57c61ecda418b5255745ee2d1"
+      "bytes": 330007,
+      "sha256": "dadbf3d480d902cdb0fd1aa08e28b954c68b8ac74872b03a7c3c653a409d2acc"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -3267,8 +3267,8 @@
     },
     {
       "path": "tests/run_ask_browser_stamped.sh",
-      "bytes": 624,
-      "sha256": "4b47de14eb43e6a9d16eb27b78fce53f6255f71468aa18a49d79c7d5fbdd8286"
+      "bytes": 636,
+      "sha256": "815be5080378a6ca6f5239b7467cc89b36b867115a568147ae9074486e28de54"
     },
     {
       "path": "tests/safe-html-lint.test.js",
