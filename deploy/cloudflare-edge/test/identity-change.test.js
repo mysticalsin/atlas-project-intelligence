@@ -629,4 +629,68 @@ describe('access identity change, required plan changes', { concurrency: false }
     }
     assert.deepEqual(failures, []);
   });
+
+  test('an upper-case copy of the minted subject key is a mismatch', async () => {
+    // The compare does not lower-case. HEX_KEY is [0-9a-f], so a real key in upper case must stay a mismatch.
+    const ada = await established();
+    const minted = await subjectBound(ADA.sub);
+    const upper = minted.toUpperCase();
+    assert.notEqual(upper, minted);
+    assert.match(minted, /^[0-9a-f]{32}$/);
+    const library = binder({ title: MARKER });
+    const interview = binder({ title: MARKER });
+    const res = await handle(new Request(ORIGIN + '/api/library/journey', {
+      headers: {
+        'cf-access-jwt-assertion': ada.token,
+        'X-Atlas-Bound-Subject': upper,
+        'X-Atlas-Bound-Email': await emailBound(ADA.email),
+      },
+    }), envFor(library.binding, interview.binding), '');
+    assert.deepEqual(await outcome(res, library.opened.concat(interview.opened)), FAILURE);
+  });
+
+  test('a minted key wrapped in whitespace is a mismatch', async () => {
+    // Fetch drops leading and trailing ASCII space before the Worker. U+00A0 is whitespace trim() removes and the header parser keeps.
+    const ada = await established();
+    const minted = await subjectBound(ADA.sub);
+    const wrapped = '\u00a0' + minted + '\u00a0';
+    const headers = new Headers({
+      'cf-access-jwt-assertion': ada.token,
+      'X-Atlas-Bound-Email': await emailBound(ADA.email),
+    });
+    headers.set('x-atlas-bound-subject', wrapped);
+    assert.equal(headers.get('x-atlas-bound-subject'), wrapped);
+    const library = binder({ title: MARKER });
+    const interview = binder({ title: MARKER });
+    const res = await handle(new Request(ORIGIN + '/api/library/journey', { headers }), envFor(library.binding, interview.binding), '');
+    assert.deepEqual(await outcome(res, library.opened.concat(interview.opened)), FAILURE);
+  });
+
+  test('an empty server subject key still rejects a presented email key', async () => {
+    // Production without LOG_SALT mints no bound subject. The check must not skip, even when the subject header is absent or empty.
+    const ada = await established();
+    const env = {
+      ...envFor(binder({}).binding, binder({}).binding),
+      DATA_MODE: 'production',
+      ATLAS_TENANT_ISOLATION: 'enforced',
+    };
+    delete env.LOG_SALT;
+    const presented = 'ab'.repeat(16);
+    const shapes = [
+      { 'X-Atlas-Bound-Email': presented },
+      { 'X-Atlas-Bound-Subject': '', 'X-Atlas-Bound-Email': presented },
+    ];
+    const failures = [];
+    for (const extra of shapes) {
+      const library = binder({ title: MARKER });
+      const interview = binder({ title: MARKER });
+      const res = await handle(new Request(ORIGIN + '/api/library/journey', {
+        headers: { 'cf-access-jwt-assertion': ada.token, ...extra },
+      }), { ...env, LIBRARY: library.binding, INTERVIEW: interview.binding }, '');
+      const got = await outcome(res, library.opened.concat(interview.opened));
+      const closed = got.status === 409 && got.opened.length === 0 && got.code === 'IDENTITY_CHANGED';
+      if (!closed) failures.push(JSON.stringify(extra) + ' ' + JSON.stringify(got));
+    }
+    assert.deepEqual(failures, []);
+  });
 });
