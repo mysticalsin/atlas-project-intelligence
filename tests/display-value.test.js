@@ -63,8 +63,9 @@ test('null, arrays, and nested objects are the placeholder', () => {
 test('boundaries stay text or the placeholder and never the default object string', () => {
   for (const v of [true, false, NaN, Infinity, -Infinity, 1n, Symbol('role'), () => 'Ada', new Date(0), Object.create(null)]) {
     const out = show(v);
-    assert.equal(typeof out, 'string', String(v));
-    assert.equal(out.includes('[object'), false, String(v));
+    assert.equal(typeof out, 'string');
+    assert.equal(out.includes('[object'), false);
+    assert.equal(out, PLACEHOLDER);
   }
   const lying = {toString() { return '[object Object]'; }, valueOf() { return 'Ada'; }};
   assert.equal(show(lying), PLACEHOLDER);
