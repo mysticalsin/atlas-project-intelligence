@@ -21,6 +21,15 @@ Residuals:
 - `atexit` does not run on SIGKILL, so one `atlas-git-home-*` directory can remain after a killed process.
 - Rebuild behaviour change: a caller `ATLAS_HOME_URL` used to make `clean-build-byte-match` fail closed. The scrubbed rebuild ignores that variable and bakes `deploy/cloudflare-edge/wrangler.jsonc` `vars.ORIGIN`. On this host the seven-name rebuild matches the shipped aliases (`7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a`, 924015 bytes).
 
+Measured on `3f254111b63bb2035e1a9e3192a3858c15575333` before this paragraph. `ATLAS_DEPLOY_STUB` was unset.
+
+- Red commit `f656ecfca32817f4fb7b77c52236ab5dd44da4bf`: the new tests, 16 failed, 16 passed, exit 1.
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 365 passed, 127 warnings, 27.65s, exit 0.
+- `node --test tests/*.test.js`: 413 tests, 413 pass, 0 fail, 0 skipped.
+- Edge `node --test test/*.test.js` with miniflare `5.20261023.3-beta` and workerd `2026-10-23`: 1117 tests, 1117 pass, 0 fail, 0 skipped. The alias-begin tail test passed.
+- `make test-ui` (`CHROMIUM_PATH=/usr/local/bin/google-chrome`): 834 PASS, 0 FAIL, exit 0.
+- `python3 scripts/check_handoff.py . --dev-git-index` on the fix tree: exit 0, 694 release files, `clean-build` and `clean-build-byte-match` pass.
+
 ## 2026-11-20 — PR10 fix loop 3/3 (`cursor/atlas-post-pr9-fixes`)
 - F-3: `tests/run_ask_browser_stamped.sh` per-run `rc` capture (Sentinel **5ca83528** @ `b459f77`); BUILD_STATUS before **final** `MANIFEST.json` regen.
 - Loop 2 closed @ `b459f77` (F-1, manifest ordering **39b36033**). F-2 **Backlog**; `check_handoff.py` still `196aee0`.
