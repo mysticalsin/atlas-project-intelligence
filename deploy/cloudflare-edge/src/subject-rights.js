@@ -11,7 +11,7 @@ import * as privacy from './privacy.js';
 import { subjectHash } from './privacy.js';
 import { str, obj, fail } from './util.js';
 import { TENANT_ID } from './authz.js';
-import { eraseJourneyFor, eraseTelemetryFor, eraseManagerTrustFor, eraseDirectoryFor } from './operate.js';
+import { eraseJourneyFor, eraseTelemetryFor, eraseManagerTrustFor, eraseDirectoryFor, eraseSubjectInvitations } from './operate.js';
 import { placeholders } from './sql-bound.js';
 
 const randomToken = () => 'erased:' + [...crypto.getRandomValues(new Uint8Array(6))].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -47,7 +47,6 @@ function whereSubject(tenantColumn, subjectSql) {
 // Trust and directory are called with mode "subject": a manager-only trust address is replaced, and another person's directory manager address is replaced. Privacy delete calls them with mode "tenant" and keeps main's deletes.
 // A staffing row where this person is only the manager is pseudonymised, not deleted.
 const SUBJECT_TABLES = [
-  { table: 'invitations', column: 'email', tenant: 'tenant', key: 'invitations' },
   { table: 'outreach', column: 'to_email', tenant: 'tenant', key: 'outreach' },
   { table: 'staffing', column: 'consultant_email', tenant: 'tenant', key: 'staffingRows' },
   { table: 'teams_conversations', column: 'email', tenant: 'tenant_id', key: 'teamsConversations' },
@@ -265,6 +264,11 @@ function eraseWithin(lib, user, subj, tenant, { now = lib.now() } = {}) {
   { const n = lib.rows('SELECT COUNT(*) AS n FROM revisions WHERE author = ? AND id IN (SELECT id FROM refs WHERE owner != ? AND ' + TENANT_SQL + ')', email, email, tenant)[0].n;
     if (n) { lib.exec('UPDATE revisions SET author = ? WHERE author = ? AND id IN (SELECT id FROM refs WHERE owner != ? AND ' + TENANT_SQL + ')', token, email, email, tenant); bump('revisionAuthors', n); } }
   // evidence_records, approvals, jobs and job_events are not created by this slice. They are not rewritten here.
+  // Invitations use the same helper as privacy delete: either address is deleted, and a sent
+  // source matches the full alias. A 60-character form matches only when the alias is no longer than 60.
+  const invitations = eraseSubjectInvitations(lib, user, tenant);
+  bump('invitations', invitations.removed);
+  bump('invitationSources', invitations.scrubbed);
   // Each statement rewrites one subject column, and the tenant test wraps that condition.
   for (const spec of SUBJECT_TABLES) {
     if (typeof spec.erase === 'function') {

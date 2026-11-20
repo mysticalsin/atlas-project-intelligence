@@ -1,5 +1,5 @@
 // Admin metrics, journey and privacy routes. Every handler checks the server role again.
-import { fail } from './util.js';
+import { fail, str } from './util.js';
 import { sameTenant, TENANT_ID } from './authz.js';
 import { queryMetrics, recordUsage, purgeTelemetry, ensureTelemetry, personaKey, personaKeySync } from './telemetry.js';
 import { toCsv } from './csvsafe.js';
@@ -14,13 +14,13 @@ function metricQuery(url, bucket = 'day') {
 }
 function dsarStores() {
   return {
-    coveredLocal: ['journey for this subject and tenant', 'profile for this subject and tenant', 'telemetry for this persona and tenant', 'manager trust for this subject and tenant', 'this subject\'s directory row for this tenant'],
+    coveredLocal: ['journey for this subject and tenant', 'profile for this subject and tenant', 'telemetry for this persona and tenant', 'manager trust for this subject and tenant', 'this subject\'s directory row for this tenant', 'invitations addressed to this subject in this tenant, and the sender field on invitations this subject sent in this tenant'],
     retained: [
       { store: 'legacy-blank-tenant-rows', action: 'quarantined', note: 'Blank ownership stays blank. It was not assigned a tenant and was not deleted by this request. A privacy export names it legacy_unscoped and does not include its content. An operator resolves it by a reviewed migration that assigns the tenant.' },
       { store: 'hindsight-bank', action: 'not-contacted', note: 'The vendor bank was not called. A subject-only bank is not read when a verified tenant is present, and it was not deleted.' },
       { store: 'interview-object', action: 'not-deleted', note: 'The Interview object was not opened and was not erased.' },
       { store: 'vendor-logs', action: 'not-asserted' },
-      { store: 'directory-and-audit', action: 'retained', note: 'Directory keys for this subject and tenant are listed in outcomes. Audit rows are not deleted. This response does not report any other row.' },
+      { store: 'directory-and-audit', action: 'retained', note: 'Directory keys and invitation counts for this subject and tenant are listed in outcomes. Audit rows are not deleted. This response does not report another person\'s row.' },
     ],
     complete: false,
   };
@@ -92,6 +92,41 @@ function deleteDirectoryKeys(lib, tenant, keys) {
   const n = lib.rows(`SELECT COUNT(*) AS n FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys)[0].n;
   if (n) lib.exec(`DELETE FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys);
   return n;
+}
+// Received: invitations.email is this subject (invite writes the consultant address there).
+// Sent: invitations.source is a full alias. str(alias, 60) is that whole alias only when the alias
+// is no longer than 60 characters. A longer actor's 60-character prefix is shared and is not matched.
+// A row whose recipient is also the subject is deleted, not scrubbed. Each sent row gets its own token.
+// The tenant compare trims, the same way journeyTenant trims the caller. Counts are changes() after the write.
+export function eraseSubjectInvitations(lib, user, tenant) {
+  if (!tableReady(lib, 'invitations')) return { removed: 0, scrubbed: 0 };
+  const aliases = subjectAliases(user);
+  if (!aliases.length) return { removed: 0, scrubbed: 0 };
+  const prefixes = [...new Set(aliases.filter(alias => alias.length <= 60).map(alias => str(alias, 60).toLowerCase()).filter(Boolean))];
+  const scope = "lower(trim(COALESCE(tenant, ''))) = ?";
+  const aliasMarks = placeholders(aliases.length);
+  const sourceMatch = prefixes.length
+    ? `(lower(source) IN (${aliasMarks}) OR lower(source) IN (${placeholders(prefixes.length)}))`
+    : `lower(source) IN (${aliasMarks})`;
+  lib.exec(`DELETE FROM invitations WHERE ${scope} AND lower(email) IN (${aliasMarks})`, tenant, ...aliases);
+  const removed = Number(lib.rows('SELECT changes() AS n')[0]?.n || 0);
+  const sentSql = `${scope} AND ${sourceMatch} AND lower(email) NOT IN (${aliasMarks})`;
+  const sentArgs = prefixes.length ? [tenant, ...aliases, ...prefixes, ...aliases] : [tenant, ...aliases, ...aliases];
+  const sent = lib.rows(`SELECT id FROM invitations WHERE ${sentSql}`, ...sentArgs);
+  let scrubbed = 0;
+  for (const row of sent) {
+    lib.exec(`UPDATE invitations SET source = ? WHERE id = ? AND ${sentSql}`, tokenOf({}), row.id, ...sentArgs);
+    scrubbed += Number(lib.rows('SELECT changes() AS n')[0]?.n || 0);
+  }
+  return { removed, scrubbed };
+}
+function eraseInvitations(lib, user, tenant) {
+  return eraseSubjectInvitations(lib, user, tenant);
+}
+function outcomeDetail(outcome) {
+  const line = outcome.store + ' ' + outcome.removed;
+  if (!Object.hasOwn(outcome, 'scrubbed')) return line;
+  return line + ' scrubbed ' + (Number(outcome.scrubbed) || 0);
 }
 export function eraseDirectoryFor(lib, user, ctx = {}) {
   if (!tableReady(lib, 'directory')) return 0;
@@ -286,21 +321,23 @@ export async function privacyRoutes(ctx) {
           directory = count(`SELECT COUNT(*) AS n FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys);
           if (directory) lib.exec(`DELETE FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys);
         }
+        const invitations = eraseInvitations(lib, user, tenant);
         const outcomes = [
           { store: 'journey', removed: journey, error: null },
           { store: 'telemetry', removed: telemetry, error: null },
           { store: 'profile', removed: profile, error: null },
           { store: 'manager-trust', removed: trust, error: null },
           { store: 'directory', removed: directory, error: null },
+          { store: 'invitations', removed: invitations.removed, scrubbed: invitations.scrubbed, error: null },
         ];
-        lib.log('library', user.email, 'privacy delete', outcomes.map(o => o.store + ' ' + o.removed).join(', '));
+        lib.log('library', user.email, 'privacy delete', outcomes.map(outcomeDetail).join(', '));
         return outcomes;
       });
     } catch (error) {
       if (error.status) throw error;
       throw fail(500, 'The deletion did not finish. Nothing was removed.');
     }
-    return { body: { outcomes, ...dsarStores(), complete: false, vendorDeletion: 'not-asserted', note: 'Each store reports only what this request removed for this subject and tenant. A failure returns an error and removes nothing. Other tenants, other people, and blank-tenant rows are not counted. Stories, staffing, invitations, and audit history are not deleted. Quarantine is not deletion. Vendor deletion is not-asserted. This is not a GDPR certification.' } };  }
+    return { body: { outcomes, ...dsarStores(), complete: false, vendorDeletion: 'not-asserted', note: 'Each store reports only what this request removed for this subject and tenant. A failure returns an error and removes nothing. Other tenants, other people, and blank-tenant rows are not counted. Stories, staffing, and audit history are not deleted. Quarantine is not deletion. Vendor deletion is not-asserted. This is not a GDPR certification.' } };  }
   if (method === 'POST' && user.role === 'admin' && parts[1] === 'purge-telemetry') {
     if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
     return { body: purgeTelemetry(lib, Number(env.ATLAS_TELEMETRY_DAYS) || 180, user) };

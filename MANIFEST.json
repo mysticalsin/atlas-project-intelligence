@@ -1072,8 +1072,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/library.js",
-      "bytes": 104636,
-      "sha256": "50922dbbcc3c9088ba7c16ca32cd3fd4f2d8af9667f35a3b7e4297e84e6735dc"
+      "bytes": 104811,
+      "sha256": "7eed1d503d8bdf2eaa3c32f3c0246f62df08fbc82c35a61e9f02a8fe275e25bc"
     },
     {
       "path": "deploy/cloudflare-edge/src/memory-routes.js",
@@ -1087,8 +1087,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/operate.js",
-      "bytes": 18901,
-      "sha256": "d45ecb469140e6e7d0a9f12e67794199384694ee0e94e1cf933e0ef6d827e8ef"
+      "bytes": 21435,
+      "sha256": "735059c9682137ae5f024df3ec2f06afdf0f0e6b47d59808bc12fe205f19e93f"
     },
     {
       "path": "deploy/cloudflare-edge/src/outreach.js",
@@ -1212,8 +1212,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/subject-rights.js",
-      "bytes": 29207,
-      "sha256": "a048ffdc4902b21bee099a2b0e7646f062bd56c5f0ae6f56f7c803bc43652862"
+      "bytes": 29510,
+      "sha256": "855d2d781c72ced7c89918cc9df066fefbad9991e817842b7f3dbff87ff9f113"
     },
     {
       "path": "deploy/cloudflare-edge/src/teams-routes.js",
@@ -1421,6 +1421,11 @@
       "sha256": "a3a9363f435e0b5e4ba99a3ce06d910353ddd59ad20b92e2c94f68f7463b43ca"
     },
     {
+      "path": "deploy/cloudflare-edge/test/invitation-tenant-erase.test.js",
+      "bytes": 31251,
+      "sha256": "64e8e9a94bdc49dd11f19ff3d9e3bc42614eab9dcbce7bb2ca09667528649bee"
+    },
+    {
       "path": "deploy/cloudflare-edge/test/invitation-tenant.test.js",
       "bytes": 1884,
       "sha256": "8348e26773261c91c1d91117d28a0f7e9d344ecce90a426d8706d763e9ad8ec9"
@@ -1507,13 +1512,13 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/policy.test.js",
-      "bytes": 138547,
-      "sha256": "72e2be77d5dbe38cd73d369fb140cc5063731f47f22e08525806e2e652b0b22d"
+      "bytes": 138544,
+      "sha256": "18103612486673a972d0d22fafc33173fa6eb829a9bb95a4193b80530f7614f4"
     },
     {
       "path": "deploy/cloudflare-edge/test/privacy-delete.test.js",
-      "bytes": 3207,
-      "sha256": "c0c4e2d71969a6df242ebb897e2524ca7e602829930acc7df264dd1be72e6398"
+      "bytes": 3194,
+      "sha256": "4bb7e865c395edcc27da0acaaa5af9f2e3cdd46f49030bd56fda6dd21ef023a7"
     },
     {
       "path": "deploy/cloudflare-edge/test/profile.test.js",
@@ -2277,8 +2282,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 324852,
-      "sha256": "706b697d670941096d99eff33615c477d7b5e177ccc6ef7b4036dabdf744a24f"
+      "bytes": 329665,
+      "sha256": "dbb4664772a01143f18d6e4cf241ed8d2c979d41f82180c188a527da99076b35"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2351,9 +2356,19 @@
       "sha256": "352c8f6b527134e44dcf5a5923b87333502019f013fede3514ecdaefaed66b4c"
     },
     {
+      "path": "handoff/decisions/invitation-tenant-erase.md",
+      "bytes": 10770,
+      "sha256": "a2897b411214cfe6a5da5f8aa118b7cc15c27e5fac489e802de18e7daff0491f"
+    },
+    {
       "path": "handoff/decisions/post-pr9-unslop.md",
       "bytes": 414,
       "sha256": "5ae00d8a348f5cf1c18afaad9e78984946d2903196c0544b52999014c6d6a30c"
+    },
+    {
+      "path": "handoff/decisions/pr12-plan-debate.md",
+      "bytes": 20111,
+      "sha256": "769afc405efedae63d393361a2aa7b6826862586e370f957b8e297e94b6c0c15"
     },
     {
       "path": "handoff/decisions/record-dialog-quality-crash.md",

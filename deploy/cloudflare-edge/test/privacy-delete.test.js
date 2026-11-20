@@ -7,7 +7,7 @@ import { memorySql } from './sqlite.js';
 import { saveJourney } from '../src/journey.js';
 
 const TENANT = '11111111-1111-4111-8111-111111111111';
-const NOTE = 'Each store reports only what this request removed for this subject and tenant. A failure returns an error and removes nothing. Other tenants, other people, and blank-tenant rows are not counted. Stories, staffing, invitations, and audit history are not deleted. Quarantine is not deletion. Vendor deletion is not-asserted. This is not a GDPR certification.';
+const NOTE = 'Each store reports only what this request removed for this subject and tenant. A failure returns an error and removes nothing. Other tenants, other people, and blank-tenant rows are not counted. Stories, staffing, and audit history are not deleted. Quarantine is not deletion. Vendor deletion is not-asserted. This is not a GDPR certification.';
 
 function lib() {
   return new Library(memorySql(), { now: () => '2026-11-08T00:00:00.000Z' });

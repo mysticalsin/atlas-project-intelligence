@@ -1310,7 +1310,7 @@ test('a privacy delete without a verified tenant leaves quarantined blank rows u
   assert.equal(l.rows('SELECT COUNT(*) AS n FROM profiles WHERE subject = ? AND tenant = ?', 'ada@example.test', B)[0].n, 1);
   assert.equal(l.rows("SELECT COUNT(*) AS n FROM staffing WHERE tenant = ''")[0].n, 1);
   assert.equal(l.rows('SELECT COUNT(*) AS n FROM staffing WHERE tenant = ?', A)[0].n, 1);
-  assert.equal(l.rows("SELECT status FROM invitations WHERE id = 'inv-keep'")[0].status, 'open');
+  assert.equal(l.rows("SELECT COUNT(*) AS n FROM invitations WHERE id = 'inv-keep'")[0].n, 0);
   assert.equal(l.row(story.id).owner, 'ada@example.test');
   assert.equal(l.rows("SELECT detail FROM audit WHERE id = 'keep-audit'")[0].detail, 'stay');
   assert.equal(erased.retained.find(item => item.store === 'legacy-blank-tenant-rows').action, 'quarantined');
