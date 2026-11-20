@@ -22,6 +22,8 @@ Suites on the fix plus these doc edits, before this paragraph's manifest refresh
 - Edge `node --test test/*.test.js` with `ATLAS_WORKERD_ROOT=/tmp/atlas-workerd-20261023`, miniflare `5.20261023.3-beta`, workerd `2026-10-23`: 1117 tests, 1117 pass, 0 fail, 0 skipped, 228.6s, exit 0. The alias-begin tail test passed.
 - `make test-ui` (`CHROMIUM_PATH=/usr/bin/google-chrome`): 834 PASS, 0 FAIL, 26 scripts, exit 0.
 
+After the manifest refresh, on `ebec373f0bd0916d7358cbb1564455b2c7cef91e`: `python3 -m pytest tests/test_*.py -q --tb=line` is 448 passed, 0 failed, 127 warnings, 24.08s, exit 0. `python3 scripts/check_handoff.py . --dev-git-index` is exit 0, 15 PASS, 699 release files, including `clean-build` and `clean-build-byte-match`. This sentence is the only later edit. The manifest that follows it is regenerated after it.
+
 Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open.
 
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
