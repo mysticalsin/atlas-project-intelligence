@@ -1,6 +1,23 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-20 — ask runner locale class, loop 1 (`cursor/atlas-askrunner-count`)
+
+Inspector QA on `5dc6a9646ce3e37606beb21a2506cf6ce1db8e5f` is FAIL, one Medium, report `/workspace/astra-qa/review-atlas-gh18-5dc6a964.md` (sha256 prefix `fc49132f`). Under `LC_ALL=en_US.UTF-8` the count guard matched fullwidth `１` and `３２`, superscript `²`, and `½`. Bash arithmetic then errored inside the `if`, the refusal was skipped, the log was truncated, and the script exited 0. That contradicts `handoff/decisions/askrunner-count.md`: every other string is refused. ASCII `0`, an empty count, `NaN`, `Infinity`, and `1000000` were already refused.
+
+The red tests are `8849d6666328a0e3362ddf86df0f43b0bf9b4d3d`. That commit does not change the runner. `python3 -m pytest tests/test_ask_runner_count.py -q` on it: 5 failed, 54 passed, 0.88s, exit 1. The five failures are `１`, `３２`, `²`, `½`, and `1１` under `LC_ALL=en_US.UTF-8`. The same five under `LC_ALL=C`, and the ASCII rows, passed. The fix is `ffb0c43fd172012125d0ce9bbb83cf11acd12091`. The same command on the fix: 59 passed, 0.85s, exit 0. `is_canonical_count` matches `[0-9]` in a subshell with `LC_ALL=C` and returns 1 on any arithmetic failure. The caller refuses before the log is truncated. `MANIFEST.json` is regenerated after this note.
+
+Mutant, restored, not committed. The locale-dependent class, with an arithmetic error treated as inside the cap: 5 failed, 54 passed, 0.81s, exit 1. The five failures are the same UTF-8 rows.
+
+Suites on the fix plus this note, before this paragraph's manifest refresh. `ATLAS_DEPLOY_STUB` was unset. No deploy, no provider call.
+
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 470 passed, 2 failed, 127 warnings, 32.17s, exit 1. Both failures are `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The tree still carried the locale fix and the decision edit ahead of `MANIFEST.json`.
+- `node --test tests/*.test.js`: 419 tests, 419 pass, 0 fail, 0 skipped, 31.9s, exit 0.
+- Edge `node --test test/*.test.js` with `ATLAS_WORKERD_ROOT=/tmp/atlas-workerd-20261023`, miniflare `5.20261023.3-beta`, workerd `2026-10-23`: 1117 tests, 1117 pass, 0 fail, 0 skipped, 313.2s, exit 0. The alias-begin tail test passed.
+- `make test-ui` (`CHROMIUM_PATH=/usr/bin/google-chrome`): 834 PASS, 0 FAIL, 26 scripts, exit 0.
+
+Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open. Inspector's FAIL on `5dc6a964` is superseded by this loop. Verification of the new head is pending.
+
 ## 2026-11-20 — ask runner count (`cursor/atlas-askrunner-count`)
 
 ATLAS-ASKRUNNER-COUNT-VALIDATION and ATLAS-PR10-DOC-PRBODY-STALE. Base `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. The runner is `tests/run_ask_browser_stamped.sh`. Red tests are `a68a8ee7a8594fe250d8e1ecd1fe12715eb49d6b`. That commit does not change the runner. `python3 -m pytest tests/test_ask_runner_count.py -q` on it: 29 failed, 6 passed, 10.62s, exit 1. The six that passed are omitted 8, explicit 8, 1, 32, the mixed run, and the missing-log usage line. The fix is `3d8136861f25f72a13fee75e1c1bdfd59d5818f9`. The same command on the fix: 35 passed, 0.35s, exit 0. `MANIFEST.json` is regenerated after this note.
