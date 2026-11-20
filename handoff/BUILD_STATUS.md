@@ -1,6 +1,24 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-20 — check_handoff fence loop 2 (`cursor/atlas-checkhandoff-nested-git`)
+
+Red tests are `8bd62711d902d6cc90373182580e0af5dd90c87e`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `d55ef53`. `MANIFEST.json` is regenerated after this note.
+
+Owner decisions, 2026-11-20, Atlas, also in `handoff/decisions/check-handoff-git-metadata.md`:
+
+- Casefold: a component that casefolds to `.git` is refused. Windows and macOS fold `.GIT` onto `.git`.
+- Fail closed: each component is NFKC, casefold, drop Cf/Zs/Mn, strip trailing dots, then confusable-fold. Refuse when that is `.git`, when it is `git~<digits>` (`GIT~1`), or when a non-ASCII raw component folds to `.git`. Backslash spellings and `::$INDEX_ALLOCATION` are `refused:`, not `unlisted:`.
+- `--dev-git-index` refuses a nested `.git` on disk when `.gitignore` hides it. An empty nested `.git` directory is refused in package mode. The checkout's own top-level git directory is not refused in dev mode.
+
+Still open after this loop:
+
+- SIGKILL does not run `atexit`, so the one `atlas-git-home-*` directory can remain.
+- A non-ASCII character that NFKC, casefold, Cf/Zs/Mn removal, trailing-dot strip, and the fold table (U+0131 dotless i, U+0456 Cyrillic i, U+0261 script g, U+2024 one-dot leader) do not map onto `.git` is not refused.
+- A short name that is not exactly `git~<digits>` after that fold (for example `GIT~1.DIR`) is not refused.
+
+Accepted, not open: a caller `ATLAS_HOME_URL` is not visible to the rebuild. The rebuild bakes `deploy/cloudflare-edge/wrangler.jsonc` `vars.ORIGIN`.
+
 ## 2026-11-20 — check_handoff fence follow-ups (`cursor/atlas-checkhandoff-nested-git`)
 
 Four rows on `scripts/check_handoff.py`, base `3d9239c112b5c5853fc49ce15424bbd29d94cfb2`. Red tests are the commit before the fix. `MANIFEST.json` is regenerated last with `python3 scripts/check_handoff.py . --dev-git-index --write-manifest`.
