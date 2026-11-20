@@ -2247,8 +2247,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 322447,
-      "sha256": "dd9a7ab73919918480dcfd14193141d96740e48b47081bc4c1f81bfa043849d6"
+      "bytes": 323736,
+      "sha256": "2849300faaa5f03eb9bc3a4f4a7a475ef7021a89f25f903065dbdfb68c360552"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2602,8 +2602,8 @@
     },
     {
       "path": "scripts/check_handoff.py",
-      "bytes": 10222,
-      "sha256": "745028175a856073498df4c176c8a364cf5e144f77d55ff591f620d8a9833147"
+      "bytes": 10414,
+      "sha256": "9f24b09ae0e9904c13ab2e9dc1583a8cc33836f706da165d91498fa70e9b4e41"
     },
     {
       "path": "scripts/check_workers_speech.py",

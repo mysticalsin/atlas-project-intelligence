@@ -1467,3 +1467,11 @@ winloop.js:68 1
 - The refresh is `python3 scripts/check_handoff.py --write-manifest .` from the writer on `origin/cursor/atlas-post-pr9-fixes` (`bd95020`). That command rewrites sizes and SHA-256 from `git ls-files` and leaves this branch's checker untouched. It wrote 674 entries. `origin/main` is still `c14302590e78b0319baab5893ef8c378b1c0bdf1`. No merge, no rebase.
 - After that refresh, listed hashes match (0 changed, 0 missing). `python3 scripts/check_handoff.py .` still exits 1. The printed `manifest-content` line is `unlisted:` under `.git/` (the checker prints the first 25). A clean checkout of main `c1430259` exits 1 as well. Its printed line is `changed: .env.example; changed: .gitignore; changed: 00_START_HERE.md` and twenty-two further `changed:` rows. The checker was not edited.
 - Gate logs for the manifest commit are in the agent store `gates-<head>` for that commit. Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open.
+
+### Session: 2026-11-20 / record dialog fix round (ATLAS-RECORD-DIALOG-QUALITY-CRASH)
+
+- `042a810a528ca795fb12fb3be79063331c2a2f11` is not a manifest-only commit. It also added the manifest-refresh paragraph in this file.
+- Red `2c9298abd53ff10fd4e283ce1e524e92a5e62e43`. `tests/test_handoff.py::test_git_archive_of_head_passes_check_handoff` fails. A clean `git archive` of that commit matches 674 hashes, then `clean-build` exits 1. The same test fails on `042a810a528ca795fb12fb3be79063331c2a2f11`.
+- The clean rebuild now copies the same source set as `281bd0b6b0a220f4c77171d1c77cbfc52aa2a918`: `build.py`, `src/`, `assets/`, `docs/`, `atlas_voice/`, and `deploy/cloudflare-edge/`. The two copy-set lines match that commit. No other change from that branch is included.
+- The dialog test requires the rendered quality line `Ready for use · threshold · completeness` when `aiScore` is missing, and `Ready for use · threshold · completeness · review agent 0` when `aiScore` is 0. Restoring `!==null` prints `review agent undefined` and that test fails. The mutant is not committed.
+- Gate logs for the fix head are in the agent store `gates-<head>` for that commit. Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open.
