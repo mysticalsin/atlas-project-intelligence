@@ -265,7 +265,7 @@ function eraseWithin(lib, user, subj, tenant, { now = lib.now() } = {}) {
     if (n) { lib.exec('UPDATE revisions SET author = ? WHERE author = ? AND id IN (SELECT id FROM refs WHERE owner != ? AND ' + TENANT_SQL + ')', token, email, email, tenant); bump('revisionAuthors', n); } }
   // evidence_records, approvals, jobs and job_events are not created by this slice. They are not rewritten here.
   // Invitations use the same helper as privacy delete: either address is deleted, and a sent
-  // source matches the alias or the 60-character form invite stored.
+  // source matches the full alias. A 60-character form matches only when the alias is no longer than 60.
   const invitations = eraseSubjectInvitations(lib, user, tenant);
   bump('invitations', invitations.removed);
   bump('invitationSources', invitations.scrubbed);

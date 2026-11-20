@@ -94,25 +94,28 @@ function deleteDirectoryKeys(lib, tenant, keys) {
   return n;
 }
 // Received: invitations.email is this subject (invite writes the consultant address there).
-// Sent: invitations.source is an alias, or the 60-character form invite stores with str(actor, 60).
+// Sent: invitations.source is a full alias. str(alias, 60) is that whole alias only when the alias
+// is no longer than 60 characters. A longer actor's 60-character prefix is shared and is not matched.
 // A row whose recipient is also the subject is deleted, not scrubbed. Each sent row gets its own token.
 // The tenant compare trims, the same way journeyTenant trims the caller. Counts are changes() after the write.
 export function eraseSubjectInvitations(lib, user, tenant) {
   if (!tableReady(lib, 'invitations')) return { removed: 0, scrubbed: 0 };
   const aliases = subjectAliases(user);
   if (!aliases.length) return { removed: 0, scrubbed: 0 };
-  const stored = [...new Set(aliases.map(alias => str(alias, 60).toLowerCase()).filter(Boolean))];
-  const forms = stored.length ? stored : aliases;
+  const prefixes = [...new Set(aliases.filter(alias => alias.length <= 60).map(alias => str(alias, 60).toLowerCase()).filter(Boolean))];
   const scope = "lower(trim(COALESCE(tenant, ''))) = ?";
   const aliasMarks = placeholders(aliases.length);
-  const storedMarks = placeholders(forms.length);
+  const sourceMatch = prefixes.length
+    ? `(lower(source) IN (${aliasMarks}) OR lower(source) IN (${placeholders(prefixes.length)}))`
+    : `lower(source) IN (${aliasMarks})`;
   lib.exec(`DELETE FROM invitations WHERE ${scope} AND lower(email) IN (${aliasMarks})`, tenant, ...aliases);
   const removed = Number(lib.rows('SELECT changes() AS n')[0]?.n || 0);
-  const sentSql = `${scope} AND (lower(source) IN (${aliasMarks}) OR lower(source) IN (${storedMarks})) AND lower(email) NOT IN (${aliasMarks})`;
-  const sent = lib.rows(`SELECT id FROM invitations WHERE ${sentSql}`, tenant, ...aliases, ...forms, ...aliases);
+  const sentSql = `${scope} AND ${sourceMatch} AND lower(email) NOT IN (${aliasMarks})`;
+  const sentArgs = prefixes.length ? [tenant, ...aliases, ...prefixes, ...aliases] : [tenant, ...aliases, ...aliases];
+  const sent = lib.rows(`SELECT id FROM invitations WHERE ${sentSql}`, ...sentArgs);
   let scrubbed = 0;
   for (const row of sent) {
-    lib.exec(`UPDATE invitations SET source = ? WHERE id = ? AND ${sentSql}`, tokenOf({}), row.id, tenant, ...aliases, ...forms, ...aliases);
+    lib.exec(`UPDATE invitations SET source = ? WHERE id = ? AND ${sentSql}`, tokenOf({}), row.id, ...sentArgs);
     scrubbed += Number(lib.rows('SELECT changes() AS n')[0]?.n || 0);
   }
   return { removed, scrubbed };

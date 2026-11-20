@@ -102,3 +102,13 @@ The plan debate in this record was written with the first change. A separate pos
 - `outcomeDetail` writes `scrubbed N` on the invitations outcome, including 0.
 
 No new table and no second writer. Stories, staffing, and audit history stay. Other tenants, other people, and a blank tenant stay.
+
+## Fix round 2
+
+Review of `7d5d97ba79a0540d1ac361efde126eaa6e2976e5` is REQUEST CHANGES, one new Medium. Everything from the previous review is confirmed fixed. `eraseSubjectInvitations` matched `str(alias, 60)` for every alias. `Library.invite` stored that same cut, so two actors who share a 60-character prefix (a `tid:oid` twin, or two long emails that differ after 60 characters) were the same `source`. Erasing one scrubbed the other's sent rows in the same tenant.
+
+`invite` now stores `str(b.source || actor, 200)`. 200 is the cap inside `email()`, and a 73-character `tid:oid` fits. Erase matches `lower(source)` to the full aliases. It matches `str(alias, 60)` only when `alias.length <= 60`, where that value is the whole alias.
+
+A row already stored as the 60-character prefix of a longer actor is left as it is. That prefix cannot be attributed to one person. Those legacy truncated sources need a one-off review. Tony decides.
+
+Readers of `invitations.source` do not assume 60 characters. `invitationView` omits `source`. The interview list renders title, reason, project id, and slot. Analytics selects project id, title, email, and reason. `exportMine` returns the stored `source` with no length cut. The column is `TEXT`. The schedule form's `maxlength="60"` is the project id field. `str(name, 60)` in `outreach.js` is the staffing row, not `invitations.source`.

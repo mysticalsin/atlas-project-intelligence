@@ -180,9 +180,8 @@ function limitOk() {
 async function scrubbedSender(actor, mail, project) {
   const lib = open();
   const sent = lib.invite(actor, { email: OTHER, title: 'Sent', projectId: project }, caller(actor, mail));
-  assert.equal(sent.source, str(actor, 60));
-  assert.equal(sent.source.length, 60);
-  assert.notEqual(sent.source, actor);
+  assert.equal(sent.source, str(actor, 200));
+  assert.equal(sent.source, actor);
   const response = await privacyDelete(lib, actor, mail);
   const body = await response.json();
   assert.equal(response.status, 200);
@@ -212,7 +211,7 @@ test('POST /api/me/erase deletes an Entra subject\'s received invitations and sc
   const toMail = lib.invite(OTHER, { email: ALT_MAIL, title: 'To mail', projectId: 'PRJ-ME-MAIL' }, caller(OTHER, OTHER));
   // invite() refuses a tid:oid: it is not an email. The row is still that subject address.
   seed(lib, { id: 'recv-entra-id', email: ENTRA, project: 'PRJ-ME-ID', title: 'To id', source: OTHER, tenant: A });
-  assert.equal(sent.source, str(ENTRA, 60));
+  assert.equal(sent.source, ENTRA);
   const env = {
     ...ACCESS_ENV, IDENTITY_SOURCE: 'entra', ENTRA_TENANTS: A,
     LIBRARY: boundLibrary(sql), INTERVIEW: limitOk(),
@@ -233,8 +232,7 @@ test('POST /api/me/erase scrubs the sender invite stored for a long email', asyn
   const who = caller(LONG_MAIL, LONG_MAIL);
   const sent = lib.invite(LONG_MAIL, { email: OTHER, title: 'Sent', projectId: 'PRJ-ME-LONG' }, who);
   const received = lib.invite(OTHER, { email: LONG_MAIL, title: 'To long', projectId: 'PRJ-ME-LONG-IN' }, caller(OTHER, OTHER));
-  assert.equal(sent.source, str(LONG_MAIL, 60));
-  assert.equal(sent.source.length, 60);
+  assert.equal(sent.source, LONG_MAIL);
   const env = { ...ACCESS_ENV, LIBRARY: boundLibrary(sql), INTERVIEW: limitOk() };
   const me = await session(env, { sub: ENTRA, email: LONG_MAIL });
   const response = await me.go('/api/me/erase', { method: 'POST', body: '{"confirmed":true}', headers: { 'content-type': 'application/json' } });

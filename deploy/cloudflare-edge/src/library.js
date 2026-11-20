@@ -1372,9 +1372,10 @@ export class Library {
     const dupe = this.rows("SELECT id FROM invitations WHERE lower(email) = ? AND reason = ? AND status IN ('open','scheduled') AND lower(project_id) = lower(?) AND reference_id = ? AND lower(COALESCE(tenant, '')) = ?", to, reason, pid, refId, tenant)[0];
     if (dupe) return this.rows('SELECT * FROM invitations WHERE id = ?', dupe.id)[0];
     const id = this.newId(), slot = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(b.slot || '')) ? String(b.slot).slice(0, 25) : '';
+    // 200 is the cap inside email(), so a 73-character tid:oid is stored whole.
     return this.recorded(() => {
       this.exec('INSERT INTO invitations (id, email, project_id, title, reason, slot, reference_id, status, created_at, source, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        id, to, pid, str(b.title, 140), reason, slot, refId, slot ? 'scheduled' : 'open', this.now(), str(b.source || actor, 60), tenant);
+        id, to, pid, str(b.title, 140), reason, slot, refId, slot ? 'scheduled' : 'open', this.now(), str(b.source || actor, 200), tenant);
       this.log(this.auditId(refId, tenant), actor, 'interview invitation', `${reason} for ${to}`);
       return this.rows('SELECT * FROM invitations WHERE id = ?', id)[0];
     });
