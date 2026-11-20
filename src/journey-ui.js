@@ -25,8 +25,10 @@ let erasure=initialErasure();
 function noteErasure(result){if(result&&result.rejection){try{console.warn(JSON.stringify(result.rejection));}catch(e){}}return result;}
 function erasureReceipt(r){const box=h('div',{id:'privacyReceipt',role:'status'});box.append(h('p',{text:r&&typeof r.note==='string'?r.note:''}));for(const o of (r&&Array.isArray(r.outcomes)?r.outcomes:[]))box.append(h('p',{text:o&&o.error?String(o.store)+' '+String(o.error):String(o&&o.store)+' '+String(o&&o.removed)}));return box;}
 function liveErasureButton(fallback){const box=$('privacyActions');const kids=box&&box.children||[];for(const n of kids)if(n&&n.textContent==='Delete my journey data')return n;return fallback||null;}
+function crossed(boot){const r=window.ATLAS_RUNTIME;if(!r||!boot)return false;const id=boot.identity||{};if(r.subjectKey&&id.subjectKey&&r.subjectKey!==id.subjectKey)return true;const mail=id.name||boot.email||'';if(r.name&&mail&&String(r.name)!==String(mail))return true;if(/^[0-9a-f]{32}$/.test(r.boundSubject||'')&&/^[0-9a-f]{32}$/.test(id.boundSubject||'')&&r.boundSubject!==id.boundSubject)return true;if(/^[0-9a-f]{32}$/.test(r.boundEmail||'')&&/^[0-9a-f]{32}$/.test(id.boundEmail||'')&&r.boundEmail!==id.boundEmail)return true;return false;}
 async function renderJourney(){const root=$('journey');if(!root)return;root.replaceChildren(h('p',{text:'Loading your journey…'}));
  let boot={};try{boot=await app().bootInfo();}catch{boot={};}
+ if(crossed(boot)){root.replaceChildren();const actions=h('p',{id:'privacyActions'});const del=h('button',{class:'btn',type:'button',text:'Delete my journey data'});del.addEventListener('click',()=>{app().confirm('Delete my journey data','Continue sends the deletion request. Cancel sends nothing.',()=>{});});actions.append(del);root.append(actions);return;}
  const adminNav=$('adminNav');if(adminNav)adminNav.hidden=boot.libraryRole!=='admin';
  let data;try{data=await api('/journey');}catch(e){root.replaceChildren(h('h1',{id:'journeyTitle',text:'Journey'}),banner('warn',e.message||'The journey could not be loaded.'),personaBar());return;}
  let picked=data.stages.find(s=>s.current)||data.stages[0];

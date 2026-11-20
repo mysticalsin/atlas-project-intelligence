@@ -490,4 +490,59 @@ describe('access identity change, required plan changes', { concurrency: false }
     assert.equal(req.headers.get('x-atlas-bound-subject'), null);
     assert.equal(req.headers.get('x-atlas-bound-email'), null);
   });
+
+  test('a matching bound key still reaches the library', async () => {
+    const ada = await established();
+    const library = binder({ title: 'Ada library' });
+    const res = await handle(new Request(ORIGIN + '/api/library/journey', {
+      headers: {
+        'cf-access-jwt-assertion': ada.token,
+        'X-Atlas-Bound-Subject': await subjectBound(ADA.sub),
+        'X-Atlas-Bound-Email': await emailBound(ADA.email),
+      },
+    }), envFor(library.binding, binder({}).binding), '');
+    assert.equal(res.status, 200);
+    assert.deepEqual(library.opened, ['global']);
+  });
+
+  test('a request with no bound key still reaches the library', async () => {
+    const ada = await established();
+    const library = binder({ title: 'Ada library' });
+    const res = await handle(new Request(ORIGIN + '/api/library/journey', {
+      headers: { 'cf-access-jwt-assertion': ada.token },
+    }), envFor(library.binding, binder({}).binding), '');
+    assert.equal(res.status, 200);
+    assert.deepEqual(library.opened, ['global']);
+  });
+
+  test('a voice upgrade with no subprotocol still opens the interview and echoes nothing', async () => {
+    const ada = await established();
+    const opened = [];
+    const interview = {
+      idFromName(name) { opened.push(String(name)); return name; },
+      get() { return { fetch: async () => new Response(null, { status: 200 }) }; },
+    };
+    const res = await handle(new Request(ORIGIN + '/api/voice', {
+      headers: { 'cf-access-jwt-assertion': ada.token, Upgrade: 'websocket', Origin: ORIGIN },
+    }), envFor(binder({}).binding, interview), '');
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('sec-websocket-protocol'), null);
+    assert.deepEqual(opened, [ADA.sub]);
+  });
+
+  test('an Entra token with no mailbox and a matching subject key reaches the library', async () => {
+    const tid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const oid = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const token = await jwt({ sub: 'cf-' + oid, custom: { tid, oid } });
+    const { binding, opened } = recordingBindings();
+    const { env } = entraBase(binding, binding);
+    const res = await handle(new Request(ORIGIN + '/api/library/journey', {
+      headers: {
+        'cf-access-jwt-assertion': token,
+        'X-Atlas-Bound-Subject': await subjectBound(tid + ':' + oid),
+      },
+    }), env, '');
+    assert.equal(res.status, 200);
+    assert.deepEqual(opened, ['global']);
+  });
 });

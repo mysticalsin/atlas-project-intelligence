@@ -5,7 +5,7 @@
 // (a keyed hash). Fields outside the whitelist below are dropped, so a caller cannot leak by accident.
 const enc = new TextEncoder();
 export const EVENTS = Object.freeze(['authn_fail', 'csrf_fail', 'origin_fail', 'external_denied', 'bearer_fail', 'access_denied', 'rate_limited', 'body_too_large',
-  'header_spoof', 'kill_switch', 'subject_blocked', 'flag_state', 'audit_chain_break', 'audit_chain_ok', 'internal_error', 'inbound_off', 'privacy_export', 'privacy_erase', 'privacy_flags', 'consent_change', 'csp_violation', 'voice_settings']);
+  'header_spoof', 'kill_switch', 'subject_blocked', 'flag_state', 'audit_chain_break', 'audit_chain_ok', 'internal_error', 'inbound_off', 'privacy_export', 'privacy_erase', 'privacy_flags', 'consent_change', 'csp_violation', 'voice_settings', 'identity_changed']);
 const FIELDS = ['route', 'method', 'status', 'reason', 'subj', 'role', 'ip_h', 'colo', 'ray', 'n', 'legacy', 'bucket', 'head', 'prev', 'directive', 'blocked'];
 // Limiter names only. A free-text bucket was stored with the punctuation stripped, so an email became a log field.
 const BUCKETS = new Set(['upsert', 'review', 'insights', 'recommend', 'slides', 'export', 'import', 'inbound', 'me-export', 'me-erase', 'flags', 'consent', 'submit', 'onepager', 'ask', 'bid-create', 'bid-edit', 'bid-match', 'people', 'sheet', 'classify', 'transcribe', 'translate', 'csp-report', 'interview-hour', 'interview-day']);
