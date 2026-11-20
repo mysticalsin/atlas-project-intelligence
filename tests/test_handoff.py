@@ -872,7 +872,8 @@ def test_dev_git_index_outside_checkout_exits_nonzero_without_traceback(tmp_path
     text = captured.out + captured.err
     assert code == 1
     assert 'dev-git-index requires a git checkout' in text
-    assert 'Traceback' not in text
+    assert 'Traceback' not in captured.out
+    assert 'Traceback' not in captured.err
     assert 'UnboundLocalError' not in text
 
 
@@ -1148,10 +1149,12 @@ def test_dev_git_index_refuses_nested_git_under_gitignore(tmp_path, capsys):
     hidden.parent.mkdir(parents=True)
     hidden.write_bytes(b'ref: refs/heads/main\n')
     code = run_verify([str(root), '--dev-git-index', '--no-rebuild'])
-    text = capsys.readouterr().out + capsys.readouterr().err
+    captured = capsys.readouterr()
+    text = captured.out + captured.err
     assert code == 1
     assert 'refused: vendor/demo/.git/HEAD' in text
-    assert 'Traceback' not in text
+    assert 'Traceback' not in captured.out
+    assert 'Traceback' not in captured.err
 
 
 def test_dev_git_index_does_not_refuse_the_checkout_git_dir(tmp_path):
@@ -1204,10 +1207,12 @@ def test_dev_git_index_refuses_non_ascii_path(tmp_path, capsys):
     root = _mini_checkout(tmp_path)
     (root / 'notes' / 'caf\u00e9.txt').write_bytes(b'x\n')
     code = run_verify([str(root), '--dev-git-index', '--no-rebuild'])
-    text = capsys.readouterr().out + capsys.readouterr().err
+    captured = capsys.readouterr()
+    text = captured.out + captured.err
     assert code == 1
     assert 'refused: non-ASCII path component' in text
-    assert 'Traceback' not in text
+    assert 'Traceback' not in captured.out
+    assert 'Traceback' not in captured.err
 
 
 def test_write_manifest_refuses_non_ascii_path(tmp_path, capsys):
@@ -1215,7 +1220,8 @@ def test_write_manifest_refuses_non_ascii_path(tmp_path, capsys):
     (root / 'notes' / 'caf\u00e9.txt').write_bytes(b'x\n')
     before = (root / 'MANIFEST.json').read_bytes()
     code = run_verify([str(root), '--dev-git-index', '--write-manifest'])
-    text = capsys.readouterr().out + capsys.readouterr().err
+    captured = capsys.readouterr()
+    text = captured.out + captured.err
     assert code == 1
     assert 'refused: non-ASCII path component' in text
     assert (root / 'MANIFEST.json').read_bytes() == before
@@ -1238,10 +1244,12 @@ def _disguised_checkout(tmp_path, dirname):
 def test_disguised_checkout_dev_git_index_exits_clean(tmp_path, capsys, dirname):
     root = _disguised_checkout(tmp_path, dirname)
     code = run_verify([str(root), '--dev-git-index', '--no-rebuild'])
-    text = capsys.readouterr().out + capsys.readouterr().err
+    captured = capsys.readouterr()
+    text = captured.out + captured.err
     assert code == 1
     assert 'dev-git-index requires a git checkout' in text
-    assert 'Traceback' not in text
+    assert 'Traceback' not in captured.out
+    assert 'Traceback' not in captured.err
 
 
 @pytest.mark.parametrize('dirname', ['.GIT', 'GIT~1'])
@@ -1249,30 +1257,36 @@ def test_disguised_checkout_write_manifest_exits_clean(tmp_path, capsys, dirname
     root = _disguised_checkout(tmp_path, dirname)
     before = (root / 'MANIFEST.json').read_bytes()
     code = run_verify([str(root), '--dev-git-index', '--write-manifest'])
-    text = capsys.readouterr().out + capsys.readouterr().err
+    captured = capsys.readouterr()
+    text = captured.out + captured.err
     assert code == 2
     assert 'dev-git-index requires a git checkout' in text
-    assert 'Traceback' not in text
+    assert 'Traceback' not in captured.out
+    assert 'Traceback' not in captured.err
     assert (root / 'MANIFEST.json').read_bytes() == before
 
 
 def test_git_failure_on_exact_dotgit_check_is_clean(tmp_path, capsys):
     root = _disguised_checkout(tmp_path, '.git')
     code = run_verify([str(root), '--dev-git-index', '--no-rebuild'])
-    text = capsys.readouterr().out + capsys.readouterr().err
+    captured = capsys.readouterr()
+    text = captured.out + captured.err
     assert code == 1
     assert 'dev-git-index requires a git checkout' in text
-    assert 'Traceback' not in text
+    assert 'Traceback' not in captured.out
+    assert 'Traceback' not in captured.err
 
 
 def test_git_failure_on_exact_dotgit_write_manifest_is_clean(tmp_path, capsys):
     root = _disguised_checkout(tmp_path, '.git')
     before = (root / 'MANIFEST.json').read_bytes()
     code = run_verify([str(root), '--dev-git-index', '--write-manifest'])
-    text = capsys.readouterr().out + capsys.readouterr().err
+    captured = capsys.readouterr()
+    text = captured.out + captured.err
     assert code == 2
     assert 'dev-git-index requires a git checkout' in text
-    assert 'Traceback' not in text
+    assert 'Traceback' not in captured.out
+    assert 'Traceback' not in captured.err
     assert (root / 'MANIFEST.json').read_bytes() == before
 
 
@@ -1283,12 +1297,14 @@ def test_dev_mode_refuses_top_level_disguised_git_dir(tmp_path, capsys, name):
     hidden.parent.mkdir()
     hidden.write_bytes(b'ref: refs/heads/main\n')
     code = run_verify([str(root), '--dev-git-index', '--no-rebuild'])
-    text = capsys.readouterr().out + capsys.readouterr().err
+    captured = capsys.readouterr()
+    text = captured.out + captured.err
     refused = [line for line in text.splitlines() if 'refused:' in line]
     assert code == 1
     assert any(name in line for line in refused), text
     assert not any(line.endswith('refused: .git') or 'refused: .git/' in line for line in refused)
-    assert 'Traceback' not in text
+    assert 'Traceback' not in captured.out
+    assert 'Traceback' not in captured.err
 
 
 def test_dev_git_index_refuses_nested_git_symlink(tmp_path, capsys):
@@ -1299,10 +1315,12 @@ def test_dev_git_index_refuses_nested_git_symlink(tmp_path, capsys):
     link.parent.mkdir(parents=True)
     link.symlink_to(target, target_is_directory=True)
     code = run_verify([str(root), '--dev-git-index', '--no-rebuild'])
-    text = capsys.readouterr().out + capsys.readouterr().err
+    captured = capsys.readouterr()
+    text = captured.out + captured.err
     assert code == 1
     assert 'refused: vendor/demo/.git' in text
-    assert 'Traceback' not in text
+    assert 'Traceback' not in captured.out
+    assert 'Traceback' not in captured.err
 
 
 @pytest.mark.parametrize('name', ['.git. .', '.git . '])
@@ -1404,6 +1422,14 @@ def test_traceback_assertion_reads_capsys_once():
     missing = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.FunctionDef):
+            continue
+        calls_read = any(
+            isinstance(child, ast.Call)
+            and isinstance(child.func, ast.Attribute)
+            and child.func.attr == 'readouterr'
+            for child in ast.walk(node)
+        )
+        if not calls_read:
             continue
         streams = set()
         saw = False
