@@ -155,6 +155,7 @@ async function boundEmailKey(env, email) {
   return boundDigest(env, 'atlas-bound-email-v1:', box);
 }
 function sameKey(left, right) {
+  // Exact 32 lowercase hex only. Do not trim and do not lower-case a value into a match.
   const a = String(left || ''), b = String(right || '');
   if (!HEX_KEY.test(a) || !HEX_KEY.test(b) || a.length !== b.length) return false;
   return timingSafe(a, b);
@@ -166,6 +167,8 @@ function boundTokens(header) {
 function identityMismatch(request, boundSubject, boundEmail) {
   const subject = request.headers.has('x-atlas-bound-subject') ? (request.headers.get('x-atlas-bound-subject') || '') : null;
   const email = request.headers.has('x-atlas-bound-email') ? (request.headers.get('x-atlas-bound-email') || '') : null;
+  // An empty server subject key does not skip the check. Any presented bound header or token is a mismatch.
+  if (!HEX_KEY.test(String(boundSubject || '')) && (subject !== null || email !== null || boundTokens(request.headers.get('sec-websocket-protocol')).length > 0)) return { mismatch: true, protocol: '' };
   const tokens = boundTokens(request.headers.get('sec-websocket-protocol'));
   if (tokens.length > 1) return { mismatch: true, protocol: '' };
   if (subject !== null && !sameKey(subject, boundSubject)) return { mismatch: true, protocol: '' };
@@ -314,7 +317,6 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
     const tenant = tenantOf(who);
     const tenantFlag = tenantEnforced(env) ? '1' : '0';
     const csrf = await hmac(env.CSRF_SECRET, who.sub), subjectKey = await subjectPseudonym(env, who.sub);
-    if (subjectKey === null) return json(env, { error: 'This deployment cannot record a subject pseudonym until LOG_SALT is set.', code: 'LOG_SALT' }, 503);
     slog.identify(subjectKey, role);
     if (blockedSubject(env, subjectKey)) { slog.log('subject_blocked', 'BLOCKED', 403); return json(env, { error: BLOCKED_MESSAGE, code: 'BLOCKED' }, 403); }
     if (externalOff(env) && (role === 'external' || url.pathname === '/confirm' || url.pathname.startsWith('/api/library/confirmations'))) {
@@ -350,6 +352,8 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
       }
       acceptedProtocol = bound.protocol;
     }
+    // After the bound-key check. A presented key against an unminted subject is an identity mismatch, not this 503.
+    if (subjectKey === null) return json(env, { error: 'This deployment cannot record a subject pseudonym until LOG_SALT is set.', code: 'LOG_SALT' }, 503);
     if (role === 'external') {
       // External confirmers (F3) reach only /confirm, a reduced bootstrap and /api/library/confirmations/*.
       if (url.pathname === '/' && request.method === 'GET') return new Response(null, { status: 303, headers: headers(env, { Location: '/confirm' }) });
