@@ -476,6 +476,96 @@ def test_dev_git_fsmonitor_via_include_path_does_not_touch_canary(tmp_path):
     assert 'GIT_DIR' not in env
 
 
+def test_listed_symlink_file_to_in_package_target_fails(tmp_path):
+    package = synthetic_package(tmp_path)
+    data = b'shared symlink target bytes\n'
+    legit = package / 'notes' / 'legit.txt'
+    legit.write_bytes(data)
+    readme = package / 'notes' / 'readme.txt'
+    readme.unlink()
+    readme.symlink_to(legit)
+    manifest = json.loads((package / 'MANIFEST.json').read_text(encoding='utf-8'))
+    manifest['files'].append({
+        'path': 'notes/legit.txt',
+        'bytes': len(data),
+        'sha256': hashlib.sha256(data).hexdigest(),
+    })
+    for row in manifest['files']:
+        if row['path'] == 'notes/readme.txt':
+            row['bytes'] = len(data)
+            row['sha256'] = hashlib.sha256(data).hexdigest()
+    (package / 'MANIFEST.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+    result = inspect(package, rebuild=False, dev_git_index=False)
+    assert not result['passed']
+    detail = ' '.join(c['detail'] for c in result['checks'])
+    assert 'symlink' in detail.lower()
+
+
+def test_listed_file_under_symlinked_dir_component_fails(tmp_path):
+    package = synthetic_package(tmp_path)
+    data = b'under symlinked directory\n'
+    realdir = package / 'realdir'
+    realdir.mkdir()
+    (realdir / 'file.txt').write_bytes(data)
+    (package / 'linkdir').symlink_to(realdir, target_is_directory=True)
+    manifest = json.loads((package / 'MANIFEST.json').read_text(encoding='utf-8'))
+    manifest['files'].append({
+        'path': 'linkdir/file.txt',
+        'bytes': len(data),
+        'sha256': hashlib.sha256(data).hexdigest(),
+    })
+    (package / 'MANIFEST.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+    result = inspect(package, rebuild=False, dev_git_index=False)
+    assert not result['passed']
+    detail = ' '.join(c['detail'] for c in result['checks'])
+    assert 'symlink' in detail.lower()
+
+
+def test_dev_git_index_fails_despite_git_index_file_env(tmp_path, monkeypatch):
+    env_init, _ = _isolated_git_env(tmp_path)
+    clean = tmp_path / 'clean'
+    dirty = tmp_path / 'dirty'
+    for d in (clean, dirty):
+        d.mkdir()
+        (d / 'notes').mkdir()
+        (d / 'notes' / 'readme.txt').write_bytes(b'listed\n')
+        subprocess.run(['git', 'init', '-q'], cwd=d, check=True, env=env_init)
+        subprocess.run(['git', 'add', 'notes/readme.txt'], cwd=d, check=True, env=env_init)
+        subprocess.run(['git', 'commit', '-qm', 'init'], cwd=d, check=True, env=env_init)
+    (dirty / 'node_modules' / 'evil').mkdir(parents=True)
+    (dirty / 'node_modules' / 'evil' / 'index.js').write_bytes(b'export default 1;\n')
+    data = b'listed\n'
+    manifest = {
+        'files': [{'path': 'notes/readme.txt', 'bytes': len(data),
+                   'sha256': hashlib.sha256(data).hexdigest()}],
+        'manifest_excludes': ['MANIFEST.json'],
+    }
+    for d in (clean, dirty):
+        (d / 'MANIFEST.json').write_text(json.dumps(manifest), encoding='utf-8')
+    monkeypatch.setenv('GIT_DIR', str(clean / '.git'))
+    monkeypatch.setenv('GIT_WORK_TREE', str(clean))
+    monkeypatch.setenv('GIT_INDEX_FILE', str(clean / '.git' / 'index'))
+    report = inspect(dirty, rebuild=False, dev_git_index=True)
+    mc = next(c for c in report['checks'] if c['name'] == 'manifest-content')
+    assert not mc['pass'], mc['detail']
+    assert 'node_modules/evil' in mc['detail']
+
+
+def test_dev_git_index_fails_despite_git_config_count_excludes_file(tmp_path, monkeypatch):
+    root, _ = _mini_dev_repo(tmp_path)
+    exclude = tmp_path / 'exclude-all'
+    exclude.write_text('*\n', encoding='utf-8')
+    monkeypatch.setenv('GIT_CONFIG_COUNT', '1')
+    monkeypatch.setenv('GIT_CONFIG_KEY_0', 'core.excludesFile')
+    monkeypatch.setenv('GIT_CONFIG_VALUE_0', str(exclude))
+    (root / 'node_modules' / 'evil').mkdir(parents=True)
+    (root / 'node_modules' / 'evil' / 'payload.js').write_bytes(b'export default 1;\n')
+    report = inspect(root, rebuild=False, dev_git_index=True)
+    mc = next(c for c in report['checks'] if c['name'] == 'manifest-content')
+    assert not mc['pass'], mc['detail']
+    assert 'node_modules/evil' in mc['detail']
+
+
 def test_dev_git_index_fails_despite_git_work_tree_env(tmp_path, monkeypatch):
     env_init, _ = _isolated_git_env(tmp_path)
     clean = tmp_path / 'clean'
@@ -515,6 +605,9 @@ def test_git_environ_is_allowlist_without_git_star(monkeypatch):
     monkeypatch.setenv('GIT_WORK_TREE', '/tmp/evil-work-tree')
     monkeypatch.setenv('GIT_INDEX_FILE', '/tmp/evil-index')
     monkeypatch.setenv('GIT_CONFIG', '/tmp/evil-config')
+    monkeypatch.setenv('GIT_CONFIG_COUNT', '1')
+    monkeypatch.setenv('GIT_CONFIG_KEY_0', 'core.excludesFile')
+    monkeypatch.setenv('GIT_CONFIG_VALUE_0', '/tmp/evil-excludes')
     env = git_environ()
     assert set(env) <= _GIT_ENV_ALLOWLIST
     assert 'GIT_DIR' not in env
