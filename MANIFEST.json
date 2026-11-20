@@ -2282,8 +2282,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 352287,
-      "sha256": "b98de8d8af13f9463a87669ccde8dac166cc6b6e665dafa783984fee630b06c0"
+      "bytes": 352204,
+      "sha256": "11df64e21682917f0bc361dbdbaca630d798d52e7d42d3f0eb77df9adc0b90f7"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2382,8 +2382,8 @@
     },
     {
       "path": "handoff/decisions/record-dialog-lows.md",
-      "bytes": 9484,
-      "sha256": "f37a4fbb602a803679cb0ab7f15b5c65c07e12aa5475a9d1f417cb48c82624d7"
+      "bytes": 9860,
+      "sha256": "6a9aef473a2c8cd72911e3a91661272d8c3acbdbdd994b46d1c3890fe9d52cec"
     },
     {
       "path": "handoff/decisions/record-dialog-quality-crash.md",

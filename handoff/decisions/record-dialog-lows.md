@@ -105,3 +105,5 @@ Mutants, each restored, each exit 1:
 - `tr=(l,v)=>true?`. Gauge file 1 pass, 1 fail: `an empty or whitespace track label renders no row`, on label `""`.
 - Rules formula always rendered. Gauge file 1 pass, 1 fail: `formula absent missing`. `tests/charts.test.js` stays 37 pass, 0 fail.
 - `Array.isArray(l)||` deleted. Browser 14 pass, 1 fail: `an array link is dropped and an object link stays`.
+
+Measured on `f9212e9` before the manifest write: node exit 0, 422 pass, 0 fail, 21351 ms. Edge exit 0, 1117 tests, 1113 pass, 0 fail, 4 skipped, 218901 ms. `make test-ui` exit 0, 849 PASS, 0 FAIL, 27 scripts. pytest exit 1, 411 passed, 2 failed, 23.90s, both the stale manifest. On `a06b5d5526effa5944cc19dae69daf341aa6bcd7`, pytest exit 0, 413 passed, 127 warnings, 24.56s.
