@@ -7,6 +7,7 @@ LOG="${1:-}"
 N="${2:-8}"
 if [[ -z "$LOG" ]]; then echo "usage: $0 <log-file> [count]" >&2; exit 2; fi
 : >"$LOG"
+fail=0
 for i in $(seq 1 "$N"); do
   {
     echo "=== ask_browser run ${i}/${N} ==="
@@ -15,5 +16,6 @@ for i in $(seq 1 "$N"); do
     date -u +%Y-%m-%dT%H:%M:%SZ
     python3 tests/ask_browser.py
     echo "exit=$?"
-  } >>"$LOG" 2>&1 || true
+  } >>"$LOG" 2>&1 || { code=$?; echo "exit=$code" >>"$LOG"; fail=1; }
 done
+exit "$fail"
