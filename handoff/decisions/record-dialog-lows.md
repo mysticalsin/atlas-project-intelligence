@@ -72,3 +72,17 @@ Revert this branch to main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. No migrat
 ## Loops
 
 Verify and QA loops are capped at 3. A failed gate is fixed only for the failure that was shown.
+
+## Fix round 1
+
+Inspector QA on `499004d35c65b1b678de488949f1a062cda5c3c9` is PASS WITH NOTES. No Devin note had landed when this round was written. The GitHub `test` job did not start: Actions budget. That is not a code change.
+
+Object items in blockers, holds, missing, and recommendations use `label`, `name`, or `text` when that value is a string or a number. Anything else is dropped. The cell never prints `[object Object]`. A consultant uses the same rule. An array has no name, so it is dropped and does not print `undefined`. A link that is not a plain object with a url is dropped the same way.
+
+`openRecord` already toasts a throw from `showRecord`. The new check installs a getter on the fetched record that throws `record field threw`. The dialog stays closed, the toast shows that message, and there is no unhandled rejection. Removing the `try` makes that check fail.
+
+A track with a label and a non-finite value is the dashed `is-tbd` placeholder, not an omitted row. A blank label is still omitted. The sentence `score = 0.8 × completeness` is rendered only when completeness is a finite number, including 0. Numeric fixtures stay byte-identical. `src/charts.js` is 56992 bytes. The seed quality line stays `Ready for use` and the center stays `of 100`. The seed now also shows the Completeness placeholder and does not show the formula.
+
+Red `58c0402a72286f697534fb924a51fb9b9b91e8cc` is tests only. `tests/record_dialog_lows_browser.py` exits 1, 10 pass, 3 fail: object items, consultant arrays, and the placeholder. The throwing-field check already passes. `tests/charts.test.js` is 36 pass, 1 fail, on the placeholder assertion.
+
+Fix `1fd36ea9a87ca5926902f3cb892f05fb04003abc`. The browser command exits 0, 13 pass. The charts file is 37 pass. The page pin is `64228da2a3cf3ba103587d6c273bac5fa09137d6760564818bfc0e006ea2467e`, 924833 bytes. The seed assertion now expects the placeholder. That is the inspector's correction, not a weaker blank-label check. The quality line still must not say threshold or completeness without a number.
