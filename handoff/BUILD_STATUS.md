@@ -1,6 +1,13 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-20 — PR10 fix loop 2 (`cursor/atlas-post-pr9-fixes`, head `94b919a`)
+- F-1: `tests/ask_browser.py` polls test-only worklet bytes until `MIN_BYTES`; red `940b1e2` / green `20031f4`; stamped 8× head + 8× main `9b81dff`; helpers `run_ask_browser_stamped.sh`, `ask_browser_red_demo.sh`.
+- `MANIFEST.json` regen **694** entries (`94b919a`); `scripts/check_handoff.py` unchanged (`196aee0` blob).
+- F-2 `check_handoff --dev-git-index` outside git: **Backlog** (Jarvis); no checker edits.
+- Gates: agent store `gates-94b919a/`; fence clean exit 0 @ `94b919a` (pytest 333).
+- Next: push branch; PR #10 body v4; CONSENSUS delta pending @ `94b919a`.
+
 ## 2026-11-19 — Post-PR9 fixes (`cursor/atlas-post-pr9-fixes`, base `02a83b32`)
 - M-1 wiki export: gateway CSP middleware no longer UTF-8-decodes ZIP; red `346b036` → fix `9d8a616`.
 - M-2 journey layout: `journey.css` grid minima/breakpoints; red `ad59341` → fix `5e09557`; `tests/journey_layout_browser.py` added.
