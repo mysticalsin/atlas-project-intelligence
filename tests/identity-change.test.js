@@ -351,3 +351,289 @@ test('journal and privacy delete stay blank when the signed-in identity changed'
   );
 });
 });
+
+const NOTICE = 'The signed-in account changed. Close this tab and open ATLAS again.';
+const HEX = /^[0-9a-f]{32}$/;
+
+function memorySession(seed) {
+  const map = new Map(seed || []);
+  return {
+    getItem(key) { return map.has(key) ? map.get(key) : null; },
+    setItem(key, value) { map.set(String(key), String(value)); },
+    removeItem(key) { map.delete(key); },
+    _map: map,
+  };
+}
+
+function listen(target) {
+  const events = new Map();
+  target.addEventListener = (type, fn) => {
+    const list = events.get(type) || [];
+    list.push(fn);
+    events.set(type, list);
+  };
+  target.removeEventListener = (type, fn) => {
+    events.set(type, (events.get(type) || []).filter(item => item !== fn));
+  };
+  target.dispatch = (type, event) => {
+    for (const fn of events.get(type) || []) fn(event || { type });
+  };
+  return target;
+}
+
+function pageFor(sessionStorage, who) {
+  const calls = [];
+  const reloads = [];
+  const nodes = new Map();
+  function track(node) {
+    const previous = typeof node.setAttribute === 'function' ? node.setAttribute.bind(node) : null;
+    node.setAttribute = (name, value) => {
+      if (previous) previous(name, value);
+      if (name === 'id' && value) nodes.set(value, node);
+    };
+    return node;
+  }
+  const body = track(element('Ada bids marker'));
+  body.id = 'body';
+  const enableSave = track(element('Enable autosave'));
+  enableSave.id = 'enableSave';
+  const backupQuick = track(element('Backup'));
+  backupQuick.id = 'backupQuick';
+  nodes.set('enableSave', enableSave);
+  nodes.set('backupQuick', backupQuick);
+  nodes.set('workspace', element('Ada local journal marker'));
+  nodes.set('libraryList', element('Ada library marker'));
+  nodes.set('agentText', element('Ada transcript marker'));
+  nodes.set('journey', element('Ada journey marker'));
+  const document = listen({
+    visibilityState: 'visible',
+    body,
+    documentElement: { append(node) { if (node && node.id) nodes.set(node.id, node); } },
+    getElementById(id) { return nodes.get(id) || null; },
+    createElement() { return track(element('')); },
+    querySelector() { return null; },
+    querySelectorAll() { return []; },
+  });
+  const socket = { readyState: 1, closed: 0, close() { this.closed += 1; this.readyState = 3; } };
+  let cancels = 0;
+  const next = { who: who || ADA };
+  const sandbox = listen({
+    ATLAS_RUNTIME: { ...ADA },
+    document,
+    location: { protocol: 'https:', href: 'https://atlas.example/', hash: '', reload() { reloads.push(1); } },
+    history: { replaceState() {} },
+    sessionStorage,
+    localStorage: { getItem() { return null; }, setItem() {}, removeItem() {} },
+    fetch(path, opts = {}) {
+      const headers = { ...(opts.headers || {}) };
+      for (const value of Object.values(headers)) {
+        if ([...String(value)].some(ch => ch.charCodeAt(0) > 255)) throw new TypeError('header is not a byte string');
+      }
+      calls.push({ path, headers });
+      return Promise.resolve(response(bootBody(next.who)));
+    },
+    BroadcastChannel: Channel,
+    AbortSignal,
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+    Date,
+    AtlasVoice: { active() { return socket.readyState <= 1; }, cancel() { cancels += 1; socket.close(); } },
+  });
+  sandbox.window = sandbox;
+  const src = readFileSync(new URL('../src/session-keeper.js', import.meta.url), 'utf8');
+  vm.runInNewContext(src, sandbox, { filename: 'session-keeper.js' });
+  return { sandbox, calls, reloads, document, socket, next, cancels: () => cancels, nodes };
+}
+
+describe('access identity change, plan debate', { concurrency: false }, () => {
+  test('the voice socket is opened with the bound subject token', async () => {
+    const seen = [];
+    const nodes = new Map();
+    function bag() {
+      const node = {
+        hidden: false, disabled: false, textContent: '', value: 'atlas', checked: true, open: false,
+        className: '', id: '',
+        style: { setProperty() {} },
+        dataset: {},
+        classList: { add() {}, remove() {}, toggle() { return false; }, contains() { return false; } },
+        children: [],
+        addEventListener() {}, removeEventListener() {},
+        setAttribute(name, value) { if (name === 'id') { node.id = value; nodes.set(value, node); } },
+        removeAttribute() {}, append() {}, replaceChildren() {}, querySelector() { return bag(); },
+        querySelectorAll() { return []; }, closest() { return null; }, focus() {}, click() {},
+        showModal() { node.open = true; }, close() { node.open = false; },
+      };
+      return node;
+    }
+    const document = {
+      body: bag(),
+      addEventListener() {},
+      getElementById(id) { return nodes.get(id) || (nodes.set(id, bag()), nodes.get(id)); },
+      createElement() { return bag(); },
+      querySelector() { return null; },
+    };
+    const sandbox = {
+      document,
+      location: { protocol: 'https:', href: 'https://atlas.example/', hash: '', pathname: '/', search: '' },
+      history: { replaceState() {} },
+      navigator: { language: 'en', mediaDevices: { getUserMedia: async () => { const track = { label: 'mic', addEventListener() {}, stop() {} }; return { getTracks: () => [track], getAudioTracks: () => [track] }; } } },
+      isSecureContext: true,
+      ATLAS_RUNTIME: { ...ADA, boundSubject: 'ab'.repeat(16), boundEmail: 'cd'.repeat(16) },
+      ATLAS_VOICE_BRIDGE: { context: () => ({ workspaceId: 'w', isNew: true, project: { id: 'p', title: 'Synthetic' }, display: {} }) },
+      AtlasSafe: { html() { return ''; }, setHTML() {}, insertHTML() {}, trusted(v) { return v; } },
+      AtlasAuth: {
+        mode: 'live',
+        Expired: class extends Error {},
+        fetch: async () => response({ protocol: 'atlas-personaplex-pcm-v1', codecAvailable: true, busy: false, csrf: 'csrf', identity: { name: ADA.name, mode: 'access', subjectKey: ADA.subjectKey }, voices: ['atlas'], defaultVoice: 'atlas', provider: 'workers', providerLabel: 'ATLAS', model: 'm', capacity: 1, maxSeconds: 60, memory: false, transcription: false, captureRequired: false }),
+        probe: async () => 'live',
+        onSignedIn() {},
+        expired() {},
+      },
+      URL: class extends URL {
+        static createObjectURL() { return 'blob:atlas'; }
+        static revokeObjectURL() {}
+      },
+      WebSocket: class {
+        constructor(url, proto) { seen.push({ url: String(url), proto: proto || '' }); this.readyState = 0; this.binaryType = ''; }
+        close() {}
+        send() {}
+      },
+      AudioContext: class {
+        constructor() { this.state = 'running'; this.destination = {}; this.currentTime = 0; this.audioWorklet = { addModule: async () => {} }; }
+        resume() { return Promise.resolve(); }
+        createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+        close() { return Promise.resolve(); }
+      },
+      AudioWorkletNode: class { constructor() { this.port = { postMessage() {} }; } connect() {} disconnect() {} },
+      Blob, AbortSignal,
+      setTimeout(fn, ms, ...args) { if ((ms || 0) >= 1000) return 0; return setTimeout(fn, ms, ...args); },
+      clearTimeout, setInterval, clearInterval, queueMicrotask, performance,
+      CustomEvent: class CustomEvent { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } },
+      Event: class Event { constructor(type) { this.type = type; } },
+      dispatchEvent() {},
+      matchMedia: () => ({ matches: true }),
+      console,
+    };
+    sandbox.window = sandbox;
+    listen(sandbox);
+    const src = readFileSync(new URL('../src/voice-client.js', import.meta.url), 'utf8');
+    vm.runInNewContext(src, sandbox, { filename: 'voice-client.js' });
+    await sandbox.AtlasVoice.checkConnection();
+    document.getElementById('modelConsent').checked = true;
+    document.getElementById('captureConsent').checked = true;
+    document.getElementById('voiceConsentStart').onclick();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.deepEqual(seen.map(item => item.proto), ['atlas-bound-' + 'ab'.repeat(16)]);
+  });
+
+  test('a focus event after the JWT changes fail-closes an idle tab', async () => {
+    const page = pageFor(memorySession());
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(page.sandbox.AtlasAuth.mode, 'live');
+    page.next.who = { subjectKey: 'subject-blake', name: 'blake@example.test' };
+    page.sandbox.dispatch('focus');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(page.sandbox.AtlasAuth.mode, 'identity-changed');
+    assert.equal(page.surfaces ? page.nodes.get('workspace').textContent : page.nodes.get('workspace').textContent, '');
+  });
+
+  test('a visibilitychange to visible fail-closes an idle tab', async () => {
+    const page = pageFor(memorySession());
+    await new Promise(resolve => setTimeout(resolve, 0));
+    page.next.who = { subjectKey: 'subject-blake', name: 'blake@example.test' };
+    page.document.visibilityState = 'visible';
+    page.document.dispatch('visibilitychange');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(page.sandbox.AtlasAuth.mode, 'identity-changed');
+  });
+
+  test('an atlas-auth broadcast fail-closes a tab that is not expired', async () => {
+    const page = pageFor(memorySession());
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(page.sandbox.AtlasAuth.mode, 'live');
+    page.next.who = { subjectKey: 'subject-blake', name: 'blake@example.test' };
+    Channel.latest.onmessage({ data: 'ok' });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(page.sandbox.AtlasAuth.mode, 'identity-changed');
+  });
+
+  test('focus probes are throttled to one fresh bootstrap', async () => {
+    const page = pageFor(memorySession());
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const before = page.calls.length;
+    page.sandbox.dispatch('focus');
+    page.sandbox.dispatch('focus');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(page.calls.length - before, 1);
+  });
+
+  test('a recent reload stamp does not reload again and the app root is blank', async () => {
+    const storage = memorySession([['atlas.reauthAt', String(Date.now())]]);
+    const page = pageFor(storage);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    page.next.who = { subjectKey: 'subject-blake', name: 'blake@example.test' };
+    await page.sandbox.AtlasAuth.probe({ fresh: true });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const note = page.nodes.get('atlasIdentityNotice');
+    assert.deepEqual({
+      mode: page.sandbox.AtlasAuth.mode,
+      reloads: page.reloads.length,
+      rootHidden: page.document.body.hidden,
+      workspace: page.nodes.get('workspace').textContent,
+      enableSave: page.nodes.get('enableSave').disabled,
+      backupQuick: page.nodes.get('backupQuick').disabled,
+      notice: note ? note.textContent.includes(NOTICE) : false,
+      marker: page.document.body.textContent.includes('Ada bids marker'),
+    }, {
+      mode: 'identity-changed',
+      reloads: 0,
+      rootHidden: true,
+      workspace: '',
+      enableSave: true,
+      backupQuick: true,
+      notice: true,
+      marker: false,
+    });
+  });
+
+  test('a real sessionStorage stamp blocks the second identity-changed reload', async () => {
+    const storage = memorySession();
+    const first = pageFor(storage);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    first.next.who = { subjectKey: 'subject-blake', name: 'blake@example.test' };
+    await first.sandbox.AtlasAuth.probe({ fresh: true });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(first.reloads.length, 1);
+    assert.match(storage.getItem('atlas.reauthAt') || '', /^[0-9]+$/);
+    const second = pageFor(storage, { subjectKey: 'subject-blake', name: 'blake@example.test' });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.deepEqual({
+      mode: second.sandbox.AtlasAuth.mode,
+      reloads: second.reloads.length,
+      rootHidden: second.document.body.hidden,
+    }, { mode: 'identity-changed', reloads: 0, rootHidden: true });
+  });
+
+  test('a non-Latin-1 mailbox is not copied into a request header', async () => {
+    const mailbox = '用户@example.test';
+    const page = pageFor(memorySession());
+    page.sandbox.ATLAS_RUNTIME = {
+      subjectKey: ADA.subjectKey,
+      name: mailbox,
+      boundSubject: 'ab'.repeat(16),
+      boundEmail: 'cd'.repeat(16),
+    };
+    let threw = false;
+    try { await page.sandbox.AtlasAuth.probe({ fresh: true }); } catch { threw = true; }
+    const headers = page.calls.at(-1)?.headers || {};
+    assert.deepEqual({
+      threw,
+      subject: headers['X-Atlas-Bound-Subject'] || '',
+      email: headers['X-Atlas-Bound-Email'] || '',
+    }, { threw: false, subject: 'ab'.repeat(16), email: 'cd'.repeat(16) });
+    assert.equal(HEX.test(headers['X-Atlas-Bound-Email'] || ''), true);
+    assert.equal(Object.values(headers).join('\n').includes(mailbox), false);
+  });
+});
