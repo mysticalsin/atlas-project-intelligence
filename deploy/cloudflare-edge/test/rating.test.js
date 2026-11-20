@@ -923,3 +923,108 @@ test('R2b fused and re-separated spellings of multi-word names never reach TypeS
   // Short fused forms stay word-sized: "Jo Li" fused is "JoLi" (4 characters), too short to match inside other words.
   assert.equal(R.guard(JSON.stringify({ s: 'a joli dashboard' }), ['Jo Li']), true);
 });
+
+// interactive() resolves with one outcome. onEnd is an observer of that outcome.
+const RATE_KEYS = ['answers', 'attempts', 'hedged', 'http', 'inputTokens', 'model', 'ms'];
+function armInteractive(onEnd) {
+  const budgets = { interactive: { deadlineMs: 200, hedgeAtMs: 70, minAttemptMs: 30 } };
+  const queued = [];
+  const delay = (ms, signal) => new Promise(resolve => {
+    if (signal?.aborted) return resolve(false);
+    queued.push({ ms, resolve });
+  });
+  const rater = R.storyRater({ TYPESAFE_API_KEY: KEY }, fakeTS(() => ({})), { budgets, now: () => 1e6, delay, onEnd });
+  const asked = ['clarity'];
+  const body = JSON.stringify(R.requestBody({ reference: { story: {} }, notice: R.NOTICE }, asked));
+  const rate = () => rater.rate(body, '{}', { asked, terms: [], budget: 'interactive' });
+  return { budgets, queued, rate };
+}
+function trackRate(rate) {
+  let settled = null, value = null, error = null;
+  const pending = rate().then(
+    r => { settled = 'resolved'; value = r; },
+    e => { settled = 'rejected'; error = e; }
+  );
+  pending.catch(() => {});
+  return { get settled() { return settled; }, get value() { return value; }, get error() { return error; } };
+}
+// The launch .then has no catch. Hold the runner's rejection listener so the assertion can run,
+// then put that listener back. The leak list is what the escape test reads.
+function holdRejections() {
+  const saved = process.listeners('unhandledRejection').slice();
+  for (const listener of saved) process.removeListener('unhandledRejection', listener);
+  const leaks = [];
+  const onLeak = err => leaks.push(err);
+  process.on('unhandledRejection', onLeak);
+  return {
+    leaks,
+    async restore() {
+      await new Promise(r => setImmediate(r));
+      await new Promise(r => setImmediate(r));
+      process.removeListener('unhandledRejection', onLeak);
+      for (const listener of saved) process.on('unhandledRejection', listener);
+    },
+  };
+}
+
+test('a throwing onEnd still resolves the interactive rating', async () => {
+  const held = holdRejections();
+  try {
+    const seen = [];
+    const { rate } = armInteractive(result => { seen.push(result); throw new Error('observer failed'); });
+    const tracked = trackRate(rate);
+    await spinUntil(() => tracked.settled !== null, 'throwing onEnd still settles the rating', { cap: 20 });
+    assert.equal(tracked.settled, 'resolved', 'throwing onEnd still resolves');
+    assert.equal(tracked.error, null);
+    assert.deepEqual(Object.keys(tracked.value).sort(), RATE_KEYS);
+    assert.equal(tracked.value.model, 'jev-1.13.0');
+    assert.equal(tracked.value.attempts, 1);
+    assert.equal(tracked.value.hedged, 0);
+    assert.equal(tracked.value.http, 200);
+    assert.equal(tracked.value.inputTokens, 2531);
+    assert.equal(tracked.value.ms, 0);
+    assert.equal(typeof tracked.value.answers, 'object');
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].ok, true);
+    assert.equal(seen[0].attempts, 1);
+    assert.equal(seen[0].hedged, 0);
+    assert.equal(seen[0].http, 200);
+  } finally {
+    await held.restore();
+  }
+});
+
+test('a throwing onEnd does not escape the rating call', async () => {
+  const held = holdRejections();
+  try {
+    const seen = [];
+    const { rate } = armInteractive(result => { seen.push(result); throw new Error('observer escaped'); });
+    const tracked = trackRate(rate);
+    await spinUntil(() => tracked.settled !== null, 'throwing onEnd still settles the rating', { cap: 20 });
+    await new Promise(r => setImmediate(r));
+    assert.equal(tracked.settled, 'resolved', 'throwing onEnd still resolves');
+    assert.equal(held.leaks.length, 0, 'a throwing onEnd must not escape');
+    assert.equal(seen.length, 1);
+    assert.deepEqual(Object.keys(tracked.value).sort(), RATE_KEYS);
+  } finally {
+    await held.restore();
+  }
+});
+
+test('a normal onEnd runs exactly once and a late settle does not call it again', async () => {
+  const seen = [];
+  const { budgets, queued, rate } = armInteractive(result => seen.push(result));
+  const value = await rate();
+  assert.equal(seen.length, 1, 'a normal onEnd runs exactly once');
+  assert.equal(seen[0].ok, true);
+  assert.equal(seen[0].attempts, value.attempts);
+  assert.equal(seen[0].hedged, value.hedged);
+  assert.equal(seen[0].http, value.http);
+  assert.deepEqual(Object.keys(value).sort(), RATE_KEYS);
+  assert.equal(value.model, 'jev-1.13.0');
+  const deadline = queued.find(q => q.ms === budgets.interactive.deadlineMs);
+  assert.ok(deadline, 'the deadline wait is still held');
+  deadline.resolve(true);
+  await new Promise(r => setImmediate(r));
+  assert.equal(seen.length, 1, 'a late settle does not call onEnd again');
+});
