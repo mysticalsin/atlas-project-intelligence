@@ -14,7 +14,11 @@ function setMode(m){if(mode===m)return;mode=m;try{window.dispatchEvent(new Custo
 // instead of a redirect, and redirect:'manual' catches the redirect anyway if Access is configured without that behaviour.
 function boundPair(){const r=window.ATLAS_RUNTIME||{},headers={};const subject=HEX.test(r.boundSubject||'')?r.boundSubject:(r.subjectKey||'');const email=HEX.test(r.boundEmail||'')?r.boundEmail:(r.name||'');if(subject)headers['X-Atlas-Bound-Subject']=subject;if(email)headers['X-Atlas-Bound-Email']=email;return headers;}
 function identityChanged(b){const r=window.ATLAS_RUNTIME;if(!r||!b||typeof b!=='object')return false;const id=b.identity||{};if(r.subjectKey&&id.subjectKey&&r.subjectKey!==id.subjectKey)return true;const mail=id.name||b.email||'';if(r.name&&mail&&String(r.name)!==String(mail))return true;if(HEX.test(r.boundSubject||'')&&HEX.test(id.boundSubject||'')&&r.boundSubject!==id.boundSubject)return true;if(HEX.test(r.boundEmail||'')&&HEX.test(id.boundEmail||'')&&r.boundEmail!==id.boundEmail)return true;return false;}
-function blankApp(){for(const id of ['workspace','libraryList','agentText','journey']){const el=$(id);if(el)el.textContent='';}const root=document.body;if(root){root.hidden=true;root.textContent='';}for(const id of ['enableSave','backupQuick','importQuick']){const el=$(id);if(el)el.disabled=true;}let note=document.getElementById('atlasIdentityNotice');if(!note&&typeof document.createElement==='function'){note=document.createElement('p');if(note.setAttribute)note.setAttribute('id','atlasIdentityNotice');else note.id='atlasIdentityNotice';try{(document.documentElement||document.body).append(note);}catch{}}if(note)note.textContent=NOTICE;}
+const pageObservers=new Set();
+function watchObserver(obs){if(obs&&typeof obs.disconnect==='function')pageObservers.add(obs);}
+function disconnectObservers(){for(const obs of pageObservers){try{obs.disconnect();}catch{}}pageObservers.clear();}
+function markNotice(note){if(!note||!note.setAttribute)return;note.setAttribute('role','alert');note.setAttribute('aria-live','assertive');note.setAttribute('class','blocking-notice');}
+function blankApp(){disconnectObservers();for(const id of ['workspace','libraryList','agentText','journey']){const el=$(id);if(el)el.textContent='';}const root=document.body;if(root){root.hidden=true;root.textContent='';}for(const id of ['enableSave','backupQuick','importQuick']){const el=$(id);if(el)el.disabled=true;}let note=document.getElementById('atlasIdentityNotice');if(!note&&typeof document.createElement==='function'){note=document.createElement('p');if(note.setAttribute)note.setAttribute('id','atlasIdentityNotice');else note.id='atlasIdentityNotice';markNotice(note);try{(document.documentElement||document.body).append(note);}catch{}}markNotice(note);if(note)note.textContent=NOTICE;}
 function lockIdentity(){bootP=Promise.resolve({b:{},state:'identity-changed'});probeP=Promise.resolve('identity-changed');setMode('identity-changed');try{window.AtlasVoice?.cancel();}catch{}blankApp();if(!recent()){stamp();reloadHome();}}
 function raw(path,opts={}){return fetch(path,{credentials:'same-origin',cache:'no-store',redirect:'manual',...opts,headers:{...boundPair(),...(opts.headers||{}),'X-Requested-With':'XMLHttpRequest'}});}
 const lapsed=r=>r.status===401||r.type==='opaqueredirect';
@@ -81,7 +85,7 @@ try{const ch=new BroadcastChannel('atlas-auth');ch.onmessage=e=>{if(e.data!=='ok
 $('authReconnect')?.addEventListener('click',reconnect);
 $('authBackup')?.addEventListener('click',()=>{$('backupQuick')?.click();backedUp=true;paint();});
 $('authReload')?.addEventListener('click',()=>{if(!(backedUp||clean()))return;stamp();reloadHome();});
-window.AtlasAuth={fetch:authFetch,expired,reconnect,Expired,pending,boot,probe,changed:identityChanged,lock:lockIdentity,
+window.AtlasAuth={fetch:authFetch,expired,reconnect,Expired,pending,boot,probe,changed:identityChanged,lock:lockIdentity,watchObserver,
  onSignedIn:fn=>{if(typeof fn==='function')signedInFns.push(fn);},
  dirty:fn=>{if(typeof fn!=='function')return ()=>{};checks.add(fn);return ()=>checks.delete(fn);},
  get mode(){return mode;}};

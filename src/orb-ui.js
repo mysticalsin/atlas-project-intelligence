@@ -73,7 +73,7 @@
   // Full screen is granted asynchronously: if focus mode was left before it arrived, leave full screen too.
   if(full&&!document.body.classList.contains('studio-focus')){document.exitFullscreen().catch(()=>{});return;}document.body.classList.toggle('orb-fullscreen',full);if(!full&&document.body.classList.contains('studio-focus'))$('studioFocus').click();orb.renderOnce();});
  $('studioSave').onclick=()=>$('profileButton').click();$('studioBackup').onclick=()=>$('backupQuick').click();
- const storageObserver=new MutationObserver(()=>{$('studioSave').textContent=$('storageStatus').textContent;});storageObserver.observe($('storageStatus'),{childList:true,subtree:true});$('studioSave').textContent=$('storageStatus').textContent;
+ const storageObserver=new MutationObserver(()=>{const save=$('studioSave'),status=$('storageStatus');if(save&&status)save.textContent=status.textContent;});storageObserver.observe($('storageStatus'),{childList:true,subtree:true});try{window.AtlasAuth?.watchObserver?.(storageObserver);}catch{}$('studioSave').textContent=$('storageStatus').textContent;
  function onView(){window.dispatchEvent(new Event('atlas-studio-project'));const active=!$('interview').hidden;document.body.classList.toggle('studio-view',active);if(!active)stopPreview();}
  window.addEventListener('atlas-context',onView);onView();
  document.addEventListener('keydown',e=>{const typing=e.target.closest('input,textarea,select,[contenteditable=true]');if(typing||document.querySelector('dialog[open]')||e.ctrlKey||e.metaKey||e.altKey)return;if(e.key.toLowerCase()==='f'&&!$('interview').hidden){e.preventDefault();$('studioFocus').click();}else if(e.key==='Escape'){stopPreview();if(document.body.classList.contains('studio-focus'))$('studioFocus').click();}});
