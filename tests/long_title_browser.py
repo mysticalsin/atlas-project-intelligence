@@ -91,11 +91,13 @@ PROBE = r"""
     const found = [];
     const walk = (rules) => {
       for (const rule of rules) {
-        if (rule.cssRules) walk(rule.cssRules);
-        else if (rule.style && rule.selectorText && el.matches(rule.selectorText)) {
+        if (rule.selectorText && rule.style) {
+          let matches = false;
+          try { matches = el.matches(rule.selectorText); } catch (err) { matches = false; }
+          if (!matches) continue;
           const value = rule.style.getPropertyValue('min-width').trim();
           if (value) found.push(value);
-        }
+        } else if (rule.cssRules) walk(rule.cssRules);
       }
     };
     for (const sheet of document.styleSheets) {
