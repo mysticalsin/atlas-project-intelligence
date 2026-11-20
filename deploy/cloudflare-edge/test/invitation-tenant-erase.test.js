@@ -142,7 +142,9 @@ test('a privacy erase leaves other subjects\' invitations untouched', async () =
 });
 
 const ENTRA = '11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const TWIN = '11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-bbbbbbbbbbbb';
 const LONG_MAIL = 'alexandra.consultant.security.review@corporate-division.example.test';
+const LONG_COM = 'alexandra.consultant.security.review@corporate-division.example.com';
 const ALT_MAIL = 'ada.alt@example.test';
 const ERASED = /^erased:[0-9a-f]{12}$/;
 
@@ -319,6 +321,84 @@ test('a privacy delete that throws from the audit log returns no counts and leav
   assert.equal(Object.hasOwn(body, 'scrubbed'), false);
   assert.deepEqual(lib.rows('SELECT * FROM invitations ORDER BY id'), before);
   assert.equal(lib.rows("SELECT COUNT(*) AS n FROM audit WHERE action = 'privacy delete'")[0].n, 0);
+});
+
+async function eraseOneSender(lib, subject, mail, ownId) {
+  const response = await privacyDelete(lib, subject, mail);
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  const stored = lib.rows('SELECT source FROM invitations WHERE id = ?', ownId)[0];
+  assert.match(stored.source, ERASED);
+  const counted = body.outcomes.find(row => row.store === 'invitations');
+  assert.equal(counted.removed, 0);
+  assert.equal(counted.scrubbed, 1);
+}
+
+test('a privacy delete scrubs one 73-character Entra id and leaves a tid:oid twin', async () => {
+  assert.equal(ENTRA.length, 73);
+  assert.equal(TWIN.length, 73);
+  assert.equal(ENTRA.slice(0, 60), TWIN.slice(0, 60));
+  assert.notEqual(ENTRA, TWIN);
+  const lib = open();
+  const sent = lib.invite(ENTRA, { email: OTHER, title: 'Mine', projectId: 'PRJ-TWIN-A' }, caller(ENTRA, ALT_MAIL));
+  const twin = lib.invite(TWIN, { email: 'sam@example.test', title: 'Twin', projectId: 'PRJ-TWIN-B' }, caller(TWIN, 'twin.mail@example.test'));
+  const twinBefore = twin.source;
+  await eraseOneSender(lib, ENTRA, ALT_MAIL, sent.id);
+  assert.equal(lib.rows('SELECT source FROM invitations WHERE id = ?', twin.id)[0].source, twinBefore);
+});
+
+test('a privacy delete scrubs one long email and leaves the address that differs after 60 characters', async () => {
+  assert.ok(LONG_MAIL.length > 60);
+  assert.ok(LONG_COM.length > 60);
+  assert.equal(LONG_MAIL.slice(0, 60), LONG_COM.slice(0, 60));
+  assert.notEqual(LONG_MAIL, LONG_COM);
+  const lib = open();
+  const sent = lib.invite(LONG_MAIL, { email: OTHER, title: 'Test', projectId: 'PRJ-LONG-A' }, caller(LONG_MAIL, LONG_MAIL));
+  const twin = lib.invite(LONG_COM, { email: 'sam@example.test', title: 'Com', projectId: 'PRJ-LONG-B' }, caller(LONG_COM, LONG_COM));
+  const twinBefore = twin.source;
+  await eraseOneSender(lib, LONG_MAIL, LONG_MAIL, sent.id);
+  assert.equal(lib.rows('SELECT source FROM invitations WHERE id = ?', twin.id)[0].source, twinBefore);
+});
+
+test('a privacy delete still scrubs a sender whose alias is at most 60 characters', async () => {
+  const actor = 'ada@example.test';
+  assert.ok(actor.length <= 60);
+  const lib = open();
+  const sent = lib.invite(actor, { email: OTHER, title: 'Short', projectId: 'PRJ-SHORT' }, caller(actor, actor));
+  assert.equal(sent.source, actor);
+  await eraseOneSender(lib, actor, actor, sent.id);
+});
+
+test('a privacy delete leaves a stored 60-character prefix of a longer sender', async () => {
+  const lib = open();
+  const prefix = str(ENTRA, 60);
+  assert.equal(prefix.length, 60);
+  assert.notEqual(prefix, ENTRA.toLowerCase());
+  seed(lib, { id: 'legacy-prefix', email: OTHER, project: 'PRJ-LEGACY', title: 'Legacy', source: prefix, tenant: A });
+  const response = await privacyDelete(lib, ENTRA, ALT_MAIL);
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(lib.rows('SELECT source FROM invitations WHERE id = ?', 'legacy-prefix')[0].source, prefix);
+  assert.equal(body.outcomes.find(row => row.store === 'invitations').scrubbed, 0);
+});
+
+test('POST /api/me/erase leaves a tid:oid twin and does not count that row', async () => {
+  const sql = memorySql();
+  const lib = new Library(sql, { now: () => STAMP });
+  const sent = lib.invite(ENTRA, { email: OTHER, title: 'Mine', projectId: 'PRJ-ME-TWIN' }, caller(ENTRA, ALT_MAIL));
+  const twin = lib.invite(TWIN, { email: 'sam@example.test', title: 'Twin', projectId: 'PRJ-ME-TWIN-B' }, caller(TWIN, 'twin.mail@example.test'));
+  const twinBefore = twin.source;
+  const env = {
+    ...ACCESS_ENV, IDENTITY_SOURCE: 'entra', ENTRA_TENANTS: A,
+    LIBRARY: boundLibrary(sql), INTERVIEW: limitOk(),
+  };
+  const me = await session(env, { email: ALT_MAIL, custom: { tid: A, oid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', roles: [] } });
+  const response = await me.go('/api/me/erase', { method: 'POST', body: '{"confirmed":true}', headers: { 'content-type': 'application/json' } });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.match(lib.rows('SELECT source FROM invitations WHERE id = ?', sent.id)[0].source, ERASED);
+  assert.equal(lib.rows('SELECT source FROM invitations WHERE id = ?', twin.id)[0].source, twinBefore);
+  assert.equal(body.counts.invitationSources, 1);
 });
 
 test('with enforcement off, a blank tenant can update its invitation and a present tenant cannot', () => {
