@@ -19,6 +19,15 @@ Still open after this loop:
 
 Accepted, not open: a caller `ATLAS_HOME_URL` is not visible to the rebuild. The rebuild bakes `deploy/cloudflare-edge/wrangler.jsonc` `vars.ORIGIN`.
 
+Measured on this loop with `ATLAS_DEPLOY_STUB` unset, before this paragraph's manifest refresh:
+
+- Red commit `8bd6271`: the new tests, 18 failed, 25 passed. The full `tests/test_handoff.py` on that commit also fails the two stale-manifest tests named above.
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 391 passed, 127 warnings, 26.63s, exit 0.
+- `node --test tests/*.test.js`: 413 tests, 413 pass, 0 fail, 0 skipped.
+- Edge `node --test test/*.test.js` with miniflare `5.20261023.3-beta` and workerd `2026-10-23`: 1117 tests, 1117 pass, 0 fail, 0 skipped. The alias-begin tail test passed.
+- `make test-ui` (`CHROMIUM_PATH=/usr/local/bin/google-chrome`): 834 PASS, 0 FAIL, exit 0.
+- `python3 scripts/check_handoff.py . --dev-git-index` before this paragraph: exit 0, 695 release files, `clean-build` and `clean-build-byte-match` pass.
+
 ## 2026-11-20 — check_handoff fence follow-ups (`cursor/atlas-checkhandoff-nested-git`)
 
 Four rows on `scripts/check_handoff.py`, base `3d9239c112b5c5853fc49ce15424bbd29d94cfb2`. Red tests are the commit before the fix. `MANIFEST.json` is regenerated last with `python3 scripts/check_handoff.py . --dev-git-index --write-manifest`.
