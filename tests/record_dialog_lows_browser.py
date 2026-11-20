@@ -53,7 +53,8 @@ def seed_ok(view):
     return (view['open'] and view['title'] == 'Northwind queue pilot' and 'Quality 80' in view['body']
         and view['line'] == 'Ready for use' and view['center'] == 'of 100'
         and 'threshold' not in view['line'] and 'completeness' not in view['line']
-        and 'Completeness' not in view['tracks'] and 'threshold 75' not in view['center']
+        and 'Completeness' in view['tbd'] and all('0.8' not in t for t in view['tracks'])
+        and 'threshold 75' not in view['center']
         and not view['rejects'] and not ERR)
 VARIANTS = [
     ('non-array list opens with a safe empty list',
