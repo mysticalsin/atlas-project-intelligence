@@ -50,7 +50,7 @@ test('app.js recordDoc practice area, consultants, and links use displayValue', 
   const p = {
     consultant: {label: 'Ada'},
     role: {label: 'Delivery lead'},
-    jev: {primary: {label: {label: 'Ops'}}, also: [{label: 'Care'}, {label: {hours: 1}}]},
+    jev: {primary: {label: {hours: 2}}, also: [{label: 'Care'}, {label: {hours: 1}}]},
   };
   const d = {
     consultants: [{name: 'Sam', role: {hours: 12}}, {name: 'Noor', role: 'Analyst'}, {name: 'Kai', role: 2}, {name: 'Ren', role: null}],
