@@ -491,6 +491,20 @@ describe('access identity change, required plan changes', { concurrency: false }
     assert.equal(req.headers.get('x-atlas-bound-email'), null);
   });
 
+  test('a wrong subject key with a matching email key opens nothing', async () => {
+    const ada = await established();
+    const library = binder({ title: MARKER });
+    const interview = binder({ title: MARKER });
+    const res = await handle(new Request(ORIGIN + '/api/library/journey', {
+      headers: {
+        'cf-access-jwt-assertion': ada.token,
+        'X-Atlas-Bound-Subject': 'ab'.repeat(16),
+        'X-Atlas-Bound-Email': await emailBound(ADA.email),
+      },
+    }), envFor(library.binding, interview.binding), '');
+    assert.deepEqual(await outcome(res, library.opened.concat(interview.opened)), FAILURE);
+  });
+
   test('a matching bound key still reaches the library', async () => {
     const ada = await established();
     const library = binder({ title: 'Ada library' });

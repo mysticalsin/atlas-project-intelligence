@@ -1,6 +1,31 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-20 — identity change fails closed (`cursor/atlas-identity-change-residual`)
+
+Sentinel plan debate: ACCEPT WITH CHANGES. Report sha256 `b2075991672e35c085b3d0fde0c0d23c828c83f444f318cb2aa7e8c7b75970cf`. Not merge approval. The record is `handoff/decisions/identity-change-fail-closed.md`.
+
+`origin/main` `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec` was merged with an ordinary merge. The red commit for R1–R5 is `3a569bb55830d28d1bffe659e397156b2203c537` (tree `283e3d1f37d60077504ac1dc7a7c1e90c60bef7b`). On that commit, before the product change:
+
+```sh
+node --test tests/identity-change.test.js deploy/cloudflare-edge/test/identity-change.test.js
+```
+
+31 tests, 0 pass, 31 fail, exit 1, duration_ms 291.971226. The fix is `87beb8aba1c95e2c0c3cd2c1193c940416ed13bc` (tree `9b8fdfd94f1411dd34b4d52602ccfc2209aa4a6b`). The same command on the fix, plus the matching-key, absent-key, and wrong-subject checks, is 36 tests, 36 pass, 0 fail, exit 0, duration_ms 308.513316.
+
+Owner decisions in the record: an Entra email change with the same `tid:oid` fails closed; the Python cookie path is out of scope; the in-progress voice view is discarded and A's Durable Object is left untouched; A's localStorage blob is left in place and unread.
+
+`python3 build.py` rebuilt the four HTML aliases (929158 bytes, sha256 `7d6729460acfaa90e0a71c8e8561978e3c9415e97c7e3c062f9e164e8b87ab52`). `deploy/cloudflare-edge/generated/PAGE_SHA256.txt` is that pin. `deploy/cloudflare-edge/src/csp.generated.js` moved with the script hashes.
+
+Measured on this working tree, `ATLAS_DEPLOY_STUB` unset, `CHROMIUM_PATH=/usr/local/bin/google-chrome` (the wrapper for `/usr/bin/google-chrome-stable`):
+
+- `node --test tests/*.test.js`: 433 tests, 433 pass, 0 fail, exit 0, duration_ms 21593.190169.
+- `cd deploy/cloudflare-edge && node --test test/*.test.js`: 1139 tests, 1135 pass, 0 fail, 4 skipped, exit 0, duration_ms 231038.376551.
+- `make test-ui`: PASS 834, FAIL 0, exit 0.
+- Seventeen mutants (the eleven in the plan, plus no protocol echo, no focus probe, reload-guard bypass, consent omitted from the check, a malformed key accepted, and the library header strip removed) each turned a named test red and were restored.
+
+`MANIFEST.json` is regenerated after this note. Pytest and `check_handoff . --dev-git-index` on the committed tree are in the gate packet. Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open. No deploy, no Access or DNS change, and no `ATLAS_DEV_IDENTITY`.
+
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.
