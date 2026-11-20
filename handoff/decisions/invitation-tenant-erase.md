@@ -90,7 +90,7 @@ Revert this branch's commits. The parent is `main` `c14302590e78b0319baab5893ef8
 
 Review of `63779db38484471abeb95f56b767e7265e3f8736` requested changes. `Library.invite` stores `str(actor, 60)`. An Entra `tid:oid` is 73 characters, and a long email can be 68. The stored prefix matched neither full alias, so `POST /api/library/privacy/delete` left `source` in place and reported `scrubbed: 0`. `POST /api/me/erase` forwards to `eraseMine` / `eraseWithin`, which deleted `invitations.email` for the sign-in identity only and did not scrub `source`. The sentence above that said `eraseMine` already covered `invitations.email` was wrong for that reason.
 
-The plan debate in this record was written with the first change. It is retroactive, and it is pending review. It is not a record that this round was pre-approved.
+The plan debate in this record was written with the first change. A separate post-build debate, `handoff/decisions/pr12-plan-debate.md`, was run after `63779db38484471abeb95f56b767e7265e3f8736`. Its consensus is AGREED. It did not catch the 60-character truncation. Fix round 1 addresses that finding. The debate is not a pre-build approval of this round.
 
 `eraseSubjectInvitations` in `operate.js` is the only invitation erase. `eraseInvitations` and `eraseWithin` both call it.
 

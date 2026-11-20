@@ -289,6 +289,38 @@ test('one privacy delete gives each sent invitation its own erased token', async
   assert.notEqual(rows[0].source, rows[1].source);
 });
 
+test('a privacy delete removes a received invitation that is scheduled, done, or dismissed', async () => {
+  const lib = open();
+  for (const status of ['scheduled', 'done', 'dismissed']) {
+    seed(lib, { id: 'recv-' + status, email: SUBJECT, project: 'PRJ-' + status.toUpperCase(), title: status, source: OTHER, tenant: A });
+    sqlOf(lib).exec('UPDATE invitations SET status = ? WHERE id = ?', status, 'recv-' + status);
+  }
+  const response = await erase(lib);
+  assert.equal(response.status, 200);
+  assert.equal(lib.rows("SELECT COUNT(*) AS n FROM invitations WHERE id IN ('recv-scheduled', 'recv-done', 'recv-dismissed')")[0].n, 0);
+});
+
+test('a privacy delete that throws from the audit log returns no counts and leaves the rows unchanged', async () => {
+  const lib = open();
+  seed(lib, { id: 'recv-roll', email: SUBJECT, project: 'PRJ-ROLL', title: 'Received', source: OTHER, tenant: A });
+  seed(lib, { id: 'sent-roll', email: OTHER, project: 'PRJ-ROLL-S', title: 'Sent', source: SUBJECT, tenant: A });
+  const before = lib.rows('SELECT * FROM invitations ORDER BY id');
+  const orig = lib.log.bind(lib);
+  lib.log = (id, actor, action, detail) => {
+    if (action === 'privacy delete') throw new Error('disk');
+    return orig(id, actor, action, detail);
+  };
+  const response = await erase(lib);
+  const body = await response.json();
+  assert.equal(response.status, 500);
+  assert.equal(body.error, 'The deletion did not finish. Nothing was removed.');
+  assert.equal(Object.hasOwn(body, 'outcomes'), false);
+  assert.equal(Object.hasOwn(body, 'removed'), false);
+  assert.equal(Object.hasOwn(body, 'scrubbed'), false);
+  assert.deepEqual(lib.rows('SELECT * FROM invitations ORDER BY id'), before);
+  assert.equal(lib.rows("SELECT COUNT(*) AS n FROM audit WHERE action = 'privacy delete'")[0].n, 0);
+});
+
 test('with enforcement off, a blank tenant can update its invitation and a present tenant cannot', () => {
   const lib = open();
   seed(lib, { id: 'blank-own', email: 'ada@example.test', project: 'PRJ-BLANK-OWN', title: 'Blank', source: 'ada@example.test', tenant: '' });
