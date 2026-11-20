@@ -89,3 +89,74 @@ Revert this branch to `ba26520b55c368fd013d77a2cacbc84f30259b77`. No migration a
 ## Known limits
 
 `name` and `text` are not labels for `displayValue`. List items in blockers, holds, missing, and recommendations still use `item()`, which reads `label`, `name`, and `text`. A null role still omits the parentheses. `src/charts.js` and the world map are unchanged. Workerd 2026-10-23 is not installed on this machine, so the edge workerd probes skip. Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open.
+
+## Loop 1 — raw concatenations
+
+PR #16 moved to `3783bc6eeeacde2ab1d2b4071983755eb83393ad` (tree `d493219c201dea48abaf1374071bfbbd34185958`). Ordinary merge `df8a8fc6e4914c25afc15751e3a12e2708fb9fc6`. That merge brings `l?.trim()` on the gauge track label. `src/charts.js` is 57000 bytes. This loop does not edit it.
+
+Inspector, first QA of `389143de`: seven raw concatenations.
+
+- `src/app.js` Word issues (`esc` of `i.field` and `i.detail`)
+- `src/app.js` Word practice area, consultants, and links
+- `src/app.js` `libraryDoc` name and role
+- `src/app.js` `q.summary`
+- `src/app.js` audit `x.detail`
+- `src/ask-ui.js` people in parentheses, and the dot role
+- `src/bids-ui.js` suggested person role
+
+Each value goes through `displayValue`. No new escape function. A string or a finite number stays text. A label object uses that label. Anything else is `—`. A null or empty role still adds no parentheses. The Word list helper maps `displayValue` before it joins.
+
+### Done when
+
+- The seven sites no longer produce `[object Object]`.
+- The six `displayValue` mutants below each exit 1, and the clean file exits 0. Red for those kills is shown by mutants.
+- The rules-guard test in `tests/charts.test.js` is a regression guard. It already passes on `ba26520b`. Red is shown by the named mutant, not by a red parent.
+
+### TEST COMMAND
+
+```sh
+node --test tests/display-value-sites.test.js tests/display-value.test.js
+```
+
+Red `e8d88eb760ebdc4d4a9e14863cf2c0675e02d481`: exit 1. 18 tests, 11 pass, 7 fail. The seven failures are the site tests. The six new formatter tests pass on that commit.
+
+Fix `3c12f0f6279c78867d6fe14f99c31a499e7cff9b`: the same command exits 0. 18 pass, 0 fail.
+
+### Mutants
+
+Each one was restored and was not committed. `node --test tests/display-value.test.js` on the clean file exits 0. 11 pass, 0 fail.
+
+1. Drop `!Array.isArray(value)&&`. Exit 1. 11 tests, 10 pass, 1 fail. `an array with its own label is the placeholder`.
+2. Replace `hasOwnProperty` with `'label' in value`. Exit 1. 10 pass, 1 fail. `an inherited label is the placeholder`.
+3. Drop `Number.isFinite(label)`. Exit 1. 10 pass, 1 fail. `a non-finite label is the placeholder`.
+4. Replace `Number.isFinite(label)` with `label===label`. Exit 1. 10 pass, 1 fail. The same non-finite test. `Infinity` becomes the text `Infinity`.
+5. Widen the object check with `||typeof value==='function'`. Exit 1. 10 pass, 1 fail. `a function with its own label is the placeholder`.
+6. Widen the string check with `||value instanceof String`. Exit 1. 10 pass, 1 fail. `a boxed String is the placeholder`.
+
+Rules formula guard, regression only. Drop `c?` on the `e==='rules'` arm. `node --test tests/charts.test.js tests/record_dialog_lows_gauge.test.js` exits 1. 40 tests, 38 pass, 2 fail. The failures are `the rules formula guard hides the 0.8 note when completeness is not a finite number` and `the rules engine omits the 0.8 note for missing and NaN completeness and keeps it for zero`. The charts test already passes on `ba26520b`. It is a regression guard. Red is shown by mutants.
+
+### Unslop
+
+| Surface | Removed | What the reader sees |
+| --- | --- | --- |
+| Quality summary and audit detail | `[object Object]` | The label, or `—` |
+| Ask people and a bid suggestion | `Ada ([object Object])` | `Ada (Delivery lead)`, or `Ada (—)` |
+| Word record | The same object text in the issue, consultant, and link cells | The label, the number, or `—` |
+
+No new control and no new sentence.
+
+### Measured on the fix commit
+
+- `node --test tests/*.test.js`: exit 0, 441 pass, 0 fail, 0 skipped, 21530 ms
+- pytest `tests/test_*.py` before the manifest write: exit 1, 411 passed, 2 failed, 127 warnings, 25.89s. Both failures are the stale manifest.
+- Edge: exit 0, 1117 tests, 1113 pass, 0 fail, 4 skipped, 231261 ms. The four skips are the existing workerd probes.
+- `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui`: exit 0, 870 PASS, 0 FAIL, 28 scripts
+- Page pin `65733562c687f45dc356a849e1e52db812b44102cc134f96140e7f251ac7b329`, 926670 bytes
+
+### Rollback
+
+Revert fix `3c12f0f6279c78867d6fe14f99c31a499e7cff9b`. The branch stays merged with PR #16 `3783bc6eeeacde2ab1d2b4071983755eb83393ad`. No migration and no stored rewrite.
+
+### Known limits for this loop
+
+The project-detail line and the story paper still concatenate `p.role` with ` · `. Those two sites were not in the seven. `displayValue` still does not read `name` or `text`. A null or empty role still adds no parentheses. Workerd 2026-10-23 is not installed. Not a production-ready claim.

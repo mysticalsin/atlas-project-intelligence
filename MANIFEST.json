@@ -622,23 +622,23 @@
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 926037,
-      "sha256": "7c45b14413945a5c4107af65cafd5f4beb946b182faacab054c77d1b0167d08d"
+      "bytes": 926670,
+      "sha256": "65733562c687f45dc356a849e1e52db812b44102cc134f96140e7f251ac7b329"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 926037,
-      "sha256": "7c45b14413945a5c4107af65cafd5f4beb946b182faacab054c77d1b0167d08d"
+      "bytes": 926670,
+      "sha256": "65733562c687f45dc356a849e1e52db812b44102cc134f96140e7f251ac7b329"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 926037,
-      "sha256": "7c45b14413945a5c4107af65cafd5f4beb946b182faacab054c77d1b0167d08d"
+      "bytes": 926670,
+      "sha256": "65733562c687f45dc356a849e1e52db812b44102cc134f96140e7f251ac7b329"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 926037,
-      "sha256": "7c45b14413945a5c4107af65cafd5f4beb946b182faacab054c77d1b0167d08d"
+      "bytes": 926670,
+      "sha256": "65733562c687f45dc356a849e1e52db812b44102cc134f96140e7f251ac7b329"
     },
     {
       "path": "CLAUDE.md",
@@ -933,7 +933,7 @@
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
       "bytes": 146,
-      "sha256": "764e376075e5216c5da2fbc1ae44ab5f7787fa894de60f5ba5a3038ca3fcd313"
+      "sha256": "121029a2448c34ba1975e1deefa544c1d71218cece2da516e0c7a33af5dadcfe"
     },
     {
       "path": "deploy/cloudflare-edge/set-keys.sh",
@@ -998,7 +998,7 @@
     {
       "path": "deploy/cloudflare-edge/src/csp.generated.js",
       "bytes": 1730,
-      "sha256": "7771e4837abaa1bffed0c4ce1db9374e6e74937c53c4e91dbf9c81d2df74af6d"
+      "sha256": "037cd65f3e5981882ea8b9879bfc01c259708a72b3f384b23cca773296f0289a"
     },
     {
       "path": "deploy/cloudflare-edge/src/csp.js",
@@ -2282,8 +2282,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 353330,
-      "sha256": "e7ff188db3b486a522d4ad5fb89b763e9f61d5d1e0fe6d428670522e5a4a962e"
+      "bytes": 357021,
+      "sha256": "e11669e9bc9d602da7538b94267e1c349848084cb918f49aba05b99f20dd9ff9"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2292,8 +2292,8 @@
     },
     {
       "path": "handoff/CODE_MAP.md",
-      "bytes": 10418,
-      "sha256": "594ebf2618fc8e7c9d9c1f1005c30e36a329ae57c6856729db05b884b2ac26a8"
+      "bytes": 10493,
+      "sha256": "600147e70779b13deebd46b6393c2e80d49946b98d01bb2e296d474b753cf9c3"
     },
     {
       "path": "handoff/COMMIT_MSG.txt",
@@ -2362,8 +2362,8 @@
     },
     {
       "path": "handoff/decisions/display-value-formatter.md",
-      "bytes": 7097,
-      "sha256": "a6a4fe8a3acd4847d5a9c92c0fad6d416f5c8a8cf82f8d0d9c0f25d92740a224"
+      "bytes": 11642,
+      "sha256": "bbc489342945fa127e14f671554bc2c62559f4e73b4d2c8d95208f899abafbc5"
     },
     {
       "path": "handoff/decisions/invitation-tenant-erase.md",
@@ -2387,8 +2387,8 @@
     },
     {
       "path": "handoff/decisions/record-dialog-lows.md",
-      "bytes": 7447,
-      "sha256": "32d66459a37d88e13de5daf4bc8e2e52f01b04c9315068a1c8b37d2a61d04689"
+      "bytes": 9860,
+      "sha256": "6a9aef473a2c8cd72911e3a91661272d8c3acbdbdd994b46d1c3890fe9d52cec"
     },
     {
       "path": "handoff/decisions/record-dialog-quality-crash.md",
@@ -2792,13 +2792,13 @@
     },
     {
       "path": "src/app.js",
-      "bytes": 147154,
-      "sha256": "1f71c6ab96aa6524745ddc151e85e3e25d879716ad8bcd4a0a7c2c1489e02bc0"
+      "bytes": 147547,
+      "sha256": "e7fcf6d53ba43157795c86d4fe0343064bc7cd019135d1f81afd899c0b03c3ba"
     },
     {
       "path": "src/ask-ui.js",
-      "bytes": 13058,
-      "sha256": "87416df37160e6b03c039d23ad713e05e4f0a024d9add83a92a24819009294fa"
+      "bytes": 13190,
+      "sha256": "c99aeaa28d1f767cdb77ffbb985fa031a74ba78b14eb3d91b702536de3eff236"
     },
     {
       "path": "src/bids-core.js",
@@ -2807,8 +2807,8 @@
     },
     {
       "path": "src/bids-ui.js",
-      "bytes": 38543,
-      "sha256": "1f57deae1dd36cf8bff6510c9d68070f8010ba564c6db9cbe6fcda899f5d0454"
+      "bytes": 38643,
+      "sha256": "71600176f0f1fb1b4412ccd1e9c8af73a4e5d54238db0741e38de6c211d250f9"
     },
     {
       "path": "src/charts.css",
@@ -2817,8 +2817,8 @@
     },
     {
       "path": "src/charts.js",
-      "bytes": 56992,
-      "sha256": "9d615482b6c6fd5105c1f71521efb88a1dcdc2e479b00bf421e557cbb9f04786"
+      "bytes": 57000,
+      "sha256": "d1bf47dfb393407ef8ee353b579f2c06100ba8a317abede4e6753de884c949b4"
     },
     {
       "path": "src/display-value.js",
@@ -3096,9 +3096,14 @@
       "sha256": "5e3abc1f50fe34feed11cc23a3e93518c3a18b8c5fd972c8a6c43189627faf35"
     },
     {
+      "path": "tests/display-value-sites.test.js",
+      "bytes": 6379,
+      "sha256": "2a3957823f377123f207be03062792a2e1a65267fbc55a9e995f844857f3c305"
+    },
+    {
       "path": "tests/display-value.test.js",
-      "bytes": 5005,
-      "sha256": "d0de31ef08a4c90df35d21db31f0dabe3177c4682482201caf4b6aa1dd939d5a"
+      "bytes": 6102,
+      "sha256": "036fd99e136ec7f3e1604ef29235b2a4934610292a7774f50a93f87307b115f1"
     },
     {
       "path": "tests/display_value_browser.py",
@@ -3247,8 +3252,13 @@
     },
     {
       "path": "tests/record_dialog_lows_browser.py",
-      "bytes": 10051,
-      "sha256": "a514c1b58eba42dcbc92f3da25093bdeaefb82f5ccd996e9907faf8b1d4535d3"
+      "bytes": 11910,
+      "sha256": "902328af632938245fd5e1ceb7ac970d8f1ac157a320bb09f146f9aa2a6a6bc4"
+    },
+    {
+      "path": "tests/record_dialog_lows_gauge.test.js",
+      "bytes": 2253,
+      "sha256": "fca083390db3396912cd42f6fa9b8b7c49c9ec5e64cb2ef6ba3705006d60bd3a"
     },
     {
       "path": "tests/record_dialog_quality_browser.py",
