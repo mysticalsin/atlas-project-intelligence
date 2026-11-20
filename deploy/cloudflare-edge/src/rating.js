@@ -495,8 +495,11 @@ export function storyRater(env, fetcher = fetch, opts = {}) {
         if (settled) return;
         settled = true; stop.abort(); for (const c of ctrls) c.abort();
         const result = { ...o, attempts, hedged, http };
-        if (typeof opts.onEnd === 'function') opts.onEnd(result);
         resolve(result);
+        if (typeof opts.onEnd === 'function') {
+          try { opts.onEnd(result); }
+          catch { /* an observer must not unsettle the outcome */ }
+        }
       };
       const launch = () => {
         if (settled || attempts >= max || deadlineAt - now() < b.minAttemptMs) return false;
