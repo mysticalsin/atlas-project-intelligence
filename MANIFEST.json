@@ -1422,8 +1422,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/invitation-tenant-erase.test.js",
-      "bytes": 22374,
-      "sha256": "820be12180c34d36d4ba16fe5ee4af8bb1c4836696cbadf362ccda45dc4bbc70"
+      "bytes": 31251,
+      "sha256": "64e8e9a94bdc49dd11f19ff3d9e3bc42614eab9dcbce7bb2ca09667528649bee"
     },
     {
       "path": "deploy/cloudflare-edge/test/invitation-tenant.test.js",
