@@ -2,6 +2,10 @@
 // Harness: test/sqlite.js memorySql, the Durable Object SQL stand-in.
 // Round 1 creates the sender through Library.invite and erases through
 // POST /api/library/privacy/delete and POST /api/me/erase.
+// Round 3 tests below are pinning (characterization) tests: they pass on
+// 5e5c5bb. They fail if the 60-character gate, the 200-character store, or
+// the changes() count is altered. There is no admin whole-tenant invitation
+// erase and no invite-revoke erase in this tree.
 // workerd 2026-10-23 is not required for this file. The full edge
 // suite still runs the workerd probes when that binary is installed.
 import test from 'node:test';
@@ -397,6 +401,162 @@ test('POST /api/me/erase leaves a tid:oid twin and does not count that row', asy
   assert.match(lib.rows('SELECT source FROM invitations WHERE id = ?', sent.id)[0].source, ERASED);
   assert.equal(lib.rows('SELECT source FROM invitations WHERE id = ?', twin.id)[0].source, twinBefore);
   assert.equal(body.counts.invitationSources, 1);
+});
+
+// Pinning. An alias of exactly 60 characters is matched through str(alias, 60)
+// when that string is not the alias. invite stores the collapsed form, so the
+// full-alias comparison misses it. A gate of < 60 leaves this row in place.
+test('pinning: an alias of exactly 60 characters scrubs the source str collapses', async () => {
+  const alias = 'a'.repeat(28) + '  ' + 'b'.repeat(30);
+  assert.equal(alias.length, 60);
+  const collapsed = str(alias, 60);
+  assert.notEqual(collapsed, alias);
+  assert.ok(collapsed.length < 60);
+  const lib = open();
+  const sent = lib.invite(alias, { email: OTHER, title: 'Sixty', projectId: 'PRJ-LEN-60' }, caller(alias, alias));
+  assert.equal(sent.source, collapsed);
+  const response = await privacyDelete(lib, alias, alias);
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.match(lib.rows('SELECT source FROM invitations WHERE id = ?', sent.id)[0].source, ERASED);
+  const counted = body.outcomes.find(row => row.store === 'invitations');
+  assert.equal(counted.removed, 0);
+  assert.equal(counted.scrubbed, 1);
+});
+
+// Pinning. An alias of exactly 61 characters matches its own stored source.
+// Its 60-character prefix is a different sender and stays. A gate of <= 61
+// scrubs that prefix.
+test('pinning: an alias of exactly 61 characters leaves a different 60-character prefix', async () => {
+  const alias = 'c'.repeat(61);
+  const prefix = str(alias, 60);
+  assert.equal(alias.length, 61);
+  assert.equal(prefix.length, 60);
+  assert.notEqual(prefix, alias);
+  const lib = open();
+  const sent = lib.invite(alias, { email: OTHER, title: 'Sixty one', projectId: 'PRJ-LEN-61' }, caller(alias, 'ada@example.test'));
+  seed(lib, { id: 'prefix-61', email: 'sam@example.test', project: 'PRJ-LEN-61-PREFIX', title: 'Prefix', source: prefix, tenant: A });
+  assert.equal(sent.source, alias);
+  const response = await privacyDelete(lib, alias, 'ada@example.test');
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.match(lib.rows('SELECT source FROM invitations WHERE id = ?', sent.id)[0].source, ERASED);
+  assert.equal(lib.rows('SELECT source FROM invitations WHERE id = ?', 'prefix-61')[0].source, prefix);
+  const counted = body.outcomes.find(row => row.store === 'invitations');
+  assert.equal(counted.removed, 0);
+  assert.equal(counted.scrubbed, 1);
+});
+
+// Pinning. invite caps the actor at 200. Exactly 200 is stored whole.
+// Changing the cap to 199 stores a shorter source.
+test('pinning: invite stores an actor of exactly 200 characters whole', () => {
+  const actor = 'd'.repeat(200);
+  assert.equal(actor.length, 200);
+  const lib = open();
+  const sent = lib.invite(actor, { email: OTHER, title: 'Two hundred', projectId: 'PRJ-CAP-200' }, caller(actor, 'ada@example.test'));
+  assert.equal(sent.source, actor);
+  assert.equal(sent.source.length, 200);
+});
+
+// Pinning. Exactly 201 is stored as the first 200 characters. Removing the cap
+// stores the whole actor.
+test('pinning: invite stores the first 200 characters of a 201-character actor', () => {
+  const actor = 'e'.repeat(201);
+  assert.equal(actor.length, 201);
+  const lib = open();
+  const sent = lib.invite(actor, { email: OTHER, title: 'Two hundred one', projectId: 'PRJ-CAP-201' }, caller(actor, 'ada@example.test'));
+  assert.equal(sent.source, str(actor, 200));
+  assert.equal(sent.source.length, 200);
+  assert.notEqual(sent.source, actor);
+});
+
+// Pinning. The select finds two sent rows. A trigger ignores the update of one,
+// so changes() sums to 1 and the select length is 2. The receipt uses changes().
+test('pinning: the scrub count is changes() when that differs from the pre-write select', async () => {
+  const lib = open();
+  const actor = 'ada@example.test';
+  const owner = caller(actor, actor);
+  const first = lib.invite(actor, { email: OTHER, title: 'Counted', projectId: 'PRJ-CHG-1' }, owner);
+  const second = lib.invite(actor, { email: 'sam@example.test', title: 'Skipped', projectId: 'PRJ-CHG-2' }, owner);
+  assert.match(second.id, /^[0-9a-f]{32}$/);
+  sqlOf(lib).exec(
+    `CREATE TRIGGER invitations_skip_one BEFORE UPDATE ON invitations WHEN OLD.id = '${second.id}' BEGIN SELECT RAISE(IGNORE); END`,
+  );
+  const response = await privacyDelete(lib, actor);
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.match(lib.rows('SELECT source FROM invitations WHERE id = ?', first.id)[0].source, ERASED);
+  assert.equal(lib.rows('SELECT source FROM invitations WHERE id = ?', second.id)[0].source, actor);
+  const counted = body.outcomes.find(row => row.store === 'invitations');
+  assert.equal(counted.removed, 0);
+  assert.equal(counted.scrubbed, 1);
+});
+
+async function meErase(sql, email) {
+  const env = { ...ACCESS_ENV, LIBRARY: boundLibrary(sql), INTERVIEW: limitOk() };
+  const me = await session(env, { sub: ENTRA, email });
+  const response = await me.go('/api/me/erase', { method: 'POST', body: '{"confirmed":true}', headers: { 'content-type': 'application/json' } });
+  const body = await response.json();
+  return { response, body };
+}
+
+// Pinning. /api/me/erase of a short alias scrubs that sender.
+test('pinning: POST /api/me/erase scrubs a short alias', async () => {
+  const sql = memorySql();
+  const lib = new Library(sql, { now: () => STAMP });
+  const actor = 'ada@example.test';
+  assert.ok(actor.length < 60);
+  const sent = lib.invite(actor, { email: OTHER, title: 'Short', projectId: 'PRJ-ME-SHORT' }, caller(actor, actor));
+  assert.equal(sent.source, actor);
+  const { response, body } = await meErase(sql, actor);
+  assert.equal(response.status, 200);
+  assert.match(lib.rows('SELECT source FROM invitations WHERE id = ?', sent.id)[0].source, ERASED);
+  assert.equal(body.counts.invitationSources, 1);
+});
+
+// Pinning. The long-email twin differs after 60 characters and is not scrubbed.
+test('pinning: POST /api/me/erase scrubs one long email and leaves the twin', async () => {
+  const sql = memorySql();
+  const lib = new Library(sql, { now: () => STAMP });
+  const sent = lib.invite(LONG_MAIL, { email: OTHER, title: 'Test', projectId: 'PRJ-ME-TWIN-LONG' }, caller(LONG_MAIL, LONG_MAIL));
+  const twin = lib.invite(LONG_COM, { email: 'sam@example.test', title: 'Com', projectId: 'PRJ-ME-TWIN-COM' }, caller(LONG_COM, LONG_COM));
+  const twinBefore = twin.source;
+  const { response, body } = await meErase(sql, LONG_MAIL);
+  assert.equal(response.status, 200);
+  assert.match(lib.rows('SELECT source FROM invitations WHERE id = ?', sent.id)[0].source, ERASED);
+  assert.equal(lib.rows('SELECT source FROM invitations WHERE id = ?', twin.id)[0].source, twinBefore);
+  assert.equal(body.counts.invitationSources, 1);
+});
+
+// Pinning. The same sender in another tenant is not touched.
+test('pinning: POST /api/me/erase leaves the same sender in another tenant', async () => {
+  const sql = memorySql();
+  const lib = new Library(sql, { now: () => STAMP });
+  const actor = 'ada@example.test';
+  const sent = lib.invite(actor, { email: OTHER, title: 'Here', projectId: 'PRJ-ME-TENANT-A' }, caller(actor, actor));
+  seed(lib, { id: 'me-other-tenant', email: OTHER, project: 'PRJ-ME-TENANT-B', title: 'There', source: actor, tenant: B });
+  const { response, body } = await meErase(sql, actor);
+  assert.equal(response.status, 200);
+  assert.match(lib.rows('SELECT source FROM invitations WHERE id = ?', sent.id)[0].source, ERASED);
+  assert.equal(lib.rows('SELECT source, tenant FROM invitations WHERE id = ?', 'me-other-tenant')[0].source, actor);
+  assert.equal(lib.rows('SELECT tenant FROM invitations WHERE id = ?', 'me-other-tenant')[0].tenant, B);
+  assert.equal(body.counts.invitationSources, 1);
+});
+
+// Pinning. A legacy row stored as the 60-character prefix of a longer sender
+// stays, and the receipt does not count it. That is the documented residual.
+test('pinning: POST /api/me/erase leaves a legacy 60-character prefix and does not count it', async () => {
+  const sql = memorySql();
+  const lib = new Library(sql, { now: () => STAMP });
+  const prefix = str(LONG_MAIL, 60);
+  assert.equal(prefix.length, 60);
+  assert.notEqual(prefix, LONG_MAIL);
+  seed(lib, { id: 'me-legacy', email: OTHER, project: 'PRJ-ME-LEGACY', title: 'Legacy', source: prefix, tenant: A });
+  const { response, body } = await meErase(sql, LONG_MAIL);
+  assert.equal(response.status, 200);
+  assert.equal(lib.rows('SELECT source FROM invitations WHERE id = ?', 'me-legacy')[0].source, prefix);
+  assert.equal(Object.hasOwn(body.counts, 'invitationSources'), false);
+  assert.equal(Object.hasOwn(body.counts, 'invitations'), false);
 });
 
 test('with enforcement off, a blank tenant can update its invitation and a present tenant cannot', () => {
