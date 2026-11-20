@@ -559,4 +559,74 @@ describe('access identity change, required plan changes', { concurrency: false }
     assert.equal(res.status, 200);
     assert.deepEqual(opened, ['global']);
   });
+
+  test('every durable object forward drops the bound headers', async () => {
+    const tid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const oid = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const sub = tid + ':' + oid;
+    const adaEmail = 'ada@example.test';
+    const token = await jwt({ sub: 'cf-' + oid, email: adaEmail, custom: { tid, oid } });
+    const { binding, forwarded, opened } = recordingBindings();
+    const { env } = entraBase(binding, binding);
+    const boot = await (await handle(new Request(ORIGIN + '/api/bootstrap', {
+      headers: { 'cf-access-jwt-assertion': token },
+    }), env, '')).json();
+    const subject = await subjectBound(sub);
+    const emailKey = await emailBound(adaEmail);
+    const bound = {
+      'X-Atlas-Bound-Subject': subject,
+      'X-Atlas-Bound-Email': emailKey,
+      'X-Atlas-CSRF': boot.csrf,
+      Origin: ORIGIN,
+    };
+    const pcm = new Uint8Array(4800);
+    const project = JSON.stringify({ project: { title: 'Synthetic', role: '', sector: '', stage: '', answers: ['one change', '', '', '', '', ''] } });
+    const routes = [
+      ['consent', ORIGIN + '/api/consent', { method: 'POST', body: '{}', headers: { ...bound, 'Content-Type': 'application/json' } }],
+      ['me/erase', ORIGIN + '/api/me/erase', { method: 'POST', body: '{"confirmed":true}', headers: { ...bound, 'Content-Type': 'application/json' } }],
+      ['me/export', ORIGIN + '/api/me/export', { method: 'GET', headers: { ...bound } }],
+      ['memory', ORIGIN + '/api/memory', { method: 'GET', headers: { ...bound } }],
+      ['sheet', ORIGIN + '/api/sheet/ingest', { method: 'POST', body: 'synthetic-bytes', headers: { ...bound, 'Content-Type': 'application/octet-stream' } }],
+      ['transcribe', ORIGIN + '/api/transcribe', { method: 'POST', body: pcm, headers: { ...bound, 'Content-Type': 'audio/L16;rate=24000', 'X-Atlas-Consent': 'spoken-ask-v1; once' } }],
+      ['jev/classify', ORIGIN + '/api/jev/classify', { method: 'POST', body: project, headers: { ...bound, 'Content-Type': 'application/json' } }],
+      ['library GET', ORIGIN + '/api/library/journey', { method: 'GET', headers: { ...bound } }],
+      ['library POST', ORIGIN + '/api/library', { method: 'POST', body: '{}', headers: { ...bound, 'Content-Type': 'application/json' } }],
+      ['privacy delete', ORIGIN + '/api/library/privacy/delete', { method: 'POST', body: '{}', headers: { ...bound, 'Content-Type': 'application/json' } }],
+      ['voice', ORIGIN + '/api/voice', { method: 'GET', headers: { ...bound, Upgrade: 'websocket', 'Sec-WebSocket-Protocol': 'atlas-bound-' + subject } }],
+    ];
+    const Real = globalThis.Response;
+    globalThis.Response = class extends Real {
+      constructor(body, init = {}) {
+        if (init && Number(init.status) === 101) {
+          return { status: 101, headers: new Headers(init.headers || {}), text: async () => '', json: async () => ({}) };
+        }
+        return new Real(body, init);
+      }
+    };
+    const failures = [];
+    try {
+      for (const [name, url, init] of routes) {
+        forwarded.length = 0;
+        opened.length = 0;
+        const headers = { 'cf-access-jwt-assertion': token, ...init.headers };
+        await handle(new Request(url, { method: init.method, body: init.body, headers }), env, '', {
+          flagsOf: () => ({ spokenAsk: true }),
+        });
+        if (!forwarded.length) {
+          failures.push(name + ' forwarded nothing');
+          continue;
+        }
+        for (const req of forwarded) {
+          const subjectHeader = req.headers.get('x-atlas-bound-subject');
+          const emailHeader = req.headers.get('x-atlas-bound-email');
+          if (subjectHeader !== null || emailHeader !== null) {
+            failures.push(name + ' subject=' + subjectHeader + ' email=' + emailHeader);
+          }
+        }
+      }
+    } finally {
+      globalThis.Response = Real;
+    }
+    assert.deepEqual(failures, []);
+  });
 });
