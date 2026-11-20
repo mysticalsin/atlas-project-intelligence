@@ -1137,8 +1137,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/rating.js",
-      "bytes": 41279,
-      "sha256": "03eca830548b959174cc0578ea528b164682bd293dc310f0ae4f4cae311be9dc"
+      "bytes": 41612,
+      "sha256": "62b375f2d1c3b3bcacf0e140f4f188f8359be86b61e1765d289ac9ccfdf7c112"
     },
     {
       "path": "deploy/cloudflare-edge/src/report.js",
@@ -1547,8 +1547,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/rating.test.js",
-      "bytes": 72622,
-      "sha256": "f77a04b2aa3830666a9462158fe318075d9b78ac32941c5d73f7fa21bab72c0f"
+      "bytes": 74907,
+      "sha256": "4f0fe22dbfb989462dc32c38e9687e36cd3d196f0ece2c788362a6321b37760a"
     },
     {
       "path": "deploy/cloudflare-edge/test/reconnect-harness.js",
@@ -2282,8 +2282,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 349827,
-      "sha256": "b7ee5fa3594789a6e79013560d10b2ce469f9c2a7f41c0718f9fd6f5b784c65d"
+      "bytes": 352153,
+      "sha256": "6d9230d20f78694f53387917f818cf483a25f4ac27ba707b727fee63068876c1"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2382,8 +2382,8 @@
     },
     {
       "path": "handoff/decisions/rating-onend-throw.md",
-      "bytes": 3952,
-      "sha256": "862de4e803dcd6498368175a619f09ff12a34a7e8c77b4123fdaeb86d0534b65"
+      "bytes": 6979,
+      "sha256": "e63fee010b319e47d2ac6a7260b1cf7906916e6a8b4ef4cde15eea3029510847"
     },
     {
       "path": "handoff/decisions/record-dialog-quality-crash.md",

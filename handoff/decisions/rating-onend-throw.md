@@ -78,3 +78,47 @@ Revert this branch to main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. No migrat
 ## Loops
 
 Verify and QA loops are capped at 3. A failed gate is fixed only for the failure that was shown.
+
+## Round 1 — order and the observer error
+
+Devin's exact-head gate on `85cea81320743b098eac851f24d92e43a0f1f457` (tree `b5d7e26397eee3c287b1ebc4311bd0ff9ac7f42a`) was code incomplete. Two gaps:
+
+- Moving `onEnd` above `resolve` and keeping the `try/catch` still settled, and all 39 tests passed.
+- The `catch` discarded the observer error.
+
+The contract stays: resolve the outcome, then call `onEnd`. A throw does not reject. The `catch` now reports it. `emit` writes `{ atlas_metric: 'rating', event: 'onend_throw', name }`. `name` is the error name when it is a short identifier, otherwise `Error`. The message and the key are not logged. A throw from the logger is caught and does not unsettle the promise.
+
+On this head, `deploy/cloudflare-edge/src/rating.js` `end` is:
+
+- Line 498 calls `resolve(result)`.
+- Line 500 calls `opts.onEnd(result)` inside `try`.
+- Line 501 catches the observer error.
+- Line 504 calls `emit`.
+
+### Tests
+
+File: `deploy/cloudflare-edge/test/rating.test.js`
+
+- `resolve runs before onEnd and a throw still settles` records the `resolve` of the outcome (`ok` and `attempts`) and requires that record before `onEnd`. The promise still resolves when `onEnd` throws.
+- `a throwing onEnd is reported and the rating still resolves` requires the log line above, the existing success keys, and no key or observer message in the log. The promise still resolves.
+
+The three earlier tests stay.
+
+TEST COMMAND is the same:
+
+```sh
+cd deploy/cloudflare-edge && node --test test/rating.test.js
+```
+
+Red commit `9385eb713019e554c25f2449e294e8d7d0d687fd` adds those tests and does not change `rating.js`. Exit 1. 41 tests, 40 pass, 1 fail: `a throwing onEnd is reported and the rating still resolves` (the log is `[]`). The order test passed on that commit because `resolve` was already first.
+
+Fix commit `88d9b96d1037d03331d25f7e24835edfd400bdd2`. Same command: exit 0, 41 pass, 0 fail. `rating.js` sha256 `62b375f2d1c3b3bcacf0e140f4f188f8359be86b61e1765d289ac9ccfdf7c112`.
+
+### Mutants
+
+Each mutant was restored. `rating.js` is that same sha256. None of these are committed.
+
+- `onEnd` above `resolve`, `try/catch` and the log kept: exit 1, 41 tests, 40 pass, 1 fail. Kills `resolve runs before onEnd and a throw still settles`. Actual order `['onEnd', 'resolve']`, expected `['resolve', 'onEnd']`. The report test stayed green, and the throw still settled.
+- Empty `catch` (the error is discarded again), `resolve` stays first: exit 1, 41 tests, 40 pass, 1 fail. Kills `a throwing onEnd is reported and the rating still resolves` (the log is `[]`). The order test stayed green.
+- Drop the `try` and leave `resolve` first: exit 1, 41 tests, 39 pass, 2 fail. Kills `a throwing onEnd does not escape the rating call` (`1 !== 0`) and `a throwing onEnd is reported and the rating still resolves`.
+- Call `onEnd` twice inside the `try`: exit 1, 41 tests, 39 pass, 2 fail. Kills `a normal onEnd runs exactly once` (`2 !== 1`) and the existing `end() after settle does not resolve or callback again` (`2 !== 1`).

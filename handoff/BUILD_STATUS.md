@@ -1,6 +1,23 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-20 — onEnd order and the observer log (`cursor/atlas-rating-onend-throw`, round 1)
+
+Devin's exact-head gate on `85cea81320743b098eac851f24d92e43a0f1f457` (tree `b5d7e26397eee3c287b1ebc4311bd0ff9ac7f42a`) was code incomplete. Moving `onEnd` above `resolve` while keeping the `try/catch` still settled, and the 39 rating tests still passed. The `catch` also discarded the observer error.
+
+Decision, also in `handoff/decisions/rating-onend-throw.md`: `resolve` stays first. The `catch` reports `{ atlas_metric: 'rating', event: 'onend_throw', name }` through the existing rating `emit`. `name` is a short error name, otherwise `Error`. The message and the key are not logged. A throw from the logger does not unsettle the promise. The promise still resolves. It does not reject. No page rebuild.
+
+Red tests are `9385eb713019e554c25f2449e294e8d7d0d687fd`. That commit does not change `rating.js` and does not refresh `MANIFEST.json`. `cd deploy/cloudflare-edge && node --test test/rating.test.js` on it: exit 1, 41 tests, 40 pass, 1 fail (`a throwing onEnd is reported and the rating still resolves`, log `[]`). `resolve runs before onEnd and a throw still settles` passed there because `resolve` was already first.
+
+The fix is `88d9b96d1037d03331d25f7e24835edfd400bdd2`. Same command: exit 0, 41 pass, 0 fail. `rating.js` sha256 `62b375f2d1c3b3bcacf0e140f4f188f8359be86b61e1765d289ac9ccfdf7c112`. `MANIFEST.json` is regenerated after this note.
+
+Mutants, each restored, not committed. `rating.js` restored to that sha256.
+
+- `onEnd` above `resolve`, `try/catch` and the log kept: exit 1, 41 tests, 40 pass, 1 fail. Kills `resolve runs before onEnd and a throw still settles` (actual `['onEnd', 'resolve']`). The report test stayed green and the throw still settled.
+- Empty `catch`, `resolve` stays first: exit 1, 41 tests, 40 pass, 1 fail. Kills `a throwing onEnd is reported and the rating still resolves` (log `[]`). The order test stayed green.
+- Drop the `try`, `resolve` stays first: exit 1, 41 tests, 39 pass, 2 fail. Kills `a throwing onEnd does not escape the rating call` (`1 !== 0`) and the report test.
+- Call `onEnd` twice inside the `try`: exit 1, 41 tests, 39 pass, 2 fail. Kills `a normal onEnd runs exactly once` (`2 !== 1`) and `end() after settle does not resolve or callback again` (`2 !== 1`).
+
 ## 2026-11-20 — throwing rating onEnd (`cursor/atlas-rating-onend-throw`)
 
 ATLAS-R15-ONEND-THROW-UNSETTLED. Low. Base `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. On the parent, `deploy/cloudflare-edge/src/rating.js` `end` calls `opts.onEnd` after `settled = true` and before `resolve`. A throw skips `resolve`, and the late path returns because `settled` is already true. `rate()` never finishes. Production callers do not pass `onEnd`.
