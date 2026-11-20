@@ -39,9 +39,15 @@ State-machine discovery skipped. This does not add or change a status, a phase, 
 
 ## Decision
 
-The UI treats a missing `blockers`, `missing`, `issues`, or `recommendations` array as empty, with the same `?.length` already used for `holds`. An empty list renders nothing. That is the existing branch. No new sentence is added.
+The UI treats a missing `blockers`, `missing`, `issues`, or `recommendations` array as empty, with the same `?.length` already used for `holds`. An empty list renders nothing. That is the existing branch. No new sentence is added. `issues` and `recommendations` are in the guard because the seed omits them too. Stopping after `blockers` and `missing` still throws on the next line.
+
+A missing `aiScore` is not a number. The old check was `!== null`, so an omitted score was concatenated and the dialog printed the word `undefined` after "review agent". The rater already stores `null` to hide that suffix. The comparison is now `!= null`, which keeps a real score, including 0, and hides both `null` and a missing key. Threshold and completeness stay the existing labels. No new sentence.
 
 The seed does not gain empty arrays. Filling `blockers` and `missing` on the seed would hide the crash, and reverting the guard would leave the new test green. The test requires the Northwind quality object to stay exactly `{status, score, engine}`.
+
+## Red on the parent
+
+Test commit `87bb28c6f5423a0343643dc723ee2a457956b738`. `src/app.js`, the seed, and the built page matched main `c14302590e78b0319baab5893ef8c378b1c0bdf1`. Exit 1. The seed checks passed. The first dialog check failed: `reviewer 320 dialog renders the sparse quality record`. The page error was `Cannot read properties of undefined (reading 'length')`. The dialog did not open.
 
 ## Rollback
 
