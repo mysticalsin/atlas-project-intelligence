@@ -1472,3 +1472,136 @@ def test_stale_git_home_is_swept_at_start(tmp_path, monkeypatch):
         assert active.is_dir()
     finally:
         handoff._GIT_HOME = previous
+
+
+def test_git_home_age_threshold_is_the_literal_day(tmp_path, monkeypatch):
+    """86399 and 86400 stay. 86401 is removed. The constant is 86400, not a copy of itself."""
+    import scripts.check_handoff as handoff
+    assert handoff._STALE_GIT_HOME_SECONDS == 86400
+    private = tmp_path / 'tmp'
+    private.mkdir()
+    monkeypatch.setattr(handoff.tempfile, 'gettempdir', lambda: str(private))
+    now = 1_700_000_000.0
+    under = private / 'atlas-git-home-under'
+    exact = private / 'atlas-git-home-exact'
+    over = private / 'atlas-git-home-over'
+    for path, age in ((under, 86399), (exact, 86400), (over, 86401)):
+        path.mkdir()
+        when = now - age
+        os.utime(path, (when, when))
+    previous = handoff._GIT_HOME
+    handoff._GIT_HOME = None
+    try:
+        handoff._sweep_stale_git_homes(now=now)
+        assert under.is_dir()
+        assert exact.is_dir()
+        assert not over.exists()
+    finally:
+        handoff._GIT_HOME = previous
+
+
+def test_stale_git_home_symlink_is_not_followed(tmp_path, monkeypatch):
+    import ast
+    import inspect
+    import scripts.check_handoff as handoff
+    private = tmp_path / 'tmp'
+    private.mkdir()
+    monkeypatch.setattr(handoff.tempfile, 'gettempdir', lambda: str(private))
+    now = 1_700_000_000.0
+    target = private / 'real-target'
+    target.mkdir()
+    marker = target / 'keep.txt'
+    marker.write_text('keep', encoding='utf-8')
+    os.utime(target, (now - 86401, now - 86401))
+    link = private / 'atlas-git-home-link'
+    link.symlink_to(target, target_is_directory=True)
+    os.utime(link, (now - 86401, now - 86401), follow_symlinks=False)
+    stale = private / 'atlas-git-home-real'
+    stale.mkdir()
+    os.utime(stale, (now - 86401, now - 86401))
+    real_rmtree = handoff.shutil.rmtree
+
+    def wrapped(path, *args, **kwargs):
+        if os.path.islink(path):
+            raise AssertionError('reaper called rmtree on a symlink')
+        return real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(handoff.shutil, 'rmtree', wrapped)
+    previous = handoff._GIT_HOME
+    handoff._GIT_HOME = None
+    try:
+        handoff._sweep_stale_git_homes(now=now)
+    finally:
+        handoff._GIT_HOME = previous
+    assert link.is_symlink()
+    assert target.is_dir()
+    assert marker.read_text(encoding='utf-8') == 'keep'
+    assert not stale.exists()
+    source = inspect.getsource(handoff._sweep_stale_git_homes)
+    tree = ast.parse(source)
+    guarded = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.If)
+        and any(isinstance(item, ast.Attribute) and item.attr == 'S_ISLNK' for item in ast.walk(node.test))
+        and any(isinstance(item, ast.Continue) for item in node.body)
+    ]
+    assert guarded, 'the reaper must continue on a symlink before it removes anything'
+
+
+def test_sigterm_orphaned_git_home_is_swept_after_the_window(tmp_path, monkeypatch):
+    import signal
+    import time
+    import scripts.check_handoff as handoff
+    private = tmp_path / 'tmp'
+    private.mkdir()
+    repo = Path(__file__).resolve().parents[1]
+    script = (
+        'import pathlib\n'
+        'import scripts.check_handoff as handoff\n'
+        'home = handoff.git_environ()["HOME"]\n'
+        'pathlib.Path(home, "marker").write_text("orphan", encoding="utf-8")\n'
+        'print(home, flush=True)\n'
+        'import time\n'
+        'time.sleep(60)\n'
+    )
+    env = os.environ.copy()
+    env['TMPDIR'] = str(private)
+    env['TEMP'] = str(private)
+    env['TMP'] = str(private)
+    proc = subprocess.Popen(
+        [sys.executable, '-c', script],
+        cwd=repo,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        line = proc.stdout.readline()
+        if not line:
+            proc.kill()
+            proc.wait(timeout=10)
+            raise AssertionError(proc.stderr.read())
+        home = Path(line.strip())
+        proc.send_signal(signal.SIGTERM)
+        rc = proc.wait(timeout=10)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=10)
+    assert rc < 0
+    assert home.is_dir()
+    assert (home / 'marker').read_text(encoding='utf-8') == 'orphan'
+    monkeypatch.setattr(handoff.tempfile, 'gettempdir', lambda: str(private))
+    previous = handoff._GIT_HOME
+    handoff._GIT_HOME = None
+    try:
+        now = time.time()
+        handoff._sweep_stale_git_homes(now=now)
+        assert home.is_dir()
+        aged = now - 86401
+        os.utime(home, (aged, aged))
+        handoff._sweep_stale_git_homes(now=now)
+        assert not home.exists()
+    finally:
+        handoff._GIT_HOME = previous
