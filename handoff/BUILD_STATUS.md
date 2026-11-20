@@ -1,6 +1,29 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-20 — check_handoff fence loop 3 (`cursor/atlas-checkhandoff-nested-git`)
+
+Final loop. Red tests are `9ec906ba30502d116bf83dd5970be6248cea68bb`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `e36aa900ad93a4833af6e925a186cf6a7eacc675`. `MANIFEST.json` is regenerated after this note.
+
+Before any code, the working tree and `git ls-files` were scanned for a path component with a character above U+007F. The count was 0, including `.git` (697 tracked paths, 0 non-ASCII). PR 13 was still open; `origin/main` was still `3d9239c112b5c5853fc49ce15424bbd29d94cfb2`. No merge.
+
+Owner decision, 2026-11-20, Atlas, also in `handoff/decisions/check-handoff-git-metadata.md`:
+
+- Refuse any non-ASCII path component in inspect, verify-package, write-manifest, and `--dev-git-index`. The message contains `refused: non-ASCII path component` and the command exits 1. The confusable fold table is gone.
+- ASCII components still casefold and drop trailing dots and spaces. `::$INDEX_ALLOCATION` is still stripped. A backslash spelling is still split and reported as `refused:`.
+- After casefold, a component matching `^git~[0-9]+(\..*)?$` is refused (`GIT~1`, `GIT~1.DIR`, `git~12.x`).
+- `.gitignore`, `.gitattributes`, `.github/`, `something.git`, and `foo/.git.bak` stay allowed.
+
+Still open after this loop: SIGKILL does not run `atexit`, so the one `atlas-git-home-*` directory can remain. That is the only residual.
+
+Accepted, not open: a caller `ATLAS_HOME_URL` is not visible to the rebuild. The rebuild bakes `deploy/cloudflare-edge/wrangler.jsonc` `vars.ORIGIN`.
+
+Red on `9ec906b`, the nine new tests only: 9 failed, exit 1. An excluded `café.txt` and components U+0131, U+0456, U+0261, and U+2024 were certified. `GIT~1.DIR` and `git~12.x` were certified. `--write-manifest` exited 0.
+
+Mutants, each exit 1, checker restored to sha256 `03960268d94974b18f76b24295778b4faef6c1ec6d63f955c8f6e73a59c68d77`: ordering, present, rebuild-env, git-home, case, followlinks, atexit, normalization, dev-nested, symlink-control, environ-control, non-ASCII refusal removed, short-name regex reverted to `^git~[0-9]+$`.
+
+Suite counts are recorded after the full run on the manifest commit.
+
 ## 2026-11-20 — check_handoff fence loop 2 (`cursor/atlas-checkhandoff-nested-git`)
 
 Red tests are `8bd62711d902d6cc90373182580e0af5dd90c87e`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `d55ef53`. `MANIFEST.json` is regenerated after this note.

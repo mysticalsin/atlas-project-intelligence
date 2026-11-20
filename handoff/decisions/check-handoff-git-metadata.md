@@ -7,19 +7,25 @@ Owner: Atlas
 
 A path component is git metadata when it matches `.git` ignoring case (`str.casefold`). Windows and macOS fold `.GIT` onto `.git`. The fence is Windows-first. `.gitignore`, `.gitattributes`, `.github/`, `something.git`, and `foo/.git.bak` stay allowed.
 
-## Normalization (fail closed)
+## Normalization (ASCII only)
 
 Every call site uses one helper. There is no raw `.git` string compare outside that helper.
 
-Each component is normalized before the compare:
+An ASCII component is normalized before the compare:
 
 1. Strip a trailing `::$INDEX_ALLOCATION` suffix.
-2. NFKC, then casefold.
-3. Drop Unicode format characters (Cf: ZWSP, ZWNJ, BOM), space separators (Zs, including NBSP), and nonspacing marks (Mn).
-4. Map the confusable table: U+0131 dotless i, U+0456 Cyrillic i, U+0261 script g, U+2024 one-dot leader.
-5. Strip trailing dots.
+2. Casefold.
+3. Strip trailing dots and spaces.
 
-Refuse when the result is `.git`. Also refuse when the result is `git~` plus digits (the 8.3 short name `GIT~1`). A backslash spelling is split and then checked, so the report is `refused:` rather than `unlisted:`.
+Refuse when the result is `.git`. A backslash spelling is split and then checked, so the report is `refused:` rather than `unlisted:`.
+
+## Non-ASCII components (loop 3, fail closed)
+
+Owner decision, 2026-11-20, Atlas. Any path component with a character above U+007F is refused in inspect, verify-package, write-manifest, and `--dev-git-index`. The message contains `refused: non-ASCII path component` and the command exits 1. The confusable fold table is removed. The real repository and package were scanned before this change and contain no non-ASCII names, so `check_handoff . --dev-git-index` stays exit 0.
+
+## Short names
+
+After casefold, refuse a component matching `^git~[0-9]+(\..*)?$`. That covers `GIT~1`, `GIT~1.DIR`, and `git~12.x`.
 
 ## Dev checkout
 
@@ -28,5 +34,3 @@ Refuse when the result is `.git`. Also refuse when the result is `git~` plus dig
 ## Still open
 
 - SIGKILL does not run `atexit`, so the one `atlas-git-home-*` directory can remain.
-- A non-ASCII character outside NFKC, casefold, Cf/Zs/Mn removal, trailing-dot strip, and the fold table above is not refused.
-- A short name that is not exactly `git~<digits>` after that fold (for example `GIT~1.DIR`) is not refused.
