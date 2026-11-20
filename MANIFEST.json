@@ -1137,8 +1137,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/rating.js",
-      "bytes": 41181,
-      "sha256": "5a85d3c43c5b58162255f9fc469f3ac2ce0e106e57b550df3c257a458fb072f6"
+      "bytes": 41612,
+      "sha256": "62b375f2d1c3b3bcacf0e140f4f188f8359be86b61e1765d289ac9ccfdf7c112"
     },
     {
       "path": "deploy/cloudflare-edge/src/report.js",
@@ -1547,8 +1547,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/rating.test.js",
-      "bytes": 67951,
-      "sha256": "02f2ba24fe10aff30b2a25b9769061f8022275f72e5269e96320d1ba74a903eb"
+      "bytes": 74907,
+      "sha256": "4f0fe22dbfb989462dc32c38e9687e36cd3d196f0ece2c788362a6321b37760a"
     },
     {
       "path": "deploy/cloudflare-edge/test/reconnect-harness.js",
@@ -2282,8 +2282,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 346929,
-      "sha256": "311bfd60630ba451016b72b88b0b6a981fd92c70e54ef68b5d665c65b2522b05"
+      "bytes": 353141,
+      "sha256": "645d4c8805ab392e29a436a3984f81bd2fcb84875ef3ba882a5c65fa9df90796"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2379,6 +2379,11 @@
       "path": "handoff/decisions/pr12-plan-debate.md",
       "bytes": 20111,
       "sha256": "769afc405efedae63d393361a2aa7b6826862586e370f957b8e297e94b6c0c15"
+    },
+    {
+      "path": "handoff/decisions/rating-onend-throw.md",
+      "bytes": 6979,
+      "sha256": "e63fee010b319e47d2ac6a7260b1cf7906916e6a8b4ef4cde15eea3029510847"
     },
     {
       "path": "handoff/decisions/record-dialog-quality-crash.md",
