@@ -1,0 +1,189 @@
+"""The Northwind seed must not print blank threshold or completeness labels, and a
+corrupt stored list must open the dialog instead of rejecting.
+  CHROMIUM_PATH=/usr/bin/google-chrome python3 tests/record_dialog_lows_browser.py
+"""
+import json, os, socket, subprocess, time, urllib.parse, urllib.request
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+ROOT = Path(__file__).resolve().parents[1]
+EDGE = ROOT / 'deploy/cloudflare-edge'
+PASSED, FAILED, ERR = [], [], []
+def check(name, ok, detail=''):
+    print(('PASS ' if ok else 'FAIL ') + name + ((' :: ' + detail) if detail and not ok else ''))
+    (PASSED if ok else FAILED).append(name)
+s = socket.socket(); s.bind(('127.0.0.1', 0)); PORT = s.getsockname()[1]; s.close()
+BASE = f'http://127.0.0.1:{PORT}'
+srv = subprocess.Popen(['node', '--no-warnings', 'dev/local-edge.mjs', str(PORT)], cwd=EDGE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+for _ in range(100):
+    try:
+        urllib.request.urlopen(BASE + '/__settle', timeout=1); break
+    except Exception:
+        time.sleep(.1)
+else:
+    raise SystemExit('local edge did not start')
+def edge_api(method, path):
+    q = 'as=' + urllib.parse.quote('admin@example.test') + '&idp=' + urllib.parse.quote(json.dumps({'roles': ['ATLAS.Admin']}))
+    url = BASE + path + ('&' if '?' in path else '?') + q
+    req = urllib.request.Request(url, method=method, headers={'Origin': BASE})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return r.status, json.loads(r.read() or b'{}')
+def snap(page):
+    return page.evaluate("""() => {
+      const norm = s => (s || '').replace(/\\s+/g, ' ').trim();
+      const line = document.querySelector('#recordBody .quality .impact-head span');
+      const center = document.querySelector('#recordBody .ag-center small');
+      const tracks = [...document.querySelectorAll('#recordBody .ag-legend.is-tracks li')].map(li => norm(li.innerText));
+      const tbd = [...document.querySelectorAll('#recordBody .ag-legend.is-tracks li')].filter(li => li.querySelector('.ag-meter.is-tbd')).map(li => norm(li.innerText));
+      return {
+        open: !!document.getElementById('recordDialog')?.open,
+        title: document.getElementById('recordTitle')?.textContent || '',
+        line: norm(line && line.textContent),
+        center: norm(center && center.textContent),
+        tracks,
+        tbd,
+        toast: norm(document.getElementById('toast')?.textContent),
+        body: norm(document.getElementById('recordBody')?.innerText),
+        quality: norm(document.querySelector('#recordBody .quality')?.innerText),
+        rejects: window.__atlasRejects || []
+      };
+    }""")
+def detail_of(view):
+    return 'open=%s title=%s line=%r center=%r tracks=%r tbd=%r toast=%r rejects=%r errors=%r' % (
+        view['open'], view['title'], view['line'], view['center'], view['tracks'], view.get('tbd'), view.get('toast'), view['rejects'], ERR)
+def seed_ok(view):
+    return (view['open'] and view['title'] == 'Northwind queue pilot' and 'Quality 80' in view['body']
+        and view['line'] == 'Ready for use' and view['center'] == 'of 100'
+        and 'threshold' not in view['line'] and 'completeness' not in view['line']
+        and 'Completeness' in view['tbd'] and all('0.8' not in t for t in view['tracks'])
+        and 'threshold 75' not in view['center']
+        and not view['rejects'] and not ERR)
+VARIANTS = [
+    ('non-array list opens with a safe empty list',
+     lambda q, d: q.__setitem__('blockers', 'not-an-array'),
+     lambda view: view['open'] and view['title'] == 'Northwind queue pilot' and 'Blocking publication' not in view['body'] and 'not-an-array' not in view['body'] and not view['rejects'] and not ERR),
+    ('null list opens with a safe fallback list',
+     lambda q, d: (q.__setitem__('blockers', None), d.__setitem__('answers', None)),
+     lambda view: view['open'] and view['title'] == 'Northwind queue pilot' and 'Not covered yet' in view['body'] and 'Blocking publication' not in view['body'] and not view['rejects'] and not ERR),
+    ('malformed JSON list opens with a safe empty list',
+     lambda q, d: d['details'].__setitem__('technologies', '[not-json'),
+     lambda view: view['open'] and view['title'] == 'Northwind queue pilot' and '[not-json' not in view['body'] and 'Missing - to confirm' in view['body'] and not view['rejects'] and not ERR),
+    ('wrong item types open with a safe empty list',
+     lambda q, d: (q.__setitem__('issues', [{'field': 'outcome', 'kind': 1, 'detail': 'n'}, 'vague']), d['details'].__setitem__('consultants', [None])),
+     lambda view: view['open'] and view['title'] == 'Northwind queue pilot' and 'Issues found' not in view['body'] and 'undefined' not in view['body'] and not view['rejects'] and not ERR),
+    ('object list items render a field or nothing',
+     lambda q, d: (q.__setitem__('blockers', [{'label': 'Queue delay'}, {'a': 1}, None, 'plain']), q.__setitem__('holds', [{'name': 'A hold'}]), q.__setitem__('missing', [{'text': 'A gap'}]), q.__setitem__('recommendations', [{'label': 'Rewrite the metric'}])),
+     lambda view: view['open'] and 'Queue delay' in view['body'] and 'A hold' in view['body'] and 'A gap' in view['body'] and 'Rewrite the metric' in view['body'] and 'plain' in view['body'] and '[object Object]' not in view['body'] and not view['rejects'] and not ERR),
+    ('consultant array items do not render as undefined',
+     lambda q, d: d['details'].__setitem__('consultants', [1, {'name': 5}, ['x']]),
+     lambda view: view['open'] and 'undefined' not in view['body'] and '[object Object]' not in view['body'] and not view['rejects'] and not ERR),
+    ('a nameless object list item is dropped and not JSON',
+     lambda q, d: q.__setitem__('blockers', [{'a': 1}, {}, {'label': {'nested': True}}, {'name': None}, {'text': ''}]),
+     lambda view: view['open'] and 'Blocking publication' not in view['quality'] and '{' not in view['quality'] and '"' not in view['quality'] and '[object Object]' not in view['quality'] and not view['rejects'] and not ERR),
+]
+BOOM = """
+(() => {
+  const orig = window.fetch;
+  window.fetch = async function(input, init) {
+    const res = await orig.apply(this, arguments);
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    const path = url.split('?')[0];
+    const method = (init && init.method) || 'GET';
+    if (method !== 'GET' || !/\\/api\\/library\\/[^/]+$/.test(path)) return res;
+    let data;
+    try { data = await res.clone().json(); } catch (e) { return res; }
+    if (!data || typeof data !== 'object') return res;
+    const boom = new Proxy(data, { get(target, prop, receiver) {
+      if (prop === 'data') throw new Error('record field threw');
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === 'function' ? value.bind(target) : value;
+    } });
+    return { ok: res.ok, status: res.status, json: async () => boom };
+  };
+})();
+"""
+# JSON cannot keep a url property on an array, so this check attaches one after parse.
+ARRAY_LINK = """
+(() => {
+  const orig = window.fetch;
+  window.fetch = async function(input, init) {
+    const res = await orig.apply(this, arguments);
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    const path = url.split('?')[0];
+    const method = (init && init.method) || 'GET';
+    if (method !== 'GET' || !/\\/api\\/library\\/[^/]+$/.test(path)) return res;
+    let data;
+    try { data = await res.clone().json(); } catch (e) { return res; }
+    if (!data || !data.data || !data.data.details) return res;
+    const link = ['not-a-url-field'];
+    link.url = 'https://array-link.example/secret';
+    link.label = 'Array link';
+    data.data.details.links = [{label: 'Ticket', url: 'https://ok.example/1'}, link];
+    return { ok: res.ok, status: res.status, json: async () => data };
+  };
+})();
+"""
+try:
+    status, listing = edge_api('GET', '/api/library')
+    item = next((i for i in listing.get('items', []) if i.get('title') == 'Northwind queue pilot'), None)
+    check('seeded Northwind record is listed', status == 200 and bool(item))
+    status, rec = edge_api('GET', '/api/library/' + item['id'])
+    quality = rec.get('state', {}).get('quality')
+    check('seeded quality is status, score and engine only', status == 200 and quality == {'status': 'ready', 'score': 80, 'engine': 'rules'})
+    rid = item['id']
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH') or None)
+        def open_record(width, mutate=None, boom=False, script=None):
+            ERR.clear()
+            ctx = browser.new_context(viewport={'width': width, 'height': 800})
+            page = ctx.new_page()
+            page.add_init_script("window.__atlasRejects=[];window.addEventListener('unhandledrejection',e=>{window.__atlasRejects.push(String(e.reason&&e.reason.stack||e.reason));});")
+            if boom:
+                page.add_init_script(BOOM)
+            if script:
+                page.add_init_script(script)
+            page.on('pageerror', lambda e: ERR.append('pageerror: ' + str(e)))
+            if mutate:
+                def handle(route):
+                    url = route.request.url.split('?', 1)[0]
+                    if route.request.method != 'GET' or not url.endswith('/api/library/' + rid):
+                        route.fallback(); return
+                    response = route.fetch()
+                    payload = json.loads(response.body().decode() or '{}')
+                    mutate(payload['state']['quality'], payload['data'])
+                    route.fulfill(status=response.status, json=payload)
+                page.route('**/api/library/**', handle)
+            email = urllib.parse.quote('admin@example.test')
+            idp = urllib.parse.quote(json.dumps({'roles': ['ATLAS.Admin']}))
+            page.goto(BASE + '/?as=' + email + '&idp=' + idp)
+            page.wait_for_timeout(400)
+            page.goto(BASE + '/#library/' + rid)
+            try:
+                page.wait_for_function("() => document.getElementById('recordDialog')?.open || (window.__atlasRejects && window.__atlasRejects.length)", timeout=4000)
+            except Exception:
+                pass
+            page.wait_for_timeout(200)
+            view = snap(page)
+            if os.environ.get('SHOTS'):
+                target = Path(os.environ['SHOTS']) / f'record-dialog-{width}.png'
+                (page.locator('#recordDialog') if view['open'] else page).screenshot(path=str(target))
+            ctx.close()
+            return view
+        for width in (1280, 375, 320):
+            view = open_record(width)
+            check(f'seed record at {width} renders with no blank labels', seed_ok(view), detail_of(view))
+        os.environ.pop('SHOTS', None)
+        for name, mutate, ok in VARIANTS:
+            view = open_record(1280, mutate)
+            check(name, ok(view), detail_of(view))
+        view = open_record(1280)
+        check('completeness placeholder stays and the formula note does not', view['open'] and 'Completeness' in view['tbd'] and all('0.8' not in t for t in view['tracks']) and not view['rejects'] and not ERR, detail_of(view))
+        view = open_record(1280, boom=True)
+        check('a throwing record field does not reject', (not view['open']) and 'record field threw' in view['toast'] and not view['rejects'] and not ERR, detail_of(view))
+        view = open_record(1280, script=ARRAY_LINK)
+        check('an array link is dropped and an object link stays', view['open'] and 'Ticket: https://ok.example/1' in view['body'] and 'array-link.example' not in view['body'] and 'Array link' not in view['body'] and 'not-a-url-field' not in view['body'] and not view['rejects'] and not ERR, detail_of(view))
+        browser.close()
+finally:
+    srv.terminate()
+print(f'{len(PASSED)} pass, {len(FAILED)} fail')
+if FAILED or ERR:
+    raise SystemExit(1)

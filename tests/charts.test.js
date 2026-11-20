@@ -312,3 +312,6 @@ test('U4 no key, no change: without opts.jev the gauge is byte-identical to the 
   assert.equal(C.qualityGauge(q,o),want,k+' '+JSON.stringify(o));if(!(o&&o.admin))assert.ok(!/JEV|TypeSafe/.test(C.qualityGauge(q,o)),k+' says nothing about JEV');}
  assert.ok(!C.qualityGauge(F.cases.reviewAgentNoKey,{jev:false}).includes('BLOCKED_EXTERNAL'),'nobody but an admin sees the hint');
  const J=C.qualityGauge(F.cases.reviewAgentNoKey,{jev:true,admin:true});assert.ok(J.includes('JEV: BLOCKED_EXTERNAL, needs TYPESAFE_API_KEY'));});
+
+test('a missing completeness keeps the is-tbd placeholder and hides the 0.8 formula',()=>{const h=C.qualityGauge({score:80,status:'ready',engine:'rules'});
+ assert.ok(h.includes('<span>Completeness</span><div class="ag-meter is-tbd"></div>'),'placeholder');assert.ok(!h.includes('score = 0.8'),'formula');});

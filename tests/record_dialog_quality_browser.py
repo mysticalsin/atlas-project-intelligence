@@ -68,7 +68,7 @@ try:
                     (page.locator('#recordDialog') if opened else page).screenshot(path=str(target))
                 check(label + ' dialog renders the sparse quality record', opened and title == 'Northwind queue pilot' and 'Quality 80' in body and 'Reference details' in body)
                 line = page.locator('#recordBody .quality .impact-head span').inner_text()
-                check(label + ' missing aiScore renders the quality line', line == 'Ready for use · threshold · completeness')
+                check(label + ' missing aiScore renders the quality line', line == 'Ready for use')
                 def with_zero(route):
                     url = route.request.url.split('?', 1)[0]
                     if route.request.method != 'GET' or not url.endswith('/api/library/' + rid):
@@ -85,7 +85,7 @@ try:
                 page.wait_for_timeout(1200)
                 zero_open = page.evaluate("() => !!document.getElementById('recordDialog')?.open")
                 zero = page.locator('#recordBody .quality .impact-head span').inner_text()
-                check(label + ' aiScore 0 renders the quality line', zero_open and zero == 'Ready for use · threshold · completeness · review agent 0')
+                check(label + ' aiScore 0 renders the quality line', zero_open and zero == 'Ready for use · review agent 0')
                 check(label + ' no console error', not ERR)
                 ctx.close()
         browser.close()

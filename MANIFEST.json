@@ -622,23 +622,23 @@
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924841,
+      "sha256": "a67b88e1aee140292de864fba322d3c3d6963c34fa77a2e74839e8e88c7ad0da"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924841,
+      "sha256": "a67b88e1aee140292de864fba322d3c3d6963c34fa77a2e74839e8e88c7ad0da"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924841,
+      "sha256": "a67b88e1aee140292de864fba322d3c3d6963c34fa77a2e74839e8e88c7ad0da"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924841,
+      "sha256": "a67b88e1aee140292de864fba322d3c3d6963c34fa77a2e74839e8e88c7ad0da"
     },
     {
       "path": "CLAUDE.md",
@@ -652,8 +652,8 @@
     },
     {
       "path": "Makefile",
-      "bytes": 1916,
-      "sha256": "a8625edc3eec8bd3a37a87b5af306d08b525ec82df6050b7c7028604de80f140"
+      "bytes": 1963,
+      "sha256": "77aa648a5fccdf17ee2a745c77ce05dfd729e3b271df7add6d0a16d926108b09"
     },
     {
       "path": "Preview.command",
@@ -933,7 +933,7 @@
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
       "bytes": 146,
-      "sha256": "93196c1732d530e8a0ad455ed9b3198c7dd2df0457e1fd9b47582c5a456c0005"
+      "sha256": "15bd5bfe30a568f76ee92e95c8485d9363f196c37837775ed851c66529303364"
     },
     {
       "path": "deploy/cloudflare-edge/set-keys.sh",
@@ -998,7 +998,7 @@
     {
       "path": "deploy/cloudflare-edge/src/csp.generated.js",
       "bytes": 1675,
-      "sha256": "7d54de0b2fed28db9dd1f20106b9cf4526cadd3a9641495c3e68762620bd6dbf"
+      "sha256": "3da70adb5f8d840ba2e2e46a40a97cfe82462f88ee1cee143a7b2bdffaa5184a"
     },
     {
       "path": "deploy/cloudflare-edge/src/csp.js",
@@ -2282,8 +2282,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 346929,
-      "sha256": "311bfd60630ba451016b72b88b0b6a981fd92c70e54ef68b5d665c65b2522b05"
+      "bytes": 352204,
+      "sha256": "11df64e21682917f0bc361dbdbaca630d798d52e7d42d3f0eb77df9adc0b90f7"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2379,6 +2379,11 @@
       "path": "handoff/decisions/pr12-plan-debate.md",
       "bytes": 20111,
       "sha256": "769afc405efedae63d393361a2aa7b6826862586e370f957b8e297e94b6c0c15"
+    },
+    {
+      "path": "handoff/decisions/record-dialog-lows.md",
+      "bytes": 9860,
+      "sha256": "6a9aef473a2c8cd72911e3a91661272d8c3acbdbdd994b46d1c3890fe9d52cec"
     },
     {
       "path": "handoff/decisions/record-dialog-quality-crash.md",
@@ -2782,8 +2787,8 @@
     },
     {
       "path": "src/app.js",
-      "bytes": 146232,
-      "sha256": "43f6d8d62381d022a6cc09d6cc09084266875387761735380dcb5b9862eea186"
+      "bytes": 147029,
+      "sha256": "dd1cfa986c3f47ca294d8fb9e396b92ff03eb8b704d36cde228ee60051d5ef59"
     },
     {
       "path": "src/ask-ui.js",
@@ -2807,8 +2812,8 @@
     },
     {
       "path": "src/charts.js",
-      "bytes": 56971,
-      "sha256": "aada46b936099f53529e6bffb4e41ccb7b35d3d9249d236866dd4dbe999a89e5"
+      "bytes": 57000,
+      "sha256": "d1bf47dfb393407ef8ee353b579f2c06100ba8a317abede4e6753de884c949b4"
     },
     {
       "path": "src/docx.js",
@@ -3047,8 +3052,8 @@
     },
     {
       "path": "tests/charts.test.js",
-      "bytes": 47638,
-      "sha256": "c54a2ac9b43cbda9e91de73be6445c651cfcf24c355f3674fa4414c469bbd1ab"
+      "bytes": 47948,
+      "sha256": "4e35f03a7fc5df8cf5845fd1bb7efa9701de8c4f78a4b1a51652a65685b67def"
     },
     {
       "path": "tests/confirm_browser.py",
@@ -3221,9 +3226,19 @@
       "sha256": "733d8322199904034e848867907dd011e7a648125428963cc657b92ad3163e87"
     },
     {
+      "path": "tests/record_dialog_lows_browser.py",
+      "bytes": 11910,
+      "sha256": "902328af632938245fd5e1ceb7ac970d8f1ac157a320bb09f146f9aa2a6a6bc4"
+    },
+    {
+      "path": "tests/record_dialog_lows_gauge.test.js",
+      "bytes": 2253,
+      "sha256": "fca083390db3396912cd42f6fa9b8b7c49c9ec5e64cb2ef6ba3705006d60bd3a"
+    },
+    {
       "path": "tests/record_dialog_quality_browser.py",
-      "bytes": 5463,
-      "sha256": "6e941aea6aac9962c15d69b670fa4cec5015dddc46e41720e41aa91aef37df57"
+      "bytes": 5405,
+      "sha256": "1c5ba0f655bcb0f9783fdac609f45752755c1c542c52c616dfe3da4c56d22754"
     },
     {
       "path": "tests/refusal_browser.py",
