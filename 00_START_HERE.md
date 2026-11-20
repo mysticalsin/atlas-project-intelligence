@@ -38,7 +38,7 @@ Then install only the required local dependencies and run the complete tests des
 ```sh
 make verify-package PACKAGE=path/to/extracted-release
 ```
-`PACKAGE` is an extracted release directory or a `.zip` / `.tar` archive. The command checks that package against the `MANIFEST.json` inside it (`python3 scripts/check_handoff.py path/to/extracted-release` is the same check). Issue a new reviewed manifest when cutting a release package.
+`PACKAGE` is an extracted release directory or a `.zip` / `.tar` archive. The command checks that package against the `MANIFEST.json` inside it (`python3 scripts/check_handoff.py path/to/extracted-release` is the same check). On a git checkout use `make verify-dev-tree` or `python3 scripts/check_handoff.py . --dev-git-index` (never implicit `.git` detection on received packages). Issue a new reviewed manifest with `python3 scripts/check_handoff.py . --dev-git-index --write-manifest`.
 
 ## What is intentionally absent
 No API keys, Entra tenant configuration, hosted services, model weights, GPU runtime, installed virtualenv, customer data or font binaries are included. Those are deployment dependencies, not missing application source. The chosen Hindsight fork is pinned in `docs/SOURCE_LOCK.json`; it is not silently replaced with a claimed deployment.

@@ -1,6 +1,7 @@
 """Offline handoff utilities: no provider calls and no real credentials."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -8,7 +9,7 @@ import tarfile
 import zipfile
 import pytest
 from scripts.doctor import read_literal_env, probe, environment, main as doctor_main
-from scripts.check_handoff import safe_relative, inspect, main
+from scripts.check_handoff import safe_relative, inspect, main, git_environ, _GIT_INVOCATION, git_index_file_list
 
 
 def test_env_reads_literals_without_execution(tmp_path):
@@ -181,6 +182,28 @@ def synthetic_package(tmp_path, *, mutate=None, omit=None, extra=None):
     return root
 
 
+def real_release_package(tmp_path, *, extra=None):
+    """Minimal copy of the real release tree (all MANIFEST-listed files) for package-mode tests."""
+    repo = Path(__file__).resolve().parents[1]
+    manifest = json.loads((repo / 'MANIFEST.json').read_text(encoding='utf-8'))
+    root = tmp_path / 'release'
+    for row in manifest['files']:
+        rel = row['path']
+        src = repo / rel
+        if not src.is_file():
+            pytest.skip('release source missing: ' + rel)
+        dest = root / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(src.read_bytes())
+    (root / 'MANIFEST.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+    if extra:
+        for rel, data in extra.items():
+            path = root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+    return root
+
+
 def archive_of(root, dest, kind, prefix=''):
     files = [p for p in root.rglob('*') if p.is_file()]
     if kind == 'zip':
@@ -231,6 +254,434 @@ def test_unlisted_file_fails(tmp_path, capsys):
     assert 'FAIL manifest-content: unlisted: notes/extra.txt' in capsys.readouterr().out
 
 
+def _isolated_git_env(tmp_path):
+    home = tmp_path / 'home'
+    home.mkdir()
+    ident = {
+        'GIT_AUTHOR_NAME': 'atlas-handoff',
+        'GIT_AUTHOR_EMAIL': 'atlas@example.com',
+        'GIT_COMMITTER_NAME': 'atlas-handoff',
+        'GIT_COMMITTER_EMAIL': 'atlas@example.com',
+    }
+    full = {**os.environ, 'HOME': str(home), **ident}
+    bare = {**os.environ, 'HOME': str(home)}
+    return full, bare
+
+
+def test_git_dev_tree_untracked_file_fails_manifest(tmp_path):
+    """Listed index files plus an untracked notes/extra.txt must fail manifest-content."""
+    root = tmp_path / 'repo'
+    root.mkdir()
+    env_init, env_commit = _isolated_git_env(tmp_path)
+    subprocess.run(['git', 'init', '-q'], cwd=root, check=True, env=env_init)
+    (root / 'notes').mkdir()
+    (root / 'notes' / 'readme.txt').write_bytes(b'listed\n')
+    subprocess.run(['git', 'add', 'notes/readme.txt'], cwd=root, check=True, env=env_init)
+    subprocess.run(['git', 'commit', '-qm', 'init'], cwd=root, check=True, env=env_init)
+    (root / 'notes' / 'extra.txt').write_bytes(b'untracked\n')
+    data = b'listed\n'
+    manifest = {'files': [{'path': 'notes/readme.txt', 'bytes': len(data),
+                         'sha256': hashlib.sha256(data).hexdigest()}],
+                'manifest_excludes': ['MANIFEST.json']}
+    (root / 'MANIFEST.json').write_text(json.dumps(manifest), encoding='utf-8')
+    result = inspect(root, rebuild=False, dev_git_index=True)
+    assert not result['passed']
+    detail = next(c['detail'] for c in result['checks'] if c['name'] == 'manifest-content')
+    assert 'notes/extra.txt' in detail and ('unlisted:' in detail or 'untracked:' in detail)
+
+
+def test_node_modules_payload_fails_without_git(tmp_path, capsys):
+    package = synthetic_package(tmp_path, extra={'node_modules/payload.js': b'export default 1;\n'})
+    assert run_verify([str(package)]) == 1
+    assert 'unlisted: node_modules/payload.js' in capsys.readouterr().out
+
+
+def test_claude_payload_fails_without_git(tmp_path, capsys):
+    package = synthetic_package(tmp_path, extra={'.claude/payload.md': b'# not a release file\n'})
+    assert run_verify([str(package)]) == 1
+    assert 'unlisted: .claude/payload.md' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('rel,payload', [
+    ('node_modules/evil/index.js', b'module.exports = {};\n'),
+    ('.claude/settings.json', b'{"model": "evil"}\n'),
+    ('deploy/cloudflare-edge/node_modules/y/i.js', b'export default 1;\n'),
+])
+def test_real_manifest_hidden_payload_fails(tmp_path, capsys, rel, payload):
+    package = real_release_package(tmp_path, extra={rel: payload})
+    assert run_verify([str(package)]) == 1
+    assert 'unlisted: ' + rel in capsys.readouterr().out
+
+
+def test_listed_file_under_symlinked_parent_outside_root_fails(tmp_path):
+    package = synthetic_package(tmp_path)
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    payload = b'escaped-by-symlink-parent\n'
+    (outside / 'payload.txt').write_bytes(payload)
+    (package / 'portal').symlink_to(outside, target_is_directory=True)
+    manifest = json.loads((package / 'MANIFEST.json').read_text(encoding='utf-8'))
+    rel = 'portal/payload.txt'
+    manifest['files'].append({
+        'path': rel,
+        'bytes': len(payload),
+        'sha256': hashlib.sha256(payload).hexdigest(),
+    })
+    (package / 'MANIFEST.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+    result = inspect(package, rebuild=False)
+    details = ' '.join(c['detail'] for c in result['checks'])
+    assert not result['passed']
+    assert 'outside package root' in details.lower()
+
+
+def test_html_alias_read_through_symlinked_parent_outside_root_fails(tmp_path):
+    package = synthetic_package(tmp_path)
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    escaped = b'<!doctype html><title>outside-alias</title>\n'
+    (outside / 'ATLAS_Project_Intelligence.html').write_bytes(escaped)
+    alias = package / 'ATLAS_Project_Intelligence.html'
+    alias.unlink()
+    alias.symlink_to(outside / 'ATLAS_Project_Intelligence.html')
+    result = inspect(package, rebuild=False)
+    details = ' '.join(c['detail'] for c in result['checks'])
+    assert not result['passed']
+    assert 'outside package root' in details.lower()
+
+
+def _plant_attacker_dotgit(package: Path, tmp_path: Path, sentinel: Path) -> None:
+    """Crafted .git that would run fsmonitor/hooks if inspect invoked git."""
+    mark = tmp_path / 'fsmark.sh'
+    mark.write_text('#!/bin/sh\ntouch "' + str(sentinel) + '"\n', encoding='utf-8')
+    mark.chmod(0o755)
+    hook_dir = tmp_path / 'hooks'
+    hook_dir.mkdir()
+    hook = hook_dir / 'pre-commit'
+    hook.write_text('#!/bin/sh\ntouch "' + str(sentinel) + '"\n', encoding='utf-8')
+    hook.chmod(0o755)
+    include_cfg = tmp_path / 'attacker-include.cfg'
+    include_cfg.write_text('[core]\n\thooksPath = ' + str(hook_dir) + '\n', encoding='utf-8')
+    env_init, _ = _isolated_git_env(tmp_path)
+    subprocess.run(['git', 'init', '-q'], cwd=package, check=True, env=env_init)
+    exclude = package / '.git' / 'info' / 'exclude'
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    exclude.write_text('node_modules/\n.claude/\n', encoding='utf-8')
+    subprocess.run(['git', 'add', '-A'], cwd=package, check=True, env=env_init)
+    subprocess.run(['git', 'commit', '-qm', 'release'], cwd=package, check=True, env=env_init)
+    cfg = package / '.git' / 'config'
+    cfg.write_text(
+        '[core]\n'
+        '\trepositoryformatversion = 0\n'
+        '\tfsmonitor = true\n'
+        '\tfsmonitorHookPath = ' + str(mark) + '\n'
+        '[include]\n'
+        '\tpath = ' + str(include_cfg) + '\n',
+        encoding='utf-8',
+    )
+
+
+def planted_dotgit_attack_package(tmp_path):
+    sentinel = tmp_path / 'git-hook-sentinel'
+    extra = {
+        'node_modules/evil/index.js': b'export default 1;\n',
+        '.claude/x': b'{"evil": true}\n',
+    }
+    package = real_release_package(tmp_path, extra=extra)
+    _plant_attacker_dotgit(package, tmp_path, sentinel)
+    return package, sentinel
+
+
+def test_planted_dotgit_package_inspect_stays_package_mode(tmp_path):
+  package, sentinel = planted_dotgit_attack_package(tmp_path)
+  assert not sentinel.exists()
+  result = inspect(package, rebuild=False, dev_git_index=False)
+  assert not result['passed']
+  assert not sentinel.exists()
+  detail = next(c['detail'] for c in result['checks'] if c['name'] == 'manifest-content')
+  details = ' '.join(c['detail'] for c in result['checks'])
+  assert 'node_modules/evil' in details
+  assert '.claude/x' in details
+  assert '.git' in details
+
+
+def test_planted_dotgit_package_cli_stays_package_mode(tmp_path, capsys):
+  package, sentinel = planted_dotgit_attack_package(tmp_path)
+  assert not sentinel.exists()
+  assert run_verify([str(package)]) == 1
+  assert not sentinel.exists()
+  out = capsys.readouterr().out
+  assert 'node_modules/evil' in out
+  assert '.claude/x' in out
+  assert '.git' in out
+
+
+def test_write_manifest_requires_explicit_dev_git_index():
+  repo = Path(__file__).resolve().parents[1]
+  assert (repo / '.git' / 'HEAD').is_file()
+  with pytest.raises(SystemExit) as error:
+    main([str(repo), '--write-manifest'])
+  assert error.value.code == 2
+
+
+def _mini_dev_repo(tmp_path, name='repo'):
+    root = tmp_path / name
+    root.mkdir()
+    env_init, _ = _isolated_git_env(tmp_path)
+    (root / 'notes').mkdir()
+    (root / 'notes' / 'readme.txt').write_bytes(b'listed\n')
+    subprocess.run(['git', 'init', '-q'], cwd=root, check=True, env=env_init)
+    subprocess.run(['git', 'add', 'notes/readme.txt'], cwd=root, check=True, env=env_init)
+    subprocess.run(['git', 'commit', '-qm', 'init'], cwd=root, check=True, env=env_init)
+    data = b'listed\n'
+    manifest = {
+        'files': [{'path': 'notes/readme.txt', 'bytes': len(data),
+                   'sha256': hashlib.sha256(data).hexdigest()}],
+        'manifest_excludes': ['MANIFEST.json'],
+    }
+    (root / 'MANIFEST.json').write_text(json.dumps(manifest), encoding='utf-8')
+    return root, env_init
+
+
+def test_dev_git_fsmonitor_script_path_does_not_touch_canary(tmp_path):
+    canary = tmp_path / 'canary-fsmonitor-script'
+    mark = tmp_path / 'fsmonitor.sh'
+    mark.write_text('#!/bin/sh\ntouch "' + str(canary) + '"\n', encoding='utf-8')
+    mark.chmod(0o755)
+    root, _ = _mini_dev_repo(tmp_path)
+    (root / '.git' / 'config').write_text('[core]\n\tfsmonitor = ' + str(mark) + '\n', encoding='utf-8')
+    assert not canary.exists()
+    inspect(root, rebuild=False, dev_git_index=True)
+    assert not canary.exists()
+    env = git_environ()
+    assert set(env) <= _GIT_ENV_ALLOWLIST
+    assert 'GIT_DIR' not in env
+
+
+def test_dev_git_fsmonitor_via_include_path_does_not_touch_canary(tmp_path):
+    canary = tmp_path / 'canary-include'
+    mark = tmp_path / 'fsmonitor-include.sh'
+    mark.write_text('#!/bin/sh\ntouch "' + str(canary) + '"\n', encoding='utf-8')
+    mark.chmod(0o755)
+    include_cfg = tmp_path / 'attacker-gitinclude.cfg'
+    include_cfg.write_text('[core]\n\tfsmonitor = ' + str(mark) + '\n', encoding='utf-8')
+    root, _ = _mini_dev_repo(tmp_path)
+    (root / '.git' / 'config').write_text(
+        '[core]\n\trepositoryformatversion = 0\n[include]\n\tpath = ' + str(include_cfg) + '\n',
+        encoding='utf-8',
+    )
+    assert not canary.exists()
+    inspect(root, rebuild=False, dev_git_index=True)
+    assert not canary.exists()
+    env = git_environ()
+    assert set(env) <= _GIT_ENV_ALLOWLIST
+    assert 'GIT_DIR' not in env
+
+
+def test_listed_symlink_file_to_in_package_target_fails(tmp_path):
+    package = synthetic_package(tmp_path)
+    data = b'shared symlink target bytes\n'
+    legit = package / 'notes' / 'legit.txt'
+    legit.write_bytes(data)
+    readme = package / 'notes' / 'readme.txt'
+    readme.unlink()
+    readme.symlink_to(legit)
+    manifest = json.loads((package / 'MANIFEST.json').read_text(encoding='utf-8'))
+    manifest['files'].append({
+        'path': 'notes/legit.txt',
+        'bytes': len(data),
+        'sha256': hashlib.sha256(data).hexdigest(),
+    })
+    for row in manifest['files']:
+        if row['path'] == 'notes/readme.txt':
+            row['bytes'] = len(data)
+            row['sha256'] = hashlib.sha256(data).hexdigest()
+    (package / 'MANIFEST.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+    result = inspect(package, rebuild=False, dev_git_index=False)
+    assert not result['passed']
+    detail = ' '.join(c['detail'] for c in result['checks'])
+    assert 'symlink' in detail.lower()
+
+
+def test_listed_file_under_symlinked_dir_component_fails(tmp_path):
+    package = synthetic_package(tmp_path)
+    data = b'under symlinked directory\n'
+    realdir = package / 'realdir'
+    realdir.mkdir()
+    (realdir / 'file.txt').write_bytes(data)
+    (package / 'linkdir').symlink_to(realdir, target_is_directory=True)
+    manifest = json.loads((package / 'MANIFEST.json').read_text(encoding='utf-8'))
+    manifest['files'].append({
+        'path': 'linkdir/file.txt',
+        'bytes': len(data),
+        'sha256': hashlib.sha256(data).hexdigest(),
+    })
+    (package / 'MANIFEST.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+    result = inspect(package, rebuild=False, dev_git_index=False)
+    assert not result['passed']
+    detail = ' '.join(c['detail'] for c in result['checks'])
+    assert 'symlink' in detail.lower()
+
+
+def test_dev_git_index_fails_despite_git_index_file_env(tmp_path, monkeypatch):
+    env_init, _ = _isolated_git_env(tmp_path)
+    clean = tmp_path / 'clean'
+    dirty = tmp_path / 'dirty'
+    for d in (clean, dirty):
+        d.mkdir()
+        (d / 'notes').mkdir()
+        (d / 'notes' / 'readme.txt').write_bytes(b'listed\n')
+        subprocess.run(['git', 'init', '-q'], cwd=d, check=True, env=env_init)
+        subprocess.run(['git', 'add', 'notes/readme.txt'], cwd=d, check=True, env=env_init)
+        subprocess.run(['git', 'commit', '-qm', 'init'], cwd=d, check=True, env=env_init)
+    (dirty / 'node_modules' / 'evil').mkdir(parents=True)
+    (dirty / 'node_modules' / 'evil' / 'index.js').write_bytes(b'export default 1;\n')
+    data = b'listed\n'
+    manifest = {
+        'files': [{'path': 'notes/readme.txt', 'bytes': len(data),
+                   'sha256': hashlib.sha256(data).hexdigest()}],
+        'manifest_excludes': ['MANIFEST.json'],
+    }
+    for d in (clean, dirty):
+        (d / 'MANIFEST.json').write_text(json.dumps(manifest), encoding='utf-8')
+    monkeypatch.setenv('GIT_DIR', str(clean / '.git'))
+    monkeypatch.setenv('GIT_WORK_TREE', str(clean))
+    monkeypatch.setenv('GIT_INDEX_FILE', str(clean / '.git' / 'index'))
+    report = inspect(dirty, rebuild=False, dev_git_index=True)
+    mc = next(c for c in report['checks'] if c['name'] == 'manifest-content')
+    assert not mc['pass'], mc['detail']
+    assert 'node_modules/evil' in mc['detail']
+
+
+def test_dev_git_index_fails_despite_git_config_count_excludes_file(tmp_path, monkeypatch):
+    root, _ = _mini_dev_repo(tmp_path)
+    exclude = tmp_path / 'exclude-all'
+    exclude.write_text('*\n', encoding='utf-8')
+    monkeypatch.setenv('GIT_CONFIG_COUNT', '1')
+    monkeypatch.setenv('GIT_CONFIG_KEY_0', 'core.excludesFile')
+    monkeypatch.setenv('GIT_CONFIG_VALUE_0', str(exclude))
+    (root / 'node_modules' / 'evil').mkdir(parents=True)
+    (root / 'node_modules' / 'evil' / 'payload.js').write_bytes(b'export default 1;\n')
+    report = inspect(root, rebuild=False, dev_git_index=True)
+    mc = next(c for c in report['checks'] if c['name'] == 'manifest-content')
+    assert not mc['pass'], mc['detail']
+    assert 'node_modules/evil' in mc['detail']
+
+
+def test_dev_git_index_fails_despite_git_work_tree_env(tmp_path, monkeypatch):
+    env_init, _ = _isolated_git_env(tmp_path)
+    clean = tmp_path / 'clean'
+    dirty = tmp_path / 'dirty'
+    for d in (clean, dirty):
+        d.mkdir()
+        (d / 'notes').mkdir()
+        (d / 'notes' / 'readme.txt').write_bytes(b'listed\n')
+        subprocess.run(['git', 'init', '-q'], cwd=d, check=True, env=env_init)
+        subprocess.run(['git', 'add', 'notes/readme.txt'], cwd=d, check=True, env=env_init)
+        subprocess.run(['git', 'commit', '-qm', 'init'], cwd=d, check=True, env=env_init)
+    (dirty / 'node_modules' / 'evil').mkdir(parents=True)
+    (dirty / 'node_modules' / 'evil' / 'index.js').write_bytes(b'export default 1;\n')
+    data = b'listed\n'
+    manifest = {
+        'files': [{'path': 'notes/readme.txt', 'bytes': len(data),
+                   'sha256': hashlib.sha256(data).hexdigest()}],
+        'manifest_excludes': ['MANIFEST.json'],
+    }
+    for d in (clean, dirty):
+        (d / 'MANIFEST.json').write_text(json.dumps(manifest), encoding='utf-8')
+    monkeypatch.setenv('GIT_DIR', str(clean / '.git'))
+    monkeypatch.setenv('GIT_WORK_TREE', str(clean))
+    report = inspect(dirty, rebuild=False, dev_git_index=True)
+    mc = next(c for c in report['checks'] if c['name'] == 'manifest-content')
+    assert not mc['pass'], mc['detail']
+    assert 'node_modules/evil' in mc['detail']
+
+
+_GIT_ENV_ALLOWLIST = frozenset({
+    'PATH', 'HOME', 'LANG', 'LC_ALL', 'GIT_CONFIG_NOSYSTEM', 'GIT_CONFIG_GLOBAL', 'GIT_TERMINAL_PROMPT',
+})
+
+
+def test_git_environ_is_allowlist_without_git_star(monkeypatch):
+    monkeypatch.setenv('GIT_DIR', '/tmp/evil-git-dir')
+    monkeypatch.setenv('GIT_WORK_TREE', '/tmp/evil-work-tree')
+    monkeypatch.setenv('GIT_INDEX_FILE', '/tmp/evil-index')
+    monkeypatch.setenv('GIT_CONFIG', '/tmp/evil-config')
+    monkeypatch.setenv('GIT_CONFIG_COUNT', '1')
+    monkeypatch.setenv('GIT_CONFIG_KEY_0', 'core.excludesFile')
+    monkeypatch.setenv('GIT_CONFIG_VALUE_0', '/tmp/evil-excludes')
+    env = git_environ()
+    assert set(env) <= _GIT_ENV_ALLOWLIST
+    assert 'GIT_DIR' not in env
+    assert 'GIT_WORK_TREE' not in env
+    assert 'GIT_INDEX_FILE' not in env
+
+
+def test_git_subprocess_argv_includes_hardening_flags(tmp_path, monkeypatch):
+    captured = {}
+    root, _ = _mini_dev_repo(tmp_path)
+
+    def fake_check_output(cmd, stderr=None, env=None):
+        captured['cmd'] = list(cmd)
+        captured['env'] = env
+        return b'notes/readme.txt\0'
+
+    monkeypatch.setattr(subprocess, 'check_output', fake_check_output)
+    git_index_file_list(root)
+    cmd = captured['cmd']
+    assert '-c' in cmd
+    assert 'core.fsmonitor=false' in cmd
+    assert 'core.hooksPath=/dev/null' in cmd
+    assert '--no-optional-locks' in cmd
+    env = captured['env']
+    assert env.get('GIT_CONFIG_NOSYSTEM') == '1'
+    assert env.get('GIT_CONFIG_GLOBAL') == '/dev/null'
+
+
+def test_dev_git_index_ignores_hostile_local_git_config(tmp_path):
+  sentinel = tmp_path / 'sentinel-dev'
+  root = tmp_path / 'repo'
+  root.mkdir()
+  env_init, _ = _isolated_git_env(tmp_path)
+  (root / 'notes').mkdir()
+  (root / 'notes' / 'readme.txt').write_bytes(b'listed\n')
+  mark = tmp_path / 'dev-fsmark.sh'
+  mark.write_text('#!/bin/sh\ntouch "' + str(sentinel) + '"\n', encoding='utf-8')
+  mark.chmod(0o755)
+  hook_dir = tmp_path / 'dev-hooks'
+  hook_dir.mkdir()
+  (hook_dir / 'pre-commit').write_text('#!/bin/sh\ntouch "' + str(sentinel) + '"\n', encoding='utf-8')
+  (hook_dir / 'pre-commit').chmod(0o755)
+  subprocess.run(['git', 'init', '-q'], cwd=root, check=True, env=env_init)
+  subprocess.run(['git', 'add', 'notes/readme.txt'], cwd=root, check=True, env=env_init)
+  subprocess.run(['git', 'commit', '-qm', 'init'], cwd=root, check=True, env=env_init)
+  cfg = root / '.git' / 'config'
+  cfg.write_text(
+      '[core]\n\tfsmonitor = true\n\tfsmonitorHookPath = ' + str(mark) + '\n'
+      '\thooksPath = ' + str(hook_dir) + '\n',
+      encoding='utf-8',
+  )
+  data = b'listed\n'
+  manifest = {'files': [{'path': 'notes/readme.txt', 'bytes': len(data),
+                         'sha256': hashlib.sha256(data).hexdigest()}],
+              'manifest_excludes': ['MANIFEST.json']}
+  (root / 'MANIFEST.json').write_text(json.dumps(manifest), encoding='utf-8')
+  assert not sentinel.exists()
+  inspect(root, rebuild=False, dev_git_index=True)
+  assert not sentinel.exists()
+
+
+def test_inspect_does_not_execute_package_git_fsmonitor(tmp_path):
+    marker = tmp_path / 'fsmonitor-ran'
+    hook = tmp_path / 'mark.sh'
+    hook.write_text('#!/bin/sh\ntouch "' + str(marker) + '"\n', encoding='utf-8')
+    hook.chmod(0o755)
+    root = synthetic_package(tmp_path)
+    (root / '.git').mkdir()
+    (root / '.git' / 'config').write_text('[core]\n\tfsmonitor = true\n\tfsmonitorHookPath = ' + str(hook) + '\n', encoding='utf-8')
+    inspect(root, rebuild=False)
+    assert not marker.exists(), 'inspect must not invoke git on a package .git directory'
+
+
 def test_tampered_zip_fails(tmp_path, capsys):
     package = synthetic_package(tmp_path, mutate='notes/readme.txt')
     archive = archive_of(package, tmp_path / 'tampered.zip', 'zip')
@@ -261,6 +712,17 @@ def test_make_verify_package_requires_an_extracted_package(tmp_path):
     assert checked.returncode == 0, checked.stdout + checked.stderr
     recipe = (repo / 'Makefile').read_text().split('test: ', 1)[1].split('\n', 1)[0]
     assert 'verify-package' not in recipe
+
+
+def test_repository_full_handoff_includes_clean_rebuild():
+    """Release tree on disk must pass manifest checks and a source-only rebuild."""
+    repo = Path(__file__).resolve().parents[1]
+    report = inspect(repo, rebuild=True, dev_git_index=True)
+    by_name = {c['name']: c for c in report['checks']}
+    assert by_name.get('manifest-content', {}).get('pass'), by_name.get('manifest-content', {}).get('detail')
+    assert by_name.get('clean-build', {}).get('pass'), by_name.get('clean-build', {}).get('detail')
+    assert by_name.get('clean-build-byte-match', {}).get('pass'), by_name.get('clean-build-byte-match', {}).get('detail')
+    assert report['passed']
 
 
 def test_docs_do_not_use_the_checker_as_a_dev_gate():

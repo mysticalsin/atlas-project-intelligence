@@ -1,6 +1,20 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-20 — PR10 fix loop 3/3 (`cursor/atlas-post-pr9-fixes`)
+- F-3: `tests/run_ask_browser_stamped.sh` per-run `rc` capture (Sentinel **5ca83528** @ `b459f77`); BUILD_STATUS before **final** `MANIFEST.json` regen.
+- Loop 2 closed @ `b459f77` (F-1, manifest ordering **39b36033**). F-2 **Backlog**; `check_handoff.py` still `196aee0`.
+
+## 2026-11-19 — Post-PR9 fixes (`cursor/atlas-post-pr9-fixes`, base `02a83b32`)
+- M-1 wiki export: gateway CSP middleware no longer UTF-8-decodes ZIP; red `346b036` → fix `9d8a616`.
+- M-2 journey layout: `journey.css` grid minima/breakpoints; red `ad59341` → fix `5e09557`; `tests/journey_layout_browser.py` added.
+- M-3 `/#admin` deep link: `openFromHash` → `switchView('admin')`; red `76b02eb` → fix `a9878d6`.
+- MANIFEST: `python3 scripts/check_handoff.py .` passes **with full rebuild** (486 files); fix copies `atlas_voice/` + `deploy/cloudflare-edge/` and uses `git ls-files` for unlisted on dev trees (`handoff/decisions/check-handoff-rebuild.md`).
+- ask_browser: deterministic waits; commit `bd95020`.
+- `docs/pr10/` before (`02a83b32`) / after PNGs for M-1–M-3 via `scripts/capture_pr10_evidence.py` (local only until authorized push).
+- Suites (this host): pytest **310**; root node **408** pass / **1** skip (310 after `test_repository_full_handoff_includes_clean_rebuild`).
+- PR #10 draft; **hold:** no `git merge main`, no push, no rebase/force — merge `origin/main` only on Tony’s go.
+
 ## Next task
 - **2026-09-29, JEV story rating ("make sure Atlas has Jev integreated into it so its very fast and relable to rate stories"):** built on `a45b140` in two tracks (EDGE, UI), then an integration review fixed 4 defects (a privacy gap for multi-word names and 3 no-key differences); locally verified, not committed, not deployed. Live JEV is `BLOCKED_EXTERNAL` until Tony sets `TYPESAFE_API_KEY` on the Worker and deploys (when nobody is interviewing). Read the session "2026-09-29 / JEV story rating" below first: "What Tony must do", the cost per rating, Tony's one open decision (§12.2: four other TypeSafe paths run without this consent) and the post-deploy checks.
 - **2026-09-29, Voice quality ("Atlas doesnt speak well and is not totally undertsandable"):** fixed on top of `ae50fae` (live Worker aa3478f8), integrated and locally verified, not committed, not deployed. Read the session "2026-09-29 / Voice quality" below: what changed, the evidence, and what the logs of the next live session should show. Commit, then Tony deploys with `deploy.sh` when nobody is interviewing.
