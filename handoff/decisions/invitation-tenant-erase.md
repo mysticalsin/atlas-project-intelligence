@@ -30,7 +30,7 @@ Sent and received, as the invitation row is stored by `invite`:
 - Received: `invitations.email` is the subject. `invite` writes the consultant address into `email`.
 - Sent: `invitations.source` is the subject and `email` is someone else. `invite` writes `body.source` or the actor into `source`.
 
-The privacy delete already treats the subject as the sign-in `email` and the verified `mail` (`subjectAliases` in `operate.js`). Both aliases count. Comparison is lowercase. The tenant predicate is `lower(COALESCE(tenant, '')) = ?` for the verified tenant only.
+The privacy delete already treats the subject as the sign-in `email` and the verified `mail` (`subjectAliases` in `operate.js`). Both aliases count. Comparison is lowercase. The tenant predicate is `lower(trim(COALESCE(tenant, ''))) = ?` for the verified tenant only. `journeyTenant` already trims the caller. A stored tenant with a trailing space is the same tenant.
 
 TEST COMMAND (this file):
 
@@ -68,7 +68,7 @@ Option E. Delete every invitation whose `email` or `source` is the subject.
 Trade-off: a invitation S sent to someone else disappears for that other person. Rejected.
 
 Option F, chosen. Inside the existing privacy-delete `withTransaction` (the recorded door, same `lib.exec` and `lib.log` as the other stores): delete received rows in this tenant, and set `source` to an `erased:` token on sent rows whose recipient is someone else. `outcomes` reports `removed` and `scrubbed`. Drop `invitations` from the sentence that lists what is not deleted. Stories, staffing, and audit history stay in that sentence.
-Trade-off: a sent invitation remains for the recipient, without S's address in `source`. The receipt has to say scrubbed as well as removed, or the count would call a scrub a delete. Subject-rights `eraseMine` already deletes `invitations.email` on its own route and is not a second writer here.
+Trade-off: a sent invitation remains for the recipient, without S's address in `source`. The receipt has to say scrubbed as well as removed, or the count would call a scrub a delete. Subject-rights `eraseMine` does not cover that route. Before fix round 1 it deleted `invitations` only where `email` was the sign-in identity, and it did not scrub `source`. Both routes now call one helper.
 
 ## Effect on stored invitations and on the receipt
 
@@ -85,3 +85,20 @@ The invitations clause is removed from that sentence because it would be false. 
 ## Rollback
 
 Revert this branch's commits. The parent is `main` `c14302590e78b0319baab5893ef8c378b1c0bdf1`. No schema change to undo. Reverting the code does not restore invitations a delete already removed or scrubbed. Those rows stay as the delete left them.
+
+## Fix round 1
+
+Review of `63779db38484471abeb95f56b767e7265e3f8736` requested changes. `Library.invite` stores `str(actor, 60)`. An Entra `tid:oid` is 73 characters, and a long email can be 68. The stored prefix matched neither full alias, so `POST /api/library/privacy/delete` left `source` in place and reported `scrubbed: 0`. `POST /api/me/erase` forwards to `eraseMine` / `eraseWithin`, which deleted `invitations.email` for the sign-in identity only and did not scrub `source`. The sentence above that said `eraseMine` already covered `invitations.email` was wrong for that reason.
+
+The plan debate in this record was written with the first change. It is retroactive, and it is pending review. It is not a record that this round was pre-approved.
+
+`eraseSubjectInvitations` in `operate.js` is the only invitation erase. `eraseInvitations` and `eraseWithin` both call it.
+
+- A received row in this tenant is deleted when `lower(email)` is either subject address (the sign-in identity and the verified mail).
+- A sent row is scrubbed when `lower(source)` is an alias or `str(alias, 60).toLowerCase()`, and `lower(email)` is not a subject address. A row whose recipient is also the subject is deleted, not scrubbed.
+- The tenant compare is `lower(trim(COALESCE(tenant, '')))`.
+- Each sent row gets a fresh `tokenOf({})`.
+- `removed` and `scrubbed` are `changes()` after the write, not the length of an earlier select.
+- `outcomeDetail` writes `scrubbed N` on the invitations outcome, including 0.
+
+No new table and no second writer. Stories, staffing, and audit history stay. Other tenants, other people, and a blank tenant stay.

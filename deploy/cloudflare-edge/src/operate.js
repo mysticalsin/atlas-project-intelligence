@@ -1,5 +1,5 @@
 // Admin metrics, journey and privacy routes. Every handler checks the server role again.
-import { fail } from './util.js';
+import { fail, str } from './util.js';
 import { sameTenant, TENANT_ID } from './authz.js';
 import { queryMetrics, recordUsage, purgeTelemetry, ensureTelemetry, personaKey, personaKeySync } from './telemetry.js';
 import { toCsv } from './csvsafe.js';
@@ -94,24 +94,36 @@ function deleteDirectoryKeys(lib, tenant, keys) {
   return n;
 }
 // Received: invitations.email is this subject (invite writes the consultant address there).
-// Sent: invitations.source is this subject and the recipient is someone else (invite writes body.source or the actor).
-// Both use the sign-in email and the verified mail. Another tenant, another person, and a blank tenant stay.
-function eraseInvitations(lib, user, tenant) {
+// Sent: invitations.source is an alias, or the 60-character form invite stores with str(actor, 60).
+// A row whose recipient is also the subject is deleted, not scrubbed. Each sent row gets its own token.
+// The tenant compare trims, the same way journeyTenant trims the caller. Counts are changes() after the write.
+export function eraseSubjectInvitations(lib, user, tenant) {
   if (!tableReady(lib, 'invitations')) return { removed: 0, scrubbed: 0 };
   const aliases = subjectAliases(user);
   if (!aliases.length) return { removed: 0, scrubbed: 0 };
-  const marks = placeholders(aliases.length);
-  const scope = "lower(COALESCE(tenant, '')) = ?";
-  const received = lib.rows(`SELECT id FROM invitations WHERE ${scope} AND lower(email) IN (${marks})`, tenant, ...aliases);
-  const sent = lib.rows(`SELECT id FROM invitations WHERE ${scope} AND lower(source) IN (${marks}) AND lower(email) NOT IN (${marks})`, tenant, ...aliases, ...aliases);
-  for (const row of received) lib.exec(`DELETE FROM invitations WHERE id = ? AND ${scope}`, row.id, tenant);
-  const token = tokenOf({});
-  for (const row of sent) lib.exec(`UPDATE invitations SET source = ? WHERE id = ? AND ${scope}`, token, row.id, tenant);
-  return { removed: received.length, scrubbed: sent.length };
+  const stored = [...new Set(aliases.map(alias => str(alias, 60).toLowerCase()).filter(Boolean))];
+  const forms = stored.length ? stored : aliases;
+  const scope = "lower(trim(COALESCE(tenant, ''))) = ?";
+  const aliasMarks = placeholders(aliases.length);
+  const storedMarks = placeholders(forms.length);
+  lib.exec(`DELETE FROM invitations WHERE ${scope} AND lower(email) IN (${aliasMarks})`, tenant, ...aliases);
+  const removed = Number(lib.rows('SELECT changes() AS n')[0]?.n || 0);
+  const sentSql = `${scope} AND (lower(source) IN (${aliasMarks}) OR lower(source) IN (${storedMarks})) AND lower(email) NOT IN (${aliasMarks})`;
+  const sent = lib.rows(`SELECT id FROM invitations WHERE ${sentSql}`, tenant, ...aliases, ...forms, ...aliases);
+  let scrubbed = 0;
+  for (const row of sent) {
+    lib.exec(`UPDATE invitations SET source = ? WHERE id = ? AND ${sentSql}`, tokenOf({}), row.id, tenant, ...aliases, ...forms, ...aliases);
+    scrubbed += Number(lib.rows('SELECT changes() AS n')[0]?.n || 0);
+  }
+  return { removed, scrubbed };
+}
+function eraseInvitations(lib, user, tenant) {
+  return eraseSubjectInvitations(lib, user, tenant);
 }
 function outcomeDetail(outcome) {
-  const scrubbed = Number(outcome.scrubbed) || 0;
-  return outcome.store + ' ' + outcome.removed + (scrubbed ? ' scrubbed ' + scrubbed : '');
+  const line = outcome.store + ' ' + outcome.removed;
+  if (!Object.hasOwn(outcome, 'scrubbed')) return line;
+  return line + ' scrubbed ' + (Number(outcome.scrubbed) || 0);
 }
 export function eraseDirectoryFor(lib, user, ctx = {}) {
   if (!tableReady(lib, 'directory')) return 0;
