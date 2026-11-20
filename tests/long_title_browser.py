@@ -87,7 +87,7 @@ PROBE = r"""
       parentMin: getComputedStyle(el.parentElement).minWidth,
     };
   };
-  const authorMin = (el) => {
+  const authorProp = (el, prop) => {
     const found = [];
     const walk = (rules) => {
       for (const rule of rules) {
@@ -95,7 +95,7 @@ PROBE = r"""
           let matches = false;
           try { matches = el.matches(rule.selectorText); } catch (err) { matches = false; }
           if (!matches) continue;
-          const value = rule.style.getPropertyValue('min-width').trim();
+          const value = rule.style.getPropertyValue(prop).trim();
           if (value) found.push(value);
         } else if (rule.cssRules) walk(rule.cssRules);
       }
@@ -114,7 +114,8 @@ PROBE = r"""
     docOver: root.scrollWidth > root.clientWidth,
     card: fit(document.querySelector('#projectCards .project-card > h2')),
     detail: fit(document.querySelector('#projectDetail .detail-title > div > h2')),
-    flexMin: authorMin(flexChild),
+    flexMin: authorProp(flexChild, 'min-width'),
+    detailMax: authorProp(document.querySelector('#projectDetail .detail-title > div > h2'), 'max-width'),
     paper: fit(document.querySelector('#storyPaper .paper-head > h2')),
     lib: fit(document.querySelector('#libraryList > .project-card > h3')),
     record: fit(recordTitle, document.getElementById('recordDialog')),
@@ -188,6 +189,11 @@ def main():
                     label + ': detail title wraps with overflow-wrap anywhere',
                     detail.get('full') and detail.get('wrap') == 'anywhere' and detail.get('clamp') == 'none' and not detail.get('textOver') and not detail.get('boxOver'),
                     detail_of(projects, 'detail'),
+                )
+                check(
+                    label + ': detail title max-width is 100%',
+                    '100%' in (projects.get('detailMax') or []),
+                    'max-width ' + str(projects.get('detailMax')),
                 )
                 page.evaluate("(v) => window.ATLAS_APP.switchView(v)", 'stories')
                 story = page.evaluate(PROBE, {'token': token, 'what': 'story'})

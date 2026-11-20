@@ -84,7 +84,7 @@ Test commit `379335f43f01470db11edfa084df1eb401b74bd6`. `src/styles.css` matched
 
 ## Fix
 
-`ed384a3db2988f19c42f9b08e8a35c8b080a8c5d` is `src/styles.css` and the author-rule walk. After it, the same command is CHECKS 83, PASS 83, FAIL 0. `c4f2dd1` only changes where the screenshot is framed. The checks are the same.
+`ed384a3db2988f19c42f9b08e8a35c8b080a8c5d` is `src/styles.css` and the author-rule walk. That commit does not rebuild the aliases, so the page in that commit is still the red page. The green CHECKS 83, PASS 83, FAIL 0 run used a local rebuild that was committed later, in `b906e65`. `c4f2dd1` only changes where the screenshot is framed. See Loop 1.
 
 ## Mutants
 
@@ -93,6 +93,19 @@ Restored and not committed. Each exits 1.
 1. Remove `overflow-wrap: anywhere` from the detail, dialog, and preview rule. CHECKS 83, PASS 44, FAIL 39. The first failure is `320 spaced: detail title wraps with overflow-wrap anywhere` (`wrap=normal`).
 2. Remove the line clamp from the list rule. CHECKS 83, PASS 65, FAIL 18. The first failure is `320 spaced: list title is clamped` (`clamp=none`).
 3. Remove `min-width: 0` from the flex-child rule. CHECKS 83, PASS 74, FAIL 9. Every failure is `dialog title flex child can shrink` (`min-width []`).
+4. Loop 1. Remove `max-width: 100%` from the detail, dialog, and preview rule (`src/styles.css` line 100). CHECKS 92, PASS 83, FAIL 9, exit 1. Every failure is `detail title max-width is 100%` (`max-width []`). Restored. The same command on the restored stylesheet exits 0: CHECKS 92, PASS 92, FAIL 0.
+
+## Loop 1
+
+Devin's exact-head gate on `b906e6512bdd1b0c59019fc5027cd33856fb8cf0` is CODE FAIL. This is loop 1 of 3. The stylesheet is not changed.
+
+`max-width: 100%` on the detail, dialog, and preview titles was a surviving mutant. The check `detail title max-width is 100%` reads that author value. Red is shown by the mutant above, not by a commit of the broken rule.
+
+`ed384a3db2988f19c42f9b08e8a35c8b080a8c5d` changed `src/styles.css` and did not rebuild the HTML aliases. That commit's page was still the red page: CHECKS 83, PASS 17, FAIL 66. The aliases and `PAGE_SHA256.txt` were written later, in `b906e65`. That history is pushed and is not rewritten.
+
+From this loop on, a commit that changes `src/` also rebuilds the four aliases and rewrites `deploy/cloudflare-edge/generated/PAGE_SHA256.txt` in that same commit. This loop changes `tests/long_title_browser.py` only. The page pin stays `c11282a8205f6866a92b0b56c411656128ee102065d69ba19657d95f31b67f9a`, 924871 bytes.
+
+PR 16, `cursor/atlas-record-dialog-lows`, is open at `3783bc6eeeacde2ab1d2b4071983755eb83393ad`. It is not merged on this branch. `PAGE_SHA256.txt`, `MANIFEST.json`, and `handoff/BUILD_STATUS.md` conflict, and a combined page matches neither pin. Whichever of #16 and #20 lands second must ordinary-merge main and re-pin those three files. The product change on this branch stays in `src/styles.css`.
 
 ## Rollback
 
