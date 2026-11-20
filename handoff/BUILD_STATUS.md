@@ -1469,3 +1469,25 @@ winloop.js:68 1
 ### Session: 2026-11-20 / invitation erase fix round 2
 - Review of `7d5d97ba79a0540d1ac361efde126eaa6e2976e5` is REQUEST CHANGES, one new Medium. Earlier findings stay fixed. Red `f6354a31bd6eb072dfff45d11464c0e151be2456` is tests only. `node --test test/invitation-tenant-erase.test.js` there: 19 tests, 15 pass, 4 fail, exit 1. The failures are the 73-character `tid:oid` twin, the long email that differs after 60 characters, a stored 60-character prefix of a longer sender, and `POST /api/me/erase` counting the twin. A sender of at most 60 characters already scrubs.
 - `invite` stores `str(actor, 200)`. Erase matches the full alias, and `str(alias, 60)` only when that alias is no longer than 60. A legacy 60-character prefix of a longer actor is left for a one-off review. Tony decides. No reader of `invitations.source` assumes 60 characters. Decision: `handoff/decisions/invitation-tenant-erase.md`, section Fix round 2. Gate numbers for this head are in the store, not in this file. Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open.
+
+### Session: 2026-11-20 / record dialog sparse quality (ATLAS-RECORD-DIALOG-QUALITY-CRASH)
+
+- Branch `cursor/atlas-record-dialog-quality-crash` off main `c14302590e78b0319baab5893ef8c378b1c0bdf1`. `origin/main` was that commit. The decision is `handoff/decisions/record-dialog-quality-crash.md`. No deploy, no provider call, synthetic Northwind data only. `scripts/check_handoff.py` and `atlas_voice/server.py` were not edited.
+- The local edge seed stores quality as `{status, score, engine}`. `showRecord` read `q.blockers.length` and then `q.missing.length`, `q.issues.length`, and `q.recommendations.length`. `q.holds?.length` already tolerated a missing array. A missing `aiScore` was concatenated and printed the word `undefined`.
+- The four array reads use `?.length`. A missing `aiScore` uses `!= null`, the same hide as an explicit `null`. The seed stays sparse so the browser test still opens that object. No new sentence.
+- Red `87bb28c6f5423a0343643dc723ee2a457956b738`: exit 1, `reviewer 320 dialog renders the sparse quality record`, page error `Cannot read properties of undefined (reading 'length')`. The fix commit does not edit that test. Gate counts for the fix head are not in this file. They are in the agent store `gates-<head>` for that commit. Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open.
+
+### Session: 2026-11-20 / manifest refresh (ATLAS-RECORD-DIALOG-QUALITY-CRASH)
+
+- `scripts/check_handoff.py` was not edited. `MANIFEST.json` on `ddb9226` was still the 12.1 package of 2026-09-26, so `python3 scripts/check_handoff.py .` failed `manifest-content` on changed hashes. The first rows were `.env.example`, `.gitignore`, and `00_START_HERE.md`.
+- The refresh is `python3 scripts/check_handoff.py --write-manifest .` from the writer on `origin/cursor/atlas-post-pr9-fixes` (`bd95020`). That command rewrites sizes and SHA-256 from `git ls-files` and leaves this branch's checker untouched. It wrote 674 entries. `origin/main` is still `c14302590e78b0319baab5893ef8c378b1c0bdf1`. No merge, no rebase.
+- After that refresh, listed hashes match (0 changed, 0 missing). `python3 scripts/check_handoff.py .` still exits 1. The printed `manifest-content` line is `unlisted:` under `.git/` (the checker prints the first 25). A clean checkout of main `c1430259` exits 1 as well. Its printed line is `changed: .env.example; changed: .gitignore; changed: 00_START_HERE.md` and twenty-two further `changed:` rows. The checker was not edited.
+- Gate logs for the manifest commit are in the agent store `gates-<head>` for that commit. Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open.
+
+### Session: 2026-11-20 / record dialog fix round (ATLAS-RECORD-DIALOG-QUALITY-CRASH)
+
+- `042a810a528ca795fb12fb3be79063331c2a2f11` is not a manifest-only commit. It also added the manifest-refresh paragraph in this file.
+- Red `2c9298abd53ff10fd4e283ce1e524e92a5e62e43`. `tests/test_handoff.py::test_git_archive_of_head_passes_check_handoff` fails. A clean `git archive` of that commit matches 674 hashes, then `clean-build` exits 1. The same test fails on `042a810a528ca795fb12fb3be79063331c2a2f11`.
+- The clean rebuild now copies the same source set as `281bd0b6b0a220f4c77171d1c77cbfc52aa2a918`: `build.py`, `src/`, `assets/`, `docs/`, `atlas_voice/`, and `deploy/cloudflare-edge/`. The two copy-set lines match that commit. No other change from that branch is included.
+- The dialog test requires the rendered quality line `Ready for use · threshold · completeness` when `aiScore` is missing, and `Ready for use · threshold · completeness · review agent 0` when `aiScore` is 0. Restoring `!==null` prints `review agent undefined` and that test fails. The mutant is not committed.
+- Gate logs for the fix head are in the agent store `gates-<head>` for that commit. Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open.
