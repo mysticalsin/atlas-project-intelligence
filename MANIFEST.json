@@ -622,23 +622,23 @@
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924451,
+      "sha256": "60986164a5d2b0fe6a96d4f2ac62137c42d0211d281d1bfb2b6726885562ed0a"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924451,
+      "sha256": "60986164a5d2b0fe6a96d4f2ac62137c42d0211d281d1bfb2b6726885562ed0a"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924451,
+      "sha256": "60986164a5d2b0fe6a96d4f2ac62137c42d0211d281d1bfb2b6726885562ed0a"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924451,
+      "sha256": "60986164a5d2b0fe6a96d4f2ac62137c42d0211d281d1bfb2b6726885562ed0a"
     },
     {
       "path": "CLAUDE.md",
@@ -652,8 +652,8 @@
     },
     {
       "path": "Makefile",
-      "bytes": 1916,
-      "sha256": "a8625edc3eec8bd3a37a87b5af306d08b525ec82df6050b7c7028604de80f140"
+      "bytes": 1963,
+      "sha256": "77aa648a5fccdf17ee2a745c77ce05dfd729e3b271df7add6d0a16d926108b09"
     },
     {
       "path": "Preview.command",
@@ -933,7 +933,7 @@
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
       "bytes": 146,
-      "sha256": "93196c1732d530e8a0ad455ed9b3198c7dd2df0457e1fd9b47582c5a456c0005"
+      "sha256": "4c8986bce6d3b946adf0d7a436b6e3d7f70ae651002b3b057de7bb2a15d8759a"
     },
     {
       "path": "deploy/cloudflare-edge/set-keys.sh",
@@ -998,7 +998,7 @@
     {
       "path": "deploy/cloudflare-edge/src/csp.generated.js",
       "bytes": 1675,
-      "sha256": "7d54de0b2fed28db9dd1f20106b9cf4526cadd3a9641495c3e68762620bd6dbf"
+      "sha256": "468a6bbbebbff3ddb07af7dfde76fcd9da5b84354411c25335d409c6202d236c"
     },
     {
       "path": "deploy/cloudflare-edge/src/csp.js",
@@ -2282,8 +2282,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 346929,
-      "sha256": "311bfd60630ba451016b72b88b0b6a981fd92c70e54ef68b5d665c65b2522b05"
+      "bytes": 348856,
+      "sha256": "9c06f002eb78f6599edfe35672a5152e6c634902fefe5483a7c1572f3ac78047"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2379,6 +2379,11 @@
       "path": "handoff/decisions/pr12-plan-debate.md",
       "bytes": 20111,
       "sha256": "769afc405efedae63d393361a2aa7b6826862586e370f957b8e297e94b6c0c15"
+    },
+    {
+      "path": "handoff/decisions/record-dialog-lows.md",
+      "bytes": 5386,
+      "sha256": "9b27f1d43dd7afd7357fce0fcb83d93587545d08d924da610379c89ae71488eb"
     },
     {
       "path": "handoff/decisions/record-dialog-quality-crash.md",
@@ -2782,8 +2787,8 @@
     },
     {
       "path": "src/app.js",
-      "bytes": 146232,
-      "sha256": "43f6d8d62381d022a6cc09d6cc09084266875387761735380dcb5b9862eea186"
+      "bytes": 146641,
+      "sha256": "bd21723b941ee45917264f6ae09a82ba4bf4352f99414209fc8f65644563d72b"
     },
     {
       "path": "src/ask-ui.js",
@@ -2807,8 +2812,8 @@
     },
     {
       "path": "src/charts.js",
-      "bytes": 56971,
-      "sha256": "aada46b936099f53529e6bffb4e41ccb7b35d3d9249d236866dd4dbe999a89e5"
+      "bytes": 56998,
+      "sha256": "2c8de062c759ea660e3c9d8a509a7289715411f63e33c732c78b761f7085c617"
     },
     {
       "path": "src/docx.js",
@@ -3221,9 +3226,14 @@
       "sha256": "733d8322199904034e848867907dd011e7a648125428963cc657b92ad3163e87"
     },
     {
+      "path": "tests/record_dialog_lows_browser.py",
+      "bytes": 7378,
+      "sha256": "f926f3166f4243e7030f03e535a12a420d0d4c104d9bd9ec14a7ea78d0e09501"
+    },
+    {
       "path": "tests/record_dialog_quality_browser.py",
-      "bytes": 5463,
-      "sha256": "6e941aea6aac9962c15d69b670fa4cec5015dddc46e41720e41aa91aef37df57"
+      "bytes": 5405,
+      "sha256": "1c5ba0f655bcb0f9783fdac609f45752755c1c542c52c616dfe3da4c56d22754"
     },
     {
       "path": "tests/refusal_browser.py",
