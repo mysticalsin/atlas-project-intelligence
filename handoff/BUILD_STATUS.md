@@ -1,11 +1,9 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
-## 2026-11-20 — PR10 fix loop 2 (`cursor/atlas-post-pr9-fixes`)
-- F-1: `tests/ask_browser.py` polls test-only worklet bytes until `MIN_BYTES`; red `940b1e2` / green `20031f4`; helpers `run_ask_browser_stamped.sh`, `ask_browser_red_demo.sh`.
-- Sentinel **39b36033** @ `27baf58`: BUILD_STATUS landed after MANIFEST regen → stale row (blocker); fix: docs/helpers commits then **final** `MANIFEST.json` regen as last commit on branch.
-- F-2 `check_handoff --dev-git-index` outside git: **Backlog** (Jarvis); `scripts/check_handoff.py` unchanged (`196aee0` blob).
-- Gates + PR body update after final head only.
+## 2026-11-20 — PR10 fix loop 3/3 (`cursor/atlas-post-pr9-fixes`)
+- F-3: `tests/run_ask_browser_stamped.sh` per-run `rc` capture (Sentinel **5ca83528** @ `b459f77`); BUILD_STATUS before **final** `MANIFEST.json` regen.
+- Loop 2 closed @ `b459f77` (F-1, manifest ordering **39b36033**). F-2 **Backlog**; `check_handoff.py` still `196aee0`.
 
 ## 2026-11-19 — Post-PR9 fixes (`cursor/atlas-post-pr9-fixes`, base `02a83b32`)
 - M-1 wiki export: gateway CSP middleware no longer UTF-8-decodes ZIP; red `346b036` → fix `9d8a616`.

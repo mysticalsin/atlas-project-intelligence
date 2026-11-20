@@ -9,13 +9,15 @@ if [[ -z "$LOG" ]]; then echo "usage: $0 <log-file> [count]" >&2; exit 2; fi
 : >"$LOG"
 fail=0
 for i in $(seq 1 "$N"); do
+  rc=0
   {
     echo "=== ask_browser run ${i}/${N} ==="
     echo "HEAD=$(git rev-parse HEAD)"
     echo "TREE=$(git rev-parse HEAD^{tree})"
     date -u +%Y-%m-%dT%H:%M:%SZ
-    python3 tests/ask_browser.py
-    echo "exit=$?"
-  } >>"$LOG" 2>&1 || { code=$?; echo "exit=$code" >>"$LOG"; fail=1; }
+    python3 tests/ask_browser.py || rc=$?
+    echo "exit=$rc"
+  } >>"$LOG" 2>&1
+  [[ "$rc" -eq 0 ]] || fail=1
 done
-exit "$fail"
+[[ "$fail" -eq 0 ]] || exit 1
