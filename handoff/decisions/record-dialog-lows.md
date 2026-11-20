@@ -86,3 +86,24 @@ A track with a label and a non-finite value is the dashed `is-tbd` placeholder, 
 Red `58c0402a72286f697534fb924a51fb9b9b91e8cc` is tests only. `tests/record_dialog_lows_browser.py` exits 1, 10 pass, 3 fail: object items, consultant arrays, and the placeholder. The throwing-field check already passes. `tests/charts.test.js` is 36 pass, 1 fail, on the placeholder assertion.
 
 Fix `1fd36ea9a87ca5926902f3cb892f05fb04003abc`. The browser command exits 0, 13 pass. The charts file is 37 pass. The page pin is `64228da2a3cf3ba103587d6c273bac5fa09137d6760564818bfc0e006ea2467e`, 924833 bytes. The seed assertion now expects the placeholder. That is the inspector's correction, not a weaker blank-label check. The quality line still must not say threshold or completeness without a number.
+
+## Fix round 2
+
+Loop 2 of 3. Devin's gate on `ba26520b55c368fd013d77a2cacbc84f30259b77` is CODE INCOMPLETE. Four mutants still passed. This round adds tests for those four. `#23` (`cursor/pr16-lows-safe-render`) is stacked on this branch and appends to `tests/charts.test.js`. The new gauge checks are in `tests/record_dialog_lows_gauge.test.js`. The browser file gains two cases at the end. `tests/charts.test.js` is not edited.
+
+A nameless object in a list is dropped. The quality text does not contain `{` or `"`. An empty track label, a whitespace label, `null`, and `undefined` draw no row. A label with text still draws. With JEV on, a rules engine omits `No rating engine answered (score = 0.8 × completeness)` when completeness is missing or `NaN`, and shows it when completeness is `0`. An array link is dropped. An object link with a url stays.
+
+The whitespace check failed on the parent. `tr` used `l`, and a space is truthy, so the row was drawn. That is the one product change: `l?.trim()`. `src/charts.js` is 57000 bytes. U4 stays byte-identical.
+
+Tests `6906e27c15188703bdc072bfd13abb04a4919313` are the two test files. On that commit the gauge file exits 1, 1 pass, 1 fail, on the space label. The browser file exits 0, 15 pass.
+
+Fix `f9212e93a3d40d3345d8a0c4570fc6f8b439ee83`. The gauge file exits 0, 2 pass. The browser file exits 0, 15 pass. The page pin is `a67b88e1aee140292de864fba322d3c3d6963c34fa77a2e74839e8e88c7ad0da`, 924841 bytes.
+
+Mutants, each restored, each exit 1:
+
+- Object branch replaced with `return JSON.stringify(x)`. Browser 14 pass, 1 fail: `a nameless object list item is dropped and not JSON`. The older object-list check stays green.
+- `tr=(l,v)=>true?`. Gauge file 1 pass, 1 fail: `an empty or whitespace track label renders no row`, on label `""`.
+- Rules formula always rendered. Gauge file 1 pass, 1 fail: `formula absent missing`. `tests/charts.test.js` stays 37 pass, 0 fail.
+- `Array.isArray(l)||` deleted. Browser 14 pass, 1 fail: `an array link is dropped and an object link stays`.
+
+Measured on `f9212e9` before the manifest write: node exit 0, 422 pass, 0 fail, 21351 ms. Edge exit 0, 1117 tests, 1113 pass, 0 fail, 4 skipped, 218901 ms. `make test-ui` exit 0, 849 PASS, 0 FAIL, 27 scripts. pytest exit 1, 411 passed, 2 failed, 23.90s, both the stale manifest. On `a06b5d5526effa5944cc19dae69daf341aa6bcd7`, pytest exit 0, 413 passed, 127 warnings, 24.56s.
