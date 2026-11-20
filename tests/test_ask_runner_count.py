@@ -68,7 +68,7 @@ exit 0
 SLOW = {'infinity', 'huge', 'overflow-digits'}
 
 
-def run(count, *, fail_at=None, timeout=20):
+def run(count, *, fail_at=None, timeout=20, lc_all=None):
     with tempfile.TemporaryDirectory() as raw:
         td = Path(raw)
         log = td / 'ask.log'
@@ -83,6 +83,8 @@ def run(count, *, fail_at=None, timeout=20):
         env = os.environ.copy()
         env['PATH'] = str(bindir) + os.pathsep + env.get('PATH', '')
         env['ATLAS_ASK_STUB_LOG'] = str(stub_log)
+        if lc_all is not None:
+            env['LC_ALL'] = lc_all
         if fail_at is not None:
             env['ATLAS_ASK_STUB_FAIL_AT'] = str(fail_at)
         cmd = [str(SCRIPT), str(log)] if count is None else [str(SCRIPT), str(log), count]
@@ -126,6 +128,53 @@ def test_mixed_run_exits_1():
     assert calls == ['tests/ask_browser.py', 'tests/ask_browser.py']
     assert 'exit=0\n' in body and 'exit=1\n' in body
     assert '=== ask_browser run 2/2 ===' in body
+
+
+# Non-ASCII digits. The class must reject them under a UTF-8 locale and under C.
+LOCALE_DIGITS = (
+    ('fw-1', '\uff11'),
+    ('fw-32', '\uff13\uff12'),
+    ('sup-2', '\u00b2'),
+    ('half', '\u00bd'),
+    ('mixed', '1\uff11'),
+)
+LOCALES = ('en_US.UTF-8', 'C')
+
+
+@pytest.mark.parametrize('locale', LOCALES)
+@pytest.mark.parametrize('name,count', LOCALE_DIGITS, ids=[row[0] for row in LOCALE_DIGITS])
+def test_non_ascii_digits_refused_under_both_locales(locale, name, count):
+    code, timed_out, _out, err, calls, body = run(count, lc_all=locale)
+    assert not timed_out, (locale, name)
+    assert code == 2, (locale, name, code, err)
+    assert err == MESSAGE.format(value=count, cap=MAX) + '\n', (locale, name, err)
+    assert calls == [], (locale, name, calls)
+    assert body == 'KEEP\n', (locale, name, body)
+    assert 'seq:' not in err
+    assert 'invalid integer constant' not in err
+
+
+@pytest.mark.parametrize('locale', LOCALES)
+@pytest.mark.parametrize('count,expect', (
+    ('0', 'reject'),
+    ('', 'reject'),
+    ('NaN', 'reject'),
+    ('Infinity', 'reject'),
+    ('1000000', 'reject'),
+    ('1', 1),
+    ('32', 32),
+), ids=['zero', 'empty', 'nan', 'infinity', 'huge', 'min', 'cap'])
+def test_ascii_counts_keep_the_same_result_in_both_locales(locale, count, expect):
+    code, timed_out, _out, err, calls, body = run(
+        count, lc_all=locale, timeout=3 if expect == 'reject' and count in ('Infinity', '1000000') else 20)
+    if expect == 'reject':
+        assert not timed_out and code == 2, (locale, count, code, err)
+        assert err == MESSAGE.format(value=count, cap=MAX) + '\n'
+        assert calls == [] and body == 'KEEP\n'
+        return
+    assert not timed_out and code == 0, (locale, count, code, err)
+    assert calls == ['tests/ask_browser.py'] * expect
+    assert body.count('exit=0\n') == expect
 
 
 def test_missing_log_is_usage_not_an_invalid_count():
