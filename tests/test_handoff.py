@@ -8,7 +8,7 @@ import tarfile
 import zipfile
 import pytest
 from scripts.doctor import read_literal_env, probe, environment, main as doctor_main
-from scripts.check_handoff import safe_relative, inspect, main
+from scripts.check_handoff import safe_relative, inspect, main, git_environ, _GIT_INVOCATION, git_index_file_list
 
 
 def test_env_reads_literals_without_execution(tmp_path):
@@ -420,6 +420,127 @@ def test_write_manifest_requires_explicit_dev_git_index():
   with pytest.raises(SystemExit) as error:
     main([str(repo), '--write-manifest'])
   assert error.value.code == 2
+
+
+def _mini_dev_repo(tmp_path, name='repo'):
+    root = tmp_path / name
+    root.mkdir()
+    env_init, _ = _isolated_git_env(tmp_path)
+    (root / 'notes').mkdir()
+    (root / 'notes' / 'readme.txt').write_bytes(b'listed\n')
+    subprocess.run(['git', 'init', '-q'], cwd=root, check=True, env=env_init)
+    subprocess.run(['git', 'add', 'notes/readme.txt'], cwd=root, check=True, env=env_init)
+    subprocess.run(['git', 'commit', '-qm', 'init'], cwd=root, check=True, env=env_init)
+    data = b'listed\n'
+    manifest = {
+        'files': [{'path': 'notes/readme.txt', 'bytes': len(data),
+                   'sha256': hashlib.sha256(data).hexdigest()}],
+        'manifest_excludes': ['MANIFEST.json'],
+    }
+    (root / 'MANIFEST.json').write_text(json.dumps(manifest), encoding='utf-8')
+    return root, env_init
+
+
+def test_dev_git_fsmonitor_script_path_does_not_touch_canary(tmp_path):
+    canary = tmp_path / 'canary-fsmonitor-script'
+    mark = tmp_path / 'fsmonitor.sh'
+    mark.write_text('#!/bin/sh\ntouch "' + str(canary) + '"\n', encoding='utf-8')
+    mark.chmod(0o755)
+    root, _ = _mini_dev_repo(tmp_path)
+    (root / '.git' / 'config').write_text('[core]\n\tfsmonitor = ' + str(mark) + '\n', encoding='utf-8')
+    assert not canary.exists()
+    inspect(root, rebuild=False, dev_git_index=True)
+    assert not canary.exists()
+    env = git_environ()
+    assert set(env) <= _GIT_ENV_ALLOWLIST
+    assert 'GIT_DIR' not in env
+
+
+def test_dev_git_fsmonitor_via_include_path_does_not_touch_canary(tmp_path):
+    canary = tmp_path / 'canary-include'
+    mark = tmp_path / 'fsmonitor-include.sh'
+    mark.write_text('#!/bin/sh\ntouch "' + str(canary) + '"\n', encoding='utf-8')
+    mark.chmod(0o755)
+    include_cfg = tmp_path / 'attacker-gitinclude.cfg'
+    include_cfg.write_text('[core]\n\tfsmonitor = ' + str(mark) + '\n', encoding='utf-8')
+    root, _ = _mini_dev_repo(tmp_path)
+    (root / '.git' / 'config').write_text(
+        '[core]\n\trepositoryformatversion = 0\n[include]\n\tpath = ' + str(include_cfg) + '\n',
+        encoding='utf-8',
+    )
+    assert not canary.exists()
+    inspect(root, rebuild=False, dev_git_index=True)
+    assert not canary.exists()
+    env = git_environ()
+    assert set(env) <= _GIT_ENV_ALLOWLIST
+    assert 'GIT_DIR' not in env
+
+
+def test_dev_git_index_fails_despite_git_work_tree_env(tmp_path, monkeypatch):
+    env_init, _ = _isolated_git_env(tmp_path)
+    clean = tmp_path / 'clean'
+    dirty = tmp_path / 'dirty'
+    for d in (clean, dirty):
+        d.mkdir()
+        (d / 'notes').mkdir()
+        (d / 'notes' / 'readme.txt').write_bytes(b'listed\n')
+        subprocess.run(['git', 'init', '-q'], cwd=d, check=True, env=env_init)
+        subprocess.run(['git', 'add', 'notes/readme.txt'], cwd=d, check=True, env=env_init)
+        subprocess.run(['git', 'commit', '-qm', 'init'], cwd=d, check=True, env=env_init)
+    (dirty / 'node_modules' / 'evil').mkdir(parents=True)
+    (dirty / 'node_modules' / 'evil' / 'index.js').write_bytes(b'export default 1;\n')
+    data = b'listed\n'
+    manifest = {
+        'files': [{'path': 'notes/readme.txt', 'bytes': len(data),
+                   'sha256': hashlib.sha256(data).hexdigest()}],
+        'manifest_excludes': ['MANIFEST.json'],
+    }
+    for d in (clean, dirty):
+        (d / 'MANIFEST.json').write_text(json.dumps(manifest), encoding='utf-8')
+    monkeypatch.setenv('GIT_DIR', str(clean / '.git'))
+    monkeypatch.setenv('GIT_WORK_TREE', str(clean))
+    report = inspect(dirty, rebuild=False, dev_git_index=True)
+    mc = next(c for c in report['checks'] if c['name'] == 'manifest-content')
+    assert not mc['pass'], mc['detail']
+    assert 'node_modules/evil' in mc['detail']
+
+
+_GIT_ENV_ALLOWLIST = frozenset({
+    'PATH', 'HOME', 'LANG', 'LC_ALL', 'GIT_CONFIG_NOSYSTEM', 'GIT_CONFIG_GLOBAL', 'GIT_TERMINAL_PROMPT',
+})
+
+
+def test_git_environ_is_allowlist_without_git_star(monkeypatch):
+    monkeypatch.setenv('GIT_DIR', '/tmp/evil-git-dir')
+    monkeypatch.setenv('GIT_WORK_TREE', '/tmp/evil-work-tree')
+    monkeypatch.setenv('GIT_INDEX_FILE', '/tmp/evil-index')
+    monkeypatch.setenv('GIT_CONFIG', '/tmp/evil-config')
+    env = git_environ()
+    assert set(env) <= _GIT_ENV_ALLOWLIST
+    assert 'GIT_DIR' not in env
+    assert 'GIT_WORK_TREE' not in env
+    assert 'GIT_INDEX_FILE' not in env
+
+
+def test_git_subprocess_argv_includes_hardening_flags(tmp_path, monkeypatch):
+    captured = {}
+    root, _ = _mini_dev_repo(tmp_path)
+
+    def fake_check_output(cmd, stderr=None, env=None):
+        captured['cmd'] = list(cmd)
+        captured['env'] = env
+        return b'notes/readme.txt\0'
+
+    monkeypatch.setattr(subprocess, 'check_output', fake_check_output)
+    git_index_file_list(root)
+    cmd = captured['cmd']
+    assert '-c' in cmd
+    assert 'core.fsmonitor=false' in cmd
+    assert 'core.hooksPath=/dev/null' in cmd
+    assert '--no-optional-locks' in cmd
+    env = captured['env']
+    assert env.get('GIT_CONFIG_NOSYSTEM') == '1'
+    assert env.get('GIT_CONFIG_GLOBAL') == '/dev/null'
 
 
 def test_dev_git_index_ignores_hostile_local_git_config(tmp_path):
