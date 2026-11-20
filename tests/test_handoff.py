@@ -348,6 +348,108 @@ def test_html_alias_read_through_symlinked_parent_outside_root_fails(tmp_path):
     assert 'outside package root' in details.lower()
 
 
+def _plant_attacker_dotgit(package: Path, tmp_path: Path, sentinel: Path) -> None:
+    """Crafted .git that would run fsmonitor/hooks if inspect invoked git."""
+    mark = tmp_path / 'fsmark.sh'
+    mark.write_text('#!/bin/sh\ntouch "' + str(sentinel) + '"\n', encoding='utf-8')
+    mark.chmod(0o755)
+    hook_dir = tmp_path / 'hooks'
+    hook_dir.mkdir()
+    hook = hook_dir / 'pre-commit'
+    hook.write_text('#!/bin/sh\ntouch "' + str(sentinel) + '"\n', encoding='utf-8')
+    hook.chmod(0o755)
+    include_cfg = tmp_path / 'attacker-include.cfg'
+    include_cfg.write_text('[core]\n\thooksPath = ' + str(hook_dir) + '\n', encoding='utf-8')
+    env_init, _ = _isolated_git_env(tmp_path)
+    (package / '.gitignore').write_text('node_modules/\n.claude/\n', encoding='utf-8')
+    subprocess.run(['git', 'init', '-q'], cwd=package, check=True, env=env_init)
+    cfg = package / '.git' / 'config'
+    cfg.write_text(
+        '[core]\n'
+        '\trepositoryformatversion = 0\n'
+        '\tfsmonitor = true\n'
+        '\tfsmonitorHookPath = ' + str(mark) + '\n'
+        '[include]\n'
+        '\tpath = ' + str(include_cfg) + '\n',
+        encoding='utf-8',
+    )
+    subprocess.run(['git', 'add', '-A'], cwd=package, check=True, env=env_init)
+    subprocess.run(['git', 'commit', '-qm', 'release'], cwd=package, check=True, env=env_init)
+
+
+def planted_dotgit_attack_package(tmp_path):
+    sentinel = tmp_path / 'git-hook-sentinel'
+    extra = {
+        'node_modules/evil/index.js': b'export default 1;\n',
+        '.claude/x': b'{"evil": true}\n',
+    }
+    package = real_release_package(tmp_path, extra=extra)
+    _plant_attacker_dotgit(package, tmp_path, sentinel)
+    return package, sentinel
+
+
+def test_planted_dotgit_package_inspect_stays_package_mode(tmp_path):
+  package, sentinel = planted_dotgit_attack_package(tmp_path)
+  assert not sentinel.exists()
+  result = inspect(package, rebuild=False, dev_git_index=False)
+  assert not result['passed']
+  assert not sentinel.exists()
+  detail = next(c['detail'] for c in result['checks'] if c['name'] == 'manifest-content')
+  assert 'node_modules/evil' in detail
+  assert '.claude/x' in detail
+  assert '.git' in detail
+
+
+def test_planted_dotgit_package_cli_stays_package_mode(tmp_path, capsys):
+  package, sentinel = planted_dotgit_attack_package(tmp_path)
+  assert not sentinel.exists()
+  assert run_verify([str(package)]) == 1
+  assert not sentinel.exists()
+  out = capsys.readouterr().out
+  assert 'node_modules/evil' in out
+  assert '.claude/x' in out
+  assert '.git' in out
+
+
+def test_write_manifest_requires_explicit_dev_git_index():
+  repo = Path(__file__).resolve().parents[1]
+  assert (repo / '.git' / 'HEAD').is_file()
+  assert main([str(repo), '--write-manifest']) != 0
+
+
+def test_dev_git_index_ignores_hostile_local_git_config(tmp_path):
+  sentinel = tmp_path / 'sentinel-dev'
+  root = tmp_path / 'repo'
+  root.mkdir()
+  env_init, _ = _isolated_git_env(tmp_path)
+  (root / 'notes').mkdir()
+  (root / 'notes' / 'readme.txt').write_bytes(b'listed\n')
+  mark = tmp_path / 'dev-fsmark.sh'
+  mark.write_text('#!/bin/sh\ntouch "' + str(sentinel) + '"\n', encoding='utf-8')
+  mark.chmod(0o755)
+  hook_dir = tmp_path / 'dev-hooks'
+  hook_dir.mkdir()
+  (hook_dir / 'pre-commit').write_text('#!/bin/sh\ntouch "' + str(sentinel) + '"\n', encoding='utf-8')
+  (hook_dir / 'pre-commit').chmod(0o755)
+  subprocess.run(['git', 'init', '-q'], cwd=root, check=True, env=env_init)
+  cfg = root / '.git' / 'config'
+  cfg.write_text(
+      '[core]\n\tfsmonitor = true\n\tfsmonitorHookPath = ' + str(mark) + '\n'
+      '\thooksPath = ' + str(hook_dir) + '\n',
+      encoding='utf-8',
+  )
+  subprocess.run(['git', 'add', 'notes/readme.txt'], cwd=root, check=True, env=env_init)
+  subprocess.run(['git', 'commit', '-qm', 'init'], cwd=root, check=True, env=env_init)
+  data = b'listed\n'
+  manifest = {'files': [{'path': 'notes/readme.txt', 'bytes': len(data),
+                         'sha256': hashlib.sha256(data).hexdigest()}],
+              'manifest_excludes': ['MANIFEST.json']}
+  (root / 'MANIFEST.json').write_text(json.dumps(manifest), encoding='utf-8')
+  assert not sentinel.exists()
+  inspect(root, rebuild=False, dev_git_index=True)
+  assert not sentinel.exists()
+
+
 def test_inspect_does_not_execute_package_git_fsmonitor(tmp_path):
     marker = tmp_path / 'fsmonitor-ran'
     hook = tmp_path / 'mark.sh'
