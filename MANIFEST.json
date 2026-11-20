@@ -1422,8 +1422,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/invitation-tenant-erase.test.js",
-      "bytes": 16196,
-      "sha256": "c7745734ccadac2d2968df18edad5dffc4ed78d5ab1b225c918145fddb506a5f"
+      "bytes": 18016,
+      "sha256": "fc5b5ce1f6de9f6d7f55780da0086619028c38772029ed4ba153454a9e1930ec"
     },
     {
       "path": "deploy/cloudflare-edge/test/invitation-tenant.test.js",
@@ -2252,8 +2252,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 322937,
-      "sha256": "bc0f37e2afaee894843e01490e6e0b2e4aacfd4447bed27d5ee02728104ed1b2"
+      "bytes": 323423,
+      "sha256": "59f6e60d624370840dd6b067df6e1046caebc213f5087395ee52c7b2fc380762"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2297,8 +2297,13 @@
     },
     {
       "path": "handoff/decisions/invitation-tenant-erase.md",
-      "bytes": 9196,
-      "sha256": "28b9b64f3356995b64801ad46c3a946e1c9dcf9fbbf377e55f25d5fcf39f78d5"
+      "bytes": 9388,
+      "sha256": "899a7dc8055ba232dcf04cb2c97e296301f0244c4468fe456728776d784ca0ef"
+    },
+    {
+      "path": "handoff/decisions/pr12-plan-debate.md",
+      "bytes": 20111,
+      "sha256": "769afc405efedae63d393361a2aa7b6826862586e370f957b8e297e94b6c0c15"
     },
     {
       "path": "handoff/provenance/original-v12-manifest.json",
