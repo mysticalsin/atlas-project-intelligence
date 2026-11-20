@@ -498,7 +498,12 @@ export function storyRater(env, fetcher = fetch, opts = {}) {
         resolve(result);
         if (typeof opts.onEnd === 'function') {
           try { opts.onEnd(result); }
-          catch { /* an observer must not unsettle the outcome */ }
+          catch (err) {
+            // Name only. The observer's message can carry story text, and the key never belongs here.
+            const name = err instanceof Error && /^[A-Za-z][A-Za-z0-9_]{0,40}$/.test(err.name) ? err.name : 'Error';
+            try { emit({ atlas_metric: 'rating', event: 'onend_throw', name }); }
+            catch { /* logging never changes the decision */ }
+          }
         }
       };
       const launch = () => {
