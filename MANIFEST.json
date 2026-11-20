@@ -1072,8 +1072,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/library.js",
-      "bytes": 104729,
-      "sha256": "eaf000e722b99d5011a69c25164e1fc3226e5b068c2e9f703bd9054c150b9802"
+      "bytes": 104811,
+      "sha256": "7eed1d503d8bdf2eaa3c32f3c0246f62df08fbc82c35a61e9f02a8fe275e25bc"
     },
     {
       "path": "deploy/cloudflare-edge/src/memory-routes.js",
@@ -1087,8 +1087,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/operate.js",
-      "bytes": 21213,
-      "sha256": "60df2d1839201ee620b4d1f7516acf42a6f6f1c802398a8e4677beddd2dc2f54"
+      "bytes": 21435,
+      "sha256": "735059c9682137ae5f024df3ec2f06afdf0f0e6b47d59808bc12fe205f19e93f"
     },
     {
       "path": "deploy/cloudflare-edge/src/outreach.js",
@@ -1212,8 +1212,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/subject-rights.js",
-      "bytes": 29474,
-      "sha256": "4aede651a507d75d18322627c8ddc3e0dcd354fc7481e2a7a7a85c4556e85a76"
+      "bytes": 29510,
+      "sha256": "855d2d781c72ced7c89918cc9df066fefbad9991e817842b7f3dbff87ff9f113"
     },
     {
       "path": "deploy/cloudflare-edge/src/teams-routes.js",
@@ -1422,8 +1422,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/invitation-tenant-erase.test.js",
-      "bytes": 18016,
-      "sha256": "fc5b5ce1f6de9f6d7f55780da0086619028c38772029ed4ba153454a9e1930ec"
+      "bytes": 22374,
+      "sha256": "820be12180c34d36d4ba16fe5ee4af8bb1c4836696cbadf362ccda45dc4bbc70"
     },
     {
       "path": "deploy/cloudflare-edge/test/invitation-tenant.test.js",
@@ -2252,8 +2252,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 323423,
-      "sha256": "59f6e60d624370840dd6b067df6e1046caebc213f5087395ee52c7b2fc380762"
+      "bytes": 324531,
+      "sha256": "533c50295f32b5a6ac2db0ee98695de38d8b69825b946c3703e16f94e67c9f42"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2297,8 +2297,8 @@
     },
     {
       "path": "handoff/decisions/invitation-tenant-erase.md",
-      "bytes": 9388,
-      "sha256": "899a7dc8055ba232dcf04cb2c97e296301f0244c4468fe456728776d784ca0ef"
+      "bytes": 10770,
+      "sha256": "a2897b411214cfe6a5da5f8aa118b7cc15c27e5fac489e802de18e7daff0491f"
     },
     {
       "path": "handoff/decisions/pr12-plan-debate.md",
