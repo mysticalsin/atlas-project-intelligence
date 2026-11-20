@@ -33,19 +33,22 @@ def snap(page):
       const line = document.querySelector('#recordBody .quality .impact-head span');
       const center = document.querySelector('#recordBody .ag-center small');
       const tracks = [...document.querySelectorAll('#recordBody .ag-legend.is-tracks li')].map(li => norm(li.innerText));
+      const tbd = [...document.querySelectorAll('#recordBody .ag-legend.is-tracks li')].filter(li => li.querySelector('.ag-meter.is-tbd')).map(li => norm(li.innerText));
       return {
         open: !!document.getElementById('recordDialog')?.open,
         title: document.getElementById('recordTitle')?.textContent || '',
         line: norm(line && line.textContent),
         center: norm(center && center.textContent),
         tracks,
+        tbd,
+        toast: norm(document.getElementById('toast')?.textContent),
         body: norm(document.getElementById('recordBody')?.innerText),
         rejects: window.__atlasRejects || []
       };
     }""")
 def detail_of(view):
-    return 'open=%s title=%s line=%r center=%r tracks=%r rejects=%r errors=%r' % (
-        view['open'], view['title'], view['line'], view['center'], view['tracks'], view['rejects'], ERR)
+    return 'open=%s title=%s line=%r center=%r tracks=%r tbd=%r toast=%r rejects=%r errors=%r' % (
+        view['open'], view['title'], view['line'], view['center'], view['tracks'], view.get('tbd'), view.get('toast'), view['rejects'], ERR)
 def seed_ok(view):
     return (view['open'] and view['title'] == 'Northwind queue pilot' and 'Quality 80' in view['body']
         and view['line'] == 'Ready for use' and view['center'] == 'of 100'
@@ -65,7 +68,34 @@ VARIANTS = [
     ('wrong item types open with a safe empty list',
      lambda q, d: (q.__setitem__('issues', [{'field': 'outcome', 'kind': 1, 'detail': 'n'}, 'vague']), d['details'].__setitem__('consultants', [None])),
      lambda view: view['open'] and view['title'] == 'Northwind queue pilot' and 'Issues found' not in view['body'] and 'undefined' not in view['body'] and not view['rejects'] and not ERR),
+    ('object list items render a field or nothing',
+     lambda q, d: (q.__setitem__('blockers', [{'label': 'Queue delay'}, {'a': 1}, None, 'plain']), q.__setitem__('holds', [{'name': 'A hold'}]), q.__setitem__('missing', [{'text': 'A gap'}]), q.__setitem__('recommendations', [{'label': 'Rewrite the metric'}])),
+     lambda view: view['open'] and 'Queue delay' in view['body'] and 'A hold' in view['body'] and 'A gap' in view['body'] and 'Rewrite the metric' in view['body'] and 'plain' in view['body'] and '[object Object]' not in view['body'] and not view['rejects'] and not ERR),
+    ('consultant array items do not render as undefined',
+     lambda q, d: d['details'].__setitem__('consultants', [1, {'name': 5}, ['x']]),
+     lambda view: view['open'] and 'undefined' not in view['body'] and '[object Object]' not in view['body'] and not view['rejects'] and not ERR),
 ]
+BOOM = """
+(() => {
+  const orig = window.fetch;
+  window.fetch = async function(input, init) {
+    const res = await orig.apply(this, arguments);
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    const path = url.split('?')[0];
+    const method = (init && init.method) || 'GET';
+    if (method !== 'GET' || !/\\/api\\/library\\/[^/]+$/.test(path)) return res;
+    let data;
+    try { data = await res.clone().json(); } catch (e) { return res; }
+    if (!data || typeof data !== 'object') return res;
+    const boom = new Proxy(data, { get(target, prop, receiver) {
+      if (prop === 'data') throw new Error('record field threw');
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === 'function' ? value.bind(target) : value;
+    } });
+    return { ok: res.ok, status: res.status, json: async () => boom };
+  };
+})();
+"""
 try:
     status, listing = edge_api('GET', '/api/library')
     item = next((i for i in listing.get('items', []) if i.get('title') == 'Northwind queue pilot'), None)
@@ -76,11 +106,13 @@ try:
     rid = item['id']
     with sync_playwright() as pw:
         browser = pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH') or None)
-        def open_record(width, mutate=None):
+        def open_record(width, mutate=None, boom=False):
             ERR.clear()
             ctx = browser.new_context(viewport={'width': width, 'height': 800})
             page = ctx.new_page()
             page.add_init_script("window.__atlasRejects=[];window.addEventListener('unhandledrejection',e=>{window.__atlasRejects.push(String(e.reason&&e.reason.stack||e.reason));});")
+            if boom:
+                page.add_init_script(BOOM)
             page.on('pageerror', lambda e: ERR.append('pageerror: ' + str(e)))
             if mutate:
                 def handle(route):
@@ -108,13 +140,17 @@ try:
                 (page.locator('#recordDialog') if view['open'] else page).screenshot(path=str(target))
             ctx.close()
             return view
-        for width in (1280, 375):
+        for width in (1280, 375, 320):
             view = open_record(width)
             check(f'seed record at {width} renders with no blank labels', seed_ok(view), detail_of(view))
         os.environ.pop('SHOTS', None)
         for name, mutate, ok in VARIANTS:
             view = open_record(1280, mutate)
             check(name, ok(view), detail_of(view))
+        view = open_record(1280)
+        check('completeness placeholder stays and the formula note does not', view['open'] and 'Completeness' in view['tbd'] and all('0.8' not in t for t in view['tracks']) and not view['rejects'] and not ERR, detail_of(view))
+        view = open_record(1280, boom=True)
+        check('a throwing record field does not reject', (not view['open']) and 'record field threw' in view['toast'] and not view['rejects'] and not ERR, detail_of(view))
         browser.close()
 finally:
     srv.terminate()
