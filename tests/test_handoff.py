@@ -1,6 +1,7 @@
 """Offline handoff utilities: no provider calls and no real credentials."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import tarfile
@@ -228,6 +229,52 @@ def test_unlisted_file_fails(tmp_path, capsys):
     package = synthetic_package(tmp_path, extra={'notes/extra.txt': b'not in the manifest\n'})
     assert run_verify([str(package)]) == 1
     assert 'FAIL manifest-content: unlisted: notes/extra.txt' in capsys.readouterr().out
+
+
+def test_git_dev_tree_untracked_file_fails_manifest(tmp_path):
+    """Listed index files plus an untracked notes/extra.txt must fail manifest-content."""
+    root = tmp_path / 'repo'
+    root.mkdir()
+    subprocess.run(['git', 'init', '-q'], cwd=root, check=True,
+                   env={**os.environ, 'GIT_AUTHOR_NAME': 't', 'GIT_AUTHOR_EMAIL': 't@e', 'GIT_COMMITTER_NAME': 't', 'GIT_COMMITTER_EMAIL': 't@e'})
+    (root / 'notes').mkdir()
+    (root / 'notes' / 'readme.txt').write_bytes(b'listed\n')
+    subprocess.run(['git', 'add', 'notes/readme.txt'], cwd=root, check=True)
+    subprocess.run(['git', 'commit', '-qm', 'init'], cwd=root, check=True)
+    (root / 'notes' / 'extra.txt').write_bytes(b'untracked\n')
+    data = b'listed\n'
+    manifest = {'files': [{'path': 'notes/readme.txt', 'bytes': len(data),
+                         'sha256': hashlib.sha256(data).hexdigest()}],
+                'manifest_excludes': ['MANIFEST.json', '.git/']}
+    (root / 'MANIFEST.json').write_text(json.dumps(manifest), encoding='utf-8')
+    result = inspect(root, rebuild=False)
+    assert not result['passed']
+    detail = next(c['detail'] for c in result['checks'] if c['name'] == 'manifest-content')
+    assert 'unlisted: notes/extra.txt' in detail
+
+
+def test_node_modules_payload_fails_without_git(tmp_path, capsys):
+    package = synthetic_package(tmp_path, extra={'node_modules/payload.js': b'export default 1;\n'})
+    assert run_verify([str(package)]) == 1
+    assert 'unlisted: node_modules/payload.js' in capsys.readouterr().out
+
+
+def test_claude_payload_fails_without_git(tmp_path, capsys):
+    package = synthetic_package(tmp_path, extra={'.claude/payload.md': b'# not a release file\n'})
+    assert run_verify([str(package)]) == 1
+    assert 'unlisted: .claude/payload.md' in capsys.readouterr().out
+
+
+def test_inspect_does_not_execute_package_git_fsmonitor(tmp_path):
+    marker = tmp_path / 'fsmonitor-ran'
+    hook = tmp_path / 'mark.sh'
+    hook.write_text('#!/bin/sh\ntouch "' + str(marker) + '"\n', encoding='utf-8')
+    hook.chmod(0o755)
+    root = synthetic_package(tmp_path)
+    (root / '.git').mkdir()
+    (root / '.git' / 'config').write_text('[core]\n\tfsmonitor = true\n\tfsmonitorHookPath = ' + str(hook) + '\n', encoding='utf-8')
+    inspect(root, rebuild=False)
+    assert not marker.exists(), 'inspect must not invoke git on a package .git directory'
 
 
 def test_tampered_zip_fails(tmp_path, capsys):
