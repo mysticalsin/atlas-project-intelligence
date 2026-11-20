@@ -22,10 +22,14 @@ const NONASCII = "SELECT é$a(') ; DELETE FROM refs";
 const COMMENT = '/* x */ EXPLAIN QUERY PLAN DELETE FROM refs';
 const COMMENT_READ = '/* x */ EXPLAIN QUERY PLAN SELECT 1';
 const SPLIT = 'EXPLAIN QUERY PLAN SELECT 1; DELETE FROM refs';
+// SELECT 1 VACUUM and SELECT 1 REINDEX are column aliases. The real
+// statements stay here. Alias rows are in write-sqltext-alias-explain.test.js.
 const TRAILING = [
   'SELECT 1 DETACH other',
-  'SELECT 1 VACUUM',
-  'SELECT 1 REINDEX',
+  'VACUUM',
+  'VACUUM main',
+  'REINDEX',
+  'REINDEX refs',
   'SELECT 1 PRAGMA user_version',
 ];
 
@@ -102,7 +106,7 @@ test('EXPLAIN is refused unless it is the first word of one statement', () => {
   doors([COMMENT, COMMENT_READ, SPLIT], 'SQL_DOOR');
 });
 
-test('detach, vacuum, reindex, and pragma after a read are writes', () => {
+test('detach and pragma after a read, and a real vacuum or reindex, are writes', () => {
   for (const sql of TRAILING) assert.equal(provenRead(sql), false, sql);
   doors(TRAILING, 'SQL_DOOR');
 });
