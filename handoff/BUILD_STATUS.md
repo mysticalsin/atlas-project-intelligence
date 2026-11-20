@@ -1,6 +1,33 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-20 — identity change, full-length compare and observer registration (`cursor/atlas-identity-change-residual`)
+
+Devin on `281742422039ad23d0764213be1455a2ecc49bbc`, tree `4b8012864178b6693ef73f1ce2e47b25dd39e348`: CODE INCOMPLETE and BODY FAIL. Merge-tree onto `main` `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec` was clean. Inspector DELTA r2 PASS WITH NOTES on that head is superseded. The record is `handoff/decisions/identity-change-fail-closed.md`.
+
+`sameKey` already compared all 32 characters. The orb already registered its storage observer. The new tests pass on that head, so this loop has no product-code change. The test commit is `a4edc6ce035454059d455196c52b4468e0205022` (tree `4138e2ee63eb14ecee8d810ee453c71dd8cc2e20`).
+
+On that commit:
+
+```sh
+node --test tests/identity-change.test.js deploy/cloudflare-edge/test/identity-change.test.js
+```
+
+44 tests, 44 pass, 0 fail, exit 0, duration_ms 241.563937.
+
+Cutting `timingSafe` to the first 8 hex characters opened the library, status 200, for a key that shares the first 8, a key that differs only in the last character, and an email key that differs only in the last character. Removing the `watchObserver` registration let the storage observer run after the blank: 3 callbacks, the test expected 2. `slice(0, 63)` stayed green. A 32-character key has no 64th character, so that cut compares the whole key. A presented 64-character value that shares its first 63 characters with `key + key` is rejected by the 32-character hex check before the compare. The header strip, the upper-case key, and the U+00A0 key were already green when added. They are regression guards.
+
+The page pin did not move. `python3 build.py` during `make test-ui` printed 929767 bytes. sha256 `1c7ce2a51fc8e4b8f360b483d9173e198cc2d0c9dcf95a386f911af46c8ac3d1`.
+
+Measured on this working tree, `ATLAS_DEPLOY_STUB` unset, `CHROMIUM_PATH=/usr/local/bin/google-chrome`. `ATLAS_WORKERD_ROOT` is unset and `/tmp/atlas-workerd-20261023` is absent.
+
+- `node --test tests/*.test.js`: 436 tests, 436 pass, 0 fail, exit 0, duration_ms 22064.617337.
+- `cd deploy/cloudflare-edge && node --test test/*.test.js`: 1144 tests, 1140 pass, 0 fail, 4 skipped, exit 0, duration_ms 238417.916817. The four skips are the workerd 2026-10-23 SQL tail tests.
+- `make test-ui`: PASS 834, FAIL 0, exit 0.
+- Twenty-five mutants each turned a named test red and were restored. That is the previous twenty-three plus the 8-character cut and the removed observer registration.
+
+`MANIFEST.json` is regenerated after this note. Pytest and `check_handoff . --dev-git-index` on the committed tree are in the gate packet. Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open. No deploy, no Access or DNS change, and no `ATLAS_DEV_IDENTITY`.
+
 ## 2026-11-20 — identity change, inspector notes and exact-head gate (`cursor/atlas-identity-change-residual`)
 
 Inspector, first QA, on `b60694e30d5465dfbe700871b46266f56b6ef633`: PASS WITH NOTES. Report sha256 `745fba3ef3c2dcac708c68b37228159b01734a19ba96ab45d355c2452ca1f32a`. The record is `handoff/decisions/identity-change-fail-closed.md`.

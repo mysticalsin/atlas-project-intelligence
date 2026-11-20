@@ -53,6 +53,17 @@ Devin, report `/cursor/stores/bot/atlas-pr15/PREMERGE-atlas-pr15-b60694e.md`. Fi
 - D-2. Do not trim before `sameKey`. A minted key wrapped in U+00A0 is a mismatch. Fetch removes leading and trailing ASCII space and tab before the Worker sees the value, so that padding cannot reach the compare. U+00A0 is whitespace that `String.prototype.trim` removes and the header parser keeps. Trimming before the hex check turns that case into a match.
 - D-3. An empty server subject key does not skip the check. Production without `LOG_SALT` mints none. A presented email key, with the subject header absent or empty, is 409 `IDENTITY_CHANGED` and opens no Durable Object. Returning "no mismatch" when `boundSubject` is empty falls through to the `LOG_SALT` 503 only after the identity check is skipped, which this test refuses.
 
+## Exact-head gate, loop 2
+
+Devin on `281742422039ad23d0764213be1455a2ecc49bbc`, tree `4b8012864178b6693ef73f1ce2e47b25dd39e348`: CODE INCOMPLETE and BODY FAIL. `git merge-tree` onto `main` `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec` was clean. Inspector DELTA r2 on that head was PASS WITH NOTES, report `/cursor/stores/bot/atlas-pr15/QA-inspector-28174242.md`. That inspector result is superseded by the next head.
+
+`sameKey` already compared all 32 characters, and the orb already registered its storage observer. The new tests pass on `28174242` and fail on the named mutants. They are not a product change.
+
+- A 32-character key that shares the first 8 characters, or every character but the last, is 409 and opens no Durable Object. The same is true of the email key. Cutting `timingSafe` to `slice(0, 8)` opens the library (status 200) for those three shapes. A presented 64-character value that shares its first 63 characters with `key + key` and differs at the last character is not a 32-character key, so it is rejected before the compare. `slice(0, 63)` on a 32-character key is the whole key, so that cut stays green. The last character of the 32-character key is what forces every shorter prefix, including 8, to fail.
+- The storage observer copies the status text while the page is up. After the identity blank it does not run again, and the blank throws nothing. Removing `watchObserver(storageObserver)` leaves the observer connected, so the post-blank mutation runs the callback. The clean-console test stays green under that removal because the null guard swallows it.
+
+The header-strip table, the upper-case minted key, and the U+00A0-wrapped key were already green on the code they were added to. They are regression guards. Their mutants go red. They are not red-first proofs.
+
 ## Known limits
 
 - A caller that sends no bound header, and a tab loaded before this page was deployed, keeps today's behavior. The server identity is still the JWT, so that caller receives only the JWT's own data. The old page does not learn that the person changed until it is reloaded.
@@ -62,3 +73,5 @@ Devin, report `/cursor/stores/bot/atlas-pr15/PREMERGE-atlas-pr15-b60694e.md`. Fi
 - The Python gateway cookie session (`atlas_voice/identity.py`) is not covered.
 - The blank notice is a child of the document element, not of the hidden body. Putting it in the body would hide it and remove it from the accessibility tree.
 - ASCII space and tab around a bound key are removed by the Fetch header parser before `sameKey`. The Worker still refuses any surrounding whitespace the parser keeps, including U+00A0, rather than trimming it into a match.
+- The early return in `identityMismatch` when the server subject key is not 32 lowercase hex characters is redundant with `sameKey`. A non-hex server key already fails the later compare. The early return is defence in depth. Removing only that line does not change the behavioural pin. On `28174242` the inspector marked it at `app.js:174`.
+- Without workerd, the edge suite skips four SQL tail tests that require workerd 2026-10-23. This VM has `ATLAS_WORKERD_ROOT` unset and no `/tmp/atlas-workerd-20261023`. The measured skip count is in `handoff/BUILD_STATUS.md`. A workerd install is a different environment.

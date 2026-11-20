@@ -1412,8 +1412,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/identity-change.test.js",
-      "bytes": 31857,
-      "sha256": "205e38712dc449bb4f082ae9687500bf66635d16eda8d2c45a78f4adb318ba8f"
+      "bytes": 34103,
+      "sha256": "836f71cbd82965742e263e871d15fef23cb40f2deb8cf69d0ce46020700dc809"
     },
     {
       "path": "deploy/cloudflare-edge/test/invitation-closed-code.test.js",
@@ -2287,8 +2287,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 353347,
-      "sha256": "725b8bed7121b36a5c489f11400eb580d10feb3a644c8d91943b988f55615ec8"
+      "bytes": 356161,
+      "sha256": "5fa0fbc99e691c77038d1cb1f8a34e7e556eeaf170395955b2125d9d1c977469"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2367,8 +2367,8 @@
     },
     {
       "path": "handoff/decisions/identity-change-fail-closed.md",
-      "bytes": 8167,
-      "sha256": "3847230e167ddcb8d3926d0859ab43f50638ee9529500344c8013a29d2329f72"
+      "bytes": 10579,
+      "sha256": "772b98d720bef86108839218c883db3501fc45e3abcf6144b52f119f099370f6"
     },
     {
       "path": "handoff/decisions/invitation-tenant-erase.md",
@@ -3147,8 +3147,8 @@
     },
     {
       "path": "tests/identity-change.test.js",
-      "bytes": 33009,
-      "sha256": "ae2a5ba847b8be8180b814fe97e3858138e341347345107ec16b828ba61588e3"
+      "bytes": 40156,
+      "sha256": "219a257ab2f483701860547bd0526e867d7656bb2b8c290daa167d21d26cbc3a"
     },
     {
       "path": "tests/intelligence-browser-results.json",
