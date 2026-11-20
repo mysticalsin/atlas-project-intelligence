@@ -44,7 +44,40 @@ test('a known object uses its label field', () => {
   assert.equal(show({label: 2, name: 'ignored'}), '2');
   assert.equal(show({label: 0}), '0');
   assert.equal(show({label: ''}), '');
+  assert.equal(show({label: '  Lead  '}), '  Lead  ');
   assert.equal(show({label: 'Lead', role: {label: 'other'}}), 'Lead');
+});
+
+test('an array with its own label is the placeholder', () => {
+  const row = ['Lead'];
+  row.label = 'Delivery lead';
+  assert.equal(show(row), PLACEHOLDER);
+});
+
+test('an inherited label is the placeholder', () => {
+  const proto = {label: 'Inherited'};
+  assert.equal(show(Object.create(proto)), PLACEHOLDER);
+  assert.equal(show(Object.assign(Object.create(proto), {hours: 3})), PLACEHOLDER);
+});
+
+test('a non-finite label is the placeholder', () => {
+  assert.equal(show({label: NaN}), PLACEHOLDER);
+  assert.equal(show({label: Infinity}), PLACEHOLDER);
+  assert.equal(show({label: -Infinity}), PLACEHOLDER);
+});
+
+test('a function with its own label is the placeholder', () => {
+  const fn = function role() { return 'Ada'; };
+  fn.label = 'Delivery lead';
+  assert.equal(show(fn), PLACEHOLDER);
+});
+
+test('a boxed String is the placeholder', () => {
+  const boxed = new String('Ada');
+  const out = show(boxed);
+  assert.equal(typeof out, 'string');
+  assert.equal(out, PLACEHOLDER);
+  assert.equal(out.includes('[object'), false);
 });
 
 test('null, arrays, and nested objects are the placeholder', () => {
