@@ -933,7 +933,7 @@
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
       "bytes": 146,
-      "sha256": "e1aab304ead080c0079bfacd41334187cc9ca97c9dee3da4c8d8bd85d5ac739d"
+      "sha256": "93196c1732d530e8a0ad455ed9b3198c7dd2df0457e1fd9b47582c5a456c0005"
     },
     {
       "path": "deploy/cloudflare-edge/set-keys.sh",
@@ -2282,8 +2282,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 330007,
-      "sha256": "dadbf3d480d902cdb0fd1aa08e28b954c68b8ac74872b03a7c3c653a409d2acc"
+      "bytes": 332190,
+      "sha256": "ee0341c117a22d6858fb5617dfc2e960248accc8471427a8b3628ab4f83cdc4d"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2359,6 +2359,11 @@
       "path": "handoff/decisions/invitation-tenant-erase.md",
       "bytes": 10770,
       "sha256": "a2897b411214cfe6a5da5f8aa118b7cc15c27e5fac489e802de18e7daff0491f"
+    },
+    {
+      "path": "handoff/decisions/page-pin-refresh.md",
+      "bytes": 5542,
+      "sha256": "12619813932482169c4e8d2a2b1e260b3cbe17cc687fc29fb7b828323dfb4509"
     },
     {
       "path": "handoff/decisions/post-pr9-unslop.md",
@@ -3189,6 +3194,11 @@
       "path": "tests/orb_touch_browser.py",
       "bytes": 3547,
       "sha256": "e038dceb0ce5304cfb9bf7f9b3c0316d7fe727cf5bc750b10626366ec99c873f"
+    },
+    {
+      "path": "tests/page-pin.test.js",
+      "bytes": 810,
+      "sha256": "f09db67a30f076be332ab83d98fe364a96747ac88500e6d9af6f073377dd1a32"
     },
     {
       "path": "tests/page_harness.py",
