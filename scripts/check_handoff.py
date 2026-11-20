@@ -65,6 +65,31 @@ def resolve_in_package(root: Path, rel: str) -> Path:
     return target
 
 
+def symlink_in_package_path(root: Path, rel: str) -> bool:
+    """True when any path component under root is a symlink (lstat; does not follow)."""
+    if not safe_relative(rel):
+        return True
+    cur = root
+    for part in PurePosixPath(rel).parts:
+        cur = cur / part
+        try:
+            st = os.lstat(cur)
+        except OSError:
+            return False
+        if stat.S_ISLNK(st.st_mode):
+            return True
+    return False
+
+
+def read_package_bytes(root: Path, rel: str) -> bytes:
+    if symlink_in_package_path(root, rel):
+        raise ValueError('symlink in package path: ' + rel)
+    target = resolve_in_package(root, rel)
+    if not target.is_file():
+        raise OSError('not a regular file: ' + rel)
+    return target.read_bytes()
+
+
 def package_files(root: Path) -> list[str]:
     found = []
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
@@ -144,7 +169,7 @@ def write_manifest(root: Path, *, dev_git_index: bool = False) -> int:
     meta = json.loads(path.read_text(encoding='utf-8'))
     rows = []
     for rel in release_file_list(root, dev_git_index=dev_git_index):
-        data = resolve_in_package(root, rel).read_bytes()
+        data = read_package_bytes(root, rel)
         rows.append({'path': rel, 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
     meta['files'] = rows
     path.write_text(json.dumps(meta, indent=2) + '\n', encoding='utf-8')
@@ -175,18 +200,16 @@ def inspect(root: Path, *, rebuild=True, dev_git_index: bool = False) -> dict:
             bad.append('duplicate: ' + rel)
             continue
         seen.add(rel)
-        try:
-            target = resolve_in_package(root, rel)
-        except ValueError:
-            bad.append('outside package root: ' + rel)
-            continue
-        if not target.is_file() or target.is_symlink():
+        if symlink_in_package_path(root, rel):
             bad.append('missing or symlink: ' + rel)
             continue
         try:
-            data = target.read_bytes()
+            data = read_package_bytes(root, rel)
+        except ValueError:
+            bad.append('outside package root: ' + rel)
+            continue
         except OSError:
-            bad.append('unreadable: ' + rel)
+            bad.append('missing or symlink: ' + rel)
             continue
         if len(data) != row.get('bytes') or hashlib.sha256(data).hexdigest() != row.get('sha256'):
             bad.append('changed: ' + rel)
@@ -246,20 +269,19 @@ def inspect(root: Path, *, rebuild=True, dev_git_index: bool = False) -> dict:
     try:
         contents = []
         for name in aliases:
-            try:
-                target = resolve_in_package(root, name)
-            except ValueError:
-                check('html-logo-files', False, 'outside package root: ' + name)
-                break
-            if target.is_symlink():
+            if symlink_in_package_path(root, name):
                 check('html-logo-files', False, 'missing or symlink: ' + name)
                 break
-            contents.append(target.read_bytes())
+            try:
+                contents.append(read_package_bytes(root, name))
+            except (ValueError, OSError):
+                check('html-logo-files', False, 'missing or symlink: ' + name)
+                break
         else:
             check('html-aliases', len(set(contents)) == 1, 'Four compatibility aliases must be byte-identical.')
             try:
-                logo = resolve_in_package(root, 'assets/Mantu.svg').read_bytes()
-            except ValueError:
+                logo = read_package_bytes(root, 'assets/Mantu.svg')
+            except (ValueError, OSError):
                 check('logo', False, 'outside package root: assets/Mantu.svg')
             else:
                 check('logo', hashlib.sha256(logo).hexdigest() == '92c5ff21779f09199097a2971c172453017f0d2581a0ced6f54fe486ba9b6c2b', 'Preserve the supplied Mantu asset bytes.')
@@ -272,11 +294,13 @@ def inspect(root: Path, *, rebuild=True, dev_git_index: bool = False) -> dict:
                 if include_in_clean_rebuild(rel):
                     target = dest / rel
                     target.parent.mkdir(parents=True, exist_ok=True)
+                    if symlink_in_package_path(root, rel):
+                        continue
                     shutil.copy2(resolve_in_package(root, rel), target)
             result = subprocess.run([sys.executable, str(dest / 'build.py')], capture_output=True, text=True, timeout=30, check=False)
             check('clean-build', result.returncode == 0, 'Build executed in a temporary source-only directory.')
             same = result.returncode == 0 and all(
-                (dest / p).is_file() and (dest / p).read_bytes() == resolve_in_package(root, p).read_bytes() for p in aliases)
+                (dest / p).is_file() and (dest / p).read_bytes() == read_package_bytes(root, p) for p in aliases)
             check('clean-build-byte-match', same, 'Temporary clean source rebuild must match all delivered HTML aliases.')
     return {'passed': all(c['pass'] for c in checks), 'offline_only': True, 'checks': checks,
             'scope': 'Extracted package manifest and clean rebuild; no providers, deployment, digital signature or production-security certification.'}
