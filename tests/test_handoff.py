@@ -181,6 +181,28 @@ def synthetic_package(tmp_path, *, mutate=None, omit=None, extra=None):
     return root
 
 
+def real_release_package(tmp_path, *, extra=None):
+    """Minimal copy of the real release tree (all MANIFEST-listed files) for package-mode tests."""
+    repo = Path(__file__).resolve().parents[1]
+    manifest = json.loads((repo / 'MANIFEST.json').read_text(encoding='utf-8'))
+    root = tmp_path / 'release'
+    for row in manifest['files']:
+        rel = row['path']
+        src = repo / rel
+        if not src.is_file():
+            pytest.skip('release source missing: ' + rel)
+        dest = root / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(src.read_bytes())
+    (root / 'MANIFEST.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+    if extra:
+        for rel, data in extra.items():
+            path = root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+    return root
+
+
 def archive_of(root, dest, kind, prefix=''):
     files = [p for p in root.rglob('*') if p.is_file()]
     if kind == 'zip':
@@ -231,16 +253,30 @@ def test_unlisted_file_fails(tmp_path, capsys):
     assert 'FAIL manifest-content: unlisted: notes/extra.txt' in capsys.readouterr().out
 
 
+def _isolated_git_env(tmp_path):
+    home = tmp_path / 'home'
+    home.mkdir()
+    ident = {
+        'GIT_AUTHOR_NAME': 'atlas-handoff',
+        'GIT_AUTHOR_EMAIL': 'atlas@example.com',
+        'GIT_COMMITTER_NAME': 'atlas-handoff',
+        'GIT_COMMITTER_EMAIL': 'atlas@example.com',
+    }
+    full = {**os.environ, 'HOME': str(home), **ident}
+    bare = {**os.environ, 'HOME': str(home)}
+    return full, bare
+
+
 def test_git_dev_tree_untracked_file_fails_manifest(tmp_path):
     """Listed index files plus an untracked notes/extra.txt must fail manifest-content."""
     root = tmp_path / 'repo'
     root.mkdir()
-    subprocess.run(['git', 'init', '-q'], cwd=root, check=True,
-                   env={**os.environ, 'GIT_AUTHOR_NAME': 't', 'GIT_AUTHOR_EMAIL': 't@e', 'GIT_COMMITTER_NAME': 't', 'GIT_COMMITTER_EMAIL': 't@e'})
+    env_init, env_commit = _isolated_git_env(tmp_path)
+    subprocess.run(['git', 'init', '-q'], cwd=root, check=True, env=env_init)
     (root / 'notes').mkdir()
     (root / 'notes' / 'readme.txt').write_bytes(b'listed\n')
-    subprocess.run(['git', 'add', 'notes/readme.txt'], cwd=root, check=True)
-    subprocess.run(['git', 'commit', '-qm', 'init'], cwd=root, check=True)
+    subprocess.run(['git', 'add', 'notes/readme.txt'], cwd=root, check=True, env=env_init)
+    subprocess.run(['git', 'commit', '-qm', 'init'], cwd=root, check=True, env=env_commit)
     (root / 'notes' / 'extra.txt').write_bytes(b'untracked\n')
     data = b'listed\n'
     manifest = {'files': [{'path': 'notes/readme.txt', 'bytes': len(data),
@@ -263,6 +299,53 @@ def test_claude_payload_fails_without_git(tmp_path, capsys):
     package = synthetic_package(tmp_path, extra={'.claude/payload.md': b'# not a release file\n'})
     assert run_verify([str(package)]) == 1
     assert 'unlisted: .claude/payload.md' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('rel,payload', [
+    ('node_modules/evil/index.js', b'module.exports = {};\n'),
+    ('.claude/settings.json', b'{"model": "evil"}\n'),
+    ('deploy/cloudflare-edge/node_modules/y/i.js', b'export default 1;\n'),
+])
+def test_real_manifest_hidden_payload_fails(tmp_path, capsys, rel, payload):
+    package = real_release_package(tmp_path, extra={rel: payload})
+    assert run_verify([str(package)]) == 1
+    assert 'unlisted: ' + rel in capsys.readouterr().out
+
+
+def test_listed_file_under_symlinked_parent_outside_root_fails(tmp_path):
+    package = synthetic_package(tmp_path)
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    payload = b'escaped-by-symlink-parent\n'
+    (outside / 'payload.txt').write_bytes(payload)
+    (package / 'portal').symlink_to(outside, target_is_directory=True)
+    manifest = json.loads((package / 'MANIFEST.json').read_text(encoding='utf-8'))
+    rel = 'portal/payload.txt'
+    manifest['files'].append({
+        'path': rel,
+        'bytes': len(payload),
+        'sha256': hashlib.sha256(payload).hexdigest(),
+    })
+    (package / 'MANIFEST.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+    result = inspect(package, rebuild=False)
+    details = ' '.join(c['detail'] for c in result['checks'])
+    assert not result['passed']
+    assert 'outside package root' in details.lower()
+
+
+def test_html_alias_read_through_symlinked_parent_outside_root_fails(tmp_path):
+    package = synthetic_package(tmp_path)
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    escaped = b'<!doctype html><title>outside-alias</title>\n'
+    (outside / 'ATLAS_Project_Intelligence.html').write_bytes(escaped)
+    alias = package / 'ATLAS_Project_Intelligence.html'
+    alias.unlink()
+    alias.symlink_to(outside / 'ATLAS_Project_Intelligence.html')
+    result = inspect(package, rebuild=False)
+    details = ' '.join(c['detail'] for c in result['checks'])
+    assert not result['passed']
+    assert 'outside package root' in details.lower()
 
 
 def test_inspect_does_not_execute_package_git_fsmonitor(tmp_path):
