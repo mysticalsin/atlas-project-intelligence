@@ -18,6 +18,15 @@ Mutants, each restored, not committed. `rating.js` restored to that sha256.
 - Drop the `try`, `resolve` stays first: exit 1, 41 tests, 39 pass, 2 fail. Kills `a throwing onEnd does not escape the rating call` (`1 !== 0`) and the report test.
 - Call `onEnd` twice inside the `try`: exit 1, 41 tests, 39 pass, 2 fail. Kills `a normal onEnd runs exactly once` (`2 !== 1`) and `end() after settle does not resolve or callback again` (`2 !== 1`).
 
+Measured on `9b30bd332e474676aa383bfbef95fd466838d6ab` before this paragraph's manifest refresh. `rating.js` and `rating.test.js` do not change after `88d9b96d1037d03331d25f7e24835edfd400bdd2`.
+
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 413 passed, 127 warnings, 28.63s, exit 0.
+- `node --test tests/*.test.js`: 419 tests, 419 pass, 0 fail, 0 skipped, 26.02s, exit 0.
+- Edge `node --test test/*.test.js` with workerd `2026-10-23` at `/tmp/atlas-workerd-20261023`: 1122 tests, 1122 pass, 0 fail, 0 skipped, 239.2s, exit 0. The two new rating tests are in that total.
+- The same four files with `ATLAS_WORKERD_ROOT=/tmp/no-such-atlas-workerd`: 35 tests, 31 pass, 4 skipped, exit 0. The skips are the workerd-gated tail tests.
+- `make test-ui` (`CHROMIUM_PATH=/usr/bin/google-chrome`): 834 PASS, 0 FAIL, 26 scripts, exit 0.
+- `python3 scripts/check_handoff.py . --dev-git-index` on that commit: exit 0, 15 PASS, 698 release files, `clean-build` and `clean-build-byte-match` pass.
+
 ## 2026-11-20 — throwing rating onEnd (`cursor/atlas-rating-onend-throw`)
 
 ATLAS-R15-ONEND-THROW-UNSETTLED. Low. Base `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. On the parent, `deploy/cloudflare-edge/src/rating.js` `end` calls `opts.onEnd` after `settled = true` and before `resolve`. A throw skips `resolve`, and the late path returns because `settled` is already true. `rate()` never finishes. Production callers do not pass `onEnd`.
