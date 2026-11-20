@@ -49,6 +49,13 @@ def package_files(root: Path):
     return found
 
 
+_REBUILD_SOURCE_PREFIXES = ('src/', 'assets/', 'docs/', 'atlas_voice/', 'deploy/cloudflare-edge/')
+
+
+def include_in_clean_rebuild(rel: str) -> bool:
+    return rel == 'build.py' or rel.startswith(_REBUILD_SOURCE_PREFIXES)
+
+
 def inspect(root: Path, *, rebuild=True) -> dict:
     checks=[]
     def check(name, ok, detail):
@@ -108,7 +115,7 @@ def inspect(root: Path, *, rebuild=True) -> dict:
         with tempfile.TemporaryDirectory(prefix='atlas-rebuild-') as td:
             dest=Path(td)
             for rel in seen:
-                if rel=='build.py' or rel.startswith(('src/','assets/','docs/')):
+                if include_in_clean_rebuild(rel):
                     target=dest/rel;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(root/rel,target)
             result=subprocess.run([sys.executable,str(dest/'build.py')],capture_output=True,text=True,timeout=30,check=False)
             check('clean-build',result.returncode==0,'Build executed in a temporary source-only directory.')
