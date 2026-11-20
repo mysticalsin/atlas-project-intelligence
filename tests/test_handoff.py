@@ -1100,7 +1100,7 @@ def test_is_dev_tree_accepts_casefolded_git_directory(tmp_path):
     root = tmp_path / 'repo'
     (root / '.GIT').mkdir(parents=True)
     (root / '.GIT' / 'HEAD').write_text('ref: refs/heads/main\n', encoding='utf-8')
-    assert is_dev_tree(root) is True
+    assert is_dev_tree(root) is False
 
 
 def test_release_hygiene_uses_the_git_metadata_helper(tmp_path):
@@ -1219,3 +1219,91 @@ def test_write_manifest_refuses_non_ascii_path(tmp_path, capsys):
     assert code == 1
     assert 'refused: non-ASCII path component' in text
     assert (root / 'MANIFEST.json').read_bytes() == before
+
+
+# Loop 4. Checkout detection is the exact top-level .git. Disguised top-level
+# names are refused. The symlink refusal and the repeated trim are load-bearing.
+def _disguised_checkout(tmp_path, dirname):
+    root = tmp_path / 'pkg'
+    root.mkdir()
+    (root / dirname).mkdir()
+    (root / dirname / 'HEAD').write_text('ref: refs/heads/main\n', encoding='utf-8')
+    (root / 'MANIFEST.json').write_text(
+        json.dumps({'files': [], 'manifest_excludes': ['MANIFEST.json']}),
+        encoding='utf-8')
+    return root
+
+
+@pytest.mark.parametrize('dirname', ['.GIT', 'GIT~1'])
+def test_disguised_checkout_dev_git_index_exits_clean(tmp_path, capsys, dirname):
+    root = _disguised_checkout(tmp_path, dirname)
+    code = run_verify([str(root), '--dev-git-index', '--no-rebuild'])
+    text = capsys.readouterr().out + capsys.readouterr().err
+    assert code == 1
+    assert 'dev-git-index requires a git checkout' in text
+    assert 'Traceback' not in text
+
+
+@pytest.mark.parametrize('dirname', ['.GIT', 'GIT~1'])
+def test_disguised_checkout_write_manifest_exits_clean(tmp_path, capsys, dirname):
+    root = _disguised_checkout(tmp_path, dirname)
+    before = (root / 'MANIFEST.json').read_bytes()
+    code = run_verify([str(root), '--dev-git-index', '--write-manifest'])
+    text = capsys.readouterr().out + capsys.readouterr().err
+    assert code == 2
+    assert 'dev-git-index requires a git checkout' in text
+    assert 'Traceback' not in text
+    assert (root / 'MANIFEST.json').read_bytes() == before
+
+
+def test_git_failure_on_exact_dotgit_is_a_clean_checkout_error(tmp_path, capsys):
+    root = _disguised_checkout(tmp_path, '.git')
+    code = run_verify([str(root), '--dev-git-index', '--no-rebuild'])
+    text = capsys.readouterr().out + capsys.readouterr().err
+    assert code == 1
+    assert 'dev-git-index requires a git checkout' in text
+    assert 'Traceback' not in text
+    code = run_verify([str(root), '--dev-git-index', '--write-manifest'])
+    text = capsys.readouterr().out + capsys.readouterr().err
+    assert code == 2
+    assert 'dev-git-index requires a git checkout' in text
+    assert 'Traceback' not in text
+
+
+@pytest.mark.parametrize('name', ['.GIT', '.git.', 'GIT~1', 'GIT~1.DIR'])
+def test_dev_mode_refuses_top_level_disguised_git_dir(tmp_path, capsys, name):
+    root = _mini_checkout(tmp_path)
+    hidden = root / name / 'HEAD'
+    hidden.parent.mkdir()
+    hidden.write_bytes(b'ref: refs/heads/main\n')
+    code = run_verify([str(root), '--dev-git-index', '--no-rebuild'])
+    text = capsys.readouterr().out + capsys.readouterr().err
+    refused = [line for line in text.splitlines() if 'refused:' in line]
+    assert code == 1
+    assert any(name in line for line in refused), text
+    assert not any(line.endswith('refused: .git') or 'refused: .git/' in line for line in refused)
+    assert 'Traceback' not in text
+
+
+def test_dev_git_index_refuses_nested_git_symlink(tmp_path, capsys):
+    root = _mini_checkout(tmp_path)
+    target = tmp_path / 'elsewhere'
+    target.mkdir()
+    link = root / 'vendor' / 'demo' / '.git'
+    link.parent.mkdir(parents=True)
+    link.symlink_to(target, target_is_directory=True)
+    code = run_verify([str(root), '--dev-git-index', '--no-rebuild'])
+    text = capsys.readouterr().out + capsys.readouterr().err
+    assert code == 1
+    assert 'refused: vendor/demo/.git' in text
+    assert 'Traceback' not in text
+
+
+@pytest.mark.parametrize('name', ['.git. .', '.git . '])
+def test_repeated_trailing_dot_and_space_is_refused(tmp_path, name):
+    rel = 'vendor/' + name
+    package = _excluded_extra(tmp_path, rel)
+    result = inspect(package, rebuild=False)
+    detail = _manifest_detail(result)
+    assert 'refused: ' + rel in detail, detail
+    assert result['passed'] is False
