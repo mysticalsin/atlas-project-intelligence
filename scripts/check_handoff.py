@@ -20,17 +20,14 @@ A package rebuild runs build.py with seven names: PATH, a fresh HOME, LANG,
 LC_ALL, PYTHONHASHSEED, PYTHONNOUSERSITE, and PYTHONDONTWRITEBYTECODE.
 Inspection failures exit 1. argparse usage errors exit 2.
 
-A git metadata component is one shared check (NFKC, casefold, drop Cf / Zs / Mn,
-strip trailing dots, confusable fold, ``git~<digits>``, backslash, and
-``::$INDEX_ALLOCATION``). Owner decisions, 2026-11-20, Atlas: casefold, and
-fail closed on the disguised names above.
+A git metadata component is one shared check. ASCII components are casefolded
+and trailing dots and spaces are stripped. Any non-ASCII component is refused
+with ``refused: non-ASCII path component``. A short name ``git~<digits>`` with
+an optional suffix (``GIT~1.DIR``) is refused. Owner decisions, 2026-11-20,
+Atlas.
 
 Still open: SIGKILL does not run atexit, so the one ``atlas-git-home-*``
-directory can remain. A non-ASCII character that NFKC, casefold, Cf/Zs/Mn
-removal, trailing-dot strip, and the fold table (U+0131, U+0456, U+0261,
-U+2024) do not map onto ``.git`` is not refused. A short name that is not
-exactly ``git~<digits>`` after that fold (for example ``GIT~1.DIR``) is not
-refused.
+directory can remain.
 """
 from __future__ import annotations
 import atexit
@@ -41,7 +38,6 @@ import os
 import re
 import stat
 import tarfile
-import unicodedata
 import zipfile
 from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
@@ -56,15 +52,8 @@ def safe_relative(value: str) -> bool:
     return bool(value) and not p.is_absolute() and '..' not in p.parts and '\\' not in value and ':' not in value
 
 
-# Confusables NFKC does not fold onto ASCII .git letters.
-_CONFUSABLE = {
-    '\u0131': 'i',  # dotless i
-    '\u0456': 'i',  # Cyrillic small i
-    '\u0261': 'g',  # Latin small script g
-    '\u2024': '.',  # one-dot leader
-}
 _ADS_SUFFIX = '::$index_allocation'
-_GIT_SHORT = re.compile(r'git~\d+')
+_GIT_SHORT = re.compile(r'^git~[0-9]+(\..*)?$')
 
 
 def _strip_ads(part: str) -> str:
@@ -75,19 +64,48 @@ def _strip_ads(part: str) -> str:
 
 
 def _normalize_component(part: str) -> str:
-    """NFKC, casefold, drop Cf/Zs/Mn, confusable-fold, strip trailing dots."""
+    """Casefold an ASCII component and strip trailing dots and spaces."""
     text = _strip_ads(part)
-    text = unicodedata.normalize('NFKC', text).casefold()
-    kept = []
-    for ch in text:
-        category = unicodedata.category(ch)
-        if category == 'Cf' or category == 'Mn' or category.startswith('Z'):
-            continue
-        kept.append(_CONFUSABLE.get(ch, ch))
-    text = ''.join(kept)
-    while text.endswith('.'):
+    text = text.casefold()
+    while text.endswith('.') or text.endswith(' '):
         text = text[:-1]
     return text
+
+
+def path_has_non_ascii(rel: str) -> bool:
+    return any(any(ord(ch) > 127 for ch in part) for part in _path_components(rel))
+
+
+def non_ascii_paths(root: Path) -> list[str]:
+    """Every file or directory under root with a non-ASCII component."""
+    found = []
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        base = Path(dirpath)
+        rel_base = base.relative_to(root).as_posix()
+        if rel_base == '.':
+            rel_base = ''
+        for name in list(dirnames):
+            rel = name if not rel_base else rel_base + '/' + name
+            path = base / name
+            if path_has_non_ascii(rel):
+                found.append(rel)
+            if path.is_symlink():
+                dirnames.remove(name)
+        for name in filenames:
+            rel = name if not rel_base else rel_base + '/' + name
+            if path_has_non_ascii(rel):
+                found.append(rel)
+    return found
+
+
+def _refuse_non_ascii(bad: list[str], rel: str, seen: set[str]) -> bool:
+    if not path_has_non_ascii(rel):
+        return False
+    for msg in ('refused: non-ASCII path component: ' + rel, 'refused: ' + rel):
+        if msg not in seen:
+            bad.append(msg)
+            seen.add(msg)
+    return True
 
 
 def is_git_metadata_component(part: str) -> bool:
@@ -399,11 +417,16 @@ def inspect(root: Path, *, rebuild=True, dev_git_index: bool = False) -> dict:
                 bad.append('refused: ' + rel)
     else:
         present = package_files(root)
+    non_ascii_seen: set[str] = set()
+    for rel in non_ascii_paths(root):
+        _refuse_non_ascii(bad, rel, non_ascii_seen)
     for rel in sorted(present):
         try:
             resolve_in_package(root, rel)
         except ValueError:
             bad.append('outside package root: ' + rel)
+            continue
+        if _refuse_non_ascii(bad, rel, non_ascii_seen):
             continue
         if is_git_metadata_path(rel) and not (dev_git_index and _is_checkout_metadata(rel)):
             bad.append('refused: ' + rel)
@@ -596,6 +619,11 @@ def main(argv=None):
             p.error('MANIFEST.json is missing in ' + str(root))
         if not is_dev_tree(root):
             p.error('--write-manifest requires a git checkout (--dev-git-index)')
+        blocked = non_ascii_paths(root)
+        if blocked:
+            for rel in blocked:
+                print('FAIL manifest-content: refused: non-ASCII path component: ' + rel)
+            return 1
         count = write_manifest(root, dev_git_index=True)
         print(f'Wrote {count} file entries to MANIFEST.json')
         return 0
