@@ -2282,8 +2282,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 350508,
-      "sha256": "fe4d375da31a5a5c3bc525d84d1dbf6cee43f9877ca9d57fd32bbd380157ee38"
+      "bytes": 353104,
+      "sha256": "36db31922b8e58f770d16d47134346cec64790a12b5cdee2bbf719159370dd7c"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2352,8 +2352,8 @@
     },
     {
       "path": "handoff/decisions/askrunner-count.md",
-      "bytes": 2023,
-      "sha256": "8b9790c060fe0f58d9b743c0c48f855b710444b5b4e7ae253bbc153749bff3c6"
+      "bytes": 3483,
+      "sha256": "741f25884dfa62428ae4ae9e5c40892a3e2b1165b2796f1bb9f1c97f120d7842"
     },
     {
       "path": "handoff/decisions/check-handoff-git-metadata.md",
@@ -3287,8 +3287,8 @@
     },
     {
       "path": "tests/run_ask_browser_stamped.sh",
-      "bytes": 1066,
-      "sha256": "8b14be5d2600dfa4908833a6bf16db6798850c4feee18e480c31b042fc546606"
+      "bytes": 1501,
+      "sha256": "4e41e0ce0cbcbbd81025a745fd52c6aaacb0134a914d3a9ce0f803d1134771f1"
     },
     {
       "path": "tests/safe-html-lint.test.js",
@@ -3352,8 +3352,8 @@
     },
     {
       "path": "tests/test_ask_runner_count.py",
-      "bytes": 4852,
-      "sha256": "ae461b8fc08b91f93ded92e1b17ac580052f5a3301717906e365c7baed0a9777"
+      "bytes": 6766,
+      "sha256": "2176f99aee225df8f93429d1ae799b42ecf8fb7144418c9d14c40db6bfdc70ad"
     },
     {
       "path": "tests/test_bakeoff.py",
