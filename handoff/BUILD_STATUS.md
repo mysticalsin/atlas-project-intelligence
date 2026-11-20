@@ -1,6 +1,28 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
+
+Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.
+
+One existing assertion changed with the red tests: `test_is_dev_tree_accepts_casefolded_git_directory` now expects `is_dev_tree` to reject `.GIT/HEAD`. The nine original fence-test bodies stay byte-identical. The rest of `tests/test_handoff.py` is append-only, plus a split of the git-failure case so each exit is read once.
+
+Owner decision, 2026-11-20, Tony, also in `handoff/decisions/check-handoff-git-metadata.md`:
+
+- Checkout detection is the exact top-level `.git` only. `.GIT` and `GIT~1` are not a checkout.
+- A git failure prints `dev-git-index requires a git checkout` with no traceback. The check exits 1. `--write-manifest` exits 2, and it does not rewrite `MANIFEST.json`.
+- In a real checkout, top-level `.GIT/`, `.git./`, `GIT~1/`, and `GIT~1.DIR/` are `refused:`. The exact `.git` is not.
+- A nested `.git` directory symlink is `refused:`. Removing that append is killed by `test_dev_git_index_refuses_nested_git_symlink`.
+- Trailing dots and spaces are stripped repeatedly. `.git. .` and `.git . ` are refused. Stripping only once is killed by `test_repeated_trailing_dot_and_space_is_refused`.
+
+Still open after this loop: SIGKILL does not run `atexit`, so the one `atlas-git-home-*` directory can remain. That is the only residual.
+
+PR 13 was still open at this manifest (`mergedAt` null). `origin/main` was still `3d9239c112b5c5853fc49ce15424bbd29d94cfb2`. No merge.
+
+Red on `7050ae3`: 10 failed, 3 passed, exit 1. The three that already passed are the symlink refusal and the repeated trim, which lock the mutants.
+
+Suite counts are recorded after the full run on the manifest commit.
+
 ## 2026-11-20 — check_handoff fence loop 3 (`cursor/atlas-checkhandoff-nested-git`)
 
 Final loop. Red tests are `9ec906ba30502d116bf83dd5970be6248cea68bb`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `e36aa900ad93a4833af6e925a186cf6a7eacc675`. `MANIFEST.json` is regenerated after this note.
