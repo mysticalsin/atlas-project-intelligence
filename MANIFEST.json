@@ -2282,8 +2282,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 353185,
-      "sha256": "096526fc6934de8d61d12dd7f3ef8c6eb1a1f8edebbb761c7db2dcd82caa47fd"
+      "bytes": 356628,
+      "sha256": "6ea685dc414d448d3d775ceec0d4bf332e90f68a189f1d4ac787618f890efb52"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2367,8 +2367,8 @@
     },
     {
       "path": "handoff/decisions/checkhandoff-githome-lifecycle.md",
-      "bytes": 4223,
-      "sha256": "23706e88645e3fb44a5b78a1262432aac9498565340783d79942627c378ba8ac"
+      "bytes": 9730,
+      "sha256": "1339a5faa125b268ad96e9d010d46767ad77576e83c1be911fa285f154b43141"
     },
     {
       "path": "handoff/decisions/invitation-tenant-erase.md",
@@ -2707,8 +2707,8 @@
     },
     {
       "path": "scripts/check_handoff.py",
-      "bytes": 29028,
-      "sha256": "4e22a883317e5d7f1aadfa9c24a1c1fabf4e4192acb704ca325721b4f757acdc"
+      "bytes": 29263,
+      "sha256": "7b9abb43f84dfdbc9cdff46baf1b329b35b2df0407c500746979e4c02739f7de"
     },
     {
       "path": "scripts/check_workers_speech.py",
@@ -2727,8 +2727,8 @@
     },
     {
       "path": "scripts/git_home.py",
-      "bytes": 12125,
-      "sha256": "c036fa220bdc45c1c39ae6d4058e685f5ede356d191815261949c83a6f5b56d1"
+      "bytes": 19886,
+      "sha256": "05966f4eb8ea3e384d72d79252c5b1ede601fe5bbfe448983145c81295d2ca66"
     },
     {
       "path": "scripts/git_publish.sh",
@@ -3412,8 +3412,8 @@
     },
     {
       "path": "tests/test_git_home.py",
-      "bytes": 14909,
-      "sha256": "2e452f9916bf2ca8406c68dee0bd0e95782ac60239b56eaa342f9d790c3e601f"
+      "bytes": 26192,
+      "sha256": "8d3ac8b13527aa1948853f763a3de31f8f6a0ccf0cb746e8c7019558b952c896"
     },
     {
       "path": "tests/test_handoff.py",

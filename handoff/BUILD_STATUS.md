@@ -1,6 +1,28 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-20 — git home removal guards (`cursor/s3-checkhandoff-githome-lifecycle`)
+
+Inspector loop 1 on `d0b58349213a97c9c02994eb10c0f5791400a9b8`. Three Mediums and three Lows. Red tests are `804c6ff38702ffecab642cbd80cdb4bc9e1bb683`. That commit does not change `scripts/git_home.py` or `scripts/check_handoff.py` and does not refresh `MANIFEST.json`. The fix is `9b4c93eab6389f8f622d8194f121b431beb869e9`. The threat model is in `handoff/decisions/checkhandoff-githome-lifecycle.md`. `handoff/decisions/check-handoff-residuals.md` is not edited. `MANIFEST.json` is regenerated after this note.
+
+On `d0b58349`, `release` deleted a home owned by another live pid and a markerless directory. The reaper deleted a live home swapped onto a classified name, and a home whose marker became live on the held directory. A temp root reached through a symlinked parent was reaped. A mode-000 child raised `OSError: could not remove atlas-git-home-a-blocked` and stopped the pass. The float sweep clock kept a home 1 nanosecond past 86400 seconds.
+
+Red on `804c6ff`, `python3 -m pytest tests/test_git_home.py -q --tb=line`: 7 failed, 16 passed, exit 1. The failures are those six behaviours plus the held-fd marker recheck. The passes include the previous ten lifecycle tests.
+
+The fix keeps removal on the directory that was classified. `release` deletes a home only when the marker names this pid and these start ticks. `reap` pins the temp root with `realpath` and `O_DIRECTORY | O_NOFOLLOW` on every component, re-checks the marker and the inode on held directory fds, and removes children relative to those fds. One home that cannot be removed keeps the mtime captured before the attempt. The other homes continue. The sweep clock is `time.time_ns()`. There is no 1000 nanosecond slack.
+
+Mutants, each restored, each exit 1: `+1000ns` slack; start ticks ignored; `release` deletes an orphan; `cleaned` ignores `owner_live`; a young prefixed symlink is followed and its target payload is deleted; a live owner is treated as dead; exactly 86400 seconds is reaped; a symlink inside a home is followed; a symlinked temp root is followed; the reaper is skipped; `in_use` → `reaped` is allowed; the active-home inode guard is skipped.
+
+Measured before this paragraph's manifest refresh, with `ATLAS_DEPLOY_STUB` unset.
+
+- `python3 -m pytest tests/test_git_home.py -q --tb=line` on the fix: 23 passed, exit 0.
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 2 failed, 440 passed, 127 warnings, 26.11s, exit 1. The failures are `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`: `manifest-content` changed `scripts/check_handoff.py`, `scripts/git_home.py`, and `tests/test_git_home.py`.
+- `node --test tests/*.test.js`: 419 tests, 419 pass, 0 fail, 0 skipped, 21.91s, exit 0.
+- Edge `node --test test/*.test.js`: 1117 tests, 1113 pass, 0 fail, 4 skipped, 228.3s, exit 0. workerd `2026-10-23` is not installed. The four skips are the workerd tail proofs: `workerd 2026-10-23 is not installed; set ATLAS_WORKERD_ROOT`.
+- `make test-ui` (`CHROMIUM_PATH=/usr/bin/google-chrome`): 834 PASS, 0 FAIL, 26 scripts, 440s, exit 0.
+
+`python3 scripts/check_handoff.py . --dev-git-index` after this note's manifest refresh: exit 0, 701 release files, `manifest-content`, `clean-build`, and `clean-build-byte-match` pass. The archive-of-HEAD package check scores the commit that contains this sentence.
+
 ## 2026-11-20 — git home lifecycle (`cursor/s3-checkhandoff-githome-lifecycle`)
 
 ATLAS-CHECKHANDOFF-REAPER and state machine S3, stacked on PR 21 head `3ee42d607a7618ec9adfdfb2f2b765f3cda52a81`. Red tests are `cb2b68d6fb940fd536399780b47012fbf49fe1ec`. That commit does not change `scripts/check_handoff.py` and does not refresh `MANIFEST.json`. The fix is `ff1d20d75fa39ec96e6b4ff3fd1a45ddfb0a7a30`. The decision is `handoff/decisions/checkhandoff-githome-lifecycle.md`. `handoff/decisions/check-handoff-residuals.md` is not edited. `MANIFEST.json` is regenerated after this note.
