@@ -17,7 +17,13 @@ Mutants, each restored, not committed. `rating.js` restored to sha256 `03eca8305
 - Drop the `try` and leave `resolve` first: exit 1, 38 pass, 1 fail. Kills `a throwing onEnd does not escape the rating call` (`1 !== 0`). The resolve test stays green.
 - Call `onEnd` twice inside the `try`: exit 1, 37 pass, 2 fail. Kills `a normal onEnd runs exactly once` (`2 !== 1`) and the existing `end() after settle does not callback again` (`2 !== 1`).
 
-Full suites run after this note. Their counts are recorded with the manifest refresh that follows them.
+Measured on `b71036f5040efee4c81a3a775622bed5c1fe6198` before this paragraph's manifest refresh. `rating.js` and `rating.test.js` do not change after that commit.
+
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 413 passed, 127 warnings, 166.32s, exit 0.
+- `node --test tests/*.test.js`: 419 tests, 419 pass, 0 fail, 0 skipped, 35.6s.
+- Edge `node --test test/*.test.js` with miniflare `5.20261023.3-beta` and workerd `2026-10-23`: 1120 tests, 1120 pass, 0 fail, 0 skipped, 252.2s. The alias-begin tail test passed.
+- `make test-ui` (`CHROMIUM_PATH=/usr/bin/google-chrome`): 834 PASS, 0 FAIL, 26 scripts, exit 0.
+- `python3 scripts/check_handoff.py . --dev-git-index` on that commit: exit 0, 698 release files, `clean-build` and `clean-build-byte-match` pass.
 
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
