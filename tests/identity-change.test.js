@@ -768,4 +768,129 @@ describe('access identity change, clean console', { concurrency: false }, () => 
     assert.equal(sandbox.AtlasAuth.mode, 'identity-changed');
     assert.deepEqual(errors, []);
   });
+
+  test('the storage observer copies the status and is disconnected by the blank', async () => {
+    const nodes = new Map();
+    const errors = [];
+    let callbacks = 0;
+    class Observed {
+      constructor(callback) { this.callback = callback; this.nodes = new Set(); this.records = []; this.armed = false; }
+      observe(node) { this.nodes.add(node); node._observers.add(this); }
+      disconnect() { for (const node of this.nodes) node._observers.delete(this); this.nodes.clear(); this.records = []; }
+    }
+    function notify(node) {
+      for (const obs of node._observers) {
+        if (!obs.nodes.has(node)) continue;
+        obs.records.push({ target: node });
+        if (obs.armed) continue;
+        obs.armed = true;
+        queueMicrotask(() => {
+          obs.armed = false;
+          const records = obs.records.splice(0);
+          if (!records.length) return;
+          callbacks += 1;
+          try { obs.callback(records, obs); }
+          catch (error) { errors.push(String(error && error.message || error)); }
+        });
+      }
+    }
+    function bag(id = '') {
+      const node = {
+        id, hidden: false, disabled: false, value: '0', checked: false, open: false,
+        className: '', dataset: {}, style: { setProperty() {} },
+        classList: { add() {}, remove() {}, toggle() { return false; }, contains() { return false; } },
+        children: [], _observers: new Set(), _text: 'label', connected: true,
+        get textContent() { return this._text; },
+        set textContent(value) {
+          this._text = String(value);
+          if (this === body) {
+            for (const child of this.children) child.connected = false;
+            this.children.length = 0;
+          }
+          notify(this);
+        },
+        addEventListener() {}, removeEventListener() {},
+        setAttribute(name, value) { this[name] = value; if (name === 'id') { this.id = value; nodes.set(value, this); } },
+        removeAttribute() {},
+        append(child) { this.children.push(child); child.connected = true; },
+        querySelector() { return bag(); }, querySelectorAll() { return []; }, closest() { return null; },
+        focus() {}, click() {}, showModal() {}, close() {},
+      };
+      if (id) nodes.set(id, node);
+      return node;
+    }
+    const body = bag('body');
+    const document = {
+      body,
+      documentElement: { append(node) { node.connected = true; node.parentNode = this; if (node && node.id) nodes.set(node.id, node); } },
+      visibilityState: 'visible', hidden: false,
+      addEventListener() {}, removeEventListener() {},
+      getElementById(id) { const node = nodes.get(id); return node && node.connected ? node : null; },
+      createElement() { return bag(); },
+      querySelector() { return bag(); },
+      querySelectorAll() { return []; },
+    };
+    for (const id of ['orbCanvas', 'orbDisplayNotice', 'orbMotion', 'orbQuickPause', 'motifTitle', 'motifDescription', 'motifPeriod', 'motifGlyph', 'motifSource', 'voicePanel', 'orbStateCaption', 'orbAccessibleState', 'orbInputWord', 'orbOutputWord', 'orbActivate', 'studioPreview', 'orbInteractionHint', 'previewNotice', 'previewPhase', 'voiceMute', 'voiceOpenHome', 'voiceNetwork', 'voiceRetry', 'voiceStart', 'orbTranscript', 'orbTranscriptToggle', 'replayPattern', 'orbQuickFocus', 'orbIntensity', 'orbIntensityValue', 'studioAppearance', 'appearancePanel', 'studioProjectDrawer', 'studioProject', 'studioContextMobile', 'studioCloseContext', 'studioChooseProject', 'studioConnection', 'voiceSetup', 'studioFocus', 'studioSave', 'studioBackup', 'profileButton', 'backupQuick', 'storageStatus', 'interview', 'workspace', 'libraryList', 'agentText', 'journey', 'enableSave', 'importQuick']) {
+      const node = bag(id);
+      body.children.push(node);
+    }
+    const listeners = new Map();
+    const sandbox = {
+      document,
+      performance: { now: () => 0 },
+      setInterval() { return 0; }, clearInterval() {}, setTimeout, clearTimeout, queueMicrotask,
+      CustomEvent: class CustomEvent { constructor(type, init = {}) { this.type = type; this.detail = init.detail || {}; } },
+      Event: class Event { constructor(type) { this.type = type; } },
+      MutationObserver: Observed,
+      matchMedia: () => ({ matches: true, addEventListener() {} }),
+      AtlasOrb: {
+        SignalState: class { snapshot() { return { state: 'idle', phase: 'idle', muted: false, input: 0, output: 0, inputActive: false }; } setPhase() {} levels() {} phase = 'idle'; },
+        create() { return { setState() {}, setLevels() {}, restart() {}, pause() {}, setIntensity() {}, setPalette() {}, renderOnce() {}, inspect() { return { reducedMotion: false }; }, destroy() {} }; },
+      },
+      console,
+      location: { protocol: 'https:', href: 'https://atlas.example/', hash: '', reload() {} },
+      history: { replaceState() {} },
+      sessionStorage: { getItem() { return String(Date.now()); }, setItem() {} },
+      localStorage: { getItem() { return null; }, setItem() {}, removeItem() {} },
+      fetch() {
+        return Promise.resolve({
+          status: 200, ok: true, type: 'basic',
+          async json() {
+            return { protocol: 'atlas-personaplex-pcm-v1', csrf: 'csrf', identity: { name: 'blake@example.test', mode: 'access', subjectKey: 'subject-blake' }, email: 'blake@example.test' };
+          },
+        });
+      },
+      BroadcastChannel: class { set onmessage(fn) { this._fn = fn; } },
+      AbortSignal: { timeout() { return {}; } },
+      ATLAS_RUNTIME: { ...ADA },
+      AtlasVoice: { active() { return false; }, cancel() {} },
+      addEventListener(type, fn) { const list = listeners.get(type) || []; list.push(fn); listeners.set(type, list); },
+      removeEventListener() {},
+      dispatchEvent(event) { for (const fn of listeners.get(event.type) || []) fn(event); return true; },
+    };
+    sandbox.window = sandbox;
+    vm.runInNewContext(readFileSync(new URL('../src/session-keeper.js', import.meta.url), 'utf8'), sandbox, { filename: 'session-keeper.js' });
+    sandbox.addEventListener('atlas-auth', () => {
+      const status = document.getElementById('storageStatus');
+      if (status) status.textContent = 'Saved on this device · no cloud sync';
+    });
+    vm.runInNewContext(readFileSync(new URL('../src/orb-ui.js', import.meta.url), 'utf8'), sandbox, { filename: 'orb-ui.js' });
+    const status = document.getElementById('storageStatus');
+    const save = document.getElementById('studioSave');
+    status.textContent = 'Saved on this device';
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(save.textContent, 'Saved on this device');
+    assert.ok(callbacks > 0);
+    const beforeBlank = callbacks;
+    await sandbox.AtlasAuth.probe({ fresh: true });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(sandbox.AtlasAuth.mode, 'identity-changed');
+    assert.deepEqual(errors, []);
+    const afterBlank = callbacks;
+    status.textContent = 'after the blank';
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(callbacks, afterBlank);
+    assert.ok(beforeBlank > 0);
+    assert.deepEqual(errors, []);
+  });
 });

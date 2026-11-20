@@ -693,4 +693,45 @@ describe('access identity change, required plan changes', { concurrency: false }
     }
     assert.deepEqual(failures, []);
   });
+
+  test('a bound key that shares a prefix and differs later is a mismatch', async () => {
+    // sameKey compares all 32 hex characters. A shared prefix, including the first 8 and every character but the last, is a mismatch.
+    const ada = await established();
+    const minted = await subjectBound(ADA.sub);
+    const email = await emailBound(ADA.email);
+    const flip = (hex, index) => hex.slice(0, index) + (hex[index] === 'a' ? 'b' : 'a') + hex.slice(index + 1);
+    const after8 = flip(minted, 8);
+    const last = flip(minted, minted.length - 1);
+    const emailLast = flip(email, email.length - 1);
+    const long = minted + minted;
+    const first63 = long.slice(0, 63) + (long[63] === 'a' ? 'b' : 'a');
+    assert.equal(after8.slice(0, 8), minted.slice(0, 8));
+    assert.notEqual(after8[8], minted[8]);
+    assert.equal(last.slice(0, 31), minted.slice(0, 31));
+    assert.notEqual(last[31], minted[31]);
+    assert.equal(emailLast.slice(0, 8), email.slice(0, 8));
+    assert.notEqual(emailLast[31], email[31]);
+    assert.equal(first63.slice(0, 63), long.slice(0, 63));
+    assert.equal(first63.length, 64);
+    assert.notEqual(first63[63], long[63]);
+    const shapes = [
+      { 'X-Atlas-Bound-Subject': after8, 'X-Atlas-Bound-Email': email },
+      { 'X-Atlas-Bound-Subject': last, 'X-Atlas-Bound-Email': email },
+      { 'X-Atlas-Bound-Subject': minted, 'X-Atlas-Bound-Email': emailLast },
+      { 'X-Atlas-Bound-Subject': first63, 'X-Atlas-Bound-Email': email },
+    ];
+    const failures = [];
+    for (const extra of shapes) {
+      const library = binder({ title: MARKER });
+      const interview = binder({ title: MARKER });
+      const res = await handle(new Request(ORIGIN + '/api/library/journey', {
+        headers: { 'cf-access-jwt-assertion': ada.token, ...extra },
+      }), envFor(library.binding, interview.binding), '');
+      const got = await outcome(res, library.opened.concat(interview.opened));
+      if (got.status !== 409 || got.opened.length !== 0 || got.code !== 'IDENTITY_CHANGED') {
+        failures.push(JSON.stringify(extra['X-Atlas-Bound-Subject'] === minted ? 'email-last' : extra['X-Atlas-Bound-Subject'].length) + ' ' + JSON.stringify(got));
+      }
+    }
+    assert.deepEqual(failures, []);
+  });
 });
