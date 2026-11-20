@@ -622,23 +622,23 @@
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 929158,
-      "sha256": "7d6729460acfaa90e0a71c8e8561978e3c9415e97c7e3c062f9e164e8b87ab52"
+      "bytes": 929767,
+      "sha256": "1c7ce2a51fc8e4b8f360b483d9173e198cc2d0c9dcf95a386f911af46c8ac3d1"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 929158,
-      "sha256": "7d6729460acfaa90e0a71c8e8561978e3c9415e97c7e3c062f9e164e8b87ab52"
+      "bytes": 929767,
+      "sha256": "1c7ce2a51fc8e4b8f360b483d9173e198cc2d0c9dcf95a386f911af46c8ac3d1"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 929158,
-      "sha256": "7d6729460acfaa90e0a71c8e8561978e3c9415e97c7e3c062f9e164e8b87ab52"
+      "bytes": 929767,
+      "sha256": "1c7ce2a51fc8e4b8f360b483d9173e198cc2d0c9dcf95a386f911af46c8ac3d1"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 929158,
-      "sha256": "7d6729460acfaa90e0a71c8e8561978e3c9415e97c7e3c062f9e164e8b87ab52"
+      "bytes": 929767,
+      "sha256": "1c7ce2a51fc8e4b8f360b483d9173e198cc2d0c9dcf95a386f911af46c8ac3d1"
     },
     {
       "path": "CLAUDE.md",
@@ -933,7 +933,7 @@
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
       "bytes": 146,
-      "sha256": "432c85d71ee8fe677d36b121cfeafcd2050f6da5cba9d10ff3693176b04d7e4b"
+      "sha256": "93ed8d05bae57a2225d866b808902ee82c6d9da701e7759aa5fcac4d651fa95e"
     },
     {
       "path": "deploy/cloudflare-edge/set-keys.sh",
@@ -942,8 +942,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/app.js",
-      "bytes": 53982,
-      "sha256": "54a303e6ff5c87df24f3c0bfa6d357ba46af6a47e9b3d8c778b1f47075af38ac"
+      "bytes": 54501,
+      "sha256": "961ee8032b48addbcb07598a1b2dd5d4bd517863c0496d2bcf98f1112fc42092"
     },
     {
       "path": "deploy/cloudflare-edge/src/ask.js",
@@ -998,7 +998,7 @@
     {
       "path": "deploy/cloudflare-edge/src/csp.generated.js",
       "bytes": 1675,
-      "sha256": "e71a0a2e664224975f82d933212122b50216a8b2478b42375be4f7e1af803d5a"
+      "sha256": "d0f47688c1c4112b383836438660c76ae154a37ffe8f887ab4d2805ecd4151a8"
     },
     {
       "path": "deploy/cloudflare-edge/src/csp.js",
@@ -1412,8 +1412,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/identity-change.test.js",
-      "bytes": 24775,
-      "sha256": "347d712756c3c10e186f660f1649efdf191c2ee660316ad065ad0614d15b1461"
+      "bytes": 31857,
+      "sha256": "205e38712dc449bb4f082ae9687500bf66635d16eda8d2c45a78f4adb318ba8f"
     },
     {
       "path": "deploy/cloudflare-edge/test/invitation-closed-code.test.js",
@@ -2287,8 +2287,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 349461,
-      "sha256": "a77cacfb2b8a60308a3f1811218baffc4eb3a76e276b4d487e40b0677dc8d03a"
+      "bytes": 353347,
+      "sha256": "725b8bed7121b36a5c489f11400eb580d10feb3a644c8d91943b988f55615ec8"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2367,8 +2367,8 @@
     },
     {
       "path": "handoff/decisions/identity-change-fail-closed.md",
-      "bytes": 5074,
-      "sha256": "c7f1c1102784dfbeccd0e552c784d46f775a8fcc98d05d1dc5dae229ce7cb80d"
+      "bytes": 8167,
+      "sha256": "3847230e167ddcb8d3926d0859ab43f50638ee9529500344c8013a29d2329f72"
     },
     {
       "path": "handoff/decisions/invitation-tenant-erase.md",
@@ -2882,8 +2882,8 @@
     },
     {
       "path": "src/orb-ui.js",
-      "bytes": 11798,
-      "sha256": "ef9d19482a8f2c584c31fbd15b7a7f76c302abde6f15eaa17a21b136402bd09b"
+      "bytes": 11907,
+      "sha256": "62ba5010a6c4227aedcfaf967f1ff630ec849c3e5ae44172d4b1264d0c363a90"
     },
     {
       "path": "src/orb.css",
@@ -2922,8 +2922,8 @@
     },
     {
       "path": "src/session-keeper.js",
-      "bytes": 9881,
-      "sha256": "5dc332d50df8d35e9d1656a11cfd0955b8c43e0fe161146c941abdf02003eb1e"
+      "bytes": 10381,
+      "sha256": "80b82da1945b75549f50cad944d38db22fda2a97755da9475a3ef5ef5e7d4983"
     },
     {
       "path": "src/shell.html",
@@ -3147,8 +3147,8 @@
     },
     {
       "path": "tests/identity-change.test.js",
-      "bytes": 25220,
-      "sha256": "c72f621fa14a9efcd8ed400148e169554e3d333faa34d91ddd81e01cededeff6"
+      "bytes": 33009,
+      "sha256": "ae2a5ba847b8be8180b814fe97e3858138e341347345107ec16b828ba61588e3"
     },
     {
       "path": "tests/intelligence-browser-results.json",

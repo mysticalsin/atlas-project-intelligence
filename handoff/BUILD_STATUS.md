@@ -1,6 +1,37 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-20 — identity change, inspector notes and exact-head gate (`cursor/atlas-identity-change-residual`)
+
+Inspector, first QA, on `b60694e30d5465dfbe700871b46266f56b6ef633`: PASS WITH NOTES. Report sha256 `745fba3ef3c2dcac708c68b37228159b01734a19ba96ab45d355c2452ca1f32a`. The record is `handoff/decisions/identity-change-fail-closed.md`.
+
+Devin, exact-head gate, on the same head: CODE INCOMPLETE. Report file sha256 `ccdb92351485495408e11f6d41ebe842e5acbbb00ca5618c1da17a064e8d66c7`. The report's last line claims `fb0519bf4bedc60333d3e8178dbd97f55da3cda2d6cabe4fb3631b046651e0ff`. Three mutants survived: lower-casing before the hex check, trimming before the compare, and skipping the check when the server subject key is empty.
+
+The compare rejects anything that is not exactly 32 lowercase hex characters. It does not trim and it does not lower-case a value into a match. An empty server subject key does not skip the check. Production without `LOG_SALT` still returns the `LOG_SALT` 503 when the request presents no bound header. A presented email key, with the subject header absent or empty, is 409 `IDENTITY_CHANGED` and opens no Durable Object.
+
+Red for the inspector notes is `8038f8c9ef74453c2c2976fc1d300683fd3bcb97` (tree `9da89a1d2fdd1b3fc3b9c919e3561a58791a6fa8`). Before the product change, the three new tests were 3 tests, 1 pass, 2 fail, exit 1, duration_ms 218.04967. The header-strip table already passed. The alert and the uncaught page error failed. The fix is `932cfcbe4173b203fc42ca57d3e2855a9acad62a` (tree `1a618b0b59fdc53d55e92c20042af2ac4f27ba72`).
+
+Red for the three surviving mutants is `20f1b68c4183f30aa65b215e41c3c3062fbe5f86` (tree `1e75525791985077f4bc01b2d8f66486f02d8540`). The three new tests on that commit, before the product change: 3 tests, 2 pass, 1 fail, exit 1, duration_ms 258.283029. Upper case and U+00A0 already failed closed. The empty server subject key returned 503 `LOG_SALT`. The fix is `6322fa372042a8ba7360fc1f7425523db0cb93f8` (tree `c724b5e92f89af036be86511d935b889126eaca0`).
+
+On that fix:
+
+```sh
+node --test tests/identity-change.test.js deploy/cloudflare-edge/test/identity-change.test.js
+```
+
+42 tests, 42 pass, 0 fail, exit 0, duration_ms 345.528084.
+
+`python3 build.py` rebuilt the four HTML aliases (929767 bytes, sha256 `1c7ce2a51fc8e4b8f360b483d9173e198cc2d0c9dcf95a386f911af46c8ac3d1`). `deploy/cloudflare-edge/generated/PAGE_SHA256.txt` is that pin. `deploy/cloudflare-edge/src/csp.generated.js` moved with the script hashes. The bound-key change is Worker-only, so the page pin did not move again.
+
+Measured on this working tree, `ATLAS_DEPLOY_STUB` unset, `CHROMIUM_PATH=/usr/local/bin/google-chrome` (the wrapper for `/usr/bin/google-chrome-stable`). Workerd is not installed here, so the edge suite skips the four workerd cases.
+
+- `node --test tests/*.test.js`: 435 tests, 435 pass, 0 fail, exit 0, duration_ms 24735.959707.
+- `cd deploy/cloudflare-edge && node --test test/*.test.js`: 1143 tests, 1139 pass, 0 fail, 4 skipped, exit 0, duration_ms 248063.233674.
+- `make test-ui`: PASS 834, FAIL 0, exit 0. The page under test is the 929767-byte rebuild above.
+- Twenty-three mutants each turned a named test red and were restored: the eleven in the plan, the five debate residuals, the library strip, the voice strip, the memory strip, the unguarded observer, lower-casing before the hex check, trimming before the compare, and skipping when the server subject key is empty. Lower-casing and trimming each opened the library (200). The empty-subject skip returned 503 `LOG_SALT`.
+
+`MANIFEST.json` is regenerated after this note. Pytest and `check_handoff . --dev-git-index` on the committed tree are in the gate packet. Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open. No deploy, no Access or DNS change, and no `ATLAS_DEV_IDENTITY`.
+
 ## 2026-11-20 — identity change fails closed (`cursor/atlas-identity-change-residual`)
 
 Sentinel plan debate: ACCEPT WITH CHANGES. Report sha256 `b2075991672e35c085b3d0fde0c0d23c828c83f444f318cb2aa7e8c7b75970cf`. Not merge approval. The record is `handoff/decisions/identity-change-fail-closed.md`.
