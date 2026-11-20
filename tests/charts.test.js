@@ -315,3 +315,19 @@ test('U4 no key, no change: without opts.jev the gauge is byte-identical to the 
 
 test('a missing completeness keeps the is-tbd placeholder and hides the 0.8 formula',()=>{const h=C.qualityGauge({score:80,status:'ready',engine:'rules'});
  assert.ok(h.includes('<span>Completeness</span><div class="ag-meter is-tbd"></div>'),'placeholder');assert.ok(!h.includes('score = 0.8'),'formula');});
+
+// The rules arm is e==='rules' only when opts.jev is on (e = J && engine). The test above never enters it.
+// Dropping the c? guard on that arm still passes every older charts test: they either omit jev or send a finite completeness.
+test('the rules formula guard hides the 0.8 note when completeness is not a finite number',()=>{const J={jev:true};
+ const missing=C.qualityGauge({score:80,status:'ready',engine:'rules'},J);
+ assert.ok(missing.includes('<span>Completeness</span><div class="ag-meter is-tbd"></div>'),'dashed Completeness track');
+ assert.ok(!missing.includes('score = 0.8'),'no formula without a number');
+ assert.ok(!missing.includes('No rating engine answered'),'the rules note stays with the formula');
+ const zero=C.qualityGauge({score:80,status:'ready',engine:'rules',completeness:0},J);
+ assert.ok(zero.includes('<span>Completeness</span><b>0</b>'),'zero stays on the track');
+ assert.ok(zero.includes('No rating engine answered (score = 0.8 × completeness)'),'zero is a finite completeness');
+ const forty=C.qualityGauge({score:72,status:'needs_work',engine:'rules',completeness:40,aiScore:null,fallbackReason:'timeout'},J);
+ assert.ok(forty.includes('No rating engine answered (score = 0.8 × completeness)'));
+ const agent=C.qualityGauge({score:48,status:'needs_work',engine:'review-agent',completeness:60,aiScore:null},J);
+ assert.ok(agent.includes('Review agent unavailable (score = 0.8 × completeness)'));
+ assert.ok(!agent.includes('No rating engine answered'),'a review agent does not take the rules arm');});

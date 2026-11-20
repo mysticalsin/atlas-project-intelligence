@@ -23,6 +23,7 @@ test-ui: build
 	$(PYTHON) tests/library_browser.py
 	$(PYTHON) tests/record_dialog_quality_browser.py
 	$(PYTHON) tests/record_dialog_lows_browser.py
+	$(PYTHON) tests/display_value_browser.py
 	$(PYTHON) tests/refusal_browser.py
 	$(PYTHON) tests/audit_marker_browser.py
 	$(PYTHON) tests/csp_console_browser.py

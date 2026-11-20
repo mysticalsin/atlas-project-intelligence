@@ -6,6 +6,7 @@
    preparing, connecting, live or ending. Contributes to window.AtlasWowUI. */
 (()=>{'use strict';
 const {html,setHTML,insertHTML,trusted}=window.AtlasSafe;
+const {displayValue}=window.AtlasDisplayValue;
 const frag=a=>a&&a.length?html`${a}`:'';
 const W=window.AtlasWowUI=window.AtlasWowUI||{},B=window.AtlasBids,esc=B.esc,$=id=>document.getElementById(id),app=()=>window.ATLAS_APP;
 const BUSY=['preparing','connecting','live','ending'],MAX_BYTES=30*24000*2,MIN_BYTES=4800,TOPIC_KEYS=['context','contribution','approach','outcome','evidence','customer_relevance'];
@@ -43,7 +44,7 @@ async function ask(){const q=$('askQuestion').value.trim(),btn=$('askGo');if(q.l
 function snippetLabel(s){const topic=typeof s?.topic==='number'?TOPIC_KEYS[s.topic]:s?.topic;return B.sourceLabel({kind:s?.kind,topic,sourceName:s?.sourceName});}
 function card(x){const rel=typeof x.relevance==='number'?'relevance '+Math.round(x.relevance):'not ranked',sim='similarity '+(typeof x.similarity==='number'?x.similarity.toFixed(2):'n/a')+' · '+(x.retrieval==='lexical'?'keyword':'semantic');
  const snips=frag((Array.isArray(x.snippets)?x.snippets:[]).map(s=>html`<blockquote class="ask-snippet"><p>${s.text}</p><cite class="tiny muted">${snippetLabel(s)}</cite></blockquote>`));
- const people=(Array.isArray(x.people)?x.people:[]).map(p=>p.name+(p.role?' ('+p.role+')':'')).join(' · ');
+ const people=(Array.isArray(x.people)?x.people:[]).map(p=>displayValue(p.name)+(p.role?' ('+displayValue(p.role)+')':'')).join(' · ');
  return html`<article class="bid-result ask-result"><div class="impact-head"><strong>${x.title}</strong><span>${rel} · ${sim}</span></div>
 <div class="tags"><span class="status-badge status-${x.status}">${STATUS[x.status]||x.status}</span>${frag([x.practice,x.industry,x.country].filter(Boolean).map(t=>html`<span class="tag">${t}</span>`))}</div>
 ${(x.why)?(html`<p class="small">${x.why}</p>`):('')}${(x.caveat)?(html`<p class="tiny muted">Caveat: ${x.caveat}</p>`):('')}${snips}${(people)?(html`<p class="tiny">Worked on it: ${people}</p>`):('')}<button class="quiet" data-open-record="${x.id}" type="button">Open reference →</button></article>`;}
@@ -54,7 +55,7 @@ function draw(r){const results=Array.isArray(r.results)?r.results:[],c=B.askVerd
  if(window.AtlasCharts&&results.length){setHTML(map,(trusted(window.AtlasCharts.portfolioMap({byCountry:countries,totals:{visible:results.length}},{interactive:true}))||html``));window.AtlasCharts.bind(map);}else map.replaceChildren();
  const people=Array.isArray(r.people)?r.people:[],box=$('askPeople');box.hidden=!people.length;
  setHTML(box,((people.length)?(html`<h3 class="panel-sub" id="askPeopleTitle">People to call</h3><p class="tiny muted">Listed by the projects they worked on, in the order found, never ranked.</p><ul class="ask-people">${frag(people.map(p=>{const n=Array.isArray(p.refIds)?p.refIds.length:0;
-  return html`<li><b>${p.name}</b>${p.role?' · '+p.role:''}${(p.email)?(html` · <a href="mailto:${encodeURIComponent(p.email)}">${p.email}</a>`):('')}${(n)?(html`<span class="tiny muted"> · ${n} reference${n===1?'':'s'}</span>`):('')}</li>`;}))}</ul>`):('')||html``));}
+  return html`<li><b>${p.name==null||p.name===''?'':displayValue(p.name)}</b>${p.role?' · '+displayValue(p.role):''}${(p.email)?(html` · <a href="mailto:${encodeURIComponent(p.email)}">${p.email}</a>`):('')}${(n)?(html`<span class="tiny muted"> · ${n} reference${n===1?'':'s'}</span>`):('')}</li>`;}))}</ul>`):('')||html``));}
 // ---- spoken question (F6.1): never sent anywhere until the consultant stops the recording. Consent is asked here, at the
 // moment of use: "Allow this time", or "Always allow for me" when the profile can store it (checked again by the server).
 async function toggleMic(){if(S.rec==='transcribing')return;if(S.rec){stopRecording(false);return;}

@@ -3,6 +3,7 @@
    dynamic string goes through esc(). Nothing is sent by ATLAS: a proof request gives a mailto draft and queued outreach rows. */
 (()=>{'use strict';
 const {html,setHTML,insertHTML,trusted}=window.AtlasSafe;
+const {displayValue}=window.AtlasDisplayValue;
 const frag=a=>a&&a.length?html`${a}`:'';
 const W=window.AtlasWowUI=window.AtlasWowUI||{},B=window.AtlasBids,esc=B.esc,$=id=>document.getElementById(id),app=()=>window.ATLAS_APP;
 const HEX=/^[a-f0-9]{32}$/,EMAIL=/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/,DOCX='application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -190,7 +191,7 @@ function checkedReqs(){return [...document.querySelectorAll('#gapReqs [data-gap-
 function renderPeople(){const m=S.bid?.match,ids=checkedReqs(),seen=new Set(),people=[];
  for(const c of (Array.isArray(m?.coverage)?m.coverage:[]))if(ids.includes(c.requirementId))for(const s of (Array.isArray(c.suggested)?c.suggested:[])){const k=s.refId+'|'+s.person;if(seen.has(k)||!Number.isInteger(s.person))continue;seen.add(k);people.push(s);}
  const title=id=>(m?.results||[]).find(r=>r.id===id)?.title,prev=document.querySelector('#gapDialog input[name=gapWho]:checked')?.value,keep=people.some(s=>s.refId+'|'+s.person===prev)?prev:null;
- setHTML($('gapPeople'),((people.length)?(html`${html`<p class="tiny muted">Suggested from the people on matching references, in reference order (never ranked).</p>`}${frag(people.map((s,i)=>html`<label class="check"><input name="gapWho" type="radio" value="${s.refId+'|'+s.person}"${(keep?s.refId+'|'+s.person===keep:!i&&prev!=='email')?' checked':''}/><span>${s.name||'Unnamed'}${s.role?' · '+s.role:''}${(title(s.refId))?(html` <span class="tiny muted">on ${title(s.refId)}</span>`):('')}</span></label>`))}`):(html`<p class="tiny muted">No suggested people for these requirements. Type the email of someone who knows.</p>`)||html``));
+ setHTML($('gapPeople'),((people.length)?(html`${html`<p class="tiny muted">Suggested from the people on matching references, in reference order (never ranked).</p>`}${frag(people.map((s,i)=>html`<label class="check"><input name="gapWho" type="radio" value="${s.refId+'|'+s.person}"${(keep?s.refId+'|'+s.person===keep:!i&&prev!=='email')?' checked':''}/><span>${s.name==null||s.name===''?'Unnamed':displayValue(s.name)}${s.role?' · '+displayValue(s.role):''}${(title(s.refId))?(html` <span class="tiny muted">on ${title(s.refId)}</span>`):('')}</span></label>`))}`):(html`<p class="tiny muted">No suggested people for these requirements. Type the email of someone who knows.</p>`)||html``));
  if(!people.length)$('gapWhoEmail').checked=true;}
 function onGapChange(e){const t=e.target;if(t.matches('[data-gap-req]')){if(checkedReqs().length>3){t.checked=false;say('gapStatus','Choose up to 3 requirements per request.');}renderPeople();}}
 function onGapClick(e){if(e.target.closest('#gapCreate'))createGap();else if(e.target.closest('#gapCopy'))copyDraft();}

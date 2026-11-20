@@ -33,6 +33,7 @@ slots={'__CSS__':read_text(ROOT/'src/styles.css')+'\n'+read_text(ROOT/'src/voice
 '__PPTX__':read_text(ROOT/'src/pptx.js'),
 '__DOCX__':read_text(ROOT/'src/docx.js'),
 '__OFFICE__':read_text(ROOT/'src/office.js'),
+ '__DISPLAY_VALUE__':read_text(ROOT/'src/display-value.js'),
  '__APP__':'window.ATLAS_BRIEF='+json.dumps(read_text(ROOT/'docs/BUILD_NOTES.md')).replace('</','<\\/')+';\n'+read_text(ROOT/'src/app.js'),
  '__VOICE_PANEL__':read_text(ROOT/'src/voice-panel.html'),
  '__STUDIO_CONNECTION__':read_text(ROOT/'src/studio-connection.js'),
