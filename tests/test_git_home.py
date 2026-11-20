@@ -92,7 +92,7 @@ def test_sigkill_orphan_is_reaped_on_next_run(handoff_temp):
     young.mkdir()
     (young / 'payload').write_bytes(b'young')
     _write_owner(young, _dead_pid(), 1)
-    result = life.reap(str(private), now=time.time(), active=None)
+    result = life.reap(str(private), now=time.time_ns(), active=None)
     assert not killed.exists()
     assert young.is_dir()
     assert life.classify(str(young)) == life.State.ORPHANED
@@ -144,7 +144,7 @@ def test_reap_boundary_keeps_86400_and_removes_86400_001(handoff_temp):
     _touch(kept, NOW_NS - STALE_NS)
     _touch(gone, NOW_NS - OVER_NS)
     handoff._GIT_HOME = None
-    handoff._sweep_stale_git_homes(now=float(NOW))
+    handoff._sweep_stale_git_homes(now=NOW_NS)
     assert kept.is_dir()
     assert (kept / 'k').read_bytes() == b'k'
     assert not gone.exists()
@@ -355,7 +355,7 @@ def test_reap_decision_property(tmp_path):
     (live / 'payload').write_bytes(b'p')
     _write_owner(live, os.getpid(), _self_start())
     _touch(live, NOW_NS - (life.STALE_NS + 5_000_000_000))
-    life.reap(str(root), now=float(NOW), active=None)
+    life.reap(str(root), now=NOW_NS, active=None)
     assert (root / 'atlas-git-home-young').is_dir()
     assert (root / 'atlas-git-home-exact').is_dir()
     assert not (root / 'atlas-git-home-over').exists()
@@ -386,7 +386,7 @@ def test_concurrent_reapers_keep_a_live_home(tmp_path):
 
     def once():
         try:
-            life.reap(str(root), now=time.time(), active=None)
+            life.reap(str(root), now=time.time_ns(), active=None)
         except Exception as exc:
             errors.append(exc)
 
@@ -507,7 +507,7 @@ def test_reap_removes_a_reused_pid_with_different_start_ticks(tmp_path):
     _write_owner(home, os.getpid(), _self_start() + 1)
     _touch(home, NOW_NS - (STALE_NS + 1_000_000))
     assert life.classify(str(home)) == life.State.ORPHANED
-    life.reap(str(root), now=float(NOW), active=None)
+    life.reap(str(root), now=NOW_NS, active=None)
     assert not home.exists()
 
 
@@ -551,7 +551,7 @@ def test_reap_does_not_delete_a_live_home_swapped_onto_the_name(tmp_path, monkey
         return state
 
     monkeypatch.setattr(life, 'classify_fd', swap_once)
-    life.reap(str(root), now=time.time(), active=None)
+    life.reap(str(root), now=time.time_ns(), active=None)
     assert swapped['done'] is True
     assert slot.is_dir()
     assert (slot / 'payload').read_bytes() == b'live'
@@ -587,7 +587,7 @@ def test_reap_rechecks_the_marker_on_the_held_directory(tmp_path, monkeypatch):
         return state
 
     monkeypatch.setattr(life, 'classify_fd', flip_once)
-    life.reap(str(root), now=time.time(), active=None)
+    life.reap(str(root), now=time.time_ns(), active=None)
     assert flipped['done'] is True
     assert home.is_dir()
     assert (home / 'payload').read_bytes() == b'stay'
@@ -612,7 +612,7 @@ def test_symlinked_parent_of_the_temp_root_is_refused(tmp_path):
     assert via.is_dir()
     assert not via.is_symlink()
     assert link_parent.is_symlink()
-    result = life.reap(str(via), now=time.time(), active=None)
+    result = life.reap(str(via), now=time.time_ns(), active=None)
     assert result.refused is True
     assert result.reaped == ()
     assert orphan.is_dir()
@@ -632,7 +632,7 @@ def test_young_prefixed_symlink_to_an_old_directory_is_not_followed(tmp_path):
     link.symlink_to(outside, target_is_directory=True)
     assert link.is_symlink()
     assert (time.time_ns() - link.lstat().st_mtime_ns) < life.STALE_NS
-    life.reap(str(root), now=time.time(), active=None)
+    life.reap(str(root), now=time.time_ns(), active=None)
     assert link.is_symlink()
     assert outside.is_dir()
     assert (outside / 'payload').read_bytes() == b'keep'
@@ -683,7 +683,7 @@ def test_mode000_child_keeps_its_age_and_the_pass_continues(tmp_path, monkeypatc
     locked.chmod(0)
     monkeypatch.setattr(os, 'listdir', _files_before_dirs(os.listdir))
     try:
-        life.reap(str(root), now=float(NOW), active=None)
+        life.reap(str(root), now=NOW_NS, active=None)
         assert not other.exists()
         assert blocked.is_dir()
         assert (blocked / 'payload').read_bytes() == b'keep'
@@ -712,7 +712,7 @@ def test_one_thousand_nanoseconds_past_the_boundary_is_removed(tmp_path):
     _touch(exact, NOW_NS - STALE_NS)
     _touch(one, NOW_NS - (STALE_NS + 1))
     _touch(slack, NOW_NS - (STALE_NS + 1000))
-    life.reap(str(root), now=float(NOW), active=None)
+    life.reap(str(root), now=NOW_NS, active=None)
     assert exact.is_dir()
     assert (exact / 'payload').read_bytes() == b'p'
     assert not one.exists()

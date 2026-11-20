@@ -31,8 +31,10 @@ top-level name ``.git`` only. A git failure on that path exits cleanly with
 Each git home is created, then in use while this process owns it. A
 normal exit cleans it. SIGKILL leaves it orphaned. The next run reaps
 an orphan older than 86400 seconds and leaves one at exactly 86400
-seconds. A live owner's home stays. Symlinks are not followed. A
-symlinked temp root is refused. Owner decision, 2026-11-20, Tony.
+seconds. Age is an integer nanosecond count from ``time.time_ns``.
+A live owner's home stays. ``release`` deletes a home only when its
+marker names this process. Symlinks are not followed. A temp root
+reached through any symlink is refused. Owner decision, 2026-11-20, Tony.
 """
 from __future__ import annotations
 import atexit
@@ -232,12 +234,13 @@ _STALE_GIT_HOME_SECONDS = git_home.STALE_SECONDS
 _GIT_HOME_PREFIX = git_home.PREFIX
 
 
-def _sweep_stale_git_homes(now: float | None = None) -> None:
+def _sweep_stale_git_homes(now: int | None = None) -> None:
     """Reap orphaned homes older than 86400 seconds.
 
+    ``now`` is integer nanoseconds, the same clock as ``time.time_ns``.
     The active home and any live owner's home stay. Exactly 86400
-    seconds stays. A symlinked temp root is refused. Symlinks are not
-    followed.
+    seconds stays. A temp root reached through any symlink is refused.
+    Symlinks are not followed.
     """
     try:
         temp_dir = tempfile.gettempdir()
@@ -246,7 +249,7 @@ def _sweep_stale_git_homes(now: float | None = None) -> None:
     try:
         git_home.reap(
             temp_dir,
-            now=time.time() if now is None else now,
+            now=time.time_ns() if now is None else now,
             active=_GIT_HOME,
         )
     except OSError:

@@ -3,8 +3,11 @@
 States are created, in use, cleaned, orphaned, and reaped. A home moves
 only through the guarded edges in ``TRANSITIONS``. The reaper removes an
 orphaned home when its age is greater than 86400 seconds. Exactly 86400
-seconds stays. A live owner (pid and /proc start time) stays. Symlinks
-are not followed, and a symlinked temp root is refused.
+seconds stays. Age is integer nanoseconds from ``time.time_ns``. A live
+owner (pid and /proc start time) stays. ``release`` deletes a directory
+only when its marker names this process. Symlinks are not followed. A
+temp root reached through any symlink is refused, and removal stays on
+directory fds held open with ``O_DIRECTORY | O_NOFOLLOW``.
 """
 from __future__ import annotations
 
@@ -185,18 +188,26 @@ def _write_marker(dir_fd: int, pid: int, start: int) -> None:
         os.close(fd)
 
 
+def _owner_state(pid: int, start: int) -> str:
+    """``live`` when pid is alive and its start ticks match, else ``dead`` or ``unknown``."""
+    owner, ticks = start_ticks(pid)
+    if owner == 'unknown':
+        return 'unknown'
+    if owner == 'alive' and ticks == start:
+        return 'live'
+    return 'dead'
+
+
 def classify_fd(dir_fd: int) -> State:
     kind, pid, start = _read_marker(dir_fd)
     if kind == 'absent':
         return State.CREATED
     if kind != 'present' or pid is None or start is None:
         return State.IN_USE
-    owner, ticks = start_ticks(pid)
-    if owner == 'unknown':
-        return State.IN_USE
-    if owner == 'alive' and ticks == start:
-        return State.IN_USE
-    return State.ORPHANED
+    state = _owner_state(pid, start)
+    if state == 'dead':
+        return State.ORPHANED
+    return State.IN_USE
 
 
 def classify(path: str) -> State:
@@ -207,132 +218,367 @@ def classify(path: str) -> State:
         os.close(fd)
 
 
-def _now_ns(now: float | None) -> int:
+def _now_ns(now: int | None) -> int:
+    """Integer nanoseconds. ``None`` reads ``time.time_ns`` and there is no slack."""
     if now is None:
         return time.time_ns()
-    return int(round(float(now) * 1_000_000_000))
+    if isinstance(now, bool) or not isinstance(now, int):
+        raise TypeError('now must be integer nanoseconds')
+    return now
 
 
-def _identity(path: str) -> tuple[int, int] | None:
+def _child_names(dir_fd: int) -> list[str]:
+    names = []
+    for name in os.listdir(dir_fd):
+        if name in ('', '.', '..') or '/' in name or '\\' in name:
+            raise OSError('refusing to leave the directory')
+        names.append(name)
+    return names
+
+
+def _open_real_dir(dir_fd: int, name: str) -> int | None:
+    """Open one real child directory. A symlink is not opened and not followed."""
+    if name in ('', '.', '..') or '/' in name or '\\' in name:
+        return None
+    try:
+        st = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+    except OSError:
+        return None
+    if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
+        return None
+    try:
+        fd = os.open(name, _OPEN_DIR, dir_fd=dir_fd)
+    except OSError:
+        return None
+    try:
+        held = os.fstat(fd)
+    except OSError:
+        os.close(fd)
+        return None
+    if (held.st_dev, held.st_ino) != (st.st_dev, st.st_ino) or not stat.S_ISDIR(held.st_mode):
+        os.close(fd)
+        return None
+    return fd
+
+
+def _open_chain(path: str) -> int | None:
+    """Walk ``path`` one component at a time. Any symlink refuses the open."""
+    if not isinstance(path, str) or not path or '\0' in path:
+        return None
+    try:
+        fd = os.open(os.sep if os.path.isabs(path) else '.', _OPEN_DIR)
+    except OSError:
+        return None
+    try:
+        for part in path.split(os.sep):
+            if part in ('', '.'):
+                continue
+            if part == '..':
+                os.close(fd)
+                return None
+            nxt = _open_real_dir(fd, part)
+            os.close(fd)
+            if nxt is None:
+                return None
+            fd = nxt
+        return fd
+    except Exception:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        return None
+
+
+def _pin_directory(path: str) -> int | None:
+    """Pin ``path`` on a directory fd.
+
+    ``realpath`` resolves the path, then every component is opened with
+    ``O_DIRECTORY | O_NOFOLLOW``. A symlink anywhere in the chain refuses
+    the pin. Later removal uses the returned fd, not the path string.
+    """
+    try:
+        real = os.path.realpath(path, strict=True)
+    except (OSError, ValueError):
+        return None
+    fd = _open_chain(path)
+    if fd is None:
+        return None
+    real_fd = _open_chain(real)
+    if real_fd is None:
+        os.close(fd)
+        return None
+    try:
+        if (os.fstat(fd).st_dev, os.fstat(fd).st_ino) != (os.fstat(real_fd).st_dev, os.fstat(real_fd).st_ino):
+            os.close(fd)
+            return None
+    finally:
+        os.close(real_fd)
+    return fd
+
+
+def _open_final(path: str) -> int | None:
+    """Open the final directory of ``path``. A symlink as that component is refused.
+
+    Parent components are not a temp-root pin. ``reap`` does not use this.
+    """
     try:
         st = os.lstat(path)
     except OSError:
         return None
-    if stat.S_ISLNK(st.st_mode):
+    if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
+        return None
+    try:
+        fd = os.open(path, _OPEN_DIR)
+    except OSError:
+        return None
+    try:
+        held = os.fstat(fd)
+    except OSError:
+        os.close(fd)
+        return None
+    if (held.st_dev, held.st_ino) != (st.st_dev, st.st_ino) or not stat.S_ISDIR(held.st_mode):
+        os.close(fd)
+        return None
+    return fd
+
+
+def _name_id(dir_fd: int, name: str) -> tuple[int, int] | None:
+    try:
+        st = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+    except OSError:
+        return None
+    if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
         return None
     return (st.st_dev, st.st_ino)
+
+
+def _owns(dir_fd: int) -> bool:
+    """True only when the marker names this process and its start ticks."""
+    kind, pid, start = _read_marker(dir_fd)
+    if kind != 'present' or pid is None or start is None or pid != os.getpid():
+        return False
+    return _owner_state(pid, start) == 'live'
+
+
+def _blocks_reap(dir_fd: int) -> bool:
+    """True when the marker on this fd is live, unknown, or not a dead owner.
+
+    A missing marker does not block. An old directory with no marker can
+    still be reaped. The read is against ``dir_fd``, not the path name.
+    """
+    kind, pid, start = _read_marker(dir_fd)
+    if kind == 'absent':
+        return False
+    if kind != 'present' or pid is None or start is None:
+        return True
+    return _owner_state(pid, start) != 'dead'
+
+
+def _ensure_removable(dir_fd: int) -> None:
+    """Raise before any unlink when a child directory cannot be opened."""
+    for name in _child_names(dir_fd):
+        st = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+        if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
+            continue
+        child = os.open(name, _OPEN_DIR, dir_fd=dir_fd)
+        try:
+            held = os.fstat(child)
+            if (held.st_dev, held.st_ino) != (st.st_dev, st.st_ino):
+                raise OSError('directory changed during removal')
+            _ensure_removable(child)
+        finally:
+            os.close(child)
 
 
 def _remove_name(dir_fd: int, name: str) -> None:
     """Remove ``name`` under ``dir_fd``. A symlink is unlinked, not followed."""
     if name in ('', '.', '..') or '/' in name or '\\' in name:
         raise OSError('refusing to leave the temp root')
-    for _ in range(4):
+    try:
+        st = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
         try:
-            st = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+            os.unlink(name, dir_fd=dir_fd)
         except FileNotFoundError:
             return
-        if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
-            try:
-                os.unlink(name, dir_fd=dir_fd)
-            except FileNotFoundError:
-                return
-            return
-        try:
-            child = os.open(name, _OPEN_DIR, dir_fd=dir_fd)
-        except FileNotFoundError:
-            return
-        except OSError:
-            try:
-                os.unlink(name, dir_fd=dir_fd)
-            except OSError:
-                return
-            return
-        try:
-            for entry in os.listdir(child):
-                _remove_name(child, entry)
-        finally:
-            os.close(child)
-        try:
-            os.rmdir(name, dir_fd=dir_fd)
-            return
-        except FileNotFoundError:
-            return
-        except OSError:
-            continue
-    raise OSError('could not remove ' + name)
+        return
+    child = os.open(name, _OPEN_DIR, dir_fd=dir_fd)
+    try:
+        held = os.fstat(child)
+        if (held.st_dev, held.st_ino) != (st.st_dev, st.st_ino):
+            raise OSError('directory changed during removal')
+        for entry in _child_names(child):
+            _remove_name(child, entry)
+    finally:
+        os.close(child)
+    os.rmdir(name, dir_fd=dir_fd)
+
+
+def _remove_children(dir_fd: int) -> None:
+    for name in _child_names(dir_fd):
+        _remove_name(dir_fd, name)
+
+
+def _restore_mtime(dir_fd: int, mtime_ns: int) -> None:
+    try:
+        os.utime(dir_fd, ns=(mtime_ns, mtime_ns))
+    except OSError:
+        return
 
 
 def _empty_refused() -> ReapResult:
     return ReapResult(reaped=(), refused=True, transitions=())
 
 
-def reap(root: str, now: float | None = None, active: str | None = None) -> ReapResult:
-    """Reap orphaned homes under ``root``. A symlink ``root`` is refused."""
+def _active_id(active: str | None) -> tuple[int, int] | None:
+    if not active:
+        return None
+    fd = _open_final(active)
+    if fd is None:
+        return None
     try:
-        root_stat = os.lstat(root)
-    except OSError:
-        return _empty_refused()
-    if stat.S_ISLNK(root_stat.st_mode) or not stat.S_ISDIR(root_stat.st_mode):
-        return _empty_refused()
+        st = os.fstat(fd)
+    finally:
+        os.close(fd)
+    return (st.st_dev, st.st_ino)
+
+
+def _decision(state: State, age_ns: int) -> bool:
+    return reap_decision(
+        state=state, age_ns=age_ns,
+        entry_is_symlink=False, root_is_symlink=False,
+    )
+
+
+def _reap_one(
+    root_fd: int,
+    home_fd: int,
+    name: str,
+    now_ns: int,
+    active_id: tuple[int, int] | None,
+    reaped: list[str],
+    transitions: list[tuple[str, str, str]],
+) -> None:
+    """Reap one held directory, or leave it. Removal stays on ``home_fd``."""
+    held = os.fstat(home_fd)
+    held_id = (held.st_dev, held.st_ino)
+    original = held.st_mtime_ns
+    if active_id is not None and held_id == active_id:
+        return
+    if _name_id(root_fd, name) != held_id:
+        return
+    age_ns = now_ns - original
+    state = classify_fd(home_fd)
+    if not _decision(state, age_ns):
+        return
+    # Marker and name are read again on the fds still held. A live marker
+    # written into this inode, or a different directory swapped onto this
+    # name, is not removed.
+    if _blocks_reap(home_fd) or _name_id(root_fd, name) != held_id:
+        return
+    state = classify_fd(home_fd)
+    if _blocks_reap(home_fd) or _name_id(root_fd, name) != held_id:
+        return
+    if not _decision(state, age_ns):
+        return
+    from_created = state is State.CREATED
+    if from_created:
+        state = transition(state, State.ORPHANED, owner_live=False)
+    if state is not State.ORPHANED:
+        return
     try:
-        root_fd = os.open(root, _OPEN_DIR)
+        transition(state, State.REAPED, owner_live=False, age_ns=age_ns)
+        _ensure_removable(home_fd)
+        if _blocks_reap(home_fd) or _name_id(root_fd, name) != held_id:
+            return
+        _remove_children(home_fd)
+        if _blocks_reap(home_fd) or _name_id(root_fd, name) != held_id:
+            _restore_mtime(home_fd, original)
+            return
+        os.rmdir(name, dir_fd=root_fd)
     except OSError:
+        _restore_mtime(home_fd, original)
+        return
+    if from_created:
+        transitions.append((name, 'created', 'orphaned'))
+    transitions.append((name, 'orphaned', 'reaped'))
+    reaped.append(name)
+
+
+def reap(root: str, now: int | None = None, active: str | None = None) -> ReapResult:
+    """Reap orphaned homes under ``root``.
+
+    ``now`` is integer nanoseconds. The root is pinned with ``realpath``
+    and a directory fd. A symlink anywhere in that chain refuses the pass.
+    Every later open, unlink, and rmdir is relative to a held directory fd.
+    """
+    root_fd = _pin_directory(root)
+    if root_fd is None:
         return _empty_refused()
     now_ns = _now_ns(now)
-    active_id = _identity(active) if active else None
+    active_id = _active_id(active)
     reaped: list[str] = []
     transitions: list[tuple[str, str, str]] = []
     try:
-        opened = os.fstat(root_fd)
-        if (opened.st_dev, opened.st_ino) != (root_stat.st_dev, root_stat.st_ino):
-            return _empty_refused()
         for name in os.listdir(root_fd):
             if not name.startswith(PREFIX) or '/' in name or name in ('.', '..'):
                 continue
-            try:
-                st = os.stat(name, dir_fd=root_fd, follow_symlinks=False)
-            except OSError:
-                continue
-            if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
-                continue
-            if active_id is not None and (st.st_dev, st.st_ino) == active_id:
-                continue
-            age_ns = now_ns - st.st_mtime_ns
-            try:
-                home_fd = os.open(name, _OPEN_DIR, dir_fd=root_fd)
-            except OSError:
+            home_fd = _open_real_dir(root_fd, name)
+            if home_fd is None:
                 continue
             try:
-                held = os.fstat(home_fd)
-                if (held.st_dev, held.st_ino) != (st.st_dev, st.st_ino):
-                    continue
-                state = classify_fd(home_fd)
+                _reap_one(root_fd, home_fd, name, now_ns, active_id, reaped, transitions)
             finally:
                 os.close(home_fd)
-            if not reap_decision(
-                state=state, age_ns=age_ns,
-                entry_is_symlink=False, root_is_symlink=False,
-            ):
-                continue
-            if state is State.CREATED:
-                state = transition(state, State.ORPHANED, owner_live=False)
-                transitions.append((name, 'created', 'orphaned'))
-            if state is not State.ORPHANED:
-                continue
-            transition(state, State.REAPED, owner_live=False, age_ns=age_ns)
-            transitions.append((name, 'orphaned', 'reaped'))
-            _remove_name(root_fd, name)
-            reaped.append(name)
     finally:
         os.close(root_fd)
     return ReapResult(reaped=tuple(reaped), refused=False, transitions=tuple(transitions))
 
 
+def _rmdir_inode(path: str, home_fd: int, *, require_owner: bool) -> None:
+    """Remove the directory entry that still names ``home_fd``."""
+    held = os.fstat(home_fd)
+    held_id = (held.st_dev, held.st_ino)
+    original = held.st_mtime_ns
+    real = os.path.realpath(path)
+    parent = os.path.dirname(real) or os.sep
+    name = os.path.basename(real)
+    parent_fd = _pin_directory(parent)
+    if parent_fd is None:
+        raise OSError('cannot pin the parent of the git home')
+    try:
+        if _name_id(parent_fd, name) != held_id:
+            raise OSError('git home path no longer names this directory')
+        if require_owner and not _owns(home_fd):
+            raise OSError('git home owner changed')
+        _ensure_removable(home_fd)
+        if _name_id(parent_fd, name) != held_id:
+            raise OSError('git home path changed during removal')
+        if require_owner and not _owns(home_fd):
+            raise OSError('git home owner changed during removal')
+        _remove_children(home_fd)
+        # Children include the owner marker. The inode check is what stops
+        # rmdir from landing on a directory swapped onto this name.
+        if _name_id(parent_fd, name) != held_id:
+            _restore_mtime(home_fd, original)
+            raise OSError('git home path changed during removal')
+        os.rmdir(name, dir_fd=parent_fd)
+    except OSError:
+        _restore_mtime(home_fd, original)
+        raise
+    finally:
+        os.close(parent_fd)
+
+
 def create() -> str:
     """Create a home and mark it in use by this process."""
     path = tempfile.mkdtemp(prefix=PREFIX)
-    fd = os.open(path, _OPEN_DIR)
+    fd = _open_final(path)
+    if fd is None:
+        raise OSError('cannot open a real directory for the git home')
     try:
         pid = os.getpid()
         kind, ticks = start_ticks(pid)
@@ -341,43 +587,36 @@ def create() -> str:
         _write_marker(fd, pid, ticks)
         transition(State.CREATED, State.IN_USE, owner_live=True)
     except Exception:
-        os.close(fd)
-        fd = -1
-        parent = os.path.dirname(path) or '.'
-        parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
         try:
-            _remove_name(parent_fd, os.path.basename(path))
-        finally:
-            os.close(parent_fd)
+            _rmdir_inode(path, fd, require_owner=False)
+        except OSError:
+            pass
         raise
     finally:
-        if fd >= 0:
-            os.close(fd)
+        os.close(fd)
     return path
 
 
 def release(path: str) -> None:
-    """Clean a home this process owns. A symlink is not followed."""
+    """Remove a home whose marker names this process and its start ticks.
+
+    Any other directory is left in place, including a markerless directory,
+    an orphan, and a home owned by a different live pid. A symlink is not
+    followed. The marker is read again on the held fd before rmdir.
+    """
     if not path:
         return
+    home_fd = _open_final(path)
+    if home_fd is None:
+        return
     try:
-        st = os.lstat(path)
+        if not _owns(home_fd):
+            return
+        transition(State.IN_USE, State.CLEANED, releasing=True, owner_live=True)
+        if not _owns(home_fd):
+            return
+        _rmdir_inode(path, home_fd, require_owner=True)
     except OSError:
         return
-    if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
-        return
-    try:
-        state = classify(path)
-    except OSError:
-        return
-    if state is State.CREATED:
-        state = transition(state, State.IN_USE, owner_live=True)
-    if state is not State.IN_USE:
-        return
-    transition(state, State.CLEANED, releasing=True, owner_live=True)
-    parent = os.path.dirname(path) or '.'
-    parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
-    try:
-        _remove_name(parent_fd, os.path.basename(path))
     finally:
-        os.close(parent_fd)
+        os.close(home_fd)
