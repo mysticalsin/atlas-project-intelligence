@@ -230,6 +230,14 @@ test('sourceIsPrefix allows a prefix and denies a different source', async () =>
   assert.equal(mod.preparesNoStatement('/* c */ DELETE FROM refs'), false);
   assert.equal(mod.preparesNoStatement('; DELETE FROM refs'), false);
   assert.equal(mod.preparesNoStatement("SELECT '/* delete */'"), false);
+  assert.equal(mod.preparesNoStatement('\0DELETE FROM refs'), true);
+  const dead = mod.statementSource(() => { const error = new Error('statement has been finalized'); error.code = 'ERR_INVALID_STATE'; throw error; });
+  assert.equal(dead.live, false);
+  assert.equal(dead.code, 'ERR_INVALID_STATE');
+  const live = mod.statementSource(() => 'SELECT 1');
+  assert.equal(live.live, true);
+  assert.equal(live.source, 'SELECT 1');
+  assert.equal(mod.statementSource(() => 1).live, false);
   const prepared = { phase: 'prepared', source: null, tail: null };
   const allowed = mod.statementTransition(prepared, { type: 'read_remainder', input: 'SELECT 1; DELETE FROM refs', source: 'SELECT 1;' });
   assert.equal(allowed.ok, true);

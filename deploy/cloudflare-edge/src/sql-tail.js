@@ -167,6 +167,10 @@ export function preparesNoStatement(text) {
   let i = 0;
   while (i < text.length) {
     const c = text[i];
+    // SQLite reads a C string. A NUL ends it. The prefix so far is only noise,
+    // so prepare would compile nothing. Do not call prepare: node:sqlite crashes
+    // at shutdown if those handles are left open.
+    if (c === '\0') return true;
     if (c === ' ' || c === '\n' || c === '\t' || c === '\r' || c === '\f' || c === ';') { i++; continue; }
     if (c === '-' && text[i + 1] === '-') {
       while (i < text.length && text[i] !== '\n') i++;
@@ -186,15 +190,19 @@ export function preparesNoStatement(text) {
 
 // One read, inside the guard. A finalized statement throws ERR_INVALID_STATE.
 // That throw stays here. The machine then takes prepare_empty.
-function readSource(stmt) {
+export function statementSource(read) {
   try {
-    const source = stmt.sourceSQL;
+    const source = read();
     if (typeof source !== 'string') return { live: false, code: 'ERR_INVALID_STATE' };
     return { live: true, source };
   } catch (error) {
     const code = error && typeof error.code === 'string' ? error.code : 'ERR_INVALID_STATE';
     return { live: false, code };
   }
+}
+
+function readSource(stmt) {
+  return statementSource(() => stmt.sourceSQL);
 }
 
 export function readStatementTail(sql) {
