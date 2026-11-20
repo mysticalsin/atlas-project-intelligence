@@ -50,6 +50,8 @@ If `/proc` is not a real directory, a marker cannot be proved dead, so a stamped
 
 A symlink named `atlas-git-home-*` is left in place.
 
+`check_handoff` sets `sys.dont_write_bytecode` before it imports this module. Package mode walks the directory it is checking. A `__pycache__` file created by that import would be `unlisted`.
+
 ## Tests
 
 `tests/test_git_home.py`

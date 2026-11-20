@@ -52,6 +52,9 @@ import sys
 import tempfile
 import time
 
+# Package mode walks the tree it is checking. Importing git_home must not
+# leave a __pycache__ entry for the checker to call unlisted.
+sys.dont_write_bytecode = True
 if __package__:
     from . import git_home
 else:

@@ -23,7 +23,7 @@ Measured before this paragraph's manifest refresh, with `ATLAS_DEPLOY_STUB` unse
 
 `python3 scripts/check_handoff.py . --dev-git-index` after this note's manifest refresh: exit 0, 701 release files, `clean-build` and `clean-build-byte-match` pass.
 
-The committed-tree pytest result follows this commit.
+Committed-tree pytest on `18e98c48745c3dda751f6ff84d26dec2c56d817e`, before the bytecode guard: 1 failed, 428 passed, 127 warnings, 25.00s, exit 1. The failure is `test_git_archive_of_head_passes_check_handoff`: package mode reported `unlisted: scripts/__pycache__/git_home.cpython-312.pyc`. The script now sets `sys.dont_write_bytecode` before importing `git_home`. The manifest is regenerated after that guard.
 
 ## 2026-11-20 — check_handoff residuals (`cursor/atlas-checkhandoff-residuals`)
 

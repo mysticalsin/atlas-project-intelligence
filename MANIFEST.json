@@ -2282,8 +2282,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 352693,
-      "sha256": "94327271fa7178d6a2aa0e55ddaa108f104228cff48a58b440a6efdb8a441b1f"
+      "bytes": 353052,
+      "sha256": "16c49de8aca46c1ccc5348d334b194692308da21931a051ccd04d68a144cf288"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2367,8 +2367,8 @@
     },
     {
       "path": "handoff/decisions/checkhandoff-githome-lifecycle.md",
-      "bytes": 4030,
-      "sha256": "f1ffcc45253a5835b02d9142620d4adc9904a77d79e50191bf82e9bb3fc652d3"
+      "bytes": 4223,
+      "sha256": "23706e88645e3fb44a5b78a1262432aac9498565340783d79942627c378ba8ac"
     },
     {
       "path": "handoff/decisions/invitation-tenant-erase.md",
@@ -2707,8 +2707,8 @@
     },
     {
       "path": "scripts/check_handoff.py",
-      "bytes": 28861,
-      "sha256": "210c8a209dc6f2a6be822d4ef03197ce2dff264e716f40ad3e2584e15d00a370"
+      "bytes": 29028,
+      "sha256": "4e22a883317e5d7f1aadfa9c24a1c1fabf4e4192acb704ca325721b4f757acdc"
     },
     {
       "path": "scripts/check_workers_speech.py",
