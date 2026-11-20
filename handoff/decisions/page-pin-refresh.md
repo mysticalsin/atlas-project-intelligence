@@ -78,3 +78,27 @@ Revert this branch to main `3d9239c112b5c5853fc49ce15424bbd29d94cfb2`. No migrat
 ## Loops
 
 Verify and QA loops are capped at 3. A failed gate is fixed only for the failure that was shown.
+
+## Loop 2
+
+Devin's gate on `344c0c47b3c63979580e9c55eba246e37f1f4d2c` was incomplete. Three mutants still passed: replacing the hash compare with `true`, an early `exit 0`, and `build.py` writing `ATLAS_Voice.html` somewhere else. The pin test also accepted a same-length page change if the digest assert was removed.
+
+Red `eb6739b5b439cbd2f54c89b0d09408ce1136bc47` changes only `tests/page-pin.test.js`. On the verifier from `344c0c47`, `node --test tests/page-pin.test.js` is 6 tests, 4 pass, 2 fail, exit 1. The failures are a tampered committed `ATLAS_Voice.html` (verify status 0, because `build.py` rewrites the file before the hash) and a build that writes `ATLAS_Voice.moved.html` (verify status 0, because the stale committed file still matches the pin).
+
+Fix `e12ff8d77a5466a80447a9c91e0c7e25d0d11a99` changes `scripts/verify_page_build.sh`. After the hold check it copies the committed page aside, deletes the four HTML aliases, and runs `build.py`. A missing `ATLAS_Voice.html` exits 23. A fresh build that differs from the committed snapshot exits 24. An alias that is missing exits 23, and an alias that differs exits 25. The second build deletes the aliases again before `build.py`. The existing double-build and edge checks stay at exits 21 and 22. INT stays 130 and TERM stays 143. The hash line stays `test "$actual" = "$expected"`. The script mode in git is now `100755`. `ATLAS_Voice.html` stays `7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a`, 924015 bytes. The pin line is unchanged.
+
+The same-length check flips one byte of a copy and requires `assertPagePin` to throw. A one-nibble pin change does the same. The four tracked aliases are checked against that function. `deploy/cloudflare-edge/src/atlas.html` is not tracked, so the test hashes it only when `git ls-files --error-unmatch` succeeds. The verify cases run in a temp copy from `git archive HEAD`, with the worktree `build.py` and `scripts/verify_page_build.sh` copied on top. `ATLAS_HOME_URL` and `ATLAS_DEPLOY_STUB` are removed from the child environment.
+
+Mutants, each restored and not committed. Each command exits 1:
+
+| Mutant | Command | Result |
+|---|---|---|
+| `test "$actual" = "$expected"` replaced with `true` | `node --test tests/page-pin.test.js` | 6 tests, 5 pass, 1 fail |
+| `exit 0` immediately after `cd` | the same | 6 tests, 4 pass, 2 fail |
+| `build.py` writes `ATLAS_Voice.moved.html` | `bash scripts/verify_page_build.sh` | exit 23, `missing: build.py did not write ATLAS_Voice.html` |
+| digest assert removed, length assert kept | `node --test tests/page-pin.test.js` | 6 tests, 4 pass, 2 fail. Same-length and one-nibble report `Missing expected exception` |
+| first hex digit of the pin `7` changed to `6` | `bash scripts/verify_page_build.sh`, then the node test | verify exit 1. Node 6 tests, 4 pass, 2 fail |
+
+After the mutants, `sha256sum ATLAS_Voice.html` is still `7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a`.
+
+On `e12ff8d`, before this loop's manifest write: the test command exits 0 (pin test 6 pass, 0 fail, 829 ms). pytest is 331 passed, 2 failed, 127 warnings, 24.74s, exit 1. Both failures are the handoff tests, detail `changed: scripts/verify_page_build.sh; changed: tests/page-pin.test.js`. `node --test tests/*.test.js` is 419 pass, 0 fail, 0 skipped, 22124 ms, exit 0. Edge is 1117 pass, 0 fail, 0 skipped, 237566 ms, exit 0. `make test-ui` is 834 PASS, 0 FAIL, 26 scripts, 437s, exit 0. `check_handoff` exits 1 on that same manifest-content detail. `origin/main` is still `3d9239c112b5c5853fc49ce15424bbd29d94cfb2`. No merge.
