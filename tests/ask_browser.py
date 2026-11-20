@@ -37,10 +37,46 @@ def route(r):
  return r.fulfill(status=404,json={'error':'not mocked: '+path})
 def calls(path):return [c for c in CALLS if c['path']==path]
 def no_overflow(p):return p.evaluate('document.scrollingElement.scrollWidth<=document.scrollingElement.clientWidth+1')
+ASK_REC_PROBE="""(() => {
+ if (window.__askBrowserProbeInstalled) return;
+ window.__askBrowserProbeInstalled = true;
+ window.__atlasAskRecordedBytes = 0;
+ window.__atlasAskBytesHooked = false;
+ window.__atlasAskSlowMicUntil = 0;
+ const Orig = AudioWorkletNode;
+ window.AudioWorkletNode = function(ctx, name, options) {
+  const node = new Orig(ctx, name, options);
+  if (name === 'atlas-duplex') {
+   node.port.addEventListener('message', (ev) => {
+    const d = ev.data;
+    if (!d || d.type !== 'pcm' || !d.buffer) return;
+    if (window.__atlasAskSlowMicUntil && performance.now() < window.__atlasAskSlowMicUntil) return;
+    const len = d.buffer.byteLength || 0;
+    window.__atlasAskRecordedBytes = (window.__atlasAskRecordedBytes || 0) + len;
+    window.__atlasAskBytesHooked = true;
+   });
+  }
+  return node;
+ };
+ window.AudioWorkletNode.prototype = Orig.prototype;
+})();"""
+def ask_min_bytes():
+ m=re.search(r'MIN_BYTES=(\d+)',(ROOT/'src'/'ask-ui.js').read_text())
+ assert m,'MIN_BYTES not found in src/ask-ui.js'
+ return int(m.group(1))
+def ask_recording_byte_target():
+ return max(ask_min_bytes(),int(48000*0.6))
+def wait_for_ask_minimum_recording(p,target,timeout=25000):
+ p.wait_for_function("""(minB) => {
+  if (!window.__atlasAskBytesHooked) return false;
+  return (window.__atlasAskRecordedBytes || 0) >= minB;
+ }""",arg=target,timeout=timeout)
 with sync_playwright() as pw:
  br=pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH') or None,args=['--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream','--autoplay-policy=no-user-gesture-required'])
- def page(w=1440):
-  c=br.new_context(viewport={'width':w,'height':1000},permissions=['microphone']);p=c.new_page();p.on('pageerror',lambda e:ERR.append(str(e)))
+ def page(w=1440,ask_rec_probe=False):
+  c=br.new_context(viewport={'width':w,'height':1000},permissions=['microphone'])
+  if ask_rec_probe:c.add_init_script(ASK_REC_PROBE)
+  p=c.new_page();p.on('pageerror',lambda e:ERR.append(str(e)))
   p.route('**/*',route);p.goto('https://atlas.test/');p.locator('header [data-view=library]').click();p.locator('#recommendQuery').wait_for(state='visible');return p
  p=page()
  check('Ask ATLAS hidden while features.ask is false',p.locator('#askAtlas').is_hidden() and p.locator('#askQuestion').count()==0)
@@ -78,7 +114,8 @@ with sync_playwright() as pw:
  S['empty']=False
  # spoken Ask: only with the flag and getUserMedia; consent asked at the moment of use (WOW_ZERO_CONFIG D1: the tick became a
  # prompt, "Allow this time" or "Always allow for me"); locked during a voice interview
- S['features']=dict(S['features'],spokenAsk=True);p=page()
+ slow_mic_ms=int(os.environ.get('ASK_BROWSER_SLOW_MIC_MS','0') or '0')
+ S['features']=dict(S['features'],spokenAsk=True);p=page(ask_rec_probe=True)
  mic=p.locator('#askMic');cp=p.locator('#askConsent')
  check('mic shown with spokenAsk and getUserMedia; nothing asked before it is used',mic.is_visible() and cp.is_hidden())
  mic.click();p.locator('#askConsent', has_text='Ask by voice').wait_for()
@@ -98,8 +135,11 @@ with sync_playwright() as pw:
  check('mic enabled again once the interview is idle',mic.is_enabled() and p.locator('#askMicBusy').is_hidden())
  asked=len(calls('/api/library/ask'));mic.click();p.locator('#askAllowOnce').click();p.locator('#askRecLine').wait_for()
  check('recording: the button becomes Stop, with the reminder and a recording indicator',mic.inner_text()=='Stop' and 'Listening' in p.locator('#askStatus').inner_text() and p.locator('#askRecLine').is_visible() and 'Don’t say client names' in p.locator('#askRecLine').inner_text())
+ if slow_mic_ms:p.evaluate(f'window.__atlasAskSlowMicUntil=performance.now()+{slow_mic_ms}')
  p.evaluate('window.__recStart=performance.now()')
- p.wait_for_function('() => performance.now()-window.__recStart>=700')
+ red_demo=os.environ.get('ASK_BROWSER_RED_DEMO')=='1'
+ wait_ms=120 if red_demo else 700
+ p.wait_for_function(f'() => performance.now()-window.__recStart>={wait_ms}')
  with p.expect_response(lambda r: '/api/transcribe' in r.url and r.request.method=='POST'):
   mic.click()
  t=calls('/api/transcribe')
