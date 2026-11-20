@@ -136,10 +136,15 @@ with sync_playwright() as pw:
  asked=len(calls('/api/library/ask'));mic.click();p.locator('#askAllowOnce').click();p.locator('#askRecLine').wait_for()
  check('recording: the button becomes Stop, with the reminder and a recording indicator',mic.inner_text()=='Stop' and 'Listening' in p.locator('#askStatus').inner_text() and p.locator('#askRecLine').is_visible() and 'Don’t say client names' in p.locator('#askRecLine').inner_text())
  if slow_mic_ms:p.evaluate(f'window.__atlasAskSlowMicUntil=performance.now()+{slow_mic_ms}')
- p.evaluate('window.__recStart=performance.now()')
- red_demo=os.environ.get('ASK_BROWSER_RED_DEMO')=='1'
- wait_ms=120 if red_demo else 700
- p.wait_for_function(f'() => performance.now()-window.__recStart>={wait_ms}')
+ if os.environ.get('ASK_BROWSER_RED_DEMO')=='1':
+  p.evaluate('window.__recStart=performance.now()')
+  p.wait_for_function('() => performance.now()-window.__recStart>=120')
+ else:
+  target=ask_recording_byte_target()
+  try:wait_for_ask_minimum_recording(p,target)
+  except Exception as e:
+   got=p.evaluate('() => window.__atlasAskRecordedBytes || 0')
+   raise AssertionError(f'timed out waiting for ask recording >= {target} bytes (have {got})') from e
  with p.expect_response(lambda r: '/api/transcribe' in r.url and r.request.method=='POST'):
   mic.click()
  t=calls('/api/transcribe')
