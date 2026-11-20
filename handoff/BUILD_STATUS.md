@@ -1,6 +1,24 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-20 — throwing rating onEnd (`cursor/atlas-rating-onend-throw`)
+
+ATLAS-R15-ONEND-THROW-UNSETTLED. Low. Base `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. On the parent, `deploy/cloudflare-edge/src/rating.js` `end` calls `opts.onEnd` after `settled = true` and before `resolve`. A throw skips `resolve`, and the late path returns because `settled` is already true. `rate()` never finishes. Production callers do not pass `onEnd`.
+
+Decision, also in `handoff/decisions/rating-onend-throw.md`: resolve the outcome first, then call `onEnd` inside `try/catch`. The promise resolves with that outcome. It does not reject. A rejection would skip the success return in `rate()` and `Library.runRating` would store fallback `rejected`, dropping a valid answer. The success shape stays `answers`, `inputTokens`, `model`, `attempts`, `hedged`, `http`, `ms`. `background` does not call `onEnd`. No page rebuild. `build.py` does not read this file.
+
+Red tests are `62ff749f9ee241bb7ee5d98cbbfba87e26a4f24c`. That commit does not refresh `MANIFEST.json`. The fix is `4a95bedce8f04c5d14e738fd636fa5edc3c99a67`. `MANIFEST.json` is regenerated after this note.
+
+Red command `cd deploy/cloudflare-edge && node --test test/rating.test.js` on `62ff749`: exit 1, 39 tests, 37 pass, 2 fail. Both failures are `throwing onEnd still settles the rating (yield cap 20)`. The once-only test passed. The same command on the fix: exit 0, 39 pass, 0 fail.
+
+Mutants, each restored, not committed. `rating.js` restored to sha256 `03eca830548b959174cc0578ea528b164682bd293dc310f0ae4f4cae311be9dc`.
+
+- Move `onEnd` back above `resolve` with no `try`: exit 1, 37 pass, 2 fail. Kills `a throwing onEnd still resolves the interactive rating` (yield cap 20). The escape test also stops at that cap.
+- Drop the `try` and leave `resolve` first: exit 1, 38 pass, 1 fail. Kills `a throwing onEnd does not escape the rating call` (`1 !== 0`). The resolve test stays green.
+- Call `onEnd` twice inside the `try`: exit 1, 37 pass, 2 fail. Kills `a normal onEnd runs exactly once` (`2 !== 1`) and the existing `end() after settle does not callback again` (`2 !== 1`).
+
+Full suites run after this note. Their counts are recorded with the manifest refresh that follows them.
+
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.
