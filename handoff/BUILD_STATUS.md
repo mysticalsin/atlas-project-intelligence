@@ -1,6 +1,54 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-20 — git home removal guards (`cursor/s3-checkhandoff-githome-lifecycle`)
+
+Inspector loop 1 on `d0b58349213a97c9c02994eb10c0f5791400a9b8`. Three Mediums and three Lows. Red tests are `804c6ff38702ffecab642cbd80cdb4bc9e1bb683`. That commit does not change `scripts/git_home.py` or `scripts/check_handoff.py` and does not refresh `MANIFEST.json`. The fix is `9b4c93eab6389f8f622d8194f121b431beb869e9`. The threat model is in `handoff/decisions/checkhandoff-githome-lifecycle.md`. `handoff/decisions/check-handoff-residuals.md` is not edited. `MANIFEST.json` is regenerated after this note.
+
+On `d0b58349`, `release` deleted a home owned by another live pid and a markerless directory. The reaper deleted a live home swapped onto a classified name, and a home whose marker became live on the held directory. A temp root reached through a symlinked parent was reaped. A mode-000 child raised `OSError: could not remove atlas-git-home-a-blocked` and stopped the pass. The float sweep clock kept a home 1 nanosecond past 86400 seconds.
+
+Red on `804c6ff`, `python3 -m pytest tests/test_git_home.py -q --tb=line`: 7 failed, 16 passed, exit 1. The failures are those six behaviours plus the held-fd marker recheck. The passes include the previous ten lifecycle tests.
+
+The fix keeps removal on the directory that was classified. `release` deletes a home only when the marker names this pid and these start ticks. `reap` pins the temp root with `realpath` and `O_DIRECTORY | O_NOFOLLOW` on every component, re-checks the marker and the inode on held directory fds, and removes children relative to those fds. One home that cannot be removed keeps the mtime captured before the attempt. The other homes continue. The sweep clock is `time.time_ns()`. There is no 1000 nanosecond slack.
+
+Mutants, each restored, each exit 1: `+1000ns` slack; start ticks ignored; `release` deletes an orphan; `cleaned` ignores `owner_live`; a young prefixed symlink is followed and its target payload is deleted; a live owner is treated as dead; exactly 86400 seconds is reaped; a symlink inside a home is followed; a symlinked temp root is followed; the reaper is skipped; `in_use` → `reaped` is allowed; the active-home inode guard is skipped.
+
+Measured before this paragraph's manifest refresh, with `ATLAS_DEPLOY_STUB` unset.
+
+- `python3 -m pytest tests/test_git_home.py -q --tb=line` on the fix: 23 passed, exit 0.
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 2 failed, 440 passed, 127 warnings, 26.11s, exit 1. The failures are `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`: `manifest-content` changed `scripts/check_handoff.py`, `scripts/git_home.py`, and `tests/test_git_home.py`.
+- `node --test tests/*.test.js`: 419 tests, 419 pass, 0 fail, 0 skipped, 21.91s, exit 0.
+- Edge `node --test test/*.test.js`: 1117 tests, 1113 pass, 0 fail, 4 skipped, 228.3s, exit 0. workerd `2026-10-23` is not installed. The four skips are the workerd tail proofs: `workerd 2026-10-23 is not installed; set ATLAS_WORKERD_ROOT`.
+- `make test-ui` (`CHROMIUM_PATH=/usr/bin/google-chrome`): 834 PASS, 0 FAIL, 26 scripts, 440s, exit 0.
+
+`python3 scripts/check_handoff.py . --dev-git-index` after this note's manifest refresh: exit 0, 701 release files, `manifest-content`, `clean-build`, and `clean-build-byte-match` pass. The archive-of-HEAD package check scores the commit that contains this sentence.
+
+## 2026-11-20 — git home lifecycle (`cursor/s3-checkhandoff-githome-lifecycle`)
+
+ATLAS-CHECKHANDOFF-REAPER and state machine S3, stacked on PR 21 head `3ee42d607a7618ec9adfdfb2f2b765f3cda52a81`. Red tests are `cb2b68d6fb940fd536399780b47012fbf49fe1ec`. That commit does not change `scripts/check_handoff.py` and does not refresh `MANIFEST.json`. The fix is `ff1d20d75fa39ec96e6b4ff3fd1a45ddfb0a7a30`. The decision is `handoff/decisions/checkhandoff-githome-lifecycle.md`. `handoff/decisions/check-handoff-residuals.md` is not edited. `MANIFEST.json` is regenerated after this note.
+
+Owner decision, 2026-11-20, Tony. A git home moves through `created`, `in_use`, `cleaned`, `orphaned`, and `reaped`. The only edges are created → in_use, created → orphaned, in_use → cleaned, in_use → orphaned, and orphaned → reaped. The reaper runs at the start of `git_environ`. It removes an orphan only when its age is greater than 86400 seconds. Exactly 86400 seconds stays. 86400.001 seconds is removed. A live pid with the same `/proc` start time stays, including a home older than the window. The active home stays. Symlinks are not followed. A symlinked temp root is refused.
+
+Known limit: SIGKILL still does not reap inside the killed process. That home remains until a later run sees an age greater than 86400 seconds.
+
+Red on `cb2b68d6`, `python3 -m pytest tests/test_git_home.py -q --tb=line`: 9 failed, 1 passed, exit 1. The pass is `test_reap_boundary_keeps_86400_and_removes_86400_001`, which already held on the PR 21 sweep. The failures are the missing lifecycle module, a live home deleted by the age sweep, a symlink marker deleted, a symlinked temp root followed, and the disk-bound live payload deleted.
+
+Mutants, each restored, each exit 1: treat a live owner as dead; reap at exactly 86400 seconds; follow a symlink inside a home; follow a symlinked temp root; skip the reaper; allow `in_use` → `reaped`; skip the active-home inode guard.
+
+Measured before this paragraph's manifest refresh, with `ATLAS_DEPLOY_STUB` unset.
+
+- Red commit `cb2b68d6`: `python3 -m pytest tests/test_git_home.py -q --tb=line`: 9 failed, 1 passed, exit 1.
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 2 failed, 427 passed, 127 warnings, 26.73s, exit 1. The two failures are `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`, the stale manifest.
+- `node --test tests/*.test.js`: 419 tests, 419 pass, 0 fail, 0 skipped, 22.0s, exit 0.
+- Edge `node --test test/*.test.js`: 1117 tests, 1113 pass, 0 fail, 4 skipped, 224.6s, exit 0. workerd `2026-10-23` is not installed (`/tmp/atlas-workerd-20261023` absent). The four skips are the workerd tail proofs: `workerd 2026-10-23 is not installed; set ATLAS_WORKERD_ROOT`.
+- `make test-ui` (`CHROMIUM_PATH=/usr/bin/google-chrome`): 834 PASS, 0 FAIL, 26 scripts, 437s, exit 0.
+
+`python3 scripts/check_handoff.py . --dev-git-index` after this note's manifest refresh: exit 0, 701 release files, `clean-build` and `clean-build-byte-match` pass.
+
+Committed-tree pytest on `18e98c48745c3dda751f6ff84d26dec2c56d817e`, before the bytecode guard: 1 failed, 428 passed, 127 warnings, 25.00s, exit 1. The failure is `test_git_archive_of_head_passes_check_handoff`: package mode reported `unlisted: scripts/__pycache__/git_home.cpython-312.pyc`. The script now sets `sys.dont_write_bytecode` before importing `git_home`.
+
+Committed-tree pytest on `309e0bfa9fd14d949255211b0c39e42bddd9b6c2`, after that guard: 429 passed, 127 warnings, 24.91s, exit 0. The manifest is regenerated after this sentence.
+
 ## 2026-11-20 — check_handoff residuals (`cursor/atlas-checkhandoff-residuals`)
 
 Four Low rows left from PR 14, on `main` `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. Red tests are `e1102c4d2b4a8296d0e12acb31e59bf5fdccae68`. That commit does not change `scripts/check_handoff.py` and does not refresh `MANIFEST.json`. The fix is `26486310b08401f5dc9faa884222515808a84ca1`. The decision is `0cceebf700a9cff954d58664cee86f78af01df00`. `MANIFEST.json` is regenerated after this note.

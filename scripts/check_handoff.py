@@ -28,9 +28,13 @@ top-level name ``.git`` only. A git failure on that path exits cleanly with
 ``dev-git-index requires a git checkout`` (1 on the check, 2 on
 ``--write-manifest``). Owner decisions, 2026-11-20, Atlas.
 
-A later run removes real ``atlas-git-home-*`` directories in the temp
-directory that are older than 86400 seconds. SIGKILL still leaves the
-current process's directory until that age. Symlinks are not removed.
+Each git home is created, then in use while this process owns it. A
+normal exit cleans it. SIGKILL leaves it orphaned. The next run reaps
+an orphan older than 86400 seconds and leaves one at exactly 86400
+seconds. Age is an integer nanosecond count from ``time.time_ns``.
+A live owner's home stays. ``release`` deletes a home only when its
+marker names this process. Symlinks are not followed. A temp root
+reached through any symlink is refused. Owner decision, 2026-11-20, Tony.
 """
 from __future__ import annotations
 import atexit
@@ -49,6 +53,14 @@ import subprocess
 import sys
 import tempfile
 import time
+
+# Package mode walks the tree it is checking. Importing git_home must not
+# leave a __pycache__ entry for the checker to call unlisted.
+sys.dont_write_bytecode = True
+if __package__:
+    from . import git_home
+else:
+    import git_home
 
 
 def safe_relative(value: str) -> bool:
@@ -210,44 +222,38 @@ _GIT_HOME_CLEANUP = False
 
 def _remove_shared_git_home() -> None:
     home = _GIT_HOME
-    if home and os.path.isdir(home):
-        shutil.rmtree(home, ignore_errors=True)
-
-
-_STALE_GIT_HOME_SECONDS = 86400
-_GIT_HOME_PREFIX = 'atlas-git-home-'
-
-
-def _sweep_stale_git_homes(now: float | None = None) -> None:
-    """Remove real atlas-git-home directories older than the sweep window.
-
-    Symlinks are left alone. This process's active home is left alone.
-    SIGKILL still leaves the active directory until a later run sees it
-    older than ``_STALE_GIT_HOME_SECONDS``.
-    """
-    current = time.time() if now is None else now
+    if not home:
+        return
     try:
-        temp_dir = tempfile.gettempdir()
-        names = os.listdir(temp_dir)
+        git_home.release(home)
     except OSError:
         return
-    active = _GIT_HOME
-    active_key = os.path.normcase(os.path.abspath(active)) if active else None
-    for name in names:
-        if not name.startswith(_GIT_HOME_PREFIX):
-            continue
-        path = os.path.join(temp_dir, name)
-        if active_key and os.path.normcase(os.path.abspath(path)) == active_key:
-            continue
-        try:
-            st = os.lstat(path)
-        except OSError:
-            continue
-        if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
-            continue
-        if current - st.st_mtime <= _STALE_GIT_HOME_SECONDS:
-            continue
-        shutil.rmtree(path, ignore_errors=True)
+
+
+_STALE_GIT_HOME_SECONDS = git_home.STALE_SECONDS
+_GIT_HOME_PREFIX = git_home.PREFIX
+
+
+def _sweep_stale_git_homes(now: int | None = None) -> None:
+    """Reap orphaned homes older than 86400 seconds.
+
+    ``now`` is integer nanoseconds, the same clock as ``time.time_ns``.
+    The active home and any live owner's home stay. Exactly 86400
+    seconds stays. A temp root reached through any symlink is refused.
+    Symlinks are not followed.
+    """
+    try:
+        temp_dir = tempfile.gettempdir()
+    except OSError:
+        return
+    try:
+        git_home.reap(
+            temp_dir,
+            now=time.time_ns() if now is None else now,
+            active=_GIT_HOME,
+        )
+    except OSError:
+        return
 
 
 def _shared_git_home() -> str:
@@ -257,7 +263,7 @@ def _shared_git_home() -> str:
         _GIT_HOME_CLEANUP = True
     _sweep_stale_git_homes()
     if _GIT_HOME is None or not os.path.isdir(_GIT_HOME):
-        _GIT_HOME = tempfile.mkdtemp(prefix=_GIT_HOME_PREFIX)
+        _GIT_HOME = git_home.create()
     return _GIT_HOME
 
 
@@ -266,9 +272,10 @@ def git_environ() -> dict[str, str]:
 
     PATH is copied from the caller, or ``/usr/bin:/bin`` when the caller
     has no PATH, so the operator's git is the binary that runs. The
-    package cannot choose it. HOME is one empty directory for this
-    process and is removed at exit. A home left by a killed process is
-    removed on a later run once it is older than 86400 seconds.
+    package cannot choose it. HOME is one directory for this process,
+    marked with this pid and start time, and removed at exit. A home
+    left by a killed process is orphaned. A later run reaps it only
+    after it is older than 86400 seconds. A live owner's home stays.
     """
     return {
         'PATH': os.environ.get('PATH', '/usr/bin:/bin'),
