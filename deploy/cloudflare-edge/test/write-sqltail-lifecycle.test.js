@@ -79,9 +79,16 @@ function eventFor(type) {
   return { type };
 }
 
-test('empty input is SQL_EMPTY and changes no row', () => {
+test('empty input is SQL_EMPTY and changes no row', async () => {
   const lib = seeded();
   expectEmpty(lib, '');
+  const mod = await import('../src/sql-tail.js');
+  const read = mod.readStatementTail('');
+  assert.equal(read.effect, 'sql_empty');
+  assert.equal(read.code, 'SQL_EMPTY');
+  assert.equal(read.phase, 'finalized');
+  assert.deepEqual(read.phases, ['idle', 'finalized']);
+  assert.equal(read.tail, null);
 });
 
 test('whitespace-only input is SQL_EMPTY and changes no row', () => {
@@ -216,6 +223,13 @@ test('sourceIsPrefix allows a prefix and denies a different source', async () =>
   assert.equal(mod.sourceIsPrefix('', ''), true);
   assert.equal(mod.sourceIsPrefix('SELECT 1', 1), false);
   assert.equal(mod.sourceIsPrefix(null, 'SELECT 1'), false);
+  assert.equal(mod.preparesNoStatement(''), true);
+  assert.equal(mod.preparesNoStatement('/* delete */'), true);
+  assert.equal(mod.preparesNoStatement('-- drop'), true);
+  assert.equal(mod.preparesNoStatement(';'), true);
+  assert.equal(mod.preparesNoStatement('/* c */ DELETE FROM refs'), false);
+  assert.equal(mod.preparesNoStatement('; DELETE FROM refs'), false);
+  assert.equal(mod.preparesNoStatement("SELECT '/* delete */'"), false);
   const prepared = { phase: 'prepared', source: null, tail: null };
   const allowed = mod.statementTransition(prepared, { type: 'read_remainder', input: 'SELECT 1; DELETE FROM refs', source: 'SELECT 1;' });
   assert.equal(allowed.ok, true);
@@ -251,6 +265,10 @@ test('comment and whitespace boundaries prepare no statement', () => {
     '-- drop\r\n',
   ];
   for (const sql of bounds) expectEmpty(lib, sql);
+  // A NUL ends the C string SQLite prepares. The bytes after it are not a statement.
+  expectEmpty(lib, '\0');
+  expectEmpty(lib, '\0DELETE FROM refs');
+  assert.equal(sqliteRemainder('\v'), null);
   const kept = open();
   const rows = kept.exec('SELECT 1 -- drop').toArray();
   assert.equal(rows.length, 1);
@@ -319,7 +337,7 @@ test('random comment and whitespace input is SQL_EMPTY and changes no row', () =
   const seen = new Set();
   for (let i = 0; i < 80; i++) {
     let sql = randomNoise(rng);
-    if (seen.has(sql)) sql += ' ';
+    while (seen.has(sql)) sql += ' ';
     seen.add(sql);
     expectEmpty(lib, sql);
   }
