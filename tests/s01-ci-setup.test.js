@@ -92,26 +92,49 @@ test('E9 the Teams client bundle is checked without a deploy', () => {
   assert.match(harness, /teams-js|wrangler[^\n]*dry-run|bundle/);
 });
 
-function installSources() {
-  const paths = ['.github/workflows/ci.yml', 'Makefile', 'constraints-tested.txt'];
-  const scripts = join(root, 'scripts');
-  if (existsSync(scripts)) {
-    for (const name of readdirSync(scripts)) {
-      if (name.endsWith('.sh') || name.endsWith('.py')) paths.push(join('scripts', name));
-    }
-  }
-  return paths.filter(path => existsSync(join(root, path))).map(read);
+function activeLines(name) {
+  return read(name).split(/\r?\n/).map(line => line.split('#')[0].trim()).filter(Boolean);
 }
 
-test('HAM-01 every integration requirement is pinned and hashed, or the file is installed with --require-hashes', () => {
-  const file = 'requirements-integrations.txt';
-  const sources = installSources();
-  const covered = sources.some(src => src.includes(file) && src.includes('--require-hashes'));
-  if (covered) return;
-  const packages = read(file).split(/\r?\n/).map(line => line.split('#')[0].trim()).filter(line => line && !line.startsWith('-r ') && !line.startsWith('-c ') && !line.startsWith('--hash'));
-  assert.ok(packages.length >= 1);
-  for (const line of packages) {
-    assert.match(line, /^[A-Za-z0-9_.-]+==[^\s]+/);
-    assert.match(line, /--hash=sha256:[a-f0-9]{64}/);
+test('ARTEX-01 CI installs the integrations lock with --require-hashes for the workflow Python', () => {
+  const ci = read('.github/workflows/ci.yml');
+  const version = /python-version:\s*['"]?(\d+\.\d+)/.exec(ci);
+  assert.ok(version, 'workflow Python');
+  assert.match(ci, /pip install --require-hashes -r requirements-integrations\.lock/);
+  const header = read('requirements-integrations.lock').split('\n').slice(0, 15).join('\n');
+  assert.match(header, new RegExp('Python ' + version[1].replace('.', '\\.')));
+});
+
+test('L-1 CI installs a Python 3.13 hash lock for msgpack, playwright, and python-docx', () => {
+  const ci = read('.github/workflows/ci.yml');
+  const version = /python-version:\s*['"]?(\d+\.\d+)/.exec(ci);
+  assert.ok(version, 'workflow Python');
+  assert.equal(version[1], '3.13');
+  assert.match(ci, /pip install --require-hashes -r requirements-ci\.lock/);
+  assert.equal(/pip install -r requirements\.txt/.test(ci), false);
+  assert.equal(existsSync(join(root, 'requirements-ci.lock')), true);
+  const text = read('requirements-ci.lock');
+  assert.match(text.split('\n').slice(0, 15).join('\n'), /Python 3\.13/);
+  for (const name of ['msgpack==', 'playwright==', 'python-docx==']) {
+    assert.match(text, new RegExp('^' + name, 'm'), name);
+  }
+});
+
+test('HAM-01 every requirements-*.txt with third-party packages is exact-pinned and hashed', () => {
+  const names = readdirSync(root).filter(name => /^requirements-.*\.txt$/.test(name)).sort();
+  for (const required of ['requirements-entra.txt', 'requirements-hindsight.txt', 'requirements-riva.txt', 'requirements-integrations.txt', 'requirements-test.txt']) {
+    assert.ok(names.includes(required), required);
+  }
+  for (const name of names) {
+    const lines = activeLines(name);
+    const packages = lines.filter(line => !line.startsWith('-r ') && !line.startsWith('-c ') && !line.startsWith('--'));
+    if (packages.length === 0) {
+      assert.ok(lines.some(line => /^-r requirements-.+\.lock$/.test(line)), name);
+      continue;
+    }
+    for (const line of packages) {
+      assert.match(line, /^[A-Za-z0-9_.-]+==[^\s]+/, `${name}: ${line}`);
+      assert.match(line, /--hash=sha256:[a-f0-9]{64}/, `${name}: ${line}`);
+    }
   }
 });
