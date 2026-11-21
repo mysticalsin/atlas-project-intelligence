@@ -1,5 +1,5 @@
 # Configuration and commands
-This is the map to **existing code**, not a claim that services are available. All commands run from the extracted `ATLAS_Project_Intelligence/` root. The intended application server is an approved Linux/Unix environment with Python 3.11+; the Mac can remain only a browser client. Local development can use macOS. Windows users need an appropriate shell for the included `.sh` scripts; native Windows server operation is not verified.
+This is the map to **existing code**, not a claim that services are available. All commands run from the repository root. A git clone is already there (`atlas-project-intelligence`). A release zip is the folder you extracted. The intended application server is an approved Linux/Unix environment with Python 3.11+; the Mac can remain only a browser client. Local development can use macOS. Windows users need an appropriate shell for the included `.sh` scripts; native Windows server operation is not verified. Use `python3`. A fresh Ubuntu image has no `python` command.
 
 ## Dependencies by task
 | Task | Required |
@@ -15,34 +15,30 @@ This is the map to **existing code**, not a claim that services are available. A
 | Riva notes | Separate Riva endpoint and `nvidia-riva-client` |
 | JEV / editor | Server-side key and accessible selected model; aiohttp is already used |
 
-`requirements-integrations.txt` installs **all** optional SDKs. To keep a hosted pilot small, use the new per-integration requirements files only when needed. Resolve and lock actual versions on the target host; `constraints-tested.txt` is an inherited snapshot, not a universal lock or compatibility guarantee.
+`requirements-integrations.txt` names the optional SDKs at exact versions. The reproducible install is `python3 -m pip install --require-hashes -r requirements-integrations.lock` (`make install-integrations`). To keep a hosted pilot small, use the per-integration requirements files only when needed. `constraints-tested.txt` records the gateway versions exercised with this tree, including `msgpack`. It is not a universal lock; the hash lock is.
 
 ## Local setup and complete checks
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements-test.txt
-python -m playwright install chromium
-python scripts/doctor.py --profile preview
-python build.py
-node --test tests/*.test.js
-python -m pytest tests/test_*.py -q
-python tests/studio_browser.py
-python tests/sculpture_browser.py
-python tests/intelligence_browser.py
-python tests/depth_browser.py
+python3 -m pip install -r requirements-test.txt
+python3 -m playwright install chromium
+python3 scripts/doctor.py --profile preview
+make test
+make test-edge
+make test-ui
 ```
-Install FFmpeg with libopus using the approved OS package manager before Python codec tests. `CHROMIUM_PATH` may point to a known installed Chromium executable. Browser installation can require OS libraries; use the approved host procedure, not blind privileged commands. No tests above need a real provider key.
+`make test` builds the page, runs the edge suite, then the Node and pytest suites. `make test-edge` checks the vendored Teams client module and runs the edge tests. `make test-ui` runs every `tests/*_browser.py`. GitHub Actions runs that same browser list. `make geo-ne-check` is not one of those three: with `ATLAS_NE_SRC` unset it exits 2. Install FFmpeg with libopus using the approved OS package manager before Python codec tests. `CHROMIUM_PATH` may point to a known installed Chromium executable. Browser installation can require OS libraries; use the approved host procedure, not blind privileged commands. No tests above need a real provider key. `ATLAS_WORKERD_ROOT` points at a workerd 2026-10-23 tree for the SQL-tail proofs. When `CI` is set and that binary is missing, those proofs fail instead of skipping.
 
 ## One real hosted conversation
 ```sh
-python -m pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
 cp .env.example .env   # only when .env does not already exist; never overwrite a working configuration
 # Edit the operator-owned .env securely. Set OPENAI_API_KEY; keep the exact origin.
-python scripts/doctor.py --profile hosted --env-file .env
+python3 scripts/doctor.py --profile hosted --env-file .env
 bash scripts/start_gateway.sh
 ```
-Open `http://localhost:8080` for the defaults. The safe preview is port 8000 and deliberately cannot activate voice. The launcher reads `.env`; running `python -m atlas_voice.server` directly does **not** load that file. The launcher sources it as shell code—inspect it and restrict its ownership/permissions. The offline doctor reads simple assignments without executing shell expressions.
+Open `http://localhost:8080` for the defaults. The safe preview is port 8000 and deliberately cannot activate voice. The launcher reads `.env`; running `python3 -m atlas_voice.server` directly does **not** load that file. The launcher sources it as shell code—inspect it and restrict its ownership/permissions. The offline doctor reads simple assignments without executing shell expressions.
 
 ### Core / selected voice
 | Variable | Existing default / example | Meaning |
@@ -56,6 +52,7 @@ Open `http://localhost:8080` for the defaults. The safe preview is port 8000 and
 | `ATLAS_BIND` / `ATLAS_PORT` | `127.0.0.1` / `8080` | Loopback in local mode. `localhost` versus `127.0.0.1` in the browser is not interchangeable under exact Host/Origin checks. |
 | `ATLAS_AUTH` | `local` | `local` for one trusted developer; `entra` for shared use. |
 | `ATLAS_MAX_SECONDS` | `900` | Whole-interview cap; code accepts 30–900 seconds (the interview is at most 15 minutes). |
+| `ATLAS_SPEAKING_SECONDS` | `600` | One spoken reply, 60–1800 seconds. |
 | `ATLAS_MAX_INTERVIEWS` | `1` | Concurrent interviews per gateway process, 1–100; one per signed-in user. Must be 1 for the stock PersonaPlex worker. With `ATLAS_MAX_SECONDS` this bounds worst-case hosted spend. |
 | `ATLAS_MAX_SESSIONS` | `500` | Signed-in sessions (1 hour each) held by one process, 10–20000. Size from peak sign-ins per hour during a campaign; beyond it new sign-ins get HTTP 503. |
 | `ATLAS_HANDSHAKE_TIMEOUT` | `90` | Ready timeout; code accepts 5–180 seconds. |
@@ -72,18 +69,32 @@ Install `requirements-entra.txt` and `requirements-hindsight.txt` as needed.
 | `ENTRA_CLIENT_ID` | Actual confidential web-app client UUID. |
 | `ENTRA_CLIENT_SECRET` | Server-held secret from the authorized secret store. |
 | `ENTRA_REQUIRED_ROLE` | Defaults to `ATLAS.Interview`. Assign it to allowed users. |
+| `ENTRA_ADMIN_ROLE` | Defaults to `ATLAS.Admin`. |
 | `HINDSIGHT_URL` | Actual approved private service base URL; verified TLS outside loopback. |
 | `HINDSIGHT_API_KEY` | Service key when required by the deployment. Blank is accepted by existing code, not approval for public anonymous service. |
 | `HINDSIGHT_BANK_SECRET` | Stable random secret, at least 32 characters; never rotate blindly or banks become differently addressed. |
 
 Register exactly `<ATLAS_ORIGIN>/auth/callback`. Configure independent `ATLAS.Review` and `ATLAS.Publish` assignments according to real authority. All app users also need the base interview role. Same-origin CSRF and secure session cookies are application requirements, not optional demo obstacles.
 
-Run `python scripts/doctor.py --profile shared --env-file .env` after configuration. It checks local prerequisites only. Test at least two distinct Entra identities and a non-author reviewer. Local workspace switching is **not** that test. `scripts/wiki_access.py --help` explains operator story grants; stop the pilot gateway before operator maintenance that requires a consistent single-process vault.
+Run `python3 scripts/doctor.py --profile shared --env-file .env` after configuration. It checks local prerequisites only. Test at least two distinct Entra identities and a non-author reviewer. Local workspace switching is **not** that test. `scripts/wiki_access.py --help` explains operator story grants; stop the pilot gateway before operator maintenance that requires a consistent single-process vault.
 
 Requested Hindsight source: https://github.com/mysticalsin/hindsight at `a921929a0e0ea82fb49da1daa0ca3e152e41fcc1`. Use `docs/SOURCE_LOCK.json` and the pinned repository's own deployment instructions. The server source/weights are not vendored in this small application ZIP.
 
 ### Kyutai voice route (selected for scale)
 `ATLAS_VOICE_PROVIDER=kyutai`. Variables, voice licensing, GPU setup and acceptance are in `docs/KYUTAI_SETUP.md`. Doctor: `--profile kyutai`. `KYUTAI_STT_URL`/`KYUTAI_TTS_URL` are ws(s) base URLs (paths `/api/asr-streaming`, `/api/tts_streaming` are added). The API key is sent as the `kyutai-api-key` header.
+
+### Workers AI voice route
+
+`ATLAS_VOICE_PROVIDER=workers`. No account id is built into the scripts. `scripts/run_local_voice.sh` and `scripts/runpod_bakeoff.sh up` stop when `WORKERS_AI_ACCOUNT` is unset. The token stays in `~/.config/atlas/workers-ai.key` or `WORKERS_AI_API_KEY`. Speech uses `@cf/deepgram/aura-2-en`.
+
+| Variable | Contract |
+|---|---|
+| `WORKERS_AI_ACCOUNT` | 32 hex Cloudflare account id. Required. No default. |
+| `WORKERS_AI_API_KEY` | Server-side token. Never committed. |
+| `WORKERS_STT_MODEL` | Default `@cf/deepgram/nova-3`. |
+| `WORKERS_TTS_MODEL` | Default `@cf/deepgram/aura-2-en`. |
+| `WORKERS_TTS_VOICE` | One of harmonia, athena, pandora, vesta, odysseus, arcas, orpheus. Default `harmonia`. |
+| `CONVERSATION_CHAT_URL` / `CONVERSATION_MODEL` / `CONVERSATION_API_KEY` | Required with this provider. |
 
 ### Analyst brain (live evidence for any voice layer)
 `atlas_voice/analyst.py`. Consultant transcript segments go to a text LLM tool call (`record_details` only), are validated by `InterviewLedger`, and produce a deterministic next-probe guidance. Wired into the Kyutai route (`cascade.py`); PersonaPlex wiring pending (see `SCALE_PLAN.md` §3b).
@@ -95,7 +106,7 @@ Requested Hindsight source: https://github.com/mysticalsin/hindsight at `a921929
 | `ANALYST_API_KEY` | Server-side key; never sent to the browser. |
 
 ### Hosting on Cloudflare (Tunnel + Access)
-Selected hosting shape (2026-09-26): the unchanged gateway on one always-on host, published through a Cloudflare named tunnel with Cloudflare Access as an outer gate. Runbook and templates: `deploy/cloudflare/README.md`, `config.yml.example`, `atlas.env.example`, `atlas-gateway.service.example`. Requires `ATLAS_AUTH=entra`, loopback bind and `ATLAS_ORIGIN` equal to the public `https://` hostname pinned by `httpHostHeader`. Local mode is rejected off loopback by design. Check with `python scripts/doctor.py --profile cloudflare --env-file .env` (offline only).
+Selected hosting shape (2026-09-26): the unchanged gateway on one always-on host, published through a Cloudflare named tunnel with Cloudflare Access as an outer gate. Runbook and templates: `deploy/cloudflare/README.md`, `config.yml.example`, `atlas.env.example`, `atlas-gateway.service.example`. Requires `ATLAS_AUTH=entra`, loopback bind and `ATLAS_ORIGIN` equal to the public `https://` hostname pinned by `httpHostHeader`. Local mode is rejected off loopback by design. Check with `python3 scripts/doctor.py --profile cloudflare --env-file .env` (offline only).
 
 ### Cloudflare edge Worker (the live test deployment): zero-setup start and profile
 The live site (`deploy/cloudflare-edge/`, docs/WOW_ZERO_CONFIG.md) needs nothing per person: sign in, press Start, tick one box, talk. Its variables are named (without values) as comments in `deploy/cloudflare-edge/wrangler.jsonc`; secrets are set with `npx wrangler secret put <NAME>` by Tony only. Everything below is unset by default, and a missing item never blocks the interview: the feature is absent, or `BLOCKED_EXTERNAL` in the admin view.

@@ -1,7 +1,7 @@
 """Live round trip against Cloudflare Workers AI speech with a synthetic sentence (costs well under $0.01).
-aura-1 synthesizes the sentence -> nova-3 transcribes it back -> word overlap is reported, with latencies.
+aura-2 synthesizes the sentence -> nova-3 transcribes it back -> word overlap is reported, with latencies.
 Uses the same WorkersSpeech code as the gateway. Reads the token from ~/.config/atlas/workers-ai.key.
-  python scripts/check_workers_speech.py
+  python3 scripts/check_workers_speech.py
 """
 import asyncio
 import json
@@ -22,7 +22,11 @@ SENTENCE = 'Before the rollout, triage took about forty minutes per ticket in th
 
 async def main():
     key = Path(os.environ.get('WORKERS_AI_KEY_FILE', Path.home() / '.config/atlas/workers-ai.key')).read_text().strip()
-    cfg = SimpleNamespace(workers_account=os.environ.get('WORKERS_AI_ACCOUNT', '294885a27b3cc0a1cbe5d0ccbe38de4f'), workers_key=key,
+    account = os.environ.get('WORKERS_AI_ACCOUNT', '')
+    if not re.fullmatch(r'[0-9a-f]{32}', account):
+        print('WORKERS_AI_ACCOUNT is required (32 hex). There is no default account.', file=sys.stderr)
+        return 2
+    cfg = SimpleNamespace(workers_account=account, workers_key=key,
                           workers_stt_model='@cf/deepgram/nova-3', workers_tts_model='@cf/deepgram/aura-2-en',
                           workers_voice=os.environ.get('WORKERS_TTS_VOICE', 'harmonia'))
     async with aiohttp.ClientSession() as http:

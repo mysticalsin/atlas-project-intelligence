@@ -1,7 +1,8 @@
 // Finds the workerd 2026-10-23 binary for the tail proof.
 // An explicit root, ATLAS_WORKERD_BIN, or ATLAS_WORKERD_ROOT wins.
-// When none of those is set, the local proof install is the last candidate.
-// A missing binary is null. The test skips. It does not fail the suite.
+// Outside CI, the local proof install is the last candidate.
+// A missing binary is null. Outside CI the caller skips. When CI is set,
+// skipWithoutWorkerd throws: a missing required binary is not a passing skip.
 import { existsSync } from 'node:fs';
 
 export const SKIP_REASON = 'workerd 2026-10-23 is not installed; set ATLAS_WORKERD_ROOT';
@@ -23,5 +24,11 @@ export function locateWorkerd(options = {}) {
     return { root: bin.slice(0, -BIN_SUFFIX.length), bin };
   }
   if (process.env.ATLAS_WORKERD_ROOT) return fromRoot(process.env.ATLAS_WORKERD_ROOT);
+  if (process.env.CI) return null;
   return fromRoot('/tmp/atlas-workerd-20261023');
+}
+
+export function skipWithoutWorkerd(t, reason) {
+  if (process.env.CI) throw new Error(reason);
+  t.skip(reason);
 }

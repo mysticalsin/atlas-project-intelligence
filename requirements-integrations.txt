@@ -1,6 +1,7 @@
 -r requirements.txt
-# Install only on the server for integrations you enable. Validate and lock
-# your resolved versions after running provider acceptance checks.
-msal>=1.28,<2
-hindsight-client
-nvidia-riva-client
+-c constraints-tested.txt
+# Exact pins recorded 2026-11-21 from PyPI. Install the hash lock:
+#   python3 -m pip install --require-hashes -r requirements-integrations.lock
+msal==1.39.0 --hash=sha256:2d2577886906cd7293850dffa2da29119966c213bfc6ec0cecf8bf7621e1ca77 --hash=sha256:6ab7de335e6d7f5717e2c7e1dbf86e4dda2f6acf3c56773b78dc53ebc6395b5f
+hindsight-client==1.2.3 --hash=sha256:276376e13c5e7e06f2bfa4ac5d10fb83676f6072ed172ac7d2613ddeb110f469 --hash=sha256:be560bb2fac8ae1e7d16aa353ecaa70b36d1055fe171261bc8d47dc66a680f39
+nvidia-riva-client==2.28.0 --hash=sha256:57fa2f4dd7004a70583ac8a794fa6b165bbe62a5d284a50c2d2b45f3cf4e4987

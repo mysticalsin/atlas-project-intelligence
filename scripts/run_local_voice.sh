@@ -7,7 +7,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 KEY_FILE="${WORKERS_AI_KEY_FILE:-$HOME/.config/atlas/workers-ai.key}"
 [ -s "$KEY_FILE" ] || { echo "Missing $KEY_FILE (Cloudflare Workers AI token)." >&2; exit 1; }
-ACCOUNT="${WORKERS_AI_ACCOUNT:-294885a27b3cc0a1cbe5d0ccbe38de4f}"
+: "${WORKERS_AI_ACCOUNT:?Set WORKERS_AI_ACCOUNT to the 32-hex Cloudflare account id. There is no default account.}"
+ACCOUNT="$WORKERS_AI_ACCOUNT"
 KEY="$(tr -d '[:space:]' < "$KEY_FILE")"
 code=$(curl -s -o /dev/null -w '%{http_code}' -H @<(printf 'Authorization: Bearer %s\n' "$KEY") \
   "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT/ai/models/search?search=nova-3")
@@ -21,5 +22,5 @@ export ANALYST_CHAT_URL="$WAI" ANALYST_MODEL="${ANALYST_MODEL:-@cf/openai/gpt-os
 unset KEY
 mkdir -p "$ATLAS_WIKI_ROOT"
 python3 build.py >/dev/null
-echo "ATLAS on http://localhost:8080 — Cloudflare voice (nova-3 / aura-1 '$WORKERS_TTS_VOICE'), Ctrl-C to stop."
+echo "ATLAS on http://localhost:8080 — Cloudflare voice (nova-3 / aura-2 '$WORKERS_TTS_VOICE'), Ctrl-C to stop."
 exec "${PYTHON:-python3}" -m atlas_voice.server

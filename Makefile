@@ -1,5 +1,5 @@
 PYTHON ?= python3
-.PHONY: build preview gateway test test-ui test-edge geo-ne-check doctor verify-package verify-dev-tree
+.PHONY: build preview gateway test test-ui test-edge geo-ne-check doctor verify-package verify-dev-tree install-integrations
 build:
 	$(PYTHON) build.py
 preview: build
@@ -10,7 +10,12 @@ test: build test-edge
 	node --test tests/*.test.js
 	$(PYTHON) -m pytest tests/test_*.py -q
 test-edge:
+	node --check deploy/cloudflare-edge/teams/vendor/teams-js.mjs
+	node --input-type=module -e "import { TEAMS_JS } from './deploy/cloudflare-edge/teams/vendor/teams-js.mjs'; if (typeof TEAMS_JS !== 'string' || TEAMS_JS.length < 1000) process.exit(1)"
 	cd deploy/cloudflare-edge && node --test test/*.test.js
+# Hash-locked install of the packages named in requirements-integrations.txt.
+install-integrations:
+	python3 -m pip install --require-hashes -r requirements-integrations.lock
 geo-ne-check:
 	node tests/geo-ne-check.js
 test-ui: build
@@ -35,6 +40,7 @@ test-ui: build
 	$(PYTHON) tests/trust_browser.py
 	$(PYTHON) tests/storyboard_browser.py
 	$(PYTHON) tests/confirm_browser.py
+	$(PYTHON) tests/confirm_csp_browser.py
 	$(PYTHON) tests/wow_edge_browser.py
 	$(PYTHON) tests/zero_config_browser.py
 	$(PYTHON) tests/zero_config_edge_browser.py

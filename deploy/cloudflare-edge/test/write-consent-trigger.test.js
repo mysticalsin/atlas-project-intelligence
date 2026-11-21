@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import { locateWorkerd, SKIP_REASON } from './workerd-bin.js';
+import { locateWorkerd, SKIP_REASON, skipWithoutWorkerd } from './workerd-bin.js';
 
 const SALT = 'synthetic-log-salt';
 const STAMP = '2026-11-17T05:00:00.000Z';
@@ -136,12 +136,12 @@ function workerModules() {
 test('workerd constructs Library at compat 2025-09-01 and 2026-09-01', async (t) => {
   const found = locateWorkerd();
   if (!found) {
-    t.skip(SKIP_REASON);
+    skipWithoutWorkerd(t, SKIP_REASON);
     return;
   }
   const version = spawnSync(found.bin, ['--version'], { encoding: 'utf8' });
   if (version.status !== 0 || !/2026-10-23/.test((version.stdout || '') + (version.stderr || ''))) {
-    t.skip('workerd binary is not 2026-10-23; set ATLAS_WORKERD_ROOT');
+    skipWithoutWorkerd(t, 'workerd binary is not 2026-10-23; set ATLAS_WORKERD_ROOT');
     return;
   }
   const require = createRequire(import.meta.url);

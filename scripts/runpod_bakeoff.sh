@@ -15,7 +15,6 @@ STATE="${ATLAS_STATE_DIR:-$HOME/.config/atlas}"
 API=https://rest.runpod.io/v1
 IMAGE="${BAKEOFF_IMAGE:-runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04}"
 GPU="${BAKEOFF_GPU:-NVIDIA L40S}"
-ACCOUNT="${WORKERS_AI_ACCOUNT:-294885a27b3cc0a1cbe5d0ccbe38de4f}"
 VOICE="${KYUTAI_VOICE:-vctk/p225_023.wav}"
 SSH_KEY="$STATE/bakeoff_ed25519"
 POD_FILE="$STATE/bakeoff.pod"
@@ -51,6 +50,8 @@ cmd_plan() {
 
 cmd_up() {
   need_file "$STATE/runpod.key"; need_file "$STATE/workers-ai.key"
+  : "${WORKERS_AI_ACCOUNT:?Set WORKERS_AI_ACCOUNT to the 32-hex Cloudflare account id. There is no default account.}"
+  local ACCOUNT="$WORKERS_AI_ACCOUNT"
   [ -s "$POD_FILE" ] && die "a bake-off pod is already recorded ($(cat "$POD_FILE")); run status or down first"
   mkdir -p "$STATE"; chmod 700 "$STATE"
   [ -f "$SSH_KEY" ] || ssh-keygen -q -t ed25519 -N '' -C atlas-bakeoff -f "$SSH_KEY"

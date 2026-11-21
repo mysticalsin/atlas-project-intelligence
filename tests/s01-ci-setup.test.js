@@ -26,9 +26,13 @@ test('E2 continuous integration and the UI target run every browser suite on dis
 });
 
 test('E3 a missing workerd binary fails the tail tests when CI is set', () => {
+  const env = { ...process.env, CI: '1', ATLAS_WORKERD_ROOT: '', ATLAS_WORKERD_BIN: '' };
+  // A nested `node --test` inherits the parent runner channel and reports exit 0.
+  delete env.NODE_CHANNEL_FD;
+  delete env.NODE_TEST_CONTEXT;
   const result = spawnSync(process.execPath, ['--test', 'test/write-sql-tail.test.js'], {
     cwd: join(root, 'deploy/cloudflare-edge'),
-    env: { ...process.env, CI: '1', ATLAS_WORKERD_ROOT: '', ATLAS_WORKERD_BIN: '' },
+    env,
     encoding: 'utf8',
   });
   assert.notEqual(result.status, 0);
