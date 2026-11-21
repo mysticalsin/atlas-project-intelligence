@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "description": "Locked miniflare and workerd for the SQL-tail proofs. Install with npm ci from this directory.",
+  "devDependencies": {
+    "miniflare": "5.20261023.3-beta",
+    "workerd": "1.20261023.1"
+  }
+}

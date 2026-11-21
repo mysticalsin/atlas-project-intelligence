@@ -2,7 +2,7 @@
 **Handoff 12.1, application baseline v12.** This is an implementation handoff, not a new feature release.
 
 ## Baseline
-The supplied application was rebuilt and its existing suites rerun for this handoff: **104 Node unit checks, 120 Python tests, and 151 browser assertions: 375 in total, with zero failures.** Python reports 81 existing aiohttp warnings. Provider/audio/identity fixtures are explicit test doubles; no real account, microphone or GPU evaluation was performed. New handoff-tool tests are listed separately in `verification/RESULTS.json`.
+The supplied application was rebuilt for this handoff. Rerun the live suites rather than quoting an inherited total: `make test`, `make test-edge`, and `make test-ui`. Python may report existing aiohttp warnings. Provider/audio/identity fixtures are explicit test doubles; no real account, microphone or GPU evaluation was performed. New handoff-tool tests are listed separately in `verification/RESULTS.json`.
 
 The compiled primary HTML and its three aliases still match the v12 application byte-for-byte. Runtime `src/`, `atlas_voice/` and `assets/Mantu.svg` are preserved. Handoff changes are documentation, build/test entry points, dependency examples, packaging hygiene and offline diagnostics.
 
@@ -27,7 +27,7 @@ The compiled primary HTML and its three aliases still match the v12 application 
 ## Explicit boundaries Claude must not erase
 - **Local mode has one synthetic server identity** (`local:single-developer`). Different browser workspace names are not different authenticated users and are not private Hindsight boundaries. Use distinct Entra subjects for the isolation test.
 - The current hosted adapter has real-time ASR-linked quality tools. The NVIDIA route has optional Riva **post-session** transcription; preserve this distinction in product copy and acceptance.
-- **One process / one interview** is the present pilot constraint for either route. In-memory sessions, locks and throttles are not distributed. Do not run multiple replicas against one worker/vault and claim safety.
+- **One process / one interview** is the present pilot constraint for the stock PersonaPlex worker. Kyutai, Workers AI, and hosted OpenAI use `ATLAS_MAX_INTERVIEWS` (1–100). In-memory sessions, locks and throttles are not distributed. Do not run multiple replicas against one worker/vault and claim safety.
 - Project metadata/notes for the voice prompt originate in the authenticated user's local draft. They are untrusted user context, not an authenticated central project roster. Central draft collaboration or CRM import is new work, not already delivered.
 - Hindsight is limited to explicitly reviewed preferences and resume continuity. Its fixed `atlas-continuity` deletion does not erase older preference records, backups, exported Markdown, provider logs or unrelated documents.
 - Markdown review requires an authorized non-author. Local mode cannot perform corporate publication approval. A user holding both review roles can currently make both non-author decisions; a stricter separation policy is not encoded automatically.
@@ -36,7 +36,7 @@ The compiled primary HTML and its three aliases still match the v12 application 
 - Locale quality is not certified. English is the current pilot default; admit another language only after native voice, ASR, wording and disclosure review.
 
 ## Known build/operations gaps to close, not claims of runtime failure
-1. Resolve and lock optional integration dependencies in the deployment environment; `requirements-integrations.txt` is not a reproducible cross-platform lock.
+1. Optional integration SDKs install with `make install-integrations`. Deployment still has to verify the fork SDK against the private service.
 2. Verify native microphone/playback/interrupt behavior on the target browsers and network. Current UI tests use adapters and `set_content`.
 3. Test Entra assignment removal, session expiry and organizational logout policy. Application logout currently clears ATLAS's session; it is not a claimed organization-wide SSO sign-out.
 4. Validate the Hindsight generated Documents API against the exact deployed fork and SDK.

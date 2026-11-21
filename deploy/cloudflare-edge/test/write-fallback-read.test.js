@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { DatabaseSync } from 'node:sqlite';
 import { Library } from '../src/library.js';
-import { locateWorkerd, SKIP_REASON } from './workerd-bin.js';
+import { locateWorkerd, SKIP_REASON, skipWithoutWorkerd } from './workerd-bin.js';
 
 const SALT = 'synthetic-log-salt';
 const STAMP = '2026-11-17T05:00:00.000Z';
@@ -120,12 +120,12 @@ test('fallback refuses explain of ddl or dml and every alias or drop tail', () =
 test('workerd is not asked to run an unproven explain tail', async (t) => {
   const found = locateWorkerd();
   if (!found) {
-    t.skip(SKIP_REASON);
+    skipWithoutWorkerd(t, SKIP_REASON);
     return;
   }
   const version = spawnSync(found.bin, ['--version'], { encoding: 'utf8' });
   if (version.status !== 0 || !/2026-10-23/.test((version.stdout || '') + (version.stderr || ''))) {
-    t.skip('workerd binary is not 2026-10-23; set ATLAS_WORKERD_ROOT');
+    skipWithoutWorkerd(t, 'workerd binary is not 2026-10-23; set ATLAS_WORKERD_ROOT');
     return;
   }
   const require = createRequire(import.meta.url);

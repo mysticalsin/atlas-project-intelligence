@@ -52,5 +52,5 @@ test('the Natural Earth check is opt-in and outside the default gate', () => {
   delete env.NODE_CHANNEL_FD;
   delete env.NODE_TEST_CONTEXT;
   const result = spawnSync(process.execPath, [file], { encoding: 'utf8', env });
-  assert.equal(result.status, 0, String(result.stdout) + String(result.stderr));
+  assert.equal(result.status, 2, String(result.stdout) + String(result.stderr));
 });

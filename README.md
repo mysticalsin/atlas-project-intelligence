@@ -17,14 +17,19 @@ A voice-first interviewer that investigates the actual work, preserves uncertain
 
 Open **ATLAS_Project_Intelligence.html** in a full browser. It contains the interface, particle sculpture, silent previews and local authoring tools. No frontend install, CDN, font files or provider keys are included. **Story intelligence** opens the quality lab, Markdown wiki workflow, customer-match brief and Hindsight controls.
 
-For a stable local preview origin:
+## Fresh clone
+
+Stay in the repository root. A git clone's directory is `atlas-project-intelligence`. Do not `cd` into `ATLAS_Project_Intelligence`; that name is not this tree. A release zip is the folder you extracted. Use `python3`. A fresh Ubuntu image has no `python` command. `python3 -m venv` also needs the venv package. On Ubuntu 24.04 that package is `python3.12-venv` (`sudo apt-get install python3.12-venv`).
 
 ```sh
-cd ATLAS_Project_Intelligence
+python3 -m venv .venv
+. .venv/bin/activate
+python3 -m pip install --require-hashes -r requirements-ci.lock
+python3 build.py
 python3 scripts/preview.py
 ```
 
-Open `http://localhost:8000`. This serves the compiled HTML only, not source files, `.env` or a knowledge vault. It does not activate voice or other providers.
+Open `http://localhost:8000`. This serves the compiled HTML only, not source files, `.env` or a knowledge vault. It does not activate voice or other providers. Stop the preview with Ctrl-C.
 
 ## Enable a genuine conversational voice API
 
@@ -33,7 +38,7 @@ On the approved application server:
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements.txt
+make install-ci
 cp .env.example .env
 # Edit server-side .env. Never put provider credentials into HTML.
 bash scripts/start_gateway.sh
@@ -61,7 +66,7 @@ git clone --filter=blob:none https://github.com/mysticalsin/hindsight.git
 git -C hindsight checkout a921929a0e0ea82fb49da1daa0ca3e152e41fcc1
 ```
 
-Deploy that reviewed checkout according to its installation instructions. This kit does not silently install it or substitute a claimed deployment. Install `requirements-integrations.txt` only for enabled integrations, test the resolved SDK against your fork service, and record your deployment lock.
+Deploy that reviewed checkout according to its installation instructions. This kit does not silently install it or substitute a claimed deployment. Install enabled integrations with `make install-integrations`, test the resolved SDK against your fork service, and keep that hash lock.
 
 Configure `HINDSIGHT_URL`, `HINDSIGHT_API_KEY` and a stable random `HINDSIGHT_BANK_SECRET`. The server derives a private bank from authenticated tenant/object identity. The browser cannot choose another person's bank. Recall is bounded and untrusted; private continuity is not customer evidence. Prepare a minimal resume note, review it, then save explicitly. Read, correct/replace and forget the fixed ATLAS continuity document from the workbench. Other older preference documents, story files, logs and exported copies are outside that delete action.
 
@@ -89,17 +94,15 @@ A weak fit or unresolved confidence/date signal can produce **no strong match**.
 
 ## Build, tests and handoff
 
+From the same repository root, after the fresh-clone install:
+
 ```sh
-python3 build.py
-node --test tests/*.test.js
-python -m pip install -r requirements-test.txt
-python -m playwright install chromium
-python -m pytest tests/test_*.py -q
-python tests/studio_browser.py
-python tests/sculpture_browser.py
-python tests/intelligence_browser.py
-python tests/depth_browser.py
+make test
+make test-edge
+make test-ui
 ```
+
+`make test-ui` runs every `tests/*_browser.py`. Set `CHROMIUM_PATH` when Chromium is already installed. `make geo-ne-check` exits 2 until `ATLAS_NE_SRC` points at the pinned Natural Earth sources. Optional integrations install from the hash lock: `make install-integrations`.
 
 The primary HTML and three compatibility aliases are identical builds. Python gateway and JavaScript source are readable without a frontend framework. `docs/PRD_v12.md` explains quality, voice, memory, wiki, editorial and JEV responsibilities. `docs/EVALUATION_v12.md` contains proposed live pilot scenarios. `tests/RESULTS.json` records actual local checks and their limitations.
 

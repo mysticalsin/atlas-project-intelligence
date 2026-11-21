@@ -8,13 +8,12 @@ The Studio v7 interface uses NVIDIA `NATM1.pt` by default, unless the server env
 
 ## Fastest route when PersonaPlex is already running
 
-Run the gateway **on the approved server**, not as a heavy installation on the Mac. Python 3.11+ and FFmpeg with libopus must be installed there.
+Run the gateway **on the approved server**, not as a heavy installation on the Mac. Python 3.11+ and FFmpeg with libopus must be installed there. Stay in the repository root (`atlas-project-intelligence`).
 
 ```bash
-cd ATLAS_Intelligence
 python3 -m venv .venv-gateway
 source .venv-gateway/bin/activate
-python -m pip install -r requirements.txt
+python3 -m pip install --require-hashes -r requirements-ci.lock
 cp .env.example .env
 # Edit PERSONAPLEX_WS_URL to the actual private worker endpoint.
 # Defaults assume the worker is on this same server, port 8998.
@@ -56,7 +55,7 @@ Keep this worker running and start the gateway in another terminal using `.venv-
 
 PersonaPlex's returned text describes the agent's own speech, not the consultant's input. The interface labels it accordingly and never inserts it as a consultant answer.
 
-To generate notes after the conversation, configure the optional **NVIDIA Riva speech-recognition service** in `.env` (`RIVA_URI`, TLS and any API metadata required by your deployment). Install `nvidia-riva-client` in the gateway environment. This is a separate service endpoint, not a browser recognizer. Enable capture consent at the start. The gateway buffers only microphone PCM in RAM, transcribes it after End and discards the raw buffer after processing. It does not write audio files. Hosting/provider logs, swap and retention need their own review.
+To generate notes after the conversation, configure the optional **NVIDIA Riva speech-recognition service** in `.env` (`RIVA_URI`, TLS and any API metadata required by your deployment). Install the client with `make install-integrations`. This is a separate service endpoint, not a browser recognizer. Enable capture consent at the start. The gateway buffers only microphone PCM in RAM, transcribes it after End and discards the raw buffer after processing. It does not write audio files. Hosting/provider logs, swap and retention need their own review.
 
 For automatic assignment to six topics, also configure an authorized `NOTES_CHAT_URL`, `NOTES_MODEL` and any key. Only exact microphone-transcript excerpts pass the assignment validator. Without this optional text endpoint, users can organize the returned transcript manually. Without Riva, voice can run but **no consultant transcript or automatic notes are claimed**.
 
@@ -64,7 +63,7 @@ The user checks/corrects the recognized text and explicitly appends selected not
 
 ## Entra ID and Hindsight
 
-For shared use, install `requirements-integrations.txt`, deploy behind an approved HTTPS reverse proxy, and configure `ATLAS_AUTH=entra`. Register a confidential Entra web app with the exact redirect URI `https://YOUR_ATLAS_HOST/auth/callback`, define/assign the `ATLAS.Interview` app role, and provide tenant/client/secret through server secrets. Keep `ATLAS_BIND=127.0.0.1` when the proxy runs on the same machine. The proxy must preserve Host, support WebSocket upgrades and NOT log sensitive query strings, payloads or cookies. Native sign-in/role assignment must be tested in the actual tenant before use.
+For shared use, run `make install-integrations`, deploy behind an approved HTTPS reverse proxy, and configure `ATLAS_AUTH=entra`. Register a confidential Entra web app with the exact redirect URI `https://YOUR_ATLAS_HOST/auth/callback`, define/assign the `ATLAS.Interview` app role, and provide tenant/client/secret through server secrets. Keep `ATLAS_BIND=127.0.0.1` when the proxy runs on the same machine. The proxy must preserve Host, support WebSocket upgrades and NOT log sensitive query strings, payloads or cookies. Native sign-in/role assignment must be tested in the actual tenant before use.
 
 Set `HINDSIGHT_URL`, its key and a stable random `HINDSIGHT_BANK_SECRET` (32+ characters). A bank is derived server-side from the validated Entra tenant/object identity. There is no client-supplied bank selector. The Connection & privacy dialog can explicitly save a private preference; the next consented session recalls a bounded relevant preference packet. The application uses current async Hindsight client methods and closes the client. Missing/unavailable memory is visibly reported; it is not faked.
 

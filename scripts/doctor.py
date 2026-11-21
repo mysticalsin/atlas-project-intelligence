@@ -77,10 +77,10 @@ def probe(profile: str, values: Mapping[str, str]) -> dict:
     required = ['build.py', 'src/shell.html', 'assets/Mantu.svg', 'ATLAS_Project_Intelligence.html', 'ATLAS_Voice.html']
     add('source', all((ROOT/p).is_file() for p in required), 'Build source, logo and compiled entry points must be present.')
     add('node', bool(shutil.which('node')), 'Node with node --test is needed for JavaScript unit tests.', required=False)
-    add('pytest', available('pytest'), 'Install requirements-test.txt to run Python unit tests.', required=False)
+    add('pytest', available('pytest'), 'Install with: python3 -m pip install --require-hashes -r requirements-ci.lock', required=False)
     add('playwright', available('playwright'), 'Playwright plus Chromium is needed for browser checks.', required=False)
     if profile != 'preview':
-        add('aiohttp', available('aiohttp'), 'Install requirements.txt for the application gateway.')
+        add('aiohttp', available('aiohttp'), 'Run make install-ci for the application gateway.')
         try:
             from atlas_voice.config import Config
             with environment(values):
@@ -99,7 +99,7 @@ def probe(profile: str, values: Mapping[str, str]) -> dict:
         else:
             add('selected-provider', provider in ('openai','personaplex','kyutai'), 'Choose one supported provider explicitly.')
         if provider == 'kyutai':
-            add('msgpack', available('msgpack'), 'Install requirements.txt (msgpack) for the Kyutai speech protocol.')
+            add('msgpack', available('msgpack'), 'Run make install-ci (msgpack) for the Kyutai speech protocol.')
             for key in ('KYUTAI_STT_URL', 'KYUTAI_TTS_URL', 'KYUTAI_VOICE', 'CONVERSATION_CHAT_URL', 'CONVERSATION_MODEL'):
                 add(key.lower(), present(key), f'{key} must be configured; values are never printed.')
             add('evidence-analyst', present('ANALYST_CHAT_URL') and present('ANALYST_MODEL'),
@@ -130,12 +130,12 @@ def probe(profile: str, values: Mapping[str, str]) -> dict:
                 'ATLAS_ORIGIN must be the exact public https:// tunnel hostname, matching cloudflared httpHostHeader.')
             add('cloudflared', bool(shutil.which('cloudflared')), 'Install cloudflared on the gateway host; no tunnel or account has been contacted.', required=False)
         if values.get('ATLAS_AUTH') == 'entra':
-            add('msal', available('msal'), 'Install requirements-entra.txt and validate the real tenant flow.')
+            add('msal', available('msal'), 'Install with make install-integrations and validate the real tenant flow.')
         if present('HINDSIGHT_URL'):
-            add('hindsight-sdk', available('hindsight_client') and available('hindsight_client_api'), 'Install requirements-hindsight.txt; verify generated Documents API compatibility with your fork.')
+            add('hindsight-sdk', available('hindsight_client') and available('hindsight_client_api'), 'Install with make install-integrations; verify generated Documents API compatibility with your fork.')
             add('hindsight-service-auth', present('HINDSIGHT_API_KEY'), 'No Hindsight key configured; verify the private service authentication policy before use.', required=False)
         if present('RIVA_URI'):
-            add('riva-sdk', available('riva'), 'Install requirements-riva.txt for the explicitly selected transcription endpoint.')
+            add('riva-sdk', available('riva'), 'Install with make install-integrations for the explicitly selected transcription endpoint.')
         if present('STORY_EDITOR_MODEL'):
             add('editor-key', present('OPENAI_API_KEY'), 'Optional editor uses the server-held OPENAI_API_KEY.')
         if not present('ATLAS_WIKI_ROOT'):

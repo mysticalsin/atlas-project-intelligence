@@ -7,8 +7,9 @@ cloud session that clones the repository; the Mac is no longer needed.
 - Everything is testable without keys: `make test` / `make test-ui`, or the commands in `CLAUDE.md`.
 - Demo the full platform offline: `node deploy/cloudflare-edge/dev/local-edge.mjs 8787` then
   `http://127.0.0.1:8787/?as=you@mantu.com` (real Worker and library code, stand-in models and Hindsight).
-- Branch per change, open a pull request; GitHub Actions (`tests`) runs every suite, including the socket-based
-  Python tests and all browser suites.
+- Branch per change, open a pull request. GitHub Actions (`tests`) runs the Node suites, the socket-based
+  Python tests, the edge suite, and every `tests/*_browser.py` (the same browser list as `make test-ui`).
+  Locally those three gates are `make test`, `make test-edge`, and `make test-ui`.
 - Provider keys never live in the repository or the cloud session. They are Cloudflare Worker secrets
   (`deploy/cloudflare-edge/set-keys.sh`).
 
