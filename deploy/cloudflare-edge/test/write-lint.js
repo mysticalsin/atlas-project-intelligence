@@ -2,10 +2,11 @@
 // A raw SQL handle is any .sql or ._sql member (lib.sql, lib._sql, this.sql).
 // audit-chain.js may use the handle it is given. library.js may call exec on
 // the private _sql binding once, inside exec. Everywhere else is a violation.
-// The placeholder census is the same spelling grep the bound-parameter tests use.
+// The placeholder census greps spellings after comments and string contents are
+// masked. A placeholders() count that the census cannot fold is a finding.
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parse } from './vendor/acorn.mjs';
+import { parse, parseExpressionAt, tokenizer } from './vendor/acorn.mjs';
 
 export const EXEC_ALLOW = ['audit-chain.js'];
 
@@ -14,8 +15,20 @@ export const PLACEHOLDER_ALLOW = [
   { file: 'library.js', max: 3, why: 'an invitation list binds at most the sign-in email, the mail claim, and the tenant' },
 ];
 
-const BUILDER = /\.map\(\s*\(\s*\)\s*=>\s*['"`]\?['"`]\s*\)|\.map\(\s*(?:\(\s*[A-Za-z_$][\w$]*\s*\)|[A-Za-z_$][\w$]*)\s*=>\s*['"`]\?['"`]\s*\)|['"`]\?['"`]\s*\.repeat\s*\(|['"`]\?,['"`]\s*\.repeat\s*\(|\.fill\(\s*['"`]\?['"`]\s*\)|Array\.from\(\s*\{[^}]*\}\s*,\s*\(\s*\)\s*=>\s*['"`]\?['"`]\s*\)/;
-const OVER_CAP = /(?:^|[^\w$])placeholders\(\s*(\d+)\s*\)/g;
+const PH_VALUE = /^(?:\?|,\s*\?|\?,\s*)$/;
+const PH = String.raw`(?:'\?(?:, ?)?[ \t]*'|\"\?(?:, ?)?[ \t]*\"|\`\?(?:, ?)?[ \t]*\`)`;
+const PARAMS = String.raw`(?:\([^)]*\)|[A-Za-z_$][\w$]*)`;
+const BODY = String.raw`(?:${PH}|\{[^}]*\breturn\s+${PH}\s*;?[^}]*\})`;
+const ARROW = String.raw`${PARAMS}\s*=>\s*${BODY}`;
+const BUILDER = new RegExp(
+  [
+    String.raw`\.map\(\s*${ARROW}\s*\)`,
+    String.raw`(?<![\w$])Array\.from\(\s*[^;]*?,\s*${ARROW}\s*\)`,
+    String.raw`${PH}\s*\.repeat\s*\(`,
+    String.raw`\.fill\(\s*${PH}\s*\)`,
+  ].join('|'),
+  'g',
+);
 const MUTATING = /^(?:insert|update|delete|replace|create|drop|alter|reindex|vacuum)\b/i;
 
 export function stripLineComment(line) {
@@ -460,23 +473,323 @@ function lintHandles(file, text) {
   return exec;
 }
 
-export function lintSource(file, text) {
+function isPlaceholderValue(value) {
+  return typeof value === 'string' && PH_VALUE.test(value);
+}
+
+function canonicalPlaceholder(value) {
+  if (value === '?') return "'?'";
+  if (value === '?,') return "'?,'";
+  if (/^\?,\s+$/.test(value)) return "'?, '";
+  if (/^,\s*\?$/.test(value)) return "',?'";
+  return null;
+}
+
+// Blank comments, regular expressions, and string contents. A string whose value
+// is a placeholder token stays, so the spelling grep can still see it. Newlines
+// stay put, so a match index is still the original line.
+function maskCommentsAndStrings(text) {
+  const src = String(text);
+  const out = src.split('');
+  const blank = (from, to) => {
+    for (let k = from; k < to; k++) if (out[k] !== '\n') out[k] = ' ';
+  };
+  const keepPlaceholder = (from, to, value, quoted) => {
+    const canon = canonicalPlaceholder(value);
+    if (!canon) { blank(from, to); return; }
+    const spell = quoted ? canon : canon.slice(1, -1);
+    for (let k = 0; k < spell.length && from + k < to; k++) out[from + k] = spell[k];
+    for (let k = from + spell.length; k < to; k++) if (out[k] !== '\n') out[k] = ' ';
+  };
+  const comments = [];
+  let tokens;
+  try {
+    tokens = [...tokenizer(src, { ecmaVersion: 'latest', sourceType: 'module', onComment: comments })];
+  } catch {
+    try { tokens = [...tokenizer(src, { ecmaVersion: 'latest', sourceType: 'script', onComment: comments })]; }
+    catch { return null; }
+  }
+  for (const comment of comments) blank(comment.start, comment.end);
+  for (const tok of tokens) {
+    const label = tok.type.label;
+    if (label === 'string' || label === 'template') {
+      if (isPlaceholderValue(tok.value)) keepPlaceholder(tok.start, tok.end, tok.value, label === 'string');
+      else blank(tok.start, tok.end);
+    } else if (label === 'regexp') blank(tok.start, tok.end);
+  }
+  return out.join('');
+}
+
+function lineAt(text, index) {
+  let line = 1;
+  for (let i = 0; i < index && i < text.length; i++) if (text[i] === '\n') line++;
+  return line;
+}
+
+function fixedMax(lines, line) {
+  const above = lines.slice(Math.max(0, line - 5), line - 1).join('\n');
+  const marked = above.match(/sql-bound-fixed:\s*(\d+)/);
+  return marked ? Number(marked[1]) : null;
+}
+
+function foldNode(node) {
+  if (!node) return { kind: 'unknown' };
+  if (node.type === 'Literal' && typeof node.value === 'number' && Number.isFinite(node.value)) return { kind: 'number', value: node.value };
+  if (node.type === 'UnaryExpression' && (node.operator === '+' || node.operator === '-')) {
+    const inner = foldNode(node.argument);
+    if (inner.kind !== 'number') return { kind: 'unknown' };
+    return { kind: 'number', value: node.operator === '-' ? -inner.value : inner.value };
+  }
+  if (node.type === 'BinaryExpression' && ['+', '-', '*', '/', '%', '**'].includes(node.operator)) {
+    const left = foldNode(node.left);
+    const right = foldNode(node.right);
+    if (left.kind !== 'number' || right.kind !== 'number') return { kind: 'unknown' };
+    const ops = { '+': (a, b) => a + b, '-': (a, b) => a - b, '*': (a, b) => a * b, '/': (a, b) => a / b, '%': (a, b) => a % b, '**': (a, b) => a ** b };
+    const value = ops[node.operator](left.value, right.value);
+    if (!Number.isFinite(value)) return { kind: 'unknown' };
+    return { kind: 'number', value };
+  }
+  if (node.type === 'SequenceExpression') return foldNode(node.expressions.at(-1));
+  if (isLengthChain(node)) return { kind: 'length' };
+  return { kind: 'unknown' };
+}
+
+function isLengthChain(node) {
+  if (!node || node.type !== 'MemberExpression' || node.computed) return false;
+  if (node.property?.type !== 'Identifier' || node.property.name !== 'length') return false;
+  return isPlainMember(node.object);
+}
+
+function isPlainMember(node) {
+  if (!node) return false;
+  if (node.type === 'Identifier') return true;
+  if (node.type === 'MemberExpression' && !node.computed && node.property?.type === 'Identifier') return isPlainMember(node.object);
+  return false;
+}
+
+// Parentheses are not a node. `(101)` parses as the literal, with the parens
+// outside start/end. Only matching parentheses may remain unread.
+function foldCount(expr) {
+  const text = String(expr).trim();
+  if (!text) return { kind: 'unknown' };
+  let node;
+  try { node = parseExpressionAt(text, 0, { ecmaVersion: 'latest' }); }
+  catch { return { kind: 'unknown' }; }
+  const head = text.slice(0, node.start).trim();
+  const rest = text.slice(node.end).trim();
+  if (!/^\(*$/.test(head) || !/^\)*$/.test(rest) || head.length !== rest.length) return { kind: 'unknown' };
+  return foldNode(node);
+}
+
+function overCap(masked, file) {
+  const found = [];
+  const re = /(?:^|[^\w$])placeholders\s*\(/g;
+  for (const match of masked.matchAll(re)) {
+    const start = masked.lastIndexOf('placeholders', match.index + match[0].length);
+    const before = masked.slice(Math.max(0, start - 40), start);
+    if (/(?:function\s*\*?\s*)$/.test(before)) continue;
+    const open = masked.indexOf('(', start);
+    if (open < 0) continue;
+    let depth = 0;
+    let end = -1;
+    for (let i = open; i < masked.length; i++) {
+      if (masked[i] === '(') depth++;
+      else if (masked[i] === ')') {
+        depth--;
+        if (depth === 0) { end = i; break; }
+      }
+    }
+    const line = lineAt(masked, start);
+    if (end < 0) { found.push({ file, line, max: null }); continue; }
+    const folded = foldCount(masked.slice(open + 1, end));
+    if (folded.kind === 'length') continue;
+    if (folded.kind === 'number' && !(folded.value > 100)) continue;
+    found.push({ file, line, max: folded.kind === 'number' ? folded.value : null });
+  }
+  return found;
+}
+
+function builders(masked, file, lines) {
+  const found = [];
+  BUILDER.lastIndex = 0;
+  for (const match of masked.matchAll(BUILDER)) {
+    const line = lineAt(masked, match.index);
+    found.push({ file, line, max: fixedMax(lines, line) });
+  }
+  return found;
+}
+
+function calleeName(node) {
+  if (!node) return '';
+  if (node.type === 'Identifier') return node.name;
+  if (node.type === 'MemberExpression' && !node.computed && node.property?.type === 'Identifier') return node.property.name;
+  return '';
+}
+
+function isPlaceholderLiteral(node) {
+  if (!node) return false;
+  if (node.type === 'Literal' && typeof node.value === 'string') return isPlaceholderValue(node.value);
+  if (node.type === 'TemplateLiteral' && node.expressions.length === 0) return isPlaceholderValue(node.quasis.map(part => part.value.cooked ?? '').join(''));
+  return false;
+}
+
+function returnsPlaceholder(fn, markers) {
+  if (!fn) return false;
+  if (fn.type === 'Identifier') return markers.has(fn.name);
+  if (fn.type !== 'ArrowFunctionExpression' && fn.type !== 'FunctionExpression' && fn.type !== 'FunctionDeclaration') return false;
+  if (fn.body.type !== 'BlockStatement') return isPlaceholderLiteral(fn.body) || (fn.body.type === 'Identifier' && markers.has(fn.body.name));
+  return blockReturnsPlaceholder(fn.body, markers);
+}
+
+function blockReturnsPlaceholder(node, markers) {
+  if (!node) return false;
+  if (node.type === 'ReturnStatement') return isPlaceholderLiteral(node.argument) || (node.argument?.type === 'Identifier' && markers.has(node.argument.name));
+  if (node.type === 'BlockStatement') return (node.body || []).some(stmt => blockReturnsPlaceholder(stmt, markers));
+  if (node.type === 'IfStatement') return blockReturnsPlaceholder(node.consequent, markers) || blockReturnsPlaceholder(node.alternate, markers);
+  return false;
+}
+
+function isMarkerProducer(node, markers) {
+  if (!node) return false;
+  if (isPlaceholderLiteral(node)) return true;
+  if (node.type === 'Identifier' && markers.has(node.name)) return true;
+  if (node.type === 'SequenceExpression') return isMarkerProducer(node.expressions.at(-1), markers);
+  if (node.type === 'CallExpression') {
+    const name = calleeName(node.callee);
+    if (name === 'placeholders') return true;
+    if ((name === 'join' || name === 'repeat') && isMarkerProducer(node.callee.object, markers)) return true;
+    if ((name === 'map' || name === 'fill') && (node.arguments || []).some(arg => returnsPlaceholder(arg, markers) || isPlaceholderLiteral(arg))) return true;
+    if (name === 'from' && node.callee.type === 'MemberExpression' && node.callee.object?.name === 'Array') return (node.arguments || []).some(arg => returnsPlaceholder(arg, markers));
+  }
+  if (node.type === 'ArrowFunctionExpression' || node.type === 'FunctionExpression') return returnsPlaceholder(node, markers);
+  return false;
+}
+
+function collectMarkers(tree) {
+  const markers = new Set();
+  const see = (node) => {
+    if (!node || typeof node.type !== 'string') return;
+    if (node.type === 'VariableDeclarator' && node.id?.type === 'Identifier' && isMarkerProducer(node.init, markers)) markers.add(node.id.name);
+    if (node.type === 'AssignmentExpression' && node.left?.type === 'Identifier' && isMarkerProducer(node.right, markers)) markers.add(node.left.name);
+    if (node.type === 'FunctionDeclaration' && node.id?.type === 'Identifier' && returnsPlaceholder(node, markers)) markers.add(node.id.name);
+    for (const child of children(node)) see(child);
+  };
+  see(tree);
+  return markers;
+}
+
+function isSqlTemplate(node) {
+  const raw = node.quasis.map(part => part.value.cooked ?? '').join('\n');
+  if (/\b(?:select|insert|update|delete|replace|drop|alter|create|pragma)\b/i.test(raw)) return true;
+  if (/\bIN\s*\(/i.test(raw)) return true;
+  return false;
+}
+
+function valuePosition(quasi) {
+  const s = String(quasi ?? '').replace(/\s+$/, '');
+  if (/(?:!=|<>|<=|>=|==|=|<|>)$/.test(s)) return true;
+  if (/['"]$/.test(s)) return true;
+  if (/\b(?:IN|LIKE|GLOB|VALUES)\s*\($/i.test(s)) return true;
+  if (/\bLIKE$/i.test(s)) return true;
+  return false;
+}
+
+function isMarkerExpr(node, markers) {
+  if (!node) return false;
+  if (node.type === 'ParenthesizedExpression') return isMarkerExpr(node.expression, markers);
+  if (node.type === 'ChainExpression') return isMarkerExpr(node.expression, markers);
+  if (node.type === 'Identifier') return markers.has(node.name);
+  if (node.type === 'CallExpression' && calleeName(node.callee) === 'placeholders') return true;
+  if (node.type === 'SequenceExpression') return isMarkerExpr(node.expressions.at(-1), markers);
+  return false;
+}
+
+function interpolations(tree, file) {
+  const markers = collectMarkers(tree);
+  const found = [];
+  const walk = (node) => {
+    if (!node || typeof node.type !== 'string') return;
+    if (node.type === 'TemplateLiteral' && node.expressions.length && isSqlTemplate(node)) {
+      node.expressions.forEach((expr, index) => {
+        if (!valuePosition(node.quasis[index]?.value?.cooked ?? '')) return;
+        if (isMarkerExpr(expr, markers)) return;
+        found.push({ file, line: expr.loc?.start?.line || 1, max: null });
+      });
+    }
+    for (const child of children(node)) walk(child);
+  };
+  walk(tree);
+  return found;
+}
+
+function markerKinds(tree) {
+  const strings = new Set();
+  const fns = new Set();
+  const see = (node) => {
+    if (!node || typeof node.type !== 'string') return;
+    if (node.type === 'VariableDeclarator' && node.id?.type === 'Identifier') {
+      if (isPlaceholderLiteral(node.init)) strings.add(node.id.name);
+      else if (node.init && (node.init.type === 'ArrowFunctionExpression' || node.init.type === 'FunctionExpression') && returnsPlaceholder(node.init, strings)) fns.add(node.id.name);
+    }
+    if (node.type === 'FunctionDeclaration' && node.id?.type === 'Identifier' && returnsPlaceholder(node, strings)) fns.add(node.id.name);
+    for (const child of children(node)) see(child);
+  };
+  see(tree);
+  return { strings, fns };
+}
+
+function aliasUses(masked, file, lines, kinds) {
+  const found = [];
+  const note = (index) => {
+    const line = lineAt(masked, index);
+    found.push({ file, line, max: fixedMax(lines, line) });
+  };
+  const bound = String.raw`(?<![\w$])`;
+  for (const name of kinds.strings) {
+    if (!/^[A-Za-z_$][\w$]*$/.test(name)) continue;
+    const re = new RegExp([
+      String.raw`\.map\(\s*${PARAMS}\s*=>\s*${name}\b`,
+      String.raw`\.map\(\s*${PARAMS}\s*=>\s*\{[^}]*\breturn\s+${name}\b`,
+      String.raw`\.fill\(\s*${name}\s*\)`,
+      String.raw`${bound}${name}\s*\.repeat\s*\(`,
+    ].join('|'), 'g');
+    for (const match of masked.matchAll(re)) note(match.index);
+  }
+  for (const name of kinds.fns) {
+    if (!/^[A-Za-z_$][\w$]*$/.test(name)) continue;
+    const re = new RegExp([
+      String.raw`\.map\(\s*${name}\s*\)`,
+      String.raw`${bound}Array\.from\(\s*[^;]*?,\s*${name}\s*\)`,
+    ].join('|'), 'g');
+    for (const match of masked.matchAll(re)) note(match.index);
+  }
+  return found;
+}
+
+function parseTree(text) {
+  try { return parse(text, { ecmaVersion: 'latest', sourceType: 'module', locations: true }); }
+  catch {
+    try { return parse(text, { ecmaVersion: 'latest', sourceType: 'script', locations: true }); }
+    catch { return null; }
+  }
+}
+
+function placeholderFindings(file, text) {
   const lines = String(text).split('\n');
-  const placeholders = [];
-  lines.forEach((line, index) => {
-    const code = stripLineComment(line);
-    if (BUILDER.test(code)) {
-      const above = lines.slice(Math.max(0, index - 4), index).join('\n');
-      const marked = above.match(/sql-bound-fixed:\s*(\d+)/);
-      placeholders.push({ file, line: index + 1, max: marked ? Number(marked[1]) : null });
-    }
-    OVER_CAP.lastIndex = 0;
-    for (const match of code.matchAll(OVER_CAP)) {
-      const count = Number(match[1]);
-      if (count > 100) placeholders.push({ file, line: index + 1, max: count });
-    }
-  });
-  return { exec: lintHandles(file, String(text)), placeholders };
+  const masked = maskCommentsAndStrings(text);
+  if (masked == null) return [{ file, line: 1, max: null }];
+  const tree = parseTree(text);
+  const found = [...builders(masked, file, lines), ...overCap(masked, file)];
+  if (!tree) found.push({ file, line: 1, max: null });
+  else {
+    found.push(...aliasUses(masked, file, lines, markerKinds(tree)));
+    found.push(...interpolations(tree, file));
+  }
+  return found;
+}
+
+export function lintSource(file, text) {
+  return { exec: lintHandles(file, String(text)), placeholders: placeholderFindings(file, String(text)) };
 }
 
 export function lintDir(dir) {

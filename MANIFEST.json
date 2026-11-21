@@ -1122,8 +1122,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/profile.js",
-      "bytes": 49365,
-      "sha256": "0cf2f6dba5fdf0132eb2c4c65f57347449c41f4382fa2b07fb4c4626bfe9487e"
+      "bytes": 49361,
+      "sha256": "58a7ebf80814a5c5bb5816b53a3dbc37408b977d693e0598c81295c32bfd67da"
     },
     {
       "path": "deploy/cloudflare-edge/src/publication.js",
@@ -1212,8 +1212,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/subject-rights.js",
-      "bytes": 29510,
-      "sha256": "855d2d781c72ced7c89918cc9df066fefbad9991e817842b7f3dbff87ff9f113"
+      "bytes": 29508,
+      "sha256": "e889aa8c6b941a6d6321a78ccb6b908cfd81dc0cfe952768cd05d99f5e11324f"
     },
     {
       "path": "deploy/cloudflare-edge/src/teams-routes.js",
@@ -1847,8 +1847,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/write-lint.js",
-      "bytes": 22377,
-      "sha256": "1abbbd7e5804adeeceee45820883dd03afa06fa2b75b70ead91988cfcf6a4c71"
+      "bytes": 35506,
+      "sha256": "ab218e6b48101e7ecb3f283f92e80a640e59d46d63ffed0899a1b7b8fbe1d94f"
     },
     {
       "path": "deploy/cloudflare-edge/test/write-now.test.js",
