@@ -15,6 +15,7 @@ import { openDurableLibrary } from './library-store.js';
 import { limitRoute } from './ratelimit.js';
 import { loadState, memoryAllowed, recordConsent } from './privacy.js';
 import { auditKey } from './audit-chain.js';
+import { handoffInterview, CheckpointStore } from './checkpoint.js';
 
 export default {
   fetch: (request, env, ctx) => handle(request, env, page, { waitUntil: p => ctx.waitUntil(p), log: line => console.log(line) }),
@@ -50,10 +51,12 @@ export class Interview extends DurableObject {
     } : null;
     const pair = new WebSocketPair(), [client, server] = Object.values(pair);
     server.accept();
-    if (this.session && !this.session.finished) {
-      // Still one live interview per signed-in person, but the newest window wins: a forgotten tab or a
-      // stale session must never block the person from starting again.
-      await this.session.fail('This interview continued in another window. Nothing was approved.', 'voice-contract');
+    // Revoke the previous checkpoint writer before its suspend can finish. The newest
+    // window still wins. A handoff that lost the token does not install a session.
+    const owner = await handoffInterview(this, session => session.fail('This interview continued in another window. Nothing was approved.', 'voice-contract'));
+    if (this.checkpointOwner !== owner) {
+      try { server.close(1000, 'This interview continued in another window.'); } catch { /* closed */ }
+      return new Response(null, { status: 101, webSocket: client });
     }
     // The verified identity the Worker forwarded (always overwritten there), for gap requests and the win hint.
     const identity = { user: request.headers.get('x-atlas-user') || '', role: request.headers.get('x-atlas-role') || 'user', mail: request.headers.get('x-atlas-email') || '', tenant: request.headers.get('x-atlas-tenant') || '', tenantEnforced: request.headers.get('x-atlas-tenant-enforced') === '1' };
@@ -64,6 +67,7 @@ export class Interview extends DurableObject {
       metric: (name, values) => console.log(JSON.stringify({ atlas_metric: name, ...values })),
       gaps: this.env.LIBRARY ? id => resolveForInterview(this.env, identity, id) : null,
       winHint: this.env.LIBRARY ? () => fetchWinHint(this.env, identity) : null,
+      checkpoint: new CheckpointStore(this.ctx.storage, { isCurrent: () => this.checkpointOwner === owner }),
     });
     this.session = session;
     server.addEventListener('message', e => {

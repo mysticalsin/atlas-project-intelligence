@@ -5,9 +5,11 @@ import { TALKER_POLICY, OPENING, HISTORY, TOPICS, ADMIN_NOTE, SPEAKING_LIMIT_S, 
   GAP_LIMIT_S, GAP_SPEAKING_S, GAP_WRAP_S, GAP_MAX, GAP_OPENING, WIN_HINTS } from './policy.generated.js';
 import { gapSystemBlock, gapNotes, gapStatus, gapGuidance, timePlan } from './gap-policy.js';
 import { Analyst, InterviewLedger } from './ledger.js';
+import { buildSummary } from './summary.js';
 import { EnergyTurns, isEcho, Phrases, speakable } from './speech.js';
 import { EndMarker, parseReport, reportMessages } from './report.js';
 import { LANGUAGES, normalize, spokenFor, languageNote, GREETINGS, WELCOME_BACK, FILLERS, unfinished } from './languages.js';
+import { newSessionId } from './checkpoint.js';
 
 export const RESUME = '[The consultant made a sound but no words were recognised, and your last reply was cut off.] Briefly re-ask your last question in fresh words.';
 
@@ -120,9 +122,9 @@ export class Session {
   // gaps: async id => {asks, bidAlias, referenceId, projectId} | null (the verified assignee's open gap request);
   // winHint: async () => ({hint: 'quantified'|'confirmed'|null}) | null (aggregate win-loop guidance, never awaited).
   constructor({ io, ai, csrf, voice, voices = null, captureRequired = false, model, maxSeconds = MAX_SECONDS, admin = false, memory = null, speakingLimit = SPEAKING_LIMIT_S, now = () => Date.now() / 1000, sleep = ms => new Promise(r => setTimeout(r, ms)), metric = () => {}, sttTimeout = STT_TIMEOUT_MS,
-    gaps = null, winHint = null, gapTimeout = GAP_RESOLVE_MS }) {
+    gaps = null, winHint = null, gapTimeout = GAP_RESOLVE_MS, checkpoint = null }) {
     // metric(name, numbers): timings and counts only, never transcript or project content.
-    Object.assign(this, { io, ai, csrf, voice, voices: voices || [voice], captureRequired, model, maxSeconds, admin, speakingLimit, now, sleep, metric, memory, sttTimeout, gaps, winHint, gapTimeout });
+    Object.assign(this, { io, ai, csrf, voice, voices: voices || [voice], captureRequired, model, maxSeconds, admin, speakingLimit, now, sleep, metric, memory, sttTimeout, gaps, winHint, gapTimeout, checkpoint });
     // Interview mode. Gap mode keeps its own answer windows: askByItem (reply item -> the ask it carried, set when the reply
     // is composed), gapAttempts (replies heard per ask), openAsk (the ask the consultant last heard; null once a reflect-back
     // or the closing is heard) and gapAnswers (ask -> the consultant turns heard after it, each turn a list of transcript parts).
@@ -138,7 +140,7 @@ export class Session {
     this.nextTime = 0; this.currentItem = null; this.timer = null; this.lastAudio = -1e9; this.cutOff = false; this.sentMs = {}; this.playedMs = {};
   }
 
-  event(type, values = {}) { if (!this.finished || ['audio_stopped', 'reporting', 'notes', 'ended', 'error', 'quality', 'quality_warning'].includes(type)) this.io.send({ type, ...values }); }
+  event(type, values = {}) { if (!this.finished || ['audio_stopped', 'reporting', 'summary', 'notes', 'ended', 'error', 'quality', 'quality_warning'].includes(type)) this.io.send({ type, ...values }); }
 
   async onText(text) {
     let value;
@@ -150,6 +152,7 @@ export class Session {
     if (!this.started) return this.start(value);
     if (value?.type === 'end' && Object.keys(value).length === 1) return this.end(true);
     if (value?.type === 'discard' && Object.keys(value).length === 1) return this.end(false);
+    if (value?.type === 'withhold' && Object.keys(value).length === 2 && typeof value.detail_id === 'string') return this.withholdDetail(value.detail_id);
     if (value?.type === 'playback') {
       // Flow control: the browser reports audio actually played; never run more than LEAD_MS ahead of it.
       const { item_id: item, played_ms: ms } = value;
@@ -333,6 +336,11 @@ export class Session {
       Object.assign(this, { mode: 'gap', maxSeconds: GAP_LIMIT_S, speakingLimit: GAP_SPEAKING_S, wrapS: GAP_WRAP_S, gapAsks: asks, gapRequest: init.gap });
     }
     const gap = this.mode === 'gap';
+    if (this.checkpoint && this.capture) {
+      this.sessionId = this.sessionId || newSessionId();
+      try { await this.checkpoint.save({ sessionId: this.sessionId }); }
+      catch (e) { if (e?.code === 'replaced') return this.fail('This interview continued in another window. Nothing was approved.', 'voice-contract'); throw e; }
+    }
     this.started = true; this.startedAt = this.lastInput = this.now();
     const stage = this.project.stage || 'Unknown';
     this.analyst = this.capture ? new Analyst(messages => this.ai.analyst(messages), stage) : null;
@@ -358,11 +366,41 @@ export class Session {
     this.prewarm();
   }
 
+  visibleDetails() {
+    if (!this.ledger) return [];
+    const hidden = this.ledger.withheldItems || new Set();
+    return this.ledger.details.filter(d => d.active && d.withheld !== true && !hidden.has(d.item_id));
+  }
+
+  // The read-back's keep-private control. The words leave the ledger and this session.
+  withholdDetail(id) {
+    if (!this.started || this.finished || this.ending || !this.ledger) return;
+    const d = this.ledger.details.find(x => x.id === id);
+    if (!d) { this.event('quality_warning', { message: 'That item could not be kept private.' }); return; }
+    const item = d.item_id;
+    const secrets = [];
+    const transcript = this.ledger.transcripts.get(item);
+    if (typeof transcript === 'string') secrets.push(transcript);
+    for (const x of this.ledger.details) if (x.item_id === item && typeof x.quote === 'string') secrets.push(x.quote);
+    try { this.ledger.withhold(id); }
+    catch { this.event('quality_warning', { message: 'That item could not be kept private.' }); return; }
+    const list = [...new Set(secrets)].filter(s => s && s !== '[withheld]').sort((a, b) => b.length - a.length);
+    const scrub = text => { let out = text; for (const s of list) out = out.split(s).join('[withheld]'); return out; };
+    for (const m of this.history) if (m && typeof m.content === 'string') m.content = scrub(m.content);
+    for (const turns of Object.values(this.gapAnswers)) {
+      if (!Array.isArray(turns)) continue;
+      for (const parts of turns) {
+        if (!Array.isArray(parts)) continue;
+        for (let i = 0; i < parts.length; i++) if (typeof parts[i] === 'string') parts[i] = scrub(parts[i]);
+      }
+    }
+  }
+
   // Gap mode: the status of every ask from the session's own answer windows and attempt counts, plus the ledger's active
   // details (an ask's field may also be answered by a detail the analyst filed there).
   gapStatuses() {
     const answers = Object.fromEntries(Object.entries(this.gapAnswers).map(([id, turns]) => [id, turns.map(parts => parts.join(' '))]));
-    return gapStatus(this.gapAsks, this.gapAttempts, answers, this.ledger ? this.ledger.details.filter(d => d.active) : []);
+    return gapStatus(this.gapAsks, this.gapAttempts, answers, this.visibleDetails());
   }
 
   // A consultant turn joins the answer window of the ask they last heard. The rest of a turn they had paused in
@@ -378,7 +416,7 @@ export class Session {
   // notes.gap.results: per ask, its answer-window turns (exact, first 400 characters, at most 3), then the quotes of active
   // details in its field that those turns do not already contain, at most 5 in all. Statuses as the consultant left them.
   gapResults() {
-    const details = this.ledger ? this.ledger.details.filter(d => d.active) : [];
+    const details = this.visibleDetails();
     return this.gapStatuses().map(s => {
       const parts = (this.gapAnswers[s.id] || []).flat(), whole = parts.map(ws);
       const quotes = parts.slice(0, WINDOW_QUOTES).map(p => first(p, QUOTE_CHARS));
@@ -784,7 +822,9 @@ export class Session {
       if (clean && this.capture && this.ledger) {
         // Gap mode writes no report: its answers go back only through the consultant's explicit clicks (§F2.1 step 6).
         const gap = this.mode === 'gap', report = gap ? null : await this.report();
-        this.event('notes', { transcript: [...this.ledger.transcripts.values()].join('\n\n'), sections: this.ledger.notes(), status: 'candidate', report, mode: this.mode,
+        const items = buildSummary(this.ledger);
+        if (items.length) this.event('summary', { items });
+        this.event('notes', { transcript: this.ledger.publicTranscript(), sections: this.ledger.notes(), status: 'candidate', report, mode: this.mode,
           ...(gap ? { gap: { requestId: this.gapRequest, results: this.gapResults() } } : {}),
           message: 'Unverified speech recognition and quote-linked candidate notes. Correct omissions and errors before adding to the project. The final cut-off utterance may be incomplete.' });
       } else if (clean) this.event('notes', { transcript: '', sections: null, status: 'not-enabled', mode: this.mode, message: 'Transcript capture was off. No consultant notes were stored.' });

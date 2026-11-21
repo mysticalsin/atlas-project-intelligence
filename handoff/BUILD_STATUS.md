@@ -1,6 +1,43 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-21 — A07 slice 2 Inspector, the read-back is live (`cursor/pr1-slice2-readback-6f11`)
+
+Inspector reviewed `4221a51f0d2dce6c2792ec774a3e1a3a193789b6` as FAIL, ADAPT, report `30b60570`. Red tests are `d59bb70027f5a4aba3b5190ad825a3032350f50a`. That commit does not refresh `MANIFEST.json`. The summary was not a session event, the read-back inputs had no label, save, or announcement, an 1800-character quote was clipped, and `inspect` left a privately marked detail in the transcript. Sentinel's M-1, M-2, and L-1 stay in `680dd70295a992c031ac82ad9a5cab067c2d69d8`.
+
+The summary event is on the session bus, so the confirmation card appears while the interview is live. Each correction has a label, a save control, and a polite live region. Save keeps the draft in session storage; without storage the live region says a reload drops the draft. The quote wraps instead of being clipped. `inspect` calls `withhold` for a detail that was marked private, so the words leave the transcript. The keep-private button and the checkpoint id write are unchanged from the Sentinel fix.
+
+No provider call.
+
+Measured on `7214ae60c07948fc513eb896974a5f4961b688f8`: `python3 -m pytest tests/test_*.py -q` 413 passed; `node --test tests/*.test.js` 424 passed, 0 failed; edge `node --test test/*.test.js` 1126 tests, 1122 passed, 0 failed, 4 skipped; `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui` 834 PASS, 0 FAIL; `python3 scripts/check_handoff.py . --dev-git-index` PASS.
+
+## 2026-11-21 — A07 slice 2 loop 2, withhold is gone (`cursor/pr1-slice2-readback-6f11`)
+
+Sentinel reviewed `4221a51f0d2dce6c2792ec774a3e1a3a193789b6` as CHANGES, report `69122e20`. Red tests are `680dd70295a992c031ac82ad9a5cab067c2d69d8`. That commit does not refresh `MANIFEST.json`. The three new tests fail there: a second detail of a withheld utterance stays visible, the keep-private control is not wired, and no live session writes `cp:current`.
+
+`withhold` now flags every detail of the utterance, refuses a later record of that item, and removes the words from the transcript, the detail quotes, and the cached tool results. An analyst result that arrives after the withhold does not bring the words back. The session accepts `{type:'withhold', detail_id}` from the read-back button, and the same words leave the talker history, the gap answers, the report input, and the gap status. The Durable Object builds a `CheckpointStore` and the session writes `cp:current` as the session id only. The interview body is not stored.
+
+No provider call.
+
+Measured on `cad20d8cab1ea6f3e5a6b51a5bc0ac12ca7324be`: `python3 -m pytest tests/test_*.py -q` 413 passed; `node --test tests/*.test.js` 420 passed, 0 failed; edge `node --test test/*.test.js` 1126 tests, 1122 passed, 0 failed, 4 skipped; `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui` 834 PASS, 0 FAIL; `python3 scripts/check_handoff.py . --dev-git-index` PASS.
+
+## 2026-11-21 — A07 slice 2, confirmation read-back (`cursor/pr1-slice2-readback-6f11`)
+
+PR #5 is merged. Its head is `9438e73ac2b750e3f3dfdf1d60e1d4b03a374842`, merge `5c55c2bcf722963ec2182dfc463fb152e57f5c89`, and that commit is an ancestor of `main` `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. The copied-commit and null-hash remigration checks in `deploy/cloudflare-edge/test/s1-a5ba30c.test.js` pass on that tree. No new test was added for those closed findings.
+
+Red tests are `939418703c76cf3d0d1fff8ab788371e33aa9aff`. They fail because withhold, the read-back module, the checkpoint fence, and the summary editor are not on `8b0972ec`. That commit does not refresh `MANIFEST.json`. On a real checkout, `check_handoff` fails because the two new test files are unlisted, and `test_repository_full_handoff_includes_clean_rebuild` plus `test_git_archive_of_head_passes_check_handoff` fail. `node --test tests/*.test.js` is 419 passed and 1 failed. Edge `node --test test/*.test.js` is 1114 passed, 5 failed, 4 skipped. The product fix is `6ac0b3831b622c112f7027d30debfefa42d23231`.
+
+Measured on `6ac0b3831b622c112f7027d30debfefa42d23231`: `python3 -m pytest tests/test_*.py -q` 413 passed; `node --test tests/*.test.js` 420 passed, 0 failed; edge `node --test test/*.test.js` 1123 tests, 1119 passed, 0 failed, 4 skipped; `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui` 834 PASS, 0 FAIL; `python3 scripts/check_handoff.py . --dev-git-index` PASS. No provider call.
+
+What the fix does:
+
+- A withheld utterance stays out of the notes, the analyst context, and the confirmation card after a later detail supersedes it. The analyst cannot set that mark by recording a field.
+- `buildSummary` lists every active, non-withheld detail up to 100. It does not stop at 40.
+- The storyboard keeps an unsaved correction when a later summary arrives.
+- `handoffInterview` revokes the previous checkpoint writer before the old session finishes suspending. The store writes the session id only. It does not store the interview body.
+
+Files: `deploy/cloudflare-edge/src/ledger.js`, `summary.js`, `checkpoint.js`, `session.js`, `worker.js`, `src/storyboard-ui.js`, the rebuilt pages, `csp.generated.js`, and `PAGE_SHA256.txt`. Sweep-owned files were not edited. No provider call.
+
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.
