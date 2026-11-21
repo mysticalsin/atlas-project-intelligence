@@ -1,6 +1,9 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+### Session: 2026-11-21 / A08 stored requirement
+- A captured Candidate Requirement can be stored and a CV generated against that row. Export stays a local docx. MiChat is not called. No salary is stored. Synthetic data only.
+
 ## Next task
 - **2026-09-29, JEV story rating ("make sure Atlas has Jev integreated into it so its very fast and relable to rate stories"):** built on `a45b140` in two tracks (EDGE, UI), then an integration review fixed 4 defects (a privacy gap for multi-word names and 3 no-key differences); locally verified, not committed, not deployed. Live JEV is `BLOCKED_EXTERNAL` until Tony sets `TYPESAFE_API_KEY` on the Worker and deploys (when nobody is interviewing). Read the session "2026-09-29 / JEV story rating" below first: "What Tony must do", the cost per rating, Tony's one open decision (§12.2: four other TypeSafe paths run without this consent) and the post-deploy checks.
 - **2026-09-29, Voice quality ("Atlas doesnt speak well and is not totally undertsandable"):** fixed on top of `ae50fae` (live Worker aa3478f8), integrated and locally verified, not committed, not deployed. Read the session "2026-09-29 / Voice quality" below: what changed, the evidence, and what the logs of the next live session should show. Commit, then Tony deploys with `deploy.sh` when nobody is interviewing.

@@ -571,7 +571,10 @@ dialog .check input[type=radio]{width:15px;height:15px;min-height:0;margin:2px 0
 
 #living,#fiche{--chc-bg:#f8f5ff;--chc-surface:#fff;--chc-text:#25113a;--chc-muted:#6d6078;--chc-line:#ded2ea;--chc-primary:#8b5cf6;--chc-primary-dark:#5b21b6;--chc-primary-soft:#f1e9ff;--chc-yellow-soft:#fff6d8;--chc-yellow-line:#f2d475;--chc-red-soft:#ffe8e4;--chc-red-line:#ffc7bd;--chc-red-text:#7a1f16;--chc-radius:22px;--chc-shadow:0 16px 40px rgba(54,28,91,.12);background:var(--chc-bg);color:var(--chc-text);border-radius:var(--chc-radius);padding:8px 8px 28px;max-height:calc(100dvh - 250px);overflow:auto}
 .living-page{max-width:1200px;margin:0 auto;display:grid;gap:24px;padding:24px 8px 40px}
-.need-row{display:flex;gap:12px;align-items:flex-end}
+.need-row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+.req-list{display:grid;gap:8px}
+.req-row{display:flex;justify-content:space-between;gap:12px;align-items:center;background:var(--chc-surface);border:1px solid var(--chc-line);border-radius:16px;padding:12px 16px}
+.req-row p{margin:0;font-weight:600}
 .need-row textarea,.review-row select{flex:1;width:100%;min-height:48px;border:1px solid var(--chc-line);border-radius:12px;padding:12px 14px;background:var(--chc-surface);color:var(--chc-text);font:inherit;font-size:14px;resize:vertical}
 .living-go{background:var(--chc-primary-dark);color:#fff;border-radius:999px;padding:12px 18px;font-weight:600;white-space:nowrap}
 .living-go.busy{position:relative;color:transparent}
@@ -613,7 +616,7 @@ dialog .check input[type=radio]{width:15px;height:15px;min-height:0;margin:2px 0
 @media(max-width:767px){
 #living,#fiche{max-height:calc(100dvh - 360px)}
 .living-page{padding:16px 0 88px;gap:16px}
-.need-row,.review-row{display:grid}
+.need-row,.review-row,.req-row{display:grid}
 .living-go{width:100%}
 .cv-stage,.cv-stage.solo{display:flex;flex-direction:column;max-width:none}
 .cv-doc{padding:20px}
@@ -4378,6 +4381,7 @@ function paintCv(){
   const field=h('textarea',{id:'livingNeed',rows:'2',placeholder:'Need link or job description','aria-label':'Need link or job description'});
   const note=h('p',{id:'livingStatus',class:'living-note',role:'status'});
   const go=h('button',{class:'btn living-go',type:'button',text:data.cv?'Regenerate':'Generate CV'});
+  const store=h('button',{class:'btn',type:'button',id:'livingStore',text:'Store captured requirement'});
   go.disabled=true;
   field.addEventListener('input',()=>{if(!go.classList.contains('busy'))go.disabled=!field.value.trim();});
   const preview=h('div',{class:'cv-preview'});
@@ -4387,6 +4391,30 @@ function paintCv(){
     go.textContent='Regenerate';
   };
   if(data.cv)show(data.cv);
+  store.addEventListener('click',async()=>{
+    store.disabled=true;note.textContent='';
+    try{
+      const out=await post('/living/requirements',{fixtureId:'192497'});
+      if(out.ok===false){note.textContent="Couldn't read that capture. Paste the job description instead.";return;}
+      cache=await load();paintCv();
+    }catch(e){note.textContent=e.message||'The library did not answer.';}
+    finally{store.disabled=false;}
+  });
+  const reqs=h('div',{class:'req-list'});
+  for(const item of data.requirements||[]){
+    const tailor=h('button',{class:'btn living-go',type:'button',text:'Tailor CV'});
+    tailor.addEventListener('click',async()=>{
+      tailor.disabled=true;note.textContent='';preview.replaceChildren(skeleton());
+      try{
+        const out=await post('/living/generate',{requirementId:item.id});
+        if(!(out.artifact?.lines||[]).length){note.textContent='No published evidence matches this need.';preview.replaceChildren();return;}
+        cache={...cache,cv:out.artifact,consent:true};show(out.artifact);
+      }catch(e){note.textContent=e.message||'The library did not answer.';if(!preview.querySelector('.cv-doc'))preview.replaceChildren();}
+      finally{tailor.disabled=false;}
+    });
+    const label=[item.title||'Requirement',item.needId].filter(Boolean).join(' · ');
+    reqs.append(h('div',{class:'req-row'},[h('p',{text:label}),tailor]));
+  }
   go.addEventListener('click',async()=>{
     const had=!!preview.querySelector('.cv-doc');
     go.classList.add('busy');go.disabled=true;field.readOnly=true;note.textContent='';
@@ -4401,7 +4429,9 @@ function paintCv(){
   });
   const queue=h('div',{class:'cv-queue'});
   for(const item of (data.queue||[]).filter(entry=>entry.type==='cv'))queue.append(stage(item,async()=>{await load();paintCv();}));
-  root.replaceChildren(h('div',{class:'living-page'},[h('div',{class:'need-row'},[field,go]),note,queue,preview]));
+  const parts=[h('div',{class:'need-row'},[field,store,go]),note,queue,preview];
+  if((data.requirements||[]).length)parts.unshift(reqs);
+  root.replaceChildren(h('div',{class:'living-page'},parts));
 }
 function ficheCard(artifact,onChange){
   const card=h('article',{class:'cv-doc'});

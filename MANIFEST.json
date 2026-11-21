@@ -27,23 +27,23 @@
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 327134,
-      "sha256": "dd7c5627afcdbdec473e300ea0082f853a0a3819a96af2daffd48b37f862d314"
+      "bytes": 926273,
+      "sha256": "09f60d9382d0744a7ee5b1bc108151a51c939991fe901e89e630124d8f8044d4"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 327134,
-      "sha256": "dd7c5627afcdbdec473e300ea0082f853a0a3819a96af2daffd48b37f862d314"
+      "bytes": 926273,
+      "sha256": "09f60d9382d0744a7ee5b1bc108151a51c939991fe901e89e630124d8f8044d4"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 327134,
-      "sha256": "dd7c5627afcdbdec473e300ea0082f853a0a3819a96af2daffd48b37f862d314"
+      "bytes": 926273,
+      "sha256": "09f60d9382d0744a7ee5b1bc108151a51c939991fe901e89e630124d8f8044d4"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 327134,
-      "sha256": "dd7c5627afcdbdec473e300ea0082f853a0a3819a96af2daffd48b37f862d314"
+      "bytes": 926273,
+      "sha256": "09f60d9382d0744a7ee5b1bc108151a51c939991fe901e89e630124d8f8044d4"
     },
     {
       "path": "CLAUDE.md",
@@ -272,8 +272,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 1988,
-      "sha256": "e4fb338b77acf9dc7730c1c5c48eafdade76dcb698e00a6c43af6d6d898cae06"
+      "bytes": 150130,
+      "sha256": "0862aeff8e0f4597d82e00fc2e65c3217eb2b90a16e7eaac2c7e762d6dcdbe66"
     },
     {
       "path": "handoff/CHANGELOG.md",

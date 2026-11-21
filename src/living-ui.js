@@ -162,6 +162,7 @@ function paintCv(){
   const field=h('textarea',{id:'livingNeed',rows:'2',placeholder:'Need link or job description','aria-label':'Need link or job description'});
   const note=h('p',{id:'livingStatus',class:'living-note',role:'status'});
   const go=h('button',{class:'btn living-go',type:'button',text:data.cv?'Regenerate':'Generate CV'});
+  const store=h('button',{class:'btn',type:'button',id:'livingStore',text:'Store captured requirement'});
   go.disabled=true;
   field.addEventListener('input',()=>{if(!go.classList.contains('busy'))go.disabled=!field.value.trim();});
   const preview=h('div',{class:'cv-preview'});
@@ -171,6 +172,30 @@ function paintCv(){
     go.textContent='Regenerate';
   };
   if(data.cv)show(data.cv);
+  store.addEventListener('click',async()=>{
+    store.disabled=true;note.textContent='';
+    try{
+      const out=await post('/living/requirements',{fixtureId:'192497'});
+      if(out.ok===false){note.textContent="Couldn't read that capture. Paste the job description instead.";return;}
+      cache=await load();paintCv();
+    }catch(e){note.textContent=e.message||'The library did not answer.';}
+    finally{store.disabled=false;}
+  });
+  const reqs=h('div',{class:'req-list'});
+  for(const item of data.requirements||[]){
+    const tailor=h('button',{class:'btn living-go',type:'button',text:'Tailor CV'});
+    tailor.addEventListener('click',async()=>{
+      tailor.disabled=true;note.textContent='';preview.replaceChildren(skeleton());
+      try{
+        const out=await post('/living/generate',{requirementId:item.id});
+        if(!(out.artifact?.lines||[]).length){note.textContent='No published evidence matches this need.';preview.replaceChildren();return;}
+        cache={...cache,cv:out.artifact,consent:true};show(out.artifact);
+      }catch(e){note.textContent=e.message||'The library did not answer.';if(!preview.querySelector('.cv-doc'))preview.replaceChildren();}
+      finally{tailor.disabled=false;}
+    });
+    const label=[item.title||'Requirement',item.needId].filter(Boolean).join(' · ');
+    reqs.append(h('div',{class:'req-row'},[h('p',{text:label}),tailor]));
+  }
   go.addEventListener('click',async()=>{
     const had=!!preview.querySelector('.cv-doc');
     go.classList.add('busy');go.disabled=true;field.readOnly=true;note.textContent='';
@@ -185,7 +210,9 @@ function paintCv(){
   });
   const queue=h('div',{class:'cv-queue'});
   for(const item of (data.queue||[]).filter(entry=>entry.type==='cv'))queue.append(stage(item,async()=>{await load();paintCv();}));
-  root.replaceChildren(h('div',{class:'living-page'},[h('div',{class:'need-row'},[field,go]),note,queue,preview]));
+  const parts=[h('div',{class:'need-row'},[field,store,go]),note,queue,preview];
+  if((data.requirements||[]).length)parts.unshift(reqs);
+  root.replaceChildren(h('div',{class:'living-page'},parts));
 }
 function ficheCard(artifact,onChange){
   const card=h('article',{class:'cv-doc'});

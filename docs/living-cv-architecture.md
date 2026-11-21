@@ -40,6 +40,10 @@ Ledger detail ids are not copied onto the library revision. The sentence the con
 - Evidence and customer relevance are story-model roles (`topic` from the snippet topics, or snippet `kind` `evidence`). They are not CV bullets and they are not competency-file fields. The composer keeps them on `provenance`, and the CV screen shows that text from the source control on a responsibility or achievement line. Context stays on the CV as one plain line under the role and dates, and the competency file still maps it to `projects[].context`. Bullets are contribution, approach, and outcome.
 - `PastedJobDescriptionAdapter` reads text the consultant pasted.
 
+## Stored requirement
+
+A requirement is a row the consultant stores. `POST /living/requirements` accepts a capture object the caller already has, pasted requirement text, or `fixtureId` `192497`. That id is read from the captured Candidate Requirement file on disk. Any other id is unreadable. There is no fetch. The stored need is what `POST /living/generate` uses when the body carries `requirementId`. Export is unchanged: someone else approves, then the local docx is written. Salary keys and salary sentences are dropped before the row is written. Another tenant cannot read the row. Privacy delete removes it with the other living rows.
+
 ## MiChat
 
 `toCompetencyFile` maps a CV onto the competency-file fields one for one: identity, summary, technical, soft, and functional skills, languages with spoken and written levels, education, certifications, and projects (company, role, dates, context, responsibilities, technologies, achievements). Years of experience and the summary stay null. A sentence that says "8 years" stays on the project. A language, a degree, or a certification is copied only when that sentence states it, and it is not copied from the need. Soft and functional skills stay empty unless the sentence itself uses those words. Every non-empty value keeps the snippet id. `exportDocument` writes that file as a local `.docx` and does not call MiChat. A connector only has to send the object.
