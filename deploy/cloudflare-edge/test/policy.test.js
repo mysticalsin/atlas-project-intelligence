@@ -30,8 +30,8 @@ const ref = () => ({ title: 'Northwind pilot alias', stage: 'Pilot', sector: 'In
 const lib = () => new Library(memorySql(), { now: () => '2026-11-08T00:00:00.000Z', complete: async () => JSON.stringify({ score: 90, client_value_clear: true, issues: [], recommendations: [], summary: 'Enough.' }) });
 
 test('verified admin is a token role or subject, never an email list or empty config', () => {
-  assert.equal(isVerifiedAdmin({}, { email: 'tony.walteur@gmail.com', roles: [] }), false);
-  assert.equal(isVerifiedAdmin({ ADMIN_EMAILS: 'tony.walteur@gmail.com' }, { email: 'tony.walteur@gmail.com' }), false);
+  assert.equal(isVerifiedAdmin({}, { email: 'owner@example.test', roles: [] }), false);
+  assert.equal(isVerifiedAdmin({ ADMIN_EMAILS: 'owner@example.test' }, { email: 'owner@example.test' }), false);
   assert.equal(isVerifiedAdmin({ ATLAS_ADMIN_ROLES: '', ATLAS_ADMIN_SUBJECTS: '' }, { roles: ['ATLAS.Admin'], sub: 'user-1' }), false);
   assert.equal(isVerifiedAdmin({}, { roles: ['ATLAS.Admin'], sub: 'user-1' }), false, 'a missing admin config grants nobody');
   assert.equal(isVerifiedAdmin({ ATLAS_ADMIN_ROLES: 'ATLAS.Admin' }, { roles: ['ATLAS.Admin'], sub: 'user-1' }), true);

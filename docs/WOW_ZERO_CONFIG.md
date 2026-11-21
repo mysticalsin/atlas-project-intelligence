@@ -20,7 +20,7 @@ Tony (product owner), verbatim:
 4. **Profile data never reaches an AI model, with no exception.** The name is shown on screen only: it is never spoken by the model and never put in a prompt. Three choke points enforce this: `modelProject()` in the browser, and `projectContext` and `forModel` on the server (§5.9).
 5. **Server-side secrets only.** The DNA key and the push secret travel in request headers. They never appear in a URL, HTML, log line or audit row.
 6. **No invented endpoints.** DNA's URL, auth, lookup key and field map come from Mantu IT. The pull connector's shape is **ASSUMED** (§5.3). A push option (§5.4) needs no inbound network path into DNA. Until one of them is configured, DNA is `BLOCKED_EXTERNAL`.
-7. **No real HR data on the test deployment.** The live Worker labels itself "TEST DEPLOYMENT · SYNTHETIC DATA ONLY" (`deploy/cloudflare-edge/src/app.js:136`, readiness `edge-deployment-test-data-only` at `:145`). It runs on a personal account (`atlas.tony-walteur.workers.dev`). Real enablement needs "a Mantu-owned Cloudflare account" (`entra/README.md:22`), and WOW §0 rule 3 says "Never send real data anywhere". So every path that brings in DNA or HR data (connector, push, export import) is gated by `DATA_MODE=production` (§5.6). Tony sets that variable only on an approved Mantu deployment.
+7. **No real HR data on the test deployment.** The live Worker labels itself "TEST DEPLOYMENT · SYNTHETIC DATA ONLY" (`deploy/cloudflare-edge/src/app.js:136`, readiness `edge-deployment-test-data-only` at `:145`). It runs on a personal account (`atlas.example.test`). Real enablement needs "a Mantu-owned Cloudflare account" (`entra/README.md:22`), and WOW §0 rule 3 says "Never send real data anywhere". So every path that brings in DNA or HR data (connector, push, export import) is gated by `DATA_MODE=production` (§5.6). Tony sets that variable only on an approved Mantu deployment.
 8. **Nothing is auto-sent** (WOW §0 rule 6, unchanged).
 
 ---
@@ -45,7 +45,7 @@ Tony (product owner), verbatim:
 ## 2. Current behaviour (read from the code on 2026-09-29)
 
 ### 2.1 Entry points
-- **Live site.** `deploy/cloudflare-edge/src/app.js` `handle()`: the host must equal `ORIGIN`, then `verifyAccess()` (RS256 Access JWT, `aud`, `iss`, `exp`), or else 401 "Sign in to use ATLAS.". `GET /` serves the page with `window.ATLAS_RUNTIME = {subjectKey, authMode: 'access', name: <verified email>}` (`:131-133`). The Python gateway injects `ATLAS_RUNTIME` the same way (`atlas_voice/server.py:104`). A saved file keeps the `/* SERVER_RUNTIME */` placeholder, so `ATLAS_RUNTIME` is absent there. Access today is email one-time PIN for `tony.walteur@gmail.com` only (`deploy/cloudflare-edge/README.md`).
+- **Live site.** `deploy/cloudflare-edge/src/app.js` `handle()`: the host must equal `ORIGIN`, then `verifyAccess()` (RS256 Access JWT, `aud`, `iss`, `exp`), or else 401 "Sign in to use ATLAS.". `GET /` serves the page with `window.ATLAS_RUNTIME = {subjectKey, authMode: 'access', name: <verified email>}` (`:131-133`). The Python gateway injects `ATLAS_RUNTIME` the same way (`atlas_voice/server.py:104`). A saved file keeps the `/* SERVER_RUNTIME */` placeholder, so `ATLAS_RUNTIME` is absent there. A placeholder or missing Access audience or team refuses signed-in routes (`deploy/cloudflare-edge/README.md`).
 - **Saved HTML file** (`file://`, any of the four `ATLAS_*.html` aliases). `src/voice-client.js` `check()` throws "The orb is running locally; a voice model is not connected…", and the catch shows `#gatewayOpenBox` in `#voiceConnectionDialog` (`src/shell.html`). There the user types an address. `src/studio-connection.js` `validate()` checks it with `AtlasStudioCore.gatewayOrigin` and requires the "I recognize and trust this application address" tick before the link is enabled.
 - **Teams tab.** WOW F4.6: `GET /teams/tab` (pre-Access) will call `app.openLink(ORIGIN)`.
 - **Old links.** Any path other than the known routes answers JSON 404 "This feature is not available in this deployment." (for example `/ATLAS_Voice.html`).
@@ -271,8 +271,8 @@ Old fragment links keep working.
 - `build.py` reads `deploy/cloudflare-edge/wrangler.jsonc`, drops full-line `//` comments (the `tests/test_edge.py` rule), runs `json.loads`, and takes `vars.ORIGIN`.
 - An `ATLAS_HOME_URL` environment variable at build time overrides it (for a future Mantu domain).
 - The value must match `^https://[a-z0-9.-]+$`, or else it becomes `''`.
-- A new slot, `__ATLAS_HOME__`, renders as `<script>window.ATLAS_HOME="https://atlas.tony-walteur.workers.dev";</script>`.
-- The value is public (it is already in the repo) and grants nothing, because the target is behind Access.
+- A new slot, `__ATLAS_HOME__`, renders as `<script>window.ATLAS_HOME="https://atlas.example.test";</script>`. That committed origin is a placeholder. `deploy.sh` rebuilds the page with the operator's `ATLAS_ORIGIN` after the pin check.
+- The committed value grants nothing. The live origin is behind Access, and a placeholder Access audience or team refuses signed-in routes.
 
 ---
 

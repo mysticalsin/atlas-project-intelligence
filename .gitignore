@@ -44,3 +44,6 @@ __pycache__/
 node_modules/
 .wrangler/
 .npm/
+# Operator deploy values. The example stays versioned. The temp wrangler file is written at deploy time.
+deploy/cloudflare-edge/deploy.local.env
+deploy/cloudflare-edge/deploy.wrangler.*.json

@@ -41,7 +41,7 @@ State-machine discovery skipped. This does not add or change a status, a phase, 
 
 `deploy/cloudflare-edge/generated/PAGE_SHA256.txt` on `3d9239c1` is the pin written at `ddb9226c242ef86e4800ea3a3a34fb8f173840f8`:
 
-`8b3328c681e6a126e2873a3737e2c72addaa1855363e58df65984943f8600921  923969  ATLAS_HOME=https://atlas.tony-walteur.workers.dev  ATLAS_HOME_URL=unset`
+`8b3328c681e6a126e2873a3737e2c72addaa1855363e58df65984943f8600921  923969  ATLAS_HOME=https://atlas.example.test  ATLAS_HOME_URL=unset`
 
 That digest is `ATLAS_Voice.html` at `ddb9226` (923969 bytes).
 
@@ -65,7 +65,7 @@ That is the PR10 page: the `#admin` deep link from `a9878d6`, and the journey st
 
 ## Decision
 
-Regenerate the pin from the repo build. `ATLAS_HOME_URL` stays unset. `python3 build.py` prints `ATLAS_HOME: https://atlas.tony-walteur.workers.dev` and 924015 bytes. `sha256sum ATLAS_Voice.html` supplies the digest. The line keeps the existing spacing: digest, two spaces, byte count, two spaces, `ATLAS_HOME=`, two spaces, `ATLAS_HOME_URL=unset`.
+Regenerate the pin from the repo build. `ATLAS_HOME_URL` stays unset. `python3 build.py` prints `ATLAS_HOME: https://atlas.example.test` and 924015 bytes. `sha256sum ATLAS_Voice.html` supplies the digest. The line keeps the existing spacing: digest, two spaces, byte count, two spaces, `ATLAS_HOME=`, two spaces, `ATLAS_HOME_URL=unset`.
 
 The rebuild left the four aliases and `csp.generated.js` byte-identical to the parent. Each alias is `7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a`, 924015 bytes. `csp.generated.js` is `7d54de0b2fed28db9dd1f20106b9cf4526cadd3a9641495c3e68762620bd6dbf`, 1675 bytes. Logo SHA-256 stays `92c5ff21779f09199097a2971c172453017f0d2581a0ced6f54fe486ba9b6c2b`.
 

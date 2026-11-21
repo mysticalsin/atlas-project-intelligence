@@ -35,9 +35,21 @@ const toB64url = s => { let bin = ''; for (const b of enc.encode(s)) bin += Stri
 const hex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
 let certs = { at: 0, keys: [] };
 
+// Committed wrangler.jsonc ships placeholders. A blank value, the audience placeholder,
+// or a team on .example.test is not a configured Access application. Refuse before any
+// cert fetch. route() answers 401 when this returns null. ATLAS_DEV_IDENTITY is not a fallback.
+const ACCESS_AUD_PLACEHOLDER = 'replace-me';
+function accessConfigured(env) {
+  const aud = String(env?.ACCESS_AUD ?? '').trim();
+  const team = String(env?.ACCESS_TEAM_DOMAIN ?? '').trim().toLowerCase();
+  if (!aud || !team) return false;
+  if (aud.toLowerCase() === ACCESS_AUD_PLACEHOLDER) return false;
+  if (team === 'example.test' || team.endsWith('.example.test')) return false;
+  return true;
+}
 export async function verifyAccess(request, env, fetcher = fetch) {
   const token = request.headers.get('cf-access-jwt-assertion');
-  if (!token || !env.ACCESS_AUD || !env.ACCESS_TEAM_DOMAIN) return null;
+  if (!token || !accessConfigured(env)) return null;
   const [h, p, s] = token.split('.');
   if (!h || !p || !s) return null;
   const header = JSON.parse(new TextDecoder().decode(b64url(h))), payload = JSON.parse(new TextDecoder().decode(b64url(p)));
