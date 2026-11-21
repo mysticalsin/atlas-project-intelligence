@@ -927,8 +927,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/entra/enable_entra.sh",
-      "bytes": 1927,
-      "sha256": "75b61868a580b1dce2b623afb660ee6133418bdf057ae1f25619ffac46ec6f0c"
+      "bytes": 4311,
+      "sha256": "e6143bda9a40ffc53e6dfa40735bddc33b3c3c1d23eac9430cac10a24bd7c152"
     },
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
@@ -3339,6 +3339,11 @@
       "path": "tests/swarm.test.js",
       "bytes": 4453,
       "sha256": "a24021f99bb237a712504f42edb4add1155258f476e83c678fc4d9065234cedc"
+    },
+    {
+      "path": "tests/sweep01-g17-entra-argv.test.js",
+      "bytes": 10386,
+      "sha256": "067f35df19988039313715445ebe6a13bdb8670c8a074d0815a7019be1430e51"
     },
     {
       "path": "tests/test_analyst.py",
