@@ -3147,8 +3147,8 @@
     },
     {
       "path": "tests/identity-change.test.js",
-      "bytes": 42243,
-      "sha256": "9443143cb05c161769feaa29c2d2e1c872d8534ad0018423d4296fc1c3669074"
+      "bytes": 42286,
+      "sha256": "884603898bf5f11576fe135b486fa2dc2b1765274ede710fe5c66b9074fba1ac"
     },
     {
       "path": "tests/intelligence-browser-results.json",

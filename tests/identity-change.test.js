@@ -870,7 +870,7 @@ describe('access identity change, clean console', { concurrency: false }, () => 
       documentElement: { append(node) { node.connected = true; node.parentNode = this; if (node && node.id) nodes.set(node.id, node); } },
       visibilityState: 'visible', hidden: false,
       addEventListener() {}, removeEventListener() {},
-      getElementById(id) { return nodes.get(id) || null; },
+      getElementById(id) { const node = nodes.get(id); return node && node.connected ? node : null; },
       createElement() { return bag(); },
       querySelector() { return bag(); },
       querySelectorAll() { return []; },
