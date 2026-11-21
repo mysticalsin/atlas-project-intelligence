@@ -1,8 +1,10 @@
 """Pure lifecycle for one tree's generated page.
 
 `transition` returns the next state or an `IllegalTransition`. It does not
-read the environment, write a file, or call a deployer. The page pipeline
-does not call this module. Deploy still compares the committed pin.
+read the environment, write a file, or call a deployer. This slice has no
+caller. P2 is the first caller: the verify script writes the gate packet
+through this reducer. P3 connects `publish_ok` to `deploy.sh`. Deploy still
+compares the committed pin until that slice.
 """
 
 import hashlib
@@ -27,14 +29,14 @@ EVENT_NAMES = (
 
 _FIELDS = {
     "SourceChanged": ("head", "tree"),
-    "Built": ("head", "tree", "page_sha256", "nbytes", "csp_sha256", "atlas_home"),
-    "Pinned": ("head", "tree", "page_sha256", "nbytes", "csp_sha256", "atlas_home", "pin"),
-    "Verified": ("head", "tree", "page_sha256", "nbytes", "csp_sha256", "atlas_home", "pin", "packet"),
+    "Built": ("head", "tree", "page_sha256", "bytes", "csp_sha256", "atlas_home"),
+    "Pinned": ("head", "tree", "page_sha256", "bytes", "csp_sha256", "atlas_home", "pin"),
+    "Verified": ("head", "tree", "page_sha256", "bytes", "csp_sha256", "atlas_home", "pin", "packet"),
     "Deployed": (
         "head",
         "tree",
         "page_sha256",
-        "nbytes",
+        "bytes",
         "csp_sha256",
         "atlas_home",
         "pin",
@@ -52,7 +54,7 @@ TRANSITIONS = {
     ("SourceChanged", "build_fail"): ("SourceChanged", ()),
     ("Built", "pin_ok"): (
         "Pinned",
-        ("g_same_head", "g_same_tree", "g_pin_matches_bytes", "g_home_annotation"),
+        ("g_same_head", "g_same_tree", "g_pin_matches_bytes", "g_home_annotation", "g_stale_pin_file"),
     ),
     ("Built", "pin_fail"): ("Built", ()),
     ("Built", "edit"): ("SourceChanged", ()),
@@ -68,7 +70,7 @@ TRANSITIONS = {
     ),
     ("Verified", "publish_ok"): (
         "Deployed",
-        ("g_verified_packet", "g_post_test_hash", "g_same_tree", "g_deploy_lookup"),
+        ("g_verified_packet", "g_post_test_hash", "g_same_tree", "g_stale_pin_file", "g_deploy_lookup"),
     ),
     ("Verified", "publish_refused"): ("Verified", ()),
     ("Verified", "edit"): ("SourceChanged", ()),
@@ -136,12 +138,12 @@ def packet_sha256(packet):
     return hashlib.sha256(packet_bytes(packet)).hexdigest()
 
 
-def format_pin_line(page_sha256, nbytes, atlas_home, atlas_home_url="unset"):
-    if not _hex64(page_sha256) or isinstance(nbytes, bool) or not isinstance(nbytes, int) or nbytes < 0:
+def format_pin_line(page_sha256, size, atlas_home, atlas_home_url="unset"):
+    if not _hex64(page_sha256) or type(size) is not int or size < 0:
         return None
     if not _ident(atlas_home) or not _ident(atlas_home_url):
         return None
-    return f"{page_sha256}  {nbytes}  ATLAS_HOME={atlas_home}  ATLAS_HOME_URL={atlas_home_url}\n"
+    return f"{page_sha256}  {size}  ATLAS_HOME={atlas_home}  ATLAS_HOME_URL={atlas_home_url}\n"
 
 
 def parse_pin_line(line):
@@ -167,7 +169,7 @@ def parse_pin_line(line):
         return None
     return {
         "page_sha256": page,
-        "nbytes": int(raw_nbytes),
+        "bytes": int(raw_nbytes),
         "atlas_home": home,
         "atlas_home_url": token,
     }
@@ -179,7 +181,7 @@ def _pin_line(state, event):
         return supplied
     return format_pin_line(
         state.get("page_sha256"),
-        state.get("nbytes"),
+        state.get("bytes"),
         state.get("atlas_home"),
         event.get("atlas_home_url", "unset"),
     )
@@ -231,7 +233,7 @@ def g_pin_matches_bytes(state, event):
     parsed = parse_pin_line(_pin_line(state, event) or "")
     if parsed is None:
         return False
-    return parsed["page_sha256"] == state.get("page_sha256") and parsed["nbytes"] == state.get("nbytes")
+    return parsed["page_sha256"] == state.get("page_sha256") and parsed["bytes"] == state.get("bytes")
 
 
 def g_home_annotation(state, event):
@@ -248,14 +250,13 @@ def g_packet_head(state, event):
     checkout = _checkout(event, "checkout_head")
     if not isinstance(packet, dict) or checkout is None:
         return False
-    return packet.get("version") == 1 and packet.get("head") == checkout
+    return _version_is_one(packet.get("version")) and packet.get("head") == checkout
 
 
 def g_verified_packet(state, event):
+    # The packet has to already be on the state. An event packet is not a substitute.
     packet = _state_packet(state)
-    if packet is None:
-        packet = _event_packet(event)
-    if not isinstance(packet, dict) or packet.get("verified") is not True or packet.get("version") != 1:
+    if not isinstance(packet, dict) or packet.get("verified") is not True or not _version_is_one(packet.get("version")):
         return False
     checkout_head = _checkout(event, "checkout_head")
     checkout_tree = _checkout(event, "checkout_tree")
@@ -353,8 +354,12 @@ GUARDS = {
 }
 
 
+def _version_is_one(value):
+    return type(value) is int and value == 1
+
+
 def load_packet(raw):
-    if not isinstance(raw, dict) or raw.get("version") != 1:
+    if not isinstance(raw, dict) or not _version_is_one(raw.get("version")):
         return _illegal("packet", "load", "version")
     tree = raw.get("tree")
     if not _ident(tree):
@@ -367,14 +372,14 @@ def load_packet(raw):
 
 def _built_fields(event):
     page = event.get("page_sha256")
-    nbytes = event.get("nbytes")
+    size = event.get("bytes")
     csp = event.get("csp_sha256")
     home = event.get("atlas_home")
-    if not _hex64(page) or isinstance(nbytes, bool) or not isinstance(nbytes, int) or nbytes < 0:
+    if not _hex64(page) or type(size) is not int or size < 0:
         return None
     if not _hex64(csp) or not _ident(home):
         return None
-    return {"page_sha256": page, "nbytes": nbytes, "csp_sha256": csp, "atlas_home": home}
+    return {"page_sha256": page, "bytes": size, "csp_sha256": csp, "atlas_home": home}
 
 
 def _project(state, name):

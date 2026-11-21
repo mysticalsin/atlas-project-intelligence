@@ -1647,3 +1647,10 @@ winloop.js:68 1
 - `build.py`, `scripts/verify_page_build.sh`, `deploy/cloudflare-edge/deploy.sh`, and `scripts/check_handoff.py` are not edited. Deploy still compares `generated/PAGE_SHA256.txt`. The pin writer round-trips that committed line, including `ATLAS_HOME_URL=unset`.
 - Characterization `49ce47d2a1e69aaca0164cc14079101a5bea8bd2` is the pin line and the uncalled pipeline. Those three tests were green before this reducer. A one-nibble pin change failed the pin test. A `deploy.sh` comment that named the module failed the caller test. Both mutants were restored and are not in that commit. After the reducer, making `publish_ok` from `SourceChanged` return `Deployed` failed `test_publish_from_source_changed_is_illegal`. That mutant was restored and is not in this commit.
 - Gate counts for this head are in the agent store, not in this file. Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open.
+
+### Session: 2026-11-21 / artifact lifecycle loop 2 (A21 P1)
+
+- Inspector on `258677281f76ded2e047a0a8ce9b396db5f339dd` is PASS WITH NOTES, ADAPT. Report sha prefix `d99bb511`. Same branch. No deploy, no workflow edit, no Actions rerun.
+- Red `b1267c8adff11b27b2ad1b53d11b1572d3ddfb28` adds four tests and does not change the reducer. `True` and `1.0` still publish. A `bytes` build event does not land. A disagreeing leftover pin does not block pin or publish. A `Verified` state with no packet fails `g_deploy_lookup` rather than `g_verified_packet` when the event carries a packet.
+- The fix requires `type(version) is int` and `version == 1`. The length field is `bytes`. `g_stale_pin_file` is on `pin_ok` and `publish_ok`. `g_verified_packet` does not read an event packet. The four red tests are not edited. The reducer still has no caller. P2 is the first caller. P3 connects `publish_ok` to deploy. Decision: `handoff/untangle-decision-log.md`, section Artifact lifecycle, loop 2.
+- Gate counts for this head are in the agent store, not in this file. Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open.

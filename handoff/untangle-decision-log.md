@@ -59,3 +59,15 @@ The page pipeline's publish rule is a reducer in `scripts/artifact_lifecycle.py`
 Callers stay on the shell. `build.py`, `scripts/verify_page_build.sh`, `deploy/cloudflare-edge/deploy.sh`, and `scripts/check_handoff.py` do not import this module. Deploy still compares `generated/PAGE_SHA256.txt`. Wiring the reducer into deploy is P3. That step is release gating and is not this change.
 
 The pin writer emits the committed line: lowercase sha256, two spaces, byte length, `ATLAS_HOME=`, two spaces, `ATLAS_HOME_URL=`. The committed file on `8b0972ec` uses `ATLAS_HOME_URL=unset`. Question 8 of the R1+R2 plan stays open. This writer matches that file. It does not decide that the token is frozen.
+
+## Artifact lifecycle, loop 2
+
+Inspector on `25867728`: `True` and `1.0` passed `version != 1` and `publish_ok` reached `Deployed`. The version is the integer 1. `type(value) is int` rejects a boolean, a float, and a string. `load_packet`, `g_packet_head`, and `g_verified_packet` share that check.
+
+The built length field is `bytes`, the name in the A21 state table. The pin parser returns that same key.
+
+`g_stale_pin_file` is on `pin_ok` and on `publish_ok`. A leftover pin whose digest differs from the built page is `IllegalTransition`. No leftover file still passes.
+
+`g_verified_packet` reads the packet stored on the state. It does not borrow a packet from the event. `verify_ok` still takes the packet from the event, because that is the step that stores it.
+
+The reducer stays unwired. P2 is the first caller, when the verify script writes the gate packet. P3 is the slice that connects `publish_ok` to `deploy.sh`. This loop does not edit those scripts.

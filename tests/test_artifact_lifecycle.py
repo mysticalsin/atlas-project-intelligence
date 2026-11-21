@@ -84,7 +84,7 @@ def test_writer_emits_the_committed_pin_line():
     assert parsed is not None
     assert format_pin_line(
         parsed["page_sha256"],
-        parsed["nbytes"],
+        parsed["bytes"],
         parsed["atlas_home"],
         parsed["atlas_home_url"],
     ) == raw
@@ -112,7 +112,7 @@ def _built():
         "head": HEAD,
         "tree": TREE,
         "page_sha256": PAGE,
-        "nbytes": NBYTES,
+        "bytes": NBYTES,
         "csp_sha256": CSP,
         "atlas_home": HOME,
     }
@@ -176,7 +176,7 @@ EVENTS = {
         "second_sha256": PAGE,
         "alias_sha256s": (PAGE, PAGE, PAGE, PAGE),
         "page_sha256": PAGE,
-        "nbytes": NBYTES,
+        "bytes": NBYTES,
         "csp_sha256": CSP,
         "atlas_home": HOME,
     },

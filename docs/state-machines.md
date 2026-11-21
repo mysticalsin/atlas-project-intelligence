@@ -320,7 +320,7 @@ The Teams card still says `This invitation is closed.` and `Nothing was changed.
 
 - Purpose: name the legal steps from a source change to a publish for one git tree, and refuse a publish that has no verified packet for that tree.
 - Code: `scripts/artifact_lifecycle.py`, tests: `tests/test_artifact_lifecycle.py`.
-- Persisted: no. The packet object is version 1. Loading version 0, a missing version, a later version, or a packet with no tree returns `IllegalTransition`. The reducer does not write the packet.
+- Persisted: no. The packet version is the integer 1. `True`, `1.0`, and `"1"` are not that version. Loading any of those, version 0, a missing version, a later version, or a packet with no tree returns `IllegalTransition`. The built length field is `bytes`. `g_stale_pin_file` is on `pin_ok` and `publish_ok`. `g_verified_packet` reads the packet on the state and does not take one from the event. The reducer does not write the packet. Nothing in the page pipeline calls this module yet. P2 is the first caller. P3 connects `publish_ok` to deploy.
 
 `build.py`, `scripts/verify_page_build.sh`, `deploy/cloudflare-edge/deploy.sh`, and `scripts/check_handoff.py` do not call it. The cross product is 50 pairs. Fourteen are legal. `publish_ok` from `SourceChanged`, from a `Verified` state with no packet, from a packet whose `verified` flag is false, or from a packet whose tree is not the checkout tree, is illegal. A publish with no deployment id stays `Verified`.
 
