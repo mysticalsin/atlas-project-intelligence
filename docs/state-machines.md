@@ -30,6 +30,7 @@ Row shape: section 4 of `docs/STATE-MACHINE-STANDARD.md`. Status in the summary 
 | 19 | Interview invitation status | `deploy/cloudflare-edge/src/invitation.js` (writers: `library.js` `updateInvitation` at :785, guard :792, UPDATEs :813, :818, :819, :820; `outreach.js` guard :540–:542, `teams_seen` and the status update in one `transactionSync` at :554–:565 (`changes()` at :557); unique index `library.js:186`) | open, scheduled, dismissed, done | `invitations.status` written only after `invitationTransition`; `slot` is the schedule effect | A done or dismissed invitation could be scheduled again. When another open row already held that scope, the `invitations_open_scope` index threw and the route returned 500. | M | FIXED. One transition, a status compare-and-swap, and a 409 refusal. |
 | 20 | JEV rating consent | `deploy/cloudflare-edge/src/profile.js:594` `storedConsent`; grant and revoke at :669; `library.js:371` `consentTenant`, `jevAllowed` at :376, `engineFor` at :377 | absent, or `{version:1}` for `jevRating`, one row per subject and tenant | `consents.jevRating` | A missing tenant argument is absent. It does not read the blank-tenant row. `jevAllowed` passes the story tenant only when it matches `TENANT_ID`. | L | NOT A MACHINE. Two stored values, written in one route. No intermediate state and no retry. The tenant is the row key, not a state. |
 | 21 | Rating in flight per revision | `deploy/cloudflare-edge/src/library.js:444`–:464 `review` (`inflight` at :182; join :450–:456; `nextGen` :471; `storeRating` guard :479) | no entry, or one `{gen, engine}` for `id:revision`. The same engine joins. A different engine starts a new generation. | `this.inflight` | None newly reproduced. The map is the re-entrancy guard. | M | LATER. One rating at a time is an ordering rule. It is not the publication status. Not started in this run. |
+| 22 | Artifact page lifecycle | `scripts/artifact_lifecycle.py` `transition` | One git tree: source changed, built, pinned, verified, deployed | The state name plus the fields that name carries. No booleans. | None. The reducer has no caller. Deploy still compares the committed pin. | L | FIXED for the reducer. Not wired to build, verify, or deploy. |
 
 ## Story publication
 - Purpose: decide the status column from the story's quality, validation and withdrawal, reopen both approval lanes when the story is revised, and leave a withdrawn story withdrawn until a reviewer reinstates it.
@@ -314,3 +315,14 @@ None.
 
 ### Copy
 The Teams card still says `This invitation is closed.` and `Nothing was changed.` The library refusal joins those two existing sentences: `This invitation is closed. Nothing was changed.` No other sentence was added.
+
+## Artifact page lifecycle
+
+- Purpose: name the legal steps from a source change to a publish for one git tree, and refuse a publish that has no verified packet for that tree.
+- Code: `scripts/artifact_lifecycle.py`, tests: `tests/test_artifact_lifecycle.py`.
+- Persisted: no. The packet object is version 1. Loading version 0, a missing version, a later version, or a packet with no tree returns `IllegalTransition`. The reducer does not write the packet.
+
+`build.py`, `scripts/verify_page_build.sh`, `deploy/cloudflare-edge/deploy.sh`, and `scripts/check_handoff.py` do not call it. The cross product is 50 pairs. Fourteen are legal. `publish_ok` from `SourceChanged`, from a `Verified` state with no packet, from a packet whose `verified` flag is false, or from a packet whose tree is not the checkout tree, is illegal. A publish with no deployment id stays `Verified`.
+
+### Platform / flag differences
+`ATLAS_HOME_URL` is a field on the pin line. The reducer does not read the environment. A different token on that line does not refuse `pin_ok` or `publish_ok` when the page hash and the `ATLAS_HOME` origin match.
