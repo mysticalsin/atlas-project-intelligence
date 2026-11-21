@@ -484,3 +484,80 @@ test('a stored requirement tailors the CV and the export stays local', async () 
     assert.equal(l.rows('SELECT COUNT(*) AS n FROM living_requirements')[0].n, 0);
   } finally { globalThis.fetch = orig; }
 });
+
+const SALARY_KEY = /salary|compensation|remuneration|marketvalue|wage|bonus|payroll|tjm|dailyrate/i;
+
+function salaryKeys(value, path = '') {
+  if (!value || typeof value !== 'object') return [];
+  const found = [];
+  for (const [key, child] of Object.entries(value)) {
+    if (SALARY_KEY.test(key)) found.push(path + key);
+    found.push(...salaryKeys(child, path + key + '.'));
+  }
+  return found;
+}
+
+function docxXml(file) {
+  return Buffer.from(file.body.base64, 'base64').toString('utf8');
+}
+
+test('the owner cannot approve, including by letter case or another address for the same person', async () => {
+  const l = lib();
+  await publish(l);
+  await consent(l);
+  const made = await living.routes({ method: 'POST', parts: ['living', 'generate'], user: OWNER, lib: l, body: { text: 'Must have\nWindows\nC#' } });
+  const id = made.body.artifact.id;
+  const attempt = user => living.routes({ method: 'POST', parts: ['living', 'artifacts', id, 'approve'], user, lib: l, body: {} });
+  await assert.rejects(attempt(OWNER), /cannot approve/);
+  await assert.rejects(attempt({ ...OWNER, email: 'Ada@example.test', role: 'presales' }), /cannot approve/);
+  await assert.rejects(attempt({ ...OWNER, email: 'ada.alias@example.test', mail: OWNER.email, role: 'presales' }), /cannot approve/);
+  assert.equal(l.rows('SELECT status FROM living_artifacts WHERE id = ?', id)[0].status, 'in_review');
+});
+
+test('export waits for approval, a second approval is refused, and a revoked or edited CV cannot be exported', async () => {
+  const l = lib();
+  await publish(l);
+  await consent(l);
+  const made = await living.routes({ method: 'POST', parts: ['living', 'generate'], user: OWNER, lib: l, body: { text: 'Must have\nWindows\nC#' } });
+  const id = made.body.artifact.id;
+  const approve = user => living.routes({ method: 'POST', parts: ['living', 'artifacts', id, 'approve'], user, lib: l, body: {} });
+  const exp = () => living.routes({ method: 'POST', parts: ['living', 'artifacts', id, 'export'], user: OWNER, lib: l, body: { format: 'docx', adapter: 'michat' } });
+  await assert.rejects(exp(), /not available/);
+  const approved = await approve(PRE);
+  assert.equal(approved.body.status, 'approved');
+  await assert.rejects(approve(PRE), /not available/);
+  assert.equal(l.rows('SELECT status FROM living_artifacts WHERE id = ?', id)[0].status, 'approved');
+  const file = await exp();
+  const xml = docxXml(file);
+  assert.equal(xml.includes('Designed the Windows service'), true);
+  const stored = JSON.parse(l.rows('SELECT payload FROM living_artifacts WHERE id = ?', id)[0].payload);
+  stored.lines[0].text = 'Edited after approval.';
+  l.recorded(() => l.exec('UPDATE living_artifacts SET payload = ? WHERE id = ?', JSON.stringify(stored), id));
+  await assert.rejects(exp(), /approval no longer matches/);
+  await living.routes({ method: 'POST', parts: ['living', 'artifacts', id, 'reject'], user: PRE, lib: l, body: {} });
+  assert.equal(l.rows('SELECT status FROM living_artifacts WHERE id = ?', id)[0].status, 'draft');
+  await assert.rejects(exp(), /not available/);
+  await assert.rejects(approve(PRE), /not available/);
+});
+
+test('the fixture, the CV model, the docx template, and the exported document have no salary field', async () => {
+  const fixture = JSON.parse(readFileSync(new URL('./smart-need-192497-candidate-requirement.json', import.meta.url), 'utf8'));
+  assert.deepEqual(salaryKeys(fixture), []);
+  const l = lib();
+  await publish(l);
+  await consent(l);
+  const made = await living.routes({ method: 'POST', parts: ['living', 'generate'], user: OWNER, lib: l, body: { text: 'Must have\nWindows\nC#\nSalary 99123-salary-sentinel' } });
+  assert.deepEqual(salaryKeys(made.body.artifact), []);
+  assert.equal(JSON.stringify(made.body.artifact).includes('99123-salary-sentinel'), false);
+  const cf = made.body.artifact.cf;
+  assert.deepEqual(salaryKeys(cf), []);
+  await living.routes({ method: 'POST', parts: ['living', 'artifacts', made.body.artifact.id, 'approve'], user: PRE, lib: l, body: {} });
+  const file = await living.routes({ method: 'POST', parts: ['living', 'artifacts', made.body.artifact.id, 'export'], user: OWNER, lib: l, body: { format: 'docx', adapter: 'michat' } });
+  const xml = docxXml(file);
+  assert.equal(xml.includes('word/document.xml'), true);
+  assert.equal(SALARY_KEY.test(xml), false);
+  assert.equal(xml.includes('99123-salary-sentinel'), false);
+  const template = readFileSync(new URL('../src/living-core.js', import.meta.url), 'utf8');
+  const builder = template.slice(template.indexOf('function documentLines'), template.indexOf('export function bytesToBase64'));
+  assert.equal(SALARY_KEY.test(builder), false);
+});
