@@ -1,0 +1,169 @@
+{
+  "version": "2026-10-31.2",
+  "status": "DRAFT — controls implemented in code; wording, lawful bases, controller and DPO details need DPO and legal sign-off",
+  "purposes": [
+    "transcription",
+    "draft",
+    "checkpoint",
+    "memory",
+    "notice"
+  ],
+  "toggles": {
+    "capture": {
+      "purposes": [
+        "transcription",
+        "draft"
+      ],
+      "required": true,
+      "text": "I agree that ATLAS transcribes what I say and saves my notes, transcript and report as a private draft that only I can see until I click Submit for review.",
+      "text_mode_purposes": [
+        "draft"
+      ],
+      "text_mode_text": "I agree that ATLAS saves what I type, my notes and my report as a private draft that only I can see until I click Submit for review."
+    },
+    "checkpoint": {
+      "purposes": [
+        "checkpoint"
+      ],
+      "required": false,
+      "text": "Keep this interview for up to 24 hours so I can resume it if the connection drops. It is deleted automatically after 24 hours, or as soon as I end or discard the interview."
+    },
+    "memory": {
+      "purposes": [
+        "memory"
+      ],
+      "required": false,
+      "text": "Let ATLAS remember a few short, neutral facts about my projects between interviews (private to me, kept with its memory service). Nothing I keep private is stored. I can see and erase it at any time."
+    },
+    "notice": {
+      "purposes": [
+        "notice"
+      ],
+      "required": false,
+      "text": "I have read the privacy notice."
+    }
+  },
+  "profile_consents": {
+    "spoken_ask": {
+      "text": "Allow ATLAS to transcribe my short spoken questions in Ask. The recording is sent for transcription and is not kept."
+    },
+    "jev_rating": {
+      "text": "Allow my reference write-ups to be rated by TypeSafe's JEV service. The text of the write-up (without my name or client details) is sent to TypeSafe for that."
+    }
+  },
+  "special_category_sentence": "Please do not share information about your health, religion, politics, trade-union membership, sexual orientation or ethnic origin. If you do, ATLAS will offer to keep that part private.",
+  "notice": {
+    "title": "How ATLAS handles your information",
+    "intro": "ATLAS is a voice-first interview that helps you turn a past project into a reusable reference. This notice explains what is collected, who sees it, how long it is kept and how you control it. Items in square brackets are placeholders that Mantu's DPO and legal team must complete before real use.",
+    "sections": [
+      {
+        "id": "controller",
+        "title": "Who is responsible",
+        "paragraphs": [
+          "Controller: [CONTROLLER — Mantu legal entity, registered address — to be completed by Mantu legal].",
+          "Data Protection Officer: [DPO name and contact — to be completed by Mantu]."
+        ]
+      },
+      {
+        "id": "purposes",
+        "title": "What your information is used for",
+        "paragraphs": [
+          "Running the interview: your voice is turned into text so ATLAS can reply and take notes. Audio is not stored.",
+          "Keeping a private draft of your notes, transcript and report. Only you can see it until you click Submit for review.",
+          "After you submit: review by your N+1 or a reviewer and, once approved, reuse as reference material for future Mantu projects.",
+          "Optional, each off unless you tick it: resuming an interrupted interview (up to 24 hours) and a short private memory between interviews.",
+          "Lawful basis for each purpose: [LAWFUL BASIS PER PURPOSE — DPO to confirm]."
+        ]
+      },
+      {
+        "id": "data",
+        "title": "What is collected",
+        "paragraphs": [
+          "Your words, spoken (as text) or typed; your project details, notes, report and any evidence statements you confirm.",
+          "Your sign-in identity (work email and name from your Microsoft or Access sign-in), your N+1 if known, and the choices you make in the consent dialog (consent receipts).",
+          "A quality score of the write-up (it rates the write-up, not you), review decisions, and an audit record of who did what.",
+          "ATLAS does not identify you by your voice, does not record audio, and does not infer anything about you as a person (no mood, personality, skill or performance judgements)."
+        ]
+      },
+      {
+        "id": "special",
+        "title": "Sensitive personal information",
+        "paragraphs": [
+          "Please do not share information about your health, religion, politics, trade-union membership, sexual orientation or ethnic origin. If you do, ATLAS will offer to keep that part private.",
+          "ATLAS matches a short list of sensitive terms in several languages only to make that offer. It never records anything about you from it, and text it flags is not sent to its memory service."
+        ]
+      },
+      {
+        "id": "recipients",
+        "title": "Who receives it",
+        "paragraphs": [
+          "Inside Mantu: you; your N+1 and reviewers only after you submit; administrators only for operating the service.",
+          "Processors: Cloudflare (hosting, storage and the Workers AI models for speech-to-text, language and text-to-speech).",
+          "Only if switched on: ElevenLabs (speech for some languages; receives the text ATLAS speaks), Hindsight (private memory, only if you turn it on), TypeSafe (story quality rating, only if you allow it).",
+          "Your name never goes to a language model. The processor list, locations and contracts are in the sub-processor register: [PROCESSOR LOCATIONS AND DPAs — to verify]."
+        ]
+      },
+      {
+        "id": "transfers",
+        "title": "Transfers outside the EEA",
+        "paragraphs": [
+          "[TRANSFER MECHANISMS — to be completed after processor locations are verified]."
+        ]
+      },
+      {
+        "id": "retention",
+        "title": "How long it is kept",
+        "paragraphs": [
+          "Interrupted interviews: deleted automatically after 24 hours.",
+          "Other periods are proposals awaiting DPO confirmation (table below). Backups held by the platform can outlast deletion for a short period: [PLATFORM RECOVERY WINDOW — to verify]."
+        ]
+      },
+      {
+        "id": "rights",
+        "title": "Your rights and how to use them",
+        "paragraphs": [
+          "Access and portability: choose Download my data in your profile to get a machine-readable file.",
+          "Erasure: choose Delete my data in your profile. Content you wrote is replaced by empty markers. Approved material already used in a bid is flagged for the DPO to review instead of being silently deleted.",
+          "Withdraw consent: change the toggles in your profile at any time. Withdrawing is recorded and does not affect what was done before.",
+          "Restriction and objection: you can ask ATLAS to stop scoring, matching or remembering your material.",
+          "You can complain to your supervisory authority. Contact: [PRIVACY CONTACT — to be completed]."
+        ]
+      },
+      {
+        "id": "checkpoint",
+        "title": "Interrupted interviews (24 hours)",
+        "paragraphs": [
+          "If you allow it, the state of a running interview is kept in your own storage for at most 24 hours from the first save so you can resume. It is then deleted automatically."
+        ]
+      },
+      {
+        "id": "text",
+        "title": "Typing instead of speaking",
+        "paragraphs": [
+          "You can type instead of speaking. No microphone is used and no audio is sent. Only saving your draft is needed."
+        ]
+      },
+      {
+        "id": "automated",
+        "title": "No automated decisions about people",
+        "paragraphs": [
+          "ATLAS does not make decisions about you by automated means. Quality scores describe the write-up, and people review every reference before it is shared."
+        ]
+      },
+      {
+        "id": "storage",
+        "title": "Your browser",
+        "paragraphs": [
+          "If you choose Save on this device, your workspace is stored unencrypted in this browser until you remove it. Nothing else is stored in your browser except small settings needed for the page to work. No advertising or tracking cookies are used."
+        ]
+      },
+      {
+        "id": "contact",
+        "title": "Contact",
+        "paragraphs": [
+          "[PRIVACY CONTACT — email and postal address, to be completed by Mantu]."
+        ]
+      }
+    ]
+  }
+}

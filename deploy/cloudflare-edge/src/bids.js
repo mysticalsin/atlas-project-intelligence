@@ -4,6 +4,7 @@
 // output is bounded and allow-listed, then passed through recordText BEFORE it is stored, so a stored value never
 // changes with the library: the author reads unmask(stored, map), everyone else (reviewers included)
 // forOthers(recordText(stored)). T2 (gap asks) and T3 (outreach previews) import getRequirement and bidView.
+import { Library } from './library.js';
 import { str, para, list, obj, fail, rateLimit } from './util.js';
 import { TENANT_ID, sameTenant } from './authz.js';
 import { pseudonymise, unmask, forOthers, recordText, recordMask, recordView, maskedPreview, safeSummary, piiText } from './scrub.js';
@@ -123,7 +124,7 @@ export function parseOnePager(text, snippetById, reqIds) {
 const DDL = [
   `CREATE TABLE IF NOT EXISTS bids (id TEXT PRIMARY KEY, owner TEXT NOT NULL, owner_mail TEXT, title TEXT, alias TEXT, prospects TEXT, brief TEXT,
     pseudo TEXT, requirements TEXT, customer TEXT, req_method TEXT, match TEXT, status TEXT, outcome TEXT, outcome_note TEXT, decided_at TEXT,
-    decided_by TEXT, purged_at TEXT, created_at TEXT, updated_at TEXT)`,
+    decided_by TEXT, purged_at TEXT, created_at TEXT, updated_at TEXT, tenant TEXT NOT NULL DEFAULT '')`,
   'CREATE INDEX IF NOT EXISTS bids_owner ON bids(owner)',
   `CREATE TABLE IF NOT EXISTS bid_references (bid_id TEXT, ref_id TEXT, revision INTEGER, proof_type TEXT, used_at TEXT, used_by TEXT,
     PRIMARY KEY (bid_id, ref_id))`,
@@ -131,9 +132,11 @@ const DDL = [
 const ensured = new WeakSet();
 export function ensure(lib) {
   if (ensured.has(lib)) return;
-  for (const q of DDL) lib.sql.exec(q);
-  const cols = lib.rows("SELECT name FROM pragma_table_info('bids')").map(r => r.name);
-  if (cols.length && !cols.includes('tenant')) lib.sql.exec("ALTER TABLE bids ADD COLUMN tenant TEXT NOT NULL DEFAULT ''");
+  lib.schema(() => {
+    for (const q of DDL) lib.exec(q);
+    const cols = lib.rows("SELECT name FROM pragma_table_info('bids')").map(r => r.name);
+    if (cols.length && !cols.includes('tenant')) Library.migrate(lib, 'bids-tenant');
+  });
   ensured.add(lib);
 }
 function bidTenant(user = {}) { return String(user.tenant || '').trim().toLowerCase(); }
@@ -263,10 +266,12 @@ async function create({ lib, user, body }) {
   // brief alone, and nothing reads the rest. Never a size-based refusal or label (a membership oracle, rule 5).
   const used = usedKeys([a.text, JSON.stringify(reqs), JSON.stringify(customer)]), pseudo = Object.fromEntries(Object.entries(p.map).filter(([k]) => used.has(k)));
   const id = lib.newId(), at = lib.now();
-  lib.sql.exec(`INSERT INTO bids (id, owner, owner_mail, title, alias, prospects, brief, pseudo, requirements, customer, req_method, match, status, outcome, created_at, updated_at, tenant)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'open', 'pending', ?, ?, ?)`, id, user.email, user.mail || '', title, a.text, JSON.stringify(prospects), brief,
-  JSON.stringify(pseudo), JSON.stringify(reqs), JSON.stringify(customer), method, at, at, tenant);
-  lib.log(id, user.email, 'bid created', `${reqs.length} requirements, ${method}`);
+  lib.recorded(() => {
+    lib.exec(`INSERT INTO bids (id, owner, owner_mail, title, alias, prospects, brief, pseudo, requirements, customer, req_method, match, status, outcome, created_at, updated_at, tenant)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'open', 'pending', ?, ?, ?)`, id, user.email, user.mail || '', title, a.text, JSON.stringify(prospects), brief,
+    JSON.stringify(pseudo), JSON.stringify(reqs), JSON.stringify(customer), method, at, at, tenant);
+    lib.log(id, user.email, 'bid created', `${reqs.length} requirements, ${method}`);
+  });
   return bidOut(lib, user, load(lib, user, id));
 }
 
@@ -304,8 +309,10 @@ function editRequirements({ lib, user, body }, row) {
   let next = Math.max(0, ...[...before, ...gapIds].map(reqNumber));
   for (const r of keep) if (!r.id) r.id = 'R' + ++next;
   const at = lib.now();
-  lib.sql.exec("UPDATE bids SET requirements = ?, pseudo = ?, req_method = 'manual', match = NULL, updated_at = ? WHERE id = ?", JSON.stringify(keep), JSON.stringify(map), at, row.id);
-  lib.log(row.id, user.email, 'requirements edited', `${keep.length} requirements`);
+  lib.recorded(() => {
+    lib.exec("UPDATE bids SET requirements = ?, pseudo = ?, req_method = 'manual', match = NULL, updated_at = ? WHERE id = ?", JSON.stringify(keep), JSON.stringify(map), at, row.id);
+    lib.log(row.id, user.email, 'requirements edited', `${keep.length} requirements`);
+  });
   return bidOut(lib, user, load(lib, user, row.id));
 }
 
@@ -325,8 +332,10 @@ async function match({ lib, user, body, env }, row) {
   const cur = lib.rows('SELECT requirements, customer, purged_at FROM bids WHERE id = ?', row.id)[0];
   if (!cur || cur.purged_at) throw fail(409, PURGED);
   if (cur.requirements !== row.requirements || cur.customer !== row.customer) throw fail(409, 'The requirements changed while the match ran. Run the match again.');
-  lib.sql.exec('UPDATE bids SET match = ?, updated_at = ? WHERE id = ?', JSON.stringify(stored), stored.runAt, row.id);
-  lib.log(row.id, user.email, 'proof matched', `${stored.verdict}, ${stored.results.length} results`);
+  lib.recorded(() => {
+    lib.exec('UPDATE bids SET match = ?, updated_at = ? WHERE id = ?', JSON.stringify(stored), stored.runAt, row.id);
+    lib.log(row.id, user.email, 'proof matched', `${stored.verdict}, ${stored.results.length} results`);
+  });
   return matchOut(lib, user, stored, viewOf(lib, user, row));
 }
 
@@ -484,13 +493,15 @@ function use({ lib, user, body }, row) {
     return r;
   });
   const at = lib.now();
-  for (const r of refs) {
-    if (lib.rows('SELECT 1 AS x FROM bid_references WHERE bid_id = ? AND ref_id = ?', row.id, r.id).length) continue; // idempotent per bid and reference
-    const type = proofTypeOf(lib, r); // fixed at the time of use
-    lib.sql.exec('INSERT INTO bid_references (bid_id, ref_id, revision, proof_type, used_at, used_by) VALUES (?, ?, ?, ?, ?, ?)', row.id, r.id, r.revision, type, at, user.email);
-    lib.log(r.id, user.email, 'used in bid', `bid ${row.id}, rev ${r.revision}, ${type}`);
-  }
-  lib.sql.exec('UPDATE bids SET updated_at = ? WHERE id = ?', at, row.id);
+  lib.recorded(() => {
+    for (const r of refs) {
+      if (lib.rows('SELECT 1 AS x FROM bid_references WHERE bid_id = ? AND ref_id = ?', row.id, r.id).length) continue; // idempotent per bid and reference
+      const type = proofTypeOf(lib, r); // fixed at the time of use
+      lib.exec('INSERT INTO bid_references (bid_id, ref_id, revision, proof_type, used_at, used_by) VALUES (?, ?, ?, ?, ?, ?)', row.id, r.id, r.revision, type, at, user.email);
+      lib.log(r.id, user.email, 'used in bid', `bid ${row.id}, rev ${r.revision}, ${type}`);
+    }
+    lib.exec('UPDATE bids SET updated_at = ? WHERE id = ?', at, row.id);
+  });
   return { used: usedOf(lib, user, row.id) };
 }
 function outcome({ lib, user, body }, row) {
@@ -498,9 +509,11 @@ function outcome({ lib, user, body }, row) {
   if (!OUTCOMES.includes(b.outcome)) throw fail(400, 'Choose won, lost, pending or withdrawn.');
   if (b.note !== undefined && (typeof b.note !== 'string' || str(b.note, 1000).length > 300)) throw fail(400, 'Keep the note to 300 characters.');
   const at = lib.now(), decided = b.outcome !== 'pending';
-  lib.sql.exec('UPDATE bids SET outcome = ?, outcome_note = ?, status = ?, decided_at = ?, decided_by = ?, updated_at = ? WHERE id = ?',
-    b.outcome, row.purged_at ? null : str(b.note, 300), decided ? 'decided' : 'open', decided ? at : null, decided ? user.email : null, at, row.id);
-  lib.log(row.id, user.email, 'bid outcome', b.outcome);
+  lib.recorded(() => {
+    lib.exec('UPDATE bids SET outcome = ?, outcome_note = ?, status = ?, decided_at = ?, decided_by = ?, updated_at = ? WHERE id = ?',
+      b.outcome, row.purged_at ? null : str(b.note, 300), decided ? 'decided' : 'open', decided ? at : null, decided ? user.email : null, at, row.id);
+    lib.log(row.id, user.email, 'bid outcome', b.outcome);
+  });
   return bidOut(lib, user, load(lib, user, row.id));
 }
 // Only the alias, requirements, outcome and uses stay (F7). The note is free text that may name the prospect, the
@@ -511,13 +524,15 @@ function purge({ lib, user }, row) {
   if (!isAuthor(row, user)) throw fail(403, 'Only the bid owner or an admin can delete it.');
   if (!row.purged_at) {
     const at = lib.now();
-    lib.sql.exec(`UPDATE bids SET title = NULL, brief = NULL, prospects = NULL, pseudo = NULL, customer = NULL, match = NULL, outcome_note = NULL,
-      purged_at = ?, updated_at = ? WHERE id = ?`, at, at, row.id);
     ensureGaps(lib);
     const gapTenant = String(row.tenant || '').toLowerCase();
-    lib.sql.exec("UPDATE gap_requests SET status = 'dismissed' WHERE bid_id = ? AND status = 'open' AND lower(COALESCE(tenant, '')) = ?", row.id, gapTenant);
-    lib.sql.exec("UPDATE gap_requests SET pseudo = NULL WHERE bid_id = ? AND lower(COALESCE(tenant, '')) = ?", row.id, gapTenant);
-    lib.log(row.id, user.email, 'bid purged', 'title, brief, customer summary, match, prospect names and name maps removed; open gap requests closed');
+    lib.recorded(() => {
+      lib.exec(`UPDATE bids SET title = NULL, brief = NULL, prospects = NULL, pseudo = NULL, customer = NULL, match = NULL, outcome_note = NULL,
+        purged_at = ?, updated_at = ? WHERE id = ?`, at, at, row.id);
+      lib.exec("UPDATE gap_requests SET status = 'dismissed' WHERE bid_id = ? AND status = 'open' AND lower(COALESCE(tenant, '')) = ?", row.id, gapTenant);
+      lib.exec("UPDATE gap_requests SET pseudo = NULL WHERE bid_id = ? AND lower(COALESCE(tenant, '')) = ?", row.id, gapTenant);
+      lib.log(row.id, user.email, 'bid purged', 'title, brief, customer summary, match, prospect names and name maps removed; open gap requests closed');
+    });
   }
   return bidOut(lib, user, load(lib, user, row.id));
 }

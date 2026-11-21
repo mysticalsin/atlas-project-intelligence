@@ -11,10 +11,13 @@ import { memoryRoutes } from './memory-routes.js';
 import { resolveForInterview } from './gaps.js';
 import { fetchWinHint } from './winloop.js';
 import { teamsClient } from './teams.js';
-import { libraryFromStorage } from './library-store.js';
+import { openDurableLibrary } from './library-store.js';
+import { limitRoute } from './ratelimit.js';
+import { loadState, memoryAllowed, recordConsent } from './privacy.js';
+import { auditKey } from './audit-chain.js';
 
 export default {
-  fetch: (request, env, ctx) => handle(request, env, page, { waitUntil: p => ctx.waitUntil(p) }),
+  fetch: (request, env, ctx) => handle(request, env, page, { waitUntil: p => ctx.waitUntil(p), log: line => console.log(line) }),
   // Daily: references not updated for six months get an update invitation for their owner (never auto-sent).
   scheduled,
 };
@@ -23,10 +26,22 @@ export class Interview extends DurableObject {
   constructor(ctx, env) { super(ctx, env); this.env = env; this.session = null; this.hs = hindsight(env); }
 
   async fetch(request) {
-    if (new URL(request.url).pathname.startsWith('/api/memory')) return memoryRoutes(request, { storage: this.ctx.storage, hs: this.hs, env: this.env });
+    const url = new URL(request.url);
+    if (url.pathname === '/api/limit') return limitRoute(request, this.ctx.storage);
+    if (url.pathname === '/api/consent' && request.method === 'POST') {
+      let wanted; try { wanted = await request.json(); } catch { return new Response(JSON.stringify({ error: 'Invalid JSON.' }), { status: 400, headers: { 'Content-Type': 'application/json' } }); }
+      const who = { user: request.headers.get('x-atlas-user') || '', role: request.headers.get('x-atlas-role') || 'user', mail: request.headers.get('x-atlas-email') || '', subj: request.headers.get('x-atlas-subj') || '' };
+      try {
+        const state = await recordConsent(this.ctx.storage, this.env, who, wanted);
+        return new Response(JSON.stringify(state), { headers: { 'Content-Type': 'application/json' } });
+      } catch (e) { return new Response(JSON.stringify({ error: e.message || 'Consent was not recorded.' }), { status: 400, headers: { 'Content-Type': 'application/json' } }); }
+    }
+    if (url.pathname.startsWith('/api/memory')) return memoryRoutes(request, { storage: this.ctx.storage, hs: this.hs, env: this.env });
     // Private memory for this person's interview: recall before the opening, JEV relevance check when configured.
+    // Recall stays off until this object has a granted memory purpose (privacy.js). The memoryOff flag still wins.
     const bank = request.headers.get('x-atlas-bank') || '', metric = (name, values) => console.log(JSON.stringify({ atlas_metric: name, ...values }));
-    const memory = this.hs && bank && (await this.ctx.storage.get('memoryOff')) !== true ? async project => {
+    const consent = await loadState(this.ctx.storage);
+    const memory = this.hs && bank && memoryAllowed(consent) && (await this.ctx.storage.get('memoryOff')) !== true ? async project => {
       const t0 = Date.now(); let found = await this.hs.recall(bank, recallQuery(project), { tags: project?.id && project.id !== 'new' ? ['project:' + project.id] : undefined });
       const n = found.length; let checked = 0;
       try { const j = await jevRelevant(this.env, found, project); found = j.memories; checked = j.checked; } catch { metric('memory_jev_error', {}); }
@@ -69,8 +84,8 @@ export class LibraryStore extends DurableObject {
     super(ctx, env);
     this.env = env;
     const ai = workersAI(env);
-    this.lib = libraryFromStorage(ctx.storage, { complete: messages => ai.complete(messages), embed: text => ai.embed(text),
-      readyScore: Number(env.READY_SCORE) || undefined, model: env.ANALYST_MODEL, services: { teams: teamsClient(env) }, rater: storyRater(env) }); // JEV only with TYPESAFE_API_KEY
+    this.lib = openDurableLibrary(ctx, env, { complete: messages => ai.complete(messages), embed: text => ai.embed(text),
+      readyScore: Number(env.READY_SCORE) || undefined, model: env.ANALYST_MODEL, services: { teams: teamsClient(env) }, rater: storyRater(env), auditKey: auditKey(env) }); // JEV only with TYPESAFE_API_KEY
   }
-  fetch(request) { return libraryRoutes(request, this.lib, { waitUntil: p => this.ctx.waitUntil(p), env: this.env }); }
+  fetch(request) { return libraryRoutes(request, this.lib, { waitUntil: p => this.ctx.waitUntil(p), env: this.env, storage: this.ctx.storage }); }
 }

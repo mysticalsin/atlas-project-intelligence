@@ -4,7 +4,7 @@ Do not rewrite completed components just to check a box. Each work package start
 ## 0 — Reproduce and understand the baseline
 **Inputs:** `CLAUDE.md`, current status, code map, compiled HTML and test report.
 
-Run `scripts/check_handoff.py` before changes, `scripts/doctor.py --profile preview`, the standard-library build, full Node/Python tests and all four browser scripts. View the supplied screenshots beside a real rendered page. Save logs under a fresh `handoff/verification/local-<date>/` directory rather than overwriting the received evidence.
+Run `scripts/doctor.py --profile preview`, the standard-library build, full Node/Python tests and all four browser scripts. For an extracted release directory or archive, run `make verify-package PACKAGE=path` to check it against its own `MANIFEST.json`. View the supplied screenshots beside a real rendered page. Save logs under a fresh `handoff/verification/local-<date>/` directory rather than overwriting the received evidence.
 
 **Done:** build produces all four identical aliases, preserved logo hash matches, local suites pass or each failure has a reproducible regression issue. Record environment versions and distinguish fixture/native tests. No provider calls needed.
 

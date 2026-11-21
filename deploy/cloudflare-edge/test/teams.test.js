@@ -4,8 +4,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { teamsStatus, teamsClient, verifyBotActivity, interviewCard, messageCard, resetBotKeyCache, OPENID_URL, BOT_ISSUER } from '../src/teams.js';
-import { teamsRoutes, TAB_CSP, eventOf } from '../src/teams-routes.js';
-import { Library } from '../src/library.js';
+import { teamsRoutes, tabPolicy, eventOf } from '../src/teams-routes.js';
+import { inlineScriptHashes } from '../src/csp.js';
+import { Library, sqlOf } from './hold.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import { memorySql } from './sqlite.js';
 
@@ -266,7 +267,7 @@ test('teamsRoutes invoke: the card action is answered in the HTTP 200 invoke res
   const { env, lib } = stack();
   await post(env, activity({ type: 'installationUpdate', action: 'add', id: 'inst-1' }));
   const inv = lib.invite('pm-system', { email: 'alex@mantu.com', reason: 'project_end', projectId: 'PRJ-9', slot: '2026-10-01T09:30' });
-  lib.sql.exec(`INSERT INTO outreach (id, kind, subject_id, channel, to_email, status, reason, payload, aad_object_id, created_at, directory_tenant, conversation_id) VALUES ('o1', 'interview_invite', ?, 'teams', 'alex@mantu.com', 'sent', '', '{"preview":{"title":"PRJ-9"}}', ?, 'x', ?, 'a:conv-alex')`, inv.id, OID, TID);
+  sqlOf(lib).exec(`INSERT INTO outreach (id, kind, subject_id, channel, to_email, status, reason, payload, aad_object_id, created_at, directory_tenant, conversation_id) VALUES ('o1', 'interview_invite', ?, 'teams', 'alex@mantu.com', 'sent', '', '{"preview":{"title":"PRJ-9"}}', ?, 'x', ?, 'a:conv-alex')`, inv.id, OID, TID);
   const invoke = (id, extra = {}) => activity({ type: 'invoke', name: 'adaptiveCard/action', id, text: undefined, value: { action: { type: 'Action.Execute', verb: 'snooze', data: { outreachId: 'o1' } } }, ...extra });
   const other = await post(env, invoke('i1', { from: { id: '29:kim', aadObjectId: 'aaaaaaaa-bbbb-cccc-dddd-ffffffffffff' } }));
   const ob = await other.json();
@@ -285,11 +286,14 @@ test('teamsRoutes tab: the launcher with its route-specific CSP when TeamsJS is 
   const js = 'window.microsoftTeams={app:{initialize:function(){return Promise.resolve()},openLink:function(){return Promise.resolve()}}};';
   const r = await teamsRoutes(new Request(ORIGIN + '/teams/tab'), ON, {}, { teamsJs: js });
   assert.equal(r.status, 200); assert.equal(r.headers.get('content-type'), 'text/html; charset=utf-8');
-  assert.equal(r.headers.get('content-security-policy'), TAB_CSP);
-  assert.match(TAB_CSP, /frame-ancestors https:\/\/teams\.microsoft\.com https:\/\/\*\.teams\.microsoft\.com https:\/\/\*\.cloud\.microsoft$/);
-  assert.match(TAB_CSP, /^default-src 'none'; script-src 'unsafe-inline';/);
+  const tabHtml = await r.text();
+  const expected = tabPolicy(await inlineScriptHashes(tabHtml));
+  assert.equal(r.headers.get('content-security-policy'), expected);
+  assert.match(expected, /frame-ancestors https:\/\/teams\.microsoft\.com https:\/\/\*\.teams\.microsoft\.com https:\/\/\*\.cloud\.microsoft/);
+  assert.match(expected, /script-src-attr 'none'/);
+  assert.equal(/script-src[^;]*unsafe-inline/.test(expected), false);
   assert.equal(r.headers.get('x-frame-options'), null);
-  const html = await r.text();
+  const html = tabHtml;
   assert.doesNotMatch(html, /<script[^>]+src|fetch\(|XMLHttpRequest|\/api\//, 'no external script and no API call');
   assert.ok(html.includes(js)); assert.match(html, /Open ATLAS/); assert.match(html, /microsoftTeams\.app\.initialize\(\)/); assert.match(html, /app\.openLink\(to\)/);
   assert.ok(html.includes('target=' + JSON.stringify(ORIGIN + '/go/start')), 'Open ATLAS goes to /go/start (the consent step)');
@@ -309,7 +313,7 @@ test('vendored TeamsJS: @microsoft/teams-js 2.57.0 embedded byte for byte (pinne
   assert.equal(digest, lock.file_sha256, 'the embedded string matches docs/SOURCE_LOCK.json');
   assert.doesNotMatch(TEAMS_JS, /<\/script|<!--/i, 'safe to inline');
   const r = await teamsRoutes(new Request(ORIGIN + '/teams/tab'), ON);
-  assert.equal(r.status, 200); assert.equal(r.headers.get('content-security-policy'), TAB_CSP);
+  assert.equal(r.status, 200); assert.equal(r.headers.get('content-security-policy'), tabPolicy(await inlineScriptHashes(await r.clone().text())));
   const html = await r.text(), scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
   assert.equal(scripts.length, 2); assert.equal(scripts[0], TEAMS_JS);
   assert.doesNotMatch(scripts[1], /fetch\(|XMLHttpRequest|\/api\//, 'the launcher itself calls no API');

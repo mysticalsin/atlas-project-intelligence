@@ -151,6 +151,43 @@ def test_authorized_wiki_export_has_markdown_index_and_excludes_drafts(vault):
  assert json.loads(z.read('manifest.json'))['records'][0]['content_hash']==s['content_hash']
 
 @pytest.mark.asyncio
+async def test_wiki_export_http_roundtrip_returns_zip(tmp_path):
+ import io, socket, zipfile
+ from dataclasses import replace
+ import aiohttp
+ from aiohttp import web
+ from atlas_voice.server import create_app
+ from atlas_voice.config import Config
+ from atlas_voice.wiki import WikiVault
+ root = tmp_path / 'vault'
+ v = WikiVault(root)
+ reviewed(v, 'internal')
+ with socket.socket() as sock:
+  sock.bind(('127.0.0.1', 0))
+  port = sock.getsockname()[1]
+ origin = f'http://127.0.0.1:{port}'
+ app = create_app(replace(Config(), origin=origin, port=port, wiki_root=str(root)))
+ runner = web.AppRunner(app, access_log=None)
+ await runner.setup()
+ await web.TCPSite(runner, '127.0.0.1', port).start()
+ try:
+  async with aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar(unsafe=True)) as client:
+   await client.get(origin)
+   boot = await (await client.get(origin + '/api/bootstrap')).json()
+   headers = {'Origin': origin, 'X-Atlas-CSRF': boot['csrf']}
+   response = await client.post(
+    origin + '/api/wiki/export', headers=headers, json={'audience': 'internal', 'consent': True})
+   assert response.status == 200
+   assert 'zip' in (response.headers.get('Content-Type') or '')
+   payload = await response.read()
+   assert zipfile.is_zipfile(io.BytesIO(payload))
+   names = zipfile.ZipFile(io.BytesIO(payload)).namelist()
+   assert 'index.md' in names and 'manifest.json' in names
+ finally:
+  await runner.cleanup()
+  v.close()
+
+@pytest.mark.asyncio
 async def test_jev_actual_adapter_body_and_confidence_label():
  from atlas_voice.jev import JevRanker
  class Response:

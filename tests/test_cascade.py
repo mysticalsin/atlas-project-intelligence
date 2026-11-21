@@ -289,7 +289,7 @@ async def test_cascade_refuses_a_gap_start_and_never_advertises_gap_mode(tmp_pat
     try:
         async with aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar(unsafe=True)) as c:
             await c.get(origin);b=await(await c.get(origin+'/api/bootstrap')).json()
-            assert 'features' not in b and 'gap' not in json.dumps(b).lower(), 'the Python gateway never advertises gap mode'
+            assert 'features' not in b and 'gap' not in b, 'the Python gateway never advertises gap mode'
             ws=await c.ws_connect(origin+'/api/voice',headers={'Origin':origin})
             await ws.send_json({'type':'start','consent':True,'csrf':b['csrf'],'project':PROJECT,'voice':'fixture-voice','capture':True,'memory':False,'gap':'ab'*16})
             seen=[]
