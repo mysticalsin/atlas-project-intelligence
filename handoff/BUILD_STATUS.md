@@ -9,6 +9,8 @@ Sentinel reviewed `4221a51f0d2dce6c2792ec774a3e1a3a193789b6` as CHANGES, report 
 
 No provider call.
 
+Measured on `cad20d8cab1ea6f3e5a6b51a5bc0ac12ca7324be`: `python3 -m pytest tests/test_*.py -q` 413 passed; `node --test tests/*.test.js` 420 passed, 0 failed; edge `node --test test/*.test.js` 1126 tests, 1122 passed, 0 failed, 4 skipped; `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui` 834 PASS, 0 FAIL; `python3 scripts/check_handoff.py . --dev-git-index` PASS.
+
 ## 2026-11-21 — A07 slice 2, confirmation read-back (`cursor/pr1-slice2-readback-6f11`)
 
 PR #5 is merged. Its head is `9438e73ac2b750e3f3dfdf1d60e1d4b03a374842`, merge `5c55c2bcf722963ec2182dfc463fb152e57f5c89`, and that commit is an ancestor of `main` `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. The copied-commit and null-hash remigration checks in `deploy/cloudflare-edge/test/s1-a5ba30c.test.js` pass on that tree. No new test was added for those closed findings.

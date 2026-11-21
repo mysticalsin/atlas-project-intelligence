@@ -2302,8 +2302,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 350259,
-      "sha256": "c6eee9292363055f4b9d3ae37932c3877f10994e3bb61ed394fd18de1f3c5ab4"
+      "bytes": 350628,
+      "sha256": "96099ef50333a56f187a36686d5c9f1048a0284fca23778584315c5d9eb1e6e5"
     },
     {
       "path": "handoff/CHANGELOG.md",
