@@ -13,7 +13,7 @@ const NOW = '2026-11-21T00:00:00.000Z';
 const NEXT = '2026-11-22T00:00:00.000Z';
 const ALEX_NAME = 'Alex Example';
 
-const caller = (role = 'user', email = 'ada@example.test') => ({
+const caller = (role = 'user', email = 'casey@example.test') => ({
   email, mail: email, role, tenant: TENANT, tenantEnforced: true,
 });
 
@@ -140,6 +140,33 @@ test('M1 a caller-set manager email does not unlock directory lookup', async () 
   const boss = await people(lib, user, 'boss@example.test');
   assert.equal(boss.status, 200);
   assert.equal(boss.body.name, 'Boss Person');
+});
+
+test('an address matches a whole members token or a consultant email', async () => {
+  const { lib } = open();
+  const user = caller();
+  directory(lib, TENANT, { email: 'member@example.test', name: 'Member Person', title: 'Lead', manager: '' });
+  directory(lib, TENANT, { email: 'consult@example.test', name: 'Consult Person', title: 'Lead', manager: '' });
+  story(lib, {
+    id: 'members-only', owner: 'editor@example.test', tenant: TENANT, updatedBy: 'editor@example.test',
+    sharedWith: [user.email], consultants: [],
+  });
+  sqlOf(lib).exec('UPDATE refs SET members = ? WHERE id = ?', ',member@example.test,', 'members-only');
+  story(lib, {
+    id: 'consultant-only', owner: 'editor@example.test', tenant: TENANT, updatedBy: 'editor@example.test',
+    sharedWith: [user.email],
+    consultants: [{ name: 'Consult Person', email: 'consult@example.test', role: 'Lead' }],
+  });
+  sqlOf(lib).exec('UPDATE refs SET members = ? WHERE id = ?', ',', 'consultant-only');
+  const member = await people(lib, user, 'member@example.test');
+  assert.equal(member.status, 200);
+  assert.equal(member.body.name, 'Member Person');
+  const consult = await people(lib, user, 'consult@example.test');
+  assert.equal(consult.status, 200);
+  assert.equal(consult.body.name, 'Consult Person');
+  const prefix = await people(lib, user, 'member@example.test.au');
+  assert.equal(prefix.status, 403);
+  assert.equal(JSON.stringify(prefix.body).includes('Member Person'), false);
 });
 
 test('M2 a self-written consultant does not unlock lookup', async () => {
@@ -306,6 +333,11 @@ test('L5 offset forms of one instant are kept or deleted together', () => {
   insert('bad-word@example.test', 'not-a-date');
   insert('bad-empty@example.test', '');
   insert('bad-calendar@example.test', '2026-13-40T00:00:00Z');
+  sqlOf(lib).exec(
+    'INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'other-tenant@example.test', OTHER, 'other-tenant@example.test', '{}', '{}', '{}', NOW, NOW,
+    new Date(cutoff - 86400000).toISOString(),
+  );
   profile.daily(lib, now, { tenantEnforced: true, tenant: TENANT });
   const left = new Set(lib.rows('SELECT email FROM profiles').map(r => r.email));
   const kept = forms(cutoff).map(seen => left.has('keep-' + seen));
@@ -317,6 +349,7 @@ test('L5 offset forms of one instant are kept or deleted together', () => {
   assert.equal(left.has('bad-word@example.test'), true);
   assert.equal(left.has('bad-empty@example.test'), true);
   assert.equal(left.has('bad-calendar@example.test'), true);
+  assert.equal(left.has('other-tenant@example.test'), true);
 });
 
 test('F2 a partition of profile fields and a later revoke keep every unrelated key', async () => {

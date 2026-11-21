@@ -1,6 +1,30 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-21 — Sweep 01 group 9 profile (`cursor/atlas-s01-fix-g9`)
+
+HIGH. Plan is PR #38 v4 `9ce5ea97d0c3b8ce653273162bb837221c77a271`, file `docs/sweeps/s01/plans/group-9-profile.md`, sha256 `12c84ca137f63b1c5243d2a49ce1e8bbb678cf1e1c87d87b0db5938bf39415b0`. SHA256SUMS sha256 `8893f60ebcb908e9fbb3265b05d96ca9e6e339496090535ac706e7d22c76681d`. Red tests were copied from PR #31 commit `96712474b59d6b058ef00479f2bb2d4eb065801e` and were not merged. Red commit `c9607777b51108c93fbf36aebe5aeb0d3a35aff1` is 14 tests, 0 pass, 14 fail, exit 1. The `L5|F2` pattern command on that commit is 3 tests, 3 fail, exit 1. Rollback is main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`.
+
+`profile.js` now compares profile `seen_at` as an instant, merges one edit or consent delta onto a fresh row with one compare retry then 409, and limits enforced directory lookup. Presales `access() === 'full'` is not a grant. A non-admin caller may resolve the directory manager or a same-tenant ref someone else wrote that role `user` would still open in full. Admin and reviewer resolve any exact address and the body has no `manager_email`. Unauthorized is 403 before `lookupPerson`. The owner cap is 30 distinct addresses per UTC day in `people_lookup`, including 403s. Admin and reviewer are exempt. The `rateLimit(...)` arguments are unchanged.
+
+Addendum G9-v4-L1: profile POST delete, `eraseMine`, and `daily` do not delete `people_lookup` and do not reset that cap. `subject-rights.js` was not edited. The plan sentence that called `erasePeopleLookups` is not implemented.
+
+Known limit: the new lookup check and the durable cap run only when `user.tenantEnforced === true`. An unenforced library still resolves any exact address. The hourly in-memory limiter still applies. A missing `updated_by` does not unlock a lookup. A later editor who is not the caller can unlock an address already on that row, and the daily cap still counts it.
+
+Touched: `deploy/cloudflare-edge/src/profile.js`, `deploy/cloudflare-edge/test/sweep01-a-logic.test.js`, `deploy/cloudflare-edge/test/sweep01-f-stress.test.js`, `deploy/cloudflare-edge/test/sweep01-g9-people.test.js`, this file, `MANIFEST.json`.
+
+Not deployed. No provider calls. GitHub Actions is PENDING because the Actions budget is exhausted. No workflow dispatch.
+
+Measured on the working tree before this paragraph's manifest refresh:
+
+- `node --test deploy/cloudflare-edge/test/sweep01-g9-people.test.js deploy/cloudflare-edge/test/sweep01-a-logic.test.js deploy/cloudflare-edge/test/sweep01-f-stress.test.js deploy/cloudflare-edge/test/profile.test.js`: 43 tests, 43 pass, 0 fail, 0 skipped, exit 0.
+- `node --test tests/*.test.js`: 419 tests, 419 pass, 0 fail, 0 skipped, exit 0.
+- `cd deploy/cloudflare-edge && node --test test/*.test.js`: 1132 tests, 1128 pass, 0 fail, 4 skipped, exit 0. The 4 skips are the existing workerd cases that need `ATLAS_WORKERD_ROOT`.
+- `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui`: 834 PASS, 0 FAIL, exit 0.
+- Mutation: 28 new guards negated, 28 killed, 0 survived.
+- `python3 -m pytest tests/test_*.py -q --tb=line` before the manifest commit: 2 failed, 411 passed, 127 warnings, 25.57s, exit 1. Both failures are the stale-manifest handoff tests. They are re-run after the manifest commit.
+- `python3 scripts/check_handoff.py . --dev-git-index --write-manifest`: exit 0, 700 release files. The check without `--write-manifest` is re-run on the committed tree.
+
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.

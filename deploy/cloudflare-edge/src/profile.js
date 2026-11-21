@@ -34,6 +34,10 @@ const IMPORTS_V2 = `CREATE TABLE directory_imports_v2 (
 const SCHEMA = [];
 // spokenAsk: spoken Ask (WOW_SPEC); jevRating: story rating by TypeSafe JEV for the owner's stories (docs/JEV_RATING.md §8).
 const CONSENT_KINDS = ['spokenAsk', 'jevRating'];
+const LOOKUP_CAP = 30;
+const PEOPLE_LOOKUP = `CREATE TABLE IF NOT EXISTS people_lookup (
+  caller TEXT NOT NULL, day TEXT NOT NULL, address TEXT NOT NULL,
+  PRIMARY KEY (caller, day, address))`;
 const ensured = new WeakSet();
 const COLLAPSED = `CREATE TABLE IF NOT EXISTS profile_collapsed (
   id INTEGER PRIMARY KEY, subject TEXT NOT NULL, tenant TEXT NOT NULL, reason TEXT NOT NULL)`;
@@ -492,13 +496,38 @@ function build(g) {
 }
 export async function resolveProfile(lib, env, user, idp = {}, opts = {}) { return build(await gather(lib, env, user, idp, opts)); }
 
+// Merge one caller's delta onto the row read inside this transaction. DNA stays in gather.
+// A changed updated_at loses the compare. One retry, then 409 and no write.
 function save(lib, g, patch, actor, action, detail) {
   const ident = storedIdentity(lib, g.row, g.row.subject, g.row.tenant);
-  return lib.recorded(() => {
-    lib.exec('UPDATE profiles SET subject = ?, tenant = ?, edits = ?, consents = ?, updated_at = ? WHERE rowid = ?', ident.subject, ident.tenant, JSON.stringify(patch.edits ?? g.edits), JSON.stringify(patch.consents ?? g.consents), g.now, g.row.id);
+  const merged = lib.recorded(() => {
+    const once = () => {
+      const fresh = lib.rows('SELECT rowid AS id, edits, consents, updated_at FROM profiles WHERE rowid = ?', g.row.id)[0];
+      if (!fresh) return { n: 0, edits: {}, consents: {} };
+      const edits = json(fresh.edits);
+      const consents = json(fresh.consents);
+      for (const field of patch.clear || []) delete edits[field];
+      for (const [field, value] of Object.entries(patch.set || {})) {
+        if (value) edits[field] = value;
+        else delete edits[field];
+      }
+      if (patch.consent) {
+        if (patch.consent.granted) consents[patch.consent.kind] = { version: 1, at: patch.consent.at };
+        else delete consents[patch.consent.kind];
+      }
+      lib.exec(
+        'UPDATE profiles SET subject = ?, tenant = ?, edits = ?, consents = ?, updated_at = ? WHERE rowid = ? AND updated_at = ?',
+        ident.subject, ident.tenant, JSON.stringify(edits), JSON.stringify(consents), g.now, fresh.id, fresh.updated_at,
+      );
+      return { n: Number(lib.rows('SELECT changes() AS n')[0]?.n || 0), edits, consents };
+    };
+    let result = once();
+    if (result.n !== 1) result = once();
+    if (result.n !== 1) throw fail(409, 'This profile changed. Open it again.');
     lib.log('profile', actor, action, detail); // field names and counts only, never values
-    return { ...g, edits: patch.edits ?? g.edits, consents: patch.consents ?? g.consents, row: { ...g.row, subject: ident.subject, tenant: ident.tenant, updated_at: g.now } };
+    return result;
   });
+  return { ...g, edits: merged.edits, consents: merged.consents, row: { ...g.row, subject: ident.subject, tenant: ident.tenant, updated_at: g.now } };
 }
 function cleanEdit(env, g, f, raw) {
   if (typeof raw !== 'string') throw fail(400, `The ${LABEL[f]} must be text.`);
@@ -519,19 +548,28 @@ async function editProfile(lib, env, user, body, opts) {
   const b = obj(body), set = obj(b.set), clear = b.clear === undefined ? [] : b.clear;
   if (!Array.isArray(clear) || [...Object.keys(set), ...clear].some(f => typeof f !== 'string' || !Object.hasOwn(FIELDS, f))) throw fail(400, 'Unknown profile field.');
   let g = await gather(lib, env, user, user.idp, opts);
-  const edits = { ...g.edits }, changed = new Set();
-  for (const f of clear) { delete edits[f]; changed.add(f); }
+  const next = {};
+  const drop = [];
+  const changed = new Set();
+  for (const f of clear) { drop.push(f); changed.add(f); }
   for (const [f, raw] of Object.entries(set)) {
     const value = cleanEdit(env, g, f, raw);
-    if (value) edits[f] = { value, at: g.now, basis: topOf(g, f)?.value || '' }; else delete edits[f];
+    if (value) next[f] = { value, at: g.now, basis: topOf(g, f)?.value || '' };
+    else drop.push(f);
     changed.add(f);
   }
   // "Yes, that's me": the guessed name (and its first name) become the person's own values.
-  if (b.confirmGuess === true && !edits.name?.value && topOf(g, 'name')?.from === 'guess') {
-    edits.name = { value: g.guess.name, at: g.now, basis: g.guess.name }; changed.add('name');
-    if (g.guess.givenName && !edits.preferredName?.value) { edits.preferredName = { value: g.guess.givenName, at: g.now, basis: topOf(g, 'preferredName')?.value || '' }; changed.add('preferredName'); }
+  const preview = { ...g.edits };
+  for (const field of drop) delete preview[field];
+  Object.assign(preview, next);
+  if (b.confirmGuess === true && !preview.name?.value && topOf(g, 'name')?.from === 'guess') {
+    next.name = { value: g.guess.name, at: g.now, basis: g.guess.name }; changed.add('name');
+    if (g.guess.givenName && !preview.preferredName?.value) {
+      next.preferredName = { value: g.guess.givenName, at: g.now, basis: topOf(g, 'preferredName')?.value || '' };
+      changed.add('preferredName');
+    }
   }
-  if (changed.size) g = save(lib, g, { edits }, user.email, 'profile edited', 'fields: ' + [...changed].join(', '));
+  if (changed.size) g = save(lib, g, { set: next, clear: drop }, user.email, 'profile edited', 'fields: ' + [...changed].join(', '));
   return build(g);
 }
 
@@ -650,8 +688,14 @@ export function daily(lib, now = lib.now(), user = {}) {
   let profiles = 0;
   if (enforced) {
     const cutoff = isoBefore(now, 395);
+    const cutoffMs = Date.parse(cutoff);
     const stale = lib.rows('SELECT rowid AS id, tenant, seen_at FROM profiles')
-      .filter(row => profileFold(row.tenant) === tenant && String(row.seen_at || '') !== '' && String(row.seen_at) < cutoff);
+      .filter(row => {
+        if (profileFold(row.tenant) !== tenant) return false;
+        const parsed = Date.parse(row.seen_at ?? '');
+        if (!Number.isFinite(parsed)) return false;
+        return parsed < cutoffMs;
+      });
     profiles = stale.length;
     // The folded tenant filter already chose these rowids. A SQL tenant compare would miss a
     // padded stored tenant. The chunks bind only rowids and commit together. The directory
@@ -675,6 +719,55 @@ export function daily(lib, now = lib.now(), user = {}) {
     }
   });
   return Object.fromEntries(Object.entries({ profilesPurged: profiles, dnaCachePurged: cache, stagedImportsPurged: staged.length }).filter(([, v]) => v));
+}
+
+function utcDay(now) {
+  const ms = Date.parse(now || '');
+  if (!Number.isFinite(ms)) return '';
+  return new Date(ms).toISOString().slice(0, 10);
+}
+// Count a distinct address for this caller and UTC day. Old days are deleted and do not count.
+// The 31st new address is over and is not stored. Profile erasure does not call this.
+function chargeLookup(lib, caller, day, address) {
+  return lib.recorded(() => {
+    lib.exec(PEOPLE_LOOKUP);
+    if (day) lib.exec('DELETE FROM people_lookup WHERE day < ?', day);
+    const known = lib.rows('SELECT 1 AS hit FROM people_lookup WHERE caller = ? AND day = ? AND address = ?', caller, day, address)[0];
+    if (known) return 'known';
+    const n = Number(lib.rows('SELECT COUNT(*) AS n FROM people_lookup WHERE caller = ? AND day = ?', caller, day)[0].n);
+    if (n >= LOOKUP_CAP) return 'over';
+    lib.exec('INSERT INTO people_lookup (caller, day, address) VALUES (?, ?, ?)', caller, day, address);
+    return 'added';
+  });
+}
+function addressOnStory(raw, address) {
+  const tokens = String(raw.members || '').split(',').map(part => part.trim().toLowerCase()).filter(Boolean);
+  if (tokens.includes(address)) return true;
+  let data = null;
+  try { data = JSON.parse(raw.data || '{}'); } catch { data = null; }
+  const consultants = data && data.details && Array.isArray(data.details.consultants) ? data.details.consultants : [];
+  return consultants.some(person => validEmail(person && person.email) === address);
+}
+// Admin and reviewer may resolve any exact address. Everyone else, including presales, needs the
+// directory manager or a same-tenant ref written by someone else that role user could still open in full.
+// access() === 'full' from the presales role is not a grant. edits.managerEmail is not a source.
+function mayResolvePerson(lib, user, address) {
+  if (user.role === 'admin' || user.role === 'reviewer') return true;
+  const tenant = tenantKey(user);
+  const manager = directoryManager(lib, user.email, tenant);
+  if (manager && validEmail(manager.email) === address) return true;
+  const caller = profileFold(user.email);
+  const asUser = { email: user.email, mail: user.mail, role: 'user', tenant: user.tenant, tenantEnforced: user.tenantEnforced === true };
+  for (const raw of lib.rows('SELECT id, tenant, updated_by, members, data FROM refs')) {
+    if (profileFold(raw.tenant) !== tenant) continue;
+    const editor = profileFold(raw.updated_by);
+    if (!editor) continue;
+    if (editor === caller) continue;
+    if (!addressOnStory(raw, address)) continue;
+    const row = lib.row(raw.id);
+    if (row && lib.access(row, asUser) === 'full') return true;
+  }
+  return false;
 }
 
 // ---- Routes: words `profile`, `people`, `directory` (users); `directory` import only for the system push. ----
@@ -709,9 +802,8 @@ export async function routes(ctx) {
     if (method === 'POST' && action === 'consent') {
       const b = obj(ctx.body);
       if (!CONSENT_KINDS.includes(b.kind) || b.version !== 1 || typeof b.granted !== 'boolean') throw fail(400, 'Unknown consent.');
-      const g = await gather(lib, env, user, user.idp, opts), consents = { ...g.consents };
-      if (b.granted) consents[b.kind] = { version: 1, at: g.now }; else delete consents[b.kind];
-      return { body: build(save(lib, g, { consents }, user.email, 'consent', b.kind + ' ' + (b.granted ? 'granted' : 'revoked'))) };
+      const g = await gather(lib, env, user, user.idp, opts);
+      return { body: build(save(lib, g, { consent: { kind: b.kind, granted: b.granted, at: g.now } }, user.email, 'consent', b.kind + ' ' + (b.granted ? 'granted' : 'revoked'))) };
     }
   }
   if (word === 'people' && method === 'GET' && !action) {
@@ -720,9 +812,15 @@ export async function routes(ctx) {
     if (!rateLimit(lib, 'people:' + tenantKey(user) + ':' + user.email, 30, 3600000)) throw fail(429, 'Too many lookups. Try again in an hour.');
     const e = validEmail(ctx.url?.searchParams.get('email'));
     if (!e) throw fail(400, 'Type one exact email address.');
-    const p = lookupPerson(lib, e, tenantKey(user));
-    if (!p) throw fail(404, 'Nobody with that email in the directory.');
-    return { body: p };
+    if (user.tenantEnforced === true) {
+      if (user.role !== 'admin' && user.role !== 'reviewer') {
+        if (chargeLookup(lib, profileFold(user.email), utcDay(lib.now()), e) === 'over') throw fail(429, 'Too many lookups. Try again tomorrow.');
+      }
+      if (!mayResolvePerson(lib, user, e)) throw fail(403, 'That directory lookup is not available.');
+    }
+    const person = lookupPerson(lib, e, tenantKey(user));
+    if (!person) throw fail(404, 'Nobody with that email in the directory.');
+    return { body: { email: person.email, name: person.name, title: person.title, from: person.from } };
   }
   if (word === 'directory') {
     if (user.role !== 'admin') throw fail(403, 'Only an admin can manage the people directory.');
