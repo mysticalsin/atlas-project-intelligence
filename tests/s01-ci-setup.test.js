@@ -120,9 +120,18 @@ test('L-1 CI installs a Python 3.13 hash lock for msgpack, playwright, and pytho
   }
 });
 
-test('HAM-01 every requirements-*.txt with third-party packages is exact-pinned and hashed', () => {
-  const names = readdirSync(root).filter(name => /^requirements-.*\.txt$/.test(name)).sort();
-  for (const required of ['requirements-entra.txt', 'requirements-hindsight.txt', 'requirements-riva.txt', 'requirements-integrations.txt', 'requirements-test.txt']) {
+function pins(path) {
+  const out = new Map();
+  for (const line of read(path).split('\n')) {
+    const match = /^([A-Za-z0-9_.-]+)==([^\s\\]+)/.exec(line);
+    if (match) out.set(match[1], match[2]);
+  }
+  return out;
+}
+
+test('HAM-01 requirements.txt and every requirements-*.txt with third-party packages is exact-pinned and hashed', () => {
+  const names = readdirSync(root).filter(name => name === 'requirements.txt' || /^requirements-.*\.txt$/.test(name)).sort();
+  for (const required of ['requirements.txt', 'requirements-entra.txt', 'requirements-hindsight.txt', 'requirements-riva.txt', 'requirements-integrations.txt', 'requirements-test.txt']) {
     assert.ok(names.includes(required), required);
   }
   for (const name of names) {
@@ -137,4 +146,65 @@ test('HAM-01 every requirements-*.txt with third-party packages is exact-pinned 
       assert.match(line, /--hash=sha256:[a-f0-9]{64}/, `${name}: ${line}`);
     }
   }
+});
+
+test('requirements-ci.lock names a compile input that exists', () => {
+  const header = read('requirements-ci.lock').split('\n').slice(0, 12).join('\n');
+  const names = [...header.matchAll(/\b(requirements[\w.-]*\.in)\b/g)].map(match => match[1]);
+  assert.ok(names.length >= 1, header);
+  for (const name of new Set(names)) assert.equal(existsSync(join(root, name)), true, name);
+});
+
+test('requirements-ci.lock pins playwright and greenlet', () => {
+  const text = read('requirements-ci.lock');
+  assert.match(text, /^playwright==/m);
+  assert.match(text, /^greenlet==/m);
+});
+
+test('a package pinned in both locks has the same version in both', () => {
+  const ci = pins('requirements-ci.lock');
+  const integrations = pins('requirements-integrations.lock');
+  let shared = 0;
+  for (const [name, version] of ci) {
+    if (!integrations.has(name)) continue;
+    shared += 1;
+    assert.equal(integrations.get(name), version, name);
+  }
+  assert.ok(shared >= 1);
+});
+
+test('setup docs do not pip install the unhashed requirements.txt', () => {
+  const files = ['README.md', 'handoff/CONFIGURATION.md', 'deploy/cloudflare/README.md'];
+  for (const name of readdirSync(join(root, 'docs'))) {
+    if (name.endsWith('.md')) files.push(join('docs', name));
+  }
+  for (const file of files) assert.equal(/pip install -r requirements\.txt/.test(read(file)), false, file);
+});
+
+test('CI installs the locked workerd, runs the tail, and still fails when the binary is missing', () => {
+  const ci = read('.github/workflows/ci.yml');
+  assert.match(ci, /npm ci/);
+  assert.match(ci, /ATLAS_WORKERD_ROOT/);
+  const edge = join(root, 'deploy/cloudflare-edge');
+  const lockPath = join(edge, 'package-lock.json');
+  assert.equal(existsSync(lockPath), true);
+  const lock = read('deploy/cloudflare-edge/package-lock.json');
+  assert.match(lock, /node_modules\/workerd/);
+  assert.match(lock, /sha512-[A-Za-z0-9+/]+=/);
+  const bin = join(edge, 'node_modules/workerd/bin/workerd');
+  assert.equal(existsSync(bin), true);
+  function runTail(env) {
+    delete env.NODE_CHANNEL_FD;
+    delete env.NODE_TEST_CONTEXT;
+    return spawnSync(process.execPath, ['--test', 'test/write-sql-tail.test.js'], {
+      cwd: edge,
+      env,
+      encoding: 'utf8',
+      timeout: 180000,
+    });
+  }
+  const missing = runTail({ ...process.env, CI: '1', ATLAS_WORKERD_ROOT: '/no/such/atlas-workerd', ATLAS_WORKERD_BIN: '' });
+  assert.notEqual(missing.status, 0);
+  const present = runTail({ ...process.env, CI: '1', ATLAS_WORKERD_ROOT: edge, ATLAS_WORKERD_BIN: '' });
+  assert.equal(present.status, 0, present.stdout + present.stderr);
 });
