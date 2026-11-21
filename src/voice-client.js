@@ -1,6 +1,25 @@
 /* Real PersonaPlex transport. No browser speech recognition or synthetic read-aloud fallback. */
 'use strict';
 (()=>{
+function voicePhase(state, event) {
+  const phases = ['idle', 'preparing', 'connecting', 'live', 'ending', 'error'];
+  const legal = {
+    idle: ['preparing', 'idle', 'ending', 'error'],
+    preparing: ['idle', 'preparing', 'connecting', 'ending', 'error'],
+    connecting: ['live', 'idle', 'ending', 'error'],
+    live: ['ending', 'idle', 'error', 'live'],
+    ending: ['idle', 'ending', 'error'],
+    error: ['preparing', 'idle', 'error', 'ending'],
+  };
+  const phase = state && typeof state.phase === 'string' ? state.phase : '';
+  const kind = event && typeof event.type === 'string' ? event.type : '';
+  const knownPhase = phases.includes(phase) ? phase : 'unknown';
+  const knownEvent = phases.includes(kind) ? kind : 'unknown';
+  if (knownPhase === 'unknown' || knownEvent === 'unknown' || !legal[knownPhase].includes(knownEvent)) {
+    return { ok: false, illegal: true, state, effects: [], rejection: { id: 'voice-phase', phase: knownPhase, event: knownEvent } };
+  }
+  return { ok: true, illegal: false, state: { phase: knownEvent }, effects: [] };
+}
 const {html,setHTML,insertHTML,trusted}=window.AtlasSafe;
 const $=id=>document.getElementById(id), bridge=window.ATLAS_VOICE_BRIDGE;
 const labels=['Context','Contribution','Approach','Outcome','Evidence','Customer relevance'];

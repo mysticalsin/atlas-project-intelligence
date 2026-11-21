@@ -45,8 +45,8 @@ test('every legal voice phase pair, and every other pair is refused', () => {
         assert.equal(result.illegal, true, `${phase} ${event}`);
         assert.equal(result.ok, false);
         assert.equal(result.state, before);
-        assert.deepEqual(result.effects, []);
-        assert.deepEqual(result.rejection, { id: 'voice-phase', phase, event });
+        assert.equal(JSON.stringify(result.effects), '[]');
+        assert.equal(JSON.stringify(result.rejection), JSON.stringify({ id: 'voice-phase', phase, event }));
       }
     }
   }
@@ -59,9 +59,9 @@ test('an unknown phase or event keeps the stored state', () => {
   const before = { phase: 'archived' };
   const result = voicePhase(before, { type: 'idle' });
   assert.equal(result.state, before);
-  assert.deepEqual(result.rejection, { id: 'voice-phase', phase: 'unknown', event: 'idle' });
+  assert.equal(JSON.stringify(result.rejection), JSON.stringify({ id: 'voice-phase', phase: 'unknown', event: 'idle' }));
   const named = voicePhase({ phase: 'idle' }, { type: 'reopen' });
-  assert.deepEqual(named.rejection, { id: 'voice-phase', phase: 'idle', event: 'unknown' });
+  assert.equal(JSON.stringify(named.rejection), JSON.stringify({ id: 'voice-phase', phase: 'idle', event: 'unknown' }));
 });
 
 test('no voice phase is unreachable and there is no terminal phase', () => {
