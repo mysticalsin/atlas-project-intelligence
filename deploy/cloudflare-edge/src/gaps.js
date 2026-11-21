@@ -191,6 +191,9 @@ function answer(ctx, g) {
     if (!given.has(x.askId)) given.set(x.askId, x);
   }
   if (!given.size) throw fail(400, 'Send at least one answer.');
+  // A named reference is where these answers are kept. The assignee must be able to open it in full.
+  // Anything else is a refusal: do not fall back to the original row and do not write the answer.
+  if (typeof b.referenceId === 'string' && b.referenceId !== '' && lib.access(lib.row(b.referenceId), user) !== 'full') throw fail(403, 'You can only attach a reference you can open in full.');
   const prospects = parsed(lib.rows('SELECT prospects FROM bids WHERE id = ?', g.bid_id)[0]?.prospects ?? null, []);
   let map = {};
   const results = asks.map(a => {
@@ -203,8 +206,7 @@ function answer(ctx, g) {
     }
     return { askId: a.id, field: a.field, status: x ? x.status : 'open', quotes, provenance: 'unverified_speech_recognition' };
   });
-  // Where the assignee keeps these answers: only a reference they may see in full.
-  const refId = typeof b.referenceId === 'string' && lib.access(lib.row(b.referenceId), user) === 'full' ? b.referenceId : g.reference_id;
+  const refId = typeof b.referenceId === 'string' && b.referenceId !== '' ? b.referenceId : g.reference_id;
   const count = s => results.filter(r => r.status === s).length;
   lib.recorded(() => {
     lib.exec("UPDATE gap_requests SET status = 'answered', answered_at = ?, results = ?, pseudo = ?, reference_id = ? WHERE id = ?",

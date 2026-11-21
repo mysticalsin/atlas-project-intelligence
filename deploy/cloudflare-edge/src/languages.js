@@ -41,6 +41,9 @@ export const GREETINGS = {
   de: 'Hallo, ich bin ATLAS und interviewe Sie zu Ihrem Projekt.',
   it: 'Ciao, sono ATLAS e ti intervisterò sul tuo progetto.',
   nl: 'Hallo, ik ben ATLAS en ik ga je interviewen over je project.',
+  ru: 'Здравствуйте, я ATLAS, и я проведу интервью о вашем проекте.',
+  hi: 'नमस्ते, मैं ATLAS हूं, और मैं आपके प्रोजेक्ट पर इंटरव्यू लूंगी.',
+  ja: 'こんにちは、私はATLASで、あなたのプロジェクトについて面接します.',
 };
 export const WELCOME_BACK = {
   en: "Hi, it's ATLAS again, and I'll interview you about your project.",
@@ -50,18 +53,24 @@ export const WELCOME_BACK = {
   de: 'Hallo, hier ist wieder ATLAS, und ich interviewe Sie zu Ihrem Projekt.',
   it: 'Ciao, sono di nuovo ATLAS e ti intervisterò sul tuo progetto.',
   nl: 'Hallo, hier is ATLAS weer, en ik ga je interviewen over je project.',
+  ru: 'Здравствуйте, это снова ATLAS, и я проведу интервью о вашем проекте.',
+  hi: 'नमस्ते, मैं फिर से ATLAS हूं, और आपके प्रोजेक्ट पर इंटरव्यू लूंगी.',
+  ja: 'こんにちは、またATLASです、あなたのプロジェクトについて面接します.',
 };
 // Short uptake words ("Right.", "I see.") played from cache as ATLAS takes her turn, while the reply is prepared.
 // Not continuers like "Mm-hm", which mean "keep going" and contradict her taking the floor.
 export const FILLERS = {
   en: ['Okay.', 'Right.', 'I see.', 'Yeah.'], fr: ["D'accord.", 'Je vois.', 'Ah oui.', 'Oui.'], es: ['Vale.', 'Ya veo.', 'Claro.', 'Sí.'], pt: ['Certo.', 'Entendi.', 'Sim.', 'Ah, sim.'],
   de: ['Okay.', 'Ja.', 'Verstehe.', 'Ah ja.'], it: ['Certo.', 'Sì.', 'Capisco.', 'Ah, ok.'], nl: ['Oké.', 'Ja.', 'Duidelijk.', 'Ik snap het.'],
+  ru: ['Хорошо.', 'Понятно.', 'Ясно.', 'Да.'], hi: ['ठीक है.', 'समझ गई.', 'हाँ.', 'अच्छा.'], ja: ['はい.', 'なるほど.', 'そうですか.', 'ええ.'],
 };
 
 // Words a finished answer almost never ends on, per language (the one the speech recogniser heard). Precision beats
 // recall: a missed trailing word only falls back to the turn model plus merge-on-resume, while a false "unfinished"
 // answers a finished answer with a nudge. The lists need a native-speaker review. Hesitations ("um", "euh") only matter
 // when the recogniser keeps them (Nova-3 drops filler words by default); conjunctions and articles are the main signal.
+// An advertised language uses its own list. Only a code with no list falls back to English, so Japanese does not treat
+// an English trailing word as unfinished.
 const TRAIL = Object.fromEntries(Object.entries({
   en: ['and but or because the an a um uh erm er hmm', ['and so', 'and then', 'such as']],
   fr: ['et mais car ou le la les des du de euh heu', ['parce que', "parce qu'", 'et puis', 'et alors']],
@@ -70,6 +79,9 @@ const TRAIL = Object.fromEntries(Object.entries({
   de: ['und aber weil sondern dass äh ähm öh', ['und dann', 'und also', 'zum beispiel']],
   it: ['e ma quindi o il lo gli di con ehm cioè che', ['e poi', 'e quindi']],
   nl: ['en maar omdat want of de met eh ehm uhm', ['en dan', 'en toen']],
+  ru: ['и но или а то же ли бы не на в с к по от для у о об потому', ['и потом', 'а потом', 'потому что', 'так что']],
+  hi: ['और लेकिन या क्योंकि कि का की के में पर से को एक', ['और फिर', 'इसलिए']],
+  ja: ['と の は が を に で も へ や から まで けど ので のに そして えっと あの だから でも', ['そして', 'だから']],
 }).map(([lang, [words, phrases]]) => [lang, { words: new Set(words.split(' ')), phrases: phrases.map(x => x.split(' ')) }]));
 const TITLES = new Set('dr mr mrs ms prof st mme mlle hr fr sr sra dott sig dhr mevr'.split(' '));
 export function unfinished(text, lang = 'en') {
