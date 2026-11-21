@@ -97,6 +97,13 @@ test('a with-write inside explain query plan is not a proven read', () => {
   }
 });
 
+test('explain analyze stays a hidden write', () => {
+  classify('EXPLAIN ANALYZE', false, true, true);
+  classify('EXPLAIN ANALYZE refs', false, true, true);
+  doors('EXPLAIN ANALYZE', 'SQL_DOOR', 'SQL_DOOR');
+  doors('EXPLAIN ANALYZE refs', 'SQL_DOOR', 'SQL_DOOR');
+});
+
 test('a vacuum alias survives a group, order, limit, offset, or set clause', () => {
   const reads = [
     'SELECT 1 VACUUM GROUP BY 1',
