@@ -7,7 +7,7 @@ import { storedConsent } from './profile.js';
 import { recordUsage } from './telemetry.js';
 import {
   SmartNeedLinkAdapter, PastedJobDescriptionAdapter, composeCv, buildFiche, transition, hasTerm,
-  MiChatAdapter, atlasExport, bytesToBase64, toCompetencyFile,
+  MiChatAdapter, atlasExport, bytesToBase64, toCompetencyFile, omitCompensation,
 } from './living-core.js';
 
 export const READY = true;
@@ -19,6 +19,8 @@ export function ensure(lib) {
     lib.exec(`CREATE TABLE IF NOT EXISTS living_artifacts (
       id TEXT PRIMARY KEY, tenant TEXT, owner TEXT, type TEXT, status TEXT, payload TEXT, created_at TEXT, updated_at TEXT)`);
     lib.exec('CREATE INDEX IF NOT EXISTS living_owner ON living_artifacts(owner, type)');
+    lib.exec(`CREATE TABLE IF NOT EXISTS living_requirements (
+      id TEXT PRIMARY KEY, tenant TEXT, owner TEXT, need_id TEXT, title TEXT, payload TEXT, created_at TEXT)`);
   });
 }
 
@@ -162,9 +164,14 @@ function profile(lib, user) {
   return {
     name: stories[0]?.data?.consultant?.name || '',
     role: stories[0]?.data?.consultant?.role || '',
-    evidence: lines.map(line => ({ text: line.text, evidenceId: line.evidenceId, storyTitle: line.storyTitle })),
-    stories: stories.map(row => ({ id: row.id, title: row.data?.title || '' })),
+    evidence: lines.map(line => ({ text: line.text, evidenceId: line.evidenceId, storyTitle: line.storyTitle, topic: line.topic || '' })),
+    stories: stories.map(row => ({
+      id: row.id, title: row.data?.title || '',
+      client: row.data?.client?.name || '', location: row.data?.client?.location || '',
+      start: row.data?.details?.start || '', end: row.data?.details?.end || '',
+    })),
     consent: storedConsent(lib, user.email, 'profileReuse', tenantOf(user)),
+    requirements: listRequirements(lib, user),
     cv: cv ? viewOf(lib, user, cv) : null,
     fiche: fiche ? viewOf(lib, user, fiche) : null,
     queue: reviewQueue(lib, user),
@@ -205,14 +212,66 @@ export function deleteOwned(lib, user) {
   ensure(lib);
   const tenant = tenantOf(user);
   const n = lib.rows("SELECT COUNT(*) AS n FROM living_artifacts WHERE owner = ? AND lower(COALESCE(tenant, '')) = ?", user.email, tenant)[0].n;
+  const reqs = lib.rows("SELECT COUNT(*) AS n FROM living_requirements WHERE owner = ? AND lower(COALESCE(tenant, '')) = ?", user.email, tenant)[0].n;
   if (n) lib.recorded(() => lib.exec("DELETE FROM living_artifacts WHERE owner = ? AND lower(COALESCE(tenant, '')) = ?", user.email, tenant));
-  return n;
+  if (reqs) lib.recorded(() => lib.exec("DELETE FROM living_requirements WHERE owner = ? AND lower(COALESCE(tenant, '')) = ?", user.email, tenant));
+  return n + reqs;
 }
 
 export function ownedIds(lib, user) {
+  const tenant = tenantOf(user);
+  let arts = [];
   try {
-    return lib.rows("SELECT id, type, status FROM living_artifacts WHERE owner = ? AND lower(COALESCE(tenant, '')) = ?", user.email, tenantOf(user));
-  } catch { return []; }
+    arts = lib.rows("SELECT id, type, status FROM living_artifacts WHERE owner = ? AND lower(COALESCE(tenant, '')) = ?", user.email, tenant);
+  } catch { arts = []; }
+  try {
+    const reqs = lib.rows("SELECT id, 'requirement' AS type, 'stored' AS status FROM living_requirements WHERE owner = ? AND lower(COALESCE(tenant, '')) = ?", user.email, tenant);
+    return [...arts, ...reqs];
+  } catch { return arts; }
+}
+
+function listRequirements(lib, user) {
+  return lib.rows("SELECT id, payload FROM living_requirements WHERE owner = ? AND lower(COALESCE(tenant, '')) = ? ORDER BY created_at DESC", user.email, tenantOf(user)).map(row => {
+    const need = JSON.parse(row.payload || '{}');
+    return { id: row.id, needId: need.needId || '', title: need.title || '', source: need.source || '' };
+  });
+}
+
+async function readCapturedFixture(id) {
+  if (id !== '192497') return null;
+  try {
+    const { readFileSync } = await import('node:fs');
+    const { dirname, join } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const file = join(dirname(fileURLToPath(import.meta.url)), '../test/smart-need-192497-candidate-requirement.json');
+    return JSON.parse(readFileSync(file, 'utf8'));
+  } catch { return null; }
+}
+
+function needFromCapture(capture) {
+  const id = String(capture?.need?.id || '');
+  if (!id) return null;
+  const got = new SmartNeedLinkAdapter({ fixtures: new Map([[id, capture]]) }).resolve('https://need.arp.mantu.com/needs/' + id);
+  return got.ok ? omitCompensation(got.need) : null;
+}
+
+function requirementNeed(lib, user, id) {
+  const key = uuidish(id);
+  if (!key) return null;
+  const row = lib.rows('SELECT tenant, owner, payload FROM living_requirements WHERE id = ?', key)[0];
+  if (!row || row.owner !== user.email || !sameTenant(row.tenant, user.tenant, user.tenantEnforced === true)) return null;
+  return JSON.parse(row.payload || '{}');
+}
+
+function saveRequirement(lib, user, need) {
+  const id = lib.newId(), at = lib.now(), tenant = tenantOf(user);
+  const body = omitCompensation(need);
+  lib.recorded(() => {
+    lib.exec('INSERT INTO living_requirements (id, tenant, owner, need_id, title, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      id, tenant, user.email, body.needId || '', body.title || '', JSON.stringify(body), at);
+    lib.log(id, user.email, 'living requirement', id + ' ' + (body.needId || 'paste'));
+  });
+  return { id, needId: body.needId || '', title: body.title || '', source: body.source || '' };
 }
 
 export async function routes(ctx, adapters = {}) {
@@ -223,11 +282,34 @@ export async function routes(ctx, adapters = {}) {
   const smart = adapters.smart || new SmartNeedLinkAdapter();
   const paste = adapters.paste || new PastedJobDescriptionAdapter();
   if (method === 'GET' && parts.length === 1) return { body: profile(lib, user) };
+  if (method === 'POST' && parts[1] === 'requirements' && parts.length === 2) {
+    requireConsent(lib, user);
+    const body = obj(ctx.body);
+    let need = null;
+    if (body.capture && typeof body.capture === 'object') need = needFromCapture(body.capture);
+    else if (body.fixtureId) {
+      const capture = await readCapturedFixture(para(body.fixtureId, 80));
+      need = capture ? needFromCapture(capture) : null;
+    } else if (para(body.text, 20000)) {
+      const got = paste.resolve(para(body.text, 20000));
+      if (!got.ok) throw fail(400, 'The job description is empty.');
+      need = omitCompensation(got.need);
+    }
+    if (!need) return { body: { ok: false, error: 'unreadable', pasteFallback: true } };
+    return { body: { ok: true, requirement: saveRequirement(lib, user, need) } };
+  }
   if (method === 'POST' && parts[1] === 'generate' && parts.length === 2) {
     const body = obj(ctx.body);
     const audience = body.audience === 'external' ? 'external' : 'internal';
-    const parsed = resolveNeed(smart, paste, para(body.link, 500), para(body.text, 20000));
-    if (parsed && parsed.ok === false) return { body: parsed };
+    let parsed = null;
+    if (body.requirementId) {
+      const need = requirementNeed(lib, user, body.requirementId);
+      if (!need) throw fail(404, 'Not found.');
+      parsed = { ok: true, need };
+    } else {
+      parsed = resolveNeed(smart, paste, para(body.link, 500), para(body.text, 20000));
+      if (parsed && parsed.ok === false) return { body: parsed };
+    }
     requireConsent(lib, user);
     const stories = publishedMine(lib, user);
     const lines = stories.flatMap(row => linesOf(lib, row, audience));

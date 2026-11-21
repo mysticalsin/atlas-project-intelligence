@@ -442,6 +442,49 @@ test('an approved CV exports once, another tenant cannot see it, and privacy del
   assert.equal(l.rows('SELECT COUNT(*) AS n FROM living_artifacts')[0].n, 0);
 });
 
+test('a stored requirement tailors the CV and the export stays local', async () => {
+  const l = lib();
+  await publish(l);
+  await consent(l);
+  const calls = [];
+  const orig = globalThis.fetch;
+  globalThis.fetch = (...args) => { calls.push(String(args[0])); return Promise.reject(new Error('network')); };
+  try {
+    const poisoned = JSON.parse(JSON.stringify(CAPTURE));
+    poisoned.salary = '99123-salary-sentinel';
+    poisoned.candidateRequirement.skills.must = [...poisoned.candidateRequirement.skills.must, 'Daily rate 700'];
+    const stored = await living.routes({ method: 'POST', parts: ['living', 'requirements'], user: OWNER, lib: l, env: {}, body: { capture: poisoned } });
+    assert.equal(stored.body.requirement.needId, '192497');
+    assert.equal(stored.body.requirement.title, 'Software Developer');
+    assert.equal(JSON.stringify(stored.body).includes('99123-salary-sentinel'), false);
+    assert.equal(JSON.stringify(stored.body).includes('Daily rate'), false);
+    const fixture = await living.routes({ method: 'POST', parts: ['living', 'requirements'], user: OWNER, lib: l, env: {}, body: { fixtureId: '192497' } });
+    assert.equal(fixture.body.requirement.needId, '192497');
+    const missed = await living.routes({ method: 'POST', parts: ['living', 'requirements'], user: OWNER, lib: l, env: {}, body: { fixtureId: '999' } });
+    assert.equal(missed.body.ok, false);
+    assert.equal(missed.body.pasteFallback, true);
+    const payloads = l.rows('SELECT payload FROM living_requirements').map(row => row.payload).join('\n');
+    assert.equal(payloads.includes('99123-salary-sentinel'), false);
+    assert.equal(payloads.includes('Daily rate'), false);
+    const made = await living.routes({ method: 'POST', parts: ['living', 'generate'], user: OWNER, lib: l, env: {}, body: { requirementId: fixture.body.requirement.id } });
+    assert.equal(made.body.artifact.need.needId, '192497');
+    assert.equal(made.body.artifact.lines.some(line => line.text.includes('Designed the Windows service')), true);
+    assert.equal(made.body.artifact.gaps.some(gap => gap.keyword === 'English'), true);
+    assert.equal(made.body.artifact.gaps.some(gap => gap.keyword === 'C++'), false);
+    assert.equal(made.body.artifact.flags.some(flag => flag.code === 'skill_conflict' && flag.skill === 'C++'), true);
+    await assert.rejects(living.routes({ method: 'POST', parts: ['living', 'generate'], user: OTHER, lib: l, env: {}, body: { requirementId: fixture.body.requirement.id } }), /Not found/);
+    await living.routes({ method: 'POST', parts: ['living', 'artifacts', made.body.artifact.id, 'approve'], user: PRE, lib: l, body: {} });
+    const file = await living.routes({ method: 'POST', parts: ['living', 'artifacts', made.body.artifact.id, 'export'], user: OWNER, lib: l, body: { format: 'docx', adapter: 'michat' } });
+    const xml = Buffer.from(file.body.base64, 'base64').toString('utf8');
+    assert.equal(xml.includes('Designed the Windows service'), true);
+    assert.equal(xml.includes('99123-salary-sentinel'), false);
+    assert.equal(xml.includes('Daily rate'), false);
+    assert.equal(calls.length, 0);
+    assert.equal(living.deleteOwned(l, OWNER) > 0, true);
+    assert.equal(l.rows('SELECT COUNT(*) AS n FROM living_requirements')[0].n, 0);
+  } finally { globalThis.fetch = orig; }
+});
+
 const SALARY_KEY = /salary|compensation|remuneration|marketvalue|wage|bonus|payroll|tjm|dailyrate/i;
 
 function salaryKeys(value, path = '') {
@@ -517,4 +560,40 @@ test('the fixture, the CV model, the docx template, and the exported document ha
   const template = readFileSync(new URL('../src/living-core.js', import.meta.url), 'utf8');
   const builder = template.slice(template.indexOf('function documentLines'), template.indexOf('export function bytesToBase64'));
   assert.equal(SALARY_KEY.test(builder), false);
+});
+
+test('a must line that is only a pay amount is dropped by the parser', () => {
+  const parsed = new PastedJobDescriptionAdapter().resolve('Must have\nWindows\nPay 900\n€900\n900 EUR');
+  assert.equal(parsed.ok, true);
+  assert.deepEqual(parsed.need.skills.must.map(item => item.text), ['Windows']);
+  assert.equal(JSON.stringify(omitCompensation(parsed.need)).includes('900'), false);
+  assert.equal(JSON.stringify(parsed.need.keywords).includes('Pay'), false);
+});
+
+test('a pay amount on a must line is not stored and never reaches the docx', async () => {
+  const l = lib();
+  await publish(l);
+  await consent(l);
+  const stored = await living.routes({ method: 'POST', parts: ['living', 'requirements'], user: OWNER, lib: l, body: { text: 'Must have\nWindows\nPay 900' } });
+  assert.equal(JSON.stringify(stored.body).includes('900'), false);
+  assert.equal(l.rows('SELECT payload FROM living_requirements').map(row => row.payload).join('\n').includes('900'), false);
+  const made = await living.routes({ method: 'POST', parts: ['living', 'generate'], user: OWNER, lib: l, body: { requirementId: stored.body.requirement.id } });
+  assert.equal((made.body.artifact.gaps || []).some(gap => /pay|900/i.test(gap.keyword)), false);
+  assert.equal(JSON.stringify(made.body.artifact).includes('900'), false);
+  await living.routes({ method: 'POST', parts: ['living', 'artifacts', made.body.artifact.id, 'approve'], user: PRE, lib: l, body: {} });
+  const file = await living.routes({ method: 'POST', parts: ['living', 'artifacts', made.body.artifact.id, 'export'], user: OWNER, lib: l, body: { format: 'docx', adapter: 'michat' } });
+  const xml = docxXml(file);
+  assert.equal(xml.includes('Pay'), false);
+  assert.equal(xml.includes('900'), false);
+});
+
+test('an owner who is also an approver cannot approve their own CV', async () => {
+  const owner = { ...OWNER, role: 'admin' };
+  const l = lib();
+  await publish(l);
+  await consent(l, owner);
+  const made = await living.routes({ method: 'POST', parts: ['living', 'generate'], user: owner, lib: l, body: { text: 'Must have\nWindows\nC#' } });
+  const id = made.body.artifact.id;
+  await assert.rejects(living.routes({ method: 'POST', parts: ['living', 'artifacts', id, 'approve'], user: owner, lib: l, body: {} }), /cannot approve/);
+  assert.equal(l.rows('SELECT status FROM living_artifacts WHERE id = ?', id)[0].status, 'in_review');
 });

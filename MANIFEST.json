@@ -622,23 +622,23 @@
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 941501,
-      "sha256": "05fb5f9ed8e99901cf59a4ad0e41d0cd9881b6b53f9c63a474267f7bb1f89e14"
+      "bytes": 946162,
+      "sha256": "cb36e7898e87907b52ccabab4aa6104ec7ab7db86e46a17bc7bf1875efaf0799"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 941501,
-      "sha256": "05fb5f9ed8e99901cf59a4ad0e41d0cd9881b6b53f9c63a474267f7bb1f89e14"
+      "bytes": 946162,
+      "sha256": "cb36e7898e87907b52ccabab4aa6104ec7ab7db86e46a17bc7bf1875efaf0799"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 941501,
-      "sha256": "05fb5f9ed8e99901cf59a4ad0e41d0cd9881b6b53f9c63a474267f7bb1f89e14"
+      "bytes": 946162,
+      "sha256": "cb36e7898e87907b52ccabab4aa6104ec7ab7db86e46a17bc7bf1875efaf0799"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 941501,
-      "sha256": "05fb5f9ed8e99901cf59a4ad0e41d0cd9881b6b53f9c63a474267f7bb1f89e14"
+      "bytes": 946162,
+      "sha256": "cb36e7898e87907b52ccabab4aa6104ec7ab7db86e46a17bc7bf1875efaf0799"
     },
     {
       "path": "CLAUDE.md",
@@ -933,7 +933,7 @@
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
       "bytes": 146,
-      "sha256": "d7de950b5d698d1cdb869ad6cc0e2867c1fe7586ebb894f02037a5a1ef2f54eb"
+      "sha256": "9100dc8f0b85eed0d3a26d0b241b015a72fe6d1f0da01597f9e77e4980456abe"
     },
     {
       "path": "deploy/cloudflare-edge/set-keys.sh",
@@ -998,7 +998,7 @@
     {
       "path": "deploy/cloudflare-edge/src/csp.generated.js",
       "bytes": 1675,
-      "sha256": "1ad3a75323055dc8a4b3ddacd626d5784bb56ff9bad8b173eecfc5914f583b73"
+      "sha256": "c0e9d57c66212ba9b07379ea7209e1640a2b4ae2c24f0b65b797e8497f34a21c"
     },
     {
       "path": "deploy/cloudflare-edge/src/csp.js",
@@ -1077,13 +1077,13 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/living-core.js",
-      "bytes": 38377,
-      "sha256": "071ec75788808c379de457ad138aa1f8ec39b9315e19f3e1d90a489559dd41e7"
+      "bytes": 38571,
+      "sha256": "b0b02acfe6efb131761eb44fc02962532bcf34ad7913780f7af79ff31e112079"
     },
     {
       "path": "deploy/cloudflare-edge/src/living.js",
-      "bytes": 14410,
-      "sha256": "fc1d9f693ba4d01bdddf2365fca0ed7d62b7b497e9fa8f0812d9c5263d4abd42"
+      "bytes": 18571,
+      "sha256": "180818acdc69679217aae360e3272a60258477599232b3cf4e7637344275e33c"
     },
     {
       "path": "deploy/cloudflare-edge/src/memory-routes.js",
@@ -1482,8 +1482,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/living.test.js",
-      "bytes": 33396,
-      "sha256": "48325bdb6ff737a4516125c79633aee5fa5fbf2367bda079d6aed56a2de4b9e1"
+      "bytes": 39118,
+      "sha256": "4f177b80e730f31e456e4ecf29d4db528f6eb3c87c9833d5b07015c10cf8db33"
     },
     {
       "path": "deploy/cloudflare-edge/test/masking-routes.test.js",
@@ -2206,6 +2206,11 @@
       "sha256": "478da6e6cabaa2e1cc3b13c6dffa495aa65ad85fd90cc43c59ca0318ec620747"
     },
     {
+      "path": "docs/a08/profile-1280.png",
+      "bytes": 77089,
+      "sha256": "28581a719fa082dd34759fb083e049ca5ffcca44fc3d5457589f82eb0883e19d"
+    },
+    {
       "path": "docs/architecture.mmd",
       "bytes": 743,
       "sha256": "12d1557e59e6445126f972b356a7fe233e004f60b86773fefea158658ce59508"
@@ -2217,8 +2222,8 @@
     },
     {
       "path": "docs/living-cv-architecture.md",
-      "bytes": 7328,
-      "sha256": "bcfbb8bfb912d3fafbeb4824f525d049740bfd80182f4d0a6ad212028ffa89bf"
+      "bytes": 7972,
+      "sha256": "02aaa813f9d973f9be0f218550f8a3ee97f56fc897c42cc34e80125a1dc25cd8"
     },
     {
       "path": "docs/pr10/PR_BODY.md",
@@ -2312,8 +2317,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 347271,
-      "sha256": "e02ea0e6e7354250ff024e692eed3540f776491637f79d6f8061d0bd3a931f24"
+      "bytes": 347826,
+      "sha256": "a8aadb9a3da0f7b61d6cffdad7b308838f19136b9ad694878807e28da2f9b161"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2892,13 +2897,13 @@
     },
     {
       "path": "src/living-ui.js",
-      "bytes": 12594,
-      "sha256": "3c511c2a1b4439a839514499d2b57ceeacccfc33a8b268e85e9ab40431336059"
+      "bytes": 16212,
+      "sha256": "05fc187a37dd218c0267e9d295e729bea815ccfcf59f20f400bdac67ec9ca2e6"
     },
     {
       "path": "src/living.css",
-      "bytes": 4677,
-      "sha256": "8a578d7f934da015fba694d43bd250e94ffbd4d8f969a3f255e007ce05342ede"
+      "bytes": 5720,
+      "sha256": "84ffda8d7560e5a4d80707144881ba3f09586681609e07f3e4352c8be1a6e744"
     },
     {
       "path": "src/office.js",
@@ -3222,8 +3227,8 @@
     },
     {
       "path": "tests/living_browser.py",
-      "bytes": 18268,
-      "sha256": "3c2bd75c8ef9e5eafecc4c7b05ab234b6a75525725984477a8485327f734e21d"
+      "bytes": 22641,
+      "sha256": "59c49e79a7b8c1e56b5657a029f260f0a75b5fa51331bff3f4e0b1a06124e9c5"
     },
     {
       "path": "tests/memory_browser.py",
