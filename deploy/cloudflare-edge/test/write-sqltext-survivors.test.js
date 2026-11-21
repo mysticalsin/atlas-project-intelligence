@@ -97,6 +97,17 @@ test('a with-write inside explain query plan is not a proven read', () => {
   }
 });
 
+test('empty text and a comment are not a mutation', () => {
+  for (const sql of ['', ' ', '   ', '\n', '\t', '-- c\n', '/* c */']) {
+    assert.equal(isMutatingStatement(sql), false, JSON.stringify(sql));
+  }
+});
+
+test('a second pragma inside an explain plan is a hidden write', () => {
+  const sql = 'EXPLAIN QUERY PLAN PRAGMA user_version PRAGMA writable_schema = ON';
+  assert.equal(hiddenWrite(sql), true, sql);
+});
+
 test('explain analyze stays a hidden write', () => {
   classify('EXPLAIN ANALYZE', false, true, true);
   classify('EXPLAIN ANALYZE refs', false, true, true);
