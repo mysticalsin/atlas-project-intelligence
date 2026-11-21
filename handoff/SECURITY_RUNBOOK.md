@@ -57,7 +57,7 @@ First decide the blast radius, then use the narrowest switch. The kill switches 
 | An integration secret leaked (triggers, DNA push, Teams) | `ATLAS_INBOUND_OFF=1` | Those endpoints answer 503 before any secret is compared |
 | Unknown, serious, and needs everything stopped | `ATLAS_READ_ONLY=1` and `ATLAS_AI_OFF=1`, and if still needed remove the Access policy so nobody can sign in | |
 | A bad release | `npx wrangler@4.156.0 rollback` to the last good version | |
-| A product behaviour (not a security switch) | the v2.1 rollback switches (`ATLAS_CHECKPOINT`, `ATLAS_EVIDENCE_WORKFLOW`, `ATLAS_ADAPTERS`, `ATLAS_REPLY_GUARD`; `handoff/CONFIGURATION.md`) | |
+| A product behaviour (not a security switch) | the rollback switches `ATLAS_TENANT_ISOLATION`, `ATLAS_DEV_IDENTITY`, and `ATLAS_LOCAL_TENANT`, read by `authz.js` outside the kill-switch file. `DATA_MODE=production` together with any of them is refused. | |
 
 Also available per person without a deploy: the person's own memory switch and the "start over" discard. Cloudflare-side options (Tony / infra): the Workers Rate Limiting binding and WAF rate rules, which need a custom-domain zone (not available on `workers.dev`).
 
