@@ -71,8 +71,12 @@ test('build.py reads quality.py; capacity, identity, kyutai and speech are casca
 });
 
 function deployEnv(extra) {
-  const env = { ...process.env, ...extra };
-  for (const key of Object.keys(env)) if (key.startsWith('NODE_TEST') || key === 'NODE_CHANNEL_FD') delete env[key];
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) {
+    if (key.startsWith('NODE_TEST') || key === 'NODE_CHANNEL_FD' || key.startsWith('ATLAS_DEPLOY_STUB') || key === 'ATLAS_DEPLOY_STAGE_LOG') delete env[key];
+  }
+  Object.assign(env, extra);
+  for (const key of Object.keys(env)) if (key.startsWith('ATLAS_DEPLOY_STUB')) delete env[key];
   return env;
 }
 function deployTree() {
@@ -142,6 +146,86 @@ test('deploy.sh calls the stub exactly once after a valid build, tests, and fina
   assert.equal(readFileSync(tree.stage, 'utf8').trim().split('\n').filter(line => line === 'deploy').length, 1);
   assert.equal(readFileSync(join(tree.edge, 'src', 'atlas.html'), 'utf8'), page);
   rmSync(tree.root, { recursive: true });
+});
+
+const STUB_ENV_KEYS = ['ATLAS_DEPLOY_STUB', 'ATLAS_DEPLOY_STUB_LOG', 'ATLAS_DEPLOY_STUB_SENTINEL', 'ATLAS_DEPLOY_STAGE_LOG'];
+
+function withStubLeak(leak, run) {
+  const previous = Object.fromEntries(STUB_ENV_KEYS.map(key => [key, process.env[key]]));
+  for (const [key, value] of Object.entries(leak)) process.env[key] = value;
+  try {
+    return run();
+  } finally {
+    for (const key of STUB_ENV_KEYS) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
+}
+
+test('deployEnv drops inherited ATLAS_DEPLOY_STUB variables and a parent stage log', () => {
+  withStubLeak({
+    ATLAS_DEPLOY_STUB: '1',
+    ATLAS_DEPLOY_STUB_LOG: '/tmp/atlas-parent-stub-log',
+    ATLAS_DEPLOY_STUB_SENTINEL: 'leak',
+    ATLAS_DEPLOY_STAGE_LOG: '/tmp/atlas-parent-stage-log',
+  }, () => {
+    const childStage = '/tmp/atlas-child-stage-log';
+    const env = deployEnv({
+      PATH: '/usr/bin',
+      ATLAS_DEPLOY_STAGE_LOG: childStage,
+      ATLAS_DEPLOY_STUB: '1',
+      ATLAS_DEPLOY_STUB_LOG: '/tmp/atlas-extra-stub-log',
+    });
+    assert.equal(env.ATLAS_DEPLOY_STUB, undefined);
+    assert.equal(env.ATLAS_DEPLOY_STUB_LOG, undefined);
+    assert.equal(env.ATLAS_DEPLOY_STUB_SENTINEL, undefined);
+    assert.equal(env.ATLAS_DEPLOY_STAGE_LOG, childStage);
+    assert.equal(env.PATH, '/usr/bin');
+    const bare = deployEnv({ PATH: '/usr/bin' });
+    assert.equal(bare.ATLAS_DEPLOY_STUB, undefined);
+    assert.equal(bare.ATLAS_DEPLOY_STUB_LOG, undefined);
+    assert.equal(bare.ATLAS_DEPLOY_STUB_SENTINEL, undefined);
+    assert.equal(bare.ATLAS_DEPLOY_STAGE_LOG, undefined);
+  });
+});
+
+test('deploy.sh still reaches wrangler when the parent has ATLAS_DEPLOY_STUB=1', () => {
+  const tree = deployTree();
+  const leakedStub = join(tree.root, 'parent-stub.txt');
+  const parentStage = join(tree.root, 'parent-stage.txt');
+  writeFileSync(parentStage, 'parent\n');
+  const page = 'canonical-page\n';
+  const pin = spawnSync('sha256sum', { input: page, encoding: 'utf8' }).stdout.split(/\s+/)[0];
+  writeFileSync(join(tree.edge, 'generated', 'PAGE_SHA256.txt'), `${pin}\n`);
+  writeFileSync(join(tree.root, 'build.py'), 'from pathlib import Path\nPath(__file__).resolve().parent.joinpath("ATLAS_Voice.html").write_bytes(b"canonical-page\\n")\n');
+  writeFileSync(join(tree.edge, 'test', 'noop.test.js'), 'import test from "node:test"; test("noop", () => {});\n');
+  try {
+    const ok = withStubLeak({
+      ATLAS_DEPLOY_STUB: '1',
+      ATLAS_DEPLOY_STUB_LOG: leakedStub,
+      ATLAS_DEPLOY_STUB_SENTINEL: 'leak',
+      ATLAS_DEPLOY_STAGE_LOG: parentStage,
+    }, () => spawnSync('bash', ['deploy.sh'], {
+      cwd: tree.edge,
+      env: deployEnv({
+        PATH: `${tree.bin}:${process.env.PATH}`,
+        ATLAS_DEPLOY_STAGE_LOG: tree.stage,
+        ATLAS_DEPLOY_STUB: '1',
+        ATLAS_DEPLOY_STUB_LOG: leakedStub,
+      }),
+      encoding: 'utf8',
+    }));
+    assert.equal(ok.status, 0, ok.stderr || ok.stdout);
+    assert.equal(existsSync(leakedStub), false);
+    const calls = readFileSync(tree.mark, 'utf8').trim().split('\n');
+    assert.deepEqual(calls.filter(line => line.includes('wrangler@4 deploy')), ['--yes wrangler@4 deploy']);
+    assert.deepEqual(calls.filter(line => line.includes('secret list')), ['--yes wrangler@4 secret list']);
+    assert.equal(readFileSync(parentStage, 'utf8'), 'parent\n');
+    assert.equal(readFileSync(tree.stage, 'utf8').trim().split('\n').filter(line => line === 'deploy').length, 1);
+  } finally {
+    rmSync(tree.root, { recursive: true });
+  }
 });
 
 test('verify_page_build.sh rejects a corrupted edge copy at the second comparison', () => {
