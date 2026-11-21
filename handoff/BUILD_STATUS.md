@@ -7,7 +7,9 @@ Inspector reviewed `6e50f111f4bc59f8e9c86f4c88a3b4b179ddc311` as FAIL, ADAPT, re
 
 There is now one notice, in the consultant's language, that the voice stays English. It is the only line on the screen, including for Japanese. An nl or ja start with an English-only voice emits that notice and still speaks the English greeting. A CJK utterance is counted in characters, so unspaced Japanese can switch. The cascade note points at the same notice and tells the talker to reply in English. "amazing" stays out of the praise. The read-back fix is the ordinary merge `d82c4cb1495c61ce8a3f59d354d84bc1047ca26e`.
 
-No provider call. Suite counts for this head follow the re-run.
+No provider call.
+
+Measured on `3444c37a627c2c37809038a47cbd7d5bb79d5da8`: `python3 -m pytest tests/test_*.py -q` 418 passed; `node --test tests/*.test.js` 424 passed, 0 failed; edge `node --test test/*.test.js` 1131 tests, 1127 passed, 0 failed, 4 skipped; `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui` 834 PASS, 0 FAIL; `python3 scripts/check_handoff.py . --dev-git-index` PASS.
 
 ## 2026-11-21 — A07 slice 3 merges the read-back fix (`cursor/pr1-slice3-a30-greetings-6f11`)
 
