@@ -15,7 +15,7 @@ import { openDurableLibrary } from './library-store.js';
 import { limitRoute } from './ratelimit.js';
 import { loadState, memoryAllowed, recordConsent } from './privacy.js';
 import { auditKey } from './audit-chain.js';
-import { handoffInterview } from './checkpoint.js';
+import { handoffInterview, CheckpointStore } from './checkpoint.js';
 
 export default {
   fetch: (request, env, ctx) => handle(request, env, page, { waitUntil: p => ctx.waitUntil(p), log: line => console.log(line) }),
@@ -67,6 +67,7 @@ export class Interview extends DurableObject {
       metric: (name, values) => console.log(JSON.stringify({ atlas_metric: name, ...values })),
       gaps: this.env.LIBRARY ? id => resolveForInterview(this.env, identity, id) : null,
       winHint: this.env.LIBRARY ? () => fetchWinHint(this.env, identity) : null,
+      checkpoint: new CheckpointStore(this.ctx.storage, { isCurrent: () => this.checkpointOwner === owner }),
     });
     this.session = session;
     server.addEventListener('message', e => {

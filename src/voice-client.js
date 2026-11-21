@@ -19,7 +19,7 @@ let gapUsed=null, consentStarting=false;
 function consumeGap(){const g=gapUsed;gapUsed=null;try{if(g&&bridge.context()?.gap===g)bridge.gapConsumed?.();}catch{}}
 // Session event bus for the live story board and the gap results (F5, F2): the server's session events, plus 'reset'
 // wherever the 'atlas-quality' reset fires. 'atlas-quality' itself is unchanged.
-const SESSION_EVENTS=['ready','time_up','wrap_up','audio_stopped','reporting','notes','ended'];
+const SESSION_EVENTS=['ready','time_up','wrap_up','audio_stopped','reporting','notes','ended','summary'];
 function sessionEvent(detail){window.dispatchEvent(new CustomEvent('atlas-session',{detail}));}
 function resetBoards(){window.dispatchEvent(new CustomEvent('atlas-quality',{detail:{type:'reset'}}));sessionEvent({type:'reset'});}
 const closed=(s,ms)=>!s||s.readyState===3?Promise.resolve():new Promise(r=>{const t=setTimeout(r,ms);s.onclose=()=>{clearTimeout(t);r();};});
@@ -188,7 +188,9 @@ $('voiceDownloadTranscript').onclick=()=>{if(!lastNotes?.transcript)return;const
 $('remotePreferenceSave').onclick=async()=>{if(!boot?.memory)return;const value=$('remotePreference').value.trim();if(!value)return;$('remotePreferenceSave').disabled=true;try{const r=await request('/api/preference',{method:'POST',headers:{'Content-Type':'application/json','X-Atlas-CSRF':boot.csrf},body:JSON.stringify({preference:value}),signal:AbortSignal.timeout(25000)});if(!r.ok)throw Error(await r.text());$('connectionActionMessage').textContent='Hindsight confirmed the preference for this signed-in identity.';$('remotePreference').value='';}catch{$('connectionActionMessage').textContent='Hindsight did not confirm the write. No saved state is assumed.';}finally{$('remotePreferenceSave').disabled=false;}};
 $('voiceSignout').onclick=async()=>{cancel('Signing out.');if(boot?.provider==='workers'){location.href='/cdn-cgi/access/logout';return;}try{const r=await request('/api/logout',{method:'POST',headers:{'X-Atlas-CSRF':boot.csrf}});if(!r.ok)throw Error();location.reload();}catch{$('connectionActionMessage').textContent='Sign-out was not confirmed. Close this tab and sign out through your identity provider.';}};
 document.addEventListener('click',e=>{if(e.target.closest('[data-voice-close]'))e.target.closest('dialog')?.close();});
-window.addEventListener('atlas-context',sync);// Audible confirmation and output selection. The chime goes straight to the speakers (not through the
+window.addEventListener('atlas-context',sync);
+window.addEventListener('atlas-withhold',e=>{const id=e.detail&&e.detail.detail_id;if(typeof id==='string'&&phase==='live'&&socket&&socket.readyState===1)socket.send(JSON.stringify({type:'withhold',detail_id:id}));});
+// Audible confirmation and output selection. The chime goes straight to the speakers (not through the
 // worklet), so it proves the output path without ever animating the orb or pretending to be ATLAS speaking.
 function chime(){try{if(!audio||audio.state!=='running'||!audio.createOscillator)return;const t=audio.currentTime+.03;[[659.25,0],[880,.15]].forEach(([f,d])=>{const o=audio.createOscillator(),g=audio.createGain();o.type='sine';o.frequency.value=f;g.gain.setValueAtTime(0,t+d);g.gain.linearRampToValueAtTime(.06,t+d+.02);g.gain.exponentialRampToValueAtTime(.0001,t+d+.3);o.connect(g);g.connect(audio.destination);o.start(t+d);o.stop(t+d+.32);});}catch{}}
 function soundBlocked(){if(!$('soundHelp'))return;$('soundHelp').hidden=false;$('soundHelpPanel').hidden=false;$('soundHelpNote').textContent='Your browser paused sound for this page. Press “Play test sound” to turn it on.';listOutputs();}

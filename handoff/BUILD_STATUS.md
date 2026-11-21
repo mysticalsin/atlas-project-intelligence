@@ -1,6 +1,10 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-21 — A07 slice 3 merges the read-back fix (`cursor/pr1-slice3-a30-greetings-6f11`)
+
+Ordinary merge of `7214ae60c07948fc513eb896974a5f4961b688f8` into this branch. The greeting Inspector tests in `0132bbe3a8ac7be087603a67663db7190e93e867` are still red on this merge. No provider call.
+
 ## 2026-11-21 — A07 slice 3, one persona and one greeting (`cursor/pr1-slice3-a30-greetings-6f11`)
 
 Ask row A30, folded into A07 by Inspector as APP-FIT ADAPT. Red tests are `10e016c101bf45b2c084f0a24757a2b9b75126e2`. That commit does not refresh `MANIFEST.json`.
@@ -15,6 +19,24 @@ What this change does:
 No provider call. No deploy.
 
 Measured on `6716bb959a4d80e1a0742cba6745615228803315`: `python3 -m pytest tests/test_*.py -q` 417 passed. `node --test tests/*.test.js` 420 passed, 0 failed. Edge `node --test test/*.test.js` 1126 tests, 1122 passed, 0 failed, 4 skipped. `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui` 834 PASS, 0 FAIL. `python3 scripts/check_handoff.py . --dev-git-index` PASS. The node, edge, and browser counts were taken on this tree immediately before the fix commit. pytest and check_handoff were run again on the fix commit.
+
+## 2026-11-21 — A07 slice 2 Inspector, the read-back is live (`cursor/pr1-slice2-readback-6f11`)
+
+Inspector reviewed `4221a51f0d2dce6c2792ec774a3e1a3a193789b6` as FAIL, ADAPT, report `30b60570`. Red tests are `d59bb70027f5a4aba3b5190ad825a3032350f50a`. That commit does not refresh `MANIFEST.json`. The summary was not a session event, the read-back inputs had no label, save, or announcement, an 1800-character quote was clipped, and `inspect` left a privately marked detail in the transcript. Sentinel's M-1, M-2, and L-1 stay in `680dd70295a992c031ac82ad9a5cab067c2d69d8`.
+
+The summary event is on the session bus, so the confirmation card appears while the interview is live. Each correction has a label, a save control, and a polite live region. Save keeps the draft in session storage; without storage the live region says a reload drops the draft. The quote wraps instead of being clipped. `inspect` calls `withhold` for a detail that was marked private, so the words leave the transcript. The keep-private button and the checkpoint id write are unchanged from the Sentinel fix.
+
+No provider call. Suite counts for this head follow the re-run.
+
+## 2026-11-21 — A07 slice 2 loop 2, withhold is gone (`cursor/pr1-slice2-readback-6f11`)
+
+Sentinel reviewed `4221a51f0d2dce6c2792ec774a3e1a3a193789b6` as CHANGES, report `69122e20`. Red tests are `680dd70295a992c031ac82ad9a5cab067c2d69d8`. That commit does not refresh `MANIFEST.json`. The three new tests fail there: a second detail of a withheld utterance stays visible, the keep-private control is not wired, and no live session writes `cp:current`.
+
+`withhold` now flags every detail of the utterance, refuses a later record of that item, and removes the words from the transcript, the detail quotes, and the cached tool results. An analyst result that arrives after the withhold does not bring the words back. The session accepts `{type:'withhold', detail_id}` from the read-back button, and the same words leave the talker history, the gap answers, the report input, and the gap status. The Durable Object builds a `CheckpointStore` and the session writes `cp:current` as the session id only. The interview body is not stored.
+
+No provider call.
+
+Measured on `cad20d8cab1ea6f3e5a6b51a5bc0ac12ca7324be`: `python3 -m pytest tests/test_*.py -q` 413 passed; `node --test tests/*.test.js` 420 passed, 0 failed; edge `node --test test/*.test.js` 1126 tests, 1122 passed, 0 failed, 4 skipped; `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui` 834 PASS, 0 FAIL; `python3 scripts/check_handoff.py . --dev-git-index` PASS.
 
 ## 2026-11-21 — A07 slice 2, confirmation read-back (`cursor/pr1-slice2-readback-6f11`)
 

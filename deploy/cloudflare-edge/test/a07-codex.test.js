@@ -37,13 +37,17 @@ test('a withheld detail stays out of notes and the analyst context after it is s
   assert.ok(blob.includes('thirty percent'));
 });
 
-test('the analyst cannot set the privacy mark by recording a withheld field', () => {
+test('inspect withholds an active detail that was marked private', () => {
   const ledger = new InterviewLedger('Pilot');
   ledger.addTranscript('u1', SECRET_UTTERANCE);
-  assert.throws(
-    () => ledger.record({ details: [{ field: 'outcome', item_id: 'u1', quote: SECRET, withheld: true }] }),
-    /Invalid detail schema/,
-  );
+  ledger.record({ details: [{ field: 'outcome', item_id: 'u1', quote: SECRET }] });
+  const row = ledger.details.find(d => d.id === 'D-001');
+  assert.equal(row.active, true);
+  row.withheld = true;
+  const seen = ledger.inspect();
+  assert.equal(seen.candidate_details.some(d => d.id === 'D-001' || String(d.quote).includes('forty two')), false);
+  assert.equal(ledger.publicTranscript().includes('forty two'), false);
+  assert.equal(ledger.transcripts.get('u1'), '[withheld]');
 });
 
 test('session notes and the read-back omit a withheld utterance after supersession', async () => {

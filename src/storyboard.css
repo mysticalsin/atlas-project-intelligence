@@ -3,7 +3,7 @@
    removes every animation under reduced motion, and storyboard-ui.js never adds .is-new while the orb is paused. */
 /* Own card class (not .context-card, which the studio's three-column layout counts): same look as the studio cards. */
 .board-card{border:1px solid rgba(169,169,188,.14);border-radius:17px;padding:20px;background:rgba(16,16,17,.6);min-width:0}
-.story-board{display:flex;flex-direction:column;gap:12px;min-width:0;overflow:hidden}
+.story-board{display:flex;flex-direction:column;gap:12px;min-width:0;overflow:visible}
 .story-board .board-card-heading{display:flex;align-items:center;gap:10px;font-size:12px;line-height:1.4;color:#E8E8EE;min-height:20px}
 .story-board .board-label{display:flex;flex-wrap:wrap;gap:3px 10px;margin:0;font-size:9px;line-height:1.5;letter-spacing:.4px;color:#A9A9BC}
 .story-board #boardCoverage{color:var(--y)}
@@ -14,6 +14,7 @@
 .story-board p.board-note,.story-board p.board-empty,.story-board p.board-corrected{font-size:10px;line-height:1.6;margin:6px 0 0;color:#A9A9BC;overflow-wrap:anywhere}
 .story-board p.board-empty{color:#666A78}
 .story-board p.board-corrected{color:var(--y)}
+.story-board p.board-quote{margin:0;font-size:12px;line-height:1.55;color:#E8E8EE;overflow:visible;max-height:none;overflow-wrap:anywhere;white-space:normal}
 .story-board p.board-warn{color:#D6D6D6}
 /* time */
 .story-board .board-bar{height:4px;border-radius:4px;background:rgba(169,169,188,.16);overflow:hidden}
