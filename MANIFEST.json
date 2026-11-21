@@ -622,23 +622,23 @@
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 943354,
-      "sha256": "16c0a395c747b4e792d54187a368ee68e624c14f483f9defaeaa8f479edac1d8"
+      "bytes": 946162,
+      "sha256": "cb36e7898e87907b52ccabab4aa6104ec7ab7db86e46a17bc7bf1875efaf0799"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 943354,
-      "sha256": "16c0a395c747b4e792d54187a368ee68e624c14f483f9defaeaa8f479edac1d8"
+      "bytes": 946162,
+      "sha256": "cb36e7898e87907b52ccabab4aa6104ec7ab7db86e46a17bc7bf1875efaf0799"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 943354,
-      "sha256": "16c0a395c747b4e792d54187a368ee68e624c14f483f9defaeaa8f479edac1d8"
+      "bytes": 946162,
+      "sha256": "cb36e7898e87907b52ccabab4aa6104ec7ab7db86e46a17bc7bf1875efaf0799"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 943354,
-      "sha256": "16c0a395c747b4e792d54187a368ee68e624c14f483f9defaeaa8f479edac1d8"
+      "bytes": 946162,
+      "sha256": "cb36e7898e87907b52ccabab4aa6104ec7ab7db86e46a17bc7bf1875efaf0799"
     },
     {
       "path": "CLAUDE.md",
@@ -933,7 +933,7 @@
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
       "bytes": 146,
-      "sha256": "1a1a3cc1c92d07172c74abb05c273edf0b01a42b82e5b45faa4de89d25a8301f"
+      "sha256": "9100dc8f0b85eed0d3a26d0b241b015a72fe6d1f0da01597f9e77e4980456abe"
     },
     {
       "path": "deploy/cloudflare-edge/set-keys.sh",
@@ -998,7 +998,7 @@
     {
       "path": "deploy/cloudflare-edge/src/csp.generated.js",
       "bytes": 1675,
-      "sha256": "de59dd4f76935dc5d6872425ece211eae12dbeaba6ed3983a77297923a96b829"
+      "sha256": "c0e9d57c66212ba9b07379ea7209e1640a2b4ae2c24f0b65b797e8497f34a21c"
     },
     {
       "path": "deploy/cloudflare-edge/src/csp.js",
@@ -1077,13 +1077,13 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/living-core.js",
-      "bytes": 38377,
-      "sha256": "071ec75788808c379de457ad138aa1f8ec39b9315e19f3e1d90a489559dd41e7"
+      "bytes": 38571,
+      "sha256": "b0b02acfe6efb131761eb44fc02962532bcf34ad7913780f7af79ff31e112079"
     },
     {
       "path": "deploy/cloudflare-edge/src/living.js",
-      "bytes": 18367,
-      "sha256": "4217cb24b4325632a2ce0ddf2f1fe51f4df6ae83946aaae99165e034feb8eac0"
+      "bytes": 18571,
+      "sha256": "180818acdc69679217aae360e3272a60258477599232b3cf4e7637344275e33c"
     },
     {
       "path": "deploy/cloudflare-edge/src/memory-routes.js",
@@ -1482,8 +1482,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/living.test.js",
-      "bytes": 36721,
-      "sha256": "c365b9799e5a239f18c7dcf2badd2a618253f0c403d70ed31faa31c82ba36d19"
+      "bytes": 39118,
+      "sha256": "4f177b80e730f31e456e4ecf29d4db528f6eb3c87c9833d5b07015c10cf8db33"
     },
     {
       "path": "deploy/cloudflare-edge/test/masking-routes.test.js",
@@ -2206,6 +2206,11 @@
       "sha256": "478da6e6cabaa2e1cc3b13c6dffa495aa65ad85fd90cc43c59ca0318ec620747"
     },
     {
+      "path": "docs/a08/profile-1280.png",
+      "bytes": 77089,
+      "sha256": "28581a719fa082dd34759fb083e049ca5ffcca44fc3d5457589f82eb0883e19d"
+    },
+    {
       "path": "docs/architecture.mmd",
       "bytes": 743,
       "sha256": "12d1557e59e6445126f972b356a7fe233e004f60b86773fefea158658ce59508"
@@ -2312,8 +2317,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 347546,
-      "sha256": "2b363967582eb52377a97ff80eabf714462fa5904492ae1a6e2a84588bbdc9e6"
+      "bytes": 347826,
+      "sha256": "a8aadb9a3da0f7b61d6cffdad7b308838f19136b9ad694878807e28da2f9b161"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2892,13 +2897,13 @@
     },
     {
       "path": "src/living-ui.js",
-      "bytes": 14173,
-      "sha256": "3ff4424eb406406654f8605c0791655958f94cebb27ce8a7954fb687370f01c0"
+      "bytes": 16212,
+      "sha256": "05fc187a37dd218c0267e9d295e729bea815ccfcf59f20f400bdac67ec9ca2e6"
     },
     {
       "path": "src/living.css",
-      "bytes": 4951,
-      "sha256": "37fc786927301d9d8debcad8e7b82ffa541763cd91d4c903472abed70c94644c"
+      "bytes": 5720,
+      "sha256": "84ffda8d7560e5a4d80707144881ba3f09586681609e07f3e4352c8be1a6e744"
     },
     {
       "path": "src/office.js",
@@ -3222,8 +3227,8 @@
     },
     {
       "path": "tests/living_browser.py",
-      "bytes": 18971,
-      "sha256": "bf9d6adf0ddaa0286000caa968ae63b105a6cb8ecc0d38bc39efeccf8df702d0"
+      "bytes": 22641,
+      "sha256": "59c49e79a7b8c1e56b5657a029f260f0a75b5fa51331bff3f4e0b1a06124e9c5"
     },
     {
       "path": "tests/memory_browser.py",

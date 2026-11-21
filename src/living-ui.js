@@ -156,13 +156,41 @@ function stage(artifact,onChange){
 }
 let cache=null;
 async function load(){cache=await api('/living');return cache;}
+function storyCount(n){return n===1?'One story.':n+' stories.';}
+function sentenceCount(n){return n===1?'One sentence on the story.':n+' sentences on the story.';}
+function profileCard(data){
+  const card=h('article',{class:'profile-card'});
+  card.append(h('h1',{text:data.name||''}));
+  if(data.role)card.append(h('p',{class:'cv-role',text:data.role}));
+  card.append(h('p',{class:'profile-muted',text:'From the published library. '+storyCount((data.stories||[]).length)}));
+  const rows=h('div',{class:'profile-rows'});
+  for(const story of data.stories||[]){
+    rows.append(h('div',{class:'profile-row'},[h('b',{text:story.title||'Story'}),h('span',{text:'Published'})]));
+    const place=[story.location, [story.start,story.end].filter(Boolean).join(' – ')].filter(Boolean).join(' · ');
+    if(story.client||place)rows.append(h('div',{class:'profile-row'},[h('b',{text:story.client||'Client'}),h('span',{text:place})]));
+  }
+  rows.append(h('div',{class:'profile-row'},[h('b',{text:'CV reuse'}),h('span',{text:data.consent?'Allowed for a generated CV':'Asked when a CV is generated'})]));
+  card.append(rows);
+  const heading=h('h2',{id:'livingEvidence',tabindex:'-1',text:'Published evidence'});
+  const open=h('button',{type:'button',class:'btn',text:'Open evidence'});
+  open.addEventListener('click',()=>heading.focus());
+  card.append(h('p',{class:'profile-muted',text:sentenceCount((data.evidence||[]).length)+' The CV uses the ones that match a requirement.'}),open,heading);
+  const list=h('div',{class:'evidence-list'});
+  for(const line of data.evidence||[]){
+    const id='ev-'+String(line.evidenceId||'').replace(/[^A-Za-z0-9_-]/g,'');
+    const link=h('a',{href:'#'+id,id,text:line.text||''});
+    list.append(h('div',{class:'evidence-item'},[h('em',{text:TOPIC_LABEL[line.topic]||'Sentence'}),link]));
+  }
+  card.append(list);
+  return card;
+}
 function paintCv(){
   const root=$('living');if(!root)return;
   const data=cache||{cv:null,queue:[]};
   const field=h('textarea',{id:'livingNeed',rows:'2',placeholder:'Need link or job description','aria-label':'Need link or job description'});
   const note=h('p',{id:'livingStatus',class:'living-note',role:'status'});
   const go=h('button',{class:'btn living-go',type:'button',text:data.cv?'Regenerate':'Generate CV'});
-  const store=h('button',{class:'btn',type:'button',id:'livingStore',text:'Store captured requirement'});
+  const store=h('button',{class:'btn',type:'button',id:'livingStore',text:'Store captured requirement 192497'});
   go.disabled=true;
   field.addEventListener('input',()=>{if(!go.classList.contains('busy'))go.disabled=!field.value.trim();});
   const preview=h('div',{class:'cv-preview'});
@@ -175,6 +203,7 @@ function paintCv(){
   store.addEventListener('click',async()=>{
     store.disabled=true;note.textContent='';
     try{
+      if(field.value.trim()){note.textContent='Generate CV uses the text in this box. This button stores captured requirement 192497.';return;}
       const out=await post('/living/requirements',{fixtureId:'192497'});
       if(out.ok===false){note.textContent="Couldn't read that capture. Paste the job description instead.";return;}
       cache=await load();paintCv();
@@ -210,8 +239,8 @@ function paintCv(){
   });
   const queue=h('div',{class:'cv-queue'});
   for(const item of (data.queue||[]).filter(entry=>entry.type==='cv'))queue.append(stage(item,async()=>{await load();paintCv();}));
-  const parts=[h('div',{class:'need-row'},[field,store,go]),note,queue,preview];
-  if((data.requirements||[]).length)parts.unshift(reqs);
+  const parts=[profileCard(data),h('div',{class:'need-row'},[field,store,go]),note,queue,preview];
+  if((data.requirements||[]).length)parts.splice(1,0,reqs);
   root.replaceChildren(h('div',{class:'living-page'},parts));
 }
 function ficheCard(artifact,onChange){

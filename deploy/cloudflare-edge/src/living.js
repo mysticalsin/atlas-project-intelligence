@@ -164,8 +164,12 @@ function profile(lib, user) {
   return {
     name: stories[0]?.data?.consultant?.name || '',
     role: stories[0]?.data?.consultant?.role || '',
-    evidence: lines.map(line => ({ text: line.text, evidenceId: line.evidenceId, storyTitle: line.storyTitle })),
-    stories: stories.map(row => ({ id: row.id, title: row.data?.title || '' })),
+    evidence: lines.map(line => ({ text: line.text, evidenceId: line.evidenceId, storyTitle: line.storyTitle, topic: line.topic || '' })),
+    stories: stories.map(row => ({
+      id: row.id, title: row.data?.title || '',
+      client: row.data?.client?.name || '', location: row.data?.client?.location || '',
+      start: row.data?.details?.start || '', end: row.data?.details?.end || '',
+    })),
     consent: storedConsent(lib, user.email, 'profileReuse', tenantOf(user)),
     requirements: listRequirements(lib, user),
     cv: cv ? viewOf(lib, user, cv) : null,

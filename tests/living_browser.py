@@ -164,7 +164,7 @@ try:
         page.mouse.move(0, 0)
         page.evaluate("() => { const el = document.activeElement; if (el && el.blur) el.blur(); }")
         check('the CV card hides snippet ids', 'A2.1' not in doc and page.locator('#living select').count() == 0)
-        check('a years claim that contradicts the role is a flag, not a CV line', '8 years of Windows work' not in doc and 'role dates cover' in rail and 'I have 8 years' not in body)
+        check('a years claim that contradicts the role is a flag, not a CV line', '8 years of Windows work' not in doc and 'role dates cover' in rail and 'I have 8 years' not in doc)
         check('unsupported must keyword is a gap beside the CV', 'English' in rail and 'Gaps' not in doc and 'C++' not in doc)
         check('a conflicted skill is only a flag', page.locator('.cv-stage > .cv-rail .gap-chip', has_text='C++').count() == 0 and 'C++' in rail and 'Gaps' not in rail and 'Flags' not in rail)
         check('level and nice-to-have are not gaps', 'Middle - From 4 to 6 years' not in body and 'WPF' not in body)

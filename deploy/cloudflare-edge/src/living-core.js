@@ -22,6 +22,7 @@ export function transition(from, event) {
 
 const BANNED_KEY = /salary|compensation|remuneration|market.?value|wage|bonus|payroll|\btjm\b|daily.?rate/i;
 const BANNED_TEXT = /\b(salary|salaries|compensation|remuneration|market[\s_-]?value|wage|wages|bonus|payroll|tjm|daily rate)\b/i;
+const PAY_AMOUNT = /(?:^|\s)(?:pay|salaire)\b[^\n]*\d|\d[\d\s.,]*\s*(?:eur|usd|gbp|chf)\b|(?:eur|usd|gbp|chf)\s*\d|[€$£¥]\s?\d/i;
 
 export function omitCompensation(value) {
   if (typeof value === 'string') return banned(value) ? undefined : value;
@@ -38,7 +39,10 @@ export function omitCompensation(value) {
   return value;
 }
 
-function banned(text) { return BANNED_TEXT.test(String(text || '')); }
+function banned(text) {
+  const s = String(text || '');
+  return BANNED_TEXT.test(s) || PAY_AMOUNT.test(s);
+}
 
 function dedupe(items) {
   const out = [], seen = new Set();
@@ -493,7 +497,7 @@ export function composeCv({ consultant = {}, lines = [], need = null, audience =
   const rest = ranked.filter(item => item.n === 0);
   const kept = (need ? [...matches, ...rest] : ranked).slice(0, Math.max(16, matches.length)).map(item => item.line);
   const flaggedSkill = new Set((need?.flags || []).filter(flag => flag.code === 'skill_conflict' && flag.skill).map(flag => flag.skill));
-  const gaps = keywords.filter(key => key.authority === 'must' && !flaggedSkill.has(key.text) && !kept.some(line => hasTerm(line.source || line.text, key.text))).map(key => ({ keyword: key.text, authority: key.authority, kind: key.kind }));
+  const gaps = keywords.filter(key => key.authority === 'must' && !banned(key.text) && !flaggedSkill.has(key.text) && !kept.some(line => hasTerm(line.source || line.text, key.text))).map(key => ({ keyword: key.text, authority: key.authority, kind: key.kind }));
   return {
     consultant: {
       name: consultant.name || '',

@@ -5,6 +5,7 @@
 - A captured Candidate Requirement can be stored and a CV generated against that row. Export stays a local docx. MiChat is not called. No salary is stored. Synthetic data only.
 - `main` at `8b0972ec` is merged into the living-CV branch, then that branch is merged here. Living writes go through the SQL door.
 - An approval records the CV body. Export refuses a later edit, a second approval, and a rejection. The owner cannot approve under a different letter case or a second address. `scripts/check_handoff.py` and `tests/test_handoff.py` are unchanged from `main`.
+- The living screen paints the published profile and the evidence sentences. The export bar stays in the page flow. Store captured requirement 192497 does not discard text typed in the job box. A must line that is only a pay amount is dropped before it can be stored or exported.
 
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
