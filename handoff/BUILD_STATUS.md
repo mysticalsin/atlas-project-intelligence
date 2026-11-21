@@ -1,6 +1,61 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-20 — check_handoff residual loop 1 (`cursor/atlas-checkhandoff-residuals`)
+
+Devin's exact-head gate on `3ee42d607a7618ec9adfdfb2f2b765f3cda52a81` failed four Medium rows in the git-home sweep. The fix is `8b1bc1b02407f4b52d4ddf80b6feb3cfb92fd008`. That commit does not change `scripts/check_handoff.py`. Red is shown by mutants: each mutant below is restored and not committed, and each exits 1. The clean tests exit 0.
+
+- `<=` changed to `<` removes a home aged exactly 86400 seconds. Kills `test_git_home_age_threshold_is_the_literal_day`.
+- `_STALE_GIT_HOME_SECONDS = 86401` keeps a home aged 86401 seconds. Kills that test, `test_stale_git_home_symlink_is_not_followed`, and `test_sigterm_orphaned_git_home_is_swept_after_the_window`.
+- `_STALE_GIT_HOME_SECONDS = 86399` fails the literal pin `== 86400`.
+- Deleting `stat.S_ISLNK(...) or` kills `test_stale_git_home_symlink_is_not_followed`.
+
+Owner decision, 2026-11-20, Atlas, also in `handoff/decisions/check-handoff-residuals.md`:
+
+- 86399 seconds stays. Exactly 86400 seconds stays. 86401 seconds is removed. The constant is the literal 86400.
+- An `atlas-git-home-*` symlink is not followed. The link and the directory it names stay.
+- SIGTERM does not run `atexit`. The home stays until a later sweep sees it older than 86400 seconds. No signal handler is added. Pull request 25 owns `scripts/git_home.py`.
+
+No review comments were open on pull request 21. The body is rewritten to the measured form and states this SIGTERM limit.
+
+`MANIFEST.json` is regenerated after this note.
+
+Measured on the fix, with `ATLAS_DEPLOY_STUB` unset, before this paragraph's manifest refresh.
+
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 2 failed, 420 passed, 127 warnings, 24.34s, exit 1. The two failures are `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`, the stale manifest.
+- `node --test tests/*.test.js`: 419 tests, 419 pass, 0 fail, 0 skipped, 22.65s, exit 0.
+- Edge `node --test test/*.test.js` with workerd `2026-10-23`: 1117 tests, 1117 pass, 0 fail, 0 skipped, 225.4s, exit 0.
+- `make test-ui` (`CHROMIUM_PATH=/usr/bin/google-chrome`): 834 PASS, 0 FAIL, exit 0, 434s.
+
+After this refresh the same pytest command is 422 passed, and `python3 scripts/check_handoff.py . --dev-git-index` exits 0 with 698 release files. Node, edge, and `make test-ui` do not read `MANIFEST.json`. Those three counts are the head counts.
+
+## 2026-11-20 — check_handoff residuals (`cursor/atlas-checkhandoff-residuals`)
+
+Four Low rows left from PR 14, on `main` `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. Red tests are `e1102c4d2b4a8296d0e12acb31e59bf5fdccae68`. That commit does not change `scripts/check_handoff.py` and does not refresh `MANIFEST.json`. The fix is `26486310b08401f5dc9faa884222515808a84ca1`. The decision is `0cceebf700a9cff954d58664cee86f78af01df00`. `MANIFEST.json` is regenerated after this note.
+
+The nine PR14 fence tests stay byte-identical. New tests are appended. The only in-place test edits are the double `capsys.readouterr()` lines, which are outside those nine functions.
+
+Owner decision, 2026-11-20, Atlas, also in `handoff/decisions/check-handoff-residuals.md`:
+
+- A top-level `.git` symlink is not a checkout. `is_dev_tree` uses `lstat` and does not follow the link.
+- An unreadable directory is `unreadable: <rel>`. The check exits 1. `--write-manifest` does not rewrite `MANIFEST.json`.
+- A traceback assertion reads `capsys` once and checks both stdout and stderr.
+- `git_environ` removes real `atlas-git-home-*` directories older than 86400 seconds. The active home and symlinks stay. `atexit` still removes the active home on a normal exit.
+
+Known limit: SIGKILL still leaves the current process's home. A later run removes it only after it is older than 86400 seconds. A younger leftover stays. There is no pid file and no external reaper.
+
+Red on `e1102c4`, the six new tests only: 6 failed, 143 deselected, exit 1. A symlinked `.git` was a dev tree. Mode `000` `sealed/` still matched. `--write-manifest` exited 0. Nine double `readouterr()` assignments remained. A stale home was not swept.
+
+Mutants, each restored, each exit 1: drop the `lstat` symlink check; `os.walk` with no `onerror`; restore one double `readouterr()`; skip the sweep; sweep the active home too.
+
+Measured before this paragraph's manifest refresh, with `ATLAS_DEPLOY_STUB` unset.
+
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 2 failed, 417 passed, 127 warnings, 166.66s. The two failures are `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`, the stale manifest. After this refresh the same command is 419 passed.
+- `node --test tests/*.test.js`: 419 tests, 419 pass, 0 fail, 0 skipped.
+- Edge `node --test test/*.test.js` with workerd `2026-10-23` and miniflare `5.20261023.3-beta`: 1117 tests, 1117 pass, 0 fail, 0 skipped, 251.7s.
+- `make test-ui` (`CHROMIUM_PATH=/usr/bin/google-chrome`): 834 PASS, 0 FAIL, exit 0.
+- `python3 scripts/check_handoff.py . --dev-git-index` after this refresh: exit 0, 698 release files.
+
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.

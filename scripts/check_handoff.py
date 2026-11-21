@@ -28,8 +28,9 @@ top-level name ``.git`` only. A git failure on that path exits cleanly with
 ``dev-git-index requires a git checkout`` (1 on the check, 2 on
 ``--write-manifest``). Owner decisions, 2026-11-20, Atlas.
 
-Still open: SIGKILL does not run atexit, so the one ``atlas-git-home-*``
-directory can remain.
+A later run removes real ``atlas-git-home-*`` directories in the temp
+directory that are older than 86400 seconds. SIGKILL still leaves the
+current process's directory until that age. Symlinks are not removed.
 """
 from __future__ import annotations
 import atexit
@@ -47,6 +48,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 
 def safe_relative(value: str) -> bool:
@@ -78,10 +80,41 @@ def path_has_non_ascii(rel: str) -> bool:
     return any(any(ord(ch) > 127 for ch in part) for part in _path_components(rel))
 
 
-def non_ascii_paths(root: Path) -> list[str]:
+class UnreadableDirectory(OSError):
+    """A directory could not be listed. The check must not pass."""
+
+    def __init__(self, rel: str):
+        self.rel = rel
+        super().__init__('unreadable: ' + rel)
+
+
+def _walk_error_rel(root: Path, err: OSError) -> str:
+    filename = getattr(err, 'filename', None)
+    if not filename:
+        return '.'
+    try:
+        rel = Path(os.fsdecode(filename)).relative_to(Path(root)).as_posix()
+    except ValueError:
+        return '.'
+    return rel or '.'
+
+
+def _walk(root: Path, errors: list[str]):
+    """Walk root without following links. Record a directory that cannot be listed."""
+
+    def onerror(err: OSError) -> None:
+        rel = _walk_error_rel(root, err)
+        if rel not in errors:
+            errors.append(rel)
+
+    return os.walk(root, followlinks=False, onerror=onerror)
+
+
+def non_ascii_paths(root: Path, errors: list[str] | None = None) -> list[str]:
     """Every file or directory under root with a non-ASCII component."""
     found = []
-    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+    unread: list[str] = [] if errors is None else errors
+    for dirpath, dirnames, filenames in _walk(root, unread):
         base = Path(dirpath)
         rel_base = base.relative_to(root).as_posix()
         if rel_base == '.':
@@ -97,6 +130,8 @@ def non_ascii_paths(root: Path) -> list[str]:
             rel = name if not rel_base else rel_base + '/' + name
             if path_has_non_ascii(rel):
                 found.append(rel)
+    if errors is None and unread:
+        raise UnreadableDirectory(unread[0])
     return found
 
 
@@ -153,12 +188,20 @@ def _is_checkout_metadata(rel: str) -> bool:
 
 
 def is_dev_tree(root: Path) -> bool:
-    """True only when the exact top-level ``.git/HEAD`` is a regular file."""
-    head = root / '.git' / 'HEAD'
+    """True only when top-level ``.git`` is a real directory and ``HEAD`` is a regular file.
+
+    A symlink ``.git`` is not a checkout. Neither path is followed.
+    """
+    git = root / '.git'
+    head = git / 'HEAD'
     try:
-        return head.is_file() and not head.is_symlink()
+        git_mode = os.lstat(git).st_mode
+        if stat.S_ISLNK(git_mode) or not stat.S_ISDIR(git_mode):
+            return False
+        head_mode = os.lstat(head).st_mode
     except OSError:
         return False
+    return stat.S_ISREG(head_mode)
 
 
 _GIT_HOME: str | None = None
@@ -171,13 +214,50 @@ def _remove_shared_git_home() -> None:
         shutil.rmtree(home, ignore_errors=True)
 
 
+_STALE_GIT_HOME_SECONDS = 86400
+_GIT_HOME_PREFIX = 'atlas-git-home-'
+
+
+def _sweep_stale_git_homes(now: float | None = None) -> None:
+    """Remove real atlas-git-home directories older than the sweep window.
+
+    Symlinks are left alone. This process's active home is left alone.
+    SIGKILL still leaves the active directory until a later run sees it
+    older than ``_STALE_GIT_HOME_SECONDS``.
+    """
+    current = time.time() if now is None else now
+    try:
+        temp_dir = tempfile.gettempdir()
+        names = os.listdir(temp_dir)
+    except OSError:
+        return
+    active = _GIT_HOME
+    active_key = os.path.normcase(os.path.abspath(active)) if active else None
+    for name in names:
+        if not name.startswith(_GIT_HOME_PREFIX):
+            continue
+        path = os.path.join(temp_dir, name)
+        if active_key and os.path.normcase(os.path.abspath(path)) == active_key:
+            continue
+        try:
+            st = os.lstat(path)
+        except OSError:
+            continue
+        if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
+            continue
+        if current - st.st_mtime <= _STALE_GIT_HOME_SECONDS:
+            continue
+        shutil.rmtree(path, ignore_errors=True)
+
+
 def _shared_git_home() -> str:
     global _GIT_HOME, _GIT_HOME_CLEANUP
     if not _GIT_HOME_CLEANUP:
         atexit.register(_remove_shared_git_home)
         _GIT_HOME_CLEANUP = True
+    _sweep_stale_git_homes()
     if _GIT_HOME is None or not os.path.isdir(_GIT_HOME):
-        _GIT_HOME = tempfile.mkdtemp(prefix='atlas-git-home-')
+        _GIT_HOME = tempfile.mkdtemp(prefix=_GIT_HOME_PREFIX)
     return _GIT_HOME
 
 
@@ -187,7 +267,8 @@ def git_environ() -> dict[str, str]:
     PATH is copied from the caller, or ``/usr/bin:/bin`` when the caller
     has no PATH, so the operator's git is the binary that runs. The
     package cannot choose it. HOME is one empty directory for this
-    process and is removed at exit.
+    process and is removed at exit. A home left by a killed process is
+    removed on a later run once it is older than 86400 seconds.
     """
     return {
         'PATH': os.environ.get('PATH', '/usr/bin:/bin'),
@@ -251,10 +332,11 @@ def read_package_bytes(root: Path, rel: str) -> bytes:
     return target.read_bytes()
 
 
-def package_files(root: Path) -> list[str]:
+def package_files(root: Path, errors: list[str] | None = None) -> list[str]:
     """Files, symlink directories, and git-metadata directories. Do not follow links."""
     found = []
-    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+    unread: list[str] = [] if errors is None else errors
+    for dirpath, dirnames, filenames in _walk(root, unread):
         base = Path(dirpath)
         rel_base = base.relative_to(root).as_posix()
         if rel_base == '.':
@@ -267,13 +349,16 @@ def package_files(root: Path) -> list[str]:
         for name in filenames:
             rel = name if not rel_base else rel_base + '/' + name
             found.append(rel)
+    if errors is None and unread:
+        raise UnreadableDirectory(unread[0])
     return found
 
 
-def nested_git_metadata_paths(root: Path) -> list[str]:
+def nested_git_metadata_paths(root: Path, errors: list[str] | None = None) -> list[str]:
     """Git metadata under the checkout, not the checkout's own top-level git dir."""
     found = []
-    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+    unread: list[str] = [] if errors is None else errors
+    for dirpath, dirnames, filenames in _walk(root, unread):
         base = Path(dirpath)
         rel_base = base.relative_to(root).as_posix()
         if rel_base == '.':
@@ -295,6 +380,8 @@ def nested_git_metadata_paths(root: Path) -> list[str]:
             rel = name if not rel_base else rel_base + '/' + name
             if is_git_metadata_path(rel) and not _is_checkout_metadata(rel):
                 found.append(rel)
+    if errors is None and unread:
+        raise UnreadableDirectory(unread[0])
     return found
 
 
@@ -411,6 +498,7 @@ def inspect(root: Path, *, rebuild=True, dev_git_index: bool = False) -> dict:
         for item in excludes:
             if isinstance(item, str) and safe_relative(item) and not item.endswith('/'):
                 allowed.add(item)
+    walk_errors: list[str] = []
     if dev_git_index:
         if not is_dev_tree(root):
             bad.append('dev-git-index requires a git checkout')
@@ -426,13 +514,15 @@ def inspect(root: Path, *, rebuild=True, dev_git_index: bool = False) -> dict:
                 for rel in untracked_dev:
                     if rel not in allowed and not manifest_allows_path(rel, excludes, package_mode=False):
                         bad.append('untracked: ' + rel)
-                for rel in nested_git_metadata_paths(root):
+                for rel in nested_git_metadata_paths(root, walk_errors):
                     bad.append('refused: ' + rel)
     else:
-        present = package_files(root)
+        present = package_files(root, walk_errors)
     non_ascii_seen: set[str] = set()
-    for rel in non_ascii_paths(root):
+    for rel in non_ascii_paths(root, walk_errors):
         _refuse_non_ascii(bad, rel, non_ascii_seen)
+    for rel in walk_errors:
+        bad.append('unreadable: ' + rel)
     for rel in sorted(present):
         try:
             resolve_in_package(root, rel)
@@ -632,7 +722,12 @@ def main(argv=None):
             p.error('MANIFEST.json is missing in ' + str(root))
         if not is_dev_tree(root):
             _exit_checkout_required()
-        blocked = non_ascii_paths(root)
+        unread: list[str] = []
+        blocked = non_ascii_paths(root, unread)
+        if unread:
+            for rel in unread:
+                print('FAIL manifest-content: unreadable: ' + rel)
+            return 1
         if blocked:
             for rel in blocked:
                 print('FAIL manifest-content: refused: non-ASCII path component: ' + rel)
