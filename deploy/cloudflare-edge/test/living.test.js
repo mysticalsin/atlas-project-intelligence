@@ -561,3 +561,39 @@ test('the fixture, the CV model, the docx template, and the exported document ha
   const builder = template.slice(template.indexOf('function documentLines'), template.indexOf('export function bytesToBase64'));
   assert.equal(SALARY_KEY.test(builder), false);
 });
+
+test('a must line that is only a pay amount is dropped by the parser', () => {
+  const parsed = new PastedJobDescriptionAdapter().resolve('Must have\nWindows\nPay 900\n€900\n900 EUR');
+  assert.equal(parsed.ok, true);
+  assert.deepEqual(parsed.need.skills.must.map(item => item.text), ['Windows']);
+  assert.equal(JSON.stringify(omitCompensation(parsed.need)).includes('900'), false);
+  assert.equal(JSON.stringify(parsed.need.keywords).includes('Pay'), false);
+});
+
+test('a pay amount on a must line is not stored and never reaches the docx', async () => {
+  const l = lib();
+  await publish(l);
+  await consent(l);
+  const stored = await living.routes({ method: 'POST', parts: ['living', 'requirements'], user: OWNER, lib: l, body: { text: 'Must have\nWindows\nPay 900' } });
+  assert.equal(JSON.stringify(stored.body).includes('900'), false);
+  assert.equal(l.rows('SELECT payload FROM living_requirements').map(row => row.payload).join('\n').includes('900'), false);
+  const made = await living.routes({ method: 'POST', parts: ['living', 'generate'], user: OWNER, lib: l, body: { requirementId: stored.body.requirement.id } });
+  assert.equal((made.body.artifact.gaps || []).some(gap => /pay|900/i.test(gap.keyword)), false);
+  assert.equal(JSON.stringify(made.body.artifact).includes('900'), false);
+  await living.routes({ method: 'POST', parts: ['living', 'artifacts', made.body.artifact.id, 'approve'], user: PRE, lib: l, body: {} });
+  const file = await living.routes({ method: 'POST', parts: ['living', 'artifacts', made.body.artifact.id, 'export'], user: OWNER, lib: l, body: { format: 'docx', adapter: 'michat' } });
+  const xml = docxXml(file);
+  assert.equal(xml.includes('Pay'), false);
+  assert.equal(xml.includes('900'), false);
+});
+
+test('an owner who is also an approver cannot approve their own CV', async () => {
+  const owner = { ...OWNER, role: 'admin' };
+  const l = lib();
+  await publish(l);
+  await consent(l, owner);
+  const made = await living.routes({ method: 'POST', parts: ['living', 'generate'], user: owner, lib: l, body: { text: 'Must have\nWindows\nC#' } });
+  const id = made.body.artifact.id;
+  await assert.rejects(living.routes({ method: 'POST', parts: ['living', 'artifacts', id, 'approve'], user: owner, lib: l, body: {} }), /cannot approve/);
+  assert.equal(l.rows('SELECT status FROM living_artifacts WHERE id = ?', id)[0].status, 'in_review');
+});
