@@ -28,6 +28,21 @@ async function reportChain(lib, env) {
 }
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+// SQLite throws these with no HTTP status. A lock is temporary. A unique key is a conflict.
+// ERR_SQLITE_ERROR is both, so the message and errcode decide. Anything else stays 500.
+function libraryFailure(error) {
+  if (error && error.status) return { status: error.status, body: { error: error.message, ...(error.code ? { code: error.code } : {}) } };
+  const message = String(error && error.message || '');
+  const code = String(error && error.code || '');
+  const errcode = Number(error && error.errcode);
+  if (/database is locked/i.test(message) || code === 'SQLITE_BUSY' || code === 'ERR_SQLITE_BUSY' || errcode === 5) {
+    return { status: 503, body: { error: 'The library is temporarily unavailable.', code: 'SQLITE_BUSY' } };
+  }
+  if (/unique constraint failed/i.test(message) || code === 'SQLITE_CONSTRAINT_UNIQUE' || errcode === 2067) {
+    return { status: 409, body: { error: 'That reference conflicts with one already stored.', code: 'SQLITE_CONSTRAINT' } };
+  }
+  return { status: 500, body: { error: 'The library could not complete that request.' } };
+}
 
 // Segments the library routes on. The platform URL parser has already resolved "." and "..", including "%2e".
 // It keeps a trailing slash, a repeated slash, and "%2F". Empty segments are dropped here, and the words stay case-sensitive.
@@ -59,7 +74,8 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
       if (r?.response) return r.response;
       return json(r.body, r.status || 200);
     } catch (e) {
-      return e.status ? json({ error: e.message, ...(e.code ? { code: e.code } : {}) }, e.status) : json({ error: 'The library could not complete that request.' }, 500);
+      const failed = libraryFailure(e);
+      return json(failed.body, failed.status);
     }
   }
   // idp: the sign-in name claims (x-atlas-idp, always written by the Worker from the verified token; WOW_ZERO_CONFIG §5.5).
@@ -147,6 +163,7 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
     if (method === 'POST' && action === 'reinstate') return json(lib.reinstate(user, id));
     return json({ error: 'Not found.' }, 404);
   } catch (e) {
-    return e.status ? json({ error: e.message, ...(e.code ? { code: e.code } : {}) }, e.status) : json({ error: 'The library could not complete that request.' }, 500);
+    const failed = libraryFailure(e);
+    return json(failed.body, failed.status);
   }
 }

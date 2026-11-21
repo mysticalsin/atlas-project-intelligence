@@ -11,6 +11,7 @@ import { recordView, pseudonymise, forAuthor, nameMatcher } from './scrub.js';
 import { winSignals } from './winloop.js';
 // Story rating by TypeSafe JEV (docs/JEV_RATING.md): used only when a rater with a key exists and the owner consented.
 import { RatingError, ratingInput, questionPlan, requestBody, compose, agentQuality, noStoryQuality, sha256Hex, BUDGETS, RUBRIC_VERSION, METRIC_CODES, MODEL } from './rating.js';
+import { impact as scoreImpact } from './classify.js';
 import { profileFold, profileSelection, storedConsent } from './profile.js';
 import { placeholders, readChunks } from './sql-bound.js';
 import { sameTenant, TENANT_ID } from './authz.js';
@@ -368,6 +369,17 @@ export const STATUSES = ['in_review', 'needs_work', 'changes_requested', 'awaiti
 export const PUBLICATION_CHANGE_REFUSED = 'That publication change is not allowed.';
 const REVIEW_DAYS = 180; // references are due for an update six months after their last change
 
+// A browser may send jev.impact. That number is not stored. The record's impact is
+// classify.impact(scores), the same function the rater uses. Missing or unusable
+// scores stay null, including when the client sent a finite impact and no scores.
+function storedImpact(scores) {
+  if (!scores || typeof scores !== 'object' || Array.isArray(scores)) return null;
+  let value;
+  try { value = scoreImpact(scores); }
+  catch { return null; }
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
 // Server-side bounds for everything a browser may send. Unknown fields are dropped.
 export function cleanReference(raw) {
   raw = obj(raw);
@@ -390,7 +402,7 @@ export function cleanReference(raw) {
       topics: Object.fromEntries(['context', 'contribution', 'approach', 'outcome', 'evidence', 'customer_relevance'].map(k => [k, str(obj(r.topics)[k], 900)])),
       highlights: list(r.highlights, 4, 200), gaps: list(r.gaps, 6, 200), follow_ups: list(r.follow_ups, 5, 200) } : null,
     jev: j && obj(j.primary).key ? { primary: { key: str(j.primary.key, 40), label: str(j.primary.label, 60) }, also: (Array.isArray(j.also) ? j.also : []).slice(0, 8).map(a => ({ key: str(obj(a).key, 40), label: str(obj(a).label, 60) })),
-      impact: Number.isFinite(j.impact) ? Math.max(0, Math.min(100, j.impact)) : null } : null,
+      impact: storedImpact(j.scores) } : null,
     validation: { manager: { name: str(obj(v.manager).name, 100), email: email(obj(v.manager).email) }, managerStaff: v.managerStaff === true },
     sheet: raw.sheet && typeof raw.sheet === 'object' ? { oppId: str(obj(raw.sheet).oppId, 40), oppIdPending: obj(raw.sheet).oppIdPending === true, title: str(obj(raw.sheet).title, 140),
       exec: Object.fromEntries(['summary', 'teamSize', 'duration', 'price', 'contacts'].map(k => [k, para(obj(obj(raw.sheet).exec)[k], 1500)])),
@@ -437,6 +449,35 @@ function publicQuality(q) {
 // Numbers only (docs/JEV_RATING.md §7.5): never an id, title, client, hash, model name, text or key.
 const defaultMetric = (name, values) => console.log(JSON.stringify({ atlas_metric: name, ...values }));
 const waitAtMost = (p, ms) => new Promise(resolve => { const t = setTimeout(resolve, ms); p.then(() => { clearTimeout(t); resolve(); }, () => { clearTimeout(t); resolve(); }); });
+function reviewDeadline(budget, rater) {
+  const name = budget === 'background' ? 'background' : 'interactive';
+  const ms = Number(rater?.budgets?.[name]?.deadlineMs ?? BUDGETS[name].deadlineMs);
+  return Number.isFinite(ms) && ms > 0 ? ms : BUDGETS[name].deadlineMs;
+}
+// The review agent uses the same deadline as the JEV budget for this call.
+// complete() is not given a signal: a provider that ignores cancellation is abandoned
+// here, and the review settles with "did not answer" instead of waiting.
+function completeWithin(complete, ms) {
+  return (messages) => new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(Object.assign(new Error('The review agent did not answer in time.'), { code: 'REVIEW_DEADLINE' }));
+    }, ms);
+    Promise.resolve().then(() => complete(messages)).then(value => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    }, error => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
+}
 // Without a key (fallback no_key) the audit text is today's, including when the review agent did not answer.
 const auditDetail = q => `score ${q.score}, ${q.status}` + (q.engine === 'jev' ? ' · JEV' : q.escalatedFrom ? ' · review agent (second opinion)' : q.engine === 'rules' && q.fallbackReason !== 'no_key' ? ' · rules only' : '');
 
@@ -882,15 +923,17 @@ export class Library {
     if (!user.email) throw fail(401, 'Sign in first.');
     if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
     body = obj(body);
-    const data = cleanReference(body.reference), localId = str(body.localId, 100), hash = await hashOf(data), at = this.now();
+    const data = cleanReference(body.reference), localKey = str(body.localId, 100), hash = await hashOf(data), at = this.now();
     const storyTenant = String(user.tenant || '').trim().toLowerCase();
-    const found = body.id ? { id: String(body.id) } : localId ? this.rows("SELECT id FROM refs WHERE owner = ? AND local_id = ? AND lower(COALESCE(tenant, '')) = ?", user.email, localId, storyTenant)[0] : null;
+    // An empty local id is not a key. The unique index treats '' as one slot per owner and tenant,
+    // and SQLite treats NULL as distinct, so a missing id is stored as NULL.
+    const found = body.id ? { id: String(body.id) } : localKey ? this.rows("SELECT id FROM refs WHERE owner = ? AND local_id = ? AND lower(COALESCE(tenant, '')) = ?", user.email, localKey, storyTenant)[0] : null;
     const row = found ? this.row(found.id) : null;
     if (body.id && !row) throw fail(404, 'Reference not found.');
     if (row && !this.canEdit(row, user)) throw fail(403, 'You cannot edit this reference.');
     if (row && row.merged_into) throw fail(409, 'This reference was merged into another one.');
     if (row && row.content_hash === hash) return { unchanged: true, summary: { ...this.summary(row, 'full', user), unchanged: true } };
-    return { user, data, localId, hash, at, storyTenant, id: row ? row.id : this.newId(), existing: !!row };
+    return { user, data, localId: localKey || null, hash, at, storyTenant, id: row ? row.id : this.newId(), existing: !!row };
   }
 
   // Synchronous. The status compare is the stored column, read again here so a merge can fold
@@ -1133,6 +1176,7 @@ export class Library {
       this.emitRating(q);
       return finish(stored);
     }
+    const deadlineMs = reviewDeadline(budget, this.rater);
     let fallback = engine === 'jev' ? null : this.rater?.available() ? 'no_consent' : 'no_key', meta = {};
     if (engine === 'jev') {
       let done = null;
@@ -1143,10 +1187,11 @@ export class Library {
       if (done) {
         const stored = this.storeRating(row, gen, done.quality, actor, done.lastJev);
         this.emitRating(done.quality, { ...done.meta, escalated: done.escalate, strict: done.quality.jev.strict });
-        return finish(stored, stored && done.escalate && this.complete ? this.secondOpinion(row, gen, done) : null);
+        return finish(stored, stored && done.escalate && this.complete ? this.secondOpinion(row, gen, done, deadlineMs) : null);
       }
     }
-    const t0 = Date.now(), q0 = await reviewReference(row.data, this.complete || (async () => { throw new Error('no review agent'); }),
+    const complete = typeof this.complete === 'function' ? completeWithin(this.complete, deadlineMs) : (async () => { throw new Error('no review agent'); });
+    const t0 = Date.now(), q0 = await reviewReference(row.data, complete,
       { view: d => recordView(this, d), readyScore: this.readyScore, now: this.now, model: this.model });
     const q = agentQuality({ ...q0, revision: row.revision }, { fallbackReason: fallback, gen, ms: Date.now() - t0 });
     const stored = this.storeRating(row, gen, q, actor);
@@ -1180,8 +1225,8 @@ export class Library {
 
   // §5.5 escalation: today's review agent decides, in the same generation. If it does not answer, the JEV rating stays
   // needs_work and says a reviewer should check the unsure parts.
-  async secondOpinion(row, gen, done) {
-    const t0 = Date.now(), q0 = await reviewReference(row.data, this.complete, { view: d => recordView(this, d), readyScore: this.readyScore, now: this.now, model: this.model });
+  async secondOpinion(row, gen, done, deadlineMs) {
+    const t0 = Date.now(), q0 = await reviewReference(row.data, completeWithin(this.complete, deadlineMs), { view: d => recordView(this, d), readyScore: this.readyScore, now: this.now, model: this.model });
     const strict = done.quality.jev.strict;
     if (q0.aiScore !== null) {
       const q = agentQuality({ ...q0, revision: row.revision }, { engine: 'review-agent', escalatedFrom: 'jev', fallbackReason: 'escalated', jev: done.quality.jev, holds: [], gen, ms: Date.now() - t0 });
@@ -1286,7 +1331,9 @@ export class Library {
     k.sources = [...k.sources, ...g.sources].slice(0, 20);
     // No name or email in the text: answers reach models through forModel and recordView (WOW_ZERO_CONFIG §5.9); who
     // contributed stays in details.consultants and members.
-    if (g.answers[1] && !k.answers[1].includes(g.answers[1])) k.answers[1] = (k.answers[1] + '\n\nContribution by another consultant: ' + g.answers[1]).trim().slice(0, 6000);
+    // Same text is one contribution. A shorter line that merely sits inside the kept answer is still attributed.
+    const keptContribution = str(k.answers[1], 6000), retiredContribution = str(g.answers[1], 6000);
+    if (retiredContribution && retiredContribution !== keptContribution) k.answers[1] = ((k.answers[1] || '') + '\n\nContribution by another consultant: ' + g.answers[1]).trim().slice(0, 6000);
     for (const i of [0, 2, 3, 4, 5]) if (!k.answers[i] && g.answers[i]) k.answers[i] = g.answers[i];
     const moved = acceptPublication(publicationTransition(gone.state, { type: 'merged', id: gone.id }), { id: gone.id, event: 'merged' });
     if (!moved) throw fail(409, PUBLICATION_CHANGE_REFUSED);
@@ -1493,12 +1540,14 @@ export class Library {
   async importAll(user, body = {}) {
     if (user.role !== 'admin') throw fail(403, 'Import is for a verified admin.');
     if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
-    const items = Array.isArray(obj(body).references) ? obj(body).references.slice(0, 500) : [];
+    const all = Array.isArray(obj(body).references) ? obj(body).references : [];
+    const items = all.slice(0, 500);
     const out = { created: 0, unchanged: 0, rejected: [] };
     for (const [i, it] of items.entries()) {
       try { const r = await this.upsert(user, { localId: 'import:' + str(obj(it).externalId || obj(it).id || String(i), 80), reference: obj(it).reference || it }); r.unchanged ? out.unchanged++ : out.created++; }
       catch (e) { out.rejected.push({ index: i, error: e.message }); }
     }
+    for (let i = items.length; i < all.length; i++) out.rejected.push({ index: i, error: 'Import is limited to 500 references.' });
     this.log('library', user.email, 'import', JSON.stringify({ created: out.created, unchanged: out.unchanged, rejected: out.rejected.length }));
     return out;
   }
