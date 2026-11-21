@@ -136,12 +136,10 @@ function nestedWrite(tokens, i) {
 // token, so a second result column stays a write.
 function readAlias(tokens, i) {
   const token = tokens[i];
-  if (!(token && token.kind === 'word' && !token.quoted && token.depth === 0)) return false;
   if (token.text !== 'vacuum' && token.text !== 'reindex') return false;
   const next = tokens[i + 1];
   if (next && next.text !== ';' && !(next.kind === 'word' && !next.quoted && listed(ALIAS_NEXT, next.text))) return false;
   const at = topVerbAt(tokens);
-  if (at < 0 || at === i) return false;
   return !!(tokens[at] && listed(READS, tokens[at].text));
 }
 function trailingVerb(tokens, i) {
@@ -198,14 +196,13 @@ function explainedAt(tokens) {
     const token = tokens[i];
     if (token && token.kind === 'word' && !token.quoted && token.depth === 0 && token.text === 'pragma' && !blockedVerb(tokens, i)) return i;
   }
-  return -1;
 }
 function strayWrite(tokens, sql) {
   const plan = explainsPlan(tokens) && explainFirst(sql);
   const explained = plan ? explainedAt(tokens) : -1;
   let seen = false;
   for (let i = 0; i < tokens.length; i++) {
-    if (i === explained) { seen = true; continue; }
+    if (i === explained) continue;
     const token = tokens[i];
     if (nestedWrite(tokens, i) || (writeVerbAt(tokens, i) && (token.depth > 0 || seen)) || (seen && trailingVerb(tokens, i))) return true;
     if (token && token.kind === 'word' && !token.quoted && token.depth === 0 && !blockedVerb(tokens, i)) {
