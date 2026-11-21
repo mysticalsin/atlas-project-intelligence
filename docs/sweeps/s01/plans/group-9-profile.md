@@ -1,6 +1,6 @@
 # Group 9 — profile
 
-Plan only. Debate this before anyone edits product code.
+Plan only. Debate this before anyone edits product code. Revision v2 (Sentinel PLAN-CHANGES on PR #38). The v2 section wins where an earlier sentence still trusts `edits.managerEmail` or a ref the caller wrote.
 
 Pinned inputs: confirmer report sha256 `57c92dcb651ddef4b7abe9c23424065a2a59fa139d2cdfc6315ce227596eac1c`, main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`, red tests `96712474b59d6b058ef00479f2bb2d4eb065801e` (PR #31). External review: ATLAS-08 in `/cursor/stores/bot/atlas-sweeps/s01/external/hammer-artex-security.md`.
 
@@ -43,11 +43,12 @@ The pattern-limited command is how this group proves its three PR #31 tests with
 
 `deploy/cloudflare-edge/test/sweep01-g9-people.test.js`. Write it first and see it fail on current `profile.js`.
 
-Setup: one tenant, a `directory` row for `alex@example.test` with a name and a title and a manager email, the caller's own directory row whose `manager_email` is `boss@example.test` with a name and title, and one story the caller owns that lists `ada@example.test` as a consultant. No DNA network.
+Setup: one tenant, a `directory` row for `alex@example.test` with a name and a title and a manager email, the caller's own directory row whose `manager_email` is `boss@example.test` with a name and title, one story the caller wrote that lists `ada@example.test` as a consultant, and one story someone else wrote (`updated_by` is not the caller) that lists `sam@example.test` and that `lib.access` grants the caller in full. No DNA network.
 
 - `GET` people as `role: "user"` for `alex@example.test` → 403, and the body does not contain the directory name.
-- Same caller for `boss@example.test` → 200, `name` and `title` present, no `manager_email`.
-- Same caller for `ada@example.test` → 200, because that address is on a story `lib.access` grants them in full.
+- Same caller for `boss@example.test` → 200, `name` and `title` present, no `manager_email`. The directory row is the only manager source.
+- Same caller for `ada@example.test` → 403, because the caller wrote that consultant.
+- Same caller for `sam@example.test` → 200, because someone else wrote that ref and the caller can open the story in full.
 - Same caller for `alex@example.test` with a prefix or a trailing domain character (`alex@example.test.au`, `xalex@example.test`) → 400 or 404, never 200 with Alex's name.
 - `role: "admin"` and `role: "reviewer"` for `alex@example.test` → 200 without `manager_email`.
 - `role: "presales"` for `alex@example.test`, when that address is on no story, → 403.
@@ -61,7 +62,7 @@ Before, F2: `editProfile` and the consent POST both `gather()` (read the row, th
 
 Before, ATLAS-08: any signed-in member of the tenant can `GET` people for any exact address. The body is `{ email, name, title, from }`. A 200 confirms the address is in the HR directory. A 404 confirms it is not. Manager email is already omitted. The cap is the in-memory limiter (ATLAS-07, group 14), so the harvest resumes after the Library Durable Object is evicted.
 
-After: retention deletes a row only when `seen_at` parses to an instant strictly before the cutoff. The offset form of the cutoff instant survives, and an unparseable value survives. Two overlapping edits or grants both remain. A normal member resolves only their own manager and people already named on a story they can open in full. Admin and reviewer can resolve an arbitrary exact address and still do not receive `manager_email`. An unauthorized address is 403, so the caller does not learn whether the directory has it.
+After: retention deletes a row only when `seen_at` parses to an instant strictly before the cutoff. The offset form of the cutoff instant survives, and an unparseable value survives. Two overlapping edits or grants both remain. A third write that conflicts twice is 409 and leaves the row unchanged. A normal member resolves only their directory manager and people named on a story someone else wrote that they can open in full. A manager email they typed into `edits`, and a consultant they wrote themselves, do not resolve. Admin and reviewer can resolve an arbitrary exact address and still do not receive `manager_email`. An unauthorized address is 403. Past 30 distinct addresses in a UTC day, a non-admin caller gets 429.
 
 ## Chosen design
 
@@ -73,14 +74,16 @@ F2. `save` must not persist the object captured before the DNA await. `editProfi
 - a consent grant sets only that kind to `{ version: 1, at }`
 - a consent revoke deletes only that kind
 
-The other keys stay as they are on the row just read. `gather` may still await DNA first; the test releases both fetches before either assertion. The merge is synchronous SQLite, so the second continuation sees the first commit. Retry once if `updated_at` changed between the read and the update inside that transaction. Do not hold a lock across the DNA `await`. A 2.5s directory read must not block the other field.
+The other keys stay as they are on the row just read. `gather` may still await DNA first; the test releases both fetches before either assertion. The merge is synchronous SQLite, so the second continuation sees the first commit. If `updated_at` changed between the read and the update, retry the read-merge once. If it changed again, return 409 and do not write. Do not hold a lock across the DNA `await`. A 2.5s directory read must not block the other field.
 
 ATLAS-08. After the existing `rateLimit` call and the email-shape check:
 
 - `admin` and `reviewer` may resolve any exact address in the tenant.
-- Anyone else may resolve an address only when it is the manager email on their own directory row (`directoryManager` of the caller) or their stored `edits.managerEmail`, or when some `refs` row in the tenant has `lib.access(row, user) === 'full'` and the address is that row's owner, a `members` token, or a `details.consultants[].email`, compared as a whole address (lowercase, no prefix and no suffix).
+- Anyone else may resolve an address only when it is `directoryManager` of the caller (the directory row's `manager_email`), or when some `refs` row in the tenant has `lib.access(row, user) === 'full'`, `updated_by` is present and is not the caller, and the address is a `members` token or a `details.consultants[].email` on that row, compared as a whole address (lowercase, no prefix and no suffix).
+- `edits.managerEmail` is not a source. The caller can set it in one request and look it up in the next.
 - Otherwise 403, before `lookupPerson`.
 - `lookupPerson` stays the response shape. Strip `manager_email` if a future change adds it. Do not add the manager to this response.
+- **Owner ruling.** Roles other than `admin` and `reviewer` may resolve at most 30 distinct addresses per UTC day, including 403s. Store them in SQLite (`people_lookup`, created with `lib.exec` from this file) so a new `Library` on the same database still counts. The 31st distinct address is 429 and does not call `lookupPerson`. The owner can change 30. This plan uses 30 until they do.
 
 `presales` is not on the arbitrary-lookup list. They still resolve people on stories they can open in full, because `access` already returns `full` for that role. An address on no such story is 403.
 
@@ -133,6 +136,18 @@ The merge write cannot drop a field the caller did not send. A bug that merges t
 
 About 120 lines in `profile.js` and about 180 lines of tests.
 
-## Open question for the owner
+## v2 — Sentinel
 
-`presales` does not get arbitrary directory lookup. Admin and reviewer do. A presales caller still resolves a person named on a story they can open in full. Confirm that split before this lands. Widening it to every `access === 'full'` role makes ATLAS-08 a lookup of anyone named on any story.
+File: `deploy/cloudflare-edge/test/sweep01-g9-people.test.js`, except the conflict test, which lives in the same file. Write these before the fix.
+
+| Sentinel | Change | Red test |
+|---|---|---|
+| M1 | Trust only the directory manager. A caller who `POST`s `edits.managerEmail` to a directory address, then `GET`s people for that address, gets 403 and the body does not contain the directory name. `boss@example.test` from the directory row still returns 200. | `M1 a caller-set manager email does not unlock directory lookup` |
+| M2 | A consultant or member on a row whose `updated_by` is the caller does not unlock lookup. The same address on a row `updated_by` someone else, which the caller can open in full, does. | `M2 a self-written consultant does not unlock lookup` |
+| M2, owner ruling | 30 distinct addresses per UTC day for roles other than admin and reviewer, stored in SQLite. After 30 distinct 403s, construct `new Library(sameSql)` and the 31st distinct address is 429. Admin is not capped. | `M2 the thirty-first distinct lookup in a day is refused after eviction` |
+| L1 | Two overlapping saves still both stick (F2). A third save that loses the compare twice returns 409, and its field is absent from the row. | `L1 a profile save that conflicts twice fails closed` |
+
+## Open questions for the owner
+
+1. `presales` does not get arbitrary directory lookup. Admin and reviewer do. A presales caller still resolves a person named on a story someone else wrote, when they can open that story in full. Confirm that split before this lands.
+2. **Owner ruling.** The distinct-address cap is 30 per UTC day, and admin and reviewer are exempt. Say if the number or the exemption should change. The red test uses 30.

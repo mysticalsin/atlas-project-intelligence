@@ -1,6 +1,6 @@
 # Group 16 — sign-in state
 
-Plan only. Debate this before anyone edits product code.
+Plan only. Debate this before anyone edits product code. Revision v2 (Sentinel PLAN-CHANGES on PR #38). **This group does not ship until owner question 3 is answered.** Never trust `X-Forwarded-For`. `CF-Connecting-IP` is read only when `ATLAS_TRUST_CF_CONNECTING_IP=1`, and that mode is off by default. The v2 section wins where an earlier sentence returns 429 because the global table is full, or groups an IPv6 address by the full address.
 
 Pinned inputs: confirmer report sha256 `57c92dcb651ddef4b7abe9c23424065a2a59fa139d2cdfc6315ce227596eac1c`, main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`, red tests `96712474b59d6b058ef00479f2bb2d4eb065801e` (PR #31).
 
@@ -41,9 +41,9 @@ The Microsoft client in the test is `FakeMsal`. `Identity.client` is assigned af
 
 Before: `login` sweeps expired flows, then refuses everyone when `len(self.flows) >= 100`. The cap is global. One client that completes `initiate_auth_code_flow` 100 times, without finishing the callback, fills the table for ten minutes (the flow TTL). Every other `request.remote`, including the owner, gets HTTP 429. Expired rows are already dropped by `sweep`, so the attack uses live rows. The flows hold the MSAL auth-code state. They do not hold the client secret. The damage is availability of sign-in, and a table that grows to the cap.
 
-After: a single remote is refused well before 500 live flows. A different remote still gets a redirect. Expired rows are gone before either decision. The table cannot grow without a bound. A remote that has no pending flow can still obtain one when the global table is full, by displacing the oldest flow of the remote that holds the most, and only when that remote holds more than one.
+After: a single remote key is refused well before 500 live flows. A different remote still gets a redirect. Expired rows are gone before either decision. The table cannot grow without a bound. When the global table is full, the oldest flow in the table is dropped so a remote that is under its own cap still gets a redirect. IPv6 addresses in one /64 share a key.
 
-What remains: if every employee shares one `request.remote` (a reverse proxy or a NAT that aiohttp sees as a single address), the per-remote cap is a cap on all of them together. This plan does not read `X-Forwarded-For`. The hammer review recorded that forwarding headers are not rate-limit keys.
+What remains: if every employee shares one `request.remote` (a reverse proxy or a NAT that aiohttp sees as a single address), the per-remote cap is a cap on all of them together. `X-Forwarded-For` is never a key. `CF-Connecting-IP` is a key only in the operator mode, which is off until owner question 3 says the edge is Cloudflare.
 
 ## Chosen design
 
@@ -51,15 +51,15 @@ Sweep first, as today. The test's 100 expired rows disappear, and the following 
 
 Then:
 
-- Per remote, at most 20 live flows. The 21st `login` from that remote raises `HTTPTooManyRequests`. Twenty is enough for a small office that truly has one address and several people mid-login, and it is far below the test's 500.
-- Global live flows at most 100, the current memory bound.
-- When the global table is full and the caller has zero flows, drop the oldest flow of the remote that currently holds the largest count, if that count is greater than 1, then insert. A brand-new remote is not stuck behind a single attacker who opened many flows from one other address.
-- When the caller is already at 20, do not evict their own oldest flow to let them continue. They are the attacker in the test, and they must see 429.
-- Key the remote with `str(request.remote or '')`. Empty remote shares one bucket. Do not parse `X-Forwarded-For`, `X-Real-IP`, or `CF-Connecting-IP`.
+- The remote key is `request.remote` unless `ATLAS_TRUST_CF_CONNECTING_IP` is exactly `1`. In that mode, and only then, use `CF-Connecting-IP` when it is present, otherwise `request.remote`. Never read `X-Forwarded-For` or `X-Real-IP`. Off by default. Empty remote shares one bucket.
+- An IPv6 address is grouped by its /64. `2001:db8:1:2::1` and `2001:db8:1:2::abcd` share a bucket. A different /64 does not. An IPv4 address stays the whole address. IPv4-mapped IPv6 is grouped as that IPv4.
+- Per remote key, at most 20 live flows. The 21st `login` from that key raises `HTTPTooManyRequests`. Do not evict to let that same key continue. That is what makes HAM-04 return 429 before 500.
+- Global live flows at most 100. When the table is full and the caller is under their per-remote cap, drop the oldest flow in the whole table, then insert, and return 302. Do not return 429 only because the global table is full.
+- Flow id is at least 128 bits from `secrets` (`token_bytes(16)` or stronger), single use, and checked against the stored state. A mismatch is 401. TTL stays 600 seconds. The authorize URL carries a nonce that callback checks. The login cookie is `HttpOnly` and `SameSite=Lax`, and `Secure` when the request scheme is https.
 
-`callback` is unchanged: a flow that was evicted fails the existing "Sign-in expired. Start again." path. The cookie name, the 600-second TTL, and the session cap in `issue` stay.
+`callback` of an evicted or reused flow fails the existing "Sign-in expired. Start again." path. The cookie name and the session cap in `issue` stay.
 
-Store the remote on the flow tuple so eviction can group by it. The tuple is in-process only.
+Store the remote key on the flow tuple so eviction can group by it. The tuple is in-process only.
 
 ## Alternatives rejected
 
@@ -74,7 +74,7 @@ Add cases to a new `tests/test_sweep01_g16_login_props.py` so the PR #31 file st
 - Property: for attacker counts 1, 20, 21, 100, the attacker is refused at or before the 21st live flow, and `len(flows)` never exceeds 100.
 - A second remote, after that refusal, gets 302, and the attacker's flows are still present (we did not wipe them to make room, unless the global cap forced an eviction of the attacker's oldest because the new remote had zero).
 - Expired flows: a table of 100 rows whose deadline is `now - 1` plus one live row from the attacker becomes one live row after sweep, and the new remote's login is 302.
-- Eviction does not drop a flow that belongs to the remote that has only one, while some other remote has more than one.
+- When the table is at 100, the next login from a new remote returns 302 and the oldest flow, whichever remote it belonged to, is gone. The 21st live flow from one key is still 429, and that key's oldest flow is not evicted to make room for a 22nd.
 - `callback` with an evicted cookie is 401 "Sign-in expired. Start again."
 
 Boundaries: `request.remote` of `None` and `''` share a bucket. Two remotes that differ only by case are different if the test's strings differ; do not lowercase, because the test uses IP literals.
@@ -107,6 +107,21 @@ A remote with zero flows can still get a redirect while some other remote holds 
 
 About 70 lines in `identity.py` and about 80 lines of property tests.
 
+## v2 — Sentinel
+
+**Gated on owner question 3.** File: `tests/test_sweep01_g16_login_props.py`. Write these before the fix. No skip, no xfail. Stub MSAL. Do not call Microsoft.
+
+| Sentinel | Change | Red test |
+|---|---|---|
+| never XFF | With the operator mode unset, `X-Forwarded-For` and `CF-Connecting-IP` do not change the bucket. With `ATLAS_TRUST_CF_CONNECTING_IP=1`, `CF-Connecting-IP` does, and `X-Forwarded-For` still does not. | `test_q3_forwarded_headers_are_ignored_unless_the_operator_mode_is_on` |
+| M1 | Two addresses in one IPv6 /64 share the cap of 20. A third address in another /64 still receives 302. When 100 live flows fill the table, the next login from a new remote returns 302 and the oldest flow is gone. It does not return 429. The 21st login from the same key still returns 429. | `test_m1_ipv6_64_shares_a_bucket_and_a_full_table_evicts_the_oldest_flow` |
+| M2 | The flow id has at least 128 bits. | `test_m2_flow_id_is_at_least_128_bits` |
+| M2 | A second callback with the same flow id is 401. | `test_m2_flow_id_is_single_use` |
+| M2 | A callback whose state does not match the stored state is 401. | `test_m2_state_mismatch_is_401` |
+| M2 | A flow older than 600 seconds is rejected. | `test_m2_flow_expires_at_600_seconds` |
+| M2 | The authorize redirect URL has a nonce, and callback rejects a missing or different nonce. | `test_m2_authorize_url_has_a_nonce` |
+| M2 | On an https request the login cookie is `HttpOnly`, `Secure`, and `SameSite=Lax`. | `test_m2_login_cookie_is_httponly_secure_samesite_lax` |
+
 ## Open question for the owner
 
-In the deployment that actually runs this gateway, is `request.remote` the person, or one shared proxy or NAT address? If it is shared, a per-remote cap locks the owner together with the attacker, and this fix should not be described as per-person. The Worker Access sign-in does not use this table. Say which sign-in is in front of users before this lands.
+**Gate for this group.** In the deployment that actually runs this gateway, is `request.remote` the person, or one shared proxy or NAT address? If it is shared, a per-remote cap locks the owner together with the attacker. This plan does not trust `X-Forwarded-For`. `CF-Connecting-IP` is available only when you set `ATLAS_TRUST_CF_CONNECTING_IP=1`, which stays off until you say the edge in front of this process is Cloudflare. The Worker Access sign-in does not use this table. Say which sign-in is in front of users before this lands.

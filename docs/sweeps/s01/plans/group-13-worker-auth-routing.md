@@ -1,6 +1,6 @@
 # Group 13 — Worker auth / routing
 
-Plan only. Debate this before anyone edits product code.
+Plan only. Debate this before anyone edits product code. Revision v2 (Sentinel PLAN-CHANGES on PR #38). `redirect: 'manual'` fail-closed stays. **This group does not ship until owner question 2 is answered:** one HEAD, from an operator network, to the live certs URL returns 200 with no redirect. The v2 section wins where an earlier sentence still accepts a missing `alg` or a per-kid negative cache.
 
 Pinned inputs: confirmer report sha256 `57c92dcb651ddef4b7abe9c23424065a2a59fa139d2cdfc6315ce227596eac1c`, main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`, red tests `96712474b59d6b058ef00479f2bb2d4eb065801e` (PR #31). External review: ATLAS-06 and ATLAS-12 in `/cursor/stores/bot/atlas-sweeps/s01/external/hammer-artex-security.md`. ATLAS-11 is already fixed by PR #30. Do not re-do it.
 
@@ -54,7 +54,7 @@ The page the browser serves is `deploy/cloudflare-edge/src/atlas.html`, gitignor
 
 ATLAS-06. A fetcher that, on `https://team.example/cdn-cgi/access/certs`, returns 302 with `Location: https://attacker.example/jwks` and does not follow it. `verifyAccess` is null. The fetcher's init has `redirect: 'manual'`. A second case: the fetcher returns 200 with a JWK of `kty: 'oct'`. `verifyAccess` is null and `crypto.subtle.importKey` is not asked to verify that token (spy, or a key that would throw). A third case: `ACCESS_TEAM_DOMAIN` of `user@attacker.example` builds no URL with a username; `verifyAccess` is null and the fetcher is not called. A fourth case, on the PR #30 base: `ACCESS_AUD` of `replace-me` or a team `foo.example.test` does not call the fetcher.
 
-A positive control stays: a 200 from `https://<configured-host>/cdn-cgi/access/certs` with an RSA `sig` JWK, `alg` `RS256` or absent, still verifies a token with the matching `kid`, `iss`, and `aud`. Existing `deploy/cloudflare-edge/test/app.test.js` cases must keep passing.
+A positive control stays: a 200 from `https://<configured-host>/cdn-cgi/access/certs` with an RSA `sig` JWK whose `alg` is exactly `RS256` still verifies a token with the matching `kid`, `iss`, `aud`, and a valid `exp`/`nbf`. A JWK with no `alg` does not. Existing `deploy/cloudflare-edge/test/app.test.js` cases must keep passing. If one of them accepts a missing `alg`, this group updates that assertion.
 
 ATLAS-12. `POST /api/triggers` with the test bearer, `Content-Length` omitted, body 20 KiB. Status 413. The library binding's `fetch` is not called. A 100-byte body with a valid bearer still reaches the stub. A `Content-Length: 0` with a 20 KiB chunked body is also 413. Use the same `boundedBytes` the directory push already uses. Do not edit `bounded.js`.
 
@@ -74,13 +74,13 @@ After: `GET /` during a refused combination is a short page that quotes the API 
 
 Stack this branch on PR #30 head `d495233609c8e2a9105a35526ccd7bb4e485a8f1` (`cursor/atlas-oss-head-cleanup`), not on main. That commit already returns from `verifyAccess` before any cert fetch when the audience or team is blank, the audience is `replace-me`, or the team is `example.test` or `*.example.test`.
 
-ATLAS-06, after that early return. Build the certs URL with `new URL('https://<team>/cdn-cgi/access/certs')` where `<team>` is the trimmed, lowercased `ACCESS_TEAM_DOMAIN`. Refuse, without calling the fetcher, when the URL has a username, a password, or a hostname other than that team. Call `fetcher(url, { redirect: 'manual' })`. Treat any status outside 200 as a failed refresh and keep the previous cache. Keep a JWK only when `kty === 'RSA'`, `use` is `sig` or absent, and `alg` is `RS256` or absent. Cache a missing `kid` for the same 600000 ms the success cache uses, so a random `kid` does not refetch every request. `iss` remains `https://<team>` and `aud` remains the configured audience. Do not require a `.cloudflareaccess.com` suffix: the configured hostname is the pin. A suffix check would reject a custom Access host and lock sign-in.
+ATLAS-06, after that early return. The team value is a hostname only. Refuse, without calling the fetcher, when it contains a userinfo, a port (`team.example:443`), a path (`team.example/extra`), a trailing dot (`team.example.`), or is an IP (`203.0.113.10`, `::1`). Build the certs URL with `new URL('https://<team>/cdn-cgi/access/certs')` where `<team>` is the trimmed, lowercased hostname. Refuse when the URL hostname is not exactly that team. Call `fetcher(url, { redirect: 'manual' })`. A throw, a non-200, a non-JSON body, or an empty key set is a failed refresh. Keep a JWK only when `kty === 'RSA'`, `use` is `sig` or absent, and `alg` is exactly `RS256`. `importKey` is called with `RS256`, not with the JWK's `alg`. A missing `alg` is not imported. Verify `exp` and `nbf`; a missing `kid` returns null. The cached set is used for at most one hour from the fetch. After that hour a failed refresh returns null and does not authenticate with the stale set. Inside the hour, one failed refresh may keep the set. Unknown kids do not get their own cache entry. At most one refetch of the whole set runs per 60 seconds, and the cache holds at most 32 keys. `iss` remains `https://<team>` and `aud` remains the configured audience. Do not require a `.cloudflareaccess.com` suffix: the configured hostname is the pin. A suffix check would reject a custom Access host and lock sign-in.
 
-C-3. Where `route` is about to return the voice page for `GET /`, if `productionDemoConflict(env)` is set, return `htmlResponse` of a document with no script. The visible text is the `error` string from that function, which already contains `DATA_MODE=production cannot be combined`. Do not include `Ready when you are` or `isn't answering`. Status 503. Do not serve that document when the conflict helper returns null. `/api/*` already returns the JSON 503. Leave `/privacy` as the notice. Agree the sentence with group 12: they must not add this sentence to the shell, and they must not depend on the shell being present when the combination is refused.
+C-3. Where `route` is about to return the voice page for `GET /`, if `productionDemoConflict(env)` is set, return `htmlResponse` of a document with no script. Escape the `error` string for HTML (`&`, `<`, `>`, quotes) before it is placed in the body. The visible text still contains `DATA_MODE=production cannot be combined`. Do not include `Ready when you are` or `isn't answering`. Status 503. Do not serve that document when the conflict helper returns null. `/api/*` already returns the JSON 503. Leave `/privacy` as the notice. Agree the sentence with group 12: they must not add this sentence to the shell, and they must not depend on the shell being present when the combination is refused.
 
 E1. The rollback row stops naming `ATLAS_CHECKPOINT`, `ATLAS_EVIDENCE_WORKFLOW`, `ATLAS_ADAPTERS`, and `ATLAS_REPLY_GUARD`. Replace it with the action that exists: `npx wrangler rollback` to the last good version, which the previous row already describes. Do not add decoy `process.env.ATLAS_CHECKPOINT` reads. `ATLAS_ADAPTERS` and `ATLAS_REPLY_GUARD` stay in the later `flag_state` paragraph, because `securityFlags` does read them. That paragraph is not the line the test scans. Do not edit `CONFIGURATION.md`.
 
-ATLAS-12. Replace the `Content-Length` branch and `request.text()` on `/api/triggers` with `boundedBytes(request, 16384)`. `null` is 413 and returns before `env.LIBRARY.get`. The byte helper already treats a declared length over the cap as too big and also stops reading the stream past the cap, so a lying `Content-Length: 0` still fails.
+ATLAS-12. Compare the bearer first, with the timing-safe compare that already exists. A bad bearer is 401 and the body is not read. A good bearer is then one `boundedBytes(request, 16384)` call and no second read. `null` is 413 and returns before `env.LIBRARY.get`. The byte helper already treats a declared length over the cap as too big and also stops reading the stream past the cap, so a lying `Content-Length: 0` still fails.
 
 ## Alternatives rejected
 
@@ -94,7 +94,7 @@ ATLAS-12. Replace the `Content-Length` branch and `request.text()` on `/api/trig
 In `sweep01-g13-auth.test.js`. `node:test`. No skip, no expected failure.
 
 - Property: for a list of bad hosts (`user@team.example`, `team.example.evil`, `team.example@attacker.example`, empty, `foo.example.test` on the #30 base), the fetcher is called zero times.
-- Property: for statuses 301, 302, 303, 307, 308, and a 200 whose body is not JSON, `verifyAccess` is null and the previous good key cache is unchanged.
+- Property: for statuses 301, 302, 303, 307, 308, and a 200 whose body is not JSON, `verifyAccess` is null. A previous good set younger than one hour is unchanged. A previous good set older than one hour is not used.
 - Property: bodies of size 16384, 16385, and 20000, with `Content-Length` absent, `0`, and equal to the real size. Only a real size at or under 16384 reaches the library.
 - C-3 unit-level, without Chrome: `handle` of `GET /` with the refused combination returns a body that contains the error sentence and does not contain the two invitation phrases. `GET /` with `DATA_MODE=production` and none of the three demo switches still returns the voice page (the `page` argument echoed). This is the lockout guard.
 
@@ -137,8 +137,22 @@ This is the highest lockout risk in the set.
 
 About 120 lines in `app.js`, about 10 lines in the runbook, about 200 lines of tests.
 
+## v2 — Sentinel
+
+`redirect: 'manual'` fail-closed is accepted. File: `deploy/cloudflare-edge/test/sweep01-g13-auth.test.js`. Write these before the fix. No skip, no expected failure. **Gated on owner question 2.** Do not deploy this group until that HEAD is done.
+
+| Sentinel | Change | Red test |
+|---|---|---|
+| M1 | `alg` must be exactly `RS256`, and `importKey` is called with `RS256`. `none`, `HS256` presented with an RSA public key, `PS256`, `ES256`, and a missing `alg` each return null. | `M1 only alg RS256 is imported` |
+| M2 | A cached JWKS older than one hour does not verify when the refresh fails. A cache younger than one hour still verifies. | `M2 a cached JWKS older than one hour does not verify` |
+| M3 | A burst of unknown `kid`s triggers one refetch, and a second burst inside 60 seconds triggers none. The cache length stays at most 32 no matter how many kids are offered. There is no per-kid 10-minute negative entry. | `M3 unknown kids share one refetch per minute` |
+| L1 | A fetcher that throws, a 200 that is not JSON, an empty key set, and a token whose `kid` is absent each return null. A token with `exp` in the past, or `nbf` in the future, returns null. A token inside both windows still verifies. | `L1 fetch errors and token time claims fail closed` |
+| L2 | A wrong bearer returns 401 and the test records zero body reads. A right bearer over 16384 bytes returns 413 after exactly one `boundedBytes` read and does not call the library. | `L2 the bearer is checked before the body and the body is read once` |
+| L3 | Team values `team.example:443`, `team.example/extra`, `team.example.`, `203.0.113.10`, and `::1` do not call the fetcher, and `verifyAccess` is null. | `L3 a team value with a port, path, trailing dot, or IP is refused` |
+| L4 | The refusal page for a conflict string that contains `<script>` renders `&lt;script&gt;` and the document has no element named `script`. | `L4 the refusal page escapes HTML` |
+
 ## Open questions for the owner
 
-1. Does `https://<the live ACCESS_TEAM_DOMAIN>/cdn-cgi/access/certs` return 200 with no redirect? This plan fails closed if it does not. One HEAD, from an approved network, before deploy. This review did not request that URL.
+1. **Gate for this group.** Does `https://<the live ACCESS_TEAM_DOMAIN>/cdn-cgi/access/certs` return 200 with no redirect? This plan fails closed if it does not. One HEAD, from an approved network, before deploy. This review did not request that URL. The group does not ship until this is answered.
 2. Group 12 must leave the C-3 sentence to this page. Confirm they will not quote `DATA_MODE=production cannot be combined` inside the shell, and will not keep the shell mounted when this Worker returns the refusal.
 3. `ATLAS_CHECKPOINT` and `ATLAS_EVIDENCE_WORKFLOW` are read nowhere. `ATLAS_ADAPTERS` and `ATLAS_REPLY_GUARD` are read only inside `kill-switches.js`, which the E1 scan skips. This plan removes all four names from the rollback-switches row and does not wire the dead ones. Confirm the runbook should stop naming them. Wiring them is a product change, and a half-wired switch can turn a feature off.

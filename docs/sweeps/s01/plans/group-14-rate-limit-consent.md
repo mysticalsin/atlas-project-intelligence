@@ -1,6 +1,6 @@
 # Group 14 — rate limit / consent
 
-Plan only. Debate this before anyone edits product code.
+Plan only. Debate this before anyone edits product code. Revision v2 (Sentinel PLAN-CHANGES on PR #38). Keying these caps on the verified email stays. The v2 section wins where an earlier sentence holds a backward clock for longer than one window.
 
 Pinned inputs: confirmer report sha256 `57c92dcb651ddef4b7abe9c23424065a2a59fa139d2cdfc6315ce227596eac1c`, main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`, red tests `96712474b59d6b058ef00479f2bb2d4eb065801e` (PR #31). External review: ATLAS-07 in `/cursor/stores/bot/atlas-sweeps/s01/external/hammer-artex-security.md`.
 
@@ -17,7 +17,7 @@ Findings: F3, F4, F8, ATLAS-07.
 
 - `deploy/cloudflare-edge/src/ratelimit.js`
 - `deploy/cloudflare-edge/src/privacy.js` (`applyState` and the lock it needs; not the receipt schema)
-- `deploy/cloudflare-edge/src/util.js`, the `rateLimit` function and its comment only (today lines 23–34). Do not edit `email`, `str`, `para`, or `inList`.
+- `deploy/cloudflare-edge/src/util.js`, the `rateLimit` function, `eraseRateHits`, and their comments only (today the `rateLimit` function is lines 23–34). Do not edit `email`, `str`, `para`, or `inList`. Group 10 calls `eraseRateHits` and does not edit this file.
 - `deploy/cloudflare-edge/test/sweep01-g14-limit.test.js` (new)
 
 Group 5 owns `email()` in the same `util.js`. The carve is the debate point: this group owns `rateLimit`, group 5 owns `email`, and neither rewrites the other's function. If the reviewer refuses a shared file, the fallback is a one-line delegate inside `rateLimit` to a new `library-limit.js` that only this group edits, and group 5 still does not touch `rateLimit`.
@@ -69,9 +69,9 @@ F3 and F8 live in `ratelimit.js`. F4 lives in `privacy.js`. ATLAS-07 lives in `u
 
 F3. The red-test storage has no compare-and-swap. An in-isolate mutex, one chain per storage object (`WeakMap` of promises), wraps the `get`, the decision, and the `put`. The second caller waits until the first `put` finishes, then reads the updated `n`. If `storage.transaction` exists, use it inside the same mutex so a real Durable Object write is atomic as well. The mutex is what makes the test pass. Release it in `finally`, including when `put` throws.
 
-F8. Store `{ n, exp, seen }` where `seen` is the greatest `now` accepted or refused for that subject and bucket. When `now < seen`, choose the window key from `seen`, not from `now`. A backward clock stays in the spent window. When `now` moves past the end of that window, a new key starts at zero, as today. Do not delete the high-water mark just because the window key changed; keep `seen` on the new record, initialized to `max(now, previousSeen)` if you read the old key, or store `seen` under a stable key `rl:<bucket>:<subj>:seen` that is not windowed. The stable key is the one that survives a backward step into a different `floor`. One extra `get`/`put` of that key, inside the same mutex.
+F8. Store `{ n, exp, seen }` where `seen` is the greatest `now` accepted or refused for that subject and bucket. When `now < seen`, do not open an empty window key. Hold the spent window, and clamp that hold to one `windowMs`: a clock step of many windows still denies for at most one window, then a later `now` may open a new window. A `rate_hits.at_ms` more than one window in the future is counted as `now + windowMs` and is not left dated in the future, so it cannot hold the bucket until that date. The same clamp applies to `seen`. One extra `get`/`put` of the stable key `rl:<bucket>:<subj>:seen`, inside the same mutex.
 
-F4. The same mutex pattern around `applyState`, keyed by the storage object. The critical section includes `loadState`, the purpose merge, `beforeCommit`, and `put`. A throw from `beforeCommit` skips `put` and releases the mutex. The second grant then loads the state the first one stored. Do not write the whole state from a snapshot taken before the other call's `put`. `beforeCommit` for the real caller posts receipts. Holding the mutex across that post serializes one person's consent changes. It does not include a DNA call.
+F4. The same mutex pattern around `applyState`, keyed by the storage object. The critical section includes `loadState`, the purpose merge, `beforeCommit`, and `put`. A throw from `beforeCommit` skips `put` and releases the mutex. `beforeCommit` has a timeout, default 5000 ms, overridable by the test as `commitTimeoutMs`. When it does not settle in time, skip `put`, release the mutex, and reject that grant. The second grant then loads the state the first one stored, or proceeds if the first one timed out. Do not write the whole state from a snapshot taken before the other call's `put`. `beforeCommit` for the real caller posts receipts. Holding the mutex across that post serializes one person's consent changes. It does not include a DNA call.
 
 ATLAS-07. `rateLimit` stops using the `WeakMap` as the source of truth. It creates, via `lib.exec`, 
 
@@ -79,9 +79,11 @@ ATLAS-07. `rateLimit` stops using the `WeakMap` as the source of truth. It creat
 CREATE TABLE IF NOT EXISTS rate_hits (bucket TEXT NOT NULL, at_ms INTEGER NOT NULL)
 ```
 
-and counts rows with `at_ms` in the same window the function uses today: `now - t < windowMs` (a hit exactly `windowMs` old does not count). `now` is `Date.parse(lib.now())` when that is finite, else `Date.now()`, which is the current clock. Insert one row when under `max`, and delete rows older than the window for that bucket. The function stays synchronous and returns a boolean. A `Library` rebuilt on the same SQL sees the rows. That is the Durable Object database, which survives eviction. Interview-object `storage.get` is the wrong store: ask, bids, and people run in the Library object, and their callers do not receive `ctx.storage`.
+and counts rows with `at_ms` in the same window the function uses today: `now - t < windowMs` (a hit exactly `windowMs` old does not count). `now` is `Date.parse(lib.now())` when that is finite, else `Date.now()`, which is the current clock. Insert one row when under `max`. On every call, delete rows for that bucket older than one day, and delete rows older than the window that are not inside the one-window clamp. The subject half of the key is the verified email the route already checked, not a field from the body. Refuse the call (return false, write nothing) when `max` is not an integer from 1 to 10000, `windowMs` is not an integer from 1000 to 7 days, or the key is empty or longer than 200 characters. The function stays synchronous and returns a boolean. A `Library` rebuilt on the same SQL sees the rows. That is the Durable Object database, which survives eviction. Interview-object `storage.get` is the wrong store: ask, bids, and people run in the Library object, and their callers do not receive `ctx.storage`.
 
-Keep the key strings the callers already pass (`bid-create:<tenant>:<email>`, `ask:<email>`, and so on). Do not add a tenant onto keys that omit one. That would give each tenant a fresh budget and loosen the cap.
+`eraseRateHits(lib, email)` deletes `rate_hits` rows whose bucket contains that exact verified email. Group 10 calls it from erase. This group does not edit `subject-rights.js`.
+
+Keep the key strings the callers already pass (`bid-create:<tenant>:<email>`, `ask:<email>`, and so on). Do not add a tenant onto keys that omit one. That would give each tenant a fresh budget and loosen the cap. The email in those strings is the verified identity.
 
 `consume` and `rateLimit` stay two mechanisms. `consume` is async Interview storage. `rateLimit` is sync Library SQL. Unifying them onto `enforce()` would edit `profile.js`, `ask.js`, and `bids.js`.
 
@@ -125,7 +127,7 @@ Group 3 owns library routes, including F6's 503 mapping. They must not wrap `rat
 
 ## Owner lockout
 
-F8: if the platform clock steps backward after the owner has spent a window, the owner stays limited until the clock catches the stored high-water mark and then finishes that window. A step of days is a lockout of days for that bucket. That is the trade for not opening a fresh window. Rollback clears it only if the new code is gone and the `seen` key is unread; document the key name in the runbook line this group is allowed to add inside `SECURITY_RUNBOOK.md` only if group 13 has not taken the file. This group does not own the runbook. Put the key name in a comment in `ratelimit.js` instead.
+F8: if the platform clock steps backward after the owner has spent a window, the owner stays limited for at most one window, including when the step is many windows or a stored hit is dated in the future. They do not get a fresh window during that hold. Put the key name in a comment in `ratelimit.js`. This group does not own the runbook.
 
 F3's mutex is per isolate. A stuck `put` that never resolves holds the chain. `storage.put` on the test double resolves. On the Durable Object, a hung storage call already fails the request. The `finally` still releases if it throws.
 
@@ -137,8 +139,20 @@ F4's mutex serializes consent for one storage object. Two purposes from one pers
 
 About 180 lines of product code and about 200 lines of tests.
 
+## v2 — Sentinel
+
+Keying on the verified email stays. File: `deploy/cloudflare-edge/test/sweep01-g14-limit.test.js`. Write these before the fix. No skip, no expected failure. The F8 test in PR #31 still passes: a `now` one window earlier stays denied.
+
+| Sentinel | Change | Red test |
+|---|---|---|
+| M1 | A clock step of ten windows denies for one window and then allows. A `rate_hits` row dated a year ahead denies for one window and then allows. Neither step inserts into an empty window key while the hold is in force. | `M1 a long clock step holds for one window and does not open a fresh window` |
+| L1 | After a hit, advance `lib.now` by more than one day and the old row is gone. `eraseRateHits` for that email removes the remaining rows, and a new `Library` on the same SQL allows the next call. Another email's rows stay. | `L1 rate_hits older than one day are pruned and erasure removes the subject` |
+| L2 | `max` of `0`, `-1`, `1e9`, and `NaN`, `windowMs` of `0` and `-1`, and a key of 201 characters each return false and write no row. `max` 1 and `windowMs` 1000 still allow one hit. | `L2 out-of-range limit parameters are refused` |
+| L3 | Two verified emails do not share a bucket. A body field named `subject` is not read by `rateLimit`. The key the test passes is the verified email. | `L3 the limit subject is the verified email` |
+| L4 | `applyState` with `commitTimeoutMs: 30` and a `beforeCommit` that never settles rejects, stores nothing, and a second `applyState` for the other purpose then stores that purpose. | `L4 a beforeCommit that hangs releases the lock` |
+
 ## Open questions for the owner
 
-1. Confirm the `util.js` carve: group 14 owns `rateLimit`, group 5 owns `email()`, same file, no other lines. If that shared file is refused, this group adds `library-limit.js` and `rateLimit` becomes a delegate, which is a larger diff and the same behavior.
-2. A clock that steps backward holds a spent window until wall time passes the stored high-water mark. Confirm that lockout is preferred to opening a fresh window. The red test requires the hold.
-3. The ask and bid-edit keys do not include the tenant. This plan keeps those strings. Adding the tenant would give each tenant its own cap and loosen the limit. Confirm the keys stay as they are.
+1. Confirm the `util.js` carve: group 14 owns `rateLimit` and `eraseRateHits`, group 5 owns `email()`, same file, no other lines. If that shared file is refused, this group adds `library-limit.js` and `rateLimit` becomes a delegate, which is a larger diff and the same behavior.
+2. Ruled by Sentinel. A backward clock holds for at most one window, and so does a future-dated hit. The hold does not open a fresh window. This is no longer an unbounded lockout.
+3. The ask and bid-edit keys do not include the tenant. This plan keeps those strings. Adding the tenant would give each tenant its own cap and loosen the limit. Confirm the keys stay as they are. The subject inside the key is the verified email.

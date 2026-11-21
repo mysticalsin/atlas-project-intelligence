@@ -1,6 +1,6 @@
 # Group 17 — Entra bootstrap
 
-Plan only. Debate this before anyone edits product code.
+Plan only. Debate this before anyone edits product code. Revision v2 (Sentinel PLAN-CHANGES on PR #38). L1 through L4 below are agreed. The v2 section wins where an earlier sentence relies on `umask` alone, prints curl's body, or sets the trap before `mktemp`.
 
 Pinned inputs: confirmer report sha256 `57c92dcb651ddef4b7abe9c23424065a2a59fa139d2cdfc6315ce227596eac1c`, main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`, red tests `96712474b59d6b058ef00479f2bb2d4eb065801e` (PR #31).
 
@@ -54,7 +54,9 @@ Keep `set -euo pipefail` and the `--i-have-it-approval` gate.
 
 Replace the `auth=(-H ...)` array and the `--data "$idp"` expansions.
 
-One Python process, started as `python3 -` with a quoted heredoc so the shell does not expand the body, reads `CLOUDFLARE_API_TOKEN`, `ENTRA_CLIENT_SECRET`, and the other variables from `os.environ`. It writes two files in a directory created with `mktemp -d` and mode `0700`:
+The shell creates the directory with `mktemp -d`, and the next line sets `trap 'rm -rf "$dir"' EXIT`. Do not set the trap before `mktemp` succeeds. `umask 077` stays, and it is not the mode check.
+
+One Python process, started as `python3 -` with a quoted heredoc so the shell does not expand the body, reads `CLOUDFLARE_API_TOKEN`, `ENTRA_CLIENT_SECRET`, and the other variables from `os.environ`. Before it writes the curl config, it refuses a token or client secret that is empty or contains a character outside visible ASCII without space, quote, backslash, backtick, or newline. On that refusal it exits non-zero and writes no file. It then opens the secret files with `os.open(..., os.O_CREAT | os.O_WRONLY | os.O_EXCL, 0o600)`:
 
 - a curl config whose `header` line is `Authorization: Bearer <token>` and whose `header` line is `Content-Type: application/json`
 - the identity-provider JSON, same object as today (`name`, `type` `azureAD`, `client_id`, `client_secret`, `directory_id`, `support_groups` false, the same claim order)
@@ -62,14 +64,10 @@ One Python process, started as `python3 -` with a quoted heredoc so the shell do
 The shell then:
 
 ```text
-curl --silent --show-error --config "$dir/curl.cfg" --url "$API/identity_providers" --request POST --data-binary @"$dir/idp.json"
+curl --silent --show-error --config "$dir/curl.cfg" --output "$dir/body" --stderr "$dir/err" --url "$API/identity_providers" --request POST --data-binary @"$dir/idp.json"
 ```
 
-and the same `--config` for the PATCH, with the PATCH body also a file the Python wrote (`allowed_idps`, `auto_redirect_to_identity`). The PATCH body does not contain the client secret. Using a file for it keeps `--data "$var"` out of the script entirely.
-
-`trap 'rm -rf "$dir"' EXIT` runs on success and on failure. `umask 077` before `mktemp`.
-
-Python prints the created IdP id on stdout and nothing else. The shell may `echo` that id. It must not `echo` or `printf` either secret. The existing `assert r["success"], r["errors"]` can print a Cloudflare error body that repeats the secret. Change it to exit non-zero with a fixed sentence (`Cloudflare refused the identity provider request.`) and do not print `r["errors"]`.
+and the same `--config`, `--output`, and `--stderr` for the PATCH, with the PATCH body also a file the Python wrote (`allowed_idps`, `auto_redirect_to_identity`). The PATCH body does not contain the client secret. Curl's response does not go to the terminal. Python reads the output file, prints the created IdP id, and on failure exits non-zero with the fixed sentence `Cloudflare refused the identity provider request.` It does not print the error file. The shell may `echo` the id. It must not `echo` or `printf` either secret.
 
 Do not pass the secret as a Python `sys.argv` element. Do not use `curl -H @file` on a line that also expands the token. The `--config` line in the shell contains the directory variable, not the token.
 
@@ -124,6 +122,17 @@ A `trap` that removes the config directory on EXIT must not remove the operator'
 ## Diff size
 
 About 60 lines in the shell script. About 40 more if the extra static test file is added. The existing HAM-05 test is enough for the finding; the extra file is the property list above, still static.
+
+## v2 — Sentinel
+
+Agreed. File: `tests/sweep01-g17-entra-argv.test.js`. Static read of the script after comments are stripped. Do not run the script. No skip, no expected failure. The HAM-05 test stays as it is.
+
+| Sentinel | Change | Red test |
+|---|---|---|
+| L1 | The Python that writes the config and the JSON opens those files with mode `0o600`. `umask` alone does not satisfy the test. | `L1 secret files are opened with mode 0o600` |
+| L2 | The character check on `CLOUDFLARE_API_TOKEN` and `ENTRA_CLIENT_SECRET` appears before any write of the curl config. A newline or a quote is in the refused set. | `L2 a token with a newline or a quote is refused before the curl config is written` |
+| L3 | Every `curl` invocation includes `--output` and `--stderr` pointed at files under the temp directory, and the script does not print those files. | `L3 curl writes stdout and stderr to temp files` |
+| L4 | The `trap` line comes after the `mktemp` line and before `curl`. | `L4 the EXIT trap is installed after mktemp` |
 
 ## Open question for the owner
 

@@ -1,6 +1,6 @@
 # Group 1 — scrub / redaction
 
-Plan only. Debate this before anyone edits product code.
+Plan only. Debate this before anyone edits product code. Revision v2 (Sentinel PLAN-CHANGES on PR #38). The v2 section wins where an earlier sentence still says a name must be 5 characters before it is case-insensitive.
 
 Pinned inputs: confirmer report sha256 `57c92dcb651ddef4b7abe9c23424065a2a59fa139d2cdfc6315ce227596eac1c`, main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`, red tests `96712474b59d6b058ef00479f2bb2d4eb065801e` (PR #31).
 
@@ -63,9 +63,10 @@ Move `STOPLIST`, `nameMatcher`, and the NFC / word-boundary helpers from `scrub.
 
 - word boundaries are `(?<![\p{L}\p{N}])` and `(?![\p{L}\p{N}])`
 - both sides are NFC
-- a name of 5 or more characters that is not a single stoplist word is case-insensitive
-- anything shorter, or a single stoplist word, matches only the stored spelling and the upper-case spelling
+- a name of 3 or more characters that is not a single stoplist word is case-insensitive (`acme`, `ibm`)
+- a name of 2 characters, or a single stoplist word, matches only the stored spelling and the upper-case spelling (`GE`, `will`, `air`)
 - a single-token contact that is a stoplist word or shorter than 3 characters is skipped
+- every name is escaped before it is compiled, so a metacharacter is a literal character
 
 `memory.scrub` and `sheet.scrub` call `maskOwnClient` and do not keep their own `RegExp`. `clientScrub` calls the same function and returns the same replacer shape it returns today, so `forModel` stays a deep walk.
 
@@ -91,7 +92,17 @@ Properties, in a new `deploy/cloudflare-edge/test/sweep01-g1-scrub-props.test.js
 - For every millisecond offset `1..999`, `retainItems` at `2026-09-27T10:00:00.000Z` and at that offset produce different conversation ids, and the project id is `project-p-123` both times.
 - Two calls with the same `now` and the same payload produce the same conversation id (retry).
 
-Boundaries: empty client, name of length 2, name of length 4, name of length 5, contact that is only an email, text that is not a string, `now` with no fractional seconds (the 17-digit slice is shorter; the id must still be stable and must not throw).
+Boundaries: empty client, name of length 2 (stored and upper-case only), name of length 3 and 4 (any case), name of length 5, contact that is only an email, text that is not a string, `now` with no fractional seconds (the 17-digit slice is shorter; the id must still be stable and must not throw).
+
+## v2 — Sentinel
+
+File: `deploy/cloudflare-edge/test/sweep01-g1-scrub-props.test.js`. Write these before the fix. No skip, no expected failure.
+
+| Sentinel | Change | Red test |
+|---|---|---|
+| M1 | A client name of 3 or more characters that is not a single stoplist word matches as a whole word in any case. `acme` masks `acme`, `Acme`, and `ACME`, and does not mask `acmeware`. A single stoplist word (`will`, `air`, `total`) stays stored-form and upper-case only, so ordinary `will` survives. Length 2 (`GE`) stays stored-form and upper-case only. | `M1 a three-letter client name is masked in any case` |
+| L1 | `memory.scrub` and `sheet.scrub` run on every string those paths put into a retain item or a sheet draft, including nested sheet fields. Plant `acme` in each string and assert the output has no `acme` in any case. | `L1 every retain item and sheet field is masked` |
+| L2 | Compile names with escaped literals. A client name `a+`, `(acme)`, or `.*` masks that literal text and does not mask a bare `a` or `acme`. A pathological name (a long run of `a+` metacharacters against a few thousand `a`s) finishes in under one second. | `L2 a client name of regex metacharacters is a literal and a pathological name finishes within one second` |
 
 ## Data migration
 
@@ -105,7 +116,7 @@ Revert the group commit. Memory and sheet go back to substring replacement. No s
 
 ## Open PRs #15–#30
 
-No file overlap with #15–#30. PR #17 edits `rating.js`, which imports `STOPLIST` from `scrub.js`. The re-export keeps that import valid. Do not change stoplist membership or the case rules `scrub.test.js` already asserts, or #17's rating tests will fail for a reason that is not `onEnd`.
+No file overlap with #15–#30. PR #17 edits `rating.js`, which imports `STOPLIST` from `scrub.js`. The re-export keeps that import valid. Do not change stoplist membership. The length cutoff moves from 5 to 3. Keep the `GE` length-2 assertion and the stoplist assertions in `scrub.test.js`. If that file's case-rule title still says "5+", update the title in this group. Do not weaken those assertions, or #17's rating tests will fail for a reason that is not `onEnd`.
 
 PR #31 is the red-test branch. Land the fix on a branch that contains those tests, or cherry-pick the test file. Do not weaken the assertions.
 

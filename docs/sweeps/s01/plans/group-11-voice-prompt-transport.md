@@ -1,6 +1,6 @@
 # Group 11 — voice prompt transport
 
-Plan only. Debate this before anyone edits product code.
+Plan only. Debate this before anyone edits product code. Revision v2 (Sentinel PLAN-CHANGES on PR #38). L1, L2, and L3 below are agreed.
 
 Pinned inputs: confirmer report sha256 `57c92dcb651ddef4b7abe9c23424065a2a59fa139d2cdfc6315ce227596eac1c`, main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`, red tests `96712474b59d6b058ef00479f2bb2d4eb065801e` (PR #31). External review: ATLAS-10 in `/cursor/stores/bot/atlas-sweeps/s01/external/hammer-artex-security.md`. HAM-03 is B4. One test covers both.
 
@@ -10,7 +10,7 @@ Findings: B4 / HAM-03, ATLAS-10.
 
 1. `python3 -m pytest tests/test_sweep01_b_prompt.py -q` passes. Both synthetic markers are absent from the upstream query and present in the first upstream websocket message.
 2. A new header test passes: an HTTPS origin sends `Strict-Transport-Security: max-age=63072000; includeSubDomains`, `Cross-Origin-Opener-Policy: same-origin`, and `Cross-Origin-Resource-Policy: same-origin`. An `http://127.0.0.1` origin does not send those three.
-3. The gateway still sends the voice name as `voice_prompt` and still waits for the `0x00` model-ready byte before it accepts microphone audio.
+3. The gateway still sends the voice name as `voice_prompt` and still waits for the `0x00` model-ready byte before it accepts microphone audio. A non-loopback upstream URL is `wss`. The prompt text frame is sent before any audio frame. Logs and error text do not contain the prompt.
 4. No test is skipped or expected-failure. No provider is called. The B4 fixture is in-process.
 
 ## Files this group may edit
@@ -59,9 +59,13 @@ What remains: the browser still sends the project to the gateway inside the auth
 
 `interview.make_prompt` stays the only builder of the role and the project JSON. Stop measuring the budget with `urlencode({'text_prompt': ...})`. Measure the UTF-8 length of the prompt itself, cap 7400 bytes, and keep the existing shrink loop (preferences, then prior notes, then title fields) so a large project still fits a frame. The shrink must not run until the markers would be removed from the small fixture: the fixture notes are under the 220-character `clean` limit and the preference is under 500. Add an assertion in the existing unit area, or in the new header file's neighbor, that a short project comes back unchanged.
 
-`server.py` `ws_connect` params become `{ voice_prompt: voice_name }` only. Drop the 7800-byte check on `urlencode(params)`. After the socket is up, `send_str(prompt)` (one text frame), then start the existing `model_ready` / `client_cancel` wait. Sending after the wait deadlocks the fixture: it will not send `0x00` until it has read the prompt, and the gateway will not send the prompt until it has read `0x00`.
+`server.py` `ws_connect` params become `{ voice_prompt: voice_name }` only. Drop the 7800-byte check on `urlencode(params)`. After the socket is up, `send_str(prompt)` (one text frame), then start the existing `model_ready` / `client_cancel` wait. Sending after the wait deadlocks the fixture: it will not send `0x00` until it has read the prompt, and the gateway will not send the prompt until it has read `0x00`. No audio frame is written before that text frame.
+
+The upstream URL uses `wss` whenever the host is not a loopback (`127.0.0.1`, `::1`, `localhost`). A `ws://` URL to any other host is refused before connect. Loopback may stay `ws` for the in-process fixture.
 
 The microphone path is unchanged: audio is still refused until `first.data == b'\x00'`.
+
+Do not put the prompt, the project note, or the preference phrase into a log line, an exception argument, or a response body. On failure, log the upstream host and a fixed sentence.
 
 ATLAS-10, in the `boundary` middleware, next to the headers already set when `response.prepared` is false: if `urlsplit(config.origin).scheme == 'https'`, set the three headers to the Worker values. Do not set them for `http`. Do not overwrite a header the handler already set. WebSocket responses that are already prepared skip this block today; leave that. The red test is a normal `GET`.
 
@@ -110,6 +114,16 @@ The handshake change can lock voice: if the upstream worker never sees a prompt 
 ## Diff size
 
 About 80 lines in the two Python modules and about 100 lines of tests.
+
+## v2 — Sentinel
+
+Agreed. File: `tests/test_sweep01_g11_headers.py`. No skip, no xfail. No provider.
+
+| Sentinel | Change | Red test |
+|---|---|---|
+| L1 | A configured upstream host other than loopback is connected with `wss`. `ws://atlas.example` is refused and no socket opens. `ws://127.0.0.1` remains allowed for the fixture. | `test_l1_non_loopback_upstream_is_wss` |
+| L2 | With a logging handler attached and a connect that raises, no log record and no exception string contains `SYNTHETIC-PROJECT-NOTE` or `SYNTHETIC-PREFERENCE-PHRASE`. | `test_l2_prompt_markers_are_absent_from_logs_and_errors` |
+| L3 | The first upstream frame is the prompt text. A binary audio frame is not sent before it. | `test_l3_prompt_frame_is_sent_before_any_audio` |
 
 ## Open question for the owner
 
