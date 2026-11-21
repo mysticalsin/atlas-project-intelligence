@@ -11,7 +11,13 @@ Red tests: `58009dc2e7965a410e370233f8d4f3654c50f31b` (module missing; the page 
 
 Decision: `handoff/decisions/confirm-step-row11.md`. Inventory: `docs/state-machines.md` row 11.
 
-Suite counts are filled in the measurement note after `pytest`, `node --test tests/*.test.js`, the edge tests, `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui`, and `check_handoff`.
+Measured on `321ae32ee0f8afed15cfc74d1db16208b96020de`, before this paragraph's manifest refresh. `ATLAS_DEPLOY_STUB` was unset. Workerd 2026-10-23 is not installed. Pytest and `check_handoff` ran in a normal checkout, because a linked worktree stores `.git` as a file and `is_dev_tree` correctly rejects that.
+
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 413 passed, 127 warnings, 25.60s, exit 0.
+- `node --test tests/*.test.js`: 419 tests, 419 pass, 0 fail, 0 skipped.
+- Edge `node --test test/*.test.js`: 1122 tests, 1118 pass, 0 fail, 4 skipped. The four skips are `workerd 2026-10-23 is not installed; set ATLAS_WORKERD_ROOT`.
+- `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui`: 834 PASS, 0 FAIL, exit 0. The confirm page browser script passed, including the recorded sentence and a 320 px submit.
+- `python3 scripts/check_handoff.py . --dev-git-index`: exit 0, 700 release files.
 
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
