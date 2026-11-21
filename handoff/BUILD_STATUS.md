@@ -1,6 +1,30 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-21 — inspector adapt on the UI shell (`cursor/atlas-s01-fix-ui-shell-v2`)
+
+Inspector on `a24ba842e8da6758babdfab4859676d887a5538f`: PASS WITH NOTES, APP-FIT ADAPT, report `e71f5a24`. Red checks are `2adba2de547fa82494cfe8ceed957a0958a02a27`. That commit adds the failing checks and does not refresh `MANIFEST.json`.
+
+Two rulings. Restored projects stay unselected behind a blank first option `Choose a project`, selected by default. Picking any real project, including when there is only one, commits it. The architecture diagram names Kyutai as the voice engine, with PersonaPlex and OpenAI Realtime shown as alternatives. The how-dialog lead already said that. The events chart accessible name includes the visible count (`Events by day, 4 events`). The meta description names Kyutai.
+
+Red, on `2adba2d`, before the product edit:
+
+- `node --test tests/s01-ui-shell.test.js`: 3 tests, 1 pass, 2 fail, exit 1. E7 still passes. The description does not match `/Kyutai/`. The diagram still contains `Hosted Realtime OR PersonaPlex` (`true !== false`).
+- `CHROMIUM_PATH=/usr/bin/google-chrome python3 tests/s01-ui-shell-restore-browser.py`: 1 pass, 5 fail, exit 1. The seed succeeds. One restored project and several restored projects are shown as selected (`Solo restored pilot`, then `Admin test copy`). Choosing the shown title does not commit it. The events chart name omits the count.
+
+Product edit: `src/app.js` `renderSelectors`, `docs/architecture.svg`, `src/journey-ui.js` `bars`, `src/shell.html` description. `tests/admin_metrics_browser.py` now requires `Events by day, 4 events` and still requires the date `11-01`. The old exact label `Events by day` cannot hold once the count is part of the name. No other assertion in that file changed. Page rebuilt with `python3 build.py`. Pin `1788fd69d57e81f7c33a35c298f4b472fcf70ee4fc953b7422dec3ab7501d7a6`, 928065 bytes. `bash scripts/verify_page_build.sh` exits 0. Screenshots at 1440 and 390 are in `docs/qa/s01-ui/`. `src/voice-client.js` and `handoff/CURRENT_STATUS.md` were not edited.
+
+Measured on this branch with `CHROMIUM_PATH=/usr/bin/google-chrome`, before this paragraph's manifest refresh:
+
+- Restore browser: 6 pass, 0 fail, exit 0.
+- `tests/s01-ui-shell-c-browser.py`: 4 pass, exit 0. `tests/s01-ui-shell-d-browser.py`: 11 pass, exit 0. `node --test tests/s01-ui-shell.test.js`: 3 pass, exit 0.
+- `node --test tests/*.test.js`: 422 tests, 422 pass, 0 fail, 0 skipped, exit 0.
+- `cd deploy/cloudflare-edge && node --test test/*.test.js`: 1117 tests, 1113 pass, 0 fail, 4 skipped, exit 0. The four skips are the existing workerd proofs (`ATLAS_WORKERD_ROOT` unset). This change adds none.
+- `make test-ui`: 834 PASS, 0 FAIL, exit 0.
+- `python3 -m pytest tests/test_*.py -q --tb=line` before the manifest refresh: 411 passed, 2 failed. The two are `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`.
+
+C-3 and `handoff/CURRENT_STATUS.md` stay owned elsewhere. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` stay open. No deploy. CI was not run. The Actions budget is blocked.
+
 ## 2026-11-21 — sweep 01 group 12 UI shell (`cursor/atlas-s01-fix-ui-shell-v2`)
 
 Mergeable copy of draft #44, branched from main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. Red tests are `355e1fd4c4bcee332e874c0f8f4f64ac0c4ea92e`. That commit only adds `tests/s01-ui-shell-c-browser.py`, `tests/s01-ui-shell-d-browser.py`, and `tests/s01-ui-shell.test.js`. It does not refresh `MANIFEST.json`.

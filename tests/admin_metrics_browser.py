@@ -61,7 +61,7 @@ with sync_playwright() as pw:
           ready == {'Events': '4', 'Errors': '1', 'Actual tokens in': '120', 'Missing token events': '2', 'Unknown token events': '1',
                     'Latency avg ms': '80', 'Published': '3', 'Awaiting manager': '2', 'Awaiting pre-sales': '1', 'Admin tests': '0'})
     check('ready shows the day chart, the cost sentence and the note',
-          p.locator('#admin .chart').get_attribute('aria-label') == 'Events by day' and '11-01' in p.locator('#admin .chart').inner_text()
+          p.locator('#admin .chart').get_attribute('aria-label') == 'Events by day, 4 events' and '11-01' in p.locator('#admin .chart').inner_text()
           and 'Estimated 0.02 USD from configured unit rates.' in text and 'Synthetic counts for this browser check.' in text
           and p.locator('#admin p', has_text='Loading…').count() == 0)
     denied = b.new_context(viewport={'width': 1366, 'height': 1000})

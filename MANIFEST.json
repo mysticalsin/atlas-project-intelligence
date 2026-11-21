@@ -622,23 +622,23 @@
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 927761,
-      "sha256": "a9cb61a6554e946f707cc731b508f17ef57522c2b4cdd2ac783d2ed3864e9bec"
+      "bytes": 928065,
+      "sha256": "1788fd69d57e81f7c33a35c298f4b472fcf70ee4fc953b7422dec3ab7501d7a6"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 927761,
-      "sha256": "a9cb61a6554e946f707cc731b508f17ef57522c2b4cdd2ac783d2ed3864e9bec"
+      "bytes": 928065,
+      "sha256": "1788fd69d57e81f7c33a35c298f4b472fcf70ee4fc953b7422dec3ab7501d7a6"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 927761,
-      "sha256": "a9cb61a6554e946f707cc731b508f17ef57522c2b4cdd2ac783d2ed3864e9bec"
+      "bytes": 928065,
+      "sha256": "1788fd69d57e81f7c33a35c298f4b472fcf70ee4fc953b7422dec3ab7501d7a6"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 927761,
-      "sha256": "a9cb61a6554e946f707cc731b508f17ef57522c2b4cdd2ac783d2ed3864e9bec"
+      "bytes": 928065,
+      "sha256": "1788fd69d57e81f7c33a35c298f4b472fcf70ee4fc953b7422dec3ab7501d7a6"
     },
     {
       "path": "CLAUDE.md",
@@ -933,7 +933,7 @@
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
       "bytes": 146,
-      "sha256": "bc7bd18af5d6f26695f93a35e0967567e9db8faded7fb942bf7387c3ccfee08f"
+      "sha256": "7507a1e8b30f9e209c6ad6710e6a31af5b3e1b58b0da402341c2d64c36877bb6"
     },
     {
       "path": "deploy/cloudflare-edge/set-keys.sh",
@@ -998,7 +998,7 @@
     {
       "path": "deploy/cloudflare-edge/src/csp.generated.js",
       "bytes": 1675,
-      "sha256": "23f61d1abe376fe92328ed9ef6a0eac39b92beab14570dcd9dbbb49400f297b8"
+      "sha256": "ed281ee5f79bf0d47f5140eb8937ea459322e3112150b06b22468ad86c9c36c1"
     },
     {
       "path": "deploy/cloudflare-edge/src/csp.js",
@@ -2187,8 +2187,8 @@
     },
     {
       "path": "docs/architecture.svg",
-      "bytes": 5562,
-      "sha256": "22a0488ffd0061be96ee2de6e82eb073adf27d9aea36dbabecf3b3bd020016d2"
+      "bytes": 5639,
+      "sha256": "7e37a5c37124fa4da3f97c709e2880e8333523f7f7ac9fafdcb35592c5bd93e6"
     },
     {
       "path": "docs/pr10/PR_BODY.md",
@@ -2251,6 +2251,16 @@
       "sha256": "841f67c52b25e49dcda060058d66e009d3a241c8e2ee9421c7f946362def0168"
     },
     {
+      "path": "docs/qa/s01-ui/admin-events-1440.png",
+      "bytes": 82153,
+      "sha256": "299d4e53ada6451893a890d73f32e06d854794e02f5e62fa55ab6e60be6d1ad5"
+    },
+    {
+      "path": "docs/qa/s01-ui/admin-events-390.png",
+      "bytes": 37066,
+      "sha256": "ca68898078fca06bbe5b1c628d61ed0d4f348d75e504a58c291b5d1f11f8e46e"
+    },
+    {
       "path": "docs/qa/s01-ui/desktop-admin-events.png",
       "bytes": 73516,
       "sha256": "13564c616254daa7ae709849039dd818f9803bb21a8a21c22bd8870f586c9297"
@@ -2286,6 +2296,16 @@
       "sha256": "cd41706f328193393fc36dae59e460ce789a15536311e30d04c3b75468970317"
     },
     {
+      "path": "docs/qa/s01-ui/how-dialog-1440.png",
+      "bytes": 136825,
+      "sha256": "0ed5a26c734d945341c7e7a18fc7825c54981e9894e77dbce124d27e9fc989de"
+    },
+    {
+      "path": "docs/qa/s01-ui/how-dialog-390.png",
+      "bytes": 68868,
+      "sha256": "9864311836cd3aee85236c2009d263cd2ba8ae37f41f0aa97e8ba4b82adeca7f"
+    },
+    {
       "path": "docs/qa/s01-ui/phone-375-conversation.png",
       "bytes": 117157,
       "sha256": "ab8571b7ff5c326ff3d437654e1fb3f603d1bc6dc2ca52452072213bbecdd159"
@@ -2309,6 +2329,16 @@
       "path": "docs/qa/s01-ui/phone-375-stories.png",
       "bytes": 52499,
       "sha256": "8507da510e32669e0ec1c0dad5fdac1880161d972c8df5269bd606ec11a2ec8d"
+    },
+    {
+      "path": "docs/qa/s01-ui/stories-1440.png",
+      "bytes": 75443,
+      "sha256": "36cdaae2ebc9f652b2036e68036d665ffb776efd1f92dc85398e501bcdc68042"
+    },
+    {
+      "path": "docs/qa/s01-ui/stories-390.png",
+      "bytes": 54202,
+      "sha256": "1f58a7e91550488fdaa55edfafc14819704ec0b6fdffc0e2a48dd3d43f7e20bb"
     },
     {
       "path": "docs/state-machines.md",
@@ -2342,8 +2372,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 349059,
-      "sha256": "ae0d7f2f2a4a84a7ffbfb55de0baaa1b01270c316969b151c5bb2a56b992fd7c"
+      "bytes": 352193,
+      "sha256": "de22d0eb52124d2c5e33a41ec86a32e6269e708b9017eee6c1666aeebee078d6"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2842,8 +2872,8 @@
     },
     {
       "path": "src/app.js",
-      "bytes": 148351,
-      "sha256": "83a17f9bc541ca6b9e26a00320b46cf9d308dfcc108b1053edd22ac360da055a"
+      "bytes": 148485,
+      "sha256": "69ff2015dbd4e5967bb0c38360fd1aa16cd4c0e1b2db3ae1a52ccaab82a2517c"
     },
     {
       "path": "src/ask-ui.js",
@@ -2912,8 +2942,8 @@
     },
     {
       "path": "src/journey-ui.js",
-      "bytes": 17955,
-      "sha256": "a4547372bc24c9eaca3f06eaeb75b4d57bfec31072f57e2a50c3ed001357b4d2"
+      "bytes": 18060,
+      "sha256": "0351108faaf9d636637c55620e61969dc8587b3ba0fdf1e82d825fb489b5ea36"
     },
     {
       "path": "src/journey.css",
@@ -2977,8 +3007,8 @@
     },
     {
       "path": "src/shell.html",
-      "bytes": 48931,
-      "sha256": "b27d18a106828d01e38293b6fdd2d9df4a643d60d0090f2e7589c1f19c7e56a5"
+      "bytes": 48919,
+      "sha256": "c33e204f660a3ec35d500df8f04c26c8cf021c8a30869d483f78104911443a8b"
     },
     {
       "path": "src/storyboard-core.js",
@@ -3067,8 +3097,8 @@
     },
     {
       "path": "tests/admin_metrics_browser.py",
-      "bytes": 7985,
-      "sha256": "edbd0ed65a4fd704e9c7616b0b80e72107199ba4b298fa9f1f31a10a27739259"
+      "bytes": 7995,
+      "sha256": "a8e3d41d68a82b45cc7e7826d609da3dfc8f740addd257b566f40f7260a99d39"
     },
     {
       "path": "tests/ask_browser.py",
@@ -3356,9 +3386,14 @@
       "sha256": "3200bdc5a442ea314297389abeacdbeebc554f5f340879e569c223d0fa845942"
     },
     {
+      "path": "tests/s01-ui-shell-restore-browser.py",
+      "bytes": 6576,
+      "sha256": "2b036fea5dbb58a52dd2070135a61120bb3faa232c1ebf0bbe4e99ea7ed8b191"
+    },
+    {
       "path": "tests/s01-ui-shell.test.js",
-      "bytes": 817,
-      "sha256": "1ca03d823fa1fc1e7c510d32c8728c2927236fb4637a698d5a491689db3aa122"
+      "bytes": 2465,
+      "sha256": "97116127a4cbd25760afb062d03aeccba551d016f17f2760031e29162d5a0246"
     },
     {
       "path": "tests/safe-html-lint.test.js",
