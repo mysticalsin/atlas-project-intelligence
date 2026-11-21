@@ -16,6 +16,7 @@ export class InterviewLedger {
   constructor(stage = 'Unknown') {
     this.transcripts = new Map(); this.details = []; this.calls = new Map(); this.updates = 0;
     this.probes = []; this.deferred = {}; this.callInputs = new Map(); this.stage = stage;
+    this.withheldItems = new Set();
   }
 
   addTranscript(itemId, text) {
@@ -50,6 +51,23 @@ export class InterviewLedger {
     for (const x of pending) { if (x.supersedes) for (const old of this.details) if (old.id === x.supersedes) old.active = false; this.details.push(x); }
     this.updates += 1;
     return this.inspect();
+  }
+
+  // Privacy is a property of the utterance, not of whichever candidate is active.
+  // A later correction supersedes the detail and leaves this mark in place.
+  withhold(detailId) {
+    if (typeof detailId !== 'string' || !detailId) fail('Unknown detail');
+    const d = this.details.find(x => x.id === detailId);
+    if (!d) fail('Unknown detail');
+    d.withheld = true;
+    this.withheldItems.add(d.item_id);
+    return this.inspect();
+  }
+
+  publicTranscript() {
+    const parts = [];
+    for (const [id, text] of this.transcripts) if (!this.withheldItems.has(id)) parts.push(text);
+    return parts.join('\n\n');
   }
 
   measurementGaps(active) {
@@ -134,17 +152,19 @@ export class InterviewLedger {
 
   notes() {
     const sections = ['', '', '', '', '', ''];
-    for (const x of this.details) if (x.active) { const i = TO_TOPIC[x.field]; if (!sections[i].includes(x.quote)) sections[i] = (sections[i] + '\n' + x.quote).trim().slice(0, 6000); }
+    for (const x of this.details) if (x.active && x.withheld !== true) { const i = TO_TOPIC[x.field]; if (!sections[i].includes(x.quote)) sections[i] = (sections[i] + '\n' + x.quote).trim().slice(0, 6000); }
     return sections;
   }
 }
 
 export function buildMessages(ledger, itemId) {
   const ids = [...ledger.transcripts.keys()];
-  const recent = ids.slice(-(CONTEXT_SEGMENTS + 1)).filter(i => i !== itemId).slice(-CONTEXT_SEGMENTS);
-  const active = ledger.details.filter(d => d.active).map(d => ({ id: d.id, field: d.field, quote: d.quote.slice(0, 200) })).slice(-20);
+  const hidden = ledger.withheldItems || new Set();
+  const recent = ids.slice(-(CONTEXT_SEGMENTS + 1)).filter(i => i !== itemId && !hidden.has(i)).slice(-CONTEXT_SEGMENTS);
+  const active = ledger.details.filter(d => d.active && d.withheld !== true).map(d => ({ id: d.id, field: d.field, quote: d.quote.slice(0, 200) })).slice(-20);
+  const segment = hidden.has(itemId) ? '' : ledger.transcripts.get(itemId);
   const context = { project_stage: ledger.stage, recent_segments: recent.map(i => ({ item_id: i, text: ledger.transcripts.get(i).slice(0, SEGMENT_CHARS) })),
-    active_candidates: active, new_segment: { item_id: itemId, text: ledger.transcripts.get(itemId).slice(0, SEGMENT_CHARS * 4) } };
+    active_candidates: active, new_segment: { item_id: itemId, text: segment.slice(0, SEGMENT_CHARS * 4) } };
   return [{ role: 'system', content: ANALYST_POLICY }, { role: 'user', content: 'UNTRUSTED INTERVIEW DATA\n' + JSON.stringify(context) }];
 }
 

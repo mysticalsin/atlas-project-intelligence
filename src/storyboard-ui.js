@@ -23,7 +23,7 @@ const motionOK=()=>!(window.matchMedia&&matchMedia('(prefers-reduced-motion: red
 const flagText=f=>f.replace(/^No verified measurement\b/i,'No measurement recorded');
 const fieldLabel=f=>{const x=obj(window.ATLAS_POLICY&&window.ATLAS_POLICY.FIELDS)[f];return Array.isArray(x)?str(x[0],80):'';};
 
-let s=blank(),prev=null,seq=0,ticker=null,mapKey=null,said='',pending='',saidAt=0,sayTimer=null,gap=null;
+let s=blank(),prev=null,seq=0,ticker=null,mapKey=null,said='',pending='',saidAt=0,sayTimer=null,gap=null,editors=new Map();
 function blank(){return {quality:null,qualitySeq:null,heard:[],session:{},live:false,off:false};}
 function state(){return {quality:s.quality,heard:s.heard,qualitySeq:s.qualitySeq,session:s.session,now:Date.now(),policy:window.ATLAS_POLICY,geo:window.AtlasGeo};}
 
@@ -83,7 +83,8 @@ function flush(){sayTimer=null;if(pending===said)return;said=pending;saidAt=Date
 function tick(){if(board.hidden)return;renderTime(B.model({session:s.session,now:Date.now()}).time);}
 function startTicker(){stopTicker();ticker=setInterval(tick,1000);}
 function stopTicker(){if(ticker!==null)clearInterval(ticker);ticker=null;}
-function clear(){stopTicker();clearTimeout(sayTimer);sayTimer=null;s=blank();prev=null;mapKey=null;said=pending='';saidAt=0;gap=null;
+function clear(){stopTicker();clearTimeout(sayTimer);sayTimer=null;s=blank();prev=null;mapKey=null;said=pending='';saidAt=0;gap=null;editors.clear();
+ const read=$('boardReadback');if(read)read.replaceChildren();
  board.hidden=true;$('boardSummary').textContent='';$('boardCoverage').textContent='';$('boardTime').hidden=true;$('boardGaps').hidden=true;
  for(const id of ['boardGaps','boardMap','boardMetrics','boardDims','boardChallenge'])body(id).replaceChildren();
  renderGap();$('gapMessage').textContent='';}
@@ -101,7 +102,25 @@ window.addEventListener('atlas-session',e=>{const d=e.detail;if(!d||typeof d!=='
  else if(d.type==='audio_stopped'){stopClock();render();}
  else if(d.type==='ended'){stopClock();s.qualitySeq=++seq;render();}  // nothing is being analysed once the session has ended
  else if(d.type==='notes'){if(d.mode==='gap')showGap(d);}
- else if(d.type==='time_up'||d.type==='wrap_up')render();});
+ else if(d.type==='time_up'||d.type==='wrap_up')render();
+ else if(d.type==='summary')renderSummary(d.items);});
+// A late summary rebuilds the editor. Text already typed, including on a row that is not focused, is copied onto the new input.
+function renderSummary(items){
+ const list=arr(items).filter(x=>x&&typeof x.detail_id==='string').slice(0,100);
+ let box=$('boardReadback');
+ if(!box){box=el('section','board-readback');box.id='boardReadback';board.append(box);}
+ const focused=document.activeElement&&document.activeElement.dataset?document.activeElement.dataset.detail:'';
+ for(const input of box.querySelectorAll('input'))if(input.dataset&&input.dataset.detail)editors.set(input.dataset.detail,input.value);
+ box.replaceChildren();
+ const ul=el('ul','board-readback-list');
+ for(const item of list){
+  const li=el('li'),input=document.createElement('input');
+  li.append(el('p','board-quote',str(item.label,80)+': '+str(item.quote,1800)));
+  input.dataset.detail=item.detail_id;input.value=editors.has(item.detail_id)?editors.get(item.detail_id):'';
+  input.addEventListener('input',()=>editors.set(item.detail_id,input.value));
+  li.append(input);ul.append(li);}
+ box.append(ul);
+ if(focused)for(const input of ul.querySelectorAll('input'))if(input.dataset.detail===focused){input.focus();break;}}
 
 /* ---------- Proof answers after a gap interview (F2.1 step 6): two separate explicit clicks ---------- */
 function showGap(m){const g=obj(m.gap),app=window.ATLAS_APP;

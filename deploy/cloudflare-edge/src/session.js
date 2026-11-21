@@ -5,6 +5,7 @@ import { TALKER_POLICY, OPENING, HISTORY, TOPICS, ADMIN_NOTE, SPEAKING_LIMIT_S, 
   GAP_LIMIT_S, GAP_SPEAKING_S, GAP_WRAP_S, GAP_MAX, GAP_OPENING, WIN_HINTS } from './policy.generated.js';
 import { gapSystemBlock, gapNotes, gapStatus, gapGuidance, timePlan } from './gap-policy.js';
 import { Analyst, InterviewLedger } from './ledger.js';
+import { buildSummary } from './summary.js';
 import { EnergyTurns, isEcho, Phrases, speakable } from './speech.js';
 import { EndMarker, parseReport, reportMessages } from './report.js';
 import { LANGUAGES, normalize, spokenFor, languageNote, GREETINGS, WELCOME_BACK, FILLERS, unfinished } from './languages.js';
@@ -138,7 +139,7 @@ export class Session {
     this.nextTime = 0; this.currentItem = null; this.timer = null; this.lastAudio = -1e9; this.cutOff = false; this.sentMs = {}; this.playedMs = {};
   }
 
-  event(type, values = {}) { if (!this.finished || ['audio_stopped', 'reporting', 'notes', 'ended', 'error', 'quality', 'quality_warning'].includes(type)) this.io.send({ type, ...values }); }
+  event(type, values = {}) { if (!this.finished || ['audio_stopped', 'reporting', 'summary', 'notes', 'ended', 'error', 'quality', 'quality_warning'].includes(type)) this.io.send({ type, ...values }); }
 
   async onText(text) {
     let value;
@@ -784,7 +785,9 @@ export class Session {
       if (clean && this.capture && this.ledger) {
         // Gap mode writes no report: its answers go back only through the consultant's explicit clicks (§F2.1 step 6).
         const gap = this.mode === 'gap', report = gap ? null : await this.report();
-        this.event('notes', { transcript: [...this.ledger.transcripts.values()].join('\n\n'), sections: this.ledger.notes(), status: 'candidate', report, mode: this.mode,
+        const items = buildSummary(this.ledger);
+        if (items.length) this.event('summary', { items });
+        this.event('notes', { transcript: this.ledger.publicTranscript(), sections: this.ledger.notes(), status: 'candidate', report, mode: this.mode,
           ...(gap ? { gap: { requestId: this.gapRequest, results: this.gapResults() } } : {}),
           message: 'Unverified speech recognition and quote-linked candidate notes. Correct omissions and errors before adding to the project. The final cut-off utterance may be incomplete.' });
       } else if (clean) this.event('notes', { transcript: '', sections: null, status: 'not-enabled', mode: this.mode, message: 'Transcript capture was off. No consultant notes were stored.' });

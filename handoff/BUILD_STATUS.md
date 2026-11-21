@@ -1,6 +1,21 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-21 — A07 slice 2, confirmation read-back (`cursor/pr1-slice2-readback-6f11`)
+
+PR #5 is merged. Its head is `9438e73ac2b750e3f3dfdf1d60e1d4b03a374842`, merge `5c55c2bcf722963ec2182dfc463fb152e57f5c89`, and that commit is an ancestor of `main` `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. The copied-commit and null-hash remigration checks in `deploy/cloudflare-edge/test/s1-a5ba30c.test.js` pass on that tree. No new test was added for those closed findings.
+
+Red tests are `939418703c76cf3d0d1fff8ab788371e33aa9aff`. They fail because withhold, the read-back module, the checkpoint fence, and the summary editor are not on `8b0972ec`. The fix is this section's commit.
+
+What the fix does:
+
+- A withheld utterance stays out of the notes, the analyst context, and the confirmation card after a later detail supersedes it. The analyst cannot set that mark by recording a field.
+- `buildSummary` lists every active, non-withheld detail up to 100. It does not stop at 40.
+- The storyboard keeps an unsaved correction when a later summary arrives.
+- `handoffInterview` revokes the previous checkpoint writer before the old session finishes suspending. The store writes the session id only. It does not store the interview body.
+
+Files: `deploy/cloudflare-edge/src/ledger.js`, `summary.js`, `checkpoint.js`, `session.js`, `worker.js`, `src/storyboard-ui.js`, the rebuilt pages, `csp.generated.js`, and `PAGE_SHA256.txt`. Sweep-owned files were not edited. No provider call.
+
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.
