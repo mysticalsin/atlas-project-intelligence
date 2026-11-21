@@ -397,8 +397,27 @@ function pageFor(sessionStorage, who) {
     };
     return node;
   }
+  const documentElement = {
+    hidden: false,
+    style: { display: '' },
+    attrs: {},
+    getAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attrs, name) ? this.attrs[name] : null; },
+    append(node) {
+      if (!node) return;
+      node.parentNode = this;
+      if (node.id) nodes.set(node.id, node);
+    },
+  };
   const body = track(element('Ada bids marker'));
   body.id = 'body';
+  body.style = { display: '' };
+  body.parentNode = documentElement;
+  body.append = function(node) {
+    if (!node) return;
+    node.parentNode = body;
+    this.children.push(node);
+    if (node.id) nodes.set(node.id, node);
+  };
   const enableSave = track(element('Enable autosave'));
   enableSave.id = 'enableSave';
   const backupQuick = track(element('Backup'));
@@ -412,7 +431,7 @@ function pageFor(sessionStorage, who) {
   const document = listen({
     visibilityState: 'visible',
     body,
-    documentElement: { append(node) { if (node && node.id) nodes.set(node.id, node); } },
+    documentElement,
     getElementById(id) { return nodes.get(id) || null; },
     createElement() { return track(element('')); },
     querySelector() { return null; },
@@ -655,6 +674,32 @@ describe('access identity change, plan debate', { concurrency: false }, () => {
     assert.equal(note.getAttribute('class'), 'blocking-notice');
     assert.equal(note.textContent, 'The signed-in account changed. Close this tab and open ATLAS again. Anything not already saved on this device is discarded.');
   });
+
+  test('the identity alert is announced and every ancestor is visible', async () => {
+    // Appending the notice to the hidden body keeps role=alert and stays green without this walk.
+    const storage = memorySession([['atlas.reauthAt', String(Date.now())]]);
+    const page = pageFor(storage);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    page.next.who = { subjectKey: 'subject-blake', name: 'blake@example.test' };
+    await page.sandbox.AtlasAuth.probe({ fresh: true });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const note = page.nodes.get('atlasIdentityNotice');
+    assert.ok(note);
+    const announced = note.getAttribute('role') === 'alert' || !!note.getAttribute('aria-live');
+    assert.equal(announced, true);
+    const blocked = [];
+    let cur = note;
+    let guard = 0;
+    while (cur && guard < 8) {
+      const display = cur.style && cur.style.display;
+      const aria = typeof cur.getAttribute === 'function' ? cur.getAttribute('aria-hidden') : null;
+      if (cur.hidden === true || display === 'none' || aria === 'true' || aria === '') blocked.push(cur.id || 'ancestor');
+      cur = cur.parentNode;
+      guard += 1;
+    }
+    assert.deepEqual(blocked, [], 'a hidden ancestor would keep the alert off the accessibility tree');
+    assert.equal(note.parentNode, page.document.documentElement);
+  });
 });
 
 describe('access identity change, clean console', { concurrency: false }, () => {
@@ -825,7 +870,7 @@ describe('access identity change, clean console', { concurrency: false }, () => 
       documentElement: { append(node) { node.connected = true; node.parentNode = this; if (node && node.id) nodes.set(node.id, node); } },
       visibilityState: 'visible', hidden: false,
       addEventListener() {}, removeEventListener() {},
-      getElementById(id) { const node = nodes.get(id); return node && node.connected ? node : null; },
+      getElementById(id) { return nodes.get(id) || null; },
       createElement() { return bag(); },
       querySelector() { return bag(); },
       querySelectorAll() { return []; },
@@ -879,7 +924,7 @@ describe('access identity change, clean console', { concurrency: false }, () => 
     const save = document.getElementById('studioSave');
     status.textContent = 'Saved on this device';
     await new Promise(resolve => setTimeout(resolve, 0));
-    assert.equal(save.textContent, 'Saved on this device');
+    assert.equal(save.textContent, 'Saved on this device', 'the save control copied a status change after the identity blank');
     assert.ok(callbacks > 0);
     const beforeBlank = callbacks;
     await sandbox.AtlasAuth.probe({ fresh: true });
@@ -887,9 +932,11 @@ describe('access identity change, clean console', { concurrency: false }, () => 
     assert.equal(sandbox.AtlasAuth.mode, 'identity-changed');
     assert.deepEqual(errors, []);
     const afterBlank = callbacks;
+    const copied = save.textContent;
     status.textContent = 'after the blank';
     await new Promise(resolve => setTimeout(resolve, 0));
-    assert.equal(callbacks, afterBlank);
+    assert.equal(save.textContent, copied, 'the save control copied a status change after the identity blank');
+    assert.equal(callbacks, afterBlank, 'the storage observer ran after the identity blank');
     assert.ok(beforeBlank > 0);
     assert.deepEqual(errors, []);
   });

@@ -734,4 +734,99 @@ describe('access identity change, required plan changes', { concurrency: false }
     }
     assert.deepEqual(failures, []);
   });
+
+  test('a key that differs only in the last character is refused and the real key is accepted', async () => {
+    // timingSafe compares every character. sameKey's 32-hex cases do not lock the bearer or CSRF calls.
+    // An 8-character cut accepts a same-length secret that matches the prefix and differs at the end.
+    const flipLast = value => value.slice(0, -1) + (value[value.length - 1] === 'a' ? 'b' : 'a');
+    const secret = 's3cret-value';
+    const bearer = flipLast(secret);
+    assert.equal(bearer.length, secret.length);
+    assert.equal(bearer.slice(0, 8), secret.slice(0, 8));
+    assert.notEqual(bearer[bearer.length - 1], secret[secret.length - 1]);
+    let opened = 0;
+    const triggerEnv = {
+      ...envFor({
+        idFromName: name => name,
+        get: () => ({ fetch: () => { opened += 1; return new Response('{"id":"x"}', { status: 201 }); } }),
+      }, binder({}).binding),
+      TRIGGER_SECRET: secret,
+      ATLAS_SYSTEM_TENANT: '11111111-1111-4111-8111-111111111111',
+    };
+    const trig = auth => handle(new Request(ORIGIN + '/api/triggers', {
+      method: 'POST',
+      body: '{"email":"a@b.co","reason":"project_end"}',
+      headers: { Authorization: 'Bearer ' + auth },
+    }), triggerEnv, '');
+    const acceptedBearer = await trig(secret);
+    const refusedBearer = await trig(bearer);
+    const ada = await established();
+    const csrf = ada.csrf;
+    const flippedCsrf = flipLast(csrf);
+    assert.equal(flippedCsrf.length, csrf.length);
+    assert.equal(flippedCsrf.slice(0, 8), csrf.slice(0, 8));
+    assert.notEqual(flippedCsrf[flippedCsrf.length - 1], csrf[csrf.length - 1]);
+    const library = binder({ title: 'Ada library' });
+    const post = token => handle(new Request(ORIGIN + '/api/library', {
+      method: 'POST',
+      body: '{}',
+      headers: {
+        'cf-access-jwt-assertion': ada.token,
+        Origin: ORIGIN,
+        'X-Atlas-CSRF': token,
+      },
+    }), envFor(library.binding, binder({}).binding), '');
+    const acceptedCsrf = await post(csrf);
+    const refusedCsrf = await post(flippedCsrf);
+    assert.deepEqual({
+      bearerAccepted: acceptedBearer.status,
+      bearerRefused: refusedBearer.status,
+      bearerOpened: opened,
+      csrfAccepted: acceptedCsrf.status,
+      csrfRefused: refusedCsrf.status,
+      libraryOpened: library.opened.length,
+    }, {
+      bearerAccepted: 201,
+      bearerRefused: 401,
+      bearerOpened: 1,
+      csrfAccepted: 200,
+      csrfRefused: 403,
+      libraryOpened: 1,
+    });
+  });
+
+  test('GET / embeds both bound keys and a library call with those keys succeeds', async () => {
+    // The page is what the browser echoes. Bootstrap can still carry the keys after runtimeBlock drops them.
+    const ada = await established();
+    const page = '<script id="atlas-runtime" type="application/json">{}</script></body>';
+    const html = await (await handle(new Request(ORIGIN + '/', {
+      headers: { 'cf-access-jwt-assertion': ada.token },
+    }), envFor(binder({}).binding, binder({}).binding), page)).text();
+    const runtime = JSON.parse(/<script id="atlas-runtime" type="application\/json">([\s\S]*?)<\/script>/.exec(html)[1]);
+    const hexKey = /^[0-9a-f]{32}$/;
+    const sentSubject = hexKey.test(runtime.boundSubject || '') ? runtime.boundSubject : (runtime.subjectKey || '');
+    const sentEmail = hexKey.test(runtime.boundEmail || '') ? runtime.boundEmail : (runtime.name || '');
+    const library = binder({ title: 'Ada library' });
+    const res = await handle(new Request(ORIGIN + '/api/library/journey', {
+      headers: {
+        'cf-access-jwt-assertion': ada.token,
+        'X-Atlas-Bound-Subject': sentSubject,
+        'X-Atlas-Bound-Email': sentEmail,
+      },
+    }), envFor(library.binding, binder({}).binding), '');
+    const got = await outcome(res, library.opened);
+    assert.deepEqual({
+      boundSubject: runtime.boundSubject || '',
+      boundEmail: runtime.boundEmail || '',
+      status: got.status,
+      opened: got.opened,
+      code: got.code,
+    }, {
+      boundSubject: await subjectBound(ADA.sub),
+      boundEmail: await emailBound(ADA.email),
+      status: 200,
+      opened: ['global'],
+      code: '',
+    });
+  });
 });
