@@ -1,6 +1,6 @@
 # Group 9 — profile
 
-Plan only. Debate this before anyone edits product code. Revision v2 (Sentinel PLAN-CHANGES on PR #38). The v2 section wins where an earlier sentence still trusts `edits.managerEmail` or a ref the caller wrote.
+Plan only. Debate this before anyone edits product code. Revision v2 (Sentinel PLAN-CHANGES on PR #38, then Devin `6c17bee6`). The v2 section wins where an earlier sentence still trusts `edits.managerEmail`, a ref the caller wrote, or `access() === 'full'` for presales.
 
 Pinned inputs: confirmer report sha256 `57c92dcb651ddef4b7abe9c23424065a2a59fa139d2cdfc6315ce227596eac1c`, main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`, red tests `96712474b59d6b058ef00479f2bb2d4eb065801e` (PR #31). External review: ATLAS-08 in `/cursor/stores/bot/atlas-sweeps/s01/external/hammer-artex-security.md`.
 
@@ -62,7 +62,7 @@ Before, F2: `editProfile` and the consent POST both `gather()` (read the row, th
 
 Before, ATLAS-08: any signed-in member of the tenant can `GET` people for any exact address. The body is `{ email, name, title, from }`. A 200 confirms the address is in the HR directory. A 404 confirms it is not. Manager email is already omitted. The cap is the in-memory limiter (ATLAS-07, group 14), so the harvest resumes after the Library Durable Object is evicted.
 
-After: retention deletes a row only when `seen_at` parses to an instant strictly before the cutoff. The offset form of the cutoff instant survives, and an unparseable value survives. Two overlapping edits or grants both remain. A third write that conflicts twice is 409 and leaves the row unchanged. A normal member resolves only their directory manager and people named on a story someone else wrote that they can open in full. A manager email they typed into `edits`, and a consultant they wrote themselves, do not resolve. Admin and reviewer can resolve an arbitrary exact address and still do not receive `manager_email`. An unauthorized address is 403. Past 30 distinct addresses in a UTC day, a non-admin caller gets 429.
+After: retention deletes a row only when `seen_at` parses to an instant strictly before the cutoff. The offset form of the cutoff instant survives, and an unparseable value survives. Two overlapping edits or grants both remain. A third write that conflicts twice is 409 and leaves the row unchanged. A normal member, including presales, resolves only their directory manager and people named on a same-tenant story someone else wrote, and only when they would still have full access as role `user`. The presales role grant does not count. A story in another tenant does not count. A manager email they typed into `edits`, and a consultant they wrote themselves, do not resolve. Admin and reviewer can resolve an arbitrary exact address and still do not receive `manager_email`. An unauthorized address is 403. Past 30 distinct addresses in a UTC day, a non-admin caller gets 429.
 
 ## Chosen design
 
@@ -79,7 +79,7 @@ The other keys stay as they are on the row just read. `gather` may still await D
 ATLAS-08. After the existing `rateLimit` call and the email-shape check:
 
 - `admin` and `reviewer` may resolve any exact address in the tenant.
-- Anyone else may resolve an address only when it is `directoryManager` of the caller (the directory row's `manager_email`), or when some `refs` row in the tenant has `lib.access(row, user) === 'full'`, `updated_by` is present and is not the caller, and the address is a `members` token or a `details.consultants[].email` on that row, compared as a whole address (lowercase, no prefix and no suffix).
+- Anyone else, including `presales`, may resolve an address only when it is `directoryManager` of the caller (the directory row's `manager_email` in the caller's tenant), or when a `refs` row has the same tenant as the caller, `updated_by` is present and is not the caller, the address is a `members` token or a `details.consultants[].email` on that row, and the caller would still have `full` access if their role were `user`. `access() === 'full'` from the `presales` role (`library.js` line 821) does not count. That role is `full` on every story in the tenant, which is the arbitrary lookup this plan rejected. Compare addresses as a whole (lowercase, no prefix and no suffix). A row whose tenant is not the caller's tenant does not count.
 - `edits.managerEmail` is not a source. The caller can set it in one request and look it up in the next.
 - Otherwise 403, before `lookupPerson`.
 - `lookupPerson` stays the response shape. Strip `manager_email` if a future change adds it. Do not add the manager to this response.
@@ -146,8 +146,9 @@ File: `deploy/cloudflare-edge/test/sweep01-g9-people.test.js`, except the confli
 | M2 | A consultant or member on a row whose `updated_by` is the caller does not unlock lookup. The same address on a row `updated_by` someone else, which the caller can open in full, does. | `M2 a self-written consultant does not unlock lookup` |
 | M2, owner ruling | 30 distinct addresses per UTC day for roles other than admin and reviewer, stored in SQLite. After 30 distinct 403s, construct `new Library(sameSql)` and the 31st distinct address is 429. Admin is not capped. | `M2 the thirty-first distinct lookup in a day is refused after eviction` |
 | L1 | Two overlapping saves still both stick (F2). A third save that loses the compare twice returns 409, and its field is absent from the row. | `L1 a profile save that conflicts twice fails closed` |
+| Devin | `presales` plus `access() === 'full'` is not a grant. A presales caller in tenant A does not resolve an address that appears only on a story in tenant B, including a story they would fully open if the tenant check were skipped. A presales caller also does not resolve an address that appears only on a same-tenant story they can see solely because their role is presales. | `D1 a presales lookup does not cross tenants` |
 
 ## Open questions for the owner
 
-1. `presales` does not get arbitrary directory lookup. Admin and reviewer do. A presales caller still resolves a person named on a story someone else wrote, when they can open that story in full. Confirm that split before this lands.
+1. Parked for Tony (question 7). The plan does not wait on it. Presales does not get the role-wide `full` grant, and lookup is limited to the caller's tenant. Admin and reviewer still resolve an arbitrary exact address in that tenant.
 2. **Owner ruling.** The distinct-address cap is 30 per UTC day, and admin and reviewer are exempt. Say if the number or the exemption should change. The red test uses 30.

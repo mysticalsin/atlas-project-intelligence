@@ -1,6 +1,6 @@
 # Group 1 — scrub / redaction
 
-Plan only. Debate this before anyone edits product code. Revision v2 (Sentinel PLAN-CHANGES on PR #38). The v2 section wins where an earlier sentence still says a name must be 5 characters before it is case-insensitive.
+Plan only. Debate this before anyone edits product code. Revision v2 (Sentinel PLAN-CHANGES on PR #38, then Devin `6c17bee6`). The v2 section wins where an earlier sentence still says a name must be 5 characters before it is case-insensitive, or still passes the client name with `{ contacts: true }`.
 
 Pinned inputs: confirmer report sha256 `57c92dcb651ddef4b7abe9c23424065a2a59fa139d2cdfc6315ce227596eac1c`, main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`, red tests `96712474b59d6b058ef00479f2bb2d4eb065801e` (PR #31).
 
@@ -59,13 +59,15 @@ What an attacker still can do: a client whose legal name is the ordinary word `w
 
 Move `STOPLIST`, `nameMatcher`, and the NFC / word-boundary helpers from `scrub.js` into `name-match.js`, with no imports from `review.js` or `scrub.js`. `scrub.js` re-exports them. `rating.js` (PR #17) does not change.
 
-`maskOwnClient(text, clientOrNames)` in `name-match.js` builds the name list the way `clientScrub` already documents: client name, location, full contact, and `contactLead` when that lead contains whitespace. It runs `nameMatcher` with `{ contacts: true }`. Those rules are already tested:
+One rule, `nameMatcher`, for every name. `{ contacts: true }` is only how a contact is passed in. It is not applied to the client name or the location. Passing the client name with `{ contacts: true }` drops stoplist names such as `Air` and `Will` before they can match, and the frozen tests still mask those spellings. The rule is:
+
+`maskOwnClient` calls `nameMatcher` once for the client name and the location, with the contacts flag off, and once for the full contact and for `contactLead` when that lead contains whitespace, with the contacts flag on.
 
 - word boundaries are `(?<![\p{L}\p{N}])` and `(?![\p{L}\p{N}])`
 - both sides are NFC
-- a name of 3 or more characters that is not a single stoplist word is case-insensitive (`acme`, `ibm`)
-- a name of 2 characters, or a single stoplist word, matches only the stored spelling and the upper-case spelling (`GE`, `will`, `air`)
-- a single-token contact that is a stoplist word or shorter than 3 characters is skipped
+- a name of 3 or more characters that is not a single stoplist word is case-insensitive as a whole word (`acme`, `ibm`)
+- a name of 2 characters, or a single stoplist word used as a client name, matches the stored spelling and the upper-case spelling (`GE`, `Air`/`AIR`, `Will`/`WILL`, `Total`/`TOTAL`) and does not match the lower-case word inside a sentence
+- a single-token contact that is a stoplist word or shorter than 3 characters is skipped, so contact `Will` does not rewrite `will`
 - every name is escaped before it is compiled, so a metacharacter is a literal character
 
 `memory.scrub` and `sheet.scrub` call `maskOwnClient` and do not keep their own `RegExp`. `clientScrub` calls the same function and returns the same replacer shape it returns today, so `forModel` stays a deep walk.
@@ -100,7 +102,8 @@ File: `deploy/cloudflare-edge/test/sweep01-g1-scrub-props.test.js`. Write these 
 
 | Sentinel | Change | Red test |
 |---|---|---|
-| M1 | A client name of 3 or more characters that is not a single stoplist word matches as a whole word in any case. `acme` masks `acme`, `Acme`, and `ACME`, and does not mask `acmeware`. A single stoplist word (`will`, `air`, `total`) stays stored-form and upper-case only, so ordinary `will` survives. Length 2 (`GE`) stays stored-form and upper-case only. | `M1 a three-letter client name is masked in any case` |
+| M1 | A client name of 3 or more characters that is not a single stoplist word matches as a whole word in any case. `acme` masks `acme`, `Acme`, and `ACME`, and does not mask `acmeware`. Length 2 (`GE`) stays stored-form and upper-case only. | `M1 a three-letter client name is masked in any case` |
+| Devin | The client name is not passed with `{ contacts: true }`. Client name `Air` still masks `Air` and `AIR` and does not mask `repair`. Client name `Will` still masks `Will` and `WILL`. Contact `Will` does not mask `will`. One matcher implements both. | `D1 a stoplist client name stays masked and the same word as a contact does not` |
 | L1 | `memory.scrub` and `sheet.scrub` run on every string those paths put into a retain item or a sheet draft, including nested sheet fields. Plant `acme` in each string and assert the output has no `acme` in any case. | `L1 every retain item and sheet field is masked` |
 | L2 | Compile names with escaped literals. A client name `a+`, `(acme)`, or `.*` masks that literal text and does not mask a bare `a` or `acme`. A pathological name (a long run of `a+` metacharacters against a few thousand `a`s) finishes in under one second. | `L2 a client name of regex metacharacters is a literal and a pathological name finishes within one second` |
 

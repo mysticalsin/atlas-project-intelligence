@@ -1,6 +1,6 @@
 # Group 10 — erasure / tenant
 
-Plan only. Debate this before anyone edits product code. Revision v2 (Sentinel PLAN-CHANGES on PR #38). Sentinel's ruling replaces the earlier send rule: deleting the subject's own unstamped Teams row by exact email is correct, and the quarantine is on the send side. The v2 section wins where an earlier sentence still lets `sendTeams` use a blank `atlas_tenant`.
+Plan only. Debate this before anyone edits product code. Revision v2 (Sentinel PLAN-CHANGES on PR #38, then Devin `6c17bee6`). Sentinel's ruling replaces the earlier send rule: deleting the subject's own unstamped Teams row by exact email is correct, and the quarantine is on the send side. The v2 section wins where an earlier sentence still lets `sendTeams` use a blank `atlas_tenant`, or still expects the old s1 teams fixture to stay unchanged.
 
 Pinned inputs: confirmer report sha256 `57c92dcb651ddef4b7abe9c23424065a2a59fa139d2cdfc6315ce227596eac1c`, main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`, red tests `96712474b59d6b058ef00479f2bb2d4eb065801e` (PR #31).
 
@@ -9,7 +9,7 @@ Findings: B1, B2, B3, B5.
 ## Done when
 
 1. All five tests in `deploy/cloudflare-edge/test/sweep01-b-security.test.js` pass (B1, B2, both B3, B5).
-2. `node --test --test-name-pattern "staffing and teams rows" deploy/cloudflare-edge/test/s1-review.test.js` still passes. That control deletes a Teams row whose `tenant_id` was seeded with the ATLAS tenant. The new delete still removes it.
+2. `node --test --test-name-pattern "staffing and teams rows" deploy/cloudflare-edge/test/s1-review.test.js` passes after the teams fixture change below. The staffing assertion is unchanged: the other tenant's staffing row stays. The teams assertion changes, and this group is the one that edits that test.
 3. After `eraseMine`, the erased address is not in `state.sharedWith`, not in live story JSON, and not in any revision of a story in that tenant. `lib.get` as that person throws 404 for the surviving story.
 4. A Teams row whose `tenant_id` is a directory GUID other than the ATLAS tenant is removed when its email is the subject and its ATLAS-tenant column is null or equal to this tenant. A row stamped with a different ATLAS tenant is kept. `sendTeams` does not select a null stamp.
 5. A staffing import of `=sum(1)@example.com`, or the same cell with a leading space or NBSP, does not come back from the staffing page as a live cell. No test is skipped or expected-failure.
@@ -22,7 +22,7 @@ Findings: B1, B2, B3, B5.
 
 Do not edit `library.js`, `library-routes.js`, `util.js`, `csvsafe.js`, `operate.js`, or `privacy.js`. `email()` must stay as it is. Group 5 owns the address cap. Rejecting a formula-shaped address inside `email()` would move B5 into group 5, which the confirmer forbade. This group may import `eraseRateHits` from `util.js` and call it. Group 14 owns that function. Do not rewrite it here.
 
-New tests, if the property loops do not fit in the PR #31 file: `deploy/cloudflare-edge/test/sweep01-g10-erasure-props.test.js`. Do not edit `test/sqlite.js` (PR #27).
+New tests: `deploy/cloudflare-edge/test/sweep01-g10-erasure-props.test.js`. This group also edits the one test `staffing and teams rows are erased for this tenant without an outreach table, and the other tenant stays` in `deploy/cloudflare-edge/test/s1-review.test.js`, and no other test in that file. Do not edit `test/sqlite.js` (PR #27).
 
 ## Failing tests from PR #31
 
@@ -149,8 +149,13 @@ Sentinel's ruling: deleting the subject's own unstamped Teams row by exact email
 | L1 | `eraseWithin` with an empty alias list deletes no Teams row, no staffing row, and no story. | `L1 an empty alias list deletes no rows` |
 | L2 | `Ada@Example.TEST` is removed. `ada@example.test.au` is kept. The erase SQL and the selector do not call `instr`. | `L2 address match is case-insensitive and the selector does not use instr` |
 | L3 | A revision whose `data` is a string containing the address, and a revision whose `data` is an array of strings containing it, both lose the address. | `L3 a non-object revision loses the address` |
+| Devin | Pick the Sentinel delete. An unstamped row is deleted by exact email, including when `tenant_id` is some other directory id. Keeping that row so `s1-review.test.js` lines 109-118 stay byte-for-byte would fail B2. | `D1 an unstamped teams row is deleted by exact email and a stamped other-tenant row remains` |
+
+Devin's conflict is real. `s1-review.test.js` lines 109-118 create two `teams_conversations` rows with the same email and no `atlas_tenant`, and expect the row whose `tenant_id` is the other tenant to survive. `tenant_id` there was used as if it were the ATLAS tenant. It is the directory id. Both rows are unstamped. Sentinel deletes the subject's own unstamped row by exact email, so both would go, and B2 requires that. This plan changes that one test and does not change B2.
+
+The change: the table in the fixture gains `atlas_tenant`. The row that must survive is stamped with the other ATLAS tenant. The unstamped row is deleted even though its `tenant_id` differs. The assertion becomes "the stamped other-tenant row remains and the unstamped row is gone." The staffing rows in the same test stay selected by `staffing.tenant`, and that assertion is not edited. Erase adds `atlas_tenant` when the table exists and the column does not, so a database created like this fixture still has a column to stamp.
 
 ## Open questions for the owner
 
-1. Ruled by Sentinel. Erase deletes the subject's own unstamped Teams row by exact email. Unstamped rows are not sent to, for any tenant, until restamped. This question is not still open.
-2. `erasure_log` stores a subject hash, not the address. Leftovers from an erase that already ran stay until that same subject calls erase again. People who cannot sign in again are not cleaned. This plan does not add an operator sweep. Confirm that waiting is acceptable.
+1. Parked for Tony (question 4). The plan does not wait on it. Until Tony says otherwise, erase deletes the subject's own unstamped Teams row by exact email, and `sendTeams` does not use an unstamped row.
+2. Parked for Tony (question 8). `erasure_log` stores a subject hash, not the address. Leftovers from an erase that already ran stay until that same subject calls erase again. This plan does not add an operator sweep.

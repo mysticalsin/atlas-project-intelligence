@@ -125,7 +125,7 @@ About 60 lines in the shell script. About 40 more if the extra static test file 
 
 ## v2 — Sentinel
 
-Agreed. File: `tests/sweep01-g17-entra-argv.test.js`. Static read of the script after comments are stripped. Do not run the script. No skip, no expected failure. The HAM-05 test stays as it is.
+Agreed. Devin's plan debate (`6c17bee6`) is PASS for this group. No design change from that pass. File: `tests/sweep01-g17-entra-argv.test.js`. Static read of the script after comments are stripped. Do not run the script. No skip, no expected failure. The HAM-05 test stays as it is.
 
 | Sentinel | Change | Red test |
 |---|---|---|

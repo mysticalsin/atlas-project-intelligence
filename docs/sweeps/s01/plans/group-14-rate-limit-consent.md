@@ -141,7 +141,7 @@ About 180 lines of product code and about 200 lines of tests.
 
 ## v2 — Sentinel
 
-Keying on the verified email stays. File: `deploy/cloudflare-edge/test/sweep01-g14-limit.test.js`. Write these before the fix. No skip, no expected failure. The F8 test in PR #31 still passes: a `now` one window earlier stays denied.
+Keying on the verified email stays. Devin's plan debate (`6c17bee6`) is PASS for this group. No design change from that pass. File: `deploy/cloudflare-edge/test/sweep01-g14-limit.test.js`. Write these before the fix. No skip, no expected failure. The F8 test in PR #31 still passes: a `now` one window earlier stays denied.
 
 | Sentinel | Change | Red test |
 |---|---|---|
@@ -153,6 +153,6 @@ Keying on the verified email stays. File: `deploy/cloudflare-edge/test/sweep01-g
 
 ## Open questions for the owner
 
-1. Confirm the `util.js` carve: group 14 owns `rateLimit` and `eraseRateHits`, group 5 owns `email()`, same file, no other lines. If that shared file is refused, this group adds `library-limit.js` and `rateLimit` becomes a delegate, which is a larger diff and the same behavior.
-2. Ruled by Sentinel. A backward clock holds for at most one window, and so does a future-dated hit. The hold does not open a fresh window. This is no longer an unbounded lockout.
-3. The ask and bid-edit keys do not include the tenant. This plan keeps those strings. Adding the tenant would give each tenant its own cap and loosen the limit. Confirm the keys stay as they are. The subject inside the key is the verified email.
+1. Decided (question 5). Group 5 owns `email()` only. Group 14 owns `rateLimit` and `eraseRateHits`. Same file, no other lines. Group 5 does not edit those two functions.
+2. Decided (question 9). The backward-clock hold is clamped to one window, and so is a future-dated hit, per Sentinel M1. The hold does not open a fresh window. The red test is `M1 a long clock step holds for one window and does not open a fresh window`.
+3. Decided (question 11). Ask and bid-edit keys stay tenant-free. Adding the tenant would give each tenant its own cap. The subject inside the key is the verified email.

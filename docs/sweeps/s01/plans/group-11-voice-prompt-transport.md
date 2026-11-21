@@ -117,7 +117,7 @@ About 80 lines in the two Python modules and about 100 lines of tests.
 
 ## v2 — Sentinel
 
-Agreed. File: `tests/test_sweep01_g11_headers.py`. No skip, no xfail. No provider.
+Agreed. Devin's plan debate (`6c17bee6`) is PASS for this group. No design change from that pass. Question 1 stays parked for Tony. File: `tests/test_sweep01_g11_headers.py`. No skip, no xfail. No provider.
 
 | Sentinel | Change | Red test |
 |---|---|---|

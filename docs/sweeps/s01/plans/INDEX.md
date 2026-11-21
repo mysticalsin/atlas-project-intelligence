@@ -1,23 +1,23 @@
 # Atlas sweep 01 — fix plans
 
-Planner only. No product code in this pull request. Revision v2 after Sentinel PLAN-CHANGES on PR #38 (`a5a24e1b`).
+Planner only. No product code in this pull request. Frozen v2 after Sentinel PLAN-CHANGES on PR #38 and Devin's plan debate `6c17bee6`.
 
 Pinned inputs: confirmer `/cursor/stores/bot/atlas-sweeps/s01/confirm/confirm-report.md` sha256 `57c92dcb651ddef4b7abe9c23424065a2a59fa139d2cdfc6315ce227596eac1c`. Main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. Red tests `96712474b59d6b058ef00479f2bb2d4eb065801e` (PR #31). External Lows from `/cursor/stores/bot/atlas-sweeps/s01/external/hammer-artex-security.md`, confirmed new at that main.
 
 ATLAS-09 is not in these plans. It belongs to the backend writer (`wiki.py`, `knowledge_routes.py`). ATLAS-11 is already fixed by PR #30. It is not planned again.
 
-`SHA256SUMS` in this directory lists the eight plan files and not this index, so the sums hash stays stable if the index is edited. sha256 of `SHA256SUMS`: `e00f79df60e7a80fd7b1db43760214e7ae67f175e34383e44919f4a01aa83ac8`.
+`SHA256SUMS` in this directory lists the eight plan files and not this index, so the sums hash stays stable if the index is edited. sha256 of `SHA256SUMS`: `1a66487893d26ddd6d10f45d562891dba41984f34defa0d05b24e361d42e3557`.
 
 | Plan | sha256 |
 |---|---|
-| `group-1-scrub-redaction.md` | `abede6fc6f755968ffb24aea3e57fb7808a766dddf8151b2ca81c1ef44ded75e` |
-| `group-9-profile.md` | `c5a6862ff124c5b1172d6a676d9df58bdb5d69df51bbf70f9c7c19c2a7a5769c` |
-| `group-10-erasure-tenant.md` | `edd6f16fc2445d53e37fea0359c6da620f3d005723add4236e03439c6fbc1e82` |
-| `group-11-voice-prompt-transport.md` | `7e657e9e880f5cdffe4a204c9b7a1cfb9312e8978ca9f65baf621c3d75e1a95d` |
-| `group-13-worker-auth-routing.md` | `9e4a79054f06c6f0fe26d1e8589cc06f75578e56bcf28dd5d7900ec675c59471` |
-| `group-14-rate-limit-consent.md` | `915d241a4814fdea6d93a4210026f8072efb9c19d5ce32dbe2ced20d8e794bc9` |
-| `group-16-sign-in-state.md` | `ad5a536a1ce51afdb5e72835419eab57b743b062e745acccd98a68fb95110fa5` |
-| `group-17-entra-bootstrap.md` | `0b0e6e8509bbadbb3919ab871fd6cdb678567264684057322a8fd18785429944` |
+| `group-1-scrub-redaction.md` | `876d4cec1b0a3ca002c6d1b48ea80f9b1b812907989a059bfbdf299dd1331e3d` |
+| `group-9-profile.md` | `9caa3fc6cc4e9cdf2906fc722d4a898969a6a418f73db35efdc98fcffb8b22f3` |
+| `group-10-erasure-tenant.md` | `bcdce6fe7e0ede9dffe120fa1398cc6f39d8ae4093fc49941a38c18d22f9777f` |
+| `group-11-voice-prompt-transport.md` | `2cee610e699d545518b6ae5f26ea3af66f6a8ae7d900dc5245cece32c920ea17` |
+| `group-13-worker-auth-routing.md` | `3c102544fd6d883e007a5bb2470b729996c8c49bd1c98f63068b6f9d1591220e` |
+| `group-14-rate-limit-consent.md` | `f1e947cca5e8f7747807b8e5cc69238b99e9b4023abcf023b8d0ea7ef76d2566` |
+| `group-16-sign-in-state.md` | `11253b092649806d3b853a0d04dcef73a2d9f929bde836b92a825e8c46673930` |
+| `group-17-entra-bootstrap.md` | `53f5d40b67e135881884fdd356ad6016642b10a6db8cdef4f9e5fe19d8959fdd` |
 
 ## Dependency order
 
@@ -49,20 +49,38 @@ Shared sweep-test files stay red for other groups. A writer proves their own tes
 | 16 | `tests/test_sweep01_ham.py` (HAM-04) | `tests/test_sweep01_g16_login_props.py`: `test_q3_forwarded_headers_are_ignored_unless_the_operator_mode_is_on`, `test_m1_ipv6_64_shares_a_bucket_and_a_full_table_evicts_the_oldest_flow`, and the six `test_m2_*` cookie and flow-id tests. Gated on question 3. |
 | 17 | HAM-05 in `tests/sweep01-ham.test.js` | `tests/sweep01-g17-entra-argv.test.js`: `L1 secret files are opened with mode 0o600`, `L2 a token with a newline or a quote is refused before the curl config is written`, `L3 curl writes stdout and stderr to temp files`, `L4 the EXIT trap is installed after mktemp` |
 
-## Open questions that need the owner
+## Devin and Sentinel
 
-The plans recommend a side for each of these. A reviewer can reject the recommendation. The owner is the one who can answer the facts. v2 marks the ones Sentinel already ruled.
+Devin `6c17bee6`: groups 11, 14, 16, and 17 PASS with no design change. Groups 1, 9, 10, and 13 were REVISE and are updated above. Sentinel's earlier rows still stand.
+
+| Group | Devin | What v2 does |
+|---|---|---|
+| 1 | REVISE | One matcher. Client names are not passed with `{ contacts: true }`. Stoplist names `Air` and `Will` stay masked in the stored and upper-case spellings. Contacts of those words are skipped. Non-stoplist names of 3+ characters are whole-word and case-insensitive. Red test `D1 a stoplist client name stays masked and the same word as a contact does not`. |
+| 9 | REVISE | Presales `access() === 'full'` is not a lookup grant. Lookup is limited to the caller's tenant. Red test `D1 a presales lookup does not cross tenants`. |
+| 10 | REVISE | Sentinel's delete wins. The s1 teams fixture changes: the other tenant survives only with an `atlas_tenant` stamp. An unstamped row is deleted by exact email, which is what B2 requires. Red test `D1 an unstamped teams row is deleted by exact email and a stamped other-tenant row remains`. |
+| 11 | PASS | No change. Question 1 parked for Tony. |
+| 13 | REVISE | The rollback-switches line names `ATLAS_TENANT_ISOLATION`, `ATLAS_DEV_IDENTITY`, and `ATLAS_LOCAL_TENANT`. `team.example.evil` is not a refuse-before-fetch fixture. The 302 double follows unless `redirect` is `'manual'`. Red tests `D1 team.example.evil is not the pinned host` and `D1 a followed redirect would authenticate and manual refuses`. Question 2 parked for Tony. |
+| 14 | PASS | No design change. Questions 5, 9, and 11 are decided here. |
+| 16 | PASS | No design change. Question 3 parked for Tony. |
+| 17 | PASS | No design change. |
+
+## Open questions
+
+Decided in this v2:
+
+5. Group 5 owns `email()` only. Group 14 owns `rateLimit` and `eraseRateHits`.
+6. Group 12 keeps the existing `productionDemoConflict` sentence and does not show "Ready when you are" under the refused combination. The refusal page is that sentence.
+9. The backward-clock hold is clamped to one window, per Sentinel group 14 M1. Red test `M1 a long clock step holds for one window and does not open a fresh window`.
+10. Kill-switch names stay where they are read. The rollback-switches line names `ATLAS_TENANT_ISOLATION`, `ATLAS_DEV_IDENTITY`, and `ATLAS_LOCAL_TENANT`. `ATLAS_CHECKPOINT` and `ATLAS_EVIDENCE_WORKFLOW` are not on that line. `ATLAS_ADAPTERS` and `ATLAS_REPLY_GUARD` stay in `kill-switches.js` and the flag_state paragraph.
+11. Ask and bid-edit keys stay tenant-free. The subject is the verified email.
+
+Parked for Tony. The plans do not wait on an engineering choice for these. Groups 13 and 16 still do not ship until Tony answers 2 and 3.
 
 1. PersonaPlex. Does the worker you would run accept the prompt as the first websocket text frame? The B4 test forbids the query parameter. Kyutai is the selected route and does not use this handshake. Group 11.
-2. **Gate for group 13.** Access certs. Does `https://<ACCESS_TEAM_DOMAIN>/cdn-cgi/access/certs` return 200 with no redirect? `redirect: 'manual'` fails closed and locks sign-in if it does. One HEAD from an operator network before deploy. Not requested from this agent. Group 13 does not ship until this is answered.
-3. **Gate for group 16.** Python sign-in. Is `request.remote` the person, or one shared proxy or NAT? A shared address means the per-remote cap cannot separate the owner from an attacker. Do not use `X-Forwarded-For`. `CF-Connecting-IP` is read only when `ATLAS_TRUST_CF_CONNECTING_IP=1`, which is off by default. Is this gateway even the production sign-in, or is Worker Access the real path? Group 16 does not ship until this is answered.
-4. Ruled by Sentinel. Erase deletes the subject's own unstamped Teams row by exact email. `sendTeams` does not use an unstamped row for any tenant until it is restamped. Group 10.
-5. Confirm group 5 will not edit `rateLimit` or `eraseRateHits` while group 14 owns those functions inside `util.js`. Group 5 owns `email()` only. Group 14.
-6. Confirm group 12 will not keep `Ready when you are` on a page that still loads under the refused production combination, and will not invent a different C-3 sentence. The sentence is the existing `productionDemoConflict` error. Group 13.
-7. Confirm presales does not get arbitrary directory lookup. Admin and reviewer do. Presales still resolves people on stories someone else wrote, when they can open that story in full. A self-written consultant does not unlock lookup. Group 9.
-8. Already-erased subjects. The address is not stored, so leftovers wait until that subject runs erase again. Is that acceptable, or do you want an operator tool? Group 10 does not add the tool.
-9. Ruled by Sentinel. A backward clock holds a spent rate-limit window for at most one window, and a future-dated hit is clamped the same way. The hold does not open a fresh window. Group 14.
-10. `ATLAS_CHECKPOINT` and `ATLAS_EVIDENCE_WORKFLOW` look dead. Confirm the runbook should stop naming them, rather than wiring them up. Group 13.
-11. Ask and bid-edit rate-limit keys omit the tenant. Adding the tenant would give each tenant its own cap. The plan keeps the current keys. The subject inside the key is the verified email. Confirm. Group 14.
+2. Access certs. Does `https://<ACCESS_TEAM_DOMAIN>/cdn-cgi/access/certs` return 200 with no redirect? `redirect: 'manual'` fails closed. One HEAD from an operator network before group 13 ships.
+3. Python sign-in. Is `request.remote` the person, or one shared proxy or NAT? Do not use `X-Forwarded-For`. `CF-Connecting-IP` is off unless `ATLAS_TRUST_CF_CONNECTING_IP=1`. Group 16 does not ship until this is answered.
+4. Are consultant emails unique across ATLAS tenants? The plan follows Sentinel until Tony says otherwise: erase deletes the subject's own unstamped Teams row by exact email, and send does not use an unstamped row.
+7. Presales lookup. The plan does not give presales the role-wide `full` grant, and it does not cross tenants. Tony can widen it later.
+8. Already-erased subjects. Leftovers wait until that subject runs erase again. This plan does not add an operator tool.
 
-Owner ruling inside group 9, separate from the list above: the directory lookup cap is 30 distinct addresses per UTC day, and admin and reviewer are exempt. The red test uses 30 until the owner changes it.
+Owner ruling inside group 9: the directory lookup cap is 30 distinct addresses per UTC day, and admin and reviewer are exempt. The red test uses 30 until Tony changes it.

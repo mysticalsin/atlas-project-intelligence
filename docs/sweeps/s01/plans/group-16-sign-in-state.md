@@ -109,7 +109,7 @@ About 70 lines in `identity.py` and about 80 lines of property tests.
 
 ## v2 — Sentinel
 
-**Gated on owner question 3.** File: `tests/test_sweep01_g16_login_props.py`. Write these before the fix. No skip, no xfail. Stub MSAL. Do not call Microsoft.
+Devin's plan debate (`6c17bee6`) is PASS for this group. No design change from that pass. **Gated on owner question 3, which is parked for Tony.** File: `tests/test_sweep01_g16_login_props.py`. Write these before the fix. No skip, no xfail. Stub MSAL. Do not call Microsoft.
 
 | Sentinel | Change | Red test |
 |---|---|---|
