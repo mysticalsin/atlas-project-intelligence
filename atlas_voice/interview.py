@@ -1,7 +1,6 @@
 """A single voice-model role. No agent swarm; model output never grants permissions."""
 import json
 import re
-from urllib.parse import urlencode
 
 TOPICS = ('Context', 'Contribution', 'Approach', 'Outcome', 'Evidence', 'Customer relevance')
 
@@ -44,8 +43,8 @@ def project_context(raw):
 
 
 def make_prompt(project, preferences=''):
-    # Stock PersonaPlex accepts the role via a query parameter. Bound the actual
-    # percent-encoded URL, not only Unicode character count. Keep policy intact.
+    # The prompt is one websocket text frame. Budget the UTF-8 size of that
+    # frame, not a percent-encoded query. Keep the role intact while shrinking data.
     context = dict(project)
     context.pop('id', None)
     context['prior_notes'] = dict(context.get('prior_notes', {}))
@@ -53,7 +52,7 @@ def make_prompt(project, preferences=''):
     for _ in range(8):
         data = json.dumps(context, ensure_ascii=False, separators=(',', ':'))
         prompt = ROLE + '\nPROJECT DATA: ' + data + '\nINTERVIEW PREFERENCES: ' + prefs
-        if len(urlencode({'text_prompt': prompt, 'voice_prompt': 'NATF2.pt'}).encode()) <= 7400:
+        if len(prompt.encode()) <= 7400:
             return prompt
         prefs = prefs[:len(prefs)//2]
         context['prior_notes'] = {k: v[:len(v)//2] for k, v in context['prior_notes'].items() if len(v)>16}

@@ -1,6 +1,26 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-21 — Sweep 01 group 11, voice prompt transport (`cursor/atlas-s01-fix-g11`)
+
+Red tests first: `39242d1ea2f70dd64d8efb1ee5f7df1a2e7062df`. On that commit, `python3 -m pytest tests/test_sweep01_g11_prompt.py tests/test_sweep01_g11_headers.py -q` was 9 failed, 5 passed, 40 warnings, 4.41s. No provider was called. The B4 body is the PR #31 test copied into the g11 file name.
+
+Fix: the PersonaPlex query keeps `voice_prompt` only. The prompt is the first upstream text frame, sent before the `0x00` wait and before any audio. A non-loopback worker URL must be `wss` or the connect is refused before a socket opens. Connect failures log the host and a fixed sentence. HTTPS origins gain HSTS, COOP, and CORP from `deploy/cloudflare-edge/src/security-headers.js` (copied, not imported). HTTP loopback does not. `atlas_voice/kyutai.py` and `atlas_voice/config.py` are unchanged.
+
+`tests/test_voice.py` `test_prompt_leads_and_bounds_unicode` now bounds the UTF-8 frame (7400 bytes). It previously bounded the percent-encoded query this change removes.
+
+Measured on this branch, synthetic fixtures only:
+
+- Group 11 command, after the fix: 14 passed, 0 failed.
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 427 passed, 0 failed, 167 warnings. The pre-commit run was 426 passed and 1 failed (`test_git_archive_of_head_passes_check_handoff`) because HEAD did not yet contain this manifest.
+- `node --test tests/*.test.js`: 419 passed, 0 failed, 0 skipped.
+- `cd deploy/cloudflare-edge && node --test test/*.test.js`: 1117 tests, 1113 passed, 0 failed, 4 skipped. The 4 skips are the existing workerd proofs that need `ATLAS_WORKERD_ROOT`. None were added here.
+- `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui`: 834 PASS, 0 FAIL.
+
+Decision, 2026-11-21: Kyutai stays the selected route. This fixes the PersonaPlex path the red test exercises. The prompt is not sent both as a query parameter and as a frame, and there is no flag that puts it back on the URL. Whether a stock PersonaPlex accepts the frame is still Tony's open question. Do not point a live PersonaPlex at this handshake until that is answered.
+
+Rollback: `git revert` of the fix commit. The prompt returns to the query. HTTPS responses lose HSTS, COOP, and CORP. No schema change.
+
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.

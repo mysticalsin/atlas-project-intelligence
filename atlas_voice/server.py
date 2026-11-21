@@ -3,13 +3,14 @@ import asyncio
 import contextlib
 import html
 import json
+import logging
 import os
 import re
 import secrets
 import shutil
 import time
 from pathlib import Path
-from urllib.parse import urlsplit, urlencode
+from urllib.parse import urlsplit
 
 import aiohttp
 from aiohttp import web
@@ -24,6 +25,12 @@ from .notes import make_notes
 from .csp import REPORTING_ENDPOINTS, RUNTIME_BLOCK, html_csp, legacy_csp, script_hashes
 
 ROOT = Path(__file__).resolve().parents[1]
+log = logging.getLogger(__name__)
+
+# Copied from deploy/cloudflare-edge/src/security-headers.js. The Worker is not imported.
+_HSTS = 'max-age=63072000; includeSubDomains'
+_COOP = 'same-origin'
+_CORP = 'same-origin'
 
 class SessionCancelled(Exception):
     pass
@@ -49,6 +56,21 @@ def csp_headers(config, hashes=(), *, blob=False):
 
 def same_origin(request, config):
     return request.headers.get('Origin') == config.origin
+
+
+def _upstream_websocket(url):
+    """Loopback may stay ws. Any other host must already be wss. No socket is opened otherwise."""
+    parts = urlsplit(url)
+    host = (parts.hostname or '').lower()
+    if host not in LOOPBACK and parts.scheme != 'wss':
+        raise ConnectionError('A non-loopback voice worker requires wss.')
+    return url
+
+
+def _log_voice_failure(url):
+    # Host only. The prompt, the query string, and header values are not logged.
+    host = urlsplit(url).hostname or 'unknown'
+    log.warning('PersonaPlex connection failed for host %s.', host)
 
 
 def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes):
@@ -80,6 +102,14 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
             response.headers['X-Content-Type-Options'] = 'nosniff'
             response.headers['Referrer-Policy'] = 'no-referrer'
             response.headers['Permissions-Policy'] = 'microphone=(self), camera=(), geolocation=()'
+            if urlsplit(config.origin).scheme == 'https':
+                for key, value in (
+                    ('Strict-Transport-Security', _HSTS),
+                    ('Cross-Origin-Opener-Policy', _COOP),
+                    ('Cross-Origin-Resource-Policy', _CORP),
+                ):
+                    if key not in response.headers:
+                        response.headers[key] = value
             if 'Content-Security-Policy' not in response.headers:
                 content_type = response.content_type or ''
                 if 'html' not in content_type:
@@ -245,11 +275,16 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
                 except Exception:
                     await event('memory', status='unavailable', message='Private memory is unavailable. Continuing without it.')
             prompt = make_prompt(project, preferences)
-            params = {'text_prompt': prompt, 'voice_prompt': voice_name}
-            if len(urlencode(params).encode()) > 7800:
-                raise ValueError('Project context is too long for this PersonaPlex server. Shorten the project description.')
-            upstream = await app['http'].ws_connect(config.personaplex_url, params=params,
-                max_msg_size=131072, heartbeat=20, autoclose=True)
+            params = {'voice_prompt': voice_name}
+            try:
+                upstream_url = _upstream_websocket(config.personaplex_url)
+                upstream = await app['http'].ws_connect(upstream_url, params=params,
+                    max_msg_size=131072, heartbeat=20, autoclose=True)
+                # The prompt is the first upstream frame, before any audio and before the 0x00 wait.
+                await upstream.send_str(prompt)
+            except Exception:
+                _log_voice_failure(config.personaplex_url)
+                raise ConnectionError('The voice worker did not accept the connection.') from None
             # The upstream seed parameter is deliberately omitted: this audited stock version
             # indexes request['seed'] instead of request.query['seed'].
             # Cancellation while the GPU prepares its prompt must not hold the
