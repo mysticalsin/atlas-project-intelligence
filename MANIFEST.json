@@ -933,7 +933,7 @@
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
       "bytes": 146,
-      "sha256": "93196c1732d530e8a0ad455ed9b3198c7dd2df0457e1fd9b47582c5a456c0005"
+      "sha256": "a96205b9cea449bb35b323ba1fb260a18e37ad056c5bd87bb6cffa568be05952"
     },
     {
       "path": "deploy/cloudflare-edge/set-keys.sh",
@@ -2282,8 +2282,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 346929,
-      "sha256": "311bfd60630ba451016b72b88b0b6a981fd92c70e54ef68b5d665c65b2522b05"
+      "bytes": 348197,
+      "sha256": "d5d761bc665525b918fda1ef97192fa0a1ecd28f78fa6d3004ada7a57bb1b4ca"
     },
     {
       "path": "handoff/CHANGELOG.md",
