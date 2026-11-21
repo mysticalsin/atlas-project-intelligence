@@ -36,7 +36,9 @@ Inspector reviewed `4221a51f0d2dce6c2792ec774a3e1a3a193789b6` as FAIL, ADAPT, re
 
 The summary event is on the session bus, so the confirmation card appears while the interview is live. Each correction has a label, a save control, and a polite live region. Save keeps the draft in session storage; without storage the live region says a reload drops the draft. The quote wraps instead of being clipped. `inspect` calls `withhold` for a detail that was marked private, so the words leave the transcript. The keep-private button and the checkpoint id write are unchanged from the Sentinel fix.
 
-No provider call. Suite counts for this head follow the re-run.
+No provider call.
+
+Measured on `7214ae60c07948fc513eb896974a5f4961b688f8`: `python3 -m pytest tests/test_*.py -q` 413 passed; `node --test tests/*.test.js` 424 passed, 0 failed; edge `node --test test/*.test.js` 1126 tests, 1122 passed, 0 failed, 4 skipped; `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui` 834 PASS, 0 FAIL; `python3 scripts/check_handoff.py . --dev-git-index` PASS.
 
 ## 2026-11-21 — A07 slice 2 loop 2, withhold is gone (`cursor/pr1-slice2-readback-6f11`)
 
