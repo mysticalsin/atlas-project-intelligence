@@ -712,8 +712,13 @@
     },
     {
       "path": "atlas_voice/cascade.py",
-      "bytes": 32311,
-      "sha256": "50966c625b8efa6cd745e96eb9e4dfd5ddce3d622b34d8fb9859c947f72e0752"
+      "bytes": 32910,
+      "sha256": "03bd4761c8dc135812f4df429b8a9a54cf30732ab12017dbfe2d1fa31ba62ed5"
+    },
+    {
+      "path": "atlas_voice/cascade_run.py",
+      "bytes": 1731,
+      "sha256": "bec1beeafb892833115919dfa7149e5fcba3dd08a5ffa25c62450ac35fc55eb3"
     },
     {
       "path": "atlas_voice/config.py",
@@ -744,6 +749,11 @@
       "path": "atlas_voice/editor.py",
       "bytes": 8483,
       "sha256": "87793202bb1506746d22f7dee899bf5d15af441c327007133faba4e3ea2423d1"
+    },
+    {
+      "path": "atlas_voice/field_status.py",
+      "bytes": 3016,
+      "sha256": "89263c522e3d1f3ec8752986e9903db6ab37e2ae7c86e168f3b6e298b39f73e8"
     },
     {
       "path": "atlas_voice/gaps.py",
@@ -797,8 +807,8 @@
     },
     {
       "path": "atlas_voice/quality.py",
-      "bytes": 19089,
-      "sha256": "7bf6cbaaa9bb51c87d28b672692b6fa9c4b8b83b08144686836c177a9992728a"
+      "bytes": 19341,
+      "sha256": "dfde94b3a4df5abc57713c7659faff7a35084bddcf98fa55e42f70ed30203a7e"
     },
     {
       "path": "atlas_voice/realtime.py",
@@ -1021,6 +1031,11 @@
       "sha256": "6b1d4bef7c3f943a5e887763433b11deb81b7a1669b00b248c48baab71aa9889"
     },
     {
+      "path": "deploy/cloudflare-edge/src/field-status.js",
+      "bytes": 2273,
+      "sha256": "aae37282fe98928e0672ef91551ec53db7c2237a17ec65465514fa2c071765dc"
+    },
+    {
       "path": "deploy/cloudflare-edge/src/gap-policy.js",
       "bytes": 4388,
       "sha256": "65eeb96e5255587a42d01015121b0b415a05048dc074b5723475aef1e5683f69"
@@ -1057,8 +1072,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/ledger.js",
-      "bytes": 13722,
-      "sha256": "92d8e9b3f3214b6fed65d0b8e9703c1c832eba5f7eba05fc71eb5fda812e37f1"
+      "bytes": 14012,
+      "sha256": "f76a0f8ec21b41a4253e67eafaaa48194b14e1d234412c24b8c2ffb99b481685"
     },
     {
       "path": "deploy/cloudflare-edge/src/library-routes.js",
@@ -1359,6 +1374,11 @@
       "path": "deploy/cloudflare-edge/test/features.test.js",
       "bytes": 23244,
       "sha256": "f0b214f0106b87388bf7fec11804de8d86ac7e6ee3cd8a3c7251123689811a4a"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/field-status.test.js",
+      "bytes": 3607,
+      "sha256": "9db499434db1717422d06163256bd6b505be8fa60e69fc01e693c43d293e3507"
     },
     {
       "path": "deploy/cloudflare-edge/test/gap-policy.test.js",
@@ -2252,8 +2272,8 @@
     },
     {
       "path": "docs/state-machines.md",
-      "bytes": 36413,
-      "sha256": "539433097004d7c60ca526e287eb14d67ca7e466a6f9209d9cf81eb80798c68a"
+      "bytes": 37921,
+      "sha256": "1fe7f3642cff6ed58462149fd3cc83d127da3c98cb1372519b0432c743719297"
     },
     {
       "path": "examples/claude_customer_brief.json",
@@ -2359,6 +2379,11 @@
       "path": "handoff/decisions/check-handoff-rebuild.md",
       "bytes": 1125,
       "sha256": "352c8f6b527134e44dcf5a5923b87333502019f013fede3514ecdaefaed66b4c"
+    },
+    {
+      "path": "handoff/decisions/interview-rows-2-4.md",
+      "bytes": 1978,
+      "sha256": "1860b9cad75802161c9628e25dac0a69d90b44e93459730a5bb685aea34e5c35"
     },
     {
       "path": "handoff/decisions/invitation-tenant-erase.md",
@@ -3366,6 +3391,11 @@
       "sha256": "12c3376ac292b6b60f38ad39464604d495edb277b2ac2ec08dc494c9c159641a"
     },
     {
+      "path": "tests/test_cascade_run.py",
+      "bytes": 3080,
+      "sha256": "09e072f7ffaaf9293aaa20915e9a884c7e2b1147a8569de47043722d82615674"
+    },
+    {
       "path": "tests/test_cloudflare.py",
       "bytes": 5699,
       "sha256": "4b5fc20f8b12a3c77002930eb0ae63a1d2caf30a61fd19192345afad85ee398f"
@@ -3394,6 +3424,11 @@
       "path": "tests/test_entra_claims.py",
       "bytes": 1650,
       "sha256": "d89fca153b047a2cff876dfbdfa890ca7810c86de7f72469f5b051f7fab1fba6"
+    },
+    {
+      "path": "tests/test_field_status.py",
+      "bytes": 4036,
+      "sha256": "527a8c9d6d65020cad750489fdb283570823ba656f88eba676762497ff2c06eb"
     },
     {
       "path": "tests/test_handoff.py",
