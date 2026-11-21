@@ -1,6 +1,43 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-21 — A29 loop 2 (`cursor/atlas-a29-early-stt`)
+
+Inspector FAILed head `77e600781c72668c996029fce7d6c450e31e4875` (verdict ADAPT). This loop restores the `f0ea602a` design behind the flags. `EARLY_STT` and `EARLY_DRAFT` stay off unless the value is the exact string `1` and a global spend ledger is bound. The Worker still binds none. Up to three early Nova-3 batches run at the existing 0.7 s pause. A batch is reused only when the final audio is that prefix plus silence. Speech, a barge-in, or a late result withdraws it. `EARLY_DRAFT` starts a cancellable talker draft. The draft is not shown, played, or written into the transcript before adoption, and `end(true)` withdraws a still-matching batch instead of adopting it. A `reserve()` that succeeds after the 150 ms ledger timeout is released, so the concurrency slot and the 1900 ms of audio are not left open. A request that was actually sent is still not refunded. Kyutai, Realtime, and PersonaPlex are unchanged.
+
+Red tests for this loop are `e59e910ac62d5a267ddfe82708c252538dda9e0e`. `node --test deploy/cloudflare-edge/test/early-stt-loop2.test.js` on that commit: 3 failed, 0 passed, 3 tests, exit 1. The failures were the open slot, `perTurn` forced to 1, and `end(true)` adopting the matching transcript.
+
+Counts on the fix, before this paragraph's manifest refresh:
+
+- `node --test deploy/cloudflare-edge/test/early-stt.test.js deploy/cloudflare-edge/test/early-stt-loop2.test.js`: 11 passed, 0 failed, exit 0.
+- `node --test deploy/cloudflare-edge/test/session.test.js`: 102 passed, exit 0.
+- `python3 -m pytest tests/test_*.py -q`: 413 passed, 127 warnings, exit 0, after the manifest refresh below. Before that refresh the same command was 2 failed, 411 passed, 127 warnings. Both failures were the stale manifest.
+- `node --test tests/*.test.js`: 419 tests, 419 pass, 0 fail, 0 skipped, exit 0, 23098 ms.
+- Edge `node --test test/*.test.js`: 1128 tests, 1124 pass, 0 fail, 4 skipped, exit 0, 246476 ms.
+- `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui`: 834 PASS, 0 FAIL, exit 0.
+
+Synthetic first audio at assumed STT 0.8 s and talker first token 0.4 s, from the locked test: off 2.4 s, on 1.9 s, draft flag 1.9 s. One transcription either way. The draft does not start before the turn ends at that STT delay, so it does not add a talker call. Local fixtures only. No provider and no spend.
+
+No Wrangler, Cloudflare, or provider call. No deploy. GitHub Actions was not run (`[skip ci]`, Actions budget blocked).
+
+## 2026-11-21 — A29 early STT (`cursor/atlas-a29-early-stt`)
+
+APP-FIT ADAPT of `f0ea602a`. One early Nova-3 batch on the edge Session at the existing 0.7 s `EARLY_PAUSE`, using the same `transcribe()` as the final turn. The result is reused only when the flushed audio is that prefix plus silence. Any later speech discards it and `endTurn` runs the normal transcription. `EARLY_STT` and `EARLY_DRAFT` default off. `speculationConfig` refuses both until a ledger with `scope: 'global'` is bound. The Worker passes `null`, so the env flags cannot turn this on. `bindEarly` forces `draft: false`: `EARLY_DRAFT` does not call the talker, TTS or the transcript. Kyutai, Realtime and PersonaPlex are unchanged. No second recogniser.
+
+Red tests are `a584ede0c70c08100184ed6d400d7f9ed71b42ef`. That commit does not refresh `MANIFEST.json`. `node --test deploy/cloudflare-edge/test/early-stt.test.js` on it: 6 failed, 2 passed, 8 tests, exit 1.
+
+Synthetic first-audio timing, virtual clock, local fixtures, no provider and no spend. Assumed talker first token 0.4 s. Last consultant sound to first reply audio sent: STT 0.3 s is 1.9 s off and 1.6 s on; STT 0.8 s is 2.4 s off and 1.9 s on. One transcription either way. The draft flag matches the on time and does not add a talker call. This is not a live gain.
+
+Counts on the fix, before this paragraph's manifest refresh:
+
+- `node --test deploy/cloudflare-edge/test/early-stt.test.js`: 8 passed, exit 0.
+- `python3 -m pytest tests/test_*.py -q`: 413 passed, 127 warnings, exit 0, after the manifest refresh below.
+- `node --test tests/*.test.js`: 419 tests, 419 pass, 0 fail, 0 skipped, exit 0, 25221 ms.
+- Edge `node --test test/*.test.js`: 1125 tests, 1121 pass, 0 fail, 4 skipped, exit 0, 237861 ms.
+- `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui`: 834 PASS, 0 FAIL, exit 0.
+
+No Wrangler, Cloudflare, or provider call. No deploy. GitHub Actions was not run (`[skip ci]`, Actions budget blocked).
+
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.

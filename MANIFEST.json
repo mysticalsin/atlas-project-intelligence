@@ -942,8 +942,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/app.js",
-      "bytes": 50068,
-      "sha256": "fa20ad29bd91256d42feb5a300592ebb9d2a9403a72dd79ea54c771e970cc838"
+      "bytes": 50396,
+      "sha256": "7d25959fa7f28c5506f31bb7ed85317b7f2c08604c8e34e088141732ef616b6d"
     },
     {
       "path": "deploy/cloudflare-edge/src/ask.js",
@@ -1177,8 +1177,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/session.js",
-      "bytes": 61468,
-      "sha256": "56e873a1b49645e95854c9014f77db1b1a8685a8bb90c4aa4336ba4ff25e3aff"
+      "bytes": 73516,
+      "sha256": "7c5226c00f9050510ab8487e3a41bd204f52c7538d7cf7732ad5475662126efe"
     },
     {
       "path": "deploy/cloudflare-edge/src/sheet.js",
@@ -1189,6 +1189,11 @@
       "path": "deploy/cloudflare-edge/src/snippets.js",
       "bytes": 2664,
       "sha256": "528badb5b1c8e0d84b20016a07f53e9ff01b1ba4f40c747d806585d85672e1f7"
+    },
+    {
+      "path": "deploy/cloudflare-edge/src/speculation.js",
+      "bytes": 5468,
+      "sha256": "4625c5b5dd5b3b872cde64b1bbf60e3760b2adc694c15498e8cc1a0701d49ee4"
     },
     {
       "path": "deploy/cloudflare-edge/src/speech.js",
@@ -1247,8 +1252,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/worker.js",
-      "bytes": 6615,
-      "sha256": "f03219f1c626a3e49ce4d77ac323acb79c4be263646f10ec4bea265a2d01d359"
+      "bytes": 6938,
+      "sha256": "4c47d34cd2bfd74410f9fece5ecd4e639ddcec8b8c4fea04fc852a6967f34d51"
     },
     {
       "path": "deploy/cloudflare-edge/teams/.gitignore",
@@ -1349,6 +1354,16 @@
       "path": "deploy/cloudflare-edge/test/customer-jev.test.js",
       "bytes": 4946,
       "sha256": "f12dff6c293bc89963567587e2c7de347fc939fe0f0ea74d2f8bddecd0184ee8"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/early-stt-loop2.test.js",
+      "bytes": 8186,
+      "sha256": "3c1b7657245d5929d185451f43e9f83b5bc10a6f5d8b62c2a8daf445380be221"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/early-stt.test.js",
+      "bytes": 16418,
+      "sha256": "1ff7eb6295915af906497b3043bc3ffb16cff31742e10b19efd38d093b26f2d0"
     },
     {
       "path": "deploy/cloudflare-edge/test/erasure-atomic.test.js",
@@ -2252,8 +2267,8 @@
     },
     {
       "path": "docs/state-machines.md",
-      "bytes": 36413,
-      "sha256": "539433097004d7c60ca526e287eb14d67ca7e466a6f9209d9cf81eb80798c68a"
+      "bytes": 36894,
+      "sha256": "40931826c995fbaa7962661c252db194b4a74d5bbac58a665de4318194558ae2"
     },
     {
       "path": "examples/claude_customer_brief.json",
@@ -2282,8 +2297,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 346929,
-      "sha256": "311bfd60630ba451016b72b88b0b6a981fd92c70e54ef68b5d665c65b2522b05"
+      "bytes": 351381,
+      "sha256": "33b9f8051653b1c1fc7dbdac7f571ad54f27a6b8773816d5f12ebbf192d00cf7"
     },
     {
       "path": "handoff/CHANGELOG.md",
