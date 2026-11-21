@@ -36,7 +36,7 @@ The compiled primary HTML and its three aliases still match the v12 application 
 - Locale quality is not certified. English is the current pilot default; admit another language only after native voice, ASR, wording and disclosure review.
 
 ## Known build/operations gaps to close, not claims of runtime failure
-1. Resolve and lock optional integration dependencies in the deployment environment; `requirements-integrations.txt` is not a reproducible cross-platform lock.
+1. Optional integration SDKs install with `make install-integrations`. Deployment still has to verify the fork SDK against the private service.
 2. Verify native microphone/playback/interrupt behavior on the target browsers and network. Current UI tests use adapters and `set_content`.
 3. Test Entra assignment removal, session expiry and organizational logout policy. Application logout currently clears ATLAS's session; it is not a claimed organization-wide SSO sign-out.
 4. Validate the Hindsight generated Documents API against the exact deployed fork and SDK.

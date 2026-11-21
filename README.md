@@ -24,7 +24,8 @@ Stay in the repository root. A git clone's directory is `atlas-project-intellige
 ```sh
 python3 -m venv .venv
 . .venv/bin/activate
-python3 -m pip install -r requirements.txt -r requirements-test.txt
+python3 -m pip install -r requirements.txt
+python3 -m pip install --require-hashes -r requirements-ci.lock
 python3 build.py
 python3 scripts/preview.py
 ```
@@ -66,7 +67,7 @@ git clone --filter=blob:none https://github.com/mysticalsin/hindsight.git
 git -C hindsight checkout a921929a0e0ea82fb49da1daa0ca3e152e41fcc1
 ```
 
-Deploy that reviewed checkout according to its installation instructions. This kit does not silently install it or substitute a claimed deployment. Install `requirements-integrations.txt` only for enabled integrations, test the resolved SDK against your fork service, and record your deployment lock.
+Deploy that reviewed checkout according to its installation instructions. This kit does not silently install it or substitute a claimed deployment. Install enabled integrations with `make install-integrations`, test the resolved SDK against your fork service, and keep that hash lock.
 
 Configure `HINDSIGHT_URL`, `HINDSIGHT_API_KEY` and a stable random `HINDSIGHT_BANK_SECRET`. The server derives a private bank from authenticated tenant/object identity. The browser cannot choose another person's bank. Recall is bounded and untrusted; private continuity is not customer evidence. Prepare a minimal resume note, review it, then save explicitly. Read, correct/replace and forget the fixed ATLAS continuity document from the workbench. Other older preference documents, story files, logs and exported copies are outside that delete action.
 

@@ -15,13 +15,13 @@ This is the map to **existing code**, not a claim that services are available. A
 | Riva notes | Separate Riva endpoint and `nvidia-riva-client` |
 | JEV / editor | Server-side key and accessible selected model; aiohttp is already used |
 
-`requirements-integrations.txt` names the optional SDKs at exact versions. The reproducible install is `python3 -m pip install --require-hashes -r requirements-integrations.lock` (`make install-integrations`). To keep a hosted pilot small, use the per-integration requirements files only when needed. `constraints-tested.txt` records the gateway versions exercised with this tree, including `msgpack`. It is not a universal lock; the hash lock is.
+`requirements-integrations.txt` names the optional SDKs at exact versions. `requirements-entra.txt`, `requirements-hindsight.txt`, and `requirements-riva.txt` install that same lock and nothing else. The install is `make install-integrations`. `requirements-ci.lock` is the Python 3.13 hash lock for the test tools and the gateway packages; `requirements-test.txt` installs it. `constraints-tested.txt` records the gateway versions exercised with this tree, including `msgpack`. It is an input to those locks, not a second install.
 
 ## Local setup and complete checks
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
-python3 -m pip install -r requirements-test.txt
+python3 -m pip install --require-hashes -r requirements-ci.lock
 python3 -m playwright install chromium
 python3 scripts/doctor.py --profile preview
 make test
@@ -61,7 +61,7 @@ Open `http://localhost:8080` for the defaults. The safe preview is port 8000 and
 The OpenAI IDs are recorded from official model pages on 2026-09-26: https://developers.openai.com/api/docs/models/gpt-realtime-2.1 and https://developers.openai.com/api/docs/models/gpt-transcribe . This confirms documented identifiers, **not** a real request or access in your account. No provider model silently substitutes for a rejected configuration.
 
 ### Shared Entra + private Hindsight
-Install `requirements-entra.txt` and `requirements-hindsight.txt` as needed.
+Install the Entra and Hindsight SDKs with `make install-integrations`. The same command installs the Riva client.
 
 | Variable | Required value / contract |
 |---|---|

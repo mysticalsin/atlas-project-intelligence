@@ -17,8 +17,8 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "bytes": 1895,
-      "sha256": "ba8d53076f95cf10d18f7a192237aaea37f9e4ca51a652b7c1b16b05b7079c43"
+      "bytes": 2127,
+      "sha256": "4a93f9ba27cca1eeabd8416345534f3a09939493fe42a66803bdb0421cd5ce72"
     },
     {
       "path": ".github/workflows/deploy.yml",
@@ -667,8 +667,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 11047,
-      "sha256": "f0d04685172b78bebc5e04a4a4ea116ba3bbdf20e0dad4f73d536e31ac608ba0"
+      "bytes": 11070,
+      "sha256": "d7889b03ed0c6999e88295ab5ebf700eb7cd741699c460ccdf471d4e86b560b4"
     },
     {
       "path": "SECOND_BRAIN.md",
@@ -2042,8 +2042,8 @@
     },
     {
       "path": "deploy/cloudflare/README.md",
-      "bytes": 5135,
-      "sha256": "87f8f00cf64c35ebd42027abc03de7d729d1ef46e7b8e51da4b263f6f7c1ce17"
+      "bytes": 5171,
+      "sha256": "eb314b914e3a045045baaebe2cbb4dda314eeb34cbee0a4cd05384a24e07f37b"
     },
     {
       "path": "deploy/cloudflare/atlas-gateway.service.example",
@@ -2107,8 +2107,8 @@
     },
     {
       "path": "docs/NVIDIA_SETUP.md",
-      "bytes": 8941,
-      "sha256": "75c345f94224c6eb7a3936e0e822838e94f1e9b6e048ebdaee41bda27eac399a"
+      "bytes": 8929,
+      "sha256": "5f735181f4d79a215799d64ebea1c4dcd30c898928e234190826e7f3c6eff8f7"
     },
     {
       "path": "docs/ORB_DESIGN.md",
@@ -2282,8 +2282,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 348572,
-      "sha256": "1973b3d84939affe5fd73ef0827f803ab7dd6115cf88ea889e4408589c221a31"
+      "bytes": 350661,
+      "sha256": "3c37cc0de06b03db92a7e22948789d1f9c3498c3c8d14c0882973acd7e9718c9"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2302,13 +2302,13 @@
     },
     {
       "path": "handoff/CONFIGURATION.md",
-      "bytes": 17381,
-      "sha256": "fca4747b8252b220d59b33936dfc3b93f871784dcece6c01de72df2a0e2bfe49"
+      "bytes": 17518,
+      "sha256": "3bd511e491bd130dd5d9fb968f5cef60939c4355286c38f8d155e18638e850e1"
     },
     {
       "path": "handoff/CURRENT_STATUS.md",
-      "bytes": 8316,
-      "sha256": "f1c0d3d125b156047087aeba13d6253c1141f588e69daa01091d3be45a4613aa"
+      "bytes": 8300,
+      "sha256": "f36eb20d745dff1b5a276ad7449c0cd404ae62893aa3d3bb551747a835c34712"
     },
     {
       "path": "handoff/PLAN_REFERENCE_PLATFORM.md",
@@ -2651,19 +2651,24 @@
       "sha256": "04740f63c96dfb1e1e4ce7fa632addc1e96a8fa4da4aed364646ffaf9f97bd7e"
     },
     {
+      "path": "requirements-ci.lock",
+      "bytes": 86775,
+      "sha256": "5e5849f88e2a9db455ae6e73b305f113eb7dbe1497074d07e55ba374e863eb39"
+    },
+    {
       "path": "requirements-entra.txt",
-      "bytes": 115,
-      "sha256": "723f9779fb7ab9165a6aceb6999f3433aa2dda69be722cc6919ae07d495dbb38"
+      "bytes": 143,
+      "sha256": "14498938089ac964e51abc6e3faa0074dc135f1a5657ff96b449f4abe51f5e50"
     },
     {
       "path": "requirements-hindsight.txt",
-      "bytes": 105,
-      "sha256": "7eba5f56d69419d43f88679fda777de4504c2066876aeb8c8be2e4b64378c57f"
+      "bytes": 154,
+      "sha256": "c0dc72e3f3605b5aa63083f560bb0ee28b16c00706d3245bb7a55340b4aa61bb"
     },
     {
       "path": "requirements-integrations.lock",
-      "bytes": 123448,
-      "sha256": "6175299096c23c592eb806034e1bb9be61108ef91bffd0ec9bcd642eb41b7097"
+      "bytes": 123430,
+      "sha256": "1c36aa71a7411b054219d54b8574fb3bd8e36bd68b955ca671aaa267b9a36ee3"
     },
     {
       "path": "requirements-integrations.txt",
@@ -2672,13 +2677,13 @@
     },
     {
       "path": "requirements-riva.txt",
-      "bytes": 112,
-      "sha256": "e0e46af844b4fc872079648b9a4c0176c96e776b41eb7cb88e69cf95b8eb3874"
+      "bytes": 157,
+      "sha256": "458489051ece124068764628d3443d973392a2ebc7d11d8af095685a7a7ec552"
     },
     {
       "path": "requirements-test.txt",
-      "bytes": 98,
-      "sha256": "e823ad2548177286568ea3c6a6d7d02a10774bfe66015e5590368a423ccc6643"
+      "bytes": 185,
+      "sha256": "dac7ffb155f2039a2ac577e56a85e63a71d7cb43f1c15bb12af08ba988564bc7"
     },
     {
       "path": "requirements.txt",
@@ -2712,8 +2717,8 @@
     },
     {
       "path": "scripts/doctor.py",
-      "bytes": 10456,
-      "sha256": "b84c3a092fca726775e3e30843d4895d18348816ecdd1a8b0a34a8ca97f3dbe9"
+      "bytes": 10499,
+      "sha256": "2f5c9ba8cc81f501b3dcfd39782efaf4b8d59416198db6727ae5d39212cb11db"
     },
     {
       "path": "scripts/e2e_demo.py",
@@ -3292,8 +3297,8 @@
     },
     {
       "path": "tests/s01-ci-setup.test.js",
-      "bytes": 5608,
-      "sha256": "b02755ddbc0a4abe3540ead58694a31f5ab0cdadb0c647b50fa8f8cc1eb6cc02"
+      "bytes": 6855,
+      "sha256": "1e456a181a150036cdc9b9e8c1fa1d2b0b3feabe8e70d2bc5cf9d1b51a40bfe6"
     },
     {
       "path": "tests/safe-html-lint.test.js",

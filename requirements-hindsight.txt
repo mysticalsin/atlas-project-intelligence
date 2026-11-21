@@ -1,3 +1,3 @@
-# Optional SDK; validate against the pinned fork before deployment.
--r requirements.txt
-hindsight-client
+# hindsight-client==1.2.3 is pinned in requirements-integrations.lock.
+# The only install is: make install-integrations
+-r requirements-integrations.lock
