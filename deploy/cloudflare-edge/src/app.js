@@ -33,7 +33,11 @@ const enc = new TextEncoder();
 const b64url = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
 const toB64url = s => { let bin = ''; for (const b of enc.encode(s)) bin += String.fromCharCode(b); return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
 const hex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
-let certs = { at: 0, keys: [] };
+// Certs are trusted for one hour. A failed refresh keeps a set only while it is still inside that hour.
+// Unknown kids share one refetch of the whole set per minute, and the cache holds at most 32 keys.
+const JWKS_HOUR_MS = 3600000, JWKS_MINUTE_MS = 60000, JWKS_MAX_KEYS = 32;
+let certs = { at: 0, keys: [], attemptedAt: 0 };
+export function resetJwksCache() { certs = { at: 0, keys: [], attemptedAt: 0 }; }
 
 // Committed wrangler.jsonc ships placeholders. A blank value, the audience placeholder,
 // or a team on .example.test is not a configured Access application. Refuse before any
@@ -47,26 +51,57 @@ function accessConfigured(env) {
   if (team === 'example.test' || team.endsWith('.example.test')) return false;
   return true;
 }
+// A team is a hostname only. The cert URL is built from the trimmed, lowercased host and kept
+// only when its hostname is exactly that host: no userinfo, port, path, trailing dot, or IP.
+function accessTeamHost(raw) {
+  const team = String(raw ?? '').trim().toLowerCase();
+  if (!team || team.length > 253 || /[@#?/\\\s:]/.test(team) || team.endsWith('.') || team.includes('..')) return null;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(team)) return null;
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/.test(team)) return null;
+  let url;
+  try { url = new URL(`https://${team}/cdn-cgi/access/certs`); } catch { return null; }
+  if (url.username || url.password || url.port || url.search || url.hash || url.hostname !== team || url.pathname !== '/cdn-cgi/access/certs') return null;
+  return team;
+}
+// WebCrypto rejects the string 'RS256' as importKey's algorithm. The JWK alg is still exactly RS256;
+// the algorithm object is RSASSA-PKCS1-v1_5 / SHA-256. A missing alg, or any other alg, is not imported.
+function rsaSigKey(jwk) {
+  if (!jwk || jwk.kty !== 'RSA' || jwk.alg !== 'RS256' || (jwk.use != null && jwk.use !== 'sig')) return null;
+  if (typeof jwk.kid !== 'string' || !jwk.kid || typeof jwk.n !== 'string' || typeof jwk.e !== 'string') return null;
+  const copy = { kty: 'RSA', n: jwk.n, e: jwk.e, alg: 'RS256', kid: jwk.kid };
+  if (jwk.use === 'sig') copy.use = 'sig';
+  return copy;
+}
 export async function verifyAccess(request, env, fetcher = fetch) {
   const token = request.headers.get('cf-access-jwt-assertion');
   if (!token || !accessConfigured(env)) return null;
   const [h, p, s] = token.split('.');
   if (!h || !p || !s) return null;
   const header = JSON.parse(new TextDecoder().decode(b64url(h))), payload = JSON.parse(new TextDecoder().decode(b64url(p)));
-  if (header.alg !== 'RS256') return null;
-  if (Date.now() - certs.at > 600000 || !certs.keys.some(k => k.kid === header.kid)) {
+  if (header.alg !== 'RS256' || typeof header.kid !== 'string' || !header.kid) return null;
+  const team = accessTeamHost(env.ACCESS_TEAM_DOMAIN);
+  if (!team) return null;
+  const nowMs = Date.now();
+  // A different team does not reuse another host's keys or its refetch window.
+  if (certs.team !== team) certs = { at: 0, keys: [], attemptedAt: 0, team };
+  const fresh = certs.at > 0 && nowMs - certs.at < JWKS_HOUR_MS && certs.keys.length > 0;
+  const known = certs.keys.some(k => k.kid === header.kid);
+  if ((!known || !fresh) && (!certs.attemptedAt || nowMs - certs.attemptedAt >= JWKS_MINUTE_MS)) {
+    certs.attemptedAt = nowMs;
     try {
-      const r = await fetcher(`https://${env.ACCESS_TEAM_DOMAIN}/cdn-cgi/access/certs`);
-      const keys = r.ok ? (await r.json()).keys : null;
-      if (Array.isArray(keys) && keys.length) certs = { at: Date.now(), keys };
-    } catch { /* keep the previous keys; a bad directory must not replace a good cache or authenticate anyone */ }
+      const r = await fetcher(`https://${team}/cdn-cgi/access/certs`, { redirect: 'manual' });
+      const body = r && r.ok ? await r.json() : null;
+      const keys = Array.isArray(body?.keys) ? body.keys.map(rsaSigKey).filter(Boolean).slice(0, JWKS_MAX_KEYS) : null;
+      if (keys && keys.length) certs = { at: nowMs, keys, attemptedAt: nowMs, team };
+    } catch { /* a failed refresh keeps a young set and never replaces it; a set older than an hour is not used */ }
   }
+  if (!(certs.at > 0 && nowMs - certs.at < JWKS_HOUR_MS && certs.keys.length > 0)) return null;
   const jwk = certs.keys.find(k => k.kid === header.kid);
   if (!jwk) return null;
   const key = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
   if (!await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, b64url(s), enc.encode(h + '.' + p))) return null;
-  const aud = Array.isArray(payload.aud) ? payload.aud : [payload.aud], now = Date.now() / 1000;
-  if (!aud.includes(env.ACCESS_AUD) || payload.iss !== `https://${env.ACCESS_TEAM_DOMAIN}` || !(payload.exp > now) || (payload.nbf && payload.nbf > now + 60) || !payload.sub) return null;
+  const aud = Array.isArray(payload.aud) ? payload.aud : [payload.aud], now = nowMs / 1000;
+  if (!aud.includes(env.ACCESS_AUD) || payload.iss !== `https://${team}` || !(payload.exp > now) || (payload.nbf && payload.nbf > now) || !payload.sub) return null;
   const roles = tokenRoles({ roles: Array.isArray(payload.custom?.roles) ? payload.custom.roles : [] });
   return entraIdentity(payload, env) ?? (env.IDENTITY_SOURCE === 'entra' ? null : { sub: payload.sub, email: payload.email || 'Access service identity', roles });
 }
@@ -120,13 +155,20 @@ const json = (env, body, status = 200, extra = {}) => new Response(JSON.stringif
 const VOICE_PAGE = { scriptBlob: true, workerBlob: true, mediaBlob: true, fontSelf: true, trustedTypes: 'atlas-html', connectSelf: true };
 const QUIET_PAGE = { connectSelf: false, scriptBlob: false, imgSrc: false, fontSelf: false, workerBlob: false, mediaBlob: false, trustedTypes: 'none', formAction: "'none'" };
 async function htmlResponse(env, body, opts = {}) {
-  const { hashes = null, reportOnlyStrip = false, connect = '', ...caps } = opts;
+  const { hashes = null, reportOnlyStrip = false, connect = '', status = 200, ...caps } = opts;
   const use = hashes || await inlineScriptHashes(body);
   const policy = htmlCspHeaders(env, { hashes: use, connect, ...caps });
   const upgrade = String(env.ORIGIN || '').startsWith('https:') ? '; upgrade-insecure-requests' : '';
   if (policy['Content-Security-Policy']) policy['Content-Security-Policy'] += upgrade;
   const html = reportOnlyStrip && cspMode(env) === 'report-only' ? withoutMetaCsp(body) : body;
-  return new Response(html, { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8', ...policy }) });
+  return new Response(html, { status, headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8', ...policy }) });
+}
+function escapeHtml(value) {
+  return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+// The refused-combination page. No script. The message is escaped before it is placed in the body.
+export function refusalDocument(message) {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>ATLAS</title></head><body><p>${escapeHtml(message)}</p></body></html>`;
 }
 async function consumeLimit(env, slog, name, checks) {
   const unavailable = () => json(env, { error: 'The request could not be limited, so it was not run.', code: 'LIMIT_UNAVAILABLE' }, 503);
@@ -195,6 +237,24 @@ function continuityScope(env, sub, tenant) {
 function systemForwardHeaders(user, scope) {
   return { 'Content-Type': 'application/json', 'x-atlas-user': user, 'x-atlas-role': 'system', 'x-atlas-email': '', 'x-atlas-idp': 'e30', 'x-atlas-tenant': scope.tenant, 'x-atlas-tenant-enforced': scope.flag };
 }
+// A Headers value is a ByteString. Code points above 255 cannot be forwarded, and the address is not echoed.
+function headerByteString(value) {
+  const text = String(value ?? '');
+  for (let i = 0; i < text.length; i += 1) if (text.charCodeAt(i) > 255) return false;
+  return true;
+}
+function signInForwardRefusal(env) {
+  return new Response('This sign-in cannot be forwarded.', { status: 400, headers: headers(env, { 'content-type': 'text/plain; charset=utf-8' }) });
+}
+// One guard for every durable-object forward that carries the verified sign-in.
+// Client x-atlas-* headers are removed first; only the fields passed here are set.
+function atlasHeaders(source, fields) {
+  if (Object.values(fields).some(value => !headerByteString(value))) return null;
+  const out = new Headers(source || undefined);
+  for (const key of [...out.keys()]) if (key.toLowerCase().startsWith('x-atlas-')) out.delete(key);
+  for (const [key, value] of Object.entries(fields)) out.set(key, String(value ?? ''));
+  return out;
+}
 
 const noopLog = { log() {}, identify() {}, async flush() {} };
 // flagsOf: the bootstrap feature flags (tests pass flags with D1 approved to exercise /api/transcribe before it flips).
@@ -231,8 +291,8 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
     if (url.pathname === '/api/triggers' && request.method === 'POST') {
       const secret = env.TRIGGER_SECRET || '', given = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
       if (!secret || !env.LIBRARY || given.length !== secret.length || !timingSafe(given, secret)) { slog.log('bearer_fail', 'BEARER_INVALID', 401); return json(env, { error: 'Unauthorized.' }, 401); }
-      if (Number(request.headers.get('Content-Length') || 0) > 16384) { slog.log('body_too_large', 'BODY_TOO_LARGE', 413); return json(env, { error: 'Request too large.' }, 413); }
-      const raw = await request.text();
+      const raw = await boundedBytes(request, 16384);
+      if (raw === null) { slog.log('body_too_large', 'BODY_TOO_LARGE', 413); return json(env, { error: 'Request too large.' }, 413); }
       const scope = systemScope(env);
       if (!scope.ok) return json(env, scope.body, scope.status);
       if (callerNamedTenant(request, raw).some(t => t !== scope.tenant)) return json(env, { error: 'A system ingress uses only the configured tenant. The tenant on this request was not accepted.' }, 403);
@@ -324,6 +384,7 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
       return htmlResponse(env, notice, { hashes: await inlineScriptHashes(notice), ...QUIET_PAGE, reportOnlyStrip: true, enforceStrict: true });
     }
     if (url.pathname === '/' && request.method === 'GET') {
+      if (demoConflict) return htmlResponse(env, refusalDocument(demoConflict.error), { status: 503, hashes: [], ...QUIET_PAGE });
       const block = runtimeBlock({ subjectKey, authMode: identity.mode, name: who.email });
       let body = page.replace(/<script id="atlas-runtime" type="application\/json">[\s\S]*?<\/script>/, block)
         .replace("connect-src 'self';", "connect-src 'self' " + connectOrigin(env) + ';');
@@ -346,7 +407,9 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
       const scope = continuityScope(env, who.sub, tenant);
       if (!scope.ok) return json(env, { error: 'A verified tenant is required.' }, 403);
       if (!env.INTERVIEW) return json(env, { error: 'The interview store is not configured on this deployment.' }, 404);
-      const fwd = new Request('https://atlas.internal/api/consent', { method: 'POST', body: await request.text(), headers: { 'content-type': 'application/json', 'x-atlas-user': libraryUser, 'x-atlas-role': role, 'x-atlas-email': mail, 'x-atlas-tenant': scope.tenant, 'x-atlas-tenant-enforced': tenantFlag, 'x-atlas-subj': subjectKey } });
+      const consentHeaders = atlasHeaders(null, { 'content-type': 'application/json', 'x-atlas-user': libraryUser, 'x-atlas-role': role, 'x-atlas-email': mail, 'x-atlas-tenant': scope.tenant, 'x-atlas-tenant-enforced': tenantFlag, 'x-atlas-subj': subjectKey });
+      if (!consentHeaders) return signInForwardRefusal(env);
+      const fwd = new Request('https://atlas.internal/api/consent', { method: 'POST', body: await request.text(), headers: consentHeaders });
       const res = await env.INTERVIEW.get(env.INTERVIEW.idFromName(scope.objectName)).fetch(fwd);
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
     }
@@ -364,7 +427,9 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
       }
       const limited = await spend(action === 'erase' ? 'me-erase' : 'me-export', action === 'erase' ? 3 : 5);
       if (limited) return limited;
-      const fwd = new Request('https://atlas.internal/api/privacy/' + action, { method: request.method, headers: { 'content-type': 'application/json', 'x-atlas-user': libraryUser, 'x-atlas-role': role, 'x-atlas-email': mail, 'x-atlas-tenant': tenant, 'x-atlas-tenant-enforced': tenantFlag, 'x-atlas-subj': subjectKey }, body: action === 'erase' ? eraseBody : undefined });
+      const privacyHeaders = atlasHeaders(null, { 'content-type': 'application/json', 'x-atlas-user': libraryUser, 'x-atlas-role': role, 'x-atlas-email': mail, 'x-atlas-tenant': tenant, 'x-atlas-tenant-enforced': tenantFlag, 'x-atlas-subj': subjectKey });
+      if (!privacyHeaders) return signInForwardRefusal(env);
+      const fwd = new Request('https://atlas.internal/api/privacy/' + action, { method: request.method, headers: privacyHeaders, body: action === 'erase' ? eraseBody : undefined });
       const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(fwd);
       let payload = {};
       try { payload = await res.json(); } catch { payload = {}; }
@@ -376,14 +441,15 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
       if (aiOff(env)) return json(env, { error: INTERVIEW_PAUSED_MESSAGE, code: 'AI_OFF' }, 503);
       if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected a WebSocket upgrade.', { status: 426, headers: headers(env) });
       if (request.headers.get('Origin') !== env.ORIGIN) return new Response('Invalid voice origin', { status: 403 });
-      const forward = new Request(request, { headers: new Headers(request.headers) });
-      forward.headers.set('x-atlas-admin', admin ? '1' : '0'); // always overwritten: a browser can never claim admin
-      forward.headers.set('x-atlas-user', libraryUser); forward.headers.set('x-atlas-role', role); forward.headers.set('x-atlas-email', mail); forward.headers.set('x-atlas-tenant', tenant); forward.headers.set('x-atlas-tenant-enforced', tenantFlag);
       const scope = continuityScope(env, who.sub, tenant);
       if (!scope.ok) return json(env, { error: 'A verified tenant is required before this interview can open. The subject-only object was not read.' }, 403);
-      forward.headers.set('x-atlas-bank', await bankId(env, who.sub, scope.tenant)); // server-derived; the browser never picks a bank
-      forward.headers.set('x-atlas-csrf', csrf); // set by the Worker only; the DO is not reachable otherwise
-      return env.INTERVIEW.get(env.INTERVIEW.idFromName(scope.objectName)).fetch(forward);
+      const voiceHeaders = atlasHeaders(request.headers, {
+        'x-atlas-admin': admin ? '1' : '0', 'x-atlas-user': libraryUser, 'x-atlas-role': role, 'x-atlas-email': mail,
+        'x-atlas-tenant': tenant, 'x-atlas-tenant-enforced': tenantFlag,
+        'x-atlas-bank': await bankId(env, who.sub, scope.tenant), 'x-atlas-csrf': csrf,
+      });
+      if (!voiceHeaders) return signInForwardRefusal(env);
+      return env.INTERVIEW.get(env.INTERVIEW.idFromName(scope.objectName)).fetch(new Request(request, { headers: voiceHeaders }));
     }
     if (url.pathname.startsWith('/api/sheet/') && request.method === 'POST') {
       if (aiOff(env)) return json(env, { error: AI_OFF_MESSAGE, code: 'AI_OFF' }, 503);
@@ -410,11 +476,14 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
     if (url.pathname === '/api/memory' || url.pathname.startsWith('/api/memory/')) {
       if (request.method !== 'GET') { const refused = sessionGuard(); if (refused) return refused; }
       if (Number(request.headers.get('Content-Length') || 0) > 131072) return json(env, { error: 'Request too large.' }, 413);
-      const forward = new Request(request, { headers: new Headers(request.headers) });
       const scope = continuityScope(env, who.sub, tenant);
       if (!scope.ok) return json(env, { error: 'A verified tenant is required before memory can open. The subject-only bank was not read.' }, 403);
-      forward.headers.set('x-atlas-bank', await bankId(env, who.sub, scope.tenant)); forward.headers.set('x-atlas-role', role); forward.headers.set('x-atlas-tenant', tenant); forward.headers.set('x-atlas-tenant-enforced', tenantFlag);
-      const res = await env.INTERVIEW.get(env.INTERVIEW.idFromName(scope.objectName)).fetch(forward);
+      const memoryHeaders = atlasHeaders(request.headers, {
+        'x-atlas-user': libraryUser, 'x-atlas-role': role, 'x-atlas-email': mail, 'x-atlas-bank': await bankId(env, who.sub, scope.tenant),
+        'x-atlas-tenant': tenant, 'x-atlas-tenant-enforced': tenantFlag,
+      });
+      if (!memoryHeaders) return signInForwardRefusal(env);
+      const res = await env.INTERVIEW.get(env.INTERVIEW.idFromName(scope.objectName)).fetch(new Request(request, { headers: memoryHeaders }));
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
     }
     if (url.pathname === '/api/library' || url.pathname.startsWith('/api/library/')) {
@@ -427,11 +496,13 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
       if (acceptedSubjectDelete(request.method, url.pathname) && !TENANT_ID.test(tenant)) {
         return json(env, { error: 'A verified tenant is required.' }, 403);
       }
-      const fwdHeaders = new Headers(request.headers); fwdHeaders.delete('content-length');
+      const fwdHeaders = atlasHeaders(request.headers, {
+        'x-atlas-user': libraryUser, 'x-atlas-role': role, 'x-atlas-email': mail, 'x-atlas-tenant': tenant, 'x-atlas-tenant-enforced': tenantFlag,
+        'x-atlas-idp': toB64url(JSON.stringify(signinClaims(request))),
+      });
+      if (!fwdHeaders) return signInForwardRefusal(env);
+      fwdHeaders.delete('content-length');
       const forward = new Request(request.url, { method: request.method, headers: fwdHeaders, body: bodyless ? undefined : bytes });
-      // Entra: the stable tid:oid is the library identity (emails can change); Access: the verified email.
-      forward.headers.set('x-atlas-user', libraryUser); forward.headers.set('x-atlas-role', role); forward.headers.set('x-atlas-email', mail); forward.headers.set('x-atlas-tenant', tenant); forward.headers.set('x-atlas-tenant-enforced', tenantFlag);
-      forward.headers.set('x-atlas-idp', toB64url(JSON.stringify(signinClaims(request)))); // always overwritten ('e30' = {}): never from the browser
       const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(forward);
       if (res.status === 403) slog.log('access_denied', 'FORBIDDEN', 403);
       if (res.status === 429) slog.log('rate_limited', 'RATE_LIMITED', 429);
@@ -491,8 +562,9 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
 async function storedSpokenAsk(env, { libraryUser, role, mail, tenant, tenantFlag }) {
   if (!env.LIBRARY) return false;
   try {
-    const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(new Request('https://atlas.internal/api/library/profile/consents',
-      { headers: { 'x-atlas-user': libraryUser, 'x-atlas-role': role, 'x-atlas-email': mail, 'x-atlas-tenant': tenant || '', 'x-atlas-tenant-enforced': tenantFlag || '0', 'x-atlas-idp': 'e30' } }));
+    const spokenHeaders = atlasHeaders(null, { 'x-atlas-user': libraryUser, 'x-atlas-role': role, 'x-atlas-email': mail, 'x-atlas-tenant': tenant || '', 'x-atlas-tenant-enforced': tenantFlag || '0', 'x-atlas-idp': 'e30' });
+    if (!spokenHeaders) return false;
+    const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(new Request('https://atlas.internal/api/library/profile/consents', { headers: spokenHeaders }));
     return res.ok && (await res.json())?.spokenAsk?.version === 1;
   } catch { return false; }
 }

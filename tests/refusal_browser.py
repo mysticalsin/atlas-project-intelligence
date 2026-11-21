@@ -36,6 +36,8 @@ def start(extra=None):
         try:
             urllib.request.urlopen(base + '/', timeout=1)
             return proc, base
+        except urllib.error.HTTPError:
+            return proc, base
         except Exception:
             time.sleep(0.1)
     proc.terminate()
@@ -68,19 +70,17 @@ try:
     lib_status, lib_body = http_error(base, '/api/library')
     check('bootstrap and library both refuse', status == 503 and lib_status == 503 and body.get('error') and body['error'] == lib_body.get('error'))
     reason = body['error']
+    try:
+        urllib.request.urlopen(base + '/', timeout=5)
+        home_code, home_html = 200, ''
+    except urllib.error.HTTPError as e:
+        home_code, home_html = e.code, e.read().decode()
+    check('the voice page names the refused combination', home_code == 503 and reason in home_html)
+    check('the voice page does not invite a conversation', 'Ready when you are' not in home_html and "isn't answering" not in home_html)
+    proc.terminate(); proc = None
+
     with sync_playwright() as pw:
         browser = pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH') or None)
-        page = browser.new_context(viewport={'width': 1400, 'height': 1000}).new_page()
-        page.goto(base + '/?as=ada@example.test')
-        page.wait_for_timeout(700)
-        journey = show(page, 'journey', reason)
-        check('journey shows the bootstrap 503 reason', reason in journey)
-        check('journey does not replace that reason', GENERIC not in journey)
-        library = show(page, 'library', reason)
-        check('library shows the bootstrap 503 reason', reason in library)
-        check('library does not replace that reason', GENERIC not in library)
-        proc.terminate(); proc = None
-
         plain, base = start()
         library_reason = 'Refused before any story, trust, or metric read. This library fetch was refused.'
         fresh = browser.new_context(viewport={'width': 1400, 'height': 1000}).new_page()

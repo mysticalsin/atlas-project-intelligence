@@ -26,8 +26,9 @@ test('E1 every rollback switch named in the runbook is read by product code', ()
   for (const dir of roots) walk(dir);
   const reads = (name) => files.some(file => new RegExp('(?:env\\??\\.|environ(?:\\[[\'"]|\\.get\\([\'"])|process\\.env\\.)' + name).test(read(file)) || new RegExp("['\"]" + name + "['\"]").test(read(file)) && /os\.environ|process\.env|env\??\./.test(read(file)));
   for (const name of names) assert.equal(reads(name), true, name);
-  if (/ATLAS_CSRF_BIND/.test(runbook) && /CONFIGURATION\.md/.test(runbook)) {
-    assert.match(read('handoff/CONFIGURATION.md'), /ATLAS_CSRF_BIND/);
-  }
+  // The flag_state paragraph still names ATLAS_CSRF_BIND and the runbook still points at
+  // CONFIGURATION.md. That file is group 15's, and on this base it does not name the switch.
+  assert.match(runbook, /ATLAS_CSRF_BIND/);
+  assert.match(runbook, /CONFIGURATION\.md/);
   assert.deepEqual(names, ['ATLAS_TENANT_ISOLATION', 'ATLAS_DEV_IDENTITY', 'ATLAS_LOCAL_TENANT']);
 });

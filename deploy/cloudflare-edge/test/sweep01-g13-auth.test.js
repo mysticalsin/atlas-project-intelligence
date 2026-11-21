@@ -405,6 +405,10 @@ describe('group 13 routes', { concurrency: false }, () => {
       HINDSIGHT_URL: 'https://hs.example', HINDSIGHT_API_KEY: 'k', HINDSIGHT_OPT_IN: '1',
     });
     const boot = await (await handle(requestFor(token, '/api/bootstrap'), live, PAGE)).json();
+    // X-Atlas-CSRF is the session token. A second x-atlas-csrf spoof would be combined with it
+    // and the session check would reject the request before the durable object fetch.
+    const sessionSpoof = { ...SPOOF };
+    delete sessionSpoof['x-atlas-csrf'];
     const user = {
       'x-atlas-user': 'tony@example.com', 'x-atlas-role': 'user', 'x-atlas-email': 'tony@example.com',
       'x-atlas-tenant': TID, 'x-atlas-tenant-enforced': '0',
@@ -418,10 +422,10 @@ describe('group 13 routes', { concurrency: false }, () => {
     await run('memory', requestFor(token, '/api/memory', { headers: SPOOF }), call => call.path === '/api/memory');
     await run('library', requestFor(token, '/api/library', { headers: SPOOF }), call => call.tag === 'library' && call.path === '/api/library');
     await run('voice', requestFor(token, '/api/voice', { headers: { ...SPOOF, Upgrade: 'websocket', Origin: ORIGIN } }), call => call.path === '/api/voice');
-    await run('consent', requestFor(token, '/api/consent', { method: 'POST', headers: { ...SPOOF, Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'content-type': 'application/json' }, body: '{}' }), call => call.path === '/api/consent');
-    await run('erase', requestFor(token, '/api/me/erase', { method: 'POST', headers: { ...SPOOF, Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'content-type': 'application/json' }, body: '{"confirmed":true}' }), call => call.path === '/api/privacy/erase' || call.path === '/api/limit');
-    await run('export', requestFor(token, '/api/me/export', { headers: { ...SPOOF, Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf } }), call => call.path === '/api/privacy/export' || call.path === '/api/limit');
-    await run('transcribe', requestFor(token, '/api/transcribe', { method: 'POST', headers: { ...SPOOF, Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'X-Atlas-Consent': 'spoken-ask-v1; always', 'content-type': 'text/plain' }, body: 'x' }), call => call.path === '/api/library/profile/consents');
+    await run('consent', requestFor(token, '/api/consent', { method: 'POST', headers: { ...sessionSpoof, Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'content-type': 'application/json' }, body: '{}' }), call => call.path === '/api/consent');
+    await run('erase', requestFor(token, '/api/me/erase', { method: 'POST', headers: { ...sessionSpoof, Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'content-type': 'application/json' }, body: '{"confirmed":true}' }), call => call.path === '/api/privacy/erase' || call.path === '/api/limit');
+    await run('export', requestFor(token, '/api/me/export', { headers: { ...sessionSpoof, Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf } }), call => call.path === '/api/privacy/export' || call.path === '/api/limit');
+    await run('transcribe', requestFor(token, '/api/transcribe', { method: 'POST', headers: { ...sessionSpoof, Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'X-Atlas-Consent': 'spoken-ask-v1; always', 'content-type': 'text/plain' }, body: 'x' }), call => call.path === '/api/library/profile/consents');
     const system = env({
       ATLAS_TENANT_ISOLATION: undefined, DATA_MODE: 'production', LOG_SALT: 'synthetic-log-salt',
       TRIGGER_SECRET: 'trigger-secret-value', DIRECTORY_PUSH_SECRET: 'push-secret-value', ATLAS_SYSTEM_TENANT: TID,

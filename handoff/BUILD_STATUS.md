@@ -1,6 +1,30 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-21 — sweep 01 group 13, identity and JWT
+
+Draft only. Merge blocked on Tony Q2: whether this gateway is production, and whether the live Access certs URL returns 200 with no redirect. This branch does not deploy and does not call a provider.
+
+Red commit `b0646c57ce3fda91c8fb4e1f810fae62ac27cf02` (tests only, manifest not refreshed). Measured before the fix: E1 failed because the runbook named `ATLAS_CHECKPOINT`, which nothing reads. The C-3 browser check failed because GET `/` still served the voice page. The auth file failed the cert pin, the one-hour cache, the trigger cap, the header strip, and the CJK 500s. GET `/` and `/api/bootstrap` for a CJK address, and a Latin-1 address on `/api/library`, already passed.
+
+Decisions:
+
+- Cert fetch uses `redirect: 'manual'`. The team is a hostname. The cert URL is `https://<trimmed lowercased host>/cdn-cgi/access/certs`, and it is used only when that URL's hostname is exactly the host. A port, path, trailing dot, userinfo, or IP is refused before the fetch. `team.example.evil` is a normal host when it is the configured team, and it does not satisfy `team.example`.
+- A JWK is kept only when `kty` is `RSA`, `use` is `sig` or absent, and `alg` is exactly `RS256`. WebCrypto rejects the string `RS256` as `importKey`'s algorithm, so the call uses `{name:'RSASSA-PKCS1-v1_5', hash:'SHA-256'}` and the stored JWK's `alg` is `RS256`. The cache is one hour, at most 32 keys, and one refetch per minute. A failed refresh keeps a set only while that set is younger than one hour. A second failure inside the hour does not drop it. A failure after the hour does not authenticate with the stale set. `nbf` in the future returns null.
+- GET `/` returns the escaped 503 refusal page when `productionDemoConflict` is set. Production alone still serves the voice page. `/api/*` stays JSON 503.
+- POST `/api/triggers` checks the bearer, then reads the body once with `boundedBytes(request, 16384)`. A null read is 413 and does not call the library.
+- Every durable-object forward in `app.js` drops client `x-atlas-*` headers. `/api/memory` derives `x-atlas-user` on the server. `worker.js` is unchanged. A verified address with a code point above 255 is 400 `This sign-in cannot be forwarded.` on library, voice, consent, erase, and memory, and the address is not in the body. GET `/` and `/api/bootstrap` stay 200. Latin-1 (code points at or under 255) is forwarded.
+- The runbook rollback line names `ATLAS_TENANT_ISOLATION`, `ATLAS_DEV_IDENTITY`, and `ATLAS_LOCAL_TENANT`. `handoff/CONFIGURATION.md` is unchanged. It does not name `ATLAS_CSRF_BIND` on this base, and group 15 owns that file, so E1 asserts the runbook still names the switch and still points at that file.
+
+Measured on this tree before this paragraph's manifest refresh. `ATLAS_DEPLOY_STUB` stayed unset. No deploy.
+
+- `node --test deploy/cloudflare-edge/test/sweep01-g13-auth.test.js` and `node --test --test-name-pattern E1 tests/sweep01-setup.test.js`: pass.
+- `CHROMIUM_PATH=/usr/bin/google-chrome python3 tests/sweep01_c_browser.py`: `PASS C-3 a refused production combination is named and does not invite a conversation`.
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 416 passed after this manifest refresh. Before it, 413 passed and 3 failed: the two stale-manifest tests, and the alias test while `ATLAS_Project_Intelligence.html` was absent. `python3 build.py` restored the alias.
+- `node --test tests/*.test.js`: 420 tests, 420 pass, 0 fail, 0 skipped.
+- Edge `node --test test/*.test.js`: 1142 tests, 1138 pass, 0 fail, 4 skipped. The 4 skips are the existing workerd proofs that need `ATLAS_WORKERD_ROOT`.
+- `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui`: 832 PASS, 0 FAIL. The refusal browser now reads the 503 page instead of the voice shell for a refused combination. That replaces four shell checks with two page checks.
+
 ## 2026-11-21 — open-source HEAD cleanup
 
 The personal mailbox and the live Workers origin, Access team domain, and Access audience are no longer in this tree. Committed `wrangler.jsonc` uses placeholders. `deploy.sh` deploys only when the operator supplies the three live values in `deploy.local.env` or the environment. The Worker refuses a placeholder or missing Access audience and team, and a dev identity does not bypass that. Older lines below that named the live origin or the mailbox now use the placeholders. History is unchanged. Red commit `046ae7ee6163b7a9eb19f978af711cf8e243cc9b`: pytest 3 failed; the Access placeholder test failed and the non-placeholder audience test passed. Working-tree gitleaks is clean with `.gitleaks.toml` (0 findings). The audience literal is gone. The allowlist still covers the Entra permission name the default rule misreads.

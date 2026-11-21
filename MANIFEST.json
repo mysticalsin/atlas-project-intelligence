@@ -952,8 +952,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/app.js",
-      "bytes": 50724,
-      "sha256": "3ed696acda8041e541fcc8ebddd23968c96563940e6b7697fce9d1b222bf31e4"
+      "bytes": 54787,
+      "sha256": "46709224bf5cbd4fa53961279f31ec3fc48fcef0e0b9c460fcdda71b180c3ad5"
     },
     {
       "path": "deploy/cloudflare-edge/src/ask.js",
@@ -1741,6 +1741,11 @@
       "sha256": "e1bd38b2b9a3d9f2c72bfcf9d5ca74e1af9696cf6fb54bb58556483c4ac8f0b5"
     },
     {
+      "path": "deploy/cloudflare-edge/test/sweep01-g13-auth.test.js",
+      "bytes": 30900,
+      "sha256": "f8a8a2c193e0ec98e2e3a8bd9d06d52fefc818661bb212a0c9e349ef5d8bb2df"
+    },
+    {
       "path": "deploy/cloudflare-edge/test/teams.test.js",
       "bytes": 27444,
       "sha256": "cae7c6de0a57cee362da5d360d62c75280b922269f87e7116ad6b8dc9e9e8ad9"
@@ -2302,8 +2307,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 348349,
-      "sha256": "6620e4e6960b69b2ba985914a33448dd22d81a3bc165a9f33c8f66ecec3901cc"
+      "bytes": 352223,
+      "sha256": "2b286f9f655e2b0b110d3425681065be53adda4a079b5d75a401db90dea00a76"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2342,8 +2347,8 @@
     },
     {
       "path": "handoff/SECURITY_RUNBOOK.md",
-      "bytes": 30329,
-      "sha256": "f20687975a3b0fc96cc9d6f2db07bc33915b3b69d66e2bf9057831ff96c51a2c"
+      "bytes": 30393,
+      "sha256": "0965109d0574f0c89ab871f7b3a0fcc79f5771644e1168bee663975dd4200c8c"
     },
     {
       "path": "handoff/decisions/M-1-wiki-export-csp.md",
@@ -3247,8 +3252,8 @@
     },
     {
       "path": "tests/refusal_browser.py",
-      "bytes": 8605,
-      "sha256": "384b2497d1c1201d739ccb0057c7e32524485e2d16e2501fc10d8df70a76c97d"
+      "bytes": 8531,
+      "sha256": "7a5b944ad973d2f947a1f9e8b0b1ae4fbc10998cfc31262aa182aa327c8be73f"
     },
     {
       "path": "tests/report_browser.py",
@@ -3359,6 +3364,16 @@
       "path": "tests/swarm.test.js",
       "bytes": 4453,
       "sha256": "a24021f99bb237a712504f42edb4add1155258f476e83c678fc4d9065234cedc"
+    },
+    {
+      "path": "tests/sweep01-setup.test.js",
+      "bytes": 1958,
+      "sha256": "b76a174e97e8413fbb7414765b9208c78efacf47bca4fcd891100db6835e58c5"
+    },
+    {
+      "path": "tests/sweep01_c_browser.py",
+      "bytes": 2346,
+      "sha256": "b447877900a7831aa77ebc8a0b7069aedd4230da6644f96aa899e5621f89db8f"
     },
     {
       "path": "tests/test_analyst.py",
