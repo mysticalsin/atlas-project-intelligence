@@ -2282,8 +2282,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 349593,
-      "sha256": "17cabf71d214c6a79f9d964f3525287e2176c808530dfe3d87b5700efa5906f9"
+      "bytes": 352045,
+      "sha256": "3fb6b363b41b79d809ed7deefa57dd000ba9bcfff7198f14150350e28cbcdcb5"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2362,8 +2362,8 @@
     },
     {
       "path": "handoff/decisions/check-handoff-residuals.md",
-      "bytes": 2551,
-      "sha256": "f090a9d8c769c4ad9cb4393b6eae4893f472429d1340a3df84121bdaa50919c8"
+      "bytes": 5089,
+      "sha256": "cfe1aa2d7a0d0909ce3942fb14f80a7d79ff81ebb80a8a3f2b17f884727f62f4"
     },
     {
       "path": "handoff/decisions/invitation-tenant-erase.md",
@@ -3402,8 +3402,8 @@
     },
     {
       "path": "tests/test_handoff.py",
-      "bytes": 58995,
-      "sha256": "3d5f21c6c9f0dcb8fb8e5dbaf3189900de85f897481f2155196b73623d8c738d"
+      "bytes": 63641,
+      "sha256": "8c578083f0c4104e956694f0925cffb884816ea73c5ffd7949a91c0ca532b661"
     },
     {
       "path": "tests/test_page_harness.py",
