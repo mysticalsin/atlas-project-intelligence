@@ -1,6 +1,14 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-21 — A07 slice 2 loop 2, withhold is gone (`cursor/pr1-slice2-readback-6f11`)
+
+Sentinel reviewed `4221a51f0d2dce6c2792ec774a3e1a3a193789b6` as CHANGES, report `69122e20`. Red tests are `680dd70295a992c031ac82ad9a5cab067c2d69d8`. That commit does not refresh `MANIFEST.json`. The three new tests fail there: a second detail of a withheld utterance stays visible, the keep-private control is not wired, and no live session writes `cp:current`.
+
+`withhold` now flags every detail of the utterance, refuses a later record of that item, and removes the words from the transcript, the detail quotes, and the cached tool results. An analyst result that arrives after the withhold does not bring the words back. The session accepts `{type:'withhold', detail_id}` from the read-back button, and the same words leave the talker history, the gap answers, the report input, and the gap status. The Durable Object builds a `CheckpointStore` and the session writes `cp:current` as the session id only. The interview body is not stored.
+
+No provider call.
+
 ## 2026-11-21 — A07 slice 2, confirmation read-back (`cursor/pr1-slice2-readback-6f11`)
 
 PR #5 is merged. Its head is `9438e73ac2b750e3f3dfdf1d60e1d4b03a374842`, merge `5c55c2bcf722963ec2182dfc463fb152e57f5c89`, and that commit is an ancestor of `main` `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. The copied-commit and null-hash remigration checks in `deploy/cloudflare-edge/test/s1-a5ba30c.test.js` pass on that tree. No new test was added for those closed findings.

@@ -116,6 +116,9 @@ function renderSummary(items){
  for(const item of list){
   const li=el('li'),input=document.createElement('input');
   li.append(el('p','board-quote',str(item.label,80)+': '+str(item.quote,1800)));
+  const keep=el('button','board-keep','Keep private');keep.type='button';keep.dataset.action='withhold';keep.dataset.detail=item.detail_id;
+  keep.addEventListener('click',()=>{if(typeof window.dispatchEvent==='function')window.dispatchEvent(new CustomEvent('atlas-withhold',{detail:{detail_id:item.detail_id}}));});
+  li.append(keep);
   input.dataset.detail=item.detail_id;input.value=editors.has(item.detail_id)?editors.get(item.detail_id):'';
   input.addEventListener('input',()=>editors.set(item.detail_id,input.value));
   li.append(input);ul.append(li);}

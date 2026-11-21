@@ -37,6 +37,7 @@ export class InterviewLedger {
       if ('uncertain' in x && typeof x.uncertain !== 'boolean') fail('uncertain must be boolean');
       const f = x.field, ident = x.item_id, q = x.quote;
       if (!FIELD_KEYS.includes(f) || !this.transcripts.has(ident) || typeof q !== 'string' || q.length < 5 || q.length > 1800) fail('Invalid field, transcript reference or quote length');
+      if (this.withheldItems.has(ident)) fail('Quote comes from words the consultant kept private');
       const quote = ws(q), source = ws(this.transcripts.get(ident));
       if (!source.includes(quote)) fail('Quote is not in the consultant transcript');
       const supersedes = x.supersedes || '';
@@ -54,14 +55,34 @@ export class InterviewLedger {
   }
 
   // Privacy is a property of the utterance, not of whichever candidate is active.
-  // A later correction supersedes the detail and leaves this mark in place.
+  // Every detail of that item is flagged, and the words are removed from the
+  // transcript, the details, and the cached tool results.
   withhold(detailId) {
     if (typeof detailId !== 'string' || !detailId) fail('Unknown detail');
     const d = this.details.find(x => x.id === detailId);
     if (!d) fail('Unknown detail');
-    d.withheld = true;
-    this.withheldItems.add(d.item_id);
+    const item = d.item_id;
+    const secrets = [];
+    const transcript = this.transcripts.get(item);
+    if (typeof transcript === 'string') secrets.push(transcript);
+    for (const x of this.details) if (x.item_id === item && typeof x.quote === 'string') secrets.push(x.quote);
+    this.withheldItems.add(item);
+    for (const x of this.details) if (x.item_id === item) { x.withheld = true; x.quote = '[withheld]'; }
+    if (this.transcripts.has(item)) this.transcripts.set(item, '[withheld]');
+    this.scrubStored(secrets);
     return this.inspect();
+  }
+
+  scrubStored(secrets) {
+    const list = [...new Set(secrets)].filter(s => typeof s === 'string' && s && s !== '[withheld]').sort((a, b) => b.length - a.length);
+    const scrub = value => {
+      if (typeof value === 'string') { let out = value; for (const s of list) out = out.split(s).join('[withheld]'); return out; }
+      if (Array.isArray(value)) return value.map(scrub);
+      if (value && typeof value === 'object') { for (const k of Object.keys(value)) value[k] = scrub(value[k]); }
+      return value;
+    };
+    for (const [id, sig] of this.callInputs) this.callInputs.set(id, scrub(sig));
+    for (const [id, result] of this.calls) this.calls.set(id, scrub(result));
   }
 
   publicTranscript() {
@@ -83,7 +104,8 @@ export class InterviewLedger {
   }
 
   inspect() {
-    const active = this.details.filter(x => x.active);
+    const hidden = this.withheldItems;
+    const active = this.details.filter(x => x.active && x.withheld !== true && !hidden.has(x.item_id));
     const present = new Set(active.map(x => x.field));
     const missing = FIELD_KEYS.filter(f => !present.has(f));
     const numeric = active.some(x => x.field === 'outcome' && NUMERIC.test(x.quote));
@@ -152,7 +174,8 @@ export class InterviewLedger {
 
   notes() {
     const sections = ['', '', '', '', '', ''];
-    for (const x of this.details) if (x.active && x.withheld !== true) { const i = TO_TOPIC[x.field]; if (!sections[i].includes(x.quote)) sections[i] = (sections[i] + '\n' + x.quote).trim().slice(0, 6000); }
+    const hidden = this.withheldItems;
+    for (const x of this.details) if (x.active && x.withheld !== true && !hidden.has(x.item_id)) { const i = TO_TOPIC[x.field]; if (!sections[i].includes(x.quote)) sections[i] = (sections[i] + '\n' + x.quote).trim().slice(0, 6000); }
     return sections;
   }
 }
@@ -161,7 +184,7 @@ export function buildMessages(ledger, itemId) {
   const ids = [...ledger.transcripts.keys()];
   const hidden = ledger.withheldItems || new Set();
   const recent = ids.slice(-(CONTEXT_SEGMENTS + 1)).filter(i => i !== itemId && !hidden.has(i)).slice(-CONTEXT_SEGMENTS);
-  const active = ledger.details.filter(d => d.active && d.withheld !== true).map(d => ({ id: d.id, field: d.field, quote: d.quote.slice(0, 200) })).slice(-20);
+  const active = ledger.details.filter(d => d.active && d.withheld !== true && !hidden.has(d.item_id)).map(d => ({ id: d.id, field: d.field, quote: d.quote.slice(0, 200) })).slice(-20);
   const segment = hidden.has(itemId) ? '' : ledger.transcripts.get(itemId);
   const context = { project_stage: ledger.stage, recent_segments: recent.map(i => ({ item_id: i, text: ledger.transcripts.get(i).slice(0, SEGMENT_CHARS) })),
     active_candidates: active, new_segment: { item_id: itemId, text: segment.slice(0, SEGMENT_CHARS * 4) } };

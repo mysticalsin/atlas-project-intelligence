@@ -3,6 +3,12 @@
 // consent, which this slice does not change. A session whose owner token is no
 // longer current cannot move the id.
 export const SUSPEND_WAIT_MS = 3000;
+
+export function newSessionId() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map(b => b.toString(16).padStart(2, '0')).join('');
+}
 const SESSION_ID = /^[a-f0-9]{32}$/;
 export const CURRENT_KEY = 'cp:current';
 

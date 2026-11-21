@@ -9,7 +9,8 @@ const ORDER = Object.keys(FIELDS);
 
 export function buildSummary(ledger) {
   const details = Array.isArray(ledger) ? ledger : Array.isArray(ledger?.details) ? ledger.details : [];
-  const shown = details.filter(d => d && d.active !== false && d.withheld !== true && typeof d.quote === 'string' && Object.hasOwn(FIELDS, d.field));
+  const hidden = ledger && ledger.withheldItems instanceof Set ? ledger.withheldItems : new Set();
+  const shown = details.filter(d => d && d.active !== false && d.withheld !== true && !hidden.has(d.item_id) && typeof d.quote === 'string' && Object.hasOwn(FIELDS, d.field));
   return shown.map((d, i) => ({ d, i }))
     .sort((a, b) => (ORDER.indexOf(a.d.field) < 0 ? ORDER.length : ORDER.indexOf(a.d.field)) - (ORDER.indexOf(b.d.field) < 0 ? ORDER.length : ORDER.indexOf(b.d.field)) || a.i - b.i)
     .slice(0, MAX_ITEMS)
