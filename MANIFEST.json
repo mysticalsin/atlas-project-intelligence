@@ -2252,8 +2252,8 @@
     },
     {
       "path": "docs/state-machines.md",
-      "bytes": 36413,
-      "sha256": "539433097004d7c60ca526e287eb14d67ca7e466a6f9209d9cf81eb80798c68a"
+      "bytes": 38533,
+      "sha256": "af2a64a999c7a8c3c5f57a45a7b4e204f107d2522fcfa92309daf9862dfb1e84"
     },
     {
       "path": "examples/claude_customer_brief.json",
@@ -2282,8 +2282,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 346929,
-      "sha256": "311bfd60630ba451016b72b88b0b6a981fd92c70e54ef68b5d665c65b2522b05"
+      "bytes": 350149,
+      "sha256": "fd0f292460c1a07bf910fd7780b73abc1bebc623d83529bc590da979ff0d0310"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2442,8 +2442,8 @@
     },
     {
       "path": "handoff/untangle-decision-log.md",
-      "bytes": 6391,
-      "sha256": "ce19a81b0d5683fe06121fe38cabe03aa635958c0236efdc281bd8d08f9e2fb0"
+      "bytes": 9036,
+      "sha256": "2667103ec13d60e48e5d4c380bd0d7381471d45e580d21e70ca05bcc3c42bf79"
     },
     {
       "path": "handoff/v10-decision-log.md",
@@ -2679,6 +2679,11 @@
       "path": "requirements.txt",
       "bytes": 104,
       "sha256": "48a321caccd4c42412e2e4147e2d9e13d33e406f4ed41c426416a61749efb699"
+    },
+    {
+      "path": "scripts/artifact_lifecycle.py",
+      "bytes": 15861,
+      "sha256": "3276dcb8d3b81335c48865920d8131c78c26dd4fb2cddbadcb6562340c960262"
     },
     {
       "path": "scripts/build_world_map.py",
@@ -3344,6 +3349,11 @@
       "path": "tests/test_analyst.py",
       "bytes": 6193,
       "sha256": "2f11d708d41cec75ca251c43752d521d9da2bc323bab4a28f2ec66260ee76c6d"
+    },
+    {
+      "path": "tests/test_artifact_lifecycle.py",
+      "bytes": 16406,
+      "sha256": "8110e7c8cc69484e33f2b618a9883d82f215979d151e46ae7b4b3079244be0fd"
     },
     {
       "path": "tests/test_bakeoff.py",

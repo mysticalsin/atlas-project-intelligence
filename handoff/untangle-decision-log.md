@@ -49,3 +49,27 @@ The route that does not use the body is the layer that changes. An empty reinsta
 `sqlTokens` follows SQLite `tokenize.c` for `?NNN` and for `$` `:` `@` `#`. A named token includes `::` segments and one `(...)` suffix. That suffix stops at the first `)`, at sqlite3Isspace (tab, LF, VT, FF, CR, space), or at the end. A quote or a comment inside the suffix is text. `splitBody`, `scanSemi`, and `placeholderCount` skip the same span, so a semicolon inside it is not a second statement and a `?` inside it is not a bind hole. `$` inside an identifier, as in `x$y`, stays part of that word.
 
 `Library.exec` calls `namedVariable` before prepare and before the multi-statement check. A `$` `:` `@` `#` token with at least one IdChar is `SQL_DOOR` on both doors. `?` and `?NNN` are not. An unterminated quote, identifier, or block comment is the same refusal. A write verb inside a CTE body, or after the depth-0 verb, is a write on both doors. `REPLACE(` stays a function. `EXPLAIN QUERY PLAN` of one delete stays allowed on the primary door and `SQL_DOOR` on the fallback. The record is in `handoff/v13-decision-log.md`.
+
+## Artifact lifecycle (A21 P1)
+
+The page pipeline's publish rule is a reducer in `scripts/artifact_lifecycle.py`. `transition(state, event)` returns the next state or `IllegalTransition`. It does not read the environment, write a file, or call wrangler.
+
+`publish_ok` is illegal unless the state is `Verified` and `g_verified_packet` passes: a version-1 packet, `verified` true, and head and tree equal to the checkout named on the event. A state whose name is `Verified` and whose packet is missing is the same refusal.
+
+Callers stay on the shell. `build.py`, `scripts/verify_page_build.sh`, `deploy/cloudflare-edge/deploy.sh`, and `scripts/check_handoff.py` do not import this module. Deploy still compares `generated/PAGE_SHA256.txt`. Wiring the reducer into deploy is P3. That step is release gating and is not this change.
+
+The pin writer emits the committed line: lowercase sha256, two spaces, byte length, `ATLAS_HOME=`, two spaces, `ATLAS_HOME_URL=`. The committed file on `8b0972ec` uses `ATLAS_HOME_URL=unset`. Question 8 of the R1+R2 plan stays open. This writer matches that file. It does not decide that the token is frozen.
+
+## Artifact lifecycle, loop 2
+
+Inspector on `25867728`: `True` and `1.0` passed `version != 1` and `publish_ok` reached `Deployed`. The version is the integer 1. `type(value) is int` rejects a boolean, a float, and a string. `load_packet`, `g_packet_head`, and `g_verified_packet` share that check.
+
+The built length field is `bytes`, the name in the A21 state table. The pin parser returns that same key.
+
+`g_stale_pin_file` is on `pin_ok` and on `publish_ok`. A leftover pin whose digest differs from the built page is `IllegalTransition`. No leftover file still passes.
+
+`g_verified_packet` reads the packet stored on the state. It does not borrow a packet from the event. `verify_ok` still takes the packet from the event, because that is the step that stores it.
+
+The reducer stays unwired. P2 is the first caller, when the verify script writes the gate packet. P3 is the slice that connects `publish_ok` to `deploy.sh`. This loop does not edit those scripts.
+
+Devin on the same head, gate `r4b48a352`: negating each of the 70 `if` tests left five survivors. A present `deploy_record` whose `packet_sha256` is not the packet digest is `IllegalTransition` at `g_packet_witness`, and so is a record that is not a dict. A missing record still verifies. A packet pin whose page digest is not `hash_before` is `IllegalTransition` at `g_post_test_hash`. An edit event carries a different head and a different tree from the state, and both are copied. `g_stale_pin_file` stays on `pin_ok` and `publish_ok`.
