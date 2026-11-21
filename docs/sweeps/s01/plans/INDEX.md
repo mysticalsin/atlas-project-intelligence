@@ -6,18 +6,18 @@ Pinned inputs: confirmer `/cursor/stores/bot/atlas-sweeps/s01/confirm/confirm-re
 
 ATLAS-09 is not in these plans. It belongs to the backend writer (`wiki.py`, `knowledge_routes.py`). ATLAS-11 is already fixed by PR #30. It is not planned again.
 
-`SHA256SUMS` in this directory lists the eight plan files and not this index, so the sums hash stays stable if the index is edited. sha256 of `SHA256SUMS`: `dc5cb5f642f8f3b68f3413e65534e9d2c0959eba56e114404d8ad63183dcbd4f`.
+`SHA256SUMS` in this directory lists the eight plan files and not this index, so the sums hash stays stable if the index is edited. sha256 of `SHA256SUMS`: `8893f60ebcb908e9fbb3265b05d96ca9e6e339496090535ac706e7d22c76681d`.
 
 | Plan | sha256 |
 |---|---|
-| `group-1-scrub-redaction.md` | `65a3e4ade838ae9229a8d040655a373612af0632140c08cfd99997f741eef2a2` |
-| `group-9-profile.md` | `bc5475aa8d955fc52e19b8efb19fd9f3f0fd7b205f61794fc52602e3e6b4a399` |
-| `group-10-erasure-tenant.md` | `1d303dcec95302090d809a5538dce5dbba05875836a7ab330e3187fa39d69448` |
-| `group-11-voice-prompt-transport.md` | `2cee610e699d545518b6ae5f26ea3af66f6a8ae7d900dc5245cece32c920ea17` |
-| `group-13-worker-auth-routing.md` | `a4acef1226dedc5d9d69c1fd39e7356449a62ab17d0a0191f0a9ea768cc75374` |
-| `group-14-rate-limit-consent.md` | `f1e947cca5e8f7747807b8e5cc69238b99e9b4023abcf023b8d0ea7ef76d2566` |
-| `group-16-sign-in-state.md` | `d43838ae1f854f60d09204cf0d26299f3b1d43db382743d3282358f49b1bdba0` |
-| `group-17-entra-bootstrap.md` | `53f5d40b67e135881884fdd356ad6016642b10a6db8cdef4f9e5fe19d8959fdd` |
+| `group-1-scrub-redaction.md` | `7b4c187f6077fc2d8783f7b48c2772a8931b035f0f8b4848a547214f7eefc74e` |
+| `group-9-profile.md` | `12c84ca137f63b1c5243d2a49ce1e8bbb678cf1e1c87d87b0db5938bf39415b0` |
+| `group-10-erasure-tenant.md` | `d0361783825343868c8c5676053d1efc5b0f90646299e6b4b739b12ae4dd9eff` |
+| `group-11-voice-prompt-transport.md` | `6921436552fd4a28a2901c96e536a29b6734bdf0a723fd0d1a6f611a7e62f228` |
+| `group-13-worker-auth-routing.md` | `3a3abb94570879bc7572c6e2351d79cd017c5e77b7bff16876aa7f75362da610` |
+| `group-14-rate-limit-consent.md` | `66f3511b43736aef68614dc5d6e6f21c4d15f96072529af7c1ca30c53e083a1f` |
+| `group-16-sign-in-state.md` | `0fb91bfc15413ae61ebb6b096b4380b6ac50caa305ec8c478c83840de43be0f7` |
+| `group-17-entra-bootstrap.md` | `a88a653c43e822de3d00631ea8a75eb387c9cdcb497f8a068390bed3281a6c3e` |
 
 ## Dependency order
 
@@ -37,6 +37,8 @@ Group 13 is last, and **gated on owner question 2** (one HEAD to the live certs 
 Shared sweep-test files stay red for other groups. A writer proves their own tests with the name pattern in their plan. They do not edit another group's assertions, and they do not mark a test skipped or expected-failure.
 
 ## What each plan turns green
+
+Every plan has a `Known limits` heading. That section is the residual the writer does not close.
 
 | Group | PR #31 tests | New red tests the writer adds |
 |---|---|---|

@@ -1,6 +1,6 @@
 # Group 9 — profile
 
-Plan only. Debate this before anyone edits product code. Revision v4 (Sentinel re-review `e4e9dada` of `4d15c83c`, AGREED). The v2 section wins where an earlier sentence still trusts `edits.managerEmail`, a ref the caller wrote, or `access() === 'full'` for presales. The sentence under ATLAS-08 that still says presales resolve every story they can open in full is stale and does not.
+Plan only. Debate this before anyone edits product code. Revision v4 (Sentinel re-review `e4e9dada` of `4d15c83c`, AGREED). The v2 section wins where an earlier sentence still trusts `edits.managerEmail`, a ref the caller wrote, or `access() === 'full'` for presales. The paragraph that repeated the presales rule under that bullet is removed. The bullet is the rule.
 
 Pinned inputs: confirmer report sha256 `57c92dcb651ddef4b7abe9c23424065a2a59fa139d2cdfc6315ce227596eac1c`, main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`, red tests `96712474b59d6b058ef00479f2bb2d4eb065801e` (PR #31). External review: ATLAS-08 in `/cursor/stores/bot/atlas-sweeps/s01/external/hammer-artex-security.md`.
 
@@ -85,8 +85,6 @@ ATLAS-08. After the existing `rateLimit` call and the email-shape check:
 - `lookupPerson` stays the response shape. Strip `manager_email` if a future change adds it. Do not add the manager to this response.
 - **Owner ruling.** Roles other than `admin` and `reviewer` may resolve at most 30 distinct addresses per UTC day, including 403s. Store them in SQLite (`people_lookup`, created with `lib.exec` from this file) so a new `Library` on the same database still counts. Key each row by caller email, UTC day, and address. On lookup, delete rows whose day is before today. `erasePeopleLookups(lib, email)` deletes that caller's rows; the profile `DELETE` inside `eraseMine` calls it. That call is the only line this group adds outside `profile.js`. The 31st distinct address is 429 and does not call `lookupPerson`. Another caller's first lookup is not 429. The owner can change 30. This plan uses 30 until they do.
 
-`presales` is not on the arbitrary-lookup list. `access()` returning `full` for that role does not unlock a lookup. A presales caller resolves an address only under the same rule as role `user`: their directory manager, or a same-tenant story someone else wrote that they could still open in full as role `user`. An address that fails that rule is 403.
-
 Leave the `rateLimit(...)` call in place with the same arguments. Group 14 makes that function durable. Changing the call would edit a line group 14 also needs, and changing `util.js` is not this group's file.
 
 ## Alternatives rejected
@@ -143,7 +141,7 @@ File: `deploy/cloudflare-edge/test/sweep01-g9-people.test.js`, except the confli
 | Sentinel | Change | Red test |
 |---|---|---|
 | M1 | Trust only the directory manager. A caller who `POST`s `edits.managerEmail` to a directory address, then `GET`s people for that address, gets 403 and the body does not contain the directory name. `boss@example.test` from the directory row still returns 200. | `M1 a caller-set manager email does not unlock directory lookup` |
-| M2 | A consultant or member on a row whose `updated_by` is the caller does not unlock lookup. The same address on a row `updated_by` someone else, which the caller can open in full, does. | `M2 a self-written consultant does not unlock lookup` |
+| M2 | A consultant or member on a row whose `updated_by` is the caller does not unlock lookup. The same address on a row `updated_by` someone else, which the caller could open in full as role `user`, does. The presales role grant does not. | `M2 a self-written consultant does not unlock lookup` |
 | M2, owner ruling | 30 distinct addresses per UTC day for roles other than admin and reviewer, stored in SQLite. After 30 distinct 403s, construct `new Library(sameSql)` and the 31st distinct address is 429. Admin is not capped. | `M2 the thirty-first distinct lookup in a day is refused after eviction` |
 | L1 | Two overlapping saves still both stick (F2). A third save that loses the compare twice returns 409, and its field is absent from the row. | `L1 a profile save that conflicts twice fails closed` |
 | Devin | `presales` plus `access() === 'full'` is not a grant. A presales caller in tenant A does not resolve an address that appears only on a story in tenant B, including a story they would fully open if the tenant check were skipped. A presales caller also does not resolve an address that appears only on a same-tenant story they can see solely because their role is presales. | `D1 a presales lookup does not cross tenants` |
@@ -154,3 +152,7 @@ File: `deploy/cloudflare-edge/test/sweep01-g9-people.test.js`, except the confli
 
 1. Parked for Tony (question 7). The plan does not wait on it. Presales does not get the role-wide `full` grant, and lookup is limited to the caller's tenant. Admin and reviewer still resolve an arbitrary exact address in that tenant.
 2. **Owner ruling.** The distinct-address cap is 30 per UTC day, and admin and reviewer are exempt. Say if the number or the exemption should change. The red test uses 30.
+
+## Known limits
+
+`access() === 'full'` from the presales role is not a lookup grant. The rule is the bullet above that names the directory manager and a same-tenant ref written by someone else. A missing `updated_by` does not unlock lookup. A later save by someone other than the caller can unlock an address already on that row. The daily cap still counts that lookup. Admin and reviewer are not capped.

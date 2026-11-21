@@ -22,7 +22,7 @@ Findings: B1, B2, B3, B5.
 
 Do not edit `library.js`, `library-routes.js`, `util.js`, `csvsafe.js`, `operate.js`, or `privacy.js`. `email()` must stay as it is. Group 5 owns the address cap. Rejecting a formula-shaped address inside `email()` would move B5 into group 5, which the confirmer forbade. This group may import `eraseRateHits` from `util.js` and call it. Group 14 owns that function. Do not rewrite it here.
 
-New tests: `deploy/cloudflare-edge/test/sweep01-g10-erasure-props.test.js`. This group also edits the one test `staffing and teams rows are erased for this tenant without an outreach table, and the other tenant stays` in `deploy/cloudflare-edge/test/s1-review.test.js`, and no other test in that file. Do not edit `test/sqlite.js` (PR #27).
+New tests: `deploy/cloudflare-edge/test/sweep01-g10-erasure-props.test.js`. This group also edits the tests listed under "Existing callers this group owns" below, and no other test in those files. Do not edit `test/sqlite.js` (PR #27).
 
 ## Failing tests from PR #31
 
@@ -153,7 +153,7 @@ Sentinel's ruling: deleting the subject's own unstamped Teams row by exact email
 | L1 | A stored `atlas_tenant` of `'\u00a0'` or `' \u00a0 '` is blank for erase and for send. Both call the one normalizer. | `L1 an nbsp-only atlas_tenant is blank for erase and send` |
 | L4 | A consultant cell `'=1+1@example.com` is rejected and is not stored as a value that starts with `=`. | `L4 an apostrophe-prefixed cell stays inert` |
 
-Devin's conflict is real. `s1-review.test.js` lines 109-118 create two `teams_conversations` rows with the same email and no `atlas_tenant`, and expect the row whose `tenant_id` is the other tenant to survive. `tenant_id` there was used as if it were the ATLAS tenant. It is the directory id. Both rows are unstamped. Sentinel deletes the subject's own unstamped row by exact email, so both would go, and B2 requires that. This plan changes that one test and does not change B2.
+Devin's conflict is real. `s1-review.test.js` lines 109-118 create two `teams_conversations` rows with the same email and no `atlas_tenant`, and expect the row whose `tenant_id` is the other tenant to survive. `tenant_id` there was used as if it were the ATLAS tenant. It is the directory id. Both rows are unstamped. Sentinel deletes the subject's own unstamped row by exact email, so both would go, and B2 requires that. This plan changes that fixture and does not change B2. The other callers that install or send with no stamp are listed under "Existing callers this group owns".
 
 The change: the table in the fixture gains `atlas_tenant`. The row that must survive is stamped with the other ATLAS tenant. The unstamped row is deleted even though its `tenant_id` differs. The assertion becomes "the stamped other-tenant row remains and the unstamped row is gone." The staffing rows in the same test stay selected by `staffing.tenant`, and that assertion is not edited. Erase adds `atlas_tenant` when the table exists and the column does not, so a database created like this fixture still has a column to stamp.
 
@@ -161,3 +161,16 @@ The change: the table in the fixture gains `atlas_tenant`. The row that must sur
 
 1. Parked for Tony (question 4). The plan does not wait on it. Until Tony says otherwise, erase deletes the subject's own unstamped Teams row by exact email, and `sendTeams` does not use an unstamped row.
 2. Parked for Tony (question 8). `erasure_log` stores a subject hash, not the address. Leftovers from an erase that already ran stay until that same subject calls erase again. This plan does not add an operator sweep.
+
+## Existing callers this group owns
+
+An install whose ATLAS tenant is missing or whitespace is refused, and `sendTeams` does not select an unstamped row. These callers pass today because the column does not exist and send selects by email. This group changes each one. The expected success stays success. The stamp is what makes it success.
+
+- `deploy/cloudflare-edge/test/s1-review.test.js` lines 109-118, test `staffing and teams rows are erased for this tenant without an outreach table, and the other tenant stays`. The staffing assertion is unchanged. The teams table in the fixture gains `atlas_tenant`. The surviving row is stamped with the other ATLAS tenant. The unstamped row is deleted even though `tenant_id` differs.
+- `deploy/cloudflare-edge/test/outreach.test.js` lines 36-37 and 244-246, inside `Teams connected (fake client)`. `install` is `POST teams-event` as `BOT`, and `BOT` has no tenant. The invitation from `trigger` is stored with an empty tenant because `setup` sends no `x-atlas-tenant`. After this plan that install is refused, so line 244 would not be `{ ok: true }`, and line 246 would not be `sent` because the row has no stamp. Change: this test gives `SYS`, `REV`, and `BOT` one shared tenant GUID, sends it as `x-atlas-tenant`, and the install writes that GUID to `atlas_tenant`. Line 244 stays `{ ok: true }`. Line 246 stays `sent`. `tenant_id` on the row stays the directory id `TID`.
+- `deploy/cloudflare-edge/test/policy.test.js` lines 858-862, inside `Teams directory and ATLAS tenants are mapped separately`. The INSERT has no `atlas_tenant`. The outreach row and the reviewer already use `atlas`. After this plan `sendTeams` skips that row, so line 862 would not be `sent`. Change: the INSERT sets `atlas_tenant` to `atlas` and leaves `tenant_id` as `directory`. Line 862 stays `sent`. `calls[0].tenantId` stays `directory` and stays unequal to `atlas`. The same test's inserts at lines 865 and 868 also set `atlas_tenant` to `atlas`, so the later `blocked_external` is still two directory ids and not two missing stamps.
+- `deploy/cloudflare-edge/test/s1-afa7b8c.test.js` lines 207-210 and 240, `teamsReady` and `a retry after a throw following teams.send`. `lib.invite('atlas', ...)` with no caller stores an empty invitation tenant, `queue` copies it, and the INSERT sets `tenant_id` to `TENANT` with no `atlas_tenant`. After this plan line 240 would not be `sent`. Change: the invite body passes `tenant: ATLAS_TENANT` (the constant already in the file), the outreach row keeps that tenant, and the INSERT sets `atlas_tenant` to `ATLAS_TENANT`. `tenant_id` stays `TENANT`. Line 240 stays `sent`.
+
+## Known limits
+
+A stamped row for another ATLAS tenant is not deleted and is not a route for this tenant. An address that was erased before this walk, where the subject cannot sign in again, stays until that subject erases again. This plan does not add an operator sweep. A real mailbox that starts with `+` is rejected at staffing import.

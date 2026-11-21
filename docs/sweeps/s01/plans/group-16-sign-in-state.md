@@ -143,6 +143,10 @@ G1, G9, G10, G13, and G14 were AGREED on that review. This group was PLAN-CHANGE
 
 L3 residual. An IPv6 /64 shares one cap, so a person who is given another address in an attacker's /64 shares that attacker's 20. An IPv4 key is the whole address, so a client that changes IPv4 source gets a new cap of 20 each time. Five such addresses can fill the global table of 100, and the next login evicts the oldest flow. That churn does not raise the per-address cap above 20. This plan does not add a broader IPv4 prefix or a tighter /64.
 
+## Known limits
+
+An IPv6 /64 shares one cap, so another address in an attacker's /64 shares that cap of 20. An IPv4 key is the whole address, so a client that changes source address gets a new cap of 20, and five such addresses can fill the global table. That churn does not raise the per-address cap. `CF-Connecting-IP` is ignored unless the mode is on, the TCP peer is loopback, the tunnel, or an allowlisted peer, and the header is one IP literal. Question 3 stays parked for Tony.
+
 ## Open question for the owner
 
 **Gate for this group.** In the deployment that actually runs this gateway, is `request.remote` the person, or one shared proxy or NAT address? If it is shared, a per-remote cap locks the owner together with the attacker. This plan does not trust `X-Forwarded-For`. `CF-Connecting-IP` is used only when `ATLAS_TRUST_CF_CONNECTING_IP=1` and the TCP peer is loopback, `ATLAS_TUNNEL_PEER`, or `ATLAS_TRUSTED_PEERS`, and the header is one IP literal. The mode stays off until you say the edge in front of this process is Cloudflare and name that peer. The Worker Access sign-in does not use this table. Say which sign-in is in front of users before this lands.

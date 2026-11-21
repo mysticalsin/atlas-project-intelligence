@@ -21,6 +21,8 @@ Findings: H1, M1, L6.
 - `deploy/cloudflare-edge/src/scrub.js` (re-export the matcher so `rating.js` and `scrub.test.js` keep `import { STOPLIST, nameMatcher } from './scrub.js'`)
 - `deploy/cloudflare-edge/src/name-match.js` (new). This is the one shared matcher. Nobody else edits it.
 
+This group also owns `deploy/cloudflare-edge/test/library.test.js` test `forModel regression: a client named "Air" no longer turns "repair" into "repthe client"` and the case-rule assertions in `deploy/cloudflare-edge/test/scrub.test.js` named below. Do not edit any other test in those files.
+
 Do not edit `publication.js`, `library.js`, `util.js`, `profile.js`, `gaps.js`, `session.js`, `languages.js`, `breaker.js`, or any UI, CI, or Python file.
 
 `memory-routes.js` already calls `scrub` from `memory.js`. Leave that import alone.
@@ -51,9 +53,9 @@ Run the second command as the regression net. It is already green on main and mu
 
 Before: a signed-in consultant, or the interview text they cause to be retained, can store a short client name (`Air`, `Will`) or a decomposed spelling. `memory.scrub` and `sheet.scrub` compile those strings into one case-insensitive substring alternation. `Air` rewrites `repair` and `aircraft`. `Will` rewrites `will`. The sheet prompt sent to the model, and the Hindsight document, then say `the client` in place of ordinary words, and a name stored as NFD is left sitting in NFC text. `clientScrub` is already word-bounded and NFC, but it still puts a one-word contact on the case-insensitive matcher, so model text loses every `will`. Separately, two utterances in the same second share one Hindsight `document_id` (`conversation-<id>-YYYYMMDDHHMMSS`). The later retain replaces the earlier one. The first utterance is gone.
 
-After: ordinary words stay. The client name is removed when it stands as a word, including when one side was NFD and the other NFC. A one-word stoplist contact is not a mask. Two utterances that differ at the millisecond get two conversation documents. The project document is still one upsert per project.
+After: a client name that stands as a whole word is removed in every case, including a stoplist name in lowercase (`air`, `Air`, `AIR`). A longer word that merely contains that name (`repair`, `aircraft`) stays. A one-word stoplist contact is not a mask, so contact `Will` leaves `will` in the sentence. Two utterances that differ at the millisecond get two conversation documents. The project document is still one upsert per project.
 
-What an attacker still can do: a client whose legal name is the ordinary word `will` in lowercase, inside a sentence, is not masked by `clientScrub`. That is the existing stoplist rule in `scrub.test.js` ("single-token stoplist contacts are skipped"; a stoplist *name* at the start of a sentence is still masked in its stored and upper-case forms). Misspellings, subsidiaries, and names shorter than two characters stay unmasked. Two retains that pass the identical `now` string still share a conversation id.
+What an attacker still can do: a name shorter than 3 characters (`GE`) is still only the stored spelling and the upper-case spelling. Misspellings and subsidiaries stay unmasked. Two retains that pass the identical `now` string still share a conversation id.
 
 ## Chosen design
 
@@ -65,9 +67,9 @@ One rule, `nameMatcher`, for every name. `{ contacts: true }` is only how a cont
 
 - word boundaries are `(?<![\p{L}\p{N}])` and `(?![\p{L}\p{N}])`
 - both sides are NFC
-- a name of 3 or more characters that is not a single stoplist word is case-insensitive as a whole word (`acme`, `ibm`)
-- a name of 2 characters, or a single stoplist word used as a client name, matches the stored spelling and the upper-case spelling (`GE`, `Air`/`AIR`, `Will`/`WILL`, `Total`/`TOTAL`) and does not match the lower-case word inside a sentence
-- a single-token contact that is a stoplist word or shorter than 3 characters is skipped, so contact `Will` does not rewrite `will`
+- a client name or location of 3 or more characters is case-insensitive as a whole word, including when the name is on `STOPLIST`. Client name `Air` masks `air`, `Air`, and `AIR`, and does not mask `repair` or `aircraft`. Client name `Will` masks `will`, `Will`, and `WILL`. `acme` and `ibm` stay in this bucket
+- a client name of 2 characters matches only the stored spelling and the upper-case spelling (`GE`, not `ge`)
+- a single-token contact that is a stoplist word or shorter than 3 characters is skipped, so contact `Will` does not rewrite `will`. That skip applies only to the contact pass. It does not apply to the client name
 - every name is escaped before it is compiled, so a metacharacter is a literal character
 
 `memory.scrub` and `sheet.scrub` call `maskOwnClient` and do not keep their own `RegExp`. `clientScrub` calls the same function and returns the same replacer shape it returns today, so `forModel` stays a deep walk.
@@ -88,7 +90,7 @@ No `test.skip`, no `it.skip`, no `xtest`, no expected-failure mark. No new npm d
 
 Properties, in a new `deploy/cloudflare-edge/test/sweep01-g1-scrub-props.test.js` owned by this group:
 
-- For every name in a fixed list of short stoplist words (`will`, `air`, `mark`, `total`, `orange`) and every carrier in `repair`, `aircraft`, `will`, `airline`, the masked sentence still contains the carrier when the client field is that word with an initial capital.
+- For every stoplist client name in `will`, `air`, `mark`, `total`, `orange`, the lowercase, stored, and upper-case spellings are masked as whole words, and every carrier in `repair`, `aircraft`, `airline` still contains that carrier. The carrier is a longer word, not the name itself.
 - For every pair of NFC and NFD spellings of `Société Générale` and `Ångström`, masking the NFD name removes the NFC word and the reverse.
 - A multi-word contact `Jane Doe (Head of Claims)` still masks `Jane Doe` and does not mask `Jane` inside `Janeery`.
 - For every millisecond offset `1..999`, `retainItems` at `2026-09-27T10:00:00.000Z` and at that offset produce different conversation ids, and the project id is `project-p-123` both times.
@@ -103,7 +105,7 @@ File: `deploy/cloudflare-edge/test/sweep01-g1-scrub-props.test.js`. Write these 
 | Sentinel | Change | Red test |
 |---|---|---|
 | M1 | A client name of 3 or more characters that is not a single stoplist word matches as a whole word in any case. `acme` masks `acme`, `Acme`, and `ACME`, and does not mask `acmeware`. Length 2 (`GE`) stays stored-form and upper-case only. | `M1 a three-letter client name is masked in any case` |
-| Devin | The client name is not passed with `{ contacts: true }`. Client name `Air` still masks `Air` and `AIR` and does not mask `repair`. Client name `Will` still masks `Will` and `WILL`. Contact `Will` does not mask `will`. One matcher implements both. | `D1 a stoplist client name stays masked and the same word as a contact does not` |
+| Devin | The client name is not passed with `{ contacts: true }`. Client name `Air` masks `air`, `Air`, and `AIR`, and does not mask `repair`. Client name `Will` masks `will`, `Will`, and `WILL`. Contact `Will`, with no client name, does not mask `will`. One matcher implements both. | `D1 a stoplist client name stays masked and the same word as a contact does not` |
 | L1 | `memory.scrub` and `sheet.scrub` run on every string those paths put into a retain item or a sheet draft, including nested sheet fields. Plant `acme` in each string and assert the output has no `acme` in any case. | `L1 every retain item and sheet field is masked` |
 | L2 | Compile names with escaped literals. A client name `a+`, `(acme)`, `.*`, `[`, or `\` masks that literal text and does not mask a bare `a` or `acme`. A pathological name (a long run of `a+` metacharacters against a few thousand `a`s) finishes in under one second. | `L2 a client name of regex metacharacters is a literal and a pathological name finishes within one second` |
 
@@ -119,14 +121,20 @@ Revert the group commit. Memory and sheet go back to substring replacement. No s
 
 ## Open PRs #15–#30
 
-No file overlap with #15–#30. PR #17 edits `rating.js`, which imports `STOPLIST` from `scrub.js`. The re-export keeps that import valid. Do not change stoplist membership. The case-insensitive floor is 3 characters. Keep the `GE` length-2 assertion and the stoplist assertions in `scrub.test.js`. If that file's case-rule title still says "5+", change the title to 3. Do not weaken those assertions, or #17's rating tests will fail for a reason that is not `onEnd`.
+No file overlap with #15–#30. PR #17 edits `rating.js`, which imports `STOPLIST` from `scrub.js`. The re-export keeps that import valid. Do not change stoplist membership. The case-insensitive floor is 3 characters, and a stoplist client name is included. Keep the `GE` length-2 assertion. Update the `scrub.js` comment that still says a lowercase stoplist client name is not masked. In `scrub.test.js`, the case-rule title that says "5+" becomes 3, `nameMatcher(['Air'])` also masks lowercase `air`, client `Total` masks `total`, and client `Orange` masks `orange`. The contact assertion that `Will` does not mask `will` stays. Do not weaken it, or #17's rating tests will fail for a reason that is not `onEnd`.
+
+`library.test.js` lines 157-162 stay the contract. Client `Air` makes `air`, `Air`, and `AIR` into `the client`, leaves `repair`, masks `Lyon`, and leaves `Lyonnais`. `clientScrub` of that name on `HR teams repair air ducts` still yields `HR teams repair the client ducts`. This group does not change those expected strings.
 
 PR #31 is the red-test branch. Land the fix on a branch that contains those tests, or cherry-pick the test file. Do not weaken the assertions.
 
 ## Owner lockout
 
-None. This does not touch sign-in, Access, kill switches, or the profile row. The worst product miss is a client whose name is a lowercase stoplist word remaining visible to a model. That is the current written rule, not a new outage.
+None. This does not touch sign-in, Access, kill switches, or the profile row. A client named `Will` now masks the ordinary word `will`. That is the library test's case rule. Contact `Will` still does not.
 
 ## Diff size
 
 About 150 lines of product code moved or rewritten, plus about 120 lines of property tests. `name-match.js` is mostly the existing `STOPLIST` and `nameMatcher` moved, not new logic. Review the move as a move.
+
+## Known limits
+
+A client name of 2 characters is still only the stored spelling and the upper-case spelling. A stoplist word that is only a contact is not masked. Misspellings and subsidiaries are not masked. Two retains with the same `now` string still share a conversation id.

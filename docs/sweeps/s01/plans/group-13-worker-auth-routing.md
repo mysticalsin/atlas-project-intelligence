@@ -154,6 +154,10 @@ About 120 lines in `app.js`, about 10 lines in the runbook, about 200 lines of t
 | Devin, pin | Configured team `team.example`. Host `team.example.evil` is not treated as that team. `iss` `https://team.example.evil` returns null. `team.example.evil` is not listed as a team value that is refused before any fetch. | `D1 team.example.evil is not the pinned host` |
 | Devin, 302 | The fetcher follows when `redirect` is omitted and returns the attacker JWK. The same fetcher returns only the 302 when `redirect` is `'manual'`. `verifyAccess` is null only because manual was set. | `D1 a followed redirect would authenticate and manual refuses` |
 
+## Known limits
+
+`redirect: 'manual'` fails closed. If the live certs URL redirects, sign-in stays 401 until Tony answers question 2. A cached JWKS older than one hour is not used after a failed refresh. A cache younger than one hour is kept. `ATLAS_CHECKPOINT` and `ATLAS_EVIDENCE_WORKFLOW` are not wired.
+
 ## Open questions for the owner
 
 1. **Gate.** Parked for Tony (question 2). Does `https://<the live ACCESS_TEAM_DOMAIN>/cdn-cgi/access/certs` return 200 with no redirect? `redirect: 'manual'` stays fail-closed. This group does not ship until Tony answers. This review did not request that URL.

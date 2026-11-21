@@ -151,6 +151,10 @@ Keying on the verified email stays. Devin's plan debate (`6c17bee6`) is PASS for
 | L3 | Two verified emails do not share a bucket. A body field named `subject` is not read by `rateLimit`. The key the test passes is the verified email. | `L3 the limit subject is the verified email` |
 | L4 | `applyState` with `commitTimeoutMs: 30` and a `beforeCommit` that never settles rejects, stores nothing, and a second `applyState` for the other purpose then stores that purpose. | `L4 a beforeCommit that hangs releases the lock` |
 
+## Known limits
+
+A backward clock and a future-dated hit hold for one window and do not open a fresh window. Ask and bid-edit keys stay tenant-free, so two tenants share that cap. The subject inside the key is the verified email. `rate_hits` older than one day are pruned.
+
 ## Open questions for the owner
 
 1. Decided (question 5). Group 5 owns `email()` only. Group 14 owns `rateLimit` and `eraseRateHits`. Same file, no other lines. Group 5 does not edit those two functions.

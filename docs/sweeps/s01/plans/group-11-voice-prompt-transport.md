@@ -125,6 +125,10 @@ Agreed. Devin's plan debate (`6c17bee6`) is PASS for this group. No design chang
 | L2 | With a logging handler attached and a connect that raises, no log record and no exception string contains `SYNTHETIC-PROJECT-NOTE` or `SYNTHETIC-PREFERENCE-PHRASE`. | `test_l2_prompt_markers_are_absent_from_logs_and_errors` |
 | L3 | The first upstream frame is the prompt text. A binary audio frame is not sent before it. | `test_l3_prompt_frame_is_sent_before_any_audio` |
 
+## Known limits
+
+A non-loopback upstream that is not `wss` is refused. The prompt is not written to logs or errors. Two retains are not this group's problem. Question 1, whether a live PersonaPlex worker accepts the first text frame, stays parked for Tony. Kyutai does not use this handshake.
+
 ## Open question for the owner
 
 The red test is the contract: the prompt is the first upstream text frame, and it is not on the URL. Stock PersonaPlex, as this repo's comments describe it, reads `text_prompt` from the query. Does the build you would actually run accept the frame instead? Kyutai is the selected route and does not use this handshake. If the answer is no, this plan must not land against a live PersonaPlex, and the test has to change in a later decision. Do not land a dual-send to paper over that.

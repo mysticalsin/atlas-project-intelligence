@@ -134,6 +134,10 @@ Agreed. Devin's plan debate (`6c17bee6`) is PASS for this group. No design chang
 | L3 | Every `curl` invocation includes `--output` and `--stderr` pointed at files under the temp directory, and the script does not print those files. | `L3 curl writes stdout and stderr to temp files` |
 | L4 | The `trap` line comes after the `mktemp` line and before `curl`. | `L4 the EXIT trap is installed after mktemp` |
 
+## Known limits
+
+The script is not executed by this group. A token character outside the allowed set is refused before the curl config is written. The owner decides whether IT runs the script after the argv change.
+
 ## Open question for the owner
 
 None that blocks the debate. The script stays unrun. The owner decides when, and whether, IT executes it after the argv change. That execution is not part of this group.
