@@ -1,3 +1,5 @@
+import { CONFIRM_EVENTS, CONFIRM_PHASES, confirmStep } from './confirm-step.js';
+
 // F3.3 the /confirm page (WOW_SPEC §F3.3): the 60-second confirmation page for an N+1 or, when enabled, a client
 // contact. Served by app.js at GET /confirm after sign-in, under the standard CSP (inline script and style only,
 // connect-src 'self'). Self-contained: no external asset, no <script src>, no web font, no animation.
@@ -18,9 +20,18 @@ const STYLE = ':root{color-scheme:dark}*{box-sizing:border-box}'
 
 // The page script. It exposes window.AtlasConfirm (el, render, heading, choose, ready, state) so node tests can drive it
 // with a DOM double; it loads data only when fetch exists (a real browser).
+const STEP_SOURCE = 'var CONFIRM_PHASES = ' + JSON.stringify(CONFIRM_PHASES) + '; var CONFIRM_EVENTS = ' + JSON.stringify(CONFIRM_EVENTS) + ';\n' + confirmStep.toString();
+
 const SCRIPT = String.raw`(function () {
   'use strict';
-  var doc = document, state = { csrf: '', items: [], current: null, decisions: {}, busy: false };
+  ${STEP_SOURCE}
+  function applyStep(event) {
+    var step = confirmStep({ phase: state.phase }, event);
+    if (step && step.ok) state.phase = step.state.phase;
+    state.busy = state.phase === 'submitting';
+    return step;
+  }
+  var doc = document, state = { csrf: '', items: [], current: null, decisions: {}, busy: false, phase: 'loading' };
   var TOPIC = { 1: 'Contribution', 2: 'Approach', 3: 'Outcome', 4: 'Evidence' };
   var CHOICES = [['confirm', 'Confirm'], ['correct', 'Correct…'], ['cant_say', 'Can’t say']];
   // The only way data reaches the page: createElement + setAttribute + textContent.
@@ -74,6 +85,7 @@ const SCRIPT = String.raw`(function () {
     var box = byId('confirmInbox'); clear(box);
     byId('confirmDone').hidden = true; byId('confirmError').hidden = true;
     state.items = items || []; state.decisions = {}; state.rows = {}; state.current = null;
+    applyStep({ type: state.items.length ? 'loaded' : 'vacant' });
     if (!state.items.length) {
       box.appendChild(el('h1', { id: 'confirmTitle', tabindex: '-1' }, 'Nothing to confirm'));
       box.appendChild(el('p', { 'class': 'muted' }, 'There is no open confirmation request for you. A request closes when it is answered, when the reference changes, or after 14 days.'));
@@ -115,12 +127,14 @@ const SCRIPT = String.raw`(function () {
   function send() {
     if (!ready() || state.busy) return;
     var item = state.current;
+    var step = applyStep({ type: 'submit', ready: true });
+    if (!step || !step.ok || state.phase !== 'submitting') return;
     var body = { decisions: item.claims.map(function (c) { var d = state.decisions[c.id]; return d.decision === 'correct' ? { claimId: c.id, decision: d.decision, note: d.note.trim() } : { claimId: c.id, decision: d.decision }; }) };
-    state.busy = true; update(); byId('confirmError').hidden = true;
+    update(); byId('confirmError').hidden = true;
     fetch('/api/library/confirmations/' + encodeURIComponent(item.request.id), { method: 'POST', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'X-Atlas-CSRF': state.csrf }, body: JSON.stringify(body) })
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) throw new Error(j.error || 'Your answers could not be recorded. Try again.'); return j; }); })
-      .then(function () { state.busy = false; done(item); }, function (e) { state.busy = false; update(); showError(e.message); });
+      .then(function () { applyStep({ type: 'succeed' }); done(item); }, function (e) { applyStep({ type: 'fail' }); update(); showError(e.message); });
   }
   function load() {
     fetch('/api/bootstrap', { credentials: 'same-origin' })
@@ -132,7 +146,7 @@ const SCRIPT = String.raw`(function () {
       })
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) throw new Error(j.error || 'Your requests could not be loaded.'); return j; }); })
       .then(function (j) { var h = render(j.items || [], location.hash); if (h && location.hash) h.focus(); })
-      .catch(function (e) { clear(byId('confirmInbox')); showError(e.message); });
+      .catch(function (e) { applyStep({ type: 'broke' }); clear(byId('confirmInbox')); showError(e.message); });
     window.addEventListener('hashchange', function () { var h = render(state.items, location.hash); if (h) h.focus(); });
   }
   state.rows = {};

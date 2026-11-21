@@ -987,8 +987,13 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/confirm-page.js",
-      "bytes": 11474,
-      "sha256": "72af3fdac540942670fbc0585171deb5380b02d2ce8ee32bbc0f3187d276b033"
+      "bytes": 12203,
+      "sha256": "63e5b143e021fdfe50cbb7df217b753c786b008ba1e3d2e717b62ad869254185"
+    },
+    {
+      "path": "deploy/cloudflare-edge/src/confirm-step.js",
+      "bytes": 1610,
+      "sha256": "90aa76442736e3ef97ccc6fd2046b37a1afab995236419aec3f94206052a10bb"
     },
     {
       "path": "deploy/cloudflare-edge/src/csp-report.js",
@@ -1342,8 +1347,13 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/confirm-page.test.js",
-      "bytes": 7277,
-      "sha256": "d3d75a1a80fbae1c2574cceee9541d3521eda8c66e08642ec21f706affa6b989"
+      "bytes": 7710,
+      "sha256": "eb011aa4d88235a5937b10aa8eb746c1dba541450f9fcd98b09b9f6a9da7f3c0"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/confirm-step.test.js",
+      "bytes": 3548,
+      "sha256": "512092cf85259a0401ca3ba7360151842857c8e4f357dba27cdee63d60ddf41c"
     },
     {
       "path": "deploy/cloudflare-edge/test/customer-jev.test.js",
@@ -2252,8 +2262,8 @@
     },
     {
       "path": "docs/state-machines.md",
-      "bytes": 36413,
-      "sha256": "539433097004d7c60ca526e287eb14d67ca7e466a6f9209d9cf81eb80798c68a"
+      "bytes": 38566,
+      "sha256": "088a77be2c563c6e5309d56ac8bf4b3ce5ba03dff09f29ff34ef35fea9e4846d"
     },
     {
       "path": "examples/claude_customer_brief.json",
@@ -2282,8 +2292,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 346929,
-      "sha256": "311bfd60630ba451016b72b88b0b6a981fd92c70e54ef68b5d665c65b2522b05"
+      "bytes": 348147,
+      "sha256": "19732aeb9306dceb24cb1fd012fbf3e485bf5f24ec168ed3ce975da90a0f48a3"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2359,6 +2369,11 @@
       "path": "handoff/decisions/check-handoff-rebuild.md",
       "bytes": 1125,
       "sha256": "352c8f6b527134e44dcf5a5923b87333502019f013fede3514ecdaefaed66b4c"
+    },
+    {
+      "path": "handoff/decisions/confirm-step-row11.md",
+      "bytes": 1725,
+      "sha256": "eedf76def0a23cb8b30591cd2f2630126cb6bc9a86ffcc5a5742ff17ece542b7"
     },
     {
       "path": "handoff/decisions/invitation-tenant-erase.md",

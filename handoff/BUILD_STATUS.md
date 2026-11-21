@@ -1,6 +1,18 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-21 — colleague confirm page row 11 (`cursor/row11-confirm-step-d7f3`)
+
+Ask row A22. APP-FIT: FIT. The inventory risk stays H because the page records a human confirmation. This run's HIGH is auth, tenant, erasure, or release gating, which this page is not. Branched from `main` `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. Independent of draft PRs #25 and #27, and of the rating-stream branch. No push to those branches. `app.js` is not edited.
+
+Red tests: `58009dc2e7965a410e370233f8d4f3654c50f31b` (module missing; the page script has no `confirmStep`). Reducer: `3a263ed0668f224289cf7f1297a878d4deb756e0` (table tests pass; the page test still fails). Wiring, this note, and `MANIFEST.json` are the third commit.
+
+`confirmStep` is the only writer of the page phase. Eleven of thirty-six pairs are legal. `failed` is the only terminal phase. The served script inlines the reducer. The POST is still the existing fetch.
+
+Decision: `handoff/decisions/confirm-step-row11.md`. Inventory: `docs/state-machines.md` row 11.
+
+Suite counts are filled in the measurement note after `pytest`, `node --test tests/*.test.js`, the edge tests, `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui`, and `check_handoff`.
+
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.

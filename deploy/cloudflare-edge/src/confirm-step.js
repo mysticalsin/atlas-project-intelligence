@@ -2,21 +2,15 @@
 export const CONFIRM_PHASES = Object.freeze(['loading', 'choosing', 'submitting', 'recorded', 'empty', 'failed']);
 export const CONFIRM_EVENTS = Object.freeze(['loaded', 'vacant', 'broke', 'submit', 'succeed', 'fail']);
 
-function refuse(state, phase, event) {
-  return {
-    ok: false, illegal: true, state, effects: [],
-    rejection: { id: 'confirm-page', phase, event },
-  };
-}
-
-function go(phase) {
-  return { ok: true, illegal: false, state: { phase }, effects: [] };
-}
-
 export function confirmStep(state, event) {
+  const refuse = (phase, type) => ({
+    ok: false, illegal: true, state, effects: [],
+    rejection: { id: 'confirm-page', phase, event: type },
+  });
+  const go = phase => ({ ok: true, illegal: false, state: { phase }, effects: [] });
   const phase = CONFIRM_PHASES.includes(state && state.phase) ? state.phase : 'unknown';
   const type = CONFIRM_EVENTS.includes(event && event.type) ? event.type : 'unknown';
-  if (phase === 'unknown' || type === 'unknown') return refuse(state, phase, type);
+  if (phase === 'unknown' || type === 'unknown') return refuse(phase, type);
   if ((phase === 'loading' || phase === 'choosing' || phase === 'recorded' || phase === 'empty') && type === 'loaded') return go('choosing');
   if ((phase === 'loading' || phase === 'choosing' || phase === 'recorded') && type === 'vacant') return go('empty');
   if (phase === 'loading' && type === 'broke') return go('failed');
@@ -26,5 +20,5 @@ export function confirmStep(state, event) {
   }
   if (phase === 'submitting' && type === 'succeed') return go('recorded');
   if (phase === 'submitting' && type === 'fail') return go('choosing');
-  return refuse(state, phase, type);
+  return refuse(phase, type);
 }
