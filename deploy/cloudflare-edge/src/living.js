@@ -73,8 +73,24 @@ function readArtifact(lib, id) {
   return { ...row, payload: JSON.parse(row.payload || '{}') };
 }
 
+function identityKeys(user) {
+  return [...new Set([user?.email, user?.mail].map(value => String(value || '').trim().toLowerCase()).filter(Boolean))];
+}
+
+function sameConsultant(user, ownerEmail) {
+  const owner = String(ownerEmail || '').trim().toLowerCase();
+  return !!owner && identityKeys(user).includes(owner);
+}
+
+function cvBody(payload) {
+  return JSON.stringify({
+    consultant: { name: payload?.consultant?.name || '', role: payload?.consultant?.role || '' },
+    lines: (payload?.lines || []).map(line => ({ text: line.text || '', source: line.source || '', evidenceId: line.evidenceId || '' })),
+  });
+}
+
 function mayApprove(lib, user, row) {
-  if (!user?.email || user.email === row.owner) return false;
+  if (!identityKeys(user).length || sameConsultant(user, row.owner)) return false;
   if (!sameTenant(row.tenant, user.tenant, user.tenantEnforced === true)) return false;
   if (['admin', 'reviewer'].includes(user.role)) return true;
   const owner = { email: row.owner, role: 'user', tenant: user.tenant, tenantEnforced: user.tenantEnforced === true };
@@ -85,7 +101,7 @@ function mayApprove(lib, user, row) {
 
 function canSee(lib, user, row) {
   if (!row || !sameTenant(row.tenant, user.tenant, user.tenantEnforced === true)) return false;
-  return row.owner === user.email || mayApprove(lib, user, row);
+  return sameConsultant(user, row.owner) || mayApprove(lib, user, row);
 }
 
 // The only status writer. transition() decides; this writes; the log follows the write.
@@ -240,21 +256,23 @@ export async function routes(ctx, adapters = {}) {
     if (method === 'GET' && !action) return { body: viewOf(lib, user, row) };
     if (method === 'POST' && action === 'approve' && parts.length === 4) {
       if (!mayApprove(lib, user, row)) throw fail(403, 'You cannot approve your own CV.');
+      row.payload = { ...row.payload, approvedBody: cvBody(row.payload) };
       commit(lib, user, row, 'approve');
       return { body: viewOf(lib, user, row) };
     }
     if (method === 'POST' && action === 'reject' && parts.length === 4) {
       if (!mayApprove(lib, user, row)) throw fail(403, 'You cannot approve your own CV.');
-      commit(lib, user, row, 'reject');
+      commit(lib, user, row, row.status === 'approved' || row.status === 'exported' ? 'revise' : 'reject');
       return { body: viewOf(lib, user, row) };
     }
     if (method === 'POST' && action === 'export' && parts.length === 4) {
-      if (row.owner !== user.email && !mayApprove(lib, user, row)) throw fail(404, 'Not found.');
+      if (!sameConsultant(user, row.owner) && !mayApprove(lib, user, row)) throw fail(404, 'Not found.');
       const audience = row.payload.audience === 'external' ? 'external' : 'internal';
       const owner = { email: row.owner, role: 'user', tenant: user.tenant, tenantEnforced: user.tenantEnforced === true };
       if (!stillLive(lib, owner, audience, row.payload.lines || [])) throw fail(409, 'A cited line is no longer published.');
+      if (row.status !== 'approved' && row.status !== 'exported') throw fail(409, 'That action is not available.');
+      if (row.payload.approvedBody !== cvBody(row.payload)) throw fail(409, 'That approval no longer matches this CV.');
       if (row.status === 'approved') commit(lib, user, row, 'export');
-      else if (row.status !== 'exported') throw fail(409, 'That action is not available.');
       const doc = row.type === 'fiche'
         ? atlasExport({ consultant: row.payload.consultant, lines: row.payload.lines, status: row.status }, 'docx')
         : new MiChatAdapter().exportDocument({ ...row.payload, status: row.status });
