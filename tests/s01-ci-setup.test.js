@@ -5,8 +5,9 @@
 // They fail on main. They are not skipped and they are not expected failures.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -30,12 +31,18 @@ test('E3 a missing workerd binary fails the tail tests when CI is set', () => {
   // A nested `node --test` inherits the parent runner channel and reports exit 0.
   delete env.NODE_CHANNEL_FD;
   delete env.NODE_TEST_CONTEXT;
-  const result = spawnSync(process.execPath, ['--test', 'test/write-sql-tail.test.js'], {
-    cwd: join(root, 'deploy/cloudflare-edge'),
-    env,
-    encoding: 'utf8',
-  });
-  assert.notEqual(result.status, 0);
+  const files = ['write-sql-tail', 'write-trigger-tail', 'write-consent-trigger', 'write-fallback-read'];
+  for (const name of files) {
+    const result = spawnSync(process.execPath, ['--test', `test/${name}.test.js`], {
+      cwd: join(root, 'deploy/cloudflare-edge'),
+      env,
+      encoding: 'utf8',
+    });
+    const out = result.stdout + result.stderr;
+    assert.notEqual(result.status, 0, name);
+    assert.equal(/# SKIP/.test(out), false, out);
+    assert.match(out, /^# skipped 0$/m, name);
+  }
 });
 
 test('E4 documented setup commands use this repository and python3', () => {
@@ -207,4 +214,63 @@ test('CI installs the locked workerd, runs the tail, and still fails when the bi
   assert.notEqual(missing.status, 0);
   const present = runTail({ ...process.env, CI: '1', ATLAS_WORKERD_ROOT: edge, ATLAS_WORKERD_BIN: '' });
   assert.equal(present.status, 0, present.stdout + present.stderr);
+});
+
+test('make build writes the gitignored edge page a fresh tree does not have', () => {
+  const dest = mkdtempSync(join(tmpdir(), 'atlas-fresh-'));
+  const archive = join(dest, 'src.tar');
+  const archived = spawnSync('git', ['archive', '--format=tar', '-o', archive, 'HEAD'], { cwd: root });
+  assert.equal(archived.status, 0, archived.stderr);
+  const clone = join(dest, 'clone');
+  mkdirSync(clone);
+  assert.equal(spawnSync('tar', ['-xf', archive, '-C', clone]).status, 0);
+  copyFileSync(join(root, 'Makefile'), join(clone, 'Makefile'));
+  copyFileSync(join(root, 'build.py'), join(clone, 'build.py'));
+  const page = join(clone, 'deploy/cloudflare-edge/src/atlas.html');
+  assert.equal(existsSync(page), false);
+  assert.match(read('Makefile'), /^test-ui:.*\bbuild\b/m);
+  const built = spawnSync('make', ['build'], { cwd: clone, encoding: 'utf8' });
+  assert.equal(built.status, 0, built.stdout + built.stderr);
+  assert.equal(existsSync(page), true);
+  assert.equal(readFileSync(page), readFileSync(join(clone, 'ATLAS_Voice.html')));
+});
+
+test('setup docs name the Ubuntu python3.12-venv package', () => {
+  for (const file of ['README.md', 'handoff/CONFIGURATION.md']) {
+    assert.match(read(file), /python3\.12-venv/, file);
+  }
+});
+
+test('library browser fails clearly when node is not on PATH', () => {
+  const python = spawnSync('python3', ['-c', 'import sys; print(sys.executable)'], { encoding: 'utf8' });
+  assert.equal(python.status, 0, python.stderr);
+  const env = { ...process.env, PATH: '/tmp', ATLAS_NODE: '' };
+  const result = spawnSync(python.stdout.trim(), ['tests/library_browser.py'], {
+    cwd: root,
+    env,
+    encoding: 'utf8',
+    timeout: 20000,
+  });
+  const out = result.stdout + result.stderr;
+  assert.notEqual(result.status, 0);
+  assert.equal(result.error, undefined);
+  assert.match(out, /ATLAS_NODE/);
+  assert.equal(/Traceback/.test(out), false, out);
+});
+
+test('jev rating exits non-zero in CI when the contract mock is missing', () => {
+  const python = spawnSync('python3', ['-c', 'import sys; print(sys.executable)'], { encoding: 'utf8' });
+  assert.equal(python.status, 0, python.stderr);
+  const env = { ...process.env, CI: '1', JEV_BROWSER_MOCK: '' };
+  const result = spawnSync(python.stdout.trim(), ['tests/jev_rating_browser.py'], {
+    cwd: root,
+    env,
+    encoding: 'utf8',
+    timeout: 15000,
+  });
+  const out = result.stdout + result.stderr;
+  assert.equal(result.error, undefined, result.error && result.error.message);
+  assert.notEqual(result.status, 0);
+  assert.match(out, /JEV_BROWSER_MOCK/);
+  assert.equal(/INFO 14 skipped/.test(out), false, out);
 });
