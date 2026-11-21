@@ -6,7 +6,6 @@
 - `main` at `8b0972ec` is merged into the living-CV branch, then that branch is merged here. Living writes go through the SQL door.
 - An approval records the CV body. Export refuses a later edit, a second approval, and a rejection. The owner cannot approve under a different letter case or a second address. `scripts/check_handoff.py` and `tests/test_handoff.py` are unchanged from `main`.
 
-
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.
