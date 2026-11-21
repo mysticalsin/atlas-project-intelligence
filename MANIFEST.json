@@ -1712,8 +1712,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/sql-bound.test.js",
-      "bytes": 14231,
-      "sha256": "2fc6ddb52340bb6da7fb3bd9d94547ca082069bb372b00f783907b13ea271c5b"
+      "bytes": 15277,
+      "sha256": "60de6dc020352085f9eec846ab5367d6ca08934017d1c7ea9e1ec7a5fa5834cc"
     },
     {
       "path": "deploy/cloudflare-edge/test/sqlite.js",

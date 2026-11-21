@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PLACEHOLDER_ALLOW, lintDir } from './write-lint.js';
+import { PLACEHOLDER_ALLOW, lintDir, lintSource } from './write-lint.js';
 import { Library, sqlOf } from './hold.js';
 import { memorySql } from './sqlite.js';
 import { deleteOwnedProfile, directoryRows, ensure as ensureProfile } from '../src/profile.js';
@@ -228,6 +228,28 @@ test('an inbox request with 100 claims still returns every claim', async () => {
   const result = await claims.routes({ method: 'GET', parts: ['confirmations', 'inbox'], user: user('sam@example.test'), lib: l, url: new URL('https://atlas.test/api/library/confirmations/inbox') });
   assert.equal(result.body.items.length, 1);
   assert.equal(result.body.items[0].claims.length, 100);
+});
+
+// ATLAS-SQLBOUND-GREP-SPELLINGS. The guard must see these builders.
+// placeholders(100) is the Durable Object cap. A larger literal is not.
+test('spelling: map(x => "?") is a placeholder builder', () => {
+  const found = lintSource('spell.js', "const q = ids.map(x => '?').join(',');");
+  assert.equal(found.placeholders.length, 1);
+});
+
+test('spelling: a comma-question repeat is a placeholder builder', () => {
+  const found = lintSource('spell.js', "const q = '?,'.repeat(n);");
+  assert.equal(found.placeholders.length, 1);
+});
+
+test('spelling: placeholders(101) is over the bound cap', () => {
+  const found = lintSource('spell.js', 'const q = placeholders(101);');
+  assert.equal(found.placeholders.some(item => item.max === 101), true);
+});
+
+test('spelling: placeholders(100) and a chunk length are not flagged', () => {
+  assert.equal(lintSource('spell.js', 'const q = placeholders(100);').placeholders.length, 0);
+  assert.equal(lintSource('spell.js', 'const q = placeholders(chunk.length);').placeholders.length, 0);
 });
 
 test('dynamic placeholder lists stay in the chunk helper or on the bounded allowlist', () => {
