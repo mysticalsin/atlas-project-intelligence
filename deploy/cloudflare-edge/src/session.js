@@ -5,7 +5,8 @@ import { TALKER_POLICY, OPENING, HISTORY, TOPICS, ADMIN_NOTE, SPEAKING_LIMIT_S, 
   GAP_LIMIT_S, GAP_SPEAKING_S, GAP_WRAP_S, GAP_MAX, GAP_OPENING, WIN_HINTS } from './policy.generated.js';
 import { gapSystemBlock, gapNotes, gapStatus, gapGuidance, timePlan } from './gap-policy.js';
 import { Analyst, InterviewLedger } from './ledger.js';
-import { EnergyTurns, isEcho, Phrases, speakable } from './speech.js';
+import { EnergyTurns, isEcho, Phrases, rms, speakable } from './speech.js';
+import { audioMs, bindEarly } from './speculation.js';
 import { EndMarker, parseReport, reportMessages } from './report.js';
 import { LANGUAGES, normalize, spokenFor, languageNote, GREETINGS, WELCOME_BACK, FILLERS, unfinished } from './languages.js';
 
@@ -113,6 +114,10 @@ export function talkerMessages(project, guidance, history, instruction, notes = 
 }
 
 const joinPcm = (a, b) => { const out = new Uint8Array(a.length + b.length); out.set(a); out.set(b, a.length); return out; };
+const prefixOf = (whole, part) => { if (whole.length < part.length) return false; for (let i = 0; i < part.length; i++) if (whole[i] !== part[i]) return false; return true; };
+// EnergyTurns treats a frame as quiet below threshold * 0.7, and threshold is at least 0.012.
+const SILENCE_RMS = 0.0084;
+const isSilence = pcm => { if (!pcm.length) return true; for (let i = 0; i < pcm.length; i += 960) if (rms(pcm.subarray(i, Math.min(pcm.length, i + 960))) >= SILENCE_RMS) return false; return true; };
 const same = (a, b) => { if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false; let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i); return d === 0; };
 
 export class Session {
@@ -120,9 +125,12 @@ export class Session {
   // gaps: async id => {asks, bidAlias, referenceId, projectId} | null (the verified assignee's open gap request);
   // winHint: async () => ({hint: 'quantified'|'confirmed'|null}) | null (aggregate win-loop guidance, never awaited).
   constructor({ io, ai, csrf, voice, voices = null, captureRequired = false, model, maxSeconds = MAX_SECONDS, admin = false, memory = null, speakingLimit = SPEAKING_LIMIT_S, now = () => Date.now() / 1000, sleep = ms => new Promise(r => setTimeout(r, ms)), metric = () => {}, sttTimeout = STT_TIMEOUT_MS,
-    gaps = null, winHint = null, gapTimeout = GAP_RESOLVE_MS }) {
+    gaps = null, winHint = null, gapTimeout = GAP_RESOLVE_MS, speculation = null }) {
     // metric(name, numbers): timings and counts only, never transcript or project content.
     Object.assign(this, { io, ai, csrf, voice, voices: voices || [voice], captureRequired, model, maxSeconds, admin, speakingLimit, now, sleep, metric, memory, sttTimeout, gaps, winHint, gapTimeout });
+    // Null unless EARLY_STT is on and a global ledger is bound. EARLY_DRAFT never starts a model call.
+    this.early = bindEarly(speculation);
+    this.spec = null; this.specSeq = 0; this.pauseKey = 0; this.specTried = -1; this.specTurn = -1; this.specCount = 0; this.earlyOff = '';
     // Interview mode. Gap mode keeps its own answer windows: askByItem (reply item -> the ask it carried, set when the reply
     // is composed), gapAttempts (replies heard per ask), openAsk (the ask the consultant last heard; null once a reflect-back
     // or the closing is heard) and gapAnswers (ask -> the consultant turns heard after it, each turn a list of transcript parts).
@@ -173,6 +181,8 @@ export class Session {
     const audible = this.audible();
     const [started, utterance] = this.turnDetector.feed(bytes, audible);
     const d = this.turnDetector;
+    // New voice invalidates the one early batch. Silence does not. Flag off: this block does not run.
+    if (this.early && (started || (d.active && d.quiet === 0))) { this.pauseKey += 1; if (this.spec) this.dropEarly('speech'); }
     if (started) this.voiced = d.loud; // actual voice in this utterance, from its onset
     else if (d.active && d.quiet === 0) this.voiced += bytes.length / 48000;
     // A short sound closed a moment ago ("So,", "No,", "Yes…") is the start of what they are saying now: nothing is lost.
@@ -213,14 +223,16 @@ export class Session {
     if (utterance) {
       // endedAt: the consultant's last sound (feed() leaves the silence count in place when it completes an utterance)
       const endedBy = this.pause === 'unfinished' ? 'thinking' : 'silence', endedAt = this.now() - this.turnDetector.quiet;
-      this.pause = ''; this.queueTranscription(utterance, { ...this.takeUtterance(), endedBy, endedAt, blip: this.voiced < MIN_VOICED }); return;
+      this.pause = ''; this.queueTranscription(utterance, this.utteranceHow(endedBy, endedAt, utterance)); return;
     }
     if (!d.active || d.quiet === 0) { this.pause = ''; return; }
     // A click or a breath is over once quiet longer than a comma pause follows it: close it, so ATLAS is held for half a
     // second at most, and anything said next starts a fresh utterance (which picks the sound up again, see above).
     if (this.voiced < MIN_VOICED && d.quiet >= BLIP_QUIET) { this.closeBlip(); return; }
-    // Semantic end of turn: at a pause, ask the turn model once; transcribe only once the turn has ended
-    // (a speculative transcript at every mid-answer pause would bill the same audio several times).
+    // One early Nova-3 batch at this same pause, only when a global ledger has admitted it. It does not end the turn.
+    if (this.early && !this.earlyOff && this.specTried !== this.pauseKey && d.quiet >= EARLY_PAUSE && d.spoken - d.quiet >= 0.6 && this.voiced >= MIN_VOICED) this.speculate();
+    // Semantic end of turn: at a pause, ask the turn model once. The early batch is not a second recogniser and is not
+    // a partial: it is reused only if the turn ends on that prefix plus silence (endTurn).
     if (this.ai.turnComplete && !this.pause && d.quiet >= EARLY_PAUSE && d.spoken - d.quiet >= 0.6) this.checkTurn();
     // Plain silence ends the turn, unless the turn model is still being asked or heard an unfinished thought
     // (then the detector's own THINKING_PAUSE applies).
@@ -236,10 +248,12 @@ export class Session {
     if (!d.active) return;
     const endedAt = this.now() - d.quiet, pcm = d.flush();
     this.pause = '';
-    if (pcm && this.voiced >= MIN_VOICED) this.queueTranscription(pcm, { ...this.takeUtterance(), endedBy: 'limit', endedAt });
+    if (pcm && this.voiced >= MIN_VOICED) this.queueTranscription(pcm, this.utteranceHow('limit', endedAt, pcm));
+    else if (this.spec) this.dropEarly('closed');
   }
 
   closeBlip() {
+    if (this.spec) this.dropEarly('closed');
     const d = this.turnDetector, endedAt = this.now() - d.quiet, pcm = d.flush();
     this.pause = '';
     this.blip = pcm ? { pcm, voiced: this.voiced, at: this.now(), endedAt, ...this.takeUtterance() } : null;
@@ -260,8 +274,80 @@ export class Session {
     const endedAt = this.now() - this.turnDetector.quiet; // before flush(), which clears the silence count
     const utterance = this.turnDetector.flush();
     this.pause = '';
-    if (utterance) this.queueTranscription(utterance, { ...this.takeUtterance(), endedBy, endedAt, blip: this.voiced < MIN_VOICED });
+    if (utterance) this.queueTranscription(utterance, this.utteranceHow(endedBy, endedAt, utterance));
+    else if (this.spec) this.dropEarly('closed');
   }
+
+  // Flag off: no `early` field, so transcribe() keeps the previous metric shape.
+  utteranceHow(endedBy, endedAt, pcm) {
+    const how = { ...this.takeUtterance(), endedBy, endedAt, blip: this.voiced < MIN_VOICED };
+    if (this.early) how.early = this.takeEarly(pcm);
+    return how;
+  }
+
+  // Admission before the one speculative transcription. A refusal, a throw or a slow answer sends nothing.
+  // An exhausted ledger stops further early batches for this session. The interview itself continues.
+  async admit(request) {
+    const { ledger, limits } = this.early; let timer;
+    try {
+      const r = await Promise.race([Promise.resolve().then(() => ledger.reserve(request)),
+        new Promise(res => { timer = setTimeout(() => res({ ok: false, reason: 'timeout' }), limits.ledgerTimeoutMs); })]);
+      if (r?.ok === true && r.id) return r;
+      const reason = typeof r?.reason === 'string' ? r.reason : 'refused';
+      if (reason !== 'concurrency') this.earlyOff = reason;
+      this.metric('early_refused', { kind: request.kind, reason });
+    } catch (e) { this.earlyOff = 'unavailable'; this.metric('early_refused', { kind: request.kind, reason: 'error', name: e?.name || 'Error' }); }
+    finally { clearTimeout(timer); }
+    return null;
+  }
+
+  settle(id, observed) { Promise.resolve().then(() => this.early.ledger.settle(id, observed)).catch(() => this.metric('early_settle_error', {})); }
+
+  // One Nova-3 batch (the same transcribe the final turn uses) of the audio so far. Not a second recogniser.
+  async speculate() {
+    this.specTried = this.pauseKey;
+    if (this.earlyOff || this.finished || this.ending) return;
+    if (this.specTurn !== this.turns) { this.specTurn = this.turns; this.specCount = 0; }
+    const { limits } = this.early, d = this.turnDetector, pcm = d.buffer.slice(), ms = audioMs(pcm);
+    if (this.specCount >= limits.perTurn) return this.metric('early_skipped', { reason: 'per_turn' });
+    if (ms > limits.maxAudioMs || !pcm.length) return this.metric('early_skipped', { reason: 'duration', audio_ms: ms });
+    this.specCount += 1;
+    const rec = { id: ++this.specSeq, key: this.pauseKey, pcm, open: true, used: false, result: null, ms };
+    this.spec = rec;
+    const admitted = await this.admit({ kind: 'stt', audioMs: ms, requests: 1 });
+    if (!admitted) { if (this.spec === rec) this.spec = null; rec.open = false; return; }
+    if (!rec.open) { this.settle(admitted.id, { kind: 'stt', sent: 0, audioMs: 0 }); return; }
+    const t0 = this.now(), call = Promise.resolve().then(() => this.ai.transcribe(pcm));
+    call.then(() => this.settle(admitted.id, { kind: 'stt', sent: 1, audioMs: ms }), e => this.settle(admitted.id, { kind: 'stt', sent: 1, audioMs: ms, error: e?.name || 'Error' }));
+    let timer;
+    rec.result = Promise.race([call, new Promise((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error('timeout'), { name: 'Timeout' })), this.sttTimeout); })])
+      .then(heard => ({ ok: true, heard }), e => ({ ok: false, name: e?.name || 'Error' })).finally(() => clearTimeout(timer));
+    this.metric('early_stt_sent', { audio_ms: ms });
+    const r = await rec.result;
+    this.metric('early_stt', { ms: Math.round((this.now() - t0) * 1000), ok: r.ok ? 1 : 0 });
+    if (!rec.open && !rec.used) this.metric('early_late_discarded', { kind: 'stt' });
+  }
+
+  // Reuse only when the flushed audio is the early prefix plus silence, and no voice has resumed.
+  takeEarly(pcm) {
+    const rec = this.spec;
+    if (!rec) return null;
+    this.spec = null;
+    const suffix = pcm.length >= rec.pcm.length ? pcm.subarray(rec.pcm.length) : pcm;
+    if (!rec.open || !rec.result || rec.key !== this.pauseKey || !prefixOf(pcm, rec.pcm) || !isSilence(suffix)) { this.dropRec(rec, 'changed'); return null; }
+    rec.open = false; rec.used = true;
+    return rec;
+  }
+
+  dropEarly(reason) { const rec = this.spec; this.spec = null; if (rec) this.dropRec(rec, reason); }
+
+  dropRec(rec, reason) {
+    if (!rec.open && !rec.used) return;
+    rec.open = false; rec.used = false;
+    this.metric('early_withdrawn', { reason, sent: rec.result ? 1 : 0 });
+  }
+
+  cancelEarly(reason) { if (this.spec) this.dropEarly(reason); }
 
   queueTranscription(pcm, how = {}) {
     this.sttBusy += 1;
@@ -431,16 +517,25 @@ export class Session {
     this.event('clear_audio');
   }
 
-  async transcribe(pcm, { continuing = false, echoable = true, endedBy = '', endedAt = this.now(), blip = false } = {}) {
+  async transcribe(pcm, { continuing = false, echoable = true, endedBy = '', endedAt = this.now(), blip = false, early = null } = {}) {
     if (this.finished) return;
     let text = '';
     const t0 = this.now();
     let heardIn = null, timer;
     if (blip) this.metric('blip', {}); // a click or a breath: no words to transcribe
     else try {
-      const heard = await Promise.race([this.ai.transcribe(pcm), new Promise((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error('timeout'), { name: 'Timeout' })), this.sttTimeout); })]);
+      // The early batch of this prefix, if the flushed audio was that prefix plus silence. Otherwise the normal call, once.
+      let heard, usedEarly = 0;
+      if (early?.used) {
+        const r = await early.result;
+        if (r?.ok) { heard = r.heard; usedEarly = 1; this.metric('early_stt_used', { waited_ms: Math.round((this.now() - t0) * 1000) }); }
+        else this.metric('early_stt_fallback', { name: r?.name || 'error' });
+      }
+      if (heard === undefined) heard = await Promise.race([this.ai.transcribe(pcm), new Promise((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error('timeout'), { name: 'Timeout' })), this.sttTimeout); })]);
       text = (typeof heard === 'string' ? heard : heard?.text || '').trim(); heardIn = typeof heard === 'string' ? null : heard?.language || null;
-      this.metric('stt', { ms: Math.round((this.now() - t0) * 1000), audio_ms: Math.round(pcm.length / 48), words: text ? text.split(/\s+/).length : 0 });
+      const stt = { ms: Math.round((this.now() - t0) * 1000), audio_ms: Math.round(pcm.length / 48), words: text ? text.split(/\s+/).length : 0 };
+      if (early?.used) stt.early = usedEarly;
+      this.metric('stt', stt);
     } catch (e) {
       // A failed (or hung) transcription counts as no words: whatever was waiting on it (a held answer, a re-ask) still happens.
       this.metric('stt_error', { name: e?.name || 'Error' }); this.event('quality_warning', { message: 'A speech segment could not be transcribed. Please repeat it or add it to your notes.' }); text = ''; heardIn = null;
@@ -772,6 +867,7 @@ export class Session {
     this.ending = (async () => {
       this.recordLive(' [cut off when the interview ended]');
       if (clean) this.finalWords();
+      if (this.early) this.cancelEarly('ended');
       this.gen += 1; clearInterval(this.timer); this.queue = [];
       if (this.waiter) { const w = this.waiter; this.waiter = null; w(); }
       if (clean) {
