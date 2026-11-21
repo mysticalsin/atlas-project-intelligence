@@ -1,6 +1,39 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-21: sweep 01 group 13, header alg and every identity forward
+
+Draft only. Merge blocked on Tony Q2. The approved plan freeze is PR #38 v4 at `9ce5ea97d0c3b8ce653273162bb837221c77a271` (Sentinel AGREED `7b267fbe`). This pass does not deploy and does not call a provider.
+
+The token header `alg` must be exactly `RS256`. Separate tests reject `none`, `HS256` (the token is signed with the RSA public key as the HMAC secret, and that HMAC verifies), `PS256`, `ES256`, and a missing `alg`. None of those fetch the certs. An unknown `kid` is rejected. A burst inside the minute of the last fetch does not refetch. One refetch is allowed after the minute, and a second burst inside that minute does not refetch. The first local draft of that test expected a refetch one second after a successful fetch. The gateway correctly kept the fetch count at 1, so the assertion was corrected before commit. There is no new failing commit. The original red commit remains `b0646c57ce3fda91c8fb4e1f810fae62ac27cf02`.
+
+`atlasHeaders` is the guard for every durable-object fetch in `app.js` that sets `x-atlas-user`, `x-atlas-email`, `x-atlas-tenant`, or `x-atlas-subj`. Triggers, directory push, and the daily cron now build those headers through it. A value with a code point above 255 returns null, and the route does not open the object. A CJK address plus a spoofed `x-atlas-*` header is covered on library, voice, consent, erase, export, memory, triggers, and directory push. The trigger and push JSON bodies may contain the address. That body is not copied into a header, and the response does not contain it. Spoken-ask consent is covered with a CJK address. `worker.js` is unchanged.
+
+| Site in `app.js` | Sets | Guard | Covering test |
+| --- | --- | --- | --- |
+| `consumeLimit` line 177, `POST /api/limit` | no `x-atlas-*` | fresh headers | table rows for erase and export (`atlas` map size 0); CJK spoof on erase and export |
+| `POST /api/triggers` line 304 | user `pm-system`, email `''`, tenant, idp | `systemForwardHeaders` via `atlasHeaders` | `a CJK address and a spoofed header on triggers are not forwarded`; table row `trigger` |
+| `POST /api/directory/push` line 324 | user `dna-push`, email `''`, tenant, idp | `systemForwardHeaders` via `atlasHeaders` | `a CJK address and a spoofed header on directory push are not forwarded`; table row `push` |
+| `POST /api/consent` line 417 | user, email, tenant, subj | `atlasHeaders(null)` | CJK consent; `a CJK address and a spoofed header on consent are not forwarded`; table row `consent` |
+| `POST /api/me/erase` and `GET /api/me/export` line 437 | user, email, tenant, subj | `atlasHeaders(null)` | CJK erase; CJK spoof on erase and export; table rows `erase` and `export` |
+| `/api/voice` line 456 | user, email, tenant, admin, bank, csrf | `atlasHeaders(request)` | CJK voice; CJK spoof on voice; table row `voice` |
+| `/api/memory` line 490 | user, email, tenant, role, bank | `atlasHeaders(request)` | `a client x-atlas-user on /api/memory is not forwarded to the interview object`; CJK memory; CJK spoof on memory; table row `memory` |
+| `/api/library` line 510 | user, email, tenant, idp | `atlasHeaders(request)` | CJK library; CJK spoof on library; Latin-1 library; table row `library` |
+| `storedSpokenAsk` line 571, `/api/library/profile/consents` | user, email, tenant, idp | `atlasHeaders(null)`; null returns false | `a CJK address on the spoken-ask consent read is not forwarded`; table row `transcribe` |
+| `scheduled` line 585, `/api/library/scan-stale` or `verify-chain` | user `atlas-cron`, tenant | `atlasHeaders(null)` | table row `cron` |
+
+`teams-routes.js` also fetches a durable object. This pass does not edit it. It builds a fresh header object and does not copy the client request.
+
+PENDING-CI. GitHub Actions is budget-blocked. No workflow was triggered or rerun.
+
+Measured on this tree before this paragraph's manifest refresh. `ATLAS_DEPLOY_STUB` stayed unset. No deploy.
+
+- `node --test deploy/cloudflare-edge/test/sweep01-g13-auth.test.js`: 35 tests, 35 pass.
+- `node --test tests/*.test.js`: 420 tests, 420 pass, 0 fail, 0 skipped.
+- Edge `node --test test/*.test.js`: 1156 tests, 1152 pass, 0 fail, 4 skipped. The 4 skips are the existing workerd proofs that need `ATLAS_WORKERD_ROOT`.
+- `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui`: 832 PASS, 0 FAIL.
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 416 passed after this manifest refresh.
+
 ## 2026-11-21 — sweep 01 group 13, identity and JWT
 
 Draft only. Merge blocked on Tony Q2: whether this gateway is production, and whether the live Access certs URL returns 200 with no redirect. This branch does not deploy and does not call a provider.

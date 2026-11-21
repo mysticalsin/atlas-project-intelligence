@@ -952,8 +952,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/app.js",
-      "bytes": 54787,
-      "sha256": "46709224bf5cbd4fa53961279f31ec3fc48fcef0e0b9c460fcdda71b180c3ad5"
+      "bytes": 55086,
+      "sha256": "61a051c58edfa37b514ca0c974762588d7e27850edb658689eb304efe56646f7"
     },
     {
       "path": "deploy/cloudflare-edge/src/ask.js",
@@ -1742,8 +1742,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/sweep01-g13-auth.test.js",
-      "bytes": 30900,
-      "sha256": "f8a8a2c193e0ec98e2e3a8bd9d06d52fefc818661bb212a0c9e349ef5d8bb2df"
+      "bytes": 39951,
+      "sha256": "1a4710da1f0a22abf2ad9e4c5bde2f2f98504245a8ee7425434dfc2d1db75eab"
     },
     {
       "path": "deploy/cloudflare-edge/test/teams.test.js",
@@ -2307,8 +2307,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 352223,
-      "sha256": "2b286f9f655e2b0b110d3425681065be53adda4a079b5d75a401db90dea00a76"
+      "bytes": 356667,
+      "sha256": "19ec20fb342342273db15ad497a6c0d4dfa40b657ea970f55ad15f066f59413b"
     },
     {
       "path": "handoff/CHANGELOG.md",

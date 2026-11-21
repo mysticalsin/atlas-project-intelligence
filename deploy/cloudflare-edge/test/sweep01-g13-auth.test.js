@@ -239,6 +239,80 @@ describe('group 13 auth', { concurrency: false }, () => {
     assert.equal(await verifyAccess(requestFor(token), env(), async () => new Response('<html>', { status: 200 })), null);
   });
 
+  test('G13-L1 alg none is rejected', async () => {
+    let fetches = 0;
+    const token = await sign(privateKey, {}, { alg: 'none', kid: 'k-real' });
+    assert.equal(await verifyAccess(requestFor(token), env(), async () => { fetches += 1; return jsonResponse([realJwk]); }), null);
+    assert.equal(fetches, 0);
+  });
+
+  test('G13-L1 alg HS256 signed with the RSA public key is rejected', async () => {
+    const spki = new Uint8Array(await crypto.subtle.exportKey('spki', publicKey));
+    const now = Math.floor(Date.now() / 1000);
+    const header = { alg: 'HS256', kid: 'k-real' };
+    const body = { aud: [AUD], iss: `https://${TEAM}`, sub: `${TID}:user-abc`, email: 'tony@example.com', exp: now + 7200, iat: now };
+    const input = b64u(JSON.stringify(header)) + '.' + b64u(JSON.stringify(body));
+    const mac = await crypto.subtle.importKey('raw', spki, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
+    const sig = new Uint8Array(await crypto.subtle.sign('HMAC', mac, new TextEncoder().encode(input)));
+    const token = input + '.' + b64u(sig);
+    const [h, p, s] = token.split('.');
+    assert.equal(await crypto.subtle.verify('HMAC', mac, Uint8Array.from(Buffer.from(s, 'base64url')), new TextEncoder().encode(h + '.' + p)), true, 'the public key would verify this token if alg were trusted');
+    let fetches = 0;
+    const verified = [];
+    const orig = crypto.subtle.verify.bind(crypto.subtle);
+    crypto.subtle.verify = async (algorithm, ...rest) => { verified.push(algorithm); return orig(algorithm, ...rest); };
+    try {
+      assert.equal(await verifyAccess(requestFor(token), env(), async () => { fetches += 1; return jsonResponse([realJwk]); }), null);
+    } finally {
+      crypto.subtle.verify = orig;
+    }
+    assert.equal(fetches, 0);
+    assert.deepEqual(verified, []);
+  });
+
+  test('G13-L1 any other alg is rejected', async () => {
+    for (const alg of ['PS256', 'ES256']) {
+      let fetches = 0;
+      const token = await sign(privateKey, {}, { alg, kid: 'k-real' });
+      assert.equal(await verifyAccess(requestFor(token), env(), async () => { fetches += 1; return jsonResponse([realJwk]); }), null, alg);
+      assert.equal(fetches, 0, alg);
+    }
+  });
+
+  test('G13-L1 a missing alg is rejected', async () => {
+    let fetches = 0;
+    const token = await sign(privateKey, {}, { kid: 'k-real' });
+    assert.equal(await verifyAccess(requestFor(token), env(), async () => { fetches += 1; return jsonResponse([realJwk]); }), null);
+    assert.equal(fetches, 0);
+  });
+
+  test('G13-L1 an unknown kid is rejected without another refetch inside the minute', async () => {
+    const start = 1_800_000_000_000;
+    let now = start;
+    Date.now = () => now;
+    let fetches = 0;
+    const fetcher = async () => { fetches += 1; return jsonResponse([realJwk]); };
+    const kept = await sign(privateKey, { exp: Math.floor(start / 1000) + 8 * 3600 });
+    assert.ok(await verifyAccess(requestFor(kept), env(), fetcher));
+    now = start + 1000;
+    for (let i = 0; i < 5; i += 1) {
+      const unknown = await sign(privateKey, { exp: Math.floor(start / 1000) + 8 * 3600 }, { alg: 'RS256', kid: 'missing-' + i });
+      assert.equal(await verifyAccess(requestFor(unknown), env(), fetcher), null);
+    }
+    assert.equal(fetches, 1, 'unknown kids inside the minute of the last fetch are rejected with no refetch');
+    now = start + 61 * 1000;
+    const later = await sign(privateKey, { exp: Math.floor(start / 1000) + 8 * 3600 }, { alg: 'RS256', kid: 'missing-later' });
+    assert.equal(await verifyAccess(requestFor(later), env(), fetcher), null);
+    assert.equal(fetches, 2, 'one refetch is allowed after the minute');
+    now = start + 90 * 1000;
+    for (let i = 0; i < 5; i += 1) {
+      const unknown = await sign(privateKey, { exp: Math.floor(start / 1000) + 8 * 3600 }, { alg: 'RS256', kid: 'again-' + i });
+      assert.equal(await verifyAccess(requestFor(unknown), env(), fetcher), null);
+    }
+    assert.equal(fetches, 2, 'a second burst inside the minute does not refetch');
+    assert.equal((await verifyAccess(requestFor(kept), env(), fetcher)).email, 'tony@example.com');
+  });
+
   test('a positive RS256 cert still verifies and oct is not imported', async () => {
     const imported = [];
     const orig = crypto.subtle.importKey.bind(crypto.subtle);
@@ -516,6 +590,37 @@ describe('group 13 routes', { concurrency: false }, () => {
       assert.equal(calls[0].request.headers.get('x-atlas-email'), email);
     }
   });
+
+  for (const path of ['library', 'voice', 'consent', 'erase', 'export', 'memory']) {
+    test('a CJK address and a spoofed header on ' + path + ' are not forwarded', async () => {
+      await assertCjkSpoof(path);
+    });
+  }
+
+  test('a CJK address and a spoofed header on triggers are not forwarded', async () => {
+    await assertSystemCjk('trigger');
+  });
+
+  test('a CJK address and a spoofed header on directory push are not forwarded', async () => {
+    await assertSystemCjk('push');
+  });
+
+  test('a CJK address on the spoken-ask consent read is not forwarded', async () => {
+    const calls = [];
+    const token = await sign(privateKey, { email: CJK });
+    const live = env({ INTERVIEW: binding(calls, 'interview'), LIBRARY: binding(calls, 'library') });
+    const boot = await (await handle(requestFor(token, '/api/bootstrap'), live, PAGE)).json();
+    const res = await handle(requestFor(token, '/api/transcribe', {
+      method: 'POST',
+      headers: { Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'X-Atlas-Consent': 'spoken-ask-v1; always', 'content-type': 'text/plain' },
+      body: 'x',
+    }), live, PAGE, { flagsOf: () => ({ spokenAsk: true }) });
+    const text = await res.text();
+    assert.notEqual(res.status, 500);
+    assert.equal(text.includes(CJK), false);
+    assert.equal(text.includes('用户'), false);
+    assert.equal(calls.filter(call => call.path === '/api/library/profile/consents').length, 0);
+  });
 });
 
 async function assertHandled(email, path) {
@@ -535,4 +640,55 @@ async function assertHandled(email, path) {
   assert.equal(text.includes('用户'), false, path);
   assert.equal(text.includes('Something went wrong.'), false, path);
   assert.match(text, /forwarded/);
+}
+
+async function assertCjkSpoof(path) {
+  const calls = [];
+  const token = await sign(privateKey, { email: CJK });
+  const live = env({ INTERVIEW: binding(calls, 'interview'), LIBRARY: binding(calls, 'library') });
+  const boot = await (await handle(requestFor(token, '/api/bootstrap'), live, PAGE)).json();
+  const session = { ...SPOOF };
+  delete session['x-atlas-csrf'];
+  let res;
+  if (path === 'library') res = await handle(requestFor(token, '/api/library', { headers: SPOOF }), live, PAGE);
+  if (path === 'memory') res = await handle(requestFor(token, '/api/memory', { headers: SPOOF }), live, PAGE);
+  if (path === 'voice') res = await handle(requestFor(token, '/api/voice', { headers: { ...SPOOF, Upgrade: 'websocket', Origin: ORIGIN } }), live, PAGE);
+  if (path === 'consent') res = await handle(requestFor(token, '/api/consent', { method: 'POST', headers: { ...session, Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'content-type': 'application/json' }, body: '{}' }), live, PAGE);
+  if (path === 'erase') res = await handle(requestFor(token, '/api/me/erase', { method: 'POST', headers: { ...session, Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf, 'content-type': 'application/json' }, body: '{"confirmed":true}' }), live, PAGE);
+  if (path === 'export') res = await handle(requestFor(token, '/api/me/export', { headers: { ...session, Origin: ORIGIN, 'X-Atlas-CSRF': boot.csrf } }), live, PAGE);
+  const text = await res.text();
+  assert.equal(res.status, 400, path);
+  assert.equal(text.includes(CJK), false, path);
+  assert.equal(text.includes('用户'), false, path);
+  assert.match(text, /forwarded/);
+  const forwarded = calls.filter(call => call.path !== '/api/limit');
+  assert.equal(forwarded.length, 0, path);
+  for (const call of calls) assert.equal(atlasOf(call.request).size, 0, path + ' ' + call.path);
+}
+
+async function assertSystemCjk(kind) {
+  const calls = [];
+  const system = env({
+    ATLAS_TENANT_ISOLATION: undefined, DATA_MODE: 'production', LOG_SALT: 'synthetic-log-salt',
+    TRIGGER_SECRET: 'trigger-secret-value', DIRECTORY_PUSH_SECRET: 'push-secret-value', ATLAS_SYSTEM_TENANT: TID,
+    LIBRARY: binding(calls, 'library'), ORIGIN, ACCESS_AUD: AUD, ACCESS_TEAM_DOMAIN: TEAM, CSRF_SECRET: 'test-secret',
+  });
+  const spoof = { 'x-atlas-user': 'other@example.test', 'x-atlas-role': 'admin', 'x-atlas-email': 'other@example.test', 'x-atlas-subj': 'spoof-subject', 'x-atlas-extra': 'spoof-extra' };
+  const body = kind === 'trigger'
+    ? JSON.stringify({ email: CJK, reason: 'project_end' })
+    : JSON.stringify({ rows: [{ email: CJK }] });
+  const path = kind === 'trigger' ? '/api/triggers' : '/api/directory/push';
+  const secret = kind === 'trigger' ? 'trigger-secret-value' : 'push-secret-value';
+  const res = await handle(new Request(ORIGIN + path, { method: 'POST', headers: { Authorization: 'Bearer ' + secret, ...spoof }, body }), system, PAGE);
+  const text = await res.text();
+  assert.equal(res.status, 200, kind);
+  assert.equal(text.includes(CJK), false, kind);
+  assert.equal(text.includes('用户'), false, kind);
+  assert.equal(calls.length, 1, kind);
+  const headers = atlasOf(calls[0].request);
+  assert.equal(headers.get('x-atlas-user'), kind === 'trigger' ? 'pm-system' : 'dna-push');
+  assert.equal(headers.get('x-atlas-email'), '');
+  assert.equal(headers.has('x-atlas-subj'), false);
+  assert.equal(headers.has('x-atlas-extra'), false);
+  assert.equal(headers.get('x-atlas-user').includes('用户'), false);
 }

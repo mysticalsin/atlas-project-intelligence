@@ -235,7 +235,7 @@ function continuityScope(env, sub, tenant) {
   return { ok: true, objectName: `${tid}:${sub}`, tenant: tid };
 }
 function systemForwardHeaders(user, scope) {
-  return { 'Content-Type': 'application/json', 'x-atlas-user': user, 'x-atlas-role': 'system', 'x-atlas-email': '', 'x-atlas-idp': 'e30', 'x-atlas-tenant': scope.tenant, 'x-atlas-tenant-enforced': scope.flag };
+  return atlasHeaders(null, { 'Content-Type': 'application/json', 'x-atlas-user': user, 'x-atlas-role': 'system', 'x-atlas-email': '', 'x-atlas-idp': 'e30', 'x-atlas-tenant': scope.tenant, 'x-atlas-tenant-enforced': scope.flag });
 }
 // A Headers value is a ByteString. Code points above 255 cannot be forwarded, and the address is not echoed.
 function headerByteString(value) {
@@ -246,7 +246,7 @@ function headerByteString(value) {
 function signInForwardRefusal(env) {
   return new Response('This sign-in cannot be forwarded.', { status: 400, headers: headers(env, { 'content-type': 'text/plain; charset=utf-8' }) });
 }
-// One guard for every durable-object forward that carries the verified sign-in.
+// One guard for every durable-object fetch that sets x-atlas-user, email, tenant, or subj.
 // Client x-atlas-* headers are removed first; only the fields passed here are set.
 function atlasHeaders(source, fields) {
   if (Object.values(fields).some(value => !headerByteString(value))) return null;
@@ -298,7 +298,9 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
       if (callerNamedTenant(request, raw).some(t => t !== scope.tenant)) return json(env, { error: 'A system ingress uses only the configured tenant. The tenant on this request was not accepted.' }, 403);
       const unkeyed = rejectUnkeyedAudit(env);
       if (unkeyed) return unkeyed;
-      const fwd = new Request(new URL('/api/library/trigger', request.url), { method: 'POST', body: raw, headers: systemForwardHeaders('pm-system', scope) });
+      const triggerHeaders = systemForwardHeaders('pm-system', scope);
+      if (!triggerHeaders) return signInForwardRefusal(env);
+      const fwd = new Request(new URL('/api/library/trigger', request.url), { method: 'POST', body: raw, headers: triggerHeaders });
       const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(fwd);
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
     }
@@ -316,7 +318,9 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
       if (callerNamedTenant(request, bytes).some(t => t !== scope.tenant)) return json(env, { error: 'A system ingress uses only the configured tenant. The tenant on this request was not accepted.' }, 403);
       const unkeyed = rejectUnkeyedAudit(env);
       if (unkeyed) return unkeyed;
-      const fwd = new Request(new URL('/api/library/directory/import', request.url), { method: 'POST', body: bytes, headers: systemForwardHeaders('dna-push', scope) });
+      const pushHeaders = systemForwardHeaders('dna-push', scope);
+      if (!pushHeaders) return signInForwardRefusal(env);
+      const fwd = new Request(new URL('/api/library/directory/import', request.url), { method: 'POST', body: bytes, headers: pushHeaders });
       const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(fwd);
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
     }
@@ -576,8 +580,9 @@ export async function scheduled(controller, env, ctx) {
   const enforced = tenantEnforced(env);
   const tenant = String(env.ATLAS_SYSTEM_TENANT || '').trim().toLowerCase();
   if (enforced && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenant)) return;
-  const headers = { 'Content-Type': 'application/json', 'x-atlas-user': 'atlas-cron', 'x-atlas-role': 'system', 'x-atlas-tenant': enforced ? tenant : '', 'x-atlas-tenant-enforced': enforced ? '1' : '0' };
-  const post = path => env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(new Request('https://atlas.internal' + path, { method: 'POST', body: '{}', headers }));
+  const cronHeaders = atlasHeaders(null, { 'Content-Type': 'application/json', 'x-atlas-user': 'atlas-cron', 'x-atlas-role': 'system', 'x-atlas-tenant': enforced ? tenant : '', 'x-atlas-tenant-enforced': enforced ? '1' : '0' });
+  if (!cronHeaders) return;
+  const post = path => env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(new Request('https://atlas.internal' + path, { method: 'POST', body: '{}', headers: cronHeaders }));
   if (readOnly(env)) {
     ctx.waitUntil((async () => {
       await secEvent(env, 'kill_switch', { reason: 'READ_ONLY', route: '/api/library/verify-chain', method: 'POST', status: 200 });
