@@ -1,6 +1,6 @@
 // Persistent per-person rate limits (blue review G3). Fixed-window counters kept in Durable Object STORAGE, so they survive
-// eviction and restarts (the in-memory util.rateLimit does not) and spread across the people's own Interview Durable Objects
-// instead of loading the one global LibraryStore. A counter is { n, exp }: `exp` lets a sweep delete finished windows.
+// eviction and restarts. Library ask, bid, and people caps are the SQLite rows in util.rateLimit. These counters stay on
+// each person's Interview Durable Object. A counter is { n, exp }: `exp` lets a sweep delete finished windows.
 //   consume(storage, checks)   all checks must pass; counters advance only when every one has room (a refusal costs reads only)
 //   limitRoute(request, ...)   the internal POST /api/limit of the Interview DO, called by the Worker for sheet/classify/transcribe
 //   enforce(storage, ...)      for the library routes (Wave B): a ready 429 Response, or null when allowed
@@ -34,9 +34,16 @@ const locks = new WeakMap();
 
 function withLock(storage, fn) {
   const prev = locks.get(storage) || Promise.resolve();
-  const run = prev.then(fn, fn);
-  locks.set(storage, run.then(() => undefined, () => undefined));
-  return run;
+  let release;
+  const done = new Promise(resolve => { release = resolve; });
+  locks.set(storage, done);
+  return prev.then(() => undefined, () => undefined).then(async () => {
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  });
 }
 
 // checks: [{ bucket, max, windowMs }]. Returns { ok: true, remaining } or { ok: false, retryAfter (seconds, at least 1), bucket }.

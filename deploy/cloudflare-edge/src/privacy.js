@@ -75,9 +75,16 @@ const COMMIT_TIMEOUT_MS = 5000;
 
 function withConsentLock(storage, fn) {
   const prev = consentLocks.get(storage) || Promise.resolve();
-  const run = prev.then(fn, fn);
-  consentLocks.set(storage, run.then(() => undefined, () => undefined));
-  return run;
+  let release;
+  const done = new Promise(resolve => { release = resolve; });
+  consentLocks.set(storage, done);
+  return prev.then(() => undefined, () => undefined).then(async () => {
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  });
 }
 
 function commitWithin(work, ms) {

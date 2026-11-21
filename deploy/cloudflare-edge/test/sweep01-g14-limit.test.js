@@ -1,5 +1,5 @@
 // Sweep 01 group 14 limits. Written before the fix. No skip and no expected failure.
-// Plan: group-14-rate-limit-consent.md at 4d15c83c, sha256 f1e947cca5e8f7747807b8e5cc69238b99e9b4023abcf023b8d0ea7ef76d2566.
+// Plan freeze: PR #38 v4 at 9ce5ea97, group-14-rate-limit-consent.md sha256 66f3511b43736aef68614dc5d6e6f21c4d15f96072529af7c1ca30c53e083a1f.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Library } from './hold.js';
@@ -158,18 +158,54 @@ test('L3 the limit subject is the verified email', () => {
   assert.deepEqual(buckets.sort(), ['ask:ada@example.test', 'ask:bob@example.test']);
 });
 
-test('L3 a key with a quote and a semicolon is a bound parameter', () => {
+test('L3 a quote and a semicolon are bound, not spliced, and read back literally', () => {
   const sql = memorySql();
   const clock = { now: Date.parse('2026-11-21T00:00:00.000Z') };
   const lib = libraryAt(sql, clock);
   const key = "ask:o'hara; DROP TABLE rate_hits;--@example.test";
+  const calls = [];
+  const inner = lib.exec.bind(lib);
+  lib.exec = (statement, ...args) => {
+    calls.push({ statement, args });
+    return inner(statement, ...args);
+  };
   assert.equal(util.rateLimit(lib, key, 1, 60000), true);
   assert.equal(util.rateLimit(lib, key, 1, 60000), false, 'the same key spends its own cap');
-  const rows = rowsOf(sql);
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].bucket, key);
+  for (const call of calls) {
+    assert.equal(call.statement.includes(key), false, 'the key is not spliced into SQL');
+    assert.equal(call.statement.includes("o'hara"), false);
+    assert.equal(call.statement.includes('DROP TABLE'), false);
+    if (call.args.includes(key)) assert.match(call.statement, /\?/);
+  }
+  assert.ok(calls.some(call => call.args.includes(key)), 'the key is passed as a bound argument');
+  const back = lib.rows('SELECT bucket, at_ms FROM rate_hits WHERE bucket = ?', key);
+  assert.equal(back.length, 1);
+  assert.equal(back[0].bucket, key, 'the stored bucket is the key, quote and semicolon included');
+  assert.equal(back[0].at_ms, clock.now);
+  assert.equal(util.eraseRateHits(lib, "o'hara; DROP TABLE rate_hits;--@example.test"), 1);
+  assert.equal(lib.rows('SELECT bucket FROM rate_hits WHERE bucket = ?', key).length, 0);
   assert.equal(util.rateLimit(lib, 'ask:ada@example.test', 1, 60000), true, 'the quoted key does not become another statement');
   assert.equal(sql.exec("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'rate_hits'").toArray().length, 1);
+});
+
+test('a thrown put releases the rate-limit lock', async () => {
+  let failPut = true;
+  const data = new Map();
+  const storage = {
+    async get(keys) {
+      const out = new Map();
+      for (const key of keys) if (data.has(key)) out.set(key, structuredClone(data.get(key)));
+      return out;
+    },
+    async put(entries) {
+      if (failPut) throw new Error('put failed');
+      for (const [key, value] of Object.entries(entries)) data.set(key, structuredClone(value));
+    },
+  };
+  const check = [{ bucket: 'inbound', max: 1, windowMs: 60000 }];
+  await assert.rejects(() => consume(storage, check, { now: 100000, subj: 'person' }), /put failed/);
+  failPut = false;
+  assert.equal((await consume(storage, check, { now: 100000, subj: 'person' })).ok, true);
 });
 
 test('L4 a beforeCommit that hangs releases the lock', { timeout: 500 }, async () => {
