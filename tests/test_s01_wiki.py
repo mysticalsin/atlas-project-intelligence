@@ -135,3 +135,20 @@ async def test_atlas09_http_limit_above_the_cap_is_rejected(tmp_path):
             assert response.status == 400
     finally:
         await runner.cleanup()
+
+
+def test_atlas09_catalogue_keeps_the_gap_count(tmp_path):
+    vault = WikiVault(tmp_path / 'wiki')
+    author = person('author')
+    try:
+        raw = story('internal')
+        raw['sections']['limitations'] = 'Unknown until the owner confirms the limit.'
+        saved = vault.save(author, raw)
+        full = vault.get(author, saved['id'])
+        item = vault.page(author, 'internal')['stories'][0]
+        assert item['quality_gap_count'] == len(full['quality_gaps'])
+        assert item['quality_gap_count'] >= 1
+        assert 'quality_gaps' not in item
+        assert 'markdown' not in item
+    finally:
+        vault.close()

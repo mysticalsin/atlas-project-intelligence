@@ -351,3 +351,121 @@ test('M3 an exact duplicate contribution is not written twice, and the merged an
   assert.ok(store.row(wide.id).data.answers[1].length <= 6000);
   assert.equal(sqlOf(store).exec('SELECT COUNT(*) AS n FROM refs').toArray()[0].n >= 4, true);
 });
+
+test('HAM-02 scores outside 0 to 4 are clamped, and a non-finite score stores no impact', async () => {
+  const store = fresh();
+  const keys = ['business_impact', 'evidence', 'reusability', 'differentiation', 'showcase'];
+  const pack = score => Object.fromEntries(keys.map(key => [key, { score }]));
+  const save = async (name, score) => store.upsert(user, {
+    localId: 'bound-' + name,
+    reference: { title: 'Bound ' + name, jev: { primary: { key: 'data_ai', label: 'Data & AI' }, also: [], scores: pack(score), impact: 99 } },
+  });
+  const expectImpact = async (name, score, expected, uncapped) => {
+    const saved = await save(name, score);
+    const stored = store.row(saved.id).data.jev.impact;
+    assert.equal(stored, expected);
+    assert.equal(saved.impact, expected);
+    if (uncapped !== undefined) assert.notEqual(stored, uncapped);
+  };
+  await expectImpact('max-1', 3, 75);
+  await expectImpact('max', 4, 100);
+  await expectImpact('max-plus', 5, 100, 125);
+  await expectImpact('49', 49, 100, 1225);
+  await expectImpact('50', 50, 100, 1250);
+  await expectImpact('51', 51, 100, 1275);
+  await expectImpact('wide', 2 ** 31, 100);
+  const nan = await save('nan', Number.NaN);
+  assert.equal(store.row(nan.id).data.jev.impact, null);
+  const infinite = await save('infinity', Number.POSITIVE_INFINITY);
+  assert.equal(store.row(infinite.id).data.jev.impact, null);
+});
+
+test('F5 the row past five hundred is stored, not rejected', async () => {
+  const store = fresh();
+  const admin = { email: 'admin@example.test', mail: 'admin@example.test', role: 'admin' };
+  const references = Array.from({ length: 501 }, (_, index) => ({
+    externalId: 'tail-' + index,
+    reference: { title: 'Tail ' + index },
+  }));
+  const out = await store.importAll(admin, { references });
+  assert.equal(out.rejected.length, 0);
+  assert.equal(out.created, 501);
+  const titles = sqlOf(store).exec('SELECT data FROM refs').toArray().map(row => JSON.parse(row.data).title);
+  assert.equal(titles.length, 501);
+  assert.ok(titles.includes('Tail 500'));
+});
+
+test('M3 a contribution already kept as its own segment is not appended again', async () => {
+  const store = lib();
+  const reviewer = { email: 'rev@example.test', mail: 'rev@example.test', role: 'reviewer' };
+  const marker = '\n\nContribution by another consultant: ';
+  const kept = 'I ran the pilot with two teams.';
+  const retired = 'I designed and built the routing model';
+  const answers = text => ['', text, '', '', '', ''];
+  const owner = { email: 'kim@example.test', mail: 'kim@example.test', role: 'user' };
+  const other = { email: 'ada@example.test', mail: 'ada@example.test', role: 'user' };
+  const keeper = await store.upsert(owner, { localId: 'seg-kept', reference: { title: 'Segment kept', answers: answers(kept) } });
+  const first = await store.upsert(other, { localId: 'seg-first', reference: { title: 'Segment first', answers: answers(retired) } });
+  await store.merge(reviewer, { keep: keeper.id, merge: first.id });
+  const second = await store.upsert(other, { localId: 'seg-second', reference: { title: 'Segment second', answers: answers(retired) } });
+  await store.merge(reviewer, { keep: keeper.id, merge: second.id });
+  const once = store.row(keeper.id).data.answers[1];
+  assert.equal(once.split(marker).length, 2);
+  assert.equal(once.split(marker)[1], retired);
+  const prefix = await store.upsert(other, { localId: 'seg-prefix', reference: { title: 'Segment prefix', answers: answers('I designed') } });
+  await store.merge(reviewer, { keep: keeper.id, merge: prefix.id });
+  const twice = store.row(keeper.id).data.answers[1];
+  assert.equal(twice.split(marker).length, 3);
+  assert.equal(twice.split(marker)[2], 'I designed');
+});
+
+test('F7 a fast review is kept, and a hung review waits out the interactive deadline', async () => {
+  const store = fresh();
+  const owner = { email: 'ada@example.test', mail: 'ada@example.test', role: 'user' };
+  const saved = await store.upsert(owner, {
+    localId: 'deadline-fast',
+    reference: { title: 'Fast review', answers: ['I rebuilt the intake queue for the service desk.'] },
+  });
+  const hung = await store.upsert(owner, {
+    localId: 'deadline-hung',
+    reference: { title: 'Hung deadline', answers: ['I rebuilt the intake queue for the service desk.'] },
+  });
+  const review = async id => libraryRoutes(new Request('https://atlas.example.test/api/library/' + id + '/review', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-atlas-user': owner.email, 'x-atlas-email': owner.email },
+    body: '{}',
+  }), store, { env: {} });
+  store.complete = (_messages, options) => new Promise(resolve => {
+    setTimeout(() => {
+      if (options && options.signal && options.signal.aborted) return;
+      resolve(JSON.stringify({ score: 80, client_value_clear: true, issues: [], recommendations: [], summary: 'Synthetic review kept.' }));
+    }, 80);
+  });
+  const fastStarted = Date.now();
+  const fast = await review(saved.id);
+  const fastBody = await fast.json();
+  assert.equal(fast.status, 200);
+  assert.ok(Date.now() - fastStarted < 1500);
+  assert.doesNotMatch(JSON.stringify(fastBody.state && fastBody.state.quality), /The review agent did not answer/);
+  assert.match(JSON.stringify(fastBody.state && fastBody.state.quality), /Synthetic review kept/);
+  let aborted = false;
+  store.complete = (_messages, options) => new Promise((_resolve, reject) => {
+    const signal = options && options.signal;
+    const stop = () => {
+      aborted = true;
+      reject(Object.assign(new Error('The review was aborted.'), { name: 'AbortError' }));
+    };
+    if (!signal) return;
+    if (signal.aborted) stop();
+    else signal.addEventListener('abort', stop, { once: true });
+  });
+  const hungStarted = Date.now();
+  const slow = await review(hung.id);
+  const elapsed = Date.now() - hungStarted;
+  const slowBody = await slow.json();
+  assert.equal(slow.status, 200);
+  assert.equal(aborted, true);
+  assert.ok(elapsed >= 1500, 'elapsed ' + elapsed);
+  assert.ok(elapsed < 4000, 'elapsed ' + elapsed);
+  assert.match(JSON.stringify(slowBody.state && slowBody.state.quality), /The review agent did not answer/);
+});
