@@ -392,3 +392,63 @@ def test_illegal_transition_is_logged(caplog):
 def test_edit_drops_the_pin_and_the_packet():
     result = transition(_deployed(), EVENTS["edit"]())
     assert result == {"name": "SourceChanged", "head": HEAD, "tree": TREE}
+
+
+def test_packet_version_rejects_bool_float_and_string():
+    bad = []
+    for version in (True, 1.0, "1"):
+        raw = _packet()
+        raw["version"] = version
+        loaded = load_packet(raw)
+        state = _verified()
+        state["packet"] = raw
+        published = transition(state, EVENTS["publish_ok"]())
+        reached = isinstance(published, dict) and published.get("name") == "Deployed"
+        if not isinstance(loaded, IllegalTransition) or reached:
+            bad.append(repr(version))
+    assert bad == []
+
+
+def test_built_length_field_is_bytes():
+    event = {
+        "name": "build_ok",
+        "checkout_head": HEAD,
+        "checkout_tree": TREE,
+        "wrote_voice": True,
+        "first_sha256": PAGE,
+        "second_sha256": PAGE,
+        "alias_sha256s": (PAGE, PAGE, PAGE, PAGE),
+        "page_sha256": PAGE,
+        "bytes": NBYTES,
+        "csp_sha256": CSP,
+        "atlas_home": HOME,
+    }
+    result = transition(_source(), event)
+    assert isinstance(result, dict)
+    assert result["name"] == "Built"
+    assert result["bytes"] == NBYTES
+    assert "nbytes" not in result
+
+
+def test_stale_pin_file_blocks_pin_and_publish():
+    pin_event = EVENTS["pin_ok"]()
+    pin_event["stale_pin_text"] = format_pin_line("a" * 64, 1, HOME)
+    pinned = transition(_built(), pin_event)
+    assert isinstance(pinned, IllegalTransition)
+    assert pinned.guard == "g_stale_pin_file"
+
+    publish = EVENTS["publish_ok"]()
+    publish["stale_pin_text"] = format_pin_line("a" * 64, 1, HOME)
+    published = transition(_verified(), publish)
+    assert isinstance(published, IllegalTransition)
+    assert published.guard == "g_stale_pin_file"
+
+
+def test_verified_packet_ignores_an_event_packet():
+    state = _verified()
+    del state["packet"]
+    event = EVENTS["publish_ok"]()
+    event["packet"] = _packet()
+    result = transition(state, event)
+    assert isinstance(result, IllegalTransition)
+    assert result.guard == "g_verified_packet"

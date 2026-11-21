@@ -3352,8 +3352,8 @@
     },
     {
       "path": "tests/test_artifact_lifecycle.py",
-      "bytes": 12984,
-      "sha256": "ff1af54d00400001b12a389419caf03e5ef250d91e06bbbc9c9b8d402311eb83"
+      "bytes": 14956,
+      "sha256": "df2d35f246f4d80ec21dfe163418305448b43cd8d667a181acb5546d2f563da0"
     },
     {
       "path": "tests/test_bakeoff.py",
