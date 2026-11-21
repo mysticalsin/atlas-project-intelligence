@@ -46,7 +46,7 @@ function tableExists(lib, name) {
   return !!lib.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", name)[0];
 }
 function profilePk(lib, table) {
-  return lib.rows(`SELECT name FROM pragma_table_info('${table}') WHERE pk > 0 ORDER BY pk`).map(r => r.name);
+  return lib.rows('SELECT name FROM pragma_table_info(?) WHERE pk > 0 ORDER BY pk', table).map(r => r.name);
 }
 function isProfileV2(lib, table = 'profiles') {
   const pk = profilePk(lib, table);
@@ -176,7 +176,7 @@ export function quarantineReport(lib) {
   return { blankProfiles: blank, action: 'none', note: 'Blank ownership stays blank until a reviewed operator migration. A privacy export names a matching subject as legacy_unscoped and does not include the row. Erasure does not delete it. This report does not write a tenant.' };
 }
 function pkOf(lib, table) {
-  return lib.rows(`SELECT name FROM pragma_table_info('${table}') WHERE pk > 0 ORDER BY pk`).map(r => r.name);
+  return lib.rows('SELECT name FROM pragma_table_info(?) WHERE pk > 0 ORDER BY pk', table).map(r => r.name);
 }
 function migrateDirectory(lib) {
   const directoryCurrent = () => pkOf(lib, 'directory').join(',') === 'key,source,tenant';

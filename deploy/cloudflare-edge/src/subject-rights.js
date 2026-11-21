@@ -25,13 +25,13 @@ function requireTenant(user) {
   return tenant;
 }
 function hasTenantColumn(lib, table) {
-  return tableExists(lib, table) && lib.rows("SELECT 1 AS x FROM pragma_table_info('" + table + "') WHERE name = 'tenant'").length > 0;
+  return tableExists(lib, table) && lib.rows("SELECT 1 AS x FROM pragma_table_info(?) WHERE name = 'tenant'", table).length > 0;
 }
 const TENANT_SQL = "lower(COALESCE(tenant, '')) = ?";
 const IDENT = /^[a-z_]+$/;
 function columnsOf(lib, table) {
   if (!IDENT.test(table) || !tableExists(lib, table)) return [];
-  return lib.rows(`SELECT name FROM pragma_table_info('${table}')`).map(r => r.name);
+  return lib.rows('SELECT name FROM pragma_table_info(?)', table).map(r => r.name);
 }
 function ready(lib, table, columns) {
   const have = new Set(columnsOf(lib, table));
