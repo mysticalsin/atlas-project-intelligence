@@ -21,6 +21,7 @@ from .identity import Identity, COOKIE
 from .interview import project_context, make_prompt
 from .memory import PrivateMemory
 from .notes import make_notes
+from .voice_socket import initial_voice_socket, voice_socket_transition
 from .csp import REPORTING_ENDPOINTS, RUNTIME_BLOCK, html_csp, legacy_csp, script_hashes
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -210,12 +211,21 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
         clean_end = False
         session_cookie = request.cookies.get(COOKIE, '')
         counters = {'inputBytes': 0, 'outputBytes': 0, 'agentTextCharacters': 0}
+        sock = initial_voice_socket()
+
+        def step(kind):
+            nonlocal sock
+            result = voice_socket_transition(sock, {'type': kind})
+            if result['ok']:
+                sock = result['state']
+            return result
 
         async def event(kind, **values):
             if not ws.closed:
                 await ws.send_json({'type': kind, **values})
 
         try:
+            step('open')
             init = await asyncio.wait_for(ws.receive_json(), 15)
             if not isinstance(init, dict) or set(init) - {'type', 'csrf', 'consent', 'project', 'voice', 'capture', 'memory', 'language'}:
                 raise ValueError('Invalid start message.')
@@ -229,10 +239,12 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
             capture = init.get('capture') is True and bool(config.riva_uri)
             slot = gate.try_acquire(subject.subject_key)
             if slot != 'ok':
+                step('reject')
                 await event('error', code='busy', message=BUSY[slot])
                 await ws.close(code=1013)
                 return ws
             held = True
+            step('admit')
             active[session_cookie] = ws
             if not shutil.which(config.ffmpeg):
                 raise ValueError('FFmpeg is missing on the voice gateway. Install FFmpeg with libopus support.')
@@ -279,6 +291,7 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
             await event('ready', model='NVIDIA PersonaPlex 7B v1', sampleRate=24000,
                         capture=capture, maxSeconds=config.duration,
                         message='Model handshake received. Microphone audio now streams to PersonaPlex.')
+            step('ready')
             started = time.monotonic()
             last_input = started
 
@@ -303,8 +316,10 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
                         data = json.loads(msg.data)
                         if data == {'type': 'end'}:
                             clean_end = True
+                            step('finish')
                             return
                         if data == {'type': 'discard'}:
+                            step('discard')
                             return
                         raise ValueError('Unknown voice control message.')
                     else:
@@ -341,6 +356,7 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
                 nonlocal clean_end
                 await asyncio.sleep(config.duration)
                 clean_end = True
+                step('finish')
                 await event('status', state='ended', message='Session time limit reached. Start a new interview when ready.')
 
             async def identity_watch():
@@ -360,19 +376,25 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
                 raise errors[0]
         except SessionCancelled:
             clean_end = False
+            step('discard')
         except (ValueError, PermissionError) as e:
             clean_end = False
+            step('fail')
             await event('error', code='invalid-session', message=str(e))
         except asyncio.TimeoutError:
             clean_end = False
+            step('fail')
             await event('error', code='model-timeout', message='NVIDIA did not become ready before the timeout. Microphone capture has stopped.')
         except (aiohttp.ClientError, ConnectionError, OSError) as e:
             clean_end = False
+            step('fail')
             await event('error', code='voice-unavailable', message='The NVIDIA voice connection failed. Check the GPU worker and gateway logs; no fallback voice was used.')
         except Exception:
             clean_end = False
+            step('fail')
             await event('error', code='voice-failed', message='The voice session stopped unexpectedly. No interview data was approved.')
         finally:
+            step('release')
             for task in tasks:
                 if not task.done():
                     task.cancel()

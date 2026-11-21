@@ -812,8 +812,8 @@
     },
     {
       "path": "atlas_voice/server.py",
-      "bytes": 23820,
-      "sha256": "acacb393cb4f4737508add39a53c21ac24e6b6751407dbf315eff5d858c7c79a"
+      "bytes": 24524,
+      "sha256": "c2dfbe016b24a0a3b5d98a824299cf8dd2d08ed3b15cf8a5cff0b08f3d3f91c7"
     },
     {
       "path": "atlas_voice/speech.py",
@@ -824,6 +824,11 @@
       "path": "atlas_voice/textfold.py",
       "bytes": 2977,
       "sha256": "62cde26311a83e376a746302a02b8ca0f2c0625ea8061edb886a7b5b1c5593b8"
+    },
+    {
+      "path": "atlas_voice/voice_socket.py",
+      "bytes": 1847,
+      "sha256": "991e6f9a72897914416787f2e56d3ecea6c30d4538154abc4d42f3d93a79854f"
     },
     {
       "path": "atlas_voice/wiki.py",
@@ -2252,8 +2257,8 @@
     },
     {
       "path": "docs/state-machines.md",
-      "bytes": 36413,
-      "sha256": "539433097004d7c60ca526e287eb14d67ca7e466a6f9209d9cf81eb80798c68a"
+      "bytes": 37940,
+      "sha256": "956e550615d647d94b278a2c25f158ec2912664d2ad415c1fab44664f9440202"
     },
     {
       "path": "examples/claude_customer_brief.json",
@@ -2282,8 +2287,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 346929,
-      "sha256": "311bfd60630ba451016b72b88b0b6a981fd92c70e54ef68b5d665c65b2522b05"
+      "bytes": 348161,
+      "sha256": "aef0eb6b6131e5ee1a41c19de52008d4d5fe1d1b790e98b049f0785cdf33fb3a"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2384,6 +2389,11 @@
       "path": "handoff/decisions/record-dialog-quality-crash.md",
       "bytes": 3816,
       "sha256": "9f7947bffb235354679ffd69cc65c919d7c8be2ad41bccc7f43f8417fd29b350"
+    },
+    {
+      "path": "handoff/decisions/voice-socket-row5.md",
+      "bytes": 1335,
+      "sha256": "e0fe0e80812490155c440e68ff22418e67fefdfd420de50dd65bfb8fdbfbc9d2"
     },
     {
       "path": "handoff/provenance/original-v12-manifest.json",
@@ -3464,6 +3474,11 @@
       "path": "tests/test_voice.py",
       "bytes": 12927,
       "sha256": "c300ce099fe40a917ac8be998193eabc71b4d3b3d3e25a7b72e3f805acb7e8aa"
+    },
+    {
+      "path": "tests/test_voice_socket.py",
+      "bytes": 3609,
+      "sha256": "c3dfd33866a6d43c321a8112b972ea997ddf2156b3211ad2436b1f398e437ce8"
     },
     {
       "path": "tests/trust_browser.py",

@@ -1,6 +1,22 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-21 — PersonaPlex voice socket, row 5 (`cursor/row5-voice-socket-d7f3`)
+
+Ask row A22. The PersonaPlex path in `server.voice` now steps `voice_socket_transition`. OpenAI and Kyutai still return before that path. `released` is the only terminal. A double start can still occupy the one slot. The reducer does not add a slot.
+
+Red `1aebe6d5d9efbdc56b2e5d8b9ca1838be8ee06e7` (module missing, 1 collection error). Reducer `5b2f79d1e61e32ca5fe17f9322c37390d84c025c` (table 3 passed, the handler assertion failed). Wire `8b8ff21f6757f20ee963675302f64b2510946cd1`.
+
+Measured on this note's parent, before this paragraph's manifest refresh.
+
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 417 passed, 127 warnings, 25.20s, exit 0.
+- `node --test tests/*.test.js`: 419 tests, 419 pass, 0 fail, 0 skipped.
+- Edge `node --test test/*.test.js`: 1117 tests, 1113 pass, 0 fail, 4 skipped, 240.2s. The 4 skips are workerd 2026-10-23 not installed.
+- `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui`: 834 PASS, 0 FAIL, exit 0.
+- `python3 scripts/check_handoff.py . --dev-git-index`: exit 0, 700 release files.
+
+Locally verified on this machine. The NVIDIA socket was not opened against a live GPU. Not a production-ready claim.
+
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.
