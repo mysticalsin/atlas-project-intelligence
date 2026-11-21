@@ -1,115 +1,104 @@
-# ATLAS — Claude build handoff 12.1
+# Atlas
 
-**Start with [00_START_HERE.md](00_START_HERE.md).** Paste [CLAUDE_BUILD_PROMPT.md](CLAUDE_BUILD_PROMPT.md) into Claude with this extracted folder as its workspace. [CLAUDE.md](CLAUDE.md) defines the product and implementation rules.
+**A voice-first interviewer that turns one consultant's real work into a reviewable project story.**
 
-This handoff preserves the v12 runtime and UI. It adds an ordered build plan, current-status matrix, configuration reference, complete test entry points, offline diagnostics and packaging verification.
+The conversation is the product. The orb is the interface. Atlas asks one useful question at a time, keeps uncertainty visible, and writes a story you can review before anyone treats it as evidence.
 
-The setup below is the retained application README. The current handoff documents take precedence for setup/test entry points; no historical test count is a live-provider validation.
+![Home, with the orb in a silent speaking preview](docs/media/home-orb.gif)
 
----
+## What Atlas does
 
-# ATLAS Project Intelligence / Mantu
-## v12 · 26 September 2026
+A consultant talks about a piece of work. Atlas listens, accepts a correction, and asks for the concrete example that is still missing: what happened, who was affected, what the consultant personally owned, what was rejected, who adopted the change, and what was actually observed. "40% better" stays an unverified claim until the metric, the before and after, the units, the period, and the source are all present.
 
-A voice-first interviewer that investigates the actual work, preserves uncertainty, and produces reviewable customer stories. The embedded orb reacts to output audio; the intelligence is in the interview policy, bounded follow-up planner, evidence record and review process—not in the animation.
+From that conversation Atlas keeps:
 
-## Open the HTML
+- a quote-linked evidence record, with unknown and confidential left open
+- an immutable Markdown story, revised rather than overwritten
+- a customer brief match that ranks eligible stories, never people, and can return no strong match
 
-Open **ATLAS_Project_Intelligence.html** in a full browser. It contains the interface, particle sculpture, silent previews and local authoring tools. No frontend install, CDN, font files or provider keys are included. **Story intelligence** opens the quality lab, Markdown wiki workflow, customer-match brief and Hindsight controls.
+Private memory helps the next conversation with the same person. It is not evidence and it does not become a customer claim on its own.
 
-For a stable local preview origin:
+![A synthetic project, filled in the browser](docs/media/synthetic-project.gif)
+
+## How it works
+
+The browser is one self-contained page: the interview, the particle orb, and the review tools. `build.py` writes four identical HTML files. No frontend framework and no CDN.
+
+The gateway is one process. It caps concurrent interviews and keeps one active interview per signed-in person. The selected voice route is Kyutai speech-to-text and text-to-speech, plus a conversation model and an evidence analyst. OpenAI Realtime and NVIDIA PersonaPlex remain explicit alternatives. Atlas does not switch provider on its own.
+
+```mermaid
+flowchart LR
+  browser["Browser\norb, interview, review"]
+  gateway["Gateway\none process, bounded interviews"]
+  voice["Kyutai route\nSTT, TTS, conversation, analyst"]
+  memory["Private memory\nper signed-in person"]
+  wiki["Story vault\nimmutable Markdown + SQLite registry"]
+  match["Customer match\nstories for one brief"]
+  browser <--> gateway
+  gateway --> voice
+  gateway --> memory
+  gateway --> wiki
+  wiki --> match
+```
+
+The orb moves from output audio that was actually played. A timer, a tool call, or a block of agent text does not pretend to be speech. The buttons under the orb are a silent preview.
+
+## Quickstart
+
+Synthetic data only. Nothing below calls a paid provider.
 
 ```sh
-cd ATLAS_Project_Intelligence
+python3 build.py
 python3 scripts/preview.py
 ```
 
-Open `http://localhost:8000`. This serves the compiled HTML only, not source files, `.env` or a knowledge vault. It does not activate voice or other providers.
+Open `http://127.0.0.1:8000`. The preview serves the compiled page and refuses anything else. Choose **Add a project** and use a fictional record, for example:
 
-## Enable a genuine conversational voice API
+| Field | Value |
+|---|---|
+| Project name | Northwind intake pilot (synthetic) |
+| Consultant | Alex Example |
+| Role | Service designer |
+| Industry | Insurance |
+| Delivery stage | Pilot |
 
-On the approved application server:
+![The same synthetic project in the form](docs/media/synthetic-project.png)
 
-```sh
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-cp .env.example .env
-# Edit server-side .env. Never put provider credentials into HTML.
-bash scripts/start_gateway.sh
-```
+The home screen, with the speaking preview and the microphone still off:
 
-The example explicitly selects `ATLAS_VOICE_PROVIDER=openai`, `OPENAI_REALTIME_MODEL=gpt-realtime-2.1`, `OPENAI_REALTIME_VOICE=cedar` and `OPENAI_TRANSCRIBE_MODEL=gpt-transcribe`. Set the authorized `OPENAI_API_KEY`. Confirm model access, provider data policy and native audio quality in your account. This is genuine speech-to-speech with server-side tool handling, not browser read-aloud.
+![Atlas at rest, silent preview](docs/media/home.png)
 
-Open `http://localhost:8080` on the server, or use an authorized SSH tunnel from the Mac. Choose a project, Start conversation, inspect the provider/processing notice, and explicitly enable transcript capture for the quote-based quality ledger. The model leads the conversation. End always stops the microphone. Failures are visible; no alternate voice provider is selected behind your back.
+A real conversation needs the gateway, a voice provider, and server-side credentials in an uncommitted `.env` copied from `.env.example`. The preview above does not use those credentials. Operator setup for the gateway, identity, and the story vault lives in [00_START_HERE.md](00_START_HERE.md).
 
-To use NVIDIA instead, set `ATLAS_VOICE_PROVIDER=personaplex` and configure the dedicated private GPU worker and FFmpeg as described in `docs/NVIDIA_SETUP.md`. The hosted route supports live candidate tools. PersonaPlex retains its optional Riva post-session transcript path; its agent text must not be mistaken for consultant speech. The kit does not include a GPU, model weights, endpoints or credentials. One active interview per gateway/worker is an intentional pilot limit.
+## Security model
 
-## Quality upgrades
+- Provider credentials stay on the server. They are not written into the HTML, the browser, or a URL.
+- The signed-in person does not choose someone else's memory bank. The server derives it from the authenticated identity.
+- Private memory is continuity for the next interview. It is not a source for a customer claim.
+- A story is an immutable Markdown revision. A SQLite registry controls the current version, access, review, expiry, and withdrawal. Authors do not approve their own facts.
+- The interview agent cannot approve, publish, grant access, or write private memory.
+- Customer matching ranks stories for one brief. A weak or poorly evidenced story can produce no strong match. The score is not a performance rating.
+- An unknown answer and a confidential answer both stay open. After two unproductive probes on the same point, Atlas offers to move on.
 
-The live hosted ledger records exact consultant ASR quotes with uncertainty/correction state. The next-question planner prioritizes concrete missing information and caps repeated clarification plans at two per field. Unknown and confidentiality are valid; assessment outcomes and qualitative lessons are not inflated into production benefits. A plan is not proof the model spoke it. ASR, field assignment and meaning require user review.
+See [SECURITY.md](SECURITY.md) to report a vulnerability.
 
-In the workbench, try **Vague example**, **No measurement** and **Assessment, not delivery**. Those are deterministic offline demonstrations. They never populate a real transcript or pretend an API is connected.
+## Contributing
 
-## Memory: your Hindsight fork
-
-Inspected source: `https://github.com/mysticalsin/hindsight`, commit `a921929a0e0ea82fb49da1daa0ca3e152e41fcc1`.
-
-```sh
-# Review repository and dependencies before installation.
-git clone --filter=blob:none https://github.com/mysticalsin/hindsight.git
-git -C hindsight checkout a921929a0e0ea82fb49da1daa0ca3e152e41fcc1
-```
-
-Deploy that reviewed checkout according to its installation instructions. This kit does not silently install it or substitute a claimed deployment. Install `requirements-integrations.txt` only for enabled integrations, test the resolved SDK against your fork service, and record your deployment lock.
-
-Configure `HINDSIGHT_URL`, `HINDSIGHT_API_KEY` and a stable random `HINDSIGHT_BANK_SECRET`. The server derives a private bank from authenticated tenant/object identity. The browser cannot choose another person's bank. Recall is bounded and untrusted; private continuity is not customer evidence. Prepare a minimal resume note, review it, then save explicitly. Read, correct/replace and forget the fixed ATLAS continuity document from the workbench. Other older preference documents, story files, logs and exported copies are outside that delete action.
-
-For shared use, configure `ATLAS_AUTH=entra`, exact HTTPS origin/redirect URI and server-held Entra credentials. Assign `ATLAS.Interview` to users and independently assign `ATLAS.Review` and `ATLAS.Publish` where authorized. Follow `docs/NVIDIA_SETUP.md` for the existing identity/proxy deployment. Local profiles organize browser drafts but do not authenticate users. Entra login does not magically make all local project drafts a centrally governed database.
-
-## Markdown wiki and optional Graphify
-
-Set `ATLAS_WIKI_ROOT` to a private durable directory. Drafts are immutable Markdown revisions. The SQLite registry stores current version, content hash, access, review, expiry and withdrawal. Back up both together. The provided pilot uses one process.
-
-Prepare the current project, edit all eight sections, inspect source excerpts, and explicitly save a restricted server candidate. Structural gaps block factual approval. Authors cannot self-approve. An independently authorized reviewer with record access decides facts; an authorized publication reviewer decides the exact external audience. Use `scripts/wiki_access.py --help` on the trusted operator server to manage grants. No arbitrary browser user ID grants access.
-
-The native graph connects current eligible stories to explicit topics and versioned evidence. Export an authorized snapshot containing index, topic pages, Markdown stories, relationships and manifest. Graphify may consume that snapshot under your approved model/data policy; **Graphify itself is not run here**. Inferred graph edges do not become facts or permission. `docs/WIKI_SCHEMA.md` defines the maintenance rules. The server checks current eligibility rather than trusting an exported `approved` flag.
-
-## Source-grounded story refinement
-
-Optionally set `STORY_EDITOR_MODEL` to your approved structured-output model and use `OPENAI_API_KEY`. Leave it empty to keep this external operation unavailable. Save your current candidate, open **Refine the narrative**, describe the customer decision, and authorize the external call. The model must supply references per paragraph; the validator rejects missing sections, unknown/cross-section references and new numerical tokens. Original limitations are retained.
-
-Review the suggestion before applying it to the editor. Applying does not save or approve; save separately as a new restricted revision. Current access, source hash and local unsaved edits are checked so a stale response cannot silently replace work. Citation existence is NOT truth or entailment; semantic, causality, anonymity and factual review remain required.
-
-## JEV: customer-specific relevance, not a truth score
-
-Configure `TYPESAFE_API_KEY` and `JEV_MODEL` (example candidate: `jev-1.13.0`). Enter the four-part customer brief and authorize external processing. Only currently eligible customer-anonymized stories are considered. An inspectable lexical shortlist reduces the initial set; JEV supplies four typed semantic scores. Code computes the source-date proxy. The 30/25/20/15/10 weights and review thresholds are proposed pilot assumptions, not calibrated commercial predictions.
-
-A weak fit or unresolved confidence/date signal can produce **no strong match**. Results retain limitations and poor-fit conditions. Access/eligibility are rechecked before outbound calls and before results return. No score is invented when JEV is unavailable. Do not use these scores for consultant performance ratings.
-
-## Build, tests and handoff
+Use fictional projects and fictional people in issues, tests, and screenshots. Do not commit `.env`, a vault, a key, or a customer export. `.env.example` is the only environment file that belongs in git.
 
 ```sh
 python3 build.py
 node --test tests/*.test.js
-python -m pip install -r requirements-test.txt
-python -m playwright install chromium
-python -m pytest tests/test_*.py -q
-python tests/studio_browser.py
-python tests/sculpture_browser.py
-python tests/intelligence_browser.py
-python tests/depth_browser.py
+python3 -m pytest tests/test_*.py -q
+gitleaks detect --no-git --config .gitleaks.toml --redact
 ```
 
-The primary HTML and three compatibility aliases are identical builds. Python gateway and JavaScript source are readable without a frontend framework. `docs/PRD_v12.md` explains quality, voice, memory, wiki, editorial and JEV responsibilities. `docs/EVALUATION_v12.md` contains proposed live pilot scenarios. `tests/RESULTS.json` records actual local checks and their limitations.
+`tests/test_oss_readiness.py` checks that `LICENSE` exists, that every `docs/media` link in this README is a file under 3 MB, and that gitleaks on the working tree reports nothing. The gitleaks binary has to be on `PATH`. The test does not scan git history.
 
-## What is and is not delivered
+Browser suites are `make test-ui`. They are local and offline.
 
-Delivered: executable browser application, real provider adapters, bounded interview logic, private-memory adapter, actual Markdown vault with authority checks, optional grounded editor, actual TypeSafe decision adapter, authorized graph/export, tests and configuration. No synthetic fixture is shipped as a real voice service.
+## License
 
-Not deployed or validated here: live OpenAI/NVIDIA inference, native microphone/turn-taking/voice quality, real Entra tenant login, live Hindsight, live JEV, actual Graphify extraction, multiuser production operations or brand-owner sign-off. Automated provider tests use explicit synthetic fixtures. Frontend validation in this environment uses Chromium `set_content` because direct local-file navigation is blocked.
+Source code and documentation are [MIT](LICENSE), copyright Tony WALTEUR.
 
-The original supplied Mantu logo is preserved byte-for-byte; no font files are distributed. Store local drafts and backups only on a trusted device and use authorized material. Browser storage/backups are not encrypted. Do not expose local-auth mode, the GPU worker, secrets or the private knowledge directory publicly.
-
-## Working in the cloud
-See `docs/CLOUD_WORKFLOW.md`: private GitHub repository, tests on every push (GitHub Actions), manual deploy workflow, offline demo with `deploy/cloudflare-edge/dev/local-edge.mjs`.
+The name Mantu and `assets/Mantu.svg` are brand assets and are not covered by that grant. Third-party notices are in [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md).

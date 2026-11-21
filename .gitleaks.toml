@@ -1,0 +1,15 @@
+title = "ATLAS"
+
+[extend]
+useDefault = true
+
+# Working-tree allowlist for two non-credentials the default rules misread.
+# It does not embed a secret value. A 64-hex string that is not an ACCESS_AUD
+# assignment is still reported. History is not ignored.
+[allowlist]
+description = "Cloudflare Access audience tag, and a permission name in the Entra notes."
+regexTarget = "match"
+regexes = [
+  '''ACCESS_AUD.{0,16}[0-9a-fA-F]{64}''',
+  '''Organizations/IdPs''',
+]

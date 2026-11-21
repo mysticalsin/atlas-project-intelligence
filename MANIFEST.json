@@ -31,6 +31,11 @@
       "sha256": "695cdbdc0f98b182442489ee69392497d1e31b363bf20a9224490a639c89ca4e"
     },
     {
+      "path": ".gitleaks.toml",
+      "bytes": 463,
+      "sha256": "e8213fc82c8613f89782a17be07b6e7ea3daf7488483206146bf9ea039e49f18"
+    },
+    {
       "path": ".specify/bugs/attach-detach/assessment.md",
       "bytes": 423,
       "sha256": "d811a069420a5b3aa68bbcee6d8d74678b52257561335b23041304e05096dc47"
@@ -651,6 +656,11 @@
       "sha256": "bd18301ff2b9c47708670290b7d9f6fca1a69f7866600537d8f3071bb55050e9"
     },
     {
+      "path": "LICENSE",
+      "bytes": 1283,
+      "sha256": "d599db07b251d772bcbe567348ff8bba30a10c054d8fb78331cd42131b9b549d"
+    },
+    {
       "path": "Makefile",
       "bytes": 1916,
       "sha256": "a8625edc3eec8bd3a37a87b5af306d08b525ec82df6050b7c7028604de80f140"
@@ -667,13 +677,18 @@
     },
     {
       "path": "README.md",
-      "bytes": 10592,
-      "sha256": "2252cb30bfb3eac79549bb6f6c88783af016a65959e2192a67b265cc9d3ebbc4"
+      "bytes": 5357,
+      "sha256": "2b49601024303e32449b0fbc034ef2fbde2a558c13afeb26046279dd579b052f"
     },
     {
       "path": "SECOND_BRAIN.md",
       "bytes": 7692,
       "sha256": "deea4d6b63b08fe5d0a23b37f161b8d951d12b7e3127203defd00923484217e9"
+    },
+    {
+      "path": "SECURITY.md",
+      "bytes": 844,
+      "sha256": "a8b1e28baae574d0aa297e92d6814a9f4289af2ff5d4aa5ab1a7b42f87a7a961"
     },
     {
       "path": "START_HERE.html",
@@ -2191,6 +2206,26 @@
       "sha256": "22a0488ffd0061be96ee2de6e82eb073adf27d9aea36dbabecf3b3bd020016d2"
     },
     {
+      "path": "docs/media/home-orb.gif",
+      "bytes": 1101437,
+      "sha256": "c257dec9c04e3a6dd79a72f7828d12f2f5ff4cf169ce0b6df7ab0a54e16d2ceb"
+    },
+    {
+      "path": "docs/media/home.png",
+      "bytes": 286510,
+      "sha256": "d6234c275f24bf08f42aa1f0e884f5015fe612d99c0abbb6b4aa25a7113b6015"
+    },
+    {
+      "path": "docs/media/synthetic-project.gif",
+      "bytes": 287902,
+      "sha256": "df5801c3c26c6774e86cb70684a8997f843d9199962786b6ca15bae80b2c82a3"
+    },
+    {
+      "path": "docs/media/synthetic-project.png",
+      "bytes": 136751,
+      "sha256": "47ed0337ed932520c1a6828a2575740bddf5e1cfd59cc2653524de855fb1582a"
+    },
+    {
       "path": "docs/pr10/PR_BODY.md",
       "bytes": 5907,
       "sha256": "774de744e71ca86260d130c3989990b3fabf5c7945394bff87b32e5cc9350c43"
@@ -2282,8 +2317,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 346929,
-      "sha256": "311bfd60630ba451016b72b88b0b6a981fd92c70e54ef68b5d665c65b2522b05"
+      "bytes": 347748,
+      "sha256": "45e166cba9f34c8386e042cbb5b0f0ab90e641f3df27f4874f4b6524ab6487f3"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -3399,6 +3434,11 @@
       "path": "tests/test_handoff.py",
       "bytes": 53489,
       "sha256": "c2f0a00daea024cde0a7a83562820a9bc66ff424141c8ce5e4fd188b9e70bae4"
+    },
+    {
+      "path": "tests/test_oss_readiness.py",
+      "bytes": 1963,
+      "sha256": "861864f644283be45c78ca2f203910b38597d6acf6f892173fc9d52ea8f5e0d9"
     },
     {
       "path": "tests/test_page_harness.py",
