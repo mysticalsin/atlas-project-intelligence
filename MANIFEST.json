@@ -2381,9 +2381,19 @@
       "sha256": "769afc405efedae63d393361a2aa7b6826862586e370f957b8e297e94b6c0c15"
     },
     {
+      "path": "handoff/decisions/r1-r2-pipeline-plan-revision-1.md",
+      "bytes": 2958,
+      "sha256": "d9b485be3f6cc0d924158ea8b063a7e41cda64fe09b575c9edbec02b9a265619"
+    },
+    {
       "path": "handoff/decisions/record-dialog-quality-crash.md",
       "bytes": 3816,
       "sha256": "9f7947bffb235354679ffd69cc65c919d7c8be2ad41bccc7f43f8417fd29b350"
+    },
+    {
+      "path": "handoff/plans/r1-r2-pipeline-generated-artifacts.md",
+      "bytes": 76095,
+      "sha256": "bb61a635c5e8ef8a0a672916b8a9b5fb1a6053abdfd89e6c460fce2c03c5f957"
     },
     {
       "path": "handoff/provenance/original-v12-manifest.json",

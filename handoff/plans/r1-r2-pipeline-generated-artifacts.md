@@ -1,10 +1,16 @@
 # Plan: build generated files and pages in the pipeline (R1+R2)
 
-Plan phase only. This file is the only change. No product code, no pipeline code, no deploy, no secret, no edit to a workflow timeout, and no Cloudflare setting.
+Plan phase only. Revision 1 (loop 1 of 3) edits this plan, adds its `MANIFEST.json` row, and adds `handoff/decisions/r1-r2-pipeline-plan-revision-1.md`. No product code, no pipeline code, no deploy, no secret, no edit to a workflow timeout, and no Cloudflare setting.
 
 Base of this plan: `main` `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec` (merge of PR #14).
 
-Tony approved the direction of R1 and R2. Coding starts after the debate on the questions below, and after pull requests #15–#21 have merged. Each implementation PR is still its own gate. This document does not merge them.
+Tony approved the direction of R1 and R2. Coding starts after pull requests #15–#21 have merged. Each implementation PR is still its own gate. This document does not merge them.
+
+## Revision 1
+
+Debate on `cad889f5ca558da902f93a407101bae60d558dc7`: CONSENSUS NOT YET. Report sha256 prefix `9cab4ebb` (`/workspace/atlas-gate/PLAN-DEBATE-atlas-22-cad889f.md` on the Atlas box). This revision is loop 1 of 3. The plan freezes after it. The decision record is `handoff/decisions/r1-r2-pipeline-plan-revision-1.md`.
+
+The six fixes live in the sections below. The manifest row is in `MANIFEST.json`, not in an exclude list. The publish guard, the tree binding, the deploy lookup, and the base fetch are in sections 2 and 3. The Actions-budget precondition is in section 2. P3 and P4 each have their own rollback step and test. The packet witness is in section 2. Phase numbers are P1 through P6 in every section. `MANIFEST.json` leaves git in P5. `handoff/BUILD_STATUS.md` leaves git in P6.
 
 ## Scope fence
 
@@ -280,8 +286,8 @@ A new stdlib module, `scripts/artifact_lifecycle.py`, is the only writer of the 
 | Four `ATLAS_*.html` | P4 | `build.py` during verify, during deploy, and during the release cut |
 | `deploy/cloudflare-edge/generated/PAGE_SHA256.txt` | P4 | The pin line in the gate packet. The release cut writes the same line into the package. |
 | `deploy/cloudflare-edge/src/csp.generated.js` | P4, unless question 1 strikes it | `build.py` writes it at the import path before edge tests and before wrangler. Gitignored, same as `atlas.html`. |
-| `MANIFEST.json` | P6 | Generated into the release package and into the packet. Dev inspect generates it in a temp file. |
-| `handoff/BUILD_STATUS.md` | P7 | Authored notes are one new file per change under `handoff/status/`. The current log is moved once to `handoff/status/archive/BUILD_STATUS.md` and then left alone. The rollup is generated into the package and the packet. |
+| `MANIFEST.json` | P5 | Generated into the release package and into the packet. Dev inspect generates it in a temp file. |
+| `handoff/BUILD_STATUS.md` | P6 | Authored notes are one new file per change under `handoff/status/`. The current log is moved once to `handoff/status/archive/BUILD_STATUS.md` and then left alone. The rollup is generated into the package and the packet. |
 
 `policy.generated.js` stays committed. `atlas.html` stays gitignored.
 
@@ -292,21 +298,21 @@ Both the verify step and the deploy step run `build.py`. They do not share a pag
 Verify (`scripts/verify_page_build.sh`, the CI step that already calls it, and Devin's gate on that same script):
 
 1. Build twice in the worktree. The two `ATLAS_Voice.html` bytes match. The four aliases match. The edge copy matches. Exits 21, 22, 23, 25 stay.
-2. Ask the lifecycle module for the pin line of those bytes. The digest, the byte count, and the `ATLAS_HOME` annotation have to match the build. `ATLAS_HOME_URL` stays unset in this script (`verify_page_build.sh:6`).
+2. Ask the lifecycle module for the pin line of those bytes. The digest, the byte count, and the baked `ATLAS_HOME` origin have to match the build. `ATLAS_HOME_URL` stays unset in this script (`verify_page_build.sh:6`) so CI pins stay comparable. That unset is not a deploy gate.
 3. Write the gate packet outside the worktree. CI uploads that directory as the artifact `gate-packet-<head>`. Devin copies the same directory to the store `gates-<head>`.
-4. From P6, write `MANIFEST.json` into the packet directory by hashing the source list plus the built outputs. From P7, write the status rollup there too.
+4. From P5, write `MANIFEST.json` into the packet directory by hashing the source list plus the built outputs. From P6, write the status rollup there too. The packet directory also gets `SHA256SUMS`, the witness in the section below.
 
 Deploy (`deploy/cloudflare-edge/deploy.sh`, still the only publisher, still ending in `npx --yes wrangler@4 deploy`):
 
 1. Run `build.py` again. Copy `ATLAS_Voice.html` to `src/atlas.html`. A failed build still exits 11 and does not deploy a page that was already there.
 2. Hash the copied page before the edge tests. Run the tests. Hash again. A mismatch exits 14 and does not call wrangler. This is the current "tests can rewrite the page" rule, expressed as two hashes of the page this run built.
-3. On GitHub Actions the workflow downloads `gate-packet-<github.sha>` and sets `ATLAS_GATE_PACKET`. The post-test hash must equal the packet pin, and `packet.head` must equal `github.sha`, and `packet.source` must be `ci`. A missing packet, a wrong head, or a wrong pin exits 14. Wrangler is not called.
-4. A local run with `ATLAS_GATE_PACKET` unset keeps the same-run hash check and prints the pin. It does not claim to be the CI packet. Question 2 asks whether that local path stays.
-5. The worker still receives the page as `src/atlas.html` (`worker.js:3`). No wrangler binding, var, route, or account setting changes. `deploy.yml` still requires `confirm == DEPLOY` and `refs/heads/main`.
+3. On GitHub Actions the workflow downloads `gate-packet-<github.sha>` and sets `ATLAS_GATE_PACKET`. The reducer allows `publish_ok` only when `g_verified_packet` passes: the packet is present, `verified` is true, `version` is 1, `source` is `ci`, `packet.head` equals `github.sha`, and `packet.tree` equals `git rev-parse 'HEAD^{tree}'`. The post-test hash must equal the packet pin. A missing packet, an unverified packet, a wrong tree, or a wrong pin exits 14. Wrangler is not called. `ATLAS_HOME_URL` is not one of these checks.
+4. A local run with no packet does not publish. It may walk `build_ok` → `pin_ok` → `verify_ok` and write `source: local-run`. `publish_ok` is then legal only under `g_verified_packet`. The runner does not relabel that packet `ci`. Question 2 is closed by this rule.
+5. The worker still receives the page as `src/atlas.html` (`worker.js:3`). No wrangler binding, var, route, or account setting changes. `deploy.yml` still requires `confirm == DEPLOY` and `refs/heads/main`. The deploy lookup below is how a later command finds the version this tree published.
 
-Release package, from P4 for the pages and P6 for the manifest:
+Release package, from P4 for the pages and P5 for the manifest:
 
-`python3 scripts/cut_release.py DEST` archives `HEAD` into `DEST`, runs `build.py` there, writes the pin, and (P6) writes `MANIFEST.json` from a directory walk. P7 adds the status rollup before the manifest so the manifest row covers the rollup. `make verify-package PACKAGE=DEST` is unchanged: it checks that directory against the manifest inside it. Package mode does not learn git.
+`python3 scripts/cut_release.py DEST` archives `HEAD` into `DEST`, runs `build.py` there, writes the pin, and (P5) writes `MANIFEST.json` from a directory walk. P6 adds the status rollup before the manifest so the manifest row covers the rollup. `make verify-package PACKAGE=DEST` is unchanged: it checks that directory against the manifest inside it. Package mode does not learn git.
 
 ### Gate packet
 
@@ -315,19 +321,47 @@ The packet is a directory, not a git path. `packet.json` version 1:
 | Field | Meaning |
 |---|---|
 | `version` | `1`. Any other value is an illegal transition. The deploy step does not publish. |
+| `verified` | True only after `verify_ok`. A packet loaded from disk starts unverified until this checkout recomputes it. |
 | `head` | `git rev-parse HEAD`, forty hex digits. |
-| `base` | The commit the page diff was built from. CI passes `github.event.pull_request.base.sha` on a pull request and `github.event.before` on a push. The script fetches that one SHA. It does not set `fetch-depth: 0`. |
-| `source` | `ci` or `local-run`. |
+| `tree` | `git rev-parse 'HEAD^{tree}'`, forty hex digits. This is the binding. A commit SHA alone is not enough. |
+| `base` | The commit the page diff was built from. See the base fetch below. |
+| `base_tree` | `git rev-parse "${BASE_SHA}^{tree}"`. |
+| `source` | `ci` or `local-run`. Nothing rewrites one into the other. |
 | `pin` | The pin line, two spaces between fields, the same shape as today's file. |
 | `page_sha256` | Field 1 of `pin`. |
 | `bytes` | Field 2. |
-| `atlas_home` | The origin `build.py` printed. |
-| `atlas_home_url` | `unset`, or the override value. |
+| `csp_sha256` | sha256 of the `csp.generated.js` this build wrote. |
+| `atlas_home` | The origin `build.py` printed. Recorded. Not a deploy gate. |
+| `atlas_home_url` | The value seen at build time, or `unset`. Recorded. Not a deploy gate. |
 | `page_diff` | `page.diff`, or null when this commit is the base. |
-| `manifest_sha256` | Null until P6. |
-| `status_rollup_sha256` | Null until P7. |
+| `manifest_sha256` | Null until P5. |
+| `status_rollup_sha256` | Null until P6. |
 
-`page.diff` is `diff -u` between `ATLAS_Voice.html` built at `base` and `ATLAS_Voice.html` built at `head`. The base build uses a temp archive, the same isolation as `tests/test_build_home.py:24-37`. No new output flag on `build.py`.
+`page.diff` is `diff -u` between `ATLAS_Voice.html` built at `base_tree` and `ATLAS_Voice.html` built at `tree`. The base build uses a temp archive, the same isolation as `tests/test_build_home.py:24-37`. No new output flag on `build.py`.
+
+### Base fetch
+
+The primary checkout stays at the workflow's default `fetch-depth`. The verify script fetches an advertised branch ref, then checks that the base commit is in that history:
+
+```sh
+# pull_request: GITHUB_BASE_REF is github.base_ref, GITHUB_BASE_SHA is github.event.pull_request.base.sha
+# push: GITHUB_BASE_REF is the branch name, GITHUB_BASE_SHA is github.event.before
+git fetch --no-tags origin "refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+git cat-file -e "${GITHUB_BASE_SHA}^{commit}" || exit 28
+git archive "${GITHUB_BASE_SHA}" | tar -x -C "$BASE_DIR"
+```
+
+`refs/heads/<branch>` is a ref the server advertises. The script does not ask for an unadvertised SHA, which GitHub rejects, and it does not set `fetch-depth: 0`. Exit 28 means the base commit is not on that branch. The script writes no packet and does not publish. It does not raise `timeout-minutes` and it does not start a second job.
+
+### While Actions cannot run
+
+Pull-request run `44829213197` on `cad889f5` did not start. The job annotation says an Actions budget is preventing further use. `runner_id` is 0, the step list is empty, and the log blob is 404. The push run beside it has the same shape. The pytest failure recorded in the decision was not observed in Actions, because the job never started.
+
+Precondition: `publish_ok` requires a verified packet, and a `source: ci` packet exists only after the verify job runs. While Actions cannot start, that packet does not exist. `deploy.yml` does not publish. The runner exits 14. Wrangler is not called.
+
+Fallback, for review only: run the same verify commands on the exact tree outside Actions. The packet's `source` is `local-run`. Store it under `gates-<head>` with `SHA256SUMS`. Devin can recompute it. Nothing in the fallback rewrites `source` to `ci`.
+
+The fallback does not rerun the workflow, does not edit the Actions budget, does not raise `timeout-minutes`, does not call a paid provider, and does not call wrangler. A green local packet is not a CI pass and is not a publish.
 
 The current page is thousands of lines and line 3 of `ATLAS_Voice.html` is one CSS line. A one-token CSS change makes a large hunk. The packet still carries that diff, because that is the rendered page, and it carries the two pins so a reviewer can see whether the bytes moved before opening the hunk. This plan does not add a pretty-printer.
 
@@ -341,8 +375,10 @@ CI, on the verify step:
 - Four aliases match (exit 25).
 - Edge copy matches (exit 22).
 - Pin digest equals `sha256sum` of the built page. The compare stays a bare `test "$actual" = "$expected"` so the existing mutant still applies.
-- Byte count and `ATLAS_HOME` annotation match. Those are new checks beside the digest compare, not a replacement of it.
+- Byte count matches. The `ATLAS_HOME=` field equals the origin baked into the page. `ATLAS_HOME_URL` is stored on the pin line and is not a reason to fail this step. These checks sit beside the digest compare. They do not replace it.
 - `packet.head` equals `git rev-parse HEAD` of the checkout. A mismatch exits 26.
+- `packet.tree` equals `git rev-parse 'HEAD^{tree}'`. A mismatch exits 27.
+- `SHA256SUMS` in the packet directory hashes canonical `packet.json`. A missing line fails the witness check below.
 - After P4, a `PAGE_SHA256.txt` that exists and disagrees exits 14 on deploy and fails verify. Absence is the normal case. A leftover local file fails closed.
 
 Devin's exact-head gate, on that same SHA:
@@ -350,12 +386,46 @@ Devin's exact-head gate, on that same SHA:
 - Check out the SHA. Re-run the verify script. Recompute the pin from the page that checkout just built.
 - Fail if the recomputed pin differs from `packet.json`.
 - Fail if `packet.head` differs from the checkout SHA.
-- Fail if `packet.version` is not 1.
+- Fail if `packet.tree` differs from `git rev-parse 'HEAD^{tree}'`.
+- Fail if `packet.version` is not 1 or `packet.verified` is not true after the recompute.
+- Fail `g_packet_witness` when the `SHA256SUMS` line for `packet.json` does not match the bytes just written.
 - Keep the mutants that already have to fail: hash compare replaced with `true`, `exit 0` immediately after `cd`, `build.py` writing `ATLAS_Voice.moved.html`, digest assert removed while the length assert remains (`handoff/decisions/page-pin-refresh.md:92-99`).
 - From P4, also fail if any generated path in the cutover set is tracked by `git ls-files`.
 - Write the result to `gates-<head>`. Do not commit the pin, the page, or the counts.
 
 `check_handoff.py` on a received package still checks the pin file as a manifest row. That row is produced by the cut, and it is checked because the bytes are in the package, which is the current `manifest-content` rule.
+
+### Packet witness
+
+From P4, `csp.generated.js` and `PAGE_SHA256.txt` are not in git. The packet holds `csp_sha256` and the pin. The witness that this packet is the one that was verified is the sha256 of the canonical `packet.json` bytes. That digest is stored outside the packet, because a hash inside the file it hashes cannot match.
+
+- `SHA256SUMS` in the packet directory. One line, two spaces, name `packet.json`. Written by `verify_ok`.
+- The deploy record field `packet_sha256`. The artifact is `deploy-record-<tree>`. Once a tree is published, the same object is the new path `handoff/deploy-records/<tree>.json`. That path is one file per tree. It is not a shared file every PR edits.
+
+`g_packet_witness` checks:
+
+1. `sha256sum packet.json` equals the `SHA256SUMS` line.
+2. When a deploy record exists, its `packet_sha256` equals that digest and its `tree` equals `packet.tree`. A record for another tree is not loaded.
+3. The `csp.generated.js` just built hashes to `packet.csp_sha256`, and to `deploy-record.csp_sha256` when the record exists.
+4. The page just built hashes to `packet.page_sha256`.
+
+A publish with no `SHA256SUMS` line and no deploy record is `IllegalTransition`. The witness is not a committed copy of the pin or of `csp.generated.js`.
+
+### Deploy lookup
+
+The reducer does not call the network. The shell runner does, and only after `publish_ok` is legal.
+
+The worker name is `atlas` (`deploy/cloudflare-edge/wrangler.jsonc`). The runner calls `npx --yes wrangler@4 deploy` and passes `--message "atlas-tree=<tree> atlas-head=<head> atlas-packet=<packet_sha256>"`. The message is the version annotation. No wrangler.jsonc key, binding, route, var, or account setting changes. If wrangler@4 rejects `--message`, that implementation PR stops and reports. It does not invent a second annotation channel and it does not change the account.
+
+On exit 0 the runner reads `Current Version ID` from wrangler stdout. The deploy record stores that id, the previous id, the tree, the head, `packet_sha256`, `page_sha256`, and `csp_sha256`. Lookup of a tree that was already published is:
+
+```sh
+npx --yes wrangler@4 deployments list --name atlas
+```
+
+The deployment for a tree is the newest version whose message contains `atlas-tree=<tree>`. The live deployment is the newest version in the list. A tree with no matching message is not live. The list command does not deploy.
+
+Rollback of the live page uses that list. The previous version is the entry before the one whose message names this tree. The runner calls `npx --yes wrangler@4 rollback <previous-version-id>`. It does not deploy a rebuilt page to undo a page. A git revert of `deploy.sh` does not change the Worker. P3's rollback test stubs the list and expects `wrangler rollback <previous-id>` and no new `wrangler deploy`.
 
 ### How a reviewer sees a page change
 
@@ -365,17 +435,17 @@ The PR diff shows `src/` and `build.py`. The Actions artifact `gate-packet-<head
 
 This is the machine in `scripts/artifact_lifecycle.py`. It follows `docs/STATE-MACHINE-STANDARD.md`: one state, named events, one pure `transition(state, event) -> state | IllegalTransition`, guards named and tested, side effects only in the shell runners.
 
-The machine describes one commit's artifacts. An `edit` event always returns to `SourceChanged` and drops the pin. A packet whose `head` is a different commit is not loaded.
+The machine describes one tree's artifacts. `tree` is `git rev-parse 'HEAD^{tree}'`. An `edit` event always returns to `SourceChanged` and drops the pin and the packet. A packet whose `tree` is a different tree is not loaded. The reducer refuses `publish_ok` unless the current state is `Verified` and `g_verified_packet` passes. A state that is named `Verified` and has no packet is not a legal source of `publish_ok`.
 
 ### States
 
 | State | Data | Meaning |
 |---|---|---|
-| `SourceChanged` | `head` | This commit has no accepted build. |
-| `Built` | `head`, `page_sha256`, `bytes`, `atlas_home` | `build.py` exited 0, the two builds match, the four aliases match. |
-| `Pinned` | `Built` plus `pin` | The pin line was computed from those bytes and names this `head`. |
-| `Verified` | `Pinned` plus `packet_version`, `source` | The verify step accepted the packet for this `head`. |
-| `Deployed` | `Verified` | Wrangler was called with a page whose post-test hash equals this pin. |
+| `SourceChanged` | `head`, `tree` | This tree has no accepted build. |
+| `Built` | `head`, `tree`, `page_sha256`, `bytes`, `csp_sha256`, `atlas_home` | `build.py` exited 0, the two builds match, the four aliases match. |
+| `Pinned` | `Built` plus `pin` | The pin line was computed from those bytes and names this `tree`. |
+| `Verified` | `Pinned` plus the packet (`version`, `verified`, `source`, `tree`) | `verify_ok` accepted the packet for this `tree`. `verified` is true only in this state. |
+| `Deployed` | `Verified` plus `deployment_id` | Wrangler was called with a page whose post-test hash equals this pin, and the lookup can name that version. |
 
 ### Events
 
@@ -395,9 +465,13 @@ The machine describes one commit's artifacts. An `edit` event always returns to 
 | `g_double_build` | The second build's bytes equal the first, and `build.py` wrote `ATLAS_Voice.html`. | Exit 21 or 23. |
 | `g_four_aliases` | The four alias byte strings are equal. | Exit 25. |
 | `g_same_head` | The state's `head` equals the checkout `git rev-parse HEAD`. | A packet or a pin from another commit. |
+| `g_same_tree` | The state's `tree` and `packet.tree`, when a packet is present, equal `git rev-parse 'HEAD^{tree}'`. | Exit 27. A packet bound to another tree. |
 | `g_pin_matches_bytes` | Field 1 equals sha256 of the page and field 2 equals the byte length. | Digest or length mismatch. |
-| `g_home_annotation` | The `ATLAS_HOME=` field equals the origin `build.py` printed, and `ATLAS_HOME_URL=` is `unset` or that override. | A pin line that names a different origin than the page. |
+| `g_home_annotation` | The `ATLAS_HOME=` field equals the origin baked into the page. The `ATLAS_HOME_URL` token is recorded and is not a deploy gate. | A pin whose origin disagrees with the page that was hashed. Setting or unsetting `ATLAS_HOME_URL` does not by itself refuse publish when the page hash matches the packet. |
 | `g_packet_head` | `packet.head` equals the checkout and `packet.version` is 1. | Exit 26, or an unknown version. |
+| `g_verified_packet` | `packet` is present, `verified` is true, `version` is 1, `g_packet_head`, and `g_same_tree`. | `publish_ok` with no packet, an unverified packet, or a packet for another tree. The reducer returns `IllegalTransition`. |
+| `g_packet_witness` | The event carries the sha256 of the canonical packet bytes, and that digest equals the hash of the packet object. The runner writes the same line to `SHA256SUMS` as the side effect. A later load fails if the line is missing or differs. When a deploy record exists, its `packet_sha256` equals that digest. The rebuilt `csp.generated.js` hashes to `packet.csp_sha256`. | A packet with no witness, or a witness for a different tree. |
+| `g_deploy_lookup` | The runner can name the Worker version for this tree, or it is recording the id from wrangler stdout on this publish. | A publish that cannot be found later. State stays `Verified`. |
 | `g_ci_packet` | GitHub deploy sees `source == ci`. | A `local-run` packet on `deploy.yml`. |
 | `g_main_ref` | `github.ref == refs/heads/main`. | The existing `deploy.yml:15` condition. |
 | `g_confirm_deploy` | `confirm == DEPLOY`. | The existing `deploy.yml:15` condition. |
@@ -413,19 +487,19 @@ The machine describes one commit's artifacts. An `edit` event always returns to 
 | `SourceChanged` | `edit` | | `SourceChanged` | none |
 | `SourceChanged` | `build_ok` | `g_double_build` and `g_four_aliases` | `Built` | pages and `csp.generated.js` are on disk |
 | `SourceChanged` | `build_fail` | | `SourceChanged` | log the build exit |
-| `Built` | `pin_ok` | `g_same_head` and `g_pin_matches_bytes` and `g_home_annotation` | `Pinned` | the pin line exists in memory |
+| `Built` | `pin_ok` | `g_same_head` and `g_same_tree` and `g_pin_matches_bytes` and `g_home_annotation` | `Pinned` | the pin line exists in memory |
 | `Built` | `pin_fail` | | `Built` | log |
 | `Built` | `edit` | | `SourceChanged` | drop the build |
-| `Pinned` | `verify_ok` | `g_packet_head` and `g_same_head` | `Verified` | write the packet directory |
+| `Pinned` | `verify_ok` | `g_packet_head` and `g_same_head` and `g_same_tree` and `g_packet_witness` | `Verified` | write the packet directory and `SHA256SUMS`. `verified` becomes true |
 | `Pinned` | `verify_fail` | | `Pinned` | log, do not upload a passing artifact |
 | `Pinned` | `edit` | | `SourceChanged` | the old packet is not reused |
-| `Verified` | `deploy_request` | `g_main_ref` and `g_confirm_deploy` and `g_packet_head` and `g_ci_packet` | `Verified` | start `deploy.sh`. State stays until publish. |
-| `Verified` | `publish_ok` | `g_post_test_hash` and `g_same_head` | `Deployed` | wrangler |
+| `Verified` | `deploy_request` | `g_main_ref` and `g_confirm_deploy` and `g_verified_packet` and `g_ci_packet` | `Verified` | start `deploy.sh`. State stays until publish. |
+| `Verified` | `publish_ok` | `g_verified_packet` and `g_post_test_hash` and `g_same_tree` and `g_deploy_lookup` | `Deployed` | wrangler, then write the deploy record |
 | `Verified` | `publish_refused` | | `Verified` | exit 14, no wrangler |
 | `Verified` | `edit` | | `SourceChanged` | do not publish this pin |
 | `Deployed` | `edit` | | `SourceChanged` | a later commit is not deployed |
 
-Anything not in this table is illegal and is logged. That includes `publish_ok` from `SourceChanged`, `Built`, or `Pinned`; `verify_ok` from `Built`; `pin_ok` from `SourceChanged`; `deploy_request` from `Pinned`. A local deploy that has no CI packet still walks `build_ok` → `pin_ok` → `verify_ok` with `source: local-run` inside that one process, and then `publish_ok` under `g_post_test_hash`. It does not jump to `Deployed`.
+Anything not in this table is illegal and is logged. That includes `publish_ok` from `SourceChanged`, `Built`, or `Pinned`; `publish_ok` from `Verified` when `packet` is missing, `verified` is false, or `packet.tree` differs; `verify_ok` from `Built`; `pin_ok` from `SourceChanged`; `deploy_request` from `Pinned`. There is no publish transition without a verified packet. A local deploy with no packet is `publish_refused`. A local deploy that should publish first walks `build_ok` → `pin_ok` → `verify_ok` and writes `source: local-run` with `verified: true` and `tree` equal to the checkout tree. Only then may `publish_ok` run, and only under `g_verified_packet`. It does not jump to `Deployed`. GitHub `deploy.yml` still requires `source == ci`. A `local-run` packet cannot be relabeled `ci`.
 
 ```mermaid
 stateDiagram-v2
@@ -448,7 +522,7 @@ stateDiagram-v2
 
 ### Persistence
 
-The packet is version 1. Loading version 0, a missing version, or a future version returns `IllegalTransition` and does not deploy. The committed pin file is not a packet. Until P4, the verify script still compares it. From P4, `g_stale_pin_file` is the only reading of it. The packet is not written back into the commit.
+The packet is version 1 and is bound to `tree`. Loading version 0, a missing version, a future version, or a packet with no `tree` returns `IllegalTransition` and does not deploy. The committed pin file is not a packet and is not a witness. Until P4, the verify script still compares it. From P4, `g_stale_pin_file` is the only reading of it. The packet bytes are not written back into the commit. The witness that is written down is the deploy record's `packet_sha256`, and `SHA256SUMS` beside the packet.
 
 ## 4. Migration sequence
 
@@ -466,6 +540,7 @@ Done when:
 - Every legal row is accepted. Every other `(state, event)` pair is `IllegalTransition`. The test builds that cross product.
 - Each guard has an allow case and a deny case.
 - The current pin line in `PAGE_SHA256.txt` parses, and the writer emits that same line for those bytes, that origin, and `ATLAS_HOME_URL=unset`.
+- `publish_ok` is `IllegalTransition` when the packet is missing, `verified` is false, or `packet.tree` is not the checkout tree, including when the state name is `Verified`.
 - An unknown packet version is `IllegalTransition`.
 - `git diff` of `build.py`, the two shell scripts, and `check_handoff.py` is empty.
 
@@ -479,18 +554,23 @@ TEST COMMAND:
 python3 -m pytest tests/test_artifact_lifecycle.py::test_publish_from_source_changed_is_illegal -q
 ```
 
+Risk: low. The module has no caller in this PR. A bad transition cannot publish.
+
 Rollback: revert the PR to its parent on `main`. No data migration.
 
 ### P2. Gate packet, committed files still decide
 
 `scripts/verify_page_build.sh` keeps exits 21–25 and the committed-page compare (exit 24). After those pass, it writes the packet directory given by `ATLAS_GATE_PACKET`. CI sets that variable and uploads `gate-packet-<head>`. `deploy.sh` is not edited.
 
-The page diff fetches only `packet.base`. Checkout `fetch-depth` stays the workflow default.
+The page diff uses the base fetch in section 2. Checkout `fetch-depth` stays the workflow default. A missing base commit exits 28 and writes no packet.
 
 Done when:
 
-- A packet written for this checkout has `head` equal to `git rev-parse HEAD` and `pin` equal to the committed pin line.
+- A packet written for this checkout has `head` equal to `git rev-parse HEAD`, `tree` equal to `git rev-parse 'HEAD^{tree}'`, and `pin` equal to the committed pin line.
+- `SHA256SUMS` in that directory hashes `packet.json`.
 - A packet whose `head` is forty `a`s exits 26.
+- A packet whose `tree` is forty `b`s exits 27.
+- The base fetch exits 28 when `git cat-file -e` cannot see `BASE_SHA`, and the packet directory is absent.
 - `page.diff` is empty when the base SHA equals `HEAD`.
 - The existing `node --test tests/page-pin.test.js` stays green, including the three mutants.
 - Deploy is untouched. `bash deploy/cloudflare-edge/deploy.sh` is not run against Cloudflare.
@@ -505,11 +585,15 @@ TEST COMMAND:
 python3 -m pytest tests/test_gate_packet.py::test_packet_head_must_equal_checkout -q
 ```
 
-Rollback: revert the PR. The committed pin is still the verify witness, which it was before this PR.
+Risk: low. `deploy.sh` is not edited. A packet for the wrong tree exits 27 and is not uploaded as a passing artifact.
+
+Rollback: revert the PR. The committed pin is still the verify witness, which it was before this PR. The packet directory is not in git, so the revert has nothing to restore there.
 
 ### P3. Deploy binds to the packet
 
-HIGH. This is the deploy path. `deploy.sh` still reads the committed pin, and it also reads the packet when `ATLAS_GATE_PACKET` is set or `GITHUB_ACTIONS` is `true`. Both witnesses must agree. A missing packet on GitHub Actions exits 14, logs stage `hash`, and does not call wrangler. A local run with the variable unset keeps today's same-run behavior and the committed pin.
+HIGH. This is the deploy path. `deploy.sh` reads the packet whenever `GITHUB_ACTIONS` is `true` or `ATLAS_GATE_PACKET` is set. On GitHub the packet is required. A missing packet, a packet that is not verified, a wrong tree, or a wrong pin exits 14, logs stage `hash`, and does not call wrangler. Until P4 the committed pin is still read. A one-nibble difference between that pin and the packet pin exits 14. `ATLAS_HOME_URL` is not a gate. A deploy whose built page hash equals the packet pin reaches the stub when the variable is set, unset, or different from the annotation token. If the variable changes the baked page, the hash changes, and the pin mismatch is the refusal.
+
+The live page can be rolled back without reverting P4. After a publish, the deploy lookup finds the version for this tree and `wrangler rollback` returns the previous version. The rollback test stubs that list. This PR does not call the network.
 
 `deploy.yml` downloads the artifact for `github.sha` and exports `ATLAS_GATE_PACKET`. It does not change `timeout-minutes`, `environment`, the `confirm` input, the ref condition, or the secret names. `wrangler.jsonc` is not edited.
 
@@ -517,10 +601,12 @@ Done when:
 
 - The existing `page-guard.test.js` deploy tests stay at exits 11, 14, and 0 with the stub.
 - GitHub Actions with no packet exits 14 and the stub log does not contain `wrangler@4 deploy`.
-- A packet whose pin matches the page and whose `head` matches the checkout reaches the stub once.
+- A packet whose pin matches the page, whose `head` matches the checkout, and whose `tree` matches `HEAD^{tree}` reaches the stub once.
+- `ATLAS_HOME_URL=https://atlas.tony-walteur.workers.dev` with a page hash that matches the packet pin reaches the stub once. The variable alone does not exit 14.
 - A packet with `source: local-run` exits 14 on the GitHub path.
 - The committed pin and the packet pin must be equal. A one-nibble difference exits 14.
-- No live `wrangler deploy`. `ATLAS_DEPLOY_STUB` covers the new test. The Cloudflare account is not contacted.
+- The rollback test's stub log contains `wrangler rollback` for the previous version id and does not contain a second `wrangler deploy`.
+- No live `wrangler deploy`. `ATLAS_DEPLOY_STUB` covers the new tests. The Cloudflare account is not contacted.
 
 Failing test first: `deploy/cloudflare-edge/test/page-guard.test.js` test name `deploy.sh on GitHub Actions refuses a missing packet and does not deploy`
 
@@ -532,7 +618,21 @@ TEST COMMAND:
 node --test --test-name-pattern "missing packet" deploy/cloudflare-edge/test/page-guard.test.js
 ```
 
-Rollback: revert the PR. `deploy.sh` returns to reading only the committed pin. No Cloudflare state changed, so there is no remote rollback.
+Rollback of P3 is independent of P4. Revert only the P3 commit. `deploy.sh` returns to reading the committed pin and does not require a packet. P4's gitignore and deletions, if they have already landed, stay as they are. Reverting P3 does not restore or remove the generated files.
+
+If that P3 tree was published, roll back the live page. Lookup the version whose message is `atlas-tree=<P3 tree>`. Call `wrangler rollback` with the previous version id from that list. Do not deploy a new build to undo the page. The Cloudflare account settings are not edited.
+
+Rollback test: `deploy/cloudflare-edge/test/page-guard.test.js` test name `P3 rollback restores pin-only deploy and rolls the live page back to the previous version`
+
+The test is two fixtures. The reverted `deploy.sh` reaches the stub when `ATLAS_HOME_URL` is set and the page hash matches the committed pin. The rollback fixture's stub log contains `wrangler rollback <previous-id>` and does not contain a new `wrangler deploy`. On the red commit of P3 the rollback command does not exist, so this test fails. It is not the missing-packet test, and it does not import P4.
+
+TEST COMMAND:
+
+```sh
+node --test --test-name-pattern "P3 rollback" deploy/cloudflare-edge/test/page-guard.test.js
+```
+
+Risk: high. A rollback that deploys a fresh build instead of `wrangler rollback` can publish a third page. The test forbids a second `wrangler deploy` in the stub log.
 
 ### P4. Stop committing the pages, the pin, and `csp.generated.js`
 
@@ -544,7 +644,7 @@ HIGH. The committed witnesses leave git. Verify and deploy already know how to r
 
 `deploy.sh` stops treating a pin file as the authority. It hashes before the tests and after the tests. On GitHub Actions the post-test hash must equal the packet. A pin file that exists and disagrees still exits 14.
 
-`scripts/cut_release.py DEST` archives `HEAD`, runs `build.py` in the archive, and writes the pin line into the destination. `make verify-package` on that destination passes `html-aliases`, `logo`, `clean-build`, and `clean-build-byte-match`. The destination's manifest is still written with the existing `--write-manifest` only if the destination is a checkout; until P6 the cut's package-mode check is the four aliases and the logo, and `manifest-content` runs only when the caller passes a manifest. P6 makes the manifest part of the cut. The gap is explicit: between P4 and P6 a full `check_handoff.py` package needs a manifest produced beside the cut, and P6 is the PR that closes that.
+`scripts/cut_release.py DEST` archives `HEAD`, runs `build.py` in the archive, and writes the pin line into the destination. `make verify-package` on that destination passes `html-aliases`, `logo`, `clean-build`, and `clean-build-byte-match`. The destination's manifest is still written with the existing `--write-manifest` only if the destination is a checkout; until P5 the cut's package-mode check is the four aliases and the logo, and `manifest-content` runs only when the caller passes a manifest. P5 makes the manifest part of the cut. The gap is explicit: between P4 and P5 a full `check_handoff.py` package needs a manifest produced beside the cut, and P5 is the PR that closes that. The packet witness from section 2 is required in this PR, because the pin and `csp.generated.js` leave git here. `verify_ok` writes `SHA256SUMS`. A missing witness fails `g_packet_witness`.
 
 `scripts/doctor.py:77` stops requiring the compiled HTML. It still requires `build.py`, `src/shell.html`, and `assets/Mantu.svg`.
 
@@ -561,7 +661,8 @@ Done when:
 - `bash scripts/verify_page_build.sh` exits 0 on this head after the files are absent from git, and the packet pin equals the built page.
 - `make test` and the CI order still build before the suites that import the HTML.
 - `node --test deploy/cloudflare-edge/test/page-guard.test.js` passes, including the missing-packet test from P3.
-- `python3 scripts/cut_release.py DEST && python3 scripts/check_handoff.py DEST --no-rebuild` reports `PASS html-aliases` and `PASS logo`. Full manifest pass is P6.
+- `python3 scripts/cut_release.py DEST && python3 scripts/check_handoff.py DEST --no-rebuild` reports `PASS html-aliases` and `PASS logo`. Full manifest pass is P5.
+- `SHA256SUMS` hashes `packet.json`, and the rebuilt `csp.generated.js` hashes to `packet.csp_sha256`.
 - No live deploy.
 
 Failing test first: `tests/test_handoff.py::test_tracked_page_is_refused`
@@ -574,7 +675,21 @@ TEST COMMAND:
 python3 -m pytest tests/test_handoff.py::test_tracked_page_is_refused -q
 ```
 
-Rollback: revert the PR. That restores the four files, the pin, and `csp.generated.js` from the parent commit. `deploy.sh` returns to the P3 behavior, which still knows how to read a committed pin. No Cloudflare state changed.
+Rollback of P4 is independent of P3. Revert only the P4 commit. That restores the four HTML files, `PAGE_SHA256.txt`, and `csp.generated.js` from the parent blobs and removes those paths from `.gitignore`. P3's packet requirement in `deploy.sh` stays. A GitHub deploy with no packet still exits 14.
+
+P4 does not publish, so its revert does not by itself call wrangler. If a later publish used the P4 tree and must be undone, that live-page rollback is the P3 step, addressed at the published tree. It does not require reverting P3's code.
+
+Rollback test: `tests/test_handoff.py::test_p4_revert_restores_tracked_pages`
+
+The test builds a fixture with the generated paths untracked, applies the parent blobs of those paths, and expects `git ls-files` to list the four aliases, the pin, and `csp.generated.js`. A second assertion runs the P3 missing-packet case against that restored tree and still expects exit 14. Reverting P4 does not drop the P3 guard. On the red commit of P4 the revert helper does not exist, so the test fails. The test file is new in P4's red commit and is not the P3 test file.
+
+TEST COMMAND:
+
+```sh
+python3 -m pytest tests/test_handoff.py::test_p4_revert_restores_tracked_pages -q
+```
+
+Risk: high. Reverting P4 and P3 together would drop the packet guard and put the generated files back in one step. The test keeps the missing-packet refusal after the P4 revert, so the two reverts stay separable.
 
 ### P5. Stop committing `MANIFEST.json`
 
@@ -607,7 +722,9 @@ TEST COMMAND:
 python3 -m pytest tests/test_handoff.py::test_tracked_manifest_is_refused -q
 ```
 
-Rollback: revert the PR. `MANIFEST.json` returns from the parent. Package mode was not changed, so already-cut packages still verify.
+Risk: medium. A dev inspect that starts requiring a git checkout would make a received package fail. Package mode stays the directory walk. The synthetic package tests are the guard.
+
+Rollback: revert the PR. `MANIFEST.json` returns from the parent. Package mode was not changed, so already-cut packages still verify. This revert does not touch P4's generated files or P3's `deploy.sh`.
 
 ### P6. Stop committing the shared status log
 
@@ -637,7 +754,9 @@ TEST COMMAND:
 python3 -m pytest tests/test_build_status.py::test_tracked_build_status_is_refused -q
 ```
 
-Rollback: revert the PR. `git mv` reverses with the revert. Status notes that landed as new files stay. They do not depend on the rollup.
+Risk: low. The archive is frozen. New notes are new files. The rollup concatenates and does not rewrite history.
+
+Rollback: revert the PR. `git mv` reverses with the revert. Status notes that landed as new files stay. They do not depend on the rollup. This revert does not touch P5's manifest change.
 
 ## 5. Risks, rollback, and the two gates
 
@@ -645,9 +764,13 @@ Rollback: revert the PR. `git mv` reverses with the revert. Status notes that la
 
 | ID | Risk | Where | What the PR does |
 |---|---|---|---|
-| HIGH | Deploy publishes a page the verify step did not pin, or blocks every deploy. | P3 and P4, `deploy.sh` | Fail closed. Missing packet, wrong head, wrong pin, and a post-test hash change all exit 14 before wrangler. The stub tests cover each one. A compare replaced with `true` is still a failing mutant. |
-| HIGH | P4 removes the pin file the current deploy trusts, before the packet path is proven. | P4 | P3 lands first and keeps the committed pin as a second witness. P4 deletes it only after that witness and the packet have to agree. |
+| HIGH | Deploy publishes a page the verify step did not pin. | P3 and P4, `deploy.sh` | `publish_ok` requires `g_verified_packet`. Missing packet, wrong tree, wrong pin, and a post-test hash change all exit 14 before wrangler. The stub tests cover each one. A compare replaced with `true` is still a failing mutant. |
+| HIGH | P3 blocks a deploy because `ATLAS_HOME_URL` is set. | P3 | The variable is recorded and is not a gate. The page hash is the gate. The done-when case with the variable set still reaches the stub when the hash matches. |
+| HIGH | A published page cannot be taken off the live worker. | P3 | Deploy lookup finds `atlas-tree=<tree>`. Rollback is `wrangler rollback` of the previous version id. The P3 rollback test stubs that and forbids a second deploy. |
+| HIGH | P4 removes the pin file the current deploy trusts, before the packet path is proven. | P4 | P3 lands first and keeps the committed pin as a second witness. P4 deletes it only after that witness and the packet have to agree. P4's revert does not revert P3. |
+| HIGH | Actions cannot start, so there is no CI packet. Run `44829213197`. | Any publish while the budget holds | No `source: ci` packet, so no publish. The local fallback is `local-run` only. No rerun, no budget edit, no spend. |
 | MEDIUM | Package mode starts requiring a git checkout, and a received release stops verifying. | P5 | Package mode stays the directory walk. The new git checks run only behind `--dev-git-index`. The synthetic package tests are the guard. |
+| MEDIUM | `csp.generated.js` and the pin leave git with nothing to recompute against. | P4 | `g_packet_witness` compares `SHA256SUMS`, the deploy record's `packet_sha256`, `packet.csp_sha256`, and the page hash. |
 | MEDIUM | A suite imports HTML before `build.py` has run. | P4 | `make test`, `make test-ui`, and CI already build first. The PR does not reorder them and does not add a build call inside each test. |
 | MEDIUM | `test_git_archive_of_head_passes_check_handoff` is edited and the edit drops a real check. | P4 and P5 | The red commit adds a new test and does not edit the old one. The fix retargets the old test at `cut_release.py` and the PR says that. The cut package still has to pass `manifest-content`, `html-aliases`, and `clean-build-byte-match`. |
 | LOW | A reviewer looks only at the git diff and misses a rendered change. | P2 | The packet carries `page.diff` and both pins. CI fails the packet step when the base SHA cannot be fetched. |
@@ -657,15 +780,15 @@ Rollback: revert the PR. `git mv` reverses with the revert. Status notes that la
 
 ### Rollback
 
-Each PR reverts to its parent. P1–P3 have no committed generated output to restore. P3's revert restores a `deploy.sh` that reads the pin file, which is still in git at that point. P4's revert restores the four HTML files, the pin, and `csp.generated.js` from the parent blobs. P5's revert restores `MANIFEST.json`. P6's revert restores `handoff/BUILD_STATUS.md` at its old path. None of these reverts rewrite Cloudflare, because none of the PRs deploy.
+Each PR's code reverts to its parent. P3's revert does not revert P4. P4's revert does not revert P3. P1 and P2 have no Worker version to roll back. P3's code revert restores pin-only `deploy.sh`. If a P3 tree was published, the live page rolls back by `wrangler rollback` to the previous version id from the deploy lookup. The P3 rollback test stubs that call. P4's code revert restores the four HTML files, the pin, and `csp.generated.js` from the parent blobs and leaves P3's packet guard in place. P5's revert restores `MANIFEST.json`. P6's revert restores `handoff/BUILD_STATUS.md` at its old path. No PR in this sequence edits a Cloudflare setting. The implementation PRs do not run a live deploy. The rollback command is specified so a later publish can be undone, and the test uses the stub.
 
 ### What Devin's gate changes
 
 | When | The gate gains | The gate keeps |
 |---|---|---|
-| P2 | Read `packet.json`. Fail if `head` differs from the checkout SHA. Fail if `version` is not 1. Store the packet, including `page.diff`, under `gates-<head>`. | `verify_page_build.sh`, the mutants, counts kept out of git. |
-| P3 | On a deploy review, fail the packet if `source` is not `ci` or if the pin disagrees with the page the gate just built. The gate does not call wrangler. | Tony's `DEPLOY` confirmation stays the human publish switch. |
-| P4 | Fail if `git ls-files` lists a page, the pin, or `csp.generated.js`. The committed-snapshot compare (exit 24) is gone, so the mutant for "build writes the file somewhere else" is the missing-file exit 23, which stays. | Recompute the pin. Do not write it back into the commit. |
+| P2 | Read `packet.json`. Fail if `head` or `tree` differs from the checkout. Fail if `version` is not 1. Fail if `SHA256SUMS` does not hash `packet.json`. Store the packet, including `page.diff`, under `gates-<head>`. | `verify_page_build.sh`, the mutants, counts kept out of git. |
+| P3 | On a deploy review, fail the packet if `source` is not `ci`, if `verified` is not true, if `tree` disagrees, or if the pin disagrees with the page the gate just built. Do not fail because `ATLAS_HOME_URL` is set. The gate does not call wrangler. | Tony's `DEPLOY` confirmation stays the human publish switch. The live-page rollback is the lookup plus `wrangler rollback`, and it is stubbed. |
+| P4 | Fail if `git ls-files` lists a page, the pin, or `csp.generated.js`. Fail `g_packet_witness` when the packet hash or `csp_sha256` does not match. The committed-snapshot compare (exit 24) is gone, so the mutant for "build writes the file somewhere else" is the missing-file exit 23, which stays. | Recompute the pin. Do not write the pin or `csp.generated.js` back into the commit. The witness is `SHA256SUMS` and the deploy record. |
 | P5 | Fail if `MANIFEST.json` is tracked. Recompute `manifest_sha256` and compare it to the packet. | Package-mode review of a cut directory still uses `check_handoff.py` with no git flag. |
 | P6 | Fail if `handoff/BUILD_STATUS.md` is tracked. The per-change file is the authored note the gate reads. | The rollup hash in the packet has to match a fresh concatenation. |
 
@@ -696,7 +819,7 @@ A stacked PR opened after P4 uses the parent as `packet.base` when CI sets `gith
 
 1. `csp.generated.js` is in the P4 cutover because `build.py:69-72` writes it in the same run as the pages and PRs #15 and #16 already collide on it. Should it stay committed instead, with the runbook's `git diff --exit-code` added to CI?
 
-2. A local `deploy.sh` with no packet keeps the same-run hash and can publish. GitHub deploy requires a `ci` packet. Should a local publish also require a packet from CI?
+2. Closed in revision 1. A local publish requires a verified packet with `source: local-run`. It cannot publish on the same-run hash alone. GitHub deploy still requires `source: ci`. A local packet is not relabeled.
 
 3. Is a frozen `handoff/status/archive/BUILD_STATUS.md` plus one new file per change the right split, or should the historical log stay at `handoff/BUILD_STATUS.md` and only new sessions move?
 
@@ -710,7 +833,7 @@ A stacked PR opened after P4 uses the parent as `packet.base` when CI sets `gith
 
 8. The pin line keeps two spaces and the `ATLAS_HOME_URL=unset` token so the current file parses. Is that spelling frozen?
 
-9. This plan file is unlisted in `MANIFEST.json`. Adding it without a manifest rewrite makes `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff` fail `manifest-content` (`unlisted:`). CI runs those tests. Regenerating the manifest in this plan PR is the R1 collision. Should this draft stay red until P5, or does merging the plan include one last manifest write?
+9. Closed in revision 1. The plan file stays tracked. `MANIFEST.json` gains one row for it. The path is not added to `manifest_excludes`. `cad889f5` fails `tests/test_handoff.py:722` and `:753` with `unlisted: handoff/plans/r1-r2-pipeline-generated-artifacts.md`. The head that adds the row passes those two tests. This is not a regeneration of the manifest. The decision file is a second tracked path, so it has its own row for the same rule.
 
 10. #15–#21 are the queue this plan waits for. #1, #2, and #4 are also open. Does the wait include those three?
 
@@ -738,12 +861,12 @@ flowchart TB
   end
   subgraph after [After: verify and deploy build, git stores source]
     src2[src shell assets atlas_voice] --> verify2[verify step runs build.py twice]
-    verify2 --> packet[gate packet: head, pin, page.diff]
+    verify2 --> packet[gate packet: tree, head, pin, page.diff, SHA256SUMS]
     packet --> upload[CI artifact gate-packet-sha and store gates-head]
     upload --> devin[Devin recomputes the pin on that exact SHA]
     src2 --> deploy2[deploy step runs build.py again]
     packet --> deploy2
-    deploy2 --> hash2{post-test hash equals packet pin and head}
+    deploy2 --> hash2{verified packet, same tree, post-test hash equals pin}
     hash2 -->|yes, main, DEPLOY| wrangler[wrangler, page via atlas.html]
     hash2 -->|no| stop14[exit 14, wrangler not called]
     status2[handoff/status one new file per change] --> cut[cut_release.py]
