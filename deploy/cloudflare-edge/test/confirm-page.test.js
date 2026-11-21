@@ -90,6 +90,18 @@ test('flow: three buttons per claim; Correct reveals a required note; #confirmSu
   assert.equal(doc.getElementById('note-0').parentNode.hidden, true, 'no note field unless Correct');
 });
 
+test('the confirm page steps through confirmStep', () => {
+  const { api } = page();
+  assert.match(script(), /function confirmStep/);
+  assert.match(script(), /confirmStep\(\{ phase: state\.phase/);
+  api.render(items(), '');
+  assert.equal(api.state.phase, 'choosing');
+  api.render(items(), '');
+  assert.equal(api.state.phase, 'choosing');
+  assert.equal(api.render([], ''), null);
+  assert.equal(api.state.phase, 'empty');
+});
+
 test('deep link: #<reqId> focuses that request; an unknown id says so and shows the first; an empty inbox says nothing is waiting', () => {
   const { api, find } = page('#r2');
   const h = api.render(items(), '#r2');
