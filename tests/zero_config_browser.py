@@ -186,7 +186,12 @@ with sync_playwright() as pw:
     check('1 no setup text in the conversation view, the address form hidden, the pill reads "Ready"',
           not FORBIDDEN.search(p.locator('#interview').inner_text()) and p.locator('#gatewayOpenBox').is_hidden() and p.locator('#voiceState').inner_text() == 'Ready'
           and p.locator('#cardConnection').is_hidden() and p.locator('#emptyVoiceNote').is_hidden())
-    check('1 the connection pill is labelled "Connection and privacy"', p.locator('#studioConnection').get_attribute('aria-label') == 'Connection and privacy')
+    connection_status = p.locator('#voiceState').inner_text().strip()
+    connection_label = p.locator('#studioConnection').get_attribute('aria-label') or ''
+    check(
+        '1 the connection pill name starts with the visible status and ends with "Connection and privacy"',
+        bool(connection_status) and connection_label == f'{connection_status}. Connection and privacy',
+    )
     consent(p)
     dlg = p.locator('#voiceConsentDialog')
     check('1 Start opens the consent step at once: exactly one visible checkbox, heading with the first name',

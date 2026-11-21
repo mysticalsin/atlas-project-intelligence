@@ -622,23 +622,23 @@
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 928065,
+      "sha256": "1788fd69d57e81f7c33a35c298f4b472fcf70ee4fc953b7422dec3ab7501d7a6"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 928065,
+      "sha256": "1788fd69d57e81f7c33a35c298f4b472fcf70ee4fc953b7422dec3ab7501d7a6"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 928065,
+      "sha256": "1788fd69d57e81f7c33a35c298f4b472fcf70ee4fc953b7422dec3ab7501d7a6"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 928065,
+      "sha256": "1788fd69d57e81f7c33a35c298f4b472fcf70ee4fc953b7422dec3ab7501d7a6"
     },
     {
       "path": "CLAUDE.md",
@@ -933,7 +933,7 @@
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
       "bytes": 146,
-      "sha256": "93196c1732d530e8a0ad455ed9b3198c7dd2df0457e1fd9b47582c5a456c0005"
+      "sha256": "7507a1e8b30f9e209c6ad6710e6a31af5b3e1b58b0da402341c2d64c36877bb6"
     },
     {
       "path": "deploy/cloudflare-edge/set-keys.sh",
@@ -998,7 +998,7 @@
     {
       "path": "deploy/cloudflare-edge/src/csp.generated.js",
       "bytes": 1675,
-      "sha256": "7d54de0b2fed28db9dd1f20106b9cf4526cadd3a9641495c3e68762620bd6dbf"
+      "sha256": "ed281ee5f79bf0d47f5140eb8937ea459322e3112150b06b22468ad86c9c36c1"
     },
     {
       "path": "deploy/cloudflare-edge/src/csp.js",
@@ -2187,8 +2187,8 @@
     },
     {
       "path": "docs/architecture.svg",
-      "bytes": 5562,
-      "sha256": "22a0488ffd0061be96ee2de6e82eb073adf27d9aea36dbabecf3b3bd020016d2"
+      "bytes": 5639,
+      "sha256": "7e37a5c37124fa4da3f97c709e2880e8333523f7f7ac9fafdcb35592c5bd93e6"
     },
     {
       "path": "docs/pr10/PR_BODY.md",
@@ -2251,6 +2251,96 @@
       "sha256": "841f67c52b25e49dcda060058d66e009d3a241c8e2ee9421c7f946362def0168"
     },
     {
+      "path": "docs/qa/s01-ui/admin-events-1440.png",
+      "bytes": 82153,
+      "sha256": "299d4e53ada6451893a890d73f32e06d854794e02f5e62fa55ab6e60be6d1ad5"
+    },
+    {
+      "path": "docs/qa/s01-ui/admin-events-390.png",
+      "bytes": 37066,
+      "sha256": "ca68898078fca06bbe5b1c628d61ed0d4f348d75e504a58c291b5d1f11f8e46e"
+    },
+    {
+      "path": "docs/qa/s01-ui/desktop-admin-events.png",
+      "bytes": 73516,
+      "sha256": "13564c616254daa7ae709849039dd818f9803bb21a8a21c22bd8870f586c9297"
+    },
+    {
+      "path": "docs/qa/s01-ui/desktop-conversation.png",
+      "bytes": 278848,
+      "sha256": "907ecf7ef38f2e726a853c17c54f7d7bd15d9fef0be48da90f2f73ed27d54264"
+    },
+    {
+      "path": "docs/qa/s01-ui/desktop-how-dialog.png",
+      "bytes": 131914,
+      "sha256": "db3b05ba3dbb6a2268c5747c2a6e8daf67b3b4fb993f8d6c177068409a917773"
+    },
+    {
+      "path": "docs/qa/s01-ui/desktop-journey.png",
+      "bytes": 112289,
+      "sha256": "8120f684fe365c685dcac80087f05b92f96400793b04f7c556841af90d2d03ef"
+    },
+    {
+      "path": "docs/qa/s01-ui/desktop-library.png",
+      "bytes": 84829,
+      "sha256": "f3aff8aaae9034b0809a5b055a3bd8c0805f7574f64f6f431e52f5562d383d05"
+    },
+    {
+      "path": "docs/qa/s01-ui/desktop-long-title.png",
+      "bytes": 266652,
+      "sha256": "e604b3012d33e512d047ea318a6fdd502dd5b8d89e030adde53db4b2c05ade3a"
+    },
+    {
+      "path": "docs/qa/s01-ui/desktop-stories.png",
+      "bytes": 73554,
+      "sha256": "cd41706f328193393fc36dae59e460ce789a15536311e30d04c3b75468970317"
+    },
+    {
+      "path": "docs/qa/s01-ui/how-dialog-1440.png",
+      "bytes": 136825,
+      "sha256": "0ed5a26c734d945341c7e7a18fc7825c54981e9894e77dbce124d27e9fc989de"
+    },
+    {
+      "path": "docs/qa/s01-ui/how-dialog-390.png",
+      "bytes": 68868,
+      "sha256": "9864311836cd3aee85236c2009d263cd2ba8ae37f41f0aa97e8ba4b82adeca7f"
+    },
+    {
+      "path": "docs/qa/s01-ui/phone-375-conversation.png",
+      "bytes": 117157,
+      "sha256": "ab8571b7ff5c326ff3d437654e1fb3f603d1bc6dc2ca52452072213bbecdd159"
+    },
+    {
+      "path": "docs/qa/s01-ui/phone-375-journey.png",
+      "bytes": 52269,
+      "sha256": "373a45e1d45fbfaf3fe988df888ca7e9ecd13ed9c644d14b27451ba03f1962a5"
+    },
+    {
+      "path": "docs/qa/s01-ui/phone-375-library.png",
+      "bytes": 63116,
+      "sha256": "134e5fd538ce1846aed29a2371d8861901136305be444a504181ea67dbe9ea8b"
+    },
+    {
+      "path": "docs/qa/s01-ui/phone-375-rtl-count.png",
+      "bytes": 44444,
+      "sha256": "af739505c63f66dca805cd5dc3d81a1a4ee622a3646a77863559623533424ec3"
+    },
+    {
+      "path": "docs/qa/s01-ui/phone-375-stories.png",
+      "bytes": 52499,
+      "sha256": "8507da510e32669e0ec1c0dad5fdac1880161d972c8df5269bd606ec11a2ec8d"
+    },
+    {
+      "path": "docs/qa/s01-ui/stories-1440.png",
+      "bytes": 75443,
+      "sha256": "36cdaae2ebc9f652b2036e68036d665ffb776efd1f92dc85398e501bcdc68042"
+    },
+    {
+      "path": "docs/qa/s01-ui/stories-390.png",
+      "bytes": 54202,
+      "sha256": "1f58a7e91550488fdaa55edfafc14819704ec0b6fdffc0e2a48dd3d43f7e20bb"
+    },
+    {
       "path": "docs/state-machines.md",
       "bytes": 36413,
       "sha256": "539433097004d7c60ca526e287eb14d67ca7e466a6f9209d9cf81eb80798c68a"
@@ -2282,8 +2372,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 346929,
-      "sha256": "311bfd60630ba451016b72b88b0b6a981fd92c70e54ef68b5d665c65b2522b05"
+      "bytes": 352478,
+      "sha256": "88059ba16d153bcf922d40ff6d0e3c1bd74bc9dac880c185e939e6d74d88722e"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2782,8 +2872,8 @@
     },
     {
       "path": "src/app.js",
-      "bytes": 146232,
-      "sha256": "43f6d8d62381d022a6cc09d6cc09084266875387761735380dcb5b9862eea186"
+      "bytes": 148485,
+      "sha256": "69ff2015dbd4e5967bb0c38360fd1aa16cd4c0e1b2db3ae1a52ccaab82a2517c"
     },
     {
       "path": "src/ask-ui.js",
@@ -2807,8 +2897,8 @@
     },
     {
       "path": "src/charts.js",
-      "bytes": 56971,
-      "sha256": "aada46b936099f53529e6bffb4e41ccb7b35d3d9249d236866dd4dbe999a89e5"
+      "bytes": 56969,
+      "sha256": "3dc870d0f71e2a8a8cb5687afd11d75712d9cc975f43b8d23e3af12cee9ab0cf"
     },
     {
       "path": "src/docx.js",
@@ -2852,8 +2942,8 @@
     },
     {
       "path": "src/journey-ui.js",
-      "bytes": 17668,
-      "sha256": "47f960236cddf00fadd91c4a3c935254fdbb05fbd28b810f82b3ff64ad4d14be"
+      "bytes": 18060,
+      "sha256": "0351108faaf9d636637c55620e61969dc8587b3ba0fdf1e82d825fb489b5ea36"
     },
     {
       "path": "src/journey.css",
@@ -2877,8 +2967,8 @@
     },
     {
       "path": "src/orb.css",
-      "bytes": 31210,
-      "sha256": "6c785da97aa25a30a3097ac3b237ea24a97d09c4865ca87c0ef45b1e3be807d6"
+      "bytes": 31272,
+      "sha256": "78d9ad80771523ca300471dfade69bc0302af262bcda3e53e7d3d1ff03b8fc25"
     },
     {
       "path": "src/pptx.js",
@@ -2907,8 +2997,8 @@
     },
     {
       "path": "src/sculpture.css",
-      "bytes": 16767,
-      "sha256": "a70d77049b3a966843f8ad86fb234ebaabb92c00287bb6398b9a7490ee5999ec"
+      "bytes": 16900,
+      "sha256": "d35484e46a81e7988d304328825b68647cfc851801a325b291e3634f67b1c9d8"
     },
     {
       "path": "src/session-keeper.js",
@@ -2917,8 +3007,8 @@
     },
     {
       "path": "src/shell.html",
-      "bytes": 48872,
-      "sha256": "65149cb906a1175e9adfeb98be5505b9fb42e5505b2eebde2abba94ff4f9ed58"
+      "bytes": 48919,
+      "sha256": "c33e204f660a3ec35d500df8f04c26c8cf021c8a30869d483f78104911443a8b"
     },
     {
       "path": "src/storyboard-core.js",
@@ -2952,8 +3042,8 @@
     },
     {
       "path": "src/styles.css",
-      "bytes": 38940,
-      "sha256": "5b545ed263fb14045449136e11d886409c87246b4741edf8eaa2589bcde43343"
+      "bytes": 40008,
+      "sha256": "15ab35adc1d170e55d680e6be5b1e6c4303cf2a22e74754b8b8c7e55f77c691e"
     },
     {
       "path": "src/trust-ui.js",
@@ -2972,8 +3062,8 @@
     },
     {
       "path": "src/voice-panel.html",
-      "bytes": 15828,
-      "sha256": "5809677cb8354f3edf165b998c917cd82cc5cced3972ed7b1de48209efc56207"
+      "bytes": 15848,
+      "sha256": "086f0f6e208f63a631dfbb7de7b8a341768d033908e315296387741e78b0c1e7"
     },
     {
       "path": "src/voice-worklet.js",
@@ -3007,8 +3097,8 @@
     },
     {
       "path": "tests/admin_metrics_browser.py",
-      "bytes": 7985,
-      "sha256": "edbd0ed65a4fd704e9c7616b0b80e72107199ba4b298fa9f1f31a10a27739259"
+      "bytes": 7995,
+      "sha256": "a8e3d41d68a82b45cc7e7826d609da3dfc8f740addd257b566f40f7260a99d39"
     },
     {
       "path": "tests/ask_browser.py",
@@ -3286,6 +3376,26 @@
       "sha256": "815be5080378a6ca6f5239b7467cc89b36b867115a568147ae9074486e28de54"
     },
     {
+      "path": "tests/s01-ui-shell-c-browser.py",
+      "bytes": 5828,
+      "sha256": "cb0545e2f1480ec7ab9255009cb7316efc0baffaa119951c498cd1a24abcf32d"
+    },
+    {
+      "path": "tests/s01-ui-shell-d-browser.py",
+      "bytes": 7937,
+      "sha256": "3200bdc5a442ea314297389abeacdbeebc554f5f340879e569c223d0fa845942"
+    },
+    {
+      "path": "tests/s01-ui-shell-restore-browser.py",
+      "bytes": 6576,
+      "sha256": "2b036fea5dbb58a52dd2070135a61120bb3faa232c1ebf0bbe4e99ea7ed8b191"
+    },
+    {
+      "path": "tests/s01-ui-shell.test.js",
+      "bytes": 2465,
+      "sha256": "97116127a4cbd25760afb062d03aeccba551d016f17f2760031e29162d5a0246"
+    },
+    {
       "path": "tests/safe-html-lint.test.js",
       "bytes": 10826,
       "sha256": "266ddac8b8aa0f2f5482eb0a2381448739e045df8d172e0ef2a9c25a773f250d"
@@ -3487,8 +3597,8 @@
     },
     {
       "path": "tests/zero_config_browser.py",
-      "bytes": 44238,
-      "sha256": "92237993314ef1a99da1fc6ecb582a152fe8c1a3eabf6a7d24541e75d923fc53"
+      "bytes": 44465,
+      "sha256": "8be4816bf20d802a36434382144917fae2f00af4d183d3bf291f66972242273d"
     },
     {
       "path": "tests/zero_config_edge_browser.py",

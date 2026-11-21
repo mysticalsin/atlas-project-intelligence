@@ -18,8 +18,8 @@ let GEO=null;
 function geo(){if(GEO)return GEO;if(root.AtlasGeo)return root.AtlasGeo;if(typeof module==='object'&&typeof require==='function')try{GEO=require('./geo.js');}catch(e){}return GEO;}
 const setGeo=g=>{GEO=g||null;},ctx=o=>o&&o._c?o:{_c:1,live:!!(o&&o.interactive),p:String(o&&o.idPrefix||'ag').replace(/[^\w-]/g,'')||'ag'};
 // Tooltip: a live glass card in the app (data-tt/data-td, read by bind); a native title (HTML) or <title> child (SVG) in static exports.
-// A focusable mark is named with the tooltip text (an HTML mark as role=img, since a generic element cannot carry a name).
-function tip(o,t,rows,focus,svg){rows=[t,...(rows||[])].filter(Boolean);return o.live?` data-tt="${esc(rows[0])}"${rows[1]?` data-td="${esc(rows.slice(1).join('\n'))}"`:''}${focus?` tabindex="0"${svg?'':' role="img"'} aria-label="${esc(rows.join(' · '))}"`:''}`:svg?'':` title="${esc(rows.join(' · '))}"`;}
+// A focusable mark is named with the tooltip text and role=img, including an SVG path (a path's name is not exposed without a role).
+function tip(o,t,rows,focus,svg){rows=[t,...(rows||[])].filter(Boolean);return o.live?` data-tt="${esc(rows[0])}"${rows[1]?` data-td="${esc(rows.slice(1).join('\n'))}"`:''}${focus?` tabindex="0" role="img" aria-label="${esc(rows.join(' · '))}"`:''}`:svg?'':` title="${esc(rows.join(' · '))}"`;}
 const ttl=(o,t,rows)=>o.live?'':`<title>${esc([t,...rows].filter(Boolean).join(' · '))}</title>`;
 const pill=(t,w)=>`<span class="ag-pill${w?' is-warn':''}">${esc(t)}</span>`,chip=(t,c,a)=>`<span class="ag-chip${c?' '+c:''}"${a||''}>${esc(t)}</span>`,tbd=l=>chip(l+': '+TBD,'is-tbd');
 const btn=(a,l)=>`<button type="button" class="ag-btn" ${a}>${esc(l)}</button>`,sub=t=>`<div class="ag-sub">${t}</div>`,list=(c,a)=>a.length?`<ul class="${c}">${a.map(t=>`<li>${esc(t)}</li>`).join('')}</ul>`:'';
