@@ -64,6 +64,17 @@ Devin on `281742422039ad23d0764213be1455a2ecc49bbc`, tree `4b8012864178b6693ef73
 
 The header-strip table, the upper-case minted key, and the U+00A0-wrapped key were already green on the code they were added to. They are regression guards. Their mutants go red. They are not red-first proofs.
 
+## Exact-head gate, loop 3
+
+Devin on `a7c1855c94db43af6b0e5a6cb31c9a8fa0c7a6a9`: CODE INCOMPLETE and BODY FAIL. The report named is `PREMERGE-atlas-pr15-a7c1855.md`. Four mutants left the previous tests green. No product source changed. The test commit is `d4753fe75d7a781673038121fd179843ad4361c9`.
+
+- `timingSafe` in `deploy/cloudflare-edge/src/timing-safe.js`, loop bound cut to `Math.min(8, a.length)`. A bearer secret and a CSRF token that differ only in the last character were accepted. Red: bearer 201 instead of 401, CSRF 200 instead of 403, and both forwards ran. The real secret stayed 201 and the real CSRF stayed 200. Green on the restored tree: the same test passes, 47 identity tests, 0 fail.
+- `runtimeBlock` at `deploy/cloudflare-edge/src/app.js`, `boundSubject` and `boundEmail` removed. `app.test.js` stayed 39 pass, 0 fail. Red: `GET /` embedded empty keys and the library call returned 409 `IDENTITY_CHANGED` with no Durable Object. Green: both keys are the minted 32-hex values and the library call is 200 with `opened: ['global']`.
+- `src/session-keeper.js`, the identity notice appended to `document.body` after that body is hidden. The older alert test stayed green. Red: the parent walk reported `body`. Green: the chain has no `hidden`, `display:none`, or `aria-hidden` ancestor, the notice is a child of the document element, and it has `role=alert` or `aria-live`.
+- `watchObserver(storageObserver)` removed from `src/orb-ui.js`. Red is no longer only `3 !== 2`. The save control copied the status written during the blank. Green: that text stays the pre-blank copy and the observer does not run again.
+
+GitHub Actions was not run. CI is budget-blocked.
+
 ## Known limits
 
 - A caller that sends no bound header, and a tab loaded before this page was deployed, keeps today's behavior. The server identity is still the JWT, so that caller receives only the JWT's own data. The old page does not learn that the person changed until it is reloaded.

@@ -1,6 +1,35 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-21 — identity change, survivor tests (`cursor/atlas-identity-change-residual`)
+
+Devin on `a7c1855c94db43af6b0e5a6cb31c9a8fa0c7a6a9`: CODE INCOMPLETE and BODY FAIL. Four mutants stayed green under the previous tests. No product source changed. The test commit is `d4753fe75d7a781673038121fd179843ad4361c9`.
+
+On that commit:
+
+```sh
+node --test tests/identity-change.test.js deploy/cloudflare-edge/test/identity-change.test.js
+```
+
+47 tests, 47 pass, 0 fail, exit 0, duration_ms 250.089768.
+
+- Cutting `timingSafe` to the first 8 characters accepted a bearer secret that differs only in the last character (201, not 401) and a CSRF token that differs only in the last character (200, not 403). The real secret and the real CSRF stayed accepted.
+- Dropping `boundSubject` and `boundEmail` from `runtimeBlock` left `app.test.js` at 39 pass, 0 fail. `GET /` embedded neither key, and the library call made with the page's fallback returned 409 `IDENTITY_CHANGED`.
+- Appending the identity notice to `document.body` left the old alert test green. The parent walk found the hidden body.
+- Removing `watchObserver(storageObserver)` made the save control copy the status written during the blank (`Saved on this device · no cloud sync`). The old failure was only `3 !== 2`.
+
+The page pin did not move. `python3 build.py` during `make test-ui` printed 929767 bytes.
+
+Measured on this working tree, `ATLAS_DEPLOY_STUB` unset, `CHROMIUM_PATH=/usr/bin/google-chrome`. `ATLAS_WORKERD_ROOT` is unset and `/tmp/atlas-workerd-20261023` is absent. GitHub Actions was not run: CI is budget-blocked.
+
+- `node --test tests/*.test.js`: 437 tests, 437 pass, 0 fail, exit 0, duration_ms 22015.65862.
+- `cd deploy/cloudflare-edge && node --test test/*.test.js`: 1146 tests, 1142 pass, 0 fail, 4 skipped, exit 0, duration_ms 224243.837374. The four skips are the workerd 2026-10-23 SQL tail tests.
+- `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui`: PASS 834, FAIL 0, exit 0.
+- Pytest on the test commit, before this note: 411 passed, 2 failed, 127 warnings, 24.44s, exit 1. Both failures are the stale manifest naming the two test files.
+- After this note's manifest write, and before the commit: `check_handoff . --dev-git-index` exit 0, 700 release files. Pytest 412 passed, 1 failed, 127 warnings, 24.18s, exit 1. The failure is `test_git_archive_of_head_passes_check_handoff`, because HEAD does not yet contain this `MANIFEST.json`. The committed-tree pytest is in the gate packet.
+
+`MANIFEST.json` is regenerated after this note. Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open. No deploy, no Access or DNS change, and no `ATLAS_DEV_IDENTITY`.
+
 ## 2026-11-20 — identity change, full-length compare and observer registration (`cursor/atlas-identity-change-residual`)
 
 Devin on `281742422039ad23d0764213be1455a2ecc49bbc`, tree `4b8012864178b6693ef73f1ce2e47b25dd39e348`: CODE INCOMPLETE and BODY FAIL. Merge-tree onto `main` `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec` was clean. Inspector DELTA r2 PASS WITH NOTES on that head is superseded. The record is `handoff/decisions/identity-change-fail-closed.md`.
