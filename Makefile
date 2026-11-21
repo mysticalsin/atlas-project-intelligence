@@ -32,6 +32,7 @@ test-ui: build
 	$(PYTHON) tests/zero_config_browser.py
 	$(PYTHON) tests/zero_config_edge_browser.py
 	$(PYTHON) tests/jev_rating_browser.py
+	$(PYTHON) tests/living_browser.py
 doctor:
 	$(PYTHON) scripts/doctor.py --profile preview
 verify-package:
