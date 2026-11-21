@@ -18,6 +18,8 @@ import { appendAudit, checkpointHead, ensureChain, verifyChain, anchoredVerdict,
 import { recordUsage } from './telemetry.js';
 import { publicationEffect, publicationStatus, publicationTransition, readPublication } from './publication.js';
 import { impact as scoreImpact, DIMENSIONS } from './classify.js';
+export const IMPORT_ROW_CAP = 10000;
+export const IMPORT_BYTE_CAP = 1024 * 1024;
 import { invitationTransition, noteInvitation, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
 import { bareSemicolon, explainThenMore, hasCreateAsSelect, hiddenWrite, isMutatingStatement, leadingWords, namedVariable, pragmaClass, pragmaSetter, pragmaSetterName, provenRead, remainderIsNoise, splitStatements, sqlShape, unclosedLexeme, unparsedTail, writableAssignment } from './sql-text.js';
 import { sqliteRemainder } from './sql-tail.js';
@@ -391,7 +393,7 @@ export function cleanReference(raw) {
       topics: Object.fromEntries(['context', 'contribution', 'approach', 'outcome', 'evidence', 'customer_relevance'].map(k => [k, str(obj(r.topics)[k], 900)])),
       highlights: list(r.highlights, 4, 200), gaps: list(r.gaps, 6, 200), follow_ups: list(r.follow_ups, 5, 200) } : null,
     jev: j && obj(j.primary).key ? { primary: { key: str(j.primary.key, 40), label: str(j.primary.label, 60) }, also: (Array.isArray(j.also) ? j.also : []).slice(0, 8).map(a => ({ key: str(obj(a).key, 40), label: str(obj(a).label, 60) })),
-      impact: j.scores != null ? impactFromScores(j.scores) : (Number.isFinite(j.impact) ? Math.max(0, Math.min(100, j.impact)) : null) } : null,
+      impact: j.scores != null ? impactFromScores(j.scores) : null } : null,
     validation: { manager: { name: str(obj(v.manager).name, 100), email: email(obj(v.manager).email) }, managerStaff: v.managerStaff === true },
     sheet: raw.sheet && typeof raw.sheet === 'object' ? { oppId: str(obj(raw.sheet).oppId, 40), oppIdPending: obj(raw.sheet).oppIdPending === true, title: str(obj(raw.sheet).title, 140),
       exec: Object.fromEntries(['summary', 'teamSize', 'duration', 'price', 'contacts'].map(k => [k, para(obj(obj(raw.sheet).exec)[k], 1500)])),
@@ -438,12 +440,21 @@ function publicQuality(q) {
 // Numbers only (docs/JEV_RATING.md §7.5): never an id, title, client, hash, model name, text or key.
 const defaultMetric = (name, values) => console.log(JSON.stringify({ atlas_metric: name, ...values }));
 const waitAtMost = (p, ms) => new Promise(resolve => { const t = setTimeout(resolve, ms); p.then(() => { clearTimeout(t); resolve(); }, () => { clearTimeout(t); resolve(); }); });
-function completeWithin(promise, ms) {
+function sleepSync(ms) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) { /* a write retry has to stay inside the synchronous transaction */ }
+}
+function completeWithin(run, ms) {
+  const controller = new AbortController();
   let timer;
   const deadline = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(Object.assign(new Error('The review agent did not answer in time.'), { status: 504 })), ms);
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(Object.assign(new Error('The review agent did not answer in time.'), { status: 504 }));
+    }, ms);
   });
-  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+  const work = Promise.resolve().then(() => run(controller.signal));
+  return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
 }
 function databaseBusy(error) {
   const message = String(error && error.message || '');
@@ -750,12 +761,16 @@ export class Library {
     const bound = consentSweep ? [consentCutoff(this.now())] : params;
     const prior = consentSweep ? Number(this.rows('SELECT COUNT(*) AS n FROM consent_receipts')[0].n) : 0;
     let result;
-    try { result = _sql.exec(sql, ...bound); }
-    catch (error) {
-      if (error?.status) throw error;
-      if (databaseBusy(error)) throw Object.assign(fail(503, 'The library is busy. Try again.'), { code: 'SQLITE_BUSY' });
-      if (/UNIQUE constraint failed/i.test(String(error?.message || ''))) throw fail(409, 'This reference was already saved. Open it again.');
-      throw error;
+    const backoff = [5, 20];
+    for (let attempt = 0; ; attempt++) {
+      try { result = _sql.exec(sql, ...bound); break; }
+      catch (error) {
+        if (error?.status) throw error;
+        if (databaseBusy(error) && attempt < backoff.length) { sleepSync(backoff[attempt]); continue; }
+        if (databaseBusy(error)) throw Object.assign(fail(503, 'The library is busy. Try again.'), { code: 'SQLITE_BUSY', retryAfter: '1' });
+        if (/UNIQUE constraint failed/i.test(String(error?.message || ''))) throw fail(409, 'This reference was already saved. Open it again.');
+        throw error;
+      }
     }
     if (consentSweep) {
       const left = Number(this.rows('SELECT COUNT(*) AS n FROM consent_receipts')[0].n);
@@ -950,7 +965,7 @@ export class Library {
         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM refs WHERE id = ?)`,
         id, plan.user.email, plan.localId || null, data.title, status, revision, plan.hash, data.jev?.primary?.key || '', data.sector, data.details.country, data.validation.manager.email, members, plan.at, plan.at, plan.user.email, next, JSON.stringify(data), JSON.stringify(state), keptTenant, id);
       this.exec('INSERT INTO revisions (id, revision, data, author, at) VALUES (?, ?, ?, ?, ?)', id, revision, JSON.stringify(data), plan.user.email, plan.at);
-      this.log(id, plan.user.email, row ? 'revised' : 'created', 'revision ' + revision + (row ? (state.withdrawn ? '; stays withdrawn until a reviewer reinstates' : '; manager and pre-sales approval reopened') : ''));
+      if (!plan.skipLog) this.log(id, plan.user.email, row ? 'revised' : 'created', 'revision ' + revision + (row ? (state.withdrawn ? '; stays withdrawn until a reviewer reinstates' : '; manager and pre-sales approval reopened') : ''));
       return { id, unchanged: false };
     });
   }
@@ -1183,7 +1198,7 @@ export class Library {
     }
     const deadlineMs = this.rater?.budgets?.[budget]?.deadlineMs ?? BUDGETS[budget]?.deadlineMs ?? BUDGETS.interactive.deadlineMs;
     const agent = this.complete || (async () => { throw new Error('no review agent'); });
-    const t0 = Date.now(), q0 = await reviewReference(row.data, messages => completeWithin(Promise.resolve().then(() => agent(messages)), deadlineMs),
+    const t0 = Date.now(), q0 = await reviewReference(row.data, messages => completeWithin(signal => agent(messages, { signal }), deadlineMs),
       { view: d => recordView(this, d), readyScore: this.readyScore, now: this.now, model: this.model });
     const q = agentQuality({ ...q0, revision: row.revision }, { fallbackReason: fallback, gen, ms: Date.now() - t0 });
     const stored = this.storeRating(row, gen, q, actor);
@@ -1218,7 +1233,7 @@ export class Library {
   // §5.5 escalation: today's review agent decides, in the same generation. If it does not answer, the JEV rating stays
   // needs_work and says a reviewer should check the unsure parts.
   async secondOpinion(row, gen, done) {
-    const t0 = Date.now(), q0 = await reviewReference(row.data, messages => completeWithin(Promise.resolve().then(() => this.complete(messages)), BUDGETS.background.deadlineMs), { view: d => recordView(this, d), readyScore: this.readyScore, now: this.now, model: this.model });
+    const t0 = Date.now(), q0 = await reviewReference(row.data, messages => completeWithin(signal => this.complete(messages, { signal }), BUDGETS.background.deadlineMs), { view: d => recordView(this, d), readyScore: this.readyScore, now: this.now, model: this.model });
     const strict = done.quality.jev.strict;
     if (q0.aiScore !== null) {
       const q = agentQuality({ ...q0, revision: row.revision }, { engine: 'review-agent', escalatedFrom: 'jev', fallbackReason: 'escalated', jev: done.quality.jev, holds: [], gen, ms: Date.now() - t0 });
@@ -1531,13 +1546,27 @@ export class Library {
     if (user.role !== 'admin') throw fail(403, 'Import is for a verified admin.');
     if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
     const items = Array.isArray(obj(body).references) ? obj(body).references : [];
-    const out = { created: 0, unchanged: 0, rejected: [] };
+    if (items.length > IMPORT_ROW_CAP) throw fail(413, 'Import has too many rows.');
+    const plans = [];
+    const rejected = [];
     for (const [i, it] of items.entries()) {
-      try { const r = await this.upsert(user, { localId: 'import:' + str(obj(it).externalId || obj(it).id || String(i), 80), reference: obj(it).reference || it }); r.unchanged ? out.unchanged++ : out.created++; }
-      catch (e) { out.rejected.push({ index: i, error: e.message }); }
+      try {
+        const plan = await this.revisionPlan(user, { localId: 'import:' + str(obj(it).externalId || obj(it).id || String(i), 80), reference: obj(it).reference || it });
+        plans.push({ ...plan, skipLog: true });
+      } catch (e) { rejected.push({ index: i, error: e.message }); }
     }
-    this.log('library', user.email, 'import', JSON.stringify({ created: out.created, unchanged: out.unchanged, rejected: out.rejected.length }));
-    return out;
+    let created = 0, unchanged = 0;
+    const write = () => {
+      for (const plan of plans) {
+        if (plan.unchanged) { unchanged++; continue; }
+        const written = this.commitRevision(plan);
+        if (written.unchanged) unchanged++; else created++;
+      }
+      this.log('library', user.email, 'import', JSON.stringify({ created, unchanged, rejected: rejected.length }));
+    };
+    if (plans.length) this.recorded(write);
+    else this.log('library', user.email, 'import', JSON.stringify({ created, unchanged, rejected: rejected.length }));
+    return { created, unchanged, rejected };
   }
 
   validate(user, id, body = {}) {

@@ -296,7 +296,7 @@ test('F6 a library error that is not a lock stays an untyped failure', async () 
   assert.equal(blocked.status, 500);
 });
 
-test('HAM-02 scores of zero and four are the ends of the scale, and a declared impact survives when scores are absent', async () => {
+test('HAM-02 scores of zero and four are the ends of the scale, and a client impact without scores is dropped', async () => {
   const store = fresh();
   const pack = score => Object.fromEntries(['business_impact', 'evidence', 'reusability', 'differentiation', 'showcase'].map(key => [key, { score }]));
   const ends = { 0: 0, 4: 100, 2: 50 };

@@ -827,8 +827,8 @@
     },
     {
       "path": "atlas_voice/wiki.py",
-      "bytes": 15686,
-      "sha256": "aabe987b30ce2ba366a4a156c899cf1be0fd2128bd95ebe5923bd16ace7f9ba5"
+      "bytes": 16896,
+      "sha256": "554aa554095cd4d62593bab86d2fcdc7f2b80d58a88e75834e3f0bc3246d4e66"
     },
     {
       "path": "atlas_voice/wiki_export.py",
@@ -1062,8 +1062,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/library-routes.js",
-      "bytes": 11115,
-      "sha256": "1678a87c96e32d42d384c53020d71164784d183731816551faff3282a87ede2b"
+      "bytes": 11694,
+      "sha256": "d1971075427990a11f451edcfe14332f3490a1829d931537989fc653eda9d62e"
     },
     {
       "path": "deploy/cloudflare-edge/src/library-store.js",
@@ -1072,8 +1072,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/library.js",
-      "bytes": 106835,
-      "sha256": "56ddd8d68936b37454d2e40cae43d98c2bbd86a4f6d55ae8475c025ab565f9ff"
+      "bytes": 107896,
+      "sha256": "63670abcd30b3a744f752026700c264464dfceb2e3b351f54f5199a23fc9b7fb"
     },
     {
       "path": "deploy/cloudflare-edge/src/memory-routes.js",
@@ -1592,8 +1592,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/s01-library.test.js",
-      "bytes": 10063,
-      "sha256": "2291fc6b47c42c19e6a2be7b690f4503ce7595fc63cf200ffc28663faff9b3d0"
+      "bytes": 16074,
+      "sha256": "20893364ddf18f5bd5ff74fa191f5e866a8a23af3a30de6b2dea931f057013b2"
     },
     {
       "path": "deploy/cloudflare-edge/test/s01-publication.test.js",
@@ -3477,8 +3477,8 @@
     },
     {
       "path": "tests/test_s01_wiki.py",
-      "bytes": 4268,
-      "sha256": "685c893170ac075e2515b343377cc593960bf391cdafe2068ef52db88a4ded89"
+      "bytes": 5588,
+      "sha256": "a8be9d554cd0030c10d7e1181b886fd096a9ce1d12d4f4e73e0d18f156c514ac"
     },
     {
       "path": "tests/test_s1_csp.py",
