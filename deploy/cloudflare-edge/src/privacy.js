@@ -68,8 +68,46 @@ export async function loadState(storage) {
 export const grantedIn = (state, purpose) => state?.purposes?.[purpose]?.granted === true;
 // Applies the wanted purposes to the state and returns what CHANGED (each entry is a receipt to write): a purpose never granted and not granted now changes nothing.
 // `beforeCommit(changes)` runs before the state is stored: when it throws (the receipt could not be written) the state stays as it was, so a choice is never in force
-// without its receipt.
-export async function applyState(storage, wanted, { mode = 'voice', channel = 'api', now = new Date().toISOString(), beforeCommit = null } = {}) {
+// without its receipt. Overlapping calls take one lock per storage object, including the receipt post. A beforeCommit that does not settle within
+// commitTimeoutMs (default 5000) skips the put, releases the lock, and rejects that grant.
+const consentLocks = new WeakMap();
+const COMMIT_TIMEOUT_MS = 5000;
+
+function withConsentLock(storage, fn) {
+  const prev = consentLocks.get(storage) || Promise.resolve();
+  const run = prev.then(fn, fn);
+  consentLocks.set(storage, run.then(() => undefined, () => undefined));
+  return run;
+}
+
+function commitWithin(work, ms) {
+  const limit = Number.isFinite(ms) && ms >= 0 ? ms : COMMIT_TIMEOUT_MS;
+  return new Promise((resolve, reject) => {
+    let done = false;
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      reject(Object.assign(new Error('The consent receipt did not finish in time.'), { code: 'commit-timeout' }));
+    }, limit);
+    Promise.resolve(work).then(value => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(value);
+    }, err => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+
+export async function applyState(storage, wanted, options = {}) {
+  return withConsentLock(storage, () => applyStateLocked(storage, wanted, options));
+}
+
+async function applyStateLocked(storage, wanted, { mode = 'voice', channel = 'api', now = new Date().toISOString(), beforeCommit = null, commitTimeoutMs = COMMIT_TIMEOUT_MS } = {}) {
   const state = await loadState(storage), changes = [];
   for (const p of PURPOSES) {
     if (wanted[p] === undefined) continue;
@@ -78,7 +116,10 @@ export async function applyState(storage, wanted, { mode = 'voice', channel = 'a
     state.purposes[p] = { granted: want, at: now, version: NOTICE_VERSION };
     changes.push({ purpose: p, granted: want, mode, channel });
   }
-  if (changes.length) { if (beforeCommit) await beforeCommit(changes); await storage.put(STATE_KEY, state); }
+  if (changes.length) {
+    if (beforeCommit) await commitWithin(beforeCommit(changes), commitTimeoutMs);
+    await storage.put(STATE_KEY, state);
+  }
   return { state, changes };
 }
 // Appends receipts in the LibraryStore, server to server (the same internal path pattern as the evidence draft). `who`: {user, role, mail, subj} as the Worker verified them.

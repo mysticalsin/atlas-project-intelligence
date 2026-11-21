@@ -27,21 +27,76 @@ export const limitOf = (env, name) => { const v = Math.floor(Number(env?.['RL_' 
 
 const BUCKET = /^[a-z0-9-]{1,32}$/;
 const keyOf = (c, subj, now) => `rl:${c.bucket}:${subj ? subj + ':' : ''}${Math.floor(now / c.windowMs)}`;
+// Owner lockout key. A backward clock, or a `seen` more than one window in the future, holds this subject for at most
+// one windowMs. The hold does not open `rl:<bucket>:<subject>:<floor(now / windowMs)>` while it is in force.
+const seenKeyOf = (bucket, subj) => `rl:${bucket}:${subj}:seen`;
+const locks = new WeakMap();
+
+function withLock(storage, fn) {
+  const prev = locks.get(storage) || Promise.resolve();
+  const run = prev.then(fn, fn);
+  locks.set(storage, run.then(() => undefined, () => undefined));
+  return run;
+}
 
 // checks: [{ bucket, max, windowMs }]. Returns { ok: true, remaining } or { ok: false, retryAfter (seconds, at least 1), bucket }.
 export async function consume(storage, checks, { now = Date.now(), subj = '' } = {}) {
   const valid = (Array.isArray(checks) ? checks : []).slice(0, 4).filter(c => c && BUCKET.test(c.bucket) && Number.isFinite(c.max) && c.max >= 1 && Number.isFinite(c.windowMs) && c.windowMs >= 1000);
   if (!valid.length) return { ok: true, remaining: Infinity };
-  const slots = valid.map(c => ({ ...c, key: keyOf(c, subj, now), until: (Math.floor(now / c.windowMs) + 1) * c.windowMs }));
+  return withLock(storage, () => {
+    const run = () => consumeLocked(storage, valid, now, subj);
+    return typeof storage.transaction === 'function' ? storage.transaction(run) : run();
+  });
+}
+
+async function consumeLocked(storage, valid, now, subj) {
+  const seenGot = await storage.get(valid.map(c => seenKeyOf(c.bucket, subj)));
+  const slots = valid.map(c => {
+    const rec = seenGot.get(seenKeyOf(c.bucket, subj));
+    let seen = Number(rec?.seen);
+    if (!Number.isFinite(seen)) seen = -Infinity;
+    // A future high-water mark counts as one window from this call, not until the stored date.
+    if (seen > now + c.windowMs) seen = now + c.windowMs;
+    let holdUntil = Number(rec?.holdUntil);
+    if (!Number.isFinite(holdUntil)) holdUntil = -Infinity;
+    let holding = false;
+    let key;
+    if (now < seen) {
+      if (!(holdUntil > now) && holdUntil === -Infinity) holdUntil = now + c.windowMs;
+      if (now < holdUntil) {
+        holding = true;
+        key = typeof rec?.key === 'string' ? rec.key : keyOf(c, subj, seen);
+      } else {
+        seen = now;
+        holdUntil = -Infinity;
+        key = keyOf(c, subj, now);
+      }
+    } else {
+      seen = now;
+      holdUntil = -Infinity;
+      key = keyOf(c, subj, now);
+    }
+    const until = holding ? holdUntil : (Math.floor(now / c.windowMs) + 1) * c.windowMs;
+    return { ...c, key, seen, holdUntil, holding, until, seenKey: seenKeyOf(c.bucket, subj) };
+  });
   const got = await storage.get(slots.map(s => s.key));
   let refused = null;
   for (const s of slots) {
     s.n = Number(got.get(s.key)?.n) || 0;
     if (s.n >= s.max && (!refused || s.until > refused.until)) refused = s;
   }
-  if (refused) return { ok: false, retryAfter: Math.max(1, Math.ceil((refused.until - now) / 1000)), bucket: refused.bucket };
-  await storage.put(Object.fromEntries(slots.map(s => [s.key, { n: s.n + 1, exp: s.until }])));
-  if (slots.some(s => s.n === 0)) await sweep(storage, now); // a new window opened: drop finished ones
+  const seenWrites = Object.fromEntries(slots.map(s => [s.seenKey, {
+    seen: s.seen, holdUntil: s.holdUntil, key: s.key, exp: Math.max(s.until, now + 1),
+  }]));
+  if (refused) {
+    await storage.put(seenWrites);
+    return { ok: false, retryAfter: Math.max(1, Math.ceil((refused.until - now) / 1000)), bucket: refused.bucket };
+  }
+  await storage.put({
+    ...Object.fromEntries(slots.map(s => [s.key, { n: s.n + 1, exp: s.until, seen: s.seen }])),
+    ...seenWrites,
+  });
+  if (slots.some(s => s.n === 0 && !s.holding)) await sweep(storage, now); // a new window opened: drop finished ones
   return { ok: true, remaining: Math.min(...slots.map(s => s.max - s.n - 1)) };
 }
 

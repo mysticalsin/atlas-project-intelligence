@@ -31,7 +31,7 @@ test('consume: hour and day windows are checked together and nothing advances on
   const dayFull = await consume(st, spec, { now: T0 + HOUR + 1 });
   assert.deepEqual([dayFull.ok, dayFull.bucket], [false, 'interview-d']); assert.equal(dayFull.retryAfter, Math.ceil((Date.UTC(2026, 10, 1) - (T0 + HOUR + 1)) / 1000));
   // the refused calls did not advance the day counter beyond its max
-  const day = [...await st.list({ prefix: 'rl:interview-d:' })].map(([, v]) => v.n); assert.deepEqual(day, [3]);
+  const day = [...await st.list({ prefix: 'rl:interview-d:' })].filter(([k]) => !k.endsWith(':seen')).map(([, v]) => v.n); assert.deepEqual(day, [3]);
   // the longest wait wins when both are full
   const both = await consume(new FakeStorage(), [{ bucket: 'a', max: 1, windowMs: HOUR }, { bucket: 'b', max: 1, windowMs: DAY }], { now: T0 });
   assert.ok(both.ok);
@@ -43,7 +43,7 @@ test('consume ignores malformed checks (bad bucket names, windows, maxima) and a
   assert.equal(st.keys().length, 0);
   await consume(st, [{ bucket: 'old', max: 5, windowMs: HOUR }], { now: T0 });
   await consume(st, [{ bucket: 'cur', max: 5, windowMs: DAY }], { now: T0 + 3 * HOUR }); // a new window opened: the finished hour is swept
-  assert.deepEqual(st.keys().map(k => k.split(':')[1]), ['cur']);
+  assert.deepEqual(st.keys().filter(k => !k.endsWith(':seen')).map(k => k.split(':')[1]), ['cur']);
   await consume(st, [{ bucket: 'live', max: 5, windowMs: HOUR }], { now: T0 + 3 * HOUR });
   assert.equal(await sweep(st, T0 + 3 * HOUR), 0, 'live windows stay');
   assert.equal(await sweep({}, T0), 0, 'a storage without list is tolerated');

@@ -256,6 +256,7 @@ test('F8 property the spent window stays closed until seen plus one window', asy
   assert.equal((await consumeAt(start + 200)).ok, false);
   const windowStart = Math.floor((start + 200) / windowMs) * windowMs;
   assert.equal((await consumeAt(windowStart)).ok, false, 'the spent window start is refused');
+  assert.equal((await consumeAt(start + 200 - windowMs)).ok, false, 'one window earlier does not open a fresh window');
   assert.equal((await consumeAt(start + 200 + windowMs)).ok, true, 'seen plus one window opens');
 
   let high = -Infinity;

@@ -1117,8 +1117,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/privacy.js",
-      "bytes": 19569,
-      "sha256": "73db65006e8bfd4ef8269a63ae322923c51f055cd62e1c3fd7e1be9486cb9151"
+      "bytes": 20949,
+      "sha256": "c3b1ec2b31ad778559829aa32fee3769b32397b3358e6dabb692c0879a3ae600"
     },
     {
       "path": "deploy/cloudflare-edge/src/profile.js",
@@ -1132,8 +1132,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/ratelimit.js",
-      "bytes": 5890,
-      "sha256": "5e1fd1c506b22558e7ee910953094a6834f9cecc3395de176f56ac2377a5d689"
+      "bytes": 8003,
+      "sha256": "cfe28a40b7098d5b2666e620eec524f63da10fadeb6facb1607ba505c872df9a"
     },
     {
       "path": "deploy/cloudflare-edge/src/rating.js",
@@ -1237,8 +1237,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/util.js",
-      "bytes": 2605,
-      "sha256": "bd932eaccbf1993be000a571435652733dde91a64b8bfa2b4e66285902cfa414"
+      "bytes": 5249,
+      "sha256": "5221e1f4df9a0df983ae6ac1247d00505d6ee391bf075549e1f30dc1e6b3378d"
     },
     {
       "path": "deploy/cloudflare-edge/src/winloop.js",
@@ -1357,8 +1357,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/features.test.js",
-      "bytes": 23244,
-      "sha256": "f0b214f0106b87388bf7fec11804de8d86ac7e6ee3cd8a3c7251123689811a4a"
+      "bytes": 23462,
+      "sha256": "9e7cbf61195e554fd1c20a9c7fc4bb013dd868441b889b305ca2f4905747c6ee"
     },
     {
       "path": "deploy/cloudflare-edge/test/gap-policy.test.js",
@@ -1542,8 +1542,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/ratelimit.test.js",
-      "bytes": 11264,
-      "sha256": "f6e2e06a78fded1062a68d195dd73fcea5b428f638f0025226954a462d36e872"
+      "bytes": 11336,
+      "sha256": "657c4aae87a682c7bac30182a45a3e6462d7fe9409807066c6f5787b4fb659a5"
     },
     {
       "path": "deploy/cloudflare-edge/test/rating.test.js",
@@ -1719,6 +1719,16 @@
       "path": "deploy/cloudflare-edge/test/sqlite.js",
       "bytes": 3391,
       "sha256": "e1bd38b2b9a3d9f2c72bfcf9d5ca74e1af9696cf6fb54bb58556483c4ac8f0b5"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/sweep01-f-stress.test.js",
+      "bytes": 2690,
+      "sha256": "2df581d6ccdd7391b0913fd7b2b5fba00ca0a8bafb0394d9ae73ed1e39ea56e8"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/sweep01-g14-limit.test.js",
+      "bytes": 14087,
+      "sha256": "8d7f84b3fec4c12f5f6d54dd5d699abbe8d093780e98375362fd4fd5c51febaa"
     },
     {
       "path": "deploy/cloudflare-edge/test/teams.test.js",
