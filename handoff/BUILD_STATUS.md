@@ -1,6 +1,25 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-21 — sweep 01 group 12 UI shell (`cursor/atlas-s01-fix-ui-shell-v2`)
+
+Mergeable copy of draft #44, branched from main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. Red tests are `355e1fd4c4bcee332e874c0f8f4f64ac0c4ea92e`. That commit only adds `tests/s01-ui-shell-c-browser.py`, `tests/s01-ui-shell-d-browser.py`, and `tests/s01-ui-shell.test.js`. It does not refresh `MANIFEST.json`.
+
+Copied from red tests `96712474`: C-1, C-2, C-4, C-5, D-01 through D-12 (D-04 is C-2 and is not a second check), and the shell half of E7. C-3 stays with group 13 (`src/voice-client.js` and the production-conflict sentence). The `handoff/CURRENT_STATUS.md` half of E7 stays with group 15.
+
+Red, before the product edit: C 0 pass / 4 fail, exit 1. D 0 pass / 11 fail, exit 1. E7 shell 0 pass / 1 fail, exit 1. The E7 failure is `v11.0` still present (`true !== false`).
+
+The product edit is cherry-pick `851b4f30616d0a5f865b192aa8a8cf70cc101128` (draft #44). After it, those same checks are 4 pass, 11 pass, and 1 pass, all exit 0. `tests/zero_config_browser.py` now requires the connection chip name to be the visible status plus `. Connection and privacy`. Screenshots retaken under `docs/qa/s01-ui/`. `MANIFEST.json` is regenerated after this note.
+
+Measured on this branch with `CHROMIUM_PATH=/usr/bin/google-chrome`, before this paragraph's manifest refresh:
+
+- `node --test tests/*.test.js`: 420 tests, 420 pass, 0 fail, 0 skipped, exit 0.
+- `cd deploy/cloudflare-edge && node --test test/*.test.js`: 1117 tests, 1113 pass, 0 fail, 4 skipped, exit 0. The four skips are the existing workerd proofs (`ATLAS_WORKERD_ROOT` unset). This change adds none.
+- `make test-ui`: 834 PASS, 0 FAIL, exit 0.
+- `python3 -m pytest tests/test_*.py -q --tb=line` before the manifest refresh: 411 passed, 2 failed. The two are `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`.
+
+C-3 and `handoff/CURRENT_STATUS.md` were not edited.
+
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.
