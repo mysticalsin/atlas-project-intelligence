@@ -55,7 +55,7 @@ def test_environment_override(tmp_path):
         assert homes(html) == ['https://atlas.mantu.example']
 
 
-@pytest.mark.parametrize('bad', ['http://atlas.tony-walteur.workers.dev', 'https://atlas.example/go/start', 'https://ATLAS.example',
+@pytest.mark.parametrize('bad', ['http://atlas.example.test', 'https://atlas.example/go/start', 'https://ATLAS.example',
                                  'https://user@atlas.example', 'javascript:alert(1)', 'https://atlas.example";alert(1);"', ' ', ''])
 def test_invalid_override_gives_empty(tmp_path, bad):
     for html in build(tmp_path, env_value=bad):

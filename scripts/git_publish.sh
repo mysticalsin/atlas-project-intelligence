@@ -9,7 +9,10 @@ MSG_FILE="${2:-}"
 PATTERN='rpa_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY|Bearer [A-Za-z0-9_-]{30,}'
 
 [ -d .git ] || git init -q -b main
-git config user.email >/dev/null || git config user.email "tony.walteur@gmail.com"
+if ! git config user.email >/dev/null; then
+  echo "ABORT: git user.email is not set. Set it, then rerun this script: git config user.email 'you@example.test'" >&2
+  exit 1
+fi
 git config user.name >/dev/null || git config user.name "Tony Walteur"
 git add -A
 if git diff --cached --name-only | grep -E '(^|/)\.env$|\.(key|pem|p12)$|^\.claude/|^data/|\.playwright-mcp/|\.sqlite'; then

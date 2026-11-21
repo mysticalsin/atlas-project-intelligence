@@ -12,9 +12,11 @@
   "observability": { "enabled": true },
   "triggers": { "crons": ["17 6 * * *"] },
   "vars": {
-    "ORIGIN": "https://atlas.tony-walteur.workers.dev",
-    "ACCESS_TEAM_DOMAIN": "tony-walteur.cloudflareaccess.com",
-    "ACCESS_AUD": "fc05e3d966db92b03ed3bf38b31e5c5254e1508bb0e090825a56ce12a933f386",
+    // ORIGIN, ACCESS_TEAM_DOMAIN and ACCESS_AUD are placeholders. Signed-in routes stay
+    // closed until deploy.sh substitutes the operator's live values. Do not commit those values.
+    "ORIGIN": "https://atlas.example.test",
+    "ACCESS_TEAM_DOMAIN": "team.example.test",
+    "ACCESS_AUD": "replace-me",
     "STT_MODEL": "@cf/deepgram/nova-3",
     "TTS_MODEL": "@cf/deepgram/aura-2-en",
     "TTS_VOICE": "harmonia",

@@ -1,9 +1,9 @@
 # ATLAS on Cloudflare's edge (test deployment)
-A live, protected ATLAS at **https://atlas.tony-walteur.workers.dev**, with a real backend and nothing to host yourself.
+The committed config does not name a live host. `wrangler.jsonc` carries placeholders. `deploy.sh` deploys only after the operator supplies the live origin, Access team domain, and Access audience. The Worker refuses signed-in routes while those Access values are missing or still the placeholders.
 
 ```
 Browser (the real ATLAS page, orb, worklet)
-  │  Cloudflare Access: email one-time PIN; policy allows tony.walteur@gmail.com only
+  │  Cloudflare Access: the operator's policy, not a mailbox in this repo
   ▼
 Worker (src/app.js)  verifies the Access JWT (RS256, aud, iss, exp) → identity; host/origin/CSRF checks; strict CSP
   │ WebSocket /api/voice
@@ -56,12 +56,23 @@ An interviewer lets people think. The rules live in `src/session.js` (constants 
 - **Admin mode** keeps the same end-of-turn rules and the same patience on words that trail off, but no nudges and no acknowledgements.
 
 ## Deploy
+Copy `deploy.local.env.example` to `deploy.local.env` in this directory (that copy is gitignored). Set:
+
+- `ATLAS_ORIGIN` — the live `https` origin, no path
+- `ATLAS_ACCESS_TEAM_DOMAIN` — the Access team hostname
+- `ATLAS_ACCESS_AUD` — the 64-character Access audience tag
+
+The same three names may be exported in the environment instead. `deploy.sh` refuses the placeholders in the example and in `wrangler.jsonc`, and it does not call wrangler until the values pass those checks. It then builds the page with that origin and deploys a temporary config that carries those three values. The other vars stay as committed. The page pin still matches the placeholder build.
+
 ```sh
 npx wrangler login                      # one time, in Terminal (browser approval)
 bash deploy/cloudflare-edge/deploy.sh   # runs the edge tests, deploys, sets CSRF_SECRET on first run
 ```
+
+A direct `npx wrangler deploy` of the committed file starts a worker whose signed-in routes answer 401. Do that only to confirm the closed default.
+
 ### Deploy from GitHub (Workers Builds)
-Pushing to the `live` branch deploys; `main` stays the working branch. One-time setup in the Cloudflare dashboard: Workers & Pages → `atlas` → Settings → Builds → Connect → `mysticalsin/atlas-project-intelligence`, then:
+Pushing to the `live` branch deploys the committed placeholders, and the Worker then refuses signed-in routes. Use `deploy.sh` with `deploy.local.env` until the build environment supplies the three variables itself. One-time setup in the Cloudflare dashboard, when that path is ready: Workers & Pages → `atlas` → Settings → Builds → Connect → `mysticalsin/atlas-project-intelligence`, then:
 
 | Setting | Value |
 |---|---|

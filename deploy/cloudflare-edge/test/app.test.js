@@ -123,7 +123,7 @@ test('admin mode comes only from a verified role or subject; a browser cannot cl
   assert.equal(await voice({}), '1');
   assert.equal(await voice({ email: 'other@example.com', sub: 'other' }, { 'x-atlas-admin': '1' }), '0');
   assert.equal(await voice({ custom: { roles: ['ATLAS.Admin'] }, sub: 'someone' }, {}), '1');
-  assert.equal(await voice({ email: 'tony.walteur@gmail.com', sub: 'gmail' }, { 'x-atlas-admin': '1' }, { ...ENV, ATLAS_TENANT_ISOLATION: 'local-synthetic', ADMIN_EMAILS: 'tony.walteur@gmail.com', INTERVIEW: env.INTERVIEW }), '0');
+  assert.equal(await voice({ email: 'owner@example.test', sub: 'gmail' }, { 'x-atlas-admin': '1' }, { ...ENV, ATLAS_TENANT_ISOLATION: 'local-synthetic', ADMIN_EMAILS: 'owner@example.test', INTERVIEW: env.INTERVIEW }), '0');
   assert.equal(await (async () => { forwarded = null; await handle(new Request(ORIGIN + '/api/voice', { headers: { 'cf-access-jwt-assertion': await jwt(), Upgrade: 'websocket', Origin: ORIGIN, 'x-atlas-admin': '1' } }), { ...env, ATLAS_ADMIN_SUBJECTS: '', ATLAS_ADMIN_ROLES: '' }, ''); return forwarded.headers.get('x-atlas-admin'); })(), '0');
   const boot = await (await handle(await req('/api/bootstrap'), env, '')).json();
   assert.equal(boot.admin, true); assert.equal(boot.speakingSeconds, 600);
