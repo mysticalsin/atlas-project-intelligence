@@ -1,6 +1,52 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-21 — SQL text loop 2, empty text and a second pragma (`cursor/atlas-sqltext-lows`)
+
+Loop 2 of 3, the last allowed. Base `7bd6c29f6727126303c854066f3d189a66e42729`. Inspector delta 1 is PASS WITH NOTES, report sha `0921be8c`. Devin agreed. The pragma conjunction and `topVerbAt` returning `0` are not equivalent. The decision is `handoff/decisions/sqltext-alias-explain.md`. No deploy, no provider call, no secrets. `library.js` and `sql-tail.js` were not edited. Public exports of `sql-text.js` are unchanged. `sql-text.js` itself is unchanged in this loop.
+
+Red is shown by mutants. `2d838fefeadd0e113a38cc716450cb334a60cfe3` is tests only. The command `cd deploy/cloudflare-edge && node --test test/write-sqltext-survivors.test.js test/write-sqltext-alias-explain.test.js test/write-v14-gap.test.js` on that commit is 11 tests, 11 pass, 0 fail, exit 0. `topVerbAt` returning `0` is 9 pass, 2 fail, exit 1, killed by `empty text and a comment are not a mutation`. The pragma `&&` to `||` is 10 pass, 1 fail, exit 1, killed by `a second pragma inside an explain plan is a hidden write`. Restoring the file is 11 pass, 0 fail, exit 0. There is no product fix: the clean classifier already returns those results.
+
+Changed-line mutants on that command: 79 rows, 65 killed, 14 survive. The survivors are 11 comment deletions and three operator edits, each with a one-line proof in the decision. The two withdrawn equivalents are killed.
+
+Known limits, not fixed: `library.js:683` prepares before the write gate, so a temp name inside `PRAGMA database_list` can be prepared before the refusal. `sql-tail.js:40` reads `stmt.sourceSQL` outside the prepare `try`, and a throw there is pre-existing.
+
+Full local suites are run on the commit that contains this note. Their counts are in the loop-2 packet. `MANIFEST.json` is regenerated after this note. `ATLAS_DEPLOY_STUB` stayed unset. Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open. GitHub Actions was not rerun.
+
+## 2026-11-21 — SQL text survivor tests, high risk (`cursor/atlas-sqltext-lows`)
+
+Loop 1 of 3. Devin's gate on `b1fa82d2772bee79b45e97197bcb5728c707b241` was CODE INCOMPLETE / BODY FAIL, report sha `e9c82d89`. The decision is now high because the classifier gates writes: `handoff/decisions/sqltext-alias-explain.md`. No deploy, no provider call, no secrets. `library.js` was not edited. Public exports of `sql-text.js` are unchanged.
+
+Red is shown by mutants. `e388761e4da741d08a4d0f387bc6e5d81eed564c` and `03b30739a7bdc54ecc8839ec9ebf6866e9709379` are tests. `2c2be2e63d00c3ccdf721746950b6f8fd23e0bf8` removes four equivalent lines. The command `cd deploy/cloudflare-edge && node --test test/write-sqltext-survivors.test.js test/write-sqltext-alias-explain.test.js test/write-v14-gap.test.js` is 8 pass, 0 fail, exit 0 on this head. Deleting the vacuum/reindex-only guard, deleting the top-verb text, and replacing the plan conjunction with `||` each exit 1.
+
+Measured before this note's manifest refresh. `ATLAS_DEPLOY_STUB` stayed unset.
+
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 411 passed, 2 failed, 127 warnings, 153.28s, exit 1. The failures are the two handoff tests against the stale manifest. `MANIFEST.json` is regenerated after this note.
+- `node --test tests/*.test.js`: 419 tests, 419 pass, 0 fail, 0 skipped, 31.7s, exit 0.
+- Edge `node --test test/*.test.js` with workerd `2026-10-23`: 1122 tests, 1122 pass, 0 fail, 0 skipped, 277.2s, exit 0. The alias-begin tail test passed.
+- `make test-ui CHROMIUM_PATH=/usr/bin/google-chrome`: 834 PASS, 0 FAIL, 26 scripts, exit 0.
+
+Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open.
+
+## 2026-11-20 — SQL text alias and explain plan (`cursor/atlas-sqltext-lows`)
+
+Low rows ATLAS-SQLTEXT-ALIAS-VERB-INCONSISTENT and ATLAS-SQLTEXT-EXPLAIN-TRAILING-VERB-READ. Decision: `handoff/decisions/sqltext-alias-explain.md`. Base `main` `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. No deploy, no provider call, no secrets. `library.js` was not edited. `python3 build.py` was not run for this change; `build.py` does not embed `sql-text.js`.
+
+`SELECT 1 VACUUM` and `SELECT 1 REINDEX` are column aliases. They are proven reads. A real `VACUUM` or `REINDEX` statement stays a write on both doors. `write-v14-gap.test.js` no longer calls the two alias strings writes. It keeps `SELECT 1 DETACH other`, `SELECT 1 PRAGMA user_version`, `VACUUM`, `VACUUM main`, `REINDEX`, and `REINDEX refs` as writes. `EXPLAIN QUERY PLAN` of one write verb stays a plan on the primary door and is not a proven read, so the fallback door still returns `SQL_DOOR`. A second verb or a nested write inside that plan is a write on both doors. `EXPLAIN` of a write stays a mutation. `EXPLAIN QUERY PLAN PRAGMA writable_schema = ON` stays a write.
+
+Red `73edbf5d8f494e1e1a0a3310eb232058ca8fcec1` is tests only. `node --test test/write-sqltext-alias-explain.test.js test/write-v14-gap.test.js`: 5 tests, 4 pass, 1 fail, exit 1. The failure is `alias and explain table`. The gap test passes. Fix `9c72ebeca5e6e0ac4011f1cbe56a1cd8d4a39a6b` is `deploy/cloudflare-edge/src/sql-text.js` only. The same command on the fix is 5 pass, 0 fail, exit 0.
+
+Mutants, restored and not committed, same command: removing the alias exemption (4 pass, 1 fail, `SELECT 1 VACUUM` is `read false !== true`); removing `vacuum` and `reindex` from `VERBS` (3 pass, 2 fail, real `VACUUM` is `mut false !== true` and the gap test fails); restoring the `EXPLAIN QUERY PLAN` early return (4 pass, 1 fail, `EXPLAIN QUERY PLAN SELECT 1 DELETE FROM refs` is `read true !== false`); forcing the explained index to `-1` (4 pass, 1 fail, `EXPLAIN QUERY PLAN DELETE FROM refs` is `mut true !== false`).
+
+Measured on the fix commit before this note's manifest refresh. `ATLAS_DEPLOY_STUB` stayed unset.
+
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 411 passed, 2 failed, 127 warnings, 210.67s, exit 1. The failures are `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. Both are the stale manifest. `MANIFEST.json` is regenerated after this note.
+- `node --test tests/*.test.js`: 419 tests, 419 pass, 0 fail, 0 skipped, 31.3s, exit 0.
+- Edge `node --test test/*.test.js` with workerd `2026-10-23` from `/tmp/atlas-workerd-20261023` (`miniflare@5.20261023.3-beta`): 1118 tests, 1118 pass, 0 fail, 0 skipped, 261.2s, exit 0. The alias-begin tail test passed.
+- `make test-ui CHROMIUM_PATH=/usr/bin/google-chrome`: 834 PASS, 0 FAIL, 26 scripts, exit 0.
+
+Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open.
+
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.

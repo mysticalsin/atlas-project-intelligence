@@ -115,6 +115,8 @@ const NESTED_WRITES = ['insert', 'update', 'delete', 'drop', 'alter', 'create', 
 // A second depth-0 verb. DROP, CREATE, ALTER, and ATTACH are not in WRITES,
 // so a read followed by one of them was still a proven read.
 const TRAILING = ['drop', 'create', 'alter', 'attach', 'detach', 'vacuum', 'reindex', 'pragma'];
+// A clause word cannot be the schema or table argument of VACUUM or REINDEX.
+const ALIAS_NEXT = ['from', 'where', 'group', 'having', 'order', 'limit', 'offset', 'union', 'except', 'intersect'];
 function writeVerbAt(tokens, i) {
   const token = tokens[i];
   if (!(token && token.kind === 'word' && !token.quoted && listed(WRITES, token.text))) return false;
@@ -129,10 +131,22 @@ function nestedWrite(tokens, i) {
   if (prev && ((prev.text === 'as' && !prev.quoted) || prev.text === '.')) return false;
   return true;
 }
+// vacuum and reindex after a SELECT or VALUES are a column or table alias when
+// nothing follows that could be their statement argument. A comma is not a
+// token, so a second result column stays a write.
+function readAlias(tokens, i) {
+  const token = tokens[i];
+  if (token.text !== 'vacuum' && token.text !== 'reindex') return false;
+  const next = tokens[i + 1];
+  if (next && next.text !== ';' && !(next.kind === 'word' && !next.quoted && listed(ALIAS_NEXT, next.text))) return false;
+  const at = topVerbAt(tokens);
+  return !!(tokens[at] && listed(READS, tokens[at].text));
+}
 function trailingVerb(tokens, i) {
   const token = tokens[i];
   if (!(token && token.kind === 'word' && !token.quoted && token.depth === 0 && listed(TRAILING, token.text))) return false;
   if (blockedVerb(tokens, i)) return false;
+  if (readAlias(tokens, i)) return false;
   return true;
 }
 function explainsPlan(tokens) {
@@ -145,8 +159,8 @@ function explainsPlan(tokens) {
 }
 // A write verb at depth > 0 is inside a CTE body or a subquery. A write verb
 // after the first depth-0 verb is a second write. REPLACE( is the function.
-// topVerb still returns only the first depth-0 verb. EXPLAIN QUERY PLAN
-// describes a statement, so its verb is not this check.
+// topVerb still returns only the first depth-0 verb. EXPLAIN QUERY PLAN is
+// walked. The one verb it describes is not a second write.
 function explainFirst(sql) {
   let text;
   try { text = mustText(sql); }
@@ -173,10 +187,22 @@ export function explainThenMore(sql) {
     return true;
   }
 }
+// The statement EXPLAIN QUERY PLAN describes. A later or nested verb is not it.
+// A read pragma has no verb in VERBS or READS, so the pragma token is that statement.
+function explainedAt(tokens) {
+  const at = topVerbAt(tokens);
+  if (at >= 0) return at;
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token && token.kind === 'word' && !token.quoted && token.depth === 0 && token.text === 'pragma' && !blockedVerb(tokens, i)) return i;
+  }
+}
 function strayWrite(tokens, sql) {
-  if (explainsPlan(tokens) && explainFirst(sql)) return false;
+  const plan = explainsPlan(tokens) && explainFirst(sql);
+  const explained = plan ? explainedAt(tokens) : -1;
   let seen = false;
   for (let i = 0; i < tokens.length; i++) {
+    if (i === explained) continue;
     const token = tokens[i];
     if (nestedWrite(tokens, i) || (writeVerbAt(tokens, i) && (token.depth > 0 || seen)) || (seen && trailingVerb(tokens, i))) return true;
     if (token && token.kind === 'word' && !token.quoted && token.depth === 0 && !blockedVerb(tokens, i)) {
@@ -219,7 +245,7 @@ function afterCteList(tokens, withAt) {
   }
   return i;
 }
-function topVerb(tokens) {
+function topVerbAt(tokens) {
   let i = 0;
   while (i < tokens.length) {
     const token = tokens[i];
@@ -228,11 +254,15 @@ function topVerb(tokens) {
       continue;
     }
     if (token && token.kind === 'word' && !token.quoted && token.depth === 0 && !blockedVerb(tokens, i)) {
-      if (listed(VERBS, token.text) || listed(READS, token.text)) return token.text;
+      if (listed(VERBS, token.text) || listed(READS, token.text)) return i;
     }
     i++;
   }
-  return '';
+  return -1;
+}
+function topVerb(tokens) {
+  const at = topVerbAt(tokens);
+  return at < 0 ? '' : tokens[at].text;
 }
 function hasStatementVerb(sql) {
   return listed(VERBS, topVerb(sqlTokens(sql)));
@@ -702,7 +732,8 @@ function mutatingBody(sql) {
   if (writableAssignment(sql)) return true;
   if (pragmaVerb(words) && !pragmaRead(sql)) return true;
   if (openingVerb(sql)) return true;
-  // EXPLAIN DELETE still names a mutation. EXPLAIN QUERY PLAN only describes one, and a plan read stays a read.
+  // EXPLAIN of a write names a mutation. EXPLAIN QUERY PLAN of that one verb
+  // returns a plan, so strayWrite does not call the explained verb a second write.
   const plan = verb === 'explain' && words[1] === 'query' && words[2] === 'plan';
   const named = hasStatementVerb(sql);
   if (verb === 'explain' && !plan && named) return true;
@@ -866,13 +897,13 @@ export function provenRead(sql) {
 
 // The primary door asks the same lexer as provenRead. A WITH or EXPLAIN whose
 // statement is not a read is a write even when the first word is not the verb.
-// EXPLAIN QUERY PLAN only describes a statement, so it is not this check.
+// EXPLAIN QUERY PLAN of one verb is not a hidden write. An extra verb is.
 export function hiddenWrite(sql) {
   if (!primordialsHold()) return true;
   try {
     const words = leadingWords(sql);
     const verb = words[0] || '';
-    if (verb === 'explain' && words[1] === 'query' && words[2] === 'plan') return false;
+    if (verb === 'explain' && words[1] === 'query' && words[2] === 'plan') return strayWrite(sqlTokens(sql), sql);
     if (verb !== 'with' && verb !== 'explain') return false;
     return !provenRead(sql);
   } catch {

@@ -1207,8 +1207,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/sql-text.js",
-      "bytes": 34205,
-      "sha256": "d3f460a85259ceaca4f89d06169d06a4b6b0a00ba9649045e9545002778604d3"
+      "bytes": 35763,
+      "sha256": "04dc4e04dcf610ff4f207a0f4f2f3f428647e2800591c921bb42359b3181b15e"
     },
     {
       "path": "deploy/cloudflare-edge/src/subject-rights.js",
@@ -1906,6 +1906,16 @@
       "sha256": "3c7903ebc42e39f983c9816b4dfd512de988b022d21e9cf7ecf4cba68e91b838"
     },
     {
+      "path": "deploy/cloudflare-edge/test/write-sqltext-alias-explain.test.js",
+      "bytes": 8166,
+      "sha256": "e8a08ba0aaf5fdb8908fa30b608e0c48a0d151c585499521a56706f3c5b97976"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/write-sqltext-survivors.test.js",
+      "bytes": 5136,
+      "sha256": "91d46cb41906859ac00f15c5a9873a9cd8739acefedcd1f4d952deeb95e1ac7e"
+    },
+    {
       "path": "deploy/cloudflare-edge/test/write-tail.test.js",
       "bytes": 6357,
       "sha256": "a8683fce5dae6e784509b6344e5cd056628a0c14fe96e669c72b26e6a3dc1035"
@@ -1997,8 +2007,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/write-v14-gap.test.js",
-      "bytes": 4358,
-      "sha256": "c24f88caf193f3d299bee24565d8fb4b80b468e11faa4e2f39b7fee97e30caff"
+      "bytes": 4537,
+      "sha256": "9a0b4cf608788306d27c532c0c34b1a69f85031577b40fbeecf51b90980d1547"
     },
     {
       "path": "deploy/cloudflare-edge/test/write-v14-hold.test.js",
@@ -2282,8 +2292,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 346929,
-      "sha256": "311bfd60630ba451016b72b88b0b6a981fd92c70e54ef68b5d665c65b2522b05"
+      "bytes": 353649,
+      "sha256": "6f6e50623b562c091b08b597002c084c22519b0d23b7701e12de6056fdc13873"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2384,6 +2394,11 @@
       "path": "handoff/decisions/record-dialog-quality-crash.md",
       "bytes": 3816,
       "sha256": "9f7947bffb235354679ffd69cc65c919d7c8be2ad41bccc7f43f8417fd29b350"
+    },
+    {
+      "path": "handoff/decisions/sqltext-alias-explain.md",
+      "bytes": 13394,
+      "sha256": "7343a95ec58fe4cbe5b240127d38d1648ac00ed8ba443712429d5008dbae5785"
     },
     {
       "path": "handoff/provenance/original-v12-manifest.json",
