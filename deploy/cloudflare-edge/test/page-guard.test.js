@@ -71,8 +71,12 @@ test('build.py reads quality.py; capacity, identity, kyutai and speech are casca
 });
 
 function deployEnv(extra) {
-  const env = { ...process.env, ...extra };
-  for (const key of Object.keys(env)) if (key.startsWith('NODE_TEST') || key === 'NODE_CHANNEL_FD') delete env[key];
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) {
+    if (key.startsWith('NODE_TEST') || key === 'NODE_CHANNEL_FD' || key.startsWith('ATLAS_DEPLOY_STUB') || key === 'ATLAS_DEPLOY_STAGE_LOG') delete env[key];
+  }
+  Object.assign(env, extra);
+  for (const key of Object.keys(env)) if (key.startsWith('ATLAS_DEPLOY_STUB')) delete env[key];
   return env;
 }
 function deployTree() {

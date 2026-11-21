@@ -1497,8 +1497,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/page-guard.test.js",
-      "bytes": 9518,
-      "sha256": "e80983ded7d37c2469837c0a791becfc8edf4cafe34118ff2223a6e00ef3c231"
+      "bytes": 13267,
+      "sha256": "8305468fc1a47a0df7dc6bb3c9817ea52817a8fdd5481525a35aaadea0a51e05"
     },
     {
       "path": "deploy/cloudflare-edge/test/parity.test.js",
