@@ -1,18 +1,18 @@
 # Atlas sweep 01 — fix plans
 
-Planner only. No product code in this pull request. Frozen v4 after Sentinel re-review `e4e9dada` of `4d15c83c`. Group 14 is unchanged in this freeze.
+Planner only. No product code in this pull request. Frozen v5 after Devin recheck `e29dfaaf` of `9ce5ea97`. Groups 9 and 13 stay PASS. Groups 1 and 10 are the only plans edited in this freeze. Group 14 is unchanged.
 
 Pinned inputs: confirmer `/cursor/stores/bot/atlas-sweeps/s01/confirm/confirm-report.md` sha256 `57c92dcb651ddef4b7abe9c23424065a2a59fa139d2cdfc6315ce227596eac1c`. Main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. Red tests `96712474b59d6b058ef00479f2bb2d4eb065801e` (PR #31). External Lows from `/cursor/stores/bot/atlas-sweeps/s01/external/hammer-artex-security.md`, confirmed new at that main.
 
 ATLAS-09 is not in these plans. It belongs to the backend writer (`wiki.py`, `knowledge_routes.py`). ATLAS-11 is already fixed by PR #30. It is not planned again.
 
-`SHA256SUMS` in this directory lists the eight plan files and not this index, so the sums hash stays stable if the index is edited. sha256 of `SHA256SUMS`: `8893f60ebcb908e9fbb3265b05d96ca9e6e339496090535ac706e7d22c76681d`.
+`SHA256SUMS` in this directory lists the eight plan files and not this index, so the sums hash stays stable if the index is edited. sha256 of `SHA256SUMS`: `41cdeccfd907d7861172fe6b93a8ff90b7027e1adf80caf644c546ea447c1e9c`.
 
 | Plan | sha256 |
 |---|---|
-| `group-1-scrub-redaction.md` | `7b4c187f6077fc2d8783f7b48c2772a8931b035f0f8b4848a547214f7eefc74e` |
+| `group-1-scrub-redaction.md` | `70582a3fada7797417ab33346908e78d8292c294e26fff42050630292dd3a8d5` |
 | `group-9-profile.md` | `12c84ca137f63b1c5243d2a49ce1e8bbb678cf1e1c87d87b0db5938bf39415b0` |
-| `group-10-erasure-tenant.md` | `d0361783825343868c8c5676053d1efc5b0f90646299e6b4b739b12ae4dd9eff` |
+| `group-10-erasure-tenant.md` | `7506c9ed4fc17788f8fcc1564d435d238dc34850e5c398ed86e40e681224f9cf` |
 | `group-11-voice-prompt-transport.md` | `6921436552fd4a28a2901c96e536a29b6734bdf0a723fd0d1a6f611a7e62f228` |
 | `group-13-worker-auth-routing.md` | `3a3abb94570879bc7572c6e2351d79cd017c5e77b7bff16876aa7f75362da610` |
 | `group-14-rate-limit-consent.md` | `66f3511b43736aef68614dc5d6e6f21c4d15f96072529af7c1ca30c53e083a1f` |
@@ -44,7 +44,7 @@ Every plan has a `Known limits` heading. That section is the residual the writer
 |---|---|---|
 | 1 | H1, M1, L6 in `sweep01-a-logic.test.js` | `sweep01-g1-scrub-props.test.js`, including `M1 a three-letter client name is masked in any case`, `L1 every retain item and sheet field is masked`, `L2 a client name of regex metacharacters is a literal and a pathological name finishes within one second` |
 | 9 | L5 in the A file; both F2 tests in `sweep01-f-stress.test.js` | `sweep01-g9-people.test.js`: `M1 a caller-set manager email does not unlock directory lookup`, `M2 a self-written consultant does not unlock lookup`, `M2 the thirty-first distinct lookup in a day is refused after eviction`, `L1 a profile save that conflicts twice fails closed` |
-| 10 | B1, B2, both B3, B5 in `sweep01-b-security.test.js` | `sweep01-g10-erasure-props.test.js`: `M1 sendTeams skips an unstamped row`, `M2 whitespace atlas_tenant is null and an empty tenant install is refused`, `M3 a formula address with a leading space or NBSP is rejected`, `L1 an empty alias list deletes no rows`, `L2 address match is case-insensitive and the selector does not use instr`, `L3 a non-object revision loses the address` |
+| 10 | B1, B2, both B3, B5 in `sweep01-b-security.test.js` | `sweep01-g10-erasure-props.test.js`: `M1 sendTeams skips an unstamped row`, `M1 sendTeams skips a stamp for another atlas tenant`, `M2 whitespace atlas_tenant is null and an empty tenant install is refused`, `M3 a formula address with a leading space or NBSP is rejected`, `L1 an empty alias list deletes no rows`, `L2 address match is case-insensitive and the selector does not use instr`, `L3 a non-object revision loses the address` |
 | 11 | `tests/test_sweep01_b_prompt.py` (B4 and HAM-03) | `tests/test_sweep01_g11_headers.py`: `test_l1_non_loopback_upstream_is_wss`, `test_l2_prompt_markers_are_absent_from_logs_and_errors`, `test_l3_prompt_frame_is_sent_before_any_audio` |
 | 13 | C-3 line PASS in `sweep01_c_browser.py`; E1 in `sweep01-setup.test.js` | `sweep01-g13-auth.test.js`: `M1 only alg RS256 is imported`, `M2 a cached JWKS older than one hour does not verify`, `M3 unknown kids share one refetch per minute`, `L1 fetch errors and token time claims fail closed`, `L2 the bearer is checked before the body and the body is read once`, `L3 a team value with a port, path, trailing dot, or IP is refused`, `L4 the refusal page escapes HTML`. Gated on question 2. |
 | 14 | F3, F4, F8 in `sweep01-f-stress.test.js` | `sweep01-g14-limit.test.js`: `M1 a long clock step holds for one window and does not open a fresh window`, `L1 rate_hits older than one day are pruned and erasure removes the subject`, `L2 out-of-range limit parameters are refused`, `L3 the limit subject is the verified email`, `L4 a beforeCommit that hangs releases the lock` |
@@ -57,7 +57,7 @@ Devin `6c17bee6`: groups 11, 14, 16, and 17 PASS with no design change. Groups 1
 
 | Group | Devin | What v2 does |
 |---|---|---|
-| 1 | REVISE | One matcher. Client names are not passed with `{ contacts: true }`. Stoplist names `Air` and `Will` stay masked in the stored and upper-case spellings. Contacts of those words are skipped. Non-stoplist names of 3+ characters are whole-word and case-insensitive. Red test `D1 a stoplist client name stays masked and the same word as a contact does not`. |
+| 1 | REVISE | One matcher. Client names are not passed with `{ contacts: true }`. A stoplist client name of 3 or more characters, including `Air` and `Will`, is masked in every case as a whole word. A stoplist contact is not masked, so contact `Will` does not mask `will`. Length 2 stays the stored spelling and the upper-case spelling. Red test `D1 a stoplist client name stays masked and the same word as a contact does not`. |
 | 9 | REVISE | Presales `access() === 'full'` is not a lookup grant. Lookup is limited to the caller's tenant. Red test `D1 a presales lookup does not cross tenants`. |
 | 10 | REVISE | Sentinel's delete wins. The s1 teams fixture changes: the other tenant survives only with an `atlas_tenant` stamp. An unstamped row is deleted by exact email, which is what B2 requires. Red test `D1 an unstamped teams row is deleted by exact email and a stamped other-tenant row remains`. |
 | 11 | PASS | No change. Question 1 parked for Tony. |
@@ -69,6 +69,14 @@ Devin `6c17bee6`: groups 11, 14, 16, and 17 PASS with no design change. Groups 1
 ## v4 — Sentinel `e4e9dada`
 
 Agreed, wording or tests only: groups 1, 9, 10, and 13. Group 14 agreed and is not edited. Group 16 is the design change: `CF-Connecting-IP` only from loopback, the tunnel, or an allowlisted TCP peer, and only when the header is one IP literal. Otherwise the key is `request.remote`.
+
+## v5 — Devin recheck `e29dfaaf`
+
+Groups 9 and 13 stay PASS. Groups 1 and 10 are REVISE. No other plan file changes.
+
+Group 1. A stoplist client name of 3 or more characters is masked in every case as a whole word. `library.test.js` lines 157-162 are the contract. The M1 row no longer excludes a single stoplist word. `masking-routes.test.js` lines 99, 100, 103, 116, 119, and 122 change as that plan says, and `docs/WOW_SPEC.md` lines 191 and 533 are spec lines to update.
+
+Group 10. `sendTeams` skips a stamp for another ATLAS tenant. `s1-afa7b8c` approves with `tenant: ATLAS_TENANT` so line 240 stays `sent`. `invitation-closed-code.test.js` line 37 and `s1-09ada7d.test.js` lines 55 and 95 get a real ATLAS tenant so their success and chain-failure assertions still run. `s1-de9e44c.test.js` line 177 stays `tenant: ''` and expects the 403 blank-tenant refusal, which returns before the 503. A second call with `ATLAS_TENANT` still expects 503.
 
 ## Open questions
 

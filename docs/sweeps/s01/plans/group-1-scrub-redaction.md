@@ -1,6 +1,6 @@
 # Group 1 — scrub / redaction
 
-Plan only. Debate this before anyone edits product code. Revision v4 (Sentinel re-review `e4e9dada` of `4d15c83c`, AGREED, plus the Lows below). A name of 3 or more characters that is not a single stoplist word is case-insensitive. There is no 5-character floor. The client name is not passed with `{ contacts: true }`.
+Plan only. Debate this before anyone edits product code. Revision v5 (Devin recheck `e29dfaaf` of `9ce5ea97`: G1 REVISE). A stoplist client name of 3 or more characters is masked in every case as a whole word. `deploy/cloudflare-edge/test/library.test.js` lines 157-162 are the contract. There is no 5-character floor, and a single stoplist word is not excluded from that match. A name of 2 characters stays the stored spelling and the upper-case spelling. The client name is not passed with `{ contacts: true }`.
 
 Pinned inputs: confirmer report sha256 `57c92dcb651ddef4b7abe9c23424065a2a59fa139d2cdfc6315ce227596eac1c`, main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`, red tests `96712474b59d6b058ef00479f2bb2d4eb065801e` (PR #31).
 
@@ -21,7 +21,7 @@ Findings: H1, M1, L6.
 - `deploy/cloudflare-edge/src/scrub.js` (re-export the matcher so `rating.js` and `scrub.test.js` keep `import { STOPLIST, nameMatcher } from './scrub.js'`)
 - `deploy/cloudflare-edge/src/name-match.js` (new). This is the one shared matcher. Nobody else edits it.
 
-This group also owns `deploy/cloudflare-edge/test/library.test.js` test `forModel regression: a client named "Air" no longer turns "repair" into "repthe client"` and the case-rule assertions in `deploy/cloudflare-edge/test/scrub.test.js` named below. Do not edit any other test in those files.
+This group also owns `deploy/cloudflare-edge/test/library.test.js` test `forModel regression: a client named "Air" no longer turns "repair" into "repthe client"` and the case-rule assertions in `deploy/cloudflare-edge/test/scrub.test.js` named below. Do not edit any other test in those files. It also owns the two review-#12 tests in `deploy/cloudflare-edge/test/masking-routes.test.js` (the comment at lines 78-81 and the assertions at lines 99, 100, 103, 116, 119, and 122) and two spec lines, `docs/WOW_SPEC.md` line 191 and line 533. Do not edit any other line of that spec or any other test in `masking-routes.test.js`.
 
 Do not edit `publication.js`, `library.js`, `util.js`, `profile.js`, `gaps.js`, `session.js`, `languages.js`, `breaker.js`, or any UI, CI, or Python file.
 
@@ -104,7 +104,7 @@ File: `deploy/cloudflare-edge/test/sweep01-g1-scrub-props.test.js`. Write these 
 
 | Sentinel | Change | Red test |
 |---|---|---|
-| M1 | A client name of 3 or more characters that is not a single stoplist word matches as a whole word in any case. `acme` masks `acme`, `Acme`, and `ACME`, and does not mask `acmeware`. Length 2 (`GE`) stays stored-form and upper-case only. | `M1 a three-letter client name is masked in any case` |
+| M1 | A client name of 3 or more characters matches as a whole word in any case, including a single stoplist word. `acme` masks `acme`, `Acme`, and `ACME`, and does not mask `acmeware`. Length 2 (`GE`) stays stored-form and upper-case only. | `M1 a three-letter client name is masked in any case` |
 | Devin | The client name is not passed with `{ contacts: true }`. Client name `Air` masks `air`, `Air`, and `AIR`, and does not mask `repair`. Client name `Will` masks `will`, `Will`, and `WILL`. Contact `Will`, with no client name, does not mask `will`. One matcher implements both. | `D1 a stoplist client name stays masked and the same word as a contact does not` |
 | L1 | `memory.scrub` and `sheet.scrub` run on every string those paths put into a retain item or a sheet draft, including nested sheet fields. Plant `acme` in each string and assert the output has no `acme` in any case. | `L1 every retain item and sheet field is masked` |
 | L2 | Compile names with escaped literals. A client name `a+`, `(acme)`, `.*`, `[`, or `\` masks that literal text and does not mask a bare `a` or `acme`. A pathological name (a long run of `a+` metacharacters against a few thousand `a`s) finishes in under one second. | `L2 a client name of regex metacharacters is a literal and a pathological name finishes within one second` |
@@ -124,6 +124,17 @@ Revert the group commit. Memory and sheet go back to substring replacement. No s
 No file overlap with #15–#30. PR #17 edits `rating.js`, which imports `STOPLIST` from `scrub.js`. The re-export keeps that import valid. Do not change stoplist membership. The case-insensitive floor is 3 characters, and a stoplist client name is included. Keep the `GE` length-2 assertion. Update the `scrub.js` comment that still says a lowercase stoplist client name is not masked. In `scrub.test.js`, the case-rule title that says "5+" becomes 3, `nameMatcher(['Air'])` also masks lowercase `air`, client `Total` masks `total`, and client `Orange` masks `orange`. The contact assertion that `Will` does not mask `will` stays. Do not weaken it, or #17's rating tests will fail for a reason that is not `onEnd`.
 
 `library.test.js` lines 157-162 stay the contract. Client `Air` makes `air`, `Air`, and `AIR` into `the client`, leaves `repair`, masks `Lyon`, and leaves `Lyonnais`. `clientScrub` of that name on `HR teams repair air ducts` still yields `HR teams repair the client ducts`. This group does not change those expected strings.
+
+`masking-routes.test.js` lines 78-81 say client `Orange` is matched case-sensitively and that Kim's lowercase `orange` reaches the model unmasked. That comment is now wrong. `Orange` is a stoplist client name of 3 or more characters, so `orange` is masked as a whole word before the model. Alias `Heron` matches no library client, so the first company placeholder is `[Company 1]` and the map stores the typed span `orange`. Rewrite that comment. Change only these expectations. `Zebracorp` stays `another client` everywhere an assertion already says so.
+
+- Line 99. `seen[0]` no longer starts with `orange juice`. The assertion becomes `assert.match(seen[0], /^\[Company 1\] juice/)`.
+- Line 100. The fake model capitalizes the first sentence, which now starts with `[`, so `recordMask` stores the placeholder. Author `unmask` restores the typed spelling `orange`, not the capitalised echo `Orange`. The first requirement becomes `'orange juice supply chain experience is required for this tender.'` The second stays `'Claims routing like another client is needed.'`
+- Line 103. The other view is `forOthers(recordText(stored))`. The stored first requirement is the placeholder, not the word `Orange`, so it becomes `'[company] juice supply chain experience is required for this tender.'` The second stays `'Claims routing like another client is needed.'` The old `'another client juice...'` string was the mask of the capitalised echo, and that echo is gone.
+- Line 116. Ask's model still returns `why: 'Orange juice supply chains match.'` `forAuthor` passes the placeholder form of the question as `authorText`. `saidIn` does not see the word `orange` there, so `recordText` masks `Orange`. `r.why` becomes `'another client juice supply chains match.'` `r.caveat` stays `'Unlike another client, smaller.'`
+- Line 119. The same echo. `r.why` becomes `'another client juice supply chains match.'` `r.transferable` becomes `['another client juice planning']`. `r.caveat` stays `'Unlike another client, smaller.'`
+- Line 122. The slides model still returns the `Orange juice` strings, and the context was sent as a placeholder, so the author echo is masked. `s.title` becomes `'another client juice logistics'`. `s.summary` becomes `'another client juice planning, unlike another client.'` The bullet becomes `'another client juice supply chain was slow.'`
+
+`docs/WOW_SPEC.md` line 191 is the case rule that still says 5 characters and not a single `STOPLIST` word, and that client `Total` does not mask `total cost of ownership` and client `Orange` does not touch `orange juice`. Replace that sentence. A client name of 3 or more characters, including a single stoplist word, is case-insensitive. `Total` masks `total` in `total cost of ownership`. `Orange` masks `orange` in `orange juice`. A name of 2 characters stays the stored spelling and the upper-case spelling. Line 192, the contact skip for `Will` and `Mark`, stays. Line 533, the F1.10 bullet, lists those same `Total` / `total cost` and `Orange` / `orange juice` pairs as the unmasked cases. Those lowercase forms are now masked. Contact `Will` versus `the supplier will` stays unmasked, and `Zebracorp` versus `zebracorp` stays masked.
 
 PR #31 is the red-test branch. Land the fix on a branch that contains those tests, or cherry-pick the test file. Do not weaken the assertions.
 
