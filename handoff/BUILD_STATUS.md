@@ -13,17 +13,19 @@ Known limit: the new lookup check and the durable cap run only when `user.tenant
 
 Touched: `deploy/cloudflare-edge/src/profile.js`, `deploy/cloudflare-edge/test/sweep01-a-logic.test.js`, `deploy/cloudflare-edge/test/sweep01-f-stress.test.js`, `deploy/cloudflare-edge/test/sweep01-g9-people.test.js`, this file, `MANIFEST.json`.
 
-Not deployed. No provider calls. GitHub Actions is PENDING because the Actions budget is exhausted. No workflow dispatch.
+Not deployed. No provider calls. Draft PR: https://github.com/mysticalsin/atlas-project-intelligence/pull/60. Next task for this group: none. Production gates in `handoff/ACCEPTANCE.md` stay open.
 
-Measured on the working tree before this paragraph's manifest refresh:
+GitHub Actions did not run the suite. Runs 44878311449 (job 136767825886) and 44878293630 (job 136767772017) completed failure with an empty runner. Annotation: The job was not started because an Actions budget is preventing further use. No workflow dispatch. The test result stays PENDING.
+
+Measured on product commit `4b70a86dc8545d854a73ca21ccefc9749abfeb84` before this paragraph's manifest refresh:
 
 - `node --test deploy/cloudflare-edge/test/sweep01-g9-people.test.js deploy/cloudflare-edge/test/sweep01-a-logic.test.js deploy/cloudflare-edge/test/sweep01-f-stress.test.js deploy/cloudflare-edge/test/profile.test.js`: 43 tests, 43 pass, 0 fail, 0 skipped, exit 0.
 - `node --test tests/*.test.js`: 419 tests, 419 pass, 0 fail, 0 skipped, exit 0.
-- `cd deploy/cloudflare-edge && node --test test/*.test.js`: 1132 tests, 1128 pass, 0 fail, 4 skipped, exit 0. The 4 skips are the existing workerd cases that need `ATLAS_WORKERD_ROOT`.
+- `cd deploy/cloudflare-edge && node --test test/*.test.js`: 1132 tests, 1128 pass, 0 fail, 4 skipped, duration_ms 238393.621634, exit 0. The 4 skips are the existing workerd cases that need `ATLAS_WORKERD_ROOT`.
 - `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui`: 834 PASS, 0 FAIL, exit 0.
 - Mutation: 28 new guards negated, 28 killed, 0 survived.
-- `python3 -m pytest tests/test_*.py -q --tb=line` before the manifest commit: 2 failed, 411 passed, 127 warnings, 25.57s, exit 1. Both failures are the stale-manifest handoff tests. They are re-run after the manifest commit.
-- `python3 scripts/check_handoff.py . --dev-git-index --write-manifest`: exit 0, 700 release files. The check without `--write-manifest` is re-run on the committed tree.
+- `python3 -m pytest tests/test_*.py -q --tb=line` on that commit: 413 passed, 127 warnings, 25.14s, exit 0. The pre-commit run was 2 failed, 411 passed, 127 warnings, 25.57s, exit 1. Both failures were the stale-manifest handoff tests.
+- `python3 scripts/check_handoff.py . --dev-git-index` on that commit: PASS, 700 release files, exit 0.
 
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
