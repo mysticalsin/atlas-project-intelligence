@@ -11,13 +11,362 @@ import { recordView, pseudonymise, forAuthor, nameMatcher } from './scrub.js';
 import { winSignals } from './winloop.js';
 // Story rating by TypeSafe JEV (docs/JEV_RATING.md): used only when a rater with a key exists and the owner consented.
 import { RatingError, ratingInput, questionPlan, requestBody, compose, agentQuality, noStoryQuality, sha256Hex, BUDGETS, RUBRIC_VERSION, METRIC_CODES, MODEL } from './rating.js';
-import { storedConsent } from './profile.js';
+import { profileFold, profileSelection, storedConsent } from './profile.js';
+import { placeholders, readChunks } from './sql-bound.js';
 import { sameTenant, TENANT_ID } from './authz.js';
+import { appendAudit, checkpointHead, ensureChain, verifyChain, anchoredVerdict, rewriteRows, verifyDaily, isTombstoneActor } from './audit-chain.js';
 import { recordUsage } from './telemetry.js';
+import { publicationEffect, publicationStatus, publicationTransition, readPublication } from './publication.js';
+import { invitationTransition, noteInvitation, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
+import { bareSemicolon, explainThenMore, hasCreateAsSelect, hiddenWrite, isMutatingStatement, leadingWords, namedVariable, pragmaClass, pragmaSetter, pragmaSetterName, provenRead, remainderIsNoise, splitStatements, sqlShape, unclosedLexeme, unparsedTail, writableAssignment } from './sql-text.js';
+import { sqliteRemainder } from './sql-tail.js';
+import { clockIso, find, includes, isoFrom, parseDate, some, trim } from './primordials.js';
+import { RETENTION } from './policy.generated.js';
+function receiptInsert(sql) {
+  const words = leadingWords(sql);
+  return words[0] === 'insert' && words[1] === 'into' && words[2] === 'consent_receipts';
+}
+function auditReady(sql) {
+  let rows;
+  try { rows = sql.exec("SELECT name FROM pragma_table_info('audit')").toArray(); }
+  catch { return false; }
+  const found = some(rows, (row) => row && row.name === 'hash');
+  if (found !== true && found !== false) throw Object.assign(fail(409, 'The audit chain is tampered.'), { code: 'CHAIN_DAMAGED' });
+  return found === true;
+}
+// A null prototype, a frozen key list, and Object.hasOwn. A polluted prototype is not a name.
+function freezeMap(source) {
+  const map = Object.create(null);
+  for (const key of Object.keys(source)) {
+    const value = source[key];
+    map[key] = Array.isArray(value) ? Object.freeze(value.slice()) : value;
+  }
+  return Object.freeze(map);
+}
+function ownValue(map, keys, name) {
+  if (typeof name !== 'string' || !Object.hasOwn(map, name)) return;
+  for (let i = 0; i < keys.length; i++) if (keys[i] === name) return map[name];
+}
+// Housekeeping runs these statements and no others. The match is the whole statement.
+const HOUSEKEEPING = freezeMap({
+  retention: [
+    "DELETE FROM confirmation_requests WHERE expires_at < ? AND lower(COALESCE(tenant, '')) = ?",
+    "DELETE FROM gap_requests WHERE status != 'open' AND created_at < ? AND lower(COALESCE(tenant, '')) = ?",
+    "DELETE FROM outreach WHERE created_at < ? AND lower(COALESCE(tenant, '')) = ?",
+    "DELETE FROM invitations WHERE status IN ('done', 'dismissed') AND created_at < ? AND lower(COALESCE(tenant, '')) = ?",
+    "DELETE FROM staffing WHERE lower(COALESCE(tenant, '')) = ? AND ((end_date != '' AND end_date < ?) OR (end_date = '' AND updated_at < ?))",
+  ],
+  'consent-retention': [
+    "INSERT OR REPLACE INTO privacy_gate (name, open) VALUES ('receipts', 1)",
+    "INSERT OR REPLACE INTO privacy_gate (name, open) VALUES ('receipts', 0)",
+    'DELETE FROM consent_receipts WHERE subject IN (SELECT subject FROM consent_receipts GROUP BY subject HAVING MAX(at) < ?)',
+  ],
+  'dna-cache': [
+    `INSERT OR REPLACE INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at, tenant)
+      VALUES (?, 'dna', ?, ?, ?, ?, ?, 'pull', ?, ?)`,
+  ],
+  'sign-in': [
+    'INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'UPDATE profiles SET subject = ?, tenant = ?, email = ?, signin = ?, seen_at = ? WHERE rowid = ?',
+  ],
+  'profile-daily': [
+    "DELETE FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND source = 'dna' AND batch = 'pull' AND fetched_at < ?",
+    "DELETE FROM directory WHERE source = ? AND lower(COALESCE(tenant, '')) = ?",
+    "UPDATE directory_imports SET state = 'refused', finished_at = ? WHERE batch = ? AND lower(COALESCE(tenant, '')) = ?",
+  ],
+  telemetry: [
+    `INSERT INTO telemetry (id, at, tenant, persona, kind, feature, outcome, latency_ms, tokens_in, tokens_out, token_status, model, error_class)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ],
+  'telemetry-purge': [
+    "DELETE FROM telemetry WHERE at < ? AND lower(COALESCE(tenant, '')) = ?",
+  ],
+  'teams-seen': [
+    'DELETE FROM teams_seen WHERE at < ?',
+  ],
+});
+const HOUSE_KEYS = Object.freeze(Object.keys(HOUSEKEEPING));
+function consentTrigger(sql) {
+  const shape = sqlShape(sql);
+  if (!shape) return false;
+  const named = some(['consent-no-update', 'consent-no-delete', 'consent-no-replace'], (name) => sqlShape(ownValue(MIGRATIONS, MIGRATION_KEYS, name)) === shape);
+  return named === true;
+}
+const GUARDED_TABLES = ['audit', 'audit_anchor', 'consent_receipts', 'privacy_gate'];
+const AUDIT_TABLES = ['audit', 'audit_anchor'];
+const CATALOG_TABLES = ['sqlite_master', 'sqlite_schema'];
+const CONFLICT = ['replace', 'ignore', 'fail', 'abort', 'rollback'];
+const CLAUSE = Object.freeze(['where', 'set', 'values', 'select', 'from', 'limit', 'order', 'group', 'having', 'returning', 'on', 'left', 'inner', 'join', 'cross', 'as', 'and', 'or', 'not', 'indexed', 'null', 'default', 'add', 'column', 'rename', 'to', 'cascade', 'restrict', 'when', 'begin', 'end', 'into', 'by', 'asc', 'desc', 'offset', 'union', 'nothing', 'do']);
+function namedIn(list, name) {
+  const named = includes(list, name);
+  if (named !== true && named !== false) return true;
+  return named === true;
+}
+function skipExists(words, i) {
+  if (words[i] === 'if' && words[i + 1] === 'not' && words[i + 2] === 'exists') return i + 3;
+  if (words[i] === 'if' && words[i + 1] === 'exists') return i + 2;
+  return i;
+}
+function skipOr(words, i) {
+  if (words[i] !== 'or') return i;
+  for (let k = 0; k < CONFLICT.length; k++) if (CONFLICT[k] === words[i + 1]) return i + 2;
+  return i;
+}
+function clauseWord(word) {
+  const named = includes(CLAUSE, word);
+  if (named !== true && named !== false) return false;
+  return named === true;
+}
+function listedName(list, name) {
+  const named = includes(list, name);
+  if (named !== true && named !== false) return false;
+  return named === true;
+}
+function namesAt(words, i) {
+  const names = [];
+  if (!words[i]) return names;
+  names[0] = words[i];
+  const next = words[i + 1];
+  if (next && !clauseWord(next)) names[1] = next;
+  return names;
+}
+function hits(names, list) {
+  for (let i = 0; i < names.length; i++) if (namedIn(list, names[i])) return true;
+  return false;
+}
+function auditIndexName(name) {
+  if (name === 'audit' || name === 'audit_one_chain_start') return true;
+  if (typeof name !== 'string' || name.length < 6) return false;
+  return name[0] === 'a' && name[1] === 'u' && name[2] === 'd' && name[3] === 'i' && name[4] === 't' && name[5] === '_';
+}
+function targetHits(words, at, list) {
+  return hits(namesAt(words, skipExists(words, at)), list);
+}
+function indexForbidden(words, at) {
+  const names = namesAt(words, skipExists(words, at));
+  for (let i = 0; i < names.length; i++) if (auditIndexName(names[i])) return true;
+  for (let i = at; i < words.length; i++) {
+    if (words[i] === 'on' && hits(namesAt(words, i + 1), AUDIT_TABLES)) return true;
+  }
+  return false;
+}
+function writeTarget(words, i) {
+  const verb = words[i];
+  let at = skipOr(words, i + 1);
+  if (verb === 'insert' || verb === 'replace') {
+    if (words[at] !== 'into') return false;
+    at += 1;
+    const names = namesAt(words, at);
+    const rest = [];
+    for (let n = 1; n < names.length; n++) rest[n - 1] = names[n];
+    if (verb === 'insert' && words[i + 1] !== 'or' && names[0] === 'consent_receipts' && !hits(rest, GUARDED_TABLES) && !hits(rest, CATALOG_TABLES)) return false;
+    return hits(names, GUARDED_TABLES) || hits(names, CATALOG_TABLES);
+  }
+  if (verb !== 'update') return false;
+  const names = namesAt(words, at);
+  return hits(names, GUARDED_TABLES) || hits(names, CATALOG_TABLES);
+}
+function createShadow(words, i) {
+  let at = i + 1;
+  if (words[at] === 'or') {
+    at += 1;
+    if (words[at] === 'replace') at += 1;
+  }
+  if (words[at] === 'temp' || words[at] === 'temporary') at += 1;
+  if (words[at] === 'unique') at += 1;
+  if (words[at] === 'virtual' && words[at + 1] === 'table') at += 2;
+  else if (words[at] === 'table' || words[at] === 'view' || words[at] === 'index' || words[at] === 'trigger') at += 1;
+  else return false;
+  return targetHits(words, at, GUARDED_TABLES);
+}
+function renameGuarded(words, i) {
+  if (words[i] !== 'alter' || words[i + 1] !== 'table') return false;
+  for (let k = i + 2; k < words.length - 1; k++) {
+    if (words[k] === 'rename' && words[k + 1] === 'to') return targetHits(words, k + 2, GUARDED_TABLES);
+  }
+  return false;
+}
+function receiptIndex(words, at) {
+  const tables = ['consent_receipts', 'privacy_gate'];
+  for (let i = at; i < words.length; i++) {
+    if (words[i] === 'on' && hits(namesAt(words, i + 1), tables)) return true;
+  }
+  return false;
+}
+function recordedEarly(sql) {
+  let words;
+  try { words = leadingWords(sql); }
+  catch { return true; }
+  if (!words) return true;
+  for (let i = 0; i < words.length; i++) {
+    if (words[i] === 'create' && (createShadow(words, i) || receiptIndex(words, i))) return true;
+    if (renameGuarded(words, i)) return true;
+  }
+  return false;
+}
+function refusePragma(sql, kind) {
+  let klass = 'setter';
+  try { klass = pragmaClass(sql); }
+  catch { klass = 'setter'; }
+  if (klass === 'writable' || klass === 'setter') {
+    if (klass === 'writable') return true;
+    if (kind !== 'schema' && kind !== 'registered') return true;
+    const name = pragmaSetterName(sql);
+    return name !== 'user_version' && name !== 'foreign_keys';
+  }
+  return false;
+}
+function recordedForbidden(sql) {
+  let words;
+  try { words = leadingWords(sql); }
+  catch { return true; }
+  if (!words) return true;
+  for (let i = 0; i < words.length; i++) {
+    if (words[i] === 'drop' && words[i + 1] === 'trigger') return true;
+    if (words[i] === 'drop' && (words[i + 1] === 'table' || words[i + 1] === 'view') && targetHits(words, i + 2, GUARDED_TABLES)) return true;
+    if (words[i] === 'drop' && words[i + 1] === 'index' && (targetHits(words, i + 2, GUARDED_TABLES) || indexForbidden(words, i + 2))) return true;
+    if (words[i] === 'alter' && words[i + 1] === 'table' && (targetHits(words, i + 2, GUARDED_TABLES) || renameGuarded(words, i))) return true;
+    if (words[i] === 'delete' && words[i + 1] === 'from' && (targetHits(words, i + 2, GUARDED_TABLES) || targetHits(words, i + 2, CATALOG_TABLES))) return true;
+    if ((words[i] === 'update' || words[i] === 'insert' || words[i] === 'replace') && writeTarget(words, i)) return true;
+    if (words[i] === 'create' && (createShadow(words, i) || receiptIndex(words, i) || (words[i + 1] === 'index' || (words[i + 1] === 'unique' && words[i + 2] === 'index')) && indexForbidden(words, words[i + 1] === 'index' ? i + 2 : i + 3))) return true;
+  }
+  return false;
+}
+function explainedStart(words) {
+  let i = 0;
+  if (words[0] === 'explain') {
+    i = 1;
+    if (words[1] === 'query' && words[2] === 'plan') i = 3;
+  }
+  return i;
+}
+function alwaysBlocked(sql) {
+  let words;
+  try { words = leadingWords(sql); }
+  catch { return true; }
+  if (!words || !words.length) return false;
+  const i = explainedStart(words);
+  const verb = words[i] || '';
+  if (verb === 'attach' || verb === 'detach') return true;
+  if (writableAssignment(sql)) return true;
+  if (verb === 'delete' && words[i + 1] === 'from' && targetHits(words, i + 2, CATALOG_TABLES)) return true;
+  if ((verb === 'update' || verb === 'insert' || verb === 'replace' || verb === 'drop' || verb === 'alter') && recordedForbidden(sql)) {
+    for (let k = 0; k < words.length; k++) if (namedIn(CATALOG_TABLES, words[k]) || words[k] === 'writable_schema') return true;
+  }
+  if (verb === 'drop' && words[i + 1] === 'index' && indexForbidden(words, i + 2)) return true;
+  if (verb === 'create' && (words[i + 1] === 'index' || (words[i + 1] === 'unique' && words[i + 2] === 'index')) && indexForbidden(words, words[i + 1] === 'index' ? i + 2 : i + 3)) return true;
+  return false;
+}
+function isCreateTrigger(sql) {
+  const words = leadingWords(sql);
+  if (words[0] !== 'create') return false;
+  let i = 1;
+  if (words[i] === 'temp' || words[i] === 'temporary') i++;
+  if (words[i] === 'if' && words[i + 1] === 'not' && words[i + 2] === 'exists') i += 3;
+  return words[i] === 'trigger';
+}
+function housekeepingAllowed(reason, sql) {
+  const list = ownValue(HOUSEKEEPING, HOUSE_KEYS, reason);
+  if (!list || !sqlShape(sql)) return false;
+  const shape = sqlShape(sql);
+  const allowed = some(list, (item) => sqlShape(item) === shape);
+  return allowed === true;
+}
+// The consent-retention delete's only parameter is the cutoff. It is this clock minus the policy period.
+// A date supplied by the caller is not bound. Other housekeeping statements still carry their own row values.
+const CONSENT_DELETE = 'DELETE FROM consent_receipts WHERE subject IN (SELECT subject FROM consent_receipts GROUP BY subject HAVING MAX(at) < ?)';
+function consentCutoff(now) {
+  const category = find(RETENTION.categories, (item) => item.id === 'consent_receipts');
+  if (category === null) throw Object.assign(fail(500, 'The consent cutoff is not a finite time.'), { code: 'SQL_DOOR' });
+  const span = category && category.hours ? category.hours * 36e5 : ((category && category.days) || 0) * 864e5;
+  const parsed = parseDate(now);
+  if (parsed == null) throw Object.assign(fail(500, 'The consent cutoff is not a finite time.'), { code: 'SQL_DOOR' });
+  const ms = parsed - span;
+  const cutoff = isoFrom(ms);
+  if (cutoff == null) throw Object.assign(fail(500, 'The consent cutoff is not a finite time.'), { code: 'SQL_DOOR' });
+  return cutoff;
+}
+// Schema accepts CREATE TABLE and CREATE INDEX IF NOT EXISTS on these names.
+// Drop, alter, trigger, and CREATE TABLE AS SELECT are not in this set.
+const KNOWN_TABLES = Object.freeze([
+  'refs', 'revisions', 'audit', 'invitations', 'manager_trust', 'manager_trust_v2',
+  'staffing', 'staffing_v2', 'outreach', 'teams_conversations', 'teams_seen',
+  'journey', 'journey_v2', 'consent_receipts', 'privacy_flags', 'erasure_log', 'erasure_holds', 'privacy_gate',
+  'gap_requests', 'telemetry', 'claims', 'confirmation_requests', 'bids', 'bid_references',
+  'profiles', 'profiles_v2', 'profile_collapsed', 'directory', 'directory_v2', 'directory_imports', 'directory_imports_v2',
+  'living_artifacts', 'living_requirements',
+]);
+const KNOWN_INDEXES = Object.freeze([
+  'refs_owner_local', 'invitations_open_scope', 'outreach_subject', 'outreach_status',
+  'teams_conversations_email', 'journey_tenant_subject', 'consent_receipts_subject',
+  'telemetry_at', 'claims_ref', 'claims_sentence', 'confirmation_requests_ref',
+  'confirmation_requests_to', 'bids_owner', 'living_owner',
+]);
+function schemaAllowed(statement) {
+  if (splitStatements(statement).length !== 1 || hasCreateAsSelect(statement)) return false;
+  const words = leadingWords(statement);
+  if (words[0] !== 'create') return false;
+  if (words[1] === 'trigger') {
+    const shape = sqlShape(statement);
+    const named = some(['consent-no-update', 'consent-no-delete', 'consent-no-replace'], (name) => sqlShape(ownValue(MIGRATIONS, MIGRATION_KEYS, name)) === shape);
+    return named === true;
+  }
+  if (words[1] === 'table') {
+    let at = 2;
+    if (words[at] === 'if' && words[at + 1] === 'not' && words[at + 2] === 'exists') at += 3;
+    const name = words[at];
+    return !!name && name !== 'audit_anchor' && listedName(KNOWN_TABLES, name);
+  }
+  let at = 1;
+  if (words[at] === 'unique') at++;
+  if (words[at] !== 'index') return false;
+  at++;
+  if (!(words[at] === 'if' && words[at + 1] === 'not' && words[at + 2] === 'exists')) return false;
+  at += 3;
+  const index = words[at];
+  const table = words[at + 2];
+  if (words[at + 1] !== 'on' || table === 'audit' || table === 'audit_anchor') return false;
+  return listedName(KNOWN_INDEXES, index) && listedName(KNOWN_TABLES, table);
+}
+// Named migrations. None of these target audit or audit_anchor. Triggers are named here, not accepted as free text.
+export const MIGRATIONS = freezeMap({
+  'invitations-tenant': 'ALTER TABLE invitations ADD COLUMN tenant TEXT',
+  'refs-tenant': "ALTER TABLE refs ADD COLUMN tenant TEXT NOT NULL DEFAULT ''",
+  'drop-refs-owner-local': 'DROP INDEX IF EXISTS refs_owner_local',
+  'drop-manager-trust': 'DROP TABLE manager_trust',
+  'rename-manager-trust': 'ALTER TABLE manager_trust_v2 RENAME TO manager_trust',
+  'drop-staffing': 'DROP TABLE staffing',
+  'rename-staffing': 'ALTER TABLE staffing_v2 RENAME TO staffing',
+  'outreach-tenant': "ALTER TABLE outreach ADD COLUMN tenant TEXT NOT NULL DEFAULT ''",
+  'outreach-directory-tenant': "ALTER TABLE outreach ADD COLUMN directory_tenant TEXT NOT NULL DEFAULT ''",
+  'outreach-conversation': "ALTER TABLE outreach ADD COLUMN conversation_id TEXT NOT NULL DEFAULT ''",
+  'outreach-idempotency': 'ALTER TABLE outreach ADD COLUMN idempotency_key TEXT',
+  'drop-journey': 'DROP TABLE journey',
+  'rename-journey': 'ALTER TABLE journey_v2 RENAME TO journey',
+  'erasure-holds-tenant': 'ALTER TABLE erasure_holds ADD COLUMN tenant TEXT',
+  'gap-tenant': "ALTER TABLE gap_requests ADD COLUMN tenant TEXT NOT NULL DEFAULT ''",
+  'confirmation-tenant': "ALTER TABLE confirmation_requests ADD COLUMN tenant TEXT NOT NULL DEFAULT ''",
+  'bids-tenant': "ALTER TABLE bids ADD COLUMN tenant TEXT NOT NULL DEFAULT ''",
+  'drop-profiles': 'DROP TABLE profiles',
+  'rename-profiles': 'ALTER TABLE profiles_v2 RENAME TO profiles',
+  'drop-profiles-v2': 'DROP TABLE profiles_v2',
+  'drop-directory': 'DROP TABLE directory',
+  'rename-directory': 'ALTER TABLE directory_v2 RENAME TO directory',
+  'drop-directory-v2': 'DROP TABLE directory_v2',
+  'drop-directory-imports': 'DROP TABLE directory_imports',
+  'rename-directory-imports': 'ALTER TABLE directory_imports_v2 RENAME TO directory_imports',
+  'drop-directory-imports-v2': 'DROP TABLE directory_imports_v2',
+  'consent-no-update': "CREATE TRIGGER IF NOT EXISTS consent_receipts_no_update BEFORE UPDATE ON consent_receipts BEGIN SELECT RAISE(ABORT, 'consent receipts are append-only'); END",
+  'consent-no-delete': "CREATE TRIGGER IF NOT EXISTS consent_receipts_no_delete BEFORE DELETE ON consent_receipts WHEN COALESCE((SELECT open FROM privacy_gate WHERE name = 'receipts'), 0) != 1 BEGIN SELECT RAISE(ABORT, 'consent receipts are append-only'); END",
+  'consent-no-replace': "CREATE TRIGGER IF NOT EXISTS consent_receipts_no_replace BEFORE INSERT ON consent_receipts WHEN EXISTS (SELECT 1 FROM consent_receipts WHERE id = NEW.id) BEGIN SELECT RAISE(ABORT, 'consent receipts are append-only'); END",
+});
+const MIGRATION_KEYS = Object.freeze(Object.keys(MIGRATIONS));
 const DUPLICATE = 0.9; // cosine similarity above which two references are flagged as the same or a related project
 export const PRACTICES = { data_ai: 'Data & AI', web_app: 'Web & App Development', telecom: 'Telecom & Networks', sap_erp: 'SAP & ERP', cloud_infra: 'Cloud & Infrastructure', cybersecurity: 'Cybersecurity', transformation: 'Transformation & Strategy', engineering: 'Engineering & Industry' };
 
 export const STATUSES = ['in_review', 'needs_work', 'changes_requested', 'awaiting_validation', 'published', 'admin_test', 'withdrawn'];
+// Tony has not approved this sentence. It is one constant so the wording can change in one place.
+export const PUBLICATION_CHANGE_REFUSED = 'That publication change is not allowed.';
 const REVIEW_DAYS = 180; // references are due for an update six months after their last change
 
 // Server-side bounds for everything a browser may send. Unknown fields are dropped.
@@ -92,33 +441,50 @@ const waitAtMost = (p, ms) => new Promise(resolve => { const t = setTimeout(reso
 // Without a key (fallback no_key) the audit text is today's, including when the review agent did not answer.
 const auditDetail = q => `score ${q.score}, ${q.status}` + (q.engine === 'jev' ? ' · JEV' : q.escalatedFrom ? ' · review agent (second opinion)' : q.engine === 'rules' && q.fallbackReason !== 'no_key' ? ' · rules only' : '');
 
+// Status is the publication reducer. Callers that already built the next state use this.
+// A revision goes through publicationTransition({ type: 'revised' }) instead of writing the fields here.
+const publicationLog = line => { try { console.warn(JSON.stringify(line)); } catch { /* logging never changes the status */ } };
 export function deriveStatus(state) {
-  if (state.withdrawn) return 'withdrawn';
-  const v = state.validation || {};
-  // A verified admin bypass is explicit and audited. The manager-staff checkbox never arrives here as not_required.
-  if (v.status === 'admin_bypass') {
-    if (state.test) return 'admin_test';
-    if (!state.quality) return 'in_review';
-    if (state.quality.status !== 'ready') return 'needs_work';
-    return 'published';
+  const effect = publicationEffect(state);
+  if (effect) publicationLog(effect);
+  return publicationStatus(state);
+}
+// A rejected transition is logged and dropped. Callers must not read its state or status.
+function malformedRow(id) {
+  publicationLog({ atlas_metric: 'library', id: id ?? null, event: 'malformed_row' });
+}
+function readStoredStory(r) {
+  let stored, data;
+  try {
+    stored = JSON.parse(r.state);
+    data = JSON.parse(r.data);
+  } catch {
+    malformedRow(r.id);
+    return null;
   }
-  if (!state.quality) return 'in_review';
-  if (state.quality.status !== 'ready') return 'needs_work';
-  if (v.status === 'changes_requested' || v.managerDecision === 'changes_requested' || v.presalesDecision === 'changes_requested') return 'changes_requested';
-  const both = v.managerDecision === 'approved' && v.presalesDecision === 'approved';
-  if (v.status === 'validated' || both) return 'published';
-  return 'awaiting_validation';
+  const viewed = readPublication(stored);
+  // storedStatus is the column. CAS uses it. status may be the decoded value.
+  return { ...r, data, state: viewed.state, status: viewed.status == null ? r.status : viewed.status, storedStatus: r.status };
+}
+
+export function acceptPublication(result, event) {
+  if (!result || result.ok === false || result.rejection) {
+    if (result?.rejection) publicationLog(result.rejection);
+    return null;
+  }
+  const effect = publicationEffect(result.state, event);
+  if (effect) publicationLog(effect);
+  return result;
 }
 
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS refs (id TEXT PRIMARY KEY, owner TEXT NOT NULL, local_id TEXT, title TEXT, status TEXT, revision INTEGER, content_hash TEXT,
     practice TEXT, industry TEXT, country TEXT, manager_email TEXT, members TEXT, quality_score INTEGER, created_at TEXT, updated_at TEXT, updated_by TEXT,
-    next_review TEXT, merged_into TEXT, data TEXT, state TEXT, embedding TEXT)`,
-  'CREATE UNIQUE INDEX IF NOT EXISTS refs_owner_local ON refs(owner, local_id)',
+    next_review TEXT, merged_into TEXT, data TEXT, state TEXT, embedding TEXT, tenant TEXT NOT NULL DEFAULT '')`,
   'CREATE TABLE IF NOT EXISTS revisions (id TEXT, revision INTEGER, data TEXT, author TEXT, at TEXT, PRIMARY KEY (id, revision))',
   'CREATE TABLE IF NOT EXISTS audit (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT, actor TEXT, action TEXT, at TEXT, detail TEXT)',
   `CREATE TABLE IF NOT EXISTS invitations (id TEXT PRIMARY KEY, email TEXT, project_id TEXT, title TEXT, reason TEXT, slot TEXT, reference_id TEXT,
-    status TEXT, created_at TEXT, source TEXT)`,
+    status TEXT, created_at TEXT, source TEXT, tenant TEXT)`,
 ];
 
 function migrateManagerTrust(lib) {
@@ -126,52 +492,286 @@ function migrateManagerTrust(lib) {
   const create = `CREATE TABLE manager_trust_v2 (
     owner TEXT NOT NULL, email TEXT NOT NULL, source TEXT, tenant TEXT NOT NULL DEFAULT '', at TEXT,
     PRIMARY KEY (owner, email, tenant))`;
-  if (!exists) { lib.sql.exec(create.replace('manager_trust_v2', 'manager_trust')); return; }
+  if (!exists) { lib.exec(create.replace('manager_trust_v2', 'manager_trust')); return; }
   const pk = lib.rows("SELECT name FROM pragma_table_info('manager_trust') WHERE pk > 0 ORDER BY pk").map(r => r.name);
   if (pk.join(',') === 'owner,email,tenant') return;
   const cols = lib.rows("SELECT name FROM pragma_table_info('manager_trust')").map(r => r.name);
-  lib.sql.exec(create);
+  lib.exec(create);
   const tenantSql = cols.includes('tenant') ? "COALESCE(tenant, '')" : "''";
-  lib.sql.exec(`INSERT INTO manager_trust_v2 (owner, email, source, tenant, at)
-    SELECT owner, email, source, ${tenantSql}, at FROM manager_trust`);
-  lib.sql.exec('DROP TABLE manager_trust');
-  lib.sql.exec('ALTER TABLE manager_trust_v2 RENAME TO manager_trust');
+  return () => {
+    lib.recorded(() => {
+      lib.exec(`INSERT INTO manager_trust_v2 (owner, email, source, tenant, at)
+        SELECT owner, email, source, ${tenantSql}, at FROM manager_trust`);
+      lib.log('schema', 'atlas', 'schema copy', 'manager_trust');
+    });
+    Library.migrate(lib, 'drop-manager-trust');
+    Library.migrate(lib, 'rename-manager-trust');
+  };
 }
 function migrateStoryTenant(lib) {
   const cols = lib.rows("SELECT name FROM pragma_table_info('refs')").map(r => r.name);
+  let copy = false;
   if (cols.length && !cols.includes('tenant')) {
-    lib.sql.exec("ALTER TABLE refs ADD COLUMN tenant TEXT NOT NULL DEFAULT ''");
-    // Copy the tenant already stored on the story. Blank stays blank. Nothing is assigned.
-    lib.sql.exec("UPDATE refs SET tenant = COALESCE(json_extract(state, '$.tenant'), '')");
+    Library.migrate(lib, 'refs-tenant');
+    copy = true;
   }
   const idx = lib.rows("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'refs_owner_local'")[0]?.sql || '';
   if (!idx.includes('tenant')) {
-    lib.sql.exec('DROP INDEX IF EXISTS refs_owner_local');
-    lib.sql.exec('CREATE UNIQUE INDEX refs_owner_local ON refs(owner, local_id, tenant)');
+    Library.migrate(lib, 'drop-refs-owner-local');
+    lib.exec('CREATE UNIQUE INDEX IF NOT EXISTS refs_owner_local ON refs(owner, local_id, tenant)');
   }
+  if (!copy) return null;
+  return () => {
+    const pending = lib.rows("SELECT COUNT(*) AS n FROM refs WHERE COALESCE(json_extract(state, '$.tenant'), '') != ''")[0].n;
+    if (!pending) return;
+    lib.recorded(() => {
+      lib.exec("UPDATE refs SET tenant = COALESCE(json_extract(state, '$.tenant'), '')");
+      lib.log('schema', 'atlas', 'schema copy', 'refs tenant');
+    });
+  };
+}
+function defaultNow() {
+  const out = clockIso();
+  if (typeof out !== 'string') throw Object.assign(fail(500, 'The clock is not a finite time.'), { code: 'SQL_DOOR' });
+  return out;
 }
 export class Library {
+  // Door flags are private. A callback cannot read or replace them.
+  // open, receiptOnly, and appended are copied into locals at the check, so a getter cannot flip the decision.
+  // The driver is a private field. It is not stored in a WeakMap.
+  #state = { open: 0, kind: '', reason: '', auditTx: 0, appended: false, receiptOnly: true, migration: '' };
+  #sql;
   // services: outbound adapters for feature modules ({ teams } in production; empty in tests and local runs).
   // rater: rating.storyRater(env) (null: no JEV); metric(name, values): numbers only (default: one console.log line).
-  constructor(sql, { now = () => new Date().toISOString(), newId = () => crypto.randomUUID().replace(/-/g, ''), complete = null, embed = null, readyScore = READY_SCORE, model = '', services = {},
-    rater = null, metric = defaultMetric, transactionSync = null } = {}) {
+  constructor(sql, { now = defaultNow, newId = () => crypto.randomUUID().replace(/-/g, ''), complete = null, embed = null, readyScore = READY_SCORE, model = '', services = {},
+    rater = null, metric = defaultMetric, transactionSync = null, auditKey = '', dbId = '' } = {}) {
+    if (auditKey == null) throw Object.assign(fail(503, 'LOG_SALT is not set.'), { code: 'LOG_SALT' });
+    this.#sql = sql;
     const atomic = typeof transactionSync === 'function' ? transactionSync : (typeof sql?.transactionSync === 'function' ? sql.transactionSync.bind(sql) : null);
-    Object.assign(this, { sql, now, newId, complete, embed, readyScore, model, services, rater, metric, transactionSync: atomic });
+    // One synchronous transaction for a business write and its audit line. A 409 or a 503 rolls both back.
+    // An inner call joins the open transaction. There is no await inside it: a returned promise is a mistake.
+    // Without a real transaction the property stays null, so a caller that cannot be atomic still refuses.
+    // The door opens inside the transaction, so exec can write and a throw rolls the write back.
+    // A nested call joins this transaction and cannot turn the checkpoint off.
+    // The anchor moves for every recorded append while the chain is healthy, including a consent receipt.
+    // It stays put only when the chain is already damaged and every write was a consent receipt.
+    const recorded = (fn) => {
+      if (typeof fn !== 'function') throw fail(500, 'A library write needs a function.');
+      const state = this.#state;
+      if (state.auditTx) return this.#enter(fn, 'recorded');
+      if (typeof this._atomic !== 'function') throw fail(503, 'Atomic library writes need storage.transactionSync.');
+      const run = () => {
+        const sql = this.#sql;
+        const ready = auditReady(sql);
+        const healthy = ready && anchoredVerdict(sql, verifyChain(sql, this.auditKey, this.dbId)).ok;
+        state.appended = false;
+        state.receiptOnly = true;
+        const result = this.#enter(fn, 'recorded');
+        const appended = state.appended === true;
+        const receiptOnly = state.receiptOnly === true;
+        if (ready && receiptOnly !== true) {
+          let verdict;
+          try { verdict = anchoredVerdict(sql, verifyChain(sql, this.auditKey, this.dbId)); }
+          catch { verdict = { ok: false }; }
+          if (!verdict || verdict.ok !== true) throw Object.assign(fail(409, 'The audit chain is tampered.'), { code: 'CHAIN_DAMAGED' });
+        }
+        if (ready && !healthy && !receiptOnly) throw Object.assign(fail(409, 'The audit chain is tampered.'), { code: 'CHAIN_DAMAGED' });
+        if (appended && (healthy || !receiptOnly)) {
+          const checkpoint = checkpointHead(sql, this.auditKey, this.dbId);
+          if (!checkpoint.ok) throw Object.assign(fail(409, 'The audit chain is tampered.'), { code: checkpoint.reason });
+        }
+        return result;
+      };
+      state.auditTx = 1;
+      try { return this._atomic(run); }
+      finally { state.auditTx = 0; }
+    };
+    Object.assign(this, { newId, complete, embed, readyScore, model, services, rater, metric, _atomic: atomic, recorded, transactionSync: typeof atomic === 'function' ? recorded : null, auditKey, dbId: String(dbId ?? '') });
+    Object.defineProperty(this, 'now', { value: now, writable: false, enumerable: true, configurable: false });
     this.inflight = new Map(); // `${id}:${revision}` -> { gen, engine, first, all }: one rating per revision at a time
-    for (const q of SCHEMA) this.sql.exec(q);
+    let trustCopy = null;
+    let storyCopy = null;
+    this.schema(() => {
+      for (const q of SCHEMA) this.exec(q);
+      const refCols = this.rows("SELECT name FROM pragma_table_info('refs')").map(r => r.name);
+      if (refCols.includes('tenant')) this.exec('CREATE UNIQUE INDEX IF NOT EXISTS refs_owner_local ON refs(owner, local_id, tenant)');
+      trustCopy = migrateManagerTrust(this);
+    });
+    ensureChain(this.#sql, this.auditKey, this.transactionSync, this.dbId);
     const inv = this.rows("SELECT name FROM pragma_table_info('invitations')").map(r => r.name);
-    if (inv.length && !inv.includes('tenant')) this.sql.exec('ALTER TABLE invitations ADD COLUMN tenant TEXT');
-    this.sql.exec("CREATE UNIQUE INDEX IF NOT EXISTS invitations_open_scope ON invitations(email, reason, project_id, reference_id, tenant) WHERE status IN ('open', 'scheduled')");
-    migrateManagerTrust(this);
-    migrateStoryTenant(this);
+    if (inv.length && !inv.includes('tenant')) this.#registered('invitations-tenant');
+    this.schema(() => {
+      this.exec("CREATE UNIQUE INDEX IF NOT EXISTS invitations_open_scope ON invitations(email, reason, project_id, reference_id, tenant) WHERE status IN ('open', 'scheduled')");
+    });
+    this.schema(() => { storyCopy = migrateStoryTenant(this); });
+    if (typeof trustCopy === 'function') trustCopy();
+    if (typeof storyCopy === 'function') storyCopy();
   }
 
-  rows(q, ...p) { return this.sql.exec(q, ...p).toArray(); }
+  // A mutating statement needs one of the three doors. Reads do not. The one raw exec is below.
+  // Callers outside Library use these three because the raw handle is private.
+  // chainVerdict: privacy.js records a receipt only when the chain is healthy, and profile.js does the same for a directory import. auditLines uses it too.
+  // rewriteAudit: subject-rights.js and retention.js pass a tombstone and the row numbers. A predicate is refused.
+  // dailyChain: library-routes.js is the daily check.
+  chainVerdict() {
+    const sql = this.#sql;
+    return anchoredVerdict(sql, verifyChain(sql, this.auditKey, this.dbId));
+  }
+  rewriteAudit(pseudonym, seqs) {
+    const rows = Array.isArray(seqs) ? seqs : null;
+    const badRow = !rows || some(rows, (n) => !Number.isInteger(n) || n < 1) !== false;
+    if (typeof pseudonym !== 'string' || isTombstoneActor(pseudonym) !== true || badRow) {
+      throw Object.assign(fail(500, 'An audit erasure needs a tombstone and the row numbers.'), { code: 'AUDIT_ERASURE' });
+    }
+    const want = new Set(rows);
+    return this.recorded(() => {
+      const result = rewriteRows(this.#sql, row => want.has(Number(row.seq)) ? { actor: pseudonym, detail: '' } : null, this.auditKey, this.dbId);
+      if (result.changed && !result.refused) this.log('audit', 'privacy', 'audit erasure', String(result.changed));
+      return result;
+    });
+  }
+  dailyChain() {
+    return verifyDaily(this.#sql, this.auditKey, this.dbId);
+  }
+  #enter(fn, kind) {
+    if (typeof fn !== 'function') throw fail(500, 'A library write needs a function.');
+    const state = this.#state;
+    const prevKind = state.kind;
+    const prevOpen = state.open;
+    if (kind) state.kind = kind;
+    state.open = prevOpen + 1;
+    try {
+      const result = fn();
+      if (result && typeof result.then === 'function') throw fail(500, 'A library write cannot await inside its audit transaction.');
+      return result;
+    } finally {
+      state.open = prevOpen;
+      state.kind = prevKind;
+    }
+  }
+  static migrate(lib, name) {
+    return lib.#registered(name);
+  }
+  #registered(name) {
+    const statement = ownValue(MIGRATIONS, MIGRATION_KEYS, name);
+    if (typeof statement !== 'string') throw Object.assign(fail(500, 'That migration is not registered.'), { code: 'SCHEMA_DML' });
+    const apply = () => {
+      const state = this.#state;
+      const prev = state.migration;
+      state.migration = statement;
+      try { this.#enter(() => { this.exec(statement); }, 'registered'); }
+      finally { state.migration = prev; }
+    };
+    // A caller that already opened recorded writes the one line for the whole rebuild.
+    if (this.#state.auditTx) return apply();
+    return this.recorded(() => {
+      apply();
+      this.log('schema', 'atlas', 'schema migration', name);
+    });
+  }
+  exec(statement, ...params) {
+    if (typeof statement !== 'string') throw Object.assign(fail(500, 'A SQL write must be a string.'), { code: 'SQL_TEXT' });
+    const sql = statement;
+    // Preparing a pragma assignment runs it. Classify the whole string first.
+    // A named parameter is refused before the statement boundary, so a TCL suffix
+    // that hides a second statement is SQL_DOOR rather than a later code.
+    if (namedVariable(sql) || unclosedLexeme(sql) || explainThenMore(sql)) throw Object.assign(fail(500, 'This statement is not allowed.'), { code: 'SQL_DOOR' });
+    if (refusePragma(sql, this.#state.kind)) throw Object.assign(fail(500, 'This statement is not allowed.'), { code: 'SQL_DOOR' });
+    if (this.#state.kind === 'recorded' && recordedEarly(sql)) throw Object.assign(fail(500, 'A recorded write cannot change audit or consent receipts.'), { code: 'SQL_DOOR' });
+    // The boundary is the text SQLite prepared. The hand counter is not the authority.
+    // Workerd's sql.exec does not return that tail, so a missing parser refuses a leftover semicolon.
+    let tail = null;
+    if (typeof this.#sql?.statementTail === 'function') {
+      try { tail = this.#sql.statementTail(sql); }
+      catch { tail = null; }
+    }
+    if (typeof tail !== 'string') tail = sqliteRemainder(sql);
+    // A real prepare boundary is one statement. Without it, a semicolon that is
+    // not one of the three consent triggers is not a proven statement, and a
+    // statement is a read only when the explained text is itself a read.
+    const fallback = typeof tail !== 'string';
+    const listedTrigger = consentTrigger(sql);
+    if (!fallback) {
+      let extra = false;
+      for (let i = 0; tail && i < tail.length; i++) if (tail[i] === ';') extra = true;
+      if (!remainderIsNoise(tail) || (extra && bareSemicolon(sql) && !listedTrigger)) throw Object.assign(fail(500, 'A SQL write must be one statement.'), { code: 'SQL_MULTI' });
+    } else if ((bareSemicolon(sql) || unparsedTail(sql)) && !listedTrigger) {
+      throw Object.assign(fail(500, 'A SQL write must be one statement.'), { code: 'SQL_MULTI' });
+    }
+    if (splitStatements(sql).length !== 1 && !listedTrigger) throw Object.assign(fail(500, 'A SQL write must be one statement.'), { code: 'SQL_MULTI' });
+    if (alwaysBlocked(sql)) throw Object.assign(fail(500, 'This statement is not allowed.'), { code: 'SQL_DOOR' });
+    const state = this.#state;
+    const open = state.open;
+    const kind = state.kind;
+    const reason = state.reason;
+    const migration = state.migration;
+    if (isMutatingStatement(sql) || hiddenWrite(sql) || (fallback && !provenRead(sql))) {
+      if (pragmaSetter(sql) && kind !== 'schema' && kind !== 'registered') throw Object.assign(fail(500, 'This statement is not allowed.'), { code: 'SQL_DOOR' });
+      if (isCreateTrigger(sql) && kind !== 'schema' && kind !== 'registered') {
+        throw Object.assign(fail(500, 'A trigger is installed only by schema.'), { code: 'SCHEMA_DML' });
+      }
+      if (!open) throw Object.assign(fail(500, 'A SQL write must run inside recorded, housekeeping, or schema.'), { code: 'SQL_DOOR' });
+      if (kind === 'recorded' && recordedForbidden(sql)) throw Object.assign(fail(500, 'A recorded write cannot change audit or consent receipts.'), { code: 'SQL_DOOR' });
+      if (kind === 'schema' && !pragmaSetter(sql) && !schemaAllowed(sql)) throw Object.assign(fail(500, 'Schema accepts named CREATE TABLE and CREATE INDEX only.'), { code: 'SCHEMA_DML' });
+      if (kind === 'housekeeping' && !housekeepingAllowed(reason, sql)) throw Object.assign(fail(500, 'That housekeeping statement is not allowed.'), { code: 'HOUSEKEEPING_SQL' });
+      if (kind === 'registered' && sqlShape(sql) !== sqlShape(migration)) throw Object.assign(fail(500, 'That migration is not registered.'), { code: 'SCHEMA_DML' });
+      if (!receiptInsert(sql)) state.receiptOnly = false;
+    }
+    const _sql = this.#sql;
+    const consentSweep = kind === 'housekeeping' && reason === 'consent-retention' && sqlShape(sql) === sqlShape(CONSENT_DELETE);
+    if (consentSweep && !this.chainVerdict().ok) throw Object.assign(fail(409, 'The audit chain is tampered.'), { code: 'CHAIN_DAMAGED' });
+    const bound = consentSweep ? [consentCutoff(this.now())] : params;
+    const prior = consentSweep ? Number(this.rows('SELECT COUNT(*) AS n FROM consent_receipts')[0].n) : 0;
+    const result = _sql.exec(sql, ...bound);
+    if (consentSweep) {
+      const left = Number(this.rows('SELECT COUNT(*) AS n FROM consent_receipts')[0].n);
+      this.log('privacy', 'atlas', 'consent retention', String(prior - left));
+      const checkpoint = checkpointHead(this.#sql, this.auditKey, this.dbId);
+      if (!checkpoint.ok) throw Object.assign(fail(409, 'The audit chain is tampered.'), { code: checkpoint.reason || 'CHAIN_DAMAGED' });
+    }
+    return result;
+  }
+  schema(fn) {
+    return this.#enter(fn, 'schema');
+  }
+  // The reason selects a fixed list of statements. A call already inside a door joins it.
+  // Consent retention opens one transaction for the gate, the delete, and the audit line.
+  // Other reasons do not start a transaction.
+  housekeeping(reason, fn) {
+    const name = trim(String(reason || '')) || '';
+    if (!ownValue(HOUSEKEEPING, HOUSE_KEYS, name)) throw Object.assign(fail(500, 'That housekeeping reason is not allowed.'), { code: 'HOUSEKEEPING_SQL' });
+    const state = this.#state;
+    const prev = state.reason;
+    state.reason = name;
+    try {
+      if (name === 'consent-retention' && !state.auditTx) {
+        if (typeof this._atomic !== 'function') throw fail(503, 'Atomic library writes need storage.transactionSync.');
+        state.auditTx = 1;
+        try { return this._atomic(() => this.#enter(fn, 'housekeeping')); }
+        finally { state.auditTx = 0; }
+      }
+      return this.#enter(fn, 'housekeeping');
+    } finally { state.reason = prev; }
+  }
+
+  rows(q, ...p) { return this.exec(q, ...p).toArray(); }
   row(id) {
     const r = this.rows('SELECT * FROM refs WHERE id = ?', String(id || ''))[0];
-    return r ? { ...r, data: JSON.parse(r.data), state: JSON.parse(r.state) } : null;
+    return r ? readStoredStory(r) : null;
   }
-  log(id, actor, action, detail = '') { this.sql.exec('INSERT INTO audit (id, actor, action, at, detail) VALUES (?, ?, ?, ?, ?)', id, actor, action, this.now(), String(detail).slice(0, 300)); }
+  columnState(id) {
+    const r = this.rows('SELECT state FROM refs WHERE id = ?', String(id || ''))[0];
+    if (!r) return null;
+    try { return JSON.parse(r.state); } catch { return null; }
+  }
+  log(id, actor, action, detail = '') {
+    const state = this.#state;
+    if (!state.auditTx) return this.recorded(() => this.log(id, actor, action, detail));
+    if (this.auditKey == null) throw fail(503, 'LOG_SALT is not set.');
+    appendAudit(this.#sql, { id, actor, action, at: this.now(), detail: String(detail).slice(0, 300) }, this.auditKey, this.dbId);
+    state.appended = true;
+    if (String(action) !== 'consent receipt') state.receiptOnly = false;
+  }
   // An invitation or card action may name a story. The audit id is that story only when the story's stored tenant
   // is the caller's tenant. A foreign id is not an audit target.
   auditId(refId, tenant) {
@@ -198,12 +798,12 @@ export class Library {
     return out;
   }
   ownerKeys(row) {
-    const owner = String(row?.owner || '').toLowerCase();
+    const owner = profileFold(row?.owner);
     const keys = new Set(owner ? [owner] : []);
-    const tenant = String(row?.tenant || row?.state?.tenant || '').toLowerCase();
+    const tenant = profileFold(row?.tenant || row?.state?.tenant);
     if (!this.rows("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'profiles'")[0]) return [...keys];
-    for (const found of this.rows("SELECT email FROM profiles WHERE lower(subject) = ? AND lower(COALESCE(tenant, '')) = ?", owner, tenant)) {
-      const mail = String(found.email || '').trim().toLowerCase();
+    for (const found of profileSelection(this, owner, tenant).matched) {
+      const mail = profileFold(found.email);
       if (mail) keys.add(mail);
     }
     return [...keys];
@@ -236,17 +836,23 @@ export class Library {
     if (!aliases.length || !row || aliases.includes(owner)) return false;
     if (!sameTenant(row.state?.tenant, user.tenant, user.tenantEnforced === true)) return false;
     const want = String(user.tenant || '').toLowerCase();
-    const marks = aliases.map(() => '?').join(', ');
     const owners = this.ownerKeys(row);
     if (!owners.length || owners.some(o => aliases.includes(o))) return false;
-    const ownerMarks = owners.map(() => '?').join(', ');
-    const grants = this.rows(`SELECT source FROM manager_trust WHERE lower(owner) IN (${ownerMarks}) AND lower(email) IN (${marks}) AND lower(COALESCE(tenant, '')) = ?`, ...owners, ...aliases, want);
+    const grants = readChunks(this, owners, {
+      fixed: aliases.length + 1,
+      sql: chunk => `SELECT source FROM manager_trust WHERE lower(owner) IN (${placeholders(chunk.length)}) AND lower(email) IN (${placeholders(aliases.length)}) AND lower(COALESCE(tenant, '')) = ?`,
+      params: chunk => [...chunk, ...aliases, want],
+    });
     if (grants.some(g => g.source === 'directory')) return true;
     if (!grants.some(g => g.source === 'staffing')) return false;
     const project = String(row.data?.details?.projectId || '').trim().toLowerCase();
     if (!project) return false;
     if (!this.rows("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'staffing'")[0]) return false;
-    const hits = this.rows(`SELECT project_id, consultant_email, manager_email FROM staffing WHERE lower(project_id) = ? AND lower(consultant_email) IN (${ownerMarks}) AND lower(COALESCE(tenant, '')) = ?`, project, ...owners, want);
+    const hits = readChunks(this, owners, {
+      fixed: 2,
+      sql: chunk => `SELECT project_id, consultant_email, manager_email FROM staffing WHERE lower(project_id) = ? AND lower(consultant_email) IN (${placeholders(chunk.length)}) AND lower(COALESCE(tenant, '')) = ?`,
+      params: chunk => [project, ...chunk, want],
+    });
     const physical = new Map();
     for (const hit of hits) {
       const key = String(hit.project_id || '').toLowerCase() + '\n' + String(hit.consultant_email || '').toLowerCase();
@@ -261,14 +867,19 @@ export class Library {
   }
 
   summary(row, level, user) {
-    const d = row.data, q = row.state.quality;
-    return { id: row.id, title: d.title, status: row.status, revision: row.revision, access: level, mine: row.owner === user.email,
+    const d = row.data, q = row.state.quality, v = row.state.validation || {};
+    const item = { id: row.id, title: d.title, status: row.status, revision: row.revision, access: level, mine: row.owner === user.email,
       practice: d.jev?.primary?.label || '', industry: d.sector, country: d.details.country, serviceLines: d.details.serviceLines, technologies: d.details.technologies,
       headline: d.report?.headline || '', impact: d.jev?.impact ?? null, qualityScore: q?.score ?? null, qualityStatus: q?.status || '',
       updatedAt: row.updated_at, nextReview: row.next_review, owner: row.owner, client: level === 'full' ? d.client.name : '' };
+    if (level === 'full') {
+      item.managerDecision = v.managerDecision || 'pending';
+      item.presalesDecision = v.presalesDecision || 'pending';
+    }
+    return item;
   }
 
-  async upsert(user, body) {
+  async revisionPlan(user, body) {
     if (!user.email) throw fail(401, 'Sign in first.');
     if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
     body = obj(body);
@@ -279,28 +890,73 @@ export class Library {
     if (body.id && !row) throw fail(404, 'Reference not found.');
     if (row && !this.canEdit(row, user)) throw fail(403, 'You cannot edit this reference.');
     if (row && row.merged_into) throw fail(409, 'This reference was merged into another one.');
-    if (row && row.content_hash === hash) return { ...this.summary(row, 'full', user), unchanged: true };
-    const id = row ? row.id : this.newId(), revision = row ? row.revision + 1 : 1;
-    const members = ',' + data.details.consultants.map(c => c.email).filter(Boolean).join(',') + ',';
+    if (row && row.content_hash === hash) return { unchanged: true, summary: { ...this.summary(row, 'full', user), unchanged: true } };
+    return { user, data, localId, hash, at, storyTenant, id: row ? row.id : this.newId(), existing: !!row };
+  }
+
+  // Synchronous. The status compare is the stored column, read again here so a merge can fold
+  // the keeper in the same transaction as the story it retires.
+  commitRevision(plan) {
+    const row = plan.existing ? this.row(plan.id) : null;
+    if (plan.existing && (!row || row.merged_into)) throw fail(409, 'This reference changed. Open it again.');
+    if (row && row.content_hash === plan.hash) return { unchanged: true, id: row.id };
+    const id = row ? row.id : plan.id, revision = row ? row.revision + 1 : 1;
+    const data = plan.data, members = ',' + data.details.consultants.map(c => c.email).filter(Boolean).join(',') + ',';
     // An empty tenant is left empty. Enforcement hides that row until an operator backfill
     // supplies the tenant from a verified source. This function does not invent one.
-    const keptTenant = row ? String(row.tenant || row.state?.tenant || '') : storyTenant;
-    const state = { ...(row ? row.state : {}), quality: null, withdrawn: false, test: false, tenant: keptTenant,
-      validation: { status: 'pending', managerDecision: 'pending', presalesDecision: 'pending', by: '', at: '', note: '', managerStaffIgnored: !!data.validation.managerStaff } };
-    const status = deriveStatus(state), next = new Date(Date.parse(at) + REVIEW_DAYS * 864e5).toISOString();
-    if (row) this.sql.exec(`UPDATE refs SET title=?, status=?, revision=?, content_hash=?, practice=?, industry=?, country=?, manager_email=?, members=?, quality_score=NULL,
-      updated_at=?, updated_by=?, next_review=?, data=?, state=?, embedding=NULL WHERE id=?`,
-      data.title, status, revision, hash, data.jev?.primary?.key || '', data.sector, data.details.country, data.validation.manager.email, members, at, user.email, next, JSON.stringify(data), JSON.stringify(state), id);
-    else this.sql.exec(`INSERT INTO refs (id, owner, local_id, title, status, revision, content_hash, practice, industry, country, manager_email, members, created_at, updated_at, updated_by, next_review, data, state, tenant)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      id, user.email, localId, data.title, status, revision, hash, data.jev?.primary?.key || '', data.sector, data.details.country, data.validation.manager.email, members, at, at, user.email, next, JSON.stringify(data), JSON.stringify(state), keptTenant);
-    this.sql.exec('INSERT INTO revisions (id, revision, data, author, at) VALUES (?, ?, ?, ?, ?)', id, revision, JSON.stringify(data), user.email, at);
-    this.log(id, user.email, row ? 'revised' : 'created', 'revision ' + revision + (row ? '; manager and pre-sales approval reopened' : ''));
-    return this.summary(this.row(id), 'full', user);
+    const keptTenant = row ? String(row.tenant || row.state?.tenant || '') : plan.storyTenant;
+    const revised = acceptPublication(publicationTransition(row ? row.state : {}, { type: 'revised', id, tenant: keptTenant, managerStaffIgnored: !!data.validation.managerStaff }), { id, event: 'revised' });
+    if (!revised) throw fail(409, PUBLICATION_CHANGE_REFUSED);
+    const state = revised.state, status = revised.status, next = new Date(Date.parse(plan.at) + REVIEW_DAYS * 864e5).toISOString();
+    return this.recorded(() => {
+      if (row) this.writeStatus(`UPDATE refs SET title=?, status=?, revision=?, content_hash=?, practice=?, industry=?, country=?, manager_email=?, members=?, quality_score=NULL,
+        updated_at=?, updated_by=?, next_review=?, data=?, state=?, embedding=NULL WHERE id=? AND revision=? AND status=?`,
+        data.title, status, revision, plan.hash, data.jev?.primary?.key || '', data.sector, data.details.country, data.validation.manager.email, members, plan.at, plan.user.email, next, JSON.stringify(data), JSON.stringify(state), id, row.revision, row.storedStatus);
+      else this.writeStatus(`INSERT INTO refs (id, owner, local_id, title, status, revision, content_hash, practice, industry, country, manager_email, members, created_at, updated_at, updated_by, next_review, data, state, tenant)
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM refs WHERE id = ?)`,
+        id, plan.user.email, plan.localId, data.title, status, revision, plan.hash, data.jev?.primary?.key || '', data.sector, data.details.country, data.validation.manager.email, members, plan.at, plan.at, plan.user.email, next, JSON.stringify(data), JSON.stringify(state), keptTenant, id);
+      this.exec('INSERT INTO revisions (id, revision, data, author, at) VALUES (?, ?, ?, ?, ?)', id, revision, JSON.stringify(data), plan.user.email, plan.at);
+      this.log(id, plan.user.email, row ? 'revised' : 'created', 'revision ' + revision + (row ? (state.withdrawn ? '; stays withdrawn until a reviewer reinstates' : '; manager and pre-sales approval reopened') : ''));
+      return { id, unchanged: false };
+    });
+  }
+
+  async upsert(user, body) {
+    const plan = await this.revisionPlan(user, body);
+    if (plan.unchanged) return plan.summary;
+    const written = this.commitRevision(plan);
+    if (written.unchanged) return { ...this.summary(this.row(written.id), 'full', user), unchanged: true };
+    return this.summary(this.row(written.id), 'full', user);
   }
 
   demandTenant(user) {
     if (user?.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
+  }
+
+  // Rows written before chain-start were not signed. They stay visible and are marked unverified.
+  chainStartSeq() {
+    try {
+      const row = this.rows(`SELECT seq FROM audit WHERE action = 'chain-start' AND "commit" IS NOT NULL ORDER BY seq LIMIT 1`)[0];
+      return row ? Number(row.seq) : null;
+    } catch { return null; }
+  }
+  auditLines(id) {
+    let keyed = true;
+    try { this.exec('SELECT "commit" FROM audit LIMIT 0'); }
+    catch { keyed = false; }
+    const start = keyed ? this.chainStartSeq() : null;
+    const query = keyed
+      ? 'SELECT seq, actor, action, at, detail, "commit" FROM audit WHERE id = ? ORDER BY seq DESC LIMIT 100'
+      : 'SELECT seq, actor, action, at, detail FROM audit WHERE id = ? ORDER BY seq DESC LIMIT 100';
+    const verdict = keyed ? this.chainVerdict() : null;
+    const verified = verdict?.ok ? new Set(verdict.verifiedSeqs || []) : null;
+    return this.rows(query, id).map(a => {
+      const line = { actor: a.actor, action: a.action, at: a.at, detail: a.action === 'possible duplicate' ? '' : a.detail };
+      if (!keyed) return { ...line, unverified: true };
+      if (start != null && Number(a.seq) < start) return { ...line, legacy: true, unverified: true };
+      if (!verdict?.ok || !a.commit || !verified.has(Number(a.seq))) return { ...line, unverified: true };
+      return line;
+    });
   }
 
   get(user, id) {
@@ -311,17 +967,22 @@ export class Library {
     return { ...this.summary(row, level, user), data: full ? row.data : anonymise(row.data),
       state: { quality: full ? row.state.quality : publicQuality(row.state.quality), validation: full ? row.state.validation : { status: row.state.validation?.status }, withdrawn: !!row.state.withdrawn, duplicates: this.visibleDuplicates(row, user) },
       revisions: full ? this.rows('SELECT revision, author, at FROM revisions WHERE id = ? ORDER BY revision DESC', row.id) : [],
-      audit: full ? this.rows('SELECT actor, action, at, detail FROM audit WHERE id = ? ORDER BY seq DESC LIMIT 100', row.id).map(a => a.action === 'possible duplicate' ? { ...a, detail: '' } : a) : [],
+      audit: full ? this.auditLines(row.id) : [],
       permissions: { edit: this.canEdit(row, user), validate: this.canValidate(row, user), validateLane: this.canManagerApprove(row, user) ? 'manager' : this.canPresalesApprove(row, user) ? 'presales' : '', withdraw: this.canEdit(row, user), review: this.canEdit(row, user), reinstate: ['admin', 'reviewer'].includes(user.role), merge: ['admin', 'reviewer'].includes(user.role) },
       rating: { running: this.inflight.has(row.id + ':' + row.revision) }, ...(full ? { jevAllowed: this.jevAllowed(row) } : {}) };
   }
 
+  // A story with no verified tenant does not read the blank-tenant profile. Consent for that story is false.
+  consentTenant(row) {
+    const tenant = profileFold(row?.state?.tenant ?? row?.tenant);
+    return TENANT_ID.test(tenant) ? tenant : undefined;
+  }
   // JEV may rate this story: a key, the OWNER's stored consent (whoever triggers the rating), and no rejected key.
-  jevAllowed(row) { return !!this.rater?.available() && this.rater.blocked() !== 'auth' && storedConsent(this, row.owner, 'jevRating', row.state?.tenant || ''); }
+  jevAllowed(row) { return !!this.rater?.available() && this.rater.blocked() !== 'auth' && storedConsent(this, row.owner, 'jevRating', this.consentTenant(row)); }
   engineFor(row) {
     // Without a key, a story with no text still goes to the review agent, exactly as before JEV (docs/JEV_RATING.md §0).
     if (!(row.data.answers || []).some(a => String(a ?? '').trim())) return this.rater?.available() ? 'rules' : 'review-agent';
-    return this.rater?.available() && storedConsent(this, row.owner, 'jevRating', row.state?.tenant || '') ? 'jev' : 'review-agent';
+    return this.rater?.available() && storedConsent(this, row.owner, 'jevRating', this.consentTenant(row)) ? 'jev' : 'review-agent';
   }
 
   revision(user, id, n) {
@@ -333,7 +994,7 @@ export class Library {
   }
 
   visibleRows(user) {
-    const all = this.rows("SELECT * FROM refs WHERE merged_into IS NULL ORDER BY updated_at DESC").map(r => ({ ...r, data: JSON.parse(r.data), state: JSON.parse(r.state) }));
+    const all = this.rows("SELECT * FROM refs WHERE merged_into IS NULL ORDER BY updated_at DESC").map(readStoredStory).filter(Boolean);
     return all.map(r => [r, this.access(r, user)]).filter(([, level]) => level);
   }
 
@@ -363,19 +1024,31 @@ export class Library {
     } else if (enforced && (!TENANT_ID.test(tenant) || String(actor.tenant || '').toLowerCase() !== tenant)) {
       throw fail(403, 'A verified tenant is required to bind a manager.');
     }
-    this.sql.exec(`INSERT INTO manager_trust (owner, email, source, tenant, at) VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(owner, email, tenant) DO UPDATE SET
-        source = CASE WHEN manager_trust.source = 'directory' AND excluded.source = 'staffing' THEN manager_trust.source ELSE excluded.source END,
-        at = excluded.at`,
-      owner, who, source, tenant, this.now());
-    this.log('library', actor.email || actor.role, 'manager trust', `${source}`);
+    this.recorded(() => {
+      this.exec(`INSERT INTO manager_trust (owner, email, source, tenant, at) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(owner, email, tenant) DO UPDATE SET
+          source = CASE WHEN manager_trust.source = 'directory' AND excluded.source = 'staffing' THEN manager_trust.source ELSE excluded.source END,
+          at = excluded.at`,
+        owner, who, source, tenant, this.now());
+      this.log('library', actor.email || actor.role, 'manager trust', `${source}`);
+    });
     return { owner, email: who, source };
+  }
+
+  // The status write matches the revision and status just read. A concurrent change matches no row.
+  writeStatus(query, ...params) {
+    this.exec(query, ...params);
+    const changed = Number(this.rows('SELECT changes() AS n')[0]?.n || 0);
+    if (changed !== 1) throw fail(409, 'This reference changed. Open it again.');
   }
 
   setState(row, state, actor, action, detail) {
     const status = deriveStatus(state);
-    this.sql.exec('UPDATE refs SET state = ?, status = ?, quality_score = ? WHERE id = ?', JSON.stringify(state), status, state.quality?.score ?? null, row.id);
-    this.log(row.id, actor, action, detail);
+    this.recorded(() => {
+      this.writeStatus('UPDATE refs SET state = ?, status = ?, quality_score = ? WHERE id = ? AND revision = ? AND status = ?',
+        JSON.stringify(state), status, state.quality?.score ?? null, row.id, row.revision, row.storedStatus);
+      this.log(row.id, actor, action, detail);
+    });
     return status;
   }
 
@@ -412,8 +1085,11 @@ export class Library {
 
   // refs.state.ratingGen: incremented and written back at once (a synchronous read-modify-write in the Durable Object).
   nextGen(id) {
-    const r = this.row(id), gen = (Number(r.state.ratingGen) || 0) + 1;
-    this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...r.state, ratingGen: gen }), id);
+    const stored = this.columnState(id) || {}, gen = (Number(stored.ratingGen) || 0) + 1;
+    this.recorded(() => {
+      this.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...stored, ratingGen: gen }), id);
+      this.log(id, 'atlas', 'rating generation', String(gen));
+    });
     return gen;
   }
 
@@ -423,10 +1099,15 @@ export class Library {
     const fresh = this.row(row.id);
     if (!fresh || fresh.merged_into) return false;
     if (fresh.revision !== row.revision || (Number(fresh.state.ratingGen) || 0) > gen) {
-      if (lastJev) this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...fresh.state, lastJev }), fresh.id);
+      if (lastJev) this.recorded(() => {
+        this.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...(this.columnState(fresh.id) || {}), lastJev }), fresh.id);
+        this.log(fresh.id, actor, 'rating kept', 'generation superseded');
+      });
       return false;
     }
-    this.setState(fresh, { ...fresh.state, quality, ...(lastJev ? { lastJev } : {}) }, actor, 'reviewed', auditDetail(quality));
+    const reviewed = acceptPublication(publicationTransition(fresh.state, { type: 'reviewed', id: fresh.id, quality, lastJev }), { id: fresh.id, event: 'reviewed' });
+    if (!reviewed) return false;
+    this.setState(fresh, reviewed.state, actor, 'reviewed', auditDetail(quality));
     return true;
   }
 
@@ -478,7 +1159,7 @@ export class Library {
   async jevRating(row, { gen, budget }) {
     const t0 = Date.now();
     if (this.rater.blocked() === 'auth') throw new RatingError('auth'); // skipped until the key changes; never reused
-    const input = ratingInput(this, row.data, { owner: row.owner, ...(this.ratingView ? { view: this.ratingView } : {}) });
+    const input = ratingInput(this, row.data, { owner: row.owner, tenant: row.state?.tenant ?? row.tenant, ...(this.ratingView ? { view: this.ratingView } : {}) });
     const plan = questionPlan(row.data, input.figure), asked = plan.asked;
     const bodyText = JSON.stringify(requestBody(input.state, asked)), bodyHash = await sha256Hex(bodyText);
     const last = this.row(row.id)?.state?.lastJev;
@@ -517,25 +1198,45 @@ export class Library {
   async index(id) {
     const row = this.row(id); if (!row) return;
     const vec = this.embed ? await this.embed(searchText(recordView(this, row.data))) : null;
-    if (vec) this.sql.exec('UPDATE refs SET embedding = ? WHERE id = ?', JSON.stringify(vec), id);
+    return this.recorded(() => {
     const storyTenant = String(row.tenant || row.state?.tenant || '').toLowerCase();
     const others = this.rows("SELECT id, title, data, state, embedding, tenant FROM refs WHERE merged_into IS NULL AND id != ? AND lower(COALESCE(tenant, '')) = ?", id, storyTenant);
-    const mine = [], pid = row.data.details.projectId.toLowerCase();
+    // Same guard as visibleRows: one bad row is logged and skipped, and nothing is written until every row has been parsed.
+    const parsed = [];
     for (const o of others) {
-      const od = JSON.parse(o.data), sim = vec && o.embedding ? cosine(vec, JSON.parse(o.embedding)) : lexical(searchText(forModel(row.data)), searchText(forModel(od)));
-      const sameId = pid && od.details.projectId.toLowerCase() === pid;
+      try {
+        const data = JSON.parse(o.data);
+        const state = JSON.parse(o.state);
+        const embedding = o.embedding ? JSON.parse(o.embedding) : null;
+        // JSON.parse('null') does not throw. A null state is unreadable, same as an unknown version: log the id and write nothing for that row.
+        if (!data || typeof data !== 'object' || Array.isArray(data) || !state || typeof state !== 'object' || Array.isArray(state)) {
+          malformedRow(o.id);
+          continue;
+        }
+        parsed.push({ id: o.id, data, state, embedding });
+      } catch {
+        malformedRow(o.id);
+      }
+    }
+    const mine = [], pid = String(row.data?.details?.projectId || '').toLowerCase(), writes = [];
+    for (const o of parsed) {
+      const od = o.data, sim = vec && o.embedding ? cosine(vec, o.embedding) : lexical(searchText(forModel(row.data)), searchText(forModel(od)));
+      const sameId = !!(pid && String(od?.details?.projectId || '').toLowerCase() === pid);
       if (sameId || sim >= DUPLICATE) {
         const hit = { id: o.id, similarity: Math.round(sim * 100) / 100, sameProjectId: !!sameId };
         mine.push(hit);
-        const os = JSON.parse(o.state), list = (os.duplicates || []).filter(x => x.id !== id);
+        const list = (o.state.duplicates || []).filter(x => x.id !== id);
         list.push({ id, similarity: hit.similarity, sameProjectId: hit.sameProjectId });
-        this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...os, duplicates: list.slice(0, 10) }), o.id);
+        writes.push({ id: o.id, state: { ...o.state, duplicates: list.slice(0, 10) } });
       }
     }
+    if (vec) this.exec('UPDATE refs SET embedding = ? WHERE id = ?', JSON.stringify(vec), id);
+    for (const write of writes) this.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify(write.state), write.id);
     mine.sort((a, b) => (b.sameProjectId - a.sameProjectId) || (b.similarity - a.similarity)); // strongest signal first
-    const fresh = this.row(id);
-    this.sql.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...fresh.state, duplicates: mine.slice(0, 10) }), id);
+    const fresh = this.columnState(id) || {};
+    this.exec('UPDATE refs SET state = ? WHERE id = ?', JSON.stringify({ ...fresh, duplicates: mine.slice(0, 10) }), id);
     if (mine.length) this.log(id, 'atlas', 'possible duplicate', String(mine.length));
+    });
   }
 
   // Natural-language recommendation: understand the context, retrieve by meaning, then rerank with reasons.
@@ -588,13 +1289,21 @@ export class Library {
     // contributed stays in details.consultants and members.
     if (g.answers[1] && !k.answers[1].includes(g.answers[1])) k.answers[1] = (k.answers[1] + '\n\nContribution by another consultant: ' + g.answers[1]).trim().slice(0, 6000);
     for (const i of [0, 2, 3, 4, 5]) if (!k.answers[i] && g.answers[i]) k.answers[i] = g.answers[i];
-    this.sql.exec('UPDATE refs SET merged_into = ?, status = ? WHERE id = ?', keep.id, 'withdrawn', gone.id);
-    const sharedWith = [...new Set([...(keep.state.sharedWith || []), gone.owner].filter(Boolean))];
-    this.sql.exec('UPDATE refs SET state = ?, members = ? WHERE id = ?', JSON.stringify({ ...keep.state, sharedWith }), (keep.members || ',') + sharedWith.join(',') + ',', keep.id);
-    this.log(gone.id, user.email, 'merged into', keep.id);
-    const saved = await this.upsert({ ...user }, { id: keep.id, reference: k });
-    this.log(keep.id, user.email, 'consolidated', `merged ${gone.data.title} (${gone.id})`);
-    return saved;
+    const moved = acceptPublication(publicationTransition(gone.state, { type: 'merged', id: gone.id }), { id: gone.id, event: 'merged' });
+    if (!moved) throw fail(409, PUBLICATION_CHANGE_REFUSED);
+    const plan = await this.revisionPlan({ ...user }, { id: keep.id, reference: k });
+    if (typeof this.transactionSync !== 'function') throw fail(503, 'Atomic reference changes need storage.transactionSync.');
+    this.recorded(() => {
+      this.writeStatus('UPDATE refs SET merged_into = ?, status = ?, state = ? WHERE id = ? AND revision = ? AND status = ? AND merged_into IS NULL',
+        keep.id, moved.status, JSON.stringify(moved.state), gone.id, gone.revision, gone.storedStatus);
+      const sharedWith = [...new Set([...(keep.state.sharedWith || []), gone.owner].filter(Boolean))];
+      const keptState = this.columnState(keep.id) || {};
+      this.exec('UPDATE refs SET state = ?, members = ? WHERE id = ?', JSON.stringify({ ...keptState, sharedWith }), (keep.members || ',') + sharedWith.join(',') + ',', keep.id);
+      this.log(gone.id, user.email, 'merged into', keep.id);
+      if (!plan.unchanged) this.commitRevision(plan);
+      this.log(keep.id, user.email, 'consolidated', `merged ${gone.data.title} (${gone.id})`);
+    });
+    return this.summary(this.row(keep.id), 'full', user);
   }
 
   // Client-context slide content; the client name is added by code only for people allowed to see it.
@@ -664,25 +1373,26 @@ export class Library {
     const dupe = this.rows("SELECT id FROM invitations WHERE lower(email) = ? AND reason = ? AND status IN ('open','scheduled') AND lower(project_id) = lower(?) AND reference_id = ? AND lower(COALESCE(tenant, '')) = ?", to, reason, pid, refId, tenant)[0];
     if (dupe) return this.rows('SELECT * FROM invitations WHERE id = ?', dupe.id)[0];
     const id = this.newId(), slot = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(b.slot || '')) ? String(b.slot).slice(0, 25) : '';
-    this.sql.exec('INSERT INTO invitations (id, email, project_id, title, reason, slot, reference_id, status, created_at, source, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      id, to, pid, str(b.title, 140), reason, slot, refId, slot ? 'scheduled' : 'open', this.now(), str(b.source || actor, 60), tenant);
-    this.log(this.auditId(refId, tenant), actor, 'interview invitation', `${reason} for ${to}`);
-    return this.rows('SELECT * FROM invitations WHERE id = ?', id)[0];
+    // 200 is the cap inside email(), so a 73-character tid:oid is stored whole.
+    return this.recorded(() => {
+      this.exec('INSERT INTO invitations (id, email, project_id, title, reason, slot, reference_id, status, created_at, source, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        id, to, pid, str(b.title, 140), reason, slot, refId, slot ? 'scheduled' : 'open', this.now(), str(b.source || actor, 200), tenant);
+      this.log(this.auditId(refId, tenant), actor, 'interview invitation', `${reason} for ${to}`);
+      return this.rows('SELECT * FROM invitations WHERE id = ?', id)[0];
+    });
   }
   invitations(user) {
     if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
     const tenant = String(user.tenant || '').toLowerCase();
     if (['admin', 'reviewer'].includes(user.role) && user.all) {
-      const sql = user.tenantEnforced === true
-        ? "SELECT * FROM invitations WHERE lower(COALESCE(tenant, '')) = ? ORDER BY created_at DESC LIMIT 200"
-        : "SELECT * FROM invitations WHERE lower(COALESCE(tenant, '')) = '' ORDER BY created_at DESC LIMIT 200";
-      const rows = user.tenantEnforced === true ? this.rows(sql, tenant) : this.rows(sql);
+      const rows = this.rows("SELECT * FROM invitations WHERE lower(COALESCE(tenant, '')) = ? ORDER BY created_at DESC LIMIT 200", tenant);
       return rows.map(row => this.invitationView(user, row));
     }
     const aliases = [...new Set([user.email, user.mail].map(v => String(v || '').trim().toLowerCase()).filter(Boolean))];
     if (!aliases.length) return [];
+    // sql-bound-fixed: 3
     const marks = aliases.map(() => '?').join(', ');
-    return this.rows(`SELECT * FROM invitations WHERE lower(email) IN (${marks}) AND status IN ('open','scheduled') AND lower(COALESCE(tenant, '')) = ? ORDER BY created_at DESC`, ...aliases, user.tenantEnforced === true ? tenant : '')
+    return this.rows(`SELECT * FROM invitations WHERE lower(email) IN (${marks}) AND status IN ('open','scheduled') AND lower(COALESCE(tenant, '')) = ? ORDER BY created_at DESC`, ...aliases, tenant)
       .map(row => this.invitationView(user, row));
   }
   invitationView(user, row) {
@@ -698,9 +1408,14 @@ export class Library {
     const inv = this.rows('SELECT * FROM invitations WHERE id = ?', String(id))[0];
     const aliases = this.identityAliases(user);
     if (!inv || (!aliases.includes(String(inv.email || '').toLowerCase()) && !['admin', 'reviewer'].includes(user.role))) throw fail(404, 'Invitation not found.');
-    if (user.tenantEnforced === true && !sameTenant(inv.tenant, user.tenant, true)) throw fail(404, 'Invitation not found.');
+    // Present tenants are compared even when enforcement is off. Two blanks stay the local sandbox.
+    if (!sameTenant(inv.tenant, user.tenant, user.tenantEnforced === true)) throw fail(404, 'Invitation not found.');
     const action = obj(body).action;
     if (!['schedule', 'dismiss', 'done'].includes(action)) throw fail(400, 'Unknown action.');
+    const step = noteInvitation(invitationTransition({ id: inv.id, status: inv.status }, { type: action }));
+    if (!step.ok) throw fail(409, INVITATION_REFUSAL);
+    const held = () => this.rows('SELECT status FROM invitations WHERE id = ?', inv.id)[0]?.status;
+    const refuse = () => { noteInvitation({ rejection: { id: inv.id, phase: inv.status, event: action } }); throw fail(409, INVITATION_REFUSAL); };
     const nextRef = str(obj(body).referenceId, 40);
     const existingRef = String(inv.reference_id || '');
     const openRef = refId => {
@@ -718,29 +1433,42 @@ export class Library {
     const storyOpen = openRef(keptRef);
     if (keptRef && !storyOpen) {
       if (action !== 'dismiss') throw fail(404, 'Reference not found.');
-      this.sql.exec("UPDATE invitations SET status = 'dismissed' WHERE id = ?", inv.id);
-      return this.invitationView(user, this.rows('SELECT * FROM invitations WHERE id = ?', inv.id)[0]);
+      return this.recorded(() => {
+        this.exec(`UPDATE invitations SET status = 'dismissed' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, inv.id);
+        if (held() !== 'dismissed') refuse();
+        this.log('library', user.email, 'invitation dismiss', inv.reason);
+        return this.invitationView(user, this.rows('SELECT * FROM invitations WHERE id = ?', inv.id)[0]);
+      });
     }
     const auditOn = storyOpen ? this.auditFor(user, keptRef, inv.tenant) : 'library';
-    if (action === 'schedule') { const slot = String(obj(body).slot || ''); if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(slot)) throw fail(400, 'Pick a date and time.'); this.sql.exec("UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ?", slot.slice(0, 25), inv.id); }
-    else if (action === 'dismiss') this.sql.exec("UPDATE invitations SET status = 'dismissed' WHERE id = ?", inv.id);
-    else if (action === 'done') this.sql.exec("UPDATE invitations SET status = 'done', reference_id = ? WHERE id = ?", nextRef || inv.reference_id, inv.id);
-    else throw fail(400, 'Unknown action.');
-    this.log(auditOn, user.email, 'invitation ' + action, inv.reason);
-    return this.invitationView(user, this.rows('SELECT * FROM invitations WHERE id = ?', inv.id)[0]);
+    if (action === 'schedule') { const slot = String(obj(body).slot || ''); if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(slot)) throw fail(400, 'Pick a date and time.'); }
+    return this.recorded(() => {
+      if (action === 'schedule') this.exec(`UPDATE invitations SET slot = ?, status = 'scheduled' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, String(obj(body).slot || '').slice(0, 25), inv.id);
+      else if (action === 'dismiss') this.exec(`UPDATE invitations SET status = 'dismissed' WHERE id = ? AND ${OPEN_INVITATION_SQL}`, inv.id);
+      else if (action === 'done') this.exec(`UPDATE invitations SET status = 'done', reference_id = ? WHERE id = ? AND ${OPEN_INVITATION_SQL}`, nextRef || inv.reference_id, inv.id);
+      else throw fail(400, 'Unknown action.');
+      const expectStatus = action === 'schedule' ? 'scheduled' : action === 'dismiss' ? 'dismissed' : 'done';
+      if (held() !== expectStatus) refuse();
+      this.log(auditOn, user.email, 'invitation ' + action, inv.reason);
+      return this.invitationView(user, this.rows('SELECT * FROM invitations WHERE id = ?', inv.id)[0]);
+    });
   }
   // Daily: every reference not updated for six months gets one open update invitation for its owner.
+  // The status compare is the decoded publication status. CAS still compares the stored column.
   scanStale(user = {}) {
-    const due = this.rows('SELECT id, owner, title, data, state FROM refs WHERE merged_into IS NULL AND next_review < ? AND status != ?', this.now(), 'withdrawn')
-      .filter(r => { let tenant = ''; try { tenant = JSON.parse(r.state || '{}').tenant || ''; } catch { return false; } return sameTenant(tenant, user.tenant, user.tenantEnforced === true); });
+    const due = this.rows('SELECT id, owner, title, data, state, status FROM refs WHERE merged_into IS NULL AND next_review < ?', this.now())
+      .map(readStoredStory)
+      .filter(r => r && r.status !== 'withdrawn' && sameTenant(r.state?.tenant, user.tenant, user.tenantEnforced === true));
     const tenant = user.tenantEnforced === true ? String(user.tenant || '').toLowerCase() : '';
     let invited = 0;
     for (const r of due) {
-      let recordTenant = '';
-      try { recordTenant = JSON.parse(r.state || '{}').tenant || ''; } catch { continue; }
+      const recordTenant = String(r.state?.tenant || '');
+      let projectId = '';
+      try { projectId = r.data.details.projectId; }
+      catch { malformedRow(r.id); continue; }
       const to = this.reachableOwnerAddress({ owner: r.owner, tenant: recordTenant, state: { tenant: recordTenant } });
       if (!to) continue;
-      this.invite('atlas', { email: to, reason: 'six_month_update', referenceId: r.id, projectId: JSON.parse(r.data).details.projectId, title: r.title, source: 'six-month scan', tenant });
+      this.invite('atlas', { email: to, reason: 'six_month_update', referenceId: r.id, projectId, title: r.title, source: 'six-month scan', tenant });
       invited++;
     }
     return invited;
@@ -751,8 +1479,15 @@ export class Library {
     if (user.role !== 'admin') throw fail(403, 'Export is for a verified admin.');
     if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
     const references = this.rows('SELECT id, owner, status, revision, updated_at, data, state FROM refs WHERE merged_into IS NULL')
-      .filter(r => { let recordTenant = ''; try { recordTenant = JSON.parse(r.state || '{}').tenant || ''; } catch { return false; } return sameTenant(recordTenant, user.tenant, user.tenantEnforced === true); })
-      .map(r => ({ id: r.id, owner: r.owner, status: r.status, revision: r.revision, updatedAt: r.updated_at, quality: JSON.parse(r.state).quality?.score ?? null, reference: JSON.parse(r.data) }));
+      .filter(r => {
+        let recordTenant = '';
+        try { recordTenant = JSON.parse(r.state || '{}').tenant || ''; }
+        catch { malformedRow(r.id); return false; }
+        return sameTenant(recordTenant, user.tenant, user.tenantEnforced === true);
+      })
+      .map(readStoredStory)
+      .filter(Boolean)
+      .map(viewed => ({ id: viewed.id, owner: viewed.owner, status: viewed.status, revision: viewed.revision, updatedAt: viewed.updated_at, quality: viewed.state.quality?.score ?? null, reference: viewed.data }));
     this.log('library', user.email, 'admin export', `${references.length} references`);
     return { schema: 'atlas.reference.v1', exportedAt: this.now(), references };
   }
@@ -781,13 +1516,10 @@ export class Library {
     if (!decision) throw fail(400, 'Choose validate or request_changes.');
     const note = str(body.note, 500);
     if (decision === 'changes_requested' && !note) throw fail(400, 'Say what should change.');
-    const prev = row.state.validation || {};
-    const validation = { ...prev, by: user.email, at: this.now(), note, status: 'pending' };
-    if (lane === 'manager') validation.managerDecision = decision;
-    else validation.presalesDecision = decision;
-    if (validation.managerDecision === 'changes_requested' || validation.presalesDecision === 'changes_requested') validation.status = 'changes_requested';
-    else if (validation.managerDecision === 'approved' && validation.presalesDecision === 'approved') validation.status = 'validated';
-    this.setState(row, { ...row.state, validation }, user.email, lane + ' ' + decision, lane);
+    const decided = acceptPublication(publicationTransition(row.state, { type: 'decided', id: row.id, lane, decision, by: user.email, at: this.now(), note }), { id: row.id, event: 'decided' });
+    if (!decided) throw fail(409, PUBLICATION_CHANGE_REFUSED);
+    if (decided.unchanged) return this.get(user, id);
+    this.setState(row, decided.state, user.email, lane + ' ' + decision, lane);
     return this.get(user, id);
   }
 
@@ -797,8 +1529,9 @@ export class Library {
     const row = this.row(id);
     if (!row || !this.access(row, user)) throw fail(404, 'Reference not found.');
     const test = body.test === true;
-    const validation = { ...(row.state.validation || {}), status: 'admin_bypass', by: user.email, at: this.now(), note: test ? 'admin test' : 'admin publish' };
-    this.setState(row, { ...row.state, test, validation }, user.email, 'admin-publish-bypass', test ? 'test' : 'publish');
+    const published = acceptPublication(publicationTransition(row.state, { type: 'admin_published', id: row.id, test, by: user.email, at: this.now() }), { id: row.id, event: 'admin_published' });
+    if (!published) throw fail(409, PUBLICATION_CHANGE_REFUSED);
+    this.setState(row, published.state, user.email, 'admin-publish-bypass', test ? 'test' : 'publish');
     await recordUsage(this, user, { kind: 'admin_publish', feature: 'library', outcome: test ? 'test' : 'publish', tokenStatus: 'missing' });
     return this.get(user, id);
   }
@@ -807,7 +1540,9 @@ export class Library {
     const row = this.row(id);
     if (!row || !this.access(row, user)) throw fail(404, 'Reference not found.');
     if (!this.canEdit(row, user)) throw fail(403, 'You cannot withdraw this reference.');
-    this.setState(row, { ...row.state, withdrawn: true }, user.email, 'withdrawn', str(body.note, 300));
+    const withdrawn = acceptPublication(publicationTransition(row.state, { type: 'withdrawn', id: row.id }), { id: row.id, event: 'withdrawn' });
+    if (!withdrawn) throw fail(409, PUBLICATION_CHANGE_REFUSED);
+    this.setState(row, withdrawn.state, user.email, 'withdrawn', str(body.note, 300));
     return this.get(user, id);
   }
 
@@ -816,7 +1551,9 @@ export class Library {
     const row = this.row(id);
     if (!row || !sameTenant(row.tenant || row.state?.tenant, user.tenant, user.tenantEnforced === true)) throw fail(404, 'Reference not found.');
     if (!['admin', 'reviewer'].includes(user.role)) throw fail(403, 'Only a reviewer can reinstate a reference.');
-    this.setState(row, { ...row.state, withdrawn: false }, user.email, 'reinstated', '');
+    const reinstated = acceptPublication(publicationTransition(row.state, { type: 'reinstated', id: row.id, mergedInto: row.merged_into || '' }), { id: row.id, event: 'reinstated' });
+    if (!reinstated) throw fail(409, row.merged_into ? 'This reference was merged into another one.' : PUBLICATION_CHANGE_REFUSED);
+    this.setState(row, reinstated.state, user.email, 'reinstated', '');
     return this.get(user, id);
   }
 }

@@ -1,5 +1,5 @@
 PYTHON ?= python3
-.PHONY: build preview gateway test test-ui test-edge doctor verify-package
+.PHONY: build preview gateway test test-ui test-edge geo-ne-check doctor verify-package verify-dev-tree
 build:
 	$(PYTHON) build.py
 preview: build
@@ -11,6 +11,8 @@ test: build test-edge
 	$(PYTHON) -m pytest tests/test_*.py -q
 test-edge:
 	cd deploy/cloudflare-edge && node --test test/*.test.js
+geo-ne-check:
+	node tests/geo-ne-check.js
 test-ui: build
 	$(PYTHON) tests/studio_browser.py
 	$(PYTHON) tests/sculpture_browser.py
@@ -19,6 +21,11 @@ test-ui: build
 	$(PYTHON) tests/autosave_browser.py
 	$(PYTHON) tests/orb_touch_browser.py
 	$(PYTHON) tests/library_browser.py
+	$(PYTHON) tests/record_dialog_quality_browser.py
+	$(PYTHON) tests/refusal_browser.py
+	$(PYTHON) tests/audit_marker_browser.py
+	$(PYTHON) tests/csp_console_browser.py
+	$(PYTHON) tests/autosave_chain_browser.py
 	$(PYTHON) tests/reuse_browser.py
 	$(PYTHON) tests/memory_browser.py
 	$(PYTHON) tests/sheet_browser.py
@@ -33,7 +40,13 @@ test-ui: build
 	$(PYTHON) tests/zero_config_edge_browser.py
 	$(PYTHON) tests/jev_rating_browser.py
 	$(PYTHON) tests/living_browser.py
+	$(PYTHON) tests/admin_metrics_browser.py
 doctor:
 	$(PYTHON) scripts/doctor.py --profile preview
+# Usage: make verify-package PACKAGE=path/to/extracted-release
 verify-package:
-	$(PYTHON) scripts/check_handoff.py
+	@test -n "$(PACKAGE)" || { echo 'Usage: make verify-package PACKAGE=path/to/extracted-release (directory or .zip/.tar archive)'; exit 1; }
+	$(PYTHON) scripts/check_handoff.py "$(PACKAGE)"
+# Dev checkout only (never used on received release packages).
+verify-dev-tree:
+	$(PYTHON) scripts/check_handoff.py . --dev-git-index

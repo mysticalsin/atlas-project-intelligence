@@ -15,9 +15,11 @@ const TOPIC = ['context', 'contribution', 'approach', 'outcome', 'evidence', 'cu
 const TOPIC_ORDER = { outcome: 0, contribution: 1, evidence: 2, context: 3, approach: 4, customer_relevance: 5 };
 
 export function ensure(lib) {
-  lib.sql.exec(`CREATE TABLE IF NOT EXISTS living_artifacts (
-    id TEXT PRIMARY KEY, tenant TEXT, owner TEXT, type TEXT, status TEXT, payload TEXT, created_at TEXT, updated_at TEXT)`);
-  lib.sql.exec('CREATE INDEX IF NOT EXISTS living_owner ON living_artifacts(owner, type)');
+  lib.schema(() => {
+    lib.exec(`CREATE TABLE IF NOT EXISTS living_artifacts (
+      id TEXT PRIMARY KEY, tenant TEXT, owner TEXT, type TEXT, status TEXT, payload TEXT, created_at TEXT, updated_at TEXT)`);
+    lib.exec('CREATE INDEX IF NOT EXISTS living_owner ON living_artifacts(owner, type)');
+  });
 }
 
 function demand(user) {
@@ -93,17 +95,21 @@ function commit(lib, user, row, event) {
   row.status = next.to;
   row.payload = { ...row.payload, status: next.to };
   const at = lib.now();
-  lib.sql.exec('UPDATE living_artifacts SET status = ?, payload = ?, updated_at = ? WHERE id = ?', row.status, JSON.stringify(row.payload), at, row.id);
-  lib.log(row.id, user.email, 'living ' + event, row.id + ' ' + next.from + '->' + next.to);
+  lib.recorded(() => {
+    lib.exec('UPDATE living_artifacts SET status = ?, payload = ?, updated_at = ? WHERE id = ?', row.status, JSON.stringify(row.payload), at, row.id);
+    lib.log(row.id, user.email, 'living ' + event, row.id + ' ' + next.from + '->' + next.to);
+  });
   return row;
 }
 
 function createArtifact(lib, user, type, payload) {
   const id = lib.newId(), at = lib.now(), tenant = tenantOf(user);
   const body = { ...payload, id, type, status: 'draft' };
-  lib.sql.exec('INSERT INTO living_artifacts (id, tenant, owner, type, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    id, tenant, user.email, type, 'draft', JSON.stringify(body), at, at);
-  lib.log(id, user.email, 'living create', id + ' draft');
+  lib.recorded(() => {
+    lib.exec('INSERT INTO living_artifacts (id, tenant, owner, type, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      id, tenant, user.email, type, 'draft', JSON.stringify(body), at, at);
+    lib.log(id, user.email, 'living create', id + ' draft');
+  });
   return commit(lib, user, { id, tenant, owner: user.email, type, status: 'draft', payload: body }, 'submit');
 }
 
@@ -183,7 +189,7 @@ export function deleteOwned(lib, user) {
   ensure(lib);
   const tenant = tenantOf(user);
   const n = lib.rows("SELECT COUNT(*) AS n FROM living_artifacts WHERE owner = ? AND lower(COALESCE(tenant, '')) = ?", user.email, tenant)[0].n;
-  if (n) lib.sql.exec("DELETE FROM living_artifacts WHERE owner = ? AND lower(COALESCE(tenant, '')) = ?", user.email, tenant);
+  if (n) lib.recorded(() => lib.exec("DELETE FROM living_artifacts WHERE owner = ? AND lower(COALESCE(tenant, '')) = ?", user.email, tenant));
   return n;
 }
 

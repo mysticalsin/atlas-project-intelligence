@@ -1,0 +1,1 @@
+acorn 8.19.0 (MIT). Vendored so the write lint can parse calls without an install step. See acorn-LICENSE.

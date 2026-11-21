@@ -71,6 +71,43 @@ try:
   check('trusted manager sees one approval button',n.locator('#recordDialog').is_visible() and n.locator('[data-rec-validate]').count()==1)
   n.locator('[data-rec-validate]').click();n.wait_for_timeout(900)
   check('manager approval alone does not publish', 'PUBLISHED' not in n.locator('#recordEyebrow').inner_text().upper() and 'manager approved' in n.locator('#recordBody').text_content())
+  check('approval redraw focuses Close reference', n.evaluate("document.activeElement && document.activeElement.getAttribute('aria-label')")=='Close reference')
+  def lane_closed(page):
+    btn=page.locator('#recordDialog [data-rec-validate]')
+    count=btn.count()
+    return count==0 or btn.is_disabled()
+  check('approve is disabled or absent after the click', lane_closed(n))
+  code,saved=edge_api('alex@mantu.com','POST','/api/library',{'localId':'enter-lane','reference':{'title':'Enter lane alias','consultant':{'name':'Alex','role':'Engineer'},'client':{'name':'Northwind','location':'Lyon','contact':'Ops'},'answers':['A queue.','I owned the route.','We kept the manual path.','The queue moved.','The board.','A desk with a queue.']}})
+  eid=saved.get('id')
+  check('second reference exists for Enter', code in (200,201) and bool(eid))
+  n.goto(BASE+'/#library/'+eid);n.wait_for_timeout(1200)
+  check('second record offers approval', n.locator('[data-rec-validate]').count()==1)
+  def fail_validate(route):
+    if route.request.method=='POST' and '/validate' in route.request.url:
+      route.fulfill(status=500,content_type='application/json',body=json.dumps({'error':'The approval did not finish.'}))
+      return
+    route.continue_()
+  n.route('**/api/library/**', fail_validate)
+  n.locator('[data-rec-validate]').click();n.wait_for_timeout(800)
+  failed=n.locator('[data-rec-validate]')
+  check('a failed approve enables the button again', failed.count()==1 and failed.is_enabled())
+  check('a failed approve returns focus to the button', n.evaluate("document.activeElement && document.activeElement.getAttribute('data-rec-validate')")==eid)
+  n.unroute('**/api/library/**', fail_validate)
+  n.locator('[data-rec-validate]').focus();n.keyboard.press('Enter');n.wait_for_timeout(900)
+  check('approve is disabled or absent after Enter', lane_closed(n))
+  n.locator('#recordDialog [data-close]').click()
+  n.locator('header [data-view=journey]').click()
+  n.wait_for_function("() => { const t=document.querySelector('#journey')?.innerText||''; return t.includes('Enter lane alias') && t.includes('Claims triage alias'); }", timeout=8000)
+  queue=n.locator('#journey').inner_text()
+  check('journey queue drops an approved lane', n.locator('#journey').get_by_role('button', name='Approve as trusted manager').count()==0)
+  status,listing=edge_api('sam@mantu.com','GET','/api/library')
+  items={item['id']:item for item in listing.get('items',[])}
+  labels = {'in_review': 'In review', 'needs_work': 'Needs work', 'changes_requested': 'Changes requested', 'awaiting_validation': 'Awaiting N+1', 'published': 'Published', 'withdrawn': 'Withdrawn'}
+  def progress(item):
+    if item.get('status') == 'awaiting_validation' and item.get('managerDecision') == 'approved' and item.get('presalesDecision') != 'approved':
+      return 'Manager approved · awaiting pre-sales'
+    return labels.get(item.get('status'), item.get('status') or '')
+  check('journey label follows real list() output', status==200 and items[rid]['status']=='awaiting_validation' and items[rid]['managerDecision']=='approved' and items[rid]['presalesDecision']=='pending' and items[eid]['managerDecision']=='approved' and items[eid]['status'] in ('needs_work', 'in_review') and progress(items[rid]) in queue and progress(items[eid]) in queue and queue.count('Manager approved · awaiting pre-sales')==1)
   pre=page('presales@example.test',['ATLAS.Presales']);pre.goto(BASE+'/#library/'+rid);pre.wait_for_timeout(1200)
   check('pre-sales role sees its own lane',pre.locator('[data-rec-validate]').count()==1)
   pre.locator('[data-rec-validate]').click();pre.wait_for_timeout(900)

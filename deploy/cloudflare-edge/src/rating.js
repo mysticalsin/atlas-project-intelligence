@@ -11,6 +11,7 @@ import { completeness, contactLead } from './review.js';
 import { recordView, nameMatcher, STOPLIST } from './scrub.js';
 import { NUMERIC_SRC } from './policy.generated.js';
 import { storedNames } from './profile.js';
+import { blocked as breakerBlocked, initialBreaker, transition as breakerTransition } from './breaker.js';
 
 export const MODEL = 'jev-1.13.0'; // pinned (https://docs.typesafe.ai/models.md); JEV_MODEL is deliberately not read
 export const RUBRIC_VERSION = 'story-quality-v2';
@@ -109,7 +110,7 @@ export const BUDGETS = Object.freeze({
 });
 export const STATE_TOKENS_MAX = 24000; // 32k for state + the longest question (models.md), estimated conservatively (§3.4, ASSUMED)
 export const RESPONSE_MAX = 65536;
-const BREAKER_FAILS = 3, BREAKER_OPEN_MS = 60000, BACKOFF_MAX_MS = 5000;
+const BACKOFF_MAX_MS = 5000;
 export const METRIC_CODES = Object.freeze({
   engine: Object.freeze({ jev: 1, 'review-agent': 2, rules: 3 }),
   status: Object.freeze({ ready: 1, needs_work: 2, insufficient: 3 }),
@@ -225,8 +226,8 @@ function maskedView(lib, data, { names, terms }) {
     // Masked first, then cut: a cut through a raw name could leave a fragment no term matches.
     sources: (v.sources || []).slice(0, 10).map(s => ({ name: mask(s.name || ''), version: mask(s.version || ''), excerpt: cut(mask(s.excerpt || ''), 600) })) };
 }
-export function ratingInput(lib, data, { owner = '', view = maskedView } = {}) {
-  const names = storedNames(lib, owner), terms = sensitiveTerms(data, names), v = view(lib, data, { names, terms });
+export function ratingInput(lib, data, { owner = '', tenant, view = maskedView } = {}) {
+  const names = storedNames(lib, owner, tenant), terms = sensitiveTerms(data, names), v = view(lib, data, { names, terms });
   const text = x => typeof x === 'string' ? x : '';
   const reference = { title: text(v.title), industry: text(v.sector), service_lines: (v.serviceLines || []).map(text),
     story: Object.fromEntries(STORY.map((k, i) => [k, text(v.answers?.[i])])),
@@ -432,17 +433,21 @@ function retryAfterMs(headers) {
 }
 export function storyRater(env, fetcher = fetch, opts = {}) {
   const budgets = { interactive: { ...BUDGETS.interactive, ...(opts.budgets?.interactive || {}) }, background: { ...BUDGETS.background, ...(opts.budgets?.background || {}) } };
-  const now = opts.now || (() => Date.now()), random = opts.random || Math.random, sleep = opts.sleep || (ms => delay(ms));
-  let fails = 0, openUntil = 0, authKey = null;
+  const now = opts.now || (() => Date.now()), random = opts.random || Math.random, sleep = opts.sleep || (ms => delay(ms)), wait = opts.delay || delay;
+  let breaker = initialBreaker();
   const available = () => !!env.TYPESAFE_API_KEY;
-  const blocked = () => (authKey !== null && env.TYPESAFE_API_KEY === authKey ? 'auth' : openUntil && now() < openUntil ? 'circuit_open' : null);
+  const emit = opts.log || (line => { try { console.warn(JSON.stringify(line)); } catch { /* logging never changes the decision */ } });
+  const apply = event => {
+    const result = breakerTransition(breaker, event);
+    if (result.rejection) emit(result.rejection);
+    else if (result.notice) emit(result.notice);
+    if (result.ok) breaker = result.state;
+    return result;
+  };
+  const blocked = () => breakerBlocked(breaker, env.TYPESAFE_API_KEY, now());
   const note = (o, key, trial) => {
-    if (o.ok) { fails = 0; openUntil = 0; return; }
-    if (o.code === 'auth') { authKey = key; return; }
-    if (o.code === 'timeout' || o.code === 'network' || (o.http >= 500 && o.http <= 599)) {
-      fails++;
-      if (trial || fails >= BREAKER_FAILS) { openUntil = now() + BREAKER_OPEN_MS; fails = 0; }
-    }
+    const type = o.ok ? 'succeed' : o.code === 'auth' ? 'auth_fail' : (o.code === 'timeout' || o.code === 'network' || (o.http >= 500 && o.http <= 599)) ? 'fail' : 'ignore';
+    apply({ type, key, trial: !!trial, now: now() });
   };
 
   async function rate(bodyText, referenceText, { asked, terms = [], budget = 'interactive' } = {}) {
@@ -451,8 +456,10 @@ export function storyRater(env, fetcher = fetch, opts = {}) {
     const b0 = blocked();
     if (b0) throw new RatingError(b0);
     if (!available()) throw new RatingError('no_key');
-    const trial = openUntil !== 0; // the breaker's 60 s are over: this rating is the one trial request
-    if (trial) openUntil = 0;
+    // The open window has elapsed: this call is the one trial. begin moves closed -> closed, or open -> probing.
+    const begun = apply({ type: 'begin', key: env.TYPESAFE_API_KEY, now: now() });
+    if (!begun.ok) throw new RatingError(begun.reason || 'circuit_open');
+    const trial = begun.trial;
     // One request. Never rejects: every ending is an outcome.
     const one = async (signal, key) => {
       let res;
@@ -484,7 +491,13 @@ export function storyRater(env, fetcher = fetch, opts = {}) {
     return new Promise(resolve => {
       const stop = new AbortController(), ctrls = [];
       let settled = false, attempts = 0, hedged = 0, http = 0, pending = 0;
-      const end = o => { if (settled) return; settled = true; stop.abort(); for (const c of ctrls) c.abort(); resolve({ ...o, attempts, hedged, http }); };
+      const end = o => {
+        if (settled) return;
+        settled = true; stop.abort(); for (const c of ctrls) c.abort();
+        const result = { ...o, attempts, hedged, http };
+        if (typeof opts.onEnd === 'function') opts.onEnd(result);
+        resolve(result);
+      };
       const launch = () => {
         if (settled || attempts >= max || deadlineAt - now() < b.minAttemptMs) return false;
         attempts++; pending++; if (attempts > 1) hedged = 1;
@@ -501,10 +514,10 @@ export function storyRater(env, fetcher = fetch, opts = {}) {
         return true;
       };
       launch();
-      if (max > 1) delay(b.hedgeAtMs, stop.signal).then(fired => { if (fired && !settled && pending > 0) launch(); });
-      delay(b.deadlineMs, stop.signal).then(fired => {
-        if (!fired || settled) return;
-        for (let i = 0; i < pending; i++) note({ code: 'timeout' }, null, trial);
+      if (max > 1) wait(b.hedgeAtMs, stop.signal).then(fired => { if (fired && !settled && pending > 0) launch(); });
+      wait(b.deadlineMs, stop.signal).then(fired => {
+        if (!fired) return;
+        if (!settled) for (let i = 0; i < pending; i++) note({ code: 'timeout' }, null, trial);
         end({ code: 'timeout', retryable: true });
       });
     });
