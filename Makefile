@@ -41,6 +41,7 @@ test-ui: build
 	$(PYTHON) tests/jev_rating_browser.py
 	$(PYTHON) tests/admin_metrics_browser.py
 	$(PYTHON) tests/sweep01_c_browser.py
+	$(PYTHON) tests/sweep01_d_browser.py
 doctor:
 	$(PYTHON) scripts/doctor.py --profile preview
 # Usage: make verify-package PACKAGE=path/to/extracted-release
