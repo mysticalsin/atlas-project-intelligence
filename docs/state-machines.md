@@ -13,7 +13,7 @@ Row shape: section 4 of `docs/STATE-MACHINE-STANDARD.md`. Status in the summary 
 | 2 | Edge interview ledger | `deploy/cloudflare-edge/src/ledger.js:15` | Which story field is open, recorded, or deferred during the interview | detail `status` strings, `next_field`, probe budget | None newly reproduced. | H | LATER. Pending review. It decides the next question. |
 | 3 | Python interview run | `atlas_voice/cascade.py:154` `run` | Connect, speak, cancel, discard, end for the Kyutai/Workers cascade | task cancellation, `Discarded`, pacing notes | The cascade has no continuation window (`docs/LIVE_TEST_BOUND.md`). | H | LATER. Pending review. |
 | 4 | Python interview ledger | `atlas_voice/quality.py:52` | Same field lifecycle as the edge ledger, on the hosted path | status strings on recorded details | None newly reproduced. | H | LATER. Pending review. |
-| 5 | Python voice socket | `atlas_voice/server.py:166` (`active` at :47) | Connect, stream, cancel, end, error for one browser socket | `active[cookie]`, session expiry, generation implicit in the handler | None newly reproduced. A double start can occupy the one slot. | H | LATER. Pending review. |
+| 5 | Python voice socket | `atlas_voice/voice_socket.py` (writer: `atlas_voice/server.py` `voice`, PersonaPlex path) | closed, opening, connecting, streaming, ending, failed, released | `{phase}` written only by `voice_socket_transition` | A double start can still occupy the one slot. The reducer refuses a second open. It does not add a slot. | H | FIXED. The reducer is the only phase writer for the PersonaPlex socket. `released` is the only terminal. |
 | 6 | Browser voice phase | `src/voice-client.js:7` (`status()` at :37, `begin` at :67, `cancel` at :100, `fail` at :101) | idle, preparing, connecting, live, ending, error | `phase`, `generation`, `restarting`, `permissionPending`, `consentStarting`, `muted` | None newly reproduced. Illegal combinations (live without a socket) are possible if a handler returns early. | H | LATER. Pending review. |
 | 7 | Live-test spend ledger | Not on this branch. `spend-ledger.js` is not in the tree. | Admit session, admit turn, reserve, claim, settle, latch stop | `stopped`, `sessions`, `open`, `reserved`, `claimed` | The earlier `spend-ledger.js:30` citation is not a file on this branch. | H | LATER. Not reviewed here. |
 | 8 | Production day budget | Not on this branch. `meter.js` is not in the tree. | Reserve, record, settle, roll the UTC day | `day`, `open`, `reserved`, `limitUsd` | The earlier `meter.js:70` `BudgetState` citation is not a file on this branch. | H | LATER. Not reviewed here. |
@@ -30,6 +30,27 @@ Row shape: section 4 of `docs/STATE-MACHINE-STANDARD.md`. Status in the summary 
 | 19 | Interview invitation status | `deploy/cloudflare-edge/src/invitation.js` (writers: `library.js` `updateInvitation` at :785, guard :792, UPDATEs :813, :818, :819, :820; `outreach.js` guard :540–:542, `teams_seen` and the status update in one `transactionSync` at :554–:565 (`changes()` at :557); unique index `library.js:186`) | open, scheduled, dismissed, done | `invitations.status` written only after `invitationTransition`; `slot` is the schedule effect | A done or dismissed invitation could be scheduled again. When another open row already held that scope, the `invitations_open_scope` index threw and the route returned 500. | M | FIXED. One transition, a status compare-and-swap, and a 409 refusal. |
 | 20 | JEV rating consent | `deploy/cloudflare-edge/src/profile.js:594` `storedConsent`; grant and revoke at :669; `library.js:371` `consentTenant`, `jevAllowed` at :376, `engineFor` at :377 | absent, or `{version:1}` for `jevRating`, one row per subject and tenant | `consents.jevRating` | A missing tenant argument is absent. It does not read the blank-tenant row. `jevAllowed` passes the story tenant only when it matches `TENANT_ID`. | L | NOT A MACHINE. Two stored values, written in one route. No intermediate state and no retry. The tenant is the row key, not a state. |
 | 21 | Rating in flight per revision | `deploy/cloudflare-edge/src/library.js:444`–:464 `review` (`inflight` at :182; join :450–:456; `nextGen` :471; `storeRating` guard :479) | no entry, or one `{gen, engine}` for `id:revision`. The same engine joins. A different engine starts a new generation. | `this.inflight` | None newly reproduced. The map is the re-entrancy guard. | M | LATER. One rating at a time is an ordering rule. It is not the publication status. Not started in this run. |
+
+## Python voice socket
+- Purpose: record the PersonaPlex browser socket as one phase, so a busy refusal, a cancel, a clean end and a failure each have one legal successor, and `finally` can always release.
+- Code: `atlas_voice/voice_socket.py`. Writer: `server.voice` on the PersonaPlex path. The OpenAI and Kyutai branches return before this reducer. Tests: `tests/test_voice_socket.py`.
+- Persisted: nothing. The phase lives for one socket call.
+
+### States
+| State | Meaning |
+|---|---|
+| closed | The socket is prepared and the reducer has not opened. |
+| opening | The start message is being read. The slot is not held. |
+| connecting | The slot is held. The model handshake has not finished. |
+| streaming | The ready event has been sent. Audio tasks are running. |
+| ending | The browser ended or discarded, or the deadline fired, or the handshake was cancelled. |
+| failed | The slot was refused, or an error handler ran. |
+| released | `finally` released the slot, the upstream socket and the codec. Terminal. |
+
+### Events
+`open`, `reject`, `admit`, `ready`, `finish`, `discard`, `fail`, `release`.
+
+16 of the 56 pairs are legal. The other 40 keep the stored state and return `{id: voice-socket, phase, event}`. The reducer does not log. `release` is legal from opening, connecting, streaming, ending and failed, so a missed step in `finally` does not raise.
 
 ## Story publication
 - Purpose: decide the status column from the story's quality, validation and withdrawal, reopen both approval lanes when the story is revised, and leave a withdrawn story withdrawn until a reviewer reinstates it.
