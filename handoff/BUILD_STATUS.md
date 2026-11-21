@@ -5,7 +5,9 @@
 
 PR #5 is merged. Its head is `9438e73ac2b750e3f3dfdf1d60e1d4b03a374842`, merge `5c55c2bcf722963ec2182dfc463fb152e57f5c89`, and that commit is an ancestor of `main` `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. The copied-commit and null-hash remigration checks in `deploy/cloudflare-edge/test/s1-a5ba30c.test.js` pass on that tree. No new test was added for those closed findings.
 
-Red tests are `939418703c76cf3d0d1fff8ab788371e33aa9aff`. They fail because withhold, the read-back module, the checkpoint fence, and the summary editor are not on `8b0972ec`. The fix is this section's commit.
+Red tests are `939418703c76cf3d0d1fff8ab788371e33aa9aff`. They fail because withhold, the read-back module, the checkpoint fence, and the summary editor are not on `8b0972ec`. That commit does not refresh `MANIFEST.json`. On a real checkout, `check_handoff` fails because the two new test files are unlisted, and `test_repository_full_handoff_includes_clean_rebuild` plus `test_git_archive_of_head_passes_check_handoff` fail. `node --test tests/*.test.js` is 419 passed and 1 failed. Edge `node --test test/*.test.js` is 1114 passed, 5 failed, 4 skipped. The product fix is `6ac0b3831b622c112f7027d30debfefa42d23231`.
+
+Measured on `6ac0b3831b622c112f7027d30debfefa42d23231`: `python3 -m pytest tests/test_*.py -q` 413 passed; `node --test tests/*.test.js` 420 passed, 0 failed; edge `node --test test/*.test.js` 1123 tests, 1119 passed, 0 failed, 4 skipped; `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui` 834 PASS, 0 FAIL; `python3 scripts/check_handoff.py . --dev-git-index` PASS. No provider call.
 
 What the fix does:
 
