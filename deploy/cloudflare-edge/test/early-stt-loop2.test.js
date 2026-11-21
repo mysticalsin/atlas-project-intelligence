@@ -115,25 +115,17 @@ test('EARLY_DRAFT is a withdrawable talker draft, and a second and third early b
   const h = harness({
     ledger, draft: true,
     stt: [TOKEN, 'SECOND-BATCH', 'THIRD-BATCH', 'FOURTH-NOT-EARLY'],
-    ai: {
-      async *chatStream() {
-        h.calls.talker += 1;
-        try {
-          yield h.calls.talker === 1 ? 'Hello. What changed?' : DRAFT_TEXT;
-          if (h.calls.talker > 1) await gate;
-        } finally { /* return() on a draft counts below */ }
-      },
-    },
   });
-  // The harness ai is spread before this override loses the closed counter. Rebuild the iterator here.
+  // The opening finishes. Each later call is a draft that stays open until return().
   h.s.ai.chatStream = function chatStream() {
+    const n = ++h.calls.talker;
+    if (n === 1) return (async function* () { yield 'Hello. What changed?'; })();
     const it = {
       yielded: false,
       async next() {
         if (this.yielded) { await gate; return { done: true, value: undefined }; }
         this.yielded = true;
-        h.calls.talker += 1;
-        return { done: false, value: h.calls.talker === 1 ? 'Hello. What changed?' : DRAFT_TEXT };
+        return { done: false, value: DRAFT_TEXT };
       },
       async return() { calls.closed += 1; releaseDraft(); return { done: true, value: undefined }; },
     };

@@ -565,24 +565,28 @@ export function workersAI(env) {
       return pcm.length % 2 ? pcm.subarray(0, pcm.length - 1) : pcm;
     },
     // Session affinity keeps one interview on the same model instance, so the cached prompt prefix is reused.
-    async *chatStream(messages, { affinity } = {}) {
+    // maxTokens can only lower the reply bound. An early draft passes the same bound as a reply.
+    // A reader the session stops (withdrawn, interrupted, ended) closes the upstream body.
+    async *chatStream(messages, { affinity, maxTokens } = {}) {
       assertAiOn(env);
-      const stream = await env.AI.run(env.TALKER_MODEL, { messages, stream: true, max_tokens: 300, temperature: 0.7 }, affinity ? { extraHeaders: { 'x-session-affinity': affinity } } : undefined);
+      const stream = await env.AI.run(env.TALKER_MODEL, { messages, stream: true, max_tokens: Math.min(300, Number(maxTokens) || 300), temperature: 0.7 }, affinity ? { extraHeaders: { 'x-session-affinity': affinity } } : undefined);
       const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
       let buffer = '';
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) return;
-        buffer += value;
-        let cut;
-        while ((cut = buffer.indexOf('\n')) >= 0) {
-          const line = buffer.slice(0, cut).trim(); buffer = buffer.slice(cut + 1);
-          if (!line.startsWith('data:')) continue;
-          const payload = line.slice(5).trim();
-          if (payload === '[DONE]') return;
-          try { const j = JSON.parse(payload), d = j.response ?? j.choices?.[0]?.delta?.content; if (d) yield d; } catch { /* keep-alive or partial */ }
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) return;
+          buffer += value;
+          let cut;
+          while ((cut = buffer.indexOf('\n')) >= 0) {
+            const line = buffer.slice(0, cut).trim(); buffer = buffer.slice(cut + 1);
+            if (!line.startsWith('data:')) continue;
+            const payload = line.slice(5).trim();
+            if (payload === '[DONE]') return;
+            try { const j = JSON.parse(payload), d = j.response ?? j.choices?.[0]?.delta?.content; if (d) yield d; } catch { /* keep-alive or partial */ }
+          }
         }
-      }
+      } finally { reader.cancel().catch(() => {}); }
     },
     async complete(messages, maxTokens = 2500) {
       assertAiOn(env);

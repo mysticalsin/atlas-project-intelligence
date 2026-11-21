@@ -6,7 +6,7 @@ import { TALKER_POLICY, OPENING, HISTORY, TOPICS, ADMIN_NOTE, SPEAKING_LIMIT_S, 
 import { gapSystemBlock, gapNotes, gapStatus, gapGuidance, timePlan } from './gap-policy.js';
 import { Analyst, InterviewLedger } from './ledger.js';
 import { EnergyTurns, isEcho, Phrases, rms, speakable } from './speech.js';
-import { audioMs, bindEarly } from './speculation.js';
+import { audioMs, bindEarly, estimateInputTokens } from './speculation.js';
 import { EndMarker, parseReport, reportMessages } from './report.js';
 import { LANGUAGES, normalize, spokenFor, languageNote, GREETINGS, WELCOME_BACK, FILLERS, unfinished } from './languages.js';
 
@@ -128,9 +128,9 @@ export class Session {
     gaps = null, winHint = null, gapTimeout = GAP_RESOLVE_MS, speculation = null }) {
     // metric(name, numbers): timings and counts only, never transcript or project content.
     Object.assign(this, { io, ai, csrf, voice, voices: voices || [voice], captureRequired, model, maxSeconds, admin, speakingLimit, now, sleep, metric, memory, sttTimeout, gaps, winHint, gapTimeout });
-    // Null unless EARLY_STT is on and a global ledger is bound. EARLY_DRAFT never starts a model call.
+    // Null unless EARLY_STT is on and a global ledger is bound. A draft is buffered text, never shown until adopted.
     this.early = bindEarly(speculation);
-    this.spec = null; this.specSeq = 0; this.pauseKey = 0; this.specTried = -1; this.specTurn = -1; this.specCount = 0; this.earlyOff = '';
+    this.spec = null; this.draft = null; this.specSeq = 0; this.pauseKey = 0; this.specTried = -1; this.specTurn = -1; this.specCount = 0; this.earlyOff = '';
     // Interview mode. Gap mode keeps its own answer windows: askByItem (reply item -> the ask it carried, set when the reply
     // is composed), gapAttempts (replies heard per ask), openAsk (the ask the consultant last heard; null once a reflect-back
     // or the closing is heard) and gapAnswers (ask -> the consultant turns heard after it, each turn a list of transcript parts).
@@ -181,8 +181,12 @@ export class Session {
     const audible = this.audible();
     const [started, utterance] = this.turnDetector.feed(bytes, audible);
     const d = this.turnDetector;
-    // New voice invalidates the one early batch. Silence does not. Flag off: this block does not run.
-    if (this.early && (started || (d.active && d.quiet === 0))) { this.pauseKey += 1; if (this.spec) this.dropEarly('speech'); }
+    // New voice invalidates anything prepared at this pause. Silence does not. Flag off: this block does not run.
+    if (this.early && (started || (d.active && d.quiet === 0))) {
+      this.pauseKey += 1;
+      if (this.spec) this.dropEarly('speech');
+      if (started && this.draft && !this.draft.adopted) this.cancelDraft(this.draft, 'speech');
+    }
     if (started) this.voiced = d.loud; // actual voice in this utterance, from its onset
     else if (d.active && d.quiet === 0) this.voiced += bytes.length / 48000;
     // A short sound closed a moment ago ("So,", "No,", "Yes…") is the start of what they are saying now: nothing is lost.
@@ -229,7 +233,7 @@ export class Session {
     // A click or a breath is over once quiet longer than a comma pause follows it: close it, so ATLAS is held for half a
     // second at most, and anything said next starts a fresh utterance (which picks the sound up again, see above).
     if (this.voiced < MIN_VOICED && d.quiet >= BLIP_QUIET) { this.closeBlip(); return; }
-    // One early Nova-3 batch at this same pause, only when a global ledger has admitted it. It does not end the turn.
+    // Up to three early Nova-3 batches at this same pause, only when a global ledger has admitted them. They do not end the turn.
     if (this.early && !this.earlyOff && this.specTried !== this.pauseKey && d.quiet >= EARLY_PAUSE && d.spoken - d.quiet >= 0.6 && this.voiced >= MIN_VOICED) this.speculate();
     // Semantic end of turn: at a pause, ask the turn model once. The early batch is not a second recogniser and is not
     // a partial: it is reused only if the turn ends on that prefix plus silence (endTurn).
@@ -242,6 +246,8 @@ export class Session {
   // The consultant's words still in progress when the interview ends (the time limit, or End) are part of it: they are
   // transcribed and recorded (finishTurn records without replying while ending), never silently dropped.
   finalWords() {
+    // A clean end withdraws a still-matching early batch. The last words take the normal transcription.
+    if (this.early) this.cancelEarly('ended');
     const d = this.turnDetector, b = this.blip; this.blip = null;
     if (b && d.active) { d.buffer = joinPcm(b.pcm, d.buffer); this.voiced += b.voiced; }
     else if (b) this.queueTranscription(b.pcm, { continuing: b.continuing, echoable: b.echoable, endedBy: 'limit', endedAt: b.endedAt });
@@ -285,20 +291,33 @@ export class Session {
     return how;
   }
 
-  // Admission before the one speculative transcription. A refusal, a throw or a slow answer sends nothing.
+  // Admission before every speculative provider request. A refusal, a throw or a slow answer sends nothing.
   // An exhausted ledger stops further early batches for this session. The interview itself continues.
+  // A reserve that succeeds after the timeout was never sent: release it so the slot and the estimate do not stick.
   async admit(request) {
     const { ledger, limits } = this.early; let timer;
+    const pending = Promise.resolve().then(() => ledger.reserve(request));
     try {
-      const r = await Promise.race([Promise.resolve().then(() => ledger.reserve(request)),
+      const r = await Promise.race([pending,
         new Promise(res => { timer = setTimeout(() => res({ ok: false, reason: 'timeout' }), limits.ledgerTimeoutMs); })]);
       if (r?.ok === true && r.id) return r;
+      pending.then(late => { if (late?.ok === true && late.id) this.releaseUnused(late.id); }, () => {});
       const reason = typeof r?.reason === 'string' ? r.reason : 'refused';
       if (reason !== 'concurrency') this.earlyOff = reason;
       this.metric('early_refused', { kind: request.kind, reason });
-    } catch (e) { this.earlyOff = 'unavailable'; this.metric('early_refused', { kind: request.kind, reason: 'error', name: e?.name || 'Error' }); }
+    } catch (e) {
+      pending.then(late => { if (late?.ok === true && late.id) this.releaseUnused(late.id); }, () => {});
+      this.earlyOff = 'unavailable'; this.metric('early_refused', { kind: request.kind, reason: 'error', name: e?.name || 'Error' });
+    }
     finally { clearTimeout(timer); }
     return null;
+  }
+
+  releaseUnused(id) {
+    const ledger = this.early?.ledger;
+    if (!ledger) return;
+    const run = typeof ledger.release === 'function' ? ledger.release(id) : ledger.settle(id, { sent: 0, audioMs: 0, late: 1 });
+    Promise.resolve(run).catch(() => this.metric('early_settle_error', {}));
   }
 
   settle(id, observed) { Promise.resolve().then(() => this.early.ledger.settle(id, observed)).catch(() => this.metric('early_settle_error', {})); }
@@ -312,7 +331,7 @@ export class Session {
     if (this.specCount >= limits.perTurn) return this.metric('early_skipped', { reason: 'per_turn' });
     if (ms > limits.maxAudioMs || !pcm.length) return this.metric('early_skipped', { reason: 'duration', audio_ms: ms });
     this.specCount += 1;
-    const rec = { id: ++this.specSeq, key: this.pauseKey, pcm, open: true, used: false, result: null, ms };
+    const rec = { id: ++this.specSeq, key: this.pauseKey, pcm, open: true, used: false, result: null, draft: null, ms };
     this.spec = rec;
     const admitted = await this.admit({ kind: 'stt', audioMs: ms, requests: 1 });
     if (!admitted) { if (this.spec === rec) this.spec = null; rec.open = false; return; }
@@ -324,8 +343,9 @@ export class Session {
       .then(heard => ({ ok: true, heard }), e => ({ ok: false, name: e?.name || 'Error' })).finally(() => clearTimeout(timer));
     this.metric('early_stt_sent', { audio_ms: ms });
     const r = await rec.result;
-    this.metric('early_stt', { ms: Math.round((this.now() - t0) * 1000), ok: r.ok ? 1 : 0 });
-    if (!rec.open && !rec.used) this.metric('early_late_discarded', { kind: 'stt' });
+    this.metric('early_stt', { ms: Math.round((this.now() - t0) * 1000), ok: r.ok ? 1 : 0, current: rec.open || rec.used ? 1 : 0 });
+    if (!rec.open && !rec.used) return this.metric('early_late_discarded', { kind: 'stt' });
+    if (r.ok && this.early.draft) this.startDraft(rec, r.heard);
   }
 
   // Reuse only when the flushed audio is the early prefix plus silence, and no voice has resumed.
@@ -345,9 +365,77 @@ export class Session {
     if (!rec.open && !rec.used) return;
     rec.open = false; rec.used = false;
     this.metric('early_withdrawn', { reason, sent: rec.result ? 1 : 0 });
+    if (rec.draft) this.cancelDraft(rec.draft, reason);
   }
 
-  cancelEarly(reason) { if (this.spec) this.dropEarly(reason); }
+  cancelEarly(reason) { this.dropEarly(reason); if (this.draft && !this.draft.adopted) this.cancelDraft(this.draft, reason); }
+
+  // The prompt the reply would have if the turn ended now on these words and nothing else changed.
+  // Adopted only when that prompt is byte-identical to the reply that is actually composed.
+  draftMessages(text) {
+    if (this.history.at(-1)?.role === 'user' || unfinished(text, this.language)) return null;
+    const filler = this.pickFiller(text, { peek: true, turns: this.turns + 1 });
+    const notes = [...this.paceNotes(), filler ? `ALREADY SAID (server): you have just said "${filler}" out loud. Continue naturally from there; do not start with another short acknowledgement.` : ''];
+    return talkerMessages(this.project, this.guidance, [...this.history, { role: 'user', content: text }], undefined, notes, null);
+  }
+
+  async startDraft(rec, heard) {
+    const text = (typeof heard === 'string' ? heard : heard?.text || '').trim();
+    if (!text || this.mode !== 'full' || this.timeUp || this.continuing || this.earlyOff || this.finished || this.ending || !rec.open) return;
+    const messages = this.draftMessages(text);
+    if (!messages) return this.metric('early_skipped', { reason: 'draft_context' });
+    const { limits } = this.early, inputTokens = estimateInputTokens(messages);
+    if (inputTokens > limits.maxInputTokens) return this.metric('early_skipped', { reason: 'draft_input', input_tokens: inputTokens });
+    const admitted = await this.admit({ kind: 'draft', inputTokens, outputTokens: limits.draftOutputTokens, requests: 1 });
+    if (!admitted) return;
+    if (!rec.open || this.finished || this.ending) { this.settle(admitted.id, { kind: 'draft', sent: 0, outputChunks: 0, outputChars: 0 }); return; }
+    const d = { rec, key: JSON.stringify(messages), buf: [], done: false, failed: false, cancelled: false, adopted: false, chars: 0, wake: null, it: null, timer: null };
+    if (this.draft && !this.draft.adopted) this.cancelDraft(this.draft, 'replaced');
+    this.draft = d; rec.draft = d;
+    const t0 = this.now();
+    d.it = this.ai.chatStream(messages, { affinity: this.affinity, maxTokens: limits.draftOutputTokens })[Symbol.asyncIterator]();
+    d.timer = setTimeout(() => { if (!d.adopted) this.cancelDraft(d, 'timeout'); }, limits.draftTimeoutMs);
+    this.metric('early_draft_sent', { input_tokens_estimate: inputTokens, output_tokens_max: limits.draftOutputTokens });
+    const wake = () => { const w = d.wake; d.wake = null; if (w) w(); };
+    (async () => {
+      try { for (;;) { if (d.cancelled) break; const { value, done } = await d.it.next(); if (done || d.cancelled) break; d.buf.push(value); d.chars += String(value).length; wake(); } }
+      catch (e) { d.failed = true; d.error = e; }
+      finally {
+        d.done = true; clearTimeout(d.timer); wake();
+        this.settle(admitted.id, { kind: 'draft', sent: 1, outputChunks: d.buf.length, outputChars: d.chars, cancelled: d.cancelled ? 1 : 0, error: d.failed ? d.error?.name || 'Error' : undefined });
+        this.metric('early_draft', { ms: Math.round((this.now() - t0) * 1000), chunks: d.buf.length, adopted: d.adopted ? 1 : 0, cancelled: d.cancelled ? 1 : 0, failed: d.failed ? 1 : 0 });
+      }
+    })();
+  }
+
+  cancelDraft(d, reason) {
+    if (!d || d.adopted || d.cancelled) return;
+    d.cancelled = true; clearTimeout(d.timer);
+    if (this.draft === d) this.draft = null;
+    Promise.resolve().then(() => d.it?.return?.()).catch(() => {});
+    this.metric('early_draft_withdrawn', { reason, chunks: d.buf.length });
+  }
+
+  // A reply adopts the draft only when its early transcript was used and the prompt is exactly this reply's prompt.
+  adoptDraft(messages) {
+    const d = this.draft;
+    if (!d) return null;
+    this.draft = null;
+    if (!d.rec.used || d.cancelled || d.failed || d.key !== JSON.stringify(messages)) { this.cancelDraft(d, 'context'); return null; }
+    d.adopted = true; clearTimeout(d.timer);
+    this.metric('early_draft_adopted', { chunks_ready: d.buf.length });
+    return (async function* () {
+      let i = 0;
+      try {
+        for (;;) {
+          if (i < d.buf.length) { yield d.buf[i++]; continue; }
+          if (d.failed) throw d.error;
+          if (d.done) return;
+          await new Promise(r => { d.wake = r; });
+        }
+      } finally { if (!d.done) { d.cancelled = true; Promise.resolve().then(() => d.it?.return?.()).catch(() => {}); } }
+    })();
+  }
 
   queueTranscription(pcm, how = {}) {
     this.sttBusy += 1;
@@ -644,11 +732,13 @@ export class Session {
   }
 
   // A short spoken acknowledgement from cache, only after a real answer, never twice in a row, never in admin mode.
-  pickFiller(text) {
+  // peek: the acknowledgement it would pick at `turns`, without taking it (an early draft's prompt).
+  pickFiller(text, { peek = false, turns = this.turns } = {}) {
     const list = FILLERS[this.spoken()];
-    if (!list || this.admin || this.timeUp || this.turns - this.fillerTurn < 2 || String(text).split(/\s+/).length < FILLER_WORDS || /\?\s*$/.test(text)) return '';
-    this.fillerTurn = this.turns; this.lastFiller = (this.lastFiller + 1 + (this.turns % 2)) % list.length;
-    return list[this.lastFiller];
+    if (!list || this.admin || this.timeUp || turns - this.fillerTurn < 2 || String(text).split(/\s+/).length < FILLER_WORDS || /\?\s*$/.test(text)) return '';
+    const index = (this.lastFiller + 1 + (turns % 2)) % list.length;
+    if (!peek) { this.fillerTurn = turns; this.lastFiller = index; }
+    return list[index];
   }
 
   // measure: a piece of a reply (not a prewarm), reported as numbers only: synthesis time, audio length, characters, cache hit.
@@ -749,7 +839,8 @@ export class Session {
       const carry = s => { if (gap && instruction === STILL_THINKING && !asked && /[?？]/.test(s)) { asked = true; this.askByItem.set(item, guidance?.askId ?? null); } };
       // First words fast (the first sentence, or a first clause of 40 characters), then whole phrases (speech.js Phrases).
       const phrases = new Phrases();
-      for await (const raw of this.ai.chatStream(talkerMessages(this.project, guidance, this.history, instruction, notes, gap ? this.gapAsks : null), { affinity: this.affinity })) {
+      const messages = talkerMessages(this.project, guidance, this.history, instruction, notes, gap ? this.gapAsks : null);
+      for await (const raw of this.adoptDraft(messages) || this.ai.chatStream(messages, { affinity: this.affinity })) {
         if (gen !== this.gen || this.finished) return;
         const delta = marker.feed(raw);
         if (!delta) continue;

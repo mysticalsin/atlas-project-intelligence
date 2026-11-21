@@ -1,8 +1,8 @@
 // A29 early STT. Local fixtures and a virtual clock only: no provider, no microphone, no spend.
 // The flag-off trace is the behaviour of this Session with early processing unbound. A bound global
-// ledger may run one Nova-3 batch (the same transcribe()) at EARLY_PAUSE. That batch is reused only
-// when the final audio is that prefix plus silence. Any later speech discards it and endTurn runs
-// the normal transcription. EARLY_DRAFT cannot put a partial into the LLM, the transcript or TTS.
+// ledger may run up to three Nova-3 batches (the same transcribe()) at EARLY_PAUSE. A batch is reused
+// only when the final audio is that prefix plus silence. Speech after the pause withdraws it.
+// EARLY_DRAFT may call the talker. That text is not shown, played, or committed before adoption.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -77,7 +77,6 @@ async function opened(h, { capture = false } = {}) {
 }
 
 const users = h => h.s.history.filter(m => m.role === 'user').map(m => m.content);
-const seen = h => JSON.stringify({ events: h.events, talker: h.calls.talker, tts: h.calls.tts, history: h.s.history });
 
 function roundNumbers(value) {
   if (typeof value === 'number') return Math.round(value * 1000) / 1000;
@@ -144,14 +143,14 @@ test('the early batch is reused only when the final audio is that prefix plus si
   assert.equal(h.calls.stt[0].len, prefix.len);
   assert.ok(h.calls.stt[0].t <= pauseAt);
   assert.deepEqual(users(h), [TOKEN]);
-  assert.equal(led.reserved.length, 1, 'one admitted batch even if a caller asks for more');
+  assert.equal(led.reserved.length, 1, 'this one pause admits one batch');
   assert.equal(h.metrics.filter(([name]) => name === 'early_stt_used').length, 1);
   await h.s.end(false);
 });
 
-test('any speech after the early batch discards it and endTurn transcribes the whole utterance', async () => {
+test('speech after an early batch withdraws it; a later matching pause can start another batch', async () => {
   const h = harness({
-    speculation: { enabled: true, stt: true, draft: true, ledger: globalLedger(), limits: { perTurn: 3 } },
+    speculation: { enabled: true, stt: true, draft: false, ledger: globalLedger(), limits: { perTurn: 3 } },
     stt: [TOKEN, FULL],
   });
   await opened(h);
@@ -159,17 +158,18 @@ test('any speech after the early batch discards it and endTurn transcribes the w
   await until(() => h.calls.stt.length === 1);
   const prefix = h.calls.stt[0].pcm;
   await feed(h, [VOICE(0.8), QUIET(between)]);
-  assert.equal(h.calls.stt.length, 1, 'one early batch per turn: the second pause does not send another');
+  await until(() => h.calls.stt.length === 2);
+  assert.ok(h.metrics.some(([name, v]) => name === 'early_withdrawn' && v.reason === 'speech'), 'resume drops the open batch');
   await feed(h, [QUIET(END_SILENCE)]);
   await until(() => h.calls.talker.length === 2 && !h.s.busy());
-  assert.equal(h.calls.stt.length, 2, 'the discarded batch is not the endTurn transcription');
-  const final = h.calls.stt[1].pcm;
-  assert.ok(final.length > prefix.length);
-  assert.equal(Buffer.compare(final.subarray(0, prefix.length), prefix), 0);
-  assert.ok(rms(final.subarray(prefix.length)) > 0.02, 'the extra audio is speech, not silence');
+  assert.equal(h.calls.stt.length, 2, 'the second batch is the final audio plus silence, so endTurn reuses it');
+  const second = h.calls.stt[1].pcm;
+  assert.ok(second.length > prefix.length);
+  assert.equal(Buffer.compare(second.subarray(0, prefix.length), prefix), 0);
+  assert.ok(rms(second.subarray(prefix.length)) > 0.02, 'the extra audio is speech, not silence');
   assert.deepEqual(users(h), [FULL]);
-  assert.equal(seen(h).includes(TOKEN), false, 'the discarded transcript is not reused');
-  assert.equal(h.metrics.filter(([name]) => name === 'early_stt_used').length, 0);
+  assert.equal(JSON.stringify({ events: h.events, tts: h.calls.tts, history: h.s.history }).includes(TOKEN), false, 'the withdrawn transcript is not reused');
+  assert.equal(h.metrics.filter(([name]) => name === 'early_stt_used').length, 1);
   await h.s.end(false);
 });
 
@@ -187,10 +187,12 @@ test('EARLY_STT and EARLY_DRAFT stay off unless a global spend ledger is bound',
   const both = S.speculationConfig({ EARLY_STT: '1', EARLY_DRAFT: '1' }, global);
   assert.equal(stt.enabled && stt.stt && stt.draft === false, true);
   assert.equal(both.enabled && both.draft === true, true);
-  assert.equal(S.LIMITS.perTurn, 1, 'one early batch');
+  assert.equal(S.LIMITS.perTurn, 3, 'a second and a third early batch are allowed');
   const bound = S.bindEarly(both);
-  assert.equal(bound.draft, false, 'EARLY_DRAFT cannot start a model call');
-  assert.equal(bound.limits.perTurn, 1);
+  assert.equal(bound.draft, true, 'EARLY_DRAFT is a withdrawable talker draft');
+  assert.equal(bound.limits.perTurn, 3);
+  assert.equal(S.speculationConfig({ EARLY_STT: 'true', EARLY_DRAFT: 'true' }, global).enabled, false, 'only the exact string 1');
+  assert.equal(S.speculationConfig({ EARLY_STT: 'yes' }, global).enabled, false);
   assert.equal(S.bindEarly(S.speculationConfig({ EARLY_STT: '1' }, null)), null);
   assert.equal(S.bindEarly({ enabled: true, stt: true, draft: true, ledger: { scope: 'process', reserve() {}, settle() {} } }), null);
   const worker = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8');
@@ -201,29 +203,28 @@ test('EARLY_STT and EARLY_DRAFT stay off unless a global spend ledger is bound',
   assert.doesNotMatch(session, /@cf\/|whisper|nova-2|EARLY_MODEL/);
 });
 
-test('an early transcript does not reach the LLM, TTS or the transcript before the turn ends', async () => {
+test('an early transcript is not on screen, in TTS, or in the transcript before the turn ends', async () => {
   const h = harness({
     speculation: { enabled: true, stt: true, draft: true, ledger: globalLedger() },
     stt: [TOKEN], capture: true,
   });
   await opened(h, { capture: true });
   await feed(h, [VOICE(1.2), QUIET(between)]);
-  await until(() => h.calls.stt.length === 1);
+  await until(() => h.calls.stt.length === 1 && h.calls.talker.length >= 2);
   for (let i = 0; i < 30; i++) await tick();
-  assert.equal(h.calls.talker.length, 1, 'EARLY_DRAFT does not call the talker');
+  const shown = JSON.stringify({ events: h.events, tts: h.calls.tts, history: h.s.history });
+  assert.equal(shown.includes(TOKEN), false, 'the draft prompt is not the screen, the voice, or the transcript');
   assert.equal(h.calls.tts.some(c => c.text.includes(TOKEN)), false);
   assert.equal(h.events.some(e => e.type === 'user_text'), false);
   assert.equal(users(h).length, 0);
-  assert.equal(seen(h).includes(TOKEN), false);
-  const marked = { talker: h.calls.talker.length, tts: h.calls.tts.length, events: h.events.length };
+  const marked = h.calls.talker.length;
   await feed(h, [QUIET(END_SILENCE)]);
-  await until(() => h.calls.talker.length === 2 && h.events.some(e => e.type === 'user_text') && !h.s.busy());
-  assert.ok(h.calls.talker.length > marked.talker);
+  await until(() => h.events.some(e => e.type === 'user_text') && !h.s.busy());
   assert.equal(h.events.filter(e => e.type === 'user_text').map(e => e.text).join(' '), TOKEN);
   assert.equal(h.calls.stt.length, 1);
+  assert.equal(h.calls.talker.length, marked, 'a matching draft is adopted, so the reply does not call the talker again');
   const reply = h.calls.talker[1];
   assert.equal(reply.some(m => m.role === 'user' && m.content === TOKEN), true);
-  assert.equal(h.calls.talker.length, 2, 'the committed reply is the only later model call');
   await h.s.end(false);
 });
 
