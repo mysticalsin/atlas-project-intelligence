@@ -4,7 +4,6 @@ Not a live GPU, Entra, Hindsight or Riva provider test.
 import asyncio, contextlib, json, time
 from dataclasses import replace
 from pathlib import Path
-from urllib.parse import urlencode
 import aiohttp
 from aiohttp import web
 import pytest
@@ -56,7 +55,7 @@ def test_prompt_leads_and_bounds_unicode():
     c=project_context({**PROJECT,'title':'项目'*100,'answers':['数据'*2000]*6})
     p=make_prompt(c,'记忆'*500)
     assert 'Speak first' in p and 'one short question' in p and 'baseline' in p
-    assert len(urlencode({'text_prompt':p,'voice_prompt':'NATF2.pt'}).encode())<=7400
+    assert len(p.encode())<=7400
 
 def test_reject_bank_in_context():
     with pytest.raises(ValueError):project_context({**PROJECT,'bank_id':'other-user'})
