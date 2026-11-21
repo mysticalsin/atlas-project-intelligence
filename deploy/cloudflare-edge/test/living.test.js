@@ -441,3 +441,46 @@ test('an approved CV exports once, another tenant cannot see it, and privacy del
   assert.equal(living.deleteOwned(l, OWNER) > 0, true);
   assert.equal(l.rows('SELECT COUNT(*) AS n FROM living_artifacts')[0].n, 0);
 });
+
+test('a stored requirement tailors the CV and the export stays local', async () => {
+  const l = lib();
+  await publish(l);
+  await consent(l);
+  const calls = [];
+  const orig = globalThis.fetch;
+  globalThis.fetch = (...args) => { calls.push(String(args[0])); return Promise.reject(new Error('network')); };
+  try {
+    const poisoned = JSON.parse(JSON.stringify(CAPTURE));
+    poisoned.salary = '99123-salary-sentinel';
+    poisoned.candidateRequirement.skills.must = [...poisoned.candidateRequirement.skills.must, 'Daily rate 700'];
+    const stored = await living.routes({ method: 'POST', parts: ['living', 'requirements'], user: OWNER, lib: l, env: {}, body: { capture: poisoned } });
+    assert.equal(stored.body.requirement.needId, '192497');
+    assert.equal(stored.body.requirement.title, 'Software Developer');
+    assert.equal(JSON.stringify(stored.body).includes('99123-salary-sentinel'), false);
+    assert.equal(JSON.stringify(stored.body).includes('Daily rate'), false);
+    const fixture = await living.routes({ method: 'POST', parts: ['living', 'requirements'], user: OWNER, lib: l, env: {}, body: { fixtureId: '192497' } });
+    assert.equal(fixture.body.requirement.needId, '192497');
+    const missed = await living.routes({ method: 'POST', parts: ['living', 'requirements'], user: OWNER, lib: l, env: {}, body: { fixtureId: '999' } });
+    assert.equal(missed.body.ok, false);
+    assert.equal(missed.body.pasteFallback, true);
+    const payloads = l.rows('SELECT payload FROM living_requirements').map(row => row.payload).join('\n');
+    assert.equal(payloads.includes('99123-salary-sentinel'), false);
+    assert.equal(payloads.includes('Daily rate'), false);
+    const made = await living.routes({ method: 'POST', parts: ['living', 'generate'], user: OWNER, lib: l, env: {}, body: { requirementId: fixture.body.requirement.id } });
+    assert.equal(made.body.artifact.need.needId, '192497');
+    assert.equal(made.body.artifact.lines.some(line => line.text.includes('Designed the Windows service')), true);
+    assert.equal(made.body.artifact.gaps.some(gap => gap.keyword === 'English'), true);
+    assert.equal(made.body.artifact.gaps.some(gap => gap.keyword === 'C++'), false);
+    assert.equal(made.body.artifact.flags.some(flag => flag.code === 'skill_conflict' && flag.skill === 'C++'), true);
+    await assert.rejects(living.routes({ method: 'POST', parts: ['living', 'generate'], user: OTHER, lib: l, env: {}, body: { requirementId: fixture.body.requirement.id } }), /Not found/);
+    await living.routes({ method: 'POST', parts: ['living', 'artifacts', made.body.artifact.id, 'approve'], user: PRE, lib: l, body: {} });
+    const file = await living.routes({ method: 'POST', parts: ['living', 'artifacts', made.body.artifact.id, 'export'], user: OWNER, lib: l, body: { format: 'docx', adapter: 'michat' } });
+    const xml = Buffer.from(file.body.base64, 'base64').toString('utf8');
+    assert.equal(xml.includes('Designed the Windows service'), true);
+    assert.equal(xml.includes('99123-salary-sentinel'), false);
+    assert.equal(xml.includes('Daily rate'), false);
+    assert.equal(calls.length, 0);
+    assert.equal(living.deleteOwned(l, OWNER) > 0, true);
+    assert.equal(l.rows('SELECT COUNT(*) AS n FROM living_requirements')[0].n, 0);
+  } finally { globalThis.fetch = orig; }
+});
