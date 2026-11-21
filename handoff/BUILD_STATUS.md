@@ -1,6 +1,22 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-21 — interview ledger and cascade run, rows 2-4 (`cursor/rows2-4-interview-d7f3`)
+
+Ask row A22. Rows 2 and 4 share one status write and one probe budget. The status strings and the defer sentence match. `inspect` still chooses the next field. Row 3 steps the Kyutai/Workers run. No continuation window was added. Row 1 is not in this branch: `session.js` is already changed by #32 and #35.
+
+Red `bc7acfe579bf793432ed75b521afcc6875a9feb4` (modules missing, collection errors). Reducer `f4b6730dc70beb245459abe555a8d794c0250d46`. Wire `5e440cddb99b3aed32f615cc4f9ca98520978b9b`.
+
+Measured on the wire, before this paragraph's manifest refresh.
+
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 422 passed, 127 warnings, 24.80s, exit 0.
+- `node --test tests/*.test.js`: 419 tests, 419 pass, 0 fail, 0 skipped.
+- Edge `node --test test/*.test.js`: 1120 tests, 1116 pass, 0 fail, 4 skipped, 228.5s. The 4 skips are workerd 2026-10-23 not installed.
+- `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui`: 834 PASS, 0 FAIL, exit 0.
+- `python3 scripts/check_handoff.py . --dev-git-index`: exit 0, 704 release files.
+
+Locally verified. No live voice provider was called. Not a production-ready claim.
+
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.
