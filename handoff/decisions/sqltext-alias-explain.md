@@ -102,7 +102,33 @@ Devin's exact-head gate on `b1fa82d2772bee79b45e97197bcb5728c707b241` was CODE I
 cd deploy/cloudflare-edge && node --test test/write-sqltext-survivors.test.js test/write-sqltext-alias-explain.test.js test/write-v14-gap.test.js
 ```
 
-On `03b30739a7bdc54ecc8839ec9ebf6866e9709379` that command is 8 tests, 8 pass, 0 fail, exit 0. Deleting the vacuum/reindex-only guard exits 1 on `a trailing word other than vacuum or reindex is not a proven read`. Deleting the top-verb text exits 1 on `a with-write inside explain query plan is not a proven read`. Replacing the plan conjunction with `||` exits 1 on `explain analyze stays a hidden write`. Dropping `group`, `having`, `order`, `limit`, `offset`, `union`, `except`, or `intersect` from the clause list exits 1 on the clause test. Comment deletions and five operator edits (`>=` to `>`, the pragma-loop bound, the pragma conjunction, `topVerbAt` returning `0`, and `at < 0` to `at <= 0`) do not change those three results on the probed strings.
+On `03b30739a7bdc54ecc8839ec9ebf6866e9709379` that command is 8 tests, 8 pass, 0 fail, exit 0. Deleting the vacuum/reindex-only guard exits 1 on `a trailing word other than vacuum or reindex is not a proven read`. Deleting the top-verb text exits 1 on `a with-write inside explain query plan is not a proven read`. Replacing the plan conjunction with `||` exits 1 on `explain analyze stays a hidden write`. Dropping `group`, `having`, `order`, `limit`, `offset`, `union`, `except`, or `intersect` from the clause list exits 1 on the clause test. The loop-1 note called the pragma conjunction and `topVerbAt` returning `0` equivalent. Loop 2 withdraws that claim.
+
+## Loop 2
+
+Inspector delta 1 on `7bd6c29f6727126303c854066f3d189a66e42729` is PASS WITH NOTES, report sha `0921be8c`. Devin agreed. Two survivors are not equivalent.
+
+`2d838fefeadd0e113a38cc716450cb334a60cfe3` is tests only. On that commit the command above is 11 tests, 11 pass, 0 fail, exit 0. `sql-text.js` is unchanged.
+
+`topVerbAt` returning `0` instead of `-1` (`sql-text.js:261`) makes `isMutatingStatement` true for `''`, whitespace, `'-- c\n'`, and `'/* c */'`. The same command on that mutant is 9 pass, 2 fail, exit 1. The failure that kills it is `empty text and a comment are not a mutation`.
+
+Replacing the first `&&` with `||` on the pragma test in `explainedAt` (`sql-text.js:197`) makes `hiddenWrite` false for `EXPLAIN QUERY PLAN PRAGMA user_version PRAGMA writable_schema = ON`. The door can still return `SQL_DOOR` because `isMutatingStatement` stays true. The same command on that mutant is 10 pass, 1 fail, exit 1. The failure is `a second pragma inside an explain plan is a hidden write`, which asserts `hiddenWrite` directly.
+
+Restoring the file after each mutant is 11 pass, 0 fail, exit 0.
+
+The full changed-line table on that test commit is 79 rows, 65 killed, 14 survive. The 14 survivors, each with a one-line proof:
+
+- Eleven comment deletions. A comment is not executed, so the three classifiers are the same function.
+- `sql-text.js:194` `>=` to `>`. `explainedAt` runs only for `EXPLAIN QUERY PLAN`, whose first token is `explain`, so `topVerbAt` never returns 0 and both comparisons select the same index.
+- `sql-text.js:195` `i < tokens.length` to `i <= tokens.length`. The extra iteration reads `tokens[tokens.length]`, which is `undefined`, the pragma predicate is false, and the function still returns `undefined`.
+- `sql-text.js:265` `at < 0` to `at <= 0`. They differ only at index 0. A write there is already a mutation through `openingVerb`. A read there is not in `VERBS`, and `''` is not in `VERBS` either, so `readWords` takes the same branch. Empty input still has `topVerbAt` return `-1`.
+
+## Known limits
+
+Notes only. Not fixed in this loop.
+
+- `deploy/cloudflare-edge/src/library.js:683` prepares the statement before the write gate. A temp name inside `PRAGMA database_list` can be prepared before classification refuses it.
+- `deploy/cloudflare-edge/src/sql-tail.js:40` reads `stmt.sourceSQL` outside the prepare `try`. A throw from that read is pre-existing and is not caught there.
 
 ## Risk
 

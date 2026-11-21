@@ -1,6 +1,18 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-21 — SQL text loop 2, empty text and a second pragma (`cursor/atlas-sqltext-lows`)
+
+Loop 2 of 3, the last allowed. Base `7bd6c29f6727126303c854066f3d189a66e42729`. Inspector delta 1 is PASS WITH NOTES, report sha `0921be8c`. Devin agreed. The pragma conjunction and `topVerbAt` returning `0` are not equivalent. The decision is `handoff/decisions/sqltext-alias-explain.md`. No deploy, no provider call, no secrets. `library.js` and `sql-tail.js` were not edited. Public exports of `sql-text.js` are unchanged. `sql-text.js` itself is unchanged in this loop.
+
+Red is shown by mutants. `2d838fefeadd0e113a38cc716450cb334a60cfe3` is tests only. The command `cd deploy/cloudflare-edge && node --test test/write-sqltext-survivors.test.js test/write-sqltext-alias-explain.test.js test/write-v14-gap.test.js` on that commit is 11 tests, 11 pass, 0 fail, exit 0. `topVerbAt` returning `0` is 9 pass, 2 fail, exit 1, killed by `empty text and a comment are not a mutation`. The pragma `&&` to `||` is 10 pass, 1 fail, exit 1, killed by `a second pragma inside an explain plan is a hidden write`. Restoring the file is 11 pass, 0 fail, exit 0. There is no product fix: the clean classifier already returns those results.
+
+Changed-line mutants on that command: 79 rows, 65 killed, 14 survive. The survivors are 11 comment deletions and three operator edits, each with a one-line proof in the decision. The two withdrawn equivalents are killed.
+
+Known limits, not fixed: `library.js:683` prepares before the write gate, so a temp name inside `PRAGMA database_list` can be prepared before the refusal. `sql-tail.js:40` reads `stmt.sourceSQL` outside the prepare `try`, and a throw there is pre-existing.
+
+Full local suites are run on the commit that contains this note. Their counts are in the loop-2 packet. `MANIFEST.json` is regenerated after this note. `ATLAS_DEPLOY_STUB` stayed unset. Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open. GitHub Actions was not rerun.
+
 ## 2026-11-21 — SQL text survivor tests, high risk (`cursor/atlas-sqltext-lows`)
 
 Loop 1 of 3. Devin's gate on `b1fa82d2772bee79b45e97197bcb5728c707b241` was CODE INCOMPLETE / BODY FAIL, report sha `e9c82d89`. The decision is now high because the classifier gates writes: `handoff/decisions/sqltext-alias-explain.md`. No deploy, no provider call, no secrets. `library.js` was not edited. Public exports of `sql-text.js` are unchanged.
