@@ -294,12 +294,13 @@ const KNOWN_TABLES = Object.freeze([
   'journey', 'journey_v2', 'consent_receipts', 'privacy_flags', 'erasure_log', 'erasure_holds', 'privacy_gate',
   'gap_requests', 'telemetry', 'claims', 'confirmation_requests', 'bids', 'bid_references',
   'profiles', 'profiles_v2', 'profile_collapsed', 'directory', 'directory_v2', 'directory_imports', 'directory_imports_v2',
+  'living_artifacts', 'living_requirements',
 ]);
 const KNOWN_INDEXES = Object.freeze([
   'refs_owner_local', 'invitations_open_scope', 'outreach_subject', 'outreach_status',
   'teams_conversations_email', 'journey_tenant_subject', 'consent_receipts_subject',
   'telemetry_at', 'claims_ref', 'claims_sentence', 'confirmation_requests_ref',
-  'confirmation_requests_to', 'bids_owner',
+  'confirmation_requests_to', 'bids_owner', 'living_owner',
 ]);
 function schemaAllowed(statement) {
   if (splitStatements(statement).length !== 1 || hasCreateAsSelect(statement)) return false;
