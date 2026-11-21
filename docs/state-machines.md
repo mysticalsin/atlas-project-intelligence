@@ -19,7 +19,7 @@ Row shape: section 4 of `docs/STATE-MACHINE-STANDARD.md`. Status in the summary 
 | 8 | Production day budget | Not on this branch. `meter.js` is not in the tree. | Reserve, record, settle, roll the UTC day | `day`, `open`, `reserved`, `limitUsd` | The earlier `meter.js:70` `BudgetState` citation is not a file on this branch. | H | LATER. Not reviewed here. |
 | 9 | Story publication | `deploy/cloudflare-edge/src/publication.js` (`deriveStatus` is `publicationStatus`; `upsert` uses `revised`; `merge` uses `merged`) | in review, needs work, awaiting validation, changes requested, published, withdrawn, admin test | `validation.status`, `managerDecision`, `presalesDecision`, `withdrawn`, `quality.status`, `test`. `merged_into` stays a column. | `canPublish` requires both approvals. 32 of the 2560 golden rows move from `published` to `awaiting_validation` (validated, quality ready, not both approved, including both `merged_into` values). Unknown approvals still do not publish. A version-less row is a main row: it decodes through `publicationStatus` and is not rewritten. An unknown version keeps every stored field, including `withdrawn`. Its decoded status is `withdrawn` when the row is withdrawn, otherwise `in_review`. The read overlays nothing and persists nothing. CAS still compares the stored status column (`library.js:329`, `:434`, `:673`). `scanStale` (`library.js:824`) uses the decoded status, so an unknown withdrawn row is not invited even when the column is `published`. A legacy row whose column is `published` and whose story decodes to `awaiting_validation` is covered. A merge without `transactionSync` returns 503. A rejected reinstate says the story was merged only when `merged_into` is set; otherwise it uses `PUBLICATION_CHANGE_REFUSED`. `index` (`library.js:571`) parses every other row with the same guard as `visibleRows` before it writes a duplicate. Tony, Q-9a, verbatim: "Atlas withdrawn edit: stay withdrawn until a reviewer reinstates". An editor's content change on a withdrawn, non-merged story used to clear `withdrawn` and store `in_review`, which skipped reviewer-only reinstate. `revised` stays legal from `withdrawn` and keeps `withdrawn`. It still stores version 1, clears quality and test, and sets both lanes to pending. Only `reinstated` clears `withdrawn`. None of the 2560 `deriveStatus` goldens move, because `withdrawn` already wins before quality and lanes. Applying `revised` moves 1280 of those 2560 outcomes from `in_review` to `withdrawn`: every combination with `withdrawn` true, both `test` flags, all four qualities (missing, ready, needs_work, insufficient), all five validation statuses (missing, pending, validated, changes_requested, admin_bypass), both decisions over missing, pending, approved and changes_requested, and both `merged_into` values (missing and `keep-id`). The other 1280, `withdrawn` false, stay `in_review`. The earlier 16 bare rows (32 with `merged_into`) that moved `published` to `awaiting_validation` are unchanged. | H | FIXED. The reducer is the only writer of validation, withdrawn and test. `validated` does not publish without both lanes. Nine phase/event pairs are illegal. `revised` does not clear `withdrawn`. |
 | 10 | Privacy erasure | `src/erasure-machine.js` (writer: the privacy button in `src/journey-ui.js`; journey match in `journey.js` `JOURNEY_MATCH`, used by `operate.js:145` and :166–:167) | idle, confirming, in flight, receipt, failed | `{status}` written only by `erasureTransition` | The button posted `/privacy/delete` on the first click and painted `JSON.stringify` of the response. A second click sent a second POST. `saveJourney` stores `user.email` unchanged. Read and save used `subject = ?`, so a lower-case sign-in missed a mixed-case row and the next save inserted another. Export returned the first match. Those four now share `lower(subject) = lower(?)` inside the tenant. Read and save pick the newest `updated_at`, then the greatest `rowid`. Export and erasure take every match. Existing duplicates are not merged. `complete` stays false. The v1 receipt at `journey-ui.js:11` and `confirmDelete` :81 is still not on this branch. | H | FIXED. One confirmation, one POST while in flight, and the server note instead of raw JSON. |
-| 11 | Colleague confirm page | `deploy/cloudflare-edge/src/confirm-page.js:120` | Open a confirmation, submit, error | page fetches, request id | None newly reproduced. | H | LATER. Pending review. It records a human confirmation. |
+| 11 | Colleague confirm page | `deploy/cloudflare-edge/src/confirm-page.js:120` | Open a confirmation, submit, error | page fetches, request id | None newly reproduced. | H | FIXED. The page lifecycle is `confirmStep`. Eleven of thirty-six pairs are legal. A submit that is not ready stays on choosing. `failed` is the only terminal phase. The POST is still the existing fetch. The spec risk stays H because the page records a human confirmation. This run's HIGH (auth, tenant, erasure, release gating) does not include this page. |
 | 12 | Early speculation | Not on this branch. `speculation.js` is not in the tree. | Off, admitted, cancelled, claimed by the final turn | `EARLY_STT`, `EARLY_DRAFT`, reservation ids, `scope` | The earlier `speculation.js:24` and `MemoryLedger` at :46 citation is not a file on this branch. | H | LATER. Not reviewed here. |
 | 13 | Story-rating circuit breaker | `deploy/cloudflare-edge/src/breaker.js` (writer: `rating.js` `storyRater`) | closed, open for 60 s, one trial, auth block until the key changes | was `fails`, `openUntil`, `authKey`; now one object written only by `transition` | **Fixed.** The old `rating.js` admit cleared `openUntil` before the trial returned, so a second `rate()` was sent. `test/rating.test.js` R16b. A probing `ignore`, including a 429, goes back to open for a fresh 60 s. `storyRater` logs that move as phase and event only. Only `succeed` closes a probe. `auth_fail` while probing still closes it and records the key. `open` plus `succeed` is a rejection: `storyRater` logs it and the breaker stays open. `open` plus `fail` still settles. | M | FIXED |
 | 14 | Admin metrics view | `src/admin-metrics-machine.js` (writer: `src/journey-ui.js` `renderAdmin`) | boot loading, boot error, denied, metrics loading, ready, empty, error; export | `{status}` written only by `adminMetricsTransition`. `bootFailed` is a separate guard from the role. The view is not stored, so it has no version field. | A failed boot used to show the verified-admin sentence. `renderAdmin` now sends `failed: true` and paints `boot_error`. | L | FIXED. A failed boot is `boot_error` and does not show the verified-admin sentence. |
@@ -314,3 +314,56 @@ None.
 
 ### Copy
 The Teams card still says `This invitation is closed.` and `Nothing was changed.` The library refusal joins those two existing sentences: `This invitation is closed. Nothing was changed.` No other sentence was added.
+
+## Colleague confirm page (row 11)
+
+Ask row A22. The reducer is `deploy/cloudflare-edge/src/confirm-step.js`. The page in `confirm-page.js` is the only writer of `state.phase`. The served script inlines `confirmStep`. It does not use the word transition, because the page test rejects that word.
+
+### Phases
+| Phase | Meaning |
+|---|---|
+| loading | The inbox has not arrived. |
+| choosing | A request is on screen. |
+| submitting | The answers are in flight. The button is busy. |
+| recorded | The answers were stored. |
+| empty | There is nothing to confirm. |
+| failed | The inbox could not be loaded. |
+
+### Events
+| Event | Source |
+|---|---|
+| loaded | `render` with at least one request |
+| vacant | `render` with none |
+| broke | `load` failed |
+| submit | Send, and every claim is decided |
+| succeed | The POST succeeded |
+| fail | The POST failed |
+
+### Transitions
+| From | Event | Guard | To |
+|---|---|---|---|
+| loading, choosing, recorded, empty | loaded | none | choosing |
+| loading, choosing, recorded | vacant | none | empty |
+| loading | broke | none | failed |
+| choosing | submit | ready | submitting |
+| choosing | submit | not ready | choosing |
+| submitting | succeed | none | recorded |
+| submitting | fail | none | choosing |
+
+Anything else is illegal. The cross product is 36 pairs. Eleven move. A submit that is not ready stays put and is not a refusal. The rejection fields are `id`, `phase`, and `event`. The id is `confirm-page`.
+
+```mermaid
+stateDiagram-v2
+  [*] --> loading
+  loading --> choosing: loaded
+  loading --> empty: vacant
+  loading --> failed: broke
+  choosing --> choosing: loaded
+  choosing --> empty: vacant
+  choosing --> submitting: submit
+  submitting --> recorded: succeed
+  submitting --> choosing: fail
+  recorded --> choosing: loaded
+  recorded --> empty: vacant
+  empty --> choosing: loaded
+```
