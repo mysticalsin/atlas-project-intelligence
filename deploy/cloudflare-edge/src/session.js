@@ -14,6 +14,14 @@ import { newSessionId } from './checkpoint.js';
 export const RESUME = '[The consultant made a sound but no words were recognised, and your last reply was cut off.] Briefly re-ask your last question in fresh words.';
 
 const CHUNK = 960; // 20 ms of 24 kHz PCM16
+const CJK = /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af]/;
+// Latin and other spaced languages need three words. CJK is often written with no spaces, so three characters count.
+function enoughToSwitch(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return false;
+  if (CJK.test(raw)) return [...raw.replace(/\s+/g, '')].length >= 3;
+  return raw.split(/\s+/).filter(Boolean).length >= 3;
+}
 // Turn-taking is patient on purpose: an interviewer lets people think. A pause mid-story is not the end of the answer.
 export const EARLY_PAUSE = 0.7; // seconds of silence before asking the turn model whether the consultant has finished
 export const TURN_PROBABILITY = 0.85; // only a confident "finished" ends the turn early; otherwise END_SILENCE decides
@@ -358,7 +366,9 @@ export class Session {
     }
     this.timer = setInterval(() => this.watch(), 1000);
     this.pace();
+    const requested = this.language;
     const lang = this.spoken();
+    if (requested && requested !== lang) this.event('language', { language: requested, name: LANGUAGES[requested] || requested, voice: false, notice: voiceNotice(requested) });
     if (gap) { // the first open ask, after the usual greeting (always spoken, admin included: Tony, 2026-10-02)
       this.guidance = gapGuidance(this.gapAsks, this.gapStatuses());
       this.startReply(GAP_OPENING, { prefix: GREETINGS[lang] || '' });
@@ -491,7 +501,7 @@ export class Session {
     // Follow the consultant's language, on consistent evidence only: two consecutive clear utterances (three words or more,
     // not her echo) heard in the same other supported language. Nova-3 gives no confidence to trust a single one, and one
     // misheard utterance must not change her language, her voice or the talker's note. The session language clears it.
-    if (heardIn && text.split(/\s+/).length >= 3 && !isEcho(text, recent)) {
+    if (heardIn && enoughToSwitch(text) && !isEcho(text, recent)) {
       if (heardIn === this.language) this.languageCandidate = null;
       else if (heardIn !== this.languageCandidate) { this.languageCandidate = heardIn; this.metric('language_candidate', { language: heardIn }); }
       else {

@@ -197,6 +197,18 @@ NOTICES = {
         'it': 'ATLAS non può parlare italiano ad alta voce qui per ora. Le risposte compaiono sullo schermo, e puoi continuare a parlare o a scrivere.',
         'nl': 'ATLAS kan hier nu geen Nederlands uitspreken. De antwoorden verschijnen op het scherm, en je kunt blijven praten of typen.',
     },
+    # One screen line when the voice stays English. It names that fact in the consultant's language.
+    # Japanese is included because an unspaced Japanese fallback has no bank greeting.
+    'voice_stays_english': {
+        'en': 'ATLAS understands you. Its voice stays English.',
+        'fr': 'ATLAS comprend. La voix reste en anglais.',
+        'es': 'ATLAS entiende. La voz sigue en inglés.',
+        'pt': 'A ATLAS compreende. A voz fica em inglês.',
+        'de': 'ATLAS versteht dich. Die Stimme bleibt Englisch.',
+        'it': 'ATLAS capisce. La voce resta in inglese.',
+        'nl': 'ATLAS begrijpt je. De stem blijft Engels.',
+        'ja': 'ATLASは理解しています。音声は英語のままです。',
+    },
     'typed_wait': {
         'en': "I'll take that as soon as I finish speaking.",
         'fr': "Je prends cela dès que j'ai fini de parler.",
@@ -299,6 +311,12 @@ GENERATED_LINES = {
     'pause': '[Server: the consultant paused the interview.] Say in one short sentence that you will wait and that they can press Resume when they are ready. Ask no question.',
     'resume': '[Server: the consultant is back.] Welcome them back in one short sentence and say you will repeat where you were. Ask no question.',
 }
+
+
+def english_voice_notice(lang):
+    """The one screen notice, in the consultant's language, that the voice stays English."""
+    bank = NOTICES['voice_stays_english']
+    return bank.get(lang) or bank['en']
 
 
 def has_bank(lang):

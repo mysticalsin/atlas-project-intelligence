@@ -103,9 +103,13 @@ def session_language(init):
 
 
 def language_note(code):
-    from .languages import LANGUAGE_NAMES
+    from .languages import LANGUAGE_NAMES, NATIVE_VOICES, english_voice_notice
     name = LANGUAGE_NAMES.get(code, 'English')
-    return f'LANGUAGE (server): the consultant is speaking {name}. Reply only in natural {name} (not a translation).'
+    if code == 'en' or code in NATIVE_VOICES:
+        return f'LANGUAGE (server): the consultant is speaking {name}. Reply only in natural {name} (not a translation).'
+    notice = english_voice_notice(code)
+    return (f'LANGUAGE (server): the consultant is speaking {name}. Your voice stays English. '
+            f'Reply in natural English. The screen shows this notice: {notice}')
 
 
 def pace_notes(elapsed_s, limit_s, notes, admin=False):

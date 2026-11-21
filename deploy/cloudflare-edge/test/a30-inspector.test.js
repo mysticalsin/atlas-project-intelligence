@@ -20,11 +20,11 @@ function frames(segments) {
 
 const settle = async () => { for (let i = 0; i < 300; i++) await new Promise(r => setImmediate(r)); };
 
-function auraSession(events, spoken, heard) {
+function auraSession(events, spoken, heard, voice = 'harmonia') {
   let n = 0, t = 1000;
   const s = new Session({
     io: { send: e => events.push(e), sendBytes() {}, close() {} },
-    csrf: 'tok', voice: 'harmonia', now: () => t, sleep: () => new Promise(r => setImmediate(r)), metric() {},
+    csrf: 'tok', voice, now: () => t, sleep: () => new Promise(r => setImmediate(r)), metric() {},
     ai: {
       speaks: l => l === 'en',
       async *chatStream() { yield 'Reply. '; },
@@ -38,8 +38,9 @@ function auraSession(events, spoken, heard) {
 
 async function startIn(lang) {
   const events = [], spoken = [];
-  const { s } = auraSession(events, spoken, []);
-  await s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, voice: 'harmonia', capture: false, memory: false, language: lang }));
+  const voice = 'harmonia-' + lang;
+  const { s } = auraSession(events, spoken, [], voice);
+  await s.onText(JSON.stringify({ type: 'start', consent: true, csrf: 'tok', project: PROJECT, voice, capture: false, memory: false, language: lang }));
   await settle();
   return { s, events, spoken };
 }

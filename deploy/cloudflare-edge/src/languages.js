@@ -24,9 +24,9 @@ export function detectedLanguage(result) {
 // Which language ATLAS can actually be heard in for a detected language. Speech stays English when this voice cannot say it.
 export function spokenFor(lang, speaks) { return speaks(lang) ? lang : 'en'; }
 
-// The screen notice in the consultant's language when the voice cannot say that language. Machine translated (D-L2).
+// One screen notice, in the consultant's language, that the voice stays English.
 export function voiceNotice(lang) {
-  const bank = LANG_NOTICES && LANG_NOTICES.voice_unavailable;
+  const bank = LANG_NOTICES && LANG_NOTICES.voice_stays_english;
   return (bank && (bank[lang] || bank.en)) || '';
 }
 

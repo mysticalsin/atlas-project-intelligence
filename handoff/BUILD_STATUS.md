@@ -1,6 +1,14 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-21 — A07 slice 3 Inspector, one English-voice notice (`cursor/pr1-slice3-a30-greetings-6f11`)
+
+Inspector reviewed `6e50f111f4bc59f8e9c86f4c88a3b4b179ddc311` as FAIL, ADAPT, report `7e6177b6`. Red tests are `0132bbe3a8ac7be087603a67663db7190e93e867`. That commit does not refresh `MANIFEST.json`. A missing voice printed two notices, an Aura start in Dutch or Japanese spoke the English greeting with no notice, unspaced Japanese never switched, and the cascade note never fell back to English.
+
+There is now one notice, in the consultant's language, that the voice stays English. It is the only line on the screen, including for Japanese. An nl or ja start with an English-only voice emits that notice and still speaks the English greeting. A CJK utterance is counted in characters, so unspaced Japanese can switch. The cascade note points at the same notice and tells the talker to reply in English. "amazing" stays out of the praise. The read-back fix is the ordinary merge `d82c4cb1495c61ce8a3f59d354d84bc1047ca26e`.
+
+No provider call. Suite counts for this head follow the re-run.
+
 ## 2026-11-21 — A07 slice 3 merges the read-back fix (`cursor/pr1-slice3-a30-greetings-6f11`)
 
 Ordinary merge of `7214ae60c07948fc513eb896974a5f4961b688f8` into this branch. The greeting Inspector tests in `0132bbe3a8ac7be087603a67663db7190e93e867` are still red on this merge. No provider call.
