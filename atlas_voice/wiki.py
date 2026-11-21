@@ -16,6 +16,8 @@ import uuid
 
 SECTIONS=('challenge','contribution','approach','outcome','evidence','limitations','customer_fit','poor_fit')
 AUDIENCES=('internal','customer-anonymized')
+LIST_CAP=200
+SUMMARY_FIELDS=('id','title','revision','audience','eligible','stage','kind','content_hash')
 
 def compact(x):return json.dumps(x,sort_keys=True,ensure_ascii=False,separators=(',',':'))
 def valid_id(x):return isinstance(x,str) and bool(re.fullmatch(r'[a-f0-9]{32}',x))
@@ -126,7 +128,7 @@ class WikiVault:
         eligible=not r['withdrawn'] and needed<=valid
         return {**data,'id':ident,'revision':r['revision'],'content_hash':r['content_hash'],'withdrawn':bool(r['withdrawn']),
           'eligible':eligible,'review_states':sorted(valid),'markdown':contents,'quality_gaps':quality_gaps(data),'source_hash':hashlib.sha256(compact(data['sources']).encode()).hexdigest()}
-    def list(self,subject,audience=None,eligible_only=False):
+    def _accessible(self,subject,audience=None,eligible_only=False):
         rows=self.db.execute('SELECT id FROM stories WHERE owner=? OR id IN (SELECT story_id FROM access WHERE user_key=?) ORDER BY rowid DESC',(subject.subject_key,subject.subject_key)).fetchall()
         result=[]
         for r in rows:
@@ -134,6 +136,42 @@ class WikiVault:
             if s['withdrawn'] or (audience and s['audience']!=audience) or (eligible_only and not s['eligible']):continue
             result.append(s)
         return result
+    def records(self,subject,audience=None,eligible_only=False):
+        return self._accessible(subject,audience,eligible_only)
+    def summary(self,story):
+        return {k:story[k] for k in SUMMARY_FIELDS}
+    def _catalogue_row(self,row,audience,eligible_only):
+        if row['withdrawn']:return None
+        data=json.loads(row['record'])
+        if audience and data.get('audience')!=audience:return None
+        approvals=self.db.execute('SELECT kind, expires FROM approvals WHERE story_id=? AND revision=?',(row['id'],row['revision'])).fetchall()
+        valid={x['kind'] for x in approvals if x['expires']>time.time()}
+        needed={'facts'} if data['audience']=='internal' else {'facts','permission'}
+        eligible=needed<=valid
+        if eligible_only and not eligible:return None
+        return {'id':row['id'],'title':data['title'],'revision':row['revision'],'audience':data['audience'],'eligible':eligible,
+          'stage':data['stage'],'kind':data['kind'],'content_hash':row['content_hash'],'quality_gap_count':len(quality_gaps(data))}
+    def page(self,subject,audience=None,eligible_only=False,after=None,limit=LIST_CAP):
+        if isinstance(limit,bool) or not isinstance(limit,int) or not 1<=limit<=LIST_CAP:raise ValueError('Page size must be from 1 to 200')
+        if after is not None and not isinstance(after,str):raise ValueError('Invalid page cursor')
+        rows=self.db.execute('SELECT id, revision, content_hash, record, withdrawn FROM stories WHERE owner=? OR id IN (SELECT story_id FROM access WHERE user_key=?) ORDER BY rowid DESC',(subject.subject_key,subject.subject_key))
+        started=after is None
+        built=[]
+        truncated=False
+        for row in rows:
+            if not started:
+                if row['id']==after:started=True
+                continue
+            item=self._catalogue_row(row,audience,eligible_only)
+            if item is None:continue
+            if len(built)==limit:
+                truncated=True
+                break
+            built.append(item)
+        if after is not None and not started:raise ValueError('Invalid page cursor')
+        return {'stories':built,'limit':limit,'next':built[-1]['id'] if truncated and built else None,'truncated':truncated}
+    def list(self,subject,audience=None,eligible_only=False):
+        return self.page(subject,audience,eligible_only)['stories']
     def approve(self,subject,ident,expected,kind,reference,expires):
         self.get(subject,ident) # verify canonical Markdown before approval
         r=self._row(subject,ident)
@@ -166,7 +204,7 @@ class WikiVault:
         with self.db:self.db.execute('INSERT OR IGNORE INTO access VALUES(?,?)',(ident,user_key));self._audit(owner,ident,'grant-access',r['revision'])
     def graph(self,subject,audience='internal'):
         nodes={};edges=[]
-        for s in self.list(subject,audience,eligible_only=True):
+        for s in self.records(subject,audience,eligible_only=True):
             nodes[s['id']]={'id':s['id'],'label':s['title'],'type':'story','source_hash':s['content_hash'],'revision':s['revision']}
             for tag in s['tags']:
                 tid='tag:'+tag;nodes[tid]={'id':tid,'label':tag,'type':'tag'}

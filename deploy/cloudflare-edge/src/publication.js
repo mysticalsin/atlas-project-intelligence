@@ -166,10 +166,12 @@ function applyDecided(prior, event) {
   if (!lane || !decision) return null;
   const prev = prior.validation || {};
   const current = lane === 'manager' ? prev.managerDecision : prev.presalesDecision;
-  const note = event.note || '';
+  const written = typeof event.note === 'string' ? event.note : '';
+  const note = written || (prev.note || '');
   // A repeated approval, or the same changes request with the same note, is not a new decision.
+  // An empty note on a later decision keeps the note already written.
   if (current === decision && (decision !== 'changes_requested' || (prev.note || '') === note)) return { unchanged: true };
-  const validation = { ...(prior.validation || {}), by: event.by || '', at: event.at || '', note: event.note || '', status: 'pending' };
+  const validation = { ...(prior.validation || {}), by: event.by || '', at: event.at || '', note, status: 'pending' };
   if (lane === 'manager') validation.managerDecision = decision;
   else validation.presalesDecision = decision;
   if (validation.managerDecision === 'changes_requested' || validation.presalesDecision === 'changes_requested') validation.status = 'changes_requested';

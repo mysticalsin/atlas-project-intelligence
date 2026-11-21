@@ -11,6 +11,8 @@ import { sweep as retentionSweep } from './retention.js';
 import { holdRoutes } from './subject-rights.js';
 import { secEvent } from './security-log.js';
 import { productionDemoConflict, resolveTenantEnforcement } from './authz.js';
+import { boundedJson } from './bounded.js';
+import { IMPORT_BYTE_CAP, IMPORT_ROW_CAP } from './library.js';
 export const SYSTEM = { email: 'atlas', role: 'admin' }; // automatic review after a save
 function scopedReviewer(user = {}) {
   return { email: 'atlas', role: 'admin', tenant: String(user.tenant || '').toLowerCase(), tenantEnforced: user.tenantEnforced === true };
@@ -27,7 +29,10 @@ async function reportChain(lib, env) {
   } catch { await secEvent(env, 'audit_chain_break', { reason: 'VERIFY_FAILED' }); return { ok: false, reason: 'VERIFY_FAILED' }; }
 }
 
-const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+const json = (body, status = 200, extra) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...(extra || {}) } });
+const failJson = e => e && e.status
+  ? json({ error: e.message, ...(e.code ? { code: e.code } : {}) }, e.status, e.retryAfter ? { 'Retry-After': String(e.retryAfter) } : undefined)
+  : json({ error: 'The library could not complete that request.' }, 500);
 
 // Segments the library routes on. The platform URL parser has already resolved "." and "..", including "%2e".
 // It keeps a trailing slash, a repeated slash, and "%2F". Empty segments are dropped here, and the words stay case-sensitive.
@@ -59,7 +64,7 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
       if (r?.response) return r.response;
       return json(r.body, r.status || 200);
     } catch (e) {
-      return e.status ? json({ error: e.message, ...(e.code ? { code: e.code } : {}) }, e.status) : json({ error: 'The library could not complete that request.' }, 500);
+      return failJson(e);
     }
   }
   // idp: the sign-in name claims (x-atlas-idp, always written by the Worker from the verified token; WOW_ZERO_CONFIG §5.5).
@@ -74,7 +79,14 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
   // Insights and reinstate equate an empty body with {}. Reinstate does not read the
   // body; the role check stays in reinstate() so a missing row is still 404.
   // Every other POST still rejects an empty body as invalid JSON.
-  if (method === 'POST' && (parts[0] === 'insights' || parts[1] === 'reinstate')) {
+  if (method === 'POST' && parts[0] === 'import') {
+    const parsed = await boundedJson(request, IMPORT_BYTE_CAP);
+    if (parsed.tooLarge) return json({ error: 'Import is larger than 1 MB.' }, 413);
+    if (parsed.invalid) return json({ error: 'Invalid JSON.' }, 400);
+    body = parsed.value;
+    const rows = Array.isArray(body && body.references) ? body.references.length : 0;
+    if (rows > IMPORT_ROW_CAP) return json({ error: 'Import has too many rows.' }, 413);
+  } else if (method === 'POST' && (parts[0] === 'insights' || parts[1] === 'reinstate')) {
     const raw = await request.text();
     if (!String(raw || '').trim()) body = {};
     else { try { body = JSON.parse(raw); } catch { return json({ error: 'Invalid JSON.' }, 400); } }
@@ -147,6 +159,6 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
     if (method === 'POST' && action === 'reinstate') return json(lib.reinstate(user, id));
     return json({ error: 'Not found.' }, 404);
   } catch (e) {
-    return e.status ? json({ error: e.message, ...(e.code ? { code: e.code } : {}) }, e.status) : json({ error: 'The library could not complete that request.' }, 500);
+    return failJson(e);
   }
 }

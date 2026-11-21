@@ -9,7 +9,7 @@ import json
 import time
 from aiohttp import web
 from .jev import JevRanker, shortlist
-from .wiki import AUDIENCES, compact
+from .wiki import AUDIENCES, LIST_CAP, compact
 from .memory import PrivateMemory
 
 HINDSIGHT_SOURCE={'repository':'https://github.com/mysticalsin/hindsight','commit':'a921929a0e0ea82fb49da1daa0ca3e152e41fcc1','runtime':'operator-configured endpoint; source pin is not deployment evidence'}
@@ -45,7 +45,13 @@ def install(app,identity):
           'editor':bool(__import__('os').environ.get('OPENAI_API_KEY') and __import__('os').environ.get('STORY_EDITOR_MODEL')),
           'notice':'Configured does not mean live-tested. Local mode cannot authorize reviewed wiki publication.'})
     @guarded
-    async def stories(request,subject):return web.json_response({'stories':vault().list(subject,audience(request))})
+    async def stories(request,subject):
+        raw=request.query.get('limit')
+        limit=LIST_CAP
+        if raw is not None:
+            if not raw.isdecimal():raise ValueError('Page size must be from 1 to 200')
+            limit=int(raw)
+        return web.json_response(vault().page(subject,audience(request),after=request.query.get('after') or None,limit=limit))
     @guarded
     async def graph(request,subject):return web.json_response(vault().graph(subject,audience(request)))
     @guarded
@@ -95,7 +101,7 @@ def install(app,identity):
         if a!='customer-anonymized':raise ValueError('External JEV processing requires an approved customer-anonymized variant')
         ids=d.get('story_ids',[])
         if not isinstance(ids,list) or len(ids)>12 or any(not isinstance(x,str) for x in ids):raise ValueError('Select up to 12 story IDs')
-        eligible=vault().list(subject,a,eligible_only=True)
+        eligible=vault().records(subject,a,eligible_only=True)
         candidates=[s for s in eligible if s['id'] in ids][:12] if ids else shortlist(eligible,d.get('customer_brief',{}))
         if not candidates:return web.json_response({'ranked':[],'notice':('No authorized, current, reviewed stories are eligible for this audience. Nothing was sent to JEV.' if not eligible else 'No lexical shortlist match. Try a more specific problem or supply explicit authorized story IDs. No provider call was made.')})
         if rank_gate.locked():raise web.HTTPTooManyRequests(text='A ranking request is active; wait for it to finish.')
@@ -109,7 +115,7 @@ def install(app,identity):
             except (RuntimeError,asyncio.TimeoutError):raise web.HTTPBadGateway(text='JEV did not return a valid decision. No ranking is fabricated.') from None
         # Avoid returning a ranking after withdrawal, an edit, expiry or session revocation.
         identity.require(request)
-        valid={s['id']:s for s in vault().list(subject,a,eligible_only=True)}
+        valid={s['id']:s for s in vault().records(subject,a,eligible_only=True)}
         kept=[]
         for item in result['rankings']:
             live=valid.get(item['id'])

@@ -82,7 +82,8 @@ export function transition(state, event) {
   // fail. A probing fail is the half-open trial even when the caller omits event.trial, so the phase
   // re-opens the breaker on its own. event.trial covers a trial note that arrives after the phase moved on.
   const fails = state.fails + 1;
-  if (state.phase === 'probing' || event.trial || fails >= BREAKER_FAILS) return done({ ...state, phase: 'open', fails: 0, until: event.now + BREAKER_OPEN_MS });
+  const now = Number.isFinite(event.now) ? event.now : 0;
+  if (state.phase === 'probing' || event.trial || fails >= BREAKER_FAILS) return done({ ...state, phase: 'open', fails: 0, until: now + BREAKER_OPEN_MS });
   const until = state.phase === 'probing' ? 0 : state.until;
   return done({ ...state, phase: until > 0 ? 'open' : 'closed', fails, until });
 }
