@@ -1,6 +1,6 @@
 # Group 10 — erasure / tenant
 
-Plan only. Debate this before anyone edits product code. Revision v2 (Sentinel PLAN-CHANGES on PR #38, then Devin `6c17bee6`). Sentinel's ruling replaces the earlier send rule: deleting the subject's own unstamped Teams row by exact email is correct, and the quarantine is on the send side. The v2 section wins where an earlier sentence still lets `sendTeams` use a blank `atlas_tenant`, or still expects the old s1 teams fixture to stay unchanged.
+Plan only. Debate this before anyone edits product code. Revision v4 (Sentinel re-review `e4e9dada` of `4d15c83c`, AGREED). Sentinel's ruling replaces the earlier send rule: deleting the subject's own unstamped Teams row by exact email is correct, and the quarantine is on the send side. The v2 section wins where an earlier sentence still lets `sendTeams` use a blank `atlas_tenant`, or still expects the old s1 teams fixture to stay unchanged.
 
 Pinned inputs: confirmer report sha256 `57c92dcb651ddef4b7abe9c23424065a2a59fa139d2cdfc6315ce227596eac1c`, main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`, red tests `96712474b59d6b058ef00479f2bb2d4eb065801e` (PR #31).
 
@@ -77,11 +77,11 @@ lower(email) = ? AND (atlas_tenant IS NULL OR lower(atlas_tenant) = ?)
 
 A row with `atlas_tenant` set to another tenant is kept. Blank `atlas_tenant` is deleted for this email. The primary key is `subject` (`directoryTid:oid`), one row globally, so a blank row cannot be attributed after the fact.
 
-Normalize `atlas_tenant` on write, on erase, and on send: trim, treat empty and whitespace (including NBSP) as NULL, and store NULL rather than `''`. An install whose ATLAS tenant is missing or whitespace is refused and writes no row.
+One normalizer, used by write, erase, and send. It trims ordinary whitespace and NBSP (`\u00a0`), treats the result empty as NULL, and stores NULL rather than `''`. A stamp that is only NBSP is blank. An install whose ATLAS tenant is missing or whitespace is refused and writes no row. The delete predicate uses that normalizer, so a stored NBSP-only stamp is deleted with the unstamped rows and is not a route.
 
 `sendTeams` keeps treating `tenant_id` as the directory id. It selects a row only when `atlas_tenant` equals the outreach tenant after that normalization. A null stamp is not eligible for any tenant until an install restamps it. A stamp for another tenant is not eligible. Several directories still refuse, as today.
 
-B5. In `importCsv`, reject the row when either the raw consultant or manager cell, or the value `email()` returns for that cell, matches `/^[=+\-@\t\r]/` after stripping leading and trailing whitespace, including NBSP (`\u00a0`). Check both. A leading space or NBSP must not skip the raw check and then survive inside `email()`. Do not edit `util.js` or `csvsafe.js`. Push the row onto `rejected` and do not insert. Project id, title, and manager name stay on `neutralizeFormula`.
+B5. In `importCsv`, reject the row when either the raw consultant or manager cell, or the value `email()` returns for that cell, matches `/^[=+\-@\t\r]/` after stripping leading and trailing whitespace, including NBSP (`\u00a0`). Check both. A leading space or NBSP must not skip the raw check and then survive inside `email()`. A cell whose first character is an apostrophe is text: if the remainder after that apostrophe and the same trim starts with a formula character, reject the row; do not strip the apostrophe and insert a value that starts with `=`. A stored consultant email does not start with `=`, `+`, `-`, `@`, tab, or CR. Do not edit `util.js` or `csvsafe.js`. Push the row onto `rejected` and do not insert. Project id, title, and manager name stay on `neutralizeFormula`.
 
 On `ensure`, delete staffing rows in every tenant whose `consultant_email` or `manager_email` matches that class, and delete `manager_trust` rows whose `email` or `owner` is that same string and whose `source` is `staffing`. Do this inside the existing schema migration, once, in a transaction.
 
@@ -105,7 +105,7 @@ Boundaries: erase of a person who is not on any story and has no Teams row still
 
 ## Data migration
 
-Teams: `ALTER TABLE` adds a nullable `atlas_tenant`. Existing rows stay null. They are removed the next time that email is erased in any tenant, which is the behavior the B2 test requires for unstamped rows. There is no source of truth to backfill the ATLAS tenant onto old rows. Do not copy `tenant_id` into `atlas_tenant`.
+Teams: `ALTER TABLE` adds a nullable `atlas_tenant`. Existing rows stay null. They are removed the next time that email is erased in any tenant, which is the behavior the B2 test requires for unstamped rows. A row already stored as NBSP or spaces is blank under the same normalizer and is removed with them. There is no source of truth to backfill the ATLAS tenant onto old rows. Do not copy `tenant_id` into `atlas_tenant`.
 
 Stories already erased: `erasure_log` stores a subject hash, not the address. This code cannot find "the sentences Ada left behind" without Ada's address. The next `eraseMine` by that same signed-in subject runs the new walk and cleans leftovers, including `sharedWith`. People who cannot sign in again keep whatever the old walk left, until an operator, with the address in hand, runs a later job. This plan does not add that job.
 
@@ -150,6 +150,8 @@ Sentinel's ruling: deleting the subject's own unstamped Teams row by exact email
 | L2 | `Ada@Example.TEST` is removed. `ada@example.test.au` is kept. The erase SQL and the selector do not call `instr`. | `L2 address match is case-insensitive and the selector does not use instr` |
 | L3 | A revision whose `data` is a string containing the address, and a revision whose `data` is an array of strings containing it, both lose the address. | `L3 a non-object revision loses the address` |
 | Devin | Pick the Sentinel delete. An unstamped row is deleted by exact email, including when `tenant_id` is some other directory id. Keeping that row so `s1-review.test.js` lines 109-118 stay byte-for-byte would fail B2. | `D1 an unstamped teams row is deleted by exact email and a stamped other-tenant row remains` |
+| L1 | A stored `atlas_tenant` of `'\u00a0'` or `' \u00a0 '` is blank for erase and for send. Both call the one normalizer. | `L1 an nbsp-only atlas_tenant is blank for erase and send` |
+| L4 | A consultant cell `'=1+1@example.com` is rejected and is not stored as a value that starts with `=`. | `L4 an apostrophe-prefixed cell stays inert` |
 
 Devin's conflict is real. `s1-review.test.js` lines 109-118 create two `teams_conversations` rows with the same email and no `atlas_tenant`, and expect the row whose `tenant_id` is the other tenant to survive. `tenant_id` there was used as if it were the ATLAS tenant. It is the directory id. Both rows are unstamped. Sentinel deletes the subject's own unstamped row by exact email, so both would go, and B2 requires that. This plan changes that one test and does not change B2.
 

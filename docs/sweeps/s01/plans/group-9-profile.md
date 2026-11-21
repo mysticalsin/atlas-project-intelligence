@@ -1,6 +1,6 @@
 # Group 9 — profile
 
-Plan only. Debate this before anyone edits product code. Revision v2 (Sentinel PLAN-CHANGES on PR #38, then Devin `6c17bee6`). The v2 section wins where an earlier sentence still trusts `edits.managerEmail`, a ref the caller wrote, or `access() === 'full'` for presales.
+Plan only. Debate this before anyone edits product code. Revision v4 (Sentinel re-review `e4e9dada` of `4d15c83c`, AGREED). The v2 section wins where an earlier sentence still trusts `edits.managerEmail`, a ref the caller wrote, or `access() === 'full'` for presales. The sentence under ATLAS-08 that still says presales resolve every story they can open in full is stale and does not.
 
 Pinned inputs: confirmer report sha256 `57c92dcb651ddef4b7abe9c23424065a2a59fa139d2cdfc6315ce227596eac1c`, main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`, red tests `96712474b59d6b058ef00479f2bb2d4eb065801e` (PR #31). External review: ATLAS-08 in `/cursor/stores/bot/atlas-sweeps/s01/external/hammer-artex-security.md`.
 
@@ -17,9 +17,9 @@ F4 is `privacy.js` (group 14). Do not edit it.
 
 ## Files this group may edit
 
-`deploy/cloudflare-edge/src/profile.js` only, plus one new test file `deploy/cloudflare-edge/test/sweep01-g9-people.test.js`.
+`deploy/cloudflare-edge/src/profile.js`, one new test file `deploy/cloudflare-edge/test/sweep01-g9-people.test.js`, and the one `erasePeopleLookups` call in the profile `DELETE` block of `subject-rights.js`. No other line in that file.
 
-Do not edit `privacy.js`, `ratelimit.js`, `util.js`, `library.js`, `subject-rights.js`, or `authz.js`. The people route may call `lib.access`, `directoryManager`, and `lookupPerson`. Those already exist.
+Do not edit `privacy.js`, `ratelimit.js`, `util.js`, `library.js`, or `authz.js`. The people route may call `lib.access`, `directoryManager`, and `lookupPerson`. Those already exist.
 
 ## Failing tests from PR #31
 
@@ -83,9 +83,9 @@ ATLAS-08. After the existing `rateLimit` call and the email-shape check:
 - `edits.managerEmail` is not a source. The caller can set it in one request and look it up in the next.
 - Otherwise 403, before `lookupPerson`.
 - `lookupPerson` stays the response shape. Strip `manager_email` if a future change adds it. Do not add the manager to this response.
-- **Owner ruling.** Roles other than `admin` and `reviewer` may resolve at most 30 distinct addresses per UTC day, including 403s. Store them in SQLite (`people_lookup`, created with `lib.exec` from this file) so a new `Library` on the same database still counts. The 31st distinct address is 429 and does not call `lookupPerson`. The owner can change 30. This plan uses 30 until they do.
+- **Owner ruling.** Roles other than `admin` and `reviewer` may resolve at most 30 distinct addresses per UTC day, including 403s. Store them in SQLite (`people_lookup`, created with `lib.exec` from this file) so a new `Library` on the same database still counts. Key each row by caller email, UTC day, and address. On lookup, delete rows whose day is before today. `erasePeopleLookups(lib, email)` deletes that caller's rows; the profile `DELETE` inside `eraseMine` calls it. That call is the only line this group adds outside `profile.js`. The 31st distinct address is 429 and does not call `lookupPerson`. Another caller's first lookup is not 429. The owner can change 30. This plan uses 30 until they do.
 
-`presales` is not on the arbitrary-lookup list. They still resolve people on stories they can open in full, because `access` already returns `full` for that role. An address on no such story is 403.
+`presales` is not on the arbitrary-lookup list. `access()` returning `full` for that role does not unlock a lookup. A presales caller resolves an address only under the same rule as role `user`: their directory manager, or a same-tenant story someone else wrote that they could still open in full as role `user`. An address that fails that rule is 403.
 
 Leave the `rateLimit(...)` call in place with the same arguments. Group 14 makes that function durable. Changing the call would edit a line group 14 also needs, and changing `util.js` is not this group's file.
 
@@ -147,6 +147,8 @@ File: `deploy/cloudflare-edge/test/sweep01-g9-people.test.js`, except the confli
 | M2, owner ruling | 30 distinct addresses per UTC day for roles other than admin and reviewer, stored in SQLite. After 30 distinct 403s, construct `new Library(sameSql)` and the 31st distinct address is 429. Admin is not capped. | `M2 the thirty-first distinct lookup in a day is refused after eviction` |
 | L1 | Two overlapping saves still both stick (F2). A third save that loses the compare twice returns 409, and its field is absent from the row. | `L1 a profile save that conflicts twice fails closed` |
 | Devin | `presales` plus `access() === 'full'` is not a grant. A presales caller in tenant A does not resolve an address that appears only on a story in tenant B, including a story they would fully open if the tenant check were skipped. A presales caller also does not resolve an address that appears only on a same-tenant story they can see solely because their role is presales. | `D1 a presales lookup does not cross tenants` |
+| L2 | `people_lookup` is keyed by caller email, UTC day, and address. A row whose day is before today is deleted on the next lookup and does not count. Erasing the caller deletes their rows. Caller A spending 30 does not make caller B's first lookup 429. | `L2 one caller's lookups do not spend the other caller's cap` |
+| L3 | No new control. A missing `updated_by` does not unlock lookup. A later save by someone other than the caller does unlock an address already on that row, even when that editor did not add it. The daily cap still counts the lookup. | none |
 
 ## Open questions for the owner
 

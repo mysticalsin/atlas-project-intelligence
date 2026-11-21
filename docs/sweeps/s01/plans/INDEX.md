@@ -1,22 +1,22 @@
 # Atlas sweep 01 — fix plans
 
-Planner only. No product code in this pull request. Frozen v2 after Sentinel PLAN-CHANGES on PR #38 and Devin's plan debate `6c17bee6`.
+Planner only. No product code in this pull request. Frozen v4 after Sentinel re-review `e4e9dada` of `4d15c83c`. Group 14 is unchanged in this freeze.
 
 Pinned inputs: confirmer `/cursor/stores/bot/atlas-sweeps/s01/confirm/confirm-report.md` sha256 `57c92dcb651ddef4b7abe9c23424065a2a59fa139d2cdfc6315ce227596eac1c`. Main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. Red tests `96712474b59d6b058ef00479f2bb2d4eb065801e` (PR #31). External Lows from `/cursor/stores/bot/atlas-sweeps/s01/external/hammer-artex-security.md`, confirmed new at that main.
 
 ATLAS-09 is not in these plans. It belongs to the backend writer (`wiki.py`, `knowledge_routes.py`). ATLAS-11 is already fixed by PR #30. It is not planned again.
 
-`SHA256SUMS` in this directory lists the eight plan files and not this index, so the sums hash stays stable if the index is edited. sha256 of `SHA256SUMS`: `1a66487893d26ddd6d10f45d562891dba41984f34defa0d05b24e361d42e3557`.
+`SHA256SUMS` in this directory lists the eight plan files and not this index, so the sums hash stays stable if the index is edited. sha256 of `SHA256SUMS`: `dc5cb5f642f8f3b68f3413e65534e9d2c0959eba56e114404d8ad63183dcbd4f`.
 
 | Plan | sha256 |
 |---|---|
-| `group-1-scrub-redaction.md` | `876d4cec1b0a3ca002c6d1b48ea80f9b1b812907989a059bfbdf299dd1331e3d` |
-| `group-9-profile.md` | `9caa3fc6cc4e9cdf2906fc722d4a898969a6a418f73db35efdc98fcffb8b22f3` |
-| `group-10-erasure-tenant.md` | `bcdce6fe7e0ede9dffe120fa1398cc6f39d8ae4093fc49941a38c18d22f9777f` |
+| `group-1-scrub-redaction.md` | `65a3e4ade838ae9229a8d040655a373612af0632140c08cfd99997f741eef2a2` |
+| `group-9-profile.md` | `bc5475aa8d955fc52e19b8efb19fd9f3f0fd7b205f61794fc52602e3e6b4a399` |
+| `group-10-erasure-tenant.md` | `1d303dcec95302090d809a5538dce5dbba05875836a7ab330e3187fa39d69448` |
 | `group-11-voice-prompt-transport.md` | `2cee610e699d545518b6ae5f26ea3af66f6a8ae7d900dc5245cece32c920ea17` |
-| `group-13-worker-auth-routing.md` | `3c102544fd6d883e007a5bb2470b729996c8c49bd1c98f63068b6f9d1591220e` |
+| `group-13-worker-auth-routing.md` | `a4acef1226dedc5d9d69c1fd39e7356449a62ab17d0a0191f0a9ea768cc75374` |
 | `group-14-rate-limit-consent.md` | `f1e947cca5e8f7747807b8e5cc69238b99e9b4023abcf023b8d0ea7ef76d2566` |
-| `group-16-sign-in-state.md` | `11253b092649806d3b853a0d04dcef73a2d9f929bde836b92a825e8c46673930` |
+| `group-16-sign-in-state.md` | `d43838ae1f854f60d09204cf0d26299f3b1d43db382743d3282358f49b1bdba0` |
 | `group-17-entra-bootstrap.md` | `53f5d40b67e135881884fdd356ad6016642b10a6db8cdef4f9e5fe19d8959fdd` |
 
 ## Dependency order
@@ -46,7 +46,7 @@ Shared sweep-test files stay red for other groups. A writer proves their own tes
 | 11 | `tests/test_sweep01_b_prompt.py` (B4 and HAM-03) | `tests/test_sweep01_g11_headers.py`: `test_l1_non_loopback_upstream_is_wss`, `test_l2_prompt_markers_are_absent_from_logs_and_errors`, `test_l3_prompt_frame_is_sent_before_any_audio` |
 | 13 | C-3 line PASS in `sweep01_c_browser.py`; E1 in `sweep01-setup.test.js` | `sweep01-g13-auth.test.js`: `M1 only alg RS256 is imported`, `M2 a cached JWKS older than one hour does not verify`, `M3 unknown kids share one refetch per minute`, `L1 fetch errors and token time claims fail closed`, `L2 the bearer is checked before the body and the body is read once`, `L3 a team value with a port, path, trailing dot, or IP is refused`, `L4 the refusal page escapes HTML`. Gated on question 2. |
 | 14 | F3, F4, F8 in `sweep01-f-stress.test.js` | `sweep01-g14-limit.test.js`: `M1 a long clock step holds for one window and does not open a fresh window`, `L1 rate_hits older than one day are pruned and erasure removes the subject`, `L2 out-of-range limit parameters are refused`, `L3 the limit subject is the verified email`, `L4 a beforeCommit that hangs releases the lock` |
-| 16 | `tests/test_sweep01_ham.py` (HAM-04) | `tests/test_sweep01_g16_login_props.py`: `test_q3_forwarded_headers_are_ignored_unless_the_operator_mode_is_on`, `test_m1_ipv6_64_shares_a_bucket_and_a_full_table_evicts_the_oldest_flow`, and the six `test_m2_*` cookie and flow-id tests. Gated on question 3. |
+| 16 | `tests/test_sweep01_ham.py` (HAM-04) | `tests/test_sweep01_g16_login_props.py`: the five `test_m1_*` peer cases, `test_l1_flow_cookie_does_not_carry_another_flows_state`, `test_l2_flow_is_consumed_before_msal_redemption`, plus the earlier `test_q3_*`, `/64` eviction, and `test_m2_*` tests. Gated on question 3. |
 | 17 | HAM-05 in `tests/sweep01-ham.test.js` | `tests/sweep01-g17-entra-argv.test.js`: `L1 secret files are opened with mode 0o600`, `L2 a token with a newline or a quote is refused before the curl config is written`, `L3 curl writes stdout and stderr to temp files`, `L4 the EXIT trap is installed after mktemp` |
 
 ## Devin and Sentinel
@@ -64,6 +64,10 @@ Devin `6c17bee6`: groups 11, 14, 16, and 17 PASS with no design change. Groups 1
 | 16 | PASS | No design change. Question 3 parked for Tony. |
 | 17 | PASS | No design change. |
 
+## v4 — Sentinel `e4e9dada`
+
+Agreed, wording or tests only: groups 1, 9, 10, and 13. Group 14 agreed and is not edited. Group 16 is the design change: `CF-Connecting-IP` only from loopback, the tunnel, or an allowlisted TCP peer, and only when the header is one IP literal. Otherwise the key is `request.remote`.
+
 ## Open questions
 
 Decided in this v2:
@@ -78,7 +82,7 @@ Parked for Tony. The plans do not wait on an engineering choice for these. Group
 
 1. PersonaPlex. Does the worker you would run accept the prompt as the first websocket text frame? The B4 test forbids the query parameter. Kyutai is the selected route and does not use this handshake. Group 11.
 2. Access certs. Does `https://<ACCESS_TEAM_DOMAIN>/cdn-cgi/access/certs` return 200 with no redirect? `redirect: 'manual'` fails closed. One HEAD from an operator network before group 13 ships.
-3. Python sign-in. Is `request.remote` the person, or one shared proxy or NAT? Do not use `X-Forwarded-For`. `CF-Connecting-IP` is off unless `ATLAS_TRUST_CF_CONNECTING_IP=1`. Group 16 does not ship until this is answered.
+3. Python sign-in. Is `request.remote` the person, or one shared proxy or NAT? Do not use `X-Forwarded-For`. `CF-Connecting-IP` is used only when `ATLAS_TRUST_CF_CONNECTING_IP=1`, the TCP peer is loopback, the tunnel, or an allowlisted peer, and the header is one IP literal. Group 16 does not ship until this is answered.
 4. Are consultant emails unique across ATLAS tenants? The plan follows Sentinel until Tony says otherwise: erase deletes the subject's own unstamped Teams row by exact email, and send does not use an unstamped row.
 7. Presales lookup. The plan does not give presales the role-wide `full` grant, and it does not cross tenants. Tony can widen it later.
 8. Already-erased subjects. Leftovers wait until that subject runs erase again. This plan does not add an operator tool.
