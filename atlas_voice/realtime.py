@@ -17,7 +17,11 @@ from aiohttp import web
 from .capacity import BUSY
 from .identity import COOKIE
 from .interview import project_context
+from .persona import OPENING_BRIEF
 from .quality import InterviewLedger, session_config
+
+OPENING_TURN = ('Introduce yourself as ATLAS. ' + OPENING_BRIEF +
+                 ' Then ask the single most relevant opening question about the project. Do not assume a benefit or read the entire topic list.')
 
 VOICES=('cedar','marin','ash','sage','verse')
 
@@ -81,7 +85,7 @@ async def run(request,config,identity,memory,http,gate,active):
             await asyncio.gather(prepare,cancel,return_exceptions=True)
         await event('ready',model=config.openai_model,provider='OpenAI Realtime',sampleRate=24000,capture=capture,maxSeconds=config.duration,
           message='Voice session ready. Speak naturally. Candidate notes require your review.')
-        await send({'type':'response.create','response':{'instructions':'Introduce yourself briefly as ATLAS, then ask the single most relevant opening question about the project. Do not assume a benefit or read the entire topic list.'}})
+        await send({'type':'response.create','response':{'instructions':OPENING_TURN}})
         started=last_input=time.monotonic()
 
         async def client_input():

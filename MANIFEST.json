@@ -622,23 +622,23 @@
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 928036,
-      "sha256": "42233f509b105211be37444e4203e11d3c71c3007e41e6b706efa623f3cb1b5b"
+      "bytes": 928066,
+      "sha256": "5d2f523f539624701a09237bf90de209b9690999fb5766ed3b2f31344d010f4c"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 928036,
-      "sha256": "42233f509b105211be37444e4203e11d3c71c3007e41e6b706efa623f3cb1b5b"
+      "bytes": 928066,
+      "sha256": "5d2f523f539624701a09237bf90de209b9690999fb5766ed3b2f31344d010f4c"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 928036,
-      "sha256": "42233f509b105211be37444e4203e11d3c71c3007e41e6b706efa623f3cb1b5b"
+      "bytes": 928066,
+      "sha256": "5d2f523f539624701a09237bf90de209b9690999fb5766ed3b2f31344d010f4c"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 928036,
-      "sha256": "42233f509b105211be37444e4203e11d3c71c3007e41e6b706efa623f3cb1b5b"
+      "bytes": 928066,
+      "sha256": "5d2f523f539624701a09237bf90de209b9690999fb5766ed3b2f31344d010f4c"
     },
     {
       "path": "CLAUDE.md",
@@ -712,8 +712,8 @@
     },
     {
       "path": "atlas_voice/cascade.py",
-      "bytes": 32311,
-      "sha256": "50966c625b8efa6cd745e96eb9e4dfd5ddce3d622b34d8fb9859c947f72e0752"
+      "bytes": 32851,
+      "sha256": "1ebd6f2464ccc20a77bee891c4acb56bfafbc9f30384ec852fce2452da1dcfbc"
     },
     {
       "path": "atlas_voice/config.py",
@@ -757,8 +757,8 @@
     },
     {
       "path": "atlas_voice/interview.py",
-      "bytes": 6317,
-      "sha256": "06f21fc0e890b58e2a7d24d74998835138ddf1303603ad30d694609848b70553"
+      "bytes": 6321,
+      "sha256": "db6a82809d237ef70fc3d15694d43386dbf7e0549f5ed120d3e58a858a4e2767"
     },
     {
       "path": "atlas_voice/jev.py",
@@ -777,8 +777,8 @@
     },
     {
       "path": "atlas_voice/languages.py",
-      "bytes": 28070,
-      "sha256": "1204c64f2cf9da74df9636acd927aad55d64fb124ef192c8713da3576a3e61b6"
+      "bytes": 29011,
+      "sha256": "d78c63cc59bbb65c732bb9a161acc1f3ba555a919709018bede8678dc7c2fb54"
     },
     {
       "path": "atlas_voice/memory.py",
@@ -791,19 +791,24 @@
       "sha256": "decf6a0c1959a7084289d975f061cf9b5b5310d4aff0fb02ff346e4a65908299"
     },
     {
+      "path": "atlas_voice/persona.py",
+      "bytes": 26272,
+      "sha256": "7ff8826b0fb8f7efd0e1db153d7f4b795aa7b79cf52704a62b074c1584e78a78"
+    },
+    {
       "path": "atlas_voice/privacy_config.py",
       "bytes": 9669,
       "sha256": "fa9b30e5c1029acf1c03639fc5e70f21e3dd7e42c9fe6582e23aa07ef6a6224a"
     },
     {
       "path": "atlas_voice/quality.py",
-      "bytes": 19089,
-      "sha256": "7bf6cbaaa9bb51c87d28b672692b6fa9c4b8b83b08144686836c177a9992728a"
+      "bytes": 19297,
+      "sha256": "9e030d7db4da7e8224efa535a724504457749d0d362c0cbb53056e2a6206fdce"
     },
     {
       "path": "atlas_voice/realtime.py",
-      "bytes": 13987,
-      "sha256": "c4008b87678a3eab8e90457a564a63429b45c54cf8d7431312f2b7a90fb8d443"
+      "bytes": 14084,
+      "sha256": "d6e33abe510fea5e30c36c525a93f2091c75b3729f7a035df644744cd3fe1c6a"
     },
     {
       "path": "atlas_voice/report.py",
@@ -867,8 +872,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/build_edge.py",
-      "bytes": 3648,
-      "sha256": "2add01f4dd9bb9e51fc891d7eaa7459e3a0cc29f4f15698f641ba5bfcfa1cb57"
+      "bytes": 3803,
+      "sha256": "02262834836e2849e15ed6b55a3cc676d4aa1135776e45d2643dc886dc8a046e"
     },
     {
       "path": "deploy/cloudflare-edge/deploy.sh",
@@ -933,7 +938,7 @@
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
       "bytes": 146,
-      "sha256": "b0b75e1b86dfa0cdea56dbe48d9c494c03b41e54159d2a197c0540e884aef1c9"
+      "sha256": "c842aea98a1ecf9decb4960de7d668bc00424d3abeee54cb93be449aecf13b55"
     },
     {
       "path": "deploy/cloudflare-edge/set-keys.sh",
@@ -1003,7 +1008,7 @@
     {
       "path": "deploy/cloudflare-edge/src/csp.generated.js",
       "bytes": 1675,
-      "sha256": "4e43d7fe34735d9ad4f31de1d3cb1b332ec207dfd7cbc6c3b3de136dce02ed32"
+      "sha256": "95781effc7ab30da97913a2e1739b45feb6fd3b9456c634ce5099e8f23f79201"
     },
     {
       "path": "deploy/cloudflare-edge/src/csp.js",
@@ -1057,8 +1062,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/languages.js",
-      "bytes": 6456,
-      "sha256": "1684e790262ce5ab1b6d67466a86176a8aca0cb112399f9330c3279093494f09"
+      "bytes": 9428,
+      "sha256": "a334b79c67bf6b706c1d75a38ca537191a6d390987fa8afb136d62edb3212fe3"
     },
     {
       "path": "deploy/cloudflare-edge/src/ledger.js",
@@ -1107,8 +1112,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/policy.generated.js",
-      "bytes": 33270,
-      "sha256": "5af2918ad51ce4de687bc687feca64ade770f345bfb2a2823f3ac74cd4a02c3e"
+      "bytes": 54730,
+      "sha256": "3f33d2042204649197fc5031ccbaf83a6adfcbdd5e67a6e7ba7a7641241e4b70"
     },
     {
       "path": "deploy/cloudflare-edge/src/primordials.js",
@@ -1182,8 +1187,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/session.js",
-      "bytes": 63772,
-      "sha256": "12c2a6e91ac8f43d0d485e494e38f915c903e93bdd5ccfb5d48577ca09b8f172"
+      "bytes": 64683,
+      "sha256": "0831b1210e7f80e227adb76029cf293cd075a18ab6e462efeaffe04cdf65f806"
     },
     {
       "path": "deploy/cloudflare-edge/src/sheet.js",
@@ -1314,6 +1319,16 @@
       "path": "deploy/cloudflare-edge/test/a07-sentinel.test.js",
       "bytes": 5648,
       "sha256": "8e34988beb4d557c45f33e4c088145782890a4614b5c3a6eda29059f8319df39"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/a30-greetings.test.js",
+      "bytes": 4077,
+      "sha256": "abc8c19274d3347a5507f6850c325755ed4f8726898d8a642513dffffff7882a"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/a30-inspector.test.js",
+      "bytes": 3969,
+      "sha256": "98ea5517732845392f59a220737ec23baa003dff8509bb2763a28d2a0c250996"
     },
     {
       "path": "deploy/cloudflare-edge/test/app.test.js",
@@ -1477,8 +1492,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/language.test.js",
-      "bytes": 11173,
-      "sha256": "2ae9622c280996f04742488e185e8a48a7badaf1a3f99db589611736eeb6e7d9"
+      "bytes": 11037,
+      "sha256": "3bb632ed644a6ada561da3be16b5c3556cba099d4a04f385111775faa6f8ad06"
     },
     {
       "path": "deploy/cloudflare-edge/test/library.test.js",
@@ -2302,8 +2317,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 352105,
-      "sha256": "a6ea931d1873bfa34390426b2b05c59929a6c5fe447a0a665e789da755b74dac"
+      "bytes": 355614,
+      "sha256": "434d716eaf24b47dcc1e8ca523440a1bf0250d47df3155393e28b03116bc2199"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2982,8 +2997,8 @@
     },
     {
       "path": "src/voice-client.js",
-      "bytes": 46092,
-      "sha256": "828dfc33e008b3316dc5ca9f5bd955746500297f478ac69dd0ddae5ea4915997"
+      "bytes": 46122,
+      "sha256": "40c65fba3794a64ac5761dbe6b8fca01273210c41c0db0150c8151478a407b8b"
     },
     {
       "path": "src/voice-dialogs.html",
@@ -3371,6 +3386,11 @@
       "sha256": "a24021f99bb237a712504f42edb4add1155258f476e83c678fc4d9065234cedc"
     },
     {
+      "path": "tests/test_a30_persona.py",
+      "bytes": 2827,
+      "sha256": "86ea44b704af2ea59362ec61d09a76a71888638fb938ebcbe99e971bb7b6b520"
+    },
+    {
       "path": "tests/test_analyst.py",
       "bytes": 6193,
       "sha256": "2f11d708d41cec75ca251c43752d521d9da2bc323bab4a28f2ec66260ee76c6d"
@@ -3392,8 +3412,8 @@
     },
     {
       "path": "tests/test_cascade.py",
-      "bytes": 22793,
-      "sha256": "12c3376ac292b6b60f38ad39464604d495edb277b2ac2ec08dc494c9c159641a"
+      "bytes": 22747,
+      "sha256": "bc432ae85c711affb0b86dbd2893e5839bc26618cf361c95548f8919666c59bf"
     },
     {
       "path": "tests/test_cloudflare.py",
@@ -3442,8 +3462,8 @@
     },
     {
       "path": "tests/test_privacy_config.py",
-      "bytes": 6386,
-      "sha256": "5ea84564d50bb7815ea9a55c90f1ca7d0eb3d1b3538976b12c5d28d0b5ea4b3e"
+      "bytes": 6371,
+      "sha256": "fadfa192d87c2dc9cd230cee308de21312010aa2e5aab7a247297d7466ca6c39"
     },
     {
       "path": "tests/test_python_docx.py",

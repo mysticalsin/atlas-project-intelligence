@@ -1,6 +1,35 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-21 — A07 slice 3 Inspector, one English-voice notice (`cursor/pr1-slice3-a30-greetings-6f11`)
+
+Inspector reviewed `6e50f111f4bc59f8e9c86f4c88a3b4b179ddc311` as FAIL, ADAPT, report `7e6177b6`. Red tests are `0132bbe3a8ac7be087603a67663db7190e93e867`. That commit does not refresh `MANIFEST.json`. A missing voice printed two notices, an Aura start in Dutch or Japanese spoke the English greeting with no notice, unspaced Japanese never switched, and the cascade note never fell back to English.
+
+There is now one notice, in the consultant's language, that the voice stays English. It is the only line on the screen, including for Japanese. An nl or ja start with an English-only voice emits that notice and still speaks the English greeting. A CJK utterance is counted in characters, so unspaced Japanese can switch. The cascade note points at the same notice and tells the talker to reply in English. "amazing" stays out of the praise. The read-back fix is the ordinary merge `d82c4cb1495c61ce8a3f59d354d84bc1047ca26e`.
+
+No provider call.
+
+Measured on `3444c37a627c2c37809038a47cbd7d5bb79d5da8`: `python3 -m pytest tests/test_*.py -q` 418 passed; `node --test tests/*.test.js` 424 passed, 0 failed; edge `node --test test/*.test.js` 1131 tests, 1127 passed, 0 failed, 4 skipped; `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui` 834 PASS, 0 FAIL; `python3 scripts/check_handoff.py . --dev-git-index` PASS.
+
+## 2026-11-21 — A07 slice 3 merges the read-back fix (`cursor/pr1-slice3-a30-greetings-6f11`)
+
+Ordinary merge of `7214ae60c07948fc513eb896974a5f4961b688f8` into this branch. The greeting Inspector tests in `0132bbe3a8ac7be087603a67663db7190e93e867` are still red on this merge. No provider call.
+
+## 2026-11-21 — A07 slice 3, one persona and one greeting (`cursor/pr1-slice3-a30-greetings-6f11`)
+
+Ask row A30, folded into A07 by Inspector as APP-FIT ADAPT. Red tests are `10e016c101bf45b2c084f0a24757a2b9b75126e2`. That commit does not refresh `MANIFEST.json`.
+
+What this change does:
+
+- The en–nl greeting is one introduction: who ATLAS is, what is captured, the confidentiality line, and the read-back. The short interview line is not kept beside it. Russian, Hindi and Japanese greeting lines are left for PR #35. Fillers and trailing-word lists are unchanged.
+- `atlas_voice/persona.py` is composed into the cascade talker, the hosted interview policy, and the PersonaPlex role. PersonaPlex still says "Speak in English". The realtime opening uses the same brief. The talker no longer uses "amazing". That praise default, and keeping English speech when a voice is missing while also showing the translated notice, can be overturned by Tony at 07:30.
+- `cascade.py` reads the start frame's `language`. `build_edge.py` exports the language banks, including the D-L2 `machine_translated` label. The 15-minute clock is unchanged.
+- `41bacfae85e0fa61eff364903b4c6432e36240f7` (`cursor/atlas-persona-routes-a941`) is not merged.
+
+No provider call. No deploy.
+
+Measured on `6716bb959a4d80e1a0742cba6745615228803315`: `python3 -m pytest tests/test_*.py -q` 417 passed. `node --test tests/*.test.js` 420 passed, 0 failed. Edge `node --test test/*.test.js` 1126 tests, 1122 passed, 0 failed, 4 skipped. `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui` 834 PASS, 0 FAIL. `python3 scripts/check_handoff.py . --dev-git-index` PASS. The node, edge, and browser counts were taken on this tree immediately before the fix commit. pytest and check_handoff were run again on the fix commit.
+
 ## 2026-11-21 — A07 slice 2 Inspector, the read-back is live (`cursor/pr1-slice2-readback-6f11`)
 
 Inspector reviewed `4221a51f0d2dce6c2792ec774a3e1a3a193789b6` as FAIL, ADAPT, report `30b60570`. Red tests are `d59bb70027f5a4aba3b5190ad825a3032350f50a`. That commit does not refresh `MANIFEST.json`. The summary was not a session event, the read-back inputs had no label, save, or announcement, an 1800-character quote was clipped, and `inspect` left a privately marked detail in the transcript. Sentinel's M-1, M-2, and L-1 stay in `680dd70295a992c031ac82ad9a5cab067c2d69d8`.

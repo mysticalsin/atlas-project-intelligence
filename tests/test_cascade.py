@@ -304,12 +304,13 @@ async def test_cascade_refuses_a_gap_start_and_never_advertises_gap_mode(tmp_pat
         await r.cleanup();await runner.cleanup()
 
 
-def test_opening_is_a_simple_introduction_without_review_talk():
-    # Tony, 2026-09-29: the start must be "Hi, I'm ATLAS and I'll interview you on your project", not "they will review everything".
+def test_opening_follows_the_persona_brief():
+    # The 2026-10-30 introduction replaced the one-sentence interview line. Later turns still do not discuss review unless asked.
     from atlas_voice.cascade import OPENING
-    assert 'will review' not in OPENING and 'review everything' not in OPENING
+    from atlas_voice.persona import OPENING_BRIEF
+    assert OPENING_BRIEF in OPENING
+    assert 'will review everything' not in OPENING
     assert 'do not talk about reviews, approvals or how the report is used unless they ask' in OPENING
-    assert 'you are ATLAS and will interview them about their project' in OPENING
 
 
 def test_admin_note_does_not_suppress_the_introduction():
