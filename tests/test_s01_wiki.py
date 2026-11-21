@@ -57,6 +57,7 @@ async def test_atlas09_wiki_list_is_a_capped_summary_without_body_fields(tmp_pat
                 assert response.status == 200
                 body = await response.json()
                 assert body['limit'] == CAP
+                assert body['truncated'] is (pages == 1)
                 assert len(body['stories']) <= CAP
                 for item in body['stories']:
                     assert set(item) <= ALLOWED
@@ -96,6 +97,18 @@ def test_atlas09_page_cursor_limit_and_exact_summary(tmp_path):
             if not after:
                 break
         assert after is None and seen == [second['id'], first['id']]
+        third = story('internal')
+        third['title'] = 'Third synthetic catalogue story'
+        vault.save(author, third)
+        calls = {'n': 0}
+        real_get = vault.get
+        def counting(subject, ident):
+            calls['n'] += 1
+            return real_get(subject, ident)
+        vault.get = counting
+        limited = vault.page(author, 'internal', limit=1)
+        assert limited['truncated'] is True and limited['next']
+        assert calls['n'] <= 2
         for bad in (0, 201, True, -1):
             with pytest.raises(ValueError):
                 vault.page(author, 'internal', limit=bad)
@@ -103,3 +116,22 @@ def test_atlas09_page_cursor_limit_and_exact_summary(tmp_path):
             vault.page(author, 'internal', after='not-a-real-story')
     finally:
         vault.close()
+
+
+@pytest.mark.asyncio
+async def test_atlas09_http_limit_above_the_cap_is_rejected(tmp_path):
+    with socket.socket() as sock:
+        sock.bind(('127.0.0.1', 0))
+        port = sock.getsockname()[1]
+    origin = f'http://127.0.0.1:{port}'
+    app = create_app(replace(Config(), origin=origin, port=port, wiki_root=str(tmp_path / 'vault')))
+    runner = web.AppRunner(app, access_log=None)
+    await runner.setup()
+    await web.TCPSite(runner, '127.0.0.1', port).start()
+    try:
+        async with aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar(unsafe=True)) as client:
+            await client.get(origin)
+            response = await client.get(origin + '/api/wiki?audience=internal&limit=201')
+            assert response.status == 400
+    finally:
+        await runner.cleanup()
