@@ -30,12 +30,16 @@ jobs:
       - name: Python tests (including the socket tests)
         run: python -m pytest tests/test_*.py -q
       - name: Browser suites
+        env:
+          JEV_BROWSER_MOCK: '1'
         run: |
           python -m playwright install --with-deps chromium
           for t in studio sculpture intelligence depth autosave orb_touch library record_dialog_quality refusal audit_marker csp_console autosave_chain reuse memory sheet report bids ask trust storyboard confirm confirm_csp wow_edge zero_config zero_config_edge jev_rating admin_metrics ; do
             echo "::group::$t"; python tests/${t}_browser.py; echo "::endgroup::"
           done
-      # No ATLAS_WORKERD_ROOT on this runner. The four SQL-tail proofs fail closed
-      # when CI is set and the 2026-10-23 workerd binary is absent. This job does not download it.
+      - name: Edge workerd
+        run: npm ci --prefix deploy/cloudflare-edge
       - name: Edge unit tests
+        env:
+          ATLAS_WORKERD_ROOT: ${{ github.workspace }}/deploy/cloudflare-edge
         run: cd deploy/cloudflare-edge && node --test test/*.test.js

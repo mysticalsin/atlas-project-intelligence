@@ -3,13 +3,20 @@ node:sqlite, stand-in model, loopback only). Owner -> automatic sync and review 
 the published, anonymised reference -> an edit creates revision 2 and reopens the review.
   python3 tests/library_browser.py
 """
-import json,os,socket,subprocess,sys,time,urllib.request,urllib.parse,urllib.error
+import json,os,shutil,socket,subprocess,sys,time,urllib.request,urllib.parse,urllib.error
 from pathlib import Path
+def node_executable():
+    chosen=os.environ.get('ATLAS_NODE') or shutil.which('node')
+    if not chosen or not os.path.isfile(chosen) or not os.access(chosen, os.X_OK):
+        print('FAIL node is not on PATH. Set ATLAS_NODE to the node binary.', file=sys.stderr)
+        raise SystemExit(1)
+    return chosen
+NODE=node_executable()
 from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1];EDGE=ROOT/'deploy/cloudflare-edge';ERR=[]
 def check(n,v):print(('PASS ' if v else 'FAIL ')+n);assert v,n
 s=socket.socket();s.bind(('127.0.0.1',0));PORT=s.getsockname()[1];s.close();BASE=f'http://127.0.0.1:{PORT}'
-srv=subprocess.Popen(['node','--no-warnings','dev/local-edge.mjs',str(PORT)],cwd=EDGE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+srv=subprocess.Popen([NODE,'--no-warnings','dev/local-edge.mjs',str(PORT)],cwd=EDGE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
 for _ in range(100):
  try:urllib.request.urlopen(BASE+'/__settle',timeout=1);break
  except Exception:time.sleep(.1)

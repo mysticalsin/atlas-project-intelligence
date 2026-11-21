@@ -133,7 +133,7 @@ aiohttp==3.13.3 \
     --hash=sha256:fee0c6bc7db1de362252affec009707a17478a00ec69f797d23ca256e36d5940
     # via
     #   -c constraints-tested.txt
-    #   -r requirements.txt
+    #   -r requirements-integrations.txt
     #   aiohttp-retry
     #   hindsight-client
 aiohttp-retry==2.9.1 \
@@ -875,7 +875,7 @@ msgpack==1.2.4 \
     --hash=sha256:fb9ddbf23b8c6e89752af399fcf4daed60055e239cda44c6acfaa76d19331e8c
     # via
     #   -c constraints-tested.txt
-    #   -r requirements.txt
+    #   -r requirements-integrations.txt
 multidict==6.7.1 \
     --hash=sha256:026d264228bcd637d4e060844e39cdc60f86c479e463d49075dedc21b18fbbe0 \
     --hash=sha256:03ede2a6ffbe8ef936b92cb4529f27f42be7f56afcdab5ab739cd5f27fb1cbf9 \

@@ -31,8 +31,8 @@ Browser ──HTTPS/WSS──▶ Cloudflare edge ──Access policy──▶ cl
 ## Steps
 1. **Gateway host.**
    ```sh
-   python3 -m venv /opt/atlas/venv
-   /opt/atlas/venv/bin/python -m pip install -r requirements.txt
+   python3 -m venv /opt/atlas/venv   # Ubuntu 24.04: sudo apt-get install python3.12-venv first
+   PATH="/opt/atlas/venv/bin:$PATH" make install-ci
    PATH="/opt/atlas/venv/bin:$PATH" make install-integrations
    cp deploy/cloudflare/atlas.env.example .env && chmod 600 .env   # then fill it in securely
    /opt/atlas/venv/bin/python scripts/doctor.py --profile cloudflare --env-file .env

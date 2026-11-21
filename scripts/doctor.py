@@ -80,7 +80,7 @@ def probe(profile: str, values: Mapping[str, str]) -> dict:
     add('pytest', available('pytest'), 'Install with: python3 -m pip install --require-hashes -r requirements-ci.lock', required=False)
     add('playwright', available('playwright'), 'Playwright plus Chromium is needed for browser checks.', required=False)
     if profile != 'preview':
-        add('aiohttp', available('aiohttp'), 'Install requirements.txt for the application gateway.')
+        add('aiohttp', available('aiohttp'), 'Run make install-ci for the application gateway.')
         try:
             from atlas_voice.config import Config
             with environment(values):
@@ -99,7 +99,7 @@ def probe(profile: str, values: Mapping[str, str]) -> dict:
         else:
             add('selected-provider', provider in ('openai','personaplex','kyutai'), 'Choose one supported provider explicitly.')
         if provider == 'kyutai':
-            add('msgpack', available('msgpack'), 'Install requirements.txt (msgpack) for the Kyutai speech protocol.')
+            add('msgpack', available('msgpack'), 'Run make install-ci (msgpack) for the Kyutai speech protocol.')
             for key in ('KYUTAI_STT_URL', 'KYUTAI_TTS_URL', 'KYUTAI_VOICE', 'CONVERSATION_CHAT_URL', 'CONVERSATION_MODEL'):
                 add(key.lower(), present(key), f'{key} must be configured; values are never printed.')
             add('evidence-analyst', present('ANALYST_CHAT_URL') and present('ANALYST_MODEL'),

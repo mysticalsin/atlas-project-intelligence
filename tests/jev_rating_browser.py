@@ -7,10 +7,13 @@ Two backends, the same steps:
 A second server without FAKE_TYPESAFE (and without the mock) checks that, with no key, nothing about JEV appears.
   python3 tests/jev_rating_browser.py          JEV_BROWSER_MOCK=1 forces the contract mock
 """
-import copy,json,os,re,socket,subprocess,time,urllib.request
+import copy,json,os,re,socket,subprocess,sys,time,urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
+if os.environ.get('CI') and os.environ.get('JEV_BROWSER_MOCK') != '1':
+    print('FAIL the null-quality timing checks need the contract mock (JEV_BROWSER_MOCK=1)', file=sys.stderr)
+    raise SystemExit(1)
 ROOT=Path(__file__).resolve().parents[1];EDGE=ROOT/'deploy/cloudflare-edge';ERR=[];ALERTS=[];SERVERS=[]
 def check(n,v):print(('PASS ' if v else 'FAIL ')+n);assert v,n
 HOSTILE='<img src=x onerror=alert(1)>'
@@ -269,7 +272,9 @@ try:
    n0=len(MOCK.gets[rid]);o.clock.run_for(30000);o.wait_for_timeout(800)
    check(f'14 polling stops at 45 s ({n0} GETs in 45 s, none after)',3<=n0<=13 and len(MOCK.gets[rid])==n0)
    del MOCK.busy[rid];close(o)
-  else:print('INFO 14 skipped: the null-quality timing checks need the contract mock (JEV_BROWSER_MOCK=1)')
+  else:
+   print('FAIL 14 skipped: the null-quality timing checks need the contract mock (JEV_BROWSER_MOCK=1)', file=sys.stderr)
+   if os.environ.get('CI'): raise SystemExit(1)
 
   # 13. a second server without FAKE_TYPESAFE (no key): no consent row, no engine line, no JEV text in the gauge
   B=serve(False);k=page('kim@mantu.com',base=B);rid_k=create(k,'Metering pilot','Kim',NOTES);k.wait_for_timeout(1500)

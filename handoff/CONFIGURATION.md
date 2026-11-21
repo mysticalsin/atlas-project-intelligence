@@ -1,12 +1,12 @@
 # Configuration and commands
-This is the map to **existing code**, not a claim that services are available. All commands run from the repository root. A git clone is already there (`atlas-project-intelligence`). A release zip is the folder you extracted. The intended application server is an approved Linux/Unix environment with Python 3.11+; the Mac can remain only a browser client. Local development can use macOS. Windows users need an appropriate shell for the included `.sh` scripts; native Windows server operation is not verified. Use `python3`. A fresh Ubuntu image has no `python` command.
+This is the map to **existing code**, not a claim that services are available. All commands run from the repository root. A git clone is already there (`atlas-project-intelligence`). A release zip is the folder you extracted. The intended application server is an approved Linux/Unix environment with Python 3.11+; the Mac can remain only a browser client. Local development can use macOS. Windows users need an appropriate shell for the included `.sh` scripts; native Windows server operation is not verified. Use `python3`. A fresh Ubuntu image has no `python` command. `python3 -m venv` needs the venv package. On Ubuntu 24.04 install `python3.12-venv` (`sudo apt-get install python3.12-venv`).
 
 ## Dependencies by task
 | Task | Required |
 |---|---|
 | Compile HTML | Python standard library; no npm build |
 | Standalone UI | Modern browser with Canvas; no provider key |
-| Local gateway | `requirements.txt` (`aiohttp`) |
+| Local gateway | `make install-ci` (`requirements-ci.lock`: aiohttp, msgpack) |
 | Local tests | Node with `node --test`, Python test requirements, FFmpeg/libopus for codec tests, Playwright Chromium for UI tests |
 | Hosted voice | Approved OpenAI key and accessible configured voice/transcription model |
 | Entra | `msal`, actual app registration/role assignments and secrets |
@@ -15,7 +15,7 @@ This is the map to **existing code**, not a claim that services are available. A
 | Riva notes | Separate Riva endpoint and `nvidia-riva-client` |
 | JEV / editor | Server-side key and accessible selected model; aiohttp is already used |
 
-`requirements-integrations.txt` names the optional SDKs at exact versions. `requirements-entra.txt`, `requirements-hindsight.txt`, and `requirements-riva.txt` install that same lock and nothing else. The install is `make install-integrations`. `requirements-ci.lock` is the Python 3.13 hash lock for the test tools and the gateway packages; `requirements-test.txt` installs it. `constraints-tested.txt` records the gateway versions exercised with this tree, including `msgpack`. It is an input to those locks, not a second install.
+`requirements-integrations.txt` is the compile input, not the lock. `requirements-entra.txt`, `requirements-hindsight.txt`, and `requirements-riva.txt` install that same lock and nothing else. The install is `python3 -m pip install --require-hashes -r requirements-integrations.lock` (`make install-integrations`). `requirements-ci.lock` is the Python 3.13 hash lock for the test tools and the gateway packages; `requirements-test.txt` installs it. `constraints-tested.txt` records the gateway versions exercised with this tree, including `msgpack`. It is an input to those locks, not a second install.
 
 ## Local setup and complete checks
 ```sh
@@ -28,11 +28,11 @@ make test
 make test-edge
 make test-ui
 ```
-`make test` builds the page, runs the edge suite, then the Node and pytest suites. `make test-edge` checks the vendored Teams client module and runs the edge tests. `make test-ui` runs every `tests/*_browser.py`. GitHub Actions runs that same browser list. `make geo-ne-check` is not one of those three: with `ATLAS_NE_SRC` unset it exits 2. Install FFmpeg with libopus using the approved OS package manager before Python codec tests. `CHROMIUM_PATH` may point to a known installed Chromium executable. Browser installation can require OS libraries; use the approved host procedure, not blind privileged commands. No tests above need a real provider key. `ATLAS_WORKERD_ROOT` points at a workerd 2026-10-23 tree for the SQL-tail proofs. When `CI` is set and that binary is missing, those proofs fail instead of skipping.
+`make test` builds the page, runs the edge suite, then the Node and pytest suites. `make test-edge` checks the vendored Teams client module and runs the edge tests. `make test-ui` runs every `tests/*_browser.py`. GitHub Actions runs that same browser list. `make geo-ne-check` is not one of those three: with `ATLAS_NE_SRC` unset it exits 2. Install FFmpeg with libopus using the approved OS package manager before Python codec tests. `CHROMIUM_PATH` may point to a known installed Chromium executable. Browser installation can require OS libraries; use the approved host procedure, not blind privileged commands. No tests above need a real provider key. CI installs workerd 2026-10-23 with `npm ci` from `deploy/cloudflare-edge/package-lock.json` and sets `ATLAS_WORKERD_ROOT` to that directory. When `CI` is set and that binary is missing, the SQL-tail proofs fail instead of skipping.
 
 ## One real hosted conversation
 ```sh
-python3 -m pip install -r requirements.txt
+make install-ci
 cp .env.example .env   # only when .env does not already exist; never overwrite a working configuration
 # Edit the operator-owned .env securely. Set OPENAI_API_KEY; keep the exact origin.
 python3 scripts/doctor.py --profile hosted --env-file .env

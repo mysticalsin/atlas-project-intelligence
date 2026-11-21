@@ -19,12 +19,11 @@ Open **ATLAS_Project_Intelligence.html** in a full browser. It contains the inte
 
 ## Fresh clone
 
-Stay in the repository root. A git clone's directory is `atlas-project-intelligence`. Do not `cd` into `ATLAS_Project_Intelligence`; that name is not this tree. A release zip is the folder you extracted. Use `python3`. A fresh Ubuntu image has no `python` command.
+Stay in the repository root. A git clone's directory is `atlas-project-intelligence`. Do not `cd` into `ATLAS_Project_Intelligence`; that name is not this tree. A release zip is the folder you extracted. Use `python3`. A fresh Ubuntu image has no `python` command. `python3 -m venv` also needs the venv package. On Ubuntu 24.04 that package is `python3.12-venv` (`sudo apt-get install python3.12-venv`).
 
 ```sh
 python3 -m venv .venv
 . .venv/bin/activate
-python3 -m pip install -r requirements.txt
 python3 -m pip install --require-hashes -r requirements-ci.lock
 python3 build.py
 python3 scripts/preview.py
@@ -39,7 +38,7 @@ On the approved application server:
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
-python3 -m pip install -r requirements.txt
+make install-ci
 cp .env.example .env
 # Edit server-side .env. Never put provider credentials into HTML.
 bash scripts/start_gateway.sh

@@ -17,8 +17,8 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "bytes": 2127,
-      "sha256": "4a93f9ba27cca1eeabd8416345534f3a09939493fe42a66803bdb0421cd5ce72"
+      "bytes": 2159,
+      "sha256": "cdcee8bea4efefa7144cdf3644b2c9d04438c536ae0f5b40904004eb3730f7bc"
     },
     {
       "path": ".github/workflows/deploy.yml",
@@ -652,8 +652,8 @@
     },
     {
       "path": "Makefile",
-      "bytes": 2401,
-      "sha256": "2cdd7a257b44200cc3fcf3ed0a8a275741957ad34fd2da2e620e65ca45fbbdf3"
+      "bytes": 2572,
+      "sha256": "73a2a20c00a783fbd20134cd7959afb60b7883f5e706343aa98e0264b1d15082"
     },
     {
       "path": "Preview.command",
@@ -667,8 +667,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 11070,
-      "sha256": "d7889b03ed0c6999e88295ab5ebf700eb7cd741699c460ccdf471d4e86b560b4"
+      "bytes": 11139,
+      "sha256": "d950d3544651f9fd2d8e46182d57330ca5625214bb9275e1703460b837480e9f"
     },
     {
       "path": "SECOND_BRAIN.md",
@@ -837,8 +837,8 @@
     },
     {
       "path": "build.py",
-      "bytes": 6022,
-      "sha256": "62728a32b88df4fc488dc328fde8dbe1a3211ab2ea3842480102f15e97670082"
+      "bytes": 6085,
+      "sha256": "312fe2f890971ce7b89c6384eb5a452c892dcfb4c110a14cd40e0b67a9c56f0b"
     },
     {
       "path": "constraints-tested.txt",
@@ -934,6 +934,16 @@
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
       "bytes": 146,
       "sha256": "93196c1732d530e8a0ad455ed9b3198c7dd2df0457e1fd9b47582c5a456c0005"
+    },
+    {
+      "path": "deploy/cloudflare-edge/package-lock.json",
+      "bytes": 31322,
+      "sha256": "7c86e38066388aab3bda63ff5239e818d3451f838d7a75526b8b2ecec1b46d5b"
+    },
+    {
+      "path": "deploy/cloudflare-edge/package.json",
+      "bytes": 233,
+      "sha256": "5e9b0e0508e8be02b7287a3fa1b50d6734e90c4a8909d9703d033300f881f2a0"
     },
     {
       "path": "deploy/cloudflare-edge/set-keys.sh",
@@ -2042,8 +2052,8 @@
     },
     {
       "path": "deploy/cloudflare/README.md",
-      "bytes": 5171,
-      "sha256": "eb314b914e3a045045baaebe2cbb4dda314eeb34cbee0a4cd05384a24e07f37b"
+      "bytes": 5219,
+      "sha256": "44ec2e393b816f9878c0cbccb3e6d45dedebe2529652d81d96bc45a0aa689925"
     },
     {
       "path": "deploy/cloudflare/atlas-gateway.service.example",
@@ -2107,8 +2117,8 @@
     },
     {
       "path": "docs/NVIDIA_SETUP.md",
-      "bytes": 8929,
-      "sha256": "5f735181f4d79a215799d64ebea1c4dcd30c898928e234190826e7f3c6eff8f7"
+      "bytes": 8989,
+      "sha256": "738603558263dc16f48b39028f78ec3a43f9ed8ef89a0fe062278e6c877e9a28"
     },
     {
       "path": "docs/ORB_DESIGN.md",
@@ -2282,8 +2292,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 350661,
-      "sha256": "3c37cc0de06b03db92a7e22948789d1f9c3498c3c8d14c0882973acd7e9718c9"
+      "bytes": 354317,
+      "sha256": "38971474df4d61f960271a27923f4903aefe30b7a2fad3fa6b151ba2dd08c709"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2302,8 +2312,8 @@
     },
     {
       "path": "handoff/CONFIGURATION.md",
-      "bytes": 17518,
-      "sha256": "3bd511e491bd130dd5d9fb968f5cef60939c4355286c38f8d155e18638e850e1"
+      "bytes": 17785,
+      "sha256": "e0db89e4ad9968e2ae3dcc4bd1e7b70472e95ddc2c306dedd4a0b302d16f739b"
     },
     {
       "path": "handoff/CURRENT_STATUS.md",
@@ -2651,9 +2661,14 @@
       "sha256": "04740f63c96dfb1e1e4ce7fa632addc1e96a8fa4da4aed364646ffaf9f97bd7e"
     },
     {
+      "path": "requirements-ci.in",
+      "bytes": 131,
+      "sha256": "b0805dd44917a4243d6b50a59240869b6eae33d981e7882aea7f640ceccbe8d6"
+    },
+    {
       "path": "requirements-ci.lock",
-      "bytes": 86775,
-      "sha256": "5e5849f88e2a9db455ae6e73b305f113eb7dbe1497074d07e55ba374e863eb39"
+      "bytes": 86529,
+      "sha256": "a9d0209088fd777bd08c12779fbb117893b8645dbc132bab977a7d28de9e797d"
     },
     {
       "path": "requirements-entra.txt",
@@ -2667,13 +2682,13 @@
     },
     {
       "path": "requirements-integrations.lock",
-      "bytes": 123430,
-      "sha256": "1c36aa71a7411b054219d54b8574fb3bd8e36bd68b955ca671aaa267b9a36ee3"
+      "bytes": 123456,
+      "sha256": "30c4d8b6eb0e17adaa3d0becc6bd2090f52d6ea37ef86774b86a3e6eb20b166d"
     },
     {
       "path": "requirements-integrations.txt",
-      "bytes": 650,
-      "sha256": "aefb0fba7a940e9b5d047513ea25fa9d2deadf371c8a4f2572cad0897ff96dd2"
+      "bytes": 17354,
+      "sha256": "5d57da55b5d699644e677cd440a32bdd19309c046ee15e6123ddbf126d45a476"
     },
     {
       "path": "requirements-riva.txt",
@@ -2687,8 +2702,8 @@
     },
     {
       "path": "requirements.txt",
-      "bytes": 104,
-      "sha256": "48a321caccd4c42412e2e4147e2d9e13d33e406f4ed41c426416a61749efb699"
+      "bytes": 114,
+      "sha256": "8e3b3376c31788ecc1fbdbc4958b76d8f1a8f35ab781dc7ef928563b22f97163"
     },
     {
       "path": "scripts/build_world_map.py",
@@ -2717,8 +2732,8 @@
     },
     {
       "path": "scripts/doctor.py",
-      "bytes": 10499,
-      "sha256": "2f5c9ba8cc81f501b3dcfd39782efaf4b8d59416198db6727ae5d39212cb11db"
+      "bytes": 10489,
+      "sha256": "c3a013d2aa4eb595e3edd850fc2e7095f29bb6a793b0e493f2dd1ff19ba18227"
     },
     {
       "path": "scripts/e2e_demo.py",
@@ -3162,8 +3177,8 @@
     },
     {
       "path": "tests/jev_rating_browser.py",
-      "bytes": 25977,
-      "sha256": "e0b2228636a3c4a1c8749dbcbe0e8dbeb8f8b9f7de13990975ba7e5937417bd0"
+      "bytes": 26255,
+      "sha256": "710ccbb11369dbb5ca2fad79f167ddb43ac2501dd1842bbed3999e4a1cb97eb9"
     },
     {
       "path": "tests/journey-ui.test.js",
@@ -3177,8 +3192,8 @@
     },
     {
       "path": "tests/library_browser.py",
-      "bytes": 12134,
-      "sha256": "c6bebc0cf77b0fa036e0fadcd5404d478582aff732fed017be3f2e638756a731"
+      "bytes": 12473,
+      "sha256": "86ecd0829fdc2198b1e3090588ef6818abdac4c0e2a92423a6627b2e3f9c7adf"
     },
     {
       "path": "tests/memory_browser.py",
@@ -3297,8 +3312,8 @@
     },
     {
       "path": "tests/s01-ci-setup.test.js",
-      "bytes": 6855,
-      "sha256": "1e456a181a150036cdc9b9e8c1fa1d2b0b3feabe8e70d2bc5cf9d1b51a40bfe6"
+      "bytes": 14446,
+      "sha256": "03db0223f8c0aec8745a3568e273290b5edc1025b0b90173fe47fd65a47c6a62"
     },
     {
       "path": "tests/safe-html-lint.test.js",

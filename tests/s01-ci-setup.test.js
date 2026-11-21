@@ -165,7 +165,7 @@ test('HAM-01 requirements.txt and every requirements-*.txt with third-party pack
 
 test('requirements-ci.lock names a compile input that exists', () => {
   const header = read('requirements-ci.lock').split('\n').slice(0, 12).join('\n');
-  const command = header.split('\n').find(line => line.includes('pip-compile')) || '';
+  const command = header.split('\n').filter(line => line.includes('pip-compile') && line.includes('.in')).join('\n');
   const names = [...command.matchAll(/\b(requirements[\w.-]*\.in)\b/g)].map(match => match[1]);
   assert.ok(names.length >= 1, header);
   for (const name of new Set(names)) {

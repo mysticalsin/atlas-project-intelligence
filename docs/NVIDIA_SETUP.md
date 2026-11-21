@@ -8,13 +8,12 @@ The Studio v7 interface uses NVIDIA `NATM1.pt` by default, unless the server env
 
 ## Fastest route when PersonaPlex is already running
 
-Run the gateway **on the approved server**, not as a heavy installation on the Mac. Python 3.11+ and FFmpeg with libopus must be installed there.
+Run the gateway **on the approved server**, not as a heavy installation on the Mac. Python 3.11+ and FFmpeg with libopus must be installed there. Stay in the repository root (`atlas-project-intelligence`).
 
 ```bash
-cd ATLAS_Intelligence
 python3 -m venv .venv-gateway
 source .venv-gateway/bin/activate
-python -m pip install -r requirements.txt
+python3 -m pip install --require-hashes -r requirements-ci.lock
 cp .env.example .env
 # Edit PERSONAPLEX_WS_URL to the actual private worker endpoint.
 # Defaults assume the worker is on this same server, port 8998.
