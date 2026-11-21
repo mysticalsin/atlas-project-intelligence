@@ -1082,8 +1082,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/living.js",
-      "bytes": 17425,
-      "sha256": "564db209cb32331b1192f250beca7d0f640100c20f9c6e43d86480e87c7f82e6"
+      "bytes": 18367,
+      "sha256": "4217cb24b4325632a2ce0ddf2f1fe51f4df6ae83946aaae99165e034feb8eac0"
     },
     {
       "path": "deploy/cloudflare-edge/src/memory-routes.js",
@@ -1482,8 +1482,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/living.test.js",
-      "bytes": 32036,
-      "sha256": "37adf37e29b23cb8838e493fdfff1fde6415a6a45809f00c779d2dfff128d8e9"
+      "bytes": 36721,
+      "sha256": "c365b9799e5a239f18c7dcf2badd2a618253f0c403d70ed31faa31c82ba36d19"
     },
     {
       "path": "deploy/cloudflare-edge/test/masking-routes.test.js",
@@ -2312,8 +2312,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 347289,
-      "sha256": "cbe2d06c3fe5014d6ca131f3ec0e20cc9f0986302aa041f9d48e9f587df6885a"
+      "bytes": 347547,
+      "sha256": "2165718fad694b37576d295550e729115fc91d6df2240c3bd06fed4264794d15"
     },
     {
       "path": "handoff/CHANGELOG.md",
