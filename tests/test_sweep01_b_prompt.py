@@ -1,9 +1,9 @@
 """Sweep 01: a PersonaPlex handshake must not put project text on the upstream URL.
 
-The gateway talks to an in-process fixture. No provider is called.
+The prompt is the first upstream websocket message. The gateway talks to an
+in-process fixture. No provider is called. HAM-03 is this same case.
 """
 import asyncio
-import json
 from dataclasses import replace
 from urllib.parse import urlsplit
 
@@ -13,7 +13,7 @@ from aiohttp import web
 
 from atlas_voice.config import Config
 from atlas_voice.server import create_app
-from tests.mock_personaplex import MockPersonaPlex, opus_tone
+from tests.mock_personaplex import MockPersonaPlex
 
 NOTE = 'SYNTHETIC-PROJECT-NOTE'
 PREF = 'SYNTHETIC-PREFERENCE-PHRASE'
@@ -46,13 +46,24 @@ async def serve(app):
 
 @pytest.mark.asyncio
 async def test_b4_upstream_url_does_not_carry_project_or_preference_text():
-    tone = await opus_tone(0.2)
-    mock = MockPersonaPlex(tone, handshake=b'\x00')
+    mock = MockPersonaPlex(b'', handshake=b'\x00')
     seen = []
+    first = []
 
     async def chat(request):
         seen.append(str(request.url))
-        return await MockPersonaPlex.chat(mock, request)
+        mock.prompts.append(dict(request.query))
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        try:
+            msg = await asyncio.wait_for(ws.receive(), 2)
+            data = msg.data
+            first.append(data.decode('utf-8', 'replace') if isinstance(data, (bytes, bytearray)) else str(data or ''))
+        except asyncio.TimeoutError:
+            first.append('')
+        await ws.send_bytes(b'\x00')
+        await ws.close()
+        return ws
 
     mock.chat = chat
     app = web.Application()
@@ -80,17 +91,19 @@ async def test_b4_upstream_url_does_not_carry_project_or_preference_text():
             'type': 'start', 'consent': True, 'csrf': boot['csrf'], 'project': PROJECT,
             'voice': 'NATF2.pt', 'capture': False, 'memory': True,
         })
-        deadline = asyncio.get_event_loop().time() + 8
-        while asyncio.get_event_loop().time() < deadline and not mock.prompts:
-            message = await asyncio.wait_for(socket_client.receive(), 8)
-            if message.type == aiohttp.WSMsgType.TEXT and json.loads(message.data).get('type') == 'ready':
-                break
-        assert mock.prompts, 'the gateway reached the fixture'
-        carried = json.dumps(mock.prompts) + '\n' + '\n'.join(seen)
+        deadline = asyncio.get_event_loop().time() + 10
+        while asyncio.get_event_loop().time() < deadline and not first:
+            await asyncio.sleep(0.05)
+        assert first, 'the gateway reached the fixture'
+        query = urlsplit(seen[0]).query if seen else ''
+        body = first[0]
+        problems = []
         for marker in (NOTE, PREF):
-            assert marker not in carried
-            for url in seen:
-                assert marker not in urlsplit(url).query
+            if marker in query:
+                problems.append(marker + ' is in the upstream query')
+            if marker not in body:
+                problems.append(marker + ' is not in the first upstream websocket message')
+        assert not problems, '; '.join(problems)
         await socket_client.close()
     finally:
         await client.close()
