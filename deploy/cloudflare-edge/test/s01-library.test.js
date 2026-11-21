@@ -86,18 +86,31 @@ test('F6 a locked library write is unavailable, and a later write still works', 
 
 test('F7 a review whose model call never returns stops on a deadline', async () => {
   const store = fresh();
-  const user = { email: 'ada@example.test', mail: 'ada@example.test', role: 'user' };
-  const saved = await store.upsert(user, {
+  const owner = { email: 'ada@example.test', mail: 'ada@example.test', role: 'user' };
+  const saved = await store.upsert(owner, {
     localId: 'hang',
     reference: { title: 'Hung review', answers: ['I rebuilt the intake queue for the service desk.'] },
   });
-  store.complete = () => new Promise(() => {});
-  const pending = store.review(user, saved.id);
-  const outcome = await Promise.race([
-    pending.then(() => 'settled', () => 'rejected'),
-    new Promise(resolve => setTimeout(() => resolve('still-running'), 2500)),
-  ]);
-  assert.notEqual(outcome, 'still-running');
+  let aborted = false;
+  store.complete = (_messages, options) => new Promise((_resolve, reject) => {
+    const signal = options && options.signal;
+    if (!signal) return;
+    const stop = () => {
+      aborted = true;
+      reject(Object.assign(new Error('The review was aborted.'), { name: 'AbortError' }));
+    };
+    if (signal.aborted) stop();
+    else signal.addEventListener('abort', stop, { once: true });
+  });
+  const response = await libraryRoutes(new Request('https://atlas.example.test/api/library/' + saved.id + '/review', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-atlas-user': owner.email, 'x-atlas-email': owner.email },
+    body: '{}',
+  }), store, { env: {} });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(aborted, true);
+  assert.match(JSON.stringify(body.state && body.state.quality), /The review agent did not answer/);
 });
 
 const user = { email: 'ada@example.test', mail: 'ada@example.test', role: 'user' };
@@ -141,6 +154,77 @@ test('F1 several saves with no local id are distinct rows, and one explicit loca
   assert.equal((await second.json()).id, (await first.json()).id);
 });
 
+const IMPORT_ROW_CAP = 10000;
+const IMPORT_BYTE_CAP = 1024 * 1024;
+
+test('F5 ten thousand rows finish inside a time and memory bound', { timeout: 25000 }, async () => {
+  const store = fresh();
+  const admin = { email: 'admin@example.test', mail: 'admin@example.test', role: 'admin' };
+  const references = Array.from({ length: IMPORT_ROW_CAP }, (_, index) => ({ externalId: 'bulk-' + index, reference: { title: 'Imported ' + index } }));
+  const before = process.memoryUsage().heapUsed;
+  const started = Date.now();
+  const out = await store.importAll(admin, { references });
+  const elapsed = Date.now() - started;
+  const heap = process.memoryUsage().heapUsed - before;
+  assert.equal(out.created + out.unchanged + out.rejected.length, IMPORT_ROW_CAP);
+  assert.equal(out.rejected.length, 0);
+  assert.ok(elapsed < 20000, 'elapsed ' + elapsed);
+  assert.ok(heap < 256 * 1024 * 1024, 'heap ' + heap);
+});
+
+test('F5 a body over the byte ceiling is 413 and is not imported', async () => {
+  const store = fresh();
+  const response = await libraryRoutes(new Request('https://atlas.example.test/api/library/import', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'content-length': String(IMPORT_BYTE_CAP + 1),
+      'x-atlas-user': 'admin@example.test',
+      'x-atlas-email': 'admin@example.test',
+      'x-atlas-role': 'admin',
+    },
+    body: 'x'.repeat(64),
+  }), store, { env: {} });
+  assert.equal(response.status, 413);
+  assert.equal(sqlOf(store).exec('SELECT COUNT(*) AS n FROM refs').toArray()[0].n, 0);
+});
+
+test('F5 more rows than the ceiling is 413 and writes nothing', async () => {
+  const store = fresh();
+  const admin = { email: 'admin@example.test', mail: 'admin@example.test', role: 'admin' };
+  let planned = false;
+  store.revisionPlan = async () => {
+    planned = true;
+    throw Object.assign(new Error('stop'), { status: 499 });
+  };
+  const references = Array.from({ length: IMPORT_ROW_CAP + 1 }, (_, index) => ({ externalId: 'over-' + index, reference: { title: 'Over ' + index } }));
+  await assert.rejects(() => store.importAll(admin, { references }), error => error.status === 413);
+  assert.equal(planned, false);
+  assert.equal(sqlOf(store).exec('SELECT COUNT(*) AS n FROM refs').toArray()[0].n, 0);
+});
+
+test('F5 a failure mid-import leaves nothing committed', async () => {
+  const sql = memorySql();
+  const exec = sql.exec;
+  let inserts = 0;
+  sql.exec = (query, ...params) => {
+    if (/insert into refs/i.test(String(query))) {
+      inserts += 1;
+      if (inserts >= 3) {
+        const error = new Error('disk I/O error');
+        error.code = 'ERR_SQLITE_ERROR';
+        throw error;
+      }
+    }
+    return exec(query, ...params);
+  };
+  const store = freshSql(sql);
+  const admin = { email: 'admin@example.test', mail: 'admin@example.test', role: 'admin' };
+  const references = Array.from({ length: 6 }, (_, index) => ({ externalId: 'crash-' + index, reference: { title: 'Crash ' + index } }));
+  await assert.rejects(() => store.importAll(admin, { references }));
+  assert.equal(exec('SELECT COUNT(*) AS n FROM refs').toArray()[0].n, 0);
+});
+
 test('F5 an import accounts for an empty batch and a single row', async () => {
   const store = fresh();
   const admin = { email: 'admin@example.test', mail: 'admin@example.test', role: 'admin' };
@@ -149,6 +233,52 @@ test('F5 an import accounts for an empty batch and a single row', async () => {
     const out = await store.importAll(admin, { references });
     assert.equal(out.created + out.unchanged + out.rejected.length, count);
   }
+});
+
+function busyOn(storeSql, pattern) {
+  const exec = storeSql.exec;
+  let attempts = 0;
+  storeSql.exec = (query, ...params) => {
+    if (pattern.test(String(query))) {
+      attempts += 1;
+      const error = new Error('database is locked');
+      error.code = 'ERR_SQLITE_ERROR';
+      throw error;
+    }
+    return exec(query, ...params);
+  };
+  return () => attempts;
+}
+
+test('F6 a locked update and a locked invitation retry, then return 503 with Retry-After', async () => {
+  const sql = memorySql();
+  const store = freshSql(sql);
+  const created = await post(store, 'busy-update@example.test', { localId: 'lock-me', reference: { title: 'Before the lock' } });
+  assert.equal(created.status, 201);
+  const id = (await created.json()).id;
+  const updates = busyOn(sql, /update refs/i);
+  const revised = await post(store, 'busy-update@example.test', { localId: 'lock-me', reference: { title: 'During the lock' } });
+  assert.equal(revised.status, 503);
+  assert.equal(revised.headers.get('retry-after'), '1');
+  assert.ok(updates() >= 2);
+  assert.equal(store.row(id).data.title, 'Before the lock');
+
+  const inviteSql = memorySql();
+  const invites = busyOn(inviteSql, /insert into invitations/i);
+  const invited = await libraryRoutes(new Request('https://atlas.example.test/api/library/invitations', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-atlas-user': 'rev@example.test',
+      'x-atlas-email': 'rev@example.test',
+      'x-atlas-role': 'reviewer',
+    },
+    body: JSON.stringify({ email: 'guest@example.test', title: 'Synthetic invite' }),
+  }), freshSql(inviteSql), { env: {} });
+  assert.equal(invited.status, 503);
+  assert.equal(invited.headers.get('retry-after'), '1');
+  assert.ok(invites() >= 2);
+  assert.equal(inviteSql.exec('SELECT COUNT(*) AS n FROM invitations').toArray()[0].n, 0);
 });
 
 test('F6 a library error that is not a lock stays an untyped failure', async () => {
@@ -182,7 +312,15 @@ test('HAM-02 scores of zero and four are the ends of the scale, and a declared i
     localId: 'declared',
     reference: { title: 'Declared impact', jev: { primary: { key: 'data_ai', label: 'Data & AI' }, also: [], impact: 70 } },
   });
-  assert.equal(store.row(declared.id).data.jev.impact, 70);
+  assert.equal(store.row(declared.id).data.jev.impact, null);
+  assert.notEqual(declared.impact, 70);
+  const claimed = await store.upsert(user, {
+    localId: 'claimed-100',
+    reference: { title: 'Claimed perfect impact', jev: { primary: { key: 'data_ai', label: 'Data & AI' }, also: [], impact: 100 } },
+  });
+  assert.notEqual(store.row(claimed.id).data.jev.impact, 100);
+  assert.notEqual(claimed.impact, 100);
+  assert.equal(store.row(claimed.id).data.jev.scores, undefined);
 });
 
 test('M3 an exact duplicate contribution is not written twice, and the merged answer stays within 6000 characters', async () => {
