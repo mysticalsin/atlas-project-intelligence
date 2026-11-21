@@ -400,6 +400,70 @@ test('spelling: ordinary maps, fills and repeats are not placeholder builders', 
   assert.equal(lintSource('spell.js', 'export function placeholders(count) { return count; }').placeholders.length, 0);
 });
 
+// Spellings that still passed a regex pinned to `.map(` with no space, no
+// trailing comma, and the parenthesis on the same line.
+test('spelling: "?".repeat is a placeholder builder', () => {
+  assert.equal(lintSource('spell.js', "const q = '?'.repeat(n);").placeholders.length, 1);
+});
+
+test('spelling: fill("?") is a placeholder builder', () => {
+  assert.equal(lintSource('spell.js', "const q = slots.fill('?');").placeholders.length, 1);
+});
+
+test('spelling: Array.from with a parameter arrow is a placeholder builder', () => {
+  assert.equal(lintSource('spell.js', "const q = Array.from(rows, row => '?');").placeholders.length, 1);
+});
+
+test('spelling: placeholders(100+1) is over the bound cap', () => {
+  assert.equal(lintSource('spell.js', 'const q = placeholders(100+1);').placeholders.some(item => item.max === 101), true);
+});
+
+test('spelling: a space before the parenthesis is still a placeholder builder', () => {
+  assert.equal(lintSource('spell.js', "const q = ids.map (row => '?');").placeholders.length, 1);
+  assert.equal(lintSource('spell.js', "const q = slots.fill ('?');").placeholders.length, 1);
+  assert.equal(lintSource('spell.js', "const q = Array.from (rows, row => '?');").placeholders.length, 1);
+  assert.equal(lintSource('spell.js', 'const q = placeholders (101);').placeholders.some(item => item.max === 101), true);
+});
+
+test('spelling: a trailing comma does not hide a placeholder builder', () => {
+  assert.equal(lintSource('spell.js', "const q = ids.map(row => '?',);").placeholders.length, 1);
+  assert.equal(lintSource('spell.js', "const q = slots.fill('?',);").placeholders.length, 1);
+  assert.equal(lintSource('spell.js', "const q = Array.from(rows, row => '?',);").placeholders.length, 1);
+  assert.equal(lintSource('spell.js', 'const q = placeholders(101,);').placeholders.some(item => item.max === 101), true);
+});
+
+test('spelling: a call split from its parenthesis is a placeholder builder', () => {
+  assert.equal(lintSource('spell.js', "const q = ids.map\n(row => '?');").placeholders.length, 1);
+  assert.equal(lintSource('spell.js', "const q = slots.fill\n('?');").placeholders.length, 1);
+  assert.equal(lintSource('spell.js', "const q = Array.from\n(rows, row => '?');").placeholders.length, 1);
+  assert.equal(lintSource('spell.js', 'const q = placeholders\n(101);').placeholders.some(item => item.max === 101), true);
+});
+
+test('spelling: a multi-line map is a placeholder builder', () => {
+  assert.equal(lintSource('spell.js', "const q = ids.map(\n  row => '?'\n);").placeholders.length, 1);
+});
+
+test('spelling: an unprovable placeholders(n) is flagged', () => {
+  assert.equal(lintSource('spell.js', 'const n = 101;\nconst q = placeholders(n);').placeholders.length, 1);
+});
+
+test('spelling: a block comment around placeholders(101) is not a finding', () => {
+  assert.equal(lintSource('spell.js', '/* placeholders(101) */\nconst q = 1;\n').placeholders.length, 0);
+  assert.equal(lintSource('spell.js', "const s = 'placeholders(101)';\nconst t = \"ids.map (row => '?')\";\nconst u = `placeholders(101)`;\n").placeholders.length, 0);
+});
+
+test('spelling: a string concatenation splice inside SQL is flagged', () => {
+  const pragma = "lib.rows(\"SELECT 1 AS x FROM pragma_table_info('\" + table + \"') WHERE name = 'tenant'\");";
+  assert.equal(lintSource('spell.js', pragma).placeholders.length, 1);
+  assert.equal(lintSource('spell.js', "lib.rows('SELECT * FROM t WHERE id IN (' + ids.join(',') + ')');").placeholders.length, 1);
+});
+
+test('spelling: a structural concatenation and a placeholder list are not splices', () => {
+  assert.equal(lintSource('spell.js', "lib.rows('SELECT id FROM refs WHERE ' + scope, tid);").placeholders.length, 0);
+  const source = "const marks = placeholders(chunk.length);\nlib.rows('SELECT * FROM t WHERE id NOT IN (' + marks + ')');\n";
+  assert.equal(lintSource('spell.js', source).placeholders.length, 0);
+});
+
 test('dynamic placeholder lists stay in the chunk helper or on the bounded allowlist', () => {
   const { helper, rest } = lintDir(SRC);
   assert.equal(helper.length, 1, 'the chunk helper builds placeholders in one place');
