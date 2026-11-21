@@ -1,6 +1,6 @@
 /* ATLAS live story board in the Conversation view (WOW_SPEC F5.2) and the proof answers after a gap interview (F2.6, T5).
    Driven only by window events: 'atlas-quality' (quality, user_text, reset) and 'atlas-session' (ready, time_up, wrap_up,
-   audio_stopped, reporting, notes, ended, reset). Never by agent_text, and no requestAnimationFrame: the countdown is a
+   audio_stopped, reporting, notes, ended, summary, reset). Never by agent_text, and no requestAnimationFrame: the countdown is a
    one-second interval that only runs between ready and the end of the audio. All text goes through textContent; the only
    markup inserted is AtlasGeo's own escaped map SVG. Nothing leaves the browser except on an explicit click of #gapSend. */
 (()=>{'use strict';
@@ -84,6 +84,7 @@ function tick(){if(board.hidden)return;renderTime(B.model({session:s.session,now
 function startTicker(){stopTicker();ticker=setInterval(tick,1000);}
 function stopTicker(){if(ticker!==null)clearInterval(ticker);ticker=null;}
 function clear(){stopTicker();clearTimeout(sayTimer);sayTimer=null;s=blank();prev=null;mapKey=null;said=pending='';saidAt=0;gap=null;editors.clear();
+ try{if(window.sessionStorage&&typeof window.sessionStorage.removeItem==='function')window.sessionStorage.removeItem('atlas-readback-draft');}catch{}
  const read=$('boardReadback');if(read)read.replaceChildren();
  board.hidden=true;$('boardSummary').textContent='';$('boardCoverage').textContent='';$('boardTime').hidden=true;$('boardGaps').hidden=true;
  for(const id of ['boardGaps','boardMap','boardMetrics','boardDims','boardChallenge'])body(id).replaceChildren();
@@ -104,6 +105,13 @@ window.addEventListener('atlas-session',e=>{const d=e.detail;if(!d||typeof d!=='
  else if(d.type==='notes'){if(d.mode==='gap')showGap(d);}
  else if(d.type==='time_up'||d.type==='wrap_up')render();
  else if(d.type==='summary')renderSummary(d.items);});
+// A typed correction lives in this page, and in sessionStorage once Save draft is used.
+// Without storage the live region says a reload drops the draft.
+const DRAFT_KEY='atlas-readback-draft';
+function draftStore(){try{const store=window.sessionStorage;if(!store||typeof store.getItem!=='function'||typeof store.setItem!=='function')return null;return store;}catch{return null;}}
+function readDrafts(){const store=draftStore();if(!store)return null;try{const raw=store.getItem(DRAFT_KEY);const o=raw?JSON.parse(raw):{};return o&&typeof o==='object'&&!Array.isArray(o)?o:{};}catch{return null;}}
+function writeDrafts(map){const store=draftStore();if(!store)return false;try{store.setItem(DRAFT_KEY,JSON.stringify(map));return true;}catch{return false;}}
+function readbackLive(){let live=$('boardReadbackLive');if(!live){live=el('p','board-live','');live.id='boardReadbackLive';live.ariaLive='polite';board.append(live);}return live;}
 // A late summary rebuilds the editor. Text already typed, including on a row that is not focused, is copied onto the new input.
 function renderSummary(items){
  const list=arr(items).filter(x=>x&&typeof x.detail_id==='string').slice(0,100);
@@ -112,17 +120,27 @@ function renderSummary(items){
  const focused=document.activeElement&&document.activeElement.dataset?document.activeElement.dataset.detail:'';
  for(const input of box.querySelectorAll('input'))if(input.dataset&&input.dataset.detail)editors.set(input.dataset.detail,input.value);
  box.replaceChildren();
+ const stored=readDrafts(),live=readbackLive();
+ live.textContent=stored===null?'A reload drops this draft.':'Summary ready to correct.';
  const ul=el('ul','board-readback-list');
  for(const item of list){
-  const li=el('li'),input=document.createElement('input');
-  li.append(el('p','board-quote',str(item.label,80)+': '+str(item.quote,1800)));
+  const li=el('li'),input=document.createElement('input'),name=str(item.label,80)||'Detail';
+  const fieldId='readback-'+str(item.detail_id,80).replace(/[^A-Za-z0-9_-]/g,'');
+  li.append(el('p','board-quote',name+': '+str(item.quote,1800)));
+  const label=el('label','board-field',name);label.htmlFor=fieldId;
   const keep=el('button','board-keep','Keep private');keep.type='button';keep.dataset.action='withhold';keep.dataset.detail=item.detail_id;
   keep.addEventListener('click',()=>{if(typeof window.dispatchEvent==='function')window.dispatchEvent(new CustomEvent('atlas-withhold',{detail:{detail_id:item.detail_id}}));});
-  li.append(keep);
-  input.dataset.detail=item.detail_id;input.value=editors.has(item.detail_id)?editors.get(item.detail_id):'';
+  input.id=fieldId;input.ariaLabel=name+' correction';input.dataset.detail=item.detail_id;
+  input.value=editors.has(item.detail_id)?editors.get(item.detail_id):(stored&&typeof stored[item.detail_id]==='string'?stored[item.detail_id]:'');
   input.addEventListener('input',()=>editors.set(item.detail_id,input.value));
-  li.append(input);ul.append(li);}
- box.append(ul);
+  li.append(label,input,keep);ul.append(li);}
+ const save=el('button','board-save','Save draft');save.type='button';
+ save.addEventListener('click',()=>{
+  const drafts=readDrafts()||{};
+  for(const input of ul.querySelectorAll('input'))if(input.dataset&&input.dataset.detail){drafts[input.dataset.detail]=input.value;editors.set(input.dataset.detail,input.value);}
+  live.textContent=writeDrafts(drafts)?'Draft saved on this device.':'A reload drops this draft.';
+ });
+ box.append(ul,save);
  if(focused)for(const input of ul.querySelectorAll('input'))if(input.dataset.detail===focused){input.focus();break;}}
 
 /* ---------- Proof answers after a gap interview (F2.1 step 6): two separate explicit clicks ---------- */

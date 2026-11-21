@@ -104,6 +104,10 @@ export class InterviewLedger {
   }
 
   inspect() {
+    // A detail marked private still holds its words until withhold runs. Inspect
+    // finishes that, so a privately marked row is not returned while it is active.
+    const pending = this.details.find(x => x.withheld === true && x.item_id && !this.withheldItems.has(x.item_id));
+    if (pending) return this.withhold(pending.id);
     const hidden = this.withheldItems;
     const active = this.details.filter(x => x.active && x.withheld !== true && !hidden.has(x.item_id));
     const present = new Set(active.map(x => x.field));

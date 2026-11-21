@@ -19,7 +19,7 @@ let gapUsed=null, consentStarting=false;
 function consumeGap(){const g=gapUsed;gapUsed=null;try{if(g&&bridge.context()?.gap===g)bridge.gapConsumed?.();}catch{}}
 // Session event bus for the live story board and the gap results (F5, F2): the server's session events, plus 'reset'
 // wherever the 'atlas-quality' reset fires. 'atlas-quality' itself is unchanged.
-const SESSION_EVENTS=['ready','time_up','wrap_up','audio_stopped','reporting','notes','ended'];
+const SESSION_EVENTS=['ready','time_up','wrap_up','audio_stopped','reporting','notes','ended','summary'];
 function sessionEvent(detail){window.dispatchEvent(new CustomEvent('atlas-session',{detail}));}
 function resetBoards(){window.dispatchEvent(new CustomEvent('atlas-quality',{detail:{type:'reset'}}));sessionEvent({type:'reset'});}
 const closed=(s,ms)=>!s||s.readyState===3?Promise.resolve():new Promise(r=>{const t=setTimeout(r,ms);s.onclose=()=>{clearTimeout(t);r();};});
