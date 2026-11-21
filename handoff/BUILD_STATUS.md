@@ -1,6 +1,22 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-21 — browser voice phase, row 6 (`cursor/row6-voice-phase-d7f3`)
+
+Ask row A22. `status` is the only phase writer after the initial idle. The ready handler no longer assigns `live` itself. An illegal pair does not paint. There is no terminal phase.
+
+Red `ca506f398feead30f46b2ad2218ef7b7fc80b355` (`voicePhase` missing, 4 failed). Reducer `131c3defb81402b34feaa5c20f5d8146b9734ae5`. Wire `bd75954779b073d129b7342ba14f623d5f5296b7`. Page pin `daef9a44713761e72323a39e5039eb2b045a3a47`. The rebuilt page is `e7c00ca8dc1b7684383a99bb9bbb0c6b4290115e5985c1f89b36a92e74cd8dd2`, 925138 bytes.
+
+Measured on the wired client. Node was run again after the pin.
+
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 413 passed, 127 warnings, 24.46s, exit 0.
+- `node --test tests/*.test.js` after the pin: 423 tests, 423 pass, 0 fail, 0 skipped.
+- Edge `node --test test/*.test.js`: 1117 tests, 1113 pass, 0 fail, 4 skipped, 231.0s. The 4 skips are workerd 2026-10-23 not installed.
+- `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui`: 834 PASS, 0 FAIL, exit 0.
+- `python3 scripts/check_handoff.py . --dev-git-index` is run after this note's manifest refresh.
+
+Locally verified in the browser suite. No live voice provider was called. Not a production-ready claim.
+
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.

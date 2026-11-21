@@ -622,23 +622,23 @@
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 925138,
+      "sha256": "e7c00ca8dc1b7684383a99bb9bbb0c6b4290115e5985c1f89b36a92e74cd8dd2"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 925138,
+      "sha256": "e7c00ca8dc1b7684383a99bb9bbb0c6b4290115e5985c1f89b36a92e74cd8dd2"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 925138,
+      "sha256": "e7c00ca8dc1b7684383a99bb9bbb0c6b4290115e5985c1f89b36a92e74cd8dd2"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 925138,
+      "sha256": "e7c00ca8dc1b7684383a99bb9bbb0c6b4290115e5985c1f89b36a92e74cd8dd2"
     },
     {
       "path": "CLAUDE.md",
@@ -933,7 +933,7 @@
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
       "bytes": 146,
-      "sha256": "93196c1732d530e8a0ad455ed9b3198c7dd2df0457e1fd9b47582c5a456c0005"
+      "sha256": "a96205b9cea449bb35b323ba1fb260a18e37ad056c5bd87bb6cffa568be05952"
     },
     {
       "path": "deploy/cloudflare-edge/set-keys.sh",
@@ -998,7 +998,7 @@
     {
       "path": "deploy/cloudflare-edge/src/csp.generated.js",
       "bytes": 1675,
-      "sha256": "7d54de0b2fed28db9dd1f20106b9cf4526cadd3a9641495c3e68762620bd6dbf"
+      "sha256": "bd83967b3291e9856c2b7146f553772a2e10e275d952b2b924b75d8966447edb"
     },
     {
       "path": "deploy/cloudflare-edge/src/csp.js",
@@ -2252,8 +2252,8 @@
     },
     {
       "path": "docs/state-machines.md",
-      "bytes": 36413,
-      "sha256": "539433097004d7c60ca526e287eb14d67ca7e466a6f9209d9cf81eb80798c68a"
+      "bytes": 37303,
+      "sha256": "914cef18e209ec0377652ba2e5bedfef0b5d2cb7c4e0f40cd346e7e8d59fc21b"
     },
     {
       "path": "examples/claude_customer_brief.json",
@@ -2282,8 +2282,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 346929,
-      "sha256": "311bfd60630ba451016b72b88b0b6a981fd92c70e54ef68b5d665c65b2522b05"
+      "bytes": 348197,
+      "sha256": "d5d761bc665525b918fda1ef97192fa0a1ecd28f78fa6d3004ada7a57bb1b4ca"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2384,6 +2384,11 @@
       "path": "handoff/decisions/record-dialog-quality-crash.md",
       "bytes": 3816,
       "sha256": "9f7947bffb235354679ffd69cc65c919d7c8be2ad41bccc7f43f8417fd29b350"
+    },
+    {
+      "path": "handoff/decisions/voice-phase-row6.md",
+      "bytes": 1367,
+      "sha256": "fd44a6e56f5c43fc247b1e85e3b39ed14b2bed9330bf06127a7746533f5f4f46"
     },
     {
       "path": "handoff/provenance/original-v12-manifest.json",
@@ -2962,8 +2967,8 @@
     },
     {
       "path": "src/voice-client.js",
-      "bytes": 45864,
-      "sha256": "36b8a566982698400485dfafa47911360999d992301b680cc1df251860054e05"
+      "bytes": 46987,
+      "sha256": "e9a315d519dccd38ad6d362e5df2564ef46a1b60d73b712506b9f39d56cc7538"
     },
     {
       "path": "src/voice-dialogs.html",
@@ -3474,6 +3479,11 @@
       "path": "tests/upstream-source-check.json",
       "bytes": 432,
       "sha256": "4e34cbb62d7326ca21a8e6f0eb04304051832144fec1824574a9f6d3b3eb5dcf"
+    },
+    {
+      "path": "tests/voice-phase.test.js",
+      "bytes": 3752,
+      "sha256": "2c20ec7c4218c52dc3c33e1c6baa4068268e2ff7363b99e29867a3a64b08929a"
     },
     {
       "path": "tests/worklet.test.js",
