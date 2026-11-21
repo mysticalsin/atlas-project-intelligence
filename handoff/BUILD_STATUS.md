@@ -17,6 +17,7 @@ Measured on this branch with `CHROMIUM_PATH=/usr/bin/google-chrome`, before this
 - `cd deploy/cloudflare-edge && node --test test/*.test.js`: 1117 tests, 1113 pass, 0 fail, 4 skipped, exit 0. The four skips are the existing workerd proofs (`ATLAS_WORKERD_ROOT` unset). This change adds none.
 - `make test-ui`: 834 PASS, 0 FAIL, exit 0.
 - `python3 -m pytest tests/test_*.py -q --tb=line` before the manifest refresh: 411 passed, 2 failed. The two are `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`.
+- After the refresh, the same pytest command: 413 passed, 0 failed, exit 0. `python3 scripts/check_handoff.py . --dev-git-index`: 712 release files, exit 0.
 
 C-3 and `handoff/CURRENT_STATUS.md` were not edited.
 
