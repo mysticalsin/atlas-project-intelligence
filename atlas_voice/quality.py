@@ -7,6 +7,8 @@ import json
 import re
 import time
 
+from .field_status import classify_detail, probe_transition
+
 FIELDS = {
     'problem': ('Customer problem', 'What was happening before, and who was affected?'),
     'stakes': ('Business stakes', 'What did that problem cost the team in time, risk or missed service?'),
@@ -92,7 +94,7 @@ class InterviewLedger:
             if any(d['field']==f and d['item_id']==ident and d['quote']==quote and d['active'] for d in self.details+pending): continue
             if supersedes and any(d['supersedes']==supersedes for d in pending):raise ValueError('Only one correction per candidate in a batch')
             pending.append({'id':f'D-{len(self.details)+len(pending)+1:03}', 'field':f,'item_id':ident,'quote':quote,
-              'status':'unknown' if UNKNOWN.search(quote) else 'uncertain' if x.get('uncertain') is True or UNCERTAIN.search(quote) else 'reported',
+              'status':classify_detail(quote, x.get('uncertain') is True),
               'active':True,'supersedes':supersedes,'provenance':'unverified_speech_recognition'})
         if len(self.details)+len(pending)>100: raise ValueError('Candidate budget reached')
         for x in pending:
@@ -172,7 +174,12 @@ class InterviewLedger:
         if self.probes and self.probes[-1]['turn']==turn:
             return {**self.inspect(),'planned_question':self.probes[-1]['question'],'repeat_plan':True}
         choice=self.inspect();f=choice['next_field']
-        while f and sum(p['field']==f for p in self.probes)>=2:
+        while f:
+            plans=sum(p['field']==f for p in self.probes)
+            phase='deferred' if f in self.deferred else 'asking' if plans else 'open'
+            step=probe_transition({'phase':phase,'plans':plans},{'type':'plan'})
+            if not step['ok'] or 'defer' not in step['effects']:
+                break
             self.deferred[f]='Two clarification plans did not resolve this point; offer to collect it later.'
             choice=self.inspect();f=choice['next_field']
         entry={'field':f,'question':choice['next_question'],'turn':turn,'status':'planned_not_confirmed_spoken'}

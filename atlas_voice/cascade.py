@@ -26,6 +26,7 @@ from .kyutai import stream_chat
 from .report import END_TOKEN, EndMarker, parse_report, report_messages, text_completer
 from .speech import KyutaiSpeech, WorkersSpeech, is_echo
 from .quality import InterviewLedger
+from .cascade_run import initial_cascade_run, cascade_run_transition
 
 HISTORY = 40  # long and stable, so the cached prompt prefix survives a whole interview
 CHUNK = 960  # 20 ms of 24 kHz PCM16, same pacing as the hosted route.
@@ -168,6 +169,14 @@ async def run(request, config, identity, memory, http, gate, active):
     history = []
     ledger = None
     analyst = None
+    run_state = initial_cascade_run()
+
+    def step(kind):
+        nonlocal run_state
+        result = cascade_run_transition(run_state, {'type': kind})
+        if result['ok']:
+            run_state = result['state']
+        return result
 
     async def event(kind, **values):
         if not ws.closed:
@@ -299,6 +308,7 @@ async def run(request, config, identity, memory, http, gate, active):
         start_reply()
 
     try:
+        step('open')
         init = await asyncio.wait_for(ws.receive_json(), 15)
         if isinstance(init, dict) and 'gap' in init:  # focused gap interviews need the edge's library and gap requests
             raise ValueError(GAP_REFUSED)
@@ -315,6 +325,7 @@ async def run(request, config, identity, memory, http, gate, active):
         if slot != 'ok':
             raise ValueError(BUSY[slot])
         held = True
+        step('admit')
         active[session_cookie] = ws
 
         async def before_ready(awaitable, timeout):
@@ -357,6 +368,7 @@ async def run(request, config, identity, memory, http, gate, active):
         await event('ready', model=config.conversation_model, provider='Cloudflare voice' if config.voice_provider == 'workers' else 'Kyutai voice', sampleRate=24000,
                     capture=capture, liveLedger=analyst is not None, maxSeconds=config.duration,
                     message='Voice session ready. Speak naturally. Candidate notes require your review.')
+        step('ready')
         if capture and analyst is None:
             await event('quality_warning', message='The evidence analyst is not configured. The transcript is kept for your review, without live quote checks.')
         state['started'] = state['last_input'] = time.monotonic()
@@ -378,8 +390,10 @@ async def run(request, config, identity, memory, http, gate, active):
                     value = json.loads(msg.data)
                     if value == {'type': 'end'}:
                         clean_end = True
+                        step('finish')
                         return
                     if value == {'type': 'discard'}:
+                        step('discard')
                         return
                     if isinstance(value, dict) and value.get('type') == 'playback':
                         continue  # Acknowledgements are only needed by the hosted truncation protocol.
@@ -437,6 +451,7 @@ async def run(request, config, identity, memory, http, gate, active):
                             await finish_turn(last, reply=False)
                     await event('time_up', message=TIME_UP_MESSAGE.format(minutes=round(config.duration / 60)))
                     clean_end = True
+                    step('finish')
                     return
                 # The last half minute and nobody is talking: ATLAS closes on her own so the interview ends with a goodbye.
                 if (not state['time_up'] and state['turns'] >= 1 and config.duration - (time.monotonic() - state['started']) <= 30
@@ -452,16 +467,21 @@ async def run(request, config, identity, memory, http, gate, active):
                 raise task.exception()
     except Discarded:
         clean_end = False
+        step('discard')
     except (ValueError, PermissionError) as error:
         clean_end = False
+        step('fail')
         await event('error', message=str(error), code='voice-contract')
     except (aiohttp.ClientError, ConnectionError, TimeoutError, asyncio.TimeoutError):
         clean_end = False
+        step('fail')
         await event('error', message='Selected voice service unavailable. No fallback provider was used.', code='voice-unavailable')
     except Exception:
         clean_end = False
+        step('fail')
         await event('error', message='The session stopped safely. No story was approved.', code='voice-failed')
     finally:
+        step('release')
         if clean_end and side:
             # Let the evidence analyst finish the final turns before notes are built.
             await asyncio.wait(list(side), timeout=10)

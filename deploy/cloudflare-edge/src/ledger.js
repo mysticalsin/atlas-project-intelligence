@@ -2,6 +2,7 @@
 // Behaviour must match the Python source exactly: test/parity.test.js replays Python-generated
 // scenarios and requires identical results. Candidate details are never verified facts.
 import { FIELDS, TO_TOPIC, NUMERIC_SRC, UNCERTAIN_SRC, UNKNOWN_SRC, ANALYST_POLICY, CONTEXT_SEGMENTS, SEGMENT_CHARS, MAX_CALLS } from './policy.generated.js';
+import { classifyDetail, probeTransition } from './field-status.js';
 
 const FIELD_KEYS = Object.keys(FIELDS);
 const NUMERIC = new RegExp(NUMERIC_SRC, 'i');
@@ -43,7 +44,7 @@ export class InterviewLedger {
       if ([...this.details, ...pending].some(d => d.field === f && d.item_id === ident && d.quote === quote && d.active)) continue;
       if (supersedes && pending.some(d => d.supersedes === supersedes)) fail('Only one correction per candidate in a batch');
       pending.push({ id: 'D-' + String(this.details.length + pending.length + 1).padStart(3, '0'), field: f, item_id: ident, quote,
-        status: UNKNOWN.test(quote) ? 'unknown' : (x.uncertain === true || UNCERTAIN.test(quote)) ? 'uncertain' : 'reported',
+        status: classifyDetail(quote, x.uncertain === true, UNKNOWN, UNCERTAIN),
         active: true, supersedes, provenance: 'unverified_speech_recognition' });
     }
     if (this.details.length + pending.length > 100) fail('Candidate budget reached');
@@ -111,7 +112,11 @@ export class InterviewLedger {
     const keys = [...this.transcripts.keys()], turn = keys.length ? keys[keys.length - 1] : 'opening';
     if (this.probes.length && this.probes[this.probes.length - 1].turn === turn) return { ...this.inspect(), planned_question: this.probes[this.probes.length - 1].question, repeat_plan: true };
     let choice = this.inspect(), f = choice.next_field;
-    while (f && this.probes.filter(p => p.field === f).length >= 2) {
+    while (f) {
+      const plans = this.probes.filter(p => p.field === f).length;
+      const phase = Object.prototype.hasOwnProperty.call(this.deferred, f) ? 'deferred' : (plans ? 'asking' : 'open');
+      const step = probeTransition({ phase, plans }, { type: 'plan' });
+      if (!step.ok || !step.effects.includes('defer')) break;
       this.deferred[f] = 'Two clarification plans did not resolve this point; offer to collect it later.';
       choice = this.inspect(); f = choice.next_field;
     }
