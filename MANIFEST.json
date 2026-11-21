@@ -1847,8 +1847,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/write-lint.js",
-      "bytes": 21994,
-      "sha256": "a361a6aa78c1c80eff3348903757c9d5d387ae3cbef9b3243dceb6ff433de186"
+      "bytes": 22377,
+      "sha256": "1abbbd7e5804adeeceee45820883dd03afa06fa2b75b70ead91988cfcf6a4c71"
     },
     {
       "path": "deploy/cloudflare-edge/test/write-now.test.js",

@@ -14,7 +14,8 @@ export const PLACEHOLDER_ALLOW = [
   { file: 'library.js', max: 3, why: 'an invitation list binds at most the sign-in email, the mail claim, and the tenant' },
 ];
 
-const BUILDER = /\.map\(\s*\(\s*\)\s*=>\s*['"`]\?['"`]\s*\)|['"`]\?['"`]\s*\.repeat\s*\(|\.fill\(\s*['"`]\?['"`]\s*\)|Array\.from\(\s*\{[^}]*\}\s*,\s*\(\s*\)\s*=>\s*['"`]\?['"`]\s*\)/;
+const BUILDER = /\.map\(\s*\(\s*\)\s*=>\s*['"`]\?['"`]\s*\)|\.map\(\s*(?:\(\s*[A-Za-z_$][\w$]*\s*\)|[A-Za-z_$][\w$]*)\s*=>\s*['"`]\?['"`]\s*\)|['"`]\?['"`]\s*\.repeat\s*\(|['"`]\?,['"`]\s*\.repeat\s*\(|\.fill\(\s*['"`]\?['"`]\s*\)|Array\.from\(\s*\{[^}]*\}\s*,\s*\(\s*\)\s*=>\s*['"`]\?['"`]\s*\)/;
+const OVER_CAP = /(?:^|[^\w$])placeholders\(\s*(\d+)\s*\)/g;
 const MUTATING = /^(?:insert|update|delete|replace|create|drop|alter|reindex|vacuum)\b/i;
 
 export function stripLineComment(line) {
@@ -464,10 +465,16 @@ export function lintSource(file, text) {
   const placeholders = [];
   lines.forEach((line, index) => {
     const code = stripLineComment(line);
-    if (!BUILDER.test(code)) return;
-    const above = lines.slice(Math.max(0, index - 4), index).join('\n');
-    const marked = above.match(/sql-bound-fixed:\s*(\d+)/);
-    placeholders.push({ file, line: index + 1, max: marked ? Number(marked[1]) : null });
+    if (BUILDER.test(code)) {
+      const above = lines.slice(Math.max(0, index - 4), index).join('\n');
+      const marked = above.match(/sql-bound-fixed:\s*(\d+)/);
+      placeholders.push({ file, line: index + 1, max: marked ? Number(marked[1]) : null });
+    }
+    OVER_CAP.lastIndex = 0;
+    for (const match of code.matchAll(OVER_CAP)) {
+      const count = Number(match[1]);
+      if (count > 100) placeholders.push({ file, line: index + 1, max: count });
+    }
   });
   return { exec: lintHandles(file, String(text)), placeholders };
 }
