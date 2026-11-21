@@ -19,13 +19,17 @@ test('one greeting set uses the introduction and the rest, not a second short li
   assert.equal(GREETINGS.ru, undefined);
 });
 
-test('an unsupported voice stays English and the screen also shows that language', async () => {
+test('an unsupported voice stays English and the screen shows one notice', async () => {
   const { spokenFor, voiceNotice } = await import('../src/languages.js');
   assert.equal(spokenFor('pt', () => false), 'en');
-  assert.match(voiceNotice('pt'), /português/);
+  assert.equal(voiceNotice('pt'), 'A ATLAS compreende. A voz fica em inglês.');
+  assert.equal(voiceNotice('nl'), 'ATLAS begrijpt je. De stem blijft Engels.');
+  assert.equal(voiceNotice('ja'), 'ATLASは理解しています。音声は英語のままです。');
+  assert.doesNotMatch(voiceNotice('pt') + voiceNotice('ja'), /amazing/i);
   const client = readFileSync(new URL('../../../src/voice-client.js', import.meta.url), 'utf8');
-  assert.match(client, /ATLAS understands \$\{m\.name\}; its voice answers in English for now\./);
   assert.match(client, /m\.notice/);
+  assert.doesNotMatch(client, /its voice answers in English for now/);
+  assert.doesNotMatch(client, /english\+' '\+notice/);
 });
 
 function frames(segments) {
@@ -56,8 +60,9 @@ test('Portuguese with no Portuguese voice is spoken in English and noticed in Po
   }
   try {
     const pt = events.find(e => e.type === 'language');
+    assert.equal(events.filter(e => e.type === 'language').length, 1);
     assert.equal(pt.voice, false);
-    assert.match(pt.notice, /português/);
+    assert.equal(pt.notice, 'A ATLAS compreende. A voz fica em inglês.');
   } finally {
     await s.end(false);
   }

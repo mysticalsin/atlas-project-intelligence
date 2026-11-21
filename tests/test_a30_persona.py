@@ -42,6 +42,21 @@ def test_cascade_reads_the_start_language():
     assert any('French' in message['content'] for message in messages)
 
 
+def test_cascade_note_points_at_the_english_voice_notice():
+    from atlas_voice.cascade import language_note
+    from atlas_voice.languages import english_voice_notice
+    for code in ('nl', 'ja', 'fr'):
+        notice = english_voice_notice(code)
+        note = language_note(code)
+        assert notice in note
+        assert 'English' in note
+        assert 'amazing' not in note.lower()
+        assert 'Reply only in natural' not in note
+    assert 'Reply only in natural English' in language_note('en')
+    assert 'Reply only in natural Spanish' in language_note('es')
+    assert 'amazing' not in english_voice_notice('en').lower()
+
+
 def test_languages_py_is_wired_and_keeps_machine_translated_labels():
     from atlas_voice.languages import REVIEW_STATUS
     rendered = build_edge().render()
