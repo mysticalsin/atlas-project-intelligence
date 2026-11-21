@@ -8,7 +8,7 @@ import { Analyst, InterviewLedger } from './ledger.js';
 import { buildSummary } from './summary.js';
 import { EnergyTurns, isEcho, Phrases, speakable } from './speech.js';
 import { EndMarker, parseReport, reportMessages } from './report.js';
-import { LANGUAGES, normalize, spokenFor, languageNote, GREETINGS, WELCOME_BACK, FILLERS, unfinished } from './languages.js';
+import { LANGUAGES, normalize, spokenFor, languageNote, GREETINGS, WELCOME_BACK, FILLERS, unfinished, voiceNotice } from './languages.js';
 
 export const RESUME = '[The consultant made a sound but no words were recognised, and your last reply was cut off.] Briefly re-ask your last question in fresh words.';
 
@@ -459,7 +459,7 @@ export class Session {
       else if (heardIn !== this.languageCandidate) { this.languageCandidate = heardIn; this.metric('language_candidate', { language: heardIn }); }
       else {
         this.languageCandidate = null; this.language = heardIn; this.metric('language_switch', { language: heardIn, voice: this.spoken() === heardIn ? 1 : 0 });
-        this.event('language', { language: heardIn, name: LANGUAGES[heardIn], voice: this.spoken() === heardIn });
+        this.event('language', { language: heardIn, name: LANGUAGES[heardIn], voice: this.spoken() === heardIn, ...(this.spoken() === heardIn ? {} : { notice: voiceNotice(heardIn) }) });
       }
     }
     // Speaker echo of ATLAS's own words must never become consultant testimony.
@@ -558,10 +558,12 @@ export class Session {
   }
 
   // measure: a piece of a reply (not a prewarm), reported as numbers only: synthesis time, audio length, characters, cache hit.
+  // Phrases of 220 characters or fewer stay cached. The one introduction is longer, and it is cached as that same line.
   async synth(text, lang, measure = false) {
-    const key = lang + '|' + this.voice + '|' + text, cached = text.length <= 220 ? cacheGet(key) : null, t0 = this.now();
+    const cachedLine = text.length <= 220 || GREETINGS[lang] === text || WELCOME_BACK[lang] === text;
+    const key = lang + '|' + this.voice + '|' + text, cached = cachedLine ? cacheGet(key) : null, t0 = this.now();
     const pcm = cached || await this.ai.synthesize(text, this.voice, lang);
-    if (!cached && text.length <= 220) cacheSet(key, pcm);
+    if (!cached && cachedLine) cacheSet(key, pcm);
     if (measure) this.metric('tts', { ms: cached ? 0 : Math.round((this.now() - t0) * 1000), audio_ms: Math.round(pcm.length / 48), chars: text.length, cached: cached ? 1 : 0 });
     return pcm;
   }

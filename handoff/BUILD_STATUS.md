@@ -1,6 +1,21 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-21 — A07 slice 3, one persona and one greeting (`cursor/pr1-slice3-a30-greetings-6f11`)
+
+Ask row A30, folded into A07 by Inspector as APP-FIT ADAPT. Red tests are `10e016c101bf45b2c084f0a24757a2b9b75126e2`. That commit does not refresh `MANIFEST.json`.
+
+What this change does:
+
+- The en–nl greeting is one introduction: who ATLAS is, what is captured, the confidentiality line, and the read-back. The short interview line is not kept beside it. Russian, Hindi and Japanese greeting lines are left for PR #35. Fillers and trailing-word lists are unchanged.
+- `atlas_voice/persona.py` is composed into the cascade talker, the hosted interview policy, and the PersonaPlex role. PersonaPlex still says "Speak in English". The realtime opening uses the same brief. The talker no longer uses "amazing". That praise default, and keeping English speech when a voice is missing while also showing the translated notice, can be overturned by Tony at 07:30.
+- `cascade.py` reads the start frame's `language`. `build_edge.py` exports the language banks, including the D-L2 `machine_translated` label. The 15-minute clock is unchanged.
+- `41bacfae85e0fa61eff364903b4c6432e36240f7` (`cursor/atlas-persona-routes-a941`) is not merged.
+
+No provider call. No deploy.
+
+Measured on this tree before the fix commit, while HEAD was still the red commit: `python3 -m pytest tests/test_*.py -q` 416 passed and 1 failed (`test_git_archive_of_head_passes_check_handoff`, the red commit does not refresh the manifest). `node --test tests/*.test.js` 420 passed, 0 failed. Edge `node --test test/*.test.js` 1126 tests, 1122 passed, 0 failed, 4 skipped. `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui` 834 PASS, 0 FAIL. `python3 scripts/check_handoff.py . --dev-git-index` PASS.
+
 ## 2026-11-21 — A07 slice 2, confirmation read-back (`cursor/pr1-slice2-readback-6f11`)
 
 PR #5 is merged. Its head is `9438e73ac2b750e3f3dfdf1d60e1d4b03a374842`, merge `5c55c2bcf722963ec2182dfc463fb152e57f5c89`, and that commit is an ancestor of `main` `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. The copied-commit and null-hash remigration checks in `deploy/cloudflare-edge/test/s1-a5ba30c.test.js` pass on that tree. No new test was added for those closed findings.

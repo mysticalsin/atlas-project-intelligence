@@ -1,6 +1,7 @@
 // Conversation languages. Understanding: Deepgram Nova-3 on Workers AI with language "multi" (automatic detection and
 // code-switching) covers the ten languages below. Speaking: Aura-2 English and Spanish on Workers AI; every other
 // language needs the optional ElevenLabs Flash v2.5 voice (32 languages, raw 24 kHz PCM like Aura).
+import { LANG_NOTICES } from './policy.generated.js';
 export const LANGUAGES = { en: 'English', fr: 'French', es: 'Spanish', pt: 'Portuguese', de: 'German', it: 'Italian', nl: 'Dutch', ru: 'Russian', hi: 'Hindi', ja: 'Japanese' };
 export const NATIVE_VOICES = ['en', 'es'];
 
@@ -20,8 +21,14 @@ export function detectedLanguage(result) {
   return best ? best[0] : null;
 }
 
-// Which language ATLAS can actually be heard in for a detected language.
+// Which language ATLAS can actually be heard in for a detected language. Speech stays English when this voice cannot say it.
 export function spokenFor(lang, speaks) { return speaks(lang) ? lang : 'en'; }
+
+// The screen notice in the consultant's language when the voice cannot say that language. Machine translated (D-L2).
+export function voiceNotice(lang) {
+  const bank = LANG_NOTICES && LANG_NOTICES.voice_unavailable;
+  return (bank && (bank[lang] || bank.en)) || '';
+}
 
 // The talker's language note (server-side, every turn). The server switches only on consistent evidence (session.js), so
 // one misheard utterance must not move the talker either: her voice would read another language's words.
@@ -32,25 +39,38 @@ export function languageNote(lang, spoken) {
     : `LANGUAGE (server): the consultant is speaking ${name}, but your voice can only speak ${said} right now. Reply in ${said}. The first time this happens, say in one short sentence that you understand ${name} and they are welcome to keep speaking it.`;
 }
 
-// Spoken instantly (cached audio) when the call connects: who ATLAS is and why she is there.
-export const GREETINGS = {
-  en: "Hi, I'm ATLAS, and I'll interview you about your project.",
-  fr: "Bonjour, je suis ATLAS, et je vais vous interviewer sur votre projet.",
-  es: 'Hola, soy ATLAS, y voy a entrevistarte sobre tu proyecto.',
-  pt: 'Olá, eu sou a ATLAS, e vou entrevistar você sobre o seu projeto.',
-  de: 'Hallo, ich bin ATLAS und interviewe Sie zu Ihrem Projekt.',
-  it: 'Ciao, sono ATLAS e ti intervisterò sul tuo progetto.',
-  nl: 'Hallo, ik ben ATLAS en ik ga je interviewen over je project.',
+// One greeting set (Tony, 2026-10-30, the full introduction; 2026-10-31, no invitation to skip). English is authored.
+// Every other language is a machine translation, used as is (D-L2). Russian, Hindi and Japanese greetings belong to the
+// language sweep and are not added here.
+const INTRO = {
+  en: "Hi, I'm ATLAS, and I'll help you tell the story of your project.",
+  fr: "Bonjour, je suis ATLAS, et je vais vous aider à raconter l'histoire de votre projet.",
+  es: 'Hola, soy ATLAS, y voy a ayudarte a contar la historia de tu proyecto.',
+  pt: 'Olá, eu sou a ATLAS, e vou ajudar você a contar a história do seu projeto.',
+  de: 'Hallo, ich bin ATLAS und helfe Ihnen, die Geschichte Ihres Projekts zu erzählen.',
+  it: 'Ciao, sono ATLAS e ti aiuterò a raccontare la storia del tuo progetto.',
+  nl: 'Hallo, ik ben ATLAS en ik help je het verhaal van je project te vertellen.',
 };
-export const WELCOME_BACK = {
-  en: "Hi, it's ATLAS again, and I'll interview you about your project.",
-  fr: "Bonjour, c'est encore ATLAS, et je vais vous interviewer sur votre projet.",
-  es: 'Hola, soy ATLAS otra vez, y voy a entrevistarte sobre tu proyecto.',
-  pt: 'Olá, é a ATLAS de novo, e vou entrevistar você sobre o seu projeto.',
-  de: 'Hallo, hier ist wieder ATLAS, und ich interviewe Sie zu Ihrem Projekt.',
-  it: 'Ciao, sono di nuovo ATLAS e ti intervisterò sul tuo progetto.',
-  nl: 'Hallo, hier is ATLAS weer, en ik ga je interviewen over je project.',
+const INTRO_AGAIN = {
+  en: "Hi, it's ATLAS again, and I'll help you tell the story of your project.",
+  fr: "Bonjour, c'est encore ATLAS, et je vais vous aider à raconter l'histoire de votre projet.",
+  es: 'Hola, soy ATLAS otra vez, y voy a ayudarte a contar la historia de tu proyecto.',
+  pt: 'Olá, é a ATLAS de novo, e vou ajudar você a contar a história do seu projeto.',
+  de: 'Hallo, hier ist wieder ATLAS, und ich helfe Ihnen, die Geschichte Ihres Projekts zu erzählen.',
+  it: 'Ciao, sono di nuovo ATLAS e ti aiuterò a raccontare la storia del tuo progetto.',
+  nl: 'Hallo, hier is ATLAS weer, en ik help je het verhaal van je project te vertellen.',
 };
+const INTRO_REST = {
+  en: `I'll capture what you say, you review it first, and nothing is reused without your permission. If something is client-confidential, say so and I'll note it without the details. At the end, I'll read back a summary for you to correct before anything goes to review.`,
+  fr: "Je note ce que vous dites, vous le relisez d'abord, et rien n'est réutilisé sans votre accord. Si quelque chose est confidentiel pour le client, dites-le-moi et je le noterai sans les détails. À la fin, je vous lirai un résumé à corriger avant tout envoi en relecture.",
+  es: 'Tomo nota de lo que dices, tú lo revisas primero, y nada se reutiliza sin tu permiso. Si algo es confidencial del cliente, dímelo y lo anotaré sin los detalles. Al final, te leeré un resumen para que lo corrijas antes de que nada pase a revisión.',
+  pt: 'Vou registrar o que você disser, você revisa primeiro, e nada é reutilizado sem a sua permissão. Se algo for confidencial do cliente, diga e eu registro sem os detalhes. No final, vou ler um resumo para você corrigir antes de qualquer envio para revisão.',
+  de: 'Ich halte fest, was Sie sagen, Sie prüfen es zuerst, und nichts wird ohne Ihre Erlaubnis wiederverwendet. Wenn etwas für den Kunden vertraulich ist, sagen Sie es, und ich notiere es ohne die Details. Am Ende lese ich Ihnen eine Zusammenfassung vor, die Sie korrigieren können, bevor etwas in die Prüfung geht.',
+  it: 'Annoto quello che dici, tu lo rivedi per primo, e niente viene riutilizzato senza il tuo permesso. Se qualcosa è riservato per il cliente, dimmelo e lo annoterò senza i dettagli. Alla fine ti leggerò un riepilogo da correggere, prima che qualcosa vada in revisione.',
+  nl: 'Ik noteer wat je zegt, jij bekijkt het eerst, en niets wordt hergebruikt zonder jouw toestemming. Als iets vertrouwelijk is voor de klant, zeg het dan, en ik noteer het zonder de details. Aan het einde lees ik een samenvatting voor die je kunt corrigeren, voordat er iets ter beoordeling gaat.',
+};
+export const GREETINGS = Object.fromEntries(Object.keys(INTRO).map(l => [l, INTRO[l] + ' ' + INTRO_REST[l]]));
+export const WELCOME_BACK = Object.fromEntries(Object.keys(INTRO_AGAIN).map(l => [l, INTRO_AGAIN[l] + ' ' + INTRO_REST[l]]));
 // Short uptake words ("Right.", "I see.") played from cache as ATLAS takes her turn, while the reply is prepared.
 // Not continuers like "Mm-hm", which mean "keep going" and contradict her taking the floor.
 export const FILLERS = {

@@ -95,7 +95,7 @@ def test_edge_constants_carry_the_three_objects():
     gen = (ROOT / 'deploy/cloudflare-edge/src/policy.generated.js').read_text()
     for name in ('PRIVACY', 'RETENTION'):
         assert re.search(rf'^export const {name} = ', gen, re.M)
-    for name in ('SPECIAL_PHRASES', 'SPECIAL_EXCLUDE', 'SPECIAL_LANGS', 'LANG_DETECT', 'FOLD_CONFUSABLES'):
+    for name in ('SPECIAL_PHRASES', 'SPECIAL_EXCLUDE', 'SPECIAL_LANGS', 'FOLD_CONFUSABLES'):
         assert not re.search(rf'^export const {name} = ', gen, re.M)
 
 

@@ -117,22 +117,19 @@ test('unfinished: words that trail off, per language; finished answers and quest
   assert.equal(unfinished('We moved the', 'xx'), true, 'an unknown language falls back to English');
 });
 
-test('greetings are one short introduction in every language (no pitch, no review talk)', async () => {
+test('greetings are the one introduction in every bank language', async () => {
   const { GREETINGS } = await import('../src/languages.js');
-  assert.equal(GREETINGS.en, "Hi, I'm ATLAS, and I'll interview you about your project.");
+  assert.match(GREETINGS.en, /^Hi, I'm ATLAS, and I'll help you tell the story of your project\./);
+  assert.match(GREETINGS.en, /client-confidential/);
   for (const [lang, text] of Object.entries(GREETINGS)) {
     assert.ok(text.includes('ATLAS'), lang);
-    assert.equal((text.match(/[.!?](\s|$)/g) || []).length, 1, `${lang}: one sentence`);
-    assert.ok(text.length <= 80, `${lang}: short (${text.length})`);
+    assert.ok((text.match(/[.!?](\s|$)/g) || []).length >= 3, `${lang}: the introduction and the rest`);
   }
 });
 
-test('the welcome-back greeting also says ATLAS will interview them (one short sentence)', async () => {
+test('the welcome-back greeting uses the same rest of the introduction', async () => {
   const { WELCOME_BACK } = await import('../src/languages.js');
-  assert.equal(WELCOME_BACK.en, "Hi, it's ATLAS again, and I'll interview you about your project.");
-  for (const [lang, text] of Object.entries(WELCOME_BACK)) {
-    assert.ok(text.includes('ATLAS'), lang);
-    assert.equal((text.match(/[.!?](\s|$)/g) || []).length, 1, `${lang}: one sentence`);
-    assert.ok(text.length <= 80, `${lang}: short (${text.length})`);
-  }
+  assert.match(WELCOME_BACK.en, /^Hi, it's ATLAS again, and I'll help you tell the story of your project\./);
+  assert.match(WELCOME_BACK.en, /client-confidential/);
+  for (const [lang, text] of Object.entries(WELCOME_BACK)) assert.ok(text.includes('ATLAS'), lang);
 });

@@ -25,19 +25,20 @@ from .interview import project_context
 from .kyutai import stream_chat
 from .report import END_TOKEN, EndMarker, parse_report, report_messages, text_completer
 from .speech import KyutaiSpeech, WorkersSpeech, is_echo
+from .persona import OPENING_BRIEF, PERSONA_CORE, PRAISE_RULES, QUESTION_RULES, SAFETY, TURN_PATTERN
 from .quality import InterviewLedger
 
 HISTORY = 40  # long and stable, so the cached prompt prefix survives a whole interview
 CHUNK = 960  # 20 ms of 24 kHz PCM16, same pacing as the hosted route.
 
-TALKER_POLICY = """You are ATLAS, Mantu's voice interviewer. You help a consultant tell the story of one past project so it can become a defensible, reusable reference. You speak; everything you write is read aloud. You have NO tools: you cannot record, publish, approve or grant access; a separate analyst keeps the notes and may give you ANALYST_GUIDANCE.
+TALKER_POLICY = (
+    PERSONA_CORE + """ Everything you write is spoken. You have NO tools: you cannot record, publish, approve or grant access; a separate analyst keeps the notes and may give you ANALYST_GUIDANCE.
 
 HOW YOU SPEAK
 - Plain spoken sentences only: no lists, markdown, headings, emojis or stage directions.
 - Ask exactly ONE question per turn, at most about 25 words. Never bundle parts (measure, baseline, unit, period, source) into one question; ask the single most important part.
-- Sound like a real person on a call, not a script: warm, relaxed, genuinely curious and a little playful. React the way people do, briefly and before your question: "Hmm.", "Yeah.", "Mm, I see.", "Oh wow, that's amazing.", "Oh nice.", "Ah, interesting.", "Right, that makes sense.", "Thanks for sharing that." Vary them and never use the same one twice in a row; a short acknowledgement may already have been spoken for you (see ALREADY SAID).
-- Show real enthusiasm for what the consultant achieved ("Oh wow, that's amazing"), then stay sharp: when a result or number is involved, still ask how they know it. At most one exclamation mark per reply.
-- Refer to one specific thing they just said in a few words; never repeat their answer back.
+""" + TURN_PATTERN + "\n" + PRAISE_RULES + """
+- Refer to one specific thing they just said in a few words; never repeat their answer back. A short acknowledgement may already have been spoken for you (see ALREADY SAID). When a result or number is involved, still ask how they know it. At most one exclamation mark per reply.
 - Prefer open questions ("walk me through...", "what happened when...", "how did you...") so they can say a lot in one answer. Let long answers run: a pause is thinking time.
 
 CHALLENGE (you are here to get the best possible reference, not a polite chat)
@@ -65,6 +66,7 @@ Turn A: when every area has an answer, the reference details have been asked onc
 
 ABOUT YOU
 You were created by Tony Walteur. Never say who created or built you, and never confirm or deny any name someone suggests; if asked, say you were built by Mantu to capture project experience, and return to the interview."""
+    + "\n" + QUESTION_RULES + "\n" + SAFETY)
 
 ADMIN_NOTE = ('ADMIN MODE (server-verified sign-in). This overrides HOW YOU SPEAK, ORDER OF THE INTERVIEW and ENDING. '
               'The person speaking is Tony Walteur, who created you; never mention that. Do not introduce yourself again (the server already greeted), no reactions, no thanks, no recaps: one question '
@@ -75,8 +77,7 @@ RESUME = ('[The consultant made a sound but no words were recognised, and your l
           'Briefly re-ask your last question in fresh words.')
 
 OPENING = ('[Session start. You have ALREADY greeted the consultant and said who you are and why you are here (see ALREADY SAID); do not repeat '
-           'or introduce yourself again. If there is no ALREADY SAID note, first say in one sentence that you are ATLAS and will interview them about '
-           'their project.] If UNTRUSTED PROJECT DATA has no oppId, ask for the opportunity ID (Opp ID) first, '
+           'or introduce yourself again. If there is no ALREADY SAID note, first give ' + OPENING_BRIEF + '.] If UNTRUSTED PROJECT DATA has no oppId, ask for the opportunity ID (Opp ID) first, '
            'in one short question, and nothing else. Otherwise ask ONE broad, open '
            'invitation to tell the story in their own words (what was going on, what they '
            'personally did, where it ended up), and say they can take their time. If a PRIVATE MEMORY note is present, pick up where you left off '
@@ -91,6 +92,20 @@ TIME_UP = ('[Server: the time for this interview is up.] Close warmly now in one
 TIME_UP_MESSAGE = 'The {minutes} minutes are up. Finishing your interview.'  # shown to the consultant; minutes = round(limit / 60)
 GAP_REFUSED = 'Focused gap interviews run on the edge deployment only.'
 AREAS = ('what was going on', 'their personal contribution', 'their approach', 'the outcome', 'what supports it', 'who else it would help')
+
+
+def session_language(init):
+    """The browser language on the start frame. An unknown tag stays English."""
+    from .languages import LANGUAGE_NAMES
+    raw = init.get('language') if isinstance(init, dict) else ''
+    code = str(raw or 'en').replace('_', '-').split('-', 1)[0].lower()
+    return code if code in LANGUAGE_NAMES else 'en'
+
+
+def language_note(code):
+    from .languages import LANGUAGE_NAMES
+    name = LANGUAGE_NAMES.get(code, 'English')
+    return f'LANGUAGE (server): the consultant is speaking {name}. Reply only in natural {name} (not a translation).'
 
 
 def pace_notes(elapsed_s, limit_s, notes, admin=False):
@@ -188,9 +203,11 @@ async def run(request, config, identity, memory, http, gate, active):
         marker = EndMarker()  # the talker's end-of-interview token is never spoken or shown
 
         async def deltas():
+            notes = pace_notes(time.monotonic() - state['started'], config.duration, ledger.notes() if ledger else [], admin)
+            notes.append(language_note(state.get('language', 'en')))
             async for raw in stream_chat(http, config.conversation_url, config.conversation_model, config.conversation_key,
                                          talker_messages(project, preferences, None if instruction == TIME_UP else state['guidance'], history, instruction,
-                                                           pace_notes(time.monotonic() - state['started'], config.duration, ledger.notes() if ledger else [], admin))):
+                                                           notes)):
                 delta = marker.feed(raw)
                 if not delta:
                     continue
@@ -306,6 +323,7 @@ async def run(request, config, identity, memory, http, gate, active):
                 or init.get('type') != 'start' or init.get('consent') is not True
                 or not secrets.compare_digest(str(init.get('csrf', '')), subject.csrf)):
             raise ValueError('Fresh voice consent and CSRF token required')
+        state['language'] = session_language(init)
         project = project_context(init.get('project'))
         voice_name = config.workers_voice if config.voice_provider == 'workers' else config.kyutai_voice
         if init.get('voice', voice_name) != voice_name:
