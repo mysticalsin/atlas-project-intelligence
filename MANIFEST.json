@@ -933,7 +933,7 @@
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
       "bytes": 146,
-      "sha256": "93196c1732d530e8a0ad455ed9b3198c7dd2df0457e1fd9b47582c5a456c0005"
+      "sha256": "14072859d5d4406904d13891136dde56ee705f15fd30ef33a4c3e27d25c32f8b"
     },
     {
       "path": "deploy/cloudflare-edge/set-keys.sh",
