@@ -72,6 +72,8 @@ def test_deploy_still_compares_the_committed_pin():
 
 HEAD = "a" * 40
 TREE = "b" * 40
+EDIT_HEAD = "f" * 40
+EDIT_TREE = "9" * 40
 PAGE = "c" * 64
 CSP = "d" * 64
 HOME = "https://example.test"
@@ -166,7 +168,13 @@ def _verify_event():
 
 
 EVENTS = {
-    "edit": lambda: {"name": "edit", "head": HEAD, "tree": TREE, "checkout_head": HEAD, "checkout_tree": TREE},
+    "edit": lambda: {
+        "name": "edit",
+        "head": EDIT_HEAD,
+        "tree": EDIT_TREE,
+        "checkout_head": EDIT_HEAD,
+        "checkout_tree": EDIT_TREE,
+    },
     "build_ok": lambda: {
         "name": "build_ok",
         "checkout_head": HEAD,
@@ -391,7 +399,8 @@ def test_illegal_transition_is_logged(caplog):
 
 def test_edit_drops_the_pin_and_the_packet():
     result = transition(_deployed(), EVENTS["edit"]())
-    assert result == {"name": "SourceChanged", "head": HEAD, "tree": TREE}
+    assert result == {"name": "SourceChanged", "head": EDIT_HEAD, "tree": EDIT_TREE}
+    assert EDIT_HEAD != HEAD and EDIT_TREE != TREE
 
 
 def test_packet_version_rejects_bool_float_and_string():
@@ -442,6 +451,39 @@ def test_stale_pin_file_blocks_pin_and_publish():
     published = transition(_verified(), publish)
     assert isinstance(published, IllegalTransition)
     assert published.guard == "g_stale_pin_file"
+
+
+def test_deploy_record_matches_the_packet_when_present():
+    missing = _verify_event()
+    assert "deploy_record" not in missing
+    accepted = transition(_pinned(), missing)
+    assert isinstance(accepted, dict) and accepted["name"] == "Verified"
+
+    present = _verify_event()
+    present["deploy_record"] = {"packet_sha256": present["witness"]}
+    accepted = transition(_pinned(), present)
+    assert isinstance(accepted, dict) and accepted["name"] == "Verified"
+
+    mismatched = _verify_event()
+    mismatched["deploy_record"] = {"packet_sha256": "0" * 64}
+    refused = transition(_pinned(), mismatched)
+    assert isinstance(refused, IllegalTransition)
+    assert refused.guard == "g_packet_witness"
+
+    not_a_record = _verify_event()
+    not_a_record["deploy_record"] = "0" * 64
+    refused = transition(_pinned(), not_a_record)
+    assert isinstance(refused, IllegalTransition)
+    assert refused.guard == "g_packet_witness"
+
+
+def test_publish_rejects_a_mismatched_packet_pin():
+    state = _verified()
+    state["packet"] = dict(state["packet"])
+    state["packet"]["pin"] = format_pin_line("e" * 64, NBYTES, HOME)
+    refused = transition(state, EVENTS["publish_ok"]())
+    assert isinstance(refused, IllegalTransition)
+    assert refused.guard == "g_post_test_hash"
 
 
 def test_verified_packet_ignores_an_event_packet():

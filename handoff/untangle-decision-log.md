@@ -71,3 +71,5 @@ The built length field is `bytes`, the name in the A21 state table. The pin pars
 `g_verified_packet` reads the packet stored on the state. It does not borrow a packet from the event. `verify_ok` still takes the packet from the event, because that is the step that stores it.
 
 The reducer stays unwired. P2 is the first caller, when the verify script writes the gate packet. P3 is the slice that connects `publish_ok` to `deploy.sh`. This loop does not edit those scripts.
+
+Devin on the same head, gate `r4b48a352`: negating each of the 70 `if` tests left five survivors. A present `deploy_record` whose `packet_sha256` is not the packet digest is `IllegalTransition` at `g_packet_witness`, and so is a record that is not a dict. A missing record still verifies. A packet pin whose page digest is not `hash_before` is `IllegalTransition` at `g_post_test_hash`. An edit event carries a different head and a different tree from the state, and both are copied. `g_stale_pin_file` stays on `pin_ok` and `publish_ok`.

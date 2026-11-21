@@ -2252,8 +2252,8 @@
     },
     {
       "path": "docs/state-machines.md",
-      "bytes": 38242,
-      "sha256": "29ba36a1b8a180148570909ff3e5d8ee7c21ec21852d132eeea0a1f5b8d07184"
+      "bytes": 38533,
+      "sha256": "af2a64a999c7a8c3c5f57a45a7b4e204f107d2522fcfa92309daf9862dfb1e84"
     },
     {
       "path": "examples/claude_customer_brief.json",
@@ -2282,8 +2282,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 349761,
-      "sha256": "6c3d1d6880be73ef6810d5c1fcf2878fa001e69c3a2d4279174b9578e1219717"
+      "bytes": 350149,
+      "sha256": "fd0f292460c1a07bf910fd7780b73abc1bebc623d83529bc590da979ff0d0310"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2442,8 +2442,8 @@
     },
     {
       "path": "handoff/untangle-decision-log.md",
-      "bytes": 8496,
-      "sha256": "7df8439da9f861b2799d27ebf3d42d13e855bc80d5dc0bb8b641fca566e377a9"
+      "bytes": 9036,
+      "sha256": "2667103ec13d60e48e5d4c380bd0d7381471d45e580d21e70ca05bcc3c42bf79"
     },
     {
       "path": "handoff/v10-decision-log.md",
@@ -3352,8 +3352,8 @@
     },
     {
       "path": "tests/test_artifact_lifecycle.py",
-      "bytes": 14953,
-      "sha256": "281422a65dba6b4930d51410eb41a32b27afab819b170c1c1f273d0578d73bf0"
+      "bytes": 16406,
+      "sha256": "8110e7c8cc69484e33f2b618a9883d82f215979d151e46ae7b4b3079244be0fd"
     },
     {
       "path": "tests/test_bakeoff.py",
