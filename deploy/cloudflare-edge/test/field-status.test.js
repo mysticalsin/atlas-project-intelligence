@@ -53,15 +53,18 @@ test('the probe budget asks twice and then defers with the shared sentence', () 
   assert.equal(refused.state.plans, 1);
   assert.equal(DEFER_SENTENCE, 'Two clarification plans did not resolve this point; offer to collect it later.');
   const seen = new Set();
-  const queue = [{ phase: 'open', plans: 0 }];
-  while (queue.length) {
-    const state = queue.shift();
-    if (seen.has(state.phase)) continue;
-    seen.add(state.phase);
-    const result = probeTransition(state, { type: 'plan' });
-    if (result.ok) queue.push(result.state);
+  const phases = new Set();
+  const queue = [['open', 0]];
+  while (queue.length && seen.size < 200) {
+    const [phase, plans] = queue.shift();
+    const key = phase + ':' + plans;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    phases.add(phase);
+    const result = probeTransition({ phase, plans }, { type: 'plan' });
+    if (result.ok) queue.push([result.state.phase, result.state.plans]);
   }
-  assert.deepEqual([...seen].sort(), [...PROBE_PHASES].sort());
+  assert.deepEqual([...phases].sort(), [...PROBE_PHASES].sort());
 });
 
 test('both ledgers call the status and probe reducers', () => {

@@ -59,22 +59,26 @@ def test_probe_budget_asks_twice_then_defers():
 
 def test_no_probe_phase_is_unreachable_and_deferred_is_terminal():
     seen = set()
-    queue = [{'phase': 'open', 'plans': 0}]
-    steps = 0
-    while queue and steps < 200:
-        state = queue.pop(0)
-        if state['phase'] in seen:
+    phases = set()
+    queue = [('open', 0)]
+    while queue and len(seen) < 200:
+        phase, plans = queue.pop(0)
+        if (phase, plans) in seen:
             continue
-        seen.add(state['phase'])
-        steps += 1
-        result = probe_transition(state, {'type': 'plan'})
-        if result['ok']:
-            queue.append(result['state'])
-    assert seen == set(PROBE_PHASES)
-    terminals = []
-    for phase, plans in (('open', 0), ('asking', 1), ('deferred', 2)):
+        seen.add((phase, plans))
+        phases.add(phase)
         result = probe_transition({'phase': phase, 'plans': plans}, {'type': 'plan'})
-        if (not result['ok']) or result['state']['phase'] == phase:
+        if result['ok']:
+            queue.append((result['state']['phase'], result['state']['plans']))
+    assert phases == set(PROBE_PHASES)
+    terminals = []
+    for phase in PROBE_PHASES:
+        leaves = False
+        for plans in range(5):
+            result = probe_transition({'phase': phase, 'plans': plans}, {'type': 'plan'})
+            if result['ok'] and result['state']['phase'] != phase:
+                leaves = True
+        if not leaves:
             terminals.append(phase)
     assert terminals == ['deferred']
 
