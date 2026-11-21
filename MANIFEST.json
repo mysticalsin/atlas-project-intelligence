@@ -922,13 +922,13 @@
     },
     {
       "path": "deploy/cloudflare-edge/entra/README.md",
-      "bytes": 4833,
-      "sha256": "374f9082b38ff2b83cfc880db9436669b406ca4058ed3b83d4baee4af2e208f4"
+      "bytes": 4975,
+      "sha256": "47f682e2f1684b2154e3b5628d14768bb7ecbd0ea3c49a9b376af75c1e645d1c"
     },
     {
       "path": "deploy/cloudflare-edge/entra/enable_entra.sh",
-      "bytes": 4311,
-      "sha256": "e6143bda9a40ffc53e6dfa40735bddc33b3c3c1d23eac9430cac10a24bd7c152"
+      "bytes": 4910,
+      "sha256": "a3a494791ef00e98dc25ceee4d644d4691368b7b4aee71af8f0a9f55750199d8"
     },
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
@@ -3342,8 +3342,8 @@
     },
     {
       "path": "tests/sweep01-g17-entra-argv.test.js",
-      "bytes": 10386,
-      "sha256": "067f35df19988039313715445ebe6a13bdb8670c8a074d0815a7019be1430e51"
+      "bytes": 14185,
+      "sha256": "1e2948a067a77c69ab6a495f6a71a8b5eb5d368f1010e2bfff836113a5e9ac54"
     },
     {
       "path": "tests/test_analyst.py",

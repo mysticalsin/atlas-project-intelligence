@@ -1,16 +1,28 @@
 #!/usr/bin/env bash
 # Adds Microsoft Entra ID to Cloudflare Access and switches the ATLAS app to it. BUILT, NOT RUN.
 # Requires explicit approval flag and IT-provided values; see entra/README.md.
-# The EXIT trap removes only the local temp directory. It does not delete a remote identity provider; restoring the previous Access login is an IT action in the Cloudflare dashboard.
+# The trap removes only the local temp directory on EXIT, INT, TERM, and HUP. It does not delete a remote identity provider; restoring the previous Access login is an IT action in the Cloudflare dashboard.
+# A dollar sign or other shell metacharacter in the API token or the client secret is refused before any file is written. Tilde, plus, slash, and equals stay allowed: Microsoft secrets use them, and this script never expands the value in the shell.
 set -euo pipefail
 [ "${1:-}" = "--i-have-it-approval" ] || { echo "Refusing: pass --i-have-it-approval once Mantu IT has approved (see entra/README.md)." >&2; exit 2; }
+xtrace=0
+case $- in
+  *x*) xtrace=1 ;;
+esac
+set +x
 for v in CLOUDFLARE_API_TOKEN CF_ACCOUNT_ID ACCESS_APP_ID ENTRA_TENANT_ID ENTRA_CLIENT_ID ENTRA_CLIENT_SECRET; do
-  [ -n "${!v:-}" ] || { echo "Missing $v" >&2; exit 2; }
+  if [[ -v $v ]]; then
+    [ -n "${!v}" ] || { echo "Missing $v" >&2; exit 2; }
+  else
+    echo "Missing $v" >&2
+    exit 2
+  fi
 done
+if [ "$xtrace" = 1 ]; then set -x; fi
 API="https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/access"
 umask 077
 dir=$(mktemp -d)
-trap 'rm -rf "$dir"' EXIT
+trap 'if [ -n "${dir:-}" ] && [ -d "$dir" ]; then rm -rf "$dir"; fi' EXIT INT TERM HUP
 # Claim order matters: Access trims custom claims from the END of this list above ~1 KB, so the identity claims come
 # first and the name claims (WOW_ZERO_CONFIG §5.5, on-screen use only) last. Never add "groups".
 python3 - "$dir" <<'PY'
@@ -21,7 +33,7 @@ def accepted(value):
     if not isinstance(value, str) or not value:
         return False
     for ch in value:
-        if ch in "\n\"'\\` " or ord(ch) < 33 or ord(ch) > 126:
+        if ch in "\n\r\t\"'\\` !*?;&|()<>[]{}" or ch == "$" or ord(ch) in (35,) or ord(ch) < 33 or ord(ch) > 126:
             return False
     return True
 
@@ -49,7 +61,7 @@ write_private("idp.json", json.dumps({
     },
 }))
 PY
-if ! curl --silent --show-error --config "$dir/curl.cfg" --output "$dir/post.body" --stderr "$dir/post.err" --url "$API/identity_providers" --request POST --data-binary @"$dir/idp.json"; then
+if ! curl -q --fail --proto '=https' --silent --show-error --config "$dir/curl.cfg" --output "$dir/post.body" --stderr "$dir/post.err" --url "$API/identity_providers" --request POST --data-binary @"$dir/idp.json"; then
   echo "Cloudflare refused the identity provider request." >&2
   exit 1
 fi
@@ -77,7 +89,7 @@ fd = os.open(os.path.join(directory, "patch.json"), os.O_CREAT | os.O_WRONLY | o
 with os.fdopen(fd, "w", encoding="utf-8") as handle:
     json.dump({"allowed_idps": [ident], "auto_redirect_to_identity": True}, handle)
 PY
-if ! curl --silent --show-error --config "$dir/curl.cfg" --output "$dir/patch.body" --stderr "$dir/patch.err" --url "$API/apps/$ACCESS_APP_ID" --request PATCH --data-binary @"$dir/patch.json"; then
+if ! curl -q --fail --proto '=https' --silent --show-error --config "$dir/curl.cfg" --output "$dir/patch.body" --stderr "$dir/patch.err" --url "$API/apps/$ACCESS_APP_ID" --request PATCH --data-binary @"$dir/patch.json"; then
   echo "Cloudflare refused the identity provider request." >&2
   exit 1
 fi
