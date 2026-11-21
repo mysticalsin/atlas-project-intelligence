@@ -150,7 +150,7 @@ class WikiVault:
         eligible=needed<=valid
         if eligible_only and not eligible:return None
         return {'id':row['id'],'title':data['title'],'revision':row['revision'],'audience':data['audience'],'eligible':eligible,
-          'stage':data['stage'],'kind':data['kind'],'content_hash':row['content_hash']}
+          'stage':data['stage'],'kind':data['kind'],'content_hash':row['content_hash'],'quality_gap_count':len(quality_gaps(data))}
     def page(self,subject,audience=None,eligible_only=False,after=None,limit=LIST_CAP):
         if isinstance(limit,bool) or not isinstance(limit,int) or not 1<=limit<=LIST_CAP:raise ValueError('Page size must be from 1 to 200')
         if after is not None and not isinstance(after,str):raise ValueError('Invalid page cursor')

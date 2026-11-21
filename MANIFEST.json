@@ -622,23 +622,23 @@
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924529,
+      "sha256": "ee2e7f755e0d67d5cf0937ef6f85563e7fb0fb7135b9b0bab9afe1f764af0de1"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924529,
+      "sha256": "ee2e7f755e0d67d5cf0937ef6f85563e7fb0fb7135b9b0bab9afe1f764af0de1"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924529,
+      "sha256": "ee2e7f755e0d67d5cf0937ef6f85563e7fb0fb7135b9b0bab9afe1f764af0de1"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924529,
+      "sha256": "ee2e7f755e0d67d5cf0937ef6f85563e7fb0fb7135b9b0bab9afe1f764af0de1"
     },
     {
       "path": "CLAUDE.md",
@@ -827,8 +827,8 @@
     },
     {
       "path": "atlas_voice/wiki.py",
-      "bytes": 16896,
-      "sha256": "554aa554095cd4d62593bab86d2fcdc7f2b80d58a88e75834e3f0bc3246d4e66"
+      "bytes": 16940,
+      "sha256": "9aa9c1a14588d7771e2407143a1611c8186b139c66ebe500f71e28e363a8ada3"
     },
     {
       "path": "atlas_voice/wiki_export.py",
@@ -998,7 +998,7 @@
     {
       "path": "deploy/cloudflare-edge/src/csp.generated.js",
       "bytes": 1675,
-      "sha256": "7d54de0b2fed28db9dd1f20106b9cf4526cadd3a9641495c3e68762620bd6dbf"
+      "sha256": "61af3c76ffc910a70651e659f53ccfe887820fd68a2c243f99560fd007b88c65"
     },
     {
       "path": "deploy/cloudflare-edge/src/csp.js",
@@ -1072,8 +1072,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/library.js",
-      "bytes": 107896,
-      "sha256": "63670abcd30b3a744f752026700c264464dfceb2e3b351f54f5199a23fc9b7fb"
+      "bytes": 107980,
+      "sha256": "48503165e196740efc5cf14c35770f89fed0098e628e4535eb73a9a4fc5c32b3"
     },
     {
       "path": "deploy/cloudflare-edge/src/memory-routes.js",
@@ -1582,8 +1582,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/s01-gaps.test.js",
-      "bytes": 6793,
-      "sha256": "81acec534acd593440ef5e17f15baa8a98476532f5a5701e2df1bb67da2fb363"
+      "bytes": 10151,
+      "sha256": "9a39bca03a4612f6eb28495e70db35aebd1380e2eb7d2527a058937d58bfbfc2"
     },
     {
       "path": "deploy/cloudflare-edge/test/s01-languages.test.js",
@@ -1592,8 +1592,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/s01-library.test.js",
-      "bytes": 16074,
-      "sha256": "20893364ddf18f5bd5ff74fa191f5e866a8a23af3a30de6b2dea931f057013b2"
+      "bytes": 22263,
+      "sha256": "9eaa28695069fb38e6e63ac34ec144f26b01f20cf61f3deaed6f4012ffd4e202"
     },
     {
       "path": "deploy/cloudflare-edge/test/s01-publication.test.js",
@@ -2877,8 +2877,8 @@
     },
     {
       "path": "src/intelligence-ui.js",
-      "bytes": 22468,
-      "sha256": "352eb4401a99683a39da4e9c50ce22974ec7e908d3544c801b79919b4c54eb47"
+      "bytes": 22982,
+      "sha256": "6295db2dca8eab1687adeb98a09c662e1f4ad3a38ab6c14c6517333eb24901e2"
     },
     {
       "path": "src/intelligence.css",
@@ -3477,8 +3477,8 @@
     },
     {
       "path": "tests/test_s01_wiki.py",
-      "bytes": 5588,
-      "sha256": "a8be9d554cd0030c10d7e1181b886fd096a9ce1d12d4f4e73e0d18f156c514ac"
+      "bytes": 6245,
+      "sha256": "5c64292ee00b697259493f438f83811eddfe0081cd56191e277cc98c79551724"
     },
     {
       "path": "tests/test_s1_csp.py",
@@ -3514,6 +3514,11 @@
       "path": "tests/upstream-source-check.json",
       "bytes": 432,
       "sha256": "4e34cbb62d7326ca21a8e6f0eb04304051832144fec1824574a9f6d3b3eb5dcf"
+    },
+    {
+      "path": "tests/wiki-list-ui.test.js",
+      "bytes": 3335,
+      "sha256": "b895244a829cc9f50166610eb8848e9cf7bac101d509b62945049fd24485a238"
     },
     {
       "path": "tests/worklet.test.js",

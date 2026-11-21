@@ -17,7 +17,7 @@ from atlas_voice.wiki import WikiVault
 from tests.test_quality import person, story
 
 BODY = ('markdown', 'sections', 'sources', 'customer_brief')
-ALLOWED = {'id', 'title', 'revision', 'audience', 'eligible', 'stage', 'kind', 'content_hash'}
+ALLOWED = {'id', 'title', 'revision', 'audience', 'eligible', 'stage', 'kind', 'content_hash', 'quality_gap_count'}
 MARKER = 'SYNTHETIC-EXCERPT-ATLAS09'
 CAP = 200
 

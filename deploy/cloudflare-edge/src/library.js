@@ -467,7 +467,8 @@ function impactFromScores(scores) {
   for (const key of Object.keys(DIMENSIONS)) {
     const score = obj(scores[key]).score;
     if (typeof score !== 'number' || !Number.isFinite(score)) return null;
-    shaped[key] = { score };
+    const hi = DIMENSIONS[key].levels.length - 1;
+    shaped[key] = { score: Math.min(hi, Math.max(0, score)) };
   }
   try { return scoreImpact(shaped); }
   catch { return null; }
