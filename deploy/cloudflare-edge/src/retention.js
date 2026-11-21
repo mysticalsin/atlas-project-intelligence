@@ -14,7 +14,7 @@ const cat = (retention, id) => retention.categories.find(c => c.id === id);
 const before = (now, c) => new Date(Date.parse(now) - (c.hours ? c.hours * 36e5 : c.days * 864e5)).toISOString();
 
 const TENANT_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const hasTenantColumn = (lib, table) => tableExists(lib, table) && lib.rows("SELECT 1 AS x FROM pragma_table_info('" + table + "') WHERE name = 'tenant'").length > 0;
+const hasTenantColumn = (lib, table) => tableExists(lib, table) && lib.rows("SELECT 1 AS x FROM pragma_table_info(?) WHERE name = 'tenant'", table).length > 0;
 
 export function sweep(lib, { now = lib.now(), retention = RETENTION, tenant } = {}) {
   // No tenant argument deletes nothing. A blank tenant is the local sandbox only. A real id never touches blank or other tenants.

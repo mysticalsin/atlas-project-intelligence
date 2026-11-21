@@ -2,11 +2,14 @@
 // A raw SQL handle is any .sql or ._sql member (lib.sql, lib._sql, this.sql).
 // audit-chain.js may use the handle it is given. library.js may call exec on
 // the private _sql binding once, inside exec. Everywhere else is a violation.
-// The placeholder census greps spellings after comments and string contents are
-// masked. A placeholders() count that the census cannot fold is a finding.
+// The placeholder census walks the acorn AST (vendored, no new dependency).
+// The tokenizer still runs first: a file that cannot be tokenized is one finding.
+// Comments and string contents are not calls, so a builder written inside either
+// is not a finding. A placeholders() count the fold cannot prove is a finding.
+// A value spliced into SQL by + or by ${...} is a finding.
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parse, parseExpressionAt, tokenizer } from './vendor/acorn.mjs';
+import { parse, tokenizer } from './vendor/acorn.mjs';
 
 export const EXEC_ALLOW = ['audit-chain.js'];
 
@@ -16,19 +19,6 @@ export const PLACEHOLDER_ALLOW = [
 ];
 
 const PH_VALUE = /^(?:\?|,\s*\?|\?,\s*)$/;
-const PH = String.raw`(?:'\?(?:, ?)?[ \t]*'|\"\?(?:, ?)?[ \t]*\"|\`\?(?:, ?)?[ \t]*\`)`;
-const PARAMS = String.raw`(?:\([^)]*\)|[A-Za-z_$][\w$]*)`;
-const BODY = String.raw`(?:${PH}|\{[^}]*\breturn\s+${PH}\s*;?[^}]*\})`;
-const ARROW = String.raw`${PARAMS}\s*=>\s*${BODY}`;
-const BUILDER = new RegExp(
-  [
-    String.raw`\.map\(\s*${ARROW}\s*\)`,
-    String.raw`(?<![\w$])Array\.from\(\s*[^;]*?,\s*${ARROW}\s*\)`,
-    String.raw`${PH}\s*\.repeat\s*\(`,
-    String.raw`\.fill\(\s*${PH}\s*\)`,
-  ].join('|'),
-  'g',
-);
 const MUTATING = /^(?:insert|update|delete|replace|create|drop|alter|reindex|vacuum)\b/i;
 
 export function stripLineComment(line) {
@@ -520,12 +510,6 @@ function maskCommentsAndStrings(text) {
   return out.join('');
 }
 
-function lineAt(text, index) {
-  let line = 1;
-  for (let i = 0; i < index && i < text.length; i++) if (text[i] === '\n') line++;
-  return line;
-}
-
 function fixedMax(lines, line) {
   const above = lines.slice(Math.max(0, line - 5), line - 1).join('\n');
   const marked = above.match(/sql-bound-fixed:\s*(\d+)/);
@@ -567,55 +551,55 @@ function isPlainMember(node) {
   return false;
 }
 
-// Parentheses are not a node. `(101)` parses as the literal, with the parens
-// outside start/end. Only matching parentheses may remain unread.
-function foldCount(expr) {
-  const text = String(expr).trim();
-  if (!text) return { kind: 'unknown' };
-  let node;
-  try { node = parseExpressionAt(text, 0, { ecmaVersion: 'latest' }); }
-  catch { return { kind: 'unknown' }; }
-  const head = text.slice(0, node.start).trim();
-  const rest = text.slice(node.end).trim();
-  if (!/^\(*$/.test(head) || !/^\)*$/.test(rest) || head.length !== rest.length) return { kind: 'unknown' };
-  return foldNode(node);
-}
-
-function overCap(masked, file) {
+function overCapAst(tree, file) {
   const found = [];
-  const re = /(?:^|[^\w$])placeholders\s*\(/g;
-  for (const match of masked.matchAll(re)) {
-    const start = masked.lastIndexOf('placeholders', match.index + match[0].length);
-    const before = masked.slice(Math.max(0, start - 40), start);
-    if (/(?:function\s*\*?\s*)$/.test(before)) continue;
-    const open = masked.indexOf('(', start);
-    if (open < 0) continue;
-    let depth = 0;
-    let end = -1;
-    for (let i = open; i < masked.length; i++) {
-      if (masked[i] === '(') depth++;
-      else if (masked[i] === ')') {
-        depth--;
-        if (depth === 0) { end = i; break; }
+  const walk = (node) => {
+    if (!node || typeof node.type !== 'string') return;
+    const callee = unwrap(node.callee);
+    if ((node.type === 'CallExpression' || node.type === 'OptionalCallExpression') && callee?.type === 'Identifier' && callee.name === 'placeholders') {
+      const line = node.loc?.start?.line || 1;
+      const args = node.arguments || [];
+      const folded = args.length === 1 ? foldNode(args[0]) : { kind: 'unknown' };
+      if (folded.kind !== 'length' && !(folded.kind === 'number' && !(folded.value > 100))) {
+        found.push({ file, line, max: folded.kind === 'number' ? folded.value : null });
       }
     }
-    const line = lineAt(masked, start);
-    if (end < 0) { found.push({ file, line, max: null }); continue; }
-    const folded = foldCount(masked.slice(open + 1, end));
-    if (folded.kind === 'length') continue;
-    if (folded.kind === 'number' && !(folded.value > 100)) continue;
-    found.push({ file, line, max: folded.kind === 'number' ? folded.value : null });
-  }
+    for (const child of children(node)) walk(child);
+  };
+  walk(tree);
   return found;
 }
 
-function builders(masked, file, lines) {
+function isMapBuilder(arg, kinds) {
+  if (!arg || arg.type === 'SpreadElement') return false;
+  if (arg.type === 'Identifier') return kinds.fns.has(arg.name);
+  return returnsPlaceholder(arg, kinds.strings);
+}
+
+function builderFindings(tree, file, lines) {
+  const kinds = markerKinds(tree);
   const found = [];
-  BUILDER.lastIndex = 0;
-  for (const match of masked.matchAll(BUILDER)) {
-    const line = lineAt(masked, match.index);
+  const note = (node) => {
+    const line = node.loc?.start?.line || 1;
     found.push({ file, line, max: fixedMax(lines, line) });
-  }
+  };
+  const walk = (node) => {
+    if (!node || typeof node.type !== 'string') return;
+    if (node.type === 'CallExpression' || node.type === 'OptionalCallExpression') {
+      const callee = unwrap(node.callee);
+      if (callee?.type === 'MemberExpression' && !callee.computed && callee.property?.type === 'Identifier') {
+        const prop = callee.property.name;
+        const args = node.arguments || [];
+        const object = unwrap(callee.object);
+        if (prop === 'map' && isMapBuilder(args[0], kinds)) note(node);
+        else if (prop === 'fill' && (isPlaceholderLiteral(args[0]) || (args[0]?.type === 'Identifier' && kinds.strings.has(args[0].name)))) note(node);
+        else if (prop === 'repeat' && (isPlaceholderLiteral(object) || (object?.type === 'Identifier' && kinds.strings.has(object.name)))) note(node);
+        else if (prop === 'from' && object?.type === 'Identifier' && object.name === 'Array' && args.some(arg => isMapBuilder(arg, kinds))) note(node);
+      }
+    }
+    for (const child of children(node)) walk(child);
+  };
+  walk(tree);
   return found;
 }
 
@@ -678,11 +662,14 @@ function collectMarkers(tree) {
   return markers;
 }
 
-function isSqlTemplate(node) {
-  const raw = node.quasis.map(part => part.value.cooked ?? '').join('\n');
-  if (/\b(?:select|insert|update|delete|replace|drop|alter|create|pragma)\b/i.test(raw)) return true;
-  if (/\bIN\s*\(/i.test(raw)) return true;
+function isSqlText(text) {
+  if (/\b(?:select|insert|update|delete|replace|drop|alter|create|pragma)\b/i.test(text)) return true;
+  if (/\bIN\s*\(/i.test(text)) return true;
   return false;
+}
+
+function isSqlTemplate(node) {
+  return isSqlText(node.quasis.map(part => part.value.cooked ?? '').join('\n'));
 }
 
 function valuePosition(quasi) {
@@ -738,31 +725,42 @@ function markerKinds(tree) {
   return { strings, fns };
 }
 
-function aliasUses(masked, file, lines, kinds) {
+function stringText(node) {
+  if (!node) return null;
+  if (node.type === 'Literal' && typeof node.value === 'string') return node.value;
+  if (node.type === 'TemplateLiteral' && node.expressions.length === 0) return node.quasis.map(part => part.value.cooked ?? '').join('');
+  return null;
+}
+
+function concatParts(node) {
+  if (node?.type === 'BinaryExpression' && node.operator === '+') {
+    return [...concatParts(node.left), ...concatParts(node.right)];
+  }
+  return [node];
+}
+
+function concatenations(tree, file) {
+  const markers = collectMarkers(tree);
   const found = [];
-  const note = (index) => {
-    const line = lineAt(masked, index);
-    found.push({ file, line, max: fixedMax(lines, line) });
+  const walk = (node, parent) => {
+    if (!node || typeof node.type !== 'string') return;
+    const outer = node.type === 'BinaryExpression' && node.operator === '+'
+      && !(parent?.type === 'BinaryExpression' && parent.operator === '+');
+    if (outer) {
+      const parts = concatParts(node);
+      const texts = parts.map(stringText);
+      if (texts.some(text => text != null && isSqlText(text))) {
+        for (let i = 0; i < parts.length - 1; i++) {
+          if (texts[i] == null || !valuePosition(texts[i])) continue;
+          if (texts[i + 1] != null) continue;
+          if (isMarkerExpr(parts[i + 1], markers)) continue;
+          found.push({ file, line: parts[i + 1].loc?.start?.line || node.loc?.start?.line || 1, max: null });
+        }
+      }
+    }
+    for (const child of children(node)) walk(child, node);
   };
-  const bound = String.raw`(?<![\w$])`;
-  for (const name of kinds.strings) {
-    if (!/^[A-Za-z_$][\w$]*$/.test(name)) continue;
-    const re = new RegExp([
-      String.raw`\.map\(\s*${PARAMS}\s*=>\s*${name}\b`,
-      String.raw`\.map\(\s*${PARAMS}\s*=>\s*\{[^}]*\breturn\s+${name}\b`,
-      String.raw`\.fill\(\s*${name}\s*\)`,
-      String.raw`${bound}${name}\s*\.repeat\s*\(`,
-    ].join('|'), 'g');
-    for (const match of masked.matchAll(re)) note(match.index);
-  }
-  for (const name of kinds.fns) {
-    if (!/^[A-Za-z_$][\w$]*$/.test(name)) continue;
-    const re = new RegExp([
-      String.raw`\.map\(\s*${name}\s*\)`,
-      String.raw`${bound}Array\.from\(\s*[^;]*?,\s*${name}\s*\)`,
-    ].join('|'), 'g');
-    for (const match of masked.matchAll(re)) note(match.index);
-  }
+  walk(tree, null);
   return found;
 }
 
@@ -776,16 +774,15 @@ function parseTree(text) {
 
 function placeholderFindings(file, text) {
   const lines = String(text).split('\n');
-  const masked = maskCommentsAndStrings(text);
-  if (masked == null) return [{ file, line: 1, max: null }];
+  if (maskCommentsAndStrings(text) == null) return [{ file, line: 1, max: null }];
   const tree = parseTree(text);
-  const found = [...builders(masked, file, lines), ...overCap(masked, file)];
-  if (!tree) found.push({ file, line: 1, max: null });
-  else {
-    found.push(...aliasUses(masked, file, lines, markerKinds(tree)));
-    found.push(...interpolations(tree, file));
-  }
-  return found;
+  if (!tree) return [{ file, line: 1, max: null }];
+  return [
+    ...builderFindings(tree, file, lines),
+    ...overCapAst(tree, file),
+    ...concatenations(tree, file),
+    ...interpolations(tree, file),
+  ];
 }
 
 export function lintSource(file, text) {
