@@ -2282,8 +2282,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 349734,
-      "sha256": "600bf9d874364534defcaf8d1fe7d8add4f607c99d6c1128584928af57a43cc6"
+      "bytes": 351844,
+      "sha256": "b7875cbaf040ff57d3f8b98621b8732c10c1e4b5e4ef943857e8d0baf90a098f"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2367,8 +2367,8 @@
     },
     {
       "path": "handoff/decisions/long-title-overflow.md",
-      "bytes": 6351,
-      "sha256": "df7806bd944354cfdb3146494c21ab4074b75178f3b10a7edb0adf0fad37905e"
+      "bytes": 8161,
+      "sha256": "9129593e05e7c13da6b119dcbba31f4a11d81cb475dd71029c224a3fa2d88b77"
     },
     {
       "path": "handoff/decisions/page-pin-refresh.md",
@@ -3177,8 +3177,8 @@
     },
     {
       "path": "tests/long_title_browser.py",
-      "bytes": 13375,
-      "sha256": "8a44e0b3d7a96c3f36e4742388a7892016fe616959de0da3e63663eb5938c2d1"
+      "bytes": 13733,
+      "sha256": "cb51a7469e63a82094c30d325cead0705f507de4abc4de70c08eccd7750c66f8"
     },
     {
       "path": "tests/memory_browser.py",
