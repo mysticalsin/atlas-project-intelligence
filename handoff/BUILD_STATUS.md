@@ -1,6 +1,18 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-21 — interactive rating stream S1 (`cursor/s1-rating-stream-d7f3`)
+
+Ask row A22. APP-FIT: FIT. Not HIGH (not auth, tenant, erasure, or release gating). Branched from `main` `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. Independent of draft PRs #25 and #27. No push to those branches.
+
+Red tests: `f0197d96446fdefb61c5ce80dbaafb201cf5b0d1` (module missing; the throwing `onEnd` still left `rate()` unsettled). Reducer: `83d5b2949991b40d6c75ff9fdf194ce34a5342f0` (table tests pass; the wire tests still fail). Wiring, this note, and `MANIFEST.json` are the third commit.
+
+`ratingStreamTransition` is the only writer of the interactive attempt phase. Eight of eighteen pairs are legal. `settled` is the only terminal phase. `interactive()` resolves before `onEnd`. A throwing observer logs `{ atlas_metric: 'rating', event: 'onend_throw', name }` with no message and no key. `background()` and the breaker are unchanged.
+
+Decision: `handoff/decisions/rating-stream-s1.md`. Inventory section: `docs/state-machines.md` (Rating stream S1).
+
+Suite counts are filled in the measurement note after `pytest`, `node --test tests/*.test.js`, the edge tests, `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui`, and `check_handoff`.
+
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.

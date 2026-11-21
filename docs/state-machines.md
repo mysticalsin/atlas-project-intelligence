@@ -314,3 +314,55 @@ None.
 
 ### Copy
 The Teams card still says `This invitation is closed.` and `Nothing was changed.` The library refusal joins those two existing sentences: `This invitation is closed. Nothing was changed.` No other sentence was added.
+
+## Rating stream (S1)
+
+Ask row A22. Not a numbered row. The interactive attempt lifecycle inside `storyRater` (`deploy/cloudflare-edge/src/rating.js`). The reducer is `deploy/cloudflare-edge/src/rating-stream.js`. `background()` is still a loop. The breaker is still its own machine.
+
+### Phases
+| Phase | Meaning |
+|---|---|
+| idle | No attempt has started. |
+| running | One or two attempts are in flight, or a retryable result can still be followed. |
+| settled | The call has a result. `onEnd` may still observe it. |
+
+### Events
+| Event | Source |
+|---|---|
+| launch | The first attempt, or the hedge, when room and budget remain |
+| succeed | A usable answer |
+| retryable | A retryable failure |
+| terminal | A non-retryable failure |
+| deadline | The interactive deadline |
+| observe | `onEnd` ran, including when it threw |
+
+### Transitions
+| From | Event | Guard | To | Effects |
+|---|---|---|---|---|
+| idle | launch | room and max at least 1 | running | request |
+| idle | launch | no room, or max below 1 | idle | none (`room` or `budget`) |
+| idle | deadline | none | settled | note_timeout, resolve, observe |
+| running | launch | room and attempts below max | running | request |
+| running | launch | no room, or no budget | running | none |
+| running | succeed | none | settled | resolve, observe |
+| running | terminal | none | settled | resolve, observe |
+| running | retryable | room and attempts below max | running | request |
+| running | retryable | no follow, and nothing still pending | settled | resolve, observe |
+| running | retryable | no follow, and another attempt is pending | running | none |
+| running | deadline | none | settled | note_timeout, resolve, observe |
+| settled | observe | none | settled | log_observer |
+
+Anything else is illegal. The cross product is 18 pairs. Eight move. A guard that stays put is not one of those eight and is not a refusal. The rejection fields are `id`, `phase`, and `event`. The id is `rating-stream`. The reducer does not log.
+
+```mermaid
+stateDiagram-v2
+  [*] --> idle
+  idle --> running: launch
+  idle --> settled: deadline
+  running --> running: launch
+  running --> running: retryable
+  running --> settled: succeed
+  running --> settled: terminal
+  running --> settled: deadline
+  settled --> settled: observe
+```

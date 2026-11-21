@@ -1136,9 +1136,14 @@
       "sha256": "5e1fd1c506b22558e7ee910953094a6834f9cecc3395de176f56ac2377a5d689"
     },
     {
+      "path": "deploy/cloudflare-edge/src/rating-stream.js",
+      "bytes": 2869,
+      "sha256": "4e0413be2a845acffa9df68d742dd32c87ac3aebe093f8339d18687113156bc9"
+    },
+    {
       "path": "deploy/cloudflare-edge/src/rating.js",
-      "bytes": 41181,
-      "sha256": "5a85d3c43c5b58162255f9fc469f3ac2ce0e106e57b550df3c257a458fb072f6"
+      "bytes": 42521,
+      "sha256": "b95ce34d5585d684ccdc4b24a0849ca63dc22db3e3b50d0cf4e939151dda982d"
     },
     {
       "path": "deploy/cloudflare-edge/src/report.js",
@@ -1544,6 +1549,16 @@
       "path": "deploy/cloudflare-edge/test/ratelimit.test.js",
       "bytes": 11264,
       "sha256": "f6e2e06a78fded1062a68d195dd73fcea5b428f638f0025226954a462d36e872"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/rating-stream-wire.test.js",
+      "bytes": 1539,
+      "sha256": "1076fb8b0ccde19542587480e974d4371edbeed419643565b062bf730a56a035"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/rating-stream.test.js",
+      "bytes": 5792,
+      "sha256": "e34917b76413be285bb4a472e74e38dc256f7d655e9a078feabbc6774e0ea319"
     },
     {
       "path": "deploy/cloudflare-edge/test/rating.test.js",
@@ -2252,8 +2267,8 @@
     },
     {
       "path": "docs/state-machines.md",
-      "bytes": 36413,
-      "sha256": "539433097004d7c60ca526e287eb14d67ca7e466a6f9209d9cf81eb80798c68a"
+      "bytes": 38706,
+      "sha256": "0f539cc4e701cd72a83caf15a15c2eb33e5390a83eee31071b0b4ed644508136"
     },
     {
       "path": "examples/claude_customer_brief.json",
@@ -2282,8 +2297,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 346929,
-      "sha256": "311bfd60630ba451016b72b88b0b6a981fd92c70e54ef68b5d665c65b2522b05"
+      "bytes": 348161,
+      "sha256": "fd38a8d39e28c7fa3c7bbbb8a79e0a42420e41ffc17a934aa39ddabd98692fa0"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2379,6 +2394,11 @@
       "path": "handoff/decisions/pr12-plan-debate.md",
       "bytes": 20111,
       "sha256": "769afc405efedae63d393361a2aa7b6826862586e370f957b8e297e94b6c0c15"
+    },
+    {
+      "path": "handoff/decisions/rating-stream-s1.md",
+      "bytes": 1929,
+      "sha256": "d4257d9834adb95e9b3fae570506c3e55d71d9152b56aeae9342a23eff1faa2c"
     },
     {
       "path": "handoff/decisions/record-dialog-quality-crash.md",
