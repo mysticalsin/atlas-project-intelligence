@@ -6,7 +6,7 @@ included. Consumers must check current registry versions before customer reuse.
 import io,json,re,zipfile
 
 def export_view(vault,subject,audience):
-    stories=vault.list(subject,audience,eligible_only=True)
+    stories=vault.records(subject,audience,eligible_only=True)
     if len(stories)>200:raise ValueError('Export at most 200 stories in this small-pilot implementation')
     out=io.BytesIO();manifest=[];topics={}
     index=['# ATLAS · Authorized story view','',

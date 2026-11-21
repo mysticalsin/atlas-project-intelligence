@@ -20,3 +20,23 @@ test('L2 acknowledgements rotate through the whole English list', () => {
   }
   assert.deepEqual(heard, ['Okay.', 'Right.', 'I see.', 'Yeah.']);
 });
+
+test('L2 the next acknowledgement wraps, and a short line or a question stays silent', () => {
+  const session = Object.create(Session.prototype);
+  session.admin = false;
+  session.timeUp = false;
+  session.fillerTurn = -2;
+  session.lastFiller = -1;
+  session.spoken = () => 'en';
+  const text = 'one two three four five six seven eight nine ten eleven twelve thirteen';
+  const heard = [];
+  for (let turn = 1; turn <= 10; turn++) {
+    session.turns = turn;
+    const filler = session.pickFiller(text);
+    if (filler) heard.push(filler);
+  }
+  assert.deepEqual(heard, ['Okay.', 'Right.', 'I see.', 'Yeah.', 'Okay.']);
+  session.turns = 12;
+  assert.equal(session.pickFiller('too short'), '');
+  assert.equal(session.pickFiller(text + '?'), '');
+});

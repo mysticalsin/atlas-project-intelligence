@@ -17,3 +17,15 @@ test('L1 two long addresses that differ after 200 characters stay distinct', () 
   assert.equal(storedFirst, first);
   assert.equal(storedSecond, second);
 });
+
+test('L1 an address at 254 characters is stored whole and 255 is refused', () => {
+  const ofLength = n => 'a@' + 'b'.repeat(n - 6) + '.com';
+  for (const n of [7, 20, 200, 201, 254]) {
+    const value = ofLength(n);
+    assert.equal(value.length, n);
+    assert.equal(email('  ' + value.toUpperCase() + ' '), value);
+  }
+  assert.equal(ofLength(255).length, 255);
+  assert.equal(email(ofLength(255)), '');
+  assert.equal(email('=sum(1)@example.com'), '=sum(1)@example.com');
+});

@@ -204,7 +204,15 @@ function answer(ctx, g) {
     return { askId: a.id, field: a.field, status: x ? x.status : 'open', quotes, provenance: 'unverified_speech_recognition' };
   });
   // Where the assignee keeps these answers: only a reference they may see in full.
-  const refId = typeof b.referenceId === 'string' && lib.access(lib.row(b.referenceId), user) === 'full' ? b.referenceId : g.reference_id;
+  // A named reference they cannot open is a refusal, not a silent fall back to the original.
+  const named = b.referenceId;
+  let refId = g.reference_id;
+  if (typeof named === 'string' && named.trim()) {
+    if (lib.access(lib.row(named), user) !== 'full') throw fail(403, 'That reference is not yours to attach.');
+    refId = named;
+  } else if (named !== undefined && named !== null && named !== '') {
+    throw fail(403, 'That reference is not yours to attach.');
+  }
   const count = s => results.filter(r => r.status === s).length;
   lib.recorded(() => {
     lib.exec("UPDATE gap_requests SET status = 'answered', answered_at = ?, results = ?, pseudo = ?, reference_id = ? WHERE id = ?",

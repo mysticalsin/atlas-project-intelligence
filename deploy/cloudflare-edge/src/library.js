@@ -17,6 +17,7 @@ import { sameTenant, TENANT_ID } from './authz.js';
 import { appendAudit, checkpointHead, ensureChain, verifyChain, anchoredVerdict, rewriteRows, verifyDaily, isTombstoneActor } from './audit-chain.js';
 import { recordUsage } from './telemetry.js';
 import { publicationEffect, publicationStatus, publicationTransition, readPublication } from './publication.js';
+import { impact as scoreImpact, DIMENSIONS } from './classify.js';
 import { invitationTransition, noteInvitation, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
 import { bareSemicolon, explainThenMore, hasCreateAsSelect, hiddenWrite, isMutatingStatement, leadingWords, namedVariable, pragmaClass, pragmaSetter, pragmaSetterName, provenRead, remainderIsNoise, splitStatements, sqlShape, unclosedLexeme, unparsedTail, writableAssignment } from './sql-text.js';
 import { sqliteRemainder } from './sql-tail.js';
@@ -390,7 +391,7 @@ export function cleanReference(raw) {
       topics: Object.fromEntries(['context', 'contribution', 'approach', 'outcome', 'evidence', 'customer_relevance'].map(k => [k, str(obj(r.topics)[k], 900)])),
       highlights: list(r.highlights, 4, 200), gaps: list(r.gaps, 6, 200), follow_ups: list(r.follow_ups, 5, 200) } : null,
     jev: j && obj(j.primary).key ? { primary: { key: str(j.primary.key, 40), label: str(j.primary.label, 60) }, also: (Array.isArray(j.also) ? j.also : []).slice(0, 8).map(a => ({ key: str(obj(a).key, 40), label: str(obj(a).label, 60) })),
-      impact: Number.isFinite(j.impact) ? Math.max(0, Math.min(100, j.impact)) : null } : null,
+      impact: j.scores != null ? impactFromScores(j.scores) : (Number.isFinite(j.impact) ? Math.max(0, Math.min(100, j.impact)) : null) } : null,
     validation: { manager: { name: str(obj(v.manager).name, 100), email: email(obj(v.manager).email) }, managerStaff: v.managerStaff === true },
     sheet: raw.sheet && typeof raw.sheet === 'object' ? { oppId: str(obj(raw.sheet).oppId, 40), oppIdPending: obj(raw.sheet).oppIdPending === true, title: str(obj(raw.sheet).title, 140),
       exec: Object.fromEntries(['summary', 'teamSize', 'duration', 'price', 'contacts'].map(k => [k, para(obj(obj(raw.sheet).exec)[k], 1500)])),
@@ -437,6 +438,33 @@ function publicQuality(q) {
 // Numbers only (docs/JEV_RATING.md §7.5): never an id, title, client, hash, model name, text or key.
 const defaultMetric = (name, values) => console.log(JSON.stringify({ atlas_metric: name, ...values }));
 const waitAtMost = (p, ms) => new Promise(resolve => { const t = setTimeout(resolve, ms); p.then(() => { clearTimeout(t); resolve(); }, () => { clearTimeout(t); resolve(); }); });
+function completeWithin(promise, ms) {
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(Object.assign(new Error('The review agent did not answer in time.'), { status: 504 })), ms);
+  });
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+}
+function databaseBusy(error) {
+  const message = String(error && error.message || '');
+  const code = String(error && error.code || '');
+  return code === 'SQLITE_BUSY' || code === 'ERR_SQLITE_BUSY' || /database is locked|database is busy|sqlite_busy/i.test(message);
+}
+function impactFromScores(scores) {
+  if (!scores || typeof scores !== 'object' || Array.isArray(scores)) return null;
+  const shaped = {};
+  for (const key of Object.keys(DIMENSIONS)) {
+    const score = obj(scores[key]).score;
+    if (typeof score !== 'number' || !Number.isFinite(score)) return null;
+    shaped[key] = { score };
+  }
+  try { return scoreImpact(shaped); }
+  catch { return null; }
+}
+function contributionKept(kept, retired) {
+  const marker = '\n\nContribution by another consultant: ';
+  return String(kept || '').split(marker).some(part => part === retired);
+}
 // Without a key (fallback no_key) the audit text is today's, including when the review agent did not answer.
 const auditDetail = q => `score ${q.score}, ${q.status}` + (q.engine === 'jev' ? ' · JEV' : q.escalatedFrom ? ' · review agent (second opinion)' : q.engine === 'rules' && q.fallbackReason !== 'no_key' ? ' · rules only' : '');
 
@@ -721,7 +749,14 @@ export class Library {
     if (consentSweep && !this.chainVerdict().ok) throw Object.assign(fail(409, 'The audit chain is tampered.'), { code: 'CHAIN_DAMAGED' });
     const bound = consentSweep ? [consentCutoff(this.now())] : params;
     const prior = consentSweep ? Number(this.rows('SELECT COUNT(*) AS n FROM consent_receipts')[0].n) : 0;
-    const result = _sql.exec(sql, ...bound);
+    let result;
+    try { result = _sql.exec(sql, ...bound); }
+    catch (error) {
+      if (error?.status) throw error;
+      if (databaseBusy(error)) throw Object.assign(fail(503, 'The library is busy. Try again.'), { code: 'SQLITE_BUSY' });
+      if (/UNIQUE constraint failed/i.test(String(error?.message || ''))) throw fail(409, 'This reference was already saved. Open it again.');
+      throw error;
+    }
     if (consentSweep) {
       const left = Number(this.rows('SELECT COUNT(*) AS n FROM consent_receipts')[0].n);
       this.log('privacy', 'atlas', 'consent retention', String(prior - left));
@@ -913,7 +948,7 @@ export class Library {
         data.title, status, revision, plan.hash, data.jev?.primary?.key || '', data.sector, data.details.country, data.validation.manager.email, members, plan.at, plan.user.email, next, JSON.stringify(data), JSON.stringify(state), id, row.revision, row.storedStatus);
       else this.writeStatus(`INSERT INTO refs (id, owner, local_id, title, status, revision, content_hash, practice, industry, country, manager_email, members, created_at, updated_at, updated_by, next_review, data, state, tenant)
         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM refs WHERE id = ?)`,
-        id, plan.user.email, plan.localId, data.title, status, revision, plan.hash, data.jev?.primary?.key || '', data.sector, data.details.country, data.validation.manager.email, members, plan.at, plan.at, plan.user.email, next, JSON.stringify(data), JSON.stringify(state), keptTenant, id);
+        id, plan.user.email, plan.localId || null, data.title, status, revision, plan.hash, data.jev?.primary?.key || '', data.sector, data.details.country, data.validation.manager.email, members, plan.at, plan.at, plan.user.email, next, JSON.stringify(data), JSON.stringify(state), keptTenant, id);
       this.exec('INSERT INTO revisions (id, revision, data, author, at) VALUES (?, ?, ?, ?, ?)', id, revision, JSON.stringify(data), plan.user.email, plan.at);
       this.log(id, plan.user.email, row ? 'revised' : 'created', 'revision ' + revision + (row ? (state.withdrawn ? '; stays withdrawn until a reviewer reinstates' : '; manager and pre-sales approval reopened') : ''));
       return { id, unchanged: false };
@@ -1146,7 +1181,9 @@ export class Library {
         return finish(stored, stored && done.escalate && this.complete ? this.secondOpinion(row, gen, done) : null);
       }
     }
-    const t0 = Date.now(), q0 = await reviewReference(row.data, this.complete || (async () => { throw new Error('no review agent'); }),
+    const deadlineMs = this.rater?.budgets?.[budget]?.deadlineMs ?? BUDGETS[budget]?.deadlineMs ?? BUDGETS.interactive.deadlineMs;
+    const agent = this.complete || (async () => { throw new Error('no review agent'); });
+    const t0 = Date.now(), q0 = await reviewReference(row.data, messages => completeWithin(Promise.resolve().then(() => agent(messages)), deadlineMs),
       { view: d => recordView(this, d), readyScore: this.readyScore, now: this.now, model: this.model });
     const q = agentQuality({ ...q0, revision: row.revision }, { fallbackReason: fallback, gen, ms: Date.now() - t0 });
     const stored = this.storeRating(row, gen, q, actor);
@@ -1181,7 +1218,7 @@ export class Library {
   // §5.5 escalation: today's review agent decides, in the same generation. If it does not answer, the JEV rating stays
   // needs_work and says a reviewer should check the unsure parts.
   async secondOpinion(row, gen, done) {
-    const t0 = Date.now(), q0 = await reviewReference(row.data, this.complete, { view: d => recordView(this, d), readyScore: this.readyScore, now: this.now, model: this.model });
+    const t0 = Date.now(), q0 = await reviewReference(row.data, messages => completeWithin(Promise.resolve().then(() => this.complete(messages)), BUDGETS.background.deadlineMs), { view: d => recordView(this, d), readyScore: this.readyScore, now: this.now, model: this.model });
     const strict = done.quality.jev.strict;
     if (q0.aiScore !== null) {
       const q = agentQuality({ ...q0, revision: row.revision }, { engine: 'review-agent', escalatedFrom: 'jev', fallbackReason: 'escalated', jev: done.quality.jev, holds: [], gen, ms: Date.now() - t0 });
@@ -1286,7 +1323,7 @@ export class Library {
     k.sources = [...k.sources, ...g.sources].slice(0, 20);
     // No name or email in the text: answers reach models through forModel and recordView (WOW_ZERO_CONFIG §5.9); who
     // contributed stays in details.consultants and members.
-    if (g.answers[1] && !k.answers[1].includes(g.answers[1])) k.answers[1] = (k.answers[1] + '\n\nContribution by another consultant: ' + g.answers[1]).trim().slice(0, 6000);
+    if (g.answers[1] && !contributionKept(k.answers[1], g.answers[1])) k.answers[1] = (k.answers[1] + '\n\nContribution by another consultant: ' + g.answers[1]).trim().slice(0, 6000);
     for (const i of [0, 2, 3, 4, 5]) if (!k.answers[i] && g.answers[i]) k.answers[i] = g.answers[i];
     const moved = acceptPublication(publicationTransition(gone.state, { type: 'merged', id: gone.id }), { id: gone.id, event: 'merged' });
     if (!moved) throw fail(409, PUBLICATION_CHANGE_REFUSED);
@@ -1372,7 +1409,7 @@ export class Library {
     const dupe = this.rows("SELECT id FROM invitations WHERE lower(email) = ? AND reason = ? AND status IN ('open','scheduled') AND lower(project_id) = lower(?) AND reference_id = ? AND lower(COALESCE(tenant, '')) = ?", to, reason, pid, refId, tenant)[0];
     if (dupe) return this.rows('SELECT * FROM invitations WHERE id = ?', dupe.id)[0];
     const id = this.newId(), slot = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(b.slot || '')) ? String(b.slot).slice(0, 25) : '';
-    // 200 is the cap inside email(), so a 73-character tid:oid is stored whole.
+    // email() keeps a real address through the RFC 5321 length of 254, so a 73-character tid:oid is stored whole.
     return this.recorded(() => {
       this.exec('INSERT INTO invitations (id, email, project_id, title, reason, slot, reference_id, status, created_at, source, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         id, to, pid, str(b.title, 140), reason, slot, refId, slot ? 'scheduled' : 'open', this.now(), str(b.source || actor, 200), tenant);
@@ -1493,7 +1530,7 @@ export class Library {
   async importAll(user, body = {}) {
     if (user.role !== 'admin') throw fail(403, 'Import is for a verified admin.');
     if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
-    const items = Array.isArray(obj(body).references) ? obj(body).references.slice(0, 500) : [];
+    const items = Array.isArray(obj(body).references) ? obj(body).references : [];
     const out = { created: 0, unchanged: 0, rejected: [] };
     for (const [i, it] of items.entries()) {
       try { const r = await this.upsert(user, { localId: 'import:' + str(obj(it).externalId || obj(it).id || String(i), 80), reference: obj(it).reference || it }); r.unchanged ? out.unchanged++ : out.created++; }

@@ -16,6 +16,8 @@ import uuid
 
 SECTIONS=('challenge','contribution','approach','outcome','evidence','limitations','customer_fit','poor_fit')
 AUDIENCES=('internal','customer-anonymized')
+LIST_CAP=200
+SUMMARY_FIELDS=('id','title','revision','audience','eligible','stage','kind','content_hash')
 
 def compact(x):return json.dumps(x,sort_keys=True,ensure_ascii=False,separators=(',',':'))
 def valid_id(x):return isinstance(x,str) and bool(re.fullmatch(r'[a-f0-9]{32}',x))
@@ -126,7 +128,7 @@ class WikiVault:
         eligible=not r['withdrawn'] and needed<=valid
         return {**data,'id':ident,'revision':r['revision'],'content_hash':r['content_hash'],'withdrawn':bool(r['withdrawn']),
           'eligible':eligible,'review_states':sorted(valid),'markdown':contents,'quality_gaps':quality_gaps(data),'source_hash':hashlib.sha256(compact(data['sources']).encode()).hexdigest()}
-    def list(self,subject,audience=None,eligible_only=False):
+    def _accessible(self,subject,audience=None,eligible_only=False):
         rows=self.db.execute('SELECT id FROM stories WHERE owner=? OR id IN (SELECT story_id FROM access WHERE user_key=?) ORDER BY rowid DESC',(subject.subject_key,subject.subject_key)).fetchall()
         result=[]
         for r in rows:
@@ -134,6 +136,24 @@ class WikiVault:
             if s['withdrawn'] or (audience and s['audience']!=audience) or (eligible_only and not s['eligible']):continue
             result.append(s)
         return result
+    def records(self,subject,audience=None,eligible_only=False):
+        return self._accessible(subject,audience,eligible_only)
+    def summary(self,story):
+        return {k:story[k] for k in SUMMARY_FIELDS}
+    def page(self,subject,audience=None,eligible_only=False,after=None,limit=LIST_CAP):
+        if isinstance(limit,bool) or not isinstance(limit,int) or not 1<=limit<=LIST_CAP:raise ValueError('Page size must be from 1 to 200')
+        if after is not None and not isinstance(after,str):raise ValueError('Invalid page cursor')
+        visible=self._accessible(subject,audience,eligible_only)
+        start=0
+        if after:
+            ids=[s['id'] for s in visible]
+            if after not in ids:raise ValueError('Invalid page cursor')
+            start=ids.index(after)+1
+        chunk=visible[start:start+limit]
+        more=start+limit<len(visible)
+        return {'stories':[self.summary(s) for s in chunk],'limit':limit,'next':chunk[-1]['id'] if more and chunk else None}
+    def list(self,subject,audience=None,eligible_only=False):
+        return self.page(subject,audience,eligible_only)['stories']
     def approve(self,subject,ident,expected,kind,reference,expires):
         self.get(subject,ident) # verify canonical Markdown before approval
         r=self._row(subject,ident)
@@ -166,7 +186,7 @@ class WikiVault:
         with self.db:self.db.execute('INSERT OR IGNORE INTO access VALUES(?,?)',(ident,user_key));self._audit(owner,ident,'grant-access',r['revision'])
     def graph(self,subject,audience='internal'):
         nodes={};edges=[]
-        for s in self.list(subject,audience,eligible_only=True):
+        for s in self.records(subject,audience,eligible_only=True):
             nodes[s['id']]={'id':s['id'],'label':s['title'],'type':'story','source_hash':s['content_hash'],'revision':s['revision']}
             for tag in s['tags']:
                 tid='tag:'+tag;nodes[tid]={'id':tid,'label':tag,'type':'tag'}

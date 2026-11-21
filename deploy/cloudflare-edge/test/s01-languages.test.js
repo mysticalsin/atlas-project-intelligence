@@ -15,3 +15,18 @@ test('L3 every advertised language has a greeting, a welcome back, and fillers',
 test('L3 an unfinished check in Japanese does not use the English trailing-word list', () => {
   assert.equal(unfinished('プロジェクトの範囲 and', 'ja'), false);
 });
+
+test('L3 Russian, Hindi, and Japanese lines are one sentence and ignore the English word and', () => {
+  for (const code of ['ru', 'hi', 'ja']) {
+    for (const line of [GREETINGS[code], WELCOME_BACK[code]]) {
+      assert.equal(typeof line, 'string');
+      assert.ok(line.includes('ATLAS'));
+      assert.equal((line.match(/[.!?](\s|$)/g) || []).length, 1);
+      assert.ok(line.length <= 80);
+    }
+    assert.ok(FILLERS[code].length > 0);
+    assert.equal(unfinished('and', code), false);
+  }
+  assert.equal(unfinished('範囲です.', 'ja'), false);
+  assert.equal(unfinished('範囲 で', 'ja'), true);
+});
