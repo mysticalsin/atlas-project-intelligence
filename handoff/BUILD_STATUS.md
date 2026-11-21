@@ -14,7 +14,7 @@ What this change does:
 
 No provider call. No deploy.
 
-Measured on this tree before the fix commit, while HEAD was still the red commit: `python3 -m pytest tests/test_*.py -q` 416 passed and 1 failed (`test_git_archive_of_head_passes_check_handoff`, the red commit does not refresh the manifest). `node --test tests/*.test.js` 420 passed, 0 failed. Edge `node --test test/*.test.js` 1126 tests, 1122 passed, 0 failed, 4 skipped. `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui` 834 PASS, 0 FAIL. `python3 scripts/check_handoff.py . --dev-git-index` PASS.
+Measured on `6716bb959a4d80e1a0742cba6745615228803315`: `python3 -m pytest tests/test_*.py -q` 417 passed. `node --test tests/*.test.js` 420 passed, 0 failed. Edge `node --test test/*.test.js` 1126 tests, 1122 passed, 0 failed, 4 skipped. `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui` 834 PASS, 0 FAIL. `python3 scripts/check_handoff.py . --dev-git-index` PASS. The node, edge, and browser counts were taken on this tree immediately before the fix commit. pytest and check_handoff were run again on the fix commit.
 
 ## 2026-11-21 — A07 slice 2, confirmation read-back (`cursor/pr1-slice2-readback-6f11`)
 
