@@ -3,6 +3,7 @@
 
 ### Session: 2026-11-21 / A08 stored requirement
 - A captured Candidate Requirement can be stored and a CV generated against that row. Export stays a local docx. MiChat is not called. No salary is stored. Synthetic data only.
+- Local commands: `python3 -m pytest tests/test_*.py -q` 264 passed. `node --test tests/*.test.js` 386 passed, 1 skipped. `node --test test/*.test.js` in `deploy/cloudflare-edge` 554 passed. `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui` exit 0, 789 checks. `python3 scripts/check_handoff.py` still fails manifest-content on files this change did not touch. The page pin was rebuilt and `scripts/verify_page_build.sh` passed.
 
 ## Next task
 - **2026-09-29, JEV story rating ("make sure Atlas has Jev integreated into it so its very fast and relable to rate stories"):** built on `a45b140` in two tracks (EDGE, UI), then an integration review fixed 4 defects (a privacy gap for multi-word names and 3 no-key differences); locally verified, not committed, not deployed. Live JEV is `BLOCKED_EXTERNAL` until Tony sets `TYPESAFE_API_KEY` on the Worker and deploys (when nobody is interviewing). Read the session "2026-09-29 / JEV story rating" below first: "What Tony must do", the cost per rating, Tony's one open decision (§12.2: four other TypeSafe paths run without this consent) and the post-deploy checks.
