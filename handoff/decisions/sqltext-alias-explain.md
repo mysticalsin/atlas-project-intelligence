@@ -1,6 +1,6 @@
 # SQL text aliases and explain plans
 
-Low. `SELECT 1 VACUUM` and `SELECT 1 REINDEX` are column aliases. `EXPLAIN QUERY PLAN` of one write was not walked.
+High. It gates writes. `SELECT 1 VACUUM` and `SELECT 1 REINDEX` are column aliases. `EXPLAIN QUERY PLAN` of one write was not walked.
 
 Base: `main` `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. Branch: `cursor/atlas-sqltext-lows`.
 
@@ -80,11 +80,35 @@ Each change was restored and was not committed. The command was the red command 
 
 Revert this branch to `main` `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. No migration and no stored rewrite.
 
+## Threat model
+
+A misclassified write is a string the door treats as a proven read. On the fallback path there is no prepare boundary, so `provenRead` is what keeps that door shut. If it returns true for a write-shaped string, the fallback door allows the string. A delete, insert, update, or drop on that path can change rows. Attach can open another database. Vacuum can rebuild the file. The primary door allows the string as well when `isMutatingStatement` and `hiddenWrite` are both false.
+
+These tests prove that does not happen for the shapes a changed-line mutant opened:
+
+- `deploy/cloudflare-edge/test/write-sqltext-survivors.test.js` — `SELECT 1 DROP`, `CREATE`, `ALTER`, `ATTACH`, `DETACH`, `PRAGMA`, and `VALUES (1) DROP` are not proven reads. Both doors return `SQL_DOOR`. The refs row and the audit row stay. `EXPLAIN QUERY PLAN WITH x AS (SELECT 1) DELETE FROM refs`, and the same shape for `INSERT` and `UPDATE`, are not proven reads. The primary door allows the plan. The fallback door returns `SQL_DOOR`. `EXPLAIN ANALYZE` stays a hidden write, so both doors return `SQL_DOOR`.
+- `deploy/cloudflare-edge/test/write-v14-gap.test.js` — a real `VACUUM` or `REINDEX` stays a write on both doors.
+- `deploy/cloudflare-edge/test/write-sqltext-alias-explain.test.js` — a second verb inside a plan stays a write, and a one-verb plan stays not a proven read.
+
+The public functions are unchanged: `isMutatingStatement`, `provenRead`, `hiddenWrite`, `explainThenMore`, `namedVariable`, `unclosedLexeme`, and `pragmaClass` keep their signatures. No export was added or removed.
+
+## Loop 1
+
+Devin's exact-head gate on `b1fa82d2772bee79b45e97197bcb5728c707b241` was CODE INCOMPLETE / BODY FAIL. Report sha `e9c82d89`. Red is shown by mutants. There is no clean-tree failure: the new tests pass on the classifier. Restoring a mutant makes the same command exit 1.
+
+`e388761e4da741d08a4d0f387bc6e5d81eed564c` adds the survivor tests. `2c2be2e63d00c3ccdf721746950b6f8fd23e0bf8` removes four lines whose deletion did not change `provenRead`, `isMutatingStatement`, or `hiddenWrite` on 191 strings. `03b30739a7bdc54ecc8839ec9ebf6866e9709379` pins `EXPLAIN ANALYZE`.
+
+```sh
+cd deploy/cloudflare-edge && node --test test/write-sqltext-survivors.test.js test/write-sqltext-alias-explain.test.js test/write-v14-gap.test.js
+```
+
+On `03b30739a7bdc54ecc8839ec9ebf6866e9709379` that command is 8 tests, 8 pass, 0 fail, exit 0. Deleting the vacuum/reindex-only guard exits 1 on `a trailing word other than vacuum or reindex is not a proven read`. Deleting the top-verb text exits 1 on `a with-write inside explain query plan is not a proven read`. Replacing the plan conjunction with `||` exits 1 on `explain analyze stays a hidden write`. Dropping `group`, `having`, `order`, `limit`, `offset`, `union`, `except`, or `intersect` from the clause list exits 1 on the clause test. Comment deletions and five operator edits (`>=` to `>`, the pragma-loop bound, the pragma conjunction, `topVerbAt` returning `0`, and `at < 0` to `at <= 0`) do not change those three results on the probed strings.
+
 ## Risk
 
-low
+high
 
-plan debate skipped: not high-risk (aliases SQLite runs as reads become reads; every statement SQLite runs as a write stays a write; no auth, session, secret, schema, or deletion change)
+This loop classifies the change as high because the classifier is the write gate. The earlier line that called it not high-risk is withdrawn. Sentinel `CONSENSUS: AGREED` is not claimed here. It is bound to the head only after Devin is green.
 
 State-machine discovery skipped. The classifier is a pure function. It does not add or change a status, a phase, or a transition. The breaker is untouched.
 

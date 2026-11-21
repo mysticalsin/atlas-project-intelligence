@@ -1,6 +1,21 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-21 — SQL text survivor tests, high risk (`cursor/atlas-sqltext-lows`)
+
+Loop 1 of 3. Devin's gate on `b1fa82d2772bee79b45e97197bcb5728c707b241` was CODE INCOMPLETE / BODY FAIL, report sha `e9c82d89`. The decision is now high because the classifier gates writes: `handoff/decisions/sqltext-alias-explain.md`. No deploy, no provider call, no secrets. `library.js` was not edited. Public exports of `sql-text.js` are unchanged.
+
+Red is shown by mutants. `e388761e4da741d08a4d0f387bc6e5d81eed564c` and `03b30739a7bdc54ecc8839ec9ebf6866e9709379` are tests. `2c2be2e63d00c3ccdf721746950b6f8fd23e0bf8` removes four equivalent lines. The command `cd deploy/cloudflare-edge && node --test test/write-sqltext-survivors.test.js test/write-sqltext-alias-explain.test.js test/write-v14-gap.test.js` is 8 pass, 0 fail, exit 0 on this head. Deleting the vacuum/reindex-only guard, deleting the top-verb text, and replacing the plan conjunction with `||` each exit 1.
+
+Measured before this note's manifest refresh. `ATLAS_DEPLOY_STUB` stayed unset.
+
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 411 passed, 2 failed, 127 warnings, 153.28s, exit 1. The failures are the two handoff tests against the stale manifest. `MANIFEST.json` is regenerated after this note.
+- `node --test tests/*.test.js`: 419 tests, 419 pass, 0 fail, 0 skipped, 31.7s, exit 0.
+- Edge `node --test test/*.test.js` with workerd `2026-10-23`: 1122 tests, 1122 pass, 0 fail, 0 skipped, 277.2s, exit 0. The alias-begin tail test passed.
+- `make test-ui CHROMIUM_PATH=/usr/bin/google-chrome`: 834 PASS, 0 FAIL, 26 scripts, exit 0.
+
+Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open.
+
 ## 2026-11-20 — SQL text alias and explain plan (`cursor/atlas-sqltext-lows`)
 
 Low rows ATLAS-SQLTEXT-ALIAS-VERB-INCONSISTENT and ATLAS-SQLTEXT-EXPLAIN-TRAILING-VERB-READ. Decision: `handoff/decisions/sqltext-alias-explain.md`. Base `main` `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. No deploy, no provider call, no secrets. `library.js` was not edited. `python3 build.py` was not run for this change; `build.py` does not embed `sql-text.js`.

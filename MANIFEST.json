@@ -1207,8 +1207,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/sql-text.js",
-      "bytes": 35926,
-      "sha256": "a0ae13f2d6020e91fb71dcc37d5f6c256c781fb53cc58c7fe5a69bf17987bef7"
+      "bytes": 35763,
+      "sha256": "04dc4e04dcf610ff4f207a0f4f2f3f428647e2800591c921bb42359b3181b15e"
     },
     {
       "path": "deploy/cloudflare-edge/src/subject-rights.js",
@@ -1911,6 +1911,11 @@
       "sha256": "e8a08ba0aaf5fdb8908fa30b608e0c48a0d151c585499521a56706f3c5b97976"
     },
     {
+      "path": "deploy/cloudflare-edge/test/write-sqltext-survivors.test.js",
+      "bytes": 4715,
+      "sha256": "4df9b5bcc9dfc04dfc55cd08784f4c398958ba2943f2fc07f119d3b04941da0a"
+    },
+    {
       "path": "deploy/cloudflare-edge/test/write-tail.test.js",
       "bytes": 6357,
       "sha256": "a8683fce5dae6e784509b6344e5cd056628a0c14fe96e669c72b26e6a3dc1035"
@@ -2287,8 +2292,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 349895,
-      "sha256": "0edf3b80dc2ea7bb0f4441297e65cfdae2f1586f793e1e5c8e0330ebb310b46c"
+      "bytes": 351613,
+      "sha256": "b71ecb5618f6063df61ff66c69a4b601333c00c962c53e82603fcd671f7bbaef"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2392,8 +2397,8 @@
     },
     {
       "path": "handoff/decisions/sqltext-alias-explain.md",
-      "bytes": 7888,
-      "sha256": "442886fa0340b55f837f1fff1db701d6a3eb5ed94ea0a3f3c4aaee4849ca0bb1"
+      "bytes": 11055,
+      "sha256": "6933c230307f87ab60ebe618d80f7d194e542f411ad860cf03106395e4225b1d"
     },
     {
       "path": "handoff/provenance/original-v12-manifest.json",
