@@ -2302,8 +2302,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 347552,
-      "sha256": "3d6c04f752110028a5fa9a83225aa15255a2bd64c8610840787926e7e581d7e0"
+      "bytes": 348349,
+      "sha256": "6620e4e6960b69b2ba985914a33448dd22d81a3bc165a9f33c8f66ecec3901cc"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -3402,8 +3402,8 @@
     },
     {
       "path": "tests/test_edge.py",
-      "bytes": 3039,
-      "sha256": "ba934a8dfbaced8ee7bd51fc77ef258817cba2c63ca46f7ba6ddef1fc5fe6d2d"
+      "bytes": 3303,
+      "sha256": "b3b90d96e948da6435fc7a6c51c86e745e6c2bf58c0487abc3924291becd2ab4"
     },
     {
       "path": "tests/test_editor_routes.py",

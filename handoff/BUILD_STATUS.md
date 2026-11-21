@@ -3,7 +3,15 @@
 
 ## 2026-11-21 — open-source HEAD cleanup
 
-The personal mailbox and the live Workers origin, Access team domain, and Access audience are no longer in this tree. Committed `wrangler.jsonc` uses placeholders. `deploy.sh` deploys only when the operator supplies the three live values in `deploy.local.env` or the environment. The Worker refuses a placeholder or missing Access audience and team, and a dev identity does not bypass that. Older lines below that named the live origin or the mailbox now use the placeholders. History is unchanged. Red commit `046ae7ee6163b7a9eb19f978af711cf8e243cc9b`. Working-tree gitleaks is clean with `.gitleaks.toml`. The audience literal is gone. The allowlist still covers the Entra permission name the default rule misreads.
+The personal mailbox and the live Workers origin, Access team domain, and Access audience are no longer in this tree. Committed `wrangler.jsonc` uses placeholders. `deploy.sh` deploys only when the operator supplies the three live values in `deploy.local.env` or the environment. The Worker refuses a placeholder or missing Access audience and team, and a dev identity does not bypass that. Older lines below that named the live origin or the mailbox now use the placeholders. History is unchanged. Red commit `046ae7ee6163b7a9eb19f978af711cf8e243cc9b`: pytest 3 failed; the Access placeholder test failed and the non-placeholder audience test passed. Working-tree gitleaks is clean with `.gitleaks.toml` (0 findings). The audience literal is gone. The allowlist still covers the Entra permission name the default rule misreads.
+
+Measured on this tree before this paragraph's manifest refresh. `ATLAS_DEPLOY_STUB` stayed unset. No deploy.
+
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 416 passed, 127 warnings, after `tests/test_edge.py` locked the committed placeholders. The run before that lock was 415 passed and 1 failed (`ACCESS_AUD` length).
+- `node --test tests/*.test.js`: 419 tests, 419 pass, 0 fail, 0 skipped.
+- Edge `node --test test/*.test.js`: 1121 tests, 1117 pass, 0 fail, 4 skipped.
+- `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui`: 834 PASS, 0 FAIL.
+- Page pin `25652b91be8888f228c6018819765ce725b04266f7456bcffa0a60c95d70eaf0`, 924003 bytes, `ATLAS_HOME=https://atlas.example.test`.
 
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 

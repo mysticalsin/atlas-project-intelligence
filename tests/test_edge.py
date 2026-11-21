@@ -39,4 +39,8 @@ def test_wrangler_config_is_locked_down():
     text = (EDGE / 'wrangler.jsonc').read_text()
     body = json.loads('\n'.join(l for l in text.splitlines() if not l.strip().startswith('//')))
     assert body['ai'] == {'binding': 'AI'} and body['preview_urls'] is False and body['vars']['ORIGIN'].startswith('https://')
-    assert 'CSRF_SECRET' not in body['vars'] and len(body['vars']['ACCESS_AUD']) == 64
+    assert 'CSRF_SECRET' not in body['vars']
+    # The committed values are placeholders. The live origin, team domain, and audience are supplied at deploy time.
+    assert body['vars']['ORIGIN'] == 'https://atlas.example.test'
+    assert body['vars']['ACCESS_TEAM_DOMAIN'] == 'team.example.test'
+    assert body['vars']['ACCESS_AUD'] == 'replace-me'
