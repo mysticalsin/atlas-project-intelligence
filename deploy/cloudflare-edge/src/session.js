@@ -549,10 +549,11 @@ export class Session {
   }
 
   // A short spoken acknowledgement from cache, only after a real answer, never twice in a row, never in admin mode.
+  // One step through the whole list. A stride of 1 + (turns % 2) only ever spoke the odd entries.
   pickFiller(text) {
     const list = FILLERS[this.spoken()];
     if (!list || this.admin || this.timeUp || this.turns - this.fillerTurn < 2 || String(text).split(/\s+/).length < FILLER_WORDS || /\?\s*$/.test(text)) return '';
-    this.fillerTurn = this.turns; this.lastFiller = (this.lastFiller + 1 + (this.turns % 2)) % list.length;
+    this.fillerTurn = this.turns; this.lastFiller = (this.lastFiller + 1) % list.length;
     return list[this.lastFiller];
   }
 
