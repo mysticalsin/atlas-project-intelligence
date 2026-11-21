@@ -2,7 +2,7 @@
 
 Disposition: **ADDENDUM** to Sweep 01 group 10. Not a parallel plan.
 
-Group 10 plan: `docs/sweeps/s01/plans/group-10-erasure-tenant.md` on PR #38, branch `cursor/atlas-s01-high-plans`, head `a5a24e1b4d2fd9d8683f4f08841dba27497fd74a`. v2 of that plan is in progress and addresses Sentinel. This file does not edit that plan. The group 10 writer pastes this addendum after v2 settles.
+Group 10 plan: `docs/sweeps/s01/plans/group-10-erasure-tenant.md` on PR #38, branch `cursor/atlas-s01-high-plans`, head `4d15c83c7485c6e73cd50d1f2eded3824a636526`. head `4d15c83c7485c6e73cd50d1f2eded3824a636526`. Devin r8a2f8337 pins PR #38 there, not `a5a24e1`. The branch tip at this freeze is `73dd4df385ee0dbf5f29d00afdf465ea95ea125b` (v4). These addenda cite `4d15c83c`. They do not edit `docs/sweeps/s01/plans/`. The group 10 writer pastes this addendum after that pin.
 
 Pinned main: `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`.
 Triage: `triage.md` sha256 `1901b48b1a44181c59cce7434460e4e1a82057b99c85b53b9f4e049261f1059d`.
@@ -57,7 +57,7 @@ Do not edit `journey.js`, `util.js`, or `test/sqlite.js`.
 
 High. A trim that is applied in the middle of the id, or a `LIKE`, would join two tenants. The predicate strips only the six ASCII characters, and only at the ends. A failing test keeps a tenant of `A` plus a tab plus `B` out of tenant `A` and out of tenant `B`.
 
-`library.js` is also in PR #34 and PR #35. This hunk is rebased onto those heads. It is not edited in parallel with them.
+`library.js` is also in PR #34 and PR #35. This hunk is brought in with an ordinary merge of those heads. Do not rebase those pushed branches. It is not edited in parallel with them.
 
 ## Rollback
 
@@ -73,8 +73,27 @@ Revert the hunks. Rows already stored with padding stay padded. A later erase us
 | #25 | No. |
 | #27 | Do not edit `test/sqlite.js`. |
 | #30 | No. |
-| #35 | Overlaps `library.js`. Rebase this hunk onto #35. Do not take #35's other library edits into a whitespace-only reading of the diff. |
+| #35 | Overlaps `library.js`. Bring this hunk in with an ordinary merge of #35. Do not rebase that pushed branch. Do not take #35's other library edits into a whitespace-only reading of the diff. |
 | #37 | No. |
 | #40 | No. |
 
-Also open, not in that list, and blocking a clean apply: PR #2 edits `operate.js` and `library.js`. PR #34 edits `library.js`. The group 10 writer rebases onto those heads before the hunk is final. Group 10 does not wait on group 3 for B1. This addendum does wait on #34 and #35 for the one `invite` store line.
+Also open, not in that list, and blocking a clean apply: PR #2 edits `operate.js` and `library.js`. PR #34 edits `library.js`. The group 10 writer brings those heads in with an ordinary merge before the hunk is final. Do not rebase those pushed branches. Group 10 does not wait on group 3 for B1. This addendum does wait on #34 and #35 for the one `invite` store line.
+
+## Branch base
+
+main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. Bring in, by ordinary merge, PR #34, PR #35, PR #2, and PR #41 (`097c5c6680d1b8cfd55db23d39cd027ff69c9133`, `cursor/atlas-living-cv`). Do not rebase those pushed branches. PR #41 also edits `operate.js` (living import, `privacyRoutes`). Those hunks do not overlap this addendum. Do not revert them.
+
+## Known limits
+
+- The end-trim is the six ASCII characters space, tab, newline, carriage return, vertical tab, and form feed. A non-breaking space stays unmatched.
+- `journey.js` is not edited. Mixed-case journey rows stay in ATLAS-JOURNEY-MIXEDCASE-DUP.
+
+## Ask
+
+| Ask | None. This row does not ask Tony. |
+
+## Tony source
+
+The backlog row has no separate tony-verbatim card. The title below is copied verbatim from `rows-full.txt`.
+
+> Erase tenant compare trims spaces only: tab- or newline-padded tenants under-erase; stored source/email with surrounding whitespace is missed

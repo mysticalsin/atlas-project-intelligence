@@ -19,6 +19,8 @@ No Sweep 01 group owns this file.
 - An exclude without a trailing slash stays an exact path match.
 - Package mode still ignores trailing-slash excludes.
 - The match is on path components. It is not a substring of the whole path.
+- Sentinel v2, low on review `7343b668` of `2f890c3d` (R11): an exclude that is empty, `/`, `./`, absolute, or contains `..` fails the inspection. `safe_relative` already skips some of these (`check_handoff.py:52-54`). Skipping is not a refusal. The detail names the exclude.
+- An exclude never exempts release-hygiene and never exempts the nested-git check. A listed `.env` still fails hygiene when an exclude would hide it. A nested `.git` under an excluded directory still fails the nested-git check.
 
 ## Failing test
 
@@ -30,6 +32,20 @@ TEST COMMAND:
 
 ```sh
 python3 -m pytest tests/test_handoff.py::test_dev_exclude_trailing_slash_is_not_a_substring -q
+```
+
+Name: `test_dev_exclude_refuses_empty_root_dot_absolute_and_parent`
+
+An exclude list of `''`, `/`, `./`, `/tmp/x`, or `a/../b` is a failed inspection on this main only if the writer adds the refusal. Today those entries are skipped or matched as text.
+
+Name: `test_exclude_does_not_exempt_hygiene_or_nested_git`
+
+A manifest row `.env` still fails `release-hygiene` when an exclude names it. A nested `.git` under an excluded directory still fails the nested-git check.
+
+TEST COMMAND:
+
+```sh
+python3 -m pytest tests/test_handoff.py::test_dev_exclude_refuses_empty_root_dot_absolute_and_parent tests/test_handoff.py::test_exclude_does_not_exempt_hygiene_or_nested_git -q
 ```
 
 ## Files owned
@@ -46,4 +62,24 @@ Revert the predicate. Substring excludes return. No package contents change.
 
 ## Dependencies
 
-Same as `ATLAS-PR10-SENTINEL-LOWS`. #25 overlaps the file. #15, #16, #23, #27, #30, #35, #37, and #40 do not. PR #21 is the parent of #25 and also edits this file. Rebase onto #25.
+Same as `ATLAS-PR10-SENTINEL-LOWS`. #25 overlaps the file. #15, #16, #23, #27, #30, #35, #37, and #40 do not. PR #21 is the parent of #25 and also edits this file. Bring #25 in with an ordinary merge. Do not rebase that pushed branch.
+
+## Branch base
+
+PR #25 head `3d64934ee1eb` (parent PR #21 `bac4bec450ea`), then PR #41 (`097c5c6680d1b8cfd55db23d39cd027ff69c9133`) and PR #42 (`4457d69c713a784aed9dbe997028bdbe37244d51`), each by ordinary merge, before the `MANIFEST.json` hash refresh. Do not rebase those pushed branches. Do not revert their `Makefile` row or their living rows.
+
+## Known limits
+
+- An exclude that is empty, `/`, `./`, absolute, or contains `..` fails the inspection. Skipping it is not enough.
+- An exclude does not exempt release-hygiene or the nested-git check.
+- Package mode still ignores a trailing-slash exclude.
+
+## Ask
+
+| Ask | None. This row does not ask Tony. |
+
+## Tony source
+
+The backlog row has no separate tony-verbatim card. The title below is copied verbatim from `rows-full.txt`.
+
+> Plan debate: dev-mode trailing-slash excludes match as a substring; make them exact or prefix

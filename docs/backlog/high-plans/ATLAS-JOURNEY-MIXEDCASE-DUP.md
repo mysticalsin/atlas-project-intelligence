@@ -5,7 +5,7 @@ Disposition: **BLOCKED**. Not planned.
 Pinned main: `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`.
 Triage: `triage.md` sha256 `1901b48b1a44181c59cce7434460e4e1a82057b99c85b53b9f4e049261f1059d`.
 
-No done-when, no test command, and no file ownership. A writer does not open `journey.js` for this row.
+No done-when, no test command, and no file ownership. This row stays unscheduled. `journey.js` is untouched until Tony answers ATLAS-JOURNEY-DUPLICATES. Devin r8a2f8337. A writer does not open it.
 
 ## Why it is still blocked
 
@@ -35,3 +35,28 @@ No writer. `deploy/cloudflare-edge/src/journey.js` stays with nobody in this bat
 ## Dependencies
 
 None. #15, #16, #23, #25, #27, #30, #35, #37, and #40 do not unblock Tony. `journey.js` is not in those diffs.
+
+## Branch base
+
+None. Unscheduled. `journey.js` stays untouched until Tony answers ATLAS-JOURNEY-DUPLICATES.
+
+## Known limits
+
+- Unscheduled. No writer, no test command, no edit to `journey.js`.
+- Read, export, and erase already take every case-insensitive match. Merging the two stored payloads is the open question.
+- This freeze does not choose which payload survives.
+
+## Ask
+
+| Ask | Tony, via Jarvis, on ATLAS-JOURNEY-DUPLICATES: which stored payload survives when two mixed-case rows already exist. This row stays unscheduled until that answer. |
+
+## Tony source
+
+The backlog row has no separate tony-verbatim card. The title below is copied verbatim from `rows-full.txt`.
+
+> Journey rows differing only in email case for the same tenant are not merged
+
+
+Blocker text, verbatim:
+
+> Merge behaviour of existing mixed-case rows depends on Tony's ATLAS-JOURNEY-DUPLICATES cleanup answer (Jarvis batching).

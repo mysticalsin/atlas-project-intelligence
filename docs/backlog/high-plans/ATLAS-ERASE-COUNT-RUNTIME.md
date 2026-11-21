@@ -2,7 +2,7 @@
 
 Disposition: **ADDENDUM** to Sweep 01 group 10. Not a parallel plan.
 
-Group 10 plan: `docs/sweeps/s01/plans/group-10-erasure-tenant.md` on PR #38, branch `cursor/atlas-s01-high-plans`, head `a5a24e1b4d2fd9d8683f4f08841dba27497fd74a`. v2 of that plan is in progress and addresses Sentinel. This file does not edit that plan.
+Group 10 plan: `docs/sweeps/s01/plans/group-10-erasure-tenant.md` on PR #38, branch `cursor/atlas-s01-high-plans`, head `4d15c83c7485c6e73cd50d1f2eded3824a636526`. head `4d15c83c7485c6e73cd50d1f2eded3824a636526`. Devin r8a2f8337 pins PR #38 there, not `a5a24e1`. The branch tip at this freeze is `73dd4df385ee0dbf5f29d00afdf465ea95ea125b` (v4). These addenda cite `4d15c83c`. They do not edit `docs/sweeps/s01/plans/`.
 
 Pinned main: `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`.
 Triage: `triage.md` sha256 `1901b48b1a44181c59cce7434460e4e1a82057b99c85b53b9f4e049261f1059d`.
@@ -15,11 +15,12 @@ Triage: `triage.md` sha256 `1901b48b1a44181c59cce7434460e4e1a82057b99c85b53b9f4e
 
 The receipt still counts with `SELECT changes()` after the delete (`operate.js:112`) and after each scrub update (`operate.js:119`). That is the Sentinel finding: `changes()` is connection state, and it has not been verified on the Durable Object runtime.
 
-The adaptation: `invitation-tenant-erase.test.js` around the test `pinning: the scrub count is changes() when that differs from the pre-write select` now requires the receipt to follow `changes()` when a trigger ignores one of two updates (select length 2, `changes()` sum 1, receipt `scrubbed` 1). Replacing the count with the pre-write select length would fail that pin and would report a row the trigger did not change. The fix has to count rows that actually changed, without calling `changes()`.
+The adaptation: the existing pin `pinning: the scrub count is changes() when that differs from the pre-write select` stays, asserted as written. A trigger that ignores one of two updates still yields select length 2, a `changes()` sum of 1, and receipt `scrubbed` 1. Do not delete that pin and do not point it at the select length. The new red test is the lying-`changes()` case: `changes()` returns 0 after a delete that removed a row, and the receipt still reports the row delta. Devin r8a2f8337. The fix counts rows that actually changed, without calling `changes()`.
 
 ## Done when
 
 - `removed` is the number of invitation rows in scope before the delete minus the number still in scope after it, both counts inside the same transaction.
+- Sentinel v2, info on review `7343b668` of `2f890c3d` (R2): the before count and the after count use the same predicate. Same SQL text, same bound values. A wider before-count would report a row the delete did not remove. This is wording. The failing test name does not change.
 - `scrubbed` is the number of sent rows whose `source` changed, not the length of the select and not `changes()`. The trigger pin still reports `scrubbed` 1 when one of two updates is ignored.
 - A SQL double whose `changes()` returns 0 after a delete that removed a row still produces `removed` equal to the row delta. The delete itself still happens. The count is not what decides whether the write ran.
 - No other `changes()` call is rewritten. `library.js` `writeStatus` (`:1040`) is a compare-and-swap, not this receipt. Leave it.
@@ -72,4 +73,25 @@ Revert the count hunk. The delete and the scrub stay. The receipt goes back to `
 | #37 | No. A missing workerd binary is #37's CI question. This test does not require workerd. The Durable Object claim stays "not verified on workerd" until #37's job can run it. Do not mark the runtime verified from `memorySql`. |
 | #40 | No. |
 
-Also open: PR #2 edits `operate.js`. Rebase this hunk onto that head. Do not take the ledger from #2 into this addendum.
+Also open: PR #2 edits `operate.js`. Bring this hunk in with an ordinary merge of that head. Do not rebase that pushed branch. Do not take the ledger from #2 into this addendum.
+
+## Branch base
+
+main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. Bring in, by ordinary merge, PR #34, PR #35, PR #2, and PR #41 (`097c5c6680d1b8cfd55db23d39cd027ff69c9133`, `cursor/atlas-living-cv`). Do not rebase those pushed branches. PR #41 also edits `operate.js` (living import, `privacyRoutes`). Those hunks do not overlap this addendum. Do not revert them.
+
+## Known limits
+
+- The existing pin `pinning: the scrub count is changes() when that differs from the pre-write select` stays, asserted as written.
+- The new test is the lying-`changes()` case. The product code does not call `changes()` for this receipt.
+- `library.js` `writeStatus` is not this receipt. It is not rewritten.
+- A green `memorySql` run does not verify the Durable Object runtime.
+
+## Ask
+
+| Ask | None. This row does not ask Tony. |
+
+## Tony source
+
+The backlog row has no separate tony-verbatim card. The title below is copied verbatim from `rows-full.txt`.
+
+> PR12 I-4 (Info): erase counts rely on SELECT changes(), not verified on the real Durable Object runtime

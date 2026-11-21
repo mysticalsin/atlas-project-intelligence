@@ -20,9 +20,10 @@ An unreadable directory is skipped. Its children are absent from the unlisted, n
 ## Done when
 
 - Each of those three walks passes an `onerror` that records the directory and fails the inspection. A skipped directory is not a pass.
+- The failure is any `OSError`, not only `PermissionError`. An unreadable root is a failure. The same test calls `non_ascii_paths`, `package_files`, and `nested_git_metadata_paths`. Sentinel v2, low on review `7343b668` of `2f890c3d` (R12).
 - The failure is `manifest-content` (or the same check that directory was being scanned for), with the path in the detail. It is not an uncaught traceback.
 - A readable tree is unchanged. The F-2 cap still applies to a walk that can be listed.
-- `chmod 000` is not the test. The process that runs pytest may be root, and root ignores that mode. The test monkeypatches `os.scandir` to raise `PermissionError` for one child directory. That is the portable red case.
+- `chmod 000` is not the test. The process that runs pytest may be root, and root ignores that mode. The test monkeypatches `os.scandir` to raise `OSError` for the walk root and for one child directory. That is the portable red case.
 
 ## Failing test
 
@@ -50,4 +51,24 @@ Revert the three callbacks. Unreadable directories are skipped again. No package
 
 ## Dependencies
 
-Same as `ATLAS-PR10-SENTINEL-LOWS`. #25 overlaps the file. #15, #16, #23, #27, #30, #35, #37, and #40 do not. Rebase onto #25 (parent #21).
+Same as `ATLAS-PR10-SENTINEL-LOWS`. #25 overlaps the file. #15, #16, #23, #27, #30, #35, #37, and #40 do not. Bring #25 in with an ordinary merge. #25's parent is #21. Do not rebase either pushed branch.
+
+## Branch base
+
+PR #25 head `3d64934ee1eb` (parent PR #21 `bac4bec450ea`), then PR #41 (`097c5c6680d1b8cfd55db23d39cd027ff69c9133`) and PR #42 (`4457d69c713a784aed9dbe997028bdbe37244d51`), each by ordinary merge, before the `MANIFEST.json` hash refresh. Do not rebase those pushed branches. Do not revert their `Makefile` row or their living rows.
+
+## Known limits
+
+- Any `OSError` fails the inspection, including an unreadable root. `PermissionError` is not the only case.
+- The same test covers `non_ascii_paths`, `package_files`, and `nested_git_metadata_paths`.
+- `chmod 000` is not the test. Root ignores that mode.
+
+## Ask
+
+| Ask | None. This row does not ask Tony. |
+
+## Tony source
+
+The backlog row has no separate tony-verbatim card. The title below is copied verbatim from `rows-full.txt`.
+
+> os.walk in check_handoff has no onerror, so unreadable directories are skipped silently (Sentinel L-2, PR14)
