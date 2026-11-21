@@ -11,7 +11,13 @@ Red tests: `f0197d96446fdefb61c5ce80dbaafb201cf5b0d1` (module missing; the throw
 
 Decision: `handoff/decisions/rating-stream-s1.md`. Inventory section: `docs/state-machines.md` (Rating stream S1).
 
-Suite counts are filled in the measurement note after `pytest`, `node --test tests/*.test.js`, the edge tests, `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui`, and `check_handoff`.
+Measured on `34cb011aafae3b546b1de23bc6e44fd98a465892`, before this paragraph's manifest refresh. `ATLAS_DEPLOY_STUB` was unset. Workerd 2026-10-23 is not installed.
+
+- `python3 -m pytest tests/test_*.py -q --tb=line`: 413 passed, 127 warnings, 25.45s, exit 0.
+- `node --test tests/*.test.js`: 419 tests, 419 pass, 0 fail, 0 skipped.
+- Edge `node --test test/*.test.js`: 1124 tests, 1120 pass, 0 fail, 4 skipped. The four skips are `workerd 2026-10-23 is not installed; set ATLAS_WORKERD_ROOT`.
+- `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui`: 834 PASS, 0 FAIL, exit 0.
+- `python3 scripts/check_handoff.py . --dev-git-index`: exit 0, 701 release files.
 
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
