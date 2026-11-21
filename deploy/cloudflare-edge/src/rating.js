@@ -12,6 +12,7 @@ import { recordView, nameMatcher, STOPLIST } from './scrub.js';
 import { NUMERIC_SRC } from './policy.generated.js';
 import { storedNames } from './profile.js';
 import { blocked as breakerBlocked, initialBreaker, transition as breakerTransition } from './breaker.js';
+import { initialRatingStream, ratingStreamTransition } from './rating-stream.js';
 
 export const MODEL = 'jev-1.13.0'; // pinned (https://docs.typesafe.ai/models.md); JEV_MODEL is deliberately not read
 export const RUBRIC_VERSION = 'story-quality-v2';
@@ -490,35 +491,62 @@ export function storyRater(env, fetcher = fetch, opts = {}) {
     const deadlineAt = now() + b.deadlineMs, max = trial ? 1 : 2;
     return new Promise(resolve => {
       const stop = new AbortController(), ctrls = [];
-      let settled = false, attempts = 0, hedged = 0, http = 0, pending = 0;
-      const end = o => {
-        if (settled) return;
-        settled = true; stop.abort(); for (const c of ctrls) c.abort();
-        const result = { ...o, attempts, hedged, http };
-        if (typeof opts.onEnd === 'function') opts.onEnd(result);
-        resolve(result);
+      let stream = initialRatingStream(), http = 0, observed = false;
+      const applyStream = event => {
+        const result = ratingStreamTransition(stream, event);
+        if (result.rejection) emit({ id: result.rejection.id, phase: result.rejection.phase, event: result.rejection.event });
+        if (result.ok) stream = result.state;
+        return result;
       };
-      const launch = () => {
-        if (settled || attempts >= max || deadlineAt - now() < b.minAttemptMs) return false;
-        attempts++; pending++; if (attempts > 1) hedged = 1;
+      const finish = o => {
+        stop.abort();
+        for (const c of ctrls) c.abort();
+        const result = { ...o, attempts: stream.attempts, hedged: stream.hedged, http };
+        resolve(result);
+        if (observed) return;
+        observed = true;
+        try {
+          if (typeof opts.onEnd === 'function') opts.onEnd(result);
+        } catch (error) {
+          const name = error && typeof error.name === 'string' && error.name ? error.name : 'Error';
+          emit({ atlas_metric: 'rating', event: 'onend_throw', name });
+          applyStream({ type: 'observe' });
+        }
+      };
+      const settle = (o, type) => {
+        const moved = applyStream({ type });
+        if (moved.effects.includes('resolve')) finish(o);
+      };
+      const startRequest = () => {
         const ac = new AbortController(), key = env.TYPESAFE_API_KEY;
         ctrls.push(ac);
         one(ac.signal, key).then(o => {
-          pending--;
-          if (settled) return; // cancelled because another request won
+          if (stream.phase === 'settled') return;
           if (o.http) http = o.http;
           note(o, key, trial);
-          if (o.ok || !o.retryable) return end(o);
-          if (!launch() && pending === 0) end(o);
+          if (stream.phase === 'settled') return;
+          if (o.ok) return settle(o, 'succeed');
+          if (!o.retryable) return settle(o, 'terminal');
+          const moved = applyStream({ type: 'retryable', room: deadlineAt - now() >= b.minAttemptMs });
+          if (moved.effects.includes('request')) return startRequest();
+          if (moved.effects.includes('resolve')) finish(o);
         });
+      };
+      const launch = () => {
+        const moved = applyStream({ type: 'launch', max, room: deadlineAt - now() >= b.minAttemptMs });
+        if (!moved.effects.includes('request')) return false;
+        startRequest();
         return true;
       };
       launch();
-      if (max > 1) wait(b.hedgeAtMs, stop.signal).then(fired => { if (fired && !settled && pending > 0) launch(); });
+      if (max > 1) wait(b.hedgeAtMs, stop.signal).then(fired => {
+        if (fired && stream.phase === 'running' && stream.pending > 0) launch();
+      });
       wait(b.deadlineMs, stop.signal).then(fired => {
-        if (!fired) return;
-        if (!settled) for (let i = 0; i < pending; i++) note({ code: 'timeout' }, null, trial);
-        end({ code: 'timeout', retryable: true });
+        if (!fired || stream.phase === 'settled') return;
+        for (let i = 0; i < stream.pending; i++) note({ code: 'timeout' }, null, trial);
+        const moved = applyStream({ type: 'deadline' });
+        if (moved.effects.includes('resolve')) finish({ code: 'timeout', retryable: true });
       });
     });
   }
