@@ -91,6 +91,14 @@ test('E8 the integration lock covers every direct dependency, and CI installs on
   assert.equal(/\bpyjwt\b/i.test(install), false);
   assert.equal(/\bcryptography\b/i.test(install), false);
   assert.match(read('constraints-tested.txt'), /^msgpack==/m);
+  const python = spawnSync('python3', ['-c', 'import sys; print(sys.executable)'], { encoding: 'utf8' });
+  assert.equal(python.status, 0, python.stderr);
+  const dry = spawnSync(python.stdout.trim(), ['-m', 'pip', 'install', '--require-hashes', '--dry-run', '-r', 'requirements-integrations.lock'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 180000,
+  });
+  assert.equal(dry.status, 0, dry.stdout + dry.stderr);
 });
 
 test('E9 the Teams client bundle is checked without a deploy', () => {
@@ -157,9 +165,33 @@ test('HAM-01 requirements.txt and every requirements-*.txt with third-party pack
 
 test('requirements-ci.lock names a compile input that exists', () => {
   const header = read('requirements-ci.lock').split('\n').slice(0, 12).join('\n');
-  const names = [...header.matchAll(/\b(requirements[\w.-]*\.in)\b/g)].map(match => match[1]);
+  const command = header.split('\n').find(line => line.includes('pip-compile')) || '';
+  const names = [...command.matchAll(/\b(requirements[\w.-]*\.in)\b/g)].map(match => match[1]);
   assert.ok(names.length >= 1, header);
-  for (const name of new Set(names)) assert.equal(existsSync(join(root, name)), true, name);
+  for (const name of new Set(names)) {
+    assert.equal(existsSync(join(root, name)), true, name);
+    const tracked = spawnSync('git', ['ls-files', '--error-unmatch', name], { cwd: root, encoding: 'utf8' });
+    assert.equal(tracked.status, 0, name);
+  }
+});
+
+test('requirements-integrations.txt is the compile input and the install is the hashed lock', () => {
+  const head = read('requirements-integrations.txt').split('\n').slice(0, 8).join('\n');
+  assert.match(head, /compile input/i);
+  assert.match(head, /not the lock/i);
+  assert.match(head, /python3 -m pip install --require-hashes -r requirements-integrations\.lock/);
+});
+
+test('the fresh-clone block installs the CI lock with --require-hashes', () => {
+  const block = read('README.md').split('## Fresh clone')[1].split('## ')[0];
+  assert.match(block, /python3 -m pip install --require-hashes -r requirements-ci\.lock/);
+});
+
+test('NVIDIA setup stays in this tree and installs the CI lock with --require-hashes', () => {
+  const text = read('docs/NVIDIA_SETUP.md');
+  assert.equal(/cd\s+ATLAS_Intelligence\b/.test(text), false);
+  const block = text.split('```bash')[1] || '';
+  assert.match(block, /python3 -m pip install --require-hashes -r requirements-ci\.lock/);
 });
 
 test('requirements-ci.lock pins playwright and greenlet', () => {
@@ -232,7 +264,7 @@ test('make build writes the gitignored edge page a fresh tree does not have', ()
   const built = spawnSync('make', ['build'], { cwd: clone, encoding: 'utf8' });
   assert.equal(built.status, 0, built.stdout + built.stderr);
   assert.equal(existsSync(page), true);
-  assert.equal(readFileSync(page), readFileSync(join(clone, 'ATLAS_Voice.html')));
+  assert.equal(readFileSync(page, 'utf8'), readFileSync(join(clone, 'ATLAS_Voice.html'), 'utf8'));
 });
 
 test('setup docs name the Ubuntu python3.12-venv package', () => {
