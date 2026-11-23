@@ -1,6 +1,50 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-23 — Sweep 01 group 9 lookup lows (`cursor/atlas-s01-fix-g9`)
+
+`profile.js` is unchanged from `acd37788d8d98c69f1e6fd20a32a540546d6b260`. Two lows on that head left the 43 group tests green. Dropping the reviewer daily exemption at `profile.js:816` still returned 404 for an admin and never asked a reviewer for a 31st address. Dropping the `refs.tenant` compare at `profile.js:762` still returned 403 when `state.tenant` was also the other tenant, because `access()` checks the state tenant.
+
+A reviewer who has already looked up 30 distinct addresses gets 404, not 429, for the next address on a new Library. A ref whose column tenant is another tenant does not unlock lookup when `state.tenant` is this tenant, `updated_by` is someone else, and role `user` would have full access. A column in this tenant still returns the name.
+
+Plan gap closed. `erasePeopleLookups` is not a function on this branch. Addendum G9-v4-L1 supersedes the frozen plan sentence that said it deletes the caller's lookup rows and that the profile DELETE inside `eraseMine` calls it. Profile POST delete, `eraseMine`, and `daily` do not delete `people_lookup` and do not reset the 30/day cap. `subject-rights.js` is unchanged.
+
+Touched: `deploy/cloudflare-edge/test/sweep01-g9-people.test.js`, this file, `MANIFEST.json`.
+
+Not deployed. No provider calls. GitHub Actions is still blocked by the Actions budget. The local counts below are the substitute. Production gates in `handoff/ACCEPTANCE.md` stay open.
+
+Measured before this paragraph's manifest refresh:
+
+- `node --test deploy/cloudflare-edge/test/sweep01-g9-people.test.js deploy/cloudflare-edge/test/sweep01-a-logic.test.js deploy/cloudflare-edge/test/sweep01-f-stress.test.js deploy/cloudflare-edge/test/profile.test.js`: 45 tests, 45 pass, 0 fail, 0 skipped, exit 0, duration_ms 1999.739173.
+- Dropping only `profile.js:816`'s reviewer exemption failed `a reviewer is exempt from the daily lookup cap after eviction`, exit 1. The line was restored.
+- Dropping only `profile.js:762` failed `a refs tenant column in another tenant does not unlock a story state in this tenant`, exit 1. The line was restored.
+
+## 2026-11-21 — Sweep 01 group 9 profile (`cursor/atlas-s01-fix-g9`)
+
+HIGH. Plan is PR #38 v4 `9ce5ea97d0c3b8ce653273162bb837221c77a271`, file `docs/sweeps/s01/plans/group-9-profile.md`, sha256 `12c84ca137f63b1c5243d2a49ce1e8bbb678cf1e1c87d87b0db5938bf39415b0`. SHA256SUMS sha256 `8893f60ebcb908e9fbb3265b05d96ca9e6e339496090535ac706e7d22c76681d`. Red tests were copied from PR #31 commit `96712474b59d6b058ef00479f2bb2d4eb065801e` and were not merged. Red commit `c9607777b51108c93fbf36aebe5aeb0d3a35aff1` is 14 tests, 0 pass, 14 fail, exit 1. The `L5|F2` pattern command on that commit is 3 tests, 3 fail, exit 1. Rollback is main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`.
+
+`profile.js` now compares profile `seen_at` as an instant, merges one edit or consent delta onto a fresh row with one compare retry then 409, and limits enforced directory lookup. Presales `access() === 'full'` is not a grant. A non-admin caller may resolve the directory manager or a same-tenant ref someone else wrote that role `user` would still open in full. Admin and reviewer resolve any exact address and the body has no `manager_email`. Unauthorized is 403 before `lookupPerson`. The owner cap is 30 distinct addresses per UTC day in `people_lookup`, including 403s. Admin and reviewer are exempt. The `rateLimit(...)` arguments are unchanged.
+
+Addendum G9-v4-L1 closes the plan gap: profile POST delete, `eraseMine`, and `daily` do not delete `people_lookup` and do not reset that cap. `erasePeopleLookups` is not implemented. `subject-rights.js` was not edited. The frozen plan sentence that called it is superseded by that addendum.
+
+Known limit: the new lookup check and the durable cap run only when `user.tenantEnforced === true`. An unenforced library still resolves any exact address. The hourly in-memory limiter still applies. A missing `updated_by` does not unlock a lookup. A later editor who is not the caller can unlock an address already on that row, and the daily cap still counts it.
+
+Touched: `deploy/cloudflare-edge/src/profile.js`, `deploy/cloudflare-edge/test/sweep01-a-logic.test.js`, `deploy/cloudflare-edge/test/sweep01-f-stress.test.js`, `deploy/cloudflare-edge/test/sweep01-g9-people.test.js`, this file, `MANIFEST.json`.
+
+Not deployed. No provider calls. Draft PR: https://github.com/mysticalsin/atlas-project-intelligence/pull/60. Next task for this group: none. Production gates in `handoff/ACCEPTANCE.md` stay open.
+
+GitHub Actions did not run the suite. Runs 44878311449 (job 136767825886) and 44878293630 (job 136767772017) completed failure with an empty runner. Annotation: The job was not started because an Actions budget is preventing further use. No workflow dispatch. The test result stays PENDING.
+
+Measured on product commit `4b70a86dc8545d854a73ca21ccefc9749abfeb84` before this paragraph's manifest refresh:
+
+- `node --test deploy/cloudflare-edge/test/sweep01-g9-people.test.js deploy/cloudflare-edge/test/sweep01-a-logic.test.js deploy/cloudflare-edge/test/sweep01-f-stress.test.js deploy/cloudflare-edge/test/profile.test.js`: 43 tests, 43 pass, 0 fail, 0 skipped, exit 0.
+- `node --test tests/*.test.js`: 419 tests, 419 pass, 0 fail, 0 skipped, exit 0.
+- `cd deploy/cloudflare-edge && node --test test/*.test.js`: 1132 tests, 1128 pass, 0 fail, 4 skipped, duration_ms 238393.621634, exit 0. The 4 skips are the existing workerd cases that need `ATLAS_WORKERD_ROOT`.
+- `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui`: 834 PASS, 0 FAIL, exit 0.
+- Mutation: 28 new guards negated, 28 killed, 0 survived.
+- `python3 -m pytest tests/test_*.py -q --tb=line` on that commit: 413 passed, 127 warnings, 25.14s, exit 0. The pre-commit run was 2 failed, 411 passed, 127 warnings, 25.57s, exit 1. Both failures were the stale-manifest handoff tests.
+- `python3 scripts/check_handoff.py . --dev-git-index` on that commit: PASS, 700 release files, exit 0.
+
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.
