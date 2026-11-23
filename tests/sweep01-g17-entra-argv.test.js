@@ -147,6 +147,24 @@ test('I-4 the refused set names CR, TAB, backslash, and a dollar sign before the
   assert.match(fn, /\$/);
 });
 
+function assertCodePointGuard(codePoint) {
+  const code = scriptText();
+  const fn = code.slice(code.indexOf('def accepted'), code.indexOf('os.open('));
+  assert.match(fn, new RegExp('if ord\\(ch\\) == ' + codePoint + ':\\n\\s+return False'));
+}
+
+test('the hash guard is code point 35 before any secret file is opened', () => {
+  assertCodePointGuard(35);
+});
+
+test('the backtick guard is code point 96 before any secret file is opened', () => {
+  assertCodePointGuard(96);
+});
+
+test('the exclamation guard is code point 33 before any secret file is opened', () => {
+  assertCodePointGuard(33);
+});
+
 test('curl disables curlrc first and refuses a non-https URL', () => {
   const commands = scriptText().split('\n').filter(line => /\bcurl\s/.test(line));
   assert.ok(commands.length >= 1);
@@ -272,6 +290,16 @@ function leaked(run, needles) {
   return needles.some(needle => needle && text.includes(needle));
 }
 
+function refusedCharacter(codePoint, marker) {
+  const token = marker + String.fromCharCode(codePoint) + 'rest';
+  const run = runBootstrap(token, SECRET, '{"success":true,"result":{"id":"idp-dummy"}}');
+  assert.equal(leaked(run, [token, SECRET, marker]), false, 'dummy secret appeared in argv, stdout, or stderr');
+  assert.equal(run.stderr.includes(REFUSAL), true, 'the script did not refuse the character');
+  assert.equal(run.argv.includes('\ncurl\t') || run.argv.startsWith('curl\t'), false, 'curl ran');
+  assert.equal(run.files.includes('curl.cfg'), false, 'curl config was written');
+  assert.notEqual(run.status, 0, 'a bad token was accepted');
+}
+
 test('dummy secrets do not appear on argv, stdout, or stderr', () => {
   const run = runBootstrap(TOKEN, SECRET, '{"success":true,"result":{"id":"idp-dummy"}}');
   assert.equal(leaked(run, [TOKEN, SECRET]), false, 'dummy secret appeared in argv, stdout, or stderr');
@@ -323,6 +351,25 @@ test('CR, TAB, backslash, and shell metacharacters are refused before curl runs'
     assert.equal(run.argv.includes('\ncurl\t') || run.argv.startsWith('curl\t'), false, 'curl ran');
     assert.notEqual(run.status, 0, 'a bad token was accepted');
   }
+});
+
+test('a hash in a dummy token is refused before curl runs', () => {
+  refusedCharacter(35, 'hash-dummy');
+});
+
+test('a backtick in a dummy token is refused before curl runs', () => {
+  refusedCharacter(96, 'tick-dummy');
+});
+
+test('an exclamation mark in a dummy token is refused before curl runs', () => {
+  refusedCharacter(33, 'bang-dummy');
+});
+
+test('tilde, plus, slash, and equals in a dummy token are still accepted', () => {
+  const token = 'tilde~plus+slash/equals=';
+  const run = runBootstrap(token, 'ok~+/=', '{"success":true,"result":{"id":"idp-dummy"}}');
+  assert.equal(leaked(run, [token, 'ok~+/=']), false, 'dummy secret appeared in argv, stdout, or stderr');
+  assert.equal(run.status, 0, 'an allowed character was refused');
 });
 
 test('a curl response that repeats a dummy secret is not printed', () => {
