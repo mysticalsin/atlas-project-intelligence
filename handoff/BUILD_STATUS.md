@@ -1,6 +1,18 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-23 — VibeApps packaging on GitHub main `8b0972ec`
+
+Re-implemented on `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. The older ADO tree `dbd0dd9bf7d5687070395293c50172258ab83777` was not fast-forwarded and was not force-pushed. No Azure spend, no `vibeapps_app_deploy`, no `.appengine`, `.mcp`, `infra`, or `azure-pipelines` files.
+
+- Sessions, locks, throttles, SQLite, and local Markdown revisions are documented in `docs/VIBEAPPS_PACKAGING.md`. `PostgresAdapter` and `BlobAdapter` refuse to connect and do not keep a DSN or Blob URL.
+- `ATLAS_AUTH=vibeapps` accepts only `X-Forwarded-User-Email`, `X-Forwarded-User-Name`, and `X-Forwarded-User-Id`. `local` and `entra` ignore those headers. This mode does not grant review or publish roles.
+- The process serves under `APP_BASE_PATH` `/run/atlas/` or `/run/atlas-dev/` and listens on `ATLAS_PORT` (default 8080, the manifest port).
+- Key Vault names are in that note. No values. `.env.example` secret fields are empty.
+- Before `MANIFEST.json` was refreshed, `python3 scripts/check_handoff.py . --dev-git-index --no-rebuild` was red: `manifest-content` listed the changed and untracked packaging files. `scripts/check_handoff.py` itself was already green on this main and was not edited. `MANIFEST.json` is regenerated after this note.
+
+Locally verified on this host: `python3 -m pytest tests/test_*.py -q` was 422 passed, with `test_repository_full_handoff_includes_clean_rebuild` red on the stale manifest and `test_python_docx_imports` missing the `docx` package. Chrome loaded `/run/atlas/` with the three headers and requested only `/run/atlas/api/bootstrap`. `node --test tests/page-pin.test.js` passed after the pin refresh. Not a production-ready claim. Live voice, Entra, and Hindsight remain BLOCKED_EXTERNAL.
+
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.

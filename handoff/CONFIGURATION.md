@@ -53,13 +53,16 @@ Open `http://localhost:8080` for the defaults. The safe preview is port 8000 and
 | `OPENAI_REALTIME_VOICE` | `cedar` | Client/server supported list: cedar, marin, ash, sage, verse. Verify target availability. |
 | `OPENAI_TRANSCRIBE_MODEL` | `gpt-transcribe` | Consultant input transcription; capture requires consent. |
 | `ATLAS_ORIGIN` | `http://localhost:8080` | Exact scheme/host/port, no path. Must match browser, proxy and callbacks. |
-| `ATLAS_BIND` / `ATLAS_PORT` | `127.0.0.1` / `8080` | Loopback in local mode. `localhost` versus `127.0.0.1` in the browser is not interchangeable under exact Host/Origin checks. |
-| `ATLAS_AUTH` | `local` | `local` for one trusted developer; `entra` for shared use. |
+| `ATLAS_BIND` / `ATLAS_PORT` | `127.0.0.1` / `8080` | Loopback in local mode. `8080` is the VibeApps manifest port when `ATLAS_PORT` is unset. `localhost` versus `127.0.0.1` in the browser is not interchangeable under exact Host/Origin checks. |
+| `ATLAS_AUTH` | `local` | `local` for one trusted developer; `entra` for shared use; `vibeapps` for the three platform headers in `docs/VIBEAPPS_PACKAGING.md`. |
+| `APP_BASE_PATH` | empty | Empty serves at `/`. `/run/atlas/` or `/run/atlas-dev/` is the VibeApps prefix. `vibeapps` requires one of those two. |
 | `ATLAS_MAX_SECONDS` | `900` | Whole-interview cap; code accepts 30–900 seconds (the interview is at most 15 minutes). |
 | `ATLAS_MAX_INTERVIEWS` | `1` | Concurrent interviews per gateway process, 1–100; one per signed-in user. Must be 1 for the stock PersonaPlex worker. With `ATLAS_MAX_SECONDS` this bounds worst-case hosted spend. |
 | `ATLAS_MAX_SESSIONS` | `500` | Signed-in sessions (1 hour each) held by one process, 10–20000. Size from peak sign-ins per hour during a campaign; beyond it new sign-ins get HTTP 503. |
 | `ATLAS_HANDSHAKE_TIMEOUT` | `90` | Ready timeout; code accepts 5–180 seconds. |
 | `ATLAS_WIKI_ROOT` | `.env.example`: `./data/wiki`; bare Config: empty | Private durable vault; back up Markdown and SQLite together. |
+
+VibeApps (`docs/VIBEAPPS_PACKAGING.md`) serves this same process under `APP_BASE_PATH` on `ATLAS_PORT`. Identity in that mode is only `X-Forwarded-User-Email`, `X-Forwarded-User-Name`, and `X-Forwarded-User-Id`. Sessions, locks, and throttles stay in memory. The wiki registry stays SQLite and the revisions stay local files. `atlas_voice/multiinstance.py` names the Postgres and Blob adapters and refuses to connect. Key Vault secret names are in that note. No values are stored here.
 
 The OpenAI IDs are recorded from official model pages on 2026-09-26: https://developers.openai.com/api/docs/models/gpt-realtime-2.1 and https://developers.openai.com/api/docs/models/gpt-transcribe . This confirms documented identifiers, **not** a real request or access in your account. No provider model silently substitutes for a rejected configuration.
 

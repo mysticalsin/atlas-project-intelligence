@@ -1,10 +1,29 @@
 """Explicit, server-side configuration. No provider endpoint comes from a browser."""
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from urllib.parse import urlsplit
 import os
 import re
 
 LOOPBACK = {'localhost', '127.0.0.1', '::1'}
+# Port the VibeApps application manifest publishes when ATLAS_PORT is unset.
+MANIFEST_PORT = 8080
+BASE_PATHS = ('/run/atlas/', '/run/atlas-dev/')
+
+
+def canonical_base_path(value) -> str:
+    """Empty, /run/atlas/, or /run/atlas-dev/. A missing trailing slash is added."""
+    if not isinstance(value, str):
+        raise ValueError('APP_BASE_PATH must be empty, /run/atlas/, or /run/atlas-dev/.')
+    text = value.strip()
+    if text == '':
+        return ''
+    if not text.startswith('/'):
+        raise ValueError('APP_BASE_PATH must be empty, /run/atlas/, or /run/atlas-dev/.')
+    if not text.endswith('/'):
+        text += '/'
+    if text not in BASE_PATHS:
+        raise ValueError('APP_BASE_PATH must be empty, /run/atlas/, or /run/atlas-dev/.')
+    return text
 # kyutai/tts-voices folders published under CC BY-NC 4.0 (checked 2026-09-26).
 NONCOMMERCIAL_VOICES = ('expresso/', 'ears/')
 # Curated calm @cf/deepgram/aura-2-en speakers (Workers AI schema + Deepgram descriptions, 2026-09-27).
@@ -28,7 +47,7 @@ def endpoint(value: str, *, websocket: bool = False) -> str:
 class Config:
     origin: str = 'http://localhost:8080'
     bind: str = '127.0.0.1'
-    port: int = 8080
+    port: int = MANIFEST_PORT
     personaplex_url: str = 'ws://127.0.0.1:8998/api/chat'
     voice: str = 'NATM1.pt'
     duration: int = 900
@@ -75,12 +94,13 @@ class Config:
     workers_stt_model: str = '@cf/deepgram/nova-3'
     workers_tts_model: str = '@cf/deepgram/aura-2-en'
     workers_voice: str = 'harmonia'
+    base_path: str = ''
 
     @classmethod
     def env(cls):
         e = os.environ
         return cls(origin=e.get('ATLAS_ORIGIN', 'http://localhost:8080').rstrip('/'),
-            bind=e.get('ATLAS_BIND', '127.0.0.1'), port=int(e.get('ATLAS_PORT', '8080')),
+            bind=e.get('ATLAS_BIND', '127.0.0.1'), port=int(e.get('ATLAS_PORT', str(MANIFEST_PORT))),
             personaplex_url=e.get('PERSONAPLEX_WS_URL', 'ws://127.0.0.1:8998/api/chat'),
             voice=e.get('PERSONAPLEX_VOICE', 'NATM1.pt'),
             duration=int(e.get('ATLAS_MAX_SECONDS', '900')), speaking_limit=int(e.get('ATLAS_SPEAKING_SECONDS', '600')),
@@ -109,9 +129,13 @@ class Config:
             workers_account=e.get('WORKERS_AI_ACCOUNT', ''), workers_key=e.get('WORKERS_AI_API_KEY', ''),
             workers_stt_model=e.get('WORKERS_STT_MODEL', '@cf/deepgram/nova-3'),
             workers_tts_model=e.get('WORKERS_TTS_MODEL', '@cf/deepgram/aura-2-en'),
-            workers_voice=e.get('WORKERS_TTS_VOICE', 'harmonia')).validate()
+            workers_voice=e.get('WORKERS_TTS_VOICE', 'harmonia'),
+            base_path=e.get('APP_BASE_PATH', '')).validate()
 
     def validate(self):
+        base = canonical_base_path(self.base_path)
+        if base != self.base_path:
+            return replace(self, base_path=base).validate()
         if self.voice_provider not in ('personaplex','openai','kyutai','workers'):raise ValueError('Explicit supported voice provider required')
         if self.openai_voice not in ('cedar','marin','ash','sage','verse'):raise ValueError('Unsupported hosted voice')
         if not re.fullmatch(r'[a-zA-Z0-9._-]{1,100}',self.openai_model):raise ValueError('Invalid voice model ID')
@@ -155,11 +179,16 @@ class Config:
             raise ValueError('ATLAS_MAX_INTERVIEWS must be between 1 and 100.')
         if self.voice_provider == 'personaplex' and self.max_interviews != 1:
             raise ValueError('The stock PersonaPlex worker serves one interview; keep ATLAS_MAX_INTERVIEWS=1.')
-        if self.auth_mode not in ('local', 'entra'):
-            raise ValueError('ATLAS_AUTH must be local or entra.')
+        if self.auth_mode not in ('local', 'entra', 'vibeapps'):
+            raise ValueError('ATLAS_AUTH must be local, entra, or vibeapps.')
         if self.auth_mode == 'local':
             if self.bind not in LOOPBACK or urlsplit(self.origin).hostname not in LOOPBACK:
                 raise ValueError('Unauthenticated local mode may bind and serve loopback only.')
+        elif self.auth_mode == 'vibeapps':
+            if self.base_path not in BASE_PATHS:
+                raise ValueError('VibeApps serves under APP_BASE_PATH /run/atlas/ or /run/atlas-dev/.')
+            if urlsplit(self.origin).hostname not in LOOPBACK and not self.origin.startswith('https://'):
+                raise ValueError('A shared deployment requires HTTPS.')
         else:
             uuid = r'[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}'
             if not re.fullmatch(uuid, self.tenant) or not re.fullmatch(uuid, self.client_id):

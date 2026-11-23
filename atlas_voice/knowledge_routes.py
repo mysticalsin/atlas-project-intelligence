@@ -141,8 +141,9 @@ def install(app,identity):
         except ValueError:raise
         except Exception:raise web.HTTPBadGateway(text='Private memory could not be read.') from None
         return web.json_response({'content':text})
+    base = app['config'].base_path.rstrip('/')
     for method,path,fn in [('GET','/api/intelligence',status),('GET','/api/wiki',stories),('GET','/api/wiki/graph',graph),
        ('POST','/api/wiki',save),('POST','/api/wiki/export',export),('POST','/api/wiki/rank',rank),('GET','/api/wiki/{id}',get),
        ('POST','/api/wiki/{id}/refine',refine),('POST','/api/wiki/{id}/review',review),('POST','/api/wiki/{id}/withdraw',withdraw),
        ('GET','/api/memory/context',memory_read),('POST','/api/memory/context',memory_write),('DELETE','/api/memory/context',memory_delete)]:
-        app.router.add_route(method,path,fn)
+        app.router.add_route(method, (base + path) if base else path, fn)

@@ -29,6 +29,14 @@ class SessionCancelled(Exception):
     pass
 
 
+def _under_base(path, base):
+    """True when path is the mounted app. An empty base is the whole host."""
+    if not base:
+        return True
+    prefix = base.rstrip('/')
+    return path == prefix or path.startswith(prefix + '/')
+
+
 def _ws_origin(config):
     u = urlsplit(config.origin)
     return ('wss' if u.scheme == 'https' else 'ws') + '://' + u.netloc
@@ -66,15 +74,23 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
             raise web.HTTPForbidden(text='Host is not the configured ATLAS origin.')
         if config.auth_mode == 'local' and request.remote not in LOOPBACK:
             raise web.HTTPForbidden(text='Local mode accepts loopback connections only.')
-        if request.method not in ('GET', 'HEAD'):
-            subject = identity.require(request)
-            if not same_origin(request, config) or not secrets.compare_digest(
-                    request.headers.get('X-Atlas-CSRF', ''), subject.csrf):
-                raise web.HTTPForbidden(text='Invalid request origin or session token.')
         try:
+            if config.auth_mode == 'vibeapps' and _under_base(request.path, config.base_path):
+                try:
+                    identity.bind_forwarded(request)
+                except ValueError as error:
+                    raise web.HTTPUnauthorized(text=str(error)) from None
+            if request.method not in ('GET', 'HEAD'):
+                subject = identity.require(request)
+                if not same_origin(request, config) or not secrets.compare_digest(
+                        request.headers.get('X-Atlas-CSRF', ''), subject.csrf):
+                    raise web.HTTPForbidden(text='Invalid request origin or session token.')
             response = await handler(request)
         except web.HTTPException as error:
             response = error
+        fresh = request.get('atlas_new_session')
+        if isinstance(fresh, str) and fresh and not response.prepared and response.status != 401:
+            identity.set_cookie(response, fresh)
         if not response.prepared:
             response.headers['Cache-Control'] = 'no-store'
             response.headers['X-Content-Type-Options'] = 'nosniff'
@@ -119,10 +135,13 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
         if subject is None and config.auth_mode == 'local':
             cookie, subject = identity.issue('local', 'single-developer', 'Local developer')
         if subject is None:
-            return web.Response(text='''<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>ATLAS · Sign in</title><style>body{font:18px/1.6 Arial;background:#F8F8F8;color:#3E007A;padding:12vh 12vw}h1{font-size:54px}a{display:inline-block;background:#3E007A;color:white;padding:14px 25px;border-radius:9px;text-decoration:none}p{max-width:570px}</style><h1>Great work. Worth hearing.</h1><p>Sign in with your Mantu work account to use the ATLAS voice interview. Access requires the assigned ATLAS app role.</p><a href="/auth/login">Sign in with Microsoft Entra ID →</a></html>''', content_type='text/html')
+            login_href = (config.base_path.rstrip('/') if config.base_path else '') + '/auth/login'
+            return web.Response(text='''<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>ATLAS · Sign in</title><style>body{font:18px/1.6 Arial;background:#F8F8F8;color:#3E007A;padding:12vh 12vw}h1{font-size:54px}a{display:inline-block;background:#3E007A;color:white;padding:14px 25px;border-radius:9px;text-decoration:none}p{max-width:570px}</style><h1>Great work. Worth hearing.</h1><p>Sign in with your Mantu work account to use the ATLAS voice interview. Access requires the assigned ATLAS app role.</p><a href="''' + html.escape(login_href) + '''">Sign in with Microsoft Entra ID →</a></html>''', content_type='text/html')
         text = (ROOT / 'ATLAS_Voice.html').read_text()
-        runtime = json.dumps({'subjectKey': subject.subject_key, 'authMode': config.auth_mode,
-                              'name': subject.name}).replace('<', '\\u003c')
+        payload = {'subjectKey': subject.subject_key, 'authMode': config.auth_mode, 'name': subject.name}
+        if config.base_path:
+            payload['basePath'] = config.base_path
+        runtime = json.dumps(payload).replace('<', '\\u003c')
         block = '<script id="atlas-runtime" type="application/json">' + runtime + '</script>'
         text = text.replace(RUNTIME_BLOCK, block, 1)
         # Header is authoritative; replace the file's restricted connect-src too.
@@ -153,8 +172,11 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
                   'codecAvailable': bool(config.openai_key) if hosted else bool(shutil.which(config.ffmpeg)),
                   'transcription': hosted or bool(config.riva_uri), 'structuredNotes': hosted or bool(config.riva_uri and config.notes_url),
                   'providerLabel':'OpenAI Realtime' if hosted else 'NVIDIA PersonaPlex','liveLedger':hosted,'playbackAck':hosted}
-        return web.json_response({**info,'provider':config.voice_provider,'capacity':config.max_interviews,'wiki':bool(config.wiki_root),'jev':bool(__import__('os').environ.get('TYPESAFE_API_KEY')),'protocol': 'atlas-personaplex-pcm-v1', 'csrf': subject.csrf,
-            'identity': {'name': subject.name, 'mode': config.auth_mode, 'subjectKey': subject.subject_key},
+        body = {**info,'provider':config.voice_provider,'capacity':config.max_interviews,'wiki':bool(config.wiki_root),'jev':bool(__import__('os').environ.get('TYPESAFE_API_KEY')),'protocol': 'atlas-personaplex-pcm-v1', 'csrf': subject.csrf,
+            'identity': {'name': subject.name, 'mode': config.auth_mode, 'subjectKey': subject.subject_key}}
+        if config.base_path:
+            body['basePath'] = config.base_path
+        return web.json_response({**body,
             'busy': gate.locked(),
             'maxSeconds': config.duration, 'memory': memory.enabled,
             'readiness': 'configured-not-inference-tested'})
@@ -180,12 +202,12 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
             raise web.HTTPBadGateway(text='Hindsight did not confirm this write. No success is assumed.') from None
 
     async def logout(request):
-        key = request.cookies.get(COOKIE, '')
+        key = identity.session_key(request)
         identity.sessions.pop(key, None)
         if key in active:
             await active[key].close(code=1008, message=b'Signed out')
         response = web.json_response({'signedOut': True})
-        response.del_cookie(COOKIE, path='/')
+        response.del_cookie(COOKIE, path=identity.cookie_path())
         return response
 
     async def voice(request):
@@ -208,7 +230,7 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
         pcm = bytearray()
         capture = False
         clean_end = False
-        session_cookie = request.cookies.get(COOKIE, '')
+        session_cookie = identity.session_key(request)
         counters = {'inputBytes': 0, 'outputBytes': 0, 'agentTextCharacters': 0}
 
         async def event(kind, **values):
@@ -409,22 +431,30 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
             await ws.close()
         return ws
 
+    def mount(path):
+        base = config.base_path.rstrip('/')
+        if not base:
+            return path
+        return base + ('/' if path == '/' else path)
+
     from .knowledge_routes import install
     install(app,identity)
-    app.router.add_get('/', index)
-    app.router.add_get('/ATLAS_Voice.html', index)
-    app.router.add_get('/api/bootstrap', bootstrap)
-    app.router.add_get('/api/voice', voice)
-    app.router.add_post('/api/preference', preference)
-    app.router.add_post('/api/logout', logout)
-    app.router.add_get('/auth/login', identity.login)
-    app.router.add_get('/auth/callback', identity.callback)
+    app.router.add_get(mount('/'), index)
+    if config.base_path:
+        app.router.add_get(config.base_path.rstrip('/'), index)
+    app.router.add_get(mount('/ATLAS_Voice.html'), index)
+    app.router.add_get(mount('/api/bootstrap'), bootstrap)
+    app.router.add_get(mount('/api/voice'), voice)
+    app.router.add_post(mount('/api/preference'), preference)
+    app.router.add_post(mount('/api/logout'), logout)
+    app.router.add_get(mount('/auth/login'), identity.login)
+    app.router.add_get(mount('/auth/callback'), identity.callback)
     return app
 
 
 def main():
     config = Config.env()
-    print(f'ATLAS voice gateway: {config.origin}  |  authentication: {config.auth_mode}')
+    print(f'ATLAS voice gateway: {config.origin}{config.base_path}  |  authentication: {config.auth_mode}  |  manifest port: {config.port}')
     print('No model inference is claimed until a PersonaPlex session handshake and audio are received.')
     web.run_app(create_app(config), host=config.bind, port=config.port, access_log=None)
 

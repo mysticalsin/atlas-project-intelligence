@@ -20,7 +20,6 @@ from aiohttp import web
 from .analyst import Analyst, chat_completer
 from .capacity import BUSY
 from .gaps import TIME_PLAN, gap_system_block
-from .identity import COOKIE
 from .interview import project_context
 from .kyutai import stream_chat
 from .report import END_TOKEN, EndMarker, parse_report, report_messages, text_completer
@@ -157,7 +156,7 @@ async def run(request, config, identity, memory, http, gate, active):
         raise web.HTTPForbidden(text='Invalid voice origin')
     ws = web.WebSocketResponse(max_msg_size=32768, heartbeat=20)
     await ws.prepare(request)
-    session_cookie = request.cookies.get(COOKIE, '')
+    session_cookie = identity.session_key(request)
     held = capture = clean_end = False
     stt = None  # speech backend (KyutaiSpeech or WorkersSpeech)
     tasks, side = [], set()

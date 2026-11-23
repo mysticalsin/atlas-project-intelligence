@@ -15,7 +15,6 @@ from urllib.parse import urlencode
 import aiohttp
 from aiohttp import web
 from .capacity import BUSY
-from .identity import COOKIE
 from .interview import project_context
 from .quality import InterviewLedger, session_config
 
@@ -27,7 +26,7 @@ async def run(request,config,identity,memory,http,gate,active):
     ws=web.WebSocketResponse(max_msg_size=32768,heartbeat=20)
     await ws.prepare(request)
     ledger=InterviewLedger();upstream=None;tasks=[];held=False;capture=False;clean_end=False
-    session_cookie=request.cookies.get(COOKIE,'');bytes_in=0;last_input=time.monotonic();started=time.monotonic()
+    session_cookie=identity.session_key(request);bytes_in=0;last_input=time.monotonic();started=time.monotonic()
     queue=asyncio.Queue(maxsize=1500);sent={};played={};cancelled=set();current_item=None;current_response=None
     tool_count=0;pending_call_ids=set()
 
