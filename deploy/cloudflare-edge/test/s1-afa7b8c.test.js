@@ -201,17 +201,17 @@ test('a production Teams message without LOG_SALT is JSON 503 before LIBRARY.get
 });
 
 function teamsReady(lib) {
-  const inv = lib.invite('atlas', { email: 'ada@example.test', reason: 'manual', projectId: 'PRJ-SEND', title: 'Pilot', source: 'test' });
-  outreach.queue(lib, { kind: 'interview_invite', subjectId: inv.id, toEmail: 'ada@example.test', preview: { title: 'Pilot', text: 'A short interview.' } });
+  const inv = lib.invite('atlas', { email: 'ada@example.test', reason: 'manual', projectId: 'PRJ-SEND', title: 'Pilot', source: 'test', tenant: ATLAS_TENANT });
+  outreach.queue(lib, { kind: 'interview_invite', subjectId: inv.id, toEmail: 'ada@example.test', tenant: ATLAS_TENANT, preview: { title: 'Pilot', text: 'A short interview.' } });
   const row = lib.rows("SELECT * FROM outreach WHERE channel = 'teams' AND subject_id = ?", inv.id)[0];
-  sqlOf(lib).exec(`INSERT INTO teams_conversations (subject, aad_object_id, tenant_id, teams_user_id, conversation_id, service_url, email, status, updated_at)
-    VALUES (?, ?, ?, '29:ada', 'a:send', ?, 'ada@example.test', 'active', ?)`,
-    `${TENANT}:${OID}`, OID, TENANT, SERVICE, STAMP);
+  sqlOf(lib).exec(`INSERT INTO teams_conversations (subject, aad_object_id, tenant_id, teams_user_id, conversation_id, service_url, email, status, updated_at, atlas_tenant)
+    VALUES (?, ?, ?, '29:ada', 'a:send', ?, 'ada@example.test', 'active', ?, ?)`,
+    `${TENANT}:${OID}`, OID, TENANT, SERVICE, STAMP, ATLAS_TENANT);
   return row;
 }
 function approve(lib, id, action = 'approve') {
   return outreach.routes({
-    method: 'POST', parts: ['outreach', id], user: REV, lib, body: { action },
+    method: 'POST', parts: ['outreach', id], user: { ...REV, tenant: ATLAS_TENANT, tenantEnforced: false }, lib, body: { action },
     env: { ORIGIN }, url: new URL(ORIGIN + '/api/library/outreach/' + id),
   });
 }

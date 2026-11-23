@@ -50,7 +50,7 @@ function approve(lib, id, user = reviewer()) {
     method: 'POST', parts: ['outreach', id], user, lib, body: { action: 'approve' },
     env: { ORIGIN }, url: new URL(ORIGIN + '/api/library/outreach/' + id),
   });
-  return result.then(body => ({ body, calls }));
+  return result.then(result => ({ body: result.body, status: result.status, calls }));
 }
 
 test('M1 sendTeams skips an unstamped row', async () => {
@@ -244,8 +244,8 @@ test('B3 a sentence, sheet fields, and another tenant stay in their lanes', asyn
   });
   eraseMine(lib, person('ada@example.test'), 'ab'.repeat(16));
   const live = JSON.stringify(lib.row(saved.id).data);
-  assert.equal(live.includes('ada@example.test'), false);
   assert.equal(live.includes('ada@example.test.au'), true);
+  assert.equal(live.replaceAll('ada@example.test.au', '').includes('ada@example.test'), false);
   const revision = sqlOf(lib).exec('SELECT data FROM revisions WHERE id = ? AND revision = 2', saved.id).toArray()[0];
   assert.equal(String(revision.data).includes('ada@example.test'), false);
   assert.equal(JSON.stringify(lib.row(other.id).data).includes('ada@example.test'), true);

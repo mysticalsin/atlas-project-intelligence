@@ -175,6 +175,12 @@ test('a Teams install whose audit write returns 503 rolls the teams rows back', 
   };
   await assert.rejects(
     () => outreach.system({ lib, user: { email: 'teams-bot', role: 'system', tenant: '', tenantEnforced: false }, body: event }),
+    err => err.status === 403 && err.message === 'A verified tenant is required.',
+  );
+  assert.equal(countOf(sql, 'teams_seen'), 0);
+  assert.equal(countOf(sql, 'teams_conversations'), 0);
+  await assert.rejects(
+    () => outreach.system({ lib, user: { email: 'teams-bot', role: 'system', tenant: ATLAS_TENANT, tenantEnforced: false }, body: { ...event, activityId: 'act-rollback-tenant' } }),
     err => err.status === 503,
   );
   assert.equal(countOf(sql, 'teams_seen'), 0);

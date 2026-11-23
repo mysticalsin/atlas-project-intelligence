@@ -9,10 +9,11 @@ import { INVITATION_REFUSAL } from '../src/invitation.js';
 import { memorySql } from './sqlite.js';
 
 const ORIGIN = 'https://atlas.example';
+const ATLAS = 'abcdefab-cdef-4abc-8def-0123456789ab';
 const ALEX = { email: 'alex@mantu.com', mail: 'alex@mantu.com', role: 'user' };
-const REV = { email: 'rev@mantu.com', mail: 'rev@mantu.com', role: 'reviewer' };
-const SYS = { email: 'pm-system', mail: '', role: 'system' };
-const BOT = { email: 'teams-bot', mail: '', role: 'system' };
+const REV = { email: 'rev@mantu.com', mail: 'rev@mantu.com', role: 'reviewer', tenant: ATLAS };
+const SYS = { email: 'pm-system', mail: '', role: 'system', tenant: ATLAS };
+const BOT = { email: 'teams-bot', mail: '', role: 'system', tenant: ATLAS };
 const TID = '11111111-2222-3333-4444-555555555555';
 const OID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 
@@ -24,7 +25,7 @@ function setup() {
   const call = async (u, method, path, body) => {
     const r = await libraryRoutes(new Request(ORIGIN + '/api/library/' + path, {
       method,
-      headers: { 'x-atlas-user': u.email, 'x-atlas-role': u.role, 'x-atlas-email': u.mail, 'Content-Type': 'application/json' },
+      headers: { 'x-atlas-user': u.email, 'x-atlas-role': u.role, 'x-atlas-email': u.mail, 'Content-Type': 'application/json', 'x-atlas-tenant': ATLAS },
       body: method === 'POST' ? JSON.stringify(body ?? {}) : undefined,
     }), l, { env: { ORIGIN, ATLAS_TENANT_ISOLATION: 'local-synthetic' } });
     return { status: r.status, body: await r.json() };
